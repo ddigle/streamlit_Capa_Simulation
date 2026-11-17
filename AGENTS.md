@@ -6163,7 +6163,8 @@ RQ_MODULE
       잠금(replica 1 전제).
     - **벽은 세 겹이다.** 그릴 때 숨김(`viewer_can` — 미리 보기를 따름) → 누른 순간 표지 벽(`@audited` · `@audited_each` · `@gated` 첫 줄, 깊이 0
       에서만, 기록기가 꺼져도 선다 — 실제 등급) → 설비 저장 트랜잭션 안의 내용 대조(실무자 저장은 비가동 일정 말고 공통 대장 · 배치 · 일정
-      일곱 칸 · 이름이 하나라도 다르면 통째 거절). 거절 한 번 = 감사 한 줄(`authz_fail_grade` · `authz_fail_signin`) — 작업 실패 줄을 더 남기지
+      일곱 칸 · 일정 행 · 이름이 하나라도 다르면 통째 거절 — 일정 없는 호기에 비가동을 넣어 그 호기의 빈 일정 행이 끌려 오는 것도 계산
+      대상이 바뀌어 관리자 몫이고, 화면은 그 비가동을 편집본에 넣는 길에서 걷는다). 거절 한 번 = 감사 한 줄(`authz_fail_grade` · `authz_fail_signin`) — 작업 실패 줄을 더 남기지
       않는다. 표지 단 새 쓰기는 사건을 `EVENT_FLOORS` 에 더해야 하고(빠지면 `admin.area` 로 닫힌다) 쓰기 장부(`tests/test_write_entry_points.py`)
       ↔ 벽 · 받는 자리는 `tests/test_grade_coverage.py` 가 본다.
     - **앱 자신의 쓰기는 등급으로 막지 않는다** — `audit.recorder.as_system`(첫 데이터 · 표시순서 첫 판 · 사라진 시나리오 지정 비우기) · 예약 ·

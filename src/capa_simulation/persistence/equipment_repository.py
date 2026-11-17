@@ -81,7 +81,6 @@ from capa_simulation.services.equipment_contract import (
     QUAL_DATE_COLUMN,
     QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
-    SCENARIO_SCHEDULE_COLUMNS,
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
@@ -1421,10 +1420,11 @@ class DuckDBEquipmentRepository:
             schedule_changed = _schedule_digest(edit.schedule, edit.downtime) != (
                 _schedule_digest(base.schedule, base.downtime)
             )
-            # 등급 벽 ⓑ(내용) — 쓰기 잠금 안에서 다시 읽은 출발점과 견준다. 실무자는 비가동 일정만
-            # 바꾼 저장만 한다 — 공통 대장 · 일정 일곱 칸 · 가정 배치 가운데 하나라도 다르면 통째
-            # 거절(아무것도 쓰지 않는다). 옛 꼴 공통 옮겨 쓰기(`forced_common`)는 값이 그대로라 막지
-            # 않는다 — `write_common` 이 아니라 `common_changed` 로 본다.
+            # 등급 벽 ⓑ(내용) — 쓰기 잠금 안에서 다시 읽은 출발점과 견준다. 실무자는 비가동
+            # 일정만 바꾼 저장만 한다 — 공통 대장 · 일정 일곱 칸 · 일정 행(비가동이 끌고 온 일정
+            # 없는 호기의 행 포함) · 가정 배치 가운데 하나라도 다르면 통째 거절(아무것도 쓰지
+            # 않는다). 옛 꼴 공통 옮겨 쓰기(`forced_common`)는 값이 그대로라 막지 않는다 —
+            # `write_common` 이 아니라 `common_changed` 로 본다.
             if common_changed or layout_changed or not _schedule_cells_kept(edit.schedule, base):
                 grades.require("equipment.save")
             forced_common = (
@@ -3888,16 +3888,17 @@ def _layout_or_names_requested(request: EquipmentSaveRequest) -> bool:
 
 
 def _schedule_cells_kept(schedule: pd.DataFrame, base: _BaseState) -> bool:
-    """편집본 일정 행의 일곱 칸이 출발점 그대로인가(비가동은 보지 않는다 — 등급 벽 ⓑ).
+    """편집본 일정 행이 출발점 그대로인가(비가동은 보지 않는다 — 등급 벽 ⓑ).
 
-    출발 일정에 행이 있던 호기는 출발 일정과 내용 해시가 같아야 한다. 그 밖의 행은 비가동이 들어
-    끌려 온 일정 없는 호기(`select_schedule_rows`)라 일곱 칸이 모두 비어야 한다 — 출발 일정이 없던
-    호기는 합친 스냅샷에서도 일곱 칸이 비어 있다.
+    출발 일정에 없던 호기의 행이 하나라도 있으면 그대로가 아니다 — 일곱 칸이 비었어도 그렇다.
+    비가동이 들어 끌려 온 일정 없는 호기의 행(`select_schedule_rows`)이 그것인데, 호기가 그
+    시나리오에 드는지는 일정 칸 값이 아니라 일정 행이 있느냐로 정해지므로(F4 —
+    `calculation_frames`) 그 행을 하나 더하면 그 시나리오의 계산 대상이 바뀐다(관리자 몫
+    `equipment.save`). 출발 일정에 행이 있던 호기는 출발 일정과 내용 해시가 같아야 한다.
     """
     keys = schedule[UNIT_KEY_COLUMN].astype("string")
     started = keys.isin(list(base.scheduled_keys)).fillna(False).to_numpy(dtype=bool)
-    pulled = schedule.loc[~started, list(SCENARIO_SCHEDULE_COLUMNS)]
-    if bool(pulled.notna().to_numpy().any()):
+    if not bool(started.all()):
         return False
     empty = base.downtime.iloc[0:0]
     kept = schedule.loc[started].reset_index(drop=True)

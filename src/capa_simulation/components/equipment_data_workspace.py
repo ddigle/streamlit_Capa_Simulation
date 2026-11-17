@@ -559,11 +559,41 @@ def editable_targets() -> tuple[str, ...]:
 def refuse_out_of_grade(action: str) -> None:
     """화면 등급 밖 편집을 받지 않았다는 알림 — 알림창 · Alarm 에 한 번(저장 벽의 거절과 같은 글,
     설계 규칙 UI-NTF-03). 팝업 · 프래그먼트 회차면 이어 도는 본문이 앱 전체를 다시 그려 알림을
-    낸다(`grade_ui.in_fragment`)."""
+    낸다(`grade_ui.in_fragment`).
+
+    막힌 누름은 저장 벽까지 가지 않으므로 여기서 실제 등급으로 한 번 더 본다(`grades.require`) —
+    모자라면 저장 벽과 같은 감사 한 줄(`authz_fail_grade` — 누가 · 무엇 · 필요한 등급 · 지금 등급,
+    로그인 끝남은 `authz_fail_signin` 따로)이 남는다. 「이 등급으로 보기」 로만 막힌 누름(실제
+    등급은 지남)은 기록하지 않고 보는 등급으로 알린다."""
     from capa_simulation.components import grade_ui, sso_identity
 
-    grade_ui.refuse(grades.GradeDenied(action, grades.need_of(action), sso_identity.screen_grade()))
+    try:
+        grades.require(action)
+    except grades.REFUSALS as exc:
+        grade_ui.refuse(exc)
+    else:
+        grade_ui.refuse(
+            grades.GradeDenied(action, grades.need_of(action), sso_identity.screen_grade())
+        )
     st.session_state[grade_ui.PENDING_KEY] = True
+
+
+def _names_among(frame: pd.DataFrame, names: Collection[str]) -> set[str]:
+    """표의 설비명 가운데 `names` 에 든 것(앞뒤 공백을 뗀 꼴)."""
+    if EQUIPMENT_ID_COLUMN not in frame.columns:
+        return set()
+    values = frame[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()
+    return {value for value in values if value in names}
+
+
+def _pulls_unscheduled(before: pd.DataFrame, after: pd.DataFrame) -> bool:
+    """편집본 비가동이 이 시나리오의 일정 없는 호기(F4 — `draft_unscheduled_units`)를 새로
+    가리키는가. 그 호기의 일정 행이 저장 때 함께 끌려 와 시나리오의 계산 대상이 바뀌므로 저장소
+    벽 ⓑ 가 관리자 몫(`equipment.save`)으로 본다."""
+    unscheduled = draft_unscheduled_units()
+    if not unscheduled:
+        return False
+    return bool(_names_among(after, unscheduled) - _names_among(before, unscheduled))
 
 
 def _grade_kept(frames: Frames) -> Frames:
@@ -571,7 +601,9 @@ def _grade_kept(frames: Frames) -> Frames:
 
     실무자 편집본에 비가동 밖 변경이 한 번 들어가면 그 세션의 비가동 저장이 모두 거절되므로(저장소
     내용 대조 벽) 편집본에 드는 길(작은 편집표 제출 · 엑셀·CSV 넣기 · 일괄 삭제 · 되살리기 · 예시 행
-    지우기 · Space 적용 · 표 출납)에서 막는다. 걷은 것이 있으면 거절 알림을 한 번 담는다.
+    지우기 · Space 적용 · 표 출납)에서 막는다. 비가동 일정만 고치는 등급이 일정 없는 호기에 비가동을
+    넣는 것도 같다(`_pulls_unscheduled` — 비가동 일정 변경을 통째 걷는다). 걷은 것이 있으면 거절
+    알림을 한 번 담는다.
     """
     current = st.session_state.get(BUFFER_KEY)
     allowed = tuple(_viewer_can(action) for action in _POSITION_ACTIONS)
@@ -583,6 +615,9 @@ def _grade_kept(frames: Frames) -> Frames:
         if not ok and not same_frame_content(current[position], frames[position]):
             kept[position] = current[position]
             refused = refused or _POSITION_ACTIONS[position]
+    if allowed[2] and not allowed[1] and _pulls_unscheduled(current[2], kept[2]):
+        kept[2] = current[2]
+        refused = refused or TABLE_ACTIONS[EQUIPMENT_TARGET]
     if refused is not None:
         refuse_out_of_grade(refused)
     return kept[0], kept[1], kept[2]

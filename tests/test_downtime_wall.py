@@ -24,6 +24,7 @@ from grade_support import (
     grade_page_script,
     judge_spy,
     operational_sso_off,
+    preview,
     unrestricted,
 )
 from grid_fake import Calls, install_fake_grid, last, send_ops
@@ -210,11 +211,8 @@ def test_an_editor_saving_downtime_on_an_assumption_also_puts_it_into_the_offici
     )
 
 
-def test_an_editor_may_add_downtime_to_a_unit_without_a_schedule_there(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """출발 일정에 없던 호기의 비가동 — 그 호기의 빈 일정 행이 함께 끌려 와도 일곱 칸은 비어
-    있다."""
+def _unscheduled_setup(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str]:
+    """가정 시나리오에 일정 행이 없는 호기 EQ-03(공식에만 일정)을 둔 저장소와 그 시나리오 id."""
     repository = _seeded(tmp_path)
     setup = _clone(repository)
     session = _session(repository)
@@ -227,20 +225,61 @@ def test_an_editor_may_add_downtime_to_a_unit_without_a_schedule_there(
     )
     other = _session(repository, setup.equipment_scenario_id)
     assert "EQ-03" in other.unscheduled_units
+    assert "EQ-03" not in set(other.calculation_frames()[1]["설비명"])
+    return repository, setup.equipment_scenario_id
+
+
+@pytest.mark.parametrize("propagate", [True, False])
+def test_an_editor_cannot_pull_a_unit_without_a_schedule_into_the_scenario_by_downtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, propagate: bool
+) -> None:
+    """출발 일정에 없던 호기의 비가동 — 그 호기의 빈 일정 행이 함께 끌려 오면 그 시나리오의 계산
+    대상이 바뀐다(F4 — 일정 행이 있느냐). 일곱 칸이 비었어도 실무자 저장은 통째 거절이고 계산 대상 ·
+    일정 없음 호기가 그대로다."""
+    repository, scenario_id = _unscheduled_setup(tmp_path)
+    other = _session(repository, scenario_id)
     as_grade(monkeypatch, grades.EDITOR)
+
+    seen = _refused(
+        repository,
+        _request(
+            other,
+            scenario_id,
+            downtime=_with_downtime(other.downtime, "EQ-03", "공사", "2026-09-12"),
+            propagate_new_downtime=propagate,
+        ),
+    )
+
+    assert seen == [("equipment.downtime", grades.EDITOR), WALL], "바닥을 지나 내용 대조에서 멈춤"
+    after = _session(repository, scenario_id)
+    assert after.unscheduled_units == other.unscheduled_units
+    assert "EQ-03" not in set(after.downtime["설비명"])
+    assert after.calculation_frames()[1]["설비명"].tolist() == (
+        other.calculation_frames()[1]["설비명"].tolist()
+    )
+
+
+def test_a_manager_may_pull_a_unit_without_a_schedule_into_the_scenario_by_downtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 저장을 관리자는 한다 — 호기가 그 시나리오의 계산 대상으로 든다(시나리오 구성 바꿈)."""
+    repository, scenario_id = _unscheduled_setup(tmp_path)
+    other = _session(repository, scenario_id)
+    as_grade(monkeypatch, grades.MANAGER)
 
     result = repository.save_equipment(
         _request(
             other,
-            setup.equipment_scenario_id,
+            scenario_id,
             downtime=_with_downtime(other.downtime, "EQ-03", "공사", "2026-09-12"),
             propagate_new_downtime=False,
         )
     )
 
     assert result.schedule is not None and result.common is None
-    saved = _session(repository, setup.equipment_scenario_id)
+    saved = _session(repository, scenario_id)
     assert "EQ-03" in set(saved.downtime["설비명"])
+    assert "EQ-03" not in saved.unscheduled_units
 
 
 def test_an_editor_downtime_save_on_an_old_contract_common_still_passes(
@@ -516,9 +555,64 @@ def test_an_editor_grid_edit_never_reaches_the_buffer(
     assert all("grade" in row["locks"] for row in table["rows"]), "모든 칸이 잠긴 꼴"
     before = app.session_state[BUFFER_KEY][1].copy()
 
+    recorder.start(env="cdep", version="test", inst="i-test")
     send_ops(app, grid, {"op": "cell", "id": "s:EQ-02", "col": "Qual일정", "text": "2026-08-25"})
 
     assert app.session_state[BUFFER_KEY][1].equals(before)
+    assert [item.value for item in flashed(app, "error")] == [REFUSED]
+    lines = [line for line in recorder.take_pending() if line["ev"].startswith("authz_fail")]
+    assert [(line["ev"], line["det"]) for line in lines] == [
+        ("authz_fail_grade", {"action": "equipment.save", "need": "manager", "have": "editor"})
+    ], "저장 벽까지 가지 않은 막힌 누름도 감사 한 줄"
+
+
+@pytest.mark.page_failure_card
+def test_a_grid_edit_refused_only_by_the_preview_leaves_no_audit_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「이 등급으로 보기」 로만 막힌 누름(실제 등급은 개발자)은 보는 등급으로 알리되 감사 줄은
+    남기지 않는다 — 막힌 사람이 없다."""
+    grid: Calls = install_fake_grid(monkeypatch)
+    repository = _seeded(tmp_path)
+    preview(monkeypatch, grades.EDITOR)
+    app = _master_app(repository.database_path).run()
+    app.session_state[emg_loaded_key()] = ("s:EQ-01", "s:EQ-02")
+    app.run()
+    before = app.session_state[BUFFER_KEY][1].copy()
+    recorder.start(env="cdep", version="test", inst="i-test")
+
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-02", "col": "Qual일정", "text": "2026-08-25"})
+
+    assert app.session_state[BUFFER_KEY][1].equals(before)
+    assert [item.value for item in flashed(app, "error")] == [REFUSED]
+    assert not [line for line in recorder.take_pending() if line["ev"].startswith("authz_fail")]
+
+
+@pytest.mark.page_failure_card
+def test_an_editor_downtime_for_a_unit_without_a_schedule_never_reaches_the_buffer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실무자가 「엑셀·CSV로 한꺼번에」 로 이 시나리오에 일정이 없는 호기의 비가동을 넣으면 편집본에
+    들지 않는다 — 들면 저장 때 그 호기의 일정 행이 끌려 와 계산 대상이 바뀌므로 저장 벽이 통째
+    거절한다(그 세션의 비가동 저장이 모두 막히지 않게 들어오는 길에서 걷는다)."""
+    from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+    from capa_simulation.services.equipment_csv import downtime_csv_bytes
+
+    install_fake_grid(monkeypatch)
+    repository, scenario_id = _unscheduled_setup(tmp_path)
+    as_grade(monkeypatch, grades.EDITOR)
+    app = _master_app(repository.database_path)
+    app.session_state[SELECTION_KEY] = {"scenario_id": scenario_id, "schedule_revision_id": None}
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    current = app.session_state[BUFFER_KEY][2].copy()
+    pulled = downtime_csv_bytes(_with_downtime(current, "EQ-03", "공사", "2026-09-12")).decode(
+        "utf-8-sig"
+    )
+
+    _import_rows(app, pulled.replace(",", "\t"))
+
+    assert app.session_state[BUFFER_KEY][2].equals(current)
     assert [item.value for item in flashed(app, "error")] == [REFUSED]
 
 
