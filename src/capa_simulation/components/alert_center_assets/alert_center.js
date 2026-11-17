@@ -43,8 +43,10 @@
 // - 공지(2026-11-17 공지 보드 답): data 의 `notice`(파이썬 `notice_board.payload` — 프로세스 표지 `mark` · 판 `rev` · 공지 · 상태 표지
 //   `note`)를 받아 Guide 바로 왼쪽에 「공지」 칩(닫기 없음 — 누르면 작은 판)을 세우거나 걷고, `note` 를 상태 알림 길(`handleState`)로
 //   넣는다. 물음 스크립트는 같은 꼴을 `window.__capaAlerts.notice(payload)` 로 넣는다 — 표지가 같으면 판이 오른 것만 받아(`noticeNewer`)
-//   늦게 닿은 옛 값이 새 값을 되돌리지 않는다. 상태 표지는 문서 표지로 오지 않는다(프래그먼트 회차의 옛 표지가 물음이 넣은 값을 되돌린다).
-//   입장 화면이 덮는 동안에는 공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버린다), 끝 시각이 되면 이 문서가 칩을 걷고 해소한다.
+//   늦게 닿은 옛 값이 새 값을 되돌리지 않고, 물음 응답은 data 가 받은 표지와 같을 때만 받는다(표지가 바뀌는 재시작은 data 가 먼저 싣는다).
+//   상태 표지는 문서 표지로 오지 않는다(프래그먼트 회차의 옛 표지가 물음이 넣은 값을 되돌린다). 입장 화면이 덮는 동안에는 공지 알림창만
+//   미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버린다), 끝 시각 1분 뒤(브라우저 시계 여유 — 물음 있는 서버는 그 전에 판이 오른다)에는
+//   이 문서가 칩을 걷고 해소한다. 서 있는 공지의 Alarm 줄은 12시간 보관에서 빼고 해소 뒤 12시간 남긴다(공지는 길어도 24시간).
 // - 화면 탭 줄 JS(`page_tabs.js`)는 같은 문서의 `window.__capaAlerts.raise(...)` 로 알린다(알림 칸이 아직 서지 않았으면
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
@@ -128,10 +130,17 @@ function keptRowMissing(rows, note) {
 function stateKey(note) {
   return String(note.code || '') + '|' + String(note.scope || '')
 }
-// 보관 — `maxMs` 보다 오래된 줄을 걷고 최신순 `maxRows` 줄만 남긴다.
+// 보관 나이를 세는 시각 — 보통은 마지막(`last`)이다. 공지 줄(`hold` — `applyNotice`)은 서 있는(열린) 동안 걷지 않고 닫힌 뒤에는
+// 닫힌 시각부터 센다 — 공지는 길어도 24시간이라 12시간 보관이 서 있는 공지의 줄을 걷고 그 뒤 해소를 적을 줄을 잃었다.
+function keptSince(row, now) {
+  if (!row.hold) return row.last
+  if (row.state === 'open') return now
+  return typeof row.resolvedAt === 'number' ? Math.max(row.last, row.resolvedAt) : row.last
+}
+// 보관 — `maxMs` 보다 오래된 줄(`keptSince`)을 걷고 최신순 `maxRows` 줄만 남긴다.
 function pruneRows(rows, now, maxRows, maxMs) {
   const kept = (Array.isArray(rows) ? rows : []).filter(
-    (row) => row && typeof row.last === 'number' && now - row.last <= maxMs,
+    (row) => row && typeof row.last === 'number' && now - keptSince(row, now) <= maxMs,
   )
   kept.sort((a, b) => b.last - a.last)
   return kept.slice(0, Math.max(0, maxRows))
@@ -469,11 +478,17 @@ function panelTabExit(count, at, shift) {
 // <alerts-notice>
 // 공지 끝 시각 타이머의 끝 — 공지는 길어도 24시간이다.
 const NOTICE_TIMER_LIMIT_MS = 25 * 3600000
+// 끝 시각 타이머의 여유 — 끝은 서버 시계의 epoch ms 인데 타이머는 이 브라우저 시계로 잰다. 브라우저 시계가 빠르면 끝 전에 칩을 걷고
+// 줄을 해소했다(그 뒤 서버 판이 그대로라 다시 세우지 못하고, 새 문서는 다시 띄웠다). 물음이 있는 서버는 끝난 뒤 첫 물음의 판 오름이
+// 먼저 닿아 그것이 정본이고, 이 타이머는 물음 없는 서버(개발 · WebIDE)의 보조다 — 그때 칩은 끝 시각 뒤 이만큼 더 선다.
+const NOTICE_END_GRACE_MS = 60000
 // 공지 꼴(`notice_board.payload`)을 받아들일까 — 처음이거나 프로세스 표지(`mark`)가 다르면(재시작) 받고, 같으면 판(`rev`)이 오른 것만
-// 받는다. 판이 같거나 낮은 것은 이미 받은 값이거나 늦게 닿은 옛 값이다(data 와 물음 응답이 엇갈려 닿는다).
-function noticeNewer(held, payload) {
+// 받는다. 판이 같거나 낮은 것은 이미 받은 값이거나 늦게 닿은 옛 값이다(data 와 물음 응답이 엇갈려 닿는다). 물음 응답(`polled`)은 표지가
+// 마지막으로 받은 것(서버 data — 이 탭의 연결이 붙은 서버)과 같을 때만 받는다 — 재시작 뒤 새 표지는 다시 붙은 회차의 data 가 먼저
+// 싣고, 서버 한 대 전제가 깨져 물음이 다른 서버에 닿아도 그 서버의 값으로 칩 · 알림창이 번갈아 서지 않는다.
+function noticeNewer(held, payload, polled = false) {
   if (!payload || typeof payload !== 'object' || typeof payload.mark !== 'string') return false
-  if (!held || held.mark !== payload.mark) return true
+  if (!held || held.mark !== payload.mark) return !polled
   return Number(payload.rev) > Number(held.rev)
 }
 // 공지 칸의 꼴을 본다 — 글 · id · 시각 글이 있고 끝 시각이 수일 때만, 아니면 null(칩을 세우지 않는다).
@@ -489,10 +504,10 @@ function introCovering(host) {
   if (!host || host.isConnected === false) return false
   return !(host.style && host.style.display === 'none')
 }
-// 공지 끝 시각까지 기다릴 시간(ms) — 지났으면 0, 길면 `NOTICE_TIMER_LIMIT_MS` 에서 끊어 다시 잰다.
+// 공지 끝 시각(+ 여유 `NOTICE_END_GRACE_MS`)까지 기다릴 시간(ms) — 지났으면 0, 길면 `NOTICE_TIMER_LIMIT_MS` 에서 끊어 다시 잰다.
 function noticeEndWait(notice, now) {
   if (!notice) return null
-  return Math.max(0, Math.min(notice.untilMs - now, NOTICE_TIMER_LIMIT_MS))
+  return Math.max(0, Math.min(notice.untilMs + NOTICE_END_GRACE_MS - now, NOTICE_TIMER_LIMIT_MS))
 }
 // </alerts-notice>
 
@@ -717,9 +732,9 @@ function createCenter(data) {
   window.__capaAlerts = {
     raise: (note) => raiseLocal(C, note),
     scan: () => scan(C),
-    // 물음 스크립트의 공지 입구 — 서버 data 와 같은 꼴 · 같은 길이다.
+    // 물음 스크립트의 공지 입구 — 서버 data 와 같은 꼴 · 같은 길이다(표지는 data 가 받은 것과 같을 때만 — `noticeNewer`).
     notice: (payload) => {
-      if (applyNotice(C, payload)) persist(C)
+      if (applyNotice(C, payload, true)) persist(C)
       paintAll(C)
     },
   }
@@ -934,9 +949,9 @@ function handleState(C, note, popup = showPopup) {
 }
 
 // 공지 꼴 하나를 받는다(data · 물음 입구가 같이 부른다) — 받아들이면 칩 값을 갈고 상태 표지를 상태 길로 넣고 끝 시각 타이머를 다시
-// 건다. 상태 표(Alarm 줄)가 바뀌었으면 참.
-function applyNotice(C, payload) {
-  if (!noticeNewer(C.notice, payload)) return false
+// 건다. 상태 표(Alarm 줄)가 바뀌었으면 참. 서 있는 공지의 줄에는 보관 표지(`hold` — `keptSince`)를 단다.
+function applyNotice(C, payload, polled = false) {
+  if (!noticeNewer(C.notice, payload, polled)) return false
   const note = payload.note && typeof payload.note === 'object' && payload.note.code ? payload.note : null
   C.notice = { mark: payload.mark, rev: Number(payload.rev) || 0, notice: noticeOf(payload.notice), note }
   const later = C.noticeLater
@@ -945,6 +960,9 @@ function applyNotice(C, payload) {
     clearTimeout(C.noticeWait)
   }
   const changed = note ? handleState(C, note, noticePopup) : false
+  const entry = note && note.active ? C.states[stateKey(note)] : null
+  const row = entry ? C.rows.find((item) => item.id === entry.row) : null
+  if (row && !row.hold) row.hold = true
   scheduleNoticeEnd(C)
   return changed
 }
@@ -974,8 +992,9 @@ function waitIntro(C) {
   }, INTRO_WAIT_MS)
 }
 
-// 끝 시각에 이 문서가 칩을 걷고 상태 줄을 해소한다 — 물음이 없는 서버(개발 · WebIDE)에서도 다음 회차를 기다리지 않는다. 서버가 끝남을
-// 알리면(판이 오른 해소 표지) 이미 닫힌 줄이라 아무 일도 없다.
+// 끝 시각(+ 여유 — 브라우저 시계가 조금 빨라도 끝 전에 걷지 않게)에 이 문서가 칩을 걷고 상태 줄을 해소한다 — 물음이 없는
+// 서버(개발 · WebIDE)에서도 다음 회차를 기다리지 않는다. 서버가 끝남을 먼저 알리면(판이 오른 해소 표지) 칩은 이미 걷혔고 타이머도
+// 지워졌다.
 function scheduleNoticeEnd(C) {
   clearTimeout(C.noticeTimer)
   const held = C.notice && C.notice.notice
@@ -987,7 +1006,7 @@ function scheduleNoticeEnd(C) {
 function endNotice(C, id) {
   const held = C.notice && C.notice.notice
   if (!held || held.id !== id) return
-  if (held.untilMs > Date.now()) {
+  if (noticeEndWait(held, Date.now()) > 0) {
     scheduleNoticeEnd(C)
     return
   }
@@ -1100,9 +1119,13 @@ function endReconnectWait(C) {
   C.reconnectTouch = null
 }
 
+// 갈리는 칸의 관찰자 · 타이머를 걷는다 — 공지 끝 · 입장 화면 대기 타이머가 남으면 옛 칸이 끝 시각에 제 기록으로 이 탭 저장소를 덮는다.
 function retireCenter(C) {
   if (C.runObserver) C.runObserver.disconnect()
   endReconnectWait(C)
+  clearTimeout(C.noticeTimer)
+  clearTimeout(C.noticeWait)
+  C.noticeLater = null
 }
 
 // ------------------------------------------------------------------------------------------- 알림창
@@ -1335,6 +1358,8 @@ function ensureToolbar(C) {
     if (!chip) {
       chip = el('button', 'notice')
       chip.type = 'button'
+      chip.title = t.notice_title || ''
+      chip.setAttribute('aria-label', t.notice_title || '')
       chip.setAttribute('aria-haspopup', 'dialog')
       chip.setAttribute('aria-expanded', 'false')
       chip.append(icon(CAMPAIGN_PATH, 'horn'), el('span', 'word', t.notice || ''))
@@ -1998,7 +2023,8 @@ function paintCanon(C) {
   if (C.canonHost) C.canonHost.toggleAttribute('data-empty', !C.data.canon)
 }
 
-// 공지 칩 · 판 — 서 있는 동안만 선다. 풍선 · 읽기 이름은 공지 글이고 판은 그 공지의 값이다. 걷히면 열린 판도 닫는다.
+// 공지 칩 · 판 — 서 있는 동안만 선다. 칩 풍선 · 읽기 이름은 짧은 글 표의 고정 글(관리자 글은 판 · 알림창 · Alarm 의 몫)이고 판은 그
+// 공지의 값이다. 걷히면 열린 판도 닫는다.
 function paintNotice(C) {
   if (!C.noticeHost) return
   const t = text(C)
@@ -2008,9 +2034,6 @@ function paintNotice(C) {
     if (C.open === 'notice') closePanel(C, false)
     return
   }
-  const word = t.notice || ''
-  if (C.noticeChip.title !== held.text) C.noticeChip.title = held.text
-  C.noticeChip.setAttribute('aria-label', `${word} — ${held.text}`)
   const P = C.noticeParts
   P.title.textContent = fill(t.notice_head, { sender: held.sender, sent: held.sent })
   P.body.textContent = held.text
