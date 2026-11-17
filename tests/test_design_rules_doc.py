@@ -3033,7 +3033,8 @@ def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
     (`st.time_input`)은 UI-INP-03 밖이다. 4장 지금 값에 「공지」 칩 줄이 있고(검수 전),
     「정본 아님」 줄은 변경 칩 다음을 Guide 로 적지 않고 이제 그 표지만 좁은 창 규칙이 없다고
     말한다. 6-33 표는 끝 시각 기본값을 「세션에 한 번」 으로 적지 않는다(화면을 떠났다 오면 다시
-    심고, 손대지 않은 기본값이 지나면 새 기본값). 8장 v1.35 기록에 확인 보드 답 넷이 있다."""
+    심고, 손대지 않은 기본값이 지나면 새 기본값). 확인 보드가 답한 표 칸(「칩 풍선 · 좁은 창」 ·
+    「끝 시각 글」)은 그 답을 든다. 8장 v1.35 기록에 확인 보드 답 넷이 있다."""
     document = _text()
     rules = {rule.id: rule for rule in _rules()}
     narrow = " ".join(rules["UI-ACC-02"].fields["예외"])
@@ -3061,6 +3062,10 @@ def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
         assert row in table, row
     [tip] = [line for line in table.splitlines() if line.startswith("| 칩 풍선 · 좁은 창 |")]
     assert "900px 미만 창에서는 확성기 아이콘만" in tip and "글째" not in tip
+    # 확인 보드가 답한 칸은 「사용자 확인 대기」 표 안에서도 그 답을 든다(PRC-02).
+    [until] = [line for line in table.splitlines() if line.startswith("| 끝 시각 글 |")]
+    assert "공지 확인 보드 q-long 「값 줄만으로 둔다」" in until and "사용자 확인" in until
+    assert "q-narrow" in tip
     assert "세션에 한 번" not in table
     assert "다른 관리자가 공지를 바꿨습니다" not in record
     history = _chapter(document, 8)
