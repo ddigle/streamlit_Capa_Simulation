@@ -46,6 +46,8 @@ from capa_simulation.components import (
 )
 from capa_simulation.io import bdq_login, bdq_token, company_bigdataquery_adapter, object_storage
 from capa_simulation.io.container_start_report import BDQ_SECRET_KEY_ENV, CD_ONLY_ENVIRONMENT
+from capa_simulation.persistence import _sql_helpers as sql_helpers
+from capa_simulation.persistence.duckdb_memory import MemoryLimitSetting
 
 
 def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
@@ -404,6 +406,18 @@ def _without_object_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None
     """
     for name in object_storage.SETTINGS_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _without_duckdb_memory_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """화면이 읽는 DuckDB 메모리 한도 칸 판정(`_sql_helpers.DUCKDB_MEMORY_LIMIT`)을 「없음」 으로
+    둔다.
+
+    그 판정은 import 때 환경변수 `CAPA_DUCKDB_MEMORY_LIMIT` 를 한 번 읽어 정한다(같은 파일의 연결은
+    설정이 같아야 한다). 그 값을 넣은 창에서 pytest 를 돌려도 「서버 시작 점검」 표 · 제목 · `AD-01`
+    을 보는 시험이 값이 없을 때를 보게 한다. 값이 필요한 시험은 이 칸을 따로 덮는다.
+    """
+    monkeypatch.setattr(sql_helpers, "DUCKDB_MEMORY_LIMIT", MemoryLimitSetting(raw=None))
 
 
 @pytest.fixture(autouse=True)

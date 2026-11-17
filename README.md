@@ -320,6 +320,9 @@ uv pip install -r requirements-company.txt
 - C-DEP CD 서버는 디스크가 CI/CD 때 사라집니다. `CAPA_S3_SYNC_MODE=managed` 면 두 DB 의 정본이 운영 버킷에 있고 시작 스크립트가
   받은 뒤에만 앱을 띄웁니다 — 받는 동안은 같은 포트에서 시작 임시 화면(단계 · 지난 시간 · 머무는 까닭)이 보이고, 앱이 뜨면 처음 연 주소로 넘어갑니다. 저장은 앱이 1분 안에 모아 올립니다
   — 이관 · 환경변수 · 복구는 `docs/objectstore_setup.md`.
+- DuckDB 메모리 한도는 CD 환경변수 `CAPA_DUCKDB_MEMORY_LIMIT` 로 줄 수 있습니다(DB 마다 같은 값 — 비면 DuckDB 기본, 값은 코드 · 이미지에 없음).
+  Admin 「서버 시작 점검」 끝 줄이 그 판정이고, 사실 줄 끝에 지금 메모리(RSS · 세션 · `cache_data` · DB 마다 DuckDB)가 있습니다 —
+  꼴 · 범위는 `docs/objectstore_setup.md` 2장.
 - C-DEP CD 서버는 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
   `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
   스위치입니다(비면 지금처럼 열림). 로그인은 마지막 사용 뒤 6시간 유지되고 앱을 쓰는 동안 저절로 늘어납니다(최대 24시간 —
