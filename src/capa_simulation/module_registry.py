@@ -55,7 +55,7 @@ DISABLED_ENV_VAR: Final = "CAPA_MODULES_DISABLED"
 DATA_ROOT_ENV_VAR: Final = "CAPA_MODULES_DATA_ROOT"
 # 모듈 시험(`scripts/check_module.py` 가 띄우는 감시 러너)이 켜는 표지. 켜져 있으면 창구 도우미
 # (BigDataQuery 조회 · S3 올리기 · 받기 — `module_helpers`)가 밖에 닿지 않고 「쓸 수 없음」 이다 —
-# 앱 관리자 PC 의 점검이 진짜 조회 · 버킷에 닿지 않게.
+# 앱 관리자(개발자) PC 의 점검이 진짜 조회 · 버킷에 닿지 않게.
 TEST_RUN_ENV_VAR: Final = "CAPA_MODULES_TEST_RUN"
 DEFAULT_PAGE_ICON: Final = ":material/extension:"
 PAGE_ICON_PATTERN: Final = re.compile(r":material/[a-z0-9_]+:")

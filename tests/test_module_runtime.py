@@ -255,7 +255,7 @@ def test_a_missing_package_card_points_to_the_outside_request(
     (code,) = diagnostic.code
     assert "ModuleNotFoundError" in code.value
     assert "사외 요청" in code.value and "demo_not_installed_package" in code.value
-    assert "담당자가 앱 관리자에게" in code.value
+    assert "담당자가 앱 관리자(개발자)에게" in code.value
     assert "`" not in code.value and code.proto.wrap_lines
 
 

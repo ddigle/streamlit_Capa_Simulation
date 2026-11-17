@@ -148,7 +148,7 @@ def test_the_next_steps_send_the_skeleton_up_by_a_pull_request(
 
     commit = next(line for line in steps if "git commit" in line)
     assert "자기 가지(module/demo_new/<주제>)에서" in commit
-    assert '-m "승인: 앱 관리자 <YYYY-MM-DD>"' in commit
+    assert '-m "승인: 앱 관리자(개발자) <YYYY-MM-DD>"' in commit
     assert any("PR 을 연다" in line and "지침서 8-2" in line for line in steps)
 
 

@@ -99,8 +99,8 @@ def import_hint(exc: BaseException, *, module_id: str, folder: Path) -> str:
             f"from modules.{module_id} import {helper}"
         )
     return (
-        f"이 서버에 없는 패키지입니다: {head} — 담당자가 앱 관리자에게 알리면 앱 관리자가 "
-        f"「사외 요청」 으로 코어 의존성에 넣습니다({GUIDE_DOCUMENT} 6장)."
+        f"이 서버에 없는 패키지입니다: {head} — 담당자가 앱 관리자(개발자)에게 알리면 "
+        f"앱 관리자(개발자)가 「사외 요청」 으로 코어 의존성에 넣습니다({GUIDE_DOCUMENT} 6장)."
     )
 
 

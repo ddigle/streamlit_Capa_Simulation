@@ -1,4 +1,4 @@
-# Purpose: 모듈 창구 도우미(BigDataQuery 조회 · S3 올리기 · 받기)의 길 · 거절 · 쓸 수 없음을 본다.
+# Purpose: 모듈 창구 도우미(조회 · S3 올리기 · 받기)의 길 · 거절 · 쓸 수 없음 · 작업 기록을 본다.
 
 """창구 1.3 도우미(2026-11-12 사용자 결정 「도우미 함수로」).
 
@@ -21,6 +21,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_api, module_helpers, module_registry
+from capa_simulation.audit import recorder
 from capa_simulation.auth import names, runtime
 from capa_simulation.io import bdq_login_store, object_storage
 from capa_simulation.io import company_bigdataquery_adapter as adapter
@@ -566,6 +567,74 @@ def test_inside_a_module_test_run_the_query_is_never_sent(
         module_api.query_bigdataquery(ctx, "SELECT 1")
     assert caught.value.kind == "쓸 수 없음"
     assert package.calls == []
+
+
+# ------------------------------------------------------------------ 작업 기록
+
+
+def _module_lines(event: str) -> list[dict[str, Any]]:
+    return [line for line in recorder.take_pending() if line["ev"] == event]
+
+
+def test_an_upload_leaves_one_work_line_without_the_file_name_or_values(
+    ctx: module_api.ModuleContext, store: MockStore
+) -> None:
+    """올리기는 성공 · 실패 모두 한 줄 — 대상은 모듈 id, 상세는 결과 낱말 · 바이트 수뿐이다.
+    받기는 남기지 않는다(2026-11-17 접속 등급 답 — 모듈은 모두 열람부터라 누가 올렸는지 남긴다)."""
+    recorder.start(env="cdep", version="test", inst="abcabcabcabc")
+    (ctx.data_dir / "secret-name.csv").write_bytes(b"secret-value\n")
+
+    assert module_api.s3_upload(ctx, "secret-name.csv").ok
+    assert not module_api.s3_upload(ctx, "absent.csv").ok
+    assert module_api.s3_download(ctx, "secret-name.csv").ok
+
+    lines = recorder.take_pending()
+    uploads = [line for line in lines if line["ev"] == module_helpers.AUDIT_UPLOAD]
+    assert [(line["out"], line["det"]) for line in uploads] == [
+        ("success", {"result": module_helpers.AUDIT_RESULT_OK, "bytes": 13}),
+        ("fail", {"result": module_helpers.S3_NOT_FOUND, "bytes": 0}),
+    ]
+    assert all(line["tgt"] == {"type": "module", "id": "demo_ok"} for line in uploads)
+    assert all(line["cat"] == "data" for line in uploads)
+    assert [line["ev"] for line in lines if line["ev"] != module_helpers.AUDIT_UPLOAD] == []
+    payload = repr(lines)
+    assert "secret-name" not in payload and "secret-value" not in payload
+
+
+def test_a_query_leaves_one_work_line_without_the_query_or_values(
+    ctx: module_api.ModuleContext, package: _FakePackage
+) -> None:
+    """조회도 성공 · 실패 · 입력 거절마다 한 줄 — 상세는 결과 낱말 · 행 수뿐, 조회문 · 값은 없다."""
+    recorder.start(env="cdep", version="test", inst="abcabcabcabc")
+    package.answer = pd.DataFrame({"값": ["secret-cell", "secret-cell"]})
+
+    module_api.query_bigdataquery(ctx, "SELECT secret_column FROM demo_table")
+    package.error = TimeoutError("read timed out")
+    with pytest.raises(module_api.BigDataQueryError):
+        module_api.query_bigdataquery(ctx, "SELECT secret_column FROM demo_table")
+    with pytest.raises(module_api.BigDataQueryError):
+        module_api.query_bigdataquery(ctx, "")
+
+    lines = _module_lines(module_helpers.AUDIT_QUERY)
+    assert [(line["out"], line["det"]) for line in lines] == [
+        ("success", {"result": module_helpers.AUDIT_RESULT_OK, "rows": 2}),
+        ("fail", {"result": adapter.QUERY_FAILURE_TIMEOUT}),
+        ("fail", {"result": module_helpers.QUERY_INPUT}),
+    ]
+    assert all(line["tgt"] == {"type": "module", "id": "demo_ok"} for line in lines)
+    payload = repr(lines)
+    assert "secret_column" not in payload and "secret-cell" not in payload
+
+
+def test_with_the_recorder_off_the_helpers_leave_nothing(
+    ctx: module_api.ModuleContext, store: MockStore, package: _FakePackage
+) -> None:
+    """기록기가 꺼진 곳(사내 PC · WebIDE · 시험)에서는 아무것도 남지 않고 결과도 그대로다."""
+    (ctx.data_dir / "demo.csv").write_bytes(b"x\n")
+
+    assert module_api.s3_upload(ctx, "demo.csv").ok
+    assert not module_api.query_bigdataquery(ctx, "SELECT 1").empty
+    assert recorder.take_pending() == []
 
 
 # ------------------------------------------------------------------ 견본 화면

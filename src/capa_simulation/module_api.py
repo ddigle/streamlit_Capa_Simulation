@@ -264,7 +264,8 @@ def query_bigdataquery(
     조회문은 `>= '{start_date}' AND < '{end_date}'` 로 써야 끝 날까지 꼭 맞다. 최대 366일.
     실패는 `BigDataQueryError`(`kind` — 「입력」 · 「쓸 수 없음」 · 앱의 갈래)이고 글은 앱 화면과
     같은 안내다. 결과는 캐시하지 않는다 — 캐시는 모듈의 `cache.py` 에 둔다. 모듈
-    시험(`check_module.py`)에서는 늘 「쓸 수 없음」 이다.
+    시험(`check_module.py`)에서는 늘 「쓸 수 없음」 이다. 부를 때마다 누가 · 어느 모듈이 조회했는지
+    작업 기록에 한 줄 남는다(결과 낱말 · 행 수만 — 조회문 · 값 없음).
     """
     return _module_helpers.query_bigdataquery(ctx.id, sql, start=start, end=end)
 
@@ -275,7 +276,8 @@ def s3_upload(ctx: ModuleContext, name: str) -> S3Result:
     `name` 은 `ctx.data_dir` 안의 상대 이름이다(`/` 로 나눈 마디 넷까지, 마디는 영문 · 숫자 ·
     `.` · `_` · `-`). 예외를 던지지 않고 늘 `S3Result` 를 돌려준다 — 운영 서버(동기화 모드
     `managed` · 키 · 주소 · 버킷이 있음)가 아니면 「쓸 수 없음」 이다. 파일 하나는 `S3_MAX_BYTES`
-    까지.
+    까지. 같은 이름이 버킷에 있으면 덮어써 되살릴 수 없다. 부를 때마다 누가 · 어느 모듈이 올렸는지
+    작업 기록에 한 줄 남는다(결과 낱말 · 바이트 수만 — 파일 이름 · 값 없음). 받기는 남지 않는다.
     """
     place = _s3_data_dir(ctx)
     if isinstance(place, S3Result):
