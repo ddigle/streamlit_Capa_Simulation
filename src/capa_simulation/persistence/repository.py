@@ -1652,9 +1652,13 @@ class DuckDBScenarioRepository:
             ).fetchall()
         return [scenario_summary(row) for row in rows]
 
-    @audited("data_scenario_archive", work_audit.scenario)
-    def archive_scenario(self, scenario_id: str) -> None:
+    @audited("data_scenario_archive", work_audit.scenario_archive)
+    def archive_scenario(self, scenario_id: str) -> int:
         """시나리오를 목록에서 숨긴다. 행은 그대로 남아 되돌릴 수 있다.
+
+        이 시나리오를 가리키던 HOME 지정(공용 비교 대상 · 주요 Case)은 같은 트랜잭션에서
+        비우고 「되살리기」 가 되돌리지 않는다(규칙집 6-34 readback-2 — 「보관 실행」 풍선).
+        돌려준 값은 비운 지정 수이고 작업 기록 상세에 싣는다(`work_audit.scenario_archive`).
 
         **파일 크기는 줄지 않는다** — 보관본의 기준정보·리비전·원천 행이 한 바이트도
         사라지지 않으므로 오히려 물리 삭제보다 크게 유지된다. 보관이 사는 것은 용량이
@@ -1678,10 +1682,11 @@ class DuckDBScenarioRepository:
                 "UPDATE app_meta.dataset SET status = 'ARCHIVED' WHERE scenario_id = ?",
                 [scenario_id],
             )
-            home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
-            home_profile_store.clear_global_main_cases(
+            compared = home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
+            cases = home_profile_store.clear_global_main_cases(
                 connection, scenario_id, reason=home_profile_store.MAIN_CASE_CLEARED_ARCHIVED
             )
+        return compared + cases
 
     @audited("data_scenario_restore", work_audit.scenario)
     def restore_scenario(self, scenario_id: str) -> None:

@@ -367,7 +367,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표지 `@audited`(`audit/work.py` — 돌아온 뒤(COMMIT 뒤) 한 줄, 예외면 `out=fail` 한 줄을 넣고 예외는 그대로, 꺼진 프로세스는
   원래 함수만, 표지 단 함수 안의 표지 단 함수는 바깥 한 줄만)이고, 대상 id · 이름표 · 상세(값 원문 · 메모 · VOC 본문 없음,
   손입력 이름은 `claimed`)는 `persistence/work_audit.py` 가 짓는다(시험 `tests/test_audit_work_events.py` 가 설계서 2-3 표의
-  함수 → 사건을 맞댄다). 켜는 곳은 `audit/boot.py` 하나다 —
+  함수 → 사건을 맞댄다 — 설비 저장은 낸 공식 발행 번호 · 함께 넣은 시나리오 수, 보관은 같이 비운 HOME 지정 수도 싣는다). 켜는 곳은 `audit/boot.py` 하나다 —
   `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(「개발자 구성」 — 개발자
   수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(`grade_store.grade_of` — 개발자 · 관리자 · 실무자 · 열람)를 꽂는다. 설정 읽기와 S3 명단의 기동 읽기는 `start_sso()`
   안이라 기록기보다 먼저 돈다 — 같은 자리에서 그 사건을 따라잡는다. 만료가 30일 안인 서명 인증서마다 `sys_cert_expiring` 한 줄

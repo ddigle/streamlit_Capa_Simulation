@@ -169,6 +169,7 @@ def test_an_editor_saving_only_downtime_on_the_official_scenario_saves_and_publi
     session = _session(repository)
     as_grade(monkeypatch, grades.EDITOR)
 
+    recorder.start(env="cdep", version="test", inst="i-test")
     with judge_spy() as seen:
         result = repository.save_equipment(
             _request(
@@ -182,6 +183,9 @@ def test_an_editor_saving_only_downtime_on_the_official_scenario_saves_and_publi
     assert result.common is None and result.schedule is not None
     assert result.release_no == 2, "공식 설비 시나리오의 저장은 지금처럼 공식으로 발행"
     assert _counts(repository) == (1, 2, 2)
+    # 실무자의 저장이 공식 발행을 냈다는 것이 작업 기록 상세에 남는다(번호 · 함께 넣은 수).
+    saved = [line for line in recorder.take_pending() if line["ev"] == "data_equipment_save"]
+    assert [(line["det"]["release_no"], line["det"]["propagated"]) for line in saved] == [(2, 0)]
     official = repository.load_official_snapshot()
     assert official is not None and len(official.downtime) == 2
 
@@ -193,6 +197,7 @@ def test_an_editor_saving_downtime_on_an_assumption_also_puts_it_into_the_offici
     setup = _clone(repository)
     other = _session(repository, setup.equipment_scenario_id)
     as_grade(monkeypatch, grades.EDITOR)
+    recorder.start(env="cdep", version="test", inst="i-test")
 
     result = repository.save_equipment(
         _request(
@@ -204,6 +209,11 @@ def test_an_editor_saving_downtime_on_an_assumption_also_puts_it_into_the_offici
 
     assert result.schedule is not None and result.common is None
     assert [item.scenario_name for item in result.propagated] == ["운영 일정"]
+    assert result.release_no is not None, "함께 넣은 「운영 일정」 리비전이 공식으로 발행"
+    saved = [line for line in recorder.take_pending() if line["ev"] == "data_equipment_save"]
+    assert [(line["det"]["release_no"], line["det"]["propagated"]) for line in saved] == [
+        (result.release_no, 1)
+    ]
     official = repository.load_official_snapshot()
     assert official is not None
     assert ("EQ-02", "점검") in set(

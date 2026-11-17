@@ -190,22 +190,24 @@ def touch_global_comparison_scenario(
 def clear_global_comparison_scenario(
     connection: duckdb.DuckDBPyConnection,
     scenario_id: str,
-) -> None:
-    """공용 GAP 비교 대상이 이 시나리오를 가리키고 있으면 비운다.
+) -> int:
+    """공용 GAP 비교 대상이 이 시나리오를 가리키고 있으면 비운다 — 비운 지정 수(0 · 1).
 
     다른 교체와 같은 결로 `version` 을 올린다. 캐시는 경로 키이므로 다른 세션의 캐시는
     호출부가 명시적으로 비운다(`clear_global_comparison_scenario_cache`). `revision_id` 도 같이
     비운다 — 표의 `CHECK (revision_id IS NULL OR scenario_id IS NOT NULL)` 때문에 한쪽만
     비우면 제약에 걸린다.
     """
-    connection.execute(
+    cleared = connection.execute(
         """
         UPDATE app_meta.global_comparison_scenario
         SET scenario_id = NULL, revision_id = NULL, version = version + 1
         WHERE scenario_id = ?
+        RETURNING profile_id
         """,
         [scenario_id],
-    )
+    ).fetchall()
+    return len(cleared)
 
 
 def load_global_main_cases(connection: duckdb.DuckDBPyConnection) -> GlobalMainCases:
@@ -312,8 +314,8 @@ def touch_global_main_cases_revision(
 
 def clear_global_main_cases(
     connection: duckdb.DuckDBPyConnection, scenario_id: str, *, reason: str
-) -> None:
-    """이 시나리오를 가리키는 Case 만 비운다(보관·영구 삭제·목록에 없는 시나리오).
+) -> int:
+    """이 시나리오를 가리키는 Case 만 비운다(보관·영구 삭제·목록에 없는 시나리오) — 비운 Case 수.
 
     다른 Case 는 그대로이고, 가리키는 Case 가 없으면 쓰지 않는다. 시나리오와 리비전 칸을 함께
     비운다 — 표의 `CHECK (caseN_revision_id IS NULL OR caseN_scenario_id IS NOT NULL)` 때문에
@@ -325,7 +327,7 @@ def clear_global_main_cases(
     current = load_global_main_cases(connection)
     hits = [number for number in (1, 2) if current.case(number)[0] == scenario_id]
     if not hits:
-        return
+        return 0
     pairs = {number: (None, None) if number in hits else current.case(number) for number in (1, 2)}
     cases = "·".join(f"Case{number}" for number in hits)
     connection.execute(
@@ -338,3 +340,4 @@ def clear_global_main_cases(
         """,
         [*pairs[1], *pairs[2], f"{cases} 지정 비움 — {reason}"],
     )
+    return len(hits)

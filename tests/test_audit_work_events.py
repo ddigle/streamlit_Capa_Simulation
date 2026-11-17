@@ -238,6 +238,32 @@ def test_voc_and_profile_lines_carry_no_free_text(
         assert text not in payload
 
 
+def test_an_archive_line_counts_the_home_designations_it_cleared(
+    on: None, repository: DuckDBScenarioRepository
+) -> None:
+    """보관은 실무자부터인데 같은 트랜잭션에서 관리자 몫 HOME 지정(공용 비교 대상 · 주요 Case)을
+    비운다(규칙집 6-34 readback-2) — 누가 비웠는지를 보관 줄의 「HOME 지정 비움」 수로 본다."""
+    keep = repository.create_scenario(_metadata(), _reference_tables(), _preset())
+    designated = repository.create_scenario(
+        _metadata("Scenario B"),
+        _reference_tables(),
+        _preset(),
+    )
+    target = (designated.scenario.scenario_id, designated.revision.revision_id)
+    repository.replace_global_comparison_scenario(*target, source="웹 직접 편집")
+    repository.replace_global_main_case(1, *target, source="웹 직접 편집")
+    recorder.take_pending()
+
+    repository.archive_scenario(designated.scenario.scenario_id)
+    repository.archive_scenario(keep.scenario.scenario_id)
+
+    lines = _work()
+    assert [line["ev"] for line in lines] == ["data_scenario_archive"] * 2
+    assert [line["det"] for line in lines] == [{"home_cleared": 2}, {"home_cleared": 0}]
+    assert lines[0]["tgt"] == {"type": "scenario", "id": designated.scenario.scenario_id}
+    assert repository.load_global_main_cases().case(1) == (None, None)
+
+
 def test_equipment_writes_record_too(on: None, tmp_path: Path) -> None:
     equipment = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
     equipment.initialize()
