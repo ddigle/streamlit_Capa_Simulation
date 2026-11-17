@@ -28,6 +28,7 @@ from bdq_login_support import (
     FakeBdq,
     measured_token_failure,
     requests_on,
+    run_with_fake_package,
     running_mock,
     switch_on,
     target_of,
@@ -1897,19 +1898,15 @@ def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
     elif start == "revoked":
         monkeypatch.setenv("FAKE_BDQ_REVOKED", fake.write_live_token().decode("ascii"))
     key = switch_on(monkeypatch)
-    env = {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join([str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"]]),
-        login_store.SECRET_KEY_ENV: key,
-    }
-    completed = subprocess.run(
-        [sys.executable, "-c", _THREAD_SCRIPT, str(PROJECT_ROOT / "scripts")],
-        input=f"{ACCOUNT}\n{password}\n",
-        capture_output=True,
-        text=True,
-        env=env,
+    # Windows 파이프의 로캘을 흉내 낸다 — 스크립트가 제 프로세스 안에서 불러오는 가짜 패키지의
+    # 배너도, 로그인 하위 프로세스도 UTF-8 로 선다.
+    monkeypatch.setenv("PYTHONIOENCODING", "cp949")
+    completed = run_with_fake_package(
+        _THREAD_SCRIPT,
+        str(PROJECT_ROOT / "scripts"),
+        input_text=f"{ACCOUNT}\n{password}\n",
+        extra_env={login_store.SECRET_KEY_ENV: key},
         timeout=180,
-        check=False,
     )
 
     assert completed.returncode == 0, completed.stderr[-2000:]

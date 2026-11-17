@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,8 @@ from test_container_start import (
 )
 
 import capa_simulation.settings as settings
+from capa_simulation.components import container_start_check
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.io import bdq_login, bdq_token
 from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import container_start_report as report_contract
@@ -160,6 +163,7 @@ def test_without_a_key_the_start_is_the_walked_one(
         "failure_kind": "",
         "stop_write": "",
         "entered_at": "",
+        "child": None,
     }
     steps = _steps(real)
     assert steps[report_contract.STEP_TOKEN] == {"status": "ok", "reason": "토큰 파일을 씀"}
@@ -254,6 +258,60 @@ def test_an_ok_login_keeps_the_new_token_and_skips_the_fallback(
     printed = capsys.readouterr().out
     assert "BDQ 자동 로그인 — 정상: 정상 · 남은 7시간 59분" in printed
     _assert_no_login_secret(json.dumps(report, ensure_ascii=False) + printed)
+
+
+def test_a_start_login_without_a_marker_records_its_child_diag(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """표지 없이 끝난 시작 로그인(멈춤)은 결과 칸 `child` 에 하위 프로세스 진단(수 · 이름 · 판)을
+    싣고, 「서버 시작 점검」 이 표 줄 아래 값 줄로 보인다 — 앱 프로세스의 마지막 시도 줄은 시작 뒤
+    exec 로 사라지므로 시작 길의 진단은 이 칸이 남긴다. 비밀이 없다."""
+    credentials = place / "config" / ".credential"
+    diag = report_contract.ChildDiag(-9, "SIGKILL", 4.1, "import", "", "2.5.0", "-")
+    result = replace(bdq_login.LoginResult("rejected", bdq_login.REASON_NO_MARKER), diag=diag)
+    started = bdq_login.StartLogin(
+        "rejected", bdq_login.REASON_NO_MARKER, result=result, stored=_stored()
+    )
+
+    report = _check(
+        {**ALL_ENVIRONMENT, KEY_ENV: new_key()}, credentials, start_login=_login_stub(started)
+    )
+
+    assert _cell(report)["child"] == diag.fields()
+    parsed = report_contract.parse_report(report)
+    assert parsed is not None and parsed.bdq_login is not None
+    assert parsed.bdq_login.child == diag
+    step = report_contract.login_step(parsed.bdq_login)
+    assert step == report_contract.StartStep("failed", "멈춤 — 결과 표지 없음 · 예비 토큰")
+    lines = container_start_check.fact_lines(parsed)
+    label = f"**{report_contract.BDQ_LOGIN_LABEL} 진단**"
+    assert lines[-1] == f"{label} · {literal_markdown(diag.text)}"
+    _assert_no_login_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
+    without = report_contract.parse_report(
+        {**report, "bdq_login": {**_cell(report), "child": None}}
+    )
+    assert without is not None
+    assert not any(line.startswith(label) for line in container_start_check.fact_lines(without))
+
+
+def test_the_child_diag_is_read_leniently() -> None:
+    """진단 칸의 꼴이 어긋난 값은 그 값만 비운다 — 화면에 값이 실리지 않게."""
+    assert report_contract.parse_child(None) is None
+    assert report_contract.parse_child("exit=0") is None
+    found = report_contract.parse_child(
+        {
+            "exit": True,
+            "signal": "kill me",
+            "sec": -1,
+            "stage": "done",
+            "stderr": "bad kind with spaces",
+            "bigdataquery": "2.5.0 beta",
+            "getpass_asterisk": "?",
+        }
+    )
+    assert found == report_contract.ChildDiag(getpass_asterisk="?")
+    big = report_contract.parse_child({"exit": 3221225477, "sec": 5.678})
+    assert big == report_contract.ChildDiag(exit_code=3221225477, seconds=5.7)
 
 
 @pytest.mark.parametrize(

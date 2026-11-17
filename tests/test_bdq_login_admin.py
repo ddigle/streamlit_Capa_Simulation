@@ -66,6 +66,7 @@ render_flash(bdq_login_admin.FLASH_KEY)
 """
 # 로그인 하위 프로세스까지 기다리는 회차의 마감(초).
 LOGIN_RUN = 120
+LAST = bdq_login_admin.LAST_LABEL
 
 
 @pytest.fixture()
@@ -409,6 +410,47 @@ render_flash(bdq_login_admin.FLASH_KEY)
     ]
     assert _object(mock) is not None
     assert requests_on(mock, login_store.OBJECT_KEY).count("DELETE") == 0
+
+
+def test_a_login_without_a_marker_is_not_called_a_failure_and_shows_its_diag(
+    server: tuple[MockStore, S3Target, str], fake: FakeBdq, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """하위 프로세스가 표지 없이 끝나면 폼 아래 · 알림창은 「로그인 확인 못 함(결과 표지
+    없음)」 이고(비밀번호를 의심해 되풀이하지 않게) 「마지막 시도」 바로 아래 진단 값 줄이 선다.
+    감사 상세에는 진단의 수 · 이름 · 판만 있고 화면 · 세션 · 감사 어디에도 계정 · 비밀번호가
+    없다."""
+    mock, _, _ = server
+    recorder.start(env="cdep", version="test", inst="abcabcabcabc")
+    monkeypatch.setenv("FAKE_BDQ_SCENE", "exit_hard")
+    app = _submit(AppTest.from_string(SCRIPT).run(), ACCOUNT, PASSWORD)
+
+    assert not app.exception
+    line = "로그인 확인 못 함(결과 표지 없음) — 저장 안 함"
+    assert [str(item.value) for item in app.error] == [line]
+    assert [item.value for item in flashed(app, "error")] == [line]
+    assert _object(mock) is None
+    captions = _captions(app)
+    last = next(index for index, text in enumerate(captions) if text.startswith(LAST))
+    assert captions[last].endswith("로그인 확인 못 함(결과 표지 없음)")
+    diag = captions[last + 1]
+    assert diag.startswith(f"{bdq_login_admin.DIAG_LABEL} · ")
+    plain = diag.replace("\\", "")
+    assert "종료 3 · " in plain and "단계 login" in plain
+    assert "stderr bigdataquery.LoginRefused" in plain and "bigdataquery 0.0.0+fake" in plain
+    _no_secret_left(app, ACCOUNT, PASSWORD, "bad password")
+
+    lines = [line for line in recorder.take_pending() if line["ev"] == bdq_login_admin.AUDIT_SET]
+    assert len(lines) == 1
+    det = lines[0]["det"]
+    assert (det["result"], det["reason"], det["exit"], det["stage"], det["stderr"]) == (
+        bdq_login.OUTCOME_REJECTED,
+        bdq_login.REASON_NO_MARKER,
+        3,
+        "login",
+        "bigdataquery.LoginRefused",
+    )
+    payload = json.dumps(lines, ensure_ascii=False)
+    assert ACCOUNT not in payload and PASSWORD not in payload and "bad password" not in payload
 
 
 # --- 감사 · 「그 화면으로」 ----------------------------------------------------------------------

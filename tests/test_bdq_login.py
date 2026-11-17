@@ -37,6 +37,7 @@ from bdq_login_support import (
     FakeBdq,
     measured_token_failure,
     requests_on,
+    run_with_fake_package,
     running_mock,
     s3_environment,
     switch_on,
@@ -48,6 +49,7 @@ from s3_mock_store import MockStore
 from capa_simulation.auth import names as sso_names
 from capa_simulation.io import bdq_login, bdq_login_child, bdq_token
 from capa_simulation.io import bdq_login_store as store
+from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.bdq_login_store import LoginSecret
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
@@ -135,8 +137,26 @@ def test_a_right_password_is_ok_with_the_remaining_minutes(fake: FakeBdq, spawne
     assert fake.logins() == 1
     call = spawned.calls[0]
     assert call["start_new_session"] is (os.name == "posix")
-    assert call["stderr"] is subprocess.DEVNULL
+    assert call["capture_output"] is True
     assert call["timeout"] == bdq_login.LOGIN_TIMEOUT_SECONDS
+    diag = result.diag
+    assert diag is not None
+    assert (diag.exit_code, diag.signal, diag.stage, diag.stderr_kind) == (0, "", "time", "")
+    assert diag.seconds is not None and 0 <= diag.seconds < bdq_login.LOGIN_TIMEOUT_SECONDS
+    assert diag.bigdataquery == "0.0.0+fake"
+    assert diag.getpass_asterisk == bdq_login_child.installed_version("getpass_asterisk")
+
+
+def test_the_login_child_prints_utf8_whatever_the_parent_locale(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """Windows 파이프(로캘 cp949)를 흉내 낸다 — 앱 환경이 `PYTHONIOENCODING=cp949` 여도 하위 환경은
+    UTF-8 이라(`child_environment`) 가짜 배너의 em dash(cp949 에 없음)에서 import 가 깨지지 않고
+    표지를 읽는다."""
+    monkeypatch.setenv("PYTHONIOENCODING", "cp949")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    assert fake.imports() == 1 and fake.logins() == 1
 
 
 def test_a_wrong_password_that_only_prints_is_rejected_even_with_a_live_old_token(
@@ -216,6 +236,9 @@ def test_a_child_past_its_time_limit_is_unreached(
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD, timeout=3)
     assert result == bdq_login.LoginResult(bdq_login.OUTCOME_UNREACHED, bdq_login.REASON_TIMEOUT)
     assert fake.logins() == 1
+    # 끊었으니 종료 코드는 없고, 끊기 전까지 받은 단계 줄은 읽는다.
+    assert result.diag is not None
+    assert (result.diag.exit_code, result.diag.stage) == (None, "login")
 
 
 def test_a_changed_token_past_the_time_limit_is_unconfirmed_never_unreached_or_rejected(
@@ -374,6 +397,10 @@ def test_a_controlling_terminal_does_not_take_the_password_from_stdin(
 ) -> None:
     """부르는 프로세스에 제어 터미널이 있어도(WebIDE · tmux) `getpass` 가 `/dev/tty` 를 읽어 멈추지
     않고 표준 입력으로 읽는다 — 로그인 하위 프로세스를 새 세션으로 띄운다."""
+    # mypy 는 `skipif` 도 함수 안 `assert sys.platform` 도 읽지 못한다 — POSIX 에만 있는
+    # `os.openpty` · `os.ttyname` 을 이 꼴로 가린다(Windows 판 mypy 가 그 뒤를 보지 않는다).
+    if sys.platform == "win32":
+        pytest.skip("제어 터미널은 POSIX 의 것")
     master, slave = os.openpty()
     try:
         out = tmp_path / "outcome.txt"
@@ -408,6 +435,167 @@ def test_a_controlling_terminal_does_not_take_the_password_from_stdin(
         pytest.skip("이 자리에서는 제어 터미널을 세우지 못한다")
     assert outcome == bdq_login.OUTCOME_OK
     assert fake.logins() == 1
+
+
+# --- 표지 없이 끝남 · 진단 ------------------------------------------------------------------
+
+
+def _no_canary(*texts: str) -> None:
+    for text in texts:
+        for value in (ACCOUNT, PASSWORD, WRONG_PASSWORD, "bad password", "denied"):
+            assert value not in text, (value, text)
+
+
+@pytest.mark.parametrize(
+    ("name", "exit_code", "stage", "kind"),
+    [
+        ("exit_hard", 3, "login", "bigdataquery.LoginRefused"),
+        ("stderr_account_line", 3, "login", ""),
+        ("exit_on_import", 4, "import", ""),
+    ],
+)
+def test_a_child_that_ends_without_a_marker_keeps_a_diag_without_values(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    name: str,
+    exit_code: int,
+    stage: str,
+    kind: str,
+) -> None:
+    """하위 프로세스가 표지 없이 끝나도 거절(멈춤 — 계정 잠김 방지)이고, 진단에 종료 코드 · 닿은
+    단계 · 표준 오류 마지막 예외 종류만 남는다 — 예외 글의 계정 · 비밀번호, 계정을 든 예외 줄은
+    버린다."""
+    scene(monkeypatch, name)
+    result = bdq_login.attempt_login(ACCOUNT, WRONG_PASSWORD)
+    assert (result.outcome, result.reason) == (
+        bdq_login.OUTCOME_REJECTED,
+        bdq_login.REASON_NO_MARKER,
+    )
+    assert bdq_login.REASON_NO_MARKER in bdq_login.UNCONFIRMED_REJECT_REASONS
+    diag = result.diag
+    assert diag is not None
+    assert (diag.exit_code, diag.signal, diag.stage, diag.stderr_kind) == (
+        exit_code,
+        "",
+        stage,
+        kind,
+    )
+    loaded = "0.0.0+fake" if stage == "login" else bdq_login_child.installed_version("bigdataquery")
+    assert diag.bigdataquery == loaded
+    assert fake.logins() == (1 if stage == "login" else 0)
+    _no_canary(repr(result), diag.code, diag.text, json.dumps(diag.fields()))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="시그널 죽음은 POSIX 의 것")
+def test_a_child_killed_by_a_signal_names_it(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    scene(monkeypatch, "signal_kill")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert (result.outcome, result.reason) == (
+        bdq_login.OUTCOME_REJECTED,
+        bdq_login.REASON_NO_MARKER,
+    )
+    assert result.diag is not None
+    assert (result.diag.exit_code, result.diag.signal, result.diag.stage) == (
+        -9,
+        "SIGKILL",
+        "login",
+    )
+    assert result.diag.text.startswith("종료 -9(SIGKILL) · ")
+
+
+def test_an_odd_package_version_never_breaks_the_marker(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """판 글자가 낯선 꼴이어도(공백) 표지는 그대로 읽혀 성공이고 진단의 판만 `?` 다."""
+    monkeypatch.setenv("FAKE_BDQ_VERSION", "2.5.0 beta")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    assert result.diag is not None and result.diag.bigdataquery == "?"
+
+
+def test_a_form_login_without_a_marker_logs_its_diag_but_no_value(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    caplog: pytest.LogCaptureFixture,
+    mock_s3: tuple[MockStore, S3Target],
+) -> None:
+    _, target = mock_s3
+    switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    caplog.set_level(logging.DEBUG)
+    scene(monkeypatch, "exit_hard")
+    outcome = bdq_login.login_from_form(ACCOUNT, PASSWORD, ADMIN_ID)
+    assert not outcome.saved and outcome.result.reason == bdq_login.REASON_NO_MARKER
+    last = bdq_login.status().last
+    assert last is not None and last.result.diag is not None
+    assert "진단 exit=3 signal=- sec=" in caplog.text
+    assert "stage=login stderr=bigdataquery.LoginRefused" in caplog.text
+    _no_canary(caplog.text, repr(bdq_login.status()))
+
+
+def test_the_step_lines_are_read_apart_from_the_marker() -> None:
+    versions = {"bigdataquery": "2.5.0", "getpass_asterisk": "-"}
+    first = bdq_login_child.step_line("import", versions)
+    then = bdq_login_child.step_line("login", {**versions, "getpass_asterisk": "0.1.5"})
+    banner = b"=== banner ===\nAD Account : "
+    stage, found = bdq_login.parse_steps(banner + f"\n{first}\n{then}\n".encode())
+    assert (stage, found) == ("login", {"bigdataquery": "2.5.0", "getpass_asterisk": "0.1.5"})
+    assert bdq_login.parse_steps(banner) == ("", {})
+    assert bdq_login.parse_steps(f"{first}\n{then} {PASSWORD}\n".encode()) == ("", {})
+    odd = f"{bdq_login_child.STEP_MARKER} stage=import bigdataquery=a b getpass_asterisk=-"
+    assert bdq_login.parse_steps(odd.encode()) == ("", {})
+    assert bdq_login.parse_marker(f"{first}\n{then}\n".encode()) is None
+    assert bdq_login_child.version_text("2.5.0 beta") == "?"
+    assert bdq_login_child.version_text("") == bdq_login_child.version_text(None) == "-"
+    assert tuple(bdq_login_child.STEP_STAGES) == report_contract.CHILD_STAGES
+
+
+_TRACEBACK = 'Traceback (most recent call last):\n  File "<x>", line 1, in <module>\n    login()\n'
+
+
+@pytest.mark.parametrize(
+    ("stderr", "kind"),
+    [
+        ("", ""),
+        ("Warning: Password input may be echoed.\nPassword : ", ""),
+        (f"{_TRACEBACK}KeyboardInterrupt\n", "KeyboardInterrupt"),
+        (f"{_TRACEBACK}pkg.mod.LoginError: bad password for {ACCOUNT}\n", "pkg.mod.LoginError"),
+        (
+            f"{_TRACEBACK}OSError: x\n\nDuring handling of the above exception, another "
+            f"exception occurred:\n\n{_TRACEBACK}EOFError: EOF when reading a line\n",
+            "EOFError",
+        ),
+        (f"{_TRACEBACK}test.<locals>.Err: x\n", "test._locals_.Err"),
+        (f"{_TRACEBACK}{ACCOUNT}: denied\n", ""),
+        (f"{_TRACEBACK}{PASSWORD[:6]}\n", ""),
+        (f"{_TRACEBACK}two words: x\n", ""),
+        (f"{_TRACEBACK}", ""),
+    ],
+)
+def test_the_stderr_kind_is_only_the_last_exception_name(stderr: str, kind: str) -> None:
+    assert bdq_login.stderr_kind(stderr.encode(), (ACCOUNT, PASSWORD)) == kind
+
+
+def test_the_diag_fields_are_the_audit_keys_and_carry_no_free_text() -> None:
+    from capa_simulation.audit import events
+
+    spec = next(item for item in events.SPECS if item.name == "admin_bdq_login_set")
+    diag = report_contract.ChildDiag(-9, "SIGKILL", 4.1, "import", "EOFError", "2.5.0", "-")
+    assert set(diag.fields()) <= spec.det_keys
+    assert diag.text == (
+        "종료 -9(SIGKILL) · 4.1초 · 단계 import · stderr EOFError · bigdataquery 2.5.0 · "
+        "getpass_asterisk -"
+    )
+    assert diag.code == (
+        "exit=-9 signal=SIGKILL sec=4.1 stage=import stderr=EOFError bigdataquery=2.5.0 "
+        "getpass_asterisk=-"
+    )
+    assert report_contract.ChildDiag().text == (
+        "종료 - · 단계 - · stderr - · bigdataquery - · getpass_asterisk -"
+    )
+    assert report_contract.parse_child(diag.fields()) == diag
 
 
 # --- 비밀 경계 ---------------------------------------------------------------------------
@@ -822,18 +1010,9 @@ def test_the_fake_package_answers_a_dead_token_like_the_internal_measurement(
         fake.write_expired_token()
     else:
         monkeypatch.setenv("FAKE_BDQ_REVOKED", fake.write_live_token().decode("ascii"))
-    env = {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join((str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"])),
-    }
-    completed = subprocess.run(
-        [sys.executable, "-c", _FAKE_TOKEN_SCRIPT, ACCOUNT],
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=60,
-        check=False,
-    )
+    # Windows 파이프의 로캘을 흉내 낸다 — 시험 스크립트가 물려받아도 UTF-8 로 선다.
+    monkeypatch.setenv("PYTHONIOENCODING", "cp949")
+    completed = run_with_fake_package(_FAKE_TOKEN_SCRIPT, ACCOUNT)
     assert completed.returncode == 0, completed.stderr[-2000:]
     out = json.loads(completed.stdout.strip().splitlines()[-1])
     assert (out["outer"], out["inner"], out["cause"], out["relogin"]) == (

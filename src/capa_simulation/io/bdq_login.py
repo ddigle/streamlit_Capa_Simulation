@@ -15,9 +15,15 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 **로그인 한 번**(`attempt_login`)은 `sys.executable` 하위 프로세스(`io/bdq_login_child.py`)다.
 계정 · 비밀번호는 표준 입력으로만 넘기고 명령줄 · 환경변수에 없다. 하위 환경은 비밀
 이름(시작 스크립트가 앱에 넘기지 않는 것 · 통합인증 비밀 · `CAPA_BDQ_SECRET_KEY` · `CAPA_S3_*` ·
-`AWS_*`)을 뺀 것이다(`child_environment`). 하위 출력(패키지 배너 포함)은 버리고 표지 한 줄만
-읽는다. 시간 제한이 있고, tty 가 있는 자리에서도 비밀번호를 표준 입력으로 읽게 새 세션으로
-띄운다(제어 터미널 없음).
+`AWS_*`)을 뺀 것이고 표준 입출력은 UTF-8 이다(`child_environment` — 앱 자리의 로캘과 무관하게).
+하위 출력(패키지 배너 포함)은 버리고 표지 한 줄과 단계 줄만 읽는다. 시간 제한이 있고, tty 가 있는
+자리에서도 비밀번호를 표준 입력으로 읽게 새 세션으로 띄운다(제어 터미널 없음).
+
+**진단**(`child_diag` → `LoginResult.diag` — `ChildDiag`). 하위 프로세스를 띄운 시도마다 종료
+코드 · 시그널 · 걸린 초(부르는 쪽이 잰다), 하위 본문이 마지막으로 들어간 단계와 판(단계 줄 —
+표지 없이 끝나도 남는다), 표준 오류 마지막 traceback 의 예외 종류(`stderr_kind` — 이름만, 계정 ·
+비밀번호가 든 이름은 버린다)를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막 시도
+줄(Admin) · 로그 · 감사 상세 · 결과 파일 칸이 읽는다.
 
 **판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었고 같은 하위
 프로세스가 로그인 뒤 잰 남은 분이 `REMAINING_WARNING_MINUTES`(7시간)를 넘으면 성공이다(2026-11-16
@@ -30,7 +36,8 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 그대로(또는 파일 없음)면 표지로 가른다 — 패키지를 못 불러옴은 `unavailable`(시도 없음), 요청을
 보내기 전 연결 단계의 양의 증거(`bdq_login_child.is_unreached` — 종류 이름만으로 가르지 않는다)나
 하위 프로세스 시간 초과는 `unreached`, 그 밖은 모두 `rejected` 다(애매한 실패도 — 계정 잠김 방지가
-불변식). 로그인 동안 토큰 파일을 치우지 않는다.
+불변식). 로그인 동안 토큰 파일을 치우지 않는다. 표지 없음(`no_marker`)은 멈춤은 거절과 같되 화면
+낱말은 「로그인 확인 못 함」 이다(`UNCONFIRMED_REJECT_REASONS` — 비밀번호가 틀렸다는 뜻이 아니다).
 
 **잠김 방지.** 폼 제출 한 번에 시도 한 번. 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
 멈춤(`attempting`)으로 써 두고(`store.mark_attempting` — 그 쓰기가 실패하면 로그인하지 않는다)
@@ -58,7 +65,8 @@ invalid token」. 실측의 응답 코드는 400 이고 판정은 코드를 보�
 판정에만 쓴다.
 
 **비밀.** 결과 · 로그 · 예외에 계정 · 비밀번호 · 예외 문구 · 하위 출력이 없다 — 예외 종류의
-`모듈.이름` 과 짧은 영문 까닭 코드만. 토큰 다이제스트도 밖으로 내지 않는다(지문이다).
+`모듈.이름` 과 짧은 영문 까닭 코드, 진단의 수 · 판만. 토큰 다이제스트도 밖으로 내지
+않는다(지문이다).
 """
 
 from __future__ import annotations
@@ -67,19 +75,20 @@ import hashlib
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping, MutableMapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypeVar
 
 from capa_simulation.auth import names as sso_names
 from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import bdq_token
-from capa_simulation.io.bdq_login_child import MARKER
+from capa_simulation.io.bdq_login_child import MARKER, STEP_MARKER, STEP_STAGES, VERSION_PACKAGES
 from capa_simulation.io.bdq_login_store import LoadResult, LoginSecret, StoredLogin
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
@@ -88,6 +97,7 @@ from capa_simulation.io.container_start_report import (
     LOGIN_REJECTED,
     LOGIN_STANDING,
     LOGIN_STOPPED,
+    ChildDiag,
     LoginStart,
     read_container_start_report,
 )
@@ -150,6 +160,9 @@ PRE_SPAWN_REASONS: Final = frozenset({REASON_BAD_INPUT, REASON_BAD_ACCOUNT, REAS
 # `unconfirmed` 의 까닭 — 남은 시간이 7시간 이하 · 모름.
 REASON_REMAINING_SHORT: Final = "remaining_short"
 REASON_REMAINING_UNKNOWN: Final = "remaining_unknown"
+# 거절(멈춤 — 계정 잠김 방지)로 다루되 화면 낱말은 「로그인 확인 못 함」 인 까닭 — 하위 프로세스가
+# 표지 없이 끝나 로그인이 받아들여졌는지도 거절됐는지도 모른다(비밀번호가 틀렸다는 뜻이 아니다).
+UNCONFIRMED_REJECT_REASONS: Final = frozenset({REASON_NO_MARKER})
 
 # 자동 시도를 건너뛴 까닭.
 SKIP_STOPPED: Final = "stopped"
@@ -187,6 +200,17 @@ _MARKER_LINE: Final = re.compile(
     rf"{re.escape(MARKER)} stage=(input|import|login|done) error=(-|{_NAME}) net=([01]) "
     rf"minutes=(-|[0-9]{{1,7}}) time_error=(-|{_NAME})"
 )
+# 단계 줄(`bdq_login_child.step_line`) — 표지와 따로 푼다. 꼴이 어긋나면 진단의 단계 · 판만 빈다.
+_VERSION: Final = r"-|\?|[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}"
+_STEP_LINE: Final = re.compile(
+    rf"{re.escape(STEP_MARKER)} stage=({'|'.join(STEP_STAGES)})"
+    + "".join(rf" {re.escape(name)}=({_VERSION})" for name in VERSION_PACKAGES)
+)
+# 표준 오류에서 마지막 traceback 을 찾는 머리와, 그 예외 줄 앞마디(종류 이름)의 꼴.
+_TRACEBACK_HEAD: Final = "Traceback (most recent call last):"
+_EXCEPTION_HEAD: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_.<>]{0,199}")
+# 표준 오류에서 보는 끝자락(바이트) — 그 앞은 읽지 않는다.
+_STDERR_TAIL_BYTES: Final = 65_536
 # 원인을 따라가는 깊이.
 _CHAIN_LIMIT: Final = 5
 
@@ -201,12 +225,14 @@ class LoginResult:
     """로그인 한 번(또는 시도 전 거절)의 결과. 비밀 · 예외 문구 · 하위 출력이 없다.
 
     `reason` 은 짧은 영문 까닭 코드, `error_kind` 는 예외 종류의 `모듈.이름`, `remaining_minutes` 는
-    로그인 뒤 잰 남은 분(모르면 `None`)이다."""
+    로그인 뒤 잰 남은 분(모르면 `None`)이다. `diag` 는 하위 프로세스 진단(띄우지 않았으면 `None`) —
+    결과의 같음 판정에는 들지 않는다(같은 갈래의 두 시도는 걸린 초가 달라도 같은 결과다)."""
 
     outcome: Outcome
     reason: str = ""
     error_kind: str = ""
     remaining_minutes: int | None = None
+    diag: ChildDiag | None = field(default=None, compare=False)
 
     @property
     def ok(self) -> bool:
@@ -552,6 +578,82 @@ def parse_marker(output: bytes) -> Marker | None:
     )
 
 
+def parse_steps(output: bytes) -> tuple[str, dict[str, str]]:
+    """하위 표준 출력의 마지막 단계 줄 → (단계, 배포 → 판). 단계 줄이 없거나 마지막 줄의 꼴이
+    어긋나면 `("", {})` — 표지 판정과 따로다."""
+    text = output.decode("utf-8", errors="replace")
+    lines = [
+        line.strip() for line in text.splitlines() if line.strip().startswith(f"{STEP_MARKER} ")
+    ]
+    if not lines:
+        return "", {}
+    found = _STEP_LINE.fullmatch(lines[-1])
+    if found is None:
+        return "", {}
+    stage, *versions = found.groups()
+    return stage, dict(zip(VERSION_PACKAGES, versions, strict=True))
+
+
+def stderr_kind(stderr: bytes, secrets: Iterable[str]) -> str:
+    """표준 오류 끝자락의 마지막 traceback 이 끝난 예외 줄의 종류 이름(`모듈.이름`). traceback 이
+    없거나 꼴이 낯설면 빈 글. 그 이름이 계정 · 비밀번호(`secrets`)를 품거나 그 안에 들면 버린다 —
+    표준 오류는 패키지가 쓰는 글이라 값이 실릴 수 있다. 글은 돌려주지 않는다."""
+    text = stderr[-_STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    heads = [index for index, line in enumerate(lines) if line.strip() == _TRACEBACK_HEAD]
+    if not heads:
+        return ""
+    head = ""
+    for line in lines[heads[-1] + 1 :]:
+        if line and not line[:1].isspace():
+            head = line.split(":", 1)[0].strip()
+            break
+    if not _EXCEPTION_HEAD.fullmatch(head):
+        return ""
+    folded = head.casefold()
+    for secret in secrets:
+        value = secret.casefold()
+        if value and (value in folded or folded in value):
+            return ""
+    return re.sub(r"[^A-Za-z0-9_.]", "_", head)
+
+
+def _signal_name(exit_code: int | None) -> str:
+    """POSIX 에서 시그널로 죽은 종료 코드(음수)의 시그널 이름. 그 밖은 빈 글."""
+    if exit_code is None or exit_code >= 0 or os.name != "posix":
+        return ""
+    try:
+        return signal.Signals(-exit_code).name
+    except ValueError:
+        return f"SIG{-exit_code}"
+
+
+def child_diag(
+    exit_code: int | None,
+    seconds: float,
+    stdout: bytes,
+    stderr: bytes,
+    *,
+    secrets: Iterable[str],
+) -> ChildDiag:
+    """하위 프로세스 한 번의 진단 — 종료 코드 · 시그널 · 걸린 초 · 단계 줄 · 표준 오류 마지막 예외
+    종류. 하위 출력 · 표준 오류 글은 싣지 않는다."""
+    stage, versions = parse_steps(stdout)
+    return ChildDiag(
+        exit_code=exit_code,
+        signal=_signal_name(exit_code),
+        seconds=round(max(seconds, 0.0), 1),
+        stage=stage,
+        stderr_kind=stderr_kind(stderr, secrets),
+        bigdataquery=versions.get("bigdataquery", ""),
+        getpass_asterisk=versions.get("getpass_asterisk", ""),
+    )
+
+
+def _output_bytes(value: object) -> bytes:
+    return value if isinstance(value, bytes) else b""
+
+
 def _input_problem(account: str, password: str) -> str | None:
     """표준 입력 줄 약속을 깨는 값(빈 값 · 줄바꿈)."""
     if not account or not password:
@@ -641,41 +743,54 @@ def attempt_login(
     if target is None:
         return LoginResult(OUTCOME_UNAVAILABLE, REASON_BAD_ACCOUNT)
     limit = LOGIN_TIMEOUT_SECONDS if timeout is None else timeout
-    output = b""
+    output = errors = b""
+    exit_code: int | None = None
     timed_out = spawn_failed = False
     # 앞뒤 다이제스트 사이에 이 프로세스의 「토큰 넣기」 가 끼면 로그인이 토큰을 바꾼 것으로 읽힌다
     # — 그 쓰기를 막은 채 잰다(로그인 잠금 다음 토큰 쓰기 잠금 차례).
     with bdq_token.holding_token_writes():
         before = file_digest(target)
+        started = time.monotonic()
         try:
             completed = subprocess.run(
                 login_command(),
                 input=f"{account}\n{account}\n{password}\n".encode(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                capture_output=True,
                 env=child_environment(env),
                 timeout=limit,
                 check=False,
                 start_new_session=os.name == "posix",
             )
-            output = completed.stdout or b""
-        except subprocess.TimeoutExpired:
+            output = _output_bytes(completed.stdout)
+            errors = _output_bytes(completed.stderr)
+            exit_code = completed.returncode
+        except subprocess.TimeoutExpired as expired:
+            # 끊기 전까지 받은 출력 — 단계 줄 · 판을 읽는다(표지는 보지 않는다).
             timed_out = True
+            output = _output_bytes(expired.stdout)
+            errors = _output_bytes(expired.stderr)
         except OSError:
             spawn_failed = True
+        seconds = time.monotonic() - started
         after = file_digest(target)
-    return _judge(
+    result = _judge(
         changed=after is not None and after != before,
         marker=None if timed_out or spawn_failed else parse_marker(output),
         timed_out=timed_out,
         spawn_failed=spawn_failed,
     )
+    if spawn_failed:
+        return result
+    diag = child_diag(exit_code, seconds, output, errors, secrets=(account, password))
+    return replace(result, diag=diag)
 
 
 def _log(result: LoginResult, *, path: str) -> None:
     detail = f" 종류={result.error_kind}" if result.error_kind else ""
     if result.remaining_minutes is not None:
         detail += f" 남은분={result.remaining_minutes}"
+    if result.diag is not None:
+        detail += f" 진단 {result.diag.code}"
     _LOGGER.warning(
         "BigDataQuery 로그인(%s): 결과=%s 까닭=%s%s",
         path,

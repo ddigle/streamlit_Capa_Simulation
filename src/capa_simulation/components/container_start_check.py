@@ -188,7 +188,8 @@ def clock_text(value: str) -> str:
 
 
 def fact_lines(report: ContainerStartReport) -> list[str]:
-    """표 아래 한 줄씩 — 깔린 판·토큰 파일·요청자 계정. 값은 마크다운에 글자 그대로 싣는다."""
+    """표 아래 한 줄씩 — 깔린 판·토큰 파일·요청자 계정과 자동 로그인 하위 프로세스를 띄웠으면 그
+    진단. 값은 마크다운에 글자 그대로 싣는다."""
     version = report.bigdataquery_version
     account = report.user_name_masked
     if report.token_file_exists is None:
@@ -215,6 +216,9 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
         )
     if report.home_masked:
         lines.append(f"**HOME** · {literal_markdown(report.home_masked)}")
+    child = None if report.bdq_login is None else report.bdq_login.child
+    if child is not None:
+        lines.append(f"**{BDQ_LOGIN_LABEL} 진단** · {literal_markdown(child.text)}")
     return lines
 
 
@@ -561,7 +565,7 @@ def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
         scope=None,
         content=[view.stop_reason, view.stopped_at] if active else None,
         active=active,
-        text="BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣으세요" if active else None,
+        text=_login_stop_short(view) if active else None,
         full=_login_stop_text(view) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
         target=bdq_login_target() if active else None,
@@ -598,13 +602,30 @@ def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
     )
 
 
+def _login_stop_short(view: bdq_login.LoginView) -> str:
+    """`AD-23` 짧은 글 — 표지 없이 끝난 멈춤은 「로그인 확인 못 함」(비밀번호를 의심하게 하지
+    않는다)."""
+    if view.stop_reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
+        return "BigDataQuery 자동 로그인 멈춤 — 로그인 확인 못 함"
+    return "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣으세요"
+
+
 def _login_stop_text(view: bdq_login.LoginView) -> str:
-    """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다."""
+    """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다. 표지 없이 끝난 멈춤은
+    로그인이 거절됐는지 모른다는 것과 진단을 볼 자리를 먼저 말한다."""
     reason = login_reason_text(view.stop_reason) if view.stop_reason else "까닭 모름"
+    if view.stop_reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
+        head = (
+            f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다(로그인 확인 못 함 — {reason}). "
+            "로그인 하위 프로세스가 결과를 남기지 못하고 끝나 비밀번호가 틀렸는지 모릅니다 — "
+            f"Admin Area 「{BDQ_LOGIN_LABEL}」 · 「서버 시작 점검」 의 진단 줄(종료 코드 · "
+            "걸린 시간 · 단계)을 먼저 봅니다."
+        )
+    else:
+        head = f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다({reason})."
     return (
-        f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다({reason}). 계정이 "
-        f"잠기지 않게 다시 시도하지 않습니다. Admin Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 "
-        "넣어 로그인이 성공하면 풀립니다. 그때까지 조회는 예비 토큰(CD 환경변수 "
+        f"{head} 계정이 잠기지 않게 다시 시도하지 않습니다. Admin Area 「{BDQ_LOGIN_LABEL}」 "
+        "에서 계정을 다시 넣어 로그인이 성공하면 풀립니다. 그때까지 조회는 예비 토큰(CD 환경변수 "
         f"{BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
     )
 

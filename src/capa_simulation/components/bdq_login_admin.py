@@ -13,8 +13,10 @@ UI-NAV-01).
 
 **보이는 것(D7).** 값 줄 둘 — 상태(없음 · 정상 · 멈춤과 까닭 · 확인하지 못함)와 넣은 관리자 앱
 로그인 ID 앞 두 글자 · 넣은 시각(멈춤이면 멈춘 시각), 그리고 이 프로세스의 마지막 시도(시각 ·
-자동/넣기 · 결과 · 남은 시간). BDQ 계정 ID 는 어디에도 보이지 않는다. 상태는 저장소
-기억(`bdq_login.status` — 앱 기동 때 읽어 둔 것)에서 읽는다.
+자동/넣기 · 결과 · 남은 시간)와 그 시도가 하위 프로세스를 띄웠으면 바로 아래 진단 값 줄(종료 코드 ·
+시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판 —
+`ChildDiag.text`). BDQ 계정 ID 는 어디에도 보이지 않는다. 상태는 저장소 기억(`bdq_login.status` — 앱
+기동 때 읽어 둔 것)에서 읽는다.
 
 **넣기(D5).** `st.form(clear_on_submit=True)` — 계정 칸 · 비밀번호 칸(`type="password"`) · 「넣기」.
 칸 라벨은 접고 자리표시 글이 그 이름이다. 「넣기」 의 콜백(`_on_submit` — 본문보다 먼저 돈다)이 두
@@ -24,18 +26,22 @@ UI-NAV-01).
 낸다(「BigDataQuery 로그인 됨 · 남은 n시간 n분」). 그때 멈춤이 풀리고 떠 있는 앱의 계정 원천이
 곧바로 새 ID 다(저장소 기억 — 조회 · 토큰 파일 · 남은 시간). 로그인이 실패하면 저장하지 않고 앞 저장
 · 상태를 그대로 두며 실패 한 줄을 폼 아래에 둔다(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
-저장 안 함」 · 「패키지 없음 — 저장 안 함」 — Alarm 에도 남는다). 로그인은 됐는데 저장하지 못했으면
-알림창 오류다(그 자리에 고칠 입력이 없다 — UI-NTF-03). 빈 칸 · 관리자 아님은 시도 없이 폼 아래 거부
-한 줄이다(`write_guard.queue_refusal` → 본문 `take_refusal`). 같은 세션의 겹쳐 온 둘째 누름은 로그인
-한 번이다(`write_guard.save_once` — 계정 잠김 방지). 시도를 시작하거나 끝낸 때부터 창 안에 온 빈
-제출(폼이 이미 비운 칸의 더블클릭 꼬리)은 거부를 세우지 않는다(`write_guard.just_written`).
+저장 안 함」 · 「로그인 확인 못 함(까닭) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 — Alarm 에도
+남는다). 하위 프로세스가 표지 없이 끝난 거절(`no_marker`)은 「로그인 실패」 가 아니라 「로그인
+확인 못 함(결과 표지 없음)」 이다 — 비밀번호를 의심해 되풀이하지 않게. 로그인은 됐는데 저장하지
+못했으면 알림창 오류다(그 자리에 고칠 입력이 없다 — UI-NTF-03). 빈 칸 · 관리자 아님은 시도 없이
+폼 아래 거부 한 줄이다(`write_guard.queue_refusal` → 본문 `take_refusal`). 같은 세션의 겹쳐 온 둘째
+누름은 로그인 한 번이다(`write_guard.save_once` — 계정 잠김 방지). 시도를 시작하거나 끝낸 때부터
+창 안에 온 빈 제출(폼이 이미 비운 칸의 더블클릭 꼬리)은 거부를 세우지
+않는다(`write_guard.just_written`).
 
 **지우기.** 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크와 「지우기」 가 선다 —
 페이지 안 확인 한 번(브라우저 대화상자가 아니다). 체크를 켜야 눌린다(잠긴 동안 까닭 풍선). 지우면
 자동 로그인이 꺼지고 예비 길(「토큰 넣기」 · `CAPA_BDQ_TOKEN`)만 남는다 — 단추 풍선이 누르기 전에
 말한다(UI-NTF-09).
 
-**비밀.** 세션 · 알림 · 감사 줄 · 로그에 계정 · 비밀번호가 없다 — 감사 줄은 결과 · 까닭 코드만이다.
+**비밀.** 세션 · 알림 · 감사 줄 · 로그에 계정 · 비밀번호가 없다 — 감사 줄은 결과 · 까닭 코드와 하위
+프로세스 진단의 수 · 이름 · 판(`ChildDiag.fields`)만이다.
 
 **「토큰 넣기」 와.** 「토큰 넣기」(`bdq_token_admin` — 「서버 시작 점검」 펼침 안)는 예비로 남는다.
 이 펼침은 계정을, 그 단추는 토큰 값을 넣는다 — 같은 결과를 내는 단추가 아니다(UI-LAY-12)."""
@@ -104,6 +110,7 @@ DELETE_HELP: Final = (
 
 STATUS_LABEL: Final = "**상태**"
 LAST_LABEL: Final = "**마지막 시도**"
+DIAG_LABEL: Final = "**진단**"
 NONE_WORD: Final = "없음"
 OK_WORD: Final = "정상"
 STOPPED_WORD: Final = "멈춤"
@@ -185,6 +192,8 @@ def result_words(result: bdq_login.LoginResult) -> str:
     if result.ok:
         return f"로그인 됨 · {remaining_text(result.remaining_minutes)}"
     if result.outcome == bdq_login.OUTCOME_REJECTED:
+        if result.reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
+            return f"로그인 확인 못 함({login_reason_text(result.reason)})"
         return "로그인 실패"
     if result.outcome == bdq_login.OUTCOME_UNREACHED:
         return "서버에 닿지 못함"
@@ -202,6 +211,22 @@ def last_line(status: bdq_login.LoginStatus | None) -> str | None:
         return None
     how = AUTO_WORD if last.auto else FORM_WORD
     return f"{LAST_LABEL} · {_clock(last.at)} · {how} · {result_words(last.result)}"
+
+
+def diag_line(status: bdq_login.LoginStatus | None) -> str | None:
+    """「진단」 값 줄 — 마지막 시도가 하위 프로세스를 띄웠을 때만(아니면 `None`)."""
+    last = None if status is None else status.last
+    diag = None if last is None else last.result.diag
+    if diag is None:
+        return None
+    return f"{DIAG_LABEL} · {literal_markdown(diag.text)}"
+
+
+def _audit_det(result: bdq_login.LoginResult, base: dict[str, object]) -> dict[str, object]:
+    """감사 상세 — 결과 · 까닭에 하위 프로세스 진단의 칸(있으면)을 더한다."""
+    if result.diag is None:
+        return base
+    return {**base, **result.diag.fields()}
 
 
 def failure_line(result: bdq_login.LoginResult) -> str:
@@ -244,19 +269,23 @@ def _announce(outcome: bdq_login.FormResult) -> None:
     됐는데 저장하지 못했으면 알림창 오류."""
     result = outcome.result
     if outcome.saved:
-        audit_recorder.record(AUDIT_SET, det={"result": "saved", "reason": ""})
+        audit_recorder.record(AUDIT_SET, det=_audit_det(result, {"result": "saved", "reason": ""}))
         queue_flash(FLASH_KEY, f"BigDataQuery {result_words(result)}")
         return
     if result.ok:
         audit_recorder.record(
             AUDIT_SET,
             out="fail",
-            det={"result": "save_failed", "reason": _code(outcome.save_failure)},
+            det=_audit_det(
+                result, {"result": "save_failed", "reason": _code(outcome.save_failure)}
+            ),
         )
         queue_flash(FLASH_KEY, SAVE_FAILED_MESSAGE, kind="error", popup_only=True)
         return
     audit_recorder.record(
-        AUDIT_SET, out="fail", det={"result": result.outcome, "reason": result.reason}
+        AUDIT_SET,
+        out="fail",
+        det=_audit_det(result, {"result": result.outcome, "reason": result.reason}),
     )
     queue_flash(FLASH_KEY, failure_line(result), kind="error")
 
@@ -333,6 +362,9 @@ def _render_status(status: bdq_login.LoginStatus | None) -> None:
     last = last_line(status)
     if last is not None:
         st.caption(last)
+    diag = diag_line(status)
+    if diag is not None:
+        st.caption(diag)
 
 
 def bdq_login_target() -> alerts.GotoTarget:

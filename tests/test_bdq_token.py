@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import os
 import stat
+import sys
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 
 import pytest
@@ -187,11 +189,53 @@ def test_a_deeply_nested_body_is_an_unknown_expiry(folder: Path) -> None:
 
 
 def test_an_expiry_no_time_zone_can_show_is_unknown() -> None:
-    """어느 시각대로 옮겨도 넘치지 않는 안쪽만 만료로 받는다 — 시각대와 무관한 판정이다."""
+    """어느 시각대로 옮겨도 넘치지 않는 안쪽만 만료로 받는다 — 시각대와 무관한 판정이다. 받는 쪽
+    값은 Windows `fromtimestamp` 의 상한(3000년) 안이다."""
     assert bdq_token.token_expiry(fake_jwt(FAR_EXPIRY).encode()) is None
     assert bdq_token.token_expiry(jwt_with_body(b'{"exp":-62135596800}').encode()) is None
+    later = datetime(2500, 1, 1, tzinfo=timezone.utc)
+    assert bdq_token.token_expiry(fake_jwt(later).encode()) == later
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows fromtimestamp 는 3000년 뒤를 못 낸다(아래 흉내 시험)"
+)
+def test_an_expiry_just_inside_the_time_zone_margin_is_read() -> None:
+    """`datetime.max` 에서 하루 안쪽은 만료로 받는다 — 시각대 여유의 경계."""
     inside = datetime(9999, 12, 29, tzinfo=timezone.utc)
     assert bdq_token.token_expiry(fake_jwt(inside).encode()) == inside
+
+
+# Windows `gmtime` 이 내는 마지막 해(3000년)의 끝 가까이.
+_WINDOWS_TIMESTAMP_LIMIT = int(datetime(3001, 1, 1, tzinfo=timezone.utc).timestamp())
+
+
+class _WindowsClock:
+    """Windows 의 `datetime.fromtimestamp` 흉내 — 1970년 앞 · 3000년 뒤는 `OSError`(Errno 22)."""
+
+    @staticmethod
+    def fromtimestamp(timestamp: float, tz: tzinfo | None = None) -> datetime:
+        if not 0 <= timestamp < _WINDOWS_TIMESTAMP_LIMIT:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return datetime.fromtimestamp(timestamp, tz)
+
+
+def test_an_expiry_windows_cannot_convert_is_unknown_without_raising(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """서버가 준 먼 만료(9999년)를 Windows 가 시각으로 옮기지 못해도 예외 없이 「모름」 이고, 지금
+    토큰 줄은 파일 수정 시각을 그대로 읽는다."""
+    monkeypatch.setattr(bdq_token, "datetime", _WindowsClock)
+    far = fake_jwt(datetime(9999, 12, 29, tzinfo=timezone.utc))
+    assert bdq_token.token_expiry(far.encode()) is None
+    assert bdq_token.token_expiry(jwt_with_body(b'{"exp":-1}').encode()) is None
+    later = datetime(2500, 1, 1, tzinfo=timezone.utc)
+    assert bdq_token.token_expiry(fake_jwt(later).encode()) == later
+
+    assert bdq_token.install_token(far, env()).status == "written"
+    state = bdq_token.current_token(env())
+    assert state.source == "file" and state.expires_at is None
+    assert state.modified_at is not None
 
 
 def test_the_current_token_follows_the_package_order(folder: Path) -> None:
