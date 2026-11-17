@@ -154,6 +154,28 @@ def test_a_handed_over_pc_needs_its_alert(tmp_path: Path, monkeypatch: pytest.Mo
     assert sync_boot.sync_alerts_possible() is True
 
 
+def test_a_test_reads_no_mark_beside_the_repository_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """이관 `init` 을 한 사내 PC 의 작업 트리에서도 시험은 저장소 DB 옆의 진짜 표지를 읽지
+    않는다 — 공용 준비(`tests/conftest.py` `_without_handed_over_mark`)가 판정이 읽는 자리를
+    tmp 로 돌린다. 그 PC 는 저장소 DB 자리의 세대 파일만 표지를 돌려주는 읽기로 흉내
+    낸다(저장소 `data/` 에 쓰지 않는다)."""
+    repository_mark = sync_state.generation_path(DUCKDB_PATH)
+    read = sync_state.read_generation
+
+    def _handed_over_pc(path: Path) -> sync_state.GenerationState:
+        if Path(path) == repository_mark:
+            return sync_state.GenerationState(handed_over_utc="2026-11-07T00:00:00Z")
+        return read(path)
+
+    monkeypatch.setattr(sync_state, "read_generation", _handed_over_pc)
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+
+    assert sync_boot.handed_over_utc() is None
+    assert sync_boot.sync_alerts_possible() is False
+
+
 def _start_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sync: dict[str, object]) -> None:
     path = tmp_path / "container_start.json"
     monkeypatch.setattr(app_settings, "CONTAINER_START_REPORT_PATH", path)
