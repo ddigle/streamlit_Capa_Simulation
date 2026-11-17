@@ -4448,7 +4448,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
-  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
+  그린다. 산식을 화면에 복제하지 않는다. altair 는 차트를 짓는 함수 안에서 import 한다 — 맨 위에서 부르면 이 화면을 한 번만
+  열어도 프로세스 고정 약 20MiB(altair + jsonschema, 합성 표본 샘플 관측)가 끝까지 붙는다(2026-11-17 메모리 보드 decided 2 —
+  `tests/test_equipment_explorer.py::test_importing_the_explorer_leaves_altair_unloaded`). 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
   재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
   쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
   글이다(`profile_caption.render_heading_value` — 밑줄 맞춤은 공용 버전 줄과 같다, 사용자 보드 T2).
