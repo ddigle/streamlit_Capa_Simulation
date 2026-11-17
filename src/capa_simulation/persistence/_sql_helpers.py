@@ -16,8 +16,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import duckdb
+import numpy as np
 import pandas as pd
 
+from capa_simulation import settings
 from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
@@ -467,13 +469,61 @@ def load_frame(
     owner_column: str,
     owner_id: str,
 ) -> pd.DataFrame:
+    """주인 하나(리비전 · 데이터셋 · 프로필)의 업무 칸을 원래 줄 차례로 읽는다.
+
+    리비전 표 · 데이터셋 기준 표 · 저장 때 해시 대조 · 공용 표시순서가 모두 이 한 곳을 지난다.
+    `fetchdf` 바로 뒤에 같은 글을 한 객체로 모은다(`share_repeated_text` — 끄는 스위치
+    `settings.SHARE_STRINGS_ENV`). 공용 칸이 프레임을 잠그기 전이다.
+    """
     columns = business_columns(connection, schema, table_name, owner_column)
     projection = ", ".join(quote(column) for column in columns)
-    return connection.execute(
+    frame = connection.execute(
         f"SELECT {projection} FROM {quote(schema)}.{quote(table_name)} "
         f"WHERE {quote(owner_column)} = ? ORDER BY source_row_no",
         [owner_id],
     ).fetchdf()
+    if settings.share_strings_enabled():
+        share_repeated_text(frame)
+    return frame
+
+
+def share_repeated_text(frame: pd.DataFrame) -> pd.DataFrame:
+    """글자 칸에서 같은 글을 한 `str` 객체로 함께 쓰게 한다 — 값 · dtype · 블록 꼴 · 빈 칸 그대로.
+
+    `fetchdf` 는 칸마다 `str` 객체를 따로 만들어, 리비전 표의 몇 안 되는 고유 글(공정 · 제품 ·
+    양산구분 등)이 줄 수만큼 따로 산다(합성 표본의 샘플 관측: 리비전 하나 깊은 크기 25 → 4 MiB).
+
+    - 값이 모두 `str` 인 객체 칸(빈 값 None · NaN 섞임 허용)만 모은다. 숫자 · 참거짓이 섞인 칸은
+      건드리지 않는다 — `factorize` 는 `1` · `1.0` · `True` 처럼 같다고 비교되는 값을 첫 객체 하나로
+      합치고 `DataFrame.equals` 는 그것을 못 잡는다.
+    - 같은 글은 이 프레임 안에서만 한 객체로 모은다(부를 때마다 새 사전 — 전역 intern · 풀을 두지
+      않아 다 쓴 리비전의 글이 프로세스에 남지 않는다). 칸마다 고유 값만 사전을 지나 칸끼리도 같은
+      객체를 쓴다.
+    - 빈 값은 원래 객체(None · NaN)를 그 자리에 되돌린다. 모두 다른 칸(고유 수 = 줄 수)은 둔다.
+    - 갓 만든 프레임의 객체 블록에 제자리로 쓴다 — 칸을 갈아 끼우지 않아 블록이 갈라지지 않는다.
+      칸 배열이 쓸 수 있는 view 가 아니면(pandas Copy-on-Write 등) 아무것도 하지 않고, 효과가
+      사라지지 않았는지는 시험이 실제 읽기로 잠근다(`tests/test_share_repeated_text.py`).
+    """
+    pool: dict[str, str] = {}
+    for position in range(frame.shape[1]):
+        values = frame.iloc[:, position].to_numpy()
+        if values.dtype != object or not values.flags.writeable:
+            continue
+        if pd.api.types.infer_dtype(values, skipna=True) != "string":
+            continue
+        codes, uniques = pd.factorize(values, use_na_sentinel=True)
+        if len(uniques) == 0 or len(uniques) == len(values):
+            continue
+        if not all(type(value) is str for value in uniques):
+            continue
+        canonical = np.empty(len(uniques), dtype=object)
+        canonical[:] = [pool.setdefault(value, value) for value in uniques]
+        missing = codes < 0
+        shared = canonical.take(np.where(missing, 0, codes))
+        if missing.any():
+            shared[missing] = values[missing]
+        values[:] = shared
+    return frame
 
 
 def business_columns(
