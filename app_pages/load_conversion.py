@@ -28,6 +28,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation import alerts
 from capa_simulation.components import plan_grid
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.flash import pending_flash, queue_flash
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
@@ -1176,7 +1177,7 @@ if not tab_is_hidden(conversion_tab):
         # 문제가 아니라 계획 없음(0)으로 본 것이다 — 한 문장에 섞으면 채울 기준정보가 없는데 찾으러
         # 간다.
         excluded_load_rows = load_exclusions(monthly_volume)
-        excluded_file_name = (
+        excluded_file_name = edited_file_name(
             f"Capa_Conversion_Excluded_Plans_{effective_start_month}_{effective_end_month}.csv"
         )
         excluded_table = _report_excluded_plans(
@@ -1213,7 +1214,7 @@ if not tab_is_hidden(conversion_tab):
                 "환산",
                 caption=f"단위: {unit}",
                 csv=conversion_csv,
-                file_name=(
+                file_name=edited_file_name(
                     f"Capa_Conversion_{demand_basis}_{effective_start_month}_"
                     f"{effective_end_month}.csv"
                 ),

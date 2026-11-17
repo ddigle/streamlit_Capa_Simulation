@@ -29,6 +29,7 @@ from capa_simulation.components import grade_ui
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.dialog_host import DialogHost
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.formula_text import EQUALS, consistent_places
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -1251,7 +1252,9 @@ else:
         missing_availability,
         shown=missing_shown,
         scope=simulation_scope(active_scenario, dates=(start_date, end_date)),
-        file_name=f"Capa_Standard_Target_Missing_Availability_{start_date}_{end_date}.csv",
+        file_name=edited_file_name(
+            f"Capa_Standard_Target_Missing_Availability_{start_date}_{end_date}.csv"
+        ),
         labels=process_labels,
     )
     if missing_shown and missing_table is None:
@@ -1325,7 +1328,7 @@ else:
         with table_heading_row(
             f"주차별 {output_title}",
             csv=output_csv,
-            file_name=(
+            file_name=edited_file_name(
                 f"Standard_Target_Capa_{output_file_metric}_"
                 f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
             ),

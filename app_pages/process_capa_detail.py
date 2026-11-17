@@ -78,6 +78,7 @@ from capa_simulation.components.app_header import (
     header_lines,
 )
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
     equipment_basis_label,
@@ -1092,11 +1093,11 @@ render_process_detail_view(
         upeh_token=upeh_token,
         initial_month=entry.scroll_month,
         units_csv=units_csv,
-        units_csv_file_name=file_names.units_csv,
+        units_csv_file_name=edited_file_name(file_names.units_csv),
         shortening_link_help=shortening_link_help,
         units_export=units_export,
         sheet_heading=sheet_heading(),
-        sheet_file_name=file_names.sheet,
+        sheet_file_name=edited_file_name(file_names.sheet),
     )
 )
 

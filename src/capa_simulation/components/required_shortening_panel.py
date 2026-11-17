@@ -89,6 +89,7 @@ import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogHost
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.grade_hooks import in_fragment, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_field import first_and_rest
@@ -1374,19 +1375,21 @@ def _render_downloads(
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         render_csv_download(
             data=units,
-            file_name=f"required_shortening_units_{percent}pct_{span}.csv",
+            file_name=edited_file_name(f"required_shortening_units_{percent}pct_{span}.csv"),
             key=_UNITS_CSV_KEY,
             label="호기별 단축 일정 CSV",
         )
         render_csv_download(
             data=all_levels,
-            file_name=f"required_shortening_units_all_levels_{span}.csv",
+            file_name=edited_file_name(f"required_shortening_units_all_levels_{span}.csv"),
             key=_UNITS_ALL_LEVELS_CSV_KEY,
             label="호기별 단축 일정 CSV · 목표 전체",
         )
         render_csv_download(
             data=process_months,
-            file_name=f"required_shortening_process_months_{percent}pct_{span}.csv",
+            file_name=edited_file_name(
+                f"required_shortening_process_months_{percent}pct_{span}.csv"
+            ),
             key=_MONTHS_CSV_KEY,
             label="공정·월 CSV",
         )

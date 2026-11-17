@@ -41,6 +41,7 @@ import streamlit as st
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.grade_hooks import on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
@@ -653,7 +654,7 @@ def render_progress_csv(
     )
     render_csv_download(
         data=data,
-        file_name=(
+        file_name=edited_file_name(
             f"required_shortening_progress_{level_percent(level)}pct_"
             f"{baseline.summary.saved_at:%Y%m%d}_vs_{today:%Y%m%d}.csv"
         ),
