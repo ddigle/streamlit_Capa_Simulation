@@ -457,7 +457,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
-  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `개발자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` · 등급 열람 · 실무자 · 관리자 · 개발자 · `개발자(환경변수)` — 등급 파일까지 합친 값) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다, 등급 칸 하나 — 처음 값 실무자, 2026-11-17 답 「새로 드는 사람」 가) · 「사람 고르기」(「계정 · 이름 · 부서」) → 「등급 바꾸기」 팝오버 하나(열람 · 실무자 · 관리자 · 개발자 — 여럿을 한 번에, 나 자신 · 환경변수 개발자가 섞이면 개발자 아래 셋 잠금 + 까닭 풍선) · 지우기 · 다시 읽기(명단 + 등급 파일)를 두고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 개발자로 · 일반으로 · 지우기, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 「일반」 과 이름을 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
+  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `개발자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` · 등급 열람 · 실무자 · 관리자 · 개발자 · `개발자(환경변수)` — 등급 파일까지 합친 값) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다, 등급 칸 하나 — 처음 값 실무자, 2026-11-17 답 「새로 드는 사람」 가) · 「사람 고르기」(「계정 · 이름 · 부서」) → 「등급 바꾸기」 팝오버 하나(열람 · 실무자 · 관리자 · 개발자 — 여럿을 한 번에, 나 자신 · 환경변수 개발자가 섞이면 개발자 아래 셋 잠금 + 까닭 풍선) · 지우기 · 다시 읽기(명단 + 등급 파일)를 두고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 「등급 바꾸기」 · 지우기, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 이름과 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
   - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차 · `capa_server.py` 기동,
     같은 함수면 그대로) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
     `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
@@ -468,8 +468,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_grade_ui_core.py` · 도우미 `tests/grade_support.py`.
   - `components/edit_file_tail.py` — 저장하지 않은 기준 정보 · 생산 계획 고침이 있는 동안(`scenario_activation.has_unsaved_scenario_changes()`)
     계산 화면이 그리는 내려받기 파일 이름 끝에 붙이는 꼬리 `_unsaved`(공정 Capa 상세 UPEH 가정 꼬리와 같은 꼴 — 2026-11-17 정한 것). 모든 등급
-    같다. 공용 표 부품(`table_toolbar` · `shortening_board` 등)은 켜기 인자로만 받아 설비 화면 파일에는 붙지 않는다. Streamlit 표 도구 막대가 짓는
-    파일 이름은 바꿀 수 없다.
+    같다. 꼬리는 계산 화면이 파일 이름을 넘기는 자리(`edited_file_name`)에서만 붙인다 — 공용 표 부품(`table_toolbar` · `shortening_board` ·
+    `hierarchical_monthly_table` · `exclusion_table` · `monthly_table_workbook`)은 설비 화면도 쓰므로 그 안에서 짓는 이름에는 붙지 않는다. Static
+    Capa 는 앱이 그리는 내려받기가 없다. Streamlit 표 도구 막대가 짓는 파일 이름은 바꿀 수 없다.
+  - `components/grade_hooks.py` — 계산 · 시나리오 · HOME 부품이 접속 등급 창구(`grade_ui.on_press` · `in_fragment` · `sso_identity.viewer_can` ·
+    `admin_view.diagnostic_message`)를 부를 때 쓰는 늦게 읽는 얇은 대리. `sso_identity` 가 모듈 머리에서 `app_header` 를 읽고 그 길이 입장 화면 →
+    HOME 그리기 → `home_preference` · `home_main_cases` · `past_data_management` 까지 닿아, 그 부품이 머리에서 창구 이름을 꺼내면 덜 읽힌
+    모듈로 앱이 서지 않는다. 이 모듈은 머리에서 화면 모듈을 읽지 않고 부르는 순간 창구를 읽어 넘긴다 — 동작 · 데코레이터 이름이 창구와 같아
+    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다. 다만 운영 서버의 Admin Area 는 개발자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
@@ -8530,7 +8536,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `@gated(action)` 이 첫 줄에서 실제 등급으로 판정한다. 한 누름이 저장소를 여러 번 부르면 첫 쓰기 전에 `grades.require_all([...])` 로 한 번
   본다(반쪽 저장 없음). DuckDB 쓰기가 아닌 허락된 일(BigDataQuery 「시뮬레이션 코드 조회」 등)은 부르는 첫 줄에 `grades.require`.
 - **거절은 받는 자리에서 알림 한 번이다.** 위젯 콜백은 `grade_ui.on_press`, `st.fragment` · `st.dialog` 함수는 `grade_ui.in_fragment`(데코레이터
-  아래쪽), 화면 본문은 `run_core_page` 가 받는다 — 단추 곁 줄을 두지 않는다(UI-NTF-03 · UI-CON-03). 거절 예외(`grades.REFUSALS`)는
+  아래쪽), 화면 본문은 `run_core_page` 가 받는다 — 단추 곁 줄을 두지 않는다(UI-NTF-03 · UI-CON-03). 계산 · 시나리오 · HOME 부품은
+  가져오기 고리(`sso_identity` → `app_header` → 입장 화면 → HOME 부품) 때문에 같은 이름의 늦게 읽는 대리 `components/grade_hooks.py` 로
+  부르고, 설비 편집본 경계(`equipment_data_workspace`)는 `sso_identity` · `grade_ui` 를 부르는 순간에 읽는다. 거절 예외(`grades.REFUSALS`)는
   `Exception` 직속이라 넓은 `except Exception` · `except BOOTSTRAP_ERRORS` 가 삼키지 않게 그 앞에 `except grades.REFUSALS: raise` 를 둔다.
   `grades.require` 는 알림을 담지 않는다(`write_guard` 잠금 안에서도 불린다). 로그인이 끝난 신원은 등급 거절과 섞지 않는다(`SignInEnded` —
   「로그인이 끝나 저장하지 않았습니다 — 다시 로그인하세요」).
