@@ -105,7 +105,7 @@ WebIDE · 시험에는 싣지 않는다(그때 공지는 앱 전체 회차의 �
   은 버림). 표지 + 판이 지난번 넘긴 것과 다를 때만 부모 문서의 `window.__capaAlerts.notice(payload)`
   에 넘긴다 — 알림 칸이 data 와 같은 길(`applyNotice` — 판이 오른 것만)로 받는다. 칸이 아직 서지
   않았으면 그 꼴을 쥐고 있다가 다음 틱에 넘긴다(사건 알림 대기열 `__capaAlertQueue` 는 `raise`
-  꼴이라 쓰지 않는다).
+  꼴이라 쓰지 않는다). 끊기면 쥔 꼴을 버린다 — 다시 붙은 회차의 알림 칸 data 가 정본이다.
 
 **비공식 경로다.** Streamlit 1.63 프런트의 연결 상태 표지에 기댄다. 판올림으로 표지가 사라지면 띠가
 서지 않고 공지 물음이 돌지 않을 뿐 나머지는 그대로다(공지는 앱 전체 회차로 닿는다) — 올릴 때 만료 ·
@@ -596,9 +596,11 @@ _NOTICE_POLL = """
   noticeTick = function (state, now) {
     if (!noticeConnected(state)) {
       // 끊긴 동안은 묻지 않는다. 다시 붙은 것은 문지기가 쿠키를 다시 본 핸드셰이크라 401 멈춤도
-      // 푼다.
+      // 푼다. 쥐고 있던 꼴도 버린다 — 다시 붙은 회차의 알림 칸 data 가 정본이다(재시작 뒤 옛
+      // 표지의 꼴을 넘기면 알림 칸은 표지가 달라 받아 버린다).
       noticeSince = null;
       noticeStopped = false;
+      noticePending = null;
       return;
     }
     handNotice();

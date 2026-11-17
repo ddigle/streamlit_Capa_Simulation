@@ -528,6 +528,24 @@ def test_a_payload_waits_for_the_alert_center_to_stand() -> None:
     assert result["delivered"] == ["m1:1"]
 
 
+def test_a_held_payload_is_dropped_when_the_tab_disconnects() -> None:
+    """칸이 서기 전에 쥔 꼴은 끊기면 버린다 — 서버가 다시 시작한 뒤 다시 붙은 탭에 옛 표지의 꼴을
+    넘기면 알림 칸은 표지가 달라 받아 버린다(다시 붙은 회차의 data 가 정본)."""
+    script = _gate_script()
+    plan = [
+        {"tick": True},
+        {"advance": GAP, "tick": True},
+        {"state": "DISCONNECTED_FOREVER", "advance": 1000, "tick": True},
+        {"state": "CONNECTED", "center": True, "advance": 1000, "tick": True},
+        {"advance": 1000, "tick": True},
+    ]
+
+    result = _run_poll(script, [_ok("old", 7)], plan)
+
+    assert result["counts"] == [0, 1, 1, 1, 1]
+    assert result["delivered"] == []
+
+
 def test_an_unanswered_ask_is_not_stacked_and_failures_retry_next_turn() -> None:
     """답을 기다리는 동안은 다시 묻지 않는다. 닿지 못함은 다음 차례에 다시 묻는다."""
     script = _gate_script()
