@@ -199,7 +199,7 @@ def reject_unmapped_cs_codes(core: pd.DataFrame) -> None:
         + ", ".join(shown)
         + (f" 외 {rest:,}종" if rest > 0 else "")
         + f". 규칙에 있는 코드는 {', '.join(CS_PRODUCTION_CLASSES)} 입니다. 새 코드를 양산·ER 중 "
-        "어느 쪽으로 셀지 정해 사외에 알려 주세요 — 규칙에 더해야 등록할 수 있습니다."
+        "어느 쪽으로 셀지 정해 정본 개발 에이전트에 알려 주세요 — 규칙에 더해야 등록할 수 있습니다."
     )
 
 
