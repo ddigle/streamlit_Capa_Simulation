@@ -466,6 +466,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `HIDDEN_TOOLS_PREFIX` + `app.py` 가 보내는 `TOOLBAR_STYLE` 한 벌 — 줄 통째) · `chart_config`(그림 저장 · 표로 보기 끄기). 화면 본문의 거절은
     `page_failure_card.run_core_page` 가 받는다(다시 그리기 한 번 — 누름 없이 같은 거절이 또 오면 알림을 낸 채 멈춤). 시험
     `tests/test_grade_ui_core.py` · 도우미 `tests/grade_support.py`.
+  - `components/edit_file_tail.py` — 저장하지 않은 기준 정보 · 생산 계획 고침이 있는 동안(`scenario_activation.has_unsaved_scenario_changes()`)
+    계산 화면이 그리는 내려받기 파일 이름 끝에 붙이는 꼬리 `_unsaved`(공정 Capa 상세 UPEH 가정 꼬리와 같은 꼴 — 2026-11-17 정한 것). 모든 등급
+    같다. 공용 표 부품(`table_toolbar` · `shortening_board` 등)은 켜기 인자로만 받아 설비 화면 파일에는 붙지 않는다. Streamlit 표 도구 막대가 짓는
+    파일 이름은 바꿀 수 없다.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다. 다만 운영 서버의 Admin Area 는 개발자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
