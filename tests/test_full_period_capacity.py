@@ -108,8 +108,9 @@ def test_slicing_on_every_call_matches_the_old_sliced_cell(
     """자른 결과는 칸에 두지 않고 부를 때마다 전체 기간 칸에서 자른다. 옛 길 — 같은 몸통을 조회기간
     키의 `st.cache_data` 칸에 둔 것 — 의 첫 호출(계산한 객체)·적중 호출(피클 왕복)과 프레임 · dtype
     · 열 · 색인 · attrs 가 같아야 한다. 새 길의 두 번째 호출은 전체 칸에 적중해 다시 계산하지 않고,
-    받은 프레임을 고쳐도 다음 호출에 닿지 않는다(부를 때마다 새 사본). 제외 목록이 기간을 가로지르는
-    표(`_with_exclusions`)로도 본다 — 달 칸이 있는 attrs 는 같이 잘리고 가정 건수는 전체 값이다."""
+    받은 프레임에 제자리로 써도 다음 호출에 닿지 않는다(부를 때마다 새 사본). 제외 목록이 기간을
+    가로지르는 표(`_with_exclusions`)로도 본다 — 달 칸이 있는 attrs 는 같이 잘리고 가정 건수는 전체
+    값이다."""
     if noisy:
         tables = _with_exclusions(tables)
     months = _months(tables)
@@ -148,11 +149,14 @@ def test_slicing_on_every_call_matches_the_old_sliced_cell(
         assert len(excluded) == sum(start <= month <= end for month in excluded_months)
         assert new_first[0].attrs[CAPACITY_ASSUMPTIONS_ATTR] == {"RQ_WF_RATIO": 1}
 
-    new_hit[0]["대당 Capa"] = -1.0
+    # 같은 dtype 의 제자리 쓰기 — 열 대입(`df[col] = …`)은 블록만 갈아 끼워 배열을 함께 써도 칸에
+    # 닿지 않으므로 그것으로는 함께 쓰는지 가르지 못한다.
+    expected = new_hit[0].copy(deep=True)
+    new_hit[0].iloc[0, list(new_hit[0].columns).index("대당 Capa")] = -1.0
     again = sc.get_scenario_capacity_and_demand(
         new_key, _scenario_tables=tables, _reference_tables=tables
     )
-    _assert_same_frame(again[0], new_first[0])
+    _assert_same_frame(again[0], expected)
 
 
 def test_a_write_to_a_locked_session_table_is_raised_and_never_cached(
