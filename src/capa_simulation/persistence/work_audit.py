@@ -239,6 +239,21 @@ def rows_of(argument: str, *, claimed: str | None = None) -> Describe:
     return describe
 
 
+def shortening_filter(field: str, rows_argument: str | None = None) -> Describe:
+    """필요 단축 공용 기본 조회 조건 저장 — 바꾼 칸(기간 · 공정)과 공정 수만(값 없이)."""
+
+    def describe(args: Mapping[str, Any], result: Any) -> WorkNote:
+        rows = None if rows_argument is None else _rows(args.get(rows_argument))
+        return WorkNote(det={"field": field, "rows": rows})
+
+    return describe
+
+
+def legacy_trace_ack(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """설비 「옛 배포 흔적」 이어 쓰기 — 확인한 흔적 수만."""
+    return WorkNote(det={"count": args.get("expected_trace_count")})
+
+
 def baseline_save(args: Mapping[str, Any], result: Any) -> WorkNote:
     return WorkNote(tgt=_target("baseline", _get(result, "baseline_id"), _get(result, "name")))
 

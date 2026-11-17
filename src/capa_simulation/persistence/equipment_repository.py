@@ -31,6 +31,7 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.audit.work import audited
+from capa_simulation.auth import grades
 from capa_simulation.persistence import equipment_scenario_store as scenario_store
 from capa_simulation.persistence import sync_state, work_audit
 from capa_simulation.persistence._sql_helpers import (
@@ -80,6 +81,7 @@ from capa_simulation.services.equipment_contract import (
     QUAL_DATE_COLUMN,
     QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    SCENARIO_SCHEDULE_COLUMNS,
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
@@ -1135,7 +1137,7 @@ class DuckDBEquipmentRepository:
             request, mode="changed", official_target=False, check_common=True, force_publish=False
         ).result
 
-    @audited("data_equipment_save", work_audit.equipment_wrapper)
+    @audited("data_equipment_save", work_audit.equipment_wrapper, action="equipment.save")
     def save_snapshot(
         self,
         baseline: pd.DataFrame,
@@ -1240,6 +1242,10 @@ class DuckDBEquipmentRepository:
         — Q1). 가정 배치만 바꾼 저장은 그 시나리오 최신의 배치 지문이 출발과 같으면 낡아도 받는다
         (배치 빨리 감기), 가정 리비전을 쓴 저장은 커밋 전에 그 쌍을 다시 읽어 확인한다.
         """
+        # 등급 벽 ⓐ(요청 꼴) — 배치 · 층 값 · 이름 바꿈을 실은 저장과 래퍼(늘 두 쪽을 씀)는 비가동만
+        # 바꾼 저장일 수 없다. 검증보다 먼저 봐야 배치 오류 글이 아니라 등급 거절로 멈춘다.
+        if mode != "changed" or _layout_or_names_requested(request):
+            grades.require("equipment.save")
         canvases: dict[FloorKey, CanvasSize] = {}
         for (building, floor), size in (request.floor_canvases or {}).items():
             _require_floor_key(building, floor)
@@ -1415,6 +1421,12 @@ class DuckDBEquipmentRepository:
             schedule_changed = _schedule_digest(edit.schedule, edit.downtime) != (
                 _schedule_digest(base.schedule, base.downtime)
             )
+            # 등급 벽 ⓑ(내용) — 쓰기 잠금 안에서 다시 읽은 출발점과 견준다. 실무자는 비가동 일정만
+            # 바꾼 저장만 한다 — 공통 대장 · 일정 일곱 칸 · 가정 배치 가운데 하나라도 다르면 통째
+            # 거절(아무것도 쓰지 않는다). 옛 꼴 공통 옮겨 쓰기(`forced_common`)는 값이 그대로라 막지
+            # 않는다 — `write_common` 이 아니라 `common_changed` 로 본다.
+            if common_changed or layout_changed or not _schedule_cells_kept(edit.schedule, base):
+                grades.require("equipment.save")
             forced_common = (
                 mode == "changed"
                 and schedule_changed
@@ -2078,6 +2090,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return _legacy_trace_review(connection)
 
+    @audited("data_legacy_trace_ack", work_audit.legacy_trace_ack)
     def acknowledge_legacy_trace(self, *, expected_trace_count: int, note: str | None) -> int:
         """옛 배포 흔적을 확인하고 이어 쓴다 — 이관 경계 행 하나를 덧붙이고 그 번호를 돌려준다.
 
@@ -2503,6 +2516,7 @@ class DuckDBEquipmentRepository:
             outcome.wrote = True
         return version
 
+    @audited("data_shortening_filter_save", work_audit.shortening_filter("months"))
     def save_shortening_filter_months(
         self, start_month: object, end_month: object, *, source: str
     ) -> bool:
@@ -2522,6 +2536,7 @@ class DuckDBEquipmentRepository:
             outcome.wrote = True
         return True
 
+    @audited("data_shortening_filter_save", work_audit.shortening_filter("processes", "selected"))
     def save_shortening_filter_processes(
         self, selected: Sequence[object], *, visible: Sequence[str], source: str
     ) -> bool:
@@ -3856,6 +3871,37 @@ def _schedule_digest(schedule: pd.DataFrame, downtime: pd.DataFrame) -> tuple[st
     )
     events = downtime.reindex(columns=list(SCHEDULE_DOWNTIME_COLUMNS)).reset_index(drop=True)
     return _content_hash(rows), _content_hash(events)
+
+
+def _layout_or_names_requested(request: EquipmentSaveRequest) -> bool:
+    """저장 요청이 배치 · 층 값 · 이름 바꿈을 싣는가(등급 벽 ⓐ). 층마다 본 저장값
+    (`floor_layout_bases`)은 쓰는 값이 아니라 대조 재료라 보지 않는다."""
+    return bool(
+        request.floor_canvases
+        or request.floor_marks
+        or request.floor_group_labels
+        or request.floor_stacks
+        or request.renames
+        or request.group_renames
+        or request.expected_layout_role is not None
+    )
+
+
+def _schedule_cells_kept(schedule: pd.DataFrame, base: _BaseState) -> bool:
+    """편집본 일정 행의 일곱 칸이 출발점 그대로인가(비가동은 보지 않는다 — 등급 벽 ⓑ).
+
+    출발 일정에 행이 있던 호기는 출발 일정과 내용 해시가 같아야 한다. 그 밖의 행은 비가동이 들어
+    끌려 온 일정 없는 호기(`select_schedule_rows`)라 일곱 칸이 모두 비어야 한다 — 출발 일정이 없던
+    호기는 합친 스냅샷에서도 일곱 칸이 비어 있다.
+    """
+    keys = schedule[UNIT_KEY_COLUMN].astype("string")
+    started = keys.isin(list(base.scheduled_keys)).fillna(False).to_numpy(dtype=bool)
+    pulled = schedule.loc[~started, list(SCENARIO_SCHEDULE_COLUMNS)]
+    if bool(pulled.notna().to_numpy().any()):
+        return False
+    empty = base.downtime.iloc[0:0]
+    kept = schedule.loc[started].reset_index(drop=True)
+    return _schedule_digest(kept, empty)[0] == _schedule_digest(base.schedule, empty)[0]
 
 
 def _plan_propagations(
