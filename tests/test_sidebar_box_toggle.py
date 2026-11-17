@@ -496,7 +496,8 @@ def test_the_rerun_targets_are_fragments_with_their_keys(
         (
             SOURCE_ROOT / "components" / "home_preference.py",
             "_render_key_process_editor",
-            ["st.fragment", "keeps_app_run_open"],
+            # 등급 거절 받는 자리(`grade_hooks.in_fragment`)는 프래그먼트 바로 안쪽이다.
+            ["st.fragment", "in_fragment", "keeps_app_run_open"],
         ),
         (
             SOURCE_ROOT / "components" / "scenario_status.py",

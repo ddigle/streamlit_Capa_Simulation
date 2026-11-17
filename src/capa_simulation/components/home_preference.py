@@ -21,8 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import html
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from math import isclose
@@ -611,15 +610,6 @@ def _settings_read_only() -> bool:
     return not viewer_can("home.settings")
 
 
-@contextmanager
-def _settings_form(key: str, *, read_only: bool) -> Iterator[DeltaGenerator]:
-    """편집 상자의 폼 — 값만 보이는 회차는 제출 단추가 없어 폼 대신 칸 하나다(Streamlit 폼은 제출
-    단추가 있어야 한다)."""
-    box = st.container() if read_only else st.form(key)
-    with box:
-        yield box
-
-
 def render_home_preference(
     *,
     tabs: Mapping[str, OpenTab],
@@ -1121,7 +1111,7 @@ def render_threshold_editor(
         )
         stored = _thresholds_by_month(threshold_profile)
         outside = sorted(set(stored) - set(months))
-        with _settings_form("home_threshold_form", read_only=read_only):
+        with st.container() if read_only else st.form("home_threshold_form"):
             submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**다 — 선행 B/O 편집기와 같은 결이다.
             if not read_only:
@@ -1760,7 +1750,7 @@ def _render_monthly_amount_editor(
             columns=[DIMENSION_COLUMN, *month_labels],
         )
         read_only = _settings_read_only()
-        with _settings_form(editor.form_key, read_only=read_only):
+        with st.container() if read_only else st.form(editor.form_key):
             submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다. 버튼이
             # 왼쪽이고 오른쪽 끝은 표 도구 막대 자리로 비운다(`save_row_key` — 서식은 제목 줄 캡션에
@@ -1892,7 +1882,7 @@ def _render_summary_note_editor(
             empty="아직 Capa 요약을 올린 적이 없습니다",
         )
         read_only = _settings_read_only()
-        with _settings_form("home_summary_note_form", read_only=read_only):
+        with st.container() if read_only else st.form("home_summary_note_form"):
             submitted = not read_only and st.form_submit_button(
                 "Capa 요약 저장",
                 icon=":material/save:",
@@ -2012,7 +2002,7 @@ def _render_top5_band_editor(
             ),
         )
         read_only = _settings_read_only()
-        with _settings_form("home_top5_band_form", read_only=read_only):
+        with st.container() if read_only else st.form("home_top5_band_form"):
             # 작업 줄(저장 · 하한 · 상한)은 한 줄이다 — 주요공정 프리셋 줄(저장 · 이름)과 같은 꼴로
             # 단추가 왼쪽이다(2026-11-09 사용자 검수 g18 「여백 … 최적화」 — 전에는 단추만 한 줄을
             # 썼다). **두 칸 key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤
@@ -2853,7 +2843,7 @@ def _render_execution_editor(
             st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
             return
         table = _execution_editor_frame(execution_profile)
-        with _settings_form("home_execution_capacity_form", read_only=read_only):
+        with st.container() if read_only else st.form("home_execution_capacity_form"):
             submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로
             # 비운다(`EXECUTION_SAVE_ROW_KEY` — 서식은 제목 줄 캡션에 실었다).

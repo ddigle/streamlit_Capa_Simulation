@@ -360,6 +360,7 @@ def test_a_viewers_list_is_read_only_and_drops_rename_ops(
     app.run()
     _clean(app)
     assert last(calls, grid.TABLE_KEY).get("readonly") is True
+    assert last(calls, grid.REVISIONS_KEY).get("readonly") is True, "리비전 이름도 값만"
     row_id = last(calls, grid.TABLE_KEY)["rows"][0]["id"]
 
     ListBrowser(app, calls).rename_scenario(row_id, "DEMO 바꾼 이름")
@@ -467,17 +468,24 @@ def test_the_sidebar_save_popup_refuses_a_press_after_the_grade_drops(
 
 
 HOME_SETTINGS_SCRIPT = """
+from pathlib import Path
+
+import pandas as pd
+
+import capa_simulation.settings as settings
+
 from capa_simulation.components import home_settings
-from capa_simulation.components.home_preference import (
-    _render_comparison_picker,
-    render_threshold_editor,
-)
-from capa_simulation.components.home_main_cases import render_main_case_picker
+from capa_simulation.components.home_preference import render_home_preference
 from capa_simulation.components.past_data_management import render_past_data_management
-from capa_simulation.home_state import HOME_CASES_TAB, HOME_THRESHOLD_TAB
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.persistence.cache import (
+    load_global_advance_load,
+    load_global_advance_shipment,
+    load_global_execution_capacity,
     load_global_past_data,
     load_global_securement_threshold,
+    load_global_summary_note,
+    load_global_top5_band,
 )
 from capa_simulation.services.month_columns import month_label
 
@@ -486,24 +494,55 @@ months = [202601, 202602, 202603]
 
 
 def preference(tabs):
-    with tabs[HOME_CASES_TAB]:
-        _render_comparison_picker(database)
-        render_main_case_picker(database)
-    with tabs[HOME_THRESHOLD_TAB]:
-        render_threshold_editor(
-            months=months,
-            month_labels=[month_label(month) for month in months],
-            threshold_profile=load_global_securement_threshold(database),
-            database_path=database,
-        )
+    render_home_preference(
+        tabs=tabs,
+        months=months,
+        month_labels=[month_label(month) for month in months],
+        threshold_profile=load_global_securement_threshold(database),
+        advance_profile=load_global_advance_load(database),
+        advance_shipment_profile=load_global_advance_shipment(database),
+        execution_profile=load_global_execution_capacity(database),
+        top5_band_profile=load_global_top5_band(database),
+        summary_profile=load_global_summary_note(database),
+        process_options=["DEMO-P1", "DEMO-P2"],
+        process_labels=get_process_labels(),
+        unmatched_execution=pd.DataFrame(),
+        clamped_execution=pd.DataFrame(),
+        database_path=database,
+    )
 
 
 def past():
     render_past_data_management(database, load_global_past_data(database))
 
 
-home_settings._settings_dialog(preference, past)
+original_database_path = settings.DUCKDB_PATH
+settings.DUCKDB_PATH = Path(database)
+try:
+    home_settings._settings_dialog(preference, past)
+finally:
+    settings.DUCKDB_PATH = original_database_path
 """
+# 「HOME 설정」 창의 저장 단추 — 아래 등급(관리자 미만)에게는 하나도 서지 않는다.
+HOME_SAVE_LABELS = frozenset(
+    {
+        "판정 기준 저장",
+        "선행 B/O 저장",
+        "선행 입고 저장",
+        "확보율 보정 저장",
+        "Capa 요약 저장",
+        "확보율 구간 저장",
+        "프리셋 저장",
+        "과거 구간 저장",
+    }
+)
+
+
+def _seed_key_process(database: Path) -> None:
+    with as_system():
+        DuckDBScenarioRepository(database).replace_global_key_process_presets(
+            [("DEMO 핵심", ["DEMO-P1", "DEMO-P2"])], source="DEMO"
+        )
 
 
 def _home_settings(database: Path) -> AppTest:
@@ -515,6 +554,7 @@ def test_home_settings_are_values_only_below_the_manager(
     databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, grade: str
 ) -> None:
     database, _ = databases
+    _seed_key_process(database)
     as_grade(monkeypatch, grade)
     with judge_spy() as seen:
         app = _home_settings(database).run()
@@ -523,12 +563,40 @@ def test_home_settings_are_values_only_below_the_manager(
     editable = grades.at_least(grade, grades.MANAGER)
     assert not [entry for entry in seen if entry[1] == grade and not editable], seen
     labels = _buttons(app)
-    assert ("판정 기준 저장" in labels) is editable
-    assert ("과거 구간 저장" in labels) is editable
+    assert (HOME_SAVE_LABELS <= labels) is editable, HOME_SAVE_LABELS - labels
+    assert not (HOME_SAVE_LABELS & labels) or editable, HOME_SAVE_LABELS & labels
+    assert ("기본으로" in labels) is editable, "주요공정 프리셋 기본으로 · 삭제"
+    assert all(area.disabled is not editable for area in app.text_area), "Capa 요약 칸"
+    assert any("DEMO 핵심" in str(item.value) for item in app.markdown) or editable
     assert ("변경 메모" in {widget.label for widget in app.text_input}) is editable
     assert all(widget.disabled is not editable for widget in app.number_input), "값만은 잠긴 칸"
     pickers = {"비교 시나리오", "시나리오"}
     assert bool(pickers & {box.label for box in app.selectbox}) is editable, "고르기 없음"
+
+
+def test_home_settings_redrawn_from_manager_to_viewer_in_one_session_stay_whole(
+    databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 창이 관리자 화면에서 열람 화면으로 다시 그려진다(「이 등급으로 보기」 꼴) — 같은 key 의
+    편집표 · 칸이 잠기고(줄 더하기 없음) 저장 단추가 걷혀도 오류 없이 선다. 다시 관리자로 돌아와도
+    그렇다."""
+    database, _ = databases
+    _seed_key_process(database)
+    as_grade(monkeypatch, grades.MANAGER)
+    app = _home_settings(database).run()
+    _clean(app)
+    assert HOME_SAVE_LABELS <= _buttons(app)
+
+    _hold_screen(monkeypatch, grades.VIEWER)
+    app.run()
+    _clean(app)
+    assert not (HOME_SAVE_LABELS & _buttons(app))
+    assert all(widget.disabled for widget in app.number_input)
+
+    monkeypatch.setattr(sso_identity, "screen_grade", lambda: grades.MANAGER)
+    app.run()
+    _clean(app)
+    assert HOME_SAVE_LABELS <= _buttons(app)
 
 
 @pytest.mark.page_failure_card
@@ -643,6 +711,28 @@ def test_a_viewer_draws_every_calc_page_without_a_refusal(
 
     _clean(app)
     assert sum(1 for _ in app.main) > 5, "화면이 실제로 섰다"
+    assert not [entry for entry in seen if entry[1] == grades.VIEWER], seen
+
+
+@pytest.mark.parametrize(
+    ("page", "expected"),
+    [
+        ("app_pages/reference_data.py", {"변경사항 적용"}),
+        ("app_pages/load_conversion.py", {"변경사항 적용", "Excel 붙여넣기", "가상 제품 등록"}),
+    ],
+)
+def test_a_viewer_still_edits_and_calculates_on_their_own_screen(
+    databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, page: str, expected: set[str]
+) -> None:
+    """「그대로」 — 기준 정보 · 생산 계획을 고쳐 내 화면에서 계산해 보는 단추는 열람에게도 선다(저장
+    안 함 — 「신규 리비전 저장」 을 누르기 전에는 남에게 가지 않는다)."""
+    database, equipment = databases
+    as_grade(monkeypatch, grades.VIEWER)
+    with judge_spy() as seen:
+        app = _graded(_page(page, database, equipment)).run()
+
+    _clean(app)
+    assert expected <= _buttons(app), expected - _buttons(app)
     assert not [entry for entry in seen if entry[1] == grades.VIEWER], seen
 
 
