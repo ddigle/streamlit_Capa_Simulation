@@ -40,6 +40,11 @@
 //   표지가 없으면 이 화면은 공정 칸을 그리지 않은 것이라 흐린 칩이다. 지금 탭 표지는 문서 사건(`PROCESS_EVENT`)으로 탭 줄에 알린다.
 // - 툴바 실제 폭을 재어 `--capa-toolbar-width`(px)와 `data-capa-toolbar` 를 문서 뿌리에 단다 — 머리 띠 두 줄 · 진행 막대
 //   자리 규칙이 그 값으로 오른쪽을 비운다(`app_header`). 단추가 늘거나 줄어도 다시 잴 필요가 없다.
+// - 공지(2026-11-17 공지 보드 답): data 의 `notice`(파이썬 `notice_board.payload` — 프로세스 표지 `mark` · 판 `rev` · 공지 · 상태 표지
+//   `note`)를 받아 Guide 바로 왼쪽에 「공지」 칩(닫기 없음 — 누르면 작은 판)을 세우거나 걷고, `note` 를 상태 알림 길(`handleState`)로
+//   넣는다. 물음 스크립트는 같은 꼴을 `window.__capaAlerts.notice(payload)` 로 넣는다 — 표지가 같으면 판이 오른 것만 받아(`noticeNewer`)
+//   늦게 닿은 옛 값이 새 값을 되돌리지 않는다. 상태 표지는 문서 표지로 오지 않는다(프래그먼트 회차의 옛 표지가 물음이 넣은 값을 되돌린다).
+//   입장 화면이 덮는 동안에는 공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버린다), 끝 시각이 되면 이 문서가 칩을 걷고 해소한다.
 // - 화면 탭 줄 JS(`page_tabs.js`)는 같은 문서의 `window.__capaAlerts.raise(...)` 로 알린다(알림 칸이 아직 서지 않았으면
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
@@ -79,6 +84,13 @@ const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.0
 // 「정본 아님」 표지 아이콘 — 머티리얼 cloud_off(24 단위).
 const CLOUD_OFF_PATH =
   'M19.8 22.6 17.15 20H6.5q-2.3 0-3.9-1.6T1 14.5q0-1.925 1.188-3.425T5.25 9.15q.075-.2.15-.388t.15-.412L1.4 4.2l1.4-1.4 18.4 18.4zM6.5 18h8.65L7.1 9.95q-.05.275-.075.525T7 11h-.5q-1.45 0-2.475 1.025T3 14.5t1.025 2.475T6.5 18m15.1.75-1.45-1.4q.425-.35.638-.812T21 15.5q0-1.05-.725-1.775T18.5 13H17v-2q0-2.075-1.463-3.537T12 6q-.675 0-1.3.163t-1.2.512L8.05 5.225q.875-.6 1.863-.912T12 4q2.925 0 4.963 2.038T19 11q1.725.2 2.863 1.488T23 15.5q0 .975-.375 1.813T21.6 18.75M14.875 12.05'
+// 공지 칩 아이콘 — 머티리얼 campaign(24 단위, 확성기).
+const CAMPAIGN_PATH =
+  'M18 11v2h4v-2h-4zm-2 6.61c.96.71 2.21 1.65 3.2 2.39.4-.53.8-1.07 1.2-1.6-.99-.74-2.24-1.68-3.2-2.4-.4.54-.8 1.08-1.2 1.61zM20.4 5.6c-.4-.53-.8-1.07-1.2-1.6-.99.74-2.24 1.68-3.2 2.4.4.53.8 1.07 1.2 1.6.96-.72 2.21-1.65 3.2-2.4zM4 9c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h1v4h2v-4h1l5 3V6L8 9H4zm11.5 3c0-1.33-.58-2.53-1.5-3.35v6.69c.92-.81 1.5-2.01 1.5-3.34z'
+// 입장 화면 · Summary 덮개 호스트(`intro_overlay_assets/intro.js` 의 `HOST_ID`) — 덮는 동안 공지 알림창을 미룬다.
+const INTRO_HOST_ID = 'capa-intro-host'
+// 덮개가 걷혔는지 다시 보는 간격 — 미룬 공지가 있을 때만 돈다.
+const INTRO_WAIT_MS = 400
 const FLASK_PATH =
   'M19.8 18.4 14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'
@@ -454,6 +466,36 @@ function panelTabExit(count, at, shift) {
 }
 // </alerts-focus>
 
+// <alerts-notice>
+// 공지 끝 시각 타이머의 끝 — 공지는 길어도 24시간이다.
+const NOTICE_TIMER_LIMIT_MS = 25 * 3600000
+// 공지 꼴(`notice_board.payload`)을 받아들일까 — 처음이거나 프로세스 표지(`mark`)가 다르면(재시작) 받고, 같으면 판(`rev`)이 오른 것만
+// 받는다. 판이 같거나 낮은 것은 이미 받은 값이거나 늦게 닿은 옛 값이다(data 와 물음 응답이 엇갈려 닿는다).
+function noticeNewer(held, payload) {
+  if (!payload || typeof payload !== 'object' || typeof payload.mark !== 'string') return false
+  if (!held || held.mark !== payload.mark) return true
+  return Number(payload.rev) > Number(held.rev)
+}
+// 공지 칸의 꼴을 본다 — 글 · id · 시각 글이 있고 끝 시각이 수일 때만, 아니면 null(칩을 세우지 않는다).
+function noticeOf(value) {
+  if (!value || typeof value !== 'object') return null
+  const { id, text, sender, sent, until } = value
+  const untilMs = Number(value.until_ms)
+  if (typeof id !== 'string' || !id || typeof text !== 'string' || !Number.isFinite(untilMs)) return null
+  return { id, text, sender: String(sender || ''), sent: String(sent || ''), until: String(until || ''), untilMs }
+}
+// 입장 화면 · Summary 덮개가 지금 화면을 덮나 — 호스트가 문서에 있고 감추지 않았다.
+function introCovering(host) {
+  if (!host || host.isConnected === false) return false
+  return !(host.style && host.style.display === 'none')
+}
+// 공지 끝 시각까지 기다릴 시간(ms) — 지났으면 0, 길면 `NOTICE_TIMER_LIMIT_MS` 에서 끊어 다시 잰다.
+function noticeEndWait(notice, now) {
+  if (!notice) return null
+  return Math.max(0, Math.min(notice.untilMs - now, NOTICE_TIMER_LIMIT_MS))
+}
+// </alerts-notice>
+
 // <alerts-storage>
 function storageGet(key, fallback) {
   try {
@@ -636,6 +678,12 @@ function createCenter(data) {
     resizedSlot: null,
     // 이 화면의 공정 회차 표지(`processLiveOf`) — 같은 화면 · 같은 판이면 다음 회차의 짐작보다 이긴다.
     procLive: null,
+    // 마지막으로 받은 공지 — {mark, rev, notice(`noticeOf`), note(상태 표지)}. data 와 물음이 같은 칸을 고친다.
+    notice: null,
+    noticeTimer: 0,
+    // 입장 화면이 덮는 동안 미룬 공지 알림창 — {key, note}.
+    noticeLater: null,
+    noticeWait: 0,
   }
   const now = Date.now()
   C.rows = pruneRows(storageGet(storage.log, []), now, limits.rows || 200, (limits.hours || 12) * 3600000)
@@ -661,13 +709,19 @@ function createCenter(data) {
   C.panel = buildAlarmPanel(C)
   C.changesPanel = buildChangesPanel(C)
   C.processPanel = buildProcessPanel(C)
-  shadow.append(C.panel, C.changesPanel, C.processPanel)
+  C.noticePanel = buildNoticePanel(C)
+  shadow.append(C.panel, C.changesPanel, C.processPanel, C.noticePanel)
   document.body.appendChild(host)
 
   // 탭 줄 JS 의 알림 길. 칸이 서기 전에 담긴 알림을 꺼낸다.
   window.__capaAlerts = {
     raise: (note) => raiseLocal(C, note),
     scan: () => scan(C),
+    // 물음 스크립트의 공지 입구 — 서버 data 와 같은 꼴 · 같은 길이다.
+    notice: (payload) => {
+      if (applyNotice(C, payload)) persist(C)
+      paintAll(C)
+    },
   }
   const queued = Array.isArray(window.__capaAlertQueue) ? window.__capaAlertQueue.splice(0) : []
   for (const note of queued) raiseLocal(C, note, false)
@@ -838,7 +892,8 @@ function resolveRow(C, rowId, now, why) {
   row.resolvedWhy = why
 }
 
-function handleState(C, note) {
+// `popup` 은 알림창을 세우는 길이다 — 공지는 입장 화면이 덮는 동안 미루는 길(`noticePopup`)을 준다.
+function handleState(C, note, popup = showPopup) {
   const now = Date.now()
   const key = stateKey(note)
   let changed = false
@@ -858,7 +913,7 @@ function handleState(C, note) {
     if (!row.cause) row.cause = verdict === 'new' ? text(C).cause_new || '' : text(C).cause_change || ''
     C.rows.unshift(row)
     C.states[key] = { code: String(note.code), fp: String(note.fp || ''), active: true, row: row.id }
-    showPopup(C, `state:${key}`, note, false)
+    popup(C, `state:${key}`, note, false)
     return true
   }
   if (verdict === 'resolved') {
@@ -876,6 +931,74 @@ function handleState(C, note) {
     }
   }
   return changed
+}
+
+// 공지 꼴 하나를 받는다(data · 물음 입구가 같이 부른다) — 받아들이면 칩 값을 갈고 상태 표지를 상태 길로 넣고 끝 시각 타이머를 다시
+// 건다. 상태 표(Alarm 줄)가 바뀌었으면 참.
+function applyNotice(C, payload) {
+  if (!noticeNewer(C.notice, payload)) return false
+  const note = payload.note && typeof payload.note === 'object' && payload.note.code ? payload.note : null
+  C.notice = { mark: payload.mark, rev: Number(payload.rev) || 0, notice: noticeOf(payload.notice), note }
+  const later = C.noticeLater
+  if (later && !(C.notice.notice && note && note.fp === later.note.fp)) {
+    C.noticeLater = null
+    clearTimeout(C.noticeWait)
+  }
+  const changed = note ? handleState(C, note, noticePopup) : false
+  scheduleNoticeEnd(C)
+  return changed
+}
+
+// 공지 알림창 — 입장 화면이 덮는 동안에는 미뤘다가 걷힌 뒤 띄운다(그 사이 거둬졌거나 바뀌었으면 버린다).
+function noticePopup(C, key, note) {
+  if (!introCovering(document.getElementById(INTRO_HOST_ID))) {
+    showPopup(C, key, note, false)
+    return
+  }
+  C.noticeLater = { key, note }
+  waitIntro(C)
+}
+
+function waitIntro(C) {
+  clearTimeout(C.noticeWait)
+  C.noticeWait = setTimeout(() => {
+    const later = C.noticeLater
+    if (!later) return
+    if (introCovering(document.getElementById(INTRO_HOST_ID))) {
+      waitIntro(C)
+      return
+    }
+    C.noticeLater = null
+    const entry = C.states[stateKey(later.note)]
+    if (entry && entry.active && entry.fp === String(later.note.fp || '')) showPopup(C, later.key, later.note, false)
+  }, INTRO_WAIT_MS)
+}
+
+// 끝 시각에 이 문서가 칩을 걷고 상태 줄을 해소한다 — 물음이 없는 서버(개발 · WebIDE)에서도 다음 회차를 기다리지 않는다. 서버가 끝남을
+// 알리면(판이 오른 해소 표지) 이미 닫힌 줄이라 아무 일도 없다.
+function scheduleNoticeEnd(C) {
+  clearTimeout(C.noticeTimer)
+  const held = C.notice && C.notice.notice
+  const wait = noticeEndWait(held, Date.now())
+  if (wait === null) return
+  C.noticeTimer = setTimeout(() => endNotice(C, held.id), wait)
+}
+
+function endNotice(C, id) {
+  const held = C.notice && C.notice.notice
+  if (!held || held.id !== id) return
+  if (held.untilMs > Date.now()) {
+    scheduleNoticeEnd(C)
+    return
+  }
+  const note = C.notice.note
+  C.notice = { ...C.notice, notice: null }
+  if (C.noticeLater) {
+    C.noticeLater = null
+    clearTimeout(C.noticeWait)
+  }
+  if (note && handleState(C, { code: note.code, kind: 'state', scope: note.scope, active: false })) persist(C)
+  paintAll(C)
 }
 
 function raiseLocal(C, note, paint = true) {
@@ -1205,6 +1328,23 @@ function ensureToolbar(C) {
     host.toggleAttribute('data-empty', true)
     C.canonHost = host
   }
+  if (!C.noticeHost || !C.noticeHost.isConnected) {
+    const host = toolbarHost(C, toolbar.notice, 'capa-alert-notice')
+    const shadow = host.shadowRoot
+    let chip = shadow.querySelector('.notice')
+    if (!chip) {
+      chip = el('button', 'notice')
+      chip.type = 'button'
+      chip.setAttribute('aria-haspopup', 'dialog')
+      chip.setAttribute('aria-expanded', 'false')
+      chip.append(icon(CAMPAIGN_PATH, 'horn'), el('span', 'word', t.notice || ''))
+      chip.addEventListener('click', () => togglePanel(C, 'notice'))
+      shadow.append(chip)
+    }
+    host.toggleAttribute('data-empty', true)
+    C.noticeHost = host
+    C.noticeChip = chip
+  }
   if (!C.sampleHost || !C.sampleHost.isConnected) {
     const host = toolbarHost(C, toolbar.sample, 'capa-alert-sample')
     const shadow = host.shadowRoot
@@ -1226,10 +1366,12 @@ function ensureToolbar(C) {
   palette(C, C.procHost)
   palette(C, C.sampleHost)
   palette(C, C.canonHost)
+  palette(C, C.noticeHost)
   placeHost(C, slot, C.procHost)
   placeHost(C, slot, C.sampleHost)
   placeHost(C, slot, C.canonHost)
   placeHost(C, slot, C.chipHost)
+  placeHost(C, slot, C.noticeHost)
   placeHost(C, slot, C.alarmHost)
   watchSlot(C, slot)
 }
@@ -1389,6 +1531,29 @@ function buildProcessPanel(C) {
   acts.append(pick, clear)
   panel.append(head, list, acts)
   C.processParts = { title, sum, list, pick }
+  return panel
+}
+
+// 공지 판 — 칩 바로 아래 칩 왼쪽 끝(공정 판과 같은 자리 규칙). 머리 「공지 · 관리자 · 17:40」 · 글(줄바꿈 그대로 — 평문) · 끝 줄
+// 「18:20 까지」 · 닫기. 브라우저 안에서만 열고 닫는다(파이썬 회차 없음).
+function buildNoticePanel(C) {
+  const t = text(C)
+  const panel = el('section', 'panel notice')
+  panel.hidden = true
+  panel.tabIndex = -1
+  panel.setAttribute('role', 'dialog')
+  panel.setAttribute('aria-label', t.notice || '')
+  const head = el('div', 'head')
+  const title = el('h2')
+  const close = el('button', 'x', '×')
+  close.type = 'button'
+  close.setAttribute('aria-label', t.close || '')
+  close.addEventListener('click', () => closePanel(C, true))
+  head.append(title, el('span', 'grow'), close)
+  const body = el('p', 'nbody')
+  const foot = el('p', 'nfoot')
+  panel.append(head, body, foot)
+  C.noticeParts = { title, body, foot }
   return panel
 }
 
@@ -1833,6 +1998,25 @@ function paintCanon(C) {
   if (C.canonHost) C.canonHost.toggleAttribute('data-empty', !C.data.canon)
 }
 
+// 공지 칩 · 판 — 서 있는 동안만 선다. 풍선 · 읽기 이름은 공지 글이고 판은 그 공지의 값이다. 걷히면 열린 판도 닫는다.
+function paintNotice(C) {
+  if (!C.noticeHost) return
+  const t = text(C)
+  const held = C.notice && C.notice.notice
+  C.noticeHost.toggleAttribute('data-empty', !held)
+  if (!held) {
+    if (C.open === 'notice') closePanel(C, false)
+    return
+  }
+  const word = t.notice || ''
+  if (C.noticeChip.title !== held.text) C.noticeChip.title = held.text
+  C.noticeChip.setAttribute('aria-label', `${word} — ${held.text}`)
+  const P = C.noticeParts
+  P.title.textContent = fill(t.notice_head, { sender: held.sender, sent: held.sent })
+  P.body.textContent = held.text
+  P.foot.textContent = fill(t.notice_until, { until: held.until })
+}
+
 // 「정본 아님」 표지를 누르면 Alarm 패널을 거르기 없이 열고 그 코드의 가장 새 줄로 굴려 잠깐 빛낸다 — 거르기가 남아 있으면 그 줄이 숨을
 // 수 있다.
 function openAlarmAt(C, code) {
@@ -1877,6 +2061,7 @@ function paintAll(C) {
   paintProcess(C)
   paintSample(C)
   paintCanon(C)
+  paintNotice(C)
   paintChanges(C)
   paintBadge(C)
   if (C.open === 'alarms') {
@@ -1905,17 +2090,22 @@ function markRead(C) {
 function panelOf(C, which) {
   if (which === 'alarms') return { panel: C.panel, button: C.alarmButton, host: C.alarmHost }
   if (which === 'process') return { panel: C.processPanel, button: C.procChip, host: C.procHost }
+  if (which === 'notice') return { panel: C.noticePanel, button: C.noticeChip, host: C.noticeHost }
   return { panel: C.changesPanel, button: C.chip, host: C.chipHost }
 }
 
-// 공정 판은 칩 바로 아래, 칩 왼쪽 끝에 맞춘다(창 오른쪽을 넘지 않게).
-function placeProcessPanel(C) {
-  if (!C.procHost) return
-  const box = C.procHost.getBoundingClientRect()
-  const width = C.processPanel.offsetWidth || 336
+// 공정 판 · 공지 판은 칩 바로 아래, 칩 왼쪽 끝에 맞춘다(창 오른쪽을 넘지 않게).
+function placeUnderChip(host, panel, fallback) {
+  if (!host) return
+  const box = host.getBoundingClientRect()
+  const width = panel.offsetWidth || fallback
   const left = Math.max(12, Math.min(box.left, window.innerWidth - width - 12))
-  C.processPanel.style.left = `${Math.round(left)}px`
-  C.processPanel.style.right = 'auto'
+  panel.style.left = `${Math.round(left)}px`
+  panel.style.right = 'auto'
+}
+
+function placeProcessPanel(C) {
+  placeUnderChip(C.procHost, C.processPanel, 336)
 }
 
 function togglePanel(C, which) {
@@ -1934,6 +2124,9 @@ function togglePanel(C, which) {
   } else if (which === 'process') {
     paintProcess(C)
     placeProcessPanel(C)
+  } else if (which === 'notice') {
+    paintNotice(C)
+    placeUnderChip(C.noticeHost, C.noticePanel, 352)
   } else {
     paintChanges(C)
   }
@@ -1989,6 +2182,7 @@ export default function (component) {
   const boot = data.boot || {}
   if (bootChanged((data.storage || {}).boot, boot.mark) && handle(C, boot.notice)) changed = true
   if (sessionLost(before, data, C.dialogAtCut) && handle(C, data.session.notice)) changed = true
+  if (data.notice && applyNotice(C, data.notice)) changed = true
   if (changed) persist(C)
   scan(C)
   return undefined

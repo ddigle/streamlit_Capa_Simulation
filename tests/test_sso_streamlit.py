@@ -36,6 +36,7 @@ from capa_simulation.components.theme_toggle import (
     CANON_MARK_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
+    NOTICE_CHIP_ID,
     PRINT_BUTTON_ID,
     PROCESS_CHIP_ID,
     SAMPLE_MARK_ID,
@@ -657,8 +658,8 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         for button_id in TOOLBAR_BUTTON_ORDER
         if f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
     }
-    # 알림 칸의 공정 칩 · 합성 샘플 · 「정본 아님」 표지도 감춘다 — 멈춤 화면에는 걸 공정도 볼
-    # 샘플도 저장할 것도 없다.
+    # 알림 칸의 공정 칩 · 합성 샘플 · 「정본 아님」 표지 · 공지 칩도 감춘다 — 멈춤 화면에는 걸
+    # 공정도 볼 샘플도 저장할 것도 없고, 공지는 앱 안의 사람에게 보낸 글이다.
     assert hidden == {
         GUIDE_BUTTON_ID,
         PRINT_BUTTON_ID,
@@ -666,6 +667,7 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
         CANON_MARK_ID,
+        NOTICE_CHIP_ID,
     }
     # 같은 iframe 이 세운 사이드바 앱 이름 라벨도 죽은 단추다 — 함께 감춘다(사용자 답 b6).
     assert f"#{SUMMARY_LABEL_ID}" in sso_identity._STOP_TOOLBAR_STYLE

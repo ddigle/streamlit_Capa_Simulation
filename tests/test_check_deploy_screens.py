@@ -1624,15 +1624,17 @@ def test_the_toolbar_labels_cover_the_declared_order() -> None:
     from capa_simulation.components.theme_toggle import (
         CANON_MARK_ID,
         CHANGES_CHIP_ID,
+        NOTICE_CHIP_ID,
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
         TOOLBAR_BUTTON_ORDER,
     )
 
     assert set(screens.TOOLBAR_LABELS) == set(TOOLBAR_BUTTON_ORDER)
-    # 공정 칩 · 합성 샘플 · 「정본 아님」 표지 · 변경 칩은 그럴 때만 서서 차례 항목이 세지 않는다.
+    # 공정 칩 · 합성 샘플 · 「정본 아님」 표지 · 변경 칩 · 공지 칩은 그럴 때만 서서 차례 항목이 세지
+    # 않는다.
     assert screens.TOOLBAR_OPTIONAL == frozenset(
-        {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID}
+        {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID, NOTICE_CHIP_ID}
     )
 
 

@@ -1,4 +1,4 @@
-# Purpose: 알림창 · Alarm · 변경 칩 · 공정 칩 · 합성 샘플 · 정본 아님 표지의 알림 칸을 세운다.
+# Purpose: 알림창 · Alarm · 변경 칩 · 공정 칩 · 합성 샘플 · 정본 아님 · 공지 칩의 알림 칸을 세운다.
 
 """알림 칸(2026-11-03 결정 보드 D1 ~ D5 — 검수표 home-06 · home-08 · home-09). 규칙은 `alerts` 모듈
 설명이다.
@@ -9,9 +9,10 @@
 
 - **그리는 자리는 본문 칸이 아니다.** JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자
   DOM)를 붙여 알림창 · 패널 · 시선 끌기 테두리를 그리고, 머리 툴바 슬롯에 공정 칩 · 합성 샘플 표지 ·
-  변경 칩 · Alarm 단추 호스트(`theme_toggle.PROCESS_CHIP_ID` · `SAMPLE_MARK_ID` · `CHANGES_CHIP_ID`
-  · `ALARM_BUTTON_ID`)를 세운다 — 컴포넌트 칸 안에 그리면 머리말 · 사이드바 · 대화상자의 쌓임 맥락
-  밑에 깔린다. 칸 자체는 `_HIDE_STYLE` 로 접어 본문에 틈을 남기지 않는다(입장 화면과 같은 꼴).
+  「정본 아님」 표지 · 변경 칩 · 공지 칩 · Alarm 단추 호스트(`theme_toggle.PROCESS_CHIP_ID` ·
+  `SAMPLE_MARK_ID` · `CANON_MARK_ID` · `CHANGES_CHIP_ID` · `NOTICE_CHIP_ID` · `ALARM_BUTTON_ID`)를
+  세운다 — 컴포넌트 칸 안에 그리면 머리말 · 사이드바 · 대화상자의 쌓임 맥락 밑에 깔린다. 칸 자체는
+  `_HIDE_STYLE` 로 접어 본문에 틈을 남기지 않는다(입장 화면과 같은 꼴).
 - **data 는 세션만 읽는다**(DB · 캐시 없음). 회차마다 드는 것은 이 세션의 변경 몇
   줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`), 이번 화면
   주소(`here`), 공용 공정 값과 이 화면에 대한 짐작(`process_field.header_chip`), 합성 샘플 표지를
@@ -43,6 +44,17 @@
   것은 다음 배포에 사라진다 — 알림창을 놓쳐도 보이게). 누르면 Alarm 패널을 거르기 없이 열고 그
   코드의 줄로 굴려 잠깐 빛낸다(파이썬 회차 없음). data 는 그 코드 글 하나(프로세스에 한 번 정한
   값)라 회차마다 같다.
+- **공지 칩과 공지 알림**(2026-11-17 공지 보드 답 q-look · q-until). 관리자가 보낸
+  공지(`notice_board` — 프로세스 메모리)가 서 있는 동안 모든 화면 · 모든 사용자에게 Guide 바로
+  왼쪽에 「공지」 칩이 선다(「정본 아님」 표지와 같은 호스트 꼴 · 닫기 없음). 누르면 작은 판(머리
+  「공지 · 관리자 · 17:40」 · 글 · 끝 줄 「18:20 까지」 · 닫기)이 브라우저 안에서만 열린다. data 의
+  `notice` 칸은 `notice_board.payload` 그대로다 — 프로세스 표지 · 판 · 공지 · 상태 알림 `GL-09`
+  표지(서 있으면 active 참, 없어도 거짓으로 늘 싣는다). **상태 표지를 이벤트 칸 표지로 내지 않는다**
+  — JS 는 회차 표지가 움직일 때마다(프래그먼트 회차 포함) 문서의 표지를 다시 훑는데 프래그먼트
+  회차는 이 칸을 다시 그리지 않아, 물음 경로(`window.__capaAlerts.notice`)가 넣은 새 값을 옛 표지가
+  거꾸로 되돌린다. data 와 물음 응답은 같은 꼴이고 JS 가 같은 길로 받으며(표지가 같으면 판이 오른
+  것만), 판은 공지가 바뀔 때만 오르므로 회차마다 data 가 같다는 약속이 그대로다. 입장 화면이 덮는
+  동안 공지 알림창은 미뤘다가 걷힌 뒤 띄운다.
 - **다시 붙은 탭은 앱 전체 회차를 한 번 돈다**(2026-11-07 2차 보드 R1 (가)). 프런트는 마지막 회차가
   앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는 프래그먼트의 요청을 회차
   없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. JS 가 앱 뿌리의 연결
@@ -146,6 +158,7 @@ from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CANON_MARK_ID,
     CHANGES_CHIP_ID,
+    NOTICE_CHIP_ID,
     PROCESS_CHIP_ID,
     SAMPLE_MARK_ID,
     TOOLBAR_BUTTON_ORDER,
@@ -154,6 +167,7 @@ from capa_simulation.components.theme_toggle import (
 from capa_simulation.design import tokens
 from capa_simulation.korea_time import KST
 from capa_simulation.navigation import PageSpec
+from capa_simulation.notice_board import NoticePayload
 
 _ASSETS = Path(__file__).with_name("alert_center_assets")
 # 컴포넌트 key — 접는 스타일이 `.st-key-<key>` 로 고른다. Components v2 key 에는 `__` 를 쓰지
@@ -297,6 +311,10 @@ TEXT: Final[dict[str, str]] = {
     # 「정본 아님」 표지(2026-11-14 보드 d13 (가)) — 풍선은 값 한 줄(그 까닭은 Alarm 줄 전문).
     "canon": "정본 아님",
     "canon_title": "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라짐 · 누르면 Alarm",
+    # 공지 칩 · 판(2026-11-17 공지 보드 답 q-look) — 판 머리 · 끝 줄. 글은 관리자가 쓴 평문이다.
+    "notice": "공지",
+    "notice_head": "공지 · {sender} · {sent}",
+    "notice_until": "{until} 까지",
 }
 
 
@@ -363,11 +381,14 @@ def alert_center_data(
     current: PageSpec | None = None,
     canon: str | None = None,
     official_known: bool = False,
+    notice: NoticePayload | None = None,
 ) -> dict[str, Any]:
     """알림 칸 data. 같은 변경 · 사건 · 공용 공정 값이면 회차마다 같은 값이다(시각 · 카운터를 싣지
     않는다). `current` 는 지금 화면의 선언이다 — 공정 칩의 짐작과 합성 샘플 표지가 읽는다. `canon`
     은 정본이 아닌 데이터로 뜬 서버의 알림 코드(「정본 아님」 표지 — 없으면 None)다.
-    `official_known` 이면 공식버전 없음 `SC-01` 의 해소 표지를 사건 뒤에 싣는다(모듈 설명)."""
+    `official_known` 이면 공식버전 없음 `SC-01` 의 해소 표지를 사건 뒤에 싣는다(모듈 설명).
+    `notice` 는 공지 꼴(`notice_board.payload` — 공지 칩 · 상태 알림 `GL-09`, 판은 공지가 바뀔
+    때만 오른다)이다."""
     mark = session_mark()
     return {
         "events": [
@@ -400,6 +421,7 @@ def alert_center_data(
             "process": PROCESS_CHIP_ID,
             "sample": SAMPLE_MARK_ID,
             "canon": CANON_MARK_ID,
+            "notice": NOTICE_CHIP_ID,
         },
         "marker": alerts.MARKER_ATTRIBUTE,
         # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
@@ -418,6 +440,7 @@ def alert_center_data(
         "process": process_field.header_chip(None if current is None else current.path),
         "sample": shows_sample_mark(current),
         "canon": canon or "",
+        "notice": notice,
     }
 
 
@@ -452,12 +475,14 @@ def render_alert_center(
     current: PageSpec | None = None,
     canon: str | None = None,
     official_known: bool = False,
+    notice: NoticePayload | None = None,
 ) -> None:
     """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
 
     콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
     스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None). `canon` 은 「정본 아님」
-    표지의 알림 코드, `official_known` 은 이 세션이 공식버전을 확인했는가다(`alert_center_data`).
+    표지의 알림 코드, `official_known` 은 이 세션이 공식버전을 확인했는가, `notice` 는 공지
+    꼴이다(`alert_center_data`).
     앞 회차의 「그 화면으로」 대상이 남았으면 페이지 앞에서 버린다(`expire_check_target` — 이 회차에
     누른 것은 남긴다).
     """
@@ -471,6 +496,7 @@ def render_alert_center(
             current=current,
             canon=canon,
             official_known=official_known,
+            notice=notice,
         ),
         width="stretch",
         on_reconnected_change=_reconnected,

@@ -61,6 +61,7 @@ textarea {
 .chip:focus-visible,
 .sample:focus-visible,
 .canon:focus-visible,
+.notice:focus-visible,
 .pbtn:focus-visible,
 .link:focus-visible,
 .x:focus-visible,
@@ -243,6 +244,33 @@ textarea {
   fill: currentColor;
 }
 
+/* 공지 칩(2026-11-17 공지 보드 답 q-look) — 관리자가 보낸 공지가 서 있는 동안 모든 화면에 선다. 「정본 아님」 표지와 같은 네모 꼴이고
+   색은 공지 알림의 단계(알림 — info) 색 · 확성기 아이콘. 닫기가 없고 누르면 작은 판이 열린다. 글이 「공지」 두 자라 좁은 창 규칙이 없다. */
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 8px 0 0;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--ac-info) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ac-info) 8%, var(--ac-surface));
+  color: var(--ac-info);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notice .horn {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
 /* 「정본 아님」 표지가 연 줄 — 잠깐 테두리 빛(움직임 없음). */
 .item.flash {
   box-shadow: inset 0 0 0 2px var(--ac-error);
@@ -369,6 +397,29 @@ textarea {
 /* 공정 판 — 칩 바로 아래 칩 왼쪽 끝에 선다(JS 가 `left` 를 단다). */
 .panel.process {
   width: min(21rem, calc(100vw - 1.5rem));
+}
+
+/* 공지 판 — 공정 판과 같은 자리 규칙. 글은 관리자가 쓴 평문이라 줄바꿈을 그대로 두고 긴 낱말은 꺾는다. */
+.panel.notice {
+  width: min(22rem, calc(100vw - 1.5rem));
+}
+
+.nbody {
+  max-height: min(40vh, 18rem);
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  overflow-y: auto;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.nfoot {
+  margin: 0;
+  padding: 0.45rem 0.85rem 0.65rem;
+  border-top: 1px solid var(--ac-border);
+  color: var(--ac-muted);
+  font-size: 0.8rem;
 }
 
 .plist {

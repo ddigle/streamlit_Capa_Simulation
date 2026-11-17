@@ -403,6 +403,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 자동 시도가 성공하거나 멈추거나 Admin Area 「BDQ 자동 로그인」 에서 다시 넣으면 걷힌다 — 성공
     # 없이 이어지면 `AD-23`(멈춤)으로 넘어간다.
     AlertSpec("AD-24", "action", "state", "BigDataQuery 자동 로그인이 서지 못함 — 다시 시도 대기"),
+    # 관리자가 보낸 공지(`notice_board` — 프로세스 메모리, 끝 시각까지 · 2026-11-17 공지 보드 답).
+    # 서 있는 동안이 조건이라 새로 들어온 탭에도 한 번 뜨고, 새 공지는 「내용 바뀜」 · 거둠 · 끝남 ·
+    # 재시작 뒤는 「해소」 다. 어느 화면의 일도 아니라 화면 없는 표지를 알림 칸 data 가 싣는다(물음
+    # 경로도 같은 표지 — `notice_board.payload`). 글은 부를 때 준다.
+    AlertSpec("GL-09", "info", "state", "공지"),
 )
 
 
@@ -597,19 +602,27 @@ def current_page() -> tuple[str, str]:
     return (page if isinstance(page, str) else ""), (href if isinstance(href, str) else "")
 
 
-def _base(code: str, level: Level | None, text: str | None, full: str | None) -> AlertNote:
+def _base(
+    code: str,
+    level: Level | None,
+    text: str | None,
+    full: str | None,
+    *,
+    pageless: bool = False,
+) -> AlertNote:
+    """표지 한 칸의 머리 — `pageless` 면 화면 · 주소를 싣지 않고 세션도 읽지 않는다."""
     entry = spec(code)
     long_text = full or text or entry.full or entry.short or entry.title
-    page, href = current_page()
-    return AlertNote(
+    note = AlertNote(
         code=code,
         kind=entry.kind,
         level=level or entry.level,
         short=short_text(text or entry.short or long_text),
         full=long_text,
-        page=page,
-        href=href,
     )
+    if not pageless:
+        note["page"], note["href"] = current_page()
+    return note
 
 
 def event_note(
@@ -822,10 +835,15 @@ def state_note(
     tables: Sequence[AlertTable | None] = (),
     goto: tuple[str, str] | None = None,
     target: GotoTarget | None = None,
+    pageless: bool = False,
 ) -> AlertNote:
     """상태 알림 표지 한 칸(그리지 않는다) — 인자는 `state` 와 같다. 이벤트 칸을 쓰지 않는
-    자리(「데이터 Error」 마크 칸의 숨은 표지 · 알림 칸 data)가 상태 알림을 실을 때 쓴다."""
-    note = _base(code, level, text, full)
+    자리(「데이터 Error」 마크 칸의 숨은 표지 · 알림 칸 data)가 상태 알림을 실을 때 쓴다.
+
+    `pageless` 는 어느 화면의 일도 아닌 알림이다 — 화면 · 주소를 싣지 않아 「그 화면으로」 가 서지
+    않고, 세션을 읽지 않아 Streamlit 실행 문맥 밖(문지기 쪽 물음 처리기)에서도 같은 값을 짓는다(공지
+    `GL-09` — `notice_board.payload`)."""
+    note = _base(code, level, text, full, pageless=pageless)
     if goto is not None:
         note["page"], note["href"] = goto
     note["kind"] = "state"

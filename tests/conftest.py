@@ -24,7 +24,7 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
-from capa_simulation import module_failures, module_registry, page_failures
+from capa_simulation import module_failures, module_registry, notice_board, page_failures
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
@@ -326,6 +326,15 @@ def _without_bdq_login_state() -> Iterator[None]:
     bdq_login.forget_state()
     yield
     bdq_login.forget_state()
+
+
+@pytest.fixture(autouse=True)
+def _without_notice() -> Iterator[None]:
+    """앞 시험이 보낸 공지(프로세스 메모리 — 알림 칸 data 의 공지 칸 · 머리 칩)를 다음 시험에 넘기지
+    않는다."""
+    notice_board.reset()
+    yield
+    notice_board.reset()
 
 
 @pytest.fixture(autouse=True)

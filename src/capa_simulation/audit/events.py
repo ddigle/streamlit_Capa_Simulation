@@ -102,6 +102,9 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("admin_sync_prune", "admin", "수동 정리", "deleted", "result"),
     _spec("admin_auto_update_settings", "admin", "자동 갱신 설정", "fields", *_VERSION),
     _spec("admin_auto_update_run", "admin", "자동 갱신 수동 실행", "run_id", "status"),
+    # 공지 — 대상은 공지 id(`tgt`), 상세는 결과 · 끝 시각뿐이고 글은 싣지 않는다.
+    _spec("admin_notice_send", "admin", "공지 보냄", "result", "until"),
+    _spec("admin_notice_withdraw", "admin", "공지 거둠", "result"),
     # --- 작업 ---------------------------------------------------------------------------------
     _spec("data_scenario_create", "data", "시나리오 만들기", "source", "rows"),
     _spec("data_scenario_rename", "data", "시나리오 이름 바꾸기"),
@@ -219,6 +222,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "tables": "표",
     "total": "합계",
     "trunc": "줄임",
+    "until": "끝 시각",
     "version_from": "판 전",
     "version_to": "판",
 }

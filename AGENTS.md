@@ -1114,9 +1114,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자
   회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
   `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
+  여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
-  기록 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드)을
-  읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
+  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은
+  둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
@@ -1920,6 +1922,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `admin_bdq_login_set`(결과 · 까닭 코드) · `admin_bdq_login_delete`(결과)에는 계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
+- `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
+  공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「관리자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
+  「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 기본값 `notice_board.default_until` 을 세션에 한 번 심는다) · 「보내기」.
+  「보내기」 콜백이 Admin Area 잠금 판정(`sso_identity.admin_area_locked`)을 다시 보고 글 · 끝을 검사해(빈 글 · 300자 넘음은 단추 아래 거부
+  한 줄 — `write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py` BESIDE) 연 순간의 값(글 · 끝 ISO · 그때 서 있던 공지
+  id — `PENDING_KEY`)을 쥐고 확인 팝업 「공지 보내기」(`admin_dialog` 한 칸의 값 `notice_send`)를 연다 — 값 한 줄 `confirm_line`(`끝 18:20` ·
+  다음 날이면 `끝 내일 09:00` · 서 있었으면 ` · 서 있는 공지 바뀜`, `st.caption`) · 「보내기」(primary · `:material/campaign:`) · 「취소」.
+  팝업의 「보내기」(`submit_notice`)는 다시 판정한 뒤 쥔 값 그대로 `notice_board.send(…, expected=…)` 한 번(`write_guard.save_once`) —
+  팝업이 열린 사이 남이 바꿨으면(`NoticeChanged` — 끝 시각으로 걷힘 포함) 보내지 않고 팝업을 닫아 바뀐 카드를 다시 보인다(글 상자는 그대로).
+  결과는 모두 `queue_flash`(성공 「공지 보냄 · 18:20 까지」 · 「공지 거둠」 은 알림창으로만, 막힘 · 바뀜은 `popup_only`) — 보낸 뒤 다음 앱 전체
+  회차가 글 상자 · 끝 시각을 비운다(`CLEAR_KEY` — 팝업 회차에서 바깥 위젯 칸을 건드리지 않는다). 「거두기」 콜백(`withdraw_notice`)도
+  다시 판정하고 그린 회차의 공지가 아직 서 있을 때만 걷는다(확인 없음). 감사 사건 `admin_notice_send`(결과 · 끝 시각) ·
+  `admin_notice_withdraw`(결과) — 대상은 공지 id(`tgt`), 글은 어느 칸에도 없다(감사 불변조건). 시험 `tests/test_notice_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드. 자리에는 누구나 읽는 머리 한 줄(「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 · 가드 자리 · 앞 동작이면 그 범위의 말)과 값 줄 「담당 <이름>」 만, 개발자용 정보(형식·첫 줄, import 꼴 안내, 끄는 법, 모듈 폴더 안 프레임만)는 접힌 「담당자용 진단」 안 코드 칸 + 복사 단추다(`DIAGNOSTIC_LABEL` — 복사 key 는 카드마다 새로, 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare). 코드 칸은 평문이라 앱이 짓는 안내 줄(끄는 법 · import 안내)에 코드 표지(백틱)를 쓰지 않고, 줄을 꺾는다(`wrap_lines` — 앱 안 멈춤 판의 접힌 진단 · Admin 「서버 시작 점검」 pip 출력 끝과 같은 꼴, 설계 규칙 UI-CON-04). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/page_failure_card.py` — 코어 화면 감싸기(`run_core_page` — `app.py` 가 모듈이 아닌 화면의 `navigation.run()` 을 이것으로 부른다, `module_runtime` 과 같은 예외 사다리: 제어 예외 · `KeyboardInterrupt` 는 다시 던지고 `FragmentHandledException` 은 적기만, 그 밖 `BaseException` 은 카드 — 처리한 실패는 둘 다 `st.stop()` 으로 끝내 `app.py` 의 멈춤 길(`finish_stopped`)을 탄다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 것으로 보고 오류 자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지운다). 처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 자리 카드 하나 — 앱 안 멈춤 판의 한 꼴(`stop_panel`, 보드 stop-panels): 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(`RETRY_KEY` — 회차 하나) → 「문의 <메일>」 → 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」(UTC 분은 실패를 적은 순간 `PageFailure.epoch` — `AD-22` 의 시각과 같은 순간) → 관리자 몫(`stop_panel.admin_fold_visible`)에만 접힌 「관리자용 진단」(맨 위 참고 줄 · 화면 · 첫 줄 · 이 저장소 안 프레임 · 복사 — C-DEP 에는 로그가 없다). 실패는 `page_failures` 에 적고 서버 로그에 참고 번호와 원문을 남긴다. 관리자 상태 알림 `AD-22`(`render_page_failure_alert` — `app.py` 가 토큰 알림 곁에서 부른다)는 프로세스 기록에서 낸다 — 오류가 난 탭이 관리자의 탭이 아니어서다. 이벤트 칸 수가 프로세스 동안 같도록 시작 점검 알림 `AD-01` 과 같은 판정(`start_check_alert_possible`)이 참인 서버만 회차마다 한 자리(실패가 없거나 관리자가 아니면 해소)이고 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는 운영이 아니고 통합인증이 꺼져 카드의 「관리자용 진단」 이 누구에게나 선다. 지문은 프로세스에서 난 (화면, 종류) 쌍 모두, 건수는 최근 줄 상한과 따로 센다. HOME 의 「그 화면으로」 주소는 빈 글자다. 시험은 `conftest` 가 감싸기를 걷어(`app.py` 를 도는 시험이 실패를 놓치지 않게) 보고, 감싸기 자체는 `@pytest.mark.page_failure_card`(`tests/test_page_failure_card.py`). 화면 확인(`check_deploy_screens` 의 예외 세기)도 이 카드 칸(`CARD_KEY`)을 예외로 센다. 운영 이미지는 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의 `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type` — 보드 d12 (가)).
@@ -2828,6 +2843,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/korea_time.py` — 화면 · 알림 · 복사 글에 그리는 시각의 시각대 한 곳(`KST` — +09:00 고정 ·
   `kst_clock(시각대 붙은 시각 · UNIX 초, 꼴)` — 시각대 없는 시각은 `ValueError`, 먼 시각은 넘침을 그대로 올림). 표준 라이브러리만
   쓴다 — `audit/read.KST` · `auth/page_frame.KST` 는 이 상수 그대로다. 규칙은 8장 「화면 시각은 KST」.
+- `src/capa_simulation/notice_board.py` — 관리자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
+  재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「관리자」) · `current` · `revision`
+  (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`) ·
+  `withdraw`(그 id 일 때만) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `ValueError`) · `default_until`(지금 + 1시간 10분 올림) ·
+  `until_from_time`(지난 시각이면 내일) · `payload`(프로세스 표지 `PROCESS_MARK` · 판 · 공지 칸 `NoticeView`(KST 시각 글 · 끝 epoch ms) ·
+  상태 표지 `GL-09` — `alerts.state_note(…, pageless=True)` 그대로, 없어도 active 거짓) · `reset`(시험 — `conftest._without_notice`). 끝 시각은
+  읽을 때 본다(배경 스레드 · `st.cache_resource` 없음). Streamlit 을 읽지 않고 등록부(`alerts`)는 `payload` 가 부를 때 들인다 — 문지기 쪽
+  물음 처리기가 부를 자리다. UI 없음. 시험 `tests/test_notice_board.py`.
 - `src/capa_simulation/page_failures.py` — 코어 화면 실패 기록(참고 번호 · 시각(KST) · 화면 이름 · 주소 · 예외 형식 이름 — 본문은 적지 않는다, 최근 20건과 따로 건수 · 난 (화면, 종류) 쌍, 재시작하면 빔). UI 없음. `page_failure_card` 가 적고 `AD-22` 가 읽는다.
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
@@ -4266,7 +4289,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
-  테두리 · 공정 판)와 머리 툴바 슬롯에 다섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
+  테두리 · 공정 판)와 머리 툴바 슬롯에 여섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · 공지 칩 · Alarm 단추)를 세우고 칸 자체는
   접는다(`_HIDE_STYLE`). 공정 칩은 공용 공정 값(`process_field.header_chip`)이 있을 때만, 합성 샘플 표지는 지금 화면이 원천 미연결
   화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬 서버(`SY-05` · `SY-01` —
   `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
@@ -7770,6 +7793,23 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   짧은 글은 누구나 읽는 꼴(「정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다」 · 「저장이 정본에 올라가지 않습니다」)이고
   환경변수 칸 · CI/CD · 설정 파일 지시는 관리자 몫 전문에만 싣는다(`components/admin_view.admin_notes_visible` — 운영 아닌 꺼진
   서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 관리자 몫에만 선다.
+- **공지**(2026-11-17 공지 보드 답 q-use · q-look · q-speed · q-until · decided — 설계 규칙 6-33). 관리자가 Admin Area 「공지」 탭에서
+  보낸 글 하나가 끝 시각까지 서고(`notice_board` — **프로세스 메모리**, 서버 한 대 전제 · 재시작하면 걷힘 · 서버가 둘 이상이면 서버마다
+  갈린다 — 사내 확인 거리), 그동안 모든 화면 · 모든 사용자에게 두 가지가 선다. ① 상태 알림 `GL-09`(알림 단계 · 화면 없음 · 이름 「공지」 —
+  짧은 글 `공지 · <글>`, 전문 글 + 「관리자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
+  새 공지는 「내용 바뀜」, 거둠 · 끝남 · 재시작 뒤는 「해소」 다(지문 재료는 공지 id, 범위는 늘 같은 값). ② 머리 「공지」 칩(Guide 바로
+  왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 좁은 창 규칙
+  없음 · 멈춤 화면은 감춤): 누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」 ·
+  닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
+  `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
+  회차마다 같다). **이 상태 표지는 이벤트 칸 표지(`alerts.state`)로 내지 않는다** — JS 는 프래그먼트 회차 끝에도 문서의 표지를 다시
+  훑는데 그 회차는 `app.py` 표지를 다시 그리지 않아, 물음 경로가 넣은 새 값을 옛 표지가 되돌린다(거둠 뒤 다시 열림 · 새 공지 뒤 닫힘).
+  JS 입구 `window.__capaAlerts.notice(payload)` 는 운영 서버의 10초 물음 스크립트(다음 갈래)가 부를 자리이고 data 와 같은 꼴 · 같은
+  함수(`applyNotice`)로 받는다 — 프로세스 표지가 같으면 판이 오른 것만(`noticeNewer` — 엇갈려 닿은 옛 값을 버림), 다르면(재시작) 늘.
+  입장 화면 · Summary 덮개(`#capa-intro-host`)가 덮는 동안에는 공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버림 — 줄 · 칩은
+  바로 선다), 끝 시각이 되면 그 문서가 칩을 걷고 줄을 해소한다(물음 없는 개발 · WebIDE 도 다음 회차를 기다리지 않음). 시험
+  `tests/test_notice_board.py` · `tests/test_notice_admin.py` · `tests/test_alert_center.py`(회차의 공지 칸) · `tests/test_alert_center_assets.py`
+  (`noticeNewer` · 입구 · 판).
 
 ### 팝업과 콜백
 

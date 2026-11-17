@@ -239,7 +239,7 @@ def test_top_level_names_are_declared_once() -> None:
     assert sorted(name for name in set(names) if names.count(name) > 1) == []
 
 
-_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage", "alerts-reconnect")
+_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-notice", "alerts-storage", "alerts-reconnect")
 
 
 def _sections() -> str:
@@ -1621,6 +1621,111 @@ def test_the_canon_mark_opens_the_alarm_row_without_filters() -> None:
     canon = CSS[CSS.index(".canon {") :]
     canon = canon[: canon.index("}")]
     assert "var(--ac-error)" in canon and "solid" in canon and "cursor: pointer" in canon
+
+
+def test_the_notice_payload_is_taken_only_when_newer_and_a_late_old_one_does_not_reopen() -> None:
+    """공지 꼴(2026-11-17 공지 보드 답)은 data 와 물음 응답이 엇갈려 닿는다. 같은 프로세스 표지면
+    판이 오른 것만 받고, 표지가 다르면(재시작) 판과 상관없이 받는다. 그래서 물음이 거둠(판 2)을 넣은
+    뒤 늦게 닿은 data(판 1 — 서 있음)는 버려져 닫힌 줄을 다시 열지 않는다(상태 판정 `stateVerdict`
+    를 거치지 않는다). 공지 칸은 꼴을 보고, 입장 화면 덮개는 감추지 않은 호스트만 덮는 것으로 본다.
+    끝 시각 타이머는 지났으면 0, 길면 끊어 다시 잰다."""
+    out = _node(
+        """
+const held = { mark: 'p1', rev: 2 }
+const view = {
+  id: 'n1', text: '합성 공지', sender: '관리자', sent: '17:40', until: '18:20', until_ms: 5000,
+}
+const entry = { fp: 'f1', active: false }
+const lateStanding = { mark: 'p1', rev: 1, note: { kind: 'state', active: true, fp: 'f1' } }
+console.log(JSON.stringify({
+  first: noticeNewer(null, { mark: 'p1', rev: 0 }),
+  newer: noticeNewer(held, { mark: 'p1', rev: 3 }),
+  same: noticeNewer(held, { mark: 'p1', rev: 2 }),
+  late: noticeNewer(held, lateStanding),
+  restart: noticeNewer(held, { mark: 'p2', rev: 0 }),
+  no_mark: noticeNewer(held, { rev: 9 }),
+  not_object: noticeNewer(held, null),
+  late_would_reopen: stateVerdict(entry, lateStanding.note),
+  view: noticeOf(view),
+  bad_view: [
+    noticeOf(null),
+    noticeOf({ id: '', text: 'x', until_ms: 1 }),
+    noticeOf({ id: 'n', text: 'x' }),
+  ],
+  covering: [
+    introCovering(null),
+    introCovering({ isConnected: true, style: { display: '' } }),
+    introCovering({ isConnected: true, style: { display: 'none' } }),
+    introCovering({ isConnected: false, style: { display: '' } }),
+  ],
+  wait: [
+    noticeEndWait(null, 0),
+    noticeEndWait({ untilMs: 5000 }, 1000),
+    noticeEndWait({ untilMs: 5000 }, 9000),
+    noticeEndWait({ untilMs: 200 * 3600000 }, 0),
+  ],
+}))
+"""
+    )
+    assert out == {
+        "first": True,
+        "newer": True,
+        "same": False,
+        "late": False,
+        "restart": True,
+        "no_mark": False,
+        "not_object": False,
+        "late_would_reopen": "new",
+        "view": {
+            "id": "n1",
+            "text": "합성 공지",
+            "sender": "관리자",
+            "sent": "17:40",
+            "until": "18:20",
+            "untilMs": 5000,
+        },
+        "bad_view": [None, None, None],
+        "covering": [False, True, False, False],
+        "wait": [None, 4000, 0, 25 * 3600000],
+    }
+
+
+def test_the_notice_chip_panel_and_entry_share_one_path_without_a_python_rerun() -> None:
+    """공지 칩은 「정본 아님」 표지와 같은 호스트 꼴(확성기 · 알림 단계 색 실선 네모 · 닫기
+    없음)이고 누르면 작은 판(머리 · 글 · 끝 줄 · 닫기)이 브라우저 안에서만 열린다. data 의 공지 칸과
+    물음 입구 `window.__capaAlerts.notice` 는 같은 함수(`applyNotice`)로 받고, 그 상태 표지는 입장
+    화면이 덮는 동안 미루는 알림창 길(`noticePopup`)로 간다. 입장 화면 호스트 id 는 입장 화면 자산과
+    같다. 상태 표지는 문서 표지로 오지 않아 훑기(`scan`)가 공지를 보지 않는다."""
+    apply = JS[JS.index("function applyNotice(C, payload)") :]
+    apply = apply[: apply.index("\n}\n")]
+    assert "noticeNewer(C.notice, payload)" in apply
+    assert "handleState(C, note, noticePopup)" in apply
+    assert "scheduleNoticeEnd(C)" in apply
+    entry = JS[JS.index("window.__capaAlerts = {") :]
+    entry = entry[: entry.index("\n  }\n")]
+    assert "notice: (payload) => {" in entry and "applyNotice(C, payload)" in entry
+    exported = JS[JS.index("export default function (component)") :]
+    assert "if (data.notice && applyNotice(C, data.notice)) changed = true" in exported
+    scan = JS[JS.index("function scan(C)") :]
+    assert "notice" not in scan[: scan.index("\n}\n")]
+    popup = JS[JS.index("function noticePopup(C, key, note)") :]
+    popup = popup[: popup.index("\n}\n")]
+    assert "introCovering(document.getElementById(INTRO_HOST_ID))" in popup
+    intro = (alert_center._ASSETS.parent / "intro_overlay_assets" / "intro.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'const HOST_ID = "capa-intro-host";' in intro
+    assert "const INTRO_HOST_ID = 'capa-intro-host'" in JS
+    assert "togglePanel(C, 'notice')" in JS
+    assert "if (which === 'notice') return { panel: C.noticePanel" in JS
+    assert "C.noticeHost.toggleAttribute('data-empty', !held)" in JS
+    assert "P.body.textContent = held.text" in JS, "관리자 글은 평문(textContent)이다"
+    chip = CSS[CSS.index(".notice {") :]
+    chip = chip[: chip.index("}")]
+    assert "var(--ac-info)" in chip and "solid" in chip and "cursor: pointer" in chip
+    assert "white-space: pre-wrap;" in _rule(".nbody")
+    for key in ("notice", "notice_head", "notice_until"):
+        assert key in alert_center.TEXT
 
 
 def test_a_restart_raises_only_the_restart_notice_not_the_session_one() -> None:

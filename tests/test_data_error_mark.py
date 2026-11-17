@@ -88,6 +88,7 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/bdq_token_admin.py", "_token_dialog"): (1, BESIDE),
     ("src/capa_simulation/components/bdq_login_admin.py", "render_bdq_login_admin"): (1, BESIDE),
+    ("src/capa_simulation/components/notice_admin.py", "render_notice_admin"): (1, BESIDE),
     ("src/capa_simulation/components/bigdataquery_registration.py", "_save_scenario"): (4, PRESSED),
     ("src/capa_simulation/components/bigdataquery_registration.py", "_submitted_detail_window"): (
         5,

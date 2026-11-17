@@ -61,6 +61,17 @@ def test_the_baseline_gone_event_is_registered_after_the_screens_state_codes() -
     )
 
 
+def test_the_notice_is_a_shell_state_alert_at_the_end_of_the_registry() -> None:
+    """공지(2026-11-17 공지 보드 답)는 껍데기 갈래(`GL-*` — 어느 화면의 일도 아닌 알림)의 다음
+    번호이고 등록부 끝에 섰다(번호를 다시 쓰지 않는다). 서 있는 동안이 조건인 상태 알림 · 알림 단계
+    · 이름 「공지」 다."""
+    spec = alerts.spec("GL-09")
+    assert (spec.level, spec.kind, spec.title) == ("info", "state", "공지")
+    assert alerts.SPECS[-1] is spec
+    shell = sorted(code for code in alerts.REGISTRY if code.startswith("GL-"))
+    assert shell[-3:] == ["GL-07", "GL-08", "GL-09"]
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):

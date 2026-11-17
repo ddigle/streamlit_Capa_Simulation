@@ -1,4 +1,4 @@
-# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록 탭, 위의 서버 점검·BDQ 자동
+# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록·공지 탭, 위의 서버 점검·BDQ 자동
 # 로그인·통합인증 점검·접속 명단.
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
 from capa_simulation.components.module_status import render_module_status
+from capa_simulation.components.notice_admin import render_notice_admin
 from capa_simulation.components.object_sync_status import render_object_sync_status
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -37,6 +38,7 @@ from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import (
     ADMIN_AREA_LOG_TAB,
+    ADMIN_AREA_NOTICE_TAB,
     ADMIN_AREA_TAB_KEY,
     ADMIN_AREA_TABS,
     HOME,
@@ -51,10 +53,11 @@ from capa_simulation.settings import DUCKDB_PATH
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
 # (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
-# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 회차에만 선다 — 다른 회차는 탭 셋
-# 그대로다.
+# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 회차에만 선다. 맨 끝 「공지」 는 늘 서는
+# 입력 탭이다(2026-11-17 공지 보드 답 decided 2 — DB 를 쓰지 않는다).
 TAB_NAMES = ADMIN_AREA_TABS
 LOG_TAB = ADMIN_AREA_LOG_TAB
+NOTICE_TAB = ADMIN_AREA_NOTICE_TAB
 TABS_KEY = ADMIN_AREA_TAB_KEY
 # 안쪽 탭 묶음을 담는 칸 — 그 안 맨 앞에 「모듈 상태」 팝오버 단추를 두면 탭 줄 오른쪽 끝에 선다
 # (`module_status.tools_style`).
@@ -96,18 +99,24 @@ with tabs_box:
     # 탭 묶음은 DB 를 열기 **앞**이다 — DB 를 못 열어도 DB 를 쓰지 않는 기록 탭은 열린다(DB
     # 탭 안에만 「데이터 Error」 마크). 명단에서 관리자 등급이 바뀌면 세션 중에도 라벨 목록이
     # 바뀐다 — 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
-    tab_labels = (*TAB_NAMES, LOG_TAB) if viewer_can_audit() else TAB_NAMES
+    shows_log = viewer_can_audit()
+    tab_labels = (*TAB_NAMES, *((LOG_TAB,) if shows_log else ()), NOTICE_TAB)
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]
     opened_tabs = stateful_tabs(tab_labels, key=TABS_KEY)
 process_rename_tab, display_order_tab, source_quality_tab = opened_tabs[:3]
 
-if len(opened_tabs) > len(TAB_NAMES):
+if shows_log:
     log_tab = opened_tabs[len(TAB_NAMES)]
     with log_tab:
         # 닫혀 있으면 읽지 않는다 — 기록 조건 카드도 이 탭이 열린 회차에만 선다.
         if not tab_is_hidden(log_tab):
             render_audit_tab()
+
+# 공지 — DB 를 쓰지 않는 입력 탭이라 DB 를 열기 앞에서 늘 그린다(DB 를 못 열어 멈추는 회차에도
+# 선다). 보내기 · 거두기는 그 순간 관리자 판정을 다시 본다(`components/notice_admin.py`).
+with opened_tabs[-1]:
+    render_notice_admin()
 
 try:
     database_path = str(DUCKDB_PATH.resolve())

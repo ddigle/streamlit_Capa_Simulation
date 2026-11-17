@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,7 +16,7 @@ import pytest
 from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation import alerts, page_bootstrap, sync_boot
+from capa_simulation import alerts, notice_board, page_bootstrap, sync_boot
 from capa_simulation.components import alert_center, change_summary
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.theme_toggle import (
@@ -23,6 +24,7 @@ from capa_simulation.components.theme_toggle import (
     CANON_MARK_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
+    NOTICE_CHIP_ID,
     PRINT_BUTTON_ID,
     PROCESS_CHIP_ID,
     SAMPLE_MARK_ID,
@@ -92,8 +94,8 @@ def _ok(app: AppTest) -> AppTest:
 
 def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None:
     """단계 넷의 이름 · 알림창 시간, 쌓기 · 반복 창 · 보관, 시선 끌기, 툴바 차례(공정 칩 · 합성 샘플
-    · 변경 칩 · Guide · Alarm · Print · 테마 — 공정 칩이 맨 왼쪽, Alarm 은 Guide 오른쪽), 표지 이름
-    · 저장 칸이 등록부 · 상수 그대로다."""
+    · 변경 칩 · 공지 칩 · Guide · Alarm · Print · 테마 — 공정 칩이 맨 왼쪽, 공지 칩은 Guide 바로
+    왼쪽, Alarm 은 Guide 오른쪽), 표지 이름 · 저장 칸이 등록부 · 상수 그대로다."""
     data = alert_center.alert_center_data(changes=[], events=[])
     assert [(level["id"], level["label"], level["ms"]) for level in data["levels"]] == [
         ("info", "알림", 8000),
@@ -120,6 +122,7 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
             SAMPLE_MARK_ID,
             CANON_MARK_ID,
             CHANGES_CHIP_ID,
+            NOTICE_CHIP_ID,
             GUIDE_BUTTON_ID,
             ALARM_BUTTON_ID,
             PRINT_BUTTON_ID,
@@ -127,6 +130,9 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
         ]
     )
     assert (data["toolbar"]["alarm"], data["toolbar"]["chip"]) == (ALARM_BUTTON_ID, CHANGES_CHIP_ID)
+    assert data["toolbar"]["notice"] == NOTICE_CHIP_ID
+    # 공지 꼴을 주지 않으면 공지 칸은 비고 칩이 서지 않는다(`app.py` 는 회차마다 준다).
+    assert data["notice"] is None
     assert (data["toolbar"]["process"], data["toolbar"]["sample"]) == (
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
@@ -522,6 +528,42 @@ def test_the_app_draws_the_alert_center_before_the_page_and_sends_queued_events(
     ] + [note["id"] for note in alert_notes(app) if note.get("id") == "demo"]
     assert delivered == ["demo"]
     assert alerts.OUTBOX_KEY not in app.session_state
+
+
+def test_the_app_carries_the_notice_and_its_state_note_in_every_run(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """`app.py` 가 회차마다 공지 꼴(`notice_board.payload`)을 알림 칸 data 에 싣는다 — 공지가 없어도
+    상태 알림 `GL-09` 의 해소 표지가 간다(상태 알림 규칙). 서 있음 → 거둠이면 같은 범위의 표지가
+    active 참 → 거짓으로 바뀌어 그 줄을 「해소」 로 닫고, 바뀐 것이 없는 회차는 data 가 같다. 상태
+    표지는 이벤트 칸 표지로 내지 않는다(프래그먼트 회차의 옛 표지가 물음 경로가 넣은 값을 되돌리지
+    않게 — 알림 칸 모듈 설명)."""
+    app = _ok(_app.run())
+    empty = sent[-1]["data"]["notice"]
+    assert empty["notice"] is None
+    assert (empty["note"]["code"], empty["note"]["active"]) == ("GL-09", False)
+    assert sent[-1]["data"]["events"] == [page_bootstrap.missing_official_note(None)]
+
+    notice = notice_board.send(
+        "합성 공지 — 오늘 18시 점검", notice_board.now_kst() + timedelta(hours=1)
+    )
+    _ok(app.run())
+    standing = sent[-1]["data"]["notice"]
+    assert standing["mark"] == empty["mark"] == notice_board.PROCESS_MARK
+    assert standing["rev"] == empty["rev"] + 1
+    assert standing["notice"]["id"] == notice.id
+    assert standing["notice"]["text"] == notice.text
+    assert (standing["note"]["active"], standing["note"]["scope"]) == (True, empty["note"]["scope"])
+    assert "page" not in standing["note"] and "href" not in standing["note"]
+    _ok(app.run())
+    assert sent[-1]["data"]["notice"] == standing, "바뀐 것이 없으면 회차마다 같다"
+
+    notice_board.withdraw(notice.id)
+    _ok(app.run())
+    gone = sent[-1]["data"]["notice"]
+    assert gone["notice"] is None and gone["rev"] == standing["rev"] + 1
+    assert (gone["note"]["active"], gone["note"]["scope"]) == (False, empty["note"]["scope"])
+    assert not [note for note in alert_notes(app) if note.get("code") == "GL-09"]
 
 
 def test_the_data_resolves_a_missing_official_only_when_the_session_knows_one() -> None:

@@ -2917,13 +2917,13 @@ def test_the_bdq_auto_login_answers_close_the_narrowed_d6_and_the_new_forms() ->
     """v1.34 — 6-32 줄은 그때 기록 그대로 두고, 그 밑 들여쓴 줄 하나(6-14 Q2-26 선례)가 같은 날
     사용자 답 둘(D6 좁힘 · 새 화면 꼴)을 고른 글 원문으로 들어 그 꼴들의 사용자 확인 대기를 닫는다.
     묻지 않은 나머지 「답 밖」 꼴은 그대로 대기이고, 셋째 답(토큰 만료 대응)은 화면 결정이 아니라
-    TODO 에만 있다. D6 은 좁혔을 뿐이라 7-1 줄이 없다."""
+    TODO 에만 있다. D6 은 좁혔을 뿐이라 7-1 줄이 없다. 판 머리는 v1.35 시험이 보고, 6-32 구간은
+    6-33 앞에서 끊는다."""
     document = _text()
-    assert "판 v1.34" in document.split("\n## 1. ")[0]
     assert "- **v1.34 — 2026-11-16.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-32. ") :]
+    record = section[section.index("\n### 6-32. ") : section.index("\n### 6-33. ")]
     [decision] = [line for line in record.splitlines() if line.startswith("- ")]
     assert "답 밖 — 구현이 정함(사용자 확인 대기)" in decision, "6-32 줄은 그때 기록 그대로다"
     assert record.count(AUTO_LOGIN_ANSWER_HEAD) == 1
@@ -2958,3 +2958,51 @@ def test_the_bdq_auto_login_answers_close_the_narrowed_d6_and_the_new_forms() ->
     for answer_text in AUTO_LOGIN_ANSWERS:
         assert answer_text in entry, answer_text
     assert "「일반 오류일 때만 넣기 (Recommended)」" in entry
+
+
+NOTICE_1117_LINES = (
+    "q-use",
+    "q-look",
+    "q-speed",
+    "q-until",
+    "q-name",
+    *(f"decided-{n}" for n in range(1, 10)),
+)
+NOTICE_1117_NAME_MEMO = "HOME의 공지는 'Capa 요약'으로 변경"
+
+
+def test_the_notice_board_answers_are_recorded_with_what_the_implementation_chose() -> None:
+    """v1.35 — 6-33 은 2026-11-17 공지 기능 보드의 카드 다섯과 정한 것 아홉이 차례대로 한 줄씩이고
+    (모두 「(2026-11-17 · 규칙 id)」 로 끝남), 권장이 아닌 이름 답의 메모가 원문 그대로다. 구현이
+    좁게 정한 것은 표로 사용자 확인 대기에 남는다. 예외를 더한 UI-TXT-06 · 차례를 고친 UI-LAY-05 가
+    「공지」 칩을 든다."""
+    document = _text()
+    assert "판 v1.35" in document.split("\n## 1. ")[0]
+    assert "- **v1.35 — 2026-11-17.**" in _chapter(document, 8)
+    assert "6-33 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-33. ") :]
+    assert "https://claude.ai/artifact/B1pkodTjQDZLJseRW9F57F" in record
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-17) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == NOTICE_1117_LINES
+    name = next(line for line in lines if line.startswith("- q-name "))
+    assert f"「{NOTICE_1117_NAME_MEMO}」" in name and "권장이 아닌 답" in name
+    for phrase in ("`GL-09`", "`admin_notice_send`", "`window.__capaAlerts.notice`", "본문은 싣지"):
+        assert phrase in record, phrase
+    table = record[record.index("구현이 좁게 정한 것(보드에 올리지 않음") :]
+    assert "| 알림 번호 · 단계 |" in table and "| 끝 시각 기본값 |" in table
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert "「공지」 칩(2026-11-17 공지 보드 답 q-look" in " ".join(
+        rules["UI-TXT-06"].fields["예외"]
+    )
+    assert "「공지」 칩은 Guide 바로 왼쪽" in rules["UI-LAY-05"].text
