@@ -18,6 +18,7 @@ import pandas as pd
 
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit.work import audited, audited_each
+from capa_simulation.auth import grades
 from capa_simulation.io.core_data_source import (
     build_source_column_profile,
     core_data_hash,
@@ -604,7 +605,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return display_order_store.load_global_display_order(connection)
 
-    @audited("data_profile_save", work_audit.profile("display_order", "rules"))
+    @audited("data_profile_save", work_audit.profile("display_order", "rules"), action="admin.area")
     def replace_global_display_order(
         self,
         rules: pd.DataFrame,
@@ -643,7 +644,9 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return process_rename_store.load_global_process_rename(connection)
 
-    @audited("data_profile_save", work_audit.profile("process_rename", "rules"))
+    @audited(
+        "data_profile_save", work_audit.profile("process_rename", "rules"), action="admin.area"
+    )
     def replace_global_process_rename(
         self,
         rules: pd.DataFrame,
@@ -1136,6 +1139,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return auto_official_update_store.load_settings(connection)
 
+    @grades.gated("auto_update.edit")
     def replace_auto_official_update_settings(
         self,
         config: AutoUpdateConfig,
@@ -1195,6 +1199,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return auto_official_update_store.load_setting_changes(connection, limit=limit)
 
+    @grades.gated("auto_update.edit")
     def claim_auto_official_update_run(
         self,
         *,

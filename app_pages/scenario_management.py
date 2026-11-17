@@ -1,9 +1,10 @@
-# Purpose: Capa · 설비 시나리오 관리, DB 등록, 공식버전 자동 갱신을 탭 넷으로 제공한다.
+# Purpose: Capa · 설비 시나리오 관리, DB 등록, 공식버전 자동 갱신을 접속 등급에 맞춘 탭으로 낸다.
 
 from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components import grade_ui
 from capa_simulation.components.auto_official_update_tab import render_auto_official_update
 from capa_simulation.components.bigdataquery_registration import (
     render_bigdataquery_registration,
@@ -22,8 +23,13 @@ from capa_simulation.components.scenario_management_tabs import (
     QUERY_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
+from capa_simulation.components.sso_identity import viewer_can
 from capa_simulation.components.state_alerts import open_tab_name
-from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.components.tab_state import (
+    remember_open_tab,
+    remembered_tab_key,
+    stateful_tabs,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
@@ -59,28 +65,55 @@ except BOOTSTRAP_ERRORS as exc:
 # 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다.
 # 옛 세션에 남은 옛 탭 이름은 목록 밖이라 첫 탭이 열린다(Streamlit 이 첫 값으로 되돌리고 기억 칸은
 # `stateful_tabs` 가 목록 안 값만 쓴다).
-capa_tab, equipment_tab, query_tab, auto_update_tab = stateful_tabs(
-    [CAPA_SCENARIO_TAB, EQUIPMENT_SCENARIO_TAB, QUERY_TAB, AUTO_UPDATE_TAB],
-    key=SCENARIO_MANAGEMENT_TABS_KEY,
+#
+# DB 등록 탭은 실무자부터, 자동 갱신 탭은 관리자부터 선다(접속 등급 — 설계 규칙 UI-INP-07 예외, 등급
+# 밖 탭은 숨김). 「그 화면으로」 · 기억된 탭이 숨은 탭을 가리킨 회차에는 한 번 멈추고(「실무자부터
+# 여는 탭입니다」 + 「HOME 으로」) 탭 값 · 기억 칸을 첫 탭으로 새로 적는다 — 다음 회차는 첫 탭이다.
+GRADED_TABS = {QUERY_TAB: "scenario.db_register", AUTO_UPDATE_TAB: "auto_update.view"}
+for hidden_tab, tab_action in GRADED_TABS.items():
+    if viewer_can(tab_action):
+        continue
+    if hidden_tab in (
+        st.session_state.get(SCENARIO_MANAGEMENT_TABS_KEY),
+        st.session_state.get(remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)),
+    ):
+        remember_open_tab(SCENARIO_MANAGEMENT_TABS_KEY, CAPA_SCENARIO_TAB)
+        grade_ui.stop_unless(
+            tab_action,
+            place="tab",
+            tab_key=SCENARIO_MANAGEMENT_TABS_KEY,
+            first_label=CAPA_SCENARIO_TAB,
+        )
+tab_labels = [CAPA_SCENARIO_TAB, EQUIPMENT_SCENARIO_TAB] + [
+    label for label, tab_action in GRADED_TABS.items() if viewer_can(tab_action)
+]
+tabs = dict(
+    zip(tab_labels, stateful_tabs(tab_labels, key=SCENARIO_MANAGEMENT_TABS_KEY), strict=True)
 )
 # 탭 안 상태 알림(공식버전 없음 `SC-01` · BigDataQuery 설정 `AD-04` · 자동 갱신 예약
 # `AU-01/02`)은 그 탭이 열린 회차에만 낸다 — 닫힌 탭이면 None(`open_tab_name`). 「그 화면으로」 가
-# 그 탭을 연다.
+# 그 탭을 연다. 숨은 탭의 알림은 그 탭을 보는 등급에게만 선다(탭을 그리지 않으면 내지 않는다).
 
+capa_tab = tabs[CAPA_SCENARIO_TAB]
 with capa_tab:
     render_scenario_management(
         repository,
         database_path,
         alert_tab=open_tab_name(capa_tab, CAPA_SCENARIO_TAB),
     )
+equipment_tab = tabs[EQUIPMENT_SCENARIO_TAB]
 with equipment_tab:
     if equipment_tab.open:
         render_equipment_scenario_section()
-with query_tab:
-    render_bigdataquery_registration(
-        repository, database_path, alert_tab=open_tab_name(query_tab, QUERY_TAB)
-    )
-with auto_update_tab:
-    render_auto_official_update(
-        repository, alert_tab=open_tab_name(auto_update_tab, AUTO_UPDATE_TAB)
-    )
+if QUERY_TAB in tabs:
+    query_tab = tabs[QUERY_TAB]
+    with query_tab:
+        render_bigdataquery_registration(
+            repository, database_path, alert_tab=open_tab_name(query_tab, QUERY_TAB)
+        )
+if AUTO_UPDATE_TAB in tabs:
+    auto_update_tab = tabs[AUTO_UPDATE_TAB]
+    with auto_update_tab:
+        render_auto_official_update(
+            repository, alert_tab=open_tab_name(auto_update_tab, AUTO_UPDATE_TAB)
+        )

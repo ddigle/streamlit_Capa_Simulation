@@ -75,6 +75,7 @@ import streamlit as st
 
 from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.flash import emit_flash
+from capa_simulation.components.grade_hooks import in_fragment
 from capa_simulation.components.past_data_management import forget_past_paste
 from capa_simulation.components.settings_box import (
     SETTINGS_ICON,
@@ -231,6 +232,7 @@ def render_home_settings_box(*, pending: bool, stopped: bool = False) -> None:
 
 
 @st.dialog(SETTINGS_TITLE, width="large", icon=SETTINGS_ICON, on_dismiss=_dismiss_home_settings)
+@in_fragment
 @keeps_app_run_open
 def _settings_dialog(
     preference: Callable[[Mapping[str, OpenTab]], None],

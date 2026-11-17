@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import hashlib
 import html
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from math import isclose
@@ -37,6 +38,7 @@ from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
+from capa_simulation.components.grade_hooks import in_fragment, on_press, viewer_can
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
@@ -602,6 +604,22 @@ def render_lob_title_row(
     )
 
 
+def _settings_read_only() -> bool:
+    """「HOME 설정」 창을 값만 보이나 — 화면 등급으로 HOME 설정을 저장할 수 없다(`home.settings` —
+    관리자 미만). 같은 창이 고칠 수 없는 표 · 값으로 서고 저장 · 메모 · 확인 칸이 없다(설계 규칙
+    UI-INP-07 예외 · UI-NTF-05). 운영 서버가 아닌 곳은 늘 고칠 수 있다(제한 없음)."""
+    return not viewer_can("home.settings")
+
+
+@contextmanager
+def _settings_form(key: str, *, read_only: bool) -> Iterator[DeltaGenerator]:
+    """편집 상자의 폼 — 값만 보이는 회차는 제출 단추가 없어 폼 대신 칸 하나다(Streamlit 폼은 제출
+    단추가 있어야 한다)."""
+    box = st.container() if read_only else st.form(key)
+    with box:
+        yield box
+
+
 def render_home_preference(
     *,
     tabs: Mapping[str, OpenTab],
@@ -806,6 +824,11 @@ def _render_comparison_picker(database_path: str) -> None:
             # 그 글자가 id 자리에 들어간다(AGENTS 9장 「글자가 바뀌는 것을 피할 수 없는 상자」).
             # 무효일 때 리비전 칸도 함께 지워야 해서 `prune_choice` 는 쓰지 않는다.
             st.session_state[COMPARISON_SCENARIO_KEY] = st.session_state[COMPARISON_SCENARIO_KEY]
+        if not viewer_can("home.settings"):
+            # HOME 설정을 저장할 수 없는 등급은 고른 값 글만 본다(설계 규칙 UI-INP-07 예외 ·
+            # UI-NTF-05) — 메우기 쓰기(`_persist_comparison_choice`)도 하지 않는다.
+            _render_comparison_value(repository, scenario_by_id)
+            return
         scenario_id = st.selectbox(
             "비교 시나리오",
             options=[None, *scenario_by_id],
@@ -864,6 +887,33 @@ def _render_comparison_picker(database_path: str) -> None:
         if note is not None:
             line, line_help = note
             st.caption(line, help=line_help)
+
+
+def _render_comparison_value(
+    repository: DuckDBScenarioRepository, scenario_by_id: Mapping[str, ScenarioSummary]
+) -> None:
+    """비교 대상의 값만 — 「시나리오 · 리비전」 한 줄(고르기 없음 — `_render_comparison_picker`).
+
+    세션 값(공용 프로필에서 심은 것)을 그대로 보인다. 리비전 목록을 읽지 못하면 오류 표지 한 줄이다.
+    """
+    scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+    if scenario_id is None or scenario_id not in scenario_by_id:
+        st.markdown(_comparison_label(dict(scenario_by_id), None))
+        return
+    scenario_name = literal_markdown(scenario_by_id[str(scenario_id)].scenario_name)
+    try:
+        revisions = repository.list_revisions(str(scenario_id))
+    except BOOTSTRAP_ERRORS as exc:
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="비교 리비전을 읽지 못했습니다"
+        )
+        return
+    revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
+    revision = next((item for item in revisions if item.revision_id == revision_id), None)
+    if revision is None and revisions:
+        revision = revisions[0]
+    revision_text = "—" if revision is None else literal_markdown(revision_label(revision))
+    st.markdown(f"**{scenario_name}** · {revision_text}")
 
 
 def _comparison_active_note(
@@ -930,6 +980,7 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     _recheck_intro_summary()
 
 
+@on_press
 def _save_comparison_scenario(database_path: str) -> None:
     """비교 **시나리오** 상자의 콜백. 고른 시나리오를 리비전 칸을 비운 채 공용 프로필에 남긴다.
 
@@ -955,6 +1006,7 @@ def _save_comparison_scenario(database_path: str) -> None:
     )
 
 
+@on_press
 def _save_comparison_revision(database_path: str) -> None:
     """비교 **리비전** 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 공용 프로필에 남긴다."""
     scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
@@ -1054,6 +1106,7 @@ def render_threshold_editor(
     기본값) 첫 저장이 그 값을 공용 기준으로 고정하므로 쓴다.
     """
     submitted_base = seen(THRESHOLD_BASE_VERSION_KEY)
+    read_only = _settings_read_only()
     with st.container(border=True):
         render_profile_heading(
             "#### :material/rule: 확보율 판정 기준",
@@ -1068,24 +1121,27 @@ def render_threshold_editor(
         )
         stored = _thresholds_by_month(threshold_profile)
         outside = sorted(set(stored) - set(months))
-        with st.form("home_threshold_form"):
+        with _settings_form("home_threshold_form", read_only=read_only):
+            submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**다 — 선행 B/O 편집기와 같은 결이다.
-            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-                submitted = st.form_submit_button(
-                    "판정 기준 저장",
-                    icon=":material/save:",
-                    type="primary",
-                    help=SHARED_SAVE_HELP,
-                )
-                ready_note_field(THRESHOLD_NOTE_KEY, submitted=submitted, start=submitted_base)
-                # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(`note_placeholder` — 2026-11-09 상단 띠
-                # 재고 · 꼴은 사용자 수락 11-10 Q-12, 설계 규칙 UI-CON-03 · UI-TXT-01 예외).
-                note = st.text_input(
-                    "변경 메모",
-                    placeholder=note_placeholder("27년 이후 확보 기준 120% 적용"),
-                    key=THRESHOLD_NOTE_KEY,
-                    label_visibility="collapsed",
-                )
+            if not read_only:
+                with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                    submitted = st.form_submit_button(
+                        "판정 기준 저장",
+                        icon=":material/save:",
+                        type="primary",
+                        help=SHARED_SAVE_HELP,
+                    )
+                    ready_note_field(THRESHOLD_NOTE_KEY, submitted=submitted, start=submitted_base)
+                    # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(`note_placeholder` — 2026-11-09
+                    # 상단 띠 재고 · 꼴은 사용자 수락 11-10 Q-12, 설계 규칙 UI-CON-03 · UI-TXT-01
+                    # 예외).
+                    note = st.text_input(
+                        "변경 메모",
+                        placeholder=note_placeholder("27년 이후 확보 기준 120% 적용"),
+                        key=THRESHOLD_NOTE_KEY,
+                        label_visibility="collapsed",
+                    )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
             # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
             # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g18).
@@ -1122,6 +1178,7 @@ def render_threshold_editor(
                     step=DEFAULT_THRESHOLD_STEP,
                     format=DEFAULT_THRESHOLD_FORMAT,
                     key=threshold_widget_key(THRESHOLD_DEFAULT_SECURE_KEY, *defaults_view),
+                    disabled=read_only,
                     help=(
                         f"확보율이 이 값 이상이면 확보입니다({threshold_range_text()} 의 정수 % — "
                         "소수를 치면 사사오입한 정수로 보이고 저장합니다, 109.5 → 110). 확보율은 "
@@ -1137,6 +1194,7 @@ def render_threshold_editor(
                     step=DEFAULT_THRESHOLD_STEP,
                     format=DEFAULT_THRESHOLD_FORMAT,
                     key=threshold_widget_key(THRESHOLD_DEFAULT_WARNING_KEY, *defaults_view),
+                    disabled=read_only,
                     help=(
                         "이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다"
                         f"({threshold_range_text()} 의 정수 % — 소수는 사사오입, 확보 기준과 같이 "
@@ -1172,7 +1230,7 @@ def render_threshold_editor(
                     width="stretch",
                     # 빈칸은 「기본값을 따른다」는 뜻이라 `None` 글자가 아니라 빈칸으로 그린다.
                     placeholder="",
-                    disabled=[DIMENSION_COLUMN],
+                    disabled=True if read_only else [DIMENSION_COLUMN],
                     column_config={
                         DIMENSION_COLUMN: st.column_config.TextColumn(
                             DIMENSION_COLUMN, width="small"
@@ -1199,6 +1257,7 @@ def render_threshold_editor(
             # 말하고 표 밑에 따로 안내 글을 두지 않는다(설계 규칙 UI-TXT-01 · AMB-02).
             clear_outside = bool(
                 outside
+                and not read_only
                 and st.checkbox(
                     f"조회기간 밖 월별 기준 {len(outside):,}개월 지우기({_month_labels(outside)})",
                     key=THRESHOLD_CLEAR_OUTSIDE_KEY,
@@ -1700,29 +1759,32 @@ def _render_monthly_amount_editor(
             [[editor.row_label, *[stored.get(month, 0.0) for month in months]]],
             columns=[DIMENSION_COLUMN, *month_labels],
         )
-        with st.form(editor.form_key):
+        read_only = _settings_read_only()
+        with _settings_form(editor.form_key, read_only=read_only):
+            submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다. 버튼이
             # 왼쪽이고 오른쪽 끝은 표 도구 막대 자리로 비운다(`save_row_key` — 서식은 제목 줄 캡션에
             # 실었다).
-            with st.container(
-                horizontal=True,
-                vertical_alignment="bottom",
-                gap="small",
-                key=editor.save_row_key,
-            ):
-                submitted = st.form_submit_button(
-                    editor.save_label,
-                    icon=":material/save:",
-                    type="primary",
-                    help=SHARED_SAVE_HELP,
-                )
-                ready_note_field(editor.note_key, submitted=submitted)
-                note = st.text_input(
-                    "변경 메모",
-                    placeholder=editor.placeholder,
-                    key=editor.note_key,
-                    label_visibility="collapsed",
-                )
+            if not read_only:
+                with st.container(
+                    horizontal=True,
+                    vertical_alignment="bottom",
+                    gap="small",
+                    key=editor.save_row_key,
+                ):
+                    submitted = st.form_submit_button(
+                        editor.save_label,
+                        icon=":material/save:",
+                        type="primary",
+                        help=SHARED_SAVE_HELP,
+                    )
+                    ready_note_field(editor.note_key, submitted=submitted)
+                    note = st.text_input(
+                        "변경 메모",
+                        placeholder=editor.placeholder,
+                        key=editor.note_key,
+                        label_visibility="collapsed",
+                    )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다(`render_flash` 가 돌려준 칸
             # 하나 — 폼 안 빈 칸은 간격을 먹지 않는다, `app_header.EMPTY_FORM_SLOT_SELECTOR`).
             notice = render_flash(editor.flash_key)
@@ -1737,7 +1799,7 @@ def _render_monthly_amount_editor(
                 width="stretch",
                 # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
                 placeholder="",
-                disabled=[DIMENSION_COLUMN],
+                disabled=True if read_only else [DIMENSION_COLUMN],
                 column_config={
                     DIMENSION_COLUMN: st.column_config.TextColumn(
                         DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
@@ -1829,8 +1891,9 @@ def _render_summary_note_editor(
             key="home_summary",
             empty="아직 Capa 요약을 올린 적이 없습니다",
         )
-        with st.form("home_summary_note_form"):
-            submitted = st.form_submit_button(
+        read_only = _settings_read_only()
+        with _settings_form("home_summary_note_form", read_only=read_only):
+            submitted = not read_only and st.form_submit_button(
                 "Capa 요약 저장",
                 icon=":material/save:",
                 type="primary",
@@ -1856,6 +1919,7 @@ def _render_summary_note_editor(
                 height=180,
                 placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
                 label_visibility="collapsed",
+                disabled=read_only,
             )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
@@ -1947,7 +2011,8 @@ def _render_top5_band_editor(
                 f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
             ),
         )
-        with st.form("home_top5_band_form"):
+        read_only = _settings_read_only()
+        with _settings_form("home_top5_band_form", read_only=read_only):
             # 작업 줄(저장 · 하한 · 상한)은 한 줄이다 — 주요공정 프리셋 줄(저장 · 이름)과 같은 꼴로
             # 단추가 왼쪽이다(2026-11-09 사용자 검수 g18 「여백 … 최적화」 — 전에는 단추만 한 줄을
             # 썼다). **두 칸 key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤
@@ -1960,7 +2025,7 @@ def _render_top5_band_editor(
             # 바뀌면 두 칸이 함께 저장본으로 다시 서고, 같은 version 안에서는 친 값이 남는다. 이
             # 칸은 세션에 적지 않으므로 `value=` 를 함께 줘도 경고가 없다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-                submitted = st.form_submit_button(
+                submitted = not read_only and st.form_submit_button(
                     "확보율 구간 저장",
                     icon=":material/save:",
                     type="primary",
@@ -1972,6 +2037,7 @@ def _render_top5_band_editor(
                     step=10.0,
                     format="%.0f",
                     key=f"{TOP5_MIN_KEY_PREFIX}{top5_band_profile.version}",
+                    disabled=read_only,
                 )
                 maximum = st.number_input(
                     "상한(%)",
@@ -1979,6 +2045,7 @@ def _render_top5_band_editor(
                     step=10.0,
                     format="%.0f",
                     key=f"{TOP5_MAX_KEY_PREFIX}{top5_band_profile.version}",
+                    disabled=read_only,
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
             # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
@@ -2224,6 +2291,7 @@ def _open_key_process_dialog(applied: str | None) -> None:
     icon=KEY_PROCESS_ICON,
     on_dismiss=HOME_DIALOG_HOST.close,
 )
+@in_fragment
 @keeps_app_run_open
 def show_key_process_dialog(database_path: str, process_options: Sequence[str]) -> None:
     """HOME 팝업 호스트가 열림 값 `key_process` 로 연다. 닫기(X · 바깥 · Esc)는 호스트만 돈다 — 닫는
@@ -2283,6 +2351,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
 
 
 @st.fragment
+@in_fragment
 @keeps_app_run_open
 def _render_key_process_editor(
     *,
@@ -2351,6 +2420,10 @@ def _render_key_process_editor(
             detail=f"{len(profile.presets)}개 프리셋",
         )
         names = list(profile.preset_names)
+        read_only = _settings_read_only()
+        if read_only:
+            _render_key_process_values(profile, process_labels)
+            return
         targets = [*names, NEW_KEY_PROCESS_PRESET]
         _apply_pending_selection(KEY_PROCESS_EDIT_TARGET_KEY)
         if st.session_state.get(KEY_PROCESS_EDIT_TARGET_KEY) not in targets:
@@ -2530,6 +2603,18 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(KEY_PROCESS_FLASH_KEY, saved_message)
         st.rerun(scope="app")
+
+
+def _render_key_process_values(profile: GlobalKeyProcess, process_labels: ProcessLabels) -> None:
+    """주요공정 프리셋의 값만 — 프리셋마다 「이름 · 공정」 한 줄(고칠 프리셋 고르기 · 저장 ·
+    기본으로 · 삭제 없음 — `_render_key_process_editor`)."""
+    names = list(profile.preset_names)
+    if not names:
+        return
+    st.caption(f"**{DEFAULT_PRESET_LABEL}** · {quoted(names[0])}", help=DEFAULT_PRESET_HELP)
+    for name in names:
+        shown = " · ".join(process_labels.label(process) for process in profile.processes_of(name))
+        st.markdown(f"**{literal_markdown(name)}** · {literal_markdown(shown) if shown else '—'}")
 
 
 def _key_process_saved_message(name: str) -> str:
@@ -2755,6 +2840,7 @@ def _render_execution_editor(
     같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     submitted_base = seen(EXECUTION_BASE_VERSION_KEY)
+    read_only = _settings_read_only()
     with st.container(border=True):
         render_profile_heading(
             "#### :material/exposure: 확보율 보정",
@@ -2767,28 +2853,30 @@ def _render_execution_editor(
             st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
             return
         table = _execution_editor_frame(execution_profile)
-        with st.form("home_execution_capacity_form"):
+        with _settings_form("home_execution_capacity_form", read_only=read_only):
+            submitted, note = False, ""
             # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로
             # 비운다(`EXECUTION_SAVE_ROW_KEY` — 서식은 제목 줄 캡션에 실었다).
-            with st.container(
-                horizontal=True,
-                vertical_alignment="bottom",
-                gap="small",
-                key=EXECUTION_SAVE_ROW_KEY,
-            ):
-                submitted = st.form_submit_button(
-                    "확보율 보정 저장",
-                    icon=":material/save:",
-                    type="primary",
-                    help=SHARED_SAVE_HELP,
-                )
-                ready_note_field(EXECUTION_NOTE_KEY, submitted=submitted, start=submitted_base)
-                note = st.text_input(
-                    "변경 메모",
-                    placeholder=note_placeholder("26.07 Wafer Mount 비가동 3대"),
-                    key=EXECUTION_NOTE_KEY,
-                    label_visibility="collapsed",
-                )
+            if not read_only:
+                with st.container(
+                    horizontal=True,
+                    vertical_alignment="bottom",
+                    gap="small",
+                    key=EXECUTION_SAVE_ROW_KEY,
+                ):
+                    submitted = st.form_submit_button(
+                        "확보율 보정 저장",
+                        icon=":material/save:",
+                        type="primary",
+                        help=SHARED_SAVE_HELP,
+                    )
+                    ready_note_field(EXECUTION_NOTE_KEY, submitted=submitted, start=submitted_base)
+                    note = st.text_input(
+                        "변경 메모",
+                        placeholder=note_placeholder("26.07 Wafer Mount 비가동 3대"),
+                        key=EXECUTION_NOTE_KEY,
+                        label_visibility="collapsed",
+                    )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
             # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않는다(폼 안 빈 칸은 간격을 먹지
             # 않는다 — `app_header.EMPTY_FORM_SLOT_SELECTOR`).
@@ -2804,7 +2892,8 @@ def _render_execution_editor(
                 table,
                 key=EXECUTION_EDITOR_KEY,
                 hide_index=True,
-                num_rows="dynamic",
+                num_rows="fixed" if read_only else "dynamic",
+                disabled=read_only,
                 width="stretch",
                 # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
                 placeholder="",

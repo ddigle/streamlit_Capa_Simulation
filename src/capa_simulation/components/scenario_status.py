@@ -39,6 +39,7 @@ from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.grade_hooks import in_fragment, viewer_can
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
@@ -351,6 +352,7 @@ def scenario_dialog_is_open() -> bool:
     icon=SCENARIO_FIELD_ICON,
     on_dismiss=close_scenario_dialog,
 )
+@in_fragment
 def show_scenario_dialog(page_file: str | None) -> None:
     """팝업 껍데기. 열림 키가 있는 동안 `app.py` 의 호스트 프래그먼트가 매 회차 부른다. 본문은 아래
     함수다."""
@@ -416,14 +418,22 @@ def _render_dialog_body(
         # 빈 결과는 값이다 — 평문 한 줄만 두고 하는 법 · 길 안내는 붙이지 않는다.
         st.caption("저장된 시나리오가 없습니다.")
         return
-    if st.session_state.get(SCENARIO_DIALOG_MODE_KEY) not in (LOAD_MODE, SAVE_MODE):
+    # 「신규 리비전 저장」 구획은 새 리비전을 저장할 수 있는 등급(실무자부터)에게만 선다 — 열람은
+    # 「불러오기」 만이라 구획 고르기도 두지 않는다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
+    # 고른 값이 숨은 구획이면 첫 구획으로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
+    modes = [LOAD_MODE, SAVE_MODE] if viewer_can("scenario.revision_save") else [LOAD_MODE]
+    if st.session_state.get(SCENARIO_DIALOG_MODE_KEY) not in modes:
         st.session_state[SCENARIO_DIALOG_MODE_KEY] = LOAD_MODE
-    mode = st.segmented_control(
-        "구획",
-        options=[LOAD_MODE, SAVE_MODE],
-        required=True,
-        key=SCENARIO_DIALOG_MODE_KEY,
-        label_visibility="collapsed",
+    mode = (
+        st.segmented_control(
+            "구획",
+            options=modes,
+            required=True,
+            key=SCENARIO_DIALOG_MODE_KEY,
+            label_visibility="collapsed",
+        )
+        if len(modes) > 1
+        else LOAD_MODE
     )
     scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
     if mode == SAVE_MODE:

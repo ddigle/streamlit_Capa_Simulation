@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
@@ -230,6 +231,10 @@ def render_derived_save(
     칸 위 늘 서 있는 칸이 보낸다). 같은 요청으로 이미 저장했으면 저장 단추를 끄고 그 까닭을
     단추 풍선에 둔다(설계 규칙 AMB-05 (나) — 막힌 단추의 풍선).
     """
+    if not viewer_can("scenario.create"):
+        # 새 시나리오 저장은 실무자부터다 — 아래 등급은 계산 미리보기만 본다(설계 규칙 UI-INP-07
+        # 예외 — 등급 밖 기능은 숨김).
+        return
     blocked = revision_block_reason(tables)
     if blocked:
         st.error(blocked)

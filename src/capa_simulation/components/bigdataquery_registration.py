@@ -31,6 +31,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.auth import grades
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_range_field, optional_date_range_field
 from capa_simulation.components.flash import (
@@ -419,6 +420,10 @@ def _render_catalog_form(toolbar: DeltaGenerator, *, configured: bool) -> None:
         )
     if not clicked:
         return
+    # 공용 BigDataQuery 계정으로 사내 DB 를 여는 조회는 DuckDB 쓰기가 아니라 저장소 벽이 없다 — 누른
+    # 순간 실제 등급으로 다시 본다(DB 등록 — 실무자부터). 거절은 화면 본문의 받는 자리
+    # (`page_failure_card.run_core_page`)가 알림창 · Alarm 으로 낸다.
+    grades.require("scenario.db_register")
     window = _submitted_window()
     if window is not None:
         _run_catalog_query(window)

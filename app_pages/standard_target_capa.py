@@ -25,6 +25,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.dialog_host import DialogHost
@@ -48,6 +49,7 @@ from capa_simulation.components.process_labels import (
     ProcessLabels,
     get_process_labels,
 )
+from capa_simulation.components.sso_identity import viewer_can
 from capa_simulation.components.state_alerts import (
     ALARM_ROW_PLACE,
     AlertScope,
@@ -1021,6 +1023,7 @@ def _open_dialog(name: str) -> None:
 
 
 @st.dialog("가용설비 붙여넣기", width="large", on_dismiss=DIALOG_HOST.close)
+@grade_ui.in_fragment
 @keeps_app_run_open
 def _paste_dialog() -> None:
     """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다).
@@ -1103,6 +1106,7 @@ def _paste_dialog() -> None:
 
 
 @st.dialog("입력 초기화", width="small", on_dismiss=_close_dialog)
+@grade_ui.in_fragment
 def _clear_dialog() -> None:
     """저장된 주차별 가용설비를 모두 지운다. 되돌릴 수 없어 한 번 더 묻는다.
 
@@ -1136,29 +1140,33 @@ def _clear_dialog() -> None:
     st.rerun()
 
 
+# 가용설비 붙여넣기 · 입력 초기화는 관리자부터다 — 아래 등급에게는 두 단추(와 창 안 「CSV 양식
+# 다운로드」)가 서지 않는다(접속 등급 — 설계 규칙 UI-INP-07 예외). 저장된 표의 「CSV 다운로드」 는
+# 모두에게 선다.
 with action_row:
     # 결과 상자 맨 위 「표시 항목」 줄 오른쪽 끝 작업 단추. 결과를 만드는 입력(주차별 가용설비)이
     # 여기서 들어간다. 붙여넣기와 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한
     # 회차에 팝업이 둘 뜨지 않는다. 붙여넣기를 여는 콜백은 할 수 있으면 호스트만 다시 돌린다
     # (`DialogHost.open`). 결과 알림은 성공뿐이라 알림창으로만 뜬다(칸은 비어 줄을 밀지 않는다).
-    st.button(
-        "가용설비 붙여넣기",
-        icon=":material/content_paste:",
-        key=PASTE_BUTTON_KEY,
-        type="primary",
-        on_click=DIALOG_HOST.open,
-        args=(PASTE_DIALOG, PASTE_BUTTON_KEY),
-    )
-    st.button(
-        "입력 초기화",
-        icon=":material/delete:",
-        key="open_standard_target_availability_clear",
-        on_click=_open_dialog,
-        args=(CLEAR_DIALOG,),
-        disabled=availability.empty,
-        # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
-        help=CLEAR_LOCKED_HELP if availability.empty else None,
-    )
+    if viewer_can("target.availability"):
+        st.button(
+            "가용설비 붙여넣기",
+            icon=":material/content_paste:",
+            key=PASTE_BUTTON_KEY,
+            type="primary",
+            on_click=DIALOG_HOST.open,
+            args=(PASTE_DIALOG, PASTE_BUTTON_KEY),
+        )
+        st.button(
+            "입력 초기화",
+            icon=":material/delete:",
+            key="open_standard_target_availability_clear",
+            on_click=_open_dialog,
+            args=(CLEAR_DIALOG,),
+            disabled=availability.empty,
+            # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
+            help=CLEAR_LOCKED_HELP if availability.empty else None,
+        )
     render_flash(AVAILABILITY_FLASH_KEY)
 # 붙여넣기 팝업의 호스트 — 매 앱 전체 회차 빠짐없이, 아래 멈춤(`st.stop()`)보다 앞이다. 이벤트 칸에
 # 늘 한 자리를 쓰므로 「입력 초기화」 팝업은 그 뒤 자리에 선다.
