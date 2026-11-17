@@ -1479,6 +1479,16 @@ def test_child_processes_get_neither_the_secret_nor_the_access_lists() -> None:
     assert app == environ
 
 
+def test_the_duckdb_memory_limit_reaches_the_app() -> None:
+    """DuckDB 메모리 한도 칸은 앱 프로세스가 import 때 읽는다 — 시작 스크립트가 앱 환경에서 빼지
+    않는다(비밀이 아니다)."""
+    from capa_simulation.persistence.duckdb_memory import MEMORY_LIMIT_ENV
+
+    environ = {MEMORY_LIMIT_ENV: "256MiB"}
+
+    assert container_start.app_environment(environ) == environ
+
+
 def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
     """시작 스크립트가 쓰는 이름 튜플은 `auth.names` 하나다(무거운 auth 모듈을 끌어오지 않는다).
     자동 로그인 키는 앱에는 넘기고 하위 프로세스에는 넘기지 않는다."""

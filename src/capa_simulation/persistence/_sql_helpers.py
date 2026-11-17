@@ -18,6 +18,11 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence.duckdb_memory import (
+    memory_limit_config,
+    memory_limit_setting,
+)
+from capa_simulation.persistence.duckdb_memory import observe as observe_memory
 from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
@@ -26,8 +31,13 @@ from capa_simulation.services.month_filter import valid_month_mask
 # 16 KiB 로 만들면 같은 내용이 4.2 MiB 가 되고, 리비전 저장당 증가분도 2.5~9.5 MB 에서
 # 0.6 MB 로 줄어든다. 값은 파일 생성 시점에 각인되며 기존 파일에서는 무시된다.
 DUCKDB_BLOCK_SIZE = 16384
+# DuckDB 메모리 한도 칸(`CAPA_DUCKDB_MEMORY_LIMIT` — `duckdb_memory`). import 때 한 번만 읽는다 —
+# 같은 파일의 연결은 설정이 모두 같아야 한다(아래 `connect()`). 두 DB 가 이 설정 한 벌을 쓰므로
+# 한도는 DB 마다 같은 값이다. 값이 없거나 틀리면 넣지 않는다(DuckDB 기본).
+DUCKDB_MEMORY_LIMIT = memory_limit_setting(os.environ)
 DUCKDB_CONNECT_CONFIG: dict[str, str | bool | int | float | list[str]] = {
-    "default_block_size": DUCKDB_BLOCK_SIZE
+    "default_block_size": DUCKDB_BLOCK_SIZE,
+    **memory_limit_config(DUCKDB_MEMORY_LIMIT),
 }
 
 # **같은 프로세스가 쥔 잠금**을 기다려 주는 한도와 간격(2026-10-01). 한 프로세스 안에서 마지막
@@ -203,16 +213,20 @@ def pinned_connections(*database_paths: Path) -> Iterator[None]:
     try:
         yield
     finally:
-        released: list[duckdb.DuckDBPyConnection] = []
+        released: list[tuple[str, duckdb.DuckDBPyConnection]] = []
         for key in reversed(keys):
             slot = slots[key]
             slot.depth -= 1
             if slot.depth == 0:
                 del slots[key]
                 if slot.connection is not None:
-                    released.append(slot.connection)
-        for pin in released:
-            pin.close()
+                    released.append((key, slot.connection))
+        for key, pin in released:
+            # 인스턴스가 내려가기 전 그 핀으로 DB 메모리 표본을 읽는다(`duckdb_memory.observe`).
+            try:
+                observe_memory(key, pin)
+            finally:
+                pin.close()
 
 
 @contextmanager

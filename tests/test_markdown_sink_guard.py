@@ -164,6 +164,11 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "옛 판 흔적 시나리오 한 칸 — 상태 알림 SC-03 전문이다. 알림 칸 JS 가 textContent 로 그린다"
         "(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/memory_diagnostic.py", "memory_limit_step"): (
+        "「서버 시작 점검」 표 끝 줄의 까닭 — 단계 표(평문 칸) · 복사 글 · 시작 점검 관리자 "
+        "알림 AD-01 전문(알림 칸 JS 가 textContent 로 그린다)으로만 간다(마크다운 자리가 "
+        "아니다). 값은 CD 환경변수 CAPA_DUCKDB_MEMORY_LIMIT 의 틀린 값이다"
+    ),
     ("src/capa_simulation/components/missing_page.py", "missing_text"): (
         "없는 화면 주소 알림의 짧은 글 · 전문 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
         "자리가 아니다). 이름은 모듈 선언의 이름이다"

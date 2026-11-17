@@ -18,6 +18,11 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
 (읽기 전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
 
+**메모리** — 표 끝 「DuckDB 메모리 한도」 줄(지금 연결 설정의 한도 칸 판정 — 틀린 값이면
+「실패」 라 제목 판정 `start_verdict` 와 `AD-01` 에 든다)과 사실 줄 끝 메모리 값 줄(RSS · 세션 ·
+`cache_data` · DB 마다 DuckDB 회차 끝 표본)은 `memory_diagnostic` 이 짓는다. 둘 다 결과 파일이
+아니라 이 프로세스의 지금 값이다.
+
 **토큰 넣기 · 만료 알림** — 표 아래 「지금 토큰」 줄과 관리자의 「토큰 넣기」 단추 · 팝업, 만료
 1시간 전 관리자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
 부른다).
@@ -78,6 +83,12 @@ from capa_simulation.components.diagnostic_copy import (
     table_lines,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.memory_diagnostic import (
+    MEMORY_LIMIT_STEP_LABEL,
+    memory_limit_failed,
+    memory_limit_step,
+    memory_lines,
+)
 from capa_simulation.components.sso_status import (
     CLOCK_FORMAT,
     sso_start_step,
@@ -355,11 +366,16 @@ def render_container_start_check() -> None:
     if report is None:
         _render_missing_report()
         return
-    title = f"서버 시작 점검 · {report_verdict(report)}"
+    title = f"서버 시작 점검 · {start_verdict(report)}"
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
-    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
-    steps = build_step_table(report, (sso_start_step(), *login_rows(report), *sync_rows(report)))
-    facts = report_fact_lines(report)
+    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다). 끝 줄
+    # 「DuckDB 메모리 한도」 도 지금 연결 설정의 판정이다(`memory_diagnostic.memory_limit_step`).
+    steps = build_step_table(
+        report,
+        (sso_start_step(), *login_rows(report), *sync_rows(report), memory_limit_step()),
+    )
+    # 사실 줄 끝의 메모리 값 줄은 「지금 토큰」 처럼 이 프로세스의 지금 값이다(`memory_diagnostic`).
+    facts = [*report_fact_lines(report), *memory_lines()]
     # 「지금 토큰」 은 시작 기록이 아니라 지금 파일에서 읽는다 — 「토큰 넣기」 가 바꾼다.
     token = token_line()
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
@@ -377,6 +393,12 @@ def render_container_start_check() -> None:
             st.code("\n".join(report.pip_tail), language=None, wrap_lines=True)
     if admin:
         render_token_dialog()
+
+
+def start_verdict(report: ContainerStartReport) -> str:
+    """펼침 제목 끝 판정 — 결과 파일의 판정(`report_verdict`)에, 지금 연결 설정의 DuckDB 한도 칸이
+    틀렸으면 「실패 있음」 을 더한다(그 줄은 `AD-01` 에도 든다)."""
+    return "실패 있음" if memory_limit_failed() else report_verdict(report)
 
 
 def _render_missing_report() -> None:
@@ -442,6 +464,15 @@ def failed_start_steps(report: ContainerStartReport) -> list[tuple[str, str]]:
     return failed
 
 
+def live_failed_steps() -> list[tuple[str, str]]:
+    """결과 파일이 아니라 이 프로세스의 지금 설정에서 실패한 단계의 (이름, 까닭) — DuckDB 메모리
+    한도 칸이 틀려 기본으로 물러섰을 때 하나."""
+    if not memory_limit_failed():
+        return []
+    _, _, reason = memory_limit_step()
+    return [(MEMORY_LIMIT_STEP_LABEL, reason)]
+
+
 def start_check_alert_possible() -> bool:
     """`AD-01` 을 낼 일이 있을 수 있는 프로세스인가 — 결과 파일이 있거나 CD 전용 환경변수가 앱에
     들어왔다. 둘 다 시작 스크립트 · 실행 환경이 정해 프로세스 동안 그대로라 이벤트 칸 수가 회차마다
@@ -469,7 +500,7 @@ def render_start_check_alert() -> None:
             full = alerts.plain_text(detail)
             content = title
     else:
-        failed = failed_start_steps(report)
+        failed = [*failed_start_steps(report), *live_failed_steps()]
         if failed:
             names = " · ".join(name for name, _ in failed)
             text = f"서버 시작 점검 실패 — {names}"

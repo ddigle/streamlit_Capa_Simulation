@@ -1135,7 +1135,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
     「서버 시작 점검」 의 「토큰 넣기」 팝업(`components/bdq_token_admin.py` — 호스트 `DialogHost`)도 같은 칸을 값으로 쓴다.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
-    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
+    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 펼침의 표 끝 「DuckDB 메모리 한도」 줄과 사실 줄 끝 메모리 값
+    줄(RSS · 세션 · `cache_data` · DB 마다 DuckDB 회차 끝 표본 — `components/memory_diagnostic.py`)은 이 프로세스의 지금 값이다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
     캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 · 실패한 단계 `AD-01` — 토큰 줄 실패는 `AD-10` 몫, C-DEP 에서 `app.py` 가 관리자 몫(`admin_view.admin_notes_visible`)의 모든 화면 회차에 내고 이 펼침은 따로 내지 않는다(2026-11-14 보드 카드 p2-sync),
     운영인데 꺼짐 `AD-02` — 잠금 판정 앞에서 내 잠긴 회차에도 닿는다, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08`(할 일이 두 갈래 — 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 · 파일을 먼저 고침, `access_store.needs_admin_fix` — 보드 p0-unread) · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` · 새 스스로 등록(최근 30일 「새 등록 n명」) `AD-19` — 셋 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area 의 「접속 명단」 펼침까지(대상 `access_list` — 설계 규칙 UI-NAV-01), 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` · 자동 로그인 멈춤 `AD-23`(`AD-17` · `AD-18` 은 걷은 번호) — C-DEP 에서 `app.py` 가 시작 점검 알림 `AD-01` 뒤에 관리자의 모든 화면 회차에 낸다, 코어 화면의 처리 못 한 오류 `AD-22` — 같은 서버에서 `app.py` 가 토큰 알림 뒤에 내고 「그 화면으로」 는 그 화면, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 관리자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 글 없는 해소) 「그 화면으로」 는 Admin 「통합인증 점검」 펼침까지 — 대상 `sso_status`)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
@@ -1859,15 +1860,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + `managed` 서버의 「BDQ 자동
   로그인」 줄 `login_rows`(시작 때 결과 — `container_start_report.login_step`) + S3 키 · `managed` 가 있는 서버의
-  동기화 줄 다섯 `sync_rows` — AWS 프로필 · aws CLI · ECS 연결 · 버킷 목록 · DB 받기)와 「시작 때 있던
+  동기화 줄 다섯 `sync_rows` — AWS 프로필 · aws CLI · ECS 연결 · 버킷 목록 · DB 받기 + 끝 줄 「DuckDB 메모리 한도」 — 지금 연결 설정의
+  한도 칸 판정 `memory_diagnostic.memory_limit_step`, 틀린 값이면 「실패」 라 제목 판정 `start_verdict` 와 `AD-01` 에 든다)와 「시작 때 있던
   통합인증 환경변수」 캡션(이름만)·디스크 · pod · 한도 · DuckDB 기본값 · 다운 시간 값(`sync_fact_lines`)·깔린 판·
   토큰 파일 수정 시각·자리·실행 사용자·HOME·시작 자동 로그인이 하위 프로세스를 띄웠으면 그 진단 값 줄(「BDQ 자동 로그인 진단」 —
-  `LoginStart.child`)·비어 있던 환경변수·pip 출력 끝을 싣는다. 결과 파일이 없는데 CD 전용
+  `LoginStart.child`)·비어 있던 환경변수·사실 줄 끝 메모리 값 줄(`memory_diagnostic.memory_lines` — 이 프로세스의
+  지금)·pip 출력 끝을 싣는다. 결과 파일이 없는데 CD 전용
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
   시작 점검 관리자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
-  화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다)를
+  화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다 —
+  와 지금 설정에서 실패한 단계 `live_failed_steps` — DuckDB 메모리 한도 칸이 틀림)를
   관리자 몫(`admin_view.admin_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area 의 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_start_check` · 알림 칸 받는 쪽 `start_check`, 설계 규칙 UI-NAV-01). 결과 파일도
   CD 전용 환경변수도 없는 프로세스(`start_check_alert_possible` — 프로세스 동안 그대로)는 Streamlit 호출이 없다. Admin 펼침은 이 알림을 따로
   내지 않는다.
@@ -1900,6 +1904,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   낱말 하나, 같은 대상 — D6 「알림만」)도 부른다 — `AD-10` 도 할 일이 계정 넣기 · 다시 넣기인 갈래(`_token_alert_target` — 꺼짐 아니고 시작
   점검 실패 · 토큰 환경변수 아님)에서는 같은 대상을 들고 간다. 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다. 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` —
   무엇이 나도 `off` 로 물러선다). 시험 `tests/test_bdq_login_alerts.py`.
+- `src/capa_simulation/components/memory_diagnostic.py` — Admin 「서버 시작 점검」 의 메모리 값 줄과 표 끝 「DuckDB 메모리 한도」 줄(사내
+  리뷰 202611162130 사외요청 3 — 사내가 메모리 줄이기 앞뒤를 잰다). 값 줄은 「**메모리 지금** · RSS · 최고 · 세션 연결 n · 전체 n ·
+  cache_data」(RSS 는 `/proc/self/status` 의 `VmRSS` · `VmHWM`, 없으면 최고만 `resource` · Windows 는 「모름」, 세션은 Streamlit 내부 `Runtime`
+  세션 관리자, `cache_data` 는 `get_data_cache_stats_provider` 의 저장된 pickle 길이 합 — 내부 API 는 감싸 무엇이 나도 「모름」)와 DB 마다
+  「**DuckDB <시뮬레이션 · 설비> 회차 끝** · 마지막 · 최고 · 임시 파일 최고 · 한도」(`persistence/duckdb_memory.memory_sample` — 아직 못 쟀으면
+  「모름」)다. 세션 표 · `cache_resource` · 세션 상태의 크기를 깊이 재지 않는다(잠긴 표에 `memory_usage(deep=True)` 를 부르지 않는다 —
+  `tests/test_memory_diagnostic.py` 가 막고 돈다). 화면에는 값 줄만 두고 뜻은 Guide 「서버 시작 점검」 이다. 한도 줄은 지금 연결 설정
+  (`_sql_helpers.DUCKDB_MEMORY_LIMIT`)의 판정 — 없음 「건너뜀」 · 받은 값 「정상」(DB 마다 그 값) · 틀린 값 「실패」(꼴 · 범위, 기본 그대로).
 - `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
   다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
   (2026-11-12 사용자 결정). 단추는 관리자(`sso_identity.viewer_is_admin`)에게만 서고 — 권한 기능이라 접속 명단처럼 숨긴다 —
@@ -5366,6 +5378,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   와 `_migration_core` 가 `transaction()` 한 벌을 쓰고, 공용 프로필 버전 대조 `require_profile_version()`
   (`ProfileVersionConflict` — 기본 스키마 `app_meta`, 설비 DB 층 사용 상태는 `schema="equipment_ops"`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
+  연결 설정 `DUCKDB_CONNECT_CONFIG` 는 한 벌(블록 16KiB + 메모리 한도 칸 — 아래 `duckdb_memory.py`)이고 두 DB 가 함께 쓴다 — 같은 파일의
+  연결은 설정이 모두 같아야 해서 환경변수는 import 때 한 번만 읽는다. 가장 바깥 `pinned_connections` 블록이 핀을 닫기 직전에 그 핀으로
+  DB 메모리 표본을 읽는다(`duckdb_memory.observe` — 새 연결을 열지 않는다).
+- `src/capa_simulation/persistence/duckdb_memory.py` — DuckDB 메모리 한도 칸과 회차 끝 메모리 표본. 환경변수 `CAPA_DUCKDB_MEMORY_LIMIT`
+  (사내 리뷰 202611162130 사외요청 3)가 없거나 비면 연결 설정에 넣지 않는다 — DuckDB 기본(보이는 메모리의 80%) 그대로다. 값은 사용자가
+  정하고 코드 · 이미지에 기본값을 두지 않는다(`docker/Dockerfile-prod` 에 `ENV` 없음). 꼴은 수 + 단위(`KB` · `MB` · `GB` · `TB` ·
+  `KiB` · `MiB` · `GiB` · `TiB`, 대소문자 · 띄어 씀 상관없음)이고 받는 범위는 64MiB ~ 1TiB 다 — 권하는 값이 아니라 울타리다(너무 작으면
+  DuckDB 가 첫 표에서 메모리 부족으로 멈춰 모든 DB 열기가 실패하고, 너무 크면 DuckDB 가 거절한다). 틀린 값은 넣지 않고 「서버 시작 점검」
+  「DuckDB 메모리 한도」 줄 「실패」 · `AD-01` 이 알린다. 한도는 DB 파일(인스턴스)마다 같은 값이라 두 DB 합은 그 두 배까지 가고, 같은
+  `connect()` 로 잠깐 여는 사본(동기화의 받은 사본 확인 · 스냅샷 짓기)도 같은 한도를 쓴다 — 따로 두지
+  않은 것은 `connect()` 가 경로만 받는 한 곳이라 DB 를 가르려면 그 경계에 DB 종류를 들여야 하고, 설비 DB 는 작아 한도에 닿을 일이
+  드물어서다. 한도를 넘는 질의의 넘침은 DuckDB 기본 `temp_directory`(DB 파일 옆 `<DB 파일>.tmp` — `.gitignore` 의 `*.tmp`) 다. 표본은
+  `pinned_connections` 가 핀을 닫기 직전 그 핀으로 `duckdb_memory()` 를 읽어 DB 마다 마지막 · 최고 · 임시 파일 최고와 DuckDB 가 실제로
+  쓰는 한도(DB 마다 처음 한 번)를 프로세스 메모리에 모은다(회차당 0.2ms 안팎 — 샘플 관측). 이 앱은 회차가 끝나면 인스턴스가 내려가
+  아무 때나 재면 거의 늘 0 이라 회차 끝을 잰다 — 질의 중 순간 최고는 잡지 못한다. Streamlit 을 import 하지 않는다.
+  시험 `tests/test_duckdb_memory.py`.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
   - 다시 해도 같은 실패는 `MigrationFailed`(`RuntimeError`)다 — 이미 적용된 파일이 바뀜(`MigrationChanged`)과, 새 SQL 이
