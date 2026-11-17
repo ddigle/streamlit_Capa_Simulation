@@ -765,6 +765,10 @@ def _save_scenario(
     *,
     existing_names: frozenset[str],
 ) -> None:
+    # 저장은 공용 BigDataQuery 계정으로 사내 DB 를 여는 상세 조회(`fetch_core_data_dataset`)를 먼저
+    # 돌리고 저장소 벽(`create_scenario`)은 그 뒤에 선다 — 목록 조회와 같이 누른 순간 실제 등급으로
+    # 먼저 본다(DB 등록 — 실무자부터). 거절은 화면 본문의 받는 자리가 알림창 · Alarm 으로 낸다.
+    grades.require("scenario.db_register")
     st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
     scenario_name = str(st.session_state.get(form_field_key(FORM_SCENARIO_NAME_KEY), "")).strip()
     if scenario_name in existing_names:

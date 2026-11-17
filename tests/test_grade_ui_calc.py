@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alert_marks import flashed
@@ -738,6 +739,55 @@ def test_a_viewer_still_edits_and_calculates_on_their_own_screen(
     _clean(app)
     assert expected <= _buttons(app), expected - _buttons(app)
     assert not [entry for entry in seen if entry[1] == grades.VIEWER], seen
+
+
+BDQ_SAVE_SCRIPT = """
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+
+for key, value in (
+    (registration.FORM_CODE_KEY, "SIM-DEMO"),
+    (registration.FORM_SOURCE_NAME_KEY, "DEMO 원천"),
+    (registration.FORM_SCENARIO_NAME_KEY, "DEMO 등록"),
+    (registration.FORM_REGISTERED_AT_KEY, "2026-11-01 09:00:00"),
+):
+    st.session_state[registration.form_field_key(key)] = value
+# 저장 제출은 첫 회차 한 번이다 — 거절 알림을 내는 다음 회차에는 다시 누르지 않는다.
+if not st.session_state.get("__submitted__"):
+    st.session_state["__submitted__"] = True
+    registration._save_scenario(None, "demo.duckdb", existing_names=frozenset())
+"""
+
+
+def test_a_viewers_db_register_save_never_reaches_the_shared_account_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DB 등록 「저장」 은 공용 BigDataQuery 계정으로 사내 DB 를 여는 상세 조회를 저장소 벽보다
+    먼저 돌린다 — 목록 조회처럼 누른 순간 실제 등급으로 본다. 열람의 저장 제출은 조회 함수에 닿지
+    않고 거절 알림 한 번이다(화면 본문의 받는 자리)."""
+    from capa_simulation.components import bigdataquery_registration as registration
+
+    fetched: list[object] = []
+
+    def _fetch(*args: object, **kwargs: object) -> None:
+        fetched.append(args)
+        raise RuntimeError("시험 — 사내 DB 상세 조회에 닿았다")
+
+    monkeypatch.setattr(registration, "fetch_core_data_dataset", _fetch)
+    monkeypatch.setattr(
+        registration, "load_global_display_order", lambda _path: SimpleNamespace(rules=())
+    )
+    as_grade(monkeypatch, grades.VIEWER)
+    with judge_spy() as seen:
+        app = _graded(BDQ_SAVE_SCRIPT).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert fetched == []
+    assert seen == [("scenario.db_register", grades.VIEWER)]
+    assert [item.value for item in flashed(app, "error")] == [
+        grades.refusal_text("scenario.db_register")
+    ]
 
 
 YIELD_GRID_HOST = "yield_grid"
