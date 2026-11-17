@@ -90,7 +90,7 @@ from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.edit_file_tail import edited_file_name
-from capa_simulation.components.grade_hooks import in_fragment, viewer_can
+from capa_simulation.components.grade_hooks import in_fragment, on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
@@ -1064,6 +1064,7 @@ def _render_process_filter(
     return [str(process) for process in selected]
 
 
+@on_press
 def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
     """시작 월·끝 월 상자의 콜백. 고른 기간을 공용 프로필에 남긴다(공정은 그대로).
 
@@ -1090,6 +1091,7 @@ def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
         clear_shortening_filter_cache()
 
 
+@on_press
 def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
     """공정 선택의 콜백. 고른 공정을 공용 프로필에 남긴다(기간은 그대로).
 
