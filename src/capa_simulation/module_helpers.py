@@ -25,6 +25,12 @@
   있으면 조회는 「쓸 수 없음」 으로 던지고 S3 는 「쓸 수 없음」 을 돌려준다.
 - 돌려주는 까닭 · 로그에는 고정 낱말만 싣는다(버킷 · 주소 · 키 · 조회문 없음). 조회 실패의 글은 앱
   화면과 같은 안내(`BigDataQueryCallError` 의 글)다.
+- **올리기 · 조회는 부를 때마다 작업 기록 한 줄**(`data_module_upload` · `data_module_query`,
+  2026-11-17 접속 등급 답 — 모듈은 모두 열람부터라 누가 했는지 남긴다). 누가는 기록기가 정하고(쿠키
+  신원) 대상은 모듈 id, 상세는 결과 낱말과 크기 · 행 수뿐이다(파일 이름 · 조회문 · 값 없음). 실패도
+  한 줄이다.
+  받기는 모듈 데이터 자리만 바꾸므로 남기지 않는다. 등급으로 막지 않는다 — 모듈 안의 일은 열람이
+  한다. 기록기가 꺼진 곳(사내 PC · WebIDE · 시험 · 모듈 시험 러너)에서는 아무것도 하지 않는다.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ from typing import TYPE_CHECKING, Final, cast
 import pandas as pd
 
 from capa_simulation import module_registry
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.io import s3_small
 
 if TYPE_CHECKING:
@@ -94,6 +101,11 @@ UNAVAILABLE_SETTINGS: Final = "설정 읽기 실패"
 UNAVAILABLE_NO_TARGET: Final = "키 · 주소 · 버킷 없음"
 # 「파일 오류」 의 자세히 — 받을 자리에 폴더가 있다(그 밖은 예외 종류 이름).
 S3_DETAIL_FOLDER: Final = "폴더가 있음"
+# --- 작업 기록 -----------------------------------------------------------------------------------
+AUDIT_UPLOAD: Final = "data_module_upload"
+AUDIT_QUERY: Final = "data_module_query"
+# 성공의 결과 낱말. 실패는 `S3Result.reason`(S3) · `BigDataQueryError.kind`(조회) 고정 낱말이다.
+AUDIT_RESULT_OK: Final = "ok"
 # 「전송 실패」 의 자세히 — `s3_small` 의 까닭 분류 → 고정 낱말.
 _TRANSFER_LABELS: Final = {
     s3_small.KIND_UNREACHABLE: "주소에 닿지 못함",
@@ -181,10 +193,33 @@ def build_module_query(sql: object, start: object, end: object) -> str:
     return sql.replace("{start_date}", start_bound).replace("{end_date}", end_bound)
 
 
+def _module_target(module_id: str) -> dict[str, str]:
+    return {"type": "module", "id": module_id}
+
+
 def query_bigdataquery(
     module_id: str, sql: object, *, start: object = None, end: object = None
 ) -> pd.DataFrame:
-    """모듈 `module_id` 의 조회 한 번 — 앱의 DB 등록과 같은 길로 묻고 표를 돌려준다(0행도)."""
+    """모듈 `module_id` 의 조회 한 번 — 앱의 DB 등록과 같은 길로 묻고 표를 돌려준다(0행도).
+
+    성공 · 실패 모두 작업 기록 한 줄(`AUDIT_QUERY` — 결과 낱말 · 행 수)을 남긴다.
+    """
+    try:
+        frame = _query(module_id, sql, start=start, end=end)
+    except BigDataQueryError as error:
+        audit_recorder.record(
+            AUDIT_QUERY, out="fail", tgt=_module_target(module_id), det={"result": error.kind}
+        )
+        raise
+    audit_recorder.record(
+        AUDIT_QUERY,
+        tgt=_module_target(module_id),
+        det={"result": AUDIT_RESULT_OK, "rows": len(frame)},
+    )
+    return frame
+
+
+def _query(module_id: str, sql: object, *, start: object, end: object) -> pd.DataFrame:
     from capa_simulation.io import company_bigdataquery_adapter as adapter
 
     query = build_module_query(sql, start, end)
@@ -201,7 +236,7 @@ def query_bigdataquery(
         _LOGGER.warning("모듈 %s BigDataQuery 실패 갈래=%s", module_id, error.kind)
         raise BigDataQueryError(error.kind, str(error)) from error
     except RuntimeError as error:
-        # 패키지 없음 · 불러오기 실패 · 서버의 요청자 계정 없음 — 앱 관리자가 고칠 설정이다.
+        # 패키지 없음 · 불러오기 실패 · 서버의 요청자 계정 없음 — 앱 관리자(개발자)가 고칠 설정이다.
         _LOGGER.warning("모듈 %s BigDataQuery 쓸 수 없음", module_id)
         raise BigDataQueryError(QUERY_UNAVAILABLE, str(error)) from error
     if not isinstance(frame, pd.DataFrame):
@@ -284,7 +319,21 @@ def _transfer_failure(module_id: str, failure: s3_small.S3Failure, action: str) 
 
 
 def s3_upload(module_id: str, data_dir: Path, name: object) -> S3Result:
-    """`data_dir/<name>` 파일 하나를 버킷 `modules/<id>/<name>` 으로 올린다(있으면 덮는다)."""
+    """`data_dir/<name>` 파일 하나를 버킷 `modules/<id>/<name>` 으로 올린다(있으면 덮는다).
+
+    성공 · 실패 모두 작업 기록 한 줄(`AUDIT_UPLOAD` — 결과 낱말 · 바이트 수)을 남긴다.
+    """
+    result = _upload(module_id, data_dir, name)
+    audit_recorder.record(
+        AUDIT_UPLOAD,
+        out="success" if result.ok else "fail",
+        tgt=_module_target(module_id),
+        det={"result": AUDIT_RESULT_OK if result.ok else result.reason, "bytes": result.size},
+    )
+    return result
+
+
+def _upload(module_id: str, data_dir: Path, name: object) -> S3Result:
     place = _local_path(module_id, data_dir, name)
     if isinstance(place, S3Result):
         return place

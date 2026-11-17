@@ -110,8 +110,8 @@ _DYNAMIC_IMPORTS: Final = frozenset(
 )
 # 창구(`module_api`)를 돌아 코어에 닿는 길(M06). 모듈은 코어와 한 프로세스라 이 길로 세션 비밀 ·
 # S3 키 · 명단 쓰기 함수까지 닿는다. **막는 것은 쉬운 꼴뿐이다** — 의도를 가진 코드는 다른 길을 찾을
-# 수 있어 점검 통과가 보증이 아니고, 방어선은 앱 관리자의 PR 점검이다(런북 4-6). 판정할 수 없으면
-# 오류다.
+# 수 있어 점검 통과가 보증이 아니고, 방어선은 앱 관리자(개발자)의 PR 점검이다(런북 4-6). 판정할 수
+# 없으면 오류다.
 _ESCAPE_ATTRIBUTES: Final = frozenset(
     {
         "__globals__",
@@ -979,7 +979,8 @@ def _check_package(node: ast.AST, top: str, context: _FileContext) -> None:
             "M09",
             "error",
             node,
-            f"`import {top}` — 이 서버에 설치되지 않은 이름입니다(담당자 → 앱 관리자 → 사외 요청)",
+            f"`import {top}` — 이 서버에 설치되지 않은 이름입니다"
+            "(담당자 → 앱 관리자(개발자) → 사외 요청)",
         )
         return
     names = [normalize_name(name) for name in distributions]
@@ -1002,7 +1003,8 @@ def _check_package(node: ast.AST, top: str, context: _FileContext) -> None:
             "M09",
             "error",
             node,
-            f"`import {top}` — requirements.txt 에 없습니다(담당자 → 앱 관리자 → 사외 요청)",
+            f"`import {top}` — requirements.txt 에 없습니다"
+            "(담당자 → 앱 관리자(개발자) → 사외 요청)",
         )
         return
     verdicts = [(requirement, marker_on_linux(requirement.marker)) for requirement in pinned]
@@ -1367,7 +1369,7 @@ def _check_window_escapes(tree: ast.Module, names: _Names, context: _FileContext
 # (`data/modules/<그 id>/`)와 버킷의 `modules/<그 id>/` 를 읽고 덮는다(2026-11-12 사용자 답 ④-4
 # (가)). 이름표는 `api.context(__file__)` 로만 받는다. 자기 id — 글자 상수(모듈 시험의 대역)와
 # `api.context(__file__)` 이름표의 `.id` — 는 넘기고, 판정할 수 없는 id 는 오류다. 막는 것은
-# 쉬운 꼴뿐이다 — 방어선은 앱 관리자의 PR 점검이다(런북 4-6).
+# 쉬운 꼴뿐이다 — 방어선은 앱 관리자(개발자)의 PR 점검이다(런북 4-6).
 CONTEXT_CLASS: Final = f"{_MODULE_API}.ModuleContext"
 _CONTEXT_FACTORY: Final = f"{_MODULE_API}.context"
 _DATACLASS_REPLACE: Final = "dataclasses.replace"
@@ -1382,7 +1384,7 @@ HAND_MADE_CONTEXT_FORMS: Final = (
 # 이름표를 받는 `api.context(…)` 의 인자가 맨이름 `__file__` 이 아닌 꼴(M06) — 남의 모듈 파일 자리를
 # 넣으면 남의 이름표를 받는다. 이 파일이 `__file__` 을 다시 묶으면 맨이름도 이 파일 자리가 아니다.
 # 이름표를 옮겨 담기 · `self.ctx` · 틀 별명 · 주석 없는 인자 같은 돌아가는 꼴은 보지 않는다 — 앱
-# 관리자의 PR 점검 몫이다.
+# 관리자(개발자)의 PR 점검 몫이다.
 # 지침서 부록 B 의 M06 우회 줄이 이 꼴을 다 적는다(`tests/test_module_guide_sync.py`).
 OTHER_FILE_CONTEXT_FORMS: Final = (
     "api.context(<__file__ 이 아닌 인자>)",

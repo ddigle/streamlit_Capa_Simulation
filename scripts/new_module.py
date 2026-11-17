@@ -1,6 +1,6 @@
 # Purpose: 모듈 뼈대(module.json·첫 화면·스모크 시험·README)를 modules/<id>/ 안에만 만든다.
 
-"""모듈 뼈대 만들기 — 새 모듈 등록은 앱 관리자의 승인 뒤에 한다.
+"""모듈 뼈대 만들기 — 새 모듈 등록은 앱 관리자(개발자)의 승인 뒤에 한다.
 
 담당자 클론(사내 PC, PowerShell — 저장소 뿌리에서):
 
@@ -152,7 +152,7 @@ def readme_text(module_id: str, *, name: str, owner: str, title: str) -> str:
 
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="모듈 뼈대를 modules/<id>/ 안에만 만든다(새 모듈은 앱 관리자 승인 뒤)"
+        description="모듈 뼈대를 modules/<id>/ 안에만 만든다(새 모듈은 앱 관리자(개발자) 승인 뒤)"
     )
     parser.add_argument("id", help="모듈 id — 소문자·숫자·밑줄 하나, 2 ~ 24자")
     parser.add_argument(
@@ -248,17 +248,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     root_option = "" if args.root is None else f" --root {args.root}"
     print("다음 할 일:")
     print(
-        "  1) 앱 관리자의 승인을 받는다(새 모듈 등록 — 커밋 본문과 PR 본문에 "
-        "`승인: 앱 관리자 <YYYY-MM-DD>`)"
+        "  1) 앱 관리자(개발자)의 승인을 받는다(새 모듈 등록 — 커밋 본문과 PR 본문에 "
+        "`승인: 앱 관리자(개발자) <YYYY-MM-DD>`)"
     )
     print(f"  2) uv run --no-sync python scripts/check_module.py {module_id}{root_option}")
     print(
         f"  3) 자기 가지(module/{module_id}/<주제>)에서 "
         f"git add {MODULES_FOLDER_NAME}/{module_id} → "
-        f'git commit -m "module({module_id}): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"'
+        f'git commit -m "module({module_id}): 새 모듈 뼈대" '
+        '-m "승인: 앱 관리자(개발자) <YYYY-MM-DD>"'
     )
     print(
-        "  4) 담당자가 그 가지를 푸시하고 GitHub 에서 PR 을 연다 — 앱 관리자가 점검한 뒤 "
+        "  4) 담당자가 그 가지를 푸시하고 GitHub 에서 PR 을 연다 — 앱 관리자(개발자)가 점검한 뒤 "
         "합친다(지침서 8-2)"
     )
     return 0

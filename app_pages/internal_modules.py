@@ -18,7 +18,7 @@ from capa_simulation.components.page_link import render_page_link
 from capa_simulation.module_registry import MATURITY_LABELS
 from capa_simulation.navigation import module_page_specs, module_scan
 
-OFF_FAILED_HELP = "꺼지거나 실패한 모듈의 까닭은 관리자가 Admin Area 「모듈 상태」 에서 봅니다."
+OFF_FAILED_HELP = "꺼지거나 실패한 모듈의 까닭은 개발자가 Admin Area 「모듈 상태」 에서 봅니다."
 
 render_page_header("모듈")
 render_page_guide("internal_modules", title="모듈")

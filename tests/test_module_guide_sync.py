@@ -772,4 +772,4 @@ def test_module_data_on_the_deploy_server_is_outside_the_db_sync_in_every_guide(
     assert "재배포(CI/CD)마다" in _section("2. 쓸 수 있는 자리").replace("\n  ", "")
     assert "DB 동기화를 켜기(이관) 전에는 「쓸 수 없음」" in _section("3-10.").replace("\n  ", "")
     assert "DB 동기화가 켜진 뒤에도 모듈 데이터는 그 밖입니다" in colleague
-    assert "앱 관리자가 DB 동기화를 켠 뒤에만 되고" in colleague
+    assert "앱 관리자(개발자)가 DB 동기화를 켠 뒤에만 되고" in colleague
