@@ -199,6 +199,23 @@ def scenario_month_table(
     )
 
 
+def _next_edit_token(previous: ActiveScenario) -> str:
+    """편집 적용의 새 내용 토큰. 갈아끼워지는 **편집본** 토큰의 전체 기간 결과 칸은 여기서 걷는다.
+
+    편집 토큰은 uuid 라 이 세션의 그 편집본만 쓰고, 새 토큰이 서면 아무도 다시 부르지 않는다 —
+    적용하는 길은 모두 적용 뒤 곧바로 앱 전체 회차를 다시 돌려(`st.rerun` · `DialogHost.finish`) 옛
+    토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). pristine 토큰 칸(세션끼리
+    나누는 리비전 결과)은 걷지 않는다. 표를 다 갈아끼운 뒤에 부른다 — 적용이 막히면(`ValueError`)
+    아무 칸도 걷지 않는다.
+    """
+    old_token = previous.get("content_token")
+    if isinstance(old_token, str) and not is_pristine_content_token(old_token):
+        from capa_simulation.services.simulation_cache import retire_full_capacity_outcome
+
+        retire_full_capacity_outcome((previous["reference_version"], old_token))
+    return _new_content_token()
+
+
 def apply_month_updates(
     scenario: ActiveScenario,
     replacements: dict[str, pd.DataFrame],
@@ -221,7 +238,7 @@ def apply_month_updates(
     updated: ActiveScenario = {
         "reference_version": scenario["reference_version"],
         "revision": scenario["revision"] + 1,
-        "content_token": _new_content_token(),
+        "content_token": _next_edit_token(scenario),
         "tables": tables,
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = updated
@@ -247,7 +264,7 @@ def apply_table_updates(
     updated: ActiveScenario = {
         "reference_version": scenario["reference_version"],
         "revision": scenario["revision"] + 1,
-        "content_token": _new_content_token(),
+        "content_token": _next_edit_token(scenario),
         "tables": tables,
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = updated

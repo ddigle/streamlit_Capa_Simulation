@@ -15,9 +15,14 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
+import streamlit as st
 
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.unit_capacity import (
+    CAPACITY_ASSUMPTIONS_ATTR,
+    CAPACITY_EXCLUSIONS_ATTR,
+)
 
 
 @pytest.fixture(scope="module")
@@ -58,6 +63,95 @@ def test_a_period_is_a_slice_of_the_whole_scenario(tables: dict[str, pd.DataFram
     assert unit.equals(alone.unit_capacity.reset_index(drop=True))
     assert required.equals(alone.required_equipment.reset_index(drop=True))
     assert set(pd.to_numeric(unit["생산계획년월"])) <= set(range(start, end + 1))
+
+
+def _assert_same_frame(new: pd.DataFrame, old: pd.DataFrame) -> None:
+    assert new.equals(old)
+    assert new.dtypes.equals(old.dtypes)
+    assert new.columns.equals(old.columns) and new.index.equals(old.index)
+    assert new.attrs.keys() == old.attrs.keys()
+    for name, value in new.attrs.items():
+        other = old.attrs[name]
+        if isinstance(value, pd.DataFrame):
+            assert isinstance(other, pd.DataFrame), name
+            assert value.equals(other) and value.dtypes.equals(other.dtypes), name
+        else:
+            assert value == other, name
+
+
+def _with_exclusions(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """attrs 가 비지 않은 표 — Lot 측정률 음수 세 달(달 칸이 있는 제외 목록)과 WF 측정률 한 행 빠짐
+    (1.0 가정 건수 · 달). 합성 시드에서는 제외 목록이 비어 있어 attrs 대조가 빈 표끼리만 된다."""
+    noisy = dict(tables)
+    lot = tables["RQ_LOT_RATIO"].copy()
+    lot_months = pd.to_numeric(lot["생산계획년월"])
+    months = sorted(int(month) for month in lot_months.unique())
+    marked = lot_months.isin([months[1], months[4], months[8]])
+    picked = lot.loc[marked].groupby(lot_months[marked]).head(1).index
+    lot.loc[picked, "Lot 측정률"] = -0.5
+    noisy["RQ_LOT_RATIO"] = lot
+    wf = tables["RQ_WF_RATIO"]
+    wf_months = pd.to_numeric(wf["생산계획년월"])
+    noisy["RQ_WF_RATIO"] = wf.drop(wf.index[wf_months.eq(months[3])][:1]).reset_index(drop=True)
+    return noisy
+
+
+@pytest.mark.parametrize("noisy", [False, True], ids=["seed", "exclusions"])
+@pytest.mark.parametrize("bounds", [(0, -1), (2, 5), (6, 6)])
+def test_slicing_on_every_call_matches_the_old_sliced_cell(
+    tables: dict[str, pd.DataFrame],
+    bounds: tuple[int, int],
+    noisy: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """자른 결과는 칸에 두지 않고 부를 때마다 전체 기간 칸에서 자른다. 옛 길 — 같은 몸통을 조회기간
+    키의 `st.cache_data` 칸에 둔 것 — 의 첫 호출(계산한 객체)·적중 호출(피클 왕복)과 프레임 · dtype
+    · 열 · 색인 · attrs 가 같아야 한다. 새 길의 두 번째 호출은 전체 칸에 적중해 다시 계산하지 않고,
+    받은 프레임을 고쳐도 다음 호출에 닿지 않는다(부를 때마다 새 사본). 제외 목록이 기간을 가로지르는
+    표(`_with_exclusions`)로도 본다 — 달 칸이 있는 attrs 는 같이 잘리고 가정 건수는 전체 값이다."""
+    if noisy:
+        tables = _with_exclusions(tables)
+    months = _months(tables)
+    start, end = months[bounds[0]], months[bounds[1]]
+    computed: list[int] = []
+    original = sc.get_capacity_and_demand
+
+    def counted(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+        computed.append(1)
+        return original(inputs)
+
+    monkeypatch.setattr(sc, "get_capacity_and_demand", counted)
+    old_cell = st.cache_data(show_spinner=False, max_entries=16)(
+        sc.get_scenario_capacity_and_demand
+    )
+    new_key, old_key = _key(start, end), _key(start, end)
+
+    new_first = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    new_hit = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    assert len(computed) == 1
+    old_first = old_cell(old_key, _scenario_tables=tables, _reference_tables=tables)
+    old_hit = old_cell(old_key, _scenario_tables=tables, _reference_tables=tables)
+    assert len(computed) == 2
+
+    for new in (new_first, new_hit):
+        for old in (old_first, old_hit):
+            for new_frame, old_frame in zip(new, old, strict=True):
+                _assert_same_frame(new_frame, old_frame)
+    if noisy:
+        excluded = new_first[0].attrs[CAPACITY_EXCLUSIONS_ATTR]
+        excluded_months = [months[1], months[4], months[8]]
+        assert len(excluded) == sum(start <= month <= end for month in excluded_months)
+        assert new_first[0].attrs[CAPACITY_ASSUMPTIONS_ATTR] == {"RQ_WF_RATIO": 1}
+
+    new_hit[0]["대당 Capa"] = -1.0
+    again = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    _assert_same_frame(again[0], new_first[0])
 
 
 def test_an_error_outside_the_period_still_stops_and_says_so(
