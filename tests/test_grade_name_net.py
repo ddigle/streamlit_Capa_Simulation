@@ -159,7 +159,15 @@ def _all_strings(path: Path) -> list[tuple[int, str]]:
 
 def test_the_net_catches_the_old_sense_and_lets_the_allowed_forms_through() -> None:
     """그물이 헛돌지 않는다 — 옛 꼴은 잡고 허용 꼴 · 다른 뜻은 지나간다."""
-    for old in ("관리자만 여는 화면입니다", "관리자로", "관리자(환경변수)", "관리자가 넣음"):
+    for old in (
+        "관리자만 여는 화면입니다",
+        "관리자로",
+        "관리자(환경변수)",
+        "관리자가 넣음",
+        "관리자 몫 알림이 서지 않습니다",
+        "관리자 화면입니다",
+        "관리자까지만 보입니다",
+    ):
         assert stray_manager_words(old), old
     for allowed in (
         "앱 관리자(개발자)에게 알려 주세요",
@@ -168,8 +176,13 @@ def test_the_net_catches_the_old_sense_and_lets_the_allowed_forms_through() -> N
         "열람 · 실무자 · 관리자 · 개발자",
         "브라우저 개발자 도구",
         "기록 열람",
+        "Capa 공식 지정 · 설비 저장은 관리자 몫(등급)이고",
+        "통합인증이 꺼진 운영 서버는 관리자 몫까지 됩니다(개발자 몫만 막힘).",
+        "운영 서버에서 관리자 아래 등급에게는 값만 보입니다",
     ):
         assert not stray_manager_words(allowed), allowed
+    # 문맥 꼴은 문장마다 본다 — 앞 문장의 등급 낱말이 다음 문장의 옛 꼴을 덮지 않는다.
+    assert stray_manager_words("실무자부터 저장합니다. 관리자 몫 알림이 섭니다.")
     assert screen_python_files(), "훑을 파일이 있어야 한다"
     assert not any(
         _is_module_file(path.relative_to(ROOT).as_posix()) for path in screen_python_files()

@@ -8558,7 +8558,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **시험** — 갈래마다 `tests/test_grade_ui_<core|calc|equip|modules>.py` 가 자기 화면을 등급 넷으로 그려 단추 유무를 보고
   `COVERED_ACTIONS` 와 받는 자리를 다는 뿌리 파일(`assert_refusals_caught`)을 둔다. `tests/test_grade_coverage.py` 가 화면 동작이 모두 덮였는지 ·
   장부 쓰기마다 벽 · 뿌리가 있는지 본다. 「관리자」 뜻 그물은 `tests/test_grade_name_net.py`(앱 · 부품 · `auth` · `scripts` · sso_setup) ·
-  `tests/test_grade_name_net_docs.py`(Guide · 런북 · 지침서 · 사내 문서 · 모듈 파일) 둘이고 허용 목록은 `tests/grade_words.py` 한 벌이다.
+  `tests/test_grade_name_net_docs.py`(Guide · 런북 · 지침서 · 사내 문서 · 모듈 파일) 둘이고 허용 목록은 `tests/grade_words.py` 한 벌이다
+  (「관리자 몫」 은 같은 문장에 새 뜻 표지가 있을 때만 · 등급 자리의 옛 낱말 「일반」 도 같은 파일이 잡는다).
 
 ### 스크립트와 컴포넌트
 
