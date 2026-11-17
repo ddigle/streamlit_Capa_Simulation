@@ -243,3 +243,61 @@ def test_parse_options_reads_repeatable_omissions() -> None:
 
     assert parsed.omit_claims == ("loginid", "x")
     assert parsed.host == "127.0.0.1"
+
+
+def _authorize_query(opts: MockOptions, **extra: str) -> str:
+    return urlencode(
+        {
+            "client_id": opts.client_id,
+            "response_type": "id_token",
+            "response_mode": "form_post",
+            "redirect_uri": f"{APP_URL}/auth/callback",
+            "nonce": "nonce-acc",
+            "state": "state-acc",
+            **extra,
+        }
+    )
+
+
+def test_accounts_show_a_chooser_and_sign_the_chosen_synthetic_account() -> None:
+    """접속 등급 확인용 — 고르기 화면에서 고른 합성 계정으로 서명한다(2026-11-18 접속 등급)."""
+    identity = make_signing_identity()
+    opts = options(accounts=("demo.dev", "demo.viewer"), developer="demo.dev", operational=True)
+
+    chooser = http(build_app(opts, identity), "GET", f"/oauth2/authorize?{_authorize_query(opts)}")
+    assert chooser.status == 200
+    assert "demo.dev" in chooser.text and "demo.viewer" in chooser.text
+    assert 'name="id_token"' not in chooser.text
+
+    chosen = http(
+        build_app(opts, identity),
+        "GET",
+        f"/oauth2/authorize?{_authorize_query(opts, **{'as': 'demo.viewer'})}",
+    )
+    token = hidden_field(chosen.text, "id_token")
+    environ = environ_from_lines(env_lines(opts, identity, DEV_SECRET))
+    cfg = load_config(environ)
+    login = verify_id_token(token, cfg, expected_nonce="nonce-acc", now=int(time.time()))
+    assert login.loginid == "demo.viewer"
+    assert environ[names.ENV_ACCESS_ADMINS] == "demo.dev"
+    assert environ[names.ENV_SSO] == "required"
+    assert cfg.operational, "운영 판정이어야 등급이 갈린다"
+
+    stranger = http(
+        build_app(opts, identity),
+        "GET",
+        f"/oauth2/authorize?{_authorize_query(opts, **{'as': 'demo.other'})}",
+    )
+    assert 'name="id_token"' not in stranger.text, "목록 밖 계정은 다시 고르기 화면"
+
+
+def test_accounts_options_are_synthetic_and_operational_needs_a_developer(
+    tmp_path: Path,
+) -> None:
+    parsed = parse_options(
+        ["--port", "8592", "--app-url", APP_URL, "--accounts", "demo.dev, demo.viewer"]
+    )
+    assert parsed.accounts == ("demo.dev", "demo.viewer")
+    environ = {names.ENV_APP_ENV: "dev"}
+    assert main(["--port", "8592", "--app-url", APP_URL, "--accounts", "real.person"], environ) == 2
+    assert main(["--port", "8592", "--app-url", APP_URL, "--operational"], environ) == 2

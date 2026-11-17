@@ -20,7 +20,14 @@
 - 실패를 흉내 내는 선택: `--aud`(다른 aud) · `--omit-claim`(클레임 빼기) · `--error`(IdP 오류) ·
   `--submit-delay-ms`(제출 늦추기 — state 만료 · 다른 탭 시험).
 - `--app-url` 이 루프백이 아니면(WebIDE 프록시) 앱의 접속 명단이 켜지므로 env 파일에
-  `--loginid` 를 관리자 목록으로 적는다. 루프백이면 적지 않아 명단이 꺼진 채로 돈다.
+  `--loginid` 를 개발자 목록(`CAPA_ACCESS_ADMINS`)으로 적는다. 루프백이면 적지 않아 명단이 꺼진 채로
+  돈다.
+- **접속 등급을 보려면**(2026-11-18 접속 등급) — `--accounts` 에 합성 계정을 쉼표로 주면
+  (예: `demo.dev,demo.manager,demo.editor,demo.viewer`) authorize 가 고르기 화면을 내고 고른
+  계정(`?as=`)으로 서명한다(루프백에서만 — 이 스크립트가 루프백 밖을 거절한다).
+  `--developer demo.dev` 는 env 파일의 개발자 목록, `--operational` 은 env 파일에
+  `CAPA_SSO=required` 를 적어 운영 판정으로 띄운다(등급은 운영 + 켜짐에서만 갈린다). 값은
+  합성만이다.
 """
 
 from __future__ import annotations
@@ -77,6 +84,12 @@ class MockOptions:
     submit_delay_ms: int = 0
     tls_cert: Path | None = None
     tls_key: Path | None = None
+    # 고르기 화면에 세울 계정(합성) — 비면 `loginid` 하나로 서명한다.
+    accounts: tuple[str, ...] = ()
+    # env 파일의 개발자 목록(`CAPA_ACCESS_ADMINS`) — 비면 루프백 밖에서만 `loginid` 를 적는다.
+    developer: str = ""
+    # env 파일에 `CAPA_SSO=required` 를 적어 운영 판정으로 띄운다.
+    operational: bool = False
 
     @property
     def scheme(self) -> str:
@@ -138,7 +151,11 @@ def make_signing_identity() -> SigningIdentity:
     return SigningIdentity(private_key=key, certificate_der=der, x5t=x5t)
 
 
-def id_token_claims(options: MockOptions, *, nonce: str, now: int) -> dict[str, Any]:
+def id_token_claims(
+    options: MockOptions, *, nonce: str, now: int, loginid: str | None = None
+) -> dict[str, Any]:
+    account = loginid or options.loginid
+    username = options.username if account == options.loginid else f"DEMO {account}"
     claims: dict[str, Any] = {
         "iss": options.issuer,
         "aud": options.aud or options.client_id,
@@ -146,9 +163,9 @@ def id_token_claims(options: MockOptions, *, nonce: str, now: int) -> dict[str, 
         "nbf": now,
         "exp": now + options.lifetime,
         "nonce": nonce,
-        "sub": f"mock-{options.loginid}",
-        "loginid": options.loginid,
-        "username": options.username,
+        "sub": f"mock-{account}",
+        "loginid": account,
+        "username": username,
         "deptname": options.deptname,
     }
     for claim in options.omit_claims:
@@ -157,13 +174,18 @@ def id_token_claims(options: MockOptions, *, nonce: str, now: int) -> dict[str, 
 
 
 def issue_id_token(
-    identity: SigningIdentity, options: MockOptions, *, nonce: str, now: int | None = None
+    identity: SigningIdentity,
+    options: MockOptions,
+    *,
+    nonce: str,
+    now: int | None = None,
+    loginid: str | None = None,
 ) -> str:
     """ADFS 꼴 RS256 id_token — 헤더 `kid` = `x5t` = 인증서 SHA-1 지문."""
     import jwt
 
     moment = int(time.time()) if now is None else now
-    claims = id_token_claims(options, nonce=nonce, now=moment)
+    claims = id_token_claims(options, nonce=nonce, now=moment, loginid=loginid)
     headers = {"x5t": identity.x5t, "kid": identity.x5t}
     return jwt.encode(claims, identity.private_key, algorithm="RS256", headers=headers)
 
@@ -206,6 +228,24 @@ def form_post_page(
     return _page("가짜 IdP — 로그인", body, script=script)
 
 
+ACCOUNT_PARAM = "as"
+
+
+def chooser_page(query: Mapping[str, str], accounts: Sequence[str]) -> str:
+    """계정 고르기 화면 — 같은 authorize 요청에 `as=<계정>` 을 붙인 링크(값은 이스케이프한다)."""
+    from urllib.parse import urlencode
+
+    links = [
+        (account, AUTHORIZE_PATH + "?" + urlencode({**query, ACCOUNT_PARAM: account}))
+        for account in accounts
+    ]
+    items = "".join(
+        f'<li><a href="{html.escape(link)}">{html.escape(account)}</a></li>'
+        for account, link in links
+    )
+    return _page("가짜 IdP — 계정 고르기", f"<ul>{items}</ul>")
+
+
 def build_app(options: MockOptions, identity: SigningIdentity) -> Starlette:
     """`GET /oauth2/authorize` 하나뿐인 Starlette 앱."""
 
@@ -236,9 +276,16 @@ def build_app(options: MockOptions, identity: SigningIdentity) -> Starlette:
             }
             page = form_post_page(options.redirect_uri, fields, delay_ms=options.submit_delay_ms)
             return HTMLResponse(page)
+        account: str | None = None
+        if options.accounts:
+            chosen = query.get(ACCOUNT_PARAM, "")
+            if chosen not in options.accounts:
+                plain = {key: value for key, value in query.items() if key != ACCOUNT_PARAM}
+                return HTMLResponse(chooser_page(plain, options.accounts))
+            account = chosen
         now = int(time.time())
-        token = issue_id_token(identity, options, nonce=query["nonce"], now=now)
-        claims = id_token_claims(options, nonce="(요청의 nonce)", now=now)
+        token = issue_id_token(identity, options, nonce=query["nonce"], now=now, loginid=account)
+        claims = id_token_claims(options, nonce="(요청의 nonce)", now=now, loginid=account)
         page = form_post_page(
             options.redirect_uri,
             {"id_token": token, "state": state},
@@ -261,8 +308,12 @@ def env_lines(options: MockOptions, identity: SigningIdentity, secret: str) -> l
         names.ENV_SECRET: secret,
         names.ENV_APP_ENV: "dev",
     }
-    if not is_loopback_host(urlsplit(options.app_url).hostname):
+    if options.developer:
+        values[names.ENV_ACCESS_ADMINS] = options.developer
+    elif not is_loopback_host(urlsplit(options.app_url).hostname):
         values[names.ENV_ACCESS_ADMINS] = options.loginid
+    if options.operational:
+        values[names.ENV_SSO] = "required"
     return [f"export {name}={shlex.quote(value)}" for name, value in values.items()]
 
 
@@ -286,6 +337,10 @@ def refusal(options: MockOptions, environ: Mapping[str, str]) -> str | None:
     app_scheme = urlsplit(options.app_url).scheme
     if app_scheme not in ("http", "https"):
         return "--app-url 은 http(s):// 로 시작합니다."
+    if options.operational and not options.developer:
+        return "--operational 은 --developer 와 함께 줍니다(운영 판정은 개발자 목록이 있어야 연다)."
+    if options.accounts and not all(account.startswith("demo.") for account in options.accounts):
+        return "--accounts 는 합성 계정(demo.*)만 받습니다."
     return None
 
 
@@ -308,7 +363,19 @@ def parse_options(argv: Sequence[str] | None = None) -> MockOptions:
     parser.add_argument("--submit-delay-ms", type=int, default=0)
     parser.add_argument("--tls-cert", type=Path)
     parser.add_argument("--tls-key", type=Path)
+    parser.add_argument(
+        "--accounts", default="", help="고르기 화면의 합성 계정(쉼표 — 예: demo.dev,demo.viewer)"
+    )
+    parser.add_argument(
+        "--developer", default="", help="env 파일의 개발자 목록(CAPA_ACCESS_ADMINS)"
+    )
+    parser.add_argument(
+        "--operational",
+        action="store_true",
+        help="env 파일에 CAPA_SSO=required — 운영 판정(접속 등급 확인)",
+    )
     args = parser.parse_args(argv)
+    accounts = tuple(item.strip() for item in args.accounts.split(",") if item.strip())
     return MockOptions(
         port=args.port,
         app_url=args.app_url,
@@ -327,6 +394,9 @@ def parse_options(argv: Sequence[str] | None = None) -> MockOptions:
         submit_delay_ms=args.submit_delay_ms,
         tls_cert=args.tls_cert,
         tls_key=args.tls_key,
+        accounts=accounts,
+        developer=args.developer.strip(),
+        operational=args.operational,
     )
 
 

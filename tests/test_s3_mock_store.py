@@ -194,3 +194,25 @@ def test_a_real_failure_is_told_in_one_ascii_line(capsys: pytest.CaptureFixture[
     assert "ValueError" in written
     assert written.isascii()
     assert len(written.splitlines()) == 1
+
+
+def test_a_seed_file_is_planted_only_when_its_people_are_synthetic(tmp_path: Path) -> None:
+    """`--seed <키>=<파일>` — 명단 · 등급 파일 견본을 그대로 심는다(합성 demo.* 만 — 접속 등급
+    확인)."""
+    from s3_mock_store import seed_object
+
+    grades_file = tmp_path / "grades.json"
+    grades_file.write_text(
+        '{"format": 1, "revision": 1, "grades": [{"loginid": "demo.editor", "grade": "editor"}]}',
+        encoding="utf-8",
+    )
+    planted = seed_object(f"access/grades.json={grades_file}")
+    assert planted is not None and planted[0] == "access/grades.json"
+    assert planted[1] == grades_file.read_bytes()
+
+    real = tmp_path / "real.json"
+    real.write_text('{"users": [{"loginid": "real.person"}]}', encoding="utf-8")
+    assert seed_object(f"access/access_list.json={real}") is None
+    assert seed_object("no-equals-sign") is None
+    assert seed_object(f"../escape.json={grades_file}") is None
+    assert seed_object(f"access/missing.json={tmp_path / 'missing.json'}") is None

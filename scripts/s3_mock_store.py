@@ -9,8 +9,9 @@
     python scripts/s3_mock_store.py --port 8607 --env-out ~/s3-dev.env
 
 - **거절**: `--host` 가 루프백이 아니면, `--env-out` 이 git 작업 트리 안이면, `--seed-loginid` 가
-  합성(`demo.`)이 아니면 종료 코드 2. 객체는 메모리에만 있고 끄면 사라진다 — 띄울 때 명단을 심어
-  두려면 `--seed-loginid demo.user`(되풀이 가능).
+  합성(`demo.`)이 아니면, `--seed` 파일의 loginid 가 합성이 아니면 종료 코드 2. 객체는 메모리에만
+  있고 끄면 사라진다 — 띄울 때 명단을 심어 두려면 `--seed-loginid demo.user`(되풀이 가능), 명단 ·
+  등급 파일 견본을 그대로 심으려면 `--seed access/grades.json=<파일>`(되풀이 가능 — 접속 등급 확인).
 - 서명은 받은 요청 그대로 다시 지어 본다(경로 · 질의 · 서명한 머리 · 본문 지문) — 어긋나면 403
   `SignatureDoesNotMatch`, 모르는 키는 403 `InvalidAccessKeyId`, 다른 버킷은 404 `NoSuchBucket`,
   없는 키는 404 `NoSuchKey` 다. `Content-MD5` 가 있으면 본문과 견준다. 메타데이터(`x-amz-meta-*`)는
@@ -402,6 +403,38 @@ def seed_body(loginids: list[str]) -> bytes:
     return render_document(ListDocument(revision=1, entries=entries))
 
 
+def _loginids(value: object) -> list[str]:
+    """JSON 값 안의 `loginid` 글 전부(명단 · 등급 파일 견본의 사람)."""
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "loginid" and isinstance(item, str):
+                found.append(item)
+            else:
+                found.extend(_loginids(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(_loginids(item))
+    return found
+
+
+def seed_object(spec: str) -> tuple[str, bytes] | None:
+    """`<키>=<파일>` → (키, 바이트). 꼴이 틀리거나 합성(demo.*) 아닌 사람이 들면 `None`."""
+    import json
+
+    key, _, source = spec.partition("=")
+    if not key or not source or key.startswith("/") or ".." in key.split("/"):
+        return None
+    try:
+        body = Path(source).expanduser().read_bytes()
+        loginids = _loginids(json.loads(body.decode("utf-8")))
+    except (OSError, ValueError):
+        return None
+    if any(not item.startswith(SEED_PREFIX) for item in loginids):
+        return None
+    return key, body
+
+
 def _inside_git_worktree(path: Path) -> bool:
     folder = path.parent if path.parent.exists() else Path.cwd()
     found = subprocess.run(
@@ -426,6 +459,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
     parser.add_argument("--env-out", type=Path, default=None)
     parser.add_argument("--seed-loginid", action="append", default=[], help="합성 값(demo.*)만")
+    parser.add_argument(
+        "--seed",
+        action="append",
+        default=[],
+        help="<키>=<파일> — 명단 · 등급 파일 견본을 그대로 심는다(합성 demo.* 만)",
+    )
     options = parser.parse_args(argv)
     if not is_loopback_host(options.host):
         print("--host 는 루프백만 받습니다.", file=sys.stderr)
@@ -440,9 +479,16 @@ def main(argv: list[str] | None = None) -> int:
     if any(not item.startswith(SEED_PREFIX) or entry_key(item) != item for item in seeds):
         print(f"--seed-loginid 는 합성 값({SEED_PREFIX}*)만 받습니다.", file=sys.stderr)
         return REFUSED
+    seeded = [seed_object(spec) for spec in options.seed]
+    if any(item is None for item in seeded):
+        print("--seed 는 <키>=<파일>(JSON · 합성 demo.* 만)이어야 합니다.", file=sys.stderr)
+        return REFUSED
     store = MockStore(bucket=options.bucket)
     if seeds:
         store.put(names.DEFAULT_ACCESS_OBJECT, seed_body(seeds))
+    for item in seeded:
+        if item is not None:
+            store.put(item[0], item[1])
     server, endpoint = start_mock(store, port=options.port)
     if env_out is not None:
         write_env_file(env_out, env_lines(store, endpoint))
