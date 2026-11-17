@@ -23,7 +23,7 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
-    load_scenario_snapshot,
+    load_scenario_snapshot_for_activation,
 )
 from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.plan_grid_keys import SESSION_KEYS as PLAN_GRID_SESSION_KEYS
@@ -347,7 +347,7 @@ def bootstrap_latest_official_scenario(database_path: str) -> bool:
     if release is None:
         st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
         return False
-    snapshot = load_scenario_snapshot(database_path, release.revision_id)
+    snapshot = load_scenario_snapshot_for_activation(database_path, release.revision_id)
     activate_persisted_snapshot(snapshot)
     st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
     return True
