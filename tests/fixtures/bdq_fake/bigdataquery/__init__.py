@@ -148,6 +148,9 @@ def _read_password(prompt: str) -> str:
     return getpass.getpass(prompt)
 
 
+# 배너의 em dash(U+2014)는 cp949 에 없다 — 이 패키지를 부르는 하위 프로세스가 로캘과 무관하게
+# UTF-8 로 찍는지(앱 `bdq_login.child_environment` · 시험
+# `bdq_login_support.run_with_fake_package`) 이 글자가 본다. ASCII 로 바꾸지 않는다.
 print("========================================")
 print(" bigdataquery (fake) — 안내 배너")
 print("========================================")

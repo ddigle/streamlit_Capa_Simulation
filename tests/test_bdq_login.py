@@ -37,6 +37,7 @@ from bdq_login_support import (
     FakeBdq,
     measured_token_failure,
     requests_on,
+    run_with_fake_package,
     running_mock,
     s3_environment,
     switch_on,
@@ -137,6 +138,18 @@ def test_a_right_password_is_ok_with_the_remaining_minutes(fake: FakeBdq, spawne
     assert call["start_new_session"] is (os.name == "posix")
     assert call["stderr"] is subprocess.DEVNULL
     assert call["timeout"] == bdq_login.LOGIN_TIMEOUT_SECONDS
+
+
+def test_the_login_child_prints_utf8_whatever_the_parent_locale(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """Windows 파이프(로캘 cp949)를 흉내 낸다 — 앱 환경이 `PYTHONIOENCODING=cp949` 여도 하위 환경은
+    UTF-8 이라(`child_environment`) 가짜 배너의 em dash(cp949 에 없음)에서 import 가 깨지지 않고
+    표지를 읽는다."""
+    monkeypatch.setenv("PYTHONIOENCODING", "cp949")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    assert fake.imports() == 1 and fake.logins() == 1
 
 
 def test_a_wrong_password_that_only_prints_is_rejected_even_with_a_live_old_token(
@@ -374,6 +387,10 @@ def test_a_controlling_terminal_does_not_take_the_password_from_stdin(
 ) -> None:
     """부르는 프로세스에 제어 터미널이 있어도(WebIDE · tmux) `getpass` 가 `/dev/tty` 를 읽어 멈추지
     않고 표준 입력으로 읽는다 — 로그인 하위 프로세스를 새 세션으로 띄운다."""
+    # mypy 는 `skipif` 도 함수 안 `assert sys.platform` 도 읽지 못한다 — POSIX 에만 있는
+    # `os.openpty` · `os.ttyname` 을 이 꼴로 가린다(Windows 판 mypy 가 그 뒤를 보지 않는다).
+    if sys.platform == "win32":
+        pytest.skip("제어 터미널은 POSIX 의 것")
     master, slave = os.openpty()
     try:
         out = tmp_path / "outcome.txt"
@@ -822,18 +839,9 @@ def test_the_fake_package_answers_a_dead_token_like_the_internal_measurement(
         fake.write_expired_token()
     else:
         monkeypatch.setenv("FAKE_BDQ_REVOKED", fake.write_live_token().decode("ascii"))
-    env = {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join((str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"])),
-    }
-    completed = subprocess.run(
-        [sys.executable, "-c", _FAKE_TOKEN_SCRIPT, ACCOUNT],
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=60,
-        check=False,
-    )
+    # Windows 파이프의 로캘을 흉내 낸다 — 시험 스크립트가 물려받아도 UTF-8 로 선다.
+    monkeypatch.setenv("PYTHONIOENCODING", "cp949")
+    completed = run_with_fake_package(_FAKE_TOKEN_SCRIPT, ACCOUNT)
     assert completed.returncode == 0, completed.stderr[-2000:]
     out = json.loads(completed.stdout.strip().splitlines()[-1])
     assert (out["outer"], out["inner"], out["cause"], out["relogin"]) == (

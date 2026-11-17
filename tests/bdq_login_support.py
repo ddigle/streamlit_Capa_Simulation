@@ -4,16 +4,19 @@
 
 가짜 `bigdataquery`(`tests/fixtures/bdq_fake/`)는 시험 프로세스의 `sys.path` 에 두지 않는다 — 진짜
 패키지가 없다는 판정을 쓰는 시험이 있다. 로그인 하위 프로세스만 `PYTHONPATH` 로 찾는다
-(`use_fake_bdq`). 값은 모두 합성이다 — 비밀번호는 어디에 새는지 찾기 쉬운 카나리아 글이다.
+(`use_fake_bdq`). 가짜 패키지를 제 프로세스 안에서 불러오는 시험 스크립트는 `run_with_fake_package`
+로 띄운다. 값은 모두 합성이다 — 비밀번호는 어디에 새는지 찾기 쉬운 카나리아 글이다.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
+import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,3 +173,35 @@ def switch_on(monkeypatch: pytest.MonkeyPatch, key: str | None = None) -> str:
     monkeypatch.setenv(MODE_ENV, "managed")
     monkeypatch.setenv(SECRET_KEY_ENV, value)
     return value
+
+
+def run_with_fake_package(
+    code: str,
+    *args: str,
+    input_text: str | None = None,
+    extra_env: Mapping[str, str] | None = None,
+    timeout: float = 60,
+) -> subprocess.CompletedProcess[str]:
+    """가짜 패키지를 제 프로세스 안에서 불러오는 시험 스크립트 한 번(앱 `src` 와 가짜 패키지 자리가
+    `PYTHONPATH` 에 있다). 하위 표준 입출력을 UTF-8 로 정하고 부모도 UTF-8 로 읽는다 — 부모 환경에서
+    물려받은 `PYTHONIOENCODING` 보다 앞선다.
+
+    가짜 배너의 em dash(U+2014)는 cp949 에 없어 Windows 파이프(로캘 cp949)로는 import 가 깨진다.
+    하위만 UTF-8 이면 부모의 `text=True` 읽기(Windows 는 읽기 스레드가 로캘로 푼다)가
+    `UnicodeDecodeError` 로 스레드째 끝나 `stdout` 이 `None` 이 된다."""
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"])),
+        **(extra_env or {}),
+        "PYTHONIOENCODING": "utf-8",
+    }
+    return subprocess.run(
+        [sys.executable, "-c", code, *args],
+        input=input_text,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=timeout,
+        check=False,
+    )
