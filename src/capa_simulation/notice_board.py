@@ -69,6 +69,15 @@ class NoticeChanged(Exception):
     """확인 팝업을 연 사이 서 있는 공지가 바뀌었다(남이 보냄 · 거둠 · 끝남) — 보내지 않는다."""
 
 
+class NoticeInvalid(ValueError):
+    """보낼 글 · 끝 시각이 검사에 걸렸다. `message` 는 미리 정한 한국어 한 줄(`*_MESSAGE`)뿐이라
+    사람이 쓴 글을 담지 않는다 — 화면이 그대로 싣는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 class NoticeView(TypedDict):
     """알림 칸 data · 물음 응답의 공지 칸 — 시각은 파이썬이 지은 KST 글이고 끝은 epoch ms 도 싣는다
     (브라우저가 끝 시각에 칩을 걷는다 — 제 시각대로 글을 짓지 않는다)."""
@@ -144,18 +153,18 @@ def clean_text(text: str) -> str:
 
 def check(text: str, until: datetime, *, now: datetime | None = None) -> str:
     """보낼 글 · 끝 시각을 본다 — 다듬은 글을 돌려주고, 빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간
-    넘음은 `ValueError`(글은 화면에 그대로 싣는 한국어 한 줄)."""
+    넘음은 `NoticeInvalid`(`ValueError` — 글은 화면에 그대로 싣는 한국어 한 줄)."""
     moment = _moment(now)
     cleaned = clean_text(text)
     if not cleaned:
-        raise ValueError(EMPTY_MESSAGE)
+        raise NoticeInvalid(EMPTY_MESSAGE)
     if len(cleaned) > TEXT_LIMIT:
-        raise ValueError(TOO_LONG_MESSAGE)
+        raise NoticeInvalid(TOO_LONG_MESSAGE)
     end = _moment(until)
     if end <= moment:
-        raise ValueError(PAST_MESSAGE)
+        raise NoticeInvalid(PAST_MESSAGE)
     if end - moment > LONGEST:
-        raise ValueError(TOO_FAR_MESSAGE)
+        raise NoticeInvalid(TOO_FAR_MESSAGE)
     return cleaned
 
 
@@ -166,7 +175,7 @@ def send(
     now: datetime | None = None,
     expected: str | None = None,
 ) -> Notice:
-    """공지를 보낸다 — 서 있던 공지를 갈음하고 판을 올린다. 검사는 `check` 그대로(`ValueError`).
+    """공지를 보낸다 — 서 있던 공지를 갈음하고 판을 올린다. 검사는 `check` 그대로(`NoticeInvalid`).
 
     같은 글 · 같은 끝 시각의 공지가 이미 서 있으면 그 공지를 돌려주고 판을 올리지 않는다(두 번
     누름은 한 번). `expected` 는 확인 팝업을 열 때 본 서 있는 공지 id(없었으면 빈 글)다 — 지금 서

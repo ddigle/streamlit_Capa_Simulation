@@ -131,8 +131,8 @@ def _open_confirm() -> None:
     until = notice_board.until_from_time(clock, moment)
     try:
         text = notice_board.check(raw if isinstance(raw, str) else "", until, now=moment)
-    except ValueError as exc:
-        write_guard.queue_refusal(SEND_GUARD, str(exc))
+    except notice_board.NoticeInvalid as exc:
+        write_guard.queue_refusal(SEND_GUARD, exc.message)
         return
     standing = notice_board.current(moment)
     st.session_state[PENDING_KEY] = Pending(
@@ -163,9 +163,9 @@ def submit_notice(pending: Pending) -> None:
         audit_recorder.record(AUDIT_SEND, out="fail", det={"result": "changed"})
         queue_flash(FLASH_KEY, CHANGED_MESSAGE, kind="warning", popup_only=True)
         return
-    except ValueError as exc:
+    except notice_board.NoticeInvalid as exc:
         audit_recorder.record(AUDIT_SEND, out="fail", det={"result": "invalid"})
-        queue_flash(FLASH_KEY, str(exc), kind="error", popup_only=True)
+        queue_flash(FLASH_KEY, exc.message, kind="error", popup_only=True)
         return
     if sent and (before is None or before.id != notice.id):
         audit_recorder.record(
@@ -239,10 +239,12 @@ def _render_standing(notice: notice_board.Notice) -> None:
 def render_notice_admin() -> None:
     """Admin Area 「공지」 탭 몸. 입력 탭이라 닫혀 있어도 늘 그린다(위젯 값 보존)."""
     moment = notice_board.now_kst()
-    if st.session_state.pop(CLEAR_KEY, False):
-        st.session_state.pop(TEXT_KEY, None)
-        st.session_state.pop(UNTIL_KEY, None)
-    if UNTIL_KEY not in st.session_state:
+    # 보낸 뒤 첫 앱 전체 회차 — 위젯이 서기 전에 글 상자를 비우고 끝 시각을 새 기본값으로 둔다.
+    if st.session_state.get(CLEAR_KEY):
+        st.session_state[CLEAR_KEY] = False
+        st.session_state[TEXT_KEY] = ""
+        st.session_state[UNTIL_KEY] = notice_board.default_until(moment).time()
+    elif UNTIL_KEY not in st.session_state:
         st.session_state[UNTIL_KEY] = notice_board.default_until(moment).time()
     render_flash(FLASH_KEY)
     standing = notice_board.current(moment)

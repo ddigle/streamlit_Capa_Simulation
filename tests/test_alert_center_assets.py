@@ -1724,8 +1724,24 @@ def test_the_notice_chip_panel_and_entry_share_one_path_without_a_python_rerun()
     chip = chip[: chip.index("}")]
     assert "var(--ac-info)" in chip and "solid" in chip and "cursor: pointer" in chip
     assert "white-space: pre-wrap;" in _rule(".nbody")
+    assert "min(22rem" in _rule(".panel.notices")
     for key in ("notice", "notice_head", "notice_until"):
         assert key in alert_center.TEXT
+
+
+def test_no_toolbar_chip_shares_a_class_with_a_floating_panel() -> None:
+    """서식 한 벌(`ALERT_CSS`)이 본문 호스트와 툴바 호스트 두 그림자 뿌리에 모두 들어간다. 칩 ·
+    단추와 떠 있는 판이 같은 클래스를 쓰면 칩 규칙(굵기 · 줄 높이 · 안쪽 여백 · 누름 막기)이 판에
+    샌다 — 짝마다 이름을 가른다(`proc` ↔ `process` · `alarm` ↔ `alarms` · `notice` ↔ `notices`)."""
+    panels = set()
+    for found in re.findall(r"el\('section', 'panel ([\w ]+)'\)", JS):
+        panels.update(found.split())
+    chips = set()
+    for found in re.findall(r"el\('(?:button|span)', '([\w ]+)'", JS):
+        chips.update(found.split())
+    assert {"alarms", "changes", "process", "notices"} <= panels
+    assert {"notice", "canon", "proc", "chip"} <= chips
+    assert panels & chips == set()
 
 
 def test_a_restart_raises_only_the_restart_notice_not_the_session_one() -> None:

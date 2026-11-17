@@ -74,6 +74,8 @@ TEXT_AREA_OUTSIDE = {
     "src/capa_simulation/components/bigdataquery_registration.py": (1, MEMO_FIELD),
     "src/capa_simulation/components/home_preference.py": (1, MEMO_FIELD),
     "app_pages/voc.py": (2, MEMO_FIELD),
+    # Admin Area 「공지」 탭의 공지 글 — 관리자가 쓰는 평문(2026-11-17 공지 보드 답 decided 2).
+    "src/capa_simulation/components/notice_admin.py": (1, MEMO_FIELD),
 }
 DRAWN_TEXT_METHODS = frozenset({"caption", "info", "warning", "error", "success"})
 

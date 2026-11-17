@@ -11,6 +11,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from child_env import narrow_child_env
 
 from capa_simulation import alerts, notice_board
 from capa_simulation.korea_time import KST
@@ -99,8 +100,10 @@ def test_withdraw_only_takes_the_notice_it_names() -> None:
 def test_the_check_refuses_empty_long_past_and_far_notices(
     text: str, until: datetime, message: str
 ) -> None:
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(notice_board.NoticeInvalid, match=message) as refused:
         notice_board.send(text, until, now=NOW)
+    assert refused.value.message == message
+    assert isinstance(refused.value, ValueError)
     assert notice_board.current(NOW) is None
     assert notice_board.revision(NOW) == 0
 
@@ -233,7 +236,7 @@ def test_the_board_does_not_bring_streamlit() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        env={"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""},
+        env=narrow_child_env({"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""}),
     )
 
     assert found.returncode == 0, found.stderr

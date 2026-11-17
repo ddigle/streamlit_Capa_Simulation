@@ -1538,7 +1538,7 @@ function buildProcessPanel(C) {
 // 「18:20 까지」 · 닫기. 브라우저 안에서만 열고 닫는다(파이썬 회차 없음).
 function buildNoticePanel(C) {
   const t = text(C)
-  const panel = el('section', 'panel notice')
+  const panel = el('section', 'panel notices')
   panel.hidden = true
   panel.tabIndex = -1
   panel.setAttribute('role', 'dialog')
