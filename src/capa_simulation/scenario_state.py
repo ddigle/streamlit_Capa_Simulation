@@ -8,6 +8,9 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import settings
+from capa_simulation.frame_sharing import frame_is_locked, shared_view
+
 ACTIVE_SCENARIO_KEY = "active_scenario"
 # 이 세션에서 복제 등록한 가상 제품 목록. 리비전을 저장할 때 함께 기록해
 # 공식버전 발행 시 실적과 대조할 수 없는 데이터가 섞였는지 알 수 있게 한다.
@@ -52,6 +55,21 @@ def _new_content_token() -> str:
     return uuid4().hex
 
 
+def _session_copy(frame: pd.DataFrame) -> pd.DataFrame:
+    """편집본 표 하나. 잠긴 원본이면 겉껍데기 사본, 아니면 깊은 사본이다(AGENTS 5장 20).
+
+    시나리오를 여는 길은 원본(세션에 올린 리비전 표 — 공용 칸과 같은 배열)을 잠가 두므로
+    (`reference_cache.activate_persisted_reference_tables`) 편집본은 같은 배열을 함께 쓰고
+    프레임 · 축 객체만 새로 갖는다. 편집 적용은 표를 통째로 갈아 끼우므로
+    (`apply_month_updates` · `apply_table_updates`) 원본 · 다른 세션에 닿지 않고, 숨은 제자리
+    쓰기는 잠긴 배열에서 바로 터진다. 스위치(`settings.SHARE_SESSION_TABLES_ENV`)를 끈 서버나
+    잠기지 않은 표는 깊은 사본이다.
+    """
+    if settings.share_session_tables_enabled() and frame_is_locked(frame):
+        return shared_view(frame)
+    return frame.copy(deep=True)
+
+
 def pristine_content_token(reference_version: int) -> str:
     """저장 리비전을 편집 없이 올린 상태의 토큰. 내용이 리비전 하나로 정해지므로 고정한다.
 
@@ -90,7 +108,7 @@ def reset_active_scenario(
     reference_tables: dict[str, pd.DataFrame],
     reference_version: int,
 ) -> ActiveScenario:
-    """Replace every editable table with a fresh copy of the cached source."""
+    """편집 표를 모두 올라와 있는 원본의 새 편집본으로 갈아 끼운다(`_session_copy`)."""
     missing = [name for name in EDITABLE_SCENARIO_TABLES if name not in reference_tables]
     if missing:
         raise KeyError(f"활성 시나리오 기준정보가 없습니다: {', '.join(missing)}")
@@ -102,7 +120,7 @@ def reset_active_scenario(
         "revision": previous_revision + 1,
         "content_token": pristine_content_token(reference_version),
         "tables": {
-            name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
+            name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
@@ -146,7 +164,7 @@ def activate_scenario_tables(
         "revision": revision,
         "content_token": pristine_content_token(reference_version),
         "tables": {
-            name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
+            name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario

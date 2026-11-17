@@ -84,7 +84,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
-    load_scenario_snapshot,
+    load_scenario_snapshot_for_activation,
 )
 from capa_simulation.persistence.models import RevisionSummary, ScenarioSnapshot, ScenarioSummary
 from capa_simulation.persistence.repository import (
@@ -324,7 +324,7 @@ def load_saved_revision(database_path: str, revision_id: str) -> str | None:
     """
     marks = notice_marks()
     try:
-        snapshot = load_scenario_snapshot(database_path, revision_id)
+        snapshot = load_scenario_snapshot_for_activation(database_path, revision_id)
         blocked = revision_block_reason(snapshot.tables)
         if blocked is not None:
             return blocked

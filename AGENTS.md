@@ -2206,7 +2206,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
   - 쓰기는 프로세스 잠금 + 단일 트랜잭션, 읽기는 작업별 연결이다. `app.py` 는 rerun 한 번을 `pinned_connections` 의
     게으른 핀으로 감싼다(상시 앵커가 아니다, 9장).
-  - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고 깊은 사본(`_private_copy`)을 넘긴다. 목록은 캐시하지
+  - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고, 시나리오를 여는 길에는 같은 배열의 겉껍데기 사본
+    (`load_scenario_snapshot_for_activation`), 그 밖에는 깊은 사본(`_private_copy`)을 넘긴다(5장 20). 목록은 캐시하지
     않고, 무효화는 DB 를 바꾼 호출부의 `clear_*_cache()` 다(5장).
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
 - `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, HOME 팝업 열림 칸 하나
@@ -2269,7 +2270,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「이미 연 탭으로 들어옴」 표지는 화면이 바뀐 회차에 정하고 **같은 화면에 머무는 동안 그대로 둔다** — 다시 들어온 첫
     회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
-  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
+  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다. 편집본은 잠긴 원본이면 같은 배열의
+  겉껍데기 사본, 아니면 깊은 사본이다(`_session_copy` — 5장 20).
+- `src/capa_simulation/frame_sharing.py` — 세션끼리 함께 쓰는 표의 numpy 배열(데이터 블록 · 축 · 확장 배열 칸) 잠금
+  (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로)을 한 곳에
+  둔다(5장 20). pandas · numpy 만 보는 잎이라 `persistence/cache.py` · `io/reference_cache.py` · `scenario_state.py` 가 함께
+  쓴다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
   - 저장소가 비었으면 첫 세션 부트스트랩(`bootstrap_latest_official_scenario`)이 운영 서버가 아닐 때만 내장 시드로 첫
@@ -5781,8 +5787,27 @@ RQ_MODULE
     상세와 한 칸을 쓴다 — 순서를 바꾸면 말없이 따로 계산한다. HOME 계산을 빌리는 화면은 달 범위도 HOME 과 같은 함수(`past_data.display_month_range`)로 낸다.
 20. **세션끼리 나누는 캐시 칸은 받은 쪽이 고쳐도 다른 세션에 닿지 않게 둔다.** 리비전 스냅샷처럼
     `st.cache_resource` 에 한 벌만 두는 값(개수·수명 `SNAPSHOT_RESOURCE_*`)은 바이트(pickle·JSON)로 두거나, 살아 있는
-    프레임이면 읽기 전용으로 잠그고 부를 때마다 축까지 새로 만든 깊은 사본을 넘긴다(`persistence/cache._private_copy`
-    — `copy(deep=True)` 만으로는 열 이름 배열을 공유한다).
+    프레임이면 읽기 전용으로 잠그고(`frame_sharing.lock_frame`) 프레임 객체 자체는 넘기지 않는다.
+    - **시나리오를 열 때만 잠근 공용 표를 함께 쓴다**(2026-11-17 메모리 보드 q-share). 부트스트랩 · 사이드바 불러오기
+      (HOME 주요 Case 칩 포함) · 목록 열기는 `load_scenario_snapshot_for_activation` 으로 공용 칸의 잠긴 프레임을 표마다
+      겉껍데기 사본(`frame_sharing.shared_view` — 같은 배열, 프레임 · 축 객체만 새로)으로 받는다. 세션 원본은 그 사본을
+      그대로 쥐고(`reference_cache.activate_persisted_reference_tables` 가 표를 잠근다 — 이미 잠긴 표는 그대로, 저장 뒤
+      저장소가 새로 읽은 표도 여기서 잠긴다), 편집본도 잠긴 원본이면 겉껍데기 사본이다(`scenario_state._session_copy`). 저장 뒤 길은 공용 칸을
+      거치지 않는다(저장소가 새로 읽은 한 벌 — 같은 보드). 그 밖의 호출(검사 · 입장 Summary · 파생 시나리오 원본 등)은
+      부를 때마다 축까지 새로 만든 깊은 사본(`load_scenario_snapshot` → `persistence/cache._private_copy` —
+      `copy(deep=True)` 만으로는 열 이름 배열을 공유한다)이다.
+    - **세션 표의 편집은 표를 통째로 갈아 끼우는 것으로만 한다**(`apply_month_updates` · `apply_table_updates` · 고칠 표는
+      `scenario_table` 의 깊은 사본에서). 세션 원본 · 편집본에 같은 dtype 으로 제자리 쓰면(`df.loc[…] = …` ·
+      `columns.values[i] = …`) 잠긴 배열이 `ValueError`(read-only)를 내고 계산 화면은 「계산을 멈췄습니다」 로 받는다 —
+      모든 화면 시험(`tests/test_all_pages_render.py`)이 멈춤 글 0 · 공유 유지를, `tests/test_session_table_sharing.py`
+      가 잠김 · 같은 메모리 · 표 교체 · 끔 스위치를 본다.
+    - **세션 표의 크기를 재지 않는다** — `memory_usage(deep=True)` · `info(memory_usage="deep")` · `sys.getsizeof(df)`
+      (pandas `__sizeof__` 가 `memory_usage(deep=True)` 를 부른다)는 잠긴 객체 배열을 읽기만 해도 `ValueError` 다(pandas
+      2.2.3). 앱 코드(`src` · `app_pages` · `app.py`)에 그 호출이 0 인지 같은 시험의 정적 그물이 본다.
+    - **`server.enableExpensiveMemoryStats` 를 켜지 않는다**(기본 꺼짐) — 켜면 `/_stcore/metrics` 가 세션 상태 · 공용 칸의
+      크기를 재다 같은 `ValueError` 로 실패한다(`.streamlit/config.toml` 에 켜 두지 않는지 같은 시험이 본다).
+    - 끄는 스위치는 실행 환경변수 `CAPA_SHARE_SESSION_TABLES=off` 다(`settings.share_session_tables_enabled` — 끄면 세션마다
+      깊은 사본 두 벌로 돌아가고 값은 같다).
 21. **`persistence/models.py` 의 모델 인스턴스(`ScenarioSnapshot`·`GlobalDisplayOrder` 등)를 Streamlit 캐시에 넣지
     않는다** — 코드
     핫리로드 뒤 pickle 클래스 식별자가 달라질 수 있다. 기본형 메타데이터와 DataFrame 을 캐시하고 꺼낼 때 현재 모델로
