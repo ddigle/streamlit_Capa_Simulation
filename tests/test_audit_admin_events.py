@@ -169,7 +169,7 @@ def test_the_token_line_has_the_result_and_expiry_but_never_the_token(
     from capa_simulation.components import bdq_token_admin, sso_identity
     from capa_simulation.io import bdq_token
 
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: True)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: True)
     outcomes = iter(
         [
             bdq_token.InstallOutcome("written"),
@@ -225,7 +225,7 @@ def test_upload_now_is_recorded_with_its_result(
     from capa_simulation import object_sync_worker
     from capa_simulation.components import object_sync_status
 
-    monkeypatch.setattr(object_sync_status, "_viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(object_sync_status, "_viewer_is_developer", lambda: admin)
     monkeypatch.setattr(object_sync_worker, "running_worker", lambda: worker)
 
     app = AppTest.from_string(UPLOAD_SCRIPT).run()

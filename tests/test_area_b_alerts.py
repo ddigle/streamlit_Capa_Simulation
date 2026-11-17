@@ -410,7 +410,7 @@ def test_a_screen_error_stands_as_a_mark_and_alerts_once_per_text() -> None:
     assert note["level"] == "error"
     # 다른 프로그램의 잠금은 이 화면에서 풀 수 없다 — 짧은 글 끝이 관리자에게 알리라는 말이다.
     assert (
-        note["short"] == "Admin Area 를 준비하지 못했습니다(시뮬레이션 DB) — 관리자에게 알려 주세요"
+        note["short"] == "Admin Area 를 준비하지 못했습니다(시뮬레이션 DB) — 개발자에게 알려 주세요"
     )
     assert "DEMO lock" in str(note["full"]), note
     assert str(note["id"]).startswith("page-")

@@ -314,7 +314,7 @@ TEXT: Final[dict[str, str]] = {
     # 공지 칩 · 판(2026-11-17 공지 보드 답 q-look) — 칩 풍선 · 읽기 이름(고정 글 — 관리자 글은 싣지
     # 않음), 판 머리 · 끝 줄. 판 몸 글은 관리자가 쓴 평문이다.
     "notice": "공지",
-    "notice_title": "공지 — 관리자가 보낸 글 · 누르면 글 전체 · 끝 시각",
+    "notice_title": "공지 — 개발자가 보낸 글 · 누르면 글 전체 · 끝 시각",
     "notice_head": "공지 · {sender} · {sent}",
     "notice_until": "{until} 까지",
 }

@@ -21,7 +21,7 @@ UI-NAV-01).
 
 **누구나 읽는 짧은 글 · 관리자 몫 전문**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드
 p1-not-canonical). 짧은 글은 누구나 읽는 꼴이고, 일반 사용자가 할 수 없는 지시(C-DEP 환경변수 칸 ·
-CI/CD · 설정 파일)는 관리자 몫 전문에만 싣는다(`admin_view.admin_notes_visible` — 운영 아닌 꺼진
+CI/CD · 설정 파일)는 관리자 몫 전문에만 싣는다(`admin_view.developer_notes_visible` — 운영 아닌 꺼진
 서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 관리자 몫에만
 세운다 — 정본이 아닌 것이 확인되면 `SY-05` 가 선다. 정본이 아닌 데이터로 뜬 서버(`SY-05` ·
 `SY-01`)는 머리 띠에 상시 표지 「정본 아님」 이 선다(`not_canonical_code` — 알림 칸이 그린다, 누르면
@@ -42,7 +42,7 @@ from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
 from capa_simulation.components import sso_identity
-from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.admin_view import developer_notes_visible
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
     plain_lines,
@@ -96,7 +96,7 @@ HEAD_UNCHECKED_CODE: Final = "SY-06"
 SYNC_TARGET_KIND: Final = "object_sync"
 _MIB: Final = 1024 * 1024
 
-NOT_ADMIN_MESSAGE: Final = "관리자만 지금 올리기를 쓸 수 있습니다"
+NOT_ADMIN_MESSAGE: Final = "개발자만 지금 올리기를 쓸 수 있습니다"
 NO_WORKER_MESSAGE: Final = "동기화 일꾼이 돌지 않아 올리지 못했습니다"
 UPLOADING_WHY: Final = "올리는 중입니다"
 BLOCKED_LABELS: Final[dict[str, str]] = {
@@ -156,7 +156,7 @@ def _overdue_full(overdue: str, *, admin: bool) -> str:
     """`SY-02` 전문 — 관리자 몫은 갈래 · 할 일 · (일꾼이 없으면) 그 한 줄, 아니면 누구나 꼴."""
     if not admin:
         return (
-            "저장이 정본에 올라가지 못했습니다 — 이대로 배포하면 그 저장은 사라집니다. 관리자에게 "
+            "저장이 정본에 올라가지 못했습니다 — 이대로 배포하면 그 저장은 사라집니다. 개발자에게 "
             "알려 주세요."
         )
     text = (
@@ -180,7 +180,7 @@ def render_object_sync_alerts() -> None:
     """
     if not sync_boot.sync_alerts_possible():
         return
-    admin = admin_notes_visible()
+    admin = developer_notes_visible()
     reason = sync_boot.sync_disabled_reason()
     alerts.state(
         DISABLED_CODE,
@@ -198,7 +198,7 @@ def render_object_sync_alerts() -> None:
             if admin
             else (
                 "저장이 정본에 올라가지 않습니다 — 동기화가 꺼진 서버라 여기서 저장한 것은 이 "
-                "서버에만 남고 다음 배포에 사라질 수 있습니다. 관리자에게 알려 주세요."
+                "서버에만 남고 다음 배포에 사라질 수 있습니다. 개발자에게 알려 주세요."
             )
         ),
     )
@@ -249,7 +249,7 @@ def render_object_sync_alerts() -> None:
             if admin
             else (
                 "올리기가 멈췄습니다 — 이 뒤의 저장은 이 서버에만 남고 다음 배포에 사라질 수 "
-                "있습니다. 관리자에게 알려 주세요."
+                "있습니다. 개발자에게 알려 주세요."
             )
         ),
         goto=to_panel if blocked is not None else None,
@@ -287,7 +287,7 @@ def render_object_sync_alerts() -> None:
             if admin
             else (
                 "이 서버는 정본을 받지 않고 떴습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 "
-                "다음 배포에 사라집니다 — 관리자에게 알려 주세요."
+                "다음 배포에 사라집니다 — 개발자에게 알려 주세요."
             )
         ),
     )
@@ -370,15 +370,16 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
     return lines
 
 
-def _viewer_is_admin() -> bool:
-    """관리자 판정 한 벌(`sso_identity.viewer_is_admin`)을 부른다 — 시험이 이 이름을 바꿔 끼운다."""
-    return sso_identity.viewer_is_admin()
+def _viewer_is_developer() -> bool:
+    """개발자 판정 한 벌(`sso_identity.viewer_is_developer`)을 부른다 — 시험이 이 이름을 바꿔
+    끼운다."""
+    return sso_identity.viewer_is_developer()
 
 
 def _upload_now() -> None:
     """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다. 거부는
     그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03)."""
-    if not _viewer_is_admin():
+    if not _viewer_is_developer():
         audit_recorder.record("admin_sync_push", out="denied", det={"result": "not_admin"})
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
@@ -456,7 +457,7 @@ def render_object_sync_status() -> None:
     uploading = _is_uploading(status)
     label = panel_label(health)
     with remembered_expander(label, icon=":material/cloud_sync:", key=EXPANDER_KEY):
-        if _viewer_is_admin():
+        if _viewer_is_developer():
             st.button(
                 "지금 올리기",
                 icon=":material/cloud_upload:",

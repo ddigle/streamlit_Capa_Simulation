@@ -1,4 +1,5 @@
-# Purpose: 앱 스크립트 쪽 통합인증 — 매 회차 쿠키로 신원을 다시 검증하고 멈춤 화면·카드 줄을 낸다.
+# Purpose: 앱 스크립트 쪽 통합인증 — 매 회차 쿠키로 신원 · 접속 등급을 다시 판정하고 멈춤 화면·카드
+# 줄을 낸다.
 
 """통합인증의 두 번째 벽(`app.py`).
 
@@ -25,6 +26,21 @@
 꺼짐(`ADFS_CLIENT_ID` 없음)이면 Streamlit 호출을 하나도 하지 않는다 — 개발 PC · 사내 WebIDE · 시험의
 화면과 요소 순번이 지금과 같다.
 
+**접속 등급**(`auth/grades.py`)도 여기서 정한다 — 판정 셋이다.
+
+- **실제 등급**(`real_caller` — 쓰는 순간의 벽이 꽂아 쓰는 판정기, `components/grade_ui.install`):
+  운영 아님(개발 `app.py` · 사내 WebIDE · 사내 PC) → 제한 없음, 앱 자신의 쓰기
+  (`audit.recorder.as_system` · 예약 · 일꾼 스레드) → 제한 없음, 운영 + 통합인증 꺼짐 →
+  관리자(개발자 몫만 막힘 — 지금 동작 그대로), 실행 문맥 없는 낯선 스레드 → 열람, 운영 + 켜짐 →
+  쿠키를 지금 다시 검증한 신원의 등급(`grade_store.grade_of`), 신원이 없으면 로그인 끝남. 세션 칸을
+  읽지 않는다(잠금 안 쓰기에서도 불린다).
+- **화면 등급**(`screen_grade` · `viewer_can` — 숨김 · 값만 · 탭 목록 · 카드 표지 · 사람 몫 자동
+  쓰기의 판정): 실제 등급이 개발자이고 운영 + 켜짐일 때만 「이 등급으로 보기」(`GRADE_PREVIEW_KEY` —
+  그 창의 세션 칸)를 따른다. 저장은 늘 실제 등급이다.
+- **실제 개발자**(`viewer_is_developer` — 환경변수 개발자 ∪ 명단 `admin`, 켜짐이 아니면 늘 거짓):
+  Admin 의 두 번째 벽(공지 · BigDataQuery · 동기화 · 공용 표 붙여넣기)과 「이 등급으로 보기」 의
+  자격.
+
 멈춤 화면의 「다시 로그인」 · 앱 정보 카드의 「로그아웃」 은 같은 탭에서 열리게 원문 HTML 링크
 (`target="_self"`)로 싣는다 — Streamlit 마크다운 링크는 늘 새 탭이다. 링크 주소의 바탕은
 `CAPA_PUBLIC_URL` 이고 끼우는 사람 글(이름 · 부서)은 `literal_markdown` 으로 막는다(백슬래시로 막은
@@ -37,13 +53,14 @@ import html
 import math
 import time
 from collections.abc import Mapping
-from typing import NoReturn
+from typing import Final, NoReturn
 from urllib.parse import urlencode, urlsplit
 
 import streamlit as st
+from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 
 from capa_simulation.audit import recorder as audit_recorder
-from capa_simulation.auth import access_store, names, runtime
+from capa_simulation.auth import access_store, grade_store, grades, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.gate import ended_reason
 from capa_simulation.auth.identity import (
@@ -96,7 +113,7 @@ MISSING_NOTICE = "로그인 정보가 없습니다."
 # 계정 바뀜 경고의 꼬리 — 앞에 새 계정의 표시 이름(「…」)이 선다(`account_changed_notice`).
 ACCOUNT_CHANGED_TAIL = " 계정으로 바뀌었습니다"
 # 문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄. 실행 명령 · 환경변수 이름 · 문서
-# 경로는 관리자 몫에만 서는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 에만 둔다.
+# 경로는 개발자 몫에만 서는 접힌 「개발자용 진단」 의 `NO_GATE_DIAGNOSTIC` 에만 둔다.
 NO_GATE_NOTICE = "지금은 앱을 열 수 없습니다(서버 시작 설정)"
 NO_GATE_DIAGNOSTIC = (
     f"통합인증을 켜는 설정(`{names.ENV_CLIENT_ID}`)인데 문지기 없이 앱이 시작됐습니다. "
@@ -321,36 +338,116 @@ def verified_identity() -> Identity | None:
     return None if isinstance(found, IdentityProblem) else found
 
 
-def viewer_is_admin() -> bool:
-    """이 연결의 쿠키를 지금 다시 검증한 신원이 관리자인가. 통합인증이 켜짐이 아니면 늘 거짓이다.
+# 「이 등급으로 보기」 — 개발자 자기 창(세션)만 · 화면만. 값은 열람 · 실무자 · 관리자 가운데 하나다.
+GRADE_PREVIEW_KEY: Final = "grade_preview"
+PREVIEW_GRADES: Final = (grades.VIEWER, grades.EDITOR, grades.MANAGER)
+_UNRESTRICTED: Final = grades.Caller(grades.DEVELOPER, unrestricted=True)
 
-    관리자 판정은 이것 하나다 — 화면 · 콜백이 사본을 두지 않는다(DB 동기화 · 통합인증 점검도 이것을
-    부른다).
+
+def script_context_present() -> bool:
+    """지금 스레드에 Streamlit 실행 문맥이 있는가(본문 · 콜백 · 프래그먼트). 시험이 바꿔 끼운다."""
+    return get_script_run_ctx(suppress_warning=True) is not None
+
+
+def _judged(*, thread_check: bool) -> grades.Caller:
+    """실제 등급 판정 한 벌. `thread_check` 면 실행 문맥 없는 낯선 스레드를 열람으로 본다(쓰는
+    순간의 벽 — 화면 판정은 늘 실행 문맥 안이라 보지 않는다)."""
+    cfg = runtime.config()
+    if not cfg.operational:
+        return _UNRESTRICTED
+    if audit_recorder.system_actor() is not None:
+        return _UNRESTRICTED
+    if cfg.mode is not SsoMode.ON:
+        return grades.Caller(grades.MANAGER)
+    if thread_check and not script_context_present():
+        return grades.Caller(grades.VIEWER)
+    found = identity_from_cookies(session_cookies(), cfg, _now(), renewals=True)
+    if isinstance(found, IdentityProblem):
+        return grades.Caller(grades.VIEWER, ended=found.value)
+    return grades.Caller(grade_store.grade_of(cfg, found.loginid))
+
+
+def real_caller() -> grades.Caller:
+    """쓰는 순간의 실제 등급(모듈 설명 「접속 등급」) — 미리 보기를 따르지 않고 세션 칸을 읽지
+    않는다. 쓰는 순간의 벽이 꽂아 쓰는 판정기다(`grade_ui.install`)."""
+    return _judged(thread_check=True)
+
+
+def viewer_is_developer() -> bool:
+    """이 연결의 쿠키를 지금 다시 검증한 신원이 개발자인가(환경변수 개발자 ∪ 명단 `admin`).
+    통합인증이 켜짐이 아니면 늘 거짓이다 — 「이 등급으로 보기」 를 따르지 않는 실제 판정이다.
+
+    Admin 의 두 번째 벽(BigDataQuery · 동기화 · 공지)과 미리 보기의 자격이 이것을 부른다.
     """
     identity = verified_identity()
     return identity is not None and access_store.is_admin(runtime.config(), identity.loginid)
 
 
-ADMIN_ONLY_NOTICE = "관리자만 여는 화면입니다"
+def preview_grade() -> str | None:
+    """「이 등급으로 보기」 중이면 그 등급 — 운영 + 켜짐의 실제 개발자 회차에만 있다."""
+    cfg = runtime.config()
+    if not (cfg.operational and cfg.mode is SsoMode.ON):
+        return None
+    value = st.session_state.get(GRADE_PREVIEW_KEY)
+    if value not in PREVIEW_GRADES or not viewer_is_developer():
+        return None
+    return str(value)
+
+
+def end_preview() -> None:
+    """「이 등급으로 보기」 를 끝낸다(앱 정보 카드 「끝내기」 콜백)."""
+    st.session_state.pop(GRADE_PREVIEW_KEY, None)
+
+
+def screen_grade() -> str:
+    """화면 등급 — 제한 없음은 개발자, 로그인 끝남은 열람, 실제 개발자는 미리 보기를 따른다."""
+    who = _judged(thread_check=False)
+    if who.unrestricted:
+        return grades.DEVELOPER
+    if who.ended is not None:
+        return grades.VIEWER
+    if who.grade == grades.DEVELOPER:
+        preview = preview_grade()
+        if preview is not None:
+            return preview
+    return who.grade
+
+
+def viewer_can(action: str) -> bool:
+    """이 화면에 그 동작을 세우나(화면 판정 — 미리 보기를 따른다). 숨김 · 값만 · 탭 목록 · 사람 몫
+    자동 쓰기가 부른다. 쓰는 순간의 벽은 따로 실제 등급으로 다시 본다."""
+    need = grades.need_of(action)
+    return grades.at_least(screen_grade(), need)
+
+
+ADMIN_ONLY_NOTICE = grades.stop_text("admin.area", place="page")
 HOME_LINK_LABEL = "HOME 으로"
 
 
 def admin_area_locked() -> bool:
-    """Admin Area 를 이 회차에 닫는가 — 운영 서버(`SsoConfig.operational`)이고 관리자가 아니다.
+    """Admin Area 를 이 회차에 닫는가 — 화면 등급으로 개발자 몫(`admin.area`)을 할 수 없다.
 
     판정은 이것 하나다 — 사이드바 링크를 빼는 `app.py` 와 주소로 연 회차를 멈추는 Admin Area 가 같이
-    부른다(2026-11-13 보드 D11 「Admin Area 전체를 관리자 전용으로」). 개발 `app.py` · 사내 WebIDE ·
-    사내 PC(운영 아님)는 지금처럼 연다. 통합인증이 꺼진 운영 서버 · 문지기 없이 뜬 운영 서버는
-    관리자
-    신원이 없어 잠긴 채다(`viewer_is_admin` 은 켜짐이 아니면 거짓).
+    부른다(2026-11-13 보드 D11 · 2026-11-18 접속 등급). 개발 `app.py` · 사내 WebIDE · 사내 PC(운영
+    아님)는 지금처럼 연다. 통합인증이 꺼진 운영 서버는 관리자까지라 잠긴 채다. 「이 등급으로 보기」
+    동안은 잠긴다(끄는 자리는 앱 정보 카드의 「끝내기」).
     """
-    return runtime.config().operational and not viewer_is_admin()
+    return not viewer_can("admin.area")
+
+
+def developer_wall_locked() -> bool:
+    """쓰는 순간의 두 번째 벽 — 운영 서버이고 실제 개발자가 아니다(미리 보기를 따르지 않는다).
+
+    Admin 의 쓰기 콜백(공지 · 공용 표시순서 · 공정 표시명 붙여넣기)이 누른 순간 다시 본다.
+    """
+    return runtime.config().operational and not viewer_is_developer()
 
 
 def viewer_can_audit() -> bool:
     """접속 · 작업 기록을 볼 수 있는가 — 감사 기록을 남기는 서버(`audit.recorder.enabled()` —
-    통합인증 켜짐 기동)이고 보는 사람이 관리자(`viewer_is_admin`)다. 아니면 늘 거짓."""
-    return audit_recorder.enabled() and viewer_is_admin()
+    통합인증 켜짐 기동)이고 보는 사람이 실제 개발자(`viewer_is_developer`)이며 미리 보기 중이
+    아니다."""
+    return audit_recorder.enabled() and viewer_is_developer() and preview_grade() is None
 
 
 def logout_url(cfg: SsoConfig) -> str:
@@ -361,14 +458,39 @@ def logout_url(cfg: SsoConfig) -> str:
     return public_link(cfg, f"{names.LOGOUT_PATH}{query}")
 
 
-def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
-    """앱 정보 카드 셋째 줄 — 「이름 · 부서 · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
+# 앱 정보 카드 셋째 줄의 등급 표지 — 열람 · 실무자만(등급 때문에 단추가 없는 사람에게만 까닭을
+# 보인다
+# — 설계 규칙 UI-TXT-05 예외). 미리 보기 동안은 보는 등급을 싣는다.
+CARD_GRADES: Final = (grades.VIEWER, grades.EDITOR)
+PREVIEW_MARK = "{grade} 화면으로 보는 중"
+PREVIEW_END_LABEL = "끝내기"
+PREVIEW_END_KEY = "grade_preview_end"
 
-    이름이 없으면 loginid 를 싣고, 부서가 없으면 뺀다. 실제로 끝나는 시각(갱신 표까지 견준
-    `session_end_of`) 30분 전부터 끝에 남은 시간을 붙인다 — 최대 시간이 정한 끝이면
-    `CAP_WARNING_SUFFIX`, 마지막 사용 뒤 유지 시간이 정한 끝이면 `IDLE_WARNING_SUFFIX`. 이름 ·
-    부서는 IdP 가 준 사람 글이라 `literal_markdown` 으로 막는다. 이 줄은 원문 HTML 을 허락한
-    캡션으로 그린다(로그아웃 링크를 같은 탭에서 열려고).
+
+def card_grade_mark(identity: Identity) -> str | None:
+    """카드 셋째 줄의 등급 표지 글 — 미리 보기 중이면 「실무자 화면으로 보는 중」, 열람 · 실무자면
+    등급 이름, 관리자 · 개발자 · 운영 아님은 없음."""
+    preview = preview_grade()
+    if preview is not None:
+        return PREVIEW_MARK.format(grade=grades.label_of(preview))
+    cfg = runtime.config()
+    if not (cfg.operational and cfg.mode is SsoMode.ON):
+        return None
+    grade = grade_store.grade_of(cfg, identity.loginid)
+    return grades.label_of(grade) if grade in CARD_GRADES else None
+
+
+def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
+    """앱 정보 카드 셋째 줄 — 「이름 · 부서 · (등급) · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
+
+    이름이 없으면 loginid 를 싣고, 부서가 없으면 뺀다. 등급은 열람 · 실무자만 싣고(미리 보기 동안은
+    「<등급> 화면으로 보는 중」 — 그 곁 「끝내기」 단추는 카드가 그린다), 관리자 · 개발자는 싣지
+    않는다. 실제로 끝나는 시각(갱신 표까지 견준 `session_end_of`) 30분 전부터 끝에 남은 시간을
+    붙인다 —
+    최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 마지막 사용 뒤 유지 시간이 정한 끝이면
+    `IDLE_WARNING_SUFFIX`. 이름 · 부서는 IdP 가 준 사람 글이라 `literal_markdown` 으로 막는다. 이
+    줄은
+    원문 HTML 을 허락한 캡션으로 그린다(로그아웃 링크를 같은 탭에서 열려고).
     """
     if identity is None:
         return None
@@ -376,6 +498,9 @@ def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str
     parts = [literal_markdown(identity.display_name)]
     if identity.dept:
         parts.append(literal_markdown(identity.dept))
+    mark = card_grade_mark(identity)
+    if mark is not None:
+        parts.append(mark)
     parts.append(_same_tab_link(logout_url(cfg), LOGOUT_LABEL))
     line = " · ".join(parts)
     moment = _now() if now is None else now

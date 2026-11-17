@@ -4,7 +4,7 @@
 critic-missing 1 · 5(2026-11-14 답 「좋음」).
 
 화면은 공통 틀(`auth/page_frame.py`)이다 — 위는 누구나 읽는 글(표지 · 제목 · 까닭 · 단추 · 문의 줄),
-바닥에 「참고 사유 코드 · 시각(· 진단 번호)」, 아래 접힌 「관리자용 진단」. 값 · 토큰은 싣지 않는다.
+바닥에 「참고 사유 코드 · 시각(· 진단 번호)」, 아래 접힌 「개발자용 진단」. 값 · 토큰은 싣지 않는다.
 """
 
 from __future__ import annotations
@@ -113,9 +113,9 @@ def main_part(page: AsgiResponse) -> str:
 
 
 def admin_part(page: AsgiResponse) -> str:
-    """접힌 「관리자용 진단」 안."""
+    """접힌 「개발자용 진단」 안."""
     marker = f"<details><summary>{page_frame.DIAGNOSTIC_LABEL}</summary>"
-    assert marker in page.text, "접힌 관리자용 진단이 있다"
+    assert marker in page.text, "접힌 개발자용 진단이 있다"
     return page.text.split(marker, 1)[1]
 
 
@@ -219,7 +219,7 @@ def test_a_temporary_failure_keeps_counting_and_retries_to_the_first_screen() ->
 
 def test_no_cookie_at_all_is_its_own_case() -> None:
     """콜백에 이 앱의 쿠키가 하나도 오지 않음(다른 주소로 시작 · 쿠키 막힘) — 시작 정보 없음과
-    가르고 주소창 주소 · 쿠키 설정을 보라고 한다. 관리자용 진단은 10분 넘게 머문 때와 가르지 못함을
+    가르고 주소창 주소 · 쿠키 설정을 보라고 한다. 개발자용 진단은 10분 넘게 머문 때와 가르지 못함을
     말한다."""
     cfg = use_config()
     app = routes_app()
@@ -774,7 +774,7 @@ def test_the_gate_counts_only_browser_navigations_as_login_starts() -> None:
 
 
 def test_the_outer_diagnostic_fold_has_the_same_name_as_the_in_app_one() -> None:
-    """「관리자용 진단」 은 앱 밖 틀(설정 막힘 · 로그인 실패)과 앱 안 판(문지기 없이 뜬 앱 · 오류
+    """「개발자용 진단」 은 앱 밖 틀(설정 막힘 · 로그인 실패)과 앱 안 판(문지기 없이 뜬 앱 · 오류
     카드)이 같은 이름이다(UI-CON-02) — 두 상수를 맞댄다."""
     assert page_frame.DIAGNOSTIC_LABEL == ADMIN_DIAGNOSTIC_LABEL
 
@@ -806,7 +806,7 @@ def test_the_frame_folds_a_table_and_a_second_fold_and_escapes_them() -> None:
     for raw in ("<script>", "<b>줄", "<u>", "<s>", "<h>", "<i>", "<em>", "<x>", "<v>"):
         assert raw not in text, raw
     assert "<td><code>&lt;script&gt;</code></td>" in text
-    assert "<summary>관리자용 진단</summary><p>&lt;em&gt;머리&lt;/em&gt;</p><ul>" in text
+    assert "<summary>개발자용 진단</summary><p>&lt;em&gt;머리&lt;/em&gt;</p><ul>" in text
     assert "<td><code>A_<wbr>B&lt;x&gt;</code></td>" in text, "이름 칸만 `_` 뒤에서 끊는다"
     assert "<td>값_이름</td><td><code>&lt;v&gt;_1</code></td>" in text, "값 칸은 글자 그대로"
     assert text.index("A_<wbr>B") < text.index("값_이름") < text.index("&lt;s&gt;끝")

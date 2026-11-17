@@ -1,11 +1,14 @@
-# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록·공지 탭, 위의 서버 점검·BDQ 자동
-# 로그인·통합인증 점검·접속 명단.
+# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록·공지 탭, 위의 서버 점검·BDQ 자동
+# 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
 
 from __future__ import annotations
 
 import streamlit as st
 
-from capa_simulation.components.access_list_admin import render_access_list_admin
+from capa_simulation.components.access_list_admin import (
+    render_access_list_admin,
+    render_grade_preview,
+)
 from capa_simulation.components.audit_log_view import render_audit_tab
 from capa_simulation.components.bdq_login_admin import render_bdq_login_admin
 from capa_simulation.components.container_start_check import render_container_start_check
@@ -42,6 +45,7 @@ from capa_simulation.navigation import (
     ADMIN_AREA_TAB_KEY,
     ADMIN_AREA_TABS,
     HOME,
+    module_scan,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -67,8 +71,9 @@ render_page_header("Admin Area")
 # 운영인데 통합인증이 꺼진 서버(`AD-02`)는 관리자 신원이 없어 아래 잠금이 모두를 멈춘다 — 그
 # 알림만은 잠금 앞에서 내 잠긴 회차에도 Alarm 으로 닿게 한다.
 render_off_in_production_alert()
-# 운영 서버에서 관리자가 아니면 메뉴가 없고(`app.py`), 주소로 열어도 여기서 멈춘다 — 판정은
-# `sso_identity.admin_area_locked` 하나다(설계 규칙 UI-INP-07 — 없는 기능은 숨김).
+# 운영 서버에서 화면 등급이 개발자가 아니면(「이 등급으로 보기」 동안 포함) 메뉴가 없고(`app.py`),
+# 주소로 열어도 여기서 「개발자만 여는 화면입니다」 + 「HOME 으로」 뒤 멈춘다 — 판정은
+# `sso_identity.admin_area_locked` 하나다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
 if admin_area_locked():
     st.warning(ADMIN_ONLY_NOTICE, icon=":material/lock:")
     render_page_link(HOME.path, label=HOME_LINK_LABEL, icon=":material/home:")
@@ -85,8 +90,8 @@ render_object_sync_status()
 # 통합인증의 설정 판정 · 서명 인증서 · 최근 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도
 # 그리지 않는다(개발·사내 PC 화면 그대로). 값은 싣지 않는다.
 render_sso_status()
-# S3 접속 명단 편집. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 선다 — 그 밖에는 아무것도
-# 그리지 않는다(개발·사내 PC 화면 그대로). DB 를 열지 않는다.
+# S3 접속 명단 · 등급 파일 편집. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 선다 — 그 밖에는
+# 아무것도 그리지 않는다(개발·사내 PC 화면 그대로). DB 를 열지 않는다.
 render_access_list_admin()
 # 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패 수를 단추 글로 단 팝오버가 안쪽 탭 줄 오른쪽 끝에
 # 서고, 까닭·마지막 오류 표는 그 안이다 — 탭 위에 줄을 세우지 않는다(2026-11-10 보드 Q-6, 설계 규칙
@@ -96,8 +101,16 @@ render_access_list_admin()
 tabs_box = st.container(key=TABS_BOX_KEY)
 with tabs_box:
     render_module_status(box_key=TABS_BOX_KEY)
+    # 「이 등급으로 보기」 — 운영 + 통합인증 켜짐의 실제 개발자에게만 탭 줄 오른쪽 끝(모듈 상태
+    # 단추가
+    # 있으면 그 왼쪽) 팝오버로 선다(설계 규칙 UI-LAY-13). 그 밖에는 아무것도 그리지 않는다.
+    scanned = module_scan()
+    render_grade_preview(
+        box_key=TABS_BOX_KEY,
+        beside_module_status=bool(scanned.records or scanned.root_error),
+    )
     # 탭 묶음은 DB 를 열기 **앞**이다 — DB 를 못 열어도 DB 를 쓰지 않는 기록 탭은 열린다(DB
-    # 탭 안에만 「데이터 Error」 마크). 명단에서 관리자 등급이 바뀌면 세션 중에도 라벨 목록이
+    # 탭 안에만 「데이터 Error」 마크). 명단에서 개발자 등급이 바뀌면 세션 중에도 라벨 목록이
     # 바뀐다 — 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
     shows_log = viewer_can_audit()
     tab_labels = (*TAB_NAMES, *((LOG_TAB,) if shows_log else ()), NOTICE_TAB)
@@ -114,7 +127,7 @@ if shows_log:
             render_audit_tab()
 
 # 공지 — DB 를 쓰지 않는 입력 탭이라 DB 를 열기 앞에서 늘 그린다(DB 를 못 열어 멈추는 회차에도
-# 선다). 보내기 · 거두기는 그 순간 관리자 판정을 다시 본다(`components/notice_admin.py`).
+# 선다). 보내기 · 거두기는 그 순간 실제 개발자 판정을 다시 본다(`components/notice_admin.py`).
 with opened_tabs[-1]:
     render_notice_admin()
 

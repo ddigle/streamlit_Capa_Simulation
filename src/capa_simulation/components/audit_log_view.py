@@ -69,9 +69,10 @@ RECORD_COLUMNS: Final = (
     "세션",
 )
 # 기록 표의 상세 · 세션 칸 폭(px — `record_column_config`). 왼쪽 여백 7 을 두고, 상세는 명단 판이
-# 세 자리인 줄 「등급 전 user · 등급 admin · 판 전 103 · 판 104」(글 220.2)가, 세션은 8자 세션
-# 앞머리(무작위 5,000개 가운데 가장 넓은 것 66.4)가 다 드는 폭이다(샘플 관측 — 표 글꼴 12.25px).
-# 세션은 끝 칸이라 줄이 많아 선 세로 스크롤 막대(10px)가 그 오른쪽을 덮으므로 그만큼 더 둔다.
+# 세 자리인 줄(옛 꼴 「등급 전 user · 등급 admin · 판 전 103 · 판 104」 글 220.2 — 새 꼴
+# 「등급 전 개발자 · 등급 실무자 · …」 도 거의 같다)이, 세션은 8자 세션 앞머리(무작위 5,000개
+# 가운데 가장 넓은 것 66.4)가 다 드는 폭이다(샘플 관측 — 표 글꼴 12.25px). 세션은 끝 칸이라 줄이
+# 많아 선 세로 스크롤 막대(10px)가 그 오른쪽을 덮으므로 그만큼 더 둔다.
 DETAIL_WIDTH_PX: Final = 232
 SESSION_WIDTH_PX: Final = 84
 SUMMARY_COLUMNS: Final = (
@@ -88,6 +89,8 @@ SUMMARY_COLUMNS: Final = (
 EMPTY_VALUE: Final = "—"
 _LOGIN_FAIL_EVENTS: Final = frozenset({"authn_login_fail"})
 _DENIED_EVENTS: Final = frozenset({"authz_fail_access_list"})
+# 등급 값을 싣는 상세 키 — 등급 이름으로(옛 줄의 `admin` · `user` 는 「(옛 기록)」 을 달아) 보인다.
+_GRADE_KEYS: Final = frozenset({"grade_from", "grade_to", "need", "have"})
 _DELETE_EVENTS: Final = frozenset(
     {"data_scenario_delete", "data_voc_delete", "data_baseline_delete", "user_deleted"}
 )
@@ -210,7 +213,9 @@ def detail_text(line: Mapping[str, Any]) -> str:
     """상세 칸 — 「행 120 · 칸 3」 같은 짧은 값 글.
 
     명단 판(`rev_from` · `rev_to`)이 같은 줄은 쓰지 못한 실패라 「판 n(그대로)」 한 칸으로 접는다 —
-    「판 전 1 · 판 1」 이 판이 오른 줄처럼 읽히지 않게. 다른 판 칸(`version_*`)은 접지 않는다.
+    「판 전 1 · 판 1」 이 판이 오른 줄처럼 읽히지 않게. 다른 판 칸(`version_*`)은 접지 않는다. 등급
+    값(`grade_from` · `grade_to` · `need` · `have`)은 등급 이름으로 — 옛 줄의 `admin` · `user` 는
+    「개발자(옛 기록)」 · 「일반(옛 기록)」 이다.
     """
     det = line.get("det")
     if not isinstance(det, Mapping):
@@ -225,6 +230,8 @@ def detail_text(line: Mapping[str, Any]) -> str:
             continue
         if isinstance(value, bool):
             value = events.YES_NO[value]
+        elif key in _GRADE_KEYS and isinstance(value, str):
+            value = events.GRADE_VALUE_LABELS.get(value, value)
         elif isinstance(value, Mapping):
             value = " ".join(f"{name} {count}" for name, count in value.items())
         elif isinstance(value, list):

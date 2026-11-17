@@ -51,7 +51,7 @@ from capa_simulation.components.admin_dialog import (
     open_admin_dialog,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.sso_identity import admin_area_locked
+from capa_simulation.components.sso_identity import developer_wall_locked
 
 DIALOG: Final = "notice_send"
 FLASH_KEY: Final = "notice_admin_flash"
@@ -85,7 +85,7 @@ NEXT_DAY_WORD: Final = "내일 "
 
 SENT_MESSAGE: Final = "공지 보냄 · {until} 까지"
 WITHDRAWN_MESSAGE: Final = "공지 거둠"
-NOT_ADMIN_MESSAGE: Final = "관리자만 공지를 보내고 거둘 수 있습니다"
+NOT_ADMIN_MESSAGE: Final = "개발자만 공지를 보내고 거둘 수 있습니다"
 CHANGED_MESSAGE: Final = "서 있는 공지가 바뀌었습니다 — 서 있는 공지를 보고 다시 보내세요"
 ENDED_MESSAGE: Final = "서 있던 공지가 끝났거나 거둬졌습니다 — 다시 보내세요"
 GONE_MESSAGE: Final = "서 있는 공지가 바뀌어 거두지 않았습니다"
@@ -156,7 +156,7 @@ def _close_confirm() -> None:
 
 def _open_confirm() -> None:
     """「보내기」 콜백 — 다시 판정하고 글 · 끝 시각을 본 뒤 그 순간의 값을 쥐고 팝업을 연다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     moment = notice_board.now_kst()
@@ -179,7 +179,7 @@ def _open_confirm() -> None:
 
 def submit_notice(pending: Pending) -> None:
     """팝업의 「보내기」 한 번 — 다시 판정하고 쥔 값을 그대로 보낸다. 결과는 알림 칸에 담는다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         audit_recorder.record(AUDIT_SEND, out="denied", det={"result": "not_admin"})
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
@@ -216,7 +216,7 @@ def submit_notice(pending: Pending) -> None:
 
 def withdraw_notice(notice_id: str) -> None:
     """「거두기」 콜백 — 다시 판정하고 그린 회차의 공지가 아직 서 있을 때만 걷는다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         audit_recorder.record(
             AUDIT_WITHDRAW, out="denied", tgt=_target(notice_id), det={"result": "not_admin"}
         )

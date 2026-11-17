@@ -60,7 +60,7 @@ def _report(
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, *, admin: bool = True) -> None:
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: admin)
 
 
 def _query(monkeypatch: pytest.MonkeyPatch, error: BaseException | None) -> None:
@@ -264,7 +264,7 @@ def test_the_administrator_is_judged_from_the_cookie(
     """바꿔 끼우지 않은 판정 — 이 연결의 쿠키를 지금 검증한 신원이 명단 관리자인가."""
     _real_viewer(monkeypatch, cookie=cookie)
 
-    assert sso_identity.viewer_is_admin() is expected
+    assert sso_identity.viewer_is_developer() is expected
 
 
 def test_nobody_gets_the_alert_with_sso_off(
@@ -279,7 +279,7 @@ def test_nobody_gets_the_alert_with_sso_off(
     monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
     _report(tmp_path, monkeypatch, token=(report_contract.STATUS_FAILED, "까닭"))
 
-    assert sso_identity.viewer_is_admin() is False
+    assert sso_identity.viewer_is_developer() is False
     app = AppTest.from_string(SCRIPT).run()
     assert active_state(app, CODE) is None
     assert [item["active"] for item in states(app, CODE)] == [False]

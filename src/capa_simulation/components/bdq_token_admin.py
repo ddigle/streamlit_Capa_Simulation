@@ -68,7 +68,7 @@ OPEN_HELP: Final = (
     "패키지가 다음 조회부터 읽는 토큰 파일을 이 값으로 바꿉니다. 컨테이너를 다시 띄우면 "
     f"CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아갑니다."
 )
-NOT_ADMIN_MESSAGE: Final = "관리자만 토큰을 넣을 수 있습니다"
+NOT_ADMIN_MESSAGE: Final = "개발자만 토큰을 넣을 수 있습니다"
 TOKEN_LINE_LABEL: Final = "**지금 토큰**"
 # 알림창 짧은 글의 만료 시각 꼴(KST) — 전문은 펼침과 같은 `CLOCK_FORMAT`.
 SHORT_CLOCK_FORMAT: Final = "%m-%d %H:%M"
@@ -154,7 +154,7 @@ def token_line(state: bdq_token.TokenState | None = None) -> str:
 def render_token_row(line: str) -> bool:
     """펼침 안 한 줄 — 관리자면 「토큰 넣기」 단추 + 값 줄, 아니면 값 줄만. 단추를 그렸으면 참 —
     그 회차는 펼침 뒤에서 팝업 호스트(`render_token_dialog`)를 부른다."""
-    if not sso_identity.viewer_is_admin():
+    if not sso_identity.viewer_is_developer():
         st.caption(line)
         return False
     blocked = bdq_token.blocked_reason()
@@ -181,7 +181,7 @@ def render_token_dialog() -> None:
 def install_from_dialog(raw: str) -> str | None:
     """누른 회차의 넣기 — 거절 글(칸 아래 한 줄) 또는 `None`(넣음 · 같음 — 알림창에 담았다). 신원을
     이 회차의 쿠키에서 다시 검증한다."""
-    if not sso_identity.viewer_is_admin():
+    if not sso_identity.viewer_is_developer():
         audit_recorder.record("admin_token_set", out="denied", det={"result": "not_admin"})
         return NOT_ADMIN_MESSAGE
     outcome = bdq_token.install_token(raw)
@@ -238,7 +238,7 @@ def render_expiry_alert(*, standing: bool = False) -> None:
         not standing
         and expires is not None
         and bdq_token.expiry_is_near(state)
-        and sso_identity.viewer_is_admin()
+        and sso_identity.viewer_is_developer()
     )
     alerts.state(
         EXPIRY_ALERT_CODE,

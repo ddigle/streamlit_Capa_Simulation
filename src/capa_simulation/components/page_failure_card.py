@@ -1,4 +1,5 @@
-# Purpose: 코어 화면 실행을 감싸 처리 못 한 오류를 그 화면 카드 · 참고 번호 · 관리자 알림으로.
+# Purpose: 코어 화면 실행을 감싸 처리 못 한 오류는 카드 · 참고 번호 · 개발자 알림으로, 등급 거절은
+# 알림 한 번으로.
 
 """코어 화면 오류 카드(2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare — 처리 못 한 오류,
 d12 (가)).
@@ -28,6 +29,14 @@ d12 (가)).
   전용 환경변수, 프로세스 동안 그대로)이 참인 서버만 회차마다 한 자리를 쓰고(실패가 없거나
   관리자 몫이 아니면 해소로), 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는
   운영이 아니고 통합인증이 꺼져 카드의 「관리자용 진단」 이 누구에게나 선다.
+- **등급 거절**(`auth/grades.REFUSALS` — 화면 본문의 쓰기가 쓰는 순간의 벽에 걸림)은 오류 카드 ·
+  `AD-22` 로 가지 않는다 — 거절 알림을 담고(`grade_ui.refuse`) 화면을 한 번 다시 그린다. 누름 없이
+  같은
+  거절이 다음 회차에 또 오면(걸러지지 않은 「그리는 회차의 쓰기」) 알림은 그 회차의 `emit` 이 이미
+  냈으므로 다시 담지 않고 멈춘다 — 끝없이 거절 · 다시 그리기를 되풀이하지 않는다. 회차가 끝까지
+  돌거나
+  화면이 스스로 멈추면 표지를 걷는다. 프래그먼트가 던져 Streamlit 이 싸서 넘긴 거절
+  (`FragmentHandledException`)도 같은 길이다.
 - **지나가는 것** — Streamlit 제어 예외(`st.stop()` · `st.rerun()` · `st.switch_page` —
   `ScriptControlException`)와 `KeyboardInterrupt` 는 그대로 다시 던진다. 전체 실행 안 프래그먼트
   실패(`FragmentHandledException` — Streamlit 이 이미 그 안에 그렸다)는 적고 카드 없이 멈춘다.
@@ -52,7 +61,9 @@ from streamlit.errors import FragmentHandledException
 from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlException
 
 from capa_simulation import alerts, page_failures, settings
-from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.auth import grades
+from capa_simulation.components import grade_ui
+from capa_simulation.components.admin_view import developer_notes_visible
 from capa_simulation.components.container_start_check import start_check_alert_possible
 from capa_simulation.components.stop_panel import RETRY_LABEL, AdminFold, render_stop_footer
 from capa_simulation.page_failures import PageFailure
@@ -70,6 +81,8 @@ HEADLINE: Final = "이 화면에 오류가 났습니다 — 다른 화면은 그
 ALERT_CODE: Final = "AD-22"
 MESSAGE_LIMIT: Final = 200
 FRAME_LIMIT: Final = 12
+# 직전 회차의 등급 거절(종류, 동작) — 누름 없이 같은 거절이 또 오면 다시 그리지 않고 멈춘다.
+REFUSAL_SEEN_KEY: Final = "grade_refusal_seen"
 # 관리자 알림 전문에 싣는 최근 실패 수.
 RECENT_SHOWN: Final = 5
 _LOGGER = logging.getLogger(__name__)
@@ -132,24 +145,49 @@ def _record(page: str, href: str, exc: BaseException) -> PageFailure:
     return failure
 
 
+def _refusal_mark(exc: grades.GradeDenied | grades.SignInEnded) -> tuple[str, str]:
+    return (type(exc).__name__, exc.action)
+
+
+def _take_refusal(exc: grades.GradeDenied | grades.SignInEnded) -> bool:
+    """등급 거절을 받는다 — 처음이면 알림을 담고 참(다시 그린다), 누름 없이 같은 거절이 또 오면
+    거짓(이미 그 회차의 알림 칸이 냈다 — 멈춘다)."""
+    mark = _refusal_mark(exc)
+    if st.session_state.get(REFUSAL_SEEN_KEY) == mark:
+        return False
+    st.session_state[REFUSAL_SEEN_KEY] = mark
+    grade_ui.refuse(exc)
+    return True
+
+
 def run_core_page(run: Callable[[], None], *, page: str, href: str) -> None:
-    """코어 화면을 `run`(보통 `navigation.run`)으로 돌리며 처리 못 한 오류를 카드로 바꾼다.
-    `page` · `href` 는 이 화면의 이름 · 주소다(기록 · 알림 「그 화면으로」 — HOME 은 빈 글자).
-    처리한 실패는 `st.stop()` 으로 끝난다(모듈 설명 「멈춤으로 끝낸다」)."""
+    """코어 화면을 `run`(보통 `navigation.run`)으로 돌리며 처리 못 한 오류를 카드로, 등급 거절을
+    알림 한 번으로 바꾼다. `page` · `href` 는 이 화면의 이름 · 주소다(기록 · 알림 「그 화면으로」 —
+    HOME 은 빈 글자). 처리한 실패는 `st.stop()` 으로 끝난다(모듈 설명 「멈춤으로 끝낸다」)."""
+    rerun = False
     try:
         run()
+    except grades.REFUSALS as refused:
+        rerun = _take_refusal(refused)
     except FragmentHandledException as handled:
-        # Streamlit 이 이미 그 프래그먼트 안에 그렸다 — 카드 없이 적는다.
+        # Streamlit 이 이미 그 프래그먼트 안에 그렸다 — 카드 없이 적는다. 거절이면 적지 않는다.
         original = handled.args[0] if handled.args else handled
-        _record(page, href, original if isinstance(original, BaseException) else handled)
+        if isinstance(original, grades.REFUSALS):
+            rerun = _take_refusal(original)
+        else:
+            _record(page, href, original if isinstance(original, BaseException) else handled)
     except (ScriptControlException, KeyboardInterrupt):
+        st.session_state.pop(REFUSAL_SEEN_KEY, None)
         raise
     # SystemExit · CancelledError 도 받는다 — 두면 회차 스레드가 끝나 세션이 「실행 중」 에 머문다.
     except BaseException as error:
         render_page_failure(_record(page, href, error), error)
     else:
+        st.session_state.pop(REFUSAL_SEEN_KEY, None)
         return
-    # 예외 처리 칸 밖에서 멈춘다 — 멈춤 예외에 처리한 오류가 이어 붙지 않게.
+    # 예외 처리 칸 밖에서 다시 그리거나 멈춘다 — 제어 예외에 처리한 오류가 이어 붙지 않게.
+    if rerun:
+        st.rerun()
     st.stop()
 
 
@@ -163,7 +201,7 @@ def render_page_failure_alert() -> None:
     if not start_check_alert_possible():
         return
     failures = page_failures.recent_failures()
-    if not failures or not admin_notes_visible():
+    if not failures or not developer_notes_visible():
         alerts.state(ALERT_CODE, scope=None, content=None, active=False)
         return
     shown = failures[-RECENT_SHOWN:]
@@ -179,7 +217,7 @@ def render_page_failure_alert() -> None:
         text=f"화면 오류 {page_failures.failure_count()}건 — 「{last.page}」 · {last.kind}",
         full=(
             f"이 서버의 화면에서 처리하지 못한 오류가 났습니다 — {lines}. 원문은 그 화면 "
-            "카드의 「관리자용 진단」 과 서버 로그(참고 번호)에 있습니다."
+            "카드의 「개발자용 진단」 과 서버 로그(참고 번호)에 있습니다."
         ),
         # HOME 의 주소는 빈 글자다(기본 화면 — 알림 칸 · 탭 줄이 그 글자로 HOME 을 연다).
         goto=(last.page, last.href) if last.page else None,

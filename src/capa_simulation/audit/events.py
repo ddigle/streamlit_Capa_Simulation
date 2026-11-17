@@ -28,7 +28,10 @@ OUTCOMES: Final[Mapping[str, str]] = {
     "unknown": "결과 모름",
 }
 LEVELS: Final = ("info", "warn", "crit")
-GRADES: Final = ("admin", "user", "system", "none")
+# 줄의 등급 칸 — 사람 넷(`auth/grades.GRADES` 의 높은 차례) · 앱 자신 · 없음. 옛 줄의 `admin` ·
+# `user` 는 읽기 표시에서 「개발자(옛 기록)」 · 「일반(옛 기록)」 이다(`LEGACY_GRADE_LABELS`).
+GRADES: Final = ("developer", "manager", "editor", "viewer", "system", "none")
+LEGACY_GRADES: Final = ("admin", "user")
 
 BAD_EVENT: Final = "sys_audit_bad_event"
 
@@ -67,6 +70,11 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     ),
     _spec("authn_username_missing", "access", "계정 클레임 없음", "claim", lvl="warn"),
     _spec("authz_fail_access_list", "access", "명단 밖 접속", "reason", lvl="warn"),
+    # 등급 때문에 막힌 누름 — 누가(행위자) · 무엇(동작) · 필요한 등급 · 지금 등급. 로그인이 끝나
+    # 막힌
+    # 것은 따로 적는다(값 원문 없음 — 2026-11-18 접속 등급 결정 30).
+    _spec("authz_fail_grade", "access", "등급 때문에 막힘", "action", "need", "have", lvl="warn"),
+    _spec("authz_fail_signin", "access", "로그인 끝나 막힘", "action", "reason", lvl="warn"),
     _spec(
         "authz_fail_access_list_summary",
         "access",
@@ -91,7 +99,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("user_grade_changed", "admin", "등급 바꿈", "grade_from", "grade_to", *_REV),
     _spec("user_bulk_dropped", "admin", "못 읽는 항목 정리", "count", *_REV),
     _spec("user_seeded", "admin", "명단 첫 판 심기", "count", *_REV),
-    _spec("authz_admin_config", "admin", "관리자 구성", "admins", "admin_fp"),
+    _spec("authz_admin_config", "admin", "개발자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     # 결과 · 까닭과 로그인 하위 프로세스 진단(`container_start_report.ChildDiag.fields` — 수 ·
     # 이름 · 판만, 계정 · 비밀번호 없음).
@@ -152,12 +160,21 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("data_target_clear", "data", "표준 목표 지우기"),
     _spec("data_floor_state_save", "data", "층 사용 저장", "rows"),
     _spec("data_drawing_save", "data", "Space 도면 저장", "rows"),
+    _spec("data_shortening_filter_save", "data", "필요 단축 기본 조회 조건 저장", "field", "rows"),
+    _spec("data_legacy_trace_ack", "data", "옛 배포 흔적 이어 쓰기", "count"),
+    # 모듈 화면의 운영 서버 파일 올리기 · 공용 BigDataQuery 조회 — 대상은 모듈 id, 상세는 결과 낱말
+    # ·
+    # 크기 · 행 수만(파일 이름 · 조회문 없음).
+    _spec("data_module_upload", "data", "모듈 파일 올리기", "result", "bytes"),
+    _spec("data_module_query", "data", "모듈 BigDataQuery 조회", "result", "rows"),
     # --- 시스템 -------------------------------------------------------------------------------
     _spec("sys_startup", "system", "앱 시작", "env", "sso", "sync", "spool"),
     _spec("sys_boot_pull", "system", "시작 받기", "action", "seq", "seconds"),
     _spec("sys_cert_expiring", "system", "서명 인증서 만료 임박", "days", lvl="warn"),
     _spec("sys_access_read_fail", "system", "접속 명단 읽기 실패", "reason", "status", lvl="warn"),
     _spec("sys_access_save_fail", "system", "접속 명단 저장 실패", "reason", "status", lvl="warn"),
+    _spec("sys_grade_read_fail", "system", "등급 파일 읽기 실패", "reason", "status", lvl="warn"),
+    _spec("sys_grade_save_fail", "system", "등급 파일 저장 실패", "reason", "status", lvl="warn"),
     _spec("sys_sync_fail", "system", "DB 올리기 실패", "kind", "failures", lvl="warn"),
     _spec("sys_sync_blocked", "system", "DB 올리기 멈춤", "decision", lvl="warn"),
     _spec("sys_sync_summary", "system", "DB 올리기(시간 묶음)", *_SUMMARY),
@@ -184,9 +201,10 @@ SPEC_BY_NAME: Final[Mapping[str, EventSpec]] = {spec.name: spec for spec in SPEC
 DET_LABELS: Final[Mapping[str, str]] = {
     "accounts": "계정",
     "action": "동작",
-    "admin_fp": "관리자 지문",
-    "admins": "관리자 수",
+    "admin_fp": "개발자 지문",
+    "admins": "개발자 수",
     "bigdataquery": "bigdataquery 판",
+    "bytes": "바이트",
     "claim": "클레임",
     "count": "수",
     "counts": "건수",
@@ -201,16 +219,19 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "exit": "종료",
     "expires": "만료",
     "failures": "실패 수",
+    "field": "칸",
     "fields": "칸",
     "getpass_asterisk": "getpass_asterisk 판",
     "grade_from": "등급 전",
     "grade_to": "등급",
+    "have": "지금 등급",
     "hour": "시간",
     "hours": "유지(시간)",
     "key": "조각",
     "kind": "갈래",
     "max_hours": "최대 유지(시간)",
     "name": "사건 이름",
+    "need": "필요 등급",
     "parent": "부모 리비전",
     "partial": "앞당겨 닫음",
     "prev_h": "앞 해시",
@@ -247,6 +268,17 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "until": "끝 시각",
     "version_from": "판 전",
     "version_to": "판",
+}
+# 등급 칸 · 상세 등급 값의 표시 — 사람 넷은 등급 이름, 옛 줄의 값은 「(옛 기록)」 을 단다.
+GRADE_VALUE_LABELS: Final[Mapping[str, str]] = {
+    "developer": "개발자",
+    "manager": "관리자",
+    "editor": "실무자",
+    "viewer": "열람",
+    "system": "앱",
+    "none": "-",
+    "admin": "개발자(옛 기록)",
+    "user": "일반(옛 기록)",
 }
 # 참 · 거짓 값의 표시(상세 칸).
 YES_NO: Final[Mapping[bool, str]] = {True: "예", False: "아니오"}

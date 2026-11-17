@@ -5,7 +5,8 @@
 
 **자리.** 동기화 모드 `managed` 이고 키(`CAPA_BDQ_SECRET_KEY`)를 쓸 수 있는 서버의 관리자 회차에만
 Admin Area 「서버 시작 점검」 펼침 바로 뒤에 펼침 하나로 선다. 문지기는 「토큰 넣기」 와 같은
-`sso_identity.viewer_is_admin` 이다. 그 밖(개발 · WebIDE · 사내 PC · 키 없음 · 관리자가 아님)에는
+`sso_identity.viewer_is_developer` 이다. 그 밖(개발 · WebIDE · 사내 PC · 키 없음 · 관리자가
+아님)에는
 Streamlit 호출이 하나도 없다 — 요소 순번이 그대로다. 펼침 이름은 「서버 시작 점검」 표 줄과 같은
 `BDQ_LOGIN_LABEL` 하나다(설계 규칙 UI-CON-02). 자동 로그인 멈춤 알림 `AD-23` 과 계정 없음 `AD-10` 의
 「그 화면으로」 가 이 펼침을 연다(`open_bdq_login` — 알림 칸 받는 쪽 `BDQ_LOGIN_TARGET_KIND`,
@@ -119,7 +120,7 @@ UNKNOWN_CLOCK: Final = "시각 모름"
 AUTO_WORD: Final = "자동"
 FORM_WORD: Final = "넣기"
 
-NOT_ADMIN_MESSAGE: Final = "관리자만 계정을 넣을 수 있습니다"
+NOT_ADMIN_MESSAGE: Final = "개발자만 계정을 넣을 수 있습니다"
 BLANK_MESSAGE: Final = "계정과 비밀번호를 모두 넣으세요"
 NOT_SAVED: Final = "저장 안 함"
 SAVE_FAILED_MESSAGE: Final = (
@@ -130,7 +131,7 @@ DELETE_FAILED_MESSAGE: Final = (
     "BigDataQuery 자동 로그인 계정을 지우지 못했습니다 — 저장된 계정 그대로"
 )
 CONFIRM_FIRST_MESSAGE: Final = f"「{DELETE_CONFIRM_LABEL}」 를 체크한 뒤 지우세요"
-NOT_ADMIN_DELETE_MESSAGE: Final = "관리자만 계정을 지울 수 있습니다"
+NOT_ADMIN_DELETE_MESSAGE: Final = "개발자만 계정을 지울 수 있습니다"
 
 AUDIT_SET: Final = "admin_bdq_login_set"
 AUDIT_DELETE: Final = "admin_bdq_login_delete"
@@ -153,7 +154,7 @@ def form_visible() -> bool:
             return False
     except Exception:  # 설정을 읽다 깨져도 Admin Area 는 선다 — 펼침만 없다
         return False
-    return sso_identity.viewer_is_admin()
+    return sso_identity.viewer_is_developer()
 
 
 def _clock(text: str | None) -> str:
@@ -293,7 +294,7 @@ def _announce(outcome: bdq_login.FormResult) -> None:
 def submit_login(account: str, password: str) -> str | None:
     """넣기 한 번 — 폼 아래 거부 한 줄(시도 없음) 또는 `None`(결과는 알림 칸에 담았다). 누른 회차의
     신원을 다시 검증한다(그려진 폼을 믿지 않는다)."""
-    if not sso_identity.viewer_is_admin():
+    if not sso_identity.viewer_is_developer():
         audit_recorder.record(AUDIT_SET, out="denied", det={"result": "not_admin"})
         return NOT_ADMIN_MESSAGE
     if not account and not password and write_guard.just_written(SUBMIT_GUARD):
@@ -325,7 +326,7 @@ def _on_submit() -> None:
 
 def _delete() -> None:
     """「지우기」 콜백 — 누른 회차의 신원을 다시 검증하고 확인 체크를 본 뒤 지운다."""
-    if not sso_identity.viewer_is_admin():
+    if not sso_identity.viewer_is_developer():
         audit_recorder.record(AUDIT_DELETE, out="denied", det={"result": "not_admin"})
         queue_flash(FLASH_KEY, NOT_ADMIN_DELETE_MESSAGE, kind="error", popup_only=True)
         return

@@ -95,7 +95,7 @@ def server(
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, *, admin: bool = True) -> None:
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: admin)
     monkeypatch.setattr(
         sso_identity, "verified_identity", lambda: SimpleNamespace(loginid=ADMIN_ID)
     )

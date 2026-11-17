@@ -293,7 +293,7 @@ def test_the_copy_of_the_sync_panel_is_its_lines(
         alive=True, phase=object_sync_worker.PHASE_IDLE, last_tick=0.0, seq=7, failures=2
     )
     monkeypatch.setattr(object_sync_worker, "current_status", lambda: status)
-    monkeypatch.setattr(object_sync_status, "_viewer_is_admin", lambda: False)
+    monkeypatch.setattr(object_sync_status, "_viewer_is_developer", lambda: False)
 
     app = AppTest.from_string(SYNC_SCRIPT).run()
 

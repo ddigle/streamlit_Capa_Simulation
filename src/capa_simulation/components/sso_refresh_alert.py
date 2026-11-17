@@ -13,7 +13,7 @@
   「건너뜀」 이 모두 0. 건너뜀(60초 안 · 상한)도 출처 · 머리 검사를 지난 요청이라, 한 번이라도 다시
   발급했거나 건너뛰었으면 길은 열린 것이라 세우지 않는다(한 사람의 다른 주소 접속 같은 잡음).
 - 내용(지문)은 고정 값이다 — 거절 수를 넣으면 새 거절마다 알림창이 다시 뜬다.
-- 관리자 몫(`admin_view.admin_notes_visible` — 켜진 서버라 관리자 회차)에만 세우고 다른
+- 관리자 몫(`admin_view.developer_notes_visible` — 켜진 서버라 관리자 회차)에만 세우고 다른
   회차는 해소로 부른다(`sso_status._access_read_alert` 와 같은 꼴 — 회차마다 이벤트 칸 한
   자리). 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 일반 사용자 회차의 숨은 표지에 운영
   낱말(접속 주소 환경변수 · 갱신 머리 이름)이 실리지 않게(알림 칸은 해소에 글을 쓰지 않는다).
@@ -27,7 +27,7 @@ from __future__ import annotations
 from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoMode
-from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.admin_view import developer_notes_visible
 from capa_simulation.components.sso_status import sso_status_target
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -56,7 +56,7 @@ def render_refresh_alert() -> None:
     cfg = runtime.config()
     if cfg.mode is not SsoMode.ON:
         return
-    active = refresh_refused() and admin_notes_visible()
+    active = refresh_refused() and developer_notes_visible()
     alerts.state(
         ALERT_CODE,
         scope=None,

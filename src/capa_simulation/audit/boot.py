@@ -7,7 +7,7 @@
 환경변수는 두지 않는다.
 
 켜면 줄 셋을 남긴다 — `sys_startup`(환경 · 판 · 통합인증 · 동기화 모드),
-`authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은 싣지 않는다), 시작 받기
+`authz_admin_config`(개발자 수 · 목록 지문 8자 — 사람 값은 싣지 않는다), 시작 받기
 기록이 있으면 `sys_boot_pull`. 그 뒤 기록기가 켜지기 전에 지나간 기동 사건을 그 차례로 따라잡는다 —
 진입 파일은 `start_sso()`(설정을 읽고 S3 명단을 한 번 읽는다) 다음에 이 함수를 불러, 그 안의 사건이
 대응표에 닿지 못한다. 만료가 30일 안인 서명 인증서마다 `sys_cert_expiring` 한 줄
@@ -23,7 +23,7 @@ import logging
 
 from capa_simulation import settings, sync_boot
 from capa_simulation.audit import recorder
-from capa_simulation.auth import access_store, runtime
+from capa_simulation.auth import access_store, grade_store, runtime
 from capa_simulation.auth.access import GRADE_ADMIN
 from capa_simulation.auth.config import SsoConfig, SsoMode
 
@@ -43,10 +43,11 @@ def deploy_version() -> str:
 
 
 def grader(cfg: SsoConfig) -> recorder.Grader:
-    """loginid → `admin` · `user`. 관리자는 지금 명단(`access_store.is_admin`)."""
+    """loginid → 접속 등급(`developer` · `manager` · `editor` · `viewer` —
+    `grade_store.grade_of`)."""
 
     def grade(loginid: str) -> str:
-        return "admin" if access_store.is_admin(cfg, loginid) else "user"
+        return grade_store.grade_of(cfg, loginid)
 
     return grade
 

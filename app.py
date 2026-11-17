@@ -7,8 +7,10 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation import alerts, notice_board
+from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth.runtime import note_boot_failure, note_boot_success
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
+from capa_simulation.components import grade_ui
 from capa_simulation.components.accent_button_style import render_accent_button_style
 from capa_simulation.components.alert_center import render_alert_center
 from capa_simulation.components.app_credits import render_app_credits
@@ -165,6 +167,7 @@ def active_condition_tab(spec: PageSpec) -> str | None:
 
 
 @st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
+@grade_ui.in_fragment
 def render_condition_dialogs(
     page_file: str | None,
     shows_scenario: bool,
@@ -218,6 +221,12 @@ CELL_SELECT_CHART_KEYS = (
     CONSTRAINT_SHEET_KEY,
 )
 
+# 접속 등급의 판정기(`components/grade_ui.install` — `sso_identity.real_caller`)를 꽂는다. 테마 ·
+# 통합인증 확인 · 부트스트랩 · 페이지보다 앞, 매 회차다(같은 함수면 그대로). 그 뒤로 표지를 단
+# 저장소
+# 쓰기는 쓰는 순간의 실제 등급을 본다 — 운영 아님(개발 · WebIDE · 사내 PC)은 늘 지나간다. 메시지를
+# 보내지 않아 아래 「끝까지 돌았는지」 표지보다 앞이어도 된다.
+grade_ui.install()
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
 # Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
 # 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
@@ -325,7 +334,10 @@ with pinned_connections(DUCKDB_PATH):
         # 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다(다른
         # 탭이 아직 막혀 있어도 줄이 쌓이지 않게).
         attempted = st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True
-        bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+        # 첫 데이터 · 세션 첫 활성화는 앱 자신의 쓰기다 — 사람 등급으로 막지 않는다(배포 날 모두가
+        # 열람이어도 첫 회차가 선다, `audit.recorder.as_system`).
+        with as_system("system:app"):
+            bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
         if not attempted and st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
             note_boot_success()
     except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
@@ -619,6 +631,11 @@ with pinned_connections(DUCKDB_PATH):
         # 바뀔 때만 올라 data 가 회차마다 같다(이벤트 칸을 쓰지 않는다 — 요소 순번 그대로).
         notice=notice_board.payload(),
     )
+    # 쓰는 순간 등급 때문에 막힌 누름의 알림(`grade_ui.emit` — 알림창 · Alarm 한 번, 이벤트 칸 한
+    # 자리). 알림 칸 곁 고정 자리에서 매 전체 회차 부른다 — 위젯 콜백 · 화면 본문의 거절이 담아 둔
+    # 것을
+    # 이 회차에 낸다(페이지가 멈춰도 나가게 페이지보다 앞).
+    grade_ui.emit()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

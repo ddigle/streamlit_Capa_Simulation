@@ -70,7 +70,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from capa_simulation import settings
-from capa_simulation.auth import access_store, names, page_frame, runtime
+from capa_simulation.auth import access_store, grade_store, names, page_frame, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, url_origin
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.auth.page_frame import Form, Frame, Link
@@ -153,13 +153,13 @@ AGAIN_LABEL = "다시 들어가기"
 REOPEN_LABEL = "다시 열기"
 # 계정 뒤에는 조사를 못박지 않는다(받침을 모른다 — `tests/test_particle_sites.py`).
 DENIED_ACCOUNT_TEXT = "계정 {account} — 이 앱의 접속 명단에 없습니다."
-DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 명단에 등록됩니다."
+DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 열람으로 명단에 등록됩니다."
 DENIED_OTHER_STEP = "다른 계정으로 들어가려면 「다른 계정으로 로그인」 을 누르세요."
 DENIED_NO_TICKET_TEXT = "신청하려면 먼저 로그인해 계정을 확인합니다."
 SEND_NOTE_STEP = "아래 글을 문의처로 보내 주세요."
 NOTE_LABEL = "문의처로 보낼 글 — 한 번 누르면 통째로 골라집니다"
 ADMIN_TYPO_DIAGNOSTIC = (
-    "모두가 이 화면을 본다면 관리자 목록 칸(CAPA_ACCESS_ADMINS)에 위 계정이 철자 그대로 들었는지 "
+    "모두가 이 화면을 본다면 개발자 목록 칸(CAPA_ACCESS_ADMINS)에 위 계정이 철자 그대로 들었는지 "
     "확인합니다."
 )
 REGISTERED_TITLE = "등록했습니다"
@@ -172,12 +172,12 @@ LIST_UNREAD_WAIT_TEXT = (
     "서버가 접속 명단을 읽지 못해 지금은 확인할 수 없습니다. 권한 문제가 아닙니다."
 )
 LIST_UNREAD_WAIT_STEP = "1분 뒤 「다시 확인」 을 누르세요. 계속되면 문의처에 알려 주세요."
-LIST_UNREAD_ADMIN_TEXT = "관리자가 서버 설정을 고쳐야 열립니다. 권한 문제가 아닙니다."
+LIST_UNREAD_ADMIN_TEXT = "개발자가 서버 설정을 고쳐야 열립니다. 권한 문제가 아닙니다."
 LIST_UNREAD_ADMIN_STEP = "문의처에 알려 주세요."
 PORTAL_TITLE = "통합인증이 이 앱 사용을 막았습니다"
 PORTAL_TEXT = (
     "앱의 접속 명단보다 앞 단계에서 통합인증(포털)이 이 계정의 앱 사용을 허락하지 않았습니다. "
-    "앱 관리자가 아니라 포털 권한 담당에게 신청해야 합니다."
+    "앱 관리자(개발자)가 아니라 포털 권한 담당에게 신청해야 합니다."
 )
 PORTAL_STEPS = (
     "포털 권한 담당에게 이 앱의 사용 권한을 신청하세요.",
@@ -211,7 +211,7 @@ CONFIG_TEXT = "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어
 CONFIG_BROKEN_TEXT = "통합인증 설정을 마치지 못했습니다"
 CONFIG_FIX_COUNT = "{text} — 고칠 것 {count}개"
 CONFIG_ADMINS_TEXT = (
-    f"관리자 목록({names.ENV_ACCESS_ADMINS})이 비었거나 읽을 수 있는 계정이 없어 막았습니다 — "
+    f"개발자 목록({names.ENV_ACCESS_ADMINS})이 비었거나 읽을 수 있는 계정이 없어 막았습니다 — "
     "값을 넣고 CI/CD 를 다시 돌리세요."
 )
 CONFIG_HOW_TO = "C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요."
@@ -225,16 +225,19 @@ CONFIG_ENV_HEAD = ("환경변수", "상태", "까닭")
 # 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
 # 앱 관리자로 바꿔 보이지 않는 곳을 가리키지 않는다.
 NO_CONTACT_TEXT: Mapping[str, str] = {
-    SEND_NOTE_STEP: "아래 글을 앱 관리자에게 보내 주세요.",
-    NOTE_LABEL: "앱 관리자에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
-    LIST_UNREAD_WAIT_STEP: "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자에게 알려 주세요.",
-    LIST_UNREAD_ADMIN_STEP: "앱 관리자에게 알려 주세요.",
-    PORTAL_STEPS[1]: "모르겠으면 앱 관리자에게 아래 참고 번호를 알려 주세요.",
+    SEND_NOTE_STEP: "아래 글을 앱 관리자(개발자)에게 보내 주세요.",
+    NOTE_LABEL: "앱 관리자(개발자)에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
+    LIST_UNREAD_WAIT_STEP: (
+        "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자(개발자)에게 알려 주세요."
+    ),
+    LIST_UNREAD_ADMIN_STEP: "앱 관리자(개발자)에게 알려 주세요.",
+    PORTAL_STEPS[1]: "모르겠으면 앱 관리자(개발자)에게 아래 참고 번호를 알려 주세요.",
     LOGIN_SETUP_TEXT: (
-        "앱 설정 문제라 다시 시도해도 같습니다. 앱 관리자에게 아래 참고 번호를 알려 주세요."
+        "앱 설정 문제라 다시 시도해도 같습니다. 앱 관리자(개발자)에게 아래 참고 번호를 알려 주세요."
     ),
     CONFIG_TEXT: (
-        "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 앱 관리자에게 알려 주세요."
+        "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 앱 관리자(개발자)에게 "
+        "알려 주세요."
     ),
 }
 
@@ -1482,6 +1485,13 @@ async def callback(request: Request) -> Response:
         await run_in_threadpool(access_store.retry_unread, cfg)
     if not runtime.current_access(cfg).allows(login.loginid):
         return _deny(cfg, state_cookie, login, claims.next_path, now)
+    if grade_store.is_unread(cfg):
+        # 등급 파일을 아직 못 읽었으면 세션을 내기 직전에 다시 읽어 본다(60초에 한 번까지) — 못
+        # 읽어도
+        # 열람으로 들어와 거절이 없으므로 명단의 「거절 직전」 과 따로 둔다. 네트워크라 이벤트
+        # 루프에서
+        # 부르지 않는다.
+        await run_in_threadpool(grade_store.retry_unread, cfg)
 
     token, session = issue_session(
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now

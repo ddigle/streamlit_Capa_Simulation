@@ -61,7 +61,7 @@ CHIP_ROLES: Final = {
     "maintenance": "ALERT_CHECK",
     "starting": "ALERT_ACTION",
 }
-DIAGNOSTIC_LABEL: Final = "관리자용 진단"
+DIAGNOSTIC_LABEL: Final = "개발자용 진단"
 CONTACT_LABEL: Final = "문의"
 REFERENCE_LABEL: Final = "참고"
 DIAGNOSTIC_ID_LABEL: Final = "진단"

@@ -62,7 +62,7 @@ def _server(
     monkeypatch.setenv(report_contract.BDQ_USER_NAME_ENV, ENV_USER)
     folder = tmp_path / "credential"
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", folder)
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: True)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: True)
     return folder
 
 
@@ -164,7 +164,7 @@ def test_the_stop_alert_stays_down(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, admin: bool
 ) -> None:
     _server(tmp_path, monkeypatch)
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: admin)
     store.remember(_stored() if admin else _stored(store.STATE_STOPPED, "token_unchanged"))
 
     app = AppTest.from_string(SCRIPT).run()
@@ -360,9 +360,9 @@ def test_the_trouble_alert_follows_the_process_and_clears_on_success_or_stop(
     note = active_state(app, TROUBLE)
     assert note is not None and "연결 실패" in note["full"]
 
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: False)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: False)
     assert active_state(app.run(), TROUBLE) is None
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: True)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: True)
 
     monkeypatch.setattr(bdq_login, "_STATE", bdq_login._Process())
     assert active_state(app.run(), TROUBLE) is None

@@ -42,7 +42,7 @@ LONGEST: Final = timedelta(hours=24)
 # 끝 시각 기본값 — 지금 + 1시간을 10분 단위로 올림.
 DEFAULT_LEAD: Final = timedelta(hours=1)
 ROUND_MINUTES: Final = 10
-SENDER_LABEL: Final = "관리자"
+SENDER_LABEL: Final = "개발자"
 CLOCK_LAYOUT: Final = "%H:%M"
 # 끝 시각이 보낸 날의 다음 날이면 날짜도 싣는다 — 받는 사람은 다음 날 읽기도 해 「내일」 이 틀린다.
 DATED_CLOCK_LAYOUT: Final = "%m-%d %H:%M"

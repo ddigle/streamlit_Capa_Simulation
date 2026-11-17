@@ -19,6 +19,7 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.grade_ui import in_fragment
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.paste_form import (
@@ -35,7 +36,7 @@ from capa_simulation.components.saved_note import (
     note_placeholder,
     ready_note_field,
 )
-from capa_simulation.components.sso_identity import admin_area_locked
+from capa_simulation.components.sso_identity import developer_wall_locked
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_room_css
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
@@ -118,7 +119,7 @@ HEADING_MARK_ROOM = 160
 # 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙 UI-LAY-13).
 SAVE_ROW_KEY = "admin_area_process_rename_save_row"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
-PROCESS_RENAME_NOT_ADMIN_MESSAGE = "관리자만 공용 공정 표시명을 바꿀 수 있습니다"
+PROCESS_RENAME_NOT_ADMIN_MESSAGE = "개발자만 공용 공정 표시명을 바꿀 수 있습니다"
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
 )
@@ -226,6 +227,7 @@ def _save_error_message(exc: BaseException) -> str:
 
 
 @st.dialog("Excel 붙여넣기 · 공정 표시명", width="large", on_dismiss=close_admin_dialog)
+@in_fragment
 def _clipboard_dialog(
     repository: DuckDBScenarioRepository,
     current: pd.DataFrame,
@@ -252,7 +254,7 @@ def _clipboard_dialog(
         return
     # 팝업 안의 누름은 팝업만 다시 돌아 페이지 앞머리의 Admin Area 잠금을 지나지 않는다 — 팝업을 연
     # 뒤 관리자 등급을 잃은 사람의 적용이 저장되지 않게 쓰는 순간 다시 판정한다.
-    if admin_area_locked():
+    if developer_wall_locked():
         refuse_paste(CLIPBOARD_FORM_KEY, PROCESS_RENAME_NOT_ADMIN_MESSAGE)
         return
     if not submit.text.strip():

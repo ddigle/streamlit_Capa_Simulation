@@ -711,7 +711,7 @@ LONG_FAILURE_CLUE: Final = "오래 걸림"
 # 기록이 없는 WebIDE · 사내 PC 는 사용자가 BigDataQuery 로그인을 다시 해 토큰을 새로 받는다
 # (`token_advice`).
 TOKEN_ADVICE_SERVER: Final = (
-    "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 관리자에게 "
+    "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 개발자에게 "
     "알려 주세요(토큰을 새로 넣어야 풀립니다)."
 )
 TOKEN_ADVICE_LOCAL: Final = (
@@ -727,9 +727,9 @@ _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
     "조회를 다시 하세요.",
     QUERY_FAILURE_SQL: "DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 아래 원문을 "
-    "관리자에게 알려 주세요.",
+    "개발자에게 알려 주세요.",
     QUERY_FAILURE_OTHER: "잠시 뒤 같은 조회를 다시 하세요. 같은 실패가 이어지면 아래 원문을 "
-    "관리자에게 알려 주세요.",
+    "개발자에게 알려 주세요.",
 }
 # 화면에 옮기는 원문 길이. 패키지 문구에 조회문 전체가 실려 오기도 한다.
 _ORIGINAL_TEXT_LIMIT: Final = 300
@@ -911,6 +911,6 @@ def load_bigdataquery_module() -> ModuleType:
         _log_failure("패키지 초기화 실패", type_names=failure_type_names(exc))
         raise RuntimeError(
             "bigdataquery 패키지를 불러오지 못했습니다. 패키지를 다시 설치한 뒤 "
-            "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 관리자에게 "
+            "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 개발자에게 "
             f"알려 주세요.\n\n원문 — {_original_text(exc)}"
         ) from exc

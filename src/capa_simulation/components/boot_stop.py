@@ -17,7 +17,7 @@
   일을 시킨다. 이 앱 자신이 정리하는 동안의 잠김은 다시 하면 풀려 붙이지 않는다(뒤 회차도
   새로고침을 권한다). 판 올리기 실패(`MigrationFailed` — 이미 적용된
   마이그레이션이 바뀜 · 새 SQL 이 SQL · 데이터 오류로 실패함) → 「앱 업데이트를 마치지 못했습니다 —
-  관리자가 고칠 때까지 열 수 없습니다」, 다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07).
+  개발자가 고칠 때까지 열 수 없습니다」, 다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07).
   열기 · 쓰기 실패와 그 밖도 사람이 고칠 수 없는 원인이라 같은 꼬리다 — 「지금은 데이터를 열 수
   없습니다(<까닭>) — 관리자에게 알려 주세요」 + 「다시 시도」. 까닭은 「디스크가 가득 참」 · 「파일
   권한」 · 「파일을 열 수 없음」 이고, 그 밖은 까닭 칸 없이 꼬리만이다(갈래는 참고 줄의 `db_other`
@@ -61,7 +61,7 @@ BOOT_STOP_ATTRIBUTE: Final = "data-capa-boot-stop"
 LOCKED_LINE: Final = "지금은 데이터를 열 수 없습니다"
 # 다른 프로세스가 쥔 잠김 — 뒤 회차의 DB 실패 알림 짧은 글과 같은 꼬리.
 HELD_LINE: Final = f"{LOCKED_LINE}{ADMIN_TAIL}"
-UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 관리자가 고칠 때까지 열 수 없습니다"
+UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 개발자가 고칠 때까지 열 수 없습니다"
 RETRY_KEY: Final = "boot_stop_retry"
 DIAGNOSTIC_KEY: Final = "boot_stop_diagnostic"
 DIAGNOSTIC_TITLE: Final = "앱 시작 실패 진단"

@@ -116,7 +116,7 @@ def _worker(monkeypatch: pytest.MonkeyPatch, **values: object) -> _Handle:
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, *, admin: bool = True) -> None:
-    monkeypatch.setattr(object_sync_status, "_viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(object_sync_status, "_viewer_is_developer", lambda: admin)
 
 
 def _labels(app: AppTest) -> list[str]:
@@ -587,7 +587,7 @@ def test_a_wrong_mode_reaches_the_alert_as_a_word(monkeypatch: pytest.MonkeyPatc
 
 # --------------------------------------------------------------------------- 실제 신원 판정
 def _real_viewer(monkeypatch: pytest.MonkeyPatch, *, cookie: str | None) -> SsoConfig:
-    """`_viewer_is_admin` 을 바꿔 끼우지 않는다 — 쿠키만 주고 판정 길을 그대로 태운다."""
+    """`_viewer_is_developer` 을 바꿔 끼우지 않는다 — 쿠키만 주고 판정 길을 그대로 태운다."""
     cfg = use_config({names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_ACCESS_USERS: USER})
     cookies = {} if cookie is None else {cfg.session_cookie: session_token(cfg, cookie)}
     monkeypatch.setattr(sso_identity, "session_cookies", lambda: cookies)
@@ -602,7 +602,7 @@ def test_the_viewer_is_judged_from_the_cookie(
 ) -> None:
     _real_viewer(monkeypatch, cookie=cookie)
 
-    assert object_sync_status._viewer_is_admin() is expected
+    assert object_sync_status._viewer_is_developer() is expected
 
 
 def test_a_tampered_cookie_is_not_an_admin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -611,7 +611,7 @@ def test_a_tampered_cookie_is_not_an_admin(monkeypatch: pytest.MonkeyPatch) -> N
     forged = {cfg.session_cookie: f"{head}.{payload}.{signature[::-1]}"}
     monkeypatch.setattr(sso_identity, "session_cookies", lambda: forged)
 
-    assert object_sync_status._viewer_is_admin() is False
+    assert object_sync_status._viewer_is_developer() is False
 
 
 def test_nobody_is_an_admin_with_sso_off(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -623,7 +623,7 @@ def test_nobody_is_an_admin_with_sso_off(monkeypatch: pytest.MonkeyPatch) -> Non
     assert off.mode is not SsoMode.ON
     monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
 
-    assert object_sync_status._viewer_is_admin() is False
+    assert object_sync_status._viewer_is_developer() is False
 
 
 def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
@@ -645,8 +645,8 @@ def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
 
 
 def _view(monkeypatch: pytest.MonkeyPatch, *, admin: bool) -> None:
-    """관리자 몫 보기(`admin_view.admin_notes_visible`)를 바꿔 끼운다."""
-    monkeypatch.setattr(object_sync_status, "admin_notes_visible", lambda: admin)
+    """관리자 몫 보기(`admin_view.developer_notes_visible`)를 바꿔 끼운다."""
+    monkeypatch.setattr(object_sync_status, "developer_notes_visible", lambda: admin)
 
 
 @pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
@@ -664,7 +664,7 @@ def test_a_server_that_skipped_the_canon_says_so_in_plain_words(
     assert note is not None
     assert note["short"] == "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다"
     assert ("CAPA_S3_SYNC_MODE" in str(note["full"])) is admin
-    assert ("관리자에게 알려 주세요" in str(note["full"])) is not admin
+    assert ("개발자에게 알려 주세요" in str(note["full"])) is not admin
 
 
 @pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
@@ -724,7 +724,7 @@ def test_the_head_mark_names_the_code_of_a_server_off_the_canon(
 def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
     monkeypatch: pytest.MonkeyPatch, admin: bool
 ) -> None:
-    """`SY-02` · `SY-03` 짧은 글은 일반 사용자에게 「— 관리자에게 알려 주세요」 이고, 관리자 몫은
+    """`SY-02` · `SY-03` 짧은 글은 일반 사용자에게 「— 개발자에게 알려 주세요」 이고, 관리자 몫은
     갈래 · 런북 · 「그 화면으로」 Admin 「DB 동기화」 다. 일꾼이 서지 않은 서버의 관리자 전문에는
     CI/CD 를 누르면 저장이 사라진다는 한 줄이 붙는다(카드 p2-sync)."""
     _boot(monkeypatch, managed=True)
@@ -740,7 +740,7 @@ def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
         assert str(overdue["full"]).endswith(object_sync_status.WORKER_ABSENT_LINE)
         assert overdue["href"] == "admin_area"
     else:
-        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 관리자에게 알려 주세요"
+        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 개발자에게 알려 주세요"
         assert "Admin" not in str(overdue["full"]) and "CI/CD" not in str(overdue["full"])
         assert overdue.get("href", "") != "admin_area"
 
@@ -752,7 +752,7 @@ def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
         assert blocked["short"] == "올리기가 멈춤 — 원격이 갈라짐"
         assert "런북" in str(blocked["full"])
     else:
-        assert blocked["short"] == "올리기가 멈춤 — 관리자에게 알려 주세요"
+        assert blocked["short"] == "올리기가 멈춤 — 개발자에게 알려 주세요"
         assert "런북" not in str(blocked["full"])
 
 

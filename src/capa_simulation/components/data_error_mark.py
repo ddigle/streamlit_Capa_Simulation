@@ -31,7 +31,7 @@ Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면(셋째
 관리자에게 알려 주세요」 로 끝나고, 사용자가 고칠 원인인데 부르는 쪽이 고칠 화면을 주지 않은 경로 ·
 계획 표 빈 리비전은 「그 화면으로」 가 시나리오 관리 「DB 등록」 을
 연다(`page_bootstrap.screen_error_goto`). 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스 번호 ·
-원문 줄)은 관리자 몫(`admin_view.admin_notes_visible` — 운영 아닌 꺼진 서버는 누구에게나)에만
+원문 줄)은 관리자 몫(`admin_view.developer_notes_visible` — 운영 아닌 꺼진 서버는 누구에게나)에만
 싣고, 그 밖에는 첫 문단과 「관리자에게 알려 주세요.」 만이다(`page_bootstrap.screen_error_public`).
 
 **한 칸에 함께 그린다.** 마크와 알림 표지(`alerts.hidden_marker`)가 `st.html` 하나라 이벤트 칸을
@@ -141,7 +141,7 @@ def data_error_note(
         # 부를 때 읽는다 — 관리자 판정이 이끄는 머리 띠 모듈들이 이 모듈을 부른다(순환).
         from capa_simulation.components import admin_view
 
-        if not admin_view.admin_notes_visible():
+        if not admin_view.developer_notes_visible():
             message = page_bootstrap.screen_error_public(message)
     if text is None:
         text = admin_short

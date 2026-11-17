@@ -118,7 +118,7 @@ def test_admin_notes_follow_the_admin_and_the_operational_server(
     assert (cfg.mode, cfg.operational) == (mode, operational)
     _as(monkeypatch, viewer)
 
-    assert admin_view.admin_notes_visible() is visible
+    assert admin_view.developer_notes_visible() is visible
 
 
 @pytest.mark.parametrize(
@@ -134,5 +134,5 @@ def test_admin_notes_never_point_at_a_locked_admin_area(
     setup()
     _as(monkeypatch, viewer)
 
-    if admin_view.admin_notes_visible():
+    if admin_view.developer_notes_visible():
         assert not sso_identity.admin_area_locked()

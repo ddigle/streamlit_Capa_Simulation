@@ -1726,7 +1726,8 @@ function tableBox(C, table) {
     el('span', 'count', clipped ? fill(t.table_rows_clipped, { n: table.rows.length.toLocaleString(), total }) : fill(t.table_rows, { n: total })),
     el('span', 'grow'),
   )
-  if (!clipped) head.append(csv)
+  // 표지 `csv: false`(설비 표를 관리자 아래 등급이 띄움 — 접속 등급 결정 26)면 「CSV 내려받기」 를 세우지 않는다.
+  if (!clipped && table.csv !== false) head.append(csv)
   const scroller = el('div', 'tscroll')
   scroller.tabIndex = 0
   const grid = el('table')

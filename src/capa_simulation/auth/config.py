@@ -139,8 +139,8 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "no_valid_entry": "읽을 수 있는 loginid 가 하나도 없음",
         "entries_unreadable": "loginid 꼴이 아닌 항목이 있어 뺌",
         "s3_users_ignored": "S3 명단 파일이 있어 이 목록은 쓰지 않음",
-        "s3_needed": "S3 명단이 켜졌는데 값이 없음 — 관리자만 들어옴",
-        "s3_bad": "S3 명단이 켜졌는데 값 꼴이 틀림 — 관리자만 들어옴",
+        "s3_needed": "S3 명단이 켜졌는데 값이 없음 — 개발자만 들어옴",
+        "s3_bad": "S3 명단이 켜졌는데 값 꼴이 틀림 — 개발자만 들어옴",
         "s3_plain_http": "평문 http — 명단이 사내망에 그대로 흐름",
     }
 )

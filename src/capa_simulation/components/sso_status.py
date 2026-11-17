@@ -48,7 +48,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 from capa_simulation import alerts, sync_boot
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
-from capa_simulation.auth import access_store, names, runtime
+from capa_simulation.auth import access_store, grade_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components import admin_view, sso_identity
@@ -249,7 +249,7 @@ def access_line(cfg: SsoConfig) -> str:
         return "**접속 명단** · 꺼짐(인증된 사람 전부)"
     state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
     return (
-        f"**접속 명단** · {state} · 관리자 {access.admin_count} · 일반 {access.user_count} · "
+        f"**접속 명단** · {state} · 개발자 {access.admin_count} · 일반 {access.user_count} · "
         f"읽지 못함 {access.unreadable_count}"
     )
 
@@ -279,7 +279,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
         return "**S3 명단** · 통합인증이 켜지면 적용"
     source = runtime.access_source()
     if source is None:
-        return "**S3 명단** · 실패 · 아직 읽지 않음 · 관리자만 들어옴"
+        return "**S3 명단** · 실패 · 아직 읽지 않음 · 개발자만 들어옴"
     parts = ["**S3 명단** · 정상" if source.problem is None else "**S3 명단** · 실패"]
     if source.problem is not None:
         parts.append(access_problem_text(source.problem))
@@ -290,7 +290,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
             parts.append(f"자가 회복 실패 {retries}")
     document = source.document
     if document is None or source.read_at is None:
-        parts.append("마지막 읽기 없음 · 관리자만 들어옴")
+        parts.append("마지막 읽기 없음 · 개발자만 들어옴")
     else:
         parts += [
             f"마지막 읽기 {_clock_text(source.read_at)}",
@@ -513,11 +513,11 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
     ]
 
 
-def _viewer_is_admin(cfg: SsoConfig) -> bool:
-    """관리자 몫 보기 한 판정(`admin_view.admin_notes_visible`) — `cfg` 는 지금 설정과 같다. S3 명단
-    서버는 통합인증이 켜져 있어(`access_store.is_on`) 관리자 판정(`sso_identity.viewer_is_admin`)과
-    같다."""
-    return admin_view.admin_notes_visible()
+def _viewer_is_developer(cfg: SsoConfig) -> bool:
+    """개발자 몫 보기 한 판정(`admin_view.developer_notes_visible`) — `cfg` 는 지금 설정과 같다.
+    S3 명단 서버는 통합인증이 켜져 있어(`access_store.is_on`) 개발자
+    판정(`sso_identity.viewer_is_developer`)과 같다."""
+    return admin_view.developer_notes_visible()
 
 
 def _admin_area_goto() -> tuple[str, str]:
@@ -561,7 +561,7 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
     problem = None if source is None else source.problem
     unread = access_store.is_unread(cfg)
     active = (problem is not None or unread) and admin
-    effect = "관리자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
+    effect = "개발자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
     todo = (
         ACCESS_READ_FIX_STEP
         if problem is not None and access_store.needs_admin_fix(problem)
@@ -642,22 +642,56 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
     )
 
 
+GRADE_READ_TEXT = "등급 파일을 읽지 못했습니다 — {effect}"
+GRADE_READ_UNREAD_EFFECT = "개발자 말고 모두 열람으로 읽습니다"
+GRADE_READ_HELD_EFFECT = "기억해 둔 등급으로 판정합니다"
+GRADE_READ_STEP = "Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
+
+
+def _grade_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
+    """상태 알림 `AD-25` — 등급 파일을 읽지 못함(`grade_store.read_problem`).
+
+    못 읽은 동안은 개발자 말고 모두 열람이고(못 읽었다고 넓어지지 않는다), 한 번 읽은 뒤의 실패는
+    기억해 둔 등급으로 잇는다. 그 자리(「다시 읽기」)가 개발자에게만 있어 개발자 회차(`admin`)에만
+    세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다 — `AD-08` 과 같은 꼴).
+    """
+    problem = grade_store.read_problem(cfg)
+    active = problem is not None and admin
+    effect = GRADE_READ_UNREAD_EFFECT if grade_store.is_unread(cfg) else GRADE_READ_HELD_EFFECT
+    alerts.state(
+        "AD-25",
+        scope=None,
+        content=problem if active else None,
+        active=active,
+        text=GRADE_READ_TEXT.format(effect=effect) if active else None,
+        full=(
+            f"{GRADE_READ_TEXT.format(effect=effect)}"
+            f"({access_problem_text(problem)}). {GRADE_READ_STEP}"
+            if active and problem is not None
+            else None
+        ),
+        goto=_admin_area_goto(),
+        target=_access_list_goto_target(),
+    )
+
+
 def render_access_alerts() -> None:
-    """접속 명단 상태 알림 셋(`AD-08` · `AD-09` · `AD-19`) — 관리자의 어느 화면에서나 뜨게 매 회차
-    부른다.
+    """접속 명단 상태 알림 넷(`AD-08` · `AD-09` · `AD-19` · 등급 파일 `AD-25`) — 개발자의 어느
+    화면에서나 뜨게 매 회차 부른다.
 
     S3 명단을 쓰는 서버에서만 부른다 — 설정은 재시작 전에 바뀌지 않으니 해소할 것이 없고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
-    서버에서는 부를 때마다 이벤트 칸에 늘 세 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
-    이 회차 쿠키에서 한 번만 다시 검증해 셋에 쓴다.
+    서버에서는 부를 때마다 이벤트 칸에 늘 네 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
+    이 회차 쿠키에서 한 번만 다시 검증해 넷에 쓴다.
     """
     cfg = runtime.config()
     if not access_store.is_on(cfg):
         return
-    admin = _viewer_is_admin(cfg)
+    admin = _viewer_is_developer(cfg)
     _access_read_alert(cfg, admin=admin)
     _access_seed_alert(admin=admin)
     _new_registration_alert(admin=admin, now=int(time.time()))
+    _grade_read_alert(cfg, admin=admin)
 
 
 def _audit_goto() -> tuple[str, str]:

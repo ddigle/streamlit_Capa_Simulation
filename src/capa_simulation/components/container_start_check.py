@@ -64,7 +64,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
-from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.admin_view import developer_notes_visible
 from capa_simulation.components.bdq_login_admin import bdq_login_target
 from capa_simulation.components.bdq_token_admin import (
     AUTO_LOGIN_FIX,
@@ -484,7 +484,7 @@ def render_start_check_alert() -> None:
     """서버 시작 점검 관리자 알림(`AD-01`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
 
     관리자 몫이 아닌 회차는 해소로 부른다(같은 수의 표지 —
-    `admin_view.admin_notes_visible`, 운영 아닌 꺼진 서버는 누구에게나). 지문은 (제목, 실패
+    `admin_view.developer_notes_visible`, 운영 아닌 꺼진 서버는 누구에게나). 지문은 (제목, 실패
     단계 이름들)이다 — 까닭 글이 바뀌어도 같은 단계면 다시 뜨지 않는다."""
     if not start_check_alert_possible():
         return
@@ -510,7 +510,7 @@ def render_start_check_alert() -> None:
                 "단계 표를 보고 배포 서버 환경변수를 고친 뒤 CI/CD 를 다시 누르세요."
             )
             content = ["실패 있음", [name for name, _ in failed]]
-    active = text is not None and admin_notes_visible()
+    active = text is not None and developer_notes_visible()
     alerts.state(
         START_CHECK_ALERT_CODE,
         scope=None,
@@ -550,7 +550,7 @@ def render_token_alert() -> None:
     start_failed = step is not None and step.status == STATUS_FAILED
     query_failed = last_query_failed_on_token()
     view = login_view(report)
-    admin = sso_identity.viewer_is_admin()
+    admin = sso_identity.viewer_is_developer()
     active = (start_failed or query_failed) and admin
     alerts.state(
         TOKEN_ALERT_CODE,

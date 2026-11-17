@@ -89,6 +89,7 @@ from typing import Any, Final, Literal, TypedDict, cast, get_args
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.delta_generator_singletons import get_last_dg_added_to_context_stack
+from typing_extensions import NotRequired
 
 Level = Literal["info", "check", "action", "error"]
 Kind = Literal["event", "state"]
@@ -404,6 +405,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 자동 시도가 성공하거나 멈추거나 Admin Area 「BDQ 자동 로그인」 에서 다시 넣으면 걷힌다 — 성공
     # 없이 이어지면 `AD-23`(멈춤)으로 넘어간다.
     AlertSpec("AD-24", "action", "state", "BigDataQuery 자동 로그인이 서지 못함 — 다시 시도 대기"),
+    # 접속 등급 파일(명단 곁의 `grades.json`)을 읽지 못함 — 못 읽은 동안 개발자 말고 모두 열람으로
+    # 읽고, 한 번 읽은 뒤의 실패는 기억해 둔 등급으로 잇는다. 개발자 회차에만 서고 「그 화면으로」
+    # 가 Admin 「접속 명단」 펼침을 연다(「다시 읽기」 — 2026-11-18 접속 등급 결정 14).
+    AlertSpec("AD-25", "action", "state", "접속 등급 파일을 읽지 못함 — 다시 읽기"),
     # 관리자가 보낸 공지(`notice_board` — 프로세스 메모리, 끝 시각까지 · 2026-11-17 공지 보드 답).
     # 서 있는 동안이 조건이라 새로 들어온 탭에도 한 번 뜨고, 새 공지는 「내용 바뀜」 · 거둠 · 끝남 ·
     # 재시작 뒤는 「해소」 다. 어느 화면의 일도 아니라 화면 없는 표지를 알림 칸 data 가 싣는다(물음
@@ -445,7 +450,10 @@ class AlertTable(TypedDict):
     - `title` 단추 · 표 머리 글, `columns` 칸 이름, `rows` 행 값(JSON 값 — 수 · 글 · None),
     - `total` 원래 행 수(`rows` 보다 크면 앞 `TABLE_ROW_LIMIT` 행만 실은 것), `file` CSV 파일 이름,
     - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다),
-    - `help` 칸 머리 풍선(칸 → 글 — 그 칸의 값을 어디서 고치는지 · 무슨 뜻인지).
+    - `help` 칸 머리 풍선(칸 → 글 — 그 칸의 값을 어디서 고치는지 · 무슨 뜻인지),
+    - `csv` 거짓이면 그 표의 「CSV 내려받기」 를 세우지 않는다 — 설비 표가 실린 Alarm 표를 관리자
+      아래 등급이 띄웠을 때(2026-11-18 접속 등급 결정 26). 표지가 표와 함께 Alarm 에 남아 다른
+      화면으로도 따라간다. 없으면 참이다.
     """
 
     title: str
@@ -455,6 +463,7 @@ class AlertTable(TypedDict):
     file: str
     shown: dict[str, dict[str, str]]
     help: dict[str, str]
+    csv: NotRequired[bool]
 
 
 class GotoTarget(TypedDict):

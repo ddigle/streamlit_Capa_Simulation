@@ -141,9 +141,12 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (2, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
-    # 운영 서버에서 관리자가 아닌 사람이 주소로 연 Admin Area — 「관리자만 여는 화면입니다」 뒤
-    # 멈춘다(2026-11-13 보드 D11).
+    # 운영 서버에서 개발자가 아닌 사람이 주소로 연 Admin Area — 「개발자만 여는 화면입니다」 뒤
+    # 멈춘다(2026-11-13 보드 D11 · 2026-11-18 접속 등급).
     ("app_pages/admin_area.py", ""): (1, PLACE_STOP),
+    # 주소 · 알림 · 기억된 탭 값으로 연 등급 밖 화면 · 탭 — 「실무자부터 여는 탭입니다」 뒤 멈춘다
+    # (2026-11-18 접속 등급 결정 7 — Admin Area 와 같은 꼴).
+    ("src/capa_simulation/components/grade_ui.py", "stop_unless"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),
 }
 

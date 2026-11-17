@@ -203,7 +203,7 @@ WRITE_FAILED_LEAD: Final = (
 )
 DB_FAILED_LEAD: Final = "데이터베이스 작업이 실패했습니다."
 OPEN_FAILED_LEAD: Final = "데이터베이스를 열지 못했습니다."
-ADMIN_TAIL: Final = " — 관리자에게 알려 주세요"
+ADMIN_TAIL: Final = " — 개발자에게 알려 주세요"
 _ADMIN_LEADS: Final[tuple[tuple[str, str], ...]] = (
     (HELD_LEAD, "데이터베이스를 열지 못함(다른 프로그램이 엶)"),
     (WRITE_FAILED_LEAD, "데이터베이스에 쓰지 못함"),
@@ -229,7 +229,7 @@ def screen_error_public(message: str) -> str:
     for lead, _ in _ADMIN_LEADS:
         at = message.find(f"{lead}\n\n")
         if at >= 0:
-            return message[: at + len(lead)] + "\n\n관리자에게 알려 주세요."
+            return message[: at + len(lead)] + "\n\n개발자에게 알려 주세요."
     return message
 
 
@@ -437,7 +437,7 @@ def bootstrap_error_message(
 
     **사람이 고칠 수 없는 DB 실패**(다른 프로그램의 잠금 · 쓰기 실패 · 열기 실패 · 그 밖의 DB
     실패)는 첫 문단을 고정 글(`_ADMIN_LEADS`)로 둔다 — 화면 알림의 짧은 글이 그 첫 문단으로 그
-    갈래를 알고 「— 관리자에게 알려 주세요」 로 끝난다(`screen_error_short`). 이 앱 자신의 잠금은
+    갈래를 알고 「— 개발자에게 알려 주세요」 로 끝난다(`screen_error_short`). 이 앱 자신의 잠금은
     새로고침으로 풀려 그 갈래가 아니다.
 
     **경로 표 · 계획 표가 빈 리비전**이 조회기간을 정하다 멈춘 글(「RQ_REQB에 선택할
@@ -496,7 +496,7 @@ def bootstrap_error_message(
         return (
             f"{DB_FAILED_LEAD}\n\n"
             f"{files}\n"
-            "- 같은 실패가 이어지면 아래 원문을 관리자에게 알려 주세요.\n"
+            "- 같은 실패가 이어지면 아래 원문을 개발자에게 알려 주세요.\n"
             f"{_original_line(exc)}"
         )
     return (

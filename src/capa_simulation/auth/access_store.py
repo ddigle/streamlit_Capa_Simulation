@@ -648,8 +648,12 @@ def save_changes(
     remove: Iterable[str] = (),
     grades: Mapping[str, str] | None = None,
     now: int | None = None,
+    note_grades: bool = True,
 ) -> SaveResult:
-    """관리자의 고침 하나(넣기 · 빼기 · 등급 바꾸기). 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
+    """개발자의 고침 하나(넣기 · 빼기 · 등급 바꾸기). 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
+
+    `note_grades` 가 거짓이면 명단 등급 칸의 바뀜을 감사에 남기지 않는다 — 등급 파일과 합친 등급으로
+    부르는 쪽(`grade_store`)이 사람마다 한 줄을 남긴다.
 
     `NotAdminError`(권한) · `SelfChangeError`(자기 등급 내림 · 자기 빼기) · `EnvAdminError`(환경변수
     관리자 내림) · `ValueError`(모르는 등급) · `StoreUnreadError`(아직 못 읽음) ·
@@ -690,7 +694,8 @@ def save_changes(
                     reason="conflict",
                 )
                 _audit_list_change(actor, audit_targets, source.document, result, out="fail")
-                _audit_grade_change(actor, source.document, fresh, result, out="fail")
+                if note_grades:
+                    _audit_grade_change(actor, source.document, fresh, result, out="fail")
                 raise StoreConflictError
             etag = _put_noting_no_answer(
                 target, cfg.access_object_key, render_document(fresh), moment
@@ -698,7 +703,8 @@ def save_changes(
         except S3Failure as failure:
             outcome = "unknown" if isinstance(failure, SaveUnconfirmedError) else "fail"
             _audit_list_change(actor, audit_targets, source.document, result, out=outcome)
-            _audit_grade_change(actor, source.document, fresh, result, out=outcome)
+            if note_grades:
+                _audit_grade_change(actor, source.document, fresh, result, out=outcome)
             problem = problem_of(failure)
             runtime.publish_access_source(replace(source, save_problem=problem))
             runtime.record_event(
@@ -745,7 +751,8 @@ def save_changes(
             out="success",
             seeded=source.seeded,
         )
-        _audit_grade_change(actor, source.document, fresh, result, out="success")
+        if note_grades:
+            _audit_grade_change(actor, source.document, fresh, result, out="success")
         return result
 
 

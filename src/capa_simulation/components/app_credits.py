@@ -10,8 +10,12 @@
 싣지 않는다(2026-10-07 사용자 결정). 문의처 메일은 사내 값이라 저장소에 없고 환경변수
 (`settings.APP_CONTACT_EMAIL_ENV`)로만 받는다 — 비면 둘째 줄은 팀 이름만이다(2026-11-12 보드 답
 ⑤-9). 예외는 통합인증이 켜진 서버 하나다 — 셋째 줄에 로그인한 사람의 「이름 · 부서 · 로그아웃」
-을 붙인다(`components/sso_identity.sso_credit_line`, 2026-11-02 메인 세션이 정한 기본값). 꺼진
-서버(개발 PC · 사내 WebIDE · 시험)는 두 줄 그대로다.
+을 붙인다(`components/sso_identity.sso_credit_line`, 2026-11-02 메인 세션이 정한 기본값). 운영
+서버의 열람 · 실무자는 그 줄에 등급(「이름 · 부서 · 열람 · 로그아웃」)이 서고 — 등급 때문에 단추가
+없는 사람에게만 까닭을 보인다(2026-11-18 접속 등급 결정 10, 설계 규칙 UI-TXT-05 예외) — 개발자의
+「이 등급으로 보기」 동안은 「실무자 화면으로 보는 중」 과 카드 칸 안의 작은 「끝내기」 단추가
+선다(미리 보기 동안 Admin Area 가 잠겨 끄는 자리가 여기여야 한다). 꺼진 서버(개발 PC · 사내 WebIDE ·
+시험)는 두 줄 그대로다.
 
 **첫 줄 끝은 적용된 배포 번호다**(2026-10-08 사용자 결정). 손으로 적던 빌드일은 배포마다 고치지
 않아 낡은 날짜가 남았다. 사내에서 배포 ZIP 을 적용하면 남는 기록(`settings.DEPLOY_STATE_PATH`)의
@@ -39,6 +43,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components import sso_identity
 from capa_simulation.components.sso_refresh_alert import render_refresh_alert
 from capa_simulation.components.sso_status import render_access_alerts, render_audit_alerts
 from capa_simulation.deploy_stamp import deployed_stamp
@@ -76,6 +81,13 @@ def render_app_credits(sso_line: str | None = None) -> None:
             st.caption("  \n".join(credit_lines()))
         else:
             st.caption("  \n".join((*credit_lines(), sso_line)), unsafe_allow_html=True)
+            if sso_identity.preview_grade() is not None:
+                st.button(
+                    sso_identity.PREVIEW_END_LABEL,
+                    key=sso_identity.PREVIEW_END_KEY,
+                    type="tertiary",
+                    on_click=sso_identity.end_preview,
+                )
     render_access_alerts()
     render_audit_alerts()
     render_refresh_alert()

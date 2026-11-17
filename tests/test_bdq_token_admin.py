@@ -112,7 +112,7 @@ def east_clock() -> Iterator[None]:
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, *, admin: bool = True) -> None:
-    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: admin)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: admin)
 
 
 def _open(app: AppTest) -> AppTest:

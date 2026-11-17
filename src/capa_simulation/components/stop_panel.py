@@ -20,7 +20,8 @@
   아니다. 시작 임시 화면(`scripts/container_stage.py`)이 문의 줄 · 참고 줄을 같은 글자 꼴로 따로
   짓는다(시험이 맞댄다 — 그쪽은 앱 밖 공통 틀이라 창구 글을 늘 싣는다).
 - **접힌 「관리자용 진단」** — 서버 경로 · 프로세스 번호 · 원문 · 실행 명령은 여기에만 둔다(복사
-  단추 — UI-NTF-10). 관리자 몫(`admin_view.admin_notes_visible` 한 판정)에만 선다 — 접어도 누구나
+  단추 — UI-NTF-10). 관리자 몫(`admin_view.developer_notes_visible` 한 판정)에만 선다 — 접어도
+  누구나
   펼치므로 접힘으로 가리지 않는다. 판이 마지막 자리라 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로
   물러선다. 복사 글 · 펼친 글 맨 위는 참고 줄이다.
 
@@ -158,12 +159,12 @@ def reference_line(code: str, *, now: float | None = None) -> str:
 
 
 def admin_fold_visible() -> bool:
-    """접힌 「관리자용 진단」 을 세우나 — 관리자 몫(`admin_view.admin_notes_visible`)일 때만. 판이
-    마지막 자리라 판정이 무엇을 내도 닫힌 쪽으로 물러선다."""
+    """접힌 「개발자용 진단」 을 세우나 — 개발자 몫(`admin_view.developer_notes_visible`)일 때만.
+    판이 마지막 자리라 판정이 무엇을 내도 닫힌 쪽으로 물러선다."""
     try:
         from capa_simulation.components import admin_view
 
-        return admin_view.admin_notes_visible()
+        return admin_view.developer_notes_visible()
     except Exception:
         return False
 

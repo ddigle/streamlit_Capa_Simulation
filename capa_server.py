@@ -21,6 +21,7 @@ import streamlit as st
 from capa_simulation.audit.boot import start as start_audit
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 from capa_simulation.components.audit_actor import install as install_audit_actor
+from capa_simulation.components.grade_ui import install as install_grade_judge
 from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
 from capa_simulation.io.container_start_report import note_app_ready
 from capa_simulation.object_sync_worker import start_object_sync
@@ -34,6 +35,9 @@ start_bdq_login(os.environ)
 # 행위자 해석기(스크립트 스레드의 쿠키를 지금 다시 검증)는 켜졌을 때만 꽂는다.
 start_audit(sso_config)
 install_audit_actor()
+# 접속 등급의 판정기 — 운영 진입은 첫 회차 전부터 늘 꽂혀 있다(`app.py` 도 매 회차 같은 함수를
+# 꽂는다).
+install_grade_judge()
 # 정본 버킷 동기화 일꾼. 시작 받기가 성공한 `managed` 서버에만 선다 — 첫 접속을 기다리지 않는다.
 start_object_sync()
 

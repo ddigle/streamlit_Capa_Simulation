@@ -1,4 +1,4 @@
-# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기·붙잡기 보호·운영 DB 문지기와 화면 대역.
+# Purpose: 시험 공용 자동 복원·권한 비트·명령줄·붙잡기 보호·운영 DB 문지기·등급 판정기·화면 대역.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -28,6 +28,7 @@ from capa_simulation import module_failures, module_registry, notice_board, page
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
+from capa_simulation.auth import grades as access_grades
 from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
@@ -361,6 +362,20 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
     yield
     sso_runtime.reset()
+
+
+@pytest.fixture(autouse=True)
+def _without_grade_judge() -> Iterator[None]:
+    """접속 등급의 판정기(`grades.install_caller_source` — `app.py` 를 도는 AppTest · 등급 시험이
+    꽂는다)와 등급 시험 한 벌(`grade_support`)을 앞뒤로 비운다 — 앞 시험의 판정기가 뒤 시험의 저장소
+    쓰기를 가르지 않게(꽂힌 것이 없으면 제한 없음)."""
+    import grade_support
+
+    access_grades.install_caller_source(None)
+    grade_support.forget_world()
+    yield
+    access_grades.install_caller_source(None)
+    grade_support.forget_world()
 
 
 @pytest.fixture(autouse=True, scope="session")
