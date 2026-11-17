@@ -162,7 +162,7 @@ def test_the_tab_sends_through_the_confirm_popup_and_shows_the_standing_card() -
     assert standing is not None and standing.text == pending["text"]
     assert not _confirm_open(app)
     assert [str(note.value) for note in flashed(app, "success")] == [
-        f"공지 보냄 · {notice_board.clock_text(standing.until)} 까지"
+        f"공지 보냄 · {notice_board.until_text(standing)} 까지"
     ]
     assert [text.value for text in app.text] == [standing.text]
     assert notice_board.stamp_line(standing) in [caption.value for caption in app.caption]

@@ -52,7 +52,8 @@ TOO_LONG_MESSAGE: Final = f"공지 글은 {TEXT_LIMIT}자까지입니다"
 PAST_MESSAGE: Final = "끝 시각이 지났습니다"
 TOO_FAR_MESSAGE: Final = "끝 시각은 24시간 안이어야 합니다"
 
-# 이 프로세스의 표지 — 재시작하면 바뀐다. 브라우저는 표지가 다르면 판과 상관없이 새 값을 받는다.
+# 이 프로세스의 표지 — 재시작하면 바뀐다. 브라우저는 data 의 표지가 다르면 판과 상관없이 새 값을
+# 받고, 물음 응답은 data 가 받은 표지와 같을 때만 받는다(`alert_center.js` `noticeNewer`).
 PROCESS_MARK: Final = secrets.token_hex(4)
 
 

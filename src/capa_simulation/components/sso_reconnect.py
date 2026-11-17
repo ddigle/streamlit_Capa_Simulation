@@ -597,7 +597,7 @@ _NOTICE_POLL = """
     if (!noticeConnected(state)) {
       // 끊긴 동안은 묻지 않는다. 다시 붙은 것은 문지기가 쿠키를 다시 본 핸드셰이크라 401 멈춤도
       // 푼다. 쥐고 있던 꼴도 버린다 — 다시 붙은 회차의 알림 칸 data 가 정본이다(재시작 뒤 옛
-      // 표지의 꼴을 넘기면 알림 칸은 표지가 달라 받아 버린다).
+      // 표지의 꼴은 알림 칸도 받지 않는다 — data 와 표지가 다른 물음 꼴은 버린다).
       noticeSince = null;
       noticeStopped = false;
       noticePending = null;

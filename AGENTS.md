@@ -2858,8 +2858,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓴다 — `audit/read.KST` · `auth/page_frame.KST` 는 이 상수 그대로다. 규칙은 8장 「화면 시각은 KST」.
 - `src/capa_simulation/notice_board.py` — 관리자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
   재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「관리자」) · `current` · `revision`
-  (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`) ·
-  `withdraw`(그 id 일 때만 — `NoticeChanged.ended` 는 서 있던 공지가 없어졌는가) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
+  (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`, `ended` 는 서 있던 공지가 없어졌는가(끝남 · 거둠) · 거짓이면 갈음) ·
+  `withdraw`(그 id 일 때만) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
   `until_from_time`(지난 시각이면 내일) · `until_text`(끝 글 — 보낸 날의 다음 날이면 `11-18 09:00`, 판 · 전문 · 카드 · 보냄 알림창이 같은 글) ·
   `payload`(프로세스 표지 `PROCESS_MARK` · 판 · 공지 칸 `NoticeView`(KST 시각 글 · 끝 epoch ms) ·
   상태 표지 `GL-09` — `alerts.state_note(…, pageless=True)` 그대로, 없어도 active 거짓) · `reset`(시험 — `conftest._without_notice`). 끝 시각은
