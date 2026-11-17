@@ -36,6 +36,16 @@ ENV STREAMLIT_SERVER_HEADLESS=true
 # 진단), 이 값은 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 걸린다.
 ENV STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type
 
+# 운영 코드는 재배포(CI/CD)로만 바뀌어 파일 감시가 쓸모없다. 끄면 감시 스레드 · 파일 핸들이 줄고 새 접속의 첫
+# 회차가 빨라진다(합성 표본 샘플 관측 — 스레드 −23 · 첫 회차 −0.3 ~ 0.5초, 2026-11-17 메모리 보드 decided 3).
+# 개발 PC · WebIDE 의 `.streamlit/config.toml` 은 감시를 그대로 둔다.
+ENV STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+
+# glibc 할당기가 스레드마다 따로 잡는 메모리 덩어리(아레나)를 둘로 묶는다 — 탭 5 ~ 6개에서 −16 ~ −26MiB(합성 표본
+# 샘플 관측). 여럿이 같은 때 조작할 때 느린 회차가 느는지는 사외에서 못 재 사내에서 넣기 전후를 잰다(2026-11-17
+# 메모리 보드 q-arena 「넣고 사내에서 전후를 잰다」). 되돌리기는 이 줄을 지우는 것이다.
+ENV MALLOC_ARENA_MAX=2
+
 # 사내 bigdataquery 가 로그인 토큰을 찾는 자리. 앱은 `$DSUSER` 로 돌아(위 `sudo` 가 그 까닭이다)
 # `/` 에 폴더를 만들 수 없으므로, 시작 스크립트가 토큰 파일을 쓸 수 있게 미리 만들어 넘겨준다.
 RUN sudo mkdir -p /config/.credential \

@@ -1205,6 +1205,19 @@ def test_the_image_prepares_the_token_folder_for_the_runtime_user() -> None:
     assert dockerfile.index("/config/.credential") < dockerfile.index("CMD [")
 
 
+def test_the_image_stops_the_file_watcher_and_binds_the_allocator_arenas() -> None:
+    """운영 이미지만 파일 감시를 끄고(재배포로만 바뀐다) glibc 아레나를 둘로 묶는다(2026-11-17
+    메모리 보드 decided 3 · q-arena). 시작 스크립트는 비밀값만 빼고 환경을 앱에 넘기므로 두 값이
+    앱 프로세스에 닿는다. 개발 설정(`.streamlit/config.toml`)은 감시를 그대로 둔다."""
+    lines = (PROJECT_ROOT / "docker" / "Dockerfile-prod").read_text(encoding="utf-8").splitlines()
+    assert "ENV STREAMLIT_SERVER_FILE_WATCHER_TYPE=none" in lines
+    assert "ENV MALLOC_ARENA_MAX=2" in lines
+    image = {"STREAMLIT_SERVER_FILE_WATCHER_TYPE": "none", "MALLOC_ARENA_MAX": "2"}
+    assert container_start.app_environment(image) == image
+    config = (PROJECT_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    assert "fileWatcherType" not in config
+
+
 def test_an_undecodable_environment_value_still_starts_the_app(place: Path) -> None:
     """리눅스 환경변수의 깨진 바이트는 surrogate 로 들어온다. 그것이 가리개나 주소 만들기를 깨도
     앱은 뜨고 결과 파일은 남는다."""
