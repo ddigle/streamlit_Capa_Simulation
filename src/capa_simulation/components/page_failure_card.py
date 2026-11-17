@@ -63,7 +63,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlExcepti
 from capa_simulation import alerts, page_failures, settings
 from capa_simulation.auth import grades
 from capa_simulation.components import grade_ui
-from capa_simulation.components.admin_view import developer_notes_visible
+from capa_simulation.components.admin_view import developer_alerts_visible
 from capa_simulation.components.container_start_check import start_check_alert_possible
 from capa_simulation.components.stop_panel import RETRY_LABEL, AdminFold, render_stop_footer
 from capa_simulation.page_failures import PageFailure
@@ -201,7 +201,7 @@ def render_page_failure_alert() -> None:
     if not start_check_alert_possible():
         return
     failures = page_failures.recent_failures()
-    if not failures or not developer_notes_visible():
+    if not failures or not developer_alerts_visible():
         alerts.state(ALERT_CODE, scope=None, content=None, active=False)
         return
     shown = failures[-RECENT_SHOWN:]

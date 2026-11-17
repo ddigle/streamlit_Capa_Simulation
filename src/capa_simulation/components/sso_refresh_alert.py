@@ -27,7 +27,7 @@ from __future__ import annotations
 from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoMode
-from capa_simulation.components.admin_view import developer_notes_visible
+from capa_simulation.components.admin_view import developer_alerts_visible
 from capa_simulation.components.sso_status import sso_status_target
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -56,7 +56,7 @@ def render_refresh_alert() -> None:
     cfg = runtime.config()
     if cfg.mode is not SsoMode.ON:
         return
-    active = refresh_refused() and developer_notes_visible()
+    active = refresh_refused() and developer_alerts_visible()
     alerts.state(
         ALERT_CODE,
         scope=None,

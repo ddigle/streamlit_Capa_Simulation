@@ -64,7 +64,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
-from capa_simulation.components.admin_view import developer_notes_visible
+from capa_simulation.components.admin_view import developer_alerts_visible
 from capa_simulation.components.bdq_login_admin import bdq_login_target
 from capa_simulation.components.bdq_token_admin import (
     AUTO_LOGIN_FIX,
@@ -510,7 +510,7 @@ def render_start_check_alert() -> None:
                 "단계 표를 보고 배포 서버 환경변수를 고친 뒤 CI/CD 를 다시 누르세요."
             )
             content = ["실패 있음", [name for name, _ in failed]]
-    active = text is not None and developer_notes_visible()
+    active = text is not None and developer_alerts_visible()
     alerts.state(
         START_CHECK_ALERT_CODE,
         scope=None,

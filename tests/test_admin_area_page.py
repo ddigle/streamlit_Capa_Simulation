@@ -1620,7 +1620,7 @@ def test_a_failed_start_check_is_told_to_the_admin_only(
         json.dumps({"version": 1, "steps": {"install": failed, "token": ok, "user_name": ok}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(container_start_check, "developer_notes_visible", lambda: False)
+    monkeypatch.setattr(container_start_check, "developer_alerts_visible", lambda: False)
     app = AppTest.from_string(_start_check_script(tmp_path / "scenario.duckdb", report))
     app.run(timeout=120)
 

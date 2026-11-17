@@ -42,7 +42,7 @@ from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
 from capa_simulation.components import sso_identity
-from capa_simulation.components.admin_view import developer_notes_visible
+from capa_simulation.components.admin_view import developer_alerts_visible
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
     plain_lines,
@@ -180,7 +180,7 @@ def render_object_sync_alerts() -> None:
     """
     if not sync_boot.sync_alerts_possible():
         return
-    admin = developer_notes_visible()
+    admin = developer_alerts_visible()
     reason = sync_boot.sync_disabled_reason()
     alerts.state(
         DISABLED_CODE,

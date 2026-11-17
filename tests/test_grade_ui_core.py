@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from alert_marks import active_state, states
 from grade_support import (
     DEMO_DEVELOPER,
     DEMO_EDITOR,
@@ -32,6 +33,7 @@ from grade_support import (
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.auth import grade_store, grades, runtime
+from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.components import access_list_admin, admin_view, grade_ui, sso_identity
 
@@ -116,6 +118,44 @@ def test_developer_notes_follow_the_screen_grade(
     assert admin_view.developer_notes_visible() is (grade == grades.DEVELOPER)
     if grade != grades.DEVELOPER:
         assert admin_view.diagnostic_message("짧은 글") == "짧은 글"
+
+
+ACCESS_ALERTS_SCRIPT = """
+from capa_simulation.components import sso_status
+
+sso_status.render_access_alerts()
+sso_status.render_audit_alerts()
+"""
+
+
+def test_a_preview_leaves_the_developer_server_alerts_standing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「이 등급으로 보기」 는 화면만 바꾼다 — 서 있던 개발자 상태 알림(등급 파일 못 읽음 `AD-25`)이
+    미리 보기를 켜도 해소되지 않고(끄면 「새로 뜸」 으로 다시 서지 않고) 그대로 서 있다. 진단 글 ·
+    Admin Area 는 미리 보기를 따른다(보는 등급으로 잠김)."""
+    as_grade(monkeypatch, grades.DEVELOPER)
+    monkeypatch.setattr(grade_store, "read_problem", lambda _cfg: SourceProblem("http", 503))
+
+    seen = AppTest.from_string(ACCESS_ALERTS_SCRIPT, default_timeout=30).run()
+    preview(monkeypatch, grades.VIEWER)
+    previewed = AppTest.from_string(ACCESS_ALERTS_SCRIPT, default_timeout=30).run()
+
+    for app in (seen, previewed):
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert active_state(app, "AD-25") is not None
+    assert [note["code"] for note in states(seen)] == [note["code"] for note in states(previewed)]
+    assert admin_view.developer_alerts_visible()
+    assert not admin_view.developer_notes_visible(), "진단 글은 미리 보기를 따른다"
+    assert sso_identity.admin_area_locked()
+
+
+@GRADE_PARAMS
+def test_developer_server_alerts_follow_the_real_grade(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    assert admin_view.developer_alerts_visible() is (grade == grades.DEVELOPER)
 
 
 def test_off_the_operational_server_the_admin_area_opens_without_a_preview(

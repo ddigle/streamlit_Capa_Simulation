@@ -514,10 +514,10 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
 
 
 def _viewer_is_developer(cfg: SsoConfig) -> bool:
-    """개발자 몫 보기 한 판정(`admin_view.developer_notes_visible`) — `cfg` 는 지금 설정과 같다.
-    S3 명단 서버는 통합인증이 켜져 있어(`access_store.is_on`) 개발자
-    판정(`sso_identity.viewer_is_developer`)과 같다."""
-    return admin_view.developer_notes_visible()
+    """개발자 상태 알림 한 판정(`admin_view.developer_alerts_visible` — 「이 등급으로 보기」 를
+    따르지 않는다) — `cfg` 는 지금 설정과 같다. S3 명단 서버는 통합인증이 켜져 있어
+    (`access_store.is_on`) 개발자 판정(`sso_identity.viewer_is_developer`)과 같다."""
+    return admin_view.developer_alerts_visible()
 
 
 def _admin_area_goto() -> tuple[str, str]:
@@ -712,7 +712,9 @@ def render_audit_alerts() -> None:
     """
     if not audit_recorder.enabled():
         return
-    viewer = sso_identity.viewer_can_audit()
+    # 실제 개발자 — 「이 등급으로 보기」 를 따르지 않는다(기록 탭 열람 판정 `viewer_can_audit` 은
+    # 미리 보기 동안 거짓이라 그대로 쓰면 켜고 끄는 사이 두 알림이 해소 · 다시 뜸으로 흔들린다).
+    viewer = sso_identity.viewer_is_developer()
     managed = sync_boot.is_managed()
     keeping = audit_shipper.keeping_problems(managed=managed) if viewer else ()
     alerts.state(

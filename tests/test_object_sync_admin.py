@@ -645,8 +645,8 @@ def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
 
 
 def _view(monkeypatch: pytest.MonkeyPatch, *, admin: bool) -> None:
-    """관리자 몫 보기(`admin_view.developer_notes_visible`)를 바꿔 끼운다."""
-    monkeypatch.setattr(object_sync_status, "developer_notes_visible", lambda: admin)
+    """개발자 상태 알림 판정(`admin_view.developer_alerts_visible`)을 바꿔 끼운다."""
+    monkeypatch.setattr(object_sync_status, "developer_alerts_visible", lambda: admin)
 
 
 @pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])

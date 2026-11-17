@@ -8,7 +8,10 @@
 보일지는 `developer_notes_visible` 하나가 가른다 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` ·
 `AD-19` · 등급 파일 `AD-25` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 의
 개발자 전문 · DB 실패 전문 · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판의
-「개발자용 진단」. BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23` · `AD-24`)은 이 판정 밖이다 —
+「개발자용 진단」. 그 가운데 서버 상태 알림(`AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` ·
+`AD-22` · `AD-25` · `SY-*` 전문)은 `developer_alerts_visible` 로 세운다 — 「이 등급으로 보기」 를
+따르지 않아 켜고 끄는 사이 알림 칸 상태가 그대로다(감사 알림 `AD-12` · `AD-13` 도 같은 까닭으로
+실제 개발자). BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23` · `AD-24`)은 이 판정 밖이다 —
 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않기로 했고(규칙집 결정 ad10-nosso) 실제 개발자
 판정(`sso_identity.viewer_is_developer`) 그대로다.
 
@@ -40,6 +43,16 @@ def developer_notes_visible() -> bool:
     if not cfg.operational and cfg.mode is SsoMode.ON:
         return sso_identity.viewer_is_developer()
     return sso_identity.viewer_can("diag.full")
+
+
+def developer_alerts_visible() -> bool:
+    """이 회차에 개발자 상태 알림(서버 상태 — 그 자리가 Admin Area 인 알림)을 세우나.
+
+    `developer_notes_visible` 와 같되 「이 등급으로 보기」 를 따르지 않는다. 미리 보기는 운영 +
+    켜짐의 실제 개발자에게만 있고 화면만 바꾼다 — 그 등급을 따르면 켜는 순간 서 있던 알림이
+    「해소」 되고 끄면 「새로 뜸」 으로 다시 서서 알림 칸 상태(해소 · 다시 뜸 기록)가 흔들린다.
+    미리 보기 동안 그 알림의 「그 화면으로」 는 잠긴 Admin Area 에 닿는다 — 「끝내기」 뒤 열린다."""
+    return sso_identity.preview_grade() is not None or developer_notes_visible()
 
 
 def diagnostic_message(message: str) -> str:
