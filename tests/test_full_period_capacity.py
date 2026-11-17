@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
+import streamlit as st
 
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -58,6 +59,68 @@ def test_a_period_is_a_slice_of_the_whole_scenario(tables: dict[str, pd.DataFram
     assert unit.equals(alone.unit_capacity.reset_index(drop=True))
     assert required.equals(alone.required_equipment.reset_index(drop=True))
     assert set(pd.to_numeric(unit["생산계획년월"])) <= set(range(start, end + 1))
+
+
+def _assert_same_frame(new: pd.DataFrame, old: pd.DataFrame) -> None:
+    assert new.equals(old)
+    assert new.dtypes.equals(old.dtypes)
+    assert new.columns.equals(old.columns) and new.index.equals(old.index)
+    assert new.attrs.keys() == old.attrs.keys()
+    for name, value in new.attrs.items():
+        other = old.attrs[name]
+        if isinstance(value, pd.DataFrame):
+            assert isinstance(other, pd.DataFrame), name
+            assert value.equals(other) and value.dtypes.equals(other.dtypes), name
+        else:
+            assert value == other, name
+
+
+@pytest.mark.parametrize("bounds", [(0, -1), (2, 5), (6, 6)])
+def test_slicing_on_every_call_matches_the_old_sliced_cell(
+    tables: dict[str, pd.DataFrame],
+    bounds: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """자른 결과는 칸에 두지 않고 부를 때마다 전체 기간 칸에서 자른다. 옛 길 — 같은 몸통을 조회기간
+    키의 `st.cache_data` 칸에 둔 것 — 의 첫 호출(계산한 객체)·적중 호출(피클 왕복)과 프레임 · dtype
+    · 열 · 색인 · attrs 가 같아야 한다. 새 길의 두 번째 호출은 전체 칸에 적중해 다시 계산하지 않고,
+    받은 프레임을 고쳐도 다음 호출에 닿지 않는다(부를 때마다 새 사본)."""
+    months = _months(tables)
+    start, end = months[bounds[0]], months[bounds[1]]
+    computed: list[int] = []
+    original = sc.get_capacity_and_demand
+
+    def counted(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+        computed.append(1)
+        return original(inputs)
+
+    monkeypatch.setattr(sc, "get_capacity_and_demand", counted)
+    old_cell = st.cache_data(show_spinner=False, max_entries=16)(
+        sc.get_scenario_capacity_and_demand
+    )
+    new_key, old_key = _key(start, end), _key(start, end)
+
+    new_first = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    new_hit = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    assert len(computed) == 1
+    old_first = old_cell(old_key, _scenario_tables=tables, _reference_tables=tables)
+    old_hit = old_cell(old_key, _scenario_tables=tables, _reference_tables=tables)
+    assert len(computed) == 2
+
+    for new in (new_first, new_hit):
+        for old in (old_first, old_hit):
+            for new_frame, old_frame in zip(new, old, strict=True):
+                _assert_same_frame(new_frame, old_frame)
+
+    new_hit[0]["대당 Capa"] = -1.0
+    again = sc.get_scenario_capacity_and_demand(
+        new_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    _assert_same_frame(again[0], new_first[0])
 
 
 def test_an_error_outside_the_period_still_stops_and_says_so(

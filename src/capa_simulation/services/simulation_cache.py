@@ -1679,7 +1679,7 @@ def get_capacity_and_demand(
     프레임을 어디서 가져오는지는 페이지마다 다르므로(활성 시나리오 · 월 필터 결과 ·
     사용자 편집본) 매핑만 받고 출처는 호출자에게 남긴다.
 
-    캐시는 get_scenario_capacity_and_demand 가 키로 건다. 여기는 계산 순서만 정한다.
+    캐시는 전체 기간 칸(`get_full_capacity_outcome`)이 키로 건다. 여기는 계산 순서만 정한다.
     """
     unit_capacity = calculate_unit_capacity(
         upeh=tables["RQ_UPEH"],
@@ -1701,8 +1701,11 @@ def get_capacity_and_demand(
 
 
 # 시나리오 전체 기간 계산 결과의 칸 수. 70공정·30개월 합성 표본에서 한 칸이 pickle 로 약
-# 11MB 다(샘플 관측) — 4칸이면 44MB 안쪽이다. 칸은 (리비전, 내용) 하나에 하나라 넉넉하다.
-FULL_CAPACITY_MAX_ENTRIES = 4
+# 11MB 다(샘플 관측) — 8칸이면 88MB 안쪽이다(계산값). 칸은 (리비전, 내용) 하나에 하나이고,
+# 조회기간으로 자른 결과는 칸에 두지 않는다(`get_scenario_capacity_and_demand` 가 부를 때마다
+# 자른다). 편집본 칸은 새 편집이 서면 걷으므로(`retire_full_capacity_outcome`) 남는 칸은 리비전
+# 칸(세션끼리 나눔)과 세션마다 지금 편집본 하나다.
+FULL_CAPACITY_MAX_ENTRIES = 8
 
 # 시나리오 내용만 대표하는 키. 월 범위가 없다 — 조회기간은 이 결과를 잘라 쓴다.
 FullScenarioCacheKey = tuple[int, str]
@@ -1788,6 +1791,18 @@ def get_full_capacity_outcome(
     return full_capacity_outcome(_scenario_tables, _reference_tables)
 
 
+def retire_full_capacity_outcome(cache_key: FullScenarioCacheKey) -> None:
+    """더는 아무도 부르지 않을 내용의 전체 기간 칸 하나만 걷는다. 칸이 없으면 아무 일도 하지 않는다.
+
+    활성 시나리오가 새 편집 토큰을 낼 때 갈아끼워지는 편집본 토큰으로 부른다(`scenario_state`).
+    그대로 두면 죽은 편집본 칸이 상한(`FULL_CAPACITY_MAX_ENTRIES`)까지 차 다른 세션이 나눠 쓰는
+    리비전 칸을 밀어낸다. pristine 토큰(세션끼리 나누는 리비전 칸)이 아닌지는 부르는 쪽이 가른다 —
+    여기는 키 하나를 지울 뿐이다. 키 꼴은 화면 · 저장 검사가 부르는 것과 같다
+    — `(reference_version, content_token)`.
+    """
+    get_full_capacity_outcome.clear(cache_key)
+
+
 def full_capacity_outcome(
     scenario_tables: Mapping[str, pd.DataFrame],
     reference_tables: Mapping[str, pd.DataFrame],
@@ -1819,7 +1834,7 @@ def get_revision_input_check(
     리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **이 칸 밖의 캐시를 쓰지 않는
     길**로 계산한다 — 스냅샷(공용 표시순서를 얹지 않은 것) · 등록 때 뺀 원천 행은 저장소에서 캐시
     없이 읽고, 계산은 캐시 없는 `full_capacity_outcome`(`capacity_gate.input_check_verdict`). 계산
-    페이지 · 저장 검사가 쓰는 전체 기간 칸(`get_full_capacity_outcome`, 4칸)과 공유 스냅샷 칸(4칸)에
+    페이지 · 저장 검사가 쓰는 전체 기간 칸(`get_full_capacity_outcome`, 8칸)과 공유 스냅샷 칸(4칸)에
     고른 리비전마다 한 칸씩 들이면 활성 리비전 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시
     계산한다. 몸통은 묶음 행 · 수 · 오류만 남기고 결과 프레임은 버린다. 적중하면 DB 도 읽지 않는다.
     """
@@ -1893,19 +1908,21 @@ def _month_rows(frame: pd.DataFrame, start_month: int, end_month: int) -> pd.Dat
     return frame.loc[months.between(start_month, end_month)].reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
 def get_scenario_capacity_and_demand(
     cache_key: ScenarioCacheKey,
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """활성 시나리오의 대당 Capa 와 소요대수를 조회기간으로 잘라 준다. 키만 해시한다.
+    """활성 시나리오의 대당 Capa 와 소요대수를 조회기간으로 잘라 준다. 캐시는 전체 기간 칸 하나다.
 
-    다섯 페이지가 get_capacity_and_demand 에 프레임 11개를 넘겨 st.cache_data 가 내용을
-    해시했다 — 적중해도 105ms(하위 두 캐시 66+95ms). 여기서는 (reference_version,
-    content_token, start, end) 만 해시해 결과 언피클만 남는다.
+    계산은 **시나리오 전체 기간**으로 한 번 하고(`get_full_capacity_outcome` — 키
+    `(reference_version, content_token)` 만 해시한다) 여기서 **부를 때마다** 자른다. 자른 결과는
+    칸에 두지 않는다 — 두면 토큰 × 기간마다 칸이 서 전체 칸과 같은 내용을 한 벌 더 쥐고, 그 칸들이
+    메모리를 차지하는 동안 전체 칸이 밀려 같은 내용을 다시 계산한다. 대가는 부를 때마다 전체 칸을
+    풀어 자르는 몫이다(합성 표본 ×1 에서 한 번에 +7~8ms, 대부분 자르기의 행 복사 — 샘플 관측). 키
+    전용 파생 칸이 적중하는 회차는 이것을 부르지 않는다. 받은 프레임은 부를 때마다 새 사본이라
+    고쳐도 칸에 닿지 않는다.
 
-    계산은 **시나리오 전체 기간**으로 한 번 하고(`get_full_capacity_outcome`) 여기서 자른다.
     어느 달이든 기준정보 오류가 있으면 **조회기간과 상관없이 멈춘다.** 오류가 조회기간 안에도
     있으면 그 오류를 그대로, 밖에만 있으면 「조회기간 밖」이라고 말한다 — 보는 기간이 고장
     났다고 읽히지 않게.

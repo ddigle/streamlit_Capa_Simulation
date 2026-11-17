@@ -2269,7 +2269,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「이미 연 탭으로 들어옴」 표지는 화면이 바뀐 회차에 정하고 **같은 화면에 머무는 동안 그대로 둔다** — 다시 들어온 첫
     회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
-  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
+  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다. 편집 적용(`apply_month_updates`·
+  `apply_table_updates`)이 새 토큰을 낼 때 갈아끼워진 **편집본** 토큰의 전체 기간 칸을 걷는다(`_next_edit_token` →
+  `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다, `tests/test_edit_token_retire.py`).
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
   - 저장소가 비었으면 첫 세션 부트스트랩(`bootstrap_latest_official_scenario`)이 운영 서버가 아닐 때만 내장 시드로 첫
@@ -2338,7 +2340,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/simulation_cache.py` — 계산 함수의 content-addressed Streamlit 캐시 래퍼를 모은 경계다
   (5장 4·「키 방침」). 큰 프레임은 `_` 인자 + 내용 지문(`frame_digest`)으로 받는다.
   - 대당 Capa·소요대수는 전체 기간으로 한 번 계산해 자르고(`get_full_capacity_outcome` → `slice_capacity_months`,
-    `tests/test_full_period_capacity.py`) 오류도 `CapacityOutcome` 으로 캐시한다. 배경 회차는 순수 코어
+    `tests/test_full_period_capacity.py`) 오류도 `CapacityOutcome` 으로 캐시한다. 캐시는 전체 기간 칸 하나다
+    (`FULL_CAPACITY_MAX_ENTRIES` 8칸) — `get_scenario_capacity_and_demand` 는 칸을 두지 않고 부를 때마다 그 칸에서
+    자르며(이름 · 인자 · 실패 동작은 그대로, 조회기간 오류 칸 `get_period_capacity_error` 는 따로), 편집본 칸은 새 편집
+    토큰이 설 때 키로 걷는다(`retire_full_capacity_outcome`, 5장 3). 배경 회차는 순수 코어
     `full_capacity_outcome` 을 부른다. 화면에서 그 순수 코어를 부르는 곳은 입력 점검 하나다 — 고른 리비전마다 계산하므로
     결과 대신 묶음만 요약 칸 `get_revision_input_check` 에 둔다(5장 39).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
@@ -5630,7 +5635,10 @@ RQ_MODULE
    — 리비전 **내용**은 append-only 라(이름표인 리비전명만 고칠 수 있다, 아래 8) 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
-   단위이고 조회기간은 그 결과를 자른다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
+   단위이고 조회기간은 그 결과를 부를 때마다 자른다(자른 결과는 칸에 두지 않는다). 새 편집 토큰이 서면 갈아끼워진
+   **편집본** 토큰의 전체 기간 칸을 키로 걷는다 — 편집 토큰은 uuid 라 그 세션의 그 편집본만 쓰고, 편집을 적용하는 길은
+   모두 곧바로 앱 전체 회차를 다시 돌려 옛 토큰으로 계산을 부르지 않는다. 리비전(pristine) 토큰 칸은 세션끼리 나누므로
+   걷지 않는다(`scenario_state._next_edit_token`). **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
    Streamlit 1.63 은 5만 행 넘는 DataFrame 인자를 1만 행 표본(`df.sample(10_000)`)으로만 해시해, 표본 밖 한 행
    편집이 옛 결과에 적중한다. 그런 프레임은 `_` 인자로 넘기고 키에는 그 내용을 정하는 `content_token`(시나리오
    키)이나 `frame_digest` 를 싣는다.
@@ -5973,7 +5981,7 @@ RQ_MODULE
     값을 넣어 주지 않는다. 세션 키는 모듈 밖에서 만지지 않는다(그물 `tests/test_shared_process.py`). 사용자는 「계속 모니터링하고
     적절치 않으면 다른 구조 · 원복을 검토」 한다고 했다 — 경계를 이 모듈과 `components/process_field.py` 둘에 가두어 걷기 쉽게 둔다.
 39. **입력 점검은 따로 둔 요약 칸 하나로만 캐시한다**(2026-11-11 입력 점검 보드 q6 — 시나리오 관리 › 목록 관리 「점검」). 고른 리비전마다
-    전체 기간 계산을 돌리므로 계산 페이지 · 저장 검사가 함께 쓰는 칸(`get_full_capacity_outcome` 4칸 · 공유 스냅샷 칸
+    전체 기간 계산을 돌리므로 계산 페이지 · 저장 검사가 함께 쓰는 칸(`get_full_capacity_outcome` 8칸 · 공유 스냅샷 칸
     `SNAPSHOT_RESOURCE_*` 4칸)에 들이지 않는다 — 들이면 활성 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시 계산한다.
     `simulation_cache.get_revision_input_check(cache_key, _compute)`(`INPUT_CHECK_MAX_ENTRIES` 16칸)의 키는 (`reference_version_for_revision`,
     `pristine_content_token`) — 저장 리비전 내용은 append-only 라 리비전 하나에 내용 하나다. 몸통 `_compute` 는
