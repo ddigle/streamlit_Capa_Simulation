@@ -466,13 +466,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py` — HOME 대시보드(공정 필터 「선택 공정 적용」 은 좁힌 공정을 `shared_process.publish_from_home` 으로 다른 화면의 공용 공정 칸에 복사만 한다 — 다른 화면 값은 B/N 판정 · 리비전 저장값 `PROCESS_SELECTION_KEY` 에 들지 않는다, 2026-11-08 답 P1 · P2-1. 팝업 단추 글자는 표시명 `unique_format_func` 라 겹친 표시명도 갈린다). 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정(Preference 공용 프로필
   편집기·`Past Data` — `past_data_management.py`)은 사이드바 「HOME 설정」 상자가 여는 큰 팝업이다(`components/home_settings.py`,
   2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 팝업 안은 쓰는 묶음 다섯 탭 `비교 · 주요 Case` · `판정 기준` ·
-  `선행 · 보정` · `공지 · 표시` · `Past Data` 다(2026-11-04 사용자 검수 home-u01 — 라벨은 `home_state`, 앞 넷은
+  `선행 · 보정` · `Capa 요약 · 표시` · `Past Data` 다(2026-11-04 사용자 검수 home-u01 — 라벨은 `home_state`, 앞 넷은
   `home_preference.render_home_preference` 가 탭을 라벨로 받아 상자를 놓는다). 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
     바꾸면 토글을 기본값으로 적어 푼다(`scenario_activation.py`·`test_scenario_activation.py`). 공정 필터는 패널 칸이다.
   - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
     공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
-    프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `공지 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
+    프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `Capa 요약 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -492,7 +492,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     센다(2026-11-11 입력 점검 보드 q7). 측정률 가정 한 줄은 남는다.
   - 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)은 `LOB 표시 조건`
     카드 맨 위 항목이다(2026-11-02 — 전에는 본문 제목 줄 끝). 카드는 그래서 HOME 에서 처음 펼친 채 선다
-    (`condition_card(default=True)`). 제목 줄에는 끝 칸이 없어 본문이 화면 탭 줄 바로 밑에서 「공지」 로 시작한다.
+    (`condition_card(default=True)`). 제목 줄에는 끝 칸이 없어 본문이 화면 탭 줄 바로 밑에서 「Capa 요약」 으로 시작한다.
     팝업 열림 칸·안쪽 탭 key·라벨은 `home_state.py`(칩이 미지정 Case 를 누르면 팝업을 `비교 · 주요 Case` 탭으로 열고 그 Case
     칸을 한 번 강조한다 — `home_main_cases.focus_main_case`).
   - **「HOME 설정」 팝업이 열린 회차에는 팝업을 열기 전 그림을 그대로 쓴다**(`HOME_DRAWN_CONDITIONS_KEY` 의 네 묶음 —
@@ -3939,9 +3939,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `Capa LOB 현황` 제목 줄과 「HOME 설정」 팝업의 Preference 편집기 여덟을 그려 공용 프로필에 저장한다. 편집기는 팝업의 앞 네
   탭에 쓰는 묶음대로 선다(`render_home_preference(tabs=)` — 2026-11-04 사용자 검수 home-u01): `비교 · 주요 Case` 는 「비교
   시나리오」 · 「주요 Case」(`home_main_cases`) 나란히(`CASES_COLUMN_WEIGHTS`), `판정 기준` 은 확보율 판정 기준, `선행 · 보정` 은
-  선행 B/O · 선행 입고 실적 · 확보율 보정 위아래(앞 둘은 `구분` 칸 폭이 같아 달 칸이 맞선다), `공지 · 표시` 는 왼쪽
-  공지 · Top5 구간, 오른쪽 주요공정 프리셋. `공지 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — 공지
-  버전 줄에 「공지 중 · 내림」 꼬리가 없고 글 칸 이름은 숨기며(상자 제목과 같은 말), Top5 는 저장 · 하한 · 상한이 한 줄(프리셋
+  선행 B/O · 선행 입고 실적 · 확보율 보정 위아래(앞 둘은 `구분` 칸 폭이 같아 달 칸이 맞선다), `Capa 요약 · 표시` 는 왼쪽
+  Capa 요약 · Top5 구간, 오른쪽 주요공정 프리셋. `Capa 요약 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — Capa 요약
+  버전 줄에 옛 「공지 중 · 내림」 꼬리가 없고 글 칸 이름은 숨기며(상자 제목과 같은 말), Top5 는 저장 · 하한 · 상한이 한 줄(프리셋
   저장 · 이름 줄과 같은 꼴)이다. 폼마다 알림 칸은 `render_flash` 가 돌려준 칸 하나다(폼 안 빈 칸은 간격을 먹지 않는다 —
   9장 「알림 칸」). 선행 B/O · 선행 입고 · 확보율 보정의 저장 줄(`ADVANCE_SAVE_ROW_KEY` · `ADVANCE_SHIPMENT_SAVE_ROW_KEY` ·
   `EXECUTION_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2차 보드 Q2-2,
@@ -3955,12 +3955,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름·공정 칸의 key 끝에는 고칠 프리셋 저장본의 지문을 붙여, 남의 저장에 거부된 뒤 두 칸이 함께 저장본으로 선다(5장 25).
     판정 기준 월별 표의 key 끝에는 그 회차가 그린 저장본 version 을 붙인다(`threshold_widget_key` — Top5 구간과 같다. 남이
     저장하면 보내지 않은 편집은 버려지고 최신이 서며, 제출 회차면 대조 값이 옛 version 이라 거부된다 — 9장 「본 값과 보이는 칸」).
-    바꾼 것 없는 저장(판정 기준·확보율 보정·공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
+    바꾼 것 없는 저장(판정 기준·확보율 보정·Capa 요약·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
     폼 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5·넓힘 — 9장 「바꾼 것 없는 저장」).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
     (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
     고치지 않은 「프리셋 저장」 의 「바뀐 것이 없습니다」 도 저장처럼 알림을 담고 앱 전체를 다시 돌린다 — 카드는 프래그먼트라
-    카드만 돌면 다른 저장 칸(공지 등)이 앞 회차에 그린 알림이 이 알림과 두 줄로 남았다(2026-11-01 리뷰,
+    카드만 돌면 다른 저장 칸(Capa 요약 등)이 앞 회차에 그린 알림이 이 알림과 두 줄로 남았다(2026-11-01 리뷰,
     `tests/test_home_key_process_fragment.py`). 느린 둘째 누름은 그 칸의 표지 글이 그 이름의 저장 성공 글일 때만으로 가른다 — 같은
     칸의 「기본으로」·「삭제」 알림 뒤의 누름은 「바뀐 것이 없습니다」 다.
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
@@ -4063,7 +4063,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만들고, 제목 · 단추 줄의 값 글 한 칸(`render_row_value` · `render_heading_value`)을 그린다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
   「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
   빈 출처(저장자·메모를 모두 비운 저장 — 가용설비 현황 Preference 등)는 그 자리를 건너뛴다(구분자가 `· ·` 로 겹치지 않게).
-  맨 뒤 꼬리는 두지 않는다(공지의 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
+  맨 뒤 꼬리는 두지 않는다(Capa 요약의 옛 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
   `render_profile_heading` 은 제목 옆 공용 버전 줄 한 줄이다(그림 메모 g18 — key 필수, 줄 칸 key `profile_heading_<key>`). 두 글은
   버전 줄 캡션에 실은 `align-items: baseline` 규칙으로 글자 밑줄을 맞추고, 캡션이 HTML 을 받으므로 앱 글의 맨 `<` 는 `&lt;` 로
   바꾸며 이벤트 칸은 쓰지 않는다. `style=` 은 그 구획의 다른 칸에 거는 앱 서식 규칙을 같은 캡션에 싣는다 — 팝업 본문이
@@ -4413,7 +4413,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   int·str·tuple·dict; 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 별칭), **거부 넘김**(`queue_refusal`·`take_refusal`
   — 충돌 회차는 본 값을 올리지 않고 거부를 다음 회차에 그린다). 화면에서 충돌 예외 10종을 잡는 자리는 모두 제 저장을 판정해
   빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」 으로 알리지 않는다 — 자동 갱신 설정·Cut-off·리비전명·공식 지정·층
-  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME 공지·Top5 구간·주요공정 프리셋·설비 시나리오
+  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Capa 요약·Top5 구간·주요공정 프리셋·설비 시나리오
   이름·리비전명·되돌리기·배치 차이 지우기·발행·설비 리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). HOME 주요 Case 의 시나리오 대조 충돌은 지금 짝이 고른 짝일 수
   없어(대조 없는 쓰기이고, 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다) 판정하지 않는다 —
   그물이 이름으로 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`). 제 저장 짝의 「저장된 값」 은 쓰기 결과(저장소가 돌려준 version·새
@@ -4422,7 +4422,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   안에서 함께 한다(`save_remembered`) — 겹친 둘째 회차는 그 뒤에야 저장소에 가 짝을 본다. 저장소에 가기 전에 첫 쓰기의 새
   값을 보고 거절하는 발행 확인 글 대조는 그 잠금을 거쳐 판정한다(`is_own_save_settled`). 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME 공지·Top5 구간·주요공정 프리셋(저장·
+  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·
   기본으로·삭제)·자동 갱신 설정·Cut-off·Space 층 사용·설비 시나리오 이름·리비전명·공식 발행(충돌 회차가 초안·출발점·입력 칸·확인 글의 본 값을 최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은
   내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을 최신 위에 얹거나, 바뀐 확인 글을 보지 않은 채 새 번호로
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
@@ -5303,7 +5303,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
-- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·공지·GAP 비교 대상(`0020`)·주요
+- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·Capa 요약·GAP 비교 대상(`0020`)·주요
   Case(`0036`)의 조회·교체·해제 SQL.
   - 주요 Case 는 한 행에 Case 마다 칸 둘(`case1_scenario_id`…)이다. 칸 이름이 `scenario_id` 가 아니라 `_owned_tables`
     자동 발견에 걸리지 않고, 보관·영구 삭제는 그 시나리오를 가리키는 Case 만 비우며 출처 칸에 까닭을 적는다
@@ -5798,7 +5798,7 @@ RQ_MODULE
     위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
-    표시명·표시순서(직접 편집)·확보율 보정·HOME 공지·Top5 구간은 `require_profile_version` →
+    표시명·표시순서(직접 편집)·확보율 보정·HOME Capa 요약·Top5 구간은 `require_profile_version` →
     `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
     이다. HOME 주요공정 프리셋은 묶음을 회차마다 다시 읽어 고칠 프리셋만 갈아 끼우므로 직전 회차가 그린 **고칠
@@ -7430,7 +7430,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   칩(`alert_center` — 변경 칩 · 공정 칩 · 합성 샘플 표지)이나 화면 탭 표지(`page_tabs` · `tab_marks`)로, 값 한 줄은 바로 위 제목 ·
   단추 줄 오른쪽 끝 작은 글로(값 글 한 벌 `profile_caption.render_row_value` — 제목 줄이면 공용 버전 줄과 같은 밑줄 맞춤), 혼자 한 줄 단추는 옆 작업 줄 ·
   제목 줄 오른쪽 끝(줄지 않는 한 덩이 — 좁으면 통째로 다음 줄)으로 옮긴다. 늘 서 있는 알림 · 자리 칸이 빈 회차는 간격을 먹지
-  않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「공지」 접힘(T1 (나)) ·
+  않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「Capa 요약」 접힘(T1 (나)) ·
   탭 줄 아래 14px · 안쪽 탭(T9 (가)).
 - **라벨을 숨긴 칸의 뜻은 그 줄 끝 ⓘ 하나다.** `label_visibility="collapsed"` 는 라벨 줄을 통째로 걷고, 1.63 은 위젯 풍선(`help=`)을
   그 라벨 줄 안에 그리므로 같은 칸의 `help=` 는 어디에도 서지 않는다. 그래서 라벨을 숨긴 칸에는 `help=` 를 주지 않고, 그 줄의 뜻은
@@ -7951,7 +7951,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     편집표(`num_rows="dynamic"`)는 같은 E2E 에서 남의 값이 서서 결함이 아니었다.
   - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
     거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장(Proc Rename·표시순서
-    직접 편집·판정 기준·확보율 보정·HOME 공지·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
+    직접 편집·판정 기준·확보율 보정·HOME Capa 요약·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
     짝을 적고(`remember_own_save`), 충돌 예외의 `(본 값, 지금 값)` 이 **정확히** 그 짝이면(`is_own_save`) 거부 대신 저장 성공을
     다시 알리고 끊겼을 뒷정리(초안 비우기·세션 옮기기)를 잇는다. 예외가 지금 값을 싣지 않으면(자동 갱신 설정·Cut-off·설비 쪽)
     거부 직후 저장소에서 바로 다시 읽는다. 짝의 저장된 값은 쓰기 결과로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에
@@ -7983,7 +7983,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`·
     `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·
-    `tests/test_preference_profile_conflicts.py` — HOME 공지·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
     HOME 주요 Case 는 표지를 거부한 콜백이 아니라 상자를 옮기는 회차가 적는다(`home_main_cases._hold_moved_boxes`) — 고르면
@@ -8034,8 +8034,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     끊긴 경합이라 저장 세대로는 못 거른다. 창은 저장에 **들어올 때** 본다 — 설비 쪽 대조를 마친 뒤에 보면 그 사이 창이 지나
     사본 앱 브라우저에서 고침이 듣지 않았다. 설비 마스터 탭·사이드바 팝업 저장도 지나는 길,
     `tests/test_equipment_save_double_press.py`·`tests/test_space_fab_edit_page.py`).
-  - **`save_once` 를 지나는 공용 저장 폼**(Preference 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적 —
-    공지·구간·프리셋은 버전 대조도 함께 하고, 선행 둘은 대조가 없다)은 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을
+  - **`save_once` 를 지나는 공용 저장 폼**(Preference Capa 요약·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적 —
+    Capa 요약·구간·프리셋은 버전 대조도 함께 하고, 선행 둘은 대조가 없다)은 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을
     0.15~0.4초 간격으로 두 번 누르면 공용 버전만
     두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
     (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 아래 「바꾼 것 없는 저장」 이 거른다(개선 I5 ·
@@ -8047,10 +8047,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     폼 알림 칸에 「바뀐 것이 없습니다 — …」 를 적는다. 변경 메모만 적은 저장도 같다. **넓힌 일곱 자리**(같은 꼴 — 저장 꼴끼리
     견준다): Admin 표시순서 직접 편집(고친 범위를 합친 전체 규칙 `replace_display_order_scope` 의 `.equals`, 머리 알림 칸),
     HOME Preference 확보율 보정(`prepare_execution_capacity` 꼴의 `.equals` — 증감은 칸 값 그대로 저장해 끝자리를 접지 않는다),
-    공지(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
+    Capa 요약(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
     프리셋의 이름·공정 차례까지 — 「＋ 새 프리셋」 은 늘 쓴다), 선행 B/O·선행 입고 실적(보이는 달을 합친 저장 행의 달·값,
     `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 버전 대조가 있는 넷(표시순서·확보율 보정·
-    공지·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
+    Capa 요약·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
     `display_order_management._render_direct_editor` 안의 같은 조건), 프리셋은 제출 회차가 다시 읽은 묶음(고칠
     프리셋 대조 `_stale_key_process_target` 를 지난 뒤), 대조 없는 선행 둘은 제출 회차가 읽은 최신 저장본과 견준다. 겹친 둘째
     누름(저장본이 아직 낡은 회차)은 전처럼 `save_once`·제 저장 표지가 거른다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
@@ -8414,11 +8414,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
   다시 그리는 시간이라 프래그먼트로 감싸도 크게 줄지 않는다.
 - **회차마다 소켓으로 다시 가는 스타일 문자열에는 CSS 주석(`/* */`)을 싣지 않는다** — 사이드바 시트·머리 띠·껍데기
-  스타일·HOME 제목 줄·공지 상자·공정 필터 풍선이 그렇다. 설명은 그 조각 바로 위 파이썬 `#` 주석에 두고 문자열을 규칙
+  스타일·HOME 제목 줄·Capa 요약 상자·공정 필터 풍선이 그렇다. 설명은 그 조각 바로 위 파이썬 `#` 주석에 두고 문자열을 규칙
   단위 조각으로 나눠 괄호 안에서 잇는다. 사용자 글을 넣은 뒤의 CSS 에 정규식으로 주석을 걷지 않는다(`css_string` 이
   `/*` 를 이스케이프하지 않는다). `..._carry_no_css_comments` 테스트가 지킨다.
 - **브라우저 ForwardMsg 캐시는 `.streamlit/config.toml` `[global]` 의 나이 20·문턱 1,000B 다**(기본 2·10,000B). 문턱
-  이상인 요소는 같은 내용이면 해시 참조(약 75B)로 간다 — 머리 띠·HOME 제목 줄·공지 상자가 문턱 이상인지는
+  이상인 요소는 같은 내용이면 해시 참조(약 75B)로 간다 — 머리 띠·HOME 제목 줄·Capa 요약 상자가 문턱 이상인지는
   `tests/test_app_header.py` 가 config 를 읽어 지킨다. 나이 2 에서는 사이드바 상자를 두세 번 여닫거나(빈 프래그먼트
   회차도 나이를 먹는다) 화면 둘을 거쳐 HOME 에 오면 그림을 통째로 다시 받았다(합성 표본 약 1MB). 「Cached ForwardMsg
   MISS」 연결 오류 창은 Streamlit 프런트 경합(빈 프래그먼트 회차의 script_finished 를 앱 전체 회차로 읽음)이라 줄일

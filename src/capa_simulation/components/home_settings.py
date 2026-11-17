@@ -13,10 +13,11 @@
   그린다.
 - **팝업 안**: 쓰는 묶음 다섯 탭(`stateful_tabs` — 닫았다 다시 열면 그 탭, 2026-11-04 사용자 검수
   home-u01 — 전에는 옮겨 온 `Preference`·`Past Data` 두 탭이라 상자 아홉이 한 탭에 세로로 섰다).
-  `비교 · 주요 Case` · `판정 기준` · `선행 · 보정` · `공지 · 표시` 는 Preference 편집기, `Past Data`
-  는 과거 구간 편집기다(라벨은 `home_state`). 머리 안내 글은 두지 않는다 — 「모든 사용자가 함께 쓰는
-  공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추 풍선이 말한다
-  (`home_preference.SHARED_SAVE_HELP` · `past_data_management.PAST_SHARED_HELP`). 본문은
+  `비교 · 주요 Case` · `판정 기준` · `선행 · 보정` · `Capa 요약 · 표시` 는 Preference 편집기,
+  `Past Data` 는 과거 구간 편집기다(라벨은 `home_state`). 머리 안내 글은 두지 않는다 —
+  「모든 사용자가 함께 쓰는 공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추
+  풍선이 말한다(`home_preference.SHARED_SAVE_HELP` · `past_data_management.PAST_SHARED_HELP`).
+  본문은
   `app_pages/home.py` 가 넘긴 함수 둘이다 — 앞 넷의 탭을 라벨로 받는 Preference 함수와 `Past Data`
   탭 본문 함수. 이 모듈은 편집기를 들이지 않는다(주요 Case 칩이 이 모듈의 여는 콜백을 쓰고, 편집기
   쪽이 칩을 그리므로 들이면 순환한다).
@@ -122,7 +123,7 @@ SETTINGS_BOX_KEY = _settings_box_key(SETTINGS_BOX_NAME)
 SETTINGS_BUTTON_KEY = "home_settings_open"
 SETTINGS_HELP = (
     "HOME 공용 설정(모든 사용자가 함께 씀) — 비교 · 주요 Case / 판정 기준 / 선행 · 보정: "
-    "선행 B/O · 선행 입고 실적 · 확보율 보정 / 공지 · 표시: 공지 · Top5 구간 · "
+    "선행 B/O · 선행 입고 실적 · 확보율 보정 / Capa 요약 · 표시: Capa 요약 · Top5 구간 · "
     "주요공정 프리셋 / Past Data: 과거 구간"
 )
 PENDING_HELP = "읽어 두고 저장하지 않은 Past Data 가 있습니다 — 팝업의 Past Data 탭에서 저장합니다."
