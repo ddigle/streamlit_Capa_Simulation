@@ -516,10 +516,12 @@ def test_home_settings_are_values_only_below_the_manager(
 ) -> None:
     database, _ = databases
     as_grade(monkeypatch, grade)
-    app = _home_settings(database).run()
+    with judge_spy() as seen:
+        app = _home_settings(database).run()
 
     _clean(app)
     editable = grades.at_least(grade, grades.MANAGER)
+    assert not [entry for entry in seen if entry[1] == grade and not editable], seen
     labels = _buttons(app)
     assert ("판정 기준 저장" in labels) is editable
     assert ("과거 구간 저장" in labels) is editable
@@ -587,6 +589,34 @@ def test_standard_target_paste_and_clear_are_the_managers(
     allowed = grades.at_least(grade, grades.MANAGER)
     assert ("가용설비 붙여넣기" in labels) is allowed
     assert ("입력 초기화" in labels) is allowed
+
+
+BASELINE_SCRIPT = """
+from datetime import date
+
+from capa_simulation.components.shortening_progress_panel import (
+    BaselineSaveContext,
+    render_baseline_controls,
+)
+
+render_baseline_controls(
+    BaselineSaveContext(
+        database_path={database!r}, plan=None, today=date(2026, 11, 18), provenance=None
+    ),
+    None,
+)
+"""
+
+
+@GRADE_PARAMS
+def test_the_baseline_save_popover_is_from_the_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    app = _graded(BASELINE_SCRIPT.format(database=str(tmp_path / "equipment.duckdb"))).run()
+
+    _clean(app)
+    assert ("기준선 저장" in visible_labels(app)) is grades.at_least(grade, grades.EDITOR)
 
 
 # ---------------------------------------------------------- 열람의 모든 화면 · 앱 자신의 쓰기
