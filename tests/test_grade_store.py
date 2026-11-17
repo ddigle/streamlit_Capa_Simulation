@@ -361,6 +361,65 @@ def test_removing_people_clears_their_lines_and_a_failed_clear_is_harmless(
     assert grade_store.grade_of(cfg, DEMO_MANAGER) == grades.VIEWER, "다시 들면 옛 줄을 버린다"
 
 
+@pytest.mark.parametrize("grade", [grades.VIEWER, grades.EDITOR])
+def test_a_person_readded_in_the_same_second_never_inherits_the_leftover_line(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """관리자로 넣고 · 빼기의 둘째 쓰기(줄 지움)가 실패해 줄이 남은 채 · 같은 초에 다시 넣으면 등록
+    시각(초 단위 글)이 옛 줄과 같다 — 그래도 옛 관리자를 이어받지 않는다(넣기가 남은 줄을 명단 쓰기
+    앞에서 먼저 지운다)."""
+    cfg = operational_grades(monkeypatch)
+    _, bucket = _world()
+    moment = int(time.time())
+    developer = _identity(DEMO_DEVELOPER)
+    grade_store.add_people(cfg, developer, [NEWCOMER], grades.MANAGER, now=moment)
+    assert grade_store.grade_of(cfg, NEWCOMER) == grades.MANAGER
+    bucket.fail("put", grade_store.object_key(cfg))  # type: ignore[attr-defined]
+    removed = grade_store.remove_people(cfg, developer, [NEWCOMER], now=moment)
+    assert removed.second_failed is not None, "남은 줄을 짓는다"
+    bucket.heal()  # type: ignore[attr-defined]
+
+    result = grade_store.add_people(cfg, developer, [NEWCOMER], grade, now=moment)
+
+    assert result.added == 1 and result.second_failed is None
+    assert grade_store.grade_of(cfg, NEWCOMER) == grade, "옛 관리자를 이어받지 않는다"
+
+
+def test_a_failed_leftover_clear_adds_nobody(monkeypatch: pytest.MonkeyPatch) -> None:
+    """남은 줄을 먼저 지우지 못하면 아무도 넣지 않는다(앞 상태 — 명단 · 등급 파일 그대로)."""
+    cfg = operational_grades(monkeypatch)
+    _, bucket = _world()
+    bucket.fail("put", grade_store.object_key(cfg))  # type: ignore[attr-defined]
+    grade_store.remove_people(cfg, _identity(DEMO_DEVELOPER), [DEMO_MANAGER])
+    listed = runtime.access_source()
+    assert listed is not None and listed.document is not None
+    before = listed.document.revision
+
+    with pytest.raises(s3_small.S3Failure):
+        grade_store.add_people(cfg, _identity(DEMO_DEVELOPER), [DEMO_MANAGER], grades.VIEWER)
+
+    after = runtime.access_source()
+    assert after is not None and after.document is not None
+    assert after.document.revision == before
+    assert DEMO_MANAGER not in {entry.loginid for entry in after.document.entries}
+
+
+def test_people_added_or_self_registered_always_carry_a_registration_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """옛 파일 · 환경변수 첫 판 항목은 등록 시각이 빈 글자이고 그 사람의 등급 줄도 빈 글자로
+    적힌다. 빠졌다 다시 드는 길(「명단에 넣기」 · 「접속 권한 신청」)은 늘 새 시각을 매기므로 빈
+    글자 줄이 다시 맞지 않는다."""
+    cfg = operational_grades(monkeypatch)
+    for loginid in ("demo.again", NEWCOMER):
+        grade_store.add_people(cfg, _identity(DEMO_DEVELOPER), [loginid], grades.VIEWER)
+    access_store.register_self(cfg, "demo.self")
+    listed = runtime.access_source()
+    assert listed is not None and listed.document is not None
+    stamps = {entry.loginid: entry.added_at for entry in listed.document.entries}
+    assert all(stamps[key] for key in ("demo.again", NEWCOMER, "demo.self")), stamps
+
+
 def test_self_registration_reads_as_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = operational_grades(monkeypatch)
     access_store.register_self(cfg, NEWCOMER)

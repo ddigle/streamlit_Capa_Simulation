@@ -32,7 +32,8 @@
 - → 개발자: 명단만(`user` → `admin`). 등급 줄은 두되 개발자인 동안 보지 않는다.
 - 개발자 → 아래: 등급 파일 먼저(목표 줄, 그 사람의 지금 등록 시각), 그다음 명단(`admin` → `user`).
   둘째가 실패하면 그대로 개발자(앞 상태)다.
-- 빼기: 명단 먼저, 그다음 등급 줄 지움(둘째 실패는 무해 — 다시 들면 시각이 달라 버려진다).
+- 빼기: 명단 먼저, 그다음 등급 줄 지움(둘째 실패는 무해 — 다시 들면 시각이 달라 버려지고, 「명단에
+  넣기」 는 남은 줄을 명단 쓰기 앞에서 먼저 지운다 — 같은 초로 다시 매겨진 시각에 맞지 않게).
 - 넣기(넣는 창에서 고른 등급): 명단 먼저(개발자면 `admin` 으로 바로 — 한 번의 쓰기), 그다음 실무자 ·
   관리자면 등급 파일. 둘째 실패면 열람(좁은 쪽)으로 읽히고 알림.
 - 스스로 등록은 `access_store.register_self` 그대로다(줄 없음 → 열람).
@@ -523,6 +524,14 @@ def _audit_grades(
         )
 
 
+def _held_keys() -> set[str]:
+    """메모리 등급 파일에 줄이 있는 loginid(명단에 있든 없든 — 못 읽었으면 빈 셋)."""
+    source = runtime.grade_source()
+    if source is None or source.document is None:
+        return set()
+    return {line.loginid for line in source.document.lines}
+
+
 def _second_problem(failure: Exception) -> SourceProblem:
     """둘째 쓰기 실패의 까닭 — 저장소 실패 · 그 사이 바뀜 · 아직 못 읽음."""
     if isinstance(failure, S3Failure):
@@ -651,6 +660,10 @@ def add_people(
     쓰기(실무자 · 관리자의 등급 파일)의 실패는 `second_failed` 로 돌려준다 — 넣은 사람은 열람으로
     읽힌다.
     이미 명단에 있던 사람의 등급은 건드리지 않는다.
+
+    새로 드는 사람에게 남은 등급 줄(빼기의 둘째 쓰기 실패 · 앞 ZIP 이 뺌)이 있으면 명단 쓰기
+    **앞에서** 먼저 지운다 — 등록 시각은 초 단위 글이라 같은 초로 다시 매겨지면 옛 줄이 맞을 수
+    있다. 그 지움이 실패하면 예외 그대로이고 아무것도 넣지 않는다(앞 상태).
     """
     if grade not in grades.GRADES:
         raise ValueError("grade")
@@ -660,6 +673,9 @@ def add_people(
     listed_before = _list_document()
     existing = set() if listed_before is None else {e.loginid for e in listed_before.entries}
     fresh = [key for key in adding if key not in existing]
+    leftover = [key for key in fresh if key in _held_keys()]
+    if leftover:
+        _write_lines(cfg, actor, dict.fromkeys(leftover), moment)
     saved = access_store.save_changes(
         cfg,
         identity,
@@ -707,12 +723,7 @@ def remove_people(
     removing = tuple(dict.fromkeys(keys))
     saved = access_store.save_changes(cfg, identity, remove=removing, now=moment)
     second_failed: SourceProblem | None = None
-    source = runtime.grade_source()
-    held = (
-        set()
-        if source is None or source.document is None
-        else {line.loginid for line in source.document.lines}
-    )
+    held = _held_keys()
     stale = {key: None for key in removing if key in held}
     if saved.removed and stale:
         try:
