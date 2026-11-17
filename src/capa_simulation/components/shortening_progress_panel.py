@@ -41,7 +41,9 @@ import streamlit as st
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
+from capa_simulation.components.grade_hooks import on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_timeline import (
@@ -360,8 +362,10 @@ def render_baseline_notice() -> None:
 def render_baseline_controls(
     save: BaselineSaveContext | None, selected: ShorteningBaselineSummary | None
 ) -> None:
-    """CSV 단추 줄의 「기준선 저장」 팝오버와, 고른 기준선이 있으면 「기준선 지우기」 팝오버."""
-    if save is None:
+    """CSV 단추 줄의 「기준선 저장」 팝오버와, 고른 기준선이 있으면 「기준선 지우기」 팝오버.
+    기준선을 남기거나 지울 수 없는 등급(열람)에게는 둘 다 서지 않는다(접속 등급 — 설계 규칙
+    UI-INP-07 예외)."""
+    if save is None or not viewer_can("shortening.baseline"):
         return
     # 팝오버 key 에 폼 세대를 붙인다 — 저장에 성공하면 새 블록으로 서서 닫힌 채 그려진다(열린 채
     # 기본 이름으로 다시 서면 확인 삼아 한 번 더 누른 것이 기본 이름 기준선을 하나 더 남긴다).
@@ -482,6 +486,7 @@ def consume_baseline_write() -> bool:
     return bool(st.session_state.pop(_BASELINE_WRITTEN_KEY, False))
 
 
+@on_press
 def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) -> None:
     """「기준선 저장」 콜백. 위젯보다 먼저 돌아 새 기준선이 그 회차의 「진척 비교」 목록에 바로
     선다.
@@ -558,6 +563,7 @@ def _save_error_message(exc: BaseException) -> str:
     return bootstrap_error_message(exc)
 
 
+@on_press
 def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
     """「기준선 지우기」 콜백. 확인 칸을 체크하지 않았으면 지우지 않는다. 지우면 비교를 끈다.
 
@@ -648,7 +654,7 @@ def render_progress_csv(
     )
     render_csv_download(
         data=data,
-        file_name=(
+        file_name=edited_file_name(
             f"required_shortening_progress_{level_percent(level)}pct_"
             f"{baseline.summary.saved_at:%Y%m%d}_vs_{today:%Y%m%d}.csv"
         ),

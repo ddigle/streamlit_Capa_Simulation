@@ -519,6 +519,16 @@ function cellValue(S, row, column, index) {
   return String(row[column.key] || '')
 }
 
+// 값만 보는 등급(data `readonly` — 이름 · 차례를 바꿀 수 없다)에게는 칸 고치기 · 줄 옮기기가 없다. 파이썬도 그 출납을 받지
+// 않는다(`scenario_management._fold_outboxes`).
+function readonly(S) {
+  return Boolean(S.data && S.data.readonly)
+}
+
+function canEdit(S, column) {
+  return Boolean(column && column.editable) && !readonly(S)
+}
+
 function cellElement(S, row, column, k, index) {
   const cell = el('div', 'emg-c sgl-w-' + column.key)
   cell.setAttribute('role', 'gridcell')
@@ -528,6 +538,7 @@ function cellElement(S, row, column, k, index) {
   const pending = pendingName(S, row.id)
   const name = pending !== null ? pending : String(row.name || '')
   if (column.key === 'grip') {
+    if (readonly(S)) return cell
     const grip = el('span', 'sgl-grip', '⋮⋮')
     grip.title = '끌어 옮기기 · Alt+↑ ↓'
     grip.setAttribute('aria-label', name + ' 줄 옮기기')
@@ -557,7 +568,7 @@ function cellElement(S, row, column, k, index) {
     tips.push('저장 차례 ' + row.place + '번째')
   }
   if (TIP_COLUMNS.has(column.key) && value) tips.unshift(value)
-  if (!column.editable) cell.classList.add('sgl-ro')
+  if (!canEdit(S, column)) cell.classList.add('sgl-ro')
   if (tips.length) cell.title = tips.join('\n')
   if (editing) {
     cell.classList.add('is-editing')
@@ -571,7 +582,7 @@ function cellElement(S, row, column, k, index) {
   const shown = (column.key === 'name' && row.problem ? '! ' : '') + (value || (column.key === 'name' ? '(빈 이름)' : ''))
   const press = column.key === 'calc' ? calcPress(row, value) : button('emg-cb', shown)
   press.tabIndex = tabStop(S, row, column) ? 0 : -1
-  press.setAttribute('aria-label', label + (column.editable ? '' : ' ' + value))
+  press.setAttribute('aria-label', label + (canEdit(S, column) ? '' : ' ' + value))
   if (row.problem && column.key === 'name') press.setAttribute('aria-invalid', 'true')
   cell.appendChild(press)
   return cell
@@ -624,7 +635,7 @@ function repaintCell(S, id, col) {
 function startEdit(S, id, col, initial) {
   const row = rowOf(S, id)
   const column = COLUMNS[S.mode].find((item) => item.key === col)
-  if (!row || !column || !column.editable) return
+  if (!row || !canEdit(S, column)) return
   const current = cellValue(S, row, column, rowPlace(S, id))
   const typed = initial !== undefined
   S.edit = {
@@ -734,6 +745,7 @@ function paintSelection(S) {
 }
 
 function queueMove(S, id, before) {
+  if (readonly(S)) return false
   const queued = queue(S, { op: 'move', id, before, token: String(S.data.orderToken || '') })
   if (queued) schedule(S)
   return queued
@@ -833,7 +845,7 @@ function onBodyKey(S, event) {
     return
   }
   const column = COLUMNS[S.mode].find((item) => item.key === col)
-  const editable = Boolean(column && column.editable)
+  const editable = canEdit(S, column)
   if (key === 'Enter' || key === 'F2') {
     event.preventDefault()
     if (editable) startEdit(S, id, col)
@@ -864,7 +876,7 @@ function focusCell(S, id, col) {
 // ---------------------------------------------------------------- 누름 · 끌기
 
 function onPointerDown(S, event) {
-  if (S.mode !== 'scenarios' || event.button !== 0) return
+  if (S.mode !== 'scenarios' || event.button !== 0 || readonly(S)) return
   const grip = event.target.closest ? event.target.closest('.sgl-grip') : null
   if (!grip) return
   event.preventDefault()

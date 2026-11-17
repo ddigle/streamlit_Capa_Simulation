@@ -89,6 +89,8 @@ import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogHost
+from capa_simulation.components.edit_file_tail import edited_file_name
+from capa_simulation.components.grade_hooks import in_fragment, on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
@@ -615,6 +617,7 @@ def _mark_empty_card(
 
 
 @st.fragment(key=VIEW_FRAGMENT_KEY)
+@in_fragment
 def _render_view(
     prepared: _Plan | ShorteningStop,
     *,
@@ -1061,6 +1064,7 @@ def _render_process_filter(
     return [str(process) for process in selected]
 
 
+@on_press
 def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
     """시작 월·끝 월 상자의 콜백. 고른 기간을 공용 프로필에 남긴다(공정은 그대로).
 
@@ -1069,6 +1073,10 @@ def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
     실패해도 화면을 멈추지 않는다** — 이번 화면은 세션 값으로 이미 동작하고, 남기지 못한 것은 다음
     세션의 기본값이 안 바뀌는 정도의 일이다.
     """
+    if not viewer_can("shortening.filter_default"):
+        # 모두의 기본값으로 남기는 것은 관리자부터다 — 아래 등급의 고름은 세션에만 남아 자기 화면만
+        # 바뀐다(`persist_state="session"`). 벽에 닿기 전에 걸러 거절이 감사에 남지 않는다.
+        return
     start = st.session_state.get(SHORTENING_START_KEY)
     end = st.session_state.get(SHORTENING_END_KEY)
     if start not in options or end not in options:
@@ -1083,6 +1091,7 @@ def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
         clear_shortening_filter_cache()
 
 
+@on_press
 def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
     """공정 선택의 콜백. 고른 공정을 공용 프로필에 남긴다(기간은 그대로).
 
@@ -1090,6 +1099,9 @@ def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
     되보내는 경우다(AGENTS 9장 — 선택 상자는 라벨 글자를 주고받는다). 그 값을 그대로 쓰면 사용자가
     고르지 않은 빠짐이 공용 설정이 된다. 실패해도 화면은 멈추지 않는다(`_save_month_range`).
     """
+    if not viewer_can("shortening.filter_default"):
+        # 기간과 같다 — 아래 등급의 고름은 세션에만 남는다(`_save_month_range`).
+        return
     selected = st.session_state.get(SHORTENING_PROCESS_KEY)
     if not isinstance(selected, list) or any(str(value) not in visible for value in selected):
         return
@@ -1365,19 +1377,21 @@ def _render_downloads(
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         render_csv_download(
             data=units,
-            file_name=f"required_shortening_units_{percent}pct_{span}.csv",
+            file_name=edited_file_name(f"required_shortening_units_{percent}pct_{span}.csv"),
             key=_UNITS_CSV_KEY,
             label="호기별 단축 일정 CSV",
         )
         render_csv_download(
             data=all_levels,
-            file_name=f"required_shortening_units_all_levels_{span}.csv",
+            file_name=edited_file_name(f"required_shortening_units_all_levels_{span}.csv"),
             key=_UNITS_ALL_LEVELS_CSV_KEY,
             label="호기별 단축 일정 CSV · 목표 전체",
         )
         render_csv_download(
             data=process_months,
-            file_name=f"required_shortening_process_months_{percent}pct_{span}.csv",
+            file_name=edited_file_name(
+                f"required_shortening_process_months_{percent}pct_{span}.csv"
+            ),
             key=_MONTHS_CSV_KEY,
             label="공정·월 CSV",
         )

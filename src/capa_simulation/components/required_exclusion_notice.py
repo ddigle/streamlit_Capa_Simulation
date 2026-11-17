@@ -54,6 +54,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import (
@@ -206,6 +207,9 @@ def _exclusion_list(
     column_help: Mapping[str, str] | None = None,
 ) -> ExclusionList:
     helps = column_help or {}
+    # 저장하지 않은 고침이 있으면 파일 이름에 고침 꼬리(`edit_file_tail`) — 본문 펼침 · Alarm 표가
+    # 같은 이름을 쓴다.
+    file_name = edited_file_name(file_name)
     return ExclusionList(
         title,
         frame,

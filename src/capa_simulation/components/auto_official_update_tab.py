@@ -61,6 +61,7 @@ from capa_simulation.auto_update_scheduler import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
+from capa_simulation.components.grade_hooks import diagnostic_message, viewer_can
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -299,7 +300,13 @@ def _render_status(
             ]
             if status.last_tick_at is not None and status.last_outcome is not None:
                 last = status.last_outcome
-                detail = f" — {markdown_safe_tildes(last.message)}" if last.message else ""
+                # 마지막 확인의 글은 운영 진단 글이다 — 개발자 몫이면 원문, 아니면 화면 공용 꼴
+                # (`admin_view.diagnostic_message` — 접속 등급).
+                detail = (
+                    f" — {markdown_safe_tildes(diagnostic_message(last.message))}"
+                    if last.message
+                    else ""
+                )
                 parts.append(
                     f"마지막 확인 {format(status.last_tick_at, '%Y-%m-%d %H:%M:%S')} "
                     f"{last.label}{detail}"
@@ -458,6 +465,10 @@ def _render_settings_form(
 ) -> None:
     submitted_base = seen(SETTINGS_BASE_VERSION_KEY)
     config = settings.config
+    # 설정을 바꾸는 것은 개발자만이다 — 관리자는 같은 칸을 값만 본다(설계 규칙 UI-INP-07 예외 ·
+    # UI-NTF-05). 값만이면 제출 단추가 없어 폼 대신 칸 하나다.
+    read_only = not viewer_can("auto_update.edit")
+    submitted, changed_by = False, ""
     with st.container(border=True):
         # 공용 버전 줄은 제목 옆 한 줄이다(2026-11-08 그림 메모 g18).
         render_profile_heading(
@@ -466,10 +477,11 @@ def _render_settings_form(
             key="auto_official_update_settings",
             empty=f"아직 저장하지 않아 기본값({_config_line(DEFAULT_CONFIG)})을 씁니다",
         )
-        with st.form("auto_official_update_settings_form"):
+        with st.container() if read_only else st.form("auto_official_update_settings_form"):
             enabled = st.toggle(
                 "자동 갱신 켜기",
                 value=config.enabled,
+                disabled=read_only,
                 help=(
                     "켜 두면 매일 확인 시각에 새 코드를 받아 등록·판정하고 공식버전으로 "
                     f"지정합니다. 실행 줄에 `{ENV_VAR}=1` 이 있는 앱에서만 돕니다."
@@ -481,6 +493,7 @@ def _render_settings_form(
                     value=config.check_time,
                     step=60,
                     width=160,
+                    disabled=read_only,
                     help="PC 시계(OS 시각) 기준입니다. 매일 이 시각에 한 번 돕니다.",
                 )
                 keyword = st.text_input(
@@ -488,6 +501,7 @@ def _render_settings_form(
                     value=config.keyword,
                     max_chars=MAX_KEYWORD_LENGTH,
                     width=240,
+                    disabled=read_only,
                     help=(
                         "시뮬레이션명에 이 글자(대소문자 무시)와 주차(W##)가 함께 있는 코드만 "
                         "받습니다."
@@ -501,22 +515,24 @@ def _render_settings_form(
                     step=1.0,
                     format="%.1f",
                     width=180,
+                    disabled=read_only,
                     help=(
                         "리비전 전체 기간에서 한 달이라도 원 확보율(가용 ÷ 소요)이 이 값 "
                         "**미만**인 공정을 공정 필터에서 끕니다. 같으면 남깁니다. 소요가 0 인 "
                         "달은 보지 않습니다."
                     ),
                 )
-            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-                submitted = st.form_submit_button(
-                    "설정 저장", icon=":material/save:", type="primary"
-                )
-                changed_by = st.text_input(
-                    "바꾼 사람(선택)",
-                    value="",
-                    width=280,
-                    help="이름을 적으면 설정 변경 기록에 남습니다.",
-                )
+            if not read_only:
+                with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                    submitted = st.form_submit_button(
+                        "설정 저장", icon=":material/save:", type="primary"
+                    )
+                    changed_by = st.text_input(
+                        "바꾼 사람(선택)",
+                        value="",
+                        width=280,
+                        help="이름을 적으면 설정 변경 기록에 남습니다.",
+                    )
         notice = render_flash(SETTINGS_FLASH_KEY)
         refused = take_refusal(SETTINGS_SAVE_NAME)
         if refused is not None:
@@ -642,6 +658,10 @@ def _render_run_now(
     sources: AutoUpdateSources | None,
     clock: Clock,
 ) -> None:
+    if not viewer_can("auto_update.edit"):
+        # 「지금 실행」 은 개발자만이다 — 아래 등급에게는 칸째 서지 않는다(설계 규칙 UI-INP-07
+        # 예외).
+        return
     with st.container(border=True):
         clicked = st.button(
             "지금 실행",

@@ -44,6 +44,7 @@ from capa_simulation.components.flash import (
     render_flash,
     send_to_popup,
 )
+from capa_simulation.components.grade_hooks import in_fragment, on_press, viewer_can
 from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
@@ -345,7 +346,11 @@ SAME_AS_OFFICIAL_HELP = (
 REVISION_PICK_HELP = "리비전 표에서 리비전을 고르면 풀립니다."
 DISCARD_LOCK_HELP = "위 「변경을 버리고 불러오기」 를 체크하면 풀립니다."
 OFFICIAL_CONFIRM_HELP = "위 「가상 제품이 포함된 것을 확인했습니다」 를 체크하면 풀립니다."
-ARCHIVE_EFFECT_HELP = "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다."
+ARCHIVE_EFFECT_HELP = (
+    "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다. "
+    "HOME 「비교 · 주요 Case」 로 고른 시나리오면 그 지정이 함께 비워지고 다시 꺼내도 돌아오지 "
+    "않습니다."
+)
 ARCHIVE_LOCK_HELP = f"위 확인을 체크하면 풀립니다. {ARCHIVE_EFFECT_HELP}"
 DELETE_LOCK_HELP = "위 칸에 시나리오 이름을 그대로 입력하면 풀립니다."
 # 「변경 저장」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은 저장본에 맞추기 전
@@ -388,7 +393,11 @@ def render_scenario_management(
         return
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
     # 옵션에 없는 값이 그대로 오면 Streamlit 이 선택을 잃고 필수 선택에서 막힌다.
-    if st.session_state.get(MODE_KEY) not in MODES:
+    # 복제 작업은 새 시나리오를 저장할 수 있는 등급(실무자부터)에게만 선다 — 폼이 저장 하나뿐이다
+    # (설계 규칙 UI-INP-07 예외). 월 머지 · 연도 Shift 는 계산 미리보기가 있어 모두에게 서고 저장
+    # 구획만 가른다(`render_derived_save`).
+    modes = [mode for mode in MODES if mode != CLONE_MODE or viewer_can("scenario.create")]
+    if st.session_state.get(MODE_KEY) not in modes:
         st.session_state.pop(MODE_KEY, None)
     list_mode = st.session_state.get(MODE_KEY, MODES[0]) == MODES[0]
     # 맨 위 알림 **앞에서** 접고 맞춘다 — 사라진 고침의 알림이 그 회차에 뜬다.
@@ -403,7 +412,7 @@ def render_scenario_management(
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         mode = st.segmented_control(
             "시나리오 작업",
-            list(MODES),
+            modes,
             default=MODES[0],
             key=MODE_KEY,
             persist_state="session",
@@ -580,6 +589,12 @@ def _fold_outboxes() -> ListDraft:
 
     draft = load_draft()
     result = fold_ops(draft, [outbox_value(key) for key in MOUNT_KEYS], shown_order())
+    folded = result.draft
+    if has_edits(folded) and not viewer_can("scenario.list_edit"):
+        # 이름 · 차례를 바꿀 수 없는 등급(열람)의 고침은 받지 않는다 — 표는 값만이고(`readonly`)
+        # 「저장 전 변경」 이 쌓이지 않는다. 고름(`open` · `pick`)은 그대로다. 세대는 올리지 않는다.
+        folded = replace(folded, scenarios={}, revisions={}, order=None, order_base=None)
+    result = replace(result, draft=folded)
     if result.draft != draft:
         store_draft(result.draft)
     notes = []
@@ -713,6 +728,9 @@ def _list_common(draft: ListDraft, key: str) -> dict[str, Any]:
     """세 마운트 data 공통 — 세대 · 그 마운트가 보낸 op 가운데 반영한 마지막 seq · 보낼 목록
     상한."""
     common: dict[str, Any] = {"base": draft_base(draft), "limits": {"outboxCells": OUTBOX_LIMIT}}
+    if not viewer_can("scenario.list_edit"):
+        # 값만 — 이름 · 차례 고치기 · 끌기가 없다(설계 규칙 UI-INP-07 예외 · UI-NTF-05).
+        common["readonly"] = True
     mount = outbox_mount(outbox_value(key))
     if mount:
         common["ack"] = {"mount": mount, "seq": int(draft.applied.get(mount, 0))}
@@ -786,8 +804,15 @@ def _render_list_management(
         else:
             # 빈 결과는 값이다 — 평문 한 줄만 두고 하는 법은 붙이지 않는다(설계 규칙 AMB-02 (가)).
             st.caption("저장된 시나리오가 없습니다.")
+    # 「저장 전 변경」(「변경 저장」 이 있는 칸)은 이름 · 차례를 바꿀 수 있는 등급(실무자부터)에게만
+    # 선다 — 아래 등급의 표는 값만이다(설계 규칙 UI-INP-07 예외).
+    sides = (
+        SIDES
+        if viewer_can("scenario.list_edit")
+        else tuple(side for side in SIDES if side != SIDE_CHANGES)
+    )
     with right:
-        side, body = render_side_head(LIST_SIDE, SIDES, SIDE_DETAIL)
+        side, body = render_side_head(LIST_SIDE, sides, SIDE_DETAIL)
     official_open = False
     with body:
         if side == SIDE_DETAIL:
@@ -970,6 +995,7 @@ def _own_settled(
     )
 
 
+@on_press
 def _save_list_edits(database_path: str, drawn_base: str) -> None:
     """「변경 저장」 콜백 — 시나리오명 · 순서 · 리비전명을 한 트랜잭션으로 쓴다. 하나라도 거부되면
     쓰지 않는다.
@@ -1216,27 +1242,31 @@ def _render_detail(
                 on_click=_load_picked_revision,
                 args=(database_path, summary.scenario_id),
             )
-            st.button(
-                "공식으로 지정…",
-                icon=":material/verified:",
-                disabled=picked is None,
-                help=REVISION_PICK_HELP if picked is None else None,
-                key=f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}",
-                on_click=_open_official_dialog,
-                args=(summary.scenario_id, f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}"),
-            )
+            # 공식 지정은 관리자부터다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
+            if viewer_can("official.publish"):
+                st.button(
+                    "공식으로 지정…",
+                    icon=":material/verified:",
+                    disabled=picked is None,
+                    help=REVISION_PICK_HELP if picked is None else None,
+                    key=f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}",
+                    on_click=_open_official_dialog,
+                    args=(summary.scenario_id, f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}"),
+                )
         render_flash(CARD_NOTICE_KEY)
-    st.button(
-        "보관…",
-        icon=":material/archive:",
-        type="tertiary",
-        key=f"{ACTION_KEY}_archive",
-        on_click=_toggle_action,
-        args=("archive",),
-    )
-    with st.container():
-        if st.session_state.get(ACTION_KEY) == "archive":
-            _render_archive(repository, summary)
+    # 보관은 실무자부터다(설계 규칙 UI-INP-07 예외).
+    if viewer_can("scenario.archive"):
+        st.button(
+            "보관…",
+            icon=":material/archive:",
+            type="tertiary",
+            key=f"{ACTION_KEY}_archive",
+            on_click=_toggle_action,
+            args=("archive",),
+        )
+        with st.container():
+            if st.session_state.get(ACTION_KEY) == "archive":
+                _render_archive(repository, summary)
     opened = st.session_state.get(OFFICIAL_DIALOG_KEY)
     return (
         isinstance(opened, tuple)
@@ -1517,6 +1547,7 @@ def _wide_dialog(database_path: str, value: WideValue) -> None:
 
 
 @st.dialog("공식버전 지정", width="medium", on_dismiss=_close_official_dialog)
+@in_fragment
 @keeps_app_run_open
 def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> None:
     """공식버전 지정 확인 팝업. 호스트(`OFFICIAL_HOST`)가 부르고, 팝업 안 조작은 실행 핀 밖의
@@ -1966,6 +1997,10 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
         key=ARCHIVED_SELECT_KEY,
     )
     summary = by_id[selected_id]
+    # 되돌리기는 실무자부터, 영구 삭제는 관리자부터다 — 아래 등급은 보관본 목록만 본다(설계 규칙
+    # UI-INP-07 예외).
+    if not viewer_can("scenario.archive"):
+        return
     restore_column, _ = st.columns(2)
     with restore_column:
         if st.button(
@@ -1977,7 +2012,8 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
             if choice.moved:
                 _refuse_gone_press()
             _restore_scenario(repository, summary)
-    _render_delete(repository, summary)
+    if viewer_can("scenario.delete"):
+        _render_delete(repository, summary)
 
 
 def _clear_gone_delete_confirm(current_name: str) -> None:
