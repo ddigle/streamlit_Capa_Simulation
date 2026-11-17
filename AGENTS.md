@@ -5814,6 +5814,10 @@ RQ_MODULE
       거치지 않는다(저장소가 새로 읽은 한 벌 — 같은 보드). 그 밖의 호출(검사 · 입장 Summary · 파생 시나리오 원본 등)은
       부를 때마다 축까지 새로 만든 깊은 사본(`load_scenario_snapshot` → `persistence/cache._private_copy` —
       `copy(deep=True)` 만으로는 열 이름 배열을 공유한다)이다.
+    - **한 벌은 공용 칸이 그 리비전을 쥐고 있는 동안만이다.** 칸(`SNAPSHOT_RESOURCE_*` — 4칸 · 1시간)이 밀리거나 수명이 다하거나
+      쓰기 세대가 오르면(`_clear_snapshot_payloads` — 시나리오 이름 바꾸기 · 보관 · 삭제 등 `clear_scenario_snapshot_cache` 와 공용
+      표시순서 저장) 이미 연 세션은 옛 배열을 쥔 채 남고 그 뒤 여는 세션은 새로 읽은 배열을 받아, 그동안 같은 리비전이 두 벌 이상
+      산다(값은 같다 — 메모리 몫만). 인원 셈(`docs/objectstore_setup.md` 9장)은 한 벌 전제다.
     - **세션 표의 편집은 표를 통째로 갈아 끼우는 것으로만 한다**(`apply_month_updates` · `apply_table_updates` · 고칠 표는
       `scenario_table` 의 깊은 사본에서). 세션 원본 · 편집본에 같은 dtype 으로 제자리 쓰면(`df.loc[…] = …` ·
       `columns.values[i] = …`) 잠긴 배열이 `ValueError`(read-only)를 내고 계산 화면은 「계산을 멈췄습니다」 로 받는다. 그
