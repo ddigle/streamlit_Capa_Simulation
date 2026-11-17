@@ -345,6 +345,56 @@ _MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
 }
 
 
+# 공식 지정을 할 수 없는 등급(관리자 아래 — `official.publish`)의 글. 할 일 절이 그 등급에 없는
+# 단추(「공식으로 지정…」 · 열람의 DB 등록 · 「되돌리기」)를 가리키지 않게 등급마다 고른다(설계 규칙
+# UI-INP-07 예외 — 등급 밖 기능은 없는 기능). 실무자는 DB 등록 · 되돌리기까지, 열람은 할 일이 없다.
+OFFICIAL_BY_MANAGER: Final = "공식 지정은 관리자부터입니다 — 그 등급의 사람에게 요청하세요."
+_EDITOR_MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
+    "none": (
+        "공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 공식 지정은 관리자부터",
+        "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다. "
+        + OFFICIAL_BY_MANAGER,
+    ),
+    "empty": (
+        "공식버전이 없습니다 — 시나리오 없음 · DB 등록에서 시나리오 등록",
+        "공식버전이 없고 시나리오도 없습니다 — 시나리오 관리 › DB 등록에서 시나리오를 등록하세요. "
+        + OFFICIAL_BY_MANAGER,
+    ),
+    "archived_only": (
+        "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」",
+        "공식버전이 없고 보관본만 있습니다 — 시나리오 관리 › Capa 시나리오 › 목록 관리의 "
+        "「보관함」 에서 「되돌리기」 하세요. " + OFFICIAL_BY_MANAGER,
+    ),
+}
+_VIEWER_MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
+    "none": _EDITOR_MISSING_OFFICIAL_TEXTS["none"],
+    "empty": (
+        "공식버전이 없습니다 — 시나리오 없음 · 등록은 실무자부터",
+        "공식버전이 없고 시나리오도 없어 불러올 기준이 없습니다 — 시나리오 등록은 실무자부터, "
+        + OFFICIAL_BY_MANAGER,
+    ),
+    "archived_only": (
+        "공식버전이 없습니다 — 보관본만 있음 · 되돌리기는 실무자부터",
+        "공식버전이 없고 보관본만 있어 불러올 기준이 없습니다 — 보관본 되돌리기는 실무자부터, "
+        + OFFICIAL_BY_MANAGER,
+    ),
+}
+
+
+def _missing_official_texts(missing: MissingOfficial) -> tuple[tuple[str, str], str]:
+    """(짧은 글 · 전문, 「그 화면으로」 탭) — 화면 등급으로 고른다(운영 아닌 곳은 늘 지정자 글)."""
+    # 부를 때 읽는다 — 등급 창구가 이 모듈을 부르는 화면 모듈을 머리에서 읽는다(순환).
+    from capa_simulation.components import grade_hooks
+
+    registration = REGISTRATION_TAB_NAME if missing == "empty" else SCENARIO_TAB_NAME
+    if grade_hooks.viewer_can("official.publish"):
+        return _MISSING_OFFICIAL_TEXTS[missing], registration
+    if grade_hooks.viewer_can("scenario.db_register"):
+        return _EDITOR_MISSING_OFFICIAL_TEXTS[missing], registration
+    # 열람에게는 DB 등록 탭이 없다(「실무자부터 여는 탭입니다」 로 멈춤) — 목록 탭으로 간다.
+    return _VIEWER_MISSING_OFFICIAL_TEXTS[missing], SCENARIO_TAB_NAME
+
+
 def missing_official_note(missing: MissingOfficial | None) -> alerts.AlertNote:
     """공식버전 없음 상태 알림(`SC-01`) 표지 한 칸(그리지 않는다) — `missing` 이 None 이면 해소다.
 
@@ -352,16 +402,28 @@ def missing_official_note(missing: MissingOfficial | None) -> alerts.AlertNote:
     `archived_only`)라, 어느 화면이 내도 같은 줄이고 알림창은 이 브라우저 탭에 한 번 뜬다(첫
     시나리오를 등록해 갈래가 바뀌면 그 줄은 닫히고 새 줄이 뜬다). 줄의 화면 칸과 「그 화면으로」 는
     시나리오 관리 › Capa 시나리오이고, 시나리오가 하나도 없으면 고를 목록이 없어 시나리오 관리 ›
-    DB 등록이다."""
-    text, full = _MISSING_OFFICIAL_TEXTS["none" if missing is None else missing]
+    DB 등록이다(그 탭이 없는 열람은 Capa 시나리오). 글의 할 일 절은 화면 등급마다 그 등급에 있는
+    단추만 가리킨다(`_missing_official_texts`)."""
+    if missing is None:
+        return alerts.state_note(
+            MISSING_OFFICIAL_CODE,
+            scope=None,
+            content=None,
+            active=False,
+            text=_MISSING_OFFICIAL_TEXTS["none"][0],
+            full=_MISSING_OFFICIAL_TEXTS["none"][1],
+            tab=SCENARIO_TAB_NAME,
+            goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
+        )
+    (text, full), tab = _missing_official_texts(missing)
     return alerts.state_note(
         MISSING_OFFICIAL_CODE,
         scope=None,
-        content=None if missing is None else (True if missing == "none" else missing),
-        active=missing is not None,
+        content=True if missing == "none" else missing,
+        active=True,
         text=text,
         full=full,
-        tab=REGISTRATION_TAB_NAME if missing == "empty" else SCENARIO_TAB_NAME,
+        tab=tab,
         goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
     )
 

@@ -37,7 +37,7 @@ from grade_support import (
 )
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation import page_failures
+from capa_simulation import page_bootstrap, page_failures
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth import grades
@@ -788,6 +788,41 @@ def test_a_viewers_db_register_save_never_reaches_the_shared_account_query(
     assert [item.value for item in flashed(app, "error")] == [
         grades.refusal_text("scenario.db_register")
     ]
+
+
+@GRADE_PARAMS
+def test_the_missing_official_alert_points_only_at_what_the_grade_can_do(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """공식버전 없음 상태 알림(`SC-01`)의 할 일 절은 그 등급에 있는 단추만 가리킨다 — 「공식으로
+    지정…」 은 관리자부터, DB 등록 · 「되돌리기」 는 실무자부터, 열람은 할 일 없이 관리자부터라는
+    말뿐이고 「그 화면으로」 가 멈추는 DB 등록 탭으로 가지 않는다(UI-INP-07 예외)."""
+    as_grade(monkeypatch, grade)
+    publishes = grade in (grades.MANAGER, grades.DEVELOPER)
+    registers = grade != grades.VIEWER
+    for missing in ("none", "empty", "archived_only"):
+        note = page_bootstrap.missing_official_note(missing)
+        words = f"{note['short']} {note['full']}"
+        assert ("「공식으로 지정…」" in words) is publishes, (missing, words)
+        assert ("관리자부터" in words) is not publishes, (missing, words)
+        if missing == "empty":
+            assert ("DB 등록에서" in words) is registers, words
+            assert note["tab"] == (
+                page_bootstrap.REGISTRATION_TAB_NAME
+                if registers
+                else page_bootstrap.SCENARIO_TAB_NAME
+            )
+        if missing == "archived_only":
+            assert ("「되돌리기」" in words) is registers, words
+
+
+def test_off_the_operational_server_the_missing_official_alert_keeps_the_full_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unrestricted(monkeypatch)
+    for missing in ("none", "empty", "archived_only"):
+        note = page_bootstrap.missing_official_note(missing)
+        assert "「공식으로 지정…」" in note["full"] and "관리자부터" not in note["full"]
 
 
 YIELD_GRID_HOST = "yield_grid"
