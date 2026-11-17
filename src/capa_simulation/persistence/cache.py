@@ -9,18 +9,22 @@
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
+
+리비전 스냅샷은 잠근 프레임 한 벌을 프로세스에 두고, 시나리오를 여는 길에는 겉껍데기 사본을, 그 밖의
+호출에는 깊은 사본을 넘긴다(AGENTS 5장 20).
 """
 
 import threading
 from dataclasses import fields
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 from uuid import uuid4
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import settings
+from capa_simulation.frame_sharing import lock_frame, shared_view
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalAdvanceShipment,
@@ -145,33 +149,6 @@ def _snapshot_from_payload(payload: _ScenarioSnapshotPayload) -> ScenarioSnapsho
 # 들어오는 것은 사실상 최신 공식 리비전(새 세션 부트스트랩·입장 Summary)과 방금 불러온 리비전이다.
 SNAPSHOT_RESOURCE_MAX_ENTRIES = 4
 SNAPSHOT_RESOURCE_TTL_SECONDS = 3600
-# pandas 확장 배열이 데이터를 담는 numpy 배열 자리(날짜·nullable 정수·범주).
-_ARRAY_SLOTS = ("_ndarray", "_data", "_mask", "_codes")
-
-
-def _lock_arrays(values: object) -> None:
-    """numpy 배열이나 확장 배열이 담은 numpy 배열을 읽기 전용으로 둔다."""
-    arrays = [values] + [getattr(values, name, None) for name in _ARRAY_SLOTS]
-    for array in arrays:
-        if isinstance(array, np.ndarray):
-            array.flags.writeable = False
-
-
-def _lock_in_place_writes(frame: pd.DataFrame) -> None:
-    """공유 프레임의 데이터·축 배열을 읽기 전용으로 잠근다 — 같은 dtype 제자리 쓰기가 바로 터진다.
-
-    공유 프레임은 `load_scenario_snapshot` 이 깊은 복사만 하고 밖으로 내보내지 않는다. 잠금은 그
-    약속이 깨졌을 때 다른 세션의 숫자가 조용히 바뀌는 대신 오류가 나게 하는 안전장치다(깊은 복사가
-    만드는 새 배열은 쓸 수 있다). 열 대입·dtype 이 바뀌는 대입은 배열이 아니라 프레임 객체를 갈아
-    끼우므로 이것으로 막지 못한다 — 그래서 공유 프레임은 아예 내보내지 않는다. 축(열 이름·행
-    Index)도 잠근다 — `columns.values[i] = …` 같은 제자리 쓰기도 같은 길이다.
-    """
-    blocks: tuple[Any, ...] = cast(Any, frame)._mgr.blocks
-    for block in blocks:
-        _lock_arrays(block.values)
-    for axis in (frame.columns, frame.index):
-        if not isinstance(axis, pd.RangeIndex):
-            _lock_arrays(cast(Any, axis)._values)
 
 
 def _private_copy(frame: pd.DataFrame) -> pd.DataFrame:
@@ -199,14 +176,17 @@ def _load_scenario_snapshot_resource(
     """공용 표시순서를 얹은 리비전 스냅샷 한 벌을 프로세스에 둔다. **읽기만 한다.**
 
     `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화하므로 새 세션·불러오기마다 그 비용을
-    내고, 세션마다 같은 문자열을 새로 만들어 따로 쥔다. 여기 둔 프레임은 `load_scenario_snapshot` 이
-    부를 때마다 깊은 복사해 넘긴다 — 숫자 배열은 새로 만들고 객체 칸은 같은 불변 문자열을 가리킨다.
+    내고, 세션마다 같은 문자열을 새로 만들어 따로 쥔다. 여기 둔 프레임은 잠근 채
+    (`frame_sharing.lock_frame`) 두 길로 넘긴다 — 시나리오를 여는 길
+    (`load_scenario_snapshot_for_activation`)은 같은 배열을 함께 쓰는 겉껍데기 사본을, 그
+    밖의 호출(`load_scenario_snapshot`)은 축까지 새로 만든 깊은 사본을 받는다. 프레임 객체
+    자체는 넘기지 않는다(AGENTS 5장 20).
     """
     del generation
     snapshot = get_scenario_repository(database_path).load_revision(revision_id)
     payload = _snapshot_to_payload(snapshot)
     for frame in payload["tables"].values():
-        _lock_in_place_writes(frame)
+        lock_frame(frame)
     return payload
 
 
@@ -232,8 +212,10 @@ def load_scenario_snapshot(
 ) -> ScenarioSnapshot:
     """불변 리비전 스냅샷. 부를 때마다 표마다 따로 된 깊은 사본을 받는다.
 
-    받은 표는 마음대로 고쳐도 다른 호출·다른 세션·캐시에 보이지 않는다. 모델 인스턴스는 캐시에
-    넣지 않고 기본형 dict 에서 지금 클래스로 다시 만든다(핫리로드 뒤 옛 클래스가 실리지 않게).
+    받은 표는 마음대로 고쳐도 다른 호출·다른 세션·캐시에 보이지 않는다(검사 · 입장 Summary ·
+    파생 시나리오 원본 등). 시나리오를 열어 세션에 올리는 길만
+    `load_scenario_snapshot_for_activation` 이다. 모델 인스턴스는 캐시에 넣지 않고 기본형 dict
+    에서 지금 클래스로 다시 만든다(핫리로드 뒤 옛 클래스가 실리지 않게).
     """
     generation = _write_generation("snapshot")
     if not apply_global_display_order:
@@ -247,6 +229,30 @@ def load_scenario_snapshot(
             "revision": shared["revision"],
             "preset": shared["preset"],
             "tables": {name: _private_copy(frame) for name, frame in shared["tables"].items()},
+        }
+    )
+
+
+def load_scenario_snapshot_for_activation(database_path: str, revision_id: str) -> ScenarioSnapshot:
+    """시나리오를 여는 길(부트스트랩 · 사이드바 불러오기 · 목록 열기)만 쓰는 스냅샷.
+
+    공용 칸의 잠긴 프레임을 표마다 겉껍데기 사본(`frame_sharing.shared_view` — 같은 배열,
+    프레임 · 축 객체만 새로)으로 넘긴다. 세션은 이 표를 그대로 원본으로 올리고 편집본도 같은
+    배열을 함께 쓴다(`scenario_state._session_copy`) — 세션마다 깊은 사본 두 벌을 만들지
+    않는다. 받은 표는 고치지 않고 편집은 표를 통째로 갈아 끼운다. 스위치
+    (`settings.SHARE_SESSION_TABLES_ENV`)를 끈 서버는 `load_scenario_snapshot`(깊은 사본)과
+    같다.
+    """
+    if not settings.share_session_tables_enabled():
+        return load_scenario_snapshot(database_path, revision_id)
+    generation = _write_generation("snapshot")
+    shared = _load_scenario_snapshot_resource(database_path, revision_id, generation)
+    return _snapshot_from_payload(
+        {
+            "scenario": shared["scenario"],
+            "revision": shared["revision"],
+            "preset": shared["preset"],
+            "tables": {name: shared_view(frame) for name, frame in shared["tables"].items()},
         }
     )
 

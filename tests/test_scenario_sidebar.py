@@ -195,7 +195,9 @@ def sidebar_replacements() -> dict[str, Any]:
     # 가짜의 모양이 제각각이라(함수·람다·클래스) 값 타입을 하나로 좁히지 않는다.
     return {
         "get_scenario_repository": lambda _path: FakeRepository(),
-        "load_scenario_snapshot": load_snapshot,
+        # 시나리오를 여는 길의 로더(`load_saved_revision` 이 부른다) — 공유 · 잠금은 따로 검증한다
+        # (`test_session_table_sharing.py`).
+        "load_scenario_snapshot_for_activation": load_snapshot,
         "pinned_connections": lambda *_paths: nullcontext(),
         "pending_edit_labels": lambda _page: list(st.session_state.get("test_pending_edits", [])),
         "active_persisted_scenario_id": lambda: "scenario-1",

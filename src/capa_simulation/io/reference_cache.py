@@ -5,12 +5,16 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import settings
+from capa_simulation.frame_sharing import lock_frame
+
 SESSION_REFERENCE_TABLES_KEY = "persisted_reference_tables"
 SESSION_REFERENCE_VERSION_KEY = "persisted_reference_version"
 # HOME Figure 캐시 칸의 이름. **이 모듈이 소유한다** — 쓰는 곳이 셋인데(여기,
 # `scenario_activation._STALE_UI_KEYS`, `components/home_rendering`) `scenario_activation`
 # 은 `components` 를 import 할 수 없다(그 방향은 이미 반대로 나 있어 순환이 된다).
-# 이 파일은 pandas·streamlit 만 보는 잎이라 셋 다 여기서 가져올 수 있다.
+# 이 파일은 pandas·streamlit(과 잎 `settings` · `frame_sharing`)만 보는 잎이라 셋 다 여기서
+# 가져올 수 있다.
 #
 # 리터럴을 세 곳에 따로 적으면 이름을 바꿀 때 한 곳만 고쳐지고, 그러면 시나리오를 바꿔도
 # 옛 칸이 남아 **남의 시나리오 그림이 그대로 뜬다.**
@@ -80,12 +84,22 @@ def activate_persisted_reference_tables(
     reference_tables: dict[str, pd.DataFrame],
     revision_id: str,
 ) -> int:
-    """Publish one immutable DB snapshot as this browser session's reference source."""
+    """리비전 스냅샷 한 벌을 이 세션의 원본으로 올린다. 스위치를 켠 서버는 표를 잠근다.
+
+    시나리오를 여는 길의 표는 공용 칸과 배열을 함께 써 이미 잠겼고, 저장 · 등록 뒤 저장소가
+    새로 읽은 표도 여기서 같이 잠근다 — 편집본이 원본과 배열을 함께 쓰므로
+    (`scenario_state._session_copy`) 숨은 제자리 쓰기가 되돌리기 기준 · 다른 세션을 조용히
+    바꾸는 대신 바로 터진다. 잠긴 표의 크기를 재지 않는다(`memory_usage(deep=True)` 등 —
+    읽기만 해도 `ValueError`, AGENTS 5장 20).
+    """
     if not reference_tables or not all(
         isinstance(frame, pd.DataFrame) for frame in reference_tables.values()
     ):
         raise ValueError("활성화할 DuckDB 기준정보가 올바르지 않습니다.")
     version = reference_version_for_revision(revision_id)
+    if settings.share_session_tables_enabled():
+        for frame in reference_tables.values():
+            lock_frame(frame)
     st.session_state[SESSION_REFERENCE_TABLES_KEY] = reference_tables
     st.session_state[SESSION_REFERENCE_VERSION_KEY] = version
     return version

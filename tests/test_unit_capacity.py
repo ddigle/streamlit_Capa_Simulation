@@ -519,10 +519,10 @@ def test_healthy_reference_data_excludes_nothing() -> None:
 def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() -> None:
     """화면이 읽는 `attrs` 는 `st.cache_data` 의 피클 왕복을 한 번 거친 것이다.
 
-    페이지는 `get_capacity_and_demand` 를 직접 부르지 않고 `st.cache_data` 로 감싼
-    `get_scenario_capacity_and_demand` 를 부른다. 그 캐시는 결과를 피클로 저장했다가
-    되돌려 주므로, `attrs` 가 왕복에서 사라지면 제외 경고와 상세 표가 화면에서 통째로
-    없어진다. 여기서는 그 왕복을 `pickle` 로 재현한다.
+    페이지는 `get_capacity_and_demand` 를 직접 부르지 않고 `get_scenario_capacity_and_demand`
+    를 부르고, 그것은 `st.cache_data` 로 감싼 전체 기간 칸(`get_full_capacity_outcome`)에서
+    잘라 준다. 그 캐시는 결과를 피클로 저장했다가 되돌려 주므로, `attrs` 가 왕복에서 사라지면
+    제외 경고와 상세 표가 화면에서 통째로 없어진다. 여기서는 그 왕복을 `pickle` 로 재현한다.
     """
     inputs = _capacity_inputs(["Process-A", "Process-B"], lot_ratio=[1.0, -0.5])
     tables = {

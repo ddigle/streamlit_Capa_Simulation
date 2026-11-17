@@ -8,6 +8,9 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import settings
+from capa_simulation.frame_sharing import frame_is_locked, shared_view
+
 ACTIVE_SCENARIO_KEY = "active_scenario"
 # 이 세션에서 복제 등록한 가상 제품 목록. 리비전을 저장할 때 함께 기록해
 # 공식버전 발행 시 실적과 대조할 수 없는 데이터가 섞였는지 알 수 있게 한다.
@@ -52,6 +55,21 @@ def _new_content_token() -> str:
     return uuid4().hex
 
 
+def _session_copy(frame: pd.DataFrame) -> pd.DataFrame:
+    """편집본 표 하나. 잠긴 원본이면 겉껍데기 사본, 아니면 깊은 사본이다(AGENTS 5장 20).
+
+    시나리오를 여는 길은 원본(세션에 올린 리비전 표 — 공용 칸과 같은 배열)을 잠가 두므로
+    (`reference_cache.activate_persisted_reference_tables`) 편집본은 같은 배열을 함께 쓰고
+    프레임 · 축 객체만 새로 갖는다. 편집 적용은 표를 통째로 갈아 끼우므로
+    (`apply_month_updates` · `apply_table_updates`) 원본 · 다른 세션에 닿지 않고, 숨은 제자리
+    쓰기는 잠긴 배열에서 바로 터진다. 스위치(`settings.SHARE_SESSION_TABLES_ENV`)를 끈 서버나
+    잠기지 않은 표는 깊은 사본이다.
+    """
+    if settings.share_session_tables_enabled() and frame_is_locked(frame):
+        return shared_view(frame)
+    return frame.copy(deep=True)
+
+
 def pristine_content_token(reference_version: int) -> str:
     """저장 리비전을 편집 없이 올린 상태의 토큰. 내용이 리비전 하나로 정해지므로 고정한다.
 
@@ -90,7 +108,7 @@ def reset_active_scenario(
     reference_tables: dict[str, pd.DataFrame],
     reference_version: int,
 ) -> ActiveScenario:
-    """Replace every editable table with a fresh copy of the cached source."""
+    """편집 표를 모두 올라와 있는 원본의 새 편집본으로 갈아 끼운다(`_session_copy`)."""
     missing = [name for name in EDITABLE_SCENARIO_TABLES if name not in reference_tables]
     if missing:
         raise KeyError(f"활성 시나리오 기준정보가 없습니다: {', '.join(missing)}")
@@ -102,9 +120,10 @@ def reset_active_scenario(
         "revision": previous_revision + 1,
         "content_token": pristine_content_token(reference_version),
         "tables": {
-            name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
+            name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
+    _retire_edit_cell(saved)
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
     # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
     clear_virtual_products()
@@ -129,7 +148,7 @@ def clear_virtual_products() -> None:
 
 def clear_active_scenario() -> None:
     """Discard the current session scenario so it reloads from source on next use."""
-    st.session_state.pop(ACTIVE_SCENARIO_KEY, None)
+    _retire_edit_cell(st.session_state.pop(ACTIVE_SCENARIO_KEY, None))
 
 
 def activate_scenario_tables(
@@ -146,9 +165,10 @@ def activate_scenario_tables(
         "revision": revision,
         "content_token": pristine_content_token(reference_version),
         "tables": {
-            name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
+            name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
+    _retire_edit_cell(st.session_state.get(ACTIVE_SCENARIO_KEY))
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
     # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
     clear_virtual_products()
@@ -181,6 +201,48 @@ def scenario_month_table(
     )
 
 
+def _retire_edit_cell(previous: object) -> None:
+    """갈아끼워지거나 버려지는 활성 시나리오가 **편집본**이면 그 전체 기간 결과 칸 하나를 걷는다.
+
+    편집 토큰은 uuid 라 이 세션의 그 편집본만 쓰고, 활성 시나리오가 다른 내용으로 바뀌면 아무도
+    다시 부르지 않는다 — 그대로 두면 죽은 편집본 칸이 상한(`FULL_CAPACITY_MAX_ENTRIES`)까지 남아
+    세션끼리 나누는 리비전 칸을 밀어낸다. 바꾸는 길 넷(편집 적용 `_next_edit_token` · 원본 되돌리기
+    `reset_active_scenario` · 리비전 불러오기 · 저장 뒤 활성화 `activate_scenario_tables`)과 버리는
+    길(`clear_active_scenario`)이 부른다. 키는 **갈아끼워지는 dict 의** (reference_version,
+    content_token)이다 — 다른 리비전을 불러올 때는 새 번호와 다르다. pristine 토큰 칸(세션끼리
+    나누는 리비전 결과)은 걷지 않는다. 부르는 쪽은 새 시나리오를 다 지은 뒤 세션에 넣기 바로 앞에
+    부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 걷은 뒤 옛 dict 로 계산을
+    다시 부르면 그 칸을 한 번 더 계산할 뿐 값은 같다 — 편집 적용 길은 곧바로 앱 전체 회차를 다시
+    돌린다는 것을 `tests/test_edit_token_retire.py` 의 정적 그물이 보고, 되돌리기 · 불러오기 ·
+    저장 뒤 · 버리기를 부르는 곳(콜백 · `st.rerun` · 알림만 남기는 관리 화면)은 그물 없이 코드로
+    따라갔다.
+    편집본을 쥔 채 끝난 세션의 칸은 상한에서 밀릴 때까지 남는다.
+    """
+    if not isinstance(previous, dict):
+        return
+    old_token = previous.get("content_token")
+    old_version = previous.get("reference_version")
+    if (
+        isinstance(old_token, str)
+        and isinstance(old_version, int)
+        and not is_pristine_content_token(old_token)
+    ):
+        from capa_simulation.services.simulation_cache import retire_full_capacity_outcome
+
+        retire_full_capacity_outcome((old_version, old_token))
+
+
+def _next_edit_token(previous: ActiveScenario) -> str:
+    """편집 적용의 새 내용 토큰. 갈아끼워지는 편집본 칸은 여기서 걷는다(`_retire_edit_cell`).
+
+    적용하는 길은 모두 적용 뒤 곧바로 앱 전체 회차를 다시 돌려(`st.rerun` · `DialogHost.finish`) 옛
+    토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). 표를 다 갈아끼운 뒤에 부른다
+    — 적용이 막히면(`ValueError`) 아무 칸도 걷지 않는다.
+    """
+    _retire_edit_cell(previous)
+    return _new_content_token()
+
+
 def apply_month_updates(
     scenario: ActiveScenario,
     replacements: dict[str, pd.DataFrame],
@@ -203,7 +265,7 @@ def apply_month_updates(
     updated: ActiveScenario = {
         "reference_version": scenario["reference_version"],
         "revision": scenario["revision"] + 1,
-        "content_token": _new_content_token(),
+        "content_token": _next_edit_token(scenario),
         "tables": tables,
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = updated
@@ -229,7 +291,7 @@ def apply_table_updates(
     updated: ActiveScenario = {
         "reference_version": scenario["reference_version"],
         "revision": scenario["revision"] + 1,
-        "content_token": _new_content_token(),
+        "content_token": _next_edit_token(scenario),
         "tables": tables,
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = updated

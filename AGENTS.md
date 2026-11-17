@@ -2237,7 +2237,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
   - 쓰기는 프로세스 잠금 + 단일 트랜잭션, 읽기는 작업별 연결이다. `app.py` 는 rerun 한 번을 `pinned_connections` 의
     게으른 핀으로 감싼다(상시 앵커가 아니다, 9장).
-  - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고 깊은 사본(`_private_copy`)을 넘긴다. 목록은 캐시하지
+  - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고, 시나리오를 여는 길에는 같은 배열의 겉껍데기 사본
+    (`load_scenario_snapshot_for_activation`), 그 밖에는 깊은 사본(`_private_copy`)을 넘긴다(5장 20). 목록은 캐시하지
     않고, 무효화는 DB 를 바꾼 호출부의 `clear_*_cache()` 다(5장).
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
 - `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, HOME 팝업 열림 칸 하나
@@ -2300,7 +2301,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「이미 연 탭으로 들어옴」 표지는 화면이 바뀐 회차에 정하고 **같은 화면에 머무는 동안 그대로 둔다** — 다시 들어온 첫
     회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
-  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
+  없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다. 편집본은 잠긴 원본이면 같은 배열의
+  겉껍데기 사본, 아니면 깊은 사본이다(`_session_copy` — 5장 20). 활성 시나리오를 바꾸거나 버리는 길(편집 적용
+  `apply_month_updates`·`apply_table_updates` · 원본 되돌리기 `reset_active_scenario` · 불러오기와 저장 뒤
+  `activate_scenario_tables` · `clear_active_scenario`)이 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 걷는다
+  (`_retire_edit_cell` → `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다,
+  `tests/test_edit_token_retire.py`).
+- `src/capa_simulation/frame_sharing.py` — 세션끼리 함께 쓰는 표의 numpy 배열(데이터 블록 · 축 · 확장 배열 칸) 잠금
+  (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로) · 잠긴
+  배열에 쓰다 난 오류 가르기(`is_locked_write_error` — 계산 결과 칸이 담지 않고 다시 올린다)를 한 곳에 둔다(5장 20). pandas · numpy 만 보는 잎이라 `persistence/cache.py` · `io/reference_cache.py` · `scenario_state.py` 가 함께
+  쓴다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
   - 저장소가 비었으면 첫 세션 부트스트랩(`bootstrap_latest_official_scenario`)이 운영 서버가 아닐 때만 내장 시드로 첫
@@ -2369,7 +2379,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/simulation_cache.py` — 계산 함수의 content-addressed Streamlit 캐시 래퍼를 모은 경계다
   (5장 4·「키 방침」). 큰 프레임은 `_` 인자 + 내용 지문(`frame_digest`)으로 받는다.
   - 대당 Capa·소요대수는 전체 기간으로 한 번 계산해 자르고(`get_full_capacity_outcome` → `slice_capacity_months`,
-    `tests/test_full_period_capacity.py`) 오류도 `CapacityOutcome` 으로 캐시한다. 배경 회차는 순수 코어
+    `tests/test_full_period_capacity.py`) 오류도 `CapacityOutcome` 으로 캐시한다. 캐시는 전체 기간 칸 하나다
+    (`FULL_CAPACITY_MAX_ENTRIES` 8칸) — `get_scenario_capacity_and_demand` 는 칸을 두지 않고 부를 때마다 그 칸에서
+    자르며(이름 · 인자 · 실패 동작은 그대로, 조회기간 오류 칸 `get_period_capacity_error` 는 따로), 편집본 칸은 새 편집
+    토큰이 설 때 키로 걷는다(`retire_full_capacity_outcome`, 5장 3). 배경 회차는 순수 코어
     `full_capacity_outcome` 을 부른다. 화면에서 그 순수 코어를 부르는 곳은 입력 점검 하나다 — 고른 리비전마다 계산하므로
     결과 대신 묶음만 요약 칸 `get_revision_input_check` 에 둔다(5장 39).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
@@ -4479,7 +4492,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
-  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
+  그린다. 산식을 화면에 복제하지 않는다. altair 는 차트를 짓는 함수 안에서 import 한다 — 맨 위에서 부르면 이 화면을 한 번만
+  열어도 프로세스 고정 약 20MiB(altair + jsonschema, 합성 표본 샘플 관측)가 끝까지 붙는다(2026-11-17 메모리 보드 decided 2 —
+  `tests/test_equipment_explorer.py::test_importing_the_explorer_leaves_altair_unloaded`). 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
   재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
   쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
   글이다(`profile_caption.render_heading_value` — 밑줄 맞춤은 공용 버전 줄과 같다, 사용자 보드 T2).
@@ -4562,7 +4577,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ImportReview` 는 「편집본에 넣기」 때 입력·등록할 표·편집본이 달라졌으면 넣지 않고 미리보기를 다시 만든다(마스터 입력
     `read_equipment_update`, `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
-    올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)을 낮추지 않는다 — 다른 올리기 칸까지 묶인다.
+    올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)은 200MB(Streamlit 기본값 — 2026-11-17 메모리
+    보드 q-upload)이고 칸 고유 상한은 그보다 낮게만 둔다 — 올린 파일은 통째로 서버 메모리 바이트라 큰 파일 하나가 컨테이너
+    메모리 한도(1GiB)를 넘기면 앱이 다시 선다. 모듈 올리기 칸도 그 값을 물려받는다(`docs/module_guide.md` 3-9,
+    `tests/test_equipment_csv_upload_limit.py`).
   - 편집본은 세션의 **설비 시나리오 한 벌**이다(5장 32). `revision_token` 은 (공통, 일정) 쌍 토큰이고 저장본 사본과 함께
     그 쌍의 일정 없음(`DRAFT_UNSCHEDULED_KEY`)을 적는다. 계산 화면은 `calculation_drafts()`(일정 없음 호기와 그 비가동을 뺀
     셋)를 읽고, 편집 대조·`_saved_master()` 는 39칸 전부를 본다. 저장은 `save_equipment(EquipmentSaveRequest)` 로 간다 —
@@ -5402,6 +5420,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 한도(DB 마다 처음 한 번)를 프로세스 메모리에 모은다(회차당 0.2ms 안팎 — 샘플 관측). 이 앱은 회차가 끝나면 인스턴스가 내려가
   아무 때나 재면 거의 늘 0 이라 회차 끝을 잰다 — 질의 중 순간 최고는 잡지 못한다. Streamlit 을 import 하지 않는다.
   시험 `tests/test_duckdb_memory.py`.
+  리비전 · 데이터셋 표를 읽는 `load_frame()` 은 `fetchdf` 바로 뒤에 글자 칸의 같은 글을 한 객체로 모은다(`share_repeated_text` —
+  비지 않은 값이 모두 정확히 `str` 인 객체 칸만, 그 읽기 동안만 쓰는 사전, 객체 블록에 제자리로 써 값 · dtype · 블록 꼴 · 빈 칸 ·
+  해시가 그대로다. 숫자 · 참거짓 · `str` 하위형(`np.str_` 등)이 섞인 칸은 건드리지 않는다 — `1` · `1.0` · `True` 나 같은 글의
+  `str` · `np.str_` 가 합쳐지면 `equals` 가 못 잡는다). 기본 켬이고
+  환경변수 `CAPA_SHARE_STRINGS=off` 로 끈다(`settings.share_strings_enabled`). 실제로 모았는지(고유 객체 수 = 고유 값 수)는
+  `tests/test_share_repeated_text.py` 가 DuckDB 읽기 길로 잠근다 — pandas 판이 바뀌어 칸이 쓸 수 있는 view 가 아니게 되면 값은
+  맞은 채 효과만 사라진다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
   - 다시 해도 같은 실패는 `MigrationFailed`(`RuntimeError`)다 — 이미 적용된 파일이 바뀜(`MigrationChanged`)과, 새 SQL 이
@@ -5680,7 +5705,13 @@ RQ_MODULE
    — 리비전 **내용**은 append-only 라(이름표인 리비전명만 고칠 수 있다, 아래 8) 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
-   단위이고 조회기간은 그 결과를 자른다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
+   단위이고 조회기간은 그 결과를 부를 때마다 자른다(자른 결과는 칸에 두지 않는다). 활성 시나리오가 다른 내용으로
+   바뀌거나 버려지면 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 그 dict 의 (reference_version, content_token)으로
+   걷는다 — 편집 적용 · 원본 되돌리기 · 리비전 불러오기와 저장 뒤 활성화 · 시나리오 버리기(`scenario_state._retire_edit_cell`).
+   편집 토큰은 uuid 라 그 세션의 그 편집본만 쓴다 — 걷은 뒤 옛 dict 로 계산을 다시 부르면 한 번 더 계산할 뿐 값은 같다(편집
+   적용은 곧바로 앱 전체 회차를 다시 돌리고 `tests/test_edit_token_retire.py` 의 정적 그물이 그 부르는 곳을 본다 — 나머지
+   길에는 그물이 없다). 리비전(pristine) 토큰 칸은 세션끼리 나누므로 걷지 않는다. 편집본을 쥔 채 끝난
+   세션의 칸만 상한에서 밀릴 때까지 남는다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
    Streamlit 1.63 은 5만 행 넘는 DataFrame 인자를 1만 행 표본(`df.sample(10_000)`)으로만 해시해, 표본 밖 한 행
    편집이 옛 결과에 적중한다. 그런 프레임은 `_` 인자로 넘기고 키에는 그 내용을 정하는 `content_token`(시나리오
    키)이나 `frame_digest` 를 싣는다.
@@ -5825,8 +5856,34 @@ RQ_MODULE
     상세와 한 칸을 쓴다 — 순서를 바꾸면 말없이 따로 계산한다. HOME 계산을 빌리는 화면은 달 범위도 HOME 과 같은 함수(`past_data.display_month_range`)로 낸다.
 20. **세션끼리 나누는 캐시 칸은 받은 쪽이 고쳐도 다른 세션에 닿지 않게 둔다.** 리비전 스냅샷처럼
     `st.cache_resource` 에 한 벌만 두는 값(개수·수명 `SNAPSHOT_RESOURCE_*`)은 바이트(pickle·JSON)로 두거나, 살아 있는
-    프레임이면 읽기 전용으로 잠그고 부를 때마다 축까지 새로 만든 깊은 사본을 넘긴다(`persistence/cache._private_copy`
-    — `copy(deep=True)` 만으로는 열 이름 배열을 공유한다).
+    프레임이면 읽기 전용으로 잠그고(`frame_sharing.lock_frame`) 프레임 객체 자체는 넘기지 않는다.
+    - **시나리오를 열 때만 잠근 공용 표를 함께 쓴다**(2026-11-17 메모리 보드 q-share). 부트스트랩 · 사이드바 불러오기
+      (HOME 주요 Case 칩 포함) · 목록 열기는 `load_scenario_snapshot_for_activation` 으로 공용 칸의 잠긴 프레임을 표마다
+      겉껍데기 사본(`frame_sharing.shared_view` — 같은 배열, 프레임 · 축 객체만 새로)으로 받는다. 세션 원본은 그 사본을
+      그대로 쥐고(`reference_cache.activate_persisted_reference_tables` 가 표를 잠근다 — 이미 잠긴 표는 그대로, 저장 뒤
+      저장소가 새로 읽은 표도 여기서 잠긴다), 편집본도 잠긴 원본이면 겉껍데기 사본이다(`scenario_state._session_copy`). 저장 뒤 길은 공용 칸을
+      거치지 않는다(저장소가 새로 읽은 한 벌 — 같은 보드). 그 밖의 호출(검사 · 입장 Summary · 파생 시나리오 원본 등)은
+      부를 때마다 축까지 새로 만든 깊은 사본(`load_scenario_snapshot` → `persistence/cache._private_copy` —
+      `copy(deep=True)` 만으로는 열 이름 배열을 공유한다)이다.
+    - **한 벌은 공용 칸이 그 리비전을 쥐고 있는 동안만이다.** 칸(`SNAPSHOT_RESOURCE_*` — 4칸 · 1시간)이 밀리거나 수명이 다하거나
+      쓰기 세대가 오르면(`_clear_snapshot_payloads` — 시나리오 이름 바꾸기 · 보관 · 삭제 등 `clear_scenario_snapshot_cache` 와 공용
+      표시순서 저장) 이미 연 세션은 옛 배열을 쥔 채 남고 그 뒤 여는 세션은 새로 읽은 배열을 받아, 그동안 같은 리비전이 두 벌 이상
+      산다(값은 같다 — 메모리 몫만). 인원 셈(`docs/objectstore_setup.md` 9장)은 한 벌 전제다.
+    - **세션 표의 편집은 표를 통째로 갈아 끼우는 것으로만 한다**(`apply_month_updates` · `apply_table_updates` · 고칠 표는
+      `scenario_table` 의 깊은 사본에서). 세션 원본 · 편집본에 같은 dtype 으로 제자리 쓰면(`df.loc[…] = …` ·
+      `columns.values[i] = …`) 잠긴 배열이 `ValueError`(read-only)를 내고 계산 화면은 「계산을 멈췄습니다」 로 받는다. 그
+      오류는 코드 결함이라 계산 결과 칸에 담지 않는다 — 전체 기간 칸(`simulation_cache._capacity_outcome`)은 기준정보 계약
+      위반만 결과로 담고 read-only 는 다시 올린다(`frame_sharing.is_locked_write_error`, 담으면 프로세스 전역 칸이라 그
+      리비전을 연 모든 세션 · 저장 검사가 기준정보 멈춤으로 본다) —
+      모든 화면 시험(`tests/test_all_pages_render.py`)이 멈춤 글 0 · 공유 유지를, `tests/test_session_table_sharing.py`
+      가 잠김 · 같은 메모리 · 표 교체 · 끔 스위치를 본다.
+    - **세션 표의 크기를 재지 않는다** — `memory_usage(deep=True)` · `info(memory_usage="deep")` · `sys.getsizeof(df)`
+      (pandas `__sizeof__` 가 `memory_usage(deep=True)` 를 부른다)는 잠긴 객체 배열을 읽기만 해도 `ValueError` 다(pandas
+      2.2.3). 앱 코드(`src` · `app_pages` · `app.py`)에 그 호출이 0 인지 같은 시험의 정적 그물이 본다.
+    - **`server.enableExpensiveMemoryStats` 를 켜지 않는다**(기본 꺼짐) — 켜면 `/_stcore/metrics` 가 세션 상태 · 공용 칸의
+      크기를 재다 같은 `ValueError` 로 실패한다(`.streamlit/config.toml` 에 켜 두지 않는지 같은 시험이 본다).
+    - 끄는 스위치는 실행 환경변수 `CAPA_SHARE_SESSION_TABLES=off` 다(`settings.share_session_tables_enabled` — 끄면 세션마다
+      깊은 사본 두 벌로 돌아가고 값은 같다).
 21. **`persistence/models.py` 의 모델 인스턴스(`ScenarioSnapshot`·`GlobalDisplayOrder` 등)를 Streamlit 캐시에 넣지
     않는다** — 코드
     핫리로드 뒤 pickle 클래스 식별자가 달라질 수 있다. 기본형 메타데이터와 DataFrame 을 캐시하고 꺼낼 때 현재 모델로
@@ -6023,7 +6080,7 @@ RQ_MODULE
     값을 넣어 주지 않는다. 세션 키는 모듈 밖에서 만지지 않는다(그물 `tests/test_shared_process.py`). 사용자는 「계속 모니터링하고
     적절치 않으면 다른 구조 · 원복을 검토」 한다고 했다 — 경계를 이 모듈과 `components/process_field.py` 둘에 가두어 걷기 쉽게 둔다.
 39. **입력 점검은 따로 둔 요약 칸 하나로만 캐시한다**(2026-11-11 입력 점검 보드 q6 — 시나리오 관리 › 목록 관리 「점검」). 고른 리비전마다
-    전체 기간 계산을 돌리므로 계산 페이지 · 저장 검사가 함께 쓰는 칸(`get_full_capacity_outcome` 4칸 · 공유 스냅샷 칸
+    전체 기간 계산을 돌리므로 계산 페이지 · 저장 검사가 함께 쓰는 칸(`get_full_capacity_outcome` 8칸 · 공유 스냅샷 칸
     `SNAPSHOT_RESOURCE_*` 4칸)에 들이지 않는다 — 들이면 활성 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시 계산한다.
     `simulation_cache.get_revision_input_check(cache_key, _compute)`(`INPUT_CHECK_MAX_ENTRIES` 16칸)의 키는 (`reference_version_for_revision`,
     `pristine_content_token`) — 저장 리비전 내용은 append-only 라 리비전 하나에 내용 하나다. 몸통 `_compute` 는
@@ -7864,8 +7921,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   갈린다 — 사내 확인 거리), 그동안 모든 화면 · 모든 사용자에게 두 가지가 선다. ① 상태 알림 `GL-09`(알림 단계 · 화면 없음 · 이름 「공지」 —
   짧은 글 `공지 · <글>`, 전문 글 + 「관리자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
   새 공지는 「내용 바뀜」, 거둠 · 끝남 · 재시작 뒤는 「해소」 다(지문 재료는 공지 id, 범위는 늘 같은 값). ② 머리 「공지」 칩(Guide 바로
-  왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 좁은 창 규칙
-  없음(설계 규칙 UI-ACC-02 예외) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 관리자 글을 싣지 않음):
+  왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 900px
+  미만 창에서는 공정 칩 · 합성 샘플 표지처럼 확성기 아이콘만(2026-11-17 공지 확인 보드 q-narrow — 설계 규칙 UI-ACC-02) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 관리자 글을 싣지 않음):
   누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」(보낸 날의 다음 날이면
   「11-18 09:00 까지」) · 닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
   `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
@@ -8568,7 +8625,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   BigDataQuery(8-9 HOME 월 축 블록은 닫을 조건이 서서 걷었다 — 번호는 다시 쓰지 않는다)와
   「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(8-10 센서스 — 기본은 활성·공식버전 대상 리비전, `--census-all-revisions`
   면 전부. 줄마다 근거가 되는 `docs/TODO.md` 결정 번호와 그 가운데 잰 부분을 꼬리표로 단다 — 수는 근거일 뿐이라 0 이어도 결정을
-  닫지 않고 사외가 사용자에게 묻는다. BigDataQuery 가 있어야 답이 나는 것은 넣지 않는다), 기준 정보 편집 표 아홉의 실데이터 크기(8-11
+  닫지 않고 사외가 사용자에게 묻는다. BigDataQuery 가 있어야 답이 나는 것은 넣지 않는다. 같은 블록 표 아래 객체 칸 한 줄(요약 키 `8-10T` —
+  2026-11-17 메모리 보드)은 같은 리비전 묶음의 리비전 표를 `load_frame` 그대로 읽어 객체 칸을 `글자만` · `섞임` · `빈` 으로 세어 글자 공유 R1 의
+  「글자 칸만」 조건을 실데이터로 본다 — 결정의 꼴이 아니라 머리의 `0 아님` · `합` 에 넣지 않고 따로 낸다), 기준 정보 편집 표 아홉의 실데이터 크기(8-11
   `grid` — 같은 리비전 묶음을 화면과 같은 양식 함수로 펴 줄 · 달 · 칸 수와 껍데기 본문 바이트를 큰 표 상한 `reference_grid.CAP_*` 에
   견준다. 상한 · 값 형식 · 분류 칸은 화면 모듈을 부르지 않고 옮겨 두고 시험이 화면과 맞댄다 — 2026-11-03), 남는 경로의 빈 칸으로 대당 Capa 가 멈춘
   리비전의 꼴(8-12 `blank` — 6-3 a 와 같은 저장된 모든 리비전. 빈 칸을 남은 경로 · 빠질 경로만 · 안 붙음으로 가르고 분포 · 원천 형제 · 부하를 센다. 메모리 사본의 빈 칸에 자리값을 넣어 계산을

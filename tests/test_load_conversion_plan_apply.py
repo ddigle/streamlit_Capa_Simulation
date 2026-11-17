@@ -1451,6 +1451,53 @@ def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_databas
     assert _plan_grid_total(app) == pytest.approx(before * 0.5)
 
 
+def test_a_second_apply_retires_the_first_edit_cell_and_no_run_refills_it(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """적용은 새 토큰을 내며 갈아끼워진 편집본 토큰의 전체 기간 칸을
+    걷는다(`scenario_state._next_edit_token`). 적용한 회차는 곧바로 앱 전체를 다시 돌리므로 그 회차
+    · 다음 회차 어디서도 옛 토큰으로 계산을 부르지 않는다 — 불렀다면 걷은 칸이 다시 서 있다. 적용
+    알림 회차의 `ST-04` 셈이 새 토큰 칸을 채우므로 첫 적용 뒤에는 그 칸이 있다(칸이 원래 없어 그냥
+    통과하는 일을 막는다). 칸이 있는지는 몸통을 값싼 대역으로 바꿔 한 번 불러 본다 — 적중하면 몸통이
+    돌지 않는다."""
+    from capa_simulation.services import simulation_cache
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    app = _open_tab(app, PLAN_TAB)
+
+    def apply_half() -> tuple[Any, str]:
+        _paste(app, _clipboard_text(app, scale=0.5))
+        app.button(key="apply_pkg_plan_changes").click().run()
+        assert not list(app.exception)
+        assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in successes(app))
+        scenario = app.session_state["active_scenario"]
+        return scenario["reference_version"], str(scenario["content_token"])
+
+    def cell_is_there(key: tuple[Any, str]) -> bool:
+        ran: list[int] = []
+
+        def probe(*_args: object) -> simulation_cache.CapacityOutcome:
+            ran.append(1)
+            return simulation_cache.CapacityOutcome(None, None, "칸 확인")
+
+        with monkeypatch.context() as patched:
+            patched.setattr(simulation_cache, "full_capacity_outcome", probe)
+            simulation_cache.get_full_capacity_outcome(
+                key, _scenario_tables={}, _reference_tables={}
+            )
+        return not ran
+
+    first = apply_half()
+    assert cell_is_there(first)
+
+    second = apply_half()
+    assert second != first
+    assert cell_is_there(second)
+    assert not cell_is_there(first)
+
+
 APPLIED_ICON = ":material/published_with_changes:"
 
 

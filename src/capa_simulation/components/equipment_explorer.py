@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -242,6 +241,10 @@ def _table(
 
 
 def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> None:
+    # altair(+ jsonschema)는 차트를 그릴 때만 불러온다 — 맨 위에서 부르면 이 화면을 한 번만 열어도
+    # 프로세스가 끝날 때까지 약 20MiB 가 붙는다(합성 표본 샘플 관측, 2026-11-17 메모리 보드).
+    import altair as alt
+
     chart = (
         alt.Chart(frame)
         .mark_bar(cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
@@ -488,6 +491,8 @@ def _availability(
     # 막대 폭은 조회기간의 주 수로 정해진다(실측 17주에 53px — 폭 ≈ 903 / 주 수). 기간은
     # 사용자가 정하므로 반경 등급도 주 수로 고른다 — 한 해를 고르면 막대가 17px 로 가늘어진다.
     corner_radius = tokens.bar_corner_radius(_WEEKLY_BAR_SPAN_PX / max(len(trend), 1))
+    import altair as alt
+
     chart = (
         alt.Chart(long)
         .mark_bar(cornerRadiusTopLeft=corner_radius, cornerRadiusTopRight=corner_radius)
@@ -575,6 +580,8 @@ def _transitions(
     if expression == "표":
         _table(summary)
         return
+    import altair as alt
+
     chart = (
         alt.Chart(summary)
         # 굵기가 넓음 등급이라 반경 8px. 쌓인 막대는 Vega-Lite 가 막대 전체를 잘라 둥글리므로

@@ -1,4 +1,4 @@
-# Purpose: 앱 이름·파일 경로·조회기간 등 공통 설정 상수와 문의처 읽기·운영 DB 자리 판정을 정의한다.
+# Purpose: 공통 설정 상수(이름·경로·기간)와 문의처·메모리 공유 스위치 읽기·운영 DB 자리 판정을 둔다.
 
 import os
 import re
@@ -64,6 +64,33 @@ def app_contact_email(environ: Mapping[str, str] | None = None) -> str:
     env = os.environ if environ is None else environ
     value = env.get(APP_CONTACT_EMAIL_ENV, "").strip()
     return value if _CONTACT_EMAIL_SHAPE.fullmatch(value) else ""
+
+
+# 메모리 공유 스위치 — 기본 켬이고, 값이 `off`(앞뒤 공백 · 대소문자 무시)일 때만 끈다(모듈
+# 뿌리 `CAPA_MODULES_ROOT=off` 와 같은 꼴). 끄면 그 자리가 공유 전 동작으로 돌아갈 뿐 값은
+# 같다 — 탈이 나면 실행 줄 · C-DEP 환경변수 표에서 끄고 앱을 다시 띄운다. 부를 때마다 읽는다.
+# `SHARE_STRINGS_ENV` 는 리비전 표를 DB 에서 읽을 때 같은 글을 한 객체로 모으는 것이다
+# (`_sql_helpers.share_repeated_text`). `SHARE_SESSION_TABLES_ENV` 는 시나리오를 열 때 공용 칸의
+# 잠근 표를 세션끼리 함께 쓰는 것이다(`persistence/cache.load_scenario_snapshot_for_activation` ·
+# AGENTS 5장 20) — 끄면 세션마다 깊은 사본 두 벌로 돌아간다.
+SHARE_STRINGS_ENV = "CAPA_SHARE_STRINGS"
+SHARE_SESSION_TABLES_ENV = "CAPA_SHARE_SESSION_TABLES"
+MEMORY_SHARE_OFF = "off"
+
+
+def _memory_share_enabled(name: str, environ: Mapping[str, str] | None) -> bool:
+    env = os.environ if environ is None else environ
+    return env.get(name, "").strip().lower() != MEMORY_SHARE_OFF
+
+
+def share_strings_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """리비전 표 글자 칸 공유가 켜졌는가 — `SHARE_STRINGS_ENV` 가 `off` 가 아니면 켬이다."""
+    return _memory_share_enabled(SHARE_STRINGS_ENV, environ)
+
+
+def share_session_tables_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """세션 표 공유가 켜졌는가 — `SHARE_SESSION_TABLES_ENV` 가 `off` 가 아니면 켬이다."""
+    return _memory_share_enabled(SHARE_SESSION_TABLES_ENV, environ)
 
 
 def format_month(month: int) -> str:

@@ -134,7 +134,7 @@ from capa_simulation.persistence.cache import (
     clear_global_securement_threshold_cache,
     clear_scenario_snapshot_cache,
     get_scenario_repository,
-    load_scenario_snapshot,
+    load_scenario_snapshot_for_activation,
 )
 from capa_simulation.persistence.models import (
     OfficialReleaseSummary,
@@ -1354,7 +1354,7 @@ def _load_picked_revision(database_path: str, drawn_scenario: str) -> None:
             if drawn_scenario not in {item.scenario_id for item in listed}:
                 _notify(CARD_NOTICE_KEY, "error", ARCHIVE_GONE_MESSAGE)
                 return
-            snapshot = load_scenario_snapshot(database_path, revision_id)
+            snapshot = load_scenario_snapshot_for_activation(database_path, revision_id)
             # 옛 리비전 줄의 누름이 지금 연 시나리오 이름표를 달고 올 수 있다 — 소속으로 다시 본다.
             if snapshot.scenario.scenario_id != drawn_scenario:
                 _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)

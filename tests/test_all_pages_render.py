@@ -1,16 +1,32 @@
-# Purpose: 선언된 모든 페이지가 내장 시드 상태에서 예외 없이 렌더링되는지 검사한다.
+# Purpose: 선언된 모든 페이지가 내장 시드에서 예외 · 계산 멈춤 없이 서고 세션 표를 함께 쓰는지 본다.
 
+import json
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
+from alert_marks import alert_notes, place_errors
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation import settings
+from capa_simulation.frame_sharing import frame_arrays, frame_is_locked
+from capa_simulation.io.reference_cache import SESSION_REFERENCE_TABLES_KEY
 from capa_simulation.navigation import ALL_SPECS
+from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY, EDITABLE_SCENARIO_TABLES
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 개별 페이지 테스트는 화면 구성을 자세히 보지만 모든 페이지를 덮지는 못한다. 여기서는
 # "열리기는 하는가"만 전수로 확인한다. 페이지를 추가하면 자동으로 포함된다.
+#
+# 세션 표 공유(AGENTS 5장 20 — 기본 켬)의 그물이기도 하다. 세션 표는 공용 칸과 배열을 함께 쓰고
+# 잠겨 있어, 어느 화면이 그 표에 제자리로 쓰면 `ValueError`(read-only)가 나고 계산 화면은 그것을
+# 예외가 아니라 「계산 멈춤」 으로 받는다 — 그래서 예외 0 만으로는 못 잡고 멈춤 글 · read-only 글이
+# 화면 어디에도(자리 오류 · 알림 표지) 없는지, 화면을 다 그린 뒤에도 세션 표가 잠긴 채 함께
+# 쓰이는지를 함께 본다.
+STOP_WORDS = ("멈췄습니다", "계산 멈춤", "read-only")
 
 
 def _page_script(page_path: str, database_path: Path, equipment_path: Path) -> str:
@@ -60,6 +76,38 @@ finally:
 """
 
 
+@pytest.fixture(autouse=True)
+def _default_switches(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """바깥 환경의 메모리 공유 스위치가 결과를 뒤집지 않게 지운다(= 기본 켬)."""
+    monkeypatch.delenv(settings.SHARE_STRINGS_ENV, raising=False)
+    monkeypatch.delenv(settings.SHARE_SESSION_TABLES_ENV, raising=False)
+    yield
+
+
+def _stopped_texts(app: AppTest) -> list[str]:
+    """화면에 선 멈춤 · read-only 글 — 자리 오류(`st.error` · 「데이터 Error」 마크)와 알림 표지."""
+    texts = [
+        *place_errors(app),
+        *(json.dumps(note, ensure_ascii=False) for note in alert_notes(app)),
+    ]
+    return [text for text in texts if any(word in text for word in STOP_WORDS)]
+
+
+def _assert_session_tables_shared(app: AppTest) -> None:
+    """화면을 다 그린 뒤에도 편집본은 세션 원본과 같은 잠긴 배열을 함께 쓴다."""
+    assert ACTIVE_SCENARIO_KEY in app.session_state, "부트스트랩이 시나리오를 올리지 않았다"
+    reference = app.session_state[SESSION_REFERENCE_TABLES_KEY]
+    active: dict[str, Any] = app.session_state[ACTIVE_SCENARIO_KEY]
+    for name in EDITABLE_SCENARIO_TABLES:
+        table, original = active["tables"][name], reference[name]
+        assert frame_is_locked(original), name
+        assert frame_is_locked(table), name
+        assert all(
+            np.shares_memory(a, b)
+            for a, b in zip(frame_arrays(table), frame_arrays(original), strict=True)
+        ), name
+
+
 @pytest.fixture(scope="module")
 def seeded_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     """내장 시드 부트스트랩은 멱등이므로 모듈 안에서 DuckDB 두 개를 재사용한다."""
@@ -79,3 +127,5 @@ def test_page_renders_without_exceptions(
     ).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
+    assert not _stopped_texts(app)
+    _assert_session_tables_shared(app)
