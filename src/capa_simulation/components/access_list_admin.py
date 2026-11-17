@@ -484,7 +484,7 @@ def _render_remove_picker(document: ListDocument, env_admins: frozenset[str]) ->
 
 
 def recent_changes_table(document: ListDocument, *, now: int) -> pd.DataFrame:
-    """최근 `NEW_REGISTRATION_DAYS` 일의 등록(스스로 등록 · 관리자가 넣음) · 빼기 — 새것 먼저.
+    """최근 `NEW_REGISTRATION_DAYS` 일의 등록(스스로 등록 · 개발자가 넣음) · 빼기 — 새것 먼저.
 
     칸은 시각 | 계정 | 한 일이다.
 

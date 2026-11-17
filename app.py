@@ -344,13 +344,13 @@ with pinned_connections(DUCKDB_PATH):
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면 화면이 한
         # 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본 메시지의 한글이 깨져
         # 나온다. 사용자가 원인을 알 방법이 없어 앱 안 멈춤 판으로 바꾼다(`components/boot_stop.py`
-        # — 쉬운 경고 한 줄 · 「다시 시도」 · 문의 · 참고 줄, 경로 · 원문은 접힌 「관리자용 진단」).
+        # — 쉬운 경고 한 줄 · 「다시 시도」 · 문의 · 참고 줄, 경로 · 원문은 접힌 「개발자용 진단」).
         # 머리 띠도 이 화면에 세운다 — 아래 `st.stop()` 뒤의 자리에는 닿지 않는다. 세션만 읽으므로
         # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 두 줄(메인
         # 라벨·부제)이다.
         render_app_header()
         render_boot_stop(exc)
-        # 관리자가 판의 참고 줄과 맞출 자리 — 통합인증 점검의 최근 사건 고리에 같은 갈래가 이어지는
+        # 개발자가 판의 참고 줄과 맞출 자리 — 통합인증 점검의 최근 사건 고리에 같은 갈래가 이어지는
         # 동안 한 줄(C-DEP 에는 서버 로그 창구가 없다).
         note_boot_failure(classify_boot_failure(exc).code, kind_name(exc))
         st.stop()
@@ -516,7 +516,7 @@ with pinned_connections(DUCKDB_PATH):
         st.session_state[ADMIN_BOX_KEY] = True
     with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
         with st.container(key="admin_area_navigation"):
-            # 운영 서버의 관리자가 아니면 Admin Area 메뉴가 없다(`sso_identity.admin_area_locked` —
+            # 운영 서버의 개발자가 아니면 Admin Area 메뉴가 없다(`sso_identity.admin_area_locked` —
             # 주소로 열어도 그 화면이 멈춘다). 개발 · WebIDE · 사내 PC 는 지금처럼 선다.
             if not admin_area_locked():
                 st.page_link(pages.admin_area, width="stretch")
@@ -531,7 +531,7 @@ with pinned_connections(DUCKDB_PATH):
     # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
     # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다. 통합인증이 켜진 서버는 셋째 줄에
     # 「이름 · 부서 · 로그아웃」 이 붙는다(위에서 검증한 신원 — 꺼짐이면 두 줄 그대로). 카드 뒤에
-    # 관리자 알림 첫 묶음을 낸다 — 접속 명단(`AD-08` · `AD-09` · 새 스스로 등록 `AD-19`, S3 명단
+    # 개발자 알림 첫 묶음을 낸다 — 접속 명단(`AD-08` · `AD-09` · 새 스스로 등록 `AD-19`, S3 명단
     # 서버) → 감사 기록(`AD-12` · `AD-13`) → 로그인 갱신 거절(`AD-21`, 둘 다 통합인증 켜진 서버).
     # 아래 알림 칸 뒤의 `AD-01` → 토큰 → `AD-22` 보다 앞이다.
     render_app_credits(sso_credit_line(signed_in))
@@ -629,7 +629,7 @@ with pinned_connections(DUCKDB_PATH):
         canon=not_canonical_code(),
         # 공식버전 없음 `SC-01` 의 해소 — 위 요약이 이 회차에 확인한 세션 값이다(DB 를 읽지 않는다).
         official_known=latest_official_revision() is not None,
-        # 관리자가 보낸 공지(프로세스 메모리 — 끝 시각은 여기서 읽을 때 본다). 회차마다 싣고 공지가
+        # 개발자가 보낸 공지(프로세스 메모리 — 끝 시각은 여기서 읽을 때 본다). 회차마다 싣고 공지가
         # 없어도 상태 알림 `GL-09` 의 해소 표지가 간다 — 머리 공지 칩도 이 값으로 선다. 판은 공지가
         # 바뀔 때만 올라 data 가 회차마다 같다(이벤트 칸을 쓰지 않는다 — 요소 순번 그대로).
         notice=notice_board.payload(),
@@ -659,14 +659,14 @@ with pinned_connections(DUCKDB_PATH):
     # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
     # 시험)는 아무것도 쓰지 않는다.
     render_object_sync_alerts()
-    # 서버 시작 점검 관리자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
+    # 서버 시작 점검 개발자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
     # Area). 결과 파일도 CD 전용 환경변수도 없는 프로세스는 아무것도 쓰지 않는다.
     render_start_check_alert()
-    # BigDataQuery 토큰 관리자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 로그인
+    # BigDataQuery 토큰 개발자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 로그인
     # 멈춤(`AD-23`) · 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`). 시작 점검 결과 파일이 없는
     # 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 네 자리다.
     render_token_alert()
-    # 코어 화면 오류 관리자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
+    # 코어 화면 오류 개발자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
     # 시작 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고, 그 밖은 아무것도 쓰지 않는다.
     # 운영인데 통합인증이 꺼짐(`AD-02`)은 이 차례 밖이다 — Admin Area 가 잠금 판정 앞에서 낸다.
     render_page_failure_alert()
@@ -677,7 +677,7 @@ with pinned_connections(DUCKDB_PATH):
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
     # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림). 코어
-    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 관리자
+    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 개발자
     # 알림 `AD-22`). 처리한 실패는 카드 뒤 `st.stop()` 으로 아래 멈춤 길을 탄다 — 끝까지 돈 회차로
     # 끝나면 Streamlit 이 오류 자리 아래 위젯의 미저장 값을 지운다. `st.stop()`·`st.rerun()` 은
     # 지금처럼 지나간다.

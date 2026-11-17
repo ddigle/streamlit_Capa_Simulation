@@ -10,19 +10,19 @@
 순번이 그대로다. 값은 일꾼의 메모리 사본만 읽어 디스크 · 네트워크를 쓰지 않고, 주소 · 버킷 · 키를
 싣지 않아 리뷰 압축본에 그대로 옮길 수 있다(갈래 낱말 · 수 · 시각뿐).
 
-「지금 올리기」 는 통합인증이 켜진 서버의 관리자 회차에만 있다(`access_store.is_admin`). 콜백은 그
+「지금 올리기」 는 통합인증이 켜진 서버의 개발자 회차에만 있다(`access_store.is_admin`). 콜백은 그
 회차 쿠키의 신원을 다시 보고(접속 명단과 같은 꼴) 일꾼에 요청만 넣고 바로 돌아온다 — 올리는 시간을
 화면이 기다리지 않는다.
 
 상태 알림은 `app.py` 가 `GL-02` 곁 한 자리에서 부른다(`render_object_sync_alerts`). 프래그먼트 ·
-팝업 안에서 부르지 않는다. 관리자 몫 `SY-02` · `SY-03` 줄은 이 펼침을 대상으로 들고 가 다른
+팝업 안에서 부르지 않는다. 개발자 몫 `SY-02` · `SY-03` 줄은 이 펼침을 대상으로 들고 가 다른
 화면에서 눌려도 펼침까지 연다(`open_sync_panel` — 알림 칸의 받는 쪽 `SYNC_TARGET_KIND`, 설계 규칙
 UI-NAV-01).
 
-**누구나 읽는 짧은 글 · 관리자 몫 전문**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드
+**누구나 읽는 짧은 글 · 개발자 몫 전문**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드
 p1-not-canonical). 짧은 글은 누구나 읽는 꼴이고, 일반 사용자가 할 수 없는 지시(C-DEP 환경변수 칸 ·
-CI/CD · 설정 파일)는 관리자 몫 전문에만 싣는다(`admin_view.developer_notes_visible` — 운영 아닌 꺼진
-서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 관리자 몫에만
+CI/CD · 설정 파일)는 개발자 몫 전문에만 싣는다(`admin_view.developer_notes_visible` — 운영 아닌 꺼진
+서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 개발자 몫에만
 세운다 — 정본이 아닌 것이 확인되면 `SY-05` 가 선다. 정본이 아닌 데이터로 뜬 서버(`SY-05` ·
 `SY-01`)는 머리 띠에 상시 표지 「정본 아님」 이 선다(`not_canonical_code` — 알림 칸이 그린다, 누르면
 Alarm 의 그 줄). 저장은 막지 않는다(2026-11-07 결정 그대로).
@@ -120,7 +120,7 @@ def current_health() -> tuple[WorkerStatus | None, SyncHealth]:
 
 
 def sync_panel_target() -> alerts.GotoTarget:
-    """관리자 몫 동기화 알림이 들고 가는 대상 — 받는 쪽이 이 펼침을 연다(나머지 칸은 쓰지
+    """개발자 몫 동기화 알림이 들고 가는 대상 — 받는 쪽이 이 펼침을 연다(나머지 칸은 쓰지
     않는다)."""
     return alerts.GotoTarget(kind=SYNC_TARGET_KIND, scenario="-", revision="-")
 
@@ -148,12 +148,12 @@ def not_canonical_code() -> str | None:
     return None
 
 
-# 일꾼이 서지 않은 서버의 관리자 몫 전문 끝 한 줄(카드 p2-sync).
+# 일꾼이 서지 않은 서버의 개발자 몫 전문 끝 한 줄(카드 p2-sync).
 WORKER_ABSENT_LINE: Final = "일꾼이 돌지 않음 — CI/CD 를 누르면 이 서버의 저장은 사라짐."
 
 
 def _overdue_full(overdue: str, *, admin: bool) -> str:
-    """`SY-02` 전문 — 관리자 몫은 갈래 · 할 일 · (일꾼이 없으면) 그 한 줄, 아니면 누구나 꼴."""
+    """`SY-02` 전문 — 개발자 몫은 갈래 · 할 일 · (일꾼이 없으면) 그 한 줄, 아니면 누구나 꼴."""
     if not admin:
         return (
             "저장이 정본에 올라가지 못했습니다 — 이대로 배포하면 그 저장은 사라집니다. 개발자에게 "
@@ -175,8 +175,8 @@ def render_object_sync_alerts() -> None:
     """동기화 상태 알림 여섯. `app.py` 가 회차마다 조건 없이 부른다.
 
     알릴 일이 있을 수 없는 프로세스(`sync_alerts_possible` 이 거짓 — 프로세스에 한 번 정한 값)에서는
-    표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다. 관리자 몫 판정은 한 번 본다 —
-    관리자가 아닌 회차에도 같은 수의 표지를 쓴다(조건만 거짓).
+    표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다. 개발자 몫 판정은 한 번 본다 —
+    개발자가 아닌 회차에도 같은 수의 표지를 쓴다(조건만 거짓).
     """
     if not sync_boot.sync_alerts_possible():
         return
@@ -204,7 +204,7 @@ def render_object_sync_alerts() -> None:
     )
     managed = sync_boot.is_managed()
     health = current_health()[1] if managed else None
-    # 관리자 몫 줄의 「그 화면으로」 — Admin 「DB 동기화」 펼침까지(줄이 대상을 들고 간다). 관리자가
+    # 개발자 몫 줄의 「그 화면으로」 — Admin 「DB 동기화」 펼침까지(줄이 대상을 들고 간다). 개발자가
     # 아닌 회차는 그 화면이 없을 수 있어 달지 않는다.
     to_panel = (tab_label(ADMIN_AREA), ADMIN_AREA.href) if admin else None
     panel_target = sync_panel_target() if admin else None
@@ -291,8 +291,8 @@ def render_object_sync_alerts() -> None:
             )
         ),
     )
-    # 일반 사용자는 이 알림으로 할 일이 없다 — 관리자 몫에만 선다(정본이 아닌 것이 확인되면
-    # `SY-05`). 관리자가 아닌 회차의 해소 표지에는 글을 싣지 않는다(빈 CD 칸 이름이 실리지 않게).
+    # 일반 사용자는 이 알림으로 할 일이 없다 — 개발자 몫에만 선다(정본이 아닌 것이 확인되면
+    # `SY-05`). 개발자가 아닌 회차의 해소 표지에는 글을 싣지 않는다(빈 CD 칸 이름이 실리지 않게).
     unchecked = " · ".join(sync_boot.head_unchecked())
     unchecked_shown = bool(unchecked) and admin
     alerts.state(

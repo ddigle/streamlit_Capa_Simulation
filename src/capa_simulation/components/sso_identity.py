@@ -224,7 +224,7 @@ def _render_stop_chrome() -> None:
 
 
 def no_gate_diagnostic_lines(cfg: SsoConfig) -> list[str]:
-    """문지기 없이 뜬 앱의 관리자용 진단 줄(마크다운) — 까닭 · 실행 명령, 설정 문제(이름 — 까닭),
+    """문지기 없이 뜬 앱의 개발자용 진단 줄(마크다운) — 까닭 · 실행 명령, 설정 문제(이름 — 까닭),
     안내 문서. 값은 싣지 않는다."""
     lines = [NO_GATE_DIAGNOSTIC]
     if cfg.problems:
@@ -238,8 +238,8 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
     """문지기 없이 뜬 앱 — 앱 안 멈춤 판(경고 한 줄 · 문의 줄 · 참고 줄 · 접힌 진단). 다시 열어도
     같아 주 단추가 없다 — 운영자가 진입 파일로 다시 띄워야 풀린다.
 
-    접힌 진단(실행 명령 · 설정 문제 이름 · 안내 문서)은 관리자 몫에만 선다
-    (`stop_panel.admin_fold_visible`) — 앱 안 판의 「관리자용 진단」 은 앱 시작 실패 판 · 코어 화면
+    접힌 진단(실행 명령 · 설정 문제 이름 · 안내 문서)은 개발자 몫에만 선다
+    (`stop_panel.admin_fold_visible`) — 앱 안 판의 「개발자용 진단」 은 앱 시작 실패 판 · 코어 화면
     오류 카드와 한 판정이다. 다른 사람에게는 참고 줄의 사유 낱말(`NO_GATE_REFERENCE`)만이다.
     """
     _render_stop_chrome()
@@ -277,7 +277,7 @@ def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     단추는 까닭으로 가른다(「다시 로그인」 띠와 같은 낱말 — `gate.ended_reason`): 명단에서 빠짐은
     「접속 권한 신청」, 명단 못 읽음은 끊긴 구름 아이콘 + 「다시 로그인」, 그 밖은 「다시 로그인」.
     셋 다 같은 로그인 경로다. 사이드바 카드가 서지 않아 문의처(문의 메일 · 접속 요청 창구 글)는 단추
-    아래 줄로 싣는다. 접힌 진단은 없다 — 이 회차에는 검증된 신원이 없어 관리자 몫이 서지 않는다.
+    아래 줄로 싣는다. 접힌 진단은 없다 — 이 회차에는 검증된 신원이 없어 개발자 몫이 서지 않는다.
     """
     _render_stop_chrome()
     reason = ended_reason(problem, cfg)

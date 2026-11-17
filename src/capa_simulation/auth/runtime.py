@@ -67,7 +67,7 @@ SELF_REGISTER_FAILED_EVENT = "access_self_register_failed"
 # 저장소가 막힌 동안 한 사람의 되풀이가 입출력 잠금을 잡고 감사 줄을 쌓지 않게.
 REGISTER_COOLDOWN = 60
 # 앱 시작 실패(`components/boot_stop.py` — 부트스트랩이 데이터를 열지 못한 회차). C-DEP 에는 서버
-# 로그 창구가 없어 사람이 불러 준 참고 줄(「참고 db_locked · 18:27」)을 관리자가 맞출 자리로 고리에
+# 로그 창구가 없어 사람이 불러 준 참고 줄(「참고 db_locked · 18:27」)을 개발자가 맞출 자리로 고리에
 # 한 줄 남긴다. 같은 갈래가 이어지면 처음 한 번만이다 — 회차 · 「다시 시도」 · 다른 사람의 새 탭마다
 # 쌓이면 다른 사건을 밀어낸다. 부트스트랩이 한 번 성공하면 이어짐이 끊긴다(`note_boot_success`).
 BOOT_FAIL_EVENT = "boot_fail"
@@ -464,7 +464,7 @@ def current_access(cfg: SsoConfig) -> AccessList:
     """지금 접속 명단 한 벌 — 판정 자리가 모두 이것을 본다(네트워크 없음).
 
     S3 명단이 꺼져 있으면 설정의 환경변수 몫 그대로고, 켜져 있으면 마지막으로 잘 읽은 합성 명단이다.
-    아직 못 읽었으면 환경변수 관리자뿐이다(설정이 S3 가 켜진 동안 사용자 목록을 쓰지 않는다).
+    아직 못 읽었으면 환경변수 개발자뿐이다(설정이 S3 가 켜진 동안 사용자 목록을 쓰지 않는다).
     """
     with _LOCK:
         source = _STATE.access_source

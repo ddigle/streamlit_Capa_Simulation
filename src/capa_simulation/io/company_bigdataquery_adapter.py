@@ -554,7 +554,7 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     return answer
 
 
-# 이 프로세스의 마지막 조회가 토큰 갈래로 실패했나 — 관리자 상태 알림(`AD-10`)이 회차마다 읽는다.
+# 이 프로세스의 마지막 조회가 토큰 갈래로 실패했나 — 개발자 상태 알림(`AD-10`)이 회차마다 읽는다.
 # 토큰 실패에 세우고 조회 성공에 내린다(다른 실패는 그대로 둔다 — 토큰이 살아났는지 모른다). 예약
 # 스레드도 조회하므로 Streamlit 은 부르지 않고 값만 둔다.
 _TOKEN_FAILURE_LOCK: Final = threading.Lock()
@@ -589,7 +589,7 @@ def is_login_token_failure(error: BaseException) -> bool:
     """서버 시작 점검 토큰 줄 안내를 덧붙일 실패인가 — 로그인 토큰이 없거나(`TokenNotFoundException`
     꼴) 무효 · 만료인 패키지 예외로 보이는가. 종류 이름과 문구로 가른 추정이다. 갈래 「토큰」
     (`classify_query_failure` — `_token_clue`)이면 늘 참이고, 안내는 그보다 넓게 종류 이름의 token ·
-    토큰 자리 문구(`.credential`)에도 붙는다 — 안내는 덧붙일 뿐 다시 하기 · 관리자 알림을 바꾸지
+    토큰 자리 문구(`.credential`)에도 붙는다 — 안내는 덧붙일 뿐 다시 하기 · 개발자 알림을 바꾸지
     않는다."""
     chain = _failure_chain(error)
     if _token_clue(chain) is not None:
@@ -601,7 +601,7 @@ def is_login_token_failure(error: BaseException) -> bool:
 
 
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
-# 「토큰」 은 다시 해도 같다 — 토큰을 새로 받아야 풀린다(C-DEP 는 관리자 일, WebIDE 는 다시 로그인).
+# 「토큰」 은 다시 해도 같다 — 토큰을 새로 받아야 풀린다(C-DEP 는 개발자 일, WebIDE 는 다시 로그인).
 QUERY_FAILURE_TOKEN: Final = "토큰"
 # 「서버 혼잡」 은 DB 서버의 대기열이 가득 차 조회를 받지 않은 것이다(Impala `queue full` — 토큰과
 # 무관). 잠시 뒤 다시 하면 풀리지만 앱은 스스로 다시 묻지 않는다 — 안내만 한다.
@@ -615,7 +615,7 @@ QUERY_FAILURE_OTHER: Final = "그 밖"
 # (`LONG_FAILURE_SECONDS`).
 _QUERY_TEXT_WORDS: Final[tuple[str, ...]] = ("syntax", "parse", "analysis", "semantic")
 # 갈래 「토큰」 을 정하는 분명한 근거만 — 사내 실패 문구를 아직 모르니 넓히지 않는다(갈래가 서면
-# 다시 묻지 않고 관리자 알림이 선다). 종류 이름(소문자 · 밑줄 뺌)은 둘로 본다. 앞 셋은 문법 낱말보다
+# 다시 묻지 않고 개발자 알림이 선다). 종류 이름(소문자 · 밑줄 뺌)은 둘로 본다. 앞 셋은 문법 낱말보다
 # 먼저 본다 — 패키지의 토큰 예외(`TokenNotFoundException`, `docs/bigdataquery_webide_setup.md`
 # 1단계)가 문구에 조회문을 실어 와도 토큰이다. 「invalidtoken」 은 SQL 구문 분석기의 종류 이름에도
 # 있을 수 있어 문구 낱말과 같이 문법 낱말이 함께 있으면 SQL 로 둔다. 「token」 하나는 보지 않는다
@@ -707,7 +707,7 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 # `not found` · `does not exist` 도 여기 든다. 잰 가장 긴 성공(366일 목록 157초)의 두 배쯤이다.
 LONG_FAILURE_SECONDS: Final = 300.0
 LONG_FAILURE_CLUE: Final = "오래 걸림"
-# 토큰 실패의 끝 절은 자리마다 다르다 — 서버 시작 기록이 있는 C-DEP 는 토큰을 관리자가 넣고, 그
+# 토큰 실패의 끝 절은 자리마다 다르다 — 서버 시작 기록이 있는 C-DEP 는 토큰을 개발자가 넣고, 그
 # 기록이 없는 WebIDE · 사내 PC 는 사용자가 BigDataQuery 로그인을 다시 해 토큰을 새로 받는다
 # (`token_advice`).
 TOKEN_ADVICE_SERVER: Final = (
@@ -737,7 +737,7 @@ _ORIGINAL_TEXT_LIMIT: Final = 300
 
 def token_advice() -> str:
     """토큰 실패 안내의 끝 절 — 서버 시작 기록(`start_check_hint` 가 그 단계 단락을 내는 자리 —
-    결과 파일이 있거나 CD 전용 환경변수가 들어온 C-DEP)이 있으면 관리자에게, 없으면(WebIDE ·
+    결과 파일이 있거나 CD 전용 환경변수가 들어온 C-DEP)이 있으면 개발자에게, 없으면(WebIDE ·
     사내 PC) BigDataQuery 로그인을 다시."""
     return TOKEN_ADVICE_LOCAL if start_check_hint(STEP_TOKEN) is None else TOKEN_ADVICE_SERVER
 

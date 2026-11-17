@@ -1,18 +1,18 @@
-# Purpose: S3 접속 명단 파일을 읽어 메모리 한 벌로 올리고 관리자의 고침을 S3 저장 뒤 반영한다.
+# Purpose: S3 접속 명단 파일을 읽어 메모리 한 벌로 올리고 개발자의 고침을 S3 저장 뒤 반영한다.
 
 """S3 명단 — 사람을 넣고 뺄 때 재시작하지 않게.
 
 흐름은 셋이다.
 
 - **앱 시작** — 진입 파일이 한 번 받아 메모리에 올린다(`read_at_start`). 못 읽어도 앱은 뜨고
-  관리자만 통과한다(열림으로 떨어지지 않는다).
+  개발자만 통과한다(열림으로 떨어지지 않는다).
 - **접속 판정** — 메모리의 한 벌(`runtime.current_access`)로만 한다. 판정이 S3 에 가지 않으므로
   잘 읽어 둔 뒤에는 S3 가 막혀도 판정이 이어진다.
 - **명단 수정** — Admin 화면 → S3 PUT 성공 → 메모리 교체(`save_changes` — 넣기 · 빼기 · 등급
   바꾸기). 재시작이 없다. 실패면 메모리는 그대로다.
-- **스스로 등록** — 거절 화면의 「접속 권한 신청」(`web.register` → 스레드 풀 →
-  `register_self`). 신원은 콜백이 심은 거절 표에서만 오고, 늘 일반 등급이며, 이미 있으면 쓰지
-  않는다(등급 그대로).
+- **스스로 등록** — 거절 화면의 「접속 권한 신청」(`web.register` → 스레드 풀 → `register_self`).
+  신원은 콜백이 심은 거절 표에서만 오고, 늘 열람(명단 값 `user`)이며, 이미 있으면 쓰지 않는다(등급
+  그대로).
 
 파일은 작은 JSON 객체 하나다 — 형식 판(`format`) · 고칠 때마다 느는 판 번호(`revision`) · 사용자
 항목 · 고친 기록 마지막 200건. **받아 둔 파일이 없을 때** 키가 없으면(404 `NoSuchKey`) 첫 판이다 —
@@ -26,39 +26,39 @@
 바뀐다. 그래서 **파일이 있으면 표지 객체(`names.ACCESS_SEEDED_OBJECT`)도 있게 맞춘다** — 파일을 처음
 만든 저장이 쓰고, 파일을 받은 읽기가 표지가 없으면 쓴다(답 끊긴 첫 저장 · 표지만 실패한 저장 · 앞
 코드가 만든 파일 · 옮긴 버킷). 표지가 있는데 파일이 없으면 받아 둔 파일이 없어도, 환경변수가 비어
-있어도 `KIND_FILE_GONE` 이다(관리자만). 표지는 명단 다음에 쓴다 — 표지가 먼저 들어가고 명단이
+있어도 `KIND_FILE_GONE` 이다(개발자만). 표지는 명단 다음에 쓴다 — 표지가 먼저 들어가고 명단이
 실패하면 첫 판이 사라져 사용자가 모두 막힌다. 표지를 못 써도 저장 · 읽기의 실패가 아니다 — 다음
 저장 · 다음 읽기가 다시 쓴다. 표지는 GET 으로 본다 — HEAD 는 본문이 없어 코드 없는 404 를 없음으로
 읽는다.
 
 깨졌거나 형식 판을 모르면 「못 읽음」 이다. 항목은 `access.entry_key` 꼴 판정을 그대로 거치고 읽지
-못한 항목은 개수만 센다. 등급 칸은 `user` · `admin` 둘이고 그 밖은 일반으로 읽는다
-(`demoted`). 이름 · 부서 · 든 길(`via`) 칸은 형식 판 1 에 더한 칸이다 — 판을 올리지 않아 옛
-코드는 그 칸을 버리고 읽고(관리자 등급은 일반으로), 이 코드는 그 칸이 없는 옛 파일을 빈 이름 ·
-부서 · 관리자가 넣음으로 읽는다.
+못한 항목은 개수만 센다. 등급 칸은 `user`(개발자 아님) · `admin`(개발자) 둘이고 그 밖은 `user` 로
+읽는다(`demoted`). 이름 · 부서 · 든 길(`via`) 칸은 형식 판 1 에 더한 칸이다 — 판을 올리지 않아 옛
+코드는 그 칸을 버리고 읽고(개발자 등급은 옛 「일반」 으로), 이 코드는 그 칸이 없는 옛 파일을 빈 이름
+· 부서 · 개발자가 넣음으로 읽는다.
 
 **새 배경 스레드를 세우지 않는다**(AGENTS 9장). 못 읽은 채로 뜬 프로세스는 콜백이 거절하기 직전
 (`web.callback` → 스레드 풀 → `retry_unread`, 60초에 한 번까지)이나 Admin 「다시 읽기」 가 다시
 읽는다. **이벤트 루프에서 네트워크를 부르지 않는다** — 콜백은 스레드 풀로 넘긴다.
 
 입출력은 프로세스 잠금 하나로 줄 세운다(같은 프로세스의 동시 저장 · 등록 · 읽기 — replica 1
-전제). 관리자의 저장은 직전에 받을 때의 ETag(주지 않는 저장소면 판 번호)와 지금을 견줘 다르면
+전제). 개발자의 저장은 직전에 받을 때의 ETag(주지 않는 저장소면 판 번호)와 지금을 견줘 다르면
 덮지 않고 「다시 읽기」 로 돌려보낸다(그 화면에 「다시 읽기」 가 있다). 스스로 등록은 누를 「다시
 읽기」 가 없어 쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다(합침) — 그 사이 다른
 쓰기가 들인 사람 · 등급을 잃지 않는다. 받은 판이 메모리 판보다 오래되면 얹지 않고 실패다(뺀 사람 ·
-관리자 등급이 되살아나지 않게). 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은
+개발자 등급이 되살아나지 않게). 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은
 능력이다(`io/s3_small`). 그래서 같은 버킷을 쓰는 다른 프로세스와의 받기 → 쓰기 틈은 replica 1
 전제로 받아들인다.
 
-관리자 쓰기 함수(`save_changes` · `reread`)는 화면과 별개로 신원 · 관리자를 다시 본다 — 위젯
-콜백은 그 회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 등급 규칙도
-여기서 본다 — 환경변수 관리자는 일반으로 못 내리고(`EnvAdminError`), 자기 자신은 내리거나 지우지
-못한다(`SelfChangeError`). 이 벽은 화면의 실수를
-막는 것이고 같은 프로세스의 코드를 막지 못한다 — 모듈 코드가 의도를 가지면 이 함수와 키에 닿는다
-(`docs/sso_setup.md` 4장, 방어선은 앱 관리자의 PR 점검). 명단의 값(넣고 뺀 사람의 loginid)은 사건 ·
-로그 · repr 에 싣지 않고 개수만 싣는다. 저지른 관리자의 계정만 다른 사건과 같은 규칙으로 싣는다 —
-서버 로그에는 전체 값(`login_ok` 와 같다), Admin 표에는 앞 두 글자. 스스로 등록은 저지른 사람이 곧
-대상이라 사건 · 로그에 계정을 싣지 않는다 — 계정은 감사 기록(`user_self_registered`)에만 있다.
+개발자 쓰기 함수(`save_changes` · `reread`)는 화면과 별개로 신원 · 개발자를 다시 본다 — 위젯 콜백은
+그 회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 등급 규칙도 여기서 본다
+— 환경변수 개발자는 개발자 아래로 못 내리고(`EnvAdminError`), 자기 자신은 내리거나 지우지
+못한다(`SelfChangeError`). 이 벽은 화면의 실수를 막는 것이고 같은 프로세스의 코드를 막지 못한다 —
+모듈 코드가 의도를 가지면 이 함수와 키에 닿는다(`docs/sso_setup.md` 4장, 방어선은 앱
+관리자(개발자)의 PR 점검). 명단의 값(넣고 뺀 사람의 loginid)은 사건 · 로그 · repr 에 싣지 않고
+개수만 싣는다. 저지른 개발자의 계정만 다른 사건과 같은 규칙으로 싣는다 — 서버 로그에는 전체
+값(`login_ok` 와 같다), Admin 표에는 앞 두 글자. 스스로 등록은 저지른 사람이 곧 대상이라 사건 ·
+로그에 계정을 싣지 않는다 — 계정은 감사 기록(`user_self_registered`)에만 있다.
 그 실패는 명단 밖 사람이 되풀이해 남길 수 있어 사건 고리에 두지 않고 누계만 센다
 (`runtime.SELF_REGISTER_FAILED_EVENT`). 스스로 등록에 딸린 다시 쓰기의 일(못 읽은 항목이 빠짐 ·
 첫 판 심기)은 그 사람이 아니라 자동 행위로 감사에 남긴다.
@@ -133,7 +133,7 @@ _IO_LOCK = threading.Lock()
 
 
 class NotAdminError(PermissionError):
-    """쓰기를 부른 사람이 지금 관리자가 아니다(또는 세션이 끝났다)."""
+    """쓰기를 부른 사람이 지금 개발자가 아니다(또는 세션이 끝났다)."""
 
 
 class StoreUnreadError(RuntimeError):
@@ -149,11 +149,11 @@ class SaveUnconfirmedError(S3Failure):
 
 
 class SelfChangeError(PermissionError):
-    """자기 자신의 등급을 일반으로 내리거나 자기를 명단에서 빼려 했다 — 쓰지 않는다."""
+    """자기 자신을 개발자 아래로 내리거나 자기를 명단에서 빼려 했다 — 쓰지 않는다."""
 
 
 class EnvAdminError(PermissionError):
-    """환경변수 관리자를 일반으로 내리려 했다 — 늘 관리자라 화면에서 빼지 못한다."""
+    """환경변수 개발자를 개발자 아래로 내리려 했다 — 늘 개발자라 화면에서 빼지 못한다."""
 
 
 class RegisterRefusedError(ValueError):
@@ -187,7 +187,7 @@ def profile_text(value: object) -> str:
 
 
 def _parse_entries(raw: object) -> tuple[tuple[ListEntry, ...], int, int]:
-    """파일의 사용자 칸 → (항목들, 읽지 못한 수, 등급을 일반으로 읽은 수)."""
+    """파일의 사용자 칸 → (항목들, 읽지 못한 수, 모르는 등급 값이라 `user` 로 읽은 수)."""
     if not isinstance(raw, list):
         raise S3Failure(KIND_CORRUPT)
     entries: dict[str, ListEntry] = {}
@@ -300,7 +300,7 @@ def is_unread(cfg: SsoConfig) -> bool:
     return source is None or source.document is None
 
 
-# 다시 해도 같은 까닭 — 관리자가 설정 · 파일 · 권한을 고쳐야 풀린다(거절 화면이 「1분 뒤」 를 말하지
+# 다시 해도 같은 까닭 — 개발자가 설정 · 파일 · 권한을 고쳐야 풀린다(거절 화면이 「1분 뒤」 를 말하지
 # 않는다). 그 밖(닿지 못함 · 시간 초과 · 인증서 · 5xx)은 잠시 뒤 풀릴 수 있다.
 _ADMIN_FIX_KINDS: Final = frozenset(
     {
@@ -323,7 +323,7 @@ def needs_admin_fix(problem: SourceProblem) -> bool:
 
 
 def unread_needs_admin(cfg: SsoConfig) -> bool:
-    """못 읽은 까닭이 관리자가 고쳐야 풀리는 것인가(거절 화면 「점검 중」 의 두 갈래). 값 없음."""
+    """못 읽은 까닭이 개발자가 고쳐야 풀리는 것인가(거절 화면 「점검 중」 의 두 갈래). 값 없음."""
     if not is_unread(cfg):
         return False
     source = runtime.access_source()
@@ -480,17 +480,18 @@ def retry_unread(cfg: SsoConfig, *, now: int | None = None) -> None:
 
 
 def is_admin(cfg: SsoConfig, loginid: str) -> bool:
-    """지금 관리자인가 — 합성 명단의 등급으로 묻는다(환경변수 관리자 ∪ 명단 파일의 관리자 등급)."""
+    """지금 개발자인가 — 합성 명단의 등급으로 묻는다(환경변수 개발자 ∪ 명단 파일의 개발자 등급).
+    이름의 `admin` 은 명단 저장 값 이름이다(되돌림 안전 때문에 그대로) — 뜻은 개발자다."""
     return runtime.current_access(cfg).grade_of(loginid) == GRADE_ADMIN
 
 
 def env_admins(cfg: SsoConfig) -> frozenset[str]:
-    """환경변수 관리자(견주는 꼴) — 늘 관리자라 화면에서 일반으로 내리지 못한다."""
+    """환경변수 개발자(견주는 꼴) — 늘 개발자라 화면에서 개발자 아래로 내리지 못한다."""
     return frozenset(key for key, grade in cfg.access.grades.items() if grade == GRADE_ADMIN)
 
 
 def _require_admin(cfg: SsoConfig, identity: Identity | None, moment: int) -> Identity:
-    """쓰는 자리의 두 번째 벽 — 신원이 지금도 유효하고 관리자인가."""
+    """쓰는 자리의 두 번째 벽 — 신원이 지금도 유효하고 개발자인가."""
     if identity is None or session_problem(identity, cfg, moment) is not None:
         raise NotAdminError("session")
     if not is_admin(cfg, identity.loginid):
@@ -501,7 +502,7 @@ def _require_admin(cfg: SsoConfig, identity: Identity | None, moment: int) -> Id
 def reread(
     cfg: SsoConfig, identity: Identity | None, *, now: int | None = None
 ) -> SourceProblem | None:
-    """Admin 「다시 읽기」. 관리자만. 실패의 까닭을 돌려주고 메모리는 그대로다."""
+    """Admin 「다시 읽기」. 개발자만. 실패의 까닭을 돌려주고 메모리는 그대로다."""
     moment = int(time.time()) if now is None else now
     _require_admin(cfg, identity, moment)
     with _IO_LOCK:
@@ -583,7 +584,8 @@ def _changed_document(
 def _check_grade_rules(
     cfg: SsoConfig, actor: str, *, remove: tuple[str, ...], grades: Mapping[str, str]
 ) -> None:
-    """등급 규칙 — 정확히 둘 · 환경변수 관리자는 일반으로 못 내림 · 자기는 내리거나 빼지 못함."""
+    """명단 등급 규칙 — 정확히 둘 · 환경변수 개발자는 개발자 아래로 못 내림 · 자기는 내리거나 빼지
+    못함."""
     if any(grade not in GRADES for grade in grades.values()):
         raise ValueError("grade")
     own = entry_key(actor)
@@ -656,7 +658,7 @@ def save_changes(
     부르는 쪽(`grade_store`)이 사람마다 한 줄을 남긴다.
 
     `NotAdminError`(권한) · `SelfChangeError`(자기 등급 내림 · 자기 빼기) · `EnvAdminError`(환경변수
-    관리자 내림) · `ValueError`(모르는 등급) · `StoreUnreadError`(아직 못 읽음) ·
+    개발자 내림) · `ValueError`(모르는 등급) · `StoreUnreadError`(아직 못 읽음) ·
     `StoreConflictError`(그 사이 바뀜) · `SaveUnconfirmedError`(PUT 의 답을 받지 못함 — 들어갔는지
     모른다, `S3Failure` 의 하나) · `S3Failure`(대조 실패 · 거절된 PUT — 저장소 그대로, 파일이 상한을
     넘어도 이것)를 낸다. 어느 쪽이든 메모리는 그대로다. 바뀐 것이 없으면 쓰지 않는다.
@@ -798,7 +800,7 @@ def _audit_side_effects(
 ) -> None:
     """다시 쓰기에 딸린 일의 감사 줄 — 못 읽은 항목이 빠짐 · 첫 판 심기(수만).
 
-    관리자 저장은 그 관리자가 저지른 일로, 스스로 등록에 딸린 것은 자동 행위(`SYSTEM_SSO` —
+    개발자 저장은 그 개발자가 저지른 일로, 스스로 등록에 딸린 것은 자동 행위(`SYSTEM_SSO` —
     미검증)로 남긴다 — 일반 사용자의 누름이 관리 행위처럼 읽히지 않게.
     """
     revisions = {"rev_from": document.revision, "rev_to": revision}
@@ -881,10 +883,10 @@ def register_self(
     """거절 화면 「접속 권한 신청」 — 통합인증으로 확인된 본인(`loginid` — 거절 표에서만 온다)을
     열람(명단 저장 값 `user` — 등급 파일 줄 없음)으로 명단에 넣는다. 스레드 풀에서 부른다(네트워크).
 
-    쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다 — 그 사이 다른 쓰기(관리자의 등급
+    쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다 — 그 사이 다른 쓰기(개발자의 등급
     바꿈 · 다른 사람의 등록)를 잃지 않는다. 받은 판이 메모리 판보다 오래되면(덮어쓴 직후 옛 판을
     돌려준 저장소 · 옛 사본을 쓴 다른 곳) 얹지도 올리지도 않는다(`StoreConflictError`) — 방금 뺀
-    사람 · 관리자 등급이 되살아나지 않게. 이미 있으면 쓰지 않고(등급 · 이름 · 부서 그대로) 받은 판을
+    사람 · 개발자 등급이 되살아나지 않게. 이미 있으면 쓰지 않고(등급 · 이름 · 부서 그대로) 받은 판을
     메모리에 올린다. `RegisterRefusedError`(항목 꼴이 아님) · `StoreUnreadError`(S3 명단이 꺼졌거나
     아직 못 읽음) · `StoreConflictError` · `SaveUnconfirmedError` · `S3Failure`(받기 · 쓰기 실패 —
     파일 사라짐 포함)를 낸다. 실패면 메모리는 그대로이고 사건은 누계만 센다

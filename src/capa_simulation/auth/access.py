@@ -6,11 +6,10 @@
 파일(`access_store`)에서만 들어오고 이 저장소에는 적지 않는다(공개 저장소 — 실제 loginid 는 사람을
 가리킨다). 표준 라이브러리만 쓴다.
 
-안쪽 자료는 loginid → 등급 맵이다. 명단의 등급 칸은 정확히 둘(`GRADES` — 일반 `user` · `admin`)이고
-「들어올 수 있나」 와 「개발자인가」 를 가른다. 저장 값 `admin` 은 되돌림 안전 때문에 그대로이고
-뜻은
-접속 등급의 개발자다. 열람 · 실무자 · 관리자는 같은 자리의 따로 둔 등급 파일(`grade_store` — 이
-모듈의 `GradeDocument`)에만 있다.
+안쪽 자료는 loginid → 등급 맵이다. 명단의 등급 칸은 정확히 둘(`GRADES` — `user` 개발자 아님 ·
+`admin` 개발자)이고 「들어올 수 있나」 와 「개발자인가」 를 가른다. 저장 값 `admin` 은 되돌림 안전
+때문에 그대로이고 뜻은 접속 등급의 개발자다. 열람 · 실무자 · 관리자는 같은 자리의 따로 둔 등급
+파일(`grade_store` — 이 모듈의 `GradeDocument`)에만 있다.
 
 순수 함수만 둔다 — 설정(`config.load_config`)이 환경변수 몫을 만들고, S3 명단이 켜져 있으면
 `compose_access` 가 파일 몫을 얹은 한 벌을 `runtime` 이 들고 통째로 바꾼다. 판정은
@@ -36,7 +35,8 @@ from dataclasses import dataclass, field
 
 GRADE_ADMIN = "admin"
 GRADE_USER = "user"
-# 등급은 정확히 둘이다 — 파일에 그 밖의 값이 있으면 일반으로 읽는다(`ListDocument.demoted`).
+# 명단 파일의 등급 값은 정확히 둘이다 — `admin` = 개발자 · `user` = 개발자 아님(저장 값 이름은
+# 되돌림 안전 때문에 그대로). 그 밖의 값은 `user` 로 읽는다(`ListDocument.demoted`).
 GRADES = (GRADE_USER, GRADE_ADMIN)
 # 명단에 든 길 — 개발자가 넣음(옛 파일의 칸 없는 항목 · 환경변수 첫 판 포함) · 거절 화면의 「접속
 # 권한 신청」 으로 스스로 넣음.
@@ -66,7 +66,7 @@ def entry_key(value: str) -> str | None:
     """명단 항목 하나 → 견주는 꼴. 사람으로 읽지 못하면 `None`.
 
     글자 · 숫자가 하나도 없는 항목(`-` · `.` 같은 자리표)도 읽지 못한 것이다 — 빈 값을 받지 않는
-    표에 넣은 자리표가 관리자 한 명으로 세어지면 「읽은 관리자 없으면 막힘」 을 비껴가 전원이
+    표에 넣은 자리표가 개발자 한 명으로 세어지면 「읽은 개발자 없으면 막힘」 을 비껴가 전원이
     잠긴다. 토큰 쪽 꼴(`LOGINID_PATTERN`)은 그대로다.
     """
     key = normalize_loginid(value)
@@ -124,7 +124,7 @@ class AccessList:
 
 
 def build_access_list(admins: str, users: str, *, enforced: bool, contact: str = "") -> AccessList:
-    """목록 글 둘 → 명단. 두 목록에 다 있으면 관리자다(사용자를 먼저 적고 관리자로 덮는다)."""
+    """목록 글 둘 → 명단. 두 목록에 다 있으면 개발자다(사용자를 먼저 적고 개발자로 덮는다)."""
     admin_keys, unreadable_admins = parse_entries(admins)
     user_keys, unreadable_users = parse_entries(users)
     grades = dict.fromkeys(user_keys, GRADE_USER)
@@ -174,7 +174,7 @@ class ListDocument:
     entries: tuple[ListEntry, ...] = field(default=(), repr=False)
     changes: tuple[ListChange, ...] = field(default=(), repr=False)
     unreadable: int = 0
-    # 등급 칸이 `GRADES` 밖이어서 일반으로 읽은 항목 수.
+    # 등급 칸이 `GRADES` 밖이어서 `user` 로 읽은 항목 수.
     demoted: int = 0
 
 
@@ -196,7 +196,7 @@ class AccessSource:
     """지금 명단 한 벌과 그 내력 — `runtime` 이 하나를 들고 통째로 바꾼다.
 
     `access` 는 판정이 보는 합성 명단이다. `document` 가 `None` 이면 아직 한 번도 읽지 못한 것이고
-    그때 `access` 는 환경변수 관리자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
+    그때 `access` 는 환경변수 개발자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
     `problem` 에만 적고 `access` 를 건드리지 않는다. 저장이 성공하면 `problem` 을 비운다 — 저장소에
     닿았고 방금 쓴 것이 지금 명단이다.
     """
@@ -216,7 +216,7 @@ class AccessSource:
 
 
 def compose_access(base: AccessList, document: ListDocument) -> AccessList:
-    """환경변수 몫(`base` — 관리자) + S3 파일 몫(파일 등급). 환경변수 관리자는 늘 관리자다."""
+    """환경변수 몫(`base` — 개발자) + S3 파일 몫(파일 등급). 환경변수 개발자는 늘 개발자다."""
     grades = {
         entry.loginid: entry.grade if entry.grade in GRADES else GRADE_USER
         for entry in document.entries

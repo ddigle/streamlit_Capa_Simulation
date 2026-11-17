@@ -1,10 +1,10 @@
-# Purpose: 앱 안 멈춤 판 셋의 한 꼴 — 주 단추 링크 · 문의 줄 · 참고 줄 · 접힌 관리자용 진단.
+# Purpose: 앱 안 멈춤 판 셋의 한 꼴 — 주 단추 링크 · 문의 줄 · 참고 줄 · 접힌 개발자용 진단.
 
 """앱 안 멈춤 판(앱 시작 실패 `boot_stop` · 접속 멈춤 `sso_identity` · 한 화면 오류
 `page_failure_card`).
 
 앱이 서지 못하거나 멈춘 자리에는 같은 차례의 판 하나를 둔다 — **경고 띠 → 주 단추 하나 → 문의 줄 →
-참고 줄 → 접힌 「관리자용 진단」**(2026-11-14 보드 stop-panels 「한 꼴로 맞춘다」). 경고 띠와 주
+참고 줄 → 접힌 「개발자용 진단」**(2026-11-14 보드 stop-panels 「한 꼴로 맞춘다」). 경고 띠와 주
 단추는 부르는 쪽이 그리고(판마다 글 · 아이콘 · 단추가 다르다 — 다시 해도 같은 판은 주 단추가 없다),
 문의 줄 · 참고 줄 · 접힌 진단은 이 모듈의 `render_stop_footer` 가 같은 차례로 그린다. 문장을 늘리지
 않는다(설계 규칙 UI-TXT-01) — 캡션은 값(문의 메일 · 창구 글 · 사유 낱말 · 시각 · 오류 종류)만
@@ -16,11 +16,11 @@
   원문 HTML 문단 하나로 그린다(`contact_markup`).
 - **참고 줄** — 「참고 <사유 낱말> · <YYYY-MM-DD HH:MM> UTC」(+ 「 · <오류 종류>」). 사유 낱말은
   판의 갈래 키(앱 시작 실패 `db_locked` · 접속 멈춤 `sso_expired` 등)이고, 한 화면 오류는 그 자리에
-  참고 번호(8자 — 관리자 알림 `AD-22` · 서버 로그가 같은 번호를 싣는다)를 둔다. 새 번호 체계가
+  참고 번호(8자 — 개발자 알림 `AD-22` · 서버 로그가 같은 번호를 싣는다)를 둔다. 새 번호 체계가
   아니다. 시작 임시 화면(`scripts/container_stage.py`)이 문의 줄 · 참고 줄을 같은 글자 꼴로 따로
   짓는다(시험이 맞댄다 — 그쪽은 앱 밖 공통 틀이라 창구 글을 늘 싣는다).
-- **접힌 「관리자용 진단」** — 서버 경로 · 프로세스 번호 · 원문 · 실행 명령은 여기에만 둔다(복사
-  단추 — UI-NTF-10). 관리자 몫(`admin_view.developer_notes_visible` 한 판정)에만 선다 — 접어도
+- **접힌 「개발자용 진단」** — 서버 경로 · 프로세스 번호 · 원문 · 실행 명령은 여기에만 둔다(복사
+  단추 — UI-NTF-10). 개발자 몫(`admin_view.developer_notes_visible` 한 판정)에만 선다 — 접어도
   누구나
   펼치므로 접힘으로 가리지 않는다. 판이 마지막 자리라 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로
   물러선다. 복사 글 · 펼친 글 맨 위는 참고 줄이다.
@@ -34,7 +34,7 @@ Streamlit 세션을 만들어야 한다(`st.rerun` 은 같은 세션이라 앞 �
 `st.button` 「다시 시도」(`RETRY_LABEL`)다. 풍선(`title`)은 누르기 전에 알아야 하는 되돌릴 수 없는
 결과에만 단다(UI-NTF-09).
 
-진단 복사 부품(`diagnostic_copy`)과 관리자 몫 판정(`admin_view`)은 함수 안에서 불러온다 — 이 모듈은
+진단 복사 부품(`diagnostic_copy`)과 개발자 몫 판정(`admin_view`)은 함수 안에서 불러온다 — 이 모듈은
 `sso_identity` 가 맨 위에서 부르고(그것을 진입 파일이 실행기 전에 부를 수 있다 — Components v2 는
 import 때 등록된다), `admin_view` 는 `sso_identity` 를 부른다(순환).
 """
@@ -63,7 +63,7 @@ STOP_FOOTER_KEY: Final = "capa_stop_footer"
 
 @dataclass(frozen=True)
 class AdminFold:
-    """접힌 「관리자용 진단」 한 칸 — 복사 글 머리(`title`) · 펼침 key · 복사 단추 key 와 글.
+    """접힌 「개발자용 진단」 한 칸 — 복사 글 머리(`title`) · 펼침 key · 복사 단추 key 와 글.
 
     `blocks` 는 평문 칸(빈 줄로 나눈다)이고 펼친 글 · 복사 글이 같다. `notes` 는 마크다운 줄(실행
     명령 · 환경변수 이름을 코드 꼴로) — 있으면 펼친 글은 이 줄들의 캡션이고 복사 글은 그 평문이다.
@@ -153,7 +153,7 @@ def footer_style() -> str:
 
 
 def reference_line(code: str, *, now: float | None = None) -> str:
-    """「참고 <사유 낱말> · <YYYY-MM-DD HH:MM> UTC」 — 관리자가 시각으로 짝을 맞춘다."""
+    """「참고 <사유 낱말> · <YYYY-MM-DD HH:MM> UTC」 — 개발자가 시각으로 짝을 맞춘다."""
     moment = datetime.fromtimestamp(time.time() if now is None else now, tz=timezone.utc)
     return f"{REFERENCE_PREFIX} {code} · {moment.strftime('%Y-%m-%d %H:%M')} UTC"
 
@@ -201,7 +201,7 @@ def render_stop_footer(
     fold: AdminFold | None = None,
     now: float | None = None,
 ) -> str:
-    """판의 경고 띠 · 주 단추 아래 — 문의 줄 → 참고 줄 → (관리자 몫이면) 접힌 진단. 참고 줄 평문을
+    """판의 경고 띠 · 주 단추 아래 — 문의 줄 → 참고 줄 → (개발자 몫이면) 접힌 진단. 참고 줄 평문을
     돌려준다. 오류 종류 이름(있으면 「 · <종류>」 — 누구에게나 보이는 값, 보드 d12 (가))은 마크다운
     글자 그대로 막아 캡션에 싣는다."""
     head = reference_line(code, now=now)

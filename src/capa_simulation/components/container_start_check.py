@@ -1,4 +1,4 @@
-# Purpose: CD 서버 시작 점검 결과를 Admin 펼침으로 보이고 그 서버의 토큰 실패를 관리자에게 알린다.
+# Purpose: CD 서버 시작 점검 결과를 Admin 펼침으로 보이고 그 서버의 토큰 실패를 개발자에게 알린다.
 
 """서버 시작 점검.
 
@@ -23,18 +23,18 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 `cache_data` · DB 마다 DuckDB 회차 끝 표본)은 `memory_diagnostic` 이 짓는다. 둘 다 결과 파일이
 아니라 이 프로세스의 지금 값이다.
 
-**토큰 넣기 · 만료 알림** — 표 아래 「지금 토큰」 줄과 관리자의 「토큰 넣기」 단추 · 팝업, 만료
-1시간 전 관리자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
+**토큰 넣기 · 만료 알림** — 표 아래 「지금 토큰」 줄과 개발자의 「토큰 넣기」 단추 · 팝업, 만료
+1시간 전 개발자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
 부른다).
 
 **BDQ 자동 로그인** — `managed` 서버의 표에는 통합인증 줄 뒤에 「BDQ 자동 로그인」 줄
 (`login_rows` — 시작 때 결과: 꺼짐 · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) · 닿지 못함(예비
-토큰))이 서고 판정에 든다. 자동 로그인이 멈추면 관리자 알림 `AD-23`(`render_login_stop_alert`)이
+토큰))이 서고 판정에 든다. 자동 로그인이 멈추면 개발자 알림 `AD-23`(`render_login_stop_alert`)이
 서고, 서 있는 동안 `AD-11` 은 해소다. 상태는 S3 에 묻지 않고 읽는다(`login_view` —
 `bdq_login.current_view`).
 
-**시작 점검 관리자 알림(`AD-01`)** — 결과 파일이 없거나(CD 서버로 보일 때) 읽지 못했거나, 읽었는데
-실패한 단계가 있으면(토큰 줄은 `AD-10` 몫이라 뺀다) 관리자 몫의 모든 화면 회차에 상태 알림으로 낸다
+**시작 점검 개발자 알림(`AD-01`)** — 결과 파일이 없거나(CD 서버로 보일 때) 읽지 못했거나, 읽었는데
+실패한 단계가 있으면(토큰 줄은 `AD-10` 몫이라 뺀다) 개발자 몫의 모든 화면 회차에 상태 알림으로 낸다
 (`render_start_check_alert` — `app.py` 가 토큰 알림 곁에서 부른다, 2026-11-14 「앱 대신 뜨는 화면」
 보드 카드 p2-sync 「AD-01 범위를 넓힘」). 키만 넣은 서버나 local 서버의 버킷 연결 실패가 펼침
 제목으로만 드러나던 틈을 메운다. 「그 화면으로」 는 Admin Area(이 펼침)다. 알릴 일이 있을 수 없는
@@ -43,11 +43,11 @@ Admin 펼침은 이 알림을 따로 내지 않는다. 줄은 이 펼침을 대�
 펼침까지 연다(`open_start_check` — 알림 칸의 받는 쪽 `START_CHECK_TARGET_KIND`, 설계 규칙
 UI-NAV-01).
 
-**토큰 실패 관리자 알림(`AD-10`)** — 결과 파일이 있는 서버(C-DEP)에서 BigDataQuery 조회가 토큰
+**토큰 실패 개발자 알림(`AD-10`)** — 결과 파일이 있는 서버(C-DEP)에서 BigDataQuery 조회가 토큰
 갈래로 실패했거나(`company_bigdataquery_adapter.last_query_failed_on_token` — 프로세스의 마지막
-판정) 시작 점검 토큰 줄이 「실패」 면 관리자의 모든 화면 회차에 상태 알림으로 낸다
+판정) 시작 점검 토큰 줄이 「실패」 면 개발자의 모든 화면 회차에 상태 알림으로 낸다
 (`render_token_alert` — `app.py` 가 동기화 알림 곁에서 부른다). 토큰은 공용 계정 하나라 고칠 사람이
-관리자다. 결과 파일이 없는 서버(개발 · 사내 PC · WebIDE · 시험)는 Streamlit 호출이 없어 요소 순번이
+개발자다. 결과 파일이 없는 서버(개발 · 사내 PC · WebIDE · 시험)는 Streamlit 호출이 없어 요소 순번이
 그대로다. `app.py` 는 페이지보다 먼저 표지를 읽으므로 그 회차 페이지 조회의 실패는 다음 회차부터
 알림이 된다(실패 글은 화면 곁에 바로 선다).
 """
@@ -131,9 +131,9 @@ from capa_simulation.sidebar_status import open_remembered_box, remembered_expan
 # 접히지 않는다(VOC 글 상자와 같은 꼴, E2E r1). 제목 끝(판정)이 바뀌어도 편 상태는 그대로다.
 EXPANDER_KEY = "admin_area_container_start_check"
 COPY_KEY = "container_start_check"
-# BigDataQuery 토큰 실패 관리자 알림(`render_token_alert`).
+# BigDataQuery 토큰 실패 개발자 알림(`render_token_alert`).
 TOKEN_ALERT_CODE = "AD-10"
-# BigDataQuery 자동 로그인 멈춤 관리자 알림(`render_token_alert` 끝).
+# BigDataQuery 자동 로그인 멈춤 개발자 알림(`render_token_alert` 끝).
 LOGIN_STOP_ALERT_CODE = "AD-23"
 # BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함(닿지 못함 · 확인 못 함 · 못 함 — D6
 # 「알림만」).
@@ -164,8 +164,8 @@ POD_TAIL_CHARS = 5
 
 
 def step_column_config() -> dict[str, ColumnConfig]:
-    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
-
+    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자(개발자)가 셀을 눌러 펴지
+    않고 읽는다.
     폭 이름(`"small"` · `"large"`)이 아니라 px 이다 — 표가 stretch 라 남는 폭을 세 칸이 똑같이 나눠
     `"small"` 칸이 줄지 않는다. 셋의 합은 창 1283 의 표 폭 안이라 가로 스크롤이 서지 않는다."""
     return {
@@ -403,7 +403,7 @@ def start_verdict(report: ContainerStartReport) -> str:
 
 def _render_missing_report() -> None:
     """결과를 못 읽은 회차 — 파일이 있으면 「결과 파일을 읽지 못함」(꼴이 다름), 없으면 CD 서버로
-    보일 때만 「결과 없음」. 펼침 제목이 판정이고 본문은 까닭 캡션이다 — 알릴 조건은 관리자 몫 상태
+    보일 때만 「결과 없음」. 펼침 제목이 판정이고 본문은 까닭 캡션이다 — 알릴 조건은 개발자 몫 상태
     알림(`AD-01` — `render_start_check_alert`)이 낸다(알림창 · Alarm)."""
     problem = _missing_problem()
     if problem is None:
@@ -481,9 +481,9 @@ def start_check_alert_possible() -> bool:
 
 
 def render_start_check_alert() -> None:
-    """서버 시작 점검 관리자 알림(`AD-01`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
+    """서버 시작 점검 개발자 알림(`AD-01`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
 
-    관리자 몫이 아닌 회차는 해소로 부른다(같은 수의 표지 —
+    개발자 몫이 아닌 회차는 해소로 부른다(같은 수의 표지 —
     `admin_view.developer_notes_visible`, 운영 아닌 꺼진 서버는 누구에게나). 지문은 (제목, 실패
     단계 이름들)이다 — 까닭 글이 바뀌어도 같은 단계면 다시 뜨지 않는다."""
     if not start_check_alert_possible():
@@ -533,13 +533,13 @@ def login_view(report: ContainerStartReport | None) -> bdq_login.LoginView:
 
 
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 관리자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    """BigDataQuery 토큰 개발자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
     (`bdq_token_admin.render_expiry_alert`), 자동 로그인 멈춤 `AD-23`, 자동 로그인이 멈추지 않은 채
     서지 못함 `AD-24`. `app.py` 가 회차마다 조건 없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
     한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 네 자리를
-    쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
+    쓰고 개발자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
     실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다. 자동 로그인 상태는 S3 에 묻지 않고
     읽는다(`login_view`) — 서 있는 동안 `AD-11` 은 해소다.
     """
@@ -568,7 +568,7 @@ def render_token_alert() -> None:
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
         target=_token_alert_target(start_failed, view) if active else None,
     )
-    # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
+    # 만료 1시간 전 개발자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
     render_expiry_alert(standing=view.standing)
     # 자동 로그인 멈춤(`AD-23`) — 한 자리 더.
     render_login_stop_alert(view, admin=admin)
@@ -586,7 +586,7 @@ def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts
 
 
 def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
-    """자동 로그인 멈춤 관리자 알림(`AD-23`) — 이벤트 칸 한 자리. 멈춤이 아니거나 관리자가 아니면
+    """자동 로그인 멈춤 개발자 알림(`AD-23`) — 이벤트 칸 한 자리. 멈춤이 아니거나 개발자가 아니면
     해소로 부른다. 지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면
     풀린다(D3). 「그 화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` —
     UI-NAV-01)."""
@@ -604,7 +604,7 @@ def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
 
 
 def render_login_trouble_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
-    """자동 로그인이 멈추지 않은 채 서지 못함 관리자 알림(`AD-24` — D6 「알림만」) — 이벤트 칸 한
+    """자동 로그인이 멈추지 않은 채 서지 못함 개발자 알림(`AD-24` — D6 「알림만」) — 이벤트 칸 한
     자리. 시작 때 · 조회 중 자동 로그인이 서버에 닿지 못했거나 · 로그인을 확인하지 못했거나 ·
     시도하지 못한 채 서 있으면(`view.trouble`) 선다. 지문은 갈래 낱말 하나다 — 계정 · 까닭 글을 싣지
     않는다. 다음 자동 시도가 성공하거나 멈추거나 폼에서 다시 넣으면 걷힌다. 「그 화면으로」 는 Admin

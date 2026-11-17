@@ -213,7 +213,7 @@ _ADMIN_LEADS: Final[tuple[tuple[str, str], ...]] = (
 
 
 def screen_error_short(message: str) -> str | None:
-    """화면을 그리지 못한 오류 글이 사람이 고칠 수 없는 DB 실패면 알림 짧은 글(「… — 관리자에게 알려
+    """화면을 그리지 못한 오류 글이 사람이 고칠 수 없는 DB 실패면 알림 짧은 글(「… — 개발자에게 알려
     주세요」), 아니면 None(부르는 쪽 글 그대로). 첫 문단 뒤 빈 줄까지 맞대 「열지 못했습니다」 의 두
     꼴을 가른다."""
     for lead, short in _ADMIN_LEADS:
@@ -223,8 +223,8 @@ def screen_error_short(message: str) -> str | None:
 
 
 def screen_error_public(message: str) -> str:
-    """사람이 고칠 수 없는 DB 실패 글의 누구나 볼 꼴 — 첫 문단(화면이 붙인 머리까지)과 「관리자에게
-    알려 주세요.」 만. 파일 경로 · 파일을 연 프로세스 번호 · 원문 줄은 관리자 몫 전문에만 싣는다
+    """사람이 고칠 수 없는 DB 실패 글의 누구나 볼 꼴 — 첫 문단(화면이 붙인 머리까지)과 「개발자에게
+    알려 주세요.」 만. 파일 경로 · 파일을 연 프로세스 번호 · 원문 줄은 개발자 몫 전문에만 싣는다
     (`data_error_mark.data_error_note`). 그 갈래가 아니면 받은 글 그대로다."""
     for lead, _ in _ADMIN_LEADS:
         at = message.find(f"{lead}\n\n")

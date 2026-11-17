@@ -57,7 +57,7 @@ from capa_simulation.settings import DUCKDB_PATH
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
 # (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
-# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 회차에만 선다. 맨 끝 「공지」 는 늘 서는
+# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다. 맨 끝 「공지」 는 늘 서는
 # 입력 탭이다(2026-11-17 공지 보드 답 decided 2 — DB 를 쓰지 않는다).
 TAB_NAMES = ADMIN_AREA_TABS
 LOG_TAB = ADMIN_AREA_LOG_TAB
@@ -68,7 +68,7 @@ TABS_KEY = ADMIN_AREA_TAB_KEY
 TABS_BOX_KEY = "admin_area_tabs_box"
 
 render_page_header("Admin Area")
-# 운영인데 통합인증이 꺼진 서버(`AD-02`)는 관리자 신원이 없어 아래 잠금이 모두를 멈춘다 — 그
+# 운영인데 통합인증이 꺼진 서버(`AD-02`)는 개발자 신원이 없어 아래 잠금이 모두를 멈춘다 — 그
 # 알림만은 잠금 앞에서 내 잠긴 회차에도 Alarm 으로 닿게 한다.
 render_off_in_production_alert()
 # 운영 서버에서 화면 등급이 개발자가 아니면(「이 등급으로 보기」 동안 포함) 메뉴가 없고(`app.py`),
@@ -82,7 +82,7 @@ render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
 render_container_start_check()
-# BigDataQuery 자동 로그인 계정 넣기 · 지우기 — `managed` + 키(`CAPA_BDQ_SECRET_KEY`) 서버의 관리자
+# BigDataQuery 자동 로그인 계정 넣기 · 지우기 — `managed` + 키(`CAPA_BDQ_SECRET_KEY`) 서버의 개발자
 # 회차에만 선다(그 밖에는 아무것도 그리지 않는다). 예비 「토큰 넣기」 는 바로 위 펼침 안에 그대로다.
 render_bdq_login_admin()
 # 정본 버킷 동기화 — CI/CD 를 누르기 전에 보는 자리. `managed` 서버에만 선다(개발·사내 PC 그대로).

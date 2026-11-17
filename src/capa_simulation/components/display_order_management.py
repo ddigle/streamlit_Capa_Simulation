@@ -275,7 +275,7 @@ def _clipboard_dialog(
     if submit is None:
         return
     # 팝업 안의 누름은 팝업만 다시 돌아 페이지 앞머리의 Admin Area 잠금을 지나지 않는다 — 팝업을 연
-    # 뒤 관리자 등급을 잃은 사람의 적용이 저장되지 않게 쓰는 순간 다시 판정한다.
+    # 뒤 개발자 등급을 잃은 사람의 적용이 저장되지 않게 쓰는 순간 다시 판정한다.
     if developer_wall_locked():
         refuse_paste(CLIPBOARD_FORM_KEY, DISPLAY_ORDER_NOT_ADMIN_MESSAGE)
         return
