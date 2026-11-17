@@ -5372,7 +5372,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   정하고 코드 · 이미지에 기본값을 두지 않는다(`docker/Dockerfile-prod` 에 `ENV` 없음). 꼴은 수 + 단위(`KB` · `MB` · `GB` · `TB` ·
   `KiB` · `MiB` · `GiB` · `TiB`, 대소문자 · 띄어 씀 상관없음)이고 받는 범위는 64MiB ~ 1TiB 다 — 권하는 값이 아니라 울타리다(너무 작으면
   DuckDB 가 첫 표에서 메모리 부족으로 멈춰 모든 DB 열기가 실패하고, 너무 크면 DuckDB 가 거절한다). 틀린 값은 넣지 않고 「서버 시작 점검」
-  「DuckDB 메모리 한도」 줄 「실패」 · `AD-01` 이 알린다. 한도는 DB(인스턴스)마다 같은 값이라 두 DB 합은 그 두 배까지 간다 — 따로 두지
+  「DuckDB 메모리 한도」 줄 「실패」 · `AD-01` 이 알린다. 한도는 DB 파일(인스턴스)마다 같은 값이라 두 DB 합은 그 두 배까지 가고, 같은
+  `connect()` 로 잠깐 여는 사본(동기화의 받은 사본 확인 · 스냅샷 짓기)도 같은 한도를 쓴다 — 따로 두지
   않은 것은 `connect()` 가 경로만 받는 한 곳이라 DB 를 가르려면 그 경계에 DB 종류를 들여야 하고, 설비 DB 는 작아 한도에 닿을 일이
   드물어서다. 한도를 넘는 질의의 넘침은 DuckDB 기본 `temp_directory`(DB 파일 옆 `<DB 파일>.tmp` — `.gitignore` 의 `*.tmp`) 다. 표본은
   `pinned_connections` 가 핀을 닫기 직전 그 핀으로 `duckdb_memory()` 를 읽어 DB 마다 마지막 · 최고 · 임시 파일 최고와 DuckDB 가 실제로

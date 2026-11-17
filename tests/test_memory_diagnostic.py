@@ -2,9 +2,10 @@
 
 """`components/memory_diagnostic.py` 와 「서버 시작 점검」 펼침의 그 자리.
 
-값은 이 프로세스의 지금이고 못 읽으면 「모름」 이다(AppTest 에는 Streamlit `Runtime` 이 없어 세션이
-「모름」 이다). 세션 표 · 캐시 값의 크기를 깊이 재지 않는다 — `DataFrame.memory_usage` · 세션 상태 ·
-`cache_resource` 크기 재기를 부르면 실패하게 막고 돈다. DuckDB 한도 칸이 틀리면 표 끝 줄이
+값은 이 프로세스의 지금이고 못 읽으면 「모름」 이다(읽는 함수를 대역으로 바꿔 갈래를 본다 —
+같은 프로세스의 다른 시험이 Streamlit `Runtime` 을 세웠을 수 있다). 세션 표 · 캐시 값의 크기를
+깊이 재지 않는다 — `DataFrame.memory_usage` · 세션 상태 · `cache_resource` 크기 재기를 부르면
+실패하게 막고 돈다. DuckDB 한도 칸이 틀리면 표 끝 줄이
 「실패」 이고 제목 판정 · 시작 점검 관리자 알림(`AD-01`)에 든다.
 """
 
@@ -93,6 +94,7 @@ def test_without_proc_only_the_peak_comes_from_resource(tmp_path: Path) -> None:
 
 def test_the_session_counts_are_unknown_without_a_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     """내부 API 라 없거나 무엇이 나면 「모름」 — 있으면 연결된 세션 · 전체 세션이다."""
+    monkeypatch.setattr(Runtime, "exists", classmethod(lambda cls: False))
     assert session_counts() is None
 
     manager = SimpleNamespace(num_active_sessions=lambda: 3, num_sessions=lambda: 5)
@@ -226,8 +228,9 @@ def test_the_start_check_carries_the_limit_row_and_unknown_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
 ) -> None:
     """한도 칸이 없으면 끝 줄이 「건너뜀」 이고 제목 판정 · `AD-01` 은 그대로다. 아직 못 잰 DuckDB
-    와 AppTest 의 세션은 「모름」."""
+    와 읽지 못한 세션은 「모름」."""
     _report(tmp_path, monkeypatch)
+    monkeypatch.setattr(memory_diagnostic, "session_counts", lambda: None)
 
     app = AppTest.from_string(SCRIPT).run(timeout=60)
 
