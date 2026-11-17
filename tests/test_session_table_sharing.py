@@ -324,7 +324,7 @@ def _size_measuring_calls(source: str) -> list[int]:
 def test_the_app_code_never_measures_the_size_of_a_frame() -> None:
     """잠긴 객체 배열은 크기를 재기만 해도 `ValueError` 다(pandas 2.2.3) — 앱 코드에 그 호출 0."""
     found = {
-        str(path.relative_to(PROJECT_ROOT)): lines
+        path.relative_to(PROJECT_ROOT).as_posix(): lines
         for path in _app_sources()
         if (lines := _size_measuring_calls(path.read_text(encoding="utf-8")))
     }
