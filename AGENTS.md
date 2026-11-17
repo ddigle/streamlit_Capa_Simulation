@@ -2180,7 +2180,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   자리가 없다, `tests/test_bucket_secret_boundary.py` 가 가짜 S3 의 받은 요청으로 본다). 지우는 길은 Admin 「지우기」 하나다.
 - `src/capa_simulation/io/bdq_login.py` — BigDataQuery 자동 로그인 실행기. 로그인 한 번(`attempt_login`)은 `sys.executable` 하위
   프로세스(`io/bdq_login_child.py` — 표준 라이브러리만, `runpy`)이고 계정 · 비밀번호는 표준 입력으로만, 하위 환경은 비밀 이름 · `CAPA_S3_*` ·
-  `AWS_*` 를 뺀 것이고 표준 입출력은 UTF-8(앱 자리의 로캘과 무관 — Windows cp949 파이프에서도 표지를 읽는다), 출력은 버리고 표지 한 줄과 단계
+  `AWS_*` 를 뺀 것이고 표준 입출력은 UTF-8 · `surrogateescape`(앱 자리의 로캘과 무관 — Windows cp949 파이프에서도 표지를 읽고, POSIX C 로캘의 예전 오류 처리기를 지킨다), 출력은 버리고 표지 한 줄과 단계
   줄만 읽는다(표준 오류는 마지막 traceback 의 예외 종류 이름만 — `stderr_kind`, 계정 · 비밀번호를 품은 이름은 버린다). 하위 프로세스를 띄운
   시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판, 결과의 같음 판정 밖)을 남기고
   로그 · Admin 진단 줄 · 감사 상세 · 시작 결과 칸 `child` 가 읽는다. 표지 없음(`no_marker`)은 거절(멈춤)로 다루되 화면 낱말은 「로그인 확인

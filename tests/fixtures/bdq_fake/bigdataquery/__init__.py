@@ -32,7 +32,9 @@ authentication. …」)라 안쪽은 `__context__` 다. 둘 다 `bigdataquery.ex
   · `connection_context`(연결 예외를 처리하다 난 다른 예외 — 원인 사슬이 아니라 문맥만) · `slow`
   (로그인 중 잠듦) · `time_odd`(`getTokenTime` 꼴이 다름) · `time_typo`(날 칸이 `remining_days`,
   하루 더) · `time_short`(25분 남음) · `time_raises`(`getTokenTime` 예외) ·
-  `time_slow`(`getTokenTime` 중 잠듦 — 토큰은 이미 새로 씀) · `import_fails`(import 때 예외).
+  `time_slow`(`getTokenTime` 중 잠듦 — 토큰은 이미 새로 씀) · `import_fails`(import 때 예외) ·
+  `banner_surrogate`(import 때 짝 없는 서로게이트를 찍음 — UTF-8 로 풀리지 않던 바이트를
+  surrogateescape 로 읽은 경로 · 환경 값을 찍는 꼴).
 - 틀린 비밀번호(서버가 답한 401)를 연결 꼴로 내는 장면 — `wrong_conn_builtin`(errno 없는
   `ConnectionError`) · `wrong_conn_subclass`(그 하위 종류) · `wrong_requests_conn_text`(글만 든
   `requests` 연결 실패) · `wrong_read_timeout`(진짜 읽기 시간 초과 — 받기만 하고 답하지 않는 루프백
@@ -163,6 +165,8 @@ print("========================================")
 print(" bigdataquery (fake) — 안내 배너")
 print("========================================")
 _log("import")
+if "banner_surrogate" in _scenes():
+    print(" install dir: /demo/site-\udcff")
 if "import_fails" in _scenes():
     raise RuntimeError("fake package init failure")
 if "exit_on_import" in _scenes():

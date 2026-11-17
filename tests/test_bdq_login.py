@@ -159,6 +159,18 @@ def test_the_login_child_prints_utf8_whatever_the_parent_locale(
     assert fake.imports() == 1 and fake.logins() == 1
 
 
+def test_the_login_child_prints_a_surrogate_escaped_name_without_breaking(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """패키지가 UTF-8 로 풀리지 않던 바이트(surrogateescape 로 읽은 경로 · 환경 값)를 찍어도
+    import 가 깨지지 않는다 — 하위 환경이 인코딩만 정하면 오류 처리기가 strict 가 되어 POSIX C ·
+    C.UTF-8 로캘의 예전 동작(surrogateescape)과 달라지고, 비밀번호를 보낸 뒤라면 멈춤이 된다."""
+    scene(monkeypatch, "banner_surrogate")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    assert fake.imports() == 1 and fake.logins() == 1
+
+
 def test_a_wrong_password_that_only_prints_is_rejected_even_with_a_live_old_token(
     fake: FakeBdq,
 ) -> None:
@@ -670,7 +682,7 @@ def test_child_environment_drops_every_secret_name_and_prefix() -> None:
         "PYTHONPATH": "/demo/site",
         BDQ_USER_NAME_ENV: "demo_env_user",
         "HOME": "/home/demo",
-        "PYTHONIOENCODING": "utf-8",
+        "PYTHONIOENCODING": "utf-8:surrogateescape",
     }
     for name in (
         store.SECRET_KEY_ENV,
