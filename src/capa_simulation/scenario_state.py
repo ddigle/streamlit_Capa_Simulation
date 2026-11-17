@@ -123,6 +123,7 @@ def reset_active_scenario(
             name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
+    _retire_edit_cell(saved)
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
     # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
     clear_virtual_products()
@@ -147,7 +148,7 @@ def clear_virtual_products() -> None:
 
 def clear_active_scenario() -> None:
     """Discard the current session scenario so it reloads from source on next use."""
-    st.session_state.pop(ACTIVE_SCENARIO_KEY, None)
+    _retire_edit_cell(st.session_state.pop(ACTIVE_SCENARIO_KEY, None))
 
 
 def activate_scenario_tables(
@@ -167,6 +168,7 @@ def activate_scenario_tables(
             name: _session_copy(reference_tables[name]) for name in EDITABLE_SCENARIO_TABLES
         },
     }
+    _retire_edit_cell(st.session_state.get(ACTIVE_SCENARIO_KEY))
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
     # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
     clear_virtual_products()
@@ -199,20 +201,42 @@ def scenario_month_table(
     )
 
 
-def _next_edit_token(previous: ActiveScenario) -> str:
-    """편집 적용의 새 내용 토큰. 갈아끼워지는 **편집본** 토큰의 전체 기간 결과 칸은 여기서 걷는다.
+def _retire_edit_cell(previous: object) -> None:
+    """갈아끼워지거나 버려지는 활성 시나리오가 **편집본**이면 그 전체 기간 결과 칸 하나를 걷는다.
 
-    편집 토큰은 uuid 라 이 세션의 그 편집본만 쓰고, 새 토큰이 서면 아무도 다시 부르지 않는다 —
-    적용하는 길은 모두 적용 뒤 곧바로 앱 전체 회차를 다시 돌려(`st.rerun` · `DialogHost.finish`) 옛
-    토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). pristine 토큰 칸(세션끼리
-    나누는 리비전 결과)은 걷지 않는다. 표를 다 갈아끼운 뒤에 부른다 — 적용이 막히면(`ValueError`)
-    아무 칸도 걷지 않는다.
+    편집 토큰은 uuid 라 이 세션의 그 편집본만 쓰고, 활성 시나리오가 다른 내용으로 바뀌면 아무도
+    다시 부르지 않는다 — 그대로 두면 죽은 편집본 칸이 상한(`FULL_CAPACITY_MAX_ENTRIES`)까지 남아
+    세션끼리 나누는 리비전 칸을 밀어낸다. 바꾸는 길 넷(편집 적용 `_next_edit_token` · 원본 되돌리기
+    `reset_active_scenario` · 리비전 불러오기 · 저장 뒤 활성화 `activate_scenario_tables`)과 버리는
+    길(`clear_active_scenario`)이 부른다. 키는 **갈아끼워지는 dict 의** (reference_version,
+    content_token)이다 — 다른 리비전을 불러올 때는 새 번호와 다르다. pristine 토큰 칸(세션끼리
+    나누는 리비전 결과)은 걷지 않는다. 부르는 쪽은 새 시나리오를 다 지은 뒤 세션에 넣기 바로 앞에
+    부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 바꾸는 길은 모두 그 뒤 옛
+    dict 로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). 편집본을 쥔 채 끝난 세션의 칸은
+    상한에서 밀릴 때까지 남는다.
     """
+    if not isinstance(previous, dict):
+        return
     old_token = previous.get("content_token")
-    if isinstance(old_token, str) and not is_pristine_content_token(old_token):
+    old_version = previous.get("reference_version")
+    if (
+        isinstance(old_token, str)
+        and isinstance(old_version, int)
+        and not is_pristine_content_token(old_token)
+    ):
         from capa_simulation.services.simulation_cache import retire_full_capacity_outcome
 
-        retire_full_capacity_outcome((previous["reference_version"], old_token))
+        retire_full_capacity_outcome((old_version, old_token))
+
+
+def _next_edit_token(previous: ActiveScenario) -> str:
+    """편집 적용의 새 내용 토큰. 갈아끼워지는 편집본 칸은 여기서 걷는다(`_retire_edit_cell`).
+
+    적용하는 길은 모두 적용 뒤 곧바로 앱 전체 회차를 다시 돌려(`st.rerun` · `DialogHost.finish`) 옛
+    토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). 표를 다 갈아끼운 뒤에 부른다
+    — 적용이 막히면(`ValueError`) 아무 칸도 걷지 않는다.
+    """
+    _retire_edit_cell(previous)
     return _new_content_token()
 
 

@@ -1,12 +1,13 @@
-# Purpose: 편집 적용이 옛 편집본의 전체 기간 칸만 걷고 리비전 칸은 남기는지와 그 칸 상한을 검증한다.
+# Purpose: 활성 시나리오를 바꾸거나 버리면 옛 편집본 전체 기간 칸만 걷히는지와 칸 상한을 검증한다.
 
 """**죽은 편집본 칸이 프로세스 전역 칸을 차지했다.**
 
 전체 기간 결과 칸(`get_full_capacity_outcome`)은 프로세스 전역이고 키는 (reference_version,
-content_token)이다. 편집 토큰은 uuid 라 새 편집이 서면 옛 토큰은 아무도 다시 부르지 않는데, 칸은
-상한까지 남아 다른 세션이 나눠 쓰는 리비전 칸을 밀어냈다. 그래서 편집 적용이 새 토큰을 낼 때
-갈아끼워지는 편집본 칸 하나를 키로 걷는다(`scenario_state._next_edit_token`). 리비전 칸(pristine
-토큰)은 걷지 않는다 — 다른 세션 · 다음 불러오기가 그대로 쓴다.
+content_token)이다. 편집 토큰은 uuid 라 활성 시나리오가 다른 내용으로 바뀌면 옛 토큰은 아무도 다시
+부르지 않는데, 칸은 상한까지 남아 다른 세션이 나눠 쓰는 리비전 칸을 밀어냈다. 그래서 활성 시나리오를
+바꾸는 길 넷(편집 적용 두 길 · 원본 되돌리기 · 리비전 불러오기와 저장 뒤 활성화)과 버리는 길이
+갈아끼워지는 편집본 칸 하나를 그 dict 의 키로 걷는다(`scenario_state._retire_edit_cell`). 리비전 칸
+(pristine 토큰)은 걷지 않는다 — 다른 세션 · 다음 불러오기가 그대로 쓴다.
 
 칸 수 판단은 합성 표본의 샘플 관측이다(실험 R3 — 편집 16번 뒤 전체 칸이 리비전 하나 + 지금
 편집본 하나로 머묾).
@@ -161,6 +162,92 @@ def test_retiring_a_cell_that_is_not_there_is_quiet(tables: dict[str, pd.DataFra
     second = _table_edit(first)
 
     assert second["content_token"] != first["content_token"]
+
+
+def test_discarding_edits_retires_the_edit_cell_but_keeps_the_revision_cell(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """「편집 되돌리기」(`reset_active_scenario`)는 편집본을 리비전 상태로 갈아 끼운다 — 버린 편집본
+    칸을 걷고, 돌아간 리비전 칸은 그대로 적중한다."""
+    version = _version()
+    pristine = scenario_state.reset_active_scenario(tables, version)
+    _calculate(pristine, tables)
+    edited = _plan_edit(pristine)
+    _calculate(edited, tables)
+    assert len(computed) == 2
+
+    back = scenario_state.reset_active_scenario(tables, version)
+
+    assert back["content_token"] == pristine["content_token"]
+    _calculate(back, tables)
+    assert len(computed) == 2, "돌아간 리비전 칸은 남는다"
+    _calculate(edited, tables)
+    assert len(computed) == 3, "버린 편집본 칸은 걷혔다"
+
+
+def test_loading_another_revision_retires_the_edit_cell_by_its_own_version(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """리비전 불러오기 · 저장 뒤 활성화(`activate_scenario_tables`)는 **다른 번호**의 리비전을
+    올린다. 걷는 키는 갈아끼워지는 편집본의 (번호, 토큰)이다 — 새 번호로 지으면 아무것도 걷지
+    못한다."""
+    edited = _plan_edit(scenario_state.reset_active_scenario(tables, _version()))
+    _calculate(edited, tables)
+    assert len(computed) == 1
+
+    loaded = scenario_state.activate_scenario_tables(tables, _version(), revision=7)
+
+    assert loaded["reference_version"] != edited["reference_version"]
+    assert scenario_state.is_pristine_content_token(loaded["content_token"])
+    _calculate(edited, tables)
+    assert len(computed) == 2, "불러오기 전 편집본 칸은 걷혔다"
+
+
+def test_loading_from_the_revision_state_retires_nothing(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """편집 없는 리비전에서 다른 리비전을 불러오면 앞 리비전 칸(세션끼리 나눔)은 남는다."""
+    pristine = scenario_state.reset_active_scenario(tables, _version())
+    _calculate(pristine, tables)
+
+    scenario_state.activate_scenario_tables(tables, _version(), revision=3)
+
+    _calculate(pristine, tables)
+    assert len(computed) == 1
+
+
+def test_clearing_the_active_scenario_retires_its_edit_cell(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """올라와 있는 시나리오를 보관 · 삭제해 세션에서 버릴 때(`clear_active_scenario`)도 편집본 칸을
+    걷는다."""
+    edited = _plan_edit(scenario_state.reset_active_scenario(tables, _version()))
+    _calculate(edited, tables)
+
+    scenario_state.clear_active_scenario()
+
+    assert scenario_state.ACTIVE_SCENARIO_KEY not in st.session_state
+    _calculate(edited, tables)
+    assert len(computed) == 2
+
+
+def test_a_refused_load_retires_nothing(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """불러올 표가 모자라 막히면(`KeyError`) 활성 시나리오도 편집본 칸도 그대로다 — 새 시나리오를
+    다 지은 뒤에 걷는다."""
+    edited = _plan_edit(scenario_state.reset_active_scenario(tables, _version()))
+    _calculate(edited, tables)
+    short = {name: frame for name, frame in tables.items() if name != "RQ_REQB"}
+
+    with pytest.raises(KeyError, match="RQ_REQB"):
+        scenario_state.activate_scenario_tables(short, _version(), revision=2)
+    with pytest.raises(KeyError, match="RQ_REQB"):
+        scenario_state.reset_active_scenario(short, edited["reference_version"])
+
+    assert st.session_state[scenario_state.ACTIVE_SCENARIO_KEY] is edited
+    _calculate(edited, tables)
+    assert len(computed) == 1
 
 
 def _without_last_run_rate_month(tables: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:

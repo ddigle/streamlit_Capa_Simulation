@@ -2271,9 +2271,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다. 편집본은 잠긴 원본이면 같은 배열의
-  겉껍데기 사본, 아니면 깊은 사본이다(`_session_copy` — 5장 20). 편집 적용(`apply_month_updates`·
-  `apply_table_updates`)이 새 토큰을 낼 때 갈아끼워진 **편집본** 토큰의 전체 기간 칸을 걷는다(`_next_edit_token` →
-  `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다, `tests/test_edit_token_retire.py`).
+  겉껍데기 사본, 아니면 깊은 사본이다(`_session_copy` — 5장 20). 활성 시나리오를 바꾸거나 버리는 길(편집 적용
+  `apply_month_updates`·`apply_table_updates` · 원본 되돌리기 `reset_active_scenario` · 불러오기와 저장 뒤
+  `activate_scenario_tables` · `clear_active_scenario`)이 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 걷는다
+  (`_retire_edit_cell` → `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다,
+  `tests/test_edit_token_retire.py`).
 - `src/capa_simulation/frame_sharing.py` — 세션끼리 함께 쓰는 표의 numpy 배열(데이터 블록 · 축 · 확장 배열 칸) 잠금
   (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로)을 한 곳에
   둔다(5장 20). pandas · numpy 만 보는 잎이라 `persistence/cache.py` · `io/reference_cache.py` · `scenario_state.py` 가 함께
@@ -5652,11 +5654,12 @@ RQ_MODULE
    — 리비전 **내용**은 append-only 라(이름표인 리비전명만 고칠 수 있다, 아래 8) 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
-   단위이고 조회기간은 그 결과를 부를 때마다 자른다(자른 결과는 칸에 두지 않는다). 새 편집 토큰이 서면 갈아끼워진
-   **편집본** 토큰의 전체 기간 칸을 키로 걷는다 — 편집 토큰은 uuid 라 그 세션의 그 편집본만 쓰고, 편집을 적용하는 길은
-   모두 곧바로 앱 전체 회차를 다시 돌려 옛 토큰으로 계산을 부르지 않는다. 리비전(pristine) 토큰 칸은 세션끼리 나누므로
-   걷지 않는다(`scenario_state._next_edit_token`). 리비전 불러오기 · 원본 초기화 · 저장 뒤의 마지막 편집본 칸은 걷지 않아
-   상한에서 밀릴 때까지 남는다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
+   단위이고 조회기간은 그 결과를 부를 때마다 자른다(자른 결과는 칸에 두지 않는다). 활성 시나리오가 다른 내용으로
+   바뀌거나 버려지면 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 그 dict 의 (reference_version, content_token)으로
+   걷는다 — 편집 적용 · 원본 되돌리기 · 리비전 불러오기와 저장 뒤 활성화 · 시나리오 버리기(`scenario_state._retire_edit_cell`).
+   편집 토큰은 uuid 라 그 세션의 그 편집본만 쓰고, 바꾸는 길은 모두 그 뒤 옛 dict 로 계산을 부르지 않는다(편집 적용은
+   곧바로 앱 전체 회차를 다시 돌린다). 리비전(pristine) 토큰 칸은 세션끼리 나누므로 걷지 않는다. 편집본을 쥔 채 끝난
+   세션의 칸만 상한에서 밀릴 때까지 남는다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
    Streamlit 1.63 은 5만 행 넘는 DataFrame 인자를 1만 행 표본(`df.sample(10_000)`)으로만 해시해, 표본 밖 한 행
    편집이 옛 결과에 적중한다. 그런 프레임은 `_` 인자로 넘기고 키에는 그 내용을 정하는 `content_token`(시나리오
    키)이나 `frame_digest` 를 싣는다.
