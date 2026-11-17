@@ -4154,8 +4154,8 @@ def _confirmation_master(master: pd.DataFrame, official: EquipmentSnapshot | Non
 
 
 # CSV 업로드 칸 하나만의 상한(MB). 빼면 서버 전체 상한(`.streamlit/config.toml` 의
-# `maxUploadSize`, 1GB)을 물려받는데, CSV 파싱은 파일 크기의 몇 배 메모리를 써 잘못 고른 큰 파일
+# `maxUploadSize`, 200MB)을 물려받는데, CSV 파싱은 파일 크기의 몇 배 메모리를 써 잘못 고른 큰 파일
 # 하나가 공용 앱 프로세스를 몰 수 있다. 칸 안내(「50MB per file」)와 브라우저가 올리기 전에 막는
-# 크기(「File must be 50.0MB or smaller.」)가 이 값이다 — 서버 전체 상한은 그대로라 다른 올리기
-# 칸은 묶지 않는다.
+# 크기(「File must be 50.0MB or smaller.」)가 이 값이다 — 이 칸만 묶고 다른 올리기 칸은 서버 전체
+# 상한을 따른다.
 CSV_UPLOAD_LIMIT_MB = 50

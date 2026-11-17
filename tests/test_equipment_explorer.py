@@ -1,8 +1,12 @@
 # Purpose: 설비 탐색기의 질문별 단일 결과와 선택일·필터·탭 왕복·공정 표시명 동작을 검증한다.
 
 import json
+import os
 import re
+import subprocess
+import sys
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -793,3 +797,28 @@ def test_the_shared_process_field_filters_main_and_marks_a_missing_name() -> Non
     assert not [item for item in app.caption if "orange-badge" in str(item.value)]
     (mark,) = process_marks(app)
     assert mark["here"]["missing"] == ["HB 접합"]
+
+
+def test_importing_the_explorer_leaves_altair_unloaded() -> None:
+    """altair(+ jsonschema)는 차트를 그리는 함수 안에서만 불러온다 — 탐색기를 import 하기만
+    해서는 프로세스에 붙지 않는다(2026-11-17 메모리 보드 decided 2 — 맨 위 import 면 가용설비
+    현황을 한 번만 열어도 프로세스가 끝날 때까지 약 20MiB, 합성 표본 샘플 관측). 새 프로세스로
+    재야 다른 시험이 먼저 불러 둔 altair 에 가리지 않는다."""
+    root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(root / "src")}
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "import capa_simulation.components.equipment_explorer\n"
+            "print(sorted(name for name in ('altair', 'jsonschema') if name in sys.modules))",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=root,
+        timeout=120,
+        check=True,
+    )
+    assert done.stdout.strip().splitlines()[-1] == "[]"

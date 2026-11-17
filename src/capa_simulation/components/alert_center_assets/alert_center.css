@@ -245,7 +245,8 @@ textarea {
 }
 
 /* 공지 칩(2026-11-17 공지 보드 답 q-look) — 관리자가 보낸 공지가 서 있는 동안 모든 화면에 선다. 「정본 아님」 표지와 같은 네모 꼴이고
-   색은 공지 알림의 단계(알림 — info) 색 · 확성기 아이콘. 닫기가 없고 누르면 작은 판이 열린다. 글이 「공지」 두 자라 좁은 창 규칙이 없다. */
+   색은 공지 알림의 단계(알림 — info) 색 · 확성기 아이콘. 닫기가 없고 누르면 작은 판이 열린다. 좁은 창(900px 미만)에서는 공정 칩 ·
+   합성 샘플 표지처럼 확성기 아이콘만 남는다(공지 확인 보드 q-narrow) — 글은 풍선 · 읽기 이름에 그대로 있다. */
 .notice {
   display: inline-flex;
   align-items: center;
@@ -294,7 +295,8 @@ textarea {
 
 @media (max-width: 899.98px) {
   .chip .word,
-  .sample .word {
+  .sample .word,
+  .notice .word {
     display: none;
   }
 }

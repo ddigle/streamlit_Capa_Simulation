@@ -20,7 +20,7 @@
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 옛 Qual 자리표·모듈 환산비·일정 미정·사용기준·38열 개편 분포 |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·적재일·사본 여부 — 런북은 안 부름 |
-| 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
+| 8-10 | `census` | 「지금대로」 결정의 꼴이 저장 리비전에 몇 개(센서스) · 객체 칸 종류(`8-10T`) |
 | 8-11 | `grid` | 기준 정보 편집 표 아홉의 줄 · 칸 수와 본문 바이트 — 큰 표 상한 대비 |
 | 8-12 | `blank` | 남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전 — 칸 분포 · 원천 형제 · 부하 |
 
@@ -3820,6 +3820,102 @@ CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
 )
 
 
+# 리비전 표 객체 칸의 값 종류 — 메모리 줄이기 R1(2026-11-17 메모리 보드 decided 1 · 4)은
+# 표를 읽은 직후 값이 모두 글자인 객체 칸만 같은 글자를 한 객체로 모은다. 숫자 · 참거짓이
+# 섞인 칸까지 모으면 `1` · `1.0` · `True` 처럼 같다고 비교되는 값이 한 객체로 합쳐지고
+# `DataFrame.equals` 는 그것을 못 잡는다. 사외 표본에는 섞인 칸이 없어(글자 · 빈 값뿐)
+# 「글자 칸만」 조건이 실데이터에서도 맞는지는 여기서 센다. 8-10 의 `C<번호>` 줄(「지금대로」
+# 결정의 꼴 — 0 이 정상)과 뜻이 달라 머리의 `0 아님` · `합` 에 넣지 않고 요약 키 `8-10T`
+# 한 줄로 따로 낸다.
+OBJECT_TEXT: Final = "글자만"
+OBJECT_MIXED: Final = "섞임"
+OBJECT_EMPTY: Final = "빈"
+
+
+def object_column_kind(values: pd.Series) -> str:
+    """객체 칸 하나의 값 종류 — 빈 값(None · NaN)을 빼고 모두 글자면 `글자만`, 빈 값뿐이면 `빈`,
+    글자가 아닌 값(숫자 · 참거짓 · 바이트 등)이 하나라도 있으면 `섞임`(글자가 하나도 없어도). R1 이
+    모으는 칸은 `글자만` 뿐이다 — 같은 판정(`pd.api.types.infer_dtype(skipna=True)`)이다."""
+    kind = pd.api.types.infer_dtype(values, skipna=True)
+    if kind == "string":
+        return OBJECT_TEXT
+    if kind == "empty":
+        return OBJECT_EMPTY
+    return OBJECT_MIXED
+
+
+class ObjectColumns(NamedTuple):
+    """리비전 표 객체 칸을 값 종류로 센 수 — 칸은 리비전 · 표 · 칸마다 한 번 센다."""
+
+    text: int
+    mixed: int
+    empty: int
+    hit: int
+    seen: int
+
+    @property
+    def total(self) -> int:
+        return self.text + self.mixed + self.empty
+
+
+def census_object_columns(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+) -> ObjectColumns:
+    """본 리비전마다 리비전 표를 앱이 읽는 길(`load_frame`) 그대로 읽어 객체 칸을 값 종류로 센다.
+
+    한 번에 한 리비전의 한 표만 메모리에 둔다. 행이 없는 표는 셀 값이 없어 세지 않는다. `hit` 은
+    `섞임` 칸이 하나라도 있는 리비전 수다. 값 · 칸 이름은 내지 않는다.
+    """
+    counts: Counter[str] = Counter()
+    hit = 0
+    revisions = _picked_revisions(connection, scope)
+    for revision_id in revisions:
+        mixed_before = counts[OBJECT_MIXED]
+        for physical in REVISION_TABLES.values():
+            frame = load_frame(
+                connection,
+                schema="rev_data",
+                table_name=physical,
+                owner_column="revision_id",
+                owner_id=revision_id,
+            )
+            if not len(frame):
+                continue
+            for position in range(frame.shape[1]):
+                column = frame.iloc[:, position]
+                if column.dtype == object:
+                    counts[object_column_kind(column)] += 1
+        hit += counts[OBJECT_MIXED] > mixed_before
+    return ObjectColumns(
+        text=counts[OBJECT_TEXT],
+        mixed=counts[OBJECT_MIXED],
+        empty=counts[OBJECT_EMPTY],
+        hit=hit,
+        seen=len(revisions),
+    )
+
+
+def _object_columns_note(measured: ObjectColumns) -> str:
+    """요약의 `8-10T` — `칸 = 글자만 + 섞임 + 빈` 식과 섞인 칸이 있는 리비전 / 본 리비전."""
+    return _note(
+        "8-10T",
+        f"칸 {measured.total:,} = {OBJECT_TEXT} {measured.text:,} + {OBJECT_MIXED} "
+        f"{measured.mixed:,} + {OBJECT_EMPTY} {measured.empty:,}",
+        f"걸림 {measured.hit:,}/{measured.seen:,}",
+    )
+
+
+def _object_columns_line(measured: ObjectColumns) -> str:
+    return (
+        "- 객체 칸(메모리 줄이기 R1 의 「글자 칸만」 조건 — 요약 키 `8-10T`) — 본 리비전의 "
+        "리비전 표를 앱이 읽는 길(`load_frame`) 그대로 읽어 객체(object) 칸을 리비전 · 표 · "
+        f"칸마다 센다(행 없는 표는 뺌): {OBJECT_TEXT} {measured.text:,} · {OBJECT_MIXED}(빈 "
+        f"값이 아닌 글자 아닌 값 — 숫자 · 참거짓 등이 든 칸) {measured.mixed:,} · "
+        f"{OBJECT_EMPTY}(빈 값뿐) {measured.empty:,} · 섞인 칸이 있는 리비전 "
+        f"{measured.hit:,} / {measured.seen:,}. 값 · 칸 이름은 찍지 않는다."
+    )
+
+
 def _census_scope(connection: duckdb.DuckDBPyConnection, all_revisions: bool) -> CensusScope:
     picked = _ALL_REVISIONS if all_revisions else _ACTIVE_REVISIONS
     count = _scalar(connection, f"WITH {picked} SELECT count(*) FROM picked")
@@ -3885,6 +3981,7 @@ def iter_census(session: Session, *, all_revisions: bool = False) -> Iterator[li
         yield [*lines, f"- 리비전 목록을 읽지 못함 — {_failure(exc)}", ""]
         return
     rows: list[CensusRow] = []
+    objects_note: str | None = None
     try:
         yield [
             *lines,
@@ -3900,8 +3997,17 @@ def iter_census(session: Session, *, all_revisions: bool = False) -> Iterator[li
             row = item.measure(session, scope)
             rows.append(row)
             yield ["| " + " | ".join(row.cells()) + " |"]
+        try:
+            measured = census_object_columns(connection, scope)
+        except Exception as exc:  # 이 줄이 멈춰도 센서스 표와 요약은 남긴다. 문구는 찍지 않는다
+            objects_note = _note("8-10T", _failure(exc))
+            objects_line = f"- 객체 칸(요약 키 `8-10T`) — {_failure(exc)}"
+        else:
+            objects_note = _object_columns_note(measured)
+            objects_line = _object_columns_line(measured)
         yield [
             "",
+            objects_line,
             "- 읽는 법 — `걸림 / 봄` 은 그 꼴이 하나라도 있는 리비전(또는 데이터셋 · 설비 "
             "리비전) 수 / 본 수, `수` 는 그 꼴의 칸 · 키 · 행 · 달 · 묶음 수다(설비명 묶음만 최신 "
             "리비전의 수). 수는 결정의 근거일 뿐이다 — **0 이어도 결정을 닫지 않는다.** 사외가 "
@@ -3913,6 +4019,8 @@ def iter_census(session: Session, *, all_revisions: bool = False) -> Iterator[li
         ]
     finally:
         session.notes.extend(_census_notes(scope, rows, all_revisions=all_revisions))
+        if objects_note is not None:
+            session.notes.append(objects_note)
 
 
 # ---------------------------------------------------------------------------------- 8-11 grid
