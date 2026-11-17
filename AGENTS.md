@@ -5371,8 +5371,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`ProfileVersionConflict` — 기본 스키마 `app_meta`, 설비 DB 층 사용 상태는 `schema="equipment_ops"`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
   리비전 · 데이터셋 표를 읽는 `load_frame()` 은 `fetchdf` 바로 뒤에 글자 칸의 같은 글을 한 객체로 모은다(`share_repeated_text` —
-  값이 모두 `str` 인 객체 칸만, 그 읽기 동안만 쓰는 사전, 객체 블록에 제자리로 써 값 · dtype · 블록 꼴 · 빈 칸 · 해시가 그대로다.
-  숫자 · 참거짓이 섞인 칸은 건드리지 않는다 — `1` · `1.0` · `True` 가 합쳐지면 `equals` 가 못 잡는다). 기본 켬이고
+  비지 않은 값이 모두 정확히 `str` 인 객체 칸만, 그 읽기 동안만 쓰는 사전, 객체 블록에 제자리로 써 값 · dtype · 블록 꼴 · 빈 칸 ·
+  해시가 그대로다. 숫자 · 참거짓 · `str` 하위형(`np.str_` 등)이 섞인 칸은 건드리지 않는다 — `1` · `1.0` · `True` 나 같은 글의
+  `str` · `np.str_` 가 합쳐지면 `equals` 가 못 잡는다). 기본 켬이고
   환경변수 `CAPA_SHARE_STRINGS=off` 로 끈다(`settings.share_strings_enabled`). 실제로 모았는지(고유 객체 수 = 고유 값 수)는
   `tests/test_share_repeated_text.py` 가 DuckDB 읽기 길로 잠근다 — pandas 판이 바뀌어 칸이 쓸 수 있는 view 가 아니게 되면 값은
   맞은 채 효과만 사라진다.

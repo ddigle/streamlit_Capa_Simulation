@@ -493,9 +493,11 @@ def share_repeated_text(frame: pd.DataFrame) -> pd.DataFrame:
     `fetchdf` 는 칸마다 `str` 객체를 따로 만들어, 리비전 표의 몇 안 되는 고유 글(공정 · 제품 ·
     양산구분 등)이 줄 수만큼 따로 산다(합성 표본의 샘플 관측: 리비전 하나 깊은 크기 25 → 4 MiB).
 
-    - 값이 모두 `str` 인 객체 칸(빈 값 None · NaN 섞임 허용)만 모은다. 숫자 · 참거짓이 섞인 칸은
-      건드리지 않는다 — `factorize` 는 `1` · `1.0` · `True` 처럼 같다고 비교되는 값을 첫 객체 하나로
-      합치고 `DataFrame.equals` 는 그것을 못 잡는다.
+    - 값이 모두 정확히 `str` 인 객체 칸(빈 값 None · NaN 섞임 허용)만 모은다. 숫자 · 참거짓 ·
+      `str` 하위형(`np.str_` 등)이 섞인 칸은 건드리지 않는다 — `factorize` 는 `1` · `1.0` · `True`
+      나 `"a"` · `np.str_("a")` 처럼 같다고 비교되는 값을 첫 객체 하나로 합치고 `DataFrame.equals`
+      는 그것을 못 잡는다. 형은 고유 값이 아니라 비지 않은 값마다 본다 — 고유 값만 보면 같은 글의
+      `str` 이 앞에 있을 때 뒤의 하위형이 `str` 로 바뀐다.
     - 같은 글은 이 프레임 안에서만 한 객체로 모은다(부를 때마다 새 사전 — 전역 intern · 풀을 두지
       않아 다 쓴 리비전의 글이 프로세스에 남지 않는다). 칸마다 고유 값만 사전을 지나 칸끼리도 같은
       객체를 쓴다.
@@ -514,11 +516,11 @@ def share_repeated_text(frame: pd.DataFrame) -> pd.DataFrame:
         codes, uniques = pd.factorize(values, use_na_sentinel=True)
         if len(uniques) == 0 or len(uniques) == len(values):
             continue
-        if not all(type(value) is str for value in uniques):
+        missing = codes < 0
+        if set(map(type, values[~missing] if missing.any() else values)) != {str}:
             continue
         canonical = np.empty(len(uniques), dtype=object)
         canonical[:] = [pool.setdefault(value, value) for value in uniques]
-        missing = codes < 0
         shared = canonical.take(np.where(missing, 0, codes))
         if missing.any():
             shared[missing] = values[missing]

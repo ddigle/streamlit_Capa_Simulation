@@ -157,6 +157,27 @@ def test_columns_mixed_with_numbers_or_flags_are_left_alone() -> None:
     assert shared[3] == "공정 B"
 
 
+class _Label(str):
+    """글 하위형 — `np.str_` 처럼 같은 글의 `str` 과 같다고 비교되고 해시도 같다."""
+
+
+@pytest.mark.parametrize("subtype", [np.str_, _Label], ids=["np_str", "str_subclass"])
+@pytest.mark.parametrize("first", [False, True], ids=["plain_first", "subtype_first"])
+def test_a_column_with_a_str_subtype_keeps_every_type(subtype: type[str], first: bool) -> None:
+    """`str` 하위형이 섞인 칸은 건드리지 않는다 — 같은 글의 순수 `str` 이 앞에 있어도 뒤의 하위형이
+    `str` 로 바뀌지 않는다(`factorize` 는 같다고 비교되는 값을 첫 객체 하나로 합친다)."""
+    plain = ["".join(["공정", " A"]) for _ in range(2)]
+    odd = subtype("공정 A")
+    values: list[object] = [odd, *plain] if first else [plain[0], odd, plain[1]]
+    values.append(None)
+    frame = pd.DataFrame({"글": pd.Series(values, dtype=object)})
+    before = [(type(value), id(value)) for value in frame["글"]]
+
+    share_repeated_text(frame)
+
+    assert [(type(value), id(value)) for value in frame["글"]] == before
+
+
 def test_the_same_text_in_two_columns_is_one_object() -> None:
     """한 프레임 안에서는 칸끼리도 같은 글을 같은 객체로 쓴다(그 읽기 동안만 쓰는 사전)."""
     left = ["".join(["DEMO", "-", "P1"]) for _ in range(3)]
