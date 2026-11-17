@@ -82,7 +82,7 @@ ALERT_CODE: Final = "AD-22"
 MESSAGE_LIMIT: Final = 200
 FRAME_LIMIT: Final = 12
 # 직전 회차의 등급 거절(종류, 동작) — 누름 없이 같은 거절이 또 오면 다시 그리지 않고 멈춘다.
-REFUSAL_SEEN_KEY: Final = "grade_refusal_seen"
+REFUSAL_MARK_KEY: Final = "grade_refusal_mark"
 # 관리자 알림 전문에 싣는 최근 실패 수.
 RECENT_SHOWN: Final = 5
 _LOGGER = logging.getLogger(__name__)
@@ -153,9 +153,9 @@ def _take_refusal(exc: grades.GradeDenied | grades.SignInEnded) -> bool:
     """등급 거절을 받는다 — 처음이면 알림을 담고 참(다시 그린다), 누름 없이 같은 거절이 또 오면
     거짓(이미 그 회차의 알림 칸이 냈다 — 멈춘다)."""
     mark = _refusal_mark(exc)
-    if st.session_state.get(REFUSAL_SEEN_KEY) == mark:
+    if st.session_state.get(REFUSAL_MARK_KEY) == mark:
         return False
-    st.session_state[REFUSAL_SEEN_KEY] = mark
+    st.session_state[REFUSAL_MARK_KEY] = mark
     grade_ui.refuse(exc)
     return True
 
@@ -177,13 +177,13 @@ def run_core_page(run: Callable[[], None], *, page: str, href: str) -> None:
         else:
             _record(page, href, original if isinstance(original, BaseException) else handled)
     except (ScriptControlException, KeyboardInterrupt):
-        st.session_state.pop(REFUSAL_SEEN_KEY, None)
+        st.session_state.pop(REFUSAL_MARK_KEY, None)
         raise
     # SystemExit · CancelledError 도 받는다 — 두면 회차 스레드가 끝나 세션이 「실행 중」 에 머문다.
     except BaseException as error:
         render_page_failure(_record(page, href, error), error)
     else:
-        st.session_state.pop(REFUSAL_SEEN_KEY, None)
+        st.session_state.pop(REFUSAL_MARK_KEY, None)
         return
     # 예외 처리 칸 밖에서 다시 그리거나 멈춘다 — 제어 예외에 처리한 오류가 이어 붙지 않게.
     if rerun:

@@ -89,7 +89,6 @@ from typing import Any, Final, Literal, TypedDict, cast, get_args
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.delta_generator_singletons import get_last_dg_added_to_context_stack
-from typing_extensions import NotRequired
 
 Level = Literal["info", "check", "action", "error"]
 Kind = Literal["event", "state"]
@@ -442,7 +441,19 @@ FLASH_CODES: Final[Mapping[str, str]] = {
 }
 
 
-class AlertTable(TypedDict):
+class _AlertTableFields(TypedDict):
+    """알림에 딸린 표의 늘 있는 칸(`AlertTable` 의 바탕)."""
+
+    title: str
+    columns: list[str]
+    rows: list[list[str | int | float | None]]
+    total: int
+    file: str
+    shown: dict[str, dict[str, str]]
+    help: dict[str, str]
+
+
+class AlertTable(_AlertTableFields, total=False):
     """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(조건의 내역을 화면 본문
     접힘에 두지 않는다 — 산출 결과 대당 Capa 「제외 기준정보」 2026-11-02, 소요대수 탭 · 표준 목표 ·
     생산 계획 · 필요 단축 일정의 목록 2026-11-05 사용자 요청(검수표)).
@@ -456,14 +467,7 @@ class AlertTable(TypedDict):
       화면으로도 따라간다. 없으면 참이다.
     """
 
-    title: str
-    columns: list[str]
-    rows: list[list[str | int | float | None]]
-    total: int
-    file: str
-    shown: dict[str, dict[str, str]]
-    help: dict[str, str]
-    csv: NotRequired[bool]
+    csv: bool
 
 
 class GotoTarget(TypedDict):

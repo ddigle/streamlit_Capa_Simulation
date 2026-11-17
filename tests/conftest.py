@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import duckdb
+import grade_support
 import pytest
 from capture_guard import keep_capture_tolerant
 from js_runner import refuse_overlong_command_line
@@ -368,9 +369,8 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def _without_grade_judge() -> Iterator[None]:
     """접속 등급의 판정기(`grades.install_caller_source` — `app.py` 를 도는 AppTest · 등급 시험이
     꽂는다)와 등급 시험 한 벌(`grade_support`)을 앞뒤로 비운다 — 앞 시험의 판정기가 뒤 시험의 저장소
-    쓰기를 가르지 않게(꽂힌 것이 없으면 제한 없음)."""
-    import grade_support
-
+    쓰기를 가르지 않게(꽂힌 것이 없으면 제한 없음). `grade_support` 는 이 파일 맨 위에서 읽는다 —
+    시험마다 걷히기 전의 실제 화면 감싸기(`REAL_RUN_CORE_PAGE`)를 붙잡게."""
     access_grades.install_caller_source(None)
     grade_support.forget_world()
     yield

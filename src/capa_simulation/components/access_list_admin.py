@@ -94,7 +94,7 @@ _ACCOUNT_HEADERS: Final = (LOGINID_HEADER, ACCOUNT_HEADER)
 TABLE_COLUMNS: Final = ("계정", "이름", "부서", "등록 시각", "등록 길", "등급")
 # 명단에 든 길 — 「등록 길」 칸과 「최근 등록 · 빼기」 의 「한 일」 이 함께 쓰는 두 낱말.
 VIA_SELF_LABEL: Final = "스스로 등록"
-VIA_ADMIN_LABEL: Final = f"{grades.GRADE_LABELS[grades.DEVELOPER]}가 넣음"
+VIA_ADMIN_LABEL: Final = "개발자가 넣음"
 VIA_LABELS: Final = {VIA_SELF: VIA_SELF_LABEL}
 ENV_ADMIN_LABEL: Final = grades.ENV_DEVELOPER_LABEL
 _CELL_SEPARATORS: Final = ("\t", ",", ";")
@@ -130,6 +130,8 @@ GRADE_LOCKED_WHY: Final = "나 자신 · 환경변수 개발자는 개발자 아
 ADD_GRADE_KEY: Final = "admin_area_access_list_add_grade"
 ADD_GRADE_LABEL: Final = "등급"
 UNREAD_GRADES_CAPTION: Final = "등급 파일 읽지 못함"
+LIST_READ_FAILED: Final = "접속 명단을 읽지 못했습니다"
+GRADES_READ_FAILED: Final = "등급 파일을 읽지 못했습니다"
 # 「이 등급으로 보기」 — Admin Area 안쪽 탭 줄 오른쪽 끝 팝오버(운영 + 켜짐의 실제 개발자에게만).
 PREVIEW_LABEL: Final = "이 등급으로 보기"
 PREVIEW_POPOVER_KEY: Final = "admin_area_grade_preview_popover"
@@ -276,10 +278,10 @@ def _reread() -> None:
         return
     problem: SourceProblem | None = listed or graded
     if problem is not None:
-        what = "접속 명단" if listed is not None else "등급 파일"
+        lead = LIST_READ_FAILED if listed is not None else GRADES_READ_FAILED
         queue_flash(
             ACCESS_LIST_FLASH_KEY,
-            f"{what}을 읽지 못했습니다 — {access_problem_text(problem)}",
+            f"{lead} — {access_problem_text(problem)}",
             kind="error",
             popup_only=True,
         )

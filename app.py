@@ -412,6 +412,9 @@ with pinned_connections(DUCKDB_PATH):
         # 같은 까닭으로 여기 싣는다.
         + DOWNLOAD_MENU_STYLE
         + TABLE_HEADING_ROW_STYLE
+        # 등급 밖 칸(`grade_ui.toolbar_scope` — 관리자 아래 등급의 설비 화면)의 표 도구 막대 · 그림
+        # 막대 감춤 — 칸마다 스타일을 보내지 않게 여기 한 벌을 싣는다.
+        + grade_ui.TOOLBAR_STYLE
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
         # Data 초안·시나리오 관리 표 초안)이 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은

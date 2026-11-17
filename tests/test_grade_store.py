@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
-from fixtures import access_list_v1
 from grade_support import (
     ADDED_AT,
     DEMO_DEVELOPER,
@@ -37,6 +38,11 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.io import s3_small
 from capa_simulation.services.object_storage_manifest import PRUNE_PREFIXES
+
+# 얼린 앞 판 견본(`tests/fixtures/access_list_v1.py`) — 견본 폴더는 꾸러미가 아니라 길로 읽는다.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures"))
+
+import access_list_v1  # noqa: E402
 
 NEWCOMER = "demo.newcomer"
 

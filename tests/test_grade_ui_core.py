@@ -33,7 +33,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.auth import grade_store, grades, runtime
 from capa_simulation.auth.identity import Identity, identity_from_cookies
-from capa_simulation.components import access_list_admin, admin_view, sso_identity
+from capa_simulation.components import access_list_admin, admin_view, grade_ui, sso_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "app_pages" / "admin_area.py"
@@ -277,3 +277,131 @@ def test_this_lane_roots_catch_refusals() -> None:
 
 def test_the_covered_actions_are_known() -> None:
     assert COVERED_ACTIONS <= set(grades.ACTIONS)
+
+
+# ------------------------------------------------------------------ 화면 쪽 창구(grade_ui) 계약
+STOP_PAGE = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+grade_ui.stop_unless("admin.area", place="page")
+st.write("after")
+"""
+
+STOP_TAB = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+grade_ui.stop_unless(
+    "scenario.db_register", place="tab", tab_key="demo_tabs", first_label="첫 탭"
+)
+st.write("after")
+"""
+
+PENDING_FRAGMENT = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+st.session_state["runs"] = st.session_state.get("runs", 0) + 1
+
+
+@grade_ui.in_fragment
+def body() -> None:
+    st.write("body")
+
+
+if st.session_state["runs"] == 1:
+    st.session_state[grade_ui.PENDING_KEY] = True
+body()
+"""
+
+
+def _written(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.markdown]
+
+
+@GRADE_PARAMS
+def test_stop_unless_stops_an_out_of_grade_page(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    app = AppTest.from_string(STOP_PAGE).run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    if grade == grades.DEVELOPER:
+        assert "after" in _written(app) and not list(app.warning)
+    else:
+        assert [item.value for item in app.warning] == ["개발자만 여는 화면입니다"]
+        assert "after" not in _written(app)
+
+
+def test_stop_unless_rewrites_a_hidden_tab_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    as_grade(monkeypatch, grades.VIEWER)
+    app = AppTest.from_string(STOP_TAB)
+    app.session_state["demo_tabs"] = "DB 등록"
+    app.run(timeout=60)
+
+    assert [item.value for item in app.warning] == ["실무자부터 여는 탭입니다"]
+    assert app.session_state["demo_tabs"] == "첫 탭", "다음 회차는 첫 탭으로 정상"
+    with pytest.raises(ValueError):
+        grade_ui.stop_unless("scenario.db_register", place="tab", tab_key="demo_tabs")
+
+
+@GRADE_PARAMS
+def test_toolbar_scope_and_chart_config_hide_only_below_the_grade(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    allowed = grades.at_least(grade, grades.MANAGER)
+    key = grade_ui.toolbar_key("equipment.export", "equipment_master_table")
+    assert (key == "equipment_master_table") is allowed
+    assert key.startswith(grade_ui.HIDDEN_TOOLS_PREFIX) is not allowed
+    config = grade_ui.chart_config("equipment.export", {"scrollZoom": False})
+    assert config["scrollZoom"] is False
+    assert ("displayModeBar" in config) is not allowed
+    assert grade_ui.HIDDEN_TOOLS_PREFIX in grade_ui.TOOLBAR_STYLE
+    assert 'data-testid="stElementToolbar"' in grade_ui.TOOLBAR_STYLE
+
+
+def test_toolbar_scope_writes_no_style_slot_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """칸마다 스타일을 보내지 않는다 — 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 등급과 상관없이
+    같다(스타일은 `app.py` 가 보내는 한 벌)."""
+    script = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+with grade_ui.toolbar_scope("equipment.export", "demo_table"):
+    st.write("table")
+"""
+    counts = []
+    for grade in (grades.VIEWER, grades.MANAGER):
+        as_grade(monkeypatch, grade)
+        app = AppTest.from_string(script).run(timeout=60)
+        counts.append(len(app.get("html")))
+    assert counts == [0, 0]
+
+
+def test_an_alarm_table_can_drop_its_csv_button() -> None:
+    import pandas as pd
+
+    from capa_simulation.components.state_alerts import alert_table
+
+    frame = pd.DataFrame({"설비": ["DEMO-01"]})
+    kept = alert_table(frame, title="표", file_name="demo.csv")
+    dropped = alert_table(frame, title="표", file_name="demo.csv", csv=False)
+    assert kept is not None and "csv" not in kept
+    assert dropped is not None and dropped["csv"] is False
+
+
+def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """프래그먼트 · 팝업 안 콜백이 거절을 담으면(`on_press` 표지) 이어 도는 프래그먼트 회차의 본문
+    첫머리가 앱 전체를 다시 그린다 — 그 회차에는 알림을 낼 `emit` 이 돌지 않는다."""
+    monkeypatch.setattr(grade_ui, "fragment_only_run", lambda: True)
+    app = AppTest.from_string(PENDING_FRAGMENT).run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["runs"] == 2
+    assert grade_ui.PENDING_KEY not in app.session_state
+    assert "body" in _written(app)

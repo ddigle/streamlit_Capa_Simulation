@@ -137,10 +137,12 @@ def stop_unless(
     """화면 등급으로 그 동작을 할 수 없으면 경고 한 줄 + 「HOME 으로」 + 멈춤.
 
     탭(`place="tab"`)은 주소가 없어 「그 화면으로」 · 기억된 탭 값이 숨은 탭을 가리킨 회차에 한 번
-    멈춘다 — `tab_key` · `first_label` 을 주면 탭 값을 첫 라벨로 새로 적은 뒤 멈춰 다음 회차는
-    정상이다
-    (pop 하지 않는다 — AGENTS 9장).
+    멈춘다 — `tab_key` 와 `first_label`(그 탭 묶음의 첫 라벨)을 함께 주면 탭 값을 첫 라벨로 새로
+    적은 뒤 멈춰 다음 회차는 정상이다(pop 하지 않는다 — AGENTS 9장). 둘 가운데 하나만 주면
+    `ValueError`.
     """
+    if (tab_key is None) != (first_label is None):
+        raise ValueError("tab_key 와 first_label 은 함께 줍니다")
     if sso_identity.viewer_can(action):
         return
     if place == "tab" and tab_key is not None and first_label is not None:
@@ -153,24 +155,32 @@ def stop_unless(
     st.stop()
 
 
-def _hidden_tools_style(key: str) -> str:
-    return (
-        "<style>"
-        f".st-key-{key} [data-testid='stElementToolbar'],"
-        f".st-key-{key} .modebar-container,"
-        f".st-key-{key} .modebar {{ display: none !important; }}"
-        "</style>"
-    )
+# 등급 밖 칸의 key 접두 — 앱이 매 회차 보내는 스타일 한 벌(`TOOLBAR_STYLE` — `app.py` 의 사이드바
+# 스타일과 함께)이 이 접두의 칸 안 표 도구 막대 · 그림 막대를 감춘다. 칸마다 스타일을 보내지 않아
+# 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 그대로다.
+HIDDEN_TOOLS_PREFIX: Final = "grade_tools_off_"
+TOOLBAR_STYLE: Final = (
+    "<style>"
+    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"],'
+    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar-container,'
+    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar'
+    " { display: none !important; }"
+    "</style>"
+)
+
+
+def toolbar_key(action: str, key: str) -> str:
+    """`toolbar_scope` 칸의 key — 화면 등급으로 그 동작을 할 수 없으면 감춤 접두를 단다."""
+    return key if sso_identity.viewer_can(action) else f"{HIDDEN_TOOLS_PREFIX}{key}"
 
 
 @contextmanager
 def toolbar_scope(action: str, key: str) -> Iterator[DeltaGenerator]:
-    """`st.container(key=key)` 를 연다. 화면 등급으로 그 동작을 할 수 없으면 그 칸 안 Streamlit 표
-    도구 막대 · 그림 막대를 줄 통째로 감춘다(찾기 · 크게 보기도 함께). 스타일 자리는 늘 하나다 —
-    등급에 따라 이벤트 칸 자리 수가 달라지지 않게(할 수 있으면 빈 스타일)."""
-    box = st.container(key=key)
+    """`st.container` 칸을 연다. 화면 등급으로 그 동작을 할 수 없으면 칸 key 에 감춤 접두를 달아 그
+    칸 안 Streamlit 표 도구 막대 · 그림 막대를 줄 통째로 감춘다(찾기 · 크게 보기도 함께 —
+    `TOOLBAR_STYLE`). 칸 밖에 스타일을 쓰지 않는다."""
+    box = st.container(key=toolbar_key(action, key))
     with box:
-        st.html("<style></style>" if sso_identity.viewer_can(action) else _hidden_tools_style(key))
         yield box
 
 
