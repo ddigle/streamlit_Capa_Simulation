@@ -1,11 +1,11 @@
-# Purpose: HOME 공지의 공용 프로필 저장·표시 규칙을 고정한다.
+# Purpose: HOME Capa 요약의 공용 프로필 저장·표시 규칙을 고정한다.
 
-"""공지 계약.
+"""Capa 요약 계약.
 
 시나리오와 분리된 공용 프로필이다. 여러 사람이 같은 문구를 보고, 시나리오를 바꿔도
 그대로 남는다. 계산에는 들어가지 않는 **화면 문구**라 Figure 캐시 키에도 없다.
 
-**빈 문구와 미저장은 다르다.** 빈 문구는 「공지를 내렸다」는 결정이고 미저장은 아직
+**빈 문구와 미저장은 다르다.** 빈 문구는 「Capa 요약을 내렸다」는 결정이고 미저장은 아직
 아무도 손대지 않은 상태다. 화면은 둘 다 아무것도 띄우지 않지만 저장 화면은 구분해야
 하고, 내리는 것도 version 이 올라야 다른 세션의 캐시가 풀린다.
 """
@@ -49,7 +49,7 @@ def test_saving_a_notice_bumps_the_version(tmp_path: Path) -> None:
 
 
 def test_taking_the_notice_down_is_itself_a_saved_decision(tmp_path: Path) -> None:
-    """빈 문구를 막으면 공지를 내릴 방법이 없다. version 도 올라야 캐시가 풀린다."""
+    """빈 문구를 막으면 Capa 요약을 내릴 방법이 없다. version 도 올라야 캐시가 풀린다."""
     repository = _repository(tmp_path / "scenario.duckdb")
     repository.replace_global_summary_note("임시 공지", source="웹 직접 편집")
 
@@ -114,7 +114,7 @@ def _stub_streamlit(
 
     @contextmanager
     def fake_expander(label: str, *, expanded: bool = False) -> Iterator[None]:
-        assert label == "공지"
+        assert label == "Capa 요약"
         if expanded_log is not None:
             expanded_log.append(expanded)
         yield

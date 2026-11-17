@@ -834,7 +834,7 @@ class DuckDBScenarioRepository:
         """Load the scenario-independent HOME summary notice.
 
         다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
-        정상이고 그때는 빈 공지다.
+        정상이고 그때는 빈 Capa 요약이다.
         """
         with self._connect() as connection:
             return home_profile_store.load_global_summary_note(connection)
@@ -845,11 +845,11 @@ class DuckDBScenarioRepository:
     ) -> GlobalSummaryNote:
         """Atomically replace the shared summary notice. 교체마다 version 이 오른다.
 
-        **빈 문구를 막지 않는다.** 공지를 내리는 것도 저장해야 하는 결정이고, 그때도
+        **빈 문구를 막지 않는다.** Capa 요약을 내리는 것도 저장해야 하는 결정이고, 그때도
         version 이 올라야 다른 세션의 캐시가 풀린다. 화면 편집은 `expected_version` 을 넘겨
         버전 대조를 받는다(다르면 `ProfileVersionConflict`).
         """
-        source_label = required_text(source, "공지 출처")
+        source_label = required_text(source, "Capa 요약 출처")
         with self._write_transaction() as connection:
             home_profile_store.replace_global_summary_note(
                 connection, note, source=source_label, expected_version=expected_version

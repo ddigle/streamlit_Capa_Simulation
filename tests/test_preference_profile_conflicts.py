@@ -1,4 +1,4 @@
-# Purpose: HOME Preference 의 공지·Top5 구간·주요공정 프리셋 저장이 남의 저장을 덮지 않는지 본다.
+# Purpose: HOME Preference Capa 요약·Top5 구간·주요공정 프리셋 저장이 남의 저장을 덮지 않는지 본다.
 
 """세 편집기는 칸에 고정 key 가 없다(숨은 탭의 첫 값이 세션에 박히지 않게 — Top5 두 칸은 key 끝에
 저장본 version 을, 주요공정 프리셋 이름·공정 두 칸은 고칠 프리셋 저장본의 지문을 붙여 함께 다시
@@ -111,17 +111,17 @@ def test_a_summary_save_from_a_stale_screen_is_rejected_not_reported_as_saved(
     database: Path,
 ) -> None:
     app = _app(database)
-    # 이 화면이 v0 을 보는 사이 다른 세션이 먼저 공지를 올린다.
+    # 이 화면이 v0 을 보는 사이 다른 세션이 먼저 Capa 요약을 올린다.
     DuckDBScenarioRepository(database).replace_global_summary_note(
         "B 공지 — 먼저 저장", source="다른 세션", expected_version=0
     )
     clear_global_summary_note_cache()
     app.text_area[0].input("A 공지 — 옛 화면에서 저장")
-    app = _press(app, "공지 저장")
+    app = _press(app, "Capa 요약 저장")
 
     assert not list(app.exception)
     assert not _successes(app)
-    assert any("다른 사용자가 먼저 공지를 저장" in message for message in _errors(app))
+    assert any("다른 사용자가 먼저 Capa 요약을 저장" in message for message in _errors(app))
     profile = DuckDBScenarioRepository(database).load_global_summary_note()
     assert (profile.version, profile.note, profile.source) == (1, "B 공지 — 먼저 저장", "다른 세션")
     # 칸은 최신 저장본으로 다시 섰다 — 다음 저장은 그 version 에서 출발한다.
@@ -424,8 +424,8 @@ def test_a_save_on_a_fresh_screen_still_saves(
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _app(database)
     app.text_area[0].input("새 공지")
-    app = _press(app, "공지 저장")
-    assert _successes(app) == ["공지를 저장했습니다."]
+    app = _press(app, "Capa 요약 저장")
+    assert _successes(app) == ["Capa 요약을 저장했습니다."]
     app.number_input[1].set_value(170.0)
     app = _press(app, "확보율 구간 저장")
     assert _successes(app) == ["B/N Top5 확보율 구간을 저장했습니다."]
@@ -443,7 +443,7 @@ def test_a_save_on_a_fresh_screen_still_saves(
 @pytest.mark.parametrize(
     ("label", "base_key", "saved_message"),
     [
-        ("공지 저장", SUMMARY_BASE_VERSION_KEY, "공지를 저장했습니다."),
+        ("Capa 요약 저장", SUMMARY_BASE_VERSION_KEY, "Capa 요약을 저장했습니다."),
         ("확보율 구간 저장", TOP5_BASE_VERSION_KEY, "B/N Top5 확보율 구간을 저장했습니다."),
         ("프리셋 저장", KEY_PROCESS_SEEN_KEY, "주요공정 히트맵 프리셋을 저장했습니다."),
     ],
@@ -502,7 +502,7 @@ def _stored_version(database: Path, editor: str) -> int:
 @pytest.mark.parametrize(
     ("editor", "label", "first_version"),
     [
-        ("summary", "공지 저장", 1),
+        ("summary", "Capa 요약 저장", 1),
         ("top5", "확보율 구간 저장", 1),
         ("key_process", "프리셋 저장", 2),
         ("key_process_default", "기본으로", 2),
@@ -524,7 +524,7 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
     누름이 옛 화면의 입력을 든 채 대조를 지나 저장하고 「저장했습니다」 를 띄웠다 — key 없는 칸이 새
     저장본으로 서서 A 의 입력은 버려진다. 거부 직후(`TRAILING_PRESS_SECONDS`)의 둘째 누름은 저장하지
     않고 그 거부를 다시 알린다. 창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로
-    대조한다 — 공지·구간·프리셋은 그 화면이 B 의 값을 그렸고(새로 선 칸 — 프리셋 두 칸의 key 는
+    대조한다 — Capa 요약·구간·프리셋은 그 화면이 B 의 값을 그렸고(새로 선 칸 — 프리셋 두 칸의 key 는
     고칠 프리셋 저장본의 지문을 든다, N7-preset) 그대로 누른 것이라 바뀐 것이 없어 새 버전을 만들지
     않는다(2026-11-01 개선 I5 넓힘). 「기본으로」 는 바뀐 것 판정이 없어 쓴다.
     """

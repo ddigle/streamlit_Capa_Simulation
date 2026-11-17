@@ -634,7 +634,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "Excel 붙여넣기",
             "Excel 붙여넣기",
             "Guide",
-            "공지 저장",
+            "Capa 요약 저장",
             "전체 3공정",
             "프리셋 없음",
             "과거 구간 저장",
@@ -677,7 +677,7 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
         ":material/compare_arrows: 비교 · 주요 Case",
         ":material/rule: 판정 기준",
         ":material/edit_calendar: 선행 · 보정",
-        ":material/campaign: 공지 · 표시",
+        ":material/summarize: Capa 요약 · 표시",
         ":material/history: Past Data",
     ]
     # 머리 안내 글은 없다 — 공용 설정 · 닫으면 사라짐은 저장 단추 풍선이 말한다.
@@ -686,8 +686,8 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
         button.label: button.help
         for button in app.button
         if button.label
-        in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "공지 저장", "확보율 구간 저장")
-        + ("프리셋 저장", "확보율 보정 저장")
+        in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "Capa 요약 저장")
+        + ("확보율 구간 저장", "프리셋 저장", "확보율 보정 저장")
     }
     assert len(saves) == 7 and all("공용 설정" in str(text) for text in saves.values()), saves
 
@@ -2167,7 +2167,7 @@ def test_the_home_guide_carries_what_left_the_body() -> None:
         "한 버전",
         "고른 차례가 곧 행 순서",
         "hover 의 Capa 숫자는 자르지 않은 실제 값",
-        "비우고 저장하면 공지가 내려갑니다",
+        "비우고 저장하면 Capa 요약이 내려갑니다",
         "유효한 월 중 최저 확보율",
         # 년월 셀을 병합한 Past Data 는 막힌다(2026-09-29 리뷰).
         "병합을 풀고",
@@ -2702,8 +2702,8 @@ def test_a_long_section_title_stays_on_one_line_and_is_escaped() -> None:
 
 
 def test_home_styles_sent_every_run_carry_no_css_comments() -> None:
-    """HOME 의 제목 줄·공지 상자 스타일과 공정 필터 타일 풍선은 회차마다 소켓으로 다시 간다. CSS
-    주석은 그때마다 함께 가는 바이트일 뿐이라 싣지 않는다 — 설명은 파이썬 주석에 둔다."""
+    """HOME 의 제목 줄·Capa 요약 상자 스타일과 공정 필터 타일 풍선은 회차마다 소켓으로 다시 간다.
+    CSS 주석은 그때마다 함께 가는 바이트일 뿐이라 싣지 않는다 — 설명은 파이썬 주석에 둔다."""
     from capa_simulation.components.home_rendering import (
         dashboard_title_row_style,
         summary_notice_style,
@@ -2757,7 +2757,8 @@ def test_shortfall_tiles_carry_the_period_minimum_rate_beside_the_name() -> None
 
 
 def _display_tab_editors(database: str) -> None:
-    """HOME 설정 「공지 · 표시」 탭의 세 상자만(공지 · B/N Top5 구간 · 주요공정 프리셋)."""
+    """HOME 설정 「Capa 요약 · 표시」 탭의 세 상자만(Capa 요약 · B/N Top5 구간 · 주요공정
+    프리셋)."""
     from capa_simulation.components.home_preference import (
         _render_key_process_editor,
         _render_summary_note_editor,
@@ -2792,11 +2793,12 @@ def _app_block(node: Any, key: str) -> Any:
 
 
 def test_the_notice_display_tab_repeats_no_words_and_keeps_no_empty_gaps(tmp_path: Path) -> None:
-    """HOME 설정 「공지 · 표시」(2026-11-09 사용자 검수 g18 「중간중간 중복되는 문구(공지)나
-    여백이 있는데 최적화해」). 공지 버전 줄에 「공지 중 · 내림」 꼬리가 없고 글 칸 이름 「공지」 는
-    숨는다 — 상자 제목과 바로 아래 글 칸이 같은 말을 한다. Top5 저장 단추와 하한 · 상한은 한
-    줄이다(주요공정 프리셋 줄과 같은 꼴). 세 폼의 알림 칸은 칸 하나라 알림이 없으면 빈 칸이고, 폼 안
-    빈 칸은 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR`)."""
+    """HOME 설정 「Capa 요약 · 표시」(2026-11-09 사용자 검수 g18 「중간중간 중복되는 문구(공지)나
+    여백이 있는데 최적화해」 — 그때 이름 「공지 · 표시」). Capa 요약 버전 줄에 옛 「공지 중 · 내림」
+    꼬리가 없고 글 칸 이름 「Capa 요약」 은 숨는다 — 상자 제목과 바로 아래 글 칸이 같은 말을 한다.
+    Top5 저장 단추와 하한 · 상한은 한 줄이다(주요공정 프리셋 줄과 같은 꼴). 세 폼의 알림 칸은 칸
+    하나라 알림이 없으면 빈 칸이고, 폼 안 빈 칸은 줄 사이 간격을 먹지 않는다
+    (`app_header.EMPTY_FORM_SLOT_SELECTOR`)."""
     from streamlit.proto.LabelVisibility_pb2 import LabelVisibility
 
     from capa_simulation.persistence.cache import (

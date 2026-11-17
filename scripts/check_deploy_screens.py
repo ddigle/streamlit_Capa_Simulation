@@ -5092,7 +5092,7 @@ HOME_SETTINGS_TABS: Final = (
     "비교 · 주요 Case",
     "판정 기준",
     "선행 · 보정",
-    "공지 · 표시",
+    "Capa 요약 · 표시",
     "Past Data",
 )
 EQUIPMENT_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_equipment_settings"

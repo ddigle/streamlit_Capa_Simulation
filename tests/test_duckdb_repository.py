@@ -997,10 +997,10 @@ def test_removing_a_scenario_clears_the_shared_comparison_profile(tmp_path: Path
 
 
 def test_removing_a_scenario_keeps_the_shared_summary_notice(tmp_path: Path) -> None:
-    """공지는 시나리오에 딸린 값이 아니다.
+    """Capa 요약은 시나리오에 딸린 값이 아니다.
 
     소유 컬럼을 두면 `_owned_tables` 자동 발견이 시나리오 소유로 보고 단일 행을 함께
-    지운다. 시나리오 하나를 지웠다고 팀 공지가 사라지면 안 된다.
+    지운다. 시나리오 하나를 지웠다고 팀 Capa 요약이 사라지면 안 된다.
     """
     repository = _repository(tmp_path / "capa.duckdb")
     repository.replace_global_summary_note("남아 있어야 한다", source="test")

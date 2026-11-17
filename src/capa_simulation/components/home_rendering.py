@@ -99,7 +99,7 @@ class HomeFigureCacheKey(NamedTuple):
     # 가른다 — 단위만 새로 갈린다.
     product_share_basis: str
     # 「선행 입고」 토글과 선행 입고 실적 프로필 version(토글이 꺼져 있으면 0). Density 칸 오른쪽
-    # 끝 글자가 Figure 에 구워지므로 키에 든다 — 공지와 다르다.
+    # 끝 글자가 Figure 에 구워지므로 키에 든다 — Capa 요약과 다르다.
     show_advance_shipment: bool
     advance_shipment_profile_version: int
     # 주요공정 히트맵이 그릴 공정이 하나도 없을 때 남기는 한 줄. 프리셋이 비었는지(고르라)와
@@ -663,7 +663,7 @@ SUMMARY_NOTICE_KEY = "home_summary_notice"
 
 
 def summary_notice_style() -> str:
-    """공지 상자를 다른 구획 제목과 같은 모양으로 맞춘다.
+    """Capa 요약 상자를 다른 구획 제목과 같은 모양으로 맞춘다.
 
     `st.expander` 의 기본 제목은 본문 글씨 크기다. 그대로 두면 바로 아래 `Capa LOB 현황`
     보다 작아 두 상자가 다른 화면에서 온 것처럼 보인다. 제목 글자와 앞의 강조 막대를
@@ -673,10 +673,10 @@ def summary_notice_style() -> str:
     700 — `components/typography.py`)이다. 구획 제목은 앱 전체 규칙이 `role="heading"` 으로 잡지만
     이 제목은 `st.expander` 의 `summary` 라 여기서 건다.
 
-    **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 공지가 잘려 스크롤
-    안에 숨는데, 공지는 접힘을 펴는 순간 전부 보여야 하는 글이다.
+    **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 글이 잘려 스크롤
+    안에 숨는데, Capa 요약은 접힘을 펴는 순간 전부 보여야 하는 글이다.
 
-    본문 글자는 본문 기본 크기의 1.5배다. 공지는 화면을 지나가며 읽는 글이 아니라 펴서
+    본문 글자는 본문 기본 크기의 1.5배다. Capa 요약은 화면을 지나가며 읽는 글이 아니라 펴서
     읽는 글이라 대시보드 본문과 같은 크기면 눈에 들어오지 않는다. `em` 으로 두는 것은
     브라우저·사용자 배율을 그대로 따라가게 하려는 것이다 — px 로 박으면 확대했을 때만
     이 상자가 따라오지 않는다. 제목(20px)은 건드리지 않는다. 바로 아래 `Capa LOB 현황`
@@ -742,12 +742,12 @@ def summary_notice_style() -> str:
 
 
 def render_summary_notice(note: str) -> None:
-    """`Main` 탭 맨 위의 공지. 접힌 채로 열리고 내용이 없으면 아예 그리지 않는다.
+    """`Main` 탭 맨 위의 Capa 요약. 접힌 채로 열리고 내용이 없으면 아예 그리지 않는다.
 
     **Plotly 상자 밖**이다. 안에 두면 스크롤되는 월 영역과 폭을 나눠 가져 문구가 월 칸
     너비에 갇힌다.
 
-    기본이 접힘인 이유는 이 화면의 주인공이 대시보드이기 때문이다. 공지가 펼친 채로
+    기본이 접힘인 이유는 이 화면의 주인공이 대시보드이기 때문이다. Capa 요약이 펼친 채로
     뜨면 긴 글 하나가 차트를 화면 밖으로 밀어낸다.
 
     `st.expander` 를 쓰는 것은 펴고 접는 데 rerun 이 필요 없어서다. 버튼으로 만들면 누를
@@ -757,9 +757,9 @@ def render_summary_notice(note: str) -> None:
         return
     st.html(summary_notice_style())
     with st.container(key=SUMMARY_NOTICE_KEY):
-        with st.expander("공지", expanded=False):
+        with st.expander("Capa 요약", expanded=False):
             # `st.markdown` 이 아니라 `st.html` 이다. 마크다운은 raw HTML 블록을
-            # **빈 줄에서 끊으므로**(CommonMark block type 6), 문단을 나눈 공지의 둘째
+            # **빈 줄에서 끊으므로**(CommonMark block type 6), 문단을 나눈 글의 둘째
             # 문단부터는 `<div>` 밖으로 나가 줄 앞의 `#`·`-` 가 제목과 목록으로 바뀐다.
             # `st.html` 은 파서를 거치지 않는다. `pre-wrap` 이 줄바꿈과 들여쓰기를 살리고
             # `html.escape` 가 태그를 막는다.
