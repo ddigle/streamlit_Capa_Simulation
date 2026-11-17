@@ -339,6 +339,38 @@ def test_withdraw_takes_the_standing_notice_and_tells_it() -> None:
     assert not any(button.key == notice_admin.WITHDRAW_KEY for button in app.button)
 
 
+def test_a_stale_withdraw_tells_an_ended_notice_apart_from_a_replaced_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """카드는 그린 회차의 것이라 그 뒤 끝 시각으로 걷힌 공지의 「거두기」 를 누를 수 있다 — 그때는
+    「이미 끝났거나 거둬짐」 이고, 다른 공지가 서 있을 때만 「바뀌어 거두지 않음」 이다. 감사 결과도
+    ended · changed 로 가른다(2026-11-17 E2E)."""
+    _operational_recording_admin(monkeypatch)
+    clock = _clock(monkeypatch, 17)
+    notice_board.send("17:05 에 끝나는 공지", clock.moment.replace(minute=5))
+    app = _ok(_run())
+    _at(clock, 17, 6)
+
+    app = _ok(app.button(key=notice_admin.WITHDRAW_KEY).click().run(timeout=60))
+
+    assert [str(note.value) for note in flashed(app, "warning")] == [
+        notice_admin.ALREADY_GONE_MESSAGE
+    ]
+    notice_board.send("앞 공지", clock.moment.replace(hour=18))
+    app = _ok(_run())
+    notice_board.send("새 공지", clock.moment.replace(hour=19))
+
+    app = _ok(app.button(key=notice_admin.WITHDRAW_KEY).click().run(timeout=60))
+
+    assert notice_board.current() is not None
+    assert [str(note.value) for note in flashed(app, "warning")] == [notice_admin.GONE_MESSAGE]
+    assert [line["det"] for line in _notice_lines() if line["out"] == "fail"] == [
+        {"result": "ended"},
+        {"result": "changed"},
+    ]
+    assert "관리자" not in notice_admin.ALREADY_GONE_MESSAGE
+
+
 @pytest.mark.parametrize("demoted", [False, True], ids=["still_admin", "demoted"])
 def test_the_send_is_judged_again_at_the_moment_on_the_operational_server(
     monkeypatch: pytest.MonkeyPatch, demoted: bool

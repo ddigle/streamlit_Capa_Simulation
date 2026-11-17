@@ -1720,11 +1720,15 @@ def test_the_notice_chip_panel_and_entry_share_one_path_without_a_python_rerun()
     assert "notice" not in scan[: scan.index("\n}\n")]
     popup = JS[JS.index("function noticePopup(C, key, note)") :]
     popup = popup[: popup.index("\n}\n")]
-    assert "introCovering(document.getElementById(INTRO_HOST_ID))" in popup
+    assert "introBlocks(later)" in popup
+    blocks = _js_function("introBlocks")
+    assert "introCovering(host, pending)" in blocks and "INTRO_ABSENT_MAX_MS" in blocks
     intro = (alert_center._ASSETS.parent / "intro_overlay_assets" / "intro.js").read_text(
         encoding="utf-8"
     )
     assert 'const HOST_ID = "capa-intro-host";' in intro
+    assert 'const ENTERED_KEY = "capa-intro-entered";' in intro
+    assert "const INTRO_ENTERED_KEY = 'capa-intro-entered'" in JS
     assert "const INTRO_HOST_ID = 'capa-intro-host'" in JS
     assert "togglePanel(C, 'notice')" in JS
     assert "if (which === 'notice') return { panel: C.noticePanel" in JS
@@ -1759,7 +1763,10 @@ def _js_const(name: str) -> str:
 
 
 def _notice_fakes() -> str:
-    consts = "\n".join(_js_const(name) for name in ("INTRO_HOST_ID", "INTRO_WAIT_MS"))
+    consts = "\n".join(
+        _js_const(name)
+        for name in ("INTRO_HOST_ID", "INTRO_WAIT_MS", "INTRO_ENTERED_KEY", "INTRO_ABSENT_MAX_MS")
+    )
     funcs = "".join(
         _js_function(name)
         for name in (
@@ -1767,6 +1774,9 @@ def _notice_fakes() -> str:
             "resolveRow",
             "handleState",
             "applyNotice",
+            "introPending",
+            "introBlocks",
+            "noticeWaitMark",
             "noticePopup",
             "waitIntro",
             "scheduleNoticeEnd",
@@ -1807,6 +1817,10 @@ const advance = (ms) => {
 }
 let introHost = null
 const document = { getElementById: (id) => (id === INTRO_HOST_ID ? introHost : null) }
+// 탭 저장소 — 기본은 입장 화면을 이미 지나간 탭이다(새로 온 탭 시험만 지운다).
+const tabStore = new Map([[INTRO_ENTERED_KEY, '1']])
+const getItem = (key) => (tabStore.has(key) ? tabStore.get(key) : null)
+const window = { sessionStorage: { getItem } }
 let popups = []
 let persisted = 0
 let rowSeq = 0
@@ -1950,6 +1964,90 @@ console.log(JSON.stringify(out))
     assert out["once"] == 1
     assert out["withdrawn"] == [False, [["resolved", "gone", True]]]
     assert out["dropped"] == 0
+
+
+def test_a_newcomer_notice_waits_for_an_intro_that_mounts_late_and_survives_a_new_center() -> None:
+    """새로 온 탭(입장 화면을 아직 안 지남)에서는 덮개 호스트가 알림 칸보다 늦게 붙어도 공지
+    알림창을 미룬다 — 덮개 아래에서 뜨지 않는다. 미룬 사이 알림 칸이 갈려 새 칸이 같은 공지를
+    받으면(상태는 「same」) 저장소의 미룸 표지로 잇고, 덮개가 걷힌 뒤 한 번만 뜬다(2026-11-17
+    E2E 확인 5)."""
+    out = _notice_run(
+        """
+const out = {}
+tabStore.delete(INTRO_ENTERED_KEY)
+const first = fresh(TEXT)
+const payload = standing('p1', 1, 'n1', clock + 30 * MINUTE)
+applyNotice(first, payload)
+const firstEntry = first.states[stateKey(payload.note)]
+out.beforeHost = [popups.length, Boolean(first.noticeLater), Boolean(firstEntry.wait)]
+advance(INTRO_WAIT_MS * 2)
+introHost = { isConnected: true, style: { display: '' } }
+advance(INTRO_WAIT_MS * 3)
+out.covered = popups.length
+retireCenter(first)
+const next = fresh(TEXT)
+next.states = JSON.parse(JSON.stringify(first.states))
+next.rows = JSON.parse(JSON.stringify(first.rows))
+applyNotice(next, payload)
+out.newCenter = [popups.length, Boolean(next.noticeLater)]
+advance(INTRO_WAIT_MS * 3)
+tabStore.set(INTRO_ENTERED_KEY, '1')
+introHost.style.display = 'none'
+advance(INTRO_WAIT_MS)
+out.uncovered = [...popups]
+out.mark = Boolean(next.states[stateKey(payload.note)].wait)
+const again = fresh(TEXT)
+again.states = JSON.parse(JSON.stringify(next.states))
+applyNotice(again, payload)
+advance(INTRO_WAIT_MS * 5)
+out.once = popups.length
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["beforeHost"] == [0, True, True]
+    assert out["covered"] == 0
+    assert out["newCenter"] == [0, True]
+    assert out["uncovered"] == ["공지 · n1"]
+    assert out["mark"] is False
+    assert out["once"] == 1
+
+
+def test_a_newcomer_notice_shows_when_the_intro_never_mounts_or_is_released() -> None:
+    """덮개가 끝내 서지 않으면(입장 화면 실패 · 저장소) `INTRO_ABSENT_MAX_MS` 뒤에 뜨고, 한 번 선
+    덮개가 걷혀 호스트가 빠지면(`release`) 입장 표시가 없어도 바로 뜬다. 이미 들어간 탭은 기다리지
+    않는다."""
+    out = _notice_run(
+        """
+const out = {}
+tabStore.delete(INTRO_ENTERED_KEY)
+let C = fresh(TEXT)
+applyNotice(C, standing('p1', 1, 'n1', clock + 60 * MINUTE))
+advance(INTRO_ABSENT_MAX_MS - INTRO_WAIT_MS)
+out.waiting = popups.length
+advance(INTRO_WAIT_MS * 2)
+out.capped = [...popups]
+
+popups = []
+C = fresh(TEXT)
+introHost = { isConnected: true, style: { display: '' } }
+applyNotice(C, standing('p1', 1, 'n2', clock + 60 * MINUTE))
+advance(INTRO_WAIT_MS * 2)
+introHost = null
+advance(INTRO_WAIT_MS)
+out.released = [...popups]
+
+popups = []
+tabStore.set(INTRO_ENTERED_KEY, '1')
+C = fresh(TEXT)
+applyNotice(C, standing('p1', 1, 'n3', clock + 60 * MINUTE))
+out.entered = [...popups]
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["waiting"] == 0
+    assert out["capped"] == ["공지 · n1"]
+    assert out["released"] == ["공지 · n2"]
+    assert out["entered"] == ["공지 · n3"]
 
 
 def test_the_end_timer_waits_a_grace_minute_and_yields_to_the_server_revision() -> None:

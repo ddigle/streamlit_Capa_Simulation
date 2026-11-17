@@ -93,6 +93,10 @@ const CAMPAIGN_PATH =
 const INTRO_HOST_ID = 'capa-intro-host'
 // 덮개가 걷혔는지 다시 보는 간격 — 미룬 공지가 있을 때만 돈다.
 const INTRO_WAIT_MS = 400
+// 이 탭에서 입장 화면을 지나갔다는 표시(`intro.js` 의 `ENTERED_KEY`) — 없으면 덮개가 곧 선다(알림 칸이 덮개 호스트보다 먼저 설 수 있다).
+const INTRO_ENTERED_KEY = 'capa-intro-entered'
+// 덮개가 곧 선다고 보고 호스트를 기다리는 최대 시간 — 끝내 서지 않으면(입장 화면 실패 · 저장소 막힘) 알림창을 띄운다.
+const INTRO_ABSENT_MAX_MS = 20000
 const FLASK_PATH =
   'M19.8 18.4 14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'
@@ -499,9 +503,10 @@ function noticeOf(value) {
   if (typeof id !== 'string' || !id || typeof text !== 'string' || !Number.isFinite(untilMs)) return null
   return { id, text, sender: String(sender || ''), sent: String(sent || ''), until: String(until || ''), untilMs }
 }
-// 입장 화면 · Summary 덮개가 지금 화면을 덮나 — 호스트가 문서에 있고 감추지 않았다.
-function introCovering(host) {
-  if (!host || host.isConnected === false) return false
+// 입장 화면 · Summary 덮개가 지금 화면을 덮나 — 호스트가 문서에 있고 감추지 않았다. 호스트가 없을 때는 `pending`(덮개가 곧 선다)을
+// 따른다.
+function introCovering(host, pending = false) {
+  if (!host || host.isConnected === false) return pending
   return !(host.style && host.style.display === 'none')
 }
 // 공지 끝 시각(+ 여유 `NOTICE_END_GRACE_MS`)까지 기다릴 시간(ms) — 지났으면 0, 길면 `NOTICE_TIMER_LIMIT_MS` 에서 끊어 다시 잰다.
@@ -961,19 +966,51 @@ function applyNotice(C, payload, polled = false) {
   }
   const changed = note ? handleState(C, note, noticePopup) : false
   const entry = note && note.active ? C.states[stateKey(note)] : null
+  // 앞 칸이 입장 화면 뒤로 미뤄 둔 채 갈렸으면(저장소의 `wait` — 상태는 「same」 이라 상태 길이 다시 띄우지 않는다) 여기서 잇는다.
+  if (entry && entry.wait && !C.noticeLater) noticePopup(C, `state:${stateKey(note)}`, note)
   const row = entry ? C.rows.find((item) => item.id === entry.row) : null
   if (row && !row.hold) row.hold = true
   scheduleNoticeEnd(C)
   return changed
 }
 
-// 공지 알림창 — 입장 화면이 덮는 동안에는 미뤘다가 걷힌 뒤 띄운다(그 사이 거둬졌거나 바뀌었으면 버린다).
+// 이 탭이 아직 입장 화면을 지나가지 않았나 — 그러면 덮개 호스트가 늦게 붙어도 곧 덮는다. 저장소를 못 읽으면 기다리지 않는다.
+function introPending() {
+  try {
+    return window.sessionStorage.getItem(INTRO_ENTERED_KEY) !== '1'
+  } catch (error) {
+    return false
+  }
+}
+
+// 미룬 공지가 지금 덮개에 막히나 — 호스트를 한 번 본 뒤에 사라졌으면 걷힌 것이고, 한 번도 못 봤으면 이 탭이 아직 입장 전일 때
+// `INTRO_ABSENT_MAX_MS` 까지 곧 선다고 본다.
+function introBlocks(later) {
+  const host = document.getElementById(INTRO_HOST_ID)
+  if (host && host.isConnected !== false) later.seen = true
+  const pending = !later.seen && Date.now() - later.since < INTRO_ABSENT_MAX_MS && introPending()
+  return introCovering(host, pending)
+}
+
+// 미룬 표지(`wait`)를 상태 칸에 단다 · 뗀다 — 저장소에 남아 알림 칸이 다시 서도(`retireCenter` 뒤 새 칸) 미룬 알림창을 잇는다.
+function noticeWaitMark(C, note, on) {
+  const entry = C.states[stateKey(note)]
+  if (!entry || Boolean(entry.wait) === on) return
+  if (on) entry.wait = true
+  else delete entry.wait
+  persist(C)
+}
+
+// 공지 알림창 — 입장 화면이 덮는 동안(곧 덮을 때 포함)에는 미뤘다가 걷힌 뒤 띄운다(그 사이 거둬졌거나 바뀌었으면 버린다).
 function noticePopup(C, key, note) {
-  if (!introCovering(document.getElementById(INTRO_HOST_ID))) {
+  const later = { key, note, since: Date.now(), seen: false }
+  if (!introBlocks(later)) {
+    noticeWaitMark(C, note, false)
     showPopup(C, key, note, false)
     return
   }
-  C.noticeLater = { key, note }
+  C.noticeLater = later
+  noticeWaitMark(C, note, true)
   waitIntro(C)
 }
 
@@ -982,13 +1019,16 @@ function waitIntro(C) {
   C.noticeWait = setTimeout(() => {
     const later = C.noticeLater
     if (!later) return
-    if (introCovering(document.getElementById(INTRO_HOST_ID))) {
+    if (introBlocks(later)) {
       waitIntro(C)
       return
     }
     C.noticeLater = null
     const entry = C.states[stateKey(later.note)]
-    if (entry && entry.active && entry.fp === String(later.note.fp || '')) showPopup(C, later.key, later.note, false)
+    if (entry && entry.active && entry.fp === String(later.note.fp || '')) {
+      noticeWaitMark(C, later.note, false)
+      showPopup(C, later.key, later.note, false)
+    }
   }, INTRO_WAIT_MS)
 }
 

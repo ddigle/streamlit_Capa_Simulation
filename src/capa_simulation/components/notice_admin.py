@@ -89,6 +89,7 @@ NOT_ADMIN_MESSAGE: Final = "관리자만 공지를 보내고 거둘 수 있습�
 CHANGED_MESSAGE: Final = "서 있는 공지가 바뀌었습니다 — 서 있는 공지를 보고 다시 보내세요"
 ENDED_MESSAGE: Final = "서 있던 공지가 끝났거나 거둬졌습니다 — 다시 보내세요"
 GONE_MESSAGE: Final = "서 있는 공지가 바뀌어 거두지 않았습니다"
+ALREADY_GONE_MESSAGE: Final = "서 있던 공지는 이미 끝났거나 거둬졌습니다"
 
 AUDIT_SEND: Final = "admin_notice_send"
 AUDIT_WITHDRAW: Final = "admin_notice_withdraw"
@@ -229,10 +230,17 @@ def withdraw_notice(notice_id: str) -> None:
 
     done = write_guard.save_once(WITHDRAW_GUARD, notice_id, attempt, wrote=bool)
     if not done:
+        # 카드는 그린 회차의 것이다 — 그 사이 끝 시각으로 걷혔거나 거둬졌으면(지금 공지 없음)
+        # 「바뀜」 이 아니다.
+        ended = notice_board.current() is None
         audit_recorder.record(
-            AUDIT_WITHDRAW, out="fail", tgt=_target(notice_id), det={"result": "changed"}
+            AUDIT_WITHDRAW,
+            out="fail",
+            tgt=_target(notice_id),
+            det={"result": "ended" if ended else "changed"},
         )
-        queue_flash(FLASH_KEY, GONE_MESSAGE, kind="warning", popup_only=True)
+        message = ALREADY_GONE_MESSAGE if ended else GONE_MESSAGE
+        queue_flash(FLASH_KEY, message, kind="warning", popup_only=True)
         return
     if ran:
         audit_recorder.record(AUDIT_WITHDRAW, tgt=_target(notice_id), det={"result": "withdrawn"})
