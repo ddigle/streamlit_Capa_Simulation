@@ -42,6 +42,10 @@ from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth import grades
 from capa_simulation.components import page_failure_card, sso_identity
 from capa_simulation.components.edit_file_tail import with_unsaved_tail
+from capa_simulation.components.scenario_edit_bar import (
+    REVISION_SAVE_TAIL,
+    with_revision_save_tail,
+)
 from capa_simulation.components.scenario_management import (
     ARCHIVE_EFFECT_HELP,
     CARD_OFFICIAL_KEY,
@@ -734,6 +738,63 @@ def test_a_viewer_still_edits_and_calculates_on_their_own_screen(
     _clean(app)
     assert expected <= _buttons(app), expected - _buttons(app)
     assert not [entry for entry in seen if entry[1] == grades.VIEWER], seen
+
+
+YIELD_GRID_HOST = "yield_grid"
+YIELD_TAB_LABEL = ":material/percent: 수율"
+
+
+@pytest.mark.parametrize("grade", [grades.VIEWER, grades.EDITOR])
+def test_the_apply_notice_points_to_the_revision_save_only_where_that_button_stands(
+    databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """열람은 「변경사항 적용」 을 하지만 사이드바 시나리오 팝업에 「신규 리비전 저장」 단추가
+    없다 — 적용 알림이 없는 단추를 가리키지 않는다(실무자부터만 그 안내 꼬리, 설계 규칙 UI-INP-07
+    예외).
+    생산 계획 수율 탭에서 칸 하나를 고쳐 적용한다(기준 정보 · PKG PLAN 도 같은 꼬리 함수)."""
+    from alert_marks import successes
+    from edit_grid_fake import install_fake_edit_grid, last, send_ops, shell_frame, shell_key
+
+    calls = install_fake_edit_grid(monkeypatch)
+    database, equipment = databases
+    as_grade(monkeypatch, grade)
+    app = _graded(_page("app_pages/load_conversion.py", database, equipment))
+    app.session_state["load_conversion_active_tab"] = YIELD_TAB_LABEL
+    app.run()
+    _clean(app)
+    shell = last(calls, YIELD_GRID_HOST)
+    month = next(str(column) for column in shell_frame(shell).columns if str(column).isdigit())
+    op = {"op": "write", "rows": [shell_key(shell, 0)], "cols": [month], "values": [["0.5"]]}
+    send_ops(app, calls, op, host=YIELD_GRID_HOST)
+    with judge_spy() as seen:
+        app.button(key="apply_yield_changes").click().run()
+
+    _clean(app)
+    assert not seen, "적용은 저장이 아니다 — 벽에 닿지 않는다"
+    applied = [
+        str(item.value)
+        for item in successes(app)
+        if "활성 시나리오에 적용했습니다" in str(item.value)
+    ]
+    assert len(applied) == 1, applied
+    assert (REVISION_SAVE_TAIL in applied[0]) is (grade == grades.EDITOR), applied[0]
+
+
+@GRADE_PARAMS
+def test_the_revision_save_tail_follows_the_save_button(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """꼬리 함수는 「신규 리비전 저장」 단추와 같은 판정(`scenario.revision_save` — 실무자부터)을
+    본다. 운영 서버가 아닌 곳은 지금 글 그대로다."""
+    as_grade(monkeypatch, grade)
+    tailed = with_revision_save_tail("DEMO 적용했습니다. ")
+    expected = grades.at_least(grade, grades.EDITOR)
+    assert tailed == (
+        f"DEMO 적용했습니다. {REVISION_SAVE_TAIL}" if expected else "DEMO 적용했습니다."
+    )
+
+    unrestricted(monkeypatch)
+    assert with_revision_save_tail("DEMO 적용했습니다.").endswith(REVISION_SAVE_TAIL)
 
 
 def test_the_display_order_first_cut_is_the_apps_own_write_on_a_viewers_first_run(

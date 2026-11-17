@@ -3813,6 +3813,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는 상태(PKG PLAN 붙여넣기 대기와 그 표 위의 편집, 기준 정보 STEP 상자)는 `order_free_keys` 로 넘겨 차례만 바뀐 회차에 남긴다.
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
+  - 적용 · 반영 성공 알림의 「리비전으로 남기려면 … 「신규 리비전 저장」을 누르세요.」 꼬리는 `with_revision_save_tail` 하나로 붙인다 —
+    그 단추가 서는 화면 등급(`scenario.revision_save` — 실무자부터, 운영 서버가 아닌 곳은 늘)에만(열람은 적용은 하지만 그 단추가 없다).
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기·표 초안을 적고 사이드바가 `pending_edit_labels` 로 앞 회차
     목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
