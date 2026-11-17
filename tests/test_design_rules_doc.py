@@ -3006,3 +3006,20 @@ def test_the_notice_board_answers_are_recorded_with_what_the_implementation_chos
         rules["UI-TXT-06"].fields["예외"]
     )
     assert "「공지」 칩은 Guide 바로 왼쪽" in rules["UI-LAY-05"].text
+
+
+def test_the_notice_name_answer_reverses_the_old_home_box_name_once() -> None:
+    """v1.35 — q-name(권장이 아닌 답)은 2026-11-07 names 의 HOME 상자 이름 「공지」 를
+    뒤집는다. 7-1 에 그 줄이 하나 있고 UI-CON-02 근거가 q-name 을 들며, 6-9 names 줄은 그때
+    기록 그대로다."""
+    document = _text()
+    turned = [line for line in _chapter(document, 7).splitlines() if "q-name" in line]
+    assert len(turned) == 1, "7-1 에 q-name 이 뒤집은 HOME 상자 이름 줄이 하나 있다"
+    assert "6-9 names" in turned[0] and f"「{NOTICE_1117_NAME_MEMO}」" in turned[0]
+    assert "「Capa 요약 · 표시」" in turned[0]
+    rules = {rule.id: rule for rule in _rules()}
+    assert "공지 기능 보드 q-name" in " ".join(rules["UI-CON-02"].fields["근거"])
+    names = next(
+        line for line in _chapter(document, 6).splitlines() if line.startswith("- names · ")
+    )
+    assert "HOME 상자 「공지」" in names, "6-9 names 줄은 그때 기록 그대로다"
