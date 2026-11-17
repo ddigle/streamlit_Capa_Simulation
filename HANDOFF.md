@@ -87,7 +87,7 @@
 
 - **WSL 메모리 늘리기** — 보류 그대로(2026-11-01 C1).
 - **배포 clone 전환** — 10-22 결정 「ZIP 메일 유지」. 다시 검토할 때 쓰는 절차 파일은 `~/projects/Deploy/d0-mirror/`.
-- **부대공정(BDQ 밖) 생산성 기준정보** — 설계만 정했고 구현은 사용자 지시 뒤(저장소 밖 `~/projects/Deploy/worklog/extra-process-1113/design.md`).
+- **부대공정(BDQ 밖) 생산성 기준정보** — 설계만 정했다(저장소 밖 `~/projects/Deploy/worklog/extra-process-1113/design.md`). 사내 확인은 다음 배포 7장, 구현은 그다음 배포(2026-11-17 사용자 — TODO 2장 「다음 배포 7장에 넣을 줄 — 부대공정(BDQ 밖) 사내 확인」).
 - 본 체크아웃의 남은 작업 트리는 본 체크아웃과 `n-pp2`(공정 공유 2차 `night/pp2-1110` — 실을 때 묻는다) 둘이다. 새 일은 `~/projects/Deploy/lanes/` 의
   일반 클론에서 한다.
 - 메인 체크아웃의 `data/temp` 백업과 8501 의 `data/` 는 손대지 않는다.
