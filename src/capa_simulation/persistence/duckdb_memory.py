@@ -5,12 +5,17 @@
 **한도 칸**(`MEMORY_LIMIT_ENV` = `CAPA_DUCKDB_MEMORY_LIMIT`). 값이 없거나 비면 연결 설정에 넣지
 않는다 — DuckDB 기본(프로세스가 보는 메모리의 80%) 그대로다. 값은 사용자가 정한다 — 코드 · 이미지에
 기본값을 두지 않는다. 꼴은 수 + 단위다 — 단위는 `KB` · `MB` · `GB` · `TB`(1000 배) 또는 `KiB` ·
-`MiB` · `GiB` · `TiB`(1024 배)이고 대소문자 · 사이 띄어 씀은 가리지 않는다. 비율(DuckDB 가 거절한다)
+`MiB` · `GiB` · `TiB`(1024 배)이고 대소문자 · 사이 띄어 씀은 가리지 않는다. 수는 ASCII 숫자만이고 값
+전체가 ASCII 여야 한다 — 전각 · 아라비아 숫자는 `float` 이 읽어도 DuckDB 가 거절해 모든 연결이
+실패한다. 이 꼴은 DuckDB 가 받는 꼴의 부분이라 범위 안이면 DuckDB 가 그대로 받는다(앞 0 · 긴 소수
+자리까지 — `tests/test_duckdb_memory.py` 가 단위마다 연다). 비율(DuckDB 가 거절한다)
 · 단위 없는 수 · `none` · `-1` 은 받지 않는다. 받는 범위는 `MEMORY_LIMIT_FLOOR_BYTES` ~
 `MEMORY_LIMIT_CEILING_BYTES` 다 — 꼴이 맞아도 너무 작으면 DuckDB 가 첫 표를 만들다 메모리 부족으로
 멈춰 모든 DB 열기가 실패하고(16MiB · 스레드 32 에서 그 실패를 재었다), 너무 크면 DuckDB 가 범위
-밖이라 거절한다. 틀린 값은 넣지 않고(기본 그대로) Admin 「서버 시작 점검」 의 「DuckDB 메모리 한도」
-줄이 실패로 알린다(`components/memory_diagnostic.py` — 시작 점검 관리자 알림 `AD-01` 에 든다).
+밖이라 거절한다(끝없이 긴 수는 무한대라 범위 밖이다). 판정은 `_sql_helpers` import 때 돌아
+어떤 값에도 예외를 내지 않는다. 틀린 값은 넣지 않고(기본 그대로) Admin 「서버 시작 점검」 의
+「DuckDB 메모리 한도」 줄이 실패로 알린다(`components/memory_diagnostic.py` — 시작 점검 관리자
+알림 `AD-01` 에 든다).
 
 환경변수는 `_sql_helpers` 가 import 때 한 번 읽어 `DUCKDB_CONNECT_CONFIG` 에 넣는다 — 같은 파일의
 연결은 설정이 모두 같아야 해서 프로세스 중간에 바뀌면 안 된다. 그 설정 한 벌을 두 DB(시뮬레이션 ·
@@ -30,6 +35,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import threading
 from collections.abc import Mapping
@@ -50,7 +56,7 @@ PROBLEM_FORM: Final = "form"
 PROBLEM_RANGE: Final = "range"
 LimitProblem = Literal["form", "range"]
 
-_LIMIT_FORM = re.compile(r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[KMGT]I?B)")
+_LIMIT_FORM = re.compile(r"(?P<number>[0-9]+(?:\.[0-9]+)?)\s*(?P<unit>[KMGT]I?B)", re.ASCII)
 _UNIT_BYTES: Final[Mapping[str, int]] = {
     "KB": 1000,
     "MB": 1000**2,
@@ -85,19 +91,22 @@ class MemoryLimitSetting:
 
 
 def memory_limit_setting(environ: Mapping[str, str]) -> MemoryLimitSetting:
-    """`CAPA_DUCKDB_MEMORY_LIMIT` 를 판정한다 — 없음 · 빈 값은 `raw=None`, 틀린 값은 `problem`."""
+    """`CAPA_DUCKDB_MEMORY_LIMIT` 를 판정한다 — 없음 · 빈 값은 `raw=None`, 틀린 값은 `problem`.
+
+    import 때 도는 판정이라 어떤 값에도 예외를 내지 않는다(모듈 설명)."""
     text = environ.get(MEMORY_LIMIT_ENV, "").strip()
     if not text:
         return MemoryLimitSetting(raw=None)
-    match = _LIMIT_FORM.fullmatch(text.upper())
+    match = _LIMIT_FORM.fullmatch(text.upper()) if text.isascii() else None
     if match is None:
         return MemoryLimitSetting(raw=text, problem=PROBLEM_FORM)
     unit = match["unit"]
-    limit_bytes = int(float(match["number"]) * _UNIT_BYTES[unit])
-    if not MEMORY_LIMIT_FLOOR_BYTES <= limit_bytes <= MEMORY_LIMIT_CEILING_BYTES:
+    limit = float(match["number"]) * _UNIT_BYTES[unit]
+    in_range = MEMORY_LIMIT_FLOOR_BYTES <= limit <= MEMORY_LIMIT_CEILING_BYTES
+    if not (math.isfinite(limit) and in_range):
         return MemoryLimitSetting(raw=text, problem=PROBLEM_RANGE)
     value = f"{match['number']}{_UNIT_NAMES[unit]}"
-    return MemoryLimitSetting(raw=text, value=value, limit_bytes=limit_bytes)
+    return MemoryLimitSetting(raw=text, value=value, limit_bytes=int(limit))
 
 
 def memory_limit_config(setting: MemoryLimitSetting) -> dict[str, str]:

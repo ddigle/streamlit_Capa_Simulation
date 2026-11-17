@@ -5387,7 +5387,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/duckdb_memory.py` — DuckDB 메모리 한도 칸과 회차 끝 메모리 표본. 환경변수 `CAPA_DUCKDB_MEMORY_LIMIT`
   (사내 리뷰 202611162130 사외요청 3)가 없거나 비면 연결 설정에 넣지 않는다 — DuckDB 기본(보이는 메모리의 80%) 그대로다. 값은 사용자가
   정하고 코드 · 이미지에 기본값을 두지 않는다(`docker/Dockerfile-prod` 에 `ENV` 없음). 꼴은 수 + 단위(`KB` · `MB` · `GB` · `TB` ·
-  `KiB` · `MiB` · `GiB` · `TiB`, 대소문자 · 띄어 씀 상관없음)이고 받는 범위는 64MiB ~ 1TiB 다 — 권하는 값이 아니라 울타리다(너무 작으면
+  `KiB` · `MiB` · `GiB` · `TiB`, 대소문자 · 띄어 씀 상관없음 — 수는 ASCII 숫자만, 값 전체가 ASCII. 전각 · 아라비아 숫자는 `float` 이 읽어도
+  DuckDB 가 거절해 모든 연결이 실패하고 `boot-pull` 이 정상 스냅샷을 깨짐으로 내친다. 이 꼴은 DuckDB 가 받는 꼴의 부분이라 import 때 DuckDB 로
+  시험하지 않는다 — `tests/test_duckdb_memory.py` 가 단위마다 연다. 판정은 import 때 돌아 끝없이 긴 수(무한대 — 범위 밖)에도 예외를 내지
+  않는다)이고 받는 범위는 64MiB ~ 1TiB 다 — 권하는 값이 아니라 울타리다(너무 작으면
   DuckDB 가 첫 표에서 메모리 부족으로 멈춰 모든 DB 열기가 실패하고, 너무 크면 DuckDB 가 거절한다). 틀린 값은 넣지 않고 「서버 시작 점검」
   「DuckDB 메모리 한도」 줄 「실패」 · `AD-01` 이 알린다. 한도는 DB 파일(인스턴스)마다 같은 값이라 두 DB 합은 그 두 배까지 가고, 같은
   `connect()` 로 잠깐 여는 사본(동기화의 받은 사본 확인 · 스냅샷 짓기)도 같은 한도를 쓴다 — 따로 두지

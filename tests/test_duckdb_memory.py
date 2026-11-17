@@ -66,6 +66,8 @@ def test_no_value_leaves_the_connect_config_as_it_was(environ: dict[str, str]) -
         ("300mb", "300MB", 300 * 1000**2),
         ("64MiB", "64MiB", 64 * MIB),
         ("1TiB", "1TiB", 1024**4),
+        ("000256MiB", "000256MiB", 256 * MIB),
+        ("256.50MiB", "256.50MiB", int(256.5 * MIB)),
     ],
 )
 def test_a_value_in_form_goes_to_duckdb(
@@ -104,19 +106,46 @@ def test_a_value_in_form_goes_to_duckdb(
         ("63MiB", PROBLEM_RANGE),
         ("2TiB", PROBLEM_RANGE),
         ("99999999999999999999GB", PROBLEM_RANGE),
+        pytest.param("1" * 400 + "MiB", PROBLEM_RANGE, id="400-digits"),
+        pytest.param("\uff12\uff15\uff16MiB", PROBLEM_FORM, id="fullwidth-digits"),
+        pytest.param("\u0662\u0665\u0666MiB", PROBLEM_FORM, id="arabic-indic-digits"),
+        pytest.param("256M\u0131B", PROBLEM_FORM, id="dotless-i-unit"),
+        pytest.param("256\u3000MiB", PROBLEM_FORM, id="ideographic-space"),
     ],
 )
 def test_a_value_out_of_form_or_range_is_left_out(raw: str, problem: str) -> None:
     """틀린 값은 넣지 않는다 — 꼴이 맞아도 너무 작으면 DuckDB 가 첫 표에서 메모리 부족으로
-    멈추고(모든 DB 열기 실패), 너무 크면 DuckDB 가 거절한다."""
+    멈추고(모든 DB 열기 실패), 너무 크면 DuckDB 가 거절한다. 수는 ASCII 숫자만 받는다 — 전각 ·
+    아라비아 숫자는 `float` 이 읽어도 DuckDB 가 거절하고, 끝없이 긴 수는 무한대라 범위 밖이다
+    (판정은 import 때 돌아 예외를 내지 않는다)."""
     setting = memory_limit_setting({MEMORY_LIMIT_ENV: f" {raw} "})
 
     assert (setting.raw, setting.value, setting.problem) == (raw, None, problem)
     assert memory_limit_config(setting) == {}
 
 
-def _config_in_a_fresh_process(value: str | None) -> dict[str, Any]:
-    """새 프로세스가 import 때 지은 `DUCKDB_CONNECT_CONFIG`."""
+def test_every_unit_with_ascii_digits_in_range_is_taken_by_duckdb(tmp_path: Path) -> None:
+    """받는 꼴은 DuckDB 가 받는 꼴의 부분이다 — 단위마다 앞 0 · 소수 · 긴 자리를 붙여도 범위 안이면
+    DuckDB 가 그 값으로 연다(DuckDB 판을 올려 파서가 좁아지면 여기서 깨진다)."""
+    numbers = ("256", "000256", "256.0", "256.25", "256." + "0" * 30, "0" * 30 + "256")
+    taken = 0
+    for unit in ("KB", "MB", "GB", "TB", "KiB", "MiB", "GiB", "TiB"):
+        for number in numbers:
+            setting = memory_limit_setting({MEMORY_LIMIT_ENV: f"{number}{unit}"})
+            if setting.value is None:
+                continue
+            taken += 1
+            connection = duckdb.connect(
+                str(tmp_path / f"unit-{taken}.duckdb"),
+                config={"default_block_size": DUCKDB_BLOCK_SIZE, **memory_limit_config(setting)},
+            )
+            connection.close()
+    assert taken >= 12
+
+
+def _config_in_a_fresh_process(value: str | None, database: Path) -> dict[str, Any]:
+    """새 프로세스가 import 때 지은 `DUCKDB_CONNECT_CONFIG` — 그 설정으로 `connect()` 가 파일 하나를
+    열어 본 뒤에 돌려준다(DuckDB 가 거절하는 값이 들어갔으면 여기서 깨진다)."""
     environ = {name: text for name, text in os.environ.items() if name != MEMORY_LIMIT_ENV}
     if value is not None:
         environ[MEMORY_LIMIT_ENV] = value
@@ -124,12 +153,14 @@ def _config_in_a_fresh_process(value: str | None) -> dict[str, Any]:
         [str(PROJECT_ROOT / "src"), *filter(None, [os.environ.get("PYTHONPATH")])]
     )
     code = (
-        "import json\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
         "from capa_simulation.persistence import _sql_helpers\n"
+        "_sql_helpers.connect(Path(sys.argv[1])).close()\n"
         "print(json.dumps(_sql_helpers.DUCKDB_CONNECT_CONFIG))\n"
     )
     done = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(database)],
         env=environ,
         cwd=PROJECT_ROOT,
         capture_output=True,
@@ -140,15 +171,22 @@ def _config_in_a_fresh_process(value: str | None) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(done.stdout.strip().splitlines()[-1]))
 
 
-def test_the_connect_config_reads_the_variable_once_at_import() -> None:
+def test_the_connect_config_reads_the_variable_once_at_import(tmp_path: Path) -> None:
     """없으면 이 칸이 생기기 전 설정 그대로, 바른 값은 `memory_limit` 하나가 더해지고, 틀린 값은
-    빠진다. 두 DB 가 이 설정 한 벌을 쓴다 — 한도는 DB 마다 같은 값이다."""
-    assert _config_in_a_fresh_process(None) == {"default_block_size": DUCKDB_BLOCK_SIZE}
-    assert _config_in_a_fresh_process("256MiB") == {
-        "default_block_size": DUCKDB_BLOCK_SIZE,
-        "memory_limit": "256MiB",
-    }
-    assert _config_in_a_fresh_process("80%") == {"default_block_size": DUCKDB_BLOCK_SIZE}
+    빠진다. 두 DB 가 이 설정 한 벌을 쓴다 — 한도는 DB 마다 같은 값이다. 전각 숫자(DuckDB 가
+    거절)와 끝없이 긴 수(무한대)도 빠져 import 와 연결이 그대로 선다 — 동기화 `boot-pull` 도 같은
+    import 를 거친다."""
+    base = {"default_block_size": DUCKDB_BLOCK_SIZE}
+    cases: list[tuple[str | None, dict[str, Any]]] = [
+        (None, base),
+        ("256MiB", {**base, "memory_limit": "256MiB"}),
+        ("80%", base),
+        ("\uff12\uff15\uff16MiB", base),
+        ("1" * 400 + "MiB", base),
+    ]
+    for index, (value, expected) in enumerate(cases):
+        database = tmp_path / f"fresh-{index}.duckdb"
+        assert _config_in_a_fresh_process(value, database) == expected, value
 
 
 def _counting(monkeypatch: pytest.MonkeyPatch) -> list[str]:
