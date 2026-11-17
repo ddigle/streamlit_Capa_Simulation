@@ -48,7 +48,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 from capa_simulation import alerts, sync_boot
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
-from capa_simulation.auth import access_store, grade_store, names, runtime
+from capa_simulation.auth import access_store, grade_store, grades, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components import admin_view, sso_identity
@@ -243,15 +243,25 @@ def _days_left(now: datetime, not_after: datetime) -> int:
 
 
 def access_line(cfg: SsoConfig) -> str:
-    """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다."""
+    """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다.
+
+    S3 명단을 쓰는 켜진 서버는 등급 넷(개발자 · 관리자 · 실무자 · 열람 — 「접속 명단」 표와 같은
+    판정 `grade_store.grade_of`)으로 센다. 그 밖(환경변수 명단 · 아직 켜지지 않음)은 등급 파일을
+    읽지 않아 개발자와 「그 밖」 둘이다."""
     access = runtime.current_access(cfg)
     if not access.enforced:
         return "**접속 명단** · 꺼짐(인증된 사람 전부)"
     state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
-    return (
-        f"**접속 명단** · {state} · 개발자 {access.admin_count} · 일반 {access.user_count} · "
-        f"읽지 못함 {access.unreadable_count}"
-    )
+    if access_store.is_on(cfg):
+        counts = dict.fromkeys(grades.GRADES, 0)
+        for loginid in access.grades:
+            counts[grade_store.grade_of(cfg, loginid)] += 1
+        people = " · ".join(
+            f"{grades.label_of(grade)} {counts[grade]}" for grade in reversed(grades.GRADES)
+        )
+    else:
+        people = f"개발자 {access.admin_count} · 그 밖 {access.user_count}"
+    return f"**접속 명단** · {state} · {people} · 읽지 못함 {access.unreadable_count}"
 
 
 def access_problem_text(problem: SourceProblem) -> str:
@@ -300,7 +310,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
         if source.seeded:
             parts.append("환경변수 첫 버전 · 파일 없음")
         if document.demoted:
-            parts.append(f"등급을 일반으로 읽음 {document.demoted}")
+            parts.append(f"모르는 등급 값 {document.demoted}")
     parts.append(_write_text(source.saved_at, source.save_problem))
     registrations = runtime.self_register_failures()
     if registrations:

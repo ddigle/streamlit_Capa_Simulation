@@ -25,6 +25,9 @@ ALLOWED_MANAGER_PHRASES: Final = (
     "앱 관리자(개발자)",
     "저장소 관리자",
     "열람 · 실무자 · 관리자 · 개발자",
+    # 높은 차례로 센 등급 넷(「통합인증 점검」 의 접속 명단 줄 — `sso_status.access_line`).
+    "개발자 n · 관리자 n · 실무자 n · 열람 n",
+    "개발자 · 관리자 · 실무자 · 열람",
     "열람 · 실무자 · 관리자",
     "실무자 · 관리자 · 개발자",
     "실무자 · 관리자",
@@ -49,6 +52,18 @@ OTHER_MEANINGS: Final = ("개발자 도구", "기록 열람")
 
 _WORD: Final = "관리자"
 
+# 옛 두 등급의 낱말 「일반」(명단 저장 값 `user` 의 옛 화면 이름)이 등급처럼 남지 않게 — 등급
+# 자리에 「일반」 이 서는 꼴만 잡는다(일반 설비 · 일반 가용 · 일반 사용자 같은 보통 낱말은
+# 지나간다). 등급 넷에는 「일반」 이 없다(신청 = 열람 — 2026-11-18 결정). 옛 기록 표시와 되돌림
+# 설명의 옛 「일반」 은 허용.
+ALLOWED_OLD_GRADE_PHRASES: Final = ("일반(옛 기록)", "옛 「일반」")
+OLD_GRADE_PATTERNS: Final = (
+    re.compile(r"일반\s*등급"),
+    re.compile(r"·\s*일반\s*(?:[0-9n]|·)"),
+    re.compile(r"등급을\s*일반"),
+    re.compile(r"일반으로\s*(?:넣|내리|읽)"),
+)
+
 
 def stray_manager_words(text: str) -> list[str]:
     """허용 꼴을 지운 뒤에도 남은 「관리자」 의 앞뒤 글(15자씩). 없으면 빈 목록."""
@@ -59,4 +74,17 @@ def stray_manager_words(text: str) -> list[str]:
     for match in re.finditer(_WORD, remaining):
         start = max(0, match.start() - 15)
         found.append(text[start : match.end() + 15].replace("\n", " "))
+    return found
+
+
+def stray_old_grade_words(text: str) -> list[str]:
+    """허용 꼴을 지운 뒤에도 등급 자리에 남은 옛 낱말 「일반」 의 앞뒤 글(15자씩)."""
+    remaining = text
+    for phrase in ALLOWED_OLD_GRADE_PHRASES:
+        remaining = remaining.replace(phrase, "□" * len(phrase))
+    found: list[str] = []
+    for pattern in OLD_GRADE_PATTERNS:
+        for match in pattern.finditer(remaining):
+            start = max(0, match.start() - 15)
+            found.append(text[start : match.end() + 15].replace("\n", " "))
     return found

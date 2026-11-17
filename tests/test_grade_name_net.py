@@ -25,7 +25,7 @@ import re
 import warnings
 from pathlib import Path
 
-from grade_words import LABEL_TABLE_FILES, stray_manager_words
+from grade_words import LABEL_TABLE_FILES, stray_manager_words, stray_old_grade_words
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "capa_simulation"
@@ -115,6 +115,46 @@ def test_asset_texts_use_the_manager_word_only_in_the_new_sense() -> None:
 def test_the_sso_setup_guide_uses_the_manager_word_only_in_the_new_sense() -> None:
     stray = stray_manager_words(SSO_SETUP.read_text(encoding="utf-8"))
     assert not stray, "\n".join(stray)
+
+
+def test_screen_strings_and_the_sso_guide_never_use_the_old_grade_word() -> None:
+    """옛 두 등급의 「일반」 이 등급 자리에 남지 않는다(「일반 등급」 · 「개발자 n · 일반 n」 ·
+    「등급을 일반으로」) — 등급은 넷이고 신청은 열람이다. 옛 기록 표시 「일반(옛 기록)」 · 되돌림
+    설명의 옛 「일반」 은 지나간다."""
+    stray = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {found}"
+        for path in screen_python_files()
+        for line, text in _all_strings(path)
+        for found in stray_old_grade_words(text)
+    ]
+    stray += [
+        f"docs/sso_setup.md: {found}" for found in stray_old_grade_words(SSO_SETUP.read_text())
+    ]
+    assert not stray, "옛 등급 낱말 「일반」 이 남았다:\n" + "\n".join(stray)
+    for old in ("S3 명단에 **일반 등급**으로", "개발자 3 · 일반 40", "등급을 일반으로 읽음 2"):
+        assert stray_old_grade_words(old), old
+    for allowed in (
+        "일반 설비와 같습니다",
+        "일반(옛 기록)",
+        "모두 옛 「일반」 이다",
+        "일반 사용자",
+    ):
+        assert not stray_old_grade_words(allowed), allowed
+
+
+def _all_strings(path: Path) -> list[tuple[int, str]]:
+    """그 파일의 화면에 닿는 글 전부(docstring 뺌 — `screen_strings` 는 「관리자」 든 글만)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    skipped = _docstring_ids(tree)
+    return [
+        (node.lineno, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in skipped
+    ]
 
 
 def test_the_net_catches_the_old_sense_and_lets_the_allowed_forms_through() -> None:

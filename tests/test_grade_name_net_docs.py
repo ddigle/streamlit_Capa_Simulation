@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 from typing import Final
 
-from grade_words import stray_manager_words
+from grade_words import stray_manager_words, stray_old_grade_words
 from test_grade_name_net import ROOT, screen_python_files, screen_strings
 
 GUIDES: Final = ROOT / "src" / "capa_simulation" / "guides"
@@ -97,6 +97,15 @@ def test_internal_documents_use_the_manager_word_only_in_the_new_sense() -> None
     assert not stray, (
         "옛 뜻 「관리자」 가 남았다 — 「개발자」 로 바꾸거나 허용 꼴로:\n" + "\n".join(stray)
     )
+
+
+def test_guides_and_internal_documents_never_use_the_old_grade_word() -> None:
+    """옛 두 등급의 「일반」 이 등급 자리에 남지 않는다
+    (`tests/grade_words.stray_old_grade_words`)."""
+    texts = [(path.name, path.read_text(encoding="utf-8")) for path in sorted(GUIDES.glob("*.md"))]
+    texts += [(name, (ROOT / name).read_text(encoding="utf-8")) for name in DOCUMENTS]
+    stray = [f"{name}: {found}" for name, text in texts for found in stray_old_grade_words(text)]
+    assert not stray, "옛 등급 낱말 「일반」 이 남았다:\n" + "\n".join(stray)
 
 
 def test_module_screen_strings_use_the_manager_word_only_in_the_new_sense() -> None:

@@ -2792,7 +2792,9 @@ def test_the_status_panel_shows_the_line_and_only_names(
     assert not list(app.exception)
     captions = "\n".join(str(item.value) for item in app.caption)
     assert "**S3 명단** · 정상" in captions
-    assert "**접속 명단** · 켜짐 · 개발자 1 · 일반 2 · 읽지 못함 0" in captions
+    assert (
+        "**접속 명단** · 켜짐 · 개발자 1 · 관리자 0 · 실무자 0 · 열람 2 · 읽지 못함 0" in captions
+    )
     table = app.dataframe[0].value.set_index("환경변수")
     assert table.loc[names.ENV_S3_SECRET_KEY, "상태"] == "있음"
     frames = "\n".join(frame.value.to_csv() for frame in app.dataframe)

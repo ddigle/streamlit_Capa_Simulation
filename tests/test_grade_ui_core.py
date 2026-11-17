@@ -35,7 +35,13 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation.auth import grade_store, grades, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.identity import Identity, identity_from_cookies
-from capa_simulation.components import access_list_admin, admin_view, grade_ui, sso_identity
+from capa_simulation.components import (
+    access_list_admin,
+    admin_view,
+    grade_ui,
+    sso_identity,
+    sso_status,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "app_pages" / "admin_area.py"
@@ -148,6 +154,17 @@ def test_a_preview_leaves_the_developer_server_alerts_standing(
     assert admin_view.developer_alerts_visible()
     assert not admin_view.developer_notes_visible(), "진단 글은 미리 보기를 따른다"
     assert sso_identity.admin_area_locked()
+
+
+def test_the_sso_status_counts_the_list_by_the_four_grades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「통합인증 점검」 의 접속 명단 줄은 등급 넷으로 센다(「접속 명단」 표와 같은 판정 — 옛 두
+    등급의 「일반」 이 없다)."""
+    as_grade(monkeypatch, grades.DEVELOPER)
+    line = sso_status.access_line(runtime.config())
+    assert "· 켜짐 · 개발자 1 · 관리자 1 · 실무자 1 · 열람 1 · 읽지 못함 0" in line, line
+    assert "일반" not in line
 
 
 @GRADE_PARAMS
