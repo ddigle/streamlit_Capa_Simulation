@@ -53,6 +53,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components import admin_view, grade_ui, sso_identity
 from capa_simulation.components import equipment_master_grid as grid_component
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
@@ -74,6 +75,7 @@ from capa_simulation.components.equipment_data_workspace import (
     NOTHING_SAVED_MESSAGE,
     SAVE_FIELDS_PREFIX,
     STALE_SCENARIO_EDITS_TAB,
+    TABLE_ACTIONS,
     Frames,
     LayoutMode,
     _example_row_count,
@@ -105,6 +107,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     queue_grid_result,
     queue_grid_toast,
+    refuse_out_of_grade,
     render_name_changes,
     render_small_editor,
     reset_equipment_drafts,
@@ -118,6 +121,8 @@ from capa_simulation.components.equipment_data_workspace import (
     stale_save_reasons,
     stale_save_refusal,
     stamp_layout_role,
+    table_editable,
+    table_lock,
 )
 from capa_simulation.components.equipment_data_workspace import (
     NAME_CHANGES_EXPANDER_KEY as _NAME_CHANGES_KEY,
@@ -266,6 +271,8 @@ SIDE_REVEAL_KEY: Final = grid_component.MASTER_SIDE.reveal_key
 # 다음 회차에 처음 설 오른쪽 칸의 머리를 보이라는 표지 — 칸 아래쪽에서 누른 「호기 추가」 · 「이
 # 호기로 새 호기 만들기」 는 다른 칸을 연다. 스크롤이 그대로면 새 칸의 가운데부터 보인다.
 SIDE_HEAD_KEY: Final = "equipment_grid_side_head_v1"
+# 저장 이력 표의 표 도구 막대를 등급으로 가르는 칸(설비 화면 내려받기 — 관리자부터).
+HISTORY_TOOLS_KEY: Final = "equipment_master_history_tools_v1"
 # 못 찾은 설비명(다음 불러오기까지)·마운트별 마지막으로 반영한 출납 seq.
 MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
@@ -676,7 +683,7 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
-    ops = this_session(ops, context.base)
+    ops = _within_grade(this_session(ops, context.base))
     if not ops:
         return
     before = layout_memo_mark()
@@ -692,6 +699,19 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _within_grade(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """화면 등급으로 설비 마스터를 고칠 수 없으면 표 출납 가운데 「한 단계 되돌리기」(`undo`) 말고는
+    받지 않는다 — 설비 마스터 표 · 오른쪽 칸의 op 는 모두 설비 마스터 쪽이다(호기 지우기는 딸린
+    비가동까지). 버린 것이 있으면 거절 알림 한 번. 되돌리기는 받는다 — 실무자의 비가동 일정 넣기도
+    되돌리기 단계를 남긴다."""
+    if table_editable(TABLE_MASTER):
+        return list(ops)
+    kept = [op for op in ops if op.get("op") == "undo"]
+    if len(kept) < len(ops):
+        refuse_out_of_grade(TABLE_ACTIONS[TABLE_MASTER])
+    return kept
 
 
 def _view_carry() -> tuple[dict[str, str], list[str]]:
@@ -865,8 +885,9 @@ def _open_detail(row_id: str) -> None:
 
 
 def _on_new() -> None:
-    """첫 화면 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로."""
-    _switch_side(SIDE_NEW)
+    """첫 화면 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로(설비 마스터를 고치는 등급만)."""
+    if table_editable(TABLE_MASTER):
+        _switch_side(SIDE_NEW)
 
 
 def _on_draft(value: grid_component.DraftValue) -> None:
@@ -880,8 +901,8 @@ def _on_draft(value: grid_component.DraftValue) -> None:
 def _on_copy(request: grid_component.CopyRequest) -> None:
     """가져오기 — 상세 「이 호기로 새 호기 만들기」(빈 초안에 그 호기 값) 또는 「비슷한 호기에서
     값 가져오기」(브라우저 초안 위에 설비명이 같거나 앞부분이 맞는 첫 호기 값). 「새 호기」 칸을
-    연다."""
-    if BUFFER_KEY not in st.session_state:
+    연다. 설비 마스터를 고치는 등급만 받는다."""
+    if BUFFER_KEY not in st.session_state or not table_editable(TABLE_MASTER):
         return
     frames: Frames = st.session_state[BUFFER_KEY]
     master = frames[1].reset_index(drop=True)
@@ -947,7 +968,9 @@ def _on_import_menu() -> None:
 
 def _on_dialog(name: str) -> None:
     if name == IMPORT_DIALOG:
-        open_equipment_import()
+        # 첫 화면의 「엑셀·CSV로 한꺼번에」 — 고치는 표가 하나도 없는 등급(열람)은 열지 않는다.
+        if sso_identity.viewer_can(TABLE_ACTIONS[DOWNTIME_TARGET]):
+            open_equipment_import()
         return
     forget_page_dialogs()
     st.session_state[EQUIPMENT_DIALOG_KEY] = name
@@ -1040,6 +1063,7 @@ def _has_changes(frames: Frames) -> bool:
     )
 
 
+@grade_ui.on_press
 def _save_revision(
     repository: DuckDBEquipmentRepository,
     *,
@@ -1051,7 +1075,9 @@ def _save_revision(
     drawn_base: str,
 ) -> None:
     """「리비전 저장」 — 출납을 먼저 반영하고 오류를 다시 센 뒤 0 이면 저장한다. 그린 회차의 `base`
-    와 지금 `base` 가 다르면(저장 뒤의 옛 누름) 쓰지도 알리지도 않는다."""
+    와 지금 `base` 가 다르면(저장 뒤의 옛 누름) 쓰지도 알리지도 않는다. 등급 거절(비가동 밖 변경을
+    실무자가 저장 — 저장소 내용 대조)은 받는 자리(`grade_ui.on_press`)가 알림창 · Alarm 에 한 번
+    낸다. 실패 글 전문은 개발자에게만(`admin_view.diagnostic_message`)."""
     if buffer_base() != drawn_base:
         return
     apply_outbox(context, layout)
@@ -1083,7 +1109,12 @@ def _save_revision(
             reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
-        _result("error", bootstrap_error_message(exc, database_paths=(repository.database_path,)))
+        _result(
+            "error",
+            admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(repository.database_path,))
+            ),
+        )
         return
     if message == NOTHING_SAVED_MESSAGE:
         _result("info", message)
@@ -1264,7 +1295,16 @@ def _render_data_menu(
 ) -> None:
     """메뉴 「엑셀·CSV」 — 맨 위 「엑셀·CSV로 한꺼번에」(팝업), 그 아래 양식 셋 + 현재 데이터
     셋(개편 명세 4-9). 폭 고정은 불러오기 줄이 비워 두는 자리와 맞추려는 것이다
-    (`tools_menu_style`)."""
+    (`tools_menu_style`).
+
+    화면 등급마다 항목이 갈린다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김, 2026-11-18 접속
+    등급): 열람은 메뉴가 없고, 실무자는 비가동 일정 셋(「엑셀·CSV로 한꺼번에」 — 비가동 일정만 ·
+    양식 · 현재 데이터), 관리자부터 전부(설비 마스터 · 기존 보유대수 양식은 설비 저장 등급, 현재
+    데이터는 설비 화면 내려받기 등급)."""
+    if not table_editable(DOWNTIME_TARGET):
+        return
+    editable = {target for target in TABLES if table_editable(target)}
+    exported = set(TABLES) if sso_identity.viewer_can("equipment.export") else {DOWNTIME_TARGET}
     with st.popover(
         DATA_MENU_LABEL,
         key=widget_key(DATA_MENU_KEY, DATA_MENU_GENERATION_KEY, bare_zero=False),
@@ -1276,27 +1316,31 @@ def _render_data_menu(
             icon=":material/upload_file:",
             on_click=_on_import_menu,
         )
-        for label, payload, filename, key in (
+        for target, label, payload, filename, key in (
             (
+                TABLE_MASTER,
                 "설비 마스터 양식",
-                equipment_csv_template(),
+                equipment_csv_template,
                 "equipment_master_template.csv",
                 "equipment_master_template_download_v3",
             ),
             (
+                BASELINE_TARGET,
                 "기존 보유대수 양식",
-                baseline_csv_template(),
+                baseline_csv_template,
                 "equipment_baseline_template.csv",
                 "equipment_baseline_template_download_v3",
             ),
             (
+                DOWNTIME_TARGET,
                 "비가동 일정 양식",
-                downtime_csv_template(),
+                downtime_csv_template,
                 "equipment_downtime_template.csv",
                 "equipment_downtime_template_download_v3",
             ),
         ):
-            render_csv_download(data=payload, file_name=filename, key=key, label=label)
+            if target in editable:
+                render_csv_download(data=payload(), file_name=filename, key=key, label=label)
         _render_current_data_downloads(
             st.session_state[BUFFER_KEY],
             saved=_saved_frames(),
@@ -1310,6 +1354,7 @@ def _render_data_menu(
                 st.session_state.get(DRAFT_REVISION_KEY),
                 latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
             ),
+            targets=exported,
         )
 
 
@@ -1324,6 +1369,7 @@ def _render_grid_section(
     carried: tuple[Mapping[str, str], Sequence[str]] = ({}, ()),
 ) -> None:
     loaded = prune_loaded(grid_loaded_ids(), view.index)
+    read_only = table_lock(TABLE_MASTER)
     missing = st.session_state.get(MISSING_KEY)
     alert_ids = [row_id for row_id in view.index.live if row_id in view.alerts]
     grid_component.render_grid_loader(
@@ -1342,6 +1388,7 @@ def _render_grid_section(
         on_clear=_on_clear,
         on_dialog=_on_dialog,
         on_new=_on_new,
+        read_only=read_only,
     )
     # 메뉴는 불러오기 마운트 다음 차례다 — 서식(`tools_menu_style`)이 불러오기 줄 끝에 얹어도 키보드
     # 차례는 불러오기 줄 → 값 줄(「목록 비우기」 · 「전체 N대 불러오기」) 다음이 메뉴다.
@@ -1359,6 +1406,7 @@ def _render_grid_section(
         on_outbox=partial(_on_outbox, context, layout),
         on_open=_on_grid_open,
         on_unload=_on_unload,
+        read_only=read_only,
     )
 
 
@@ -1576,6 +1624,7 @@ def render_equipment_master_tab(
             stale = (basis is not None and basis.stale) or session.unmerged
             submit = render_small_editor(
                 table,
+                read_only=table_lock(table),
                 stale=stale,
                 delete_locked=context.delete_lock,
                 drafts_replaced=drafts_replaced,
@@ -1587,19 +1636,26 @@ def render_equipment_master_tab(
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
         # 뒤 고르기, 그 뒤 본문 칸.
-        side, body = render_side_head(grid_component.MASTER_SIDE, SIDES, SIDE_DETAIL)
+        # 「새 호기」 칸은 설비 마스터를 고치는 등급에만 선다(설계 규칙 UI-INP-07 예외).
+        master_lock = table_lock(TABLE_MASTER)
+        sides = SIDES if master_lock is None else tuple(item for item in SIDES if item != SIDE_NEW)
+        side, body = render_side_head(grid_component.MASTER_SIDE, sides, SIDE_DETAIL)
     with body:
         if side == SIDE_HISTORY:
             try:
-                _render_history(
-                    repository,
-                    scenario_id=_history_scenario(repository, basis, latest_snapshot),
-                    scenario_name=basis.scenario_name if basis is not None else None,
-                )
+                # 이력 표 위 작은 단추 줄(내려받기 포함)은 설비 화면 내려받기 등급(관리자부터)에만.
+                with grade_ui.toolbar_scope("equipment.export", HISTORY_TOOLS_KEY):
+                    _render_history(
+                        repository,
+                        scenario_id=_history_scenario(repository, basis, latest_snapshot),
+                        scenario_name=basis.scenario_name if basis is not None else None,
+                    )
             except BOOTSTRAP_ERRORS as exc:
                 render_data_error(
                     "저장 이력을 읽지 못했습니다: "
-                    + bootstrap_error_message(exc, database_paths=(repository.database_path,)),
+                    + admin_view.diagnostic_message(
+                        bootstrap_error_message(exc, database_paths=(repository.database_path,))
+                    ),
                     code="EQ-09",
                     text="설비 저장 이력을 읽지 못했습니다",
                 )
@@ -1610,16 +1666,19 @@ def render_equipment_master_tab(
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,
+                read_only=master_lock,
             )
-            _render_save_section(
-                repository,
-                basis=basis,
-                session=session,
-                context=context,
-                layout=layout,
-                floor_canvases=floor_canvases,
-                today=today,
-            )
+            # 저장 구획은 비가동 일정이라도 고치는 등급에만 선다 — 열람은 값만.
+            if table_editable(DOWNTIME_TARGET):
+                _render_save_section(
+                    repository,
+                    basis=basis,
+                    session=session,
+                    context=context,
+                    layout=layout,
+                    floor_canvases=floor_canvases,
+                    today=today,
+                )
         elif side == SIDE_NEW:
             _render_new_unit(
                 view,
@@ -1643,6 +1702,7 @@ def render_equipment_master_tab(
                 on_open=_on_side_open,
                 on_goto=_on_goto,
                 on_copy=_on_copy,
+                read_only=master_lock,
             )
     # 그린 마운트의 자리 거부는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 것은 거둔다(닫은 한
     # 줄이 다시 마운트할 때 되살아나지 않게).

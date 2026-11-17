@@ -496,6 +496,9 @@ export default function (component) {
   const sheetCsvMenu = q('.sle-sheet-csvmenu')
   const sheetCsvAll = q('.sle-sheet-csv-all')
   const sheetCsvShown = q('.sle-sheet-csv-shown')
+  // 설비 화면 내려받기 등급 밖(파이썬이 `csvHidden` 을 싣고 「모든 칸」 글은 싣지 않는다 — 2026-11-18 접속 등급)이면 「CSV」 단추를
+  // 세우지 않는다(「보이는 줄」 도 내려받기다).
+  if (sheetCsvButton && SHEET && SHEET.csvHidden) sheetCsvButton.hidden = true
   const sheetClose = q('.sle-sheet-close')
   const sheetChips = q('.sle-sheet-chips')
   const sheetClear = q('.sle-sheet-clear')

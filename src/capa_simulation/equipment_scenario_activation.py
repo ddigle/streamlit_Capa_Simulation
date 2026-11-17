@@ -359,12 +359,20 @@ def role_changed_reason(session: EquipmentSession, stamped: str, *, in_space: bo
     )
 
 
-def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> SpaceEditMode:
+def space_edit_mode(
+    session: EquipmentSession, *, stamped_role: str | None, can_edit: bool = True
+) -> SpaceEditMode:
     """Space·설비 마스터 탭 배치 칸·붙여넣기가 함께 쓰는 편집 권한(설계 8-4 표).
 
     `stamped_role` 은 이 세션 편집본에 쌓인 배치 편집을 적용할 때 찍은 역할이다(없으면 None —
     `equipment_data_workspace.stamped_layout_role`). 샘플 fleet 은 화면이 따로 잠근다.
+
+    `can_edit` 이 거짓이면(화면 등급으로 설비 · Space 를 저장할 수 없음 — 2026-11-18 접속 등급)
+    층 배치 · 새 호기 · 층 캔버스 · FAB · 층 사용을 모두 끈 꼴이다. 잠김 까닭 글은 없다 — 지금만 못
+    하는 상태가 아니라 등급 밖 기능이라 화면이 숨긴다(설계 규칙 UI-INP-07 예외).
     """
+    if not can_edit:
+        return SpaceEditMode(layout="locked")
     role = session.layout_role
     official = role == "official"
     if session.unmerged:

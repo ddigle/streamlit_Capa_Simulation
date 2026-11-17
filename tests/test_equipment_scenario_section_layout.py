@@ -51,6 +51,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_NAME_KEY,
     REVISION_ORIGIN_COLUMN_WIDTH,
     REVISION_TABLE_TOOLBAR_CLEARANCE,
+    REVISION_TABLE_TOOLS_KEY,
     SCENARIO_KEY,
     publish_preview,
     revision_name_help,
@@ -184,10 +185,17 @@ def test_the_revision_table_stands_clear_of_the_row_above_it(tmp_path: Path) -> 
             for child in node.children.values()
         )
     )
+    # 리비전 표는 표 도구 막대를 등급으로 가르는 칸 안이다(`REVISION_TABLE_TOOLS_KEY` — 2026-11-18
+    # 접속 등급). 그 칸이 띄움 바로 뒤에 선다.
     table = next(
         index
         for index, node in siblings
-        if isinstance(node, Dataframe) and "리비전명" in node.value.columns
+        if isinstance(node, Block)
+        and node.key == REVISION_TABLE_TOOLS_KEY
+        and any(
+            isinstance(child, Dataframe) and "리비전명" in child.value.columns
+            for child in node.children.values()
+        )
     )
     between = [node for index, node in siblings if row < index < table]
     spaces = [node for node in between if getattr(node, "type", "") == "space"]

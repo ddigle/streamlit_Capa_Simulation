@@ -54,7 +54,7 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation import alerts
-from capa_simulation.components import write_guard
+from capa_simulation.components import grade_ui, sso_identity, write_guard
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
@@ -317,6 +317,9 @@ POPOVER_GENERATION_KEY = "equipment_scenario_manage_popover_generation_v1"
 # 리비전 표 위 띄움(px, `st.space`) — 표 도구 막대가 바로 위 줄 팝오버 단추에 닿지 않을 만큼(그리는
 # 자리의 설명). 숫자는 표 도구 막대 공용 띄움 하나다(`table_toolbar.TABLE_TOOLBAR_CLEARANCE`).
 REVISION_TABLE_TOOLBAR_CLEARANCE = TABLE_TOOLBAR_CLEARANCE
+# 설비 시나리오 · 리비전 표의 표 도구 막대를 등급으로 가르는 칸(설비 화면 내려받기 — 관리자부터).
+SCENARIO_TABLE_TOOLS_KEY = "equipment_scenario_table_tools_v1"
+REVISION_TABLE_TOOLS_KEY = "equipment_scenario_revision_tools_v1"
 # 리비전 표 「출처」 칸 폭 — 가장 긴 값 「배치 차이 정리」 가 잘리지 않을 만큼.
 REVISION_ORIGIN_COLUMN_WIDTH = 112
 
@@ -896,16 +899,19 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 공통 칸과 설비 시나리오가 따로 드는 것(일정 · 메모 · 비가동 · 가정 배치)의 설명은 늘 띄워 두지
     # 않는다 — Guide 「설비 시나리오 탭」 몫이다(설계 규칙 UI-TXT-01).
     layout_previews = _latest_layout_previews(database_path, session)
-    st.dataframe(
-        scenario_rows(
-            session,
-            official_revision_no=official_release_revision_no(session),
-            layout_previews=layout_previews,
-        ),
-        hide_index=True,
-        width="stretch",
-        placeholder="",
-    )
+    # 설비 시나리오 표 위 작은 단추 줄(내려받기 포함)은 설비 화면 내려받기 등급(관리자부터)에만
+    # 선다.
+    with grade_ui.toolbar_scope("equipment.export", SCENARIO_TABLE_TOOLS_KEY):
+        st.dataframe(
+            scenario_rows(
+                session,
+                official_revision_no=official_release_revision_no(session),
+                layout_previews=layout_previews,
+            ),
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+        )
     # 옛 판 흔적이 있는 시나리오 목록은 상태 알림(`SC-03` — `report_layout_traces`)이 낸다.
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
@@ -929,6 +935,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         scenarios[selected_id],
         clearable=clearable,
     )
+    # 설비 시나리오를 만들고 고치는 단추(이름 바꾸기 · 배치 차이 지우기 · 되돌리기 · 여기서 새
+    # 시나리오 · 리비전명)와 공식 지정은 관리자부터다. 그 아래 등급은 같은 탭에서 목록 · 이력을
+    # 값만 보고 고르기 · 불러오기만 한다(설계 규칙 UI-INP-07 예외 — 2026-11-18 접속 등급).
+    can_change = sso_identity.viewer_can("equipment.scenario")
+    can_publish = sso_identity.viewer_can("equipment.publish")
     with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
         st.selectbox(
             "설비 시나리오",
@@ -936,12 +947,15 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             format_func=lambda value: scenarios[value].scenario_name,
             key=SCENARIO_KEY,
         )
-        with st.popover(
-            "시나리오 이름 바꾸기", icon=":material/edit:", key=_popover_key(RENAME_POPOVER_KEY)
-        ):
-            _render_rename(database_path, scenarios[selected_id])
+        if can_change:
+            with st.popover(
+                "시나리오 이름 바꾸기",
+                icon=":material/edit:",
+                key=_popover_key(RENAME_POPOVER_KEY),
+            ):
+                _render_rename(database_path, scenarios[selected_id])
         # 가정 설비 시나리오 최신에 배치 차이가 있을 때만(공식 시나리오에는 지울 것이 없다 — I2).
-        if clearable:
+        if clearable and can_change:
             with st.popover(
                 "배치 차이 모두 지우기",
                 icon=":material/layers_clear:",
@@ -982,30 +996,31 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 바로 위 줄 맨 오른쪽 팝오버 단추(「시나리오 이름 바꾸기」·「배치 차이 모두 지우기」)를 덮어
     # 표에서 단추로 옮긴 누름을 가로챈다. 그 막대가 위 줄에 닿지 않을 만큼 띄운다.
     st.space(REVISION_TABLE_TOOLBAR_CLEARANCE)
-    st.dataframe(
-        revision_rows(
-            revisions,
-            common_numbers=common_numbers,
-            official_id=official_id,
-            official_no=official_no,
-            # 실효 표지는 그 시나리오 최신 줄만 — 시나리오 표와 같은 판정이다(옛 리비전은 원시).
-            layout_previews=(
-                {scenario.latest_schedule_revision_id: layout_previews[selected_id]}
-                if scenario.latest_schedule_revision_id is not None
-                and selected_id in layout_previews
-                else None
+    with grade_ui.toolbar_scope("equipment.export", REVISION_TABLE_TOOLS_KEY):
+        st.dataframe(
+            revision_rows(
+                revisions,
+                common_numbers=common_numbers,
+                official_id=official_id,
+                official_no=official_no,
+                # 실효 표지는 그 시나리오 최신 줄만 — 시나리오 표와 같은 판정이다(옛 리비전은 원시).
+                layout_previews=(
+                    {scenario.latest_schedule_revision_id: layout_previews[selected_id]}
+                    if scenario.latest_schedule_revision_id is not None
+                    and selected_id in layout_previews
+                    else None
+                ),
             ),
-        ),
-        hide_index=True,
-        width="stretch",
-        placeholder="",
-        column_config={
-            "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
-            "출처": st.column_config.TextColumn(width=REVISION_ORIGIN_COLUMN_WIDTH),
-            # 최신 줄의 실효 괄호(「호기 1행 (공식과 같음)」)가 잘리지 않을 만큼.
-            "배치": st.column_config.TextColumn(width="medium"),
-        },
-    )
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+            column_config={
+                "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+                "출처": st.column_config.TextColumn(width=REVISION_ORIGIN_COLUMN_WIDTH),
+                # 최신 줄의 실효 괄호(「호기 1행 (공식과 같음)」)가 잘리지 않을 만큼.
+                "배치": st.column_config.TextColumn(width="medium"),
+            },
+        )
     # 전체 수와 출처별 수를 늘 한 줄로 — 늘 서 있어 아래 칸 자리가 그대로다. 사내 런북은 표를 세지
     # 않고 이 줄의 이관 수를 8-4s `L` 과 견준다.
     st.caption(revision_count_line(len(revisions), origins, unit="줄"))
@@ -1043,24 +1058,28 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             "이 리비전 불러오기", icon=":material/download:", key=_popover_key(LOAD_POPOVER_KEY)
         ):
             _render_load(database_path, scenario, chosen)
-        with st.popover(
-            "이 리비전으로 되돌리기",
-            icon=":material/history:",
-            key=_popover_key(RESTORE_POPOVER_KEY),
-        ):
-            _render_restore(database_path, session, scenario, chosen)
-        with st.popover(
-            "여기서 새 시나리오", icon=":material/call_split:", key=_popover_key(CLONE_POPOVER_KEY)
-        ):
-            _render_branch(database_path, scenario, chosen)
-        with st.popover(
-            "리비전명", icon=":material/label:", key=_popover_key(REVISION_NAME_POPOVER_KEY)
-        ):
-            _render_revision_name(database_path, scenario, chosen)
-        with st.popover(
-            "공식으로 지정", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
-        ):
-            _render_publish(database_path, session, scenario, chosen)
+        if can_change:
+            with st.popover(
+                "이 리비전으로 되돌리기",
+                icon=":material/history:",
+                key=_popover_key(RESTORE_POPOVER_KEY),
+            ):
+                _render_restore(database_path, session, scenario, chosen)
+            with st.popover(
+                "여기서 새 시나리오",
+                icon=":material/call_split:",
+                key=_popover_key(CLONE_POPOVER_KEY),
+            ):
+                _render_branch(database_path, scenario, chosen)
+            with st.popover(
+                "리비전명", icon=":material/label:", key=_popover_key(REVISION_NAME_POPOVER_KEY)
+            ):
+                _render_revision_name(database_path, scenario, chosen)
+        if can_publish:
+            with st.popover(
+                "공식으로 지정", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
+            ):
+                _render_publish(database_path, session, scenario, chosen)
 
 
 def _confirm_help(detail: str, *, agreed: bool) -> str:
@@ -2799,6 +2818,10 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
     합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업 복원)은 그 단추 풍선이
     말한다(검수표 11/02 equip-44 와 같은 꼴)."""
     st.caption(legacy_trace_value_line(count))
+    if not sso_identity.viewer_can("equipment.legacy_ack"):
+        # 「이대로 이어 쓰기」 는 되돌릴 수 없는 막힘 풀기라 개발자만이다(2026-11-18 접속 등급) — 그
+        # 아래 등급에는 값 한 줄만 둔다(설계 규칙 UI-INP-07 예외).
+        return
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:

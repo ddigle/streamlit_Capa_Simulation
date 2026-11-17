@@ -39,6 +39,7 @@ import streamlit as st
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import report_missing_cutoffs
 from capa_simulation.components.data_error_mark import render_data_error
@@ -387,7 +388,9 @@ if (
     with conditions_card:
         st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
 
-with main_tab:
+# 표 위 작은 단추 줄 · 그림 막대(내려받기 포함)는 설비 화면 내려받기 등급(관리자부터)에만 선다
+# (2026-11-18 접속 등급 — 그 아래 등급은 같은 화면을 값만 본다).
+with main_tab, grade_ui.toolbar_scope("equipment.export", "equipment_main_tools_v1"):
     if not tab_is_hidden(main_view):
         if using_dashboard_sample and not show_sample_fleet:
             st.caption("등록된 호기가 없습니다.")
@@ -415,7 +418,7 @@ with main_tab:
                 alert_scope=equipment_alert_scope,
             )
 
-with gap_tab:
+with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1"):
     if not tab_is_hidden(gap_view):
         assert conditions_card is not None
         with conditions_card:
