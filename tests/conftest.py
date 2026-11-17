@@ -421,6 +421,32 @@ def _without_duckdb_memory_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _without_handed_over_mark(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[None]:
+    """동기화 판정(`sync_boot`)이 넘긴 표지를 읽는 시뮬레이션 DB 자리를 없는 tmp 자리로
+    돌리고, 판정 기억을 앞뒤로 비운다.
+
+    판정은 그 DB 옆 세대 사이드카의 넘긴 표지(`handed_over_utc` — 이관 `init` 이 남긴다)를
+    읽는다. 표지가 있으면 `local` 이어도 `SY-04` 가 서고 그 회차에는 해소 표지(`SY-01` ·
+    `SY-02` · `SY-06` …)도 함께 나간다. 이관을 한 사내 PC 의 작업 트리에서 pytest 를 돌리면
+    진짜 표지를 읽어 「평범한 로컬 프로세스에는 동기화 알림이 없다」 를 보는 시험이 그
+    PC 에서만 깨진다. `sync_boot` 는 그 자리를 import 때 이름으로 쥐어
+    `settings.DUCKDB_PATH` 를 tmp 로 바꾼 시험도 진짜 자리를 읽으므로 그 이름을 돌린다.
+    등록 자리(`sync_boot.MANAGED_PATHS`)는 그대로다. 표지가 필요한 시험은
+    `monkeypatch.setattr(sync_boot, "DUCKDB_PATH", …)` 로 다시 돌린다. 모듈은 여기서
+    읽어 수집 단계에 저장소까지 불러오지 않는다.
+    """
+    from capa_simulation import sync_boot
+
+    absent = tmp_path_factory.getbasetemp() / "absent-sync-place" / _REPOSITORY_DATABASES[0].name
+    monkeypatch.setattr(sync_boot, "DUCKDB_PATH", absent)
+    sync_boot.forget_boot_result()
+    yield
+    sync_boot.forget_boot_result()
+
+
+@pytest.fixture(autouse=True)
 def _without_app_contact_email(monkeypatch: pytest.MonkeyPatch) -> None:
     """앱 정보 카드의 문의처 환경변수(`settings.APP_CONTACT_EMAIL_ENV`)를 지운다.
 

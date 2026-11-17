@@ -352,14 +352,18 @@ def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
 ) -> None:
     """사람이 고칠 수 없는 DB 실패의 전문(파일 경로 · 파일을 연 프로세스 번호 · 원문 줄)은 관리자
     몫에만 — 그 밖의 Alarm 줄 · 로그 · 복사 글은 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」
-    만이다. 짧은 글은 둘 다 같다."""
+    만이다. 짧은 글은 둘 다 같다.
+
+    파일 줄은 원문이 아니라 넘긴 `Path` 를 그 OS 의 꼴로 적는다 — Windows 에서는
+    `\\srv\\DEMO\\x.duckdb` 라 폴더 낱말도 같은 `Path` 에서 뽑는다."""
     monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: admin)
+    held = Path("/srv/DEMO/x.duckdb")
     message = "설비 현황을 준비하지 못했습니다. " + page_bootstrap.bootstrap_error_message(
         duckdb.IOException(
-            'Could not set lock on file "/srv/DEMO/x.duckdb": Conflicting lock is held in '
+            f'Could not set lock on file "{held.as_posix()}": Conflicting lock is held in '
             "/usr/bin/python3 (PID 4242) by user demo."
         ),
-        database_paths=(Path("/srv/DEMO/x.duckdb"),),
+        database_paths=(held,),
     )
 
     note = data_error_note(message, code="EQ-09")
@@ -367,7 +371,7 @@ def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
     assert (
         note["short"] == "데이터베이스를 열지 못함(다른 프로그램이 엶)" + page_bootstrap.ADMIN_TAIL
     )
-    hidden = ("/srv/DEMO", "4242", "DuckDB")
+    hidden = (str(held.parent), "4242", "DuckDB")
     if admin:
         assert all(word in note["full"] for word in hidden)
         return

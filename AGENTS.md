@@ -252,7 +252,10 @@ Windows(PowerShell):
   `data/` · 운영 DB 와 같은 파일 · git 작업 트리 안 — `settings.is_operational_database_place`, 시험이 갈아끼우기 전 저장소 경로로)를 열지 않는다 —
   `tests/conftest.py` 가 같은 프로세스의 `duckdb.connect` 를 지켜 열지 않고 멈추고 그 시험을 실패로 바꾼다(여는 쪽이 예외를 삼켜도 끝에서
   실패). 사내 관문이 운영 저장소에서 돈다(2026-11-12 사용자 답 ⑤-6 (가)). 내보내기 임시 자리처럼 `settings.DATA_DIR` 아래를 쓰는 길은 그 칸을
-  `tmp_path` 로 돌린다. 하위 프로세스는 문지기를 지나지 않아 세션 끝의 「저장소 DB 를 새로 만들었으면 실패」 가 받친다. ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
+  `tmp_path` 로 돌린다. 하위 프로세스는 문지기를 지나지 않아 세션 끝의 「저장소 DB 를 새로 만들었으면 실패」 가 받친다. 운영 DB 옆 사이드카도
+  읽지 않는다 — 이관 `init` 을 한 사내 PC 에는 넘긴 표지(`sync_generation.json` 의 `handed_over_utc`)가 있어 읽으면 그 PC 에서만 `SY-04` 와
+  해소 표지가 선다. 동기화 판정은 그 자리를 import 때 이름(`sync_boot.DUCKDB_PATH`)으로 쥐어 `settings.DUCKDB_PATH` 를 바꿔도 따라오지
+  않으므로 `tests/conftest.py` 의 `_without_handed_over_mark` 가 그 이름을 tmp 로 돌린다(그물 `tests/test_sync_boot.py`). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
   화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. ⑤ 대소문자만 다른 두 뿌리
   (`modules/`·`Modules/`)를 실제 폴더로 만들면 NTFS 는 먼저 만든 쪽 하나로 접고 git 도 그 철자로 적는다 — 철자를 글자로
   견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수
