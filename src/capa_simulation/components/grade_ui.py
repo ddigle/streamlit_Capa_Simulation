@@ -23,9 +23,8 @@
 +
   「HOME 으로」 + 멈춤(Admin Area 잠금과 같은 꼴 — 설계 규칙 UI-INP-07 예외 · UI-CON-03).
 - **설비 화면 내려받기 감추기**(`toolbar_scope` · `chart_config`) — 등급 밖이면 그 칸 안 Streamlit
-표
-  도구 막대 · 그림 막대를 줄 통째로 감춘다. 막는 벽이 아니라 길을 줄이는 것이다(칸 복사 · 캡처 ·
-  인쇄).
+  표 도구 막대의 CSV 내려받기 단추와 그림 막대를 감춘다(찾기 · 크게 보기는 남는다). 막는 벽이
+  아니라 길을 줄이는 것이다(칸 복사 · 캡처 · 인쇄 · 브라우저 개발자 도구).
 """
 
 from __future__ import annotations
@@ -156,12 +155,17 @@ def stop_unless(
 
 
 # 등급 밖 칸의 key 접두 — 앱이 매 회차 보내는 스타일 한 벌(`TOOLBAR_STYLE` — `app.py` 의 사이드바
-# 스타일과 함께)이 이 접두의 칸 안 표 도구 막대 · 그림 막대를 감춘다. 칸마다 스타일을 보내지 않아
-# 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 그대로다.
+# 스타일과 함께)이 이 접두의 칸 안 표 도구 막대의 내려받기 단추와 그림 막대를 감춘다. 칸마다
+# 스타일을 보내지 않아 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 그대로다.
 HIDDEN_TOOLS_PREFIX: Final = "grade_tools_off_"
+# Streamlit 표 도구 막대의 CSV 내려받기 단추 이름표(`aria-label` — 설치된 프런트 묶음의 글 그대로,
+# 시험이 묶음에 이 글이 있는지 본다 — 이름표가 바뀌면 단추가 다시 보이므로). 찾기 · 크게 보기 ·
+# 칸 보이기 단추는 남긴다.
+CSV_DOWNLOAD_LABEL: Final = "Download as CSV"
 TOOLBAR_STYLE: Final = (
     "<style>"
-    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"],'
+    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
+    f' button[aria-label="{CSV_DOWNLOAD_LABEL}"],'
     f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar-container,'
     f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar'
     " { display: none !important; }"
@@ -177,8 +181,8 @@ def toolbar_key(action: str, key: str) -> str:
 @contextmanager
 def toolbar_scope(action: str, key: str) -> Iterator[DeltaGenerator]:
     """`st.container` 칸을 연다. 화면 등급으로 그 동작을 할 수 없으면 칸 key 에 감춤 접두를 달아 그
-    칸 안 Streamlit 표 도구 막대 · 그림 막대를 줄 통째로 감춘다(찾기 · 크게 보기도 함께 —
-    `TOOLBAR_STYLE`). 칸 밖에 스타일을 쓰지 않는다."""
+    칸 안 Streamlit 표 도구 막대의 CSV 내려받기 단추와 그림 막대를 감춘다(찾기 · 크게 보기는
+    남는다 — `TOOLBAR_STYLE`). 칸 밖에 스타일을 쓰지 않는다."""
     box = st.container(key=toolbar_key(action, key))
     with box:
         yield box

@@ -363,6 +363,29 @@ def test_toolbar_scope_and_chart_config_hide_only_below_the_grade(
     assert 'data-testid="stElementToolbar"' in grade_ui.TOOLBAR_STYLE
 
 
+def test_the_toolbar_style_hides_only_the_csv_download_button() -> None:
+    """감춤 칸은 표 도구 막대의 CSV 내려받기 단추만 감춘다 — 찾기 · 크게 보기 · 칸 보이기는
+    남는다(2026-11-17 정한 것 42 — 브라우저로 확인). 막대 줄 통째(`stElementToolbar` 자체)를 감추는
+    규칙이 없고, 고른 단추 이름표가 설치된 Streamlit 프런트 묶음에 그대로 있다(이름표가 바뀌면
+    단추가 다시 보이므로 판 올림 때 여기서 걸린다)."""
+    import streamlit
+
+    style = grade_ui.TOOLBAR_STYLE
+    rules = [part.strip() for part in style.split("{")[0].removeprefix("<style>").split(",")]
+    toolbar_rules = [rule for rule in rules if "stElementToolbar" in rule]
+    assert toolbar_rules == [
+        f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"] '
+        f'button[aria-label="{grade_ui.CSV_DOWNLOAD_LABEL}"]'
+    ]
+    for kept in ("Search", "Fullscreen", "Show/hide columns"):
+        assert kept not in style
+    assert ":has(" not in style
+    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
+    needle = f"label:`{grade_ui.CSV_DOWNLOAD_LABEL}`"
+    labelled = [path.name for path in bundle.glob("*.js") if needle in path.read_text("utf-8")]
+    assert labelled, "설치된 Streamlit 표 도구 막대에 내려받기 단추 이름표가 없다"
+
+
 def test_toolbar_scope_writes_no_style_slot_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
     """칸마다 스타일을 보내지 않는다 — 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 등급과 상관없이
     같다(스타일은 `app.py` 가 보내는 한 벌)."""
