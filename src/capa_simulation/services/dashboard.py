@@ -1,4 +1,4 @@
-# Purpose: HOME의 생산계획·Wafer 부하량·Bottleneck 순위와 Capa 요약 데이터를 집계한다.
+# Purpose: HOME의 생산계획·Wafer 부하량·Bottleneck 순위·Capa 대시보드 데이터를 집계한다.
 
 from collections.abc import Sequence
 

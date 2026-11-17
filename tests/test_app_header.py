@@ -673,7 +673,7 @@ def _min_cached_message_size() -> int:
 def test_the_styles_sent_every_run_stay_above_the_browser_cache_threshold(
     mode: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """회차마다 다시 가는 머리 띠·HOME 제목 줄·공지 상자 스타일은 캐시 문턱 이상이어야 한다.
+    """회차마다 다시 가는 머리 띠·HOME 제목 줄·Capa 요약 상자 스타일은 캐시 문턱 이상이어야 한다.
 
     Streamlit 은 메타데이터를 뺀 직렬화가 `global.minCachedMessageSize` 이상인 요소만 브라우저
     캐시에 올리고, 같은 내용이 다시 오면 해시 참조로 보낸다. 문턱 아래면 내용이 그대로여도 회차마다
@@ -693,7 +693,7 @@ def test_the_styles_sent_every_run_stay_above_the_browser_cache_threshold(
         # 두 줄을 비운 머리 띠 — 실제 머리 띠는 시나리오 이름만큼 이보다 길다.
         "머리 띠": f"<style>{_header_css('', '')}</style>",
         "HOME 제목 줄": dashboard_title_row_style(),
-        "HOME 공지 상자": summary_notice_style(),
+        "HOME Capa 요약 상자": summary_notice_style(),
     }
     for name, body in blocks.items():
         # `st.html` 은 본문을 `clean_text`(들여쓰기 걷기·앞뒤 공백 자르기)로 다듬어 싣는다.

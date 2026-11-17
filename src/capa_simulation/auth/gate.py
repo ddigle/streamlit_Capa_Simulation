@@ -18,7 +18,10 @@
    밖은 405), 나머지는 세션 쿠키를 검증한다.
    신원이 있으면(websocket 은 Origin 까지 맞으면) 넘기고, 없으면 websocket 은 수락 전 close 1008
    (→ HTTP 403), 최상위 탐색은 IdP 로 302, 그 밖(fetch · iframe · 업로드)은 401 — 본문은 그대로이고
-   까닭 낱말 머리(`X-Capa-Sso-Reason` — `ended_reason`)를 단다.
+   까닭 낱말 머리(`X-Capa-Sso-Reason` — `ended_reason`)를 단다. 공지 물음
+   경로(`names.NOTICE_PATH`)는 탐색으로 보지 않고 늘 401 이다 — 앞단이 Sec-Fetch-* 를 떼면 그
+   fetch 가 탐색으로 보여 10초마다 로그인 시작(상태 · 시도 쿠키 · 되풀이 경고)을 냈다. 물음
+   스크립트는 그 401 에서 멈춘다.
 6. 넘긴 websocket 은 **브라우저가 보낸 메시지마다** 핸드셰이크 때의 신원을 다시
    본다(`_WatchedSocket` — 만료 · 로그아웃 폐기 목록 · 접속 명단). 쿠키는 핸드셰이크 때 한 번 찍혀
    그 연결 끝까지 같고, Streamlit 은 위젯 콜백을 스크립트 본문보다 먼저 돌리며 프래그먼트
@@ -221,7 +224,7 @@ class SsoGate:
         if kind == "websocket":
             await self._close(send)
             return
-        if is_navigation(method, headers):
+        if path != names.NOTICE_PATH and is_navigation(method, headers):
             next_path = next_from_scope(path, scope.get("raw_path"), scope.get("query_string"))
             response = start_login(
                 cfg,

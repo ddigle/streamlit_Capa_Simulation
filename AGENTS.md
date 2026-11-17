@@ -390,7 +390,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes`(넣기 · 빼기 · 등급) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
   갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
   `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
-  websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
+  websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py`, 운영 서버의 공지 물음 경로(`GET /capa/notice` — 공개 목록 밖이라 켜짐이면
+  문지기가 쿠키를 보고 신원이 없으면 탐색으로 보지 않고 늘 401(앞단이 Sec-Fetch-* 를 떼도 로그인 시작을 내지 않음), 꺼짐은 처리기가 그대로 냄 ·
+  켜짐인데 문지기 없음 · 막힘은 503, 메모리 읽기만 · `no-store` JSON — `notice_board.payload` 그대로)는
+  `auth/notice_poll.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
   `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
@@ -437,6 +440,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     띠 글은 앱 밖 공통 틀 글처럼 띄어쓰기에서만 줄을 바꾸고(`word-break: keep-all`) 띄어쓰기 없는 긴 메일 · 주소만 접는다
     (`overflow-wrap: anywhere` — 390 창에서 낱말이 가운데서 갈리던 것, 2026-11-14 보드 english 리뷰).
     바깥 화면(거절 · 로그아웃 — 공통 틀)의 보조 링크는 강조 토큰 색이다(`auth/page_frame.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
+    **같은 틱에 공지 물음 갈래**(`_NOTICE_POLL` — 2026-11-17 공지 보드 q-speed)를 문지기가 있는 서버(`runtime.gate_installed()` —
+    `capa_server.py`, 켜짐 · 꺼짐 모두)에만 끼운다(`app.py` 실행에는 없음 — 공지는 앱 전체 회차의 알림 칸 data 로만). 연결 표지가 `CONNECTED`
+    인 동안 붙은 지 · 지난 물음에서 10초(`NOTICE_POLL_MS`)마다 같은 뿌리의 `GET /capa/notice` 를 묻고(쿠키 · `no-store` · 겹쳐 묻지 않음),
+    표지 + 판(`noticeRead`)이 지난번 넘긴 것과 다르면 부모 문서의 `window.__capaAlerts.notice(payload)` 에 넘긴다(칸이 아직 없으면 쥐고 있다가
+    다음 틱 — 사건 대기열 `__capaAlertQueue` 는 쓰지 않음). 첫 401 에서 멈추고(`noticeStep` — 만료 탭이 문지기를 두드리지 않게) 끊겼다가 다시
+    붙으면 푼다. 그 밖 실패 · 앞단 HTML 은 다음 차례. 시험 `tests/test_notice_poll.py`(경로 · 문지기 · 판정 구획 · 가짜 창 통째).
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
@@ -458,13 +467,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py` — HOME 대시보드(공정 필터 「선택 공정 적용」 은 좁힌 공정을 `shared_process.publish_from_home` 으로 다른 화면의 공용 공정 칸에 복사만 한다 — 다른 화면 값은 B/N 판정 · 리비전 저장값 `PROCESS_SELECTION_KEY` 에 들지 않는다, 2026-11-08 답 P1 · P2-1. 팝업 단추 글자는 표시명 `unique_format_func` 라 겹친 표시명도 갈린다). 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정(Preference 공용 프로필
   편집기·`Past Data` — `past_data_management.py`)은 사이드바 「HOME 설정」 상자가 여는 큰 팝업이다(`components/home_settings.py`,
   2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 팝업 안은 쓰는 묶음 다섯 탭 `비교 · 주요 Case` · `판정 기준` ·
-  `선행 · 보정` · `공지 · 표시` · `Past Data` 다(2026-11-04 사용자 검수 home-u01 — 라벨은 `home_state`, 앞 넷은
+  `선행 · 보정` · `Capa 요약 · 표시` · `Past Data` 다(2026-11-04 사용자 검수 home-u01 — 라벨은 `home_state`, 앞 넷은
   `home_preference.render_home_preference` 가 탭을 라벨로 받아 상자를 놓는다). 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
     바꾸면 토글을 기본값으로 적어 푼다(`scenario_activation.py`·`test_scenario_activation.py`). 공정 필터는 패널 칸이다.
   - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
     공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
-    프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `공지 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
+    프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `Capa 요약 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -484,7 +493,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     센다(2026-11-11 입력 점검 보드 q7). 측정률 가정 한 줄은 남는다.
   - 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)은 `LOB 표시 조건`
     카드 맨 위 항목이다(2026-11-02 — 전에는 본문 제목 줄 끝). 카드는 그래서 HOME 에서 처음 펼친 채 선다
-    (`condition_card(default=True)`). 제목 줄에는 끝 칸이 없어 본문이 화면 탭 줄 바로 밑에서 「공지」 로 시작한다.
+    (`condition_card(default=True)`). 제목 줄에는 끝 칸이 없어 본문이 화면 탭 줄 바로 밑에서 「Capa 요약」 으로 시작한다.
     팝업 열림 칸·안쪽 탭 key·라벨은 `home_state.py`(칩이 미지정 Case 를 누르면 팝업을 `비교 · 주요 Case` 탭으로 열고 그 Case
     칸을 한 번 강조한다 — `home_main_cases.focus_main_case`).
   - **「HOME 설정」 팝업이 열린 회차에는 팝업을 열기 전 그림을 그대로 쓴다**(`HOME_DRAWN_CONDITIONS_KEY` 의 네 묶음 —
@@ -1113,10 +1122,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자
   회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
-  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
+  여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
-  기록 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드)을
-  읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
+  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은
+  둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
@@ -1920,6 +1931,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `admin_bdq_login_set`(결과 · 까닭 코드) · `admin_bdq_login_delete`(결과)에는 계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
+- `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
+  공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「관리자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
+  「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 칸이 없을 때(Admin Area 를 처음 열 때 · 다른 화면에 다녀와 위젯 값이 걷힌 뒤)
+  기본값 `notice_board.default_until` 을 심고 그 끝(날짜까지)을 `SEEDED_KEY` 에 적는다. 손대지 않은 기본값이 지나면 그리기 앞 · 「보내기」
+  콜백에서 새 기본값으로 간다(`stale_seed` — 그대로면 「내일 그 시각」, 사람이 고른 시각은 그대로) · 「보내기」.
+  「보내기」 콜백이 Admin Area 잠금 판정(`sso_identity.admin_area_locked`)을 다시 보고 글 · 끝을 검사해(빈 글 · 300자 넘음은 단추 아래 거부
+  한 줄 — `write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py` BESIDE) 연 순간의 값(글 · 끝 ISO · 그때 서 있던 공지
+  id — `PENDING_KEY`)을 쥐고 확인 팝업 「공지 보내기」(`admin_dialog` 한 칸의 값 `notice_send`)를 연다 — 값 한 줄 `confirm_line`(`끝 18:20` ·
+  다음 날이면 `끝 내일 09:00` · 서 있었으면 ` · 서 있는 공지 바뀜`, `st.caption`) · 「보내기」(primary · `:material/campaign:`) · 「취소」.
+  팝업의 「보내기」(`submit_notice`)는 다시 판정한 뒤 쥔 값 그대로 `notice_board.send(…, expected=…)` 한 번(`write_guard.save_once`) —
+  팝업이 열린 사이 서 있는 공지가 바뀌었으면(`NoticeChanged` — 갈음 · 거둠 · 끝 시각으로 걷힘) 보내지 않고 팝업을 닫아 바뀐 카드를 다시
+  보인다(글 상자는 그대로). 알림 글 · 감사 결과는 까닭 둘(`ended` — 「서 있던 공지가 끝났거나 거둬졌습니다」 · `result=ended` / 갈음 —
+  「서 있는 공지가 바뀌었습니다」 · `result=changed`)이고 사람을 지목하지 않는다.
+  결과는 모두 `queue_flash`(성공 「공지 보냄 · 18:20 까지」(끝이 다음 날이면 「11-18 09:00 까지」) · 「공지 거둠」 은 알림창으로만, 막힘 ·
+  바뀜은 `popup_only`) — 보낸 뒤 다음 앱 전체 회차가 글 상자 · 끝 시각을 비운다(`CLEAR_KEY` — 팝업 회차에서 바깥 위젯 칸을 건드리지 않는다). 「거두기」 콜백(`withdraw_notice`)도
+  다시 판정하고 그린 회차의 공지가 아직 서 있을 때만 걷는다(확인 없음). 감사 사건 `admin_notice_send`(결과 · 끝 시각) ·
+  `admin_notice_withdraw`(결과) — 대상은 공지 id(`tgt`), 글은 어느 칸에도 없다(감사 불변조건). 시험 `tests/test_notice_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드. 자리에는 누구나 읽는 머리 한 줄(「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 · 가드 자리 · 앞 동작이면 그 범위의 말)과 값 줄 「담당 <이름>」 만, 개발자용 정보(형식·첫 줄, import 꼴 안내, 끄는 법, 모듈 폴더 안 프레임만)는 접힌 「담당자용 진단」 안 코드 칸 + 복사 단추다(`DIAGNOSTIC_LABEL` — 복사 key 는 카드마다 새로, 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare). 코드 칸은 평문이라 앱이 짓는 안내 줄(끄는 법 · import 안내)에 코드 표지(백틱)를 쓰지 않고, 줄을 꺾는다(`wrap_lines` — 앱 안 멈춤 판의 접힌 진단 · Admin 「서버 시작 점검」 pip 출력 끝과 같은 꼴, 설계 규칙 UI-CON-04). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/page_failure_card.py` — 코어 화면 감싸기(`run_core_page` — `app.py` 가 모듈이 아닌 화면의 `navigation.run()` 을 이것으로 부른다, `module_runtime` 과 같은 예외 사다리: 제어 예외 · `KeyboardInterrupt` 는 다시 던지고 `FragmentHandledException` 은 적기만, 그 밖 `BaseException` 은 카드 — 처리한 실패는 둘 다 `st.stop()` 으로 끝내 `app.py` 의 멈춤 길(`finish_stopped`)을 탄다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 것으로 보고 오류 자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지운다). 처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 자리 카드 하나 — 앱 안 멈춤 판의 한 꼴(`stop_panel`, 보드 stop-panels): 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(`RETRY_KEY` — 회차 하나) → 「문의 <메일>」 → 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」(UTC 분은 실패를 적은 순간 `PageFailure.epoch` — `AD-22` 의 시각과 같은 순간) → 관리자 몫(`stop_panel.admin_fold_visible`)에만 접힌 「관리자용 진단」(맨 위 참고 줄 · 화면 · 첫 줄 · 이 저장소 안 프레임 · 복사 — C-DEP 에는 로그가 없다). 실패는 `page_failures` 에 적고 서버 로그에 참고 번호와 원문을 남긴다. 관리자 상태 알림 `AD-22`(`render_page_failure_alert` — `app.py` 가 토큰 알림 곁에서 부른다)는 프로세스 기록에서 낸다 — 오류가 난 탭이 관리자의 탭이 아니어서다. 이벤트 칸 수가 프로세스 동안 같도록 시작 점검 알림 `AD-01` 과 같은 판정(`start_check_alert_possible`)이 참인 서버만 회차마다 한 자리(실패가 없거나 관리자가 아니면 해소)이고 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는 운영이 아니고 통합인증이 꺼져 카드의 「관리자용 진단」 이 누구에게나 선다. 지문은 프로세스에서 난 (화면, 종류) 쌍 모두, 건수는 최근 줄 상한과 따로 센다. HOME 의 「그 화면으로」 주소는 빈 글자다. 시험은 `conftest` 가 감싸기를 걷어(`app.py` 를 도는 시험이 실패를 놓치지 않게) 보고, 감싸기 자체는 `@pytest.mark.page_failure_card`(`tests/test_page_failure_card.py`). 화면 확인(`check_deploy_screens` 의 예외 세기)도 이 카드 칸(`CARD_KEY`)을 예외로 센다. 운영 이미지는 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의 `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type` — 보드 d12 (가)).
@@ -2828,6 +2856,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/korea_time.py` — 화면 · 알림 · 복사 글에 그리는 시각의 시각대 한 곳(`KST` — +09:00 고정 ·
   `kst_clock(시각대 붙은 시각 · UNIX 초, 꼴)` — 시각대 없는 시각은 `ValueError`, 먼 시각은 넘침을 그대로 올림). 표준 라이브러리만
   쓴다 — `audit/read.KST` · `auth/page_frame.KST` 는 이 상수 그대로다. 규칙은 8장 「화면 시각은 KST」.
+- `src/capa_simulation/notice_board.py` — 관리자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
+  재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「관리자」) · `current` · `revision`
+  (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`, `ended` 는 서 있던 공지가 없어졌는가(끝남 · 거둠) · 거짓이면 갈음) ·
+  `withdraw`(그 id 일 때만) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
+  `until_from_time`(지난 시각이면 내일) · `until_text`(끝 글 — 보낸 날의 다음 날이면 `11-18 09:00`, 판 · 전문 · 카드 · 보냄 알림창이 같은 글) ·
+  `payload`(프로세스 표지 `PROCESS_MARK` · 판 · 공지 칸 `NoticeView`(KST 시각 글 · 끝 epoch ms) ·
+  상태 표지 `GL-09` — `alerts.state_note(…, pageless=True)` 그대로, 없어도 active 거짓) · `reset`(시험 — `conftest._without_notice`). 끝 시각은
+  읽을 때 본다(배경 스레드 · `st.cache_resource` 없음). Streamlit 을 읽지 않고 등록부(`alerts`)는 `payload` 가 부를 때 들인다 — 문지기 쪽
+  물음 처리기가 부를 자리다. UI 없음. 시험 `tests/test_notice_board.py`.
 - `src/capa_simulation/page_failures.py` — 코어 화면 실패 기록(참고 번호 · 시각(KST) · 화면 이름 · 주소 · 예외 형식 이름 — 본문은 적지 않는다, 최근 20건과 따로 건수 · 난 (화면, 종류) 쌍, 재시작하면 빔). UI 없음. `page_failure_card` 가 적고 `AD-22` 가 읽는다.
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
@@ -3373,10 +3410,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
     같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
     그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
-  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(공정 칩 · 합성 샘플 · 「정본 아님」 · 변경 칩 · Guide · Alarm · Print · 테마 —
-    2026-11-03, 2026-11-09 보드 C1 (라) · T8 로 맨 앞 둘을 더함, 2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) 로 합성 샘플
-    다음에 「정본 아님」. 공정 칩 `PROCESS_CHIP_ID` · 합성 샘플 `SAMPLE_MARK_ID` · 「정본 아님」 `CANON_MARK_ID` · 변경 칩
-    `CHANGES_CHIP_ID` · Alarm `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
+  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(공정 칩 · 합성 샘플 · 「정본 아님」 · 변경 칩 · 「공지」 칩 · Guide · Alarm · Print ·
+    테마 — 2026-11-03, 2026-11-09 보드 C1 (라) · T8 로 맨 앞 둘을 더함, 2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) 로 합성
+    샘플 다음에 「정본 아님」, 2026-11-17 공지 보드 답 q-look 으로 Guide 바로 왼쪽에 「공지」 칩. 공정 칩 `PROCESS_CHIP_ID` ·
+    합성 샘플 `SAMPLE_MARK_ID` · 「정본 아님」 `CANON_MARK_ID` · 변경 칩 `CHANGES_CHIP_ID` · 「공지」 칩 `NOTICE_CHIP_ID` · Alarm
+    `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS` — 바뀐 것이 있을 때만
     서면 `TOOLBAR_OPTIONAL` 에도)에 넣는다. 머리 띠 두 줄 · 진행 막대 자리의 오른쪽 비움은 알림 칸 JS 가 잰 툴바 실제
@@ -3908,9 +3946,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `Capa LOB 현황` 제목 줄과 「HOME 설정」 팝업의 Preference 편집기 여덟을 그려 공용 프로필에 저장한다. 편집기는 팝업의 앞 네
   탭에 쓰는 묶음대로 선다(`render_home_preference(tabs=)` — 2026-11-04 사용자 검수 home-u01): `비교 · 주요 Case` 는 「비교
   시나리오」 · 「주요 Case」(`home_main_cases`) 나란히(`CASES_COLUMN_WEIGHTS`), `판정 기준` 은 확보율 판정 기준, `선행 · 보정` 은
-  선행 B/O · 선행 입고 실적 · 확보율 보정 위아래(앞 둘은 `구분` 칸 폭이 같아 달 칸이 맞선다), `공지 · 표시` 는 왼쪽
-  공지 · Top5 구간, 오른쪽 주요공정 프리셋. `공지 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — 공지
-  버전 줄에 「공지 중 · 내림」 꼬리가 없고 글 칸 이름은 숨기며(상자 제목과 같은 말), Top5 는 저장 · 하한 · 상한이 한 줄(프리셋
+  선행 B/O · 선행 입고 실적 · 확보율 보정 위아래(앞 둘은 `구분` 칸 폭이 같아 달 칸이 맞선다), `Capa 요약 · 표시` 는 왼쪽
+  Capa 요약 · Top5 구간, 오른쪽 주요공정 프리셋. `Capa 요약 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — Capa 요약
+  버전 줄에 옛 「공지 중 · 내림」 꼬리가 없고 글 칸 이름은 숨기며(상자 제목과 같은 말), Top5 는 저장 · 하한 · 상한이 한 줄(프리셋
   저장 · 이름 줄과 같은 꼴)이다. 폼마다 알림 칸은 `render_flash` 가 돌려준 칸 하나다(폼 안 빈 칸은 간격을 먹지 않는다 —
   9장 「알림 칸」). 선행 B/O · 선행 입고 · 확보율 보정의 저장 줄(`ADVANCE_SAVE_ROW_KEY` · `ADVANCE_SHIPMENT_SAVE_ROW_KEY` ·
   `EXECUTION_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2차 보드 Q2-2,
@@ -3924,12 +3962,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름·공정 칸의 key 끝에는 고칠 프리셋 저장본의 지문을 붙여, 남의 저장에 거부된 뒤 두 칸이 함께 저장본으로 선다(5장 25).
     판정 기준 월별 표의 key 끝에는 그 회차가 그린 저장본 version 을 붙인다(`threshold_widget_key` — Top5 구간과 같다. 남이
     저장하면 보내지 않은 편집은 버려지고 최신이 서며, 제출 회차면 대조 값이 옛 version 이라 거부된다 — 9장 「본 값과 보이는 칸」).
-    바꾼 것 없는 저장(판정 기준·확보율 보정·공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
+    바꾼 것 없는 저장(판정 기준·확보율 보정·Capa 요약·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
     폼 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5·넓힘 — 9장 「바꾼 것 없는 저장」).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
     (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
     고치지 않은 「프리셋 저장」 의 「바뀐 것이 없습니다」 도 저장처럼 알림을 담고 앱 전체를 다시 돌린다 — 카드는 프래그먼트라
-    카드만 돌면 다른 저장 칸(공지 등)이 앞 회차에 그린 알림이 이 알림과 두 줄로 남았다(2026-11-01 리뷰,
+    카드만 돌면 다른 저장 칸(Capa 요약 등)이 앞 회차에 그린 알림이 이 알림과 두 줄로 남았다(2026-11-01 리뷰,
     `tests/test_home_key_process_fragment.py`). 느린 둘째 누름은 그 칸의 표지 글이 그 이름의 저장 성공 글일 때만으로 가른다 — 같은
     칸의 「기본으로」·「삭제」 알림 뒤의 누름은 「바뀐 것이 없습니다」 다.
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
@@ -4032,7 +4070,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만들고, 제목 · 단추 줄의 값 글 한 칸(`render_row_value` · `render_heading_value`)을 그린다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
   「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
   빈 출처(저장자·메모를 모두 비운 저장 — 가용설비 현황 Preference 등)는 그 자리를 건너뛴다(구분자가 `· ·` 로 겹치지 않게).
-  맨 뒤 꼬리는 두지 않는다(공지의 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
+  맨 뒤 꼬리는 두지 않는다(Capa 요약의 옛 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
   `render_profile_heading` 은 제목 옆 공용 버전 줄 한 줄이다(그림 메모 g18 — key 필수, 줄 칸 key `profile_heading_<key>`). 두 글은
   버전 줄 캡션에 실은 `align-items: baseline` 규칙으로 글자 밑줄을 맞추고, 캡션이 HTML 을 받으므로 앱 글의 맨 `<` 는 `&lt;` 로
   바꾸며 이벤트 칸은 쓰지 않는다. `style=` 은 그 구획의 다른 칸에 거는 앱 서식 규칙을 같은 캡션에 싣는다 — 팝업 본문이
@@ -4266,7 +4304,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
-  테두리 · 공정 판)와 머리 툴바 슬롯에 다섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
+  테두리 · 공정 판)와 머리 툴바 슬롯에 여섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · 공지 칩 · Alarm 단추)를 세우고 칸 자체는
   접는다(`_HIDE_STYLE`). 공정 칩은 공용 공정 값(`process_field.header_chip`)이 있을 때만, 합성 샘플 표지는 지금 화면이 원천 미연결
   화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬 서버(`SY-05` · `SY-01` —
   `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
@@ -4382,7 +4420,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   int·str·tuple·dict; 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 별칭), **거부 넘김**(`queue_refusal`·`take_refusal`
   — 충돌 회차는 본 값을 올리지 않고 거부를 다음 회차에 그린다). 화면에서 충돌 예외 10종을 잡는 자리는 모두 제 저장을 판정해
   빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」 으로 알리지 않는다 — 자동 갱신 설정·Cut-off·리비전명·공식 지정·층
-  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME 공지·Top5 구간·주요공정 프리셋·설비 시나리오
+  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Capa 요약·Top5 구간·주요공정 프리셋·설비 시나리오
   이름·리비전명·되돌리기·배치 차이 지우기·발행·설비 리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). HOME 주요 Case 의 시나리오 대조 충돌은 지금 짝이 고른 짝일 수
   없어(대조 없는 쓰기이고, 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다) 판정하지 않는다 —
   그물이 이름으로 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`). 제 저장 짝의 「저장된 값」 은 쓰기 결과(저장소가 돌려준 version·새
@@ -4391,7 +4429,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   안에서 함께 한다(`save_remembered`) — 겹친 둘째 회차는 그 뒤에야 저장소에 가 짝을 본다. 저장소에 가기 전에 첫 쓰기의 새
   값을 보고 거절하는 발행 확인 글 대조는 그 잠금을 거쳐 판정한다(`is_own_save_settled`). 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME 공지·Top5 구간·주요공정 프리셋(저장·
+  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·
   기본으로·삭제)·자동 갱신 설정·Cut-off·Space 층 사용·설비 시나리오 이름·리비전명·공식 발행(충돌 회차가 초안·출발점·입력 칸·확인 글의 본 값을 최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은
   내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을 최신 위에 얹거나, 바뀐 확인 글을 보지 않은 채 새 번호로
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
@@ -5272,7 +5310,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
-- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·공지·GAP 비교 대상(`0020`)·주요
+- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·Capa 요약·GAP 비교 대상(`0020`)·주요
   Case(`0036`)의 조회·교체·해제 SQL.
   - 주요 Case 는 한 행에 Case 마다 칸 둘(`case1_scenario_id`…)이다. 칸 이름이 `scenario_id` 가 아니라 `_owned_tables`
     자동 발견에 걸리지 않고, 보관·영구 삭제는 그 시나리오를 가리키는 Case 만 비우며 출처 칸에 까닭을 적는다
@@ -5767,7 +5805,7 @@ RQ_MODULE
     위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
-    표시명·표시순서(직접 편집)·확보율 보정·HOME 공지·Top5 구간은 `require_profile_version` →
+    표시명·표시순서(직접 편집)·확보율 보정·HOME Capa 요약·Top5 구간은 `require_profile_version` →
     `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
     이다. HOME 주요공정 프리셋은 묶음을 회차마다 다시 읽어 고칠 프리셋만 갈아 끼우므로 직전 회차가 그린 **고칠
@@ -7166,10 +7204,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   문맥을 찾지 않는 것만 쓴다. 그 밖의 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다(`test_object_sync_worker` 가 자리를 센다). `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
 - **통합인증 문지기는 순수 ASGI 미들웨어 하나다**(`auth/gate.py`, `capa_server.py` 의 `st.App(middleware=…)`). Starlette 의
   `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
-  다섯) — `/_stcore/` 를 접두로 열지 않는다. 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
+  여섯) — `/_stcore/` 를 접두로 열지 않는다. 공지 물음 `GET /capa/notice`(`auth/notice_poll.py`)는 그 목록에 넣지 않는다 — 켜짐이면 쿠키 검증을 거쳐
+  신원 있는 탭만 닿고(없으면 fetch 401), 꺼짐은 문지기가 모두 넘기므로 처리기가 모드를 스스로 본다(꺼짐은 앱이 열린 모드라 그대로 냄 · 막힘 503). 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
   처리기가 하고, 켜짐에서 POST 밖 메서드는 문지기가 405(`Allow: POST`)로 답한다 — Streamlit 의 정적 Mount 가 모르는 GET 경로에
   `index.html` 을 내서 라우터의 405 가 서지 않는다. 같은 까닭으로 갱신 Route 는 GET(· HEAD)도 붙여 처리기가 답한다(꺼짐 404 ·
-  막힘 503 · 그 밖 405) — 꺼짐에서는 문지기가 모두 넘긴다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
+  막힘 503 · 그 밖 405) — 꺼짐에서는 문지기가 모두 넘긴다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` · 공지 물음 `/capa/notice` 이고 Streamlit 자체
   `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
   `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
   `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
@@ -7398,7 +7437,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   칩(`alert_center` — 변경 칩 · 공정 칩 · 합성 샘플 표지)이나 화면 탭 표지(`page_tabs` · `tab_marks`)로, 값 한 줄은 바로 위 제목 ·
   단추 줄 오른쪽 끝 작은 글로(값 글 한 벌 `profile_caption.render_row_value` — 제목 줄이면 공용 버전 줄과 같은 밑줄 맞춤), 혼자 한 줄 단추는 옆 작업 줄 ·
   제목 줄 오른쪽 끝(줄지 않는 한 덩이 — 좁으면 통째로 다음 줄)으로 옮긴다. 늘 서 있는 알림 · 자리 칸이 빈 회차는 간격을 먹지
-  않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「공지」 접힘(T1 (나)) ·
+  않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「Capa 요약」 접힘(T1 (나)) ·
   탭 줄 아래 14px · 안쪽 탭(T9 (가)).
 - **라벨을 숨긴 칸의 뜻은 그 줄 끝 ⓘ 하나다.** `label_visibility="collapsed"` 는 라벨 줄을 통째로 걷고, 1.63 은 위젯 풍선(`help=`)을
   그 라벨 줄 안에 그리므로 같은 칸의 `help=` 는 어디에도 서지 않는다. 그래서 라벨을 숨긴 칸에는 `help=` 를 주지 않고, 그 줄의 뜻은
@@ -7770,6 +7809,30 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   짧은 글은 누구나 읽는 꼴(「정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다」 · 「저장이 정본에 올라가지 않습니다」)이고
   환경변수 칸 · CI/CD · 설정 파일 지시는 관리자 몫 전문에만 싣는다(`components/admin_view.admin_notes_visible` — 운영 아닌 꺼진
   서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 관리자 몫에만 선다.
+- **공지**(2026-11-17 공지 보드 답 q-use · q-look · q-speed · q-until · decided — 설계 규칙 6-33). 관리자가 Admin Area 「공지」 탭에서
+  보낸 글 하나가 끝 시각까지 서고(`notice_board` — **프로세스 메모리**, 서버 한 대 전제 · 재시작하면 걷힘 · 서버가 둘 이상이면 서버마다
+  갈린다 — 사내 확인 거리), 그동안 모든 화면 · 모든 사용자에게 두 가지가 선다. ① 상태 알림 `GL-09`(알림 단계 · 화면 없음 · 이름 「공지」 —
+  짧은 글 `공지 · <글>`, 전문 글 + 「관리자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
+  새 공지는 「내용 바뀜」, 거둠 · 끝남 · 재시작 뒤는 「해소」 다(지문 재료는 공지 id, 범위는 늘 같은 값). ② 머리 「공지」 칩(Guide 바로
+  왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 좁은 창 규칙
+  없음(설계 규칙 UI-ACC-02 예외) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 관리자 글을 싣지 않음):
+  누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」(보낸 날의 다음 날이면
+  「11-18 09:00 까지」) · 닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
+  `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
+  회차마다 같다). **이 상태 표지는 이벤트 칸 표지(`alerts.state`)로 내지 않는다** — JS 는 프래그먼트 회차 끝에도 문서의 표지를 다시
+  훑는데 그 회차는 `app.py` 표지를 다시 그리지 않아, 물음 경로가 넣은 새 값을 옛 표지가 되돌린다(거둠 뒤 다시 열림 · 새 공지 뒤 닫힘).
+  JS 입구 `window.__capaAlerts.notice(payload)` 는 운영 서버의 10초 물음(툴바 틱 스크립트 `sso_reconnect` 의 `_NOTICE_POLL` → `GET /capa/notice`
+  — 문지기가 있는 서버만, 첫 401 에서 멈춤 · 3장 그 항목)이 부르고 data 와 같은 꼴 · 같은
+  함수(`applyNotice`)로 받는다 — 프로세스 표지가 같으면 판이 오른 것만(`noticeNewer` — 엇갈려 닿은 옛 값을 버림), data 는 표지가 다르면
+  (재시작) 늘, 물음 응답은 data 가 받은 표지와 같을 때만(재시작 뒤 새 표지는 다시 붙은 회차의 data 가 먼저 싣는다 — 서버가 둘 이상이면
+  탭은 제 연결이 붙은 서버의 공지만 보고 칩 · 알림창이 번갈아 서지 않는다). 입장 화면 · Summary 덮개(`#capa-intro-host`)가 덮는 동안에는
+  공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버림 — 줄 · 칩은 바로 선다), 끝 시각 1분 뒤(`NOTICE_END_GRACE_MS` — 끝은 서버
+  시계의 epoch ms 이고 타이머는 브라우저 시계라, 시계가 조금 빠른 PC 가 끝 전에 걷지 않게)에는 그 문서가 칩을 걷고 줄을 해소한다(물음 없는
+  개발 · WebIDE 도 다음 회차를 기다리지 않음 — 물음 있는 서버는 끝난 뒤 첫 물음의 판 오름이 먼저 닿는다). 칸이 갈리면(`retireCenter`) 공지
+  타이머 둘과 미룬 알림창을 걷는다. 서 있는 공지의 Alarm 줄(`hold`)은 탭 기록 12시간 보관에서 빼고 닫힌 뒤에는 닫힌 시각부터 센다
+  (`keptSince` — 공지는 길어도 24시간, 다른 줄은 그대로). 시험 `tests/test_notice_board.py` · `tests/test_notice_admin.py` ·
+  `tests/test_alert_center.py`(회차의 공지 칸) · `tests/test_alert_center_assets.py`(`noticeNewer` · 입구 · 판, 받는 쪽 함수를 가짜 칸 · 시계 ·
+  타이머 · 입장 화면 호스트로 도는 node 시험).
 
 ### 팝업과 콜백
 
@@ -7901,7 +7964,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     편집표(`num_rows="dynamic"`)는 같은 E2E 에서 남의 값이 서서 결함이 아니었다.
   - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
     거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장(Proc Rename·표시순서
-    직접 편집·판정 기준·확보율 보정·HOME 공지·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
+    직접 편집·판정 기준·확보율 보정·HOME Capa 요약·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
     짝을 적고(`remember_own_save`), 충돌 예외의 `(본 값, 지금 값)` 이 **정확히** 그 짝이면(`is_own_save`) 거부 대신 저장 성공을
     다시 알리고 끊겼을 뒷정리(초안 비우기·세션 옮기기)를 잇는다. 예외가 지금 값을 싣지 않으면(자동 갱신 설정·Cut-off·설비 쪽)
     거부 직후 저장소에서 바로 다시 읽는다. 짝의 저장된 값은 쓰기 결과로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에
@@ -7933,7 +7996,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`·
     `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·
-    `tests/test_preference_profile_conflicts.py` — HOME 공지·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
     HOME 주요 Case 는 표지를 거부한 콜백이 아니라 상자를 옮기는 회차가 적는다(`home_main_cases._hold_moved_boxes`) — 고르면
@@ -7984,8 +8047,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     끊긴 경합이라 저장 세대로는 못 거른다. 창은 저장에 **들어올 때** 본다 — 설비 쪽 대조를 마친 뒤에 보면 그 사이 창이 지나
     사본 앱 브라우저에서 고침이 듣지 않았다. 설비 마스터 탭·사이드바 팝업 저장도 지나는 길,
     `tests/test_equipment_save_double_press.py`·`tests/test_space_fab_edit_page.py`).
-  - **`save_once` 를 지나는 공용 저장 폼**(Preference 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적 —
-    공지·구간·프리셋은 버전 대조도 함께 하고, 선행 둘은 대조가 없다)은 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을
+  - **`save_once` 를 지나는 공용 저장 폼**(Preference Capa 요약·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적 —
+    Capa 요약·구간·프리셋은 버전 대조도 함께 하고, 선행 둘은 대조가 없다)은 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을
     0.15~0.4초 간격으로 두 번 누르면 공용 버전만
     두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
     (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 아래 「바꾼 것 없는 저장」 이 거른다(개선 I5 ·
@@ -7997,10 +8060,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     폼 알림 칸에 「바뀐 것이 없습니다 — …」 를 적는다. 변경 메모만 적은 저장도 같다. **넓힌 일곱 자리**(같은 꼴 — 저장 꼴끼리
     견준다): Admin 표시순서 직접 편집(고친 범위를 합친 전체 규칙 `replace_display_order_scope` 의 `.equals`, 머리 알림 칸),
     HOME Preference 확보율 보정(`prepare_execution_capacity` 꼴의 `.equals` — 증감은 칸 값 그대로 저장해 끝자리를 접지 않는다),
-    공지(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
+    Capa 요약(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
     프리셋의 이름·공정 차례까지 — 「＋ 새 프리셋」 은 늘 쓴다), 선행 B/O·선행 입고 실적(보이는 달을 합친 저장 행의 달·값,
     `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 버전 대조가 있는 넷(표시순서·확보율 보정·
-    공지·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
+    Capa 요약·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
     `display_order_management._render_direct_editor` 안의 같은 조건), 프리셋은 제출 회차가 다시 읽은 묶음(고칠
     프리셋 대조 `_stale_key_process_target` 를 지난 뒤), 대조 없는 선행 둘은 제출 회차가 읽은 최신 저장본과 견준다. 겹친 둘째
     누름(저장본이 아직 낡은 회차)은 전처럼 `save_once`·제 저장 표지가 거른다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
@@ -8364,11 +8427,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
   다시 그리는 시간이라 프래그먼트로 감싸도 크게 줄지 않는다.
 - **회차마다 소켓으로 다시 가는 스타일 문자열에는 CSS 주석(`/* */`)을 싣지 않는다** — 사이드바 시트·머리 띠·껍데기
-  스타일·HOME 제목 줄·공지 상자·공정 필터 풍선이 그렇다. 설명은 그 조각 바로 위 파이썬 `#` 주석에 두고 문자열을 규칙
+  스타일·HOME 제목 줄·Capa 요약 상자·공정 필터 풍선이 그렇다. 설명은 그 조각 바로 위 파이썬 `#` 주석에 두고 문자열을 규칙
   단위 조각으로 나눠 괄호 안에서 잇는다. 사용자 글을 넣은 뒤의 CSS 에 정규식으로 주석을 걷지 않는다(`css_string` 이
   `/*` 를 이스케이프하지 않는다). `..._carry_no_css_comments` 테스트가 지킨다.
 - **브라우저 ForwardMsg 캐시는 `.streamlit/config.toml` `[global]` 의 나이 20·문턱 1,000B 다**(기본 2·10,000B). 문턱
-  이상인 요소는 같은 내용이면 해시 참조(약 75B)로 간다 — 머리 띠·HOME 제목 줄·공지 상자가 문턱 이상인지는
+  이상인 요소는 같은 내용이면 해시 참조(약 75B)로 간다 — 머리 띠·HOME 제목 줄·Capa 요약 상자가 문턱 이상인지는
   `tests/test_app_header.py` 가 config 를 읽어 지킨다. 나이 2 에서는 사이드바 상자를 두세 번 여닫거나(빈 프래그먼트
   회차도 나이를 먹는다) 화면 둘을 거쳐 HOME 에 오면 그림을 통째로 다시 받았다(합성 표본 약 1MB). 「Cached ForwardMsg
   MISS」 연결 오류 창은 Streamlit 프런트 경합(빈 프래그먼트 회차의 script_finished 를 앱 전체 회차로 읽음)이라 줄일

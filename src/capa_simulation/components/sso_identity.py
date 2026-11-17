@@ -136,7 +136,8 @@ _PROBLEM_REFERENCES: Mapping[IdentityProblem, str] = {
 # 문서에 세운 단추는 iframe 이 걷힌 뒤에도 남지만 듣개가 함께 죽어 눌러도 아무 일도 하지 않는다
 # (브라우저 실측). 알림 칸이 세운 변경 칩 · Alarm 은 그 칸이 걷혀도 듣개가 살아 판이 열리므로 둔다 —
 # 변경 칩은 새로고침하면 비는 이 세션의 변경 목록을 볼 마지막 자리다. 알림 칸의 공정 칩 · 합성 샘플
-# 표지 · 「정본 아님」 표지는 감춘다 — 멈춤 화면에는 걸 공정도 볼 샘플도 읽을 데이터도 없다.
+# 표지 · 「정본 아님」 표지 · 공지 칩은 감춘다 — 멈춤 화면에는 걸 공정도 볼 샘플도 읽을 데이터도
+# 없고 공지는 앱 안의 사람에게 보낸 글이다.
 _STOP_HIDDEN_TOOLBAR_BUTTONS = tuple(
     button_id
     for button_id in TOOLBAR_BUTTON_ORDER

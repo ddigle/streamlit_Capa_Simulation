@@ -129,6 +129,7 @@ try:
         CANON_MARK_ID,
         CHANGES_CHIP_ID,
         GUIDE_BUTTON_ID,
+        NOTICE_CHIP_ID,
         PRINT_BUTTON_ID,
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
@@ -245,6 +246,7 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
     SAMPLE_MARK_ID: "합성 샘플",
     CANON_MARK_ID: "정본 아님",
     CHANGES_CHIP_ID: "변경 칩",
+    NOTICE_CHIP_ID: "공지 칩",
     GUIDE_BUTTON_ID: "Guide",
     ALARM_BUTTON_ID: "Alarm",
     PRINT_BUTTON_ID: "Print",
@@ -252,9 +254,9 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
 }
 # 그럴 때만 서는 단추 — 툴바 차례 항목은 늘 서는 단추만 센다(공정 칩은 공용 공정 값이 있을 때, 합성
 # 샘플 표지는 원천 미연결 화면에서 샘플을 켠 동안, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬
-# 서버에서, 변경 칩은 바뀐 것이 있을 때).
+# 서버에서, 변경 칩은 바뀐 것이 있을 때, 공지 칩은 관리자가 보낸 공지가 서 있는 동안).
 TOOLBAR_OPTIONAL: Final = frozenset(
-    {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID}
+    {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID, NOTICE_CHIP_ID}
 )
 # 알림 칸이 `document.body` 에 붙이는 호스트(`alert_center.js` 의 `HOST_ID` — 열린 shadow root).
 ALERT_HOST_ID: Final = "capa-alert-host"
@@ -5092,7 +5094,7 @@ HOME_SETTINGS_TABS: Final = (
     "비교 · 주요 Case",
     "판정 기준",
     "선행 · 보정",
-    "공지 · 표시",
+    "Capa 요약 · 표시",
     "Past Data",
 )
 EQUIPMENT_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_equipment_settings"

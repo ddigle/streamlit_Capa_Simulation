@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
-from capa_simulation import alerts
+from capa_simulation import alerts, notice_board
 from capa_simulation.auth.runtime import note_boot_failure, note_boot_success
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.accent_button_style import render_accent_button_style
@@ -596,11 +596,11 @@ with pinned_connections(DUCKDB_PATH):
     # (스키마 경고)은 뒤에 둔다.
     render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
     # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩 ·
-    # 공용 공정 칩 · 합성 샘플 표지 · 정본이 아닌 데이터로 뜬 서버의 「정본 아님」 표지). 탭 줄처럼
-    # 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이 회차에 내는
-    # 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가 「화면」 · 「그
-    # 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션 판정이다(DB 를
-    # 읽지 않는다). 본문 위에는 칸을 두지 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭
+    # 공용 공정 칩 · 합성 샘플 표지 · 정본이 아닌 데이터로 뜬 서버의 「정본 아님」 표지 · 공지 칩).
+    # 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이
+    # 회차에 내는 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가
+    # 「화면」 · 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션
+    # 판정이다(DB 를 읽지 않는다). 본문 위에는 칸을 두지 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭
     # 표지다(2026-11-09 보드 C1 (라)).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
     # 없는 화면 주소(꺼진 · 실패한 모듈 화면, 옛 주소, 남이 보낸 링크)로 들어와 HOME 을 도는 회차는
@@ -614,6 +614,10 @@ with pinned_connections(DUCKDB_PATH):
         canon=not_canonical_code(),
         # 공식버전 없음 `SC-01` 의 해소 — 위 요약이 이 회차에 확인한 세션 값이다(DB 를 읽지 않는다).
         official_known=latest_official_revision() is not None,
+        # 관리자가 보낸 공지(프로세스 메모리 — 끝 시각은 여기서 읽을 때 본다). 회차마다 싣고 공지가
+        # 없어도 상태 알림 `GL-09` 의 해소 표지가 간다 — 머리 공지 칩도 이 값으로 선다. 판은 공지가
+        # 바뀔 때만 올라 data 가 회차마다 같다(이벤트 칸을 쓰지 않는다 — 요소 순번 그대로).
+        notice=notice_board.payload(),
     )
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차

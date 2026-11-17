@@ -1,4 +1,4 @@
-# Purpose: HOME 공용 Top5 구간·공지·GAP 비교 대상·주요 Case 의 조회와 교체 SQL을 담당한다.
+# Purpose: HOME 공용 Top5 구간·Capa 요약·GAP 비교 대상·주요 Case 의 조회와 교체 SQL을 담당한다.
 
 """HOME 공용 단일행 프로필. 연결과 트랜잭션은 Repository가 소유한다."""
 
@@ -109,7 +109,7 @@ def replace_global_summary_note(
 
     `expected_version` 은 Top5 구간과 같다 — 다르면 쓰지 않고 `ProfileVersionConflict` 다.
     """
-    require_profile_version(connection, "global_summary_note", expected_version, label="공지")
+    require_profile_version(connection, "global_summary_note", expected_version, label="Capa 요약")
     version = reset_profile(connection, "global_summary_note")
     connection.execute(
         """

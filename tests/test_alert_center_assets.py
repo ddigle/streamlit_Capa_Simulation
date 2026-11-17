@@ -239,7 +239,7 @@ def test_top_level_names_are_declared_once() -> None:
     assert sorted(name for name in set(names) if names.count(name) > 1) == []
 
 
-_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage", "alerts-reconnect")
+_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-notice", "alerts-storage", "alerts-reconnect")
 
 
 def _sections() -> str:
@@ -1621,6 +1621,432 @@ def test_the_canon_mark_opens_the_alarm_row_without_filters() -> None:
     canon = CSS[CSS.index(".canon {") :]
     canon = canon[: canon.index("}")]
     assert "var(--ac-error)" in canon and "solid" in canon and "cursor: pointer" in canon
+
+
+def test_the_notice_payload_is_taken_only_when_newer_and_a_late_old_one_does_not_reopen() -> None:
+    """공지 꼴(2026-11-17 공지 보드 답)은 data 와 물음 응답이 엇갈려 닿는다. 같은 프로세스 표지면
+    판이 오른 것만 받고, 표지가 다르면(재시작) 판과 상관없이 받는다. 그래서 물음이 거둠(판 2)을 넣은
+    뒤 늦게 닿은 data(판 1 — 서 있음)는 버려져 닫힌 줄을 다시 열지 않는다(상태 판정 `stateVerdict`
+    를 거치지 않는다). 공지 칸은 꼴을 보고, 입장 화면 덮개는 감추지 않은 호스트만 덮는 것으로 본다.
+    끝 시각 타이머는 끝 + 여유 1분(브라우저 시계가 조금 빨라도 끝 전에 걷지 않게)까지이고 지났으면
+    0, 길면 끊어 다시 잰다. 물음 응답(`polled`)은 표지가 마지막으로 받은 것과 같을 때만 받는다 —
+    표지가 다른 값(재시작 · 다른 서버)은 data 만 들인다."""
+    out = _node(
+        """
+const held = { mark: 'p1', rev: 2 }
+const view = {
+  id: 'n1', text: '합성 공지', sender: '관리자', sent: '17:40', until: '18:20', until_ms: 5000,
+}
+const entry = { fp: 'f1', active: false }
+const lateStanding = { mark: 'p1', rev: 1, note: { kind: 'state', active: true, fp: 'f1' } }
+console.log(JSON.stringify({
+  first: noticeNewer(null, { mark: 'p1', rev: 0 }),
+  newer: noticeNewer(held, { mark: 'p1', rev: 3 }),
+  same: noticeNewer(held, { mark: 'p1', rev: 2 }),
+  late: noticeNewer(held, lateStanding),
+  restart: noticeNewer(held, { mark: 'p2', rev: 0 }),
+  polled_newer: noticeNewer(held, { mark: 'p1', rev: 3 }, true),
+  polled_late: noticeNewer(held, { mark: 'p1', rev: 2 }, true),
+  polled_other_mark: noticeNewer(held, { mark: 'p2', rev: 9 }, true),
+  polled_first: noticeNewer(null, { mark: 'p1', rev: 0 }, true),
+  no_mark: noticeNewer(held, { rev: 9 }),
+  not_object: noticeNewer(held, null),
+  late_would_reopen: stateVerdict(entry, lateStanding.note),
+  view: noticeOf(view),
+  bad_view: [
+    noticeOf(null),
+    noticeOf({ id: '', text: 'x', until_ms: 1 }),
+    noticeOf({ id: 'n', text: 'x' }),
+  ],
+  covering: [
+    introCovering(null),
+    introCovering({ isConnected: true, style: { display: '' } }),
+    introCovering({ isConnected: true, style: { display: 'none' } }),
+    introCovering({ isConnected: false, style: { display: '' } }),
+  ],
+  wait: [
+    noticeEndWait(null, 0),
+    noticeEndWait({ untilMs: 5000 }, 1000),
+    noticeEndWait({ untilMs: 5000 }, 99000),
+    noticeEndWait({ untilMs: 200 * 3600000 }, 0),
+  ],
+}))
+"""
+    )
+    assert out == {
+        "first": True,
+        "newer": True,
+        "same": False,
+        "late": False,
+        "restart": True,
+        "polled_newer": True,
+        "polled_late": False,
+        "polled_other_mark": False,
+        "polled_first": False,
+        "no_mark": False,
+        "not_object": False,
+        "late_would_reopen": "new",
+        "view": {
+            "id": "n1",
+            "text": "합성 공지",
+            "sender": "관리자",
+            "sent": "17:40",
+            "until": "18:20",
+            "untilMs": 5000,
+        },
+        "bad_view": [None, None, None],
+        "covering": [False, True, False, False],
+        "wait": [None, 4000 + 60000, 0, 25 * 3600000],
+    }
+
+
+def test_the_notice_chip_panel_and_entry_share_one_path_without_a_python_rerun() -> None:
+    """공지 칩은 「정본 아님」 표지와 같은 호스트 꼴(확성기 · 알림 단계 색 실선 네모 · 닫기
+    없음)이고 누르면 작은 판(머리 · 글 · 끝 줄 · 닫기)이 브라우저 안에서만 열린다. data 의 공지 칸과
+    물음 입구 `window.__capaAlerts.notice` 는 같은 함수(`applyNotice`)로 받고, 그 상태 표지는 입장
+    화면이 덮는 동안 미루는 알림창 길(`noticePopup`)로 간다. 입장 화면 호스트 id 는 입장 화면 자산과
+    같다. 상태 표지는 문서 표지로 오지 않아 훑기(`scan`)가 공지를 보지 않는다."""
+    apply = JS[JS.index("function applyNotice(C, payload, polled = false)") :]
+    apply = apply[: apply.index("\n}\n")]
+    assert "noticeNewer(C.notice, payload, polled)" in apply
+    assert "handleState(C, note, noticePopup)" in apply
+    assert "scheduleNoticeEnd(C)" in apply
+    entry = JS[JS.index("window.__capaAlerts = {") :]
+    entry = entry[: entry.index("\n  }\n")]
+    assert "notice: (payload) => {" in entry and "applyNotice(C, payload, true)" in entry
+    exported = JS[JS.index("export default function (component)") :]
+    assert "if (data.notice && applyNotice(C, data.notice)) changed = true" in exported
+    scan = JS[JS.index("function scan(C)") :]
+    assert "notice" not in scan[: scan.index("\n}\n")]
+    popup = JS[JS.index("function noticePopup(C, key, note)") :]
+    popup = popup[: popup.index("\n}\n")]
+    assert "introCovering(document.getElementById(INTRO_HOST_ID))" in popup
+    intro = (alert_center._ASSETS.parent / "intro_overlay_assets" / "intro.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'const HOST_ID = "capa-intro-host";' in intro
+    assert "const INTRO_HOST_ID = 'capa-intro-host'" in JS
+    assert "togglePanel(C, 'notice')" in JS
+    assert "if (which === 'notice') return { panel: C.noticePanel" in JS
+    assert "C.noticeHost.toggleAttribute('data-empty', !held)" in JS
+    assert "P.body.textContent = held.text" in JS, "관리자 글은 평문(textContent)이다"
+    assert "chip.title = t.notice_title || ''" in JS
+    assert "chip.setAttribute('aria-label', t.notice_title || '')" in JS
+    assert "held.text" not in _js_function("paintNotice").replace(
+        "P.body.textContent = held.text", ""
+    ), "칩 풍선 · 읽기 이름에 관리자 글을 싣지 않는다(UI-TXT-06)"
+    chip = CSS[CSS.index(".notice {") :]
+    chip = chip[: chip.index("}")]
+    assert "var(--ac-info)" in chip and "solid" in chip and "cursor: pointer" in chip
+    assert "white-space: pre-wrap;" in _rule(".nbody")
+    assert "min(22rem" in _rule(".panel.notices")
+    media = re.findall(r"@media[^{]*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}", CSS)
+    assert media and not any(re.search(r"\.notice\b(?!s)", block) for block in media), (
+        "「공지」 칩은 좁은 창 규칙이 없다(설계 규칙 UI-ACC-02 예외 · 4장)"
+    )
+    for key in ("notice", "notice_title", "notice_head", "notice_until"):
+        assert key in alert_center.TEXT
+
+
+# 공지 받는 쪽(`applyNotice` · `noticePopup` · `waitIntro` · `scheduleNoticeEnd` · `endNotice` ·
+# `paintNotice` · `retireCenter` — 구획 밖)을 가짜 칸 · 시계 · 타이머 · 입장 화면 호스트로 돌린다.
+# 상태 길(`handleState` · `resolveRow`)은 진짜이고 줄 짓기(`rowFor`)만 줄인다. 타이머는 `advance` 가
+# 시각 차례로 부른다.
+def _js_const(name: str) -> str:
+    found = re.search(rf"^const {name} = .*$", JS, re.M)
+    assert found, f"alert_center.js 에 const {name} 이 없습니다"
+    return found.group(0)
+
+
+def _notice_fakes() -> str:
+    consts = "\n".join(_js_const(name) for name in ("INTRO_HOST_ID", "INTRO_WAIT_MS"))
+    funcs = "".join(
+        _js_function(name)
+        for name in (
+            "fill",
+            "resolveRow",
+            "handleState",
+            "applyNotice",
+            "noticePopup",
+            "waitIntro",
+            "scheduleNoticeEnd",
+            "endNotice",
+            "endReconnectWait",
+            "retireCenter",
+            "paintNotice",
+        )
+    )
+    return (
+        consts
+        + "\n"
+        + funcs
+        + """
+let clock = 1000000000
+Date.now = () => clock
+const timers = new Map()
+let timerSeq = 0
+const setTimeout = (fn, ms) => {
+  timerSeq += 1
+  timers.set(timerSeq, { fn, at: clock + Math.max(0, ms || 0) })
+  return timerSeq
+}
+const clearTimeout = (id) => { timers.delete(id) }
+const advance = (ms) => {
+  const target = clock + ms
+  for (;;) {
+    let next = null
+    for (const [id, timer] of timers) {
+      if (timer.at <= target && (!next || timer.at < next[1].at)) next = [id, timer]
+    }
+    if (!next) break
+    timers.delete(next[0])
+    clock = next[1].at
+    next[1].fn()
+  }
+  clock = target
+}
+let introHost = null
+const document = { getElementById: (id) => (id === INTRO_HOST_ID ? introHost : null) }
+let popups = []
+let persisted = 0
+let rowSeq = 0
+function showPopup(C, key, note) { popups.push(note.short) }
+function persist(C) { persisted += 1 }
+function paintAll(C) { paintNotice(C) }
+function closePanel(C) { C.open = null }
+function text(C) { return C.data.text }
+function rowFor(note, now) {
+  rowSeq += 1
+  return {
+    id: `r${rowSeq}`,
+    code: String(note.code || ''),
+    kind: note.kind === 'state' ? 'state' : 'event',
+    short: String(note.short || ''),
+    first: now,
+    last: now,
+    state: note.kind === 'state' ? 'open' : null,
+    resolvedAt: null,
+    resolvedWhy: '',
+    cause: '',
+  }
+}
+const MINUTE = 60000
+function chipHost() {
+  const attrs = new Set()
+  const toggleAttribute = (name, on) => {
+    if (on) attrs.add(name)
+    else attrs.delete(name)
+  }
+  return { attrs, toggleAttribute }
+}
+function fresh(TEXT) {
+  return {
+    data: { text: TEXT }, notice: null, noticeTimer: 0, noticeLater: null, noticeWait: 0,
+    states: {}, rows: [], open: null, runObserver: null, reconnectTimer: 0, reconnectTouch: null,
+    noticeHost: chipHost(), noticeChip: { title: TEXT.notice_title, attrs: {} },
+    noticeParts: { title: {}, body: {}, foot: {} },
+  }
+}
+const noteOf = (id, active) => ({
+  code: 'GL-09', kind: 'state', scope: 'scope-notice', fp: active ? `fp-${id}` : '', active,
+  short: active ? `공지 · ${id}` : '',
+})
+const standing = (mark, rev, id, untilMs) => ({
+  mark, rev,
+  notice: {
+    id, text: `합성 공지 ${id}`, sender: '관리자', sent: '17:40', until: '18:20', until_ms: untilMs,
+  },
+  note: noteOf(id, true),
+})
+const gone = (mark, rev) => ({ mark, rev, notice: null, note: noteOf('', false) })
+const shown = (C) => !C.noticeHost.attrs.has('data-empty')
+const rowsOf = (C) => C.rows.map((row) => [row.state, row.resolvedWhy || '', Boolean(row.hold)])
+"""
+    )
+
+
+def _notice_run(script: str) -> Any:
+    text = json.dumps(alert_center.TEXT, ensure_ascii=False)
+    return _node(_notice_fakes() + f"\nconst TEXT = {text}\n" + script)
+
+
+def test_a_received_notice_raises_once_and_ignores_other_marks_from_the_poll() -> None:
+    """data 로 받은 공지는 Alarm 줄(열림 · 보관 표지) · 알림창 한 번 · 칩 · 판 값을 세운다. 칩
+    풍선은 짧은 글 표의 고정 글이라 관리자 글이 실리지 않는다(UI-TXT-06). 같은 판은 물음이 다시
+    넣어도 아무 일도 없고, 표지가 다른 물음 응답(다른 서버 · 재시작)은 버린다 — 칩 · 알림창이
+    번갈아 서지 않는다. 재시작 뒤 새 표지는 data 가 싣고 그 줄을 「해소」 로 닫는다."""
+    out = _notice_run(
+        """
+const out = {}
+const C = fresh(TEXT)
+const first = standing('p1', 1, 'n1', clock + 30 * MINUTE)
+out.applied = applyNotice(C, first)
+out.popups = [...popups]
+out.rows = rowsOf(C)
+out.shown = shown(C)
+paintAll(C)
+const P = C.noticeParts
+out.parts = [P.title.textContent, P.body.textContent, P.foot.textContent]
+out.chipTitle = C.noticeChip.title
+out.again = applyNotice(C, standing('p1', 1, 'n1', clock + 30 * MINUTE), true)
+out.otherServer = applyNotice(C, gone('p9', 7), true)
+paintAll(C)
+out.afterOther = [C.notice.mark, shown(C), rowsOf(C)]
+out.restart = applyNotice(C, gone('p2', 0))
+paintAll(C)
+out.afterRestart = [C.notice.mark, shown(C), rowsOf(C)]
+out.popupsEnd = popups.length
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["applied"] is True
+    assert out["popups"] == ["공지 · n1"]
+    assert out["rows"] == [["open", "", True]]
+    assert out["shown"] is True
+    assert out["parts"] == ["공지 · 관리자 · 17:40", "합성 공지 n1", "18:20 까지"]
+    assert out["chipTitle"] == alert_center.TEXT["notice_title"]
+    assert "합성 공지" not in out["chipTitle"]
+    assert out["again"] is False and out["otherServer"] is False
+    assert out["afterOther"] == ["p1", True, [["open", "", True]]]
+    assert out["restart"] is True
+    assert out["afterRestart"] == ["p2", False, [["resolved", "gone", True]]]
+    assert out["popupsEnd"] == 1
+
+
+def test_a_notice_waits_behind_the_intro_and_is_dropped_if_withdrawn_meanwhile() -> None:
+    """입장 화면 덮개가 덮는 동안 공지 알림창은 미뤄진다(줄 · 칩은 바로). 덮개가 걷히면 지문이 같을
+    때만 한 번 뜬다. 덮는 사이 물음이 거둠(판이 오른 해소)을 넣으면 미룬 알림창은 버려지고 덮개가
+    걷혀도 뜨지 않는다."""
+    out = _notice_run(
+        """
+const out = {}
+let C = fresh(TEXT)
+introHost = { isConnected: true, style: { display: '' } }
+applyNotice(C, standing('p1', 1, 'n1', clock + 30 * MINUTE))
+out.deferred = [popups.length, Boolean(C.noticeLater), shown(C), rowsOf(C)]
+advance(INTRO_WAIT_MS * 3)
+out.stillCovered = popups.length
+introHost.style.display = 'none'
+advance(INTRO_WAIT_MS)
+out.uncovered = [...popups]
+advance(INTRO_WAIT_MS * 5)
+out.once = popups.length
+
+popups = []
+C = fresh(TEXT)
+introHost = { isConnected: true, style: { display: '' } }
+applyNotice(C, standing('p1', 1, 'n2', clock + 30 * MINUTE))
+applyNotice(C, gone('p1', 2), true)
+out.withdrawn = [Boolean(C.noticeLater), rowsOf(C)]
+introHost.style.display = 'none'
+advance(INTRO_WAIT_MS * 5)
+out.dropped = popups.length
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["deferred"] == [0, True, True, [["open", "", True]]]
+    assert out["stillCovered"] == 0
+    assert out["uncovered"] == ["공지 · n1"]
+    assert out["once"] == 1
+    assert out["withdrawn"] == [False, [["resolved", "gone", True]]]
+    assert out["dropped"] == 0
+
+
+def test_the_end_timer_waits_a_grace_minute_and_yields_to_the_server_revision() -> None:
+    """물음 없는 서버(개발 · WebIDE)에서는 끝 시각 + 여유 1분에 그 문서가 칩을 걷고 줄을 해소한다 —
+    브라우저 시계가 1분 안에서 빨라도 끝 전에 걷지 않는다. 물음이 끝남(판이 오른 해소)을 먼저 넣으면
+    타이머는 지워지고 줄은 한 번만 닫힌다."""
+    out = _notice_run(
+        """
+const out = {}
+let C = fresh(TEXT)
+applyNotice(C, standing('p1', 1, 'n1', clock + 10 * MINUTE))
+advance(10 * MINUTE)
+out.atEnd = [shown(C), rowsOf(C)]
+advance(MINUTE - 1)
+out.beforeGrace = shown(C)
+const saved = persisted
+advance(1)
+out.afterGrace = [shown(C), rowsOf(C), persisted - saved]
+
+C = fresh(TEXT)
+applyNotice(C, standing('p1', 1, 'n2', clock + 10 * MINUTE))
+advance(10 * MINUTE + 5000)
+applyNotice(C, gone('p1', 2), true)
+paintAll(C)
+out.serverFirst = [shown(C), rowsOf(C), timers.has(C.noticeTimer)]
+advance(5 * MINUTE)
+out.closedOnce = rowsOf(C)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["atEnd"] == [True, [["open", "", True]]]
+    assert out["beforeGrace"] is True
+    assert out["afterGrace"] == [False, [["resolved", "gone", True]], 1]
+    assert out["serverFirst"] == [False, [["resolved", "gone", True]], False]
+    assert out["closedOnce"] == [["resolved", "gone", True]]
+
+
+def test_a_retired_center_leaves_no_notice_timer_behind() -> None:
+    """칸이 갈릴 때(`retireCenter`) 공지 끝 · 입장 화면 대기 타이머를 지우고 미룬 알림창을 버린다 —
+    옛 칸이 끝 시각에 제 기록으로 탭 저장소를 덮지 않게(`persist(옛 C)` 가 없다)."""
+    out = _notice_run(
+        """
+const C = fresh(TEXT)
+introHost = { isConnected: true, style: { display: '' } }
+applyNotice(C, standing('p1', 1, 'n1', clock + 10 * MINUTE))
+const armed = [timers.has(C.noticeTimer), timers.has(C.noticeWait), Boolean(C.noticeLater)]
+const saved = persisted
+retireCenter(C)
+const cleared = [timers.has(C.noticeTimer), timers.has(C.noticeWait), C.noticeLater]
+introHost.style.display = 'none'
+advance(24 * 60 * MINUTE)
+const out = { armed, cleared, persisted: persisted - saved, popups: popups.length, rows: rowsOf(C) }
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["armed"] == [True, True, True]
+    assert out["cleared"] == [False, False, None]
+    assert out["persisted"] == 0 and out["popups"] == 0
+    assert out["rows"] == [["open", "", True]]
+
+
+def test_a_standing_notice_row_outlives_the_twelve_hour_keep_and_counts_from_its_close() -> None:
+    """공지 줄(`hold`)은 서 있는 동안 12시간 보관에서 빠지고(공지는 길어도 24시간) 닫힌 뒤에는 닫힌
+    시각부터 12시간 남는다. 공지가 아닌 줄은 그대로 마지막 시각부터 12시간이다."""
+    out = _node(
+        """
+const now = 1000000000000
+const hour = 3600000
+const closed = (id, ago) => ({
+  id, last: now - 20 * hour, state: 'resolved', resolvedAt: now - ago * hour, hold: true,
+})
+const rows = [
+  { id: 'open-hold', last: now - 13 * hour, state: 'open', hold: true },
+  closed('closed-recent', 1),
+  closed('closed-old', 13),
+  { id: 'open-other', last: now - 13 * hour, state: 'open' },
+  { id: 'fresh-other', last: now - hour, state: 'open' },
+]
+console.log(JSON.stringify(pruneRows(rows, now, 200, 12 * hour).map((row) => row.id).sort()))
+"""
+    )
+    assert out == ["closed-recent", "fresh-other", "open-hold"]
+
+
+def test_no_toolbar_chip_shares_a_class_with_a_floating_panel() -> None:
+    """서식 한 벌(`ALERT_CSS`)이 본문 호스트와 툴바 호스트 두 그림자 뿌리에 모두 들어간다. 칩 ·
+    단추와 떠 있는 판이 같은 클래스를 쓰면 칩 규칙(굵기 · 줄 높이 · 안쪽 여백 · 누름 막기)이 판에
+    샌다 — 짝마다 이름을 가른다(`proc` ↔ `process` · `alarm` ↔ `alarms` · `notice` ↔ `notices`)."""
+    panels = set()
+    for found in re.findall(r"el\('section', 'panel ([\w ]+)'\)", JS):
+        panels.update(found.split())
+    chips = set()
+    for found in re.findall(r"el\('(?:button|span)', '([\w ]+)'", JS):
+        chips.update(found.split())
+    assert {"alarms", "changes", "process", "notices"} <= panels
+    assert {"notice", "canon", "proc", "chip"} <= chips
+    assert panels & chips == set()
 
 
 def test_a_restart_raises_only_the_restart_notice_not_the_session_one() -> None:

@@ -36,6 +36,7 @@ from capa_simulation.components.theme_toggle import (
     CANON_MARK_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
+    NOTICE_CHIP_ID,
     PRINT_BUTTON_ID,
     PROCESS_CHIP_ID,
     SAMPLE_MARK_ID,
@@ -657,8 +658,8 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         for button_id in TOOLBAR_BUTTON_ORDER
         if f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
     }
-    # 알림 칸의 공정 칩 · 합성 샘플 · 「정본 아님」 표지도 감춘다 — 멈춤 화면에는 걸 공정도 볼
-    # 샘플도 저장할 것도 없다.
+    # 알림 칸의 공정 칩 · 합성 샘플 · 「정본 아님」 표지 · 공지 칩도 감춘다 — 멈춤 화면에는 걸
+    # 공정도 볼 샘플도 저장할 것도 없고, 공지는 앱 안의 사람에게 보낸 글이다.
     assert hidden == {
         GUIDE_BUTTON_ID,
         PRINT_BUTTON_ID,
@@ -666,6 +667,7 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
         CANON_MARK_ID,
+        NOTICE_CHIP_ID,
     }
     # 같은 iframe 이 세운 사이드바 앱 이름 라벨도 죽은 단추다 — 함께 감춘다(사용자 답 b6).
     assert f"#{SUMMARY_LABEL_ID}" in sso_identity._STOP_TOOLBAR_STYLE
@@ -738,14 +740,15 @@ def test_the_real_app_opens_home_with_the_name_on_the_card(
     real_app: AppTest, cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """켜짐 + 문지기 + 유효 쿠키 → HOME 이 서고 앱 정보 카드 셋째 줄에 이름 · 부서가 있다. 툴바
-    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠와 쓰는 동안 로그인을 늘리는 갱신 스크립트가
-    실린다."""
+    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠(문지기가 있어 공지 물음 갈래까지)와 쓰는 동안
+    로그인을 늘리는 갱신 스크립트가 실린다."""
     cfg, _ = _on(cookies)
     toolbar = _record_toolbar_scripts(monkeypatch)
 
     app = real_app.run()
 
     assert toolbar and toolbar[-1][-2:] == (reconnect_script(cfg), refresh_script(cfg))
+    assert f'ask("{names.NOTICE_PATH}", true)' in toolbar[-1][-2]
 
     assert not list(app.exception), [element.message for element in app.exception]
     stops = set(sso_identity._PROBLEM_NOTICES.values())
@@ -790,3 +793,5 @@ def test_the_real_app_off_keeps_the_toolbar_scripts(
     assert toolbar
     assert [script for script in toolbar[-1] if BANNER_ID in script] == [restart_script()]
     assert not [script for script in toolbar[-1] if names.REFRESH_PATH in script]
+    # `app.py` 로 띄운 서버(문지기 없음)에는 공지 물음이 실리지 않는다 — 공지는 앱 전체 회차로만.
+    assert not [script for script in toolbar[-1] if names.NOTICE_PATH in script]

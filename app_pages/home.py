@@ -508,7 +508,7 @@ try:
     key_process_profile = load_global_key_process(str(DUCKDB_PATH.resolve()))
     # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME 설정 → 판정 기준 한 곳에서 정한다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
-    # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
+    # Capa 요약은 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
     # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
     summary_profile = load_global_summary_note(str(DUCKDB_PATH.resolve()))
     execution_rows = execution_profile.rows if show_execution else empty_execution_capacity()
@@ -612,7 +612,7 @@ except BOOTSTRAP_ERRORS as exc:
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
 # 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 줄의 팝업이 정한다(세션의 보는 조건, 위젯이
-# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. 「HOME 설정」 → 공지 · 표시 에서 보던
+# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. 「HOME 설정」 → Capa 요약 · 표시 에서 보던
 # 프리셋의 이름을 바꾸면 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
 key_process_preset = resolve_preset_name(
     key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
@@ -1127,7 +1127,7 @@ view_month_labels = list(view_conditions.month_labels)
 leading_past_months = leading_past_column_count(
     view_month_labels, set(view_conditions.past_month_labels)
 )
-# 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
+# Capa 요약은 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
 # 나눠 가져 문구가 월 칸 너비에 갇힌다.
 render_summary_notice(summary_profile.note)
 # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이

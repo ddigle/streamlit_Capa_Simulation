@@ -30,6 +30,11 @@ app.py ── 매 회차 st.context.cookies 의 세션 쿠키를 다시 검증(�
 - **경로 여섯** — `POST /auth/callback`(포털 Endpoint URL), `GET /auth/sso/login?next=`, `GET /auth/sso/logout`,
   `GET /auth/sso/error?id=`, `POST /auth/sso/refresh`(로그인 갱신 — 아래), `POST /auth/sso/register`(거절 화면의 「접속 권한 신청」 — 6장).
   Streamlit 자체 `st.login`(`/auth/login` 등)은 GET 콜백이라 쓰지 않는다.
+- **공지 물음 하나**(`GET /capa/notice` — 2026-11-17 공지 보드 q-speed) — 통합인증 경로가 아니라 문지기 공개 목록 밖이다. 켜짐이면 문지기가 세션
+  쿠키를 보고 넘기고(없으면 401 + 까닭 머리 — 이 경로는 탐색으로 보지 않아 앞단이 Sec-Fetch-* 를 떼도 IdP 로 보내지 않는다, 물음 스크립트는 그
+  첫 401 에서 멈춘다), 막힘이면 503, 꺼짐이면 처리기가 그대로 낸다(앱이 열린 모드).
+  `capa_server.py` 로 뜬 서버의 열린 탭이 붙어 있는 동안 10초마다 묻고, 답은 서버 메모리의 공지 꼴 JSON(`Cache-Control: no-store`)이다 — 탭 20개면
+  1초에 두 번. 사건 고리 · 서버 로그에 적지 않는다.
 - **로그인 유지 — 마지막 사용 뒤 6시간, 최대 24시간(기본값 — 2장).** 세션의 끝은 `min(마지막 발급 + 세션 시간, 처음 로그인 + 최대 시간)` 하나이고
   (`auth/tokens.session_end` — 모든 판정이 끝 + 30초까지 받는다), 쿠키 `Max-Age` 도 그 끝 + 30초로 맞춘다. 앱 화면의 사람 입력(누름 ·
   키 · 휠 · 터치 — 스크립트가 만든 사건과 로그아웃 링크 위 입력은 세지 않는다)이 있으면 툴바 스크립트(`components/sso_refresh.py`)가

@@ -1,4 +1,4 @@
-# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로 여섯·문지기를 싣는지 고정한다.
+# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로·공지 물음·문지기를 싣는지 고정한다.
 
 """진입 파일 시험.
 
@@ -73,6 +73,8 @@ def test_the_entry_is_discovered_as_an_st_app_with_routes_and_gate() -> None:
         [names.REFRESH_PATH, ["GET", "HEAD", "POST"]],
         # 스스로 등록도 POST 하나지만 GET 을 붙여 거절 화면으로 303 한다(같은 까닭).
         [names.REGISTER_PATH, ["GET", "HEAD", "POST"]],
+        # 공지 물음(열린 탭이 10초마다 — 공개 목록 밖이라 문지기가 쿠키를 본다).
+        [names.NOTICE_PATH, ["GET", "HEAD"]],
     ]
     assert result["middleware"] == ["capa_simulation.auth.gate.SsoGate"]
 
@@ -105,7 +107,10 @@ def test_the_app_is_a_module_level_literal_assignment() -> None:
 def test_our_paths_avoid_streamlit_reserved_and_auth_names() -> None:
     reserved = ("/_stcore/", "/media/", "/component/", "/static/")
 
-    for path in names.SSO_PATHS:
+    for path in (*names.SSO_PATHS, names.NOTICE_PATH):
         assert not path.startswith(reserved)
         assert path not in names.STREAMLIT_AUTH_PATHS
     assert names.CALLBACK_PATH == "/auth/callback"
+    # 공지 물음은 통합인증 경로가 아니다 — 공개 목록에 넣으면 문지기가 쿠키를 보지 않는다.
+    assert names.NOTICE_PATH not in names.SSO_PATHS
+    assert not names.NOTICE_PATH.startswith("/auth/")
