@@ -164,7 +164,7 @@ def test_the_login_child_prints_a_surrogate_escaped_name_without_breaking(
 ) -> None:
     """패키지가 UTF-8 로 풀리지 않던 바이트(surrogateescape 로 읽은 경로 · 환경 값)를 찍어도
     import 가 깨지지 않는다 — 하위 환경이 인코딩만 정하면 오류 처리기가 strict 가 되어 POSIX C ·
-    C.UTF-8 로캘의 예전 동작(surrogateescape)과 달라지고, 비밀번호를 보낸 뒤라면 멈춤이 된다."""
+    C.UTF-8 로캘 기본(surrogateescape)과 달라지고, 비밀번호를 보낸 뒤라면 멈춤이 된다."""
     scene(monkeypatch, "banner_surrogate")
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
     assert result.outcome == bdq_login.OUTCOME_OK

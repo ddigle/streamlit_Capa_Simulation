@@ -532,8 +532,8 @@ def child_environment(environ: Mapping[str, str]) -> dict[str, str]:
     """로그인 하위 프로세스의 환경 — 비밀 이름 · 접두를 빼고 표준 입출력을 UTF-8 로.
 
     오류 처리기도 `surrogateescape` 로 정한다 — 인코딩만 적으면 strict 가 되어, 패키지가 UTF-8 로
-    풀리지 않던 바이트(경로 · 환경 값)를 찍을 때 POSIX C · C.UTF-8 로캘의 예전 동작과 달리 깨진다.
-    부모는 하위 출력을 `errors="replace"` 로 읽고 표준 입력은 늘 UTF-8 로 보낸다."""
+    풀리지 않던 바이트(경로 · 환경 값)를 찍을 때 POSIX C · C.UTF-8 로캘 기본(surrogateescape)과
+    달리 깨진다. 부모는 하위 출력을 `errors="replace"` 로 읽고 표준 입력은 늘 UTF-8 로 보낸다."""
     env = {
         name: value
         for name, value in environ.items()
