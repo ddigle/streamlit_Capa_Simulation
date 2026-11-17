@@ -185,10 +185,10 @@ def test_the_limit_step_reads_the_applied_setting() -> None:
     assert memory_limit_step(memory_limit_setting({MEMORY_LIMIT_ENV: "80%"})) == (
         MEMORY_LIMIT_STEP_LABEL,
         "실패",
-        f"{MEMORY_LIMIT_ENV} 「80%」 꼴이 틀림 — DuckDB 기본 그대로",
+        f"{MEMORY_LIMIT_ENV} 꼴이 틀림 — DuckDB 기본 그대로",
     )
     assert memory_limit_step(memory_limit_setting({MEMORY_LIMIT_ENV: "16MiB"}))[2] == (
-        f"{MEMORY_LIMIT_ENV} 「16MiB」 64MiB ~ 1TiB 밖 — DuckDB 기본 그대로"
+        f"{MEMORY_LIMIT_ENV} 64MiB ~ 1TiB 밖 — DuckDB 기본 그대로"
     )
 
 
@@ -287,14 +287,21 @@ def test_the_start_check_shows_the_values_it_can_read(
     assert "한도 256.0 MiB" in text
 
 
+# 옆 칸을 잘못 붙여 넣은 값 꼴(비밀 키 같은 44글자) — 합성 값이다.
+PASTED_BY_MISTAKE = "demoPastedSecretValue0123456789abcdefABCDEF="
+
+
 def test_a_wrong_limit_fails_the_row_the_title_and_raises_ad01(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
 ) -> None:
     """틀린 값은 기본으로 물러서고(연결 설정에 넣지 않음) 표 끝 줄이 「실패」 — 시작 점검 관리자
-    알림 `AD-01` 에 든다(「그 화면으로」 Admin Area)."""
+    알림 `AD-01` 에 든다(「그 화면으로」 Admin Area). 틀린 값의 글은 표 · 복사 글 · 알림 전문
+    어디에도 싣지 않는다 — 옆 칸(비밀 키 · 토큰)을 잘못 붙여 넣은 값일 수 있다."""
     _report(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        _sql_helpers, "DUCKDB_MEMORY_LIMIT", memory_limit_setting({MEMORY_LIMIT_ENV: "80%"})
+        _sql_helpers,
+        "DUCKDB_MEMORY_LIMIT",
+        memory_limit_setting({MEMORY_LIMIT_ENV: PASTED_BY_MISTAKE}),
     )
 
     app = AppTest.from_string(SCRIPT).run(timeout=60)
@@ -305,9 +312,14 @@ def test_a_wrong_limit_fails_the_row_the_title_and_raises_ad01(
     assert steps.iloc[-1].tolist() == [
         MEMORY_LIMIT_STEP_LABEL,
         "실패",
-        f"{MEMORY_LIMIT_ENV} 「80%」 꼴이 틀림 — DuckDB 기본 그대로",
+        f"{MEMORY_LIMIT_ENV} 꼴이 틀림 — DuckDB 기본 그대로",
     ]
     note = active_state(app, "AD-01")
     assert note is not None and note["short"] == "서버 시작 점검 실패 — DuckDB 메모리 한도"
-    assert f"DuckDB 메모리 한도: {MEMORY_LIMIT_ENV} 「80%」 꼴이 틀림" in note["full"]
+    assert f"DuckDB 메모리 한도: {MEMORY_LIMIT_ENV} 꼴이 틀림" in note["full"]
     assert note["href"] == "admin_area"
+    text = diagnostic_copies[f"{COMPONENT_KEY_PREFIX}container_start_check"]
+    assert f"DuckDB 메모리 한도\t실패\t{MEMORY_LIMIT_ENV} 꼴이 틀림" in text
+    shown = [*steps.astype(str).to_numpy().ravel(), note["short"], note["full"], text]
+    for piece in (PASTED_BY_MISTAKE[:8], PASTED_BY_MISTAKE[-8:]):
+        assert not [place for place in shown if piece in place], piece

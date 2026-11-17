@@ -19,7 +19,8 @@
 
 「DuckDB 메모리 한도」 단계 줄(`memory_limit_step`)은 이 프로세스가 연결 설정에 넣은 한도 칸의
 판정이다 — 통합인증 줄처럼 결과 파일이 아니라 지금 설정이다. 틀린 값이면 「실패」 라 펼침 제목
-판정과 시작 점검 관리자 알림 `AD-01` 에 든다(`container_start_check`).
+판정과 시작 점검 관리자 알림 `AD-01` 에 든다(`container_start_check`). 까닭은 값 없는 고정 낱말이다
+— 틀린 값은 옆 칸(비밀 키 · 토큰)을 잘못 붙여 넣은 것일 수 있고, 이 줄은 복사 글로 리뷰에 옮긴다.
 """
 
 from __future__ import annotations
@@ -52,8 +53,6 @@ from capa_simulation.persistence.duckdb_memory import (
 NOT_KNOWN: Final = "모름"
 MEMORY_LIMIT_STEP_LABEL: Final = "DuckDB 메모리 한도"
 PROC_STATUS: Final = Path("/proc/self/status")
-# 까닭 칸에 싣는 틀린 값의 글자 수 — 붙여 넣다 딸려 온 긴 글이 표를 밀지 않게.
-SHOWN_VALUE_CHARS: Final = 40
 _STATUS_LINE = re.compile(r"^(?P<name>Vm[A-Za-z]+):\s+(?P<value>\d+)\s+kB\s*$", re.MULTILINE)
 
 
@@ -167,9 +166,8 @@ def memory_limit_step(setting: MemoryLimitSetting | None = None) -> tuple[str, s
     """「서버 시작 점검」 표의 `(단계, 결과, 까닭)` — 이 프로세스가 연결 설정에 넣은 한도 칸."""
     current = _sql_helpers.DUCKDB_MEMORY_LIMIT if setting is None else setting
     if current.problem is not None and current.raw is not None:
-        shown = current.raw[:SHOWN_VALUE_CHARS]
         why = "꼴이 틀림" if current.problem == PROBLEM_FORM else f"{MEMORY_LIMIT_RANGE_TEXT} 밖"
-        reason = f"{MEMORY_LIMIT_ENV} 「{shown}」 {why} — DuckDB 기본 그대로"
+        reason = f"{MEMORY_LIMIT_ENV} {why} — DuckDB 기본 그대로"
         return MEMORY_LIMIT_STEP_LABEL, STATUS_LABELS[STATUS_FAILED], reason
     if current.value is None:
         reason = f"{MEMORY_LIMIT_ENV} 없음 — DuckDB 기본"

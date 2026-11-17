@@ -1915,6 +1915,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「모름」)다. 세션 표 · `cache_resource` · 세션 상태의 크기를 깊이 재지 않는다(잠긴 표에 `memory_usage(deep=True)` 를 부르지 않는다 —
   `tests/test_memory_diagnostic.py` 가 막고 돈다). 화면에는 값 줄만 두고 뜻은 Guide 「서버 시작 점검」 이다. 한도 줄은 지금 연결 설정
   (`_sql_helpers.DUCKDB_MEMORY_LIMIT`)의 판정 — 없음 「건너뜀」 · 받은 값 「정상」(DB 마다 그 값) · 틀린 값 「실패」(꼴 · 범위, 기본 그대로).
+  틀린 값의 까닭은 값 없는 고정 낱말(`꼴이 틀림` · `64MiB ~ 1TiB 밖`)이고 그 값의 글은 싣지 않는다 — 옆 칸(비밀 키 · 토큰)을 잘못 붙여 넣은
+  값일 수 있고 이 줄은 복사 글 · `AD-01` 전문으로 리뷰에 옮긴다(`io/object_storage.py` 의 「모드 값 틀림」 과 같은 관례).
 - `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
   다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
   (2026-11-12 사용자 결정). 단추는 관리자(`sso_identity.viewer_is_admin`)에게만 서고 — 권한 기능이라 접속 명단처럼 숨긴다 —
