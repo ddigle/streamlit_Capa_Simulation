@@ -390,7 +390,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes`(넣기 · 빼기 · 등급) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
   갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
   `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
-  websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
+  websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py`, 운영 서버의 공지 물음 경로(`GET /capa/notice` — 공개 목록 밖이라 켜짐이면
+  문지기가 쿠키를 보고, 꺼짐은 처리기가 그대로 냄 · 켜짐인데 문지기 없음 · 막힘은 503, 메모리 읽기만 · `no-store` JSON — `notice_board.payload` 그대로)는
+  `auth/notice_poll.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
   `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
@@ -437,6 +439,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     띠 글은 앱 밖 공통 틀 글처럼 띄어쓰기에서만 줄을 바꾸고(`word-break: keep-all`) 띄어쓰기 없는 긴 메일 · 주소만 접는다
     (`overflow-wrap: anywhere` — 390 창에서 낱말이 가운데서 갈리던 것, 2026-11-14 보드 english 리뷰).
     바깥 화면(거절 · 로그아웃 — 공통 틀)의 보조 링크는 강조 토큰 색이다(`auth/page_frame.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
+    **같은 틱에 공지 물음 갈래**(`_NOTICE_POLL` — 2026-11-17 공지 보드 q-speed)를 문지기가 있는 서버(`runtime.gate_installed()` —
+    `capa_server.py`, 켜짐 · 꺼짐 모두)에만 끼운다(`app.py` 실행에는 없음 — 공지는 앱 전체 회차의 알림 칸 data 로만). 연결 표지가 `CONNECTED`
+    인 동안 붙은 지 · 지난 물음에서 10초(`NOTICE_POLL_MS`)마다 같은 뿌리의 `GET /capa/notice` 를 묻고(쿠키 · `no-store` · 겹쳐 묻지 않음),
+    표지 + 판(`noticeRead`)이 지난번 넘긴 것과 다르면 부모 문서의 `window.__capaAlerts.notice(payload)` 에 넘긴다(칸이 아직 없으면 쥐고 있다가
+    다음 틱 — 사건 대기열 `__capaAlertQueue` 는 쓰지 않음). 첫 401 에서 멈추고(`noticeStep` — 만료 탭이 문지기를 두드리지 않게) 끊겼다가 다시
+    붙으면 푼다. 그 밖 실패 · 앞단 HTML 은 다음 차례. 시험 `tests/test_notice_poll.py`(경로 · 문지기 · 판정 구획 · 가짜 창 통째).
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
@@ -7189,10 +7197,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   문맥을 찾지 않는 것만 쓴다. 그 밖의 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다(`test_object_sync_worker` 가 자리를 센다). `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
 - **통합인증 문지기는 순수 ASGI 미들웨어 하나다**(`auth/gate.py`, `capa_server.py` 의 `st.App(middleware=…)`). Starlette 의
   `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
-  다섯) — `/_stcore/` 를 접두로 열지 않는다. 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
+  여섯) — `/_stcore/` 를 접두로 열지 않는다. 공지 물음 `GET /capa/notice`(`auth/notice_poll.py`)는 그 목록에 넣지 않는다 — 켜짐이면 쿠키 검증을 거쳐
+  신원 있는 탭만 닿고(없으면 fetch 401), 꺼짐은 문지기가 모두 넘기므로 처리기가 모드를 스스로 본다(꺼짐은 앱이 열린 모드라 그대로 냄 · 막힘 503). 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
   처리기가 하고, 켜짐에서 POST 밖 메서드는 문지기가 405(`Allow: POST`)로 답한다 — Streamlit 의 정적 Mount 가 모르는 GET 경로에
   `index.html` 을 내서 라우터의 405 가 서지 않는다. 같은 까닭으로 갱신 Route 는 GET(· HEAD)도 붙여 처리기가 답한다(꺼짐 404 ·
-  막힘 503 · 그 밖 405) — 꺼짐에서는 문지기가 모두 넘긴다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
+  막힘 503 · 그 밖 405) — 꺼짐에서는 문지기가 모두 넘긴다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` · 공지 물음 `/capa/notice` 이고 Streamlit 자체
   `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
   `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
   `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
@@ -7804,7 +7813,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
   회차마다 같다). **이 상태 표지는 이벤트 칸 표지(`alerts.state`)로 내지 않는다** — JS 는 프래그먼트 회차 끝에도 문서의 표지를 다시
   훑는데 그 회차는 `app.py` 표지를 다시 그리지 않아, 물음 경로가 넣은 새 값을 옛 표지가 되돌린다(거둠 뒤 다시 열림 · 새 공지 뒤 닫힘).
-  JS 입구 `window.__capaAlerts.notice(payload)` 는 운영 서버의 10초 물음 스크립트(다음 갈래)가 부를 자리이고 data 와 같은 꼴 · 같은
+  JS 입구 `window.__capaAlerts.notice(payload)` 는 운영 서버의 10초 물음(툴바 틱 스크립트 `sso_reconnect` 의 `_NOTICE_POLL` → `GET /capa/notice`
+  — 문지기가 있는 서버만, 첫 401 에서 멈춤 · 3장 그 항목)이 부르고 data 와 같은 꼴 · 같은
   함수(`applyNotice`)로 받는다 — 프로세스 표지가 같으면 판이 오른 것만(`noticeNewer` — 엇갈려 닿은 옛 값을 버림), 다르면(재시작) 늘.
   입장 화면 · Summary 덮개(`#capa-intro-host`)가 덮는 동안에는 공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버림 — 줄 · 칩은
   바로 선다), 끝 시각이 되면 그 문서가 칩을 걷고 줄을 해소한다(물음 없는 개발 · WebIDE 도 다음 회차를 기다리지 않음). 시험

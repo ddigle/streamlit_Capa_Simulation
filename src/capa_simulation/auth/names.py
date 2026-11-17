@@ -109,6 +109,9 @@ SSO_PATHS: tuple[str, ...] = (
     REFRESH_PATH,
     REGISTER_PATH,
 )
+# 운영 서버의 공지 물음(GET — 열린 탭이 10초마다 묻는다, `auth/notice_poll.py`). 통합인증 경로가
+# 아니라 `SSO_PATHS` 에 넣지 않는다 — 공개 목록 밖이라 문지기가 세션 쿠키를 본다.
+NOTICE_PATH = "/capa/notice"
 # Streamlit 의 상태 검사. C-DEP 이 본다 — 막힘 모드에서도 열어 둔다.
 HEALTH_PATH = "/_stcore/health"
 # Streamlit 자체 `st.login` 경로. 우리 경로와 이름이 겹치지 않게 피했고, 통합인증이 켜지면 막는다.

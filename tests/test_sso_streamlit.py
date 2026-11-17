@@ -740,14 +740,15 @@ def test_the_real_app_opens_home_with_the_name_on_the_card(
     real_app: AppTest, cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """켜짐 + 문지기 + 유효 쿠키 → HOME 이 서고 앱 정보 카드 셋째 줄에 이름 · 부서가 있다. 툴바
-    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠와 쓰는 동안 로그인을 늘리는 갱신 스크립트가
-    실린다."""
+    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠(문지기가 있어 공지 물음 갈래까지)와 쓰는 동안
+    로그인을 늘리는 갱신 스크립트가 실린다."""
     cfg, _ = _on(cookies)
     toolbar = _record_toolbar_scripts(monkeypatch)
 
     app = real_app.run()
 
     assert toolbar and toolbar[-1][-2:] == (reconnect_script(cfg), refresh_script(cfg))
+    assert f'ask("{names.NOTICE_PATH}", true)' in toolbar[-1][-2]
 
     assert not list(app.exception), [element.message for element in app.exception]
     stops = set(sso_identity._PROBLEM_NOTICES.values())
@@ -792,3 +793,5 @@ def test_the_real_app_off_keeps_the_toolbar_scripts(
     assert toolbar
     assert [script for script in toolbar[-1] if BANNER_ID in script] == [restart_script()]
     assert not [script for script in toolbar[-1] if names.REFRESH_PATH in script]
+    # `app.py` 로 띄운 서버(문지기 없음)에는 공지 물음이 실리지 않는다 — 공지는 앱 전체 회차로만.
+    assert not [script for script in toolbar[-1] if names.NOTICE_PATH in script]

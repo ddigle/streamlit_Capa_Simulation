@@ -1,4 +1,4 @@
-# Purpose: 다시 붙지 못한 탭에 「다시 로그인」 띠와 서버 재시작 띠를 세우는 한 스크립트를 만든다.
+# Purpose: 툴바 iframe 연결 틱 스크립트 — 끊긴 탭의 「다시 로그인」·재시작 띠와 공지 물음을 만든다.
 
 """다시 붙지 못한 탭의 「다시 로그인」 띠.
 
@@ -86,9 +86,31 @@ running)을 감춘다(같은 길). 다시 붙으면 띠를 걷고 서버 재시�
 보낸다 — 공개 주소 설정이 없어서다(WebIDE `/proxy/<포트>/` 처럼 앞단이 붙인 접두도 그대로 따른다).
 그래서 꺼짐의 툴바 iframe 에도 스크립트 하나가 더 실린다(내용은 프로세스 안에서 늘 같다).
 
+**운영 서버의 공지 물음도 같은 틱이다**(2026-11-17 공지 보드 답 q-speed — 같은 연결 상태를 1초마다
+읽는 스크립트를 둘로 두지 않는다). 문지기가 있는 서버(`runtime.gate_installed()` — `capa_server.py`
+로 뜸, 통합인증 켜짐 · 꺼짐 모두)에만 그 갈래(`_NOTICE_POLL`)를 싣고, `app.py` 로 띄운 개발 ·
+WebIDE · 시험에는 싣지 않는다(그때 공지는 앱 전체 회차의 알림 칸 data 로만 닿는다). 표지는 문지기가
+서는 첫 요청 때 한 번 서므로 프로세스 안에서 글이 늘 같다.
+
+- 연결 표지가 붙음(`CONNECTED`)인 동안만 묻는다 — 붙은 때(또는 지난 물음)에서
+  `NOTICE_POLL_MS`(10초)마다 같은 출처 `GET /capa/notice`(`names.NOTICE_PATH` — 뿌리는 위 물음과
+  같은 `appRoot`, 쿠키 실음 · `no-store` · 물음 상한 `PROBE_TIMEOUT_MS`). 첫 물음은 붙은 지 10초
+  뒤다 — 막 붙은 탭은 그 회차의 알림 칸 data 가 같은 꼴을 이미 실었다. 끊긴 동안 · 처음 · 표지
+  없음(판올림)은 묻지 않는다.
+- 답(`noticeStep`): **401 이면 멈춘다** — 만료 · 로그아웃한 탭이 10초마다 문지기를 두드리지
+  않게(문지기는 http 401 을 기록하지 않고 이 물음은 로그인을 늘리지 않는다). 끊겼다가 다시
+  붙으면(문지기가 쿠키를 다시 본 핸드셰이크) 멈춤을 푼다. 2xx 는 읽고, 그 밖(5xx · 시작 임시 응답 ·
+  앞단 거절 · 답 없음)은 다음 차례다.
+- 읽은 글(`noticeRead`)은 JSON 이고 프로세스 표지(`mark`) · 판(`rev`)이 있어야 받는다(앞단이 낸 HTML
+  은 버림). 표지 + 판이 지난번 넘긴 것과 다를 때만 부모 문서의 `window.__capaAlerts.notice(payload)`
+  에 넘긴다 — 알림 칸이 data 와 같은 길(`applyNotice` — 판이 오른 것만)로 받는다. 칸이 아직 서지
+  않았으면 그 꼴을 쥐고 있다가 다음 틱에 넘긴다(사건 알림 대기열 `__capaAlertQueue` 는 `raise`
+  꼴이라 쓰지 않는다).
+
 **비공식 경로다.** Streamlit 1.63 프런트의 연결 상태 표지에 기댄다. 판올림으로 표지가 사라지면 띠가
-서지 않을 뿐 나머지는 그대로다 — 올릴 때 만료 · 로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다(머리
-상태 글의 표가 바뀌면 그 글이 띠 곁에 다시 보일 뿐이다).
+서지 않고 공지 물음이 돌지 않을 뿐 나머지는 그대로다(공지는 앱 전체 회차로 닿는다) — 올릴 때 만료 ·
+로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다(머리 상태 글의 표가 바뀌면 그 글이 띠 곁에 다시 보일
+뿐이다).
 """
 
 from __future__ import annotations
@@ -112,6 +134,9 @@ PROBE_WAIT_MS = 3_000
 PROBE_GAP_MS = 10_000
 TICK_MS = 1_000
 HOST_CONFIG_PATH = "/_stcore/host-config"
+# 붙어 있는 동안 공지를 묻는 사이(운영 서버 — 2026-11-17 공지 보드 답 q-speed 「10초」).
+NOTICE_POLL_MS = 10_000
+NOTICE_PATH = names.NOTICE_PATH
 # 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
@@ -245,6 +270,36 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     path = path.slice(prefix.length) || "/";
   }
   return base + loginPath + "?next=" + encodeURIComponent(path + (search || ""));
+}
+// 공지를 물어도 되는 연결 상태인가 — 붙어 있을 때만(끊김 · 처음 · 표지 없음은 묻지 않는다).
+function noticeConnected(state) {
+  return state === "CONNECTED";
+}
+// 지금 공지를 물을 때인가 — 붙은 때 · 지난 물음(since)에서 gapMs 가 지났고, 401 로 멈추지 않았고,
+// 묻는 중이 아니다.
+function noticeDue(since, stopped, asking, now, gapMs) {
+  if (stopped || asking || since === null) return false;
+  return now - since >= gapMs;
+}
+// 공지 물음 답의 상태 → 할 일. 401 은 멈춤(만료 탭이 문지기를 두드리지 않게), 2xx 는 읽음,
+// 그 밖(5xx · 시작 임시 응답 · 앞단 거절)은 다음 차례.
+function noticeStep(status) {
+  if (status === 401) return "stop";
+  if (typeof status === "number" && status >= 200 && status < 300) return "read";
+  return "next";
+}
+// 공지 물음 답 글 → {key, payload}. 열쇠는 프로세스 표지 + 판이다. JSON 이 아니거나(앞단이 낸
+// HTML 등) 표지 · 판이 없으면 null — 받지 않는다.
+function noticeRead(text) {
+  var payload = null;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    return null;
+  }
+  if (!payload || typeof payload !== "object" || typeof payload.mark !== "string") return null;
+  if (typeof payload.rev !== "number" || !isFinite(payload.rev)) return null;
+  return { key: payload.mark + ":" + payload.rev, payload: payload };
 }
 // </sso-reconnect-rule>
 
@@ -437,6 +492,9 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     return probeRoot(%(login_on)s, here.origin, %(prefix)s, here.href);
   }
   var bands = %(bands)s;
+  // 공지 물음 — 문지기 있는 서버면 아래 갈래가 채운다(`_NOTICE_POLL`). 틱마다 연결 상태를 넘긴다.
+  var noticeTick = null;
+%(notice_poll)s
   function showBanner(kind) {
     var band = bands[kind] || bands.legacy;
     var shown = doc.getElementById(%(banner_id)s);
@@ -472,6 +530,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     var root = doc.querySelector('[data-testid="stApp"]');
     var state = root ? root.getAttribute("data-test-connection-state") : null;
     var now = Date.now();
+    if (noticeTick) noticeTick(state, now);
     if (!disconnected(state)) {
       since = null;
       lastProbe = null;
@@ -509,6 +568,65 @@ function loginHref(base, prefix, loginPath, pathname, search) {
   window.setInterval(tick, %(tick_ms)d);
 })();
 """
+
+
+# 공지 물음 갈래 — 문지기 있는 서버의 스크립트에만 끼운다(`_script`). 위 IIFE 안의 `ask` ·
+# `parentWindow` 를 쓴다.
+_NOTICE_POLL = """
+  var noticeSince = null;
+  var noticeStopped = false;
+  var noticeAsking = false;
+  // 마지막으로 알림 칸에 넘긴 꼴의 열쇠(표지 + 판)와 아직 넘기지 못한 꼴.
+  var noticeSeen = null;
+  var noticePending = null;
+  // 받은 꼴을 부모 문서의 알림 칸 입구에 넘긴다. 칸이 아직 서지 않았으면 쥐고 있다가 다음 틱에.
+  function handNotice() {
+    if (noticePending === null) return;
+    var center = parentWindow.__capaAlerts;
+    if (!center || typeof center.notice !== "function") return;
+    var held = noticePending;
+    noticePending = null;
+    noticeSeen = held.key;
+    try {
+      center.notice(held.payload);
+    } catch (error) {
+      // 알림 칸의 오류가 물음을 멈추지 않게 한다.
+    }
+  }
+  noticeTick = function (state, now) {
+    if (!noticeConnected(state)) {
+      // 끊긴 동안은 묻지 않는다. 다시 붙은 것은 문지기가 쿠키를 다시 본 핸드셰이크라 401 멈춤도
+      // 푼다.
+      noticeSince = null;
+      noticeStopped = false;
+      return;
+    }
+    handNotice();
+    if (noticeSince === null) noticeSince = now;
+    if (!noticeDue(noticeSince, noticeStopped, noticeAsking, now, %(gap_ms)d)) return;
+    noticeSince = now;
+    noticeAsking = true;
+    ask(%(path)s, true)
+      .then(function (answer) {
+        var step = noticeStep(answer.status);
+        if (step === "stop") noticeStopped = true;
+        if (step !== "read") return;
+        var read = noticeRead(answer.text);
+        if (read === null || read.key === noticeSeen) return;
+        noticePending = read;
+        handNotice();
+      })
+      .catch(function () {})
+      .then(function () {
+        noticeAsking = false;
+      });
+  };
+"""
+
+
+def notice_poll_part() -> str:
+    """공지 물음 갈래(경로 · 간격이 고정) — 문지기 있는 서버의 스크립트에만 끼운다."""
+    return _NOTICE_POLL % {"path": script_literal(NOTICE_PATH), "gap_ms": NOTICE_POLL_MS}
 
 
 def script_literal(value: str) -> str:
@@ -553,7 +671,9 @@ def band_texts() -> dict[str, dict[str, str]]:
 
 
 def _script(cfg: SsoConfig | None) -> str:
-    """띠 스크립트 하나 — `cfg` 가 없으면(꺼짐) 로그인 띠 없이 재시작 갈래만 돈다."""
+    """띠 스크립트 하나 — `cfg` 가 없으면(꺼짐) 로그인 띠 없이 재시작 갈래만 돈다. 문지기가 있는
+    서버(`capa_server.py`)면 켜짐 · 꺼짐 모두 공지 물음 갈래를 끼운다(표지는 프로세스에 한 번
+    선다)."""
     light_box, light_link = band_styles("light")
     dark_box, dark_link = band_styles("dark")
     prefix = "" if cfg is None else urlsplit(cfg.public_url).path.rstrip("/")
@@ -590,17 +710,19 @@ def _script(cfg: SsoConfig | None) -> str:
         "wait_ms": PROBE_WAIT_MS,
         "gap_ms": PROBE_GAP_MS,
         "tick_ms": TICK_MS,
+        "notice_poll": notice_poll_part() if runtime.gate_installed() else "",
     }
 
 
 def reconnect_script(cfg: SsoConfig) -> str:
     """켜짐 — 다시 붙지 못한 탭의 「다시 로그인」 띠와 서버 재시작 띠(주소 · 문구 · 두 팔레트가
-    고정)."""
+    고정), 문지기가 있으면 공지 물음."""
     return _script(cfg)
 
 
 def restart_script() -> str:
-    """꺼짐 — 서버 재시작 띠만(고정 문자열)."""
+    """꺼짐 — 서버 재시작 띠(고정 문자열), 문지기가 있으면(`capa_server.py` 로 뜬 꺼짐 서버) 공지
+    물음."""
     return _script(None)
 
 
