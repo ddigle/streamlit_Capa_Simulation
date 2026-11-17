@@ -572,6 +572,12 @@ _TRACEBACK = 'Traceback (most recent call last):\n  File "<x>", line 1, in <modu
     [
         ("", ""),
         ("Warning: Password input may be echoed.\nPassword : ", ""),
+        (
+            f"Warning: Password input may be echoed.\nPassword: {_TRACEBACK}"
+            f"pkg.mod.LoginRefused: bad password for {ACCOUNT}\n",
+            "pkg.mod.LoginRefused",
+        ),
+        (f"{_TRACEBACK}pkg.mod.LoginRefused: x\n".replace("\n", "\r\n"), "pkg.mod.LoginRefused"),
         (f"{_TRACEBACK}KeyboardInterrupt\n", "KeyboardInterrupt"),
         (f"{_TRACEBACK}pkg.mod.LoginError: bad password for {ACCOUNT}\n", "pkg.mod.LoginError"),
         (

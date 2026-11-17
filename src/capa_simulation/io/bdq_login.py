@@ -601,10 +601,14 @@ def parse_steps(output: bytes) -> tuple[str, dict[str, str]]:
 def stderr_kind(stderr: bytes, secrets: Iterable[str]) -> str:
     """표준 오류 끝자락의 마지막 traceback 이 끝난 예외 줄의 종류 이름(`모듈.이름`). traceback 이
     없거나 꼴이 낯설면 빈 글. 그 이름이 계정 · 비밀번호(`secrets`)를 품거나 그 안에 들면 버린다 —
-    표준 오류는 패키지가 쓰는 글이라 값이 실릴 수 있다. 글은 돌려주지 않는다."""
+    표준 오류는 패키지가 쓰는 글이라 값이 실릴 수 있다. 글은 돌려주지 않는다.
+
+    traceback 머리는 줄 끝에서 찾는다 — 비밀번호 프롬프트(「Password: 」)를 줄바꿈 없이
+    남기는 길(Windows 의 `getpass.fallback_getpass` 는 POSIX 와 달리 뒤에 줄바꿈을 쓰지
+    않는다)에서는 머리가 프롬프트 뒤 같은 줄에 붙는다."""
     text = stderr[-_STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
     lines = text.splitlines()
-    heads = [index for index, line in enumerate(lines) if line.strip() == _TRACEBACK_HEAD]
+    heads = [index for index, line in enumerate(lines) if line.rstrip().endswith(_TRACEBACK_HEAD)]
     if not heads:
         return ""
     head = ""
