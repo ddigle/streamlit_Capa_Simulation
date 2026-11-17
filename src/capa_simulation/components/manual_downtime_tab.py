@@ -510,6 +510,13 @@ def _render_editor(
             )
         )
         return
+    except ValueError as exc:
+        notice.error(
+            admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            )
+        )
+        return
     if version is None:
         notice.info(MANUAL_UNCHANGED_MESSAGE, icon=":material/info:")
         return

@@ -14,7 +14,6 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.auth import grades
-from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.editor_state import (
     discard_editor,
@@ -532,15 +531,24 @@ _POSITION_ACTIONS = (
 )
 
 
+def _viewer_can(action: str) -> bool:
+    """화면 등급 판정(`sso_identity.viewer_can`). 부를 때 읽는다 — 그 모듈은 머리 띠 · 입장 화면을
+    거쳐 `equipment_scenario_activation` 을 읽고, 그것이 이 모듈을 읽어 맨 위에서 부르면 돌고
+    돈다."""
+    from capa_simulation.components import sso_identity
+
+    return sso_identity.viewer_can(action)
+
+
 def table_editable(target: str) -> bool:
     """이 화면 등급으로 그 표를 고치나(화면 판정 — 「이 등급으로 보기」 를 따른다)."""
-    return sso_identity.viewer_can(TABLE_ACTIONS[target])
+    return _viewer_can(TABLE_ACTIONS[target])
 
 
 def table_lock(target: str) -> str | None:
     """그 표를 고칠 수 없으면 그 까닭 한 줄(거절 글), 고칠 수 있으면 None."""
     action = TABLE_ACTIONS[target]
-    return None if sso_identity.viewer_can(action) else grades.refusal_text(action)
+    return None if _viewer_can(action) else grades.refusal_text(action)
 
 
 def editable_targets() -> tuple[str, ...]:
@@ -552,6 +560,8 @@ def refuse_out_of_grade(action: str) -> None:
     """화면 등급 밖 편집을 받지 않았다는 알림 — 알림창 · Alarm 에 한 번(저장 벽의 거절과 같은 글,
     설계 규칙 UI-NTF-03). 팝업 · 프래그먼트 회차면 이어 도는 본문이 앱 전체를 다시 그려 알림을
     낸다(`grade_ui.in_fragment`)."""
+    from capa_simulation.components import grade_ui, sso_identity
+
     grade_ui.refuse(grades.GradeDenied(action, grades.need_of(action), sso_identity.screen_grade()))
     st.session_state[grade_ui.PENDING_KEY] = True
 
@@ -564,7 +574,7 @@ def _grade_kept(frames: Frames) -> Frames:
     지우기 · Space 적용 · 표 출납)에서 막는다. 걷은 것이 있으면 거절 알림을 한 번 담는다.
     """
     current = st.session_state.get(BUFFER_KEY)
-    allowed = tuple(sso_identity.viewer_can(action) for action in _POSITION_ACTIONS)
+    allowed = tuple(_viewer_can(action) for action in _POSITION_ACTIONS)
     if all(allowed) or not isinstance(current, tuple) or len(current) != 3:
         return frames
     kept = list(frames)
@@ -3789,6 +3799,8 @@ def render_small_editor(
     tools_action = "equipment.export" if baseline_table else TABLE_ACTIONS[DOWNTIME_TARGET]
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다). 그 바깥 칸이 표 도구 막대를
     # 등급으로 가른다.
+    from capa_simulation.components import grade_ui
+
     apply_clicked = False
     action: str | None = None
     with (
