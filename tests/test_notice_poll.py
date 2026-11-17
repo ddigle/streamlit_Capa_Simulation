@@ -112,7 +112,10 @@ def test_the_notice_path_is_outside_the_public_list() -> None:
 
 
 def test_without_a_session_cookie_the_gate_refuses_before_the_handler() -> None:
-    """켜짐: 쿠키 없는 fetch 는 401 + 까닭 머리(본문에 공지 없음), 주소창 탐색은 IdP 로 302."""
+    """켜짐: 쿠키 없는 물음은 401 + 까닭 머리(본문에 공지 없음). 이 경로는 탐색으로 보지 않는다 —
+    주소창 탐색 꼴이어도, 앞단이 Sec-Fetch-* 를 뗀 fetch(문지기가 비브라우저 탐색으로 보던 꼴)여도
+    401 이고 로그인 시작(IdP 302 · 상태 · 시도 쿠키 · 되풀이 경고)을 내지 않는다. 만료된 채 놀고
+    있는 탭이 10초마다 물어도 로그인이 늘지 않는다."""
     use_config()
     _send_notice()
 
@@ -121,8 +124,15 @@ def test_without_a_session_cookie_the_gate_refuses_before_the_handler() -> None:
     assert refused.status == 401
     assert refused.header(names.REASON_HEADER) == names.REASON_OTHER
     assert "합성 점검" not in refused.text and "mark" not in refused.text
-    typed = http(_gated(), "GET", names.NOTICE_PATH, headers=NAVIGATE)
-    assert typed.status == 302 and "합성 점검" not in typed.text
+    for headers in (NAVIGATE, {}, {}, {}, {}, {}):
+        bare = http(_gated(), "GET", names.NOTICE_PATH, headers=headers)
+        assert bare.status == 401, (headers, bare.status)
+        assert bare.header(names.REASON_HEADER) == names.REASON_OTHER
+        assert bare.set_cookies == [] and bare.header("location") is None
+        assert "합성 점검" not in bare.text
+    assert not [event for event in runtime.recent_events() if event.event == "login_fail"]
+    other = http(_gated(), "GET", "/space", headers={})
+    assert other.status == 302, "다른 경로의 비브라우저 탐색은 그대로 로그인으로 간다"
 
 
 def test_a_signed_in_tab_gets_the_payload_as_uncached_json() -> None:

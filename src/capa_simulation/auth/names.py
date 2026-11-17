@@ -110,7 +110,8 @@ SSO_PATHS: tuple[str, ...] = (
     REGISTER_PATH,
 )
 # 운영 서버의 공지 물음(GET — 열린 탭이 10초마다 묻는다, `auth/notice_poll.py`). 통합인증 경로가
-# 아니라 `SSO_PATHS` 에 넣지 않는다 — 공개 목록 밖이라 문지기가 세션 쿠키를 본다.
+# 아니라 `SSO_PATHS` 에 넣지 않는다 — 공개 목록 밖이라 문지기가 세션 쿠키를 보고, 신원이 없으면
+# 탐색으로 보지 않고 늘 401 이다(로그인 시작을 내지 않음).
 NOTICE_PATH = "/capa/notice"
 # Streamlit 의 상태 검사. C-DEP 이 본다 — 막힘 모드에서도 열어 둔다.
 HEALTH_PATH = "/_stcore/health"

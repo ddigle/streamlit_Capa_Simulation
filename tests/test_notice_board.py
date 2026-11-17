@@ -61,18 +61,33 @@ def test_a_send_with_a_stale_view_is_refused() -> None:
     until = NOW + timedelta(hours=1)
     other = notice_board.send("남이 보낸 공지", until, now=NOW)
 
-    with pytest.raises(notice_board.NoticeChanged):
+    with pytest.raises(notice_board.NoticeChanged) as replaced:
         notice_board.send("내 공지", until, now=NOW, expected="")
+    assert replaced.value.ended is False, "다른 공지가 섰다(갈음)"
     assert notice_board.current(NOW) == other
 
     notice_board.withdraw(other.id, now=NOW)
-    with pytest.raises(notice_board.NoticeChanged):
+    with pytest.raises(notice_board.NoticeChanged) as withdrawn:
         notice_board.send("내 공지", until, now=NOW, expected=other.id)
+    assert withdrawn.value.ended is True, "서 있던 공지가 없어졌다(거둠)"
     assert notice_board.current(NOW) is None
 
     mine = notice_board.send("내 공지", until, now=NOW, expected="")
     assert notice_board.current(NOW) == mine
     assert notice_board.send("갈음", until, now=NOW, expected=mine.id).text == "갈음"
+
+
+def test_a_notice_that_ended_while_the_popup_was_open_is_told_as_ended() -> None:
+    """팝업을 연 사이 서 있던 공지가 끝 시각으로 걷힘 — 남이 바꾼 것이 아니라 없어진 것이다
+    (`ended` 참). 보내지 않는 판정은 그대로다(6-33 「바뀜 대조」)."""
+    short = notice_board.send("곧 끝나는 공지", NOW + timedelta(minutes=5), now=NOW)
+    later = NOW + timedelta(minutes=6)
+
+    with pytest.raises(notice_board.NoticeChanged) as ended:
+        notice_board.send("새 공지", later + timedelta(hours=1), now=later, expected=short.id)
+
+    assert ended.value.ended is True
+    assert notice_board.current(later) is None
 
 
 def test_withdraw_only_takes_the_notice_it_names() -> None:
@@ -187,6 +202,32 @@ def test_the_payload_carries_the_mark_revision_view_and_an_active_pageless_note(
     assert note["short"].startswith("공지 · 오늘 18:20 서버 점검 ")
     assert len(note["short"]) == alerts.SHORT_LIMIT and note["short"].endswith("…")
     assert note["full"] == f"{sent.text}\n관리자 · 17:33 보냄 · 18:20 까지"
+
+
+def test_an_end_on_the_next_day_carries_its_date_everywhere_it_is_read() -> None:
+    """끝 시각이 보낸 날(KST)의 다음 날이면 끝 글에 날짜를 싣는다 — 받는 사람이 다음 날 읽으면
+    「22:00 까지」 가 이미 끝난 공지처럼 읽힌다. 판 끝 줄(`view` 의 until) · 알림 전문 · Admin 카드
+    값 줄이 같은 글(`until_text`)이고 「내일」 이 아니라 날짜다. 같은 날이면 시각만이다."""
+    late = datetime(2026, 11, 17, 23, 0, tzinfo=KST)
+    until = datetime(2026, 11, 18, 22, 0, tzinfo=KST)
+    sent = notice_board.send("밤샘 점검", until, now=late)
+
+    assert notice_board.until_text(sent) == "11-18 22:00"
+    assert notice_board.stamp_line(sent) == "관리자 · 23:00 보냄 · 11-18 22:00 까지"
+    payload = notice_board.payload(late)
+    assert payload["notice"] is not None and payload["notice"]["until"] == "11-18 22:00"
+    assert payload["note"]["full"] == "밤샘 점검\n관리자 · 23:00 보냄 · 11-18 22:00 까지"
+
+    notice_board.reset()
+    utc_sent = notice_board.send(
+        "UTC 서버 시계",
+        datetime(2026, 11, 17, 15, 30, tzinfo=timezone.utc),
+        now=datetime(2026, 11, 17, 14, 50, tzinfo=timezone.utc),
+    )
+    assert notice_board.until_text(utc_sent) == "11-18 00:30", "날은 KST 로 가른다"
+    notice_board.reset()
+    same_day = notice_board.send("오늘 안", datetime(2026, 11, 17, 23, 50, tzinfo=KST), now=late)
+    assert notice_board.until_text(same_day) == "23:50"
 
 
 def test_the_payload_note_is_the_registry_state_note_without_a_page() -> None:

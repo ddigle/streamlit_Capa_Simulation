@@ -9,15 +9,23 @@
 
 **탭 안 차례.** 서 있는 공지 카드(글 · 값 줄 `관리자 · 17:40 보냄 · 18:20 까지` · 「거두기」 — 서
 있을 때만) → 글 상자(라벨 접음 · 자리표 「공지 글」 · 300자) → 끝 시각(시각만 · 10분 걸음 — 기본은
-지금 + 1시간을 10분 단위로 올림, 세션에 한 번 심는다) · 「보내기」. 화면에 설명 문장을 두지 않는다
-(설명은 Guide 「공지」).
+지금 + 1시간을 10분 단위로 올림) · 「보내기」. 화면에 설명 문장을 두지 않는다(설명은 Guide
+「공지」).
+
+**끝 시각 기본값.** 탭을 그릴 때 끝 시각 칸이 없으면(Admin Area 를 처음 열 때 · 다른 화면에 다녀와
+위젯 값이 걷힌 뒤) 기본값을 심고, 심은 순간의 끝(날짜까지)을 따로 적어 둔다(`SEEDED_KEY`). 사람이
+손대지 않은 기본값이 지나면(Admin Area 에 오래 머묾) 그리기 앞과 「보내기」 콜백에서 새 기본값으로
+간다 — 그대로 두면 지난 시각이라 「내일 그 시각」(거의 하루짜리 공지)이 된다. 사람이 고른 시각은
+지났어도 그대로 「내일 그 시각」 이다(확인 팝업 값 줄이 「내일」 을 단다).
 
 **보내기.** 「보내기」 콜백이 글 · 끝 시각을 보고(빈 글 · 300자 넘음은 단추 아래 거부 한 줄 — 고칠
 입력이 그 자리에 있다) 팝업을 연 순간의 값(글 · 끝 · 그때 서 있던 공지 id)을 세션에 쥐고 확인 팝업
 「공지 보내기」 를 연다 — 값 한 줄 `끝 18:20`(다음 날이면 `끝 내일 18:20`) · 서 있었으면 ` · 서 있는
 공지 바뀜`, 「보내기」(primary · 확성기) · 「취소」. 팝업의 「보내기」 는 쥔 값을 그대로 보낸다(다시
-계산하지 않는다). 팝업이 열린 사이 남이 보냄 · 거둠 · 끝 시각으로 서 있는 공지가 바뀌었으면 보내지
-않고 팝업을 닫아 바뀐 카드를 다시 보인다(`notice_board.NoticeChanged` — 대조는 저장 잠금 안). 결과는
+계산하지 않는다). 팝업이 열린 사이 서 있는 공지가 바뀌었으면(갈음 · 거둠 · 끝 시각으로 걷힘) 보내지
+않고 팝업을 닫아 바뀐 카드를 다시 보인다(`notice_board.NoticeChanged` — 대조는 저장 잠금 안). 알림
+글은 까닭 둘(서 있던 공지가 없어짐 · 다른 공지가 섬)로 가르고 누가 했는지 지목하지 않는다 — 같은
+관리자의 다른 탭 · 끝 시각일 수도 있다. 결과는
 알림창이다(`queue_flash` — 성공은 알림창으로만, 막힘 · 바뀜도 그 자리에 고칠 입력이 없어 알림창 ·
 Alarm 만). 같은 내용의 두 번 누름은 한 번이다(저장이 같은 공지를 돌려주고, 같은 세션의 겹친 누름은
 `write_guard.save_once`).
@@ -50,6 +58,8 @@ FLASH_KEY: Final = "notice_admin_flash"
 CARD_KEY: Final = "notice_admin_card"
 TEXT_KEY: Final = "notice_admin_text"
 UNTIL_KEY: Final = "notice_admin_until"
+# 끝 시각 칸에 심은 기본값의 끝(KST ISO — 날짜까지). 위젯 키가 아니라 화면을 떠나도 남는다.
+SEEDED_KEY: Final = "notice_admin_until_seeded"
 SEND_KEY: Final = "notice_admin_send"
 WITHDRAW_KEY: Final = "notice_admin_withdraw"
 CONFIRM_KEY: Final = "notice_admin_confirm"
@@ -76,7 +86,8 @@ NEXT_DAY_WORD: Final = "내일 "
 SENT_MESSAGE: Final = "공지 보냄 · {until} 까지"
 WITHDRAWN_MESSAGE: Final = "공지 거둠"
 NOT_ADMIN_MESSAGE: Final = "관리자만 공지를 보내고 거둘 수 있습니다"
-CHANGED_MESSAGE: Final = "다른 관리자가 공지를 바꿨습니다 — 서 있는 공지를 보고 다시 보내세요"
+CHANGED_MESSAGE: Final = "서 있는 공지가 바뀌었습니다 — 서 있는 공지를 보고 다시 보내세요"
+ENDED_MESSAGE: Final = "서 있던 공지가 끝났거나 거둬졌습니다 — 다시 보내세요"
 GONE_MESSAGE: Final = "서 있는 공지가 바뀌어 거두지 않았습니다"
 
 AUDIT_SEND: Final = "admin_notice_send"
@@ -113,6 +124,29 @@ def _pending() -> Pending | None:
     return Pending(text=text, until=until, expected=expected)
 
 
+def _seed_until(moment: datetime) -> time:
+    """끝 시각 칸에 기본값을 심고 그 끝(날짜까지)을 적어 둔다 — 위젯이 서기 전 · 콜백에서만
+    부른다."""
+    target = notice_board.default_until(moment)
+    st.session_state[UNTIL_KEY] = target.time()
+    st.session_state[SEEDED_KEY] = target.isoformat()
+    return target.time()
+
+
+def stale_seed(chosen: object, seeded: object, moment: datetime) -> bool:
+    """끝 시각 칸이 손대지 않은 기본값 그대로이고 그 기본값이 지났나 — 그러면 새 기본값으로 간다.
+    사람이 고른 값(심은 시각과 다름)은 지났어도 거짓이다."""
+    if not isinstance(chosen, time) or not isinstance(seeded, str):
+        return False
+    try:
+        target = datetime.fromisoformat(seeded)
+    except ValueError:
+        return False
+    if target.utcoffset() is None:
+        return False
+    return chosen == target.time() and target <= moment
+
+
 def _close_confirm() -> None:
     """팝업을 닫는다(닫기 ✕ · 취소 · 보낸 뒤) — 쥔 값도 버린다."""
     st.session_state.pop(PENDING_KEY, None)
@@ -127,8 +161,9 @@ def _open_confirm() -> None:
     moment = notice_board.now_kst()
     raw = st.session_state.get(TEXT_KEY)
     chosen = st.session_state.get(UNTIL_KEY)
-    clock = chosen if isinstance(chosen, time) else notice_board.default_until(moment).time()
-    until = notice_board.until_from_time(clock, moment)
+    if not isinstance(chosen, time) or stale_seed(chosen, st.session_state.get(SEEDED_KEY), moment):
+        chosen = _seed_until(moment)
+    until = notice_board.until_from_time(chosen, moment)
     try:
         text = notice_board.check(raw if isinstance(raw, str) else "", until, now=moment)
     except notice_board.NoticeInvalid as exc:
@@ -159,9 +194,10 @@ def submit_notice(pending: Pending) -> None:
     start = (pending["text"], pending["until"], pending["expected"])
     try:
         notice = write_guard.save_once(SEND_GUARD, start, attempt, wrote=lambda _: True)
-    except notice_board.NoticeChanged:
-        audit_recorder.record(AUDIT_SEND, out="fail", det={"result": "changed"})
-        queue_flash(FLASH_KEY, CHANGED_MESSAGE, kind="warning", popup_only=True)
+    except notice_board.NoticeChanged as exc:
+        result, message = ("ended", ENDED_MESSAGE) if exc.ended else ("changed", CHANGED_MESSAGE)
+        audit_recorder.record(AUDIT_SEND, out="fail", det={"result": result})
+        queue_flash(FLASH_KEY, message, kind="warning", popup_only=True)
         return
     except notice_board.NoticeInvalid as exc:
         audit_recorder.record(AUDIT_SEND, out="fail", det={"result": "invalid"})
@@ -174,7 +210,7 @@ def submit_notice(pending: Pending) -> None:
             det={"result": "sent", "until": notice.until.isoformat(timespec="minutes")},
         )
     st.session_state[CLEAR_KEY] = True
-    queue_flash(FLASH_KEY, SENT_MESSAGE.format(until=notice_board.clock_text(notice.until)))
+    queue_flash(FLASH_KEY, SENT_MESSAGE.format(until=notice_board.until_text(notice)))
 
 
 def withdraw_notice(notice_id: str) -> None:
@@ -239,13 +275,17 @@ def _render_standing(notice: notice_board.Notice) -> None:
 def render_notice_admin() -> None:
     """Admin Area 「공지」 탭 몸. 입력 탭이라 닫혀 있어도 늘 그린다(위젯 값 보존)."""
     moment = notice_board.now_kst()
-    # 보낸 뒤 첫 앱 전체 회차 — 위젯이 서기 전에 글 상자를 비우고 끝 시각을 새 기본값으로 둔다.
+    # 보낸 뒤 첫 앱 전체 회차 — 위젯이 서기 전에 글 상자를 비우고 끝 시각을 새 기본값으로 둔다. 칸이
+    # 없거나(처음 · 다녀온 뒤) 손대지 않은 기본값이 지났어도 새 기본값이다(모듈 설명 「끝 시각
+    # 기본값」).
     if st.session_state.get(CLEAR_KEY):
         st.session_state[CLEAR_KEY] = False
         st.session_state[TEXT_KEY] = ""
-        st.session_state[UNTIL_KEY] = notice_board.default_until(moment).time()
-    elif UNTIL_KEY not in st.session_state:
-        st.session_state[UNTIL_KEY] = notice_board.default_until(moment).time()
+        _seed_until(moment)
+    elif UNTIL_KEY not in st.session_state or stale_seed(
+        st.session_state.get(UNTIL_KEY), st.session_state.get(SEEDED_KEY), moment
+    ):
+        _seed_until(moment)
     render_flash(FLASH_KEY)
     standing = notice_board.current(moment)
     if standing is not None:

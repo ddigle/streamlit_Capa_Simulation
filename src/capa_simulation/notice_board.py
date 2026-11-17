@@ -44,6 +44,8 @@ DEFAULT_LEAD: Final = timedelta(hours=1)
 ROUND_MINUTES: Final = 10
 SENDER_LABEL: Final = "관리자"
 CLOCK_LAYOUT: Final = "%H:%M"
+# 끝 시각이 보낸 날의 다음 날이면 날짜도 싣는다 — 받는 사람은 다음 날 읽기도 해 「내일」 이 틀린다.
+DATED_CLOCK_LAYOUT: Final = "%m-%d %H:%M"
 
 EMPTY_MESSAGE: Final = "공지 글을 넣으세요"
 TOO_LONG_MESSAGE: Final = f"공지 글은 {TEXT_LIMIT}자까지입니다"
@@ -66,7 +68,13 @@ class Notice:
 
 
 class NoticeChanged(Exception):
-    """확인 팝업을 연 사이 서 있는 공지가 바뀌었다(남이 보냄 · 거둠 · 끝남) — 보내지 않는다."""
+    """확인 팝업을 연 사이 서 있는 공지가 바뀌었다 — 보내지 않는다. `ended` 는 그때 서 있던 공지가
+    없어졌는가(끝 시각으로 걷힘 · 거둠 — 같은 관리자의 다른 탭일 수도 있다)이고, 거짓이면 다른
+    공지가 섰다(갈음)."""
+
+    def __init__(self, *, ended: bool) -> None:
+        super().__init__("ended" if ended else "replaced")
+        self.ended = ended
 
 
 class NoticeInvalid(ValueError):
@@ -79,8 +87,9 @@ class NoticeInvalid(ValueError):
 
 
 class NoticeView(TypedDict):
-    """알림 칸 data · 물음 응답의 공지 칸 — 시각은 파이썬이 지은 KST 글이고 끝은 epoch ms 도 싣는다
-    (브라우저가 끝 시각에 칩을 걷는다 — 제 시각대로 글을 짓지 않는다)."""
+    """알림 칸 data · 물음 응답의 공지 칸 — 시각은 파이썬이 지은 KST 글(끝은 보낸 날과 다르면
+    날짜까지 — `until_text`)이고 끝은 epoch ms 도 싣는다(브라우저가 끝 시각 뒤에 칩을 걷는다 — 제
+    시각대로 글을 짓지 않는다)."""
 
     id: str
     text: str
@@ -179,8 +188,8 @@ def send(
 
     같은 글 · 같은 끝 시각의 공지가 이미 서 있으면 그 공지를 돌려주고 판을 올리지 않는다(두 번
     누름은 한 번). `expected` 는 확인 팝업을 열 때 본 서 있는 공지 id(없었으면 빈 글)다 — 지금 서
-    있는 것과 다르면 보내지 않고 `NoticeChanged`(남이 보냄 · 거둠, 끝 시각으로 걷힘 모두). None
-    이면 대조하지 않는다. 대조와 갈음은 한 잠금 안이다."""
+    있는 것과 다르면 보내지 않고 `NoticeChanged`(갈음 · 거둠 · 끝 시각으로 걷힘 — `ended` 가
+    가른다). None 이면 대조하지 않는다. 대조와 갈음은 한 잠금 안이다."""
     moment = _moment(now)
     cleaned = check(text, until, now=moment)
     end = _moment(until)
@@ -190,7 +199,7 @@ def send(
         if standing is not None and standing.text == cleaned and standing.until == end:
             return standing
         if expected is not None and expected != ("" if standing is None else standing.id):
-            raise NoticeChanged
+            raise NoticeChanged(ended=standing is None)
         notice = Notice(id=secrets.token_hex(4), text=cleaned, sent_at=moment, until=end)
         _BOARD.notice = notice
         _BOARD.revision += 1
@@ -236,12 +245,18 @@ def clock_text(moment: datetime) -> str:
     return kst_clock(moment, CLOCK_LAYOUT)
 
 
+def until_text(notice: Notice) -> str:
+    """끝 시각 글 — 보낸 날(KST)과 같은 날이면 `18:20`, 다음 날이면 `11-18 09:00`. 받는 쪽 판 ·
+    알림 전문 · Admin 카드 · 보냄 알림창이 같은 글을 쓴다(브라우저가 제 시각대로 짓지 않는다)."""
+    if notice.until.astimezone(KST).date() == notice.sent_at.astimezone(KST).date():
+        return clock_text(notice.until)
+    return kst_clock(notice.until, DATED_CLOCK_LAYOUT)
+
+
 def stamp_line(notice: Notice) -> str:
-    """`관리자 · 17:40 보냄 · 18:20 까지` — Admin 카드 값 줄과 알림 전문 끝 줄."""
-    return (
-        f"{notice.sender_label} · {clock_text(notice.sent_at)} 보냄 · "
-        f"{clock_text(notice.until)} 까지"
-    )
+    """`관리자 · 17:40 보냄 · 18:20 까지`(끝이 다음 날이면 `11-18 09:00 까지`) — Admin 카드 값 줄과
+    알림 전문 끝 줄."""
+    return f"{notice.sender_label} · {clock_text(notice.sent_at)} 보냄 · {until_text(notice)} 까지"
 
 
 def short_line(notice: Notice) -> str:
@@ -261,7 +276,7 @@ def view(notice: Notice) -> NoticeView:
         text=notice.text,
         sender=notice.sender_label,
         sent=clock_text(notice.sent_at),
-        until=clock_text(notice.until),
+        until=until_text(notice),
         until_ms=int(notice.until.timestamp() * 1000),
     )
 
