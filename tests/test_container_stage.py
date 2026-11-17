@@ -468,7 +468,7 @@ def test_the_home_guide_names_the_stage_headlines() -> None:
         container_stage.TITLE_REMOTE_EMPTY,
     ):
         assert f"`{title}`" in section, title
-    assert "DB 동기화" in section and "켜는 날은 앱 관리자가 알립니다" in section
+    assert "DB 동기화" in section and "켜는 날은 앱 관리자(개발자)가 알립니다" in section
 
 
 # --------------------------------------------------------------------------- 꼴 · 보기
