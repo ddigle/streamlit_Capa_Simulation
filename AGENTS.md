@@ -391,7 +391,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
   `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py`, 운영 서버의 공지 물음 경로(`GET /capa/notice` — 공개 목록 밖이라 켜짐이면
-  문지기가 쿠키를 보고, 꺼짐은 처리기가 그대로 냄 · 켜짐인데 문지기 없음 · 막힘은 503, 메모리 읽기만 · `no-store` JSON — `notice_board.payload` 그대로)는
+  문지기가 쿠키를 보고 신원이 없으면 탐색으로 보지 않고 늘 401(앞단이 Sec-Fetch-* 를 떼도 로그인 시작을 내지 않음), 꺼짐은 처리기가 그대로 냄 ·
+  켜짐인데 문지기 없음 · 막힘은 503, 메모리 읽기만 · `no-store` JSON — `notice_board.payload` 그대로)는
   `auth/notice_poll.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
@@ -1121,7 +1122,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자
   회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
-  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
   맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
   여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
@@ -1932,15 +1933,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
 - `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
   공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「관리자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
-  「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 기본값 `notice_board.default_until` 을 세션에 한 번 심는다) · 「보내기」.
+  「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 칸이 없을 때(Admin Area 를 처음 열 때 · 다른 화면에 다녀와 위젯 값이 걷힌 뒤)
+  기본값 `notice_board.default_until` 을 심고 그 끝(날짜까지)을 `SEEDED_KEY` 에 적는다. 손대지 않은 기본값이 지나면 그리기 앞 · 「보내기」
+  콜백에서 새 기본값으로 간다(`stale_seed` — 그대로면 「내일 그 시각」, 사람이 고른 시각은 그대로) · 「보내기」.
   「보내기」 콜백이 Admin Area 잠금 판정(`sso_identity.admin_area_locked`)을 다시 보고 글 · 끝을 검사해(빈 글 · 300자 넘음은 단추 아래 거부
   한 줄 — `write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py` BESIDE) 연 순간의 값(글 · 끝 ISO · 그때 서 있던 공지
   id — `PENDING_KEY`)을 쥐고 확인 팝업 「공지 보내기」(`admin_dialog` 한 칸의 값 `notice_send`)를 연다 — 값 한 줄 `confirm_line`(`끝 18:20` ·
   다음 날이면 `끝 내일 09:00` · 서 있었으면 ` · 서 있는 공지 바뀜`, `st.caption`) · 「보내기」(primary · `:material/campaign:`) · 「취소」.
   팝업의 「보내기」(`submit_notice`)는 다시 판정한 뒤 쥔 값 그대로 `notice_board.send(…, expected=…)` 한 번(`write_guard.save_once`) —
-  팝업이 열린 사이 남이 바꿨으면(`NoticeChanged` — 끝 시각으로 걷힘 포함) 보내지 않고 팝업을 닫아 바뀐 카드를 다시 보인다(글 상자는 그대로).
-  결과는 모두 `queue_flash`(성공 「공지 보냄 · 18:20 까지」 · 「공지 거둠」 은 알림창으로만, 막힘 · 바뀜은 `popup_only`) — 보낸 뒤 다음 앱 전체
-  회차가 글 상자 · 끝 시각을 비운다(`CLEAR_KEY` — 팝업 회차에서 바깥 위젯 칸을 건드리지 않는다). 「거두기」 콜백(`withdraw_notice`)도
+  팝업이 열린 사이 서 있는 공지가 바뀌었으면(`NoticeChanged` — 갈음 · 거둠 · 끝 시각으로 걷힘) 보내지 않고 팝업을 닫아 바뀐 카드를 다시
+  보인다(글 상자는 그대로). 알림 글 · 감사 결과는 까닭 둘(`ended` — 「서 있던 공지가 끝났거나 거둬졌습니다」 · `result=ended` / 갈음 —
+  「서 있는 공지가 바뀌었습니다」 · `result=changed`)이고 사람을 지목하지 않는다.
+  결과는 모두 `queue_flash`(성공 「공지 보냄 · 18:20 까지」(끝이 다음 날이면 「11-18 09:00 까지」) · 「공지 거둠」 은 알림창으로만, 막힘 ·
+  바뀜은 `popup_only`) — 보낸 뒤 다음 앱 전체 회차가 글 상자 · 끝 시각을 비운다(`CLEAR_KEY` — 팝업 회차에서 바깥 위젯 칸을 건드리지 않는다). 「거두기」 콜백(`withdraw_notice`)도
   다시 판정하고 그린 회차의 공지가 아직 서 있을 때만 걷는다(확인 없음). 감사 사건 `admin_notice_send`(결과 · 끝 시각) ·
   `admin_notice_withdraw`(결과) — 대상은 공지 id(`tgt`), 글은 어느 칸에도 없다(감사 불변조건). 시험 `tests/test_notice_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
@@ -2854,8 +2859,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/notice_board.py` — 관리자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
   재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「관리자」) · `current` · `revision`
   (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`) ·
-  `withdraw`(그 id 일 때만) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
-  `until_from_time`(지난 시각이면 내일) · `payload`(프로세스 표지 `PROCESS_MARK` · 판 · 공지 칸 `NoticeView`(KST 시각 글 · 끝 epoch ms) ·
+  `withdraw`(그 id 일 때만 — `NoticeChanged.ended` 는 서 있던 공지가 없어졌는가) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
+  `until_from_time`(지난 시각이면 내일) · `until_text`(끝 글 — 보낸 날의 다음 날이면 `11-18 09:00`, 판 · 전문 · 카드 · 보냄 알림창이 같은 글) ·
+  `payload`(프로세스 표지 `PROCESS_MARK` · 판 · 공지 칸 `NoticeView`(KST 시각 글 · 끝 epoch ms) ·
   상태 표지 `GL-09` — `alerts.state_note(…, pageless=True)` 그대로, 없어도 active 거짓) · `reset`(시험 — `conftest._without_notice`). 끝 시각은
   읽을 때 본다(배경 스레드 · `st.cache_resource` 없음). Streamlit 을 읽지 않고 등록부(`alerts`)는 `payload` 가 부를 때 들인다 — 문지기 쪽
   물음 처리기가 부를 자리다. UI 없음. 시험 `tests/test_notice_board.py`.
@@ -3404,10 +3410,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
     같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
     그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
-  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(공정 칩 · 합성 샘플 · 「정본 아님」 · 변경 칩 · Guide · Alarm · Print · 테마 —
-    2026-11-03, 2026-11-09 보드 C1 (라) · T8 로 맨 앞 둘을 더함, 2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) 로 합성 샘플
-    다음에 「정본 아님」. 공정 칩 `PROCESS_CHIP_ID` · 합성 샘플 `SAMPLE_MARK_ID` · 「정본 아님」 `CANON_MARK_ID` · 변경 칩
-    `CHANGES_CHIP_ID` · Alarm `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
+  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(공정 칩 · 합성 샘플 · 「정본 아님」 · 변경 칩 · 「공지」 칩 · Guide · Alarm · Print ·
+    테마 — 2026-11-03, 2026-11-09 보드 C1 (라) · T8 로 맨 앞 둘을 더함, 2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) 로 합성
+    샘플 다음에 「정본 아님」, 2026-11-17 공지 보드 답 q-look 으로 Guide 바로 왼쪽에 「공지」 칩. 공정 칩 `PROCESS_CHIP_ID` ·
+    합성 샘플 `SAMPLE_MARK_ID` · 「정본 아님」 `CANON_MARK_ID` · 변경 칩 `CHANGES_CHIP_ID` · 「공지」 칩 `NOTICE_CHIP_ID` · Alarm
+    `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS` — 바뀐 것이 있을 때만
     서면 `TOOLBAR_OPTIONAL` 에도)에 넣는다. 머리 띠 두 줄 · 진행 막대 자리의 오른쪽 비움은 알림 칸 JS 가 잰 툴바 실제
@@ -7808,18 +7815,24 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   짧은 글 `공지 · <글>`, 전문 글 + 「관리자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
   새 공지는 「내용 바뀜」, 거둠 · 끝남 · 재시작 뒤는 「해소」 다(지문 재료는 공지 id, 범위는 늘 같은 값). ② 머리 「공지」 칩(Guide 바로
   왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 좁은 창 규칙
-  없음 · 멈춤 화면은 감춤): 누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」 ·
-  닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
+  없음(설계 규칙 UI-ACC-02 예외) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 관리자 글을 싣지 않음):
+  누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」(보낸 날의 다음 날이면
+  「11-18 09:00 까지」) · 닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
   `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
   회차마다 같다). **이 상태 표지는 이벤트 칸 표지(`alerts.state`)로 내지 않는다** — JS 는 프래그먼트 회차 끝에도 문서의 표지를 다시
   훑는데 그 회차는 `app.py` 표지를 다시 그리지 않아, 물음 경로가 넣은 새 값을 옛 표지가 되돌린다(거둠 뒤 다시 열림 · 새 공지 뒤 닫힘).
   JS 입구 `window.__capaAlerts.notice(payload)` 는 운영 서버의 10초 물음(툴바 틱 스크립트 `sso_reconnect` 의 `_NOTICE_POLL` → `GET /capa/notice`
   — 문지기가 있는 서버만, 첫 401 에서 멈춤 · 3장 그 항목)이 부르고 data 와 같은 꼴 · 같은
-  함수(`applyNotice`)로 받는다 — 프로세스 표지가 같으면 판이 오른 것만(`noticeNewer` — 엇갈려 닿은 옛 값을 버림), 다르면(재시작) 늘.
-  입장 화면 · Summary 덮개(`#capa-intro-host`)가 덮는 동안에는 공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버림 — 줄 · 칩은
-  바로 선다), 끝 시각이 되면 그 문서가 칩을 걷고 줄을 해소한다(물음 없는 개발 · WebIDE 도 다음 회차를 기다리지 않음). 시험
-  `tests/test_notice_board.py` · `tests/test_notice_admin.py` · `tests/test_alert_center.py`(회차의 공지 칸) · `tests/test_alert_center_assets.py`
-  (`noticeNewer` · 입구 · 판).
+  함수(`applyNotice`)로 받는다 — 프로세스 표지가 같으면 판이 오른 것만(`noticeNewer` — 엇갈려 닿은 옛 값을 버림), data 는 표지가 다르면
+  (재시작) 늘, 물음 응답은 data 가 받은 표지와 같을 때만(재시작 뒤 새 표지는 다시 붙은 회차의 data 가 먼저 싣는다 — 서버가 둘 이상이면
+  탭은 제 연결이 붙은 서버의 공지만 보고 칩 · 알림창이 번갈아 서지 않는다). 입장 화면 · Summary 덮개(`#capa-intro-host`)가 덮는 동안에는
+  공지 알림창만 미뤘다가 걷힌 뒤 띄우고(그 사이 거둬졌으면 버림 — 줄 · 칩은 바로 선다), 끝 시각 1분 뒤(`NOTICE_END_GRACE_MS` — 끝은 서버
+  시계의 epoch ms 이고 타이머는 브라우저 시계라, 시계가 조금 빠른 PC 가 끝 전에 걷지 않게)에는 그 문서가 칩을 걷고 줄을 해소한다(물음 없는
+  개발 · WebIDE 도 다음 회차를 기다리지 않음 — 물음 있는 서버는 끝난 뒤 첫 물음의 판 오름이 먼저 닿는다). 칸이 갈리면(`retireCenter`) 공지
+  타이머 둘과 미룬 알림창을 걷는다. 서 있는 공지의 Alarm 줄(`hold`)은 탭 기록 12시간 보관에서 빼고 닫힌 뒤에는 닫힌 시각부터 센다
+  (`keptSince` — 공지는 길어도 24시간, 다른 줄은 그대로). 시험 `tests/test_notice_board.py` · `tests/test_notice_admin.py` ·
+  `tests/test_alert_center.py`(회차의 공지 칸) · `tests/test_alert_center_assets.py`(`noticeNewer` · 입구 · 판, 받는 쪽 함수를 가짜 칸 · 시계 ·
+  타이머 · 입장 화면 호스트로 도는 node 시험).
 
 ### 팝업과 콜백
 

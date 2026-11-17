@@ -3023,3 +3023,35 @@ def test_the_notice_name_answer_reverses_the_old_home_box_name_once() -> None:
         line for line in _chapter(document, 6).splitlines() if line.startswith("- names · ")
     )
     assert "HOME 상자 「공지」" in names, "6-9 names 줄은 그때 기록 그대로다"
+
+
+def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
+    """v1.35 — 「공지」 칩은 좁은 창에서도 글째(UI-ACC-02 예외 — 코드에 그 칩의 `@media` 가
+    없다)이고 풍선 · 읽기 이름도 짧은 글 표의 고정 글(UI-TXT-06 예외 — 관리자 글 없음)이며, Admin
+    끝 시각 칸(`st.time_input`)은 UI-INP-03 밖이다. 4장 지금 값에 「공지」 칩 줄이 있고(검수 전),
+    「정본 아님」 줄은 변경 칩 다음을 Guide 로 적지 않는다. 6-33 표는 끝 시각 기본값을 「세션에
+    한 번」 으로 적지 않는다(화면을 떠났다 오면 다시 심고, 손대지 않은 기본값이 지나면 새
+    기본값)."""
+    document = _text()
+    rules = {rule.id: rule for rule in _rules()}
+    narrow = " ".join(rules["UI-ACC-02"].fields["예외"])
+    assert "「공지」 칩도 좁은 창에서 Alarm 점으로 합치지 않고 글째 선다" in narrow
+    assert "Admin 「공지」 끝 시각" in " ".join(rules["UI-INP-03"].fields["예외"])
+    assert "칩 풍선 · 읽기 이름도 같은 표의 고정 글" in " ".join(rules["UI-TXT-06"].fields["예외"])
+
+    values = _chapter(document, 4).splitlines()
+    [chip] = [line for line in values if line.startswith("| 「공지」 칩 |")]
+    for phrase in ("`campaign` 13px", "좁은 창 규칙 없음", "Guide 바로 왼쪽", "검수 전"):
+        assert phrase in chip, phrase
+    [canon] = [line for line in values if line.startswith("| 「정본 아님」 표지 |")]
+    assert "변경 칩 · 「공지」 칩 · Guide 왼쪽" in canon
+    assert "이 표지와 「공지」 칩만 좁은 창 규칙이 없다" in canon
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-33. ") :]
+    table = record[record.index("구현이 좁게 정한 것(보드에 올리지 않음") :]
+    for row in ("| 끝 시각 글 |", "| 끝 시각 칸 |", "| 칩 풍선 · 좁은 창 |", "| 공지 줄 보관 |"):
+        assert row in table, row
+    assert "세션에 한 번" not in table
+    assert "다른 관리자가 공지를 바꿨습니다" not in record
+    assert "UI-ACC-02 「공지」 칩" in _chapter(document, 8)

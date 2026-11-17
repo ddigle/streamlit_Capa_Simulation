@@ -1740,6 +1740,10 @@ def test_the_notice_chip_panel_and_entry_share_one_path_without_a_python_rerun()
     assert "var(--ac-info)" in chip and "solid" in chip and "cursor: pointer" in chip
     assert "white-space: pre-wrap;" in _rule(".nbody")
     assert "min(22rem" in _rule(".panel.notices")
+    media = re.findall(r"@media[^{]*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}", CSS)
+    assert media and not any(re.search(r"\.notice\b(?!s)", block) for block in media), (
+        "「공지」 칩은 좁은 창 규칙이 없다(설계 규칙 UI-ACC-02 예외 · 4장)"
+    )
     for key in ("notice", "notice_title", "notice_head", "notice_until"):
         assert key in alert_center.TEXT
 
