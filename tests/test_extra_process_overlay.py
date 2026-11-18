@@ -318,6 +318,49 @@ def test_stripping_by_name_would_remove_the_bdq_rows_of_a_mixed_process(
     assert reqb["공정"].eq(bdq_name).sum() > 0
 
 
+@pytest.mark.parametrize("shifted_first", [False, True], ids=["Shift-덧붙임", "Shift-베이스"])
+def test_a_month_merge_with_a_year_shifted_source_keeps_the_shift_mark(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot], shifted_first: bool
+) -> None:
+    """연도 Shift 한 사본을 월 머지의 어느 쪽에 두어도(같은 판이라 출처 줄이 한 줄로 접힘) 「연도
+    Shift」 메모가 남아 「이 리비전 값을 새 판으로」 가 거절된다(설계 G4) — 접기가 첫 줄 메모만
+    남기면 덧붙일 쪽의 Shift 표지가 사라져 연도를 옮긴 행 값이 다음 판에 든다."""
+    from capa_simulation.components.scenario_transform import carried_extra_process
+    from capa_simulation.services.extra_process_revision import revision_refusal
+
+    repository, _, base = based
+    shifted = _derived(
+        repository,
+        base,
+        "연도 Shift",
+        provenance=carried_extra_process(repository, ((base, "연도 Shift +1년"),)),
+    )
+    first, second = (shifted, base) if shifted_first else (base, shifted)
+
+    carried = carried_extra_process(
+        repository, ((first, "월 머지 베이스"), (second, "월 머지 덧붙임 202701~202712"))
+    )
+    month_merged = _derived(repository, first, "월 머지", provenance=carried)
+    saved = repository.load_scenario_extra_process(month_merged.scenario.scenario_id)
+
+    assert {item.process_name for item in saved} == {BOND, AOI} and len(saved) == 2
+    assert all("연도 Shift +1년" in (item.note or "") for item in saved)
+    # 리비전의 판(sha)을 활성 판으로 준다 — 다른 판 갈래가 아니라 연도 Shift 갈래로 거절되는지 본다.
+    refusal = revision_refusal(
+        off=False, active_sha=saved[0].sha256, active_version_no=1, records=saved
+    )
+    assert refusal is not None and "연도 Shift" in refusal
+
+    plain = carried_extra_process(
+        repository, ((base, "월 머지 베이스"), (base, "월 머지 덧붙임 202701~202712"))
+    )
+    assert (
+        revision_refusal(off=False, active_sha=plain[0].sha256, active_version_no=1, records=plain)
+        is None
+    )
+    assert plain[0].note == "월 머지 베이스 / 월 머지 덧붙임 202701~202712"
+
+
 def test_the_overlay_screen_refuses_a_base_with_mixed_rows(
     based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
 ) -> None:

@@ -406,7 +406,8 @@ def carried_extra_process(
     """원본 시나리오들의 부대공정 출처 줄에 메모(「연도 Shift +1년」 · 「월 머지 베이스」)를 단
     사본 — 파생 저장이 새 데이터셋에 잇는다(설계 D18 · 4-9). 부대공정이 없으면 빈 묶음이다.
 
-    월 머지의 두 원본이 같은 (공정, 판 차례)를 가지면 한 줄로 접는다(출처 표의 키) — 결과가 다르면
+    월 머지의 두 원본이 같은 (공정, 판 차례)를 가지면 한 줄로 접고 메모는 두 줄 것을 「 / 」 로
+    잇는다(덧붙일 쪽의 「연도 Shift」 표지를 잃지 않게 — 설계 G4). 출처 표의 키다 — 결과가 다르면
     `extra_process_merge.fold_outcomes` 차례이고, 합침 · BDQ 에 생김이 함께면 그 이름의 행에 판 행과
     BDQ 행이 섞였다는 뺌 줄(`MIXED_REASON`)이다 — 얹기가 그 공정을 걷지 않고 바탕을 받지 않는다.
     이미 섞임 줄이 든 묶음은 다시 겹쳐도 섞임이다(두 번째 월 머지). `mixed` 는 결과 행의 달로 가른
@@ -430,16 +431,12 @@ def carried_extra_process(
             # 앞 월 머지가 이미 섞임으로 접은 줄 — 다시 겹쳐도 섞임이다(행은 여전히 섞여 있다).
             outcome, folded_mixed = OUTCOME_DROPPED, True
         kept = next((record for record in records if record.outcome == outcome), records[0])
+        # 메모는 섞임과 상관없이 접힌 줄 모두의 것을 잇는다 — 한 원본에만 있는 「연도 Shift」 메모가
+        # 사라지면 「새 판으로」 의 연도 Shift 거절(`revision_refusal`)이 서지 않는다.
+        notes = " / ".join(dict.fromkeys(record.note for record in records if record.note))
+        kept = replace(kept, note=notes or None)
         if folded_mixed:
-            notes = " / ".join(dict.fromkeys(record.note or "" for record in records))
-            kept = replace(
-                kept,
-                outcome=outcome,
-                rule=None,
-                reason=MIXED_REASON,
-                row_counts=None,
-                note=notes or None,
-            )
+            kept = replace(kept, outcome=outcome, rule=None, reason=MIXED_REASON, row_counts=None)
         folded.append(kept)
     return tuple(folded)
 
