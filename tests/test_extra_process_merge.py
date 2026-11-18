@@ -412,3 +412,23 @@ def test_the_preview_counts_reuse_one_full_period_outcome() -> None:
         process_rows_frame(result.tables, merged)
     )
     assert load_lines(result.tables, merged, outcome=outcome) == load_lines(result.tables, merged)
+
+
+def test_a_failed_merge_is_announced_as_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """합치지 못한 보고는 뺌 · BDQ 에 생김이 비어도 「모두 합침」 알리기가 아니라 경고 + 까닭."""
+    from capa_simulation.components import extra_process_notice
+    from capa_simulation.services.extra_process_merge import ExtraMergeReport
+
+    seen: list[tuple[str, object]] = []
+
+    def record(key: str, message: str, **options: object) -> None:
+        seen.append((message, options.get("kind")))
+
+    monkeypatch.setattr(extra_process_notice, "queue_flash", record)
+    report = ExtraMergeReport(version=ExtraPackVersion(1, 1, "0" * 64), failed="ValueError")
+
+    extra_process_notice.queue_extra_report("demo_extra_flash", report)
+
+    ((message, kind),) = seen
+    assert kind == "warning"
+    assert message.startswith("부대공정 합치지 못함") and "BDQ 만으로 등록" in message

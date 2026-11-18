@@ -72,5 +72,5 @@ class SessionSlot(Generic[T]):
 
     def _initial(self) -> T:
         if self.initial is None:
-            raise LookupError(f"세션 칸 {self.key} 은 처음 값이 없습니다 — peek 로 읽습니다")
+            raise LookupError(f"처음 값이 없는 세션 칸 — peek 로 읽습니다: {self.key}")
         return self.initial()

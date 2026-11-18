@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 from alert_marks import active_state, states
-from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops, shell_frame
+from edit_grid_fake import Calls, deliver_ops, install_fake_edit_grid, last, send_ops, shell_frame
 from streamlit.testing.v1 import AppTest
 from test_sso_access import assert_absent
 from test_sso_access_s3 import (
@@ -432,6 +432,30 @@ def test_a_row_another_developer_changed_meanwhile_is_not_overwritten(
     assert grade_store.grade_of(cfg, USER) == "manager"
     assert grade_store.grade_of(cfg, OTHER) == "manager"
     assert "등급 1명" in _flash_text(app)
+
+
+def test_a_change_made_while_the_screen_was_open_counts_from_what_was_shown(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """처음 값은 브라우저가 본 값이다 — 화면을 그린 뒤(USER 열람) 다른 개발자가 USER 를 관리자로
+    올리고 나서 고친 줄도, 고침을 받는 회차의 명단(관리자)이 아니라 그린 표(열람)와 견줘 그 사이
+    바뀐 줄로 막힌다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    # 진짜처럼 출납 콜백이 회차 맨 앞에서 돈다 — 고침을 받는 회차가 그 회차의 표를 그리기 전이다.
+    calls = install_fake_edit_grid(monkeypatch, early=True)
+    _as_person(cfg, ADMIN, monkeypatch)
+    app = AppTest.from_string(ADMIN_SCRIPT, default_timeout=30).run()
+    grade_store.change_grades(cfg, identity_of(cfg, ADMIN), {USER: "manager"})
+    before = requests_named(store, "PUT")
+
+    app = deliver_ops(app, calls, _write([USER], ["등급"], [["실무자"]]), host=HOST)
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == before
+    (error,) = [str(item.value) for item in app.error]
+    assert "그 사이 바뀐 줄 1개" in error
+    assert grade_store.grade_of(cfg, USER) == "manager"
 
 
 def test_own_and_environment_rows_are_locked_in_the_grid_and_on_the_server(

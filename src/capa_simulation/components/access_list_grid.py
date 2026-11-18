@@ -22,9 +22,10 @@
 - **초안은 세션 칸**(`CELLS_KEY` · `HISTORY_KEY`) — 출납 콜백은 inbox 에 쌓기만 하고(`collect`)
   본문 · 저장 콜백이 반영한다(`apply`). 저장은 `access_list_admin` 이 이 초안을
   `services/access_list_plan` 으로 읽어 지금 저장 함수로 쓴다.
-- **처음 값**(`ORIGINS` — 초안 곁 세션 칸) — 명단 사람 줄을 처음 고친 회차의 (등급, 등록 시각)을
-  적어 둔다. 저장 판은 지금 명단과 다르면 그 줄을 「그 사이 바뀐 줄」 로 세어 막고(다른 개발자의
-  먼저 쓰기 · 뺀 뒤 다시 든 사람), 「다시 읽기」 는 그 줄의 고침을 걷는다(`drop_stale`).
+- **처음 값**(`ORIGINS` — 초안 곁 세션 칸) — 명단 사람 줄을 처음 고칠 때 브라우저가 본 (등급, 등록
+  시각)(앞 회차에 그린 표 — `SHOWN`, 없으면 그 회차의 명단)을 적어 둔다. 저장 판은 지금 명단과
+  다르면 그 줄을 「그 사이 바뀐 줄」 로 세어 막고(다른 개발자의 먼저 쓰기 · 뺀 뒤 다시 든 사람),
+  「다시 읽기」 는 그 줄의 고침을 걷는다(`drop_stale`).
 - **표는 이 회차의 명단 한 벌로 짓는다**(작은 표라 캐시 경계를 두지 않는다 — 프로세스 전역 캐시에
   사람 값을 두지 않는다). `baseKey` 는 껍데기 본문의 지문이라 같은 명단 · 같은 줄 수면 회차마다 같은
   껍데기(해시 참조)다.
@@ -80,9 +81,12 @@ CHANGES_BUTTON: Final = "저장 전"
 CELLS_KEY: Final = "admin_area_access_grid_cells"
 HISTORY_KEY: Final = "admin_area_access_grid_history"
 ORIGINS_KEY: Final = "admin_area_access_grid_origins"
-# 초안(그리드 도우미가 키로도 읽는다)과 명단 사람 줄의 처음 (등급, 등록 시각).
+SHOWN_KEY: Final = "admin_area_access_grid_shown"
+# 초안(그리드 도우미가 키로도 읽는다), 명단 사람 줄의 처음 (등급, 등록 시각), 마지막으로 그린 표의
+# (등급, 등록 시각) — 처음 값은 브라우저가 본 값(앞 회차에 그린 표)에서 가져온다.
 CELLS: Final = SessionSlot(CELLS_KEY, dict)
 ORIGINS: Final = SessionSlot(ORIGINS_KEY, dict, dict)
+SHOWN: Final = SessionSlot(SHOWN_KEY, dict, dict)
 KEYS: Final = edit_grid.GridKeys(
     inbox="admin_area_access_grid_inbox",
     applied="admin_area_access_grid_applied",
@@ -282,10 +286,14 @@ def _draft_keys() -> set[str]:
 def _note_origins(table: AccessTable) -> None:
     touched = _draft_keys()
     before = ORIGINS.get()
+    shown = SHOWN.get()
     origins = {key: value for key, value in before.items() if key in touched}
     for key in touched:
         if key in table.listed and key not in origins:
-            origins[key] = (table.listed[key], table.added.get(key, ""))
+            seen = shown.get(key)
+            origins[key] = (
+                tuple(seen) if seen is not None else (table.listed[key], table.added.get(key, ""))
+            )
     if origins:
         ORIGINS.set(origins)
     else:
@@ -362,6 +370,8 @@ def _shell(table: AccessTable | None) -> dict[str, object]:
 def render(table: AccessTable | None, *, page_style: str = "") -> None:
     """그리드 자리 — 늘 같은 자리에서 부른다(명단을 못 읽은 회차는 표 없는 껍데기로 마운트만
     남긴다)."""
+    if table is not None:
+        SHOWN.set({key: (table.listed[key], table.added.get(key, "")) for key in table.listed})
     feed = edit_grid.feed_data(
         HOST,
         table.slot if table is not None else None,

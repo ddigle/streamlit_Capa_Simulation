@@ -257,6 +257,29 @@ def test_a_month_merge_of_merged_and_graduated_sources_is_not_stripped(
     assert extras.stripped == (AOI,) and extras.mixed == (BOND,)
 
 
+def test_a_second_month_merge_keeps_the_mixed_mark(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
+) -> None:
+    """섞임으로 접은 월 머지 결과를 판으로 합친 원본과 다시 월 머지해도(같은 판 차례로 겹침) 섞임은
+    합침으로 접히지 않는다 — 그 이름의 행은 여전히 섞여 있다."""
+    from capa_simulation.components.scenario_transform import carried_extra_process
+
+    repository, _, merged_source = based
+    bdq_source = _derived(repository, merged_source, "BDQ 원본", graduated=(BOND,))
+    carried = carried_extra_process(
+        repository, ((merged_source, "월 머지 베이스"), (bdq_source, "월 머지 덧붙임"))
+    )
+    month_merged = _derived(repository, merged_source, "월 머지", provenance=carried)
+
+    again = carried_extra_process(
+        repository, ((month_merged, "월 머지 베이스"), (merged_source, "월 머지 덧붙임"))
+    )
+
+    bond = [item for item in again if item.process_name == BOND]
+    assert [(item.outcome, item.reason) for item in bond] == [(OUTCOME_DROPPED, MIXED_REASON)]
+    assert split_previous(again).mixed == (BOND,)
+
+
 def test_merged_and_graduated_rows_of_different_versions_are_mixed_too() -> None:
     """판 차례가 달라 두 줄이 다 남은 출처(판 v1 합침 · 판 v2 BDQ 에 생김)도 섞임이다. 합침 · 뺌만
     있는 공정은 걷는다(뺀 원본에는 그 행이 없다)."""

@@ -46,6 +46,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.services.extra_process_merge import (
     MIXED_REASON,
+    OUTCOME_DROPPED,
     ExtraMergeReport,
     fold_outcomes,
 )
@@ -404,7 +405,8 @@ def carried_extra_process(
 
     월 머지의 두 원본이 같은 (공정, 판 차례)를 가지면 한 줄로 접는다(출처 표의 키) — 결과가 다르면
     `extra_process_merge.fold_outcomes` 차례이고, 합침 · BDQ 에 생김이 함께면 그 이름의 행에 판 행과
-    BDQ 행이 섞였다는 뺌 줄(`MIXED_REASON`)이다 — 얹기가 그 공정을 걷지 않고 바탕을 받지 않는다."""
+    BDQ 행이 섞였다는 뺌 줄(`MIXED_REASON`)이다 — 얹기가 그 공정을 걷지 않고 바탕을 받지 않는다.
+    이미 섞임 줄이 든 묶음은 다시 겹쳐도 섞임이다(두 번째 월 머지)."""
     carried: list[ExtraProcessProvenance] = []
     for snapshot, note in sources:
         for record in repository.load_scenario_extra_process(snapshot.scenario.scenario_id):
@@ -416,6 +418,9 @@ def carried_extra_process(
     folded: list[ExtraProcessProvenance] = []
     for records in groups.values():
         outcome, mixed = fold_outcomes([record.outcome for record in records])
+        if any(record.reason == MIXED_REASON for record in records):
+            # 앞 월 머지가 이미 섞임으로 접은 줄 — 다시 겹쳐도 섞임이다(행은 여전히 섞여 있다).
+            outcome, mixed = OUTCOME_DROPPED, True
         kept = next((record for record in records if record.outcome == outcome), records[0])
         if mixed:
             notes = " / ".join(dict.fromkeys(record.note or "" for record in records))
