@@ -45,6 +45,7 @@ import streamlit as st
 from capa_simulation.design import tokens
 from capa_simulation.services.edit_grid import (
     DROPPED_TOAST,
+    LOCKED_TOAST,
     PASTE_CELL_LIMIT,
     DraftState,
     GridIndex,
@@ -286,6 +287,7 @@ def _base_texts(spec: GridSpec, *, changes_label: str, maximum: str) -> dict[str
         "cleared": "{n}칸 비움",
         "pasted": "{n}칸 붙여넣음",
         "pasteSkipped": "분류 칸 {n}칸은 건너뛰었습니다",
+        "lockedSkipped": LOCKED_TOAST,
         "pasteTiled": "고른 범위에 되풀이",
         "filled": "{n}칸 채움",
         "filledAll": "{n}칸에 같은 값을 넣음",

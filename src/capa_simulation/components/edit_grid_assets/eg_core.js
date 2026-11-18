@@ -440,6 +440,21 @@ function egLockWhy(S, r, c) {
   return S.lockAt ? S.lockAt(S, S.view.order[r], c - S.model.keyCount) : ''
 }
 
+// 보기 범위의 값 칸 가운데 줄 규칙(S.lockAt)이 잠근 칸 수 · 처음 만난 까닭 — 붙여넣기 · 비우기가 쓸 칸(`use(r, c)` — 없으면 모두)만
+// 센다. 서버도 그 칸을 건너뛰므로(LOCKED_TOAST) 상태 줄의 칸 수에서 빼고, 모두 잠겼으면 op 를 보내지 않는다.
+function egRuleLocks(S, rect, use) {
+  const m = S.model
+  const out = { n: 0, why: '' }
+  if (!S.lockAt) return out
+  for (let r = Math.max(rect.r0, 0); r <= Math.min(rect.r1, S.view.order.length - 1); r += 1) {
+    for (let c = Math.max(rect.c0, m.keyCount); c <= Math.min(rect.c1, m.colCount - 1); c += 1) {
+      const why = !use || use(r, c) ? S.lockAt(S, S.view.order[r], c - m.keyCount) : ''
+      if (why) Object.assign(out, { n: out.n + 1, why: out.why || why })
+    }
+  }
+  return out
+}
+
 // 보기 줄 r0..r1 의 업무 키(보기 차례).
 function rowKeys(S, r0, r1) {
   const keys = []
@@ -911,8 +926,11 @@ function egCoreKey(S, event) {
   if (key === 'Delete') {
     const range = S.range()
     const cols = colNames(S, range.c0, range.c1)
+    const rows = rowKeys(S, range.r0, range.r1)
+    const locks = egRuleLocks(S, range)
     if (!cols.length) setStatus(S, egText(S, 'locked', ''))
-    else queueOp(S, { op: 'clear', rows: rowKeys(S, range.r0, range.r1), cols })
+    else if (locks.n >= rows.length * cols.length) setStatus(S, locks.why)
+    else queueOp(S, { op: 'clear', rows, cols })
     return true
   }
   if (key === 'Backspace') {

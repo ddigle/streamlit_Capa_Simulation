@@ -373,7 +373,22 @@ function selOnCut(S, event) {
   setStatus(S, selText(S, 'cut', ''))
 }
 
-// Delete — 고른 범위 비우기(clear op 하나, 분류 칸은 빼고 값 칸만).
+// 줄 규칙이 잠가 건너뛴 칸 n 의 상태 줄 조각(없으면 빈 글 — 서버 알림 LOCKED_TOAST 와 같은 글).
+function selLockedNote(S, n) {
+  return n ? selText(S, 'lockedSkipped', '잠긴 칸 {n}칸은 건너뛰었습니다', n) : ''
+}
+
+// 붙일 판(r0·c0 부터 values — 되풀이면 덩어리 한 벌)이 값을 싣는 칸 가운데 줄 규칙이 잠근 칸(egRuleLocks).
+function selPasteLocks(S, plan) {
+  const vs = plan.values
+  return egRuleLocks(S, plan, (r, c) => {
+    const line = vs[(r - plan.r0) % vs.length] || []
+    const value = line[(c - plan.c0) % line.length]
+    return value !== null && value !== undefined
+  })
+}
+
+// Delete — 고른 범위 비우기(clear op 하나, 분류 칸은 빼고 값 칸만). 줄 규칙이 잠근 칸은 세지 않고, 모두 잠겼으면 보내지 않는다.
 function selClear(S) {
   const rect = S.range()
   const cols = colNames(S, rect.c0, rect.c1)
@@ -383,7 +398,13 @@ function selClear(S) {
     return
   }
   const keys = rowKeys(S, rect.r0, rect.r1)
-  if (queueOp(S, { op: 'clear', rows: keys, cols })) setStatus(S, selText(S, 'cleared', '{n}칸 비움', keys.length * cols.length))
+  const locks = egRuleLocks(S, rect)
+  const total = keys.length * cols.length
+  if (locks.n >= total) {
+    setStatus(S, locks.why)
+    return
+  }
+  if (queueOp(S, { op: 'clear', rows: keys, cols })) setStatus(S, [selText(S, 'cleared', '{n}칸 비움', total - locks.n), selLockedNote(S, locks.n)].filter(Boolean).join(' · '))
 }
 
 // 필터가 걸린 표인가 — 줄 수로 재지 않는다. 큰 표는 서버가 필터로 고른 줄만 실어 보기 줄 수가 실은 줄 수와 같다.
@@ -430,10 +451,15 @@ function selPaste(S, matrix) {
     setStatus(S, selText(S, 'pasteLimit', ''))
     return
   }
+  const locks = selPasteLocks(S, plan)
+  if (locks.n >= plan.cells) {
+    setStatus(S, locks.why)
+    return
+  }
   const op = { op: 'write', rows: rowKeys(S, plan.r0, plan.r1), cols: colNames(S, plan.c0, plan.c1), values: plan.values }
   if (!queueOp(S, op)) return
   setRange(S, { r: plan.span.r0, c: plan.span.c0 }, { r: plan.span.r1, c: plan.span.c1 })
-  const notes = [selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells)]
+  const notes = [selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells - locks.n), selLockedNote(S, locks.n)]
   if (plan.skipped) notes.push(selText(S, 'pasteSkipped', '분류 칸 {n}칸은 건너뛰었습니다', plan.skipped))
   if (plan.clipped) notes.push(selText(S, 'clipped', '', plan.clipped))
   setStatus(S, notes.filter(Boolean).join(' · '))

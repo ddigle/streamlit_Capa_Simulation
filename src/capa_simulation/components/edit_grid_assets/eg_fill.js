@@ -124,8 +124,9 @@ function fillByKey(rect, axis, keyCount) {
 
 const FILL_HANDLE_PX = 7
 
-function fillNotes(S, main, skipped, clipped, extra) {
-  const notes = [main]
+// locked = 줄 규칙이 잠가 건너뛴 칸(서버도 건너뛰고 알린다 — 토스트는 서버 몫).
+function fillNotes(S, main, skipped, clipped, extra, locked) {
+  const notes = [main, selLockedNote(S, locked)]
   if (extra) notes.push(extra)
   if (skipped) notes.push(selText(S, 'pasteSkipped', '분류 칸 {n}칸은 건너뛰었습니다', skipped))
   if (clipped) notes.push(selText(S, 'clipped', '표 끝을 넘은 {n}칸은 버렸습니다', clipped))
@@ -155,10 +156,16 @@ function fillPaste(S, matrix) {
     setStatus(S, selText(S, 'pasteLimit', ''))
     return true
   }
+  // 줄 규칙이 잠근 칸은 세지 않고, 넣을 칸이 모두 잠겼으면 보내지 않고 그 까닭(잠긴 칸 편집과 같은 글).
+  const locks = selPasteLocks(S, plan)
+  if (locks.n >= plan.cells) {
+    setStatus(S, locks.why)
+    return true
+  }
   const op = { op: 'write', rows: rowKeys(S, plan.r0, plan.r1), cols: colNames(S, plan.c0, plan.c1), values: plan.values }
   if (!queueOp(S, op)) return true
   if (!plan.tiled) setRange(S, { r: plan.span.r0, c: plan.span.c0 }, { r: plan.span.r1, c: plan.span.c1 })
-  fillNotes(S, selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells), plan.skipped, plan.clipped, plan.tiled ? selText(S, 'pasteTiled', '') : '')
+  fillNotes(S, selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells - locks.n), plan.skipped, plan.clipped, plan.tiled ? selText(S, 'pasteTiled', '') : '', locks.n)
   return true
 }
 
@@ -195,13 +202,18 @@ function fillSend(S, plan, select) {
     fillError(S, plan.error)
     return
   }
+  const locks = egRuleLocks(S, plan.span, (r, c) => plan.rows.includes(r) && plan.cols.includes(c))
+  if (locks.n >= plan.cells) {
+    setStatus(S, locks.why)
+    return
+  }
   const op = {
     op: 'fill', dir: plan.dir, rows: fillRowKeys(S, plan.rows), cols: fillColNames(S, plan.cols),
     src: { rows: fillRowKeys(S, plan.srcRows), cols: fillColNames(S, plan.srcCols) },
   }
   if (!queueOp(S, op)) return
   if (select) fillSelect(S, plan.span)
-  fillNotes(S, selText(S, 'filled', '{n}칸 채움', plan.cells), plan.skipped, 0, '')
+  fillNotes(S, selText(S, 'filled', '{n}칸 채움', plan.cells - locks.n), plan.skipped, 0, '', locks.n)
 }
 
 // 편집 중 Ctrl+Enter — 고른 범위 전체에 칸 편집기의 글(write 1×1 을 서버가 되풀이). 한 칸이고 글이 처음과 같으면 보내지 않는다.
@@ -217,8 +229,13 @@ function fillEnterAll(S) {
     return
   }
   const rows = rowKeys(S, rect.r0, rect.r1)
+  const locks = egRuleLocks(S, rect)
+  if (locks.n >= rows.length * cols.length) {
+    setStatus(S, locks.why)
+    return
+  }
   if (!queueOp(S, { op: 'write', rows, cols, values: [[text]] })) return
-  fillNotes(S, selText(S, 'filledAll', '{n}칸에 같은 값', rows.length * cols.length), rows.length * (rect.c1 - rect.c0 + 1 - cols.length), 0, '')
+  fillNotes(S, selText(S, 'filledAll', '{n}칸에 같은 값', rows.length * cols.length - locks.n), rows.length * (rect.c1 - rect.c0 + 1 - cols.length), 0, '', locks.n)
 }
 
 // ---------------------------------------------------------------- 손잡이·덮개

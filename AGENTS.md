@@ -2848,7 +2848,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     붙는다)과 줄 이름 칸(`label_column` — 상태 줄 · 변경 목록), 줄 규칙(`RowRules` · `LockKind` — 줄마다 잠긴 값 칸 · 까닭 · 지울 수
     없는 까닭 · 빈 새 줄)과 줄 지우기 · 되살리기 op(`row_ops` — `remove` · `restore`, 초안의 예약 칸 `ROW_REMOVED` = 1.0, 빈 새 줄의
     지우기는 그 줄 칸 비움, op 하나가 그 줄들 × 값 칸 + 표지 칸 한 단계). 잠긴 칸 · 지울 수 없는 줄은 op 반영이 건너뛰고 센다(토스트
-    `LOCKED_TOAST` · `LOCKED_ROWS_TOAST` — 브라우저도 막지만 서버가 다시 본다). 줄이 누구인지 말하는 잠긴 칸(`LockKind.anchor` —
+    `LOCKED_TOAST` · `LOCKED_ROWS_TOAST` — 브라우저도 막지만 서버가 다시 본다. 붙여넣기 · 비우기 · 채우기는 브라우저가 잠긴 칸을
+    미리 세어(`egRuleLocks`) 상태 줄 칸 수에서 빼고 같은 글(`lockedSkipped`)을 잇고, 모두 잠겼으면 op 를 보내지 않고 그 까닭을
+    상태 줄에 둔다). 줄이 누구인지 말하는 잠긴 칸(`LockKind.anchor` —
     접속 명단은 명단 사람 줄의 「계정」)에 쓰기(`write`)가 양식과 다른 값(앞뒤 공백 · 대소문자 무시)을 실으면 그 줄은 칸을 하나도
     쓰지 않고 센다(`ANCHOR_ROWS_TOAST` — 차례가 다른 목록을 붙여 다른 사람의 등급이 들어가지 않게. 브라우저는 덩어리를 그대로 보내고
     서버가 가른다. 채우기는 보지 않는다). 글 칸 양식 값은 `GridIndex.text_values`(행렬 자리는

@@ -255,3 +255,60 @@ def test_a_paste_longer_than_the_new_rows_is_refused_whole() -> None:
         "새 줄이 1줄 모자라 붙이지 않았습니다 — 나눠 붙이면 새 줄이 늘어납니다",
     ]
     assert result["fits"]["op"] == "write" and result["fits"]["rows"] == ["+1", "+2"]
+
+
+LOCKED_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const paste = (text) => fire(scroller, 'paste', { clipboardData: { getData: () => text } })
+  // 한 동작 뒤 쌓인 op 와 상태 줄 — 줄마다 op 를 비운다.
+  const after = (act) => {
+    S.box.ops.length = 0
+    q('.eg-note').textContent = ''
+    act()
+    const op = S.box.ops[S.box.ops.length - 1]
+    return [op ? op.op : null, q('.eg-note').textContent]
+  }
+  const pick = (r0, r1) => setRange(S, { r: r0, c: 3 }, { r: r1, c: 3 })
+  // 나 자신 줄(1) 등급 칸만 — 붙여넣기 · Delete · Ctrl+D 모두 보내지 않고 그 까닭.
+  R.onlyLocked = [
+    after(() => { pick(1, 1); paste('관리자') }),
+    after(() => { pick(1, 1); key(scroller, 'Delete') }),
+    after(() => { pick(0, 1); key(scroller, 'd', { ctrlKey: true, code: 'KeyD' }) }),
+  ]
+  // 열린 줄(0)과 잠긴 줄(1)을 함께 — 보내되 상태 줄은 건너뛴 칸을 뺀 수와 건너뛴 수.
+  R.mixed = [
+    after(() => { pick(0, 1); paste('관리자') }),
+    after(() => { pick(0, 0); paste('관리자\r\n열람\r\n') }),
+    after(() => { pick(0, 1); key(scroller, 'Delete') }),
+  ]
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_paste_delete_and_fill_skip_locked_rows_and_say_so() -> None:
+    """줄 규칙이 잠근 칸(나 자신 줄 등급 칸)에 붙여넣기 · Delete · Ctrl+D 를 하면 서버가 그 칸을
+    건너뛰는데 상태 줄은 「1칸 붙여넣음 / 1칸 비움」 이었다(2026-11-18 E2E — 토스트는 「잠긴 칸
+    1칸은 건너뛰었습니다」). 브라우저도 잠긴 칸을 미리 센다 — 모두 잠겼으면 op 를 보내지 않고
+    잠긴 칸 편집과 같은 까닭 한 줄, 섞였으면 보내고 건너뛴 칸을 뺀 수 · 건너뛴 수(서버 알림과
+    같은 글)."""
+    shell, index = _shell("k1")
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, LOCKED_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["onlyLocked"] == [[None, "나 자신"]] * 3
+    skipped = eg.LOCKED_TOAST.format(n=1)
+    assert result["mixed"] == [
+        ["write", f"1칸 붙여넣음 · {skipped} · 고른 범위에 되풀이"],
+        ["write", f"1칸 붙여넣음 · {skipped}"],
+        ["clear", f"1칸 비움 · {skipped}"],
+    ]
