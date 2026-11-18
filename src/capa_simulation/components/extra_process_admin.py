@@ -40,6 +40,7 @@ from capa_simulation.components import sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.state_alerts import tab_name
+from capa_simulation.components.table_toolbar import render_zip_download, toolbar_clearance
 from capa_simulation.extra_process_intake import (
     PackPreview,
     SourceFailure,
@@ -258,15 +259,12 @@ def _report_official_outcomes(repository: DuckDBScenarioRepository, tab: str) ->
 def _render_download(repository: DuckDBScenarioRepository, state: ExtraProcessState) -> None:
     latest = state.latest_content
     data, file_name = _template_bytes(repository, latest)
-    st.download_button(
-        DOWNLOAD_LABEL,
+    render_zip_download(
         data=data,
         file_name=file_name,
-        mime="application/zip",
         key=DOWNLOAD_BUTTON_KEY,
-        icon=":material/download:",
-        help=DOWNLOAD_HELP,
-        on_click="ignore",
+        label=DOWNLOAD_LABEL,
+        tooltip=DOWNLOAD_HELP,
     )
 
 
@@ -382,6 +380,7 @@ def _render_staged(
                 st.session_state.pop(PREVIEW_KEY, None)
                 st.rerun()
         if not reading.accepted or staged.judgement is None:
+            toolbar_clearance()
             st.dataframe(_problem_frame(staged), hide_index=True, width="stretch", placeholder="")
             return
         if not staged.judgement.applicable:

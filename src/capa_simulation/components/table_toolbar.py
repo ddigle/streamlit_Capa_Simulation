@@ -1,4 +1,4 @@
-# Purpose: 표 제목 줄, CSV·엑셀 내려받기 쌍·높이·파일 이름 토막, 표 도구 막대 띄움·자리를 짓는다.
+# Purpose: 표 제목 줄, CSV·엑셀·ZIP 내려받기·쌍·높이·파일 이름 토막, 도구 막대 띄움·자리를 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -37,6 +37,8 @@ from streamlit.delta_generator import DeltaGenerator
 CSV_MIME = "text/csv;charset=utf-8"
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+ZIP_MIME = "application/zip"
 
 DOWNLOAD_ICON = ":material/download:"
 
@@ -148,6 +150,28 @@ def render_xlsx_download(*, data: bytes, file_name: str, key: str, label: str) -
         mime=XLSX_MIME,
         icon=DOWNLOAD_ICON,
         key=key,
+        on_click="ignore",
+        width="content",
+    )
+
+
+def render_zip_download(
+    *, data: bytes, file_name: str, key: str, label: str, tooltip: str | None = None
+) -> None:
+    """ZIP 내려받기 단추 하나 — 엑셀 단추와 같은 꼴(아이콘 · `on_click="ignore"` · 내용 폭).
+
+    양식 묶음처럼 표 하나가 아닌 파일 여럿을 한 번에 줄 때 쓴다(Admin 「부대공정」 양식). 바이트는
+    부르는 쪽이 기억해 둔 것을 넘긴다 — 콜러블 지연 생성을 쓰지 않는 까닭은 `render_xlsx_download`
+    와 같다. `tooltip` 은 단추 풍선(`help`)이다.
+    """
+    st.download_button(
+        label,
+        data=data,
+        file_name=file_name,
+        mime=ZIP_MIME,
+        icon=DOWNLOAD_ICON,
+        key=key,
+        help=tooltip,
         on_click="ignore",
         width="content",
     )

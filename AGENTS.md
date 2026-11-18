@@ -4018,7 +4018,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
-- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄(엑셀 단추 `render_xlsx_download` —
+- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄(엑셀 단추 `render_xlsx_download` · ZIP 단추 `render_zip_download`(Admin 「부대공정」 양식 — 풍선 `tooltip`) —
   같은 꼴. 이웃이 글자 단추뿐인 줄은 `render_csv_download(text_link=True)` — 아이콘 없는 tertiary, 시나리오 관리 「점검」 묶음 줄), 표 곁 CSV · 「시트 엑셀」 한 쌍(`render_download_pair` — 「내려받기 ▾」 메뉴 하나(`st.popover`, key 는 부르는 쪽 ·
   `table_heading_row` 는 `download_menu_key(CSV key)`) 안에 CSV 단추 → 내용 폭 엑셀 칸, CSV 가 없으면 메뉴 없이 엑셀 칸만 —
   2026-11-10 답 Q2-7, 설비 마스터 「선택 ▾」 과 같은 꼴. 안의 단추는 `on_click="ignore"` 라 눌러도 메뉴가 열린 채 초점이 남고

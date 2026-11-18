@@ -117,6 +117,7 @@ PRESSABLE = frozenset(
         "render_download_pair",
         "render_sheet_download",
         "render_xlsx_download",
+        "render_zip_download",
         "segmented_control",
         "selectbox",
         "text_area",
