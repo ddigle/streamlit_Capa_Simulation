@@ -3220,6 +3220,17 @@ def test_the_unsaved_guard_requests_are_judged_in_6_35() -> None:
         "UI-NTF-09",
     ):
         assert phrase in manual, phrase
+    floor = lines["guard-floor"]
+    for phrase in (
+        "브라우저 확인 창",
+        "「변경을 버리고 열기」",
+        "새 꼴은 만들지 않았다",
+        "UI-STA-02 판정",
+        "UI-NTF-09 판정",
+        "답 밖 — 구현이 정함",
+    ):
+        assert phrase in floor, phrase
+    assert "tests/test_space_floor_state_page.py" in v138
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

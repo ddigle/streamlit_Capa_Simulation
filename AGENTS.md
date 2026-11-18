@@ -1433,7 +1433,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옛 화면의 동 머리 값(빠른 둘째 누름이 다시 실어 온 내 옛 변경)을 받지 않으며, 알림 칸은 담아 둔 알림이 없으면 그 거부를
     다시 그린다(2026-10-26 E2E 5회차 — 「끄고 저장」 두 번에 알림이 사라지고 다음 저장이 남의 저장을 덮었다,
     `tests/test_space_floor_state_page.py`). 토글이 꺼진 채 그려지는 회차는 남은 초안을
-    지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
+    지운다(층을 열면 토글 위젯 상태가 버려진다). 그래서 초안이 있는 동안 다른 층 열기는 먼저 묻는다(2026-11-19 사용자
+    요청 — 앱에 있던 꼴만): FAB 뷰어 · 편집기는 data `openConfirm`(`floor_open_confirm` — 초안이 있을 때만
+    `FLOOR_OPEN_CONFIRM`, 탭 줄 떠나기 확인과 같은 꼴의 브라우저 확인 창, epoch 밖)으로 블록 누름 · 선택 칸 [열기] 앞에
+    묻고 「확인」 을 `navigate` 의 `discard` 로 함께 보내며, 사이드바 `층 바로 가기` 는 팝오버 안 「변경을 버리고 열기」
+    체크(`FLOOR_OPEN_DISCARD_LABEL` — 「변경을 버리고 불러오기」 와 같은 꼴) 뒤에만 고른다. 서버 거름은
+    `floor_open_allowed`(`space_status._open_floor` 첫머리) — 묻지 않고 온 열기(확인 글이 닿기 전 누른 블록)는 초안을 두고
+    열지 않으며 층 목록 알림 칸에 경고 한 줄. 같은 화면 안의 뒤로가기 · 주소로 여는 층은 이 거름을 지나지 않는다. `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
     확인·테마 전환 표지다(`page_tabs.page_unsaved_marks`·`leave_notice` — Space 가 지금 화면일 때만) — `app.py` 가
     페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
   - **공식 설비 시나리오에서만 연다**(설비 시나리오 2단계 Q3 — 건물·층은 가정 시나리오가 없다, FAB 전체와 같은 까닭). 가정

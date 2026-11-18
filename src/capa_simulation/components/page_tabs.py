@@ -116,6 +116,9 @@ from capa_simulation.components.past_data_management import past_data_has_pendin
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
+from capa_simulation.components.space_floor_list import (
+    FLOOR_STATE_LEAVE_LABEL as FLOOR_STATE_LEAVE_LABEL,
+)
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.design import tokens
@@ -225,9 +228,9 @@ EDIT_HOST_KEYS: Final = (
 )
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
-# Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름 — 편집표 몫과 같은
-# 「제목 · 이름」 꼴이다.
-FLOOR_STATE_LEAVE_LABEL = f"{SPACE_STATUS.title} · 층 사용 편집"
+# Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름
+# (`FLOOR_STATE_LEAVE_LABEL`)은 편집표 몫과 같은 「제목 · 이름」 꼴이고, Space 의 층 열기 확인과 한
+# 글이라 `space_floor_list` 가 갖는다(여기서 다시 낸다).
 
 
 def tab_icon(spec: PageSpec) -> str:

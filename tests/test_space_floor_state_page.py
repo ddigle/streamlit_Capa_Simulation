@@ -38,6 +38,8 @@ from capa_simulation.components.space_floor_list import (
     DRAFT_KEY,
     EDIT_TOGGLE_KEY,
     EDITOR_KEY,
+    FLOOR_OPEN_CONFIRM,
+    FLOOR_OPEN_DISCARD_LABEL,
     FLOOR_TABLE_KEY,
     GENERATION_KEY,
     INACTIVE_TABLE_KEY,
@@ -51,6 +53,9 @@ from capa_simulation.services.fab_layout import FLOOR_KEYS
 
 PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
 JUMP_FAB_KEY = "space_status_floor_jump_fab"
+# 층 사용 편집 초안이 있는 동안 바로 가기를 여는 팝오버 안 확인 체크(`space_status` — 「변경을
+# 버리고 열기」).
+JUMP_FAB_DISCARD_KEY = f"{JUMP_FAB_KEY}_discard"
 
 
 @pytest.fixture(autouse=True)
@@ -562,13 +567,16 @@ def test_revert_brings_back_the_saved_states(tmp_path: Path) -> None:
 
 def test_opening_a_floor_while_editing_drops_the_draft(tmp_path: Path) -> None:
     """토글은 FAB 화면을 그리지 않는 회차에 위젯 상태가 버려진다 — 돌아오면 꺼져 있고 초안도 없다
-    (테마 전환 표지가 거짓 「저장 안 함」 을 말하지 않는다)."""
+    (테마 전환 표지가 거짓 「저장 안 함」 을 말하지 않는다). 바로 가기는 「변경을 버리고 열기」
+    체크 뒤다(2026-11-19)."""
     database = _database(tmp_path)
     app, tables = _start_editing(database)
     tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
     tables.run()
     assert app.session_state[DRAFT_KEY] == {"C2 2F": "UNUSED"}
 
+    app.checkbox(key=JUMP_FAB_DISCARD_KEY).check()
+    tables.run()
     app.selectbox(key=JUMP_FAB_KEY).set_value("C2 1F")
     tables.run()
     _ok(app)
@@ -1002,6 +1010,8 @@ def test_opening_a_floor_drops_the_draft_on_that_run_so_the_marker_is_down(tmp_p
     _ok(app)
     assert app.session_state["marker_before_page"] is True
 
+    app.checkbox(key=JUMP_FAB_DISCARD_KEY).check()
+    tables.run()
     app.selectbox(key=JUMP_FAB_KEY).set_value("C2 1F")
     tables.run()
     _ok(app)
@@ -1174,3 +1184,93 @@ def test_the_theme_marker_counts_only_a_live_changed_draft(
     app.session_state[BASE_KEY] = (0, ())
     app.run()
     assert app.session_state["pending_result"] is expected
+
+
+# ------------------------------------------------------------------ 편집 중 다른 층 열기(11-19)
+
+
+def _fab_data(calls: list[dict[str, Any]]) -> dict[str, Any]:
+    return [data for data in calls if data.get("scope") == "fab"][-1]
+
+
+def test_the_jump_asks_in_a_popover_only_while_a_floor_draft_is_pending(
+    tmp_path: Path, _stub_editor: list[dict[str, Any]]
+) -> None:
+    """층 사용 편집 초안이 있는 동안 사이드바 `층 바로 가기` 는 팝오버 안 「변경을 버리고 열기」
+    체크 뒤에만 고른다(같은 화면 「공식으로 바꾸기」 팝오버와 같은 꼴) — 체크 전에는 고르기 칸이
+    잠겨 초안이 그대로다. 잃을 것이 없으면(편집만 켬) 지금처럼 바로 고르는 칸이고 FAB 도면의 확인
+    글도 비었다(설계 규칙 UI-STA-02)."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    assert not app.selectbox(key=JUMP_FAB_KEY).disabled
+    assert not [box for box in app.checkbox if box.key == JUMP_FAB_DISCARD_KEY]
+    assert _fab_data(_stub_editor)["openConfirm"] == ""
+
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
+    tables.run()
+    _ok(app)
+    assert app.selectbox(key=JUMP_FAB_KEY).disabled
+    discard = app.checkbox(key=JUMP_FAB_DISCARD_KEY)
+    assert discard.label == FLOOR_OPEN_DISCARD_LABEL and not discard.value
+    assert _fab_data(_stub_editor)["openConfirm"] == FLOOR_OPEN_CONFIRM
+    assert "Space 현황 · 층 사용 편집" in FLOOR_OPEN_CONFIRM and "{target}" in FLOOR_OPEN_CONFIRM
+
+    discard.check()
+    tables.run()
+    _ok(app)
+    assert not app.selectbox(key=JUMP_FAB_KEY).disabled
+    assert app.session_state[DRAFT_KEY] == {"C2 2F": "UNUSED"}
+    clear_equipment_repository()
+
+
+def _navigating_stub(monkeypatch: pytest.MonkeyPatch, payloads: list[dict[str, Any]]) -> None:
+    """FAB 도면 대역 — 담아 둔 `navigate` 값이 있으면 블록을 누른 것처럼 콜백을 부른다(진짜
+    컴포넌트는 결과를 `st.session_state[key]` 에 싣는다)."""
+
+    def _stub(**kwargs: Any) -> SimpleNamespace:
+        import streamlit as st
+
+        if payloads and kwargs["data"].get("scope") == "fab":
+            payload = {"epoch": kwargs["data"]["epoch"], **payloads.pop(0)}
+            st.session_state[kwargs["key"]] = {"navigate": payload}
+            kwargs["on_navigate_change"]()
+        return SimpleNamespace(apply=None, navigate=None, pick=None, asOf=None)
+
+    monkeypatch.setattr(space_layout_editor, "_EDITOR", _stub)
+
+
+def test_a_block_press_that_was_not_asked_keeps_the_draft_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """확인 창 글이 브라우저에 닿기 전에 누른 블록(`discard` 없음)은 초안을 두고 층을 열지 않으며
+    층 목록 알림 칸에 한 줄 알린다 — 말없이 버리지 않는다. 확인 창에 「확인」 을 받은 누름
+    (`discard`)은 초안을 버리고 연다."""
+    payloads: list[dict[str, Any]] = []
+    _navigating_stub(monkeypatch, payloads)
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
+    tables.run()
+    _ok(app)
+
+    payloads.append({"target": "C2 1F"})
+    tables.run()
+    _ok(app)
+    # 거절 한 줄은 누른 회차의 층 목록 알림 칸에 선다(콜백이 그 칸보다 먼저 돈다).
+    warnings = [item.value for item in app.warning]
+    assert any("저장하지 않은 층 사용 편집이 있어" in text and "C2 1F" in text for text in warnings)
+    tables.run()
+    _ok(app)
+    assert "space_status_selected_floor" not in app.session_state
+    assert app.session_state[DRAFT_KEY] == {"C2 2F": "UNUSED"}
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+
+    payloads.append({"target": "C2 1F", "discard": True})
+    tables.run()
+    _ok(app)
+    tables.run()
+    _ok(app)
+    assert app.session_state["space_status_selected_floor"] == "1F"
+    assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
+    assert _version(database) == 0
+    clear_equipment_repository()

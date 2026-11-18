@@ -99,8 +99,12 @@ from capa_simulation.components.space_floor_layout import (
     space_layout_notices,
 )
 from capa_simulation.components.space_floor_list import (
+    FLOOR_OPEN_DISCARD_LABEL,
     FloorListColumn,
     discard_floor_state_draft,
+    floor_open_allowed,
+    floor_open_confirm,
+    floor_state_draft_pending,
     layer_columns,
     render_space_floor_list,
 )
@@ -329,6 +333,7 @@ from capa_simulation.services.space_unit_state import (
     drawn_in_range,
     unit_boundaries,
 )
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card, page_box_key
 
@@ -524,34 +529,41 @@ def _show_fab_overview() -> None:
         del st.query_params[FLOOR_PARAM]
 
 
-def _open_floor(key: FloorKey) -> None:
+def _open_floor(key: FloorKey, *, discard: bool = False) -> None:
     """그 층을 연다. 블록 누르기·층 바로 가기·층 목록 표가 모두 이것을 **콜백**에서 부른다 — 콜백은
     본문보다 먼저 돌아 재실행 한 번으로 층 상세가 서고, 본문에서 `st.rerun()` 할 때처럼 아직 안 그린
     위젯 상태가 버려지지 않는다. 주소에는 `floor` 인자만 적는다(다른 인자는 그대로).
 
-    층 목록의 `사용 편집` 초안은 여기서 버린다(「저장하지 않고 층을 열면 고친 것은 버려집니다」) —
-    토글이 위젯 상태로 남은 채 이 회차를 맞으면 페이지보다 먼저 도는 `app.py` 의 탭 점·떠나기
-    확인·테마 단추 확인이 이미 버린 초안을 한 회차 더 센다."""
+    층 목록의 `사용 편집` 초안이 있으면 버리겠다고 답한 열기(`discard` — 블록 누름의 브라우저 확인
+    창 · 바로 가기 팝오버의 「변경을 버리고 열기」 체크)만 연다(2026-11-19 사용자 요청 — 묻지 않고
+    온 열기는 초안을 두고 층 목록 알림 칸에 알린다, `floor_open_allowed`). 연 회차에는 초안을
+    여기서 버린다 — 토글이 위젯 상태로 남은 채 이 회차를 맞으면 페이지보다 먼저 도는 `app.py` 의 탭
+    점·떠나기 확인·테마 단추 확인이 이미 버린 초안을 한 회차 더 센다."""
+    if not floor_open_allowed(key, discard=discard):
+        return
     discard_floor_state_draft()
     st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = key
     if st.query_params.get(FLOOR_PARAM) != floor_param(key):
         st.query_params[FLOOR_PARAM] = floor_param(key)
 
 
-def _open_unless_inactive(inactive: frozenset[FloorKey], key: FloorKey) -> None:
+def _open_unless_inactive(inactive: frozenset[FloorKey], key: FloorKey, discard: bool) -> None:
     """FAB 도면 블록 누르기(뷰어·편집기 [열기])의 서버 쪽 거름 — 그린 회차의 비활성 층이면
     아무것도 하지 않는다. 브라우저도 비활성 블록을 열지 않지만 옛 브라우저·같은 epoch 안의 경합
-    대비 두 겹이다. 층 목록 표·층 바로 가기·주소는 이 거름을 지나지 않는다(비활성 층도 연다)."""
+    대비 두 겹이다. 층 목록 표·층 바로 가기·주소는 이 거름을 지나지 않는다(비활성 층도 연다).
+    `discard` 는 JS 가 층 열기 확인 창에 「확인」 을 받았는가다(`floor_open_confirm`)."""
     if key in inactive:
         return
-    _open_floor(key)
+    _open_floor(key, discard=discard)
 
 
-def _jump_to_floor(widget_key: str) -> None:
-    """`층 바로 가기` 콜백."""
+def _jump_to_floor(widget_key: str, discard_key: str | None = None) -> None:
+    """`층 바로 가기` 콜백. 층 사용 편집 초안이 있는 동안은 팝오버 안 「변경을 버리고 열기」
+    체크(`discard_key`)가 켜진 고르기만 연다."""
     key = floor_from_label(st.session_state.get(widget_key))
+    discard = discard_key is not None and SessionSlot(discard_key, bool).peek() is True
     if key is not None:
-        _open_floor(key)
+        _open_floor(key, discard=discard)
 
 
 def _compare_lock_reason(editing: bool) -> str | None:
@@ -2382,7 +2394,7 @@ def _note_applied(
 
 def _render_fab_editor(
     link_stats: dict[str, dict[str, str | None]],
-    on_open: Callable[[FloorKey], None],
+    on_open: Callable[[FloorKey, bool], None],
     *,
     pending_save: bool = False,
 ) -> None:
@@ -2416,6 +2428,7 @@ def _render_fab_editor(
         link_stats=link_stats,
         on_open=on_open,
         pending_save=pending_save,
+        open_confirm=floor_open_confirm(),
     )
     if submission is None:
         return
@@ -2502,18 +2515,43 @@ with space_box:
             floor_label(key) for key in selectable_floor_keys(floor_states, keep=selected)
         ]
         jump_key = f"{FLOOR_JUMP_KEY}_{floor_param(selected) if selected is not None else 'fab'}"
-        st.selectbox(
-            "층 바로 가기",
-            options=floor_labels,
-            index=floor_labels.index(floor_label(selected)) if selected is not None else None,
-            placeholder="층 바로 가기",
-            key=jump_key,
-            on_change=_jump_to_floor,
-            args=(jump_key,),
-            label_visibility="collapsed",
-            width="stretch",
-            disabled=not floor_labels,
-        )
+        if floor_state_draft_pending():
+            # 층 사용 편집 초안이 있는 동안 — 바로 가기가 그 초안을 버리므로 팝오버 안 「변경을
+            # 버리고 열기」 체크 뒤에 고른다(같은 화면 「공식으로 바꾸기」 팝오버와 같은 꼴 — 설계
+            # 규칙 UI-STA-02 · UI-NTF-09). 잃을 것이 없으면 지금처럼 바로 고른다.
+            discard_key = f"{jump_key}_discard"
+            with st.popover(
+                "층 바로 가기",
+                icon=":material/warning:",
+                key=f"{jump_key}_popover",
+                width="stretch",
+            ):
+                discard = st.checkbox(FLOOR_OPEN_DISCARD_LABEL, key=discard_key)
+                st.selectbox(
+                    "층 바로 가기",
+                    options=floor_labels,
+                    index=None,
+                    placeholder="층 바로 가기",
+                    key=jump_key,
+                    on_change=_jump_to_floor,
+                    args=(jump_key, discard_key),
+                    label_visibility="collapsed",
+                    width="stretch",
+                    disabled=not floor_labels or not discard,
+                )
+        else:
+            st.selectbox(
+                "층 바로 가기",
+                options=floor_labels,
+                index=floor_labels.index(floor_label(selected)) if selected is not None else None,
+                placeholder="층 바로 가기",
+                key=jump_key,
+                on_change=_jump_to_floor,
+                args=(jump_key,),
+                label_visibility="collapsed",
+                width="stretch",
+                disabled=not floor_labels,
+            )
     # 도면 줄 — 「배치 편집」 토글 하나. 설비 · Space 저장 등급이 아니면 세우지 않는다(숨김).
     if not can_edit_layout:
         st.session_state[EDIT_MODE_KEY] = False
@@ -2811,6 +2849,8 @@ if selected is None:
                 unconfirmed=_unconfirmed_count(),
                 on_as_of=_set_space_as_of,
                 pending_save=pending_save,
+                # 층 사용 편집 초안이 있으면 블록을 열기 전에 묻는다(epoch 밖).
+                open_confirm=floor_open_confirm(),
             )
     # 필요 단축 요약·추가 호기 상자 — 자리는 늘 선다(켜고 끌 때 아래 key 있는 층 목록 표가 밀리지
     # 않게).
