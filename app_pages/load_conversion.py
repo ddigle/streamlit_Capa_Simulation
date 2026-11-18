@@ -19,6 +19,8 @@
   표 없는 껍데기로 마운트만 남는다.
 """
 
+from dataclasses import dataclass, replace
+from functools import partial
 from typing import cast
 
 import pandas as pd
@@ -83,6 +85,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
+    selected_month_range,
 )
 from capa_simulation.plan_grid_keys import (
     PLAN_TABLE,
@@ -92,6 +95,7 @@ from capa_simulation.plan_grid_keys import (
     history_key,
 )
 from capa_simulation.scenario_state import (
+    ACTIVE_SCENARIO_KEY,
     ActiveScenario,
     apply_month_updates,
     apply_table_updates,
@@ -141,6 +145,7 @@ from capa_simulation.services.virtual_product import (
     cloned_plan_months,
     records_to_frame,
 )
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import condition_card
 
 render_page_header("생산 계획")
@@ -938,9 +943,132 @@ def _discard_yield_edits() -> None:
     plan_grid.discard(YIELD_TABLE)
 
 
+# 「변경사항 적용」 콜백이 그 단추를 그린 원본과 견주는 지금 값(읽기만) — 이 화면의 원본 토큰 ·
+# 활성 시나리오 · PKG PLAN 붙여넣기 대기 표.
+LIVE_SOURCE_TOKEN = SessionSlot(SOURCE_TOKEN_KEY, str)
+LIVE_SCENARIO = SessionSlot(ACTIVE_SCENARIO_KEY, dict)
+LIVE_PLAN_STAGED = SessionSlot(PLAN_STAGED_KEY, pd.DataFrame)
+
+
+@dataclass(frozen=True, eq=False)
+class _DrawnSource:
+    """「변경사항 적용」 단추를 그린 회차의 원본 — 이 화면 원본 토큰(`plan_token`) · 활성 시나리오
+    내용 토큰 · 고른 조회기간 · PKG PLAN 붙여넣기 대기 표(그 객체, 수율 단추는 보지 않는다)."""
+
+    source_token: str
+    content_token: str
+    period: tuple[int, int]
+    staged: pd.DataFrame | None
+    watch_staged: bool
+
+
+def _drawn_source(*, watch_staged: bool) -> _DrawnSource:
+    return _DrawnSource(
+        plan_token,
+        str(active_scenario["content_token"]),
+        (selected_start_month, selected_end_month),
+        staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else None,
+        watch_staged,
+    )
+
+
+def _still_drawn(drawn: _DrawnSource) -> bool:
+    """단추를 그린 뒤 이 화면 본문을 거치지 않고 원본이 바뀌지 않았는가.
+
+    적용은 콜백이라 본문(원본이 바뀌면 초안을 비우고 단추를 잠가 그리는 자리)보다 먼저 돈다.
+    Streamlit 1.63 은 앞 회차에 그린 단추의 누름을 그 회차의 콜백 인자로 부른다 — 그 사이
+    팝업(프래그먼트)이 시나리오 · 조회기간 · 붙여넣기 대기를 바꾸고 앱 회차가 단추에 닿기 전에
+    누름이 오면 옛 원본으로 적용한다. 그런 누름은 쓰지 않고 본문에 맡긴다 — 본문이 초안을 비우고
+    단추를 잠가 그리던 옛 길과 같다. 같은 단추의 빠른 둘째 누름도 첫 적용이 토큰을 바꿔 여기서
+    걸린다. 활성 시나리오를 세션에서 빼는 길
+    (`scenario_activation.clear_persisted_scenario_activation` — `clear_active_scenario` 뒤
+    `_release_stale_ui_state`)은 이 화면 원본 토큰 칸도 함께 지운다(`_STALE_VALUE_KEYS`) —
+    시나리오가 없을 때는 그 칸이 거른다."""
+    scenario = LIVE_SCENARIO.peek()
+    return (
+        LIVE_SOURCE_TOKEN.peek() == drawn.source_token
+        and (scenario is None or scenario.get("content_token") == drawn.content_token)
+        and selected_month_range() == drawn.period
+        and (not drawn.watch_staged or LIVE_PLAN_STAGED.peek() is drawn.staged)
+    )
+
+
+def _apply_plan_click(
+    drawn: _DrawnSource,
+    ready: plan_grid.PlanGrid | None,
+    plan: pd.DataFrame,
+    scenario: ActiveScenario,
+    start_month: int,
+    end_month: int,
+) -> None:
+    """PKG PLAN 「변경사항 적용」 콜백 — 본문보다 먼저 적용해 이 누름의 회차 하나가 새 계획으로
+    그린다(앱 머리 칩 · 탭 점도 적용 뒤 값 — `mark_own_change` 가 방금 적용한 초안을 빼고 센다).
+
+    누름과 함께 온 그 표 편집을 먼저 반영하고(`plan_grid.settle_inbox`), 고친 칸도 붙여넣기
+    대기도 없으면(편집을 비운 반영 · 같은 회차의 「편집 취소」) 그린 단추가 잠겼을 때처럼 아무것도
+    하지 않는다. 칸 오류 · 업무 규칙 오류는 작업 줄 아래 알림 칸에 그릴 글로
+    담는다(`plan_grid.refuse`). 닫힌 탭이라 그리드를 짓지 않은 회차의 누름(탭을 바꾸는 사이)도 그
+    표 양식으로 적용한다(`ready` 없음).
+    """
+    if not _still_drawn(drawn):
+        return
+    grid = ready if ready is not None else _plan_grid_table()
+    if plan_grid.settle_inbox(PLAN_TABLE, grid):
+        return
+    if not plan_grid.draft_pending(PLAN_TABLE) and drawn.staged is None:
+        return
+    blocked = plan_grid.error_notice(grid)
+    if blocked is not None:
+        plan_grid.refuse(PLAN_TABLE, blocked, icon=":material/error:")
+        return
+    try:
+        updated_plan = attach_plan_attributes(plan_from_edit_table(plan_grid.merged(grid)), plan)
+        apply_month_updates(scenario, {"RQ_PKG_PLAN": updated_plan}, start_month, end_month)
+    except ValueError as exc:
+        plan_grid.refuse(PLAN_TABLE, bootstrap_error_message(exc))
+        return
+    _queue_done(
+        PLAN_APPLIED_FLASH_KEY,
+        with_revision_save_tail(
+            f"PKG PLAN을 전역 계획값에 반영했습니다. "
+            f"{month_label(start_month)}–{month_label(end_month)} "
+            "구간의 환산·소요대수·확보율과 "
+            "홈 대시보드가 이 계획으로 다시 계산됩니다."
+        ),
+    )
+    st.session_state.pop(PLAN_STAGED_KEY, None)
+    mark_own_change(OWN_CHANGE_KEY, (*plan_grid.own_keys(PLAN_TABLE), PLAN_STAGED_KEY))
+
+
+def _apply_yield_click(
+    drawn: _DrawnSource, ready: plan_grid.PlanGrid | None, template: pd.DataFrame
+) -> None:
+    """수율 「변경사항 적용」 콜백 — PKG PLAN 과 같은 차례(`_apply_plan_click`)로 `_apply_yield`
+    를 탄다."""
+    if not _still_drawn(drawn):
+        return
+    grid = ready if ready is not None else _yield_grid_table(template)
+    if plan_grid.settle_inbox(YIELD_TABLE, grid) or not plan_grid.draft_pending(YIELD_TABLE):
+        return
+    blocked = plan_grid.error_notice(grid)
+    if blocked is not None:
+        plan_grid.refuse(YIELD_TABLE, blocked, icon=":material/error:")
+        return
+    try:
+        edited_yield_table = plan_grid.merged(grid)
+        _apply_yield(
+            edited_yield_table,
+            "편집값을",
+            note=_removed_yield_note(template, edited_yield_table),
+        )
+    except ValueError as exc:
+        plan_grid.refuse(YIELD_TABLE, bootstrap_error_message(exc))
+
+
 # 여는 단추는 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터 하나로
 # 정해진다 — 단추 값으로 열면 앞 탭의 팝업을 그린 뒤 뒤 탭의 팝업을 또 그려 Streamlit 이 「팝업은 한
-# 번에 하나」로 멈춘다(테스트로 재현).
+# 번에 하나」로 멈춘다(테스트로 재현). 「변경사항 적용」 의 콜백은 그 회차의 원본을 인자로
+# 단다(아래).
 PLAN_APPLY_BUTTON = plan_grid.Button("변경사항 적용", ":material/check:", "apply_pkg_plan_changes")
 PLAN_PASTE_BUTTON = plan_grid.Button(
     "Excel 붙여넣기", ":material/content_paste:", "open_plan_paste", _open_plan_paste
@@ -976,7 +1104,18 @@ with pkg_plan_tab:
         # 까닭은 단추 줄 바로 아래다.
         plan_actions = plan_grid.render_actions(
             PLAN_TABLE,
-            apply=PLAN_APPLY_BUTTON,
+            apply=replace(
+                PLAN_APPLY_BUTTON,
+                on_click=partial(
+                    _apply_plan_click,
+                    _drawn_source(watch_staged=True),
+                    plan_table,
+                    filtered_plan,
+                    active_scenario,
+                    effective_start_month,
+                    effective_end_month,
+                ),
+            ),
             apply_help=PLAN_APPLY_HELP,
             locked_help=APPLY_LOCKED_HELP,
             paste=PLAN_PASTE_BUTTON,
@@ -1013,7 +1152,6 @@ with pkg_plan_tab:
 
 simulation_plan = filtered_plan
 
-apply_yield = False
 with yield_tab:
     yield_layout = plan_grid.LAYOUTS[YIELD_TABLE]
     yield_actions_box = st.container(key=yield_layout.actions_box)
@@ -1033,9 +1171,17 @@ with yield_tab:
         locked_table = None
     else:
         with yield_actions_box:
-            yield_actions = plan_grid.render_actions(
+            plan_grid.render_actions(
                 YIELD_TABLE,
-                apply=YIELD_APPLY_BUTTON,
+                apply=replace(
+                    YIELD_APPLY_BUTTON,
+                    on_click=partial(
+                        _apply_yield_click,
+                        _drawn_source(watch_staged=False),
+                        yield_table,
+                        default_yield_table,
+                    ),
+                ),
                 apply_help=YIELD_APPLY_HELP,
                 locked_help=APPLY_LOCKED_HELP,
                 paste=YIELD_PASTE_BUTTON,
@@ -1044,7 +1190,6 @@ with yield_tab:
                 discard_key="discard_yield_edits",
                 flash_keys=(YIELD_FLASH_KEY,),
             )
-        apply_yield = yield_actions.submitted
         locked_table = _report_locked_yield_rows(
             locked_yield_rows,
             scope=(
@@ -1061,28 +1206,6 @@ with yield_tab:
     if YIELD_TABLE in _grid_mounted:
         with yield_grid_box:
             plan_grid.render_grid(YIELD_TABLE, yield_table, hidden=tab_is_hidden(yield_tab))
-    # 원본·줄 차례가 바뀌어 편집을 버린 회차에는 단추가 잠겨 그려지고, Streamlit 은 잠겨 그린 단추의
-    # 클릭을 서버에서 버린다 — 그 회차에 함께 온 클릭은 여기까지 오지 않는다. 칸 오류가 남았으면
-    # 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에).
-    if apply_yield and default_yield_table is not None:
-        # 닫힌 탭의 단추가 눌린 회차(탭을 바꾸는 사이)에도 적용은 그 표 양식으로 한다.
-        if yield_table is None:
-            yield_table = _yield_grid_table(default_yield_table)
-        yield_blocked = plan_grid.error_notice(yield_table)
-        if yield_blocked is not None:
-            yield_actions.notice.error(yield_blocked, icon=":material/error:")
-        else:
-            try:
-                edited_yield_table = plan_grid.merged(yield_table)
-                _apply_yield(
-                    edited_yield_table,
-                    "편집값을",
-                    note=_removed_yield_note(default_yield_table, edited_yield_table),
-                )
-            except ValueError as exc:
-                yield_actions.notice.error(bootstrap_error_message(exc))
-            else:
-                st.rerun()
     if locked_table is not None and table_clipped(locked_table):
         render_csv_download(
             data=locked_yield_rows[LOCKED_YIELD_COLUMNS].to_csv(index=False).encode("utf-8-sig"),
@@ -1091,43 +1214,9 @@ with yield_tab:
             label=LOCKED_YIELD_CSV_LABEL,
         )
 
-# PKG PLAN 적용은 **두 탭을 모두 그린 뒤**에 한다. 적용은 `st.rerun()` 으로 끝나는데, Streamlit 은
-# 그것을 정상 완료로 보고 그 회차에 그리지 않은 위젯의 상태를 서버에서 지운다 — 수율 그리드의 출납
-# 상태가 그 회차에 그려진 뒤여야 한다. 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사
-# 전에). 오류 알림은 작업 줄 아래 자리(`plan_actions.notice`)에 쓰므로 여기서 처리해도 누른 자리에
-# 뜬다. 편집을 버린 회차의 클릭은 잠겨 그린 단추라 Streamlit 이 버린다(수율과 같다).
-if plan_actions.submitted:
-    if plan_table is None:
-        plan_table = _plan_grid_table()
-    plan_blocked = plan_grid.error_notice(plan_table)
-    if plan_blocked is not None:
-        plan_actions.notice.error(plan_blocked, icon=":material/error:")
-    else:
-        try:
-            updated_plan = attach_plan_attributes(
-                plan_from_edit_table(plan_grid.merged(plan_table)), simulation_plan
-            )
-            apply_month_updates(
-                active_scenario,
-                {"RQ_PKG_PLAN": updated_plan},
-                effective_start_month,
-                effective_end_month,
-            )
-        except ValueError as exc:
-            plan_actions.notice.error(bootstrap_error_message(exc))
-        else:
-            _queue_done(
-                PLAN_APPLIED_FLASH_KEY,
-                with_revision_save_tail(
-                    f"PKG PLAN을 전역 계획값에 반영했습니다. "
-                    f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
-                    "구간의 환산·소요대수·확보율과 "
-                    "홈 대시보드가 이 계획으로 다시 계산됩니다."
-                ),
-            )
-            st.session_state.pop(PLAN_STAGED_KEY, None)
-            mark_own_change(OWN_CHANGE_KEY, (*plan_grid.own_keys(PLAN_TABLE), PLAN_STAGED_KEY))
-            st.rerun()
+# PKG PLAN · 수율 「변경사항 적용」 은 단추 콜백이다(`_apply_plan_click` · `_apply_yield_click`) —
+# 본문보다 먼저 적용하므로 이 회차가 새 원본으로 그리고 끝난다(누른 회차를 옛 원본으로 다 그린 뒤
+# `st.rerun()` 하지 않는다). 막힌 적용의 글은 그 작업 줄 아래 알림 칸이 이 회차에 그렸다.
 
 simulation_yield = filtered_yield
 

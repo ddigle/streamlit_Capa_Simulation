@@ -223,7 +223,9 @@ def render_auto_official_update(
     """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다).
     `alert_tab` 은 이 탭 이름(상태 알림 `AU-01` · `AU-02` 의 「그 화면으로」 —
     `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다
-    (`_report_read_failure`도 같다)."""
+    (`_report_read_failure`도 같다). 닫힌 탭은 맨 끝 설정 변경 기록만 읽지도 그리지도 않는다 — 탭을
+    연 회차가 읽어 그린다. 설정 칸 **위**의 상태 값 줄(다음 실행 · 현재 공식버전)은 닫힌 탭에도
+    그린다(건너뛰면 여는 회차에 늦게 붙어 설정 칸을 밀어 내린다 — AGENTS 9장 숨은 탭 규칙)."""
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
@@ -236,12 +238,19 @@ def render_auto_official_update(
     _render_status(repository, settings, now=clock(), alert_tab=alert_tab)
     _render_settings_form(repository, settings)
     _render_run_now(repository, sources=sources, clock=clock)
+    # 닫힌 탭은 설정 변경 기록을 읽지도 그리지도 않는다 — 탭의 맨 끝 표라 빠져도 앞 칸 자리가 같고
+    # 탭을 연 회차가 읽어 그린다(숨은 탭은 입력 칸만 그리고 표는 건너뛴다 — AGENTS 9장).
+    show_settings_history = alert_tab is not None
     try:
         runs = repository.list_auto_official_update_runs(limit=RUN_HISTORY_LIMIT)
         exclusions = repository.list_auto_official_update_exclusions(
             run_ids=[run.run_id for run in runs]
         )
-        changes = repository.list_auto_official_update_setting_changes(limit=SETTING_HISTORY_LIMIT)
+        changes = (
+            repository.list_auto_official_update_setting_changes(limit=SETTING_HISTORY_LIMIT)
+            if show_settings_history
+            else ()
+        )
     except BOOTSTRAP_ERRORS as exc:
         _report_read_failure(
             "자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc),
@@ -250,8 +259,11 @@ def render_auto_official_update(
         )
         return
     labels = get_process_labels()
+    # 실행 기록은 닫힌 탭에도 그린다 — 「off 공정 목록」 접는 상자(key)의 펼침이 탭을 다녀와도
+    # 남게(그리지 않은 회차가 있으면 다시 그릴 때 접혀 선다).
     _render_run_history(runs, exclusions, labels)
-    _render_setting_history(changes)
+    if show_settings_history:
+        _render_setting_history(changes)
 
 
 def _report_read_failure(message: str, *, text: str, alert_tab: str | None) -> None:

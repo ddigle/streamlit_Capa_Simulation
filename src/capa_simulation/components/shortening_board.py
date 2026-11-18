@@ -25,6 +25,9 @@
   카드는 서되 KPI·CSV 에 들지 않는다고 적는다.
 - **상세 근거 링크** — 카드마다 「공정 Capa 상세에서 근거 보기」(`st.page_link` + 주소 인자 — 그
   카드의 첫 부족 달·목표·기간·단축/신규 대수). 샘플 fleet 이면 숨긴다(상세는 설비 저장본만 본다).
+  그 숫자는 공정 전부를 한 번에 내어(`shortening_watch.detail_numbers`) 계획 키 · 목표 · 기간으로
+  세션에 한 벌 기억한다(`remembered_detail_numbers`) — 본문 프래그먼트가 카드마다 두 표를 다시
+  거르지 않게.
 - **도면 링크** — 그 옆 「도면에서 보기」(2026-10-24 결정 — Space 현황을 그 공정의 층·색 기준 「필요
   단축」·같은 목표로 연다, `space_link_params`). 층은 본문이 공정 전부를 한 번에 고른 표를 받는다
   (`space_shortening_layer.shortening_space_floors`). 두 화면이 같은 세션 설비 시나리오를
@@ -34,7 +37,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
@@ -60,11 +63,13 @@ from capa_simulation.services.shortening_watch import (
     ORDER_DISPLAY,
     ORDER_WORSENED_FIRST,
     board_order,
+    detail_numbers,
     first_shortage_month,
     imminent_units,
     process_board,
     process_counts,
 )
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import remembered_expander
 
 __all__ = [
@@ -72,6 +77,7 @@ __all__ = [
     "BOARD_HELP",
     "BOARD_ORDER_KEY",
     "BOARD_TITLE",
+    "DETAIL_NUMBERS_KEY",
     "DEFAULT_DUE_DAYS",
     "DELAYED_HELP",
     "DUE_DAYS_KEY",
@@ -82,6 +88,7 @@ __all__ = [
     "IMMINENT_KIND_HELP",
     "ORDER_FALLBACK_HELP",
     "SHORTENING_HIGHLIGHT_KEY",
+    "DetailNumbers",
     "ShorteningHighlight",
     "clear_highlight",
     "current_highlight",
@@ -89,6 +96,7 @@ __all__ = [
     "highlight_badge",
     "highlight_first",
     "highlight_shortening_process",
+    "remembered_detail_numbers",
     "render_detail_link",
     "render_highlight_notice",
     "render_progress_board",
@@ -125,6 +133,13 @@ _DELAYED_EXPANDER_KEY = "equipment_shortening_delayed"
 _IMMINENT_TABLE_KEY = "equipment_shortening_imminent_table"
 _DELAYED_TABLE_KEY = "equipment_shortening_delayed_table"
 _EMPTY = "—"
+# 카드 상세 링크의 공정마다 숫자(첫 부족 달 · 당긴 호기 · 신규) — (계획 키 · 목표 · 기간, 숫자)
+# 한 벌.
+DETAIL_NUMBERS_KEY = "equipment_shortening_detail_numbers"
+DetailNumbers = Mapping[str, tuple[int | None, int, int]]
+_DETAIL_NUMBERS: SessionSlot[tuple[object, ...]] = SessionSlot(DETAIL_NUMBERS_KEY, tuple)
+# 두 표에 없는 공정의 숫자(`shortening_watch.detail_numbers`).
+_NO_DETAIL: tuple[int | None, int, int] = (None, 0, 0)
 # 보드 · 목록의 읽는 법은 그 제목 · 칸 풍선이다 — 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 · 02).
 BOARD_HELP = (
     "단축이 필요한 공정마다 한 줄입니다 — 줄을 고르면 그 공정 카드를 맨 위로 올려 강조합니다. "
@@ -329,13 +344,19 @@ def detail_link_params(
     months: Sequence[int],
     theme: str | None,
     equipment: str | None = None,
+    numbers: DetailNumbers | None = None,
 ) -> dict[str, str]:
     """카드 하나의 상세 링크 주소 인자 — 그 카드의 첫 부족 달·목표·기간·단축/신규 대수와, 그 카드가
-    본 설비 시나리오 한 마디(`equipment` — 표시용 `eq`, 「셋업 실무 r4」)."""
-    shortened, new = process_counts(level_plan, process)
+    본 설비 시나리오 한 마디(`equipment` — 표시용 `eq`, 「셋업 실무 r4」). `numbers` 는 같은 계획 ·
+    기간으로 공정 전부를 한 번에 낸 숫자(`remembered_detail_numbers`)다 — 없으면 이 공정만 낸다."""
+    if numbers is not None:
+        month, shortened, new = numbers.get(str(process), _NO_DETAIL)
+    else:
+        shortened, new = process_counts(level_plan, process)
+        month = first_shortage_month(level_plan, process, months)
     return shortening_card_query_params(
         process=process,
-        month=first_shortage_month(level_plan, process, months),
+        month=month,
         target=level,
         start_month=int(months[0]),
         end_month=int(months[-1]),
@@ -346,6 +367,25 @@ def detail_link_params(
     )
 
 
+def remembered_detail_numbers(
+    plan_key: Hashable, level_plan: LevelPlan, *, level: float, months: Sequence[int]
+) -> DetailNumbers:
+    """카드 상세 링크의 공정마다 숫자를 세션에 한 벌 기억한다(`DETAIL_NUMBERS_KEY`).
+
+    `plan_key` 는 `level_plan` 을 낸 계획의 키(`KeyedShorteningPlan.key` — 계획 내용이 같으면
+    같다)이고, 목표 · 기간과 함께 숫자를 정한다 — 셋이 같은 회차(본문 프래그먼트 회차 · 공정 고르기
+    · 보드 조작)는 다시 내지 않는다. 꺼낸 값은 고치지 않는다."""
+    key = (plan_key, float(level), tuple(int(month) for month in months))
+    held = _DETAIL_NUMBERS.peek()
+    if held is not None and len(held) == 2 and held[0] == key:
+        stored = held[1]
+        if isinstance(stored, Mapping):
+            return stored
+    numbers = detail_numbers(level_plan, months)
+    _DETAIL_NUMBERS.set((key, numbers))
+    return numbers
+
+
 def render_detail_link(
     level_plan: LevelPlan,
     process: str,
@@ -353,9 +393,11 @@ def render_detail_link(
     level: float,
     months: Sequence[int],
     equipment: str | None = None,
+    numbers: DetailNumbers | None = None,
 ) -> None:
     """카드 아래 「공정 Capa 상세에서 근거 보기」. 달이 없으면 그리지 않는다. `equipment` 는 이
-    화면이 본 설비 시나리오 한 마디(받은 상세 화면의 기준과 다르면 그쪽 출처 띠가 알린다)."""
+    화면이 본 설비 시나리오 한 마디(받은 상세 화면의 기준과 다르면 그쪽 출처 띠가 알린다).
+    `numbers` 는 공정 전부의 숫자(`remembered_detail_numbers`)다."""
     if not months:
         return
     theme = st.query_params.get(THEME_QUERY_PARAM)
@@ -364,7 +406,13 @@ def render_detail_link(
         label="공정 Capa 상세에서 근거 보기",
         icon=":material/troubleshoot:",
         query_params=detail_link_params(
-            level_plan, process, level=level, months=months, theme=theme, equipment=equipment
+            level_plan,
+            process,
+            level=level,
+            months=months,
+            theme=theme,
+            equipment=equipment,
+            numbers=numbers,
         ),
     )
 

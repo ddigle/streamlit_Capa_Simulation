@@ -38,6 +38,7 @@ from capa_simulation.services.shortening_watch import (
     TREND_WORSENED,
     board_order,
     delayed_units,
+    detail_numbers,
     first_shortage_month,
     imminent_units,
     process_board,
@@ -133,6 +134,34 @@ def test_the_first_shortage_month_and_counts_match_the_card() -> None:
     assert first_shortage_month(level, C) is None
     assert process_counts(level, A) == (2, 1)
     assert process_counts(level, C) == (0, 0)
+
+
+@pytest.mark.parametrize("months", [[202605, 202606, 202607], [202607], [202601]])
+def test_the_numbers_of_all_processes_at_once_match_each_card(months: list[int]) -> None:
+    """카드 상세 링크의 숫자를 공정 전부 한 번에 낸 값(`detail_numbers`)은 공정마다 부른
+    `first_shortage_month` · `process_counts` 와 같다 — 표에 없는 공정은 빠지고 (None, 0, 0) 로
+    읽는다. 공정 이름이 빈 줄은 어느 공정에도 들지 않는다."""
+    level = _level()
+    blank = _units_frame([("", "DEMO-U99", KIND_SHORTENED, TODAY, 3)]).assign(공정=None)
+    level = LevelPlan(
+        level=level.level,
+        process_months=level.process_months,
+        units=pd.concat([level.units, blank], ignore_index=True),
+    )
+    numbers = detail_numbers(level, months)
+    for process in (A, B, C, "DEMO_NONE"):
+        expected = (first_shortage_month(level, process, months), *process_counts(level, process))
+        assert numbers.get(process, (None, 0, 0)) == expected, process
+    assert "DEMO_NONE" not in numbers
+    assert (
+        detail_numbers(
+            LevelPlan(
+                level=1.1, process_months=level.process_months.iloc[0:0], units=level.units[0:0]
+            ),
+            months,
+        )
+        == {}
+    )
 
 
 @pytest.mark.parametrize(

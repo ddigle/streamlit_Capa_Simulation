@@ -44,6 +44,7 @@ from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.auto_official_update_runner import (
     AutoUpdateSources,
     auto_off_marks,
+    current_official_baseline,
     run_auto_official_update,
 )
 from capa_simulation.auto_update_scheduler import ENV_VAR, SchedulerStatus, TickOutcome
@@ -354,6 +355,65 @@ def test_a_closed_tab_neither_marks_nor_alerts_what_it_could_not_read(
     with monkeypatch.context() as patch:
         patch.setattr(DuckDBScenarioRepository, "list_auto_official_update_runs", broken)
         assert_closed_then_open()
+
+
+def _inputs(app: AppTest) -> list[tuple[str, str, object]]:
+    """탭의 입력 칸 · 단추 (종류, 이름, 값) 차례 그대로."""
+    return [
+        (type(widget).__name__, str(widget.label), getattr(widget, "value", None))
+        for widget in (
+            *app.toggle,
+            *app.time_input,
+            *app.text_input,
+            *app.number_input,
+            *app.button,
+        )
+    ]
+
+
+def test_a_closed_tab_skips_only_the_settings_history_read_and_keeps_what_sits_above_inputs(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 탭을 보는 회차(닫힌 탭)는 맨 끝 설정 변경 기록만 읽지도 그리지도 않는다 — 설정 칸 위의
+    상태 값 줄(현재 공식버전)은 그대로 읽어 그리고(건너뛰면 여는 회차에 늦게 붙어 설정 칸을 밀어
+    내린다 — AGENTS 9장), 입력 칸(설정 · 지금 실행)과 실행 기록(접는 상자의 펼침이 탭을 다녀와도
+    남게)도 열린 탭과 같게 그린다. 탭을 연 회차는 전부 읽어 그린다."""
+    import capa_simulation.components.auto_official_update_tab as tab
+
+    _with_w40(database)
+    reads: list[str] = []
+    changes = DuckDBScenarioRepository.list_auto_official_update_setting_changes
+
+    def counted_baseline(repository: DuckDBScenarioRepository) -> object:
+        reads.append("baseline")
+        return current_official_baseline(repository)
+
+    def counted_changes(repository: DuckDBScenarioRepository, **kwargs: object) -> object:
+        reads.append("changes")
+        return changes(repository, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(tab, "current_official_baseline", counted_baseline)
+    monkeypatch.setattr(
+        DuckDBScenarioRepository, "list_auto_official_update_setting_changes", counted_changes
+    )
+
+    closed = _closed_tab(database)
+    assert reads == ["baseline"]
+    closed_text = _markdown(closed)
+    assert "공식 v1 W40" in closed_text
+    assert "설정 변경 기록" not in closed_text
+    assert "실행 기록" in closed_text
+
+    reads.clear()
+    opened = _tab(database)
+    assert sorted(reads) == ["baseline", "changes"]
+    opened_text = _markdown(opened)
+    assert "공식 v1 W40" in opened_text
+    assert "설정 변경 기록" in opened_text
+    assert _inputs(closed) == _inputs(opened)
+    assert [str(item.label) for item in closed.expander] == [
+        str(item.label) for item in opened.expander
+    ]
 
 
 def test_the_tab_opens_on_its_status_card_and_the_name_field_keeps_its_note_in_a_balloon(

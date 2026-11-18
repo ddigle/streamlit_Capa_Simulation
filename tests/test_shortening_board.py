@@ -18,6 +18,7 @@ from test_shortening_watch import TODAY, _level
 
 from capa_simulation.components import shortening_board
 from capa_simulation.components.shortening_board import (
+    DETAIL_NUMBERS_KEY,
     HIGHLIGHT_FROM_BOARD,
     HIGHLIGHT_FROM_DETAIL,
     SHORTENING_HIGHLIGHT_KEY,
@@ -25,7 +26,9 @@ from capa_simulation.components.shortening_board import (
     detail_link_params,
     highlight_badge,
     highlight_first,
+    remembered_detail_numbers,
 )
+from capa_simulation.services.shortening_watch import detail_numbers
 
 
 def _highlight_app() -> None:
@@ -187,6 +190,61 @@ def test_the_detail_link_carries_the_card_first_shortage_month_target_period_and
     satisfied = detail_link_params(_level(), "DEMO_C", level=1.1, months=[202605], theme="dark")
     assert "month" not in satisfied and satisfied["theme"] == "dark"
     assert TODAY < date(2026, 6, 1)
+
+
+@pytest.mark.parametrize("months", [[202605, 202606, 202607], [202607]])
+def test_the_detail_link_from_the_numbers_of_all_processes_is_the_same_link(
+    months: list[int],
+) -> None:
+    """공정 전부를 한 번에 낸 숫자(`numbers`)로 지은 링크는 카드마다 낸 링크와 같다 — 표에 없는
+    공정도."""
+    level = _level()
+    numbers = detail_numbers(level, months)
+    for process in ("DEMO_A", "DEMO_B", "DEMO_C", "DEMO_NONE"):
+        for theme in (None, "dark"):
+            alone = detail_link_params(
+                level, process, level=1.1, months=months, theme=theme, equipment="공식"
+            )
+            together = detail_link_params(
+                level,
+                process,
+                level=1.1,
+                months=months,
+                theme=theme,
+                equipment="공식",
+                numbers=numbers,
+            )
+            assert together == alone, (process, theme)
+
+
+def test_the_detail_numbers_are_remembered_by_plan_key_target_and_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """카드 상세 링크의 숫자는 (계획 키 · 목표 · 기간) 이 같으면 세션의 한 벌을 쓰고, 셋 가운데
+    하나가 바뀌면 새로 낸다(한 벌만 둔다)."""
+    import streamlit as st
+
+    state: dict[str, object] = {}
+    monkeypatch.setattr(st, "session_state", state)
+    made: list[tuple[int, ...]] = []
+
+    def counted(level_plan: Any, months: Any) -> dict[str, tuple[int | None, int, int]]:
+        made.append(tuple(months))
+        return detail_numbers(level_plan, months)
+
+    monkeypatch.setattr(shortening_board, "detail_numbers", counted)
+    level = _level()
+    months = [202605, 202606, 202607]
+    first = remembered_detail_numbers(("plan", 1), level, level=1.1, months=months)
+    assert first == detail_numbers(level, months)
+    assert remembered_detail_numbers(("plan", 1), level, level=1.1, months=months) is first
+    assert len(made) == 1
+    remembered_detail_numbers(("plan", 1), level, level=1.2, months=months)
+    remembered_detail_numbers(("plan", 2), level, level=1.2, months=months)
+    remembered_detail_numbers(("plan", 2), level, level=1.2, months=[202606])
+    assert len(made) == 4
+    held = state[DETAIL_NUMBERS_KEY]
+    assert isinstance(held, tuple) and held[0] == (("plan", 2), 1.2, (202606,))
 
 
 def _imminent_app() -> None:

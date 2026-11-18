@@ -2844,3 +2844,164 @@ def test_the_notice_display_tab_repeats_no_words_and_keeps_no_empty_gaps(tmp_pat
     preset = list(_app_block(app.main, "home_key_process_form").children.values())
     assert [type(item).__name__ for item in preset] == ["Block", "Block", "Multiselect"]
     assert not preset[1].children
+
+
+# --- HOME 토글 회차의 정렬 · 과거 합치기 기억(다시 도는 범위 C2 — M05 ~ M07 몸통) -----------------
+# 표시순서 준비 · 공정 선택지 차례 · 과거 열을 붙인 계획 세부수량은 그 입력(HOME 계산 키 · 토글 ·
+# 과거 프로필 version · 공정 목록)이 같으면 이 세션에 기억한 것을 쓴다(`home._remembered`). 기억한
+# 것으로 다시 그린 그림은 기억 없이 새로 만든 그림과 같아야 한다.
+
+HOME_SORT_MEMO_KEY = "home_sort_memo"
+
+
+def _seed_past_detail(database_path: Path) -> None:
+    """과거 두 달의 월별 실적과 계획 세부수량(과거에만 있는 제품 한 줄 포함)을 넣는다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.past_data import PAST_SECUREMENT_COLUMNS, empty_past_table
+
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    months = [202511, 202512]
+    repository.replace_global_past_data(
+        {
+            "월별": pd.DataFrame(
+                {"생산계획년월": months, "Density": [9.0, 10.0], "Wafer Total": [120.0, 121.0]}
+            ),
+            "계획": pd.DataFrame(
+                {
+                    "생산계획년월": months,
+                    "제품정보": ["DEMO-PAST-ONLY", "DEMO-PAST-ONLY"],
+                    "Stack": ["8H", "8H"],
+                    "Customer": ["DEMO-C", "DEMO-C"],
+                    "생산수량": [100.0, 200.0],
+                }
+            ),
+            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+        },
+        source="test",
+    )
+
+
+def _count_sort_work(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """HOME 이 회차마다 하던 정렬 · 과거 합치기가 돈 횟수(페이지는 회차마다 이 이름을 집는다)."""
+    import capa_simulation.persistence.repository as repository_module
+    import capa_simulation.services.display_order as display_order_module
+    import capa_simulation.services.past_data as past_data_module
+
+    counts = {"prepare": 0, "apply": 0, "to_wide": 0, "merge": 0, "list_revisions": 0}
+
+    def counted(name: str, owner: Any, attribute: str) -> None:
+        original = getattr(owner, attribute)
+
+        def inner(*args: Any, **kwargs: Any) -> Any:
+            counts[name] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(owner, attribute, inner)
+
+    counted("prepare", display_order_module, "prepare_display_order")
+    counted("apply", display_order_module, "apply_display_order")
+    counted("to_wide", past_data_module, "past_plan_detail_to_wide")
+    counted("merge", past_data_module, "merge_past_plan_detail")
+    counted("list_revisions", repository_module.DuckDBScenarioRepository, "list_revisions")
+    return counts
+
+
+def _plan_detail_figures(app: AppTest) -> tuple[dict[str, Any], dict[str, Any]]:
+    """계획 세부수량 라벨 · 월 그림(dict) — 그 회차에 그린 그림이다."""
+    figures = app.session_state["spy_figures"]
+    return (
+        figures["production_detail_labels"].to_dict(),
+        figures["production_detail_months"].to_dict(),
+    )
+
+
+def test_a_gap_toggle_draws_the_plan_detail_from_the_remembered_merge_like_a_fresh_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GAP 을 켜는 회차는 계획 세부수량 그림을 다시 만들지만 과거 열을 붙인 표 · 공정 선택지 차례 ·
+    표시순서 준비는 기억에서 꺼낸다(정렬 · 합치기 · 준비 0회). 그렇게 그린 그림은 기억을 비우고 새로
+    만든 그림과 같다. 비교 짝 확인도 기억한 리비전 목록으로 끝나 DB 를 다시 열지 않는다."""
+    from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
+
+    database_path = tmp_path / "scenario.duckdb"
+    _seed_past_detail(database_path)
+    shared_home_figure_store.clear()
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, comparison_id, comparison_revision_id)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _gap_annotations(app)
+
+    counts = _count_sort_work(monkeypatch)
+    app.session_state["home_show_comparison"] = False
+    app.run()
+    app.session_state["home_show_comparison"] = True
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert counts == {"prepare": 0, "apply": 0, "to_wide": 0, "merge": 0, "list_revisions": 0}
+    remembered = _plan_detail_figures(app)
+
+    # 기억 · 그림 칸을 모두 비우고 같은 조건으로 새로 만든다.
+    app.session_state[HOME_SORT_MEMO_KEY] = {}
+    app.session_state[HOME_FIGURE_CACHE_KEY] = {}
+    shared_home_figure_store.clear()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert counts["merge"] == 1 and counts["to_wide"] == 1 and counts["prepare"] >= 1
+    fresh = _plan_detail_figures(app)
+    assert fresh == remembered
+    labels, months = (json.dumps(figure, default=str, ensure_ascii=False) for figure in fresh)
+    assert "DEMO-PAST-ONLY" in labels and "25.11" in months
+
+
+def test_the_past_toggle_round_trip_takes_each_remembered_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past Data 를 끄고 켜는 두 키(과거 프로필 version 0 · 저장 version)를 둘 다 기억한다 — 오가는
+    회차가 합치기를 다시 하지 않고, 켠 회차는 과거 달을, 끈 회차는 계산 구간만 그린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    _seed_past_detail(database_path)
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.run()
+    app.session_state["home_preference_include_past"] = False
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    counts = _count_sort_work(monkeypatch)
+    for include_past in (True, False, True):
+        app.session_state["home_preference_include_past"] = include_past
+        app.run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        labels = _lob_month_labels(app)
+        assert ("25.11" in labels) is include_past, labels
+    assert counts["merge"] == 0 and counts["to_wide"] == 0 and counts["prepare"] == 0
+    assert len(app.session_state[HOME_SORT_MEMO_KEY]["plan_detail"]) == 2
+
+
+def test_the_remembered_process_order_is_keyed_by_the_names_and_the_order_digest(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공정 선택지 차례 기억의 키는 (공정 이름들, 표시순서 지문)이다 — 같으면 정렬하지 않고, 지문이
+    다르면(기억한 키를 다른 지문으로 바꿔 흉내) 다시 정렬해 같은 차례를 낸다."""
+    app = _run(seeded_database)
+    counts = _count_sort_work(monkeypatch)
+    app.run()
+    assert not list(app.exception)
+    assert counts["apply"] == 0
+    memo = app.session_state[HOME_SORT_MEMO_KEY]
+    ((names, digest), options) = memo["process_options"][-1]
+    assert sorted(options) == sorted(names)
+
+    memo["process_options"] = [((names, f"{digest}-other"), options)]
+    app.run()
+    assert not list(app.exception)
+    assert counts["apply"] == 1
+    ((_, again_digest), again) = app.session_state[HOME_SORT_MEMO_KEY]["process_options"][-1]
+    assert again_digest == digest and again == options

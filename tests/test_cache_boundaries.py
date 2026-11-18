@@ -67,13 +67,7 @@ HASHED_FRAME_ARGUMENTS = frozenset(
         (SIMULATION_CACHE, "get_production_dashboard", "plan"),
         (SIMULATION_CACHE, "get_production_dashboard", "density_data"),
         (SIMULATION_CACHE, "get_production_dashboard", "display_order"),
-        # 가용설비 주차 집계 — 리비전·필터를 거친 기존 보유대수·설비 마스터·비가동(호기 수 규모).
-        (SIMULATION_CACHE, "get_weekly_equipment_availability", "baseline"),
-        (SIMULATION_CACHE, "get_weekly_equipment_availability", "equipment"),
-        (SIMULATION_CACHE, "get_weekly_equipment_availability", "downtime"),
-        # 설비 마스터 한 벌(호기 수 규모).
-        (SIMULATION_CACHE, "get_undated_equipment", "equipment"),
-        (SIMULATION_CACHE, "get_usage_excluded_equipment", "equipment"),
+        # 설비 마스터 한 벌(호기 수 규모). 주차 집계 · 일정 미정 · 사용기준 밖은 지문 키다.
         (SIMULATION_CACHE, "get_unit_qual_status", "equipment"),
     }
 )

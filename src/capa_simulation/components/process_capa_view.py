@@ -31,7 +31,12 @@
   콜백 끝의 `rerun_app_unless_alone` 이 `rerun_fragment_if_alone` 과 같은 판정으로 프래그먼트만
   돌면 안 될 때(끊긴 전체 실행·다른 위젯도 바뀜)만 앱 전체로 올린다. 빈 선택(같은 칸 다시
   누르기·더블클릭)은 보던 달을 둔다. 그림은 세션에 몇 벌 기억한다(`remembered_canvas`, 재공
-  현황 꼴) — 새 `st.cache_data` 를 두지 않는다.
+  현황 꼴) — 새 `st.cache_data` 를 두지 않는다. **지금 보는 달 표지(머리 밑줄 · 열 테두리)는 그림에
+  굽지 않고** 월 그림 위에 덧칠한다(`selected_month_style`) — 칸을 눌러 달만 바뀐 회차는 그림이
+  그대로라 브라우저가 캔버스를 다시 그리지 않는다. 그 대신 브라우저에 남은 칸 선택이 보는 달과
+  어긋나면(◀▶ · 다른 화면에서 들어옴 · 그림 조건이 바뀜 — 그대로 두면 그 칸의 첫 누름이 선택
+  풀림으로 삼켜진다) 다음 그림을 새 요소로 만들어 선택을 비운다(`selection_epoch` — 그림
+  `layout.meta` 의 세대).
 - **「더 보기」 토글 둘**(④·⑤ 30줄 상한, 그 구획이 접히면 숨는다)·**설비 일정 없음 자리**(데이터
   Error 마크 또는 빈 상태 평문 — 제약 시뮬레이션과 같은 꼴). 시트 범례(띠 · 칸 색 · 표지)는 Guide
   「시트 범례」 절이다(2026-11-12 사용자 답 k-c5).
@@ -81,6 +86,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -99,7 +105,7 @@ from capa_simulation.components.home_dimensions import (
     NARROW_VIEWPORT_MAX_PX,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.month_sheet_canvas import signed_int
+from capa_simulation.components.month_sheet_canvas import SELECTED_BORDER_PX, signed_int
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -111,6 +117,7 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    SELECTED_UNDERLINE_PX,
     UNITS_ALL,
     UNITS_SHORTENING,
     AssumptionCanvasInput,
@@ -230,6 +237,7 @@ from capa_simulation.services.upeh_assumption import (
     token_percent,
 )
 from capa_simulation.services.wd_window import wd_window
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import (
     remembered_box_key,
     remembered_expander,
@@ -347,11 +355,20 @@ CAUSE_HELP: Final = (
     "보유 − 대여와 다름), 일정 = 오늘이 든 생산월부터 설비 일정 기준 가용이 단축 목표 미달인 달"
     "(참고 — 단축 대상). 지난 달은 단축으로 바꿀 수 없어 세지 않습니다."
 )
-# 직전에 만든 캔버스 몇 벌(세션 칸). 칸을 오가며 누를 때 같은 달 그림을 다시 만들지 않는다.
+# 직전에 만든 캔버스 몇 벌(세션 칸). 조건을 오가며 볼 때 같은 그림을 다시 만들지 않는다.
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 10
+CANVAS_SCHEMA_VERSION: Final = 11
+# 월 그림에 브라우저가 쥔 칸 선택의 달 — 칸 선택 콜백이 적고(빈 선택이면 지운다) 그림 세대를 올릴 때
+# 지운다(`selection_epoch`).
+CANVAS_PICK_KEY: Final = "process_detail_canvas_pick"
+_CANVAS_PICK: Final[SessionSlot[int]] = SessionSlot(CANVAS_PICK_KEY, int)
+# 월 그림 세대와 그 세대로 그린 그림 조건(달 빼고) — (세대, 조건).
+CANVAS_EPOCH_KEY: Final = "process_detail_canvas_epoch"
+_CANVAS_EPOCH: Final[SessionSlot[tuple[object, ...]]] = SessionSlot(CANVAS_EPOCH_KEY, tuple)
+# 월 그림 `layout.meta` 에 싣는 세대의 이름.
+CANVAS_EPOCH_META: Final = "select_epoch"
 # 직전에 만든 시트 엑셀 몇 벌(세션 칸) — 조건이 같은 회차(달 칸 누름 · 다른 위젯)는 통을 다시 만들지
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
@@ -599,9 +616,19 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
             label=SHEET_XLSX_LABEL,
         ),
     )
+    drawn = canvas_memo_key(
+        view,
+        expanded=expanded,
+        split=split,
+        show_all_units=show_all_units,
+        show_all_arrows=show_all_arrows,
+        collapsed=collapsed,
+        basis=basis,
+        units_view=units_view,
+    )
     canvas = remembered_canvas(
         view,
-        month=month,
+        epoch=selection_epoch(month, drawn),
         expanded=expanded,
         split=split,
         product_demand=product_demand,
@@ -611,7 +638,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         basis=basis,
         units_view=units_view,
     )
-    _render_canvas(view, canvas)
+    _render_canvas(view, canvas, month)
     _render_more_toggles(
         canvas,
         show_all_units=show_all_units,
@@ -945,7 +972,7 @@ def _ratio_percent(value: float) -> str:
 def canvas_memo_key(
     view: ProcessDetailView,
     *,
-    month: int,
+    epoch: int = 0,
     expanded: bool,
     split: str,
     show_all_units: bool,
@@ -954,9 +981,10 @@ def canvas_memo_key(
     basis: str = BASIS_STATIC,
     units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
-    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰·
-    비가동 기준 · ④ 보기가 그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이
-    정한다)."""
+    """그림을 바꾸는 조건 전부. 오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰·비가동 기준 ·
+    ④ 보기가 그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이 정한다). 지금
+    보는 달은 들지 않는다 — 그 표지는 그림 밖 덧칠이다(`selected_month_style`). `epoch` 는 그림을
+    새 요소로 만드는 세대다(`selection_epoch` — 그림 `layout.meta`)."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
     return (
         CANVAS_SCHEMA_VERSION,
@@ -970,7 +998,7 @@ def canvas_memo_key(
         bool(expanded),
         split if expanded else "",
         view.products if expanded else (),
-        int(month),
+        int(epoch),
         home,
         view.dynamic.memo_key if view.dynamic is not None else None,
         bool(show_all_units),
@@ -982,10 +1010,75 @@ def canvas_memo_key(
     )
 
 
+def selection_epoch(month: int, drawn: tuple[object, ...]) -> int:
+    """월 그림의 세대 — 브라우저에 남은 칸 선택을 비워야 하는 회차에만 올린다.
+
+    Streamlit 1.63 의 칸 선택 그림은 그림 spec 이 같으면 같은 요소라 브라우저가 고른 칸을 쥐고 있고,
+    고른 칸을 다시 누르면 첫 누름이 선택 풀림으로 삼켜진다(보던 달 그대로). 브라우저가 칸을
+    쥐었으면(`CANVAS_PICK_KEY` — 칸 선택 콜백이 적고 빈 선택이면 지운다) 그 칸이 보는 달과 다를
+    때(◀▶ · 다른 화면에서 들어옴 · 축 밖으로 밀려 첫 달)와 그림 조건(`drawn` — 세대 0 의
+    `canvas_memo_key`)이 지난 회차와 다를 때 세대를 올려 다음 그림을 새 요소로 만들고 쥔 칸을
+    지운다 — 그 칸을 한 번에 다시 고를 수 있고, 옛 조건 그림으로 돌아와도 그 요소의 옛 선택이
+    되살아나지 않는다(세대는 늘 오르기만 한다). 쥔 칸이 없으면 올리지 않는다 — 이 세대의 어느
+    요소도 선택을 쥐지 않았다(쥐었으면 떠날 때 올렸다). 칸을 눌러 달만 바뀐 회차는 그대로라 그림을
+    다시 보내지 않는다."""
+    held = _CANVAS_EPOCH.peek()
+    epoch, last = (
+        (held[0], held[1])
+        if held is not None and len(held) == 2 and isinstance(held[0], int)
+        else (0, None)
+    )
+    pick = _CANVAS_PICK.peek()
+    if pick is not None and (pick != int(month) or (last is not None and last != drawn)):
+        epoch += 1
+        _CANVAS_PICK.clear()
+    _CANVAS_EPOCH.set((epoch, drawn))
+    return epoch
+
+
+def selected_month_style(
+    index: int | None, *, count: int, header_height: float, height: int, column_px: int
+) -> str:
+    """지금 보는 달 표지 — 머리 밑줄과 열 테두리를 월 그림 위에 덧칠하는 서식. 그림에 굽던 모양
+    그대로다 — 테두리는 열 안쪽 1px 에 `SELECTED_BORDER_PX`, 밑줄은 머리 행 아래 끝에서 8px 위에 열
+    폭 24 ~ 76% · 1.5px, 색은 `tokens.ACCENT`. 그림의 바깥 테두리(위 · 아래, 끝 열이면 오른쪽 —
+    `plotly_layout.add_figure_outer_border`)는 표지 위에 그려졌으므로 덧칠도 그 줄을 같은 자리 ·
+    굵기로 표지 위에 다시 긋는다. 칸을 누르는 것은 그림으로 지나가고(`pointer-events`), 풍선
+    층(마지막 `svg.main-svg`)은 표지보다 위다. 달이 축 밖이면 빈 글자다."""
+    if index is None:
+        return ""
+    accent = str(tokens.ACCENT)
+    strong = str(tokens.BORDER_STRONG)
+    outer = f"{tokens.OUTER_BORDER_WIDTH_PX * 2:g}"
+    line_y = f"{header_height - 8:g}"
+    right = (
+        f"<path d='M{column_px},0V{height}' stroke='{strong}' stroke-width='{outer}'/>"
+        if index == count - 1
+        else ""
+    )
+    mark = (
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{column_px}' height='{height}'>"
+        f"<path d='M1,1H{column_px - 1}V{height - 1}H1Z' fill='none' stroke='{accent}' "
+        f"stroke-width='{SELECTED_BORDER_PX}'/>"
+        f"<path d='M{column_px * 0.24:g},{line_y}H{column_px * 0.76:g}' stroke='{accent}' "
+        f"stroke-width='{SELECTED_UNDERLINE_PX:g}'/>"
+        f"<path d='M0,0H{column_px}M0,{height}H{column_px}' stroke='{strong}' "
+        f"stroke-width='{outer}'/>{right}</svg>"
+    )
+    plot = f".st-key-{PROCESS_DETAIL_CANVAS_CHART_KEY} .svg-container"
+    return (
+        f"{plot} {{ isolation: isolate; }}"
+        f"{plot} > svg.main-svg:last-of-type {{ z-index: 2; }}"
+        f"{plot}::after {{ content: ''; position: absolute; z-index: 1; pointer-events: none; "
+        f"left: {index * column_px}px; top: 0; width: {column_px}px; height: {height}px; "
+        f'background: url("data:image/svg+xml,{quote(mark, safe="")}") no-repeat; }}'
+    )
+
+
 def remembered_canvas(
     view: ProcessDetailView,
     *,
-    month: int,
+    epoch: int = 0,
     expanded: bool,
     split: str,
     product_demand: pd.DataFrame | None,
@@ -998,13 +1091,14 @@ def remembered_canvas(
     """결합 캔버스를 세션에 몇 벌 기억한다(`CANVAS_MEMO_LIMIT`). 꺼낸 그림은 고치지 않는다.
 
     키(`canvas_memo_key`)는 그림을 바꾸는 조건 전부다 — 테마·시나리오 키·표시순서
-    지문·축·공정·표시명· 판정 기준 지문·펼침/분류/거르기·지금 보는 달·HOME 표시 확보율·설비 일정
-    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·비가동 기준·④ 보기·그림 모양 버전. 만들다
-    실패하면 기억하지 않는다.
+    지문·축·공정·표시명· 판정 기준 지문·펼침/분류/거르기·HOME 표시 확보율·설비 일정 키(오늘·목표·네
+    표 지문)· 더 보기 둘·접힌 구획·비가동 기준·④ 보기·그림 모양 버전과 세대(`epoch` — 월 그림
+    `layout.meta`). 지금 보는 달 표지는 그리지 않는다(`selected_month_style`). 만들다 실패하면
+    기억하지 않는다.
     """
     key = canvas_memo_key(
         view,
-        month=month,
+        epoch=epoch,
         expanded=expanded,
         split=split,
         show_all_units=show_all_units,
@@ -1038,7 +1132,7 @@ def remembered_canvas(
         months=view.months,
         summary=view.summary,
         thresholds=view.thresholds,
-        selected_month=month,
+        selected_month=None,
         product_demand=product_demand,
         home_rates=view.home_rates,
         dynamic=dynamic,
@@ -1052,6 +1146,7 @@ def remembered_canvas(
             if view.upeh_token and view.assumed_summary is not None
             else None
         ),
+        meta={CANVAS_EPOCH_META: int(epoch)},
     )
     entries = [entry for entry in entries if entry[0] != key][-(CANVAS_MEMO_LIMIT - 1) :]
     st.session_state[CANVAS_MEMO_KEY] = [*entries, (key, canvas)]
@@ -1069,7 +1164,7 @@ def sheet_memo_key(
     basis: str = BASIS_STATIC,
     units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
-    """시트 엑셀을 바꾸는 조건 전부 — 그림 기억 키(`canvas_memo_key`)에서 지금 보는 달 · 테마를 뺀
+    """시트 엑셀을 바꾸는 조건 전부 — 그림 기억 키(`canvas_memo_key`)에서 그림 세대 · 테마를 뺀
     것(시트는 고른 달 표지가 없고 늘 밝은 색이다)에 머리 값 줄 · 시트 꼴 버전을 더한다. 둘째
     시트(호기 표)는 설비 일정 키(계획 키 — 오늘 · 목표 · UPEH 가정 토큰)가 정한다."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
@@ -1115,6 +1210,11 @@ def pick_canvas_month(months: Sequence[int]) -> None:
     point = canvas_point(st.session_state.get(PROCESS_DETAIL_CANVAS_CHART_KEY))
     if point is not None and point[0] in set(int(month) for month in months):
         st.session_state[PROCESS_DETAIL_MONTH_KEY] = int(point[0])
+        # 브라우저가 이 칸을 쥐었다 — 보는 달과 어긋나면 다음 그림을 새 요소로(`selection_epoch`).
+        _CANVAS_PICK.set(int(point[0]))
+    else:
+        # 빈 선택(고른 칸을 다시 눌러 풀림 · 더블클릭)이나 축 밖 점 — 쥔 칸이 없다고 본다.
+        _CANVAS_PICK.clear()
     open_evidence()
     rerun_app_unless_alone(PROCESS_DETAIL_CANVAS_CHART_KEY)
 
@@ -1126,9 +1226,9 @@ def open_evidence() -> None:
     st.session_state[remembered_box_key(EVIDENCE_BOX_KEY)] = (True, "")
 
 
-def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
+def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas, month: int) -> None:
     """HOME 틀 — 라벨 칸 260px(px 로 못박음 — 좁은 창은 150px) + 월 칸(스크롤 상자 하나, 위에 가로
-    스크롤바)."""
+    스크롤바). 지금 보는 달(`month`) 표지는 월 그림 위 덧칠이다(`selected_month_style`)."""
     count = len(view.months)
     visible = min(max(count, 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
     st.html(
@@ -1155,8 +1255,22 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
             )
     with month_column:
         # 서식은 이 한 `st.html` 에 둔다(이벤트 칸 수는 갈래마다 같다) — 표 도구 줄 내려받기 칸
-        # 서식도 여기 싣는다(보이는 글이 없는 서식 `st.html` 은 이벤트 칸을 쓴다).
-        st.html(label_overflow_style() + DOWNLOAD_STYLE)
+        # 서식과 지금 보는 달 표지도 여기 싣는다(보이는 글이 없는 서식 `st.html` 은 이벤트 칸을
+        # 쓴다).
+        selected = view.months.index(month) if month in view.months else None
+        st.html(
+            label_overflow_style()
+            + "<style>"
+            + selected_month_style(
+                selected,
+                count=len(view.months),
+                header_height=canvas.header_height,
+                height=canvas.height,
+                column_px=tokens.MONTH_COLUMN_WIDTH_PX,
+            )
+            + "</style>"
+            + DOWNLOAD_STYLE
+        )
         with st.container(key=MONTH_REGION_KEY, gap=None):
             horizontal_scrollbar.render_horizontal_scrollbar(
                 target_selector=f".st-key-{SCROLL_KEY}_scroll",

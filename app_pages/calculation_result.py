@@ -71,6 +71,7 @@ from capa_simulation.components.required_exclusion_notice import (
     alert_uncounted_demand,
     plan_exclusion_lists,
     plan_side_counts,
+    remembered_alert_table,
     render_oversized_lists,
 )
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
@@ -174,6 +175,9 @@ AVAILABILITY_TAB = "확보율"
 # 키로 몇 벌 기억한다(두 탭이 같이 쓴다). 시트 꼴이 바뀌면 판을 올린다 — 같은 조건의 옛 통이 세션에
 # 남아 있어도 다시 짓는다.
 SHEET_MEMO_KEY = "calculation_result_sheet_memo"
+# 대당 Capa · 확보율 표의 내려받기 CSV — 시트 통과 같은 꼴로 조건 키마다 이 세션 칸에 몇 벌 기억한다
+# (시트 칸과 나누면 CSV 가 시트 통을 밀어낸다).
+CSV_MEMO_KEY = "calculation_result_csv_memo"
 SHEET_SCHEMA_VERSION = 2
 UNIT_CAPACITY_XLSX_KEY = "download_unit_capacity_xlsx"
 REQUIRED_DETAIL_XLSX_KEY = "download_required_equipment_detail_xlsx"
@@ -181,6 +185,29 @@ REQUIRED_SUMMARY_XLSX_KEY = "download_required_equipment_summary_xlsx"
 # 소요대수 탭 `표 조건` 카드 거름의 key 앞부분(`column_filter_key`) — 카드를 그리는 쪽과 시트 머리
 # 값을 짓는 쪽이 이 한 값을 같이 쓴다.
 REQUIRED_FILTER_PREFIX = "required_equipment_filter"
+
+
+def _capacity_csv(table: pd.DataFrame, classification_columns: tuple[str, ...]) -> bytes:
+    """대당 Capa 표의 내려받기 CSV 바이트(소수 없이) — 화면 표와 같은 분류로 만든다."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=list(classification_columns),
+        column_labels=COLUMN_LABELS,
+        decimal_places=0,
+    )
+    return export.to_csv(index=False, float_format="%.0f").encode("utf-8-sig")
+
+
+def _securement_csv(table: pd.DataFrame) -> bytes:
+    """확보율 표의 내려받기 CSV 바이트(백분율 소수 둘째 자리 꼴 그대로)."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=SECUREMENT_DIMENSIONS,
+        column_labels=COLUMN_LABELS,
+        decimal_places=2,
+        value_format="percent",
+    )
+    return export.to_csv(index=False).encode("utf-8-sig")
 
 
 def _required_export_csv(table: pd.DataFrame, classification_columns: list[str]) -> bytes:
@@ -355,18 +382,26 @@ else:
             exclusion_file = edited_file_name(
                 f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
             )
+            # 알림 표(칸 차례 · 행 값)는 그 목록을 정하는 결과 키 · 표시순서 지문으로 기억한다 — 이
+            # 탭의 표 조건을 바꾸는 회차마다 다시 짓지 않는다(소요대수 탭 목록과 같은 기억).
             exclusion_table = (
-                alert_table(
-                    exclusion_export(
-                        capacity_exclusions,
-                        dimensions=UNIT_CAPACITY_DIMENSIONS,
-                        display_order=display_order,
-                        page=PAGE_CALCULATION,
-                        tab=TAB_UNIT_CAPACITY,
-                    ),
+                remembered_alert_table(
+                    (capacity_cache_key, display_order_key, UNIT_CAPACITY_TAB),
                     title=CAPACITY_EXCLUSION_TITLE,
                     file_name=exclusion_file,
                     labels=process_labels,
+                    build=lambda: alert_table(
+                        exclusion_export(
+                            capacity_exclusions,
+                            dimensions=UNIT_CAPACITY_DIMENSIONS,
+                            display_order=display_order,
+                            page=PAGE_CALCULATION,
+                            tab=TAB_UNIT_CAPACITY,
+                        ),
+                        title=CAPACITY_EXCLUSION_TITLE,
+                        file_name=exclusion_file,
+                        labels=process_labels,
+                    ),
                 )
                 if not capacity_exclusions.empty
                 else None
@@ -444,14 +479,19 @@ else:
                         unit_capacity_table["공정"].isin(selected_processes)
                     ].reset_index(drop=True)
 
-                capacity_export = build_hierarchical_monthly_export(
-                    unit_capacity_table,
-                    classification_columns=classification_columns,
-                    column_labels=COLUMN_LABELS,
-                    decimal_places=0,
-                )
-                capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode(
-                    "utf-8-sig"
+                # 내려받기 CSV 는 표와 같은 조건 키(결과 키 · 표시순서 지문 · 보기 · 수준 · 공정)로
+                # 세션에 기억한다 — 내려받지 않는 회차마다 내보내기 표 · 직렬화를 다시 하지 않는다.
+                capacity_csv = remembered_bytes(
+                    CSV_MEMO_KEY,
+                    (
+                        UNIT_CAPACITY_TAB,
+                        capacity_cache_key,
+                        display_order_key,
+                        step_view,
+                        selected_level,
+                        tuple(selected_processes),
+                    ),
+                    partial(_capacity_csv, unit_capacity_table, tuple(classification_columns)),
                 )
                 capacity_file = f"{file_prefix}_{selected_level}_{effective_start}_{effective_end}"
                 # 시트 머리 값 — 머리 띠 시나리오 · 조회기간, 카드의 보기 · 수준, 공용 공정 거름.
@@ -564,6 +604,9 @@ else:
             # 같은 범위다 — 어느 경로에도 붙지 못해 경로 쪽 목록에 없다. 셋 다 이 탭이 열린 회차마다
             # 부르고 목록은 각 줄의 표다. 싣기에 큰 목록만 본문 펼침으로 남는다.
             period_suffix = f"{effective_start}_{effective_end}"
+            # 목록 알림 표는 결과 키 · 표시순서 지문이 정한다 — 상세 · 거름을 바꾸는 회차마다 다시
+            # 짓지 않는다(알림은 회차마다 낸다).
+            list_memo = (capacity_cache_key, display_order_key)
             route_lists = alert_required_exclusions(
                 required_exclusions,
                 scope=period_scope,
@@ -571,6 +614,7 @@ else:
                 display_order=display_order,
                 labels=process_labels,
                 file_suffix=period_suffix,
+                memo=list_memo,
             )
             plan_lists = plan_exclusion_lists(
                 summary.load_exclusions,
@@ -578,6 +622,7 @@ else:
                 display_order=display_order,
                 labels=process_labels,
                 file_suffix=period_suffix,
+                memo=list_memo,
             )
             alert_uncounted_demand(
                 plan_side_counts(
@@ -698,14 +743,17 @@ else:
             securement_table, screen=SCREEN, labels=process_labels
         )
         with availability_tab:
-            securement_export = build_hierarchical_monthly_export(
-                displayed_securement_table,
-                classification_columns=SECUREMENT_DIMENSIONS,
-                column_labels=COLUMN_LABELS,
-                decimal_places=2,
-                value_format="percent",
+            # 표는 결과 키 · 표시순서 지문과 공용 공정 거름(남은 공정 차례)이 정한다.
+            securement_csv = remembered_bytes(
+                CSV_MEMO_KEY,
+                (
+                    AVAILABILITY_TAB,
+                    capacity_cache_key,
+                    display_order_key,
+                    tuple(displayed_securement_table["공정"].drop_duplicates().tolist()),
+                ),
+                partial(_securement_csv, displayed_securement_table),
             )
-            securement_csv = securement_export.to_csv(index=False).encode("utf-8-sig")
             render_table_heading(
                 "확보율",
                 csv=securement_csv,

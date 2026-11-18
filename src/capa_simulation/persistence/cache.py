@@ -5,7 +5,8 @@
 저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열두 종
 (표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·Capa 요약·Top5 대역·
 주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다. 비교 시나리오 후보
-목록(HOME 이 회차마다 세션의 비교 시나리오를 대 보는 것)은 비교 대상 프로필과 한 세대를 쓴다.
+목록과 비교 시나리오의 리비전 목록(HOME 이 회차마다 세션의 비교 짝을 대 보는 것)은 비교 대상
+프로필과 한 세대를 쓴다.
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
@@ -377,6 +378,39 @@ def listed_comparison_candidates(database_path: str) -> frozenset[str]:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _scenario_revision_ids_payload(
+    database_path: str, scenario_id: str, generation: WriteGeneration
+) -> tuple[str, ...]:
+    del generation
+    return tuple(
+        revision.revision_id
+        for revision in get_scenario_repository(database_path).list_revisions(scenario_id)
+    )
+
+
+def scenario_has_revision(database_path: str, scenario_id: str, revision_id: str) -> bool:
+    """그 리비전이 그 시나리오 것인가 — HOME 이 GAP 을 켠 회차마다 세션의 비교 짝을 대 본다.
+
+    리비전은 append-only 라(리비전 하나만 지우는 길이 저장소에 없다) 한 번 그 시나리오 목록에 든
+    리비전은 시나리오를 보관 · 영구 삭제할 때까지 든다. 그래서 목록을 비교 대상 프로필과 **같은 쓰기
+    세대**(`listed_comparison_candidates` 와 같은 까닭 — 보관 · 삭제가 그 세대를 올린다)로 캐시하고,
+    목록에 있으면 DB 를 열지 않는다. 새로 저장한 리비전(사이드바 저장 · 공식버전 자동 갱신 · 다른
+    세션)은 세대를 올리지 않아 캐시 목록에 늦게 든다 — 목록에 없으면 DB 로 한 번 더 보고 거기에도
+    없을 때만 아니라고 한다(아니라는 답은 늘 지금 DB 의 답이다). 읽지 못하면 저장소 예외가 그대로
+    올라간다.
+    """
+    listed = _scenario_revision_ids_payload(
+        database_path, scenario_id, _write_generation("comparison_scenario")
+    )
+    if revision_id in listed:
+        return True
+    return any(
+        revision.revision_id == revision_id
+        for revision in get_scenario_repository(database_path).list_revisions(scenario_id)
+    )
+
+
 def clear_global_comparison_scenario_cache() -> None:
     """비교 대상 프로필과 비교 후보 목록을 비운다.
 
@@ -386,6 +420,7 @@ def clear_global_comparison_scenario_cache() -> None:
     _bump_write_generation("comparison_scenario")
     _load_global_comparison_scenario_payload.clear()
     _listed_comparison_candidates_payload.clear()
+    _scenario_revision_ids_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=4)

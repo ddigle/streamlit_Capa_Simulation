@@ -392,8 +392,8 @@ def test_downtime_rejects_unknown_equipment() -> None:
 def test_cached_weekly_availability_matches_direct_call() -> None:
     """캐시 래퍼가 원 계산과 같은 값을 돌려주는지 고정한다.
 
-    `st.cache_data` 는 DataFrame 인자를 내용으로 해시하므로 리비전과 4개 화면 필터가
-    이미 반영된 프레임을 넘기면 키가 저절로 맞는다. 그 전제가 깨지면 여기서 걸린다.
+    캐시 키는 세 프레임의 내용 지문이므로 리비전과 4개 화면 필터가 이미 반영된 프레임을 넘기면
+    키가 저절로 맞는다. 그 전제가 깨지면 여기서 걸린다.
     """
     from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
 
@@ -401,15 +401,17 @@ def test_cached_weekly_availability_matches_direct_call() -> None:
     window = {"start_date": date(2026, 9, 1), "end_date": date(2026, 10, 31)}
 
     expected = build_weekly_equipment_availability(baseline, equipment, downtime, **window)
-    cached = get_weekly_equipment_availability(baseline, equipment, downtime, **window)
+    cached = get_weekly_equipment_availability(
+        baseline, equipment, downtime, start_date=window["start_date"], end_date=window["end_date"]
+    )
 
     pd.testing.assert_frame_equal(cached, expected)
 
     # 화면 필터가 바뀌면(= 프레임 내용이 바뀌면) 캐시가 아니라 새 결과가 나와야 한다.
     narrowed = equipment.loc[equipment["설비명"].eq("EQ-01")].copy()
-    assert not get_weekly_equipment_availability(baseline, narrowed, downtime, **window).equals(
-        cached
-    )
+    assert not get_weekly_equipment_availability(
+        baseline, narrowed, downtime, start_date=window["start_date"], end_date=window["end_date"]
+    ).equals(cached)
 
 
 def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:

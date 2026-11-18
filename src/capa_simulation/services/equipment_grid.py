@@ -95,6 +95,7 @@ from capa_simulation.services.equipment_validation import (
     MasterIssue,
     coerce_master_cell,
     equipment_master_issues,
+    same_column,
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.frame_contracts import scalar_match_key
@@ -515,6 +516,53 @@ def text_matrix(master: pd.DataFrame) -> list[list[str]]:
         for name in EQUIPMENT_COLUMNS
     ]
     return [list(row) for row in zip(*columns, strict=True)] if columns and len(master) else []
+
+
+@dataclass(frozen=True, eq=False)
+class TextMatrix:
+    """`text_matrix` 한 벌과 그 재료 — 그때의 계약 칸 사본(줄 자리 색인). `text_matrix_since` 가
+    다음 표와 칸마다 견주어 바뀐 칸만 다시 쓴다."""
+
+    frame: pd.DataFrame
+    rows: list[list[str]]
+
+
+def _contract_columns(master: pd.DataFrame) -> pd.DataFrame:
+    """계약 칸 가운데 있는 것만, 줄 자리 색인 사본으로."""
+    present = [name for name in EQUIPMENT_COLUMNS if name in master.columns]
+    return master.loc[:, present].reset_index(drop=True)
+
+
+def text_matrix_since(previous: TextMatrix | None, master: pd.DataFrame) -> TextMatrix:
+    """`text_matrix(master)` 와 **같은 글자 행렬**을 앞 행렬에서 바뀐 칸만 다시 써서 낸다.
+
+    칸 글자는 칸마다 그 칸 값으로만 정해지므로(`_text_column`), 앞 재료와 칸마다 견주어
+    (`equipment_validation.same_column` — 같은 dtype 의 글자 · 실수 · 날짜만 같다고 본다) 바뀐 칸만
+    다시 글자로 바꾸고 글자가 달라진 줄만 새 줄로 갈아 끼운다 — 앞 행렬의 줄 목록은 고치지 않는다.
+    줄 수 · 칸 목록이 다르면(줄을 넣고 뺌) 통째로 다시 만든다.
+    """
+    frame = _contract_columns(master)
+    if (
+        previous is None
+        or len(previous.frame) != len(frame)
+        or list(previous.frame.columns) != list(frame.columns)
+    ):
+        return TextMatrix(frame, text_matrix(frame))
+    changed = [name for name in frame.columns if not same_column(previous.frame[name], frame[name])]
+    if not changed:
+        return TextMatrix(frame, previous.rows)
+    rows = list(previous.rows)
+    fresh: set[int] = set()
+    for name in changed:
+        index = COLUMN_INDEX[str(name)]
+        for position, text in enumerate(_text_column(frame[name])):
+            if rows[position][index] == text:
+                continue
+            if position not in fresh:
+                rows[position] = list(rows[position])
+                fresh.add(position)
+            rows[position][index] = text
+    return TextMatrix(frame, rows)
 
 
 def _names(master: pd.DataFrame) -> list[str]:

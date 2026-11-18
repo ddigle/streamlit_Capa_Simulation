@@ -14,6 +14,11 @@
   보이고(88% · 0.88 둘 다 받음) 100% 를 넘으면 틀린 칸이다. 분류 칸은 왼쪽에 고정되어 잠긴다.
 - **작업 줄**(`render_actions`)은 표 위 · 단추 줄 key 는 표마다 따로다. 기준 창에서는 표 도구 막대가
   그 줄 오른쪽에 함께 선다(`edit_grid.one_line_style` — 문턱은 표마다 고친 뒤 단추 줄 폭으로 잰 값).
+- **「변경사항 적용」 도 콜백이다**(AGENTS 9장 「세션 상태를 바꾸는 조작은 콜백」). 콜백이
+  본문보다 먼저 그 표 출납을 받아 초안에 반영하고(`settle_inbox` — 단추 콜백이 그리드 출납
+  콜백보다 먼저 돈다) 적용한 뒤, 같은 회차 하나가 새 원본으로 그린다(전에는 누른 회차가 옛
+  원본으로 다 돈 뒤 `st.rerun()` 해 회차가 둘이었다). 막힌 적용의 글은 콜백이 그릴 수 없어 한 번
+  쓰는 칸(`refuse`)에 담고 작업 줄 아래 알림 칸이 그 회차에 그린다.
 """
 
 from __future__ import annotations
@@ -54,6 +59,7 @@ from capa_simulation.services.edit_grid import (
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, base_key
 from capa_simulation.services.simulation_cache import get_edit_grid_base
+from capa_simulation.session_slot import SessionSlot
 
 # 변경 목록 이름 — 기준 정보와 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
@@ -71,6 +77,10 @@ ERROR_PLACES: Final = 5
 MORE_HELP: Final = "더 보기"
 # 「⋯」 팝오버 key 의 세대 칸 꼬리 — 메뉴 안 단추를 누르면 세대를 올려 메뉴를 닫는다.
 MORE_GENERATION_SUFFIX: Final = "_generation"
+# 「변경사항 적용」 콜백이 막힌 까닭(표, 글, 아이콘) — 콜백은 그리지 못해 담아 두고 그 표 작업 줄의
+# 알림 칸이 같은 회차에 한 번 그린다(`refuse` · `render_actions`).
+APPLY_REFUSAL_KEY: Final = "plan_grid_apply_refusal"
+APPLY_REFUSAL: Final = SessionSlot(APPLY_REFUSAL_KEY, tuple)
 
 
 @dataclass(frozen=True)
@@ -221,6 +231,31 @@ def apply_inbox(grids: Mapping[str, PlanGrid | None]) -> bool:
     return cleared
 
 
+def settle_inbox(table: str, grid: PlanGrid) -> bool:
+    """「변경사항 적용」 콜백 몫 — 그 표 출납을 inbox 로 받고(`collect` — seq 기억이라 출납
+    콜백이 뒤에 또 받아도 한 번) 그 표 초안에 반영한다. 단추 콜백은 그리드 출납 콜백보다
+    **먼저** 돌므로(Streamlit 1.63 — 콜백 하나 단추가 콜백 여럿 컴포넌트 앞) 누름과 함께 온
+    편집도 이 적용에 든다. 반영이 초안 칸을 비웠으면 참(`apply_inbox` 와 같은 뜻)."""
+    collect(table)
+    return apply_inbox({table: grid})
+
+
+def refuse(table: str, message: str, *, icon: str | None = None) -> None:
+    """막힌 적용의 글을 담는다 — 그 표 작업 줄(`render_actions`)이 같은 회차 알림 칸에 오류로
+    그린다."""
+    APPLY_REFUSAL.set((table, message, icon))
+
+
+def _take_refusal(table: str) -> tuple[str, str | None] | None:
+    """그 표에 담아 둔 막힌 적용의 (글, 아이콘)을 꺼낸다(다른 표 것은 그대로 둔다)."""
+    refusal = APPLY_REFUSAL.peek()
+    if refusal is None or len(refusal) != 3 or refusal[0] != table:
+        return None
+    APPLY_REFUSAL.clear()
+    _, message, icon = refusal
+    return str(message), icon if isinstance(icon, str) else None
+
+
 def counts(table: str) -> tuple[int, int, int]:
     """(고친 칸, 고친 줄, 오류 칸)."""
     return change_counts(edit_grid.draft_of(cells_key(table)))
@@ -317,8 +352,8 @@ def render_grid(table: str, grid: PlanGrid | None, *, hidden: bool = False) -> N
 
 @dataclass(frozen=True)
 class Button:
-    """작업 줄 단추 하나 — 글 · 아이콘 · key · 누를 때 콜백(「변경사항 적용」 은 콜백 없이 누름
-    값으로 받는다)."""
+    """작업 줄 단추 하나 — 글 · 아이콘 · key · 누를 때 콜백(「변경사항 적용」 도 콜백 — 본문보다
+    먼저 적용해 누름 하나에 회차 하나다)."""
 
     label: str
     icon: str
@@ -339,7 +374,8 @@ def _closing(callback: Callable[[], None] | None, counter: str) -> Callable[[], 
 
 @dataclass(frozen=True)
 class Actions:
-    """작업 줄 결과 — 「변경사항 적용」 이 눌렸는가와 그 바로 아래 알림 자리(적용 결과 · 오류)."""
+    """작업 줄 결과 — 「변경사항 적용」 이 눌렸는가와 그 바로 아래 알림 자리(적용 결과 · 오류 — 막힌
+    적용의 글은 `render_actions` 가 이미 그렸다)."""
 
     submitted: bool
     notice: DeltaGenerator
@@ -365,7 +401,8 @@ def render_actions(
     수는 표 도구 막대 「적용 전 (n)」 하나가 말한다(UI-TXT-07).
 
     「변경사항 적용」 은 고친 칸도 붙여넣기 대기(`staged`)도 없으면 잠근다(같은 값 적용으로 리비전만
-    오르는 일을 막는 규칙). 「⋯」 는 「Excel 붙여넣기」 바로 뒤라 고치기 전 · 뒤에 같은 자리다."""
+    오르는 일을 막는 규칙). 「⋯」 는 「Excel 붙여넣기」 바로 뒤라 고치기 전 · 뒤에 같은 자리다.
+    그 표의 적용 콜백이 막혀 담아 둔 글(`refuse`)은 알림 칸에 오류로 그린다."""
     cells, _, errors = counts(table)
     pending = cells > 0 or staged
     with st.container(
@@ -378,6 +415,7 @@ def render_actions(
             type="primary",
             help=apply_help if pending else locked_help,
             disabled=not pending,
+            on_click=apply.on_click,
         )
         st.button(paste.label, icon=paste.icon, key=paste.key, on_click=paste.on_click)
         if more:
@@ -405,4 +443,8 @@ def render_actions(
             )
             if errors:
                 st.markdown(f":red[고칠 칸 {errors:,}개]")
-    return Actions(submitted, render_flash(*flash_keys))
+    notice = render_flash(*flash_keys)
+    refusal = _take_refusal(table)
+    if refusal is not None:
+        notice.error(refusal[0], icon=refusal[1])
+    return Actions(submitted, notice)
