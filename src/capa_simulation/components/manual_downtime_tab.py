@@ -365,7 +365,12 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
     제 저장이 끊긴 것이면(`is_own_save` — 첫 누름이 저장하고 뒷정리 전에 끊겼다) 저장한 칸(보이는
     칸)을 초안에서 빼고 성공을 다시 알린다. 남의 저장이면 초안을 모두 버리고 그 수를 곁 경고 ·
     알림창으로 알린다 — 남의 저장 위에 옛 초안을 얹어 보이지 않은 칸을 덮지 않게(9장 「본 값과
-    보이는 칸」). 그 뒤(또는 초안이 없으면) 그린 저장본의 version 을 본 값으로 적는다."""
+    보이는 칸」). 그 뒤(또는 초안이 없으면) 그린 저장본의 version 을 본 값으로 적는다.
+
+    초안 칸 수가 바뀌었으면 본 값을 적은 뒤 앱 전체를 한 번 다시 돌린다 — 화면 탭 점 · 변경 칩 ·
+    ③ 탭 점은 페이지보다 먼저 초안 칸 수를 세어(`manual_downtime_draft_count`) 이 회차에는 옛 수로
+    섰다(설비 편집본의 `rerun_if_head_stale` 와 같은 까닭). 담은 알림은 다시 돈 회차의 알림 칸이 한
+    번 그린다. 다시 돈 회차는 본 값이 저장본과 같아 되풀이되지 않는다."""
     draft = _draft()
     base = seen(MANUAL_BASE_VERSION_KEY)
     if draft and base != profile.version:
@@ -382,6 +387,8 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
             )
     if not _draft() or base != profile.version:
         remember_seen(MANUAL_BASE_VERSION_KEY, profile.version)
+    if len(_draft()) != len(draft):
+        st.rerun(scope="app")
 
 
 def manual_tab_processes(

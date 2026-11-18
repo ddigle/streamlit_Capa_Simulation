@@ -5142,7 +5142,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     있으면 화면 탭 점(어느 화면에서나)·③ 탭 점·머리 변경 칩 「저장 안 함」(Preference 탭을 가리킴)·테마 · 새로고침 확인이
     선다(`manual_downtime_draft_count`). 떠나도 남으므로 탭 줄 떠나기 확인에는 넣지 않는다(설계 규칙 UI-STA-02). 초안이 있는
     동안 본 version 을 붙들고, 저장 아닌 회차에 저장본 version 이 달라졌으면 제 저장이 끊긴 것(`is_own_save`)이면 보이는 칸을
-    빼고 남의 저장이면 초안을 버리고 그 수를 곁 경고 · 알림창으로 알린다(`MANUAL_DROPPED_MESSAGE`). 조회기간 밖이 된 칸은
+    빼고 남의 저장이면 초안을 버리고 그 수를 곁 경고 · 알림창으로 알린다(`MANUAL_DROPPED_MESSAGE`). 그렇게 초안 칸 수가 바뀐
+    회차는 본 version 을 적은 뒤 앱 전체를 한 번 다시 돌려(`_settle_draft` 끝 `st.rerun(scope="app")` — 설비 편집본의
+    `rerun_if_head_stale` 와 같은 까닭) 페이지보다 먼저 센 화면 탭 점 · 변경 칩 · ③ 탭 점을 그 회차에 걷는다(2026-11-19 E2E
+    e3-D1 — 한 회차 늦게 걷혔다, 설계 규칙 UI-STA-02). 담은 알림은 다시 돈 회차가 한 번 그린다. 조회기간 밖이 된 칸은
     초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 는 초안과 편집표 위젯(`editor_state.discard_editor`)을 버린다. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
   `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 저장 줄(`MANUAL_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대
   자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2026-11-10 사용자 그림 메모 eq-pref). 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선

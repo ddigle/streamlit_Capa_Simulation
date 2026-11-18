@@ -778,6 +778,40 @@ def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_co
     assert app.session_state["count_before_page"] == 0
 
 
+def test_the_run_that_drops_the_draft_clears_the_dot_and_chip_count_in_the_same_run(
+    tmp_path: Path,
+) -> None:
+    """남의 저장이 초안을 버린 회차는 앱 머리(화면 탭 점 · 변경 칩 · ③ 탭 점 — 페이지보다 먼저 센
+    초안 칸 수)도 그 회차에 걷는다(2026-11-19 E2E e3-D1 — 버림 경고와 빈 표가 선 회차에 점 · 「변경
+    1」 칩이 남고 한 번 더 움직여야 걷혔다). 버린 회차는 한 번 다시 돌아 머리를 새 수로 그리고, 버림
+    경고는 그 다시 돈 회차에 한 번 선다. 다음 회차는 다시 돌지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    tables.run()
+    assert app.session_state["count_before_page"] == 1
+
+    DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202608): 9.0}, processes=[A], months=[202608], expected_version=0
+    )
+    clear_equipment_repository()
+    tables.run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert app.session_state["count_before_page"] == 0
+    dropped = MANUAL_DROPPED_MESSAGE.format(count=1, hidden="")
+    warnings = [item.value for item in app.warning]
+    assert warnings.count(dropped) == 1, warnings
+
+    tables.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 0
+    assert dropped not in [item.value for item in app.warning]
+
+
 # ------------------------------------------- 버린 칸 수 · 표 없는 화면의 초안(2026-11-19)
 
 
