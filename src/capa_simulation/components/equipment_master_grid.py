@@ -110,16 +110,18 @@ GRADE_LOCK: Final = "grade"
 
 
 def _locked_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """줄 잠금 갈래 맨 앞에 등급 — 브라우저는 앞 갈래의 까닭을 풍선에 띄운다(등급이 막는 까닭)."""
     locks = [str(kind) for kind in row.get("locks") or [] if kind != GRADE_LOCK]
-    return {**row, "locks": [*locks, GRADE_LOCK]}
+    return {**row, "locks": [GRADE_LOCK, *locks]}
 
 
 def read_only_data(data: Mapping[str, Any], reason: str | None) -> dict[str, Any]:
     """화면 등급으로 고칠 수 없으면(`reason`) 모든 칸 · 줄 · 새 호기를 잠근 data(모듈 설명). 없으면
-    그대로."""
+    그대로. 등급 잠금 갈래의 칸은 다른 갈래(`equipment_grid.lock_sets_payload`)처럼 칸 **번호**다
+    — 브라우저(`lockOf`)가 칸 번호로 대조한다."""
     if reason is None:
         return dict(data)
-    columns = [str(column.get("name")) for column in data.get("columns") or []]
+    columns = list(range(len(data.get("columns") or [])))
     result: dict[str, Any] = {
         **data,
         "lockSets": {**(data.get("lockSets") or {}), GRADE_LOCK: columns},

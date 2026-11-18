@@ -26,7 +26,8 @@
 - 컴포넌트 JS · CSS 를 돌리지 않는다 — 대역이 받은 data 까지만 본다. 컴포넌트 안 단추는 그
   data 를 자산의 node 판정에 그대로 돌리는 줄을 둔다(Space 「호기 정보」 「CSV」 ·
   `test_space_unit_sheet_js.run_csv_hidden`, 시나리오 목록 표 ·
-  `test_scenario_list_grid_assets.drawn_list_controls`). 단추 서식이 `[hidden]` 을 덮는 꼴은
+  `test_scenario_list_grid_assets.drawn_list_controls`, 설비 마스터 표 · 호기 상세의 칸 잠금 ·
+  `test_equipment_master_grid_assets.tried_master_edits`). 단추 서식이 `[hidden]` 을 덮는 꼴은
   자산 시험이 본다.
 - 표에 적은 단추만 본다 — 등급과 상관없어야 하는 단추(공식 세션의 「공식으로 바꾸기」), 오른쪽
   칸 고르기의 칸 하나하나, 팝업 끝 바로 가기처럼 「없어야 할 것」 도 줄로 적어야 잡힌다.

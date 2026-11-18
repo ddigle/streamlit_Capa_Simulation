@@ -548,7 +548,7 @@ function enqueue(S, op, cells) {
   return queued
 }
 
-// 브라우저 한 줄 — 칸 수 상한 · 이름 붙여넣기 거부와 진행(붙여넣는 중). `seq` 를 주면 그 op 가 돌아올 때 거둔다.
+// 브라우저 한 줄 — 칸 수 상한 · 이름 붙여넣기 거부 · 잠긴 칸 붙여넣기 거부(잠금 까닭)와 진행(붙여넣는 중). `seq` 를 주면 그 op 가 돌아올 때 거둔다.
 function showNote(S, text, seq) {
   S.note = text
   S.noteSeq = seq || 0
@@ -2171,6 +2171,21 @@ function onBodyKey(S, event) {
   }
 }
 
+// 붙일 자리(줄 × 칸)에서 처음 만난 잠금의 까닭을 한 줄로 — 띄웠으면 참.
+function lockNote(S, rows, cols) {
+  for (const row of rows) {
+    for (const k of cols) {
+      const lock = row ? lockOf(row, k, S.model.locks) : null
+      const why = lock ? S.model.reasons[lock] : ''
+      if (why) {
+        showNote(S, why)
+        return true
+      }
+    }
+  }
+  return false
+}
+
 function onPaste(S, event) {
   const cell = event.target.closest('.emg-c[data-col]')
   if (!cell) return
@@ -2188,7 +2203,11 @@ function onPaste(S, event) {
       return
     }
     const row = model.rows.find((item) => item.id === id)
-    if (!row || !editableIn(S, row, col)) return
+    if (!row) return
+    if (!editableIn(S, row, col)) {
+      lockNote(S, [row], [col])
+      return
+    }
     enqueue(S, { op: 'cell', id, col: model.columns[col].name, text: text.replace(/\r?\n$/, '') }, [[id, col, text]])
     schedule(S)
     paintWindow(S)
@@ -2206,6 +2225,11 @@ function onPaste(S, event) {
   const plan = planPaste(cells, start.row, start.col, live.map((row) => row.id), names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
   if (plan.tooMany) {
     showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV」 의 「엑셀·CSV로 한꺼번에」 를 씁니다')
+    return
+  }
+  // 넣을 칸이 하나도 없으면(모두 잠김 — 화면 등급으로 표를 고칠 수 없을 때 등) 보내지 않고 잠금 까닭 한 줄.
+  if (!plan.count) {
+    if (!lockNote(S, plan.ids.map((rowId) => byId.get(rowId)), plan.cols.map((name) => byName.get(name))) && onName) showNote(S, NAME_PASTE_NOTE)
     return
   }
   S.edit = null

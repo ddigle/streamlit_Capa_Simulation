@@ -1139,6 +1139,190 @@ def test_a_read_only_grid_keeps_the_selection_band_without_its_edit_tools() -> N
     assert "readOnly" not in emg.read_only_data({"columns": [], "rows": []}, None)
 
 
+# 칸 고치기 길을 모두 눌러 본다 — 표(Enter · F2 · 글자 치기 · 한 칸 · 여러 칸 붙여넣기)와
+# 호기 상세(입력 칸 · 고르기 칩). 받은 data 를 그대로 올린다(등급 시험이 대역이 받은 data 를
+# 넣는다 — AppTest 는 JS 를 못 돌린다).
+_TRY_EDITS_RUNNER = r"""
+FakeNode.prototype.select = function () {}
+FakeNode.prototype.scrollIntoView = function () {}
+Object.defineProperty(FakeNode.prototype, 'innerHTML', { set() { this.textContent = '' } })
+document.querySelector = () => null
+document.documentElement = { clientWidth: 1200 }
+// 표가 칸을 찾는 겹친 선택자(「.칸[속성]」 한 덩이).
+const oneMatch = FakeNode.prototype.matches
+FakeNode.prototype.matches = function (selector) {
+  return selector.split(',').some((part) => {
+    const text = part.trim()
+    const bits = text.match(/\.[\w-]+|\[[^\]]+\]/g)
+    if (!bits || bits.join('') !== text) return oneMatch.call(this, text)
+    return bits.every((bit) => oneMatch.call(this, bit))
+  })
+}
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const mountOn = (data) => {
+  const parentElement = new FakeNode('div')
+  const host = parentElement.appendChild(new FakeNode('div'))
+  host.className = 'emg'
+  const sent = []
+  const cleanup = globalThis.__mount({
+    data, parentElement, setTriggerValue() {}, setStateValue: (name) => sent.push(name),
+  })
+  return { host, S: host.__emg, cleanup, sent }
+}
+const head = (node) => String(node.title || '').split('\n')[0]
+const R = {}
+;(async () => {
+  if (input.grid) {
+    const { S, cleanup, sent } = mountOn(input.grid)
+    const body = S.body
+    const values = () => body.querySelectorAll('.emg-c').filter(
+      (node) => node.dataset.id !== undefined && Number(node.dataset.col) !== S.model.nameCol)
+    const id = values()[0].dataset.id
+    const kinds = S.model.columns.map((column) => column.kind)
+    const textCol = values().map((node) => Number(node.dataset.col))
+      .find((k) => kinds[k] !== 'choice')
+    const press = () => values().find(
+      (node) => node.dataset.id === id && Number(node.dataset.col) === textCol).children[0]
+    const opened = (act) => {
+      S.edit = null
+      paintWindow(S)
+      act()
+      const got = Boolean(S.edit) || body.querySelectorAll('.emg-ed').length > 0
+      S.edit = null
+      paintWindow(S)
+      return got
+    }
+    const paste = (text) => fire(press(), 'paste', { clipboardData: { getData: () => text } })
+    R.grid = {
+      cells: values().length,
+      locked: values().filter((node) => node.classList.contains('is-locked')).length,
+      tips: Array.from(new Set(values().map(head))),
+      enter: opened(() => fire(press(), 'keydown', { key: 'Enter' })),
+      f2: opened(() => fire(press(), 'keydown', { key: 'F2' })),
+      typed: opened(() => fire(press(), 'keydown', { key: 'X' })),
+      direct: opened(() => startEdit(S, id, textCol)),
+    }
+    paste('P1')
+    R.grid.pasteOne = { ops: S.box.ops.length, note: S.note }
+    paste('P1\tP2\nP3\tP4')
+    R.grid.pasteMany = { ops: S.box.ops.length, note: S.note }
+    await tick(400)
+    R.grid.sent = sent.length
+    cleanup()
+  }
+  if (input.detail) {
+    const { host, S, cleanup, sent } = mountOn(input.detail)
+    const inputs = host.querySelectorAll('.emg-input')
+    for (const node of inputs) {
+      if (node.disabled) continue
+      node.value = 'Y'
+      fire(node, 'input')
+      fire(node, 'keydown', { key: 'Enter' })
+    }
+    const chips = host.querySelectorAll('.emg-chip')
+    for (const chip of chips) fire(chip, 'click')
+    await tick(400)
+    R.detail = {
+      inputs: inputs.length,
+      open: inputs.filter((node) => !node.disabled).length,
+      chips: chips.length,
+      tips: Array.from(new Set(host.querySelectorAll('.emg-field').map(head))),
+      ops: S.box.ops.length,
+      sent: sent.length,
+    }
+    cleanup()
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def tried_master_edits(
+    grid: dict[str, Any] | None = None, detail: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """표 · 호기 상세 data 를 가짜 DOM 에 올려 칸 고치기 길을 모두 눌러 본 결과 — 표는 칸 수 · 잠긴
+    칸 수 · 풍선 첫 줄 · 편집기가 열렸나(Enter · F2 · 글자 · 바로 열기) · 붙여넣기 뒤 op 수와 한 줄
+    · 보낸 수, 호기 상세는 입력 칸 수 · 열린 칸 수 · 칩 수 · 풍선 첫 줄 · op 수 · 보낸 수. 등급
+    시험이 대역이 받은 data 를 그대로 넣는다(AppTest 는 JS 를 못 돌린다)."""
+    return _node(
+        {"grid": grid, "detail": detail}, _TRY_EDITS_RUNNER, source=FAKE_DOM + _fake_dom_source()
+    )
+
+
+GRADE_REASON = "DEMO 등급 까닭"
+
+
+def _try_grid() -> dict[str, Any]:
+    return {
+        "mode": "grid",
+        "base": "b1",
+        "view": "v1",
+        "limits": {"outboxCells": 10000, "pasteCells": 5000},
+        "columns": [
+            {"name": "설비명", "kind": "name", "width": "name"},
+            {"name": "Model", "kind": "text", "width": "m"},
+            {"name": "동", "kind": "choice", "width": "s", "options": ["C1", "C2"], "blank": True},
+            {"name": "Area", "kind": "text", "width": "m"},
+        ],
+        "colSets": [["all", "전체", "", [1, 2, 3]]],
+        "lockSets": {"module": [1, 2, 3]},
+        "lockReasons": {"module": "DEMO 묶음 까닭"},
+        "rows": [
+            {"id": "a", "values": ["EQ-1", "x", "C1", "p"]},
+            {"id": "b", "values": ["EQ-2", "y", "C2", "q"], "locks": ["module"]},
+        ],
+    }
+
+
+def _try_detail() -> dict[str, Any]:
+    return {
+        "mode": "side",
+        "panel": "detail",
+        "base": "b1",
+        "columns": _try_grid()["columns"],
+        "groups": [["main", "기본", "", "", [1, 2, 3]]],
+        "lockSets": {},
+        "lockReasons": {},
+        "unit": {"id": "a", "values": ["EQ-1", "x", "C1", "p"], "downtime": [], "deletable": True},
+    }
+
+
+def test_a_read_only_grid_and_detail_open_no_editor_and_send_nothing() -> None:
+    """화면 등급으로 설비 마스터를 고칠 수 없으면(`read_only_data`) 표의 모든 칸이 잠긴 칸 길을
+    탄다 — Enter · F2 · 글자 치기로 편집기가 열리지 않고, 한 칸 · 여러 칸 붙여넣기는 op 를 보내지
+    않고 까닭 한 줄을 남기며, 칸 풍선 첫 줄이 까닭이다. 호기 상세도 입력 칸이 모두 꺼지고 고르기
+    칩이 서지 않는다. 전에는 잠금 갈래에 칸 이름을 실어(브라우저는 칸 번호로 대조) 한 칸도 잠기지
+    않았고 칸마다 서버 거절 알림이 섰다(2026-11-18 E2E). 같은 data 를 등급 없이 올리면 모두
+    열린다(대조)."""
+    locked = tried_master_edits(
+        emg.read_only_data(_try_grid(), GRADE_REASON),
+        emg.read_only_data(_try_detail(), GRADE_REASON),
+    )
+    grid = locked["grid"]
+    assert grid["cells"] == grid["locked"] == 6
+    assert grid["tips"] == [GRADE_REASON], "등급 까닭이 다른 잠금보다 앞이다"
+    assert [grid[name] for name in ("enter", "f2", "typed", "direct")] == [False] * 4
+    assert grid["pasteOne"] == {"ops": 0, "note": GRADE_REASON}
+    assert grid["pasteMany"] == {"ops": 0, "note": GRADE_REASON}
+    assert grid["sent"] == 0
+    detail = locked["detail"]
+    assert detail["inputs"] == 3 and detail["open"] == 0 and detail["chips"] == 0
+    assert detail["tips"] == [GRADE_REASON]
+    assert detail["ops"] == detail["sent"] == 0
+
+    plain = tried_master_edits(
+        emg.read_only_data(_try_grid(), None), emg.read_only_data(_try_detail(), None)
+    )
+    grid = plain["grid"]
+    assert grid["locked"] == 3, "묶음 잠금 줄만"
+    assert [grid[name] for name in ("enter", "f2", "typed", "direct")] == [True] * 4
+    assert grid["pasteOne"]["ops"] == 1 and grid["pasteMany"]["ops"] == 2
+    assert grid["sent"] == 1
+    detail = plain["detail"]
+    assert detail["open"] == 2 and detail["chips"] == 3
+    assert detail["ops"] == 4 and detail["sent"] > 0, "입력 칸 둘 · 지금 값이 아닌 칩 둘"
+
+
 _PLACE_TIP_RUNNER = """
 const box = (left) => ({ getBoundingClientRect: () => ({ left }) })
 const place = (frameLeft, tipLeft) => {

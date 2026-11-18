@@ -36,6 +36,7 @@ from grade_support import (
 from grid_fake import Calls, install_fake_grid, last
 from streamlit.testing.v1 import AppTest
 from test_availability_gap_panel import _panel_app, _select_view
+from test_equipment_master_grid_assets import tried_master_edits
 from test_equipment_pages import _open_settings, _page_script
 from test_equipment_scenario_publish_guard import _add_trace
 from test_equipment_scenario_repository import _clone, _seeded
@@ -45,7 +46,7 @@ from capa_simulation.auth import grades
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components import grade_ui, space_layout_editor, sso_identity
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_MENU_KEY
-from capa_simulation.components.equipment_data_workspace import GRID_LOADED_KEY
+from capa_simulation.components.equipment_data_workspace import GRID_DETAIL_KEY, GRID_LOADED_KEY
 from capa_simulation.components.equipment_master_tab import (
     DATA_MENU_LABEL,
     SAVE_BUTTON_KEY,
@@ -166,6 +167,7 @@ def _master(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str) -> tupl
     )
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
     app.session_state[GRID_LOADED_KEY] = ("s:EQ-01", "s:EQ-02")
+    app.session_state[GRID_DETAIL_KEY] = "s:EQ-01"
     return _ok(app.run()), grid
 
 
@@ -179,6 +181,11 @@ def test_the_master_grid_is_locked_below_the_save_grade(
     table = last(grid, emg.GRID_KEY)
     locked = all(emg.GRADE_LOCK in row.get("locks", []) for row in table["rows"])
     assert locked is not editable
+    # 등급 잠금 갈래는 다른 갈래처럼 칸 번호다 — 칸 이름을 실어 브라우저(`lockOf`)가 한 칸도 잠그지
+    # 못했다(2026-11-18 E2E).
+    for data in (table, last(grid, emg.side_key("detail"))):
+        grade_cols = data["lockSets"].get(emg.GRADE_LOCK)
+        assert grade_cols == (None if editable else list(range(len(data["columns"]))))
     assert (table["deleteLock"] == grades.refusal_text("equipment.save")) is not editable
     assert last(grid, emg.LOADER_KEY)["newEnabled"] is editable, "「+ 새 호기」"
     side = app.segmented_control(key=SIDE_KEY)
@@ -189,6 +196,17 @@ def test_the_master_grid_is_locked_below_the_save_grade(
     # 같은 표 · 같은 오른쪽 칸 — 편집 도구 단추(고른 줄 띠 · 호기 상세)만 등급 표지로 세우지 않는다.
     assert bool(table.get("readOnly")) is not editable, "표 편집 도구"
     assert bool(detail.get("readOnly")) is not editable, "호기 상세 편집 도구"
+    # 칸 잠금은 표 JS 가 판정한다 — 받은 data 를 그대로 가짜 DOM 에 올려 칸 고치기 길을 눌러 본다
+    # (node 가 없으면 건너뛰는 줄이라 맨 끝).
+    assert detail["unit"] is not None
+    tried = tried_master_edits(table, detail)
+    opened = [tried["grid"][name] for name in ("enter", "f2", "typed", "direct")]
+    assert opened == [editable] * 4, "표 칸 편집기"
+    assert (tried["grid"]["pasteMany"]["ops"] > 0) is editable, "표 붙여넣기"
+    assert (tried["detail"]["open"] > 0) is editable, "호기 상세 입력 칸"
+    if not editable:
+        assert tried["grid"]["sent"] == tried["detail"]["sent"] == 0
+        assert tried["grid"]["tips"] == [grades.refusal_text("equipment.save")]
 
 
 @GRADE_PARAMS
