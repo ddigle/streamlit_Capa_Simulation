@@ -28,6 +28,7 @@ import pytest
 from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
+from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
@@ -71,13 +72,18 @@ def _fresh_cache() -> None:
 
 def _script(database_path: Path) -> str:
     """탭 조각 — 세션 칸 `test_away` 가 참이면 다른 화면을 본 회차처럼 그리지 않는다(위젯 상태가
-    걷힌다). `test_months` 가 있으면 그 달들을 열로 쓴다(조회기간을 바꾼 회차)."""
+    걷힌다). `test_months` 가 있으면 그 달들을 열로 쓴다(조회기간을 바꾼 회차). 맨 앞에서 `app.py`
+    처럼 초안 칸 수를 먼저 센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤)."""
     return f"""
 import streamlit as st
 
-from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
+from capa_simulation.components.manual_downtime_tab import (
+    manual_downtime_draft_count,
+    render_manual_downtime_tab,
+)
 from capa_simulation.components.process_labels import ProcessLabels
 
+st.session_state["count_before_page"] = manual_downtime_draft_count()
 if st.session_state.get("test_away"):
     st.write("다른 화면")
 else:
@@ -676,3 +682,85 @@ def test_cells_out_of_the_period_stay_in_the_draft_and_are_not_saved(tmp_path: P
     assert not app.exception
     assert _editor_values(app)["202608"][row_a] == pytest.approx(3.0)
     assert _draft(app) == {(A, 202608): 3.0}
+
+
+def test_a_browser_cell_edit_is_folded_by_the_callback_before_the_page_draws(
+    tmp_path: Path,
+) -> None:
+    """브라우저가 보낸 칸 편집은 편집표 `on_change` 가 그 회차 첫머리에 초안에 접는다 — `app.py`
+    처럼 페이지보다 먼저 센 초안 칸 수가 그 회차에 벌써 1 이다(탭 점 · 변경 칩 · 새로고침 확인이
+    한 회차 늦지 않다). 칸을 저장본 값으로 되돌리면 같은 회차에 0 이다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    assert not app.exception
+    row_a = _editor_values(app)["공정"].index("WM")
+
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    tables.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 1
+    assert _draft(app) == {(A, 202607): 1.5}
+
+    tables.edit(manual_editor_key(0), row_a, "202607", None)
+    tables.run()
+    assert app.session_state["count_before_page"] == 0
+    assert _draft(app) == {}
+
+
+def test_an_edit_sent_with_the_press_that_leaves_the_screen_is_kept(tmp_path: Path) -> None:
+    """칸을 고친 직후 다른 화면으로 옮긴 회차 — 표를 그리지 않는 회차에도 그 회차 첫머리의
+    `on_change` 가 칸을 초안에 접어 두어 돌아오면 그 칸이 선다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+
+    tables.edit(manual_editor_key(0), row_a, "202608", 2.25)
+    app.session_state["test_away"] = True
+    tables.run()
+    assert not app.exception
+    assert not [frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id]
+    assert _draft(app) == {(A, 202608): 2.25}
+
+    app.session_state["test_away"] = False
+    tables.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 1
+    assert _editor_values(app)["202608"][row_a] == pytest.approx(2.25)
+
+
+def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_count(
+    tmp_path: Path,
+) -> None:
+    """표가 떠 있는 채 남이 저장하면 다음 회차(아무 조작)가 브라우저에 남은 칸 편집까지 버리고
+    최신을 그린다 — 버린 칸 수를 곁 경고로 알리고, 다음 회차의 표는 새 위젯이라 옛 편집이 다시
+    접히지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    tables.edit(manual_editor_key(0), 1 - row_a, "202608", 0.5)
+    tables.run()
+    assert _draft(app) == {(A, 202607): 1.5, (B, 202608): 0.5}
+
+    DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202607): 9.0}, processes=[A], months=[202607], expected_version=0
+    )
+    clear_equipment_repository()
+    tables.run()
+    assert not app.exception
+    warnings = [item.value for item in app.warning]
+    assert MANUAL_DROPPED_MESSAGE.format(count=2) in warnings, warnings
+    assert _draft(app) == {}
+    assert manual_editor_key(1) in _editor_id(app)
+    assert _editor_values(app)["202607"][row_a] == pytest.approx(9.0)
+
+    tables.run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert app.session_state["count_before_page"] == 0
