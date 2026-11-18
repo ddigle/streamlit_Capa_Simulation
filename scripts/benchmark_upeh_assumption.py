@@ -85,7 +85,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--percent",
         type=int,
         default=110,
-        help=f"잴 UPEH 가정 %({PERCENT_MIN}~{PERCENT_MAX}, 기본 110).",
+        help=f"잴 UPEH 가정 %%({PERCENT_MIN}~{PERCENT_MAX}, 기본 110).",
     )
     parser.add_argument("--output", help="결과 JSON 을 쓸 파일(먼저 비운다). 없으면 표준 출력만.")
     return parser.parse_args(argv)

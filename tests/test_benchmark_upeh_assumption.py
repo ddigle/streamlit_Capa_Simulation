@@ -83,6 +83,14 @@ def test_the_cli_writes_json_and_refuses_a_bad_folder_or_percent(
         assert capsys.readouterr().err.strip() == refused
 
 
+def test_the_help_prints_the_percent_range(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--help` 가 서식 오류 없이 끝난다 — argparse 는 도움말의 `%` 를 서식으로 읽는다."""
+    with pytest.raises(SystemExit) as stopped:
+        benchmark.parse_args(["--help"])
+    assert stopped.value.code == 0
+    assert "UPEH 가정 %(" in capsys.readouterr().out
+
+
 def test_a_failure_names_only_the_stage_and_the_exception_kind(tmp_path: Path) -> None:
     """설비 저장본이 없는 사본 — 「설비 읽기 실패 — LookupError」 한 줄이다(이름·경로를 싣지
     않는다)."""

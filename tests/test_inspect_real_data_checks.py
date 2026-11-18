@@ -61,6 +61,7 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_UNKNOWN_PRODUCT_REASON,
     UNROUTED_UNUSED_REASON,
 )
+from capa_simulation.settings import DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -566,6 +567,20 @@ def test_the_migration_check_line_is_carried_and_checked(
     body = line.rsplit(" #", 1)[0]
     assert "확인 코드(`#NN`)가 없다" in checks.check_transcript([body])[0]
     assert checks.check_transcript([line.replace("X0", "X8")]) != []
+
+
+def test_a_copy_below_the_code_is_not_sent_to_the_app(tmp_path: Path) -> None:
+    """8-1 — 버킷 사본이 코드보다 낮으면(운영 앱의 첫 저장 전) 앱을 띄우라고 하지 않는다. 운영 DB
+    자리가 낮을 때만 4-2 의 「앱을 띄워 …」 다(런북 7-8 · 8장)."""
+    copy = tmp_path / "capa_simulation.duckdb"
+    copy.write_bytes(b"")
+    lower = checks._migration_line("시뮬레이션 DB", copy, [1, 36], [1, 36, 37, 38])
+    assert "(최고 36 · 코드 38, **코드보다 낮다** — 사본이라 앱을 띄워 올리지 않는다" in lower
+    assert "4-2" not in lower
+
+    operational = checks._migration_line("시뮬레이션 DB", DUCKDB_PATH, [36], [36, 38])
+    assert "**코드보다 낮다** — 앱을 띄워 그 DB 를 여는 화면을 연 뒤 다시(4-2)" in operational
+    assert "코드와 같다" in checks._migration_line("시뮬레이션 DB", copy, [36, 38], [36, 38])
 
 
 def test_an_error_message_carrying_names_is_reported_by_kind_only(

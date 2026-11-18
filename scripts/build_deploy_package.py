@@ -513,7 +513,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.out is None:
         parser.error("ZIP 을 만들려면 --out 이 필요합니다(--list-only 는 예외).")
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
-    if runbook_stamp_mismatch(stamp) or runbook_placeholders_left():
+    # 둘 다 돌린 뒤 가른다 — stamp 선언이 자리표 그대로여도 남은 자리표 수가 함께 찍혀
+    # 한 번에 채운다.
+    stamp_blocked = runbook_stamp_mismatch(stamp)
+    if runbook_placeholders_left() or stamp_blocked:
         return 1
     if runbook_screen_count_mismatch():
         return 1

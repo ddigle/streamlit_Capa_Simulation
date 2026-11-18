@@ -539,6 +539,33 @@ def test_a_runbook_not_filled_for_this_deploy_stops_the_build(
     assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"
 
 
+def test_a_placeholder_stamp_also_reports_the_placeholders_left(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """stamp 선언이 자리표 그대로인 초안 — 선언 대조에서 끊지 않고 남은 자리표 수까지 한 번에
+    알린다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    _write_runbook(
+        pushed_repo, "**이 절은 stamp `<STAMP>` 배포용이다.**", body="추가 {APPLY_FACTS}"
+    )
+    _git(pushed_repo, "add", "docs")
+    _git(pushed_repo, "commit", "-q", "-m", "7장 초안")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    out = tmp_path / "out"
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
+    err = capsys.readouterr().err
+    assert "stamp 선언을 찾지 못했습니다" in err
+    assert "<STAMP> 1곳" in err
+    assert "{APPLY_FACTS} 1곳" in err
+    assert not (out / "202610131200.zip").exists()
+
+
 def test_a_second_tagged_build_with_the_same_stamp_stops_before_overwriting(
     pushed_repo: Path,
     tmp_path: Path,

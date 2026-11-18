@@ -649,12 +649,19 @@ def _versions(connection: duckdb.DuckDBPyConnection, table: str) -> list[int] | 
 def _migration_line(
     label: str, path: Path, versions: list[int] | None, code_versions: Sequence[int]
 ) -> str:
+    """사본(운영 DB 자리 밖)이 낮으면 운영 앱을 띄우라고 하지 않는다 — 운영 앱은 사본을 올리지 않고,
+    버킷 사본은 운영 앱이 이 판으로 첫 저장을 하기 전까지 낮은 것이 정상이다(런북 7장)."""
     code_max = max(code_versions, default=0)
     size = path.stat().st_size / 1_000_000 if path.exists() else 0.0
     if versions is None:
         return f"- {label} `{path.name}` {size:,.1f} MB — 마이그레이션 표를 읽지 못함"
     db_max = max(versions, default=0)
-    if db_max < code_max:
+    if db_max < code_max and not is_operational_database_place(path):
+        state = (
+            "**코드보다 낮다** — 사본이라 앱을 띄워 올리지 않는다"
+            "(버킷 사본이면 운영 앱의 첫 저장 전 꼴 — 그 배포 7장)"
+        )
+    elif db_max < code_max:
         state = "**코드보다 낮다** — 앱을 띄워 그 DB 를 여는 화면을 연 뒤 다시(4-2)"
     elif db_max > code_max:
         state = "**코드보다 높다** — 옛 배포를 적용했을 수 있다"
