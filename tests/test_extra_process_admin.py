@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from alert_marks import flashed
+from alert_marks import active_state, flashed
 from extra_process_fixtures import BOND, bump_version, edited, set_cell, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 
@@ -83,7 +83,7 @@ if st.session_state.get({PACK_KEY!r}) is not None:
 try:
     bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
     repository = get_scenario_repository(str(settings.DUCKDB_PATH))
-    admin.render_extra_process_admin(repository, opened=True)
+    admin.render_extra_process_admin(repository, alert_tab="부대공정")
 finally:
     install_source(None)
     admin.write_lock_reason = original_lock
@@ -270,3 +270,29 @@ def test_stage_pack_judges_against_the_history() -> None:
     forward = stage_pack(on, SourceFetch(zip_files(bump_version(changed, 2)), "가짜"), now=now)
     assert forward.applicable
     assert read_pack_zip(template_zip()).accepted is False
+
+
+def test_the_open_tab_raises_a_state_alert_for_extras_dropped_from_the_official_version(
+    database: Path,
+) -> None:
+    """자동 갱신(화면 없음)이 뺀 부대공정도 최신 공식버전 출처 표로 잡는다 — `EP-03` 상태 알림."""
+    from auto_update_fakes import new_repository, publish_snapshot
+    from test_extra_process_registration import apply_template, register
+
+    repository = new_repository(database)
+    files = edited(
+        template_files(),
+        "02_route.csv",
+        lambda rows: set_cell(rows, lambda row: row[0] == BOND, "참조공정", "DEMO_Nowhere"),
+    )
+    apply_template(repository, files=files)
+    snapshot, memo = register(repository)
+    assert memo == "부대공정 판 1 · 1 합침 · 1 뺌"
+    publish_snapshot(repository, snapshot)
+
+    app = _app(database)
+
+    dropped = active_state(app, "EP-03")
+    assert dropped is not None and dropped["short"] == "공식 v1 에서 뺀 부대공정 1개"
+    assert BOND in dropped["full"]
+    assert active_state(app, "EP-04") is None

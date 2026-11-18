@@ -3,20 +3,15 @@
 """등록 · 부대공정 얹기 · 파생 저장의 부대공정 결과 알림 한 꼴(설계 3-4 등록 쪽 · A8).
 
 알림창 짧은 글은 「부대공정 2 합침」 · 「부대공정 1 합침 · 1 뺌」 만이고, 뺀 · BDQ 에 생긴 공정과
-까닭은 Alarm 전문에 둔다. 뺀 공정이 있으면 `EP-03`(조치 필요), BDQ 에 같은 이름이 생겼으면
-`EP-04`(확인 필요) 사건 알림이고, 모두 합쳤으면 알리기만 한다. 저장은 끝났고 그 자리에 고칠 입력이
-없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03).
+까닭은 Alarm 전문에 둔다. 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만 한다. 저장은
+끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03). 조건이 남아 있는
+동안의 상태 알림(`EP-03` · `EP-04` — 최신 공식버전 기준)은 Admin 「부대공정」 탭이 낸다.
 """
 
 from __future__ import annotations
 
-from typing import Final
-
 from capa_simulation.components.flash import queue_flash
 from capa_simulation.services.extra_process_merge import ExtraMergeReport
-
-DROPPED_ALERT: Final = "EP-03"
-GRADUATED_ALERT: Final = "EP-04"
 
 
 def extra_report_message(report: ExtraMergeReport) -> str:
@@ -37,7 +32,6 @@ def queue_extra_report(key: str, report: ExtraMergeReport) -> None:
             extra_report_message(report),
             kind="warning",
             icon=":material/warning:",
-            alert=DROPPED_ALERT if report.dropped else GRADUATED_ALERT,
             popup_only=True,
         )
         return

@@ -185,9 +185,9 @@ with display_order_tab:
         repository, alert_tab=open_tab_name(display_order_tab, TAB_NAMES[1])
     )
 with source_quality_tab:
-    # 위젯 없는 읽기 전용 표라 닫혀 있으면 건너뛴다. 원천 읽기는 캐시가 없고 다른 두 탭은 캐시만
-    # 읽어서, 이 탭이 Admin 회차의 유일한 DB 읽기다 — 닫힌 탭이 회차마다 DuckDB 인스턴스를 열고
-    # 닫게 하지 않는다.
+    # 위젯 없는 읽기 전용 표라 닫혀 있으면 건너뛴다. 원천 읽기는 캐시가 없고 앞 두 탭은 캐시만
+    # 읽어서, 이 탭과 「부대공정」 의 판 이력 한 번이 Admin 회차의 DB 읽기다 — 닫힌 탭이 회차마다
+    # 원천을 읽게 하지 않는다.
     if not tab_is_hidden(source_quality_tab):
         # 원천이 없는 시나리오(복제본 등)가 정상이다. 그때 화면을 멈추지 않는다.
         scenario_id = active_persisted_scenario_id()
@@ -208,6 +208,6 @@ with source_quality_tab:
                 render_source_quality(source_profile, source_rows)
 with extra_process_tab:
     # 판 이력 · 상태 줄 · 양식 내려받기 · 끄기 / 다시 켜기 · 받은 판의 미리보기. 위젯이 든 탭이라
-    # 닫혀 있어도 그리되(위젯 값을 버리지 않게), DB 읽기는 판 이력 한 번이다 — 시험 계산은 단추를
-    # 누른 회차에만 돈다.
-    render_extra_process_admin(repository, opened=not tab_is_hidden(extra_process_tab))
+    # 닫혀 있어도 그린다(위젯 값을 버리지 않게) — 닫힌 회차의 DB 읽기는 판 이력 한 번이고, 상태 알림
+    # (`EP-03` · `EP-04`) · 이력 표는 열린 회차에만, 시험 계산은 단추를 누른 회차에만 돈다.
+    render_extra_process_admin(repository, alert_tab=open_tab_name(extra_process_tab, TAB_NAMES[3]))

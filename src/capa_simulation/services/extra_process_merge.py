@@ -38,7 +38,7 @@ import calendar
 import json
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pandas as pd
 
@@ -59,7 +59,9 @@ from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate
-from capa_simulation.services.simulation_cache import full_capacity_outcome
+
+if TYPE_CHECKING:
+    from capa_simulation.services.simulation_cache import CapacityOutcome
 
 OUTCOME_MERGED: Final = "MERGED"
 OUTCOME_DROPPED: Final = "DROPPED"
@@ -108,6 +110,15 @@ _PATH_KEYS: Final = (
 )
 
 CapacityCheck = Callable[[Mapping[str, pd.DataFrame]], str | None]
+
+
+def _full_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
+    """세션 없는 전체 기간 계산(`simulation_cache.full_capacity_outcome`). 그 모듈은 캐시 래퍼를
+    만들며 Streamlit 을 끌어오므로 부를 때만 import 한다 — 이 모듈을 import 하는 등록 길 · 사내
+    스크립트가 Streamlit 없이 서게(실행 문맥 없는 캐시 경고가 표준 오류에 찍히지 않게)."""
+    from capa_simulation.services.simulation_cache import full_capacity_outcome
+
+    return full_capacity_outcome(tables, tables)
 
 
 @dataclass(frozen=True)
@@ -206,7 +217,7 @@ class MergeResult:
 
 def capacity_stop(tables: Mapping[str, pd.DataFrame]) -> str | None:
     """대당 Capa → 소요대수 → 확보율까지 돌려 멈추면 그 글(자동 갱신 판정과 같은 길)."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = _full_outcome(tables)
     if outcome.error is not None:
         return outcome.error
     if outcome.required_equipment is None:
@@ -281,10 +292,17 @@ def overlay_included_processes(
     base_included: Sequence[str], previous: Collection[str], report: ExtraMergeReport
 ) -> tuple[str, ...]:
     """얹기의 프리셋 포함 공정 — 바탕 프리셋의 포함 공정에서 걷은 옛 판 공정을 빼고 새로 합친
-    부대공정을 더한다(바탕에서 끈 공정이 다시 켜지지 않게, 설계 4-8)."""
+    부대공정을 더한다. 바탕에서 끈 공정은 다시 켜지지 않는다(설계 4-8) — 바탕에서 꺼 둔 옛 판
+    부대공정을 새 판으로 다시 합쳐도 꺼진 채다."""
+    included = {name.strip() for name in base_included}
     stripped = {name.strip() for name in previous}
+    switched_off = stripped - included
     kept = [name for name in base_included if name.strip() not in stripped]
-    added = [name for name in report.merged_processes() if name not in kept]
+    added = [
+        name
+        for name in report.merged_processes()
+        if name not in kept and name.strip() not in switched_off
+    ]
     return tuple([*kept, *added])
 
 
@@ -309,7 +327,7 @@ def process_rows_frame(
     tables: Mapping[str, pd.DataFrame], processes: Collection[str]
 ) -> pd.DataFrame:
     """미리보기 시험 계산 — 고른 공정의 월별 소요대수 · 가용대수 · 확보율(멈추면 빈 표)."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = _full_outcome(tables)
     columns = ["공정", "생산계획년월", "소요대수", "가용대수", "확보율"]
     if outcome.required_equipment is None:
         return pd.DataFrame(columns=columns)
@@ -326,7 +344,7 @@ def load_lines(
     tables: Mapping[str, pd.DataFrame], processes: Collection[str]
 ) -> dict[str, tuple[int, int]]:
     """공정마다 (부하가 붙은 경로 수, 부하 0 경로 수) — 미리보기 · 입력 점검이 센다(설계 4-4 끝)."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = _full_outcome(tables)
     counts: dict[str, tuple[int, int]] = {name: (0, 0) for name in processes}
     required = outcome.required_equipment
     if required is None:

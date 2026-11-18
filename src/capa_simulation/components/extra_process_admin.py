@@ -35,6 +35,7 @@ from typing import Final
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components import sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -57,7 +58,11 @@ from capa_simulation.korea_time import KST
 from capa_simulation.navigation import ADMIN_AREA_TABS
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.extra_process_store import ExtraProcessMoved
-from capa_simulation.persistence.models import ExtraProcessState, ExtraProcessVersion
+from capa_simulation.persistence.models import (
+    ExtraProcessProvenance,
+    ExtraProcessState,
+    ExtraProcessVersion,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.scenario_state import ensure_active_scenario
@@ -159,9 +164,15 @@ def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str
     return " · ".join([STATUS_HEAD, *parts])
 
 
-def render_extra_process_admin(repository: DuckDBScenarioRepository, *, opened: bool) -> None:
-    """탭 본문. `opened` 가 거짓(닫힌 탭)이면 위젯만 세우고 시험 계산 · 이력 표를 건너뛴다."""
+def render_extra_process_admin(
+    repository: DuckDBScenarioRepository, *, alert_tab: str | None
+) -> None:
+    """탭 본문. `alert_tab` 은 이 탭 이름(열린 탭)이고 None 이면 닫힌 탭이다 — 닫힌 탭은 위젯만
+    세우고 상태 알림 · 시험 계산 · 이력 표를 건너뛴다(`state_alerts.open_tab_name`)."""
+    opened = alert_tab is not None
     render_flash(FLASH_KEY)
+    if alert_tab is not None:
+        _report_official_outcomes(repository, alert_tab)
     try:
         state = repository.load_extra_process_state()
     except BOOTSTRAP_ERRORS as exc:
@@ -192,6 +203,56 @@ def render_extra_process_admin(repository: DuckDBScenarioRepository, *, opened: 
         _render_staged(repository, state, staged, lock, opened=opened)
     if opened:
         _render_history(state)
+
+
+def _report_official_outcomes(repository: DuckDBScenarioRepository, tab: str) -> None:
+    """최신 공식버전 데이터셋에서 뺀 · BDQ 에 생겨 건너뛴 부대공정 — 상태 알림 `EP-03` · `EP-04`.
+
+    판정은 출처 표(데이터셋 단위)라 자동 갱신(화면 없음)이 뺀 것도 잡는다. 조건이 없어도 늘 두 번
+    부른다(해소 — 이벤트 칸 자리 수가 갈래와 상관없이 같다). 이름은 알림 전문에만 싣는다.
+    """
+    release_no: int | None = None
+    records: tuple[ExtraProcessProvenance, ...] = ()
+    try:
+        release = repository.latest_official_release()
+        if release is not None:
+            release_no = release.release_no
+            records = repository.load_scenario_extra_process(release.scenario_id)
+    except BOOTSTRAP_ERRORS:
+        records = ()
+    scope = {"official": release_no}
+    for code, outcome, head, tail in (
+        (
+            "EP-03",
+            OUTCOME_DROPPED,
+            "뺀 부대공정",
+            "판을 고쳐 다시 놓거나 부대공정 얹기로 다시 맞추세요",
+        ),
+        (
+            "EP-04",
+            OUTCOME_GRADUATED,
+            "BDQ 에 같은 이름이 생겨 건너뛴 부대공정",
+            "판에서 그 공정을 지워 다시 놓으세요",
+        ),
+    ):
+        picked = [item for item in records if item.outcome == outcome]
+        names = sorted({item.process_name for item in picked})
+        alerts.state(
+            code,
+            scope=scope,
+            content=names or None,
+            active=bool(names),
+            text=f"공식 v{release_no} 에서 {head} {len(names)}개",
+            full=(
+                f"최신 공식버전(v{release_no})에서 {head} {len(names)}개 — "
+                + "; ".join(
+                    f"{item.process_name} {item.rule or ''} {item.reason or ''}".strip()
+                    for item in picked
+                )
+                + f". {tail}."
+            ),
+            tab=tab,
+        )
 
 
 def _render_download(repository: DuckDBScenarioRepository, state: ExtraProcessState) -> None:

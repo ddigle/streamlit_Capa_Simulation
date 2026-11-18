@@ -110,8 +110,11 @@ def test_overlay_keeps_what_the_base_preset_had_switched_off() -> None:
 
     included = overlay_included_processes(("P1", BOND), (BOND, AOI), report)
 
-    # 바탕에서 끈 P2 · 걷은 AOI 는 다시 켜지지 않고, 새로 합친 둘이 든다.
-    assert included == ("P1", BOND, AOI)
+    # 바탕에서 끈 P2 와, 바탕에서 꺼 둔 옛 판 AOI 는 다시 켜지지 않는다 — 켜 둔 BOND 만 새 판으로
+    # 다시 든다.
+    assert included == ("P1", BOND)
+    # 바탕에 없던 새 부대공정은 더한다.
+    assert overlay_included_processes(("P1",), (), report) == ("P1", BOND, AOI)
 
 
 def _overlay_app(database: Path) -> AppTest:

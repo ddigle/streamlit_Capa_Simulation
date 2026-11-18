@@ -1969,15 +1969,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/extra_process_admin.py` — Admin Area 넷째 탭 「부대공정」(설계 A7 1단계). 상태 줄 값 한 줄(판 번호 ·
   공정 수 · 적용 시각, 끈 동안 「꺼짐 · 마지막 판 n」, 원천을 봤으면 「<자리> <낱말>(hh:mm 에 봄)」) · 가져오기(원천이 꽂혔을 때만) ·
   양식 내려받기(마지막 내용 판 — 끈 동안에도, 없으면 빈 양식) · 끄기 / 다시 켜기(같은 자리) · 받은 판의 거절 표 또는 미리보기
-  (「시험 계산」 을 누른 회차에만 돌고 (sha, content_token)마다 세션에 둔다) · 적용 · 판 이력 표(적용한 사람 앞 두 글자). 쓰는
+  (「시험 계산」 을 누른 회차에만 돌고 (sha, content_token)마다 세션에 둔다) · 적용 · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의
+  상태 알림 `EP-03` · `EP-04`. 쓰는
   단추는 `write_lock_reason`(C-DEP 판정 + `sso_identity.viewer_is_developer`)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
   회차에도 다시 판정하며 쓰기는 본문(콜백 아님) · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
   `tests/test_extra_process_admin.py`.
 - `src/capa_simulation/components/extra_process_notice.py` — 부대공정 판을 합친 결과 알림 한 꼴. 짧은 글은 「부대공정 2 합침」 ·
-  「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺌 `EP-03` · BDQ 에 생김 `EP-04` 사건 알림, 모두 합쳤으면 알리기만(`popup_only`).
+  「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만(`popup_only`). 조건이 남는
+  동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
+  최신 공식버전 데이터셋의 출처 표로 판정한다 — 자동 갱신(화면 없음)이 뺀 것도 잡는다.
 - `src/capa_simulation/components/scenario_extra_overlay.py` — 시나리오 관리 작업 「부대공정 얹기」(D19 — 파생 저장 길). 활성 판이
   있을 때만 작업 줄에 선다. 바탕 저장 리비전의 데이터셋 출처가 가리키는 옛 판 공정을 걷고 활성 판을 합친 결과 표를 보이고
-  `render_derived_save` 로 저장한다(원천 종류 `SCENARIO_EXTRA_PROCESS`, 포함 공정 = 바탕 프리셋 − 걷은 공정 + 새로 합친 부대공정,
+  `render_derived_save` 로 저장한다(원천 종류 `SCENARIO_EXTRA_PROCESS`, 포함 공정 = 바탕 프리셋 − 걷은 공정 + 새로 합친 부대공정 —
+  바탕에서 꺼 둔 옛 부대공정은 꺼진 채,
   새 판 출처). 합친 결과는 (DB, 바탕 리비전, 판 차례)마다 세션 메모 한 벌(`PAGE_DIALOG_SUFFIX`)이다.
 - `src/capa_simulation/components/bdq_login_admin.py` — Admin Area 「BDQ 자동 로그인」 펼침(`BDQ_LOGIN_LABEL` — 「서버 시작 점검」 표 줄과
   같은 이름, 2026-11-16 결정 D1 · D2 · D5 · D7). 동기화 모드 `managed` + 쓸 수 있는 키(`bdq_login_store.availability` — 앱은 기동 때 키를 쥐고
