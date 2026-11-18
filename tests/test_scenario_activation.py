@@ -9,7 +9,11 @@ import pytest
 
 import capa_simulation.components.home_preference as home_preference
 from capa_simulation import plan_grid_keys
-from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
+from capa_simulation.home_state import (
+    HOME_SORT_MEMO_KEY,
+    HOME_TOGGLE_DEFAULTS,
+    PAST_DATA_TOGGLE_KEY,
+)
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.persistence.models import (
     RevisionSummary,
@@ -324,6 +328,8 @@ def test_only_previous_values_and_home_toggles_are_dropped() -> None:
         "load_conversion_own_change",
         "reference_data_own_change",
         HOME_FIGURE_CACHE_KEY,
+        # HOME 정렬 · 과거 합치기 회차 메모 — 이름마다 두 벌이 앞 시나리오 내용 토큰으로 남는다.
+        HOME_SORT_MEMO_KEY,
         # 기준 정보 편집 그리드의 표마다 초안·이력과 반영 전 op(2026-11-02 편집 표 횡전개).
         *REFERENCE_GRID_SESSION_KEYS,
         # 생산 계획 PKG PLAN · 수율 그리드의 같은 칸(2026-11-12 보드 답 k-a1 · k-a2).
@@ -347,6 +353,28 @@ def test_the_figure_cache_key_has_one_owner() -> None:
     # 다시 내보내는 이름이 아니라서 모듈 이름공간에서 직접 읽는다.
     assert vars(home_rendering)["HOME_FIGURE_CACHE_KEY"] is HOME_FIGURE_CACHE_KEY
     assert HOME_FIGURE_CACHE_KEY in _STALE_UI_KEYS
+
+
+def test_the_home_sort_memo_is_released_and_has_one_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HOME 정렬 메모(`home_sort_memo`)는 시나리오를 바꾸면 지운다 — 키에 내용 토큰이 들어 낡은 값을
+    쓰지는 않지만, 지우지 않으면 앞 시나리오의 표시순서 준비 · 계획 세부수량 두 벌이 세션에 남는다.
+
+    이름은 `home_state` 한 곳이다 — 페이지 스크립트(`app_pages/home.py`)는 import 할 수 없어
+    리터럴을 두 곳에 두면 한쪽만 고쳐져 지우는 칸이 화석이 된다.
+    """
+    from capa_simulation import scenario_activation as activation
+
+    assert HOME_SORT_MEMO_KEY in activation._STALE_VALUE_KEYS
+    page = (PROJECT_ROOT / "app_pages" / "home.py").read_text(encoding="utf-8")
+    assert f'"{HOME_SORT_MEMO_KEY}"' not in page
+    assert "SessionSlot(HOME_SORT_MEMO_KEY," in page
+
+    state = _fake_session(monkeypatch)
+    state[HOME_SORT_MEMO_KEY] = {"plan_detail": [("앞 키", "앞 표")]}
+    activation._release_stale_ui_state(release_toggles=False)
+    assert HOME_SORT_MEMO_KEY not in state
 
 
 def test_no_key_in_the_list_is_a_fossil() -> None:

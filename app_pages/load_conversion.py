@@ -95,7 +95,7 @@ from capa_simulation.plan_grid_keys import (
     history_key,
 )
 from capa_simulation.scenario_state import (
-    ACTIVE_SCENARIO_KEY,
+    ACTIVE_SCENARIO,
     ActiveScenario,
     apply_month_updates,
     apply_table_updates,
@@ -944,9 +944,9 @@ def _discard_yield_edits() -> None:
 
 
 # 「변경사항 적용」 콜백이 그 단추를 그린 원본과 견주는 지금 값(읽기만) — 이 화면의 원본 토큰 ·
-# 활성 시나리오 · PKG PLAN 붙여넣기 대기 표.
+# PKG PLAN 붙여넣기 대기 표. 활성 시나리오는 소유 모듈의 창구
+# (`scenario_state.ACTIVE_SCENARIO`)로 읽는다.
 LIVE_SOURCE_TOKEN = SessionSlot(SOURCE_TOKEN_KEY, str)
-LIVE_SCENARIO = SessionSlot(ACTIVE_SCENARIO_KEY, dict)
 LIVE_PLAN_STAGED = SessionSlot(PLAN_STAGED_KEY, pd.DataFrame)
 
 
@@ -984,7 +984,7 @@ def _still_drawn(drawn: _DrawnSource) -> bool:
     (`scenario_activation.clear_persisted_scenario_activation` — `clear_active_scenario` 뒤
     `_release_stale_ui_state`)은 이 화면 원본 토큰 칸도 함께 지운다(`_STALE_VALUE_KEYS`) —
     시나리오가 없을 때는 그 칸이 거른다."""
-    scenario = LIVE_SCENARIO.peek()
+    scenario = ACTIVE_SCENARIO.peek()
     return (
         LIVE_SOURCE_TOKEN.peek() == drawn.source_token
         and (scenario is None or scenario.get("content_token") == drawn.content_token)

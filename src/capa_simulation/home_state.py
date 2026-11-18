@@ -1,4 +1,4 @@
-# Purpose: HOME 토글의 세션 키·기본값과 HOME 팝업 열림 칸을 UI·계산·시나리오 초기화에 공유한다.
+# Purpose: HOME 토글 키·기본값과 팝업 열림 칸·정렬 메모 칸을 UI·계산·시나리오 초기화에 공유한다.
 
 """UI 모듈을 import 하지 않아도 읽을 수 있는 HOME 표시 상태 계약."""
 
@@ -82,3 +82,9 @@ HOME_DISPLAY_TAB = ":material/summarize: Capa 요약 · 표시"
 HOME_PAST_TAB = ":material/history: Past Data"
 HOME_PREFERENCE_TABS = (HOME_CASES_TAB, HOME_THRESHOLD_TAB, HOME_MONTHLY_TAB, HOME_DISPLAY_TAB)
 HOME_SETTINGS_TAB_LABELS = (*HOME_PREFERENCE_TABS, HOME_PAST_TAB)
+
+# HOME 정렬 · 과거 합치기 회차 메모 칸(`app_pages/home.py` 의 `HOME_SORT_MEMO`). 페이지
+# 스크립트는 import 할 수 없어 이름을 여기 둔다 — 시나리오를 바꾸는 자리
+# (`scenario_activation._STALE_VALUE_KEYS`)가 앞 시나리오의 메모를 지운다(키에 내용 토큰이 들어
+# 낡은 값은 쓰이지 않지만 이름마다 두 벌이 메모리에 남는다).
+HOME_SORT_MEMO_KEY = "home_sort_memo"
