@@ -469,6 +469,11 @@ class MasterRule:
     code: str
     check: Callable[[_MasterFrame], Iterator[_Finding]] = field(repr=False, compare=False)
     blocking: bool = True
+    # 이 규칙이 보는 계약 칸(다듬은 값 · 못 읽은 줄 표지 · 입력 날짜 — 설비명은 늘 본다). 이 칸이
+    # 하나도 바뀌지 않은 편집본에서는 앞 결과를 그대로 쓴다(`equipment_master_issues_since`). None
+    # 이면 늘 다시 본다 — 새 규칙은 칸을 적고 시험(`tests/test_equipment_master_issues_since.py` 의
+    # 칸 그물)이 맞는지 본다.
+    reads: frozenset[str] | None = field(default=None, compare=False)
 
 
 def _read_master(
@@ -478,33 +483,80 @@ def _read_master(
     today: date | None,
 ) -> _MasterFrame | None:
     """칸을 모두 다듬는다 — 막지 않는다. 설비명이 빈 줄은 뺀다(남는 줄이 없으면 None)."""
-    data = with_optional_equipment_columns(data)
-    require_columns(data, EQUIPMENT_COLUMNS, "설비 마스터")
-    selected = data.loc[:, list(EQUIPMENT_COLUMNS)].reset_index(drop=True)
-    raw = _drop_blank_rows(selected, (EQUIPMENT_ID_COLUMN,))
+    raw = _drop_blank_rows(_contract_frame(data), (EQUIPMENT_ID_COLUMN,))
     if raw.empty:
         return None
     raw_dates = raw.loc[:, list(DATE_COLUMNS)]
+    read = {column: _read_column(column, raw[column]) for column in EQUIPMENT_COLUMNS}
     result = raw
-    for column in (EQUIPMENT_ID_COLUMN, "공정소분류"):
-        result[column] = result[column].astype("string").str.strip()
-    for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
-        result[column] = _optional_text(result[column])
-    result[AREA_CODE_COLUMN] = normalize_area_code(result[AREA_CODE_COLUMN])
-    for column in (QUAL_STATUS_COLUMN, ARRIVAL_STATUS_COLUMN, PARENT_EQUIPMENT_COLUMN):
-        result[column] = _optional_text(result[column])
-    for column in FLAG_COLUMNS:
-        result[column] = _flag_text(result[column])
-    unreadable: dict[str, pd.Series] = {}
-    for column in COORDINATE_COLUMNS:
-        result[column], unreadable[column] = _read_number(result[column])
-    ratio, unreadable[CONVERSION_RATIO_COLUMN], not_positive = _read_ratio(
-        result[CONVERSION_RATIO_COLUMN]
+    for column, column_read in read.items():
+        if column_read.stepped:
+            result[column] = column_read.value
+    return _MasterFrame(
+        raw_dates,
+        result,
+        {column: _unreadable_of(read[column]) for column in _UNREADABLE_COLUMNS},
+        _not_positive_of(read[CONVERSION_RATIO_COLUMN]),
+        floor_canvases,
+        today,
     )
-    result[CONVERSION_RATIO_COLUMN] = ratio
-    for column in DATE_COLUMNS:
-        result[column], unreadable[column] = _read_master_dates(raw_dates[column])
-    return _MasterFrame(raw_dates, result, unreadable, not_positive, floor_canvases, today)
+
+
+def _contract_frame(data: pd.DataFrame) -> pd.DataFrame:
+    """계약 39칸만, 줄 자리 색인으로(선택 칸이 없으면 빈 칸) — 계약 칸이 없으면 `ValueError`."""
+    data = with_optional_equipment_columns(data)
+    require_columns(data, EQUIPMENT_COLUMNS, "설비 마스터")
+    return data.loc[:, list(EQUIPMENT_COLUMNS)].reset_index(drop=True)
+
+
+def _stripped_text(series: pd.Series) -> pd.Series:
+    return series.astype("string").str.strip()
+
+
+# 못 읽은 줄 표지가 있는 칸(좌표 · 크기 · 환산비 · 날짜) — `_MasterFrame.unreadable` 차례.
+_UNREADABLE_COLUMNS = (*COORDINATE_COLUMNS, CONVERSION_RATIO_COLUMN, *DATE_COLUMNS)
+
+
+@dataclass(frozen=True, eq=False)
+class _ColumnRead:
+    """칸 하나를 다듬은 것 — 값 · 못 읽은 줄(좌표 · 크기 · 환산비 · 날짜) · 0 이하(환산비).
+    `stepped` 가 거짓이면 다듬을 단계가 없는 칸이라 값이 입력 그대로다."""
+
+    value: pd.Series
+    stepped: bool
+    unreadable: pd.Series | None = None
+    not_positive: pd.Series | None = None
+
+
+def _read_column(column: str, raw: pd.Series) -> _ColumnRead:
+    """칸 하나를 다듬는다 — 그 칸의 입력만 본다. 날짜는 입력 날짜를 읽고(`_read_master_dates`), 그
+    밖은 글 단계(`_TEXT_STEPS` 차례) 뒤 좌표 · 크기는 수로, 환산비는 양수로 읽는다."""
+    if column in DATE_COLUMNS:
+        dates, unreadable = _read_master_dates(raw)
+        return _ColumnRead(dates, True, unreadable)
+    value = raw
+    stepped = False
+    for columns, step in _TEXT_STEPS:
+        if column in columns:
+            value = step(value)
+            stepped = True
+    if column in COORDINATE_COLUMNS:
+        number, unreadable = _read_number(value)
+        return _ColumnRead(number, True, unreadable)
+    if column == CONVERSION_RATIO_COLUMN:
+        ratio, unreadable, not_positive = _read_ratio(value)
+        return _ColumnRead(ratio, True, unreadable, not_positive)
+    return _ColumnRead(value, stepped)
+
+
+def _unreadable_of(read: _ColumnRead) -> pd.Series:
+    assert read.unreadable is not None
+    return read.unreadable
+
+
+def _not_positive_of(read: _ColumnRead) -> pd.Series:
+    assert read.not_positive is not None
+    return read.not_positive
 
 
 def _flags(mask: pd.Series) -> pd.Series:
@@ -976,41 +1028,271 @@ def _check_module_ratio(master: _MasterFrame) -> Iterator[_Finding]:
     )
 
 
+def _reads(*groups: str | Sequence[str]) -> frozenset[str]:
+    """규칙이 보는 칸 — 칸 이름과 칸 묶음(튜플)을 함께 받는다. 설비명은 늘 든다(칸 결과의
+    설비명)."""
+    columns: set[str] = {EQUIPMENT_ID_COLUMN}
+    for group in groups:
+        columns.update((group,) if isinstance(group, str) else group)
+    return frozenset(columns)
+
+
+# `_MasterFrame.ordinary`(보관 · 기존설비 아님) · `placement`(좌표 · 크기 있음)가 보는 칸.
+_ORDINARY_READS = (STORAGE_FLAG_COLUMN, "기존설비여부")
+_PLACEMENT_READS = COORDINATE_COLUMNS
+
 # 규칙 표. **차례가 계약이다** — 저장 함수는 이 차례로 처음 걸린 규칙 하나를 던지고(기존 시험이 그
 # 문구를 본다), 칸 결과도 이 차례로 낸다. 리비전을 다시 읽을 때도 이 표를 지나므로 **규칙을 조이지
 # 않는다** — 새 규칙은 기존 저장본이 새로 막히지 않게 걸고, 날짜에 기대는 규칙과 저장 때만 막는
-# 규칙은 `today`(저장 때 표지)를 줄 때만 돈다. 줄 끝 주석은 칸 결과의 대표 칸이다.
+# 규칙은 `today`(저장 때 표지)를 줄 때만 돈다. 줄 끝(또는 줄 위) 주석은 칸 결과의 대표 칸이다.
+# `reads` 는 그 규칙이 보는 칸이다(`MasterRule.reads`).
 MASTER_RULES: tuple[MasterRule, ...] = (
-    MasterRule("required_text", _check_required_text),  # 공정소분류
-    MasterRule("duplicate_unit", _check_duplicate_units),  # 설비명(겹친 줄 모두)
-    MasterRule("unit_group_collision", _check_unit_group_collision),  # Main 설비 / 설비명
-    MasterRule("unit_group_mixed", _check_unit_group_mixed),  # 갈린 칸, 묶음 모든 줄
-    MasterRule("unit_group_mixed_saved", _check_unit_group_mixed_saved),  # 갈린 칸(`today` 때만)
-    MasterRule("flag", _check_flags),  # 그 Y/N 칸
-    MasterRule("number_unreadable", _check_numbers),  # 그 좌표·크기 칸
-    MasterRule("location_range", _check_location_range),  # 동 또는 층
-    MasterRule("position_pair", _check_position_pair),  # 빈 쪽
-    MasterRule("size_pair", _check_size_pair),  # 빈 쪽
-    MasterRule("position_needs_size", _check_position_needs_size),  # Xsize
-    MasterRule("layout_needs_location", _check_layout_needs_location),  # 빈 쪽(동 먼저)
-    MasterRule("position_negative", _check_position_negative),  # 그 칸(X 먼저)
-    MasterRule("size_not_positive", _check_size_not_positive),  # 그 칸(Xsize 먼저)
-    MasterRule("canvas_outside", _check_canvas),  # X좌표(`floor_canvases` 줄 때만)
-    MasterRule("ratio_unreadable", _check_ratio_unreadable),  # 환산비
-    MasterRule("ratio_not_positive", _check_ratio_not_positive),  # 환산비
-    MasterRule("date_unreadable", _check_dates),  # 그 날짜 칸
-    MasterRule("qual_status_required", _check_qual_status_required),  # Qual상태
-    MasterRule("status_value", _check_status_values),  # 그 상태 칸
-    MasterRule("schedule_order", _check_schedule_order),  # 차례를 깬 뒤 칸
-    MasterRule("exit_without_arrival", _check_exit_without_arrival),  # 찬 쪽(정지일정 먼저)
-    MasterRule("stop_after_exit", _check_stop_after_exit),  # 정지일정
-    MasterRule("exit_before_arrival", _check_exit_before_arrival),  # 그 반출 칸
-    MasterRule("actual_future", _check_actual_future),  # 그 실적 칸(`today` 줄 때만)
-    MasterRule("actual_reversed", _check_actual_reversed),  # 반입실적(`today` 줄 때만)
-    MasterRule("area_code_unknown", _check_area_code, blocking=False),  # Area Code
-    MasterRule("unit_case_variant", _check_case_variants, blocking=False),  # 설비명
-    MasterRule("module_ratio_default", _check_module_ratio, blocking=False),  # 묶음 줄들의 환산비
+    MasterRule("required_text", _check_required_text, reads=_reads("공정소분류")),  # 공정소분류
+    # 설비명(겹친 줄 모두)
+    MasterRule("duplicate_unit", _check_duplicate_units, reads=_reads()),
+    # Main 설비 / 설비명
+    MasterRule(
+        "unit_group_collision",
+        _check_unit_group_collision,
+        reads=_reads(PARENT_EQUIPMENT_COLUMN),
+    ),
+    # 갈린 칸, 묶음 모든 줄
+    MasterRule(
+        "unit_group_mixed",
+        _check_unit_group_mixed,
+        reads=_reads(PARENT_EQUIPMENT_COLUMN, UNIT_CONSISTENT_COLUMNS),
+    ),
+    # 갈린 칸(`today` 때만)
+    MasterRule(
+        "unit_group_mixed_saved",
+        _check_unit_group_mixed_saved,
+        reads=_reads(PARENT_EQUIPMENT_COLUMN, UNIT_SAVE_CONSISTENT_COLUMNS),
+    ),
+    MasterRule("flag", _check_flags, reads=_reads(FLAG_COLUMNS)),  # 그 Y/N 칸
+    # 그 좌표·크기 칸
+    MasterRule("number_unreadable", _check_numbers, reads=_reads(COORDINATE_COLUMNS)),
+    MasterRule("location_range", _check_location_range, reads=_reads("동", "층")),  # 동 또는 층
+    MasterRule("position_pair", _check_position_pair, reads=_reads(_PLACEMENT_READS)),  # 빈 쪽
+    MasterRule("size_pair", _check_size_pair, reads=_reads(_PLACEMENT_READS)),  # 빈 쪽
+    # Xsize
+    MasterRule("position_needs_size", _check_position_needs_size, reads=_reads(_PLACEMENT_READS)),
+    # 빈 쪽(동 먼저)
+    MasterRule(
+        "layout_needs_location",
+        _check_layout_needs_location,
+        reads=_reads(_PLACEMENT_READS, "레이아웃표시", "동", "층"),
+    ),
+    # 그 칸(X 먼저)
+    MasterRule("position_negative", _check_position_negative, reads=_reads(_PLACEMENT_READS)),
+    # 그 칸(Xsize 먼저)
+    MasterRule("size_not_positive", _check_size_not_positive, reads=_reads(_PLACEMENT_READS)),
+    # X좌표(`floor_canvases` 줄 때만)
+    MasterRule("canvas_outside", _check_canvas, reads=_reads(_PLACEMENT_READS, "동", "층")),
+    # 환산비
+    MasterRule("ratio_unreadable", _check_ratio_unreadable, reads=_reads(CONVERSION_RATIO_COLUMN)),
+    # 환산비
+    MasterRule(
+        "ratio_not_positive", _check_ratio_not_positive, reads=_reads(CONVERSION_RATIO_COLUMN)
+    ),
+    MasterRule("date_unreadable", _check_dates, reads=_reads(DATE_COLUMNS)),  # 그 날짜 칸
+    # Qual상태
+    MasterRule(
+        "qual_status_required",
+        _check_qual_status_required,
+        reads=_reads(_ORDINARY_READS, QUAL_DATE_COLUMN, QUAL_STATUS_COLUMN),
+    ),
+    # 그 상태 칸
+    MasterRule("status_value", _check_status_values, reads=_reads(tuple(_STATUS_VALUES))),
+    # 차례를 깬 뒤 칸
+    MasterRule(
+        "schedule_order",
+        _check_schedule_order,
+        reads=_reads(_ORDINARY_READS, _SCHEDULE_CHAIN),
+    ),
+    # 찬 쪽(정지일정 먼저)
+    MasterRule(
+        "exit_without_arrival",
+        _check_exit_without_arrival,
+        reads=_reads(_ORDINARY_READS, ARRIVAL_DATE_COLUMN, EXIT_SCHEDULE_COLUMNS),
+    ),
+    # 정지일정
+    MasterRule(
+        "stop_after_exit",
+        _check_stop_after_exit,
+        reads=_reads(STOP_DATE_COLUMN, RELOCATION_DATE_COLUMN),
+    ),
+    # 그 반출 칸
+    MasterRule(
+        "exit_before_arrival",
+        _check_exit_before_arrival,
+        reads=_reads(ARRIVAL_DATE_COLUMN, EXIT_SCHEDULE_COLUMNS),
+    ),
+    # 그 실적 칸(`today` 줄 때만)
+    MasterRule(
+        "actual_future",
+        _check_actual_future,
+        reads=_reads(ARRIVAL_ACTUAL_COLUMN, QUAL_ACTUAL_COLUMN),
+    ),
+    # 반입실적(`today` 줄 때만)
+    MasterRule(
+        "actual_reversed",
+        _check_actual_reversed,
+        reads=_reads(ARRIVAL_ACTUAL_COLUMN, QUAL_ACTUAL_COLUMN),
+    ),
+    # Area Code
+    MasterRule(
+        "area_code_unknown", _check_area_code, blocking=False, reads=_reads(AREA_CODE_COLUMN)
+    ),
+    # 설비명
+    MasterRule("unit_case_variant", _check_case_variants, blocking=False, reads=_reads()),
+    # 묶음 줄들의 환산비
+    MasterRule(
+        "module_ratio_default",
+        _check_module_ratio,
+        blocking=False,
+        reads=_reads(PARENT_EQUIPMENT_COLUMN, CONVERSION_RATIO_COLUMN),
+    ),
 )
+
+
+# ------------------------------------------------------------------ 바뀐 칸만 다시 보기
+
+
+@dataclass(frozen=True, eq=False)
+class MasterIssueState:
+    """칸 결과 한 번의 재료 — 다음 계산이 바뀐 칸만 다시 본다(`equipment_master_issues_since`).
+
+    - `raw` — 그때 넘긴 표의 계약 39칸(줄 자리 색인 사본). 칸마다 지금 표와 견준다.
+    - `params` — (층 캔버스, 오늘). 다르면 처음부터 본다.
+    - `master` — 그 표를 다듬은 한 벌(설비명이 빈 줄을 뺀 것 — 없으면 None).
+    - `found` — 규칙마다 찾은 것마다 칸 결과. `issues` — 그때 낸 칸 결과 전체.
+    """
+
+    raw: pd.DataFrame
+    params: tuple[object, ...]
+    master: _MasterFrame | None
+    found: Mapping[str, tuple[tuple[MasterIssue, ...], ...]]
+    issues: tuple[MasterIssue, ...]
+
+
+def _issue_params(floor_canvases: FloorCanvasMap | None, today: date | None) -> tuple[object, ...]:
+    canvases = (
+        None
+        if floor_canvases is None
+        else tuple(sorted((tuple(key), tuple(size)) for key, size in floor_canvases.items()))
+    )
+    return canvases, today
+
+
+def _rule_found(master: _MasterFrame, rule: MasterRule) -> tuple[tuple[MasterIssue, ...], ...]:
+    return tuple(tuple(_finding_issues(master, rule, finding)) for finding in rule.check(master))
+
+
+def _issue_state(
+    raw: pd.DataFrame,
+    params: tuple[object, ...],
+    master: _MasterFrame | None,
+    found: Mapping[str, tuple[tuple[MasterIssue, ...], ...]],
+) -> MasterIssueState:
+    issues = tuple(
+        issue for rule in MASTER_RULES for finding in found.get(rule.code, ()) for issue in finding
+    )
+    return MasterIssueState(raw, params, master, found, issues)
+
+
+def _same_column(before: pd.Series, after: pd.Series) -> bool:
+    """두 칸이 같은 값인가 — 같은 dtype 의 글자 · 실수 · 시간대 없는 날짜 칸만 견준다(실수 ·
+    날짜는 비트 그대로 — -0.0 과 0.0, NaN 꼴도 가른다). 그 밖의 꼴은 늘 「바뀜」 이다(그 칸만 다시
+    읽는다)."""
+    if before.dtype != after.dtype:
+        return False
+    if after.dtype == _PYTHON_STRING:
+        return bool(before.array.equals(after.array))
+    if after.dtype == np.float64 or is_datetime64_dtype(after.dtype):
+        left = before.to_numpy()
+        right = after.to_numpy()
+        return bool(np.array_equal(left.view(np.int64), right.view(np.int64)))
+    return False
+
+
+def _issues_from_scratch(
+    raw: pd.DataFrame,
+    params: tuple[object, ...],
+    floor_canvases: FloorCanvasMap | None,
+    today: date | None,
+) -> MasterIssueState:
+    master = _read_master(raw, floor_canvases=floor_canvases, today=today)
+    found = (
+        {} if master is None else {rule.code: _rule_found(master, rule) for rule in MASTER_RULES}
+    )
+    return _issue_state(raw, params, master, found)
+
+
+def equipment_master_issues_since(
+    previous: MasterIssueState | None,
+    data: pd.DataFrame,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+    today: date | None = None,
+) -> tuple[tuple[MasterIssue, ...], MasterIssueState]:
+    """`equipment_master_issues` 와 **같은 결과**를 앞 계산(`previous`)에서 바뀐 칸만 다시 보아
+    낸다.
+
+    칸 다듬기는 칸마다 그 칸의 입력만 보고(`_read_column`), 규칙은 보는 칸(`MasterRule.reads`)이
+    정해져 있다. 그래서 바뀐 칸만 다시 다듬고, 보는 칸이 바뀐 규칙(과 `reads` 가 없는 규칙)만 다시
+    본다 — 나머지 규칙은 앞 결과를 그대로 쓴다. 결과 차례(규칙 → 칸 → 줄)와 「저장이 막힌다 ⇔ 막는
+    결과가 있다」 는 그대로다. 둘째 값은 다음 계산의 재료다.
+
+    다음이면 처음부터 본다: 앞 계산이 없음 · 층 캔버스나 오늘이 다름 · 줄 수가 다름 · 설비명 칸이
+    바뀜(빼는 줄 · 칸 결과의 설비명이 달라진다) · 앞 표에 남은 줄이 없음. 표에 계약 칸이 없으면
+    `equipment_master_issues` 와 같은 `ValueError` 다.
+    """
+    raw = _contract_frame(data)
+    params = _issue_params(floor_canvases, today)
+    if (
+        previous is None
+        or previous.params != params
+        or previous.master is None
+        or len(previous.raw) != len(raw)
+        or not _same_column(previous.raw[EQUIPMENT_ID_COLUMN], raw[EQUIPMENT_ID_COLUMN])
+    ):
+        state = _issues_from_scratch(raw, params, floor_canvases, today)
+        return state.issues, state
+    changed = frozenset(
+        column
+        for column in EQUIPMENT_COLUMNS
+        if not _same_column(previous.raw[column], raw[column])
+    )
+    if not changed:
+        return previous.issues, previous
+    before = previous.master
+    rows = raw.loc[before.data.index]
+    data_now = before.data.copy()
+    raw_dates = before.raw_dates.copy()
+    unreadable = dict(before.unreadable)
+    not_positive = before.ratio_not_positive
+    for column in EQUIPMENT_COLUMNS:
+        if column not in changed:
+            continue
+        read = _read_column(column, rows[column])
+        data_now[column] = read.value
+        if column in DATE_COLUMNS:
+            raw_dates[column] = rows[column]
+        if read.unreadable is not None:
+            unreadable[column] = read.unreadable
+        if read.not_positive is not None:
+            not_positive = read.not_positive
+    master = _MasterFrame(raw_dates, data_now, unreadable, not_positive, floor_canvases, today)
+    found = {
+        rule.code: (
+            previous.found[rule.code]
+            if rule.reads is not None and not (rule.reads & changed) and rule.code in previous.found
+            else _rule_found(master, rule)
+        )
+        for rule in MASTER_RULES
+    }
+    state = _issue_state(raw, params, master, found)
+    return state.issues, state
 
 
 def area_code_warning_rows(equipment: pd.DataFrame) -> pd.Series:
@@ -1762,3 +2044,14 @@ def _key_examples(data: pd.DataFrame, columns: tuple[str, ...]) -> list[str]:
         .head(5)
         .tolist()
     )
+
+
+# 글 칸 다듬기 — 칸마다 이 차례로 걸린 단계를 모두 지난다(Area Code 는 빈 글 → 표기 맞춤 두 단계).
+# 칸 하나의 단계는 그 칸의 값만 본다 — 칸마다 따로 다듬어도 같다(`_read_column`).
+_TEXT_STEPS: tuple[tuple[tuple[str, ...], Callable[[pd.Series], pd.Series]], ...] = (
+    ((EQUIPMENT_ID_COLUMN, "공정소분류"), _stripped_text),
+    (REFERENCE_TEXT_COLUMNS + ("동", "층"), _optional_text),
+    ((AREA_CODE_COLUMN,), normalize_area_code),
+    ((QUAL_STATUS_COLUMN, ARRIVAL_STATUS_COLUMN, PARENT_EQUIPMENT_COLUMN), _optional_text),
+    (FLAG_COLUMNS, _flag_text),
+)

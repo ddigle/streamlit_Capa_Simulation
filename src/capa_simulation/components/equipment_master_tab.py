@@ -230,7 +230,9 @@ from capa_simulation.services.equipment_grid import (
 )
 from capa_simulation.services.equipment_validation import (
     MasterIssue,
+    MasterIssueState,
     equipment_master_issues,
+    equipment_master_issues_since,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
 )
@@ -469,7 +471,9 @@ def _canvas_key(canvases: FloorCanvasMap) -> tuple[tuple[Any, ...], ...]:
 
 def _issues(master: pd.DataFrame, canvases: FloorCanvasMap, today: date) -> tuple[MasterIssue, ...]:
     """편집본 마스터의 칸 결과(저장과 같은 인자 — 캔버스·오늘). 편집본 세대·저장본 토큰·오늘·캔버스
-    열쇠로 회차마다 한 번 — 세션 칸에는 튜플로 푼다(모델 인스턴스를 세션에 두지 않는다)."""
+    열쇠로 회차마다 한 번 — 세션 칸에는 튜플로 푼다. 열쇠가 바뀐 회차는 앞 계산의 재료(같은 메모의
+    `issue_state` — 꼴이 다르면 버린다)에서 바뀐 칸만 다시 본다(`equipment_master_issues_since` —
+    처음부터 본 것과 같은 결과). 저장 판정(`_blocking_count`)은 이 메모를 쓰지 않는다."""
     key = (
         equipment_buffer_generation(),
         buffer_base(),
@@ -481,13 +485,21 @@ def _issues(master: pd.DataFrame, canvases: FloorCanvasMap, today: date) -> tupl
         rows = memo.get("issues")
         if isinstance(rows, tuple):
             return tuple(MasterIssue(*row) for row in rows)
+    previous = memo.get("issue_state") if isinstance(memo, dict) else None
+    state: MasterIssueState | None
     try:
-        issues = equipment_master_issues(master, floor_canvases=canvases, today=today)
+        issues, state = equipment_master_issues_since(
+            previous if isinstance(previous, MasterIssueState) else None,
+            master,
+            floor_canvases=canvases,
+            today=today,
+        )
     except ValueError:
-        issues = ()
+        issues, state = (), None
     memo = dict(memo) if isinstance(memo, dict) else {}
     memo["issues_key"] = key
     memo["issues"] = tuple(astuple(issue) for issue in issues)
+    memo["issue_state"] = state
     st.session_state[GRID_MEMO_KEY] = memo
     return issues
 
@@ -1087,7 +1099,12 @@ def _discard_all() -> None:
 def _blocking_count(
     frames: Frames, canvases: FloorCanvasMap, today: date, context: GridContext, layout: LayoutMode
 ) -> int:
-    issues = _issues(frames[1], canvases, today)
+    # 저장 판정은 메모 · 바뀐 칸 계산을 거치지 않고 처음부터 본다 — 「저장이 막힌다 ⇔ 막는 결과」 를
+    # 그 자리에서 지킨다(누름마다 한 번).
+    try:
+        issues = equipment_master_issues(frames[1], floor_canvases=canvases, today=today)
+    except ValueError:
+        issues = ()
     overlay = grid_overlay()
     drafts = 0
     if overlay:
