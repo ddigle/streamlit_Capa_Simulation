@@ -100,6 +100,7 @@ from capa_simulation.components.shortening_board import (
     current_highlight,
     highlight_badge,
     highlight_first,
+    remembered_detail_numbers,
     render_detail_link,
     render_highlight_notice,
     render_progress_board,
@@ -790,6 +791,13 @@ def _render_body(
         if link_details
         else {}
     )
+    # 「공정 Capa 상세에서 근거 보기」 의 숫자도 공정 전부를 한 번에 — 계획 키 · 목표 · 기간이 같은
+    # 회차는 세션에 든 한 벌을 쓴다.
+    detail_numbers = (
+        remembered_detail_numbers(prepared.official.key, level_plan, level=level, months=months)
+        if link_details
+        else None
+    )
     order = render_progress_board(
         level_plan,
         shown,
@@ -835,7 +843,12 @@ def _render_body(
             if link_details:
                 with st.container(horizontal=True, gap="small", vertical_alignment="center"):
                     render_detail_link(
-                        level_plan, process, level=level, months=months, equipment=link_label
+                        level_plan,
+                        process,
+                        level=level,
+                        months=months,
+                        equipment=link_label,
+                        numbers=detail_numbers,
                     )
                     render_space_link(process, floors=space_floors, level=level)
 
@@ -1528,6 +1541,11 @@ def _render_progress(
         if link_details
         else {}
     )
+    detail_numbers = (
+        remembered_detail_numbers(key, level_plan, level=level, months=months)
+        if link_details
+        else None
+    )
     order = render_progress_board(
         level_plan,
         view.cards,
@@ -1564,7 +1582,12 @@ def _render_progress(
             if link_details:
                 with st.container(horizontal=True, gap="small", vertical_alignment="center"):
                     render_detail_link(
-                        level_plan, process, level=level, months=months, equipment=equipment_label
+                        level_plan,
+                        process,
+                        level=level,
+                        months=months,
+                        equipment=equipment_label,
+                        numbers=detail_numbers,
                     )
                     render_space_link(process, floors=space_floors, level=level)
     for process in view.outside:

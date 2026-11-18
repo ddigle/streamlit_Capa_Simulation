@@ -64,6 +64,7 @@ __all__ = [
     "ProgressTrend",
     "board_order",
     "delayed_units",
+    "detail_numbers",
     "first_shortage_month",
     "imminent_units",
     "process_board",
@@ -180,6 +181,52 @@ def first_shortage_month(
 def process_counts(level_plan: LevelPlan, process: str) -> tuple[int, int]:
     """(당긴 호기 대수, 신규 대수) — 공정 카드 배지와 같은 셈."""
     return _counts(_rows_of(level_plan.units, process))
+
+
+def detail_numbers(
+    level_plan: LevelPlan, months: Sequence[int]
+) -> dict[str, tuple[int | None, int, int]]:
+    """공정마다 (첫 부족 달 — `months` 안, 당긴 호기 대수, 신규 대수) — 공정마다
+    `first_shortage_month` · `process_counts` 를 부른 값과 같다. 카드마다 그 둘을 부르면 두 표를
+    공정 수만큼 다시 거르므로(필요 단축 일정 카드의 상세 링크) 표마다 한 번 묶어 모든 공정을 낸다.
+    두 표에 없는 공정은 빠진다 — 그 공정의 값은 (None, 0, 0) 이다."""
+    firsts = _first_short_by_process(level_plan.process_months, months)
+    counts = _counts_by_process(level_plan.units)
+    return {
+        process: (firsts.get(process), *counts.get(process, (0, 0)))
+        for process in dict.fromkeys((*firsts, *counts))
+    }
+
+
+def _first_short_by_process(frame: pd.DataFrame, months: Sequence[int]) -> dict[str, int | None]:
+    """공정마다 `months` 안에서 `과부족 < 0` 인 첫 달(없으면 None) — 그 달 안에 줄이 있는 공정만."""
+    if frame.empty:
+        return {}
+    if "생산계획년월" in frame.columns:
+        inside = pd.to_numeric(frame["생산계획년월"], errors="coerce").isin(list(months))
+        frame = frame.loc[inside.to_numpy()]
+    if frame.empty:
+        return {}
+    keys = frame["공정"].astype("string").to_numpy()
+    short = pd.to_numeric(frame["과부족"], errors="coerce").lt(0).fillna(False).to_numpy()
+    month = pd.to_numeric(frame["생산계획년월"], errors="coerce").where(short)
+    first = month.groupby(keys, sort=False).min()
+    return {
+        str(process): None if pd.isna(value) else int(value) for process, value in first.items()
+    }
+
+
+def _counts_by_process(units: pd.DataFrame) -> dict[str, tuple[int, int]]:
+    """공정마다 (당긴 호기 대수, 신규 대수) — `_counts` 를 공정마다 부른 값."""
+    if units.empty:
+        return {}
+    keys = units["공정"].astype("string").to_numpy()
+    new = pd.Series(units["구분"].eq(KIND_NEW).fillna(False).to_numpy(dtype=bool))
+    grouped = new.groupby(keys, sort=False).agg(["size", "sum"])
+    return {
+        str(process): (int(row["size"]) - int(row["sum"]), int(row["sum"]))
+        for process, row in grouped.iterrows()
+    }
 
 
 def _split(frame: pd.DataFrame, months: Sequence[int] | None = None) -> dict[str, pd.DataFrame]:
