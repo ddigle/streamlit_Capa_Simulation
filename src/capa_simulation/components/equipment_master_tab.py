@@ -43,11 +43,11 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import astuple
 from datetime import date
 from functools import partial
-from typing import Any, Final
+from typing import Any, Final, TypeVar, cast
 
 import pandas as pd
 import streamlit as st
@@ -64,10 +64,12 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_DRAFT_KEY,
     DOWNTIME_EDITOR_KEY,
     DOWNTIME_VIEW_PREFIX,
+    DRAFT_REVISION,
     DRAFT_REVISION_KEY,
     EQUIPMENT_DRAFT_KEY,
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
+    GRID_MEMO,
     GRID_MEMO_KEY,
     GRID_RESULT_KEY,
     MASTER_TABLE_KEY,
@@ -252,6 +254,8 @@ from capa_simulation.services.space_layout_edit import (
     module_layout_message,
     name_changes,
 )
+
+T = TypeVar("T")
 
 # 표 고르기(맨 위 줄)와 오른쪽 칸 고르기 — 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 표
 # 고르기 key 는 작은 편집표 판정(`small_editor_edits` — 탭 줄이 페이지보다 먼저 읽는다)도 읽어
@@ -511,6 +515,27 @@ def _texts(buffer: pd.DataFrame, saved: pd.DataFrame) -> tuple[list[list[str]], 
     return result["buffer"], result["saved"]
 
 
+def _buffer_key() -> tuple[object, ...]:
+    """편집본 내용을 가르는 열쇠 — (편집본 세대, 출발점, 저장본 사본 쌍 토큰). 편집본 · 저장본을
+    바꾸는 길은 모두 세대나 출발점을 올리고(`equipment_data_workspace`), 저장본 사본은 그 토큰에서만
+    선다."""
+    return (equipment_buffer_generation(), buffer_base(), DRAFT_REVISION.peek())
+
+
+def _remembered(name: str, key: tuple[object, ...], build: Callable[[], T]) -> T:
+    """회차 메모(`GRID_MEMO`)의 `name` 칸 — 열쇠가 같으면 그 값, 다르면 `build()` 로 새로 적는다.
+    값은 기본형(튜플 · 글 · 수)만 둔다(모델 인스턴스를 세션에 두지 않는다)."""
+    memo = GRID_MEMO.get()
+    if memo.get(f"{name}_key") == key and name in memo:
+        return cast(T, memo[name])
+    value = build()
+    fresh = dict(memo)
+    fresh[f"{name}_key"] = key
+    fresh[name] = value
+    GRID_MEMO.set(fresh)
+    return value
+
+
 def _changed_rows(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     """두 표에서 바뀐 행 수(넣음·뺌·고침을 한 행으로 — 많은 쪽)."""
     if saved.equals(buffer):
@@ -538,26 +563,10 @@ def _table_errors(
     layout: LayoutMode,
 ) -> list[str]:
     """표 단위로 저장을 막는 것 — 기존 보유대수·비가동 일정(칸 단위로 그리지 않는다)·예시 행·모듈
-    묶음 바둑판·가정 세션 묶음 거부·낡은 세션의 지운 호기(개편 명세 5-2·4-5)."""
-    errors: list[str] = []
-    try:
-        prepare_equipment_baseline(frames[0])
-    except ValueError as exc:
-        errors.append(f"기존 보유대수 — {exc}")
-    names = frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    try:
-        prepare_downtime_for_prepared_equipment(
-            frames[2], pd.DataFrame({EQUIPMENT_ID_COLUMN: names.dropna().tolist()})
-        )
-    except ValueError as exc:
-        errors.append(f"비가동 일정 — {exc}")
-    examples = _example_row_count(frames)
-    if examples:
-        errors.append(
-            f"기존 보유대수에 손대지 않은 예시 행 {examples:,}건 — 표 고르기 「기존 보유대수」 "
-            "에서 "
-            "지우거나 실제 값으로 고칩니다"
-        )
+    묶음 바둑판·가정 세션 묶음 거부·낡은 세션의 지운 호기(개편 명세 5-2·4-5). 앞 셋(편집본 세 표만
+    보는 것)은 편집본 열쇠(`_buffer_key`)로 회차 메모에 한 번 — 뒤 셋은 이름 바꿈 · 묶음 승인 ·
+    잠금처럼 편집본 밖 칸도 보아 회차마다 본다."""
+    errors = list(_remembered("frame_errors", _buffer_key(), partial(_frame_errors, frames)))
     violations = saved_master_violations(frames[1])
     if violations:
         errors.append(module_layout_message(violations))
@@ -580,11 +589,45 @@ def _table_errors(
     return errors
 
 
+def _frame_errors(frames: Frames) -> tuple[str, ...]:
+    """`_table_errors` 의 앞 셋 — 편집본 세 표만 본다(기존 보유대수 · 비가동 일정 정규화 · 예시
+    행)."""
+    errors: list[str] = []
+    try:
+        prepare_equipment_baseline(frames[0])
+    except ValueError as exc:
+        errors.append(f"기존 보유대수 — {exc}")
+    names = frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    try:
+        prepare_downtime_for_prepared_equipment(
+            frames[2], pd.DataFrame({EQUIPMENT_ID_COLUMN: names.dropna().tolist()})
+        )
+    except ValueError as exc:
+        errors.append(f"비가동 일정 — {exc}")
+    examples = _example_row_count(frames)
+    if examples:
+        errors.append(
+            f"기존 보유대수에 손대지 않은 예시 행 {examples:,}건 — 표 고르기 「기존 보유대수」 "
+            "에서 "
+            "지우거나 실제 값으로 고칩니다"
+        )
+    return tuple(errors)
+
+
 def _alerts(
     master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
 ) -> dict[str, str]:
     """설비명 → 일정 확인 갈래 글(「Qual 미확인 · 반입 실적 누락」) — 저장을 막지 않는다. 가정 설비
-    시나리오면 공식 일정 기준이다(`official`)."""
+    시나리오면 공식 일정 기준이다(`official`). 편집본 열쇠 · 공식 스냅샷 토큰 · 오늘로 회차 메모에
+    한 번(메모에는 (설비명, 글) 튜플로 둔다)."""
+    key = (*_buffer_key(), official.token if official is not None else None, today.isoformat())
+    pairs = _remembered("alerts", key, partial(_alert_pairs, master, official, today))
+    return dict(pairs)
+
+
+def _alert_pairs(
+    master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
+) -> tuple[tuple[str, str], ...]:
     issues = get_schedule_confirmation_issues(confirmation_master(master, official), today=today)
     alerts: dict[str, list[str]] = {}
     for name, stage, kind in zip(
@@ -597,15 +640,20 @@ def _alerts(
         word = f"{stage} {kind}"
         if word not in words:
             words.append(word)
-    return {name: " · ".join(words) for name, words in alerts.items() if name}
+    return tuple((name, " · ".join(words)) for name, words in alerts.items() if name)
 
 
 def _others(frames: Frames, saved: Frames) -> str:
+    """편집본 밖 두 표 · 층 배치 · FAB 의 저장 전 변경 한 줄. 두 표의 바뀐 행 수는 편집본 열쇠로
+    회차 메모에 한 번이다(층 배치 · FAB 대기분은 세대를 올리지 않아 회차마다 읽는다)."""
     parts: list[str] = []
-    baseline = _changed_rows(saved[0], frames[0])
+    baseline, downtime = _remembered(
+        "other_rows",
+        _buffer_key(),
+        lambda: (_changed_rows(saved[0], frames[0]), _changed_rows(saved[2], frames[2])),
+    )
     if baseline:
         parts.append(f"기존 보유대수 {baseline:,}행")
-    downtime = _changed_rows(saved[2], frames[2])
     if downtime:
         parts.append(f"비가동 일정 {downtime:,}행 바뀜")
     floor = floor_layout_words(

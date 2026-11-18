@@ -644,6 +644,12 @@ def equipment_buffer_generation() -> int:
     return int(value) if isinstance(value, int) else 0
 
 
+# 설비 마스터 탭 회차 메모(`GRID_MEMO_KEY`)의 창구 — 새 메모 칸(표 단위 오류 · 일정 확인 · 다른 표
+# 바뀐 행 수 · 칸 결과 재료)은 이 창구로 읽고 쓴다(옛 칸 결과 · 글 행렬 자리는 그대로).
+GRID_MEMO: Final = SessionSlot(GRID_MEMO_KEY, dict, dict)
+# 저장본 사본의 쌍 토큰(`DRAFT_REVISION_KEY`) 읽기 창구.
+DRAFT_REVISION: Final = SessionSlot(DRAFT_REVISION_KEY, str)
+
 # 설비 화면이 같은 표의 내용 지문(`frame_digest`)을 회차마다 다시 내지 않게 하는 세션 메모
 # {"prefix": (편집본 출발점, 편집본 세대), "digests": {출처: (지문, 꼴 표지)}}
 # — `remembered_digest`.

@@ -18,6 +18,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import streamlit as st
 from grid_fake import Calls, install_fake_grid, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_master_tab import _app, _import, _rows
@@ -85,7 +86,9 @@ def _memo_entries(app: AppTest) -> dict[tuple[str, ...], str]:
 def _assert_calculation_memo_is_fresh(app: AppTest) -> None:
     """메모의 계산 사본 지문이 그 회차 표의 새 지문과 같다(지금 토큰의 것만 있다)."""
     entries = {
-        source: digest for source, digest in _memo_entries(app).items() if source[0] == "calculation"
+        source: digest
+        for source, digest in _memo_entries(app).items()
+        if source[0] == "calculation"
     }
     token = app.session_state[DRAFT_REVISION_KEY]
     assert list(entries) == [("calculation", "equipment", token)]
@@ -110,7 +113,9 @@ def _pair(app: AppTest) -> tuple[object, object]:
     """(편집본 출발점, 편집본 세대) — 메모 열쇠의 앞머리."""
     memo = _session(app, DIGEST_MEMO_KEY)
     assert isinstance(memo, dict)
-    return tuple(memo["prefix"])  # type: ignore[return-value]
+    prefix = memo["prefix"]
+    assert isinstance(prefix, tuple) and len(prefix) == 2
+    return prefix[0], prefix[1]
 
 
 def test_the_memo_follows_every_path_that_changes_the_buffer_or_the_saved_pair(
@@ -180,7 +185,8 @@ def test_the_memo_follows_every_path_that_changes_the_buffer_or_the_saved_pair(
 
 
 def test_the_sample_fleet_is_not_remembered_and_the_empty_fleet_is(tmp_path: Path) -> None:
-    """샘플 fleet(오늘마다 다른 합성 표)은 메모에 넣지 않는다. 샘플을 끄면 빈 계산 사본의 지문이다."""
+    """샘플 fleet(오늘마다 다른 합성 표)은 메모에 넣지 않는다. 샘플을 끄면 빈 계산 사본의
+    지문이다."""
     app = _app(tmp_path / "equipment.duckdb")
     _summary(app)
     assert not [source for source in _memo_entries(app) if source[0] == "calculation"]
@@ -195,7 +201,7 @@ def test_the_memo_returns_the_frame_digest_and_recomputes_on_a_new_pair(
     """메모 자체 — 같은 (출발점, 세대, 출처)면 다시 해시하지 않고, 하나라도 바뀌거나 꼴 표지가
     다르면 다시 낸다. 돌려주는 값은 늘 `frame_digest` 다."""
     state: dict[str, object] = {}
-    monkeypatch.setattr(workspace.st, "session_state", state)
+    monkeypatch.setattr(st, "session_state", state)
     pair = ["base-1", 3]
     monkeypatch.setattr(workspace, "buffer_base", lambda: pair[0])
     monkeypatch.setattr(workspace, "equipment_buffer_generation", lambda: pair[1])
