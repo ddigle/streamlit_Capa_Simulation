@@ -980,8 +980,10 @@ def _still_drawn(drawn: _DrawnSource) -> bool:
     팝업(프래그먼트)이 시나리오 · 조회기간 · 붙여넣기 대기를 바꾸고 앱 회차가 단추에 닿기 전에
     누름이 오면 옛 원본으로 적용한다. 그런 누름은 쓰지 않고 본문에 맡긴다 — 본문이 초안을 비우고
     단추를 잠가 그리던 옛 길과 같다. 같은 단추의 빠른 둘째 누름도 첫 적용이 토큰을 바꿔 여기서
-    걸린다. 활성 시나리오를 세션에서 빼는 길(활성화 해제 · 불러오기)은 원본 토큰 칸도 함께
-    지운다(`scenario_activation._STALE_VALUE_KEYS`) — 그 칸이 거른다."""
+    걸린다. 활성 시나리오를 세션에서 빼는 길
+    (`scenario_activation.clear_persisted_scenario_activation` — `clear_active_scenario` 뒤
+    `_release_stale_ui_state`)은 이 화면 원본 토큰 칸도 함께 지운다(`_STALE_VALUE_KEYS`) —
+    시나리오가 없을 때는 그 칸이 거른다."""
     scenario = LIVE_SCENARIO.peek()
     return (
         LIVE_SOURCE_TOKEN.peek() == drawn.source_token
