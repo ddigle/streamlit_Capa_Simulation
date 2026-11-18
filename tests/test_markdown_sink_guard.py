@@ -126,7 +126,7 @@ PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/equipment_data_workspace.py", "save_equipment_buffer"): (
         "FAB 저장 거부 글 — 늘 다시 던지는 ValueError 에 담겨 받는 쪽이 bootstrap_error_message"
     ),
-    ("src/capa_simulation/components/equipment_master_tab.py", "_table_errors"): (
+    ("src/capa_simulation/components/equipment_master_tab.py", "_frame_errors"): (
         "설비 마스터 표(JS) 「저장하기 전에 고칠 것」 줄 — 평문으로 그린다"
     ),
     ("src/capa_simulation/components/intro_summary.py", "_guarded"): (

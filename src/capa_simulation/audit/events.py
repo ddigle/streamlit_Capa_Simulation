@@ -293,6 +293,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "trunc": "줄임",
     "until": "끝 시각",
     "version": "판",
+    "version_entry": "판 이력 줄",
     "version_from": "판 전",
     "version_to": "판",
 }

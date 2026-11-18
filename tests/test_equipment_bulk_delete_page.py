@@ -45,6 +45,7 @@ from capa_simulation.components.equipment_master_tab import (
     UNDO_BUTTON_KEY,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.manual_downtime_tab import MANUAL_REVERT_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -379,7 +380,12 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     # 위에는 되살리기 단추가 따로 서지 않는다.
     assert app.session_state[SIDE_KEY] == SIDE_CHANGES
     assert app.session_state[emg.MASTER_SIDE.reveal_key] >= 1
-    undo = [item.key for item in app.button if "되돌리기" in str(item.label)]
+    # 같은 화면 Preference 탭의 입력 비가동 「되돌리기」(늘 서는 단추 — 다른 표)는 셈 밖이다.
+    undo = [
+        item.key
+        for item in app.button
+        if "되돌리기" in str(item.label) and item.key != MANUAL_REVERT_KEY
+    ]
     assert undo == [UNDO_BUTTON_KEY], undo
     _press_undo(app)
     assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
