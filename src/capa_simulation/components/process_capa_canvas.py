@@ -468,6 +468,9 @@ class ProcessCapaCanvas(NamedTuple):
     row_ids: tuple[str, ...]
     """위에서 아래로 그린 행 id."""
 
+    header_height: float
+    """머리 행(달 글자) 높이(px) — 지금 보는 달 표지를 그림 밖에서 덧칠하는 자리가 읽는다."""
+
 
 # ================================================================== 공개 함수
 
@@ -572,6 +575,7 @@ def build_process_capa_canvas(
     dynamic: DynamicCanvasInput | None = None,
     collapsed: Collection[str] = frozenset(),
     assumption: AssumptionCanvasInput | None = None,
+    meta: object = None,
 ) -> ProcessCapaCanvas:
     """공정 하나의 결합 월 캔버스(라벨 Figure · 월 Figure)를 만든다.
 
@@ -584,7 +588,10 @@ def build_process_capa_canvas(
       회색).
     - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다). ② 의 제품 줄도
       `product_demand` 를 따른다(① · ② 함께 펼침 — 2026-11-12 사용자 답 q4 (가)).
-    - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
+    - `selected_month` 는 지금 보는 달이다. 축에 없거나 None 이면 표시하지 않는다(공정 Capa 상세
+      화면은 None 을 넘기고 그 표지를 그림 밖에서 덧칠한다 — `ProcessCapaCanvas.header_height`).
+    - `meta` 는 월 Figure 의 `layout.meta` 로 싣는다(그리는 것은 바꾸지 않는다 — 화면이 브라우저에
+      남은 칸 선택을 비울 때 새 요소로 만드는 표).
     - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
       id 는 무시한다.
     - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠는 그 요약의 판정을, ② · ③
@@ -620,6 +627,7 @@ def build_process_capa_canvas(
         today_x=model.today_x,
         dynamic_rows=rows[model.dynamic_first :] if model.dynamic_first is not None else [],
         dynamic=dynamic,
+        meta=meta,
     )
     flush_layout_items(label_figure, month_figure)
     keep_unselected_opaque(month_figure)
@@ -630,6 +638,7 @@ def build_process_capa_canvas(
         hidden_units=model.hidden_units,
         hidden_arrow_units=model.hidden_arrow_units,
         row_ids=tuple(row.row_id for row in rows),
+        header_height=rows[0].height,
     )
 
 
@@ -2217,6 +2226,7 @@ def _month_figure(
     today_x: float | None,
     dynamic_rows: Sequence[_Row],
     dynamic: DynamicCanvasInput | None,
+    meta: object = None,
 ) -> go.Figure:
     """엔진 월 Figure(`month_sheet_canvas.month_figure`)에 이 캔버스만의 그림을 훅으로 얹는다 —
     ③ 호기 줄의 선·표지와 ④ 화살표(행마다), 부족 달 띠(머리 뒤), 지금 보는 달 열과 오늘 점선(끝)."""
@@ -2304,6 +2314,7 @@ def _month_figure(
         row_hook=draw_row,
         header_hook=draw_shortage,
         finish_hook=finish,
+        meta=meta,
     )
 
 

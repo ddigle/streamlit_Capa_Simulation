@@ -64,6 +64,7 @@ from capa_simulation.components.shortening_progress_panel import (
     SHORTENING_COMPARE_KEY,
     gone_baseline_text,
 )
+from capa_simulation.components.target_level_field import entry_out_of_range
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_shortening_baseline_cache,
@@ -355,6 +356,113 @@ def test_opening_and_dismissing_the_target_picker_runs_only_the_host(
     assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
     assert app.session_state[FULL_RUNS_KEY] == full_runs
     clear_equipment_repository()
+
+
+def _drew_widget(messages: list[Any], widget_key: str) -> bool:
+    """메시지 가운데 그 키의 위젯을 그린 델타가 있나."""
+    for message in messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        delta = message.delta
+        if delta.WhichOneof("type") != "new_element":
+            continue
+        kind = delta.new_element.WhichOneof("type")
+        widget = getattr(delta.new_element, kind) if kind else None
+        if str(getattr(widget, "id", "")).endswith(f"-{widget_key}"):
+            return True
+    return False
+
+
+def test_a_picked_or_typed_target_is_applied_by_the_callback_without_redrawing_the_picker(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목표를 고르거나 받을 수 있는 값을 넣은 상호작용은 두 칸의 콜백이 세션에 적고 닫으며 앱
+    전체를 돌린다 — 팝업 본문(라디오 · 칸)은 그 상호작용에 다시 그려지지 않는다(콜백 안
+    `st.rerun()`). 받을 수 없는 값은 콜백이 적지 않아 팝업 회차 하나가 칸 곁에 거부 글을 적고
+    팝업은 열린 채다. 라디오가 칸보다 먼저다 — 거부 글이 선 채 라디오를 고르면 라디오 값이
+    적힌다."""
+    runner = _runner(request)
+    world = _install(monkeypatch, _database(tmp_path))
+    app = _open(runner)
+
+    def open_picker() -> str:
+        runner.fragment_queue = []
+        _run(app, world)
+        _run(app, world, lambda app: app.button(key=LEVEL_FIELD.field_key).click())
+        return runner.fragment_of(LEVEL_FIELD.pick_key)
+
+    # 다섯 가운데 하나 — 팝업 회차는 콜백만 돌고 곧바로 앱 전체 회차가 선다.
+    dialog = open_picker()
+    full_runs = app.session_state[FULL_RUNS_KEY]
+    runner.fragment_queue = [dialog]
+    _run(app, world, lambda app: app.radio(key=LEVEL_FIELD.pick_key).set_value(1.2))
+    assert runner.started == [[dialog], []]
+    assert not _drew_widget(runner.emitted, LEVEL_FIELD.pick_key)
+    assert not _drew_widget(runner.emitted, LEVEL_FIELD.entry_key)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.2
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    assert app.button(key=LEVEL_FIELD.field_key).label == "120%"
+    for key in (SHORTENING_DIALOG_HOST.open_key, LEVEL_FIELD.pick_key, LEVEL_FIELD.entry_key):
+        assert key not in app.session_state, key
+
+    # 다섯 밖 직접 입력(Enter) — 같은 길이다.
+    dialog = open_picker()
+    full_runs = app.session_state[FULL_RUNS_KEY]
+    runner.fragment_queue = [dialog]
+    _run(app, world, lambda app: app.number_input(key=LEVEL_FIELD.entry_key).set_value(115.0))
+    assert runner.started == [[dialog], []]
+    assert not _drew_widget(runner.emitted, LEVEL_FIELD.pick_key)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.15
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    assert app.button(key=LEVEL_FIELD.field_key).label == "115%"
+
+    # 받을 수 없는 값 — 팝업 회차 하나가 거부 글을 칸 곁에 적고 목표 · 열림은 그대로다.
+    dialog = open_picker()
+    full_runs = app.session_state[FULL_RUNS_KEY]
+    runner.fragment_queue = [dialog]
+    app.number_input(key=LEVEL_FIELD.entry_key).set_value(40.0).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert runner.started == [[dialog]]
+    assert _drew_widget(runner.emitted, LEVEL_FIELD.entry_key)
+    assert [str(element.value) for element in app.error] == [entry_out_of_range(40)]
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.15
+    assert app.session_state[SHORTENING_DIALOG_HOST.open_key] == LEVEL_FIELD.dialog
+    assert app.session_state[FULL_RUNS_KEY] == full_runs
+
+    # 거부 글이 선 채 라디오 — 라디오가 이긴다(콜백 하나로 닫힌다).
+    runner.fragment_queue = [dialog]
+    _run(app, world, lambda app: app.radio(key=LEVEL_FIELD.pick_key).set_value(1.3))
+    assert runner.started == [[dialog], []]
+    assert not _drew_widget(runner.emitted, LEVEL_FIELD.pick_key)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
+    assert app.button(key=LEVEL_FIELD.field_key).label == "130%"
+    clear_equipment_repository()
+
+
+def test_both_picker_cells_changed_in_one_interaction_apply_the_radio_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """한 상호작용에 라디오와 칸이 함께 바뀌면 두 칸의 콜백이 둘 다 돈다 — 차례와 상관없이 라디오가
+    한 번 적힌다. 앞 콜백이 라디오 값으로 닫으며 두 칸 값을 지우고(`DialogHost.close`), 뒤 콜백은
+    빈 칸이라 아무것도 않는다."""
+    closes: list[str] = []
+    state: dict[str, object] = {
+        SHORTENING_LEVEL_KEY: 1.1,
+        LEVEL_FIELD.pick_key: 1.2,
+        LEVEL_FIELD.entry_key: 175.0,
+    }
+
+    def close_to_app(host: object) -> None:
+        closes.append("app")
+        state.pop(LEVEL_FIELD.pick_key, None)
+        state.pop(LEVEL_FIELD.entry_key, None)
+
+    monkeypatch.setattr(type(LEVEL_FIELD.host), "close_to_app", close_to_app)
+    monkeypatch.setattr(st, "session_state", state)
+    LEVEL_FIELD._commit()
+    LEVEL_FIELD._commit()
+    assert state[SHORTENING_LEVEL_KEY] == 1.2
+    assert closes == ["app"]
 
 
 def test_a_dark_session_draws_the_view_run_in_dark_colors_like_the_full_run(

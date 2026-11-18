@@ -35,6 +35,8 @@ from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
+import capa_simulation.components.shortening_board as shortening_board
+import capa_simulation.services.shortening_watch as shortening_watch
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import (
     LEVEL_FIELD,
@@ -58,6 +60,7 @@ from capa_simulation.components.shortening_board import (
     BOARD_ORDER_KEY,
     BOARD_TITLE,
     DELAYED_HELP,
+    DETAIL_NUMBERS_KEY,
     HIGHLIGHT_FROM_DETAIL,
     HIGHLIGHT_OFF_KEY,
     IMMINENT_KIND_HELP,
@@ -1701,4 +1704,48 @@ def test_saved_fleet_cards_link_to_the_detail_page_and_carry_the_manager(tmp_pat
     _, units = _csv(app, "equipment_shortening_units_csv")
     shortened = units.loc[units["구분"].eq(KIND_SHORTENED)]
     assert set(shortened["담당자"]) == {"샘플 담당자"}
+    clear_equipment_repository()
+
+
+def test_card_link_numbers_are_made_once_per_plan_key_target_and_period(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """카드 상세 링크의 숫자(공정 전부 — `shortening_watch.detail_numbers`)는 한 회차에 한 번만
+    내고, 계획 키 · 목표 · 기간이 같은 다음 회차는 세션에 든 한 벌을 쓴다. 목표를 바꾸면 같은 계획
+    키로 새로 낸다. 카드마다 링크는 그대로 선다."""
+    database_path = _database(tmp_path)
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(),
+        sample_equipment_master(),
+        empty_downtime_schedule(),
+        note="상세 링크 기억 시험",
+    )
+    made: list[tuple[int, ...]] = []
+    real = shortening_watch.detail_numbers
+
+    def counted(level_plan: Any, months: Any) -> dict[str, tuple[int | None, int, int]]:
+        made.append(tuple(months))
+        return real(level_plan, months)
+
+    monkeypatch.setattr(shortening_board, "detail_numbers", counted)
+
+    app = _run(database_path)
+    assert not app.exception, [element.message for element in app.exception]
+    cards = _cards(app)
+    assert cards and _captions(app).count(DETAIL_LINK_FALLBACK) == len(cards)
+    assert len(made) == 1
+    plan_key, level, months = app.session_state[DETAIL_NUMBERS_KEY][0]
+    assert level == 1.1 and months == made[0]
+
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert len(made) == 1
+    assert _captions(app).count(DETAIL_LINK_FALLBACK) == len(_cards(app))
+
+    app.session_state[SHORTENING_LEVEL_KEY] = 1.2
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert len(made) == 2
+    assert app.session_state[DETAIL_NUMBERS_KEY][0] == (plan_key, 1.2, months)
+    assert _captions(app).count(DETAIL_LINK_FALLBACK) == len(_cards(app))
     clear_equipment_repository()
