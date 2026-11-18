@@ -11,10 +11,14 @@
   (`TARGET_LEVELS`) 라디오와 그 밑 직접 입력 칸이 열린다(설계 규칙 UI-PRF-01 · UI-INP-05 —
   2026-11-11 사용자 고칠 것 Q2-26 「목표 확보율 5개 프리셋 외에 직접 입력도 가능하도록」). 라디오를
   고르거나 칸에 넣고 Enter(칸을 떠나도)를 누르면 곧바로 세션 칸에 적고 닫힌 뒤 앱 전체를 다시 돌린다
-  (`DialogHost.finish` — 값 칸 글과 본문이 함께 새 목표로 선다, HOME 주요공정 히트맵 팝업과 같은
-  꼴). 견주는 값은 세션의 지금 값이라 다시 도는 회차에 같아져 되풀이되지 않는다. 칸에 치고 Enter
-  없이 라디오를 누르면 라디오가 이긴다(「버튼 + 직접 입력」 칸 `preset_number_field` 와 같은 규칙 —
-  세대 key 없이도 2026-11-11 사본 앱 브라우저에서 누름 길이 0 · 0.15 · 0.6초 여섯 번 모두 라디오).
+  (값 칸 글과 본문이 함께 새 목표로 선다, HOME 주요공정 히트맵 팝업과 같은 꼴). 적고 닫는 것은
+  두 칸의 `on_change` 콜백이다(`DialogHost.close_to_app` — 콜백 안 `st.rerun()` 은 그 상호작용을
+  앱 전체 회차로 바꿔 팝업 본문이 한 번 더 돌지 않는다). 받을 수 없는 값(아래 거부)은 콜백이
+  적지 않아 팝업 회차가 돌아 칸 곁에 까닭을 적는다. 견주는 값은 세션의 지금 값이라 다시 도는
+  회차에 같아져 되풀이되지 않는다. 칸에 치고 Enter 없이 라디오를 누르면 라디오가 이긴다
+  (「버튼 + 직접 입력」 칸 `preset_number_field` 와 같은 규칙 — 세대 key 없이도 2026-11-11 사본
+  앱 브라우저에서 누름 길이 0 · 0.15 · 0.6초 여섯 번 모두 라디오). 두 칸이 한 상호작용에 함께
+  바뀌어도 콜백은 늘 라디오를 먼저 본다(`_decided` — 콜백이 도는 차례에 기대지 않는다).
   숫자 칸은 − · + 단추와 지우기 ⊗ 를 숨겨 Enter · 칸 떠남으로만 적용한다(남은 물음 보드
   Q226-stepper (나) — 단추 한 걸음이 곧 확정이라 걸음마다 앱 전체가 돌며 다섯 밖 목표를 새로
   계산하게 된다). 숨김은 그 칸 key 의 칸으로만 좁힌다(`entry_style` — 다른 화면 숫자 칸은 그대로).
@@ -45,6 +49,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Final
 
 import streamlit as st
@@ -59,6 +64,7 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.securement_threshold import THRESHOLD_RANGE, threshold_range_text
 from capa_simulation.services.threshold_label import threshold_percent, whole_percent
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import keeps_app_run_open, page_condition_slot
 
 __all__ = [
@@ -204,6 +210,10 @@ class TargetLevelField:
         self.pick_key = pick_key
         # 직접 입력 숫자 칸 — 라디오 key 에서 짓는다(팝업의 입력 위젯 key 둘).
         self.entry_key = f"{pick_key}_entry"
+        # 두 칸의 콜백이 읽는 위젯 값(`_commit`) — 꼴은 `target_level` · `read_level_entry` 가
+        # 가린다.
+        self._pick_slot: SessionSlot[object] = SessionSlot(pick_key, object)
+        self._entry_slot: SessionSlot[object] = SessionSlot(self.entry_key, object)
         self.dialog = dialog
         self.host = host
         self.seed_keys = seed_keys
@@ -257,17 +267,19 @@ class TargetLevelField:
         self.host.open(self.dialog, self.field_key)
 
     def _pick(self) -> None:
-        """목표 다섯 라디오 + 직접 입력 칸 — **고르거나 넣으면 곧바로 적용하고 닫힌다**. 조작은
-        팝업(프래그먼트)만 다시 돌리고, 돌려받은 값이 지금 목표와 다르면 세션에 적고 열림 칸을 지운
-        뒤 앱 전체를 다시 돌린다(`DialogHost.finish`). 라디오를 먼저 본다 — 칸에 치고 Enter 없이
-        라디오를 누른 회차는 라디오가 이긴다. 칸 값을 받을 수 없으면 칸 바로 밑에 까닭 한 줄을 적고
-        팝업은 열린 채다."""
-        current = self.current()
+        """목표 다섯 라디오 + 직접 입력 칸 — **고르거나 넣으면 곧바로 적용하고 닫힌다**. 적용은
+        두 칸의 `on_change` 콜백(`_commit`)이 한다 — 세션에 적고 열림 칸을 지운 뒤 콜백 안에서 앱
+        전체를 다시 돌려(`DialogHost.close_to_app`) 이 본문은 그 상호작용에 돌지 않는다. 칸 값을
+        받을 수 없으면 콜백이 적지 않아 팝업(프래그먼트)만 다시 돌고, 칸 바로 밑에 까닭 한 줄을
+        적고 팝업은 열린 채다. 라디오를 먼저 본다 — 칸에 치고 Enter 없이 라디오를 누른 회차는
+        라디오가 이긴다. 콜백 없이 칸 값이 지금 목표와 달라진 회차(세션 값을 바로 적은 자리)는 이
+        본문이 같은 판정으로 적용하고 닫는다."""
         choice = st.radio(
             LEVEL_LABEL,
             options=list(TARGET_LEVELS),
             format_func=level_text,
             key=self.pick_key,
+            on_change=self._commit,
             label_visibility="collapsed",
         )
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -277,6 +289,7 @@ class TargetLevelField:
                 step=ENTRY_STEP,
                 format=ENTRY_FORMAT,
                 key=self.entry_key,
+                on_change=self._commit,
                 label_visibility="collapsed",
                 width=ENTRY_WIDTH,
             )
@@ -285,16 +298,38 @@ class TargetLevelField:
                 unsafe_allow_html=True,
                 width="content",
             )
+        decided = self._decided(choice, typed)
+        if isinstance(decided, str):
+            # 입력 곁 거부 — 고칠 칸이 바로 위다(설계 규칙 UI-NTF-03 · UI-INP-05).
+            st.error(decided)
+        elif decided is not None:
+            self._apply(decided, self.host.finish)
+
+    def _decided(self, choice: object, typed: object) -> float | str | None:
+        """두 칸 값의 판정 — 적용할 목표(라디오 먼저, 그다음 칸), 칸의 거부 글, 또는 None(지금
+        목표와 같아 할 것 없음). 라디오가 지금 목표와 다른 다섯 가운데 하나면 칸 값과 상관없이
+        그것이다."""
+        current = self.current()
         picked = target_level(choice)
         if picked is not None and not math.isclose(picked, current):
-            self._apply(picked)
+            return picked
         entered = read_level_entry(typed)
-        if isinstance(entered, str):
-            # 입력 곁 거부 — 고칠 칸이 바로 위다(설계 규칙 UI-NTF-03 · UI-INP-05).
-            st.error(entered)
-        elif not math.isclose(entered, current):
-            self._apply(entered)
+        if isinstance(entered, str) or not math.isclose(entered, current):
+            return entered
+        return None
 
-    def _apply(self, level: float) -> None:
+    def _commit(self) -> None:
+        """라디오 · 직접 입력 칸의 `on_change` 콜백 — 받을 수 있는 새 목표면 세션에 적고 닫으며
+        앱 전체를 다시 돌린다. 거부 · 같은 값이면 아무것도 않는다(팝업 회차가 거부 글을 적는다).
+        두 칸이 한 상호작용에 함께 바뀌면 콜백이 둘 다 도는데, 앞 콜백이 닫으며 두 칸 값을 지워
+        뒤 콜백은 빈 칸 거부로 아무것도 않는다."""
+        decided = self._decided(self._pick_slot.peek(), self._entry_slot.peek())
+        if isinstance(decided, float):
+            self._apply(decided, self.host.close_to_app)
+
+    def _apply(self, level: float, close: Callable[[], object]) -> None:
+        """세션에 적고 `close` 로 열림 칸 · 두 칸 값을 지운 뒤 앱 전체를 다시 돌린다 — 콜백은
+        `DialogHost.close_to_app`(그 상호작용이 곧 앱 전체 회차), 팝업 본문은 `DialogHost.finish`
+        (이 팝업 회차를 멈추고 앱 전체를 돌린다)."""
         st.session_state[self.state_key] = level
-        self.host.finish()
+        close()
