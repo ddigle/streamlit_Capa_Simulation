@@ -4933,3 +4933,36 @@ def test_the_blank_stop_tables_are_the_tables_calculation_stops_on() -> None:
         "RQ_RUN_DAY": ("RUN_DAY", ("생산계획년월", "공정")),
     }
     assert checks.BLANK_STOP_TABLES == inputs
+
+
+def test_extra_process_rows_are_stripped_from_revision_one_and_labelled(tmp_path: Path) -> None:
+    """부대공정(BDQ 밖)을 합친 원천 데이터셋 — 리비전 1 표에서 그 행을 걷어 대조 · 계산이 원천
+    공정만 보고, 데이터셋 줄은 「원천 + 부대공정 n」 이다(설계 A12). 0037 전 DB 사본(출처 표 없음)은
+    부대공정이 없는 것으로 본다."""
+    from auto_update_fakes import new_repository
+    from extra_process_fixtures import AOI, BOND
+    from test_extra_process_registration import apply_template, register
+
+    path = tmp_path / "extra_source.duckdb"
+    repository = new_repository(path)
+    apply_template(repository)
+    snapshot, _ = register(repository)
+    dataset_id = snapshot.scenario.dataset_id
+    del repository
+
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    try:
+        assert session.simulation is not None
+        assert checks._extra_processes(session.simulation, dataset_id) == (AOI, BOND)
+        source = checks.load_source(session)
+    finally:
+        session.close()
+
+    assert source is not None
+    assert "(원천 + 부대공정 2 — 부대공정 행은 대조 · 계산에서 뺌)" in source.dataset_label
+    for name in ("RQ_REQB", "RQ_UPEH", "RQ_MODULE", "RQ_EQP_AVBL"):
+        assert not source.tables[name]["공정"].isin([BOND, AOI]).any(), name
+    with duckdb.connect(":memory:") as bare:
+        bare.execute("CREATE SCHEMA app_meta")
+        assert checks._extra_processes(bare, dataset_id) == ()
