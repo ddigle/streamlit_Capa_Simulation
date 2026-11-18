@@ -80,6 +80,7 @@ from capa_simulation.components.table_toolbar import (
     SHEET_XLSX_LABEL,
     file_name_part,
 )
+from capa_simulation.design import tokens
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -496,7 +497,9 @@ def _months(app: AppTest) -> list[int]:
 def test_an_injected_month_moves_the_evidence_panel_and_the_canvas_mark(
     databases: tuple[Path, Path],
 ) -> None:
-    """칸을 누르면 콜백이 세션 달을 적는다 — 그 달로 근거 패널·그림의 지금 보는 달이 옮겨 간다."""
+    """칸을 누르면 콜백이 세션 달을 적는다 — 그 달로 근거 패널·그림의 지금 보는 달이 옮겨 간다.
+    지금 보는 달 표지(머리 밑줄·열 테두리)는 그림에 굽지 않고 월 그림 위 덧칠 서식이다 — 달만 바뀐
+    회차는 그림이 같고(브라우저가 캔버스를 다시 그리지 않는다) 덧칠 자리가 그 달 열로 옮겨 간다."""
     app = _ok(_app(databases).run())
     months = _months(app)
     target = months[-1]
@@ -505,11 +508,19 @@ def test_an_injected_month_moves_the_evidence_panel_and_the_canvas_mark(
 
     assert month_label(target) in _panel_head(app)
     first = json.dumps(_chart_spec(app, PROCESS_DETAIL_CANVAS_CHART_KEY))
+    assert _month_mark_left(app) == (len(months) - 1) * tokens.MONTH_COLUMN_WIDTH_PX
     app.session_state[PROCESS_DETAIL_MONTH_KEY] = months[0]
     _ok(app.run())
-    # 지금 보는 달 표시(머리 밑줄·열 테두리)는 그림에 구워진다 — 달이 바뀌면 그림도 바뀐다.
-    assert json.dumps(_chart_spec(app, PROCESS_DETAIL_CANVAS_CHART_KEY)) != first
+    assert json.dumps(_chart_spec(app, PROCESS_DETAIL_CANVAS_CHART_KEY)) == first
+    assert _month_mark_left(app) == 0
     assert month_label(months[0]) in _panel_head(app)
+
+
+def _month_mark_left(app: AppTest) -> int:
+    """월 그림 위 지금 보는 달 표지(덧칠 서식)의 왼쪽 자리(px) — 서식이 하나뿐이다."""
+    marks = [re.search(r"\.svg-container::after \{[^}]*left: (\d+)px", body) for body in _html(app)]
+    (left,) = [int(found.group(1)) for found in marks if found is not None]
+    return left
 
 
 def test_expanding_products_adds_rows_and_the_split_drops_a_single_basis(

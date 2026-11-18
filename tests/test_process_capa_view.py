@@ -41,6 +41,7 @@ from capa_simulation.components.process_capa_canvas import (
     UNITS_ALL,
     UNITS_SHORTENING,
     DynamicCanvasInput,
+    ProcessCapaCanvas,
 )
 from capa_simulation.components.process_capa_view import (
     CANVAS_MEMO_LIMIT,
@@ -589,7 +590,7 @@ def test_the_scroll_starts_one_column_left_of_the_opened_month() -> None:
 def _key(
     view: ProcessDetailView,
     *,
-    month: int = 202702,
+    epoch: int = 0,
     expanded: bool = False,
     split: str = "제품정보",
     units: bool = False,
@@ -600,7 +601,7 @@ def _key(
 ) -> tuple[object, ...]:
     return canvas_memo_key(
         view,
-        month=month,
+        epoch=epoch,
         expanded=expanded,
         split=split,
         show_all_units=units,
@@ -615,7 +616,8 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
     view = _view(dynamic=_dynamic_view())
     key = _key(view)
     assert _key(view) == key
-    assert _key(view, month=202703) != key
+    # 지금 보는 달은 그림 밖 덧칠이라 키에 없고, 세대(`selection_epoch`)는 그림을 새 요소로 만든다.
+    assert _key(view, epoch=1) != key
     assert _key(view, expanded=True) != key
     assert _key(view, units=True) != key
     assert _key(view, arrows=True) != key
@@ -645,11 +647,12 @@ def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() ->
     풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7), 정수 기준 글과 판정
     경계 과부족 풍선(8 — 2026-11-01 사용자 결정), 구획 다섯 · 제목 줄 풍선 · 비가동 기준(9 —
     2026-11-12 사용자 답), ④ 「단축 후 확보율」 · 보기 · ⑤ 모듈 묶음 Main 줄과 「└ 모듈명」(10 —
-    같은 날 답 q6 · q6b · q7)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
-    버전이 10 이다(AGENTS 5장 16)."""
+    같은 날 답 q6 · q6b · q7)으로, 지금 보는 달 표지를 그림에서 빼고 세대를 `layout.meta` 에
+    실어(11) 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 11 이다
+    (AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 10
+    assert CANVAS_SCHEMA_VERSION == 11
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
@@ -660,10 +663,9 @@ def _memo_script() -> None:
     from capa_simulation.components.process_capa_view import CANVAS_MEMO_KEY, remembered_canvas
 
     view = _view()
-    months = list(view.months)
     first = remembered_canvas(
         view,
-        month=months[0],
+        epoch=0,
         expanded=False,
         split="제품정보",
         product_demand=None,
@@ -672,7 +674,7 @@ def _memo_script() -> None:
     )
     again = remembered_canvas(
         view,
-        month=months[0],
+        epoch=0,
         expanded=False,
         split="제품정보",
         product_demand=None,
@@ -680,10 +682,10 @@ def _memo_script() -> None:
         show_all_arrows=False,
     )
     st.session_state["same"] = first is again
-    for month in months:
+    for epoch in range(len(view.months)):
         remembered_canvas(
             view,
-            month=month,
+            epoch=epoch,
             expanded=False,
             split="제품정보",
             product_demand=None,
@@ -698,6 +700,126 @@ def test_the_canvas_is_remembered_a_few_times_in_the_session() -> None:
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["same"] is True
     assert app.session_state["kept"] == CANVAS_MEMO_LIMIT
+
+
+def test_the_selection_epoch_moves_only_for_a_stale_browser_pick_or_a_new_drawing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """월 그림 세대는 브라우저가 칸을 쥐었고(`CANVAS_PICK_KEY`) 그 칸이 보는 달과 어긋날 때(◀▶ ·
+    들어옴)나 그림 조건이 바뀔 때만 오른다 — 오르면 쥔 칸을 지운다(새 요소는 선택이 없다). 쥔 칸이
+    없으면 달 · 조건이 바뀌어도 그대로라 이미 만든 그림을 다시 쓴다. 칸을 눌러 달만 바뀐 회차도
+    그대로라 그림을 다시 보내지 않는다."""
+    import streamlit as st
+
+    from capa_simulation.components.process_capa_view import CANVAS_PICK_KEY, selection_epoch
+
+    state: dict[str, object] = {}
+    monkeypatch.setattr(st, "session_state", state)
+    drawn, other = ("조건", 1), ("조건", 2)
+    assert selection_epoch(202702, drawn) == 0
+    # 쥔 칸이 없으면 ◀▶ · 조건 바뀜에도 그대로다.
+    assert selection_epoch(202703, drawn) == 0
+    assert selection_epoch(202703, other) == 0
+    assert selection_epoch(202703, drawn) == 0
+    # 칸을 눌러 그 달을 봄 — 쥔 칸과 보는 달이 같다.
+    state[CANVAS_PICK_KEY] = 202704
+    assert selection_epoch(202704, drawn) == 0
+    assert state[CANVAS_PICK_KEY] == 202704
+    # ◀▶ 로 다른 달 — 쥔 칸이 어긋나 세대가 오르고 쥔 칸을 지운다. 다음 ◀▶ 는 그대로다.
+    assert selection_epoch(202705, drawn) == 1
+    assert CANVAS_PICK_KEY not in state
+    assert selection_epoch(202702, drawn) == 1
+    # 칸을 쥔 채 그림 조건이 바뀌면(구획 · 테마 …) 오른다.
+    state[CANVAS_PICK_KEY] = 202702
+    assert selection_epoch(202702, other) == 2
+    assert CANVAS_PICK_KEY not in state
+    assert selection_epoch(202702, drawn) == 2
+
+
+@pytest.mark.parametrize(
+    ("selection", "pick"),
+    [
+        ({"selection": {"points": [{"customdata": [202701, "rate", "풍선"]}]}}, 202701),
+        ({"selection": {"points": []}}, None),
+        ({"selection": {"points": [{"customdata": [199001, "rate", "풍선"]}]}}, None),
+    ],
+)
+def test_a_cell_click_records_the_cell_the_browser_holds(
+    selection: dict[str, object], pick: int | None
+) -> None:
+    """칸 선택 콜백은 브라우저가 쥔 칸을 적는다 — 빈 선택(고른 칸이 풀림) · 축 밖 점이면 지운다."""
+    from capa_simulation.components.process_capa_view import CANVAS_PICK_KEY
+
+    app = AppTest.from_function(_callback_script, default_timeout=60).run()
+    app.session_state[CANVAS_PICK_KEY] = 202612
+    app.session_state["action"] = "pick"
+    app.session_state["selection"] = selection
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    if pick is None:
+        assert CANVAS_PICK_KEY not in app.session_state
+    else:
+        assert app.session_state[CANVAS_PICK_KEY] == pick
+
+
+def test_the_remembered_canvas_carries_the_epoch_and_no_month_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기억한 캔버스의 월 그림은 지금 보는 달 표지(`tokens.ACCENT` 밑줄 · 테두리)를 굽지 않고 세대를
+    `layout.meta` 에 싣는다 — 세대가 다르면 다른 그림(새 요소)이다."""
+    import streamlit as st
+
+    from capa_simulation.components.process_capa_view import CANVAS_EPOCH_META, remembered_canvas
+    from capa_simulation.design import tokens
+
+    monkeypatch.setattr(st, "session_state", {})
+    view = _view()
+
+    def drawn(epoch: int) -> ProcessCapaCanvas:
+        return remembered_canvas(
+            view,
+            epoch=epoch,
+            expanded=False,
+            split="제품정보",
+            product_demand=None,
+            show_all_units=False,
+            show_all_arrows=False,
+        )
+
+    first = drawn(0)
+    figure = first.months.to_plotly_json()
+    assert figure["layout"]["meta"] == {CANVAS_EPOCH_META: 0}
+    shapes = figure["layout"].get("shapes", ())
+    assert not [shape for shape in shapes if shape.get("line", {}).get("color") == tokens.ACCENT]
+    assert first.header_height > 0 and first.height > first.header_height
+    later = drawn(4)
+    assert later.months.to_plotly_json()["layout"]["meta"] == {CANVAS_EPOCH_META: 4}
+    assert drawn(0) is first
+
+
+def test_the_month_mark_is_an_overlay_at_the_month_column() -> None:
+    """지금 보는 달 표지는 월 그림 위 덧칠 서식 하나다 — 그 열 자리(열 폭 × 차례), 그림과 같은
+    테두리 · 밑줄 모양, 누름은 그림으로 지나가고 풍선 층이 위다. 그림의 바깥 테두리는 표지 위에
+    다시 긋고(끝 열이면 오른쪽 줄도), 달이 축 밖이면 서식이 없다."""
+    from urllib.parse import unquote
+
+    from capa_simulation.components.month_sheet_canvas import SELECTED_BORDER_PX
+    from capa_simulation.components.process_capa_view import selected_month_style
+    from capa_simulation.design import tokens
+
+    assert selected_month_style(None, count=6, header_height=36, height=300, column_px=100) == ""
+    middle = selected_month_style(2, count=6, header_height=36, height=300, column_px=100)
+    assert "left: 200px" in middle and "width: 100px" in middle and "height: 300px" in middle
+    assert "pointer-events: none" in middle
+    assert "svg.main-svg:last-of-type { z-index: 2; }" in middle
+    mark = unquote(middle)
+    assert f"M1,1H99V299H1Z' fill='none' stroke='{tokens.ACCENT}'" in mark
+    assert f"stroke-width='{SELECTED_BORDER_PX}'" in mark
+    assert f"M24,28H76' stroke='{tokens.ACCENT}' stroke-width='1.5'" in mark
+    assert f"M0,0H100M0,300H100' stroke='{tokens.BORDER_STRONG}'" in mark
+    assert "M100,0V300" not in mark
+    last = unquote(selected_month_style(5, count=6, header_height=36, height=300, column_px=100))
+    assert "left: 500px" in last and "M100,0V300" in last
 
 
 def _sheet_memo_script() -> None:

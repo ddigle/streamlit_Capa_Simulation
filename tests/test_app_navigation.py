@@ -2624,7 +2624,8 @@ def test_a_month_step_on_the_process_detail_reruns_only_its_view_inside_the_app(
     """공정 Capa 상세의 ◀▶·칸 누름은 본문 프래그먼트(`process_detail_view`)만 **한 번** 다시
     돌린다 — `app.py` 가 끝까지 돈 실행 표지를 세운 실제 앱에서 본다. 콜백이 `st.rerun(<key>)` 를
     부르면 콜백만 도는 회차가 하나 더 돈다(그래서 `rerun_app_unless_alone`). 그 회차는 이벤트
-    칸에 앱 전체 회차의 그 프래그먼트와 같은 자리만 쓴다."""
+    칸에 앱 전체 회차의 그 프래그먼트와 같은 자리 · 같은 종류만 쓴다 — 글이 바뀌는 것은 지금 보는
+    달 표지(월 그림 위 덧칠 서식 — `selected_month_style`)를 실은 서식 하나뿐이다."""
     browser = install_fragment_browser(monkeypatch)
     app = _app.run()
     app.switch_page(PROCESS_CAPA_DETAIL.path).run()
@@ -2643,9 +2644,12 @@ def test_a_month_step_on_the_process_detail_reruns_only_its_view_inside_the_app(
     assert not list(app.exception), [element.message for element in app.exception]
     assert browser.started == [[view]]
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] > before
-    assert {
-        slot: (kind, body) for slot, (kind, body, _) in _event_slots(browser.messages).items()
-    } == own
+    after = {slot: (kind, body) for slot, (kind, body, _) in _event_slots(browser.messages).items()}
+    assert {slot: kind for slot, (kind, _) in after.items()} == {
+        slot: kind for slot, (kind, _) in own.items()
+    }
+    moved = [slot for slot in own if own[slot][1] != after[slot][1]]
+    assert len(moved) == 1 and ".svg-container::after" in after[moved[0]][1]
 
 
 def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
