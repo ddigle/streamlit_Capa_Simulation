@@ -27,6 +27,7 @@ from typing import Any, Literal
 import streamlit as st
 
 from capa_simulation.components.equipment_data_workspace import (
+    discard_drafts_for_session_move,
     has_unsaved_equipment_edits,
     pop_saved_schedule,
     reset_equipment_drafts,
@@ -74,6 +75,10 @@ class EquipmentSession:
     snapshot: EquipmentSnapshot | None = None
     # 이번 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 그 알림.
     notice: str | None = None
+    # 그 이동이 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버렸는가 — 머리는 페이지보다 먼저 그
+    # 편집을 센 채 그렸다. 편집본을 세우는 화면이 `ensure_equipment_drafts` 에 넘겨 그 회차에 한 번
+    # 다시 돈다.
+    head_dropped: bool = False
     # 옛 배포 흔적(경계 뒤 계약 v3 공통)이 어느 일정과도 합쳐지지 않아 공통만 읽은 회차 — 일정 없이
     # 연 것이다(`snapshot.schedule` 이 None, 모든 호기가 일정 없음). 공식 발행 쌍이 아니고 저장도
     # 막혀 있다(흔적). 빠져나갈 길은 백업 복원뿐이다(이어 쓰기는 같은 까닭으로 거절된다).
@@ -582,13 +587,14 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
     common_id = latest_equipment_revision_id(database_path)
     snapshot: EquipmentSnapshot | None = None
     notice: str | None = None
+    head_dropped = False
     unmerged = False
     if common_id is not None:
         try:
             snapshot = load_merged_equipment_snapshot(database_path, common_id, schedule_id)
         except (EquipmentScenarioIncompatible, KeyError) as error:
             try:
-                scenario, schedule_id, snapshot, notice = _move_after_incompatible(
+                scenario, schedule_id, snapshot, notice, head_dropped = _move_after_incompatible(
                     database_path, catalog, common_id, scenario, schedule_id, error
                 )
             except EquipmentScenarioIncompatible as last:
@@ -606,6 +612,7 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
         schedule_revision_id=schedule_id,
         snapshot=snapshot,
         notice=notice,
+        head_dropped=head_dropped,
         unmerged=unmerged,
     )
     st.session_state[LABEL_KEY] = session.label()
@@ -629,8 +636,9 @@ def _move_after_incompatible(
     scenario: EquipmentScenarioSummary | None,
     schedule_id: str | None,
     error: Exception,
-) -> tuple[EquipmentScenarioSummary, str | None, EquipmentSnapshot, str]:
-    """고정 쌍이 막혔을 때 옮길 곳 — 그 시나리오 최신 → 공식. 공식도 막히면 예외를 낸다."""
+) -> tuple[EquipmentScenarioSummary, str | None, EquipmentSnapshot, str, bool]:
+    """고정 쌍이 막혔을 때 옮길 곳 — 그 시나리오 최신 → 공식. 공식도 막히면 예외를 낸다. 끝 값은
+    옮기며 버린 편집이 앱 머리가 센 표시를 바꿨는가다(`EquipmentSession.head_dropped`)."""
     candidates: list[tuple[str, str | None]] = []
     if scenario is not None and scenario.latest_schedule_revision_id not in (None, schedule_id):
         candidates.append((scenario.equipment_scenario_id, scenario.latest_schedule_revision_id))
@@ -647,8 +655,7 @@ def _move_after_incompatible(
         except (EquipmentScenarioIncompatible, KeyError) as next_error:
             last = next_error
             continue
-        discarded = has_unsaved_equipment_edits()
-        reset_equipment_drafts(keep_fab=True)
+        discarded, head_dropped = discard_drafts_for_session_move()
         if isinstance(error, EquipmentScenarioIncompatible):
             before = f"「{error.scenario_name}」 r{error.revision_no}"
             reason = error.reason
@@ -666,7 +673,7 @@ def _move_after_incompatible(
         )
         if discarded:
             message += " 저장하지 않은 설비 편집은 버렸습니다."
-        return target, candidate_schedule, snapshot, message
+        return target, candidate_schedule, snapshot, message, head_dropped
     raise last
 
 

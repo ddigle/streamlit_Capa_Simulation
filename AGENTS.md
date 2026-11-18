@@ -3122,7 +3122,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `sidebar_expander`·`condition_card` 는 `key` + 상태 추적 `on_change` 로 펼침을 기억한다(`expanded=` 없음).
     조건 카드 key 는 `condition_card_<이름>` 이고 `sidebar_style.py` 가 그 접두어 하나로 서식을 건다.
   - 상자 여닫기는 9장 **여닫을 때 본문을 다시 돌리지 않는다**의 구현이다(`on_box_toggle`·`rerun_fragment_if_alone`·
-    `keeps_app_run_open`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다. 「이번 상호작용에서
+    `keeps_app_run_open`·`lowers_app_run`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다. 「이번 상호작용에서
     그 위젯만 바뀌었나」(`_only_this_widget_changed`)는 Components v2 부품의 트리거 모음 칸(1.63 `_make_trigger_id(<부품 id>,
     "events")` — `own_widget_ids`)도 그 위젯으로 센다 — 화면 탭 줄 고정·차례가 이 길로 페이지를 다시 돌리지 않는다(2026-11-02).
     내부 이름이 바뀌면 그 칸이 「다른 위젯」 으로 세어져 앱 전체 회차로 물러난다.
@@ -3601,7 +3601,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     뒤·목록 끝)에 묶이면 그 끝 자리이고(`dragLeft` 의 `bound`), 그 사이는 끄는 탭 가운데가 지난 다른 탭 가운데 수다(`dropSlot`) —
     가운데만 보면 끄는 탭이 이웃보다 넓거나 같을 때(넘친 줄은 탭이 같은 폭으로 준다) 끝 자리에 못 놓였다(2026-11-02 반박
     검토). 놓을 때 DOM 차례를 한 번 바꾸고 그 그림을 묶음에 담는다(아래 「묶어 보낸다」). Esc·포인터 취소는
-    제자리, 끈 뒤 `DRAG_CLICK_MS` 안의 click 은 고르기로 보내지 않는다(화면을 옮기지 않는다). Esc·끄는 중 새 data 로 접은
+    제자리, 끈 뒤 `DRAG_CLICK_MS` 안의 click 은 고르기로 보내지 않는다(화면을 옮기지 않는다). 그 창은 놓은 자리의 포인터
+    click 몫이다 — 새 포인터 누름(`pointerdown`)이 창을 닫고(놓은 자리의 click 이 오지 않은 끌기가 다음 × · 핀 · 고르기를
+    삼키지 않게) 키보드로 누른 단추(`detail` 0)는 거르지 않는다(`dragClick` 의 `detail`). Esc·끄는 중 새 data 로 접은
     끌기는 포인터가 아직 눌려 있어 그 포인터를 놓는 순간부터 같은 창을 다시 연다(`heldRelease` — 창 처리기 `RELEASE_EVENTS`
     는 그동안만 단다). 접은 시각부터만 세면 손떨림 뒤 0.4초 넘어 놓은 click 이 그 탭으로 화면을 옮겼다. 끄는 중 새 data 가
     오면 끌기를 접는다. 키보드 대안은 고정하지 않은
@@ -4427,6 +4429,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `manual_downtime=` 를 더 뺀다, 6장 「입력 비가동대수」).
   - `calculate_securement_rate` 를 고치지 않고 가용대수 프레임만 바꿔 두 번 부른다. 설비 일정 쪽에 공정 자체가 없을 때만
     Static 으로 채워 `fallback_processes` 로 알린다. HOME·B/N 은 여전히 Static 을 본다.
+  - 맞댈 달은 설비 일정이 덮는 달 ∩ 소요대수의 조회기간(`period=` — 화면 캐시 `get_securement_cross_check` 는 시나리오 키의
+    시작 · 끝 달)이다. Static 은 모든 달이 있어 좁히지 않으면 사이드바 조회기간 밖 달이 소요대수 0 · 확보율 None 행으로 실려
+    「맞대어 본 달」 에 세어졌다. 두 기간이 겹치지 않으면 행이 없다.
 - `src/capa_simulation/services/required_shortening.py` — 일정 기준 가용이 소요대수 × 목표 확보율에 모자란 공정·월마다
   신규 호기 Qual 을 며칠 당길지, 당길 호기가 없으면 가상 호기 「추가N」의 Qual 기한을 낸다. 어느 DB 도 열지 않는다.
   - 가용은 Static 대비 일정과 같은 길(`build_monthly_equipment_availability`), 소요는 `calculate_securement_rate` 다.
@@ -7623,7 +7628,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     적용이 수율 편집표보다 먼저 rerun 해 수율의 적용하지 않은 편집이 목록에서 사라졌다. 설비 편집본도 같다 —
     `ensure_equipment_drafts` 가 남의 저장으로 머리(변경 칩 · 화면 탭 점)가 센 편집을 버리면 `HEAD_STALE_KEY` 를 달고, 편집본을
     세우는 세 화면(가용설비 현황 · Space 현황 · 필요 단축 일정 — 호기 없음 `st.stop()` 앞에서도)이 모든 위젯을 그린 뒤
-    `rerun_if_head_stale()` 로 한 번 다시 돈다(다시 얹은 편집이 남아 표시가 그대로면 돌지 않는다). 그 회차의 곁 거부 — Space
+    `rerun_if_head_stale()` 로 한 번 다시 돈다(다시 얹은 편집이 남아 표시가 그대로면 돌지 않는다). 고정한 일정 리비전을 남의
+    저장 탓에 지금 공통 대장과 합칠 수 없어 세션을 옮기며(`resolve_equipment_session` → `_move_after_incompatible`) 편집을 버린
+    회차도 같다 — 버린 뒤의 편집본은 처음 세우는 것이라 견줄 앞 토큰이 없어, 세션이 `head_dropped` 로 알리고 세 화면이
+    `ensure_equipment_drafts(…, head_dropped=…)` 로 넘긴다. 옮겼다는 사건 알림 `SB-14` 는 편집본을 세운 뒤 사이드바 줄이 담으므로
+    담은 바로 뒤 `resend_on_head_rerun` 이 다시 보낼 목록에 더한다. 편집본을 세우지 않는 화면(공정 Capa 상세 · 제약
+    시뮬레이션 · 시나리오 관리)의 이동은 다시 돌지 않는다(다음 조작에 탭 점이 꺼진다). 그 회차의 곁 거부 — Space
     「배치 저장」(`SAVE_ERROR_KEY`)은 `hold_until_head_rerun`, 설비 마스터 「리비전 저장」 은 `carry_until_head_rerun`(결과 칸이
     아닌 `SAVE_RESULT_CARRIED_KEY` 로 — 다시 도는 회차가 그리기 전에 온 둘째 누름이 덮지 않게, 구획은
     `render_flash(carried, result)`) — 은 비켜 두었다가 다시 도는 회차가 한 번 그리고 한 번 보낸다. 버림 사건 알림 `EQ-05` 는
@@ -7954,6 +7964,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 프래그먼트 안 위젯의 콜백은 `rerun_fragment_if_alone` 이 아니라 `sidebar_status.rerun_app_unless_alone` 을 부른다
   (판정이 거짓일 때만 앱 전체로 올린다). 저장·불러오기·「적용」처럼 앱 전체 재실행으로 끝날 수 있는 프래그먼트 본문은
   `sidebar_status.keeps_app_run_open` 으로 감싸고 그 데코레이터는 `@st.fragment` 안쪽에 둔다.
+- **DB 에 쓰는 위젯 콜백은 `sidebar_status.lowers_app_run` 을 단다**(지금은 HOME 비교 시나리오 · 리비전 상자 둘 — `on_press`
+  바깥). 콜백은 `begin_app_run` 앞에서 돌아, 쓰는 동안 누른 사이드바 조작이 콜백 바로 뒤에서 실행을 끊으면 표지가 앞 전체
+  실행의 「끝났다」 로 남고 고른 값은 「바뀐 위젯」 으로 세지 않아 그 누름이 프래그먼트만 돌렸다(본문이 다음 전체 회차까지
+  낡음). 표지는 콜백 첫머리에 「끝나지 않음」 으로 내리고 되돌리지 않는다 — 이어지는 전체 실행이 다시 정하고, 팝업 안
+  콜백이면 다음 전체 실행까지 여닫기가 앱 전체로 물러날 뿐이다.
 - **프래그먼트 회차는 `app.py` 머리를 지나지 않고 새 스레드에서 돈다** — 스레드에 담은 값(테마)은 비어 있다. 회차
   머리에서 정하는 값은 세션에도 적고 프래그먼트 회차는 세션에서 잇는다(`design/theme.py`). 같은 까닭으로 세션마다 다른
   값(테마·조건 패널 칸·자리표시자)을 모듈 전역에 두지 않는다 — 세션마다 다른 스레드에서 도는 스크립트가 동시에 그 값을

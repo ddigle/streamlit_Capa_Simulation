@@ -21,7 +21,7 @@ from grid_fake import Calls, grid_results, install_fake_grid, last, outbox, send
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
-from test_equipment_scenario_repository import _request, _session, _set
+from test_equipment_scenario_repository import _request, _seeded, _session, _set
 
 from capa_simulation import alerts
 from capa_simulation.components import equipment_data_workspace as workspace
@@ -574,6 +574,68 @@ def test_a_reopen_without_lost_edits_does_not_spend_one_more_run(
 
     assert app.session_state[RUNS] == runs + 1
     assert app.session_state[HEAD] == ([], [])
+
+
+def _their_unmergeable_saves(repository: DuckDBEquipmentRepository) -> None:
+    """다른 세션이 저장 둘로 「운영 일정」 r1 을 지금 공통 대장과 합칠 수 없게 한다 — 일정에서 EQ-02
+    Qual일정을 비운 뒤(r2) 공통 대장에서 Qual상태를 비운다(교차 검증은 최신 · 공식만 지킨다)."""
+    first = _session(repository)
+    repository.save_equipment(
+        _request(first, equipment=_set(first.equipment, "EQ-02", "Qual일정", None))
+    )
+    second = _session(repository)
+    repository.save_equipment(
+        _request(second, equipment=_set(second.equipment, "EQ-02", "Qual상태", None))
+    )
+    clear_equipment_repository()
+
+
+def _move_events(app: AppTest) -> list[dict[str, Any]]:
+    """마지막 회차 표지에 실린 세션 이동 사건 알림(`SB-14` — 다시 보낸 것 포함)."""
+    return [note for note in alert_notes(app, again=True) if note.get("code") == "SB-14"]
+
+
+def test_the_head_drops_an_edit_a_session_move_threw_away_in_the_same_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """남의 저장으로 고정한 일정 리비전을 지금 공통 대장과 합칠 수 없게 되면 세션이 그 시나리오
+    최신으로 옮기며 내 편집을 버린다(`_move_after_incompatible`). 앱 머리는 그 편집을 센 채 그렸다 —
+    남의 저장이 편집본을 다시 세운 회차처럼 그 회차에 한 번 다시 돌아 칩 · 탭 점을 걷고, 옮겼다는
+    알림(`SB-14`)은 다시 돈 회차가 같은 id 로 한 번 더 보낸다. 다시 돈 회차는 되풀이되지 않는다."""
+    repository = _seeded(tmp_path)
+    app = _head_page(repository)
+    _head_counts_my_edit(app, grid)
+    _their_unmergeable_saves(repository)
+    runs = app.session_state[RUNS]
+
+    _ok(app.run())
+
+    _assert_marked(app, False)
+    assert app.session_state[HEAD] == ([], [])
+    assert app.session_state[RUNS] == runs + 2
+    moved = _move_events(app)
+    assert len(moved) == 1, moved
+    assert "저장하지 않은 설비 편집은 버렸습니다" in str(moved[0]["full"])
+
+    _ok(app.run())
+    assert app.session_state[RUNS] == runs + 3
+    assert not _move_events(app)
+
+
+def test_a_session_move_without_an_edit_does_not_spend_one_more_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """버린 편집이 없으면 머리가 이미 맞다 — 세션을 옮긴 회차도 한 번만 돈다."""
+    repository = _seeded(tmp_path)
+    app = _head_page(repository)
+    _their_unmergeable_saves(repository)
+    runs = app.session_state[RUNS]
+
+    _ok(app.run())
+
+    assert app.session_state[RUNS] == runs + 1
+    assert app.session_state[HEAD] == ([], [])
+    assert len(_move_events(app)) == 1
 
 
 _ROUTER = """
