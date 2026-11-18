@@ -20,14 +20,21 @@
   동안 화면 탭 점 · 이 탭 ③ 점 · 머리 변경 칩(「저장 안 함」 묶음)이 서고, 새로고침 · 탭 닫기 · 테마
   전환이 묻는다. 화면을 옮겨도 초안은 남으므로 탭 줄 떠나기 확인(`page_tabs.leave_notice`)에는 넣지
   않는다(설계 규칙 UI-STA-02 — 잃을 것이 없으면 묻지 않는다). 조회기간을 바꿔 보이지 않게 된 칸도
-  초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 가 초안을 버린다.
+  초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 가 초안을 버린다. 표를 그리지 않는 화면 — 열람
+  등급의 읽기 표(개발자의 「이 등급으로 보기」 포함)는 초안을 얹지도 버리지도 않고 점 · 칩도 세지
+  않는다(`manual_downtime_draft_count` 가 0). 「넣을 칸이 없습니다」 화면은 초안이 있으면
+  「되돌리기」 하나를 세운다.
 - **저장은 버전 대조**다 — 초안이 없는 회차는 그린 저장본의 version 을 본 값으로 적고
   (`write_guard.remember_seen`), 초안이 생기면 그 값을 붙든다(초안이 출발한 version). 저장 회차는
   그 값을 저장소에 넘기고, 그 사이 다른 사람이 저장했으면 저장소가 거부한다(확보율 보정 편집표와
   같은 길 — 제 저장의 빠른 두 번 누름은 성공으로, 거부 뒤 둘째 누름은 거부로 다시 알린다). 초안이
-  붙든 version 이 저장본과 달라진 저장 아닌 회차는 제 저장이 끊긴 것이면(`is_own_save`) 저장한
-  칸을 초안에서 빼고, 남의 저장이면 초안을 버리고 그 수를 알린다(`MANUAL_DROPPED_MESSAGE` — 곁 경고
-  · 알림창). 저장은 **보이는 범위(조회기간 달 × 보이는 공정)만** 갈아 쓰고 그 밖의 저장 칸은 남긴다.
+  붙든 version 이 저장본과 달라진 저장 아닌 회차는 제 저장이 끊긴 것이면(`is_own_save`) 저장한 칸을
+  초안에서 빼고, 남의 저장이면 초안을 버리고 그 수를 알린다(`MANUAL_DROPPED_MESSAGE` — 곁 경고 ·
+  알림창). 저장을 누른 회차가 남의 저장에 지면 거부 글 끝에 버린 칸 수를 붙인다
+  (`MANUAL_REFUSED_DROPPED_TAIL`). 두 글과 「되돌리기」 풍선은 지금 표에 보이지 않는 칸이 섞였으면
+  그 수도 말한다(`MANUAL_HIDDEN_NOTE`). 남의 저장 뒤에도 숨은 칸을 남길지는 사용자 결정 대기다
+  (`docs/TODO.md` 2장 「입력 비가동 대수」). 저장은 **보이는 범위(조회기간 달 × 보이는 공정)만**
+  갈아 쓰고 그 밖의 저장 칸은 남긴다.
 - **편집표 key 는 표가 출발한 version 을 든다**(`manual_editor_key`). key 붙은 `num_rows="fixed"`
   편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라, 값이 바뀌어도 위젯에 남은 칸 편집이
   그대로 다시 얹힌다 — 남이 저장한 칸이 보이지 않은 채 본 version 만 최신으로 올라가 그 저장을
@@ -118,8 +125,11 @@ __all__ = [
     "MANUAL_DROPPED_MESSAGE",
     "MANUAL_EDITOR_KEY",
     "MANUAL_FLASH_KEY",
+    "MANUAL_HIDDEN_NOTE",
     "MANUAL_NOTE_KEY",
     "MANUAL_PROCESS_COLUMN",
+    "MANUAL_REFUSED_DROPPED_TAIL",
+    "MANUAL_REVERT_HIDDEN_HELP",
     "MANUAL_REVERT_BUTTON",
     "MANUAL_SAVED_BY_KEY",
     "MANUAL_SAVED_MESSAGE",
@@ -127,6 +137,7 @@ __all__ = [
     "MANUAL_SAVE_NAME",
     "MANUAL_UNCHANGED_MESSAGE",
     "NOTE_PLACEHOLDER",
+    "dropped_text",
     "edited_cells",
     "manual_downtime_draft_count",
     "manual_editor_frame",
@@ -193,12 +204,21 @@ MANUAL_SAVE_HELP: Final = (
     "칸은 버려지고 최신 저장본이 섭니다."
 )
 MANUAL_REVERT_HELP: Final = "저장하지 않은 칸을 모두 버리고 저장본으로 되돌립니다."
-# 남의 저장이 초안을 버린 회차의 곁 경고 · 알림창 글(설계 규칙 UI-STA-05 — 겹친 저장은 말없이 덮지
-# 않는다, 버리는 것도 말없이 하지 않는다).
-MANUAL_DROPPED_MESSAGE: Final = (
-    "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 {count}개를 버렸습니다 — 최신 저장본을 "
-    "다시 그렸습니다."
+# 버리는 초안에 지금 표에 보이지 않는 칸(조회기간 밖 · 표에 없는 공정)이 있으면 그 수를 말한다 —
+# 버린 칸 수 바로 뒤(`{hidden}` 자리)와 되돌리기 풍선 끝.
+MANUAL_HIDDEN_NOTE: Final = "(지금 표에 보이지 않는 {hidden}칸 포함)"
+MANUAL_REVERT_HIDDEN_HELP: Final = (
+    " 지금 표에 보이지 않는 {hidden}칸(조회기간 밖 · 표에 없는 공정)도 함께 버립니다."
 )
+# 남의 저장이 초안을 버린 회차의 곁 경고 · 알림창 글(설계 규칙 UI-STA-05 — 겹친 저장은 말없이 덮지
+# 않는다, 버리는 것도 말없이 하지 않는다). `{hidden}` 은 `MANUAL_HIDDEN_NOTE` 이거나 빈 글이다.
+MANUAL_DROPPED_MESSAGE: Final = (
+    "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 {count}개{hidden}를 버렸습니다 — 최신 "
+    "저장본을 다시 그렸습니다."
+)
+# 저장을 누른 회차가 남의 저장에 진 거부 글 끝에 붙이는 버린 칸 수(위와 같은 꼴 — 거부 글이 「다른
+# 사용자가 먼저 … 저장해」 를 이미 말한다).
+MANUAL_REFUSED_DROPPED_TAIL: Final = " 저장하지 않은 칸 {count}개{hidden}를 버렸습니다."
 MANUAL_NO_CELLS_HELP: Final = (
     "설비 마스터를 저장하면 그 공정이 행으로 서고, 열은 사이드바 조회기간의 달입니다."
 )
@@ -216,8 +236,34 @@ Cell = tuple[str, int]
 def manual_downtime_draft_count() -> int:
     """저장하지 않은 입력 비가동 칸 수(보이지 않게 된 칸 포함). 세션만 읽는다 — 화면 탭 점 · 변경
     칩 · 이 화면 ③ 탭 점이 페이지보다 먼저 부른다(칸 편집은 그 회차 첫머리 `on_change` 가 이미
-    접었다)."""
-    return len(MANUAL_DRAFT.get())
+    접었다).
+
+    입력 비가동을 고칠 수 없는 화면 등급(열람 — 개발자의 「이 등급으로 보기」 포함)이면 0 이다 — 그
+    등급은 표를 값만 그려 초안을 보이지도 버리지도 못한다. 초안은 지우지 않고 남아, 고칠 수 있는
+    등급으로 돌아오면 표에 다시 얹히고 점 · 칩도 다시 선다."""
+    draft = MANUAL_DRAFT.get()
+    if not draft or not sso_identity.viewer_can("equipment.manual_downtime"):
+        return 0
+    return len(draft)
+
+
+def _hidden_count(draft: Mapping[Cell, object], visible: frozenset[Cell]) -> int:
+    """초안 가운데 지금 표에 보이지 않는 칸(조회기간 밖 · 표에 없는 공정)의 수."""
+    return sum(1 for cell in draft if cell not in visible)
+
+
+def dropped_text(template: str, draft: Mapping[Cell, object], visible: frozenset[Cell]) -> str:
+    """버린 초안 칸 수 글(`MANUAL_DROPPED_MESSAGE` · `MANUAL_REFUSED_DROPPED_TAIL`) — 보이지 않는
+    칸이 섞였으면 그 수를 칸 수 바로 뒤에 붙인다."""
+    hidden = _hidden_count(draft, visible)
+    return template.format(
+        count=len(draft), hidden=MANUAL_HIDDEN_NOTE.format(hidden=hidden) if hidden else ""
+    )
+
+
+def _revert_help(draft: Mapping[Cell, object], visible: frozenset[Cell]) -> str:
+    hidden = _hidden_count(draft, visible)
+    return MANUAL_REVERT_HELP + (MANUAL_REVERT_HIDDEN_HELP.format(hidden=hidden) if hidden else "")
 
 
 def _draft() -> dict[Cell, float | None]:
@@ -330,7 +376,7 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
             MANUAL_DRAFT.clear()
             queue_flash(
                 MANUAL_FLASH_KEY,
-                MANUAL_DROPPED_MESSAGE.format(count=len(draft)),
+                dropped_text(MANUAL_DROPPED_MESSAGE, draft, visible),
                 kind="warning",
                 icon=":material/sync_problem:",
             )
@@ -411,7 +457,8 @@ def render_manual_downtime_tab(
     owner_tab: OpenTab | None,
     locked_reason: str | None = None,
 ) -> None:
-    """탭 본문. 숨은 회차에도 폼을 그린다(적은 칸을 지킨다) — 저장 이력만 열린 회차에 그린다.
+    """탭 본문. 숨은 회차에도 표를 그린다(저장자 · 메모 칸이 탭 왕복에 남게 — 적은 칸은 세션
+    초안이 지킨다) — 저장 이력만 열린 회차에 그린다.
 
     입력 비가동 고치기 · 저장은 실무자부터다(2026-11-18 접속 등급 — 2차 답 「다」). 열람은 같은 표를
     값만 본다(설계 규칙 UI-INP-07 예외 · UI-NTF-05 — 저장 줄 없이 읽기 표). 표 위 작은 단추 줄도
@@ -438,6 +485,17 @@ def render_manual_downtime_tab(
     if not processes or not ordered_months:
         # 빈 결과는 평문 한 줄, 칸이 서는 법은 풍선이다(설계 규칙 UI-TXT-04).
         st.caption("넣을 칸이 없습니다.", help=MANUAL_NO_CELLS_HELP)
+        draft = _draft()
+        if draft and sso_identity.viewer_can("equipment.manual_downtime"):
+            # 다른 설비 시나리오 · 조회기간에서 적은 초안이 남아 점 · 칩이 서 있다 — 표가 없는
+            # 화면에서도 버릴 길을 둔다(그 칸은 표가 다시 서면 그대로 얹힌다).
+            st.button(
+                MANUAL_REVERT_BUTTON,
+                icon=":material/undo:",
+                key=MANUAL_REVERT_KEY,
+                on_click=MANUAL_DRAFT.clear,
+                help=MANUAL_REVERT_HELP,
+            )
         return
     if not sso_identity.viewer_can("equipment.manual_downtime"):
         with grade_ui.toolbar_scope("equipment.manual_downtime", MANUAL_TOOLS_KEY):
@@ -560,7 +618,7 @@ def _render_editor(
                 key=MANUAL_REVERT_KEY,
                 on_click=_revert,
                 args=(widget_base,),
-                help=MANUAL_REVERT_HELP,
+                help=_revert_help(_draft(), visible),
             )
             # 저장자 칸은 저장에 비우지 않는다 — 다음 저장에 이어 쓴다. 메모만 저장에 비운다
             # (saved_note). 두 칸은 다른 화면에 다녀와도 남는다(`persist_state` — 초안과 같은 세션).
@@ -686,11 +744,15 @@ def _render_editor(
             queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
             mark_note_saved_again(MANUAL_NOTE_KEY, memo)
         else:
+            # 남의 저장에 졌다 — 초안을 버려 다음 회차가 최신 저장본을 그린다. 버린 칸 수(보이지
+            # 않는 칸 포함)는 거부 글 끝에 붙인다 — 저장 아닌 회차의 버림 알림과 같이 말없이 버리지
+            # 않는다(설계 규칙 UI-STA-05). 충돌 표지에도 같은 글을 적어 둘째 누름이 같은 글을 다시
+            # 알린다(`held_profile_conflict` — 글이 다르면 두 상자가 선다).
+            dropped = _draft()
             message = admin_view.diagnostic_message(
                 bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-            )
+            ) + (dropped_text(MANUAL_REFUSED_DROPPED_TAIL, dropped, visible) if dropped else "")
             note_profile_conflict(conflict_marks, MANUAL_SAVE_NAME, message)
-            # 남의 저장에 졌다 — 초안을 버려 다음 회차가 최신 저장본을 그린다(거부 글이 말한다).
             MANUAL_DRAFT.clear()
             queue_refusal(MANUAL_SAVE_NAME, message)
         st.rerun(scope="app")

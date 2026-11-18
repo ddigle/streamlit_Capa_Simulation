@@ -37,8 +37,11 @@ from capa_simulation.components.manual_downtime_tab import (
     MANUAL_DRAFT_KEY,
     MANUAL_DROPPED_MESSAGE,
     MANUAL_EDITOR_KEY,
+    MANUAL_HIDDEN_NOTE,
     MANUAL_NOTE_KEY,
+    MANUAL_REFUSED_DROPPED_TAIL,
     MANUAL_REVERT_BUTTON,
+    MANUAL_REVERT_HIDDEN_HELP,
     MANUAL_SAVE_BUTTON,
     MANUAL_SAVED_BY_KEY,
     MANUAL_UNCHANGED_MESSAGE,
@@ -72,28 +75,37 @@ def _fresh_cache() -> None:
 
 def _script(database_path: Path) -> str:
     """탭 조각 — 세션 칸 `test_away` 가 참이면 다른 화면을 본 회차처럼 그리지 않는다(위젯 상태가
-    걷힌다). `test_months` 가 있으면 그 달들을 열로 쓴다(조회기간을 바꾼 회차). 맨 앞에서 `app.py`
-    처럼 초안 칸 수를 먼저 센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤)."""
+    걷힌다). `test_months` 가 있으면 그 달들을, `test_processes` 가 있으면 그 공정들을 쓴다(조회기간
+    · 설비 시나리오를 바꾼 회차). `test_viewer` 가 참이면 입력 비가동을 고칠 수 없는 화면 등급이다
+    (`sso_identity.viewer_can` 을 그 회차에만 바꾼다). 맨 앞에서 `app.py` 처럼 초안 칸 수를 먼저
+    센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤)."""
     return f"""
 import streamlit as st
 
+from capa_simulation.components import sso_identity
 from capa_simulation.components.manual_downtime_tab import (
     manual_downtime_draft_count,
     render_manual_downtime_tab,
 )
 from capa_simulation.components.process_labels import ProcessLabels
 
-st.session_state["count_before_page"] = manual_downtime_draft_count()
-if st.session_state.get("test_away"):
-    st.write("다른 화면")
-else:
-    render_manual_downtime_tab(
-        database_path={str(database_path)!r},
-        snapshot_processes=[{A!r}, {B!r}],
-        months=st.session_state.get("test_months", {list(MONTHS)!r}),
-        process_labels=ProcessLabels(version=1, labels={{{A!r}: "WM"}}),
-        owner_tab=None,
-    )
+original_can = sso_identity.viewer_can
+if st.session_state.get("test_viewer"):
+    sso_identity.viewer_can = lambda action: False
+try:
+    st.session_state["count_before_page"] = manual_downtime_draft_count()
+    if st.session_state.get("test_away"):
+        st.write("다른 화면")
+    else:
+        render_manual_downtime_tab(
+            database_path={str(database_path)!r},
+            snapshot_processes=st.session_state.get("test_processes", [{A!r}, {B!r}]),
+            months=st.session_state.get("test_months", {list(MONTHS)!r}),
+            process_labels=ProcessLabels(version=1, labels={{{A!r}: "WM"}}),
+            owner_tab=None,
+        )
+finally:
+    sso_identity.viewer_can = original_can
 """
 
 
@@ -638,7 +650,7 @@ def test_another_sessions_save_drops_the_draft_and_says_so(tmp_path: Path) -> No
     mine = _leave_and_return(mine)
     assert _draft(mine) == {}
     warnings = [item.value for item in mine.warning]
-    assert MANUAL_DROPPED_MESSAGE.format(count=2) in warnings, warnings
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
     assert manual_editor_key(1) in _editor_id(mine)
     assert _editor_values(mine)["202607"][row_a] == pytest.approx(9.0)
     assert mine.session_state[MANUAL_BASE_VERSION_KEY] == 1
@@ -755,7 +767,7 @@ def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_co
     tables.run()
     assert not app.exception
     warnings = [item.value for item in app.warning]
-    assert MANUAL_DROPPED_MESSAGE.format(count=2) in warnings, warnings
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
     assert _draft(app) == {}
     assert manual_editor_key(1) in _editor_id(app)
     assert _editor_values(app)["202607"][row_a] == pytest.approx(9.0)
@@ -764,3 +776,84 @@ def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_co
     assert not app.exception
     assert _draft(app) == {}
     assert app.session_state["count_before_page"] == 0
+
+
+# ------------------------------------------- 버린 칸 수 · 표 없는 화면의 초안(2026-11-19)
+
+
+def test_a_refused_save_says_how_many_typed_cells_it_dropped_including_hidden_ones(
+    tmp_path: Path,
+) -> None:
+    """저장을 누른 회차가 남의 저장에 지면 초안을 모두 버린다 — 조회기간 밖이라 보이지 않던 칸까지.
+    거부 글 끝에 버린 칸 수와 그 가운데 보이지 않던 칸 수를 붙인다(저장 아닌 회차의 버림 알림과
+    같이 말없이 버리지 않는다 — 설계 규칙 UI-STA-05). 「되돌리기」 풍선도 숨은 칸 수를 말한다."""
+    path = tmp_path / "equipment.duckdb"
+    mine, other = _app(path), _app(path)
+    row_a = _editor_values(mine)["공정"].index("WM")
+    _edit(mine, {(row_a, "202608"): 3.0})
+    mine.run()
+    mine.session_state["test_months"] = [202607]
+    mine = _leave_and_return(mine)
+    assert _draft(mine) == {(A, 202608): 3.0}
+    revert = next(button for button in mine.button if button.label == MANUAL_REVERT_BUTTON)
+    assert MANUAL_REVERT_HIDDEN_HELP.format(hidden=1) in str(revert.help)
+
+    _edit(other, {(row_a, "202607"): 9.0})
+    _save(other)
+    _edit(mine, {(row_a, "202607"): 1.5})
+    mine = _save(mine)
+
+    errors = [str(item.value) for item in mine.error]
+    tail = MANUAL_REFUSED_DROPPED_TAIL.format(count=2, hidden=MANUAL_HIDDEN_NOTE.format(hidden=1))
+    assert any("다른 사용자가 먼저" in error and error.endswith(tail) for error in errors), errors
+    assert len(errors) == 1, errors
+    assert _draft(mine) == {}
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((A, 202607, 9.0),), 1)
+
+
+def test_a_grade_that_cannot_edit_keeps_the_draft_without_counting_it(tmp_path: Path) -> None:
+    """입력 비가동을 고칠 수 없는 화면 등급(개발자의 「이 등급으로 보기 → 열람」 포함)은 읽기 표만
+    그린다 — 초안을 버리지 않고 점 · 칩도 세지 않는다. 고칠 수 있는 등급으로 돌아오면 칸이 다시
+    얹히고 수도 다시 선다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+    # 시험은 위젯 값을 직접 적어 콜백이 돌지 않는다 — 본문이 접은 초안을 다음 회차 첫머리가 센다.
+    app.run()
+    assert app.session_state["count_before_page"] == 1
+
+    app.session_state["test_viewer"] = True
+    app.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 0
+    assert _draft(app) == {(A, 202607): 1.5}
+    assert not [button for button in app.button if button.label == MANUAL_REVERT_BUTTON]
+
+    app.session_state["test_viewer"] = False
+    app = _leave_and_return(app)
+    assert app.session_state["count_before_page"] == 1
+    assert _editor_values(app)["202607"][row_a] == pytest.approx(1.5)
+
+
+def test_a_screen_without_cells_offers_to_drop_a_leftover_draft(tmp_path: Path) -> None:
+    """공정이 없는 설비 시나리오로 옮겨 표가 서지 않아도(「넣을 칸이 없습니다」) 남은 초안을 버릴
+    「되돌리기」 가 선다 — 점 · 칩이 말하는 칸을 그 화면에서 지울 수 있다. 초안이 없으면 서지
+    않는다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+
+    app.session_state["test_processes"] = []
+    app = _leave_and_return(app)
+    assert any(str(item.value) == "넣을 칸이 없습니다." for item in app.caption)
+    assert app.session_state["count_before_page"] == 1
+    next(button for button in app.button if button.label == MANUAL_REVERT_BUTTON).click().run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert app.session_state["count_before_page"] == 0
+    assert not [button for button in app.button if button.label == MANUAL_REVERT_BUTTON]
