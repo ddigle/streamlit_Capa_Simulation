@@ -156,7 +156,7 @@ function rowsSync(S) {
   button.classList.toggle('is-off', !plan.keys.length)
 }
 
-// 칸 표지 — 지운 줄(지움선) · 잠긴 칸(분류 칸 바탕) · 글 · 고르기 칸(왼쪽 맞춤).
+// 칸 표지 — 지운 줄(지움선) · 잠긴 칸(분류 칸 바탕 + 까닭 풍선) · 글 · 고르기 칸(왼쪽 맞춤).
 function rowsPaintCell(S, cell, r, c) {
   const m = S.model
   if (!m || (!m.locks && !m.fmts)) return
@@ -164,8 +164,10 @@ function rowsPaintCell(S, cell, r, c) {
   cell.classList.toggle('is-removed', m.removed.has(row))
   if (c < m.keyCount) return
   const vc = c - m.keyCount
-  cell.classList.toggle('is-locked', !m.removed.has(row) && Boolean(rowsLockAt(S, row, vc)))
+  const why = rowsLockAt(S, row, vc)
+  cell.classList.toggle('is-locked', !m.removed.has(row) && Boolean(why))
   cell.classList.toggle('is-text', Boolean(KINDS[fmtOf(m, vc).kind]))
+  if (why || cell.title) cell.title = why
 }
 
 // 고르기 칸을 고치는 동안 칸 아래에 항목 목록 — 누르면 그 항목으로 확정, 칸 편집기의 ↑ ↓ 가 항목을 옮긴다.
@@ -190,10 +192,16 @@ function rowsChoices(S) {
     item.setAttribute('aria-selected', label === value ? 'true' : 'false')
     list.appendChild(item)
   }
-  list.style.top = S.headH + (S.edit.r + 1) * S.rowH + 'px'
   list.style.left = S.lefts[S.edit.c] + 'px'
   list.style.minWidth = S.widths[S.edit.c] + 'px'
   list.hidden = false
+  // 칸 아래가 보이는 창 밖이면 칸 위로 — 아래 줄을 고칠 때 목록이 표 끝에 잘리지 않게.
+  const scroller = S.dom.scroller
+  const height = list.offsetHeight || (f.options || []).length * S.rowH
+  const below = S.headH + (S.edit.r + 1) * S.rowH
+  const above = S.headH + S.edit.r * S.rowH - height
+  const room = scroller.scrollTop + scroller.clientHeight
+  list.style.top = (below + height > room && above >= scroller.scrollTop + S.headH ? above : below) + 'px'
 }
 
 function rowsKey(S, event) {

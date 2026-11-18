@@ -3187,7 +3187,7 @@ def locked_editor(view: TableView, *, key: str, column_config: Mapping[str, Any]
     그대로다."""
     st.data_editor(
         view.frame,
-        key=key,
+        key=editor_widget_key(key),
         num_rows="fixed",
         disabled=True,
         hide_index=True,

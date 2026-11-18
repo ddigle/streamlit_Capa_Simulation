@@ -126,6 +126,7 @@ const R = {}
     texts: [0, 1, 2, 3].map((r) => [1, 2, 3].map((c) => cell(r, c).textContent)),
     locked: [[0, 1], [0, 3], [1, 3], [2, 1]].map(([r, c]) => has(r, c, 'is-locked')),
     text: [has(0, 1, 'is-text'), has(0, 3, 'is-text')],
+    titles: [cell(0, 1).title || '', cell(0, 3).title || '', cell(1, 3).title || ''],
     where: q('.eg-where').textContent,
     button: [button.hidden, button.textContent, button.getAttribute('aria-disabled')],
   }
@@ -195,6 +196,7 @@ def test_the_row_feature_locks_cells_lists_choices_and_removes_rows() -> None:
     ]
     assert first["locked"] == [True, False, True, False]
     assert first["text"] == [True, True]
+    assert first["titles"] == ["명단 칸은 잠김", "", "나 자신"], "잠긴 칸은 까닭 풍선"
     assert first["where"].startswith("데모 명단 › demo.a · 계정")
     assert first["button"] == [False, "줄 지우기", "false"]
     assert result["lockedEdit"] == [True, "명단 칸은 잠김"]

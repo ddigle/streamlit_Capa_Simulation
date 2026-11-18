@@ -12,6 +12,7 @@ AppTest 는 그리드 JS 를 못 돌려 대역(`tests/edit_grid_fake`)으로 출
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -41,7 +42,7 @@ from test_sso_access_s3 import (
 from capa_simulation.auth import access_store, grade_store, runtime
 from capa_simulation.auth.access import GRADE_ADMIN
 from capa_simulation.auth.identity import IdentityProblem
-from capa_simulation.components import access_list_admin, access_list_grid, sso_status
+from capa_simulation.components import access_list_admin, access_list_grid, edit_grid, sso_status
 from capa_simulation.io import s3_small
 from capa_simulation.services.access_list_plan import GRADE_OPTIONS
 from capa_simulation.services.edit_grid import change_counts, draft_from
@@ -548,6 +549,34 @@ def test_removing_everyone_still_tells_the_result(
 
     assert _listed(calls) == {}
     assert "뺌 2명" in _flash_text(app)
+
+
+def test_the_grid_keeps_the_rows_registration_while_the_list_is_unread(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """못 읽은 회차의 표 없는 껍데기도 줄 규칙 등록으로 그린다 — 「다시 읽기」 뒤 같은 key 에서
+    등록이 바뀌면 옛 JS(줄 갈래 없음)가 줄 규칙 표를 그린다."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (403, "AccessDenied")
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    calls = install_fake_edit_grid(monkeypatch)
+    plain: list[str] = []
+
+    def plain_grid(**kwargs: Any) -> SimpleNamespace:
+        plain.append(str(kwargs["key"]))
+        return SimpleNamespace(outbox=None)
+
+    monkeypatch.setattr(edit_grid, "_GRID", plain_grid)
+    _as_person(cfg, ADMIN, monkeypatch)
+    app = AppTest.from_string(ADMIN_SCRIPT, default_timeout=30).run()
+    assert _shell(calls)["table"] is None
+
+    store.force.clear()
+    app = app.button(key=access_list_admin.REREAD_KEY).click().run()
+
+    assert _shell(calls)["table"] == access_list_grid.TABLE
+    assert HOST not in plain
 
 
 def test_unread_locks_the_save_and_warns_the_admin_on_any_screen(

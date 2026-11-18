@@ -92,8 +92,8 @@ ACCOUNT_PATTERN: Final = r"(?=.*[A-Za-z0-9])" + LOGINID_PATTERN.pattern.removepr
 ).removesuffix("$")
 ACCOUNT_PATTERN_ERROR: Final = "loginid 꼴이 아닙니다 — 영문 · 숫자 · . _ @ - 만 씁니다"
 LISTED_WHY: Final = "명단에 든 사람의 계정 · 이름 · 부서 · 등록일 · 등록 길은 고칠 수 없습니다"
-SELF_WHY: Final = "나 자신의 등급은 바꾸거나 지울 수 없습니다"
-ENV_WHY: Final = "환경변수로 정한 개발자는 등급을 바꾸거나 지울 수 없습니다"
+SELF_WHY: Final = "나 자신의 줄은 고치거나 지울 수 없습니다"
+ENV_WHY: Final = "환경변수로 정한 개발자의 줄은 고치거나 지울 수 없습니다"
 FRESH_WHY: Final = "등록일 · 등록 길은 저장할 때 적힙니다"
 _LOCKED_INFO: Final = (ACCOUNT_COLUMN, NAME_COLUMN, DEPT_COLUMN, DATE_COLUMN, VIA_COLUMN)
 # 줄 규칙의 차례 — `RULES.kinds` 번호.
@@ -309,4 +309,7 @@ def render(table: AccessTable | None, *, page_style: str = "") -> None:
         KEYS,
         base_key=table.base_key if table is not None else "",
     )
-    edit_grid.render_edit_grid(HOST, _shell(table), feed, on_outbox=collect, page_style=page_style)
+    # 명단을 못 읽은 회차(표 없는 껍데기)도 줄 규칙 등록으로 — 같은 key 의 등록이 오가지 않게.
+    edit_grid.render_edit_grid(
+        HOST, _shell(table), feed, on_outbox=collect, page_style=page_style, rows=True
+    )

@@ -588,12 +588,15 @@ def render_edit_grid(
     *,
     on_outbox: Callable[[], None],
     page_style: str = "",
+    rows: bool | None = None,
 ) -> None:
     """늘 같은 자리에서 부른다 — feed 요소, 그다음 무거운 요소(이 차례 고정). 둘 다 key 가
     고정이다. `page_style` 은 그 그리드를 둘러싼 칸의 페이지 CSS(`<style>…</style>`)다 — feed 를
-    숨기는 스타일과 함께 이벤트 칸으로 가 자리를 먹지 않는다."""
+    숨기는 스타일과 함께 이벤트 칸으로 가 자리를 먹지 않는다. `rows` 를 주면 그 등록으로 그린다 —
+    표 없는 껍데기와 줄 규칙 표를 오가는 호스트(접속 명단)는 늘 `True` 를 줘 같은 key 의 등록이
+    바뀌지 않게 한다(주지 않으면 껍데기 칸으로 가른다 — `uses_rows`)."""
     _check_host(host)
     st.html(hide_feed_style(host) + page_style)
     _FEED(key=feed_key(host), data=dict(feed), width="stretch")
-    grid = _GRID_ROWS if uses_rows(shell) else _GRID
+    grid = _GRID_ROWS if (uses_rows(shell) if rows is None else rows) else _GRID
     grid(key=host, data=dict(shell), on_outbox_change=on_outbox, width="stretch")

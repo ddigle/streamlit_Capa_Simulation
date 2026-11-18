@@ -251,8 +251,9 @@ def _editors(app: AppTest) -> list[Any]:
 
 
 def _small_editor(app: AppTest, key: str) -> Any | None:
-    """key 로 찾은 작은 편집표 요소(없으면 None) — 요소 id 끝이 사용자 key 다."""
-    found = [element for element in _editors(app) if element.proto.id.endswith(key)]
+    """key 로 찾은 작은 편집표 요소(없으면 None) — 요소 id 에 사용자 key 가 든다(세대 · 세션 표지
+    꼬리가 붙을 수 있다 — `editor_widget_key`)."""
+    found = [element for element in _editors(app) if key in element.proto.id]
     return found[0] if found else None
 
 

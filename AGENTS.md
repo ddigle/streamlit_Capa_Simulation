@@ -3258,8 +3258,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표가 받는 등록 JS 는 그대로다(예산 120 KB, 줄 규칙 등록 130 KB). 줄 갈래는 글 · 고르기
     칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
     붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(고른 줄 — 지울 수 없는
-    줄은 빼고 까닭 풍선, 모두 지운 줄이면 되살리기), 지운 줄 지움선 · 잠긴 칸 바탕 · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 칸 편집 중
-    칸 아래 항목 목록(누르면 그 항목 · ↑ ↓ 가 항목을 옮김)이다. 변경 목록은 지운 줄을 맨 앞 「줄 지움」 으로 싣고 ✕ 가
+    줄은 빼고 까닭 풍선, 모두 지운 줄이면 되살리기), 지운 줄 지움선 · 잠긴 칸 바탕 + 까닭 풍선(`title`) · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 칸
+    편집 중 칸 아래 항목 목록(누르면 그 항목 · ↑ ↓ 가 항목을 옮김 — 칸 아래가 보이는 창 밖이면 칸 위로)이다. 표 없는 껍데기와 줄 규칙 표를 오가는
+    호스트는 `render_edit_grid(rows=True)` 로 늘 이 등록이다(같은 key 의 등록이 바뀌면 옛 JS 가 줄 규칙 표를 그린다 — 접속 명단). 변경 목록은 지운 줄을 맨 앞 「줄 지움」 으로 싣고 ✕ 가
     `restore` 다. 시험 `tests/test_edit_grid_rows_js.py`. 시험 대역은 `_GRID_ROWS` 도 바꾼다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
