@@ -128,6 +128,9 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     # 공지 — 대상은 공지 id(`tgt`), 상세는 결과 · 끝 시각뿐이고 글은 싣지 않는다.
     _spec("admin_notice_send", "admin", "공지 보냄", "result", "until"),
     _spec("admin_notice_withdraw", "admin", "공지 거둠", "result"),
+    # 부대공정 판 — 갈래(적용 · 끄기 · 다시 켜기) · 이력 차례 · 판 번호 · 공정 수뿐이고 공정 이름 ·
+    # 생산성 값은 싣지 않는다.
+    _spec("admin_extra_process", "admin", "부대공정 판", "kind", "entry", "version", "processes"),
     # --- 작업 ---------------------------------------------------------------------------------
     _spec("data_scenario_create", "data", "시나리오 만들기", "source", "rows"),
     _spec("data_scenario_rename", "data", "시나리오 이름 바꾸기"),
@@ -239,6 +242,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "hours": "유지(시간)",
     "key": "조각",
     "kind": "갈래",
+    "entry": "이력 줄",
     "max_hours": "최대 유지(시간)",
     "name": "사건 이름",
     "need": "필요 등급",
@@ -252,6 +256,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "reason": "사유",
     "release_no": "발행 번호",
     "resolved": "답변 완료",
+    "processes": "공정 수",
     "result": "결과",
     "rev_from": "판 전",
     "rev_to": "판",
@@ -277,6 +282,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "total": "합계",
     "trunc": "줄임",
     "until": "끝 시각",
+    "version": "판",
     "version_from": "판 전",
     "version_to": "판",
 }

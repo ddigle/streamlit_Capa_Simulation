@@ -534,3 +534,95 @@ class ScenarioSnapshot:
     revision: RevisionSummary
     preset: ScenarioPreset
     tables: dict[str, pd.DataFrame]
+
+
+# 부대공정 판 이력의 갈래(마이그레이션 0037 — `app_meta.extra_process_version.kind`).
+# 「적용」 은 가져와 적용한 판, 「끄기」 는 활성 판을 비우는 빈 줄, 「다시 켜기」 는 마지막
+# 내용 판을 파일 없이 되살린 줄, 「새 판」 은 리비전 값으로 만든 판(2단계)이다.
+EXTRA_KIND_APPLY = "APPLY"
+EXTRA_KIND_OFF = "OFF"
+EXTRA_KIND_RESUME = "RESUME"
+EXTRA_KIND_REVISION = "REVISION"
+EXTRA_KIND_LABELS: dict[str, str] = {
+    EXTRA_KIND_APPLY: "적용",
+    EXTRA_KIND_OFF: "끄기",
+    EXTRA_KIND_RESUME: "다시 켜기",
+    EXTRA_KIND_REVISION: "새 판",
+}
+# 데이터셋 출처 한 줄의 결과(`app_meta.dataset_extra_process.outcome`).
+EXTRA_OUTCOME_MERGED = "MERGED"
+EXTRA_OUTCOME_DROPPED = "DROPPED"
+EXTRA_OUTCOME_GRADUATED = "GRADUATED"
+
+
+@dataclass(frozen=True)
+class ExtraProcessVersion:
+    """부대공정 판 이력 한 줄(append-only). `OFF` 줄은 판 번호 · sha 가 없다."""
+
+    seq: int
+    kind: str
+    version_no: int | None
+    sha256: str | None
+    created_at: datetime
+    applied_by: str | None = None
+    process_count: int | None = None
+    row_counts: str | None = None
+    source_place: str | None = None
+    s3_key: str | None = None
+    s3_etag: str | None = None
+    s3_last_modified: datetime | None = None
+    byte_size: int | None = None
+    base_scenario_ref: str | None = None
+    base_revision_ref: str | None = None
+    s3_write_result: str | None = None
+
+    @property
+    def kind_label(self) -> str:
+        return EXTRA_KIND_LABELS.get(self.kind, self.kind)
+
+
+@dataclass(frozen=True)
+class ExtraProcessState:
+    """판 이력 전체(오래된 차례). 마지막 줄이 지금 상태다."""
+
+    history: tuple[ExtraProcessVersion, ...] = ()
+
+    @property
+    def last_seq(self) -> int:
+        """마지막 줄의 차례 — 쓰기가 「편집을 시작할 때 본 상태」 로 대조한다(없으면 0)."""
+        return self.history[-1].seq if self.history else 0
+
+    @property
+    def off(self) -> bool:
+        """끈 동안인가 — 마지막 줄이 「끄기」 다."""
+        return bool(self.history) and self.history[-1].kind == EXTRA_KIND_OFF
+
+    @property
+    def active(self) -> ExtraProcessVersion | None:
+        """활성 판 — 마지막 줄이 내용 판이면 그 줄. 끈 동안 · 이력이 없으면 None."""
+        if not self.history or self.off:
+            return None
+        return self.history[-1]
+
+    @property
+    def latest_content(self) -> ExtraProcessVersion | None:
+        """적용한 내용 판 가운데 판 번호가 가장 큰 줄(P · S). 「끄기」 줄은 들지 않는다."""
+        contents = [item for item in self.history if item.version_no is not None]
+        if not contents:
+            return None
+        return max(contents, key=lambda item: (item.version_no or 0, item.seq))
+
+
+@dataclass(frozen=True)
+class ExtraProcessProvenance:
+    """데이터셋 출처 한 줄 — 어느 판의 어느 공정을 합쳤나 · 뺐나와 그 까닭 · 표별 행 수(JSON)."""
+
+    process_name: str
+    version_seq: int
+    version_no: int
+    sha256: str
+    outcome: str
+    rule: str | None = None
+    reason: str | None = None
+    row_counts: str | None = None
+    note: str | None = None
