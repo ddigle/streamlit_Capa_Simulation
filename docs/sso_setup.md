@@ -432,7 +432,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 통합인증이 켜진 기동(`capa_server.py` — 모드 켜짐)에서만 감사 기록기가 켜진다(`audit/boot.py`). 꺼짐 · 막힘 · `app.py` 개발
 실행 · 사내 PC · WebIDE 는 기록도 탭도 없다. 끄는 환경변수는 없다. 위 사건 고리 · 서버 로그는 그대로이고, 같은 사건이 아래
 대응표로 감사 줄이 되어 메모리 큐 → 스풀 → 버킷 `audit/` 에 남는다(`docs/objectstore_setup.md` 「감사 기록 접두사」, 운영은
-`docs/audit_log_operations.md`). 화면은 Admin Area 넷째 탭 「접속 · 작업 기록」(개발자만)이고, 그 탭이
+`docs/audit_log_operations.md`). 화면은 Admin Area 다섯째 탭 「접속 · 작업 기록」(개발자만)이고, 그 탭이
 서는 서버의 「통합인증 점검」 은 최근 사건 · 명단 밖 표를 그리지 않는다 — 명단 밖 로그인은 누계 줄만, 로그인 전 실패는
 누계 줄과 표(진단 번호 짝 맞추기 — 보드 decided-login 5), 앱 시작 실패는 「앱 시작 실패 · <갈래> · <종류> · <처음 시각>」
 줄(있을 때 — 보드 boot-record)이고, 최근 사건 표는 리뷰용 「복사」 글에만 있다.

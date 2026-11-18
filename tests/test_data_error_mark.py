@@ -141,6 +141,10 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
         PRESSED,
     ),
     ("src/capa_simulation/components/equipment_scenario_status.py", "_render_load"): (1, PRESSED),
+    # 받은 판의 판 번호 판정 거부(뒤로 감 등) — 판을 고쳐 다시 가져오면 풀린다.
+    ("src/capa_simulation/components/extra_process_admin.py", "_render_staged"): (1, BESIDE),
+    # 「시험 계산」 을 누른 회차에 기준정보를 못 읽음.
+    ("src/capa_simulation/components/extra_process_admin.py", "_preview"): (1, PRESSED),
     ("src/capa_simulation/components/flash.py", "_draw"): (1, ALERT_PATH),
     ("src/capa_simulation/components/home_preference.py", "_reject_key_process_write"): (
         1,

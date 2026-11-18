@@ -183,6 +183,9 @@ NOT_SEEN_TOKENS = {
     # 층 배치 대기분이 본 저장값(층마다 첫 대기분의 것) — 비교 후 쓰기 남은 자리로 docs/TODO.md 에
     # 적어 두고 그대로 둔 것이다(대기분과 함께 세우고 버린다 — 충돌 예외는 10종 밖).
     ("equipment_data_workspace.py", "PENDING_BASES_KEY"),
+    # Admin 「부대공정」 탭이 판 원천을 마지막으로 본 표지(자리 · 낱말 · 시각 — 상태 줄 글) — 대조
+    # 값이 아니다(판 쓰기의 대조는 저장소가 화면이 읽은 마지막 차례와 맞대는 `ExtraProcessMoved`).
+    ("extra_process_admin.py", "SEEN_KEY"),
 }
 
 
