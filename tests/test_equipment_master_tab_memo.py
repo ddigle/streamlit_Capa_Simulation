@@ -20,6 +20,7 @@ from grid_fake import Calls, install_fake_grid, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_master_tab import _app, _import, _rows
 
+from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components import equipment_master_tab as emt
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
@@ -31,6 +32,7 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.services import equipment_grid as eg
 from capa_simulation.services import equipment_validation as ev
+from capa_simulation.services.simulation_cache import frame_digest
 
 COUNTED = ("_frame_errors", "_alert_pairs", "_changed_rows")
 
@@ -95,7 +97,7 @@ def _assert_memo_is_fresh(app: AppTest) -> None:
 
 
 def test_unchanged_reruns_skip_the_fixed_costs_and_edits_redo_them_once(
-    tmp_path: Path, grid: Calls, calls: Counter[str]
+    tmp_path: Path, grid: Calls, calls: Counter[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = _app(tmp_path / "equipment.duckdb")
     _import(app, _rows("DA-01", "DA-02"))
@@ -109,8 +111,17 @@ def test_unchanged_reruns_skip_the_fixed_costs_and_edits_redo_them_once(
     assert not app.exception, app.exception
     assert calls == before
 
-    # 표 출납 한 번 — 셋을 한 번씩(다른 표 행 수는 두 표) 다시 낸다.
+    # 표 출납 한 번 — 셋을 한 번씩(다른 표 행 수는 두 표) 다시 낸다. 숨은 Summary 몫의 계산 사본
+    # 지문은 내지 않는다(편집본 세대가 올라도).
+    digests = Counter[int]()
+
+    def counted_digest(frame: Any) -> str:
+        digests[len(frame)] += 1
+        return frame_digest(frame)
+
+    monkeypatch.setattr(workspace, "frame_digest", counted_digest)
     send_ops(app, grid, {"op": "cell", "id": "n:DA-01", "col": "담당자", "text": "홍길동"})
+    assert not digests
     assert calls["_frame_errors"] - before["_frame_errors"] == 1
     assert calls["_alert_pairs"] - before["_alert_pairs"] == 1
     assert calls["_changed_rows"] - before["_changed_rows"] == 2

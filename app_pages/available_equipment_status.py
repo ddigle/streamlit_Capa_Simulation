@@ -348,8 +348,12 @@ dashboard_baseline = (
 # 계산 사본 설비 마스터의 내용 지문 — 저장본 쌍 토큰마다 한 번(세션 메모, 편집본 출발점 · 세대가
 # 바뀌면 다시 낸다). 캐시 키(일정 미정 · 사용기준 밖 · 미확인 · 구간)가 39칸 표를 회차마다 다시
 # 해시하지 않게 넘긴다. 샘플 fleet 은 넘기지 않는다(오늘마다 다른 합성 표 — 그 함수가 낸다).
+# Summary 를 그리지 않는 회차(설비 마스터 탭 칸 고치기 — 편집본 세대가 올라 메모가 빗나간다)에는
+# 내지 않는다.
 dashboard_equipment_digest = (
-    calculation_digest(equipment, latest_snapshot) if dashboard_equipment is equipment else None
+    calculation_digest(equipment, latest_snapshot)
+    if viewing_tab_open and dashboard_equipment is equipment
+    else None
 )
 # 「가용설비 설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다.
 # 「Cut-off 를 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비

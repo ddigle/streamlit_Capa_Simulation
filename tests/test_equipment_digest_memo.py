@@ -192,7 +192,8 @@ def test_the_sample_fleet_is_not_remembered_and_the_empty_fleet_is(tmp_path: Pat
     assert not [source for source in _memo_entries(app) if source[0] == "calculation"]
     app.toggle(key="dynamic_capa_sample_data").set_value(False).run()
     assert not app.exception, app.exception
-    _assert_calculation_memo_is_fresh(app)
+    # 샘플을 끈 빈 화면은 설비 마스터 탭으로 돌아간다 — Summary 를 다시 열면 빈 계산 사본의 지문.
+    _assert_calculation_memo_is_fresh(_summary(app))
 
 
 def test_the_memo_returns_the_frame_digest_and_recomputes_on_a_new_pair(
