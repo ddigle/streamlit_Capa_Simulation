@@ -469,7 +469,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
     `st.dialog` 함수 — 받고 `st.rerun(scope="app")`) · 주소 · 알림으로 연 등급 밖 화면 · 탭 멈춤 `stop_unless`(경고 한 줄 + 「HOME 으로」 +
     `st.stop()`, 탭은 `tab_key` · `first_label` 짝으로 한 번 뒤 첫 탭) · 표 도구 막대 내려받기 단추 · 그림 막대 감춤 `toolbar_scope`(칸 key 접두
-    `HIDDEN_TOOLS_PREFIX` + `app.py` 가 보내는 `TOOLBAR_STYLE` 한 벌 — 「Download as CSV」 단추만, 찾기 · 크게 보기는 남음) · `chart_config`(그림 저장 · 표로 보기 끄기). 화면 본문의 거절은
+    `HIDDEN_TOOLS_PREFIX` + `app.py` 가 보내는 `TOOLBAR_STYLE` 한 벌 — 표 막대는 「Download as CSV」 단추만, 찾기 · 크게 보기는 남음, Altair 그림 막대는 「Download as PNG」 · 「Copy Vega-Lite spec」(`CHART_EXPORT_LABELS` — 2026-11-19 E2E E2-3, 「Show data」 · 크게 보기는 남음)) · `chart_config`(Plotly 그림 저장 · 표로 보기 끄기). 화면 본문의 거절은
     `page_failure_card.run_core_page` 가 받는다(다시 그리기 한 번 — 누름 없이 같은 거절이 또 오면 알림을 낸 채 멈춤). 시험
     `tests/test_grade_ui_core.py` · 도우미 `tests/grade_support.py`.
   - `components/edit_file_tail.py` — 저장하지 않은 기준 정보 · 생산 계획 고침이 있는 동안(`scenario_activation.has_unsaved_scenario_changes()`)
@@ -8943,7 +8943,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **주소 · 알림으로 연 등급 밖 화면 · 탭**은 `grade_ui.stop_unless`(「개발자만 여는 화면입니다」 · 「실무자부터 여는 탭입니다」 + 「HOME
   으로」). 화면은 Admin Area 하나이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
 - **설비 화면 내려받기 감추기는 벽이 아니다** — 앱이 그리는 단추는 세우지 않고, 표 도구 막대 · 그림 막대는 `grade_ui.toolbar_scope` ·
-  `chart_config` 로 감춘다. Alarm 표의 CSV 는 `state_alerts.alert_table(csv=False)` 표지가 표와 함께 따라간다. 칸 복사 · 캡처 · 인쇄 ·
+  `chart_config` 로 감춘다(Altair 그림은 칸 안 도구 막대의 그림 저장 · 그림 정의 복사 단추 — `toolbar_scope` 칸 안에 그린다). Alarm 표의 CSV 는 `state_alerts.alert_table(csv=False)` 표지가 표와 함께 따라간다. 칸 복사 · 캡처 · 인쇄 ·
   계산 화면 호기 줄 파일로는 나간다(정한 것). 「Print」 는 모든 등급에 둔다.
 - **앱 정보 카드 등급 표지**는 열람 · 실무자만(UI-TXT-05 의 예외 — 배포 날 거의 모두 열람이라 늘 보이는 표지). 「이 등급으로 보기」 는
   개발자 자기 창 · 화면만이고 저장은 실제 등급이다(끝내기는 카드 칸 안 단추). 개발자 상태 알림 · 감사 알림은 미리 보기를 따르지 않는다(`admin_view.developer_alerts_visible`).

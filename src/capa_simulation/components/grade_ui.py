@@ -23,8 +23,9 @@
 +
   「HOME 으로」 + 멈춤(Admin Area 잠금과 같은 꼴 — 설계 규칙 UI-INP-07 예외 · UI-CON-03).
 - **설비 화면 내려받기 감추기**(`toolbar_scope` · `chart_config`) — 등급 밖이면 그 칸 안 Streamlit
-  표 도구 막대의 CSV 내려받기 단추와 그림 막대를 감춘다(찾기 · 크게 보기는 남는다). 막는 벽이
-  아니라 길을 줄이는 것이다(칸 복사 · 캡처 · 인쇄 · 브라우저 개발자 도구).
+  표 도구 막대의 CSV 내려받기 단추, Altair 그림 도구 막대의 그림 저장 · 그림 정의 복사 단추와 Plotly
+  그림 막대를 감춘다(찾기 · 크게 보기 · 「Show data」 는 남는다). 막는 벽이 아니라 길을 줄이는
+  것이다(칸 복사 · 캡처 · 인쇄 · 브라우저 개발자 도구).
 """
 
 from __future__ import annotations
@@ -162,11 +163,19 @@ HIDDEN_TOOLS_PREFIX: Final = "grade_tools_off_"
 # 시험이 묶음에 이 글이 있는지 본다 — 이름표가 바뀌면 단추가 다시 보이므로). 찾기 · 크게 보기 ·
 # 칸 보이기 단추는 남긴다.
 CSV_DOWNLOAD_LABEL: Final = "Download as CSV"
+# Altair(Vega-Lite) 그림 도구 막대의 그림 저장 · 그림 정의 복사(그림 값이 함께 실린다) 단추 이름표 —
+# Plotly 그림 막대를 끄는 것(`chart_config`)과 같은 몫이다. 「Show data」 · 크게 보기는 남긴다.
+CHART_EXPORT_LABELS: Final = ("Download as PNG", "Copy Vega-Lite spec")
 TOOLBAR_STYLE: Final = (
     "<style>"
     f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
     f' button[aria-label="{CSV_DOWNLOAD_LABEL}"],'
-    f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar-container,'
+    + "".join(
+        f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
+        f' button[aria-label="{label}"],'
+        for label in CHART_EXPORT_LABELS
+    )
+    + f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar-container,'
     f'[class*="st-key-{HIDDEN_TOOLS_PREFIX}"] .modebar'
     " { display: none !important; }"
     "</style>"

@@ -439,18 +439,43 @@ def test_the_toolbar_style_hides_only_the_csv_download_button() -> None:
 
     style = grade_ui.TOOLBAR_STYLE
     rules = [part.strip() for part in style.split("{")[0].removeprefix("<style>").split(",")]
-    toolbar_rules = [rule for rule in rules if "stElementToolbar" in rule]
+    toolbar_rules = [
+        rule for rule in rules if "stElementToolbar" in rule and grade_ui.CSV_DOWNLOAD_LABEL in rule
+    ]
     assert toolbar_rules == [
         f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"] '
         f'button[aria-label="{grade_ui.CSV_DOWNLOAD_LABEL}"]'
     ]
-    for kept in ("Search", "Fullscreen", "Show/hide columns"):
+    assert not [rule for rule in rules if rule.endswith('[data-testid="stElementToolbar"]')]
+    for kept in ("Search", "Fullscreen", "Show/hide columns", "Show data"):
         assert kept not in style
     assert ":has(" not in style
     bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
     needle = f"label:`{grade_ui.CSV_DOWNLOAD_LABEL}`"
     labelled = [path.name for path in bundle.glob("*.js") if needle in path.read_text("utf-8")]
     assert labelled, "설치된 Streamlit 표 도구 막대에 내려받기 단추 이름표가 없다"
+
+
+def test_the_toolbar_style_hides_the_chart_image_and_spec_buttons() -> None:
+    """감춤 칸 안 Altair 그림(가용설비 현황 Summary › Main 「주차별 설비 현황」 등)의 도구 막대도
+    그림 저장(「Download as PNG」)과 그림 정의 복사(「Copy Vega-Lite spec」 — 그림의 값이 함께
+    실린다)를 감춘다 — Plotly 그림 막대를 끄는 것(`chart_config`)과 같은 몫이다(2026-11-19 E2E
+    E2-3 — 열람 · 실무자에게 PNG 내려받기가 남아 실제로 내려받아졌다, 6-34 「가용설비 현황 · Space
+    현황 내려받기는 관리자부터」). 「Show data」 · 크게 보기는 남는다(값 보기). 두 이름표가 설치된
+    Streamlit 프런트 묶음에 그대로 있다(판 올림 때 여기서 걸린다)."""
+    import streamlit
+
+    style = grade_ui.TOOLBAR_STYLE
+    for label in grade_ui.CHART_EXPORT_LABELS:
+        assert (
+            f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
+            f' button[aria-label="{label}"]'
+        ) in style
+    assert grade_ui.CHART_EXPORT_LABELS == ("Download as PNG", "Copy Vega-Lite spec")
+    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
+    texts = [path.read_text("utf-8") for path in bundle.glob("*.js")]
+    for label in grade_ui.CHART_EXPORT_LABELS:
+        assert any(f"`{label}`" in text for text in texts), label
 
 
 def test_toolbar_scope_writes_no_style_slot_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
