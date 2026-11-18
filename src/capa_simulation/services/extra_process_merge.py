@@ -449,6 +449,47 @@ def load_lines(
     return counts
 
 
+# 대당 Capa 가 없거나 0 이하라 소요대수에서 빠진 경로의 까닭(`required_equipment` 의 제외 줄).
+CAPACITY_GAP_REASONS: Final = frozenset({"대당 Capa 없음", "대당 Capa 0 이하"})
+
+
+def inherited_capacity_gaps(
+    pack: ExtraProcessPack,
+    processes: Collection[str],
+    *,
+    outcome: CapacityOutcome,
+) -> dict[str, int]:
+    """공정마다 따라가는 공정 쪽 「대당 Capa 없음 · 0 이하」 로 빠지는 경로를 이어받은 수(설계 4-3
+    R-02 · 3-4 의 5번).
+
+    따라가기 꼴은 참조 공정의 경로 줄을 그대로 이어받는다 — 참조 공정이 대당 Capa 결손으로
+    소요대수에 들지 않는 줄도 부대공정에서는 자기 생산성(공통 값)으로 세어 두 공정의 셈이 갈린다.
+    빼지는 않고 수만 센다. `outcome` 은 그 표로 이미 돌린 전체 기간 계산(미리보기 · 입력 점검)이고,
+    줄은 참조 공정의 제외 줄을 (월 · 양산구분 · 제품 · Stack · Capa Code · Customer · CS · WF
+    구분)으로 접어 경로 기간 안의 것만 센다. PKG 의 Buffer 밖 줄은
+    `ProcessOutcome.inherited_uncounted` 가 센다.
+    """
+    counts: dict[str, int] = {name: 0 for name in processes}
+    required = outcome.required_equipment
+    excluded = None if required is None else required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
+    if not isinstance(excluded, pd.DataFrame) or excluded.empty:
+        return counts
+    gaps = excluded.loc[excluded["제외사유"].isin(CAPACITY_GAP_REASONS).fillna(False)]
+    if gaps.empty:
+        return counts
+    gap_process = gaps["공정"].astype("string").str.strip()
+    for route in pack.routes:
+        if route.process not in counts or not route.follows:
+            continue
+        picked = gaps.loc[gap_process.eq(route.reference.strip()).fillna(False)]
+        if picked.empty:
+            continue
+        folded = picked[list(_FOLLOW_KEYS)].drop_duplicates()
+        months = pd.to_numeric(folded["생산계획년월"], errors="coerce").dropna().astype("int64")
+        counts[route.process] += sum(1 for month in months if route.period.covers(int(month)))
+    return counts
+
+
 def _appended(
     base: Mapping[str, pd.DataFrame], additions: Iterable[Mapping[str, pd.DataFrame]]
 ) -> dict[str, pd.DataFrame]:

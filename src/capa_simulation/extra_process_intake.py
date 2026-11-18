@@ -56,6 +56,7 @@ from capa_simulation.services.extra_process_merge import (
     ExtraMergeReport,
     ExtraPackVersion,
     capacity_outcome,
+    inherited_capacity_gaps,
     load_lines,
     overlay_extra_processes,
     process_rows_frame,
@@ -325,6 +326,8 @@ class PackPreview:
     report: ExtraMergeReport
     rates: pd.DataFrame
     lines: Mapping[str, tuple[int, int]] = field(default_factory=dict)
+    # 따라가는 공정 쪽 「대당 Capa 없음 · 0 이하」 줄을 이어받은 수(R-02).
+    capacity_gaps: Mapping[str, int] = field(default_factory=dict)
 
 
 def preview_pack(
@@ -351,6 +354,7 @@ def preview_pack(
         report=result.report,
         rates=process_rows_frame(result.tables, merged, outcome=outcome),
         lines=load_lines(result.tables, merged, outcome=outcome),
+        capacity_gaps=inherited_capacity_gaps(pack, merged, outcome=outcome),
     )
 
 

@@ -432,3 +432,44 @@ def test_a_failed_merge_is_announced_as_a_warning(monkeypatch: pytest.MonkeyPatc
     ((message, kind),) = seen
     assert kind == "warning"
     assert message.startswith("부대공정 합치지 못함") and "BDQ 만으로 등록" in message
+
+
+def test_inherited_capacity_gaps_count_the_reference_lines_without_unit_capacity() -> None:
+    """R-02 — 따라가는 공정 쪽 「대당 Capa 없음」 줄을 이어받은 수(부대공정은 자기 생산성으로
+    센다)."""
+    from capa_simulation.services.extra_process_merge import (
+        capacity_outcome,
+        inherited_capacity_gaps,
+    )
+
+    active = _active()
+    merged = merge_extra_processes(_seed(), active, check=_never_stops).tables
+    clean = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(merged))
+    assert clean == {BOND: 0, AOI: 0}
+
+    gapped = dict(merged)
+    for name in ("RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO"):
+        frame = gapped[name]
+        gapped[name] = frame.loc[
+            ~(frame["공정"].eq("DEMO_Chip_Attach") & frame["생산계획년월"].eq(202605))
+        ].reset_index(drop=True)
+    reqb = merged["RQ_REQB"]
+    expected = len(
+        reqb.loc[
+            reqb["공정"].eq("DEMO_Chip_Attach") & reqb["생산계획년월"].eq(202605),
+            [
+                "생산계획년월",
+                "양산구분",
+                "제품정보",
+                "Stack",
+                "Capa Code",
+                "Customer",
+                "CS",
+                "WF 구분",
+            ],
+        ].drop_duplicates()
+    )
+
+    counts = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(gapped))
+
+    assert expected > 0 and counts == {BOND: expected, AOI: 0}

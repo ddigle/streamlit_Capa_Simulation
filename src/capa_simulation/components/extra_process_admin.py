@@ -661,6 +661,7 @@ def _render_preview(preview: PackPreview) -> None:
                     "부하 0 경로": preview.lines.get(item.process, (0, 0))[1],
                     "맞물리지 않은 경로 줄": item.zero_lines,
                     "이어받은 Buffer 밖 줄": item.inherited_uncounted,
+                    "이어받은 대당 Capa 결손 줄": preview.capacity_gaps.get(item.process, 0),
                 }
                 for item in preview.report.outcomes
             ]
