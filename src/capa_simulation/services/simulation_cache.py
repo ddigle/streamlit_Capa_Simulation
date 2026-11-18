@@ -273,6 +273,16 @@ def frame_digest(frame: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
+def _equipment_digest(equipment: pd.DataFrame, given: str | None) -> str:
+    """설비 마스터 내용 지문 — 부르는 쪽이 같은 표의 `frame_digest` 를 이미 냈으면(`given`) 그
+    값이다.
+
+    키 칸은 늘 `frame_digest(equipment)` 와 같은 글자라 지문을 넘긴 화면과 넘기지 않은 화면이 한
+    칸을 나눈다. 넘기는 쪽은 그 표의 지문임을 지킨다(거른 표에는 넘기지 않는다).
+    """
+    return given if given is not None else frame_digest(equipment)
+
+
 # (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰, 입력 비가동
 # 칸).
 RequiredShorteningCacheKey = tuple[
@@ -291,6 +301,7 @@ def required_shortening_cache_key(
     today: date,
     manual_downtime: ManualDowntime,
     upeh: UpehToken = NO_ASSUMPTION,
+    equipment_digest: str | None = None,
 ) -> RequiredShorteningCacheKey:
     """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
@@ -308,10 +319,14 @@ def required_shortening_cache_key(
     키와 다른 칸이 계산에 들어올 길이 없고, 저장으로 그 달 칸이 바뀌면 새 키다. 프로필 version 은
     싣지 않는다(조회기간 밖 칸만 바꾼 저장이 계산을 가르지 않게). **필수 인자**다 — 실행 쪽 가용을
     내는 모든 키가 이 칸을 싣는다(빠뜨리면 mypy 가 잡는다).
+
+    `equipment_digest` 는 `frame_digest(equipment)` 를 부르는 쪽이 이미 낸 값이다(설비 화면의
+    세션 메모 — `equipment_data_workspace.remembered_digest`). 주면 마스터를 다시 해시하지 않고,
+    안 주면 지금처럼 낸다 — 키는 같다.
     """
     return (
         scenario_key,
-        frame_digest(equipment),
+        _equipment_digest(equipment, equipment_digest),
         frame_digest(downtime),
         frame_digest(baseline),
         frame_digest(cutoff),
@@ -1240,6 +1255,41 @@ def get_monthly_volume(
     )
 
 
+# 월 계획 부하 환산의 키 — 부르는 쪽이 낸 내용 키(계획 · 수율 · 칩 수량 · 칩 등가 · 표시순서를
+# 가르는 토큰 · 지문 글자). 프레임은 `_` 인자로 해시하지 않는다(5장 3).
+MonthlyVolumeCacheKey = tuple[str, ...]
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_monthly_volume_by_key(
+    cache_key: MonthlyVolumeCacheKey,
+    _plan: pd.DataFrame,
+    _yield_data: pd.DataFrame,
+    _chip_qty: pd.DataFrame,
+    _density_data: pd.DataFrame,
+    _display_order: pd.DataFrame,
+    demand_basis: DemandBasis,
+    detailed: bool,
+) -> pd.DataFrame:
+    """`get_monthly_volume` 의 키 꼴 — 다섯 표를 해시하지 않고 `cache_key` 가 그 내용을 대신한다.
+
+    값은 `get_monthly_volume` 과 같다(같은 `build_monthly_volume`). `cache_key` 는 다섯 표의 내용을
+    모두 가르는 글자여야 한다(시나리오 `content_token` · 기준정보 판 · 표시순서 지문 · 거른 계획의
+    지문 등) — 무엇을 싣는지는 부르는 쪽 몫이다. `demand_basis` · `detailed` 는 키와 함께
+    해시된다.
+    """
+    del cache_key
+    return build_monthly_volume(
+        plan=_plan,
+        yield_data=_yield_data,
+        chip_qty=_chip_qty,
+        demand_basis=demand_basis,
+        detailed=detailed,
+        density_data=_density_data,
+        display_order=_display_order,
+    )
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_production_dashboard(
     plan: pd.DataFrame,
@@ -1446,7 +1496,27 @@ def shared_intro_toggle_store() -> SharedBlobStore:
     return SharedBlobStore(INTRO_TOGGLE_MAX_ENTRIES)
 
 
+# (기존 보유대수 · 설비 마스터 · 비가동 내용 지문, 주차 시작, 주차 끝)
+WeeklyAvailabilityCacheKey = tuple[str, str, str, str, str]
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
+def _cached_weekly_equipment_availability(
+    cache_key: WeeklyAvailabilityCacheKey,
+    _baseline: pd.DataFrame,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    _, _, _, start, end = cache_key
+    return build_weekly_equipment_availability(
+        _baseline,
+        _equipment,
+        _downtime,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+    )
+
+
 def get_weekly_equipment_availability(
     baseline: pd.DataFrame,
     equipment: pd.DataFrame,
@@ -1454,32 +1524,48 @@ def get_weekly_equipment_availability(
     *,
     start_date: date,
     end_date: date,
+    equipment_digest: str | None = None,
 ) -> pd.DataFrame:
     """Reuse the weekly availability aggregation across reruns of the equipment page.
 
     가용설비 현황 페이지에는 fragment 가 없어 위젯 하나를 건드릴 때마다 페이지 전체가
     다시 실행된다. 이 집계는 조회기간 주차 수에 비례해 13주 300ms · 52주 1.5s 가 든다.
-    세 프레임은 이미 리비전과 4개 필터가 반영된 결과라서 내용 해시가 곧 올바른 키다.
+    세 프레임은 이미 리비전과 4개 필터가 반영된 결과라서 내용 지문이 곧 올바른 키다. 프레임은
+    해시하지 않는다(`_` 인자) — 키는 세 표의 `frame_digest` 이고, `equipment_digest` 를 주면 마스터
+    지문은 그 값이다(같은 표의 지문 — 거른 표에는 넘기지 않는다, `_equipment_digest`).
     """
-    return build_weekly_equipment_availability(
+    return _cached_weekly_equipment_availability(
+        (
+            frame_digest(baseline),
+            _equipment_digest(equipment, equipment_digest),
+            frame_digest(downtime),
+            start_date.isoformat(),
+            end_date.isoformat(),
+        ),
         baseline,
         equipment,
         downtime,
-        start_date=start_date,
-        end_date=end_date,
     )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
+def _cached_undated_equipment(cache_key: str, _equipment: pd.DataFrame) -> pd.DataFrame:
+    del cache_key
+    return undated_equipment(_equipment)
+
+
+def get_undated_equipment(
+    equipment: pd.DataFrame, *, equipment_digest: str | None = None
+) -> pd.DataFrame:
     """일정 미정 설비 행(`services/undated_equipment.undated_equipment`)을 rerun 사이에 다시 쓴다.
 
     가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고, 이 계산은 설비 마스터 검증
     (`prepare_equipment_master`)을 거쳐 3천 행에 90ms 남짓 든다. 결과는 설비 마스터 내용만으로
-    정해지므로(기준일이 없다) 내용 해시가 곧 키다. Main 과 Static 대비 일정이 같은(거르기 전) 표를
-    넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
+    정해지므로(기준일이 없다) 내용 지문이 곧 키다(프레임은 `_` 인자 — `equipment_digest` 를 주면
+    그 값, `_equipment_digest`). Main 과 Static 대비 일정이 같은(거르기 전) 표를 넘겨 한 벌을 함께
+    쓰고, 범위는 받은 쪽이 좁힌다.
     """
-    return undated_equipment(equipment)
+    return _cached_undated_equipment(_equipment_digest(equipment, equipment_digest), equipment)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -1495,14 +1581,23 @@ def get_unit_qual_status(equipment: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
+def _cached_usage_excluded_equipment(cache_key: str, _equipment: pd.DataFrame) -> pd.DataFrame:
+    del cache_key
+    return usage_excluded_equipment(_equipment)
+
+
+def get_usage_excluded_equipment(
+    equipment: pd.DataFrame, *, equipment_digest: str | None = None
+) -> pd.DataFrame:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에 세지 않는 행(`services/usage_basis`)을 다시 쓴다.
 
     일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 설비 마스터 검증을 거치고 결과가 호기
-    마스터 내용만으로 정해진다. Main·Static 대비 일정·필요 단축 일정이 거르기 전 표를 넘겨 한 벌을
-    함께 쓰고 범위는 받은 쪽이 좁힌다.
+    마스터 내용만으로 정해진다(키는 내용 지문 — `equipment_digest` 를 주면 그 값). Main·Static 대비
+    일정·필요 단축 일정이 거르기 전 표를 넘겨 한 벌을 함께 쓰고 범위는 받은 쪽이 좁힌다.
     """
-    return usage_excluded_equipment(equipment)
+    return _cached_usage_excluded_equipment(
+        _equipment_digest(equipment, equipment_digest), equipment
+    )
 
 
 # (설비 마스터 내용 지문, 오늘).
@@ -1517,7 +1612,9 @@ def _cached_schedule_confirmation_issues(
     return schedule_confirmation_issues(_equipment, today=date.fromisoformat(today))
 
 
-def get_schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
+def get_schedule_confirmation_issues(
+    equipment: pd.DataFrame, *, today: date, equipment_digest: str | None = None
+) -> pd.DataFrame:
     """일정 확인 알림 행(`services/schedule_confirmation.schedule_confirmation_issues`)을 다시 쓴다.
 
     가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고 설비 마스터 탭은 숨은 탭에서도
@@ -1528,10 +1625,11 @@ def get_schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) ->
     편집본일 수 있어 리비전·편집본 세대가 아니라 내용 지문이다(`space_status_cache_key` 와
     같은 까닭). 그래서 Main 호기 현황(저장본)과 설비 마스터 경고(편집본·미리보기 후보)가 이 한
     길을 쓰고, 아직 고치지 않은 편집본은 저장본 사본이라 한 벌을 나눈다. 프레임은 해시하지
-    않는다. 범위(공정·설비명)는 받은 쪽이 좁힌다.
+    않는다. 범위(공정·설비명)는 받은 쪽이 좁힌다. `equipment_digest` 를 주면 마스터 지문은 그 값이다
+    (`_equipment_digest`).
     """
     return _cached_schedule_confirmation_issues(
-        (frame_digest(equipment), today.isoformat()), equipment
+        (_equipment_digest(equipment, equipment_digest), today.isoformat()), equipment
     )
 
 
@@ -1540,15 +1638,24 @@ SpaceStatusCacheKey = tuple[str, str, str]
 
 
 def space_status_cache_key(
-    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    as_of: date,
+    equipment_digest: str | None = None,
 ) -> SpaceStatusCacheKey:
     """Space 기준일 상태의 키. 판정이 보는 입력을 모두 싣는다.
 
     두 표는 저장 안 한 편집본일 수 있어 리비전·편집본 세대가 아니라 내용 지문이다 — 세대
     번호는 세션마다 0 부터 세어 내용이 달라도 겹친다. 사용기준 규칙(`COUNTED_USAGE_BASIS`)처럼
     결과에 닿는 코드 상수는 넣지 않는다 — 이 모듈의 키 방침(`frame_digest` 아래 주석)이다.
+    `equipment_digest` 를 주면 마스터 지문은 그 값이다(`_equipment_digest`).
     """
-    return (frame_digest(equipment), frame_digest(downtime), as_of.isoformat())
+    return (
+        _equipment_digest(equipment, equipment_digest),
+        frame_digest(downtime),
+        as_of.isoformat(),
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -1573,7 +1680,11 @@ def _cached_space_equipment_status(
 
 
 def get_space_equipment_status(
-    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    as_of: date,
+    equipment_digest: str | None = None,
 ) -> pd.DataFrame:
     """Space 현황의 기준일 상태(`build_space_equipment_status`)를 같은 내용이면 다시 쓴다.
 
@@ -1585,9 +1696,13 @@ def get_space_equipment_status(
 
     검증(설비 마스터·비가동 일정)은 기준일과 상관없어 내용 지문만으로 따로 기억한다 — 기준일
     페이더를 놓을 때마다 새 기준일이 오지만, 검증(판정의 대부분)은 내용이 같으면 한 번이다.
+    `equipment_digest` 를 주면 마스터 지문은 그 값이다(`space_status_cache_key`).
     """
     return _cached_space_equipment_status(
-        space_status_cache_key(equipment, downtime, as_of=as_of), equipment, downtime, as_of
+        space_status_cache_key(equipment, downtime, as_of=as_of, equipment_digest=equipment_digest),
+        equipment,
+        downtime,
+        as_of,
     )
 
 
@@ -2224,12 +2339,14 @@ def equipment_span_cache_key(
     downtime: pd.DataFrame,
     start_date: date,
     end_date: date,
+    equipment_digest: str | None = None,
 ) -> EquipmentSpanCacheKey:
     """`get_equipment_lifecycle_spans` 의 키. 마스터·비가동은 저장 안 한 편집본·샘플일 수 있어 내용
     지문이다. `required_shortening_cache_key` 의 두 지문과 같은 함수라 필요 단축 일정과 키가 겹친다.
+    `equipment_digest` 를 주면 마스터 지문은 그 값이다(`_equipment_digest`).
     """
     return (
-        frame_digest(equipment),
+        _equipment_digest(equipment, equipment_digest),
         frame_digest(downtime),
         start_date.isoformat(),
         end_date.isoformat(),
@@ -2860,16 +2977,18 @@ def process_equipment_timeline_cache_key(
     months: Sequence[int],
     process: str,
     manual_downtime: ManualDowntime,
+    equipment_digest: str | None = None,
 ) -> ProcessEquipmentTimelineCacheKey:
     """`get_process_equipment_timeline` 의 키. 네 표는 거르기 전 그대로의 내용 지문이다.
 
     **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요 단축 일정 키를 이미
     만들었으면 `process_timeline_key_from_shortening` 이 지문을 다시 계산하지 않고 같은 키를 낸다.
-    끝 칸은 그 공정의 입력 비가동(달로 좁힌 칸) — ② 전월 대비가 그 칸을 뺀다.
+    끝 칸은 그 공정의 입력 비가동(달로 좁힌 칸) — ② 전월 대비가 그 칸을 뺀다. `equipment_digest` 는
+    `required_shortening_cache_key` 와 같다(주면 마스터를 다시 해시하지 않는다 — 키는 같다).
     """
     ordered = tuple(sorted({int(month) for month in months}))
     return (
-        frame_digest(equipment),
+        _equipment_digest(equipment, equipment_digest),
         frame_digest(downtime),
         frame_digest(baseline),
         frame_digest(cutoff),

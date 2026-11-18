@@ -428,6 +428,7 @@ def render_availability_gap_panel(
     manual_downtime: ManualDowntime,
     alert_scope: AlertScope | None = None,
     alert_tab: str = "",
+    units_digest: str | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -452,7 +453,8 @@ def render_availability_gap_panel(
 
     거르는 조건(공정·호기 필터)은 `conditions`(사이드바 조건 카드)에 선다. 주지 않으면 본문 제자리에
     그린다 — 홀로 띄우는 테스트가 쓴다. `units` 는 `spans` 를 만든 설비 마스터이고, 주면 분류별
-    내역에 `호기 필터` 가 선다. **무엇을 볼지 고르는 전환(조회 결과·표시)은 본문이다**
+    내역에 `호기 필터` 가 선다(`units_digest` 는 그 표의 내용 지문 — 페이지 세션 메모, 상태 알림
+    캐시 키가 다시 해시하지 않는다). **무엇을 볼지 고르는 전환(조회 결과·표시)은 본문이다**
     — 탭 안의 하위 탭과 같은 것이라 카드에 넣으면 지금 어느 결과를 보는지 본문에서 사라진다
     (2026-09-29 사용자 결정). 읽는 법(Static·설비 일정 기준의 뜻, 9행)은 가용설비 현황 Guide 다.
 
@@ -573,7 +575,7 @@ def render_availability_gap_panel(
     # 일정 미정 · 사용기준 밖은 Main 과 같은 코드 · 범위의 상태 알림이다(자리에 그리지 않는다 —
     # `equipment_explorer.report_unit_notices`). 표가 없으면(홀로 띄우는 시험) 부르지 않는다.
     if units is not None:
-        report_unit_notices(units, scope=alert_scope)
+        report_unit_notices(units, scope=alert_scope, equipment_digest=units_digest)
     _report_manual_cells(manual_cells, months, labels)
 
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
