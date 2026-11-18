@@ -2377,6 +2377,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `select_equipment_scenario` 도 옮긴 쌍으로 라벨을 바로 적는다 — `app.py` 가 페이지보다 먼저 그리는 변경 칩 「설비 가정」
     (`change_summary.session_changes`)이 옮긴 회차에 맞는다(한 회차 늦지 않게, 시험 `test_equipment_scenario_session.py`).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
+- `src/capa_simulation/session_slot.py` — 새 코드가 세션 칸을 쓰는 한 창구 `SessionSlot`(5장 42 — 칸 이름 · 꼴 · 처음 값 선언 한 줄,
+  `get` · `setdefault` · `set` · `clear` · `exists`). 바로 쓰는 자리 수 그물은 `tests/test_session_state_sites.py`(기준선
+  `tests/session_state_baseline.py`), 창구 시험은 `tests/test_session_slot.py`.
 - `src/capa_simulation/constraint_simulation_state.py` — 제약 시뮬레이션의 세션 키(모두 `constraint_sim_` 접두)·버튼 값·기본값
   (D8 — 제약 120% · 기준 HOME · 개조 켬 30일 · 비중대로 켬, 2판 — 보유 0 · 신규 끔 · 기준일 오늘)·주소 인자 계약(`constraint_query_params`·
   `take_constraint_process_request`)과 칸 선택 그림 key 둘(`app.py` `CELL_SELECT_CHART_KEYS`)을 UI 없이 선언한다. 공정 Capa
@@ -6184,6 +6187,12 @@ RQ_MODULE
       동기화 스레드. 사람 몫 자동 쓰기(HOME 비교 리비전 메우기 · 주요 Case 빈 칸 · 필요 단축 기본값)는 `viewer_can` 이 참일 때만 쓴다.
     - **되돌림.** 앞 ZIP 은 등급 파일을 모르고 건드리지 않는다 — 되돌린 동안은 등급이 없어 개발자 말고 모두 옛 「일반」(런북 4-2), 다시 오면
       등급이 그대로 돌아온다(시험 `tests/fixtures/access_list_v1.py` 견본).
+42. **새 세션 칸은 한 창구(`src/capa_simulation/session_slot.py` 의 `SessionSlot`)로만 쓰고, `st.session_state` 를 바로 쓰는 자리는
+    늘리지 않는다**(2026-11-18 사용자 「셋 다 TODO 에」 — `docs/TODO.md` 2장 「Streamlit 에 남는 조건 셋」 ③). 칸은 소유 모듈에
+    `SessionSlot(<*_KEY 상수>, <꼴>, <처음 값 함수>)` 한 줄로 선언하고 `get` · `setdefault` · `set` · `clear` · `exists` 로만 읽고 쓴다(꼴이 다른
+    값은 처음 값으로 읽는다). `tests/test_session_state_sites.py` 가 화면 코드(`app.py` · `app_pages/` · `src/capa_simulation/`)의
+    `.session_state` 속성 자리를 AST 로 세어 기준선(`tests/session_state_baseline.py` — 2026-11-18 1,463곳 · 113파일, 창구 자신의 6곳 포함)과
+    맞댄다 — 늘면 실패, 줄어도 실패(알려 준 수로 기준선을 낮춘다). 한 번에 다 옮기지 않는다 — 옛 자리는 고칠 때 창구로 옮긴다.
 
 ## 6. 핵심 계산 규칙
 
