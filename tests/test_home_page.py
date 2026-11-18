@@ -46,6 +46,7 @@ from capa_simulation.home_state import (
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     HOME_KEY_PROCESS_DIALOG,
+    HOME_SORT_MEMO_KEY,
     PRODUCT_SHARE_BASIS_KEY,
 )
 from capa_simulation.navigation import REFERENCE_DATA
@@ -2850,8 +2851,6 @@ def test_the_notice_display_tab_repeats_no_words_and_keeps_no_empty_gaps(tmp_pat
 # 표시순서 준비 · 공정 선택지 차례 · 과거 열을 붙인 계획 세부수량은 그 입력(HOME 계산 키 · 토글 ·
 # 과거 프로필 version · 공정 목록)이 같으면 이 세션에 기억한 것을 쓴다(`home._remembered`). 기억한
 # 것으로 다시 그린 그림은 기억 없이 새로 만든 그림과 같아야 한다.
-
-HOME_SORT_MEMO_KEY = "home_sort_memo"
 
 
 def _seed_past_detail(database_path: Path) -> None:

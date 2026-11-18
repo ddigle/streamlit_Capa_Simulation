@@ -2,7 +2,7 @@
 
 """Per-session active scenario built from editable reference tables."""
 
-from typing import TypedDict, cast
+from typing import Final, TypedDict, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -10,8 +10,12 @@ import streamlit as st
 
 from capa_simulation import settings
 from capa_simulation.frame_sharing import frame_is_locked, shared_view
+from capa_simulation.session_slot import SessionSlot
 
 ACTIVE_SCENARIO_KEY = "active_scenario"
+# 다른 모듈이 활성 시나리오 칸을 읽는 창구(AGENTS 5장 42) — 「있거나 없음」 칸이라 `peek` 로
+# 읽는다. 쓰기는 이 모듈의 함수(활성화 · 편집 적용 · 지우기)만 한다.
+ACTIVE_SCENARIO: Final = SessionSlot(ACTIVE_SCENARIO_KEY, dict)
 # 이 세션에서 복제 등록한 가상 제품 목록. 리비전을 저장할 때 함께 기록해
 # 공식버전 발행 시 실적과 대조할 수 없는 데이터가 섞였는지 알 수 있게 한다.
 VIRTUAL_PRODUCTS_KEY = "session_virtual_products"
@@ -235,9 +239,10 @@ def _retire_edit_cell(previous: object) -> None:
 def _next_edit_token(previous: ActiveScenario) -> str:
     """편집 적용의 새 내용 토큰. 갈아끼워지는 편집본 칸은 여기서 걷는다(`_retire_edit_cell`).
 
-    적용하는 길은 모두 적용 뒤 곧바로 앱 전체 회차를 다시 돌려(`st.rerun` · `DialogHost.finish`) 옛
-    토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). 표를 다 갈아끼운 뒤에 부른다
-    — 적용이 막히면(`ValueError`) 아무 칸도 걷지 않는다.
+    적용하는 길은 모두 옛 토큰으로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`) —
+    본문에서 적용하면 곧바로 앱 전체 회차를 다시 돌리고(`st.rerun` · `DialogHost.finish`), 위젯
+    콜백에서 적용하면(생산 계획 「변경사항 적용」) 그 회차 본문이 새 토큰으로 그린다. 표를 다
+    갈아끼운 뒤에 부른다 — 적용이 막히면(`ValueError`) 아무 칸도 걷지 않는다.
     """
     _retire_edit_cell(previous)
     return _new_content_token()

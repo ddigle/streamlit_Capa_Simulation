@@ -14,7 +14,7 @@ import streamlit as st
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.auth import runtime as sso_runtime
-from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS
+from capa_simulation.home_state import HOME_SORT_MEMO_KEY, HOME_TOGGLE_DEFAULTS
 from capa_simulation.io.reference_cache import (
     HOME_FIGURE_CACHE_KEY,
     activate_persisted_reference_tables,
@@ -98,6 +98,7 @@ _STALE_VALUE_KEYS = (
     "load_conversion_own_change",
     "reference_data_own_change",
     HOME_FIGURE_CACHE_KEY,
+    HOME_SORT_MEMO_KEY,
     # 기준 정보 · 생산 계획 편집 그리드의 표마다 초안·이력과 반영 전 op — 앞 시나리오 양식에 붙은
     # 편집이다. 세션 칸이라 다른 화면에 있어도 변경 칩·화면 탭 점이 세므로 바꾸는 자리에서 지운다.
     *REFERENCE_GRID_SESSION_KEYS,

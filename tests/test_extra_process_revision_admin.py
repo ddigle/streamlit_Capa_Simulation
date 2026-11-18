@@ -254,7 +254,7 @@ def test_without_a_sink_the_new_version_goes_to_the_database_only(database: Path
     assert history.loc[0, "갈래"] == "새 판" and str(history.loc[0, "바탕"]).endswith("r2")
     # 같은 리비전으로 다시 누를 수 없다 — 리비전의 판(1)이 활성 판(2)과 다르다.
     again = app.button(key=REVISION_BUTTON_KEY)
-    assert again.disabled and "판 1 로 만든 리비전" in str(again.help)
+    assert again.disabled and "판 1로 만든 리비전" in str(again.help)
 
 
 def test_a_sink_with_no_file_is_overwritten_and_recorded(database: Path) -> None:
@@ -549,3 +549,37 @@ def test_with_a_source_too_the_written_word_survives_the_next_round(database: Pa
     assert any("가짜 S3 같음 — 앱이 씀" in text for text in _captions(app))
     assert active_state(app, "EP-02") is None
     assert active_state(app, "EP-05") is None
+
+
+@pytest.mark.parametrize(
+    ("version_no", "short", "full"),
+    [
+        (1, "부대공정 판 1을 S3 Drive 에", ("만든 판 1이 S3 Drive", "DB 의 판 1로 돕니다")),
+        (2, "부대공정 판 2를 S3 Drive 에", ("만든 판 2가 S3 Drive", "DB 의 판 2로 돕니다")),
+        (3, "부대공정 판 3을 S3 Drive 에", ("만든 판 3이 S3 Drive", "DB 의 판 3으로 돕니다")),
+        (6, "부대공정 판 6을 S3 Drive 에", ("만든 판 6이 S3 Drive", "DB 의 판 6으로 돕니다")),
+        (10, "부대공정 판 10을 S3 Drive 에", ("만든 판 10이 S3 Drive", "DB 의 판 10으로 돕니다")),
+    ],
+)
+def test_the_unwritten_version_alert_picks_particles_by_the_number(
+    monkeypatch: pytest.MonkeyPatch, version_no: int, short: str, full: tuple[str, str]
+) -> None:
+    """`EP-05` 글의 판 번호 뒤 조사(을/를 · 이/가 · (으)로)는 번호의 끝소리로 고른다."""
+    from types import SimpleNamespace
+
+    import capa_simulation.components.extra_process_admin as admin
+    from capa_simulation import alerts
+
+    sent: dict[str, dict[str, object]] = {}
+    monkeypatch.setattr(admin, "installed_sink", lambda: object())
+    monkeypatch.setattr(admin, "pending_write", lambda state: None)
+    monkeypatch.setattr(admin, "_new_file_word", lambda state: None)
+    monkeypatch.setattr(alerts, "state", lambda code, **kwargs: sent.update({code: kwargs}))
+    state = SimpleNamespace(active=SimpleNamespace(version_no=version_no))
+
+    admin._report_remote_state(state, "부대공정")  # type: ignore[arg-type]
+
+    note = sent["EP-05"]
+    assert note["active"] is True
+    assert str(note["text"]).startswith(short), note["text"]
+    assert all(part in str(note["full"]) for part in full), note["full"]

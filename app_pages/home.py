@@ -96,6 +96,7 @@ from capa_simulation.home_state import (
     EXECUTION_TOGGLE_KEY,
     HOME_KEY_PROCESS_DIALOG,
     HOME_PROCESS_FILTER_DIALOG,
+    HOME_SORT_MEMO_KEY,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     PRODUCT_SHARE_BASIS_DEFAULT,
@@ -260,7 +261,6 @@ def _owned_comparison_revision(
 # 과거 열을 붙인 계획 세부수량)를 이 세션에 이름마다 두 벌까지 기억한다. 키는 그 결과를 정하는 입력
 # 전부(내용 토큰이 든 HOME 계산 키 · 토글 · 공용 프로필 version · 공정 목록)다 — 토글 하나를 오가는
 # 회차가 다시 만들지 않는다.
-HOME_SORT_MEMO_KEY = "home_sort_memo"
 HOME_SORT_MEMO = SessionSlot(HOME_SORT_MEMO_KEY, dict, dict)
 HOME_SORT_MEMO_DEPTH = 2
 _Remembered = TypeVar("_Remembered")
