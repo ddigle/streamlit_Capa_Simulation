@@ -14,6 +14,8 @@ const EDGE_SCROLL_STEP = 14
 const SIDE_WAIT_MS = 200
 const SIDE_WAIT_TRIES = 15
 const KEYS_HELP = '이름 칸: 연 줄이면 한 번 눌러 고칩니다(처음 누르면 엽니다) · Enter · F2 어느 줄이든 고치기 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · Space 열기 · 손잡이를 끌어 옮기기 · Alt+↑ ↓ 줄 옮기기 · 순서 칸에 자리 번호'
+// 값만 보는 등급의 풍선 — 그 등급에게 서는 손짓만(칸 고치기 · 줄 옮기기 없음).
+const KEYS_HELP_READONLY = '줄을 누르면 엽니다 · ← → ↑ ↓ 칸 옮기기 · Space · Enter 열기'
 const COLUMNS = {
   scenarios: [
     { key: 'grip', head: '' },
@@ -336,9 +338,10 @@ function buildTable(S) {
   }
   if (S.mode === 'scenarios') {
     const foot = el('div', 'emg-foot')
-    // 키보드 조작은 표지 하나와 그 풍선이다 — 표 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02).
+    // 키보드 조작은 표지 하나와 그 풍선이다 — 표 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02). 풍선 글은 등급을
+    // 따른다 — 값만 보는 등급이 바뀌면 표 틀을 다시 지어(`builtKey`) 글도 바뀐다.
     const keys = el('span', 'emg-muted emg-keys', '⌨ 키보드 조작')
-    keys.title = KEYS_HELP
+    keys.title = readonly(S) ? KEYS_HELP_READONLY : KEYS_HELP
     foot.appendChild(keys)
     S.noteNode = el('span', 'sgl-note', S.note)
     foot.appendChild(S.noteNode)

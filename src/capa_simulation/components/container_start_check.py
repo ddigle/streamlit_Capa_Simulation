@@ -23,6 +23,12 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 `cache_data` · DB 마다 DuckDB 회차 끝 표본)은 `memory_diagnostic` 이 짓는다. 둘 다 결과 파일이
 아니라 이 프로세스의 지금 값이다.
 
+**부하** — 메모리 값 줄 뒤 부하 값 줄 셋(화면 응답 · CPU 5분 평균 · 동시 세션 — `load_diagnostic`)도
+이 프로세스의 지금 값이다. 신호표 문턱(느린 쪽 3초 · CPU 0.7코어 · 연결 25)을 넘으면 개발자 상태
+알림 `AD-26`(`render_load_alert` — `app.py` 가 코어 화면 오류 알림 곁에서 부른다)이 선다 — 시작 점검
+알림과 같은 판정의 서버만 이벤트 칸 한 자리이고 그 밖은 Streamlit 호출이 없다. 지문은 넘은 문턱
+이름뿐이라 값이 오르내려도 다시 뜨지 않는다. 「그 화면으로」 는 Admin Area 의 이 펼침까지다.
+
 **토큰 넣기 · 만료 알림** — 표 아래 「지금 토큰」 줄과 개발자의 「토큰 넣기」 단추 · 팝업, 만료
 1시간 전 개발자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
 부른다).
@@ -83,6 +89,7 @@ from capa_simulation.components.diagnostic_copy import (
     table_lines,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.load_diagnostic import load_lines, load_signal
 from capa_simulation.components.memory_diagnostic import (
     MEMORY_LIMIT_STEP_LABEL,
     memory_limit_failed,
@@ -138,6 +145,8 @@ LOGIN_STOP_ALERT_CODE = "AD-23"
 # BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함(닿지 못함 · 확인 못 함 · 못 함 — D6
 # 「알림만」).
 LOGIN_TROUBLE_ALERT_CODE = "AD-24"
+# 서버 부하 신호표 문턱 넘음 개발자 알림(`render_load_alert`).
+LOAD_ALERT_CODE = "AD-26"
 # 그 갈래의 알림창 짧은 글 낱말.
 _TROUBLE_WORDS = {
     "unreached": "서버에 닿지 못함",
@@ -374,8 +383,9 @@ def render_container_start_check() -> None:
         report,
         (sso_start_step(), *login_rows(report), *sync_rows(report), memory_limit_step()),
     )
-    # 사실 줄 끝의 메모리 값 줄은 「지금 토큰」 처럼 이 프로세스의 지금 값이다(`memory_diagnostic`).
-    facts = [*report_fact_lines(report), *memory_lines()]
+    # 사실 줄 끝의 메모리 · 부하 값 줄은 「지금 토큰」 처럼 이 프로세스의 지금 값이다
+    # (`memory_diagnostic` · `load_diagnostic`).
+    facts = [*report_fact_lines(report), *memory_lines(), *load_lines()]
     # 「지금 토큰」 은 시작 기록이 아니라 지금 파일에서 읽는다 — 「토큰 넣기」 가 바꾼다.
     token = token_line()
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
@@ -518,6 +528,29 @@ def render_start_check_alert() -> None:
         active=active,
         text=text if active else None,
         full=full if active else None,
+        goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href) if active else None,
+        target=start_check_target() if active else None,
+    )
+
+
+def render_load_alert() -> None:
+    """서버 부하 개발자 알림(`AD-26`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명 「부하」).
+
+    시작 점검 알림과 같은 판정(`start_check_alert_possible` — 프로세스 동안 그대로)이 거짓이면
+    Streamlit 호출이 없다. 참이면 회차마다 이벤트 칸 한 자리를 쓰고, 개발자 몫이 아닌 회차는 글
+    없는 해소다(`admin_view.developer_alerts_visible`). 지문은 넘은 문턱
+    이름(`load_metrics.crossed`)이다."""
+    if not start_check_alert_possible():
+        return
+    signal = load_signal() if developer_alerts_visible() else None
+    active = signal is not None
+    alerts.state(
+        LOAD_ALERT_CODE,
+        scope=None,
+        content=list(signal.names) if signal is not None else None,
+        active=active,
+        text=signal.text if signal is not None else None,
+        full=signal.full if signal is not None else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href) if active else None,
         target=start_check_target() if active else None,
     )

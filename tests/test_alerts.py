@@ -63,11 +63,12 @@ def test_the_baseline_gone_event_is_registered_after_the_screens_state_codes() -
 
 def test_the_notice_is_a_shell_state_alert_at_the_end_of_the_registry() -> None:
     """공지(2026-11-17 공지 보드 답)는 껍데기 갈래(`GL-*` — 어느 화면의 일도 아닌 알림)의 다음
-    번호이고 등록부 끝에 섰다(번호를 다시 쓰지 않는다). 서 있는 동안이 조건인 상태 알림 · 알림 단계
-    · 이름 「공지」 다."""
+    번호이고 그때 등록부 끝에 섰다(번호를 다시 쓰지 않는다 — 그 뒤로는 끝에 더한 줄만 온다, 서버
+    부하 `AD-26` 등). 서 있는 동안이 조건인 상태 알림 · 알림 단계 · 이름 「공지」 다."""
     spec = alerts.spec("GL-09")
     assert (spec.level, spec.kind, spec.title) == ("info", "state", "공지")
-    assert alerts.SPECS[-1] is spec
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("GL-09") < codes.index("AD-26")
     shell = sorted(code for code in alerts.REGISTRY if code.startswith("GL-"))
     assert shell[-3:] == ["GL-07", "GL-08", "GL-09"]
 

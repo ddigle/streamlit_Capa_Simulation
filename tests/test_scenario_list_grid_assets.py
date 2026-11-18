@@ -1347,6 +1347,7 @@ const look = (host) => ({
   tools: host.querySelectorAll('.sgl-tool-slot').length,
   legend: host.querySelectorAll('.emg-legend').length,
   grips: host.querySelectorAll('.sgl-grip').length,
+  keys: host.querySelector('.emg-keys').title,
 })
 ;(async () => {
   const m = mount({ ...SCENARIOS, readonly: true })
@@ -1371,13 +1372,20 @@ def test_a_read_only_list_draws_no_move_buttons_or_legend() -> None:
     아래로 · ⤒ 맨 위로」 와 「고친 칸 · 막힘」 범례 · 손잡이를 그리지 않는다(설계 규칙 UI-INP-07
     예외 — E2E 에서 열람에게 섰다). 작업 줄은 빈 줄로 남아 두 표 머리의 윗선을 지킨다. Alt+↑ ↓ 도
     옮기지 않고 「옮김」 이라 읽지 않는다. 같은 마운트에서 값만이 풀리면 단추가 다시 선다(「이 등급으로
-    보기」 끝)."""
+    보기」 끝). 「⌨ 키보드 조작」 풍선은 그 등급에게 서는 손짓(누르기 · 칸 옮기기 · 열기)만 말한다."""
     out = _node({}, _READONLY, _MOUNT_SOURCE)
+    keys = {name: out[name].pop("keys") for name in ("readonly", "editable", "back")}
     assert out["readonly"] == {"toolsRow": 1, "tools": 0, "legend": 0, "grips": 0}
     assert out["altMoves"] == 0 and out["status"] == ""
     assert out["rows"] == ["a", "b", "c"]
     assert out["editable"] == {"toolsRow": 1, "tools": 3, "legend": 1, "grips": 3}
     assert out["back"] == out["readonly"]
+    # 「⌨ 키보드 조작」 풍선도 등급을 따른다 — 값만 보는 등급에게 고치기 · 옮기기 키를 말하지 않는다.
+    edit_words = ("F2", "고치", "끌어", "Alt+", "확정", "자리 번호")
+    assert not any(word in keys["readonly"] for word in edit_words), keys["readonly"]
+    assert "Space" in keys["readonly"] and "Enter" in keys["readonly"]
+    assert all(word in keys["editable"] for word in edit_words), keys["editable"]
+    assert keys["back"] == keys["readonly"]
 
 
 _DRAWN = (

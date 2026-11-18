@@ -324,6 +324,8 @@ uv pip install -r requirements-company.txt
 - DuckDB 메모리 한도는 CD 환경변수 `CAPA_DUCKDB_MEMORY_LIMIT` 로 줄 수 있습니다(DB 마다 같은 값 — 비면 DuckDB 기본, 값은 코드 · 이미지에 없음).
   Admin 「서버 시작 점검」 끝 줄이 그 판정이고, 사실 줄 끝에 지금 메모리(RSS · 세션 · `cache_data` · DB 마다 DuckDB)가 있습니다 —
   꼴 · 범위는 `docs/objectstore_setup.md` 2장.
+- 같은 펼침 끝에는 서버 부하 세 줄(화면 응답 최근 1시간 · 느린 쪽 · 최고, CPU 5분 평균, 동시 세션 지금 · 최고)이 있습니다 — 느린 쪽 3초 ·
+  CPU 0.7코어 · 연결 25 가운데 하나라도 넘으면 개발자 알림 `AD-26` 이 뜹니다(값은 앱 메모리에만 — 재시작하면 처음부터).
 - C-DEP CD 서버는 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
   `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
   스위치입니다(비면 지금처럼 열림). 로그인은 마지막 사용 뒤 6시간 유지되고 앱을 쓰는 동안 저절로 늘어납니다(최대 24시간 —
