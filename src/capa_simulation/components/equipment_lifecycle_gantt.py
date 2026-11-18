@@ -23,6 +23,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components import grade_ui
 from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
@@ -136,7 +137,13 @@ def render_equipment_lifecycle_gantt(
     if figure is None:
         st.caption("조회 기간에 그릴 호기 일정이 없습니다.")
         return
-    st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
+    # 그림 오른쪽 위 막대(그림 저장 · 표로 보기)는 설비 화면 내려받기 등급(관리자부터)에만 선다.
+    st.plotly_chart(
+        figure,
+        width="stretch",
+        key=key,
+        config=grade_ui.chart_config("equipment.export", {"staticPlot": False}),
+    )
     if hidden_units:
         # 자른 것을 적지 않으면 「이게 전부」로 읽힌다 — 자리에는 값(「n행 더 있음」)만, 자른 차례와
         # 보는 법은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).

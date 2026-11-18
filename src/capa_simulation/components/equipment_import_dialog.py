@@ -34,6 +34,7 @@ from typing import Final
 
 import streamlit as st
 
+from capa_simulation.components import grade_ui
 from capa_simulation.components.equipment_data_workspace import (
     _PREVIEW_VISIT_KEY,
     _TARGETS,
@@ -50,6 +51,7 @@ from capa_simulation.components.equipment_data_workspace import (
     PASTE_LAYOUT_LABEL,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
+    TABLE_ACTIONS,
     TARGET_KEY,
     Frames,
     ImportReview,
@@ -60,15 +62,18 @@ from capa_simulation.components.equipment_data_workspace import (
     assumption_group_paste_refusal,
     buffer_has_layout_edits,
     build_import_review,
+    editable_targets,
     grid_loaded_ids,
     grid_overlay,
     layout_paste_refusal,
     paste_split_summary,
     pending_unit_renames,
     queue_grid_result,
+    refuse_out_of_grade,
     replace_equipment_buffer,
     stale_paste_refusal,
     stamp_layout_role,
+    table_editable,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
 from capa_simulation.components.equipment_settings_dialog import (
@@ -304,7 +309,14 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     찍는다 — 넣고 나중에 「리비전 저장」 하므로, 그 사이 역할이 바뀌면(남이 그 가정 시나리오를
     공식으로 발행) 저장소가 쓰기 잠금 안에서 대조해 막고 Space·이 탭이 그 회차를 잠근다(설계 6-2,
     표 출납·Space 적용과 같다). 잠긴 회차는 미리보기가 배치를 바꾸는 붙여넣기를 막아 찍을 것이
-    없다."""
+    없다.
+
+    화면 등급으로 고치지 못하는 표를 대상으로 한 후보는 넣지 않는다(실무자는 비가동 일정만 —
+    2026-11-18 접속 등급). 넣는 길의 거름(`replace_equipment_buffer` → `_grade_kept`)도 그 표의
+    변경을 걷는다."""
+    if not table_editable(review.target):
+        refuse_out_of_grade(TABLE_ACTIONS[review.target])
+        return ""
     frames: Frames = st.session_state[BUFFER_KEY]
     saved = st.session_state[EQUIPMENT_DRAFT_KEY]
     renames = pending_unit_renames()
@@ -388,7 +400,11 @@ def _render_body(context: ImportContext) -> None:
         render_flash(
             IMPORT_ERROR_KEY, IMPORT_NOTICE_KEY, IMPORT_REVIEW_NOTICE_KEY, IMPORT_REVIEW_CAUTION_KEY
         )
-    target = st.selectbox("등록할 표", _TARGETS, key=TARGET_KEY)
+    # 등록할 표는 화면 등급으로 고치는 표만(실무자는 비가동 일정 하나 — 설계 규칙 UI-INP-07 예외).
+    targets = editable_targets() or _TARGETS
+    if st.session_state.get(TARGET_KEY) not in targets:
+        st.session_state[TARGET_KEY] = targets[0]
+    target = st.selectbox("등록할 표", targets, key=TARGET_KEY)
     paste_layout = False
     if context.layout_mode == "overlay":
         # 가정 세션만 — 기본 끔(Q2). 배치 칸이 어디로 드는지는 이 체크의 풍선이 말한다(설계 규칙
@@ -484,6 +500,7 @@ def _render_body(context: ImportContext) -> None:
 @st.dialog(
     IMPORT_DIALOG_TITLE, width="large", icon=":material/upload_file:", on_dismiss=_close_dialog
 )
+@grade_ui.in_fragment
 def render_import_dialog(context: ImportContext) -> None:
     """팝업 본문(`render_equipment_dialog_host` 가 열림 칸이 `import` 일 때 부른다)."""
     _render_body(context)

@@ -19,6 +19,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components import sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_field, date_range_field
 from capa_simulation.components.equipment_lifecycle_gantt import (
@@ -322,6 +323,7 @@ def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) ->
                     undated.loc[:, [EQUIPMENT_ID_COLUMN, PROCESS_COLUMN, UNDATED_KIND_COLUMN]],
                     title=UNDATED_TABLE_TITLE,
                     file_name="undated_units.csv",
+                    csv=sso_identity.viewer_can("equipment.export"),
                 )
             ]
             if undated is not None and mark is not None
@@ -353,6 +355,7 @@ def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) ->
                     excluded.loc[:, [EQUIPMENT_ID_COLUMN, PROCESS_COLUMN, USAGE_BASIS_COLUMN]],
                     title=USAGE_TABLE_TITLE,
                     file_name="usage_excluded_units.csv",
+                    csv=sso_identity.viewer_can("equipment.export"),
                 )
             ]
             if excluded is not None and usage is not None
@@ -413,6 +416,7 @@ def report_unconfirmed_units(
                     ],
                     title=UNCONFIRMED_TABLE_TITLE,
                     file_name="unconfirmed_units.csv",
+                    csv=sso_identity.viewer_can("equipment.export"),
                 )
             ]
             if mark is not None

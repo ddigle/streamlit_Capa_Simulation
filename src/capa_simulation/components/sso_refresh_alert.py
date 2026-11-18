@@ -1,4 +1,4 @@
-# Purpose: 로그인 갱신이 출처·머리 검사에서만 거절되는 서버의 관리자 회차에 상태 알림 AD-21 을 낸다.
+# Purpose: 로그인 갱신이 출처·머리 검사에서만 거절되는 서버의 개발자 회차에 상태 알림 AD-21 을 낸다.
 
 """로그인 갱신 거절 알림(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p2-rare 한 조각).
 
@@ -6,14 +6,14 @@
 출처 · 머리 검사에서 되풀이 거절되면(접속 주소가 `CAPA_PUBLIC_URL` 과 다르거나 앞단이 갱신 머리 ·
 `Origin` 을 버림) 쓰는 중에도 처음 로그인 뒤 유지 시간(기본 6시간)에 끊긴다. 사용자 화면은 그대로
 둔다(끊기면 「다시 로그인」 띠가 알린다). 결과 누계는 Admin 「통합인증 점검」 의 로그인 갱신 줄에만
-있어 Admin 을 열기 전에는 아무도 모른다 — 그래서 관리자의 모든 화면 회차에 상태 알림 `AD-21` 을
+있어 Admin 을 열기 전에는 아무도 모른다 — 그래서 개발자의 모든 화면 회차에 상태 알림 `AD-21` 을
 세운다.
 
 - 조건: 기동 뒤 누계(`runtime.refresh_counts`)의 「출처·머리 거절」 이 1 이상이고 「다시 발급」 ·
   「건너뜀」 이 모두 0. 건너뜀(60초 안 · 상한)도 출처 · 머리 검사를 지난 요청이라, 한 번이라도 다시
   발급했거나 건너뛰었으면 길은 열린 것이라 세우지 않는다(한 사람의 다른 주소 접속 같은 잡음).
 - 내용(지문)은 고정 값이다 — 거절 수를 넣으면 새 거절마다 알림창이 다시 뜬다.
-- 관리자 몫(`admin_view.admin_notes_visible` — 켜진 서버라 관리자 회차)에만 세우고 다른
+- 개발자 몫(`admin_view.developer_notes_visible` — 켜진 서버라 개발자 회차)에만 세우고 다른
   회차는 해소로 부른다(`sso_status._access_read_alert` 와 같은 꼴 — 회차마다 이벤트 칸 한
   자리). 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 일반 사용자 회차의 숨은 표지에 운영
   낱말(접속 주소 환경변수 · 갱신 머리 이름)이 실리지 않게(알림 칸은 해소에 글을 쓰지 않는다).
@@ -27,7 +27,7 @@ from __future__ import annotations
 from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoMode
-from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.admin_view import developer_alerts_visible
 from capa_simulation.components.sso_status import sso_status_target
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -52,11 +52,11 @@ def refresh_refused() -> bool:
 
 
 def render_refresh_alert() -> None:
-    """상태 알림 `AD-21` — 켜진 서버의 매 회차에 부른다(관리자 회차에만 선다)."""
+    """상태 알림 `AD-21` — 켜진 서버의 매 회차에 부른다(개발자 회차에만 선다)."""
     cfg = runtime.config()
     if cfg.mode is not SsoMode.ON:
         return
-    active = refresh_refused() and admin_notes_visible()
+    active = refresh_refused() and developer_alerts_visible()
     alerts.state(
         ALERT_CODE,
         scope=None,

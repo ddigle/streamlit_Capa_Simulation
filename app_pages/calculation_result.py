@@ -45,6 +45,7 @@ from capa_simulation.components.column_filter import (
     render_shared_process_filter,
 )
 from capa_simulation.components.data_error_mark import render_data_error, render_data_error_mark
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
@@ -351,7 +352,9 @@ else:
             render_capacity_assumption_notice(
                 assumptions, scope=simulation_scope(active_scenario), tab=UNIT_CAPACITY_TAB
             )
-            exclusion_file = f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+            exclusion_file = edited_file_name(
+                f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+            )
             exclusion_table = (
                 alert_table(
                     exclusion_export(
@@ -491,13 +494,13 @@ else:
                             ),
                         ),
                     ),
-                    file_name=f"{capacity_file}.xlsx",
+                    file_name=edited_file_name(f"{capacity_file}.xlsx"),
                     key=UNIT_CAPACITY_XLSX_KEY,
                 )
                 render_table_heading(
                     output_title,
                     csv=capacity_csv,
-                    file_name=f"{capacity_file}.csv",
+                    file_name=edited_file_name(f"{capacity_file}.csv"),
                     key="download_unit_capacity_csv",
                     sheet=capacity_sheet,
                 )
@@ -638,13 +641,13 @@ else:
                         ),
                     ),
                 ),
-                file_name=f"{required_file}.xlsx",
+                file_name=edited_file_name(f"{required_file}.xlsx"),
                 key=REQUIRED_DETAIL_XLSX_KEY if show_detail else REQUIRED_SUMMARY_XLSX_KEY,
             )
             with table_heading_row(
                 "소요대수",
                 csv=required_csv,
-                file_name=f"{required_file}.csv",
+                file_name=edited_file_name(f"{required_file}.csv"),
                 key=(
                     "download_required_equipment_detail_csv"
                     if show_detail
@@ -706,7 +709,9 @@ else:
             render_table_heading(
                 "확보율",
                 csv=securement_csv,
-                file_name=f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv",
+                file_name=edited_file_name(
+                    f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv"
+                ),
                 key="download_securement_rate_csv",
             )
             render_hierarchical_monthly_table(

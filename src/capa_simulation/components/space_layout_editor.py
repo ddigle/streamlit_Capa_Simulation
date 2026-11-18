@@ -75,6 +75,7 @@ from typing import Any
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components import sso_identity
 from capa_simulation.components.date_panel import (
     DATE_PANEL_CSS,
     DATE_PANEL_HTML,
@@ -455,7 +456,11 @@ def _clean_sheet(sheet: Mapping[str, Any] | None) -> dict[str, Any] | None:
         + extra,
     }
     csv = sheet.get("csv")
-    if (
+    if not sso_identity.viewer_can("equipment.export"):
+        # 설비 화면 내려받기 등급 밖 — 「CSV」 단추를 세우지 않고 「모든 칸」 글도 싣지 않는다
+        # (2026-11-18 접속 등급 — 브라우저가 지은 「보이는 줄」 도 내려받기라 단추째 감춘다).
+        cleaned["csvHidden"] = True
+    elif (
         isinstance(csv, Mapping)
         and isinstance(csv.get("text"), str)
         and isinstance(csv.get("file"), str)

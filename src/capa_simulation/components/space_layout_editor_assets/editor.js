@@ -496,6 +496,12 @@ export default function (component) {
   const sheetCsvMenu = q('.sle-sheet-csvmenu')
   const sheetCsvAll = q('.sle-sheet-csv-all')
   const sheetCsvShown = q('.sle-sheet-csv-shown')
+  // 설비 화면 내려받기 등급 밖(`sheetCsvHidden`)이면 「CSV」 단추를 세우지 않는다(「보이는 줄」 도 내려받기다). 마운트는 회차마다
+  // 같은 판에서 다시 돌므로 양쪽으로 적는다(「이 등급으로 보기」 를 끝내면 다시 선다). 펼침이 열린 채 등급이 내려가면 닫는다.
+  if (sheetCsvButton) {
+    sheetCsvButton.hidden = sheetCsvHidden(SHEET)
+    if (sheetCsvButton.hidden && sheetCsvMenu) sheetCsvMenu.hidden = true
+  }
   const sheetClose = q('.sle-sheet-close')
   const sheetChips = q('.sle-sheet-chips')
   const sheetClear = q('.sle-sheet-clear')
@@ -2578,6 +2584,11 @@ export default function (component) {
     const lines = [columns.map((column) => cell(column.name)).join(',')]
     for (const row of rows) lines.push(row.cells.map(cell).join(','))
     return `${lines.join('\n')}\n`
+  }
+  // 「CSV」 를 감추나 — 설비 화면 내려받기 등급 밖이면 파이썬이 `csvHidden` 을 싣고 「모든 칸」 글은 싣지 않는다(2026-11-18
+  // 접속 등급). 「보이는 줄」 은 창이 받은 줄로 브라우저가 짓는 내려받기라 단추 · 펼침 · 내려받기가 모두 이 판정 하나를 본다.
+  function sheetCsvHidden(sheet) {
+    return Boolean(sheet && sheet.csvHidden)
   }
   // </unit-sheet>
   // 「호기 정보」 창이 바꾼 도면 강조에 시선을 끌 대상(순수 함수, 2026-11-12 Space 시안 보드 답 5-2 · 5-3 — 설계 규칙 UI-NAV-02).
@@ -8302,6 +8313,7 @@ export default function (component) {
           placeIdx: SHEET.columns.findIndex((column) => column.name === SHEET_PLACE),
           // 도면에 선 호기 CSV(파이썬이 지은 글 그대로 — 옛 도면 아래 내려받기와 같은 칸·줄). 없으면 그 줄이 꺼진다.
           csv: SHEET.csv && typeof SHEET.csv.text === 'string' && typeof SHEET.csv.file === 'string' ? SHEET.csv : null,
+          csvHidden: sheetCsvHidden(SHEET),
         }
       : null
   }
@@ -8873,6 +8885,7 @@ export default function (component) {
     if (focusBack) sheetCsvButton.focus({ preventScroll: true })
   }
   function openCsvMenu() {
+    if (sheetCsvHidden(S.sheet)) return
     closeMenu()
     if (S.sheetWin.min) {
       S.sheetWin.min = false
@@ -8909,6 +8922,10 @@ export default function (component) {
   function downloadCsv(which) {
     const sheet = S.sheet
     if (!sheet) return
+    if (sheetCsvHidden(sheet)) {
+      closeCsvMenu(false)
+      return
+    }
     if (which === 'all' && sheet.csv) saveCsv(sheet.csv.text, sheet.csv.file)
     else if (which === 'shown' && Array.isArray(S.sheetShown) && S.sheetShown.length) {
       const base = sheet.csv ? sheet.csv.file.replace(/\.csv$/i, '') : 'space'

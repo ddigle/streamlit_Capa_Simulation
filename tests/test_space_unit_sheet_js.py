@@ -51,6 +51,7 @@ process.stdout.write(JSON.stringify({
   states: (input.states || []).map((raw) => storedSheetState(raw)),
   clears: (input.clears || []).map((c) => clearOfSheet(c.stage, c.win, c.rect)),
   csvs: (input.csvs || []).map((c) => sheetCsv(c.columns, c.rows)),
+  csvHidden: (input.csvHidden || []).map((sheet) => sheetCsvHidden(sheet)),
 }))
 """
 
@@ -557,6 +558,87 @@ def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> No
     assert ".sle-sheet.is-min .sle-sheet-csvmenu { display: none; }" in CSS.replace(
         ".sle-sheet.is-min .sle-sheet-menu,\n", ""
     )
+
+
+def run_csv_hidden(sheets: list[Any]) -> list[bool]:
+    """편집기의 「CSV」 감춤 판정(`sheetCsvHidden`)을 data `sheet` 들에 돌린다(등급 시험도 쓴다)."""
+    got: list[bool] = _run({"csvHidden": sheets})["csvHidden"]
+    return got
+
+
+_CSV_GUARD_RUNNER = """
+const log = []
+let S
+const sheetBox = { getBoundingClientRect: () => ({ left: 0 }), clientLeft: 0, clientWidth: 600 }
+const sheetCsvButton = {
+  setAttribute: (name, value) => log.push(`${name}=${value}`),
+  getBoundingClientRect: () => ({ right: 500 }),
+  focus: () => log.push('button-focus'),
+}
+const sheetCsvMenu = { hidden: true, style: {} }
+const sheetCsvAll = { disabled: false, focus: () => log.push('all-focus') }
+const sheetCsvShown = { disabled: false, focus: () => log.push('shown-focus') }
+const setText = () => {}
+const closeMenu = () => {}
+const sheetSaveWin = () => {}
+const layoutSheet = () => {}
+const renderSheet = () => {}
+const saveCsv = (text, file) => log.push(`save:${file}`)
+%s
+const cases = JSON.parse(require('fs').readFileSync(0, 'utf8')).cases
+const out = cases.map((c) => {
+  log.length = 0
+  sheetCsvMenu.hidden = true
+  S = { sheet: c.sheet, sheetShown: c.shown, sheetWin: { min: false } }
+  openCsvMenu()
+  const opened = !sheetCsvMenu.hidden
+  downloadCsv('all')
+  downloadCsv('shown')
+  return { opened, saved: log.filter((line) => line.startsWith('save:')) }
+})
+process.stdout.write(JSON.stringify({ out }))
+"""
+
+
+def test_below_the_download_grade_the_csv_button_menu_and_download_stay_out() -> None:
+    """설비 화면 내려받기 등급 밖이면 파이썬이 data `sheet.csvHidden` 을 싣고 「모든 칸」 글은
+    싣지 않는다(2026-11-18 접속 등급). 「보이는 줄」 은 창이 받은 줄로 브라우저가 짓는 내려받기라
+    단추 · 펼침 · 내려받기가 한 판정(`sheetCsvHidden`)을 본다 — 단추 감춤만 믿지 않는다. 단추는
+    마운트마다 양쪽으로 적고(「이 등급으로 보기」 를 끝내면 다시 선다), 편집기 단추 서식
+    (`.sle button { display: inline-flex }`)이 `[hidden]` 을 덮지 않게 그 단추의 `[hidden]` 규칙이
+    있다(E2E — 단추가 hidden 인데 보였다)."""
+    assert run_csv_hidden([None, {}, {"csvHidden": False}, {"csvHidden": True}]) == [
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert ".sle button.sle-sheet-csv[hidden] { display: none; }" in CSS
+    assert "sheetCsvButton.hidden = sheetCsvHidden(SHEET)" in JS
+    adopt = JS[JS.index("  function adoptSheet() {") : JS.index("  function sheetRows() {")]
+    assert "csvHidden: sheetCsvHidden(SHEET)," in adopt
+
+    begin = JS.index("  function openCsvMenu() {")
+    source = JS[begin : JS.index("  // Esc 의 창 차례", begin)].replace(
+        JS[JS.index("  function saveCsv(") : JS.index("  function downloadCsv(")], ""
+    )
+    closer = "function closeCsvMenu(back) { sheetCsvMenu.hidden = true }\n"
+    shown = [{"id": "EQ-01", "cells": ["A"]}]
+    columns = [{"name": "설비명", "type": "text"}]
+    allowed = {"columns": columns, "rows": shown, "csv": {"text": "a\n", "file": "space.csv"}}
+    hidden = {"columns": columns, "rows": shown, "csv": None, "csvHidden": True}
+    out = _node(
+        _CSV_GUARD_RUNNER % (closer + source + "\n" + _SHEET_CSV_STUB),
+        {"cases": [{"sheet": allowed, "shown": shown}, {"sheet": hidden, "shown": shown}]},
+    )["out"]
+    assert out[0] == {"opened": True, "saved": ["save:space.csv", "save:space_보이는줄.csv"]}
+    assert out[1] == {"opened": False, "saved": []}
+
+
+_SHEET_CSV_STUB = """
+const sheetCsvHidden = (sheet) => Boolean(sheet && sheet.csvHidden)
+const sheetCsv = () => 'csv'
+"""
 
 
 def _escape_sheet_source() -> str:

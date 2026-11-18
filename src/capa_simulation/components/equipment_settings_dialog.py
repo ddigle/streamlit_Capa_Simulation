@@ -38,6 +38,7 @@ from collections.abc import Callable
 
 import streamlit as st
 
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.cutoff_management import (
     forget_cutoff_draft,
     render_cutoff_management,
@@ -112,6 +113,7 @@ def render_equipment_settings_box(*, disabled: bool = False) -> None:
 
 
 @st.dialog(SETTINGS_DIALOG_TITLE, width="large", icon=SETTINGS_ICON, on_dismiss=_close_dialog)
+@grade_ui.in_fragment
 def _settings_dialog(
     repository: DuckDBEquipmentRepository,
     equipment_processes: list[str],
@@ -139,7 +141,13 @@ def render_equipment_dialog_host(
     opened = st.session_state.get(EQUIPMENT_DIALOG_KEY)
     if opened == SETTINGS_DIALOG:
         _settings_dialog(repository, equipment_processes, process_labels, locked_reason)
-    elif opened == IMPORT_DIALOG and import_dialog is not None:
+    elif (
+        opened == IMPORT_DIALOG
+        and import_dialog is not None
+        # 고치는 표가 하나도 없는 등급(열람)에는 「엑셀·CSV로 한꺼번에」 를 열지 않는다(2026-11-18
+        # 접속 등급 — 주소 · 기억된 열림 칸으로 와도).
+        and sso_identity.viewer_can("equipment.downtime")
+    ):
         import_dialog()
     else:
         st.html("<style></style>")

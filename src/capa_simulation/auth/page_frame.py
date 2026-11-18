@@ -17,7 +17,7 @@
    (`CAPA_ACCESS_CONTACT`)은 그 뒤에. 둘 다 비면 그리지 않는다(UI-TXT-08).
 7. 바닥 「참고 <사유 코드> · <시각> UTC」(+ 있으면 「 · 진단 <번호>」 — 오류 화면이 보관한
    진단의 번호, 한 번 눌러 통째로 고름) — 새 번호 체계 없이 지금 사유 코드 · 진단 번호를 쓴다.
-8. 접힌 「관리자용 진단」 — 머리 줄(설정 막힘의 「고칠 것 n개」) · 줄 · 이름표와 값의 표 · 그
+8. 접힌 「개발자용 진단」 — 머리 줄(설정 막힘의 「고칠 것 n개」) · 줄 · 이름표와 값의 표 · 그
    안에 다시 접힌 칸 하나(설정 막힘의 「환경변수 전체(n)」 — 표 · 값 표 · 줄). 접어도 누구나
    펼친다 — 토큰 · 비밀값 · 쿠키 값은 싣지 않고, 지금까지 실어 온 계산한 주소 · 등록 번호 ·
    인증서 지문과 이름 · 수만 싣는다(보드 D9 「이름 · 수」).
@@ -28,7 +28,7 @@
 글은 띄어쓰기에서만 줄을 바꿔 한국어 낱말을 가운데서 가르지 않고(`word-break: keep-all`), 띄어쓰기
 없는 긴 메일 · 주소만 아무 데서나 접는다(`overflow-wrap: anywhere`).
 사람이 읽는 시각(「○시 ○분」)은 한국 시각(KST — +09:00 고정, 일광 절약 시간 없음 — 감사 기록
-화면과 같은 기준)이고, 관리자가 사건과 맞추는 바닥 참고 줄은 UTC 다. 표준 라이브러리와 토큰
+화면과 같은 기준)이고, 개발자가 사건과 맞추는 바닥 참고 줄은 UTC 다. 표준 라이브러리와 토큰
 팔레트만 쓴다 —
 Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서 돈다). 넘겨받은 글은 모두 이 모듈이
 `html.escape` 한다 — 부르는 쪽은 평문을 넘긴다.
@@ -61,7 +61,7 @@ CHIP_ROLES: Final = {
     "maintenance": "ALERT_CHECK",
     "starting": "ALERT_ACTION",
 }
-DIAGNOSTIC_LABEL: Final = "관리자용 진단"
+DIAGNOSTIC_LABEL: Final = "개발자용 진단"
 CONTACT_LABEL: Final = "문의"
 REFERENCE_LABEL: Final = "참고"
 DIAGNOSTIC_ID_LABEL: Final = "진단"
@@ -314,7 +314,7 @@ def _lines_html(lines: Sequence[str]) -> str:
 
 
 def diagnostics_html(frame: Frame) -> str:
-    """접힌 「관리자용 진단」 — 머리 줄 → 줄 → 표 → 다시 접힌 칸(표 → 값 표 → 줄). 넷 다 없으면
+    """접힌 「개발자용 진단」 — 머리 줄 → 줄 → 표 → 다시 접힌 칸(표 → 값 표 → 줄). 넷 다 없으면
     빈 글(그리지 않는다)."""
     if not (
         frame.diagnostic_head

@@ -40,7 +40,7 @@ from typing import NamedTuple
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit.text import log_field
 from capa_simulation.auth import names
-from capa_simulation.auth.access import AccessList, AccessSource
+from capa_simulation.auth.access import AccessList, AccessSource, GradeSource
 from capa_simulation.auth.config import CERT_WARNING_DAYS, SsoConfig, SsoMode, load_config
 from capa_simulation.auth.tokens import SESSION_LEEWAY
 
@@ -67,7 +67,7 @@ SELF_REGISTER_FAILED_EVENT = "access_self_register_failed"
 # 저장소가 막힌 동안 한 사람의 되풀이가 입출력 잠금을 잡고 감사 줄을 쌓지 않게.
 REGISTER_COOLDOWN = 60
 # 앱 시작 실패(`components/boot_stop.py` — 부트스트랩이 데이터를 열지 못한 회차). C-DEP 에는 서버
-# 로그 창구가 없어 사람이 불러 준 참고 줄(「참고 db_locked · 18:27」)을 관리자가 맞출 자리로 고리에
+# 로그 창구가 없어 사람이 불러 준 참고 줄(「참고 db_locked · 18:27」)을 개발자가 맞출 자리로 고리에
 # 한 줄 남긴다. 같은 갈래가 이어지면 처음 한 번만이다 — 회차 · 「다시 시도」 · 다른 사람의 새 탭마다
 # 쌓이면 다른 사건을 밀어낸다. 부트스트랩이 한 번 성공하면 이어짐이 끊긴다(`note_boot_success`).
 BOOT_FAIL_EVENT = "boot_fail"
@@ -142,6 +142,8 @@ class _State:
     last_login_claims: tuple[str, ...] = ()
     access_source: AccessSource | None = None
     access_retry_failures: int = 0
+    # 등급 파일 한 벌(`grade_store`) — 못 읽은 동안 로그인할 때 다시 읽는 차례표도 여기 든다.
+    grade_source: GradeSource | None = None
     self_register_failures: int = 0
     login_starts: int = 0
     login_returns: int = 0
@@ -462,7 +464,7 @@ def current_access(cfg: SsoConfig) -> AccessList:
     """지금 접속 명단 한 벌 — 판정 자리가 모두 이것을 본다(네트워크 없음).
 
     S3 명단이 꺼져 있으면 설정의 환경변수 몫 그대로고, 켜져 있으면 마지막으로 잘 읽은 합성 명단이다.
-    아직 못 읽었으면 환경변수 관리자뿐이다(설정이 S3 가 켜진 동안 사용자 목록을 쓰지 않는다).
+    아직 못 읽었으면 환경변수 개발자뿐이다(설정이 S3 가 켜진 동안 사용자 목록을 쓰지 않는다).
     """
     with _LOCK:
         source = _STATE.access_source
@@ -494,6 +496,33 @@ def claim_access_retry(moment: int, interval: int) -> bool:
         if source.attempted_at is not None and moment - source.attempted_at < interval:
             return False
         _STATE.access_source = replace(source, attempted_at=moment)
+        return True
+
+
+def grade_source() -> GradeSource | None:
+    """등급 파일의 지금 내력. S3 명단이 꺼졌거나 기동 뒤 아직 읽으러 가지 않았으면 `None`."""
+    with _LOCK:
+        return _STATE.grade_source
+
+
+def publish_grade_source(source: GradeSource) -> None:
+    """등급 파일 한 벌을 통째로 바꾼다. 이 줄 뒤로 모든 등급 판정이 새 한 벌을 본다."""
+    with _LOCK:
+        _STATE.grade_source = source
+
+
+def claim_grade_retry(moment: int, interval: int) -> bool:
+    """등급 파일을 아직 못 읽었고 지난 시도에서 `interval` 초가 지났으면 시도 시각을 적고 `True`.
+
+    로그인할 때마다 다시 읽는 차례표다(1분에 한 번까지) — 한 번에 한 자리만 통과한다.
+    """
+    with _LOCK:
+        source = _STATE.grade_source or GradeSource()
+        if source.document is not None:
+            return False
+        if source.attempted_at is not None and moment - source.attempted_at < interval:
+            return False
+        _STATE.grade_source = replace(source, attempted_at=moment)
         return True
 
 
@@ -652,8 +681,9 @@ def denied_total() -> int:
 
 def reset() -> None:
     """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 · 로그인 누계 · state · 진단 · 사건 ·
-    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 앱 시작 실패 이어짐 · 명단 한 벌을 비우고 stdout
-    처리기를 뗀다."""
+    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 앱 시작 실패 이어짐 · 명단 · 등급 파일 한 벌을
+    비우고
+    stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

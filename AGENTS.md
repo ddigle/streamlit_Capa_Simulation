@@ -70,7 +70,7 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
 자동 생성한다. 운영 서버(`SsoConfig.operational` — Admin Area 잠금과 같은 판정)에서는 빈 저장소에도
-만들지 않아 「공식버전 없음」 으로 서고, 관리자가 데이터를 올리면 공식이 선다(2026-11-14 물음 보드
+만들지 않아 「공식버전 없음」 으로 서고, 개발자가 데이터를 올리면 공식이 선다(2026-11-14 물음 보드
 seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
 기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
 `data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 Excel 표 붙여넣기로 초기화할 수 있다.
@@ -143,15 +143,20 @@ seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하
   본문은 `ctx.guard` 가 감싼다. 끄는 스위치는 둘이다 — `module.json` 의 `"enabled": false` 와 실행 환경변수 `CAPA_MODULES_DISABLED`
   (`*` 또는 id 들). 사이드바 상자 「모듈」 은 켜진 모듈이 있을 때만 서고 자리는 Dynamic 다음 · Support 앞이다.
   `CAPA_MODULES_ROOT=off` 는 사외와 같은 화면이다(상자 · Admin 펼침 · 색인 캡션이 모두 없다) — 화면 확인 · 가이드 자식 앱이 쓴다.
-- **역할 이름 둘** — **담당자**(모듈을 맡아 그 에이전트와 대화하는 동료)와 **앱 관리자**(배포를 적용하고 승인하는 한 사람 — 이
-  저장소의 사용자). 동료 세션에서 「사용자」 는 담당자 자신이라 지침서는 「앱 관리자의 승인」 이라고만 쓴다. 그 승인은 동료 에이전트의
-  대화 안에서 받을 수 없고, 담당자가 받아 와 커밋 본문과 PR 본문에 `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다 — 앱 관리자가 그 PR 을
+- **역할 이름 둘** — **담당자**(모듈을 맡아 그 에이전트와 대화하는 동료)와 **앱 관리자(개발자)**(배포를 적용하고 승인하는 한 사람 — 이
+  저장소의 사용자). 동료 세션에서 「사용자」 는 담당자 자신이라 지침서는 「앱 관리자(개발자)의 승인」 이라고만 쓴다. 그 승인은 동료 에이전트의
+  대화 안에서 받을 수 없고, 담당자가 받아 와 커밋 본문과 PR 본문에 `승인: 앱 관리자(개발자) <YYYY-MM-DD>` 를 적는다 — 앱 관리자(개발자)가 그 PR 을
   합치는 것으로 승인이 끝난다.
+  두 이름은 역할이지 접속 등급이 아니다 — 앱 안에서는 둘 다 명단 등급을 따르고, 앱 관리자(개발자)는 등급으로 개발자다(새 등급 「관리자」 와
+  다른 사람). 모듈 화면은 **모두 열람부터** 열고 모듈 안의 저장 · 올리기 · 공용 BigDataQuery 조회도 등급으로 막지 않는다 — `module.json` 에
+  등급 칸을 두지 않는다(앞 ZIP 으로 되돌릴 때 「모르는 칸」 으로 실패하지 않게). 그 대신 올리기 · 조회는 `module_helpers` 가 작업 기록 한
+  줄(`data_module_upload` · `data_module_query` — 대상 모듈 id · 결과 낱말 · 크기 · 행 수만)을 남긴다(2026-11-17 두 차례 답 — 5장 41).
+  `module_api` 는 등급을 내지 않는다(다음 판 후보 `can_write()`). 모듈 오류 카드의 「담당자용 진단」 은 누구나 펼친다.
 - **담당자의 모듈 변경은 PR 로만 사내 main 에 들어간다**(2026-11-02 사용자 — 사내 GitHub 에서 PR · 가지 보호를 쓸 수 있다, 사양 10장 3).
-  담당자 에이전트가 자기 가지 `module/<id>/<주제>` 에서 커밋하고 담당자가 푸시해 PR 을 열면, 앱 관리자가 PR 머리를 사본 트리에서 점검한 뒤
+  담당자 에이전트가 자기 가지 `module/<id>/<주제>` 에서 커밋하고 담당자가 푸시해 PR 을 열면, 앱 관리자(개발자)가 PR 머리를 사본 트리에서 점검한 뒤
   (런북 4-6) 「Squash and merge」 로 합친다. 사내 main 보호 규칙은 강제 푸시 · 지우기 막기와 PR 필수(배포 `deploy:` · `review:` 푸시를
-  위해 앱 관리자 계정은 우회 — 우회를 둘 수 없으면 PR 필수는 걸지 않는다)다(`docs/dual_env_workflow.md` 1-2). 직접 커밋 길은 닫았다.
-- **CI/CD 단추는 앱 관리자만, 런북 4-5 모듈 점검을 본 뒤에 누른다**(2026-11-01 사용자 「권장대로」 — 사양 10장 4). C-DEP CD 는 단추를
+  위해 앱 관리자(개발자) 계정은 우회 — 우회를 둘 수 없으면 PR 필수는 걸지 않는다)다(`docs/dual_env_workflow.md` 1-2). 직접 커밋 길은 닫았다.
+- **CI/CD 단추는 앱 관리자(개발자)만, 런북 4-5 모듈 점검을 본 뒤에 누른다**(2026-11-01 사용자 「권장대로」 — 사양 10장 4). C-DEP CD 는 단추를
   누른 때의 사내 main 을 그대로 빌드하고 프로젝트 사람이면 누구나 누를 수 있다. 모듈은 PR 로만 들어와 4-6 점검을 한 번 거쳤고, 4-5 는
   합친 모듈을 새 코어와 함께 다시 본다 — `docs/TODO.md` 3장 「운영·배포」. 다음 배포 전에 합친 모듈을 사용자 앱 · 배포 서버에 올리는
   길은 런북 4-7 이다(받기 · `origin/main` 사본 점검 · 사용자가 앱을 껐다 띄움 · 단추 — 2026-11-03). 같은 날 사용자 결정 — 다시 띄우는
@@ -170,9 +175,9 @@ seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하
 - **메인 세션이 「권장대로」 로 정한 기본값 셋(사용자가 바꿀 수 있다)** — ① 자리는 `modules/<id>/`, 사이드바 별도 상자 「모듈」
   하나(켜진 모듈이 없으면 숨김) ② 새 패키지는 모듈이 직접 넣지 않고 리뷰 「사외 요청」 으로 받아 사외가 코어 의존성(`pyproject.toml` →
   `uv.lock` → `requirements.txt`)에 넣어 배포한다(이름은 `config/module_packages.json` 에도 — 12장) ③ 새 모듈 등록과 `modules/<id>/` 밖
-  변경은 앱 관리자 승인, 자기 폴더 안은 담당자가 자기 가지에 커밋하고 PR 로 올려 앱 관리자가 점검 뒤 합친다(2026-11-02 — 직접 커밋 길은
-  닫았다). 밖 변경은 승인 뒤에도 모듈 커밋이 아니라 리뷰 「사외 요청」 으로 사외가 한다 — 코어는 사외가 정본이고 앱 관리자는 폴더 밖을 바꾼
-  PR 을 합치지 않으며 런북 1-7 도 그런 모듈 커밋을 받지 않는다. 앱 관리자는 배포를 적용할 때마다 모듈 점검 결과를 본다.
+  변경은 앱 관리자(개발자) 승인, 자기 폴더 안은 담당자가 자기 가지에 커밋하고 PR 로 올려 앱 관리자(개발자)가 점검 뒤 합친다(2026-11-02 — 직접 커밋 길은
+  닫았다). 밖 변경은 승인 뒤에도 모듈 커밋이 아니라 리뷰 「사외 요청」 으로 사외가 한다 — 코어는 사외가 정본이고 앱 관리자(개발자)는 폴더 밖을 바꾼
+  PR 을 합치지 않으며 런북 1-7 도 그런 모듈 커밋을 받지 않는다. 앱 관리자(개발자)는 배포를 적용할 때마다 모듈 점검 결과를 본다.
 - **v1 은 운영 모듈 데이터를 백업하지 않는다** — 잃어도 되는 것만 둔다(런북 1-3 에 선택 줄을 더하지 않는다). 위 기본값이 아니라
   2026-11-01 사용자 「권장대로」 로 정한 것이다(사양 10장 5 — `docs/TODO.md` 3장 「모듈 사양 10장」). 코어는 모듈 데이터를 대신
   올리고 받지도 않는다(2026-11-07 통합 검수 C4 그대로) — 재배포 뒤에도 남겨야 하는 파일은 모듈이 창구 도우미 `s3_upload` ·
@@ -339,6 +344,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `st.App` 으로 감싸 통합인증 경로 여섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다. 통합인증 기동 바로 뒤
   BigDataQuery 자동 로그인 기동(`io/bdq_login.start_in_app` — 키를 쥐고 환경에서 빼고 저장 객체를 한 번 읽는다, 실패해도 앱은 뜬다)을 부른다.
+  이 파일의 import · 기동은 Streamlit 런타임 **전**이라 `st.components.v2.component(...)` 를 부르는 모듈과 그것을 머리에서 읽는 모듈
+  (`components/` 화면 조각 · `grade_ui` · `sso_identity`)을 부르지 않는다 — 부르면 등록이 사라져 모든 사람의 첫 화면이 「Component … is not
+  registered」 로 멈춘다. 접속 등급 판정기도 여기서 꽂지 않고 `app.py` 가 매 회차 꽂는다. `tests/test_server_pre_runtime_imports.py` 가 이
+  파일을 그대로 import 해 지킨다(import 줄을 시험에 옮겨 적지 않는다).
 - `src/capa_simulation/audit/` — 접속 · 작업 감사 기록(Admin Area 「접속 · 작업 기록」). 두 DB 밖에 쌓는다 — 메모리 큐 →
   로컬 스풀 → 버킷 `audit/` 접두사의 새 객체(5장 40). 통합인증이 켜진 C-DEP 기동에서만 켜지고(`recorder.enabled()`) 꺼진 곳은
   호출 0 이다. 사건 이름 · 갈래 · 한글 표시명 · 허용 상세 키는 `audit/events.py`, 글 다듬기(줄바꿈 · 제어 문자 · 길이 · 토큰 꼴
@@ -355,16 +364,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   까닭)은 `audit/shipper.py` 다(동기화 일꾼이 부른다, 시험은 `tests/test_audit_shipper.py` — `aws` 없이 인자 배열을 가짜 S3
   에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 사내 PC 운영 도구(`sync_object_storage.py` 의 rollback · init ·
   fetch-copy · prune)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
-  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 관리자 행위(명단 추가 · 삭제
+  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 개발자 행위(명단 추가 · 삭제
   — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown`(시도한 판), 쓰지 못한 실패 `fail` 은 판 전 = 후 — `access_store._audit_revisions`, 기록 보기 상세는
   「판 n(그대로)」 — `audit_log_view.detail_text` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
   이름과 판만 · 자동 갱신 수동 실행)는 그 함수 · 콜백이 `recorder.record` 를 부른다. 데이터 작업은 두 저장소의 쓰기 함수에 단
   표지 `@audited`(`audit/work.py` — 돌아온 뒤(COMMIT 뒤) 한 줄, 예외면 `out=fail` 한 줄을 넣고 예외는 그대로, 꺼진 프로세스는
   원래 함수만, 표지 단 함수 안의 표지 단 함수는 바깥 한 줄만)이고, 대상 id · 이름표 · 상세(값 원문 · 메모 · VOC 본문 없음,
   손입력 이름은 `claimed`)는 `persistence/work_audit.py` 가 짓는다(시험 `tests/test_audit_work_events.py` 가 설계서 2-3 표의
-  함수 → 사건을 맞댄다). 켜는 곳은 `audit/boot.py` 하나다 —
-  `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
-  수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 사용자)를 꽂는다. 설정 읽기와 S3 명단의 기동 읽기는 `start_sso()`
+  함수 → 사건을 맞댄다 — 설비 저장은 낸 공식 발행 번호 · 함께 넣은 시나리오 수, 보관은 같이 비운 HOME 지정 수도 싣는다). 켜는 곳은 `audit/boot.py` 하나다 —
+  `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(「개발자 구성」 — 개발자
+  수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(`grade_store.grade_of` — 개발자 · 관리자 · 실무자 · 열람)를 꽂는다. 설정 읽기와 S3 명단의 기동 읽기는 `start_sso()`
   안이라 기록기보다 먼저 돈다 — 같은 자리에서 그 사건을 따라잡는다. 만료가 30일 안인 서명 인증서마다 `sys_cert_expiring` 한 줄
   (`_note_expiring_certs` — 서버 로그 `cert_expiring` 과 한 판정 `runtime.expiring_certs`, 기동 때만), 그 읽기가 실패한 서버면
   `sys_access_read_fail` 한 줄(`_note_list_read_at_start`).
@@ -378,7 +387,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     맞는 줄이 없는 날은 빈칸 — 기록기 멈춤을 뜻하지 않는다), 기록은 새것 먼저 한 줄씩(상세 키는 `events.DET_LABELS` 한글). 설명
     글은 Guide · 풍선이고 빈 결과는 평문 한 줄이다. 닫힌 탭이면 부르지 않는다(카드도 서지 않는다). 감사 알림 `AD-12`(보관
     안 됨) · `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 켜진 서버의 매 회차 갈래
-    없이 두 자리를 쓰고 관리자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
+    없이 두 자리를 쓰고 개발자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
     단위 사건 표(최근 사건 · 명단 밖 로그인)를 그리지 않고 그 둘은 누계 줄과 리뷰용 「복사」 글로만 남긴다(설계 AU19 —
     로그인 전 실패 표 · 앱 시작 실패 줄은 그린다, 2026-11-14 보드 decided-login 5 · boot-record).
   - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
@@ -390,9 +399,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새
   `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
   `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` · S3 파일 몫을 얹는 `compose_access` — 표준 라이브러리만)은
-  `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes`(넣기 · 빼기 · 등급) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
+  `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 개발자만 쓰는 `save_changes`(넣기 · 빼기 · 개발자 등급 — 저장 값 `user` · `admin` 그대로) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 접속 등급의 판정 한 곳(등급 넷 `VIEWER` · `EDITOR` · `MANAGER` · `DEVELOPER` · 화면 글 `GRADE_LABELS` · 동작 표 `ACTIONS` · 감사 사건 → 바닥 동작 `EVENT_FLOORS`(표에 없는 사건은 `admin.area` 로 닫힘) · 거절 예외 `GradeDenied` · `SignInEnded`(`Exception` 직속 — `BOOTSTRAP_ERRORS` 밖, `REFUSALS`) · `require` · `require_all` · `gated` · 판정기 꽂기 `install_caller_source` — 표준 라이브러리 + `audit.recorder` 만이라 persistence 도 부른다, 5장 41)은 `auth/grades.py`, 등급 파일(명단 곁 `grades.json` + 표지 `grades_seen.json` — 꼴 · 판정 `grade_of` · 기동 읽기 · 로그인 때 다시 읽기 `retry_unread` · 쓰는 차례 `change_grades` · `add_people` · `remove_people`, 5장 41)은 `auth/grade_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
   갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
-  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
+  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「개발자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py`, 운영 서버의 공지 물음 경로(`GET /capa/notice` — 공개 목록 밖이라 켜짐이면
   문지기가 쿠키를 보고 신원이 없으면 탐색으로 보지 않고 늘 401(앞단이 Sec-Fetch-* 를 떼도 로그인 시작을 내지 않음), 꺼짐은 처리기가 그대로 냄 ·
   켜짐인데 문지기 없음 · 막힘은 503, 메모리 읽기만 · `no-store` JSON — `notice_board.payload` 그대로)는
@@ -404,14 +413,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
     없이 뜬 서버는 멈춤 화면 + `st.stop()`). 문지기 없이 뜬 서버는 경고 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 문의 캡션 · 참고 줄 ·
-    접힌 「관리자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL` — 실행 명령 · 설정 문제 이름 · 안내 문서, 복사 부품은 함수 안에서 import)이고
-    단추가 없다. 접힌 진단은 관리자 몫(`admin_view.admin_notes_visible` — 앱 시작 실패 판과 한 판정, `admin_view` 는 순환이라 함수 안에서 import)에만
+    접힌 「개발자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL` — 실행 명령 · 설정 문제 이름 · 안내 문서, 복사 부품은 함수 안에서 import)이고
+    단추가 없다. 접힌 진단은 개발자 몫(`admin_view.developer_notes_visible` — 앱 시작 실패 판과 한 판정, `admin_view` 는 순환이라 함수 안에서 import)에만
     서고 판정이 실패하면 없다 — 운영 서버의 일반 사용자 · 막힌 운영 서버에는 참고 줄 사유 낱말 `sso_no_gate` 만이다. 앱 정보 카드의 로그아웃 링크는 지금 화면을 `?next=` 로 싣는다(`logout_url` — `/` 면 없음). 로그인 끝남 · 계정 바뀜 멈춤은 앱 안 멈춤 판(`components/stop_panel.py`)이다 — 경고
     한 줄 · 같은 탭 주 단추 꼴 링크(`primary_link` — `st.link_button` 은 새 탭이고 `st.rerun` 은 앞 계정의 세션을 잇는다. 역할은
     링크 그대로 — `role="button"` 은 Space 로 열리지 않는다) · 「문의 <메일> · <창구 글>」 캡션(`CAPA_ACCESS_CONTACT` 는 로그인 ·
-    접속 멈춤만 넘긴다 — 둘 다 비면 없음) · 「참고 <사유 낱말> · <UTC 분>」(만료 `sso_expired` · 로그아웃 `sso_revoked` · 쿠키 없음 · 위조 `sso_missing` · 명단 밖 `not_on_list` · 명단 못 읽음 `list_unread` — 뒤 둘은 거절 화면과 같은 낱말 · 계정 바뀜 `sso_account_changed`). 접힌 진단은 없다 — 로그인이 끝난 회차에는 검증된 신원이 없어 관리자 몫이 서지 않는다. 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
+    접속 멈춤만 넘긴다 — 둘 다 비면 없음) · 「참고 <사유 낱말> · <UTC 분>」(만료 `sso_expired` · 로그아웃 `sso_revoked` · 쿠키 없음 · 위조 `sso_missing` · 명단 밖 `not_on_list` · 명단 못 읽음 `list_unread` — 뒤 둘은 거절 화면과 같은 낱말 · 계정 바뀜 `sso_account_changed`). 접힌 진단은 없다 — 로그인이 끝난 회차에는 검증된 신원이 없어 개발자 몫이 서지 않는다. 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
     `cloud_off` + 「다시 로그인」, 계정 바뀜은 새 계정 이름 + 「새로고침」(풍선 `REFRESH_TIP`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
-    벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 관리자 회차 판정 `viewer_is_admin`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, 환경변수 관리자 ∪ 명단 관리자 등급, `AD-10`) · Admin Area 잠금 판정 `admin_area_locked`(운영 서버 `SsoConfig.operational` 이고 관리자가 아님 — `app.py` 가 Support 상자의 Admin Area 링크를 빼고 `app_pages/admin_area.py` 가 「관리자만 여는 화면입니다」 + 「HOME 으로」 뒤 멈춘다, 개발 · WebIDE · 사내 PC 는 연다)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
+    벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 접속 등급의 신원 → 등급도 여기다 — 쓰는 순간의 벽이 보는 실제 등급 `real_caller`(쿠키만 — 운영 아님 · `as_system` = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자, 실행 문맥 없는 낯선 스레드 = 열람, 운영 + 켜짐 = 신원 등급 · 신원 없음 = 로그인 끝남)와 그리기 판정 `screen_grade` · `viewer_can(action)`(실제 개발자이고 운영 + 켜짐일 때만 「이 등급으로 보기」 `GRADE_PREVIEW_KEY` 를 따른다), 두 번째 벽 `developer_wall_locked`, 카드 셋째 줄 등급 표지(열람 · 실무자만 — 미리 보기 중 「<등급> 화면으로 보는 중」 + 「끝내기」 `end_preview`) — 5장 41 · 9장 「접속 등급」. 개발자 회차 판정 `viewer_is_developer`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, 환경변수 개발자 ∪ 명단 개발자 등급, `AD-10`) · Admin Area 잠금 판정 `admin_area_locked`(운영 서버 `SsoConfig.operational` 이고 개발자가 아님 — `app.py` 가 Support 상자의 Admin Area 링크를 빼고 `app_pages/admin_area.py` 가 「개발자만 여는 화면입니다」 + 「HOME 으로」 뒤 멈춘다, 개발 · WebIDE · 사내 PC 는 연다)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
     최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
@@ -452,9 +461,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
-  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `관리자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL`, 등급 칸의 「관리자」 와 겹치지 않게(E2E 보드 s-C-02) · 등급 `일반` · `관리자` · `관리자(환경변수)`) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다) · 관리자로 · 일반으로(등급 — 환경변수 관리자 · 자기 자신은 내리지 못함) · 지우기 · 다시 읽기를 둔다. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 관리자로 · 일반으로 · 지우기, 끝에 판 · 명단 n · 관리자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 「일반」 과 이름을 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 관리자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
+  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `개발자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` · 등급 열람 · 실무자 · 관리자 · 개발자 · `개발자(환경변수)` — 등급 파일까지 합친 값) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다, 등급 칸 하나 — 처음 값 실무자, 2026-11-17 답 「새로 드는 사람」 가) · 「사람 고르기」(「계정 · 이름 · 부서」) → 「등급 바꾸기」 팝오버 하나(열람 · 실무자 · 관리자 · 개발자 — 여럿을 한 번에, 나 자신 · 환경변수 개발자가 섞이면 개발자 아래 셋 잠금 + 까닭 풍선) · 지우기 · 다시 읽기(명단 + 등급 파일)를 두고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 「등급 바꾸기」 · 지우기, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 이름과 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
+  - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차,
+    같은 함수면 그대로 — `capa_server.py` 는 꽂지 않는다) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
+    `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
+    `st.dialog` 함수 — 받고 `st.rerun(scope="app")`) · 주소 · 알림으로 연 등급 밖 화면 · 탭 멈춤 `stop_unless`(경고 한 줄 + 「HOME 으로」 +
+    `st.stop()`, 탭은 `tab_key` · `first_label` 짝으로 한 번 뒤 첫 탭) · 표 도구 막대 내려받기 단추 · 그림 막대 감춤 `toolbar_scope`(칸 key 접두
+    `HIDDEN_TOOLS_PREFIX` + `app.py` 가 보내는 `TOOLBAR_STYLE` 한 벌 — 「Download as CSV」 단추만, 찾기 · 크게 보기는 남음) · `chart_config`(그림 저장 · 표로 보기 끄기). 화면 본문의 거절은
+    `page_failure_card.run_core_page` 가 받는다(다시 그리기 한 번 — 누름 없이 같은 거절이 또 오면 알림을 낸 채 멈춤). 시험
+    `tests/test_grade_ui_core.py` · 도우미 `tests/grade_support.py`.
+  - `components/edit_file_tail.py` — 저장하지 않은 기준 정보 · 생산 계획 고침이 있는 동안(`scenario_activation.has_unsaved_scenario_changes()`)
+    계산 화면이 그리는 내려받기 파일 이름 끝에 붙이는 꼬리 `_unsaved`(공정 Capa 상세 UPEH 가정 꼬리와 같은 꼴 — 2026-11-17 정한 것). 모든 등급
+    같다. 꼬리는 계산 화면이 파일 이름을 넘기는 자리(`edited_file_name`)에서만 붙인다 — 공용 표 부품(`table_toolbar` · `shortening_board` ·
+    `hierarchical_monthly_table` · `exclusion_table` · `monthly_table_workbook`)은 설비 화면도 쓰므로 그 안에서 짓는 이름에는 붙지 않는다. Static
+    Capa 는 앱이 그리는 내려받기가 없다. Streamlit 표 도구 막대가 짓는 파일 이름은 바꿀 수 없다.
+  - `components/grade_hooks.py` — 계산 · 시나리오 · HOME 부품이 접속 등급 창구(`grade_ui.on_press` · `in_fragment` · `sso_identity.viewer_can` ·
+    `admin_view.diagnostic_message`)를 부를 때 쓰는 늦게 읽는 얇은 대리. `sso_identity` 가 모듈 머리에서 `app_header` 를 읽고 그 길이 입장 화면 →
+    HOME 그리기 → `home_preference` · `home_main_cases` · `past_data_management` 까지 닿아, 그 부품이 머리에서 창구 이름을 꺼내면 덜 읽힌
+    모듈로 앱이 서지 않는다. 이 모듈은 머리에서 화면 모듈을 읽지 않고 부르는 순간 창구를 읽어 넘긴다 — 동작 · 데코레이터 이름이 창구와 같아
+    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
-    선다. 다만 운영 서버의 Admin Area 는 관리자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
+    선다. 다만 운영 서버의 Admin Area 는 개발자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
     이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「명단 밖 로그인」(계정마다 한 줄 · 횟수,
@@ -462,11 +489,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 로그인 실패 줄의 사유 코드 칸 끝은 `진단 <앞 8자>`(`_event_code` — 실패 화면 참고 줄의 진단 번호와 맞추는 열쇠). 통합인증이 켜진 서버는 감사 기록이 켜져 펼침이 최근 사건 · 명단 밖 표를 그리지 않고(「접속 · 작업 기록」 탭이 사람 단위로 보인다 — 그 둘의 줄은 「복사」 글 `status_text` 에만) 「로그인 전 실패」 표는 그대로 그린다 — 감사 줄에는 그 실패가 한 시간 건수뿐이라 겹치지 않는다(보드 decided-login 5). 사실 줄은 「라벨 · 값」 꼴이다 — 「로그인 유지 · 마지막 사용 뒤 n시간 · 최대 n시간」,
     켜짐이면 그 아래 「로그인 시작 · 돌아옴」 누계(`runtime.login_flow_counts` — 시작은 브라우저 문서 탐색을 IdP 로 보낸 수(`web.browser_navigation`), 돌아옴은 그 로그인이 검증한 상태 쿠키와 처음 온 콜백(실패 · 거절 · IdP 오류 포함, 꼴이 틀린 POST · 다시 보냄은 빼고), 돌아옴이 시작보다 훨씬
     적으면 ADFS 화면에서 멈춘 것 — 풍선 `LOGIN_FLOW_HELP`)와 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
-    재시작하면 0)를 한 줄씩 보인다(둘 다 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 일반 · 읽지 못함 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `등급을 일반으로 읽음 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
+    재시작하면 0)를 한 줄씩 보인다(둘 다 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 개발자 · 관리자 · 실무자 · 열람 · 읽지 못함, S3 명단을 쓰지 않거나 아직 켜지지 않은 서버는 개발자 · 그 밖 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `모르는 등급 값 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
     `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 감사 기록이 켜진 서버는 최근 사건 표 대신 앱 시작 실패 줄(`boot_failure_line` — 「앱 시작 실패 · <갈래> · <오류 종류> · <처음 시각>」, 고리 전체(50줄)의 `boot_fail` 마다 한 줄 · 시각은 판의 참고 줄과 같은 UTC 분)을 늘 싣는다 — 감사 대응표 밖이라 「접속 · 작업 기록」 탭에 없다(보드 boot-record). 감사가 꺼진 서버는 최근 사건 표가 같은 줄을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
   - `scripts/s3_mock_store.py` — 개발 · 시험용 가짜 S3(서명을 받은 요청 그대로 다시 지어 검증 · 메모리만 · 루프백만 · env 파일이 작업 트리 안이면 거절). S3 명단 시험과 `docs/sso_setup.md` 8장이 쓴다.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
-    `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다. `--app-url` 이 루프백이 아니면 env 파일에 `--loginid` 를 관리자 목록으로 적는다(접속 명단이 켜지므로).
+    `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다. `--app-url` 이 루프백이 아니면 env 파일에 `--loginid` 를 개발자 목록으로 적는다(접속 명단이 켜지므로).
 - `app_pages/home.py` — HOME 대시보드(공정 필터 「선택 공정 적용」 은 좁힌 공정을 `shared_process.publish_from_home` 으로 다른 화면의 공용 공정 칸에 복사만 한다 — 다른 화면 값은 B/N 판정 · 리비전 저장값 `PROCESS_SELECTION_KEY` 에 들지 않는다, 2026-11-08 답 P1 · P2-1. 팝업 단추 글자는 표시명 `unique_format_func` 라 겹친 표시명도 갈린다). 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정(Preference 공용 프로필
   편집기·`Past Data` — `past_data_management.py`)은 사이드바 「HOME 설정」 상자가 여는 큰 팝업이다(`components/home_settings.py`,
   2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 팝업 안은 쓰는 묶음 다섯 탭 `비교 · 주요 Case` · `판정 기준` ·
@@ -924,7 +951,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
     `배치 편집`(층 `space_layout_edit_mode`·잠기거나 설비 저장본이 없는 층이면 꺼진 짝 `space_layout_edit_mode_locked` — 풍선이
     까닭 / FAB `space_fab_edit_mode`, 줄마다 위젯 하나 · 가로 줄은 자리 줄 하나 — 2026-11-12 Space 보드 답 1-4 「캔버스 편집버튼은
-    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
+    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기`(세션 옮기기라 모든 등급 — 가정 여부는 `equipment_session.is_assumption` 으로 본다, 등급으로 꺼지는 `edit_mode.fab` 으로 가르지 않는다) · 잠금 줄(`_render_edit_lock_line` —
     표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글 · `반입 일정` 토글
     (`space_arrival_dates_v1`, 층 배치 편집 중 · FAB 이면 꺼진 짝 `space_arrival_dates_locked_v1` — 2026-11-12 Space 보드 답
     1-4 · 1-6 · A5, 켠 회차에만 뷰어 data `arrivalDates`)이다 — **상자에는 조작만 둔다**
@@ -1123,7 +1150,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자
+  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
   회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
   `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
   맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
@@ -1141,11 +1168,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 펼침의 표 끝 「DuckDB 메모리 한도」 줄과 사실 줄 끝 메모리 값
     줄(RSS · 세션 · `cache_data` · DB 마다 DuckDB 회차 끝 표본 — `components/memory_diagnostic.py`)은 이 프로세스의 지금 값이다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
-    캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 · 실패한 단계 `AD-01` — 토큰 줄 실패는 `AD-10` 몫, C-DEP 에서 `app.py` 가 관리자 몫(`admin_view.admin_notes_visible`)의 모든 화면 회차에 내고 이 펼침은 따로 내지 않는다(2026-11-14 보드 카드 p2-sync),
-    운영인데 꺼짐 `AD-02` — 잠금 판정 앞에서 내 잠긴 회차에도 닿는다, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08`(할 일이 두 갈래 — 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 · 파일을 먼저 고침, `access_store.needs_admin_fix` — 보드 p0-unread) · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` · 새 스스로 등록(최근 30일 「새 등록 n명」) `AD-19` — 셋 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area 의 「접속 명단」 펼침까지(대상 `access_list` — 설계 규칙 UI-NAV-01), 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` · 자동 로그인 멈춤 `AD-23`(`AD-17` · `AD-18` 은 걷은 번호) — C-DEP 에서 `app.py` 가 시작 점검 알림 `AD-01` 뒤에 관리자의 모든 화면 회차에 낸다, 코어 화면의 처리 못 한 오류 `AD-22` — 같은 서버에서 `app.py` 가 토큰 알림 뒤에 내고 「그 화면으로」 는 그 화면, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 관리자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 글 없는 해소) 「그 화면으로」 는 Admin 「통합인증 점검」 펼침까지 — 대상 `sso_status`)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
+    캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 · 실패한 단계 `AD-01` — 토큰 줄 실패는 `AD-10` 몫, C-DEP 에서 `app.py` 가 개발자 몫(`admin_view.developer_notes_visible`)의 모든 화면 회차에 내고 이 펼침은 따로 내지 않는다(2026-11-14 보드 카드 p2-sync),
+    운영인데 꺼짐 `AD-02` — 잠금 판정 앞에서 내 잠긴 회차에도 닿는다, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08`(할 일이 두 갈래 — 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 · 파일을 먼저 고침, `access_store.needs_admin_fix` — 보드 p0-unread) · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` · 새 스스로 등록(최근 30일 「새 등록 n명」) `AD-19` — 셋 다 그 명단을 쓰는 서버에서 앱 정보 카드가 개발자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area 의 「접속 명단」 펼침까지(대상 `access_list` — 설계 규칙 UI-NAV-01), 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` · 자동 로그인 멈춤 `AD-23`(`AD-17` · `AD-18` 은 걷은 번호) — C-DEP 에서 `app.py` 가 시작 점검 알림 `AD-01` 뒤에 개발자의 모든 화면 회차에 낸다, 코어 화면의 처리 못 한 오류 `AD-22` — 같은 서버에서 `app.py` 가 토큰 알림 뒤에 내고 「그 화면으로」 는 그 화면, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 개발자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 글 없는 해소) 「그 화면으로」 는 Admin 「통합인증 점검」 펼침까지 — 대상 `sso_status`)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
-    다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
-    「서버 시작 점검」 바로 뒤에는 `managed` + 키(`CAPA_BDQ_SECRET_KEY`) 서버의 관리자 회차에만 「BDQ 자동 로그인」 펼침
+    다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 개발자 회차에만 선다.
+    「서버 시작 점검」 바로 뒤에는 `managed` + 키(`CAPA_BDQ_SECRET_KEY`) 서버의 개발자 회차에만 「BDQ 자동 로그인」 펼침
     (`components/bdq_login_admin.py` — 계정 넣기 · 지우기 · 상태 줄)이 선다. 예비 「토큰 넣기」 는 「서버 시작 점검」 펼침 안 그대로다.
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
     같은 꼴, 설계 규칙 UI-LAY-13). 세 탭은 칸 `TABS_BOX_KEY` 안이고, 그 칸을 DB 를 열기 전에 세워 맨 앞에 `render_module_status(
@@ -1210,7 +1237,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오가 하나도 없으면(보관본도 없음 — 빈 디스크로 뜬 운영 서버) 글을 갈라 「DB 등록」 을 가리키고 「그 화면으로」 가 그 탭을
     연다(내용 값 `empty` — 2026-11-14 물음 보드 seed (nopub), 계산 화면의 `no_revision_message` 와 같은 판정).
     표지는 불러온 리비전 없이 멈춘 계산 화면과 한 벌(`page_bootstrap.missing_official_note`)이라 어느 화면이 내도 Alarm 줄 하나 ·
-    알림창 한 번이고, 해소는 공식버전을 확인한 회차의 알림 칸 data 가 낸다(2026-11-14 물음 보드 decided 5).
+    알림창 한 번이고, 해소는 공식버전을 확인한 회차의 알림 칸 data 가 낸다(2026-11-14 물음 보드 decided 5). 글의 할 일 절은 화면 등급마다
+    그 등급에 있는 단추만 가리킨다 — 「공식으로 지정…」 은 관리자부터, DB 등록 · 「되돌리기」 는 실무자부터, 열람은 「공식 지정은 관리자부터」 뿐이고
+    「그 화면으로」 가 DB 등록 탭이 아니라 Capa 시나리오다(UI-INP-07 예외 — 지문은 같다).
   - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
     표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 점검 · 저장 전 변경 · 공식 이력 · 보관함」(점검은 `components/scenario_input_check.py`).
     상세는 리비전 표(r · 리비전명 · 상태)가 맨 위에 서서 머리가 왼쪽 표 머리와 윗선이 같고(사용자 요청 2026-11-07), 그 아래 연 시나리오의 제목 · 원천 코드 · 최근 수정과 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
@@ -1325,7 +1354,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 달은 `date.today()` 다. 팝업 머리에 설명 글을 두지 않는다(적용 전 편집 경고만 — 2026-11-04 home-19).
 - `src/capa_simulation/components/scenario_status.py` — 사이드바 조건 패널의 시나리오 줄과 불러오기·새 리비전 저장·
   편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이고, 불러오기
-  구획 끝 단추가 그 화면 Capa 시나리오 탭으로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 서지 않는다).
+  구획 끝 단추가 그 화면 Capa 시나리오 탭으로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면, 그리고 이름을 바꿀 수 없는 화면 등급(`scenario.list_edit` — 실무자부터)이면 서지 않는다).
   - 줄은 세션만 읽고 저장소는 팝업을 연 동안에만 읽는다(팝업 프래그먼트는 `app.py` 의 실행 핀 밖이라
     `pinned_connections` 를 스스로 잡는다). `tests/test_scenario_sidebar.py`·`test_app_navigation.py` 가 고정한다.
   - 배지는 미저장 → 공식 vN → **최신 rN 있음** → 저장된 리비전 차례다(머리 띠 `header_lines` 도 같다, E2E #102). 낡음은
@@ -1443,6 +1472,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꼬리표와 배지가 서로 비키지는 않는다. FAB 블록 풍선은 단축 줄(`short`) 뒤에 견주기 줄(`layout`)이다.
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
+  - 편집기 단추 서식(`.sle button:where(…) { display: inline-flex }`)은 브라우저의 `[hidden]` 기본 규칙보다 세다 — JS 가
+    `hidden` 을 다는 단추마다 그 단추의 `[hidden] { display: none }` 규칙을 둔다(`tests/test_space_layout_editor_assets.py` 가
+    머리에서 쥔 단추를 모두 본다). 「호기 정보」 창 「CSV」 는 설비 화면 내려받기 등급 밖이면 파이썬이 `sheet.csvHidden` 을 싣고
+    「모든 칸」 글을 싣지 않으며, 단추 · 펼침 · 「보이는 줄」 내려받기가 한 판정 `sheetCsvHidden`(`// <unit-sheet>`)을 본다.
   - **편집기 몸은 가로 세 칸**(2026-11-03 사용자 요청 — 좌우로 긴 화면의 여백을 두 옆 칸에): `.sle-body` grid 다섯 칸
     [왼쪽 칸 `.sle-side.is-left`][칸막이][무대][칸막이][오른쪽 칸 `.sle-side.is-right`] — 칸마다 `grid-column` 을 박아 숨은 칸이
     있어도 밀리지 않는다. 왼쪽 칸은 FAB 보기에만 없고(층 보기는 「범례」 묶음 하나, 편집은 「도구」 — 범례·도면 요소·선택·
@@ -1857,8 +1890,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
-- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 펼침이 서 있는 동안 늘 `run_every` 프래그먼트(`LIVE_FRAGMENT_KEY` · 5초)로 갱신하고, 판정 제목 · 「지금 올리기」 잠금이 그린 때와 달라지면 앱 회차로 돌아가 함께 고친다 — 그린 순간 값에 머물면 연 채 둔 화면이 다른 회차의 저장 뒤에도 초록 「CI/CD 눌러도 됨」 을 보였다(E2E C-11), 그 페이지의 여닫기는 앱 전체로 돈다(`note_periodic_fragment` — 9장 「여닫을 때…」))과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 관리자에게 알려 주세요」), 관리자 지시 · 런북 · 갈래는 관리자 몫 전문에만, 관리자 줄의 「그 화면으로」 는 Admin 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_sync_panel` · 알림 칸 받는 쪽 `object_sync`, 설계 규칙 UI-NAV-01), `SY-06` 은 관리자 몫에만, 일꾼이 없으면 관리자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
-- `src/capa_simulation/components/admin_view.py` — 관리자 몫 알림 · 전문 · 접힌 「관리자용 진단」 을 이 회차에 보일지 한 곳(`admin_notes_visible` — 관리자(`sso_identity.viewer_is_admin`)면 참, 아니면 통합인증이 켜짐이 아니고 운영 서버(`SsoConfig.operational` — Admin Area 잠금 `admin_area_locked` 와 한 뿌리)가 아닐 때만 누구에게나). 그래서 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않고(Admin Area 가 모두에게 잠긴 것과 같다 — 참인 회차에는 Admin Area 가 늘 열려 「그 화면으로」 가 잠긴 화면을 가리키지 않는다), 개발 `app.py` · 사내 WebIDE · 사내 PC 는 누구에게나다. 이것을 부르는 자리 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` · `AD-19` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 관리자 전문 · DB 실패 전문(`data_error_mark`) · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판(`sso_identity`)의 「관리자용 진단」. BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23`)은 밖이다 — 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않는다(규칙집 결정 ad10-nosso, `viewer_is_admin` 그대로). 보이기만 가르고 쓰기 · 관리자 단추의 두 번째 벽은 그 자리 판정(`viewer_is_admin`) 그대로다(2026-11-14 보드 리뷰 반영 「관리자 회차에만 은 꺼진 서버에서 아무도 못 본다」). 시험은 `tests/test_admin_view.py`(설정 × 관리자 진리표 · Admin Area 잠금과 맞댐). 관리자에게만 서는 상태 알림(이 판정의 `AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `SY-06`, 토큰 셋, 감사 `AD-12` · `AD-13`)은 그 밖의 회차를 해소(`active=False`)로 부르고 짧은 글 · 전문을 싣지 않는다 — 숨은 표지(`[data-capa-alerts]`)에는 등록부 이름만 실린다(시험 `tests/test_admin_alert_resolved_markers.py` 가 앱 정보 카드 · 동기화 알림의 일곱 — `AD-08` · `AD-09` · `AD-19` · `AD-12` · `AD-13` · `AD-21` · `SY-06` — 을 본다). 누구에게나 서는 운영인데 꺼짐 `AD-02` 도 해소 표지에는 글을 싣지 않는다 — Admin Area 가 잠금 앞에서 부르므로 켜진 서버에서 주소로 Admin Area 를 연 일반 회차에도 그 표지가 실린다(시험 `tests/test_sso_status.py`).
+- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 펼침이 서 있는 동안 늘 `run_every` 프래그먼트(`LIVE_FRAGMENT_KEY` · 5초)로 갱신하고, 판정 제목 · 「지금 올리기」 잠금이 그린 때와 달라지면 앱 회차로 돌아가 함께 고친다 — 그린 순간 값에 머물면 연 채 둔 화면이 다른 회차의 저장 뒤에도 초록 「CI/CD 눌러도 됨」 을 보였다(E2E C-11), 그 페이지의 여닫기는 앱 전체로 돈다(`note_periodic_fragment` — 9장 「여닫을 때…」))과 개발자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 개발자에게 알려 주세요」), 개발자 지시 · 런북 · 갈래는 개발자 몫 전문에만, 개발자 줄의 「그 화면으로」 는 Admin 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_sync_panel` · 알림 칸 받는 쪽 `object_sync`, 설계 규칙 UI-NAV-01), `SY-06` 은 개발자 몫에만, 일꾼이 없으면 개발자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/admin_view.py` — 개발자 몫 알림 · 전문 · 접힌 「개발자용 진단」 을 이 회차에 보일지 한 곳(`developer_notes_visible` — 개발자(`sso_identity.viewer_is_developer`)면 참, 아니면 통합인증이 켜짐이 아니고 운영 서버(`SsoConfig.operational` — Admin Area 잠금 `admin_area_locked` 와 한 뿌리)가 아닐 때만 누구에게나). 그래서 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않고(Admin Area 가 모두에게 잠긴 것과 같다 — 참인 회차에는 Admin Area 가 늘 열려 「그 화면으로」 가 잠긴 화면을 가리키지 않는다), 개발 `app.py` · 사내 WebIDE · 사내 PC 는 누구에게나다. 이것을 부르는 자리 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` · `AD-19` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 개발자 전문 · DB 실패 전문(`data_error_mark`) · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판(`sso_identity`)의 「개발자용 진단」. BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23`)은 밖이다 — 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않는다(규칙집 결정 ad10-nosso, `viewer_is_developer` 그대로). 보이기만 가르고 쓰기 · 개발자 단추의 두 번째 벽은 그 자리 판정(`viewer_is_developer`) 그대로다(2026-11-14 보드 리뷰 반영 「개발자 회차에만 은 꺼진 서버에서 아무도 못 본다」). 그 가운데 서버 상태 알림(`AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `AD-25` · `SY-*` 전문)을 세울지는 `developer_alerts_visible` 이다 — 같은 판정이되 「이 등급으로 보기」 를 따르지 않는다(켜고 끄는 사이 서 있던 알림이 해소 · 다시 뜸으로 흔들리지 않게 — 감사 `AD-12` · `AD-13` 도 실제 개발자 `viewer_is_developer`, 시험 `tests/test_grade_ui_core.py`). 시험은 `tests/test_admin_view.py`(설정 × 개발자 진리표 · Admin Area 잠금과 맞댐). 개발자에게만 서는 상태 알림(이 판정의 `AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `SY-06`, 토큰 셋, 감사 `AD-12` · `AD-13`)은 그 밖의 회차를 해소(`active=False`)로 부르고 짧은 글 · 전문을 싣지 않는다 — 숨은 표지(`[data-capa-alerts]`)에는 등록부 이름만 실린다(시험 `tests/test_admin_alert_resolved_markers.py` 가 앱 정보 카드 · 동기화 알림의 일곱 — `AD-08` · `AD-09` · `AD-19` · `AD-12` · `AD-13` · `AD-21` · `SY-06` — 을 본다). 누구에게나 서는 운영인데 꺼짐 `AD-02` 도 해소 표지에는 글을 싣지 않는다 — Admin Area 가 잠금 앞에서 부르므로 켜진 서버에서 주소로 Admin Area 를 연 일반 회차에도 그 표지가 실린다(시험 `tests/test_sso_status.py`).
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + `managed` 서버의 「BDQ 자동
@@ -1872,27 +1905,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
-  시작 점검 관리자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
+  시작 점검 개발자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
   화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다 —
   와 지금 설정에서 실패한 단계 `live_failed_steps` — DuckDB 메모리 한도 칸이 틀림)를
-  관리자 몫(`admin_view.admin_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area 의 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_start_check` · 알림 칸 받는 쪽 `start_check`, 설계 규칙 UI-NAV-01). 결과 파일도
+  개발자 몫(`admin_view.developer_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area 의 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_start_check` · 알림 칸 받는 쪽 `start_check`, 설계 규칙 UI-NAV-01). 결과 파일도
   CD 전용 환경변수도 없는 프로세스(`start_check_alert_possible` — 프로세스 동안 그대로)는 Streamlit 호출이 없다. Admin 펼침은 이 알림을 따로
   내지 않는다.
-  BigDataQuery 토큰 실패 관리자 알림 `AD-10`(`render_token_alert` — `app.py` 가 동기화 알림 곁에서 모든 화면 회차에 부른다, 2026-11-12 리뷰
+  BigDataQuery 토큰 실패 개발자 알림 `AD-10`(`render_token_alert` — `app.py` 가 동기화 알림 곁에서 모든 화면 회차에 부른다, 2026-11-12 리뷰
   202611111500 보드 N8 (가))도 여기다 — 결과 파일이 있는 서버(C-DEP)에서만 부르고(없으면 Streamlit 호출 0), 시작 점검 토큰 줄 「실패」 나
   어댑터의 프로세스 표지(`company_bigdataquery_adapter.last_query_failed_on_token` — 조회가 토큰 갈래로 실패하면 서고 조회가 성공하면
-  내린다, 예약 스레드도 같은 값을 쓴다)가 있으면 관리자(`sso_identity.viewer_is_admin` — 통합인증이 켜짐이 아니면 아무도 아니다) 회차에
+  내린다, 예약 스레드도 같은 값을 쓴다)가 있으면 개발자(`sso_identity.viewer_is_developer` — 통합인증이 켜짐이 아니면 아무도 아니다) 회차에
   조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 만료 전에 미리 갱신하지 않는다 — 대신 C-DEP 자동 로그인(2026-11-16 사용자 결정
-  D1 ~ D11, 아래 `io/bdq_login.py`)이 회복한다: 계정은 Admin Area 관리자 폼에서만 넣고(환경변수 표에 비밀번호 없음) 버킷
+  D1 ~ D11, 아래 `io/bdq_login.py`)이 회복한다: 계정은 Admin Area 개발자 폼에서만 넣고(환경변수 표에 비밀번호 없음) 버킷
   `secrets/bdq_login.json` 에 키 `CAPA_BDQ_SECRET_KEY` 로 감싸 두며, 저장된 계정이 조회 · 토큰 파일 이름 · 남은 시간 모두의
   계정 하나의 원천이다. 시작마다 한 번 로그인하고, 조회가 토큰 파일 없음(패키지 종류 `TokenNotFoundException`)이나 만료 · 무효 토큰(안쪽
   문구 「You have invalid token」 — 실측의 응답 코드는 400 이고 판정은 코드를 보지 않는다, 둘이 같은 사슬이고 패키지 종류가 아니다,
   2026-11-16 사내 실측 · 사용자 결정)으로 실패하면
   다시 로그인해 같은 조회를 한 번만 다시 한다(WebIDE 가 같은 계정으로 로그인해 운영 토큰이 죽어도 D11 대로 이 길로 돌아온다 — 운영
   로그인이 WebIDE 토큰을 초기화하는 것은 감수).
-  로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도 시도하지 않으며(관리자
+  로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도 시도하지 않으며(개발자
   `AD-23` — 폼에서 다시 넣어 성공해야 풀린다), 요청을 보내기 전 연결 단계의 양의 증거만 「닿지 못함」 으로(패키지를 불러오지 못하면 시도
-  자체가 없어) 멈추지 않는다(관리자 `AD-24` — 성공 없이 3번이면 멈춤). 계정 잠김 방지가 불변식이다 — 폼 한 번에 시도 한 번 · 자동 시도
+  자체가 없어) 멈추지 않는다(개발자 `AD-24` — 성공 없이 3번이면 멈춤). 계정 잠김 방지가 불변식이다 — 폼 한 번에 시도 한 번 · 자동 시도
   앞의 시도 표시(쓰지 못하면 로그인 없음) · 자동 연속 3번 상한 · 재시작을 건너는 닿지 못함 · 확인 못 함 3번 상한 · 닿지 못함 뒤 5분 쉼 ·
   프로세스 잠금 하나 · 새 배경 스레드 없음. 키도 객체도 없는 서버는 시작 · 조회가 지금과 같다(「토큰 넣기」 · `CAPA_BDQ_TOKEN` 예비 길). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
   CD 환경변수 값 바꿔 두기다 — 패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버(넣기가 잠긴다)면 그 값 바꾸기 + CI/CD
@@ -1900,7 +1933,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`managed` + 키) 저장된 계정이 없으면 Admin Area 「BDQ 자동 로그인」 에 계정 넣기다(`bdq_token_admin.AUTO_LOGIN_FIX`), 저장된 계정이
   있으면(정상 · 멈춤) 그 자리에서 다시 넣기(곧바로 새 토큰 — `RELOGIN_FIX`)를 먼저, 「토큰 넣기」 를 그다음으로 적는다. 같은 함수 끝에서 만료 알림
   `AD-11`(`bdq_token_admin.render_expiry_alert` — 자동 로그인이 서 있는 동안은 해소)과 자동 로그인 멈춤 알림 `AD-23`(`render_login_stop_alert` —
-  관리자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4.
+  개발자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4.
   하위 프로세스가 표지 없이 끝난 멈춤(`bdq_login.UNCONFIRMED_REJECT_REASONS` — `no_marker`)은 짧은 글이 「… 멈춤 — 로그인 확인 못 함」 이고
   전문이 비밀번호가 틀렸는지 모른다는 것과 진단 줄을 먼저 말한다 — 2026-11-17 사내 리뷰 `202611162130` 발견 4 · 사외요청 1),
   자동 로그인이 멈추지 않은 채 서지 못함 알림 `AD-24`(`render_login_trouble_alert` — 시작 · 조회 중 닿지 못함 · 확인 못 함 · 못 함, 지문은 갈래
@@ -1918,14 +1951,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   틀린 값의 까닭은 값 없는 고정 낱말(`꼴이 틀림` · `64MiB ~ 1TiB 밖`)이고 그 값의 글은 싣지 않는다 — 옆 칸(비밀 키 · 토큰)을 잘못 붙여 넣은
   값일 수 있고 이 줄은 복사 글 · `AD-01` 전문으로 리뷰에 옮긴다(`io/object_storage.py` 의 「모드 값 틀림」 과 같은 관례).
 - `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
-  다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
-  (2026-11-12 사용자 결정). 단추는 관리자(`sso_identity.viewer_is_admin`)에게만 서고 — 권한 기능이라 접속 명단처럼 숨긴다 —
+  다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 개발자 회차의 「토큰 넣기」 단추 · 팝업
+  (2026-11-12 사용자 결정). 단추는 개발자(`sso_identity.viewer_is_developer`)에게만 서고 — 등급 밖 기능이라 접속 명단처럼 숨긴다(9장 「접속 등급」) —
   `BIGDATAQUERY_LOGIN_TOKEN` 이 있거나 계정이 없으면 잠그고 까닭 풍선(`io/bdq_token.blocked_reason`)을 단다. 팝업은 Admin Area 열림 칸
   (`admin_dialog.ADMIN_DIALOG_KEY` — 접속 명단 「추가」 와 값으로 가른다)의 `DialogHost`(`admin_area_bdq_token_dialog_host`)가 열고,
   폼 안 비밀 칸(`type="password"` · `autocomplete="new-password"` · 라벨 접음) 하나와 「넣기」 뿐이다. 받은 회차에 세션 칸을 곧바로
-  떼고(`tests/test_flash_messages.py` 허용 목록), 누른 회차에 신원을 다시 검증해 관리자일 때만 쓴다. 거절은 칸 아래 한 줄
+  떼고(`tests/test_flash_messages.py` 허용 목록), 누른 회차에 신원을 다시 검증해 개발자일 때만 쓴다. 거절은 칸 아래 한 줄
   (`tests/test_data_error_mark.py` BESIDE — 토큰 글 · 길이 없음), 넣음 · 같음은 알림창이고 넣으면 `HOST.finish` 로 닫는다. 만료 1시간
-  전 관리자 알림 `AD-11`(`render_expiry_alert` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
+  전 개발자 알림 `AD-11`(`render_expiry_alert` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
   `container_start_check.render_token_alert` 가 부른다. 만료를 못 읽으면 서지 않고, BigDataQuery 자동 로그인이 서 있는 동안(`standing`)도
   서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
   `app.py` 가 모든 화면 회차에 부르는 자리라 지금 토큰을 읽다 무엇이 나도(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로
@@ -1935,18 +1968,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/bdq_login_admin.py` — Admin Area 「BDQ 자동 로그인」 펼침(`BDQ_LOGIN_LABEL` — 「서버 시작 점검」 표 줄과
   같은 이름, 2026-11-16 결정 D1 · D2 · D5 · D7). 동기화 모드 `managed` + 쓸 수 있는 키(`bdq_login_store.availability` — 앱은 기동 때 키를 쥐고
-  환경에서 빼므로 환경을 넘기지 않는다)인 서버의 관리자(`sso_identity.viewer_is_admin` — 「토큰 넣기」 와 같은 문지기) 회차에만 「서버 시작 점검」
+  환경에서 빼므로 환경을 넘기지 않는다)인 서버의 개발자(`sso_identity.viewer_is_developer` — 「토큰 넣기」 와 같은 문지기) 회차에만 「서버 시작 점검」
   바로 뒤에 서고, 그 밖에는 Streamlit 호출이 없다. 값 줄 둘 — 상태(없음 · 정상 · 멈춤(까닭) · 확인하지 못함(읽지 못함 — 「없음」 과 가른다)) ·
-  넣은 사람(관리자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
+  넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판, `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다. 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
-  다시 검증해 관리자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
+  다시 검증해 개발자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
   떠 있는 앱의 계정 원천이 곧바로 새 ID), 로그인 실패는 저장 없이 폼 아래 한 줄 + Alarm(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
   저장 안 함」 · 「로그인 확인 못 함(남은 시간 모름 · 7시간 이하 · 결과 표지 없음) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 · 그 밖의 시도 전 거절은
   「로그인하지 않음(까닭) — 저장 안 함」 — 하위 프로세스가 표지 없이 끝난 거절 `no_marker` 는 「로그인 실패」 가 아니다, 비밀번호를 의심해
   되풀이하지 않게), 로그인은 됐는데 저장 실패는
-  알림창 오류, 빈 칸 · 관리자 아님은 시도 없이 폼 아래 거부(`write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py`
+  알림창 오류, 빈 칸 · 개발자 아님은 시도 없이 폼 아래 거부(`write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py`
   BESIDE). 같은 세션의 겹쳐 온 둘째 누름은 같은 값이면 시도하지 않는다(`write_guard.save_once` — 출발점은 값의 HMAC 지문, 키는 프로세스마다
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
@@ -1955,7 +1988,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
 - `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
-  공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「관리자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
+  공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「개발자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
   「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 칸이 없을 때(Admin Area 를 처음 열 때 · 다른 화면에 다녀와 위젯 값이 걷힌 뒤)
   기본값 `notice_board.default_until` 을 심고 그 끝(날짜까지)을 `SEEDED_KEY` 에 적는다. 손대지 않은 기본값이 지나면 그리기 앞 · 「보내기」
   콜백에서 새 기본값으로 간다(`stale_seed` — 그대로면 「내일 그 시각」, 사람이 고른 시각은 그대로) · 「보내기」.
@@ -1973,8 +2006,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `admin_notice_withdraw`(결과) — 대상은 공지 id(`tgt`), 글은 어느 칸에도 없다(감사 불변조건). 시험 `tests/test_notice_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드. 자리에는 누구나 읽는 머리 한 줄(「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 · 가드 자리 · 앞 동작이면 그 범위의 말)과 값 줄 「담당 <이름>」 만, 개발자용 정보(형식·첫 줄, import 꼴 안내, 끄는 법, 모듈 폴더 안 프레임만)는 접힌 「담당자용 진단」 안 코드 칸 + 복사 단추다(`DIAGNOSTIC_LABEL` — 복사 key 는 카드마다 새로, 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare). 코드 칸은 평문이라 앱이 짓는 안내 줄(끄는 법 · import 안내)에 코드 표지(백틱)를 쓰지 않고, 줄을 꺾는다(`wrap_lines` — 앱 안 멈춤 판의 접힌 진단 · Admin 「서버 시작 점검」 pip 출력 끝과 같은 꼴, 설계 규칙 UI-CON-04). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
-- `src/capa_simulation/components/page_failure_card.py` — 코어 화면 감싸기(`run_core_page` — `app.py` 가 모듈이 아닌 화면의 `navigation.run()` 을 이것으로 부른다, `module_runtime` 과 같은 예외 사다리: 제어 예외 · `KeyboardInterrupt` 는 다시 던지고 `FragmentHandledException` 은 적기만, 그 밖 `BaseException` 은 카드 — 처리한 실패는 둘 다 `st.stop()` 으로 끝내 `app.py` 의 멈춤 길(`finish_stopped`)을 탄다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 것으로 보고 오류 자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지운다). 처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 자리 카드 하나 — 앱 안 멈춤 판의 한 꼴(`stop_panel`, 보드 stop-panels): 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(`RETRY_KEY` — 회차 하나) → 「문의 <메일>」 → 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」(UTC 분은 실패를 적은 순간 `PageFailure.epoch` — `AD-22` 의 시각과 같은 순간) → 관리자 몫(`stop_panel.admin_fold_visible`)에만 접힌 「관리자용 진단」(맨 위 참고 줄 · 화면 · 첫 줄 · 이 저장소 안 프레임 · 복사 — C-DEP 에는 로그가 없다). 실패는 `page_failures` 에 적고 서버 로그에 참고 번호와 원문을 남긴다. 관리자 상태 알림 `AD-22`(`render_page_failure_alert` — `app.py` 가 토큰 알림 곁에서 부른다)는 프로세스 기록에서 낸다 — 오류가 난 탭이 관리자의 탭이 아니어서다. 이벤트 칸 수가 프로세스 동안 같도록 시작 점검 알림 `AD-01` 과 같은 판정(`start_check_alert_possible`)이 참인 서버만 회차마다 한 자리(실패가 없거나 관리자가 아니면 해소)이고 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는 운영이 아니고 통합인증이 꺼져 카드의 「관리자용 진단」 이 누구에게나 선다. 지문은 프로세스에서 난 (화면, 종류) 쌍 모두, 건수는 최근 줄 상한과 따로 센다. HOME 의 「그 화면으로」 주소는 빈 글자다. 시험은 `conftest` 가 감싸기를 걷어(`app.py` 를 도는 시험이 실패를 놓치지 않게) 보고, 감싸기 자체는 `@pytest.mark.page_failure_card`(`tests/test_page_failure_card.py`). 화면 확인(`check_deploy_screens` 의 예외 세기)도 이 카드 칸(`CARD_KEY`)을 예외로 센다. 운영 이미지는 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의 `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type` — 보드 d12 (가)).
-- `src/capa_simulation/components/missing_page.py` — 없는 화면 주소(꺼진 · 실패한 모듈 화면 · 옛 주소 · 남이 보낸 링크)로 들어와 HOME 을 도는 회차를 가려 사건 알림 하나(「없는 화면 주소 — HOME 을 열었습니다」, 꺼진 · 실패한 모듈이면 「「<모듈>」 은 꺼져 있습니다 · 담당 <이름>」 — `module_registry.discovered`). 판정은 Streamlit 페이지 관리자가 받은 주소 이름(`intended_page_name`)과 `st.navigation()` 이 고른 주소의 맞댐이고 같은 주소는 세션에 한 번이다. `app.py` 가 이번 화면을 적은 뒤 · 알림 칸 앞에서 부른다. 코드는 등록부 「동작 결과 — 안내」(`FL-02`)이고 영어 「Page not found」 팝업은 감추지 않는다(2026-11-14 보드 카드 p2-rare).
+- `src/capa_simulation/components/page_failure_card.py` — 코어 화면 감싸기(`run_core_page` — `app.py` 가 모듈이 아닌 화면의 `navigation.run()` 을 이것으로 부른다, `module_runtime` 과 같은 예외 사다리: 제어 예외 · `KeyboardInterrupt` 는 다시 던지고 `FragmentHandledException` 은 적기만, 그 밖 `BaseException` 은 카드 — 처리한 실패는 둘 다 `st.stop()` 으로 끝내 `app.py` 의 멈춤 길(`finish_stopped`)을 탄다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 것으로 보고 오류 자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지운다). 처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 자리 카드 하나 — 앱 안 멈춤 판의 한 꼴(`stop_panel`, 보드 stop-panels): 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(`RETRY_KEY` — 회차 하나) → 「문의 <메일>」 → 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」(UTC 분은 실패를 적은 순간 `PageFailure.epoch` — `AD-22` 의 시각과 같은 순간) → 개발자 몫(`stop_panel.admin_fold_visible`)에만 접힌 「개발자용 진단」(맨 위 참고 줄 · 화면 · 첫 줄 · 이 저장소 안 프레임 · 복사 — C-DEP 에는 로그가 없다). 실패는 `page_failures` 에 적고 서버 로그에 참고 번호와 원문을 남긴다. 개발자 상태 알림 `AD-22`(`render_page_failure_alert` — `app.py` 가 토큰 알림 곁에서 부른다)는 프로세스 기록에서 낸다 — 오류가 난 탭이 개발자의 탭이 아니어서다. 이벤트 칸 수가 프로세스 동안 같도록 시작 점검 알림 `AD-01` 과 같은 판정(`start_check_alert_possible`)이 참인 서버만 회차마다 한 자리(실패가 없거나 개발자가 아니면 해소)이고 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는 운영이 아니고 통합인증이 꺼져 카드의 「개발자용 진단」 이 누구에게나 선다. 지문은 프로세스에서 난 (화면, 종류) 쌍 모두, 건수는 최근 줄 상한과 따로 센다. HOME 의 「그 화면으로」 주소는 빈 글자다. 시험은 `conftest` 가 감싸기를 걷어(`app.py` 를 도는 시험이 실패를 놓치지 않게) 보고, 감싸기 자체는 `@pytest.mark.page_failure_card`(`tests/test_page_failure_card.py`). 화면 확인(`check_deploy_screens` 의 예외 세기)도 이 카드 칸(`CARD_KEY`)을 예외로 센다. 운영 이미지는 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의 `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type` — 보드 d12 (가)).
+- `src/capa_simulation/components/missing_page.py` — 없는 화면 주소(꺼진 · 실패한 모듈 화면 · 옛 주소 · 남이 보낸 링크)로 들어와 HOME 을 도는 회차를 가려 사건 알림 하나(「없는 화면 주소 — HOME 을 열었습니다」, 꺼진 · 실패한 모듈이면 「「<모듈>」 은 꺼져 있습니다 · 담당 <이름>」 — `module_registry.discovered`). 판정은 Streamlit 페이지 개발자가 받은 주소 이름(`intended_page_name`)과 `st.navigation()` 이 고른 주소의 맞댐이고 같은 주소는 세션에 한 번이다. `app.py` 가 이번 화면을 적은 뒤 · 알림 칸 앞에서 부른다. 코드는 등록부 「동작 결과 — 안내」(`FL-02`)이고 영어 「Page not found」 팝업은 감추지 않는다(2026-11-14 보드 카드 p2-rare).
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 목록 가운데 표가 커서 알림에 싣지 못한 것(대당
   Capa `제외 기준정보 확인` · 소요대수 탭 목록)을 본문에 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
   표시명 복사본, CSV 는 원본이고,
@@ -2077,7 +2110,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
     낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 종류 이름의 `token` 하나 · 토큰 자리(`.credential`)만으로는
     갈래가 서지 않는다. 사슬에 `ConnectionError` 가 있어도 「연결」(네트워크 · 다시)이 아니라 「다시 해도 같으니 …」 이고
-    8-5 도 다시 묻지 않는다. 그 끝 절은 자리마다다 — 서버 시작 기록(`start_check_hint` 가 단락을 내는 C-DEP)이 있으면 「관리자에게」,
+    8-5 도 다시 묻지 않는다. 그 끝 절은 자리마다다 — 서버 시작 기록(`start_check_hint` 가 단락을 내는 C-DEP)이 있으면 「개발자에게」,
     없으면(WebIDE · 사내 PC) 「BigDataQuery 로그인을 다시 하세요」(`token_advice` — 2026-11-12 남은 물음 보드 ⑤-4 (나)). 시작 점검 토큰 줄 안내(`is_login_token_failure`)는 갈래 「토큰」 이면 늘 붙고 종류 이름의 `token` ·
     `.credential` 문구에도 붙는다(덧붙일 뿐이라 넓다 — 2026-11-12 리뷰 202611111500 보드 N7). 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
     종류 이름(`type_names`), 그리고 갈래를 정한 목록 낱말(`query_failure_clue` · `BigDataQueryCallError.clue` — 문구 원문이
@@ -2145,11 +2178,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다 — **`managed` 의 DB 받기만 예외다**
     (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었거나 `local` 인데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(빈 버킷은 알리지 않는다 — 2026-11-12 리뷰 202611111500 보드 R2: 이 스크립트는 C-DEP 이미지에서만 돌아 그 자리의 `local` 은 이관 뒤 빠뜨린 `managed` 와 같다. 결과 파일이 없는 사내 PC · 개발 실행에는 표지가 없다). 그 자리에서 주소 · 버킷 · 프로필 CD 환경변수가 비어 버킷 목록을 못 보았으면 `SY-05` 를 가릴 수 없으니 빈 이름(`head_unchecked`)을 남겨 `SY-06` 이 알린다(이름만 — 2026-11-12 사내 S3 값 걷기 뒤 프로필에 기본값이 없다).
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
-  - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말 · 시각 · 횟수만 보인다. 꼴은 앱 밖 화면의 공통 틀(표지 「시작 중」 · 「다시 시도」 · 「점검 중」 · 단계 줄 · 지난 시간 · 다음 시도 n초 · 문의 줄 · 참고 줄 · 접힌 「관리자용 진단」)이고 Streamlit · `design.tokens` 를 불러오지 않아 두 팔레트를 상수로 두고 시험이 토큰과 맞댄다. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 · 값 줄)은 이 화면 몫이고, 표지 낱말 · 색 역할과 「관리자용 진단」 · 「문의」 · 「참고」 는 로그인 화면 틀의 표(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES` — 시작 중 `ALERT_ACTION` · 다시 시도 · 점검 중 `ALERT_CHECK`)를 불러 쓴다(그 모듈은 tokens 를 그릴 때만 부른다 — 2026-11-14 보드 decided 8). 결 값(`tone` — `start` · `retry` · `check`, `/_capa_stage` 셋째 줄)은 그대로 두고 `TONE_CHIPS` 가 틀의 표지 키로 잇는다. 글은 틀 · 띠처럼 띄어쓰기에서만 줄을 바꾸고 띄어쓰기 없는 긴 메일 · 주소만 접는다(본문 규칙의 `word-break: keep-all` · `overflow-wrap: anywhere` — 틀과 같은 두 선언을 시험이 맞댄다, 390 창에서 「시작하지 못했습니 / 다」 로 갈리던 것). 「다시 시도」 판의 제목 · 띠 글은 저장소에 닿지 못함 · 시간 초과일 때만 「저장소에 잠시 닿지 못했습니다」 · 「저장소에 잠시 닿지 못함 · 다시 시도 중」 이고, 원인을 모르는 실패(`other` 등)는 원인을 말하지 않는 「데이터를 잠시 받지 못했습니다」 · 「데이터를 잠시 받지 못함 · 다시 시도 중」 이다(`STORE_NOT_REACHED` — 표지 · 까닭 · 값 줄 · 10분 문의 줄은 같다, UI-DAT-11). 시작 스크립트는 단계 · 시도 · 실패만 알리고(`Stage.begin` · `step` · `attempt` · `fail`) 순수 `stage_view` 하나가 쪽과 `/_capa_stage`(제목 · 값 한 줄 · JSON 셋째 줄)를 함께 낸다. 앱이 뜨면 쪽은 처음 연 주소를 다시 읽는다 — POST 로 받은 쪽 · 콜백 경로만 바탕 주소, 거절 화면의 「접속 권한 신청」 POST 는 「다시 눌러 주세요」 한 줄(`NOTE_REGISTER_LOST` — 판을 갈아 끼워도 쪽 JS 가 옮겨 단다)과 함께 같은 주소를 GET 으로(`return_mode` · `returnWay` — 다시 읽으면 POST 를 다시 보낸다). 다시 받기가 도는 동안의 값 줄 「n번째 받는 중 · 지난 시간」 과 두 노트는 잠시 닿지 못함 · 이관 전 · 되돌리기 갈래(깨짐 · 갈라짐)가 함께 쓰되, 이관 전 · 되돌리기 갈래는 그 시도가 실제 내려받기로 넘어간 뒤만이다 — 받기는 하위 프로세스라 `boot-pull --download-mark` 가 멤버를 받기 직전 결과 파일 옆에 남기는 빈 표지(`container_boot_download`)로 알고, 시작 스크립트가 시도마다 지우며 임시 응답은 상태를 읽을 때 묻는다(`open_stage(download_seen=…)` — 넘어가면 판을 올린다). 받는 동안은 열어 둔 탭의 재시작 띠 글(`/_capa_stage` 셋째 줄 `band`)도 값 줄과 같은 「데이터 받는 중 · n번째 받기」 다(`_pull_band` — 첫 받기 · 다시 받기와 한 글). 받기로 넘어가기 전에 머무는 확인(처음 올리기 전 · 갈라짐 · 깨진 포인터)은 「확인하는 중」 · 「다시 확인하는 중」 이다 — 깨진 멤버(없음 · 크기 · 해시)는 받는 도중에 드러나 되돌리기 전의 300초 확인도 실제 받기라 그동안은 받는 값 줄이다. CI/CD 로 고치는 사람 갈래는 「다시 확인하는 중」 이다, 시험 `tests/test_container_stage.py` · `tests/test_container_start_sync.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
+  - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말 · 시각 · 횟수만 보인다. 꼴은 앱 밖 화면의 공통 틀(표지 「시작 중」 · 「다시 시도」 · 「점검 중」 · 단계 줄 · 지난 시간 · 다음 시도 n초 · 문의 줄 · 참고 줄 · 접힌 「개발자용 진단」)이고 Streamlit · `design.tokens` 를 불러오지 않아 두 팔레트를 상수로 두고 시험이 토큰과 맞댄다. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 · 값 줄)은 이 화면 몫이고, 표지 낱말 · 색 역할과 「개발자용 진단」 · 「문의」 · 「참고」 는 로그인 화면 틀의 표(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES` — 시작 중 `ALERT_ACTION` · 다시 시도 · 점검 중 `ALERT_CHECK`)를 불러 쓴다(그 모듈은 tokens 를 그릴 때만 부른다 — 2026-11-14 보드 decided 8). 결 값(`tone` — `start` · `retry` · `check`, `/_capa_stage` 셋째 줄)은 그대로 두고 `TONE_CHIPS` 가 틀의 표지 키로 잇는다. 글은 틀 · 띠처럼 띄어쓰기에서만 줄을 바꾸고 띄어쓰기 없는 긴 메일 · 주소만 접는다(본문 규칙의 `word-break: keep-all` · `overflow-wrap: anywhere` — 틀과 같은 두 선언을 시험이 맞댄다, 390 창에서 「시작하지 못했습니 / 다」 로 갈리던 것). 「다시 시도」 판의 제목 · 띠 글은 저장소에 닿지 못함 · 시간 초과일 때만 「저장소에 잠시 닿지 못했습니다」 · 「저장소에 잠시 닿지 못함 · 다시 시도 중」 이고, 원인을 모르는 실패(`other` 등)는 원인을 말하지 않는 「데이터를 잠시 받지 못했습니다」 · 「데이터를 잠시 받지 못함 · 다시 시도 중」 이다(`STORE_NOT_REACHED` — 표지 · 까닭 · 값 줄 · 10분 문의 줄은 같다, UI-DAT-11). 시작 스크립트는 단계 · 시도 · 실패만 알리고(`Stage.begin` · `step` · `attempt` · `fail`) 순수 `stage_view` 하나가 쪽과 `/_capa_stage`(제목 · 값 한 줄 · JSON 셋째 줄)를 함께 낸다. 앱이 뜨면 쪽은 처음 연 주소를 다시 읽는다 — POST 로 받은 쪽 · 콜백 경로만 바탕 주소, 거절 화면의 「접속 권한 신청」 POST 는 「다시 눌러 주세요」 한 줄(`NOTE_REGISTER_LOST` — 판을 갈아 끼워도 쪽 JS 가 옮겨 단다)과 함께 같은 주소를 GET 으로(`return_mode` · `returnWay` — 다시 읽으면 POST 를 다시 보낸다). 다시 받기가 도는 동안의 값 줄 「n번째 받는 중 · 지난 시간」 과 두 노트는 잠시 닿지 못함 · 이관 전 · 되돌리기 갈래(깨짐 · 갈라짐)가 함께 쓰되, 이관 전 · 되돌리기 갈래는 그 시도가 실제 내려받기로 넘어간 뒤만이다 — 받기는 하위 프로세스라 `boot-pull --download-mark` 가 멤버를 받기 직전 결과 파일 옆에 남기는 빈 표지(`container_boot_download`)로 알고, 시작 스크립트가 시도마다 지우며 임시 응답은 상태를 읽을 때 묻는다(`open_stage(download_seen=…)` — 넘어가면 판을 올린다). 받는 동안은 열어 둔 탭의 재시작 띠 글(`/_capa_stage` 셋째 줄 `band`)도 값 줄과 같은 「데이터 받는 중 · n번째 받기」 다(`_pull_band` — 첫 받기 · 다시 받기와 한 글). 받기로 넘어가기 전에 머무는 확인(처음 올리기 전 · 갈라짐 · 깨진 포인터)은 「확인하는 중」 · 「다시 확인하는 중」 이다 — 깨진 멤버(없음 · 크기 · 해시)는 받는 도중에 드러나 되돌리기 전의 300초 확인도 실제 받기라 그동안은 받는 값 줄이다. CI/CD 로 고치는 사람 갈래는 「다시 확인하는 중」 이다, 시험 `tests/test_container_stage.py` · `tests/test_container_start_sync.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
     ③ 점검 ④ 설치 · 자동 로그인 · 토큰(자동 로그인 — `managed` + 키 + 저장 객체 `ok` 면 저장된 계정으로 한 번 로그인, `auto_login_step` ·
     `bdq_login.start_login`. 성공하면 `CAPA_BDQ_TOKEN` 을 쓰지 않고, 그 밖은 예비 토큰 길이며 파일 이름은 계정 하나의 원천(저장된 계정 →
     `CAPA_BDQ_USER_NAME`)이다. 풀린 계정 · 비밀번호 · 키는 가리개에 통째로 들고 키는 하위 프로세스에 넘기지 않는다, 예상하지 못한 예외는
-    종류 이름만 남기고 예비 토큰 길 — 시험 `tests/test_container_start_login.py`, 키도 객체도 없는 서버의 잠든 불변식 포함) ⑤ `boot-pull` 되풀이(사람이 손대야 풀리는 갈래 `BOOT_HUMAN_KINDS` 아홉 — 설정 · aws 없음 · 거절 · 버킷 없음 · 디스크 · 깨짐 · 갈라짐 · 어긋남 · 판 새로움 — 은 300초마다 · 화면 표지 「점검 중」. 끝줄의 이름 · 수 칸(필요 · 남은 바이트 · 바뀐 DB · DB 판 · 코드 판 · 세대 — `BootOutcome` 의 더한 칸)은 `parse_boot_line` 이 닫힌 꼴로 다시 보고 임시 화면의 접힌 「관리자용 진단」 에 싣는다 — 모르는 수는 줄을 뺀다) ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
+    종류 이름만 남기고 예비 토큰 길 — 시험 `tests/test_container_start_login.py`, 키도 객체도 없는 서버의 잠든 불변식 포함) ⑤ `boot-pull` 되풀이(사람이 손대야 풀리는 갈래 `BOOT_HUMAN_KINDS` 아홉 — 설정 · aws 없음 · 거절 · 버킷 없음 · 디스크 · 깨짐 · 갈라짐 · 어긋남 · 판 새로움 — 은 300초마다 · 화면 표지 「점검 중」. 끝줄의 이름 · 수 칸(필요 · 남은 바이트 · 바뀐 DB · DB 판 · 코드 판 · 세대 — `BootOutcome` 의 더한 칸)은 `parse_boot_line` 이 닫힌 꼴로 다시 보고 임시 화면의 접힌 「개발자용 진단」 에 싣는다 — 모르는 수는 줄을 뺀다) ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
     판 값 `AWS_CLI_VERSION` 은 `docker/Dockerfile-prod` 의 `awscli==` 한 줄과 시험이 맞댄다 — `requirements.txt` · 락 밖이고(`tests/test_requirements_export.py` 가 범위를 본다) 사외 개발 환경에 넣지 않는다. 실제 `aws` 왕복은 `CAPA_TEST_AWS_BIN` 이 있을 때 돈다.
 - `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
   0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
@@ -2164,7 +2197,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/conftest.py` 가 토큰 폴더를 없는 곳으로 돌리고 `BIGDATAQUERY_LOGIN_TOKEN` 을 지운다(`tests/test_bdq_token.py`).
 - `src/capa_simulation/io/bdq_login_store.py` — BigDataQuery 자동 로그인 계정의 저장 객체 한 곳(버킷 `secrets/bdq_login.json` —
   세대 · 스냅샷 · `access/` · `modules/` 밖, 2026-11-16 사용자 결정 D1 · D2). 계정 · 비밀번호 JSON 을 CD 환경변수 `CAPA_BDQ_SECRET_KEY`
-  (cryptography Fernet)로 감싼 `cipher` 와 메타(`entered_by` 넣은 관리자 앱 ID 앞 두 글자 · `entered_at` · `state` `ok`/`stopped` ·
+  (cryptography Fernet)로 감싼 `cipher` 와 메타(`entered_by` 넣은 개발자 앱 ID 앞 두 글자 · `entered_at` · `state` `ok`/`stopped` ·
   `stop_reason` · `stopped_at` · `misses` — 성공 없이 이어진 닿지 못함 · 확인 못 함의 수, 없으면 0)다. `managed` 이고 키 꼴이 맞을 때만
   선다(`availability` — 키가 없으면 S3 에 묻지 않는다). 키 없음 · 틀림 · 객체 없음 · 깨짐 · 판 다름 · 풀리지 않음은 모두 「저장된 계정
   없음」 이고 죽지도 멈추지도 않는다. 멈춤 표시(`mark_stopped`) · 자동 시도 앞의 시도 표시(`mark_attempting` — 멈춤 `attempting`, 기억은
@@ -2191,7 +2224,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   OS 연결 errno · 이름 풀기 · `urllib3` 연결 단계 종류 · 그것을 든 응답 없는 `requests` 연결 실패, 또는 하위 프로세스 시간 초과. 종류 이름만
   연결인 401 · 읽기 시간 초과 · 끊김은 거절) · `unavailable`(패키지 없음 · 시도 전 거절). 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
   멈춤(`attempting`)으로 써 두고(쓰지 못하면 로그인하지 않음) 결과로 고쳐 쓴다 — 결과를 적지 못하거나 도중에 끊기면 다음 시작이 로그인하지
-  않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 관리자
+  않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 개발자
   알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). 자동 시도 연속 3번
   (하위 프로세스를 띄운 수) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
   종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —
@@ -2900,8 +2933,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/korea_time.py` — 화면 · 알림 · 복사 글에 그리는 시각의 시각대 한 곳(`KST` — +09:00 고정 ·
   `kst_clock(시각대 붙은 시각 · UNIX 초, 꼴)` — 시각대 없는 시각은 `ValueError`, 먼 시각은 넘침을 그대로 올림). 표준 라이브러리만
   쓴다 — `audit/read.KST` · `auth/page_frame.KST` 는 이 상수 그대로다. 규칙은 8장 「화면 시각은 KST」.
-- `src/capa_simulation/notice_board.py` — 관리자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
-  재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「관리자」) · `current` · `revision`
+- `src/capa_simulation/notice_board.py` — 개발자가 보낸 공지 하나(2026-11-17 공지 보드 답 q-use — 프로세스 메모리 · 잠금 하나 ·
+  재시작하면 걷힘 · 서버 한 대 전제). `Notice`(짧은 무작위 id · 글 · 보낸 시각 · 끝 시각(KST) · 보낸 이 「개발자」 — `SENDER_LABEL`) · `current` · `revision`
   (보냄 · 거둠 · 끝남마다 오름) · `send`(갈음 · 같은 글 + 같은 끝은 한 번 · `expected` 대조는 잠금 안 — 어긋나면 `NoticeChanged`, `ended` 는 서 있던 공지가 없어졌는가(끝남 · 거둠) · 거짓이면 갈음) ·
   `withdraw`(그 id 일 때만) · `check`(빈 글 · 300자 넘음 · 끝 ≤ 지금 · 24시간 넘음은 `NoticeInvalid` — `ValueError`, `message` 는 미리 정한 글뿐이라 화면이 `str(exc)` 없이 싣는다) · `default_until`(지금 + 1시간 10분 올림) ·
   `until_from_time`(지난 시각이면 내일) · `until_text`(끝 글 — 보낸 날의 다음 날이면 `11-18 09:00`, 판 · 전문 · 카드 · 보냄 알림창이 같은 글) ·
@@ -2989,7 +3022,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사이드바 줄 · 머리 띠와 같은 값이라 두지 않는다, 2026-11-09 상단 띠 재고) → 알림 칸 →
   테두리 하나의 편집기 영역 `equipment_master_frame` 안 두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 구획(따로 테두리 없음) 또는 작은 편집표 · 오른쪽
   `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
-  이력」 → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
+  이력」(「새 호기」 는 설비 마스터를, 「저장 전 변경」 은 비가동 일정이라도 고치는 등급에만 — 열람은 「호기 상세 · 저장 이력」) → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
   이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
   (`required=True`). 받기 콜백이 오른쪽 칸을 바꿀 때는 그 칸을 바로 적지 않고 `_SIDE_NEXT_KEY` 에 두어 다음 고르기 **앞**에서
   적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).
@@ -3529,19 +3562,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
     `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
 - `src/capa_simulation/components/boot_stop.py` — 앱이 데이터를 열지 못한 회차의 앱 안 멈춤 판(`app.py` 의 부트스트랩
-  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘. 남이 쥔 잠김은 경고 끝이 「— 관리자에게 알려 주세요」(`HELD_LINE` — 뒤 회차 DB 실패 알림의 `page_bootstrap.ADMIN_TAIL` 과 같은 일, 카드 p1-no-revision), 자기 잠김은 다시 하면 풀려 꼬리가 없다. 아래 열기 · 쓰기 실패와 그 밖도 남이 쥔 잠김과 같은 꼬리에 까닭을 괄호로 싣는다 — 「지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 관리자에게 알려 주세요」 + 「다시 시도」, 그 밖은 괄호 없이(`io_line` — 뒤 회차 DB 실패 알림의 짧은 글과 같은 꼴, 보드 decided-login 7)) →
+  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘. 남이 쥔 잠김은 경고 끝이 「— 개발자에게 알려 주세요」(`HELD_LINE` — 뒤 회차 DB 실패 알림의 `page_bootstrap.ADMIN_TAIL` 과 같은 일, 카드 p1-no-revision), 자기 잠김은 다시 하면 풀려 꼬리가 없다. 아래 열기 · 쓰기 실패와 그 밖도 남이 쥔 잠김과 같은 꼬리에 까닭을 괄호로 싣는다 — 「지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 개발자에게 알려 주세요」 + 「다시 시도」, 그 밖은 괄호 없이(`io_line` — 뒤 회차 DB 실패 알림의 짧은 글과 같은 꼴, 보드 decided-login 7)) →
   판 올리기 실패(`_migration_core.MigrationFailed` — 이미 적용된 SQL 의 체크섬이 바뀜(`MigrationChanged`) · 새 SQL 이 SQL · 데이터
   오류로 실패함, 「다시 시도」 없음) → 디스크 가득(errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set
   lock`) → 그 밖이다. 진단의 원문은 판 올리기 실패가 감싼 DuckDB 오류(`__cause__`)다.
   판은 쉬운 경고 한 줄(`st.error` — UI-NTF-08 예외) · 주 단추 「다시 시도」(누름이 회차 하나 — 부트스트랩은 성공한 회차에만
   「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분> · <오류 종류>」(오류 종류 이름은 누구에게나 — 보드 d12 (가)) ·
-  접힌 「관리자용 진단」(복사 단추 · 지금의 `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 접힌 진단은
-  관리자 몫(`admin_view.admin_notes_visible`)에만 선다 — 접어도 누구나 펼치므로 접힘으로 가리지 않고, 판정이 무엇을 내도 진단
+  접힌 「개발자용 진단」(복사 단추 · 지금의 `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 접힌 진단은
+  개발자 몫(`admin_view.developer_notes_visible`)에만 선다 — 접어도 누구나 펼치므로 접힘으로 가리지 않고, 판정이 무엇을 내도 진단
   없음으로 물러선다(마지막 자리). 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않는다. 공용 조각은 `components/stop_panel.py`(앱 안 멈춤 판 셋 —
   앱 시작 실패 · 접속 멈춤 · 한 화면 오류 — 의 한 꼴: 경고 띠 → 주 단추 하나 → 문의 줄 → 참고 줄 → 접힌 진단. 띠와 주 단추는 부르는 쪽이, 뒤 셋은
-  `render_stop_footer` 가 같은 차례로 그리고 관리자 몫 판정 `admin_fold_visible` 이 셋의 물러섬을 한 곳에 둔다. 문의 줄 메일은 그 회차 테마의 `ACCENT` 링크로 사이드바 앱 정보 카드 · 앱 밖 화면의 문의처와 같은 색이다 — 줄은 원문 HTML 문단 하나(`contact_markup` — 마크다운 줄 안의 `<a>` 는 GFM 자동 링크가 메일 글을 한 번 더 감싸 색이 빠진다), 보이는 글은 평문 `contact_caption` 과 같다. 시험 `tests/test_stop_panel.py`). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
+  `render_stop_footer` 가 같은 차례로 그리고 개발자 몫 판정 `admin_fold_visible` 이 셋의 물러섬을 한 곳에 둔다. 문의 줄 메일은 그 회차 테마의 `ACCENT` 링크로 사이드바 앱 정보 카드 · 앱 밖 화면의 문의처와 같은 색이다 — 줄은 원문 HTML 문단 하나(`contact_markup` — 마크다운 줄 안의 `<a>` 는 GFM 자동 링크가 메일 글을 한 번 더 감싸 색이 빠진다), 보이는 글은 평문 `contact_caption` 과 같다. 시험 `tests/test_stop_panel.py`). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
   함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
-  관리자가 참고 줄과 짝을 맞출 자리로 Admin 「통합인증 점검」 최근 사건 고리에 사건 `boot_fail`(사유 코드 = 갈래 키 · `kind` = 오류 종류 — 표의 사유 코드 칸은 「<갈래> · <종류>」)을 한 줄 남긴다(`auth.runtime.note_boot_failure`, 보드 boot-record — C-DEP 에는 서버 로그 창구가 없다). 같은 갈래가 이어지면 처음 한 번만(회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지 않는다)이고 `app.py` 가 부트스트랩이 저장소를 열고 끝낸 회차(공식버전이 없어도 — 「해 봤다」 표지 `OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY` 가 그 회차에 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다)에 `note_boot_success` 로 이어짐을 끊는다. 이어짐 표지는 통합인증 프로세스 상태(`runtime.reset` 이 비운다)에 있다. 새 알림 번호 · 감사 대응은 없다.
+  개발자가 참고 줄과 짝을 맞출 자리로 Admin 「통합인증 점검」 최근 사건 고리에 사건 `boot_fail`(사유 코드 = 갈래 키 · `kind` = 오류 종류 — 표의 사유 코드 칸은 「<갈래> · <종류>」)을 한 줄 남긴다(`auth.runtime.note_boot_failure`, 보드 boot-record — C-DEP 에는 서버 로그 창구가 없다). 같은 갈래가 이어지면 처음 한 번만(회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지 않는다)이고 `app.py` 가 부트스트랩이 저장소를 열고 끝낸 회차(공식버전이 없어도 — 「해 봤다」 표지 `OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY` 가 그 회차에 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다)에 `note_boot_success` 로 이어짐을 끊는다. 이어짐 표지는 통합인증 프로세스 상태(`runtime.reset` 이 비운다)에 있다. 새 알림 번호 · 감사 대응은 없다.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   실행이 끝났을 때 앱 시작 실패 표지(`boot_stop.BOOT_STOP_ATTRIBUTE`)가 있으면 「준비 완료」 대신 상태 낱말 「열지 못함」, 끝낸
@@ -3680,8 +3713,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「이름 · 부서 · 로그아웃」(`sso_identity.sso_credit_line`)이 붙고, 그 줄이 있을 때만 캡션을 `unsafe_allow_html` 로 그린다
   (로그아웃을 같은 탭에서 여는 원문 링크 — 이름 · 부서는 `literal_markdown` 으로 막았다). 꺼짐은 두 줄 그대로다.
   - 그리는 것은 캡션뿐이고 자리·바닥 고정·면은 `sidebar_style.py` 가 건다. key 는 조건 카드 접두어를 품지 않는다.
-  - 카드 뒤에 접속 명단 알림 `AD-08` · `AD-09` · `AD-19`(새 스스로 등록 — 최근 30일 수, 지문은 고친 기록의 가장 새 스스로 등록 시각이라 늘 때만 뜬다) 를 낸다 — 셋 다 「그 화면으로」 가 「접속 명단」 펼침을 연다(S3 명단 서버만 · 회차마다 이벤트 칸 세 자리 — 관리자의 어느 화면에서나,
-    2026-11-08 답 U4). 통합인증이 켜진 서버는 그 뒤에 로그인 갱신 거절 알림 `AD-21`(`sso_refresh_alert.render_refresh_alert` — 관리자 몫에만,
+  - 카드 뒤에 접속 명단 알림 `AD-08` · `AD-09` · `AD-19`(새 스스로 등록 — 최근 30일 수, 지문은 고친 기록의 가장 새 스스로 등록 시각이라 늘 때만 뜬다) 를 낸다 — 셋 다 「그 화면으로」 가 「접속 명단」 펼침을 연다(S3 명단 서버만 · 회차마다 이벤트 칸 세 자리 — 개발자의 어느 화면에서나,
+    2026-11-08 답 U4). 통합인증이 켜진 서버는 그 뒤에 로그인 갱신 거절 알림 `AD-21`(`sso_refresh_alert.render_refresh_alert` — 개발자 몫에만,
     회차마다 이벤트 칸 한 자리)도 낸다 — 켜진 S3 명단 서버의 카드 뒤 알림은 네 자리다(감사 기록기가 켜진 서버는 `AD-12` · `AD-13` 두 자리가 그 사이에 더해진다).
     남은 시간 표지는 「· 로그인 n분 남음」 · 「· 로그인 최대 시간까지 n분」 까지 값만이고, 저장해 두라는 말은 최대 시간 10분 전 첫 회차의
     사건 알림 `AD-20`(`components/sso_expiry.py` — `app.py` 가 신원이 있을 때 한 번 담는다, 보드 카드 p1-expiry)이 한다.
@@ -3790,6 +3823,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는 상태(PKG PLAN 붙여넣기 대기와 그 표 위의 편집, 기준 정보 STEP 상자)는 `order_free_keys` 로 넘겨 차례만 바뀐 회차에 남긴다.
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
+  - 적용 · 반영 성공 알림의 「리비전으로 남기려면 … 「신규 리비전 저장」을 누르세요.」 꼬리는 `with_revision_save_tail` 하나로 붙인다 —
+    그 단추가 서는 화면 등급(`scenario.revision_save` — 실무자부터, 운영 서버가 아닌 곳은 늘)에만(열람은 적용은 하지만 그 단추가 없다).
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기·표 초안을 적고 사이드바가 `pending_edit_labels` 로 앞 회차
     목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
@@ -3844,7 +3879,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
 - `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고 줄 「그 화면으로」 를 누른 리비전 칸(`CHECK_TARGET_KEY` — 경고 줄이 대상 `CHECK_TARGET_KIND` 를 들고 다니다 알림 칸이 탭 길을 다 연 회차에 그 콜백이 `queue_check_target` 으로 적고, 같은 회차의 「점검」 칸 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다 · 쓰지 않고 남은 것은 다음 앱 전체 회차 앞에서 알림 칸이 버린다 `expire_check_target` — `CHECK_TARGET_FRESH_KEY`, 2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
-- `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다.
+- `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다. 값만 보는 등급(data `readonly`)에게는 칸 고치기 · 손잡이 · 줄 옮기기 단추 · 「고친 칸 · 막힘」 범례를 그리지 않고(작업 줄은 머리 맞춤 자리라 빈 줄로 남는다) Alt+↑ ↓ 도 옮기지 않는다 — 표 틀은 `mode` 와 값만 여부로 다시 짓는다(`builtKey` — 「이 등급으로 보기」 를 끝내면 같은 마운트에서 풀린다).
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
   `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
@@ -4402,7 +4437,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/diagnostic_copy.py` — Admin 진단 펼침(서버 시작 점검 · 통합인증 점검 · DB 동기화)과 모듈 상태 팝오버의 글 전체를 한 번에 복사하는 단추와 그 글을
   짓는 도우미다(UI-NTF-10). 브라우저 안에서 끝나 회차가 돌지 않고, 막히면 고른 글을 읽기 전용 칸으로 편다(`execCommand` 는 쓰지 않는다). 복사 글은 밖으로 나가는 글이라
   부르는 쪽이 리뷰에 옮기지 말아야 할 값을 싣지 않는다(`sso_status.status_text`, `container_start_check.report_text`). 접속 명단은 loginid 가 사람이라 복사 단추를 두지 않는다.
-  접힌 진단 펼침의 이름 「관리자용 진단」 도 여기 한 곳이다(`ADMIN_DIAGNOSTIC_LABEL` — 앱 안의 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판이 함께 쓰고 셋 다 관리자 몫(`admin_view.admin_notes_visible`)에만 세워 서버 경로 · 원문 · 실행 명령을 싣는다. 로그인 전 시작 임시 화면은 누구나 펼치되 이름 · 수만 싣고(보드 d9 (가)) Streamlit 을 부르지 않아 그 `DIAGNOSTICS_SUMMARY` 는 로그인 화면 틀의 낱말(`auth/page_frame.DIAGNOSTIC_LABEL`)을 불러 쓰고 시험이 맞댄다. 통합인증 앱 밖 공통 틀(`auth/page_frame.DIAGNOSTIC_LABEL` — 설정 막힘 · 로그인 실패)도 누구나 펼치되 값 · 비밀값은 싣지 않는다 — 같은 이름을 시험이 맞댄다).
+  접힌 진단 펼침의 이름 「개발자용 진단」 도 여기 한 곳이다(`ADMIN_DIAGNOSTIC_LABEL` — 앱 안의 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판이 함께 쓰고 셋 다 개발자 몫(`admin_view.developer_notes_visible`)에만 세워 서버 경로 · 원문 · 실행 명령을 싣는다. 로그인 전 시작 임시 화면은 누구나 펼치되 이름 · 수만 싣고(보드 d9 (가)) Streamlit 을 부르지 않아 그 `DIAGNOSTICS_SUMMARY` 는 로그인 화면 틀의 낱말(`auth/page_frame.DIAGNOSTIC_LABEL`)을 불러 쓰고 시험이 맞댄다. 통합인증 앱 밖 공통 틀(`auth/page_frame.DIAGNOSTIC_LABEL` — 설정 막힘 · 로그인 실패)도 누구나 펼치되 값 · 비밀값은 싣지 않는다 — 같은 이름을 시험이 맞댄다).
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
   사용자 지시). `render_data_error(message, code=, tab=, text=, goto=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
   좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.
@@ -4418,9 +4453,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   있다고 확인한 회차의 알림 칸 data 가 낸다(`alert_center` 의 `official_known` — 계산 화면은 정상 회차에 해소를 낼 자리가 없다, 2026-11-14 물음 보드
   decided 5). 공식은 있는데 이 세션이 안 불러온 갈래만 그 화면 코드의 **확인 단계** 사건 알림(「불러온 시나리오 없음 — 새로고침하면 공식버전을
   엶」, 계기 `EMPTY_CAUSE`)이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
-  열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 관리자에게 알려 주세요」(부르는 쪽이
+  열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 개발자에게 알려 주세요」(부르는 쪽이
   준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스
-  번호 · 원문 줄)은 관리자 몫(`admin_view.admin_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」 만이다
+  번호 · 원문 줄)은 개발자 몫(`admin_view.developer_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「개발자에게 알려 주세요.」 만이다
   (`screen_error_public`). 고칠 곳을 주지 않은 경로 · 계획 표 빈 리비전은
   「그 화면으로」 가 시나리오 관리 「DB 등록」 이다(`screen_error_goto`). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) ·
   `tests/test_no_revision_pages.py`(공식버전 없는 저장소로 모든 화면 — 마크 없음 · 확인 알림) · `alert_marks.place_errors`(오류 없이 그렸다).
@@ -6067,9 +6102,9 @@ RQ_MODULE
     프래그먼트 회차를 막지 못한다(36). 쿠키를 믿지 않고 묻는 자리는 둘뿐이다 — 콜백(`verify_id_token` 뒤 · `issue_session` 앞, 거절 화면과 `login_denied` 기록은 여기 한 곳)과 갱신 경로(폐기 확인 옆 — 401,
     다시 발급하지 않음). 문지기는 분기를 늘리지 않는다 — 명단 밖 쿠키의 탐색은 IdP → 콜백 → 거절 화면으로 가고 fetch 는 401 이라 `sso_reconnect` 띠도 같은 길로 간다. 거절은 쿠키 셋(상태 · 시도 · 세션)을
     지운다(시도 쿠키가 남으면 「로그인이 되풀이됩니다」 가 잘못 뜬다). 거절 주소 `?code=not_on_list`(S3 명단을 아직 못 읽은 동안은 같은 꼴 화면의 `?code=list_unread` — 「접속 권한을 확인하지
-    못했습니다」, 2026-11-08 답 U4 · 「등록했습니다」 `registered` · 저장 실패 `register_failed`)는 로그인 없이 열리므로 진단을 보관하지 않고, 코드는 갈래만 고르며 꼴은 지금 상태(명단을 읽었나 · 거절 표 · 그 계정이 지금 명단에 드나)가 정한다. 다시 해도 같은 두 화면 — 관리자가 고쳐야 열리는 확인 못 함(`unread_needs_admin`) · 명단 파일을 쓰지 않는 서버의 거절(신청 글) — 은 「다시 확인」 이 주 단추가 아니라 보조 링크다(로그인 설정 문제와 같은 꼴 — E2E 보드 s-A-13, 「1분 뒤」 확인 못 함 · 저장 실패는 주 단추 그대로). 저장 실패 화면의 표지는 확인 못 함과 같은 「점검 중」 이다(같은 서버 쪽 문제 — E2E 보드 s-A-14). loginid · 이름은 **거절 표**(콜백이 명단 밖일 때만 심는 15분 HttpOnly 서명 쿠키 — 2026-11-13 보드 D2)가 있는 그 브라우저에만 보이고, 거절 화면의 「접속 권한 신청」(`POST /auth/sso/register` — 같은 출처 · 표에 묶인 숨은 표지 · 신원은 표에서만)이 그 사람을 일반 등급으로 S3 명단에 넣는다(`access_store.register_self`). 환경변수 명단은 기동 때 한 번 읽고(`SsoConfig.access`) `runtime.start` 가 `os.environ` 에서 뺀다(`names.WITHHELD_ENVIRONMENT` — 하위 프로세스에도 넘기지 않는다). 값은 화면 · 로그 ·
-    repr 에 나오지 않는다 — 점검에는 개수만(예외는 관리자에게만 서는 Admin 「접속 명단」 표).
-    **S3 명단(`auth/access_store.py` · `io/s3_small.py`, 2026-11-05 사용자 결정 — 키는 `loginid`, 그룹 클레임 안 씀).** 판정 자리는 그대로이고(`session_check` + 콜백 + 갱신) 이들이 `cfg.access` 대신 `runtime.current_access(cfg)` — 메모리의 불변 한 벌(`AccessSource.access`) — 를 본다. 판정은 S3 에 가지 않는다. 합성: `CAPA_ACCESS_ADMINS` 는 늘 관리자로 들고(관리자 판별 · S3 장애 비상구), 키가 없으면 `CAPA_ACCESS_USERS` 를 그대로 쓰고, 키가 있으면 명단 파일이 없는 동안만 그 목록을 첫 버전으로 쓰고(`AD-09`) 파일이 생긴 뒤로는 듣지 않고 알린다. **관리자 = 환경변수 관리자 ∪ 명단 파일의 관리자 등급**(2026-11-14 「앱 대신 뜨는 화면」 보드 n2 답 — `compose_access`, 판정은 `access_store.is_admin` → `sso_identity.viewer_is_admin` 한 곳). 등급은 정확히 둘(`user` · `admin`, 그 밖의 값은 일반으로 읽고 `demoted` 로 센다)이고 환경변수 관리자는 늘 관리자라 화면에서 일반으로 내리지 못하며(`EnvAdminError`) 자기 등급은 자기가 내리거나 자기를 빼지 못한다(`SelfChangeError`). 명단 파일을 쓸 수 있는 S3 권한은 관리자를 만들 수 있는 권한이기도 하다. 파일의 사람 칸은 형식 판 1 그대로 이름 · 부서 · 든 길(`via` — `self` · `admin`)을 더했다 — 판을 올리면 옛 ZIP 이 「모르는 형식」 으로 읽어 관리자만 들어오므로 올리지 않고, 옛 코드는 새 칸을 버리고 관리자 등급을 일반으로 읽는다(되돌림이 관리자를 만들지 않는 쪽). **스스로 등록**(`register_self` — 거절 화면 「접속 권한 신청」, 신원은 거절 표에서만)은 늘 일반 등급이고 이미 있으면 쓰지 않으며(등급 그대로), 누를 「다시 읽기」 가 없어 쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다(합침) — 관리자 저장은 지금처럼 판이 다르면 덮지 않는다. 받은 판이 메모리 판보다 오래되면(덮어쓴 직후 옛 판을 돌려준 저장소) 얹지도 메모리에 올리지도 않고 실패다(`StoreConflictError` — 뺀 사람 · 관리자 등급이 되살아나지 않게). 스스로 등록의 사건 · 서버 로그에는 계정을 싣지 않는다(저지른 사람이 곧 대상 — 계정은 감사 줄 `user_self_registered` 에만). 그 실패는 명단 밖 사람이 되풀이해 남길 수 있어 최근 사건 고리에 넣지 않고 누계만 센다(`runtime.SELF_REGISTER_FAILED_EVENT` — 「S3 명단」 줄 `스스로 등록 실패 n`, 감사 대응표 밖), 같은 거절 표로 실패한 신청은 60초 동안 저장소에 다시 가지 않는다(`runtime.register_cooling`). 스스로 등록에 딸린 다시 쓰기의 일(못 읽은 항목이 빠짐 `user_bulk_dropped` · 첫 판 심기 `user_seeded`)은 자동 행위(`system:sso`, 미검증)로 감사에 남긴다. 빠진 수는 감사 기록기가 꺼진 서버에서도 파일의 고친 기록 `drop_unreadable n` 과 사건 `access_self_registered` · 관리자 저장 `access_saved` 의 `dropped` 칸(수만)에 남고, 0 보다 크면 Admin 「최근 사건」 표의 사유 코드 칸이 같은 이름 `drop_unreadable n` 이다(`sso_status._event_code` — `access_store.CHANGE_DROP`). 로그인 성공은 거절 표를 늘 지운다 — 콜백은 IdP 의 교차 사이트 POST 라 `SameSite=Lax` 인 표가 실려 오지 않는다. 기동 때 진입 파일이 한 번 읽는다(`server.start_sso` → `read_at_start` — uvicorn 이 파일을 import 하는 때라 연결을 받기 전이고 이벤트 루프 스레드다). 못 읽으면 앱은 뜨고 관리자만 통과(열림으로 떨어지지 않음) · 관리자 어느 화면에서나 `AD-08`. 그 뒤 네트워크는 이벤트 루프에서 부르지 않는다 — 자가 회복은 콜백이 거절하기 직전에 `run_in_threadpool(retry_unread)`(60초에 한 번 — `runtime.claim_access_retry`), 다시 읽기와 저장은 스크립트 스레드다. 잘 읽어 둔 뒤의 실패는 까닭만 적고 메모리 명단으로 판정이 이어진다. 자가 회복 실패는 들어오지 못하는 사람이 되풀이해 남길 수 있어 최근 사건 고리에 넣지 않고 누계만 센다(`runtime.ACCESS_RETRY_FAILED_EVENT` — 「S3 명단」 줄, 감사 대응표 밖 — 기동 읽기 · 관리자 「다시 읽기」 의 실패는 `sys_access_read_fail`). 저장은 프로세스 잠금으로 줄 세우고, 받을 때의 ETag(없으면 판 번호)와 다르면 덮지 않고 다시 읽게 하며(`If-Match` 는 확인되지 않은 능력이라 보내지 않는다), PUT 이 성공한 뒤에만 메모리를 바꾸고 앞선 읽기 실패 표시를 걷는다. PUT 의 답을 받지 못하면 저장소에 들어갔는지 모른다 — `SaveUnconfirmedError`, 화면 글은 「그대로」 라고 단언하지 않고 다시 읽기로 보내고 점검 줄은 `쓰기 결과 모름` 이다. 쓰기 함수는 화면과 별개로 신원 · 관리자를 다시 본다(`_require_admin`) — 화면의 실수를 막는 벽이고 같은 프로세스의 모듈 코드를 막지 못한다(`check_module` M06 은 쉬운 꼴만 잡고 통과가 보증이 아니다 — 방어선은 런북 4-6, `docs/sso_setup.md` 4장). 파일은 작은 JSON 하나(형식 판 · 판 번호 · 사용자 · 고친 기록 마지막 200건)이다. **첫 판(환경변수 목록, 비었으면 빈 명단)으로 읽는 것은 받아 둔 파일도 표지 객체(`names.ACCESS_SEEDED_OBJECT`)도 없을 때 404 `NoSuchKey` 를 받은 경우뿐이다** — 파일이 있으면 표지도 있게 맞춘다(파일을 처음 만든 저장 · 파일을 받은 읽기가 쓴다, 못 써도 실패가 아니다). 받아 둔 파일이 있었거나 표지가 있으면 `KIND_FILE_GONE` 실패로 메모리를 그대로 두고(관리자만 — 지워진 뒤 옛 환경변수 명단이 되살아나 닫힘이 열림으로 바뀌지 않게), 코드 없는 404(저장소 앞단)는 언제나 실패(못 읽음 · 자가 회복)다. 표지는 GET 으로 본다 — HEAD 는 본문이 없어 그 404 를 없음으로 읽는다. `io/s3_small` 의 요청 하나는 전체 8초 마감이고(연결 · 머리 · 본문 · 100 Continue — 스레드 없이 소켓 겉으로), 이름 풀기만 끊지 못한다. 키 둘은 `names.SECRET_ENVIRONMENT` 이다. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 관리자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
+    못했습니다」, 2026-11-08 답 U4 · 「등록했습니다」 `registered` · 저장 실패 `register_failed`)는 로그인 없이 열리므로 진단을 보관하지 않고, 코드는 갈래만 고르며 꼴은 지금 상태(명단을 읽었나 · 거절 표 · 그 계정이 지금 명단에 드나)가 정한다. 다시 해도 같은 두 화면 — 개발자가 고쳐야 열리는 확인 못 함(`unread_needs_admin`) · 명단 파일을 쓰지 않는 서버의 거절(신청 글) — 은 「다시 확인」 이 주 단추가 아니라 보조 링크다(로그인 설정 문제와 같은 꼴 — E2E 보드 s-A-13, 「1분 뒤」 확인 못 함 · 저장 실패는 주 단추 그대로). 저장 실패 화면의 표지는 확인 못 함과 같은 「점검 중」 이다(같은 서버 쪽 문제 — E2E 보드 s-A-14). loginid · 이름은 **거절 표**(콜백이 명단 밖일 때만 심는 15분 HttpOnly 서명 쿠키 — 2026-11-13 보드 D2)가 있는 그 브라우저에만 보이고, 거절 화면의 「접속 권한 신청」(`POST /auth/sso/register` — 같은 출처 · 표에 묶인 숨은 표지 · 신원은 표에서만)이 그 사람을 열람(명단 저장 값 `user` — 등급 파일 줄 없음)으로 S3 명단에 넣는다(`access_store.register_self`). 환경변수 명단은 기동 때 한 번 읽고(`SsoConfig.access`) `runtime.start` 가 `os.environ` 에서 뺀다(`names.WITHHELD_ENVIRONMENT` — 하위 프로세스에도 넘기지 않는다). 값은 화면 · 로그 ·
+    repr 에 나오지 않는다 — 점검에는 개수만(예외는 개발자에게만 서는 Admin 「접속 명단」 표).
+    **S3 명단(`auth/access_store.py` · `io/s3_small.py`, 2026-11-05 사용자 결정 — 키는 `loginid`, 그룹 클레임 안 씀).** 판정 자리는 그대로이고(`session_check` + 콜백 + 갱신) 이들이 `cfg.access` 대신 `runtime.current_access(cfg)` — 메모리의 불변 한 벌(`AccessSource.access`) — 를 본다. 판정은 S3 에 가지 않는다. 합성: `CAPA_ACCESS_ADMINS` 는 늘 개발자로 들고(개발자 판별 · S3 장애 비상구), 키가 없으면 `CAPA_ACCESS_USERS` 를 그대로 쓰고, 키가 있으면 명단 파일이 없는 동안만 그 목록을 첫 버전으로 쓰고(`AD-09`) 파일이 생긴 뒤로는 듣지 않고 알린다. **개발자 = 환경변수 개발자 ∪ 명단 파일의 개발자 등급**(2026-11-14 「앱 대신 뜨는 화면」 보드 n2 답 — `compose_access`, 판정은 `access_store.is_admin` → `sso_identity.viewer_is_developer` 한 곳). 등급은 정확히 둘(`user` · `admin`, 그 밖의 값은 일반으로 읽고 `demoted` 로 센다)이고 환경변수 개발자는 늘 개발자라 화면에서 일반으로 내리지 못하며(`EnvAdminError`) 자기 등급은 자기가 내리거나 자기를 빼지 못한다(`SelfChangeError`). 명단 파일을 쓸 수 있는 S3 권한은 개발자를 만들 수 있는 권한이기도 하다. 파일의 사람 칸은 형식 판 1 그대로 이름 · 부서 · 든 길(`via` — `self` · `admin`)을 더했다 — 판을 올리면 옛 ZIP 이 「모르는 형식」 으로 읽어 개발자만 들어오므로 올리지 않고, 옛 코드는 새 칸을 버리고 개발자 등급을 일반으로 읽는다(되돌림이 개발자를 만들지 않는 쪽). **스스로 등록**(`register_self` — 거절 화면 「접속 권한 신청」, 신원은 거절 표에서만)은 늘 열람(명단 저장 값 `user`)이고 이미 있으면 쓰지 않으며(등급 그대로), 누를 「다시 읽기」 가 없어 쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다(합침) — 개발자 저장은 지금처럼 판이 다르면 덮지 않는다. 받은 판이 메모리 판보다 오래되면(덮어쓴 직후 옛 판을 돌려준 저장소) 얹지도 메모리에 올리지도 않고 실패다(`StoreConflictError` — 뺀 사람 · 개발자 등급이 되살아나지 않게). 스스로 등록의 사건 · 서버 로그에는 계정을 싣지 않는다(저지른 사람이 곧 대상 — 계정은 감사 줄 `user_self_registered` 에만). 그 실패는 명단 밖 사람이 되풀이해 남길 수 있어 최근 사건 고리에 넣지 않고 누계만 센다(`runtime.SELF_REGISTER_FAILED_EVENT` — 「S3 명단」 줄 `스스로 등록 실패 n`, 감사 대응표 밖), 같은 거절 표로 실패한 신청은 60초 동안 저장소에 다시 가지 않는다(`runtime.register_cooling`). 스스로 등록에 딸린 다시 쓰기의 일(못 읽은 항목이 빠짐 `user_bulk_dropped` · 첫 판 심기 `user_seeded`)은 자동 행위(`system:sso`, 미검증)로 감사에 남긴다. 빠진 수는 감사 기록기가 꺼진 서버에서도 파일의 고친 기록 `drop_unreadable n` 과 사건 `access_self_registered` · 개발자 저장 `access_saved` 의 `dropped` 칸(수만)에 남고, 0 보다 크면 Admin 「최근 사건」 표의 사유 코드 칸이 같은 이름 `drop_unreadable n` 이다(`sso_status._event_code` — `access_store.CHANGE_DROP`). 로그인 성공은 거절 표를 늘 지운다 — 콜백은 IdP 의 교차 사이트 POST 라 `SameSite=Lax` 인 표가 실려 오지 않는다. 기동 때 진입 파일이 한 번 읽는다(`server.start_sso` → `read_at_start` — uvicorn 이 파일을 import 하는 때라 연결을 받기 전이고 이벤트 루프 스레드다). 못 읽으면 앱은 뜨고 개발자만 통과(열림으로 떨어지지 않음) · 개발자 어느 화면에서나 `AD-08`. 그 뒤 네트워크는 이벤트 루프에서 부르지 않는다 — 자가 회복은 콜백이 거절하기 직전에 `run_in_threadpool(retry_unread)`(60초에 한 번 — `runtime.claim_access_retry`), 다시 읽기와 저장은 스크립트 스레드다. 잘 읽어 둔 뒤의 실패는 까닭만 적고 메모리 명단으로 판정이 이어진다. 자가 회복 실패는 들어오지 못하는 사람이 되풀이해 남길 수 있어 최근 사건 고리에 넣지 않고 누계만 센다(`runtime.ACCESS_RETRY_FAILED_EVENT` — 「S3 명단」 줄, 감사 대응표 밖 — 기동 읽기 · 개발자 「다시 읽기」 의 실패는 `sys_access_read_fail`). 저장은 프로세스 잠금으로 줄 세우고, 받을 때의 ETag(없으면 판 번호)와 다르면 덮지 않고 다시 읽게 하며(`If-Match` 는 확인되지 않은 능력이라 보내지 않는다), PUT 이 성공한 뒤에만 메모리를 바꾸고 앞선 읽기 실패 표시를 걷는다. PUT 의 답을 받지 못하면 저장소에 들어갔는지 모른다 — `SaveUnconfirmedError`, 화면 글은 「그대로」 라고 단언하지 않고 다시 읽기로 보내고 점검 줄은 `쓰기 결과 모름` 이다. 쓰기 함수는 화면과 별개로 신원 · 개발자를 다시 본다(`_require_admin`) — 화면의 실수를 막는 벽이고 같은 프로세스의 모듈 코드를 막지 못한다(`check_module` M06 은 쉬운 꼴만 잡고 통과가 보증이 아니다 — 방어선은 런북 4-6, `docs/sso_setup.md` 4장). 파일은 작은 JSON 하나(형식 판 · 판 번호 · 사용자 · 고친 기록 마지막 200건)이다. **첫 판(환경변수 목록, 비었으면 빈 명단)으로 읽는 것은 받아 둔 파일도 표지 객체(`names.ACCESS_SEEDED_OBJECT`)도 없을 때 404 `NoSuchKey` 를 받은 경우뿐이다** — 파일이 있으면 표지도 있게 맞춘다(파일을 처음 만든 저장 · 파일을 받은 읽기가 쓴다, 못 써도 실패가 아니다). 받아 둔 파일이 있었거나 표지가 있으면 `KIND_FILE_GONE` 실패로 메모리를 그대로 두고(개발자만 — 지워진 뒤 옛 환경변수 명단이 되살아나 닫힘이 열림으로 바뀌지 않게), 코드 없는 404(저장소 앞단)는 언제나 실패(못 읽음 · 자가 회복)다. 표지는 GET 으로 본다 — HEAD 는 본문이 없어 그 404 를 없음으로 읽는다. `io/s3_small` 의 요청 하나는 전체 8초 마감이고(연결 · 머리 · 본문 · 100 Continue — 스레드 없이 소켓 겉으로), 이름 풀기만 끊지 못한다. 키 둘은 `names.SECRET_ENVIRONMENT` 이다. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 개발자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
 38. **공용 공정 값은 `src/capa_simulation/shared_process.py` 한 곳이다**(2026-11-08 답 P1 · P2 — 공정 공유 1차). 세션 동안만 살고
     DB · 리비전 · 공용 프로필에 쓰지 않으며 원본 공정명이다. 화면은 그 화면 목록 안의 것만 읽고, 없는 값은 지우지 않는다(머리
     띠 칩 「n개 이 화면 없음」 · 화면 탭 주황 표지 — 2026-11-09 보드 C1 (라) · P1-6). HOME 은 보내기만 한다(`publish_from_home` —
@@ -6094,11 +6129,11 @@ RQ_MODULE
     dataclass 라 피클로 실린다)은 멈춘 리비전의 「경로 n」 을 글을 다시 읽지 않고 세는 재료다.
 40. **접속 · 작업 감사 기록은 두 DB 밖에 추가만 한다**(설계 `audit-1113` 1판 — 결정 기록은 `docs/TODO.md` 몫). 켜짐은
     한 곳이다 — `capa_server.py` 가 통합인증이 켜진 기동에서 `audit/boot.py` 로 켜고(`recorder.enabled()`), 사내 PC · WebIDE ·
-    시험 · `app.py` 개발 실행은 꺼짐이라 기록기 · 탭 · 알림 호출이 0 이다(끄는 환경변수는 두지 않는다 — 관리자가 자기 기록을
+    시험 · `app.py` 개발 실행은 꺼짐이라 기록기 · 탭 · 알림 호출이 0 이다(끄는 환경변수는 두지 않는다 — 개발자가 자기 기록을
     끌 수 없게). 불변조건:
     - **추가만 한다.** 줄은 메모리 큐(상한 20,000줄 — 넘치면 버리고 그 수를 `sys_audit_dropped` 「기록 못 한 줄」 로) → 로컬 스풀(해시
       사슬 `seq` · `prev` · `h`, fsync) → 버킷 `audit/v1/seg/…` · `tool/…` · `daily/…` **새 객체**(조건부 쓰기)로만 쓰고 고치거나
-      지우지 않는다. 앱에는 감사 기록을 고치기 · 지우기 · 끄기 기능이 없다(관리자 자신의 기록 포함). 보관 기간 정리는 버킷 수명
+      지우지 않는다. 앱에는 감사 기록을 고치기 · 지우기 · 끄기 기능이 없다(개발자 자신의 기록 포함). 보관 기간 정리는 버킷 수명
       규칙 몫이다(권장 3년 + 30일 — 저장소 관리자에게 요청). 로컬 스풀은 그 날짜의 일별 파일이 미러에 든 뒤에야 지운다.
     - **두 DB 에 쓰지 않는다.** 시뮬레이션 · 설비 DB 에 표가 없고 마이그레이션도 없다 — 쌍 올리기 · 세대 되돌리기 · 사본에 묶이지
       않는다. `audit/` 접두사는 세대 · 정리(`PRUNE_PREFIXES`) · 되돌리기 밖이다.
@@ -6120,7 +6155,35 @@ RQ_MODULE
       일꾼의 올리기 때 · 밀림 판정(`unshipped_count`)에는 열린 묶음을 넣지 않는다.
     - **화면은 로컬 파일만 읽는다.** Admin Area 「접속 · 작업 기록」 은 스풀 · 미러를 읽고(S3 안 부름) 읽은 줄은 세션 칸에 지문
       키로 둔다 — 「회차마다 DB 0」 · 새 `st.cache_*` 없음을 지킨다. 알림 `AD-12` · `AD-13` 은 메모리 표지만 읽는다. 탭과 두
-      알림을 보는 사람은 관리자뿐이다(`sso_identity.viewer_can_audit` — 기록만 보는 역할을 따로 두지 않는다).
+      알림을 보는 사람은 개발자뿐이다(`sso_identity.viewer_can_audit` — 기록만 보는 역할을 따로 두지 않는다).
+41. **접속 등급은 넷이고 판정은 `auth/grades.py` 한 곳이다**(2026-11-17 두 차례 답 — 결정 기록 `docs/TODO.md` 3장 「운영·배포」, 규칙집
+    6-34). 낮은 차례로 열람 `viewer` · 실무자 `editor` · 관리자 `manager` · 개발자 `developer` 이고 화면 글은 `grades.GRADE_LABELS` 한 벌이다
+    (새 등급 「관리자」 는 옛 공식 지정자 뜻 — 옛 뜻 「관리자」 는 「개발자」, 역할 「앱 관리자」 는 「앱 관리자(개발자)」, 「저장소 관리자」 는
+    그대로). 불변조건:
+    - **어디서 가르나.** 운영 아님(개발 `app.py` · WebIDE · 사내 PC) = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자 몫까지(개발자 몫만 막힘 — 기록도
+      없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 등급 시험은 모두 「운영 + 켜짐」 판정을
+      거친다(`tests/grade_support.operational_grades` — 넷 계정의 등급을 단언, 헛돌기 막음).
+    - **명단 파일 꼴 · 저장 값은 그대로다.** 등급 칸은 `user` · `admin` 둘(`admin` = 개발자) — 앞 ZIP 이 다시 써도 깨지지 않게. 열람 · 실무자 ·
+      관리자는 같은 버킷 · 같은 디렉터리의 등급 파일(`grades.json` — 적는 값 `editor` · `manager` 둘, **열람 = 줄 없음**, 줄마다 그 사람의
+      명단 `added_at`, 표지 `grades_seen.json`)에만 있다. 등록 시각이 다른 줄은 버린다 — 빠졌다 다시 든 사람은 옛 등급을 이어받지 않는다(시각이 초 단위 글이라 「명단에 넣기」 는
+      그 사람의 남은 줄을 명단 쓰기 앞에서 먼저 지운다 — 같은 초로 다시 매겨져도 맞지 않게, 지우지 못하면 넣지 않음).
+      정리 접두(`PRUNE_PREFIXES`) 밖이다. 로컬 자리는 두지 않는다(정본이 둘이 된다).
+    - **못 읽으면 좁게.** 줄 없음 · 시각 다름 · 모르는 값 · 못 읽음 · S3 명단 꺼짐은 모두 열람이다(개발자는 영향 없음). 한 번 읽은 뒤에는 메모리
+      한 벌로 잇고, 못 읽은 동안은 로그인할 때마다(1분에 한 번까지 — 스레드 풀) 다시 읽는다. 첫 부팅에 적어 두는 일은 없다(배포 날 개발자 말고
+      모두 열람). 개발자에게 `AD-25`.
+    - **두 객체 쓰기는 늘 「앞 상태 또는 더 좁은 쪽」 이다.** 열람 · 실무자 · 관리자 사이 = 등급 파일만, → 개발자 = 명단만, 개발자 → 아래 = 등급
+      파일 먼저 뒤 명단, 빼기 = 명단 먼저, 넣기 = 명단 먼저 뒤 등급 파일(둘째 실패 = 열람으로 읽힘 + 알림). 입출력은 명단과 같은 프로세스
+      잠금(replica 1 전제).
+    - **벽은 세 겹이다.** 그릴 때 숨김(`viewer_can` — 미리 보기를 따름) → 누른 순간 표지 벽(`@audited` · `@audited_each` · `@gated` 첫 줄, 깊이 0
+      에서만, 기록기가 꺼져도 선다 — 실제 등급) → 설비 저장 트랜잭션 안의 내용 대조(실무자 저장은 비가동 일정 말고 공통 대장 · 배치 · 일정
+      일곱 칸 · 일정 행 · 이름이 하나라도 다르면 통째 거절 — 일정 없는 호기에 비가동을 넣어 그 호기의 빈 일정 행이 끌려 오는 것도 계산
+      대상이 바뀌어 관리자 몫이고, 화면은 그 비가동을 편집본에 넣는 길에서 걷는다). 거절 한 번 = 감사 한 줄(`authz_fail_grade` · `authz_fail_signin`) — 작업 실패 줄을 더 남기지
+      않는다. 표지 단 새 쓰기는 사건을 `EVENT_FLOORS` 에 더해야 하고(빠지면 `admin.area` 로 닫힌다) 쓰기 장부(`tests/test_write_entry_points.py`)
+      ↔ 벽 · 받는 자리는 `tests/test_grade_coverage.py` 가 본다.
+    - **앱 자신의 쓰기는 등급으로 막지 않는다** — `audit.recorder.as_system`(첫 데이터 · 표시순서 첫 판 · 사라진 시나리오 지정 비우기) · 예약 ·
+      동기화 스레드. 사람 몫 자동 쓰기(HOME 비교 리비전 메우기 · 주요 Case 빈 칸 · 필요 단축 기본값)는 `viewer_can` 이 참일 때만 쓴다.
+    - **되돌림.** 앞 ZIP 은 등급 파일을 모르고 건드리지 않는다 — 되돌린 동안은 등급이 없어 개발자 말고 모두 옛 「일반」(런북 4-2), 다시 오면
+      등급이 그대로 돌아온다(시험 `tests/fixtures/access_list_v1.py` 견본).
 
 ## 6. 핵심 계산 규칙
 
@@ -7635,7 +7698,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 달 회차가 오지 않아 그 프래그먼트가 다음 앱 전체 회차까지 멈춘다(2026-11-14 E2E — Admin 「DB 동기화」 를 연 채
   이웃 상자를 여닫자 45초 넘게 다시 돌지 않았다). 그래서 `run_every` 프래그먼트를 세우는 자리는 전체 실행 안에서
   `sidebar_status.note_periodic_fragment()` 를 부르고, 그 실행 뒤의 앱 전체 요청은 `rerun_fragment_if_alone` 이 프래그먼트
-  회차로 바꾸지 않는다(그 페이지의 여닫기 · 팝업 열기는 앱 전체 회차 — 지금은 `managed` 서버 관리자의 Admin Area 와,
+  회차로 바꾸지 않는다(그 페이지의 여닫기 · 팝업 열기는 앱 전체 회차 — 지금은 `managed` 서버 개발자의 Admin Area 와,
   끊긴 「지금 실행」 회차가 아직 도는 동안의 시나리오 관리 — 「자동 갱신」 탭의 「도는 중」 안내 `_poll_running_round`.
   빠른 반응보다 배지 정확성을 고른 자리 — 2026-11-15 E2E 그림 검수 보드 decided-e2e 2 「좋음」, 설계 규칙 UI-PRF-01 예외).
   프래그먼트 안 위젯의 요청은 브라우저가 시계를 지우지 않아 그대로 빠른 길이고, 다른 페이지로 옮겨 새 전체 실행이 서면
@@ -7781,7 +7844,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다). 접속 · 작업
   기록의 `AD-12`(버킷에 보관되지 않음 — 동기화 아님 · 올리기 없음 · 올리기 30분 넘게 밀림 · 기록 못 한 줄 n · 시계 차이 60초) ·
   `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 감사가 켜진 서버의 **매 회차 갈래 없이
-  두 자리**를 쓰고 관리자 회차에만 세운다(「그 화면으로」 는 Admin Area 기록 탭 — `AD-12` 는 전문이 가리키는 「DB 동기화」 펼침까지, 그 펼침이 서는 `managed` 서버에서만이고 탭 없이 대상 `object_sync` 를 싣는다, 설계 규칙 UI-NAV-01). 꺼진 서버는 부르지 않아 요소 순번이 그대로다.
+  두 자리**를 쓰고 개발자 회차에만 세운다(「그 화면으로」 는 Admin Area 기록 탭 — `AD-12` 는 전문이 가리키는 「DB 동기화」 펼침까지, 그 펼침이 서는 `managed` 서버에서만이고 탭 없이 대상 `object_sync` 를 싣는다, 설계 규칙 UI-NAV-01). 꺼진 서버는 부르지 않아 요소 순번이 그대로다.
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
   `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24` · 필요 단축 일정 보던 기준선이 지워져 진척
   비교를 끔 `RS-06`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
@@ -7914,16 +7977,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   경고라 늘 다 보이게(2026-11-15 E2E 그림 검수 보드 s-B-12 「이대로」, 설계 규칙 UI-TXT-06 · UI-ACC-02 예외 · 4장). 멈춤
   화면(통합인증)은 다른 툴바 단추와 함께 감춘다. 저장은 막지 않는다(2026-11-07 결정 그대로). 같은 알림의
   짧은 글은 누구나 읽는 꼴(「정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다」 · 「저장이 정본에 올라가지 않습니다」)이고
-  환경변수 칸 · CI/CD · 설정 파일 지시는 관리자 몫 전문에만 싣는다(`components/admin_view.admin_notes_visible` — 운영 아닌 꺼진
-  서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 관리자 몫에만 선다.
-- **공지**(2026-11-17 공지 보드 답 q-use · q-look · q-speed · q-until · decided — 설계 규칙 6-33). 관리자가 Admin Area 「공지」 탭에서
+  환경변수 칸 · CI/CD · 설정 파일 지시는 개발자 몫 전문에만 싣는다(`components/admin_view.developer_notes_visible` — 운영 아닌 꺼진
+  서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 개발자 몫에만 선다.
+- **공지**(2026-11-17 공지 보드 답 q-use · q-look · q-speed · q-until · decided — 설계 규칙 6-33). 개발자가 Admin Area 「공지」 탭에서
   보낸 글 하나가 끝 시각까지 서고(`notice_board` — **프로세스 메모리**, 서버 한 대 전제 · 재시작하면 걷힘 · 서버가 둘 이상이면 서버마다
   갈린다 — 사내 확인 거리), 그동안 모든 화면 · 모든 사용자에게 두 가지가 선다. ① 상태 알림 `GL-09`(알림 단계 · 화면 없음 · 이름 「공지」 —
-  짧은 글 `공지 · <글>`, 전문 글 + 「관리자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
+  짧은 글 `공지 · <글>`, 전문 글 + 「개발자 · 17:40 보냄 · 18:20 까지」): 서 있는 동안이 조건이라 끝 시각 전에 새로 연 탭에도 한 번 뜨고
   새 공지는 「내용 바뀜」, 거둠 · 끝남 · 재시작 뒤는 「해소」 다(지문 재료는 공지 id, 범위는 늘 같은 값). ② 머리 「공지」 칩(Guide 바로
   왼쪽 — `theme_toggle.NOTICE_CHIP_ID`, 「정본 아님」 표지와 같은 호스트 꼴 · 알림 단계 색 실선 네모 · 확성기 · 닫기 없음 · 900px
-  미만 창에서는 공정 칩 · 합성 샘플 표지처럼 확성기 아이콘만(2026-11-17 공지 확인 보드 q-narrow — 설계 규칙 UI-ACC-02) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 관리자 글을 싣지 않음):
-  누르면 작은 판(머리 「공지 · 관리자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」(보낸 날의 다음 날이면
+  미만 창에서는 공정 칩 · 합성 샘플 표지처럼 확성기 아이콘만(2026-11-17 공지 확인 보드 q-narrow — 설계 규칙 UI-ACC-02) · 멈춤 화면은 감춤 · 풍선 · 읽기 이름은 짧은 글 표의 고정 글 `notice_title` — 개발자 글을 싣지 않음):
+  누르면 작은 판(머리 「공지 · 개발자 · 17:40」 · 글(평문 `textContent`, 줄바꿈 그대로) · 끝 줄 「18:20 까지」(보낸 날의 다음 날이면
   「11-18 09:00 까지」) · 닫기)이 브라우저 안에서만 열린다(파이썬 회차 없음 — 이 칸이 파이썬을 부르는 자리는 그대로 셋). `app.py` 가 앱 전체 회차마다
   `notice_board.payload()` 를 알림 칸 data `notice` 칸에 싣는다(없어도 해소 표지 — 상태 알림 규칙. 판은 공지가 바뀔 때만 올라 data 가
   회차마다 같다). **이 상태 표지는 이벤트 칸 표지(`alerts.state`)로 내지 않는다** — JS 는 프래그먼트 회차 끝에도 문서의 표지를 다시
@@ -8473,6 +8536,41 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
       (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
       열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
     - `tests/test_literal_markdown.py`(단위)·`tests/test_markdown_name_lists.py`(낫표 없는 이름 목록 — 알림 자리마다 연다).
+
+### 접속 등급(2026-11-17 두 차례 답 — 5장 41 · 규칙집 UI-INP-07 예외 · 6-34)
+
+- **등급 밖 기능은 숨긴다**(이 사람에게 없는 기능 — UI-INP-07 의 예외). 단추 · 탭 · 모드 · 메뉴 항목은 `sso_identity.viewer_can(action)` 이
+  거짓이면 세우지 않는다. 지금만 못 하는 것(확인 체크 전 · 공식에서만 · 계산 오류 · `space_edit_mode`)은 그대로 잠금 + 까닭 풍선이다. 숨긴
+  자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 · 설비 마스터 세 표 — UI-NTF-05). 탭
+  값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다.
+- **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
+  `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험
+  `tests/test_grades.py` 가 표를 잠근다).
+- **쓰는 순간 다시 본다.** 숨김을 믿지 않는다 — 저장소 쓰기는 `@audited` 표지(사건 → `EVENT_FLOORS` 바닥 동작, 더 높으면 `action=`)나
+  `@gated(action)` 이 첫 줄에서 실제 등급으로 판정한다. 한 누름이 저장소를 여러 번 부르면 첫 쓰기 전에 `grades.require_all([...])` 로 한 번
+  본다(반쪽 저장 없음). DuckDB 쓰기가 아닌 허락된 일(BigDataQuery 「시뮬레이션 코드 조회」 등)은 부르는 첫 줄에 `grades.require`.
+- **거절은 받는 자리에서 알림 한 번이다.** 위젯 콜백은 `grade_ui.on_press`, `st.fragment` · `st.dialog` 함수는 `grade_ui.in_fragment`(데코레이터
+  아래쪽), 화면 본문은 `run_core_page` 가 받는다 — 단추 곁 줄을 두지 않는다(UI-NTF-03 · UI-CON-03). 계산 · 시나리오 · HOME 부품은
+  가져오기 고리(`sso_identity` → `app_header` → 입장 화면 → HOME 부품) 때문에 같은 이름의 늦게 읽는 대리 `components/grade_hooks.py` 로
+  부르고, 설비 편집본 경계(`equipment_data_workspace`)는 `sso_identity` · `grade_ui` 를 부르는 순간에 읽는다. 거절 예외(`grades.REFUSALS`)는
+  `Exception` 직속이라 넓은 `except Exception` · `except BOOTSTRAP_ERRORS` 가 삼키지 않게 그 앞에 `except grades.REFUSALS: raise` 를 둔다.
+  `grades.require` 는 알림을 담지 않는다(`write_guard` 잠금 안에서도 불린다). 로그인이 끝난 신원은 등급 거절과 섞지 않는다(`SignInEnded` —
+  「로그인이 끝나 저장하지 않았습니다 — 다시 로그인하세요」).
+- **주소 · 알림으로 연 등급 밖 화면 · 탭**은 `grade_ui.stop_unless`(「개발자만 여는 화면입니다」 · 「실무자부터 여는 탭입니다」 + 「HOME
+  으로」). 화면은 Admin Area 하나이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
+- **설비 화면 내려받기 감추기는 벽이 아니다** — 앱이 그리는 단추는 세우지 않고, 표 도구 막대 · 그림 막대는 `grade_ui.toolbar_scope` ·
+  `chart_config` 로 감춘다. Alarm 표의 CSV 는 `state_alerts.alert_table(csv=False)` 표지가 표와 함께 따라간다. 칸 복사 · 캡처 · 인쇄 ·
+  계산 화면 호기 줄 파일로는 나간다(정한 것). 「Print」 는 모든 등급에 둔다.
+- **앱 정보 카드 등급 표지**는 열람 · 실무자만(UI-TXT-05 의 예외 — 배포 날 거의 모두 열람이라 늘 보이는 표지). 「이 등급으로 보기」 는
+  개발자 자기 창 · 화면만이고 저장은 실제 등급이다(끝내기는 카드 칸 안 단추). 개발자 상태 알림 · 감사 알림은 미리 보기를 따르지 않는다(`admin_view.developer_alerts_visible`).
+- **시험** — 갈래마다 `tests/test_grade_ui_<core|calc|equip|modules>.py` 가 자기 화면을 등급 넷으로 그려 단추 유무를 보고
+  `COVERED_ACTIONS` 와 받는 자리를 다는 뿌리 파일(`assert_refusals_caught`)을 둔다. `tests/test_grade_coverage.py` 가 화면 동작이 모두 덮였는지 ·
+  장부 쓰기마다 벽 · 뿌리가 있는지 본다. 이 그물은 운영 진입(`capa_server.py` — 런타임 전 길은 `tests/test_server_pre_runtime_imports.py`)과
+  컴포넌트 JS · CSS 를 돌리지 않고 표에 적은 단추만 본다 — 컴포넌트 안 단추는 대역이 받은 data 를 그 자산의 node 판정에 그대로 돌리는 줄을
+  같은 시험에 두고(`test_space_unit_sheet_js.run_csv_hidden` · `test_scenario_list_grid_assets.drawn_list_controls`), 「없어야 할 것」 도
+  줄로 적는다(공식 세션의 「공식으로 바꾸기」 · 오른쪽 칸 고르기의 칸 하나하나 · 팝업 끝 바로 가기). 「관리자」 뜻 그물은 `tests/test_grade_name_net.py`(앱 · 부품 · `auth` · `scripts` · sso_setup) ·
+  `tests/test_grade_name_net_docs.py`(Guide · 런북 · 지침서 · 사내 문서 · 모듈 파일) 둘이고 허용 목록은 `tests/grade_words.py` 한 벌이다
+  (「관리자 몫」 은 같은 문장에 새 뜻 표지가 있을 때만 · 등급 자리의 옛 낱말 「일반」 도 같은 파일이 잡는다).
 
 ### 스크립트와 컴포넌트
 

@@ -20,11 +20,13 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components import grade_ui
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.sso_identity import viewer_can
 from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY, render_voc_draft_keeper
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
@@ -238,6 +240,7 @@ def _text(key: str) -> str:
 # 겹쳐 온 콜백이 잇는다). 끊긴 쓰기 뒤 글을 고쳐 누른 올리기는 지문이 달라 새로 쓴다.
 
 
+@grade_ui.on_press
 def _submit_post(database_path: str, generation: int) -> None:
     """「글 올리기」 콜백. 거절(작성자 빈칸 등)되면 문구만 남기고 적은 제목·내용은 둔다.
 
@@ -279,6 +282,7 @@ def _submit_post(database_path: str, generation: int) -> None:
     st.session_state[POST_FORM_GENERATION_KEY] = generation + 1
 
 
+@grade_ui.on_press
 def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     """「답변 남기기」 콜백. 새 글 폼과 같이 거절되면 적은 답변을 두고, 남기면 비운다."""
     reply_key = f"{REPLY_BODY_KEY}_{post_id}"
@@ -314,6 +318,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     st.session_state[generation_key] = generation + 1
 
 
+@grade_ui.on_press
 def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: int) -> None:
     """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백. 바꾸면 알림창에 알린다 — 저장되는 누름이고
     답변 완료 배지는 글 상자를 펴야 보인다."""
@@ -347,6 +352,7 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
     st.session_state[generation_key] = generation + 1
 
 
+@grade_ui.on_press
 def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     """「글 삭제」 콜백. `reply_count` 는 단추를 그린 회차에 센 답글 수다 — 지운 뒤에는 셀 수 없다.
 
@@ -523,6 +529,10 @@ def _render_post(row: Any) -> None:
         # 실패 문구 칸은 늘 선다 — 생기고 빠져도 아래 단추 줄의 자리가 그대로다.
         render_flash(f"{POST_ERROR_KEY}_{post_id}")
         resolve_generation = current_generation(f"{RESOLVE_GENERATION_KEY}_{post_id}")
+        # 답변 완료 표시 · 글 지우기는 개발자만이다 — 작성자를 손으로 적는 칸이라 자기 글인지 가를
+        # 수 없다(접속 등급 — 설계 규칙 UI-INP-07 예외, 등급 밖 단추는 숨김).
+        if not viewer_can("voc.manage"):
+            return
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",

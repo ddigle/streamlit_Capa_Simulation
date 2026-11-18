@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
@@ -100,7 +101,10 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
 
 
 def _render_locked_save() -> None:
-    """저장을 막는 것이 남은 회차의 저장 자리 — 이름 · 메모 칸 없이 잠긴 단추만 선다."""
+    """저장을 막는 것이 남은 회차의 저장 자리 — 이름 · 메모 칸 없이 잠긴 단추만 선다. 새 시나리오를
+    저장할 수 없는 등급에게는 서지 않는다(설계 규칙 UI-INP-07 예외)."""
+    if not viewer_can("scenario.create"):
+        return
     st.button(
         "새 시나리오로 저장",
         type="primary",

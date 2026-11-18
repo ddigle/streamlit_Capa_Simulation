@@ -46,6 +46,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import (
     BESIDE_KINDS,
@@ -633,6 +634,7 @@ def _stored_version(database_path: str) -> int | None:
         return None
 
 
+@grade_ui.on_press
 def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> None:
     """`저장` 콜백. 받을 수 없는 사유 글(길이·제어 문자)이면 알림 칸에서 거절하고, 호기가 남은 층을
     새로 끄면 확인을 띄우고 끝낸다(S4).
@@ -665,6 +667,7 @@ def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> Non
     _write(database_path, draft, base)
 
 
+@grade_ui.on_press
 def _confirm_save(
     database_path: str,
     generation: int,
@@ -1047,7 +1050,10 @@ def render_space_floor_list(
         ):
             st.caption("층 목록", width="content", help=f"{_LIST_HELP} {_INACTIVE_HELP}")
             st.space("stretch")
-            if not editable:
+            # 층 사용은 설비 · Space 저장(관리자부터 — 2026-11-18 접속 등급)이다. 그 아래 등급에는
+            # 토글을 세우지 않는다(잠김 풍선 없이 숨김 — 설계 규칙 UI-INP-07 예외).
+            granted = sso_identity.viewer_can("equipment.save")
+            if not editable or not granted:
                 # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
                 st.session_state[EDIT_TOGGLE_KEY] = False
             editing = (
@@ -1060,6 +1066,8 @@ def render_space_floor_list(
                     help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
                 )
                 and editable
+                if granted
+                else False
             )
         if not editing:
             # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져

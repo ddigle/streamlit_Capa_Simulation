@@ -28,6 +28,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation import alerts
 from capa_simulation.components import plan_grid
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.flash import pending_flash, queue_flash
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
@@ -56,6 +57,7 @@ from capa_simulation.components.scenario_edit_bar import (
     reset_editors_on_source_change,
     show_row_order_reset,
     source_token,
+    with_revision_save_tail,
 )
 from capa_simulation.components.state_alerts import (
     ALARM_ROW_PLACE,
@@ -752,8 +754,7 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
     )
     _queue_done(
         YIELD_FLASH_KEY,
-        f"{YIELD_TAB_NAME} {origin} 활성 시나리오에 적용했습니다.{note} "
-        "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
+        with_revision_save_tail(f"{YIELD_TAB_NAME} {origin} 활성 시나리오에 적용했습니다.{note}"),
     )
     mark_own_change(OWN_CHANGE_KEY, plan_grid.own_keys(YIELD_TABLE))
 
@@ -1117,11 +1118,12 @@ if plan_actions.submitted:
         else:
             _queue_done(
                 PLAN_APPLIED_FLASH_KEY,
-                f"PKG PLAN을 전역 계획값에 반영했습니다. "
-                f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
-                "구간의 환산·소요대수·확보율과 "
-                f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
-                "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
+                with_revision_save_tail(
+                    f"PKG PLAN을 전역 계획값에 반영했습니다. "
+                    f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
+                    "구간의 환산·소요대수·확보율과 "
+                    "홈 대시보드가 이 계획으로 다시 계산됩니다."
+                ),
             )
             st.session_state.pop(PLAN_STAGED_KEY, None)
             mark_own_change(OWN_CHANGE_KEY, (*plan_grid.own_keys(PLAN_TABLE), PLAN_STAGED_KEY))
@@ -1176,7 +1178,7 @@ if not tab_is_hidden(conversion_tab):
         # 문제가 아니라 계획 없음(0)으로 본 것이다 — 한 문장에 섞으면 채울 기준정보가 없는데 찾으러
         # 간다.
         excluded_load_rows = load_exclusions(monthly_volume)
-        excluded_file_name = (
+        excluded_file_name = edited_file_name(
             f"Capa_Conversion_Excluded_Plans_{effective_start_month}_{effective_end_month}.csv"
         )
         excluded_table = _report_excluded_plans(
@@ -1213,7 +1215,7 @@ if not tab_is_hidden(conversion_tab):
                 "환산",
                 caption=f"단위: {unit}",
                 csv=conversion_csv,
-                file_name=(
+                file_name=edited_file_name(
                     f"Capa_Conversion_{demand_basis}_{effective_start_month}_"
                     f"{effective_end_month}.csv"
                 ),

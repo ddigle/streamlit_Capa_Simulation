@@ -2,12 +2,12 @@
 
 """Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6).
 
-**쓰는 사람.** 탭은 Admin Area 를 여는 사람에게 선다 — 운영 서버는 관리자뿐이고(페이지 앞머리의
+**쓰는 사람.** 탭은 Admin Area 를 여는 사람에게 선다 — 운영 서버는 개발자뿐이고(페이지 앞머리의
 잠금), 개발 PC · WebIDE 는 Admin Area 를 여는 사람이다. 보내는 순간 · 거두는 순간 다시
 판정한다(`sso_identity.admin_area_locked` — 페이지 잠금과 같은 판정, 붙여넣기 팝업과 같은 꼴). 팝업
 안의 누름은 팝업만 다시 돌아 앞머리 잠금을 지나지 않고, 거두기 콜백은 그린 회차의 단추에서 온다.
 
-**탭 안 차례.** 서 있는 공지 카드(글 · 값 줄 `관리자 · 17:40 보냄 · 18:20 까지` · 「거두기」 — 서
+**탭 안 차례.** 서 있는 공지 카드(글 · 값 줄 `개발자 · 17:40 보냄 · 18:20 까지` · 「거두기」 — 서
 있을 때만) → 글 상자(라벨 접음 · 자리표 「공지 글」 · 300자) → 끝 시각(시각만 · 10분 걸음 — 기본은
 지금 + 1시간을 10분 단위로 올림) · 「보내기」. 화면에 설명 문장을 두지 않는다(설명은 Guide
 「공지」).
@@ -25,7 +25,7 @@
 계산하지 않는다). 팝업이 열린 사이 서 있는 공지가 바뀌었으면(갈음 · 거둠 · 끝 시각으로 걷힘) 보내지
 않고 팝업을 닫아 바뀐 카드를 다시 보인다(`notice_board.NoticeChanged` — 대조는 저장 잠금 안). 알림
 글은 까닭 둘(서 있던 공지가 없어짐 · 다른 공지가 섬)로 가르고 누가 했는지 지목하지 않는다 — 같은
-관리자의 다른 탭 · 끝 시각일 수도 있다. 결과는
+개발자의 다른 탭 · 끝 시각일 수도 있다. 결과는
 알림창이다(`queue_flash` — 성공은 알림창으로만, 막힘 · 바뀜도 그 자리에 고칠 입력이 없어 알림창 ·
 Alarm 만). 같은 내용의 두 번 누름은 한 번이다(저장이 같은 공지를 돌려주고, 같은 세션의 겹친 누름은
 `write_guard.save_once`).
@@ -51,7 +51,7 @@ from capa_simulation.components.admin_dialog import (
     open_admin_dialog,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.sso_identity import admin_area_locked
+from capa_simulation.components.sso_identity import developer_wall_locked
 
 DIALOG: Final = "notice_send"
 FLASH_KEY: Final = "notice_admin_flash"
@@ -85,7 +85,7 @@ NEXT_DAY_WORD: Final = "내일 "
 
 SENT_MESSAGE: Final = "공지 보냄 · {until} 까지"
 WITHDRAWN_MESSAGE: Final = "공지 거둠"
-NOT_ADMIN_MESSAGE: Final = "관리자만 공지를 보내고 거둘 수 있습니다"
+NOT_ADMIN_MESSAGE: Final = "개발자만 공지를 보내고 거둘 수 있습니다"
 CHANGED_MESSAGE: Final = "서 있는 공지가 바뀌었습니다 — 서 있는 공지를 보고 다시 보내세요"
 ENDED_MESSAGE: Final = "서 있던 공지가 끝났거나 거둬졌습니다 — 다시 보내세요"
 GONE_MESSAGE: Final = "서 있는 공지가 바뀌어 거두지 않았습니다"
@@ -156,7 +156,7 @@ def _close_confirm() -> None:
 
 def _open_confirm() -> None:
     """「보내기」 콜백 — 다시 판정하고 글 · 끝 시각을 본 뒤 그 순간의 값을 쥐고 팝업을 연다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     moment = notice_board.now_kst()
@@ -179,7 +179,7 @@ def _open_confirm() -> None:
 
 def submit_notice(pending: Pending) -> None:
     """팝업의 「보내기」 한 번 — 다시 판정하고 쥔 값을 그대로 보낸다. 결과는 알림 칸에 담는다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         audit_recorder.record(AUDIT_SEND, out="denied", det={"result": "not_admin"})
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
@@ -216,7 +216,7 @@ def submit_notice(pending: Pending) -> None:
 
 def withdraw_notice(notice_id: str) -> None:
     """「거두기」 콜백 — 다시 판정하고 그린 회차의 공지가 아직 서 있을 때만 걷는다."""
-    if admin_area_locked():
+    if developer_wall_locked():
         audit_recorder.record(
             AUDIT_WITHDRAW, out="denied", tgt=_target(notice_id), det={"result": "not_admin"}
         )

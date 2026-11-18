@@ -1133,7 +1133,7 @@ def test_the_status_shows_counts_only() -> None:
     assert not list(app.exception)
     text = _status_text(app)
     assert_absent(text, ADMIN, "demo.boss", USER, "demo.x", GONE, CONTACT, "DOMAIN")
-    assert "**접속 명단** · 켜짐 · 관리자 2 · 일반 1 · 읽지 못함 1" in text
+    assert "**접속 명단** · 켜짐 · 개발자 2 · 그 밖 1 · 읽지 못함 1" in text
     environment = app.dataframe[0].value.set_index("환경변수")
     for name in (names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS, names.ENV_ACCESS_CONTACT):
         assert environment.loc[name, "상태"] == "있음"
@@ -1181,11 +1181,11 @@ def test_the_status_says_how_the_list_stands_in_each_mode() -> None:
     off_in_production = load_config(sso_environ(drop=[names.ENV_CLIENT_ID]))
     assert off_in_production.mode is SsoMode.OFF
     assert sso_status.access_line(off_in_production).startswith(
-        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 1 · 일반 1 · 읽지 못함 0"
+        "**접속 명단** · 통합인증이 켜지면 적용 · 개발자 1 · 그 밖 1 · 읽지 못함 0"
     )
     blocked = load_config(sso_environ(drop=[names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS]))
     assert sso_status.access_line(blocked).startswith(
-        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 0"
+        "**접속 명단** · 통합인증이 켜지면 적용 · 개발자 0"
     )
 
 

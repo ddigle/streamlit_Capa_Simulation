@@ -149,7 +149,11 @@ def test_every_detail_key_has_a_korean_label_and_flags_read_in_korean() -> None:
         ({"rev_from": 1, "rev_to": 1}, "판 1(그대로)"),
         (
             {"grade_from": "user", "grade_to": "admin", "rev_from": 3, "rev_to": 3},
-            "등급 전 user · 등급 admin · 판 3(그대로)",
+            "등급 전 일반(옛 기록) · 등급 개발자(옛 기록) · 판 3(그대로)",
+        ),
+        (
+            {"grade_from": "viewer", "grade_to": "manager", "rev_from": 3, "rev_to": 4},
+            "등급 전 열람 · 등급 관리자 · 판 전 3 · 판 4",
         ),
         ({"count": 2, "rev_from": 4, "rev_to": 5}, "수 2 · 판 전 4 · 판 5"),
         ({"rev_from": 4}, "판 전 4"),
@@ -190,7 +194,7 @@ line = {
     "actor": "demo.admin",
     "verified": True,
     "tgt": {"type": "loginid", "id": "demo.admin"},
-    "det": {"grade_from": "admin", "grade_to": "user", "rev_from": 5, "rev_to": 5},
+    "det": {"grade_from": "developer", "grade_to": "editor", "rev_from": 5, "rev_to": 5},
 }
 session = {
     "ts": "2026-11-13T00:12:00.000Z",
@@ -218,7 +222,7 @@ def test_the_record_view_gives_the_detail_and_session_columns_a_width() -> None:
 
     assert not list(app.exception), [element.message for element in app.exception]
     [table] = [frame for frame in app.dataframe if "상세" in frame.value.columns]
-    assert table.value["상세"].iloc[0] == "등급 전 admin · 등급 user · 판 5(그대로)"
+    assert table.value["상세"].iloc[0] == "등급 전 개발자 · 등급 실무자 · 판 5(그대로)"
     assert table.value["대상"].iloc[0] == "demo.admin"
     assert table.value["세션"].iloc[1] == "ODjEMVcn"
     widths = {name: config.get("width") for name, config in json.loads(table.proto.columns).items()}

@@ -92,7 +92,7 @@ def test_the_reference_line_carries_the_moment_the_failure_was_recorded(
 
 
 def test_the_admin_diagnostic_carries_the_message_and_repository_frames() -> None:
-    """관리자 몫(통합인증이 꺼진 서버는 누구에게나)에는 접힌 「관리자용 진단」 이 첫 줄 · 이 저장소
+    """관리자 몫(통합인증이 꺼진 서버는 누구에게나)에는 접힌 「개발자용 진단」 이 첫 줄 · 이 저장소
     안 프레임 · 복사 단추를 싣는다 — C-DEP 에는 로그가 없어 원문을 보는 자리다."""
     app = AppTest.from_function(_crashing_page).run()
 
@@ -120,7 +120,7 @@ def test_frames_are_repository_relative_without_the_wrapper() -> None:
 
 def test_a_viewer_who_is_not_the_admin_sees_only_the_kind(monkeypatch: pytest.MonkeyPatch) -> None:
     """통합인증이 켜진 서버의 관리자가 아닌 사람은 오류 종류 이름 · 참고 번호만 본다(d12 (가))."""
-    monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: False)
+    monkeypatch.setattr(admin_view, "developer_notes_visible", lambda: False)
 
     app = AppTest.from_function(_crashing_page).run()
 
@@ -165,7 +165,7 @@ def test_a_failing_admin_check_leaves_the_card_without_the_fold(
     def broken() -> bool:
         raise RuntimeError("판정 실패")
 
-    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
+    monkeypatch.setattr(admin_view, "developer_notes_visible", broken)
 
     app = AppTest.from_function(_crashing_page).run()
 
@@ -249,7 +249,7 @@ def test_the_event_slot_count_does_not_change_with_the_first_failure(
     호스트 자리)를 밀지 않는다. 시작 점검 판정이 참인 서버는 실패 앞뒤 모두 한 자리, 거짓인
     서버(개발 · 사내 PC · 시험)는 앞뒤 모두 0 이다."""
     monkeypatch.setattr(page_failure_card, "start_check_alert_possible", lambda: possible)
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    monkeypatch.setattr(page_failure_card, "developer_alerts_visible", lambda: True)
     app = AppTest.from_function(_alert_script).run()
     before = len(app.get("html"))
 
@@ -270,7 +270,7 @@ def test_a_failure_is_told_to_the_admin_with_its_reference(
     failure = page_failures.record_failure(
         page="공정 Capa 상세", href="process_capa_detail", kind="AttributeError"
     )
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: admin)
+    monkeypatch.setattr(page_failure_card, "developer_alerts_visible", lambda: admin)
 
     app = AppTest.from_function(_alert_script).run()
 
@@ -290,7 +290,7 @@ def test_a_failure_is_told_to_the_admin_with_its_reference(
 def test_one_broken_screen_opened_again_does_not_pop_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """고장 난 한 화면을 여럿이 거듭 열어도 같은 (화면, 종류)면 지문이 같아 알림창이 거듭 뜨지
     않는다 — 건수 · 최근 참고 번호는 글에 실린다. 다른 화면 · 다른 종류면 새 지문이다."""
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    monkeypatch.setattr(page_failure_card, "developer_alerts_visible", lambda: True)
     page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
     app = AppTest.from_function(_alert_script).run()
     first = active_state(app, page_failure_card.ALERT_CODE)
@@ -314,7 +314,7 @@ def test_one_broken_screen_opened_again_does_not_pop_again(monkeypatch: pytest.M
 def test_a_broken_home_still_offers_its_screen(monkeypatch: pytest.MonkeyPatch) -> None:
     """HOME 은 기본 화면이라 주소가 빈 글자다 — 그래도 「그 화면으로」 는 HOME 을 가리킨다(빈
     주소로 빼면 줄이 관리자가 지금 보는 화면을 가리켰다)."""
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    monkeypatch.setattr(page_failure_card, "developer_alerts_visible", lambda: True)
     page_failures.record_failure(page="HOME", href="", kind="KeyError")
 
     app = AppTest.from_function(_alert_script).run()
@@ -327,7 +327,7 @@ def test_a_broken_home_still_offers_its_screen(monkeypatch: pytest.MonkeyPatch) 
 def test_the_count_and_fingerprint_outlive_the_recent_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """최근 줄은 `RECENT_LIMIT` 건이지만 건수는 거기서 멈추지 않고, 지문은 줄에서 밀려난 (화면,
     종류) 쌍도 든다 — 같은 고장이 줄에서 밀렸다고 다시 뜨지 않는다."""
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    monkeypatch.setattr(page_failure_card, "developer_alerts_visible", lambda: True)
     page_failures.record_failure(page="VOC", href="voc", kind="IndexError")
     page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
     app = AppTest.from_function(_alert_script).run()

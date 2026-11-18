@@ -2977,12 +2977,11 @@ def test_the_notice_board_answers_are_recorded_with_what_the_implementation_chos
     좁게 정한 것은 표로 사용자 확인 대기에 남는다. 예외를 더한 UI-TXT-06 · 차례를 고친 UI-LAY-05 가
     「공지」 칩을 든다."""
     document = _text()
-    assert "판 v1.35" in document.split("\n## 1. ")[0]
     assert "- **v1.35 — 2026-11-17.**" in _chapter(document, 8)
     assert "6-33 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-33. ") :]
+    record = section[section.index("\n### 6-33. ") : section.index("\n### 6-34. ")]
     assert "https://claude.ai/artifact/B1pkodTjQDZLJseRW9F57F" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -3056,7 +3055,7 @@ def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
     assert "합성 샘플 표지 · 「공지」 칩은 900px 미만 아이콘만" in canon
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-33. ") :]
+    record = section[section.index("\n### 6-33. ") : section.index("\n### 6-34. ")]
     table = record[record.index("구현이 좁게 정한 것(보드에 올리지 않음") :]
     for row in ("| 끝 시각 글 |", "| 끝 시각 칸 |", "| 칩 풍선 · 좁은 창 |", "| 공지 줄 보관 |"):
         assert row in table, row
@@ -3081,3 +3080,101 @@ def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
         "7-1 줄은 없다",
     ):
         assert phrase in v135, phrase
+
+
+# 2026-11-17 접속 등급 두 차례 보드(6-34) — 1차 카드 넷 · 2차 카드 다섯, 이 차례로 한 줄씩.
+ACCESS_GRADES_1117_LINES = (
+    "existing-members",
+    "m-grades",
+    "new-members",
+    "viewer-what-if",
+    "readback-2",
+    "downtime-which-2",
+    "m-grades-2",
+    "view-as-2",
+    "decided-2",
+)
+# 메모 원문(줄바꿈은 「 / 」 — 2차 메모의 겹빈칸도 그대로).
+ACCESS_GRADES_1117_MEMOS = {
+    "existing-members": (
+        "스스로 등록은 열람으로 등록, 기존 명단 또한 개발자 외 전부 열람 권한으로 반영"
+    ),
+    "m-grades": (
+        "열람자 → 열람, 실무자, 공식 지정자 → 관리자, 관리자 → 개발자 / 이렇게 이름 지정하고,"
+    ),
+    "m-grades-2": (
+        "설비마스터  비가동 일정 표 고치기  저장 내려받기  실무자 가능 / "
+        "입력 비가동 - 고치기 저장 실무자 가능"
+    ),
+}
+
+
+def test_the_access_grade_board_answers_are_recorded_with_what_the_implementation_chose() -> None:
+    """v1.36 — 6-34 는 2026-11-17 접속 등급 보드 두 차례의 카드 아홉이 차례대로 한 줄씩이고
+    (모두 「(2026-11-17 · 규칙 id)」 로 끝남), 메모 셋이 원문 그대로이며 권장이 아닌 답(비가동
+    「둘 다」)이 그렇다고 적힌다. 답 밖에서 구현이 정한 것은 표로 사용자 확인 대기에 남는다.
+    등급 밖 기능 숨김은 UI-INP-07 의 예외, 카드 등급 표지는 UI-TXT-05 의 예외(「없음」 이던
+    자리), 누른 순간 거절은 UI-NTF-03 글, 넣는 창 등급 칸은 UI-INP-08 예외다."""
+    document = _text()
+    assert "판 v1.36" in document.split("\n## 1. ")[0]
+    assert "- **v1.36 — 2026-11-18.**" in _chapter(document, 8)
+    assert "6-34 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-34. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-17) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == ACCESS_GRADES_1117_LINES
+    for card, memo in ACCESS_GRADES_1117_MEMOS.items():
+        line = next(line for line in lines if line.startswith(f"- {card} · "))
+        assert f"「{memo}" in line and "메모 답" in line, card
+    downtime = next(line for line in lines if line.startswith("- downtime-which-2 · "))
+    assert "**(다) 둘 다**(권장이 아닌 답" in downtime and "통째로 저장하지 않는다" in downtime
+    view_as = next(line for line in lines if line.startswith("- view-as-2 · "))
+    assert "**(가) 싣는다**" in view_as and "실제 등급" in view_as
+    table = record[record.index("답 밖 — 구현이 정함(") :]
+    for row in (
+        "| 「이 등급으로 보기」 끝내기 |",
+        "| 숨은 탭 멈춤 |",
+        "| 고침 꼬리 |",
+        "| 입력 비가동 내려받기 |",
+        "| 표 도구 막대 감춤 |",
+        "| 주요공정 히트맵 프리셋 |",
+    ):
+        assert row in table, row
+
+    rules = {rule.id: rule for rule in _rules()}
+    hidden = rules["UI-INP-07"].fields["예외"][0]
+    assert "등급 밖 기능은 숨긴다" in hidden and "그대로 잠금 + 까닭 풍선" in hidden
+    assert "등급 때문에 못 하는 것인가" in rules["UI-INP-07"].fields["판단"][0]
+    assert "tests/test_grade_ui_core.py" in rules["UI-INP-07"].fields["그물"][0]
+    mark = rules["UI-TXT-05"].fields["예외"][0]
+    assert mark != "없음" and "열람 · 실무자만" in mark and "6-34" in mark
+    assert "누른 순간의 등급 거절" in rules["UI-NTF-03"].text
+    assert "등급 고르기 칸(처음 값 실무자)" in rules["UI-INP-08"].fields["예외"][0]
+    history = _chapter(document, 8)
+    v136 = history[history.index("- **v1.36 — 2026-11-18.**") :]
+    for phrase in ("6-34", "UI-INP-07", "UI-TXT-05", "UI-INP-08", "UI-NTF-03", "7-1 줄은 없다"):
+        assert phrase in v136, phrase
+
+
+def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
+    """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
+    보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""
+    document = _text()
+    rules_part = document[document.index("\n## 3. ") : document.index("\n## 6. ")]
+    for old in (
+        "「관리자용 진단」",
+        "admin_notes_visible",
+        "「공지 · 관리자 · 17:40」",
+        "관리자가 보낸 글",
+    ):
+        assert old not in rules_part, old
+    assert "「개발자용 진단」" in rules_part and "「공지 · 개발자 · 17:40」" in rules_part

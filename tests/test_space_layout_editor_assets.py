@@ -1569,3 +1569,26 @@ def test_the_canvas_refusal_names_what_reaches_the_floor() -> None:
     assert why + " 거기까지 놓여 있습니다" in body
     assert body.index("data.canvasEditable === false") < body.index("extentParts()")
     assert "data.canvasLimits?.overlay" in JS
+
+
+def test_every_button_the_editor_hides_has_its_own_hidden_rule() -> None:
+    """편집기 단추 서식(`.sle button:where(…) { display: inline-flex }`)은 브라우저의 `[hidden]`
+    기본 규칙보다 세다 — JS 가 `hidden` 을 다는 단추마다 `[hidden] { display: none }` 규칙이 없으면
+    감춘 단추가 그대로 보인다(E2E — 「호기 정보」 창의 「CSV」 가 등급 밖 사람에게 섰다). 머리
+    `q('.이름')` 으로 쥔 단추 가운데 `.hidden =` 을 적는 것을 모두 본다."""
+    buttons = {
+        name
+        for classes in re.findall(r'<button[^>]*\bclass="([^"]*)"', HTML)
+        for name in classes.split()
+    }
+    held = dict(re.findall(r"const (\w+) = q\('\.([\w-]+)'\)", JS))
+    hidden = set(re.findall(r"\b(\w+)\.hidden = ", JS))
+    checked = sorted(held[name] for name in hidden if held.get(name) in buttons)
+    missing = [
+        name
+        for name in checked
+        if not re.search(rf"\.{re.escape(name)}\[hidden\][^{{]*\{{[^}}]*display: none", CSS)
+    ]
+
+    assert "sle-sheet-csv" in checked
+    assert missing == []

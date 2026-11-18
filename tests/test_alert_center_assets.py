@@ -224,7 +224,7 @@ console.log(JSON.stringify([
     box = JS[JS.index("function tableBox(") :]
     box = box[: box.index("\n}\n")]
     assert "clipped ? fill(t.table_rows_clipped" in box
-    assert "if (!clipped) head.append(csv)" in box
+    assert "if (!clipped && table.csv !== false) head.append(csv)" in box
     assert alert_center.TEXT["table_rows_clipped"] == "앞 {n}건 · 전체 {total}건"
     pairs = JS[JS.index("function logPairs(") :]
     pairs = pairs[: pairs.index("\n}\n")]

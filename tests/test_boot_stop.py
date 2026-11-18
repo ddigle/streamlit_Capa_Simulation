@@ -3,8 +3,9 @@
 """`components/boot_stop.py`(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-boot · d12 (가)).
 
 부트스트랩이 실패하면 쉬운 경고 한 줄 · 「다시 시도」(판 올리기 실패는 없음) · 문의 캡션 · 참고
-줄(끝에 오류 종류 이름) · 접힌 「관리자용 진단」 이 선다. 프로세스 번호 · 서버 파일 경로 · 원문은
-접힌 진단 안에만 있고, 그 진단은 관리자 몫(`admin_view.admin_notes_visible`)에만 선다. 입장 화면이
+줄(끝에 오류 종류 이름) · 접힌 「개발자용 진단」 이 선다. 프로세스 번호 · 서버 파일 경로 · 원문은
+접힌 진단 안에만 있고, 그 진단은 관리자 몫(`admin_view.developer_notes_visible`)에만 선다. 입장
+화면이
 읽는 스타일 표지도 함께 간다.
 """
 
@@ -111,7 +112,7 @@ def test_failures_split_into_the_board_branches(
 ) -> None:
     """잠김(남 · 자기) → 판 올리기 실패 → 디스크 가득 → 권한 → 열 수 없음 → 그 밖. 판 올리기 실패만
     「다시 시도」 가 없다(다시 해도 같다). 자기 잠김(다시 하면 풀림) · 판 올리기 실패 밖은 모두 「—
-    관리자에게 알려 주세요」 로 끝난다 — 열기 · 쓰기 실패는 까닭을 괄호에 싣는다(보드 decided-login
+    개발자에게 알려 주세요」 로 끝난다 — 열기 · 쓰기 실패는 까닭을 괄호에 싣는다(보드 decided-login
     7)."""
     error = make()
     failure = boot_stop.classify_boot_failure(error)
@@ -134,17 +135,17 @@ def test_failures_split_into_the_board_branches(
     [
         (
             boot_stop.DISK_FULL,
-            "지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 관리자에게 알려 주세요",
+            "지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 개발자에게 알려 주세요",
         ),
         (
             boot_stop.PERMISSION,
-            "지금은 데이터를 열 수 없습니다(파일 권한) — 관리자에게 알려 주세요",
+            "지금은 데이터를 열 수 없습니다(파일 권한) — 개발자에게 알려 주세요",
         ),
         (
             boot_stop.CANNOT_OPEN,
-            "지금은 데이터를 열 수 없습니다(파일을 열 수 없음) — 관리자에게 알려 주세요",
+            "지금은 데이터를 열 수 없습니다(파일을 열 수 없음) — 개발자에게 알려 주세요",
         ),
-        (boot_stop.OTHER, "지금은 데이터를 열 수 없습니다 — 관리자에게 알려 주세요"),
+        (boot_stop.OTHER, "지금은 데이터를 열 수 없습니다 — 개발자에게 알려 주세요"),
     ],
     ids=["disk-full", "permission", "cannot-open", "other"],
 )
@@ -158,7 +159,7 @@ def test_an_io_failure_asks_for_the_admin_like_the_later_rounds(code: str, line:
     assert failure.retry
     later = screen_error_short(bootstrap_error_message(_lock(424242)))
     assert later is not None
-    assert re.fullmatch(r".+\(.+\) — 관리자에게 알려 주세요", later)
+    assert re.fullmatch(r".+\(.+\) — 개발자에게 알려 주세요", later)
     assert later.endswith(ADMIN_TAIL) and failure.line.endswith(ADMIN_TAIL)
 
 
@@ -400,7 +401,7 @@ def test_a_failing_admin_check_falls_back_to_no_details(monkeypatch: pytest.Monk
     def broken() -> bool:
         raise RuntimeError("판정 실패")
 
-    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
+    monkeypatch.setattr(admin_view, "developer_notes_visible", broken)
 
     app = _run("lock", monkeypatch)
 

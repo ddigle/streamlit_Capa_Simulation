@@ -55,6 +55,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.app_header import (
     EQUIPMENT_HEADER_HEAD,
     remembered_equipment_suffix,
@@ -722,7 +723,7 @@ def render_availability_gap_panel(
                 sheet_view(bare, processes=scope, static_blocked=static_blocked)
             ),
             width="stretch",
-            config=hover_chart_config(),
+            config=grade_ui.chart_config("equipment.export", hover_chart_config()),
         )
         return
 
@@ -906,7 +907,11 @@ def render_sheet_downloads(bundle: GapSheetBundle, *, heading: Sequence[tuple[st
 
     통은 조건 키(시트 꼴 판 · 범위 지문 — 공정 · 달 · 호기 필터 · 시트 키 — · 머리 글자 · 제목
     세부 글 · 머리 값 줄)로 세션에 몇 벌 기억한다 — 같은 조건 회차 · 칸 누름은 다시 짓지 않는다
-    (공정 Capa 상세 · 산출 결과와 같은 길, 새 `st.cache_*` 없음)."""
+    (공정 Capa 상세 · 산출 결과와 같은 길, 새 `st.cache_*` 없음).
+
+    설비 화면 내려받기 등급(관리자부터 — 2026-11-18 접속 등급) 밖이면 메뉴를 세우지 않는다."""
+    if not sso_identity.viewer_can("equipment.export"):
+        return
     stamp = f"{bundle.view.months[0]}_{bundle.view.months[-1]}"
     request = GapWorkbookRequest(
         view=bundle.view,
@@ -1081,7 +1086,7 @@ def _render_canvas(bundle: GapSheetBundle, canvas: AvailabilitySheetCanvas) -> N
                 canvas.labels,
                 width="stretch",
                 key=GAP_SHEET_LABEL_CHART_KEY,
-                config=static_chart_config(),
+                config=grade_ui.chart_config("equipment.export", static_chart_config()),
             )
     with month_column:
         # 라벨 칸은 월 칸 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다(HOME 과 같은 값).
@@ -1109,7 +1114,7 @@ def _render_canvas(bundle: GapSheetBundle, canvas: AvailabilitySheetCanvas) -> N
                     canvas.months,
                     width="stretch",
                     key=GAP_SHEET_CHART_KEY,
-                    config=hover_chart_config(),
+                    config=grade_ui.chart_config("equipment.export", hover_chart_config()),
                     on_select=partial(
                         pick_gap_sheet_cell, bundle.fingerprint, tuple(bundle.view.months)
                     ),
@@ -1525,6 +1530,7 @@ def _report_manual_cells(
                     title="입력 비가동 칸",
                     file_name="manual_downtime_cells.csv",
                     labels=labels,
+                    csv=sso_identity.viewer_can("equipment.export"),
                 )
             ]
             if cells
@@ -1785,6 +1791,9 @@ def _render_unit_list(
         digits={column: _UNIT_DIGITS[column] for column in table.columns if column in _UNIT_DIGITS},
         heading=shown_heading,
     )
+    if not sso_identity.viewer_can("equipment.export"):
+        # 설비 화면 내려받기 등급(관리자부터) 밖 — 「내려받기 ▾」 를 세우지 않는다.
+        return
     render_download_pair(
         csv=CsvFile(
             data=csv,

@@ -68,8 +68,10 @@ from typing import TypeAlias
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.audit.recorder import as_system
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
+from capa_simulation.components.grade_hooks import on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.revision_label import revision_label
@@ -243,10 +245,14 @@ def _read_view(database_path: str, *, notices: list[str] | None) -> _PickerView:
         profile = _drop_vanished_scenarios(
             repository, database_path, profile, scenario_by_id, notices
         )
+    # 빈 리비전 칸 메우기는 모두가 보는 공용 값의 쓰기라 HOME 설정을 저장할 수 있는 등급의 보이는
+    # 회차만 한다 — 아래 등급은 화면에서만 메운 값을 본다(접속 등급, 거절이 감사에 남지 않게 벽에
+    # 닿기 전에 거른다).
+    may_write = notices is not None and viewer_can("home.settings")
     plans: list[_CasePlan] = []
     for case_no in MAIN_CASE_NUMBERS:
         plan, profile = _plan_case(
-            repository, profile, case_no, scenario_by_id, may_write=notices is not None
+            repository, profile, case_no, scenario_by_id, may_write=may_write
         )
         plans.append(plan)
     return _PickerView(official, scenarios, (plans[0], plans[1]), profile)
@@ -267,7 +273,11 @@ def _draw(
     그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다. `focus` 는 이 회차에 한 번 강조할
     Case 번호다(미지정 칩 — `focus_main_case`). 겹침은 「**같은 리비전** · Case1 · Case2」 값 줄이고
     그 뜻은 풍선이다.
+
+    HOME 설정을 저장할 수 없는 등급(`home.settings` — 관리자 미만)에게는 고르기 없이 고른 값 글만
+    보인다(설계 규칙 UI-INP-07 예외 · UI-NTF-05 — 등급 밖 고르기는 숨기고 값은 보인다).
     """
+    read_only = not viewer_can("home.settings")
     render_profile_heading(
         MAIN_CASE_HEADING,
         view.profile,
@@ -286,6 +296,9 @@ def _draw(
         MAIN_CASE_NUMBERS, view.plans, st.columns(len(MAIN_CASE_NUMBERS)), strict=True
     ):
         with column, st.container(key=main_case_slot_key(case_no)):
+            if read_only:
+                _render_case_value(case_no, plan, scenario_by_id, unset_label)
+                continue
             _render_case(
                 database_path, case_no, plan, scenario_by_id, unset_label, focused=focus == case_no
             )
@@ -402,8 +415,10 @@ def _drop_vanished_scenarios(
     if not vanished:
         return profile
     try:
-        for scenario_id in sorted(vanished):
-            repository.clear_global_main_case_scenario(scenario_id)
+        # 앱이 스스로 하는 정리다 — 누구의 회차든(열람 포함) 돈다(`as_system`, 접속 등급).
+        with as_system("system:app"):
+            for scenario_id in sorted(vanished):
+                repository.clear_global_main_case_scenario(scenario_id)
     except BOOTSTRAP_ERRORS:
         return profile
     clear_global_main_cases_cache()
@@ -529,6 +544,26 @@ def _render_case(
     )
 
 
+def _render_case_value(
+    case_no: int,
+    plan: _CasePlan,
+    scenario_by_id: dict[str, ScenarioSummary],
+    unset_label: str,
+) -> None:
+    """Case 한 칸의 값만 — 머리 줄과 「시나리오 · 리비전」 값 줄(고르기 없음 — `_draw`)."""
+    st.html(case_head_markup(case_no, focused=False))
+    if plan.scenario_id is None or plan.scenario_id not in scenario_by_id:
+        st.markdown(literal_markdown(unset_label))
+        return
+    scenario_name = literal_markdown(scenario_by_id[plan.scenario_id].scenario_name)
+    revision = next((item for item in plan.revisions if item.revision_id == plan.revision_id), None)
+    if plan.error is not None:
+        render_data_error(plan.error, code="HM-01", text="주요 Case 리비전을 읽지 못했습니다")
+        return
+    revision_text = "—" if revision is None else literal_markdown(revision_label(revision))
+    st.markdown(f"**{scenario_name}** · {revision_text}")
+
+
 def _save_name(case_no: int) -> str:
     """Case 의 거부 표지 이름(`write_guard` — Case 마다 따로 막는다)."""
     return f"home_main_case{case_no}"
@@ -564,6 +599,7 @@ def _scenario_choice_label(
     return scenarios[value].scenario_name
 
 
+@on_press
 def _save_case_scenario(database_path: str, case_no: int, seen: CasePair) -> None:
     """「시나리오」 상자의 콜백. 고른 시나리오를 **그 첫 리비전과 짝으로** 저장한다.
 
@@ -578,6 +614,7 @@ def _save_case_scenario(database_path: str, case_no: int, seen: CasePair) -> Non
     )
 
 
+@on_press
 def _save_case_revision(database_path: str, case_no: int, seen: CasePair) -> None:
     """「리비전」 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 저장한다.
 

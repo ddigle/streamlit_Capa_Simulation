@@ -332,7 +332,7 @@ def test_a_screen_that_has_not_loaded_the_official_keeps_its_own_check_alert() -
 def test_a_failure_nobody_on_the_screen_can_fix_ends_with_tell_the_admin(
     lead: str, short: str
 ) -> None:
-    """사람이 고칠 수 없는 DB 실패는 알림 짧은 글 끝이 「— 관리자에게 알려 주세요」 다 — 화면이
+    """사람이 고칠 수 없는 DB 실패는 알림 짧은 글 끝이 「— 개발자에게 알려 주세요」 다 — 화면이
     머리를 붙여도, 짧은 글을 따로 줘도 같다. 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다."""
     message = f"설비 현황을 준비하지 못했습니다. {lead}\n\n- 파일: `x.duckdb`"
     note = data_error_note(message, code="EQ-09")
@@ -351,12 +351,12 @@ def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
     monkeypatch: pytest.MonkeyPatch, admin: bool
 ) -> None:
     """사람이 고칠 수 없는 DB 실패의 전문(파일 경로 · 파일을 연 프로세스 번호 · 원문 줄)은 관리자
-    몫에만 — 그 밖의 Alarm 줄 · 로그 · 복사 글은 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」
+    몫에만 — 그 밖의 Alarm 줄 · 로그 · 복사 글은 화면 머리 · 첫 문단 · 「개발자에게 알려 주세요.」
     만이다. 짧은 글은 둘 다 같다.
 
     파일 줄은 원문이 아니라 넘긴 `Path` 를 그 OS 의 꼴로 적는다 — Windows 에서는
     `\\srv\\DEMO\\x.duckdb` 라 폴더 낱말도 같은 `Path` 에서 뽑는다."""
-    monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: admin)
+    monkeypatch.setattr(admin_view, "developer_notes_visible", lambda: admin)
     held = Path("/srv/DEMO/x.duckdb")
     message = "설비 현황을 준비하지 못했습니다. " + page_bootstrap.bootstrap_error_message(
         duckdb.IOException(
@@ -377,7 +377,7 @@ def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
         return
     assert not any(word in note["full"] for word in hidden)
     assert note["full"] == alerts.plain_text(
-        f"설비 현황을 준비하지 못했습니다. {page_bootstrap.HELD_LEAD}\n\n관리자에게 알려 주세요."
+        f"설비 현황을 준비하지 못했습니다. {page_bootstrap.HELD_LEAD}\n\n개발자에게 알려 주세요."
     )
 
 

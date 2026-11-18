@@ -25,6 +25,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
 from capa_simulation.components.profile_caption import render_profile_heading
@@ -137,6 +138,9 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
         "확보율": profile.securement,
     }
     draft = st.session_state.setdefault(PAST_DRAFT_KEY, {})
+    # HOME 설정을 저장할 수 없는 등급(관리자 미만)은 저장된 세 표를 값만 본다 — 저장 · 메모 ·
+    # 붙여넣기가 서지 않는다(접속 등급 — 설계 규칙 UI-INP-07 예외 · UI-NTF-05).
+    read_only = not viewer_can("home.settings")
     with st.container(border=True):
         render_profile_heading(
             "#### :material/history: 과거 구간",
@@ -144,9 +148,17 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
             key="home_past_data",
             empty="아직 넣은 과거 구간이 없습니다",
         )
-        _render_save(database_path, draft)
+        if not read_only:
+            _render_save(database_path, draft)
     for spec in PAST_TABLE_SPECS:
-        _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
+        _render_table_editor(
+            database_path,
+            profile.version,
+            spec,
+            stored[spec.name],
+            {} if read_only else draft,
+            read_only=read_only,
+        )
 
 
 def past_data_has_pending() -> bool:
@@ -196,11 +208,18 @@ def _render_table_editor(
     spec: PastTableSpec,
     stored: pd.DataFrame,
     draft: dict[str, pd.DataFrame],
+    *,
+    read_only: bool = False,
 ) -> None:
     pending = draft.get(spec.name)
     current = stored if pending is None else pending
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
+        if read_only:
+            st.caption(f"저장 {len(stored):,}행")
+            if not current.empty:
+                st.dataframe(current, hide_index=True, width="stretch", height=240)
+            return
         # 작업 줄: 붙여넣기(이 상자 안 칸)와 저장·대기 행 수. 양식은 붙여넣기 칸의 작업 줄에 선다
         # (맨 위 줄 왼쪽 읽기 · 오른쪽 양식 — 공통 부품). 여는 버튼은 콜백으로 연다 — 칸은 한 번에
         # 한 표만 편다.

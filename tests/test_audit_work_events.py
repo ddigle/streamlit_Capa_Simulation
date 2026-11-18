@@ -74,9 +74,10 @@ EQUIPMENT_EVENTS: dict[str, str | tuple[str, ...]] = {
     "save_fab_layout_canvas": "data_drawing_save",
     "save_floor_layout_canvas": "data_drawing_save",
     "replace_floor_layout_marks": "data_drawing_save",
+    "save_shortening_filter_months": "data_shortening_filter_save",
+    "save_shortening_filter_processes": "data_shortening_filter_save",
+    "acknowledge_legacy_trace": "data_legacy_trace_ack",
 }
-# 업무 값이 아니라 보기 상태라 기록하지 않는 쓰기(설계서 2-3).
-UNRECORDED = ("save_shortening_filter_months", "save_shortening_filter_processes")
 
 
 @pytest.fixture()
@@ -115,9 +116,6 @@ def test_every_listed_write_carries_its_event(
 ) -> None:
     for name, event in table.items():
         assert getattr(getattr(owner, name), EVENT_ATTRIBUTE, None) == event, name
-    for name in UNRECORDED:
-        if hasattr(owner, name):
-            assert not hasattr(getattr(owner, name), EVENT_ATTRIBUTE), name
 
 
 def test_scenario_writes_leave_one_line_each_and_delete_leaves_a_trace(
@@ -240,6 +238,32 @@ def test_voc_and_profile_lines_carry_no_free_text(
         assert text not in payload
 
 
+def test_an_archive_line_counts_the_home_designations_it_cleared(
+    on: None, repository: DuckDBScenarioRepository
+) -> None:
+    """보관은 실무자부터인데 같은 트랜잭션에서 관리자 몫 HOME 지정(공용 비교 대상 · 주요 Case)을
+    비운다(규칙집 6-34 readback-2) — 누가 비웠는지를 보관 줄의 「HOME 지정 비움」 수로 본다."""
+    keep = repository.create_scenario(_metadata(), _reference_tables(), _preset())
+    designated = repository.create_scenario(
+        _metadata("Scenario B"),
+        _reference_tables(),
+        _preset(),
+    )
+    target = (designated.scenario.scenario_id, designated.revision.revision_id)
+    repository.replace_global_comparison_scenario(*target, source="웹 직접 편집")
+    repository.replace_global_main_case(1, *target, source="웹 직접 편집")
+    recorder.take_pending()
+
+    repository.archive_scenario(designated.scenario.scenario_id)
+    repository.archive_scenario(keep.scenario.scenario_id)
+
+    lines = _work()
+    assert [line["ev"] for line in lines] == ["data_scenario_archive"] * 2
+    assert [line["det"] for line in lines] == [{"home_cleared": 2}, {"home_cleared": 0}]
+    assert lines[0]["tgt"] == {"type": "scenario", "id": designated.scenario.scenario_id}
+    assert repository.load_global_main_cases().case(1) == (None, None)
+
+
 def test_equipment_writes_record_too(on: None, tmp_path: Path) -> None:
     equipment = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
     equipment.initialize()
@@ -253,6 +277,25 @@ def test_equipment_writes_record_too(on: None, tmp_path: Path) -> None:
         ("data_baseline_delete", {"type": "baseline", "id": "demo-missing-baseline"}),
     ]
     assert lines[1]["det"] == {"deleted": False}, "지울 것이 없던 지우기는 그렇다고 남는다"
+
+
+def test_the_shared_shortening_filter_and_legacy_ack_leave_value_free_lines(
+    on: None, tmp_path: Path
+) -> None:
+    """모두의 기본 조회 조건(필요 단축)과 옛 배포 흔적 이어 쓰기 — 칸 이름 · 수만 남는다."""
+    equipment = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    equipment.initialize()
+
+    equipment.save_shortening_filter_months(202611, 202703, source="DEMO")
+    equipment.save_shortening_filter_processes(["DEMO-P1", "DEMO-P2"], visible=[], source="DEMO")
+    equipment.acknowledge_legacy_trace(expected_trace_count=0, note=None)
+
+    lines = _work()
+    assert [(line["ev"], line.get("det")) for line in lines] == [
+        ("data_shortening_filter_save", {"field": "months"}),
+        ("data_shortening_filter_save", {"field": "processes", "rows": 2}),
+        ("data_legacy_trace_ack", {"count": 0}),
+    ]
 
 
 def test_a_delete_that_found_nothing_says_so(

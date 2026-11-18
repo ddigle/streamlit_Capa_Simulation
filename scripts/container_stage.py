@@ -12,8 +12,8 @@ C-DEP 의 상태 검사는 시작 제한이 1분이고 무엇을 묻는지 모�
 **꼴은 앱 밖 화면의 공통 틀이다** — 4px 강조 줄 · 앱 마크 · 「S.PKG CAPA」/「AX
 Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 「준비 · 점검 → 설치 →
 데이터 받기 → 앱」(받지 않는 서버는 받기 칸 없음) · 값 줄(지난 시간 · 다음 시도 n초) ·
-문의 줄 · 참고 줄 · 접힌 「관리자용 진단」. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 ·
-값 줄)은 이 화면 몫이고, 낱말(표지 셋 · 「관리자용 진단」 · 「문의」 · 「참고」)과 표지 색 역할은
+문의 줄 · 참고 줄 · 접힌 「개발자용 진단」. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 ·
+값 줄)은 이 화면 몫이고, 낱말(표지 셋 · 「개발자용 진단」 · 「문의」 · 「참고」)과 표지 색 역할은
 로그인 화면 틀(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES`)과 한 표다 — 그 표를
 불러 쓴다. 포트를 잡는 첫 순간이라 Streamlit · `design.tokens` 를 불러오지 않는다
 (`page_frame` 도 tokens 를 그릴 때만 부른다) — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
@@ -147,7 +147,7 @@ NOTE_AUTO: Final = "끝나면 저절로 앱으로 넘어갑니다."
 NOTE_MINUTES: Final = "몇 분 걸릴 수 있습니다."
 NOTE_NO_CICD: Final = "받는 동안 CI/CD 를 다시 누르면 받기가 처음부터 다시 시작됩니다."
 REASON_REMOTE_EMPTY: Final = (
-    "관리자가 데이터를 서버에 처음 올리고 있습니다. 끝나면 저절로 열립니다."
+    "개발자가 데이터를 서버에 처음 올리고 있습니다. 끝나면 저절로 열립니다."
 )
 REASON_TRANSIENT: Final = "저절로 다시 시도합니다."
 NOTE_LONG_RETRY: Final = "계속되면 문의처에 알려 주세요."
@@ -165,44 +165,44 @@ HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
         (FAILURE_CONFIG, FAILURE_CLI_MISSING, FAILURE_DENIED, FAILURE_NO_BUCKET),
         (
             "서버 설정 때문에 시작하지 못했습니다",
-            "관리자가 배포 설정을 고쳐야 열립니다. 문의처에 알려 주세요.",
+            "개발자가 배포 설정을 고쳐야 열립니다. 문의처에 알려 주세요.",
         ),
     ),
     FAILURE_DISK_FULL: (
         "서버 디스크가 모자라 시작하지 못했습니다",
-        "관리자가 디스크를 늘려야 열립니다. 문의처에 알려 주세요.",
+        "개발자가 디스크를 늘려야 열립니다. 문의처에 알려 주세요.",
     ),
     **dict.fromkeys(
         (FAILURE_CORRUPT, FAILURE_FORKED),
         (
             "데이터를 되돌려야 열립니다",
-            "관리자가 데이터를 앞 판으로 되돌려야 합니다. 문의처에 알려 주세요.",
+            "개발자가 데이터를 앞 판으로 되돌려야 합니다. 문의처에 알려 주세요.",
         ),
     ),
     FAILURE_DIVERGED: (
         "서버 데이터가 정본과 달라 멈췄습니다",
-        "관리자의 판단이 필요합니다. 문의처에 알려 주세요.",
+        "개발자의 판단이 필요합니다. 문의처에 알려 주세요.",
     ),
     FAILURE_SCHEMA_NEWER: (
         "앱 판이 데이터보다 오래됐습니다",
-        "관리자가 최신 판으로 다시 배포해야 열립니다.",
+        "개발자가 최신 판으로 다시 배포해야 열립니다.",
     ),
 }
-# 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 확인이
+# 개발자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 확인이
 # 실제 내려받기로 넘어간 뒤(`StageState.downloading`)는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 ·
 # 노트다(이관 전 `remote_empty` 의 처음 올리기 — init — 도 같다). 고치기 전이어도 확인이 멤버를
 # 받기 시작하면(깨진 멤버는 받는 도중에 드러난다) 그동안은 그 값 줄이다. 받기 전에 머무는 확인과
 # 다른 사람 갈래(CI/CD 로 고침)는 「다시 확인하는 중」 이다.
 REPAIRED_IN_PLACE: Final = (FAILURE_CORRUPT, FAILURE_FORKED)
-# 경우별 할 일 한 줄(접힌 「관리자용 진단」).
+# 경우별 할 일 한 줄(접힌 「개발자용 진단」).
 HUMAN_ACTIONS: Final[Mapping[str, str]] = {
     FAILURE_CONFIG: "C-DEP 환경변수 표를 고친 뒤 CI/CD",
     FAILURE_CLI_MISSING: "이미지 문제 — 사외에 요청",
     FAILURE_DENIED: "S3 키 · 권한 확인(키 둘을 함께 다시 발급했는지)",
     FAILURE_NO_BUCKET: "버킷 이름 확인(CAPA_S3_BUCKET)",
     FAILURE_DISK_FULL: "C-DEP 담당에게 컨테이너 디스크 늘리기 요청",
-    FAILURE_CORRUPT: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
-    FAILURE_FORKED: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_CORRUPT: "앱 관리자(개발자) PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_FORKED: "앱 관리자(개발자) PC 에서 generations → rollback(런북 「세대 되돌리기」)",
     FAILURE_DIVERGED: (
         "CI/CD 를 다시 누르면 풀리지만 이 서버에서 정본에 올리지 못한 변경은 사라집니다"
     ),
@@ -342,7 +342,7 @@ def page_css() -> str:
 # ---------------------------------------------------------------- 상태 → 보기
 @dataclass(frozen=True)
 class StageFacts:
-    """머문 까닭의 이름 · 수(값 아님 — 2026-11-14 보드 D9) — 접힌 「관리자용 진단」 이 싣는다.
+    """머문 까닭의 이름 · 수(값 아님 — 2026-11-14 보드 D9) — 접힌 「개발자용 진단」 이 싣는다.
     모르면 비운다. 환경변수 이름은 꼴(대문자 · 숫자 · 밑줄)만, DB 이름은 아는 것만 지난다."""
 
     missing_environment: tuple[str, ...] = ()
@@ -523,7 +523,7 @@ def _pulling(state: StageState) -> _Wait:
 
 
 def _remote_empty_view(state: StageState) -> StageView:
-    """이관 전. 관리자가 처음 올리면(init) 다음 확인이 그대로 받기라 실제 내려받기로 넘어간 뒤는
+    """이관 전. 개발자가 처음 올리면(init) 다음 확인이 그대로 받기라 실제 내려받기로 넘어간 뒤는
     다시 받기의 값 줄이다. 아직 비어 있는지 보는 짧은 확인은 「확인하는 중」 이다."""
     assert state.kind is not None
     wait = (
@@ -540,7 +540,7 @@ def _remote_empty_view(state: StageState) -> StageView:
         reference_at=state.failed_at,
         diagnostics=(
             _label(state.kind),
-            "버킷에 정본 세대가 없음 — 앱 관리자 PC 에서 doctor → init",
+            "버킷에 정본 세대가 없음 — 앱 관리자(개발자) PC 에서 doctor → init",
             "이미 init 했다면 CAPA_S3_BUCKET 이 같은 버킷인지 확인",
             f"시도 {state.failures}회",
         ),
@@ -583,7 +583,7 @@ def _retry_view(state: StageState) -> StageView:
         reference_at=state.failed_at,
         diagnostics=(
             _label(state.kind),
-            "앱 관리자 PC 에서 doctor 로 원문 보기",
+            "앱 관리자(개발자) PC 에서 doctor 로 원문 보기",
             "pod 에 프록시 변수가 있으면 NO_PROXY 에 S3 주소가 있는지 확인",
             f"시도 {state.failures}회",
         ),
@@ -653,7 +653,7 @@ def _human_view(state: StageState) -> StageView:
         until=wait.until,
         until_label=wait.until_label,
         notes=wait.notes,
-        band=wait.band or "점검 중 · 관리자가 고쳐야 열림",
+        band=wait.band or "점검 중 · 개발자가 고쳐야 열림",
     )
 
 

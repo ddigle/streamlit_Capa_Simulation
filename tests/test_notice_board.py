@@ -26,7 +26,7 @@ def test_a_sent_notice_stands_until_its_end_and_then_is_gone_on_read() -> None:
     sent = notice_board.send("  오늘 18:20 서버 점검\n저장해 두세요  ", until, now=NOW)
 
     assert sent.text == "오늘 18:20 서버 점검\n저장해 두세요"
-    assert sent.sender_label == "관리자"
+    assert sent.sender_label == "개발자"
     assert len(sent.id) == 8
     assert notice_board.current(NOW) == sent
     assert notice_board.revision(NOW) == 1
@@ -185,7 +185,7 @@ def test_the_payload_carries_the_mark_revision_view_and_an_active_pageless_note(
     assert payload["notice"] == {
         "id": sent.id,
         "text": sent.text,
-        "sender": "관리자",
+        "sender": "개발자",
         "sent": "17:33",
         "until": "18:20",
         "until_ms": int(until.timestamp() * 1000),
@@ -201,7 +201,7 @@ def test_the_payload_carries_the_mark_revision_view_and_an_active_pageless_note(
     assert note["fp"] == alerts.fingerprint("GL-09", "notice", sent.id)
     assert note["short"].startswith("공지 · 오늘 18:20 서버 점검 ")
     assert len(note["short"]) == alerts.SHORT_LIMIT and note["short"].endswith("…")
-    assert note["full"] == f"{sent.text}\n관리자 · 17:33 보냄 · 18:20 까지"
+    assert note["full"] == f"{sent.text}\n개발자 · 17:33 보냄 · 18:20 까지"
 
 
 def test_an_end_on_the_next_day_carries_its_date_everywhere_it_is_read() -> None:
@@ -213,10 +213,10 @@ def test_an_end_on_the_next_day_carries_its_date_everywhere_it_is_read() -> None
     sent = notice_board.send("밤샘 점검", until, now=late)
 
     assert notice_board.until_text(sent) == "11-18 22:00"
-    assert notice_board.stamp_line(sent) == "관리자 · 23:00 보냄 · 11-18 22:00 까지"
+    assert notice_board.stamp_line(sent) == "개발자 · 23:00 보냄 · 11-18 22:00 까지"
     payload = notice_board.payload(late)
     assert payload["notice"] is not None and payload["notice"]["until"] == "11-18 22:00"
-    assert payload["note"]["full"] == "밤샘 점검\n관리자 · 23:00 보냄 · 11-18 22:00 까지"
+    assert payload["note"]["full"] == "밤샘 점검\n개발자 · 23:00 보냄 · 11-18 22:00 까지"
 
     notice_board.reset()
     utc_sent = notice_board.send(

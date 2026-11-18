@@ -7,7 +7,7 @@
 비우기(`spool.drain`)의 몫이다 — 해시 사슬의 순번 · 앞 해시도 그때 매긴다.
 
 **켜짐은 한 곳이다.** `start` 를 부른 프로세스만 켜진다 — `capa_server.py` 가 통합인증이 켜진
-기동에서 `audit/boot.py` 로 부른다. 끄는 환경변수는 없다(관리자가 자기 기록을 끌 수 없게).
+기동에서 `audit/boot.py` 로 부른다. 끄는 환경변수는 없다(개발자가 자기 기록을 끌 수 없게).
 꺼진 곳(사내 PC · WebIDE · 시험 · `app.py` 개발 실행)에서는 모든 공개 함수가 첫 줄에서
 돌아간다.
 
@@ -15,9 +15,11 @@
 `MAX_QUEUE`) 버리고 그 수를 세어 다음 비우기 때 `sys_audit_dropped` 한 줄로 낸다. 비우기가 해시를
 못 매겨 버린 줄(`note_dropped`)도 같은 수에 더한다.
 
-**행위자는 쓰는 순간에 정한다.** 부르는 쪽이 `actor` 를 주지 않으면 스레드 이름(예약 · 일꾼 →
+**행위자는 쓰는 순간에 정한다.** 부르는 쪽이 `actor` 를 주지 않으면 앱 자신의 쓰기 표지(`as_system`
+— 스레드 로컬, 첫 데이터 · 표시순서 첫 판 · 사라진 지정 비우기)와 스레드 이름(예약 · 일꾼 →
 `system:*`)을 먼저 보고, 아니면 꽂아 둔 해석기(`set_resolver` — 스크립트 스레드의 쿠키를 지금 다시
-검증)를 부른다. 이벤트 루프의 사건은 늘 `actor` 를 준다(해석기를 부르지 않는다).
+검증)를 부른다. 이벤트 루프의 사건은 늘 `actor` 를 준다(해석기를 부르지 않는다). 등급
+판정(`auth/grades.py` 의 판정기)도 같은 `system_actor` 를 읽어 앱 자신의 쓰기를 막지 않는다.
 
 **시간 묶음.** 무인증 실패 · 로그인 갱신 · 명단 밖 되풀이 · DB 올리기 성공은 사건마다가 아니라 UTC
 정시 단위로 센 뒤, 정시를 넘긴 첫 비우기 때 한 줄을 낸다 — 무인증 홍수가 기록을 밀어내지 못한다.
@@ -30,7 +32,8 @@ import json
 import logging
 import threading
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Final
@@ -119,6 +122,8 @@ class _State:
 
 _LOCK = threading.Lock()
 _STATE = _State()
+# `as_system` 이 세운 앱 자신의 쓰기 표지(스레드 로컬 — 행위자 글).
+_SYSTEM = threading.local()
 
 
 # ------------------------------------------------------------------ 켜기 · 끄기
@@ -149,7 +154,7 @@ def set_resolver(resolver: Resolver | None) -> None:
 
 
 def set_grader(grader: Grader | None) -> None:
-    """loginid → 등급(`admin` · `user`) 판정기를 꽂는다(`audit/boot.py`)."""
+    """loginid → 등급(`events.GRADES` 의 사람 몫) 판정기를 꽂는다(`audit/boot.py`)."""
     with _LOCK:
         _STATE.grader = grader
 
@@ -177,8 +182,26 @@ def _hour_of(moment: datetime) -> str:
 
 
 # ------------------------------------------------------------------ 행위자
+@contextmanager
+def as_system(actor: str = "system:app") -> Iterator[None]:
+    """그 안의 쓰기를 앱 자신의 쓰기로 — 감사 행위자는 `actor`, 등급 판정은 없다(스레드 로컬).
+
+    사람 등급으로 막지 않는 앱의 저장(첫 데이터 · 표시순서 첫 판 · 사라진 시나리오 지정 비우기)을
+    감싼다. 겹쳐 불러도 안쪽이 끝나면 바깥 표지로 돌아간다.
+    """
+    previous = getattr(_SYSTEM, "actor", None)
+    _SYSTEM.actor = actor if actor.startswith("system:") else f"system:{actor}"
+    try:
+        yield
+    finally:
+        _SYSTEM.actor = previous
+
+
 def system_actor() -> Actor | None:
-    """실행 문맥이 없는 배경 스레드면 그 `system:*` 행위자."""
+    """앱 자신의 쓰기(`as_system`)이거나 실행 문맥이 없는 배경 스레드면 그 `system:*` 행위자."""
+    marked = getattr(_SYSTEM, "actor", None)
+    if isinstance(marked, str) and marked:
+        return Actor(marked, False, "system")
     name = threading.current_thread().name
     actor = SYSTEM_THREADS.get(name)
     return None if actor is None else Actor(actor, False, "system")

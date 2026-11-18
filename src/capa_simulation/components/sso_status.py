@@ -10,9 +10,9 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
 
 - 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도 그리지 않는다 — 개발 PC · 사내 WebIDE 화면 그대로.
 - 꺼짐(운영)이면 「주소를 아는 사람은 누구나 들어옵니다」 경고와 「켜면 막힐 문제」(`readiness`)를
-  그린다. 다만 운영 서버의 Admin Area 는 관리자에게만 열리고(`sso_identity.admin_area_locked`) 꺼진
-  서버에는 관리자 신원이 없어 이 펼침은 화면에 닿지 않는다 — 켜기 전 미리 보기 길이 없고, 켜려다
-  막히면 설정 화면(`web.config_page`)의 접힌 「관리자용 진단」 이 「고칠 것 n개」 와 다시 접힌
+  그린다. 다만 운영 서버의 Admin Area 는 개발자에게만 열리고(`sso_identity.admin_area_locked`) 꺼진
+  서버에는 개발자 신원이 없어 이 펼침은 화면에 닿지 않는다 — 켜기 전 미리 보기 길이 없고, 켜려다
+  막히면 설정 화면(`web.config_page`)의 접힌 「개발자용 진단」 이 「고칠 것 n개」 와 다시 접힌
   「환경변수 전체(n)」 표(이 펼침과 같은 꼴)로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
   꺼짐 알림 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다
   (`render_off_in_production_alert`) — 잠긴 회차에도 Alarm 으로 닿는다.
@@ -32,7 +32,7 @@ HEAD 가 되어도).
 
 접속 명단 상태 알림 셋(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 버전 · `AD-19` 새 스스로 등록 —
 `render_access_alerts`)은 이 펼침이 아니라 앱 정보 카드(`app_credits.render_app_credits` — 모든 화면
-모든 회차)가 부른다. 못 읽은 동안은 관리자만 들어오므로 관리자가 Admin 을 열기 전 어느 화면에서나
+모든 회차)가 부른다. 못 읽은 동안은 개발자만 들어오므로 개발자가 Admin 을 열기 전 어느 화면에서나
 알아야 한다(2026-11-08 사용자 답 U4).
 """
 
@@ -48,7 +48,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 from capa_simulation import alerts, sync_boot
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
-from capa_simulation.auth import access_store, names, runtime
+from capa_simulation.auth import access_store, grade_store, grades, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components import admin_view, sso_identity
@@ -228,8 +228,8 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
 
 
 def environment_column_config() -> dict[str, ColumnConfig]:
-    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
-
+    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자(개발자)가 셀을 눌러 펴지
+    않고 읽는다.
     px 로 적는 까닭은 `container_start_check.step_column_config` 와 같다."""
     return {
         "환경변수": st.column_config.TextColumn(width=220),
@@ -243,15 +243,25 @@ def _days_left(now: datetime, not_after: datetime) -> int:
 
 
 def access_line(cfg: SsoConfig) -> str:
-    """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다."""
+    """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다.
+
+    S3 명단을 쓰는 켜진 서버는 등급 넷(개발자 · 관리자 · 실무자 · 열람 — 「접속 명단」 표와 같은
+    판정 `grade_store.grade_of`)으로 센다. 그 밖(환경변수 명단 · 아직 켜지지 않음)은 등급 파일을
+    읽지 않아 개발자와 「그 밖」 둘이다."""
     access = runtime.current_access(cfg)
     if not access.enforced:
         return "**접속 명단** · 꺼짐(인증된 사람 전부)"
     state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
-    return (
-        f"**접속 명단** · {state} · 관리자 {access.admin_count} · 일반 {access.user_count} · "
-        f"읽지 못함 {access.unreadable_count}"
-    )
+    if access_store.is_on(cfg):
+        counts = dict.fromkeys(grades.GRADES, 0)
+        for loginid in access.grades:
+            counts[grade_store.grade_of(cfg, loginid)] += 1
+        people = " · ".join(
+            f"{grades.label_of(grade)} {counts[grade]}" for grade in reversed(grades.GRADES)
+        )
+    else:
+        people = f"개발자 {access.admin_count} · 그 밖 {access.user_count}"
+    return f"**접속 명단** · {state} · {people} · 읽지 못함 {access.unreadable_count}"
 
 
 def access_problem_text(problem: SourceProblem) -> str:
@@ -279,7 +289,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
         return "**S3 명단** · 통합인증이 켜지면 적용"
     source = runtime.access_source()
     if source is None:
-        return "**S3 명단** · 실패 · 아직 읽지 않음 · 관리자만 들어옴"
+        return "**S3 명단** · 실패 · 아직 읽지 않음 · 개발자만 들어옴"
     parts = ["**S3 명단** · 정상" if source.problem is None else "**S3 명단** · 실패"]
     if source.problem is not None:
         parts.append(access_problem_text(source.problem))
@@ -290,7 +300,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
             parts.append(f"자가 회복 실패 {retries}")
     document = source.document
     if document is None or source.read_at is None:
-        parts.append("마지막 읽기 없음 · 관리자만 들어옴")
+        parts.append("마지막 읽기 없음 · 개발자만 들어옴")
     else:
         parts += [
             f"마지막 읽기 {_clock_text(source.read_at)}",
@@ -300,7 +310,7 @@ def access_s3_line(cfg: SsoConfig) -> str:
         if source.seeded:
             parts.append("환경변수 첫 버전 · 파일 없음")
         if document.demoted:
-            parts.append(f"등급을 일반으로 읽음 {document.demoted}")
+            parts.append(f"모르는 등급 값 {document.demoted}")
     parts.append(_write_text(source.saved_at, source.save_problem))
     registrations = runtime.self_register_failures()
     if registrations:
@@ -394,7 +404,7 @@ def _event_code(fields: dict[str, str]) -> str:
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
     로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
     실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
-    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(로그인 전 실패 표는 펼침에 늘 있고, 서명이
+    줄의 「진단 <번호>」 를 받은 개발자가 이 칸과 맞춘다(로그인 전 실패 표는 펼침에 늘 있고, 서명이
     맞은 뒤의 실패는 감사 기록이 켜진 서버면 「복사」 글 `status_text` 의 최근 사건 표에서).
     명단을 다시 쓰며 못 읽는 항목을 빠뜨린 저장(`access_saved` · `access_self_registered` 의
     `dropped` 가 0 보다 큼)은 파일의 고친 기록과 같은 이름 `drop_unreadable n` 이다 — 감사 기록기가
@@ -513,15 +523,15 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
     ]
 
 
-def _viewer_is_admin(cfg: SsoConfig) -> bool:
-    """관리자 몫 보기 한 판정(`admin_view.admin_notes_visible`) — `cfg` 는 지금 설정과 같다. S3 명단
-    서버는 통합인증이 켜져 있어(`access_store.is_on`) 관리자 판정(`sso_identity.viewer_is_admin`)과
-    같다."""
-    return admin_view.admin_notes_visible()
+def _viewer_is_developer(cfg: SsoConfig) -> bool:
+    """개발자 상태 알림 한 판정(`admin_view.developer_alerts_visible` — 「이 등급으로 보기」 를
+    따르지 않는다) — `cfg` 는 지금 설정과 같다. S3 명단 서버는 통합인증이 켜져 있어
+    (`access_store.is_on`) 개발자 판정(`sso_identity.viewer_is_developer`)과 같다."""
+    return admin_view.developer_alerts_visible()
 
 
 def _admin_area_goto() -> tuple[str, str]:
-    """관리자 알림의 고칠 화면 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다(그 안 펼침까지
+    """개발자 알림의 고칠 화면 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다(그 안 펼침까지
     여는 줄은 대상을 함께 싣는다)."""
     return tab_label(ADMIN_AREA), ADMIN_AREA.href
 
@@ -547,12 +557,12 @@ def _access_list_goto_target() -> alerts.GotoTarget:
 
 
 def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
-    """상태 알림 `AD-08` — 못 읽은 동안은 관리자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다.
+    """상태 알림 `AD-08` — 못 읽은 동안은 개발자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다.
 
-    조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차(`admin`)에만 세운다. 다른
+    조치 알림이고 그 자리(「다시 읽기」)가 개발자에게만 있어 개발자 회차(`admin`)에만 세운다. 다른
     사람의 회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다. 해소
-    표지에는 짧은 글 · 전문을 싣지 않는다(일반 · 익명 회차의 숨은 표지에 관리자 글이 실리지 않게 —
-    `sso_refresh_alert` 와 같은 꼴, 아래 둘 · 감사 알림도 같다).
+    표지에는 짧은 글 · 전문을 싣지 않는다(개발자 아닌 · 익명 회차의 숨은 표지에 개발자 글이 실리지
+    않게 — `sso_refresh_alert` 와 같은 꼴, 아래 둘 · 감사 알림도 같다).
     할 일은 거절 화면 「점검 중」 과 같은 두 갈래다(`access_store.needs_admin_fix` — 보드
     p0-unread): 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 ·
     파일을 먼저 고친다.
@@ -561,7 +571,7 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
     problem = None if source is None else source.problem
     unread = access_store.is_unread(cfg)
     active = (problem is not None or unread) and admin
-    effect = "관리자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
+    effect = "개발자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
     todo = (
         ACCESS_READ_FIX_STEP
         if problem is not None and access_store.needs_admin_fix(problem)
@@ -588,7 +598,7 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
 def _access_seed_alert(*, admin: bool) -> None:
     """상태 알림 `AD-09` — 파일이 없어 환경변수 목록으로 판정하는 동안. 첫 저장이 쓰면 풀린다.
 
-    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 관리자 회차(`admin`)에만 세운다.
+    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 개발자 회차(`admin`)에만 세운다.
     """
     source = runtime.access_source()
     seeded = source is not None and source.seeded and admin
@@ -612,7 +622,7 @@ def _access_seed_alert(*, admin: bool) -> None:
 def _new_registration_alert(*, admin: bool, now: int) -> None:
     """상태 알림 `AD-19` 「새 등록 n명」 — 최근 30일 스스로 등록해 지금도 명단에 있는 사람 수.
 
-    관리자 회차에만 세우고 개수만 싣는다. 지문은 고친 기록의 가장 새 스스로 등록 시각이라 새 등록이
+    개발자 회차에만 세우고 개수만 싣는다. 지문은 고친 기록의 가장 새 스스로 등록 시각이라 새 등록이
     있을 때만 알림창이 뜬다(사람을 빼도 뜨지 않는다 — UI-NTF-07). 「그 화면으로」 가 Admin Area 의
     「접속 명단」 펼침을 연다(`access_list_admin.open_access_list` — UI-NAV-01).
     """
@@ -642,22 +652,56 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
     )
 
 
+GRADE_READ_TEXT = "등급 파일을 읽지 못했습니다 — {effect}"
+GRADE_READ_UNREAD_EFFECT = "개발자 말고 모두 열람으로 읽습니다"
+GRADE_READ_HELD_EFFECT = "기억해 둔 등급으로 판정합니다"
+GRADE_READ_STEP = "Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
+
+
+def _grade_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
+    """상태 알림 `AD-25` — 등급 파일을 읽지 못함(`grade_store.read_problem`).
+
+    못 읽은 동안은 개발자 말고 모두 열람이고(못 읽었다고 넓어지지 않는다), 한 번 읽은 뒤의 실패는
+    기억해 둔 등급으로 잇는다. 그 자리(「다시 읽기」)가 개발자에게만 있어 개발자 회차(`admin`)에만
+    세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다 — `AD-08` 과 같은 꼴).
+    """
+    problem = grade_store.read_problem(cfg)
+    active = problem is not None and admin
+    effect = GRADE_READ_UNREAD_EFFECT if grade_store.is_unread(cfg) else GRADE_READ_HELD_EFFECT
+    alerts.state(
+        "AD-25",
+        scope=None,
+        content=problem if active else None,
+        active=active,
+        text=GRADE_READ_TEXT.format(effect=effect) if active else None,
+        full=(
+            f"{GRADE_READ_TEXT.format(effect=effect)}"
+            f"({access_problem_text(problem)}). {GRADE_READ_STEP}"
+            if active and problem is not None
+            else None
+        ),
+        goto=_admin_area_goto(),
+        target=_access_list_goto_target(),
+    )
+
+
 def render_access_alerts() -> None:
-    """접속 명단 상태 알림 셋(`AD-08` · `AD-09` · `AD-19`) — 관리자의 어느 화면에서나 뜨게 매 회차
-    부른다.
+    """접속 명단 상태 알림 넷(`AD-08` · `AD-09` · `AD-19` · 등급 파일 `AD-25`) — 개발자의 어느
+    화면에서나 뜨게 매 회차 부른다.
 
     S3 명단을 쓰는 서버에서만 부른다 — 설정은 재시작 전에 바뀌지 않으니 해소할 것이 없고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
-    서버에서는 부를 때마다 이벤트 칸에 늘 세 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
-    이 회차 쿠키에서 한 번만 다시 검증해 셋에 쓴다.
+    서버에서는 부를 때마다 이벤트 칸에 늘 네 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
+    이 회차 쿠키에서 한 번만 다시 검증해 넷에 쓴다.
     """
     cfg = runtime.config()
     if not access_store.is_on(cfg):
         return
-    admin = _viewer_is_admin(cfg)
+    admin = _viewer_is_developer(cfg)
     _access_read_alert(cfg, admin=admin)
     _access_seed_alert(admin=admin)
     _new_registration_alert(admin=admin, now=int(time.time()))
+    _grade_read_alert(cfg, admin=admin)
 
 
 def _audit_goto() -> tuple[str, str]:
@@ -672,13 +716,15 @@ def render_audit_alerts() -> None:
     감사 기록기가 켜진 서버(통합인증 켜짐 기동 — 프로세스 동안 바뀌지 않는다)에서만 부르고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
     서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다. 판정 재료는 메모리 표지뿐이다(파일 IO
-    없음). 관리자 회차에만 세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다).
+    없음). 개발자 회차에만 세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다).
     `AD-12` 의 「그 화면으로」 는 전문이 가리키는 「DB 동기화」 펼침까지다 — 그 펼침이 서는 서버
     (`managed`)에서만이고, 펼침이 없는 서버(「동기화 아님」)는 기록 탭이다(설계 규칙 UI-NAV-01).
     """
     if not audit_recorder.enabled():
         return
-    viewer = sso_identity.viewer_can_audit()
+    # 실제 개발자 — 「이 등급으로 보기」 를 따르지 않는다(기록 탭 열람 판정 `viewer_can_audit` 은
+    # 미리 보기 동안 거짓이라 그대로 쓰면 켜고 끄는 사이 두 알림이 해소 · 다시 뜸으로 흔들린다).
+    viewer = sso_identity.viewer_is_developer()
     managed = sync_boot.is_managed()
     keeping = audit_shipper.keeping_problems(managed=managed) if viewer else ()
     alerts.state(
@@ -764,11 +810,11 @@ def status_text(title: str, cfg: SsoConfig, *, now: datetime) -> str:
 def render_off_in_production_alert() -> None:
     """상태 알림 `AD-02` 「운영인데 통합인증이 꺼짐」 — Admin Area 가 잠금 판정 **앞**에서 부른다.
 
-    통합인증이 꺼진 운영 서버에는 관리자 신원이 없어 Admin Area 가 모두에게 잠기고(`sso_identity.
+    통합인증이 꺼진 운영 서버에는 개발자 신원이 없어 Admin Area 가 모두에게 잠기고(`sso_identity.
     admin_area_locked`) 펼침 본문에 닿지 않는다 — 잠긴 회차에도 Alarm 으로 닿게 펼침 밖에 둔다. 그
     서버는 누구나 들어오는 상태라 알림이 보이는 사람을 가리지 않는다. 켜진 서버 · 개발에서는 해소로
-    부르고, 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 켜진 서버에서 주소로 Admin Area 를 연 일반
-    회차의 숨은 표지에 운영 낱말이 실리지 않게(관리자 몫 알림과 같은 꼴).
+    부르고, 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 켜진 서버에서 주소로 Admin Area 를 연
+    개발자 아닌 회차의 숨은 표지에 운영 낱말이 실리지 않게(개발자 몫 알림과 같은 꼴).
     """
     cfg = runtime.config()
     off_in_production = cfg.mode is SsoMode.OFF and cfg.prod
@@ -835,7 +881,7 @@ def render_sso_status() -> None:
             st.caption(login_flow_line(), help=LOGIN_FLOW_HELP)
             st.caption(refresh_count_line(), help=REFRESH_HELP)
             st.caption(last_claims_line())
-        # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자)이
+        # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(개발자)이
         # 보인다 — 여기에는 누계 줄만 남기고 표는 그리지 않는다(같은 정보를 두 자리에 두지
         # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다. 로그인 전
         # 실패 표는 늘 그린다 — 감사 줄에는 그 실패가 한 시간 건수뿐이라 겹치지 않고, 실패

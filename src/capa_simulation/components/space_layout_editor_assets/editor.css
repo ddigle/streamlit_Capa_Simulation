@@ -770,6 +770,7 @@
    보이는 줄). 펼침은 제목 줄 바로 밑, CSV 단추 오른쪽 끝에 맞춰 선다 — 접힌 창에서 누르면 창을 먼저 편다(JS). */
 .sle button.sle-sheet-csv { height: 24px; padding: 0 8px; font-size: 12px; }
 .sle button.sle-sheet-csv[aria-expanded="true"] { border-color: var(--sle-accent); color: var(--sle-accent); }
+.sle button.sle-sheet-csv[hidden] { display: none; }
 .sle-sheet-csvmenu {
   position: absolute; z-index: 3; top: 32px; right: 34px; display: flex; flex-direction: column; gap: 4px; padding: 6px;
   border: 1px solid var(--sle-border-strong); border-radius: 8px; background: var(--sle-surface); box-shadow: 0 0 0 2px var(--sle-border);

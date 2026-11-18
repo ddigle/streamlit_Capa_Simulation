@@ -11,6 +11,12 @@
 - 개발 PC · 사내 WebIDE · 시험 · 화면 확인은 지금처럼 `streamlit run app.py` 다. 그때 통합인증은
   꺼짐이거나, 켜진 설정이면 `app.py` 가 「문지기 없이 시작됨」 으로 멈춘다.
 - 꺼짐 모드(`ADFS_CLIENT_ID` 없음)에서도 이 파일로 뜬다 — 경로 여섯은 404, 문지기는 모두 통과.
+- **런타임 전 길에 화면 조각을 두지 않는다** — 이 파일의 import 와 기동은 Streamlit 런타임이
+  서기 전에 돈다. 그 길에서 `st.components.v2.component(...)` 를 부르는 모듈(대개 `components/`
+  의 화면 조각과 그것을 머리에서 읽는 `grade_ui` · `sso_identity`)을 불러오면 등록이 사라져 모든
+  사람의 첫 화면이 멈춘다. 접속 등급의 판정기는 `app.py` 가 매 회차 맨 앞에서 꽂는다(첫 회차
+  전에는 사람의 쓰기가 없다). `tests/test_server_pre_runtime_imports.py` 가 이 파일을 그대로
+  import 해 지킨다.
 """
 
 import os

@@ -38,7 +38,7 @@ def clock() -> Clock:
 @pytest.fixture()
 def on(clock: Clock) -> Iterator[Clock]:
     recorder.start(env="cdep", version="202611131000", inst=INST, clock=clock)
-    recorder.set_grader(lambda loginid: "admin" if loginid == "demo.admin" else "user")
+    recorder.set_grader(lambda loginid: "developer" if loginid == "demo.admin" else "viewer")
     yield clock
 
 
@@ -75,7 +75,7 @@ def test_a_line_has_the_common_fields_in_utc_with_milliseconds(on: Clock) -> Non
         "success",
         "info",
     )
-    assert (line["actor"], line["verified"], line["grade"]) == ("demo.user", True, "user")
+    assert (line["actor"], line["verified"], line["grade"]) == ("demo.user", True, "viewer")
     assert line["sid8"] == "abcd1234"
     assert "seq" not in line and "h" not in line
 
@@ -197,7 +197,7 @@ def test_failures_raise_the_level_to_warn(on: Clock) -> None:
 
 
 def test_the_actor_comes_from_the_resolver_or_the_thread_name(on: Clock) -> None:
-    recorder.set_resolver(lambda: recorder.Actor("demo.admin", True, "admin"))
+    recorder.set_resolver(lambda: recorder.Actor("demo.admin", True, "developer"))
     recorder.note_work("data_scenario_delete", tgt={"type": "scenario", "id": "s-1"})
 
     seen: list[dict[str, Any]] = []
@@ -215,7 +215,7 @@ def test_the_actor_comes_from_the_resolver_or_the_thread_name(on: Clock) -> None
     assert (from_script["actor"], from_script["verified"], from_script["grade"]) == (
         "demo.admin",
         True,
-        "admin",
+        "developer",
     )
     assert (from_thread["actor"], from_thread["verified"], from_thread["grade"]) == (
         "system:auto_update",
@@ -402,7 +402,7 @@ def test_sso_events_map_to_audit_lines_without_jti_or_department(on: Clock) -> N
     login = lines[0]
     assert (login["actor"], login["grade"], login["name"], login["sid8"]) == (
         "demo.admin",
-        "admin",
+        "developer",
         "데모 관리자",
         "sid12345",
     )

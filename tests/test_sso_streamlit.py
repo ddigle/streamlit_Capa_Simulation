@@ -488,7 +488,7 @@ def test_the_gate_less_stop_keeps_the_fold_from_people_outside_the_admin_audienc
     drop: list[str],
     loginid: str | None,
 ) -> None:
-    """관리자 몫(`admin_view.admin_notes_visible`)이 아닌 회차 — 막힌 운영 서버의 누구나, 켜진
+    """관리자 몫(`admin_view.developer_notes_visible`)이 아닌 회차 — 막힌 운영 서버의 누구나, 켜진
     설정의 일반 사용자 · 쿠키 없는 사람 — 에는 접힌 진단이 서지 않고 실행 명령 · 환경변수 이름 ·
     안내 문서가 어느 칸에도 없다. 경고 한 줄 · 참고 줄(사유 낱말)은 그대로다."""
     cfg = use_config(overrides, drop=drop)
@@ -520,7 +520,7 @@ def test_a_failing_admin_check_leaves_the_gate_less_stop_without_the_fold(
     def broken() -> bool:
         raise RuntimeError("판정 실패")
 
-    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
+    monkeypatch.setattr(admin_view, "developer_notes_visible", broken)
     use_config({names.ENV_APP_ENV: "dev"}, drop=[names.ENV_ISSUER])
 
     app = AppTest.from_string(SCRIPT).run()
@@ -537,7 +537,7 @@ def test_the_gate_less_stop_says_little_and_folds_the_admin_text(
 ) -> None:
     """문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄(실행 명령 · 환경변수 이름 없음) ·
     문의 캡션 · 참고 줄. 지금까지의 글(까닭 · 실행 명령 · 설정 문제 이름 · 안내 문서)은 앱 안 판의
-    접힌 「관리자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL`)에 있고 다시 열어도 같아 주
+    접힌 「개발자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL`)에 있고 다시 열어도 같아 주
     단추가 없다. 접힌 진단이 서는 관리자 몫 회차 — 운영이 아닌 막힌 서버(누구나)에서 본다."""
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
     use_config({names.ENV_APP_ENV: "dev"}, drop=[names.ENV_ISSUER])

@@ -6,16 +6,19 @@
 파일(`access_store`)에서만 들어오고 이 저장소에는 적지 않는다(공개 저장소 — 실제 loginid 는 사람을
 가리킨다). 표준 라이브러리만 쓴다.
 
-안쪽 자료는 loginid → 등급 맵이다. 등급은 정확히 둘(`GRADES` — 일반 `user` · 관리자 `admin`)이고
-「들어올 수 있나」 와 「관리자인가」 를 가른다.
+안쪽 자료는 loginid → 등급 맵이다. 명단의 등급 칸은 정확히 둘(`GRADES` — `user` 개발자 아님 ·
+`admin` 개발자)이고 「들어올 수 있나」 와 「개발자인가」 를 가른다. 저장 값 `admin` 은 되돌림 안전
+때문에 그대로이고 뜻은 접속 등급의 개발자다. 열람 · 실무자 · 관리자는 같은 자리의 따로 둔 등급
+파일(`grade_store` — 이 모듈의 `GradeDocument`)에만 있다.
 
 순수 함수만 둔다 — 설정(`config.load_config`)이 환경변수 몫을 만들고, S3 명단이 켜져 있으면
 `compose_access` 가 파일 몫을 얹은 한 벌을 `runtime` 이 들고 통째로 바꾼다. 판정은
 `identity.session_check` 와 콜백 · 갱신 경로가 `runtime.current_access(cfg).allows` 로 묻는다.
-**관리자 = 환경변수 관리자 ∪ 명단 파일의 관리자 등급**(2026-11-14 「앱 대신 뜨는 화면」 보드 n2 답).
-환경변수 관리자는 늘 관리자라 파일 등급이 덮지 못하고(S3 장애 · 잘못 쓴 파일의 비상구), 파일의
-관리자 등급은 Admin 「접속 명단」 에서 관리자가 주고 뺀다 — 그래서 명단 파일을 쓸 수 있는 S3
-권한은 관리자를 만들 수 있는 권한이기도 하다(`docs/sso_setup.md` 2 · 4장). `LOGINID_PATTERN` 이
+**개발자 = 환경변수 개발자(`CAPA_ACCESS_ADMINS`) ∪ 명단 파일의 `admin` 등급**(2026-11-14 「앱 대신
+뜨는 화면」 보드 n2 답 · 2026-11-18 접속 등급 결정). 환경변수 개발자는 늘 개발자라 파일 등급이 덮지
+못하고(S3 장애 · 잘못 쓴 파일의 비상구), 파일의 `admin` 등급은 Admin 「접속 명단」 에서 개발자가
+주고 뺀다 — 그래서 명단 파일을 쓸 수 있는 S3 권한은 개발자를 만들 수 있는 권한이기도
+하다(`docs/sso_setup.md` 2 · 4장). `LOGINID_PATTERN` 이
 여기 있는 까닭은 `tokens` 가 `config` 를 import 하므로 `config` 가 `tokens` 에서 꺼내면 돌고 돌기
 때문이다.
 
@@ -32,9 +35,10 @@ from dataclasses import dataclass, field
 
 GRADE_ADMIN = "admin"
 GRADE_USER = "user"
-# 등급은 정확히 둘이다 — 파일에 그 밖의 값이 있으면 일반으로 읽는다(`ListDocument.demoted`).
+# 명단 파일의 등급 값은 정확히 둘이다 — `admin` = 개발자 · `user` = 개발자 아님(저장 값 이름은
+# 되돌림 안전 때문에 그대로). 그 밖의 값은 `user` 로 읽는다(`ListDocument.demoted`).
 GRADES = (GRADE_USER, GRADE_ADMIN)
-# 명단에 든 길 — 관리자가 넣음(옛 파일의 칸 없는 항목 · 환경변수 첫 판 포함) · 거절 화면의 「접속
+# 명단에 든 길 — 개발자가 넣음(옛 파일의 칸 없는 항목 · 환경변수 첫 판 포함) · 거절 화면의 「접속
 # 권한 신청」 으로 스스로 넣음.
 VIA_ADMIN = "admin"
 VIA_SELF = "self"
@@ -62,7 +66,7 @@ def entry_key(value: str) -> str | None:
     """명단 항목 하나 → 견주는 꼴. 사람으로 읽지 못하면 `None`.
 
     글자 · 숫자가 하나도 없는 항목(`-` · `.` 같은 자리표)도 읽지 못한 것이다 — 빈 값을 받지 않는
-    표에 넣은 자리표가 관리자 한 명으로 세어지면 「읽은 관리자 없으면 막힘」 을 비껴가 전원이
+    표에 넣은 자리표가 개발자 한 명으로 세어지면 「읽은 개발자 없으면 막힘」 을 비껴가 전원이
     잠긴다. 토큰 쪽 꼴(`LOGINID_PATTERN`)은 그대로다.
     """
     key = normalize_loginid(value)
@@ -120,7 +124,7 @@ class AccessList:
 
 
 def build_access_list(admins: str, users: str, *, enforced: bool, contact: str = "") -> AccessList:
-    """목록 글 둘 → 명단. 두 목록에 다 있으면 관리자다(사용자를 먼저 적고 관리자로 덮는다)."""
+    """목록 글 둘 → 명단. 두 목록에 다 있으면 개발자다(사용자를 먼저 적고 개발자로 덮는다)."""
     admin_keys, unreadable_admins = parse_entries(admins)
     user_keys, unreadable_users = parse_entries(users)
     grades = dict.fromkeys(user_keys, GRADE_USER)
@@ -170,7 +174,7 @@ class ListDocument:
     entries: tuple[ListEntry, ...] = field(default=(), repr=False)
     changes: tuple[ListChange, ...] = field(default=(), repr=False)
     unreadable: int = 0
-    # 등급 칸이 `GRADES` 밖이어서 일반으로 읽은 항목 수.
+    # 등급 칸이 `GRADES` 밖이어서 `user` 로 읽은 항목 수.
     demoted: int = 0
 
 
@@ -192,7 +196,7 @@ class AccessSource:
     """지금 명단 한 벌과 그 내력 — `runtime` 이 하나를 들고 통째로 바꾼다.
 
     `access` 는 판정이 보는 합성 명단이다. `document` 가 `None` 이면 아직 한 번도 읽지 못한 것이고
-    그때 `access` 는 환경변수 관리자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
+    그때 `access` 는 환경변수 개발자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
     `problem` 에만 적고 `access` 를 건드리지 않는다. 저장이 성공하면 `problem` 을 비운다 — 저장소에
     닿았고 방금 쓴 것이 지금 명단이다.
     """
@@ -212,7 +216,7 @@ class AccessSource:
 
 
 def compose_access(base: AccessList, document: ListDocument) -> AccessList:
-    """환경변수 몫(`base` — 관리자) + S3 파일 몫(파일 등급). 환경변수 관리자는 늘 관리자다."""
+    """환경변수 몫(`base` — 개발자) + S3 파일 몫(파일 등급). 환경변수 개발자는 늘 개발자다."""
     grades = {
         entry.loginid: entry.grade if entry.grade in GRADES else GRADE_USER
         for entry in document.entries
@@ -225,3 +229,61 @@ def compose_access(base: AccessList, document: ListDocument) -> AccessList:
         unreadable_users=document.unreadable,
         contact=base.contact,
     )
+
+
+@dataclass(frozen=True)
+class GradeLine:
+    """등급 파일의 사람 하나 — 등급(`editor` · `manager`, 모르는 값은 원문 그대로 두고 열람으로
+    읽는다) · 그 줄을 적을 때 명단 항목의 등록 시각 · 적은 사람 · 때."""
+
+    loginid: str
+    grade: str
+    added_at: str = ""
+    by: str = ""
+    at: str = ""
+
+
+@dataclass(frozen=True)
+class GradeChange:
+    """등급 파일의 고친 기록 한 줄 — 누가 · 언제 · 무엇(`grade <등급>` · `clear`)을 누구에게."""
+
+    by: str
+    at: str
+    what: str
+    loginid: str = ""
+
+
+@dataclass(frozen=True)
+class GradeDocument:
+    """등급 파일 한 벌. 판 번호는 저장할 때마다 1 씩 는다. repr 에 사람이 나오지 않는다."""
+
+    revision: int = 0
+    lines: tuple[GradeLine, ...] = field(default=(), repr=False)
+    changes: tuple[GradeChange, ...] = field(default=(), repr=False)
+    # 읽지 못한 줄(꼴이 틀림) 수 — 다시 쓰면 빠진다.
+    unreadable: int = 0
+
+    def line_of(self, loginid: str) -> GradeLine | None:
+        for line in self.lines:
+            if line.loginid == loginid:
+                return line
+        return None
+
+
+@dataclass(frozen=True)
+class GradeSource:
+    """지금 등급 파일 한 벌과 그 내력 — `runtime` 이 하나를 들고 통째로 바꾼다.
+
+    `document` 가 `None` 이면 아직 한 번도 읽지 못한 것이다(개발자 말고 모두 열람). 한 번 읽은 뒤의
+    실패는 `problem` 에만 적고 `document` 를 건드리지 않는다(기억해 둔 등급으로 잇는다). `seen` 은
+    「있었다」 표지(`grades_seen.json`)가 저장소에 있다고 확인한 것이다.
+    """
+
+    document: GradeDocument | None = None
+    etag: str = ""
+    read_at: int | None = None
+    attempted_at: int | None = None
+    problem: SourceProblem | None = None
+    saved_at: int | None = None
+    save_problem: SourceProblem | None = None
+    seen: bool = False

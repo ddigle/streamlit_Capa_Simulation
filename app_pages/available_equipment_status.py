@@ -39,6 +39,7 @@ import streamlit as st
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import report_missing_cutoffs
 from capa_simulation.components.data_error_mark import render_data_error
@@ -184,10 +185,13 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
         ("비가동 일정", "equipment_first_data_down_v1"),
         ("공정별 Cut-off", None),
     )
+    # 첫 데이터를 넣는 단추는 설비 · Space 저장 등급(관리자부터)에만 선다 — 첫 데이터는 설비 마스터
+    # 붙여넣기부터다(설계 규칙 UI-INP-07 예외, 2026-11-18 접속 등급).
+    can_import = sso_identity.viewer_can("equipment.save")
     for (title, key), count in zip(rows, counts, strict=True):
         with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
             st.markdown(f"{'✓' if count else '✗'} **{title}** {count:,}건")
-            if key is not None:
+            if key is not None and can_import:
                 st.button(
                     "설비 마스터 탭에서 붙여넣기",
                     icon=":material/arrow_forward:",
@@ -304,14 +308,15 @@ viewing_tab_open = not tab_is_hidden(main_view) or not tab_is_hidden(gap_view)
 if latest_snapshot is None and not tab_is_hidden(main_view):
     with first_action.container():
         # 첫 데이터 안내 — 하는 법은 단추 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 저장된
-        # 것이 없다는 값은 아래 건수 줄이 이미 말한다(UI-TXT-07).
-        st.button(
-            "설비 데이터 입력",
-            icon=":material/add:",
-            type="primary",
-            on_click=_open_master_import,
-            help=FIRST_DATA_HELP,
-        )
+        # 것이 없다는 값은 아래 건수 줄이 이미 말한다(UI-TXT-07). 단추는 설비 · Space 저장 등급에만.
+        if sso_identity.viewer_can("equipment.save"):
+            st.button(
+                "설비 데이터 입력",
+                icon=":material/add:",
+                type="primary",
+                on_click=_open_master_import,
+                help=FIRST_DATA_HELP,
+            )
         cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))
@@ -387,7 +392,9 @@ if (
     with conditions_card:
         st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
 
-with main_tab:
+# 표 위 작은 단추 줄 · 그림 막대(내려받기 포함)는 설비 화면 내려받기 등급(관리자부터)에만 선다
+# (2026-11-18 접속 등급 — 그 아래 등급은 같은 화면을 값만 본다).
+with main_tab, grade_ui.toolbar_scope("equipment.export", "equipment_main_tools_v1"):
     if not tab_is_hidden(main_view):
         if using_dashboard_sample and not show_sample_fleet:
             st.caption("등록된 호기가 없습니다.")
@@ -415,7 +422,7 @@ with main_tab:
                 alert_scope=equipment_alert_scope,
             )
 
-with gap_tab:
+with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1"):
     if not tab_is_hidden(gap_view):
         assert conditions_card is not None
         with conditions_card:

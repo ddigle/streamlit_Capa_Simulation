@@ -1,4 +1,4 @@
-# Purpose: 관리자가 보낸 공지 하나를 프로세스 메모리에 두고 보내기 · 거두기 · 끝남과 알림 꼴을 낸다.
+# Purpose: 개발자가 보낸 공지 하나를 프로세스 메모리에 두고 보내기 · 거두기 · 끝남과 알림 꼴을 낸다.
 
 """공지(2026-11-17 공지 보드 답 — q-use · q-until · decided).
 
@@ -17,7 +17,7 @@
   들인다(앱 프로세스 에는 이미 읽혀 있다). 표지는 화면 없는 꼴(`alerts.state_note(…, pageless=True)`
   — 세션을 읽지 않음)이라 실행 문맥 밖에서도 같은 값이다.
 - 글은 꾸밈 없는 평문 300자, 끝 시각은 한국 시각(KST) 분 단위 · 길어도 24시간이다. 보낸 이는 실명
-  대신 「관리자」 다(누가 보냈는지는 감사 기록 — `components/notice_admin.py`).
+  대신 「개발자」 다(누가 보냈는지는 감사 기록 — `components/notice_admin.py`).
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ LONGEST: Final = timedelta(hours=24)
 # 끝 시각 기본값 — 지금 + 1시간을 10분 단위로 올림.
 DEFAULT_LEAD: Final = timedelta(hours=1)
 ROUND_MINUTES: Final = 10
-SENDER_LABEL: Final = "관리자"
+SENDER_LABEL: Final = "개발자"
 CLOCK_LAYOUT: Final = "%H:%M"
 # 끝 시각이 보낸 날의 다음 날이면 날짜도 싣는다 — 받는 사람은 다음 날 읽기도 해 「내일」 이 틀린다.
 DATED_CLOCK_LAYOUT: Final = "%m-%d %H:%M"
@@ -70,7 +70,7 @@ class Notice:
 
 class NoticeChanged(Exception):
     """확인 팝업을 연 사이 서 있는 공지가 바뀌었다 — 보내지 않는다. `ended` 는 그때 서 있던 공지가
-    없어졌는가(끝 시각으로 걷힘 · 거둠 — 같은 관리자의 다른 탭일 수도 있다)이고, 거짓이면 다른
+    없어졌는가(끝 시각으로 걷힘 · 거둠 — 같은 개발자의 다른 탭일 수도 있다)이고, 거짓이면 다른
     공지가 섰다(갈음)."""
 
     def __init__(self, *, ended: bool) -> None:
@@ -255,7 +255,7 @@ def until_text(notice: Notice) -> str:
 
 
 def stamp_line(notice: Notice) -> str:
-    """`관리자 · 17:40 보냄 · 18:20 까지`(끝이 다음 날이면 `11-18 09:00 까지`) — Admin 카드 값 줄과
+    """`개발자 · 17:40 보냄 · 18:20 까지`(끝이 다음 날이면 `11-18 09:00 까지`) — Admin 카드 값 줄과
     알림 전문 끝 줄."""
     return f"{notice.sender_label} · {clock_text(notice.sent_at)} 보냄 · {until_text(notice)} 까지"
 

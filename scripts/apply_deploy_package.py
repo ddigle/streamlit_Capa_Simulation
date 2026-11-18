@@ -159,7 +159,7 @@ def dirty_stop_message(dirty: Sequence[str], outside_modules: Sequence[str]) -> 
         return (
             f"커밋하지 않은 모듈 수정이 {len(dirty)}개 있습니다 — 배포 체크아웃에서는 모듈을 "
             "고치지 않습니다. 담당자가 자기 클론에서 커밋해 올리면 런북 1-7 로 받습니다. "
-            "에이전트는 되돌리지 않고 앱 관리자(사용자)에게 알립니다:" + listed
+            "에이전트는 되돌리지 않고 앱 관리자(개발자)에게 알립니다:" + listed
         )
     return (
         "작업트리에 미저장 변경이 있습니다. 지우고 푸는 과정이 그것을 없앱니다 — "

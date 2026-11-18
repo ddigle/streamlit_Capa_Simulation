@@ -7,8 +7,10 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation import alerts, notice_board
+from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth.runtime import note_boot_failure, note_boot_success
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
+from capa_simulation.components import grade_ui
 from capa_simulation.components.accent_button_style import render_accent_button_style
 from capa_simulation.components.alert_center import render_alert_center
 from capa_simulation.components.app_credits import render_app_credits
@@ -165,6 +167,7 @@ def active_condition_tab(spec: PageSpec) -> str | None:
 
 
 @st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
+@grade_ui.in_fragment
 def render_condition_dialogs(
     page_file: str | None,
     shows_scenario: bool,
@@ -218,6 +221,12 @@ CELL_SELECT_CHART_KEYS = (
     CONSTRAINT_SHEET_KEY,
 )
 
+# 접속 등급의 판정기(`components/grade_ui.install` — `sso_identity.real_caller`)를 꽂는다. 테마 ·
+# 통합인증 확인 · 부트스트랩 · 페이지보다 앞, 매 회차다(같은 함수면 그대로). 그 뒤로 표지를 단
+# 저장소
+# 쓰기는 쓰는 순간의 실제 등급을 본다 — 운영 아님(개발 · WebIDE · 사내 PC)은 늘 지나간다. 메시지를
+# 보내지 않아 아래 「끝까지 돌았는지」 표지보다 앞이어도 된다.
+grade_ui.install()
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
 # Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
 # 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
@@ -325,20 +334,23 @@ with pinned_connections(DUCKDB_PATH):
         # 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다(다른
         # 탭이 아직 막혀 있어도 줄이 쌓이지 않게).
         attempted = st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True
-        bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+        # 첫 데이터 · 세션 첫 활성화는 앱 자신의 쓰기다 — 사람 등급으로 막지 않는다(배포 날 모두가
+        # 열람이어도 첫 회차가 선다, `audit.recorder.as_system`).
+        with as_system("system:app"):
+            bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
         if not attempted and st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
             note_boot_success()
     except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면 화면이 한
         # 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본 메시지의 한글이 깨져
         # 나온다. 사용자가 원인을 알 방법이 없어 앱 안 멈춤 판으로 바꾼다(`components/boot_stop.py`
-        # — 쉬운 경고 한 줄 · 「다시 시도」 · 문의 · 참고 줄, 경로 · 원문은 접힌 「관리자용 진단」).
+        # — 쉬운 경고 한 줄 · 「다시 시도」 · 문의 · 참고 줄, 경로 · 원문은 접힌 「개발자용 진단」).
         # 머리 띠도 이 화면에 세운다 — 아래 `st.stop()` 뒤의 자리에는 닿지 않는다. 세션만 읽으므로
         # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 두 줄(메인
         # 라벨·부제)이다.
         render_app_header()
         render_boot_stop(exc)
-        # 관리자가 판의 참고 줄과 맞출 자리 — 통합인증 점검의 최근 사건 고리에 같은 갈래가 이어지는
+        # 개발자가 판의 참고 줄과 맞출 자리 — 통합인증 점검의 최근 사건 고리에 같은 갈래가 이어지는
         # 동안 한 줄(C-DEP 에는 서버 로그 창구가 없다).
         note_boot_failure(classify_boot_failure(exc).code, kind_name(exc))
         st.stop()
@@ -400,6 +412,9 @@ with pinned_connections(DUCKDB_PATH):
         # 같은 까닭으로 여기 싣는다.
         + DOWNLOAD_MENU_STYLE
         + TABLE_HEADING_ROW_STYLE
+        # 등급 밖 칸(`grade_ui.toolbar_scope` — 관리자 아래 등급의 설비 화면)의 표 도구 막대 · 그림
+        # 막대 감춤 — 칸마다 스타일을 보내지 않게 여기 한 벌을 싣는다.
+        + grade_ui.TOOLBAR_STYLE
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
         # Data 초안·시나리오 관리 표 초안)이 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은
@@ -501,7 +516,7 @@ with pinned_connections(DUCKDB_PATH):
         st.session_state[ADMIN_BOX_KEY] = True
     with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
         with st.container(key="admin_area_navigation"):
-            # 운영 서버의 관리자가 아니면 Admin Area 메뉴가 없다(`sso_identity.admin_area_locked` —
+            # 운영 서버의 개발자가 아니면 Admin Area 메뉴가 없다(`sso_identity.admin_area_locked` —
             # 주소로 열어도 그 화면이 멈춘다). 개발 · WebIDE · 사내 PC 는 지금처럼 선다.
             if not admin_area_locked():
                 st.page_link(pages.admin_area, width="stretch")
@@ -516,7 +531,7 @@ with pinned_connections(DUCKDB_PATH):
     # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
     # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다. 통합인증이 켜진 서버는 셋째 줄에
     # 「이름 · 부서 · 로그아웃」 이 붙는다(위에서 검증한 신원 — 꺼짐이면 두 줄 그대로). 카드 뒤에
-    # 관리자 알림 첫 묶음을 낸다 — 접속 명단(`AD-08` · `AD-09` · 새 스스로 등록 `AD-19`, S3 명단
+    # 개발자 알림 첫 묶음을 낸다 — 접속 명단(`AD-08` · `AD-09` · 새 스스로 등록 `AD-19`, S3 명단
     # 서버) → 감사 기록(`AD-12` · `AD-13`) → 로그인 갱신 거절(`AD-21`, 둘 다 통합인증 켜진 서버).
     # 아래 알림 칸 뒤의 `AD-01` → 토큰 → `AD-22` 보다 앞이다.
     render_app_credits(sso_credit_line(signed_in))
@@ -614,11 +629,16 @@ with pinned_connections(DUCKDB_PATH):
         canon=not_canonical_code(),
         # 공식버전 없음 `SC-01` 의 해소 — 위 요약이 이 회차에 확인한 세션 값이다(DB 를 읽지 않는다).
         official_known=latest_official_revision() is not None,
-        # 관리자가 보낸 공지(프로세스 메모리 — 끝 시각은 여기서 읽을 때 본다). 회차마다 싣고 공지가
+        # 개발자가 보낸 공지(프로세스 메모리 — 끝 시각은 여기서 읽을 때 본다). 회차마다 싣고 공지가
         # 없어도 상태 알림 `GL-09` 의 해소 표지가 간다 — 머리 공지 칩도 이 값으로 선다. 판은 공지가
         # 바뀔 때만 올라 data 가 회차마다 같다(이벤트 칸을 쓰지 않는다 — 요소 순번 그대로).
         notice=notice_board.payload(),
     )
+    # 쓰는 순간 등급 때문에 막힌 누름의 알림(`grade_ui.emit` — 알림창 · Alarm 한 번, 이벤트 칸 한
+    # 자리). 알림 칸 곁 고정 자리에서 매 전체 회차 부른다 — 위젯 콜백 · 화면 본문의 거절이 담아 둔
+    # 것을
+    # 이 회차에 낸다(페이지가 멈춰도 나가게 페이지보다 앞).
+    grade_ui.emit()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,
@@ -639,14 +659,14 @@ with pinned_connections(DUCKDB_PATH):
     # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
     # 시험)는 아무것도 쓰지 않는다.
     render_object_sync_alerts()
-    # 서버 시작 점검 관리자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
+    # 서버 시작 점검 개발자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
     # Area). 결과 파일도 CD 전용 환경변수도 없는 프로세스는 아무것도 쓰지 않는다.
     render_start_check_alert()
-    # BigDataQuery 토큰 관리자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 로그인
+    # BigDataQuery 토큰 개발자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 로그인
     # 멈춤(`AD-23`) · 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`). 시작 점검 결과 파일이 없는
     # 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 네 자리다.
     render_token_alert()
-    # 코어 화면 오류 관리자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
+    # 코어 화면 오류 개발자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
     # 시작 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고, 그 밖은 아무것도 쓰지 않는다.
     # 운영인데 통합인증이 꺼짐(`AD-02`)은 이 차례 밖이다 — Admin Area 가 잠금 판정 앞에서 낸다.
     render_page_failure_alert()
@@ -657,7 +677,7 @@ with pinned_connections(DUCKDB_PATH):
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
     # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림). 코어
-    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 관리자
+    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 개발자
     # 알림 `AD-22`). 처리한 실패는 카드 뒤 `st.stop()` 으로 아래 멈춤 길을 탄다 — 끝까지 돈 회차로
     # 끝나면 Streamlit 이 오류 자리 아래 위젯의 미저장 값을 지운다. `st.stop()`·`st.rerun()` 은
     # 지금처럼 지나간다.

@@ -24,6 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import settings
+from capa_simulation.audit.recorder import as_system
 from capa_simulation.frame_sharing import lock_frame, shared_view
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
@@ -120,8 +121,11 @@ def get_scenario_repository(database_path: str) -> DuckDBScenarioRepository:
     repository.initialize()
     from capa_simulation.services.builtin_seed import load_builtin_display_order
 
-    # 결과가 아니라 읽는 함수를 넘긴다 — 시드는 공용 프로필이 없을 때만 읽는다.
-    repository.initialize_global_display_order(load_builtin_display_order)
+    # 결과가 아니라 읽는 함수를 넘긴다 — 시드는 공용 프로필이 없을 때만 읽는다. 첫 판 · 보강은 앱
+    # 자신의 쓰기다(`as_system`) — 보강은 Admin 몫 표지(공용 표시순서)를 지나므로 새 프로세스의 첫
+    # 회차가 열람이어도 화면이 서야 한다(접속 등급 — `auth/grades.py`).
+    with as_system("system:app"):
+        repository.initialize_global_display_order(load_builtin_display_order)
     return repository
 
 

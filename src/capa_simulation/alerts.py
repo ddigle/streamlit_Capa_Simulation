@@ -355,7 +355,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # (나)).
     AlertSpec("RS-06", "info", "event", "필요 단축 일정 — 보던 기준선이 지워져 진척 비교를 끔"),
     # BigDataQuery 로그인 토큰 실패 — 조회가 토큰 갈래로 실패했거나 서버 시작 점검 토큰 줄이 실패인
-    # C-DEP 서버에서 관리자의 모든 화면 회차에 낸다(`container_start_check.render_token_alert`,
+    # C-DEP 서버에서 개발자의 모든 화면 회차에 낸다(`container_start_check.render_token_alert`,
     # 리뷰 202611111500 보드 N8 (가)). 토큰을 새로 넣어야 풀린다.
     AlertSpec("AD-10", "action", "state", "BigDataQuery 로그인 토큰 실패 — 조회가 막힘"),
     # 정본 버킷 동기화 — 빈 CD 환경변수(주소 · 버킷 · 프로필) 때문에 시작 점검이 버킷 목록을 보지
@@ -368,17 +368,17 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
         "EQ-25", "check", "event", "Space 「호기 정보」 창 — 고친 칸이 설비 마스터 규칙에 걸려 막힘"
     ),
     # BigDataQuery 로그인 토큰 만료 1시간 전(지난 것 포함) — 토큰에서 만료 시각을 읽은 C-DEP 서버의
-    # 관리자 회차(`bdq_token_admin.render_expiry_alert`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
+    # 개발자 회차(`bdq_token_admin.render_expiry_alert`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
     # 풀린다.
     AlertSpec("AD-11", "action", "state", "BigDataQuery 로그인 토큰 만료 1시간 전 · 지남"),
-    # 접속 · 작업 감사 기록(`audit/`) — 관리자 회차에만 선다. 기록이 버킷에 보관되지 않음
+    # 접속 · 작업 감사 기록(`audit/`) — 개발자 회차에만 선다. 기록이 버킷에 보관되지 않음
     # (동기화 아님 · 올리기 없음 · 기록 못 한 줄 · 올리기 밀림 · 시계 차이)과 기록 사슬 이상(1판은
     # 14일 넘게 늦은 조각).
     AlertSpec("AD-12", "action", "state", "접속 · 작업 기록이 버킷에 보관되지 않음"),
     AlertSpec("AD-13", "error", "state", "접속 · 작업 기록 사슬 이상 — 너무 늦게 온 조각"),
     # `AD-14` ~ `AD-16` 은 접속 · 작업 기록 2판 몫으로 비워 둔다. `AD-17`(BigDataQuery 토큰 자동
     # 갱신 멈춤 · 실패)과 `AD-18`(갱신 토큰 80일)은 걷은 번호라 비워 둔다(다시 쓰지 않는다).
-    # 거절 화면 「접속 권한 신청」 으로 스스로 등록한 사람 — 관리자 회차에만 · 개수만 · 새 등록이
+    # 거절 화면 「접속 권한 신청」 으로 스스로 등록한 사람 — 개발자 회차에만 · 개수만 · 새 등록이
     # 있을 때만 뜬다(지문은 고친 기록의 가장 새 스스로 등록 시각). 「그 화면으로」 가 Admin 「접속
     # 명단」 펼침을 연다(2026-11-14 보드 p0-admin-list).
     AlertSpec("AD-19", "check", "state", "접속 명단 — 새 스스로 등록(최근 30일)"),
@@ -386,25 +386,29 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-expiry). 쓰는 중에도 늘지 않는 끝이라 저장해
     # 두라고 알린다. 글은 남은 분을 부를 때 준다.
     AlertSpec("AD-20", "action", "event", "로그인 최대 시간 10분 전 — 저장해 두기"),
-    # 로그인 갱신이 출처 · 머리 검사에서만 거절되는 서버 — 관리자 회차에만(`components/
+    # 로그인 갱신이 출처 · 머리 검사에서만 거절되는 서버 — 개발자 회차에만(`components/
     # sso_refresh_alert.py`, 같은 보드 카드 p2-rare). 그대로면 쓰는 중에도 유지 시간 뒤 끊긴다.
     AlertSpec("AD-21", "action", "state", "로그인 갱신이 출처 · 머리 검사에서 거절됨"),
-    # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
+    # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 개발자 몫 회차에 낸다(참고
     # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`).
     AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
     # BigDataQuery 자동 로그인 멈춤 — 저장된 계정의 로그인이 거절돼(시작 · 조회 중) 다시 시도하지
-    # 않고 멈춘 C-DEP 서버의 관리자 회차(`container_start_check.render_token_alert`, 2026-11-16
+    # 않고 멈춘 C-DEP 서버의 개발자 회차(`container_start_check.render_token_alert`, 2026-11-16
     # 사용자 결정 D3 · D4). Admin Area 「BDQ 자동 로그인」 에서 계정을 다시 넣어 로그인이 성공하면
     # 풀린다. 하위 프로세스가 결과 표지 없이 끝난 멈춤은 짧은 글이 「로그인 확인 못 함」 이다
     # (`bdq_login.UNCONFIRMED_REJECT_REASONS` — 비밀번호를 의심하게 하지 않는다).
     AlertSpec("AD-23", "action", "state", "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣기"),
     # BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함 — 시작 때 · 조회 중 자동 로그인이 서버에
-    # 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 C-DEP 서버의 관리자
+    # 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 C-DEP 서버의 개발자
     # 회차(`container_start_check.render_token_alert`, 2026-11-16 사용자 결정 D6 「알림만」). 다음
     # 자동 시도가 성공하거나 멈추거나 Admin Area 「BDQ 자동 로그인」 에서 다시 넣으면 걷힌다 — 성공
     # 없이 이어지면 `AD-23`(멈춤)으로 넘어간다.
     AlertSpec("AD-24", "action", "state", "BigDataQuery 자동 로그인이 서지 못함 — 다시 시도 대기"),
-    # 관리자가 보낸 공지(`notice_board` — 프로세스 메모리, 끝 시각까지 · 2026-11-17 공지 보드 답).
+    # 접속 등급 파일(명단 곁의 `grades.json`)을 읽지 못함 — 못 읽은 동안 개발자 말고 모두 열람으로
+    # 읽고, 한 번 읽은 뒤의 실패는 기억해 둔 등급으로 잇는다. 개발자 회차에만 서고 「그 화면으로」
+    # 가 Admin 「접속 명단」 펼침을 연다(「다시 읽기」 — 2026-11-18 접속 등급 결정 14).
+    AlertSpec("AD-25", "action", "state", "접속 등급 파일을 읽지 못함 — 다시 읽기"),
+    # 개발자가 보낸 공지(`notice_board` — 프로세스 메모리, 끝 시각까지 · 2026-11-17 공지 보드 답).
     # 서 있는 동안이 조건이라 새로 들어온 탭에도 한 번 뜨고, 새 공지는 「내용 바뀜」 · 거둠 · 끝남 ·
     # 재시작 뒤는 「해소」 다. 어느 화면의 일도 아니라 화면 없는 표지를 알림 칸 data 가 싣는다(물음
     # 경로도 같은 표지 — `notice_board.payload`). 글은 부를 때 준다.
@@ -437,16 +441,8 @@ FLASH_CODES: Final[Mapping[str, str]] = {
 }
 
 
-class AlertTable(TypedDict):
-    """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(조건의 내역을 화면 본문
-    접힘에 두지 않는다 — 산출 결과 대당 Capa 「제외 기준정보」 2026-11-02, 소요대수 탭 · 표준 목표 ·
-    생산 계획 · 필요 단축 일정의 목록 2026-11-05 사용자 요청(검수표)).
-
-    - `title` 단추 · 표 머리 글, `columns` 칸 이름, `rows` 행 값(JSON 값 — 수 · 글 · None),
-    - `total` 원래 행 수(`rows` 보다 크면 앞 `TABLE_ROW_LIMIT` 행만 실은 것), `file` CSV 파일 이름,
-    - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다),
-    - `help` 칸 머리 풍선(칸 → 글 — 그 칸의 값을 어디서 고치는지 · 무슨 뜻인지).
-    """
+class _AlertTableFields(TypedDict):
+    """알림에 딸린 표의 늘 있는 칸(`AlertTable` 의 바탕)."""
 
     title: str
     columns: list[str]
@@ -457,12 +453,29 @@ class AlertTable(TypedDict):
     help: dict[str, str]
 
 
+class AlertTable(_AlertTableFields, total=False):
+    """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(조건의 내역을 화면 본문
+    접힘에 두지 않는다 — 산출 결과 대당 Capa 「제외 기준정보」 2026-11-02, 소요대수 탭 · 표준 목표 ·
+    생산 계획 · 필요 단축 일정의 목록 2026-11-05 사용자 요청(검수표)).
+
+    - `title` 단추 · 표 머리 글, `columns` 칸 이름, `rows` 행 값(JSON 값 — 수 · 글 · None),
+    - `total` 원래 행 수(`rows` 보다 크면 앞 `TABLE_ROW_LIMIT` 행만 실은 것), `file` CSV 파일 이름,
+    - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다),
+    - `help` 칸 머리 풍선(칸 → 글 — 그 칸의 값을 어디서 고치는지 · 무슨 뜻인지),
+    - `csv` 거짓이면 그 표의 「CSV 내려받기」 를 세우지 않는다 — 설비 표가 실린 Alarm 표를 관리자
+      아래 등급이 띄웠을 때(2026-11-18 접속 등급 결정 26). 표지가 표와 함께 Alarm 에 남아 다른
+      화면으로도 따라간다. 없으면 참이다.
+    """
+
+    csv: bool
+
+
 class GotoTarget(TypedDict):
     """「그 화면으로」 가 그 화면 · 탭에 닿았을 때 서버에 보내는 대상 — 줄이 들고 다니고 누를 때만
     간다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). `kind` 는 받는 쪽 이름이고 알림 칸이 아는
     종류만 받는다(`components/alert_center.py` `GOTO_RECEIVERS` — JS 도 data `goto_kinds` 로 그
     종류만 들고 가고, 모르는 종류는 대상 없는 줄처럼 탭 길 마지막 칸을 누른다). 「소요대수에 들지
-    않은 수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)과, 관리자 알림이
+    않은 수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)과, 개발자 알림이
     가리키는 Admin 펼침(「서버 시작 점검」 · 「DB 동기화」 · 「통합인증 점검」 · 「접속 명단」 —
     나머지 두 칸은 쓰지 않는다)이다."""
 

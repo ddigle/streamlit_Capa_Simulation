@@ -26,6 +26,12 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
 - **그림자 DOM**(`isolate_styles` 기본값) — 팝업 안에 마운트하지 않는다(AGENTS 9장 「스크립트와
   컴포넌트」).
 
+**읽기 전용**(`read_only` — 화면 등급으로 설비 마스터를 고칠 수 없는 까닭 글)은 data 만 바꾼다
+(`read_only_data`). 모든 줄 · 모든 칸에 잠금 갈래 `grade` 를 달고(칸 고치기 · 붙여넣기 · 값 넣기 ·
+일정 밀기가 잠긴 칸 길을 탄다), 지우기 · 새 호기 만들기를 잠그고, 「공식 자리로 되돌리기」 를 싣지
+않는다. 받는 쪽도 등급 밖 출납을 버린다(`equipment_master_tab.apply_outbox`) — 이것은 길을 줄이는
+것이지 벽이 아니다(2026-11-18 접속 등급).
+
 **두 칸 배치**(왼쪽 표 · 오른쪽 칸 — 칸막이 · 접기 · 폭 기억 · 서식)는 시나리오 목록 관리와 함께
 쓰는 `components/side_panel.py` 이고 이 화면의 스펙이 `MASTER_SIDE` 다(저장소
 `capa-equipment-side-v1`, `<html>` 의 `--emd-side-w` · `--emd-top` · `data-emd-side`).
@@ -94,6 +100,43 @@ _palette = grid_shared.grid_palette
 
 def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:
     return {**data, "palette": _palette()}
+
+
+# 화면 등급 잠금 갈래(`lockSets` · 줄 `locks` · `lockReasons` 의 이름 — 다른 잠금과 겹치지 않는다).
+GRADE_LOCK: Final = "grade"
+
+
+def _locked_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    locks = [str(kind) for kind in row.get("locks") or [] if kind != GRADE_LOCK]
+    return {**row, "locks": [*locks, GRADE_LOCK]}
+
+
+def read_only_data(data: Mapping[str, Any], reason: str | None) -> dict[str, Any]:
+    """화면 등급으로 고칠 수 없으면(`reason`) 모든 칸 · 줄 · 새 호기를 잠근 data(모듈 설명). 없으면
+    그대로."""
+    if reason is None:
+        return dict(data)
+    columns = [str(column.get("name")) for column in data.get("columns") or []]
+    result: dict[str, Any] = {
+        **data,
+        "lockSets": {**(data.get("lockSets") or {}), GRADE_LOCK: columns},
+        "lockReasons": {**(data.get("lockReasons") or {}), GRADE_LOCK: reason},
+        "deleteLock": reason,
+        "newRowsLocked": True,
+        "newEnabled": False,
+        "firstData": False,
+    }
+    if isinstance(data.get("rows"), list):
+        result["rows"] = [_locked_row(row) for row in data["rows"]]
+    unit = data.get("unit")
+    if isinstance(unit, Mapping):
+        result["unit"] = {
+            **_locked_row(unit),
+            "deletable": False,
+            "deleteLock": reason,
+            "official": None,
+        }
+    return result
 
 
 # ------------------------------------------------------------------ 받은 값 읽기
@@ -253,13 +296,14 @@ def render_grid_loader(
     on_dialog: Callable[[str], None],
     on_new: Callable[[], None] | None = None,
     key: str = LOADER_KEY,
+    read_only: str | None = None,
 ) -> None:
     """불러오기 자리 — 설비명 찾기(부분 일치·목록)·공정별·조건별(사용자 R1)·일정 확인·전체
     불러오기, 불러온 수·못 찾은 설비명. 목록이 비면 빈 안내와 단추가 서고, 저장된 데이터가 없는 첫
     화면에는 「엑셀·CSV로 한꺼번에」 팝업 열기 · 「+ 새 호기」 도 선다(`on_dialog` · `on_new`)."""
     _GRID(
         key=key,
-        data=_with_palette(data),
+        data=_with_palette(read_only_data(data, read_only)),
         on_load_change=partial(_dispatch_load, key, on_load),
         on_clear_change=partial(_dispatch_signal, key, "clear", on_clear),
         on_new_change=partial(_dispatch_signal, key, "new", on_new),
@@ -275,6 +319,7 @@ def render_grid_table(
     on_open: Callable[[str], None],
     on_unload: Callable[[list[str]], None],
     key: str = GRID_KEY,
+    read_only: str | None = None,
 ) -> None:
     """표 자리 — 칸 묶음·정렬(브라우저 몫), 칸 고치기·엑셀 여러 칸 붙여넣기·고르기·한꺼번에 고치기·
     지우기·되살리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`). 고른 줄 띠는 고른 동안
@@ -283,7 +328,7 @@ def render_grid_table(
     view = str(data.get("view") or "")
     _GRID(
         key=key,
-        data={**_with_palette(data), "loaderKey": LOADER_KEY},
+        data={**_with_palette(read_only_data(data, read_only)), "loaderKey": LOADER_KEY},
         on_outbox_change=on_outbox,
         on_open_change=partial(_dispatch_open, key, view, on_open),
         on_unload_change=partial(_dispatch_unload, key, view, on_unload),
@@ -301,6 +346,7 @@ def render_grid_side(
     on_draft: Callable[[DraftValue], None] | None = None,
     on_copy: Callable[[CopyRequest], None] | None = None,
     columns: int = 39,
+    read_only: str | None = None,
 ) -> None:
     """오른쪽 칸 — 「호기 상세」(묶음 다섯·그 호기 비가동·지우기/되살리기·「이 호기로 새 호기
     만들기」), 「새 호기」(체크 상자·가져오기·한 장 칸·「호기 추가」) 또는 「저장 전 변경」(수 넷·
@@ -310,7 +356,7 @@ def render_grid_side(
     key = side_key(panel)
     _GRID(
         key=key,
-        data=_with_palette(data),
+        data=_with_palette(read_only_data(data, read_only)),
         on_outbox_change=on_outbox,
         on_open_change=partial(_dispatch_open, key, None, on_open),
         on_goto_change=partial(_dispatch_goto, key, on_goto),

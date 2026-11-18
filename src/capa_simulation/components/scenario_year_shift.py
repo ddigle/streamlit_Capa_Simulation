@@ -3,6 +3,7 @@
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
     month_table_summary,
@@ -82,6 +83,8 @@ def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> N
     with st.expander("12개 월표 전후 비교", expanded=True):
         st.dataframe(preview, hide_index=True, width="stretch")
     if years == 0:
+        if not viewer_can("scenario.create"):
+            return
         st.button(
             "새 시나리오로 저장",
             type="primary",

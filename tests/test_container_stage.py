@@ -468,7 +468,7 @@ def test_the_home_guide_names_the_stage_headlines() -> None:
         container_stage.TITLE_REMOTE_EMPTY,
     ):
         assert f"`{title}`" in section, title
-    assert "DB 동기화" in section and "켜는 날은 앱 관리자가 알립니다" in section
+    assert "DB 동기화" in section and "켜는 날은 앱 관리자(개발자)가 알립니다" in section
 
 
 # --------------------------------------------------------------------------- 꼴 · 보기
@@ -1218,13 +1218,13 @@ def test_the_folded_diagnostics_carry_names_and_numbers(
     facts: container_stage.StageFacts,
     line: str,
 ) -> None:
-    """2026-11-14 보드 D9 — 접힌 「관리자용 진단」 에 이름 · 수(값 · 주소 · 키 · 버킷 이름 아님)."""
+    """2026-11-14 보드 D9 — 접힌 「개발자용 진단」 에 이름 · 수(값 · 주소 · 키 · 버킷 이름 아님)."""
     opened, port = stage
 
     opened.fail(1, kind, wait_seconds=300, facts=facts)
 
     page = _ask(port, "GET", "/")[2].decode("utf-8")
-    folded = page.partition("<summary>관리자용 진단</summary>")[2]
+    folded = page.partition("<summary>개발자용 진단</summary>")[2]
     assert f"<li>{line}</li>" in folded
 
 

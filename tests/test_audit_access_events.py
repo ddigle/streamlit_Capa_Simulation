@@ -93,7 +93,7 @@ def test_a_login_through_the_routes_is_one_line_with_the_name_only(clock: Clock)
     lines = recorder.take_pending()
     assert [line["ev"] for line in lines] == ["authn_login_success"]
     (line,) = lines
-    assert (line["actor"], line["verified"], line["grade"]) == (LOGINID, True, "admin")
+    assert (line["actor"], line["verified"], line["grade"]) == (LOGINID, True, "developer")
     assert line["name"] == "개발 사용자"
     assert line["det"] == {"hours": 6, "max_hours": 24}
     assert len(line["sid8"]) == 8
@@ -315,15 +315,16 @@ def test_the_deploy_version_falls_back_to_the_app_version(monkeypatch: pytest.Mo
     assert boot.deploy_version() == settings.APP_VERSION
 
 
-def test_the_grader_knows_only_admins_and_users() -> None:
-    """기록을 보는 사람은 관리자뿐이다 — 판정기의 등급은 관리자 · 사용자 둘이다."""
+def test_the_grader_gives_the_access_grade() -> None:
+    """감사 줄의 등급은 접속 등급(개발자 · 관리자 · 실무자 · 열람)이다 — 환경변수 명단 서버는 등급
+    파일이 없어 개발자 말고 모두 열람이다(옛 값 `admin` · `user` 를 새로 쓰지 않는다)."""
     cfg = use_config()
 
     grade = boot.grader(cfg)
     assert (grade(LOGINID), grade(LOGINID.upper()), grade("other.user")) == (
-        "admin",
-        "admin",
-        "user",
+        "developer",
+        "developer",
+        "viewer",
     )
 
 
@@ -364,4 +365,4 @@ def test_the_session_line_is_once_per_session_and_work_takes_the_cookie_actor(
     assert created["sid8"] == issued.sid[:8]
     assert len(created["tab8"]) == 8 and created["ip"] == ""
     assert all((line["actor"], line["verified"]) == (LOGINID, True) for line in lines)
-    assert lines[1]["grade"] == "admin"
+    assert lines[1]["grade"] == "developer"

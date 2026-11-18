@@ -273,17 +273,29 @@ function emptyHost(S) {
   S.rowNodes = new Map()
 }
 
+// 표 틀을 다시 지을 열쇠 — 자리와 값만 보는 등급(줄 옮기기 단추 · 범례 유무가 다르다). 「이 등급으로 보기」 를 끝내면 같은
+// 마운트에서 값만이 풀린다.
+function builtKey(S) {
+  return S.mode + (readonly(S) ? ':readonly' : '')
+}
+
 function buildTable(S) {
   emptyHost(S)
-  S.built = S.mode
+  S.built = builtKey(S)
   const root = el('div', 'sgl-root sgl-' + S.mode)
+  S.tools = []
+  S.toolsNode = null
   if (S.mode === 'scenarios') {
+    // 작업 줄은 값만 보는 등급에도 빈 줄로 선다 — 오른쪽 칸 머리와 두 표 머리의 윗선을 맞추는 자리다(`alignHead`). 줄 옮기기
+    // 단추는 고치는 등급에만 둔다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
     const tools = el('div', 'sgl-tools')
-    S.tools = [
-      toolButton(S, '↑ 위로', -1, '연 줄을 한 칸 위로 옮깁니다', '맨 위 줄입니다'),
-      toolButton(S, '↓ 아래로', 1, '연 줄을 한 칸 아래로 옮깁니다', '맨 아래 줄입니다'),
-      toolButton(S, '⤒ 맨 위로', null, '연 줄을 맨 위로 옮깁니다', '맨 위 줄입니다'),
-    ]
+    if (!readonly(S)) {
+      S.tools = [
+        toolButton(S, '↑ 위로', -1, '연 줄을 한 칸 위로 옮깁니다', '맨 위 줄입니다'),
+        toolButton(S, '↓ 아래로', 1, '연 줄을 한 칸 아래로 옮깁니다', '맨 아래 줄입니다'),
+        toolButton(S, '⤒ 맨 위로', null, '연 줄을 맨 위로 옮깁니다', '맨 위 줄입니다'),
+      ]
+    }
     for (const tool of S.tools) tools.appendChild(tool.slot)
     root.appendChild(tools)
     S.toolsNode = tools
@@ -327,17 +339,20 @@ function buildTable(S) {
     // 키보드 조작은 표지 하나와 그 풍선이다 — 표 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02).
     const keys = el('span', 'emg-muted emg-keys', '⌨ 키보드 조작')
     keys.title = KEYS_HELP
-    const legend = el('span', 'emg-legend')
-    for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '막힘']]) {
-      const item = el('span')
-      item.appendChild(el('span', 'emg-swatch ' + kind))
-      item.appendChild(el('span', null, label))
-      legend.appendChild(item)
-    }
     foot.appendChild(keys)
     S.noteNode = el('span', 'sgl-note', S.note)
     foot.appendChild(S.noteNode)
-    foot.appendChild(legend)
+    // 「고친 칸 · 막힘」 은 고친 이름 칸의 뜻이라 고치는 등급에만 둔다.
+    if (!readonly(S)) {
+      const legend = el('span', 'emg-legend')
+      for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '막힘']]) {
+        const item = el('span')
+        item.appendChild(el('span', 'emg-swatch ' + kind))
+        item.appendChild(el('span', null, label))
+        legend.appendChild(item)
+      }
+      foot.appendChild(legend)
+    }
     root.appendChild(foot)
   }
   S.status = el('div', 'sgl-status')
@@ -450,7 +465,7 @@ function releaseHead(S) {
 }
 
 function paintTable(S) {
-  if (S.built !== S.mode) buildTable(S)
+  if (S.built !== builtKey(S)) buildTable(S)
   const keyboard = S.wantFocus
   const hadFocus = keyboard || activeInside(S)
   const rows = viewRows(S)
@@ -519,6 +534,16 @@ function cellValue(S, row, column, index) {
   return String(row[column.key] || '')
 }
 
+// 값만 보는 등급(data `readonly` — 이름 · 차례를 바꿀 수 없다)에게는 칸 고치기 · 줄 옮기기가 없다. 파이썬도 그 출납을 받지
+// 않는다(`scenario_management._fold_outboxes`).
+function readonly(S) {
+  return Boolean(S.data && S.data.readonly)
+}
+
+function canEdit(S, column) {
+  return Boolean(column && column.editable) && !readonly(S)
+}
+
 function cellElement(S, row, column, k, index) {
   const cell = el('div', 'emg-c sgl-w-' + column.key)
   cell.setAttribute('role', 'gridcell')
@@ -528,6 +553,7 @@ function cellElement(S, row, column, k, index) {
   const pending = pendingName(S, row.id)
   const name = pending !== null ? pending : String(row.name || '')
   if (column.key === 'grip') {
+    if (readonly(S)) return cell
     const grip = el('span', 'sgl-grip', '⋮⋮')
     grip.title = '끌어 옮기기 · Alt+↑ ↓'
     grip.setAttribute('aria-label', name + ' 줄 옮기기')
@@ -557,7 +583,7 @@ function cellElement(S, row, column, k, index) {
     tips.push('저장 차례 ' + row.place + '번째')
   }
   if (TIP_COLUMNS.has(column.key) && value) tips.unshift(value)
-  if (!column.editable) cell.classList.add('sgl-ro')
+  if (!canEdit(S, column)) cell.classList.add('sgl-ro')
   if (tips.length) cell.title = tips.join('\n')
   if (editing) {
     cell.classList.add('is-editing')
@@ -571,7 +597,7 @@ function cellElement(S, row, column, k, index) {
   const shown = (column.key === 'name' && row.problem ? '! ' : '') + (value || (column.key === 'name' ? '(빈 이름)' : ''))
   const press = column.key === 'calc' ? calcPress(row, value) : button('emg-cb', shown)
   press.tabIndex = tabStop(S, row, column) ? 0 : -1
-  press.setAttribute('aria-label', label + (column.editable ? '' : ' ' + value))
+  press.setAttribute('aria-label', label + (canEdit(S, column) ? '' : ' ' + value))
   if (row.problem && column.key === 'name') press.setAttribute('aria-invalid', 'true')
   cell.appendChild(press)
   return cell
@@ -624,7 +650,7 @@ function repaintCell(S, id, col) {
 function startEdit(S, id, col, initial) {
   const row = rowOf(S, id)
   const column = COLUMNS[S.mode].find((item) => item.key === col)
-  if (!row || !column || !column.editable) return
+  if (!row || !canEdit(S, column)) return
   const current = cellValue(S, row, column, rowPlace(S, id))
   const typed = initial !== undefined
   S.edit = {
@@ -734,12 +760,14 @@ function paintSelection(S) {
 }
 
 function queueMove(S, id, before) {
+  if (readonly(S)) return false
   const queued = queue(S, { op: 'move', id, before, token: String(S.data.orderToken || '') })
   if (queued) schedule(S)
   return queued
 }
 
 function moveRow(S, id, step) {
+  if (readonly(S)) return
   const order = viewRows(S).map((row) => row.id)
   const before = beforeForStep(order, id, step)
   if (before === undefined) return
@@ -833,7 +861,7 @@ function onBodyKey(S, event) {
     return
   }
   const column = COLUMNS[S.mode].find((item) => item.key === col)
-  const editable = Boolean(column && column.editable)
+  const editable = canEdit(S, column)
   if (key === 'Enter' || key === 'F2') {
     event.preventDefault()
     if (editable) startEdit(S, id, col)
@@ -864,7 +892,7 @@ function focusCell(S, id, col) {
 // ---------------------------------------------------------------- 누름 · 끌기
 
 function onPointerDown(S, event) {
-  if (S.mode !== 'scenarios' || event.button !== 0) return
+  if (S.mode !== 'scenarios' || event.button !== 0 || readonly(S)) return
   const grip = event.target.closest ? event.target.closest('.sgl-grip') : null
   if (!grip) return
   event.preventDefault()

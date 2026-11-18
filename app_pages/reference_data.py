@@ -60,6 +60,7 @@ from capa_simulation.components.scenario_edit_bar import (
     register_pending_edits,
     reset_editors_on_source_change,
     source_token,
+    with_revision_save_tail,
 )
 from capa_simulation.components.tab_marks import mark_pending_segments
 from capa_simulation.page_bootstrap import (
@@ -948,9 +949,7 @@ def _edit_flash(
         removal = removed_notice.format(count=removed)
     return (
         f"{editor_key}_apply",
-        f"{label} {origin} 활성 시나리오에 적용했습니다. "
-        f"{removal}"
-        "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
+        with_revision_save_tail(f"{label} {origin} 활성 시나리오에 적용했습니다. {removal}"),
     )
 
 

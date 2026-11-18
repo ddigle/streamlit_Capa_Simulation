@@ -25,6 +25,7 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.editor_state import discard_editor, editor_has_edits
+from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.scenario_state import ActiveScenario
 
 # 화면마다 「적용하지 않은 편집이 남을 수 있는 곳」의 목록. 사이드바가 저장·불러오기 전에 읽는다.
@@ -38,6 +39,21 @@ OTHER_APPLY_DROPPED_NOTICE = (
     "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
     " — 다시 입력하세요."
 )
+# 적용 · 반영 성공 알림의 끝 — 리비전으로 남기는 자리. 기준 정보 · 생산 계획(수율 · PKG PLAN)이 같은
+# 글로 낸다(`with_revision_save_tail`).
+REVISION_SAVE_TAIL = "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요."
+
+
+def with_revision_save_tail(text: str) -> str:
+    """적용 알림 글 끝에 「신규 리비전 저장」 안내를 붙인다 — 그 단추가 서는 화면 등급(실무자부터 ·
+    운영 서버가 아닌 곳은 늘)에만. 열람에게는 사이드바 시나리오 팝업에 그 단추가 없어 싣지 않는다
+    (설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 없는 기능)."""
+    body = text.rstrip()
+    if not viewer_can("scenario.revision_save"):
+        return body
+    return f"{body} {REVISION_SAVE_TAIL}"
+
+
 OTHER_APPLY_DROPPED_ICON = ":material/sync_problem:"
 
 

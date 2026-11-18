@@ -34,7 +34,7 @@ SSO_SCREEN_MODULES = (
     PACKAGE / "components" / "container_start_check.py",
     PACKAGE / "io" / "container_start_report.py",
     ROOT / "scripts" / "container_start.py",
-    # 시작 임시 화면(로그인 전 앱 밖 화면 — 접힌 「관리자용 진단」 글까지 화면 글이다).
+    # 시작 임시 화면(로그인 전 앱 밖 화면 — 접힌 「개발자용 진단」 글까지 화면 글이다).
     ROOT / "scripts" / "container_stage.py",
 )
 _DOCUMENTED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)

@@ -54,6 +54,15 @@ def scenario(args: Mapping[str, Any], result: Any) -> WorkNote:
     return WorkNote(tgt=_target("scenario", args.get("scenario_id"), args.get("scenario_name")))
 
 
+def scenario_archive(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """보관 — 같은 트랜잭션에서 비운 HOME 지정(공용 비교 대상 · 주요 Case) 수를 싣는다. 보관은
+    실무자부터라 관리자 몫 HOME 설정 지정을 실무자가 비울 수 있다 — 누가 비웠는지를 이 줄로 본다."""
+    return WorkNote(
+        tgt=_target("scenario", args.get("scenario_id")),
+        det={"home_cleared": result if isinstance(result, int) else None},
+    )
+
+
 def revision_save(args: Mapping[str, Any], result: Any) -> WorkNote:
     tables = args.get("revision_tables")
     return WorkNote(
@@ -160,7 +169,17 @@ def voc_delete(args: Mapping[str, Any], result: Any) -> WorkNote:
 
 
 # ------------------------------------------------------------------ 설비
+def _propagated_count(result: Any) -> int | None:
+    """함께 넣기로 새 리비전을 받은 다른 시나리오 수(건너뛰기만 한 시나리오는 세지 않는다)."""
+    rows = _get(result, "propagated")
+    if not isinstance(rows, tuple | list):
+        return None
+    return sum(1 for row in rows if _get(row, "revision_no") is not None)
+
+
 def equipment_save(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """설비 저장 — 이 저장이 낸 공식 발행 번호(없으면 싣지 않음)와 함께 넣은 시나리오 수도 싣는다.
+    비가동만 바뀐 저장은 실무자부터라 그 사람의 저장이 공식 발행을 냈는지를 이 줄로 가른다."""
     request = args.get("request")
     return WorkNote(
         tgt=_target("equipment_scenario", _get(request, "equipment_scenario_id")),
@@ -168,6 +187,8 @@ def equipment_save(args: Mapping[str, Any], result: Any) -> WorkNote:
             "source": "screen",
             "rows": _rows(_get(request, "equipment")),
             "schedule_revision": _text(_get(result, "schedule", "schedule_revision_id")),
+            "release_no": _get(result, "release_no"),
+            "propagated": _propagated_count(result),
         },
         claimed=_text(_get(request, "saved_by")),
     )
@@ -237,6 +258,21 @@ def rows_of(argument: str, *, claimed: str | None = None) -> Describe:
         )
 
     return describe
+
+
+def shortening_filter(field: str, rows_argument: str | None = None) -> Describe:
+    """필요 단축 공용 기본 조회 조건 저장 — 바꾼 칸(기간 · 공정)과 공정 수만(값 없이)."""
+
+    def describe(args: Mapping[str, Any], result: Any) -> WorkNote:
+        rows = None if rows_argument is None else _rows(args.get(rows_argument))
+        return WorkNote(det={"field": field, "rows": rows})
+
+    return describe
+
+
+def legacy_trace_ack(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """설비 「옛 배포 흔적」 이어 쓰기 — 확인한 흔적 수만."""
+    return WorkNote(det={"count": args.get("expected_trace_count")})
 
 
 def baseline_save(args: Mapping[str, Any], result: Any) -> WorkNote:

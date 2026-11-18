@@ -133,11 +133,14 @@ def alert_table(
     labels: ProcessLabels | None = None,
     column_help: Mapping[str, str] | None = None,
     clip: bool = False,
+    csv: bool = True,
 ) -> alerts.AlertTable | None:
     """알림에 딸린 표. 칸 차례는 `frame` 그대로다(부르는 쪽이 표시순서로 칸을 세운 내보내기 프레임을
     준다). `column_help` 는 칸 머리 풍선(칸 이름 → 글 — 없는 칸은 뺀다)이다. 행이
     `alerts.TABLE_ROW_LIMIT` 를 넘으면 None — 본문 목록을 남기라는 뜻이다. `clip` 이면 None 대신 앞
-    `TABLE_ROW_LIMIT` 행만 싣고 `total` 에 원래 행 수를 둔다(`table_clipped`)."""
+    `TABLE_ROW_LIMIT` 행만 싣고 `total` 에 원래 행 수를 둔다(`table_clipped`). `csv` 가 거짓이면 그
+    표의 「CSV 내려받기」 를 세우지 않는다(설비 표를 관리자 아래 등급이 띄웠을 때 — 표지가 표와
+    함께 다른 화면으로 따라간다)."""
     if len(frame) > alerts.TABLE_ROW_LIMIT and not clip:
         return None
     columns = [str(column) for column in frame.columns]
@@ -154,7 +157,7 @@ def alert_table(
         }
         if renamed:
             shown[PROCESS_COLUMN] = renamed
-    return alerts.AlertTable(
+    table = alerts.AlertTable(
         title=title,
         columns=columns,
         rows=rows,
@@ -163,6 +166,9 @@ def alert_table(
         shown=shown,
         help={column: text for column, text in (column_help or {}).items() if column in columns},
     )
+    if not csv:
+        table["csv"] = False
+    return table
 
 
 def table_clipped(table: alerts.AlertTable) -> bool:

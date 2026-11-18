@@ -16,6 +16,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts, shared_process
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
@@ -766,7 +767,12 @@ with notices:
     )
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
-edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
+# 설비 · Space 저장(관리자부터 — 2026-11-18 접속 등급)을 못 하는 화면 등급이면 배치 편집 · 층 사용
+# 편집 · FAB 편집이 모두 꺼진 꼴이다(잠김 표지 없이 숨김 — 설계 규칙 UI-INP-07 예외).
+can_edit_layout = sso_identity.viewer_can("equipment.save")
+edit_mode = space_edit_mode(
+    equipment_session, stamped_role=live_layout_role(), can_edit=can_edit_layout
+)
 # 층 배치 편집(호기·도면 요소·Main 설비명 위치)을 열 수 있는가. 잠긴 회차에도 편집본은 그대로다 —
 # 잠기기 전에 쌓은 변경은 저장 안 한 상자가 말한다(「배치 변경만 버리기」).
 editable = buffer_frames is not None and edit_mode.layout_editable
@@ -1714,6 +1720,7 @@ def _discard_space_layout(with_equipment: bool) -> None:
         stage_fab_layout(None, None, base=(None, ""))
 
 
+@grade_ui.on_press
 def _save_space_layout(
     frames: Frames | None,
     note_key: str,
@@ -2507,8 +2514,11 @@ with space_box:
             width="stretch",
             disabled=not floor_labels,
         )
-    # 도면 줄 — 「배치 편집」 토글 하나.
-    if selected is None:
+    # 도면 줄 — 「배치 편집」 토글 하나. 설비 · Space 저장 등급이 아니면 세우지 않는다(숨김).
+    if not can_edit_layout:
+        st.session_state[EDIT_MODE_KEY] = False
+        st.session_state[FAB_EDIT_MODE_KEY] = False
+    elif selected is None:
         # FAB 배치 편집 — 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2).
         # 샘플 화면· 가정 설비 시나리오에서는 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면
         # 스위치는 켜짐인데 보기 전용 도면이 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E).
@@ -2557,14 +2567,15 @@ with space_box:
     if (
         selected is None
         and not showing_sample
-        and not edit_mode.fab
+        and equipment_session.is_assumption
         and not equipment_session.unmerged
     ):
-        # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 일정 없이 연
-        # 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로 옮겨도 같은 까닭으로 합쳐지지
-        # 않는다(1단계 규칙 그대로).
+        # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 세션을 옮기는 일이라
+        # 등급과 상관없이 모두에게 선다 — 편집 권한 `edit_mode.fab`(등급 밖이면 늘 거짓)으로
+        # 가르지 않는다. 일정 없이 연 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로
+        # 옮겨도 같은 까닭으로 합쳐지지 않는다(1단계 규칙 그대로).
         _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
-    if buffer_frames is not None:
+    if buffer_frames is not None and can_edit_layout:
         # 층 배치 편집이 잠긴 회차의 표지(「최신 rM 불러오기」)·배치 빨리 감기 표지 — `배치 편집`
         # 바로 아래(FAB 에서도 선다).
         _render_edit_lock_line()
@@ -2604,7 +2615,10 @@ with space_box:
 # 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다. 높이는
 # 따로다 — 배치 편집 중에는 머리 줄을 늘 세워 첫 적용 · 저장 · 버리기에 도면이 밀리지 않는다.
 save_row_reserved = editing or fab_editing
-panel_drawn = save_row_reserved or buffer_frames is not None or pending_fab_layout() is not None
+# 「배치 저장」 상자는 설비 · Space 저장 등급에만 선다(실무자는 Space 에서 비가동을 고치지 않는다).
+panel_drawn = can_edit_layout and (
+    save_row_reserved or buffer_frames is not None or pending_fab_layout() is not None
+)
 unsaved_panel = UnsavedPanel()
 with st.container(key="space_unsaved_layout_slot"):
     if panel_drawn:
@@ -2800,7 +2814,11 @@ if selected is None:
             )
     # 필요 단축 요약·추가 호기 상자 — 자리는 늘 선다(켜고 끌 때 아래 key 있는 층 목록 표가 밀리지
     # 않게).
-    with st.container(key="space_shortening_fab_slot"):
+    with (
+        st.container(key="space_shortening_fab_slot"),
+        # 표 위 작은 단추 줄(내려받기 포함)은 설비 화면 내려받기 등급(관리자부터)에만 선다.
+        grade_ui.toolbar_scope("equipment.export", "space_shortening_fab_tools_v1"),
+    ):
         if space_layer is not None and layer_summary is not None:
             render_fab_layer_summary(
                 space_layer,
@@ -2825,35 +2843,43 @@ if selected is None:
     # 여는 길이다(행에 초점을 두고 Shift+Space). 행을 고르면 그 층이 열린다. 비활성 층은 맨 아래
     # 접힌 「비활성 층 n개」 로 내려가고 표 머리 `사용 편집` 이 층 사용 상태를 고친다 — 공용
     # 설정이라 공식 설비 시나리오에서만 연다(Q3 — G5 와 같은 까닭). 샘플 fleet 화면에서도 잠근다.
-    render_space_floor_list(
-        database_path=equipment_database_path,
-        placements=placements,
-        canvas_text=_canvas_text,
-        states=floor_states,
-        unit_counts=lambda: floor_unit_counts(_today_status()),
-        editable=not showing_sample and edit_mode.floor_state,
-        on_open=_open_floor,
-        locked_reason=None if showing_sample else FLOOR_STATE_LOCK_REASON,
-        # 덧붙임 칸 — 「공식과 견주기」 를 켜면 「공식과 다름」(사용·비활성 두 표), 필요 단축 보기를
-        # 켠 동안은 칸 넷(사용 층 표만). 함께 켜지면 이 차례로 기본 칸 뒤에 선다.
-        extra_columns=(
-            *(
-                (
-                    FloorListColumn(
-                        COMPARE_COLUMN,
-                        {
-                            placement.key: unit_differences.get(placement.key, 0)
-                            for placement in placements
-                        },
-                        st.column_config.NumberColumn(format="localized", help=COMPARE_COLUMN_HELP),
-                    ),
-                )
-                if compare_on
-                else ()
+    # 표 위 작은 단추 줄(내려받기 포함)은 설비 화면 내려받기 등급(관리자부터)에만 선다.
+    with grade_ui.toolbar_scope("equipment.export", "space_floor_list_tools_v1"):
+        render_space_floor_list(
+            database_path=equipment_database_path,
+            placements=placements,
+            canvas_text=_canvas_text,
+            states=floor_states,
+            unit_counts=lambda: floor_unit_counts(_today_status()),
+            editable=not showing_sample and edit_mode.floor_state,
+            on_open=_open_floor,
+            locked_reason=None if showing_sample else FLOOR_STATE_LOCK_REASON,
+            # 덧붙임 칸 — 「공식과 견주기」 를 켜면 「공식과 다름」(사용·비활성 두 표), 필요 단축
+            # 보기를 켠 동안은 칸 넷(사용 층 표만). 함께 켜지면 이 차례로 기본 칸 뒤에 선다.
+            extra_columns=(
+                *(
+                    (
+                        FloorListColumn(
+                            COMPARE_COLUMN,
+                            {
+                                placement.key: unit_differences.get(placement.key, 0)
+                                for placement in placements
+                            },
+                            st.column_config.NumberColumn(
+                                format="localized", help=COMPARE_COLUMN_HELP
+                            ),
+                        ),
+                    )
+                    if compare_on
+                    else ()
+                ),
+                *(
+                    layer_columns(layer_table_columns(layer_counts))
+                    if layer_counts is not None
+                    else ()
+                ),
             ),
-            *(layer_columns(layer_table_columns(layer_counts)) if layer_counts is not None else ()),
-        ),
-    )
+        )
 
 else:
     selected_building, selected_floor = selected
@@ -3114,7 +3140,10 @@ else:
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
     # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다).
-    with st.container(key="space_shortening_slot"):
+    with (
+        st.container(key="space_shortening_slot"),
+        grade_ui.toolbar_scope("equipment.export", "space_shortening_tools_v1"),
+    ):
         if space_layer is not None and shown_layer is not None:
             render_floor_layer_panel(
                 selected,

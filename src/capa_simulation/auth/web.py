@@ -70,7 +70,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from capa_simulation import settings
-from capa_simulation.auth import access_store, names, page_frame, runtime
+from capa_simulation.auth import access_store, grade_store, names, page_frame, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, url_origin
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.auth.page_frame import Form, Frame, Link
@@ -129,7 +129,7 @@ LOGIN_REQUIRED = "login required"
 NOT_ON_LIST = "not_on_list"
 NOT_ON_LIST_TITLE = "접속 권한이 없습니다"
 NOT_ON_LIST_TEXT = "이 앱의 접속 명단에 없습니다."
-# S3 명단을 아직 한 번도 읽지 못해(관리자만 들어옴) 명단에 있는지 확인하지 못한 거절의 사유 코드와
+# S3 명단을 아직 한 번도 읽지 못해(개발자만 들어옴) 명단에 있는지 확인하지 못한 거절의 사유 코드와
 # 화면 글. 사람이 명단에 있는지는 말하지 않는다 — 읽지 못했으니 모른다.
 LIST_UNREAD = "list_unread"
 LIST_UNREAD_TITLE = "접속 권한을 확인하지 못했습니다"
@@ -153,13 +153,13 @@ AGAIN_LABEL = "다시 들어가기"
 REOPEN_LABEL = "다시 열기"
 # 계정 뒤에는 조사를 못박지 않는다(받침을 모른다 — `tests/test_particle_sites.py`).
 DENIED_ACCOUNT_TEXT = "계정 {account} — 이 앱의 접속 명단에 없습니다."
-DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 명단에 등록됩니다."
+DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 열람으로 명단에 등록됩니다."
 DENIED_OTHER_STEP = "다른 계정으로 들어가려면 「다른 계정으로 로그인」 을 누르세요."
 DENIED_NO_TICKET_TEXT = "신청하려면 먼저 로그인해 계정을 확인합니다."
 SEND_NOTE_STEP = "아래 글을 문의처로 보내 주세요."
 NOTE_LABEL = "문의처로 보낼 글 — 한 번 누르면 통째로 골라집니다"
 ADMIN_TYPO_DIAGNOSTIC = (
-    "모두가 이 화면을 본다면 관리자 목록 칸(CAPA_ACCESS_ADMINS)에 위 계정이 철자 그대로 들었는지 "
+    "모두가 이 화면을 본다면 개발자 목록 칸(CAPA_ACCESS_ADMINS)에 위 계정이 철자 그대로 들었는지 "
     "확인합니다."
 )
 REGISTERED_TITLE = "등록했습니다"
@@ -172,12 +172,12 @@ LIST_UNREAD_WAIT_TEXT = (
     "서버가 접속 명단을 읽지 못해 지금은 확인할 수 없습니다. 권한 문제가 아닙니다."
 )
 LIST_UNREAD_WAIT_STEP = "1분 뒤 「다시 확인」 을 누르세요. 계속되면 문의처에 알려 주세요."
-LIST_UNREAD_ADMIN_TEXT = "관리자가 서버 설정을 고쳐야 열립니다. 권한 문제가 아닙니다."
+LIST_UNREAD_ADMIN_TEXT = "개발자가 서버 설정을 고쳐야 열립니다. 권한 문제가 아닙니다."
 LIST_UNREAD_ADMIN_STEP = "문의처에 알려 주세요."
 PORTAL_TITLE = "통합인증이 이 앱 사용을 막았습니다"
 PORTAL_TEXT = (
     "앱의 접속 명단보다 앞 단계에서 통합인증(포털)이 이 계정의 앱 사용을 허락하지 않았습니다. "
-    "앱 관리자가 아니라 포털 권한 담당에게 신청해야 합니다."
+    "앱 관리자(개발자)가 아니라 포털 권한 담당에게 신청해야 합니다."
 )
 PORTAL_STEPS = (
     "포털 권한 담당에게 이 앱의 사용 권한을 신청하세요.",
@@ -211,7 +211,7 @@ CONFIG_TEXT = "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어
 CONFIG_BROKEN_TEXT = "통합인증 설정을 마치지 못했습니다"
 CONFIG_FIX_COUNT = "{text} — 고칠 것 {count}개"
 CONFIG_ADMINS_TEXT = (
-    f"관리자 목록({names.ENV_ACCESS_ADMINS})이 비었거나 읽을 수 있는 계정이 없어 막았습니다 — "
+    f"개발자 목록({names.ENV_ACCESS_ADMINS})이 비었거나 읽을 수 있는 계정이 없어 막았습니다 — "
     "값을 넣고 CI/CD 를 다시 돌리세요."
 )
 CONFIG_HOW_TO = "C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요."
@@ -223,18 +223,21 @@ CONFIG_ISSUER_NOTE = (
 CONFIG_ENV_FOLD = "환경변수 전체({count})"
 CONFIG_ENV_HEAD = ("환경변수", "상태", "까닭")
 # 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
-# 앱 관리자로 바꿔 보이지 않는 곳을 가리키지 않는다.
+# 앱 관리자(개발자)로 바꿔 보이지 않는 곳을 가리키지 않는다.
 NO_CONTACT_TEXT: Mapping[str, str] = {
-    SEND_NOTE_STEP: "아래 글을 앱 관리자에게 보내 주세요.",
-    NOTE_LABEL: "앱 관리자에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
-    LIST_UNREAD_WAIT_STEP: "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자에게 알려 주세요.",
-    LIST_UNREAD_ADMIN_STEP: "앱 관리자에게 알려 주세요.",
-    PORTAL_STEPS[1]: "모르겠으면 앱 관리자에게 아래 참고 번호를 알려 주세요.",
+    SEND_NOTE_STEP: "아래 글을 앱 관리자(개발자)에게 보내 주세요.",
+    NOTE_LABEL: "앱 관리자(개발자)에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
+    LIST_UNREAD_WAIT_STEP: (
+        "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자(개발자)에게 알려 주세요."
+    ),
+    LIST_UNREAD_ADMIN_STEP: "앱 관리자(개발자)에게 알려 주세요.",
+    PORTAL_STEPS[1]: "모르겠으면 앱 관리자(개발자)에게 아래 참고 번호를 알려 주세요.",
     LOGIN_SETUP_TEXT: (
-        "앱 설정 문제라 다시 시도해도 같습니다. 앱 관리자에게 아래 참고 번호를 알려 주세요."
+        "앱 설정 문제라 다시 시도해도 같습니다. 앱 관리자(개발자)에게 아래 참고 번호를 알려 주세요."
     ),
     CONFIG_TEXT: (
-        "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 앱 관리자에게 알려 주세요."
+        "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 앱 관리자(개발자)에게 "
+        "알려 주세요."
     ),
 }
 
@@ -258,7 +261,7 @@ _DIAGNOSTIC_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _IDP_ERROR = re.compile(r"^[a-z_]{1,40}$")
 # IdP 가 form_post 로 보낼 수 있는 오류 코드(OAuth 2.0 · OpenID Connect 의 인가 응답 오류). 화면 ·
 # 오류 주소의 사유 코드에는 이 이름만 싣고, 그 밖은 `other` 다 — 콜백은 누구나 보낼 수 있어 아무
-# 글이나 앱 화면에 띄우는 길이 된다. 받은 원문(꼴이 맞을 때)은 관리자만 보는 사건 기록에 남긴다.
+# 글이나 앱 화면에 띄우는 길이 된다. 받은 원문(꼴이 맞을 때)은 개발자만 보는 사건 기록에 남긴다.
 IDP_ERROR_CODES = frozenset(
     {
         "invalid_request",
@@ -308,7 +311,7 @@ _NO_COOKIES_REASON = (
     "머물렀거나, 로그인을 마치고 10분 넘게 지나(또는 서버를 다시 시작한 뒤) 「뒤로」 로 다시 "
     "보냈습니다."
 )
-# 관리자용 진단의 사유 한 줄(사유 코드별). 모르는 사유 코드는 빈 글이다 — 제목과 참고 줄만 선다.
+# 개발자용 진단의 사유 한 줄(사유 코드별). 모르는 사유 코드는 빈 글이다 — 제목과 참고 줄만 선다.
 REASON_TEXT: Mapping[str, str] = {
     "bad_content_type": _FORM_REASON,
     "body_too_large": _FORM_REASON,
@@ -780,7 +783,7 @@ def _env_table(cfg: SsoConfig) -> page_frame.Table:
 
 
 def config_fixes(cfg: SsoConfig) -> list[str]:
-    """「고칠 것」 줄 — 문제가 있는 환경변수마다 한 줄(이름 — 까닭). 관리자 목록이 비었거나 읽을
+    """「고칠 것」 줄 — 문제가 있는 환경변수마다 한 줄(이름 — 까닭). 개발자 목록이 비었거나 읽을
     계정이 없으면 그 줄을 카드 글로 맨 앞에 둔다(첫 배포에서 가장 흔한 실수 — 보드 카드
     p2-config)."""
     grouped: dict[str, list[SsoProblem]] = {}
@@ -870,7 +873,7 @@ def config_page(cfg: SsoConfig, *, status: int, now: int | None = None) -> HTMLR
 
 
 def reason_text(code: str) -> str:
-    """사유 코드의 한 줄 설명(관리자용 진단의 첫 줄). 모르는 코드는 빈 글이다 — 화면은 제목과 참고
+    """사유 코드의 한 줄 설명(개발자용 진단의 첫 줄). 모르는 코드는 빈 글이다 — 화면은 제목과 참고
     줄만 둔다."""
     if code.startswith(_IDP_ERROR_PREFIX):
         detail = code.split(":", 1)[1]
@@ -993,7 +996,8 @@ def _other_account(cfg: SsoConfig) -> tuple[Link, ...]:
 
 
 def _reachable(cfg: SsoConfig, text: str) -> str:
-    """「문의처」 를 가리키는 글 — 문의 줄이 서지 않는 서버(두 칸 모두 빔)면 앱 관리자로 바꾼 글."""
+    """「문의처」 를 가리키는 글 — 문의 줄이 서지 않는 서버(두 칸 모두 빔)면 앱 관리자(개발자)로
+    바꾼 글."""
     if _contact_email() or cfg.access.contact:
         return text
     return NO_CONTACT_TEXT.get(text, text)
@@ -1027,7 +1031,7 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         )
         note = ""
     else:
-        # 명단 파일을 쓰지 않는 서버 — 관리자가 명단을 고치기 전에는 「다시 확인」 이 같은 화면이라
+        # 명단 파일을 쓰지 않는 서버 — 개발자가 명단을 고치기 전에는 「다시 확인」 이 같은 화면이라
         # 주 단추 없이 보조 링크다(보드 s-A-13). 할 일의 중심은 신청 글 · 문의 줄이다.
         steps = (_reachable(cfg, SEND_NOTE_STEP), *((DENIED_OTHER_STEP,) if other else ()))
         primary = None
@@ -1051,10 +1055,10 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
 
 
 def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None) -> Frame:
-    """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 관리자가 고칠 때를
+    """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 개발자가 고칠 때를
     가른다. 신청 글 상자 없이 문의 줄만이다 — 그 글의 머리 「접속 권한」 이 「권한 문제가
     아닙니다」 와 부딪힌다. 거절 표는 「다시 확인」 이 돌아갈 화면만 준다. 「다시 확인」 은 잠시
-    뒤 풀릴 수 있을 때만 주 단추이고, 관리자가 고칠 때는 다시 해도 같은 화면이라 보조 링크다
+    뒤 풀릴 수 있을 때만 주 단추이고, 개발자가 고칠 때는 다시 해도 같은 화면이라 보조 링크다
     (로그인 설정 문제 화면과 같은 꼴 — 보드 s-A-13)."""
     needs_admin = access_store.unread_needs_admin(cfg)
     text, step = (
@@ -1116,7 +1120,7 @@ def denied_family_page(
 
     `registered` 는 표가 있고 그 계정이 지금 명단에 들 때만 그 꼴이다. 표의 계정이 지금 명단에
     드는데
-    다른 코드면(명단을 못 읽은 동안 거절된 사람이 명단이 돌아온 뒤 새로 고침 · 그 사이 관리자가
+    다른 코드면(명단을 못 읽은 동안 거절된 사람이 명단이 돌아온 뒤 새로 고침 · 그 사이 개발자가
     넣음)
     「명단에 없습니다」 를 보이지 않고 로그인 경로로 보낸다(303 — 처음 가려던 화면으로 들어간다).
     `register_failed` 는 표가 있고 아직 명단 밖일 때만 그 꼴이다. 그 밖은 명단을 읽었으면 명단 밖
@@ -1482,6 +1486,13 @@ async def callback(request: Request) -> Response:
         await run_in_threadpool(access_store.retry_unread, cfg)
     if not runtime.current_access(cfg).allows(login.loginid):
         return _deny(cfg, state_cookie, login, claims.next_path, now)
+    if grade_store.is_unread(cfg):
+        # 등급 파일을 아직 못 읽었으면 세션을 내기 직전에 다시 읽어 본다(60초에 한 번까지) — 못
+        # 읽어도
+        # 열람으로 들어와 거절이 없으므로 명단의 「거절 직전」 과 따로 둔다. 네트워크라 이벤트
+        # 루프에서
+        # 부르지 않는다.
+        await run_in_threadpool(grade_store.retry_unread, cfg)
 
     token, session = issue_session(
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now
