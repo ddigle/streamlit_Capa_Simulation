@@ -134,6 +134,12 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/extra_process_admin.py", "_apply", "resume_extra_process"): VERSION_CHECK,
     (f"{_PARTS}/extra_process_admin.py", "_render_toggle", "resume_extra_process"): VERSION_CHECK,
     (f"{_PARTS}/extra_process_admin.py", "_render_toggle", "turn_off_extra_process"): VERSION_CHECK,
+    (f"{_PARTS}/extra_process_admin.py", "_apply_revision", "revise_extra_process"): VERSION_CHECK,
+    # S3 Drive 쓰기 기록은 넣기만 하고, 같은 판을 두 번 써도 S3 의 파일은 같다. 「S3 에 다시
+    # 쓰기」 는 누른 회차에 판 이력을 다시 읽어 이미 쓴 판이면 쓰지 않는다.
+    (f"{_PARTS}/extra_process_admin.py", "_write_active", "record_extra_process_write"): (
+        SAME_REPLACE
+    ),
     (
         f"{_PARTS}/equipment_scenario_management.py",
         "_render_branch",

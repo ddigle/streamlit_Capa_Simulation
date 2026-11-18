@@ -398,7 +398,10 @@ def render_derived_save(
 
 
 def carried_extra_process(
-    repository: DuckDBScenarioRepository, sources: Sequence[tuple[ScenarioSnapshot, str]]
+    repository: DuckDBScenarioRepository,
+    sources: Sequence[tuple[ScenarioSnapshot, str]],
+    *,
+    mixed: Collection[str] = (),
 ) -> tuple[ExtraProcessProvenance, ...]:
     """원본 시나리오들의 부대공정 출처 줄에 메모(「연도 Shift +1년」 · 「월 머지 베이스」)를 단
     사본 — 파생 저장이 새 데이터셋에 잇는다(설계 D18 · 4-9). 부대공정이 없으면 빈 묶음이다.
@@ -406,7 +409,10 @@ def carried_extra_process(
     월 머지의 두 원본이 같은 (공정, 판 차례)를 가지면 한 줄로 접는다(출처 표의 키) — 결과가 다르면
     `extra_process_merge.fold_outcomes` 차례이고, 합침 · BDQ 에 생김이 함께면 그 이름의 행에 판 행과
     BDQ 행이 섞였다는 뺌 줄(`MIXED_REASON`)이다 — 얹기가 그 공정을 걷지 않고 바탕을 받지 않는다.
-    이미 섞임 줄이 든 묶음은 다시 겹쳐도 섞임이다(두 번째 월 머지)."""
+    이미 섞임 줄이 든 묶음은 다시 겹쳐도 섞임이다(두 번째 월 머지). `mixed` 는 결과 행의 달로 가른
+    판 · BDQ 행 섞임 공정(`extra_process_merge.month_merge_mixing` — 한 원본에는 출처 줄이 아예
+    없는 꼴)이고 그 공정의 줄도 섞임 뺌 줄로 접는다."""
+    forced = {name.strip() for name in mixed}
     carried: list[ExtraProcessProvenance] = []
     for snapshot, note in sources:
         for record in repository.load_scenario_extra_process(snapshot.scenario.scenario_id):
@@ -417,12 +423,14 @@ def carried_extra_process(
         groups.setdefault((record.process_name, record.version_seq), []).append(record)
     folded: list[ExtraProcessProvenance] = []
     for records in groups.values():
-        outcome, mixed = fold_outcomes([record.outcome for record in records])
+        outcome, folded_mixed = fold_outcomes([record.outcome for record in records])
+        if records[0].process_name in forced:
+            outcome, folded_mixed = OUTCOME_DROPPED, True
         if any(record.reason == MIXED_REASON for record in records):
             # 앞 월 머지가 이미 섞임으로 접은 줄 — 다시 겹쳐도 섞임이다(행은 여전히 섞여 있다).
-            outcome, mixed = OUTCOME_DROPPED, True
+            outcome, folded_mixed = OUTCOME_DROPPED, True
         kept = next((record for record in records if record.outcome == outcome), records[0])
-        if mixed:
+        if folded_mixed:
             notes = " / ".join(dict.fromkeys(record.note or "" for record in records))
             kept = replace(
                 kept,

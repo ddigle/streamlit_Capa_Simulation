@@ -242,3 +242,35 @@ def test_home_static_and_calculation_pages_show_both_extra_processes(
     assert not app.exception, [item.message for item in app.exception]
     shown = _shown_text(app)
     assert BOND in shown and AOI in shown, page_path
+
+
+def test_the_input_check_adds_an_extra_process_group_only_when_extras_were_merged(
+    tmp_path: Path,
+) -> None:
+    """입력 점검 「부대공정」 묶음(설계 A10) — 판을 합친 리비전에만 서고 공정마다 판 · 경로 수를
+    싣는다. 판 없이 등록한 리비전의 묶음 · 「확인 n」 은 그대로다."""
+    from capa_simulation.components.capacity_gate import input_check_verdict
+    from capa_simulation.services.revision_input_check import EXTRA_COLUMNS, GROUP_EXTRA
+
+    database = tmp_path / "extra_check.duckdb"
+    repository = new_repository(database)
+    plain, _ = register(repository, code="SIM-PLAIN", name="PSM W40")
+    apply_template(repository)
+    merged, _ = register(repository)
+
+    without = input_check_verdict(
+        str(database), plain.scenario.scenario_id, plain.revision.revision_id
+    )
+    with_extra = input_check_verdict(
+        str(database), merged.scenario.scenario_id, merged.revision.revision_id
+    )
+
+    assert without.group(GROUP_EXTRA) is None
+    group = with_extra.group(GROUP_EXTRA)
+    assert group is not None and group.title == "부대공정" and group.level == "check"
+    (table,) = group.tables
+    assert list(table.frame.columns) == list(EXTRA_COLUMNS)
+    assert sorted(table.frame["공정"]) == sorted([BOND, AOI])
+    assert set(table.frame["판"]) == {"1"}
+    assert (table.frame["부하 붙은 경로"] > 0).all()
+    assert group.count == 0 and not group.flagged

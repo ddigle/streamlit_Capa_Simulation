@@ -340,3 +340,80 @@ def test_the_overlay_screen_refuses_a_base_with_mixed_rows(
     (frame,) = [item.value for item in app.dataframe]
     assert list(frame["공정"]) == [BOND] and list(frame["결과"]) == ["섞임"]
     assert not [button for button in app.button if button.label == "새 시나리오로 저장"]
+
+
+# ------------------------------------------------------- 월 머지 섞임을 결과 달로 가름(A14)
+
+
+def _no_provenance(
+    repository: DuckDBScenarioRepository, base: ScenarioSnapshot, name: str
+) -> ScenarioSnapshot:
+    """출처 줄이 아예 없는 원본 — 판 없이 등록해 BDQ 가 그 공정을 스스로 가진 꼴(표는 같다)."""
+    return _derived(repository, base, name, provenance=())
+
+
+def test_month_merge_mixing_finds_bdq_rows_from_a_source_without_provenance(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
+) -> None:
+    """한 원본에 출처 줄이 아예 없으면(판 없이 등록) 출처만으로는 섞임을 모른다 — 결과의 그 원본
+    달에 같은 이름 행이 있으면 BDQ 행으로 보고 섞임으로 가르며, 파생 저장은 그 공정을 섞임 뺌 줄로
+    접어 얹기가 걷지 않는다(`docs/TODO.md` 부대공정 ④)."""
+    from capa_simulation.components.scenario_transform import carried_extra_process
+    from capa_simulation.services.extra_process_merge import month_merge_mixing
+
+    repository, _, merged_source = based
+    bdq_source = _no_provenance(repository, merged_source, "BDQ 원본")
+    reqb = merged_source.tables["RQ_REQB"]
+    months = sorted(int(month) for month in reqb["생산계획년월"].unique())
+    origin = {month: ("베이스" if month < 202607 else "덧붙일 쪽") for month in months}
+    provenance = {
+        "베이스": repository.load_scenario_extra_process(bdq_source.scenario.scenario_id),
+        "덧붙일 쪽": repository.load_scenario_extra_process(merged_source.scenario.scenario_id),
+    }
+
+    mixing = month_merge_mixing(reqb, origin, provenance)
+
+    assert set(mixing.bdq) == {BOND, AOI} and mixing.versions == ()
+    carried = carried_extra_process(
+        repository,
+        ((bdq_source, "월 머지 베이스"), (merged_source, "월 머지 덧붙임 202607~202612")),
+        mixed=mixing.bdq,
+    )
+    assert {(item.process_name, item.reason) for item in carried} == {
+        (BOND, MIXED_REASON),
+        (AOI, MIXED_REASON),
+    }
+    assert split_previous(carried).stripped == ()
+
+
+def test_month_merge_mixing_tells_two_versions_apart_from_one(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
+) -> None:
+    """두 원본이 다른 판을 실으면 「판 섞임」(얹기로 다시 맞춘다), 같은 판이면 섞임이 아니다. 한
+    원본의 달에 그 공정 행이 없으면 그 원본은 세지 않는다."""
+    from capa_simulation.persistence.models import ExtraProcessProvenance
+    from capa_simulation.services.extra_process_merge import month_merge_mixing
+
+    _, _, base = based
+    reqb = base.tables["RQ_REQB"]
+    origin = {
+        int(month): ("베이스" if int(month) < 202607 else "덧붙일 쪽")
+        for month in reqb["생산계획년월"].unique()
+    }
+
+    def merged(sha: str) -> list[ExtraProcessProvenance]:
+        return [ExtraProcessProvenance(BOND, 1, 1, sha, OUTCOME_MERGED)]
+
+    two = month_merge_mixing(
+        reqb, origin, {"베이스": merged("a" * 64), "덧붙일 쪽": merged("b" * 64)}
+    )
+    one = month_merge_mixing(
+        reqb, origin, {"베이스": merged("a" * 64), "덧붙일 쪽": merged("a" * 64)}
+    )
+    later_only = {month: "덧붙일 쪽" for month in origin}
+    absent = month_merge_mixing(
+        reqb, later_only, {"베이스": merged("a" * 64), "덧붙일 쪽": merged("b" * 64)}
+    )
+
+    assert two.versions == (BOND,) and two.bdq == ()
+    assert (one.versions, one.bdq) == ((), ()) and absent.versions == ()

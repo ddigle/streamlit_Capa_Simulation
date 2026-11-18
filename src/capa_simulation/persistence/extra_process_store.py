@@ -1,11 +1,12 @@
-# Purpose: 부대공정 판 내용 · 판 이력 · 데이터셋 출처(마이그레이션 0037)의 읽기와 넣기 SQL 을
-# 담당한다.
+# Purpose: 부대공정 판 내용 · 판 이력 · 데이터셋 출처(마이그레이션 0037)와 S3 Drive 쓰기
+# 기록(0038)의 읽기와 넣기 SQL 을 담당한다.
 
 """부대공정 판 표의 SQL. 연결과 트랜잭션은 저장소(`repository.DuckDBScenarioRepository`)가 소유한다.
 
 판 이력은 넣기만 하고(append-only) 마지막 줄이 지금 상태다. 판 내용은 본문 sha256 하나에 한 벌만
 둔다. 데이터셋 출처는 새 데이터셋을 만드는 저장(등록 · 복제 · 파생 저장 · 얹기)이 같은 트랜잭션에서
-넣는다.
+넣는다. S3 Drive 쓰기 기록(「새 판으로」 · 「S3 에 다시 쓰기」 의 결과)도 넣기만 한다 — 판 이력 줄을
+고치지 않는다.
 """
 
 from __future__ import annotations
@@ -17,7 +18,10 @@ import duckdb
 
 from capa_simulation.persistence.models import (
     EXTRA_KIND_OFF,
+    EXTRA_WRITE_FAILED,
+    EXTRA_WRITE_WRITTEN,
     ExtraProcessProvenance,
+    ExtraProcessS3Write,
     ExtraProcessState,
     ExtraProcessVersion,
 )
@@ -54,12 +58,45 @@ class ExtraProcessMoved(ValueError):
         self.current = current
 
 
+_WRITE_COLUMNS = (
+    "seq",
+    "version_seq",
+    "result",
+    "created_at",
+    "etag",
+    "seen_etag",
+    "stage",
+    "reason",
+    "written_by",
+)
+
+
 def load_state(connection: duckdb.DuckDBPyConnection) -> ExtraProcessState:
-    """판 이력 전체(오래된 차례)."""
+    """판 이력 전체와 S3 Drive 쓰기 기록(둘 다 오래된 차례)."""
     rows = connection.execute(
         f"SELECT {', '.join(_VERSION_COLUMNS)} FROM app_meta.extra_process_version ORDER BY seq"
     ).fetchall()
-    return ExtraProcessState(tuple(_version(row) for row in rows))
+    writes = connection.execute(
+        f"SELECT {', '.join(_WRITE_COLUMNS)} FROM app_meta.extra_process_s3_write ORDER BY seq"
+    ).fetchall()
+    return ExtraProcessState(
+        tuple(_version(row) for row in rows), tuple(_write(row) for row in writes)
+    )
+
+
+def _write(row: Sequence[object]) -> ExtraProcessS3Write:
+    values = dict(zip(_WRITE_COLUMNS, row, strict=True))
+    return ExtraProcessS3Write(
+        seq=int(str(values["seq"])),
+        version_seq=int(str(values["version_seq"])),
+        result=str(values["result"]),
+        created_at=_timestamp(values["created_at"]),
+        etag=_optional_text(values["etag"]),
+        seen_etag=_optional_text(values["seen_etag"]),
+        stage=_optional_text(values["stage"]),
+        reason=_optional_text(values["reason"]),
+        written_by=_optional_text(values["written_by"]),
+    )
 
 
 def _version(row: Sequence[object]) -> ExtraProcessVersion:
@@ -130,6 +167,8 @@ def append_version(
     s3_key: str | None = None,
     s3_etag: str | None = None,
     s3_last_modified: datetime | None = None,
+    base_scenario_ref: str | None = None,
+    base_revision_ref: str | None = None,
 ) -> int:
     """판 이력에 한 줄을 넣고 그 차례를 돌려준다.
 
@@ -161,9 +200,9 @@ def append_version(
         """
         INSERT INTO app_meta.extra_process_version (
             seq, kind, version_no, sha256, applied_by, process_count, row_counts, source_place,
-            s3_key, s3_etag, s3_last_modified, byte_size
+            s3_key, s3_etag, s3_last_modified, byte_size, base_scenario_ref, base_revision_ref
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             seq,
@@ -178,7 +217,47 @@ def append_version(
             s3_etag,
             s3_last_modified,
             None if pack_bytes is None else len(pack_bytes),
+            base_scenario_ref,
+            base_revision_ref,
         ],
+    )
+    return seq
+
+
+def append_write(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    version_seq: int,
+    result: str,
+    etag: str | None = None,
+    seen_etag: str | None = None,
+    stage: str | None = None,
+    reason: str | None = None,
+    written_by: str | None = None,
+) -> int:
+    """S3 Drive 쓰기 기록에 한 줄을 넣고 그 차례를 돌려준다. 쓴 판은 판 이력에 있어야 한다."""
+    found = connection.execute(
+        "SELECT 1 FROM app_meta.extra_process_version WHERE seq = ? AND kind <> ?",
+        [version_seq, EXTRA_KIND_OFF],
+    ).fetchone()
+    if found is None:
+        raise ValueError(f"쓴 부대공정 판(차례 {version_seq})이 판 이력에 없습니다.")
+    if (result == EXTRA_WRITE_WRITTEN) != bool(etag):
+        raise ValueError("S3 Drive 에 쓴 기록에만 ETag 가 있습니다.")
+    if (result == EXTRA_WRITE_FAILED) != (stage is not None):
+        raise ValueError("실패한 S3 Drive 쓰기에만 단계(HEAD · PUT)가 있습니다.")
+    row = connection.execute(
+        "SELECT coalesce(max(seq), 0) FROM app_meta.extra_process_s3_write"
+    ).fetchone()
+    seq = (0 if row is None else int(str(row[0]))) + 1
+    connection.execute(
+        """
+        INSERT INTO app_meta.extra_process_s3_write (
+            seq, version_seq, result, etag, seen_etag, stage, reason, written_by
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [seq, version_seq, result, etag, seen_etag, stage, reason, written_by],
     )
     return seq
 

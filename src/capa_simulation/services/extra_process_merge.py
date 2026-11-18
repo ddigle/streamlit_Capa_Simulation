@@ -79,6 +79,8 @@ RULE_DUPLICATE: Final = "R-06"
 RULE_STOP: Final = "R-07"
 # 월 머지 데이터셋의 같은 공정이 한 원본에서 합침 · 다른 원본에서 BDQ 에 생김 — 출처 뺌 줄 까닭.
 MIXED_REASON: Final = "월 머지로 판 · BDQ 행이 섞임 — 걷지 않음"
+# 연도 Shift 가 출처 줄 메모에 다는 머리(「연도 Shift +1년」) — 달이 판과 어긋난 데이터셋을 가른다.
+YEAR_SHIFT_NOTE: Final = "연도 Shift"
 # 등록 이음매가 판을 합치지 못한 때(예외)의 메모 낱말 — 판 없이 BDQ 만으로 등록한다.
 MERGE_FAILED_WORD: Final = "합치지 못함"
 # 부대공정 행을 싣는 표 — 공정 칸이 있는 기준정보 표 열하나(계획 · 수율 · Chip · 표시순서는 BDQ
@@ -355,6 +357,9 @@ class _Provenance(Protocol):
     @property
     def reason(self) -> str | None: ...
 
+    @property
+    def sha256(self) -> str: ...
+
 
 @dataclass(frozen=True)
 class PreviousExtras:
@@ -384,6 +389,60 @@ def split_previous(records: Iterable[_Provenance]) -> PreviousExtras:
     return PreviousExtras(
         stripped=tuple(name for name in merged if name not in mixed), mixed=tuple(mixed)
     )
+
+
+@dataclass(frozen=True)
+class MonthMergeMixing:
+    """월 머지 결과의 부대공정 섞임(설계 4-9 · D20 · A14) — 공정 이름(처음 나온 차례).
+
+    `versions` 는 두 원본이 서로 다른 판(sha)의 부대공정 행을 결과에 실은 공정이다 — 「부대공정
+    얹기」 로 한 판으로 다시 맞춘다(옛 판 행은 이름으로 걷으면 된다). `bdq` 는 한 원본의 달에는 판
+    행, 다른 원본의 달에는 BDQ 행(그 원본 출처에 합침이 없음)이 실린 공정이다 — 이름으로 걷으면 BDQ
+    행까지 지워 얹기가 그 바탕을 받지 않는다(`MIXED_REASON`).
+    """
+
+    versions: tuple[str, ...] = ()
+    bdq: tuple[str, ...] = ()
+
+
+def month_merge_mixing(
+    reqb: pd.DataFrame,
+    month_origin: Mapping[int, str],
+    provenance: Mapping[str, Sequence[_Provenance]],
+) -> MonthMergeMixing:
+    """결과 `RQ_REQB`(`reqb`) · 달마다 고른 원본(`month_origin` — 달 → 원본 이름) · 원본마다
+    데이터셋 출처로 섞임을 가른다. 출처에 달이 없어 걷기만으로는 가르지 못하던 「판 없이 등록한
+    원본의 BDQ 행」 을 결과 행의 달로 가른다(`docs/TODO.md` 부대공정 ④)."""
+    names = list(
+        dict.fromkeys(record.process_name for records in provenance.values() for record in records)
+    )
+    process = reqb["공정"].astype("string").str.strip()
+    months = pd.to_numeric(reqb["생산계획년월"], errors="coerce")
+    versions: list[str] = []
+    bdq: list[str] = []
+    for name in names:
+        kinds: set[str] = set()
+        shas: set[str] = set()
+        for origin, records in provenance.items():
+            origin_months = [month for month, picked in month_origin.items() if picked == origin]
+            if not origin_months:
+                continue
+            present = bool((process.eq(name) & months.isin(origin_months)).fillna(False).any())
+            if not present:
+                continue
+            own = [record for record in records if record.process_name == name]
+            if any(record.reason == MIXED_REASON for record in own):
+                kinds.update({"extra", "bdq"})
+            elif any(record.outcome == OUTCOME_MERGED for record in own):
+                kinds.add("extra")
+                shas.update(record.sha256 for record in own if record.outcome == OUTCOME_MERGED)
+            else:
+                kinds.add("bdq")
+        if {"extra", "bdq"} <= kinds:
+            bdq.append(name)
+        elif len(shas) > 1:
+            versions.append(name)
+    return MonthMergeMixing(tuple(versions), tuple(bdq))
 
 
 def fold_outcomes(outcomes: Collection[str]) -> tuple[str, bool]:
@@ -444,6 +503,47 @@ def load_lines(
         picked = lines.loc[lines["공정"].astype("string").str.strip().eq(name).fillna(False)]
         loaded = int(picked["부하량"].fillna(0).gt(0).sum())
         counts[name] = (loaded, len(picked) - loaded)
+    return counts
+
+
+# 대당 Capa 가 없거나 0 이하라 소요대수에서 빠진 경로의 까닭(`required_equipment` 의 제외 줄).
+CAPACITY_GAP_REASONS: Final = frozenset({"대당 Capa 없음", "대당 Capa 0 이하"})
+
+
+def inherited_capacity_gaps(
+    pack: ExtraProcessPack,
+    processes: Collection[str],
+    *,
+    outcome: CapacityOutcome,
+) -> dict[str, int]:
+    """공정마다 따라가는 공정 쪽 「대당 Capa 없음 · 0 이하」 로 빠지는 경로를 이어받은 수(설계 4-3
+    R-02 · 3-4 의 5번).
+
+    따라가기 꼴은 참조 공정의 경로 줄을 그대로 이어받는다 — 참조 공정이 대당 Capa 결손으로
+    소요대수에 들지 않는 줄도 부대공정에서는 자기 생산성(공통 값)으로 세어 두 공정의 셈이 갈린다.
+    빼지는 않고 수만 센다. `outcome` 은 그 표로 이미 돌린 전체 기간 계산(미리보기 · 입력 점검)이고,
+    줄은 참조 공정의 제외 줄을 (월 · 양산구분 · 제품 · Stack · Capa Code · Customer · CS · WF
+    구분)으로 접어 경로 기간 안의 것만 센다. PKG 의 Buffer 밖 줄은
+    `ProcessOutcome.inherited_uncounted` 가 센다.
+    """
+    counts: dict[str, int] = {name: 0 for name in processes}
+    required = outcome.required_equipment
+    excluded = None if required is None else required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
+    if not isinstance(excluded, pd.DataFrame) or excluded.empty:
+        return counts
+    gaps = excluded.loc[excluded["제외사유"].isin(CAPACITY_GAP_REASONS).fillna(False)]
+    if gaps.empty:
+        return counts
+    gap_process = gaps["공정"].astype("string").str.strip()
+    for route in pack.routes:
+        if route.process not in counts or not route.follows:
+            continue
+        picked = gaps.loc[gap_process.eq(route.reference.strip()).fillna(False)]
+        if picked.empty:
+            continue
+        folded = picked[list(_FOLLOW_KEYS)].drop_duplicates()
+        months = pd.to_numeric(folded["생산계획년월"], errors="coerce").dropna().astype("int64")
+        counts[route.process] += sum(1 for month in months if route.period.covers(int(month)))
     return counts
 
 

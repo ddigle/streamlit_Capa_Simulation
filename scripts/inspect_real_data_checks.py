@@ -171,6 +171,10 @@ from capa_simulation.services.equipment_units import (  # noqa: E402
     format_unit_count,
     unit_keys,
 )
+from capa_simulation.services.extra_process_merge import (  # noqa: E402
+    OUTCOME_MERGED,
+    strip_extra_processes,
+)
 from capa_simulation.services.frame_contracts import (  # noqa: E402
     AREA_NAMES,
     DEMAND_BASES,
@@ -1082,7 +1086,11 @@ def _source_place(numbers: dict[str, int], scenario_id: str, *, revision_one: bo
 def _revision_one(
     connection: duckdb.DuckDBPyConnection, scenario_id: str, dataset_id: str
 ) -> tuple[str, dict[str, pd.DataFrame]] | None:
-    """그 데이터셋 시나리오의 리비전 1 과 그 표(리비전 표 + 데이터셋 표). 없으면 None."""
+    """그 데이터셋 시나리오의 리비전 1 과 그 표(리비전 표 + 데이터셋 표). 없으면 None.
+
+    그 데이터셋에 합친 부대공정(BDQ 밖 — 데이터셋 출처 `0037`)의 행은 걷는다 — 이 블록들은 원천과
+    기존 결과를 맞대는 것이라 원천에 없는 공정이 섞이면 소요대수 대조가 「신규만」 으로 센다(설계
+    A12). 걷은 공정 수는 데이터셋 줄이 「원천 + 부대공정 n」 으로 적는다(`_extra_processes`)."""
     revision = connection.execute(
         "SELECT revision_id FROM app_meta.scenario_revision "
         "WHERE scenario_id = ? AND revision_no = 1",
@@ -1091,7 +1099,23 @@ def _revision_one(
     if revision is None:
         return None
     revision_id = str(revision[0])
-    return revision_id, _revision_tables(connection, revision_id, dataset_id)
+    tables = _revision_tables(connection, revision_id, dataset_id)
+    extras = _extra_processes(connection, dataset_id)
+    return revision_id, strip_extra_processes(tables, extras) if extras else tables
+
+
+def _extra_processes(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> tuple[str, ...]:
+    """그 데이터셋에 합친 부대공정 이름(데이터셋 출처 — 0037). 0037 전 판의 DB 사본이라 표가
+    없으면 빈 묶음이다."""
+    try:
+        rows = connection.execute(
+            "SELECT DISTINCT process_name FROM app_meta.dataset_extra_process "
+            "WHERE dataset_id = ? AND outcome = ? ORDER BY process_name",
+            [dataset_id, OUTCOME_MERGED],
+        ).fetchall()
+    except duckdb.CatalogException:
+        return ()
+    return tuple(str(row[0]) for row in rows)
 
 
 def _revision_tables(
@@ -1235,6 +1259,7 @@ def load_source(session: Session) -> SourceData | None:
             )
             return None
         raw = _raw_core_data(connection, picked.dataset_id)
+        extras = _extra_processes(connection, picked.dataset_id)
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
         return None
@@ -1258,6 +1283,8 @@ def load_source(session: Session) -> SourceData | None:
     )
     if picked.source_type in DERIVED_SOURCE_TYPES or raw.empty:
         label += " · **⚠ 원천에서 온 데이터셋이 아니다 — 리비전 1 이 원천 그대로가 아닐 수 있다**"
+    elif extras:
+        label += f"(원천 + 부대공정 {len(extras):,} — 부대공정 행은 대조 · 계산에서 뺌)"
     else:
         label += "(원천 그대로)"
     # 돌아온 것은 건너뛴 목록에서 뺀다 — 고른 것이 그 줄에 두 번 서지 않게.
