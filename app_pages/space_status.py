@@ -44,6 +44,7 @@ from capa_simulation.components.equipment_data_workspace import (
     reset_equipment_drafts,
     revision_token,
     save_equipment_buffer,
+    snapshot_digest,
     stage_editor_module_layouts,
     stage_fab_layout,
     stage_floor_canvas,
@@ -842,7 +843,17 @@ stored_as_of = st.session_state.get(SPACE_AS_OF_KEY)
 as_of = today if layer_active else clamp_as_of(stored_as_of, today)
 if not layer_active and stored_as_of is not None and stored_as_of != as_of:
     st.session_state[SPACE_AS_OF_KEY] = as_of
-all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
+# 그리는 설비 마스터(스냅샷 계산 프레임)의 내용 지문 — 스냅샷 쌍 토큰마다 한 번(세션 메모). 기준일
+# 페이더 · 색 기준 회차의 캐시 키가 39칸 표를 다시 해시하지 않게 넘긴다. 샘플 fleet · 빈 화면은
+# 넘기지 않는다(그 함수가 낸다).
+space_equipment_digest = (
+    snapshot_digest(equipment, latest_snapshot, "calculation")
+    if latest_snapshot is not None and not using_sample_equipment
+    else None
+)
+all_status = get_space_equipment_status(
+    equipment, downtime, as_of=as_of, equipment_digest=space_equipment_digest
+)
 # 필요 단축 보기의 「단축 없는 호기 흐리게」 값과 기준 달 한 줄 자리 — 둘 다 `Space 조건` 카드의
 # 「색 기준」 밑이다(2026-11-09 사용자 검수 g05 — 도면 위 본문 줄 셋을 걷는다). 기준 달은 계획을
 # 꺼낸 뒤 아래에서 그 자리에 채운다.
@@ -1104,7 +1115,9 @@ def _today_status() -> pd.DataFrame:
     회차의 `all_status` 를 그대로 쓴다. 편집 모드 본문에서만 부른다."""
     if as_of == today:
         return all_status
-    return get_space_equipment_status(equipment, downtime, as_of=today)
+    return get_space_equipment_status(
+        equipment, downtime, as_of=today, equipment_digest=space_equipment_digest
+    )
 
 
 def _unconfirmed_count() -> int:
@@ -1114,11 +1127,13 @@ def _unconfirmed_count() -> int:
     if no_fleet:
         return 0
     master = equipment
+    master_digest = space_equipment_digest
     if equipment_session.is_assumption and not using_sample_equipment:
         official = official_snapshot_for(equipment_database_path, equipment_session)
         if official is not None:
             master = official_confirmation_master(equipment, official)
-    issues = get_schedule_confirmation_issues(master, today=today)
+            master_digest = None
+    issues = get_schedule_confirmation_issues(master, today=today, equipment_digest=master_digest)
     return confirmation_counts(issues, processes=selected_processes or None)[UNCONFIRMED]
 
 

@@ -292,14 +292,17 @@ def _names(frame: pd.DataFrame, *columns: str) -> list[tuple[str, ...]]:
     return sorted({tuple(str(value) for value in row) for row in rows.itertuples(index=False)})
 
 
-def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) -> None:
+def report_unit_notices(
+    equipment: pd.DataFrame, *, scope: AlertScope | None, equipment_digest: str | None = None
+) -> None:
     """일정 미정(`EQ-20`) · 사용기준 밖(`EQ-22`) 상태 알림 — Main · Static 대비 일정이 열린 회차마다
     (없어도 — 해소 · 이벤트 칸 한 자리씩) 부른다. `equipment` 는 이 화면이 그리는 설비 마스터(거르기
     전)다. 설비 마스터가 검증을 못 넘으면 알리지 않는다(해소로 둔다) — 그 오류는 결과 자리가 이미
-    알린다."""
+    알린다. `equipment_digest` 는 그 표의 내용 지문(페이지 세션 메모 — 주면 캐시 키가 표를 다시
+    해시하지 않는다)."""
     key, label = (scope.scope, scope.label) if scope is not None else (None, "")
     try:
-        undated = get_undated_equipment(equipment)
+        undated = get_undated_equipment(equipment, equipment_digest=equipment_digest)
     except ValueError:
         undated = None
     mark = None if undated is None else undated_equipment_mark(undated)
@@ -331,7 +334,7 @@ def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) ->
         ),
     )
     try:
-        excluded = get_usage_excluded_equipment(equipment)
+        excluded = get_usage_excluded_equipment(equipment, equipment_digest=equipment_digest)
     except ValueError:
         excluded = None
     usage = None if excluded is None else usage_exclusion_mark(excluded)
@@ -371,16 +374,26 @@ def report_unconfirmed_units(
     scope: AlertScope | None,
     confirmation_equipment: pd.DataFrame | None = None,
     confirmation_basis: str | None = None,
+    equipment_digest: str | None = None,
+    confirmation_digest: str | None = None,
 ) -> None:
     """미확인(`EQ-21`) 상태 알림 — 반입 · Qual 일정이 지났는데 실적이 비고 상태가 계획 · 확정인
     호기. Main 호기 현황의 상태 분포 · 호기 목록(`UNIT_NAME_VIEWS`)이 열린 회차마다(없어도)
     부른다. **오늘 기준**이라 Main 의 기준일과 상관없다(2026-10-16 사용자 결정).
     `confirmation_equipment` 를 주면 그 마스터(가정 설비 시나리오일 때 공식 스냅샷 그대로)로
     고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다.
-    `confirmation_basis` 는 그때 글 끝 꼬리표(「공식 일정 기준」)다."""
+    `confirmation_basis` 는 그때 글 끝 꼬리표(「공식 일정 기준」)다. `equipment_digest` ·
+    `confirmation_digest` 는 두 표의 내용 지문(페이지 세션 메모 — 고르는 표의 것이 캐시 키에
+    든다)."""
     key, label = (scope.scope, scope.label) if scope is not None else (None, "")
     source = equipment if confirmation_equipment is None else confirmation_equipment
-    issues = get_schedule_confirmation_issues(source, today=today)
+    issues = get_schedule_confirmation_issues(
+        source,
+        today=today,
+        equipment_digest=(
+            equipment_digest if confirmation_equipment is None else confirmation_digest
+        ),
+    )
     unit_ids = _unit_ids(equipment)
     mark = schedule_confirmation_mark(issues, unit_ids=unit_ids)
     tail = (
@@ -435,6 +448,7 @@ def _availability(
     view: str,
     expression: str,
     labels: ProcessLabels | None = None,
+    equipment_digest: str | None = None,
 ) -> None:
     weekly = get_weekly_equipment_availability(
         baseline,
@@ -442,6 +456,7 @@ def _availability(
         downtime,
         start_date=start,
         end_date=end,
+        equipment_digest=equipment_digest,
     )
     if weekly.empty:
         st.caption("조건에 맞는 설비가 없습니다.")
@@ -630,6 +645,8 @@ def render_equipment_explorer(
     confirmation_basis: str | None = None,
     shared_screen: str | None = None,
     alert_scope: AlertScope | None = None,
+    equipment_digest: str | None = None,
+    confirmation_digest: str | None = None,
 ) -> None:
     """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
 
@@ -655,10 +672,15 @@ def render_equipment_explorer(
     `process_labels` 는 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정) — `공정소분류` 선택지·
     걸린 조건 줄·조회 표의 `공정소분류` 칸·생애주기 그림의 풍선. 선택값(세션)과 거르는 값은
     원본이다. 주지 않으면 원본 그대로 그린다.
+
+    `equipment_digest` · `confirmation_digest` 는 `equipment` · `confirmation_equipment` 의 내용
+    지문이다(페이지 세션 메모 — `equipment_data_workspace.remembered_digest`). 주면 캐시 키가 39칸
+    표를 회차마다 다시 해시하지 않는다. 거른 표에는 거르는 조건이 하나도 걸리지 않은 회차만 그
+    지문을 쓴다(거르지 않은 사본 — 같은 내용).
     """
     if tab_is_hidden(owner_tab):
         return
-    report_unit_notices(equipment, scope=alert_scope)
+    report_unit_notices(equipment, scope=alert_scope, equipment_digest=equipment_digest)
     labels = process_labels or ProcessLabels()
     in_card = conditions is not None
     # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
@@ -732,6 +754,8 @@ def render_equipment_explorer(
             scope=alert_scope,
             confirmation_equipment=confirmation_equipment,
             confirmation_basis=confirmation_basis,
+            equipment_digest=equipment_digest,
+            confirmation_digest=confirmation_digest,
         )
     else:
         alerts.flush()
@@ -862,6 +886,8 @@ def render_equipment_explorer(
         if values:
             filtered = filtered.loc[filtered[column].isin(values)]
     filtered = filtered.copy()
+    # 거르는 조건이 하나도 없으면 거른 표는 받은 표의 사본(같은 내용)이라 그 지문을 그대로 쓴다.
+    filtered_digest = None if any(values for _, values in filters) else equipment_digest
     filtered_downtime = downtime.loc[
         downtime[EQUIPMENT_ID_COLUMN].isin(filtered[EQUIPMENT_ID_COLUMN])
     ].copy()
@@ -884,6 +910,7 @@ def render_equipment_explorer(
         labels=labels,
         today=today,
         owner_tab=owner_tab,
+        filtered_digest=filtered_digest,
     )
     if view in EXPRESSION_VIEWS:
         _render_expressed_result(row, shown)
@@ -915,6 +942,8 @@ class _Shown:
     labels: ProcessLabels
     today: date
     owner_tab: OpenTab | None
+    # 거른 마스터의 내용 지문 — 거르는 조건이 없는 회차에만(받은 표의 지문), 아니면 None.
+    filtered_digest: str | None = None
 
 
 @st.fragment
@@ -983,6 +1012,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                     view=view,
                     expression=expression,
                     labels=labels,
+                    equipment_digest=shown.filtered_digest,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
                 # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다. 시점과 결과는

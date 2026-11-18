@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, Final, Literal, NamedTuple, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -175,6 +175,7 @@ from capa_simulation.services.layout_overlay import (
     place_rows,
     reapply_layout_edits,
 )
+from capa_simulation.services.simulation_cache import frame_digest
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
@@ -185,6 +186,7 @@ from capa_simulation.services.space_layout_edit import (
     restore_saved_layout,
     saved_layout_drift,
 )
+from capa_simulation.session_slot import SessionSlot
 
 # 빠른 두 번 누름 거름(`write_guard.save_once`)의 저장 이름 — 설비 편집본 저장과 FAB 전체 배치 쓰기.
 # 설비 편집본 저장은 같은 이름으로 제 저장 표지(`write_guard.own_save_marks` — `<이름>:<설비
@@ -640,6 +642,67 @@ def equipment_buffer_generation() -> int:
     """편집본 세대. 편집본이 바뀔 때마다(설비 마스터 탭 고침·Space 적용·새 리비전) 오른다."""
     value = st.session_state.get(BUFFER_GENERATION_KEY, 0)
     return int(value) if isinstance(value, int) else 0
+
+
+# 설비 화면이 같은 표의 내용 지문(`frame_digest`)을 회차마다 다시 내지 않게 하는 세션 메모
+# {"prefix": (편집본 출발점, 편집본 세대), "digests": {출처: (지문, 꼴 표지)}}
+# — `remembered_digest`.
+DIGEST_MEMO_KEY = "equipment_digest_memo_v1"
+DIGEST_MEMO: Final = SessionSlot(DIGEST_MEMO_KEY, dict, dict)
+# 한 (출발점, 세대) 안에서 기억하는 출처 수 상한 — 화면마다 서너 개다.
+_DIGEST_MEMO_LIMIT = 16
+
+
+def _frame_shape(frame: pd.DataFrame) -> tuple[int, tuple[str, ...]]:
+    """메모 꼴 표지 — 행 수 · 칸 이름. 출처를 잘못 붙인 표를 잡는 그물이다(내용 대조는 아니다)."""
+    return len(frame), tuple(str(column) for column in frame.columns)
+
+
+def remembered_digest(frame: pd.DataFrame, *, source: tuple[str, ...]) -> str:
+    """`frame_digest(frame)` 를 출처(`source`)마다 한 번만 낸다 — 세션 메모(`DIGEST_MEMO`).
+
+    `source` 는 **그 표의 내용을 정하는 것**이다 — 불변 스냅샷 쌍 토큰 + 역할(「계산 사본의 설비
+    마스터」 등). 메모 열쇠는 편집본 출발점(`buffer_base` — 세션 · 저장본 쌍 토큰 · 세운 세대)과
+    편집본 세대도 싣는다 — 편집본 · 저장본이 바뀌는 모든 길(저장 · 불러오기 · 버리기 · 이어 쓰기 ·
+    붙여넣기 · 표 출납 · Space 적용)이 세대나 출발점을 올리므로 그 뒤의 첫 회차가 다시 낸다. 세대
+    번호만으로 캐시 키를 삼지 않는다(세션마다 0 부터 세어 겹친다) — 돌려주는 값은 늘 내용 지문이라
+    캐시 키는 지문을 넘기지 않는 화면과 같다.
+
+    거른 표(공정 · 분류로 좁힌 것)나 그 회차에 고쳐 만든 표에는 쓰지 않는다 — 출처가 내용을 정하지
+    못한다. 꼴 표지(행 수 · 칸 이름)가 메모와 다르면 다시 낸다.
+    """
+    prefix = (buffer_base(), equipment_buffer_generation())
+    memo = DIGEST_MEMO.get()
+    digests = memo.get("digests") if memo.get("prefix") == prefix else None
+    if not isinstance(digests, dict):
+        digests = {}
+    shape = _frame_shape(frame)
+    found = digests.get(source)
+    if isinstance(found, tuple) and len(found) == 2 and found[1] == shape:
+        return str(found[0])
+    digest = frame_digest(frame)
+    kept = dict(list(digests.items())[-(_DIGEST_MEMO_LIMIT - 1) :]) if digests else {}
+    kept[source] = (digest, shape)
+    DIGEST_MEMO.set({"prefix": prefix, "digests": kept})
+    return digest
+
+
+def calculation_digest(frame: pd.DataFrame, latest_snapshot: EquipmentSnapshot | None) -> str:
+    """계산 사본(`calculation_drafts`)의 설비 마스터 지문 — 저장본 쌍 토큰마다 한 번.
+
+    계산 사본은 `ensure_equipment_drafts(latest_snapshot)` 가 그 토큰의 저장본에서만 세우므로 토큰이
+    내용을 정한다. `frame` 은 그 회차의 `calculation_drafts()[1]` 이어야 한다(샘플 fleet · 거른
+    표에는 쓰지 않는다).
+    """
+    return remembered_digest(
+        frame, source=("calculation", "equipment", revision_token(latest_snapshot))
+    )
+
+
+def snapshot_digest(frame: pd.DataFrame, snapshot: EquipmentSnapshot, role: str) -> str:
+    """불변 스냅샷에서 바로 꺼낸 표의 지문 — (쌍 토큰, 역할)마다 한 번. `role` 은 그 표가 무엇인지
+    (「equipment」 = `snapshot.equipment`, 「calculation」 = `calculation_frames()[1]` 등)다."""
+    return remembered_digest(frame, source=("snapshot", role, snapshot.token))
 
 
 def revision_token(latest_snapshot: EquipmentSnapshot | None) -> str:

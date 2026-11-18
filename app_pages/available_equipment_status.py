@@ -48,6 +48,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
     _official_places_by_name,
+    calculation_digest,
     calculation_drafts,
     draft_unscheduled_units,
     effective_floor_canvases,
@@ -60,6 +61,7 @@ from capa_simulation.components.equipment_data_workspace import (
     rerun_if_head_stale,
     settle_grid_toasts,
     small_editor_edits,
+    snapshot_digest,
 )
 from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
@@ -343,6 +345,12 @@ dashboard_baseline = (
     if latest_snapshot is None and baseline.empty and using_dashboard_sample and show_sample_fleet
     else baseline
 )
+# 계산 사본 설비 마스터의 내용 지문 — 저장본 쌍 토큰마다 한 번(세션 메모, 편집본 출발점 · 세대가
+# 바뀌면 다시 낸다). 캐시 키(일정 미정 · 사용기준 밖 · 미확인 · 구간)가 39칸 표를 회차마다 다시
+# 해시하지 않게 넘긴다. 샘플 fleet 은 넘기지 않는다(오늘마다 다른 합성 표 — 그 함수가 낸다).
+dashboard_equipment_digest = (
+    calculation_digest(equipment, latest_snapshot) if dashboard_equipment is equipment else None
+)
 # 「가용설비 설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다.
 # 「Cut-off 를 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비
 # 시나리오 공용이라 가정 설비 시나리오에서는 읽기 전용(E3)이고, 공식 시나리오의 발행 안 한
@@ -420,6 +428,12 @@ with main_tab, grade_ui.toolbar_scope("equipment.export", "equipment_main_tools_
                 shared_screen=SHARED_PROCESS_SCREEN,
                 # 일정 미정 · 미확인 · 사용기준 밖 상태 알림의 범위(세션의 리비전 쌍).
                 alert_scope=equipment_alert_scope,
+                equipment_digest=dashboard_equipment_digest,
+                confirmation_digest=(
+                    snapshot_digest(official_snapshot.equipment, official_snapshot, "equipment")
+                    if official_snapshot is not None and not using_dashboard_sample
+                    else None
+                ),
             )
 
 with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1"):
@@ -528,6 +542,7 @@ with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1
                     downtime=dashboard_downtime,
                     start_date=span_start,
                     end_date=span_end,
+                    equipment_digest=dashboard_equipment_digest,
                 ),
                 _equipment=dashboard_equipment,
                 _downtime=dashboard_downtime,
@@ -551,6 +566,7 @@ with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1
                         downtime=free_downtime,
                         start_date=span_start,
                         end_date=span_end,
+                        equipment_digest=dashboard_equipment_digest,
                     ),
                     _equipment=dashboard_equipment,
                     _downtime=free_downtime,
@@ -592,6 +608,7 @@ with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1
                 manual_downtime=gap_manual_downtime,
                 alert_scope=equipment_alert_scope,
                 alert_tab=tab_name(EQUIPMENT_SUMMARY_TAB, EQUIPMENT_GAP_TAB),
+                units_digest=dashboard_equipment_digest,
             )
 
 
