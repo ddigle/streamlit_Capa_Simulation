@@ -375,9 +375,8 @@ def test_a_viewers_list_is_read_only_and_drops_rename_ops(
     _clean(app)
     assert last(calls, grid.TABLE_KEY).get("readonly") is True
     assert last(calls, grid.REVISIONS_KEY).get("readonly") is True, "리비전 이름도 값만"
-    # 단추 · 범례는 표 JS 가 그린다 — 받은 data 를 그대로 가짜 DOM 에 올린다.
-    assert drawn_list_controls(last(calls, grid.TABLE_KEY)) == {"tools": 0, "legend": 0, "grips": 0}
-    row_id = last(calls, grid.TABLE_KEY)["rows"][0]["id"]
+    shipped = last(calls, grid.TABLE_KEY)
+    row_id = shipped["rows"][0]["id"]
 
     ListBrowser(app, calls).rename_scenario(row_id, "DEMO 바꾼 이름")
 
@@ -386,6 +385,9 @@ def test_a_viewers_list_is_read_only_and_drops_rename_ops(
     with as_system():
         names = [item.scenario_name for item in DuckDBScenarioRepository(database).list_scenarios()]
     assert "DEMO 바꾼 이름" not in names
+    # 단추 · 범례는 표 JS 가 그린다 — 받은 data 를 그대로 가짜 DOM 에 올린다(node 가 없으면 건너뛰는
+    # 줄이라 맨 끝).
+    assert drawn_list_controls(shipped) == {"tools": 0, "legend": 0, "grips": 0}
 
 
 def test_an_editors_list_takes_rename_ops(
@@ -402,15 +404,16 @@ def test_an_editors_list_takes_rename_ops(
     calls = install_fake_list_grid(monkeypatch)
     app = _graded(_page(SCENARIO_PAGE, database, equipment))
     app.run()
-    assert "readonly" not in last(calls, grid.TABLE_KEY)
-    drawn = drawn_list_controls(last(calls, grid.TABLE_KEY))
-    assert drawn["tools"] == 3 and drawn["legend"] == 1 and drawn["grips"] > 0
-    row_id = last(calls, grid.TABLE_KEY)["rows"][0]["id"]
+    shipped = last(calls, grid.TABLE_KEY)
+    assert "readonly" not in shipped
+    row_id = shipped["rows"][0]["id"]
 
     ListBrowser(app, calls).rename_scenario(row_id, "DEMO 바꾼 이름")
 
     _clean(app)
     assert has_edits(app.session_state[DRAFT_KEY])
+    drawn = drawn_list_controls(shipped)
+    assert drawn["tools"] == 3 and drawn["legend"] == 1 and drawn["grips"] > 0
 
 
 # ------------------------------------------------------------------ 화면을 거친 거절
