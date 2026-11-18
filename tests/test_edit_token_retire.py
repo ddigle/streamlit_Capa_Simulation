@@ -311,16 +311,18 @@ def test_the_full_cell_holds_eight_contents(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # 편집 적용(`apply_month_updates` · `apply_table_updates`)을 부르는 곳. 모두 적용 뒤 곧바로 앱 전체
-# 회차를 다시 돌리고(`st.rerun` · `DialogHost.finish`), 그 사이에 계산을 부르지 않는다 — 걷은 옛
-# 편집본 칸을 같은 회차가 다시 채우지 않는다(생산 계획 적용 두 번은
-# `test_load_conversion_plan_apply.py` 가 실제로 돌려 본다). `_apply_yield` 는 부르는 두 곳(편집표
-# 적용 · 붙여넣기 팝업)이, `_apply_edit` 는 그리드 적용 · 붙여넣기 팝업(`month_editor.paste_dialog`
-# → `DialogHost.finish`)이 다시 돌린다. 곳을 더하면 같은 차례인지 보고 여기 더한다.
+# 회차를 다시 돌리거나(`st.rerun` · `DialogHost.finish`) 위젯 콜백 안이라 그 뒤 첫 앱 회차가 새
+# 토큰으로 돈다 — 그 사이에 계산을 부르지 않아 걷은 옛 편집본 칸을 같은 회차가 다시 채우지
+# 않는다(생산 계획 적용 두 번은 `test_load_conversion_plan_apply.py` 가 실제로 돌려 본다).
+# `_apply_yield` 는 부르는 두 곳(수율 「변경사항 적용」 콜백 · 붙여넣기 팝업)이, `_apply_edit` 는
+# 그리드 적용 · 붙여넣기 팝업(`month_editor.paste_dialog` → `DialogHost.finish`)이 다시 돌린다.
+# PKG PLAN 「변경사항 적용」(`_apply_plan_click`)은 단추 콜백이다. 곳을 더하면 같은 차례인지 보고
+# 여기 더한다.
 EDIT_APPLY_SITES = frozenset(
     {
         ("app_pages/load_conversion.py", "_apply_yield"),
         ("app_pages/load_conversion.py", "_virtual_product_dialog"),
-        ("app_pages/load_conversion.py", "<module>"),
+        ("app_pages/load_conversion.py", "_apply_plan_click"),
         ("app_pages/reference_data.py", "_step_dialog"),
         ("app_pages/reference_data.py", "_apply_edit"),
     }

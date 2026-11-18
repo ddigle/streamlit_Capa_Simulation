@@ -1,13 +1,15 @@
 # Purpose: 생산 계획 화면의 PKG PLAN·수율 적용·붙여넣기·가상 제품 등록 동작을 고정한다.
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import streamlit as st
 from alert_marks import (
     active_state,
     alert_notes,
@@ -18,7 +20,15 @@ from alert_marks import (
     successes,
     table_frame,
 )
-from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops, shell_frame, shell_key
+from edit_grid_fake import (
+    Calls,
+    install_fake_edit_grid,
+    last,
+    outbox,
+    send_ops,
+    shell_frame,
+    shell_key,
+)
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, TextInput
 
@@ -1163,9 +1173,10 @@ def test_applying_one_table_leaves_only_the_other_tables_edit_pending(
     assert not list(app.exception)
     assert app.session_state["active_scenario"]["content_token"] != before_token
 
-    # 누른 회차와 적용 뒤 `st.rerun()` 회차. 사용자가 보는 사이드바는 뒤 회차의 것이다.
+    # 적용은 단추 콜백이라 누른 회차 하나다(본문 `st.rerun()` 회차가 없다). 그 회차의 사이드바가 이미
+    # 적용 뒤 목록을 센다.
     runs = app.session_state[PRE_PAGE_LOG_KEY][runs_before:]
-    assert len(runs) == 2
+    assert len(runs) == 1
     assert runs[-1] == [other_label]
     # 다른 표의 초안은 그대로 남아 탭 점·작업 줄이 계속 선다.
     assert _drafted(app, other_table)
@@ -1574,3 +1585,229 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     app.run()
     assert not list(app.exception)
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+
+
+# --- 「변경사항 적용」 은 단추 콜백 — 누름 하나에 회차 하나(다시 도는 범위 C1, M24) ----------------
+# 전에는 누른 회차가 옛 원본으로 화면을 다 그린 뒤 적용하고 `st.rerun()` 해 회차가 둘이었다. 지금은
+# 콜백이 본문보다 먼저 적용하고 그 회차 하나가 새 원본 · 알림을 그린다. 회차 수는 페이지 앞 기록
+# (`_sidebar_probe_script` — 회차마다 한 줄)으로 센다.
+
+STALE_PRESS_KEY = "test_stale_press"
+
+
+def _press_runs(app: AppTest, key: str) -> int:
+    """그 단추를 눌러 돈 회차 수(페이지 앞 기록 줄 수)."""
+    before = len(app.session_state[PRE_PAGE_LOG_KEY])
+    app.button(key=key).click().run()
+    assert not list(app.exception)
+    return len(app.session_state[PRE_PAGE_LOG_KEY]) - before
+
+
+def _stale_press_script(database_path: Path) -> str:
+    """페이지 앞에서 세션에 넣어 둔 함수 하나를 부르는 스크립트 — 앞 회차에 그린 단추의 콜백을
+    그 뒤 회차에 부르는 Streamlit 1.63 의 옛 화면 누름을 흉내 낸다(콜백도 본문보다 먼저 돈다)."""
+    return _sidebar_probe_script(database_path).replace(
+        "apply_pending_scenario_preset()\n",
+        "apply_pending_scenario_preset()\n"
+        f"_stale = st.session_state.pop({STALE_PRESS_KEY!r}, None)\n"
+        "if _stale is not None:\n"
+        "    _stale()\n",
+        1,
+    )
+
+
+def _captured_apply_clicks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Callable[[], None]]:
+    """작업 줄이 그린 「변경사항 적용」 콜백을 표마다 마지막 것으로 적는다."""
+    from capa_simulation.components import plan_grid
+
+    captured: dict[str, Callable[[], None]] = {}
+    draw = plan_grid.render_actions
+
+    def recorded(table: str, **kwargs: Any) -> Any:
+        callback = kwargs["apply"].on_click
+        assert callback is not None
+        captured[table] = callback
+        return draw(table, **kwargs)
+
+    monkeypatch.setattr(plan_grid, "render_actions", recorded)
+    return captured
+
+
+def _plan_value(app: AppTest, product: str, month: str) -> list[float]:
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"])
+    picked = plan["제품정보"].eq(product) & pd.to_numeric(plan["생산계획년월"]).eq(int(month))
+    return [float(value) for value in plan.loc[picked, "생산수량"]]
+
+
+def _first_plan_product(app: AppTest) -> str:
+    return str(_grid(app, PLAN_HOST).iloc[0]["제품정보"])
+
+
+def test_a_plan_apply_is_one_run_that_draws_the_new_plan_and_its_notices(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PKG PLAN 적용은 누른 회차 하나다 — 그 회차가 새 계획 · 성공 알림 · `ST-04`(그리드 뒤 셈)를
+    그리고, 머리(페이지 앞)는 이미 적용 뒤 목록을 센다. 같은 회차에 `st.rerun()` 이 없다."""
+    import capa_simulation.services.required_equipment as required_equipment
+
+    monkeypatch.setattr(
+        required_equipment,
+        "required_exclusion_counts",
+        lambda _frame: required_equipment.RequiredExclusionCounts(
+            unrouted_loads=3, excluded_routes=5
+        ),
+    )
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    reruns: list[int] = []
+    rerun = st.rerun
+
+    def counted_rerun(*args: Any, **kwargs: Any) -> Any:
+        reruns.append(1)
+        return rerun(*args, **kwargs)
+
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    product = _first_plan_product(app)
+    app = _cell_edit(app, PLAN_CELL_EDIT)
+    revision = app.session_state["active_scenario"]["revision"]
+    monkeypatch.setattr(st, "rerun", counted_rerun)
+
+    assert _press_runs(app, "apply_pkg_plan_changes") == 1
+    assert not reruns
+    assert app.session_state["active_scenario"]["revision"] == revision + 1
+    assert _plan_value(app, product, PLAN_CELL_EDIT[1]) == [200.0]
+    assert not _drafted(app, "RQ_PKG_PLAN")
+    assert app.session_state[PRE_PAGE_LOG_KEY][-1] == []
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+    (note,) = _st04(app)
+    assert note["active"] is True
+    assert app.button(key="apply_pkg_plan_changes").disabled
+
+
+def test_a_yield_apply_is_one_run_and_keeps_the_plan_draft(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """수율 적용도 누른 회차 하나이고 PKG PLAN 그리드 초안은 남는다(그 회차 머리가 이미 그 초안만
+    센다)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    app = _drafts_in_both_grids(app)
+    revision = app.session_state["active_scenario"]["revision"]
+
+    assert _press_runs(app, "apply_yield_changes") == 1
+    assert app.session_state["active_scenario"]["revision"] == revision + 1
+    assert not _drafted(app, "RQ_YLD")
+    assert _drafted(app, "RQ_PKG_PLAN")
+    assert app.session_state[PRE_PAGE_LOG_KEY][-1] == ["생산 계획 · PKG PLAN"]
+    assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+
+
+def test_an_edit_that_arrives_with_the_press_is_in_the_apply(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """편집 묶음과 누름이 한 메시지로 오면 단추 콜백이 그리드 출납 콜백보다 먼저 돈다 — 콜백이 그
+    출납을 먼저 받아 반영한다(`plan_grid.settle_inbox`). 둘 다 적용되고 초안 · inbox 가 남지 않는다.
+    출납 값은 진짜처럼 콜백보다 먼저 세션에 선다(대역의 출납 콜백은 부르지 않는다)."""
+    from capa_simulation.plan_grid_keys import inbox_key
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    product = _first_plan_product(app)
+    app = _cell_edit(app, PLAN_CELL_EDIT)
+    shell = last(_GRID["calls"], PLAN_HOST)
+    late = {"op": "write", "rows": [shell_key(shell, 0)], "cols": ["202603"], "values": [["300"]]}
+    app.session_state[PLAN_HOST] = SimpleNamespace(
+        outbox=outbox(_GRID["calls"], late, host=PLAN_HOST)
+    )
+
+    assert _press_runs(app, "apply_pkg_plan_changes") == 1
+    assert _plan_value(app, product, "202602") == [200.0]
+    assert _plan_value(app, product, "202603") == [300.0]
+    assert not _drafted(app, "RQ_PKG_PLAN")
+    assert inbox_key("RQ_PKG_PLAN") not in app.session_state
+
+
+def test_a_press_drawn_before_the_source_changed_applies_nothing(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞 회차에 그린 단추의 누름이 원본이 바뀐 뒤 오면(팝업이 시나리오를 바꾸고 앱 회차가 단추에
+    닿기 전) 콜백은 쓰지 않는다 — 옛 원본으로 적용해 바뀐 시나리오를 덮지 않는다. 빠른 둘째 누름이
+    첫 적용 회차의 본문(초안 비우기)보다 먼저 와도 같다 — 첫 적용이 원본 토큰을 바꿔 리비전은 한 번만
+    오른다."""
+    from capa_simulation import scenario_state
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    clicks = _captured_apply_clicks(monkeypatch)
+    applies: list[int] = []
+    apply_month_updates = scenario_state.apply_month_updates
+
+    def counted_apply(*args: Any, **kwargs: Any) -> Any:
+        applies.append(1)
+        return apply_month_updates(*args, **kwargs)
+
+    # 페이지는 회차마다 이 이름을 집으므로 첫 회차 전에 바꿔 둔다(앞 화면 콜백도 이것을 든다).
+    monkeypatch.setattr(scenario_state, "apply_month_updates", counted_apply)
+    app = AppTest.from_string(_stale_press_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    product = _first_plan_product(app)
+    app = _cell_edit(app, PLAN_CELL_EDIT)
+    drawn = clicks["RQ_PKG_PLAN"]
+    revision = app.session_state["active_scenario"]["revision"]
+
+    # 같은 앞 화면 콜백이 본문 없이 두 번 — 첫째가 적용하고 둘째는 원본이 바뀐 것을 보고 멈춘다.
+    def pressed_twice() -> None:
+        drawn()
+        drawn()
+
+    app.session_state[STALE_PRESS_KEY] = pressed_twice
+    app.run()
+    assert not list(app.exception)
+    assert len(applies) == 1
+    assert app.session_state["active_scenario"]["revision"] == revision + 1
+    assert _plan_value(app, product, PLAN_CELL_EDIT[1]) == [200.0]
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+
+    # 원본이 바뀐 뒤의 누름 — 고친 칸이 남은 채 시나리오를 바꿔 끼우고(리비전 · 토큰) 그 앞 화면의
+    # 콜백을 부른다.
+    app = _cell_edit(app, (PLAN_HOST, PLAN_CELL_EDIT[1], "250"))
+    assert _drafted(app, "RQ_PKG_PLAN")
+    drawn = clicks["RQ_PKG_PLAN"]
+    scenario = app.session_state["active_scenario"]
+    app.session_state["active_scenario"] = {
+        **scenario,
+        "revision": scenario["revision"] + 1,
+        "content_token": "test-plan-apply-source-changed",
+    }
+    app.session_state[STALE_PRESS_KEY] = drawn
+    app.run()
+    assert not list(app.exception)
+    assert len(applies) == 1
+    assert app.session_state["active_scenario"]["content_token"] == "test-plan-apply-source-changed"
+    assert _plan_value(app, product, PLAN_CELL_EDIT[1]) == [200.0]
+    assert not _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다")
+
+
+def test_a_blocked_plan_apply_says_why_under_the_action_row_in_the_same_run(
+    seeded_database: Path,
+) -> None:
+    """칸 오류가 남은 적용은 막히고 그 까닭이 작업 줄 아래 알림 칸(`pkg_plan_actions` 안)에 누른 회차
+    하나로 선다 — 콜백은 그리지 못해 글을 담고 작업 줄이 그린다(`plan_grid.refuse`). 시나리오는
+    그대로이고 초안도 남는다. 다음 회차에는 다시 서지 않는다."""
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    app = _cell_edit(app, (PLAN_HOST, "202602", "-5"))
+    token = app.session_state["active_scenario"]["content_token"]
+
+    assert _press_runs(app, "apply_pkg_plan_changes") == 1
+    assert app.session_state["active_scenario"]["content_token"] == token
+    draft = _draft_cells(app, "RQ_PKG_PLAN")
+    assert isinstance(draft, dict) and draft.get("bad")
+    actions = _block(app, "pkg_plan_actions")
+    shown = [str(item.value) for item in actions.error]
+    assert len(shown) == 1 and shown[0].startswith("고칠 칸 1개 — 빨간 칸을 고치거나 비우세요:")
+    assert actions.error[0].proto.icon == ":material/error:"
+
+    app.run()
+    assert not [str(item.value) for item in _block(app, "pkg_plan_actions").error]
