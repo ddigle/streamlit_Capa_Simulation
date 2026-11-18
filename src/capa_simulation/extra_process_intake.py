@@ -48,6 +48,7 @@ from capa_simulation.persistence.models import (
     EXTRA_WRITE_FAILED,
     EXTRA_WRITE_KEPT,
     EXTRA_WRITE_WRITTEN,
+    ExtraProcessS3Write,
     ExtraProcessState,
     ExtraProcessVersion,
 )
@@ -222,26 +223,45 @@ SAME_WORD: Final = "같음"
 
 
 def head_word(etag: str | None, state: ExtraProcessState, known: Mapping[str, str]) -> str:
-    """HEAD 로 본 ETag 의 상태 줄 낱말(설계 3-4 의 1번) — 없음 · 같음(기준 ETag 가 활성 판 자기
-    파일의 것) · 옛 판(「새 판으로」 가 아직 쓰지 못해 기준이 앞 판에서 이어진 동안의 같은 ETag) ·
-    마지막으로 가져온 파일의 낱말(`known`) · 새 파일."""
+    """HEAD 로 본 ETag 의 상태 줄 낱말(설계 3-4 의 1번) — 없음 · 같음(기준 ETag 가 활성 판과 같은
+    내용 파일의 것) · 옛 판(「새 판으로」 가 아직 쓰지 못해 기준이 앞 판에서 이어진 동안의 같은
+    ETag) · 마지막으로 가져온 파일의 낱말(`known`) · 새 파일. 판은 sha 로 견준다 — 끄기 → 다시 켜기
+    뒤에도 같은 판이다."""
     if etag is None:
         return MISSING_WORD
     baseline, owner = state.baseline
     if etag == baseline:
         active = state.active
-        return SAME_WORD if active is not None and owner == active.seq else OLD_VERSION_WORD
+        owner_sha = next((item.sha256 for item in state.history if item.seq == owner), None)
+        same = active is not None and owner_sha is not None and owner_sha == active.sha256
+        return SAME_WORD if same else OLD_VERSION_WORD
     return known.get(etag, NEW_FILE_WORD)
 
 
-def needs_write(state: ExtraProcessState) -> bool:
-    """활성 판이 「새 판」 인데 S3 Drive 에 아직 쓰지 못했나(마지막 쓰기가 「씀」 이 아님 · 쓴 적
-    없음) — 알림 `EP-05` 와 「S3 에 다시 쓰기」 의 조건(꽂힌 내보내기가 있을 때만 부른다)."""
+def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool:
+    """활성 판을 S3 Drive 에 아직 쓰지 못했으면 그 내용의 마지막 쓰기 기록(쓴 적 없으면 None),
+    쓸 것이 없으면 False.
+
+    쓸 것은 「새 판으로」 가 만든 내용이다 — 활성 줄이 「새 판」 이거나, 끄기 → 다시 켜기로 같은
+    내용(sha)이 다시 활성이 된 때다. 같은 sha 의 어느 판 줄에든 「씀」 기록이 있으면 S3 에 이미
+    있다(판은 sha 로 견준다)."""
     active = state.active
-    if active is None or active.kind != EXTRA_KIND_REVISION:
+    if active is None or active.sha256 is None:
         return False
-    last = state.last_write(active.seq)
-    return last is None or last.result != EXTRA_WRITE_WRITTEN
+    same = {item.seq for item in state.history if item.sha256 == active.sha256}
+    made_here = any(item.kind == EXTRA_KIND_REVISION for item in state.history if item.seq in same)
+    if not made_here:
+        return False
+    writes = [item for item in state.writes if item.version_seq in same]
+    if any(item.result == EXTRA_WRITE_WRITTEN for item in writes):
+        return False
+    return writes[-1] if writes else None
+
+
+def needs_write(state: ExtraProcessState) -> bool:
+    """활성 판(「새 판으로」 가 만든 내용)을 S3 Drive 에 아직 쓰지 못했나 — 알림 `EP-05` 와 「S3 에
+    다시 쓰기」 의 조건(꽂힌 내보내기가 있을 때만 부른다)."""
+    return pending_write(state) is not False
 
 
 @dataclass(frozen=True)

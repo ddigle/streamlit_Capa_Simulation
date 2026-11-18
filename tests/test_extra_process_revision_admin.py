@@ -34,13 +34,21 @@ from capa_simulation.extra_process_intake import (
     RemoteHead,
     SourceFailure,
     head_word,
+    needs_write,
+    pending_write,
     write_back,
 )
 from capa_simulation.persistence.models import (
+    EXTRA_KIND_APPLY,
+    EXTRA_KIND_OFF,
+    EXTRA_KIND_RESUME,
     EXTRA_KIND_REVISION,
     EXTRA_WRITE_FAILED,
     EXTRA_WRITE_KEPT,
     EXTRA_WRITE_WRITTEN,
+    ExtraProcessS3Write,
+    ExtraProcessState,
+    ExtraProcessVersion,
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.extra_process_pack import read_pack_zip
@@ -372,3 +380,67 @@ def test_head_word_tells_same_from_old_version(database: Path) -> None:
     assert head_word(None, state, {}) == "없음"
     assert head_word('"x"', state, {'"x"': "거절"}) == "거절"
     assert head_word('"y"', state, {}) == NEW_FILE_WORD
+
+
+def _row(seq: int, kind: str, sha: str | None, etag: str | None = None) -> ExtraProcessVersion:
+    from datetime import datetime
+
+    return ExtraProcessVersion(
+        seq=seq,
+        kind=kind,
+        version_no=None if sha is None else seq,
+        sha256=sha,
+        created_at=datetime(2026, 11, 19, 1, 0),
+        s3_etag=etag,
+    )
+
+
+def _write(seq: int, version_seq: int, result: str, etag: str | None = None) -> ExtraProcessS3Write:
+    from datetime import datetime
+
+    return ExtraProcessS3Write(
+        seq=seq,
+        version_seq=version_seq,
+        result=result,
+        created_at=datetime(2026, 11, 19, 1, 0),
+        etag=etag,
+        stage="PUT" if result == EXTRA_WRITE_FAILED else None,
+    )
+
+
+def test_off_and_resume_keep_the_written_new_version_the_same() -> None:
+    """끄기 → 단추 「다시 켜기」 뒤에도 같은 내용(sha)이다 — 앱이 쓴 파일의 ETag 는 「같음」 이고,
+    아직 쓰지 못한 「새 판」 은 다시 켠 뒤에도 `EP-05` · 「S3 에 다시 쓰기」 거리다."""
+    applied = _row(1, EXTRA_KIND_APPLY, "a" * 64, '"etag-1"')
+    revised = _row(2, EXTRA_KIND_REVISION, "b" * 64)
+    off = _row(3, EXTRA_KIND_OFF, None)
+    resumed = _row(4, EXTRA_KIND_RESUME, "b" * 64)
+
+    written = ExtraProcessState(
+        (applied, revised, off, resumed), (_write(1, 2, EXTRA_WRITE_WRITTEN, '"etag-2"'),)
+    )
+    assert head_word('"etag-2"', written, {}) == "같음"
+    assert not needs_write(written)
+
+    kept = ExtraProcessState((applied, revised, off, resumed), (_write(1, 2, EXTRA_WRITE_KEPT),))
+    assert needs_write(kept)
+    pending = pending_write(kept)
+    assert isinstance(pending, ExtraProcessS3Write) and pending.result == EXTRA_WRITE_KEPT
+    # 기준은 아직 판 1 파일 — 그 ETag 는 활성 판(판 2 내용)에는 「옛 판」 이다.
+    assert head_word('"etag-1"', kept, {}) == OLD_VERSION_WORD
+    assert not needs_write(ExtraProcessState((applied,)))
+
+
+def test_with_a_source_too_the_written_word_survives_the_next_round(database: Path) -> None:
+    """원천 · 내보내기가 둘 다 꽂힌 꼴(운영이 될 꼴) — 쓴 뒤 다음 회차의 새 파일 감지 HEAD 가
+    「같음 — 앱이 씀」 을 덮지 않고, 앱이 쓴 파일을 새 파일로 보지 않는다."""
+    _edited_revision(database)
+    app = _app(database, sink=True, source=True)
+
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+    app.run()
+
+    assert any("가짜 S3 같음 — 앱이 씀" in text for text in _captions(app))
+    assert active_state(app, "EP-02") is None
+    assert active_state(app, "EP-05") is None

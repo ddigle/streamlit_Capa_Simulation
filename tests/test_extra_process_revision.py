@@ -233,14 +233,34 @@ def test_a_step_added_in_the_app_is_counted_and_not_moved() -> None:
 
 
 def test_the_new_pack_merges_back_to_the_edited_values() -> None:
-    tables = _edit(_revision(), "RQ_UPEH", "ST", 2.0, _month(AOI, 202607))
-    tables = _edit(tables, "RQ_EQP_OWN", "설비보유", 4.0, _month(AOI, 202608))
-    tables = _edit(tables, "RQ_EQP_AVBL", "가용대수", 3.5, _month(AOI, 202608))
+    """왕복(설계 9-2 기준) — 두 공정(따라가기 꼴 · 지정 꼴) × 값 표 열 모두를 고친 리비전으로 새
+    판을 만들어 같은 시드에 다시 합치면 고친 값이 그대로 나온다(`모두` 쪼개기 · 달력 · 대여 · 측정률
+    0 포함)."""
+
+    def er(name: str) -> Callable[[pd.DataFrame], pd.Series]:
+        return lambda frame: frame["공정"].eq(name) & frame["양산구분"].eq(ENGINEERING)
+
+    def mass_month(name: str, month: int) -> Callable[[pd.DataFrame], pd.Series]:
+        return lambda frame: (
+            frame["공정"].eq(name) & frame["생산계획년월"].eq(month) & frame["양산구분"].eq(MASS)
+        )
+
+    tables = _edit(_revision(), "RQ_UPEH", "UPEH", 60000.0, _month(BOND, 202609))
+    tables = _edit(tables, "RQ_WF_RATIO", "WF측정률", 0.95, _month(BOND, 202603))
+    tables = _edit(tables, "RQ_RUN_RATE", "CAPA_RUN_RATE", 0.7, er(BOND))
+    tables = _edit(tables, "RQ_VITAL", "편중률", 1.1, mass_month(AOI, 202608))
+    tables = _edit(tables, "RQ_UPEH", "ST", 2.0, _month(AOI, 202607))
     tables = _edit(tables, "RQ_LOT_RATIO", "Lot 측정률", 0.0, _month(AOI, 202609))
+    tables = _edit(tables, "RQ_EQP_LENT", "설비대여평가", 1.0, _month(AOI, 202605))
+    tables = _edit(tables, "RQ_EQP_AVBL", "가용대수", 2.0, _month(AOI, 202605))
+    tables = _edit(tables, "RQ_EQP_OWN", "설비보유", 9.0, _month(BOND, 202610))
+    tables = _edit(tables, "RQ_EQP_AVBL", "가용대수", 9.0, _month(BOND, 202610))
+    tables = _edit(tables, "RQ_RUN_DAY", "RUN_DAY", 25, _month(BOND, 202611))
 
     result = _build(tables)
     pack = result.reading.pack
-    assert pack is not None
+    assert pack is not None, [item.text() for item in result.reading.problems]
+    assert result.moved == (BOND, AOI) and result.kept == ()
     seed = {
         name: frame.copy() for name, frame in build_builtin_seed_dataset().reference_tables.items()
     }
@@ -248,21 +268,30 @@ def test_the_new_pack_merges_back_to_the_edited_values() -> None:
         seed, ActiveExtraPack(ExtraPackVersion(2, 2, pack.sha256), pack), check=lambda _t: None
     ).tables
 
-    for name in ("RQ_UPEH", "RQ_LOT_RATIO", "RQ_EQP_OWN", "RQ_EQP_AVBL", "RQ_RUN_DAY"):
-        keys = [column for column in tables[name].columns if column not in _VALUES[name]]
-        left = tables[name].loc[tables[name]["공정"].eq(AOI)].sort_values(keys)
-        right = again[name].loc[again[name]["공정"].eq(AOI)].sort_values(keys)
-        pd.testing.assert_frame_equal(
-            left.reset_index(drop=True), right.reset_index(drop=True), check_dtype=False
-        )
+    for name, values in _VALUES.items():
+        keys = [column for column in tables[name].columns if column not in values]
+        for process in (BOND, AOI):
+            left = tables[name].loc[tables[name]["공정"].eq(process)].sort_values(keys)
+            right = again[name].loc[again[name]["공정"].eq(process)].sort_values(keys)
+            pd.testing.assert_frame_equal(
+                left.reset_index(drop=True),
+                right.reset_index(drop=True),
+                check_dtype=False,
+                obj=f"{name} {process}",
+            )
 
 
 _VALUES = {
     "RQ_UPEH": ("UPEH", "ST"),
     "RQ_LOT_RATIO": ("Lot 측정률",),
-    "RQ_EQP_OWN": ("설비보유",),
-    "RQ_EQP_AVBL": ("가용대수",),
+    "RQ_WF_RATIO": ("WF측정률",),
+    "RQ_RUN_RATE": ("CAPA_RUN_RATE",),
+    "RQ_VITAL": ("편중률",),
     "RQ_RUN_DAY": ("RUN_DAY",),
+    "RQ_EQP_OWN": ("설비보유",),
+    "RQ_EQP_LENT": ("설비대여평가",),
+    "RQ_EQP_AVBL": ("가용대수",),
+    "RQ_MODULE": ("모듈수",),
 }
 
 

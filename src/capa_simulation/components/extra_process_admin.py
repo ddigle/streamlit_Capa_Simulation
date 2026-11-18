@@ -72,6 +72,7 @@ from capa_simulation.extra_process_intake import (
     installed_sink,
     installed_source,
     needs_write,
+    pending_write,
     preview_pack,
     previous_content,
     production_place,
@@ -91,6 +92,7 @@ from capa_simulation.persistence.models import (
     EXTRA_REVISION_PLACE,
     EXTRA_WRITE_WRITTEN,
     ExtraProcessProvenance,
+    ExtraProcessS3Write,
     ExtraProcessState,
     ExtraProcessVersion,
 )
@@ -738,8 +740,9 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
     """
     sink = installed_sink()
     active = None if state is None else state.active
-    pending = sink is not None and state is not None and active is not None and needs_write(state)
-    last = None if not pending or state is None or active is None else state.last_write(active.seq)
+    found = False if sink is None or state is None else pending_write(state)
+    pending = found is not False
+    last = found if isinstance(found, ExtraProcessS3Write) else None
     version = None if active is None else active.version_no
     why = (
         "아직 쓰지 않음"
@@ -817,7 +820,9 @@ def _write_active(
     now = datetime.now(KST)
     outcome = write_back(sink, data, baseline=state.baseline[0], now=now, known=_known_etags())
     SEEN.set(SeenSource(sink.place, outcome.word, now))
-    HEAD_SEEN.clear()
+    # 방금 본 낱말을 새 파일 감지 메모에도 둔다 — 다음 회차 HEAD 가 「같음 — 앱이 씀」 을 곧바로
+    # 「같음」 으로 덮지 않게(`HEAD_INTERVAL` 동안 잇는다).
+    HEAD_SEEN.set((now, outcome.word))
     repository.record_extra_process_write(
         version_seq=version.seq,
         result=outcome.result,
