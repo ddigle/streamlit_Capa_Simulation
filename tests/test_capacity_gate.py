@@ -654,6 +654,15 @@ def test_module_hint_points_an_extra_process_to_the_overlay() -> None:
     assert "월 머지" in module_fix_hint(error) and "부대공정 얹기" not in module_fix_hint(error)
     assert "부대공정 얹기" in module_fix_hint(error, lambda: ("DEMO_New_Bond",))
     assert "부대공정 얹기" not in module_fix_hint(error, lambda: ("DEMO_Other",))
+    # 예시의 공정 칸과 똑같을 때만이다 — 다른 공정 이름 안에 든 이름은 부대공정 갈래로 가지 않는다.
+    assert "부대공정 얹기" not in module_fix_hint(error, lambda: ("DEMO_New", "Bond"))
+    # 판을 고쳐 적용하는 Admin 「부대공정」 은 개발자만 연다 — 그 밖의 등급에는 시키지 않는다(6-34
+    # SC-01). 고칠 길(개발자의 판 · 부대공정 얹기)은 그대로 말한다.
+    developer = module_fix_hint(error, lambda: ("DEMO_New_Bond",), developer=True)
+    others = module_fix_hint(error, lambda: ("DEMO_New_Bond",), developer=False)
+    assert "Admin" in developer and "S3 Drive" in developer
+    assert "Admin" not in others and "S3 Drive" not in others
+    assert "개발자가 판을 고쳐 적용한 뒤" in others and "부대공정 얹기" in others
     read: list[int] = []
 
     def extras() -> tuple[str, ...]:

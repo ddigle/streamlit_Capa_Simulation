@@ -104,6 +104,27 @@ def readable_examples(
     return "".join(parts)
 
 
+def example_processes(text: str) -> tuple[str, ...]:
+    """`text` 속 `예시 [dict, …]` 목록들의 `공정` 칸 값(원본 이름, 처음 나온 차례). 읽지 못한 목록은
+    건너뛴다 — 오류 글에 어느 공정이 걸렸는지를 글자 일부가 아니라 칸 값 그대로 견줄 때 쓴다
+    (`capacity_gate.module_fix_hint`)."""
+    head = EXAMPLE_HEAD + "["
+    found: dict[str, None] = {}
+    position = 0
+    while (start := text.find(head, position)) >= 0:
+        opening = start + len(EXAMPLE_HEAD)
+        parsed = _records_at(text, opening)
+        if parsed is None:
+            position = opening + 1
+            continue
+        records, position = parsed
+        for record in records:
+            value = record.get(PROCESS_KEY)
+            if value is not None:
+                found[str(value)] = None
+    return tuple(found)
+
+
 def examples_text(
     records: Sequence[_Record],
     labels: ProcessLabels | None = None,

@@ -55,7 +55,7 @@ from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
 )
-from capa_simulation.components.stop_examples import markdown_examples
+from capa_simulation.components.stop_examples import example_processes, markdown_examples
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import get_scenario_repository, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioSnapshot
@@ -415,7 +415,12 @@ def derived_save_verdict(
     )
 
 
-def module_fix_hint(error: str, extras: Callable[[], Collection[str]] | None = None) -> str:
+def module_fix_hint(
+    error: str,
+    extras: Callable[[], Collection[str]] | None = None,
+    *,
+    developer: bool | None = None,
+) -> str:
     """`RQ_MODULE` 이 원인인 계산 오류에 고칠 길을 덧붙인다. 아니면 빈 문자열이다.
 
     모듈수(`RQ_MODULE`)는 편집·리비전 대상이 아니라 데이터셋에만 산다(`repository.DATASET_TABLES`).
@@ -424,13 +429,28 @@ def module_fix_hint(error: str, extras: Callable[[], Collection[str]] | None = N
     (`scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS`).
 
     `extras` 는 그 시나리오 데이터셋에 합친 부대공정 이름을 읽는다 — 모듈수 오류일 때만 부른다(출처
-    표를 한 번 읽는다). 오류 글의 예시에 부대공정이 있으면 「부대공정 얹기」 를 권한다 — 부대공정의
-    모듈수는 판(01)에서 오고, 월 머지는 베이스의 옛 판 모듈수가 이겨 고치지 못한다(설계 4-7 · A11).
+    표를 한 번 읽는다). 오류 글의 예시 공정 칸(`stop_examples.example_processes` — 글자 일부가
+    아니라 칸 값 그대로)에 부대공정이 있으면 「부대공정 얹기」 를 권한다 — 부대공정의 모듈수는
+    판(01)에서 오고, 월 머지는 베이스의 옛 판 모듈수가 이겨 고치지 못한다(설계 4-7 · A11). 판을 고쳐
+    적용하는 Admin 「부대공정」 은 개발자만 열어(`admin.area`) 그 밖의 등급에는 그 단추를 시키지
+    않는다(설계 규칙 6-34 SC-01 — 할 일은 그 등급에 있는 단추만). `developer` 를 주지 않으면 이
+    화면의 등급 (`sso_identity.viewer_can` — 「이 등급으로 보기」 를 따른다)으로 가른다.
     """
     if "RQ_MODULE" not in error:
         return ""
-    names = () if extras is None else extras()
-    if any(name and name in error for name in names):
+    names = {name for name in (() if extras is None else extras()) if name}
+    if names & set(example_processes(error)):
+        if developer is None:
+            from capa_simulation.components import sso_identity
+
+            developer = sso_identity.viewer_can("admin.area")
+        if not developer:
+            return (
+                " — RQ_MODULE(모듈수)은 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다. "
+                "부대공정의 모듈수는 판에서 옵니다 — 개발자가 판을 고쳐 적용한 뒤 시나리오 관리 "
+                "「부대공정 얹기」 로 새 시나리오를 만들어야 풀립니다(월 머지는 베이스의 옛 판 "
+                "모듈수가 이겨 풀리지 않습니다)."
+            )
         return (
             " — RQ_MODULE(모듈수)은 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다. "
             "부대공정의 모듈수는 판에서 옵니다 — 판의 01_process.csv 를 고쳐 S3 Drive 에 다시 "

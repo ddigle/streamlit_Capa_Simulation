@@ -1875,9 +1875,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     부르므로 위 「같은 캐시 칸」 이 아니라 입력 점검 요약 칸(`simulation_cache.get_revision_input_check`, 5장 39)에 두고, 계산은 공유 칸을
     밀지 않는 길(저장소에서 캐시 없이 읽은 표시순서 없는 스냅샷 · 원천 행, 캐시 없는 `full_capacity_outcome`)이다. 경로 키가 없는 옛 리비전은 계산을 부르지 않고
     그 까닭으로 멈춘다(`revision_block_reason`). 저장된 리비전 그대로를 세고 미저장 편집은 보지 않는다.
-  - 모듈수(`RQ_MODULE`) 멈춤 안내(`module_fix_hint`)는 오류 예시에 그 시나리오 데이터셋의 부대공정이 있으면 「판을 고쳐 다시 놓고
-    적용한 뒤 부대공정 얹기」 를 권한다(설계 A11 — 월 머지는 베이스의 옛 판 모듈수가 이겨 풀지 못한다). 출처는 모듈수 오류일 때만
-    읽는다(`_scenario_extras` · `_active_extras` — 다섯 부르는 곳이 시나리오를 넘긴다).
+  - 모듈수(`RQ_MODULE`) 멈춤 안내(`module_fix_hint`)는 오류 예시의 공정 칸(`stop_examples.example_processes` — 글자 일부가
+    아니라 칸 값 그대로)에 그 시나리오 데이터셋의 부대공정이 있으면 「판을 고쳐 다시 놓고 적용한 뒤 부대공정 얹기」 를 권한다(설계
+    A11 — 월 머지는 베이스의 옛 판 모듈수가 이겨 풀지 못한다). 판을 적용하는 Admin 「부대공정」 은 개발자만 열어 그 밖의 화면
+    등급(`sso_identity.viewer_can("admin.area")`)에는 「개발자가 판을 고쳐 적용한 뒤 부대공정 얹기」 로 할 수 있는 일만 적는다(규칙
+    6-34 SC-01). 출처는 모듈수 오류일 때만 읽는다(`_scenario_extras` · `_active_extras` — 다섯 부르는 곳이 시나리오를 넘긴다).
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
   두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
