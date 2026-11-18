@@ -319,3 +319,85 @@ def test_a_required_list_too_large_for_the_alarm_stays_on_the_page(
 
     app = _open_calc_tab(app, UNIT_CAPACITY_TAB)
     assert "소요대수 제외 기준정보" not in {expander.label for expander in app.expander}
+
+
+# --- 탭 조건을 바꾸는 회차의 목록 알림 표 기억(다시 도는 범위 C3 — M10 · M11 몸통) ---------------
+# 대당 Capa `ST-14` · 소요대수 `ST-15` · `ST-21` · `ST-01` 의 알림 표(내보내기 표 → 행 값)는 결과
+# 키 · 표시순서 지문 · 목록 이름 · 파일 이름 · 표시명 판으로 이 세션에 기억한다
+# (`required_exclusion_notice.remembered_alert_table`). 알림은 회차마다 그대로 낸다.
+
+EXCLUSION_MEMO_KEY = "required_exclusion_table_memo"
+
+
+def _count_exports(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """제외 목록 내보내기 표를 지은 차례(부르는 모듈)를 적는다 — 짓는 것은 그대로 한다."""
+    import capa_simulation.components.exclusion_table as exclusion_table
+    import capa_simulation.components.required_exclusion_notice as notice
+
+    built: list[str] = []
+    for owner, name in ((exclusion_table, "page"), (notice, "notice")):
+        original: Callable[..., Any] = owner.exclusion_export
+
+        def counting(
+            *args: Any, _name: str = name, _original: Callable[..., Any] = original, **kwargs: Any
+        ) -> Any:
+            built.append(_name)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(owner, "exclusion_export", counting)
+    return built
+
+
+def _note_tables(app: AppTest, code: str) -> list[dict[str, Any]]:
+    note = active_state(app, code)
+    assert note is not None, code
+    return list(note.get("tables") or [])
+
+
+def test_the_required_lists_are_remembered_across_detail_toggles_and_match_a_fresh_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """소요대수 탭의 「상세」 를 오가는 회차는 제외 목록 표를 다시 짓지 않고 같은 알림(`ST-15`)을
+    같은 표와 함께 낸다. 기억을 비우면 다시 지은 표가 기억한 표와 같다."""
+    app = _open_calc_tab(
+        AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
+    assert not app.exception
+    first = _note_tables(app, "ST-15")
+    assert first and first[0]["total"] == 4
+
+    built = _count_exports(monkeypatch)
+    for detail in (True, False):
+        app.session_state["required_equipment_detail"] = detail
+        app.run()
+        assert not app.exception
+        assert _note_tables(app, "ST-15") == first
+    assert built == []
+
+    app.session_state[EXCLUSION_MEMO_KEY] = {}
+    app.run()
+    assert not app.exception
+    assert built == ["notice"]
+    assert _note_tables(app, "ST-15") == first
+
+
+def test_the_unit_capacity_exclusion_table_is_remembered_by_the_result_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """대당 Capa 탭의 제외 기준정보 표(`ST-14`)도 같은 기억이다 — 집계 수준을 바꿔도 다시 짓지
+    않고, 기억을 비우면 같은 표를 다시 짓는다."""
+    app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    first = _note_tables(app, "ST-14")
+    assert first
+
+    built = _count_exports(monkeypatch)
+    app.selectbox(key="unit_capacity_detail_level").set_value("제품").run()
+    assert not app.exception
+    assert _note_tables(app, "ST-14") == first
+    assert built == []
+
+    app.session_state[EXCLUSION_MEMO_KEY] = {}
+    app.run()
+    assert built == ["page"]
+    assert _note_tables(app, "ST-14") == first

@@ -316,3 +316,89 @@ def test_the_sheet_is_built_once_per_condition_and_not_in_a_closed_tab(
     _open_calc_tab(app, REQUIRED_TAB)
     assert built == ["대당 Capa", "대당 Capa", "소요대수"]
     assert len(app.session_state[MEMO_KEY]) <= SHEET_MEMO_LIMIT
+
+
+# --- 대당 Capa · 확보율 내려받기 CSV 기억(다시 도는 범위 C3 — M10 · M11 몸통) ------------------
+# CSV 는 회차마다 내보내기 표 · 직렬화를 했다. 지금은 표와 같은 조건 키(결과 키 · 표시순서 지문 ·
+# 보기 · 수준 · 공정)로 이 세션 칸(`calculation_result_csv_memo` — 시트 칸과 따로)에 기억한다. 같은
+# 조건이면 짓지 않고 같은 바이트이며, 기억을 비우고 다시 지은 바이트도 같다.
+
+CSV_MEMO_KEY = "calculation_result_csv_memo"
+UNIT_CAPACITY_LABEL = ":material/insights: 대당 Capa"
+SECUREMENT_CSV = "download_securement_rate_csv"
+
+
+def _count_exports(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """월 표 내보내기 표를 지은 횟수를 적는다 — 짓는 것은 그대로 한다(페이지는 exec 때 이름을
+    집는다)."""
+    import capa_simulation.components.hierarchical_monthly_table as hierarchical
+
+    built: list[int] = []
+    original: Callable[..., pd.DataFrame] = hierarchical.build_hierarchical_monthly_export
+
+    def counting(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        built.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(hierarchical, "build_hierarchical_monthly_export", counting)
+    return built
+
+
+def _csv_bytes(app: AppTest, key: str) -> bytes:
+    return bytes(_captured(app, key)["data"])
+
+
+def test_the_unit_capacity_csv_is_remembered_by_its_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """같은 조건의 회차는 CSV 를 다시 짓지 않고, 수준 · 공정 거름이 바뀌면 그 조건으로 짓고,
+    돌아오면 기억한 바이트다. 기억을 비우고 다시 지은 바이트는 기억한 것과 같다."""
+    built = _count_exports(monkeypatch)
+    app = _app()
+    first = _csv_bytes(app, UNIT_CSV)
+    count = len(built)
+
+    app.run()
+    assert len(built) == count
+    assert _csv_bytes(app, UNIT_CSV) == first
+
+    app.selectbox(key="unit_capacity_detail_level").set_value("제품").run()
+    assert not app.exception
+    by_product = _csv_bytes(app, UNIT_CSV)
+    assert by_product != first and len(built) > count
+    count = len(built)
+    app.selectbox(key="unit_capacity_detail_level").set_value("공정").run()
+    assert len(built) == count
+    assert _csv_bytes(app, UNIT_CSV) == first
+
+    share(app, ["Process-B"])
+    app.run()
+    assert not app.exception
+    narrowed = _csv(app, UNIT_CSV)
+    assert set(narrowed["공정"].dropna()) == {"Process-B"}
+
+    app.session_state[CSV_MEMO_KEY] = []
+    app.run()
+    assert _csv(app, UNIT_CSV).equals(narrowed)
+    assert len(app.session_state[CSV_MEMO_KEY]) == 1
+
+
+def test_the_securement_csv_is_remembered_and_rebuilds_the_same_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """확보율 탭도 같다 — 탭을 오가도 짓지 않고, 기억을 비우면 같은 바이트를 다시 짓는다."""
+    app = _app()
+    _open_calc_tab(app, SECUREMENT_TAB)
+    assert not app.exception
+    first = _csv_bytes(app, SECUREMENT_CSV)
+
+    built = _count_exports(monkeypatch)
+    _open_calc_tab(app, UNIT_CAPACITY_LABEL)
+    _open_calc_tab(app, SECUREMENT_TAB)
+    assert built == []
+    assert _csv_bytes(app, SECUREMENT_CSV) == first
+
+    app.session_state[CSV_MEMO_KEY] = []
+    app.run()
+    assert built == [1]
+    assert _csv_bytes(app, SECUREMENT_CSV) == first

@@ -47,7 +47,7 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from typing import Final, Literal, NamedTuple
 
 import pandas as pd
@@ -83,6 +83,7 @@ from capa_simulation.services.required_equipment import (
     RequiredExclusionCounts,
     counted_unrouted_loads,
 )
+from capa_simulation.session_slot import SessionSlot
 
 # 문장의 범위 말. 저장·발행 검사와 PKG PLAN 적용 알림은 시나리오 전체 기간,
 # Static Capa 현황 요약은 그 화면이 보는 조회기간으로 본다.
@@ -195,6 +196,41 @@ def required_exclusion_message(
     return f"{message} {list_note}"
 
 
+# 제외 목록 알림 표(내보내기 표 → 알림 표) 기억 — 산출 결과는 탭 조건을 바꾸는 회차마다 같은 목록의
+# 칸 차례 · 알림 표를 다시 지었다(합성 표본 소요대수 탭 회차의 약 15ms — 샘플 관측). 부르는 쪽이
+# 목록 내용을 정하는 키(`memo` — 시나리오 결과 키 · 표시순서 지문)를 줄 때만 기억하고, 키는 거기에
+# 목록 이름 · 파일 이름(고침 꼬리 포함) · 공정 표시명 판을 더한 것이다. 알림을 내는
+# 일(`alerts.state`)은 기억하지 않는다 — 회차마다 제 이벤트 칸을 쓴다.
+EXCLUSION_MEMO_KEY: Final = "required_exclusion_table_memo"
+EXCLUSION_MEMO: Final = SessionSlot(EXCLUSION_MEMO_KEY, dict, dict)
+EXCLUSION_MEMO_LIMIT: Final = 8
+
+
+def remembered_alert_table(
+    memo: Hashable | None,
+    *,
+    title: str,
+    file_name: str,
+    labels: ProcessLabels,
+    build: Callable[[], alerts.AlertTable | None],
+) -> alerts.AlertTable | None:
+    """제외 목록의 알림 표 — `memo` 가 있으면 (memo, 목록 이름, 파일 이름, 표시명 판) 키로 이 세션에
+    기억한 것을 꺼내고(없으면 지어 넣는다 — 오래된 것부터 `EXCLUSION_MEMO_LIMIT` 넘게는 버린다),
+    없으면 늘 짓는다. 꺼낸 표는 겉 dict 를 새로 낸다(받은 쪽이 칸을 더해도 기억은 그대로다)."""
+    if memo is None:
+        return build()
+    key = (memo, title, file_name, labels.version)
+    held = EXCLUSION_MEMO.setdefault()
+    if key in held:
+        (table,) = held.pop(key)
+    else:
+        table = build()
+        while len(held) >= EXCLUSION_MEMO_LIMIT:
+            held.pop(next(iter(held)))
+    held[key] = (table,)
+    return None if table is None else table.copy()
+
+
 def _exclusion_list(
     frame: pd.DataFrame,
     *,
@@ -205,6 +241,7 @@ def _exclusion_list(
     display_order: DisplayOrderInput,
     labels: ProcessLabels,
     column_help: Mapping[str, str] | None = None,
+    memo: Hashable | None = None,
 ) -> ExclusionList:
     helps = column_help or {}
     # 저장하지 않은 고침이 있으면 파일 이름에 고침 꼬리(`edit_file_tail`) — 본문 펼침 · Alarm 표가
@@ -217,18 +254,24 @@ def _exclusion_list(
         file_name,
         key,
         helps,
-        alert_table(
-            exclusion_export(
-                frame,
-                dimensions=dimensions,
-                display_order=display_order,
-                page=PAGE_CALCULATION,
-                tab=TAB_REQUIRED,
-            ),
+        remembered_alert_table(
+            memo,
             title=title,
             file_name=file_name,
             labels=labels,
-            column_help=helps,
+            build=lambda: alert_table(
+                exclusion_export(
+                    frame,
+                    dimensions=dimensions,
+                    display_order=display_order,
+                    page=PAGE_CALCULATION,
+                    tab=TAB_REQUIRED,
+                ),
+                title=title,
+                file_name=file_name,
+                labels=labels,
+                column_help=helps,
+            ),
         ),
     )
 
@@ -240,6 +283,7 @@ def plan_exclusion_lists(
     display_order: DisplayOrderInput,
     labels: ProcessLabels,
     file_suffix: str,
+    memo: Hashable | None = None,
 ) -> tuple[ExclusionList, ...]:
     """계획 쪽 목록 둘(있는 것만) — 부하량에서 빠진 계획, 경로에 닿지 않은 계획 부하. 표는
     `alert_uncounted_demand(lists=…)` 가 싣는다. 입력은 프레임 또는 없음이다(결과 `attrs` 에서 꺼낸
@@ -251,6 +295,8 @@ def plan_exclusion_lists(
     경로에 닿지 않은 부하는 건수와 같은 행(`counted_unrouted_loads`)만 싣는다. 규칙상 쓰지 않는
     조합(EDP-TSV 의 PKG 처럼 그 제품에 그 소요기준·WF 구분 경로가 없는 것)은 고칠 것이 없어 싣지
     않는다 — 실으면 늘 있는 목록이 되어 정작 고칠 행이 묻힌다.
+
+    `memo` 는 두 목록 내용을 정하는 키다(주면 알림 표를 기억한다 — `remembered_alert_table`).
     """
     lists: list[ExclusionList] = []
     if isinstance(load_exclusions, pd.DataFrame) and not load_exclusions.empty:
@@ -264,6 +310,7 @@ def plan_exclusion_lists(
                 display_order=display_order,
                 labels=labels,
                 column_help={LOAD_EXCLUSION_REASON_COLUMN: LOAD_EXCLUSION_HELP},
+                memo=memo,
             )
         )
     if isinstance(unrouted_loads, pd.DataFrame):
@@ -279,6 +326,7 @@ def plan_exclusion_lists(
                     display_order=display_order,
                     labels=labels,
                     column_help={UNROUTED_REASON_COLUMN: UNROUTED_HELP},
+                    memo=memo,
                 )
             )
     return tuple(lists)
@@ -401,12 +449,14 @@ def alert_required_exclusions(
     display_order: DisplayOrderInput,
     labels: ProcessLabels,
     file_suffix: str,
+    memo: Hashable | None = None,
 ) -> tuple[ExclusionList, ...]:
     """소요대수 산출에서 뺀 경로 — 대당 Capa 가 없는 것(`ST-15`, 기준정보를 고칠 일)과 PKG 의 Buffer
     밖 행(`ST-21`, 규칙대로 세지 않은 것 — 고칠 것이 없다). 두 사유를 한 문장에 섞으면 고칠 것이
     없는데 고치러 간다. 소요대수 탭이 열린 회차마다 둘 다 부른다. 목록도 사유로 갈라 각 줄의 표로
     싣고(표 행 수가 그 알림 건수다) 만든 목록을 돌려준다 — 큰 것은 화면이 본문에 남긴다
-    (`render_oversized_lists`)."""
+    (`render_oversized_lists`). `memo` 는 `required_exclusions` 내용을 정하는 키다(주면 알림 표를
+    기억한다)."""
     if required_exclusions.empty or "제외사유" not in required_exclusions.columns:
         uncounted_pkg = pd.Series(False, index=required_exclusions.index)
     else:
@@ -421,6 +471,7 @@ def alert_required_exclusions(
             key="download_required_exclusions_csv",
             display_order=display_order,
             labels=labels,
+            memo=memo,
         )
         if not capacity_missing.empty
         else None
@@ -464,6 +515,7 @@ def alert_required_exclusions(
             key="download_required_pkg_uncounted_csv",
             display_order=display_order,
             labels=labels,
+            memo=memo,
         )
         if not pkg_rows.empty
         else None

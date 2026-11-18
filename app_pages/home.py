@@ -1,9 +1,10 @@
 # Purpose: HOME 대시보드와 사이드바 조건·주요 Case 칩·「HOME 설정」 팝업을 그린다.
 
 
-from collections.abc import Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import replace
 from functools import partial
+from typing import TypeVar
 
 import pandas as pd
 import streamlit as st
@@ -114,7 +115,6 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.performance import PerformanceTrace
 from capa_simulation.persistence.cache import (
-    get_scenario_repository,
     load_global_advance_load,
     load_global_advance_shipment,
     load_global_execution_capacity,
@@ -124,6 +124,7 @@ from capa_simulation.persistence.cache import (
     load_global_summary_note,
     load_global_top5_band,
     load_scenario_plan,
+    scenario_has_revision,
 )
 from capa_simulation.scenario_preset_state import PROCESS_SEEN_KEY, PROCESS_SELECTION_KEY
 from capa_simulation.scenario_state import (
@@ -151,7 +152,11 @@ from capa_simulation.services.dashboard import (
     build_production_lob_summary,
     build_year_totals,
 )
-from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order import (
+    PreparedDisplayOrder,
+    apply_display_order,
+    prepare_display_order,
+)
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.execution_capacity import (
     apply_execution_adjustment,
@@ -203,6 +208,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_plan_detail,
     get_home_simulation,
 )
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.shared_process import publish_from_home
 from capa_simulation.sidebar_status import (
@@ -244,10 +250,36 @@ def _owned_comparison_revision(
     불러오면 화면 전체가 오류로 멈춘다. 확인해서 아니면 조용히 비교를 끈다.
     """
     try:
-        revisions = get_scenario_repository(database_path).list_revisions(scenario_id)
+        owned = scenario_has_revision(database_path, scenario_id, revision_id)
     except BOOTSTRAP_ERRORS:
         return None
-    return revision_id if any(item.revision_id == revision_id for item in revisions) else None
+    return revision_id if owned else None
+
+
+# HOME 회차마다 같은 입력으로 다시 하던 정렬 · 과거 합치기의 결과(표시순서 준비 · 공정 선택지 차례 ·
+# 과거 열을 붙인 계획 세부수량)를 이 세션에 이름마다 두 벌까지 기억한다. 키는 그 결과를 정하는 입력
+# 전부(내용 토큰이 든 HOME 계산 키 · 토글 · 공용 프로필 version · 공정 목록)다 — 토글 하나를 오가는
+# 회차가 다시 만들지 않는다.
+HOME_SORT_MEMO_KEY = "home_sort_memo"
+HOME_SORT_MEMO = SessionSlot(HOME_SORT_MEMO_KEY, dict, dict)
+HOME_SORT_MEMO_DEPTH = 2
+_Remembered = TypeVar("_Remembered")
+
+
+def _remembered(
+    name: str, key: tuple[Hashable, ...], build: Callable[[], _Remembered]
+) -> _Remembered:
+    """`name` 칸에 `key` 로 지은 값을 꺼낸다 — 없으면 지어 넣는다(가장 오래된 것부터 버린다). 꺼낸
+    값은 고치지 않는다(부르는 쪽이 사본을 낸다)."""
+    memo = HOME_SORT_MEMO.setdefault()
+    held = memo.get(name)
+    entries = [entry for entry in held if entry[0] == key] if isinstance(held, list) else []
+    if entries:
+        return entries[0][1]  # type: ignore[no-any-return]
+    value = build()
+    kept = [entry for entry in held if entry[0] != key] if isinstance(held, list) else []
+    memo[name] = [*kept[-(HOME_SORT_MEMO_DEPTH - 1) :], (key, value)]
+    return value
 
 
 # Guide 를 진행 막대보다 먼저 단다. 막대 자리는 가이드가 있는 화면인지(숨은 Guide 트리거)로 툴바
@@ -476,19 +508,41 @@ try:
     for equipment_column in ("가용대수", "소요대수"):
         if equipment_column not in securement_rate.columns:
             securement_rate[equipment_column] = pd.NA
-    past_detail = past_plan_detail_to_wide(
-        past_profile.plan_detail,
-        plan_detail_dimensions,
-        start_month=effective_start,
-        end_month=effective_end,
-        exclude_months=calculated_months,
-    )
-    production_detail = merge_past_plan_detail(
-        production_detail,
-        past_detail,
-        plan_detail_dimensions,
-        reference_tables["RQ_DISPLAY_ORDER"],
-    )
+    # 표시순서 규칙은 HOME 계산 키의 지문(`home_simulation_cache_key[-1]`)으로 한 번만 준비한다 —
+    # 아래 정렬 둘이 날 표를 받으면 회차마다 규칙 검증 · 파생을 두 번 했다. 준비가 실패하면 예전처럼
+    # 이 `try` 가 받는다(기억하지 않는다).
+    raw_display_order = reference_tables["RQ_DISPLAY_ORDER"]
+
+    def _prepared_order() -> PreparedDisplayOrder | None:
+        return _remembered(
+            "display_order",
+            (home_simulation_cache_key[-1],),
+            partial(prepare_display_order, raw_display_order),
+        )
+
+    def _merged_detail(detail: pd.DataFrame) -> pd.DataFrame:
+        past_detail = past_plan_detail_to_wide(
+            past_profile.plan_detail,
+            plan_detail_dimensions,
+            start_month=effective_start,
+            end_month=effective_end,
+            exclude_months=calculated_months,
+        )
+        # 붙일 과거 열이 없으면 합치기가 표를 그대로 돌려주고 정렬하지 않는다(규칙도 보지 않는다).
+        return merge_past_plan_detail(
+            detail,
+            past_detail,
+            plan_detail_dimensions,
+            None if past_detail.empty else _prepared_order(),
+        )
+
+    # 과거 열을 붙인 계획 세부수량은 (HOME 계산 키 · EDP · 거래선 칸 · 과거 구간 프로필 version)이
+    # 정한다 — 계산 구간 달(`calculated_months`)도 그 키의 계산에서 나온다. 꺼낸 표는 사본으로 쓴다.
+    production_detail = _remembered(
+        "plan_detail",
+        (home_simulation_cache_key, include_edp, plan_detail_customer, past_profile.version),
+        partial(_merged_detail, production_detail),
+    ).copy()
     # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). 그리는 수량에는 잇되, 색 칸을 정하는
     # 목록(`product_volume_with_edp`)에는 섞지 않고 따로 넘긴다 — 과거 전용 제품이 계산 구간
     # 제품의 칸을 밀어내지 않게(`assign_product_slots`).
@@ -538,26 +592,25 @@ try:
     # 표시명은 정렬 키나 세션값으로 쓰지 않는다. 규칙 밖의 공정은 기존 이름순으로 남는다.
     # 이 try 안에 둔다 — 잘못 저장된 표시순서 규칙에 `apply_display_order` 가 ValueError 를
     # 내면, 밖에서는 안내 대신 traceback 으로 HOME 전체가 멈추고 진행 막대도 남는다.
-    process_options = (
-        apply_display_order(
-            pd.DataFrame(
-                {
-                    "공정": sorted(
-                        securement_rate["공정"]
-                        .astype("string")
-                        .str.strip()
-                        .dropna()
-                        .unique()
-                        .tolist()
-                    )
-                }
+    process_names = tuple(
+        sorted(securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist())
+    )
+    # 차례는 (공정 이름들, 표시순서 지문)이 정한다 — 기억한 묶음을 새 목록으로 낸다.
+    process_options = list(
+        _remembered(
+            "process_options",
+            (process_names, home_simulation_cache_key[-1]),
+            lambda: tuple(
+                apply_display_order(
+                    pd.DataFrame({"공정": list(process_names)}),
+                    _prepared_order(),
+                    PAGE_CALCULATION,
+                    TAB_SECUREMENT,
+                )["공정"]
+                .astype(str)
+                .tolist()
             ),
-            reference_tables["RQ_DISPLAY_ORDER"],
-            PAGE_CALCULATION,
-            TAB_SECUREMENT,
-        )["공정"]
-        .astype(str)
-        .tolist()
+        )
     )
     home_trace.mark("HOME 계산 파이프라인")
     loading.advance()
