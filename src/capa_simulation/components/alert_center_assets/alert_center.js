@@ -10,7 +10,8 @@
 //   (`data-test-script-state`)가 바뀔 때마다 문서를 **한 번** 훑는다 — 상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 회차 시작에도 훑어 끊긴 회차의 표지를 놓치지
 //   않는다. 같은 표지를 또 봐도 사건은 id, 상태는 지문으로 한 번만 띄운다.
 // - 상태 알림(`kind: "state"`)은 「코드 + 범위 → 마지막 지문」 표로 바뀔 때만 띄운다. 같은 코드의 다른 범위가 오면 앞 범위는
-//   「범위가 바뀜」 으로 닫고, `active: false` 가 오면 「조건이 사라짐」 으로 해소한다. 범위 교체로 닫힌 줄은 Alarm 에 「해소」
+//   「범위가 바뀜」 으로 닫고(그 범위의 알림창 칸도 걷는다 — 한 상태 코드는 알림창 한 칸), `active: false` 가 오면 「조건이
+//   사라짐」 으로 해소한다. 범위 교체로 닫힌 줄은 Alarm 에 「해소」
 //   대신 「범위 바뀜」 이라 적는다(2026-11-08 사용자 답 a3 — 리비전이 오르면 조건이 그대로여도 앞 줄이 풀린 것처럼 읽혔다). 같은
 //   범위에서 내용(건수 · 목록)만 바뀌어 새 줄로 넘어간 앞 줄도 「해소」 가 아니라 「내용 바뀜」 이다(지난 보드 a-content-changed).
 // - 같은 사건 알림(코드 + 짧은 글)이 앞 알림창이 떠 있거나 사라진 지 반복 창(60초) 안에 다시 나면 새 칸을 쌓지 않고 앞 칸을
@@ -917,11 +918,14 @@ function handleState(C, note, popup = showPopup) {
   const now = Date.now()
   const key = stateKey(note)
   let changed = false
-  // 같은 코드의 다른 범위(시나리오 · 조회기간 · 리비전을 바꿈)는 지금 범위가 아니다 — 「범위가 바뀜」(`scope`)으로 닫는다.
+  // 같은 코드의 다른 범위(시나리오 · 조회기간 · 리비전을 바꿈)는 지금 범위가 아니다 — 「범위가 바뀜」(`scope`)으로 닫고 그
+  // 범위의 알림창 칸도 걷는다(한 상태 코드는 알림창 한 칸 — 적용마다 내용 토큰이 바뀌는 상태 알림이 같은 글 칸을 쌓아 적용
+  // 성공 알림을 밀어내던 길, 2026-11-19 E2E E1-D1).
   for (const [other, entry] of Object.entries(C.states)) {
     if (other !== key && entry && entry.code === note.code && entry.active) {
       resolveRow(C, entry.row, now, 'scope')
       entry.active = false
+      hidePopup(C, `state:${other}`)
       changed = true
     }
   }

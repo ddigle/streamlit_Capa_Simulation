@@ -1031,6 +1031,50 @@ console.log(JSON.stringify(out))
     assert timer in _js_function("showPopup")
 
 
+def test_a_state_popup_whose_scope_moved_leaves_the_stack_so_the_apply_success_stays() -> None:
+    """같은 코드의 상태 알림이 다른 범위로 오면 앞 범위 줄은 「범위 바뀜」 으로 닫히고(UI-NTF-02 —
+    수가 같아도 새 줄) 그 줄의 알림창 칸도 걷힌다 — 한 상태 코드는 알림창 한 칸이다. 생산 계획
+    「변경사항 적용」 을 15초 안에 세 번 하면 적용마다 내용 토큰이 바뀌어 같은 글의 상태 알림 칸이
+    셋 쌓이고, 단계가 가장 낮은 적용 성공 알림이 밀려 보이지 않았다(2026-11-19 E2E E1-D1). 범위가
+    같은 줄의 내용 바뀜은 전처럼 그 칸을 갈아 끼운다."""
+    out = _node(
+        _js_function("showPopup")
+        + _js_function("hidePopup")
+        + _js_function("rowFor")
+        + _js_function("resolveRow")
+        + _js_function("text")
+        + _js_function("handleState")
+        + _POPUP_FAKES
+        + """
+const out = {}
+const C = fresh()
+C.rows = []
+C.states = {}
+C.data.text = {}
+const demand = (scope, short) => ({
+  code: 'ST-04', kind: 'state', level: 'check', scope, fp: `fp-${short}`, active: true, short,
+})
+raise(C, '적용', 'info')
+handleState(C, demand('t1', '수요 29건'))
+raise(C, '적용', 'info')
+handleState(C, demand('t2', '수요 29건'))
+raise(C, '적용', 'info')
+handleState(C, demand('t3', '수요 29건'))
+out.applied = shown(C)
+out.closed = C.rows.filter((row) => row.state === 'resolved').map((row) => row.resolvedWhy)
+handleState(C, demand('t3', '수요 30건'))
+out.changed = shown(C)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["applied"] == ["적용 ×3", "수요 29건"]
+    assert out["closed"] == ["scope", "scope"]
+    assert out["changed"] == ["적용 ×3", "수요 30건"]
+    state = _js_function("handleState")
+    assert "resolveRow(C, entry.row, now, 'scope')" in state
+    assert "hidePopup(C, `state:${other}`)" in state
+
+
 def test_a_goto_target_is_sent_once_after_the_tab_path_and_its_run_are_done() -> None:
     """대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)) — 대상은 줄에서
     꼴을 보고(`goTarget`) 받는 쪽이 아는 종류만(`knownTarget` — data `goto_kinds`) 들고 가, 탭 길을

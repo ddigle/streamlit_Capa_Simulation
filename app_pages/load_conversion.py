@@ -541,7 +541,9 @@ def _queue_done(key: str, message: str) -> None:
 
 def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenerator) -> None:
     """PKG PLAN 적용 알림이 서는 회차 — 소요대수에 들지 않은 수요의 상태 알림(`ST-04` — 자리에는
-    그리지 않고 건수가 바뀔 때만 알림창에 뜬다). 셈 동안의 스피너는 그 알림 칸(`slot`)에 선다.
+    그리지 않고 지문(범위 + 건수)이 바뀔 때 알림창에 뜬다. 범위가 활성 리비전 내용 토큰이라 적용마다
+    같은 건수도 새 줄로 다시 뜨고, 앞 범위 줄의 알림창 칸은 걷혀 한 칸이다 — 알림 칸 JS
+    `handleState`). 셈 동안의 스피너는 그 알림 칸(`slot`)에 선다.
 
     그 달 `RQ_REQB` 경로가 없는 칸에 넣은 계획은 소요대수에 들지 않아 「다시 계산됩니다」 뒤에도
     현황 요약 수가 그대로라 「고쳤는데 안 바뀐다」 고 헷갈렸다(E2E r2 static #57, 개선 I38). 셈은
