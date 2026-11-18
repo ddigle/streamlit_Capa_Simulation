@@ -10,12 +10,14 @@
 지난다. 시험은 가짜 원천을 꽂는다.
 
 **받은 파일**(`stage_pack`)은 접수 검증(`extra_process_pack.read_pack_zip`)과 판 번호
-판정(`judge_pack` — 바뀐 것 없음 · 다시 켜기 · 적용 · 뒤로 감)을 함께 든다. 판정은 받은 때의 판 이력
-마지막 차례 (`seen_seq`)를 들고 있어 적용이 그 차례와 대조한다(설계 규칙 UI-STA-05).
+판정(`judge_pack` — 바뀐 것 없음 · 다시 켜기 · 적용 · 뒤로 감)과 지금 판과의 차이 · 앞 판 값으로
+되돌리는 칸 수(G12 — `pack_changes`, 계산 없이 센다)를 함께 든다 — 화면은 「적용」 위에 그 값 줄을
+늘 세운다. 판정은 받은 때의 판 이력 마지막 차례 (`seen_seq`)를 들고 있어 적용이 그 차례와
+대조한다(설계 규칙 UI-STA-05).
 
 **미리보기**(`preview_pack`)는 지금 활성 시나리오의 표에 이 판을 4장 규칙대로 합쳐 본다(저장하지
-않는다) — 지금 판과의 차이 · 앞 판 값으로 되돌리는 칸 수(G12) · 측정률 칸 수 · 공정마다 합침/뺌과
-월별 소요대수 · 확보율 · 부하 0 경로 수.
+않는다) — 공정마다 합침/뺌과 월별 소요대수 · 확보율 · 부하 0 경로 수. 합친 표의 전체 기간 계산은
+한 번 돌려 두 셈이 함께 쓴다.
 
 **쓰는 곳**(`production_place`)은 C-DEP(동기화 `managed` + 접속 정보)이다 — 꺼진 곳(사내 PC · WebIDE
 · 사외 `app.py`)은 화면(`components/extra_process_admin.write_lock_reason`)이 쓰는 단추를 모두
@@ -36,6 +38,7 @@ from capa_simulation.services.extra_process_merge import (
     ActiveExtraPack,
     ExtraMergeReport,
     ExtraPackVersion,
+    capacity_outcome,
     load_lines,
     overlay_extra_processes,
     process_rows_frame,
@@ -106,17 +109,29 @@ class StagedPack:
     judgement: PackJudgement | None
     seen_seq: int
     staged_at: datetime
+    # 지금 판 · 앞 판과의 차이(받은 판이 읽혔을 때만).
+    changes: PackChanges | None = None
 
     @property
     def applicable(self) -> bool:
         return self.reading.accepted and self.judgement is not None and self.judgement.applicable
 
 
-def stage_pack(state: ExtraProcessState, fetched: SourceFetch, *, now: datetime) -> StagedPack:
-    """받은 파일을 접수 검증하고 판 이력과 견준다."""
+def stage_pack(
+    state: ExtraProcessState,
+    fetched: SourceFetch,
+    *,
+    now: datetime,
+    current: ExtraProcessPack | None = None,
+    before: ExtraProcessPack | None = None,
+) -> StagedPack:
+    """받은 파일을 접수 검증하고 판 이력과 견준다. `current` · `before` 는 활성 판 · 그 앞 내용 판
+    (`previous_content`)의 내용이다 — 차이 · 되돌리는 칸 수를 받는 때 한 번 센다."""
     reading = read_pack_zip(fetched.data)
     judgement = None
+    changes = None
     if reading.pack is not None:
+        changes = pack_changes(reading.pack, current, before)
         latest = state.latest_content
         active = state.active
         judgement = judge_pack(
@@ -127,7 +142,7 @@ def stage_pack(state: ExtraProcessState, fetched: SourceFetch, *, now: datetime)
             latest_sha=None if latest is None else latest.sha256,
             off=state.off,
         )
-    return StagedPack(fetched, reading, judgement, state.last_seq, now)
+    return StagedPack(fetched, reading, judgement, state.last_seq, now, changes)
 
 
 def previous_content(state: ExtraProcessState) -> ExtraProcessVersion | None:
@@ -160,21 +175,24 @@ def preview_pack(
     pack: ExtraProcessPack,
     *,
     seq: int,
-    current: ExtraProcessPack | None,
+    current: ExtraProcessPack | None = None,
     before: ExtraProcessPack | None = None,
+    changes: PackChanges | None = None,
 ) -> PackPreview:
     """지금 활성 시나리오의 표(`tables`)에 판을 합쳐 본다 — 그 시나리오에 이미 든 부대공정
-    (`previous_extra`)은 먼저 걷는다(얹기와 같은 길). 저장하지 않는다. `seq` 는 미리보기에 쓸 판
-    차례(아직 적용 전이면 다음 차례)다."""
+    (`previous_extra` — 출처에 합침만 있는 것, `split_previous`)은 먼저 걷는다(얹기와 같은 길).
+    저장하지 않는다. `seq` 는 미리보기에 쓸 판 차례(아직 적용 전이면 다음 차례)다. `changes` 는
+    받은 때 센 차이(`StagedPack.changes`)이고 없으면 `current` · `before` 로 센다."""
     active = ActiveExtraPack(ExtraPackVersion(seq, pack.info.version_no, pack.sha256), pack)
     result = overlay_extra_processes(tables, previous_extra, active)
     merged = result.report.merged_processes()
+    outcome = capacity_outcome(result.tables)
     return PackPreview(
-        changes=pack_changes(pack, current, before),
+        changes=changes if changes is not None else pack_changes(pack, current, before),
         ratio=pack.ratio,
         report=result.report,
-        rates=process_rows_frame(result.tables, merged),
-        lines=load_lines(result.tables, merged),
+        rates=process_rows_frame(result.tables, merged, outcome=outcome),
+        lines=load_lines(result.tables, merged, outcome=outcome),
     )
 
 

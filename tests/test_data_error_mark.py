@@ -187,6 +187,8 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/scenario_management.py", "_restore_scenario"): (1, PRESSED),
     # 덧붙일 월 없음 · 합치기 거부 · 모듈수 막힘은 고를 칸 곁이고, 넷째는 저장 칸이 선 뒤 누른
     # 저장의 거부다 — 칸을 고치면 풀리는 것은 같다.
+    # 「부대공정 얹기」 — 판 · BDQ 행이 섞인 공정이 있는 바탕의 거부(바탕 상자를 바꾸면 풀린다).
+    ("src/capa_simulation/components/scenario_extra_overlay.py", "_render"): (1, BESIDE),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (4, BESIDE),
     ("src/capa_simulation/components/scenario_month_merge.py", "render_scenario_month_merge"): (
         1,

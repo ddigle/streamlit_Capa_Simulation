@@ -60,6 +60,33 @@ exec(
 """
 
 
+def test_the_closed_extra_process_tab_does_not_read_the_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「부대공정」 탭이 닫힌 회차는 판 이력을 읽지 않는다(접속 명단 표 · Proc Rename 처럼 잦은
+    회차마다 DuckDB 를 열지 않게) — 연 회차에만 상태 줄 · 양식 내려받기가 선다."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
+    reads: list[int] = []
+    original = DuckDBScenarioRepository.load_extra_process_state
+
+    def counted(self: DuckDBScenarioRepository) -> Any:
+        reads.append(1)
+        return original(self)
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "load_extra_process_state", counted)
+    app = AppTest.from_string(_page_script(tmp_path / "scenario.duckdb")).run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run(timeout=120)
+    assert reads == []
+
+    app.session_state["admin_area_active_tab"] = ":material/extension: 부대공정"
+    app.run(timeout=120)
+
+    assert reads
+    assert any(caption.value == "부대공정 · 판 없음" for caption in app.caption)
+    assert len(app.get("download_button")) == 3
+
+
 def test_admin_area_renders_without_an_active_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -86,10 +113,12 @@ def test_admin_area_renders_without_an_active_scenario(
     ]
     bodies = [str(element.proto.body) for element in app.get("html")]
     assert not [body for body in bodies if "stTab" in body and "content:" in body]
-    # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭).
+    # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭). 부대공정 탭도 위젯이
+    # 단추 · 내려받기뿐이라 닫혀 있으면 그리지 않는다 — 회차마다 판 이력을 읽어 DB 를 열지 않는다.
     assert not any("활성 시나리오가 없습니다" in info.value for info in infos(app))
-    # 내려받기는 표시명 양식 · 표시순서 양식 · 부대공정 양식 셋이다.
-    assert len(app.get("download_button")) == 3
+    assert not any(caption.value.startswith("부대공정 · ") for caption in app.caption)
+    # 닫힌 회차의 내려받기는 표시명 양식 · 표시순서 양식 둘이다.
+    assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0
     # 붙여넣기는 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
     assert not any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)

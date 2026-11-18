@@ -1152,18 +1152,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
-  회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
-  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  `원천 품질` · `부대공정` 네 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
+  회차(`sso_identity.viewer_can_audit`)에만 다섯째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 넷과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
   맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
   여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
-  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은
-  둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
+  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 네 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은
+  둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
-  - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
-    읽기다)은 닫혀 있으면 건너뛴다(`tab_is_hidden`, `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
+  - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(위젯이 단추 · 내려받기 · 확인
+    칸뿐이라 버릴 값이 없다 — 판 이력 읽기에 캐시가 없다)은 닫혀 있으면 건너뛴다(`tab_is_hidden`, `tests/test_admin_area_page.py`) — 둘이
+    Admin 회차의 DB 읽기라 열린 회차에만 DuckDB 를 연다. 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
     「서버 시작 점검」 의 「토큰 넣기」 팝업(`components/bdq_token_admin.py` — 호스트 `DialogHost`)도 같은 칸을 값으로 쓴다.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
@@ -1979,9 +1980,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/extra_process_admin.py` — Admin Area 넷째 탭 「부대공정」(설계 A7 1단계). 상태 줄 값 한 줄(판 번호 ·
   공정 수 · 적용 시각, 끈 동안 「꺼짐 · 마지막 판 n」, 원천을 봤으면 「<자리> <낱말>(hh:mm 에 봄)」) · 가져오기(원천이 꽂혔을 때만) ·
-  양식 내려받기(마지막 내용 판 — 끈 동안에도, 없으면 빈 양식) · 끄기 / 다시 켜기(같은 자리) · 받은 판의 거절 표 또는 미리보기
-  (「시험 계산」 을 누른 회차에만 돌고 (sha, content_token)마다 세션에 둔다) · 적용 · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의
-  상태 알림 `EP-03` · `EP-04`. 쓰는
+  양식 내려받기(마지막 내용 판 — 끈 동안에도, 없으면 빈 양식) · 끄기 / 다시 켜기(같은 자리) · 받은 판의 거절 표 또는 값 줄(지금 판과의
+  차이 · 앞 판 값으로 되돌리는 칸 G12 · 측정률 칸 — 받는 때 `stage_pack` 이 센다, 계산 없음)과 미리보기(「시험 계산」 을 누른 회차에만
+  돌고 (sha, content_token)마다 세션에 둔다 — 시나리오를 못 읽으면 단추 자리에 「데이터 Error」 마크 `AD-07`) · 적용(되돌리는 칸이
+  있으면 확인 칸을 채워야 열림 — UI-NTF-09) · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의 상태 알림 `EP-03` · `EP-04`. 닫힌
+  탭은 `admin_area` 가 그리지 않는다(위젯이 단추 · 내려받기 · 확인 칸뿐 — 닫힌 회차는 DB 를 읽지 않는다). 받은 판을 판정하다 난
+  예외는 원천 실패와 같은 `EP-01` 길이다. 세션 칸은 `SessionSlot`(`STAGED` · `SEEN` — `peek`, 메모 `PREVIEW` · `TEMPLATE`). 쓰는
   단추는 `write_lock_reason`(C-DEP 판정 + `sso_identity.viewer_is_developer`)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
   회차에도 다시 판정하며 쓰기는 본문(콜백 아님) · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
   `tests/test_extra_process_admin.py`.
@@ -1990,10 +1994,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
   최신 공식버전 데이터셋의 출처 표로 판정한다 — 자동 갱신(화면 없음)이 뺀 것도 잡는다.
 - `src/capa_simulation/components/scenario_extra_overlay.py` — 시나리오 관리 작업 「부대공정 얹기」(D19 — 파생 저장 길). 활성 판이
-  있을 때만 작업 줄에 선다. 바탕 저장 리비전의 데이터셋 출처가 가리키는 옛 판 공정을 걷고 활성 판을 합친 결과 표를 보이고
-  `render_derived_save` 로 저장한다(원천 종류 `SCENARIO_EXTRA_PROCESS`, 포함 공정 = 바탕 프리셋 − 걷은 공정 + 새로 합친 부대공정 —
-  바탕에서 꺼 둔 옛 부대공정은 꺼진 채,
-  새 판 출처). 합친 결과는 (DB, 바탕 리비전, 판 차례)마다 세션 메모 한 벌(`PAGE_DIALOG_SUFFIX`)이다.
+  있을 때만 작업 줄에 선다. 바탕 저장 리비전의 데이터셋 출처가 가리키는 옛 판 공정(합침만 있는 것 — `split_previous`)을 걷고 활성
+  판을 합친 결과 표를 보이고 `render_derived_save` 로 저장한다(원천 종류 `SCENARIO_EXTRA_PROCESS`, 포함 공정 = 바탕 프리셋 − 걷은
+  공정 + 새로 합친 부대공정 — 바탕에서 꺼 둔 옛 부대공정은 꺼진 채, 새 판 출처). 월 머지로 판 행과 BDQ 행이 섞인 공정이 있는
+  바탕은 거부 한 줄 + 그 공정 표만 서고 합치지 · 저장하지 않는다(걷으면 BDQ 행까지 지우고, 두면 옛 판 행이 BDQ 로 셈된다). 합친
+  결과는 (DB, 바탕 리비전, 판 차례)마다 세션 메모 한 벌(`OVERLAY_MEMO` — `PAGE_DIALOG_SUFFIX`)이다.
 - `src/capa_simulation/components/bdq_login_admin.py` — Admin Area 「BDQ 자동 로그인」 펼침(`BDQ_LOGIN_LABEL` — 「서버 시작 점검」 표 줄과
   같은 이름, 2026-11-16 결정 D1 · D2 · D5 · D7). 동기화 모드 `managed` + 쓸 수 있는 키(`bdq_login_store.availability` — 앱은 기동 때 키를 쥐고
   환경에서 빼므로 환경을 넘기지 않는다)인 서버의 개발자(`sso_identity.viewer_is_developer` — 「토큰 넣기」 와 같은 문지기) 회차에만 「서버 시작 점검」
@@ -2106,8 +2111,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/extra_process_intake.py` — 부대공정 판 들이기의 화면 밖 몸통(세션 없음). 가져오기 원천은 **꽂는 자리 하나**
   (`ExtraProcessSource` · `install_source`)이고 1단계는 꽂지 않는다 — S3 Drive 원천(설계 A6)은 사내 확인 부대 5(DRM) · 6(같은 버킷)의
   답 뒤에 `fetch()` 하나로 붙인다(그 전에는 Admin 「부대공정」 의 가져오기 단추가 서지 않는다). 받은 파일 판정(`stage_pack` — 접수
-  검증 + 판 번호 판정, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산(`preview_pack` — 지금 시나리오 표에 이미 든
-  부대공정을 걷고 합쳐 본다, 저장 안 함) · C-DEP 판정(`production_place` — 동기화 `managed` + 기동 때 읽은 S3 접속 정보).
+  검증 + 판 번호 판정 + 지금 판 · 앞 판과의 차이 `changes`, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산
+  (`preview_pack` — 지금 시나리오 표에 이미 든 부대공정을 걷고 합쳐 본다, 저장 안 함, 합친 표의 전체 기간 계산은 한 번 돌려 월별
+  확보율 · 경로 수가 함께 쓴다) · C-DEP 판정(`production_place` — 동기화 `managed` + 기동 때 읽은 S3 접속 정보).
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
   - 조회·시계·발행 뒤 정리는 주입받는다. 위험하면 발행하지 않고(`PUBLISH_SKIPPED` — 계산 실패·판정 가능 공정 0·발행 검사
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
@@ -2456,8 +2462,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`FULL_CAPACITY_MAX_ENTRIES` 8칸) — `get_scenario_capacity_and_demand` 는 칸을 두지 않고 부를 때마다 그 칸에서
     자르며(이름 · 인자 · 실패 동작은 그대로, 조회기간 오류 칸 `get_period_capacity_error` 는 따로), 편집본 칸은 새 편집
     토큰이 설 때 키로 걷는다(`retire_full_capacity_outcome`, 5장 3). 배경 회차는 순수 코어
-    `full_capacity_outcome` 을 부른다. 화면에서 그 순수 코어를 부르는 곳은 입력 점검 하나다 — 고른 리비전마다 계산하므로
-    결과 대신 묶음만 요약 칸 `get_revision_input_check` 에 둔다(5장 39).
+    `full_capacity_outcome` 을 부른다. 화면에서 그 순수 코어를 캐시 없이 부르는 곳은 넷이다 — 입력 점검(고른 리비전마다 계산하므로
+    결과 대신 묶음만 요약 칸 `get_revision_input_check` 에 둔다, 5장 39), 그리고 부대공정을 합친 표를 보는 셋(Admin 「부대공정」 의
+    「시험 계산」 · 「부대공정 얹기」 · DB 등록의 R-07 등록 점검 — `extra_process_merge.capacity_stop` · `capacity_outcome`). 셋은
+    한 번 누른 회차에만 돌고 저장 전 표라 공유 칸에 두지 않는다(미리보기는 합친 표의 계산 하나를 두 셈이 함께 쓰고, 얹기는 바탕
+    리비전 · 판마다 세션 메모 한 벌).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
   - 필요 단축 일정 계획 키 끝 칸은 UPEH 가정 토큰이다. 공식 칸과 가정 칸(공정 Capa 상세의 목표 하나 칸 하나 —
@@ -2565,9 +2574,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/core_data_pipeline.py` — CSV·BigDataQuery 결과를 같은 정규화·RQ 변환 길로 잇는다.
   - 등록 이음매 `fetch_registration_dataset` · `merge_registration_dataset` — 조회 · 변환(② 기준 정보 표) 뒤, 프리셋 · 저장(③) 앞에서
     DB 의 활성 부대공정 판을 16표에 합친다(원천 `source_data` · 원천 해시는 그대로). 화면 DB 등록과 공식버전 자동 갱신이 함께
-    부른다 — 프리셋(전 공정)이 부대공정을 저절로 넣는다. 내장 시드 부트스트랩은 이 길을 지나지 않는다.
+    부른다 — 프리셋(전 공정)이 부대공정을 저절로 넣는다. 내장 시드 부트스트랩은 이 길을 지나지 않는다. 합치기가 예외로 끝나면
+    판 없이 BDQ 만으로 등록하고 로그 · 메모 조각 「부대공정 판 n · 합치지 못함」 을 남긴다(D10 — 판 탓으로 등록이 멈추지 않게).
+    활성 판 내용을 못 읽어도(`load_active_extra_pack` — 지운 sha · 꼴이 다른 값) 판을 빼고 등록한다.
 - `src/capa_simulation/services/extra_process_pack.py` — 부대공정 양식(ZIP 하나 · CSV 여섯 장 `00_info` ~ `05_rate_vital`, 머리 칸은
   Core_Data 칸 이름 그대로)의 읽기 · 접수 검증 V-01 ~ V-14 · 판 번호 판정 · 양식 다시 쓰기 · 판 견주기(Streamlit 없음).
+  - 받은 크기 8 MiB(`PACK_MAX_BYTES`)에 더해 풀린 크기도 장마다 8 MiB · 여섯 장 합 32 MiB 까지다(머리 값을 믿지 않고 읽는
+    바이트로도 센다 — ZIP 폭탄). 넘거나 지원하지 않는 압축 방식이면 V-01 이다.
   - 폴더 이름은 무시하고 파일 이름으로 찾고, UTF-8(BOM 허용)이 안 되면 CP949 로 한 번 더 읽는다. 글자 칸은 앞뒤 공백 ·
     `="..."` 가드를 벗기고 제품정보는 원천과 같은 `core_data_derivation.normalize_product_names` 를 지난다. V-01(파일 · 인코딩 ·
     머리 칸 · 칸 수)이 어긋나면 뒤 검사를 하지 않는다. 측정률 빈칸 · 0 은 거절하지 않고 1.0 으로 센 칸 수만 센다(D23 (나) —
@@ -2579,8 +2592,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     판의 바로 앞 판 값으로 되돌리는 칸 수(G12)를 센다.
 - `src/capa_simulation/services/extra_process_merge.py` — 부대공정 판을 BDQ 16표에 펼쳐 합친다(R-01 ~ R-07 — 6장 「부대공정」).
   덧붙이는 행은 BDQ 표와 같은 칸 · 차례 · 형식이다(저장의 칸 집합 대조). 옛 판 걷기(`strip_extra_processes` — 이름으로, 사람이
-  더한 STEP 까지) · 얹기(`overlay_extra_processes` · `overlay_included_processes`) · 미리보기 시험 계산(`process_rows_frame` ·
-  `load_lines`) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄)를 둔다. 순수 함수라 자동 갱신 스레드도 부른다.
+  더한 STEP 까지) · 걷을 공정 가르기(`split_previous` — 출처에 합침만 있는 공정, 합침 · BDQ 에 생김이 함께거나 섞임 뺌 줄
+  `MIXED_REASON` 이면 「섞임」) · 겹친 출처 줄 접기(`fold_outcomes` — 월 머지가 잇는 두 원본의 같은 (공정, 판 차례)) · 얹기
+  (`overlay_extra_processes` · `overlay_included_processes`) · 미리보기 시험 계산(`process_rows_frame` · `load_lines` — 같은 표의
+  전체 기간 계산 `capacity_outcome` 을 받으면 다시 돌리지 않는다) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄, 합치지
+  못함 `failed`)를 둔다. 표를 제자리에서 고치지 않고 더한 표만 새로 이어 붙인다(나머지 표는 받은 프레임 그대로 — 얹기 · 미리보기는
+  걷기가 사본이다). 순수 함수라 자동 갱신 스레드도 부른다.
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을

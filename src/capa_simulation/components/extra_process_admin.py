@@ -5,9 +5,11 @@
 
 **보이는 것.** 상태 줄 값 한 줄(「부대공정 · 판 3 · 공정 2 · 적용 11-13 09:12」 — 끈 동안 「꺼짐 ·
 마지막 판 3」, 판이 없으면 「판 없음」. 원천을 본 적이 있으면 끝에 「<자리> <낱말>(hh:mm 에 봄)」),
-단추 줄(가져오기 · 양식 내려받기 · 끄기 / 다시 켜기), 받은 판이 있으면 그 거절 표 또는 미리보기,
-맨 아래 판 이력 표. 설명 글은 세우지 않는다 — 단추 · 칸의 뜻은 풍선, 탭의 쓰임은 Guide 다(설계
-규칙 UI-TXT-01 · UI-TXT-02).
+단추 줄(가져오기 · 양식 내려받기 · 끄기 / 다시 켜기), 받은 판이 있으면 그 거절 표 또는 값 줄(지금
+판과의 차이 · 앞 판 값으로 되돌리는 칸 · 측정률 칸 — 받는 때 센다)과 미리보기 · 「적용」, 맨 아래 판
+이력 표. 설명 글은 세우지 않는다 — 단추 · 칸의 뜻은 풍선, 탭의 쓰임은 Guide 다(설계 규칙 UI-TXT-01 ·
+UI-TXT-02). 앞 판 값으로 되돌리는 칸이 있으면(G12 — 옛 사본에서 판 번호만 올린 판) 「적용」 앞 확인
+칸을 채워야 「적용」 이 열린다(UI-NTF-09).
 
 **가져오기 단추는 원천이 꽂혀 있을 때만 선다**(`extra_process_intake.installed_source`). 1단계는
 원천을 꽂지 않는다 — S3 Drive 가져오기는 사내 확인 부대 5 · 6 의 답 뒤에 붙인다(설계 9-4).
@@ -20,8 +22,12 @@
 
 **미리보기 시험 계산**은 「시험 계산」 을 누른 회차에만 돈다 — 지금 활성 시나리오의 표에 받은 판을
 합쳐(그 시나리오에 이미 든 부대공정은 먼저 걷고) 공정마다 합침 · 뺌, 월별 소요대수 · 가용 · 확보율,
-부하 붙은 · 0 경로 수와 지금 판과의 차이 · 앞 판 값으로 되돌리는 칸 수 · 측정률 칸 수를 보인다.
-결과는 (판 sha, 활성 리비전 content_token)마다 세션에 둔다 — 회차마다 다시 돌리지 않는다.
+부하 붙은 · 0 경로 수를 보인다. 결과는 (판 sha, 활성 리비전 content_token)마다 세션에 둔다 —
+회차마다 다시 돌리지 않는다. 시나리오를 못 읽으면 단추 자리에 「데이터 Error」 마크다(UI-NTF-08).
+
+**닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 이 탭의 위젯은 단추 · 내려받기 · 확인
+칸뿐이라 버릴 값이 없고, 닫힌 탭이 회차마다 판 이력을 읽지 않게 한다. 세션 칸은 `SessionSlot`
+창구다.
 """
 
 from __future__ import annotations
@@ -71,15 +77,18 @@ from capa_simulation.services.extra_process_merge import (
     OUTCOME_DROPPED,
     OUTCOME_GRADUATED,
     OUTCOME_MERGED,
+    split_previous,
 )
 from capa_simulation.services.extra_process_pack import (
     JUDGE_RESUME,
     JUDGE_UNCHANGED,
     ExtraProcessPack,
+    PackChanges,
     pack_to_zip,
     read_pack_zip,
     template_zip,
 )
+from capa_simulation.session_slot import SessionSlot
 
 TAB_LABEL: Final = ADMIN_AREA_TABS[3]
 STAGED_KEY: Final = "admin_extra_process_staged"
@@ -93,6 +102,7 @@ DOWNLOAD_BUTTON_KEY: Final = "admin_extra_process_download"
 PREVIEW_BUTTON_KEY: Final = "admin_extra_process_preview_run"
 APPLY_BUTTON_KEY: Final = "admin_extra_process_apply"
 DISCARD_BUTTON_KEY: Final = "admin_extra_process_discard"
+APPLY_CONFIRM_KEY: Final = "admin_extra_process_apply_confirm"
 
 STATUS_HEAD: Final = "부대공정"
 DOWNLOAD_LABEL: Final = "양식 내려받기"
@@ -127,6 +137,12 @@ OUTCOME_LABELS: Final = {
     OUTCOME_GRADUATED: "BDQ 에 생김",
 }
 HISTORY_COLUMNS: Final = ("판", "갈래", "적용 시각", "적용한 사람", "sha", "공정 수", "행 수")
+# 앞 판 값으로 되돌리는 칸이 있는 판의 「적용」 앞 확인 칸(UI-NTF-09 — 누르기 전에 알아야 할 결과).
+REVERT_CONFIRM_LABEL: Final = "앞 판 값으로 되돌리는 칸 {n}개를 확인했습니다"
+REVERT_CONFIRM_HELP: Final = (
+    "옛 사본에서 판 번호만 올린 판이면 지금 판에서 고친 값이 앞 판 값으로 돌아갑니다"
+)
+UNCONFIRMED_REASON: Final = "앞 판 값으로 되돌리는 칸을 확인하면 누를 수 있습니다"
 
 
 @dataclass(frozen=True)
@@ -136,6 +152,15 @@ class SeenSource:
     place: str
     word: str
     seen_at: datetime
+
+
+# 세션 칸(AGENTS 5장 42 — 창구로만). 받은 판 · 원천을 본 결과는 「있거나 없음」, 메모 둘은 튜플.
+STAGED: Final = SessionSlot(STAGED_KEY, StagedPack)
+SEEN: Final = SessionSlot(SEEN_KEY, SeenSource)
+# (판 sha, 활성 리비전 content_token) → 미리보기.
+PREVIEW: Final = SessionSlot(PREVIEW_KEY, tuple, tuple)
+# (판 sha, 양식 ZIP 바이트, 파일 이름).
+TEMPLATE: Final = SessionSlot(TEMPLATE_KEY, tuple, tuple)
 
 
 def write_lock_reason() -> str | None:
@@ -185,8 +210,7 @@ def render_extra_process_admin(
         )
         return
     lock = write_lock_reason()
-    seen = st.session_state.get(SEEN_KEY)
-    st.caption(status_line(state, seen if isinstance(seen, SeenSource) else None))
+    st.caption(status_line(state, SEEN.peek()))
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         source = installed_source()
         if source is not None and st.button(
@@ -199,8 +223,8 @@ def render_extra_process_admin(
             _import(repository)
         _render_download(repository, state)
         _render_toggle(repository, state, lock)
-    staged = st.session_state.get(STAGED_KEY)
-    if isinstance(staged, StagedPack):
+    staged = STAGED.peek()
+    if staged is not None:
         _render_staged(repository, state, staged, lock, opened=opened)
     if opened:
         _render_history(state)
@@ -275,14 +299,14 @@ def _template_bytes(
     만든다."""
     if latest is None or latest.sha256 is None:
         return template_zip(), BLANK_TEMPLATE_FILE
-    memo = st.session_state.get(TEMPLATE_KEY)
-    if isinstance(memo, tuple) and len(memo) == 3 and memo[0] == latest.sha256:
+    memo = TEMPLATE.get()
+    if len(memo) == 3 and memo[0] == latest.sha256:
         return bytes(memo[1]), str(memo[2])
     reading = read_pack_zip(repository.load_extra_process_content(latest.sha256))
     if reading.pack is None:
         return template_zip(), BLANK_TEMPLATE_FILE
     result = (pack_to_zip(reading.pack), TEMPLATE_FILE.format(version=latest.version_no))
-    st.session_state[TEMPLATE_KEY] = (latest.sha256, *result)
+    TEMPLATE.set((latest.sha256, *result))
     return result
 
 
@@ -320,35 +344,50 @@ def _render_toggle(
     st.rerun()
 
 
+# 받은 파일을 판정하다 난 예외(검사가 못 거른 꼴 · 지운 판 내용) — 원천 실패와 같은 길로 알린다.
+_STAGE_ERRORS: Final = (*BOOTSTRAP_ERRORS, NotImplementedError)
+
+
+def _stage_error_word(exc: BaseException) -> str:
+    return f"판을 읽지 못함 · {type(exc).__name__}"
+
+
 def _import(repository: DuckDBScenarioRepository) -> None:
     """원천에서 받아 검사한다 — 바뀐 것 없으면 알리기만, 아니면 받은 판을 세션에 둔다."""
     source = installed_source()
     if source is None or write_lock_reason() is not None:
         return
     now = datetime.now(KST)
-    st.session_state.pop(PREVIEW_KEY, None)
+    PREVIEW.clear()
     try:
         with st.spinner("부대공정 판을 받는 중입니다..."):
             fetched = source.fetch()
-    except SourceFailure as failure:
-        st.session_state[SEEN_KEY] = SeenSource(source.place, f"읽지 못함({failure.reason})", now)
+        state = repository.load_extra_process_state()
+        staged = stage_pack(
+            state,
+            fetched,
+            now=now,
+            current=_content(repository, state.active),
+            before=_content(repository, previous_content(state)),
+        )
+    except (SourceFailure, *_STAGE_ERRORS) as exc:
+        reason = exc.reason if isinstance(exc, SourceFailure) else _stage_error_word(exc)
+        SEEN.set(SeenSource(source.place, f"읽지 못함({reason})", now))
         queue_flash(
             FLASH_KEY,
-            f"부대공정 판을 가져오지 못했습니다 — {failure.reason}. 지난 판으로 계속합니다.",
+            f"부대공정 판을 가져오지 못했습니다 — {reason}. 지난 판으로 계속합니다.",
             kind="error",
             icon=":material/error:",
             alert="EP-01",
             popup_only=True,
         )
         st.rerun()
-    staged = stage_pack(repository.load_extra_process_state(), fetched, now=now)
-    word = _staged_word(staged)
-    st.session_state[SEEN_KEY] = SeenSource(source.place, word, now)
+    SEEN.set(SeenSource(source.place, _staged_word(staged), now))
     if staged.judgement is not None and staged.judgement.verdict == JUDGE_UNCHANGED:
-        st.session_state.pop(STAGED_KEY, None)
+        STAGED.clear()
         queue_flash(FLASH_KEY, "바뀐 것 없음 — 활성 판과 같은 파일입니다", kind="info")
     else:
-        st.session_state[STAGED_KEY] = staged
+        STAGED.set(staged)
     st.rerun()
 
 
@@ -376,8 +415,8 @@ def _render_staged(
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.markdown(f"**받은 판** · {_staged_word(staged)} · sha {reading.sha256[:8]}")
             if st.button(DISCARD_LABEL, key=DISCARD_BUTTON_KEY, type="tertiary"):
-                st.session_state.pop(STAGED_KEY, None)
-                st.session_state.pop(PREVIEW_KEY, None)
+                STAGED.clear()
+                PREVIEW.clear()
                 st.rerun()
         if not reading.accepted or staged.judgement is None:
             toolbar_clearance()
@@ -386,19 +425,37 @@ def _render_staged(
         if not staged.judgement.applicable:
             st.error(staged.judgement.reason, icon=":material/block:")
             return
-        st.caption(reading.ratio.text())
+        st.caption(" · ".join([*_changes_parts(staged.changes), reading.ratio.text()]))
         preview = _preview(repository, state, staged, run=opened)
         if preview is not None:
             _render_preview(preview)
+        reverted = 0 if staged.changes is None else staged.changes.reverted_cells
+        confirmed = reverted == 0 or st.checkbox(
+            REVERT_CONFIRM_LABEL.format(n=f"{reverted:,}"),
+            key=APPLY_CONFIRM_KEY,
+            help=REVERT_CONFIRM_HELP,
+        )
         if st.button(
             APPLY_LABEL,
             key=APPLY_BUTTON_KEY,
             type="primary",
             icon=":material/check:",
-            disabled=lock is not None,
-            help=lock or APPLY_HELP,
+            disabled=lock is not None or not confirmed,
+            help=lock or (APPLY_HELP if confirmed else UNCONFIRMED_REASON),
         ):
             _apply(repository, staged)
+
+
+def _changes_parts(changes: PackChanges | None) -> list[str]:
+    """값 줄 앞 조각 — 지금 판과의 차이 · 앞 판 값으로 되돌리는 칸(받은 판이 읽혔을 때만)."""
+    if changes is None:
+        return []
+    return [
+        f"더한 공정 {len(changes.added)}",
+        f"뺀 공정 {len(changes.removed)}",
+        f"바뀐 칸 {changes.changed_cells}",
+        f"앞 판 값으로 되돌리는 칸 {changes.reverted_cells}",
+    ]
 
 
 def _preview(
@@ -415,44 +472,47 @@ def _preview(
     try:
         tables = get_effective_reference_tables()
         active = ensure_active_scenario(tables, get_effective_reference_version())
-    except BOOTSTRAP_ERRORS:
+    except BOOTSTRAP_ERRORS as exc:
+        # 시험 계산 단추가 설 자리 — 까닭 없이 사라지지 않게 마크로 둔다(UI-NTF-08).
+        render_data_error(
+            bootstrap_error_message(exc),
+            code="AD-07",
+            tab=tab_name(TAB_LABEL),
+            text="시험 계산에 쓸 시나리오를 읽지 못했습니다",
+        )
         return None
     memo_key = (staged.reading.sha256, str(active["content_token"]))
-    memo = st.session_state.get(PREVIEW_KEY)
-    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == memo_key:
-        cached = memo[1]
-        if isinstance(cached, PackPreview):
-            return cached
+    memo = PREVIEW.get()
+    if len(memo) == 2 and memo[0] == memo_key and isinstance(memo[1], PackPreview):
+        return memo[1]
     if not run or not st.button(PREVIEW_LABEL, key=PREVIEW_BUTTON_KEY, help=PREVIEW_HELP):
         return None
     try:
         with st.spinner("시험 계산 중입니다..."):
-            preview = _compute_preview(repository, state, pack, tables)
+            preview = _compute_preview(repository, state, staged, tables)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc), icon=":material/error:")
         return None
-    st.session_state[PREVIEW_KEY] = (memo_key, preview)
+    PREVIEW.set((memo_key, preview))
     return preview
 
 
 def _compute_preview(
     repository: DuckDBScenarioRepository,
     state: ExtraProcessState,
-    pack: ExtraProcessPack,
+    staged: StagedPack,
     tables: Mapping[str, pd.DataFrame],
 ) -> PackPreview:
+    pack = staged.reading.pack
+    assert pack is not None
     scenario_id = active_persisted_scenario_id()
     previous = (
         ()
         if scenario_id is None
-        else tuple(
-            dict.fromkeys(
-                item.process_name
-                for item in repository.load_scenario_extra_process(scenario_id)
-                if item.outcome == OUTCOME_MERGED
-            )
-        )
+        else split_previous(repository.load_scenario_extra_process(scenario_id)).stripped
     )
+    if staged.changes is not None:
+        return preview_pack(tables, previous, pack, seq=state.last_seq + 1, changes=staged.changes)
     current = _content(repository, state.active)
     before = _content(repository, previous_content(state))
     return preview_pack(
@@ -469,18 +529,7 @@ def _content(
 
 
 def _render_preview(preview: PackPreview) -> None:
-    changes = preview.changes
-    st.caption(
-        " · ".join(
-            [
-                f"더한 공정 {len(changes.added)}",
-                f"뺀 공정 {len(changes.removed)}",
-                f"바뀐 칸 {changes.changed_cells}",
-                f"앞 판 값으로 되돌리는 칸 {changes.reverted_cells}",
-                preview.report.counts_text(),
-            ]
-        )
-    )
+    st.caption(preview.report.counts_text())
     st.dataframe(
         pd.DataFrame(
             [
@@ -535,8 +584,8 @@ def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
     except (ExtraProcessMoved, ValueError) as exc:
         queue_flash(FLASH_KEY, bootstrap_error_message(exc), kind="error", icon=":material/error:")
     else:
-        st.session_state.pop(STAGED_KEY, None)
-        st.session_state.pop(PREVIEW_KEY, None)
+        STAGED.clear()
+        PREVIEW.clear()
         queue_flash(FLASH_KEY, f"부대공정 판 {pack.info.version_no} 적용")
     st.rerun()
 

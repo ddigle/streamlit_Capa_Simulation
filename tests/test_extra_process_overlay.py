@@ -11,6 +11,7 @@ UPEH 58000 → 60000)를 얹는다. 걷지 않으면 R-01 이 판 1 의 행을 B
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -31,15 +32,20 @@ from capa_simulation.components.scenario_extra_overlay import (
     EXTRA_OVERLAY_MODE,
     OVERLAY_OPERATION,
 )
-from capa_simulation.persistence.models import ScenarioSnapshot
+from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_registration import load_active_extra_pack
 from capa_simulation.services.extra_process_merge import (
+    MIXED_REASON,
+    OUTCOME_DROPPED,
     OUTCOME_GRADUATED,
     OUTCOME_MERGED,
+    fold_outcomes,
     merge_extra_processes,
     overlay_extra_processes,
     overlay_included_processes,
+    split_previous,
+    strip_extra_processes,
 )
 from capa_simulation.services.extra_process_pack import read_pack_zip
 
@@ -188,3 +194,126 @@ def test_year_shift_and_clone_paths_carry_the_base_provenance(
         (BOND, "연도 Shift +1년"),
         (AOI, "연도 Shift +1년"),
     }
+
+
+# ------------------------------------------------------------------ 월 머지 뒤 판 · BDQ 행 섞임
+
+
+def _derived(
+    repository: DuckDBScenarioRepository,
+    base: ScenarioSnapshot,
+    name: str,
+    provenance: tuple[object, ...] | None = None,
+    *,
+    graduated: tuple[str, ...] = (),
+) -> ScenarioSnapshot:
+    """바탕 표로 새 시나리오 — 출처 줄은 바탕 것을 그대로(`graduated` 공정은 BDQ 에 생김으로 바꿔).
+    BDQ 가 그 공정을 스스로 가진 원본의 출처 꼴이다(표는 같아도 출처만 본다)."""
+    records = tuple(
+        replace(record, outcome=OUTCOME_GRADUATED, rule="R-01", row_counts=None)
+        if record.process_name in graduated
+        else record
+        for record in repository.load_scenario_extra_process(base.scenario.scenario_id)
+    )
+    created = ScenarioCreate(
+        scenario_name=name,
+        source_simulation_code=f"TEST-{name}",
+        source_simulation_name=base.scenario.scenario_name,
+        source_type="SCENARIO_MONTH_MERGE",
+        pipeline_version="test",
+    )
+    return repository.create_scenario(
+        created,
+        base.tables,
+        base.preset,
+        extra_process=provenance if provenance is not None else records,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize("bdq_first", [False, True], ids=["판-베이스", "BDQ-베이스"])
+def test_a_month_merge_of_merged_and_graduated_sources_is_not_stripped(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot], bdq_first: bool
+) -> None:
+    """월 머지 두 차례 — 한 원본은 판으로 BOND 를 합쳤고(MERGED) 다른 원본은 BDQ 가 BOND 를 스스로
+    가졌다(GRADUATED, 같은 판 차례). 출처 표는 (공정, 판 차례)가 키라 두 줄이 겹친다 — 어느 차례로
+    머지해도 한 줄을 잃지 않고 섞임 뺌 줄 하나로 접고, 얹기는 BOND 를 걷지 않는다(걷으면 BDQ 달의
+    BOND 행까지 지운다). 섞이지 않은 AOI 는 그대로 걷는다."""
+    from capa_simulation.components.scenario_transform import carried_extra_process
+
+    repository, _, merged_source = based
+    bdq_source = _derived(repository, merged_source, "BDQ 원본", graduated=(BOND,))
+    first, second = (bdq_source, merged_source) if bdq_first else (merged_source, bdq_source)
+
+    carried = carried_extra_process(
+        repository, ((first, "월 머지 베이스"), (second, "월 머지 덧붙임"))
+    )
+    month_merged = _derived(repository, first, "월 머지", provenance=carried)
+
+    saved = repository.load_scenario_extra_process(month_merged.scenario.scenario_id)
+    bond = [item for item in saved if item.process_name == BOND]
+    assert [(item.outcome, item.reason) for item in bond] == [(OUTCOME_DROPPED, MIXED_REASON)]
+    assert bond[0].note == "월 머지 베이스 / 월 머지 덧붙임"
+    extras = split_previous(saved)
+    assert extras.stripped == (AOI,) and extras.mixed == (BOND,)
+
+
+def test_merged_and_graduated_rows_of_different_versions_are_mixed_too() -> None:
+    """판 차례가 달라 두 줄이 다 남은 출처(판 v1 합침 · 판 v2 BDQ 에 생김)도 섞임이다. 합침 · 뺌만
+    있는 공정은 걷는다(뺀 원본에는 그 행이 없다)."""
+    from capa_simulation.persistence.models import ExtraProcessProvenance
+
+    def row(name: str, seq: int, outcome: str) -> ExtraProcessProvenance:
+        return ExtraProcessProvenance(name, seq, seq, "0" * 64, outcome)
+
+    extras = split_previous(
+        [
+            row(BOND, 1, OUTCOME_MERGED),
+            row(BOND, 2, OUTCOME_GRADUATED),
+            row(AOI, 1, OUTCOME_MERGED),
+            row(AOI, 2, OUTCOME_DROPPED),
+            row("DEMO_Only_BDQ", 2, OUTCOME_GRADUATED),
+        ]
+    )
+    assert extras.stripped == (AOI,) and extras.mixed == (BOND,)
+    assert fold_outcomes([OUTCOME_DROPPED, OUTCOME_MERGED]) == (OUTCOME_MERGED, False)
+    assert fold_outcomes([OUTCOME_GRADUATED, OUTCOME_DROPPED]) == (OUTCOME_GRADUATED, False)
+    assert fold_outcomes([OUTCOME_GRADUATED, OUTCOME_MERGED]) == (OUTCOME_DROPPED, True)
+
+
+def test_stripping_by_name_would_remove_the_bdq_rows_of_a_mixed_process(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
+) -> None:
+    """걷기는 이름으로 모든 달을 지운다 — 섞인 공정을 걷을 목록에 넣으면 BDQ 공정 행까지 사라진다
+    (그래서 섞임은 걷지 않는다). BDQ 공정 이름 하나를 넣으면 그 행이 0 이 되는 것으로 본다."""
+    _, _, base = based
+    reqb = base.tables["RQ_REQB"]
+    bdq_name = next(name for name in reqb["공정"].astype(str).unique() if name not in {BOND, AOI})
+
+    stripped = strip_extra_processes(base.tables, (BOND, AOI, bdq_name))
+
+    assert stripped["RQ_REQB"]["공정"].eq(bdq_name).sum() == 0
+    assert reqb["공정"].eq(bdq_name).sum() > 0
+
+
+def test_the_overlay_screen_refuses_a_base_with_mixed_rows(
+    based: tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot],
+) -> None:
+    """섞인 공정이 있는 바탕 — 거부 한 줄과 그 공정 표만 서고 합치기 · 저장 칸이 서지 않는다."""
+    from capa_simulation.components.scenario_transform import carried_extra_process
+
+    repository, database, merged_source = based
+    bdq_source = _derived(repository, merged_source, "BDQ 원본", graduated=(BOND,))
+    carried = carried_extra_process(
+        repository, ((merged_source, "월 머지 베이스"), (bdq_source, "월 머지 덧붙임"))
+    )
+    month_merged = _derived(repository, merged_source, "월 머지", provenance=carried)
+    app = _overlay_app(database)
+
+    app.selectbox(key="extra_source_scenario").set_value(month_merged.scenario.scenario_id).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    (error,) = [str(item.value) for item in app.error]
+    assert error == "판 · BDQ 행이 섞인 부대공정 1개 — 이 바탕에는 얹지 않습니다"
+    (frame,) = [item.value for item in app.dataframe]
+    assert list(frame["공정"]) == [BOND] and list(frame["결과"]) == ["섞임"]
+    assert not [button for button in app.button if button.label == "새 시나리오로 저장"]

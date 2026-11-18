@@ -311,6 +311,53 @@ def test_a_too_large_or_broken_file_is_refused_at_v01(monkeypatch: pytest.Monkey
     assert [p.code for p in read_pack_zip(zip_files(template_files())).problems] == ["V-01"]
 
 
+def _deflated(files: dict[str, bytes]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_a_small_zip_that_unpacks_too_large_is_refused_without_reading_it_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ZIP 폭탄 — 받은 크기는 상한 안이어도 풀린 크기(장마다 · 합)가 상한을 넘으면 V-01 로
+    거절한다. 머리의 크기 값을 속여도 읽는 바이트로 다시 센다."""
+    files = template_files()
+    files["05_rate_vital.csv"] = files["05_rate_vital.csv"] + b"\n" * (9 * 1024 * 1024)
+    data = _deflated(files)
+    assert len(data) < pack_module.PACK_MAX_BYTES
+
+    (problem,) = read_pack_zip(data).problems
+    assert (problem.code, problem.file) == ("V-01", "05_rate_vital.csv")
+    assert problem.reason.startswith("풀면 너무 큼")
+
+    small = template_files()
+    monkeypatch.setattr(pack_module, "PACK_MEMBER_MAX_BYTES", 10**9)
+    monkeypatch.setattr(
+        pack_module, "PACK_UNPACKED_MAX_BYTES", sum(len(body) for body in small.values()) - 1
+    )
+    (total,) = read_pack_zip(zip_files(small)).problems
+    assert total.reason.startswith("풀면 너무 큼")
+
+
+def test_an_unsupported_compression_is_refused_at_v01() -> None:
+    """지원하지 않는 압축 방식(Deflate64 등)은 처리 못 한 예외가 아니라 V-01 거절이다."""
+    data = bytearray(_deflated(template_files()))
+    at = data.find(b"PK\x01\x02")
+    while at >= 0:
+        data[at + 10 : at + 12] = (9).to_bytes(2, "little")
+        at = data.find(b"PK\x01\x02", at + 4)
+
+    problems = read_pack_zip(bytes(data)).problems
+    assert problems and {problem.code for problem in problems} == {"V-01"}
+    assert all(problem.reason == "ZIP 안 파일을 읽지 못함" for problem in problems)
+
+
 def test_pack_to_zip_round_trips_the_same_rows_and_bytes() -> None:
     reading = read_pack_files(template_files())
     assert reading.pack is not None

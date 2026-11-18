@@ -49,6 +49,10 @@ FORMAT_VERSION: Final = 1
 KNOWN_FORMATS: Final = frozenset({FORMAT_VERSION})
 # S3 Drive 에서 받는 상한 — 모듈 도우미와 같은 8 MiB(설계 3-1).
 PACK_MAX_BYTES: Final = 8 * 1024 * 1024
+# 풀린 크기 상한 — 장마다 · 여섯 장 합(작은 ZIP 이 수 GB 로 풀려 메모리를 다 쓰지 않게). 머리의
+# 크기 값은 믿지 않고 읽는 바이트로도 센다.
+PACK_MEMBER_MAX_BYTES: Final = 8 * 1024 * 1024
+PACK_UNPACKED_MAX_BYTES: Final = 32 * 1024 * 1024
 
 INFO_FILE: Final = "00_info.csv"
 PROCESS_FILE: Final = "01_process.csv"
@@ -293,6 +297,7 @@ def read_pack_zip(data: bytes) -> PackReading:
         return _rejected(sha, len(data), "", "ZIP 이 아님(파일 깨짐 · DRM)")
     files: dict[str, bytes] = {}
     problems: list[PackProblem] = []
+    unpacked = 0
     with archive:
         for info in archive.infolist():
             if info.is_dir():
@@ -303,13 +308,35 @@ def read_pack_zip(data: bytes) -> PackReading:
             if name in files:
                 problems.append(PackProblem("V-01", name, None, "", "같은 이름의 파일이 둘 이상"))
                 continue
+            room = min(PACK_MEMBER_MAX_BYTES, PACK_UNPACKED_MAX_BYTES - unpacked)
+            if info.file_size > room:
+                problems.append(_too_big(name))
+                break
             try:
-                files[name] = archive.read(info)
-            except (zipfile.BadZipFile, RuntimeError, ValueError, OSError):
+                with archive.open(info) as member:
+                    body = member.read(room + 1)
+            except (zipfile.BadZipFile, RuntimeError, ValueError, OSError, NotImplementedError):
                 problems.append(PackProblem("V-01", name, None, "", "ZIP 안 파일을 읽지 못함"))
+                continue
+            if len(body) > room:
+                problems.append(_too_big(name))
+                break
+            unpacked += len(body)
+            files[name] = body
     if problems:
         return PackReading(sha, len(data), None, tuple(problems))
     return read_pack_files(files, sha256=sha, byte_size=len(data))
+
+
+def _too_big(name: str) -> PackProblem:
+    return PackProblem(
+        "V-01",
+        name,
+        None,
+        "",
+        f"풀면 너무 큼 — 장마다 {PACK_MEMBER_MAX_BYTES // (1024 * 1024)} MiB · "
+        f"합 {PACK_UNPACKED_MAX_BYTES // (1024 * 1024)} MiB 까지",
+    )
 
 
 def _rejected(sha: str, size: int, file: str, reason: str) -> PackReading:

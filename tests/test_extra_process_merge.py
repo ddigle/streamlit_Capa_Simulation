@@ -374,3 +374,41 @@ def test_the_report_memo_names_the_version(version_no: int) -> None:
     result = merge_extra_processes(_seed(), _active(version_no=version_no), check=_never_stops)
 
     assert result.report.memo().startswith(f"부대공정 판 {version_no} · ")
+
+
+def test_a_merge_that_raises_registers_with_bdq_only_and_says_so(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """등록 이음매 — 합치기가 규칙 밖 예외로 끝나도 등록 · 자동 갱신을 멈추지 않는다. 판 없이 BDQ
+    만으로 두고 메모 조각 · 로그에 「합치지 못함」 을 남긴다(설계 D10)."""
+    from capa_simulation.services.core_data_pipeline import merge_registration_dataset
+
+    prepared = build_builtin_seed_dataset()
+
+    def boom(tables: Mapping[str, pd.DataFrame]) -> str | None:
+        raise ValueError("데모 — 검사가 엄해짐")
+
+    result = merge_registration_dataset(prepared, _active(), check=boom)
+
+    assert result.prepared is prepared
+    report = result.extra
+    assert report.failed == "ValueError" and report.outcomes == ()
+    assert report.memo() == "부대공정 판 1 · 합치지 못함"
+    assert report.flash_text() == "부대공정 합치지 못함"
+    assert report.detail_lines() == ["부대공정 판을 합치지 못함 — ValueError · BDQ 만으로 등록"]
+    assert "합치지 못해 BDQ 만으로 등록합니다" in caplog.text
+
+
+def test_the_preview_counts_reuse_one_full_period_outcome() -> None:
+    """미리보기 두 셈은 같은 합친 표의 전체 기간 계산 하나를 함께 쓸 수 있다(넘기면 다시 돌리지
+    않는다)."""
+    from capa_simulation.services.extra_process_merge import capacity_outcome
+
+    result = merge_extra_processes(_seed(), _active(), check=_never_stops)
+    merged = result.report.merged_processes()
+    outcome = capacity_outcome(result.tables)
+
+    assert process_rows_frame(result.tables, merged, outcome=outcome).equals(
+        process_rows_frame(result.tables, merged)
+    )
+    assert load_lines(result.tables, merged, outcome=outcome) == load_lines(result.tables, merged)

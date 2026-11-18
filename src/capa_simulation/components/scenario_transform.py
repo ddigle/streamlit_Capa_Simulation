@@ -44,7 +44,11 @@ from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
     active_persisted_scenario_id,
 )
-from capa_simulation.services.extra_process_merge import ExtraMergeReport
+from capa_simulation.services.extra_process_merge import (
+    MIXED_REASON,
+    ExtraMergeReport,
+    fold_outcomes,
+)
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_transform import (
@@ -396,13 +400,35 @@ def carried_extra_process(
     repository: DuckDBScenarioRepository, sources: Sequence[tuple[ScenarioSnapshot, str]]
 ) -> tuple[ExtraProcessProvenance, ...]:
     """원본 시나리오들의 부대공정 출처 줄에 메모(「연도 Shift +1년」 · 「월 머지 베이스」)를 단
-    사본 — 파생 저장이 새 데이터셋에 잇는다(설계 D18 · 4-9). 부대공정이 없으면 빈 묶음이다."""
+    사본 — 파생 저장이 새 데이터셋에 잇는다(설계 D18 · 4-9). 부대공정이 없으면 빈 묶음이다.
+
+    월 머지의 두 원본이 같은 (공정, 판 차례)를 가지면 한 줄로 접는다(출처 표의 키) — 결과가 다르면
+    `extra_process_merge.fold_outcomes` 차례이고, 합침 · BDQ 에 생김이 함께면 그 이름의 행에 판 행과
+    BDQ 행이 섞였다는 뺌 줄(`MIXED_REASON`)이다 — 얹기가 그 공정을 걷지 않고 바탕을 받지 않는다."""
     carried: list[ExtraProcessProvenance] = []
     for snapshot, note in sources:
         for record in repository.load_scenario_extra_process(snapshot.scenario.scenario_id):
             joined = " · ".join(part for part in (record.note, note) if part)
             carried.append(replace(record, note=joined or None))
-    return tuple(carried)
+    groups: dict[tuple[str, int], list[ExtraProcessProvenance]] = {}
+    for record in carried:
+        groups.setdefault((record.process_name, record.version_seq), []).append(record)
+    folded: list[ExtraProcessProvenance] = []
+    for records in groups.values():
+        outcome, mixed = fold_outcomes([record.outcome for record in records])
+        kept = next((record for record in records if record.outcome == outcome), records[0])
+        if mixed:
+            notes = " / ".join(dict.fromkeys(record.note or "" for record in records))
+            kept = replace(
+                kept,
+                outcome=outcome,
+                rule=None,
+                reason=MIXED_REASON,
+                row_counts=None,
+                note=notes or None,
+            )
+        folded.append(kept)
+    return tuple(folded)
 
 
 def derived_flash_keys(key: str) -> tuple[str, str]:

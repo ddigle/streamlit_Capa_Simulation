@@ -300,7 +300,16 @@ def load_active_extra_pack(repository: DuckDBScenarioRepository) -> ActiveExtraP
     active = repository.load_extra_process_state().active
     if active is None or active.sha256 is None or active.version_no is None:
         return None
-    reading = read_pack_zip(repository.load_extra_process_content(active.sha256))
+    try:
+        reading = read_pack_zip(repository.load_extra_process_content(active.sha256))
+    except (KeyError, TypeError, ValueError) as exc:
+        # 판 내용이 없거나(지운 sha) 꼴이 다른 값 — 등록 · 자동 갱신을 막지 않고 판을 뺀다.
+        _LOGGER.warning(
+            "활성 부대공정 판(%s) — 내용을 읽지 못해 합치지 않습니다(%s).",
+            active.version_no,
+            type(exc).__name__,
+        )
+        return None
     if reading.pack is None:
         _LOGGER.warning(
             "활성 부대공정 판(%s) — 다시 읽지 못해 합치지 않습니다(거절 %d건).",

@@ -14,17 +14,20 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from alert_marks import active_state, flashed
+from alert_marks import active_state, data_error_marks, flashed
 from extra_process_fixtures import BOND, bump_version, edited, set_cell, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.data_error_mark import EMPTY_CLASS
 from capa_simulation.components.extra_process_admin import (
     APPLY_BUTTON_KEY,
+    APPLY_CONFIRM_KEY,
     DOWNLOAD_BUTTON_KEY,
     IMPORT_BUTTON_KEY,
     NOT_PRODUCTION_REASON,
     PREVIEW_BUTTON_KEY,
     TOGGLE_BUTTON_KEY,
+    UNCONFIRMED_REASON,
     history_frame,
     status_line,
     write_lock_reason,
@@ -49,6 +52,7 @@ from capa_simulation.services.extra_process_pack import (
 
 OPEN_KEY = "__extra_open__"
 PACK_KEY = "__extra_pack__"
+NO_SCENARIO_KEY = "__extra_no_scenario__"
 
 
 def _script(database: Path) -> str:
@@ -81,7 +85,8 @@ if st.session_state.get({OPEN_KEY!r}):
 if st.session_state.get({PACK_KEY!r}) is not None:
     install_source(FakeSource())
 try:
-    bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
+    if not st.session_state.get({NO_SCENARIO_KEY!r}):
+        bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
     repository = get_scenario_repository(str(settings.DUCKDB_PATH))
     admin.render_extra_process_admin(repository, alert_tab="부대공정")
 finally:
@@ -96,10 +101,17 @@ def database(tmp_path: Path) -> Path:
     return tmp_path / "admin_extra.duckdb"
 
 
-def _app(database: Path, *, open_place: bool = False, pack: bytes | None = None) -> AppTest:
+def _app(
+    database: Path,
+    *,
+    open_place: bool = False,
+    pack: bytes | None = None,
+    no_scenario: bool = False,
+) -> AppTest:
     app = AppTest.from_string(_script(database), default_timeout=120)
     app.session_state[OPEN_KEY] = open_place
     app.session_state[PACK_KEY] = pack
+    app.session_state[NO_SCENARIO_KEY] = no_scenario
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     return app
@@ -137,6 +149,13 @@ def test_a_fake_source_imports_previews_and_applies_a_pack(database: Path) -> No
     assert not app.exception, [item.message for item in app.exception]
     assert any("가짜 적용 전 판 1" in text for text in _captions(app))
     assert any("측정률 빈칸 → 1.0 2칸 · 0 → 1.0 으로 셈 0칸" in text for text in _captions(app))
+    # 지금 판과의 차이 · 되돌리는 칸은 시험 계산 없이 「적용」 위 값 줄에 선다(설계 3-4 의 5 · 6).
+    assert any(
+        text.startswith("더한 공정 2 · 뺀 공정 0 · 바뀐 칸 ")
+        and "앞 판 값으로 되돌리는 칸 0" in text
+        for text in _captions(app)
+    )
+    assert not [box for box in app.checkbox if box.key == APPLY_CONFIRM_KEY]
 
     app.button(key=PREVIEW_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
@@ -189,6 +208,51 @@ def test_a_rejected_pack_shows_the_rejection_table_without_apply(database: Path)
     )
     assert list(table["규칙"]) == ["V-03"]
     assert not [button for button in app.button if button.key == APPLY_BUTTON_KEY]
+
+
+def test_a_pack_that_brings_back_older_values_needs_a_check_before_apply(database: Path) -> None:
+    """G12 — 판 2 위에 판 1 사본의 판 번호만 3 으로 올린 판을 받으면 값 줄에 되돌리는 칸이 서고,
+    확인 칸을 채워야 「적용」 이 열린다(UI-NTF-09)."""
+    from auto_update_fakes import new_repository
+    from test_extra_process_registration import apply_template
+
+    repository = new_repository(database)
+    apply_template(repository)
+    second = edited(
+        bump_version(template_files(), 2),
+        "03_productivity.csv",
+        lambda rows: set_cell(
+            rows, lambda row: row[0] == BOND and row[7] == "202607", "UPEH", "60000"
+        ),
+    )
+    apply_template(repository, expected_seq=1, files=second)
+    app = _app(database, open_place=True, pack=zip_files(bump_version(template_files(), 3)))
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+
+    line = next(text for text in _captions(app) if text.startswith("더한 공정 0 · 뺀 공정 0"))
+    assert "앞 판 값으로 되돌리는 칸 0" not in line
+    apply = app.button(key=APPLY_BUTTON_KEY)
+    assert apply.disabled and apply.help == UNCONFIRMED_REASON
+    app.checkbox(key=APPLY_CONFIRM_KEY).check().run()
+    assert not app.button(key=APPLY_BUTTON_KEY).disabled
+
+
+def test_the_trial_button_place_shows_a_data_error_when_no_scenario_is_loaded(
+    database: Path,
+) -> None:
+    """시험 계산에 쓸 시나리오를 못 읽으면 단추가 까닭 없이 사라지지 않고 그 자리에 「데이터
+    Error」 마크가 선다(UI-NTF-08 — 불러온 시나리오가 없는 것은 마크 대신 회색 빈 상태 한 줄).
+    「적용」 은 그대로 선다."""
+    app = _app(database, open_place=True, pack=zip_files(template_files()), no_scenario=True)
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not [button for button in app.button if button.key == PREVIEW_BUTTON_KEY]
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    assert data_error_marks(app) + sum(EMPTY_CLASS in body for body in bodies) == 1
+    assert not app.button(key=APPLY_BUTTON_KEY).disabled
 
 
 def test_off_and_resume_toggle_on_the_same_button(database: Path) -> None:

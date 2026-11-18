@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
@@ -26,6 +27,8 @@ from capa_simulation.services.reference_conflicts import conflict_resolution
 from capa_simulation.services.reference_transformer import (
     build_reference_tables_with_conflicts,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 CONFLICT_SUMMARY_COLUMNS = [
     "RQ테이블",
@@ -95,10 +98,24 @@ def merge_registration_dataset(
     원천(`source_data`)과 원천 해시는 그대로이고 기준정보 표에만 더한다. 등록 점검(R-07 —
     소요대수 · 확보율까지)도 이 안에서 프리셋보다 앞에 돈다 — 부르는 쪽은 돌려준 표로 프리셋을
     만든다(설계 D21). 판이 없으면 표를 그대로 둔다.
+
+    합치기가 예외로 끝나면(검사가 엄해졌거나 원천 꼴이 바뀌어 규칙 밖 값이 닿음) 판 없이 BDQ 만으로
+    등록하고 로그와 메모 조각(「부대공정 판 n · 합치지 못함」)을 남긴다 — 판을 끌 때까지 등록 · 자동
+    갱신 공식 지정이 멈추지 않게(설계 D10 「맞물리지 않는 부대공정만 빼고 나머지는 등록」).
     """
     if extra is None:
         return RegistrationDataset(prepared)
-    result = merge_extra_processes(prepared.reference_tables, extra, check=check)
+    try:
+        result = merge_extra_processes(prepared.reference_tables, extra, check=check)
+    except Exception as exc:  # noqa: BLE001 — 판 탓의 어떤 예외도 BDQ 등록을 막지 않는다(위 설명).
+        _LOGGER.exception(
+            "부대공정 판(%s)을 합치지 못해 BDQ 만으로 등록합니다(%s).",
+            extra.version.version_no,
+            type(exc).__name__,
+        )
+        return RegistrationDataset(
+            prepared, ExtraMergeReport(version=extra.version, failed=type(exc).__name__)
+        )
     return RegistrationDataset(replace(prepared, reference_tables=result.tables), result.report)
 
 

@@ -27,7 +27,12 @@
 
 **옛 판 걷기**(`strip_extra_processes`) — 「부대공정 얹기」 가 바탕 데이터셋의 출처 표로 옛 판
 공정의 행을 16표에서 먼저 걷어 낸 뒤 새 판을 합친다(걷지 않으면 R-01 이 옛 판 행을 BDQ 로 잘못
-본다).
+본다). 걷는 것은 출처에 합침(MERGED)만 있는 공정이다(`split_previous`). 월 머지는 두 원본의 출처를
+잇는다 — 한 원본에서 합침 · 다른 원본에서 BDQ 에 생김(GRADUATED)인 공정은 그 이름의 행에 판 행과
+BDQ 행이 섞여 이름으로 걷으면 BDQ 행까지 지운다. 그런 공정은 걷지 않고 「섞임」 으로 가르고(같은
+판 차례로 겹친 두 줄은 저장 전에 `MIXED_REASON` 뺌 줄 하나로 접는다 — `fold_outcomes`), 얹기는 그
+바탕을 받지 않는다(`components/scenario_extra_overlay`). 출처에는 달 범위가 없어 한 원본에 그 공정의
+줄이 아예 없을 때(판 없이 등록한 원본의 BDQ 행)는 가르지 못한다 — `docs/TODO.md` 부대공정 ②.
 
 Streamlit 실행 문맥을 쓰지 않는 순수 함수다 — 자동 갱신 배경 스레드도 부른다.
 """
@@ -38,7 +43,7 @@ import calendar
 import json
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol
 
 import pandas as pd
 
@@ -72,6 +77,10 @@ RULE_PRODUCT: Final = "R-03"
 RULE_VALUES: Final = "R-05"
 RULE_DUPLICATE: Final = "R-06"
 RULE_STOP: Final = "R-07"
+# 월 머지 데이터셋의 같은 공정이 한 원본에서 합침 · 다른 원본에서 BDQ 에 생김 — 출처 뺌 줄 까닭.
+MIXED_REASON: Final = "월 머지로 판 · BDQ 행이 섞임 — 걷지 않음"
+# 등록 이음매가 판을 합치지 못한 때(예외)의 메모 낱말 — 판 없이 BDQ 만으로 등록한다.
+MERGE_FAILED_WORD: Final = "합치지 못함"
 # 부대공정 행을 싣는 표 — 공정 칸이 있는 기준정보 표 열하나(계획 · 수율 · Chip · 표시순서는 BDQ
 # 그대로).
 PROCESS_TABLES: Final = (
@@ -112,10 +121,11 @@ _PATH_KEYS: Final = (
 CapacityCheck = Callable[[Mapping[str, pd.DataFrame]], str | None]
 
 
-def _full_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
+def capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
     """세션 없는 전체 기간 계산(`simulation_cache.full_capacity_outcome`). 그 모듈은 캐시 래퍼를
     만들며 Streamlit 을 끌어오므로 부를 때만 import 한다 — 이 모듈을 import 하는 등록 길 · 사내
-    스크립트가 Streamlit 없이 서게(실행 문맥 없는 캐시 경고가 표준 오류에 찍히지 않게)."""
+    스크립트가 Streamlit 없이 서게(실행 문맥 없는 캐시 경고가 표준 오류에 찍히지 않게). 미리보기는
+    한 번 계산해 `process_rows_frame` · `load_lines` 에 함께 넘긴다."""
     from capa_simulation.services.simulation_cache import full_capacity_outcome
 
     return full_capacity_outcome(tables, tables)
@@ -163,6 +173,8 @@ class ExtraMergeReport:
     outcomes: tuple[ProcessOutcome, ...] = ()
     # BDQ 만으로도 R-07 이 멈춰 부대공정을 그대로 둔 때의 까닭(부대공정 탓이 아니다).
     base_stop: str | None = None
+    # 판을 합치지 못해(예외) BDQ 만으로 둔 때의 예외 갈래 이름 — `merge_registration_dataset`.
+    failed: str | None = None
 
     def _with(self, kind: str) -> tuple[ProcessOutcome, ...]:
         return tuple(item for item in self.outcomes if item.outcome == kind)
@@ -183,7 +195,9 @@ class ExtraMergeReport:
         return tuple(item.process for item in self.merged)
 
     def counts_text(self) -> str:
-        """「2 합침 · 1 뺌 · 1 BDQ 에 생김」 — 0 인 갈래는 뺀다."""
+        """「2 합침 · 1 뺌 · 1 BDQ 에 생김」 — 0 인 갈래는 뺀다. 합치지 못했으면 「합치지 못함」."""
+        if self.failed is not None:
+            return MERGE_FAILED_WORD
         parts = [
             f"{len(self.merged)} 합침",
             *([f"{len(self.dropped)} 뺌"] if self.dropped else []),
@@ -202,7 +216,10 @@ class ExtraMergeReport:
         return "" if self.version is None else f"부대공정 {self.counts_text()}"
 
     def detail_lines(self) -> list[str]:
-        """뺀 · BDQ 에 생긴 공정과 까닭 — 알림 전문(Alarm)에 싣는다."""
+        """뺀 · BDQ 에 생긴 공정과 까닭 — 알림 전문(Alarm)에 싣는다. 합치지 못했으면 그 예외
+        갈래(판 없이 BDQ 만으로 등록함)."""
+        if self.failed is not None:
+            return [f"부대공정 판을 {MERGE_FAILED_WORD} — {self.failed} · BDQ 만으로 등록"]
         return [
             f"{item.process} — {item.rule} {item.reason}".rstrip()
             for item in (*self.dropped, *self.graduated)
@@ -217,7 +234,7 @@ class MergeResult:
 
 def capacity_stop(tables: Mapping[str, pd.DataFrame]) -> str | None:
     """대당 Capa → 소요대수 → 확보율까지 돌려 멈추면 그 글(자동 갱신 판정과 같은 길)."""
-    outcome = _full_outcome(tables)
+    outcome = capacity_outcome(tables)
     if outcome.error is not None:
         return outcome.error
     if outcome.required_equipment is None:
@@ -235,8 +252,11 @@ def merge_extra_processes(
     *,
     check: CapacityCheck = capacity_stop,
 ) -> MergeResult:
-    """판을 16표에 펼쳐 합친 표와 보고. 판이 없으면 표를 그대로 돌려준다(사본)."""
-    base = {name: frame.copy() for name, frame in tables.items()}
+    """판을 16표에 펼쳐 합친 표와 보고. 판이 없으면 받은 표 묶음을 그대로 돌려준다(묶음은 새 dict).
+
+    표를 제자리에서 고치지 않는다 — 더한 표는 새로 이어 붙이고(`_appended`) 나머지는 받은 표
+    그대로라 돌려준 묶음은 받은 표와 프레임을 함께 쓴다(얹기 · 미리보기는 걷기가 이미 사본이다)."""
+    base = dict(tables)
     if active is None:
         return MergeResult(base, ExtraMergeReport())
     expander = _Expander(base, active.pack)
@@ -323,11 +343,72 @@ def strip_extra_processes(
     return result
 
 
+class _Provenance(Protocol):
+    """출처 줄의 읽는 칸(`persistence.models.ExtraProcessProvenance`)."""
+
+    @property
+    def process_name(self) -> str: ...
+
+    @property
+    def outcome(self) -> str: ...
+
+    @property
+    def reason(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class PreviousExtras:
+    """바탕 데이터셋의 옛 판 공정 — 걷을 것(합침만)과 판 · BDQ 행이 섞여 걷지 않는 것."""
+
+    stripped: tuple[str, ...] = ()
+    mixed: tuple[str, ...] = ()
+
+
+def split_previous(records: Iterable[_Provenance]) -> PreviousExtras:
+    """출처 줄 → 걷을 공정 · 섞인 공정(이름 차례는 처음 나온 차례). 합침 줄이 있고 같은 공정에 BDQ
+    에 생김 줄이나 섞임 뺌 줄(`MIXED_REASON`)이 있으면 섞임이다(모듈 설명 「옛 판 걷기」)."""
+    merged: dict[str, None] = {}
+    graduated: set[str] = set()
+    mixed: dict[str, None] = {}
+    for record in records:
+        name = record.process_name
+        if record.outcome == OUTCOME_MERGED:
+            merged[name] = None
+        elif record.outcome == OUTCOME_GRADUATED:
+            graduated.add(name)
+        elif record.reason == MIXED_REASON:
+            mixed[name] = None
+    for name in merged:
+        if name in graduated:
+            mixed[name] = None
+    return PreviousExtras(
+        stripped=tuple(name for name in merged if name not in mixed), mixed=tuple(mixed)
+    )
+
+
+def fold_outcomes(outcomes: Collection[str]) -> tuple[str, bool]:
+    """같은 (공정, 판 차례)로 겹친 출처 줄들의 결과 하나와 섞임 여부 — 합침 · BDQ 에 생김이 함께면
+    섞임(뺌 + `MIXED_REASON`), 아니면 합침 → BDQ 에 생김 → 뺌 차례로 남는 것(그 이름의 행이 있는
+    쪽을 남긴다)."""
+    kinds = set(outcomes)
+    if {OUTCOME_MERGED, OUTCOME_GRADUATED} <= kinds:
+        return OUTCOME_DROPPED, True
+    for kind in (OUTCOME_MERGED, OUTCOME_GRADUATED):
+        if kind in kinds:
+            return kind, False
+    return OUTCOME_DROPPED, False
+
+
 def process_rows_frame(
-    tables: Mapping[str, pd.DataFrame], processes: Collection[str]
+    tables: Mapping[str, pd.DataFrame],
+    processes: Collection[str],
+    *,
+    outcome: CapacityOutcome | None = None,
 ) -> pd.DataFrame:
-    """미리보기 시험 계산 — 고른 공정의 월별 소요대수 · 가용대수 · 확보율(멈추면 빈 표)."""
-    outcome = _full_outcome(tables)
+    """미리보기 시험 계산 — 고른 공정의 월별 소요대수 · 가용대수 · 확보율(멈추면 빈 표).
+    `outcome` 은 같은 표로 이미 돌린 전체 기간 계산이다(없으면 여기서 돌린다)."""
+    if outcome is None:
+        outcome = capacity_outcome(tables)
     columns = ["공정", "생산계획년월", "소요대수", "가용대수", "확보율"]
     if outcome.required_equipment is None:
         return pd.DataFrame(columns=columns)
@@ -341,10 +422,15 @@ def process_rows_frame(
 
 
 def load_lines(
-    tables: Mapping[str, pd.DataFrame], processes: Collection[str]
+    tables: Mapping[str, pd.DataFrame],
+    processes: Collection[str],
+    *,
+    outcome: CapacityOutcome | None = None,
 ) -> dict[str, tuple[int, int]]:
-    """공정마다 (부하가 붙은 경로 수, 부하 0 경로 수) — 미리보기 · 입력 점검이 센다(설계 4-4 끝)."""
-    outcome = _full_outcome(tables)
+    """공정마다 (부하가 붙은 경로 수, 부하 0 경로 수) — 미리보기 · 입력 점검이 센다(설계 4-4 끝).
+    `outcome` 은 `process_rows_frame` 과 같다."""
+    if outcome is None:
+        outcome = capacity_outcome(tables)
     counts: dict[str, tuple[int, int]] = {name: (0, 0) for name in processes}
     required = outcome.required_equipment
     if required is None:

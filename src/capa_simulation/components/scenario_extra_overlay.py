@@ -4,16 +4,18 @@
 """「부대공정 얹기」(설계 4-8 · D19 (가) — 파생 저장 길).
 
 다음 BDQ 등록을 기다리지 않고 「저장 리비전 + 활성 판 → 새 시나리오」 를 만든다. 바탕은 고른 **저장
-리비전**이라 미저장 편집이 섞이지 않는다. 바탕 데이터셋의 출처 표가 가리키는 옛 판 공정을 16표에서
-먼저 걷고 활성 판을 합친다(`extra_process_merge.overlay_extra_processes`). 프리셋 포함 공정은 바탕
-프리셋에서 걷은 공정을 빼고 새로 합친 부대공정을 더한다 — 바탕에서 끈 공정이 다시 켜지지 않는다.
-저장은 연도 Shift · 월 머지와 같은 `render_derived_save` 이고(원본 리비전이 「편집 전」 —
-`derived_save_verdict`), 새 데이터셋에 새 판의 출처 줄을 남긴다(D18).
+리비전**이라 미저장 편집이 섞이지 않는다. 바탕 데이터셋의 출처 표가 가리키는 옛 판 공정(합침만 있는
+것 — `extra_process_merge.split_previous`)을 16표에서 먼저 걷고 활성 판을 합친다
+(`overlay_extra_processes`). 월 머지로 판 행과 BDQ 행이 섞인 공정이 있는 바탕은 걷으면 BDQ 행까지
+지우고 두면 옛 판 행이 BDQ 로 셈되므로 얹지 않는다 — 그 공정과 거부 한 줄만 보인다(바탕을 바꾸면
+풀린다). 프리셋 포함 공정은 바탕 프리셋에서 걷은 공정을 빼고 새로 합친 부대공정을 더한다 — 바탕에서
+끈 공정이 다시 켜지지 않는다. 저장은 연도 Shift · 월 머지와 같은 `render_derived_save` 이고(원본
+리비전이 「편집 전」 — `derived_save_verdict`), 새 데이터셋에 새 판의 출처 줄을 남긴다(D18).
 
 합치기는 대당 Capa → 확보율까지 돌리는 등록 점검(R-07)을 품어 몇 초가 걸릴 수 있다. 그래서 (바탕
 리비전, 판 차례)마다 한 번만 돌리고 결과를 세션 메모(`OVERLAY_MEMO_KEY`)에 둔다 — 메모 이름이
-`PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 떠나면 버린다. 활성 판이 없으면 이 작업은 목록에 서지
-않는다(`scenario_management` — 설계 규칙 UI-TXT-08).
+`PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 떠나면 버린다(세션 칸 창구 `OVERLAY_MEMO`). 활성 판이 없으면
+이 작업은 목록에 서지 않는다(`scenario_management` — 설계 규칙 UI-TXT-08).
 """
 
 from __future__ import annotations
@@ -39,16 +41,20 @@ from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_registration import load_active_extra_pack, provenance_records
 from capa_simulation.services.extra_process_merge import (
+    MIXED_REASON,
     OUTCOME_DROPPED,
     OUTCOME_GRADUATED,
     OUTCOME_MERGED,
     ActiveExtraPack,
     MergeResult,
+    PreviousExtras,
     overlay_extra_processes,
     overlay_included_processes,
+    split_previous,
 )
 from capa_simulation.services.scenario_transform import copy_scenario_tables
 from capa_simulation.services.scenario_virtual_products import virtual_product_records
+from capa_simulation.session_slot import SessionSlot
 
 EXTRA_OVERLAY_MODE: Final = "부대공정 얹기"
 # 바탕 리비전을 고르는 상자의 역할(`render_source_selector` 의 `key` — 원본 메모의 칸 이름).
@@ -57,6 +63,7 @@ OVERLAY_OPERATION: Final = "SCENARIO_EXTRA_PROCESS"
 OVERLAY_KEY: Final = "scenario_extra"
 # (DB 경로, 바탕 리비전 id, 판 차례) → 합친 결과 · 걷은 공정. 페이지를 떠나면 버린다.
 OVERLAY_MEMO_KEY: Final = f"scenario_extra_overlay{PAGE_DIALOG_SUFFIX}"
+OVERLAY_MEMO: Final = SessionSlot(OVERLAY_MEMO_KEY, tuple, tuple)
 OUTCOME_LABELS: Final = {
     OUTCOME_MERGED: "합침",
     OUTCOME_DROPPED: "뺌",
@@ -64,11 +71,13 @@ OUTCOME_LABELS: Final = {
 }
 RESULT_TITLE: Final = "부대공정 판 {version} · {counts}"
 STRIPPED_LINE: Final = "걷은 옛 판 공정 {count}개"
+MIXED_LABEL: Final = "섞임"
+MIXED_REFUSAL: Final = "판 · BDQ 행이 섞인 부대공정 {count}개 — 이 바탕에는 얹지 않습니다"
 
 
 def forget_extra_overlay() -> None:
     """메모한 합친 결과를 버린다 — 다른 작업으로 옮길 때."""
-    st.session_state.pop(OVERLAY_MEMO_KEY, None)
+    OVERLAY_MEMO.clear()
 
 
 def render_scenario_extra_overlay(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -94,7 +103,13 @@ def _render(repository: DuckDBScenarioRepository, database_path: str) -> None:
     )
     if source is None:
         return
-    previous = _previous_extra_processes(repository, source)
+    extras = _previous_extra_processes(repository, source)
+    if extras.mixed:
+        # 바탕 상자 바로 아래의 거부 — 바탕을 바꾸면 풀린다(설계 규칙 UI-NTF-03).
+        st.error(MIXED_REFUSAL.format(count=len(extras.mixed)), icon=":material/block:")
+        st.dataframe(_mixed_frame(extras), hide_index=True, width="stretch", placeholder="")
+        return
+    previous = extras.stripped
     with st.spinner("부대공정 판을 얹고 계산을 점검하는 중입니다..."):
         result = _overlay(database_path, source, previous, active)
     report = result.report
@@ -128,11 +143,16 @@ def _render(repository: DuckDBScenarioRepository, database_path: str) -> None:
 
 def _previous_extra_processes(
     repository: DuckDBScenarioRepository, source: ScenarioSnapshot
-) -> tuple[str, ...]:
-    """바탕 데이터셋에 이미 합쳐진 옛 판 공정 — 출처 표가 없는 바탕(구현 전)은 빈 묶음이다."""
-    records = repository.load_scenario_extra_process(source.scenario.scenario_id)
-    return tuple(
-        dict.fromkeys(record.process_name for record in records if record.outcome == OUTCOME_MERGED)
+) -> PreviousExtras:
+    """바탕 데이터셋에 이미 합쳐진 옛 판 공정(걷을 것)과 판 · BDQ 행이 섞인 공정 — 출처 표가 없는
+    바탕(구현 전)은 둘 다 빈 묶음이다."""
+    return split_previous(repository.load_scenario_extra_process(source.scenario.scenario_id))
+
+
+def _mixed_frame(extras: PreviousExtras) -> pd.DataFrame:
+    return pd.DataFrame(
+        [{"공정": name, "결과": MIXED_LABEL, "까닭": MIXED_REASON} for name in extras.mixed],
+        columns=["공정", "결과", "까닭"],
     )
 
 
@@ -143,13 +163,11 @@ def _overlay(
     active: ActiveExtraPack,
 ) -> MergeResult:
     memo_key = (database_path, source.revision.revision_id, active.version.seq)
-    memo = st.session_state.get(OVERLAY_MEMO_KEY)
-    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == memo_key:
-        cached = memo[1]
-        if isinstance(cached, MergeResult):
-            return cached
+    memo = OVERLAY_MEMO.get()
+    if len(memo) == 2 and memo[0] == memo_key and isinstance(memo[1], MergeResult):
+        return memo[1]
     result = overlay_extra_processes(copy_scenario_tables(source.tables), previous, active)
-    st.session_state[OVERLAY_MEMO_KEY] = (memo_key, result)
+    OVERLAY_MEMO.set((memo_key, result))
     return result
 
 
