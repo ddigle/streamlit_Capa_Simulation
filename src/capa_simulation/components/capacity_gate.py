@@ -64,6 +64,8 @@ from capa_simulation.services.load_calculator import calculate_density_load
 from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.revision_input_check import (
+    EXTRA_COLUMNS,
+    ExtraProcessCheck,
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
@@ -82,6 +84,7 @@ from capa_simulation.services.simulation_cache import (
 
 if TYPE_CHECKING:
     from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 # 입력 점검 칸 머리 「전체 기간」 의 달을 모으는 표 — 계산 입력 표 가운데 달 축이 있는 것(계획
 # `RQ_PKG_PLAN` 포함). 묶음이 그 표들 전체 달의 행을 세므로 기간도 그 합친 범위다.
@@ -291,13 +294,85 @@ def input_check_verdict(
             return blocked_input_check(blocked, blank_cs, period=period)
         outcome = full_capacity_outcome(tables, tables)
         stop = _stop_error(outcome, tables)
+        extra = (
+            None if outcome.error is not None else _extra_check(repository, scenario_id, outcome)
+        )
         return build_input_check(
-            outcome, stop if outcome.error is None else None, blank_cs, period=period
+            outcome,
+            stop if outcome.error is None else None,
+            blank_cs,
+            period=period,
+            extra=extra,
         )
 
     return get_revision_input_check(
         (reference_version, pristine_content_token(reference_version)), _compute=compute
     )
+
+
+def _extra_check(
+    repository: DuckDBScenarioRepository, scenario_id: str, outcome: CapacityOutcome
+) -> ExtraProcessCheck | None:
+    """입력 점검 「부대공정」 묶음의 재료(설계 A10) — 그 데이터셋 출처에 부대공정이 없으면 None.
+
+    공정마다 판 번호 · 부하 붙은 · 0 경로 수(`load_lines`) · 따라가는 공정에서 이어받은 대당 Capa
+    결손 줄(R-02 — 판 내용이 있을 때만) · 판 섞임(월 머지)을 같은 계산 결과로 센다."""
+    from capa_simulation.services.extra_process_merge import (
+        OUTCOME_MERGED,
+        inherited_capacity_gaps,
+        load_lines,
+        split_previous,
+    )
+    from capa_simulation.services.extra_process_pack import read_pack_zip
+
+    records = repository.load_scenario_extra_process(scenario_id)
+    if not records:
+        return None
+    merged = tuple(
+        dict.fromkeys(item.process_name for item in records if item.outcome == OUTCOME_MERGED)
+    )
+    by_name: dict[str, set[str]] = {}
+    numbers: dict[str, set[int]] = {}
+    for item in records:
+        by_name.setdefault(item.process_name, set()).add(item.sha256)
+        numbers.setdefault(item.process_name, set()).add(item.version_no)
+    mixed = set(split_previous(records).mixed) | {
+        name for name in merged if len(by_name.get(name, ())) > 1
+    }
+    names = [*merged, *(name for name in sorted(mixed) if name not in merged)]
+    if not names:
+        return None
+    lines = load_lines({}, merged, outcome=outcome)
+    gaps: dict[str, int] = {}
+    for sha in {item.sha256 for item in records if item.outcome == OUTCOME_MERGED}:
+        try:
+            pack = read_pack_zip(repository.load_extra_process_content(sha)).pack
+        except (KeyError, TypeError, ValueError):
+            pack = None
+        if pack is None:
+            continue
+        own = [
+            item.process_name
+            for item in records
+            if item.sha256 == sha and item.outcome == OUTCOME_MERGED
+        ]
+        for name, count in inherited_capacity_gaps(pack, own, outcome=outcome).items():
+            gaps[name] = gaps.get(name, 0) + count
+    frame = pd.DataFrame(
+        [
+            {
+                "공정": name,
+                "판": ", ".join(str(number) for number in sorted(numbers.get(name, ()))),
+                "부하 붙은 경로": lines.get(name, (0, 0))[0],
+                "부하 0 경로": lines.get(name, (0, 0))[1],
+                "이어받은 대당 Capa 결손 줄": gaps.get(name, 0),
+                "판 섞임": int(name in mixed),
+            }
+            for name in names
+        ],
+        columns=list(EXTRA_COLUMNS),
+    )
+    return ExtraProcessCheck(frame)
 
 
 def derived_save_verdict(
