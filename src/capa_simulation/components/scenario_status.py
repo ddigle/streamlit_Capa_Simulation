@@ -465,9 +465,10 @@ def _render_rename_route(*, on_management_page: bool) -> None:
 
     그 페이지에서 연 팝업이면 아무것도 그리지 않는다 — 같은 페이지로 가는 길은 팝업을 닫지 못하고,
     「어디서 고친다」 는 길 안내 글은 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나) — 글 대신 바로
-    가기 단추도 두지 않는다).
+    가기 단추도 두지 않는다). 이름을 바꿀 수 없는 화면 등급(`scenario.list_edit` — 실무자부터)에게도
+    그리지 않는다 — 그 화면의 이름 칸은 값만이다(설계 규칙 UI-INP-07 예외).
     """
-    if on_management_page:
+    if on_management_page or not viewer_can("scenario.list_edit"):
         return
     _render_capa_route(
         "시나리오 관리에서 이름 바꾸기", key=RENAME_ROUTE_KEY, icon=":material/edit:"

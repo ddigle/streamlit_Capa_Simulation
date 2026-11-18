@@ -1354,7 +1354,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 달은 `date.today()` 다. 팝업 머리에 설명 글을 두지 않는다(적용 전 편집 경고만 — 2026-11-04 home-19).
 - `src/capa_simulation/components/scenario_status.py` — 사이드바 조건 패널의 시나리오 줄과 불러오기·새 리비전 저장·
   편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이고, 불러오기
-  구획 끝 단추가 그 화면 Capa 시나리오 탭으로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 서지 않는다).
+  구획 끝 단추가 그 화면 Capa 시나리오 탭으로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면, 그리고 이름을 바꿀 수 없는 화면 등급(`scenario.list_edit` — 실무자부터)이면 서지 않는다).
   - 줄은 세션만 읽고 저장소는 팝업을 연 동안에만 읽는다(팝업 프래그먼트는 `app.py` 의 실행 핀 밖이라
     `pinned_connections` 를 스스로 잡는다). `tests/test_scenario_sidebar.py`·`test_app_navigation.py` 가 고정한다.
   - 배지는 미저장 → 공식 vN → **최신 rN 있음** → 저장된 리비전 차례다(머리 띠 `header_lines` 도 같다, E2E #102). 낡음은

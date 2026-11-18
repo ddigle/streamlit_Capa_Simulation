@@ -66,7 +66,11 @@ from capa_simulation.components.scenario_management_tabs import (
     QUERY_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
-from capa_simulation.components.scenario_status import SAVE_MODE, SCENARIO_DIALOG_MODE_KEY
+from capa_simulation.components.scenario_status import (
+    RENAME_ROUTE_KEY,
+    SAVE_MODE,
+    SCENARIO_DIALOG_MODE_KEY,
+)
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.persistence import repository as repository_module
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -264,6 +268,10 @@ def test_scenario_management_shows_each_grade_its_buttons_and_tabs(
     assert (CLONE_MODE in app.segmented_control(key=MODE_KEY).options) is at_least[grades.EDITOR]
     sides = list(app.segmented_control(key=SIDE_KEY).options)
     assert (SIDE_CHANGES in sides) is at_least[grades.EDITOR], "저장 전 변경 — 실무자부터"
+    renames = [button for button in app.button if button.key == RENAME_ROUTE_KEY]
+    assert bool(renames) is at_least[grades.EDITOR], (
+        "「시나리오 관리에서 이름 바꾸기」 — 실무자부터"
+    )
     dialog_modes = [
         control for control in app.segmented_control if control.key == SCENARIO_DIALOG_MODE_KEY
     ]
