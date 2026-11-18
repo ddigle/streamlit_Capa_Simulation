@@ -230,11 +230,46 @@ def test_the_alert_resolves_when_the_load_falls(monkeypatch: pytest.MonkeyPatch)
     assert note["active"] is False
 
 
-def test_the_alert_is_the_last_registry_line() -> None:
+# ---------------------------------------------------------------- `app.py` 이음
+
+
+APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
+
+
+@pytest.mark.parametrize("possible", [True, False], ids=["start-check", "plain"])
+def test_the_app_records_its_runs_and_raises_the_alert_on_start_check_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, possible: bool
+) -> None:
+    """`app.py` 의 이음 셋 — 맨 앞 `begin_run`, 끝까지 돈 회차 끝 `note_run_end`, 페이지 앞
+    `render_load_alert` — 이 빠지면 여기서 멈춘다. 개발 · 시험(시작 점검 판정 거짓)도 회차를 재고
+    알림 표지는 없다."""
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **_: None)
+    monkeypatch.setattr(container_start_check, "start_check_alert_possible", lambda: possible)
+    monkeypatch.setattr(container_start_check, "developer_alerts_visible", lambda: True)
+    _busy(monkeypatch)
+
+    app = AppTest.from_file(str(APP_PATH), default_timeout=300).run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert load_metrics.response_view().runs >= 1
+    note = active_state(app, container_start_check.LOAD_ALERT_CODE)
+    assert (note is not None) is possible
+    assert len(states(app, container_start_check.LOAD_ALERT_CODE)) == (1 if possible else 0)
+
+
+def test_the_alert_was_added_at_the_end_of_the_registry() -> None:
     """등록부는 끝에만 더한다 — `AD-26` 은 공지 `GL-09` 뒤다(`AD-14` ~ `AD-18` 은 비워 둔 · 걷은
-    번호 그대로)."""
+    번호 그대로). 뒤에 더 붙는 줄이 있어도 차례만 본다."""
     codes = [spec.code for spec in alerts.SPECS]
-    assert codes[-2:] == ["GL-09", "AD-26"]
+    assert codes.index("GL-09") < codes.index("AD-26")
     spec = alerts.spec("AD-26")
     assert (spec.kind, spec.title) == (
         "state",
