@@ -549,10 +549,6 @@ EXTRA_KIND_LABELS: dict[str, str] = {
     EXTRA_KIND_RESUME: "다시 켜기",
     EXTRA_KIND_REVISION: "새 판",
 }
-# 데이터셋 출처 한 줄의 결과(`app_meta.dataset_extra_process.outcome`).
-EXTRA_OUTCOME_MERGED = "MERGED"
-EXTRA_OUTCOME_DROPPED = "DROPPED"
-EXTRA_OUTCOME_GRADUATED = "GRADUATED"
 
 
 @dataclass(frozen=True)
@@ -615,7 +611,10 @@ class ExtraProcessState:
 
 @dataclass(frozen=True)
 class ExtraProcessProvenance:
-    """데이터셋 출처 한 줄 — 어느 판의 어느 공정을 합쳤나 · 뺐나와 그 까닭 · 표별 행 수(JSON)."""
+    """데이터셋 출처 한 줄 — 어느 판의 어느 공정을 합쳤나 · 뺐나와 그 까닭 · 표별 행 수(JSON).
+
+    `outcome` 낱말은 합치기 결과(`services/extra_process_merge.OUTCOME_*`)와 같다.
+    """
 
     process_name: str
     version_seq: int

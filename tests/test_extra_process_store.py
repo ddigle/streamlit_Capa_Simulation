@@ -21,7 +21,6 @@ from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
     EXTRA_KIND_RESUME,
-    EXTRA_OUTCOME_MERGED,
     ExtraProcessProvenance,
     ScenarioCreate,
 )
@@ -129,7 +128,7 @@ def test_provenance_rides_with_the_dataset_and_leaves_with_the_scenario(
         version_seq=1,
         version_no=1,
         sha256="a" * 64,
-        outcome=EXTRA_OUTCOME_MERGED,
+        outcome="MERGED",
         row_counts=json.dumps({"RQ_REQB": 24}),
     )
     seed = build_builtin_seed_dataset()
