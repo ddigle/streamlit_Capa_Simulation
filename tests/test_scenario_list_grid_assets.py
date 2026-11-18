@@ -1336,3 +1336,68 @@ def test_the_check_table_is_as_narrow_as_its_columns() -> None:
     assert re.search(r"\.sgl-chip\.is-check \{[^}]*var\(--emg-level-check\);", OWN_CSS)
     assert re.search(r"\.sgl-chip\.is-error \{[^}]*var\(--emg-level-error\);", OWN_CSS)
     assert "'calc'" in OWN_JS and "checks: [" in OWN_JS
+
+
+_READONLY = (
+    _DOM
+    + """
+const out = {}
+const look = (host) => ({
+  toolsRow: host.querySelectorAll('.sgl-tools').length,
+  tools: host.querySelectorAll('.sgl-tool-slot').length,
+  legend: host.querySelectorAll('.emg-legend').length,
+  grips: host.querySelectorAll('.sgl-grip').length,
+})
+;(async () => {
+  const m = mount({ ...SCENARIOS, readonly: true })
+  out.readonly = look(m.host)
+  key(press(cell(m.host, 'a', 'name')), 'ArrowDown', { altKey: true })
+  await tick(330)
+  out.altMoves = m.sent.filter((entry) => ops(entry).includes('move')).length
+  out.status = m.host.querySelector('.sgl-status').textContent
+  out.rows = rows(m.host)
+  m.rerender({ ...SCENARIOS })
+  out.editable = look(m.host)
+  m.rerender({ ...SCENARIOS, readonly: true })
+  out.back = look(m.host)
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_a_read_only_list_draws_no_move_buttons_or_legend() -> None:
+    """값만 보는 등급(data `readonly` — 2026-11-18 접속 등급)에게는 줄 옮기기 단추 「↑ 위로 · ↓
+    아래로 · ⤒ 맨 위로」 와 「고친 칸 · 막힘」 범례 · 손잡이를 그리지 않는다(설계 규칙 UI-INP-07
+    예외 — E2E 에서 열람에게 섰다). 작업 줄은 빈 줄로 남아 두 표 머리의 윗선을 지킨다. Alt+↑ ↓ 도
+    옮기지 않고 「옮김」 이라 읽지 않는다. 같은 마운트에서 값만이 풀리면 단추가 다시 선다(「이 등급으로
+    보기」 끝)."""
+    out = _node({}, _READONLY, _MOUNT_SOURCE)
+    assert out["readonly"] == {"toolsRow": 1, "tools": 0, "legend": 0, "grips": 0}
+    assert out["altMoves"] == 0 and out["status"] == ""
+    assert out["rows"] == ["a", "b", "c"]
+    assert out["editable"] == {"toolsRow": 1, "tools": 3, "legend": 1, "grips": 3}
+    assert out["back"] == out["readonly"]
+
+
+_DRAWN = (
+    _DOM
+    + """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const m = mount(input.data)
+process.stdout.write(JSON.stringify({
+  tools: m.host.querySelectorAll('.sgl-tool-slot').length,
+  legend: m.host.querySelectorAll('.emg-legend').length,
+  grips: m.host.querySelectorAll('.sgl-grip').length,
+}))
+"""
+)
+
+
+def drawn_list_controls(data: dict[str, Any]) -> dict[str, int]:
+    """시나리오 표 data 하나를 가짜 DOM 에 올려 그린 줄 옮기기 단추 · 범례 · 손잡이 수 — 등급 시험이
+    대역이 받은 data 를 그대로 넣는다(AppTest 는 JS 를 못 돌린다). 오른쪽 칸 머리 맞춤(`side` —
+    문서에서 칸을 찾는다)은 가짜 DOM 에 없어 뺀다."""
+    shown = {name: value for name, value in data.items() if name != "side"}
+    got: dict[str, int] = _node({"data": shown}, _DRAWN, _MOUNT_SOURCE)
+    return got

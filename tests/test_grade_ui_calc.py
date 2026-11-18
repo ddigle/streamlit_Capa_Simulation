@@ -36,6 +36,7 @@ from grade_support import (
     visible_labels,
 )
 from streamlit.testing.v1 import AppTest
+from test_scenario_list_grid_assets import drawn_list_controls
 
 from capa_simulation import page_bootstrap, page_failures
 from capa_simulation.application_bootstrap import ensure_initial_scenario
@@ -366,6 +367,8 @@ def test_a_viewers_list_is_read_only_and_drops_rename_ops(
     _clean(app)
     assert last(calls, grid.TABLE_KEY).get("readonly") is True
     assert last(calls, grid.REVISIONS_KEY).get("readonly") is True, "리비전 이름도 값만"
+    # 단추 · 범례는 표 JS 가 그린다 — 받은 data 를 그대로 가짜 DOM 에 올린다.
+    assert drawn_list_controls(last(calls, grid.TABLE_KEY)) == {"tools": 0, "legend": 0, "grips": 0}
     row_id = last(calls, grid.TABLE_KEY)["rows"][0]["id"]
 
     ListBrowser(app, calls).rename_scenario(row_id, "DEMO 바꾼 이름")
@@ -392,6 +395,8 @@ def test_an_editors_list_takes_rename_ops(
     app = _graded(_page(SCENARIO_PAGE, database, equipment))
     app.run()
     assert "readonly" not in last(calls, grid.TABLE_KEY)
+    drawn = drawn_list_controls(last(calls, grid.TABLE_KEY))
+    assert drawn["tools"] == 3 and drawn["legend"] == 1 and drawn["grips"] > 0
     row_id = last(calls, grid.TABLE_KEY)["rows"][0]["id"]
 
     ListBrowser(app, calls).rename_scenario(row_id, "DEMO 바꾼 이름")

@@ -273,17 +273,29 @@ function emptyHost(S) {
   S.rowNodes = new Map()
 }
 
+// 표 틀을 다시 지을 열쇠 — 자리와 값만 보는 등급(줄 옮기기 단추 · 범례 유무가 다르다). 「이 등급으로 보기」 를 끝내면 같은
+// 마운트에서 값만이 풀린다.
+function builtKey(S) {
+  return S.mode + (readonly(S) ? ':readonly' : '')
+}
+
 function buildTable(S) {
   emptyHost(S)
-  S.built = S.mode
+  S.built = builtKey(S)
   const root = el('div', 'sgl-root sgl-' + S.mode)
+  S.tools = []
+  S.toolsNode = null
   if (S.mode === 'scenarios') {
+    // 작업 줄은 값만 보는 등급에도 빈 줄로 선다 — 오른쪽 칸 머리와 두 표 머리의 윗선을 맞추는 자리다(`alignHead`). 줄 옮기기
+    // 단추는 고치는 등급에만 둔다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
     const tools = el('div', 'sgl-tools')
-    S.tools = [
-      toolButton(S, '↑ 위로', -1, '연 줄을 한 칸 위로 옮깁니다', '맨 위 줄입니다'),
-      toolButton(S, '↓ 아래로', 1, '연 줄을 한 칸 아래로 옮깁니다', '맨 아래 줄입니다'),
-      toolButton(S, '⤒ 맨 위로', null, '연 줄을 맨 위로 옮깁니다', '맨 위 줄입니다'),
-    ]
+    if (!readonly(S)) {
+      S.tools = [
+        toolButton(S, '↑ 위로', -1, '연 줄을 한 칸 위로 옮깁니다', '맨 위 줄입니다'),
+        toolButton(S, '↓ 아래로', 1, '연 줄을 한 칸 아래로 옮깁니다', '맨 아래 줄입니다'),
+        toolButton(S, '⤒ 맨 위로', null, '연 줄을 맨 위로 옮깁니다', '맨 위 줄입니다'),
+      ]
+    }
     for (const tool of S.tools) tools.appendChild(tool.slot)
     root.appendChild(tools)
     S.toolsNode = tools
@@ -327,17 +339,20 @@ function buildTable(S) {
     // 키보드 조작은 표지 하나와 그 풍선이다 — 표 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02).
     const keys = el('span', 'emg-muted emg-keys', '⌨ 키보드 조작')
     keys.title = KEYS_HELP
-    const legend = el('span', 'emg-legend')
-    for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '막힘']]) {
-      const item = el('span')
-      item.appendChild(el('span', 'emg-swatch ' + kind))
-      item.appendChild(el('span', null, label))
-      legend.appendChild(item)
-    }
     foot.appendChild(keys)
     S.noteNode = el('span', 'sgl-note', S.note)
     foot.appendChild(S.noteNode)
-    foot.appendChild(legend)
+    // 「고친 칸 · 막힘」 은 고친 이름 칸의 뜻이라 고치는 등급에만 둔다.
+    if (!readonly(S)) {
+      const legend = el('span', 'emg-legend')
+      for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '막힘']]) {
+        const item = el('span')
+        item.appendChild(el('span', 'emg-swatch ' + kind))
+        item.appendChild(el('span', null, label))
+        legend.appendChild(item)
+      }
+      foot.appendChild(legend)
+    }
     root.appendChild(foot)
   }
   S.status = el('div', 'sgl-status')
@@ -450,7 +465,7 @@ function releaseHead(S) {
 }
 
 function paintTable(S) {
-  if (S.built !== S.mode) buildTable(S)
+  if (S.built !== builtKey(S)) buildTable(S)
   const keyboard = S.wantFocus
   const hadFocus = keyboard || activeInside(S)
   const rows = viewRows(S)
@@ -752,6 +767,7 @@ function queueMove(S, id, before) {
 }
 
 function moveRow(S, id, step) {
+  if (readonly(S)) return
   const order = viewRows(S).map((row) => row.id)
   const before = beforeForStep(order, id, step)
   if (before === undefined) return
