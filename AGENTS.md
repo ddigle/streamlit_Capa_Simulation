@@ -7576,7 +7576,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     적용이 수율 편집표보다 먼저 rerun 해 수율의 적용하지 않은 편집이 목록에서 사라졌다. 설비 편집본도 같다 —
     `ensure_equipment_drafts` 가 남의 저장으로 머리(변경 칩 · 화면 탭 점)가 센 편집을 버리면 `HEAD_STALE_KEY` 를 달고, 편집본을
     세우는 세 화면(가용설비 현황 · Space 현황 · 필요 단축 일정 — 호기 없음 `st.stop()` 앞에서도)이 모든 위젯을 그린 뒤
-    `rerun_if_head_stale()` 로 한 번 다시 돈다(다시 얹은 편집이 남아 표시가 그대로면 돌지 않는다). 그 회차의 곁 거부 — Space
+    `rerun_if_head_stale()` 로 한 번 다시 돈다(다시 얹은 편집이 남아 표시가 그대로면 돌지 않는다). 고정한 일정 리비전을 남의
+    저장 탓에 지금 공통 대장과 합칠 수 없어 세션을 옮기며(`resolve_equipment_session` → `_move_after_incompatible`) 편집을 버린
+    회차도 같다 — 버린 뒤의 편집본은 처음 세우는 것이라 견줄 앞 토큰이 없어, 세션이 `head_dropped` 로 알리고 세 화면이
+    `ensure_equipment_drafts(…, head_dropped=…)` 로 넘긴다. 옮겼다는 사건 알림 `SB-14` 는 편집본을 세운 뒤 사이드바 줄이 담으므로
+    담은 바로 뒤 `resend_on_head_rerun` 이 다시 보낼 목록에 더한다. 편집본을 세우지 않는 화면(공정 Capa 상세 · 제약
+    시뮬레이션 · 시나리오 관리)의 이동은 다시 돌지 않는다(다음 조작에 탭 점이 꺼진다). 그 회차의 곁 거부 — Space
     「배치 저장」(`SAVE_ERROR_KEY`)은 `hold_until_head_rerun`, 설비 마스터 「리비전 저장」 은 `carry_until_head_rerun`(결과 칸이
     아닌 `SAVE_RESULT_CARRIED_KEY` 로 — 다시 도는 회차가 그리기 전에 온 둘째 누름이 덮지 않게, 구획은
     `render_flash(carried, result)`) — 은 비켜 두었다가 다시 도는 회차가 한 번 그리고 한 번 보낸다. 버림 사건 알림 `EQ-05` 는

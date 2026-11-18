@@ -719,7 +719,10 @@ with notices:
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
 if not using_sample_equipment and latest_snapshot is not None:
-    buffer_frames = ensure_equipment_drafts(latest_snapshot)
+    # 세션 이동이 앱 머리가 센 편집을 버렸으면 그것도 넘긴다(그 회차에 한 번 다시 돈다).
+    buffer_frames = ensure_equipment_drafts(
+        latest_snapshot, head_dropped=equipment_session.head_dropped
+    )
     # 이 화면에는 설비 마스터 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
     # 회차가 정상 제출까지 막는다.
     pop_drafts_replaced()

@@ -244,7 +244,8 @@ with notices:
     render_legacy_trace_warning(equipment_session)
 
 # 저장본 사본과 미저장 편집본을 한 곳에서 세운다 — Space 현황이 먼저 세웠어도 같은 토큰이다.
-ensure_equipment_drafts(latest_snapshot)
+# 세션 이동이 앱 머리가 센 편집을 버렸으면 그것도 넘긴다(그 회차에 한 번 다시 돈다).
+ensure_equipment_drafts(latest_snapshot, head_dropped=equipment_session.head_dropped)
 # 배치 편집 권한(Space 와 한 판정 — 찍힌 역할은 편집본을 세운 뒤에 읽는다).
 layout_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
 drafts_replaced = pop_drafts_replaced()

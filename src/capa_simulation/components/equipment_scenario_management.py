@@ -61,6 +61,7 @@ from capa_simulation.components.equipment_data_workspace import (
     common_revision_words,
     equipment_write_token,
     has_unsaved_equipment_edits,
+    resend_on_head_rerun,
     revision_count_line,
     schedule_revision_title,
 )
@@ -846,6 +847,9 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
             cause="고른 설비 일정이 지금 공통 대장과 합쳐지지 않음",
             tab=tab,
         )
+        # 그 이동이 앱 머리가 센 편집을 버려 이 회차가 한 번 다시 돌면 다시 도는 회차가 같은 id 로
+        # 한 번 더 보낸다 — 다시 돌기 전 회차의 표지는 브라우저가 훑기 전에 덮일 수 있다.
+        resend_on_head_rerun("SB-14")
     alerts.state(
         "SB-20",
         scope=session.scenario_id or "",
