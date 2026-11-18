@@ -1,5 +1,5 @@
-# Purpose: 부대공정 판 이력 · 판 내용 · 데이터셋 출처(마이그레이션 0037) 저장과 끄기 · 다시 켜기를
-# 본다.
+# Purpose: 부대공정 판 이력 · 판 내용 · 데이터셋 출처(마이그레이션 0037)와 S3 Drive 쓰기 기록(0038)
+# 저장, 끄기 · 다시 켜기 · 새 판 · 기준 ETag 를 본다.
 
 """부대공정 판 저장소(`repository.*_extra_process*` · `persistence/extra_process_store.py`).
 
@@ -21,6 +21,11 @@ from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
     EXTRA_KIND_RESUME,
+    EXTRA_KIND_REVISION,
+    EXTRA_REVISION_PLACE,
+    EXTRA_WRITE_FAILED,
+    EXTRA_WRITE_KEPT,
+    EXTRA_WRITE_WRITTEN,
     ExtraProcessProvenance,
     ScenarioCreate,
 )
@@ -153,3 +158,113 @@ def test_provenance_rides_with_the_dataset_and_leaves_with_the_scenario(
     assert repository.load_dataset_extra_process(dataset_id) == ()
     # 판 이력은 시나리오 삭제와 상관없이 남는다.
     assert repository.load_extra_process_state().last_seq == 1
+
+
+def _revise(repository: DuckDBScenarioRepository, data: bytes, *, expected_seq: int) -> None:
+    reading = read_pack_zip(data)
+    assert reading.pack is not None
+    repository.revise_extra_process(
+        data,
+        sha256=reading.sha256,
+        version_no=reading.pack.info.version_no,
+        expected_seq=expected_seq,
+        applied_by="개발자 A",
+        process_count=len(reading.pack.processes),
+        row_counts=json.dumps(reading.pack.row_counts()),
+        base_scenario_ref="scenario-1",
+        base_revision_ref="revision-2",
+    )
+
+
+def test_a_revision_version_points_at_its_base_and_needs_a_larger_number(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    _apply(repository, zip_files(template_files()), expected_seq=0)
+    with pytest.raises(ValueError, match="커야 합니다"):
+        _revise(repository, zip_files(template_files()), expected_seq=1)
+
+    _revise(repository, zip_files(bump_version(template_files(), 2)), expected_seq=1)
+
+    active = repository.load_extra_process_state().active
+    assert active is not None and active.kind == EXTRA_KIND_REVISION
+    assert active.version_no == 2 and active.source_place == EXTRA_REVISION_PLACE
+    assert (active.base_scenario_ref, active.base_revision_ref) == ("scenario-1", "revision-2")
+    assert active.kind_label == "새 판"
+
+
+def test_s3_writes_are_appended_and_pick_the_baseline_etag(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    one = zip_files(template_files())
+    reading = read_pack_zip(one)
+    assert reading.pack is not None
+    repository.apply_extra_process(
+        one,
+        sha256=reading.sha256,
+        version_no=1,
+        expected_seq=0,
+        applied_by=None,
+        process_count=2,
+        row_counts="{}",
+        source_place="S3 Drive",
+        s3_etag='"etag-1"',
+    )
+    assert repository.load_extra_process_state().baseline == ('"etag-1"', 1)
+
+    _revise(repository, zip_files(bump_version(template_files(), 2)), expected_seq=1)
+    # 「새 판으로」 가 아직 쓰지 못한 동안은 앞 판 파일의 ETag 를 잇는다.
+    state = repository.load_extra_process_state()
+    assert state.baseline == ('"etag-1"', 1)
+
+    state = repository.record_extra_process_write(
+        version_seq=2, result=EXTRA_WRITE_KEPT, written_by="개발자 A", seen_etag='"사람"'
+    )
+    state = repository.record_extra_process_write(
+        version_seq=2, result=EXTRA_WRITE_FAILED, written_by=None, stage="PUT", reason="닿지 못함"
+    )
+    assert state.baseline == ('"etag-1"', 1)
+    last = state.last_write(2)
+    assert last is not None and last.result == EXTRA_WRITE_FAILED and last.result_label == "실패"
+
+    state = repository.record_extra_process_write(
+        version_seq=2, result=EXTRA_WRITE_WRITTEN, written_by=None, etag='"etag-2"'
+    )
+    assert state.baseline == ('"etag-2"', 2)
+    assert [item.result for item in state.writes] == [
+        EXTRA_WRITE_KEPT,
+        EXTRA_WRITE_FAILED,
+        EXTRA_WRITE_WRITTEN,
+    ]
+    # 판 이력 줄은 고치지 않았다(넣기만).
+    assert state.active is not None and state.active.s3_write_result is None
+
+
+def test_a_write_needs_a_content_version_and_matching_fields(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    with pytest.raises(ValueError, match="판 이력에 없습니다"):
+        repository.record_extra_process_write(
+            version_seq=1, result=EXTRA_WRITE_WRITTEN, written_by=None, etag='"x"'
+        )
+    _apply(repository, zip_files(template_files()), expected_seq=0)
+    with pytest.raises(ValueError, match="ETag"):
+        repository.record_extra_process_write(
+            version_seq=1, result=EXTRA_WRITE_WRITTEN, written_by=None
+        )
+    with pytest.raises(ValueError, match="단계"):
+        repository.record_extra_process_write(
+            version_seq=1, result=EXTRA_WRITE_FAILED, written_by=None
+        )
+    assert repository.load_extra_process_state().writes == ()
+
+
+def test_resume_from_an_imported_file_keeps_its_etag(repository: DuckDBScenarioRepository) -> None:
+    _apply(repository, zip_files(template_files()), expected_seq=0)
+    repository.turn_off_extra_process(expected_seq=1, applied_by=None)
+
+    state = repository.resume_extra_process(
+        expected_seq=2, applied_by=None, s3_key="extra_process/current.zip", s3_etag='"etag-r"'
+    )
+
+    assert state.active is not None and state.active.kind == EXTRA_KIND_RESUME
+    assert state.baseline == ('"etag-r"', 3)

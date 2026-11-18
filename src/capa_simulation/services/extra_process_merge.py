@@ -79,6 +79,8 @@ RULE_DUPLICATE: Final = "R-06"
 RULE_STOP: Final = "R-07"
 # 월 머지 데이터셋의 같은 공정이 한 원본에서 합침 · 다른 원본에서 BDQ 에 생김 — 출처 뺌 줄 까닭.
 MIXED_REASON: Final = "월 머지로 판 · BDQ 행이 섞임 — 걷지 않음"
+# 연도 Shift 가 출처 줄 메모에 다는 머리(「연도 Shift +1년」) — 달이 판과 어긋난 데이터셋을 가른다.
+YEAR_SHIFT_NOTE: Final = "연도 Shift"
 # 등록 이음매가 판을 합치지 못한 때(예외)의 메모 낱말 — 판 없이 BDQ 만으로 등록한다.
 MERGE_FAILED_WORD: Final = "합치지 못함"
 # 부대공정 행을 싣는 표 — 공정 칸이 있는 기준정보 표 열하나(계획 · 수율 · Chip · 표시순서는 BDQ

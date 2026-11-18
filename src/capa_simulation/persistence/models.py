@@ -543,6 +543,8 @@ EXTRA_KIND_APPLY = "APPLY"
 EXTRA_KIND_OFF = "OFF"
 EXTRA_KIND_RESUME = "RESUME"
 EXTRA_KIND_REVISION = "REVISION"
+# 「새 판」 줄의 원천 자리(판 이력 `source_place`) — 파일이 아니라 저장 리비전에서 왔다.
+EXTRA_REVISION_PLACE = "리비전"
 EXTRA_KIND_LABELS: dict[str, str] = {
     EXTRA_KIND_APPLY: "적용",
     EXTRA_KIND_OFF: "끄기",
@@ -577,11 +579,71 @@ class ExtraProcessVersion:
         return EXTRA_KIND_LABELS.get(self.kind, self.kind)
 
 
+# 부대공정 판을 S3 Drive 파일로 다시 쓴 결과(마이그레이션 0038 —
+# `app_meta.extra_process_s3_write.result`). 「씀」 은 덮어 쓴 것(PUT 이 돌려준 ETag 가 있다),
+# 「덮지 않음」 은 쓰기 직전 HEAD 의 ETag 가 기준과 달라(적용하지 않은 사람 파일) 쓰지 않은 것,
+# 「실패」 는 HEAD · PUT 이 실패한 것이다.
+EXTRA_WRITE_WRITTEN = "WRITTEN"
+EXTRA_WRITE_KEPT = "KEPT"
+EXTRA_WRITE_FAILED = "FAILED"
+EXTRA_WRITE_LABELS: dict[str, str] = {
+    EXTRA_WRITE_WRITTEN: "앱이 덮음",
+    EXTRA_WRITE_KEPT: "덮지 않음",
+    EXTRA_WRITE_FAILED: "실패",
+}
+
+
+@dataclass(frozen=True)
+class ExtraProcessS3Write:
+    """S3 Drive 파일 쓰기 한 번(넣기만). `version_seq` 는 쓴 판의 이력 차례다."""
+
+    seq: int
+    version_seq: int
+    result: str
+    created_at: datetime
+    etag: str | None = None
+    seen_etag: str | None = None
+    stage: str | None = None
+    reason: str | None = None
+    written_by: str | None = None
+
+    @property
+    def result_label(self) -> str:
+        return EXTRA_WRITE_LABELS.get(self.result, self.result)
+
+
 @dataclass(frozen=True)
 class ExtraProcessState:
-    """판 이력 전체(오래된 차례). 마지막 줄이 지금 상태다."""
+    """판 이력 전체(오래된 차례)와 S3 Drive 쓰기 기록. 판 이력의 마지막 줄이 지금 상태다."""
 
     history: tuple[ExtraProcessVersion, ...] = ()
+    writes: tuple[ExtraProcessS3Write, ...] = ()
+
+    def last_write(self, version_seq: int) -> ExtraProcessS3Write | None:
+        """그 판의 마지막 S3 쓰기 기록 — 없으면 None."""
+        found = [item for item in self.writes if item.version_seq == version_seq]
+        return found[-1] if found else None
+
+    @property
+    def baseline(self) -> tuple[str | None, int | None]:
+        """S3 쓰기의 기준 ETag 와 그 ETag 를 가진 판 차례 — (None, None) 이면 기준이 없다.
+
+        앱이 적용했거나(가져와 적용 · 가져와 다시 켬 — 판 이력 줄의 ETag) 앱이 쓴(쓰기 기록 「씀」)
+        마지막 파일의 ETag 다. 「새 판으로」 가 아직 쓰지 못한 동안은 앞 판의 것을 잇는다 — S3 에는
+        아직 그 파일이 있다. 쓰기는 늘 그때의 활성 판에 하므로 차례는 (판 차례, 판 줄 → 그 판의
+        쓰기 줄)이다. 가져와 검사만 한 파일 · 거절된 파일의 ETag 는 기준이 되지 않는다.
+        """
+        events: list[tuple[tuple[int, int, int], str, int]] = []
+        for item in self.history:
+            if item.s3_etag and item.kind != EXTRA_KIND_OFF:
+                events.append(((item.seq, 0, 0), item.s3_etag, item.seq))
+        for write in self.writes:
+            if write.result == EXTRA_WRITE_WRITTEN and write.etag:
+                events.append(((write.version_seq, 1, write.seq), write.etag, write.version_seq))
+        if not events:
+            return None, None
+        _, etag, owner = max(events, key=lambda event: event[0])
+        return etag, owner
 
     @property
     def last_seq(self) -> int:
