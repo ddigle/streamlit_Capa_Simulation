@@ -75,7 +75,11 @@ from capa_simulation.persistence.repository import (
     OfficialReleaseMoved,
 )
 from capa_simulation.scenario_preset_state import full_data_scenario_preset
-from capa_simulation.scenario_registration import registration_note, save_bigdataquery_scenario
+from capa_simulation.scenario_registration import (
+    load_active_extra_pack,
+    registration_note,
+    save_bigdataquery_scenario,
+)
 from capa_simulation.services.auto_official_update import (
     CATALOG_WINDOW_DAYS,
     EXCLUSION_AUTO,
@@ -109,7 +113,7 @@ from capa_simulation.services.auto_official_update import (
     week_label,
 )
 from capa_simulation.services.bigdataquery_catalog_view import registration_prefill
-from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
+from capa_simulation.services.core_data_pipeline import fetch_registration_dataset
 from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.securement_rate import calculate_securement_rate
@@ -315,6 +319,10 @@ class _RunLog:
         # 등록이 CS 가 빈 행을 빼고 저장했으면 그 수(`BlankCsDrop.memo`). 어느 결과로 끝나든 사유의
         # 발행 줄 쪽 끝에 붙인다 — 소요대수 밖 수요 경고(`split_published_reason`)와 섞지 않는다.
         self.blank_cs_memo = ""
+        # 등록이 합친 부대공정 판의 조각(「부대공정 판 n · 합침 k · 뺌 m」 —
+        # `ExtraMergeReport.memo`). 판이 없으면 빈 글이다. CS 빈 행 조각처럼 사유의 발행 줄 쪽 끝과
+        # 리비전 2 · 공식버전 메모에 붙인다.
+        self.extra_memo = ""
         # 등록 때 돌려 본 대당 Capa 가 멈췄으면 푸는 길(`RegistrationCapacityCheck.fix_hint` — 화면
         # 등록의 경고 띠와 같은 글). 지정까지 가지 못하고 끝나면 어느 갈래든 사유 끝(등록한
         # 시나리오를 남겼다는 글 앞)에 한 번 붙인다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
@@ -332,9 +340,10 @@ class _RunLog:
         self._repository.update_auto_official_update_run(self.run_id, values)
 
     def finish(self, status: RunStatus, reason: str, **values: object) -> None:
-        if self.blank_cs_memo:
+        tail = " · ".join(part for part in (self.blank_cs_memo, self.extra_memo) if part)
+        if tail:
             head, warning = split_published_reason(reason)
-            head = f"{head.rstrip().rstrip('.')} · {self.blank_cs_memo}"
+            head = f"{head.rstrip().rstrip('.')} · {tail}"
             reason = f"{head}{_WARNING_SEPARATOR}{warning}" if warning else head
         if status != STATUS_PUBLISHED and self.fix_hint and self.fix_hint not in reason:
             reason = f"{reason.rstrip().rstrip('.')}. {self.fix_hint}"
@@ -437,9 +446,16 @@ def _execute(
             window=detail_window,
         )
     )
-    prepared = fetch_core_data_dataset(
-        provider, candidate.simulation_code, repository.load_global_display_order().rules
+    # 부대공정은 DB 에 적용된 활성 판만 합친다 — 스레드는 S3 를 읽지 않는다(설계 3-4). 그날 BDQ 와
+    # 맞물리지 않는 부대공정만 빠지고 나머지는 그대로 등록 · 공식 지정한다(설계 D10 — 합치기
+    # R-02 · R-03 · R-07 이 공정마다 가른다).
+    registration_data = fetch_registration_dataset(
+        provider,
+        candidate.simulation_code,
+        repository.load_global_display_order().rules,
+        load_active_extra_pack(repository),
     )
+    prepared = registration_data.prepared
     previous_preset = repository.load_revision_preset(baseline.revision_id)
     registration = save_bigdataquery_scenario(
         repository,
@@ -455,6 +471,7 @@ def _execute(
         scenario_name=prefill.scenario_name,
         revision_name=prefill.revision_name,
         note=registration_note(f"자동 갱신 등록 · {prefill.note}", detail_window),
+        extra=registration_data.extra,
     )
     base = registration.snapshot
     log.note(
@@ -464,6 +481,7 @@ def _execute(
     )
     log.registered_name = base.scenario.scenario_name
     log.blank_cs_memo = prepared.blank_cs.memo()
+    log.extra_memo = registration_data.extra.memo()
     if registration.capacity.stopped:
         log.fix_hint = registration.capacity.fix_hint(base.revision.revision_no)
         log.fixed_at_source = registration.capacity.fixed_at_source
@@ -507,7 +525,7 @@ def _execute(
     log.note(auto_off_count=len(auto_off), inherited_off_count=len(inherited))
     # 공식버전이 되는 리비전 2 와 발행 메모에도 CS 빈 행 조각을 잇는다 — 공식버전 목록·리비전 2 만
     # 보는 사람도 원천 일부를 뺀 판인 줄 알게. 실행 기록 사유에는 `finish` 가 따로 붙인다.
-    saved_note = " · ".join(part for part in (memo, log.blank_cs_memo) if part)
+    saved_note = " · ".join(part for part in (memo, log.blank_cs_memo, log.extra_memo) if part)
     # 확보율이 있어 판정할 수 있는 포함 공정. `RQ_REQB` 에만 있고 확보율 행이 없는 공정은 B/N 에
     # 나오지 않으므로, 그것만 남으면 B/N 이 빈 공식버전이 된다.
     judged_included = [process for process in included if process in minimums]

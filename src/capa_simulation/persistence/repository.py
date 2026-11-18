@@ -32,6 +32,7 @@ from capa_simulation.persistence import (
     auto_official_update_store,
     display_order_store,
     execution_capacity_store,
+    extra_process_store,
     home_profile_store,
     key_process_store,
     past_data_store,
@@ -58,10 +59,15 @@ from capa_simulation.persistence.display_order_store import (
 )
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode, apply_migrations
 from capa_simulation.persistence.models import (
+    EXTRA_KIND_APPLY,
+    EXTRA_KIND_OFF,
+    EXTRA_KIND_RESUME,
     AutoOfficialUpdateExclusion,
     AutoOfficialUpdateRun,
     AutoOfficialUpdateSettingChange,
     AutoOfficialUpdateSettings,
+    ExtraProcessProvenance,
+    ExtraProcessState,
     GlobalAdvanceLoad,
     GlobalAdvanceShipment,
     GlobalComparisonScenario,
@@ -1328,7 +1334,14 @@ class DuckDBScenarioRepository:
         revision_name: str = "초기 리비전",
         note: str | None = None,
         virtual_products: Sequence[Mapping[str, str]] = (),
+        extra_process: Sequence[ExtraProcessProvenance] = (),
     ) -> ScenarioSnapshot:
+        """새 시나리오 · 데이터셋 · 리비전 1 을 한 트랜잭션으로 저장한다.
+
+        `extra_process` 는 이 데이터셋에 합친 부대공정 판의 출처 줄이다(설계 D18 — 데이터셋 단위).
+        새 데이터셋을 만드는 넷(BDQ 등록 · 복제 · 파생 저장 · 부대공정 얹기)이 넘긴다 — 같은
+        시나리오의 다음 리비전은 데이터셋이 같아 저절로 따라간다.
+        """
         require_tables(reference_tables, tuple(REFERENCE_TABLES), "기준정보")
         revision_source = dict(reference_tables)
         if revision_tables is not None:
@@ -1426,6 +1439,7 @@ class DuckDBScenarioRepository:
                     frame=reference_tables[logical_name],
                     logical_name=logical_name,
                 )
+            extra_process_store.insert_provenance(connection, dataset_id, extra_process)
             self._insert_revision(
                 connection,
                 revision_id=revision_id,
@@ -1453,6 +1467,150 @@ class DuckDBScenarioRepository:
             )
 
         return self.load_revision(revision_id)
+
+    def load_extra_process_state(self) -> ExtraProcessState:
+        """부대공정 판 이력 전체(오래된 차례) — 마지막 줄이 지금 상태다."""
+        with self._connect() as connection:
+            return extra_process_store.load_state(connection)
+
+    def load_extra_process_content(self, sha256: str) -> bytes:
+        """판 내용(적용한 양식 ZIP 바이트). 없으면 `KeyError`."""
+        with self._connect() as connection:
+            return extra_process_store.load_content(connection, sha256)
+
+    def load_dataset_extra_process(self, dataset_id: str) -> tuple[ExtraProcessProvenance, ...]:
+        """데이터셋 하나에 합친 부대공정 판의 출처 줄. 부대공정이 없는 데이터셋은 빈 묶음이다."""
+        with self._connect() as connection:
+            return extra_process_store.load_provenance(connection, dataset_id)
+
+    def load_scenario_extra_process(self, scenario_id: str) -> tuple[ExtraProcessProvenance, ...]:
+        """시나리오 데이터셋의 부대공정 출처 줄 — 새 데이터셋을 만드는 복제 · 파생 저장이 잇는다."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT dataset_id FROM app_meta.dataset WHERE scenario_id = ?", [scenario_id]
+            ).fetchone()
+            if row is None:
+                return ()
+            return extra_process_store.load_provenance(connection, str(row[0]))
+
+    @grades.gated("admin.area")
+    def apply_extra_process(
+        self,
+        pack_bytes: bytes,
+        *,
+        sha256: str,
+        version_no: int,
+        expected_seq: int,
+        applied_by: str | None,
+        process_count: int,
+        row_counts: str,
+        source_place: str,
+        s3_key: str | None = None,
+        s3_etag: str | None = None,
+        s3_last_modified: datetime | None = None,
+    ) -> ExtraProcessState:
+        """검사를 지난 판을 적용해 활성 판으로 둔다(append-only).
+
+        판 번호는 적용한 가장 큰 판보다 커야 한다 — 트랜잭션 안에서 한 번 더 본다(가져오기 판정
+        `extra_process_pack.judge_pack` 이 먼저 거른다). `expected_seq` 는 화면이 본 마지막 줄의
+        차례다(`ExtraProcessMoved`).
+        """
+        return self._append_extra_process(
+            kind=EXTRA_KIND_APPLY,
+            expected_seq=expected_seq,
+            applied_by=applied_by,
+            pack_bytes=pack_bytes,
+            sha256=sha256,
+            version_no=version_no,
+            process_count=process_count,
+            row_counts=row_counts,
+            source_place=source_place,
+            s3_key=s3_key,
+            s3_etag=s3_etag,
+            s3_last_modified=s3_last_modified,
+        )
+
+    @grades.gated("admin.area")
+    def turn_off_extra_process(
+        self, *, expected_seq: int, applied_by: str | None
+    ) -> ExtraProcessState:
+        """「끄기」 — 빈 줄을 넣어 활성 판을 비운다. 이미 꺼졌으면 거절한다."""
+        return self._append_extra_process(
+            kind=EXTRA_KIND_OFF, expected_seq=expected_seq, applied_by=applied_by
+        )
+
+    @grades.gated("admin.area")
+    def resume_extra_process(
+        self, *, expected_seq: int, applied_by: str | None
+    ) -> ExtraProcessState:
+        """「다시 켜기」 — 끈 동안 마지막 내용 판(P)을 파일 없이 다시 활성으로 넣는다."""
+        return self._append_extra_process(
+            kind=EXTRA_KIND_RESUME, expected_seq=expected_seq, applied_by=applied_by
+        )
+
+    def _append_extra_process(
+        self,
+        *,
+        kind: str,
+        expected_seq: int,
+        applied_by: str | None,
+        pack_bytes: bytes | None = None,
+        sha256: str | None = None,
+        version_no: int | None = None,
+        process_count: int | None = None,
+        row_counts: str | None = None,
+        source_place: str | None = None,
+        s3_key: str | None = None,
+        s3_etag: str | None = None,
+        s3_last_modified: datetime | None = None,
+    ) -> ExtraProcessState:
+        author = (applied_by or "").strip() or None
+        try:
+            with self._write_transaction() as connection:
+                state = extra_process_store.load_state(connection)
+                latest = state.latest_content
+                if kind == EXTRA_KIND_OFF:
+                    if state.active is None:
+                        raise ValueError("부대공정 판이 이미 꺼져 있습니다.")
+                elif kind == EXTRA_KIND_RESUME:
+                    if not state.off or latest is None:
+                        raise ValueError("다시 켤 부대공정 판이 없습니다 — 꺼진 동안만 됩니다.")
+                    version_no, sha256 = latest.version_no, latest.sha256
+                    process_count, row_counts = latest.process_count, latest.row_counts
+                    source_place = latest.source_place
+                elif latest is not None and version_no is not None:
+                    if version_no <= (latest.version_no or 0):
+                        raise ValueError(
+                            f"부대공정 판 번호({version_no})가 적용한 가장 큰 판"
+                            f"({latest.version_no})보다 커야 합니다."
+                        )
+                seq = extra_process_store.append_version(
+                    connection,
+                    expected_seq=expected_seq,
+                    kind=kind,
+                    version_no=version_no,
+                    sha256=sha256,
+                    pack_bytes=pack_bytes,
+                    applied_by=author,
+                    process_count=process_count,
+                    row_counts=row_counts,
+                    source_place=source_place,
+                    s3_key=s3_key,
+                    s3_etag=s3_etag,
+                    s3_last_modified=s3_last_modified,
+                )
+        except Exception:
+            audit_recorder.record(
+                "admin_extra_process", out="fail", claimed=author, det={"kind": kind}
+            )
+            raise
+        # 감사 줄에는 갈래 · 판 번호 · 공정 수만 — 공정 이름 · 생산성 값은 싣지 않는다.
+        audit_recorder.record(
+            "admin_extra_process",
+            claimed=author,
+            det={"kind": kind, "entry": seq, "version": version_no, "processes": process_count},
+        )
+        return self.load_extra_process_state()
 
     def load_source_data(self, scenario_id: str) -> pd.DataFrame:
         with self._connect() as connection:

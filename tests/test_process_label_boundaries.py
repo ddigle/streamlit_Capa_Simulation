@@ -191,6 +191,10 @@ def test_display_order_and_equipment_paths_never_see_display_names() -> None:
         "src/capa_simulation/components/shortening_source.py",
         "src/capa_simulation/components/reference_csv_tools.py",
         "src/capa_simulation/components/display_order_management.py",
+        # 부대공정 양식 — 입력 · 판 저장 · 양식 다시 쓰기는 원본 공정명만 받는다(설계 5장 끝 줄).
+        "src/capa_simulation/services/extra_process_pack.py",
+        "src/capa_simulation/services/extra_process_merge.py",
+        "src/capa_simulation/persistence/extra_process_store.py",
     ]
     offenders = [
         path

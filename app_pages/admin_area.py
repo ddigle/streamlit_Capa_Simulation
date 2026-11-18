@@ -1,5 +1,5 @@
-# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록·공지 탭, 위의 서버 점검·BDQ 자동
-# 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
+# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·부대공정·접속 기록·공지 탭, 위의 서버 점검·
+# BDQ 자동 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
+from capa_simulation.components.extra_process_admin import render_extra_process_admin
 from capa_simulation.components.module_status import render_module_status
 from capa_simulation.components.notice_admin import render_notice_admin
 from capa_simulation.components.object_sync_status import render_object_sync_status
@@ -57,7 +58,8 @@ from capa_simulation.settings import DUCKDB_PATH
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
 # (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
-# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다. 맨 끝 「공지」 는 늘 서는
+# 「부대공정」 은 늘 서는 입력 탭이고 쓰는 단추는 C-DEP 의 개발자에게만 열린다. 다음 「접속 · 작업
+# 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다. 맨 끝 「공지」 는 늘 서는
 # 입력 탭이다(2026-11-17 공지 보드 답 decided 2 — DB 를 쓰지 않는다).
 TAB_NAMES = ADMIN_AREA_TABS
 LOG_TAB = ADMIN_AREA_LOG_TAB
@@ -117,7 +119,7 @@ with tabs_box:
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]
     opened_tabs = stateful_tabs(tab_labels, key=TABS_KEY)
-process_rename_tab, display_order_tab, source_quality_tab = opened_tabs[:3]
+process_rename_tab, display_order_tab, source_quality_tab, extra_process_tab = opened_tabs[:4]
 
 if shows_log:
     log_tab = opened_tabs[len(TAB_NAMES)]
@@ -139,7 +141,9 @@ except BOOTSTRAP_ERRORS as exc:
     # 마크는 DB 를 쓰는 탭 가운데 열린 탭 안에만 선다(같은 글의 알림은 한 번 — 기록 탭이
     # 열린 회차에는 서지 않고, DB 탭을 여는 회차에 선다).
     for database_tab, label in zip(
-        (process_rename_tab, display_order_tab, source_quality_tab), TAB_NAMES, strict=True
+        (process_rename_tab, display_order_tab, source_quality_tab, extra_process_tab),
+        TAB_NAMES,
+        strict=True,
     ):
         if tab_is_hidden(database_tab):
             continue
@@ -181,9 +185,9 @@ with display_order_tab:
         repository, alert_tab=open_tab_name(display_order_tab, TAB_NAMES[1])
     )
 with source_quality_tab:
-    # 위젯 없는 읽기 전용 표라 닫혀 있으면 건너뛴다. 원천 읽기는 캐시가 없고 다른 두 탭은 캐시만
-    # 읽어서, 이 탭이 Admin 회차의 유일한 DB 읽기다 — 닫힌 탭이 회차마다 DuckDB 인스턴스를 열고
-    # 닫게 하지 않는다.
+    # 위젯 없는 읽기 전용 표라 닫혀 있으면 건너뛴다. 원천 읽기는 캐시가 없고 앞 두 탭은 캐시만
+    # 읽어서, 이 탭과 「부대공정」 의 판 이력 한 번이 Admin 회차의 DB 읽기다 — 닫힌 탭이 회차마다
+    # 원천을 읽게 하지 않는다.
     if not tab_is_hidden(source_quality_tab):
         # 원천이 없는 시나리오(복제본 등)가 정상이다. 그때 화면을 멈추지 않는다.
         scenario_id = active_persisted_scenario_id()
@@ -202,3 +206,8 @@ with source_quality_tab:
                 )
             else:
                 render_source_quality(source_profile, source_rows)
+with extra_process_tab:
+    # 판 이력 · 상태 줄 · 양식 내려받기 · 끄기 / 다시 켜기 · 받은 판의 미리보기. 위젯이 든 탭이라
+    # 닫혀 있어도 그린다(위젯 값을 버리지 않게) — 닫힌 회차의 DB 읽기는 판 이력 한 번이고, 상태 알림
+    # (`EP-03` · `EP-04`) · 이력 표는 열린 회차에만, 시험 계산은 단추를 누른 회차에만 돈다.
+    render_extra_process_admin(repository, alert_tab=open_tab_name(extra_process_tab, TAB_NAMES[3]))

@@ -1968,6 +1968,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   토큰 알림의 걷은 번호 `AD-17`(자동 갱신 멈춤 · 실패) · `AD-18`(갱신 토큰 80일)은 다시 쓰지 않는다 — 자동 로그인 멈춤은 새 번호 `AD-23`,
   서지 못함은 `AD-24` 다.
   시험 `tests/test_bdq_token_admin.py`.
+- `src/capa_simulation/components/extra_process_admin.py` — Admin Area 넷째 탭 「부대공정」(설계 A7 1단계). 상태 줄 값 한 줄(판 번호 ·
+  공정 수 · 적용 시각, 끈 동안 「꺼짐 · 마지막 판 n」, 원천을 봤으면 「<자리> <낱말>(hh:mm 에 봄)」) · 가져오기(원천이 꽂혔을 때만) ·
+  양식 내려받기(마지막 내용 판 — 끈 동안에도, 없으면 빈 양식) · 끄기 / 다시 켜기(같은 자리) · 받은 판의 거절 표 또는 미리보기
+  (「시험 계산」 을 누른 회차에만 돌고 (sha, content_token)마다 세션에 둔다) · 적용 · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의
+  상태 알림 `EP-03` · `EP-04`. 쓰는
+  단추는 `write_lock_reason`(C-DEP 판정 + `sso_identity.viewer_is_developer`)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
+  회차에도 다시 판정하며 쓰기는 본문(콜백 아님) · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
+  `tests/test_extra_process_admin.py`.
+- `src/capa_simulation/components/extra_process_notice.py` — 부대공정 판을 합친 결과 알림 한 꼴. 짧은 글은 「부대공정 2 합침」 ·
+  「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만(`popup_only`). 조건이 남는
+  동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
+  최신 공식버전 데이터셋의 출처 표로 판정한다 — 자동 갱신(화면 없음)이 뺀 것도 잡는다.
+- `src/capa_simulation/components/scenario_extra_overlay.py` — 시나리오 관리 작업 「부대공정 얹기」(D19 — 파생 저장 길). 활성 판이
+  있을 때만 작업 줄에 선다. 바탕 저장 리비전의 데이터셋 출처가 가리키는 옛 판 공정을 걷고 활성 판을 합친 결과 표를 보이고
+  `render_derived_save` 로 저장한다(원천 종류 `SCENARIO_EXTRA_PROCESS`, 포함 공정 = 바탕 프리셋 − 걷은 공정 + 새로 합친 부대공정 —
+  바탕에서 꺼 둔 옛 부대공정은 꺼진 채,
+  새 판 출처). 합친 결과는 (DB, 바탕 리비전, 판 차례)마다 세션 메모 한 벌(`PAGE_DIALOG_SUFFIX`)이다.
 - `src/capa_simulation/components/bdq_login_admin.py` — Admin Area 「BDQ 자동 로그인」 펼침(`BDQ_LOGIN_LABEL` — 「서버 시작 점검」 표 줄과
   같은 이름, 2026-11-16 결정 D1 · D2 · D5 · D7). 동기화 모드 `managed` + 쓸 수 있는 키(`bdq_login_store.availability` — 앱은 기동 때 키를 쥐고
   환경에서 빼므로 환경을 넘기지 않는다)인 서버의 개발자(`sso_identity.viewer_is_developer` — 「토큰 넣기」 와 같은 문지기) 회차에만 「서버 시작 점검」
@@ -2073,6 +2090,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
     화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
+  - 부대공정(BDQ 밖 공정 — 2026-11-13 · 11-14 보드 답으로 정한 설계 1단계)은 `load_active_extra_pack` 이 DB 의 활성 판을 판 내용
+    표에서 다시 읽어(S3 를 읽지 않는다) 등록 이음매(`core_data_pipeline.fetch_registration_dataset`)에 넘기고,
+    `save_bigdataquery_scenario(extra=…)` 가 리비전 메모 조각(「부대공정 판 n · k 합침 · m 뺌」)과 데이터셋 출처 줄
+    (`provenance_records` → `create_scenario(extra_process=…)`)을 남긴다. 판이 없거나 꺼졌으면 전과 같다.
+- `src/capa_simulation/extra_process_intake.py` — 부대공정 판 들이기의 화면 밖 몸통(세션 없음). 가져오기 원천은 **꽂는 자리 하나**
+  (`ExtraProcessSource` · `install_source`)이고 1단계는 꽂지 않는다 — S3 Drive 원천(설계 A6)은 사내 확인 부대 5(DRM) · 6(같은 버킷)의
+  답 뒤에 `fetch()` 하나로 붙인다(그 전에는 Admin 「부대공정」 의 가져오기 단추가 서지 않는다). 받은 파일 판정(`stage_pack` — 접수
+  검증 + 판 번호 판정, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산(`preview_pack` — 지금 시나리오 표에 이미 든
+  부대공정을 걷고 합쳐 본다, 저장 안 함) · C-DEP 판정(`production_place` — 동기화 `managed` + 기동 때 읽은 S3 접속 정보).
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
   - 조회·시계·발행 뒤 정리는 주입받는다. 위험하면 발행하지 않고(`PUBLISH_SKIPPED` — 계산 실패·판정 가능 공정 0·발행 검사
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
@@ -2525,6 +2551,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수
     있다 — `scripts/validate_duckdb_persistence.py` 는 같은 보정을 건 뒤 견준다.
 - `src/capa_simulation/services/core_data_pipeline.py` — CSV·BigDataQuery 결과를 같은 정규화·RQ 변환 길로 잇는다.
+  - 등록 이음매 `fetch_registration_dataset` · `merge_registration_dataset` — 조회 · 변환(② 기준 정보 표) 뒤, 프리셋 · 저장(③) 앞에서
+    DB 의 활성 부대공정 판을 16표에 합친다(원천 `source_data` · 원천 해시는 그대로). 화면 DB 등록과 공식버전 자동 갱신이 함께
+    부른다 — 프리셋(전 공정)이 부대공정을 저절로 넣는다. 내장 시드 부트스트랩은 이 길을 지나지 않는다.
+- `src/capa_simulation/services/extra_process_pack.py` — 부대공정 양식(ZIP 하나 · CSV 여섯 장 `00_info` ~ `05_rate_vital`, 머리 칸은
+  Core_Data 칸 이름 그대로)의 읽기 · 접수 검증 V-01 ~ V-14 · 판 번호 판정 · 양식 다시 쓰기 · 판 견주기(Streamlit 없음).
+  - 폴더 이름은 무시하고 파일 이름으로 찾고, UTF-8(BOM 허용)이 안 되면 CP949 로 한 번 더 읽는다. 글자 칸은 앞뒤 공백 ·
+    `="..."` 가드를 벗기고 제품정보는 원천과 같은 `core_data_derivation.normalize_product_names` 를 지난다. V-01(파일 · 인코딩 ·
+    머리 칸 · 칸 수)이 어긋나면 뒤 검사를 하지 않는다. 측정률 빈칸 · 0 은 거절하지 않고 1.0 으로 센 칸 수만 센다(D23 (나) —
+    0 은 0 그대로 싣고 계산이 1.0 으로 읽는다). `WF 구분` 은 대소문자를 무시해 덮임 · 겹침을 본다. RUN_DAY 는 `달력` 또는 정수다
+    (계약 `integer` — 설계 V-11 을 좁힘).
+  - 판 번호 판정 `judge_pack` — 활성 판과 sha 같음 = 바뀐 것 없음, 끈 동안 마지막 판과 sha 같음 = 다시 켜기, 판 번호 > 적용한
+    가장 큰 판 = 적용, 그 밖 = 뒤로 감(거절). 판을 가르는 값은 받은 본문 sha256 이다.
+  - `pack_to_zip` 은 같은 판을 늘 같은 바이트로 쓴다(고정 시각 · 글자 칸 가드). `pack_changes` 는 바뀐 칸 수와 그 가운데 활성
+    판의 바로 앞 판 값으로 되돌리는 칸 수(G12)를 센다.
+- `src/capa_simulation/services/extra_process_merge.py` — 부대공정 판을 BDQ 16표에 펼쳐 합친다(R-01 ~ R-07 — 6장 「부대공정」).
+  덧붙이는 행은 BDQ 표와 같은 칸 · 차례 · 형식이다(저장의 칸 집합 대조). 옛 판 걷기(`strip_extra_processes` — 이름으로, 사람이
+  더한 STEP 까지) · 얹기(`overlay_extra_processes` · `overlay_included_processes`) · 미리보기 시험 계산(`process_rows_frame` ·
+  `load_lines`) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄)를 둔다. 순수 함수라 자동 갱신 스레드도 부른다.
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
@@ -5417,6 +5461,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   SQL과 버전 대조(`SecurementThresholdConflict`). 미저장일 때의 기본값은 Repository 가 정한다.
 - `src/capa_simulation/persistence/auto_official_update_store.py` — 공식버전 자동 갱신(`0035`)의 설정(버전 대조)·변경
   기록·실행 기록·자동 off 기록 SQL. `run_key` 유일이 회차 선점이고, 소유 컬럼이 없어 시나리오를 지워도 남는다.
+- `src/capa_simulation/persistence/extra_process_store.py` — 부대공정 판(`0037`)의 판 내용(sha256 키 · ZIP 바이트 한 벌) · 판 이력
+  (넣기만 — 마지막 줄이 지금 상태, 화면이 본 마지막 차례와 대조 `ExtraProcessMoved`) · 데이터셋 출처(같은 (공정, 판 차례)는 앞
+  줄만) SQL. 판 이력 · 내용 표는 소유 칸이 없어 시나리오를 지워도 남고, 출처 표는 `dataset_id` 소유라 함께 지워진다.
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
@@ -5749,6 +5796,11 @@ RQ_MODULE
 때 14개를 데이터셋에 한 번 더 적던 사본은 2026-10-06 사용자 결정(B3)으로 없앴다 — 그 전에 만든
 데이터셋의 사본은 리비전 1 과 행 단위로 같으면 마이그레이션 `0033` 이 지우고(2026-10-10 사용자 승인),
 리비전 1 과 다른 사본만 남는다. 남은 사본을 읽는 코드는 없다(`docs/data_model.md`).
+
+**부대공정 판은 같은 표에 행으로 든다.** BDQ 에 없는 공정은 양식 ZIP(`services/extra_process_pack.py`)으로 받아 등록
+이음매에서 `RQ_REQB` · `RQ_UPEH` · 측정률 둘 · `RQ_RUN_RATE` · `RQ_VITAL` · `RQ_RUN_DAY` · `RQ_EQP_*` 셋 · `RQ_MODULE` 에 BDQ 와 같은 칸 ·
+형식으로 덧붙인다(6장 「부대공정」). 원천(`raw_data`)과 계획 · 수율 · Chip 표는 그대로라 부대공정은 계획에 이미 있는 제품에만
+걸린다. 모듈수는 데이터셋 표라 앱에서 고치지 않는다 — 판을 고쳐 다시 얹는다.
 
 나머지 테이블을 웹에서 수정할 필요가 생기면 단순히 session state에 별도 복사하지 말고 활성
 시나리오의 editable table 계약과 저장 정책을 함께 변경한다.
@@ -6210,6 +6262,20 @@ RQ_MODULE
       동기화 스레드. 사람 몫 자동 쓰기(HOME 비교 리비전 메우기 · 주요 Case 빈 칸 · 필요 단축 기본값)는 `viewer_can` 이 참일 때만 쓴다.
     - **되돌림.** 앞 ZIP 은 등급 파일을 모르고 건드리지 않는다 — 되돌린 동안은 등급이 없어 개발자 말고 모두 옛 「일반」(런북 4-2), 다시 오면
       등급이 그대로 돌아온다(시험 `tests/fixtures/access_list_v1.py` 견본).
+
+42. **부대공정 판의 정본은 DB 에 적용된 판이고 이력은 넣기만 한다**(시뮬레이션 `0037`, 2026-11-13 · 11-14 보드 답 D3 · D16 · D18 ·
+    D22). 불변조건:
+    - **판 이력은 append-only 이고 마지막 줄이 지금 상태다** — 적용 · 끄기(빈 줄) · 다시 켜기(마지막 내용 판을 파일 없이). 판 번호는
+      적용한 가장 큰 판보다 커야 하고(뒤로 가면 거절), 같은 sha 를 다시 가져오면 「바뀐 것 없음」 으로 아무것도 쓰지 않는다. 쓰기는 화면이
+      본 마지막 차례와 대조한다. 판 내용은 sha256 하나에 한 벌이다 — S3 의 옛 판 사본을 두지 않는다(이력은 DB 에만).
+    - **등록 · 자동 갱신 · 얹기는 DB 의 활성 판만 읽는다** — 스레드도 화면도 S3 를 읽지 않는다(자동 갱신 결과가 그날의 S3 상태에 따라
+      조용히 바뀌지 않게). 판을 바꿔도 이미 저장된 리비전 · 발행한 공식버전은 그대로다(append-only).
+    - **합치기는 프리셋을 만들기 전이다** — 등록 점검(R-07)도 그 안에서 돈다. 프리셋 뒤에서 빼면 `validate_preset_processes` 가 막는다.
+    - **출처는 데이터셋 단위다**(`app_meta.dataset_extra_process`) — 새 데이터셋을 만드는 넷(BDQ 등록 · 복제 · 파생 저장(연도 Shift 는
+      이동량 메모, 월 머지는 두 원본 모두) · 부대공정 얹기)만 넘기고 같은 시나리오의 다음 리비전(사이드바 저장 · 자동 갱신 r2)은 저절로
+      따라간다. 얹기의 옛 판 걷기가 이 표에 기댄다.
+    - **쓰는 곳은 C-DEP 의 개발자 하나다** — 꺼진 곳(사내 PC · WebIDE · 사외 `app.py`)에는 입력 길이 없고(D16 (다)) 쓰는 단추가 모두
+      잠긴다. 판 이력 쓰기는 저장소 `admin.area` 벽 뒤다.
 
 ## 6. 핵심 계산 규칙
 
@@ -6864,6 +6930,33 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   0으로 표기」). 화면 요약 셋째 칸 「개조 달 최저 여유」 는 여유 % 가 값이고 확보율이 캡션이다.
 - 대수 모델이라 호기·Qual·다른 비가동과의 겹침을 모른다. 설비 DB 비가동에 이미 든 개조를 다시 넣으면 두 번 빠진다(화면 한 줄).
   저장하지 않고, 제약 영향 모드와 함께 쓰지 않는다.
+
+### 부대공정(BDQ 밖) 합치기
+
+BDQ(Core_Data)에 공정 이름조차 없는 공정을 판 한 벌로 받아 등록 이음매에서 기준정보 표에 펼친다(설계 4-3 · 4-4,
+`services/extra_process_merge.py`). 계산 서비스(부하량 → 대당 Capa → 소요대수 → 확보율)는 고치지 않는다 — 공정이 부하를 받는
+길은 `RQ_REQB` 줄뿐이라 「경로를 계획 변형에서 펼치는 것」 이 곧 계획과 잇는 것이다. 공정마다 **전부 아니면 전무**다(01 의 줄 차례).
+
+- **R-01 졸업** — 같은 이름(대소문자 무시)이 BDQ 표에 있으면 건너뛴다(BDQ 가 이긴다 — 막지 않으면 `RQ_EQP_AVBL` 이 합산돼 가용이
+  두 배가 되거나 키 중복으로 멈춘다).
+- **R-02 참조 공정** — 따라가기 꼴은 참조 공정이 이번 `RQ_REQB` 에 있고 소요기준이 같아야 한다. 참조 경로를 (월 · 양산구분 ·
+  제품 · Stack · Capa Code · Customer · CS · WF 구분)으로 고유하게 접어 이어받는다(참조 공정의 STEP 이 여럿이어도 한 번). PKG 의
+  Buffer 밖 줄도 함께 와서 셈에 들지 않는다 — 그 수를 보고에 싣는다.
+- **R-03 제품** — 지정 꼴은 (제품정보, Stack)이 계획에 있어야 하고, CHIP · WF 는 WF 구분이 그 제품의 `RQ_CHIP_QTY` 에, PKG 는 그
+  제품의 `RQ_REQB` 에 소요기준 PKG · `WF 구분` Buffer(대소문자 무시) 줄이 하나라도 있어야 한다(2026-11-18 사용자 답 Q6 「경로 표」 —
+  기존 PKG 공정이 실제로 세는 줄). WF 구분은 데이터 쪽 글자로 맞춘다. 모든 줄이 0 행이면 공정을 빼고, 일부만이면 합치고 수를 알린다.
+- **R-04 월** — 기간을 이번 `RQ_PKG_PLAN` 의 월로 자른다(프리셋 기간이 넓어지지 않게).
+- **R-05 값 표** — 펼친 경로마다 03(제품 행 또는 공통 행) · 04 · 05 에서 값을 찾는다. `RQ_UPEH` 는 12칸이고 `소요기준` 을 01 에서
+  반드시 채운다(연결 키 — 비면 계산 전체가 멈춘다). `달력` = 그 달 날수, 빈 대여 = 0, 가용 = 보유 − 대여, 측정률 빈칸 = 1.0(0 은 0).
+  하나라도 없으면 공정을 뺀다.
+- **R-06 덧붙임** — 표마다 업무 키 중복을 한 번 더 본다(같은 경로를 두 번 적으면 그 공정을 뺀다).
+- **R-07 안전망** — 합친 표로 대당 Capa → 소요대수 → 확보율까지 돌린다. 멈추면 BDQ 만으로 돌려, BDQ 만으로도 멈추면 부대공정 탓이
+  아니라 그대로 두고(보고 `base_stop`), BDQ 만으로는 서면 01 의 줄 차례로 한 공정씩 더해 **멈추게 한 공정만** 뺀다(G10 — 둘이
+  함께여야 멈추면 뒤에 더한 쪽). 끝난 표는 늘 선다.
+
+자동 갱신은 같은 함수를 지나 그날 BDQ 와 맞물리지 않는 부대공정만 빠진 채 등록 · 공식 지정한다(D10). 부대공정의 실행 관리
+화면(공정 Capa 상세 ②~⑤ · 필요 단축 · 제약 · 가용설비 · Space)은 설비 DB 에 같은 이름의 부대설비 호기 · Cut-off 를 넣어야 이어진다
+(D8 — 기존 공정과 같은 구조).
 
 ### 계산 기간과 멈춤
 

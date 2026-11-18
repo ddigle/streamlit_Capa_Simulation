@@ -128,6 +128,12 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "_render_restore",
         "restore_schedule_revision",
     ): VERSION_CHECK,
+    # 부대공정 판 이력은 넣기만 하고, 화면이 본 마지막 차례와 대조해 겹친 둘째 누름 · 남의 먼저
+    # 쓰기를 쓰지 않는다(`extra_process_store.ExtraProcessMoved`).
+    (f"{_PARTS}/extra_process_admin.py", "_apply", "apply_extra_process"): VERSION_CHECK,
+    (f"{_PARTS}/extra_process_admin.py", "_apply", "resume_extra_process"): VERSION_CHECK,
+    (f"{_PARTS}/extra_process_admin.py", "_render_toggle", "resume_extra_process"): VERSION_CHECK,
+    (f"{_PARTS}/extra_process_admin.py", "_render_toggle", "turn_off_extra_process"): VERSION_CHECK,
     (
         f"{_PARTS}/equipment_scenario_management.py",
         "_render_branch",

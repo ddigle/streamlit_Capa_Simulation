@@ -304,6 +304,23 @@ def _route_match_keys(core: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return keys
 
 
+def normalize_product_names(values: pd.Series) -> pd.Series:
+    """제품정보 업무 키를 원천 등록과 같은 꼴로 맞춘다 — `*_` 를 먼저, 그다음 `_` 를 띄어쓰기로
+    바꾸고 연속 공백을 하나로 줄인 뒤 앞뒤 공백을 뗀다.
+
+    행마다 따로 바뀌는 정규화라 원천(`derive_q_core_data`)과 부대공정 양식
+    (`extra_process_pack`)이 같은 함수를 지난다 — 사람이 적은 제품 칸이 계획 줄의 글자와 맞아야
+    경로가 계획에 붙는다.
+    """
+    return (
+        values.astype("string")
+        .str.replace("*_", " ", regex=False)
+        .str.replace("_", " ", regex=False)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
+
+
 def derive_q_core_data(
     source: pd.DataFrame,
     contract: CoreDataContract | None = None,
@@ -328,13 +345,7 @@ def derive_q_core_data(
     # BigDataQuery can represent blanks in product names with underscores. Keep
     # the typed raw snapshot unchanged, but normalize the RQ business key before
     # any table is derived so every downstream join receives the same value.
-    core["제품정보"] = (
-        core["제품정보"]
-        .str.replace("*_", " ", regex=False)
-        .str.replace("_", " ", regex=False)
-        .str.replace(r"\s+", " ", regex=True)
-        .str.strip()
-    )
+    core["제품정보"] = normalize_product_names(core["제품정보"])
     # 공정은 효율·편중률·모듈수·일수·설비대수 표의 유일한 글자 키다.
     # 계산(`unit_capacity._join_reference`)은 앞뒤 공백을 떼고 붙이는데 표는 원래 글자로
     # 접으므로(`validated_distinct`), `P1`·`P1 ` 이 두 행으로 저장되면 계산이 같은 키 두 행으로 보고

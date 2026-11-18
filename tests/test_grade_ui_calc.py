@@ -790,7 +790,7 @@ def test_a_viewers_db_register_save_never_reaches_the_shared_account_query(
         fetched.append(args)
         raise RuntimeError("시험 — 사내 DB 상세 조회에 닿았다")
 
-    monkeypatch.setattr(registration, "fetch_core_data_dataset", _fetch)
+    monkeypatch.setattr(registration, "fetch_registration_dataset", _fetch)
     monkeypatch.setattr(
         registration, "load_global_display_order", lambda _path: SimpleNamespace(rules=())
     )

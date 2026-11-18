@@ -128,6 +128,7 @@ SOURCE_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("DUCKDB_SCENARIO_CLONE", "복제"),
     ("SCENARIO_YEAR_SHIFT", "연도 이동"),
     ("SCENARIO_MONTH_MERGE", "월 병합"),
+    ("SCENARIO_EXTRA_PROCESS", "부대공정 얹기"),
 )
 # 계획 줄 — `RQ_PKG_PLAN` 업무 키에서 Pack Code 를 뺀 것. 부하량이 이 단위로 접힌다.
 PLAN_LINE_KEYS: Final[tuple[str, ...]] = (

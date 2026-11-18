@@ -178,6 +178,7 @@ import streamlit as st
 
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+from capa_simulation.persistence.models import ExtraProcessState
 from capa_simulation.services.bigdataquery_catalog_view import normalize_catalog
 
 WINDOW = QueryWindow(start_date=date(2026, 9, 1), end_date=date(2026, 9, 8))
@@ -212,7 +213,10 @@ if st.session_state.get("__rerun__"):
     st.session_state["__rerun__"] = False
     st.rerun()
 
-repository = SimpleNamespace(list_scenarios=lambda: [])
+# 부대공정 판이 없는 저장소 — 등록 폼의 「부대공정 판 n」 칩을 세우지 않는다.
+repository = SimpleNamespace(
+    list_scenarios=lambda: [], load_extra_process_state=lambda: ExtraProcessState()
+)
 if not st.session_state.get("__skip__"):
     # 건너뛴 회차는 다른 화면을 다녀온 것이다 — 그 회차에 등록 폼이 그려지지 않는다.
     registration.render_bigdataquery_registration(repository, "demo.duckdb")
@@ -1438,6 +1442,7 @@ import streamlit as st
 import capa_simulation.settings as settings
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+from capa_simulation.persistence.models import ExtraProcessState
 
 REPORT = __REPORT__
 if REPORT is not None:
@@ -1470,7 +1475,11 @@ saved = sys.modules.get("bigdataquery")
 sys.modules["bigdataquery"] = None
 try:
     registration.render_bigdataquery_registration(
-        SimpleNamespace(list_scenarios=lambda **_kwargs: []), "demo.duckdb"
+        SimpleNamespace(
+            list_scenarios=lambda **_kwargs: [],
+            load_extra_process_state=lambda: ExtraProcessState(),
+        ),
+        "demo.duckdb",
     )
     registration._run_catalog_query(
         QueryWindow(start_date=date(2026, 9, 21), end_date=date(2026, 10, 21))
