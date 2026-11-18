@@ -105,6 +105,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_manual_downtime,
     load_manual_downtime_saves,
 )
+from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.manual_downtime import (
     MANUAL_DOWNTIME_MAX_UNITS,
     ManualDowntime,
@@ -211,14 +212,15 @@ MANUAL_REVERT_HIDDEN_HELP: Final = (
     " 지금 표에 보이지 않는 {hidden}칸(조회기간 밖 · 표에 없는 공정)도 함께 버립니다."
 )
 # 남의 저장이 초안을 버린 회차의 곁 경고 · 알림창 글(설계 규칙 UI-STA-05 — 겹친 저장은 말없이 덮지
-# 않는다, 버리는 것도 말없이 하지 않는다). `{hidden}` 은 `MANUAL_HIDDEN_NOTE` 이거나 빈 글이다.
+# 않는다, 버리는 것도 말없이 하지 않는다). `{hidden}` 은 `MANUAL_HIDDEN_NOTE` 이거나 빈 글이고, 조사
+# `{particle}` 은 괄호 메모가 아니라 그 앞 「n개」 의 끝소리로 고른다(`dropped_text`).
 MANUAL_DROPPED_MESSAGE: Final = (
-    "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 {count}개{hidden}를 버렸습니다 — 최신 "
-    "저장본을 다시 그렸습니다."
+    "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 {count}개{hidden}{particle} 버렸습니다 "
+    "— 최신 저장본을 다시 그렸습니다."
 )
 # 저장을 누른 회차가 남의 저장에 진 거부 글 끝에 붙이는 버린 칸 수(위와 같은 꼴 — 거부 글이 「다른
 # 사용자가 먼저 … 저장해」 를 이미 말한다).
-MANUAL_REFUSED_DROPPED_TAIL: Final = " 저장하지 않은 칸 {count}개{hidden}를 버렸습니다."
+MANUAL_REFUSED_DROPPED_TAIL: Final = " 저장하지 않은 칸 {count}개{hidden}{particle} 버렸습니다."
 MANUAL_NO_CELLS_HELP: Final = (
     "설비 마스터를 저장하면 그 공정이 행으로 서고, 열은 사이드바 조회기간의 달입니다."
 )
@@ -254,10 +256,13 @@ def _hidden_count(draft: Mapping[Cell, object], visible: frozenset[Cell]) -> int
 
 def dropped_text(template: str, draft: Mapping[Cell, object], visible: frozenset[Cell]) -> str:
     """버린 초안 칸 수 글(`MANUAL_DROPPED_MESSAGE` · `MANUAL_REFUSED_DROPPED_TAIL`) — 보이지 않는
-    칸이 섞였으면 그 수를 칸 수 바로 뒤에 붙인다."""
+    칸이 섞였으면 그 수를 칸 수 바로 뒤에 붙인다. 조사는 괄호 메모를 건너 「n개」 에 붙는다."""
     hidden = _hidden_count(draft, visible)
+    count = len(draft)
     return template.format(
-        count=len(draft), hidden=MANUAL_HIDDEN_NOTE.format(hidden=hidden) if hidden else ""
+        count=count,
+        hidden=MANUAL_HIDDEN_NOTE.format(hidden=hidden) if hidden else "",
+        particle=object_particle(f"{count}개"),
     )
 
 

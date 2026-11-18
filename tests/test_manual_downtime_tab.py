@@ -46,6 +46,7 @@ from capa_simulation.components.manual_downtime_tab import (
     MANUAL_SAVED_BY_KEY,
     MANUAL_UNCHANGED_MESSAGE,
     _folded,
+    dropped_text,
     edited_cells,
     manual_editor_frame,
     manual_editor_key,
@@ -650,7 +651,7 @@ def test_another_sessions_save_drops_the_draft_and_says_so(tmp_path: Path) -> No
     mine = _leave_and_return(mine)
     assert _draft(mine) == {}
     warnings = [item.value for item in mine.warning]
-    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="", particle="를") in warnings, warnings
     assert manual_editor_key(1) in _editor_id(mine)
     assert _editor_values(mine)["202607"][row_a] == pytest.approx(9.0)
     assert mine.session_state[MANUAL_BASE_VERSION_KEY] == 1
@@ -767,7 +768,7 @@ def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_co
     tables.run()
     assert not app.exception
     warnings = [item.value for item in app.warning]
-    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="", particle="를") in warnings, warnings
     assert _draft(app) == {}
     assert manual_editor_key(1) in _editor_id(app)
     assert _editor_values(app)["202607"][row_a] == pytest.approx(9.0)
@@ -802,7 +803,7 @@ def test_the_run_that_drops_the_draft_clears_the_dot_and_chip_count_in_the_same_
     assert not app.exception
     assert _draft(app) == {}
     assert app.session_state["count_before_page"] == 0
-    dropped = MANUAL_DROPPED_MESSAGE.format(count=1, hidden="")
+    dropped = MANUAL_DROPPED_MESSAGE.format(count=1, hidden="", particle="를")
     warnings = [item.value for item in app.warning]
     assert warnings.count(dropped) == 1, warnings
 
@@ -838,12 +839,33 @@ def test_a_refused_save_says_how_many_typed_cells_it_dropped_including_hidden_on
     mine = _save(mine)
 
     errors = [str(item.value) for item in mine.error]
-    tail = MANUAL_REFUSED_DROPPED_TAIL.format(count=2, hidden=MANUAL_HIDDEN_NOTE.format(hidden=1))
+    tail = MANUAL_REFUSED_DROPPED_TAIL.format(
+        count=2, hidden=MANUAL_HIDDEN_NOTE.format(hidden=1), particle="를"
+    )
     assert any("다른 사용자가 먼저" in error and error.endswith(tail) for error in errors), errors
     assert len(errors) == 1, errors
     assert _draft(mine) == {}
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((A, 202607, 9.0),), 1)
+
+
+def test_the_dropped_texts_read_the_same_with_and_without_hidden_cells() -> None:
+    """버린 칸 수 글의 조사는 괄호 메모가 아니라 그 앞 「n개」 에 붙는다 — 숨은 칸 메모가 끼어도
+    「…개(…)를」 이다(글은 2026-11-19 처음 판 그대로 — 조사 그물이 괄호 메모 자리를 값으로 읽어
+    조사를 「n개」 의 끝소리로 고르게 바꿨다)."""
+    visible = frozenset({(A, 202607)})
+    shown = {(A, 202607): 1.0, (B, 202607): 2.0}
+    assert dropped_text(MANUAL_DROPPED_MESSAGE, shown, frozenset(shown)) == (
+        "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 2개를 버렸습니다 — 최신 저장본을 "
+        "다시 그렸습니다."
+    )
+    assert dropped_text(MANUAL_DROPPED_MESSAGE, shown, visible) == (
+        "다른 사용자가 입력 비가동을 저장해 저장하지 않은 칸 2개(지금 표에 보이지 않는 1칸 포함)를 "
+        "버렸습니다 — 최신 저장본을 다시 그렸습니다."
+    )
+    assert dropped_text(MANUAL_REFUSED_DROPPED_TAIL, shown, visible) == (
+        " 저장하지 않은 칸 2개(지금 표에 보이지 않는 1칸 포함)를 버렸습니다."
+    )
 
 
 def test_a_grade_that_cannot_edit_keeps_the_draft_without_counting_it(tmp_path: Path) -> None:
