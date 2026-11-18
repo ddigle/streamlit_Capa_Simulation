@@ -127,6 +127,11 @@ from capa_simulation.services.extra_process_revision import (
     pack_from_revision,
     revision_refusal,
 )
+from capa_simulation.services.korean_particle import (
+    with_direction_particle,
+    with_object_particle,
+    with_subject_particle,
+)
 from capa_simulation.session_slot import SessionSlot
 
 TAB_LABEL: Final = ADMIN_AREA_TABS[3]
@@ -745,6 +750,7 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
     pending = found is not False
     last = found if isinstance(found, ExtraProcessS3Write) else None
     version = None if active is None else active.version_no
+    name = f"판 {version}"
     why = (
         "아직 쓰지 않음"
         if last is None
@@ -756,11 +762,12 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
         scope={"version": version},
         content=None if not pending or last is None else [last.seq, last.result],
         active=pending,
-        text=f"부대공정 판 {version} 을 S3 Drive 에 쓰지 못함 · {why}",
+        text=f"부대공정 {with_object_particle(name)} S3 Drive 에 쓰지 못함 · {why}",
         full=(
-            f"「이 리비전 값을 새 판으로」 로 만든 판 {version} 이 S3 Drive 의 current.zip 에 아직 "
-            f"없습니다({why}). 적용하지 않은 파일이 놓여 있으면 치운 뒤 「S3 에 다시 쓰기」 를 "
-            f"누르세요. 다음 등록 · 자동 갱신은 DB 의 판 {version} 으로 돕니다."
+            f"「이 리비전 값을 새 판으로」 로 만든 {with_subject_particle(name)} S3 Drive 의 "
+            f"current.zip 에 아직 없습니다({why}). 적용하지 않은 파일이 놓여 있으면 치운 뒤 "
+            "「S3 에 다시 쓰기」 를 누르세요. 다음 등록 · 자동 갱신은 DB 의 "
+            f"{with_direction_particle(name)} 돕니다."
         ),
         tab=tab,
     )

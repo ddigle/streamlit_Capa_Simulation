@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
+import pytest
 from extra_process_fixtures import AOI, BOND, template_files
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -323,5 +324,29 @@ def test_refusal_reasons_follow_the_design_order() -> None:
     shifted = _Record(BOND, 1, "a" * 64, OUTCOME_MERGED, note="연도 Shift +1년")
     assert "연도 Shift" in str(refusal(shifted))
     # 판은 sha 로 견준다 — 끄기 → 다시 켜기로 판 이력 차례가 달라져도 같은 판이다.
-    assert "판 1 로 만든 리비전" in str(refusal(merged, sha="c" * 64))
+    assert "판 1로 만든 리비전" in str(refusal(merged, sha="c" * 64))
     assert merged_processes([merged, mixed, other]) == (BOND, AOI)
+
+
+@pytest.mark.parametrize(
+    ("version_no", "expected"),
+    [
+        (1, "판 1로 만든 리비전입니다 — 활성 판 1로 얹거나"),
+        (2, "판 2로 만든 리비전입니다 — 활성 판 2로 얹거나"),
+        (3, "판 3으로 만든 리비전입니다 — 활성 판 3으로 얹거나"),
+        (6, "판 6으로 만든 리비전입니다 — 활성 판 6으로 얹거나"),
+        (10, "판 10으로 만든 리비전입니다 — 활성 판 10으로 얹거나"),
+    ],
+)
+def test_the_other_version_refusal_picks_the_particle_by_the_number(
+    version_no: int, expected: str
+) -> None:
+    """판 번호 뒤 「(으)로」 는 번호의 끝소리로 고른다 — 일(ㄹ) · 이는 「로」, 삼 · 육 · 십은
+    「으로」."""
+    merged = _Record(BOND, version_no, "a" * 64, OUTCOME_MERGED)
+
+    refusal = revision_refusal(
+        off=False, active_sha="c" * 64, active_version_no=version_no, records=[merged]
+    )
+
+    assert refusal is not None and refusal.startswith(expected), refusal

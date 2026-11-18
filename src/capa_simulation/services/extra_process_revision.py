@@ -63,6 +63,7 @@ from capa_simulation.services.extra_process_pack import (
     read_pack_zip,
     wf_key,
 )
+from capa_simulation.services.korean_particle import with_direction_particle
 
 # 리비전 경로를 바탕 판 경로와 맞대는 칸(계획 변형 · 경로 · WF 구분).
 ROUTE_COMPARE_COLUMNS: Final = (
@@ -177,8 +178,9 @@ def revision_refusal(
     record = records[0]
     if record.sha256 != active_sha:
         return (
-            f"판 {record.version_no} 로 만든 리비전입니다 — 활성 판 {active_version_no} 로 얹거나 "
-            "등록한 시나리오에서 고쳐 저장한 뒤 누르세요"
+            f"{with_direction_particle(f'판 {record.version_no}')} 만든 리비전입니다 — 활성 "
+            f"{with_direction_particle(f'판 {active_version_no}')} 얹거나 등록한 시나리오에서 고쳐 "
+            "저장한 뒤 누르세요"
         )
     return None
 

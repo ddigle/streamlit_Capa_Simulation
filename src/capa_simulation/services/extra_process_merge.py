@@ -59,6 +59,7 @@ from capa_simulation.services.extra_process_pack import (
     wf_key,
 )
 from capa_simulation.services.frame_contracts import normalize_demand_basis
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -674,7 +675,10 @@ class _Expander:
                 self.reqb["_process"].str.casefold().eq(reference.casefold()).fillna(False)
             ]
         if picked.empty:
-            raise _Refused(RULE_REFERENCE, f"참조 공정 {reference} 이 이번 경로(RQ_REQB)에 없음")
+            raise _Refused(
+                RULE_REFERENCE,
+                f"참조 공정 {with_subject_particle(reference)} 이번 경로(RQ_REQB)에 없음",
+            )
         bases = set(picked["_basis"].dropna())
         if bases != {process.basis}:
             raise _Refused(RULE_REFERENCE, f"참조 공정 {reference} 의 소요기준이 다름")
