@@ -1173,8 +1173,8 @@ def test_applying_one_table_leaves_only_the_other_tables_edit_pending(
     assert not list(app.exception)
     assert app.session_state["active_scenario"]["content_token"] != before_token
 
-    # 적용은 단추 콜백이라 누른 회차 하나다(본문 `st.rerun()` 회차가 없다). 그 회차의 사이드바가 이미
-    # 적용 뒤 목록을 센다.
+    # 적용은 단추 콜백이라 누른 회차 하나다(본문 `st.rerun()` 회차가 없다). 그 회차의 사이드바가
+    # 이미 적용 뒤 목록을 센다.
     runs = app.session_state[PRE_PAGE_LOG_KEY][runs_before:]
     assert len(runs) == 1
     assert runs[-1] == [other_label]
@@ -1587,7 +1587,7 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
 
 
-# --- 「변경사항 적용」 은 단추 콜백 — 누름 하나에 회차 하나(다시 도는 범위 C1, M24) ----------------
+# --- 「변경사항 적용」 은 단추 콜백 — 누름 하나에 회차 하나(다시 도는 범위 C1, M24) -------------
 # 전에는 누른 회차가 옛 원본으로 화면을 다 그린 뒤 적용하고 `st.rerun()` 해 회차가 둘이었다. 지금은
 # 콜백이 본문보다 먼저 적용하고 그 회차 하나가 새 원본 · 알림을 그린다. 회차 수는 페이지 앞 기록
 # (`_sidebar_probe_script` — 회차마다 한 줄)으로 센다.
@@ -1734,8 +1734,8 @@ def test_a_press_drawn_before_the_source_changed_applies_nothing(
 ) -> None:
     """앞 회차에 그린 단추의 누름이 원본이 바뀐 뒤 오면(팝업이 시나리오를 바꾸고 앱 회차가 단추에
     닿기 전) 콜백은 쓰지 않는다 — 옛 원본으로 적용해 바뀐 시나리오를 덮지 않는다. 빠른 둘째 누름이
-    첫 적용 회차의 본문(초안 비우기)보다 먼저 와도 같다 — 첫 적용이 원본 토큰을 바꿔 리비전은 한 번만
-    오른다."""
+    첫 적용 회차의 본문(초안 비우기)보다 먼저 와도 같다 — 첫 적용이 원본 토큰을 바꿔 리비전은 한
+    번만 오른다."""
     from capa_simulation import scenario_state
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
@@ -1792,8 +1792,8 @@ def test_a_press_drawn_before_the_source_changed_applies_nothing(
 def test_a_blocked_plan_apply_says_why_under_the_action_row_in_the_same_run(
     seeded_database: Path,
 ) -> None:
-    """칸 오류가 남은 적용은 막히고 그 까닭이 작업 줄 아래 알림 칸(`pkg_plan_actions` 안)에 누른 회차
-    하나로 선다 — 콜백은 그리지 못해 글을 담고 작업 줄이 그린다(`plan_grid.refuse`). 시나리오는
+    """칸 오류가 남은 적용은 막히고 그 까닭이 작업 줄 아래 알림 칸(`pkg_plan_actions` 안)에 누른
+    회차 하나로 선다 — 콜백은 그리지 못해 글을 담고 작업 줄이 그린다(`plan_grid.refuse`). 시나리오는
     그대로이고 초안도 남는다. 다음 회차에는 다시 서지 않는다."""
     app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
     assert not list(app.exception)
