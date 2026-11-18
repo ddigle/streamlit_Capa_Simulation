@@ -20,6 +20,7 @@ from capa_simulation.components.scenario_transform import (
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.extra_process_merge import month_merge_mixing
 from capa_simulation.services.scenario_month_merge import (
     OverlapPolicy,
     PlanKeyGap,
@@ -65,6 +66,15 @@ MIXED_PRODUCTS_HELP = (
     "한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키입니다. 결과에서 그 제품은 달마다 그 달 "
     "원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
     "때 확인을 받습니다."
+)
+EXTRA_VERSIONS_HELP = (
+    "두 원본이 서로 다른 부대공정 판을 실어 달마다 다른 판의 값이 섞이고, 모듈수는 베이스의 판 "
+    "값이 이깁니다. 저장한 뒤 시나리오 관리 「부대공정 얹기」 로 한 판으로 다시 맞춥니다."
+)
+EXTRA_BDQ_HELP = (
+    "한 원본의 달에는 부대공정 판의 행, 다른 원본의 달에는 BDQ 의 같은 이름 행이 실립니다. "
+    "이름으로 걷으면 BDQ 행까지 지워져 이 결과에는 「부대공정 얹기」 를 할 수 없습니다 — 원본이나 "
+    "월 범위를 바꿉니다."
 )
 DROPPED_HISTORY_HELP = (
     "원본의 가상제품 복제 이력 가운데 결과 표에 그 제품이 없는 것입니다 — 새 시나리오에 남기지 "
@@ -244,6 +254,30 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         donor_tables=donor_tables,
         result_tables=result,
     )
+    month_origin = {
+        int(month): str(origin)
+        for month, origin in sources[["생산계획년월", "선택 출처"]].itertuples(
+            index=False, name=None
+        )
+    }
+    extra_mixing = month_merge_mixing(
+        result["RQ_REQB"],
+        month_origin,
+        {
+            "베이스": repository.load_scenario_extra_process(base.scenario.scenario_id),
+            "덧붙일 쪽": repository.load_scenario_extra_process(donor.scenario.scenario_id),
+        },
+    )
+    for title, names, help_text in (
+        ("부대공정 판 섞임", extra_mixing.versions, EXTRA_VERSIONS_HELP),
+        ("부대공정 · BDQ 행 섞임", extra_mixing.bdq, EXTRA_BDQ_HELP),
+    ):
+        if names:
+            st.caption(
+                f"**{title}** :orange[{len(names)}개] · "
+                f"{markdown_safe_tildes(', '.join(literal_markdown(name) for name in names))}",
+                help=help_text,
+            )
     if history.mixed:
         st.caption(
             f"**가상·실제 섞임** :orange[{len(history.mixed)}개] · "
@@ -304,7 +338,9 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
             gate_sources=(base, donor),
             # 두 원본의 부대공정 판을 모두 적는다 — 판이 다르면 한 공정이 두 판을 갖는다(설계 D20).
             extra_process=carried_extra_process(
-                repository, ((base, "월 머지 베이스"), (donor, "월 머지 덧붙임"))
+                repository,
+                ((base, "월 머지 베이스"), (donor, f"월 머지 덧붙임 {start}~{end}")),
+                mixed=extra_mixing.bdq,
             ),
         )
     except ValueError as exc:

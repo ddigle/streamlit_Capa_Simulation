@@ -357,6 +357,9 @@ class _Provenance(Protocol):
     @property
     def reason(self) -> str | None: ...
 
+    @property
+    def sha256(self) -> str: ...
+
 
 @dataclass(frozen=True)
 class PreviousExtras:
@@ -386,6 +389,60 @@ def split_previous(records: Iterable[_Provenance]) -> PreviousExtras:
     return PreviousExtras(
         stripped=tuple(name for name in merged if name not in mixed), mixed=tuple(mixed)
     )
+
+
+@dataclass(frozen=True)
+class MonthMergeMixing:
+    """월 머지 결과의 부대공정 섞임(설계 4-9 · D20 · A14) — 공정 이름(처음 나온 차례).
+
+    `versions` 는 두 원본이 서로 다른 판(sha)의 부대공정 행을 결과에 실은 공정이다 — 「부대공정
+    얹기」 로 한 판으로 다시 맞춘다(옛 판 행은 이름으로 걷으면 된다). `bdq` 는 한 원본의 달에는 판
+    행, 다른 원본의 달에는 BDQ 행(그 원본 출처에 합침이 없음)이 실린 공정이다 — 이름으로 걷으면 BDQ
+    행까지 지워 얹기가 그 바탕을 받지 않는다(`MIXED_REASON`).
+    """
+
+    versions: tuple[str, ...] = ()
+    bdq: tuple[str, ...] = ()
+
+
+def month_merge_mixing(
+    reqb: pd.DataFrame,
+    month_origin: Mapping[int, str],
+    provenance: Mapping[str, Sequence[_Provenance]],
+) -> MonthMergeMixing:
+    """결과 `RQ_REQB`(`reqb`) · 달마다 고른 원본(`month_origin` — 달 → 원본 이름) · 원본마다
+    데이터셋 출처로 섞임을 가른다. 출처에 달이 없어 걷기만으로는 가르지 못하던 「판 없이 등록한
+    원본의 BDQ 행」 을 결과 행의 달로 가른다(`docs/TODO.md` 부대공정 ④)."""
+    names = list(
+        dict.fromkeys(record.process_name for records in provenance.values() for record in records)
+    )
+    process = reqb["공정"].astype("string").str.strip()
+    months = pd.to_numeric(reqb["생산계획년월"], errors="coerce")
+    versions: list[str] = []
+    bdq: list[str] = []
+    for name in names:
+        kinds: set[str] = set()
+        shas: set[str] = set()
+        for origin, records in provenance.items():
+            origin_months = [month for month, picked in month_origin.items() if picked == origin]
+            if not origin_months:
+                continue
+            present = bool((process.eq(name) & months.isin(origin_months)).fillna(False).any())
+            if not present:
+                continue
+            own = [record for record in records if record.process_name == name]
+            if any(record.reason == MIXED_REASON for record in own):
+                kinds.update({"extra", "bdq"})
+            elif any(record.outcome == OUTCOME_MERGED for record in own):
+                kinds.add("extra")
+                shas.update(record.sha256 for record in own if record.outcome == OUTCOME_MERGED)
+            else:
+                kinds.add("bdq")
+        if {"extra", "bdq"} <= kinds:
+            bdq.append(name)
+        elif len(shas) > 1:
+            versions.append(name)
+    return MonthMergeMixing(tuple(versions), tuple(bdq))
 
 
 def fold_outcomes(outcomes: Collection[str]) -> tuple[str, bool]:
