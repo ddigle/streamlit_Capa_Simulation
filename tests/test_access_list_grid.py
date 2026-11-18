@@ -370,6 +370,41 @@ def test_many_grades_change_at_once_by_filling_down(
     assert "등급 3명" in _flash_text(app)
 
 
+def test_a_paste_in_another_order_does_not_move_grades_to_other_people(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """음성 — 차례가 다른 「계정 · 등급」 두 줄(OTHER → 개발자, USER → 열람)을 첫 줄 계정 칸에
+    붙여도 계정이 그 줄과 다른 줄은 등급까지 건너뛴다. 저장할 것이 없고 아무도 개발자가 되지 않는다.
+    같은 차례(대소문자만 다름 포함)로 붙이면 등급이 제 사람에게 들어간다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    assert _shell(calls)["ids"][:2] == [USER, OTHER]
+    before = requests_named(store, "PUT")
+
+    app = _ops(
+        app, calls, _write([USER, OTHER], ["계정", "등급"], [[OTHER, "개발자"], [USER, "열람"]])
+    )
+
+    assert _draft(app) == (0, 0, 0)
+    feed = last(calls, f"{HOST}-feed")
+    assert "계정 칸이 다른 줄 2개는 건너뛰었습니다" in feed["toast"]["text"]
+    assert app.button(key=access_list_admin.SAVE_KEY).disabled
+    assert requests_named(store, "PUT") == before
+    assert not access_store.is_admin(cfg, USER) and not access_store.is_admin(cfg, OTHER)
+
+    app = _ops(
+        app,
+        calls,
+        _write([USER, OTHER], ["계정", "등급"], [[USER.upper(), "관리자"], [OTHER, "실무자"]]),
+    )
+    app = _save(app)
+
+    assert grade_store.grade_of(cfg, USER) == "manager"
+    assert grade_store.grade_of(cfg, OTHER) == "editor"
+    assert "등급 2명" in _flash_text(app)
+
+
 def test_own_and_environment_rows_are_locked_in_the_grid_and_on_the_server(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

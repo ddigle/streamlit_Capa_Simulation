@@ -190,6 +190,98 @@ def test_locked_cells_are_skipped_and_counted() -> None:
     assert result.toasts == ["잠긴 칸 3칸은 건너뛰었습니다"]
 
 
+# 계정이 그 줄을 가리키는 명단 줄 둘 · 새 줄 하나(접속 명단 편집 표의 꼴).
+ANCHORED = eg.LockKind(cols=("계정", "이름"), reason="명단 칸은 잠김", anchor=("계정",))
+ANCHORED_RULES = eg.RowRules((ANCHORED, FRESH), (0, 0, 1))
+
+
+def _anchored_apply(ops: list[eg.Op]) -> eg.ApplyResult:
+    frame = pd.DataFrame(
+        {
+            "No.": ["1", "2", "새 1"],
+            "_id": ["demo.a", "demo.b", "+1"],
+            "_label": ["demo.a", "demo.b", "새 줄 1"],
+            "계정": ["demo.a", "demo.b", None],
+            "이름": ["데모 가", "데모 나", None],
+            "등급": [0.0, 0.0, None],
+        }
+    )
+    index = eg.build_index(frame, SPEC, ANCHORED_RULES)
+    return eg.apply_ops(index, SPEC, None, {"gen": "g", "undo": [], "redo": []}, ops)
+
+
+def test_a_paste_whose_account_points_to_another_row_skips_that_row() -> None:
+    """차례가 다른 목록(계정 · 등급)을 첫 줄에 붙이면 계정이 다른 줄은 등급까지 건너뛴다 — 그 줄
+    사람에게 다른 사람의 등급이 들어가지 않는다."""
+    result = _anchored_apply(
+        [
+            _op(
+                "write",
+                rows=("demo.a", "demo.b"),
+                cols=("계정", "등급"),
+                values=(("demo.b", "개발자"), ("demo.a", "열람")),
+            )
+        ]
+    )
+    assert result.draft is None and not result.changed
+    assert result.history["undo"] == []
+    assert result.toasts == ["계정 칸이 다른 줄 2개는 건너뛰었습니다"]
+
+
+def test_a_paste_in_the_same_order_or_case_still_writes_the_grade() -> None:
+    """같은 차례 — 계정이 그 줄과 같으면(앞뒤 공백 · 대소문자만 다름 포함) 잠긴 계정 칸만 건너뛰고
+    등급은 쓴다. 한 줄만 어긋나면 그 줄만 건너뛴다."""
+    result = _anchored_apply(
+        [
+            _op(
+                "write",
+                rows=("demo.a", "demo.b"),
+                cols=("계정", "등급"),
+                values=((" DEMO.A ", "관리자"), ("demo.x", "개발자")),
+            )
+        ]
+    )
+    assert _plain(result.draft) == {"cells": {"demo.a": {"등급": 2.0}}, "bad": {}}
+    assert result.toasts == [
+        "잠긴 칸 1칸은 건너뛰었습니다",
+        "계정 칸이 다른 줄 1개는 건너뛰었습니다",
+    ]
+
+
+def test_grade_only_paste_fill_and_fresh_rows_are_not_anchored() -> None:
+    """계정 칸을 싣지 않은 쓰기 · 채우기 · 빈 새 줄의 쓰기는 계정 견줌과 상관없다."""
+    result = _anchored_apply(
+        [
+            _op("write", rows=("demo.a", "demo.b"), cols=("등급",), values=(("실무자",),)),
+            _op(
+                "fill",
+                seq=2,
+                rows=("demo.b",),
+                cols=("계정", "등급"),
+                src_rows=("demo.a",),
+                src_cols=("계정", "등급"),
+                direction="down",
+            ),
+            _op(
+                "write",
+                seq=3,
+                rows=("+1",),
+                cols=("계정", "이름", "등급"),
+                values=(("demo.new", "데모 다", "열람"),),
+            ),
+        ]
+    )
+    assert _plain(result.draft) == {
+        "cells": {
+            "demo.a": {"등급": 1.0},
+            "demo.b": {"등급": 1.0},
+            "+1": {"계정": "demo.new", "이름": "데모 다", "등급": 0.0},
+        },
+        "bad": {},
+    }
+    assert result.toasts == ["잠긴 칸 1칸은 건너뛰었습니다"]
+
+
 def test_fresh_rows_take_text_and_choice_with_errors_in_place() -> None:
     result = _apply(
         [

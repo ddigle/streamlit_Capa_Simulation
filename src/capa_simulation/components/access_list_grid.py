@@ -16,7 +16,8 @@
   관리자 · 개발자, 값은 차례 번호). 새 줄은 계정 · 이름 · 부서 · 등급을 적고, 계정은 loginid 꼴만
   받는다(틀리면 빨간 칸).
 - **잠금**(까닭은 칸 · 단추 풍선과 상태 줄) — 명단 사람의 계정 · 이름 · 부서 · 등록일 · 등록 길, 나
-  자신과 환경변수로 정한 개발자의 등급 칸 · 줄 지우기, 새 줄의 등록일 · 등록 길.
+  자신과 환경변수로 정한 개발자의 등급 칸 · 줄 지우기, 새 줄의 등록일 · 등록 길. 명단 사람 줄에
+  붙인 덩어리의 「계정」 이 그 줄과 다르면(차례가 다른 목록) 그 줄은 등급까지 건너뛰고 센다.
 - **초안은 세션 칸**(`CELLS_KEY` · `HISTORY_KEY`) — 출납 콜백은 inbox 에 쌓기만 하고(`collect`)
   본문 · 저장 콜백이 반영한다(`apply`). 저장은 `access_list_admin` 이 이 초안을
   `services/access_list_plan` 으로 읽어 지금 저장 함수로 쓴다.
@@ -48,6 +49,7 @@ from capa_simulation.services.access_list_plan import (
     DEPT_COLUMN,
     GRADE_COLUMN,
     GRADE_OPTIONS,
+    LISTED_LOCKED_COLUMNS,
     NAME_COLUMN,
     VALUE_COLUMNS,
     VIA_COLUMN,
@@ -95,13 +97,14 @@ LISTED_WHY: Final = "명단에 든 사람의 계정 · 이름 · 부서 · 등�
 SELF_WHY: Final = "나 자신의 줄은 고치거나 지울 수 없습니다"
 ENV_WHY: Final = "환경변수로 정한 개발자의 줄은 고치거나 지울 수 없습니다"
 FRESH_WHY: Final = "등록일 · 등록 길은 저장할 때 적힙니다"
-_LOCKED_INFO: Final = (ACCOUNT_COLUMN, NAME_COLUMN, DEPT_COLUMN, DATE_COLUMN, VIA_COLUMN)
-# 줄 규칙의 차례 — `RULES.kinds` 번호.
+# 줄 규칙의 차례 — `RULES.kinds` 번호. 명단 사람 줄은 「계정」 이 그 사람을 가리킨다 — 차례가 다른
+# 덩어리를 붙여 계정이 그 줄과 다르면 그 줄은 등급까지 건너뛴다(`LockKind.anchor`).
 LISTED, SELF, ENV, FRESH = 0, 1, 2, 3
+_WHO: Final = (ACCOUNT_COLUMN,)
 RULE_KINDS: Final = (
-    LockKind(cols=_LOCKED_INFO, reason=LISTED_WHY),
-    LockKind(cols=VALUE_COLUMNS, reason=SELF_WHY, remove=SELF_WHY),
-    LockKind(cols=VALUE_COLUMNS, reason=ENV_WHY, remove=ENV_WHY),
+    LockKind(cols=LISTED_LOCKED_COLUMNS, reason=LISTED_WHY, anchor=_WHO),
+    LockKind(cols=VALUE_COLUMNS, reason=SELF_WHY, remove=SELF_WHY, anchor=_WHO),
+    LockKind(cols=VALUE_COLUMNS, reason=ENV_WHY, remove=ENV_WHY, anchor=_WHO),
     LockKind(cols=(DATE_COLUMN, VIA_COLUMN), reason=FRESH_WHY, fresh=True),
 )
 _TEXT: Final = ValueFormat("text", 0)

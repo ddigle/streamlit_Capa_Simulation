@@ -96,6 +96,21 @@ def test_every_problem_is_counted_and_blocks_the_save_without_values() -> None:
     assert result.removed == (), "잠긴 사람은 빼지 않는다"
 
 
+def test_a_locked_cell_of_a_listed_person_in_the_draft_blocks_that_row() -> None:
+    """명단 사람 줄의 계정 칸 등에 초안이 들었으면(표가 잠그고 계정이 다른 붙여넣기 줄은 건너뛰지만)
+    그 줄은 고칠 수 없는 줄로 세고 등급을 쓰지 않는다."""
+    draft: DraftState = {
+        "cells": {
+            "demo.a": {plan.ACCOUNT_COLUMN: "demo.b", plan.GRADE_COLUMN: 3.0},
+            "demo.b": {plan.GRADE_COLUMN: 2.0},
+        },
+        "bad": {"demo.b": {plan.NAME_COLUMN: ("x" * 200, "length")}},
+    }
+    result = _plan(draft)
+    assert result.problems.locked == 2
+    assert dict(result.graded) == {}
+
+
 def test_a_bad_account_is_caught_even_without_a_cell_error() -> None:
     draft: DraftState = {
         "cells": {"+1": {plan.ACCOUNT_COLUMN: "---", plan.GRADE_COLUMN: 1.0}},

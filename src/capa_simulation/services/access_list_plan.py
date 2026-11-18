@@ -13,7 +13,9 @@
   글(`loginid` · `계정`)이 아니며 명단 · 다른 새 줄과 겹치지 않고, 「등급」 이 있어야 한다.
   「이름」 · 「부서」 는 손으로 적은 그대로 넣는다(빈 칸은 빈 칸).
 - **문제**가 하나라도 있으면 저장하지 않는다 — 칸 오류(빨간 칸) · 계정이 빔 · 계정 꼴이 아님 · 머리
-  글 · 겹침 · 등급이 빔 · 잠긴 줄(나 자신 · 환경변수 개발자 — 표가 잠그지만 다시 본다).
+  글 · 겹침 · 등급이 빔 · 잠긴 줄(나 자신 · 환경변수 개발자의 등급 · 줄 지우기, 명단 사람의 계정 ·
+  이름 · 부서 · 등록일 · 등록 길 칸 초안 — 표가 잠그고 계정이 다른 붙여넣기 줄은 건너뛰지만
+  다시 본다).
 """
 
 from __future__ import annotations
@@ -46,6 +48,8 @@ VALUE_COLUMNS: Final = (
     VIA_COLUMN,
     GRADE_COLUMN,
 )
+# 명단 사람 줄에서 잠긴 칸 — 표가 잠그고 저장 판이 다시 본다(초안에 들었으면 고칠 수 없는 줄).
+LISTED_LOCKED_COLUMNS: Final = (ACCOUNT_COLUMN, NAME_COLUMN, DEPT_COLUMN, DATE_COLUMN, VIA_COLUMN)
 # 「등급」 고르기 칸의 항목 — 낮은 차례(열람 · 실무자 · 관리자 · 개발자). 값은 이 차례 번호다.
 GRADE_OPTIONS: Final = tuple(grades.label_of(grade) for grade in grades.GRADES)
 # 새 줄의 업무 키 앞글자 — loginid 꼴에 없는 글자라 사람과 겹치지 않는다.
@@ -168,6 +172,13 @@ def plan_changes(
     no_grade = 0
     for key, current in listed.items():
         row = cells.get(key)
+        if any(
+            column in book
+            for book in (row or {}, draft["bad"].get(key) or {})
+            for column in LISTED_LOCKED_COLUMNS
+        ):
+            locked_count += 1
+            continue
         if key in removed or row is None or GRADE_COLUMN not in row:
             continue
         grade = grade_at(row[GRADE_COLUMN])

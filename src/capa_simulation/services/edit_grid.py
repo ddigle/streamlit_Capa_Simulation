@@ -19,8 +19,10 @@
   시험). 표시 형식(`format_value` ↔ `formatValue`)도 같다.
 - **글 · 고르기 칸 · 줄 규칙은 고른 표만**(2026-11-18 접속 명단 편집 표). 칸마다 형식
   (`GridSpec.column_formats` — `text` 글 · `choice` 고르기, 값은 고른 항목 차례 번호), 업무 키를
-  보이는 분류 칸이 아닌 칸에서(`GridSpec.id_column`), 줄마다 잠긴 칸 · 지울 수 없는 줄 · 빈 새 줄
-  (`RowRules`), 줄 지우기 · 되살리기 op(`GridSpec.row_ops` — 초안의 예약 칸 `ROW_REMOVED`)를 둔다.
+  보이는 분류 칸이 아닌 칸에서(`GridSpec.id_column`), 줄마다 잠긴 칸 · 지울 수 없는 줄 · 빈 새 줄 ·
+  줄이 누구인지 말하는 잠긴 칸(`RowRules` — 붙인 값이 그 칸과 다르면 그 줄을 건너뛴다,
+  `LockKind.anchor`), 줄 지우기 · 되살리기 op(`GridSpec.row_ops` — 초안의 예약 칸
+  `ROW_REMOVED`)를 둔다.
   주지 않은 표의 껍데기 · feed · op 반영은 그대로다(브라우저 쪽은 `eg_rows.js` 를 실은 다른 등록).
 """
 
@@ -83,6 +85,7 @@ PASTE_LIMIT_TOAST: Final = (
 UNDO_EMPTY_TOAST: Final = "되돌릴 편집이 없습니다"
 LOCKED_TOAST: Final = "잠긴 칸 {n}칸은 건너뛰었습니다"
 LOCKED_ROWS_TOAST: Final = "지울 수 없는 줄 {n}개는 건너뛰었습니다"
+ANCHOR_ROWS_TOAST: Final = "{column} 칸이 다른 줄 {n}개는 건너뛰었습니다"
 REDO_EMPTY_TOAST: Final = "다시 실행할 편집이 없습니다"
 
 
@@ -140,12 +143,18 @@ class GridSpec:
 @dataclass(frozen=True)
 class LockKind:
     """줄 규칙 하나 — 잠긴 값 칸과 그 까닭, 줄 지우기를 막는 까닭(None 이면 지울 수 있음), 빈 새
-    줄인가(지우기는 그 줄 칸을 비운다)."""
+    줄인가(지우기는 그 줄 칸을 비운다), 그 줄이 누구인지 말하는 잠긴 칸(`anchor`).
+
+    `anchor` 칸에 쓰기(`write` — 붙여넣기 · 입력)가 양식과 다른 값을 실으면 그 줄은 칸을 하나도
+    쓰지 않고 센다(`ANCHOR_ROWS_TOAST`) — 붙인 덩어리의 줄 차례가 표와 달라 다른 사람의 값이 이
+    줄에 들어가지 않게. 같은지는 앞뒤 공백을 떼고 대소문자를 접어 본다. 채우기는 표 안에서 고른
+    칸을 옮기는 것이라 보지 않는다."""
 
     cols: tuple[str, ...] = ()
     reason: str = ""
     remove: str | None = None
     fresh: bool = False
+    anchor: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -241,6 +250,11 @@ class GridIndex:
         if kind is None or self.months[col] not in kind.cols:
             return None
         return kind.reason
+
+    def anchor_cols(self, row: int) -> tuple[str, ...]:
+        """그 줄이 누구인지 말하는 잠긴 칸(`LockKind.anchor`)."""
+        kind = self._kind(row)
+        return () if kind is None else kind.anchor
 
     def remove_lock(self, row: int) -> str | None:
         """그 줄을 지울 수 없으면 까닭, 아니면 None."""
@@ -778,6 +792,7 @@ class _Tally:
     redo_empty: int = 0
     locked: int = 0
     locked_rows: int = 0
+    anchored: dict[str, int] = field(default_factory=dict)
 
 
 def _rect(
@@ -815,6 +830,36 @@ def _effective(index: GridIndex, draft: DraftState, key: str, month: str) -> obj
     return state
 
 
+def _anchor_text(value: object) -> str:
+    """줄을 가리키는 칸의 견주는 꼴 — 앞뒤 공백을 떼고 대소문자를 접는다(빈칸은 빈 글)."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    return str(value).strip(_STRIP).casefold()
+
+
+def _anchor_mismatch(
+    index: GridIndex, op: Op, row_at: int, row: int, cols: list[tuple[int, str, int]]
+) -> str | None:
+    """쓰기가 그 줄의 `anchor` 칸에 양식과 다른 값을 실었으면 그 칸 이름, 아니면 None."""
+    if op.kind != "write" or index.rules is None:
+        return None
+    anchors = index.anchor_cols(row)
+    if not anchors:
+        return None
+    block = op.values[row_at % len(op.values)]
+    if not block:
+        return None
+    for col_at, month, col in cols:
+        if month not in anchors:
+            continue
+        cell = block[col_at % len(block)]
+        if cell is None:
+            continue
+        if _anchor_text(cell) != _anchor_text(index.template_value(row, col)):
+            return month
+    return None
+
+
 def _fill_source(op: Op, k: int, size: int) -> int:
     """채우기 대상의 k 번째(원본에서 멀어지는 차례) 줄·칸이 가져올 원본 자리."""
     return k % size if op.direction in ("down", "right") else size - 1 - (k % size)
@@ -841,6 +886,11 @@ def _new_states(
         ):
             return [[_KEEP] * len(cols) for _ in rows]
     for row_at, _key, row in rows:
+        mismatch = _anchor_mismatch(index, op, row_at, row, cols)
+        if mismatch is not None:
+            tally.anchored[mismatch] = tally.anchored.get(mismatch, 0) + 1
+            out.append([_KEEP] * len(cols))
+            continue
         line: list[CellState] = []
         for (col_at, _month, col), fmt in zip(cols, formats, strict=True):
             template = index.template_value(row, col)
@@ -1042,6 +1092,8 @@ def _toasts(tally: _Tally) -> list[str]:
         toasts.append(LOCKED_TOAST.format(n=f"{tally.locked:,}"))
     if tally.locked_rows:
         toasts.append(LOCKED_ROWS_TOAST.format(n=f"{tally.locked_rows:,}"))
+    for column, count in tally.anchored.items():
+        toasts.append(ANCHOR_ROWS_TOAST.format(column=column, n=f"{count:,}"))
     if tally.undo_empty:
         toasts.append(UNDO_EMPTY_TOAST)
     if tally.redo_empty:
@@ -1059,7 +1111,8 @@ def apply_ops(
     """그 표의 op 를 차례로 초안·이력에 반영한다(받은 초안·이력은 바꾸지 않는다).
 
     `gen` 이 이력과 다른 op·꼴이 틀린 op·다른 표의 op 는 버리고 수를 토스트로 알린다. 양식에 없는
-    줄은 건너뛰고 센다. `write` 의 값 칸이 `PASTE_CELL_LIMIT` 를 넘으면 그 op 를 버린다."""
+    줄 · 줄을 가리키는 칸(`LockKind.anchor`)이 다른 줄은 건너뛰고 센다. `write` 의 값 칸이
+    `PASTE_CELL_LIMIT` 를 넘으면 그 op 를 버린다."""
     work = _copy_draft(draft)
     new: HistoryState = {
         "gen": history["gen"],
