@@ -181,6 +181,7 @@ def test_the_master_grid_is_values_only_below_the_save_grade(
     assert last(grid, emg.LOADER_KEY)["newEnabled"] is editable, "「+ 새 호기」"
     side = app.segmented_control(key=SIDE_KEY)
     assert (SIDE_NEW in side.options) is editable, "오른쪽 「새 호기」 칸"
+    assert (SIDE_CHANGES in side.options) is _at_least(grade, grades.EDITOR), "「저장 전 변경」 칸"
     detail = last(grid, emg.side_key("detail"))
     assert detail["newRowsLocked"] is True or editable
 

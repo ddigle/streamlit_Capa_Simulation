@@ -3022,7 +3022,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사이드바 줄 · 머리 띠와 같은 값이라 두지 않는다, 2026-11-09 상단 띠 재고) → 알림 칸 →
   테두리 하나의 편집기 영역 `equipment_master_frame` 안 두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 구획(따로 테두리 없음) 또는 작은 편집표 · 오른쪽
   `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
-  이력」 → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
+  이력」(「새 호기」 는 설비 마스터를, 「저장 전 변경」 은 비가동 일정이라도 고치는 등급에만 — 열람은 「호기 상세 · 저장 이력」) → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
   이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
   (`required=True`). 받기 콜백이 오른쪽 칸을 바꿀 때는 그 칸을 바로 적지 않고 `_SIDE_NEXT_KEY` 에 두어 다음 고르기 **앞**에서
   적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).

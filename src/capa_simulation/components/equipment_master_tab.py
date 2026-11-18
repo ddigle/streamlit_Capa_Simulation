@@ -1636,9 +1636,15 @@ def render_equipment_master_tab(
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
         # 뒤 고르기, 그 뒤 본문 칸.
-        # 「새 호기」 칸은 설비 마스터를 고치는 등급에만 선다(설계 규칙 UI-INP-07 예외).
+        # 「새 호기」 칸은 설비 마스터를 고치는 등급에만, 「저장 전 변경」 칸은 비가동 일정이라도
+        # 고치는 등급에만 선다 — 열람은 쌓을 변경이 없다(설계 규칙 UI-INP-07 예외, 시나리오 관리
+        # 오른쪽 칸과 같은 꼴). 저장 구획도 같은 판정이다.
         master_lock = table_lock(TABLE_MASTER)
-        sides = SIDES if master_lock is None else tuple(item for item in SIDES if item != SIDE_NEW)
+        hidden_sides = {
+            *(() if master_lock is None else (SIDE_NEW,)),
+            *(() if table_editable(DOWNTIME_TARGET) else (SIDE_CHANGES,)),
+        }
+        sides = tuple(item for item in SIDES if item not in hidden_sides)
         side, body = render_side_head(grid_component.MASTER_SIDE, sides, SIDE_DETAIL)
     with body:
         if side == SIDE_HISTORY:
