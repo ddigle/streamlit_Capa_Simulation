@@ -156,6 +156,15 @@ class FakeNode {
     this.children.push(child)
     return child
   }
+  insertBefore(child, ref) {
+    const old = child.parentNode
+    if (old) old.children = old.children.filter((item) => item !== child)
+    child.parentNode = this
+    const at = ref ? this.children.indexOf(ref) : -1
+    if (at < 0) this.children.push(child)
+    else this.children.splice(at, 0, child)
+    return child
+  }
   get textContent() {
     return this.ownText + this.children.map((child) => child.textContent).join('')
   }

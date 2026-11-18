@@ -26,10 +26,13 @@ from capa_simulation.services import edit_grid_payload as payload
 PURE = asset("eg_pure.js")
 CORE = asset("eg_core.js")
 FEED = asset("feed.js")
-JS_FILES = {name: asset(name) for name in edit_grid.JS_PARTS}
-CSS_FILES = {name: asset(name) for name in edit_grid.CSS_PARTS}
+JS_FILES = {name: asset(name) for name in edit_grid.ROWS_JS_PARTS}
+CSS_FILES = {name: asset(name) for name in edit_grid.ROWS_CSS_PARTS}
 REGISTERED_JS = edit_grid.registered_js()
 REGISTERED_CSS = edit_grid.registered_css()
+# 줄 규칙 표의 등록(접속 명단) — 줄 갈래 `eg_rows` 를 더 싣는다.
+ROWS_JS = edit_grid.registered_js(edit_grid.ROWS_JS_PARTS)
+ROWS_CSS = edit_grid.registered_css(edit_grid.ROWS_CSS_PARTS)
 SOURCE = Path(edit_grid.__file__).read_text(encoding="utf-8")
 CASES = json.loads(
     (Path(__file__).parent / "fixtures" / "edit_grid_cases.json").read_text(encoding="utf-8")
@@ -49,26 +52,34 @@ CORE_SECTIONS = (
 
 
 def test_the_parts_are_the_files_in_the_folder() -> None:
-    """등록 차례 상수와 폴더의 파일이 같다 — 새 기능 파일을 만들면 차례에도 넣는다."""
+    """등록 차례 상수와 폴더의 파일이 같다 — 새 기능 파일을 만들면 차례에도 넣는다. 줄 갈래
+    (`eg_rows`)는 줄 규칙 표의 등록에만 실린다 — 그 밖의 표가 받는 등록은 그대로다."""
     folder = edit_grid._ASSETS
     scripts = {path.name for path in folder.glob("*.js")} - {edit_grid.FEED_JS}
-    assert scripts == set(edit_grid.JS_PARTS)
-    assert {path.name for path in folder.glob("*.css")} == set(edit_grid.CSS_PARTS)
-    assert edit_grid.JS_PARTS[0] == "eg_pure.js" and edit_grid.JS_PARTS[-1] == "eg_core.js"
+    assert scripts == set(edit_grid.ROWS_JS_PARTS)
+    assert set(edit_grid.ROWS_JS_PARTS) - set(edit_grid.JS_PARTS) == {"eg_rows.js"}
+    assert {path.name for path in folder.glob("*.css")} == set(edit_grid.ROWS_CSS_PARTS)
+    assert set(edit_grid.ROWS_CSS_PARTS) - set(edit_grid.CSS_PARTS) == {"eg_rows.css"}
+    for parts in (edit_grid.JS_PARTS, edit_grid.ROWS_JS_PARTS):
+        assert parts[0] == "eg_pure.js" and parts[-1] == "eg_core.js"
+    assert "eg_rows" not in REGISTERED_JS and "rowsInit" in ROWS_JS
 
 
 def test_the_registered_script_drops_comment_lines_and_keeps_the_rest() -> None:
-    assert not any(re.match(r"^\s*//", line) for line in REGISTERED_JS.splitlines())
+    for registered in (REGISTERED_JS, ROWS_JS):
+        assert not any(re.match(r"^\s*//", line) for line in registered.splitlines())
+        assert registered.count("export default function") == 1
     for name, text in JS_FILES.items():
         for line in text.splitlines():
             if line.strip() and not re.match(r"^\s*//", line):
-                assert line in REGISTERED_JS, (name, line)
-    assert REGISTERED_JS.count("export default function") == 1
+                assert line in ROWS_JS, (name, line)
+                assert name == "eg_rows.js" or line in REGISTERED_JS, (name, line)
 
 
 def test_the_registered_script_parses_as_a_module() -> None:
-    completed = check_module(REGISTERED_JS)
-    assert completed.returncode == 0, completed.stderr
+    for registered in (REGISTERED_JS, ROWS_JS):
+        completed = check_module(registered)
+        assert completed.returncode == 0, completed.stderr
     completed = check_module(edit_grid.feed_js())
     assert completed.returncode == 0, completed.stderr
 
@@ -88,6 +99,7 @@ def test_every_feature_file_registers_its_hook_and_carries_its_sections() -> Non
         "eg_select.js": ("select", ("eg-rect", "eg-clip")),
         "eg_fill.js": ("fill", ("eg-paste", "eg-fill")),
         "eg_toolbar.js": ("toolbar", ("eg-search", "eg-summary", "eg-width")),
+        "eg_rows.js": ("rows", ("eg-kinds",)),
     }
     for name, (hook, names) in expected.items():
         text = JS_FILES[name]
@@ -136,6 +148,10 @@ def test_ops_the_browser_sends_are_the_ops_python_applies() -> None:
     sent = set(re.findall(r"\bop: '([a-z]+)'", REGISTERED_JS))
     assert sent and sent <= eg.OP_NAMES, sent - eg.OP_NAMES
     assert {"write", "clear"} <= sent
+    rows = set(re.findall(r"\bop: '([a-z]+)'", ROWS_JS)) | set(
+        re.findall(r"'(remove|restore)'", ROWS_JS)
+    )
+    assert rows <= eg.OP_NAMES and {"remove", "restore"} <= rows, rows
 
 
 def test_the_clipboard_is_never_read_through_the_async_api() -> None:
@@ -146,14 +162,14 @@ def test_the_clipboard_is_never_read_through_the_async_api() -> None:
 
 
 def test_local_storage_is_touched_only_inside_try() -> None:
-    for match in re.finditer(r"localStorage", REGISTERED_JS):
-        before = REGISTERED_JS[max(match.start() - 120, 0) : match.start()]
-        assert "try {" in before, REGISTERED_JS[match.start() - 120 : match.end() + 20]
+    for match in re.finditer(r"localStorage", ROWS_JS):
+        before = ROWS_JS[max(match.start() - 120, 0) : match.start()]
+        assert "try {" in before, ROWS_JS[match.start() - 120 : match.end() + 20]
 
 
 def test_colours_come_only_from_the_palette() -> None:
     """등록 CSS 는 테마를 따라오지 않는다 — 색은 팔레트 data 의 `var(--eg-*)` 로만."""
-    used = set(re.findall(r"var\(--eg-([a-z-]+)", REGISTERED_CSS + REGISTERED_JS))
+    used = set(re.findall(r"var\(--eg-([a-z-]+)", ROWS_CSS + ROWS_JS))
     layout_vars = {
         "row-h",
         "head-h",
@@ -164,7 +180,7 @@ def test_colours_come_only_from_the_palette() -> None:
         "tb-font",
     }
     assert used - layout_vars <= set(edit_grid.palette()), used - set(edit_grid.palette())
-    for text in (REGISTERED_CSS, REGISTERED_JS, asset("grid.html"), FEED):
+    for text in (ROWS_CSS, ROWS_JS, asset("grid.html"), FEED):
         assert not re.search(r"#[0-9A-Fa-f]{3,8}\b", text)
         assert "rgb(" not in text and "rgba(" not in text and "hsl(" not in text
 
@@ -219,13 +235,13 @@ def test_user_text_goes_in_with_text_content_only() -> None:
         r"outerHTML\s*=",
         r"document\.write",
     ):
-        assert not re.search(pattern, REGISTERED_JS), pattern
+        assert not re.search(pattern, ROWS_JS), pattern
 
 
 def test_nothing_is_fixed_on_screen() -> None:
     """전체 화면은 그림자 DOM 안 `<dialog>.showModal()` 이다 — `position: fixed` 덮개는 긴 회차에
     Streamlit 이 opacity 0.33 을 걸어 머리 띠·사이드바 밑으로 묻힌다(D2 시제품)."""
-    for text in (REGISTERED_CSS, REGISTERED_JS):
+    for text in (ROWS_CSS, ROWS_JS):
         assert not re.search(r"position:\s*fixed", text)
         assert "position = 'fixed'" not in text
 
@@ -261,9 +277,12 @@ def test_css_files_carry_no_comments() -> None:
 
 
 def test_the_registered_bytes_stay_within_budget() -> None:
-    """명세 12장 예산 — 등록 JS(주석 줄 걷은 뒤) ≤ 120 KB, CSS ≤ 24 KB, feed JS ≤ 3 KB."""
+    """명세 12장 예산 — 등록 JS(주석 줄 걷은 뒤) ≤ 120 KB, CSS ≤ 24 KB, feed JS ≤ 3 KB. 줄 규칙
+    표의 등록(줄 갈래를 더 실음 — 접속 명단 하나)은 JS ≤ 130 KB 다."""
     assert len(REGISTERED_JS.encode("utf-8")) <= 120_000
     assert len(REGISTERED_CSS.encode("utf-8")) <= 24_000
+    assert len(ROWS_JS.encode("utf-8")) <= 130_000
+    assert len(ROWS_CSS.encode("utf-8")) <= 24_000
     assert len(edit_grid.feed_js().encode("utf-8")) <= 3_000
 
 
@@ -304,10 +323,13 @@ def test_the_cleanup_releases_listeners_timers_and_frames() -> None:
 
 
 def test_the_component_is_registered_once_with_a_shadow_root() -> None:
-    """그림자 DOM(기본값) — 팝업 안에 마운트하지 않는다. 두 등록 이름이 정해져 있다."""
+    """그림자 DOM(기본값) — 팝업 안에 마운트하지 않는다. 세 등록 이름이 정해져 있다(줄 규칙 표의
+    껍데기 `capa_edit_grid_rows` 는 줄 갈래를 더 실은 같은 껍데기 꼴)."""
     assert "isolate_styles" not in SOURCE.split("_GRID = st.components.v2.component(")[1][:200]
-    assert SOURCE.count("st.components.v2.component(") == 2
+    assert "isolate_styles" not in SOURCE.split("_GRID_ROWS = st.components.v2.component(")[1][:200]
+    assert SOURCE.count("st.components.v2.component(") == 3
     assert edit_grid.GRID_COMPONENT == "capa_edit_grid"
+    assert edit_grid.ROWS_COMPONENT == "capa_edit_grid_rows"
     assert edit_grid.FEED_COMPONENT == "capa_edit_grid_feed"
 
 

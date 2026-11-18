@@ -2,10 +2,10 @@
 
 """AppTest 에서 범용 편집 그리드(`components/edit_grid`)를 흉내 내는 대역.
 
-AppTest 는 그 JS 를 못 돌린다. 대역은 두 등록(`_GRID` 껍데기·`_FEED` feed)이 받은 (key, data)를
-차례대로 목록에 적고, 세션 칸(`FAKE_EVENT_KEY`)에 넣어 둔 (호스트, 출납)을 그 마운트의 상태 값으로
-적은 뒤 받은 `on_outbox_change` 콜백을 부른다. 출납 값은 진짜처럼 세션에 남는다(같은 출납이 다시
-와도 seq 기억으로 한 번만 반영한다).
+AppTest 는 그 JS 를 못 돌린다. 대역은 등록(`_GRID` · `_GRID_ROWS` 껍데기·`_FEED` feed)이 받은
+(key, data)를 차례대로 목록에 적고, 세션 칸(`FAKE_EVENT_KEY`)에 넣어 둔 (호스트, 출납)을 그
+마운트의 상태 값으로 적은 뒤 받은 `on_outbox_change` 콜백을 부른다. 출납 값은 진짜처럼 세션에
+남는다(같은 출납이 다시 와도 seq 기억으로 한 번만 반영한다).
 
 콜백을 부르는 때는 둘이다.
 
@@ -70,6 +70,7 @@ def install_fake_edit_grid(monkeypatch: pytest.MonkeyPatch, *, early: bool = Fal
         calls.append((kwargs["key"], kwargs["data"]))
 
     monkeypatch.setattr(edit_grid, "_GRID", _grid)
+    monkeypatch.setattr(edit_grid, "_GRID_ROWS", _grid)
     monkeypatch.setattr(edit_grid, "_FEED", _feed)
     if early:
         original = SafeSessionState.on_script_will_rerun

@@ -2766,13 +2766,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지워 양식으로)·`undo`·`redo`. op 하나 = 되돌리기 한 단계(직사각형의 전·후 상태), `UNDO_LIMIT` 40 · 이력 칸 `HISTORY_CELL_LIMIT`
     200,000(넘으면 오래된 단계부터 — 맨 새 단계는 남긴다), 새 op 가 오면 다시 실행 목록을 비운다. 이력 `gen` 과 다른 op·다른 표의
     op·꼴이 틀린 op(`kind="bad"`)는 버리되 ack 는 하고 수를 토스트로 알린다. 양식에 없는 줄은 건너뛰고 센다.
+  - **줄 규칙 표는 고른 표만**(2026-11-18 접속 명단 편집 표 — 지금은 `components/access_list_grid` 하나). 칸마다 형식
+    (`GridSpec.column_formats` — `text` 글: 앞뒤 공백 걷음 · 제어 문자 `text` · 글자 수 `len` · `pattern` 전체 맞음 오류, `choice`
+    고르기: 항목 글과 같아야 그 차례 번호 · 수는 차례 번호 그대로(채우기 원본) · 그 밖 `choice` 오류 — 값은 번호라 초안 · 이력 ·
+    채우기가 수 칸과 같은 길이다), 보이는 분류 칸이 아닌 업무 키 칸(`id_column` — 명단이 다시 읽혀 차례가 바뀌어도 초안이 제 사람에게
+    붙는다)과 줄 이름 칸(`label_column` — 상태 줄 · 변경 목록), 줄 규칙(`RowRules` · `LockKind` — 줄마다 잠긴 값 칸 · 까닭 · 지울 수
+    없는 까닭 · 빈 새 줄)과 줄 지우기 · 되살리기 op(`row_ops` — `remove` · `restore`, 초안의 예약 칸 `ROW_REMOVED` = 1.0, 빈 새 줄의
+    지우기는 그 줄 칸 비움, op 하나가 그 줄들 × 값 칸 + 표지 칸 한 단계). 잠긴 칸 · 지울 수 없는 줄은 op 반영이 건너뛰고 센다(토스트
+    `LOCKED_TOAST` · `LOCKED_ROWS_TOAST` — 브라우저도 막지만 서버가 다시 본다). 글 칸 양식 값은 `GridIndex.text_values`(행렬 자리는
+    NaN), 되머지는 글 칸을 글로, 지운 줄은 `removed_keys` 로 따로 읽는다. 주지 않은 표의 껍데기 · feed · op 반영은 그대로다(시험
+    `tests/test_edit_grid_rows.py` · 쌍둥이 사례 `edit_grid_cases.json` 의 `kinds`).
 - `src/capa_simulation/services/edit_grid_payload.py` — 범용 편집 그리드가 보내는 두 data 의 꼴(streamlit 모름). 껍데기
   본문(`encode_table` — 분류 칸 사전 `dims`·표시명 `labels`·줄마다 고정 폭 64자 코드 `codes`, 값 사전 `vals`(0 번은 빈칸)·줄마다
   (값 코드 + 길이 1글자) RLE `runs`(63 넘는 런은 나눔), 중복 키 꼬리표 `dupes`)과 색인을 한 번에 짓는다(`build_base` — 캐시
   `simulation_cache.get_edit_grid_base` 가 부른다, numpy 로 벡터화). `encode_base` 가 호스트·`baseKey`(`base_key` = 표:내용 토큰:줄
   차례 지문:표시명 지문)·글·팔레트·줄 높이·상한을 더하고, `encode_feed` 는 초안(줄마다 (코드 + 길이) RLE — 0 초안 없음 · 1 빈칸 ·
   2 못 읽음 · 3.. 값 사전 `dvals`)·오류 칸 앞 `BAD_LIMIT` 2,000개·수·되돌리기 수·ack·토스트·필터를 싣는다. 바이트 예산은
-  `tests/test_edit_grid_payload.py`(합성 2,660×30 껍데기 ≤ 100,000 B, feed 1·100·15,000칸 ≤ 1·4·64 KB).
+  `tests/test_edit_grid_payload.py`(합성 2,660×30 껍데기 ≤ 100,000 B, feed 1·100·15,000칸 ≤ 1·4·64 KB). 줄 규칙 표만 껍데기에
+  `fmts` · `ids` · `rowLabels` · `locks`(규칙마다 잠긴 값 칸 번호 · 까닭 · 지우기 까닭 · 빈 새 줄, 줄마다 규칙 번호) · `rowOps` 를 더
+  싣고 값 사전에 글이 들며(`_object_codes`), feed 에 지운 줄 `removed`(있을 때만)가 선다.
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
@@ -3238,7 +3250,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표 도구 막대」).
   - **바탕**(2026-11-12 보드 답 k-b2): 팔레트 `surface` 는 페이지 바탕색(`SURFACE_PAGE`)이다 — 둘레 · 칸 · 칸 입력 칸 · 적용 전 변경
     판 · 전체 화면 판. 표 도구 단추 · 찾기 칸은 `control`(`SURFACE` — 화면의 다른 단추와 같은 꼴), 고친 칸 · 틀린 칸 · 잠긴 칸은 제 토큰.
-  모듈을 읽을 때 두 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
+  모듈을 읽을 때 세 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
+  - **줄 규칙 표의 등록**(`ROWS_COMPONENT` `capa_edit_grid_rows` — 2026-11-18 접속 명단): 껍데기에 `fmts` · `ids` · `locks` ·
+    `rowOps` 가 있으면(`uses_rows`) 줄 갈래 `eg_rows.js` · `eg_rows.css` 를 eg_core 앞에 더 실은 등록(`ROWS_JS_PARTS` ·
+    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표가 받는 등록 JS 는 그대로다(예산 120 KB, 줄 규칙 등록 130 KB). 줄 갈래는 글 · 고르기
+    칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
+    붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(고른 줄 — 지울 수 없는
+    줄은 빼고 까닭 풍선, 모두 지운 줄이면 되살리기), 지운 줄 지움선 · 잠긴 칸 바탕 · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 칸 편집 중
+    칸 아래 항목 목록(누르면 그 항목 · ↑ ↓ 가 항목을 옮김)이다. 변경 목록은 지운 줄을 맨 앞 「줄 지움」 으로 싣고 ✕ 가
+    `restore` 다. 시험 `tests/test_edit_grid_rows_js.py`. 시험 대역은 `_GRID_ROWS` 도 바꾼다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
     `capa-edit-grid` 로 잇고(비공식 — 화면 탭 줄의 `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의

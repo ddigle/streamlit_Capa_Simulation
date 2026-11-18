@@ -12,6 +12,10 @@
 
 코드 글자는 64자(`CODE_ALPHABET`)이고 사전 크기 n 의 코드 폭은 `max(1, ceil(log64 n))` 이다.
 브라우저는 `eg_pure.js` 의 `// <eg-codes>` 가 같은 표로 푼다(쌍둥이 시험).
+
+고른 표(`services/edit_grid` 모듈 설명 「글 · 고르기 칸 · 줄 규칙」)만 껍데기에 칸마다 형식
+`fmts` · 업무 키 `ids` · 줄 이름 `rowLabels` · 줄 규칙 `locks` · 줄 지우기 `rowOps` 를 더 싣고, 값
+사전에 글이 들며, feed 에 지운 줄 `removed` 가 선다. 주지 않은 표의 두 꼴은 그대로다.
 """
 
 from __future__ import annotations
@@ -35,10 +39,12 @@ from capa_simulation.services.edit_grid import (
     GridIndex,
     GridSpec,
     HistoryState,
+    RowRules,
     build_index,
     change_counts,
     format_payload,
     key_duplicates,
+    removed_keys,
 )
 
 CODE_ALPHABET: Final = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
@@ -144,6 +150,45 @@ def base_key(table: str, content_token: str, order_digest: str, labels_key: str)
     return f"{table}:{content_token}:{order_digest}:{labels_key}"
 
 
+def _json_value(value: float | str) -> int | float | str:
+    return value if isinstance(value, str) else json_number(value)
+
+
+def _object_codes(index: GridIndex) -> tuple[list[Any], npt.NDArray[np.int64]]:
+    """글 칸이 든 표의 값 사전(0 = 빈칸)과 칸마다 코드 — 수와 글을 한 사전에(나온 차례)."""
+    rows, cols = index.values.shape
+    dictionary: dict[tuple[bool, float | str], int] = {}
+    codes = np.zeros((rows, cols), dtype=np.int64)
+    for row in range(rows):
+        for col in range(cols):
+            value = index.template_value(row, col)
+            if value is None:
+                continue
+            slot = (isinstance(value, str), value + 0.0 if isinstance(value, float) else value)
+            code = dictionary.get(slot)
+            if code is None:
+                code = dictionary[slot] = len(dictionary) + 1
+            codes[row, col] = code
+    return [None, *(_json_value(value) for _, value in dictionary)], codes
+
+
+def _row_rules(index: GridIndex, rules: RowRules) -> dict[str, Any]:
+    """줄 규칙 — 규칙마다 잠긴 값 칸 번호 · 까닭 · 지우기를 막는 까닭 · 빈 새 줄, 줄마다 규칙
+    번호."""
+    return {
+        "kinds": [
+            {
+                "cols": [index.cols[month] for month in kind.cols if month in index.cols],
+                "reason": kind.reason,
+                "remove": kind.remove,
+                "fresh": kind.fresh,
+            }
+            for kind in rules.kinds
+        ],
+        "rows": list(rules.rows),
+    }
+
+
 def encode_table(
     template: pd.DataFrame, spec: GridSpec, labels: Labels | None, index: GridIndex
 ) -> dict[str, Any]:
@@ -161,13 +206,18 @@ def encode_table(
         label_lists.append(shown if shown is not None and shown != values else None)
         key_codes.append(encode_codes(codes, width))
         widths.append(width)
-    matrix = index.values
-    finite = ~np.isnan(matrix)
-    uniques, inverse = np.unique(matrix[finite] + 0.0, return_inverse=True)
-    value_codes = np.zeros(matrix.shape, dtype=np.int64)
-    value_codes[finite] = inverse.reshape(-1) + 1
-    value_width = code_width(len(uniques) + 1)
-    return {
+    vals: list[Any]
+    if index.text_cols:
+        vals, value_codes = _object_codes(index)
+    else:
+        matrix = index.values
+        finite = ~np.isnan(matrix)
+        uniques, inverse = np.unique(matrix[finite] + 0.0, return_inverse=True)
+        value_codes = np.zeros(matrix.shape, dtype=np.int64)
+        value_codes[finite] = inverse.reshape(-1) + 1
+        vals = [None, *(json_number(float(value)) for value in uniques)]
+    value_width = code_width(len(vals))
+    body: dict[str, Any] = {
         "table": spec.table,
         "title": spec.title,
         "rows": len(index.keys),
@@ -179,11 +229,26 @@ def encode_table(
         "labels": label_lists,
         "codes": key_codes,
         "codeWidths": widths,
-        "vals": [None, *(json_number(float(value)) for value in uniques)],
+        "vals": vals,
         "valWidth": value_width,
         "runs": encode_runs(value_codes, value_width),
-        "dupes": [list(pair) for pair in key_duplicates(template, spec.key_columns)],
+        "dupes": (
+            []
+            if spec.id_column is not None
+            else [list(pair) for pair in key_duplicates(template, spec.key_columns)]
+        ),
     }
+    if spec.column_formats:
+        body["fmts"] = [format_payload(spec.format_of(month)) for month in spec.value_columns]
+    if spec.id_column is not None:
+        body["ids"] = list(index.keys)
+    if spec.label_column is not None:
+        body["rowLabels"] = [str(value) for value in template[spec.label_column].tolist()]
+    if index.rules is not None:
+        body["locks"] = _row_rules(index, index.rules)
+    if spec.row_ops:
+        body["rowOps"] = True
+    return body
 
 
 @dataclass(frozen=True)
@@ -196,9 +261,12 @@ class EditGridBase:
     size: int = 0
 
 
-def build_base(template: pd.DataFrame, spec: GridSpec, labels: Labels | None) -> EditGridBase:
-    """양식 하나의 색인과 본문(캐시 빗나감에만 — `simulation_cache.get_edit_grid_base`)."""
-    index = build_index(template, spec)
+def build_base(
+    template: pd.DataFrame, spec: GridSpec, labels: Labels | None, rules: RowRules | None = None
+) -> EditGridBase:
+    """양식 하나의 색인과 본문(캐시 빗나감에만 — `simulation_cache.get_edit_grid_base`). 줄 규칙
+    (`rules`)은 고른 표만 준다."""
+    index = build_index(template, spec, rules)
     body = encode_table(template, spec, labels, index)
     return EditGridBase(index, body, payload_bytes(body))
 
@@ -242,9 +310,9 @@ def empty_base(
 
 def _draft_rows(
     index: GridIndex, draft: DraftState
-) -> tuple[list[list[Any]], list[int | float], int, list[list[Any]], int]:
+) -> tuple[list[list[Any]], list[int | float | str], int, list[list[Any]], int]:
     """초안을 줄 RLE 로 — (drows, dvals, 코드 폭, 오류 칸 앞 `BAD_LIMIT` 개, 오류 칸 수)."""
-    dictionary: dict[float, int] = {}
+    dictionary: dict[float | str, int] = {}
     per_row: dict[int, dict[int, int]] = {}
     for key, cells in draft["cells"].items():
         row = index.rows.get(key)
@@ -296,7 +364,7 @@ def _draft_rows(
             col += length
         drows.append([row, start, "".join(pairs)])
     bad.sort(key=lambda item: (item[0], item[1]))
-    values = [json_number(value) for value in dictionary]
+    values = [_json_value(value) for value in dictionary]
     return drows, values, width, bad, bad_count
 
 
@@ -333,6 +401,9 @@ def encode_feed(
     if index is not None and draft is not None:
         drows, values, width, bad, bad_count = _draft_rows(index, draft)
         feed.update(dvals=values, dwidth=width, drows=drows, bad=bad, badCount=bad_count)
+        removed = sorted(index.rows[key] for key in removed_keys(draft) if key in index.rows)
+        if removed:
+            feed["removed"] = removed
     return feed
 
 

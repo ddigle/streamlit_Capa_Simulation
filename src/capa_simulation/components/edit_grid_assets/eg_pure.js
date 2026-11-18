@@ -49,7 +49,8 @@ function rowKeyText(dims, keyCodes, dupes, r) {
   return parts.join(KEY_SEPARATOR) + (count ? DUPLICATE_SEPARATOR + count : '')
 }
 
-// 껍데기 → 모델. 값은 Float64Array(줄 × 값 칸, 빈칸 NaN).
+// 껍데기 → 모델. 값은 Float64Array(줄 × 값 칸, 빈칸 NaN) — 글 칸이 든 표(fmts)는 Array(글 · 수 · NaN). ids 가 있으면 그것이
+// 업무 키다. 칸마다 형식 fmts · 줄 이름 rowLabels · 줄 규칙 locks · 줄 지우기 rowOps 는 고른 표만 싣는다.
 function decodeBase(shell) {
   const keyCols = shell.keyCols || []
   const valueCols = shell.valueCols || []
@@ -60,21 +61,22 @@ function decodeBase(shell) {
   const keyCodes = (shell.codes || []).map((text, j) => decodeCodes(text, (shell.codeWidths || [])[j]))
   const vals = shell.vals || [null]
   const runs = shell.runs || []
-  const values = new Float64Array(rows * valueCount)
+  const fmts = shell.fmts || null
+  const values = fmts && fmts.some((f) => f && f.kind === 'text') ? new Array(rows * valueCount).fill(NaN) : new Float64Array(rows * valueCount)
   const line = new Int32Array(valueCount)
   for (let r = 0; r < rows; r += 1) {
     line.fill(0)
     decodeRuns(runs[r], shell.valWidth, line, 0, valueCount)
     for (let c = 0; c < valueCount; c += 1) {
       const value = vals[line[c]]
-      values[r * valueCount + c] = value === null || value === undefined ? NaN : Number(value)
+      values[r * valueCount + c] = value === null || value === undefined ? NaN : typeof value === 'string' ? value : Number(value)
     }
   }
   const dupes = new Map((shell.dupes || []).map((pair) => [pair[0], pair[1]]))
   const keys = new Array(rows)
   const rowOf = new Map()
   for (let r = 0; r < rows; r += 1) {
-    keys[r] = rowKeyText(dims, keyCodes, dupes, r)
+    keys[r] = shell.ids ? String(shell.ids[r]) : rowKeyText(dims, keyCodes, dupes, r)
     rowOf.set(keys[r], r)
   }
   const colOf = new Map(valueCols.map((name, c) => [name, c]))
@@ -82,10 +84,16 @@ function decodeBase(shell) {
     table: shell.table, title: shell.title || '', rows, keyCount, valueCount, colCount: keyCount + valueCount,
     keyCols, valueCols, dims, labels: shell.labels || [], keyCodes, values, keys, rowOf, colOf,
     fmt: shell.fmt || { kind: 'fixed', digits: 0 }, draft: new Map(), bad: new Map(),
+    fmts, rowLabels: shell.rowLabels || null, locks: shell.locks || null, rowOps: Boolean(shell.rowOps), removed: new Set(),
   }
 }
 
-// feed 초안 → Map(셀번호 → 값 | null(빈칸) | DRAFT_BAD) 과 Map(셀번호 → {text, code}). 셀번호 = 줄 × 값 칸 + 칸.
+// 값 칸 vc 의 형식(칸마다 정하지 않은 표는 표 형식).
+function fmtOf(m, vc) {
+  return (m.fmts && m.fmts[vc]) || m.fmt
+}
+
+// feed 초안 → Map(셀번호 → 값 | null(빈칸) | DRAFT_BAD) 과 Map(셀번호 → {text, code}), 지운 줄 Set. 셀번호 = 줄 × 값 칸 + 칸.
 function decodeDraft(feed, valueCount) {
   const draft = new Map()
   const bad = new Map()
@@ -100,16 +108,19 @@ function decodeDraft(feed, valueCount) {
     for (let k = 0; k < count; k += 1) {
       const code = codes[k]
       if (!code) continue
-      draft.set(row * valueCount + start + k, code === 1 ? null : code === 2 ? DRAFT_BAD : Number(dvals[code - 3]))
+      const value = dvals[code - 3]
+      draft.set(row * valueCount + start + k, code === 1 ? null : code === 2 ? DRAFT_BAD : typeof value === 'string' ? value : Number(value))
     }
   }
   for (const item of feed.bad || []) bad.set(item[0] * valueCount + item[1], { text: String(item[2]), code: String(item[3]) })
-  return { draft, bad }
+  return { draft, bad, removed: new Set(feed.removed || []) }
 }
 // </eg-codes>
 
 // <eg-format>
-// 값 다듬기(Python `coerce` 와 같은 규칙)와 표시 형식(`format_value`). 공백은 이 글자 묶음만 걷는다.
+// 값 다듬기(Python `coerce` 와 같은 규칙)와 표시 형식(`format_value`). 공백은 이 글자 묶음만 걷는다. 글 · 고르기 형식은 KINDS 에
+// 단 갈래(eg_rows 의 `// <eg-kinds>` — 그 파일을 실은 등록에만)가 맡는다.
+const KINDS = {}
 const STRIP_EDGES = /^[ \t\n\r\f\v 　]+|[ \t\n\r\f\v 　]+$/g
 const STRIP_END = /[ \t\n\r\f\v 　]+$/
 const NUMBER_TEXT = /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/
@@ -138,6 +149,7 @@ function parseNumberText(body, percent) {
 
 // 칸에 적은 글(또는 수) → {value, error, text}. 빈 글은 빈칸(null — blankZero 면 0). 범위 검사는 양식과 같은 값이면 하지 않는다.
 function parseInput(raw, fmt, templateValue) {
+  if (KINDS[fmt.kind]) return KINDS[fmt.kind].parse(raw, fmt, templateValue)
   const blank = { value: fmt.blankZero ? 0 : null, error: null, text: null }
   if (raw === null || raw === undefined) return blank
   let number
@@ -198,6 +210,7 @@ function significantText(value, digits) {
 // 칸에 보이는 글. percent 98.75% · fixed 천 단위 + 소수 digits · sig 유효숫자. 빈칸은 빈 글.
 function formatValue(value, fmt) {
   if (value === null || value === undefined || Number.isNaN(value)) return ''
+  if (KINDS[fmt.kind]) return KINDS[fmt.kind].format(value, fmt)
   const number = value + 0
   const digits = Number(fmt.digits) || 0
   if (fmt.kind === 'percent') return groupedText(stripZeros((number * 100).toFixed(digits))) + '%'
@@ -208,6 +221,7 @@ function formatValue(value, fmt) {
 // 칸 편집기의 처음 글 — percent 는 「98.75%」(100 배를 15자리로 다듬음), 그 밖은 원값 글.
 function editText(value, fmt) {
   if (value === null || value === undefined || Number.isNaN(value)) return ''
+  if (KINDS[fmt.kind]) return KINDS[fmt.kind].format(value, fmt)
   if (fmt.kind === 'percent') return numberText(Number((value * 100).toPrecision(15))) + '%'
   return numberText(value)
 }
@@ -447,10 +461,10 @@ function changeEntries(draft, bad, values, valueCount, rank, limit) {
 
 // ---------------------------------------------------------------- 기능 갈고리
 // 기능 파일(eg_select·eg_fill·eg_toolbar)은 모듈을 읽을 때 `feature({...})` 로 갈고리를 등록하고, eg_core 가 마운트 때 이
-// 차례(select → fill → toolbar)로 부른다. 갈고리: init · keydown(true 면 처리함) · pointerdown(true 면 처리함) · paintCell ·
+// 차례(select → fill → toolbar → rows)로 부른다. 갈고리: init · keydown(true 면 처리함) · pointerdown(true 면 처리함) · paintCell ·
 // paintOverlay · onFeed · onSelect · onLayout · cleanup.
 const FEATURES = []
-const FEATURE_ORDER = ['select', 'fill', 'toolbar']
+const FEATURE_ORDER = ['select', 'fill', 'toolbar', 'rows']
 
 function feature(def) {
   if (!def || typeof def.name !== 'string') return

@@ -270,8 +270,9 @@ function egRebuildView(S, keepCell) {
   const oneRow = corner.r === S.focus.r && S.anchor.r === S.focus.r
   const anchorRow = keepCell && old.length ? old[Math.min(S.anchor.r, old.length - 1)] : -1
   const sort = S.view.sort && S.view.sort.col < m.colCount ? S.view.sort : null
-  const numeric = Boolean(sort && sort.col >= m.keyCount)
-  const keyOf = sort ? (row) => (numeric ? egNumberAt(S, row, sort.col - m.keyCount) : egLabel(S, row, sort.col)) : null
+  const vc = sort ? sort.col - m.keyCount : -1
+  const numeric = vc >= 0 && fmtOf(m, vc).kind !== 'text'
+  const keyOf = sort ? (row) => (numeric ? egNumberAt(S, row, vc) : vc < 0 ? egLabel(S, row, sort.col) : formatValue(egCellState(S, row, vc).value, fmtOf(m, vc))) : null
   const filters = S.feedData && S.feedData.table === m.table ? S.feedData.filters : null
   S.view.order = viewOrder(m.rows, m.keyCodes, filters, sort, keyOf, numeric)
   S.view.rank = viewRank(S.view.order, m.rows)
@@ -332,6 +333,7 @@ function egApplyFeed(S, feed) {
   const decoded = decodeDraft(feed, m.valueCount)
   m.draft = decoded.draft
   m.bad = decoded.bad
+  m.removed = decoded.removed
   const filterKey = JSON.stringify(feed.filters || null)
   if (filterKey !== S.view.filterKey) {
     S.view.filterKey = filterKey
@@ -397,13 +399,15 @@ function egErrorText(S, code) {
   return typeof errors[code] === 'string' ? errors[code] : code
 }
 
-// 지금 보이는 값 — 분류 칸은 원값 글, 값 칸은 수 | null(빈칸) | 글(못 읽은 칸). r 은 보기 줄.
+// 지금 보이는 값 — 분류 칸은 원값 글, 값 칸은 수 | null(빈칸) | 글(못 읽은 칸 · 글 · 고르기 칸). r 은 보기 줄.
 function valueAt(S, r, c) {
   const m = S.model
   const row = S.view.order[r]
   if (c < m.keyCount) return String(m.dims[c][m.keyCodes[c][row]])
   const state = egCellState(S, row, c - m.keyCount)
-  return state.bad ? state.bad.text : state.value
+  if (state.bad) return state.bad.text
+  const f = fmtOf(m, c - m.keyCount)
+  return KINDS[f.kind] && state.value !== null ? formatValue(state.value, f) : state.value
 }
 
 // 칸에 보이는 글(분류 칸은 표시명).
@@ -412,7 +416,7 @@ function displayText(S, r, c) {
   const row = S.view.order[r]
   if (c < m.keyCount) return egLabel(S, row, c)
   const state = egCellState(S, row, c - m.keyCount)
-  return state.bad ? state.bad.text : formatValue(state.value, m.fmt)
+  return state.bad ? state.bad.text : formatValue(state.value, fmtOf(m, c - m.keyCount))
 }
 
 // 복사 글 — 수 칸은 원값(소수점 ., 천 단위 없음, percent 는 분수), 분류 칸은 표시명, 못 읽은 칸은 적은 글.
@@ -422,11 +426,18 @@ function rawText(S, r, c) {
   if (c < m.keyCount) return egLabel(S, row, c)
   const state = egCellState(S, row, c - m.keyCount)
   if (state.bad) return state.bad.text
-  return state.value === null ? '' : numberText(state.value)
+  const f = fmtOf(m, c - m.keyCount)
+  return state.value === null ? '' : KINDS[f.kind] ? formatValue(state.value, f) : numberText(state.value)
 }
 
 function isLocked(S, c) {
   return !S.model || c < S.model.keyCount
+}
+
+// 보기 칸을 고칠 수 없는 까닭(고칠 수 있으면 빈 글) — 분류 칸, 그리고 줄 규칙 갈래(S.lockAt — 고른 표만)가 잠근 칸.
+function egLockWhy(S, r, c) {
+  if (isLocked(S, c)) return egText(S, 'locked', '')
+  return S.lockAt ? S.lockAt(S, S.view.order[r], c - S.model.keyCount) : ''
 }
 
 // 보기 줄 r0..r1 의 업무 키(보기 차례).
@@ -623,7 +634,7 @@ function egRow(S, r, range) {
         cell.classList.add('is-error')
         cell.setAttribute('aria-invalid', 'true')
         text = state.bad.text
-      } else text = formatValue(state.value, m.fmt)
+      } else text = formatValue(state.value, fmtOf(m, c - m.keyCount))
     }
     cell.textContent = text
     const selected = r >= range.r0 && r <= range.r1 && c >= range.c0 && c <= range.c1
@@ -701,7 +712,7 @@ function egWhere(S) {
   const row = S.view.order[Math.min(S.anchor.r, S.view.order.length - 1)]
   const keys = []
   for (let j = 0; j < m.keyCount; j += 1) keys.push(egLabel(S, row, j))
-  let text = m.title + ' › ' + keys.join(' · ')
+  let text = m.title + ' › ' + (m.rowLabels ? String(m.rowLabels[row]) : keys.join(' · '))
   if (S.anchor.c >= m.keyCount) {
     text += ' · ' + m.valueCols[S.anchor.c - m.keyCount]
     const state = egCellState(S, row, S.anchor.c - m.keyCount)
@@ -933,7 +944,7 @@ function egHistory(S, kind) {
 function egEditTextAt(S, r, c) {
   const m = S.model
   const state = egCellState(S, S.view.order[r], c - m.keyCount)
-  return state.bad ? state.bad.text : editText(state.value, m.fmt)
+  return state.bad ? state.bad.text : editText(state.value, fmtOf(m, c - m.keyCount))
 }
 
 // 칸 편집 시작 — text 를 주면 그 글로 바꿔 쓰기(글자 입력·Backspace), 없으면 지금 값(Enter·F2·두 번 누름).
@@ -941,8 +952,9 @@ function startEdit(S, text) {
   const m = S.model
   if (!m || S.edit || !S.view.order.length) return
   const { r, c } = S.anchor
-  if (isLocked(S, c)) {
-    setStatus(S, egText(S, 'locked', ''))
+  const why = egLockWhy(S, r, c)
+  if (why) {
+    setStatus(S, why)
     return
   }
   if (!S.gen) {
@@ -1042,8 +1054,9 @@ function egOnPaste(S, event) {
   const text = (event.clipboardData && event.clipboardData.getData('text/plain')) || ''
   const first = text.replace(/\r?\n$/, '').split(/[\t\r\n]/)[0]
   const { r, c } = S.anchor
-  if (isLocked(S, c)) {
-    setStatus(S, egText(S, 'locked', ''))
+  const why = egLockWhy(S, r, c)
+  if (why) {
+    setStatus(S, why)
     return
   }
   queueOp(S, { op: 'write', rows: rowKeys(S, r, r), cols: colNames(S, c, c), values: [[first]] })
@@ -1085,7 +1098,7 @@ function queueOp(S, op) {
 function egPreviewOf(m, row, col, raw) {
   const base = m.values[row * m.valueCount + col]
   const template = Number.isNaN(base) ? null : base
-  const parsed = parseInput(raw, m.fmt, template)
+  const parsed = parseInput(raw, fmtOf(m, col), template)
   if (parsed.error) return { bad: { text: String(parsed.text), code: parsed.error } }
   if (parsed.value === template) return { revert: true }
   return { value: parsed.value }
@@ -1097,7 +1110,7 @@ function egPreview(S, op) {
   const out = new Map()
   const rows = (op.rows || []).map((key) => m.rowOf.get(key))
   const cols = (op.cols || []).map((name) => m.colOf.get(name))
-  const put = (row, col, item) => out.set(row * m.valueCount + col, item)
+  const put = (row, col, item) => S.lockAt && S.lockAt(S, row, col) ? null : out.set(row * m.valueCount + col, item)
   if (op.op === 'write' || op.op === 'clear') {
     const values = op.op === 'write' ? op.values || [] : [['']]
     rows.forEach((row, i) => {

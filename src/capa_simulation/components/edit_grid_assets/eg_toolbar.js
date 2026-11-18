@@ -234,9 +234,10 @@ function tbErrorText(S, code) {
   return typeof errors[code] === 'string' ? errors[code] : String(code)
 }
 
-// 원본 줄의 분류 표시명 「공정 · 양산」.
+// 원본 줄의 분류 표시명 「공정 · 양산」(줄 이름을 실은 표는 그 이름).
 function tbRowLabel(S, row) {
   const m = S.model
+  if (m.rowLabels) return String(m.rowLabels[row])
   const parts = []
   for (let j = 0; j < m.keyCount; j += 1) {
     const code = m.keyCodes[j][row]
@@ -861,8 +862,8 @@ function tbToggleDrawer(S, open) {
   if (S.model) egLayout(S)
 }
 
-function tbValueText(S, value) {
-  return value === null || value === undefined ? tbText(S, 'changesBlank', '빈칸') : formatValue(value, S.model.fmt)
+function tbValueText(S, value, col) {
+  return value === null || value === undefined ? tbText(S, 'changesBlank', '빈칸') : formatValue(value, fmtOf(S.model, col))
 }
 
 // 서랍 목록 — 초안 칸(feed 가 실어 온 것)을 보기 차례로, 앞 500개. 줄마다 「분류 · 월」 과 「옛 값 → 새 값」(오류는 적은 글).
@@ -871,6 +872,10 @@ function tbRenderDrawer(S) {
   const m = S.model
   if (!tb.drawerOpen || !m) return
   const listing = changeEntries(m.draft, m.bad, m.values, m.valueCount, S.view.rank, TB_CHANGES_LIMIT)
+  for (const row of m.removed) {
+    listing.entries.unshift({ row, col: -1, removed: true })
+    listing.total += 1
+  }
   tb.entries = listing.entries
   const fragment = document.createDocumentFragment()
   listing.entries.forEach((entry, i) => fragment.appendChild(tbChangeRow(S, entry, i)))
@@ -889,15 +894,15 @@ function tbChangeRow(S, entry, i) {
   const item = tbEl('div', 'eg-chg')
   item.setAttribute('role', 'listitem')
   item.dataset.i = String(i)
-  const where = tbRowLabel(S, entry.row) + ' · ' + m.valueCols[entry.col]
+  const where = tbRowLabel(S, entry.row) + ' · ' + (entry.removed ? tbText(S, 'rowRemoved', '줄 지움') : m.valueCols[entry.col])
   const go = tbEl('button', 'eg-chg-go')
   go.type = 'button'
   go.title = where
   go.appendChild(tbEl('span', 'eg-chg-where', where))
   const line = tbEl('span', 'eg-chg-val')
-  line.appendChild(tbEl('span', 'eg-chg-old', tbValueText(S, entry.before)))
-  line.appendChild(tbEl('span', 'eg-chg-arrow', ' → '))
-  const after = tbEl('span', 'eg-chg-new', entry.bad ? entry.bad.text : tbValueText(S, entry.after))
+  if (!entry.removed) line.appendChild(tbEl('span', 'eg-chg-old', tbValueText(S, entry.before, entry.col)))
+  if (!entry.removed) line.appendChild(tbEl('span', 'eg-chg-arrow', ' → '))
+  const after = tbEl('span', 'eg-chg-new', entry.removed ? '' : entry.bad ? entry.bad.text : tbValueText(S, entry.after, entry.col))
   if (entry.bad) {
     item.classList.add('is-bad')
     after.title = tbErrorText(S, entry.bad.code)
@@ -916,7 +921,8 @@ function tbOnChangeClick(S, event) {
   const entry = item ? S.tb.entries[Number(item.dataset.i)] : null
   if (!entry || !S.model) return
   if (event.target.closest('.eg-chg-x')) {
-    const op = { op: 'revert', rows: [S.model.keys[entry.row]], cols: [S.model.valueCols[entry.col]] }
+    const key = S.model.keys[entry.row]
+    const op = entry.removed ? { op: 'restore', rows: [key] } : { op: 'revert', rows: [key], cols: [S.model.valueCols[entry.col]] }
     if (sendOnce(S, op)) item.classList.add('is-pending')
     return
   }
@@ -925,7 +931,7 @@ function tbOnChangeClick(S, event) {
     setStatus(S, tbText(S, 'changesHidden', '지금 보기(필터)에 없는 줄입니다'))
     return
   }
-  const c = S.model.keyCount + entry.col
+  const c = S.model.keyCount + Math.max(entry.col, 0)
   setRange(S, { r, c }, { r, c })
   scrollToCell(S, r, c)
   focusGrid(S)

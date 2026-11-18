@@ -23,8 +23,13 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 - **늘 같은 자리에서 부른다** — feed 요소, 그다음 무거운 요소(이 차례 고정, 둘 다 key 고정). 앞 형제
   순번이 밀리면 다시 마운트되어 보내지 않은 출납을 잃는다.
 
-이 모듈은 읽을 때 두 컴포넌트를 등록한다 — 페이지 대본이 늘 import 해 첫 AppTest 실행에서 등록되게
-한다. 시험은 `tests/conftest.py` 의 대역(`_GRID`·`_FEED`)이 바꾼다.
+- **줄 규칙 표는 다른 등록**(`ROWS_COMPONENT` — 2026-11-18 접속 명단 편집 표). 껍데기에 칸마다
+  형식 · 업무 키 · 줄 규칙 · 줄 지우기(`fmts` · `ids` · `locks` · `rowOps`)가 실리면 `eg_rows.js` ·
+  `eg_rows.css` 를 더 실은 등록으로 그린다(`ROWS_JS_PARTS`) — 그 밖의 표가 받는 등록 JS 는
+  그대로다(예산).
+
+이 모듈은 읽을 때 세 컴포넌트를 등록한다 — 페이지 대본이 늘 import 해 첫 AppTest 실행에서 등록되게
+한다. 시험은 `tests/conftest.py` 의 대역(`_GRID`·`_GRID_ROWS`·`_FEED`)이 바꾼다.
 """
 
 from __future__ import annotations
@@ -64,11 +69,17 @@ from capa_simulation.services.korean_particle import with_subject_particle
 
 _ASSETS: Final = Path(__file__).with_name("edit_grid_assets")
 GRID_COMPONENT: Final = "capa_edit_grid"
+ROWS_COMPONENT: Final = "capa_edit_grid_rows"
 FEED_COMPONENT: Final = "capa_edit_grid_feed"
 # 등록 때 이 차례로 잇는다 — 기능 파일의 최상위 `feature({...})` 가 읽을 때 차례로 돌고 eg_core 가
 # 마운트 때 부른다.
 JS_PARTS: Final = ("eg_pure.js", "eg_select.js", "eg_fill.js", "eg_toolbar.js", "eg_core.js")
 CSS_PARTS: Final = ("eg_core.css", "eg_select.css", "eg_fill.css", "eg_toolbar.css")
+# 줄 규칙 표의 등록 — 줄 갈래를 eg_core 앞에 더한다.
+ROWS_JS_PARTS: Final = (*JS_PARTS[:-1], "eg_rows.js", JS_PARTS[-1])
+ROWS_CSS_PARTS: Final = (*CSS_PARTS, "eg_rows.css")
+# 껍데기에 이 칸 가운데 하나가 있으면 줄 규칙 표의 등록으로 그린다.
+ROWS_SHELL_KEYS: Final = ("fmts", "ids", "locks", "rowOps")
 FEED_JS: Final = "feed.js"
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = ("outbox",)
@@ -97,14 +108,16 @@ def _joined(parts: Sequence[str], *, drop_comments: bool) -> str:
     return "\n".join(text for text in texts if text) + "\n"
 
 
-def registered_js() -> str:
-    """등록 JS — `JS_PARTS` 를 잇고 주석만 든 줄을 걷는다(줄 끝 주석·문자열 안 `//` 는 그대로)."""
-    return _joined(JS_PARTS, drop_comments=True)
+def registered_js(parts: Sequence[str] = JS_PARTS) -> str:
+    """등록 JS — `parts`(기본 `JS_PARTS`)를 잇고 주석만 든 줄을 걷는다(줄 끝 주석·문자열 안
+    `//` 는 그대로)."""
+    return _joined(parts, drop_comments=True)
 
 
-def registered_css() -> str:
-    """등록 CSS — `CSS_PARTS` 를 잇는다(CSS 파일에는 주석을 적지 않는다 — 자산 시험)."""
-    return _joined(CSS_PARTS, drop_comments=False)
+def registered_css(parts: Sequence[str] = CSS_PARTS) -> str:
+    """등록 CSS — `parts`(기본 `CSS_PARTS`)를 잇는다(CSS 파일에는 주석을 적지 않는다 — 자산 시험
+    이 본다)."""
+    return _joined(parts, drop_comments=False)
 
 
 def feed_js() -> str:
@@ -116,6 +129,12 @@ _GRID = st.components.v2.component(
     html=(_ASSETS / "grid.html").read_text(encoding="utf-8"),
     css=registered_css(),
     js=registered_js(),
+)
+_GRID_ROWS = st.components.v2.component(
+    ROWS_COMPONENT,
+    html=(_ASSETS / "grid.html").read_text(encoding="utf-8"),
+    css=registered_css(ROWS_CSS_PARTS),
+    js=registered_js(ROWS_JS_PARTS),
 )
 _FEED = st.components.v2.component(FEED_COMPONENT, js=feed_js())
 
@@ -166,12 +185,50 @@ def _bound_text(value: float | None, spec: GridSpec) -> str:
     return format_value(value, spec.fmt) if value is not None else ""
 
 
+def _rows_texts(spec: GridSpec) -> dict[str, Any]:
+    """줄 규칙 표만의 글 — 줄 지우기 단추 · 변경 목록 · 지운 줄 잠김 · 글 · 고르기 칸 오류."""
+    found: dict[str, Any] = {}
+    if spec.row_ops:
+        found.update(
+            rowRemove="줄 지우기",
+            rowRestore="줄 되살리기",
+            rowRemoveHint="고른 줄을 지웁니다 — 저장해야 빠집니다(빈 새 줄은 칸을 비웁니다)",
+            rowRestoreHint="고른 지운 줄을 되살립니다",
+            rowRemoved="줄 지움",
+            removedRow="지운 줄입니다 — 「줄 되살리기」 뒤에 고칩니다",
+        )
+    errors: dict[str, str] = {}
+    for _, fmt in spec.column_formats:
+        if fmt.kind == "choice":
+            errors["choice"] = f"{' · '.join(fmt.options)} 가운데 하나를 적습니다"
+        if fmt.kind == "text":
+            errors["text"] = "줄바꿈 · 탭 같은 글자는 받지 않습니다"
+            if fmt.max_length:
+                errors["len"] = f"{fmt.max_length}자 이하로 적습니다"
+            if fmt.pattern is not None:
+                errors["pattern"] = "꼴이 맞지 않습니다"
+    if errors:
+        found["kindErrors"] = errors
+    return found
+
+
 def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
-    """그리드 글(한국어) — 껍데기에 싣는다. 오류 문구의 하한·상한은 그 표의 형식으로 채운다."""
+    """그리드 글(한국어) — 껍데기에 싣는다. 오류 문구의 하한·상한은 그 표의 형식으로 채운다. 줄 규칙
+    표는 제 글을 더한다(`_rows_texts` — 그 밖의 표 글은 그대로)."""
     fmt = spec.fmt
     maximum = f"{_bound_text(fmt.max_value, spec)} 이하로 적습니다"
     if fmt.kind == "percent":
         maximum += " — 85% 는 0.85 또는 85% 로 적습니다"
+    found = _base_texts(spec, changes_label=changes_label, maximum=maximum)
+    extra = _rows_texts(spec)
+    kind_errors = extra.pop("kindErrors", None)
+    if kind_errors:
+        found["errors"] = {**found["errors"], **kind_errors}
+    return {**found, **extra}
+
+
+def _base_texts(spec: GridSpec, *, changes_label: str, maximum: str) -> dict[str, Any]:
+    fmt = spec.fmt
     return {
         "toolbar": f"{spec.title} 표 도구",
         "find": "찾기",
@@ -414,6 +471,11 @@ def discard_table(slot_keys: tuple[str, str], keys: GridKeys | None = None) -> N
 # ------------------------------------------------------------------ data 짓기·그리기
 
 
+def uses_rows(shell: Mapping[str, Any]) -> bool:
+    """줄 규칙 표의 껍데기인가 — 그 등록(`_GRID_ROWS`)으로 그린다."""
+    return any(key in shell for key in ROWS_SHELL_KEYS)
+
+
 def shell_data(
     host: str,
     base: EditGridBase | None,
@@ -533,4 +595,5 @@ def render_edit_grid(
     _check_host(host)
     st.html(hide_feed_style(host) + page_style)
     _FEED(key=feed_key(host), data=dict(feed), width="stretch")
-    _GRID(key=host, data=dict(shell), on_outbox_change=on_outbox, width="stretch")
+    grid = _GRID_ROWS if uses_rows(shell) else _GRID
+    grid(key=host, data=dict(shell), on_outbox_change=on_outbox, width="stretch")
