@@ -3086,7 +3086,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `sidebar_expander`·`condition_card` 는 `key` + 상태 추적 `on_change` 로 펼침을 기억한다(`expanded=` 없음).
     조건 카드 key 는 `condition_card_<이름>` 이고 `sidebar_style.py` 가 그 접두어 하나로 서식을 건다.
   - 상자 여닫기는 9장 **여닫을 때 본문을 다시 돌리지 않는다**의 구현이다(`on_box_toggle`·`rerun_fragment_if_alone`·
-    `keeps_app_run_open`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다. 「이번 상호작용에서
+    `keeps_app_run_open`·`lowers_app_run`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다. 「이번 상호작용에서
     그 위젯만 바뀌었나」(`_only_this_widget_changed`)는 Components v2 부품의 트리거 모음 칸(1.63 `_make_trigger_id(<부품 id>,
     "events")` — `own_widget_ids`)도 그 위젯으로 센다 — 화면 탭 줄 고정·차례가 이 길로 페이지를 다시 돌리지 않는다(2026-11-02).
     내부 이름이 바뀌면 그 칸이 「다른 위젯」 으로 세어져 앱 전체 회차로 물러난다.
@@ -7917,6 +7917,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 프래그먼트 안 위젯의 콜백은 `rerun_fragment_if_alone` 이 아니라 `sidebar_status.rerun_app_unless_alone` 을 부른다
   (판정이 거짓일 때만 앱 전체로 올린다). 저장·불러오기·「적용」처럼 앱 전체 재실행으로 끝날 수 있는 프래그먼트 본문은
   `sidebar_status.keeps_app_run_open` 으로 감싸고 그 데코레이터는 `@st.fragment` 안쪽에 둔다.
+- **DB 에 쓰는 위젯 콜백은 `sidebar_status.lowers_app_run` 을 단다**(지금은 HOME 비교 시나리오 · 리비전 상자 둘 — `on_press`
+  바깥). 콜백은 `begin_app_run` 앞에서 돌아, 쓰는 동안 누른 사이드바 조작이 콜백 바로 뒤에서 실행을 끊으면 표지가 앞 전체
+  실행의 「끝났다」 로 남고 고른 값은 「바뀐 위젯」 으로 세지 않아 그 누름이 프래그먼트만 돌렸다(본문이 다음 전체 회차까지
+  낡음). 표지는 콜백 첫머리에 「끝나지 않음」 으로 내리고 되돌리지 않는다 — 이어지는 전체 실행이 다시 정하고, 팝업 안
+  콜백이면 다음 전체 실행까지 여닫기가 앱 전체로 물러날 뿐이다.
 - **프래그먼트 회차는 `app.py` 머리를 지나지 않고 새 스레드에서 돈다** — 스레드에 담은 값(테마)은 비어 있다. 회차
   머리에서 정하는 값은 세션에도 적고 프래그먼트 회차는 세션에서 잇는다(`design/theme.py`). 같은 까닭으로 세션마다 다른
   값(테마·조건 패널 칸·자리표시자)을 모듈 전역에 두지 않는다 — 세션마다 다른 스레드에서 도는 스크립트가 동시에 그 값을
