@@ -37,6 +37,7 @@ from test_availability_gap_panel import _panel_app, _select_view
 from test_equipment_pages import _open_settings, _page_script
 from test_equipment_scenario_publish_guard import _add_trace
 from test_equipment_scenario_repository import _clone, _seeded
+from test_space_unit_sheet_js import run_csv_hidden
 
 from capa_simulation.auth import grades
 from capa_simulation.components import equipment_master_grid as emg
@@ -397,6 +398,8 @@ def test_the_unit_sheet_csv_stands_from_the_manager(
     sheet = next(call["sheet"] for call in reversed(calls) if call.get("sheet"))
     assert bool(sheet.get("csvHidden")) is not manager
     assert ("csv" in sheet) is manager, "「모든 칸」 글은 아예 싣지 않는다"
+    # 단추는 편집기 JS 가 세운다 — 실은 data 를 그 판정에 그대로 돌린다(AppTest 는 JS 를 못 돌린다).
+    assert run_csv_hidden([sheet]) == [not manager], "「CSV」 단추 · 펼침 · 「보이는 줄」"
 
 
 # ------------------------------------------------------------------ 시나리오 관리 › 설비 시나리오

@@ -1472,6 +1472,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꼬리표와 배지가 서로 비키지는 않는다. FAB 블록 풍선은 단축 줄(`short`) 뒤에 견주기 줄(`layout`)이다.
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
+  - 편집기 단추 서식(`.sle button:where(…) { display: inline-flex }`)은 브라우저의 `[hidden]` 기본 규칙보다 세다 — JS 가
+    `hidden` 을 다는 단추마다 그 단추의 `[hidden] { display: none }` 규칙을 둔다(`tests/test_space_layout_editor_assets.py` 가
+    머리에서 쥔 단추를 모두 본다). 「호기 정보」 창 「CSV」 는 설비 화면 내려받기 등급 밖이면 파이썬이 `sheet.csvHidden` 을 싣고
+    「모든 칸」 글을 싣지 않으며, 단추 · 펼침 · 「보이는 줄」 내려받기가 한 판정 `sheetCsvHidden`(`// <unit-sheet>`)을 본다.
   - **편집기 몸은 가로 세 칸**(2026-11-03 사용자 요청 — 좌우로 긴 화면의 여백을 두 옆 칸에): `.sle-body` grid 다섯 칸
     [왼쪽 칸 `.sle-side.is-left`][칸막이][무대][칸막이][오른쪽 칸 `.sle-side.is-right`] — 칸마다 `grid-column` 을 박아 숨은 칸이
     있어도 밀리지 않는다. 왼쪽 칸은 FAB 보기에만 없고(층 보기는 「범례」 묶음 하나, 편집은 「도구」 — 범례·도면 요소·선택·
