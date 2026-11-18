@@ -518,7 +518,7 @@ def _bump_buffer_generation() -> None:
 
 
 # 편집본 세 표(기존 보유대수 · 설비 마스터 · 비가동 일정)를 고치는 데 필요한 등급 동작(2026-11-18
-# 접속 등급 — 실무자는 비가동 일정만, 열람은 값만).
+# 접속 등급 — 실무자는 비가동 일정만, 열람은 세 표 모두 잠김).
 TABLE_ACTIONS: dict[str, str] = {
     BASELINE_TARGET: "equipment.save",
     EQUIPMENT_TARGET: "equipment.save",
@@ -3179,6 +3179,24 @@ def _selectable_editor(
     return edited, checked
 
 
+def locked_editor(view: TableView, *, key: str, column_config: Mapping[str, Any]) -> None:
+    """고칠 수 없는 등급의 작은 편집표 — 고치는 등급과 같은 편집표(칸 꼴 · 보기 · 고정 칸)를
+    모든 칸을 잠그고 줄 더하기 · 지우기 없이 그린다(2026-11-18 구현 확인 보드 「고칠 것」 — 메모
+    「편집기는 동일하게 적용하면서 권한에 따라 편집이 막히게끔」). 고르기 칸(일괄 삭제용)은 싣지
+    않는다 — 그 단추가 이 등급에 없다(설계 규칙 UI-INP-07 예외). 돌려준 표는 버린다 — 편집본은
+    그대로다."""
+    st.data_editor(
+        view.frame,
+        key=editor_widget_key(key),
+        num_rows="fixed",
+        disabled=True,
+        hide_index=True,
+        width="stretch",
+        placeholder="",
+        column_config={**column_config, **view.column_config},
+    )
+
+
 def selection_menu_generation_key(slug: str) -> str:
     """작은 편집표 「선택 ▾」 메뉴의 세대 칸(`SELECTION_MENU_LABEL`)."""
     return f"equipment_{slug}_selection_menu_generation_v1"
@@ -3796,9 +3814,10 @@ def render_small_editor(
     칸만 고름)은 그대로 되돌린다(`_undo_lines_up`). `on_deleted` 는 「삭제 확정」 을
     받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6).
 
-    `read_only`(화면 등급으로 그 표를 고칠 수 없는 까닭 — `table_lock`)를 주면 값만 보인다 —
-    작업 줄 단추(「편집본에 적용」 · 「모두 선택」 · 「선택 ▾」) · 예시 행 줄 · 삭제 확인 없이
-    「표 보기 ▾」 와 읽기 표만(설계 규칙 UI-INP-07 예외 · UI-NTF-05 — 2026-11-18 접속 등급).
+    `read_only`(화면 등급으로 그 표를 고칠 수 없는 까닭 — `table_lock`)를 주면 같은 편집표를 모든
+    칸을 잠근 채 그린다(`locked_editor`) — 작업 줄 단추(「편집본에 적용」 · 「모두 선택」 ·
+    「선택 ▾」) · 예시 행 줄 · 삭제 확인 · 고르기 칸 없이 「표 보기 ▾」 와 잠긴 편집표만(설계 규칙
+    UI-INP-07 예외 · UI-NTF-05 — 2026-11-18 접속 등급, 같은 날 구현 확인 보드 「고칠 것」).
     표 위 작은 단추 줄(표 도구 막대)은 그 표를 고치거나 내려받는 등급에만 선다 — 비가동 일정은
     실무자부터, 기존 보유대수는 설비 화면 내려받기 등급부터(`grade_ui.toolbar_scope`). 실무자의
     비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다."""
@@ -3885,17 +3904,33 @@ def render_small_editor(
         confirm_delete, cancel_delete = (
             _render_bulk_delete_status(frames) if read_only is None else (False, False)
         )
+        if baseline_table:
+            column_config: dict[str, Any] = {
+                "공정": st.column_config.TextColumn(required=True, pinned=True),
+                "분류": st.column_config.TextColumn(required=True),
+                # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
+                # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
+                # 자리만 형식이 소수 둘째 자리로 반올림한다(`prepare_equipment_baseline`).
+                "기존보유대수": st.column_config.NumberColumn(
+                    "기존 보유대수", min_value=0, format="%.2f 대", required=True
+                ),
+                "비고": st.column_config.TextColumn(),
+            }
+        else:
+            types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
+            column_config = {
+                EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, pinned=True),
+                "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
+                "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
+                "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            }
         if read_only is not None:
-            # 값만 — 고칠 칸도 고르기 칸도 없는 읽기 표(편집본은 그대로다). 표 도구 막대가 바로 위
-            # 「표 보기 ▾」 줄을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-            toolbar_clearance()
-            st.dataframe(
-                view.frame,
-                hide_index=True,
-                width="stretch",
-                placeholder="",
-                column_config=dict(view.column_config),
-                key=f"equipment_small_{slug}_view_only_v1",
+            # 같은 편집표를 잠근 꼴 — 칸 · 줄 더하기 · 지우기가 모두 막히고 고르기 칸이 없다
+            # (편집본은 그대로다 — 설계 규칙 UI-INP-07 예외). 잠긴 위젯이 돌려준 표는 쓰지 않는다.
+            locked_editor(
+                view,
+                key=f"equipment_small_{slug}_locked_v1",
+                column_config=column_config,
             )
             edited = frames[position]
             checked: frozenset[RowKey] = frozenset()
@@ -3905,32 +3940,16 @@ def render_small_editor(
                 view,
                 key=BASELINE_EDITOR_KEY,
                 target=BASELINE_TARGET,
-                column_config={
-                    "공정": st.column_config.TextColumn(required=True, pinned=True),
-                    "분류": st.column_config.TextColumn(required=True),
-                    # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
-                    # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
-                    # 자리만 형식이 소수 둘째 자리로 반올림한다(`prepare_equipment_baseline`).
-                    "기존보유대수": st.column_config.NumberColumn(
-                        "기존 보유대수", min_value=0, format="%.2f 대", required=True
-                    ),
-                    "비고": st.column_config.TextColumn(),
-                },
+                column_config=column_config,
                 selection=selection.get(BASELINE_TARGET, frozenset()),
             )
         else:
-            types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
             edited, checked = _selectable_editor(
                 downtime,
                 view,
                 key=DOWNTIME_EDITOR_KEY,
                 target=DOWNTIME_TARGET,
-                column_config={
-                    EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, pinned=True),
-                    "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
-                    "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
-                    "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                },
+                column_config=column_config,
                 selection=selection.get(DOWNTIME_TARGET, frozenset()),
                 # 비가동 일정 표 전체가 설비 시나리오 쪽이다 — 낡은 세션에서는 통째로 잠근다.
                 locked_columns=tuple(downtime.columns) if stale else (),

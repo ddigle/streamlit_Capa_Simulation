@@ -461,7 +461,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
-  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `개발자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` · 등급 열람 · 실무자 · 관리자 · 개발자 · `개발자(환경변수)` — 등급 파일까지 합친 값) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다, 등급 칸 하나 — 처음 값 실무자, 2026-11-17 답 「새로 드는 사람」 가) · 「사람 고르기」(「계정 · 이름 · 부서」) → 「등급 바꾸기」 팝오버 하나(열람 · 실무자 · 관리자 · 개발자 — 여럿을 한 번에, 나 자신 · 환경변수 개발자가 섞이면 개발자 아래 셋 잠금 + 까닭 풍선) · 지우기 · 다시 읽기(명단 + 등급 파일)를 두고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 「등급 바꾸기」 · 지우기, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 이름과 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
+  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 범용 편집 그리드의 줄 규칙 표(`components/access_list_grid`)와 그 위 작업 줄(저장 · 편집 취소(고친 것이 있을 때) · 다시 읽기 · 「고칠 칸 n개」, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값 — 「명단」 은 파일의 사람 수, 넓은 창에서는 표 도구 막대가 같은 줄 오른쪽 — `ONE_LINE_STYLE`)을 그리고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 「저장」(2026-11-18 구현 확인 보드 「고칠 것」 — 사용자 답 「추가 · 지우기까지 표 안에서」)은 콜백이 출납을 먼저 거두고(`collect` · `apply`) 쓰는 순간의 실제 등급을 다시 본 뒤 저장 판(`services/access_list_plan`)을 읽어 문제(빨간 칸 · 계정이 빔 · 꼴이 아님 · 머리 글 `loginid` · `계정` · 겹침 · 등급이 빔 · 잠긴 줄)가 있으면 아무것도 쓰지 않고 작업 줄 바로 아래 곁 한 줄(고칠 입력이 표에 있다)로, 없으면 지금 저장 함수로 좁히는 차례 — `grade_store.remove_people` → `change_grades` → `add_people`(등급마다 한 번, 새 줄의 이름 · 부서는 `profiles`) — 를 쓴다(`_write_plan`). 앞 쓰기가 남고 뒤가 막히면 남은 수 + 막힌 까닭을 알림창 · Alarm 한 번에 내고 저장한 사람 · 새 줄의 초안만 걷는다(`access_list_grid.forget`). 저장 · 다시 읽기의 실패 · 거부와 둘째 쓰기 실패는 알림창 · Alarm 에만(`popup_only` — UI-NTF-03). 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/grade_store` · `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 펼침 차례는 작업 줄 칸(`ACTIONS_BOX` — 단추 줄 + 곁 알림 칸) → 그리드 칸(`GRID_BOX` — 명단을 못 읽은 회차는 표 없는 껍데기로 마운트만) → 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)다. 시험은 `tests/test_access_list_grid.py` · `tests/test_sso_access_s3.py`.
+  - `components/access_list_grid.py` — 「접속 명단」 편집 표 어댑터. 줄은 명단 사람(파일 차례) 뒤에 빈 새 줄 `FRESH_ROWS` 개(채운 새 줄 뒤로 늘 그만큼 — `fresh_count`), 업무 키는 견주는 꼴 loginid · 새 줄 `+n`(`id_column` `_id` — 보이지 않음), 맨 앞 분류 칸 `No.` 는 차례 글(새 줄 「새 n」), 줄 이름 `_label`(상태 줄 · 변경 목록). 칸 계정(loginid 꼴 `ACCOUNT_PATTERN` — `access.LOGINID_PATTERN` + 글자 · 숫자 하나 · 64자) · 이름 · 부서(`MAX_PROFILE_LENGTH`) · 등록일(KST 날짜 `date_text`) · 등록 길(`VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` — 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수) · 등급(고르기 — `access_list_plan.GRADE_OPTIONS`). 줄 규칙 `RULE_KINDS` — 명단 사람(계정 · 이름 · 부서 · 등록일 · 등록 길 잠김 `LISTED_WHY`) · 나 자신(모든 칸 · 줄 지우기 잠김 `SELF_WHY`) · 환경변수 개발자(`ENV_WHY`) · 새 줄(등록일 · 등록 길 잠김, 지우기는 칸 비움). 표는 이 회차의 명단 한 벌로 짓고 캐시하지 않는다(사람 값을 프로세스 전역 캐시에 두지 않음 — `baseKey` 는 본문 지문). 초안 · 이력 세션 칸 `CELLS_KEY` · `HISTORY_KEY`, 그리드 호스트 `admin-access-grid`(줄 규칙 등록 `capa_edit_grid_rows`).
+  - `services/access_list_plan.py` — 편집 표 초안 → 저장 판(`plan_changes` — 빼기 · 등급 바꿈 · 넣기와 문제 수 `Problems`, 값은 문제 글에 싣지 않음). 지운 줄은 빼기가 이기고, 표에 없는 키(그 사이 명단에서 빠진 사람)는 읽지 않으며, 새 줄 계정은 `access.entry_key` 로 견주는 꼴. 시험 `tests/test_access_list_plan.py`.
   - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차,
     같은 함수면 그대로 — `capa_server.py` 는 꽂지 않는다) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
     `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
@@ -1316,8 +1318,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/paste_form.py` (+ `paste_window_assets/` CSS · JS) — 잠긴 적용은 감싼 칸이 탭 자리 · `aria-label` 을 맡아 풍선이 `:focus-visible` 로도 선다. 붙여넣기 · 양식 창의 공통 부품(9장
   「붙여넣기 · 양식 창」). 글 칸(`paste_text_area`) · 창 제목 옆 작업 줄(`paste_action_row` — 왼쪽 적용 · 오른쪽 양식) · 창 크기와 「적용」 잠금을 맡는 숨은
   컴포넌트(`render_paste_window`) · 창을 연 회차의 알림(`announce_on_open`) · 거부 · 안내(`refuse_paste` · `tell_paste`)와 이를
-  묶은 본문 `render_paste_form`. 빈 칸 까닭 풍선은 `empty_why` 로 창마다 줄 수 있다(기본 `PASTE_EMPTY_WHY` — 표가 아닌 loginid
-  목록을 받는 접속 명단 추가 창만 제 글). 판정 구획(`// <paste-window-core>`)은 node 로 떼어 시험한다(`tests/test_paste_form.py`).
+  묶은 본문 `render_paste_form`. 빈 칸 까닭 풍선은 `empty_why` 로 창마다 줄 수 있다(기본 `PASTE_EMPTY_WHY` — 제 글을 쓰던 접속
+  명단 추가 창은 2026-11-18 편집 표로 걷었다). 판정 구획(`// <paste-window-core>`)은 node 로 떼어 시험한다(`tests/test_paste_form.py`).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 본문·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 공통 부품 위에 양식 · 검증을 얹는다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
@@ -2766,13 +2768,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지워 양식으로)·`undo`·`redo`. op 하나 = 되돌리기 한 단계(직사각형의 전·후 상태), `UNDO_LIMIT` 40 · 이력 칸 `HISTORY_CELL_LIMIT`
     200,000(넘으면 오래된 단계부터 — 맨 새 단계는 남긴다), 새 op 가 오면 다시 실행 목록을 비운다. 이력 `gen` 과 다른 op·다른 표의
     op·꼴이 틀린 op(`kind="bad"`)는 버리되 ack 는 하고 수를 토스트로 알린다. 양식에 없는 줄은 건너뛰고 센다.
+  - **줄 규칙 표는 고른 표만**(2026-11-18 접속 명단 편집 표 — 지금은 `components/access_list_grid` 하나). 칸마다 형식
+    (`GridSpec.column_formats` — `text` 글: 앞뒤 공백 걷음 · 제어 문자 `text` · 글자 수 `len` · `pattern` 전체 맞음 오류, `choice`
+    고르기: 항목 글과 같아야 그 차례 번호 · 수는 차례 번호 그대로(채우기 원본) · 그 밖 `choice` 오류 — 값은 번호라 초안 · 이력 ·
+    채우기가 수 칸과 같은 길이다), 보이는 분류 칸이 아닌 업무 키 칸(`id_column` — 명단이 다시 읽혀 차례가 바뀌어도 초안이 제 사람에게
+    붙는다)과 줄 이름 칸(`label_column` — 상태 줄 · 변경 목록), 줄 규칙(`RowRules` · `LockKind` — 줄마다 잠긴 값 칸 · 까닭 · 지울 수
+    없는 까닭 · 빈 새 줄)과 줄 지우기 · 되살리기 op(`row_ops` — `remove` · `restore`, 초안의 예약 칸 `ROW_REMOVED` = 1.0, 빈 새 줄의
+    지우기는 그 줄 칸 비움, op 하나가 그 줄들 × 값 칸 + 표지 칸 한 단계). 잠긴 칸 · 지울 수 없는 줄은 op 반영이 건너뛰고 센다(토스트
+    `LOCKED_TOAST` · `LOCKED_ROWS_TOAST` — 브라우저도 막지만 서버가 다시 본다). 글 칸 양식 값은 `GridIndex.text_values`(행렬 자리는
+    NaN), 되머지는 글 칸을 글로, 지운 줄은 `removed_keys` 로 따로 읽는다. 주지 않은 표의 껍데기 · feed · op 반영은 그대로다(시험
+    `tests/test_edit_grid_rows.py` · 쌍둥이 사례 `edit_grid_cases.json` 의 `kinds`).
 - `src/capa_simulation/services/edit_grid_payload.py` — 범용 편집 그리드가 보내는 두 data 의 꼴(streamlit 모름). 껍데기
   본문(`encode_table` — 분류 칸 사전 `dims`·표시명 `labels`·줄마다 고정 폭 64자 코드 `codes`, 값 사전 `vals`(0 번은 빈칸)·줄마다
   (값 코드 + 길이 1글자) RLE `runs`(63 넘는 런은 나눔), 중복 키 꼬리표 `dupes`)과 색인을 한 번에 짓는다(`build_base` — 캐시
   `simulation_cache.get_edit_grid_base` 가 부른다, numpy 로 벡터화). `encode_base` 가 호스트·`baseKey`(`base_key` = 표:내용 토큰:줄
   차례 지문:표시명 지문)·글·팔레트·줄 높이·상한을 더하고, `encode_feed` 는 초안(줄마다 (코드 + 길이) RLE — 0 초안 없음 · 1 빈칸 ·
   2 못 읽음 · 3.. 값 사전 `dvals`)·오류 칸 앞 `BAD_LIMIT` 2,000개·수·되돌리기 수·ack·토스트·필터를 싣는다. 바이트 예산은
-  `tests/test_edit_grid_payload.py`(합성 2,660×30 껍데기 ≤ 100,000 B, feed 1·100·15,000칸 ≤ 1·4·64 KB).
+  `tests/test_edit_grid_payload.py`(합성 2,660×30 껍데기 ≤ 100,000 B, feed 1·100·15,000칸 ≤ 1·4·64 KB). 줄 규칙 표만 껍데기에
+  `fmts` · `ids` · `rowLabels` · `locks`(규칙마다 잠긴 값 칸 번호 · 까닭 · 지우기 까닭 · 빈 새 줄, 줄마다 규칙 번호) · `rowOps` 를 더
+  싣고 값 사전에 글이 들며(`_object_codes`), feed 에 지운 줄 `removed`(있을 때만)가 선다.
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
@@ -3238,7 +3252,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표 도구 막대」).
   - **바탕**(2026-11-12 보드 답 k-b2): 팔레트 `surface` 는 페이지 바탕색(`SURFACE_PAGE`)이다 — 둘레 · 칸 · 칸 입력 칸 · 적용 전 변경
     판 · 전체 화면 판. 표 도구 단추 · 찾기 칸은 `control`(`SURFACE` — 화면의 다른 단추와 같은 꼴), 고친 칸 · 틀린 칸 · 잠긴 칸은 제 토큰.
-  모듈을 읽을 때 두 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
+  모듈을 읽을 때 세 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
+  - **줄 규칙 표의 등록**(`ROWS_COMPONENT` `capa_edit_grid_rows` — 2026-11-18 접속 명단): 껍데기에 `fmts` · `ids` · `locks` ·
+    `rowOps` 가 있으면(`uses_rows`) 줄 갈래 `eg_rows.js` · `eg_rows.css` 를 eg_core 앞에 더 실은 등록(`ROWS_JS_PARTS` ·
+    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표가 받는 등록 JS 는 그대로다(예산 120 KB, 줄 규칙 등록 130 KB). 줄 갈래는 글 · 고르기
+    칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
+    붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(고른 줄 — 지울 수 없는
+    줄은 빼고 까닭 풍선, 모두 지운 줄이면 되살리기), 지운 줄 지움선 · 잠긴 칸 바탕 + 까닭 풍선(`title`) · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 칸
+    편집 중 칸 아래 항목 목록(누르면 그 항목 · ↑ ↓ 가 항목을 옮김 — 칸 아래가 보이는 창 밖이면 칸 위로)이다. 표 없는 껍데기와 줄 규칙 표를 오가는
+    호스트는 `render_edit_grid(rows=True)` 로 늘 이 등록이다(같은 key 의 등록이 바뀌면 옛 JS 가 줄 규칙 표를 그린다 — 접속 명단). 변경 목록은 지운 줄을 맨 앞 「줄 지움」 으로 싣고 ✕ 가
+    `restore` 다. 시험 `tests/test_edit_grid_rows_js.py`. 시험 대역은 `_GRID_ROWS` 도 바꾼다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
     `capa-edit-grid` 로 잇고(비공식 — 화면 탭 줄의 `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의
@@ -4595,7 +4618,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     있으면 `defer_grid_undo` 가 `GRID_UNDO_REQUEST_KEY` 만 세우고, 그 표 제출이 `_remember_edits(keep_undo=True)` 로 편집을 넣은 뒤
     `undo`(탭의 `_grid_undo`)로 되돌린다(`_undo_lines_up` — 편집 값이 그대로면 통째 단계여도 되돌리고, 값을 바꾼 편집이 줄을
     지웠거나 통째 단계면 되돌리기를 비우고 편집을 지킴, 답 X1). 그 표를 그리지 않는 회차는 `settle_grid_undo`. 「삭제 확정」 제출 뒤
-    `on_deleted`(탭이 `switch_side(SIDE_CHANGES)`)가 「저장 전 변경」 칸을 열고 접힌 칸을 편다(작은 결정 c6).
+    `on_deleted`(탭이 `switch_side(SIDE_CHANGES)`)가 「저장 전 변경」 칸을 열고 접힌 칸을 편다(작은 결정 c6). 화면 등급으로 그 표를
+    고칠 수 없으면(`read_only` — `table_lock`) 같은 칸 꼴 · 같은 보기의 편집표를 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이
+    그린다(`locked_editor` — 따로 key `equipment_small_<slug>_locked_v1` 라 적용 전 편집 판정에 들지 않고, 돌려준 표는 버린다 · 작업 줄 단추와
+    예시 행 줄 · 삭제 확인은 서지 않는다 — 2026-11-18 구현 확인 보드 「고칠 것」). 잠긴 칸은 Streamlit 편집표가 열지 않아 거절 알림이 없다.
   - **배치 편집 판정은 세션 메모다**(`buffer_has_layout_edits` — 열쇠 = 편집본 세대·편집본 출발 토큰·저장본 사본 토큰·이름 지도,
     `LAYOUT_EDITS_MEMO_KEY`). 역할이 찍힌 세션은 회차마다 `live_layout_role` 이 부르므로 편집본 전체 `layout_edits`(합성 3천 대에
     0.13~0.17 s)를 회차마다 돌리면 8장 예산을 넘었다. 표 출납이 배치에 닿지 않는 op(칸 고침·값 넣기·붙여넣기·날짜 밀기 — 배치·설비명·
@@ -6165,7 +6191,7 @@ RQ_MODULE
       거친다(`tests/grade_support.operational_grades` — 넷 계정의 등급을 단언, 헛돌기 막음).
     - **명단 파일 꼴 · 저장 값은 그대로다.** 등급 칸은 `user` · `admin` 둘(`admin` = 개발자) — 앞 ZIP 이 다시 써도 깨지지 않게. 열람 · 실무자 ·
       관리자는 같은 버킷 · 같은 디렉터리의 등급 파일(`grades.json` — 적는 값 `editor` · `manager` 둘, **열람 = 줄 없음**, 줄마다 그 사람의
-      명단 `added_at`, 표지 `grades_seen.json`)에만 있다. 등록 시각이 다른 줄은 버린다 — 빠졌다 다시 든 사람은 옛 등급을 이어받지 않는다(시각이 초 단위 글이라 「명단에 넣기」 는
+      명단 `added_at`, 표지 `grades_seen.json`)에만 있다. 등록 시각이 다른 줄은 버린다 — 빠졌다 다시 든 사람은 옛 등급을 이어받지 않는다(시각이 초 단위 글이라 넣기(`add_people`)는
       그 사람의 남은 줄을 명단 쓰기 앞에서 먼저 지운다 — 같은 초로 다시 매겨져도 맞지 않게, 지우지 못하면 넣지 않음).
       정리 접두(`PRUNE_PREFIXES`) 밖이다. 로컬 자리는 두지 않는다(정본이 둘이 된다).
     - **못 읽으면 좁게.** 줄 없음 · 시각 다름 · 모르는 값 · 못 읽음 · S3 명단 꺼짐은 모두 열람이다(개발자는 영향 없음). 한 번 읽은 뒤에는 메모리
@@ -8312,8 +8338,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   그 겹 바로 밑에 작업 줄(`st-key-capa_paste_head_*`)이 든 창에만 걸린다 — 다른 팝업과 작업 줄 없는 확인 창(입력 초기화)은 그대로고, 판올림으로 겹이 바뀌면 작업 줄이 글 칸 아래에 남을 뿐 창은 그대로 쓴다.
   회차가 그리는 차례는 글 칸 → 작업 줄 그대로다(화면 차례는 서식의 `order`) — 붙여넣고 Tab 하면 적용으로 간다. 표 상자 안에 펴지는 칸(HOME 설정 Past Data — `in_box`)은 창 제목이 없어 작업 줄이
   그 상자 맨 위다. 까닭 풍선은 단추 아래로 서고(창 위 끝이라 위로 서면 창 상자의 `overflow: hidden` 에 잘린다), 단추 왼쪽 끝에서 창 오른쪽 끝까지의 자리(`tipRoom` → `--capa-paste-tip-room`)에서 접힌다(제목 옆 단추가 좁은 창에서 오른쪽으로 잘리지 않게).
-- **글 칸 라벨은 화면에 보이지 않는다**(`label_visibility="collapsed"` — 접근성 이름으로 남는다, 2026-11-05 답 「중복된 내용 표기」). 보이는 창은 둘이다(`label_visible`, `tests/test_paste_form.py` 가 목록으로 잡는다) —
-  「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝) · 접속 명단 추가(넣을 것이 loginid 라고 말하는 글이 라벨뿐).
+- **글 칸 라벨은 화면에 보이지 않는다**(`label_visibility="collapsed"` — 접근성 이름으로 남는다, 2026-11-05 답 「중복된 내용 표기」). 보이는 창은 하나다(`label_visible`, `tests/test_paste_form.py` 가 목록으로 잡는다) —
+  「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝). 둘이던 다른 하나(접속 명단 추가)는 2026-11-18 편집 표로 걷었다.
 - `st.download_button` 은
   `st.form` 안에 들어가지 못하므로 이 창들은 **폼을 쓰지 않는다** — 글 칸은 일반 위젯(초점을 잃을 때 값이 오르고 팝업 프래그먼트만 돈다,
   Streamlit 의 「Press Ctrl+Enter to apply」 안내는 서식이 걷는다), 적용은 일반 단추이고 세대 · 지문 거름(`write_once_value`)은 그대로다.
@@ -8324,8 +8350,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **「적용」 잠금은 브라우저가 한다** — 글 칸이 비었거나 전체 교체 확인 체크가 꺼져 있으면 숨은 컴포넌트가 단추를 잠그고 까닭 풍선(`data-capa-paste-locked` ·
   `::after`)을 단다(판정이 브라우저 안에서 끝나는 잠금 — 설계 규칙 UI-INP-07 의 예외). 서버는 눌린 회차에 같은 조건을 다시 본다 — JS 가 못 돌아도 쓰이지
   않는다. AppTest 는 잠금을 보지 못한다(눌린 회차의 거부를 본다). 입력이 글 칸이나 파일인 「엑셀·CSV로 한꺼번에」 는 잠그지 않고(`lock=False`) 「편집본에 넣기」 를
-  미리보기가 잠근다. 빈 칸 까닭 글은 창이 받는 것을 말한다(`render_paste_form(empty_why=…)` — 접속 명단 추가는 「loginid 를
-  넣으면 누를 수 있습니다.」).
+  미리보기가 잠근다. 빈 칸 까닭 글은 창이 받는 것을 말한다(`render_paste_form(empty_why=…)` — 지금은 모든 창이 기본 글이다).
 - **창 크기는 보기 상태다** — 오른쪽 아래 손잡이(변 둘 포함)를 끌면 `<html>` 의 CSS 변수(`--capa-paste-w` · `--capa-paste-text-h`)와 속성
   (`data-capa-paste-sized`)만 바꾸고, 그 변수를 읽는 규칙은 컴포넌트 서식이라 창이 닫히면 함께 사라진다. 회차가 다시 돌아도 유지되고 그 브라우저의
   `localStorage`(`capa-paste-size:<칸>` — 읽기 · 쓰기 try/catch)가 기억한다. 칸은 같은 꼴 창이 함께 쓰는 `paste` · 미리보기가 있는 `import` · HOME 설정 `past` 다. 두 번 누르면
@@ -8541,7 +8566,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **등급 밖 기능은 숨긴다**(이 사람에게 없는 기능 — UI-INP-07 의 예외). 단추 · 탭 · 모드 · 메뉴 항목은 `sso_identity.viewer_can(action)` 이
   거짓이면 세우지 않는다. 지금만 못 하는 것(확인 체크 전 · 공식에서만 · 계산 오류 · `space_edit_mode`)은 그대로 잠금 + 까닭 풍선이다. 숨긴
-  자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 · 설비 마스터 세 표 — UI-NTF-05). 탭
+  자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 — UI-NTF-05). 가용설비 현황 › 설비 마스터의
+  세 표는 모든 등급이 같은 편집 표를 보고 권한 없는 표 · 칸만 잠근다(2026-11-18 구현 확인 보드 「고칠 것」 — 설비 마스터 표는 `read_only_data`
+  잠금 갈래 `grade` + 편집 도구를 세우지 않는 `readOnly`, 작은 편집표 둘은 `locked_editor` — 같은 칸 꼴을 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이). 탭
   값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다.
 - **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
   `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험

@@ -1,0 +1,32 @@
+.eg-c.is-text,
+.eg-ed.is-text {
+  text-align: left;
+}
+
+.eg-c.is-locked {
+  background: var(--eg-lock-fill);
+}
+
+.eg-c.is-removed {
+  color: var(--eg-muted);
+  text-decoration: line-through;
+}
+
+.eg-choices {
+  position: absolute;
+  z-index: 1;
+  padding: 2px 0;
+  border: 1px solid var(--eg-border-strong);
+  background: var(--eg-surface);
+}
+
+.eg-choice {
+  padding: 3px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eg-choice:hover,
+.eg-choice.is-on {
+  background: var(--eg-selected-fill);
+}

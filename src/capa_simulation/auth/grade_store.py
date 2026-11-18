@@ -32,9 +32,10 @@
 - → 개발자: 명단만(`user` → `admin`). 등급 줄은 두되 개발자인 동안 보지 않는다.
 - 개발자 → 아래: 등급 파일 먼저(목표 줄, 그 사람의 지금 등록 시각), 그다음 명단(`admin` → `user`).
   둘째가 실패하면 그대로 개발자(앞 상태)다.
-- 빼기: 명단 먼저, 그다음 등급 줄 지움(둘째 실패는 무해 — 다시 들면 시각이 달라 버려지고, 「명단에
-  넣기」 는 남은 줄을 명단 쓰기 앞에서 먼저 지운다 — 같은 초로 다시 매겨진 시각에 맞지 않게).
-- 넣기(넣는 창에서 고른 등급): 명단 먼저(개발자면 `admin` 으로 바로 — 한 번의 쓰기), 그다음 실무자 ·
+- 빼기: 명단 먼저, 그다음 등급 줄 지움(둘째 실패는 무해 — 다시 들면 시각이 달라 버려지고, 명단
+  넣기는 남은 줄을 명단 쓰기 앞에서 먼저 지운다 — 같은 초로 다시 매겨진 시각에 맞지 않게).
+- 넣기(편집 표 새 줄의 등급 — 등급마다 한 번): 명단 먼저(개발자면 `admin` 으로 바로 — 한 번의 쓰기),
+  그다음 실무자 ·
   관리자면 등급 파일. 둘째 실패면 열람(좁은 쪽)으로 읽히고 알림.
 - 스스로 등록은 `access_store.register_self` 그대로다(줄 없음 → 열람).
 
@@ -653,8 +654,10 @@ def add_people(
     grade: str,
     *,
     now: int | None = None,
+    profiles: Mapping[str, tuple[str, str]] | None = None,
 ) -> ChangeResult:
-    """개발자가 「명단에 넣기」 로 넣는다 — 넣는 창에서 고른 등급(모듈 설명 「쓰기」).
+    """개발자가 접속 명단 편집 표의 새 줄로 넣는다 — 그 줄의 등급(모듈 설명 「쓰기」). `profiles` 는
+    새 줄의 (이름, 부서)다.
 
     명단 쓰기의 실패는 `access_store.save_changes` 의 예외 그대로다(아무것도 바뀌지 않음). 둘째
     쓰기(실무자 · 관리자의 등급 파일)의 실패는 `second_failed` 로 돌려준다 — 넣은 사람은 열람으로
@@ -683,6 +686,7 @@ def add_people(
         grades=dict.fromkeys(fresh, GRADE_ADMIN) if grade == grades.DEVELOPER else None,
         now=moment,
         note_grades=False,
+        profiles=profiles,
     )
     second_failed: SourceProblem | None = None
     grade_revision = 0

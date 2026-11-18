@@ -27,10 +27,13 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
   컴포넌트」).
 
 **읽기 전용**(`read_only` — 화면 등급으로 설비 마스터를 고칠 수 없는 까닭 글)은 data 만 바꾼다
-(`read_only_data`). 모든 줄 · 모든 칸에 잠금 갈래 `grade` 를 달고(칸 고치기 · 붙여넣기 · 값 넣기 ·
-일정 밀기가 잠긴 칸 길을 탄다), 지우기 · 새 호기 만들기를 잠그고, 「공식 자리로 되돌리기」 를 싣지
-않는다. 받는 쪽도 등급 밖 출납을 버린다(`equipment_master_tab.apply_outbox`) — 이것은 길을 줄이는
-것이지 벽이 아니다(2026-11-18 접속 등급).
+(`read_only_data`). 모든 줄 · 모든 칸에 잠금 갈래 `grade` 를 달고(칸 고치기 · 붙여넣기가 잠긴 칸
+길을 타 까닭 한 줄로 막힌다), 지우기 · 새 호기 만들기를 잠그고, 「공식 자리로 되돌리기」 를 싣지
+않는다. 편집 도구 단추(고른 줄 띠의 값 넣기 · 일정 밀기 · 선택 n대 지우기, 호기 상세의 이 호기
+지우기 · 이 호기로 새 호기 만들기)는 `readOnly` 로 세우지 않는다 — 모든 등급이 같은 표를 보고 권한
+없는 칸만 잠근다(설계 규칙 UI-INP-07 등급 예외 · 2026-11-18 구현 확인 보드 「고칠 것」). 받는 쪽도
+등급 밖 출납을 버린다(`equipment_master_tab.apply_outbox`) — 이것은 길을 줄이는 것이지 벽이
+아니다(2026-11-18 접속 등급).
 
 **두 칸 배치**(왼쪽 표 · 오른쪽 칸 — 칸막이 · 접기 · 폭 기억 · 서식)는 시나리오 목록 관리와 함께
 쓰는 `components/side_panel.py` 이고 이 화면의 스펙이 `MASTER_SIDE` 다(저장소
@@ -125,6 +128,7 @@ def read_only_data(data: Mapping[str, Any], reason: str | None) -> dict[str, Any
         "newRowsLocked": True,
         "newEnabled": False,
         "firstData": False,
+        "readOnly": True,
     }
     if isinstance(data.get("rows"), list):
         result["rows"] = [_locked_row(row) for row in data["rows"]]

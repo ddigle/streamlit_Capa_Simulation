@@ -64,10 +64,17 @@ def test_every_toolbar_text_is_shipped_by_python() -> None:
     texts = edit_grid.texts(spec, changes_label="적용 전 변경")
     used = set(re.findall(r"tbText\(S, '([A-Za-z]+)'", TOOLBAR))
     assert used, "tbText 를 쓰지 않는다"
-    missing = used - set(texts)
+    # 줄 지우기 글은 줄 규칙 표(`row_ops`)의 껍데기에만 실린다 — 그 밖의 표에는 지운 줄이 없다.
+    rows_only = {"rowRemoved"}
+    missing = used - rows_only - set(texts)
     assert not missing, missing
-    for name in used:
+    for name in used - rows_only:
         assert isinstance(texts[name], str) and texts[name], name
+    row_spec = eg.GridSpec(
+        "RQ_DEMO", "효율", ("공정",), ("202701",), eg.ValueFormat("percent", 2), row_ops=True
+    )
+    row_texts = edit_grid.texts(row_spec, changes_label="적용 전 변경")
+    assert rows_only <= set(row_texts) and not rows_only & set(texts)
     assert texts["changesEmpty"] == "적용 전 변경이 없습니다"
     # 막대 단추 글만 짧다 — 표 없는 껍데기도 같은 글을 싣는다(texts 가 오기 전 기본값과 같음).
     assert texts["changesButton"] == "적용 전" and "'changesButton', '적용 전')" in TOOLBAR
@@ -175,7 +182,7 @@ def test_fullscreen_is_a_dialog_in_the_shadow_root_not_a_fixed_overlay() -> None
 
 def test_the_toolbar_sends_only_ops_python_knows() -> None:
     sent = set(re.findall(r"\bop: '([a-z]+)'", TOOLBAR))
-    assert sent == {"revert"} and sent <= eg.OP_NAMES
+    assert sent == {"revert", "restore"} and sent <= eg.OP_NAMES
     assert "setState" not in TOOLBAR and "setTrigger" not in TOOLBAR
 
 
@@ -989,7 +996,7 @@ def test_changes_drawer_caps_its_list_and_explains_filtered_rows() -> None:
     rows = 140
     frame = _frame(rows)
     keys = [f"{frame.loc[k, '공정']}\x1f{frame.loc[k, '구분']}" for k in range(rows)]
-    cells: dict[str, dict[str, float | None]] = {
+    cells: dict[str, dict[str, eg.CellValue]] = {
         key: {month: 0.7 for month in MONTHS} for key in keys
     }
     draft: eg.DraftState = {"cells": cells, "bad": {}}

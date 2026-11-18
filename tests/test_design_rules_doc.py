@@ -436,9 +436,10 @@ def test_the_before_after_board_answers_are_recorded_and_written_into_the_rules(
     assert "창 제목 옆" in rules["UI-INP-08"].text and "라벨" in rules["UI-INP-08"].text
     assert "제목 옆" in rules["UI-INP-08"].fields["판단"][0]
     assert "타이틀 옆에 배치" in rules["UI-INP-08"].fields["근거"][0]
-    assert "접속 명단 추가" in rules["UI-INP-08"].fields["범위"][0]
+    assert "Admin 표시순서" in rules["UI-INP-08"].fields["범위"][0]
     exceptions = rules["UI-INP-08"].fields["예외"][0]
-    assert "표 상자" in exceptions and "라벨을 보이는 창은 둘" in exceptions
+    # 라벨을 보이는 창 「둘」 은 v1.37 에 하나가 되었다(접속 명단 추가 창을 편집 표로 걷음).
+    assert "표 상자" in exceptions and "라벨을 보이는 창은" in exceptions
     assert (
         "그 화면으로" in rules["UI-NTF-02"].text
         and "q-wip04" in rules["UI-NTF-02"].fields["근거"][0]
@@ -3116,7 +3117,6 @@ def test_the_access_grade_board_answers_are_recorded_with_what_the_implementatio
     등급 밖 기능 숨김은 UI-INP-07 의 예외, 카드 등급 표지는 UI-TXT-05 의 예외(「없음」 이던
     자리), 누른 순간 거절은 UI-NTF-03 글, 넣는 창 등급 칸은 UI-INP-08 예외다."""
     document = _text()
-    assert "판 v1.36" in document.split("\n## 1. ")[0]
     assert "- **v1.36 — 2026-11-18.**" in _chapter(document, 8)
     assert "6-34 에 있다" in _chapter(document, 1)
 
@@ -3158,11 +3158,40 @@ def test_the_access_grade_board_answers_are_recorded_with_what_the_implementatio
     mark = rules["UI-TXT-05"].fields["예외"][0]
     assert mark != "없음" and "열람 · 실무자만" in mark and "6-34" in mark
     assert "누른 순간의 등급 거절" in rules["UI-NTF-03"].text
-    assert "등급 고르기 칸(처음 값 실무자)" in rules["UI-INP-08"].fields["예외"][0]
     history = _chapter(document, 8)
     v136 = history[history.index("- **v1.36 — 2026-11-18.**") :]
     for phrase in ("6-34", "UI-INP-07", "UI-TXT-05", "UI-INP-08", "UI-NTF-03", "7-1 줄은 없다"):
         assert phrase in v136, phrase
+
+
+def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08() -> None:
+    """v1.37 — 6-34 구현 확인 보드의 「고칠 것」 둘(접속 명단 편집 표 · 설비 마스터 같은 편집 표의
+    권한 잠금)이 6-34 끝 문단에 있고(카드 줄 꼴 밖 — `- ` 로 시작하지 않는다), UI-INP-08 범위 ·
+    예외에서 걷은 접속 명단 추가 창이 빠졌다."""
+    document = _text()
+    assert "판 v1.37" in document.split("\n## 1. ")[0]
+    history = _chapter(document, 8)
+    v137 = history[history.index("- **v1.37 — 2026-11-18.**") :]
+    for phrase in ("6-34", "UI-INP-08", "7-1 줄은 없다", "tests/test_access_list_grid.py"):
+        assert phrase in v137, phrase
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-34. ") :]
+    (paragraph,) = [line for line in record.splitlines() if line.startswith("다음 배포 고침(")]
+    for phrase in (
+        "feat/grid-1118",
+        "① Admin 「접속 명단」",
+        "줄 규칙 표",
+        "「줄 지우기」",
+        "빼기 → 등급 바꿈 → 넣기",
+        "② 가용설비 현황 › 설비 마스터",
+        "UI-INP-07 등급 예외",
+    ):
+        assert phrase in paragraph, phrase
+    rules = {rule.id: rule for rule in _rules()}
+    assert "접속 명단 추가," not in rules["UI-INP-08"].fields["범위"][0]
+    exceptions = rules["UI-INP-08"].fields["예외"][0]
+    assert "「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝) 하나다" in exceptions
+    assert "등급 고르기 칸(처음 값 실무자)" not in exceptions
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

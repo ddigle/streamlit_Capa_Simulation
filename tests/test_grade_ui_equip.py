@@ -1,10 +1,12 @@
-# Purpose: 설비 화면(가용설비 · Space · 설비 시나리오)의 등급 넷마다 단추 · 값만 · 내려받기 유무.
+# Purpose: 설비 화면(가용설비 · Space · 설비 시나리오)의 등급 넷마다 단추 · 잠김 · 내려받기 유무.
 
 """등급 넷마다 설비 화면(2026-11-18 접속 등급 — equip 갈래).
 
 설비 · Space 저장과 설비 화면 내려받기 · 설비 시나리오 단추 · 설비 공식 지정 · Cut-off 는
-관리자부터, 열람 · 실무자는 같은 화면을 값만 본다. 예외(2차 답 「다」) — 실무자는 설비 마스터
-「비가동 일정」 표를 고치고 · 저장하고 · 내려받고, Preference 「입력 비가동」 을 고치고 · 저장한다.
+관리자부터, 열람 · 실무자는 같은 화면을 값만 본다(설비 마스터 탭의 세 표는 같은 편집 표를
+권한 없는 표 · 칸만 잠근 채 — 2026-11-18 구현 확인 보드 「고칠 것」). 예외(2차 답 「다」) —
+실무자는 설비 마스터 「비가동 일정」 표를 고치고 · 저장하고 · 내려받고, Preference 「입력
+비가동」 을 고치고 · 저장한다.
 「옛 배포 흔적」 이어 쓰기는 개발자만이다.
 
 모든 등급 시험은 「운영 + 통합인증 켜짐」 판정을 거친다(`grade_support.as_grade` — 가짜 버킷에
@@ -168,7 +170,7 @@ def _master(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str) -> tupl
 
 
 @GRADE_PARAMS
-def test_the_master_grid_is_values_only_below_the_save_grade(
+def test_the_master_grid_is_locked_below_the_save_grade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str
 ) -> None:
     app, grid = _master(tmp_path, monkeypatch, grade)
@@ -184,6 +186,9 @@ def test_the_master_grid_is_values_only_below_the_save_grade(
     assert (SIDE_CHANGES in side.options) is _at_least(grade, grades.EDITOR), "「저장 전 변경」 칸"
     detail = last(grid, emg.side_key("detail"))
     assert detail["newRowsLocked"] is True or editable
+    # 같은 표 · 같은 오른쪽 칸 — 편집 도구 단추(고른 줄 띠 · 호기 상세)만 등급 표지로 세우지 않는다.
+    assert bool(table.get("readOnly")) is not editable, "표 편집 도구"
+    assert bool(detail.get("readOnly")) is not editable, "호기 상세 편집 도구"
 
 
 @GRADE_PARAMS
@@ -225,6 +230,31 @@ def test_the_save_section_and_small_editors_follow_the_grade(
         tools = "equipment.export" if target == BASELINE_TARGET else "equipment.downtime"
         hidden = _hidden(app, f"equipment_small_{slug}_tools_v1")
         assert hidden is not _at_least(grade, grades.need_of(tools)), (target, "표 도구 막대")
+        # 고칠 수 없는 등급도 같은 편집표를 본다 — 모든 칸을 잠그고 줄 더하기 · 지우기가 없다(값만
+        # 보이는 따로 꼴 `st.dataframe` 을 걷었다 — 2026-11-18 구현 확인 보드 「고칠 것」).
+        locked = _small_editor(app, f"equipment_small_{slug}_locked_v1")
+        assert (locked is not None) is not _at_least(grade, need), (target, "잠긴 편집표")
+        if locked is not None:
+            assert locked.proto.disabled is True and locked.proto.editing_mode == FIXED_ROWS
+            assert "선택" not in str(locked.proto.columns), (target, "고르기 칸 없음")
+        assert _small_editor(app, f"equipment_small_{slug}_view_only_v1") is None, "값만 꼴"
+        assert all(not element.proto.disabled for element in _editors(app)) or locked is not None
+
+
+# `st.data_editor` 의 줄 더하기 · 지우기 없음(`num_rows="fixed"`).
+FIXED_ROWS = 1
+
+
+def _editors(app: AppTest) -> list[Any]:
+    """본문의 편집표 · 읽기 표 요소(AppTest 의 `dataframe` — 둘 다 같은 꼴)."""
+    return list(app.get("dataframe"))
+
+
+def _small_editor(app: AppTest, key: str) -> Any | None:
+    """key 로 찾은 작은 편집표 요소(없으면 None) — 요소 id 에 사용자 key 가 든다(세대 · 세션 표지
+    꼬리가 붙을 수 있다 — `editor_widget_key`)."""
+    found = [element for element in _editors(app) if key in element.proto.id]
+    return found[0] if found else None
 
 
 # ------------------------------------------------------------------ 사이드바 「설비 데이터 저장」

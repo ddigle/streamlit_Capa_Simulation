@@ -2365,5 +2365,234 @@
     ]
    ]
   }
- ]
+ ],
+ "kinds": {
+  "formats": {
+   "account": {
+    "kind": "text",
+    "digits": 0,
+    "int": false,
+    "min": 0.0,
+    "max": null,
+    "blankZero": false,
+    "pattern": "[a-z.]+",
+    "maxLength": 12
+   },
+   "plain": {
+    "kind": "text",
+    "digits": 0,
+    "int": false,
+    "min": 0.0,
+    "max": null,
+    "blankZero": false,
+    "pattern": null,
+    "maxLength": 0
+   },
+   "grade": {
+    "kind": "choice",
+    "digits": 0,
+    "int": false,
+    "min": 0.0,
+    "max": null,
+    "blankZero": false,
+    "options": [
+     "열람",
+     "실무자",
+     "관리자",
+     "개발자"
+    ]
+   }
+  },
+  "coerce": [
+   {
+    "raw": " demo.a ",
+    "fmt": "account",
+    "template": null,
+    "value": "demo.a",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "",
+    "fmt": "account",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "   ",
+    "fmt": "account",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": null,
+    "fmt": "account",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "Demo",
+    "fmt": "account",
+    "template": null,
+    "value": null,
+    "error": "pattern",
+    "text": "Demo"
+   },
+   {
+    "raw": "abcdefghijklm",
+    "fmt": "account",
+    "template": null,
+    "value": null,
+    "error": "len",
+    "text": "abcdefghijklm"
+   },
+   {
+    "raw": "Same",
+    "fmt": "account",
+    "template": "Same",
+    "value": "Same",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "a\tb",
+    "fmt": "plain",
+    "template": null,
+    "value": null,
+    "error": "text",
+    "text": "a\tb"
+   },
+   {
+    "raw": " 데모 가 ",
+    "fmt": "plain",
+    "template": null,
+    "value": "데모 가",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": 7,
+    "fmt": "plain",
+    "template": null,
+    "value": "7",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": 1.5,
+    "fmt": "plain",
+    "template": null,
+    "value": "1.5",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "관리자",
+    "fmt": "grade",
+    "template": null,
+    "value": 2,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": " 열람 ",
+    "fmt": "grade",
+    "template": 1,
+    "value": 0,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "관리",
+    "fmt": "grade",
+    "template": null,
+    "value": null,
+    "error": "choice",
+    "text": "관리"
+   },
+   {
+    "raw": 3,
+    "fmt": "grade",
+    "template": null,
+    "value": 3,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": 4,
+    "fmt": "grade",
+    "template": null,
+    "value": null,
+    "error": "choice",
+    "text": "4"
+   },
+   {
+    "raw": 1.5,
+    "fmt": "grade",
+    "template": null,
+    "value": null,
+    "error": "choice",
+    "text": "1.5"
+   },
+   {
+    "raw": null,
+    "fmt": "grade",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "",
+    "fmt": "grade",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
+   }
+  ],
+  "format": [
+   {
+    "value": 2,
+    "fmt": "grade",
+    "text": "관리자"
+   },
+   {
+    "value": 0,
+    "fmt": "grade",
+    "text": "열람"
+   },
+   {
+    "value": 9,
+    "fmt": "grade",
+    "text": ""
+   },
+   {
+    "value": 1.5,
+    "fmt": "grade",
+    "text": ""
+   },
+   {
+    "value": "demo.a",
+    "fmt": "account",
+    "text": "demo.a"
+   },
+   {
+    "value": null,
+    "fmt": "plain",
+    "text": ""
+   },
+   {
+    "value": 7,
+    "fmt": "plain",
+    "text": "7"
+   }
+  ]
+ }
 }

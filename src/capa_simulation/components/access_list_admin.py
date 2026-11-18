@@ -1,39 +1,41 @@
-# Purpose: Admin Area 「접속 명단」 — 개발자에게만 S3 명단 · 등급 파일의 목록·추가·등급
-# 바꾸기·지우기·
+# Purpose: Admin Area 「접속 명단」 — 개발자에게만 S3 명단 · 등급 파일을 편집 표로 보이고 저장 ·
 # 다시 읽기와 「이 등급으로 보기」 를 그린다.
 
 """Admin 「접속 명단」.
 
-자리는 통합인증이 켜지고 S3 명단이 켜진 서버의 **개발자 회차에만** 있다. 그 밖(꺼짐 · 사내 PC ·
-개발 · S3 명단 꺼짐 · 개발자가 아닌 사람)에는 Streamlit 호출을 하나도 하지 않는다 — 요소 순번이
-그대로다.
+자리는 통합인증이 켜지고 S3 명단이 켜진 서버의 **개발자 회차에만** 있다. 그 밖(꺼짐 · 사내 PC · 개발
+· S3 명단 꺼짐 · 개발자가 아닌 사람)에는 Streamlit 호출을 하나도 하지 않는다 — 요소 순번이 그대로다.
 
-쓰기(추가 · 지우기 · 등급 바꾸기 · 다시 읽기)는 그 회차에 쿠키에서 다시 검증한 신원
-(`sso_identity.verified_identity`)을 넘기고, 저장소 쪽(`auth/grade_store` → `auth/access_store`)이
-신원 · 개발자를 다시 본다 — 이 화면이 개발자에게만 그려진다는 것을 믿지 않는다(보인 회차와 누른
-회차의 권한이 달라질 수 있고 위젯 콜백은 본문보다 먼저 돈다). 등급은 넷(열람 · 실무자 · 관리자 ·
-개발자)이고 명단 파일(`user` · `admin` — `admin` = 개발자)과 그 곁의 등급 파일(실무자 · 관리자)을
-합쳐 읽는다(2026-11-18 접속 등급).
+**편집 표**(2026-11-18 접속 등급 구현 확인 보드 「고칠 것」 — 사용자 답 「추가 · 지우기까지 표
+안에서」). 기준 정보 · 생산 계획과 같은 범용 편집 그리드의 줄 규칙 표(`components/access_list_grid`)
+다 — 칸 계정 · 이름 · 부서 · 등록일 · 등록 길(스스로 등록 · 개발자가 넣음 — 아래 「최근 등록 ·
+빼기」 의 「한 일」 과 같은 낱말 — E2E 보드 s-C-02) · 등급(고르기 칸 — 열람 · 실무자 · 관리자 ·
+개발자). 여러 줄을 골라 채우기 · 붙여넣기로 등급을 한 번에 바꾸고, 빈 새 줄에 계정(+ 이름 · 부서) ·
+등급을 적어 넣고, 「줄 지우기」 로 뺀다. 나 자신과 환경변수로 정한 개발자의 등급 칸 · 줄 지우기는
+잠긴다(까닭 풍선). 「저장」 한 번이 바뀐 것 전부를 지금 저장 함수로 쓴다 —
+빼기(`grade_store.remove_people`) → 등급 바꿈(`change_grades`) → 넣기(`add_people` — 등급마다 한
+번)의 좁히는 차례이고, 저장 판(`services/access_list_plan`)의 문제(빨간 칸 · 계정이 빔 · 꼴이 아님
+· 머리 글 · 겹침 · 등급이 빔)가 하나라도 있으면 아무것도 쓰지 않는다. 등록 시각 · 다시 든 사람 규칙
+· 감사 줄은 저장 함수 그대로다.
+
+쓰기(저장 · 다시 읽기)는 그 회차에 쿠키에서 다시 검증한 신원(`sso_identity.verified_identity`)을
+넘기고, 저장소 쪽(`auth/grade_store` → `auth/access_store`)이 신원 · 개발자를 쓰는 순간 다시 본다 —
+이 화면이 개발자에게만 그려진다는 것을 믿지 않는다(보인 회차와 누른 회차의 권한이 달라질 수 있고
+위젯 콜백은 본문보다 먼저 돈다). 등급은 넷이고 명단 파일(`user` · `admin` — `admin` = 개발자)과 그
+곁의 등급 파일(실무자 · 관리자)을 합쳐 읽는다(2026-11-18 접속 등급).
 
 알림에는 개수와 까닭만 싣는다 — loginid 는 실제 사람을 가리켜 Alarm 복사 · 리뷰로 나가면 안
 된다(런북 3-3). 저장 실패 · 그 사이 바뀜은 메모리를 바꾸지 않는다. 답을 받지 못한 PUT 은 저장소에
-들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다. 다시 읽기 · 지우기의 실패와
-거부는 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03). 「지울 사람을
-고르세요」 는 곁 칸을 고치는 말이라 곁에 남는다.
+들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다. 저장 · 다시 읽기의 실패와 거부는
+그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03). 저장 판의 문제는 표에서
+고칠 일이라 작업 줄 바로 아래 곁 한 줄이다. 앞 쓰기가 남고 뒤 쓰기가 막히면 남은 수와 막힌 까닭을
+함께 알리고 저장한 사람의 초안만 걷는다.
 
-붙여 넣은 글이 표면 머리 줄의 `loginid`(또는 이 표의 「계정」) 칸만 읽고, 그 칸을 찾지 못한 표는
-넣지 않는다 — 다른 칸의 값(날짜 · 이름)이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다.
-
-표는 계정 · 이름 · 부서 · 등록 시각 · 등록 길(스스로 등록 · 개발자가 넣음 — 아래 「최근 등록 ·
-빼기」 의 「한 일」 과 같은 낱말 — E2E 보드 s-C-02) · 등급(열람 · 실무자 · 관리자 · 개발자 ·
-개발자(환경변수))이다(2026-11-14 보드 p0-admin-list · n2 답 · 2026-11-18 결정 11). 「사람 고르기」
-칸(「계정 · 이름 · 부서」)으로 여럿을 골라 「등급 바꾸기」 메뉴 하나(넷 가운데 하나)로 한 번에 같은
-등급으로 바꾼다 — 고른 사람에 나 자신 · 환경변수 개발자가 있으면 개발자 아래 셋이 잠기고 까닭
-풍선이 선다(저장소 쪽도 다시 본다). 「명단에 넣기」 창은 등급 칸 하나(처음 값 실무자)를 든다. 접속
-명단 알림 `AD-08` · `AD-09` · `AD-19` · 등급 파일 `AD-25` 의 「그 화면으로」 가 이 펼침을
-연다(`open_access_list` — 알림 칸의 받는 쪽 `ACCESS_LIST_TARGET_KIND`). 표 아래 접힌 「최근
-등록 · 빼기(30일)」 은 파일의 고친 기록에서 꺼낸 읽기 전용 표다(시각 · 계정 · 한 일 — 등급 바꿈은
-감사 기록이 맡는다).
+표 위 작업 줄은 한 줄이다(저장 · 편집 취소 · 다시 읽기, 끝에 버전 · 명단 · 개발자 수 — 넓은 창에서는
+표 도구 막대가 같은 줄 오른쪽에 선다, `edit_grid.one_line_style`). 접속 명단 알림 `AD-08` · `AD-09`
+· `AD-19` · 등급 파일 `AD-25` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸의
+받는 쪽 `ACCESS_LIST_TARGET_KIND`). 표 아래 접힌 「최근 등록 · 빼기(30일)」 은 파일의 고친 기록에서
+꺼낸 읽기 전용 표다(시각 · 계정 · 한 일 — 등급 바꿈은 감사 기록이 맡는다).
 
 「이 등급으로 보기」(`render_grade_preview`)는 운영 + 켜짐의 실제 개발자에게만 Admin Area 안쪽 탭 줄
 오른쪽 끝 팝오버로 선다(설계 규칙 UI-LAY-13 — 탭 위 줄을 늘리지 않는다). 그 창의 세션 칸에만 적고
@@ -44,7 +46,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import partial
 from typing import Final
 
 import pandas as pd
@@ -52,28 +56,18 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.auth import access_store, grade_store, grades, runtime
-from capa_simulation.auth.access import (
-    GRADE_ADMIN,
-    VIA_SELF,
-    ListDocument,
-    ListEntry,
-    SourceProblem,
-    parse_entries,
-)
-from capa_simulation.auth.config import SsoMode
-from capa_simulation.components import sso_identity
-from capa_simulation.components.admin_dialog import (
-    admin_dialog_is_open,
-    close_admin_dialog,
-    open_admin_dialog,
-)
+from capa_simulation.auth.access import ListDocument, SourceProblem, entry_key
+from capa_simulation.auth.config import SsoConfig, SsoMode
+from capa_simulation.auth.identity import Identity
+from capa_simulation.components import access_list_grid, edit_grid, sso_identity
+from capa_simulation.components.access_list_grid import VIA_ADMIN_LABEL, VIA_SELF_LABEL
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.module_status import TAB_ROW_RESERVE_REM
-from capa_simulation.components.paste_form import refuse_paste, render_paste_form, tell_paste
 from capa_simulation.components.sso_status import NEW_REGISTRATION_DAYS, access_problem_text
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.io.s3_small import S3Failure
 from capa_simulation.korea_time import kst_clock
+from capa_simulation.services.access_list_plan import AccessPlan
 from capa_simulation.sidebar_status import remembered_box_key, remembered_expander
 
 EXPANDER_KEY: Final = "admin_area_access_list"
@@ -82,22 +76,31 @@ EXPANDER_LABEL: Final = "접속 명단"
 # 이름(`alerts.GotoTarget`).
 ACCESS_LIST_TARGET_KIND: Final = "access_list"
 ACCESS_LIST_FLASH_KEY: Final = "admin_area_access_list_flash"
-ACCESS_LIST_REMOVE_KEY: Final = "admin_area_access_list_remove"
-ADD_DIALOG: Final = "access_list_add"
-ADD_FORM_KEY: Final = "access_list_add"
-ADD_TEXT_KEY: Final = "admin_area_access_list_add_text"
-# 표의 머리 칸 이름. 머리 줄을 찾는 기준이고, 목록의 머리 줄로 들어와도 사람으로 넣지 않는다 —
-# 이 표를 그대로 붙여 넣으면 「계정」 칸을 읽는다.
-LOGINID_HEADER: Final = "loginid"
-ACCOUNT_HEADER: Final = "계정"
-_ACCOUNT_HEADERS: Final = (LOGINID_HEADER, ACCOUNT_HEADER)
-TABLE_COLUMNS: Final = ("계정", "이름", "부서", "등록 시각", "등록 길", "등급")
-# 명단에 든 길 — 「등록 길」 칸과 「최근 등록 · 빼기」 의 「한 일」 이 함께 쓰는 두 낱말.
-VIA_SELF_LABEL: Final = "스스로 등록"
-VIA_ADMIN_LABEL: Final = "개발자가 넣음"
-VIA_LABELS: Final = {VIA_SELF: VIA_SELF_LABEL}
+# 표 위 칸의 key — 작업 줄 칸 안의 단추 줄이 `ACTION_ROW`, 그 바로 뒤 형제 칸이 그리드 칸이다.
+ACTIONS_BOX: Final = "admin_area_access_actions"
+ACTION_ROW: Final = "admin_area_access_action_row"
+GRID_BOX: Final = "admin_area_access_grid_box"
+SAVE_KEY: Final = "admin_area_access_list_save"
+DISCARD_KEY: Final = "admin_area_access_list_discard"
+REREAD_KEY: Final = "admin_area_access_list_reread"
+SAVE_LABEL: Final = "저장"
+SAVE_HELP: Final = (
+    "바뀐 것 전부(등급 바꿈 · 넣기 · 줄 지우기)를 S3 에 저장합니다 — 뺀 사람의 열린 탭은 다음 "
+    "조작에 닫힙니다."
+)
+SAVE_LOCKED_WHY: Final = "고친 칸이 있으면 누를 수 있습니다."
+DISCARD_HELP: Final = "저장하지 않은 고침을 버립니다."
+# 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭 · 단추 줄 자리(`edit_grid.one_line_style`).
+ONE_LINE_MIN_WINDOW_PX: Final = 1500
+ACTION_ROW_RESERVE_PX: Final = 640
+ONE_LINE_STYLE: Final = edit_grid.one_line_style(
+    ACTIONS_BOX,
+    ACTION_ROW,
+    GRID_BOX,
+    min_window_px=ONE_LINE_MIN_WINDOW_PX,
+    reserve_px=ACTION_ROW_RESERVE_PX,
+)
 ENV_ADMIN_LABEL: Final = grades.ENV_DEVELOPER_LABEL
-_CELL_SEPARATORS: Final = ("\t", ",", ";")
 
 NOT_ADMIN_MESSAGE: Final = "개발자만 접속 명단을 고칠 수 있습니다"
 UNREAD_MESSAGE: Final = (
@@ -106,29 +109,20 @@ UNREAD_MESSAGE: Final = (
 CONFLICT_MESSAGE: Final = (
     "그 사이 S3 의 접속 명단이 바뀌어 저장하지 않았습니다 — 「다시 읽기」 뒤 다시 하세요"
 )
-TABLE_REFUSED_MESSAGE: Final = (
-    "칸이 여럿인 표라 넣지 않았습니다 — "
-    "머리 줄에 loginid 칸(또는 계정 칸)이 있어야 그 칸만 읽습니다"
-)
 SELF_CHANGE_MESSAGE: Final = "자기 등급은 개발자 아래로 내리거나 자기를 지울 수 없습니다"
 ENV_ADMIN_MESSAGE: Final = "환경변수 개발자는 개발자 아래로 내릴 수 없습니다"
 GRADE_UNREAD_MESSAGE: Final = (
     "등급 파일을 아직 읽지 못해 저장하지 않았습니다 — 「다시 읽기」 뒤 다시 하세요"
 )
-# 둘째 쓰기의 실패 — 첫째는 남았다(넣기 · 빼기는 명단, 개발자 → 아래는 등급 파일).
+# 둘째 쓰기의 실패 — 첫째는 남았다(넣기는 명단, 개발자 → 아래는 등급 파일).
 ADD_GRADE_FAILED_MESSAGE: Final = (
     "명단에는 넣었고 등급은 적지 못해 열람으로 읽힙니다 — 「다시 읽기」 뒤 다시 하세요"
 )
 DOWN_LIST_FAILED_MESSAGE: Final = (
     "등급 파일에는 적었고 명단은 저장하지 못해 개발자로 남았습니다 — 「다시 읽기」 뒤 다시 하세요"
 )
-GRADE_MENU_LABEL: Final = "등급 바꾸기"
-GRADE_MENU_KEY: Final = "admin_area_access_list_grade_menu"
-GRADE_BUTTON_KEY: Final = "admin_area_access_list_grade_{grade}"
-# 개발자 아래 셋이 잠긴 까닭(고른 사람에 나 자신 · 환경변수 개발자가 있음).
-GRADE_LOCKED_WHY: Final = "나 자신 · 환경변수 개발자는 개발자 아래로 내릴 수 없습니다"
-ADD_GRADE_KEY: Final = "admin_area_access_list_add_grade"
-ADD_GRADE_LABEL: Final = "등급"
+PROBLEMS_LEAD: Final = "저장하지 않았습니다 — "
+NOTHING_CHANGED: Final = "바뀐 것이 없습니다"
 UNREAD_GRADES_CAPTION: Final = "등급 파일 읽지 못함"
 LIST_READ_FAILED: Final = "접속 명단을 읽지 못했습니다"
 GRADES_READ_FAILED: Final = "등급 파일을 읽지 못했습니다"
@@ -145,13 +139,6 @@ PREVIEW_HELP: Final = (
 )
 # 탭 줄 오른쪽에 비워 둘 폭(rem) — 「이 등급으로 보기」 단추 자리.
 PREVIEW_TAB_RESERVE_REM: Final = 10
-PICK_FIRST_MESSAGE: Final = "사람을 고르세요"
-ADD_LOCKED_WHY: Final = "접속 명단을 읽은 뒤에 넣을 수 있습니다 — 「다시 읽기」"
-# 글 칸이 빈 동안 잠긴 「명단에 넣기」 의 까닭 풍선 — 이 창은 표가 아니라 loginid 목록을 받는다.
-ADD_EMPTY_WHY: Final = "loginid 를 넣으면 누를 수 있습니다."
-REMOVE_HELP: Final = "고른 사람을 명단에서 뺍니다. 그 사람의 열린 탭은 다음 조작에 닫힙니다."
-# 고르기 칸(지우기 · 등급 바꾸기가 함께 쓴다)의 이름 — 라벨을 접은 칸이라 자리표시 글로 보인다.
-REMOVE_PICKER_LABEL: Final = "사람 고르기"
 # 표 아래 접힌 「최근 등록 · 빼기」(보드 p0-admin-list) — 고친 기록(파일의 마지막 200건)에서 꺼낸다.
 RECENT_EXPANDER_KEY: Final = "admin_area_access_list_recent"
 RECENT_LABEL: Final = f"최근 등록 · 빼기({NEW_REGISTRATION_DAYS}일)"
@@ -212,62 +199,6 @@ def _write(action: Callable[[], grade_store.ChangeResult]) -> Outcome:
         return text
 
 
-def _picked() -> tuple[str, ...]:
-    return tuple(st.session_state.get(ACCESS_LIST_REMOVE_KEY) or ())
-
-
-def _remove_selected() -> None:
-    """「지우기」 콜백 — 본문보다 먼저 돌아 고른 칸을 비울 수 있다(옵션에서 빠진 값이 남지 않게)."""
-    selected = _picked()
-    if not selected:
-        queue_flash(ACCESS_LIST_FLASH_KEY, PICK_FIRST_MESSAGE, kind="warning")
-        return
-    cfg = runtime.config()
-    outcome = _write(
-        lambda: grade_store.remove_people(cfg, sso_identity.verified_identity(), selected)
-    )
-    if isinstance(outcome, str):
-        queue_flash(ACCESS_LIST_FLASH_KEY, outcome, kind="error", popup_only=True)
-        return
-    st.session_state[ACCESS_LIST_REMOVE_KEY] = []
-    if outcome.changed:
-        queue_flash(
-            ACCESS_LIST_FLASH_KEY,
-            f"접속 명단에서 {outcome.removed}명을 뺐습니다 — 버전 {outcome.list_revision}",
-        )
-    else:
-        queue_flash(ACCESS_LIST_FLASH_KEY, "바뀐 것이 없습니다", kind="info")
-
-
-def _grade_selected(grade: str) -> None:
-    """「등급 바꾸기」 메뉴 항목 콜백 — 고른 사람을 그 등급으로(결과는 수만)."""
-    selected = _picked()
-    if not selected:
-        queue_flash(ACCESS_LIST_FLASH_KEY, PICK_FIRST_MESSAGE, kind="warning")
-        return
-    cfg = runtime.config()
-    outcome = _write(
-        lambda: grade_store.change_grades(
-            cfg, sso_identity.verified_identity(), dict.fromkeys(selected, grade)
-        )
-    )
-    if isinstance(outcome, str):
-        queue_flash(ACCESS_LIST_FLASH_KEY, outcome, kind="error", popup_only=True)
-        return
-    st.session_state[ACCESS_LIST_REMOVE_KEY] = []
-    if outcome.second_failed is not None:
-        queue_flash(ACCESS_LIST_FLASH_KEY, DOWN_LIST_FAILED_MESSAGE, kind="error", popup_only=True)
-        return
-    if outcome.changed:
-        queue_flash(
-            ACCESS_LIST_FLASH_KEY,
-            f"{grades.label_of(grade)} {outcome.graded}명 — 등급 버전 "
-            f"{outcome.grade_revision} · 명단 버전 {outcome.list_revision}",
-        )
-    else:
-        queue_flash(ACCESS_LIST_FLASH_KEY, "바뀐 것이 없습니다", kind="info")
-
-
 def _reread() -> None:
     """「다시 읽기」 콜백 — 명단과 등급 파일을 함께. 실패해도 메모리 한 벌은 그대로다."""
     cfg = runtime.config()
@@ -294,90 +225,6 @@ def _reread() -> None:
     )
 
 
-def pasted_entries(text: str) -> tuple[tuple[str, ...], int] | None:
-    """붙여 넣은 글 → (loginid 들, 읽지 못한 수). 어느 칸이 사람인지 모르는 표면 `None`.
-
-    머리 줄에 `loginid` 칸이 있으면 그 칸만 읽는다(탭 · 쉼표 · 세미콜론). 머리 없이 탭이 든 글은
-    표로 보고 받지 않는다. 그 밖은 쉼표 · 세미콜론 · 빈칸 · 줄바꿈으로 나눈 목록이다.
-    """
-    lines = [line for line in text.splitlines() if line.strip()]
-    for separator in _CELL_SEPARATORS:
-        header = [cell.strip().casefold() for cell in (lines[:1] or [""])[0].split(separator)]
-        named = [name for name in _ACCOUNT_HEADERS if name in header]
-        if len(header) > 1 and named:
-            column = header.index(named[0])
-            rows = [line.split(separator) for line in lines[1:]]
-            keys, unreadable = parse_entries(
-                "\n".join(row[column] for row in rows if column < len(row))
-            )
-            return keys, unreadable + sum(1 for row in rows if column >= len(row))
-    if "\t" in text:
-        return None
-    keys, unreadable = parse_entries(text)
-    return tuple(key for key in keys if key != LOGINID_HEADER), unreadable
-
-
-def _added_message(result: grade_store.ChangeResult, unreadable: int, grade: str) -> str:
-    parts = [f"접속 명단에 {grades.label_of(grade)} {result.added}명을 넣었습니다"]
-    if result.already:
-        parts.append(f"이미 있음 {result.already}")
-    if unreadable:
-        parts.append(f"꼴이 아니라 뺌 {unreadable}")
-    parts.append(f"버전 {result.list_revision}")
-    return " · ".join(parts)
-
-
-@st.dialog("접속 명단 · 추가", width="large", on_dismiss=close_admin_dialog)
-def _add_dialog() -> None:
-    # 넣는 사람의 첫 등급 — 처음 값 실무자(2026-11-18 결정 「새로 드는 사람」 가). 이 창에서 무엇을
-    # 넣는지 말하는 글은 라벨뿐이라 라벨이 보인다(설계 규칙 UI-INP-08 「라벨 보이는 창」).
-    chosen = st.radio(
-        ADD_GRADE_LABEL,
-        grades.GRADES,
-        index=grades.GRADES.index(grades.EDITOR),
-        key=ADD_GRADE_KEY,
-        format_func=grades.label_of,
-        horizontal=True,
-    )
-    submit = render_paste_form(
-        ADD_FORM_KEY,
-        text_key=ADD_TEXT_KEY,
-        text_label="loginid 붙여넣기",
-        apply_label="명단에 넣기",
-        # 이 창에서 무엇을 넣는지 말하는 글은 라벨뿐이라 보인다(창 제목은 「접속 명단 · 추가」).
-        label_visible=True,
-        empty_why=ADD_EMPTY_WHY,
-    )
-    if submit is None:
-        return
-    pasted = pasted_entries(submit.text)
-    if pasted is None:
-        refuse_paste(ADD_FORM_KEY, TABLE_REFUSED_MESSAGE)
-        return
-    keys, unreadable = pasted
-    if not keys:
-        refuse_paste(ADD_FORM_KEY, f"넣을 loginid 가 없습니다 — 꼴이 아닌 항목 {unreadable}")
-        return
-    grade = chosen if chosen in grades.GRADES else grades.EDITOR
-    cfg = runtime.config()
-    outcome = _write(
-        lambda: grade_store.add_people(cfg, sso_identity.verified_identity(), keys, grade)
-    )
-    if isinstance(outcome, str):
-        refuse_paste(ADD_FORM_KEY, outcome)
-        return
-    if not outcome.changed:
-        tell_paste(ADD_FORM_KEY, f"바뀐 것이 없습니다 — 이미 있음 {outcome.already}")
-        return
-    if outcome.second_failed is not None:
-        queue_flash(ACCESS_LIST_FLASH_KEY, ADD_GRADE_FAILED_MESSAGE, kind="error", popup_only=True)
-    else:
-        queue_flash(ACCESS_LIST_FLASH_KEY, _added_message(outcome, unreadable, grade))
-    st.session_state.pop(ADD_TEXT_KEY, None)
-    close_admin_dialog()
-    st.rerun()
-
-
 def _when_text(value: str) -> str:
     """파일의 UTC 시각 → KST 글(`korea_time`). 읽거나 옮기지 못하면 받은 글 그대로(사람이 고친 파일
     — 시각대 없는 시각 포함)."""
@@ -386,101 +233,6 @@ def _when_text(value: str) -> str:
         return kst_clock(moment, "%Y-%m-%d %H:%M")
     except (ValueError, OverflowError, OSError):
         return value
-
-
-def people_table(
-    document: ListDocument,
-    env_admins: frozenset[str] = frozenset(),
-    grade_of: Callable[[str], str] | None = None,
-) -> pd.DataFrame:
-    """목록 — 계정 | 이름 | 부서 | 등록 시각 | 등록 길 | 등급. 등급은 명단 · 등급 파일을 합친 넷
-    (`grade_of` — 없으면 명단 칸만: `admin` 은 개발자, 그 밖은 열람)이고 환경변수 개발자는
-    「개발자(환경변수)」."""
-
-    def grade_text(entry: ListEntry) -> str:
-        if entry.loginid in env_admins:
-            return ENV_ADMIN_LABEL
-        if grade_of is not None:
-            return grades.label_of(grade_of(entry.loginid))
-        return grades.label_of(grades.DEVELOPER if entry.grade == GRADE_ADMIN else grades.VIEWER)
-
-    rows = [
-        (
-            entry.loginid,
-            entry.name,
-            entry.dept,
-            _when_text(entry.added_at),
-            VIA_LABELS.get(entry.via, VIA_ADMIN_LABEL),
-            grade_text(entry),
-        )
-        for entry in document.entries
-    ]
-    return pd.DataFrame(rows, columns=list(TABLE_COLUMNS))
-
-
-def person_label(entry: ListEntry) -> str:
-    """「사람 고르기」 칸의 글 — 「계정 · 이름 · 부서」(빈 칸은 뺀다 — 개발자가 넣은 사람은
-    계정만)."""
-    return " · ".join(part for part in (entry.loginid, entry.name, entry.dept) if part)
-
-
-def grade_menu_locked(selected: tuple[str, ...], own: str | None, env: frozenset[str]) -> bool:
-    """고른 사람에 나 자신 · 환경변수 개발자가 있어 개발자 아래 셋을 잠그는가."""
-    return any(key == own or key in env for key in selected)
-
-
-def _render_grade_menu(env_admins: frozenset[str]) -> None:
-    """「등급 바꾸기」 메뉴 하나 — 넷 가운데 하나로 고른 사람을 한 번에(결정 11)."""
-    identity = sso_identity.verified_identity()
-    own = None if identity is None else identity.loginid.casefold()
-    locked = grade_menu_locked(_picked(), own, env_admins)
-    with st.popover(GRADE_MENU_LABEL, icon=":material/badge:", key=GRADE_MENU_KEY):
-        for grade in reversed(grades.GRADES):
-            below = grade != grades.DEVELOPER
-            st.button(
-                grades.label_of(grade),
-                key=GRADE_BUTTON_KEY.format(grade=grade),
-                width="stretch",
-                disabled=locked and below,
-                help=GRADE_LOCKED_WHY if locked and below else None,
-                on_click=_grade_selected,
-                args=(grade,),
-            )
-
-
-def _render_remove_picker(document: ListDocument, env_admins: frozenset[str]) -> None:
-    """작업 줄의 고르기 칸 · 「등급 바꾸기」 · 「지우기」. 칸 라벨은 접고(접근성 이름으로 남는다)
-    자리표시 글이 그 이름이다.
-
-    칩은 줄을 접는다 — 가로 칸 안의 기본값은 한 줄 가로 스크롤이라 고른 사람이 칸 밖으로 밀려
-    보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다). 펼친 목록 맨 위의
-    「Select all」 줄은 없다 — 한 번에 전원을 골라 지우면 되돌릴 단추가 없어 한 사람씩 고른다.
-    """
-    labels = {entry.loginid: person_label(entry) for entry in document.entries}
-    options = list(labels)
-    # 다시 읽기로 빠진 사람이 고른 칸에 남으면 위젯이 옵션 밖 값을 받는다.
-    selected = st.session_state.get(ACCESS_LIST_REMOVE_KEY) or []
-    kept = [item for item in selected if item in options]
-    if len(kept) != len(selected):
-        st.session_state[ACCESS_LIST_REMOVE_KEY] = kept
-    st.multiselect(
-        REMOVE_PICKER_LABEL,
-        options,
-        key=ACCESS_LIST_REMOVE_KEY,
-        placeholder=REMOVE_PICKER_LABEL,
-        label_visibility="collapsed",
-        select_all=False,
-        wrap=True,
-        format_func=lambda key: labels.get(key, key),
-    )
-    _render_grade_menu(env_admins)
-    st.button(
-        "지우기",
-        icon=":material/person_remove:",
-        key="admin_area_access_list_remove_button",
-        help=REMOVE_HELP,
-        on_click=_remove_selected,
-    )
 
 
 def recent_changes_table(document: ListDocument, *, now: int) -> pd.DataFrame:
@@ -505,20 +257,6 @@ def recent_changes_table(document: ListDocument, *, now: int) -> pd.DataFrame:
             continue
         rows.append((_when_text(item.at), item.loginid, what))
     return pd.DataFrame(rows, columns=list(RECENT_COLUMNS))
-
-
-def _render_people(document: ListDocument, env_admins: frozenset[str]) -> None:
-    if not document.entries:
-        st.caption("명단에 사람이 없습니다")
-        return
-    toolbar_clearance()
-    cfg = runtime.config()
-    st.dataframe(
-        people_table(document, env_admins, lambda key: grade_store.grade_of(cfg, key)),
-        hide_index=True,
-        width="stretch",
-        placeholder="",
-    )
 
 
 def _render_recent(document: ListDocument) -> None:
@@ -552,6 +290,178 @@ def list_caption(cfg_revision: int, people: int, developers: int, env: int, *, u
     return f"{text} · {UNREAD_GRADES_CAPTION}" if unread else text
 
 
+@dataclass
+class _Saved:
+    """저장 한 번의 결과 — 쓴 수 · 명단 판, 초안을 걷을 키, 둘째 쓰기 실패 글, 막힌 까닭."""
+
+    removed: int = 0
+    graded: int = 0
+    added: int = 0
+    revision: int = 0
+    done: set[str] = field(default_factory=set)
+    warnings: list[str] = field(default_factory=list)
+    refusal: str | None = None
+
+    def parts(self) -> list[str]:
+        counts = ((self.removed, "뺌"), (self.graded, "등급"), (self.added, "넣음"))
+        return [f"{word} {count}명" for count, word in counts if count]
+
+
+def _write_plan(cfg: SsoConfig, identity: Identity | None, plan: AccessPlan) -> _Saved:
+    """저장 판을 좁히는 차례로 쓴다 — 빼기 → 등급 바꿈 → 넣기(등급마다). 막히면 거기서 멈춘다."""
+    saved = _Saved()
+    if plan.removed:
+        outcome = _write(lambda: grade_store.remove_people(cfg, identity, plan.removed))
+        if isinstance(outcome, str):
+            saved.refusal = outcome
+            return saved
+        saved.removed, saved.revision = outcome.removed, outcome.list_revision
+        saved.done.update(plan.removed)
+    if plan.graded:
+        outcome = _write(lambda: grade_store.change_grades(cfg, identity, plan.graded))
+        if isinstance(outcome, str):
+            saved.refusal = outcome
+            return saved
+        saved.graded, saved.revision = outcome.graded, outcome.list_revision
+        if outcome.second_failed is None:
+            saved.done.update(plan.graded)
+        else:
+            saved.warnings.append(DOWN_LIST_FAILED_MESSAGE)
+    for grade, people in plan.added_by_grade().items():
+        profiles = {person.loginid: (person.name, person.dept) for person in people}
+        outcome = _write(
+            partial(
+                grade_store.add_people,
+                cfg,
+                identity,
+                [person.loginid for person in people],
+                grade,
+                profiles=profiles,
+            )
+        )
+        if isinstance(outcome, str):
+            saved.refusal = outcome
+            return saved
+        saved.added += outcome.added
+        saved.revision = outcome.list_revision
+        saved.done.update(person.row for person in people)
+        if outcome.second_failed is not None and ADD_GRADE_FAILED_MESSAGE not in saved.warnings:
+            saved.warnings.append(ADD_GRADE_FAILED_MESSAGE)
+    return saved
+
+
+def _current_table(cfg: SsoConfig) -> access_list_grid.AccessTable | None:
+    """이 회차의 명단 한 벌로 지은 표(명단을 못 읽었거나 자리가 없으면 None)."""
+    source = runtime.access_source()
+    document = None if source is None else source.document
+    if document is None:
+        return None
+    identity = sso_identity.verified_identity()
+    own = None if identity is None else entry_key(identity.loginid)
+    return access_list_grid.build_table(
+        document,
+        lambda key: grade_store.grade_of(cfg, key),
+        own=own,
+        env=access_store.env_admins(cfg),
+    )
+
+
+def _save() -> None:
+    """「저장」 콜백 — 보낸 고침을 먼저 반영하고(출납은 300ms 묶음이라 마지막 회차보다 늦다) 저장
+    판을 읽어 문제가 없으면 쓴다. 결과는 수만."""
+    cfg = runtime.config()
+    access_list_grid.collect()
+    identity = sso_identity.verified_identity()
+    if identity is None or not access_store.is_admin(cfg, identity.loginid):
+        # 쓰는 순간의 실제 등급 — 저장 함수도 다시 보지만 저장 판(잠긴 줄)보다 먼저 까닭을 가른다.
+        queue_flash(ACCESS_LIST_FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
+        return
+    table = _current_table(cfg)
+    if table is None:
+        queue_flash(ACCESS_LIST_FLASH_KEY, UNREAD_MESSAGE, kind="error", popup_only=True)
+        return
+    access_list_grid.apply(table)
+    plan = access_list_grid.plan(table)
+    if plan.problems.any:
+        queue_flash(ACCESS_LIST_FLASH_KEY, PROBLEMS_LEAD + plan.problems.text(), kind="error")
+        return
+    if plan.empty:
+        access_list_grid.discard()
+        queue_flash(ACCESS_LIST_FLASH_KEY, NOTHING_CHANGED, kind="info")
+        return
+    saved = _write_plan(cfg, identity, plan)
+    if saved.refusal is None and not saved.warnings:
+        access_list_grid.discard()
+    else:
+        access_list_grid.forget(frozenset(saved.done))
+    parts = saved.parts()
+    if saved.refusal is not None:
+        before = f" — 앞서 저장: {' · '.join(parts)}" if parts else ""
+        queue_flash(ACCESS_LIST_FLASH_KEY, saved.refusal + before, kind="error", popup_only=True)
+    elif saved.warnings:
+        queue_flash(
+            ACCESS_LIST_FLASH_KEY,
+            " · ".join([*saved.warnings, *parts]),
+            kind="error",
+            popup_only=True,
+        )
+    elif parts:
+        queue_flash(
+            ACCESS_LIST_FLASH_KEY,
+            f"접속 명단을 저장했습니다 — {' · '.join(parts)} · 버전 {saved.revision}",
+        )
+    else:
+        queue_flash(ACCESS_LIST_FLASH_KEY, NOTHING_CHANGED, kind="info")
+
+
+def _render_actions(
+    document: ListDocument | None, cfg: SsoConfig, env_admins: frozenset[str]
+) -> None:
+    """표 위 작업 줄 — 저장 · 편집 취소(고친 것이 있을 때) · 다시 읽기 · 「고칠 칸 n개」 · 끝에 버전
+    ·
+    명단 · 개발자 수. 그 바로 아래가 곁 알림 칸이다(저장 판의 문제 · 못 읽음)."""
+    cells, _, errors = access_list_grid.draft_counts()
+    pending = cells > 0 and document is not None
+    with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
+        st.button(
+            SAVE_LABEL,
+            icon=":material/save:",
+            key=SAVE_KEY,
+            type="primary",
+            disabled=not pending,
+            help=SAVE_HELP if pending else SAVE_LOCKED_WHY,
+            on_click=_save,
+        )
+        if pending:
+            st.button(
+                "편집 취소",
+                icon=edit_grid.DISCARD_ICON,
+                key=DISCARD_KEY,
+                help=DISCARD_HELP,
+                on_click=access_list_grid.discard,
+            )
+        st.button(
+            "다시 읽기",
+            icon=":material/refresh:",
+            key=REREAD_KEY,
+            on_click=_reread,
+        )
+        if errors:
+            st.markdown(f":red[고칠 칸 {errors:,}개]")
+        if document is not None:
+            access = runtime.current_access(cfg)
+            st.caption(
+                list_caption(
+                    document.revision,
+                    len(document.entries),
+                    access.admin_count,
+                    len(env_admins),
+                    unread=grade_store.read_problem(cfg) is not None,
+                ),
+                width="content",
+            )
+
+
 def render_access_list_admin() -> None:
     """Admin 「접속 명단」 펼침. 자리가 없는 회차에는 아무것도 부르지 않는다(모듈 설명)."""
     cfg = runtime.config()
@@ -563,49 +473,24 @@ def render_access_list_admin() -> None:
     source = runtime.access_source()
     document = None if source is None else source.document
     env_admins = access_store.env_admins(cfg)
+    table = _current_table(cfg)
+    if table is not None and access_list_grid.apply(table):
+        # 채운 새 줄이 늘면 빈 새 줄을 더 단다(같은 업무 키라 초안은 제 줄에 붙는다).
+        table = _current_table(cfg)
     with remembered_expander(EXPANDER_LABEL, icon=":material/group:", key=EXPANDER_KEY):
-        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 등급 바꾸기 · 지우기, 끝에 버전 ·
-        # 명단 · 개발자 수).
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.button(
-                "추가",
-                icon=":material/person_add:",
-                key="admin_area_access_list_open_add",
-                disabled=document is None,
-                help=ADD_LOCKED_WHY if document is None else None,
-                on_click=open_admin_dialog,
-                args=(ADD_DIALOG,),
-            )
-            st.button(
-                "다시 읽기",
-                icon=":material/refresh:",
-                key="admin_area_access_list_reread",
-                on_click=_reread,
-            )
-            if document is not None and document.entries:
-                _render_remove_picker(document, env_admins)
-            if document is not None:
-                access = runtime.current_access(cfg)
-                st.caption(
-                    list_caption(
-                        document.revision,
-                        len(document.entries),
-                        access.admin_count,
-                        len(env_admins),
-                        unread=grade_store.read_problem(cfg) is not None,
-                    ),
-                    width="content",
-                )
-        # 곁 거부(「지울 사람을 고르세요」)는 누른 단추 줄 바로 아래 · 표 띄움 앞이다. 갈래(못
-        # 읽음 · 빈 명단 · 표)마다 한 번 불려 그 회차의 알림이 늘 나간다.
-        render_flash(ACCESS_LIST_FLASH_KEY)
-        if document is None:
-            st.caption("접속 명단 읽지 못함")
-        else:
-            _render_people(document, env_admins)
+        actions = st.container(key=ACTIONS_BOX)
+        grid_box = st.container(key=GRID_BOX)
+        with actions:
+            _render_actions(document, cfg, env_admins)
+            # 곁 알림(저장 판의 문제)은 단추 줄 바로 아래 · 표 앞이다. 회차마다 한 번 불려 그
+            # 회차의 알림이 늘 나간다.
+            slot = render_flash(ACCESS_LIST_FLASH_KEY)
+            if document is None:
+                slot.caption("접속 명단 읽지 못함")
+        with grid_box:
+            access_list_grid.render(table, page_style=ONE_LINE_STYLE)
+        if document is not None:
             _render_recent(document)
-    if admin_dialog_is_open(ADD_DIALOG):
-        _add_dialog()
 
 
 def preview_available() -> bool:

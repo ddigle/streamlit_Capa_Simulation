@@ -523,11 +523,13 @@ def _changed_document(
     grades: Mapping[str, str] | None = None,
     seeded: bool = False,
     joined: ListEntry | None = None,
+    profiles: Mapping[str, tuple[str, str]] | None = None,
 ) -> tuple[ListDocument, SaveResult]:
     """고침을 얹은 새 한 벌과 개수. 판 번호는 바뀐 것이 있을 때만 는다. 값은 꼴을 거친 것이다.
 
     `grades` 는 loginid → 새 등급(이미 그 등급이면 `already`, 명단에 없으면 `absent`). `joined`
     는 스스로 등록하는 사람의 항목이다(이미 있으면 `already` — 등급 · 칸을 건드리지 않는다).
+    `profiles` 는 개발자가 넣는 사람의 (이름, 부서) — 새로 드는 사람에게만 적는다(꼴을 거친 글).
     `seeded` 면 첫 판이 파일이 되는 저장이다 — 환경변수에서 온 사람은 기록이 없으니 수로 남긴다.
     """
     stamp = _iso_text(moment)
@@ -545,7 +547,10 @@ def _changed_document(
         if key in entries:
             already += 1
             continue
-        entries[key] = ListEntry(key, actor, stamp)
+        name, dept = (profiles or {}).get(key, ("", ""))
+        entries[key] = ListEntry(
+            key, actor, stamp, name=profile_text(name), dept=profile_text(dept)
+        )
         changes.append(ListChange(actor, stamp, CHANGE_ADD, key))
         added += 1
     for key in dict.fromkeys(remove):
@@ -651,11 +656,13 @@ def save_changes(
     grades: Mapping[str, str] | None = None,
     now: int | None = None,
     note_grades: bool = True,
+    profiles: Mapping[str, tuple[str, str]] | None = None,
 ) -> SaveResult:
     """개발자의 고침 하나(넣기 · 빼기 · 등급 바꾸기). 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
 
     `note_grades` 가 거짓이면 명단 등급 칸의 바뀜을 감사에 남기지 않는다 — 등급 파일과 합친 등급으로
-    부르는 쪽(`grade_store`)이 사람마다 한 줄을 남긴다.
+    부르는 쪽(`grade_store`)이 사람마다 한 줄을 남긴다. `profiles` 는 넣는 사람의 (이름, 부서)다
+    (접속 명단 편집 표의 새 줄 — 비면 빈 칸).
 
     `NotAdminError`(권한) · `SelfChangeError`(자기 등급 내림 · 자기 빼기) · `EnvAdminError`(환경변수
     개발자 내림) · `ValueError`(모르는 등급) · `StoreUnreadError`(아직 못 읽음) ·
@@ -681,6 +688,7 @@ def save_changes(
             grades=grading,
             moment=moment,
             seeded=source.seeded,
+            profiles=profiles,
         )
         if not result.changed:
             return result

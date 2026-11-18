@@ -45,7 +45,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from sso_support import sso_environ, use_config
-from streamlit.proto.LabelVisibility_pb2 import LabelVisibility
 from streamlit.testing.v1 import AppTest
 from test_sso_access import (
     ECHO_DISCONNECTS,
@@ -64,7 +63,6 @@ from test_sso_access import (
 )
 
 from capa_simulation.auth import access_store, grade_store, names, runtime, server, web
-from capa_simulation.auth import grades as grades_module
 from capa_simulation.auth.access import (
     GRADE_ADMIN,
     GRADE_USER,
@@ -75,7 +73,7 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, load_config
 from capa_simulation.auth.identity import Identity, IdentityProblem, session_check
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import access_list_admin, paste_form, sso_identity, sso_status
+from capa_simulation.components import access_list_admin, access_list_grid, sso_identity, sso_status
 from capa_simulation.io import s3_small
 from capa_simulation.io.s3_small import S3Failure, S3Target
 
@@ -1945,50 +1943,6 @@ def test_someone_who_is_not_an_admin_has_no_place(
     assert not list(app.main.children.values())
 
 
-def test_the_admin_sees_the_list(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-
-    app = _admin_app(cfg, monkeypatch)
-
-    assert not list(app.exception)
-    assert _labels(app) == [access_list_admin.RECENT_LABEL, "접속 명단"]
-    frame = app.dataframe[0].value
-    assert list(frame.columns) == ["계정", "이름", "부서", "등록 시각", "등록 길", "등급"]
-    assert sorted(frame["계정"].tolist()) == [OTHER, USER]
-    assert frame["등록 길"].tolist() == ["개발자가 넣음", "개발자가 넣음"], "옛 파일(칸 없음)"
-    assert frame["등급"].tolist() == ["열람", "열람"]
-    assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).options
-    assert any("버전 1 · 명단 2 · 개발자 1(환경변수 1)" in str(item.value) for item in app.caption)
-
-
-def test_the_way_in_reads_the_same_words_as_the_recent_table_and_not_as_a_grade(
-    mock_s3: tuple[MockStore, str],
-) -> None:
-    """「등록 길」 은 바로 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 두 낱말(스스로 등록 ·
-    개발자가 넣음)이고 「등급」 칸의 「관리자」 와 겹치지 않는다(E2E 보드 s-C-02)."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    access_store.save_changes(cfg, identity_of(cfg, ADMIN), grades={USER: GRADE_ADMIN})
-    access_store.register_self(cfg, "demo.self")
-    source = runtime.access_source()
-    assert source is not None and source.document is not None
-
-    table = access_list_admin.people_table(source.document).set_index("계정")
-    recent = access_list_admin.recent_changes_table(source.document, now=int(time.time()))
-
-    assert table.loc[USER, "등록 길"] == "개발자가 넣음"
-    assert table.loc[USER, "등급"] == "개발자", "명단 `admin` 은 등급 칸의 「개발자」"
-    assert table.loc["demo.self", "등록 길"] == "스스로 등록"
-    assert set(table["등록 길"]) <= set(recent["한 일"]) | {"개발자가 넣음"}
-    assert set(table["등록 길"]).isdisjoint(
-        {*grades_module.GRADE_LABELS.values(), access_list_admin.ENV_ADMIN_LABEL}
-    )
-    assert "스스로 등록" in recent["한 일"].tolist()
-
-
 def test_the_recent_registrations_and_removals_fold_under_the_table(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2016,119 +1970,7 @@ def test_the_recent_registrations_and_removals_fold_under_the_table(
 
     (recent,) = [item for item in app.expander if item.label == access_list_admin.RECENT_LABEL]
     assert recent.proto.expanded is False, "접혀 있다"
-    assert app.dataframe[1].value["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
-
-
-def test_an_empty_list_says_so(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint)
-
-    app = _admin_app(cfg, monkeypatch)
-
-    assert not list(app.dataframe)
-    assert any(item.value == "명단에 사람이 없습니다" for item in app.caption)
-
-
-def test_the_paste_window_adds_people(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-    assert any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area)
-    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(
-        f"loginid\n{OTHER}\n{USER}\n bad\\one \n{GONE}"
-    ).run()
-    app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    saved = json.loads(store.objects[OBJECT])
-    assert sorted(item["loginid"] for item in saved["users"]) == [GONE, OTHER, USER]
-    assert problem_of(cfg, GONE) is None, "재시작 없이 바로 들어온다"
-    assert not any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area)
-    text = _flash_text(app)
-    assert "2명을 넣었습니다" in text and "이미 있음 1" in text and "꼴이 아니라 뺌 1" in text
-    # 명단의 저장 차례 번호는 「버전 n」 이다 — 같은 화면의 공용 표 「공용 버전 vN」 과 같은 말이다
-    # (2026-11-08 사용자 답 b4).
-    assert text.endswith(f"버전 {saved['revision']}") and "판 " not in text
-    assert_absent(text, OTHER, GONE, "bad")
-
-
-def test_the_locked_add_says_it_takes_loginids(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """빈 칸에 잠긴 「명단에 넣기」 풍선은 이 창이 받는 것(loginid)을 말한다 — 공용 글 「표를
-    붙여넣으면」 은 머리 없는 표를 거절하는 이 창과 맞지 않는다."""
-    sent: list[dict[str, Any]] = []
-    monkeypatch.setattr(paste_form, "_PASTE_WINDOW", lambda **kwargs: sent.append(kwargs))
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    (window,) = [item for item in sent if item["key"].endswith(access_list_admin.ADD_FORM_KEY)]
-    assert window["data"]["reasons"]["empty"] == access_list_admin.ADD_EMPTY_WHY
-    assert "loginid" in access_list_admin.ADD_EMPTY_WHY
-    assert "표" not in access_list_admin.ADD_EMPTY_WHY
-
-
-def test_the_paste_window_refuses_nothing_readable(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint)
-    app = _admin_app(cfg, monkeypatch)
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(r"DOMAIN\only").run()
-
-    app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
-
-    assert OBJECT not in store.objects
-    assert any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area), "창이 남는다"
-    assert "넣을 loginid 가 없습니다" in _flash_text(app)
-
-
-def test_a_failed_save_in_the_window_tells_why_and_keeps_the_memory(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint)
-    store.force["PUT"] = (403, "AccessDenied")
-    app = _admin_app(cfg, monkeypatch)
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(USER).run()
-
-    app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
-
-    assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
-    assert "명단은 그대로입니다" in _flash_text(app)
-    assert problem_of(cfg, USER) is IdentityProblem.DENIED
-
-
-def test_a_put_with_no_answer_tells_the_admin_to_read_again(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-    store.answer_delay["PUT"] = 1.0
-    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(OTHER).run()
-
-    app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    text = _flash_text(app)
-    assert "저장됐는지 알 수 없습니다" in text and "시간 초과" in text and "다시 읽기" in text
-    assert "그대로입니다" not in text
-    assert_absent(text, OTHER)
+    assert app.dataframe[0].value["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
 
 
 @pytest.mark.parametrize(
@@ -2166,75 +2008,6 @@ def test_a_file_too_big_to_send_is_a_plain_failure(
     assert "명단은 그대로입니다" in access_list_admin.save_failure_message(caught.value)
 
 
-def _paste_and_apply(app: AppTest, text: str) -> AppTest:
-    app = _button(app, "admin_area_access_list_open_add").click().run()
-    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(text).run()
-    return next(item for item in app.button if item.label == "명단에 넣기").click().run()
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        f"loginid\t넣은 때\t넣은 사람\n{OTHER}\t11-05 18:15\t{ADMIN}\n{GONE}\t2026-11-05\t{ADMIN}",
-        f"넣은 때\tLoginID\n2026-11-05\t{OTHER}\n2026-11-05\t{GONE}",
-        f"loginid,넣은 때,넣은 사람\n{OTHER},2026-11-05 18:15,{ADMIN}\n{GONE},2026-11-05,{ADMIN}",
-    ],
-    ids=["tab", "column-moved", "comma"],
-)
-def test_a_pasted_table_adds_only_its_loginid_column(
-    text: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """다른 칸의 값이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint)
-    app = _admin_app(cfg, monkeypatch)
-
-    app = _paste_and_apply(app, text)
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    saved = json.loads(store.objects[OBJECT])
-    assert sorted(item["loginid"] for item in saved["users"]) == [GONE, OTHER]
-    assert "2명을 넣었습니다" in _flash_text(app)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [f"{OTHER}\t2026-11-05\t{USER}", f"loginid\n{OTHER}\t{USER}"],
-    ids=["no-header", "header-without-cells"],
-)
-def test_a_table_without_a_loginid_column_is_refused(
-    text: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """어느 칸이 사람인지 모르면 넣지 않고 까닭을 알린다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint)
-    app = _admin_app(cfg, monkeypatch)
-
-    app = _paste_and_apply(app, text)
-
-    assert OBJECT not in store.objects
-    assert problem_of(cfg, OTHER) is IdentityProblem.DENIED
-    assert any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area), "창이 남는다"
-    assert "loginid 칸" in _flash_text(app)
-    assert_absent(_flash_text(app), OTHER, USER)
-
-
-def test_a_list_with_separators_still_reads_every_entry() -> None:
-    assert access_list_admin.pasted_entries(f"loginid\n{OTHER}, {USER};{GONE} bad\\one") == (
-        (OTHER, USER, GONE),
-        1,
-    )
-
-
-def test_a_short_table_row_is_counted_as_unreadable() -> None:
-    assert access_list_admin.pasted_entries(
-        f"넣은 때\tloginid\n2026-11-05\n2026-11-05\t{OTHER}"
-    ) == (
-        (OTHER,),
-        1,
-    )
-
-
 @pytest.mark.parametrize(
     "value",
     [
@@ -2244,302 +2017,6 @@ def test_a_short_table_row_is_counted_as_unreadable() -> None:
 )
 def test_a_time_past_the_calendar_comes_back_as_it_was(value: str) -> None:
     assert access_list_admin._when_text(value) == value
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "0001-01-01T00:00:00",
-        "0001-01-01T00:00:00+14:00",
-        "9999-12-31T23:59:59-14:00",
-        "9999-12-31T23:59:59Z",
-    ],
-)
-def test_a_hand_written_time_at_the_edge_does_not_stop_the_admin_screen(
-    value: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    store.put(
-        OBJECT,
-        json.dumps(
-            {
-                "format": 1,
-                "revision": 1,
-                "users": [{"loginid": USER, "added_at": value, "added_by": ADMIN}],
-            }
-        ).encode(),
-    )
-    cfg = started(store, endpoint)
-
-    app = _admin_app(cfg, monkeypatch)
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    assert app.dataframe[0].value["계정"].tolist() == [USER]
-
-
-def test_removing_from_the_screen(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    assert problem_of(cfg, USER) is IdentityProblem.DENIED
-    assert problem_of(cfg, OTHER) is None
-    assert app.dataframe[0].value["계정"].tolist() == [OTHER]
-    assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).value == []
-    assert "1명을 뺐습니다" in _flash_text(app)
-    assert "— 버전 " in _flash_text(app) and "판 " not in _flash_text(app)
-    assert_absent(_flash_text(app), USER, OTHER)
-
-
-def test_removing_with_nothing_chosen_writes_nothing(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-    before = list(store.requests)
-
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    assert store.requests == before
-    assert "사람을 고르세요" in _flash_text(app)
-
-
-def test_a_stale_button_of_someone_who_lost_the_right_writes_nothing(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """보인 회차에는 관리자였어도 누른 회차의 쿠키로 다시 본다 — 위젯 콜백이 그 자리에서 막힌다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-    _as_person(cfg, USER, monkeypatch)
-    before = requests_named(store, "PUT")
-
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    assert not list(app.exception)
-    assert requests_named(store, "PUT") == before
-    assert problem_of(cfg, USER) is None
-    assert "접속 명단" not in _labels(app)
-
-
-def test_reading_again_from_the_screen(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-    store.put(OBJECT, file_body(USER, OTHER, revision=4))
-
-    app = _button(app, "admin_area_access_list_reread").click().run()
-
-    assert sorted(app.dataframe[0].value["계정"].tolist()) == [OTHER, USER]
-    assert problem_of(cfg, OTHER) is None
-    assert "명단 2 · 버전 4" in _flash_text(app)
-
-    store.force["GET"] = (403, "AccessDenied")
-    app = _button(app, "admin_area_access_list_reread").click().run()
-
-    assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
-    assert sorted(app.dataframe[0].value["계정"].tolist()) == [OTHER, USER]
-    assert problem_of(cfg, OTHER) is None
-
-
-def _box_layout(app: AppTest) -> list[Any]:
-    """「접속 명단」 펼침 안 차례 — 가로 칸은 그 안 (꼴, key) 목록, 세로 칸은 「칸:」 뒤에 그 안 꼴,
-    그 밖은 꼴 이름."""
-    (box,) = [item for item in app.status if item.label == "접속 명단"]
-
-    def name(node: Any) -> tuple[str, str]:
-        return (node.type, str(getattr(node, "key", "") or ""))
-
-    def kinds(node: Any) -> list[str]:
-        children = getattr(node, "children", None)
-        if not children:
-            return [node.type]
-        return [kind for child in children.values() for kind in kinds(child)]
-
-    layout: list[Any] = []
-    for child in box.children.values():
-        flex = getattr(getattr(child, "proto", None), "flex_container", None)
-        if flex is not None and flex.direction == 2:
-            layout.append([name(item) for item in child.children.values()])
-        elif getattr(child, "children", None):
-            layout.append("칸:" + ",".join(kinds(child)))
-        else:
-            layout.append(child.type)
-    return layout
-
-
-def test_the_list_actions_stand_in_one_row_above_the_table(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """표 위 작업 줄은 한 줄이다(UI-LAY-11) — 추가 · 다시 읽기 · 고르기 칸 · 「등급 바꾸기」 메뉴 ·
-    지우기, 끝에 버전 값. 고르기 칸 라벨은 접고 자리표시 글이 그 이름이다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-
-    app = _admin_app(cfg, monkeypatch)
-
-    layout = _box_layout(app)
-    rows = [item for item in layout if isinstance(item, list)]
-    assert len(rows) == 1, layout
-    assert [item for item in rows[0] if item[0] != "caption"] == [
-        ("button", "admin_area_access_list_open_add"),
-        ("button", "admin_area_access_list_reread"),
-        ("multiselect", access_list_admin.ACCESS_LIST_REMOVE_KEY),
-        ("popover", access_list_admin.GRADE_MENU_KEY),
-        ("button", "admin_area_access_list_remove_button"),
-    ]
-    assert rows[0][-1][0] == "caption"
-    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
-    assert picker.proto.label_visibility.value == LabelVisibility.LabelVisibilityOptions.COLLAPSED
-    assert picker.label == picker.proto.placeholder == "사람 고르기"
-
-
-def test_the_picked_people_wrap_instead_of_scrolling_out_of_sight(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """고른 사람 칩은 줄을 접는다 — 가로 작업 줄 안 기본값은 한 줄 가로 스크롤이라 칸 밖으로 밀린
-    사람이 보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다)."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER, OTHER]).run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
-    assert picker.value == [USER, OTHER]
-    assert picker.proto.HasField("wrap") and picker.proto.wrap
-
-
-def test_the_remove_picker_has_no_select_all_row(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """지울 사람 칸 맨 위에 「Select all」 줄이 없다 — 한 번에 전원을 고르고 「지우기」 를 누르면
-    되돌릴 길이 없다(2026-11-08 사용자 답 U1 — 한 사람씩 고른다). 전송 값 0 이 「늘 숨김」 이다
-    (기본 임계값이면 명단이 1000명 이하일 때 선다)."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    app = _admin_app(cfg, monkeypatch)
-
-    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
-    assert picker.proto.select_all == 0
-
-
-def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """고르지 않은 「지우기」 의 곁 거부는 누른 단추 줄 바로 아래 · 표 앞이다(UI-LAY-03)."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    layout = _box_layout(app)
-    assert [item.value for item in app.warning] == ["사람을 고르세요"]
-    assert isinstance(layout[0], list), layout
-    assert "warning" in layout[1], layout
-    assert layout[2:4] == ["space", "dataframe"], layout
-    assert layout[4:] == ["칸:caption"], "표 아래 접힌 「최근 등록 · 빼기」(기록 없음)"
-
-
-def test_removing_everyone_still_tells_the_result(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """명단이 빈 갈래에서도 그 회차의 결과 알림이 나간다 — 알림 칸이 표 갈래 안에만 있지 않다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    app = _admin_app(cfg, monkeypatch)
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER, OTHER]).run()
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    assert any(item.value == "명단에 사람이 없습니다" for item in app.caption)
-    assert "2명을 뺐습니다" in _flash_text(app)
-
-
-def test_a_failed_action_of_the_list_goes_to_the_alert_popup_only(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """다시 읽기 · 지우기의 실패는 곁에 고칠 입력이 없다 — 곁 상자 없이 알림창에만 뜬다(UI-NTF-03).
-    고를 사람을 고르지 않은 누름만 곁 칸을 고치는 말이라 곁에 선다."""
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER)
-    app = _admin_app(cfg, monkeypatch)
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-    assert [item.value for item in app.warning] == ["사람을 고르세요"]
-
-    store.force["GET"] = (403, "AccessDenied")
-    app = _button(app, "admin_area_access_list_reread").click().run()
-
-    assert not list(app.error), [item.value for item in app.error]
-    assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
-
-    store.force.clear()
-    store.force["PUT"] = (403, "AccessDenied")
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-    app = _button(app, "admin_area_access_list_remove_button").click().run()
-
-    assert not list(app.error), [item.value for item in app.error]
-    assert "S3 에 저장하지 못했습니다" in _flash_text(app)
-
-
-def test_a_list_that_shrinks_on_reading_again_leaves_no_stale_choice(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    app = _admin_app(cfg, monkeypatch)
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-    store.put(OBJECT, file_body(OTHER, revision=2))
-
-    app = _button(app, "admin_area_access_list_reread").click().run()
-
-    assert not list(app.exception), [item.message for item in app.exception]
-    assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).value == []
-
-
-def test_unread_locks_adding_and_warns_the_admin_on_any_screen(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """못 읽은 동안은 관리자만 들어온다 — 관리자는 Admin 을 열기 전 어느 화면에서나 알림을 받는다
-    (앱 정보 카드가 낸다, 2026-11-08 사용자 답 U4). 「그 화면으로」 는 Admin Area 의 「접속 명단」
-    펼침까지다(`test_the_list_alerts_open_the_access_list_box_from_another_screen`)."""
-    store, endpoint = mock_s3
-    store.force["GET"] = (403, "AccessDenied")
-    cfg = s3_config(store, endpoint)
-    access_store.read_at_start(cfg)
-
-    app = _admin_app(cfg, monkeypatch)
-
-    assert _button(app, "admin_area_access_list_open_add").disabled
-    assert any(item.value == "접속 명단 읽지 못함" for item in app.caption)
-    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
-    note = active_state(card, "AD-08")
-    assert note is not None
-    assert "개발자만 들어옵니다" in note["short"]
-    assert "인증 거절(HTTP 403 · AccessDenied)" in note["full"]
-    assert sso_status.ACCESS_READ_FIX_STEP in note["full"], "다시 해도 같은 까닭 — 먼저 고친다"
-    assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
-
-    store.force.clear()
-    app = _button(app, "admin_area_access_list_reread").click().run()
-
-    assert not _button(app, "admin_area_access_list_open_add").disabled
-    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
-    assert active_state(card, "AD-08") is None
-    assert [item["active"] for item in states(card, "AD-08")] == [False]
 
 
 def test_an_open_tab_stopped_while_the_list_is_unread_says_it_could_not_check(
@@ -3304,69 +2781,6 @@ def test_the_first_version_alert_goes_only_to_those_who_can_act(
 # --- 등급 · 새 등록 알림(2026-11-14 보드 p0-admin-list · n2) ------------------------------------
 
 
-def test_the_developer_changes_grades_from_one_menu_on_screen(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """「등급 바꾸기」 메뉴 하나(열람 · 실무자 · 관리자 · 개발자) — 여럿을 골라 한 번에, 결과는
-    수만.
-    개발자로는 명단만, 관리자로는 등급 파일만 쓴다(2026-11-18 접속 등급 결정 11 · 12)."""
-    store, endpoint = mock_s3
-    boss = "demo.boss"
-    cfg = started(store, endpoint, USER, OTHER, boss, CAPA_ACCESS_ADMINS=f"{ADMIN},{boss}")
-    app = _admin_app(cfg, monkeypatch)
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-    app = _button(app, "admin_area_access_list_grade_developer").click().run()
-
-    assert not list(app.exception)
-    assert "개발자 1명" in _flash_text(app)
-    assert access_store.is_admin(cfg, USER)
-    frame = app.dataframe[0].value
-    shown = dict(zip(frame["계정"], frame["등급"], strict=True))
-    assert shown == {boss: "개발자(환경변수)", OTHER: "열람", USER: "개발자"}
-    assert USER not in _flash_text(app), "알림에는 개수만"
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([OTHER]).run()
-    app = _button(app, "admin_area_access_list_grade_manager").click().run()
-    assert not list(app.exception)
-    assert "관리자 1명" in _flash_text(app)
-    assert grade_store.grade_of(cfg, OTHER) == "manager"
-    assert not access_store.is_admin(cfg, OTHER), "관리자는 등급 파일에만"
-    assert grade_store.object_key(cfg) in store.objects
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([boss]).run()
-    locked = _button(app, "admin_area_access_list_grade_viewer")
-    assert locked.disabled and locked.help == access_list_admin.GRADE_LOCKED_WHY
-    assert not _button(app, "admin_area_access_list_grade_developer").disabled
-    with pytest.raises(access_store.EnvAdminError):
-        grade_store.change_grades(cfg, identity_of(cfg, ADMIN), {boss: "viewer"})
-    assert access_store.is_admin(cfg, boss)
-
-
-def test_a_list_developer_cannot_take_their_own_grade_on_screen(
-    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store, endpoint = mock_s3
-    cfg = started(store, endpoint, USER, OTHER)
-    access_store.save_changes(cfg, identity_of(cfg, ADMIN), grades={USER: GRADE_ADMIN})
-    app = _admin_app(cfg, monkeypatch, loginid=USER)
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
-
-    for grade in ("viewer", "editor", "manager"):
-        button = _button(app, f"admin_area_access_list_grade_{grade}")
-        assert button.disabled and button.help == access_list_admin.GRADE_LOCKED_WHY, grade
-    with pytest.raises(access_store.SelfChangeError):
-        grade_store.change_grades(cfg, identity_of(cfg, USER), {USER: "manager"})
-    assert access_store.is_admin(cfg, USER)
-
-
-def test_the_table_pasted_back_reads_the_account_column() -> None:
-    pasted = access_list_admin.pasted_entries(f"계정\t이름\t부서\n{OTHER}\t데모\t부서\n{GONE}\t\t")
-
-    assert pasted == ((OTHER, GONE), 0)
-
-
 def test_a_new_self_registration_alerts_admins_once_with_a_count_only(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3385,7 +2799,7 @@ def test_a_new_self_registration_alerts_admins_once_with_a_count_only(
     first = active_state(card(ADMIN), "AD-19")
     assert first is not None
     assert first["short"].startswith("새 등록 2명")
-    assert f"등록 길 「{access_list_admin.VIA_SELF_LABEL}」" in first["full"], "표의 낱말 그대로"
+    assert f"등록 길 「{access_list_grid.VIA_SELF_LABEL}」" in first["full"], "표의 낱말 그대로"
     assert "demo.first" not in json.dumps(first, ensure_ascii=False)
     assert first["target"]["kind"] == access_list_admin.ACCESS_LIST_TARGET_KIND
     assert first["page"] == "Admin Area"

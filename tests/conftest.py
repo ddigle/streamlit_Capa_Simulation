@@ -655,9 +655,10 @@ def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _stub_edit_grid(monkeypatch: pytest.MonkeyPatch) -> None:
-    """범용 편집 그리드의 두 등록(`edit_grid._GRID` 껍데기·`_FEED` feed)을 아무것도 보내지 않는
-    대역으로 바꾼다 — 설비 마스터 표 대역과 같은 까닭(AppTest 는 그 JS 를 못 돌리고, 한 프로세스의
-    두 번째 AppTest 에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다). 받은 값을 보는 시험은
+    """범용 편집 그리드의 등록(`edit_grid._GRID` 껍데기 · 줄 규칙 표 껍데기 `_GRID_ROWS` · `_FEED`
+    feed)을 아무것도 보내지 않는 대역으로 바꾼다 — 설비 마스터 표 대역과 같은 까닭(AppTest 는 그
+    JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서 진짜 컴포넌트를 부르면 「not registered」로
+    죽는다). 받은 값을 보는 시험은
     `tests/edit_grid_fake.install_fake_edit_grid` 로 이 위에 다시 덮는다."""
 
     def _silent_grid(**_: Any) -> SimpleNamespace:
@@ -667,6 +668,7 @@ def _stub_edit_grid(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(edit_grid, "_GRID", _silent_grid)
+    monkeypatch.setattr(edit_grid, "_GRID_ROWS", _silent_grid)
     monkeypatch.setattr(edit_grid, "_FEED", _silent_feed)
 
 

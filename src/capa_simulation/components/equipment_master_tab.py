@@ -1674,7 +1674,7 @@ def render_equipment_master_tab(
                 on_goto=_on_goto,
                 read_only=master_lock,
             )
-            # 저장 구획은 비가동 일정이라도 고치는 등급에만 선다 — 열람은 값만.
+            # 저장 구획은 비가동 일정이라도 고치는 등급에만 선다 — 열람은 쌓을 변경이 없다.
             if table_editable(DOWNTIME_TARGET):
                 _render_save_section(
                     repository,
