@@ -403,6 +403,15 @@ function selOnPaste(S, event) {
     setStatus(S, selText(S, 'pasteFiltered', ''))
     return
   }
+  // 기능의 거절(pasteGuard — 글이면 붙이지 않음): 줄 규칙 표는 새 줄이 모자라면 잘라 붙이지 않고 통째로 거절한다.
+  for (const item of FEATURES) {
+    const refusal = item.pasteGuard ? item.pasteGuard(S, matrix) : ''
+    if (refusal) {
+      setStatus(S, refusal)
+      toast(S, refusal)
+      return
+    }
+  }
   for (const item of FEATURES) if (item.name !== 'select' && item.paste && item.paste(S, matrix, event) === true) return
   selPaste(S, matrix)
 }

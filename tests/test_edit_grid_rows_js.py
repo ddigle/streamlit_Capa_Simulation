@@ -216,3 +216,42 @@ def test_the_row_feature_locks_cells_lists_choices_and_removes_rows() -> None:
     assert result["removed"]["lockedWhy"].startswith("지운 줄입니다")
     assert "demo.a · 줄 지움" in result["drawer"]
     assert result["restoreOp"]["rows"] == ["demo.a"]
+
+
+PASTE_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const paste = (text) => fire(scroller, 'paste', { clipboardData: { getData: () => text } })
+  // 새 줄 1 의 계정 칸에서 세 줄을 붙인다 — 새 줄은 둘뿐이라 통째로 거절한다(잘라 붙이지 않는다).
+  setRange(S, { r: 2, c: 1 }, { r: 2, c: 1 })
+  const before = S.box.ops.length
+  paste('demo.x\t관리자\r\ndemo.y\t열람\r\ndemo.z\t열람\r\n')
+  R.short = [S.box.ops.length === before, q('.eg-note').textContent]
+  // 둘이면 들어간다.
+  paste('demo.x\r\ndemo.y\r\n')
+  R.fits = S.box.ops.length > before ? S.box.ops[S.box.ops.length - 1] : null
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_paste_longer_than_the_new_rows_is_refused_whole() -> None:
+    """줄 규칙 표 — 붙일 줄이 표 끝(빈 새 줄)을 넘으면 앞 몇 줄만 넣고 나머지를 조용히 버리지 않고
+    통째로 거절하고 모자란 줄 수를 알린다(`pasteGuard`). 맞으면 그대로 붙는다."""
+    shell, index = _shell("k1")
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, PASTE_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["short"] == [
+        True,
+        "새 줄이 1줄 모자라 붙이지 않았습니다 — 나눠 붙이면 새 줄이 늘어납니다",
+    ]
+    assert result["fits"]["op"] == "write" and result["fits"]["rows"] == ["+1", "+2"]

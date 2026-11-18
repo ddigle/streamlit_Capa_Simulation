@@ -186,7 +186,8 @@ def _bound_text(value: float | None, spec: GridSpec) -> str:
 
 
 def _rows_texts(spec: GridSpec) -> dict[str, Any]:
-    """줄 규칙 표만의 글 — 줄 지우기 단추 · 변경 목록 · 지운 줄 잠김 · 글 · 고르기 칸 오류."""
+    """줄 규칙 표만의 글 — 줄 지우기 단추 · 변경 목록 · 지운 줄 잠김 · 새 줄이 모자란 붙여넣기
+    거절 · 글 · 고르기 칸 오류."""
     found: dict[str, Any] = {}
     if spec.row_ops:
         found.update(
@@ -196,6 +197,7 @@ def _rows_texts(spec: GridSpec) -> dict[str, Any]:
             rowRestoreHint="고른 지운 줄을 되살립니다",
             rowRemoved="줄 지움",
             removedRow="지운 줄입니다 — 「줄 되살리기」 뒤에 고칩니다",
+            freshShort="새 줄이 {n}줄 모자라 붙이지 않았습니다 — 나눠 붙이면 새 줄이 늘어납니다",
         )
     errors: dict[str, str] = {}
     for _, fmt in spec.column_formats:

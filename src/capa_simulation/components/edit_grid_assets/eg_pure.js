@@ -462,7 +462,7 @@ function changeEntries(draft, bad, values, valueCount, rank, limit) {
 // ---------------------------------------------------------------- 기능 갈고리
 // 기능 파일(eg_select·eg_fill·eg_toolbar)은 모듈을 읽을 때 `feature({...})` 로 갈고리를 등록하고, eg_core 가 마운트 때 이
 // 차례(select → fill → toolbar → rows)로 부른다. 갈고리: init · keydown(true 면 처리함) · pointerdown(true 면 처리함) · paintCell ·
-// paintOverlay · onFeed · onSelect · onLayout · cleanup.
+// paintOverlay · onFeed · onSelect · onLayout · paste(true 면 처리함) · pasteGuard(글이면 붙이지 않고 그 글을 알림) · cleanup.
 const FEATURES = []
 const FEATURE_ORDER = ['select', 'fill', 'toolbar', 'rows']
 

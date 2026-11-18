@@ -222,6 +222,13 @@ function rowsPointerDown(S, event) {
   return Boolean(event.target && event.target.closest && event.target.closest('.eg-choices'))
 }
 
+// 붙일 덩어리가 표 끝(빈 새 줄)을 넘으면 거절 글 — 여러 사람을 붙여 앞 몇 줄만 들어가고 나머지가 조용히 잘리지 않게(select 의
+// pasteGuard 갈고리). 고른 범위 안에서 되풀이하는 붙여넣기는 표 끝을 넘지 않는다.
+function rowsPasteGuard(S, matrix) {
+  const short = S.range().r0 + matrix.length - S.view.order.length
+  return short > 0 ? selText(S, 'freshShort', '새 줄이 {n}줄 모자라 붙이지 않았습니다', short) : ''
+}
+
 function rowsCleanup(S) {
   const R = S.rows
   if (!R) return
@@ -236,5 +243,5 @@ feature({
     rowsSync(S)
     rowsChoices(S)
   },
-  onFeed: rowsSync, onSelect: rowsSync, cleanup: rowsCleanup,
+  onFeed: rowsSync, onSelect: rowsSync, pasteGuard: rowsPasteGuard, cleanup: rowsCleanup,
 })
