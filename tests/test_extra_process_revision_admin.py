@@ -391,6 +391,92 @@ def test_write_back_branches_follow_the_baseline() -> None:
     assert put_none.word == "없음"
 
 
+class _BrokenSink(_Sink):
+    """`SourceFailure` 로 감싸지 못한 실패 · 빈 ETag 를 돌려주는 꽂이(꽂을 실물이 그럴 수 있다)."""
+
+    def __init__(self, etag: str | None, *, head_error: bool = False, put_etag: str | None = None):
+        super().__init__(etag)
+        self.head_error = head_error
+        self.put_etag = put_etag
+
+    def head(self) -> RemoteHead:
+        if self.head_error:
+            raise RuntimeError("https://bucket.example/extra_process/current.zip?X-Amz-Signature=x")
+        return super().head()
+
+    def put(self, data: bytes) -> str:
+        if self.put_etag is None:
+            raise KeyError("ETag")
+        return self.put_etag
+
+
+def test_write_back_records_any_sink_failure_and_an_empty_etag_as_failed() -> None:
+    """꽂이가 `SourceFailure` 밖의 예외를 내거나 PUT 이 빈 ETag 를 돌려줘도 쓰기는 「실패」 기록으로
+    끝난다 — DB 에 새 판을 넣은 뒤라 새면 기록 없이 화면 오류가 되고, 빈 ETag 의 「씀」 은 기록이
+    거절한다. 까닭에는 예외 종류 이름만 싣는다(글에 주소 · 서명이 섞일 수 있다)."""
+    from datetime import datetime
+
+    from capa_simulation.extra_process_intake import ETAG_MISSING
+
+    now = datetime(2026, 11, 19, 1, 2)
+    head = write_back(_BrokenSink(None, head_error=True), b"x", baseline=None, now=now)
+    assert (head.result, head.stage, head.reason) == (
+        EXTRA_WRITE_FAILED,
+        "HEAD",
+        "예상하지 못한 오류(RuntimeError)",
+    )
+    assert "Signature" not in head.word and "https" not in head.word
+    put = write_back(_BrokenSink(None), b"x", baseline=None, now=now)
+    assert (put.result, put.stage, put.reason, put.word) == (
+        EXTRA_WRITE_FAILED,
+        "PUT",
+        "예상하지 못한 오류(KeyError)",
+        "없음",
+    )
+    for empty in ("", "  "):
+        blank = write_back(_BrokenSink('"base"', put_etag=empty), b"x", baseline='"base"', now=now)
+        assert (blank.result, blank.stage, blank.reason, blank.etag, blank.word) == (
+            EXTRA_WRITE_FAILED,
+            "PUT",
+            ETAG_MISSING,
+            None,
+            OLD_VERSION_WORD,
+        )
+
+
+def test_an_empty_etag_write_is_recorded_and_leaves_the_rewrite_button(database: Path) -> None:
+    """빈 ETag 의 쓰기도 기록이 거절되지 않고 「실패」 로 남아 「S3 에 다시 쓰기」 가 선다."""
+    repository = _edited_revision(database)
+    app = _app(database)
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+    from datetime import datetime
+
+    from capa_simulation.extra_process_intake import ETAG_MISSING
+
+    state = repository.load_extra_process_state()
+    active = state.active
+    assert active is not None and active.sha256 is not None and needs_write(state)
+    data = repository.load_extra_process_content(active.sha256)
+
+    outcome = write_back(
+        _BrokenSink(None, put_etag=""), data, baseline=state.baseline[0], now=datetime(2026, 11, 19)
+    )
+    repository.record_extra_process_write(
+        version_seq=active.seq,
+        result=outcome.result,
+        written_by=None,
+        etag=outcome.etag,
+        seen_etag=outcome.seen_etag,
+        stage=outcome.stage,
+        reason=outcome.reason,
+    )
+    after = repository.load_extra_process_state()
+    last = pending_write(after)
+    assert isinstance(last, ExtraProcessS3Write) and last.reason == ETAG_MISSING
+    assert needs_write(after)
+
+
 def test_head_word_tells_same_from_old_version(database: Path) -> None:
     repository = _edited_revision(database)
     state = repository.load_extra_process_state()

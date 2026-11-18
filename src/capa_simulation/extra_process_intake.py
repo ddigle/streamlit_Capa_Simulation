@@ -173,6 +173,8 @@ WRITE_STAGE_PUT: Final = "PUT"
 NEW_FILE_WORD: Final = "새 파일"
 OLD_VERSION_WORD: Final = "옛 판"
 MISSING_WORD: Final = "없음"
+# PUT 이 ETag 를 돌려주지 않은 쓰기의 까닭 낱말(실패로 남긴다 — `write_back`).
+ETAG_MISSING: Final = "ETag 없음"
 
 
 def written_word(now: datetime) -> str:
@@ -193,30 +195,45 @@ def write_back(
     - 다르면 덮지 않는다 — 「덮지 않음」. 상태 줄 낱말은 그 ETag 가 마지막으로 가져온 파일의
       것이면(`known` — ETag → 낱말) 그 낱말, 아니면 「새 파일」(판은 가져와야 안다).
     - HEAD 실패는 「읽지 못함(까닭)」, PUT 실패는 HEAD 로 본 파일이 있었으면 「옛 판」 · 없었으면
-      「없음」 이다.
+      「없음」 이다. 꽂이가 `SourceFailure` 로 감싸지 못한 예외도 같은 실패다(까닭은 예외 종류
+      이름만 — 글에 주소 · 열쇠가 섞일 수 있어 싣지 않는다). 부르는 쪽은 DB 에 새 판을 넣은 뒤라,
+      새면 쓰기 기록 없이 화면 오류가 된다.
+    - PUT 이 빈 ETag 를 돌려주면 실패(PUT · `ETAG_MISSING`)다 — 「씀」 기록은 ETag 를 들어야 하고
+      (기준 ETag 가 된다), 빈 값으로 넣으면 기록이 거절된다.
     """
     try:
         head = sink.head()
-    except SourceFailure as exc:
+    except Exception as exc:  # noqa: BLE001 — 꽂이의 어떤 실패도 「읽지 못함」 기록으로 남긴다.
+        reason = failure_reason(exc)
         return WriteOutcome(
             EXTRA_WRITE_FAILED,
-            f"읽지 못함({exc.reason})",
+            f"읽지 못함({reason})",
             stage=WRITE_STAGE_HEAD,
-            reason=exc.reason,
+            reason=reason,
         )
     if head.etag is not None and head.etag != baseline:
         word = (known or {}).get(head.etag, NEW_FILE_WORD)
         return WriteOutcome(EXTRA_WRITE_KEPT, word, seen_etag=head.etag)
+    failed_word = OLD_VERSION_WORD if head.etag is not None else MISSING_WORD
     try:
         etag = sink.put(data)
-    except SourceFailure as exc:
+    except Exception as exc:  # noqa: BLE001 — 꽂이의 어떤 실패도 「쓰지 못함」 기록으로 남긴다.
         return WriteOutcome(
-            EXTRA_WRITE_FAILED,
-            OLD_VERSION_WORD if head.etag is not None else MISSING_WORD,
-            stage=WRITE_STAGE_PUT,
-            reason=exc.reason,
+            EXTRA_WRITE_FAILED, failed_word, stage=WRITE_STAGE_PUT, reason=failure_reason(exc)
+        )
+    if not isinstance(etag, str) or not etag.strip():
+        return WriteOutcome(
+            EXTRA_WRITE_FAILED, failed_word, stage=WRITE_STAGE_PUT, reason=ETAG_MISSING
         )
     return WriteOutcome(EXTRA_WRITE_WRITTEN, written_word(now), etag=etag)
+
+
+def failure_reason(exc: BaseException) -> str:
+    """S3 Drive 자리 실패의 까닭 낱말 — `SourceFailure` 면 그 낱말, 아니면 예외 종류 이름만(쓰기 ·
+    새 파일 감지 HEAD 가 함께 쓴다)."""
+    if isinstance(exc, SourceFailure):
+        return exc.reason
+    return f"예상하지 못한 오류({type(exc).__name__})"
 
 
 SAME_WORD: Final = "같음"

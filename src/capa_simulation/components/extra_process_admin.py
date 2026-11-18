@@ -68,6 +68,7 @@ from capa_simulation.extra_process_intake import (
     SourceFetch,
     StagedPack,
     WriteOutcome,
+    failure_reason,
     head_word,
     installed_sink,
     installed_source,
@@ -790,8 +791,8 @@ def _new_file_word(state: ExtraProcessState) -> str | None:
         return str(memo[1])
     try:
         head = sink.head()
-    except SourceFailure as exc:
-        word = f"읽지 못함({exc.reason})"
+    except Exception as exc:  # noqa: BLE001 — 꽂이의 어떤 실패도 탭을 멈추지 않고 「읽지 못함」 이다.
+        word = f"읽지 못함({failure_reason(exc)})"
     else:
         word = head_word(head.etag, state, _known_etags())
     HEAD_SEEN.set((now, word))
