@@ -6,6 +6,9 @@
 그때는 Streamlit 런타임이 없어서, 그 길에서 `st.components.v2.component(...)` 를 부르는 모듈을
 불러오면 컴포넌트가 버리는 관리자에 등록되고 앱이 첫 화면에서 「Component … is not registered」 로
 멈춘다. `app.py` 로 띄우는 개발 · 시험 · 화면 확인에서는 드러나지 않아 이 시험이 그물이다.
+
+하위 프로세스가 진입 파일을 **그대로 import** 한다 — import 줄을 시험에 옮겨 적으면 진입 파일에 더한
+줄이 그물 밖에 남는다(통합인증 · 명단 환경변수는 빼서 꺼짐 기동이다).
 """
 
 from __future__ import annotations
@@ -18,17 +21,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# capa_server.py 의 런타임 전 import 와 감사 기동이 늦게 부르는 함수를 그대로 따라 한다.
+# 진입 파일을 그대로 import 하고(모듈 수준 기동 전부) 감사 기동이 늦게 부르는 함수를 더 부른다.
 PRE_RUNTIME = """
 import json
 import sys
 
-from capa_simulation.audit.boot import deploy_version, start as start_audit
-from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
-from capa_simulation.components.audit_actor import install as install_audit_actor
-from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
-from capa_simulation.io.container_start_report import note_app_ready
-from capa_simulation.object_sync_worker import start_object_sync
+import capa_server
+from capa_simulation.audit.boot import deploy_version
 
 deploy_version()
 print(json.dumps(sorted(name for name in sys.modules if name.startswith("capa_simulation"))))

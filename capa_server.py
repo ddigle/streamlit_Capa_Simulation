@@ -11,6 +11,12 @@
 - 개발 PC · 사내 WebIDE · 시험 · 화면 확인은 지금처럼 `streamlit run app.py` 다. 그때 통합인증은
   꺼짐이거나, 켜진 설정이면 `app.py` 가 「문지기 없이 시작됨」 으로 멈춘다.
 - 꺼짐 모드(`ADFS_CLIENT_ID` 없음)에서도 이 파일로 뜬다 — 경로 여섯은 404, 문지기는 모두 통과.
+- **런타임 전 길에 화면 조각을 두지 않는다** — 이 파일의 import 와 기동은 Streamlit 런타임이
+  서기 전에 돈다. 그 길에서 `st.components.v2.component(...)` 를 부르는 모듈(대개 `components/`
+  의 화면 조각과 그것을 머리에서 읽는 `grade_ui` · `sso_identity`)을 불러오면 등록이 사라져 모든
+  사람의 첫 화면이 멈춘다. 접속 등급의 판정기는 `app.py` 가 매 회차 맨 앞에서 꽂는다(첫 회차
+  전에는 사람의 쓰기가 없다). `tests/test_server_pre_runtime_imports.py` 가 이 파일을 그대로
+  import 해 지킨다.
 """
 
 import os
@@ -21,7 +27,6 @@ import streamlit as st
 from capa_simulation.audit.boot import start as start_audit
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 from capa_simulation.components.audit_actor import install as install_audit_actor
-from capa_simulation.components.grade_ui import install as install_grade_judge
 from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
 from capa_simulation.io.container_start_report import note_app_ready
 from capa_simulation.object_sync_worker import start_object_sync
@@ -35,9 +40,6 @@ start_bdq_login(os.environ)
 # 행위자 해석기(스크립트 스레드의 쿠키를 지금 다시 검증)는 켜졌을 때만 꽂는다.
 start_audit(sso_config)
 install_audit_actor()
-# 접속 등급의 판정기 — 운영 진입은 첫 회차 전부터 늘 꽂혀 있다(`app.py` 도 매 회차 같은 함수를
-# 꽂는다).
-install_grade_judge()
 # 정본 버킷 동기화 일꾼. 시작 받기가 성공한 `managed` 서버에만 선다 — 첫 접속을 기다리지 않는다.
 start_object_sync()
 

@@ -344,6 +344,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `st.App` 으로 감싸 통합인증 경로 여섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다. 통합인증 기동 바로 뒤
   BigDataQuery 자동 로그인 기동(`io/bdq_login.start_in_app` — 키를 쥐고 환경에서 빼고 저장 객체를 한 번 읽는다, 실패해도 앱은 뜬다)을 부른다.
+  이 파일의 import · 기동은 Streamlit 런타임 **전**이라 `st.components.v2.component(...)` 를 부르는 모듈과 그것을 머리에서 읽는 모듈
+  (`components/` 화면 조각 · `grade_ui` · `sso_identity`)을 부르지 않는다 — 부르면 등록이 사라져 모든 사람의 첫 화면이 「Component … is not
+  registered」 로 멈춘다. 접속 등급 판정기도 여기서 꽂지 않고 `app.py` 가 매 회차 꽂는다. `tests/test_server_pre_runtime_imports.py` 가 이
+  파일을 그대로 import 해 지킨다(import 줄을 시험에 옮겨 적지 않는다).
 - `src/capa_simulation/audit/` — 접속 · 작업 감사 기록(Admin Area 「접속 · 작업 기록」). 두 DB 밖에 쌓는다 — 메모리 큐 →
   로컬 스풀 → 버킷 `audit/` 접두사의 새 객체(5장 40). 통합인증이 켜진 C-DEP 기동에서만 켜지고(`recorder.enabled()`) 꺼진 곳은
   호출 0 이다. 사건 이름 · 갈래 · 한글 표시명 · 허용 상세 키는 `audit/events.py`, 글 다듬기(줄바꿈 · 제어 문자 · 길이 · 토큰 꼴
@@ -458,8 +462,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
   - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 개발자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로 등록` · `개발자가 넣음` — 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 상수 `VIA_SELF_LABEL` · `VIA_ADMIN_LABEL` · 등급 열람 · 실무자 · 관리자 · 개발자 · `개발자(환경변수)` — 등급 파일까지 합친 값) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다, 등급 칸 하나 — 처음 값 실무자, 2026-11-17 답 「새로 드는 사람」 가) · 「사람 고르기」(「계정 · 이름 · 부서」) → 「등급 바꾸기」 팝오버 하나(열람 · 실무자 · 관리자 · 개발자 — 여럿을 한 번에, 나 자신 · 환경변수 개발자가 섞이면 개발자 아래 셋 잠금 + 까닭 풍선) · 지우기 · 다시 읽기(명단 + 등급 파일)를 두고, 안쪽 탭 줄 오른쪽 끝에 「이 등급으로 보기」 팝오버(운영 + 켜짐의 실제 개발자에게만 — 세션 칸 `sso_identity.GRADE_PREVIEW_KEY`, 화면만 · 저장은 실제 등급, 끝내기는 앱 정보 카드)를 그린다. 등급 파일을 못 읽으면 `AD-25`. 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 「등급 바꾸기」 · 지우기, 끝에 판 · 명단 n · 개발자 n(환경변수 n) 값(「명단」 은 파일의 사람 수 — 등급 이름과 가른다). 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 표 아래 접힌 「최근 등록 · 빼기(30일)」(`recent_changes_table` — 파일의 고친 기록에서 스스로 등록 · 개발자가 넣음 · 뺌만, 새것 먼저, 읽기 전용 — 보드 p0-admin-list)가 선다. 시험은 `tests/test_sso_access_s3.py`.
-  - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차 · `capa_server.py` 기동,
-    같은 함수면 그대로) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
+  - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차,
+    같은 함수면 그대로 — `capa_server.py` 는 꽂지 않는다) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
     `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
     `st.dialog` 함수 — 받고 `st.rerun(scope="app")`) · 주소 · 알림으로 연 등급 밖 화면 · 탭 멈춤 `stop_unless`(경고 한 줄 + 「HOME 으로」 +
     `st.stop()`, 탭은 `tab_key` · `first_label` 짝으로 한 번 뒤 첫 탭) · 표 도구 막대 내려받기 단추 · 그림 막대 감춤 `toolbar_scope`(칸 key 접두

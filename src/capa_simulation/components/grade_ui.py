@@ -3,10 +3,10 @@
 
 """접속 등급의 화면 쪽 창구(`auth/grades.py` 의 판정을 화면에 잇는다).
 
-- **꽂기**(`install`) — `app.py` 맨 앞(매 회차 — 같은 함수면 그대로)과 `capa_server.py`(운영 진입은
-늘
-  꽂힘)가 `sso_identity.real_caller` 를 판정기로 꽂는다. 그 뒤로 표지를 단 저장소 쓰기가 쓰는 순간의
-  실제 등급을 본다(`audit/work.py`).
+- **꽂기**(`install`) — `app.py` 맨 앞(매 회차 — 같은 함수면 그대로)이 `sso_identity.real_caller` 를
+  판정기로 꽂는다. 그 뒤로 표지를 단 저장소 쓰기가 쓰는 순간의 실제 등급을 본다(`audit/work.py`).
+  운영 진입 `capa_server.py` 는 꽂지 않는다 — 이 모듈은 머리에서 화면 조각을 읽어 Streamlit 런타임
+  전에 불러오면 사용자 컴포넌트 등록이 사라진다(`tests/test_server_pre_runtime_imports.py`).
 - **거절 알림**(`refuse` · `emit`) — 거절은 알림창 · Alarm 에 한 번(설계 규칙 UI-NTF-03 · UI-CON-03
 —
   그 자리에 고칠 입력이 없어 단추 곁 줄을 두지 않는다). `queue_flash(GRADE_FLASH_KEY, …,
