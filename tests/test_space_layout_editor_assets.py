@@ -1592,3 +1592,16 @@ def test_every_button_the_editor_hides_has_its_own_hidden_rule() -> None:
 
     assert "sle-sheet-csv" in checked
     assert missing == []
+
+
+def test_opening_a_floor_asks_first_while_a_floor_draft_would_be_lost() -> None:
+    """층 사용 편집 초안이 있을 때 파이썬이 싣는 `openConfirm`(epoch 밖)이 있으면 블록 누름 · 선택
+    칸 [열기] 는 브라우저 확인 창으로 먼저 묻고(「취소」 면 열지 않는다), 「확인」 은 `navigate`
+    의 `discard` 로 함께 보낸다 — 파이썬은 그 표지가 없는 열기를 초안을 두고 열지
+    않는다(2026-11-19)."""
+    declared = "const OPEN_CONFIRM = typeof data.openConfirm === 'string' ? data.openConfirm : ''"
+    assert declared in JS
+    body = JS[JS.index("  function openFloor(") : JS.index("  function pickText(")]
+    ask = body.index("window.confirm(OPEN_CONFIRM.replace('{target}', item.link))")
+    sent = "setTriggerValue('navigate', { epoch: S.epoch, target: item.link, discard })"
+    assert body.index("const discard = Boolean(OPEN_CONFIRM)") < ask < body.index(sent)
