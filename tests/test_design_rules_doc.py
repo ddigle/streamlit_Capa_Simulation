@@ -3172,8 +3172,11 @@ def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08()
     assert "판 v1.37" in document.split("\n## 1. ")[0]
     history = _chapter(document, 8)
     v137 = history[history.index("- **v1.37 — 2026-11-18.**") :]
-    for phrase in ("6-34", "UI-INP-08", "7-1 줄은 없다", "tests/test_access_list_grid.py"):
+    for phrase in ("6-34", "UI-INP-08", "new-members (가)", "tests/test_access_list_grid.py"):
         assert phrase in v137, phrase
+    # 새 줄 등급의 처음 값(실무자 → 빈칸)은 뒤집힌 답이라 7-1 에도 한 줄이다(PRC-02).
+    flipped = _chapter(document, 7)
+    assert "6-34 new-members (가)" in flipped and "새 줄 등급은 처음 값 없이 빈칸" in flipped
     section = _chapter(document, 6)
     record = section[section.index("\n### 6-34. ") :]
     (paragraph,) = [line for line in record.splitlines() if line.startswith("다음 배포 고침(")]
