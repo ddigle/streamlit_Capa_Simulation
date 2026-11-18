@@ -161,8 +161,16 @@ def test_a_fake_source_imports_previews_and_applies_a_pack(database: Path) -> No
     assert not app.exception, [item.message for item in app.exception]
     outcome = next(frame.value for frame in app.dataframe if "결과" in frame.value)
     assert list(outcome["결과"]) == ["합침", "합침"]
-    rates = next(frame.value for frame in app.dataframe if "확보율" in frame.value)
+    rate_frame = next(frame for frame in app.dataframe if "확보율" in frame.value)
+    rates = rate_frame.value
     assert {BOND, "DEMO_New_AOI"} == set(rates["공정"])
+    # 확보율은 비율 값 그대로 싣고 꼴만 %(다른 화면과 같은 `percent`) — 비율(6.3903)로 보였다
+    # (2026-11-18 E2E).
+    formats = {
+        name: config.get("type_config", {}).get("format")
+        for name, config in json.loads(rate_frame.proto.columns).items()
+    }
+    assert formats["확보율"] == "percent"
 
     app.button(key=APPLY_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]

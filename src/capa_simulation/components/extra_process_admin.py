@@ -551,7 +551,14 @@ def _render_preview(preview: PackPreview) -> None:
         placeholder="",
     )
     if not preview.rates.empty:
-        st.dataframe(preview.rates, hide_index=True, width="stretch", placeholder="")
+        # 확보율은 비율 값이다 — 다른 화면처럼 %(`percent`)로 보인다.
+        st.dataframe(
+            preview.rates,
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+            column_config={"확보율": st.column_config.NumberColumn(format="percent")},
+        )
 
 
 def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
