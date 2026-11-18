@@ -102,7 +102,7 @@ def _render(repository: DuckDBScenarioRepository, database_path: str) -> None:
         RESULT_TITLE.format(version=active.version.version_no, counts=report.counts_text())
         + (f" · {STRIPPED_LINE.format(count=len(previous))}" if previous else "")
     )
-    st.dataframe(_outcome_frame(result), hide_index=True, width="stretch")
+    st.dataframe(_outcome_frame(result), hide_index=True, width="stretch", placeholder="")
     if not report.merged:
         return
     virtual_products = virtual_product_records(

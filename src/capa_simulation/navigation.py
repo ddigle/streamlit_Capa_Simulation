@@ -504,7 +504,9 @@ INTERNAL_MODULES = PageSpec(
 # 모듈 상자의 slug — 상자 key `internal_modules_box`, CSS 는 `build_sidebar_stylesheet` 가 낸다.
 MODULE_GROUP_SLUG: Final = "internal_modules"
 
-# Admin Area 탭. 앞 셋은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다. 넷째 「접속
+# Admin Area 탭. 앞 넷은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다 — 넷째
+# 「부대공정」 은 BDQ 밖 공정의 판(시뮬레이션 DB 판 이력)을 보이고 쓰는 단추는 C-DEP 의 개발자에게만
+# 연다(`components/extra_process_admin.py`). 다음 「접속
 # · 작업 기록」 은 통합인증이 켜진 서버의 관리자 회차에만 서고 (`sso_identity.viewer_can_audit`)
 # 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다. 맨 끝 「공지」 는 늘 서고(Admin Area
 # 를 여는 사람 — 운영 서버는 관리자) 시나리오 · 조건 카드가 없다 (2026-11-17 공지 보드 답 decided
@@ -514,6 +516,7 @@ ADMIN_AREA_TABS = (
     ":material/label: Proc Rename",
     ":material/sort: 표시순서 관리",
     ":material/fact_check: 원천 품질",
+    ":material/extension: 부대공정",
 )
 ADMIN_AREA_LOG_TAB = ":material/history: 접속 · 작업 기록"
 ADMIN_AREA_NOTICE_TAB = ":material/campaign: 공지"

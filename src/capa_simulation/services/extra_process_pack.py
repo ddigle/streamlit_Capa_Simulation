@@ -383,7 +383,7 @@ def judge_pack(
         return PackJudgement(JUDGE_APPLY, f"새 판 {version_no}")
     return PackJudgement(
         JUDGE_BACKWARD,
-        f"판 번호 {version_no} 가 적용한 가장 큰 판 {latest_version_no} 이하인데 내용이 다름 — "
+        f"판 번호({version_no})가 적용한 가장 큰 판({latest_version_no}) 이하인데 내용이 다름 — "
         "판 번호를 올려 다시 놓으세요",
     )
 
@@ -1158,3 +1158,124 @@ def _decode(raw: bytes) -> str | None:
             return raw.decode("cp949")
         except UnicodeDecodeError:
             return None
+
+
+# --------------------------------------------------------------------------- 판 견주기
+
+
+@dataclass(frozen=True)
+class PackChanges:
+    """두 판의 차이 — 더한 공정 · 뺀 공정 · 바뀐 칸 수 · 그 가운데 앞 판 값으로 되돌리는 칸
+    수(G12)."""
+
+    added: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()
+    changed_cells: int = 0
+    reverted_cells: int = 0
+
+
+_Cell = tuple[str, tuple[object, ...], str]
+
+
+def pack_cells(pack: ExtraProcessPack) -> dict[_Cell, object]:
+    """판을 (파일, 줄 키, 칸) → 값으로 편다 — 줄 키는 값이 아닌 칸(공정 · 경로 · 제품 · 시작월)."""
+    cells: dict[_Cell, object] = {}
+
+    def put(file: str, key: tuple[object, ...], values: Mapping[str, object]) -> None:
+        for column, value in values.items():
+            cells[(file, key, column)] = value
+
+    for item in pack.processes:
+        put(
+            PROCESS_FILE,
+            (item.name,),
+            {"Area_Name": item.area, "소요기준": item.basis, "모듈수": item.modules},
+        )
+    for route in pack.routes:
+        key = (
+            route.process,
+            route.reference,
+            route.product,
+            route.stack,
+            wf_key(route.wf),
+            route.step,
+            route.mcp,
+            route.period.start,
+        )
+        put(ROUTE_FILE, key, {"끝월": route.period.end})
+    for row in pack.productivity:
+        key = (
+            row.process,
+            row.product,
+            row.stack,
+            wf_key(row.wf),
+            row.step,
+            row.mcp,
+            row.mass_class,
+            row.period.start,
+        )
+        put(
+            PRODUCTIVITY_FILE,
+            key,
+            {
+                "끝월": row.period.end,
+                "UPEH": row.upeh,
+                "ST": row.st,
+                "Lot 측정률": row.lot_ratio,
+                "WF측정률": row.wf_ratio,
+            },
+        )
+    for equipment in pack.equipment:
+        put(
+            EQUIPMENT_FILE,
+            (equipment.process, equipment.period.start),
+            {
+                "끝월": equipment.period.end,
+                "RUN_DAY": equipment.run_day,
+                "설비보유": equipment.owned,
+                "설비대여평가": equipment.lent,
+            },
+        )
+    for rate in pack.rate_vital:
+        put(
+            RATE_FILE,
+            (rate.process, rate.mass_class, rate.period.start),
+            {"끝월": rate.period.end, "CAPA_RUN_RATE": rate.run_rate, "편중률": rate.vital},
+        )
+    return cells
+
+
+def pack_changes(
+    new: ExtraProcessPack, current: ExtraProcessPack | None, before: ExtraProcessPack | None = None
+) -> PackChanges:
+    """새 판을 활성 판(`current`)과 견준다. `before` 는 활성 판의 바로 앞 판 — 바뀐 칸 가운데 그
+    값과 같아지는 칸을 따로 센다(옛 사본에서 판 번호만 올려 놓은 파일을 알아보게 — 설계 3-2 ·
+    G12)."""
+    new_cells = pack_cells(new)
+    old_cells = {} if current is None else pack_cells(current)
+    before_cells = None if before is None else pack_cells(before)
+    changed = [
+        key
+        for key in new_cells.keys() | old_cells.keys()
+        if new_cells.get(key) != old_cells.get(key)
+    ]
+    reverted = (
+        0
+        if before_cells is None
+        else sum(
+            1
+            for key in changed
+            if key in new_cells and before_cells.get(key, _MISSING) == new_cells[key]
+        )
+    )
+    new_names = new.process_names()
+    old_names = () if current is None else current.process_names()
+    return PackChanges(
+        added=tuple(name for name in new_names if name not in old_names),
+        removed=tuple(name for name in old_names if name not in new_names),
+        changed_cells=len(changed),
+        reverted_cells=reverted,
+    )
+
+
+_MISSING: Final = object()

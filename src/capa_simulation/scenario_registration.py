@@ -303,7 +303,7 @@ def load_active_extra_pack(repository: DuckDBScenarioRepository) -> ActiveExtraP
     reading = read_pack_zip(repository.load_extra_process_content(active.sha256))
     if reading.pack is None:
         _LOGGER.warning(
-            "활성 부대공정 판 %s 을 다시 읽지 못해 합치지 않습니다(거절 %d건).",
+            "활성 부대공정 판(%s) — 다시 읽지 못해 합치지 않습니다(거절 %d건).",
             active.version_no,
             len(reading.problems),
         )

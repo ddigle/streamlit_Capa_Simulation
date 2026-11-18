@@ -81,14 +81,15 @@ def test_admin_area_renders_without_an_active_scenario(
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
+        ":material/extension: 부대공정",
         ":material/campaign: 공지",
     ]
     bodies = [str(element.proto.body) for element in app.get("html")]
     assert not [body for body in bodies if "stTab" in body and "content:" in body]
     # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭).
     assert not any("활성 시나리오가 없습니다" in info.value for info in infos(app))
-    # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
-    assert len(app.get("download_button")) == 2
+    # 내려받기는 표시명 양식 · 표시순서 양식 · 부대공정 양식 셋이다.
+    assert len(app.get("download_button")) == 3
     assert len(app.get("file_uploader")) == 0
     # 붙여넣기는 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
     assert not any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
@@ -1025,6 +1026,7 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
+        ":material/extension: 부대공정",
         ":material/campaign: 공지",
     ]
 

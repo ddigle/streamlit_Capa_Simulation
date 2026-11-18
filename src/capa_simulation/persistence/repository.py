@@ -1581,8 +1581,8 @@ class DuckDBScenarioRepository:
                 elif latest is not None and version_no is not None:
                     if version_no <= (latest.version_no or 0):
                         raise ValueError(
-                            f"부대공정 판 번호 {version_no} 는 적용한 가장 큰 판 "
-                            f"{latest.version_no} 보다 커야 합니다."
+                            f"부대공정 판 번호({version_no})가 적용한 가장 큰 판"
+                            f"({latest.version_no})보다 커야 합니다."
                         )
                 seq = extra_process_store.append_version(
                     connection,
