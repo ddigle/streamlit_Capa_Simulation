@@ -69,8 +69,10 @@ ERROR_REASONS = frozenset(
 # `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
 PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/boot_stop.py", "render_boot_stop"): (1, NO_ALARM),
-    ("app_pages/load_conversion.py", ""): (4, PRESSED),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (1, PRESSED),
+    # 생산 계획 PKG PLAN · 수율 「변경사항 적용」 콜백이 막혀 담은 글(`plan_grid.refuse`)을 그 표
+    # 작업 줄 아래 알림 칸에 그리는 한 자리(칸 오류 · 업무 규칙 오류).
+    ("src/capa_simulation/components/plan_grid.py", "render_actions"): (1, PRESSED),
     ("app_pages/reference_data.py", ""): (2, PRESSED),
     ("app_pages/reference_data.py", "_step_dialog"): (1, PRESSED),
     ("app_pages/reference_integrity.py", "_render_detail"): (1, BESIDE),
