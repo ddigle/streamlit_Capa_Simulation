@@ -265,6 +265,29 @@ def merge_extra_processes(
     return MergeResult(merged, report)
 
 
+def overlay_extra_processes(
+    tables: Mapping[str, pd.DataFrame],
+    previous: Collection[str],
+    active: ActiveExtraPack,
+    *,
+    check: CapacityCheck = capacity_stop,
+) -> MergeResult:
+    """「부대공정 얹기」 — 바탕 리비전 표에서 옛 판 공정(`previous` — 바탕 데이터셋 출처의 합친
+    공정)을 먼저 걷고 활성 판을 합친다(설계 4-8 · D19)."""
+    return merge_extra_processes(strip_extra_processes(tables, previous), active, check=check)
+
+
+def overlay_included_processes(
+    base_included: Sequence[str], previous: Collection[str], report: ExtraMergeReport
+) -> tuple[str, ...]:
+    """얹기의 프리셋 포함 공정 — 바탕 프리셋의 포함 공정에서 걷은 옛 판 공정을 빼고 새로 합친
+    부대공정을 더한다(바탕에서 끈 공정이 다시 켜지지 않게, 설계 4-8)."""
+    stripped = {name.strip() for name in previous}
+    kept = [name for name in base_included if name.strip() not in stripped]
+    added = [name for name in report.merged_processes() if name not in kept]
+    return tuple([*kept, *added])
+
+
 def strip_extra_processes(
     tables: Mapping[str, pd.DataFrame], processes: Collection[str]
 ) -> dict[str, pd.DataFrame]:

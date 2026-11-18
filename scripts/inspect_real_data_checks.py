@@ -415,12 +415,14 @@ DEFAULT_COPY_DAYS: Final = 4
 # 묻지 않는다 — 한 번 더 기다리면 8-5 가 그만큼 길어져 창이 닫히면 요약까지 잃을 수 있다.
 RETRY_PAUSE_SECONDS: Final = 2.0
 
-# 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
+# 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동·부대공정
+# 얹기가 적는 값).
 MONTH_MERGE_SOURCE: Final = "SCENARIO_MONTH_MERGE"
 DERIVED_SOURCE_TYPES: Final[tuple[str, ...]] = (
     "DUCKDB_SCENARIO_CLONE",
     MONTH_MERGE_SOURCE,
     "SCENARIO_YEAR_SHIFT",
+    "SCENARIO_EXTRA_PROCESS",
 )
 
 _Picked = TypeVar("_Picked", bound=Hashable)

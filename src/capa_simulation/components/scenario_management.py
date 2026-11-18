@@ -56,6 +56,12 @@ from capa_simulation.components.required_exclusion_notice import (
 )
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
+from capa_simulation.components.scenario_extra_overlay import (
+    EXTRA_OVERLAY_MODE,
+    EXTRA_SOURCE_ROLES,
+    forget_extra_overlay,
+    render_scenario_extra_overlay,
+)
 from capa_simulation.components.scenario_input_check import (
     CHECK_NOTICE_KEY,
     WIDE_TITLE,
@@ -223,16 +229,20 @@ CLONE_SOURCE_NOTE = (
     "원천 시뮬레이션 코드·원천 시뮬레이션명은 새로 적는 필수 칸입니다 — 원천 시뮬레이션명은 "
     "공식버전 자동 갱신이 주차(W##)를 읽는 근거라 올라와 있는 시나리오의 값을 물려받지 않습니다."
 )
+# 「부대공정 얹기」 는 활성 부대공정 판이 있을 때만 목록에 선다(설계 규칙 UI-TXT-08 — 탭 본문이
+# 그리는 회차에 거른다).
 MODES = (
     LIST_MODE,
     CLONE_MODE,
     "월 머지",
     "연도 Shift",
+    EXTRA_OVERLAY_MODE,
 )
 # 원본 리비전을 메모해 두는 모드와 그 역할(`scenario_transform.SOURCE_MEMO_KEY`).
 DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
     "월 머지": MERGE_SOURCE_ROLES,
     "연도 Shift": SHIFT_SOURCE_ROLES,
+    EXTRA_OVERLAY_MODE: EXTRA_SOURCE_ROLES,
 }
 # 오른쪽 칸 다섯. 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 「점검」 은 고른 리비전의 입력
 # 점검이다(2026-11-11 입력 점검 시안 보드 답 q1 — 「상세」 와 같은 리비전 고름).
@@ -396,7 +406,13 @@ def render_scenario_management(
     # 복제 작업은 새 시나리오를 저장할 수 있는 등급(실무자부터)에게만 선다 — 폼이 저장 하나뿐이다
     # (설계 규칙 UI-INP-07 예외). 월 머지 · 연도 Shift 는 계산 미리보기가 있어 모두에게 서고 저장
     # 구획만 가른다(`render_derived_save`).
-    modes = [mode for mode in MODES if mode != CLONE_MODE or viewer_can("scenario.create")]
+    has_extra = _has_active_extra_process(repository)
+    modes = [
+        mode
+        for mode in MODES
+        if (mode != CLONE_MODE or viewer_can("scenario.create"))
+        and (mode != EXTRA_OVERLAY_MODE or has_extra)
+    ]
     if st.session_state.get(MODE_KEY) not in modes:
         st.session_state.pop(MODE_KEY, None)
     list_mode = st.session_state.get(MODE_KEY, MODES[0]) == MODES[0]
@@ -436,6 +452,8 @@ def render_scenario_management(
     # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
     forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
+    if mode != EXTRA_OVERLAY_MODE:
+        forget_extra_overlay()
     official_open = False
     if mode == LIST_MODE:
         official_open = _render_list_management(
@@ -447,7 +465,17 @@ def render_scenario_management(
         render_scenario_month_merge(repository, database_path)
     elif mode == "연도 Shift":
         render_scenario_year_shift(repository, database_path)
+    elif mode == EXTRA_OVERLAY_MODE:
+        render_scenario_extra_overlay(repository, database_path)
     _render_official_host(database_path, official_open=official_open)
+
+
+def _has_active_extra_process(repository: DuckDBScenarioRepository) -> bool:
+    """활성 부대공정 판이 있나 — 없거나 읽지 못하면 「부대공정 얹기」 를 목록에 두지 않는다."""
+    try:
+        return repository.load_extra_process_state().active is not None
+    except BOOTSTRAP_ERRORS:
+        return False
 
 
 def _render_official_host(database_path: str, *, official_open: bool) -> None:

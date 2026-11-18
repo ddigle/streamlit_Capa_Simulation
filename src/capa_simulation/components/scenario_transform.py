@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
+from capa_simulation.components.extra_process_notice import queue_extra_report
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
@@ -43,6 +44,7 @@ from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
     active_persisted_scenario_id,
 )
+from capa_simulation.services.extra_process_merge import ExtraMergeReport
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_transform import (
@@ -224,12 +226,15 @@ def render_derived_save(
     gate_sources: Sequence[ScenarioSnapshot] = (),
     extra_process: Sequence[ExtraProcessProvenance] = (),
     included_processes: tuple[str, ...] | None = None,
+    extra_report: ExtraMergeReport | None = None,
 ) -> None:
     """저장 성공을 세션에 남기고 같은 제출의 중복 저장과 활성 편집본 교체를 피한다.
 
     `extra_process` 는 새 데이터셋에 이어 둘 부대공정 출처 줄(설계 D18 — 연도 Shift · 월 머지는
     원본의 줄을 메모와 함께, 부대공정 얹기는 새로 합친 판의 줄)이다. `included_processes` 를 주면
     프리셋 포함 공정을 결과 전체 대신 그것으로 둔다(얹기 — 바탕에서 끈 공정이 다시 켜지지 않게).
+    `extra_report` 를 주면 저장한 뒤 그 합치기 결과(「부대공정 2 합침」 · 뺌)를 저장 결과와 함께
+    알린다(등록과 같은 꼴).
 
     제출하면 결과의 Capa 계산을 먼저 검사한다(`derived_save_verdict`). 「편집 전」은 결과를 만든
     원본 리비전 전부다 — `gate_sources` 가 비면 `source` 하나다(머지는 베이스·덧붙일 쪽 둘).
@@ -251,7 +256,8 @@ def render_derived_save(
         st.error("저장할 월 데이터가 없습니다.")
         return
     flash_key, warning_key = derived_flash_keys(key)
-    render_flash(flash_key, warning_key)
+    extra_key = f"{key}_flash_extra"
+    render_flash(flash_key, warning_key, extra_key)
     saved_key = f"{key}_saved"
     saved = st.session_state.get(saved_key)
     already_saved = isinstance(saved, dict) and saved.get("request") == request
@@ -356,6 +362,8 @@ def render_derived_save(
         follow_created_scenario(repository, snapshot.scenario.scenario_id)
     st.session_state[saved_key] = {"request": request, "name": saved_name}
     queue_flash(flash_key, derived_saved_message(saved_name))
+    if extra_report is not None:
+        queue_extra_report(extra_key, extra_report)
     if verdict.message:
         # 원본부터 있던 계산 오류는 저장을 막지 않는다. 저장은 끝났고 고칠 입력이 이 자리에 없어
         # 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 · 복제와 한 꼴 — 설계 규칙 AMB-05 (나)).
