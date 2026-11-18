@@ -195,6 +195,8 @@ def test_display_order_and_equipment_paths_never_see_display_names() -> None:
         "src/capa_simulation/services/extra_process_pack.py",
         "src/capa_simulation/services/extra_process_merge.py",
         "src/capa_simulation/persistence/extra_process_store.py",
+        # 「이 리비전 값을 새 판으로」 의 거꾸로 만들기 — 리비전 표의 원본 공정명으로 판을 짓는다.
+        "src/capa_simulation/services/extra_process_revision.py",
     ]
     offenders = [
         path

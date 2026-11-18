@@ -1181,6 +1181,44 @@ def test_a_drag_cancelled_with_escape_swallows_the_click_of_its_release() -> Non
     assert "stopRelease()" in cleanup
 
 
+_DRAG_PRESS_RUNNER = """
+const out = {}
+// 끌기를 1000ms 에 놓았다. 키보드로 누른 단추(Enter · Space — detail 0)는 놓은 자리의 click 이
+// 아니다 — 창 안이어도 거르지 않는다. 포인터 누름(detail 1 · 2)과 detail 을 모르는 부름(옛 꼴)은
+// 창 안이면 거른다.
+out.keyboard = [dragClick(1000, 1060, 400, 0), dragClick(1000, 1399, 400, 0)]
+out.pointer = [
+  dragClick(1000, 1060, 400, 1), dragClick(1000, 1060, 400, 2), dragClick(1000, 1060, 400),
+]
+// 새 포인터 누름이 창을 닫는다(`list.onpointerdown` 이 `S.dragEndAt` 을 비운다) — 그 누름의
+// click 은 창 안 시각이어도 고르기다.
+out.afterPress = dragClick(null, 1060, 400, 1)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_fresh_press_or_a_key_press_right_after_a_drag_is_not_swallowed() -> None:
+    """끌기를 놓은 뒤 0.4초(`DRAG_CLICK_MS`) 안의 누름은 놓은 자리의 click 으로 보아 버렸다 —
+    놓은 자리의 click 이 오지 않은 끌기(헤드리스 Chrome 이 차례를 바꾼 끌기를 놓을 때)는 그 창이
+    다음 진짜 누름(× · 핀 · 고르기 · 키보드 Enter)을 삼켰다(2026-11-03 탭 묶어 보내기 재검 — 놓은
+    뒤 60 · 200 · 330ms 누름 무시). 2026-11-19 사용자 권장대로 — 새 포인터 누름이 창을 닫고 키보드
+    누름(`detail` 0)은 거르지 않는다. 놓은 자리의 click(같은 누름의 포인터 click)은 그대로
+    버린다."""
+    out = _node(_DRAG_PRESS_RUNNER)
+
+    assert out["keyboard"] == [False, False]
+    assert out["pointer"] == [True, True, True]
+    assert out["afterPress"] is False
+    press = JS[JS.index("list.onpointerdown = (event) => {") :]
+    press = press[: press.index("\n  }\n")]
+    assert press.index("S.dragEndAt = null") < press.index("startDrag(event)")
+    click = JS[JS.index("list.onclick = (event) => {") :]
+    assert "dragClick(S.dragEndAt, Date.now(), DRAG_CLICK_MS, event.detail)" in click
+    # 끌기를 놓을 때(`endDrag`)와 접은 끌기의 포인터를 놓을 때(`heldRelease`)만 창을 연다.
+    assert JS.count("S.dragEndAt = Date.now()") == 1
+    assert "if (next.endedAt !== null) S.dragEndAt = next.endedAt" in JS
+
+
 _LINKS_RUNNER = """
 const MS = 1000
 const pages = {

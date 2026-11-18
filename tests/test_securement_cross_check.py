@@ -295,3 +295,80 @@ def test_static_rows_split_on_the_same_key_are_summed_not_rejected() -> None:
     assert float(none["Dynamic가용대수"]) == 4.0
     assert bool(none["Static대체"])
     assert check.fallback_processes == ["NONE"]
+
+
+_THREE_MONTHS = (202609, MONTH, 202611)
+
+
+def _three_month_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """설비 조회기간(9 ~ 11월)이 사이드바 조회기간(10월)보다 넓은 꼴 — Static(`RQ_EQP_AVBL`)은
+    조회기간과 상관없이 모든 달이 있고, 소요대수는 조회기간(10월)의 것뿐이다."""
+    monthly = _monthly([(month, "A", "가용", 8.0, True) for month in _THREE_MONTHS])
+    static = two_month_frame({(month, "A"): 10.0 for month in _THREE_MONTHS}, "가용대수")
+    return monthly, static, frame({"A": 20.0}, "소요대수")
+
+
+def test_months_outside_the_scenario_period_are_not_compared() -> None:
+    """조회기간 밖 달은 소요대수가 없어 맞댈 것이 없다 — 좁히지 않으면 그 달이 소요대수 0 ·
+    확보율 None 행으로 실려 「맞대어 본 달」 에 세어졌다(2026-10-15 브라우저 확인 — 2026-11-19
+    사용자 권장대로 그 달을 뺀다)."""
+    monthly, static, required = _three_month_inputs()
+
+    unbounded = cross_check_from_monthly(static, monthly, required)
+    bounded = cross_check_from_monthly(static, monthly, required, period=(MONTH, MONTH))
+
+    assert unbounded.months == list(_THREE_MONTHS)
+    outside = unbounded.rows.loc[unbounded.rows["생산계획년월"] != MONTH]
+    assert outside["소요대수"].eq(0.0).all() and outside["Static확보율"].isna().all()
+    assert bounded.months == [MONTH]
+    assert set(bounded.rows["생산계획년월"]) == {MONTH}
+    row = bounded.rows.iloc[0]
+    assert float(row["Static확보율"]) == 0.5 and float(row["Dynamic확보율"]) == 0.4
+    assert bounded.compared_processes == ["A"]
+    assert bounded.fallback_processes == []
+
+
+def test_a_period_that_misses_the_equipment_months_compares_nothing() -> None:
+    """두 기간이 겹치지 않으면 맞댈 달이 없다 — 「좁힌 달 없음」 을 「좁히지 않음」 으로 읽어 모든
+    달을 싣지 않는다."""
+    monthly = _monthly([(202612, "A", "가용", 8.0, True)])
+    static = two_month_frame({(MONTH, "A"): 10.0, (202612, "A"): 10.0}, "가용대수")
+
+    check = cross_check_from_monthly(
+        static, monthly, frame({"A": 20.0}, "소요대수"), period=(MONTH, MONTH)
+    )
+
+    assert check.rows.empty
+    assert check.months == []
+    assert check.compared_processes == []
+
+
+def test_the_cached_cross_check_narrows_to_the_period_in_its_scenario_key() -> None:
+    """화면이 부르는 캐시(`get_securement_cross_check`)는 시나리오 키의 조회기간(시작 · 끝 달)으로
+    좁힌다 — 키에 이미 실린 값이라 캐시 키는 그대로다."""
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.manual_downtime import ManualDowntime
+
+    simulation_cache.get_securement_cross_check.clear()
+    monthly, static, required = _three_month_inputs()
+    monthly_key: simulation_cache.DynamicMonthlyCacheKey = (
+        "spans-period",
+        "baseline-period",
+        "cutoff-period",
+        _THREE_MONTHS,
+        "ratios-period",
+    )
+    key = simulation_cache.securement_cross_check_cache_key(
+        (monthly_key, "static-period"),
+        (1, "period-token", MONTH, MONTH),
+        manual_downtime=ManualDowntime(),
+    )
+
+    result = simulation_cache.get_securement_cross_check(
+        key, _monthly=monthly, _static=static, _required_equipment=lambda: required
+    )
+
+    assert result.has_demand and result.check is not None
+    assert result.check.months == [MONTH]
+    assert set(result.check.rows["생산계획년월"]) == {MONTH}
+    simulation_cache.get_securement_cross_check.clear()

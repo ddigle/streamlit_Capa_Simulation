@@ -44,9 +44,10 @@ BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 �
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, NamedTuple
 
+import duckdb
 import pandas as pd
 
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -54,7 +55,7 @@ from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
 )
-from capa_simulation.components.stop_examples import markdown_examples
+from capa_simulation.components.stop_examples import example_processes, markdown_examples
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import get_scenario_repository, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioSnapshot
@@ -63,6 +64,8 @@ from capa_simulation.services.load_calculator import calculate_density_load
 from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.revision_input_check import (
+    EXTRA_COLUMNS,
+    ExtraProcessCheck,
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
@@ -81,6 +84,7 @@ from capa_simulation.services.simulation_cache import (
 
 if TYPE_CHECKING:
     from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 # 입력 점검 칸 머리 「전체 기간」 의 달을 모으는 표 — 계산 입력 표 가운데 달 축이 있는 것(계획
 # `RQ_PKG_PLAN` 포함). 묶음이 그 표들 전체 달의 행을 세므로 기간도 그 합친 범위다.
@@ -204,7 +208,7 @@ def revision_save_verdict(
             "종류의 오류가 걸린 칸의 건수·예시만 달라진 채 남았습니다(일부를 고쳤거나 이번 편집이 "
             "같은 오류를 더 만든 것입니다). 남은 오류를 고쳐 다시 저장하세요. "
             f"편집 뒤 오류: {shown} / 편집 전 오류: {_shown(base, labels)}"
-            + module_fix_hint(edited),
+            + module_fix_hint(edited, _active_extras),
         )
     if base != edited:
         return GateVerdict(
@@ -213,12 +217,13 @@ def revision_save_verdict(
             "오류입니다(이번 편집이 새로 깨뜨렸거나, 편집 전 오류를 고쳐 그 뒤에 가려져 있던 "
             "오류가 드러난 것 — 계산은 첫 오류에서 멈춥니다). 오류를 고쳐 다시 저장하세요. "
             f"편집 뒤 오류: {shown} / 편집 전 오류: {_shown(base, labels)}"
-            + module_fix_hint(edited),
+            + module_fix_hint(edited, _active_extras),
         )
     return GateVerdict(
         True,
         "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전부터 있던 "
-        f"오류입니다. 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}" + module_fix_hint(edited),
+        f"오류입니다. 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}"
+        + module_fix_hint(edited, _active_extras),
     )
 
 
@@ -258,7 +263,8 @@ def official_publish_verdict(
         "이 리비전은 Capa 계산이 실패해 공식버전으로 지정할 수 없습니다. 공식버전은 모든 "
         "사용자가 처음 여는 화면이라, 지정하면 모두의 HOME 이 멈춥니다. 기준 정보 페이지에서 "
         "고친 뒤 새 리비전으로 저장하고 그 리비전을 지정하세요. "
-        f"오류: {_shown(error, labels)}" + module_fix_hint(error),
+        f"오류: {_shown(error, labels)}"
+        + module_fix_hint(error, _scenario_extras(database_path, (snapshot.scenario.scenario_id,))),
     )
 
 
@@ -288,13 +294,85 @@ def input_check_verdict(
             return blocked_input_check(blocked, blank_cs, period=period)
         outcome = full_capacity_outcome(tables, tables)
         stop = _stop_error(outcome, tables)
+        extra = (
+            None if outcome.error is not None else _extra_check(repository, scenario_id, outcome)
+        )
         return build_input_check(
-            outcome, stop if outcome.error is None else None, blank_cs, period=period
+            outcome,
+            stop if outcome.error is None else None,
+            blank_cs,
+            period=period,
+            extra=extra,
         )
 
     return get_revision_input_check(
         (reference_version, pristine_content_token(reference_version)), _compute=compute
     )
+
+
+def _extra_check(
+    repository: DuckDBScenarioRepository, scenario_id: str, outcome: CapacityOutcome
+) -> ExtraProcessCheck | None:
+    """입력 점검 「부대공정」 묶음의 재료(설계 A10) — 그 데이터셋 출처에 부대공정이 없으면 None.
+
+    공정마다 판 번호 · 부하 붙은 · 0 경로 수(`load_lines`) · 따라가는 공정에서 이어받은 대당 Capa
+    결손 줄(R-02 — 판 내용이 있을 때만) · 판 섞임(월 머지)을 같은 계산 결과로 센다."""
+    from capa_simulation.services.extra_process_merge import (
+        OUTCOME_MERGED,
+        inherited_capacity_gaps,
+        load_lines,
+        split_previous,
+    )
+    from capa_simulation.services.extra_process_pack import read_pack_zip
+
+    records = repository.load_scenario_extra_process(scenario_id)
+    if not records:
+        return None
+    merged = tuple(
+        dict.fromkeys(item.process_name for item in records if item.outcome == OUTCOME_MERGED)
+    )
+    by_name: dict[str, set[str]] = {}
+    numbers: dict[str, set[int]] = {}
+    for item in records:
+        by_name.setdefault(item.process_name, set()).add(item.sha256)
+        numbers.setdefault(item.process_name, set()).add(item.version_no)
+    mixed = set(split_previous(records).mixed) | {
+        name for name in merged if len(by_name.get(name, ())) > 1
+    }
+    names = [*merged, *(name for name in sorted(mixed) if name not in merged)]
+    if not names:
+        return None
+    lines = load_lines({}, merged, outcome=outcome)
+    gaps: dict[str, int] = {}
+    for sha in {item.sha256 for item in records if item.outcome == OUTCOME_MERGED}:
+        try:
+            pack = read_pack_zip(repository.load_extra_process_content(sha)).pack
+        except (KeyError, TypeError, ValueError):
+            pack = None
+        if pack is None:
+            continue
+        own = [
+            item.process_name
+            for item in records
+            if item.sha256 == sha and item.outcome == OUTCOME_MERGED
+        ]
+        for name, count in inherited_capacity_gaps(pack, own, outcome=outcome).items():
+            gaps[name] = gaps.get(name, 0) + count
+    frame = pd.DataFrame(
+        [
+            {
+                "공정": name,
+                "판": ", ".join(str(number) for number in sorted(numbers.get(name, ()))),
+                "부하 붙은 경로": lines.get(name, (0, 0))[0],
+                "부하 0 경로": lines.get(name, (0, 0))[1],
+                "이어받은 대당 Capa 결손 줄": gaps.get(name, 0),
+                "판 섞임": int(name in mixed),
+            }
+            for name in names
+        ],
+        columns=list(EXTRA_COLUMNS),
+    )
+    return ExtraProcessCheck(frame)
 
 
 def derived_save_verdict(
@@ -329,26 +407,100 @@ def derived_save_verdict(
         True,
         "Capa 계산 오류가 남아 이 시나리오는 공식버전으로 지정할 수 없습니다 — "
         f"원본({names})부터 있던 오류가 결과에도 남았습니다. 남은 오류를 고쳐 새 리비전으로 "
-        f"저장하세요. 오류: {_shown(error, labels)}" + module_fix_hint(error),
+        f"저장하세요. 오류: {_shown(error, labels)}"
+        + module_fix_hint(
+            error,
+            _scenario_extras(None, tuple(source.scenario.scenario_id for source in sources)),
+        ),
     )
 
 
-def module_fix_hint(error: str) -> str:
+def module_fix_hint(
+    error: str,
+    extras: Callable[[], Collection[str]] | None = None,
+    *,
+    developer: bool | None = None,
+) -> str:
     """`RQ_MODULE` 이 원인인 계산 오류에 고칠 길을 덧붙인다. 아니면 빈 문자열이다.
 
     모듈수(`RQ_MODULE`)는 편집·리비전 대상이 아니라 데이터셋에만 산다(`repository.DATASET_TABLES`).
     새 리비전으로 고칠 수 없고 후속 리비전도 그대로 물려받아, 발행이 영영 막힌다. 남은 길은
     시나리오를 다시 만드는 것이다 — 월 머지는 베이스에 없는 공정의 모듈수를 덧붙일 쪽에서 보충한다
     (`scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS`).
+
+    `extras` 는 그 시나리오 데이터셋에 합친 부대공정 이름을 읽는다 — 모듈수 오류일 때만 부른다(출처
+    표를 한 번 읽는다). 오류 글의 예시 공정 칸(`stop_examples.example_processes` — 글자 일부가
+    아니라 칸 값 그대로)에 부대공정이 있으면 「부대공정 얹기」 를 권한다 — 부대공정의 모듈수는
+    판(01)에서 오고, 월 머지는 베이스의 옛 판 모듈수가 이겨 고치지 못한다(설계 4-7 · A11). 판을 고쳐
+    적용하는 Admin 「부대공정」 은 개발자만 열어(`admin.area`) 그 밖의 등급에는 그 단추를 시키지
+    않는다(설계 규칙 6-34 SC-01 — 할 일은 그 등급에 있는 단추만). `developer` 를 주지 않으면 이
+    화면의 등급 (`sso_identity.viewer_can` — 「이 등급으로 보기」 를 따른다)으로 가른다.
     """
     if "RQ_MODULE" not in error:
         return ""
+    names = {name for name in (() if extras is None else extras()) if name}
+    if names & set(example_processes(error)):
+        if developer is None:
+            from capa_simulation.components import sso_identity
+
+            developer = sso_identity.viewer_can("admin.area")
+        if not developer:
+            return (
+                " — RQ_MODULE(모듈수)은 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다. "
+                "부대공정의 모듈수는 판에서 옵니다 — 개발자가 판을 고쳐 적용한 뒤 시나리오 관리 "
+                "「부대공정 얹기」 로 새 시나리오를 만들어야 풀립니다(월 머지는 베이스의 옛 판 "
+                "모듈수가 이겨 풀리지 않습니다)."
+            )
+        return (
+            " — RQ_MODULE(모듈수)은 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다. "
+            "부대공정의 모듈수는 판에서 옵니다 — 판의 01_process.csv 를 고쳐 S3 Drive 에 다시 "
+            "놓고 Admin 「부대공정」 에서 적용한 뒤 시나리오 관리 「부대공정 얹기」 로 새 "
+            "시나리오를 만드세요(월 머지는 베이스의 옛 판 모듈수가 이겨 풀리지 않습니다)."
+        )
     return (
         " — RQ_MODULE(모듈수)은 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다. 월 머지로 "
         "만든 시나리오라면 시나리오 관리 「월 머지」에서 같은 두 원본으로 다시 머지하세요 — "
         "베이스에 없는 공정의 모듈수는 덧붙일 쪽에서 보충합니다. 그 밖의 시나리오는 원천을 다시 "
         "등록하세요."
     )
+
+
+def _scenario_extras(
+    database_path: str | None, scenario_ids: Sequence[str]
+) -> Callable[[], tuple[str, ...]]:
+    """시나리오들의 데이터셋 출처에서 합친 부대공정 이름을 읽는 함수(부를 때 읽는다 —
+    `module_fix_hint`). 못 읽으면 빈 묶음이다(안내만 일반 갈래로 간다)."""
+
+    def read() -> tuple[str, ...]:
+        if not scenario_ids:
+            return ()
+        from capa_simulation import settings
+        from capa_simulation.services.extra_process_merge import OUTCOME_MERGED
+
+        try:
+            repository = get_scenario_repository(database_path or str(settings.DUCKDB_PATH))
+            records = [
+                record
+                for scenario_id in scenario_ids
+                for record in repository.load_scenario_extra_process(scenario_id)
+            ]
+        except (OSError, RuntimeError, ValueError, KeyError, duckdb.Error):
+            return ()
+        return tuple(
+            dict.fromkeys(
+                record.process_name for record in records if record.outcome == OUTCOME_MERGED
+            )
+        )
+
+    return read
+
+
+def _active_extras() -> tuple[str, ...]:
+    """올라와 있는 시나리오(사이드바 저장 · 편집본)의 부대공정 이름 — 모듈수 안내 갈래."""
+    from capa_simulation.scenario_activation import active_persisted_scenario_id
+
+    scenario_id = active_persisted_scenario_id()
+    return () if scenario_id is None else _scenario_extras(None, (scenario_id,))()
 
 
 def _capacity_error(tables: Mapping[str, pd.DataFrame]) -> str | None:

@@ -111,10 +111,14 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
+from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_count
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
+from capa_simulation.components.space_floor_list import (
+    FLOOR_STATE_LEAVE_LABEL as FLOOR_STATE_LEAVE_LABEL,
+)
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.design import tokens
@@ -224,9 +228,9 @@ EDIT_HOST_KEYS: Final = (
 )
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
-# Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름 — 편집표 몫과 같은
-# 「제목 · 이름」 꼴이다.
-FLOOR_STATE_LEAVE_LABEL = f"{SPACE_STATUS.title} · 층 사용 편집"
+# Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름
+# (`FLOOR_STATE_LEAVE_LABEL`)은 편집표 몫과 같은 「제목 · 이름」 꼴이고, Space 의 층 열기 확인과 한
+# 글이라 `space_floor_list` 가 갖는다(여기서 다시 낸다).
 
 
 def tab_icon(spec: PageSpec) -> str:
@@ -272,6 +276,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
       칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
     - 설비 편집본은 가용설비 현황·Space 현황이 함께 쓰는 한 벌이라 두 탭에 함께 찍는다(세대 기준이라
       되돌린 편집에도 남는다 — 테마 표지와 같은 오탐).
+    - 가용설비 현황 Preference 「입력 비가동」 초안(`manual_downtime_draft_count` — 편집표 칸
+      편집을 `on_change` 가 세션에 접은 칸)도 세션 칸이라 **어느 화면에서나** 가용설비 현황 탭에
+      찍는다(떠나도 남아 떠나기 확인에는 넣지 않는다 — 2026-11-19 사용자 요청).
     - VOC 적어 둔 답변(`kept_reply_count` — 남지 못한 답변을 「닫기」 까지 두는 세션 칸)도 탭을
       옮겨도 남아 **어느 화면에서나** VOC 탭에 찍는다. 새로고침 · 테마 전환에 사라지는 사용자의
       글이다.
@@ -288,6 +295,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     if has_unsaved_equipment_edits() or pending_fab_layout() is not None:
         for spec in (AVAILABLE_EQUIPMENT_STATUS, SPACE_STATUS):
             mark(spec.path, "저장하지 않은 설비 편집")
+    manual = manual_downtime_draft_count()
+    if manual:
+        mark(AVAILABLE_EQUIPMENT_STATUS.path, f"저장하지 않은 입력 비가동 {manual:,}칸")
     if past_data_has_pending():
         mark(HOME.path, "저장하지 않은 Past Data")
     if list_has_edits():
@@ -315,7 +325,8 @@ def leave_notice(page_file: str | None) -> str:
     """지금 화면을 떠나면 사라지는 편집(편집표 몫과 Space 층 사용 편집 초안)을 이은 글. 없으면 빈
     글자 — 탭 줄이 묻지 않는다.
 
-    붙여넣기 대기·설비 편집본처럼 세션에 남는 것은 넣지 않는다(떠나도 사라지지 않는다).
+    붙여넣기 대기·설비 편집본·입력 비가동 초안처럼 세션에 남는 것은 넣지 않는다(떠나도 사라지지
+    않는다).
     """
     if page_file is None:
         return ""

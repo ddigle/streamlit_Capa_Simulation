@@ -640,3 +640,34 @@ def test_no_new_path_publishes_an_official_version_around_the_check() -> None:
                 found.add((path.relative_to(PROJECT_ROOT).as_posix(), node.name))
 
     assert found == PUBLISH_CALLERS
+
+
+def test_module_hint_points_an_extra_process_to_the_overlay() -> None:
+    """모듈수 오류의 예시에 부대공정이 있으면 「부대공정 얹기」 를 권한다(설계 A11) — 출처는 모듈수
+    오류일 때만 읽는다."""
+    from capa_simulation.components.capacity_gate import module_fix_hint
+
+    error = (
+        "RQ_MODULE의 모듈수 값이 빈 대당 Capa 기준이 있습니다: 1건, "
+        "예시 [{'공정': 'DEMO_New_Bond'}]"
+    )
+    assert "월 머지" in module_fix_hint(error) and "부대공정 얹기" not in module_fix_hint(error)
+    assert "부대공정 얹기" in module_fix_hint(error, lambda: ("DEMO_New_Bond",))
+    assert "부대공정 얹기" not in module_fix_hint(error, lambda: ("DEMO_Other",))
+    # 예시의 공정 칸과 똑같을 때만이다 — 다른 공정 이름 안에 든 이름은 부대공정 갈래로 가지 않는다.
+    assert "부대공정 얹기" not in module_fix_hint(error, lambda: ("DEMO_New", "Bond"))
+    # 판을 고쳐 적용하는 Admin 「부대공정」 은 개발자만 연다 — 그 밖의 등급에는 시키지 않는다(6-34
+    # SC-01). 고칠 길(개발자의 판 · 부대공정 얹기)은 그대로 말한다.
+    developer = module_fix_hint(error, lambda: ("DEMO_New_Bond",), developer=True)
+    others = module_fix_hint(error, lambda: ("DEMO_New_Bond",), developer=False)
+    assert "Admin" in developer and "S3 Drive" in developer
+    assert "Admin" not in others and "S3 Drive" not in others
+    assert "개발자가 판을 고쳐 적용한 뒤" in others and "부대공정 얹기" in others
+    read: list[int] = []
+
+    def extras() -> tuple[str, ...]:
+        read.append(1)
+        return ()
+
+    assert module_fix_hint("RQ_VITAL의 편중률 값이 빈 대당 Capa 기준이 있습니다", extras) == ""
+    assert read == []

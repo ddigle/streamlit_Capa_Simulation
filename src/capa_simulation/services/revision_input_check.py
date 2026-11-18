@@ -70,6 +70,7 @@ GROUP_ASSUMED: Final = "assumed"
 GROUP_SOURCE: Final = "source"
 GROUP_RULES: Final = "rules"
 GROUP_UNCOUNTED: Final = "uncounted"
+GROUP_EXTRA: Final = "extra"
 
 # 묶음 이름 · 부제 · 수 자리 글 — 시안 글자 그대로다.
 STOP_TITLE: Final = "계산 멈춤"
@@ -81,6 +82,7 @@ ASSUMED_TITLE: Final = "측정률 1.0 가정"
 SOURCE_TITLE: Final = "등록 때 뺀 원천 행"
 RULES_TITLE: Final = "규칙대로 셈에서 뺀 것"
 UNCOUNTED_TITLE: Final = "대당 Capa 에서 뺀 기준 · 소요대수 · 계획 · 가정"
+EXTRA_TITLE: Final = "부대공정"
 UNCOUNTED_SUBTITLE: Final = "앞 단계가 멈춰 그 뒤 묶음은 세지 못함"
 PKG_RULE_TITLE: Final = "PKG Buffer 밖"
 UNUSED_RULE_TITLE: Final = "쓰지 않는 경로 조합"
@@ -118,6 +120,16 @@ ROUTES_PREVIEW: Final = ("생산계획년월", "공정", "제품정보", "부하
 PLANS_PREVIEW: Final = tuple(LOAD_EXCLUSION_COLUMNS)
 UNROUTED_PREVIEW: Final = ("생산계획년월", "제품정보", "소요기준", "부하량", UNROUTED_REASON_COLUMN)
 SOURCE_PREVIEW: Final = ("생산계획년월", "공정", "제품정보", "계획기초정보여부", "CS")
+# 「부대공정」 묶음 표의 칸 — 공정마다 한 줄(`ExtraProcessCheck`).
+EXTRA_COLUMNS: Final = (
+    "공정",
+    "판",
+    "부하 붙은 경로",
+    "부하 0 경로",
+    "이어받은 대당 Capa 결손 줄",
+    "판 섞임",
+)
+EXTRA_PREVIEW: Final = EXTRA_COLUMNS
 
 # 원천의 계획 행 표시 칸 — 등록 때 뺀 행을 계획 · 경로로 가른다(`plan_row_mask`).
 SOURCE_PLAN_FLAG_COLUMN: Final = "계획기초정보여부"
@@ -189,6 +201,16 @@ class InputCheckGroup:
     def flagged(self) -> bool:
         """「확인 n」 에 드는 묶음인가 — 확인 필요 단계이고 수가 0 이 아니다."""
         return self.level == "check" and bool(self.count)
+
+
+@dataclass(frozen=True, eq=False)
+class ExtraProcessCheck:
+    """「부대공정」 묶음의 재료 — 그 리비전 데이터셋에 합친 부대공정마다 한 줄(`EXTRA_COLUMNS`).
+
+    부르는 쪽(`capacity_gate.input_check_verdict`)이 데이터셋 출처 · 판 · 계산 결과로 센다(설계
+    A10). 「판 섞임」 은 0/1 이다."""
+
+    frame: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -452,19 +474,48 @@ def _counted_groups(
     return checks, rules
 
 
+def _extra_group(extra: ExtraProcessCheck) -> InputCheckGroup:
+    """「부대공정」 — 부하가 하나도 붙지 않은 공정 · 이어받은 대당 Capa 결손 줄 · 판이 섞인 공정을
+    센다(다른 공정 경로가 있으면 「경로에 닿지 않은 계획 부하」 가 부대공정만 빠진 것을 못 본다 —
+    설계 4-4 끝). 부하 0 경로는 부제에만 싣는다 — 그 달 계획이 0 인 경로도 들어 확인 거리가
+    아니다."""
+    frame = extra.frame
+    unloaded = int((frame["부하 붙은 경로"] == 0).sum())
+    zero = int(frame["부하 0 경로"].sum())
+    gaps = int(frame["이어받은 대당 Capa 결손 줄"].sum())
+    mixed = int(frame["판 섞임"].sum())
+    parts = (
+        ("부하 없는 공정", unloaded),
+        ("이어받은 대당 Capa 결손 줄", gaps),
+        ("판 섞임", mixed),
+        ("부하 0 경로", zero),
+    )
+    return InputCheckGroup(
+        GROUP_EXTRA,
+        "check",
+        EXTRA_TITLE,
+        unloaded + gaps + mixed,
+        " · ".join(f"{title} {count:,}" for title, count in parts if count),
+        tables=(InputCheckTable(EXTRA_TITLE, frame, EXTRA_PREVIEW),),
+    )
+
+
 def build_input_check(
     outcome: CapacityResult,
     density_error: str | None,
     blank_cs: pd.DataFrame | None,
     *,
     period: tuple[int, int] | None = None,
+    extra: ExtraProcessCheck | None = None,
 ) -> RevisionInputCheck:
     """전체 기간 계산 결과 · Density 검사 오류 · 등록 때 뺀 원천 행(원천 없으면 None)으로 점검을
     짓는다.
 
     `density_error` 는 Capa 계산이 통과했을 때만 본 값이다(`capacity_gate` 의 멈춤 판정과 같은
     차례).
-    `period` 는 그 리비전 계산이 본 달 범위(`calculation_period`)다.
+    `period` 는 그 리비전 계산이 본 달 범위(`calculation_period`)다. `extra` 는 그 리비전
+    데이터셋에 합친 부대공정의 재료이고, 있을 때만 「부대공정」 묶음이 확인 필요 묶음 뒤에 선다 —
+    부대공정이 없는 리비전의 묶음 · 「확인 n」 은 그대로다.
     """
     source = _source_group(blank_cs)
     if outcome.error is not None:
@@ -481,7 +532,10 @@ def build_input_check(
             (_stop_group(stop), _uncounted_group(), source), period=period, stop=stop
         )
     checks, rules = _counted_groups(outcome.unit_capacity, outcome.required_equipment)
-    return RevisionInputCheck((_stop_group(stop), *checks, source, rules), period=period, stop=stop)
+    extras = () if extra is None or extra.frame.empty else (_extra_group(extra),)
+    return RevisionInputCheck(
+        (_stop_group(stop), *checks, *extras, source, rules), period=period, stop=stop
+    )
 
 
 def blocked_input_check(

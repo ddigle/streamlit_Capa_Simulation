@@ -62,6 +62,8 @@ from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
     EXTRA_KIND_RESUME,
+    EXTRA_KIND_REVISION,
+    EXTRA_REVISION_PLACE,
     AutoOfficialUpdateExclusion,
     AutoOfficialUpdateRun,
     AutoOfficialUpdateSettingChange,
@@ -1541,12 +1543,96 @@ class DuckDBScenarioRepository:
 
     @grades.gated("admin.area")
     def resume_extra_process(
-        self, *, expected_seq: int, applied_by: str | None
+        self,
+        *,
+        expected_seq: int,
+        applied_by: str | None,
+        s3_key: str | None = None,
+        s3_etag: str | None = None,
+        s3_last_modified: datetime | None = None,
     ) -> ExtraProcessState:
-        """「다시 켜기」 — 끈 동안 마지막 내용 판(P)을 파일 없이 다시 활성으로 넣는다."""
+        """「다시 켜기」 — 끈 동안 마지막 내용 판(P)을 다시 활성으로 넣는다. 단추로 켜면 파일이
+        없고, 같은 파일을 가져와 켜면 그 S3 메타를 남긴다(그 ETag 가 다음 쓰기의 기준이 된다)."""
         return self._append_extra_process(
-            kind=EXTRA_KIND_RESUME, expected_seq=expected_seq, applied_by=applied_by
+            kind=EXTRA_KIND_RESUME,
+            expected_seq=expected_seq,
+            applied_by=applied_by,
+            s3_key=s3_key,
+            s3_etag=s3_etag,
+            s3_last_modified=s3_last_modified,
         )
+
+    @grades.gated("admin.area")
+    def revise_extra_process(
+        self,
+        pack_bytes: bytes,
+        *,
+        sha256: str,
+        version_no: int,
+        expected_seq: int,
+        applied_by: str | None,
+        process_count: int,
+        row_counts: str,
+        base_scenario_ref: str,
+        base_revision_ref: str,
+    ) -> ExtraProcessState:
+        """「이 리비전 값을 새 판으로」 — 리비전 값으로 만든 판(P + 1)을 활성으로 넣는다(갈래
+        「새 판」, 바탕 시나리오 · 리비전을 가리킴). S3 Drive 파일은 그 뒤에 쓰고 결과는
+        `record_extra_process_write` 가 따로 남긴다 — 정본은 DB 라 DB 가 먼저다."""
+        return self._append_extra_process(
+            kind=EXTRA_KIND_REVISION,
+            expected_seq=expected_seq,
+            applied_by=applied_by,
+            pack_bytes=pack_bytes,
+            sha256=sha256,
+            version_no=version_no,
+            process_count=process_count,
+            row_counts=row_counts,
+            source_place=EXTRA_REVISION_PLACE,
+            base_scenario_ref=base_scenario_ref,
+            base_revision_ref=base_revision_ref,
+        )
+
+    @grades.gated("admin.area")
+    def record_extra_process_write(
+        self,
+        *,
+        version_seq: int,
+        result: str,
+        written_by: str | None,
+        etag: str | None = None,
+        seen_etag: str | None = None,
+        stage: str | None = None,
+        reason: str | None = None,
+    ) -> ExtraProcessState:
+        """S3 Drive 파일 쓰기 결과를 넣는다(넣기만 — 판 이력 줄은 고치지 않는다)."""
+        author = (written_by or "").strip() or None
+        try:
+            with self._write_transaction() as connection:
+                entry = extra_process_store.append_write(
+                    connection,
+                    version_seq=version_seq,
+                    result=result,
+                    etag=etag,
+                    seen_etag=seen_etag,
+                    stage=stage,
+                    reason=reason,
+                    written_by=author,
+                )
+        except Exception:
+            audit_recorder.record(
+                "admin_extra_process_write",
+                out="fail",
+                claimed=author,
+                det={"result": result, "version_entry": version_seq},
+            )
+            raise
+        audit_recorder.record(
+            "admin_extra_process_write",
+            claimed=author,
+            det={"result": result, "version_entry": version_seq, "entry": entry},
+        )
+        return self.load_extra_process_state()
 
     def _append_extra_process(
         self,
@@ -1563,6 +1649,8 @@ class DuckDBScenarioRepository:
         s3_key: str | None = None,
         s3_etag: str | None = None,
         s3_last_modified: datetime | None = None,
+        base_scenario_ref: str | None = None,
+        base_revision_ref: str | None = None,
     ) -> ExtraProcessState:
         author = (applied_by or "").strip() or None
         try:
@@ -1598,6 +1686,8 @@ class DuckDBScenarioRepository:
                     s3_key=s3_key,
                     s3_etag=s3_etag,
                     s3_last_modified=s3_last_modified,
+                    base_scenario_ref=base_scenario_ref,
+                    base_revision_ref=base_revision_ref,
                 )
         except Exception:
             audit_recorder.record(

@@ -369,6 +369,96 @@ def test_a_fragment_body_does_not_restore_over_a_run_that_began_meanwhile() -> N
     assert state["complete"] is False
 
 
+# --- DB 에 쓰는 위젯 콜백의 표지(`lowers_app_run` — HOME 비교 대상 두 상자) -----------------------
+
+PICK_KEY = "sidebar_box_toggle_test_pick"
+MARKED_KEY = "sidebar_box_toggle_test_marked"
+
+
+def _writing_callback_script() -> None:
+    """DB 에 쓰는 콜백을 단 선택 상자(HOME 비교 대상 꼴)와 사이드바 상자 하나.
+
+    `sidebar_box_toggle_test_marked` 가 거짓이면 콜백에 표지(`lowers_app_run`)를 달지 않는다(옛 꼴 —
+    양성 대조). `sidebar_box_toggle_test_end` 가 `cut_after_callback` 이면 콜백 바로 뒤 · 본문
+    앞(`begin_app_run` 앞)에서 새 요청이 실행을 끊은 꼴이다 — 실행 표지를 세우지도 닫지도 않는다
+    (AppTest 가 위젯을 찾도록 위젯은 그린다).
+    """
+    import streamlit as st
+
+    from capa_simulation.sidebar_status import begin_app_run, lowers_app_run, on_box_toggle
+
+    def save() -> None:
+        st.session_state["sidebar_box_toggle_test_saved"] = st.session_state[
+            "sidebar_box_toggle_test_pick"
+        ]
+
+    marked = st.session_state.get("sidebar_box_toggle_test_marked", True)
+    callback = lowers_app_run(save) if marked else save
+    cut = st.session_state.get("sidebar_box_toggle_test_end") == "cut_after_callback"
+    run = None if cut else begin_app_run()
+    st.selectbox("비교", ["가", "나"], key="sidebar_box_toggle_test_pick", on_change=callback)
+    box_key = "sidebar_box_toggle_test_box"
+    st.checkbox("상자", key=box_key, on_change=on_box_toggle, args=(box_key, "상자"))
+    if run is not None:
+        run.finish()
+
+
+@pytest.mark.parametrize(("marked", "reruns_fragment"), [(True, False), (False, True)])
+def test_a_box_pressed_while_a_writing_callback_ran_falls_back_to_the_whole_app(
+    rerun_calls: list[tuple[object, ...]], marked: bool, reruns_fragment: bool
+) -> None:
+    """DB 에 쓰는 콜백(HOME 비교 시나리오 · 리비전)이 도는 동안 사이드바 상자를 누르면 새 요청이
+    콜백 바로 뒤 · 본문 앞에서 실행을 끊는다. 표지가 없으면 앞 전체 실행의 「끝났다」 가 남고 고른
+    값은 이미 세션에 들어가 「바뀐 위젯」 으로 세지 않아, 상자 콜백이 프래그먼트만 돌려 본문이 새
+    비교 대상 전의 것으로 남았다(2026-10-15 브라우저 재현 — 양성 대조). 표지(`lowers_app_run`)가
+    있으면 앱 전체로 물러난다(2026-11-19 사용자 권장대로)."""
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, SIDEBAR_TOGGLE_FRAGMENT_KEY
+
+    app = AppTest.from_function(_writing_callback_script)
+    app.session_state[MARKED_KEY] = marked
+    app.run()
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
+
+    app.session_state[END_KEY] = "cut_after_callback"
+    app.selectbox(key=PICK_KEY).select("나").run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["sidebar_box_toggle_test_saved"] == "나"
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is not marked
+
+    app.session_state[END_KEY] = "finish"
+    app.checkbox(key=BOX_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == ([(SIDEBAR_TOGGLE_FRAGMENT_KEY,)] if reruns_fragment else [])
+
+
+def test_a_writing_callback_that_ran_to_the_end_keeps_the_fragment_toggle(
+    rerun_calls: list[tuple[object, ...]],
+) -> None:
+    """표지는 이어지는 전체 실행이 다시 정한다 — 끊기지 않고 끝까지 돈 뒤의 상자 여닫기는 그대로
+    프래그먼트만 돌린다(표지가 여닫기를 늘 앱 전체로 미루지 않는다)."""
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, SIDEBAR_TOGGLE_FRAGMENT_KEY
+
+    app = AppTest.from_function(_writing_callback_script).run()
+    app.selectbox(key=PICK_KEY).select("나").run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
+
+    app.checkbox(key=BOX_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == [(SIDEBAR_TOGGLE_FRAGMENT_KEY,)]
+
+
+@pytest.mark.parametrize("function", ["_save_comparison_scenario", "_save_comparison_revision"])
+def test_the_home_comparison_callbacks_carry_the_mark(function: str) -> None:
+    """DB 에 쓰는 HOME 비교 대상 두 상자의 콜백은 표지(`lowers_app_run`)를 단다 — 등급 거절 받는
+    자리(`on_press`)보다 바깥이라 거절된 누름도 먼저 내린다(내려도 이어지는 전체 실행이 다시
+    정한다)."""
+    path = SOURCE_ROOT / "components" / "home_preference.py"
+    assert _decorators(path, function) == ["lowers_app_run", "on_press"]
+
+
 # --- `run_every` 프래그먼트가 선 페이지(E2E C-11 · C-15) ------------------------------------------
 
 

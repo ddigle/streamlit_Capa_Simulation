@@ -10,6 +10,10 @@
 회차는 새 key 로 최신을 그린다(보내지 않은 편집이 남의 칸을 가린 채 본 version 만 오르던 결함 —
 2026-10-27 리뷰). 남의 저장에 거부된 누름의 둘째 누름 회차도 최신 key 로 그려 그 뒤 친 칸이 다음
 누름에 닿는다. 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 성공으로 다시 알린다.
+
+표는 폼 밖이고 적은 칸은 세션 초안이다(2026-11-19 사용자 요청) — 다른 화면에 다녀와도 그 칸이
+다시 서고, 남의 저장은 초안을 버리며 그 수를 알리고, 「되돌리기」 가 초안을 버리며, 조회기간 밖이
+된 칸은 초안에 남되 저장하지 않는다.
 """
 
 from __future__ import annotations
@@ -24,16 +28,24 @@ import pytest
 from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
+from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
     MANUAL_BASE_VERSION_KEY,
     MANUAL_COLUMNS_HELP,
+    MANUAL_DRAFT_KEY,
+    MANUAL_DROPPED_MESSAGE,
     MANUAL_EDITOR_KEY,
+    MANUAL_HIDDEN_NOTE,
     MANUAL_NOTE_KEY,
+    MANUAL_REFUSED_DROPPED_TAIL,
+    MANUAL_REVERT_BUTTON,
+    MANUAL_REVERT_HIDDEN_HELP,
     MANUAL_SAVE_BUTTON,
     MANUAL_SAVED_BY_KEY,
     MANUAL_UNCHANGED_MESSAGE,
+    _folded,
     edited_cells,
     manual_editor_frame,
     manual_editor_key,
@@ -62,17 +74,38 @@ def _fresh_cache() -> None:
 
 
 def _script(database_path: Path) -> str:
+    """탭 조각 — 세션 칸 `test_away` 가 참이면 다른 화면을 본 회차처럼 그리지 않는다(위젯 상태가
+    걷힌다). `test_months` 가 있으면 그 달들을, `test_processes` 가 있으면 그 공정들을 쓴다(조회기간
+    · 설비 시나리오를 바꾼 회차). `test_viewer` 가 참이면 입력 비가동을 고칠 수 없는 화면 등급이다
+    (`sso_identity.viewer_can` 을 그 회차에만 바꾼다). 맨 앞에서 `app.py` 처럼 초안 칸 수를 먼저
+    센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤)."""
     return f"""
-from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
+import streamlit as st
+
+from capa_simulation.components import sso_identity
+from capa_simulation.components.manual_downtime_tab import (
+    manual_downtime_draft_count,
+    render_manual_downtime_tab,
+)
 from capa_simulation.components.process_labels import ProcessLabels
 
-render_manual_downtime_tab(
-    database_path={str(database_path)!r},
-    snapshot_processes=[{A!r}, {B!r}],
-    months={list(MONTHS)!r},
-    process_labels=ProcessLabels(version=1, labels={{{A!r}: "WM"}}),
-    owner_tab=None,
-)
+original_can = sso_identity.viewer_can
+if st.session_state.get("test_viewer"):
+    sso_identity.viewer_can = lambda action: False
+try:
+    st.session_state["count_before_page"] = manual_downtime_draft_count()
+    if st.session_state.get("test_away"):
+        st.write("다른 화면")
+    else:
+        render_manual_downtime_tab(
+            database_path={str(database_path)!r},
+            snapshot_processes=st.session_state.get("test_processes", [{A!r}, {B!r}]),
+            months=st.session_state.get("test_months", {list(MONTHS)!r}),
+            process_labels=ProcessLabels(version=1, labels={{{A!r}: "WM"}}),
+            owner_tab=None,
+        )
+finally:
+    sso_identity.viewer_can = original_can
 """
 
 
@@ -490,6 +523,19 @@ def test_the_preference_tab_reads_only_the_period_on_the_sidebar() -> None:
     assert not spec.has_cards_on(EQUIPMENT_PREFERENCE_TAB)
 
 
+def test_folding_drops_cells_back_to_saved_and_keeps_cells_out_of_view() -> None:
+    """초안 접기 — 보인 칸이 저장본과 같아지면(빈칸 · 0 은 같은 빈칸) 빼고, 다르면 두고, 보이지 않는
+    칸(조회기간 밖)은 그대로 둔다."""
+    draft: dict[tuple[str, int], float | None] = {(A, 202607): 2.0, (A, 202612): 3.0}
+    shown = {(A, 202607): 1.5, (B, 202607): 0.0, (B, 202608): None, (A, 202608): 0.25}
+    saved = {(A, 202607): 1.5, (B, 202608): 0.5}
+    assert _folded(draft, shown, saved) == {
+        (A, 202612): 3.0,
+        (B, 202608): None,
+        (A, 202608): 0.25,
+    }
+
+
 def test_the_month_columns_are_numbers_with_two_decimals(tmp_path: Path) -> None:
     app = _app(tmp_path / "equipment.duckdb")
     frame = next(frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id)
@@ -529,3 +575,285 @@ def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
     app = _app(path)
     versions = [item.value for item in app.caption if item.value.startswith("공용 버전 ")]
     assert len(versions) == 1 and " · 조회기간 밖 저장 1칸 · " in versions[0], versions
+
+
+# ------------------------------------------------------------------ 세션 초안(2026-11-19)
+
+
+def _draft(app: AppTest) -> dict[tuple[str, int], float | None]:
+    held = app.session_state[MANUAL_DRAFT_KEY] if MANUAL_DRAFT_KEY in app.session_state else {}
+    return dict(held)
+
+
+def _leave_and_return(app: AppTest, *, version: int = 0) -> AppTest:
+    """다른 화면을 본 회차 하나 뒤 돌아온다 — 편집표 위젯 상태는 그 사이 걷힌다."""
+    app.session_state["test_away"] = True
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    key = manual_editor_key(version)
+    if key in app.session_state:
+        del app.session_state[key]
+    app.session_state["test_away"] = False
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def test_typed_cells_survive_another_screen_and_save_from_the_draft(tmp_path: Path) -> None:
+    """적은 칸은 세션 초안이라 다른 화면에 다녀와도(위젯 상태가 걷혀도) 표에 다시 선다 — 그대로
+    저장하면 그 값이 남고 초안이 빈다. 저장자 · 메모 칸도 남는다(`persist_state`)."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+    assert _draft(app) == {(A, 202607): 1.5}
+    app.text_input(key=MANUAL_SAVED_BY_KEY).set_value("홍길동").run()
+
+    app = _leave_and_return(app)
+    assert _draft(app) == {(A, 202607): 1.5}
+    assert _editor_values(app)["202607"][row_a] == pytest.approx(1.5)
+    assert app.text_input(key=MANUAL_SAVED_BY_KEY).value == "홍길동"
+    assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 0
+
+    app = _save(app)
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version, stored.saved_by) == (((A, 202607, 1.5),), 1, "홍길동")
+    assert _draft(app) == {}
+
+
+def test_typing_a_cell_back_to_its_saved_value_leaves_no_draft(tmp_path: Path) -> None:
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+    assert _draft(app) == {(A, 202607): 1.5}
+    _edit(app, {(row_a, "202607"): None})
+    app.run()
+    assert _draft(app) == {}
+
+
+def test_another_sessions_save_drops_the_draft_and_says_so(tmp_path: Path) -> None:
+    """초안이 붙든 version 위에 남이 저장하면 다음 회차는 초안을 버리고 그 수를 곁 경고로 알린 뒤
+    최신 저장본을 그린다 — 남의 칸 위에 옛 초안을 얹어 보이지 않게 덮지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    mine, other = _app(path), _app(path)
+    row_a = _editor_values(mine)["공정"].index("WM")
+    _edit(mine, {(row_a, "202607"): 1.5, (1 - row_a, "202608"): 2.0})
+    mine.run()
+    assert len(_draft(mine)) == 2
+
+    _edit(other, {(row_a, "202607"): 9.0})
+    _save(other)
+    clear_equipment_repository()
+    mine = _leave_and_return(mine)
+    assert _draft(mine) == {}
+    warnings = [item.value for item in mine.warning]
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
+    assert manual_editor_key(1) in _editor_id(mine)
+    assert _editor_values(mine)["202607"][row_a] == pytest.approx(9.0)
+    assert mine.session_state[MANUAL_BASE_VERSION_KEY] == 1
+
+
+def test_the_revert_button_drops_the_draft(tmp_path: Path) -> None:
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+    assert _draft(app) == {(A, 202607): 1.5}
+    next(button for button in app.button if button.label == MANUAL_REVERT_BUTTON).click().run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert bool(pd.Series(_editor_values(app)["202607"], dtype="object").isna().iloc[row_a])
+    assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 0
+
+
+def test_cells_out_of_the_period_stay_in_the_draft_and_are_not_saved(tmp_path: Path) -> None:
+    """조회기간을 바꿔 보이지 않게 된 칸은 초안에 남고(점이 남는다) 저장은 보이는 칸만이다 — 다시
+    그 달을 보면 칸이 선다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202608"): 3.0})
+    app.run()
+    app.session_state["test_months"] = [202607]
+    app = _leave_and_return(app)
+    assert _draft(app) == {(A, 202608): 3.0}
+    assert list(_editor_values(app)) == ["공정", "202607"]
+
+    _edit(app, {(row_a, "202607"): 1.5})
+    app = _save(app)
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((A, 202607, 1.5),), 1)
+    assert _draft(app) == {(A, 202608): 3.0}
+
+    app.session_state["test_months"] = list(MONTHS)
+    app.run()
+    assert not app.exception
+    assert _editor_values(app)["202608"][row_a] == pytest.approx(3.0)
+    assert _draft(app) == {(A, 202608): 3.0}
+
+
+def test_a_browser_cell_edit_is_folded_by_the_callback_before_the_page_draws(
+    tmp_path: Path,
+) -> None:
+    """브라우저가 보낸 칸 편집은 편집표 `on_change` 가 그 회차 첫머리에 초안에 접는다 — `app.py`
+    처럼 페이지보다 먼저 센 초안 칸 수가 그 회차에 벌써 1 이다(탭 점 · 변경 칩 · 새로고침 확인이
+    한 회차 늦지 않다). 칸을 저장본 값으로 되돌리면 같은 회차에 0 이다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    assert not app.exception
+    row_a = _editor_values(app)["공정"].index("WM")
+
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    tables.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 1
+    assert _draft(app) == {(A, 202607): 1.5}
+
+    tables.edit(manual_editor_key(0), row_a, "202607", None)
+    tables.run()
+    assert app.session_state["count_before_page"] == 0
+    assert _draft(app) == {}
+
+
+def test_an_edit_sent_with_the_press_that_leaves_the_screen_is_kept(tmp_path: Path) -> None:
+    """칸을 고친 직후 다른 화면으로 옮긴 회차 — 표를 그리지 않는 회차에도 그 회차 첫머리의
+    `on_change` 가 칸을 초안에 접어 두어 돌아오면 그 칸이 선다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+
+    tables.edit(manual_editor_key(0), row_a, "202608", 2.25)
+    app.session_state["test_away"] = True
+    tables.run()
+    assert not app.exception
+    assert not [frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id]
+    assert _draft(app) == {(A, 202608): 2.25}
+
+    app.session_state["test_away"] = False
+    tables.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 1
+    assert _editor_values(app)["202608"][row_a] == pytest.approx(2.25)
+
+
+def test_another_save_under_a_mounted_editor_drops_the_typed_cells_with_their_count(
+    tmp_path: Path,
+) -> None:
+    """표가 떠 있는 채 남이 저장하면 다음 회차(아무 조작)가 브라우저에 남은 칸 편집까지 버리고
+    최신을 그린다 — 버린 칸 수를 곁 경고로 알리고, 다음 회차의 표는 새 위젯이라 옛 편집이 다시
+    접히지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    tables.edit(manual_editor_key(0), 1 - row_a, "202608", 0.5)
+    tables.run()
+    assert _draft(app) == {(A, 202607): 1.5, (B, 202608): 0.5}
+
+    DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202607): 9.0}, processes=[A], months=[202607], expected_version=0
+    )
+    clear_equipment_repository()
+    tables.run()
+    assert not app.exception
+    warnings = [item.value for item in app.warning]
+    assert MANUAL_DROPPED_MESSAGE.format(count=2, hidden="") in warnings, warnings
+    assert _draft(app) == {}
+    assert manual_editor_key(1) in _editor_id(app)
+    assert _editor_values(app)["202607"][row_a] == pytest.approx(9.0)
+
+    tables.run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert app.session_state["count_before_page"] == 0
+
+
+# ------------------------------------------- 버린 칸 수 · 표 없는 화면의 초안(2026-11-19)
+
+
+def test_a_refused_save_says_how_many_typed_cells_it_dropped_including_hidden_ones(
+    tmp_path: Path,
+) -> None:
+    """저장을 누른 회차가 남의 저장에 지면 초안을 모두 버린다 — 조회기간 밖이라 보이지 않던 칸까지.
+    거부 글 끝에 버린 칸 수와 그 가운데 보이지 않던 칸 수를 붙인다(저장 아닌 회차의 버림 알림과
+    같이 말없이 버리지 않는다 — 설계 규칙 UI-STA-05). 「되돌리기」 풍선도 숨은 칸 수를 말한다."""
+    path = tmp_path / "equipment.duckdb"
+    mine, other = _app(path), _app(path)
+    row_a = _editor_values(mine)["공정"].index("WM")
+    _edit(mine, {(row_a, "202608"): 3.0})
+    mine.run()
+    mine.session_state["test_months"] = [202607]
+    mine = _leave_and_return(mine)
+    assert _draft(mine) == {(A, 202608): 3.0}
+    revert = next(button for button in mine.button if button.label == MANUAL_REVERT_BUTTON)
+    assert MANUAL_REVERT_HIDDEN_HELP.format(hidden=1) in str(revert.help)
+
+    _edit(other, {(row_a, "202607"): 9.0})
+    _save(other)
+    _edit(mine, {(row_a, "202607"): 1.5})
+    mine = _save(mine)
+
+    errors = [str(item.value) for item in mine.error]
+    tail = MANUAL_REFUSED_DROPPED_TAIL.format(count=2, hidden=MANUAL_HIDDEN_NOTE.format(hidden=1))
+    assert any("다른 사용자가 먼저" in error and error.endswith(tail) for error in errors), errors
+    assert len(errors) == 1, errors
+    assert _draft(mine) == {}
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((A, 202607, 9.0),), 1)
+
+
+def test_a_grade_that_cannot_edit_keeps_the_draft_without_counting_it(tmp_path: Path) -> None:
+    """입력 비가동을 고칠 수 없는 화면 등급(개발자의 「이 등급으로 보기 → 열람」 포함)은 읽기 표만
+    그린다 — 초안을 버리지 않고 점 · 칩도 세지 않는다. 고칠 수 있는 등급으로 돌아오면 칸이 다시
+    얹히고 수도 다시 선다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+    # 시험은 위젯 값을 직접 적어 콜백이 돌지 않는다 — 본문이 접은 초안을 다음 회차 첫머리가 센다.
+    app.run()
+    assert app.session_state["count_before_page"] == 1
+
+    app.session_state["test_viewer"] = True
+    app.run()
+    assert not app.exception
+    assert app.session_state["count_before_page"] == 0
+    assert _draft(app) == {(A, 202607): 1.5}
+    assert not [button for button in app.button if button.label == MANUAL_REVERT_BUTTON]
+
+    app.session_state["test_viewer"] = False
+    app = _leave_and_return(app)
+    assert app.session_state["count_before_page"] == 1
+    assert _editor_values(app)["202607"][row_a] == pytest.approx(1.5)
+
+
+def test_a_screen_without_cells_offers_to_drop_a_leftover_draft(tmp_path: Path) -> None:
+    """공정이 없는 설비 시나리오로 옮겨 표가 서지 않아도(「넣을 칸이 없습니다」) 남은 초안을 버릴
+    「되돌리기」 가 선다 — 점 · 칩이 말하는 칸을 그 화면에서 지울 수 있다. 초안이 없으면 서지
+    않는다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.5})
+    app.run()
+
+    app.session_state["test_processes"] = []
+    app = _leave_and_return(app)
+    assert any(str(item.value) == "넣을 칸이 없습니다." for item in app.caption)
+    assert app.session_state["count_before_page"] == 1
+    next(button for button in app.button if button.label == MANUAL_REVERT_BUTTON).click().run()
+    assert not app.exception
+    assert _draft(app) == {}
+    assert app.session_state["count_before_page"] == 0
+    assert not [button for button in app.button if button.label == MANUAL_REVERT_BUTTON]

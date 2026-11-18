@@ -357,8 +357,11 @@ function shownOrder(batch, data) {
 // (`min`) 아래로 내려가지 않는다(고정 묶음 앞으로 못 간다). 가운데만 보면 끄는 탭이 이웃보다 넓거나 같을 때 끝 자리에 못
 // 놓였다 — 넘친 줄은 탭이 같은 폭으로 줄어 맨 끝에 놓을 수 없었고(끝에서 둘째에 멈춤), 넘치지 않아도 긴 이름 탭을 짧은
 // 이름 탭 앞(고정 묶음 바로 뒤)에 놓을 수 없었다(2026-11-02 반박 검토). `edgeSpeed` — 목록 가장자리 `edge` 안에서 끄는
-// 동안 굴릴 한 프레임 px(왼쪽은 음수). `dragClick` — 끌기가 끝난 뒤 `ms` 안의 누름은 고르기로 보내지 않는다(끈 탭을 놓은
-// 자리의 click). `heldRelease` — Esc·새 data 로 접은 끌기는 포인터가 아직 눌려 있다(`held` — 그 포인터 id, 없으면 null).
+// 동안 굴릴 한 프레임 px(왼쪽은 음수). `dragClick` — 끌기가 끝난 뒤 `ms` 안의 포인터 누름(`detail` > 0 — 없으면 포인터로
+// 본다)은 고르기로 보내지 않는다(끈 탭을 놓은 자리의 click). 키보드로 누른 단추(`detail` 0 — Enter·Space)는 놓은 자리의
+// click 이 아니라 거르지 않는다. 창은 새 포인터 누름(`pointerdown`)이 닫는다 — 놓은 자리의 click 이 오지 않은 끌기(헤드리스
+// Chrome 은 차례가 바뀐 끌기를 놓을 때 click 을 보내지 않았다)의 창이 다음 진짜 누름(× · 핀 · 고르기)을 삼키지 않게.
+// `heldRelease` — Esc·새 data 로 접은 끌기는 포인터가 아직 눌려 있다(`held` — 그 포인터 id, 없으면 null).
 // 그 포인터를 놓는 순간(`pointerup`)부터 `dragClick` 창을 다시 연다 — 접은 시각부터만 세면 손을 떼기 전 작은 움직임 뒤
 // 0.4초 넘어 놓은 click 이 고르기로 가 화면을 옮겼다(2026-11-02 반박 검토). 같은 포인터의 새 누름(놓음을 놓쳤다)·포인터
 // 취소(click 이 없다)는 기다림만 거둔다. 돌려주는 `{held, endedAt}` 의 `endedAt` 은 새 창의 시작(없으면 null)이다.
@@ -390,8 +393,8 @@ function edgeSpeed(x, left, right, edge, max) {
   if (x > right - edge) return Math.ceil(max * Math.min(1, (x - right + edge) / edge))
   return 0
 }
-function dragClick(endedAt, now, ms) {
-  return endedAt !== null && now - endedAt < ms
+function dragClick(endedAt, now, ms, detail = 1) {
+  return detail > 0 && endedAt !== null && now - endedAt < ms
 }
 // </tabs-drag>
 // <tabs-links>
@@ -1249,6 +1252,9 @@ export default function (component) {
   // 누르는 순간(포커스가 탭으로 옮기기 전) 편집표에 포커스가 있었는지 적는다 — 칸 편집기는 바깥 누름에 편집을 적용하고 닫는다.
   list.onpointerdown = (event) => {
     S.pressFromGrid = S.gridFocused
+    // 새 누름이다 — 앞 끌기를 놓은 자리의 click 은 이미 지나갔다(오지 않았으면 오지 않는다). 창을 닫아 이 누름의 click 을
+    // 삼키지 않는다(`<tabs-drag>` 의 `dragClick`).
+    S.dragEndAt = null
     startDrag(event)
   }
   // 닫기·고정 누름 뒤 포인터 아래로 밀려 온 다른 탭에 닿은 둘째 누름인가(`<tabs-press>`). 포인터 누름(`detail` > 0)만
@@ -1262,8 +1268,8 @@ export default function (component) {
       : null
   }
   list.onclick = (event) => {
-    // 끌기를 놓은 자리의 누름은 고르기가 아니다(`<tabs-drag>`).
-    if (dragClick(S.dragEndAt, Date.now(), DRAG_CLICK_MS)) {
+    // 끌기를 놓은 자리의 누름은 고르기가 아니다(`<tabs-drag>` — 키보드 누름은 거르지 않는다).
+    if (dragClick(S.dragEndAt, Date.now(), DRAG_CLICK_MS, event.detail)) {
       S.dragEndAt = null
       event.stopPropagation()
       return

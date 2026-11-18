@@ -69,6 +69,7 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
 
 app_meta.extra_process_version N ── 1 app_meta.extra_process_content   (0037 — 부대공정 판 이력 · 내용, 소유 칸 없음)
         └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION). 내용은 sha256 하나에 ZIP 한 벌
+app_meta.extra_process_s3_write N ── 1 app_meta.extra_process_version  (0038 — 판을 S3 Drive 파일로 쓴 결과, 넣기만)
 
 result_data.simulation_run                                 (골격만 — 쓰는 코드 없음)
 
@@ -281,8 +282,14 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   양식 ZIP 바이트(키 = 본문 sha256, 같은 내용은 한 벌), 이력은 넣기만 하고 마지막 줄이 지금 상태다 — `OFF` 줄은 판 번호 · sha 가
   없다(`CHECK`). 이력 · 내용은 소유 칸이 없어 시나리오를 지워도 남고(「이력은 DB 에만」 — S3 옛 판 사본 없음), 출처는
   `dataset_id` 소유라 데이터셋과 함께 지워진다. 출처 한 줄 = (데이터셋, 공정, 판 차례) — 판 번호 · sha · 결과(`MERGED` ·
-  `DROPPED` · `GRADUATED`) · 규칙(R-01 ~ R-07) · 까닭 · 표별 행 수(JSON) · 메모(연도 Shift 이동량 · 월 머지 쪽). 「새 판으로」(2단계)의
-  바탕 시나리오 · 리비전은 `base_*_ref` 로 가리키기만 한다.
+  `DROPPED` · `GRADUATED`) · 규칙(R-01 ~ R-07) · 까닭 · 표별 행 수(JSON) · 메모(연도 Shift 이동량 · 월 머지 쪽 · 덧붙인 달 범위).
+  「새 판으로」(2단계 — 갈래 `REVISION`)의 바탕 시나리오 · 리비전은 `base_*_ref` 로 가리키기만 한다. 0037 의 `s3_write_result` 칸은
+  쓰지 않는다 — 쓰기 결과는 판을 넣은 뒤에야 알아 아래 0038 표에 넣는다.
+- `extra_process_s3_write`(0038): 「새 판으로」 · 「S3 에 다시 쓰기」 가 S3 Drive 의 `extra_process/current.zip` 을 쓴 결과 한 줄씩(넣기만).
+  쓴 판(`version_seq` — 판 이력 차례, 가리키기만) · 결과(`WRITTEN` — PUT 이 돌려준 ETag / `KEPT` — 쓰기 직전 HEAD 의 ETag 가 기준과 달라
+  덮지 않음, 본 ETag / `FAILED` — 실패한 단계 HEAD · PUT 과 까닭 낱말) · 쓴 사람. 기준 ETag 는 판 이력 줄의 ETag(가져와 적용 · 다시
+  켬)와 이 표의 `WRITTEN` 가운데 마지막 것이다(`models.ExtraProcessState.baseline`). 내보내기 자리가 꽂히기 전(지금 판 — 사내 확인 뒤)에는
+  0행이다.
 - `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
   시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 

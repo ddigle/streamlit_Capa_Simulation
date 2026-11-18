@@ -191,7 +191,7 @@ from capa_simulation.services.threshold_label import (
     threshold_percent_label,
     whole_percent,
 )
-from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
+from capa_simulation.sidebar_status import condition_card, keeps_app_run_open, lowers_app_run
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
@@ -970,6 +970,7 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     _recheck_intro_summary()
 
 
+@lowers_app_run
 @on_press
 def _save_comparison_scenario(database_path: str) -> None:
     """비교 **시나리오** 상자의 콜백. 고른 시나리오를 리비전 칸을 비운 채 공용 프로필에 남긴다.
@@ -986,6 +987,10 @@ def _save_comparison_scenario(database_path: str) -> None:
     **저장에 실패해도 화면을 멈추지 않는다.** 비교 대상은 이번 화면에서 이미 세션 값으로
     동작하고, 남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다. 그것 때문에
     대시보드가 서면 손해가 더 크다.
+
+    DB 에 쓰는 콜백이라 실행 표지를 내려 둔다(`lowers_app_run`) — 쓰는 동안 누른 사이드바 조작이 이
+    실행을 끊어도 그 누름이 프래그먼트만 돌려 새 비교 대상 전의 본문을 남기지 않는다(리비전 상자도
+    같다).
     """
     scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
     if scenario_id is None:
@@ -996,6 +1001,7 @@ def _save_comparison_scenario(database_path: str) -> None:
     )
 
 
+@lowers_app_run
 @on_press
 def _save_comparison_revision(database_path: str) -> None:
     """비교 **리비전** 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 공용 프로필에 남긴다."""

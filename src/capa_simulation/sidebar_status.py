@@ -4,7 +4,7 @@ import functools
 import inspect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import ParamSpec, TypeVar
+from typing import Any, Final, ParamSpec, TypeVar
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -13,6 +13,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.navigation import CONDITIONS_SECTION, SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.session_slot import SessionSlot
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -73,6 +74,7 @@ SIDEBAR_TOGGLE_SINK_KEY = "sidebar_box_toggle_sink"
 # (끝까지 돌았나), `run`(가장 늦게 시작한 실행의 표지), `page`(끝까지 돈 실행의 페이지),
 # `periodic`(`run_every` 프래그먼트를 세운 실행의 표지 — `note_periodic_fragment`).
 APP_RUN_STATE_KEY = "sidebar_app_run_state"
+_APP_RUN: Final[SessionSlot[dict[Any, Any]]] = SessionSlot(APP_RUN_STATE_KEY, dict)
 
 # 조건 패널의 시나리오·조회기간 팝업을 여닫는 **키 붙은 호스트 프래그먼트**(`app.py`). 값 칸을
 # 누르거나 팝업을 닫을 때(X·바깥·Esc) 페이지 계산까지 앱 전체를 다시 돌리지 않고 이 프래그먼트만
@@ -170,6 +172,30 @@ def keeps_app_run_open(func: Callable[P, R]) -> Callable[P, R]:
         if state.get("run") is run:
             state["complete"] = complete
         return result
+
+    return wrapper
+
+
+def lowers_app_run(func: Callable[P, R]) -> Callable[P, R]:
+    """DB 에 쓰는 위젯 콜백을 감싼다 — 콜백이 시작할 때 직전 전체 실행의 「끝났다」를 내리고
+    되돌리지 않는다(표지).
+
+    콜백은 스크립트 본문 **앞**(`app.py` 맨 위 `begin_app_run` 앞)에서 돈다. 그동안 사이드바 값 칸 ·
+    상자를 누르면 새 요청이 콜백 바로 뒤의 멈춤 자리에서 이 실행을 끊어, 표지는 앞 전체 실행의
+    「끝났다」 그대로다. 콜백이 고른 위젯 값은 이미 세션에 들어가 다음 요청에서 「바뀐 위젯」 으로
+    세지 않으므로(`_only_this_widget_changed`) 그 누름의 콜백은 프래그먼트만 돌리고, 본문은 콜백이
+    쓴 새 값을 보지 못한 채 다음 전체 회차까지 남는다. 내려 둔 표지는 이어지는 전체 실행의
+    `begin_app_run` · `finish` 가 다시 정한다. 프래그먼트 · 팝업 안 위젯이면 다음 전체 실행까지
+    내린 채다 — 그동안의 상자 여닫기는 앱 전체로 물러날 뿐이다(`keeps_app_run_open` 의 되돌림은
+    본문이 끝까지 돈 실행의 몫이라 콜백에는 쓰지 않는다).
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        state = _APP_RUN.peek()
+        if state is not None:
+            state["complete"] = False
+        return func(*args, **kwargs)
 
     return wrapper
 

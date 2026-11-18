@@ -191,8 +191,9 @@ with notices:
     render_legacy_trace_warning(equipment_session)
 
 # 저장본 사본과 미저장 편집본 — 가용설비 현황·Space 현황과 같은 세션 칸이라 어디서 먼저 세웠어도
-# 같은 토큰이다. 계산은 저장본 사본만 읽는다.
-ensure_equipment_drafts(latest_snapshot)
+# 같은 토큰이다. 계산은 저장본 사본만 읽는다. 세션 이동이 앱 머리가 센 편집을 버렸으면 그것도
+# 넘긴다(그 회차에 한 번 다시 돈다).
+ensure_equipment_drafts(latest_snapshot, head_dropped=equipment_session.head_dropped)
 with notices:
     render_reopen_notices()
 render_equipment_scenario_row(equipment_session)
