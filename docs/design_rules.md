@@ -2661,3 +2661,4 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
 - **v1.38 — 2026-11-19.** 사용자 미저장 보호 요청 둘(가용설비 현황 Preference 「입력 비가동」 · Space 층 사용 편집 중 다른 층 열기)의 판정과 구현이 요청 밖에서 정한 것을 6-35 에 적었다(PRC-02 · PRC-07).
   - 규칙 글은 바꾸지 않았다 — 요청을 UI-STA-02 · UI-STA-04 · UI-STA-05 · UI-NTF-09 의 지금 글로 판정했다. 규칙 81 — MUST 46 · SHOULD 35 · MAY 0.
   - 그물: `tests/test_design_rules_doc.py` 가 판 머리 · 6-35 를 보고(판 머리는 v1.37 시험에서 옮김), 화면 그물은 `tests/test_manual_downtime_tab.py` · `tests/test_page_tabs.py` · `tests/test_space_floor_state_page.py` 다.
+  - 같은 날 통합 검토 뒤 6-35 에 guard-manual-review 한 줄을 더했다(버린 칸 수 · 표를 그리지 않는 화면의 초안 · 남은 결정 둘) — 규칙 글 · 판 번호는 그대로다.
