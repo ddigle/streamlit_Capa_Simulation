@@ -405,6 +405,35 @@ def test_a_paste_in_another_order_does_not_move_grades_to_other_people(
     assert "등급 2명" in _flash_text(app)
 
 
+def test_a_row_another_developer_changed_meanwhile_is_not_overwritten(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 프로세스의 먼저 쓰기 — USER 를 실무자로 초안해 둔 사이 다른 개발자가 USER 를 관리자로
+    올렸다. 저장은 「그 사이 바뀐 줄」 로 막히고 USER 는 관리자로 남는다. 「다시 읽기」 가 그 줄의
+    고침을 걷고, 바뀌지 않은 OTHER 의 고침은 남아 저장된다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    app = _ops(app, calls, _write([USER, OTHER], ["등급"], [["실무자"], ["관리자"]]))
+    grade_store.change_grades(cfg, identity_of(cfg, ADMIN), {USER: "manager"})
+    before = requests_named(store, "PUT")
+
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == before
+    (error,) = [str(item.value) for item in app.error]
+    assert error.startswith(access_list_admin.PROBLEMS_LEAD) and "그 사이 바뀐 줄 1개" in error
+    assert grade_store.grade_of(cfg, USER) == "manager"
+
+    app = app.button(key=access_list_admin.REREAD_KEY).click().run()
+    assert "그 사이 바뀐 줄 1개의 고침을 걷었습니다" in _flash_text(app)
+    app = _save(app)
+
+    assert grade_store.grade_of(cfg, USER) == "manager"
+    assert grade_store.grade_of(cfg, OTHER) == "manager"
+    assert "등급 1명" in _flash_text(app)
+
+
 def test_own_and_environment_rows_are_locked_in_the_grid_and_on_the_server(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

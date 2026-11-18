@@ -111,6 +111,32 @@ def test_a_locked_cell_of_a_listed_person_in_the_draft_blocks_that_row() -> None
     assert dict(result.graded) == {}
 
 
+def test_rows_whose_grade_or_registration_moved_since_the_edit_began_are_not_written() -> None:
+    """처음 (등급, 등록 시각)이 지금과 다르면 그 사이 바뀐 줄 — 등급이 바뀐 사람 · 뺀 뒤 다시 든
+    사람(등록 시각이 다름)의 등급 바꿈 · 빼기를 쓰지 않는다. 처음 값을 모르는 줄은 그대로 쓴다."""
+    added_at = {"demo.a": "2026-11-18T00:00:00Z", "demo.b": "2026-11-18T09:00:00Z"}
+    origins = {
+        "demo.a": (grades.MANAGER, "2026-11-18T00:00:00Z"),
+        "demo.b": (grades.EDITOR, "2026-11-01T00:00:00Z"),
+    }
+    draft: DraftState = {
+        "cells": {
+            "demo.a": {plan.GRADE_COLUMN: 1.0},
+            "demo.b": {ROW_REMOVED: 1.0},
+            "+1": {plan.ACCOUNT_COLUMN: "demo.new", plan.GRADE_COLUMN: 0.0},
+        },
+        "bad": {},
+    }
+    result = plan.plan_changes(
+        draft, listed=LISTED, fresh=FRESH, added_at=added_at, origins=origins
+    )
+    assert result.problems == plan.Problems(stale=2)
+    assert result.removed == () and dict(result.graded) == {}
+    assert "그 사이 바뀐 줄 2개" in result.problems.text()
+    assert plan.is_stale("demo.b", LISTED, added_at, origins)
+    assert not plan.is_stale("demo.me", LISTED, added_at, origins), "처음 값 모름"
+
+
 def test_a_bad_account_is_caught_even_without_a_cell_error() -> None:
     draft: DraftState = {
         "cells": {"+1": {plan.ACCOUNT_COLUMN: "---", plan.GRADE_COLUMN: 1.0}},

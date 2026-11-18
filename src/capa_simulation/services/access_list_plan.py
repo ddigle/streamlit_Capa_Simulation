@@ -12,10 +12,13 @@
 - **넣기** — 빈 새 줄에 무엇이든 적힌 것. 「계정」 은 loginid 꼴(`access.entry_key`)이어야 하고 머리
   글(`loginid` · `계정`)이 아니며 명단 · 다른 새 줄과 겹치지 않고, 「등급」 이 있어야 한다.
   「이름」 · 「부서」 는 손으로 적은 그대로 넣는다(빈 칸은 빈 칸).
+- **그 사이 바뀐 줄** — 편집을 시작할 때 그 사람의 (등급, 등록 시각)(`origins` — 화면이 초안 곁
+  세션 칸에 둔다)이 지금 명단과 다르면(다른 개발자가 등급을 바꿈 · 뺀 뒤 다시 듦) 그 줄을 쓰지 않고
+  센다. 같은 프로세스의 먼저 쓰기는 저장소 대조(S3 · 메모리)가 못 잡아 여기서 본다.
 - **문제**가 하나라도 있으면 저장하지 않는다 — 칸 오류(빨간 칸) · 계정이 빔 · 계정 꼴이 아님 · 머리
-  글 · 겹침 · 등급이 빔 · 잠긴 줄(나 자신 · 환경변수 개발자의 등급 · 줄 지우기, 명단 사람의 계정 ·
-  이름 · 부서 · 등록일 · 등록 길 칸 초안 — 표가 잠그고 계정이 다른 붙여넣기 줄은 건너뛰지만
-  다시 본다).
+  글 · 겹침 · 등급이 빔 · 그 사이 바뀐 줄 · 잠긴 줄(나 자신 · 환경변수 개발자의 등급 · 줄 지우기,
+  명단 사람의 계정 · 이름 · 부서 · 등록일 · 등록 길 칸 초안 — 표가 잠그고 계정이 다른 붙여넣기
+  줄은 건너뛰지만 다시 본다).
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from typing import Final
 from capa_simulation.auth import grades
 from capa_simulation.auth.access import entry_key
 from capa_simulation.services.edit_grid import (
+    ROW_REMOVED,
     CellValue,
     DraftState,
     change_counts,
@@ -80,6 +84,7 @@ class Problems:
     duplicate: int = 0
     no_grade: int = 0
     locked: int = 0
+    stale: int = 0
 
     @property
     def any(self) -> bool:
@@ -92,6 +97,7 @@ class Problems:
                 self.duplicate,
                 self.no_grade,
                 self.locked,
+                self.stale,
             )
         )
 
@@ -105,6 +111,7 @@ class Problems:
             (self.duplicate, "이미 명단에 있거나 겹치는 계정 {n}개"),
             (self.no_grade, "등급이 빈 줄 {n}개"),
             (self.locked, "바꾸거나 지울 수 없는 줄 {n}개"),
+            (self.stale, "그 사이 바뀐 줄 {n}개(「다시 읽기」 가 그 고침을 걷음)"),
         ]
         return " · ".join(template.format(n=f"{count:,}") for count, template in parts if count)
 
@@ -139,6 +146,19 @@ def is_fresh(key: str) -> bool:
     return key.startswith(FRESH_PREFIX)
 
 
+def is_stale(
+    key: str,
+    listed: Mapping[str, str],
+    added_at: Mapping[str, str],
+    origins: Mapping[str, Sequence[str]],
+) -> bool:
+    """편집을 시작할 때의 (등급, 등록 시각)이 지금과 다른 명단 사람인가(처음 값을 모르면 아니다)."""
+    origin = origins.get(key)
+    if origin is None or key not in listed:
+        return False
+    return tuple(origin) != (listed[key], added_at.get(key, ""))
+
+
 def grade_at(value: CellValue) -> str | None:
     """「등급」 칸 값(차례 번호) → 등급. 빈칸 · 범위 밖은 None."""
     if not isinstance(value, float) or math.isnan(value) or value != math.floor(value):
@@ -158,15 +178,21 @@ def plan_changes(
     listed: Mapping[str, str],
     fresh: Sequence[str],
     locked: frozenset[str] = frozenset(),
+    added_at: Mapping[str, str] | None = None,
+    origins: Mapping[str, Sequence[str]] | None = None,
 ) -> AccessPlan:
     """초안 → 저장 판. `listed` 는 표에 실린 명단 사람(견주는 꼴 loginid → 지금 등급), `fresh` 는
     표의 빈 새 줄 키(차례대로), `locked` 는 등급 · 줄을 바꿀 수 없는 사람(나 자신 · 환경변수
-    개발자)이다. 표에 없는 키의 초안(그 사이 명단에서 빠진 사람)은 읽지 않는다."""
+    개발자)이다. 표에 없는 키의 초안(그 사이 명단에서 빠진 사람)은 읽지 않는다. `added_at` 은
+    명단 사람의 등록 시각 글, `origins` 는 편집을 시작할 때의 (등급, 등록 시각)이다 — 다르면 그
+    사이 바뀐 줄(`is_stale`)."""
     if draft is None:
         return AccessPlan()
     cells = draft["cells"]
     errors = change_counts(draft)[2]
-    removed = tuple(key for key in removed_keys(draft) if key in listed)
+    moved = {key for key in listed if is_stale(key, listed, added_at or {}, origins or {})}
+    stale_count = sum(1 for key in removed_keys(draft) if key in moved)
+    removed = tuple(key for key in removed_keys(draft) if key in listed and key not in moved)
     locked_count = sum(1 for key in removed if key in locked)
     graded: dict[str, str] = {}
     no_grade = 0
@@ -179,13 +205,15 @@ def plan_changes(
         ):
             locked_count += 1
             continue
-        if key in removed or row is None or GRADE_COLUMN not in row:
+        if key in removed or row is None or GRADE_COLUMN not in row or ROW_REMOVED in row:
             continue
         grade = grade_at(row[GRADE_COLUMN])
         if grade is None:
             no_grade += 1
         elif grade != current:
-            if key in locked:
+            if key in moved:
+                stale_count += 1
+            elif key in locked:
                 locked_count += 1
             else:
                 graded[key] = grade
@@ -226,6 +254,7 @@ def plan_changes(
         duplicate=duplicate,
         no_grade=no_grade,
         locked=locked_count,
+        stale=stale_count,
     )
     return AccessPlan(
         removed=tuple(key for key in removed if key not in locked),

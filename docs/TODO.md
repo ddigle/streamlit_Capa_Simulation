@@ -2052,10 +2052,14 @@
   나누기) ② **최소 계측** — 화면 응답 시간(느린 쪽 20번 중 1번 꼴) · CPU 5분 평균 · 동시 세션 최고값을 앱이 기록해 Admin 「서버 시작 점검」 에 보인다(다중 사용자
   방향 1단계 「계측」 과 같은 일) ③ **세션 상태가 늘지 않게** — 새 코드는 한 창구로만 쓰고, 쓰는 곳 수가 늘면 실패하는 시험으로 묶는다(한 번에 다 고치지 않음).
   ③ 은 2026-11-18 구현(가지 `feat/misc-1118` — AGENTS 5장 42): 창구 `session_slot.SessionSlot`(있던 공용 도우미가 없어 새로 둠), 그물
-  `tests/test_session_state_sites.py` 는 늘면 실패 · 줄어도 실패(기준선을 낮추라는 글), 기준선 `tests/session_state_baseline.py` 1,463곳 · 113파일(같은 날 통합 `feat/next-int-1118` 에서 1,477곳 · 116파일로 한 번 올림 — 나란히 짠
-  부대공정 · 접속 명단 편집 표 갈래의 새 자리 20곳(`extra_process_admin` 15 · `scenario_extra_overlay` 3 · `access_list_grid` 2)이 들고 옛 자리 6곳이
-  걷힘. 그 새 자리는 「있거나 없음」 꼴 값이 섞여 창구로 옮기려면 `SessionSlot` 에 없으면 None 을 돌려주는 읽기를 더할지부터 정한다) —
-  화면 코드의 `.session_state` 속성 AST 자리(창구 자신의 6곳 포함)이고 위 1,433곳 · 114파일은 다른 셈법의 값이다(그 판정 문서도 셈법 차이라 적음).
+  `tests/test_session_state_sites.py` 는 **파일마다** 늘면 실패 · 줄어도 실패(그 파일 줄을 낮추라는 글 — 합계 하나만 보면 옛 자리를 걷고 새 파일에
+  더해도 지나가서 같은 날 통합 검토에서 파일마다로 바꿈), 기준선 `tests/session_state_baseline.py` 1,456곳 · 113파일(같은 날 통합
+  `feat/next-int-1118` — 나란히 짠 부대공정 · 접속 명단 편집 표 갈래의 새 자리 20곳(`extra_process_admin` 15 · `scenario_extra_overlay` 3 ·
+  `access_list_grid` 2)을 창구로 옮기고 「있거나 없음」 칸 읽기 `SessionSlot.peek` 를 더함, 옛 자리 6곳(`access_list_admin`)은 걷힘) —
+  화면 코드의 `.session_state` 속성 AST 자리(창구 자신의 5곳 포함)이고 위 1,433곳 · 114파일은 다른 셈법의 값이다(그 판정 문서도 셈법 차이라 적음).
+  **남은 구멍** — 키 글을 받는 도우미(`components/edit_grid` 의 `GridKeys` · `draft_of` · `discard_table` · `collect_outbox`,
+  `sidebar_status.remembered_expander`)에 키만 넘기는 칸은 속성 자리가 도우미 안이라 부르는 쪽에서 세지 않는다(접속 명단 편집 표의 `GridKeys`
+  넷 등). 다음 판에 도우미가 `SessionSlot` 을 받게 바꾸거나 그 부름 수를 따로 센다.
   ② 도 2026-11-18 구현(같은 가지): 앱 프로세스가 끝까지 돈 전체 회차의 끝에서 스크립트 시간 · 프로세스 CPU 시간 · 연결 세션을 메모리에 모은다(`load_metrics` —
   배경 스레드 없음, 회차당 기록 약 2µs · 판정 약 3µs, 샘플 관측). C-DEP 「서버 시작 점검」 메모리 값 줄 뒤 세 줄 — 「화면 응답 · 최근 1시간 n회 · 느린 쪽(p95) ·
   최고」 · 「CPU · 5분 평균 · 기동 뒤 최고(시각)」 · 「동시 세션 · 지금 · 기동 뒤 최고(시각)」(`components/load_diagnostic.py`, 「복사」 글에도). 문턱을 넘으면 개발자

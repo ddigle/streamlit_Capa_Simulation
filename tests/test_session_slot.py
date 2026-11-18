@@ -16,8 +16,17 @@ from capa_simulation.session_slot import SessionSlot
 
 COUNT = SessionSlot("demo_slot_count", int, lambda: 0)
 BOX = SessionSlot("demo_slot_box", dict, dict)
+MAYBE = SessionSlot("demo_slot_maybe", str)
 
 st.session_state["demo_seen_before"] = COUNT.exists()
+st.session_state["demo_peek"] = MAYBE.peek()
+if st.session_state.get("demo_step") == "maybe":
+    MAYBE.set("있음")
+if st.session_state.get("demo_step") == "maybe_get":
+    try:
+        MAYBE.get()
+    except LookupError:
+        st.session_state["demo_lookup"] = True
 st.session_state["demo_read"] = COUNT.get()
 st.session_state["demo_present_after_read"] = COUNT.exists()
 if st.session_state.get("demo_step") == "set":
@@ -75,3 +84,17 @@ def test_setdefault_hands_back_the_stored_container() -> None:
     app = _run(AppTest.from_string(SCRIPT), "box")
     _run(app, "box")
     assert app.session_state["demo_slot_box"] == {"n": 2}
+
+
+def test_a_slot_without_an_initial_value_is_peeked() -> None:
+    """「있거나 없음」 칸 — `peek` 는 비었거나 꼴이 다르면 None, `get` 은 처음 값이 없어 막힌다."""
+    app = AppTest.from_string(SCRIPT)
+    app.session_state["demo_slot_maybe"] = 3
+    _run(app)
+    assert app.session_state["demo_peek"] is None
+    _run(app, "maybe")
+    _run(app, "set")
+    assert app.session_state["demo_peek"] == "있음"
+    del app.session_state["demo_slot_maybe"]
+    _run(app, "maybe_get")
+    assert app.session_state["demo_lookup"] is True

@@ -2415,8 +2415,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`change_summary.session_changes`)이 옮긴 회차에 맞는다(한 회차 늦지 않게, 시험 `test_equipment_scenario_session.py`).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
 - `src/capa_simulation/session_slot.py` — 새 코드가 세션 칸을 쓰는 한 창구 `SessionSlot`(5장 42 — 칸 이름 · 꼴 · 처음 값 선언 한 줄,
-  `get` · `setdefault` · `set` · `clear` · `exists`). 바로 쓰는 자리 수 그물은 `tests/test_session_state_sites.py`(기준선
-  `tests/session_state_baseline.py`), 창구 시험은 `tests/test_session_slot.py`.
+  `get` · `peek` · `setdefault` · `set` · `clear` · `exists`, 처음 값 없는 「있거나 없음」 칸은 `peek`). 바로 쓰는 자리 수 그물은
+  `tests/test_session_state_sites.py`(파일마다 기준선 `tests/session_state_baseline.py`), 창구 시험은 `tests/test_session_slot.py`.
 - `src/capa_simulation/constraint_simulation_state.py` — 제약 시뮬레이션의 세션 키(모두 `constraint_sim_` 접두)·버튼 값·기본값
   (D8 — 제약 120% · 기준 HOME · 개조 켬 30일 · 비중대로 켬, 2판 — 보유 0 · 신규 끔 · 기준일 오늘)·주소 인자 계약(`constraint_query_params`·
   `take_constraint_process_request`)과 칸 선택 그림 key 둘(`app.py` `CELL_SELECT_CHART_KEYS`)을 UI 없이 선언한다. 공정 Capa
@@ -6288,9 +6288,13 @@ RQ_MODULE
 42. **새 세션 칸은 한 창구(`src/capa_simulation/session_slot.py` 의 `SessionSlot`)로만 쓰고, `st.session_state` 를 바로 쓰는 자리는
     늘리지 않는다**(2026-11-18 사용자 「셋 다 TODO 에」 — `docs/TODO.md` 2장 「Streamlit 에 남는 조건 셋」 ③). 칸은 소유 모듈에
     `SessionSlot(<*_KEY 상수>, <꼴>, <처음 값 함수>)` 한 줄로 선언하고 `get` · `setdefault` · `set` · `clear` · `exists` 로만 읽고 쓴다(꼴이 다른
-    값은 처음 값으로 읽는다). `tests/test_session_state_sites.py` 가 화면 코드(`app.py` · `app_pages/` · `src/capa_simulation/`)의
-    `.session_state` 속성 자리를 AST 로 세어 기준선(`tests/session_state_baseline.py` — 2026-11-18 1,477곳 · 116파일, 창구 자신의 6곳 포함)과
-    맞댄다 — 늘면 실패, 줄어도 실패(알려 준 수로 기준선을 낮춘다). 한 번에 다 옮기지 않는다 — 옛 자리는 고칠 때 창구로 옮긴다.
+    값은 처음 값으로 읽는다). 처음 값을 지을 수 없는 「있거나 없음」 칸(받은 파일 · 메모)은 처음 값 없이 선언하고 `peek`(비었거나 꼴이 다르면
+    None)로 읽는다. `tests/test_session_state_sites.py` 가 화면 코드(`app.py` · `app_pages/` · `src/capa_simulation/`)의
+    `.session_state` 속성 자리를 AST 로 세어 **파일마다** 기준선(`tests/session_state_baseline.py` — 2026-11-18 1,456곳 · 113파일, 창구 자신의
+    5곳 포함, 없는 파일은 0곳)과 맞댄다 — 한 파일이라도 늘면 실패, 줄어도 실패(알려 준 수로 그 파일 줄을 낮춘다). 합계 하나만 보면 한 변경이
+    옛 자리를 걷고 새 파일에 자리를 더해도 지나가서 파일마다다. 한 번에 다 옮기지 않는다 — 옛 자리는 고칠 때 창구로 옮긴다. 키 글을 받는
+    도우미(`components/edit_grid` 의 `GridKeys` · `draft_of` · `discard_table` · `collect_outbox`, `remembered_expander`)에 키만 넘기는 칸은
+    이 셈에 들지 않는다 — 도우미가 창구를 받게 바꾸는 일은 `docs/TODO.md` 2장 같은 항목에 남겼다.
 
 43. **부대공정 판의 정본은 DB 에 적용된 판이고 이력은 넣기만 한다**(시뮬레이션 `0037`, 2026-11-13 · 11-14 보드 답 D3 · D16 · D18 ·
     D22). 불변조건:

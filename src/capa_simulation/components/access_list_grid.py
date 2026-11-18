@@ -21,6 +21,9 @@
 - **초안은 세션 칸**(`CELLS_KEY` · `HISTORY_KEY`) — 출납 콜백은 inbox 에 쌓기만 하고(`collect`)
   본문 · 저장 콜백이 반영한다(`apply`). 저장은 `access_list_admin` 이 이 초안을
   `services/access_list_plan` 으로 읽어 지금 저장 함수로 쓴다.
+- **처음 값**(`ORIGINS` — 초안 곁 세션 칸) — 명단 사람 줄을 처음 고친 회차의 (등급, 등록 시각)을
+  적어 둔다. 저장 판은 지금 명단과 다르면 그 줄을 「그 사이 바뀐 줄」 로 세어 막고(다른 개발자의
+  먼저 쓰기 · 뺀 뒤 다시 든 사람), 「다시 읽기」 는 그 줄의 고침을 걷는다(`drop_stale`).
 - **표는 이 회차의 명단 한 벌로 짓는다**(작은 표라 캐시 경계를 두지 않는다 — 프로세스 전역 캐시에
   사람 값을 두지 않는다). `baseKey` 는 껍데기 본문의 지문이라 같은 명단 · 같은 줄 수면 회차마다 같은
   껍데기(해시 참조)다.
@@ -36,7 +39,6 @@ from datetime import datetime
 from typing import Final
 
 import pandas as pd
-import streamlit as st
 
 from capa_simulation.auth import grades
 from capa_simulation.auth.access import LOGINID_PATTERN, VIA_SELF, ListDocument, ListEntry
@@ -56,6 +58,7 @@ from capa_simulation.services.access_list_plan import (
     AccessPlan,
     fresh_key,
     is_fresh,
+    is_stale,
     plan_changes,
 )
 from capa_simulation.services.edit_grid import (
@@ -66,6 +69,7 @@ from capa_simulation.services.edit_grid import (
     change_counts,
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, build_base
+from capa_simulation.session_slot import SessionSlot
 
 HOST: Final = "admin-access-grid"
 TABLE: Final = "ACCESS_LIST"
@@ -74,6 +78,10 @@ CHANGES_LABEL: Final = "저장 전 변경"
 CHANGES_BUTTON: Final = "저장 전"
 CELLS_KEY: Final = "admin_area_access_grid_cells"
 HISTORY_KEY: Final = "admin_area_access_grid_history"
+ORIGINS_KEY: Final = "admin_area_access_grid_origins"
+# 초안(그리드 도우미가 키로도 읽는다)과 명단 사람 줄의 처음 (등급, 등록 시각).
+CELLS: Final = SessionSlot(CELLS_KEY, dict)
+ORIGINS: Final = SessionSlot(ORIGINS_KEY, dict, dict)
 KEYS: Final = edit_grid.GridKeys(
     inbox="admin_area_access_grid_inbox",
     applied="admin_area_access_grid_applied",
@@ -144,7 +152,8 @@ def via_label(entry: ListEntry) -> str:
 
 @dataclass(frozen=True)
 class AccessTable:
-    """이 회차의 표 — 양식 · 껍데기 본문 · 지문, 명단 사람의 지금 등급 · 새 줄 키 · 잠긴 사람."""
+    """이 회차의 표 — 양식 · 껍데기 본문 · 지문, 명단 사람의 지금 등급 · 새 줄 키 · 잠긴 사람 ·
+    등록 시각 글."""
 
     template: pd.DataFrame
     base: EditGridBase
@@ -152,6 +161,7 @@ class AccessTable:
     listed: Mapping[str, str]
     fresh: tuple[str, ...]
     locked: frozenset[str]
+    added: Mapping[str, str]
 
     @property
     def slot(self) -> edit_grid.TableSlot:
@@ -196,11 +206,13 @@ def build_table(
     rows: list[dict[str, object]] = []
     kinds: list[int] = []
     listed: dict[str, str] = {}
+    added: dict[str, str] = {}
     locked: set[str] = set()
     for number, entry in enumerate(document.entries, start=1):
         key = entry.loginid
         grade = grade_of(key)
         listed[key] = grade
+        added[key] = entry.added_at
         kind = SELF if key == own else ENV if key in env else LISTED
         if kind != LISTED:
             locked.add(key)
@@ -218,7 +230,7 @@ def build_table(
                 GRADE_COLUMN: float(grades.GRADES.index(grade)),
             }
         )
-    count = fresh_count(_filled(st.session_state.get(CELLS_KEY)))
+    count = fresh_count(_filled(CELLS.peek()))
     fresh = tuple(fresh_key(number) for number in range(1, count + 1))
     for number, key in enumerate(fresh, start=1):
         kinds.append(FRESH)
@@ -243,6 +255,7 @@ def build_table(
         listed=listed,
         fresh=fresh,
         locked=frozenset(locked),
+        added=added,
     )
 
 
@@ -252,8 +265,30 @@ def collect() -> None:
 
 
 def apply(table: AccessTable) -> bool:
-    """inbox 의 op 를 초안 · 이력에 반영한다(초안이 바뀌었으면 참)."""
-    return edit_grid.apply_inbox(KEYS, {TABLE: table.slot})
+    """inbox 의 op 를 초안 · 이력에 반영한다(초안이 바뀌었으면 참). 초안에 처음 든 명단 사람 줄의
+    처음 값을 적고, 초안에서 빠진 줄의 처음 값은 걷는다."""
+    changed = edit_grid.apply_inbox(KEYS, {TABLE: table.slot})
+    if changed:
+        _note_origins(table)
+    return changed
+
+
+def _draft_keys() -> set[str]:
+    draft = edit_grid.draft_of(CELLS_KEY)
+    return set() if draft is None else {*draft["cells"], *draft["bad"]}
+
+
+def _note_origins(table: AccessTable) -> None:
+    touched = _draft_keys()
+    before = ORIGINS.get()
+    origins = {key: value for key, value in before.items() if key in touched}
+    for key in touched:
+        if key in table.listed and key not in origins:
+            origins[key] = (table.listed[key], table.added.get(key, ""))
+    if origins:
+        ORIGINS.set(origins)
+    else:
+        ORIGINS.clear()
 
 
 def draft_counts() -> tuple[int, int, int]:
@@ -264,19 +299,35 @@ def draft_counts() -> tuple[int, int, int]:
 def plan(table: AccessTable) -> AccessPlan:
     """이 회차 초안의 저장 판."""
     return plan_changes(
-        edit_grid.draft_of(CELLS_KEY), listed=table.listed, fresh=table.fresh, locked=table.locked
+        edit_grid.draft_of(CELLS_KEY),
+        listed=table.listed,
+        fresh=table.fresh,
+        locked=table.locked,
+        added_at=table.added,
+        origins=ORIGINS.get(),
     )
+
+
+def drop_stale(table: AccessTable) -> int:
+    """「다시 읽기」 뒤 — 처음 값이 지금 명단과 다른 줄(그 사이 바뀐 줄)의 고침을 걷고 그 수."""
+    origins = ORIGINS.get()
+    stale = frozenset(key for key in origins if is_stale(key, table.listed, table.added, origins))
+    if stale:
+        forget(stale)
+    return len(stale)
 
 
 def discard(*, quiet: bool = True) -> None:
     """초안 · 이력을 버린다(「편집 취소」 · 저장 끝 — 다음 회차에 새 `gen`). `quiet` 면 누름 직전에
     보낸 op 를 알림 없이 버린다."""
     edit_grid.discard_table((CELLS_KEY, HISTORY_KEY), KEYS if quiet else None)
+    ORIGINS.clear()
 
 
 def forget(keys: frozenset[str]) -> None:
     """저장한 사람 · 새 줄의 초안 칸을 걷고 이력을 버린다(일부만 저장된 뒤 — 남은 고침은 둔다)."""
     draft = edit_grid.draft_of(CELLS_KEY)
+    origins = ORIGINS.get()
     if draft is None:
         discard()
         return
@@ -285,7 +336,11 @@ def forget(keys: frozenset[str]) -> None:
         for name, book in (("cells", draft["cells"]), ("bad", draft["bad"]))
     }
     discard()
-    st.session_state[CELLS_KEY] = kept if kept["cells"] or kept["bad"] else None
+    if kept["cells"] or kept["bad"]:
+        CELLS.set(kept)
+        left = {key: value for key, value in origins.items() if key not in keys}
+        if left:
+            ORIGINS.set(left)
 
 
 def _shell(table: AccessTable | None) -> dict[str, object]:

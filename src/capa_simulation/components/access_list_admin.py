@@ -26,10 +26,12 @@
 
 알림에는 개수와 까닭만 싣는다 — loginid 는 실제 사람을 가리켜 Alarm 복사 · 리뷰로 나가면 안
 된다(런북 3-3). 저장 실패 · 그 사이 바뀜은 메모리를 바꾸지 않는다. 답을 받지 못한 PUT 은 저장소에
-들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다. 저장 · 다시 읽기의 실패와 거부는
-그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03). 저장 판의 문제는 표에서
-고칠 일이라 작업 줄 바로 아래 곁 한 줄이다. 앞 쓰기가 남고 뒤 쓰기가 막히면 남은 수와 막힌 까닭을
-함께 알리고 저장한 사람의 초안만 걷는다.
+들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다. 편집을 시작한 뒤 그 사람의
+등급 · 등록이 바뀐 줄(다른 개발자의 먼저 쓰기 — 같은 프로세스면 저장소 대조가 못 잡는다)은 저장
+판이 「그 사이 바뀐 줄」 로 막고 「다시 읽기」 가 그 줄의 고침을 걷는다(`drop_stale`). 저장 · 다시
+읽기의 실패와 거부는 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03).
+저장 판의 문제는 표에서 고칠 일이라 작업 줄 바로 아래 곁 한 줄이다. 앞 쓰기가 남고 뒤 쓰기가 막히면
+남은 수와 막힌 까닭을 함께 알리고 저장한 사람의 초안만 걷는다.
 
 표 위 작업 줄은 한 줄이다(저장 · 편집 취소 · 다시 읽기, 끝에 버전 · 명단 · 개발자 수 — 넓은 창에서는
 표 도구 막대가 같은 줄 오른쪽에 선다, `edit_grid.one_line_style`). 접속 명단 알림 `AD-08` · `AD-09`
@@ -219,9 +221,12 @@ def _reread() -> None:
         return
     source = runtime.access_source()
     document = ListDocument() if source is None else source.document or ListDocument()
+    table = _current_table(cfg)
+    dropped = 0 if table is None else access_list_grid.drop_stale(table)
     queue_flash(
         ACCESS_LIST_FLASH_KEY,
-        f"접속 명단을 다시 읽었습니다 — 명단 {len(document.entries)} · 버전 {document.revision}",
+        f"접속 명단을 다시 읽었습니다 — 명단 {len(document.entries)} · 버전 {document.revision}"
+        + (f" · 그 사이 바뀐 줄 {dropped}개의 고침을 걷었습니다" if dropped else ""),
     )
 
 
