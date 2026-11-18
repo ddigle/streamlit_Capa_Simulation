@@ -41,6 +41,25 @@ def test_the_slow_side_is_one_in_twenty_after_twenty_runs() -> None:
     assert load_metrics.response_view(now=300.0).slow_seconds == 15.0
 
 
+def test_the_signal_side_leaves_out_the_first_five_minutes_after_start() -> None:
+    """막 띄운 서버의 첫 그리기(캐시가 빈 HOME 4초대 둘)는 값 줄의 느린 쪽에는 들고 신호 판정의
+    느린 쪽에서는 빠진다 — 기동 뒤 5분 뒤 회차가 20회 차야 신호 쪽 값이 선다."""
+    load_metrics.reset(now=0.0, cpu=0.0)
+    _run(4.5, now=10.0)
+    _run(4.4, now=20.0)
+    for index in range(28):
+        _run(0.3, now=30.0 + index)
+    early = load_metrics.response_view(now=400.0)
+    assert early.runs == 30 and early.slow_seconds == 4.4
+    assert early.signal_seconds is None
+
+    for index in range(20):
+        _run(0.4, now=load_metrics.SLOW_SETTLE_SECONDS + index)
+    later = load_metrics.response_view(now=1_000.0)
+    assert later.slow_seconds is not None and later.slow_seconds >= 0.4
+    assert later.signal_seconds == 0.4
+
+
 def test_runs_older_than_the_window_leave_and_the_count_is_capped() -> None:
     load_metrics.reset(now=0.0, cpu=0.0)
     _run(9.0, now=0.0)
@@ -116,21 +135,22 @@ def test_the_session_peak_keeps_its_first_time() -> None:
     ("response", "cpu", "sessions", "expected"),
     [
         (
-            ResponseView(20, 3.0, 9.0),
+            ResponseView(20, 3.0, 9.0, 3.0),
             CpuView(0.7, None, None),
             SessionView(25, 25, 1.0),
             ("slow", "cpu", "sessions"),
         ),
-        (ResponseView(20, 2.99, 9.0), CpuView(0.69, 0.9, 1.0), SessionView(24, 30, 1.0), ()),
+        (ResponseView(20, 2.99, 9.0, 2.99), CpuView(0.69, 0.9, 1.0), SessionView(24, 30, 1.0), ()),
         (ResponseView(5, None, 9.0), CpuView(None, None, None), SessionView(None, 40, 1.0), ()),
         (
-            ResponseView(40, 0.4, 1.0),
+            ResponseView(40, 0.4, 1.0, 0.4),
             CpuView(0.1, None, None),
             SessionView(26, 26, 1.0),
             ("sessions",),
         ),
+        (ResponseView(30, 4.5, 4.6, None), CpuView(None, None, None), SessionView(2, 2, 1.0), ()),
     ],
-    ids=["all-at-threshold", "just-below", "unknown", "sessions-only"],
+    ids=["all-at-threshold", "just-below", "unknown", "sessions-only", "cold-start-only"],
 )
 def test_the_signal_thresholds_are_inclusive_and_use_now(
     response: ResponseView, cpu: CpuView, sessions: SessionView, expected: tuple[str, ...]

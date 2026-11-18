@@ -13,7 +13,10 @@ Streamlit 을 import 하지 않는다.
   안, 많으면 최근 `RESPONSE_SAMPLE_LIMIT`(5,000)회만 둔다. 「느린 쪽」 은 그 창의 20번 중 1번
   꼴(p95 — 작은 쪽부터 `ceil(0.95 n)` 째, 가까운 순위)이고 `SLOW_MIN_RUNS`(20)회 전에는 모른다.
   「최고」 는 같은 창의 가장 긴 회차다. 정렬은 읽을 때 하고 그 값은
-  `RESPONSE_CACHE_SECONDS`(5초) 동안 다시 쓴다.
+  `RESPONSE_CACHE_SECONDS`(5초) 동안 다시 쓴다. 신호 판정에 쓰는 느린 쪽(`signal_seconds`)은
+  기동 뒤 `SLOW_SETTLE_SECONDS`(5분 — CPU 와 같은 때) 뒤의 회차만으로 따로 센다 — 막 띄운 서버의
+  첫 그리기(캐시가 빈 HOME 몇 초)가 20 ~ 40회 창의 p95 를 홀로 정해 배포 날마다 신호가 서지 않게.
+  값 줄은 모든 회차다.
 - **CPU 5분 평균** — 프로세스 CPU 시간(`time.process_time` — 모든 스레드의 사용자 + 시스템
   시간)을 회차 끝마다 5초에 한 번까지 표본으로 둔다(첫 표본은 import 때). 평균은 (지금 CPU 시간
   − 5분 전 CPU 시간) ÷ 300초이고, 5분 전 값은 그 시각을 낀 두 표본(마지막은 지금)을 곧게 이어
@@ -46,6 +49,8 @@ RESPONSE_WINDOW_SECONDS: Final = 3600.0
 RESPONSE_SAMPLE_LIMIT: Final = 5000
 SLOW_RANK: Final = 0.95
 SLOW_MIN_RUNS: Final = 20
+# 신호 판정의 느린 쪽에서 빼는 기동 뒤 시간(초) — 제안 값(docs/TODO.md 2장 신호표).
+SLOW_SETTLE_SECONDS: Final = 300.0
 RESPONSE_CACHE_SECONDS: Final = 5.0
 CPU_WINDOW_SECONDS: Final = 300.0
 CPU_SAMPLE_GAP_SECONDS: Final = 5.0
@@ -61,11 +66,13 @@ SIGNAL_SESSIONS: Final = "sessions"
 
 @dataclass(frozen=True)
 class ResponseView:
-    """최근 창의 회차 수 · 느린 쪽(p95) · 최고 — 초. 모르면 None."""
+    """최근 창의 회차 수 · 느린 쪽(p95) · 최고, 신호 판정의 느린 쪽(기동 뒤 5분 뒤 회차만) — 초.
+    모르면 None."""
 
     runs: int
     slow_seconds: float | None
     max_seconds: float | None
+    signal_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +97,7 @@ class _State:
     """프로세스 하나의 계측 값 — `_LOCK` 안에서만 읽고 쓴다."""
 
     def __init__(self, now: float, cpu: float) -> None:
+        self.started = now
         self.runs: deque[tuple[float, float]] = deque(maxlen=RESPONSE_SAMPLE_LIMIT)
         self.cpu: deque[tuple[float, float]] = deque([(now, cpu)])
         self.cpu_peak: tuple[float, float] | None = None
@@ -137,11 +145,14 @@ def response_view(now: float | None = None) -> ResponseView:
         if cached is not None and 0 <= moment - cached[0] < RESPONSE_CACHE_SECONDS:
             return cached[1]
         floor = moment - RESPONSE_WINDOW_SECONDS
-        recent = sorted(seconds for at, seconds in _STATE.runs if at >= floor)
+        settled = _STATE.started + SLOW_SETTLE_SECONDS
+        window = [(at, seconds) for at, seconds in _STATE.runs if at >= floor]
+        recent = sorted(seconds for _, seconds in window)
         view = ResponseView(
             runs=len(recent),
             slow_seconds=slow_seconds(recent),
             max_seconds=recent[-1] if recent else None,
+            signal_seconds=slow_seconds(sorted(seconds for at, seconds in window if at >= settled)),
         )
         _STATE.response_cache = (moment, view)
         return view
@@ -186,9 +197,10 @@ def session_view(current: int | None, wall: float | None = None) -> SessionView:
 
 def crossed(response: ResponseView, cpu: CpuView, sessions: SessionView) -> tuple[str, ...]:
     """넘은 신호표 문턱 — `SIGNAL_SLOW` · `SIGNAL_CPU` · `SIGNAL_SESSIONS` 차례. 모르는 값은
-    넘지 않는다."""
+    넘지 않는다. 화면 응답은 기동 뒤 5분 뒤 회차의 느린 쪽(`signal_seconds`)으로 판정한다."""
     found: list[str] = []
-    if response.slow_seconds is not None and response.slow_seconds >= SLOW_SIGNAL_SECONDS:
+    slow = response.signal_seconds
+    if slow is not None and slow >= SLOW_SIGNAL_SECONDS:
         found.append(SIGNAL_SLOW)
     if cpu.cores is not None and cpu.cores >= CPU_SIGNAL_CORES:
         found.append(SIGNAL_CPU)

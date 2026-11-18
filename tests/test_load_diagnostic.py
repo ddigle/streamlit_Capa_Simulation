@@ -33,8 +33,16 @@ from capa_simulation.load_metrics import CpuView, ResponseView, SessionView
 
 # 2026-11-18 14:03:00 KST.
 PEAK_EPOCH = datetime(2026, 11, 18, 5, 3, tzinfo=timezone.utc).timestamp()
-QUIET = (ResponseView(40, 0.4, 1.2), CpuView(0.1, 0.3, PEAK_EPOCH), SessionView(3, 7, PEAK_EPOCH))
-BUSY = (ResponseView(40, 3.4, 8.0), CpuView(0.82, 0.9, PEAK_EPOCH), SessionView(26, 26, PEAK_EPOCH))
+QUIET = (
+    ResponseView(40, 0.4, 1.2, 0.4),
+    CpuView(0.1, 0.3, PEAK_EPOCH),
+    SessionView(3, 7, PEAK_EPOCH),
+)
+BUSY = (
+    ResponseView(40, 3.4, 8.0, 3.4),
+    CpuView(0.82, 0.9, PEAK_EPOCH),
+    SessionView(26, 26, PEAK_EPOCH),
+)
 
 
 def test_unknown_values_read_as_unknown() -> None:
@@ -71,7 +79,7 @@ def test_a_signal_names_only_what_crossed_and_its_fingerprint_is_the_names() -> 
     assert "화면 응답 느린 쪽 3초 · CPU 5분 평균 0.7코어 · 동시 세션 25" in signal.full
     assert "「서버 시작 점검」" in signal.full
     higher = signal_of(
-        ResponseView(80, 5.0, 9.0), CpuView(0.95, 0.95, 1.0), SessionView(30, 30, 1.0)
+        ResponseView(80, 5.0, 9.0, 5.0), CpuView(0.95, 0.95, 1.0), SessionView(30, 30, 1.0)
     )
     assert higher is not None and higher.names == signal.names
     assert alerts.fingerprint("AD-26", None, list(higher.names)) == alerts.fingerprint(

@@ -114,7 +114,7 @@ def signal_of(response: ResponseView, cpu: CpuView, sessions: SessionView) -> Lo
     if not names:
         return None
     values = {
-        load_metrics.SIGNAL_SLOW: f"화면 응답 느린 쪽 {seconds_text(response.slow_seconds)}",
+        load_metrics.SIGNAL_SLOW: f"화면 응답 느린 쪽 {seconds_text(response.signal_seconds)}",
         load_metrics.SIGNAL_CPU: f"CPU 5분 평균 {cores_text(cpu.cores)}",
         load_metrics.SIGNAL_SESSIONS: f"동시 세션 {sessions.now}",
     }
