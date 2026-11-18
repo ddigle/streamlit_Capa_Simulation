@@ -127,9 +127,8 @@ def test_screen_strings_and_the_sso_guide_never_use_the_old_grade_word() -> None
         for line, text in _all_strings(path)
         for found in stray_old_grade_words(text)
     ]
-    stray += [
-        f"docs/sso_setup.md: {found}" for found in stray_old_grade_words(SSO_SETUP.read_text())
-    ]
+    guide = SSO_SETUP.read_text(encoding="utf-8")
+    stray += [f"docs/sso_setup.md: {found}" for found in stray_old_grade_words(guide)]
     assert not stray, "옛 등급 낱말 「일반」 이 남았다:\n" + "\n".join(stray)
     for old in ("S3 명단에 **일반 등급**으로", "개발자 3 · 일반 40", "등급을 일반으로 읽음 2"):
         assert stray_old_grade_words(old), old
