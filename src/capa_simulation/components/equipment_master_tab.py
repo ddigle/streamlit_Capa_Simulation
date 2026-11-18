@@ -202,6 +202,7 @@ from capa_simulation.services.equipment_grid import (
     GridSource,
     GridState,
     GridView,
+    TextMatrix,
     all_load_ids,
     apply_ops,
     blank_draft,
@@ -226,6 +227,7 @@ from capa_simulation.services.equipment_grid import (
     prune_loaded,
     save_id_map,
     text_matrix,
+    text_matrix_since,
     unit_texts,
 )
 from capa_simulation.services.equipment_validation import (
@@ -507,7 +509,9 @@ def _issues(master: pd.DataFrame, canvases: FloorCanvasMap, today: date) -> tupl
 def _texts(buffer: pd.DataFrame, saved: pd.DataFrame) -> tuple[list[list[str]], list[list[str]]]:
     """(편집본, 저장본) 설비 마스터의 화면 글자(`text_matrix` — 3천 대 × 39칸). 편집본은 편집본
     세대·출발점, 저장본은 저장본 사본 토큰 열쇠로 세션 메모(`GRID_MEMO_KEY` — 글 목록만)에 한 번 —
-    바뀐 것 없는 회차·편집본만 바뀐 회차가 둘 다 다시 내지 않게(개편 명세 8장 「payload 메모」)."""
+    바뀐 것 없는 회차·편집본만 바뀐 회차가 둘 다 다시 내지 않게(개편 명세 8장 「payload 메모」).
+    편집본 열쇠가 바뀐 회차는 직전 행렬(같은 메모의 `buffer_texts_matrix` — 재료 사본 포함)에서
+    바뀐 칸 · 줄만 갈아 끼운다(`text_matrix_since` — 통째로 만든 것과 같은 글자)."""
     memo = st.session_state.get(GRID_MEMO_KEY)
     memo = dict(memo) if isinstance(memo, dict) else {}
     keys = {
@@ -520,7 +524,15 @@ def _texts(buffer: pd.DataFrame, saved: pd.DataFrame) -> tuple[list[list[str]], 
         if memo.get(f"{name}_texts_key") == keys[name] and isinstance(cached, list):
             result[name] = cached
             continue
-        result[name] = text_matrix(frame.reset_index(drop=True))
+        if name == "buffer":
+            previous = memo.get("buffer_texts_matrix")
+            matrix = text_matrix_since(
+                previous if isinstance(previous, TextMatrix) else None, frame
+            )
+            memo["buffer_texts_matrix"] = matrix
+            result[name] = matrix.rows
+        else:
+            result[name] = text_matrix(frame.reset_index(drop=True))
         memo[f"{name}_texts_key"] = keys[name]
         memo[f"{name}_texts"] = result[name]
     st.session_state[GRID_MEMO_KEY] = memo

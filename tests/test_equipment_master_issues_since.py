@@ -277,11 +277,11 @@ def test_rows_names_canvases_and_today_start_over() -> None:
 
 def test_unchanged_columns_are_compared_bit_for_bit() -> None:
     before = pd.Series([0.0, np.nan, 1.5])
-    assert ev._same_column(before, before.copy())
-    assert not ev._same_column(before, pd.Series([-0.0, np.nan, 1.5]))
+    assert ev.same_column(before, before.copy())
+    assert not ev.same_column(before, pd.Series([-0.0, np.nan, 1.5]))
     text = pd.Series(["a", None, "b"], dtype="string")
-    assert ev._same_column(text, text.copy())
-    assert not ev._same_column(text, pd.Series(["a", "b", "b"], dtype="string"))
-    assert not ev._same_column(text, pd.Series([None, None, "b"], dtype="string"))
+    assert ev.same_column(text, text.copy())
+    assert not ev.same_column(text, pd.Series(["a", "b", "b"], dtype="string"))
+    assert not ev.same_column(text, pd.Series([None, None, "b"], dtype="string"))
     objects = pd.Series(["a", None], dtype=object)
-    assert not ev._same_column(objects, objects.copy())
+    assert not ev.same_column(objects, objects.copy())

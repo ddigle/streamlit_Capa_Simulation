@@ -1200,7 +1200,7 @@ def _issue_state(
     return MasterIssueState(raw, params, master, found, issues)
 
 
-def _same_column(before: pd.Series, after: pd.Series) -> bool:
+def same_column(before: pd.Series, after: pd.Series) -> bool:
     """두 칸이 같은 값인가 — 같은 dtype 의 글자 · 실수 · 시간대 없는 날짜 칸만 견준다(실수 ·
     날짜는 비트 그대로 — -0.0 과 0.0, NaN 꼴도 가른다). 그 밖의 꼴은 늘 「바뀜」 이다(그 칸만 다시
     읽는다)."""
@@ -1254,14 +1254,12 @@ def equipment_master_issues_since(
         or previous.params != params
         or previous.master is None
         or len(previous.raw) != len(raw)
-        or not _same_column(previous.raw[EQUIPMENT_ID_COLUMN], raw[EQUIPMENT_ID_COLUMN])
+        or not same_column(previous.raw[EQUIPMENT_ID_COLUMN], raw[EQUIPMENT_ID_COLUMN])
     ):
         state = _issues_from_scratch(raw, params, floor_canvases, today)
         return state.issues, state
     changed = frozenset(
-        column
-        for column in EQUIPMENT_COLUMNS
-        if not _same_column(previous.raw[column], raw[column])
+        column for column in EQUIPMENT_COLUMNS if not same_column(previous.raw[column], raw[column])
     )
     if not changed:
         return previous.issues, previous

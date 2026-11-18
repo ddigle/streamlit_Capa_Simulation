@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import astuple
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_MEMO_KEY,
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.services import equipment_grid as eg
+from capa_simulation.services import equipment_validation as ev
 
 COUNTED = ("_frame_errors", "_alert_pairs", "_changed_rows")
 
@@ -78,6 +81,17 @@ def _assert_memo_is_fresh(app: AppTest) -> None:
         emt._changed_rows(saved[0], frames[0]),
         emt._changed_rows(saved[2], frames[2]),
     )
+    # 칸 결과(바뀐 칸만 다시 본 것) · 글 행렬(바뀐 줄만 갈아 끼운 것) = 처음부터 낸 것.
+    state = memo["issue_state"]
+    assert isinstance(state, ev.MasterIssueState)
+    canvases, today = state.params
+    fresh = ev.equipment_master_issues(
+        frames[1],
+        floor_canvases=None if canvases is None else dict(canvases),  # type: ignore[call-overload]
+        today=today,  # type: ignore[arg-type]
+    )
+    assert memo["issues"] == tuple(astuple(issue) for issue in fresh)
+    assert memo["buffer_texts"] == eg.text_matrix(frames[1].reset_index(drop=True))
 
 
 def test_unchanged_reruns_skip_the_fixed_costs_and_edits_redo_them_once(
@@ -100,4 +114,12 @@ def test_unchanged_reruns_skip_the_fixed_costs_and_edits_redo_them_once(
     assert calls["_frame_errors"] - before["_frame_errors"] == 1
     assert calls["_alert_pairs"] - before["_alert_pairs"] == 1
     assert calls["_changed_rows"] - before["_changed_rows"] == 2
+    _assert_memo_is_fresh(app)
+
+    # 날짜 · 막는 값 · 붙여넣기도 메모 값이 처음부터 낸 값과 같다.
+    send_ops(app, grid, {"op": "cell", "id": "n:DA-02", "col": "반입일정", "text": "2026-12-01"})
+    _assert_memo_is_fresh(app)
+    send_ops(app, grid, {"op": "cell", "id": "n:DA-01", "col": "보관유무", "text": ""})
+    _assert_memo_is_fresh(app)
+    _import(app, _rows("DA-01", "DA-02", "DA-03"))
     _assert_memo_is_fresh(app)
