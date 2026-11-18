@@ -157,10 +157,14 @@ def revision_refusal(
 ) -> str | None:
     """「새 판으로」 를 누를 수 없는 까닭(풍선 글) — 누를 수 있으면 None(설계 G4).
 
-    판은 판 이력 차례가 아니라 sha 로 견준다 — 끄기 → 다시 켜기 뒤에도 같은 판이다.
+    판은 판 이력 차례가 아니라 sha 로 견준다 — 끄기 → 다시 켜기 뒤에도 같은 판이다. 끈 판(`off` —
+    단추 「다시 켜기」 가 선다)과 판 이력이 아예 없음(상태 줄 「판 없음」 — 끄기 단추가 잠김)은 글이
+    갈린다.
     """
-    if off or active_sha is None:
+    if off:
         return "부대공정 판이 꺼져 있습니다 — 먼저 「다시 켜기」"
+    if active_sha is None:
+        return "적용한 부대공정 판이 없습니다"
     if not any(item.outcome == OUTCOME_MERGED for item in records):
         return "이 리비전에는 합친 부대공정이 없습니다"
     if (

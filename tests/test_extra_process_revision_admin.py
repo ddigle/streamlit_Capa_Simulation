@@ -198,6 +198,25 @@ def test_off_the_production_server_the_revision_button_is_locked(database: Path)
     assert button.disabled and button.help == NOT_PRODUCTION_REASON
 
 
+def test_without_any_version_the_lock_says_there_is_none_not_that_it_is_off(
+    database: Path,
+) -> None:
+    """판 이력이 아예 없으면(가져오기 원천이 꽂히기 전의 운영) 상태 줄은 「판 없음」 이고
+    「새 판으로」 의 풍선도 「판 없음」 을 말한다 — 「다시 켜기」 를 시키지 않는다(그 단추는
+    끈 판에만 선다)."""
+    repository = new_repository(database)
+    snapshot, _memo = register(repository)
+    publish_snapshot(repository, snapshot)
+
+    app = _app(database)
+
+    assert repository.load_extra_process_state().history == ()
+    assert any(caption.endswith("판 없음") for caption in _captions(app))
+    button = app.button(key=REVISION_BUTTON_KEY)
+    assert button.disabled and button.help == "적용한 부대공정 판이 없습니다"
+    assert not [item for item in app.button if "다시 켜기" in str(item.label)]
+
+
 def test_an_unedited_revision_has_nothing_to_carry(database: Path) -> None:
     _edited_revision(database, upeh=None)
     app = _app(database)

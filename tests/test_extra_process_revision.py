@@ -313,6 +313,8 @@ def test_refusal_reasons_follow_the_design_order() -> None:
 
     assert refusal(merged) is None
     assert refusal(merged, off=True) is not None and "다시 켜기" in str(refusal(merged, off=True))
+    # 판 이력이 아예 없음(끈 것이 아님) — 「다시 켜기」 단추가 서지 않으므로 그것을 시키지 않는다.
+    assert refusal(sha=None) == "적용한 부대공정 판이 없습니다"
     assert "합친 부대공정이 없습니다" in str(refusal(_Record(BOND, 1, "a" * 64, OUTCOME_DROPPED)))
     mixed = _Record(AOI, 1, "a" * 64, OUTCOME_DROPPED, reason=MIXED_REASON)
     assert "섞인" in str(refusal(merged, mixed))
