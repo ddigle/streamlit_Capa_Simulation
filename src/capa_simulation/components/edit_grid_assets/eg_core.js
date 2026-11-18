@@ -441,12 +441,14 @@ function egLockWhy(S, r, c) {
 }
 
 // 보기 범위의 값 칸 가운데 줄 규칙(S.lockAt)이 잠근 칸 수 · 처음 만난 까닭 — 붙여넣기 · 비우기가 쓸 칸(`use(r, c)` — 없으면 모두)만
-// 센다. 서버도 그 칸을 건너뛰므로(LOCKED_TOAST) 상태 줄의 칸 수에서 빼고, 모두 잠겼으면 op 를 보내지 않는다.
+// 센다. 서버도 그 칸을 건너뛰므로(LOCKED_TOAST) 상태 줄의 칸 수에서 빼고, 모두 잠겼으면 op 를 보내지 않는다. 지운 줄은 서버가 쓰고
+// 세지 않으므로 여기서도 세지 않는다.
 function egRuleLocks(S, rect, use) {
   const m = S.model
   const out = { n: 0, why: '' }
   if (!S.lockAt) return out
   for (let r = Math.max(rect.r0, 0); r <= Math.min(rect.r1, S.view.order.length - 1); r += 1) {
+    if (m.removed && m.removed.has(S.view.order[r])) continue
     for (let c = Math.max(rect.c0, m.keyCount); c <= Math.min(rect.c1, m.colCount - 1); c += 1) {
       const why = !use || use(r, c) ? S.lockAt(S, S.view.order[r], c - m.keyCount) : ''
       if (why) Object.assign(out, { n: out.n + 1, why: out.why || why })

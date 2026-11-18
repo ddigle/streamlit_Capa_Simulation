@@ -287,6 +287,12 @@ LOCKED_RUNNER = (
     after(() => { pick(0, 0); paste('관리자\r\n열람\r\n') }),
     after(() => { pick(0, 1); key(scroller, 'Delete') }),
   ]
+  // 지운 줄(0)은 서버가 쓰고 세지 않는다 — 브라우저도 잠긴 칸으로 세지 않는다.
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 99 } }))
+  R.removed = [
+    after(() => { pick(0, 2); key(scroller, 'Delete') }),
+    after(() => { pick(0, 0); paste('관리자') }),
+  ]
   cleanup()
   process.stdout.write(JSON.stringify(R))
 })()
@@ -303,7 +309,12 @@ def test_paste_delete_and_fill_skip_locked_rows_and_say_so() -> None:
     shell, index = _shell("k1")
     source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
 
-    result = run_node(source, LOCKED_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+    removed: eg.DraftState = {"cells": {"demo.a": {eg.ROW_REMOVED: 1.0}}, "bad": {}}
+    result = run_node(
+        source,
+        LOCKED_RUNNER,
+        {"shell": shell, "feed": _feed(index, "k1", None), "feed2": _feed(index, "k1", removed)},
+    )
 
     assert result["onlyLocked"] == [[None, "나 자신"]] * 3
     skipped = eg.LOCKED_TOAST.format(n=1)
@@ -312,3 +323,4 @@ def test_paste_delete_and_fill_skip_locked_rows_and_say_so() -> None:
         ["write", f"1칸 붙여넣음 · {skipped}"],
         ["clear", f"1칸 비움 · {skipped}"],
     ]
+    assert result["removed"] == [["clear", f"2칸 비움 · {skipped}"], ["write", "1칸 붙여넣음"]]
