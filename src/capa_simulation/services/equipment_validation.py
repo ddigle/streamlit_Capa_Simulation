@@ -684,9 +684,13 @@ def _mixed_findings(
     if not named.any():
         return
     keys = parents.where(named, result[EQUIPMENT_ID_COLUMN])
+    # 두 줄 이상인 묶음만 갈릴 수 있다 — 한 줄짜리 열쇠(묶음 밖 호기)는 묶기 전에 뺀다(갈린 묶음 ·
+    # 그 차례는 같다).
+    grouped = keys.duplicated(keep=False)
+    group_keys = keys.loc[grouped]
     for column in columns:
-        values = result[column].astype("string").fillna("")
-        mixed = values.groupby(keys).nunique().gt(1)
+        values = result.loc[grouped, column].astype("string").fillna("")
+        mixed = values.groupby(group_keys).nunique().gt(1)
         groups = mixed.loc[mixed].index
         head = message(column)
         yield _hit(
@@ -1466,6 +1470,15 @@ def _present_order_breaks(data: pd.DataFrame, columns: tuple[str, ...]) -> dict[
 
 
 def _blank_numbers(raw: pd.Series) -> pd.Series:
+    if raw.dtype == np.float64:
+        # 실수 칸은 글자로 바꿔도 결측만 빈 값이다(NaN 은 `<NA>` 결측이 되고 수는 수 글자다) — 칸
+        # 지름길, 결과는 일반 길(`_blank_number_values`)과 같다
+        # (`tests/test_equipment_validation_fast_paths.py`).
+        return raw.isna()
+    return _blank_number_values(raw)
+
+
+def _blank_number_values(raw: pd.Series) -> pd.Series:
     return raw.isna() | raw.astype("string").str.strip().isin(["", "nan", "None", "<NA>"])
 
 
@@ -1497,6 +1510,14 @@ def _read_number(raw: pd.Series) -> tuple[pd.Series, pd.Series]:
     좌표는 비어도 되는 칸이라(레이아웃표시 Y 의 미배치·크기만 있는 행), 못 읽는 값을 NaN 으로
     흘리면 붙여넣기의 `12,5`·`12m`·줄바꿈 없는 공백이 조용히 「미배치」로 저장된다.
     """
+    if raw.dtype == np.float64:
+        # 실수 칸 지름길 — 빈 값은 결측뿐이고 못 읽는 값이 없다(일반 길 `_read_number_values` 와
+        # 같은 결과).
+        return raw.astype("float64"), pd.Series(False, index=raw.index, dtype=bool)
+    return _read_number_values(raw)
+
+
+def _read_number_values(raw: pd.Series) -> tuple[pd.Series, pd.Series]:
     blank = _blank_numbers(raw)
     number = pd.to_numeric(raw, errors="coerce")
     unreadable = ~blank & number.isna()
@@ -1536,8 +1557,15 @@ def _normalize_required_text(data: pd.DataFrame, columns: tuple[str, ...], label
 
 
 def _optional_text(series: pd.Series) -> pd.Series:
-    result = series.astype("string").str.strip()
+    # 이미 글자 칸이면 글자로 바꾸지 않는다(`astype` 사본 하나를 던다 — 결과는 같다,
+    # `tests/test_equipment_validation_fast_paths.py`).
+    text = series if series.dtype == _PYTHON_STRING else series.astype("string")
+    result = text.str.strip()
     return result.mask(result.eq(""))
+
+
+# 설비 마스터 편집본의 글자 칸 dtype(`astype("string")` 의 기본 저장소).
+_PYTHON_STRING = pd.StringDtype("python")
 
 
 # 연도가 앞인 날짜 글자. 구분자는 한 값 안에서 같아야 하고(`\2`), 붙은 시각은 떼어 낸다.
@@ -1569,6 +1597,16 @@ def _read_date(series: pd.Series) -> tuple[pd.Series, pd.Series, bool]:
     (시간대가 서로 다른 값이 섞임 등) 셋째 값이 True 이고 첫째 값은 모두 NaT 다 — 부르는 쪽은 이
     예외를 던지지 않고 시간대 붙은 값을 빼고 다시 읽는다(`_read_master_dates`).
     """
+    if is_datetime64_dtype(series.dtype):
+        # 이미 시간대 없는 날짜 칸(편집본 · 저장본) — 빈 값은 NaT 뿐이고 못 읽는 값이 없으며 칸 꼴
+        # 추정도 없다. 일반 길(`_read_date_values`)과 같은 결과를 글자로 바꾸지 않고 낸다
+        # (`tests/test_equipment_validation_fast_paths.py`).
+        return series.dt.normalize(), pd.Series(False, index=series.index, dtype=bool), False
+    return _read_date_values(series)
+
+
+def _read_date_values(series: pd.Series) -> tuple[pd.Series, pd.Series, bool]:
+    """`_read_date` 의 일반 길 — 글자로 바꿔 빈 값을 가르고 pandas 로 칸을 읽는다."""
     missing = series.isna() | series.astype("string").str.strip().eq("")
     not_dates = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
     try:
