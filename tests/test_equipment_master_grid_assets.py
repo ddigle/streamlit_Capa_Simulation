@@ -243,7 +243,7 @@ def test_a_deleted_row_stays_on_the_keyboard_path() -> None:
     assert "live.findIndex" not in key.split("event.key === ' '")[0]
     space = key[key.index("event.key === ' '") : key.index("if (col === model.nameCol) return")]
     assert "toggleRow(S, id, event.shiftKey)" in space and "{ op: 'restore', ids: [id] }" in space
-    selection = _function("buildSelection")
+    selection = _function("buildSelection") + _function("buildBulkTools")
     assert selection.count("refocusTable(S, ") == 2
     refocus = _function("refocusTable")
     assert "S.wantFocus = true" in refocus and "ensureVisible(S, S.focus.id)" in refocus
@@ -1111,6 +1111,32 @@ def test_the_selection_bar_is_one_line_and_its_edits_open_in_popups() -> None:
     assert result["shiftClosed"] == {"open": False, "back": True}
     assert result["released"] == {"hidden": True, "mark": None}
     assert result["unmounted"] is None
+
+
+_READ_ONLY_BAND_RUNNER = """
+document.documentElement.dataset = {}
+const R = {}
+toggleRow(S, 'a', false)
+R.picked = S.selBar.children.map((node) => node.textContent.trim())
+cleanup()
+process.stdout.write(JSON.stringify(R))
+"""
+
+
+def test_a_read_only_grid_keeps_the_selection_band_without_its_edit_tools() -> None:
+    """화면 등급으로 표를 고칠 수 없으면(`readOnly` — `read_only_data`) 고른 줄 띠는 「선택 n대 ·
+    선택 풀기」 만 — 값 넣기 · 일정 밀기 · 선택 n대 지우기는 세우지 않는다(설계 규칙 UI-INP-07
+    등급 예외 · 2026-11-18 구현 확인 보드 「고칠 것」 — 모든 등급이 같은 표, 권한 없는 칸만
+    잠금). 호기 상세의 이 호기 지우기 · 이 호기로 새 호기 만들기도 같은 판정이다."""
+    head = _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    head = head.replace("const component = {", "data.readOnly = true\nconst component = {", 1)
+    result = _node({}, head + _READ_ONLY_BAND_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["picked"] == ["선택 1대", "선택 풀기"]
+    assert "if (!S.data.readOnly) buildBulkTools(S, bar, rows)" in _function("buildSelection")
+    assert "} else if (!data.readOnly) {" in _function("drawDetail")
+    locked = emg.read_only_data({"columns": [{"name": "설비명"}], "rows": []}, "까닭")
+    assert locked["readOnly"] is True
+    assert "readOnly" not in emg.read_only_data({"columns": [], "rows": []}, None)
 
 
 _PLACE_TIP_RUNNER = """

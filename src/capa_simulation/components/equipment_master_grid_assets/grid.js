@@ -1582,6 +1582,19 @@ function buildSelection(S, bar) {
     return
   }
   bar.appendChild(el('span', 'emg-sel-count', '선택 ' + rows.length.toLocaleString() + '대'))
+  if (!S.data.readOnly) buildBulkTools(S, bar, rows)
+  bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
+    const first = rows[0].id
+    S.selected = new Set()
+    S.anchor = null
+    paintSelection(S)
+    refocusTable(S, first)
+  }))
+}
+
+// 고른 줄 띠의 편집 도구 — 값 넣기 · 일정 밀기 · 선택 n대 지우기. 화면 등급으로 표를 고칠 수 없으면(`readOnly`) 세우지 않는다
+// (설계 규칙 UI-INP-07 의 등급 예외 — 등급 때문에 없는 단추는 숨김).
+function buildBulkTools(S, bar, rows) {
   bar.appendChild(popover(S, 'bulk-set', '값 넣기', '고른 호기의 칸에 값 넣기', (panel, repaint, done) => bulkSetPanel(S, rows, panel, repaint, done), 'bulk'))
   bar.appendChild(popover(S, 'bulk-shift', '일정 밀기', '고른 호기의 반입·Qual 일정 밀기', (panel, repaint, done) => bulkShiftPanel(S, rows, panel, repaint, done), 'bulk'))
   const lock = S.data.deleteLock
@@ -1596,13 +1609,6 @@ function buildSelection(S, bar) {
   remove.disabled = deletable.length === 0
   remove.title = lock || (rows.some((row) => row.tag !== 'new') ? DELETE_TIP : '')
   bar.appendChild(remove)
-  bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
-    const first = rows[0].id
-    S.selected = new Set()
-    S.anchor = null
-    paintSelection(S)
-    refocusTable(S, first)
-  }))
 }
 
 // 고른 줄 띠가 닫히는 단추(지우기·선택 풀기)는 누른 단추가 사라진다 — 초점을 표 본문의 초점 칸(없으면 고른 첫 줄의
@@ -2383,7 +2389,7 @@ function drawDetail(S, root, data) {
   const actions = el('div', 'emg-side-actions')
   if (unit.tag === 'deleted') {
     actions.appendChild(button('emg-btn', '되살리기', () => sendOnce(S, { op: 'restore', ids: [unit.id] }, [])))
-  } else {
+  } else if (!data.readOnly) {
     const remove = button('emg-btn is-danger', '이 호기 지우기', () => sendOnce(S, { op: 'delete', ids: [unit.id] }, []))
     remove.disabled = !unit.deletable
     remove.title = unit.deleteLock || (unit.tag === 'new' ? '' : DELETE_TIP)

@@ -4595,7 +4595,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     있으면 `defer_grid_undo` 가 `GRID_UNDO_REQUEST_KEY` 만 세우고, 그 표 제출이 `_remember_edits(keep_undo=True)` 로 편집을 넣은 뒤
     `undo`(탭의 `_grid_undo`)로 되돌린다(`_undo_lines_up` — 편집 값이 그대로면 통째 단계여도 되돌리고, 값을 바꾼 편집이 줄을
     지웠거나 통째 단계면 되돌리기를 비우고 편집을 지킴, 답 X1). 그 표를 그리지 않는 회차는 `settle_grid_undo`. 「삭제 확정」 제출 뒤
-    `on_deleted`(탭이 `switch_side(SIDE_CHANGES)`)가 「저장 전 변경」 칸을 열고 접힌 칸을 편다(작은 결정 c6).
+    `on_deleted`(탭이 `switch_side(SIDE_CHANGES)`)가 「저장 전 변경」 칸을 열고 접힌 칸을 편다(작은 결정 c6). 화면 등급으로 그 표를
+    고칠 수 없으면(`read_only` — `table_lock`) 같은 칸 꼴 · 같은 보기의 편집표를 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이
+    그린다(`locked_editor` — 따로 key `equipment_small_<slug>_locked_v1` 라 적용 전 편집 판정에 들지 않고, 돌려준 표는 버린다 · 작업 줄 단추와
+    예시 행 줄 · 삭제 확인은 서지 않는다 — 2026-11-18 구현 확인 보드 「고칠 것」). 잠긴 칸은 Streamlit 편집표가 열지 않아 거절 알림이 없다.
   - **배치 편집 판정은 세션 메모다**(`buffer_has_layout_edits` — 열쇠 = 편집본 세대·편집본 출발 토큰·저장본 사본 토큰·이름 지도,
     `LAYOUT_EDITS_MEMO_KEY`). 역할이 찍힌 세션은 회차마다 `live_layout_role` 이 부르므로 편집본 전체 `layout_edits`(합성 3천 대에
     0.13~0.17 s)를 회차마다 돌리면 8장 예산을 넘었다. 표 출납이 배치에 닿지 않는 op(칸 고침·값 넣기·붙여넣기·날짜 밀기 — 배치·설비명·
@@ -8541,7 +8544,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **등급 밖 기능은 숨긴다**(이 사람에게 없는 기능 — UI-INP-07 의 예외). 단추 · 탭 · 모드 · 메뉴 항목은 `sso_identity.viewer_can(action)` 이
   거짓이면 세우지 않는다. 지금만 못 하는 것(확인 체크 전 · 공식에서만 · 계산 오류 · `space_edit_mode`)은 그대로 잠금 + 까닭 풍선이다. 숨긴
-  자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 · 설비 마스터 세 표 — UI-NTF-05). 탭
+  자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 — UI-NTF-05). 가용설비 현황 › 설비 마스터의
+  세 표는 모든 등급이 같은 편집 표를 보고 권한 없는 표 · 칸만 잠근다(2026-11-18 구현 확인 보드 「고칠 것」 — 설비 마스터 표는 `read_only_data`
+  잠금 갈래 `grade` + 편집 도구를 세우지 않는 `readOnly`, 작은 편집표 둘은 `locked_editor` — 같은 칸 꼴을 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이). 탭
   값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다.
 - **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
   `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험
