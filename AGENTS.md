@@ -1404,6 +1404,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`remember_active_scenario_latest`). 제 저장 뒤에는 이름표 번호가 확인 값 이상이라 서지 않는다.
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
+  - 「신규 리비전 저장」 구획은 화면 등급 실무자부터 서고, 제출 단추 key 는 고정(`SAVE_SUBMIT_KEY` — `SessionSlot` `SAVE_SUBMIT`)이다.
+    화면을 연 뒤 등급이 내려가 구획이 서지 않는 회차에 앞 회차 단추의 누름이 오면 말없이 「불러오기」 로 바꾸지 않고
+    `_refuse_hidden_save` 가 실제 등급으로 다시 본다(`grades.require` — 감사 「등급 때문에 막힘」 한 줄 · 팝업 `in_fragment` 가 알림창 ·
+    Alarm 한 번, 규칙집 6-34 decided-2 · 2026-11-19 E2E E1-D3). 적어 둔 리비전명은 구획과 함께 사라진다.
   - 저장은 부모 리비전의 가상 제품 이력에 세션 등록을 더해 넘긴다(`inherit_virtual_product_records`, 활성화 전에 읽음).
     `skip_unchanged=True` 로 넘겨 최신 리비전과 내용이 같으면 쓰지 않는다 — `RevisionUnchanged` 를 받으면 팝업 안 info
     (`revision_unchanged_notice`)를 적고 칸은 그대로 둔다(개선 I5, 5장 8).

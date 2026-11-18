@@ -34,6 +34,7 @@ import streamlit as st
 # 테스트가 `settings.DUCKDB_PATH` 를 갈아끼운다. 이름을 직접 import 하면 여기서 잡은
 # 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation.auth import grades
 from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
@@ -108,6 +109,7 @@ from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.services.korean_particle import object_particle, with_topic_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_FRAGMENT_KEY,
     keeps_app_run_open,
@@ -128,6 +130,10 @@ SIDEBAR_FLASH_WARNING_KEY = "sidebar_scenario_flash_warning"
 SAVE_REVISION_NAME_KEY = "sidebar_revision_name"
 SAVE_REVISION_NOTE_KEY = "sidebar_revision_note"
 SAVE_FORM_GENERATION_KEY = "sidebar_revision_save_generation"
+# 「신규 리비전 저장」 제출 단추 key — 화면 등급이 실무자 밑으로 내려가 저장 구획이 서지 않는
+# 회차에도 앞 회차 단추의 누름을 읽어 서버가 다시 본다(`_refuse_hidden_save`).
+SAVE_SUBMIT_KEY = "sidebar_revision_save_submit"
+SAVE_SUBMIT = SessionSlot(SAVE_SUBMIT_KEY, bool)
 # 패널의 시나리오 값 칸. 누르면 팝업이 열린다.
 SCENARIO_FIELD_KEY = "sidebar_scenario_field"
 # 시나리오 관리 「Capa 시나리오」 탭으로 가는 단추 둘(`_render_capa_route`).
@@ -421,7 +427,10 @@ def _render_dialog_body(
     # 「신규 리비전 저장」 구획은 새 리비전을 저장할 수 있는 등급(실무자부터)에게만 선다 — 열람은
     # 「불러오기」 만이라 구획 고르기도 두지 않는다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김).
     # 고른 값이 숨은 구획이면 첫 구획으로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
-    modes = [LOAD_MODE, SAVE_MODE] if viewer_can("scenario.revision_save") else [LOAD_MODE]
+    can_save = viewer_can("scenario.revision_save")
+    if not can_save:
+        _refuse_hidden_save()
+    modes = [LOAD_MODE, SAVE_MODE] if can_save else [LOAD_MODE]
     if st.session_state.get(SCENARIO_DIALOG_MODE_KEY) not in modes:
         st.session_state[SCENARIO_DIALOG_MODE_KEY] = LOAD_MODE
     mode = (
@@ -458,6 +467,17 @@ def _render_dialog_body(
         pending_edits=pending_edits,
     )
     _render_rename_route(on_management_page=on_management_page)
+
+
+def _refuse_hidden_save() -> None:
+    """저장 구획이 서지 않는 회차(화면 등급이 실무자 밑)에 온 「신규 리비전 저장」 누름 — 화면을
+    연 뒤 등급이 내려가 앞 회차에 서 있던 단추를 누른 것이다. 말없이 「불러오기」 로 바꾸지 않고
+    서버가 실제 등급으로 다시 본다(`grades.require` — 막히면 감사 한 줄 「등급 때문에 막힘」 과
+    `GradeDenied`, 팝업 함수의 `in_fragment` 가 알림창 · Alarm 한 번으로 받고 앱 전체를 다시
+    그린다 — 규칙집 6-34 decided-2, 2026-11-19 E2E E1-D3). 실제 등급이 저장할 수 있으면(「이
+    등급으로 보기」 를 그 사이 켬) 아무것도 하지 않는다 — 저장 구획이 없는 회차라 쓰지 않는다."""
+    if SAVE_SUBMIT.peek() is True:
+        grades.require("scenario.revision_save")
 
 
 def _render_rename_route(*, on_management_page: bool) -> None:
@@ -749,6 +769,7 @@ def _render_revision_save(
             icon=":material/save_as:",
             type="primary",
             help=SAVE_BUTTON_HELP,
+            key=SAVE_SUBMIT_KEY,
         )
     if not submitted:
         return

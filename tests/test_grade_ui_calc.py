@@ -488,6 +488,48 @@ def test_the_sidebar_save_popup_refuses_a_press_after_the_grade_drops(
     assert len(repository.list_revisions(scenario_id)) == revisions_before
 
 
+@pytest.mark.page_failure_card
+def test_the_sidebar_save_popup_refuses_a_press_when_the_screen_grade_dropped_too(
+    databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면을 연 뒤 등급이 내려가 누른 회차의 화면 등급도 열람이면 「신규 리비전 저장」 구획이
+    서지 않는다 — 그래도 그 누름은 말없이 「불러오기」 로 바뀌지 않고 서버가 다시 보아 거절
+    알림을 알림창 · Alarm 에 한 번 내고 작업 기록에 「등급 때문에 막힘」 을 남긴다(2026-11-19 E2E
+    E1-D3 — 규칙집 6-34 decided-2 「누르는 순간 서버가 다시 보고 막히면 알림창 · Alarm 한 번」).
+    누르지 않은 회차는 거절하지 않는다."""
+    database, equipment = databases
+    as_grade(monkeypatch, grades.EDITOR)
+    app = _graded(_page(SCENARIO_PAGE, database, equipment, tail=SIDEBAR_SAVE_POPUP))
+    app.session_state[SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    _clean(app)
+    repository = DuckDBScenarioRepository(database)
+    scenario_id = repository.list_scenarios()[0].scenario_id
+    revisions_before = len(repository.list_revisions(scenario_id))
+    next(widget for widget in app.text_input if widget.label == "새 리비전명").set_value(
+        "DEMO 거절될 리비전"
+    )
+
+    as_grade(monkeypatch, grades.VIEWER)
+    with judge_spy() as seen:
+        next(button for button in app.button if button.label == "신규 리비전 저장").click()
+        app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not page_failures.recent_failures()
+    assert [item.value for item in flashed(app, "error")] == [
+        grades.refusal_text("scenario.revision_save")
+    ]
+    assert ("scenario.revision_save", grades.VIEWER) in seen
+    assert len(repository.list_revisions(scenario_id)) == revisions_before
+    assert not [button for button in app.button if button.label == "신규 리비전 저장"]
+
+    with judge_spy() as again:
+        app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert ("scenario.revision_save", grades.VIEWER) not in again
+
+
 HOME_SETTINGS_SCRIPT = """
 from pathlib import Path
 
