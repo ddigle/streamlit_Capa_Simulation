@@ -473,6 +473,9 @@ def _import(repository: DuckDBScenarioRepository) -> None:
     SEEN.set(SeenSource(source.place, _staged_word(staged), now))
     if fetched.etag:
         FETCHED.set((fetched.etag, _staged_word(staged)))
+    # 새 파일 감지 메모를 비운다 — 다음 회차가 HEAD 를 다시 보아 방금 가져온 파일을 「새 파일」 로
+    # 잇지 않는다(가져온 파일은 그 낱말, 적용한 파일은 「같음」 — `head_word`).
+    HEAD_SEEN.clear()
     if staged.judgement is not None and staged.judgement.verdict == JUDGE_UNCHANGED:
         STAGED.clear()
         queue_flash(FLASH_KEY, "바뀐 것 없음 — 활성 판과 같은 파일입니다", kind="info")
@@ -730,6 +733,7 @@ def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
     else:
         STAGED.clear()
         PREVIEW.clear()
+        HEAD_SEEN.clear()
         queue_flash(FLASH_KEY, f"부대공정 판 {pack.info.version_no} 적용")
     st.rerun()
 
@@ -788,7 +792,9 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
 
 def _new_file_word(state: ExtraProcessState) -> str | None:
     """S3 Drive 자리를 HEAD 로 본 낱말 — `HEAD_INTERVAL` 안에 본 적이 있으면 그 낱말을 잇는다
-    (HEAD 한 번이 회차를 묶지 않게). 가져오기 원천이 없으면 가져올 길이 없어 보지 않는다."""
+    (HEAD 한 번이 회차를 묶지 않게). 가져오기 원천이 없으면 가져올 길이 없어 보지 않는다. 가져오기 ·
+    적용이 성공하면 메모를 비워 다음 회차가 다시 본다 — 같은 세션이 가져와 적용한 파일을 5분 동안
+    「새 파일」 로 잇지 않게(2026-11-19 E2E e3-D2)."""
     sink = installed_sink()
     if sink is None or installed_source() is None:
         return None

@@ -32,7 +32,7 @@ from capa_simulation.components.extra_process_admin import (
     status_line,
     write_lock_reason,
 )
-from capa_simulation.extra_process_intake import SourceFetch, stage_pack
+from capa_simulation.extra_process_intake import SAME_WORD, SourceFetch, stage_pack
 from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
@@ -53,6 +53,8 @@ from capa_simulation.services.extra_process_pack import (
 OPEN_KEY = "__extra_open__"
 PACK_KEY = "__extra_pack__"
 NO_SCENARIO_KEY = "__extra_no_scenario__"
+# 가짜 S3 Drive 자리(내보내기 꽂이)의 HEAD ETag — 있으면 꽂고, 가짜 원천도 같은 ETag 로 받는다.
+DRIVE_ETAG_KEY = "__extra_drive_etag__"
 
 
 def _script(database: Path) -> str:
@@ -63,7 +65,12 @@ import streamlit as st
 
 import capa_simulation.components.extra_process_admin as admin
 import capa_simulation.settings as settings
-from capa_simulation.extra_process_intake import SourceFetch, install_source
+from capa_simulation.extra_process_intake import (
+    RemoteHead,
+    SourceFetch,
+    install_sink,
+    install_source,
+)
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
 
@@ -74,7 +81,22 @@ class FakeSource:
 
     def fetch(self):
         data = st.session_state[{PACK_KEY!r}]
-        return SourceFetch(data=data, place="가짜", key="extra_process/current.zip")
+        return SourceFetch(
+            data=data,
+            place="가짜",
+            key="extra_process/current.zip",
+            etag=st.session_state.get({DRIVE_ETAG_KEY!r}),
+        )
+
+
+class FakeSink:
+    place = "가짜"
+
+    def head(self):
+        return RemoteHead(st.session_state.get({DRIVE_ETAG_KEY!r}))
+
+    def put(self, data):
+        raise AssertionError("쓰지 않는 시험")
 
 
 original_path = settings.DUCKDB_PATH
@@ -84,6 +106,8 @@ if st.session_state.get({OPEN_KEY!r}):
     admin.write_lock_reason = lambda: None
 if st.session_state.get({PACK_KEY!r}) is not None:
     install_source(FakeSource())
+if st.session_state.get({DRIVE_ETAG_KEY!r}) is not None:
+    install_sink(FakeSink())
 try:
     if not st.session_state.get({NO_SCENARIO_KEY!r}):
         bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
@@ -91,6 +115,7 @@ try:
     admin.render_extra_process_admin(repository, alert_tab="부대공정")
 finally:
     install_source(None)
+    install_sink(None)
     admin.write_lock_reason = original_lock
     settings.DUCKDB_PATH = original_path
 """
@@ -107,11 +132,13 @@ def _app(
     open_place: bool = False,
     pack: bytes | None = None,
     no_scenario: bool = False,
+    drive_etag: str | None = None,
 ) -> AppTest:
     app = AppTest.from_string(_script(database), default_timeout=120)
     app.session_state[OPEN_KEY] = open_place
     app.session_state[PACK_KEY] = pack
     app.session_state[NO_SCENARIO_KEY] = no_scenario
+    app.session_state[DRIVE_ETAG_KEY] = drive_etag
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     return app
@@ -183,6 +210,28 @@ def test_a_fake_source_imports_previews_and_applies_a_pack(database: Path) -> No
     app.button(key=IMPORT_BUTTON_KEY).click().run()
     assert any("바뀐 것 없음" in str(note.value) for note in flashed(app))
     assert _repository(database).load_extra_process_state().last_seq == 1
+
+
+def test_the_new_file_alert_clears_once_that_file_is_imported_and_applied(database: Path) -> None:
+    """S3 Drive 에 사람이 놓은 새 파일(`EP-02`)을 같은 세션이 가져와 적용하면 그 회차에 알림이
+    걷히고 상태 줄도 그 파일 낱말로 바뀐다(2026-11-19 E2E e3-D2 — HEAD 를 5분 띄워 보는 메모가
+    가져오기 · 적용 뒤에도 「새 파일」 을 이어 적용 뒤 5분 동안 「가져오지 않은 파일」 이
+    남았다)."""
+    pack = zip_files(template_files())
+    app = _app(database, open_place=True, pack=pack, drive_etag='"사람-1"')
+    assert active_state(app, "EP-02") is not None
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert active_state(app, "EP-02") is None
+    assert any("가짜 적용 전 판 1" in text for text in _captions(app))
+
+    app.button(key=APPLY_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    state = _repository(database).load_extra_process_state()
+    assert state.active is not None and state.active.s3_etag == '"사람-1"'
+    assert active_state(app, "EP-02") is None
+    assert any(f"가짜 {SAME_WORD}" in text for text in _captions(app)), _captions(app)
 
 
 def test_a_zero_ratio_pack_is_accepted_with_its_cell_count(database: Path) -> None:
