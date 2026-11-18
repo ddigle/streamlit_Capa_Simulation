@@ -2526,13 +2526,15 @@ def securement_cross_check_result(
     required_equipment: pd.DataFrame,
     *,
     manual_downtime: ManualDowntimeKey,
-    period: tuple[int, int] | None = None,
+    period: tuple[int, int] | None,
 ) -> SecurementCrossCheckResult:
     """`cross_check_from_monthly` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
 
     소요대수나 Static 이 비면 맞대지 않는다. 맞대지 못하면(`KeyError`·`ValueError`) 그대로 올라간다.
     `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key`)이다 — 설비 일정 기준 가용에서 뺀다.
     `period` 는 소요대수를 낸 조회기간(시작 · 끝 `YYYYMM`)이다 — 그 밖의 달은 맞대지 않는다.
+    **필수 인자**다(None 은 「좁히지 않음」 을 적어 고른 것) — 캐시 길과 캐시 없는 길이 다른 달
+    묶음을 맞대지 않게 빠뜨림을 형 검사가 잡는다.
     """
     if required_equipment.empty:
         return SecurementCrossCheckResult(has_demand=False, check=None)

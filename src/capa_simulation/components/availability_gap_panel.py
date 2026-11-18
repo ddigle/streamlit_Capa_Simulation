@@ -418,6 +418,7 @@ def render_availability_gap_panel(
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     required_equipment_key: ScenarioCacheKey | None = None,
+    required_period: tuple[int, int] | None = None,
     no_demand_message: Callable[[], str] | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
@@ -465,6 +466,10 @@ def render_availability_gap_panel(
     로더(`simulation_cache.scenario_required_equipment`)를 넘긴다 — 소요대수는 확보율 교차검증에만
     들고, 그 보기에서도 캐시가 빗나갈 때만 푼다. `required_equipment_key` 는 그 소요대수를 낸
     시나리오 키다. 주면 확보율 교차검증을 (비교 키, 이 키)로 캐시한다(`get_securement_cross_check`).
+    교차검증이 맞대는 달은 소요대수를 낸 조회기간(시작 · 끝 `YYYYMM`) 안이다 — 키를 주면 키의
+    기간, 아니면 `required_period` 다(캐시 없는 길도 같은 달을 맞댄다). 둘 다 없으면 좁히지 않는다
+    (소요대수 프레임을 그 기간 것으로 넘기는 홀로 띄우는 시험). 패널의 `months`(설비 조회일)는 이
+    기간과 다를 수 있어 대신 쓰지 않는다.
     `no_demand_message` 는 조회기간에 소요대수가 없을 때의 안내를 만드는 함수다 — 페이지는
     `page_bootstrap.no_demand_message` 에 활성 상태를 묶어 넘겨 데이터 범위를 붙인다. 그 갈래에서만
     부른다. 주지 않으면 범위 없는 첫 문장(`NO_DEMAND_MESSAGE`)이다.
@@ -647,6 +652,11 @@ def render_availability_gap_panel(
                 else securement_cross_check_cache_key(
                     comparison_key, required_equipment_key, manual_downtime=manual_downtime
                 )
+            ),
+            period=(
+                required_period
+                if required_equipment_key is None
+                else (required_equipment_key[2], required_equipment_key[3])
             ),
             process=process,
             labels=labels,
@@ -1825,6 +1835,7 @@ def _render_securement_cross_check(
     static_availability: pd.DataFrame,
     required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None,
     cache_key: SecurementCrossCheckCacheKey | None,
+    period: tuple[int, int] | None,
     process: str | None,
     labels: ProcessLabels,
     no_demand_message: Callable[[], str] | None = None,
@@ -1845,7 +1856,8 @@ def _render_securement_cross_check(
     경고로 알린다. 표 머리의
     `Dynamic가용대수`·`Dynamic확보율` 은 보일 때만 「일정기준…」 으로 바꾼다(내부 컬럼 그대로).
     `manual_cells` 는 조회 달로 좁힌 입력 비가동 칸이다 — 일정기준 가용에서 뺀다(키가 없는 길도
-    같은 칸으로 맞댄다).
+    같은 칸으로 맞댄다). `period` 는 소요대수를 낸 조회기간이다 — 캐시 길은 키 안의 같은 기간으로
+    좁히고, 키 없는 길은 이것으로 좁혀 두 길이 같은 달을 맞댄다.
     """
     # 머리 제목(「확보율 교차검증」)은 두지 않는다 — 바로 위 「조회 결과」 전환 단추의 고른 값이
     # 같은 말이다(설계 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고).
@@ -1857,7 +1869,11 @@ def _render_securement_cross_check(
     try:
         result = (
             securement_cross_check_result(
-                static_availability, monthly, load(), manual_downtime=manual_cells
+                static_availability,
+                monthly,
+                load(),
+                manual_downtime=manual_cells,
+                period=period,
             )
             if cache_key is None
             else get_securement_cross_check(

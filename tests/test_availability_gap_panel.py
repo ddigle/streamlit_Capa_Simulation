@@ -121,6 +121,14 @@ def _panel_app() -> None:
     static_lent = static.rename(columns={"가용대수": "설비대여평가"}).assign(
         설비대여평가=[1.0, 0.0, 2.0]
     )
+    # `wide_months` 를 켜면 설비 조회일(패널 `months`)이 소요대수의 조회기간(202610)보다 한 달
+    # 앞까지 넓다 — Static 세 표는 조회기간과 상관없이 그 달도 있다(페이지의 두 기간이 갈린 꼴).
+    wide = bool(st.session_state.get("wide_months", False))
+    if wide:
+        static, static_owned, static_lent = (
+            pd.concat([frame.assign(생산계획년월=202609), frame], ignore_index=True)
+            for frame in (static, static_owned, static_lent)
+        )
     # `downtime` 을 켜면 EQ-1(가용, 환산비 1.5)에 닷새 비가동, 셋업 호기 EQ-S 에 나흘 비가동을
     # 넣는다 — 반사실(비가동 비움) 구간을 따로 넘긴다. 셋업 호기의 비가동은 대여에 들지 않아야 한다.
     counterfactual = None
@@ -275,7 +283,9 @@ def _panel_app() -> None:
         spans=spans,
         baseline=baseline,
         cutoff=cutoff.iloc[:0] if st.session_state.get("empty_cutoff", False) else cutoff,
-        months=[] if st.session_state.get("empty_months", False) else [202610],
+        months=[]
+        if st.session_state.get("empty_months", False)
+        else ([202609, 202610] if wide else [202610]),
         static_availability=None if st.session_state.get("missing_static", False) else static,
         static_owned=None if st.session_state.get("missing_static", False) else static_owned,
         static_lent=None if st.session_state.get("missing_static", False) else static_lent,
@@ -293,6 +303,8 @@ def _panel_app() -> None:
         required_equipment_key=(0, "panel-" + frame_digest(required), 202610, 202610)
         if st.session_state.get("keyed_required", False)
         else None,
+        # 키 없는 길의 소요대수 조회기간(키를 주면 키 안의 기간을 쓴다).
+        required_period=st.session_state.get("required_period"),
         owner_tab=SimpleNamespace(open=is_open),
         units=units,
         process_labels=labels,
@@ -469,6 +481,32 @@ def test_the_panel_key_carries_both_the_comparison_and_the_scenario(
     assert keyed_first != keyed_second
     assert keyed_first == _cross_check_table(**{changed: first})
     assert keyed_second == _cross_check_table(**{changed: second})
+
+
+def _cross_check_months(**state: object) -> tuple[str, list[object]]:
+    app = _run(**state)
+    _select_view(app, "확보율 교차검증")
+    frame = app.dataframe[0].value
+    return frame.to_json(force_ascii=False), sorted(set(frame.iloc[:, 0].tolist()))
+
+
+def test_both_cross_check_paths_compare_only_the_demand_period() -> None:
+    """설비 조회일(패널 `months`)이 소요대수의 조회기간보다 넓어도 캐시 길과 키 없는 길이 같은
+    달만 맞댄다 — 키 없는 길에 기간을 주지 않으면 그 밖의 달이 소요대수 0 · 확보율 빈 행으로 다시
+    실린다."""
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+    keyed, keyed_months = _cross_check_months(wide_months=True, keyed_required=True)
+    keyless, keyless_months = _cross_check_months(
+        wide_months=True, required_period=(202610, 202610)
+    )
+    _, unbounded_months = _cross_check_months(wide_months=True)
+
+    assert keyed == keyless
+    assert len(keyed_months) == 1 and keyed_months == keyless_months
+    assert len(unbounded_months) == 2
+    get_securement_cross_check.clear()
 
 
 def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatch) -> None:
