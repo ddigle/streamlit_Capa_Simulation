@@ -115,14 +115,17 @@ class AppRun:
         self.state["page"] = _current_page_hash()
         self.state["complete"] = True
 
-    def finish_stopped(self, stop: BaseException) -> None:
-        """멈춤 예외로 끝난 실행. 페이지가 스스로 멈춘 것(`st.stop()`)만 끝까지 돈 것이다.
+    def finish_stopped(self, stop: BaseException) -> bool:
+        """멈춤 예외로 끝난 실행. 페이지가 스스로 멈춘 것(`st.stop()`)만 끝까지 돈 것이다 — 그랬으면
+        참(`app.py` 의 화면 응답 계측도 그 회차만 센다).
 
         페이지가 `st.stop()` 으로 멈춘 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행도 같은
         멈춤 예외로 끝나지만 본문이 반쯤 그려진 채라 끝나지 않은 실행으로 둔다.
         """
-        if _raised_by_st_stop(stop):
-            self.finish()
+        if not _raised_by_st_stop(stop):
+            return False
+        self.finish()
+        return True
 
 
 def begin_app_run() -> AppRun:

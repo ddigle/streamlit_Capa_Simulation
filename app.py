@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
-from capa_simulation import alerts, notice_board
+from capa_simulation import alerts, load_metrics, notice_board
 from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth.runtime import note_boot_failure, note_boot_success
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
@@ -27,6 +27,7 @@ from capa_simulation.components.boot_stop import classify_boot_failure, kind_nam
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
 from capa_simulation.components.container_start_check import (
+    render_load_alert,
     render_start_check_alert,
     render_token_alert,
 )
@@ -43,6 +44,7 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
+from capa_simulation.components.load_diagnostic import note_run_end
 from capa_simulation.components.missing_page import notice_missing_page
 from capa_simulation.components.object_sync_status import (
     not_canonical_code,
@@ -221,6 +223,10 @@ CELL_SELECT_CHART_KEYS = (
     CONSTRAINT_SHEET_KEY,
 )
 
+# 화면 응답 시간 계측의 시작 표(`load_metrics.begin_run` — 끝은 맨 아래 끝까지 돈 두 출구의
+# `note_run_end`). 무엇보다 앞이다 — 이 회차 스크립트 시간 전부를 잰다. 값은 지역 이름이라 세션 칸을
+# 쓰지 않는다.
+run_started = load_metrics.begin_run()
 # 접속 등급의 판정기(`components/grade_ui.install` — `sso_identity.real_caller`)를 꽂는다. 테마 ·
 # 통합인증 확인 · 부트스트랩 · 페이지보다 앞, 매 회차다(같은 함수면 그대로). 그 뒤로 표지를 단
 # 저장소
@@ -670,6 +676,10 @@ with pinned_connections(DUCKDB_PATH):
     # 시작 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고, 그 밖은 아무것도 쓰지 않는다.
     # 운영인데 통합인증이 꺼짐(`AD-02`)은 이 차례 밖이다 — Admin Area 가 잠금 판정 앞에서 낸다.
     render_page_failure_alert()
+    # 서버 부하 개발자 알림(`AD-26` — 화면 응답 느린 쪽 · CPU 5분 평균 · 연결 세션이 신호표
+    # 문턱을 넘음, 「그 화면으로」 Admin 「서버 시작 점검」). 값은 앞 회차들까지 모은 것이다. 시작
+    # 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고 그 밖은 아무것도 쓰지 않는다.
+    render_load_alert()
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
@@ -692,8 +702,13 @@ with pinned_connections(DUCKDB_PATH):
                     href=navigation.url_path,
                 )
     except StopException as stop:
-        app_run.finish_stopped(stop)
+        finished = app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))
+        # 화면 응답 계측의 끝 — 페이지가 스스로 멈춘 회차만 끝까지 돈 회차로 센다(새 상호작용이 끊은
+        # 회차는 세지 않는다 — `load_metrics` 모듈 설명).
+        if finished:
+            note_run_end(run_started)
         raise
     app_run.finish()
     warm_intro_summary(str(DUCKDB_PATH.resolve()))
+    note_run_end(run_started)

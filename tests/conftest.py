@@ -25,7 +25,13 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
-from capa_simulation import module_failures, module_registry, notice_board, page_failures
+from capa_simulation import (
+    load_metrics,
+    module_failures,
+    module_registry,
+    notice_board,
+    page_failures,
+)
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
@@ -339,6 +345,17 @@ def _without_notice() -> Iterator[None]:
     notice_board.reset()
     yield
     notice_board.reset()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_load_metrics() -> Iterator[None]:
+    """앞 시험의 회차 시간 · CPU 표본 · 세션 최고(프로세스 메모리 — 「서버 시작 점검」 부하 값 줄 ·
+    개발자 알림 `AD-26`)를 다음 시험에 넘기지 않는다. `app.py` 를 도는 AppTest 마다 회차가 쌓이고
+    pytest 프로세스는 바빠 CPU 5분 평균이 문턱을 넘을 수 있어, 시험마다 CPU 첫 표본을 지금으로 다시
+    둔다(5분을 덮기 전이라 「모름」)."""
+    load_metrics.reset()
+    yield
+    load_metrics.reset()
 
 
 @pytest.fixture(autouse=True)

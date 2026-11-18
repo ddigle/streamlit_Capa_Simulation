@@ -413,6 +413,12 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 재시작 뒤는 「해소」 다. 어느 화면의 일도 아니라 화면 없는 표지를 알림 칸 data 가 싣는다(물음
     # 경로도 같은 표지 — `notice_board.payload`). 글은 부를 때 준다.
     AlertSpec("GL-09", "info", "state", "공지"),
+    # 서버 부하가 신호표 문턱(화면 응답 느린 쪽 3초 · CPU 5분 평균 0.7코어 · 연결 25)을 넘음 —
+    # 시작 점검 알림과 같은 판정의 서버에서 개발자 회차에만
+    # (`container_start_check.render_load_alert`, `docs/TODO.md` 2장 「Streamlit 에 남는 조건 셋」
+    # ②). 지문은 넘은 문턱 이름뿐이고 「그 화면으로」 는 Admin 「서버 시작 점검」 펼침까지다. 글은
+    # 부를 때 준다(값이 든다).
+    AlertSpec("AD-26", "check", "state", "서버 부하 신호 — 화면 응답 · CPU · 동시 세션 문턱 넘음"),
 )
 
 
