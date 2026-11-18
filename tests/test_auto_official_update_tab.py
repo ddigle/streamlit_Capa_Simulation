@@ -371,12 +371,13 @@ def _inputs(app: AppTest) -> list[tuple[str, str, object]]:
     ]
 
 
-def test_a_closed_tab_skips_the_status_and_settings_history_reads_but_keeps_its_inputs(
+def test_a_closed_tab_skips_only_the_settings_history_read_and_keeps_what_sits_above_inputs(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """다른 탭을 보는 회차(닫힌 탭)는 DB 를 읽는 상태 값 줄(현재 공식버전)과 맨 끝 설정 변경 기록을
-    읽지도 그리지도 않는다 — 입력 칸(설정 · 지금 실행)과 실행 기록(접는 상자의 펼침이 탭을 다녀와도
-    남게)은 열린 탭과 같게 그린다. 탭을 연 회차는 전부 읽어 그린다."""
+    """다른 탭을 보는 회차(닫힌 탭)는 맨 끝 설정 변경 기록만 읽지도 그리지도 않는다 — 설정 칸 위의
+    상태 값 줄(현재 공식버전)은 그대로 읽어 그리고(건너뛰면 여는 회차에 늦게 붙어 설정 칸을 밀어
+    내린다 — AGENTS 9장), 입력 칸(설정 · 지금 실행)과 실행 기록(접는 상자의 펼침이 탭을 다녀와도
+    남게)도 열린 탭과 같게 그린다. 탭을 연 회차는 전부 읽어 그린다."""
     import capa_simulation.components.auto_official_update_tab as tab
 
     _with_w40(database)
@@ -397,12 +398,13 @@ def test_a_closed_tab_skips_the_status_and_settings_history_reads_but_keeps_its_
     )
 
     closed = _closed_tab(database)
-    assert reads == []
+    assert reads == ["baseline"]
     closed_text = _markdown(closed)
-    assert "현재 공식버전" not in closed_text
+    assert "공식 v1 W40" in closed_text
     assert "설정 변경 기록" not in closed_text
     assert "실행 기록" in closed_text
 
+    reads.clear()
     opened = _tab(database)
     assert sorted(reads) == ["baseline", "changes"]
     opened_text = _markdown(opened)

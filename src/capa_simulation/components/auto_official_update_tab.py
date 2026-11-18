@@ -223,9 +223,9 @@ def render_auto_official_update(
     """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다).
     `alert_tab` 은 이 탭 이름(상태 알림 `AU-01` · `AU-02` 의 「그 화면으로」 —
     `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다
-    (`_report_read_failure`도 같다). 닫힌 탭은 입력 칸(설정 · 지금 실행)과 실행 기록만 그리고 DB 를
-    읽는 상태 값 줄(다음 실행 · 현재 공식버전)과 설정 변경 기록은 건너뛴다 — 탭을 연 회차가 읽어
-    그린다."""
+    (`_report_read_failure`도 같다). 닫힌 탭은 맨 끝 설정 변경 기록만 읽지도 그리지도 않는다 — 탭을
+    연 회차가 읽어 그린다. 설정 칸 **위**의 상태 값 줄(다음 실행 · 현재 공식버전)은 닫힌 탭에도
+    그린다(건너뛰면 여는 회차에 늦게 붙어 설정 칸을 밀어 내린다 — AGENTS 9장 숨은 탭 규칙)."""
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
@@ -326,18 +326,17 @@ def _render_status(
             if status.pending_day is not None:
                 parts.append(f"{status.pending_day.isoformat()} 회차를 다시 시도하는 중")
             st.caption(" · ".join(parts))
-            if alert_tab is not None:
-                try:
-                    claimed_today = repository.auto_official_update_run_key_exists(
-                        scheduled_run_key(now.date())
-                    )
-                except BOOTSTRAP_ERRORS:
-                    claimed_today = False
-                # 다음 실행은 이 실행에 예약이 서 있을 때만 값이다 — 꺼진 실행은 위 줄이 이미
-                # 말한다(설계 규칙 UI-TXT-07).
-                st.markdown(
-                    f"**다음 실행** · {next_run_line(config, now, claimed_today=claimed_today)}"
+            try:
+                claimed_today = repository.auto_official_update_run_key_exists(
+                    scheduled_run_key(now.date())
                 )
+            except BOOTSTRAP_ERRORS:
+                claimed_today = False
+            # 다음 실행은 이 실행에 예약이 서 있을 때만 값이다 — 꺼진 실행은 위 줄이 이미 말한다
+            # (설계 규칙 UI-TXT-07).
+            st.markdown(
+                f"**다음 실행** · {next_run_line(config, now, claimed_today=claimed_today)}"
+            )
         elif missing_thread:
             # 허락했는데 스레드가 없다 — 까닭 · 할 일은 알림(`AU-02`)에 있다. 상태 줄만 남긴다.
             st.markdown(f"**예약** · :red[스레드 없음] — 실행 줄은 허락했습니다(`{ENV_VAR}=1`).")
@@ -350,10 +349,6 @@ def _render_status(
                     "실행」은 이 서버에서도 됩니다."
                 ),
             )
-        if alert_tab is None:
-            # 닫힌 탭은 DB 를 읽는 값 줄(다음 실행 · 현재 공식버전)을 건너뛴다 — 이 상자 안에는 입력
-            # 칸이 없고, 탭을 연 회차가 읽어 그린다. 상자는 늘 서서 아래 설정 칸 자리가 같다.
-            return
         try:
             baseline = current_official_baseline(repository)
         except MissingOfficialWeek as exc:
