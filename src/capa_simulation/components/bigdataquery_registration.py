@@ -34,6 +34,7 @@ from capa_simulation import alerts
 from capa_simulation.auth import grades
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_range_field, optional_date_range_field
+from capa_simulation.components.extra_process_notice import queue_extra_report
 from capa_simulation.components.flash import (
     BESIDE_KINDS,
     FlashNote,
@@ -69,7 +70,11 @@ from capa_simulation.persistence.cache import load_global_display_order
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
-from capa_simulation.scenario_registration import registration_note, save_bigdataquery_scenario
+from capa_simulation.scenario_registration import (
+    load_active_extra_pack,
+    registration_note,
+    save_bigdataquery_scenario,
+)
 from capa_simulation.services.bigdataquery_catalog_view import (
     SCOPE_ALL,
     SCOPE_OPTIONS,
@@ -86,7 +91,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     view_token,
 )
 from capa_simulation.services.core_data_pipeline import (
-    fetch_core_data_dataset,
+    fetch_registration_dataset,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
@@ -106,11 +111,21 @@ REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 # 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고(`RegistrationCapacityCheck`) — 알림창 ·
 # Alarm 에만(맨 뒤). 푸는 길은 그 전문(Alarm)이 말한다.
 REGISTRATION_CAPACITY_FLASH_KEY = "bigdataquery_registration_capacity_flash"
+# 부대공정 판을 합친 결과(「부대공정 2 합침」 · 뺌이면 경고 — `extra_process_notice`) — 알림창 ·
+# Alarm 에만(성공 알림 뒤).
+REGISTRATION_EXTRA_FLASH_KEY = "bigdataquery_registration_extra_flash"
 REGISTRATION_FLASH_KEYS: Final = (
     REGISTRATION_FLASH_KEY,
     REGISTRATION_CONFLICT_FLASH_KEY,
     REGISTRATION_DROP_FLASH_KEY,
+    REGISTRATION_EXTRA_FLASH_KEY,
     REGISTRATION_CAPACITY_FLASH_KEY,
+)
+# 활성 부대공정 판이 있을 때 저장 단추 위에 서는 칩의 글(미리 정한 짧은 글 — 설계 규칙 UI-TXT-06).
+EXTRA_CHIP_TEMPLATE: Final = "부대공정 판 {version}"
+EXTRA_CHIP_HELP: Final = (
+    "저장할 때 Admin 「부대공정」 에 적용된 판을 생산 계획에 맞춰 함께 넣습니다 — 맞물리지 않는 "
+    "부대공정은 빼고 알립니다."
 )
 # 저장 결과 칸(저장 단추 바로 아래)이 화면 밖이면 마지막 알림이 화면 아래에 닿게 본문을 옮기는
 # 스크립트 — 이미 보이면 움직이지 않는다(`block: "nearest"`). 단추를 화면 맨 아래에 두고 누르면 그
@@ -723,6 +738,14 @@ def _render_registration_form(
             ),
         )
         st.text_area("등록 메모", key=form_field_key(FORM_NOTE_KEY), height=90)
+        extra_version = _active_extra_version(repository)
+        if extra_version is not None:
+            st.badge(
+                EXTRA_CHIP_TEMPLATE.format(version=extra_version),
+                icon=":material/extension:",
+                color="gray",
+                help=EXTRA_CHIP_HELP,
+            )
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
             icon=":material/cloud_download:",
@@ -746,6 +769,15 @@ def _render_registration_form(
             _save_scenario(repository, database_path, existing_names=existing_names)
         # 저장하면 다음 회차로 넘어가므로(`st.rerun`) 여기까지 오면 칸에 저장하지 못한 까닭이 섰다.
         _reveal_notice(notice)
+
+
+def _active_extra_version(repository: DuckDBScenarioRepository) -> int | None:
+    """활성 부대공정 판 번호 — 없거나 읽지 못하면 None(칩을 세우지 않는다)."""
+    try:
+        active = repository.load_extra_process_state().active
+    except BOOTSTRAP_ERRORS:
+        return None
+    return None if active is None else active.version_no
 
 
 def _drawn_beside(note: FlashNote | None) -> bool:
@@ -820,7 +852,12 @@ def _save_scenario(
             f"DB에서 Core Data를 조회하고 검증하는 중입니다 — 상세 조회 {window.label()}"
             f"({window.days}일)..."
         ):
-            prepared = fetch_core_data_dataset(provider, simulation_code, display_order)
+            # 부대공정은 DB 에 적용된 활성 판을 프리셋을 만들기 **전에** 합친다 — 프리셋(전
+            # 공정)이 부대공정을 저절로 넣는다(설계 D2 (라) · D21).
+            registration_data = fetch_registration_dataset(
+                provider, simulation_code, display_order, load_active_extra_pack(repository)
+            )
+            prepared = registration_data.prepared
             preset = capture_full_data_scenario_preset(prepared.reference_tables)
             registration = save_bigdataquery_scenario(
                 repository,
@@ -829,6 +866,7 @@ def _save_scenario(
                 scenario_name=scenario_name,
                 revision_name=revision_name,
                 note=note,
+                extra=registration_data.extra,
             )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
@@ -856,6 +894,7 @@ def _save_scenario(
             icon=":material/warning:",
             popup_only=True,
         )
+    queue_extra_report(REGISTRATION_EXTRA_FLASH_KEY, registration_data.extra)
     if registration.capacity.stopped:
         # 저장은 됐다 — 막지 않고 무엇이 멈췄는지와 푸는 길을 알린다(2026-11-01 사용자 결정 —
         # 알림창 짧은 글이 무엇이 멈췄는지, Alarm 전문이 푸는 길). 꼴·개수는 리비전 메모에도 남는다.

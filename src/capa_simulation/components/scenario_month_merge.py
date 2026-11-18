@@ -11,6 +11,7 @@ from capa_simulation.components.literal_markdown import literal_markdown, markdo
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
+    carried_extra_process,
     month_table_summary,
     render_derived_save,
     render_source_selector,
@@ -301,6 +302,10 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
             ),
             virtual_products=history.records,
             gate_sources=(base, donor),
+            # 두 원본의 부대공정 판을 모두 적는다 — 판이 다르면 한 공정이 두 판을 갖는다(설계 D20).
+            extra_process=carried_extra_process(
+                repository, ((base, "월 머지 베이스"), (donor, "월 머지 덧붙임"))
+            ),
         )
     except ValueError as exc:
         # 저장 칸이 이미 섰다 — 누른 저장의 거부라 잠긴 단추를 더 세우지 않는다.

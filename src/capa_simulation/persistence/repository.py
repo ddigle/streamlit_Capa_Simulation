@@ -1483,6 +1483,16 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return extra_process_store.load_provenance(connection, dataset_id)
 
+    def load_scenario_extra_process(self, scenario_id: str) -> tuple[ExtraProcessProvenance, ...]:
+        """시나리오 데이터셋의 부대공정 출처 줄 — 새 데이터셋을 만드는 복제 · 파생 저장이 잇는다."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT dataset_id FROM app_meta.dataset WHERE scenario_id = ?", [scenario_id]
+            ).fetchone()
+            if row is None:
+                return ()
+            return extra_process_store.load_provenance(connection, str(row[0]))
+
     @grades.gated("admin.area")
     def apply_extra_process(
         self,

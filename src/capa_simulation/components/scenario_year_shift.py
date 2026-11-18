@@ -6,6 +6,7 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.grade_hooks import viewer_can
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
+    carried_extra_process,
     month_table_summary,
     render_derived_save,
     render_source_selector,
@@ -113,4 +114,6 @@ def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> N
         key="scenario_shift",
         request=(source.revision.revision_id, str(years)),
         virtual_products=virtual_products,
+        # 부대공정 행도 연도가 함께 옮겨져 판의 기간과 어긋난다 — 출처에 이동량을 남긴다(설계 4-9).
+        extra_process=carried_extra_process(repository, ((source, f"연도 Shift {years:+d}년"),)),
     )

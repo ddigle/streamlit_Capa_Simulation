@@ -2287,6 +2287,14 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             virtual_products = revision_virtual_product_rows(
                 repository, parent_revision_id, revision_source
             )
+            # 복제는 지금 편집본의 부대공정 행을 그대로 옮긴다 — 바탕 시나리오 데이터셋의 판 출처를
+            # 새 데이터셋에 잇는다(설계 D18 · 4-9).
+            base_scenario_id = active_persisted_scenario_id()
+            extra_process = (
+                ()
+                if base_scenario_id is None
+                else repository.load_scenario_extra_process(base_scenario_id)
+            )
             request = ScenarioCreate(
                 scenario_name=scenario_name,
                 source_simulation_code=source_code,
@@ -2312,6 +2320,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                     revision_name=revision_name,
                     note=note_text,
                     virtual_products=virtual_products,
+                    extra_process=extra_process,
                 ),
                 fingerprint=(
                     active_scenario["content_token"],

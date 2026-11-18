@@ -15,6 +15,7 @@ Streamlit 을 import 하지 않고 세션을 읽지 않는다. 프리셋은 부�
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,9 +24,21 @@ from typing import Final
 import pandas as pd
 
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
-from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSnapshot
+from capa_simulation.persistence.models import (
+    ExtraProcessProvenance,
+    ScenarioCreate,
+    ScenarioPreset,
+    ScenarioSnapshot,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.core_data_pipeline import PreparedCoreDataset
+from capa_simulation.services.extra_process_merge import (
+    ActiveExtraPack,
+    ExtraMergeReport,
+    ExtraPackVersion,
+    provenance_rows,
+)
+from capa_simulation.services.extra_process_pack import read_pack_zip
 from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.unit_capacity import (
     JOIN_BLANK_VALUE,
@@ -38,6 +51,7 @@ from capa_simulation.services.unit_capacity import (
 )
 
 BIGDATAQUERY_PIPELINE_VERSION: Final = "bigdataquery-core-data-v6"
+_LOGGER = logging.getLogger(__name__)
 
 # 대당 Capa 를 멈춘 표 → 기준 정보 화면의 표(종류 단추 글, 낫표까지 — 앱이 지은 이름이다).
 # 모듈수(`RQ_MODULE`)는 편집·리비전 대상이 아니다.
@@ -277,6 +291,47 @@ def registration_note(note: str, window: QueryWindow) -> str:
     return " · ".join(part for part in (note.strip(), f"상세 조회기간 {window.label()}") if part)
 
 
+def load_active_extra_pack(repository: DuckDBScenarioRepository) -> ActiveExtraPack | None:
+    """DB 에 적용된 활성 부대공정 판과 그 내용 — 등록 · 자동 갱신 · 얹기가 S3 대신 읽는다.
+
+    끈 동안 · 판이 없으면 None 이다. 적용 때 검사를 지난 판이라 다시 읽어 거절되는 일은 코드의
+    검사가 그 사이 엄해졌을 때뿐이다 — 그때도 등록을 막지 않고 판을 빼고 로그를 남긴다.
+    """
+    active = repository.load_extra_process_state().active
+    if active is None or active.sha256 is None or active.version_no is None:
+        return None
+    reading = read_pack_zip(repository.load_extra_process_content(active.sha256))
+    if reading.pack is None:
+        _LOGGER.warning(
+            "활성 부대공정 판 %s 을 다시 읽지 못해 합치지 않습니다(거절 %d건).",
+            active.version_no,
+            len(reading.problems),
+        )
+        return None
+    return ActiveExtraPack(
+        ExtraPackVersion(active.seq, active.version_no, active.sha256), reading.pack
+    )
+
+
+def provenance_records(report: ExtraMergeReport | None) -> tuple[ExtraProcessProvenance, ...]:
+    """합치기 보고 → 데이터셋 출처 줄(설계 D18). 판이 없으면 빈 묶음이다."""
+    if report is None:
+        return ()
+    return tuple(
+        ExtraProcessProvenance(
+            process_name=str(row["process_name"]),
+            version_seq=int(str(row["version_seq"])),
+            version_no=int(str(row["version_no"])),
+            sha256=str(row["sha256"]),
+            outcome=str(row["outcome"]),
+            rule=None if row["rule"] is None else str(row["rule"]),
+            reason=None if row["reason"] is None else str(row["reason"]),
+            row_counts=None if row["row_counts"] is None else str(row["row_counts"]),
+        )
+        for row in provenance_rows(report)
+    )
+
+
 def save_bigdataquery_scenario(
     repository: DuckDBScenarioRepository,
     prepared: PreparedCoreDataset,
@@ -285,6 +340,7 @@ def save_bigdataquery_scenario(
     scenario_name: str,
     revision_name: str,
     note: str,
+    extra: ExtraMergeReport | None = None,
 ) -> BigDataQueryRegistration:
     """조회·변환을 마친 원천을 새 시나리오와 리비전 1 로 저장한다. 세션을 활성화하지 않는다.
 
@@ -293,11 +349,16 @@ def save_bigdataquery_scenario(
     (`BlankCsDrop.memo`)와 대당 Capa 멈춤의 꼴·개수(`RegistrationCapacityCheck.memo`)는 리비전 메모
     끝에 붙인다 — 저장한 리비전에 남는 기록이다. 이름 중복(보관본 포함)·원천 코드 불변 검사는
     저장소가 쓰기 트랜잭션 안에서 한다.
+
+    `extra` 는 `prepared` 에 이미 합친 부대공정 판의 보고다
+    (`core_data_pipeline.fetch_registration_dataset`) — 메모 조각(「부대공정 판 3 · 2 합침」)과
+    데이터셋 출처 줄을 남긴다.
     """
     capacity = check_registration_capacity(
         prepared.reference_tables, blank_cs_routes=prepared.blank_cs.route_rows
     )
-    memos = [memo for memo in (prepared.blank_cs.memo(), capacity.memo()) if memo]
+    extra_memo = "" if extra is None else extra.memo()
+    memos = [memo for memo in (prepared.blank_cs.memo(), extra_memo, capacity.memo()) if memo]
     if memos:
         note = " · ".join(part for part in (note.strip(), *memos) if part)
     snapshot = repository.create_scenario(
@@ -314,5 +375,6 @@ def save_bigdataquery_scenario(
         source_data=prepared.source_data,
         revision_name=revision_name,
         note=note,
+        extra_process=provenance_records(extra),
     )
     return BigDataQueryRegistration(snapshot, capacity)

@@ -32,6 +32,7 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.cache import load_scenario_snapshot
 from capa_simulation.persistence.models import (
+    ExtraProcessProvenance,
     RevisionSummary,
     ScenarioCreate,
     ScenarioSnapshot,
@@ -221,8 +222,14 @@ def render_derived_save(
     request: tuple[str, ...],
     virtual_products: tuple[VirtualProductRecord, ...] = (),
     gate_sources: Sequence[ScenarioSnapshot] = (),
+    extra_process: Sequence[ExtraProcessProvenance] = (),
+    included_processes: tuple[str, ...] | None = None,
 ) -> None:
     """저장 성공을 세션에 남기고 같은 제출의 중복 저장과 활성 편집본 교체를 피한다.
+
+    `extra_process` 는 새 데이터셋에 이어 둘 부대공정 출처 줄(설계 D18 — 연도 Shift · 월 머지는
+    원본의 줄을 메모와 함께, 부대공정 얹기는 새로 합친 판의 줄)이다. `included_processes` 를 주면
+    프리셋 포함 공정을 결과 전체 대신 그것으로 둔다(얹기 — 바탕에서 끈 공정이 다시 켜지지 않게).
 
     제출하면 결과의 Capa 계산을 먼저 검사한다(`derived_save_verdict`). 「편집 전」은 결과를 만든
     원본 리비전 전부다 — `gate_sources` 가 비면 `source` 하나다(머지는 베이스·덧붙일 쪽 둘).
@@ -300,7 +307,11 @@ def render_derived_save(
         source.preset,
         start_month=months[0],
         end_month=months[-1],
-        included_processes=tuple(sorted(tables["RQ_REQB"]["공정"].dropna().astype(str).unique())),
+        included_processes=(
+            included_processes
+            if included_processes is not None
+            else tuple(sorted(tables["RQ_REQB"]["공정"].dropna().astype(str).unique()))
+        ),
         standard_target_processes=(),
         standard_target_start_date=None,
         standard_target_end_date=None,
@@ -328,6 +339,7 @@ def render_derived_save(
                 revision_name="초기 리비전",
                 note=full_note,
                 virtual_products=records,
+                extra_process=extra_process,
             ),
             # 같은 요청의 같은 이름·메모만 한 저장이다 — 끊긴 쓰기 뒤 이름을 바꿔 누른 저장은
             # 새로 쓴다.
@@ -370,6 +382,19 @@ def render_derived_save(
     bump(generation_key)
     written.release()
     st.rerun()
+
+
+def carried_extra_process(
+    repository: DuckDBScenarioRepository, sources: Sequence[tuple[ScenarioSnapshot, str]]
+) -> tuple[ExtraProcessProvenance, ...]:
+    """원본 시나리오들의 부대공정 출처 줄에 메모(「연도 Shift +1년」 · 「월 머지 베이스」)를 단
+    사본 — 파생 저장이 새 데이터셋에 잇는다(설계 D18 · 4-9). 부대공정이 없으면 빈 묶음이다."""
+    carried: list[ExtraProcessProvenance] = []
+    for snapshot, note in sources:
+        for record in repository.load_scenario_extra_process(snapshot.scenario.scenario_id):
+            joined = " · ".join(part for part in (record.note, note) if part)
+            carried.append(replace(record, note=joined or None))
+    return tuple(carried)
 
 
 def derived_flash_keys(key: str) -> tuple[str, str]:
