@@ -3432,7 +3432,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   이름에 내준다(× 가 먼저 줄어든다 — 탭 10칸 · 1283px 에서 이름이 한 음절로 줄던 것, 2026-11-07 답 narrow · UI-ACC-02). 칸 폭은
   그대로라 가리켜도 이웃 탭이 밀리지 않는다. 터치 기기(`hover: none`)는 × 가 늘 보인다(`page_tabs.css`).
   - 점(`page_unsaved_marks`)은 세션만 읽는다 — 붙여넣기 대기·표 초안(기준 정보 그리드)·설비 편집본(가용설비·Space 두 탭)·Past Data 초안·시나리오
-    관리 표 초안·VOC 적어 둔 답변(`voc_draft_keeper.kept_reply_count` — VOC 탭에)은 어느 화면에서나, 편집표의 적용 전 편집과 Space 층 사용 편집 초안(`floor_state_draft_pending` — `사용
+    관리 표 초안·VOC 적어 둔 답변(`voc_draft_keeper.kept_reply_count` — VOC 탭에)·가용설비 현황 Preference 입력 비가동
+    초안(`manual_downtime_tab.manual_downtime_draft_count` — 가용설비 현황 탭에, 2026-11-19)은 어느 화면에서나, 편집표의 적용 전 편집과 Space 층 사용 편집 초안(`floor_state_draft_pending` — `사용
     편집` 토글이 위젯 상태라 화면을 떠나면 초안이 버려진다)·가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
     (`small_editor_edits` — 시나리오 편집 등록부에는 넣지 않는다, 시나리오 저장 경고가 아니다)은 지금 탭에만 찍는다. 지금 화면의 그 둘이 있으면 다른 탭
     누름·지금 탭 × 에서 `confirm` 으로 묻는다(`leave_notice`). 사이드바 링크·뒤로가기에는 묻지 않는다. 시나리오 미저장·
@@ -3615,7 +3616,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     직전에 부모 창에 `RELOAD_ASKED_FLAG` 를 달아 탭 줄의 새로고침 확인 창(`page_tabs.js` 의 `<tabs-unload>`)이 다시 묻지 않게
     한다. 같은 표지를 그 확인 창도 읽는다.
     시나리오 밖의 것 — 설비 편집본·Space FAB 전체 배치 대기분(설비 편집본 세대 밖)·Space 층 사용 편집 초안·적용 전
-    편집(편집표·붙여넣기 대기·표 초안)·Past Data 초안·시나리오 관리 표 초안·VOC 적어 둔 답변 — 은 `app.py` 가 같은 회차의 탭 점
+    편집(편집표·붙여넣기 대기·표 초안)·Past Data 초안·시나리오 관리 표 초안·VOC 적어 둔 답변·입력 비가동 초안 — 은 `app.py` 가 같은 회차의 탭 점
     판정(`page_tabs.page_unsaved_marks`)으로 넣는다.
 - `src/capa_simulation/components/page_guide.py` — 헤더 툴바 맨 왼쪽 `Guide` 버튼과 화면별 사용 안내
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
@@ -4995,16 +4996,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     2026-10-25 E2E) 읽기만 하는 `월` 만 붙박아 넓은 창의 남는 폭은 두 입력 칸이 나눈다(입력 칸을 붙박으면 값이 흐린
     글자라 잠긴 칸처럼 보인다). 호기별 표 `메모` 칸에는 메모 한 가지가 다 보이는 폭을 준다.
 - `src/capa_simulation/components/manual_downtime_tab.py` — 가용설비 현황 탭 ③ 「Preference」 본문 — 공정 × 생산월 입력
-  비가동대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
-  메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 — 2026-11-09 상단 띠 재고)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
-  저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
+  비가동대수 편집표(폼 밖 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0, 폼이 두르던
+  테두리는 `st.container(border=True)` 로 그대로)·「되돌리기」·저장자·변경 메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 —
+  2026-11-09 상단 띠 재고, `persist_state="session"`)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
+  저장 이력 펼침.
+  - **적은 칸은 세션 초안이다**(`MANUAL_DRAFT` — `SessionSlot`, (공정, 달) → 값, 저장본과 다른 칸만 — 2026-11-19 사용자 요청
+    「다른 화면에 다녀오거나 테마를 바꾸면 말없이 사라진다」). 편집표 `on_change`(`_fold_edits`)가 칸을 고친 회차 첫머리에 접고
+    본문도 편집표 결과로 다시 접으며, 편집표는 늘 저장본 위에 초안을 얹어 그린다 — 다른 화면에 다녀와도 칸이 선다. 초안이
+    있으면 화면 탭 점(어느 화면에서나)·③ 탭 점·머리 변경 칩 「저장 안 함」(Preference 탭을 가리킴)·테마 · 새로고침 확인이
+    선다(`manual_downtime_draft_count`). 떠나도 남으므로 탭 줄 떠나기 확인에는 넣지 않는다(설계 규칙 UI-STA-02). 초안이 있는
+    동안 본 version 을 붙들고, 저장 아닌 회차에 저장본 version 이 달라졌으면 제 저장이 끊긴 것(`is_own_save`)이면 보이는 칸을
+    빼고 남의 저장이면 초안을 버리고 그 수를 곁 경고 · 알림창으로 알린다(`MANUAL_DROPPED_MESSAGE`). 조회기간 밖이 된 칸은
+    초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 는 초안과 편집표 위젯(`editor_state.discard_editor`)을 버린다. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
   `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 저장 줄(`MANUAL_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대
   자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2026-11-10 사용자 그림 메모 eq-pref). 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선
   (`MANUAL_INTRO_HELP` + 지금 열 + `MANUAL_COLUMNS_HELP`)이고, 조회기간 밖 저장 칸은 있을 때만 공용 버전 줄 표지다.
   - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
-    「본 값과 보이는 칸」). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는 제출 회차여도 그린 저장본 version
-    이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인
-    `equipment_preference` 가 그 칸으로 찾는다.
+    「본 값과 보이는 칸」 — `editor_widget_key` 를 지난다). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는
+    제출 회차여도 그린 저장본 version 이고 초안을 버린다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key
+    `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
@@ -7452,7 +7462,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   기준 · 선행 B/O · 선행 입고 · 확보율 보정 · Past Data · Proc Rename · 표시순서)은 key 세대를 쓰지 않고
   `components/saved_note` 로 비운다 — 칸이 갈리면 Enter 저장의 초점이 대화상자 닫기 단추로 가고, 서버 재시작 뒤 앞 세션
   탭의 칸이 빈다(2026-11-08 리뷰). 성공한 저장과 제 저장을 알아본 둘째 누름에만, 칸 글이 저장한 그 글일 때만 비우고,
-  거절 · 오류 · 바꾼 것 없는 저장은 칸을 지킨다. 입력 비가동 저장자 칸은 남는다.
+  거절 · 오류 · 바꾼 것 없는 저장은 칸을 지킨다. 입력 비가동 저장자 칸은 남는다(입력 비가동은 2026-11-19 부터 폼 밖이고
+  두 칸이 `persist_state="session"` 이라 다른 화면에 다녀와도 남는다).
   **닫힌 팝업 안처럼 브라우저에 마운트되지 않은 위젯은 적은 값도 받지 못한다** — 그때는 key
   세대를 바꾼다(사이드바 저장 폼, 2026-10-08). 나중에 열려 마운트되는 칸은 **마지막 회차가 실어
   보낸 값**(`set_value`)으로 서고, 없으면 빈 기본값으로 선다 — 비우는 칸이 아니라 지금 값으로 세워
@@ -8297,7 +8308,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     위젯이라, 폼 안에서 보내지 않은 편집을 브라우저가 그대로 들고 있다 — 남이 같은 칸을 저장한 뒤 회차가 한 번만 돌아도(탭 왕복)
     본 값은 최신으로 오르는데 그 칸에는 남의 값이 아니라 제 편집이 보여, 저장이 거부 없이 남의 저장을 덮었다(2026-10-27 리뷰 —
     Preference 입력 비가동, 사본 앱 두 세션. 거부 뒤에도 제 편집이 남아 1초 뒤 다시 누르면 덮었다). 그런 표는 위젯 key 에 **표가
-    출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`).
+    출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`
+    — 입력 비가동은 2026-11-19 부터 폼 밖 세션 초안이라 초안이 있는 동안 본 값을 붙들고, 저장 아닌 회차에 남의 저장이 보이면
+    초안을 버리고 알린다 — 위 파일 절).
     거부된 누름의 둘째 누름(held) 회차는 제출 회차여도 그린 저장본 version 이다 — 그 회차가 본 값을 최신으로 적으므로, 본 값(옛
     version — 둘째 누름이 거부 뒤 회차를 적기 전에 끊었다)으로 그리면 옛 편집이 다시 서고 그 위에 친 칸이 다음 누름의 최신 key
     위젯에 닿지 않아 「바뀐 것이 없습니다」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
