@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 from alert_marks import active_state, states
+from edit_grid_fake import install_fake_edit_grid, last, send_ops, shell_frame
 from grade_support import (
     DEMO_DEVELOPER,
     DEMO_EDITOR,
@@ -37,6 +38,7 @@ from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.components import (
     access_list_admin,
+    access_list_grid,
     admin_view,
     grade_ui,
     sso_identity,
@@ -187,53 +189,61 @@ def test_off_the_operational_server_the_admin_area_opens_without_a_preview(
     assert admin_view.developer_notes_visible()
 
 
-def test_the_access_list_shows_four_grades_one_menu_and_a_grade_choice_when_adding(
+def test_the_access_list_is_one_edit_grid_with_four_grades_and_locked_own_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """접속 명단은 범용 편집 그리드의 줄 규칙 표다(2026-11-18 구현 확인 보드 「고칠 것」) — 등급은
+    고르기 칸(열람 · 실무자 · 관리자 · 개발자), 나 자신 · 환경변수 개발자 줄은 등급 칸 · 줄 지우기가
+    잠기고, 옛 「사람 고르기」 · 「등급 바꾸기」 · 「추가」 창 · 「지우기」 는 없다."""
+    calls = install_fake_edit_grid(monkeypatch)
     as_grade(monkeypatch, grades.DEVELOPER)
     app = _admin(tmp_path)
 
-    (frame,) = [table.value for table in app.dataframe if "등급" in table.value.columns]
-    shown = dict(zip(frame["계정"], frame["등급"], strict=True))
+    shell = last(calls, access_list_grid.HOST)
+    frame = shell_frame(shell)
+    options = shell["fmts"][-1]["options"]
+    assert options == ["열람", "실무자", "관리자", "개발자"]
+    listed = frame[frame["계정"].notna()]
+    shown = {row["계정"]: options[int(row["등급"])] for _, row in listed.iterrows()}
     assert shown == {
-        DEMO_DEVELOPER: "개발자(환경변수)",
+        DEMO_DEVELOPER: "개발자",
         DEMO_MANAGER: "관리자",
         DEMO_EDITOR: "실무자",
         DEMO_VIEWER: "열람",
     }
+    editor = listed.set_index("계정").loc[DEMO_EDITOR]
+    assert (editor["이름"], editor["부서"]) == ("DEMO 이대리", "DEMO 팀")
+    kinds = dict(zip(shell["ids"], shell["locks"]["rows"], strict=True))
+    assert kinds[DEMO_DEVELOPER] == access_list_grid.SELF, "나 자신(환경변수 개발자이기도)"
+    assert kinds[DEMO_VIEWER] == access_list_grid.LISTED
     labels = visible_labels(app)
-    assert access_list_admin.GRADE_MENU_LABEL in labels
-    assert "관리자로" not in labels and "일반으로" not in labels, "옛 두 단추는 걷었다"
-    assert {"열람", "실무자", "관리자", "개발자"} <= labels
+    for gone in ("등급 바꾸기", "추가", "지우기", "관리자로", "일반으로", "사람 고르기"):
+        assert gone not in labels, gone
+    assert not list(app.multiselect)
     captions = [str(caption.value) for caption in app.caption]
     assert any("개발자 1(환경변수 1)" in caption for caption in captions), captions
-    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
-    assert picker.format_func(DEMO_EDITOR) == "demo.editor · DEMO 이대리 · DEMO 팀"
-    assert picker.format_func(DEMO_VIEWER) == DEMO_VIEWER, "이름 없는 사람은 계정만"
-
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([DEMO_DEVELOPER]).run()
-    for grade in (grades.VIEWER, grades.EDITOR, grades.MANAGER):
-        button = app.button(key=access_list_admin.GRADE_BUTTON_KEY.format(grade=grade))
-        assert button.disabled and button.help == access_list_admin.GRADE_LOCKED_WHY
-    assert not app.button(key=access_list_admin.GRADE_BUTTON_KEY.format(grade="developer")).disabled
-
-    app.button(key="admin_area_access_list_open_add").click().run()
-    radio = app.radio(key=access_list_admin.ADD_GRADE_KEY)
-    assert radio.label == "등급" and radio.value == grades.EDITOR, "처음 값 실무자"
-    assert list(radio.options) == ["열람", "실무자", "관리자", "개발자"]
+    save = app.button(key=access_list_admin.SAVE_KEY)
+    assert save.disabled and save.help == access_list_admin.SAVE_LOCKED_WHY
 
 
-def test_a_menu_press_after_losing_the_developer_grade_changes_nothing(
+def test_a_save_after_losing_the_developer_grade_changes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """보인 회차와 누른 회차의 등급이 다르면 쓰는 자리(두 번째 벽)가 막고 알림창 · Alarm 에
-    한 번."""
+    """보인 회차와 누른 회차의 등급이 다르면 저장 콜백이 쓰는 순간의 실제 등급으로 막고 알림창 ·
+    Alarm 에 한 번."""
+    calls = install_fake_edit_grid(monkeypatch)
     as_grade(monkeypatch, grades.DEVELOPER)
     app = _admin(tmp_path)
-    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([DEMO_VIEWER]).run()
+    app = send_ops(
+        app,
+        calls,
+        {"op": "write", "rows": [DEMO_VIEWER], "cols": ["등급"], "values": [["관리자"]]},
+        host=access_list_grid.HOST,
+    )
+    assert not app.button(key=access_list_admin.SAVE_KEY).disabled
 
     as_grade(monkeypatch, grades.MANAGER)
-    app.button(key=access_list_admin.GRADE_BUTTON_KEY.format(grade="manager")).click().run()
+    app.button(key=access_list_admin.SAVE_KEY).click().run()
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert grade_store.grade_of(runtime.config(), DEMO_VIEWER) == grades.VIEWER

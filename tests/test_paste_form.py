@@ -44,12 +44,10 @@ PASTE_WINDOWS = (
     ("src/capa_simulation/components/process_rename_management.py", "_clipboard_dialog"),
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"),
     ("src/capa_simulation/components/equipment_import_dialog.py", "_render_body"),
-    ("src/capa_simulation/components/access_list_admin.py", "_add_dialog"),
 )
 # 글 칸 라벨을 화면에 보이는 창(파일 → 까닭) — 창 제목만으로는 무엇을 넣는 칸인지 모른다.
 LABEL_VISIBLE_WINDOWS = {
     "src/capa_simulation/components/equipment_import_dialog.py": "곁의 CSV 업로드 칸과 짝",
-    "src/capa_simulation/components/access_list_admin.py": "넣을 것을 말하는 글이 라벨뿐",
 }
 # 창 제목이 없는 표 상자 안 칸 — 작업 줄이 제목 줄이 아니라 그 상자 맨 위에 선다.
 IN_BOX_FORMS = {"src/capa_simulation/components/past_data_management.py"}

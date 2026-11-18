@@ -27,6 +27,7 @@ from capa_simulation.auth import page_frame, runtime
 from capa_simulation.auth.access import ListChange, ListDocument, ListEntry
 from capa_simulation.components import (
     access_list_admin,
+    access_list_grid,
     bdq_token_admin,
     container_start_check,
     object_sync_status,
@@ -78,26 +79,24 @@ def utc_server() -> Iterator[None]:
 
 
 def test_the_access_list_times_are_korean_on_a_utc_server(utc_server: None) -> None:
-    """접속 명단 표 「등록 시각」 과 「최근 등록 · 빼기」 의 시각 — 파일의 UTC 를 KST 로 옮긴다."""
+    """접속 명단 편집 표 「등록일」 과 「최근 등록 · 빼기」 의 시각 — 파일의 UTC 를 KST 로 옮긴다
+    (UTC 16:56 은 KST 다음 날 01:56)."""
     document = ListDocument(
         revision=1,
         entries=(ListEntry("dev.user", added_by="admin", added_at=MOMENT_TEXT),),
         changes=(ListChange(by="admin", at=MOMENT_TEXT, what="add", loginid="dev.user"),),
     )
 
-    people = access_list_admin.people_table(document)
     recent = access_list_admin.recent_changes_table(document, now=EPOCH + 60)
 
-    assert people["등록 시각"].tolist() == [KST_MINUTE]
+    assert access_list_grid.date_text(MOMENT_TEXT) == KST_MINUTE[:10]
     assert recent.iloc[0, 0] == KST_MINUTE
 
 
 def test_a_hand_written_time_without_a_zone_stays_as_written() -> None:
     """사람이 고친 파일의 시각대 없는 시각은 어느 시각대인지 몰라 옮기지 않고 받은 글 그대로다
     — 서버 시각대로 읽어 옮기지 않는다."""
-    document = ListDocument(entries=(ListEntry("dev.user", added_at="2026-11-14T16:56:09"),))
-
-    assert access_list_admin.people_table(document)["등록 시각"].tolist() == ["2026-11-14T16:56:09"]
+    assert access_list_grid.date_text("2026-11-14T16:56:09") == "2026-11-14T16:56:09"
 
 
 def test_the_one_clock_turns_moments_and_seconds_into_korean_time(utc_server: None) -> None:
