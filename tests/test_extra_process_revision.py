@@ -1,5 +1,5 @@
-# Purpose: 「이 리비전 값을 새 판으로」 의 거꾸로 만들기 — 값 겹치기 · 기간 접기 · 옮기지 못한 공정 ·
-# 경로 다름 · 누를 수 없는 까닭과 판 → 리비전 → 고침 → 새 판 → 다시 합침 왕복을 본다.
+# Purpose: 「이 리비전 값을 새 판으로」 의 거꾸로 만들기 — 값 겹치기 · 기간 접기 · 옮기지 못한
+# 공정 · 경로 다름 · 누를 수 없는 까닭과 판 → 리비전 → 고침 → 새 판 → 다시 합침 왕복을 본다.
 
 """거꾸로 만들기(`services/extra_process_revision.py` — 설계 3-5 · A15).
 
@@ -68,7 +68,7 @@ def _edit(
     tables: Tables,
     name: str,
     column: str,
-    value: object,
+    value: float,
     where: Callable[[pd.DataFrame], pd.Series],
 ) -> Tables:
     copy = {key: frame.copy() for key, frame in tables.items()}
@@ -193,9 +193,7 @@ def test_split_product_values_on_a_follow_route_keep_the_process_on_the_base() -
 
     result = _build(tables)
 
-    assert [(item.process, item.reason) for item in result.kept] == [
-        (BOND, SPLIT_PRODUCTS_REASON)
-    ]
+    assert [(item.process, item.reason) for item in result.kept] == [(BOND, SPLIT_PRODUCTS_REASON)]
     assert result.moved == (AOI,)
     assert result.reading.pack is not None
     assert pack_changes(result.reading.pack, _base()).changed_cells == 0
@@ -282,9 +280,7 @@ def test_refusal_reasons_follow_the_design_order() -> None:
     merged = _Record(BOND, 1, "a" * 64, OUTCOME_MERGED)
 
     def refusal(*records: _Record, off: bool = False, sha: str | None = "a" * 64) -> str | None:
-        return revision_refusal(
-            off=off, active_sha=sha, active_version_no=3, records=list(records)
-        )
+        return revision_refusal(off=off, active_sha=sha, active_version_no=3, records=list(records))
 
     assert refusal(merged) is None
     assert refusal(merged, off=True) is not None and "다시 켜기" in str(refusal(merged, off=True))
