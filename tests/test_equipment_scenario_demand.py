@@ -479,7 +479,8 @@ def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> Non
     assert after is not None and set(after["소요대수"]) == {18.0}
     assert list(after["공정"]) == list(before["공정"])
 
-    # 교차검증도 조회기간을 따른다 — 좁힌 기간 밖의 달은 소요대수가 없다(0).
+    # 교차검증도 조회기간을 따른다 — 좁힌 기간 밖의 달은 소요대수가 없어 맞대지 않는다(소요대수 0 ·
+    # 확보율 None 행으로 싣고 「맞대어 본 달」 에 세던 것을 2026-11-19 사용자 권장대로 뺐다).
     app.session_state["test_period"] = (
         f"{months[3] // 100}-{months[3] % 100:02d}",
         f"{last // 100}-{last % 100:02d}",
@@ -490,10 +491,8 @@ def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> Non
     assert narrowed is not None and not narrowed.equals(after)
     assert _demand_calls(app)[-1][2:] == (months[3], last)
     inside = {month_label(m) for m in months[3:-1]}
-    in_period = narrowed["생산계획년월"].isin(inside)
-    assert in_period.any() and (~in_period).any()
-    assert set(narrowed.loc[in_period, "소요대수"]) == {18.0}
-    assert set(narrowed.loc[~in_period, "소요대수"]) == {0.0}
+    assert set(narrowed["생산계획년월"]) == inside
+    assert set(narrowed["소요대수"]) == {18.0}
 
     # 교차검증도 기준정보 버전만 바뀐 것을 따른다(토큰·조회기간은 그대로).
     app.session_state["test_reference_version"] = 3

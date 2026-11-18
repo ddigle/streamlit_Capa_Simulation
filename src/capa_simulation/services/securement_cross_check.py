@@ -85,7 +85,7 @@ class CrossCheck:
     """Cut-off 가 없어 Dynamic 을 Static 으로 채운 공정. 그 행은 차이가 늘 0 이다."""
 
     months: list[int] = field(default_factory=list)
-    """실제로 맞대어 본 달. Dynamic 이 덮는 달로 좁힌 결과다."""
+    """실제로 맞대어 본 달. Dynamic 이 덮는 달(과 주면 소요대수의 조회기간)로 좁힌 결과다."""
 
     dynamic_only_processes: list[str] = field(default_factory=list)
     """Dynamic 에만 있고 기준정보(Static)에 없는 공정. 맞댈 수 없어 `rows` 에 없다."""
@@ -130,6 +130,7 @@ def cross_check_from_monthly(
     required_equipment: pd.DataFrame,
     *,
     manual_downtime: Sequence[ManualRow] = (),
+    period: tuple[int, int] | None = None,
 ) -> CrossCheck:
     """월별 Dynamic 분해(`build_monthly_equipment_availability`)로 맞댄다 — 화면이 부르는 길.
 
@@ -137,7 +138,8 @@ def cross_check_from_monthly(
     프레임의 행으로 정한다(`dynamic_coverage`). 그래서 Dynamic 공정의 가용 소계가 없는 달은 0 이다.
     `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key` — 계산할 달로 좁힌 0 아닌 칸)이다 —
     분자에서 더 뺀다(`apply_manual_downtime`, 그 달 가용에서 멈춤). 필요 단축 일정 계획·비교 시트의
-    설비 일정 기준 가용과 같은 값이다. 비면 전과 같다.
+    설비 일정 기준 가용과 같은 값이다. 비면 전과 같다. `period` 는 소요대수를 낸 조회기간(시작 · 끝
+    `YYYYMM`)이다(`build_securement_cross_check`).
     """
     months, processes = dynamic_coverage(monthly)
     dynamic, _ = apply_manual_downtime(dynamic_available_equipment(monthly), tuple(manual_downtime))
@@ -147,6 +149,7 @@ def cross_check_from_monthly(
         required_equipment,
         dynamic_months=months,
         dynamic_processes=processes,
+        period=period,
     )
 
 
@@ -157,6 +160,7 @@ def build_securement_cross_check(
     *,
     dynamic_months: Collection[int] | None = None,
     dynamic_processes: Collection[str] | None = None,
+    period: tuple[int, int] | None = None,
 ) -> CrossCheck:
     """같은 소요대수에 두 가용대수를 각각 나눈 결과.
 
@@ -170,7 +174,16 @@ def build_securement_cross_check(
     `dynamic_months`·`dynamic_processes` 는 Dynamic 이 덮는 달·공정(`dynamic_coverage`)이다. 주면
     맞댈 달을 그 달로 정하고, 그 공정의 빈 칸은 Static 이 아니라 0 으로 채운다. 주지 않으면 가용
     프레임에 행이 있는 달·공정이다.
+
+    `period` 는 소요대수를 낸 조회기간(시작 · 끝 `YYYYMM`, 양 끝 포함)이다. 주면 그 밖의 달은 맞대지
+    않는다 — Static(`RQ_EQP_AVBL`)은 조회기간과 상관없이 모든 달이 있어, 설비 조회기간이 사이드바
+    조회기간보다 넓으면 그 밖의 달이 소요대수 0 · 확보율 None 행으로 실려 「맞대어 본 달」 에
+    세어진다. 두 기간이 겹치지 않으면 맞댈 달이 없다(행 없음). 주지 않으면 조회기간으로 좁히지
+    않는다.
     """
+    if period is not None:
+        static_available = _within(static_available, period)
+        required_equipment = _within(required_equipment, period)
     months = (
         {int(month) for month in dynamic_months}
         if dynamic_months is not None
@@ -225,6 +238,14 @@ def _dynamic_months(dynamic_available: pd.DataFrame) -> set[int]:
         return set()
     months = pd.to_numeric(dynamic_available["생산계획년월"], errors="coerce").dropna()
     return {int(month) for month in months}
+
+
+def _within(frame: pd.DataFrame, period: tuple[int, int]) -> pd.DataFrame:
+    """조회기간(시작 · 끝 `YYYYMM`, 양 끝 포함) 안의 달 행만."""
+    if frame.empty or "생산계획년월" not in frame.columns:
+        return frame
+    numeric = pd.to_numeric(frame["생산계획년월"], errors="coerce")
+    return frame.loc[numeric.between(period[0], period[1])]
 
 
 def _only_months(frame: pd.DataFrame, months: set[int]) -> pd.DataFrame:

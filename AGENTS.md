@@ -4393,6 +4393,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `manual_downtime=` 를 더 뺀다, 6장 「입력 비가동대수」).
   - `calculate_securement_rate` 를 고치지 않고 가용대수 프레임만 바꿔 두 번 부른다. 설비 일정 쪽에 공정 자체가 없을 때만
     Static 으로 채워 `fallback_processes` 로 알린다. HOME·B/N 은 여전히 Static 을 본다.
+  - 맞댈 달은 설비 일정이 덮는 달 ∩ 소요대수의 조회기간(`period=` — 화면 캐시 `get_securement_cross_check` 는 시나리오 키의
+    시작 · 끝 달)이다. Static 은 모든 달이 있어 좁히지 않으면 사이드바 조회기간 밖 달이 소요대수 0 · 확보율 None 행으로 실려
+    「맞대어 본 달」 에 세어졌다. 두 기간이 겹치지 않으면 행이 없다.
 - `src/capa_simulation/services/required_shortening.py` — 일정 기준 가용이 소요대수 × 목표 확보율에 모자란 공정·월마다
   신규 호기 Qual 을 며칠 당길지, 당길 호기가 없으면 가상 호기 「추가N」의 Qual 기한을 낸다. 어느 DB 도 열지 않는다.
   - 가용은 Static 대비 일정과 같은 길(`build_monthly_equipment_availability`), 소요는 `calculate_securement_rate` 다.
