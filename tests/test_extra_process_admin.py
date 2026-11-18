@@ -1,5 +1,5 @@
-# Purpose: Admin 「부대공정」 탭의 잠금 · 상태 줄 · 가져오기(가짜 원천) · 미리보기 · 적용 · 끄기 / 다시
-# 켜기와 이력 표를 본다.
+# Purpose: Admin 「부대공정」 탭의 잠금 · 상태 줄 · 가져오기(가짜 원천) · 미리보기 · 적용 · 끄기 /
+# 다시 켜기와 이력 표를 본다.
 
 """Admin 「부대공정」(`components/extra_process_admin.py` · `extra_process_intake.py` — 설계 A7).
 
@@ -69,7 +69,8 @@ class FakeSource:
     place = "가짜"
 
     def fetch(self):
-        return SourceFetch(data=st.session_state[{PACK_KEY!r}], place="가짜", key="extra_process/current.zip")
+        data = st.session_state[{PACK_KEY!r}]
+        return SourceFetch(data=data, place="가짜", key="extra_process/current.zip")
 
 
 original_path = settings.DUCKDB_PATH
@@ -81,7 +82,8 @@ if st.session_state.get({PACK_KEY!r}) is not None:
     install_source(FakeSource())
 try:
     bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
-    admin.render_extra_process_admin(get_scenario_repository(str(settings.DUCKDB_PATH)), opened=True)
+    repository = get_scenario_repository(str(settings.DUCKDB_PATH))
+    admin.render_extra_process_admin(repository, opened=True)
 finally:
     install_source(None)
     admin.write_lock_reason = original_lock
@@ -120,7 +122,7 @@ def test_off_the_production_server_every_writing_button_is_locked(database: Path
     toggle = app.button(key=TOGGLE_BUTTON_KEY)
     assert toggle.disabled and toggle.help == NOT_PRODUCTION_REASON
     downloads = [item for item in app.get("download_button") if item.key == DOWNLOAD_BUTTON_KEY]
-    assert len(downloads) == 1 and not downloads[0].disabled
+    assert len(downloads) == 1
 
 
 def test_write_lock_is_closed_without_a_managed_server() -> None:

@@ -51,6 +51,7 @@ app_meta.scenario 1 ── 1 app_meta.dataset                 (status ACTIVE·AR
        │                       │
        │                       ├── N raw_data.core_data            (원천 등록만 — 복제·파생은 0행)
        │                       ├── 78 raw_data.source_column_profile
+       │                       ├── N app_meta.dataset_extra_process  (0037 — 합친 부대공정 판의 출처, 공정 · 판 차례마다)
        │                       └── N ref_data.rq_display_order · rq_module   (데이터셋 표 2 — 편집 대상 아님)
        │                           ref_data.rq_* 나머지 14 는 0033 이 남긴 옛 사본뿐(읽는 코드 없음)
        │
@@ -65,6 +66,9 @@ app_meta.scenario 1 ── 1 app_meta.dataset                 (status ACTIVE·AR
 
 app_meta.official_release N ── 1 app_meta.scenario_revision
         └── 전역 증가 release_no 의 공식 발행 이력(scenario_id 를 가져 시나리오 삭제가 함께 지운다)
+
+app_meta.extra_process_version N ── 1 app_meta.extra_process_content   (0037 — 부대공정 판 이력 · 내용, 소유 칸 없음)
+        └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION). 내용은 sha256 하나에 ZIP 한 벌
 
 result_data.simulation_run                                 (골격만 — 쓰는 코드 없음)
 
@@ -230,7 +234,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   `restore_scenario`), 보관한 시나리오에는 새 리비전을 저장할 수 없다. 보관본은 목록 관리의
   오른쪽 「보관함」 칸에서 되돌리거나 영구 삭제한다.
 - `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
-  `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`),
+  `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`·
+  `SCENARIO_EXTRA_PROCESS`(부대공정 얹기)),
   원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)
 - `scenario_revision`: 증가하는 리비전 번호, 리비전명(이름표 — 시나리오 관리 리비전 표에서 고칠 수 있다), 부모 리비전,
   입력 해시와 변경 메모(시스템 출처 기록이 들어 고치지 않는다)
@@ -272,6 +277,12 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   `warning_threshold`(없으면 코드 기본값 1.10·1.00)를 쓴다 — 리비전 프리셋 열은 그 대체값으로만 읽힌다.
   저장된 비율은 사사오입 정수 % 로 읽는다(2026-11-01 — 옛 1.095·0.995 도 110%·100%, 저장본은 고치지
   않고 새 저장은 T/100, AGENTS 8장 「판정 기준은 정수 %」).
+- `extra_process_content`·`extra_process_version`·`dataset_extra_process`(0037): 부대공정(BDQ 밖 공정) 판. 내용은 적용한
+  양식 ZIP 바이트(키 = 본문 sha256, 같은 내용은 한 벌), 이력은 넣기만 하고 마지막 줄이 지금 상태다 — `OFF` 줄은 판 번호 · sha 가
+  없다(`CHECK`). 이력 · 내용은 소유 칸이 없어 시나리오를 지워도 남고(「이력은 DB 에만」 — S3 옛 판 사본 없음), 출처는
+  `dataset_id` 소유라 데이터셋과 함께 지워진다. 출처 한 줄 = (데이터셋, 공정, 판 차례) — 판 번호 · sha · 결과(`MERGED` ·
+  `DROPPED` · `GRADUATED`) · 규칙(R-01 ~ R-07) · 까닭 · 표별 행 수(JSON) · 메모(연도 Shift 이동량 · 월 머지 쪽). 「새 판으로」(2단계)의
+  바탕 시나리오 · 리비전은 `base_*_ref` 로 가리키기만 한다.
 - `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
   시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 
