@@ -2567,12 +2567,13 @@ with space_box:
     if (
         selected is None
         and not showing_sample
-        and not edit_mode.fab
+        and equipment_session.is_assumption
         and not equipment_session.unmerged
     ):
-        # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 일정 없이 연
-        # 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로 옮겨도 같은 까닭으로 합쳐지지
-        # 않는다(1단계 규칙 그대로).
+        # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 세션을 옮기는 일이라
+        # 등급과 상관없이 모두에게 선다 — 편집 권한 `edit_mode.fab`(등급 밖이면 늘 거짓)으로
+        # 가르지 않는다. 일정 없이 연 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로
+        # 옮겨도 같은 까닭으로 합쳐지지 않는다(1단계 규칙 그대로).
         _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
     if buffer_frames is not None and can_edit_layout:
         # 층 배치 편집이 잠긴 회차의 표지(「최신 rM 불러오기」)·배치 빨리 감기 표지 — `배치 편집`

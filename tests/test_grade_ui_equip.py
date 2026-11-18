@@ -103,6 +103,8 @@ ROOT_FILES = (
     "src/capa_simulation/components/manual_downtime_tab.py",
     "src/capa_simulation/components/space_floor_list.py",
 )
+# Space FAB 자리의 「공식으로 바꾸기」 단추 key(`app_pages/space_status.py`).
+SWITCH_TO_OFFICIAL = "space_switch_to_official"
 SCENARIO_BUTTONS = (
     "시나리오 이름 바꾸기",
     "이 리비전으로 되돌리기",
@@ -381,6 +383,35 @@ def test_space_editing_and_floor_use_stand_from_the_manager(
     assert ("배치 편집" in toggles) is manager, "FAB 배치 편집"
     assert ("사용 편집" in toggles) is manager, "층 목록 사용 편집"
     assert _hidden(app, "space_floor_list_tools_v1") is not manager
+
+
+@GRADE_PARAMS
+def test_switching_to_official_stands_only_on_an_assumption_for_every_grade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """FAB 자리의 「공식으로 바꾸기」 는 세션을 옮기는 일이라 등급과 상관없이 가정 설비
+    시나리오에서만 선다 — 이미 공식을 보는 열람 · 실무자에게 서지 않는다(E2E — 편집 권한이
+    등급으로 꺼진 것을 가정으로 읽었다)."""
+    from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+
+    monkeypatch.setattr(
+        space_layout_editor, "_EDITOR", lambda **_kwargs: SimpleNamespace(apply=None)
+    )
+    repository = _seeded(tmp_path)
+    assumption = _clone(repository)
+    as_grade(monkeypatch, grade)
+    app = AppTest.from_string(
+        grade_page_script(_page_script(SPACE, repository.database_path)), default_timeout=60
+    )
+    _ok(app.run())
+    assert not [b for b in app.button if b.key == SWITCH_TO_OFFICIAL], "공식 세션"
+
+    app.session_state[SELECTION_KEY] = {
+        "scenario_id": assumption.equipment_scenario_id,
+        "schedule_revision_id": None,
+    }
+    _ok(app.run())
+    assert [b for b in app.button if b.key == SWITCH_TO_OFFICIAL], "가정 세션 — 모든 등급"
 
 
 @GRADE_PARAMS

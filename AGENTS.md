@@ -951,7 +951,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
     `배치 편집`(층 `space_layout_edit_mode`·잠기거나 설비 저장본이 없는 층이면 꺼진 짝 `space_layout_edit_mode_locked` — 풍선이
     까닭 / FAB `space_fab_edit_mode`, 줄마다 위젯 하나 · 가로 줄은 자리 줄 하나 — 2026-11-12 Space 보드 답 1-4 「캔버스 편집버튼은
-    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
+    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기`(세션 옮기기라 모든 등급 — 가정 여부는 `equipment_session.is_assumption` 으로 본다, 등급으로 꺼지는 `edit_mode.fab` 으로 가르지 않는다) · 잠금 줄(`_render_edit_lock_line` —
     표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글 · `반입 일정` 토글
     (`space_arrival_dates_v1`, 층 배치 편집 중 · FAB 이면 꺼진 짝 `space_arrival_dates_locked_v1` — 2026-11-12 Space 보드 답
     1-4 · 1-6 · A5, 켠 회차에만 뷰어 data `arrivalDates`)이다 — **상자에는 조작만 둔다**
