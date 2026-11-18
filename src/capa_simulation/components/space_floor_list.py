@@ -74,6 +74,7 @@ from capa_simulation.components.write_guard import (
     seen,
 )
 from capa_simulation.design import tokens
+from capa_simulation.navigation import SPACE_STATUS
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -104,10 +105,15 @@ from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 __all__ = [
     "EDIT_TOGGLE_KEY",
+    "FLOOR_OPEN_CONFIRM",
+    "FLOOR_OPEN_DISCARD_LABEL",
+    "FLOOR_STATE_LEAVE_LABEL",
     "FLOOR_TABLE_KEY",
     "INACTIVE_TABLE_KEY",
     "FloorListColumn",
     "discard_floor_state_draft",
+    "floor_open_allowed",
+    "floor_open_confirm",
     "floor_state_draft_pending",
     "layer_columns",
     "render_space_floor_list",
@@ -153,6 +159,17 @@ _BULK_LABELS = {ACTIVE_STATE: "사용", **FLOOR_REASON_LABELS}
 _SAVED_REASON_LIMIT = 5
 
 SAMPLE_LOCKED = "샘플 데이터를 보는 중에는 층 사용 설정을 바꾸지 않습니다."
+# 층 사용 편집 초안의 이름 — 화면 탭 줄 떠나기 확인(`page_tabs.leave_notice`)과 아래 층 열기 확인이
+# 같은 「제목 · 이름」 을 쓴다.
+FLOOR_STATE_LEAVE_LABEL = f"{SPACE_STATUS.title} · 층 사용 편집"
+# 층 사용 편집 중 FAB 블록 · 선택 칸 [열기] 로 다른 층을 열 때의 브라우저 확인 창 글(2026-11-19
+# 사용자 요청 — 탭 줄 떠나기 확인 `page_tabs.TEXT["leave"]` 와 같은 꼴). `{target}` 은 편집기 JS 가
+# 「C1 3F」 로 채운다.
+FLOOR_OPEN_CONFIRM = (
+    f"적용하지 않은 편집이 사라집니다 — {FLOOR_STATE_LEAVE_LABEL}\n「{{target}}」 층을 열까요?"
+)
+# 사이드바 `층 바로 가기` 를 여는 팝오버 안 확인 체크 — 「변경을 버리고 불러오기」 와 같은 꼴.
+FLOOR_OPEN_DISCARD_LABEL = "변경을 버리고 열기"
 # 층 목록 머리의 이름 풍선 — 하는 법은 자리 글이 아니라 여기다(설계 규칙 UI-TXT-01 · UI-TXT-04).
 _LIST_HELP = "행을 고르면 그 층이 열립니다(키보드는 행에 초점을 두고 Shift+Space)."
 # 같은 풍선에 잇는 글 — 비활성 층의 FAB 도면 모습과 여는 곳(Guide 「비활성 층」). 펼침 머리 「비활성
@@ -165,7 +182,7 @@ _INACTIVE_HELP = (
 # 바뀐 층 수만 둔다.
 _SAVE_HELP = (
     "저장하면 모두의 Space 화면에 반영됩니다(설비 리비전은 만들지 않습니다). 도면은 저장하면 "
-    "바뀝니다. 저장하지 않고 층을 열면 고친 것은 버려집니다."
+    "바뀝니다. 저장하지 않고 다른 층을 열면 버릴지 먼저 묻습니다."
 )
 _TOGGLE_HELP = (
     "층마다 사용·비활성과 그 사유(직접 적는 글)를 고칩니다. 모두에게 같은 공용 설정이고 설비 "
@@ -356,6 +373,26 @@ def floor_state_draft_pending() -> bool:
         return False
     folded, _ = _folded(draft, _widget_edits())
     return folded != _base_draft(base)
+
+
+def floor_open_confirm() -> str:
+    """층을 열기 전 브라우저 확인 창 글 — 버려질 층 사용 편집이 있을 때만 `FLOOR_OPEN_CONFIRM`,
+    없으면 빈 글자(묻지 않는다 — 설계 규칙 UI-STA-02). FAB 뷰어 · 편집기가 data 로 받는다."""
+    return FLOOR_OPEN_CONFIRM if floor_state_draft_pending() else ""
+
+
+def floor_open_allowed(target: FloorKey, *, discard: bool) -> bool:
+    """층을 여는 콜백의 거름 — 버려질 층 사용 편집이 없거나 버리겠다고 답한 열기(`discard` — 블록
+    누름의 확인 창 · 바로 가기의 확인 체크)만 지난다. 묻지 않고 온 열기(확인 창 글이 data 에 닿기
+    전 누른 블록 · 체크 전 바꾼 고르기)는 초안을 두고 열지 않으며 층 목록 알림 칸에 한 줄 알린다 —
+    말없이 버리지 않는다."""
+    if discard or not floor_state_draft_pending():
+        return True
+    _notice(
+        "warning",
+        f"저장하지 않은 층 사용 편집이 있어 {quoted(floor_label(target))} 층을 열지 않았습니다.",
+    )
+    return False
 
 
 # ---------------------------------------------------------------- 편집표 접기

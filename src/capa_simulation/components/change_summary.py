@@ -9,6 +9,7 @@
 가용설비 현황 작은
    편집표.
 2. **저장 안 함**(`keep`) — 적용했지만 저장하지 않은 시나리오, 설비 편집본 · FAB 배치 대기,
+가용설비 현황 Preference 입력 비가동 초안(세션 칸 — 2026-11-19),
 기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Past Data
    초안, 시나리오 관리 표 초안, VOC 적어 둔 답변(남지 못한 답변). 판 머리 글은 「새로고침에
    사라짐」 하나다 — 시나리오를 바꿀 때는 그 팝업이 따로 묻는다(적어 둔 답변은 새로고침 · 테마
@@ -18,13 +19,15 @@
    회색 점이다.
 
 **판정은 화면 탭 줄 주황 점(`page_tabs.page_unsaved_marks`)과 같은 등록부**이고 **세션만 읽는다**(DB
-· 캐시 없음 — 매 회차 페이지 앞에서 부른다). 서버가 모르는 초안(폼 안 · 브라우저 안 — Preference 폼
-· Cut-off · Admin 표 · 자동 갱신 설정 · Space 적용 전 배치 · VOC 새 글)과 저장 개념이 없는 세션
-조건(제약 시뮬레이션 · Qual 계산기 · 필터)은 들지 않는다(설계 5-2 「넣지 않는 것」 — 다음 판 후보).
+· 캐시 없음 — 매 회차 페이지 앞에서 부른다). 서버가 모르는 초안(폼 안 · 브라우저 안 — HOME
+Preference 폼 · Cut-off · Admin 표 · 자동 갱신 설정 · Space 적용 전 배치 · VOC 새 글)과 저장 개념이
+없는 세션 조건(제약 시뮬레이션 · Qual 계산기 · 필터)은 들지 않는다(설계 5-2 「넣지 않는 것」 — 다음
+판 후보).
 머리 띠 위 줄의 「최신 rN 있음」 · 「공식 vN」 은 상태라 넣지 않는다.
 
-차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 표 초안 ·
-붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 → 설비 가정 → UPEH 가정.
+차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 입력
+비가동 미저장 → 표 초안 · 붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 → 설비 가정 → UPEH
+가정.
 """
 
 from __future__ import annotations
@@ -40,15 +43,18 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
+from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_count
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import list_has_edits
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
+from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
+    EQUIPMENT_PREFERENCE_TAB,
     HOME,
     PROCESS_CAPA_DETAIL,
     SCENARIO_MANAGEMENT,
@@ -172,6 +178,18 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
     if pending_fab_layout() is not None:
         keep.append(
             item("keep", SPACE_STATUS, SPACE_STATUS.title, "FAB 배치 저장 안 함", "설비 미저장")
+        )
+    manual = manual_downtime_draft_count()
+    if manual:
+        keep.append(
+            item(
+                "keep",
+                AVAILABLE_EQUIPMENT_STATUS,
+                AVAILABLE_EQUIPMENT_STATUS.title,
+                f"입력 비가동 {manual:,}칸 저장 안 함",
+                "입력 비가동 미저장",
+                tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
+            )
         )
     keep.extend(held)
     if past_data_has_pending():

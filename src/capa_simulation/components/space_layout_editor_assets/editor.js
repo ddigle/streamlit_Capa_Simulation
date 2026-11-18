@@ -39,6 +39,8 @@ export default function (component) {
   host.classList.toggle('is-fab', FAB)
   // 블록 글자(배치·미배치 대수, 점유율). epoch 밖이라 같은 epoch 회차에도 새 값으로 다시 쓴다.
   const LINK_STATS = data.linkStats || {}
+  // 층을 열기 전 확인 창 글(`{target}` 자리 — 「C1 3F」). 버려질 층 사용 편집이 있을 때만 오고 epoch 밖이다.
+  const OPEN_CONFIRM = typeof data.openConfirm === 'string' ? data.openConfirm : ''
   const palette = data.palette || {}
   // 팔레트(테마)는 바뀐 회차에만 다시 단다 — 같은 값을 다시 달아도 도면 전체의 스타일 계산이 다시 돌 수 있다.
   const paletteKey = JSON.stringify(palette)
@@ -5392,12 +5394,16 @@ export default function (component) {
   // FAB 편집의 선택 칸 [열기]: 고른 층 블록이고 적용하지 않은 편집이 없을 때만.
   const opensFromInspector = (item) => Boolean(!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits() && !blockOff(item))
   // 블록이 가리키는 층을 연다. 파이썬 `on_navigate_change` 콜백이 층을 바꿔 재실행 한 번으로 층 상세가 선다.
-  // 보기 전용 FAB 의 블록 누르기·Enter, 그리고 FAB 편집 선택 칸의 [열기] 가 모두 여기로 온다.
+  // 보기 전용 FAB 의 블록 누르기·Enter, 그리고 FAB 편집 선택 칸의 [열기] 가 모두 여기로 온다. 버려질 층 사용 편집이
+  // 있으면(`openConfirm` — epoch 밖, 탭 줄 떠나기 확인과 같은 꼴) 열기 전에 브라우저 확인 창으로 묻고, 「취소」 면 열지 않는다.
+  // 「확인」 은 `discard` 로 함께 보낸다 — 묻지 않고 온 열기는 파이썬이 초안을 두고 열지 않는다.
   function openFloor(item, fromInspector = false) {
     if (!(opensFloor(item) || (fromInspector && opensFromInspector(item)))) return
+    const discard = Boolean(OPEN_CONFIRM)
+    if (discard && !window.confirm(OPEN_CONFIRM.replace('{target}', item.link))) return
     pickBox.textContent = `${item.link} 여는 중…`
     if (fromInspector) { S.note = `${item.link} 여는 중…`; updateStatus() }
-    setTriggerValue('navigate', { epoch: S.epoch, target: item.link })
+    setTriggerValue('navigate', { epoch: S.epoch, target: item.link, discard })
   }
 
   function pickText(item) {

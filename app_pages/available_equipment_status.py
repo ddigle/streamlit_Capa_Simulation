@@ -83,7 +83,10 @@ from capa_simulation.components.equipment_settings_dialog import (
     render_equipment_settings_box,
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
-from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
+from capa_simulation.components.manual_downtime_tab import (
+    manual_downtime_draft_count,
+    render_manual_downtime_tab,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
@@ -103,6 +106,7 @@ from capa_simulation.equipment_scenario_activation import (
 from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_PREFERENCE_TAB,
     EQUIPMENT_SUMMARY_TAB,
     EQUIPMENT_SUMMARY_TAB_KEY,
     EQUIPMENT_SUMMARY_TABS,
@@ -296,13 +300,17 @@ gap_view = NestedTab(summary_tab, gap_tab)
 # — 탭 위젯 id). 화면 탭 줄의 점과 같은 판정이다. 찍을 것이 없어도 빈 규칙을 매 회차 그린다.
 # 작은 편집표(기존 보유대수·비가동 일정)의 적용 전 편집도 같은 점이다 — 그 편집은 탭을 옮기면
 # 사라진다
-# (화면 탭 줄 떠나기 확인도 이것으로 묻는다 — `page_tabs.leave_notice`).
+# (화면 탭 줄 떠나기 확인도 이것으로 묻는다 — `page_tabs.leave_notice`). ③ Preference 는 저장하지
+# 않은 입력 비가동 초안(세션 칸 — 화면을 옮겨도 남는다)이 있으면 점이다.
 mark_pending_tabs(
     EQUIPMENT_TAB_KEY,
     EQUIPMENT_TABS,
-    {EQUIPMENT_MASTER_TAB}
-    if has_unsaved_equipment_edits() or pending_fab_layout() is not None or small_editor_edits()
-    else set(),
+    (
+        {EQUIPMENT_MASTER_TAB}
+        if has_unsaved_equipment_edits() or pending_fab_layout() is not None or small_editor_edits()
+        else set()
+    )
+    | ({EQUIPMENT_PREFERENCE_TAB} if manual_downtime_draft_count() else set()),
 )
 # 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭) — Summary 의 두 안쪽 탭.
 viewing_tab_open = not tab_is_hidden(main_view) or not tab_is_hidden(gap_view)
@@ -597,8 +605,8 @@ with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1
 
 
 with preference_tab:
-    # 숨은 회차에도 폼을 그린다(적은 칸이 버려지지 않게 — AGENTS 9장). 행은 지금 설비 시나리오
-    # 저장본의 공정(샘플 fleet 은 쓰지 않는다), 열은 사이드바 조회기간의 달이다.
+    # 숨은 회차에도 표를 그린다(저장자 · 메모 칸이 탭 왕복에 남게 — 적은 칸은 세션 초안). 행은 지금
+    # 설비 시나리오 저장본의 공정(샘플 fleet 은 쓰지 않는다), 열은 사이드바 조회기간의 달이다.
     preference_processes: list[str] = []
     if latest_snapshot is not None:
         snapshot_baseline, snapshot_equipment, _ = latest_snapshot.calculation_frames()

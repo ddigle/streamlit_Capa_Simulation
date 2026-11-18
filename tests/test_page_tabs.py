@@ -1277,6 +1277,87 @@ def test_a_kept_voc_reply_marks_the_voc_tab_and_the_theme_button(
     assert _has_theme_unsaved_marker(app)
 
 
+def _manual_draft_marks_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.change_summary import session_changes
+    from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+
+    page = st.session_state["test_page_file"]
+    st.session_state["test_marks"] = page_unsaved_marks(page)
+    st.session_state["test_leave"] = leave_notice(page)
+    st.session_state["test_changes"] = session_changes(
+        page, hrefs={AVAILABLE_EQUIPMENT_STATUS.path: "equipment"}
+    )
+
+
+@pytest.mark.parametrize("page_file", ["home.py", "available_equipment_status.py"])
+def test_a_manual_downtime_draft_marks_the_equipment_tab_and_the_change_chip_from_any_page(
+    page_file: str,
+) -> None:
+    """가용설비 현황 Preference 「입력 비가동」 초안은 세션 칸이라 화면을 옮겨도 남지만 새로고침 ·
+    테마 전환에는 사라진다(2026-11-19 사용자 요청). 어느 화면에서나 가용설비 현황 탭에 점, 머리 변경
+    칩 「저장 안 함」 에 Preference 탭을 가리키는 한 줄이 선다. 떠나도 남으므로 떠나기 확인 글에는
+    들지 않는다(설계 규칙 UI-STA-02). 초안을 비우면 둘 다 걷힌다."""
+    from capa_simulation.components.manual_downtime_tab import MANUAL_DRAFT_KEY
+    from capa_simulation.components.state_alerts import tab_name
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, EQUIPMENT_PREFERENCE_TAB
+
+    app = AppTest.from_function(_manual_draft_marks_script)
+    app.session_state["test_page_file"] = page_file
+    app.session_state[MANUAL_DRAFT_KEY] = {
+        ("Wafer Mount", 202607): 1.5,
+        ("Final Test", 202608): None,
+    }
+    _ok(app.run())
+
+    assert app.session_state["test_marks"] == {
+        AVAILABLE_EQUIPMENT_STATUS.path: "저장하지 않은 입력 비가동 2칸"
+    }
+    assert app.session_state["test_leave"] == ""
+    assert [
+        (item["group"], item["page"], item["text"], item["top"], item["href"], item["tab"])
+        for item in app.session_state["test_changes"]
+    ] == [
+        (
+            "keep",
+            AVAILABLE_EQUIPMENT_STATUS.title,
+            "입력 비가동 2칸 저장 안 함",
+            "입력 비가동 미저장",
+            "equipment",
+            tab_name(EQUIPMENT_PREFERENCE_TAB),
+        )
+    ]
+
+    del app.session_state[MANUAL_DRAFT_KEY]
+    _ok(app.run())
+    assert app.session_state["test_marks"] == {}
+    assert app.session_state["test_changes"] == []
+
+
+def test_a_manual_downtime_draft_marks_the_theme_button_on_another_page(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """입력 비가동 초안이 있으면 다른 화면에서도 가용설비 현황 탭에 점이 서고 테마 단추 · 새로고침
+    확인 표지가 선다 — 새로고침 · 테마 전환이 확인 없이 지우지 않는다."""
+    from capa_simulation.components.manual_downtime_tab import MANUAL_DRAFT_KEY
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+
+    app = _ok(_app.run())
+    app.session_state[PAGE_TABS_OPEN_KEY] = (H, AVAILABLE_EQUIPMENT_STATUS.path, B)
+    _ok(app.switch_page(B).run())
+    assert _tab(sent, AVAILABLE_EQUIPMENT_STATUS.path)["dirty"] is False
+    assert not _has_theme_unsaved_marker(app)
+
+    app.session_state[MANUAL_DRAFT_KEY] = {("Wafer Mount", 202607): 1.5}
+    _ok(app.switch_page(B).run())
+    assert _tab(sent, AVAILABLE_EQUIPMENT_STATUS.path)["dirty"] is True
+    assert _tab(sent, B)["dirty"] is False
+    assert _data(sent)["leave"] == ""
+    assert _has_theme_unsaved_marker(app)
+
+
 # ------------------------------------------------------------------ 탭 왕복에 남는 보기 조건
 
 _CALCULATION_RESULT = "app_pages/calculation_result.py"

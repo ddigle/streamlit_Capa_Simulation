@@ -3121,7 +3121,7 @@ def test_the_access_grade_board_answers_are_recorded_with_what_the_implementatio
     assert "6-34 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-34. ") :]
+    record = section[section.index("\n### 6-34. ") : section.index("\n### 6-35. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -3169,7 +3169,6 @@ def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08()
     권한 잠금)이 6-34 끝 문단에 있고(카드 줄 꼴 밖 — `- ` 로 시작하지 않는다), UI-INP-08 범위 ·
     예외에서 걷은 접속 명단 추가 창이 빠졌다."""
     document = _text()
-    assert "판 v1.37" in document.split("\n## 1. ")[0]
     history = _chapter(document, 8)
     v137 = history[history.index("- **v1.37 — 2026-11-18.**") :]
     for phrase in ("6-34", "UI-INP-08", "new-members (가)", "tests/test_access_list_grid.py"):
@@ -3178,7 +3177,7 @@ def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08()
     flipped = _chapter(document, 7)
     assert "6-34 new-members (가)" in flipped and "새 줄 등급은 처음 값 없이 빈칸" in flipped
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-34. ") :]
+    record = section[section.index("\n### 6-34. ") : section.index("\n### 6-35. ")]
     (paragraph,) = [line for line in record.splitlines() if line.startswith("다음 배포 고침(")]
     for phrase in (
         "feat/grid-1118",
@@ -3195,6 +3194,43 @@ def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08()
     exceptions = rules["UI-INP-08"].fields["예외"][0]
     assert "「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝) 하나다" in exceptions
     assert "등급 고르기 칸(처음 값 실무자)" not in exceptions
+
+
+def test_the_unsaved_guard_requests_are_judged_in_6_35() -> None:
+    """v1.38 — 2026-11-19 사용자 미저장 보호 요청을 앱에 이미 있는 꼴로 입힌 판정이 6-35 줄마다
+    있고(걸린 규칙 id · 「답 밖 — 구현이 정함」), 판 머리 · 1장 안내가 그 절을 가리킨다."""
+    document = _text()
+    assert "판 v1.38" in document.split("\n## 1. ")[0]
+    assert "6-35 에 있다" in _chapter(document, 1)
+    history = _chapter(document, 8)
+    v138 = history[history.index("- **v1.38 — 2026-11-19.**") :]
+    for phrase in ("6-35", "UI-STA-02", "tests/test_manual_downtime_tab.py"):
+        assert phrase in v138, phrase
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-35. ") :]
+    lines = {
+        line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
+    }
+    manual = lines["guard-manual"]
+    for phrase in (
+        "UI-STA-02 판정",
+        "떠나기 확인",
+        "답 밖 — 구현이 정함",
+        "「되돌리기」",
+        "UI-NTF-09",
+    ):
+        assert phrase in manual, phrase
+    floor = lines["guard-floor"]
+    for phrase in (
+        "브라우저 확인 창",
+        "「변경을 버리고 열기」",
+        "새 꼴은 만들지 않았다",
+        "UI-STA-02 판정",
+        "UI-NTF-09 판정",
+        "답 밖 — 구현이 정함",
+    ):
+        assert phrase in floor, phrase
+    assert "tests/test_space_floor_state_page.py" in v138
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

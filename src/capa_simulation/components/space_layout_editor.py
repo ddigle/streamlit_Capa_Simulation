@@ -687,12 +687,13 @@ def _dispatch_sheet_check(
     on_check(payload)
 
 
-def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey], None]) -> None:
+def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey, bool], None]) -> None:
     """`on_navigate_change` 콜백. 누른 블록의 연결(「C1 1F」)이 FAB 의 층이면 연다.
 
     콜백은 인자가 없고 결과 객체도 아직 없다 — 값은 `st.session_state[key].navigate` 다. 연결이
     잘못됐으면 조용히 둔다(FAB 그대로). 뷰어를 그린 epoch 와 다른 값(도면이 다시 서기 전에 누른
-    옛 블록)은 버린다 — 적용(`apply`)의 옛 epoch 거절과 같은 규칙이다."""
+    옛 블록)은 버린다 — 적용(`apply`)의 옛 epoch 거절과 같은 규칙이다. 둘째 인자는 JS 가 층 열기
+    확인 창(`openConfirm`)에 「확인」 을 받았는가(`discard`)다 — 받은 쪽이 버릴 편집을 거른다."""
     state = st.session_state.get(key)
     payload = (
         state.get("navigate") if isinstance(state, Mapping) else getattr(state, "navigate", None)
@@ -701,7 +702,7 @@ def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey], None]
         return
     target = floor_from_label(payload.get("target"))
     if target is not None:
-        on_open(target)
+        on_open(target, payload.get("discard") is True)
 
 
 def render_fab_layout_viewer(
@@ -712,19 +713,23 @@ def render_fab_layout_viewer(
     marks: Sequence[FabLayoutMark],
     link_stats: Mapping[str, Mapping[str, str | None]],
     summary: str,
-    on_open: Callable[[FloorKey], None],
+    on_open: Callable[[FloorKey, bool], None],
     as_of: date,
     today: date,
     as_of_range: tuple[date, date],
     unconfirmed: int,
     on_as_of: Callable[[date], None],
     pending_save: bool = False,
+    open_confirm: str = "",
 ) -> None:
     """FAB 전체 **뷰어**. 층 도면과 같은 편집기의 보기 전용(`scope="fab"`)이다.
 
     누르면 열리는 것은 층 블록뿐이다(영역·글자는 꾸밈). 블록 글자의 대수(`link_stats`, 키는
     「C1 1F」)는 epoch 밖으로 따로 보낸다 — 같은 epoch 의 회차에는 블록 글자만 다시 쓴다. 블록을
-    누르거나 Tab 으로 초점을 두고 Enter 를 누르면 `on_open((동, 층))` 이 콜백에서 돈다.
+    누르거나 Tab 으로 초점을 두고 Enter 를 누르면 `on_open((동, 층), discard)` 가 콜백에서 돈다.
+    `open_confirm` 이 있으면(버려질 층 사용 편집 — `space_floor_list.floor_open_confirm`) 열기 전에
+    브라우저 확인 창으로 묻고(`{target}` 은 JS 가 채운다), 「확인」 이면 `discard` 가 참이다. epoch
+    밖이라 같은 epoch 회차에도 새 값을 쓴다.
 
     FAB 에는 페이더가 없다. 도구 줄 요약 앞에 「기준일 YYYY-MM-DD」(블록 대수의 기준일)와, 오늘이
     아니면 「오늘로」 단추(누르면 `asOf` = 오늘 → `on_as_of`), 그리고 `unconfirmed`(오늘 기준 미확인
@@ -753,6 +758,7 @@ def render_fab_layout_viewer(
             "newUnit": {},
             "legend": None,
             "pendingSave": bool(pending_save),
+            "openConfirm": open_confirm,
             "sheet": None,
         },
         on_apply_change=lambda: None,
@@ -769,15 +775,17 @@ def render_fab_layout_editor(
     canvas: CanvasSize,
     marks: Sequence[FabLayoutMark],
     link_stats: Mapping[str, Mapping[str, str | None]],
-    on_open: Callable[[FloorKey], None],
+    on_open: Callable[[FloorKey, bool], None],
     pending_save: bool = False,
+    open_confirm: str = "",
 ) -> EditorSubmission | None:
     """FAB 전체 **편집기**(`scope="fab"`). 층 편집기와 같은 컴포넌트이고 범위 표시로 나눈다.
 
     호기가 없어 트레이·호기 추가·다른 층 보내기·겹침 상태 줄이 없고, 팔레트는 영역·글자·동선·층
     블록이다(반입구·문·기둥은 층 도면 요소). 블록을 누르면 고르기이고(열지 않는다), 선택 칸에서 연결
     층(`linkTargets`, 30개 층)·색(기본 + 영역 색)을 고르며 [열기] 로 그 층을 연다 — 적용하지 않은
-    편집이 있으면 잠긴다. 블록 대수(`link_stats`)는 보기와 같이 epoch 밖이다.
+    편집이 있으면 잠긴다. 블록 대수(`link_stats`)와 층 열기 확인 글(`open_confirm` — 뷰어와 같다)은
+    보기와 같이 epoch 밖이다.
 
     `적용` 이 눌린 회차에만 받은 값(``{"epoch", "changes": [], "canvas", "marks"}``)을 돌려준다."""
     result = _EDITOR(
@@ -801,6 +809,7 @@ def render_fab_layout_editor(
             "newUnit": {},
             "legend": None,
             "pendingSave": bool(pending_save),
+            "openConfirm": open_confirm,
             "sheet": None,
         },
         on_apply_change=lambda: None,
