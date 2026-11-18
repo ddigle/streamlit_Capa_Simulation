@@ -8565,7 +8565,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   개발자 자기 창 · 화면만이고 저장은 실제 등급이다(끝내기는 카드 칸 안 단추). 개발자 상태 알림 · 감사 알림은 미리 보기를 따르지 않는다(`admin_view.developer_alerts_visible`).
 - **시험** — 갈래마다 `tests/test_grade_ui_<core|calc|equip|modules>.py` 가 자기 화면을 등급 넷으로 그려 단추 유무를 보고
   `COVERED_ACTIONS` 와 받는 자리를 다는 뿌리 파일(`assert_refusals_caught`)을 둔다. `tests/test_grade_coverage.py` 가 화면 동작이 모두 덮였는지 ·
-  장부 쓰기마다 벽 · 뿌리가 있는지 본다. 「관리자」 뜻 그물은 `tests/test_grade_name_net.py`(앱 · 부품 · `auth` · `scripts` · sso_setup) ·
+  장부 쓰기마다 벽 · 뿌리가 있는지 본다. 이 그물은 운영 진입(`capa_server.py` — 런타임 전 길은 `tests/test_server_pre_runtime_imports.py`)과
+  컴포넌트 JS · CSS 를 돌리지 않고 표에 적은 단추만 본다 — 컴포넌트 안 단추는 대역이 받은 data 를 그 자산의 node 판정에 그대로 돌리는 줄을
+  같은 시험에 두고(`test_space_unit_sheet_js.run_csv_hidden` · `test_scenario_list_grid_assets.drawn_list_controls`), 「없어야 할 것」 도
+  줄로 적는다(공식 세션의 「공식으로 바꾸기」 · 오른쪽 칸 고르기의 칸 하나하나 · 팝업 끝 바로 가기). 「관리자」 뜻 그물은 `tests/test_grade_name_net.py`(앱 · 부품 · `auth` · `scripts` · sso_setup) ·
   `tests/test_grade_name_net_docs.py`(Guide · 런북 · 지침서 · 사내 문서 · 모듈 파일) 둘이고 허용 목록은 `tests/grade_words.py` 한 벌이다
   (「관리자 몫」 은 같은 문장에 새 뜻 표지가 있을 때만 · 등급 자리의 옛 낱말 「일반」 도 같은 파일이 잡는다).
 

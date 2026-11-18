@@ -17,6 +17,19 @@
   `@gated` — `grades.GATE_ATTRIBUTE`)이 닿는다.
 
 갈래를 합치기 전(한 갈래 가지 홀로)에는 다른 갈래 파일 · 벽이 없어 실패한다 — 합친 머리의 그물이다.
+
+**네 갈래 시험이 보지 못하는 것**(새 줄을 더할 때 짝을 단다):
+
+- 운영 진입(`capa_server.py`)을 돌리지 않는다 — AppTest 는 `app.py` 쪽 화면만 그린다.
+  진입의 런타임 전 길은 `tests/test_server_pre_runtime_imports.py` 가 진입 파일을 그대로
+  import 해 본다.
+- 컴포넌트 JS · CSS 를 돌리지 않는다 — 대역이 받은 data 까지만 본다. 컴포넌트 안 단추는 그
+  data 를 자산의 node 판정에 그대로 돌리는 줄을 둔다(Space 「호기 정보」 「CSV」 ·
+  `test_space_unit_sheet_js.run_csv_hidden`, 시나리오 목록 표 ·
+  `test_scenario_list_grid_assets.drawn_list_controls`). 단추 서식이 `[hidden]` 을 덮는 꼴은
+  자산 시험이 본다.
+- 표에 적은 단추만 본다 — 등급과 상관없어야 하는 단추(공식 세션의 「공식으로 바꾸기」), 오른쪽
+  칸 고르기의 칸 하나하나, 팝업 끝 바로 가기처럼 「없어야 할 것」 도 줄로 적어야 잡힌다.
 """
 
 from __future__ import annotations
