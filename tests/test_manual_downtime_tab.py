@@ -654,7 +654,7 @@ def test_the_revert_button_drops_the_draft(tmp_path: Path) -> None:
     next(button for button in app.button if button.label == MANUAL_REVERT_BUTTON).click().run()
     assert not app.exception
     assert _draft(app) == {}
-    assert pd.isna(_editor_values(app)["202607"][row_a])
+    assert bool(pd.Series(_editor_values(app)["202607"], dtype="object").isna().iloc[row_a])
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 0
 
 
