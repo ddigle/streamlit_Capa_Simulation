@@ -10,15 +10,17 @@
 - **빼기** — 명단 사람 줄의 줄 지우기 표지(`edit_grid.removed_keys`).
 - **등급 바꿈** — 명단 사람 줄의 「등급」 칸 초안이 지금 등급과 다른 것(지운 줄은 빼기가 이긴다).
 - **넣기** — 빈 새 줄에 무엇이든 적힌 것. 「계정」 은 loginid 꼴(`access.entry_key`)이어야 하고 머리
-  글(`loginid` · `계정`)이 아니며 명단 · 다른 새 줄과 겹치지 않고, 「등급」 이 있어야 한다.
+  글(`loginid` · `계정`)이 아니며 명단 · 다른 새 줄과 겹치지 않아야 한다. 「등급」 을 비우면
+  실무자다(처음 값 — 2026-11-18 다음 배포 화면 확인 보드 q-new-row-grade (가) · 6-34
+  new-members (가)).
   「이름」 · 「부서」 는 손으로 적은 그대로 넣는다(빈 칸은 빈 칸).
 - **그 사이 바뀐 줄** — 편집을 시작할 때 그 사람의 (등급, 등록 시각)(`origins` — 화면이 초안 곁
   세션 칸에 둔다)이 지금 명단과 다르면(다른 개발자가 등급을 바꿈 · 뺀 뒤 다시 듦) 그 줄을 쓰지 않고
   센다. 같은 프로세스의 먼저 쓰기는 저장소 대조(S3 · 메모리)가 못 잡아 여기서 본다.
 - **문제**가 하나라도 있으면 저장하지 않는다 — 칸 오류(빨간 칸) · 계정이 빔 · 계정 꼴이 아님 · 머리
-  글 · 겹침 · 등급이 빔 · 그 사이 바뀐 줄 · 잠긴 줄(나 자신 · 환경변수 개발자의 등급 · 줄 지우기,
-  명단 사람의 계정 · 이름 · 부서 · 등록일 · 등록 길 칸 초안 — 표가 잠그고 계정이 다른 붙여넣기
-  줄은 건너뛰지만 다시 본다).
+  글 · 겹침 · 명단 사람의 등급을 비움 · 그 사이 바뀐 줄 · 잠긴 줄(나 자신 · 환경변수 개발자의
+  등급 · 줄 지우기, 명단 사람의 계정 · 이름 · 부서 · 등록일 · 등록 길 칸 초안 — 표가 잠그고
+  계정이 다른 붙여넣기 줄은 건너뛰지만 다시 본다).
 """
 
 from __future__ import annotations
@@ -58,6 +60,8 @@ LISTED_LOCKED_COLUMNS: Final = (ACCOUNT_COLUMN, NAME_COLUMN, DEPT_COLUMN, DATE_C
 GRADE_OPTIONS: Final = tuple(grades.label_of(grade) for grade in grades.GRADES)
 # 새 줄의 업무 키 앞글자 — loginid 꼴에 없는 글자라 사람과 겹치지 않는다.
 FRESH_PREFIX: Final = "+"
+# 새 줄의 「등급」 을 비웠을 때의 등급 — 넣는 창 처음 값과 같은 실무자(6-34 new-members (가)).
+NEW_PERSON_GRADE: Final = grades.EDITOR
 # 붙여 넣은 표의 머리 줄 글 — 계정으로 넣지 않는다(그 낱말의 사람에게 접속이 열린다).
 HEADER_WORDS: Final = frozenset({"loginid", "계정"})
 
@@ -241,8 +245,7 @@ def plan_changes(
             continue
         seen.add(loginid)
         if grade is None:
-            no_grade += 1
-            continue
+            grade = NEW_PERSON_GRADE
         added.append(
             NewPerson(loginid, _text(row, NAME_COLUMN), _text(row, DEPT_COLUMN), grade, key)
         )

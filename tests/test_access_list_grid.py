@@ -280,7 +280,7 @@ def test_new_rows_add_people_with_their_grade_and_hand_written_profile(
 def test_a_bad_new_row_blocks_the_save_beside_the_row_and_writes_nothing(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """틀린 계정 꼴은 빨간 칸, 머리 글 · 겹침 · 등급 빔은 저장 판의 문제 — 하나라도 있으면 아무것도
+    """틀린 계정 꼴은 빨간 칸, 머리 글 · 겹침은 저장 판의 문제 — 하나라도 있으면 아무것도
     쓰지 않고 작업 줄 바로 아래 곁 한 줄로 알린다(표에서 고칠 일 — UI-NTF-03 · UI-LAY-03)."""
     store, endpoint = mock_s3
     cfg = started(store, endpoint, USER)
@@ -302,7 +302,7 @@ def test_a_bad_new_row_blocks_the_save_beside_the_row_and_writes_nothing(
     assert requests_named(store, "PUT") == before
     (error,) = [str(item.value) for item in app.error]
     assert error.startswith(access_list_admin.PROBLEMS_LEAD)
-    for part in ("고칠 칸 1개", "머리 글", "겹치는 계정 1개", "등급이 빈 줄 1개"):
+    for part in ("고칠 칸 1개", "머리 글", "겹치는 계정 1개"):
         assert part in error, part
     assert_absent(error, USER, OTHER)
     assert _draft(app)[0] > 0, "고침은 남는다"

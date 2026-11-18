@@ -87,7 +87,7 @@ def test_every_problem_is_counted_and_blocks_the_save_without_values() -> None:
     result = _plan(draft)
     problems = result.problems
     assert problems == plan.Problems(
-        errors=1, no_account=1, header=1, duplicate=2, no_grade=2, locked=1
+        errors=1, no_account=1, header=1, duplicate=2, no_grade=1, locked=1
     )
     text = problems.text()
     assert text.startswith("고칠 칸 1개 · 계정이 빈 새 줄 1개")
@@ -150,3 +150,21 @@ def test_grade_values_map_back_to_the_four_grades() -> None:
     assert plan.grade_at(None) is None and plan.grade_at(4.0) is None and plan.grade_at(1.5) is None
     assert plan.GRADE_OPTIONS == ("열람", "실무자", "관리자", "개발자")
     assert plan.fresh_key(3) == "+3" and plan.is_fresh("+3") and not plan.is_fresh("demo.a")
+
+
+def test_a_new_row_without_a_grade_goes_in_as_a_practitioner() -> None:
+    """새 줄의 「등급」 을 비우면 실무자로 넣는다(처음 값 — 2026-11-18 다음 배포 화면 확인 보드
+    q-new-row-grade (가), 6-34 new-members (가)). 명단 사람의 등급을 비우는 것은 그대로 문제다."""
+    draft: DraftState = {
+        "cells": {
+            "+1": {plan.ACCOUNT_COLUMN: "demo.blank"},
+            "+2": {plan.ACCOUNT_COLUMN: "demo.picked", plan.GRADE_COLUMN: 2.0},
+        },
+        "bad": {},
+    }
+    result = _plan(draft)
+    assert not result.problems.any
+    groups = result.added_by_grade()
+    assert [p.loginid for p in groups[plan.NEW_PERSON_GRADE]] == ["demo.blank"]
+    assert plan.NEW_PERSON_GRADE == grades.EDITOR
+    assert [p.loginid for p in groups[grades.MANAGER]] == ["demo.picked"]
