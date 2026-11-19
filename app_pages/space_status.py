@@ -107,7 +107,9 @@ from capa_simulation.components.space_floor_list import (
     floor_open_confirm,
     floor_state_draft_pending,
     layer_columns,
+    queue_floor_state_notice,
     render_space_floor_list,
+    settle_floor_state_draft,
 )
 from capa_simulation.components.space_layout import (
     FLOOR_TABLE_COLUMNS,
@@ -537,9 +539,9 @@ def _open_floor(key: FloorKey, *, discard: bool = False) -> None:
 
     층 목록의 `사용 편집` 초안이 있으면 버리겠다고 답한 열기(`discard` — 블록 누름의 브라우저 확인
     창 · 바로 가기 팝오버의 「변경을 버리고 열기」 체크)만 연다(2026-11-19 사용자 요청 — 묻지 않고
-    온 열기는 초안을 두고 층 목록 알림 칸에 알린다, `floor_open_allowed`). 연 회차에는 초안을
-    여기서 버린다 — 토글이 위젯 상태로 남은 채 이 회차를 맞으면 페이지보다 먼저 도는 `app.py` 의 탭
-    점·떠나기 확인·테마 단추 확인이 이미 버린 초안을 한 회차 더 센다."""
+    온 열기는 초안을 두고 층 목록 알림 칸에 알린다, `floor_open_allowed`). 연 회차에는 초안을 여기서
+    버린다 — 초안은 위젯 밖 칸이라 층을 열어도 남으므로, 답한 대로 버리고 페이지보다 먼저 도는
+    `app.py` 의 탭 점·변경 칩·테마 단추 확인이 이 회차부터 걷히게 한다."""
     if not floor_open_allowed(key, discard=discard):
         return
     discard_floor_state_draft()
@@ -828,6 +830,20 @@ if using_sample_equipment:
 # 샘플 화면에서는 둘 다 막는다.
 fab_editable = not showing_sample and edit_mode.fab
 fab_save_blocked = showing_sample
+# 층 사용 편집 초안은 위젯 밖 칸이라 다른 화면에 다녀와도 남는다(2026-11-19 보드 m19-e2e-space-leave
+# (나)). FAB 회차마다 층 목록 · 층 바로 가기를 그리기 전에 되살아난 초안을 거른다 — 더는 고칠 수
+# 없게 됐거나(등급 · 가정 설비 시나리오 · 샘플 화면) 다녀온 사이 남이 저장했으면 버린다. 바뀐 층이
+# 있던 초안을 버린 회차는 회차 끝에 그 수를 알림 칸에 담고 앱 머리(탭 점 · 변경 칩)를 새로 그리려 한
+# 번 더 돈다(알림은 다시 돈 회차에 선다).
+floor_dropped = (
+    settle_floor_state_draft(
+        equipment_database_path,
+        floor_states,
+        editable=not showing_sample and edit_mode.floor_state,
+    )
+    if selected is None
+    else None
+)
 
 # 색 기준 「필요 단축」(2026-10-24 결정). 고른 회차(`layer_requested`)라도 배치 편집 중이면
 # 쉰다(결정 D7 — 라디오 값은 그대로, 편집기는 공정구분 기본 색). 둘 다 위젯보다 먼저 세션에서
@@ -3223,10 +3239,15 @@ SPACE_DIALOG_HOST.render(
     {value: body for value, (body, _) in LEVEL_DIALOGS.items()} if layer_active else {},
     widget_keys={value: keys for value, (_, keys) in LEVEL_DIALOGS.items()},
 )
+# 되살아난 층 사용 초안을 버린 회차 — 버린 수를 다음 회차 알림 칸에 담는다(아래 어느 다시 돌기보다
+# 먼저 — 담기 전에 끊기면 말없이 버린 꼴이 된다).
+if floor_dropped is not None:
+    queue_floor_state_notice(floor_dropped)
 # 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 머리를 새로 그리려 한 번 더
 # 돈다.
 rerun_if_head_stale()
-# 호기 없는 화면에 남은 「필요 단축」 을 기본 값으로 적은 회차 — 사이드바 줄을 걷으려 한 번 더 돈다
-# (모든 위젯을 그린 뒤라 그 회차의 위젯 값을 잃지 않는다).
-if sidebar_rows_stale:
+# 호기 없는 화면에 남은 「필요 단축」 을 기본 값으로 적은 회차 — 사이드바 줄을 걷으려 한 번 더 돈다.
+# 층 사용 초안을 버린 회차도 같다(머리 점 · 칩). 모든 위젯을 그린 뒤라 그 회차의 위젯 값을 잃지
+# 않는다.
+if sidebar_rows_stale or floor_dropped is not None:
     st.rerun()

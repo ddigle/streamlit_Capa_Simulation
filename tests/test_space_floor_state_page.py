@@ -37,6 +37,7 @@ from capa_simulation.components.space_floor_list import (
     CONFIRM_KEY,
     DRAFT_KEY,
     EDIT_TOGGLE_KEY,
+    EDITING_KEY,
     EDITOR_KEY,
     FLOOR_OPEN_CONFIRM,
     FLOOR_OPEN_DISCARD_LABEL,
@@ -1165,7 +1166,7 @@ def _pending_script() -> None:
 
 
 @pytest.mark.parametrize(
-    ("toggle", "draft", "expected"),
+    ("editing", "draft", "expected"),
     [
         (True, {"C1 3F": "UNUSED"}, True),
         (True, {}, False),
@@ -1174,12 +1175,12 @@ def _pending_script() -> None:
     ids=["켜짐·다름", "켜짐·같음", "꺼짐·남은 초안"],
 )
 def test_the_theme_marker_counts_only_a_live_changed_draft(
-    toggle: bool, draft: dict[str, str], expected: bool
+    editing: bool, draft: dict[str, str], expected: bool
 ) -> None:
-    """테마 전환 미저장 표지(`app.py`)는 세션만 읽는다 — 토글이 켜져 있고 초안이 편집 시작 저장본과
-    다를 때만 참이다."""
+    """테마 전환 미저장 표지(`app.py`)는 세션만 읽는다 — 편집 중(위젯 밖 칸 `EDITING_KEY` — 토글
+    위젯 상태가 없어도)이고 초안이 편집 시작 저장본과 다를 때만 참이다."""
     app = AppTest.from_function(_pending_script)
-    app.session_state[EDIT_TOGGLE_KEY] = toggle
+    app.session_state[EDITING_KEY] = editing
     app.session_state[DRAFT_KEY] = draft
     app.session_state[BASE_KEY] = (0, ())
     app.run()
@@ -1273,4 +1274,263 @@ def test_a_block_press_that_was_not_asked_keeps_the_draft_and_says_so(
     assert app.session_state["space_status_selected_floor"] == "1F"
     assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
     assert _version(database) == 0
+    clear_equipment_repository()
+
+
+# ------------------------------------------- 화면을 떠나도 남는 초안(11-19 m19-e2e-space-leave)
+
+
+def _roundtrip_script(database: Path) -> str:
+    """Space 페이지를 `app.py` 처럼 감싼 원문 — 세션 칸 `test_away` 가 참이면 다른 화면(HOME)을 본
+    회차처럼 Space 를 그리지 않는다(위젯 상태가 걷힌다). 맨 앞에서 화면 탭 점 · 탭 줄 떠나기 확인 ·
+    머리 변경 칩 · 초안 층 수를 먼저 센다(페이지보다 먼저 서는 머리의 때맞춤). `test_viewer` 가
+    참이면 그 회차의 화면 등급이 열람이다(`sso_identity.viewer_can` 을 그 회차에만 바꾼다)."""
+    page = _page_script(PAGE, database)
+    body = "\n".join("        " + line for line in page.strip().splitlines())
+    return f"""
+import streamlit as st
+
+from capa_simulation.components import sso_identity
+from capa_simulation.components.change_summary import session_changes
+from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
+from capa_simulation.components.space_floor_list import floor_state_draft_count
+from capa_simulation.navigation import SPACE_STATUS
+
+original_can = sso_identity.viewer_can
+if st.session_state.get("test_viewer"):
+    sso_identity.viewer_can = lambda action: False
+try:
+    page_file = "home.py" if st.session_state.get("test_away") else "space_status.py"
+    st.session_state["count_before_page"] = floor_state_draft_count()
+    st.session_state["marks_before_page"] = page_unsaved_marks(page_file)
+    st.session_state["leave_before_page"] = leave_notice(page_file)
+    st.session_state["changes_before_page"] = [
+        dict(item) for item in session_changes(page_file, hrefs={{SPACE_STATUS.path: "space"}})
+    ]
+    if st.session_state.get("test_away"):
+        st.write("다른 화면")
+    else:
+{body}
+finally:
+    sso_identity.viewer_can = original_can
+"""
+
+
+def _roundtrip(database: Path) -> tuple[AppTest, BrowserTables]:
+    """편집을 켜고 C5 동 머리를 「사용 안 함」 으로 — 바뀐 층 6개의 초안."""
+    app = AppTest.from_string(_roundtrip_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    _ok(app)
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    _ok(app)
+    app.segmented_control(key="space_floor_state_bulk_C5").set_value("UNUSED")
+    tables.run()
+    _ok(app)
+    return app, tables
+
+
+_C5_UNUSED = {f"C5 {floor}": "UNUSED" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")}
+
+
+def _leave(app: AppTest, tables: BrowserTables) -> None:
+    """다른 화면으로 — 두 회차(첫 회차 끝에 Space 위젯 상태가 걷힌다)."""
+    app.session_state["test_away"] = True
+    tables.run()
+    _ok(app)
+    tables.run()
+    _ok(app)
+
+
+def _come_back(app: AppTest, tables: BrowserTables) -> None:
+    app.session_state["test_away"] = False
+    tables.run()
+    _ok(app)
+
+
+def test_a_floor_draft_survives_leaving_and_coming_back_with_the_switch_still_on(
+    tmp_path: Path,
+) -> None:
+    """층 사용 편집 초안은 위젯 밖 세션 칸이라 화면 탭 · 사이드바 링크 · 뒤로가기 어느 길로 떠났다
+    와도 `사용 편집` 이 켜진 채 그대로 선다(2026-11-19 보드 m19-e2e-space-leave (나) — E2E E2-1 ·
+    E2-2 는 토글 위젯 상태가 걷혀 초안이 말없이 버려졌다). 떠나 있는 동안에도 Space 탭 점 · 머리
+    「변경」 칩(「저장 안 함」 묶음 — 그 화면으로)이 서고, 탭 줄 떠나기 확인은 묻지 않는다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+    assert app.session_state["leave_before_page"] == ""
+
+    _leave(app, tables)
+    assert EDIT_TOGGLE_KEY not in app.session_state
+    assert app.session_state["count_before_page"] == 6
+    assert app.session_state["marks_before_page"] == {
+        "app_pages/space_status.py": "저장하지 않은 층 사용 편집"
+    }
+    assert app.session_state["leave_before_page"] == ""
+    floor_items = [
+        item for item in app.session_state["changes_before_page"] if item["top"] == "층 사용 미저장"
+    ]
+    assert floor_items == [
+        {
+            "group": "keep",
+            "page": "Space 현황",
+            "text": "층 사용 편집 · 층 6개 저장 안 함",
+            "top": "층 사용 미저장",
+            "href": "space",
+            "tab": "",
+        }
+    ]
+
+    _come_back(app, tables)
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+    assert any("바뀐 층 6개" in item.value for item in app.caption)
+    assert not [item.value for item in app.warning]
+    assert _version(database) == 0
+    # 돌아온 뒤 저장하면 그 초안 그대로 저장된다.
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert _states(database) == {key: "UNUSED" for key in _C5_FLOORS}
+    clear_equipment_repository()
+
+
+_C5_FLOORS = tuple(("C5", floor) for floor in ("1F", "2F", "3F", "4F", "5F", "6F"))
+
+
+def test_a_cell_edited_right_before_leaving_is_kept_by_the_editor_callback(
+    tmp_path: Path,
+) -> None:
+    """칸을 고친 직후 바로 떠나 본문이 편집표까지 가지 않은 회차에도(사이드바 링크 · 뒤로가기) 그
+    칸은 편집표 `on_change` 가 초안에 접어 남는다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
+    app.session_state["test_away"] = True
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {**_C5_UNUSED, "C2 2F": "UNUSED"}
+    tables.run()
+    _ok(app)
+
+    _come_back(app, tables)
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == {**_C5_UNUSED, "C2 2F": "UNUSED"}
+    assert any("바뀐 층 7개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_another_save_while_away_rebuilds_the_draft_and_says_how_many_floors_it_dropped(
+    tmp_path: Path,
+) -> None:
+    """떠나 있는 사이 남이 층 사용을 저장했으면 돌아온 회차에 옛 초안을 되살리지 않는다 — 편집은
+    켜진 채 최신 저장본으로 다시 세우고 버린 층 수를 알림 칸 · 알림창으로 한 번 알린다(입력 비가동
+    「… 버렸습니다」 와 같은 꼴, 설계 규칙 UI-STA-05). 버린 회차는 한 번 더 돌아 머리 점 · 칩도 그
+    회차에 걷힌다. 남의 저장은 그대로다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    _leave(app, tables)
+    DuckDBEquipmentRepository(database).save_floor_states(
+        {("C4", "6F"): "NOT_LINE"}, expected_version=0, source="남"
+    )
+
+    _come_back(app, tables)
+    dropped = space_floor_list.FLOOR_DROPPED_SAVED.format(count=6)
+    warnings = [item.value for item in app.warning]
+    assert warnings.count(dropped) == 1, warnings
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == {"C4 6F": "NOT_LINE"}
+    assert app.session_state[BASE_KEY][0] == 1
+    assert app.session_state["count_before_page"] == 0
+    assert app.session_state["marks_before_page"] == {}
+
+    tables.run()
+    _ok(app)
+    assert dropped not in [item.value for item in app.warning]
+    assert _states(database) == {("C4", "6F"): "NOT_LINE"}
+    clear_equipment_repository()
+
+
+def test_a_draft_without_changes_comes_back_quietly_over_another_save(tmp_path: Path) -> None:
+    """편집만 켜고 떠난 사이 남이 저장했으면 버릴 것이 없어 알리지 않고 최신 저장본으로 다시
+    선다."""
+    database = _database(tmp_path)
+    app = AppTest.from_string(_roundtrip_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    _ok(app)
+    _leave(app, tables)
+    DuckDBEquipmentRepository(database).save_floor_states(
+        {("C4", "6F"): "NOT_LINE"}, expected_version=0, source="남"
+    )
+
+    _come_back(app, tables)
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == {"C4 6F": "NOT_LINE"}
+    assert app.session_state[BASE_KEY][0] == 1
+    assert not [item.value for item in app.warning]
+    clear_equipment_repository()
+
+
+def test_losing_the_right_to_edit_drops_the_draft_and_says_how_many_floors(
+    tmp_path: Path,
+) -> None:
+    """층 사용을 고칠 수 없는 화면 등급이 되면(관리자 아래 · 「이 등급으로 보기」) 떠나 있는 동안
+    점 · 칩을 세지 않고, Space 에 오면 편집을 끄고 초안을 버린 뒤 버린 층 수를 알린다(가정 설비
+    시나리오 · 샘플 화면도 같은 거름 — `editable`)."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    app.session_state["test_viewer"] = True
+    _leave(app, tables)
+    assert app.session_state["count_before_page"] == 0
+    assert app.session_state["marks_before_page"] == {}
+
+    _come_back(app, tables)
+    dropped = space_floor_list.FLOOR_DROPPED_LOCKED.format(count=6)
+    warnings = [item.value for item in app.warning]
+    assert warnings.count(dropped) == 1, warnings
+    assert EDITING_KEY not in app.session_state
+    assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
+
+    app.session_state["test_viewer"] = False
+    tables.run()
+    _ok(app)
+    assert not app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state["count_before_page"] == 0
+    assert _version(database) == 0
+    clear_equipment_repository()
+
+
+def test_the_in_screen_floor_open_still_asks_and_drops_only_on_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """떠나도 남는 초안이 되었어도 같은 화면 안에서 다른 층을 여는 것은 그대로 먼저 묻는다(보드
+    m19-guard-floor 「좋음」) — 다녀온 뒤에도 묻지 않은 블록 누름은 열지 않고, 「확인」 받은 누름만
+    버리고 연다."""
+    payloads: list[dict[str, Any]] = []
+    _navigating_stub(monkeypatch, payloads)
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    _leave(app, tables)
+    _come_back(app, tables)
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+
+    payloads.append({"target": "C2 1F"})
+    tables.run()
+    _ok(app)
+    tables.run()
+    _ok(app)
+    assert "space_status_selected_floor" not in app.session_state
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+
+    payloads.append({"target": "C2 1F", "discard": True})
+    tables.run()
+    _ok(app)
+    tables.run()
+    _ok(app)
+    assert app.session_state["space_status_selected_floor"] == "1F"
+    assert EDITING_KEY not in app.session_state and DRAFT_KEY not in app.session_state
     clear_equipment_repository()

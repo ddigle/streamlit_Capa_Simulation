@@ -27,6 +27,21 @@
   캐시 `load_layout_overlay_floor_counts`).
 - 성공 문구는 flash(`st.success`), 충돌·검증 오류·「바뀐 층이 없습니다」 는 같은 상자 안 알림
   칸이다.
+- **편집 중인가 · 초안 · 출발 저장본은 위젯 밖 세션 칸이다**(`FLOOR_EDITING` · `FLOOR_DRAFT` ·
+  `BASE_KEY` — 2026-11-19 아침 확인 보드 m19-e2e-space-leave (나)). `사용 편집` 토글은 화면을 떠나면
+  위젯 상태가 걷히므로 그리기 전에 회차마다 칸 값으로 다시 세운다 — 화면 탭 · 사이드바 링크 · 뒤로 ·
+  앞으로가기 어느 길로 떠났다 와도 켜진 채 초안 그대로 선다. 편집표 칸 편집은 `on_change` 에서도
+  초안에 접는다(고친 칸을 누르자마자 떠나도 남게). 초안이 있는 동안 화면 탭 점 · 머리 변경 칩(「저장
+  안 함」 묶음)은 어느 화면에서나 서고, 탭 줄 떠나기 확인에는 들지 않는다(떠나도 잃지 않는다 — 설계
+  규칙 UI-STA-02). 새로고침 · 탭 닫기 · 테마 전환은 묻는다(세션이 바뀐다). 같은 화면 안에서 다른
+  층을 열 때의 「버릴까요?」 확인은 그대로다(`floor_open_allowed`).
+- **되살아난 초안의 거름**(`settle_floor_state_draft` — FAB 회차마다 토글을 그리기 전): 등급 · 설비
+  시나리오(`space_edit_mode`) · 샘플 화면 때문에 더는 고칠 수 없으면 초안을 버리고, 다른 화면에서
+  돌아온 회차(토글 위젯 상태가 없음)에 그 사이 남의 저장이 보이면 초안을 최신 저장본으로 다시 세운다
+  — 둘 다 바뀐 층이 있었으면 Space 가 회차 끝에 그 수를 알림 칸 · 알림창으로 알리고 앱 전체를 한 번
+  다시 돈다(머리 점 · 칩은 페이지보다 먼저 섰다). 화면에 머문 채 남이 저장하면 전처럼 「저장」 이
+  거부하며 다시 세운다. 공식 설비 시나리오 안의 리비전만 바뀐 것은 거르지 않는다 — 층 사용은
+  리비전과 무관하다(S6).
 - 설비 시나리오·설비 리비전과 무관한 공용 현행값이다(S6). 그래서 **공식 설비 시나리오에서만**
   고친다(설비 시나리오 2단계 Q3 — FAB 전체와 같은 까닭, 건물·층은 가정 시나리오가 없다). 가정 세션과
   샘플 fleet 화면에서는 잠근다(값도 끈다 — 까닭은 풍선). 끄기 확인은 공식 배치의 호기 수에 더해
@@ -101,10 +116,14 @@ from capa_simulation.services.floor_state import (
     prepare_floor_states,
     reason_cell_text,
 )
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 __all__ = [
+    "EDITING_KEY",
     "EDIT_TOGGLE_KEY",
+    "FLOOR_DROPPED_LOCKED",
+    "FLOOR_DROPPED_SAVED",
     "FLOOR_OPEN_CONFIRM",
     "FLOOR_OPEN_DISCARD_LABEL",
     "FLOOR_STATE_LEAVE_LABEL",
@@ -114,9 +133,12 @@ __all__ = [
     "discard_floor_state_draft",
     "floor_open_allowed",
     "floor_open_confirm",
+    "floor_state_draft_count",
     "floor_state_draft_pending",
     "layer_columns",
+    "queue_floor_state_notice",
     "render_space_floor_list",
+    "settle_floor_state_draft",
 ]
 
 # 사용 층 표·비활성 층 표의 위젯 key. 층을 열면 FAB 화면은 그려지지 않아 표 선택은 그 회차에
@@ -124,11 +146,18 @@ __all__ = [
 FLOOR_TABLE_KEY = "space_status_floor_table"
 INACTIVE_TABLE_KEY = "space_status_floor_table_inactive"
 INACTIVE_EXPANDER_KEY = "space_floor_inactive_expander"
-# 표 머리 `사용 편집` 토글. `value=` 를 주지 않는다 — 저장 콜백·샘플 잠금이 세션에 적는다.
+# 표 머리 `사용 편집` 토글. `value=` 를 주지 않는다 — 그리기 전에 회차마다 `FLOOR_EDITING` 값을
+# 적는다(화면을 떠나 위젯 상태가 걷혀도 돌아오면 켜진 채 선다).
 EDIT_TOGGLE_KEY = "space_floor_state_edit"
+EDIT_TOGGLE = SessionSlot(EDIT_TOGGLE_KEY, bool)
+# 층 사용 편집 중인가 — 위젯 밖 칸이라 화면을 떠나도 남는다(2026-11-19 보드 m19-e2e-space-leave
+# (나)). 켜고 끄는 자리는 토글 콜백 · 저장 뒷정리 · 버리기(`discard_floor_state_draft`) · 잠금이다.
+EDITING_KEY = "space_floor_state_editing_v1"
+FLOOR_EDITING = SessionSlot(EDITING_KEY, bool)
 # 초안(「C1 3F」 → 사유 — 옛 코드 또는 적은 글, 비활성 층만)과 편집을 시작할 때 본 저장본
 # (version, rows). base 는 초안을 세우는 자리에서만 적는다(`write_guard.remember_seen`).
 DRAFT_KEY = "space_floor_state_draft_v1"
+FLOOR_DRAFT = SessionSlot(DRAFT_KEY, dict)
 BASE_KEY = "space_floor_state_base_v1"
 # 이 세션이 한 층 사용 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
 FLOOR_STATE_SAVE_NAME = "space_floor_states"
@@ -170,6 +199,13 @@ FLOOR_OPEN_CONFIRM = (
 )
 # 사이드바 `층 바로 가기` 를 여는 팝오버 안 확인 체크 — 「변경을 버리고 불러오기」 와 같은 꼴.
 FLOOR_OPEN_DISCARD_LABEL = "변경을 버리고 열기"
+# 되살아난 초안을 거른 회차의 알림(`settle_floor_state_draft` — 설계 규칙 UI-STA-05 「버리는 것도
+# 말없이 하지 않는다」, 입력 비가동 `MANUAL_DROPPED_MESSAGE` 와 같은 꼴). `{count}` 는 바뀐 층 수다.
+FLOOR_DROPPED_SAVED = (
+    "다른 사용자가 층 사용 설정을 저장해 저장하지 않은 층 {count}개의 편집을 버렸습니다 — "
+    "편집표를 최신 저장본으로 다시 세웠습니다."
+)
+FLOOR_DROPPED_LOCKED = "층 사용을 고칠 수 없게 되어 저장하지 않은 층 {count}개의 편집을 버렸습니다."
 # 층 목록 머리의 이름 풍선 — 하는 법은 자리 글이 아니라 여기다(설계 규칙 UI-TXT-01 · UI-TXT-04).
 _LIST_HELP = "행을 고르면 그 층이 열립니다(키보드는 행에 초점을 두고 Shift+Space)."
 # 같은 풍선에 잇는 글 — 비활성 층의 FAB 도면 모습과 여는 곳(Guide 「비활성 층」). 펼침 머리 「비활성
@@ -182,7 +218,9 @@ _INACTIVE_HELP = (
 # 바뀐 층 수만 둔다.
 _SAVE_HELP = (
     "저장하면 모두의 Space 화면에 반영됩니다(설비 리비전은 만들지 않습니다). 도면은 저장하면 "
-    "바뀝니다. 저장하지 않고 다른 층을 열면 버릴지 먼저 묻습니다."
+    "바뀝니다. 저장 전에는 이 창(세션)에만 남아 다른 화면에 다녀와도 그대로이고, 새로고침 · 테마 "
+    "전환에는 사라집니다. 다녀온 사이 다른 사람이 저장했으면 고친 것은 버려지고 최신 저장본이 "
+    "섭니다. 저장하지 않고 다른 층을 열면 버릴지 먼저 묻습니다."
 )
 _TOGGLE_HELP = (
     "층마다 사용·비활성과 그 사유(직접 적는 글)를 고칩니다. 모두에게 같은 공용 설정이고 설비 "
@@ -281,8 +319,8 @@ def layer_columns(cells: Mapping[FloorKey, Mapping[str, object]]) -> tuple[Floor
 
 
 def _stored_draft() -> Draft | None:
-    held = st.session_state.get(DRAFT_KEY)
-    if not isinstance(held, Mapping):
+    held = FLOOR_DRAFT.peek()
+    if held is None:
         return None
     draft: Draft = {}
     for label, reason in held.items():
@@ -293,9 +331,7 @@ def _stored_draft() -> Draft | None:
 
 
 def _store_draft(draft: Mapping[FloorKey, str]) -> None:
-    st.session_state[DRAFT_KEY] = {
-        floor_label(key): draft[key] for key in FLOOR_KEYS if key in draft
-    }
+    FLOOR_DRAFT.set({floor_label(key): draft[key] for key in FLOOR_KEYS if key in draft})
 
 
 def _stored_base() -> Base | None:
@@ -343,36 +379,103 @@ def _start(states: FloorStates) -> None:
 
 def _forget() -> None:
     """초안·base·확인을 지운다(편집을 끈 회차 — 저장하지 않은 변경은 버린다)."""
-    for key in (DRAFT_KEY, CONFIRM_KEY):
-        st.session_state.pop(key, None)
+    FLOOR_DRAFT.clear()
+    st.session_state.pop(CONFIRM_KEY, None)
     forget_seen(BASE_KEY)
 
 
-def discard_floor_state_draft() -> None:
-    """`사용 편집` 토글을 끄고 초안·base·확인을 버린다 — 사이드바 팝업이 가정 설비 시나리오를 불러온
-    회차(층 사용은 공식에서만 고친다 — Q3)와 Space 가 층을 여는 콜백(층 상세는 토글을 그리지
-    않는다). Space 가 잠그며 버리기(`render_space_floor_list`)나 토글 위젯 상태가 걷히기를 기다리면
-    그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을 한 회차 더
-    센다.
-    토글 위젯을 그리기 전(팝업 회차·콜백·다음 회차 첫머리)에만 부른다."""
-    st.session_state[EDIT_TOGGLE_KEY] = False
+def _editing() -> bool:
+    """층 사용 편집 중인가 — 위젯 밖 칸(`FLOOR_EDITING`)이라 화면을 떠났다 와도 남는다."""
+    return FLOOR_EDITING.peek() is True
+
+
+def _stop_editing() -> None:
+    """편집을 끄고(칸 · 토글 값) 초안·base·확인을 지운다. 토글 위젯을 그리기 전에만 부른다."""
+    FLOOR_EDITING.clear()
+    EDIT_TOGGLE.set(False)
     _forget()
 
 
-def floor_state_draft_pending() -> bool:
-    """`사용 편집` 이 켜져 있고 초안이 편집을 시작할 때 본 저장본과 다른가 — 세션만 읽는다(테마 전환
-    미저장 표지, AGENTS 5장 23). 토글이 꺼진 세션의 남은 초안은 세지 않는다.
+def discard_floor_state_draft() -> None:
+    """`사용 편집` 을 끄고 초안·base·확인을 버린다 — 사이드바 팝업이 가정 설비 시나리오를 불러온
+    회차(층 사용은 공식에서만 고친다 — Q3)와 Space 가 층을 여는 콜백(「버릴까요?」 에 답한 열기).
+    Space 가 잠그며 버리기(`settle_floor_state_draft`)를 기다리면 그 앞에 `app.py` 가 세는 탭
+    점·변경 칩(`floor_state_draft_pending`)이 버린 초안을 한 회차 더 센다.
+    토글 위젯을 그리기 전(팝업 회차·콜백·다음 회차 첫머리)에만 부른다."""
+    _stop_editing()
 
-    `app.py` 는 페이지보다 먼저 돌아 이 회차의 칸 편집이 아직 초안에 접히지 않았다 — 위젯 상태의
-    칸 편집까지 (적지 않고) 접어 본다. 끈 칸을 다시 켜 저장본과 같아졌으면 남은 편집이 있어도
-    거짓이다."""
-    if not st.session_state.get(EDIT_TOGGLE_KEY):
-        return False
+
+def _changed_count() -> int:
+    """초안이 편집을 시작할 때 본 저장본과 다른 층 수 — 세션만 읽는다. 이 회차 편집표 위젯 상태의
+    칸 편집까지 (적지 않고) 접어 본다. 편집 중인지 · 등급은 보지 않는다."""
     draft, base = _stored_draft(), _stored_base()
     if draft is None or base is None:
-        return False
+        return 0
     folded, _ = _folded(draft, _widget_edits())
-    return folded != _base_draft(base)
+    saved = _base_draft(base)
+    return sum(1 for key in FLOOR_KEYS if folded.get(key) != saved.get(key))
+
+
+def floor_state_draft_count() -> int:
+    """저장하지 않은 층 사용 편집의 바뀐 층 수 — 편집 중이 아니거나 층 사용을 고칠 수 없는 화면
+    등급(관리자 아래 · 「이 등급으로 보기」 포함)이면 0. 세션만 읽는다(화면 탭 점 · 머리 변경 칩 ·
+    테마 · 새로고침 표지, AGENTS 5장 23).
+
+    `app.py` 는 페이지보다 먼저 돌아 이 회차의 칸 편집이 아직 초안에 접히지 않았을 수 있다 — 위젯
+    상태의 칸 편집까지 (적지 않고) 접어 본다. 끈 칸을 다시 켜 저장본과 같아졌으면 남은 편집이 있어도
+    0 이다. 다른 화면에서도 같은 수다(초안이 위젯 밖 칸이라 떠나도 남는다)."""
+    if not _editing() or not sso_identity.viewer_can("equipment.save"):
+        return 0
+    return _changed_count()
+
+
+def floor_state_draft_pending() -> bool:
+    """저장하지 않은 층 사용 편집이 있는가(`floor_state_draft_count` 가 0 이 아닌가)."""
+    return floor_state_draft_count() > 0
+
+
+def settle_floor_state_draft(
+    database_path: str, states: FloorStates, *, editable: bool
+) -> str | None:
+    """FAB 회차마다 층 목록을 그리기 전에 되살아난 초안을 거른다(Space 가 부른다 — 토글보다 먼저).
+
+    - 더는 고칠 수 없으면(`editable` 거짓 — 가정 설비 시나리오 · 샘플 화면, 또는 층 사용을 고칠 수
+      없는 화면 등급) 편집을 끄고 초안을 버린다.
+    - 다른 화면에서 돌아온 회차(편집 중인데 토글 위젯 상태가 켜져 있지 않다 — 그리지 않은 회차에
+      걷혔다)에 초안이 출발한 version 이 `states`(이 회차에 읽은 저장본)와 다르면, 제 저장이 끊긴
+      것(`is_own_save`)은 저장 뒷정리를 마치고, 남의 저장이면 초안을 최신 저장본으로 다시
+      세운다(편집은 켜진 채) — 남의 저장 위에 옛 초안이 되살아나지 않게.
+    - 화면에 머문 회차(토글이 켜진 채)는 거르지 않는다 — 남의 저장은 「저장」 이 거부하며 알린다.
+
+    바뀐 층이 있던 초안을 버렸으면 알릴 글(바뀐 층 수 — 설계 규칙 UI-STA-05, 제 저장의 뒷정리는 성공
+    알림을 이미 담아 빈 글)을 돌려준다. 화면 탭 점 · 머리 변경 칩 · 테마 표지는 페이지보다 먼저 옛
+    초안으로 섰으므로 부르는 쪽은 회차 끝(위젯을 모두 그린 뒤)에 그 글을 `queue_floor_state_notice`
+    로 담고 앱 전체를 한 번 다시 돈다(입력 비가동 `_settle_draft` 와 같은 까닭) — 글은 다시 돈
+    회차의 층 목록 알림 칸 · 알림창에 한 번 선다. 다시 돈 회차는 거를 것이 없어 되풀이되지 않는다.
+    버린 것이 없으면 None 이다."""
+    if not _editing():
+        return None
+    changed = _changed_count()
+    if not editable or not sso_identity.viewer_can("equipment.save"):
+        _stop_editing()
+        return FLOOR_DROPPED_LOCKED.format(count=changed) if changed else None
+    if EDIT_TOGGLE.peek() is True:
+        return None
+    base = _stored_base()
+    if base is None or base[0] == states.version:
+        return None
+    if is_own_save(FLOOR_STATE_SAVE_NAME, base[0], states.version):
+        _saved(_stored_draft() or {})
+        return "" if changed else None
+    _start(states)
+    return FLOOR_DROPPED_SAVED.format(count=changed) if changed else None
+
+
+def queue_floor_state_notice(text: str) -> None:
+    """`settle_floor_state_draft` 가 돌려준 글을 층 목록 알림 칸에 담는다(빈 글은 담지 않는다) —
+    다음 회차 알림 칸이 곁 경고와 알림창으로 한 번 낸다."""
+    if text:
+        _notice("warning", text)
 
 
 def floor_open_confirm() -> str:
@@ -497,11 +600,22 @@ def _fold() -> Draft:
 
 
 def _toggle_changed(database_path: str) -> None:
-    """`사용 편집` 토글. 켜면 초안 = 저장본, 끄면 초안·base·확인을 버린다."""
-    if st.session_state.get(EDIT_TOGGLE_KEY):
+    """`사용 편집` 토글. 켜면 편집 중(`FLOOR_EDITING`) · 초안 = 저장본, 끄면 편집을 끄고
+    초안·base·확인을 버린다."""
+    if EDIT_TOGGLE.peek():
+        FLOOR_EDITING.set(True)
         _start(load_floor_states(database_path))
     else:
+        FLOOR_EDITING.clear()
         _forget()
+
+
+def _fold_from_editor() -> None:
+    """편집표 `on_change` — 칸 편집을 바로 초안에 접는다. 콜백은 본문보다 먼저 돌아, 칸을 고친 직후
+    사이드바 링크 · 뒤로가기로 떠나 본문이 편집표까지 가지 않는 회차에도 고친 칸이 초안에 남는다
+    (입력 비가동 `_fold_edits` 와 같은 까닭). 본문의 `_fold` 가 같은 편집을 다시 접어도 같다."""
+    if _editing():
+        _fold()
 
 
 def _refused_just_now() -> str | None:
@@ -658,8 +772,7 @@ def _saved(draft: Draft) -> None:
     """저장 뒤 이 세션의 뒷정리 — 성공 flash 를 담고 토글을 끄고 초안을 버린다."""
     queue_flash(FLASH_KEY, _saved_message(draft))
     # 콜백은 본문보다 먼저 돈다 — 토글을 그리기 전이라 값을 적을 수 있다.
-    st.session_state[EDIT_TOGGLE_KEY] = False
-    _forget()
+    _stop_editing()
 
 
 def _stored_version(database_path: str) -> int | None:
@@ -995,6 +1108,7 @@ def _render_editor(
     st.data_editor(
         frame,
         key=editor_widget_key(EDITOR_KEY),
+        on_change=_fold_from_editor,
         hide_index=True,
         width="stretch",
         num_rows="fixed",
@@ -1092,7 +1206,11 @@ def render_space_floor_list(
             granted = sso_identity.viewer_can("equipment.save")
             if not editable or not granted:
                 # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
-                st.session_state[EDIT_TOGGLE_KEY] = False
+                # 버린 초안의 수는 Space 가 이 앞에서 알렸다(`settle_floor_state_draft`).
+                _stop_editing()
+            # 토글 값은 위젯 밖 칸이 정한다 — 다른 화면에 다녀와 위젯 상태가 걷혔어도 켜진 채
+            # 선다(그리기 전에만 적을 수 있다).
+            EDIT_TOGGLE.set(_editing())
             editing = (
                 st.toggle(
                     "사용 편집",
@@ -1107,8 +1225,8 @@ def render_space_floor_list(
                 else False
             )
         if not editing:
-            # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져
-            # 꺼진 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
+            # 편집을 끈 세션에 남은 초안 조각(옛 판 세션 · 시험이 바로 적은 칸)을 지운다 — 「저장
+            # 안 한 편집」 표지가 거짓을 말하지 않게.
             _forget()
             # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
             with st.container(key="space_floor_state_notices", gap=None):

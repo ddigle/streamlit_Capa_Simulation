@@ -67,6 +67,7 @@ from capa_simulation.components.space_floor_list import (
     CONFIRM_BUTTON_KEY,
     CONFIRM_KEY,
     EDIT_TOGGLE_KEY,
+    EDITING_KEY,
 )
 from capa_simulation.components.space_floor_list import (
     SAVE_BUTTON_KEY as FLOOR_SAVE_BUTTON_KEY,
@@ -1794,7 +1795,7 @@ def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: 
     app = AppTest.from_function(
         _load_section, args=(str(repository.database_path),), default_timeout=60
     )
-    app.session_state[EDIT_TOGGLE_KEY] = True
+    app.session_state[EDITING_KEY] = True
     app.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
     app.session_state[BASE_KEY] = (0, ())
     app.session_state[DIALOG_SCENARIO_KEY] = setup
@@ -1809,7 +1810,7 @@ def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: 
     official = AppTest.from_function(
         _load_section, args=(str(repository.database_path),), default_timeout=60
     )
-    official.session_state[EDIT_TOGGLE_KEY] = True
+    official.session_state[EDITING_KEY] = True
     official.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
     official.session_state[BASE_KEY] = (0, ())
     official.session_state[DIALOG_SCENARIO_KEY] = OPERATIONS
@@ -1855,7 +1856,7 @@ def test_loading_an_assumption_drops_the_floor_use_draft_before_the_tab_marks(
     app = AppTest.from_function(
         _marks_then_load_section, args=(str(repository.database_path),), default_timeout=60
     )
-    app.session_state[EDIT_TOGGLE_KEY] = True
+    app.session_state[EDITING_KEY] = True
     app.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
     app.session_state[BASE_KEY] = (0, ())
     app.session_state[DIALOG_SCENARIO_KEY] = setup if assumption else OPERATIONS
@@ -1869,13 +1870,16 @@ def test_loading_an_assumption_drops_the_floor_use_draft_before_the_tab_marks(
     _ok(app.run())
 
     assert app.session_state[SELECTION_KEY]["scenario_id"] == (setup if assumption else OPERATIONS)
+    # 층 사용 초안은 떠나도 남아 탭 줄 떠나기 확인에는 들지 않는다(2026-11-19 보드
+    # m19-e2e-space-leave (나)).
+    assert app.session_state["test_leave"] == ""
     if assumption:
         assert app.session_state[EDIT_TOGGLE_KEY] is False
+        assert EDITING_KEY not in app.session_state
         assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
         assert app.session_state["test_marks"] == {}
-        assert app.session_state["test_leave"] == ""
     else:
-        assert app.session_state[EDIT_TOGGLE_KEY] is True
+        assert app.session_state[EDITING_KEY] is True
         assert app.session_state[DRAFT_KEY] == {"C2 3F": "UNUSED"}
         assert app.session_state["test_marks"] == dirty
 
