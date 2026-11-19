@@ -2027,14 +2027,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`bdq_token.environment_token_set` — 값은 보지 않는다, 글은 `AD-11` 과 같은 `bdq_token_admin.ENVIRONMENT_FIX`), 자동 로그인이 켜졌는데
   (`managed` + 키) 저장된 계정이 없으면 Admin Area 「BDQ 자동 로그인」 에 계정 넣기다(`bdq_token_admin.AUTO_LOGIN_FIX`), 저장된 계정이
   있으면(정상 · 멈춤) 그 자리에서 다시 넣기(곧바로 새 토큰 — `RELOGIN_FIX`)를 먼저, 「토큰 넣기」 를 그다음으로 적는다. 같은 함수 끝에서 만료 알림
-  `AD-11`(`bdq_token_admin.render_expiry_alert` — 자동 로그인이 서 있는 동안은 해소)과 자동 로그인 멈춤 알림 `AD-23`(`render_login_stop_alert` —
+  `AD-11`(`bdq_token_admin.expiry_alert_note` — 자동 로그인이 서 있는 동안은 해소)과 자동 로그인 멈춤 알림 `AD-23`(`login_stop_note` —
   개발자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4.
   하위 프로세스가 표지 없이 끝난 멈춤(`bdq_login.UNCONFIRMED_REJECT_REASONS` — `no_marker`)은 짧은 글이 「… 멈춤 — 로그인 확인 못 함」 이고
   전문이 비밀번호가 틀렸는지 모른다는 것과 진단 줄을 먼저 말한다 — 2026-11-17 사내 리뷰 `202611162130` 발견 4 · 사외요청 1),
-  자동 로그인이 멈추지 않은 채 서지 못함 알림 `AD-24`(`render_login_trouble_alert` — 시작 · 조회 중 닿지 못함 · 확인 못 함 · 못 함, 지문은 갈래
+  자동 로그인이 멈추지 않은 채 서지 못함 알림 `AD-24`(`login_trouble_note` — 시작 · 조회 중 닿지 못함 · 확인 못 함 · 못 함, 지문은 갈래
   낱말 하나, 같은 대상 — D6 「알림만」)도 부른다 — `AD-10` 도 할 일이 계정 넣기 · 다시 넣기인 갈래(`_token_alert_target` — 꺼짐 아니고 시작
-  점검 실패 · 토큰 환경변수 아님)에서는 같은 대상을 들고 간다. 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다. 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` —
-  무엇이 나도 `off` 로 물러선다). 시험 `tests/test_bdq_login_alerts.py`.
+  점검 실패 · 토큰 환경변수 아님)에서는 같은 대상을 들고 간다. 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다(넷의 표지는 `token_alert_notes` 한
+  벌이 짓는다). 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` — 무엇이 나도 `off` 로 물러선다). 조회 실패 ·
+  조회 중 자동 로그인의 멈춤은 화면 본문의 조회(DB 등록 단추 · 모듈 조회)에서 생기는데 넷은 화면 앞에서 낸다 — 그 회차의 앞 표지는 해소라
+  실패 글을 본 그 자리에서 Alarm 을 열어도 없었다(사내 리뷰 `202611181400` 발견 3). 그래서 `render_token_alert` 가 낸 표지(코드 · 조건 · 지문)를
+  돌려주고 `app.py` 가 화면이 끝까지 돈 회차의 끝에서 `render_token_alert_late` 에 넘긴다 — 같은 짓기로 다시 지어 달라진 것만 이벤트 칸 한
+  자리에 싣는다(없으면 빈 칸, 결과 파일이 있는 서버는 늘 한 자리 — 회차의 마지막 칸이라 앞 칸 순번을 밀지 않는다, 담아 둔 사건 알림은 꺼내지
+  않는다 `alerts.emit(drain=False)`). 덮지 못하는 회차는 둘이다 — 화면이 `st.stop()` 으로 멈춘 회차(더 쓸 수 없다)와 프래그먼트 · 팝업
+  본문만 다시 도는 회차(`app.py` 가 돌지 않아 앞 · 끝 표지가 모두 없다 — 모듈이 `@st.fragment` · `@st.dialog` 안에서 `query_bigdataquery` 를
+  부르는 꼴)이고 둘 다 다음 전체 회차의 앞 표지가 낸다(프래그먼트 · 팝업을 처음 그리는 전체 회차 안의 조회는 끝 표지가 덮는다). 알림 칸 JS 는 한 번 훑을 때
+  같은 상태 칸의 마지막 표지만 받는다(`latestStateNotes` — 앞 표지가 줄을 닫고 끝 표지가 새 줄을 여는 되풀이를 막는다). 시험
+  `tests/test_bdq_login_alerts.py` · `tests/test_bdq_login_stop_alert_flow.py`(실제 개발자 쿠키 · 조회 중 멈춤 · 재시작 뒤 멈춤 · 같은 회차).
 - `src/capa_simulation/components/memory_diagnostic.py` — Admin 「서버 시작 점검」 의 메모리 값 줄과 표 끝 「DuckDB 메모리 한도」 줄(사내
   리뷰 202611162130 사외요청 3 — 사내가 메모리 줄이기 앞뒤를 잰다). 값 줄은 「**메모리 지금** · RSS · 최고 · 세션 연결 n · 전체 n ·
   cache_data」(RSS 는 `/proc/self/status` 의 `VmRSS` · `VmHWM`, 없으면 최고만 `resource` · Windows 는 「모름」, 세션은 Streamlit 내부 `Runtime`
@@ -2061,8 +2070,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   폼 안 비밀 칸(`type="password"` · `autocomplete="new-password"` · 라벨 접음) 하나와 「넣기」 뿐이다. 받은 회차에 세션 칸을 곧바로
   떼고(`tests/test_flash_messages.py` 허용 목록), 누른 회차에 신원을 다시 검증해 개발자일 때만 쓴다. 거절은 칸 아래 한 줄
   (`tests/test_data_error_mark.py` BESIDE — 토큰 글 · 길이 없음), 넣음 · 같음은 알림창이고 넣으면 `HOST.finish` 로 닫는다. 만료 1시간
-  전 개발자 알림 `AD-11`(`render_expiry_alert` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
-  `container_start_check.render_token_alert` 가 부른다. 만료를 못 읽으면 서지 않고, BigDataQuery 자동 로그인이 서 있는 동안(`standing`)도
+  전 개발자 알림 `AD-11`(`expiry_alert_note` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
+  `container_start_check.render_token_alert` 가 낸다(회차 끝 다시 내기 `render_token_alert_late` 도 같은 짓기). 만료를 못 읽으면 서지 않고, BigDataQuery 자동 로그인이 서 있는 동안(`standing`)도
   서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
   `app.py` 가 모든 화면 회차에 부르는 자리라 지금 토큰을 읽다 무엇이 나도(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로
   물러서고, 시각대로 못 옮기는 시각은 「알 수 없음」(`_clock`)이다 — 넣기는 쓴 뒤 무엇이 나도 넣음으로 끝난다.
@@ -2109,7 +2118,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   바로 뒤에 서고, 그 밖에는 Streamlit 호출이 없다. 값 줄 둘 — 상태(없음 · 정상 · 멈춤(까닭) · 확인하지 못함(읽지 못함 — 「없음」 과 가른다)) ·
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
-  종류 · bigdataquery · getpass_asterisk 판, `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다. 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
+  종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
+  최고 앞→뒤MiB」(못 읽은 값은 「모름」 — `io/memory_probe`), `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다. 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
   다시 검증해 개발자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
   떠 있는 앱의 계정 원천이 곧바로 새 ID), 로그인 실패는 저장 없이 폼 아래 한 줄 + Alarm(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
@@ -2121,7 +2131,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드 · 하위 프로세스 진단 칸 `exit` · `signal` · `sec` · `stage` · `stderr` · `bigdataquery` ·
-  `getpass_asterisk` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는 계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
+  `getpass_asterisk` 와 메모리 단서 칸 아홉 `container_start_report.MEMORY_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
+  계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
 - `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
@@ -2317,8 +2328,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `data/temp/container_start.json`) 꼴·화면 안내 문장(`step_hint`)이다. 결과 파일의 자동 로그인 칸 `bdq_login`(`LoginStart` ·
   `parse_login` — 갈래 `LOGIN_*`(`unconfirmed` 포함) · 까닭 코드 · 키 꼴 검사 · 남은 분 · 예외 종류 · S3 읽기 분류 · 객체에 결과를 못 씀 ·
   판정한 객체의 넣은 시각 · 하위 프로세스 진단 `child`(`ChildDiag` · `parse_child` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류
-  마지막 예외 종류 · bigdataquery · getpass_asterisk 판, 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 ·
-  감사 상세와 한 벌), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
+  마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
+  한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS · 거둔 하위 프로세스 최고 RSS, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
+  파일은 `None` 이라 화면 글도 옛 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
+  벌), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
   시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
   에 들되 키가 없어 꺼진 줄은 기능 상태라 세지 않는다 `LoginStart.counted`)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
   의 계정 넣는 자리 이름이기도 하다 — 알림 글이 그 이름으로 가리킨다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
@@ -2371,8 +2384,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   프로세스(`io/bdq_login_child.py` — 표준 라이브러리만, `runpy`)이고 계정 · 비밀번호는 표준 입력으로만, 하위 환경은 비밀 이름 · `CAPA_S3_*` ·
   `AWS_*` 를 뺀 것이고 표준 입출력은 UTF-8 · `surrogateescape`(앱 자리의 로캘과 무관 — Windows cp949 파이프에서도 표지를 읽고, POSIX C 로캘 기본 오류 처리기와 같다), 출력은 버리고 표지 한 줄과 단계
   줄만 읽는다(표준 오류는 마지막 traceback 의 예외 종류 이름만 — `stderr_kind`, 계정 · 비밀번호를 품은 이름은 버린다). 하위 프로세스를 띄운
-  시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판, 결과의 같음 판정 밖)을 남기고
-  로그 · Admin 진단 줄 · 감사 상세 · 시작 결과 칸 `child` 가 읽는다. 표지 없음(`no_marker`)은 거절(멈춤)로 다루되 화면 낱말은 「로그인 확인
+  시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판 · 띄우기 바로 앞과 끝난 바로 뒤의
+  메모리 단서(`io/memory_probe` — 바깥 SIGKILL 을 가를 값), 결과의 같음 판정 밖)을 남기고 로그 · Admin 진단 줄 · 감사 상세 · 시작 결과 칸
+  `child` 가 읽는다. 표지 없음(`no_marker`)은 거절(멈춤)로 다루되 화면 낱말은 「로그인 확인
   못 함」(`UNCONFIRMED_REJECT_REASONS`)이다(시간 제한 60초, 새 세션으로 띄움 — 앞뒤 다이제스트는 이 프로세스의 「토큰 넣기」
   쓰기를 막은 채 잰다). 판정은 로그인 전후 토큰 파일 다이제스트가 바뀌었고 같은 하위 프로세스가 잰 남은 분이 7시간을 넘으면 성공(2026-11-16
   사용자 답), 바뀌었는데 남은 시간을 모르거나 7시간 이하면 `unconfirmed`(성공도 거절도 아님 — 폼은 저장하지 않고 자동 길은 멈추지 않되
@@ -2401,6 +2415,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`capa-bdq-login-step stage=… bigdataquery=<판> getpass_asterisk=<판>` — 판은 불러온 모듈의 `__version__`, 아니면 설치 정보, 낯선 꼴은 `?`)을
   곧바로 내보낸다 — 표지 없이 끝나도 부르는 쪽이 어디까지 갔는지와 판을 읽고, 낯선 판 글자가 표지를 깨지 않는다. `net`(닿지 못함의 증거 — `is_unreached`)은 요청을 보내기 전 연결 단계의 실패만이고
   종류 이름으로 가르지 않는다(errno 없는 `ConnectionError` · 글만 든 `requests` 연결 실패 · 응답을 든 것 · 읽기 시간 초과는 아님).
+- `src/capa_simulation/io/memory_probe.py` — 자동 로그인 하위 프로세스 앞뒤의 메모리 단서(사내 리뷰 `202611181400` 사외요청 2 — 하위가
+  import 단계에서 바깥 SIGKILL 로 끝난 갈래를 가를 값). `attempt_login` 이 띄우기 바로 앞 · 끝난 바로 뒤에 한 번씩 읽고(`read`) MiB · 수로 접어
+  (`child_memory` → `container_start_report.ChildMemory`) 진단에 싣는다 — cgroup 사용 · 한도 · OOM 종료 수(v2 뿌리 `memory.current` ·
+  `memory.max` · `memory.events` 의 `oom_kill`, 없으면 v1 `memory/` 의 `memory.usage_in_bytes` · `memory.limit_in_bytes` · `memory.oom_control`,
+  뿌리는 시작 스크립트의 한도 읽기와 같은 `/sys/fs/cgroup`), 앱 RSS(`/proc/self/status` 의 `VmRSS`), 거둔 하위 프로세스 최고 RSS
+  (`resource.getrusage(RUSAGE_CHILDREN)` — 앞뒤가 같으면 이번 하위는 그보다 작았다, `resource` 가 없는 Windows 는 모름). 못 읽은 값은 `None`
+  (화면 「모름」)이고 판정하지 않는다 — 앞뒤 OOM 종료 수가 다르면 그 사이 cgroup 이 죽인 것이라는 읽기는 사람 몫이다. 표준 라이브러리만이고 예외를
+  내지 않는다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - `aws` 가 찍는 시각은 두 꼴이다 — 목록(XML)은 ISO, HEAD · GET 은 `Last-Modified` 머리 글 그대로(RFC 1123 — `aws` 1 판, 운영 이미지 판).
@@ -4684,7 +4706,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」, 이 세션이
   공식버전을 확인했으면(`official_known` — `app.py` 가 `intro_summary.latest_official_revision()` 으로 넘긴다) 공식버전 없음
   `SC-01` 의 해소 표지 — 2026-11-14 물음 보드 decided 5. 그 data 가 선 동안 화면 표지의 같은 칸 「있음」 은 앞 회차가 남긴 표지라
-  보지 않는다 — JS `settledStateKeys` · `markerNotes`, `tests/test_alert_center_assets.py`). 패널은
+  보지 않는다 — JS `settledStateKeys` · `markerNotes`, `tests/test_alert_center_assets.py`). 한 번 훑은 표지(문서 차례)에서 같은
+  상태 칸(코드 + 범위)은 마지막 것만 다룬다(`latestStateNotes` — 회차 끝 토큰 알림 다시 내기 `container_start_check.render_token_alert_late` 가
+  같은 회차 앞 표지를 고쳐 쓴다, 앞 것까지 다루면 같은 문서를 다시 훑을 때마다 줄이 닫혔다 열린다). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`tables`)는 표마다 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
@@ -8217,7 +8241,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `flash.emit_flash` — 알릴 것이 없으면 빈 `<style></style>`). 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수 규칙(위 「프래그먼트·이벤트 칸·토스트」)
   때문에 갈래 안에서 부르지 않고 늘 같은 자리에서 부른다. 팝업(`st.dialog`) 본문 안에서는 이벤트 칸을 쓰지 않고 그 칸
   안에 숨은 표지(`<span hidden data-capa-alerts>`)를 그린다(`alerts.emit` · `alerts.in_dialog` — 팝업 호스트는 열렸든 닫혔든
-  이벤트 칸에 정확히 한 자리다). `alerts.event` 는 담기만 해 어느 갈래에서 불러도 된다.
+  이벤트 칸에 정확히 한 자리다). `alerts.event` 는 담기만 해 어느 갈래에서 불러도 된다. 화면 앞에서 낸 상태 알림의 조건이 화면
+  본문에서 바뀌는 것(토큰 실패 · 조회 중 자동 로그인 멈춤)은 `app.py` 가 화면이 끝까지 돈 회차의 끝에서 늘 한 자리로 달라진 것만 다시 낸다
+  (`container_start_check.render_token_alert_late` — 회차의 마지막 칸이라 앞 칸 순번을 밀지 않는다, 담아 둔 사건 알림은 꺼내지 않는다
+  `alerts.emit(drain=False)`). 알림 칸 JS 는 한 번 훑을 때 같은 상태 칸의 마지막 표지만 받는다(`latestStateNotes`).
 - **상태 경고는 자리에 그리지 않는다**(D2 (나)). 그 조건을 보는 회차마다 조건이 없어도 `alerts.state(..., active=False)` 로
   부른다 — 지문(코드 + 범위 + 내용 — 범위는 시뮬레이션이면 `content_token` + 조회기간, 설비면 (공통 대장, 일정) 리비전 쌍,
   내용은 글이 아니라 건수 · 이름 목록 같은 구조 값)이 바뀔 때만 알림창이 뜨고, 없어지면 Alarm 줄에 「해소 hh:mm」 이 선다.

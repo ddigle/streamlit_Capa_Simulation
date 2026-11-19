@@ -19,7 +19,8 @@ DB 받기와 재서 남긴 수(디스크 · pod · cgroup · 다운 시간). 값
 
 **자동 로그인 칸**(`bdq_login`)은 BigDataQuery 자동 로그인 단계의 결과다 — 갈래 낱말 · 까닭 코드 ·
 키 꼴 검사 · 남은 분 · 하위 프로세스 진단(`ChildDiag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 ·
-표준 오류 마지막 예외 종류 · 판)뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다).
+표준 오류 마지막 예외 종류 · 판 · 하위 프로세스 앞뒤 메모리 단서 `ChildMemory` — MiB · 수)뿐이고
+계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다).
 「서버 시작 점검」 표 줄(`login_step`) · 진단 값 줄과 앱 기동의 멈춤
 넘겨받기(`bdq_login.start_in_app`) · 알림이 읽는다. 진단 칸 꼴과 그 화면 · 로그 글은 Admin 「BDQ
 자동 로그인」 의 마지막 시도 진단과 함께 쓴다.
@@ -263,6 +264,132 @@ _CHILD_SIGNAL: Final = re.compile(r"SIG[A-Z0-9]{1,12}")
 # 종료 코드 · 초의 받는 범위(Windows 의 종료 코드는 부호 없는 32비트까지 온다).
 _CHILD_EXIT_LIMIT: Final = 2**32
 _CHILD_SECONDS_LIMIT: Final = 86_400.0
+# 메모리 단서 칸의 받는 범위 — MiB(1PiB 아래) · OOM 종료 수.
+_MEMORY_MIB_LIMIT: Final = 2**30
+_MEMORY_COUNT_LIMIT: Final = 2**31
+# 메모리 단서 칸 — 결과 파일 · 감사 상세 · 로그의 이름(차례대로). 한도 칸의 「max」 는 한도
+# 없음이다.
+MEMORY_FIELDS: Final = (
+    "cg_before",
+    "cg_after",
+    "cg_max",
+    "oom_before",
+    "oom_after",
+    "rss_before",
+    "rss_after",
+    "kid_peak_before",
+    "kid_peak_after",
+)
+MEMORY_UNLIMITED: Final = "max"
+UNKNOWN_VALUE: Final = "모름"
+
+
+@dataclass(frozen=True)
+class ChildMemory:
+    """로그인 하위 프로세스 앞뒤의 메모리 단서 — MiB · 수뿐이다. 그 파일이 없거나 못 읽으면 `None`.
+
+    `cgroup_*` — 컨테이너 cgroup 의 메모리 사용(v2 `memory.current` · v1
+    `memory.usage_in_bytes`). `limit` — 그 한도(v2 `memory.max` · v1 `memory.limit_in_bytes`),
+    `unlimited` — 한도 없음. `oom_*` — cgroup 의 OOM 종료 수(v2 `memory.events` · v1
+    `memory.oom_control` 의 `oom_kill` — 앞뒤가 다르면 그 사이 cgroup 이 프로세스를 죽였다).
+    `rss_*` — 앱 프로세스 RSS(`/proc/self/status` 의 `VmRSS`). `child_peak_*` — 거둔 하위
+    프로세스들의 최고 RSS(`getrusage(RUSAGE_CHILDREN)` — 앞뒤가 같으면 이번 하위는 그 값보다
+    작았다)."""
+
+    cgroup_before: int | None = None
+    cgroup_after: int | None = None
+    limit: int | None = None
+    unlimited: bool = False
+    oom_before: int | None = None
+    oom_after: int | None = None
+    rss_before: int | None = None
+    rss_after: int | None = None
+    child_peak_before: int | None = None
+    child_peak_after: int | None = None
+
+    def fields(self) -> dict[str, object]:
+        """칸 이름(`MEMORY_FIELDS`) → 값. 모르는 값은 `None`."""
+        return dict(
+            zip(
+                MEMORY_FIELDS,
+                (
+                    self.cgroup_before,
+                    self.cgroup_after,
+                    MEMORY_UNLIMITED if self.unlimited else self.limit,
+                    self.oom_before,
+                    self.oom_after,
+                    self.rss_before,
+                    self.rss_after,
+                    self.child_peak_before,
+                    self.child_peak_after,
+                ),
+                strict=True,
+            )
+        )
+
+    @property
+    def text(self) -> str:
+        """화면 값 조각 — 「cgroup 712→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고
+        120→650MiB」(한도 없음은 「/max」). 모르는 값은 「모름」 이고, 한 묶음을 통째로 모르면
+        「cgroup 모름」 꼴이다."""
+        if self.cgroup_before is None and self.cgroup_after is None and self.limit is None:
+            cgroup = (
+                f"cgroup {UNKNOWN_VALUE}/{MEMORY_UNLIMITED}"
+                if self.unlimited
+                else f"cgroup {UNKNOWN_VALUE}"
+            )
+        else:
+            cap = MEMORY_UNLIMITED if self.unlimited else f"{_known(self.limit)}MiB"
+            cgroup = f"cgroup {_pair(self.cgroup_before, self.cgroup_after)}/{cap}"
+        return " · ".join(
+            (
+                cgroup,
+                f"oom_kill {_pair(self.oom_before, self.oom_after)}",
+                _pair_part("앱 RSS", self.rss_before, self.rss_after),
+                _pair_part("하위 최고", self.child_peak_before, self.child_peak_after),
+            )
+        )
+
+
+def _known(value: int | None) -> str:
+    return UNKNOWN_VALUE if value is None else str(value)
+
+
+def _pair(before: int | None, after: int | None) -> str:
+    if before is None and after is None:
+        return UNKNOWN_VALUE
+    return f"{_known(before)}→{_known(after)}"
+
+
+def _pair_part(label: str, before: int | None, after: int | None) -> str:
+    if before is None and after is None:
+        return f"{label} {UNKNOWN_VALUE}"
+    return f"{label} {_pair(before, after)}MiB"
+
+
+def parse_memory(data: Mapping[str, object]) -> ChildMemory | None:
+    """진단 칸의 메모리 단서를 읽는다. 그 칸이 하나도 없으면(옛 파일 · 재지 않음) `None`. 꼴이
+    어긋난 값은 그 값만 비운다."""
+    if not any(name in data for name in MEMORY_FIELDS):
+        return None
+    limit = data.get("cg_max")
+    return ChildMemory(
+        cgroup_before=_bounded(data.get("cg_before"), _MEMORY_MIB_LIMIT),
+        cgroup_after=_bounded(data.get("cg_after"), _MEMORY_MIB_LIMIT),
+        limit=_bounded(limit, _MEMORY_MIB_LIMIT),
+        unlimited=limit == MEMORY_UNLIMITED,
+        oom_before=_bounded(data.get("oom_before"), _MEMORY_COUNT_LIMIT),
+        oom_after=_bounded(data.get("oom_after"), _MEMORY_COUNT_LIMIT),
+        rss_before=_bounded(data.get("rss_before"), _MEMORY_MIB_LIMIT),
+        rss_after=_bounded(data.get("rss_after"), _MEMORY_MIB_LIMIT),
+        child_peak_before=_bounded(data.get("kid_peak_before"), _MEMORY_MIB_LIMIT),
+        child_peak_after=_bounded(data.get("kid_peak_after"), _MEMORY_MIB_LIMIT),
+    )
+
+
+def _bounded(value: object, limit: int) -> int | None:
+    number = _int_or_none(value)
+    return number if number is not None and 0 <= number < limit else None
 
 
 @dataclass(frozen=True)
@@ -275,7 +402,8 @@ class ChildDiag:
     하위 본문이 마지막으로 들어간 단계(`CHILD_STAGES` — 하나도 못 들어갔으면 빈 글). `stderr_kind`
     — 표준 오류 마지막 traceback 의 예외 종류(`모듈.이름`, 없으면 빈 글). `bigdataquery` ·
     `getpass_asterisk` — 하위 본문이 읽은 판(불러온 모듈의 `__version__`, 아니면 설치 정보 — `-`
-    없음 · `?` 낯선 꼴 · 빈 글 모름)."""
+    없음 · `?` 낯선 꼴 · 빈 글 모름). `memory` — 하위 프로세스 앞뒤의 메모리 단서(`ChildMemory` —
+    재지 않았으면 `None`)."""
 
     exit_code: int | None = None
     signal: str = ""
@@ -284,10 +412,12 @@ class ChildDiag:
     stderr_kind: str = ""
     bigdataquery: str = ""
     getpass_asterisk: str = ""
+    memory: ChildMemory | None = None
 
     def fields(self) -> dict[str, object]:
-        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`."""
-        return {
+        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`. 메모리 단서는
+        재었을 때만 칸이 선다(`MEMORY_FIELDS`)."""
+        found: dict[str, object] = {
             "exit": self.exit_code,
             "signal": self.signal or None,
             "sec": self.seconds,
@@ -296,6 +426,9 @@ class ChildDiag:
             "bigdataquery": self.bigdataquery or None,
             "getpass_asterisk": self.getpass_asterisk or None,
         }
+        if self.memory is not None:
+            found.update(self.memory.fields())
+        return found
 
     @property
     def code(self) -> str:
@@ -308,7 +441,8 @@ class ChildDiag:
     @property
     def text(self) -> str:
         """화면 값 조각 — 「종료 0 · 4.1초 · 단계 import · stderr - · bigdataquery 2.5.0 ·
-        getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」)."""
+        getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」). 메모리 단서를
+        재었으면 그 뒤에 「cgroup … · oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`)."""
         if self.exit_code is None:
             ended = "종료 -"
         elif self.signal:
@@ -324,6 +458,8 @@ class ChildDiag:
             f"bigdataquery {self.bigdataquery or '-'}",
             f"getpass_asterisk {self.getpass_asterisk or '-'}",
         ]
+        if self.memory is not None:
+            parts.append(self.memory.text)
         return " · ".join(parts)
 
 
@@ -347,6 +483,7 @@ def parse_child(data: object) -> ChildDiag | None:
         stderr_kind=_matched(_LOGIN_ERROR_KIND, data.get("stderr")),
         bigdataquery=_child_version(data.get("bigdataquery")),
         getpass_asterisk=_child_version(data.get("getpass_asterisk")),
+        memory=parse_memory(data),
     )
 
 

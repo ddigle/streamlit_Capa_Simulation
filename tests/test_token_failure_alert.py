@@ -94,8 +94,9 @@ def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -
     assert adapter.last_query_failed_on_token() is True
     calls: list[str] = []
     monkeypatch.setattr(alerts, "state", lambda *args, **_kwargs: calls.append(args[0]))
+    monkeypatch.setattr(alerts, "emit", lambda *_args, **_kwargs: calls.append("emit"))
 
-    container_start_check.render_token_alert()
+    container_start_check.render_token_alert_late(container_start_check.render_token_alert())
 
     assert calls == []
 
@@ -253,6 +254,36 @@ def test_the_app_raises_the_alert_on_every_screen_of_a_cd_server(
     assert not list(app.exception), [element.message for element in app.exception]
     note = active_state(app, CODE)
     assert note is not None and "최근 BigDataQuery 조회가 토큰 갈래로 실패" in note["full"]
+    assert len(states(app, CODE)) == 1
+
+
+def test_a_failure_made_during_the_page_is_raised_at_the_end_of_that_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """진짜 `app.py` — 화면 앞 표지를 낸 뒤 그 회차 화면의 조회가 토큰 갈래로 실패한 꼴(앞 짓기 뒤에
+    표지를 세운다). 화면이 끝까지 돈 회차의 끝 칸(`render_token_alert_late`)이 같은 코드 · 범위로
+    선 표지를 싣는다 — 같은 회차의 마지막 표지가 지금 상태다."""
+    sync_boot.forget_boot_result()
+    _report(tmp_path, monkeypatch)
+    _admin(monkeypatch)
+    built = container_start_check.token_alert_notes
+    calls: list[int] = []
+
+    def page_fails_between(*args: object, **kwargs: object) -> list[alerts.AlertNote]:
+        calls.append(len(calls))
+        if len(calls) == 2:
+            adapter._note_token_failure(True)
+        return built()
+
+    monkeypatch.setattr(container_start_check, "token_alert_notes", page_fails_between)
+    try:
+        app = _app_test(tmp_path, monkeypatch).run()
+    finally:
+        sync_boot.forget_boot_result()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert calls == [0, 1]
+    assert [item["active"] for item in states(app, CODE)] == [False, True]
 
 
 @pytest.mark.parametrize(

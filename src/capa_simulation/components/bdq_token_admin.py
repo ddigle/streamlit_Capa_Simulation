@@ -17,10 +17,11 @@ base64 · 쓰기 실패)은 칸 아래 한 줄이고(폼 검증 — UI-NTF-03) �
 바뀐다).
 
 **만료 알림(`AD-11`).** `container_start_check.render_token_alert` 가 결과 파일이 있는 서버에서
-회차마다 부른다(`AD-10` 곁). 토큰에서 만료 시각을 읽었고 지금이 그 1시간 앞 이후면(지난 것 포함)
-개발자 회차에 조치 알림이 선다. 지문은 만료 시각 하나라 토큰마다 알림창이 한 번이다. 만료를 읽지
-못하면(지금 아는 꼴은 JWT `exp` 하나 — `io/bdq_token.py`) 서지 않고 조회 실패 알림 `AD-10` 이
-뒷벽이다. 회차가 돌 때만 선다 — 배경 스레드를 더하지 않는다(AGENTS 9장).
+회차마다 낸다(`AD-10` 곁 — 표지는 `expiry_alert_note`). 토큰에서 만료 시각을 읽었고 지금이 그
+1시간 앞 이후면(지난 것 포함) 개발자 회차에 조치 알림이 선다. 지문은 만료 시각 하나라 토큰마다
+알림창이 한 번이다. 만료를 읽지 못하면(지금 아는 꼴은 JWT `exp` 하나 — `io/bdq_token.py`) 서지
+않고 조회 실패 알림 `AD-10` 이 뒷벽이다. 회차가 돌 때만 선다 — 배경 스레드를 더하지
+않는다(AGENTS 9장).
 
 **물러서기.** 이 알림은 `app.py` 가 모든 화면 회차에 부르는 자리라, 지금 토큰을 읽다 무엇이 나도
 (`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로 물러서고 시각을 못 옮기면 「알 수 없음」
@@ -227,11 +228,12 @@ def _token_dialog() -> None:
     HOST.finish()
 
 
-def render_expiry_alert(*, standing: bool = False) -> None:
-    """토큰 만료 1시간 전 개발자 알림(`AD-11`). 결과 파일이 있는 서버에서 회차마다 조건 없이 부른다
-    (이벤트 칸 한 자리 — 토큰을 읽지 못해도 해소로 그 자리를 쓴다). 지문은 만료 시각 하나다 —
-    회차마다 바뀌는 지금 시각을 싣지 않는다. 자동 로그인이 서 있는 동안(`standing` —
-    `bdq_login.current_view`)은 해소로 부른다 — 토큰이 죽으면 앱이 다시 로그인한다."""
+def expiry_alert_note(*, standing: bool = False) -> alerts.AlertNote:
+    """토큰 만료 1시간 전 개발자 알림(`AD-11`) 표지 한 칸(그리지 않는다). 결과 파일이 있는 서버에서
+    `container_start_check.token_alert_notes` 가 회차마다 조건 없이 짓는다(이벤트 칸 한 자리 —
+    토큰을 읽지 못해도 해소로 그 자리를 쓴다). 지문은 만료 시각 하나다 — 회차마다 바뀌는 지금
+    시각을 싣지 않는다. 자동 로그인이 서 있는 동안(`standing` — `bdq_login.current_view`)은
+    해소다 — 토큰이 죽으면 앱이 다시 로그인한다."""
     state = read_current()
     expires = state.expires_at
     active = (
@@ -240,7 +242,7 @@ def render_expiry_alert(*, standing: bool = False) -> None:
         and bdq_token.expiry_is_near(state)
         and sso_identity.viewer_is_developer()
     )
-    alerts.state(
+    return alerts.state_note(
         EXPIRY_ALERT_CODE,
         scope=None,
         content=expires.isoformat() if active and expires is not None else None,
