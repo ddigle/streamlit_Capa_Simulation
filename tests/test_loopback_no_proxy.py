@@ -98,6 +98,8 @@ def test_child_processes_inherit_the_loopback_names() -> None:
         [sys.executable, "-c", CHILD_PROBE, *hosts],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=60,
     )
@@ -121,6 +123,8 @@ def bypass_seen_by_a_module_fixture_child() -> str:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=60,
     )

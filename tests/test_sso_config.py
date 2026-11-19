@@ -647,12 +647,14 @@ def test_off_mode_does_not_import_pyjwt() -> None:
         "print('ok')\n"
     )
     environ = {key: value for key, value in os.environ.items() if key not in names.SSO_ENVIRONMENT}
+    environ["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, "-c", code],
         cwd=PROJECT_ROOT,
         env=environ,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
 

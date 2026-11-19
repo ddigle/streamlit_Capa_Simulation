@@ -1406,6 +1406,8 @@ def test_the_engine_loads_without_streamlit() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=120,
         env=narrow_child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}),

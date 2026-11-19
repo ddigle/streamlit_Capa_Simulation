@@ -464,13 +464,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
 
     revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True, text=True, check=True
+        ["git", "rev-parse", "HEAD"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout.strip()
     dirty = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
     ).stdout.strip()
     report = json.dumps(

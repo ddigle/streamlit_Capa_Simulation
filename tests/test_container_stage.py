@@ -311,6 +311,8 @@ def test_children_of_the_start_script_do_not_hold_the_port(
         [sys.executable, "-c", "import os; print(sorted(os.listdir('/proc/self/fd')))"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
 
@@ -574,7 +576,12 @@ def test_the_start_scripts_load_neither_streamlit_nor_the_tokens() -> None:
         """
     )
     completed = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
     )
 
     assert completed.stdout.strip() == ""

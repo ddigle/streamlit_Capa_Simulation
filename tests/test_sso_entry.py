@@ -48,12 +48,14 @@ def test_the_entry_is_discovered_as_an_st_app_with_routes_and_gate() -> None:
     environ["PYTHONPATH"] = os.pathsep.join(
         [str(PROJECT_ROOT / "src"), *filter(None, [os.environ.get("PYTHONPATH")])]
     )
+    environ["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, "-c", _PROBE],
         cwd=PROJECT_ROOT,
         env=environ,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
     )
 

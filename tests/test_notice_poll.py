@@ -225,6 +225,8 @@ def test_importing_the_route_does_not_bring_streamlit() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         env=narrow_child_env({"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""}),
     )

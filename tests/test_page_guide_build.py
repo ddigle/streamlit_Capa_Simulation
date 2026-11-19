@@ -1205,6 +1205,7 @@ def test_generator_files_are_tracked_so_the_archived_copy_carries_them() -> None
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert listed.returncode == 0, listed.stderr

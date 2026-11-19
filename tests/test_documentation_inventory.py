@@ -35,6 +35,7 @@ def _tracked_modules() -> list[str]:
         ["git", "ls-files", "*.py"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=PROJECT_ROOT,
         check=True,
     ).stdout.split()

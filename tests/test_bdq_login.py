@@ -716,9 +716,14 @@ def test_the_light_modules_bring_no_streamlit_pandas_or_cryptography() -> None:
         "print(sorted(n for n in ('streamlit', 'pandas', 'cryptography', 'duckdb', 'bigdataquery')"
         " if n in sys.modules))\n"
     )
-    env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")}
+    env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src"), "PYTHONIOENCODING": "utf-8"}
     completed = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        check=True,
     )
     assert completed.stdout.strip() == "[]"
 

@@ -152,6 +152,7 @@ def _config_in_a_fresh_process(value: str | None, database: Path) -> dict[str, A
     environ["PYTHONPATH"] = os.pathsep.join(
         [str(PROJECT_ROOT / "src"), *filter(None, [os.environ.get("PYTHONPATH")])]
     )
+    environ["PYTHONIOENCODING"] = "utf-8"
     code = (
         "import json, sys\n"
         "from pathlib import Path\n"
@@ -165,6 +166,7 @@ def _config_in_a_fresh_process(value: str | None, database: Path) -> dict[str, A
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
         timeout=120,
     )
