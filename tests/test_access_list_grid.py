@@ -12,6 +12,7 @@ AppTest 는 그리드 JS 를 못 돌려 대역(`tests/edit_grid_fake`)으로 출
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -61,6 +62,7 @@ __all__ = ["mock_s3"]
 # 가짜 S3 는 `scripts/` 에 있고 그 자리는 `test_sso_access_s3` 를 읽을 때 `sys.path` 에 든다.
 from s3_mock_store import MockStore  # noqa: E402
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HOST = access_list_grid.HOST
 COLUMNS = ["No.", "계정", "이름", "부서", "등록일", "등록 길", "등급"]
 
@@ -816,3 +818,21 @@ def test_unread_leaves_nothing_to_save_and_warns_the_admin_on_any_screen(
     card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
     assert [item["active"] for item in states(card, "AD-08")] == [False]
     assert runtime.access_source() is not None
+
+
+def test_the_runbook_and_the_guide_describe_a_save_that_is_always_open() -> None:
+    """늘 켜진 「저장」 을 읽는 글도 같은 꼴로 말한다 — 런북 7장이 접속 명단 편집 표를 보게 하면
+    켜진 「저장」 과 지금 풍선 글(`SAVE_HELP`)을 옮기게 하고, Guide 는 명단을 못 읽은 동안에도
+    「저장」 을 잠긴 단추로 말하지 않는다(UI-INP-07). 사내 에이전트는 7장 글을 화면과 글자 그대로
+    견줘 압축본에 적는다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    for gone in ("저장잠김", "고친 칸이 있으면 누를 수 있습니다", "고친 칸이 있을 때만 열림"):
+        assert gone not in runbook, gone
+    chapter = " ".join(runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0].split())
+    if "「접속 명단」 편집 표" in chapter:
+        assert access_list_admin.SAVE_HELP in chapter
+        assert "저장켜짐 됨" in chapter
+    guide_path = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "admin_area.md"
+    guide = " ".join(guide_path.read_text(encoding="utf-8").split())
+    assert "**저장** — 늘 누를 수 있고" in guide
+    assert "**저장** 이 잠" not in guide
