@@ -1420,6 +1420,26 @@ def test_a_cell_edited_right_before_leaving_is_kept_by_the_editor_callback(
     clear_equipment_repository()
 
 
+def test_the_editor_callback_folds_without_raising_the_button_generation(tmp_path: Path) -> None:
+    """편집표 `on_change` 는 초안만 적고 새 위젯 세우기(단추 세대 올림)는 본문에 둔다 — 새로 세울
+    칸 편집(사용 층에 코드 글자를 적음)과 같은 회차에 온 「저장」 누름이 콜백 차례에 따라 옛 세대로
+    버려지지 않게. 본문이 돌지 않는 회차(떠난 회차)에도 초안은 접힌다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    generation = app.session_state[GENERATION_KEY]
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사유", "UNUSED")
+    app.session_state["test_away"] = True
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {**_C5_UNUSED, "C2 2F": "UNUSED"}
+    assert app.session_state[GENERATION_KEY] == generation
+
+    _come_back(app, tables)
+    assert app.session_state[DRAFT_KEY] == {**_C5_UNUSED, "C2 2F": "UNUSED"}
+    assert any("바뀐 층 7개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
 def test_another_save_while_away_rebuilds_the_draft_and_says_how_many_floors_it_dropped(
     tmp_path: Path,
 ) -> None:

@@ -613,9 +613,17 @@ def _toggle_changed(database_path: str) -> None:
 def _fold_from_editor() -> None:
     """편집표 `on_change` — 칸 편집을 바로 초안에 접는다. 콜백은 본문보다 먼저 돌아, 칸을 고친 직후
     사이드바 링크 · 뒤로가기로 떠나 본문이 편집표까지 가지 않는 회차에도 고친 칸이 초안에 남는다
-    (입력 비가동 `_fold_edits` 와 같은 까닭). 본문의 `_fold` 가 같은 편집을 다시 접어도 같다."""
-    if _editing():
-        _fold()
+    (입력 비가동 `_fold_edits` 와 같은 까닭). 본문의 `_fold` 가 같은 편집을 다시 접어도 같다.
+
+    초안만 적고 새 위젯 세우기(`_remount` — 단추 세대를 올린다)는 본문의 `_fold` 에 둔다 — 같은
+    회차에 온 「저장」 · 동 머리 · 「되돌리기」 누름이 이 콜백 뒤에 돌면 올라간 세대에 걸려 말없이
+    버려진다."""
+    if not _editing():
+        return
+    edits = _widget_edits()
+    if edits:
+        folded, _ = _folded(_stored_draft() or {}, edits)
+        _store_draft(folded)
 
 
 def _refused_just_now() -> str | None:
