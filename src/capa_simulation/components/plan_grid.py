@@ -386,7 +386,6 @@ def render_actions(
     *,
     apply: Button,
     apply_help: str,
-    locked_help: str,
     paste: Button,
     more: Sequence[Button] = (),
     more_key: str = "plan_grid_more",
@@ -400,9 +399,12 @@ def render_actions(
     칸이나 붙여넣기 대기가 있을 때) · 「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 알림 칸. 고친
     수는 표 도구 막대 「적용 전 (n)」 하나가 말한다(UI-TXT-07).
 
-    「변경사항 적용」 은 고친 칸도 붙여넣기 대기(`staged`)도 없으면 잠근다(같은 값 적용으로 리비전만
-    오르는 일을 막는 규칙). 「⋯」 는 「Excel 붙여넣기」 바로 뒤라 고치기 전 · 뒤에 같은 자리다.
-    그 표의 적용 콜백이 막혀 담아 둔 글(`refuse`)은 알림 칸에 오류로 그린다."""
+    「변경사항 적용」 은 잠그지 않는다 — 고친 칸이 서버에 닿기 전(편집기를 연 채 · Enter
+    직후)의 누름도 받아야 하므로, 고친 칸도 붙여넣기 대기(`staged`)도 없는 누름은 적용 콜백이
+    누른 회차에 보고 아무것도 하지 않는다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙 —
+    설계 규칙 UI-INP-07 「누른 회차에 판정」, 2026-11-19 아침 확인 보드 m19-e2e-first-apply
+    (가)). 「⋯」 는 「Excel 붙여넣기」 바로 뒤라 고치기 전 · 뒤에 같은 자리다. 그 표의 적용
+    콜백이 막혀 담아 둔 글(`refuse`)은 알림 칸에 오류로 그린다."""
     cells, _, errors = counts(table)
     pending = cells > 0 or staged
     with st.container(
@@ -413,8 +415,7 @@ def render_actions(
             icon=apply.icon,
             key=apply.key,
             type="primary",
-            help=apply_help if pending else locked_help,
-            disabled=not pending,
+            help=apply_help,
             on_click=apply.on_click,
         )
         st.button(paste.label, icon=paste.icon, key=paste.key, on_click=paste.on_click)

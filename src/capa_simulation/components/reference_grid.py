@@ -113,8 +113,6 @@ PASTE_DROPS_DRAFT_NOTICE: Final = (
     "이 표에 적용하지 않은 편집 {n}칸이 있습니다 — 붙여넣어 적용하면 그 편집은 버려집니다."
 )
 DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다."
-# 잠긴 「변경사항 적용」 의 풍선 — 왜 잠겼는지(풀린 동안은 `APPLY_NOTICE` 가 하는 일을 말한다).
-APPLY_LOCKED_HELP: Final = "고친 칸이 있으면 누를 수 있습니다."
 # 표 위 칸의 key — 작업 줄 칸 안의 단추 줄이 `ACTION_ROW` 다.
 ACTIONS_BOX: Final = "reference_actions"
 GRID_BOX: Final = "reference_grid_box"
@@ -554,6 +552,11 @@ class Actions:
     notice: DeltaGenerator
 
 
+def apply_button_key(table: GridTable) -> str:
+    """작업 줄 「변경사항 적용」 단추 key — 옛 편집표와 같은 꼴(`f"{editor_key}_apply"`)."""
+    return f"{table.editor_key}_apply"
+
+
 def paste_button_key(table: GridTable) -> str:
     """작업 줄 「Excel 붙여넣기」 단추 key — 팝업 호스트의 여는 콜백이 그 단추를 가리킨다."""
     return f"{table.editor_key}_open_paste"
@@ -566,18 +569,19 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
     「적용 전 (n)」 하나가 말한다(UI-TXT-07). key·글은 옛 편집표 작업 줄과 같다
     (`f"{editor_key}_apply"` 등).
 
-    「변경사항 적용」 은 초안이 없으면 잠근다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙). 첫
-    편집은 그리드가 기다리지 않고 바로 보내므로 고친 뒤 한 회차 안에 켜진다."""
+    「변경사항 적용」 은 잠그지 않는다 — 고친 칸이 서버에 닿기 전(편집기를 연 채 · Enter
+    직후)의 누름도 받아야 하므로, 초안이 없는 누름은 부르는 쪽이 누른 회차에 보고 아무것도 하지
+    않는다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙 — 설계 규칙 UI-INP-07 「누른 회차에
+    판정」, 2026-11-19 아침 확인 보드 m19-e2e-first-apply (가))."""
     cells, _, errors = draft_counts(table.table)
     pending = cells > 0
     with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
         submitted = st.button(
             "변경사항 적용",
             icon=":material/check:",
-            key=f"{table.editor_key}_apply",
+            key=apply_button_key(table),
             type="primary",
-            help=APPLY_NOTICE if pending else APPLY_LOCKED_HELP,
-            disabled=not pending,
+            help=APPLY_NOTICE,
         )
         st.button(
             "Excel 붙여넣기",

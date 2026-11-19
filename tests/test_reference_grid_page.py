@@ -315,7 +315,33 @@ def test_apply_raises_the_revision_and_drops_only_that_tables_draft(calls: Calls
     assert any("일수 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app))
     assert _draft(app) is None
     assert last(calls, FEED)["counts"]["cells"] == 0
-    assert app.button(key=APPLY).disabled
+    assert not app.button(key=APPLY).disabled
+
+
+def test_a_press_with_no_draft_does_nothing(calls: Calls) -> None:
+    """초안이 없는 「변경사항 적용」 누름은 누른 회차에 보고 아무것도 하지 않는다 — 리비전 · 내용
+    토큰이 그대로이고(같은 값 적용으로 「미저장 변경」 이 켜지지 않는다) 알림도 없다(설계 규칙
+    UI-INP-07 「누른 회차에 판정」, 2026-11-19 보드 m19-e2e-first-apply (가)). 적용한 바로 뒤의
+    빠른 둘째 누름도 같다."""
+    app = _open(REAL_APPLY_TEST_SCRIPT)
+    assert not app.button(key=APPLY).disabled
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    assert "active_scenario" not in app.session_state
+    assert not successes(app)
+    assert not list(app.error)
+
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    after = dict(app.session_state["active_scenario"])
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    again = app.session_state["active_scenario"]
+    assert (again["revision"], again["content_token"]) == (
+        after["revision"],
+        after["content_token"],
+    )
 
 
 def test_a_business_rule_error_is_a_sentence_and_keeps_the_draft(calls: Calls) -> None:
@@ -392,7 +418,7 @@ def test_undo_and_redo_go_through_the_server_history(calls: Calls) -> None:
 def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: Calls) -> None:
     """작업 줄(적용·붙여넣기·편집 취소)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
-    assert app.button(key=APPLY).disabled
+    assert not app.button(key=APPLY).disabled
     assert "capa_run_day_editor_discard" not in {button.key for button in app.button}
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     elements = _walk(app.main)
@@ -456,11 +482,13 @@ def test_a_refused_apply_stands_right_under_the_buttons_after_the_action_row(cal
     assert keys.index(APPLY) < kinds.index("error")
 
 
-def test_the_locked_apply_says_why_and_the_open_one_says_what_it_does(calls: Calls) -> None:
-    """잠긴 「변경사항 적용」 풍선은 까닭을 말하고(UI-INP-07), 풀리면 하는 일을 말한다."""
+def test_the_apply_is_always_open_and_says_what_it_does(calls: Calls) -> None:
+    """「변경사항 적용」 은 초안이 없어도 잠그지 않고 풍선은 늘 하는 일이다 — 잠긴 까닭 풍선이
+    없다(UI-INP-07 「누른 회차에 판정」, 2026-11-19 보드 m19-e2e-first-apply (가)). 첫 편집이
+    서버에 닿기 전의 누름이 잠긴 단추에 닿아 버려지던 것(E2E E1-D2)을 막는다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
-    assert app.button(key=APPLY).disabled
-    assert app.button(key=APPLY).help == reference_grid.APPLY_LOCKED_HELP
+    assert not app.button(key=APPLY).disabled
+    assert app.button(key=APPLY).help == APPLY_NOTICE
 
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     assert not app.button(key=APPLY).disabled
@@ -890,6 +918,32 @@ def test_a_first_op_that_changes_nothing_leaves_no_chip_mark(early_calls: Calls)
         labels, marks = _probes(app)[-1]
         assert labels == [], value
         assert REFERENCE_TAB not in marks, value
+
+
+def test_a_first_edit_that_arrives_with_the_press_is_applied(early_calls: Calls) -> None:
+    """초안이 없던 표의 첫 편집이 서버에 닿기 전에 누른 「변경사항 적용」 — 그리드는 편집기를
+    닫는 순간(누름의 pointerdown 이 부른 blur) 그 편집을 보내고, 누름은 그 출납 값을 함께 싣고
+    온다. 단추가 늘 켜져 있어 그 누름이 버려지지 않고, 출납 콜백이 회차 맨 앞에서 쌓은 op 를
+    본문이 단추보다 먼저 반영해(`apply_grid_inbox`) 같은 누름 하나로 그 편집까지 적용한다(E2E
+    E1-D2)."""
+    app = _open(REAL_APPLY_TEST_SCRIPT)
+    assert _draft(app) is None
+    assert "active_scenario" not in app.session_state
+    app.session_state[FAKE_EVENT_KEY] = (
+        GRID_HOST,
+        outbox(
+            early_calls,
+            {"op": "write", "rows": ["Process-A"], "cols": ["202608"], "values": [["20"]]},
+            host=GRID_HOST,
+        ),
+    )
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+
+    assert app.session_state["active_scenario"]["revision"] == 2
+    assert _scenario_table(app, "RQ_RUN_DAY")["RUN_DAY"].tolist() == [20.0]
+    assert any("일수 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app))
+    assert _draft(app) is None
 
 
 def test_an_empty_draft_slot_counts_as_no_edit() -> None:

@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pytest
 from edit_grid_node import FAKE_DOM, mountable, run_node
 
 from capa_simulation.components import edit_grid
@@ -795,3 +796,64 @@ def test_a_filtered_table_takes_one_row_of_paste_only() -> None:
     assert result["wholeMany"]["ops"][-1][2] == [["31%"], ["32%"]], "필터가 없으면 여러 줄을 받는다"
     assert result["cappedShown"] == [2, 2]
     assert result["capped"] == {"added": 0, "note": refused}, "서버가 좁힌 큰 표도 막는다"
+
+
+RUNNER_PRESS_OUTSIDE = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const editor = q('.eg-ed')
+  // 표 밖 「변경사항 적용」 단추 — 그 누름의 pointerdown · mousedown 기본 동작이 초점을
+  // 단추로 옮겨 편집기 blur 와 뿌리 focusout 이 click 보다 먼저 온다(브라우저 차례).
+  const button = new FakeNode('button')
+  const pointerdownOnButton = () => {
+    document.activeElement = button
+    fire(editor, 'blur', { relatedTarget: button })
+    fire(editor, 'focusout', { relatedTarget: button })
+  }
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowRight')
+  key(scroller, '6')
+  editor.value = '61%'
+  R.typing = { sent: sent.length, editing: !editor.hidden }
+  pointerdownOnButton()
+  const out = sent[sent.length - 1]
+  R.beforeClick = {
+    sent: sent.length,
+    edit: S.edit,
+    writes: out ? out.ops.filter((op) => op.op === 'write').map((op) => op.values) : [],
+  }
+  await tick(360)
+  R.quiet = { sent: sent.length }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+@pytest.mark.parametrize("drafted", [False, True], ids=["first-edit", "drafted-table"])
+def test_an_open_edit_goes_out_before_the_press_on_an_outside_button(drafted: bool) -> None:
+    """편집기를 연 채(Enter 없이) 표 밖 「변경사항 적용」 을 누르면 그 편집은 누름의 click 보다
+    먼저 나간다 — 고친 칸이 없던 표는 첫 op 라 blur 의 확정이 곧바로 보내고, 고친 칸이 있는 표는
+    300ms 묶음 대신 표 밖 focusout 이 보낸다. Streamlit 은 누름의 rerun 에 이 출납 값을 함께
+    실으므로 단추를 잠그지 않는 한 같은 누름 하나가 그 편집까지 적용한다(2026-11-19 E2E E1-D2 ·
+    보드 m19-e2e-first-apply (가)). 보낸 뒤 묶음 시간이 지나도 다시 보내지 않는다."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    draft: eg.DraftState | None = (
+        {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}} if drafted else None
+    )
+    feed = _feed(index, "k1", draft, undo=1 if drafted else 0)
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_PRESS_OUTSIDE,
+        {"shell": shell, "feed": feed},
+    )
+    assert result["typing"] == {"sent": 0, "editing": True}
+    assert result["beforeClick"] == {"sent": 1, "edit": None, "writes": [[["61%"]]]}
+    assert result["quiet"] == {"sent": 1}

@@ -1517,36 +1517,101 @@ def _applied(app: AppTest, text: str) -> list[str | None]:
     return [item.icon for item in successes(app) if text in str(item.value)]
 
 
-def test_a_locked_apply_button_says_why_and_an_open_one_says_what_it_does(
-    seeded_database: Path,
-) -> None:
-    """잠긴 동안 풍선은 까닭이고 눌리면 하는 일이다 — 「적용해야 반영된다」 는 눌리는 단추에 남는다
-    (설계 규칙 UI-INP-07). 두 탭 단추는 같은 일이라 한 이름 「변경사항 적용」 이다(2026-11-12 남은
-    물음 보드 ③-9 (가) — 하는 일은 풍선이 가른다)."""
+APPLY_HELPS = {
+    "apply_pkg_plan_changes": "이 계획으로 다시 계산됩니다",
+    "apply_yield_changes": "이 수율로 다시 계산됩니다",
+}
+
+
+def test_the_apply_button_is_always_open_and_says_what_it_does(seeded_database: Path) -> None:
+    """「변경사항 적용」 은 고친 칸이 없어도 잠그지 않는다 — 풍선은 늘 하는 일이다(잠긴 까닭 풍선이
+    없다, 2026-11-19 아침 확인 보드 m19-e2e-first-apply (가)). 고친 칸이 서버에 닿기 전(편집기를
+    연 채 · Enter 직후)의 누름이 잠긴 단추에 닿아 말없이 버려지던 것(E2E E1-D2)을 막는다. 두 탭
+    단추는 같은 일이라 한 이름 「변경사항 적용」 이다(2026-11-12 남은 물음 보드 ③-9 (가) — 하는 일은
+    풍선이 가른다)."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
-    for key in ("apply_pkg_plan_changes", "apply_yield_changes"):
+    for key, help_text in APPLY_HELPS.items():
         button = app.button(key=key)
         assert button.label == "변경사항 적용"
-        assert button.disabled
-        assert button.proto.help == "고친 칸이 있으면 누를 수 있습니다."
+        assert not button.disabled
+        assert help_text in button.proto.help
 
     app = _cell_edit(app, PLAN_CELL_EDIT)
     app = _cell_edit(app, YIELD_CELL_EDIT)
     assert not list(app.exception)
-
-    assert not app.button(key="apply_pkg_plan_changes").disabled
-    assert "이 계획으로 다시 계산됩니다" in app.button(key="apply_pkg_plan_changes").proto.help
-    assert not app.button(key="apply_yield_changes").disabled
-    assert "이 수율로 다시 계산됩니다" in app.button(key="apply_yield_changes").proto.help
+    for key, help_text in APPLY_HELPS.items():
+        assert not app.button(key=key).disabled
+        assert help_text in app.button(key=key).proto.help
 
 
-def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
+@pytest.mark.parametrize("key", list(APPLY_HELPS))
+def test_a_press_with_no_edit_does_nothing(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """고친 칸도 붙여넣기 대기도 없는 누름은 누른 회차에 보고 아무것도 하지 않는다 — 리비전 · 내용
+    토큰이 그대로이고(같은 값 적용으로 사이드바 「미저장 변경」 이 켜지지 않는다) 성공 · 오류 알림도
+    없으며 회차는 하나다(설계 규칙 UI-INP-07 「누른 회차에 판정」)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    scenario = app.session_state["active_scenario"]
+    revision, token = scenario["revision"], scenario["content_token"]
+
+    assert _press_runs(app, key) == 1
+    after = app.session_state["active_scenario"]
+    assert (after["revision"], after["content_token"]) == (revision, token)
+    assert not successes(app)
+    assert not list(app.error)
+    assert app.session_state[PRE_PAGE_LOG_KEY][-1] == []
+
+
+@pytest.mark.parametrize(
+    ("edit", "key", "table"),
+    [
+        (PLAN_CELL_EDIT, "apply_pkg_plan_changes", "RQ_PKG_PLAN"),
+        (YIELD_CELL_EDIT, "apply_yield_changes", "RQ_YLD"),
+    ],
+)
+def test_a_first_edit_that_arrives_with_the_press_is_applied(
+    seeded_database: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    edit: tuple[str, str, str],
+    key: str,
+    table: str,
+) -> None:
+    """고친 칸이 없던 표의 첫 편집이 서버에 닿기 전에 누른 「변경사항 적용」 — 그리드는 편집기를
+    닫는 순간(누름의 pointerdown 이 부른 blur) 그 편집을 보내고, 누름은 그 출납 값을 함께 싣고
+    온다. 단추가 늘 켜져 있어 그 누름이 버려지지 않고, 콜백이 출납을 먼저
+    받아(`plan_grid.settle_inbox`) 같은 누름 하나로 그 편집까지 적용한다(E2E E1-D2). 출납 값은
+    진짜처럼 콜백보다 먼저 세션에 선다."""
+    from capa_simulation.plan_grid_keys import inbox_key
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    host, month, text = edit
+    _grid(app, host)
+    shell = last(_GRID["calls"], host)
+    first = {"op": "write", "rows": [shell_key(shell, 0)], "cols": [month], "values": [[text]]}
+    assert not _drafted(app, table)
+    revision = app.session_state["active_scenario"]["revision"]
+    app.session_state[host] = SimpleNamespace(outbox=outbox(_GRID["calls"], first, host=host))
+
+    assert _press_runs(app, key) == 1
+    assert app.session_state["active_scenario"]["revision"] == revision + 1
+    assert not _drafted(app, table)
+    assert inbox_key(table) not in app.session_state
+    assert len(successes(app)) == 1
+
+
+def test_the_plan_apply_notice_survives_a_quick_second_press(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PKG PLAN 「변경사항 적용」 을 0.3~0.35초 간격으로 두 번 누르면 적용은 되는데 성공 알림이
-    사라졌다(2026-10-27 E2E 3/4). 둘째 누름은 적용 뒤 잠긴 단추에 닿아 버려지고, 그 회차가 화면을
-    다시 그리며 앞 회차가 꺼내 그린 알림을 지웠다. 쓰기 직후 적어 둔 알림 표지로 창 안의 회차가 같은
-    아이콘으로 다시 그린다 — 창이 지난 회차는 그리지 않는다."""
+    사라졌다(2026-10-27 E2E 3/4). 둘째 누름의 회차가 화면을 다시 그리며 앞 회차가 꺼내 그린 알림을
+    지웠다. 쓰기 직후 적어 둔 알림 표지로 창 안의 회차가 같은 아이콘으로 다시 그린다 — 창이 지난
+    회차는 그리지 않는다. 단추는 잠그지 않으므로(2026-11-19 보드 m19-e2e-first-apply (가)) 둘째
+    누름은 서버에 닿되 고친 칸이 없어 아무것도 하지 않는다 — 리비전은 한 번만 오른다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     _paste(app, _clipboard_text(app, scale=0.5))
@@ -1557,11 +1622,13 @@ def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     assert _applied(app, f"{month_label(202601)}–{month_label(202612)} 구간의 환산") == [
         APPLIED_ICON
     ]
-    assert app.button(key="apply_pkg_plan_changes").disabled
+    assert not app.button(key="apply_pkg_plan_changes").disabled
+    revision = app.session_state["active_scenario"]["revision"]
 
-    # 둘째 누름의 회차 — 잠긴 단추의 누름은 버려져 아무것도 하지 않고 화면만 다시 그린다.
-    app.run()
+    # 둘째 누름의 회차 — 고친 칸이 없어 아무것도 하지 않고 화면만 다시 그린다.
+    app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
+    assert app.session_state["active_scenario"]["revision"] == revision
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
@@ -1569,10 +1636,11 @@ def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == []
 
 
-def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
+def test_the_yield_apply_notice_survives_a_quick_second_press(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """수율 탭 「변경사항 적용」 도 같다(2026-10-27 E2E 4/6)."""
+    """수율 탭 「변경사항 적용」 도 같다(2026-10-27 E2E 4/6) — 잠그지 않는 단추의 둘째 누름은
+    서버에 닿되 고친 칸이 없어 아무것도 하지 않고, 성공 알림은 남는다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     grid = _yield_grid(app)
@@ -1581,9 +1649,11 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    revision = app.session_state["active_scenario"]["revision"]
 
-    app.run()
+    app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
+    assert app.session_state["active_scenario"]["revision"] == revision
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
 
 
@@ -1681,7 +1751,7 @@ def test_a_plan_apply_is_one_run_that_draws_the_new_plan_and_its_notices(
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
     (note,) = _st04(app)
     assert note["active"] is True
-    assert app.button(key="apply_pkg_plan_changes").disabled
+    assert not app.button(key="apply_pkg_plan_changes").disabled
 
 
 def test_a_yield_apply_is_one_run_and_keeps_the_plan_draft(
