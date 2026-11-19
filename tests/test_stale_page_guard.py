@@ -221,3 +221,31 @@ def test_app_checks_for_stale_runs_before_navigation_and_notes_body_widgets() ->
     assert source.index("navigation = st.navigation(") < source.index("    note_page()")
     before = source.index("body_before = body_widgets_before()")
     assert before < source.index("run_core_page(") < source.index("note_body_widgets(body_before)")
+
+
+def test_the_real_streamlit_internals_still_show_the_request_and_body_widgets() -> None:
+    """판을 올려 Streamlit 내부가 바뀌면 막이는 말없이 꺼진다(못 읽으면 막지 않는다) — 실제 실행에서
+    요청이 실은 위젯 id 와 회차에 등록한 위젯 id 를 읽는지 본다."""
+    from streamlit.testing.v1 import AppTest
+
+    def app() -> None:
+        import streamlit as st
+
+        from capa_simulation import stale_page_guard as guard
+
+        st.session_state["probe_incoming"] = guard._incoming_widget_ids()
+        before = guard.body_widgets_before()
+        st.text_input("이름", key="guard_probe_text")
+        st.session_state["probe_before"] = before
+        st.session_state["probe_after"] = guard.body_widgets_before()
+
+    at = AppTest.from_function(app)
+    at.run()
+    at.text_input(key="guard_probe_text").input("a").run()
+
+    incoming = at.session_state["probe_incoming"]
+    assert incoming is not None
+    assert any(widget.endswith("guard_probe_text") for widget in incoming)
+    before, after = at.session_state["probe_before"], at.session_state["probe_after"]
+    assert before is not None and after is not None
+    assert any(widget.endswith("guard_probe_text") for widget in after - before)
