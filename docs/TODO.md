@@ -5945,6 +5945,15 @@
   `main_cases` 물음 글, 정본 메모(리뷰 `202611181400` 이 인코딩 실패를 적었으면 닫는 자리). 런북 밖 셋 — 가정 계획 `--help` 서식 오류 · 빌더 첫 멈춤이 남은
   자리표 수를 숨김 · 8-1 사본 안내 — 도 고쳤다. 앞 장으로 옮길 것은 2장 「문서 및 테스트」 「런북 앞 장 정리 거리」. 런북 수(변경 · 대조 · 해시 · E · mypy ·
   ruff)는 이 가지 머리를 git 으로 다시 센 값이고, pytest 두 칸 · 리뷰 `202611181400` 묶음은 빌드 전 몫이다.
+- (2026-11-19) **사내 리뷰 `202611181400` 사외요청 1 — 인코딩 없는 텍스트 입출력 훑기**(가지 `fix/enc-1119`). 그 줄(`tests/test_grade_name_net.py`)은
+  `5588ea60` 로 고쳤고, 같은 꼴을 `app.py` · `capa_server.py` · `app_pages/` · `src/` · `scripts/` · `tests/` 에서 AST 로 훑어 자식 프로세스 `text=True` 까지
+  29곳(tests 24 · scripts 4 · src 1, app_pages · app.py · capa_server.py 0 — 꼴은 subprocess 27 · `read_text()` 1 · `os.popen` 1)에 인코딩을 적었다.
+  파이썬 자식은 환경을 짓는 곳이면 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`, 환경을 일부러 좁히거나 물려받기를 보는 곳은
+  `encoding="utf-8", errors="replace"`, git 은 `"utf-8"`, 앱의 aws 실행기는 `"locale"`(3.10 이 붙이던 값 그대로 — 동작 같음).
+  `scripts/review_sample_sim.py` 는 UTF-8 로 쓰는 자식을 로캘로 읽던 실제 어긋남이었다. 그물 `tests/test_explicit_text_encoding.py`
+  (허용 표 `ALLOWED` 하나 — 파일이 아닌 `_DeferredPanel.open()`) · AGENTS 2장 ⑪. ruff `PLW1514` 는 preview 라 `lint.preview` 가 있어야 하고
+  (`--preview` 전체는 B903 둘을 더 낸다) 고치기 전 트리에서도 0건이었다 — `(폴더 / 이름).read_text()` 와 subprocess 를 보지 못한다.
+  `scripts/check_module.py` 가 저장소 ruff 설정으로 사내 `modules/` 를 보므로 켜면 모듈 점검도 바뀐다 — 켜지 않았다.
 - (2026-11-18) **다음 배포 화면 확인 보드 답**(`https://claude.ai/artifact/EhhW6TDs8pZwyU8KoBfrJz` — 규칙집 6-34 끝 문단) — 새 화면 다섯(접속 명단 편집 표 · 설비 마스터
   같은 편집 표 · Admin 「부대공정」 탭 · 「부대공정 얹기」 · 「서버 시작 점검」 계측 값 줄)과 구현이 정한 것 열 모두 좋음. 여쭘 하나 q-new-row-grade 는 (가) 「처음 값
   실무자 — 앞 답대로」 — 접속 명단 새 줄의 등급을 비우면 실무자로 넣는다(`services/access_list_plan.NEW_PERSON_GRADE`, 구현이 한때 빈칸 · 막음으로 바꿨던 것을 되돌림).
