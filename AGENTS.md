@@ -240,7 +240,7 @@ Windows(PowerShell):
   합집합은 `type` 키로 좁히기, AppTest 노드는 `app.markdown` 같은 타입 있는 접근자나
   `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
 - 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
-- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 열 가지(사내 리뷰 `202610271800` 발견 2 에서 16개,
+- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 열한 가지(사내 리뷰 `202610271800` 발견 2 에서 16개,
   `202611041000` 발견 2 에서 9개, `202611111500` 발견 1 · 2 에서 7개가 깨졌다). ① 경로를 글자로 견줄 때는 `relative_to(...).as_posix()` 로 짓는다 — `str(Path)`·f-문자열은 Windows 에서 `\` 로
   잇는다(실패 메시지에만 쓰는 글은 그대로 둬도 된다). 스크립트가 경로를 OS 꼴로 찍으면 기대도 같은 상수로 짓는다.
   `str(경로.relative_to(…))` 는 그물이 막는다(`tests/test_js_runner.py`).
@@ -280,11 +280,19 @@ Windows(PowerShell):
   (`_loopback_skips_proxy_from_the_start` · `_loopback_skips_proxy` — 모듈 · 세션 범위 준비가 띄우는 하위 프로세스도 받는다) `NO_PROXY` ·
   `no_proxy` 에 루프백 셋을 붙이고, 루프백 요청기는 `ProxyHandler({})` 로 짓는다(`tests/test_s3_mock_store.py`, 리뷰
   `202611111500` 발견 2). 시험 · 스크립트의 맨 `urlopen` · `urlretrieve` 는 그물 `tests/test_no_bare_urlopen.py` 가 막는다(앱 코드는
-  보지 않는다 — 바깥 주소로 가는 앱 요청은 사내 프록시를 따라야 할 수 있다). 사외 CI 의 둘째 작업
-  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 열 가지를 사내보다 먼저 보인다 — 작업 단위
+  보지 않는다 — 바깥 주소로 가는 앱 요청은 사내 프록시를 따라야 할 수 있다).
+  ⑪ 텍스트 입출력은 인코딩을 늘 적는다 — 빼면 그 PC 의 로캘(사내 cp949 · 사외 CI Windows cp1252)로 풀어 UTF-8 한글 문서가
+  `UnicodeDecodeError` 로 깨진다(`tests/test_grade_name_net.py`, 리뷰 `202611181400` 사외요청 1). 저장소 · 사용자 파일은 `encoding="utf-8"`,
+  자식 프로세스(`text=True`)는 자식이 쓰는 인코딩이다 — 파이썬 자식은 환경에 `PYTHONIOENCODING=utf-8` 을 주고 `encoding="utf-8"`
+  (CI Windows 작업은 그 변수를 물려주고 사내 창은 아닐 수 있어 짝을 맞춘다), 환경을 일부러 좁히거나(⑦) 물려받기를 보는 시험은
+  환경을 그대로 두고 `encoding="utf-8", errors="replace"`, git 은 `"utf-8"`, 앱의 aws 실행기는 로캘 그대로 `"locale"`(파이썬 3.10 이 `text=True` 에 쓰는 값). 그물
+  `tests/test_explicit_text_encoding.py` 가 `app.py` · `capa_server.py` · `app_pages/` · `src/` · `scripts/` · `tests/` 를 AST 로
+  훑는다 — 일부러 뺀 자리는 그 파일의 `ALLOWED` 에 까닭과 함께 두고, 자리가 사라지면 실패한다. ruff `PLW1514` 는 preview 이고
+  `(폴더 / 이름).read_text()` · 자식 프로세스를 보지 못해 이 그물이 대신한다. 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 열한 가지를 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
-  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 열 가지부터 본다. 러너 로캘은 영어라
+  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 열한 가지부터 본다. 러너 로캘은 영어라
   사내 한국어 로캘(cp949 · 한글 오류 글)은 흉내 내지 못한다. 계약은 `tests/test_ci_workflow.py` · `tests/test_run_test_shard.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는

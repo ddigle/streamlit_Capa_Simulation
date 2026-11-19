@@ -377,7 +377,8 @@ def test_other_outcomes_take_the_fallback_under_the_stored_account(
 
     report = _check(environ, credentials, start_login=_login_stub(started))
 
-    assert (credentials / f"bigdataquery.token.{ACCOUNT}").read_text() == FAKE_BDQ_TOKEN
+    token_path = credentials / f"bigdataquery.token.{ACCOUNT}"
+    assert token_path.read_text(encoding="utf-8") == FAKE_BDQ_TOKEN
     assert not (credentials / f"bigdataquery.token.{FAKE_BDQ_USER}").exists()
     token_file = report["token_file"]
     assert isinstance(token_file, dict)

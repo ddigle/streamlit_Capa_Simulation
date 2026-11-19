@@ -909,8 +909,9 @@ def test_the_script_does_not_load_the_app_stack_before_it_hands_over() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
-        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")},
+        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src"), "PYTHONIOENCODING": "utf-8"},
     )
     assert completed.stdout.strip() == "[]"
 
@@ -1031,8 +1032,9 @@ def test_the_report_lives_in_the_ignored_temp_folder() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
-        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")},
+        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src"), "PYTHONIOENCODING": "utf-8"},
     )
     assert Path(completed.stdout.strip()).as_posix() == "data/temp/container_start.json"
     assert "data/temp/" in (PROJECT_ROOT / ".dockerignore").read_text(encoding="utf-8")

@@ -1793,10 +1793,12 @@ def run_inspect(
     shutil.copy2(database, copy)
     output = copy_dir / "inspect.md"
     env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
     result = subprocess.run(
         [sys.executable, str(INSPECT_SCRIPT), "--database", str(copy), "--output", str(output)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
         cwd=str(copy_dir),
         timeout=900,

@@ -805,7 +805,7 @@ def test_importing_the_explorer_leaves_altair_unloaded() -> None:
     현황을 한 번만 열어도 프로세스가 끝날 때까지 약 20MiB, 합성 표본 샘플 관측). 새 프로세스로
     재야 다른 시험이 먼저 불러 둔 altair 에 가리지 않는다."""
     root = Path(__file__).resolve().parents[1]
-    env = {**os.environ, "PYTHONPATH": str(root / "src")}
+    env = {**os.environ, "PYTHONPATH": str(root / "src"), "PYTHONIOENCODING": "utf-8"}
     done = subprocess.run(
         [
             sys.executable,
@@ -816,6 +816,7 @@ def test_importing_the_explorer_leaves_altair_unloaded() -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
         cwd=root,
         timeout=120,

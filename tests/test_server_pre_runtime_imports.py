@@ -41,10 +41,12 @@ def _loaded_modules() -> list[str]:
         key: value for key, value in os.environ.items() if not key.startswith(("CAPA_", "ADFS_"))
     }
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
+    env["PYTHONIOENCODING"] = "utf-8"
     done = subprocess.run(
         [sys.executable, "-c", PRE_RUNTIME],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
         cwd=PROJECT_ROOT,
         timeout=120,

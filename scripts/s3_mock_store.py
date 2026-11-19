@@ -441,6 +441,7 @@ def _inside_git_worktree(path: Path) -> bool:
         ["git", "-C", str(folder), "rev-parse", "--is-inside-work-tree"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     return found.returncode == 0 and found.stdout.strip() == "true"

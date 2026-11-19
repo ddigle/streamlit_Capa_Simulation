@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
@@ -108,7 +109,15 @@ def _wipe_disk(real: SimpleNamespace) -> None:
 
 
 def test_the_version_in_use_runs_here() -> None:
-    assert "aws-cli/1.46.3" in os.popen(f"{AWS_BIN} --version").read()
+    found = subprocess.run(
+        [AWS_BIN, "--version"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert "aws-cli/1.46.3" in found.stdout + found.stderr
 
 
 def test_the_whole_way_round(

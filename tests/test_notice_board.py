@@ -277,6 +277,8 @@ def test_the_board_does_not_bring_streamlit() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=narrow_child_env({"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""}),
     )
 

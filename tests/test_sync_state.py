@@ -67,6 +67,7 @@ def test_sidecar_path_is_gitignored() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -456,6 +457,7 @@ def test_generation_file_path_sits_beside_the_databases_and_is_gitignored(
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

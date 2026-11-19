@@ -307,6 +307,7 @@ def _ignored(path: str) -> bool:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert completed.returncode in (0, 1), completed.stderr
