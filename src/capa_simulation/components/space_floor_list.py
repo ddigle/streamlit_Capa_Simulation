@@ -160,9 +160,10 @@ FLOOR_EDITING = SessionSlot(EDITING_KEY, bool)
 DRAFT_KEY = "space_floor_state_draft_v1"
 FLOOR_DRAFT = SessionSlot(DRAFT_KEY, dict)
 BASE_KEY = "space_floor_state_base_v1"
-# 편집표 위젯이 지난번 그린 초안(초안과 같은 꼴). 칸 편집은 이 값 위에 접는다 — 편집표 `on_change`
-# 가 접어 세션 초안이 바뀐 회차에 본문이 같은 편집을 다시 접어도 같은 값이 된다. 새 위젯을 세우면
-# (`_remount`) · 편집을 끄면 걷는다.
+# 동 머리 · 편집표 위젯이 지난번 그린 초안(초안과 같은 꼴). 칸 편집은 이 값 위에 접는다 — 편집표
+# `on_change` 가 접어 세션 초안이 바뀐 회차에 본문이 같은 편집을 다시 접어도 같은 값이 된다. 동 머리
+# 콜백은 그린 머리 값과 같은 값(늦게 온 옛 값)을 받지 않는다. 새 위젯을 세우면(`_remount`) · 편집을
+# 끄면 걷는다.
 DRAWN_KEY = "space_floor_state_drawn_v1"
 FLOOR_DRAWN = SessionSlot(DRAWN_KEY, dict)
 # 이 세션이 한 층 사용 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
@@ -681,13 +682,22 @@ def _bulk_changed(building: str, generation: int) -> None:
     최신으로 다시 세우고 동 머리를 최신 값으로 적었는데, 그 회차가 브라우저에 닿기 전에 누른 둘째
     누름이 옛 화면의 동 머리 값(내 옛 변경)을 다시 실어 온다 — 세대는 거부 회차가 올린 새 세대라
     그대로 받으면 최신 위에 옛 변경이 얹혀 다음 저장이 남의 저장을 말없이 덮었다(2026-10-26 E2E
-    5회차)."""
+    5회차).
+
+    머리가 그린 값(그린 초안의 그 동 상태)과 같은 값도 받지 않는다 — 누른 값은 늘 그린 값과 다르다
+    (고른 칸을 다시 누르면 None). 칸을 고친 직후 화면 탭을 누르면 브라우저가 옛 Space 위젯 값을 실은
+    메시지를 다른 화면을 돈 뒤 한 번 더 보내고, 그 사이 위젯 상태가 걷혀 Streamlit 이 이 콜백을
+    부른다 — 그 값을 받으면 같은 메시지에 실린 그 동의 칸 편집을 옛 머리 값이 덮는다(토글 콜백과
+    같은 까닭)."""
     if generation != _generation():
         return
     if _refused_just_now() is not None:
         return
-    draft = _fold()
     value = st.session_state.get(f"{_BULK_PREFIX}{building}")
+    drawn = _draft_of(FLOOR_DRAWN.peek())
+    if drawn is not None and value == building_state(drawn, building):
+        return
+    draft = _fold()
     if value not in _BULK_LABELS:
         return
     others = {key: reason for key, reason in draft.items() if key[0] != building}
@@ -1163,8 +1173,6 @@ def _render_editor(
             for key in FLOOR_KEYS
         ]
     ).astype({_REASON_COLUMN: "string"})
-    # 남은 칸 편집을 다음 회차에 접을 바탕(`_fold_base`) — 이 위젯이 그린 초안.
-    FLOOR_DRAWN.set(_labelled(draft))
     st.data_editor(
         frame,
         key=editor_widget_key(EDITOR_KEY),
@@ -1228,6 +1236,9 @@ def _render_edit(
     # 알림 칸은 늘 선다(성공·충돌·오류가 생기고 사라질 때 아래 묶음이 밀리지 않게).
     with st.container(key="space_floor_state_notices"):
         _render_notices()
+    # 동 머리 · 편집표가 그리는 초안 — 남은 칸 편집을 다음 회차에 접을 바탕(`_fold_base`)이고, 늦게
+    # 온 옛 동 머리 값을 가르는 기준(`_bulk_changed`)이다.
+    FLOOR_DRAWN.set(_labelled(draft))
     _render_buildings(draft)
     _render_editor(draft, counts, {placement.key: placement for placement in placements})
 

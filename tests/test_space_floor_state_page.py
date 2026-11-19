@@ -1478,6 +1478,57 @@ def test_a_late_switch_message_after_leaving_keeps_the_draft(tmp_path: Path) -> 
     clear_equipment_repository()
 
 
+def test_a_late_building_head_message_does_not_overwrite_a_cell_edit(tmp_path: Path) -> None:
+    """늦게 온 메시지가 옛 동 머리 값(그린 값 그대로)과 그 동의 칸 편집을 함께 실어 와도 동 머리
+    콜백은 그 값을 받지 않는다 — 받으면 같은 메시지의 칸 편집을 옛 머리 값이 덮는다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    switch = get_widget_state(app.toggle(key=EDIT_TOGGLE_KEY))
+    head = get_widget_state(app.segmented_control(key="space_floor_state_bulk_C5"))
+    assert switch is not None and head is not None
+    editor = tables.widget_id(_editor_key(app))
+
+    app.session_state["test_away"] = True
+    tables.run()
+    _ok(app)
+    app.session_state["test_away"] = False
+    late = WidgetStates()
+    late.widgets.extend([switch, head])
+    cell = late.widgets.add()
+    cell.id = editor
+    cell.string_value = json.dumps(
+        {
+            "edited_rows": {str(_position("C5", "1F")): {"사용": True}},
+            "added_rows": [],
+            "deleted_rows": [],
+        }
+    )
+    app._run(late)
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {
+        label: reason for label, reason in _C5_UNUSED.items() if label != "C5 1F"
+    }
+    assert any("바뀐 층 5개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_a_real_building_head_press_still_turns_the_six_floors(tmp_path: Path) -> None:
+    """그린 값과 다른 동 머리 누름은 그대로 그 동 6개 층을 한꺼번에 바꾼다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    app.segmented_control(key="space_floor_state_bulk_C5").set_value("ACTIVE")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {}
+    app.segmented_control(key="space_floor_state_bulk_C4").set_value("NOT_LINE")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {
+        f"C4 {floor}": "NOT_LINE" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")
+    }
+    clear_equipment_repository()
+
+
 @pytest.mark.parametrize("called", [True, None])
 def test_the_switch_callback_without_a_real_change_keeps_the_draft(
     tmp_path: Path, called: bool | None
