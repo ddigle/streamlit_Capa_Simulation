@@ -3288,6 +3288,25 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
             assert f"`{item.key}`" in later
 
 
+def test_the_deploy_chapter_b_count_matches_its_hand_checks() -> None:
+    """7장 머리의 압축본 B 줄 기대(`B <N> = 기록 <n> + 미기록 <N-n>` · 시간이 없을 때의 한 줄)의
+    N 이 7-39 B 의 번호 항목 수와 같고, 항목마다 압축본 항목 줄 꼴(`B <i>)ok…@u`)을 적는다(5장
+    「B 세는 법」 — N 은 그 배포 7장 B 의 번호 항목 수). 항목을 더하고 머리 수를 그대로 두면
+    사내가 셈 줄을 틀리게 옮긴다."""
+    runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
+    chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
+    draft = chapter.split("### 7-39. ", 1)[1].split("### 7-5. ", 1)[0]
+    b_part = draft.split("#### B. ", 1)[1].split("\n### ", 1)[0]
+    numbers = [int(n) for n in re.findall(r"^(\d+)\) \*\*", b_part, re.MULTILINE)]
+    assert numbers == list(range(1, len(numbers) + 1)) and numbers
+    count = len(numbers)
+    head = chapter.split("### 7-0. ", 1)[0]
+    assert f"`B {count} = 기록 <n> + 미기록 <{count}-n>; u<u>; na칸 <m>; 빈칸 <k>`" in head
+    assert f"`B {count} = 기록 0 + 미기록 {count}; u0; na <까닭>`" in head
+    for number in numbers:
+        assert f"`B {number})ok" in b_part, number
+
+
 def test_the_scenario_list_grid_item_matches_the_app() -> None:
     """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — key · 칸 이름 · `<html>` 표지가 앱과 같다."""
     from capa_simulation.components import scenario_list_grid as grid

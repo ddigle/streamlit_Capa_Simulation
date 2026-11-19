@@ -3198,16 +3198,16 @@ def test_the_next_deploy_grid_fixes_close_the_6_34_paragraph_and_fit_ui_inp_08()
 
 def test_the_unsaved_guard_requests_are_judged_in_6_35() -> None:
     """v1.38 — 2026-11-19 사용자 미저장 보호 요청을 앱에 이미 있는 꼴로 입힌 판정이 6-35 줄마다
-    있고(걸린 규칙 id · 「답 밖 — 구현이 정함」), 판 머리 · 1장 안내가 그 절을 가리킨다."""
+    있고(걸린 규칙 id · 「답 밖 — 구현이 정함」), 1장 안내가 그 절을 가리킨다. 판 머리는 v1.39
+    시험이 보고, 6-35 구간은 6-36 앞에서 끊는다."""
     document = _text()
-    assert "판 v1.38" in document.split("\n## 1. ")[0]
     assert "6-35 에 있다" in _chapter(document, 1)
     history = _chapter(document, 8)
     v138 = history[history.index("- **v1.38 — 2026-11-19.**") :]
     for phrase in ("6-35", "UI-STA-02", "tests/test_manual_downtime_tab.py"):
         assert phrase in v138, phrase
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-35. ") :]
+    record = section[section.index("\n### 6-35. ") : section.index("\n### 6-36. ")]
     lines = {
         line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
     }
@@ -3231,6 +3231,97 @@ def test_the_unsaved_guard_requests_are_judged_in_6_35() -> None:
     ):
         assert phrase in floor, phrase
     assert "tests/test_space_floor_state_page.py" in v138
+
+
+# 2026-11-19 아침 확인 보드(6-36) — 카드 스물다섯, 보드 차례대로 한 줄씩.
+MORNING_1119_LINES = (
+    "m19-guard-manual",
+    "m19-guard-floor",
+    "m19-extra2-screen",
+    "m19-extra2-avail",
+    "m19-extra2-newfile",
+    "m19-extra2-button",
+    "m19-extra2-shift",
+    "m19-manual-rerun",
+    "m19-manual-hidden",
+    "m19-manual-undo",
+    "m19-rr-result",
+    "m19-rr-tooltip",
+    "m19-rr-autotab",
+    "m19-rr-d1",
+    "m19-rr-d3",
+    "m19-rr-d4",
+    "m19-rr-d5",
+    "m19-rr-d8",
+    "m19-e2e-space-leave",
+    "m19-e2e-first-apply",
+    "m19-e2e-repeat-alert",
+    "m19-e2e-percent",
+    "m19-e2e-chart-copy",
+    "m19-v-fix4",
+    "m19-v-e2e",
+)
+# 고른 안의 글(보드 카드 choices) — 「좋음」 은 확인 · 정한 것 · 판정 카드.
+MORNING_1119_ANSWERS = {
+    "m19-extra2-avail": "(가) 지금대로 — 그 공정은 통째로 옮기지 않음",
+    "m19-extra2-newfile": "(가) 가져오기만으로 세우고, 쓰는 쪽이 없는 동안 상태 알림 하나",
+    "m19-extra2-button": "(가) 잠긴 채 둠",
+    "m19-extra2-shift": "(나) 안 넣음",
+    "m19-manual-rerun": "(가) 먼저 재고, 느리면 그때 묻기",
+    "m19-manual-hidden": "(가) 모두 버리고 수만 알림",
+    "m19-manual-undo": "(가) 확인 없음",
+    "m19-rr-tooltip": "(가) 받아들임",
+    "m19-rr-autotab": "(가) 받아들임",
+    **{f"m19-rr-d{n}": "(나) 그대로 — 사내에서 재 본 뒤" for n in (1, 3, 4, 5, 8)},
+    "m19-e2e-space-leave": "(나) 층 사용 편집을 화면을 떠나도 남김",
+    "m19-e2e-first-apply": "(가) 단추를 늘 켜 둠",
+    "m19-e2e-repeat-alert": "(가) 그대로",
+    "m19-e2e-percent": "(나) 앱의 % 표 칸을 한 번에 소수 둘째 자리",
+}
+# 같은 판에서 따로 갈래가 구현하는 답 — 여기 줄은 답과 걸린 규칙 id 만.
+MORNING_1119_CODE_CHANGES = ("m19-e2e-space-leave", "m19-e2e-first-apply", "m19-e2e-percent")
+
+
+def test_the_morning_1119_board_answers_are_recorded_in_6_36() -> None:
+    """v1.39 — 6-36 은 2026-11-19 아침 확인 보드의 카드 스물다섯이 보드 차례대로 한 줄씩이고
+    (모두 「(2026-11-19 · 규칙 id)」 로 끝남), 고른 안의 글이 굵게 선다. 권장이 아닌 답은 부대공정
+    가용대수 (가) 하나이고 그 까닭 글이 「새 판으로」 의 코드 상수와 같다(지금 코드가 그 답대로
+    그 공정을 옮기지 않음). 코드를 바꾸는 셋은 「같은 판에서 구현」 이고, space-leave 가 바꾼
+    2026-10-24 답은 7-1 에 한 줄이다."""
+    from capa_simulation.services.extra_process_revision import AVAILABLE_REASON
+
+    document = _text()
+    assert "판 v1.39" in document.split("\n## 1. ")[0]
+    assert "6-36 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-36. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-19) · ([^()]+)\)$", line)
+        assert match, line
+        card, answer = match.group(1), match.group(2)
+        found.append(card)
+        assert answer == MORNING_1119_ANSWERS.get(card, "좋음"), card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert ("권장이 아닌 답" in line) == (card == "m19-extra2-avail"), card
+        assert ("같은 판에서 구현" in line) == (card in MORNING_1119_CODE_CHANGES), card
+    assert tuple(found) == MORNING_1119_LINES
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    avail = by_id["m19-extra2-avail"]
+    assert "권장은 (다)" in avail and f"「{AVAILABLE_REASON}」" in avail
+    leave = by_id["m19-e2e-space-leave"]
+    assert "「사이드바 링크 · 뒤로가기는 그대로」" in leave and "(7-1)" in leave
+
+    turned = [line for line in _chapter(document, 7).splitlines() if "m19-e2e-space-leave" in line]
+    assert len(turned) == 1, "7-1 에 space-leave 가 바꾼 2026-10-24 답 줄이 하나 있다"
+    assert "2026-10-24 페이지 탭 1단계 답" in turned[0] and "6-36" in turned[0]
+    history = _chapter(document, 8)
+    v139 = history[history.index("- **v1.39 — 2026-11-19.**") :]
+    for phrase in ("6-36", "m19-extra2-avail", "7-1", "규칙 81"):
+        assert phrase in v139, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
