@@ -233,7 +233,7 @@ def test_the_core_draws_edits_moves_and_talks_to_python() -> None:
     )
     first = result["first"]
     assert first["rows"] == 3 and first["cols"] == 6
-    assert first["texts"] == ["공정 에이", "양산", "90%", "", "79%"]
+    assert first["texts"] == ["공정 에이", "양산", "90.00%", "", "79.00%"]
     assert first["head"] == ["공정", "구분", *MONTHS]
     assert first["active"] and first["gen"] == "g1" and first["palette"] == "black-ink"
     assert first["where"] == "효율 › 공정 에이 · 양산 · 202701"
@@ -257,10 +257,10 @@ def test_the_core_draws_edits_moves_and_talks_to_python() -> None:
         "seq": 1,
     }
     assert commit["anchor"] == {"r": 2, "c": 3}, "Enter 확정은 아래 칸으로"
-    assert result["preview"] == {"text": "50%", "changed": True}
+    assert result["preview"] == {"text": "50.00%", "changed": True}
     acked = result["acked"]
     assert acked["box"] == 0 and acked["pending"] == 0
-    assert acked["text"] == "50%" and acked["changed"]
+    assert acked["text"] == "50.00%" and acked["changed"]
     assert acked["bad"] == ["85", True, "true"]
     assert result["whereBad"].endswith(
         "202701 — 100% 이하로 적습니다 — 85% 는 0.85 또는 85% 로 적습니다"

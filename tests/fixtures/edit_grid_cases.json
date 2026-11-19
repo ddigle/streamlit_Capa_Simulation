@@ -516,17 +516,17 @@
   {
    "value": 0.85,
    "fmt": "vital",
-   "text": "85%"
+   "text": "85.00%"
   },
   {
    "value": 1,
    "fmt": "vital",
-   "text": "100%"
+   "text": "100.00%"
   },
   {
    "value": 0.987,
    "fmt": "vital",
-   "text": "98.7%"
+   "text": "98.70%"
   },
   {
    "value": 0.00125,
@@ -541,7 +541,27 @@
   {
    "value": 0,
    "fmt": "vital",
-   "text": "0%"
+   "text": "0.00%"
+  },
+  {
+   "value": 6.053,
+   "fmt": "vital",
+   "text": "605.30%"
+  },
+  {
+   "value": -0.1093,
+   "fmt": "vital",
+   "text": "-10.93%"
+  },
+  {
+   "value": -1e-06,
+   "fmt": "vital",
+   "text": "-0.00%"
+  },
+  {
+   "value": -0.0,
+   "fmt": "vital",
+   "text": "0.00%"
   },
   {
    "value": 0.33333333,

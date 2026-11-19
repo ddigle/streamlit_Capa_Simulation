@@ -207,13 +207,14 @@ function significantText(value, digits) {
   return sign + mantissa + 'e' + (exponent >= 0 ? '+' : '-') + size
 }
 
-// 칸에 보이는 글. percent 98.75% · fixed 천 단위 + 소수 digits · sig 유효숫자. 빈칸은 빈 글.
+// 칸에 보이는 글. percent 소수 digits 자리 고정(98.70% · 100.00% — 끝 0 을 지우지 않음) · fixed 천 단위 + 소수 digits ·
+// sig 유효숫자. 빈칸은 빈 글.
 function formatValue(value, fmt) {
   if (value === null || value === undefined || Number.isNaN(value)) return ''
   if (KINDS[fmt.kind]) return KINDS[fmt.kind].format(value, fmt)
   const number = value + 0
   const digits = Number(fmt.digits) || 0
-  if (fmt.kind === 'percent') return groupedText(stripZeros((number * 100).toFixed(digits))) + '%'
+  if (fmt.kind === 'percent') return groupedText((number * 100).toFixed(digits)) + '%'
   if (fmt.kind === 'fixed') return groupedText(number.toFixed(digits))
   return significantText(number, Math.max(digits, 1))
 }

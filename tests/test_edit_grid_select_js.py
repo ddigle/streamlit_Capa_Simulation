@@ -655,7 +655,7 @@ def test_paste_spreads_a_block_from_the_anchor_and_selects_it() -> None:
     assert op["values"] == [["55%", "0.6"], ["0.7", "abc"]]
     assert block["range"] == {"r0": 1, "r1": 2, "c0": 3, "c1": 4}
     assert block["note"] == "4칸 붙여넣음"
-    assert block["texts"] == ["55%", "abc", True], "곧바로 미리보기 — 못 읽은 칸은 빨강"
+    assert block["texts"] == ["55.00%", "abc", True], "곧바로 미리보기 — 못 읽은 칸은 빨강"
     keys = result["keys"]
     assert keys["op"]["cols"] == ["202701", "202702"] and keys["op"]["values"] == [["0.8", "0.9"]]
     assert keys["note"] == "2칸 붙여넣음 · 분류 칸 2칸은 건너뛰었습니다"

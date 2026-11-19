@@ -531,8 +531,8 @@ def test_dragging_the_handle_down_fills_from_the_source_rows_and_selects_the_spa
     assert after["anchor"] == {"r": 0, "c": 2}
     assert after["note"] == "8칸 채움" and after["box"] and not after["filling"]
     # 곧바로 미리보기 — 원본 두 줄이 되풀이된다(0 → 2·4, 1 → 3·5).
-    assert after["source"] == ["50%", "55%"]
-    assert after["preview"] == ["50%", "55%", "50%", "55%", "74%"]
+    assert after["source"] == ["50.00%", "55.00%"]
+    assert after["preview"] == ["50.00%", "55.00%", "50.00%", "55.00%", "74.00%"]
     draft = _server(result["sent"])
     assert draft is not None
     expected = {
@@ -693,7 +693,7 @@ def test_ctrl_d_and_ctrl_r_fill_down_and_right_and_explain_when_they_cannot() ->
     assert down["op"]["src"]["rows"] == ["DEMO_P02\x1f양산"]
     assert down["note"] == "4칸 채움"
     assert down["range"] == {"r0": 2, "r1": 4, "c0": 2, "c1": 3}, "단축키는 고름을 그대로 둔다"
-    assert down["preview"] == ["58%", "59%"]
+    assert down["preview"] == ["58.00%", "59.00%"]
     one = result["oneRow"]
     assert one["prevented"], "한글 입력 상태(key 「ㅇ」)도 자판 자리 KeyD 로 본다"
     assert one["op"]["rows"] == ["DEMO_P06\x1f양산"]
@@ -743,7 +743,7 @@ def test_ctrl_enter_writes_the_typed_value_into_the_whole_range() -> None:
     assert len(op["rows"]) == 3 and op["cols"] == ["202701", "202702"]
     assert every["range"] == {"r0": 1, "r1": 3, "c0": 0, "c1": 3}, "고름을 그대로 둔다(엑셀)"
     assert every["note"] == "6칸에 같은 값을 넣음 · 분류 칸 6칸은 건너뛰었습니다"
-    assert every["preview"] == ["42%", "42%", "66%"]
+    assert every["preview"] == ["42.00%", "42.00%", "66.00%"]
     assert result["same"] == [True, None, {"r0": 5, "r1": 5, "c0": 2, "c1": 2}]
     draft = _server(result["sent"])
     assert draft is not None
@@ -778,16 +778,16 @@ def test_paste_repeats_a_value_or_a_block_over_an_exact_multiple_selection() -> 
     assert len(one["op"]["rows"]) == 5 and one["op"]["cols"] == ["202701", "202702", "202703"]
     assert one["note"] == "15칸 붙여넣음 · 고른 범위에 되풀이"
     assert one["range"] == {"r0": 0, "r1": 4, "c0": 2, "c1": 4}
-    assert one["preview"] == ["90%", "90%", "70%"]
+    assert one["preview"] == ["90.00%", "90.00%", "70.00%"]
     column = result["column"]
     assert column["op"]["values"] == [["10%"], ["20%"]] and len(column["op"]["rows"]) == 4
-    assert column["preview"] == ["10%", "20%", "10%", "20%"]
+    assert column["preview"] == ["10.00%", "20.00%", "10.00%", "20.00%"]
     phase = result["phase"]
     # 고른 범위가 분류 칸(c=1)에서 시작 — 엑셀 자리 차례(1 → 31, 2 → 32, 3 → 31, 4 → 32)대로
     # 돌려 싣는다.
     assert phase["op"]["values"] == [["32%", "31%"]]
     assert phase["op"]["cols"] == ["202701", "202702", "202703"]
-    assert phase["preview"] == ["32%", "31%", "32%"]
+    assert phase["preview"] == ["32.00%", "31.00%", "32.00%"]
     assert phase["note"] == "6칸 붙여넣음 · 고른 범위에 되풀이 · 분류 칸 2칸은 건너뛰었습니다"
     assert phase["toast"] == phase["note"]
     anchor = result["anchor"]

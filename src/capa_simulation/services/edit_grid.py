@@ -510,8 +510,8 @@ def _fixed(value: float, digits: int) -> str:
 def fixed_percent_text(value: float, digits: int) -> str:
     """분수 값의 % 글 — 100 배를 소수 `digits` 자리로 고정(끝 0 을 지우지 않음 — 98.70% ·
     100.00%)하고 천 단위를 끊는다. 반올림은 `_fixed`(반을 0 에서 먼 쪽 — 브라우저
-    `formatValue` 의 percent 와 같은 반올림)이고 -0 은 0 으로 적는다. 읽기 표 % 칸
-    (`components/percent_cells.py`)이 쓴다(설계 규칙 UI-DAT-12)."""
+    `formatValue` 의 percent 와 같은 답)이고 -0 은 0 으로 적는다. 편집 그리드 percent 칸과 읽기
+    표 % 칸(`components/percent_cells.py`)이 함께 쓰는 한 함수다(설계 규칙 UI-DAT-12)."""
     return _grouped_text(_fixed((value + 0.0) * 100, digits)) + "%"
 
 
@@ -549,7 +549,7 @@ def format_value(value: CellValue, fmt: ValueFormat) -> str:
         return fmt.options[at] if 0 <= at < len(fmt.options) else ""
     value += 0.0
     if fmt.kind == "percent":
-        return _grouped_text(_strip_zeros(_fixed(value * 100, fmt.digits))) + "%"
+        return fixed_percent_text(value, fmt.digits)
     if fmt.kind == "fixed":
         return _grouped_text(_fixed(value, fmt.digits))
     return _significant(value, fmt.digits)

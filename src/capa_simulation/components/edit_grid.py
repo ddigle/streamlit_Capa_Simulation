@@ -183,7 +183,14 @@ def palette() -> dict[str, str]:
 
 
 def _bound_text(value: float | None, spec: GridSpec) -> str:
-    return format_value(value, spec.fmt) if value is not None else ""
+    """오류 글의 하한 · 상한 — 칸 글과 같은 꼴이되 percent 는 끝 0 을 걷는다(「100% 이하로」 —
+    칸 글은 소수 둘째 자리 고정이지만 경계는 정한 기준 값이다)."""
+    if value is None:
+        return ""
+    text = format_value(value, spec.fmt)
+    if spec.fmt.kind != "percent" or "." not in text:
+        return text
+    return text[:-1].rstrip("0").rstrip(".") + "%"
 
 
 def _rows_texts(spec: GridSpec) -> dict[str, Any]:

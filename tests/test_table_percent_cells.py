@@ -6,7 +6,8 @@
 두 겹으로 본다. ① 도우미(`components/percent_cells.py`) — 보이는 글 · 이웃 칸 글 · 표시만 바뀌는
 것(데이터는 그대로라 칸 정렬은 원값 숫자, 표 도구 막대 CSV · 칸 복사는 원값 분수) · 상한을 넘는
 표 · 회차마다 같은 표 꼴. ② 그물 — 화면 코드가 도우미 밖에서 `percent` 칸 꼴이나 끝 0 을 지우는
-% 꼴을 쓰지 않고, `percent_column` 을 쓴 화면은 `percent_table` 로 그린다.
+% 꼴을 쓰지 않고, `percent_column` 을 쓴 화면은 `percent_table` 로 그리고, 편집 그리드 percent 칸은
+같은 자릿수 · 같은 글 함수를 쓴다.
 """
 
 from __future__ import annotations
@@ -14,14 +15,18 @@ from __future__ import annotations
 import ast
 import math
 import re
+import warnings
+from pathlib import Path
 
 import pandas as pd
+import pytest
 from pandas.io.formats.style import Styler
-from source_sites import called_name, screen_calls, screen_files
+from source_sites import PROJECT_ROOT, called_name, relative, screen_calls, screen_files
 from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
 from streamlit.elements.lib.pandas_styler_utils import marshall_styler
 from streamlit.proto.ArrowData_pb2 import ArrowData
 
+from capa_simulation.components import edit_grid as grid_component
 from capa_simulation.components.percent_cells import (
     PERCENT_STEP,
     TABLE_PERCENT_DIGITS,
@@ -31,6 +36,7 @@ from capa_simulation.components.percent_cells import (
     percent_progress_column,
     percent_table,
 )
+from capa_simulation.services import edit_grid as eg
 
 HELPER = "src/capa_simulation/components/percent_cells.py"
 # 2026-11-19 보드 답의 합성 예 — 지금 꼴(끝 0 지움)과 바뀐 꼴.
@@ -68,6 +74,13 @@ def test_percent_text_is_two_fixed_decimals_with_grouping_and_sign() -> None:
     assert percent_cell_text(-0.0) == "0.00%"
     for empty in (None, math.nan, pd.NA, math.inf, -math.inf):
         assert percent_cell_text(empty) == "", empty
+
+
+def test_the_read_table_text_and_the_grid_text_are_one_function() -> None:
+    """반올림이 한 벌이다 — 읽기 표 % 칸과 편집 그리드 percent 칸(브라우저 `formatValue` 쌍둥이)."""
+    fmt = eg.ValueFormat("percent", TABLE_PERCENT_DIGITS)
+    for value in (*VALUES, 0.01005, 0.98765, 1 / 3, -0.00005, 2.675, 100.0):
+        assert percent_cell_text(value) == eg.format_value(value, fmt), value
 
 
 def test_neighbour_numbers_keep_the_streamlit_default_look() -> None:
@@ -209,3 +222,53 @@ def test_screens_that_declare_percent_columns_draw_through_the_helper() -> None:
             drawn.add(path)
     assert declared, "그물이 볼 자리가 있다"
     assert declared <= drawn, sorted(declared - drawn)
+
+
+def _value_format_digits() -> list[tuple[str, int, object]]:
+    roots = [*screen_files(), *sorted((PROJECT_ROOT / "scripts").rglob("*.py"))]
+    found: list[tuple[str, int, object]] = []
+    for path in roots:
+        with warnings.catch_warnings():
+            # 옛 독스트링의 역슬래시 경고는 이 그물의 일이 아니다.
+            warnings.simplefilter("ignore")
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and called_name(node) == "ValueFormat"):
+                continue
+            args = node.args
+            if args and isinstance(args[0], ast.Constant) and args[0].value == "percent":
+                second = args[1] if len(args) > 1 else None
+                digits = second.value if isinstance(second, ast.Constant) else None
+                found.append((relative(path), node.lineno, digits))
+    return found
+
+
+def test_grid_percent_columns_use_the_table_digits() -> None:
+    """편집 그리드 percent 칸(기준 정보 효율 · 여유율 · 측정률, 생산 계획 수율)도 같은 자릿수다."""
+    found = _value_format_digits()
+    assert found, "그물이 볼 자리가 있다"
+    assert [item for item in found if item[2] != TABLE_PERCENT_DIGITS] == []
+
+
+def test_the_browser_grid_text_does_not_strip_percent_zeros() -> None:
+    """브라우저 `formatValue` 의 percent 갈래는 끝 0 을 걷지 않는다(쌍둥이 사례는
+    `tests/fixtures/edit_grid_cases.json` 의 `format`)."""
+    source = Path(PROJECT_ROOT, "src/capa_simulation/components/edit_grid_assets/eg_pure.js")
+    lines = [
+        line
+        for line in source.read_text(encoding="utf-8").splitlines()
+        if "fmt.kind === 'percent'" in line and "formatValue" not in line and "return" in line
+    ]
+    shown = [line for line in lines if "number * 100" in line]
+    assert len(shown) == 1 and "stripZeros" not in shown[0], shown
+
+
+@pytest.mark.parametrize("value", [0.9875, 0.85, 1.0, 0.0])
+def test_the_grid_bound_text_and_edit_text_keep_their_short_look(value: float) -> None:
+    """상한 오류 글(「100% 이하로」)과 칸 편집기 처음 글은 칸 글이 아니다 — 끝 0 없이 그대로."""
+    fmt = eg.ValueFormat("percent", 2, max_value=value)
+    spec = eg.GridSpec("RQ_DEMO", "효율", ("공정",), ("202701",), fmt)
+    texts = grid_component.texts(spec, changes_label="적용 전 변경")
+    expected = {0.9875: "98.75%", 0.85: "85%", 1.0: "100%", 0.0: "0%"}[value]
+    assert texts["errors"]["max"].startswith(f"{expected} 이하로 적습니다")
+    assert texts["errors"]["min"] == "0% 이상으로 적습니다"

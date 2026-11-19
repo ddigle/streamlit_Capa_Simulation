@@ -261,7 +261,9 @@ done({
     acc, text = result["mixed"]
     # 비지 않은 칸 4개(수 3 + 못 읽은 글 1), 합계·평균은 수 칸만.
     assert (acc["count"], acc["nums"]) == (4, 3) and abs(acc["sum"] - 1.53) < 1e-12
-    assert text == "개수 4 · 합계 153% · 평균 51%"
+    # percent 표의 합계 · 평균도 칸 글과 같은 소수 둘째 자리 고정이다(2026-11-19 보드
+    # m19-e2e-percent).
+    assert text == "개수 4 · 합계 153.00% · 평균 51.00%"
     assert result["days"][1] == "개수 2 · 합계 61 · 평균 30.5"
     assert result["daysWhole"][1] == "개수 2 · 합계 60 · 평균 30"
     assert result["units"][1] == "개수 3 · 합계 3.50 · 평균 1.17"
@@ -620,8 +622,8 @@ def test_find_highlights_matches_steps_with_enter_and_wraps() -> None:
   key(scroller, 'ArrowRight')
   click(d.next)
   R.fromHere = [S.anchor.r, S.anchor.c]
-  // 값 칸도 형식 적용 글로 찾는다(53% — 0.53).
-  d.input.value = '53%'
+  // 값 칸도 형식 적용 글로 찾는다(53.00% — 0.53, 칸 글이 소수 둘째 자리 고정이다).
+  d.input.value = '53.00%'
   fire(d.input, 'input')
   key(d.input, 'Enter')
   R.value = { count: d.count.textContent, at: Object.assign({}, S.anchor),
@@ -661,7 +663,7 @@ def test_find_highlights_matches_steps_with_enter_and_wraps() -> None:
     assert result["f3"] == [True, 3] and result["shiftF3"] == 2
     assert result["fromHere"] == [6, 0]
     value = result["value"]
-    assert value["text"] == "53%" and value["count"].endswith("/24")
+    assert value["text"] == "53.00%" and value["count"].endswith("/24")
     assert result["none"] == ["없음", "찾기 없음"]
     assert result["esc"] == {
         "prevented": True,
@@ -676,7 +678,7 @@ def test_find_highlights_matches_steps_with_enter_and_wraps() -> None:
 def test_find_follows_edits_and_sorting_without_typing_again() -> None:
     body = r"""
   const d = tb()
-  d.input.value = '77%'
+  d.input.value = '77.00%'
   fire(d.input, 'input')
   await tick(160)
   R.before = d.count.textContent
@@ -807,9 +809,9 @@ def test_the_status_bar_sums_the_numeric_cells_of_the_selection() -> None:
     result = _run(body, _payloads(draft=draft))
     assert result["single"] == "", "한 칸만 골랐으면 요약을 쓰지 않는다(엑셀)"
     # (0..1, 202701..202702) = 0.50 0.51 / 0.51 0.52.
-    assert result["block"] == ["개수 4 · 합계 204% · 평균 51%", 4]
+    assert result["block"] == ["개수 4 · 합계 204.00% · 평균 51.00%", 4]
     # (2..3, 202702..202703) = 0.53 「85」(오류) / 빈칸 0.55 — 개수 3, 합계·평균은 수 둘만.
-    assert result["mixed"] == "개수 3 · 합계 108% · 평균 54%"
+    assert result["mixed"] == "개수 3 · 합계 108.00% · 평균 54.00%"
     assert result["keys"] == "칸 4개"
     text, count, value_cells = result["all"]
     assert value_cells == 240 and count == 239
@@ -961,9 +963,9 @@ def test_changes_drawer_lists_old_and_new_values_goes_to_cells_and_reverts() -> 
     assert opened["pressed"] == "true" and not opened["hidden"] and opened["frame"]
     assert opened["title"] == "적용 전 변경 3칸"
     assert opened["rows"] == [
-        ["공정 영 · 양산 · 202701", "50% → 90%", False, "공정 영 · 양산 · 202701 되돌리기"],
-        ["DEMO_P03 · ER · 202702", "빈칸 → 60%", False, "DEMO_P03 · ER · 202702 되돌리기"],
-        ["DEMO_P05 · ER · 202701", "55% → 85", True, "DEMO_P05 · ER · 202701 되돌리기"],
+        ["공정 영 · 양산 · 202701", "50.00% → 90.00%", False, "공정 영 · 양산 · 202701 되돌리기"],
+        ["DEMO_P03 · ER · 202702", "빈칸 → 60.00%", False, "DEMO_P03 · ER · 202702 되돌리기"],
+        ["DEMO_P05 · ER · 202701", "55.00% → 85", True, "DEMO_P05 · ER · 202701 되돌리기"],
     ]
     assert opened["badTitle"].startswith("100% 이하로 적습니다")
     assert opened["more"] and opened["empty"]

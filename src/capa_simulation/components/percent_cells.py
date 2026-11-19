@@ -14,8 +14,8 @@ Streamlit 1.63 의 `percent` 꼴은 끝 0 을 지워(605.3% · 125%) 한 표 안
 - **막대 칸** — `percent_progress_column()`(`ProgressColumn` percent + `step` 0.0001). 막대
   칸에는 Styler 글이 닿지 않고, `step` 은 글의 고정 자릿수에만 쓰여 값을 자르지 않는다(막대 ·
   내려받기 그대로).
-- 글은 `services.edit_grid.fixed_percent_text`(편집 그리드 `_fixed` 와 같은 반올림 — 반을 0 에서
-  먼 쪽)로 짓는다.
+- **편집 그리드** — 칸 글은 `services.edit_grid.fixed_percent_text`(브라우저 `formatValue`
+  쌍둥이)다. 이 모듈의 글도 같은 함수를 부른다 — 반올림이 한 벌이다(반을 0 에서 먼 쪽).
 
 `NumberColumn(format="percent", step=0.0001)` 은 값을 버림해(0.639551 → 63.95%, CSV 도
 0.6395) 쓰지 않는다. 값을 100 배 한 표시 열 + `"%.2f%%"` 는 칸 복사 · CSV 가 100 배 수로 나가
@@ -38,7 +38,7 @@ from capa_simulation.services.edit_grid import fixed_percent_text
 if TYPE_CHECKING:
     from pandas.io.formats.style import Styler
 
-# 표 % 칸의 소수 자릿수.
+# 표 % 칸의 소수 자릿수 — 편집 그리드 percent 칸(`ValueFormat("percent", 2)`)과 같은 값이다.
 TABLE_PERCENT_DIGITS: Final = 2
 # 막대 칸 글의 고정 자릿수 — Streamlit 은 `step` 의 소수 자릿수 − 2 를 % 글 자릿수로 쓴다.
 PERCENT_STEP: Final = 10.0 ** -(TABLE_PERCENT_DIGITS + 2)
