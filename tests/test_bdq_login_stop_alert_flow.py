@@ -233,3 +233,13 @@ def test_app_ends_a_finished_run_with_the_late_token_alert() -> None:
     stop_branch = source.index("except StopException as stop:")
     late_at = source.index("render_token_alert_late(token_alerts)")
     assert stop_branch < late_at < source.index("app_run.finish()\n", stop_branch)
+
+
+def test_the_late_alert_names_the_runs_it_does_not_cover() -> None:
+    """끝 표지가 덮지 못하는 회차 둘(멈춘 회차 · 프래그먼트 · 팝업 본문만 다시 도는 회차)을
+    설명이 말하고, 운영 문서에 「다음 회차부터」 만 말하던 옛 글이 없다 — AppTest 는 프래그먼트만
+    다시 돌리지 못해 그 회차는 문서로만 묶는다(다음 전체 회차의 앞 표지는 위 첫 시험이 본다)."""
+    doc = container_start_check.render_token_alert_late.__doc__ or ""
+    assert "st.stop()" in doc and "프래그먼트 · 팝업 본문만 다시 도는 회차" in doc
+    setup = (APP_PATH.parent / "docs" / "bigdataquery_webide_setup.md").read_text(encoding="utf-8")
+    assert "페이지 안이면 알림은 다음 회차부터 선다" not in " ".join(setup.split())

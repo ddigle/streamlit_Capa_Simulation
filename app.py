@@ -714,8 +714,9 @@ with pinned_connections(DUCKDB_PATH):
         raise
     # 토큰 알림 다시 내기 — 화면 본문의 조회가 이 회차에 만든 토큰 실패 · 자동 로그인 멈춤을 같은
     # 회차의 마지막 표지로 낸다(바뀐 것만, 결과 파일이 있는 서버는 늘 이벤트 칸 한 자리 — 회차의
-    # 마지막 칸이라 앞 칸 순번을 밀지 않는다). 화면이 `st.stop()` 으로 멈춘 회차는 더 쓸 수 없어
-    # 다음 회차의 앞 표지가 낸다.
+    # 마지막 칸이라 앞 칸 순번을 밀지 않는다). 화면이 `st.stop()` 으로 멈춘 회차는 더 쓸 수 없고
+    # 프래그먼트 · 팝업 본문만 다시 도는 회차는 이 파일이 돌지 않아, 둘 다 다음 전체 회차의 앞
+    # 표지가 낸다.
     render_token_alert_late(token_alerts)
     app_run.finish()
     warm_intro_summary(str(DUCKDB_PATH.resolve()))

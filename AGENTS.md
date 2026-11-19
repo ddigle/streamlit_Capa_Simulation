@@ -2031,7 +2031,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   실패 글을 본 그 자리에서 Alarm 을 열어도 없었다(사내 리뷰 `202611181400` 발견 3). 그래서 `render_token_alert` 가 낸 표지(코드 · 조건 · 지문)를
   돌려주고 `app.py` 가 화면이 끝까지 돈 회차의 끝에서 `render_token_alert_late` 에 넘긴다 — 같은 짓기로 다시 지어 달라진 것만 이벤트 칸 한
   자리에 싣는다(없으면 빈 칸, 결과 파일이 있는 서버는 늘 한 자리 — 회차의 마지막 칸이라 앞 칸 순번을 밀지 않는다, 담아 둔 사건 알림은 꺼내지
-  않는다 `alerts.emit(drain=False)`). 화면이 `st.stop()` 으로 멈춘 회차는 더 쓸 수 없어 다음 회차의 앞 표지가 낸다. 알림 칸 JS 는 한 번 훑을 때
+  않는다 `alerts.emit(drain=False)`). 덮지 못하는 회차는 둘이다 — 화면이 `st.stop()` 으로 멈춘 회차(더 쓸 수 없다)와 프래그먼트 · 팝업
+  본문만 다시 도는 회차(`app.py` 가 돌지 않아 앞 · 끝 표지가 모두 없다 — 모듈이 `@st.fragment` · `@st.dialog` 안에서 `query_bigdataquery` 를
+  부르는 꼴)이고 둘 다 다음 전체 회차의 앞 표지가 낸다(프래그먼트 · 팝업을 처음 그리는 전체 회차 안의 조회는 끝 표지가 덮는다). 알림 칸 JS 는 한 번 훑을 때
   같은 상태 칸의 마지막 표지만 받는다(`latestStateNotes` — 앞 표지가 줄을 닫고 끝 표지가 새 줄을 여는 되풀이를 막는다). 시험
   `tests/test_bdq_login_alerts.py` · `tests/test_bdq_login_stop_alert_flow.py`(실제 개발자 쿠키 · 조회 중 멈춤 · 재시작 뒤 멈춤 · 같은 회차).
 - `src/capa_simulation/components/memory_diagnostic.py` — Admin 「서버 시작 점검」 의 메모리 값 줄과 표 끝 「DuckDB 메모리 한도」 줄(사내
