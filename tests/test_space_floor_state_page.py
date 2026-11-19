@@ -1410,7 +1410,7 @@ _C5_FLOORS = tuple(("C5", floor) for floor in ("1F", "2F", "3F", "4F", "5F", "6F
 def test_a_cell_edited_right_before_leaving_is_kept_by_the_editor_callback(
     tmp_path: Path,
 ) -> None:
-    """칸을 고친 직후 바로 떠나 본문이 편집표까지 가지 않은 회차에도(사이드바 링크 · 뒤로가기) 그
+    """칸을 고친 직후 바로 떠나 본문이 편집표까지 가지 않은 회차에도(화면 탭 · 사이드바 링크) 그
     칸은 편집표 `on_change` 가 초안에 접어 남는다."""
     database = _database(tmp_path)
     app, tables = _roundtrip(database)
