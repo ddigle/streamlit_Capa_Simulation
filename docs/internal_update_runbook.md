@@ -1844,8 +1844,9 @@ C-DEP 환경변수 표의 `CAPA_BDQ_SECRET_KEY`(BigDataQuery 자동 로그인 �
 > 중괄호 APPLY_FACTS 자리표로 두었다 — 잰 값으로 바꾸거나 관측과 같으면 자리표만 지운다. 수는 이 ZIP 을 사내 흉내 저장소(직전 배포 `202611181400` 의 배포 세트에 적용 기록을 둔 저장소 한 벌)에
 > 실제로 풀어 본 값과 전체 관문 끝줄의 수다. `변경` 줄은 적용기가 찍은 그대로 옮기고, `지움` 이 `없음` 인지 본다(배포 머리가 움직였으면 다시 센다).
 > 빌드 전에 `check_deploy_screens.py --list` 가 7-39 A 표와 같은 서른세 줄인지도 본다(빌더도 압축본 기대의 수를 스크립트 항목 수와 견준다).
-> 2026-11-19 리허설 뒤 수 자리표는 채웠다 — 변경 · 대조 · 해시 · E 는 `night/p2-int-1119` 머리를 배포 세트 규칙대로 git 으로 다시 센 값(리허설 `b2d8ab5b` 의 추가 49 · 수정 153 에
-> 그 뒤 고친 스크립트 둘 · 시험 둘을 더함), mypy · ruff 는 같은 머리의 끝줄이다. 빌드 커밋이 그때 목록 밖 파일(예: `HANDOFF.md` · `CLAUDE.md`)을 더 고치면 하나마다
+> 2026-11-19 리허설 뒤 수 자리표는 채웠다 — 변경 · 대조 · 해시 · E 는 아침 확인 보드 답과 그 구현 검토 고침을 합친 `ans/int-1119` 머리(`b1c028c5` — 이 수를 적은 커밋은 이미 센
+> 런북 하나만 고쳐 수가 같다)를 배포 세트 규칙대로 git 으로 다시 센 값이다(같은 셈이 `28ae630f` 에서 앞 판 값 49 · 157 · 1,378 · 207 · mypy 1161 을 그대로 냈다 — 리허설
+> `b2d8ab5b` 의 추가 49 · 수정 153 에 그 뒤 고친 스크립트 둘 · 시험 둘을 더한 값). mypy · ruff 는 같은 머리의 끝줄이다. 그 머리 뒤로 커밋이 더 들면(합침 · 빌드) 다시 센다. 빌드 커밋이 그때 목록 밖 파일(예: `HANDOFF.md` · `CLAUDE.md`)을 더 고치면 하나마다
 > 수정 · E · 「외 n」 에 1 을 더하고, `.py` 파일이 늘거나 줄면 mypy · ruff 수를 다시 잰다. 남은 자리표는 아래 리뷰 묶음과 4-3 의 pytest 두 칸(전체 관문 끝줄)이다.
 >
 > **아래 묶음은 리뷰 `202611181400` 을 받은 뒤 맞추고 이 묶음째 지운다 — 그때까지 빌드를 막는 자리표 {APPLY_FACTS}.** 이 7장은 그 리뷰를 받기 전(2026-11-19)에 썼다.
@@ -1961,20 +1962,21 @@ B 줄 `B 3 = 기록 <n> + 미기록 <3-n>; u<u>; na칸 <m>; 빈칸 <k>` 와 항�
 - **`변경` 줄은 이 꼴이다.**
 
   ```
-  변경    추가 49 · 수정 157  (직전 202611181400 대비)
+  변경    추가 52 · 수정 181  (직전 202611181400 대비)
   ```
 
   그 아래로 추가 · 수정은 각각 8개 뒤 「… 외 n개」(n 은 위 줄의 수에서 8 을 뺀 것)로 끝나고 삭제 줄은 없다.
   추가는 부대공정(`extra_process_intake.py` · `persistence/extra_process_store.py` · `services/extra_process_pack.py` · `services/extra_process_merge.py` · `services/extra_process_revision.py` ·
   `components/extra_process_admin.py` · `components/extra_process_notice.py` · `components/scenario_extra_overlay.py` · 마이그레이션 `0037_extra_process.sql` · `0038_extra_process_s3_write.sql`) ·
   접속 명단 편집 표(`components/access_list_grid.py` · `services/access_list_plan.py` · `components/edit_grid_assets/eg_rows.js` · `eg_rows.css`) · 부하 계측(`load_metrics.py` · `components/load_diagnostic.py`) ·
-  세션 칸 창구(`session_slot.py`) · 시험(견본 `tests/fixtures/extra_process/` 여섯 장 포함)이다. 수정은 화면 · 조각 · 서비스 · 스크립트(`inspect_real_data_checks.py` ·
+  세션 칸 창구(`session_slot.py`) · 표 % 칸 도우미(`components/percent_cells.py`) · 시험(견본 `tests/fixtures/extra_process/` 여섯 장, % 칸 `tests/percent_display.py` ·
+  `tests/test_table_percent_cells.py` 포함)이다. 수정은 화면 · 조각 · 서비스 · 스크립트(`inspect_real_data_checks.py` ·
   `inspect_revision_calculations.py`) · 시험 · 문서다. `pyproject.toml` · `uv.lock` · 권한 템플릿은 없다.
 - **지움은 없다**. 적용기 `지움` 줄이 `없음` 이고 「예상된 삭제」 목록이 없다. 2-1 의 `지움` 이나 「사외에서 지워진 파일」 에 경로가 하나라도 찍히면 멈추고 묻는다.
-- **대조 블록 둘째 칸** — 적용 **전**(2-1 `--dry-run`)에는 「목록에 있는데 사내에 없는 파일 49개 — ZIP 이 채웁니다 — 정상입니다.」(10개만 찍히고 「… 외 39개」 — 위 추가)가 선다.
+- **대조 블록 둘째 칸** — 적용 **전**(2-1 `--dry-run`)에는 「목록에 있는데 사내에 없는 파일 52개 — ZIP 이 채웁니다 — 정상입니다.」(10개만 찍히고 「… 외 42개」 — 위 추가)가 선다.
   적용 **뒤**(3-1)의 재대조에는 「목록에 있는데 사내에 없는 파일」 도 「사외에서 지워진 파일」 도 없다.
-- **해시 대조는 `1,378/1,378`** 이다(「대조    N/N 해시 일치」 꼴).
-- **`deploy:` 커밋의 파일 수 E 는 `207`** 이다(추가 + 수정 + 적용 기록 `.deploy/applied.json` 하나. 지움 · 옮긴 파일이 없다. 위 줄끝 확인에서 견준다).
+- **해시 대조는 `1,381/1,381`** 이다(「대조    N/N 해시 일치」 꼴).
+- **`deploy:` 커밋의 파일 수 E 는 `234`** 이다(추가 + 수정 + 적용 기록 `.deploy/applied.json` 하나. 지움 · 옮긴 파일이 없다. 위 줄끝 확인에서 견준다).
 - **맨 위 「건너뛴 배포」 알림 줄은 없다.** 서면 멈추고 `.deploy/applied.json` 을 다시 본다.
 - **`주의` 블록의 `.gitkeep` 세 줄은 결함이 아니다.** `data/input/.gitkeep` · `data/output/.gitkeep` · `data/temp/.gitkeep` 은 배포가 싣는 빈
   폴더 자리표라 배포마다 이렇게 나온다 — `git rm` 하지 않는다(1-4). 그 셋 말고 다른 경로가 이 블록에 있으면 1-4 대로 멈춘다.
@@ -1988,7 +1990,7 @@ B 줄 `B 3 = 기록 <n> + 미기록 <3-n>; u<u>; na칸 <m>; 빈칸 <k>` 와 항�
   머문다. 되돌릴 일이 생기면 4-2 를 읽고 무엇도 누르기 전에 정본 개발 에이전트에게 알린다(7-7).
 - **최상위 선언** — 새 최상위는 없다(3-2 를 깨지 않는다).
 - **권한 템플릿은 그대로다** — 2-3 뒤 1-2 대조도 빈 줄이 기대다(줄이 찍히면 1-2 대로).
-- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 1161 source files」, `ruff format --check` 는 「1205 files already formatted」 꼴이다. pytest 는 약 {APPLY_FACTS} 개(정본 개발 쪽
+- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 1164 source files」, `ruff format --check` 는 「1208 files already formatted」 꼴이다. pytest 는 약 {APPLY_FACTS} 개(정본 개발 쪽
   WSL {APPLY_FACTS} 통과 · 실패 0 · 오류 0) — 건너뜀 · xfail 수는 PC 마다 다르다. mypy · ruff 두 수가 같고 pytest 넷 동시의 **네 조각 모두 실패 0 · 오류 0** 이면 판정 줄이 `관문 ok` 이고
   (통과 · 건너뜀 수는 견주지 않는다), 다르면 `관문수` 줄에 적는다(5장 차례 2). 남은 실패는 고치지 않고 **처음 깨진 시험 이름 · 오류 종류 · 수만** 「발견」 에 적는다.
   - **판정은 넷 동시 한 번이다** — 4-3 의 펜스를 사용자가 저장소 뿌리의 별도 PowerShell 창에서 친다(단독 재실행 · `$o` 지우기도 4-3 대로). 압축본 한 줄
