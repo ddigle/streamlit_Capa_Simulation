@@ -35,7 +35,7 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 
 **BDQ 자동 로그인** — `managed` 서버의 표에는 통합인증 줄 뒤에 「BDQ 자동 로그인」 줄
 (`login_rows` — 시작 때 결과: 꺼짐 · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) · 닿지 못함(예비
-토큰))이 서고 판정에 든다. 자동 로그인이 멈추면 개발자 알림 `AD-23`(`render_login_stop_alert`)이
+토큰))이 서고 판정에 든다. 자동 로그인이 멈추면 개발자 알림 `AD-23`(`login_stop_note`)이
 서고, 서 있는 동안 `AD-11` 은 해소다. 상태는 S3 에 묻지 않고 읽는다(`login_view` —
 `bdq_login.current_view`).
 
@@ -54,8 +54,10 @@ UI-NAV-01).
 판정) 시작 점검 토큰 줄이 「실패」 면 개발자의 모든 화면 회차에 상태 알림으로 낸다
 (`render_token_alert` — `app.py` 가 동기화 알림 곁에서 부른다). 토큰은 공용 계정 하나라 고칠 사람이
 개발자다. 결과 파일이 없는 서버(개발 · 사내 PC · WebIDE · 시험)는 Streamlit 호출이 없어 요소 순번이
-그대로다. `app.py` 는 페이지보다 먼저 표지를 읽으므로 그 회차 페이지 조회의 실패는 다음 회차부터
-알림이 된다(실패 글은 화면 곁에 바로 선다).
+그대로다. `app.py` 는 페이지보다 먼저 표지를 낸다 — 그 회차 페이지 조회의 실패 · 조회 중 자동
+로그인의 멈춤은 화면이 끝까지 돈 회차면 회차 끝의 다시 내기(`render_token_alert_late` — 바뀐 것만,
+이벤트 칸 한 자리)로 같은 회차에, 화면이 `st.stop()` 으로 멈춘 회차면 다음 회차부터 알림이 된다(실패
+글은 화면 곁에 바로 선다).
 """
 
 from __future__ import annotations
@@ -77,7 +79,7 @@ from capa_simulation.components.bdq_token_admin import (
     ENVIRONMENT_FIX,
     INSTALL_FIX,
     RELOGIN_FIX,
-    render_expiry_alert,
+    expiry_alert_note,
     render_token_dialog,
     render_token_row,
     token_line,
@@ -565,19 +567,54 @@ def login_view(report: ContainerStartReport | None) -> bdq_login.LoginView:
         return bdq_login.LoginView("off")
 
 
-def render_token_alert() -> None:
-    """BigDataQuery 토큰 개발자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
-    (`bdq_token_admin.render_expiry_alert`), 자동 로그인 멈춤 `AD-23`, 자동 로그인이 멈추지 않은 채
-    서지 못함 `AD-24`. `app.py` 가 회차마다 조건 없이 부른다.
+# 토큰 알림 넷이 한 회차 앞에서 낸 표지 — (코드, 조건이 있나, 지문). 회차 끝의 다시 내기가 견준다.
+TokenAlertMarks = tuple[tuple[str, bool, str], ...]
 
-    결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 네 자리를
-    쓰고 개발자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
-    실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다. 자동 로그인 상태는 S3 에 묻지 않고
-    읽는다(`login_view`) — 서 있는 동안 `AD-11` 은 해소다.
+
+def render_token_alert() -> TokenAlertMarks | None:
+    """BigDataQuery 토큰 개발자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.expiry_alert_note`), 자동 로그인 멈춤 `AD-23`, 자동 로그인이 멈추지 않은 채
+    서지 못함 `AD-24`. `app.py` 가 화면 앞에서 회차마다 조건 없이 부르고 돌려준 표지를 회차 끝의
+    `render_token_alert_late` 에 넘긴다.
+
+    결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않고 `None` 이다 — 그 파일은 시작 스크립트가
+    앱보다 먼저 한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸
+    네 자리를 쓰고 개발자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패,
+    조회 토큰 실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다. 자동 로그인 상태는 S3 에
+    묻지 않고 읽는다(`login_view`) — 서 있는 동안 `AD-11` 은 해소다.
     """
     if not report_file_exists():
+        return None
+    notes = token_alert_notes()
+    for note in notes:
+        alerts.emit([note])
+    return tuple(_mark(note) for note in notes)
+
+
+def render_token_alert_late(marks: TokenAlertMarks | None) -> None:
+    """회차 끝의 토큰 알림 다시 내기 — `app.py` 가 화면이 끝까지 돈 회차(멈춤 · 다시 돌기 예외 밖)의
+    끝에서 부른다. 앞 표지가 `None`(결과 파일이 없는 서버)이면 아무것도 부르지 않는다.
+
+    조회 실패(`AD-10`) · 조회 중 자동 로그인의 멈춤(`AD-23`) · 서지 못함(`AD-24`)은 화면 본문의
+    조회에서 생기는데 토큰 알림은 화면 앞에서 낸다 — 그 회차의 앞 표지는 해소라, 개발자가 실패 글을
+    본 그 자리에서 Alarm 을 열어도 없다. 같은 짓기(`token_alert_notes` — 코드 · 범위 · 지문이 앞
+    표지와 같다)로 다시 지어 앞 표지와 (조건, 지문)이 달라진 것만 이벤트 칸 한 자리에
+    싣는다(없으면 빈 칸 — 갈래와 상관없이 늘 한 자리, 회차의 마지막 칸이라 앞 칸 순번을 밀지
+    않는다). 알림 칸 JS 는 한 번 훑을 때 같은 상태 칸의 마지막 표지만 받는다(`latestStateNotes`).
+    담아 둔 사건 알림은 꺼내지 않는다(`drain=False`) — 닿는 회차가 지금과 같다."""
+    if marks is None:
         return
+    moved = [note for note in token_alert_notes() if _mark(note) not in marks]
+    alerts.emit(moved, drain=False)
+
+
+def _mark(note: alerts.AlertNote) -> tuple[str, bool, str]:
+    return (str(note.get("code", "")), bool(note.get("active")), str(note.get("fp", "")))
+
+
+def token_alert_notes() -> list[alerts.AlertNote]:
+    """토큰 알림 넷의 표지(그리지 않는다) — `AD-10` · `AD-11` · `AD-23` · `AD-24` 차례. 결과 파일이
+    있는 서버에서만 부른다(`render_token_alert` · `render_token_alert_late`)."""
     report = read_container_start_report()
     step = None if report is None else report.steps.get(STEP_TOKEN)
     start_failed = step is not None and step.status == STATUS_FAILED
@@ -585,7 +622,7 @@ def render_token_alert() -> None:
     view = login_view(report)
     admin = sso_identity.viewer_is_developer()
     active = (start_failed or query_failed) and admin
-    alerts.state(
+    failure = alerts.state_note(
         TOKEN_ALERT_CODE,
         scope=None,
         content=(start_failed, query_failed) if active else None,
@@ -601,12 +638,15 @@ def render_token_alert() -> None:
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
         target=_token_alert_target(start_failed, view) if active else None,
     )
-    # 만료 1시간 전 개발자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
-    render_expiry_alert(standing=view.standing)
-    # 자동 로그인 멈춤(`AD-23`) — 한 자리 더.
-    render_login_stop_alert(view, admin=admin)
-    # 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`) — 한 자리 더.
-    render_login_trouble_alert(view, admin=admin)
+    return [
+        failure,
+        # 만료 1시간 전 개발자 알림(`AD-11`) — 같은 서버 · 같은 회차.
+        expiry_alert_note(standing=view.standing),
+        # 자동 로그인 멈춤(`AD-23`).
+        login_stop_note(view, admin=admin),
+        # 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`).
+        login_trouble_note(view, admin=admin),
+    ]
 
 
 def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts.GotoTarget | None:
@@ -618,13 +658,12 @@ def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts
     return bdq_login_target()
 
 
-def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
-    """자동 로그인 멈춤 개발자 알림(`AD-23`) — 이벤트 칸 한 자리. 멈춤이 아니거나 개발자가 아니면
-    해소로 부른다. 지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면
-    풀린다(D3). 「그 화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` —
-    UI-NAV-01)."""
+def login_stop_note(view: bdq_login.LoginView, *, admin: bool) -> alerts.AlertNote:
+    """자동 로그인 멈춤 개발자 알림(`AD-23`) 표지 한 칸. 멈춤이 아니거나 개발자가 아니면 해소다.
+    지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면 풀린다(D3). 「그
+    화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` — UI-NAV-01)."""
     active = view.state == "stopped" and admin
-    alerts.state(
+    return alerts.state_note(
         LOGIN_STOP_ALERT_CODE,
         scope=None,
         content=[view.stop_reason, view.stopped_at] if active else None,
@@ -636,15 +675,15 @@ def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
     )
 
 
-def render_login_trouble_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
-    """자동 로그인이 멈추지 않은 채 서지 못함 개발자 알림(`AD-24` — D6 「알림만」) — 이벤트 칸 한
-    자리. 시작 때 · 조회 중 자동 로그인이 서버에 닿지 못했거나 · 로그인을 확인하지 못했거나 ·
-    시도하지 못한 채 서 있으면(`view.trouble`) 선다. 지문은 갈래 낱말 하나다 — 계정 · 까닭 글을 싣지
-    않는다. 다음 자동 시도가 성공하거나 멈추거나 폼에서 다시 넣으면 걷힌다. 「그 화면으로」 는 Admin
-    「BDQ 자동 로그인」 펼침까지 연다."""
+def login_trouble_note(view: bdq_login.LoginView, *, admin: bool) -> alerts.AlertNote:
+    """자동 로그인이 멈추지 않은 채 서지 못함 개발자 알림(`AD-24` — D6 「알림만」) 표지 한 칸. 시작
+    때 · 조회 중 자동 로그인이 서버에 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 채
+    서 있으면(`view.trouble`) 선다. 지문은 갈래 낱말 하나다 — 계정 · 까닭 글을 싣지 않는다. 다음
+    자동 시도가 성공하거나 멈추거나 폼에서 다시 넣으면 걷힌다. 「그 화면으로」 는 Admin 「BDQ 자동
+    로그인」 펼침까지 연다."""
     word = _TROUBLE_WORDS.get(view.trouble, "")
     active = view.state == "ok" and bool(word) and admin
-    alerts.state(
+    return alerts.state_note(
         LOGIN_TROUBLE_ALERT_CODE,
         scope=None,
         content=[view.trouble] if active else None,

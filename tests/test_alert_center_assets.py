@@ -419,7 +419,38 @@ console.log(JSON.stringify({{
     scan = JS[JS.index("function scan(") :]
     scan = scan[: scan.index("\n}\n")]
     assert "const settled = settledStateKeys(C.data.events)" in scan
-    assert "for (const note of markerNotes(notes, settled))" in scan
+    assert "found.push(...markerNotes(notes, settled))" in scan
+
+
+def test_one_scan_takes_only_the_last_mark_of_a_state() -> None:
+    """한 번 훑은 표지(문서 차례)에서 같은 상태 칸의 마지막 것만 다룬다 — 회차 끝의 토큰 알림 다시
+    내기(`container_start_check.render_token_alert_late`)가 같은 회차 앞 표지를 고쳐 쓴다. 앞 것까지
+    다루면 같은 문서를 다시 훑을 때마다 앞 표지(해소)가 줄을 닫고 끝 표지(있음)가 새 줄을 연다. 사건
+    알림 · 다른 칸 · 차례는 그대로이고, 끝 표지를 다룬 뒤 같은 문서를 또 훑어도 「같음」 이다."""
+    out = _node(
+        """
+const early = { kind: 'state', code: 'AD-23', scope: 's', active: false, fp: '' }
+const other = { kind: 'state', code: 'AD-10', scope: 't', active: true, fp: 'g' }
+const event = { kind: 'event', code: 'FL-01', id: 'e1', short: '글' }
+const late = { kind: 'state', code: 'AD-23', scope: 's', active: true, fp: 'f' }
+const codes = (notes) => notes.map((note) => note.code + ':' + Boolean(note.active))
+const kept = latestStateNotes([early, other, event, late])
+const entry = { active: true, fp: 'f' }
+console.log(JSON.stringify({
+  kept: codes(kept),
+  again: kept.filter((note) => note.code === 'AD-23').map((note) => stateVerdict(entry, note)),
+  alone: codes(latestStateNotes([early])),
+  empty: latestStateNotes(undefined).length,
+}))
+"""
+    )
+    assert out["kept"] == ["AD-10:true", "FL-01:false", "AD-23:true"]
+    assert out["again"] == ["same"]
+    assert out["alone"] == ["AD-23:false"]
+    assert out["empty"] == 0
+    scan = JS[JS.index("function scan(") :]
+    scan = scan[: scan.index("\n}\n")]
+    assert "for (const note of latestStateNotes(found))" in scan
 
 
 def test_a_restart_is_a_different_boot_mark_stored_in_this_tab() -> None:

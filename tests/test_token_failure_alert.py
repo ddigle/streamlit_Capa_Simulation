@@ -94,8 +94,9 @@ def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -
     assert adapter.last_query_failed_on_token() is True
     calls: list[str] = []
     monkeypatch.setattr(alerts, "state", lambda *args, **_kwargs: calls.append(args[0]))
+    monkeypatch.setattr(alerts, "emit", lambda *_args, **_kwargs: calls.append("emit"))
 
-    container_start_check.render_token_alert()
+    container_start_check.render_token_alert_late(container_start_check.render_token_alert())
 
     assert calls == []
 

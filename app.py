@@ -30,6 +30,7 @@ from capa_simulation.components.container_start_check import (
     render_load_alert,
     render_start_check_alert,
     render_token_alert,
+    render_token_alert_late,
 )
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
@@ -670,8 +671,10 @@ with pinned_connections(DUCKDB_PATH):
     render_start_check_alert()
     # BigDataQuery 토큰 개발자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 로그인
     # 멈춤(`AD-23`) · 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`). 시작 점검 결과 파일이 없는
-    # 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 네 자리다.
-    render_token_alert()
+    # 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 네 자리다. 낸 표지는 화면이 끝까지
+    # 돈 회차의 끝에서 다시 견준다(`render_token_alert_late` — 이 회차 화면의 조회가 만든 실패 ·
+    # 멈춤).
+    token_alerts = render_token_alert()
     # 코어 화면 오류 개발자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
     # 시작 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고, 그 밖은 아무것도 쓰지 않는다.
     # 운영인데 통합인증이 꺼짐(`AD-02`)은 이 차례 밖이다 — Admin Area 가 잠금 판정 앞에서 낸다.
@@ -709,6 +712,11 @@ with pinned_connections(DUCKDB_PATH):
         if finished:
             note_run_end(run_started)
         raise
+    # 토큰 알림 다시 내기 — 화면 본문의 조회가 이 회차에 만든 토큰 실패 · 자동 로그인 멈춤을 같은
+    # 회차의 마지막 표지로 낸다(바뀐 것만, 결과 파일이 있는 서버는 늘 이벤트 칸 한 자리 — 회차의
+    # 마지막 칸이라 앞 칸 순번을 밀지 않는다). 화면이 `st.stop()` 으로 멈춘 회차는 더 쓸 수 없어
+    # 다음 회차의 앞 표지가 낸다.
+    render_token_alert_late(token_alerts)
     app_run.finish()
     warm_intro_summary(str(DUCKDB_PATH.resolve()))
     note_run_end(run_started)

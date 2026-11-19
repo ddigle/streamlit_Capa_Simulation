@@ -368,7 +368,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
         "EQ-25", "check", "event", "Space 「호기 정보」 창 — 고친 칸이 설비 마스터 규칙에 걸려 막힘"
     ),
     # BigDataQuery 로그인 토큰 만료 1시간 전(지난 것 포함) — 토큰에서 만료 시각을 읽은 C-DEP 서버의
-    # 개발자 회차(`bdq_token_admin.render_expiry_alert`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
+    # 개발자 회차(`bdq_token_admin.expiry_alert_note`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
     # 풀린다.
     AlertSpec("AD-11", "action", "state", "BigDataQuery 로그인 토큰 만료 1시간 전 · 지남"),
     # 접속 · 작업 감사 기록(`audit/`) — 개발자 회차에만 선다. 기록이 버킷에 보관되지 않음
@@ -907,7 +907,9 @@ def flush() -> None:
     emit([])
 
 
-def emit(notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None) -> None:
+def emit(
+    notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None, drain: bool = True
+) -> None:
     """표지 한 칸 — 담아 둔 사건 알림과 `notes` 를 한 표지에 싣는다.
 
     - 보통은 스타일만 든 `st.html`(이벤트 칸 한 자리)이다. 알릴 것이 없으면 빈 `<style></style>` 를
@@ -917,8 +919,10 @@ def emit(notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None) -> N
       표지를 더 쓰면 연 회차만 한 자리가 는다. 그때는 `slot`(없으면 이 자리에 세운 칸) 안에 숨은
       표지(`<span hidden data-capa-alerts>`)를 그린다 — 알릴 것이 없으면 그리지 않는다(칸은 늘
       선다).
+    - `drain` 이 거짓이면 담아 둔 사건 알림을 꺼내지 않는다 — 회차 끝의 다시 내기(토큰 알림
+      `container_start_check.render_token_alert_late`)가 사건 알림이 닿는 회차를 바꾸지 않게.
     """
-    sending = [*drain_outbox(), *notes]
+    sending = [*(drain_outbox() if drain else []), *notes]
     if in_dialog(slot):
         holder = slot if slot is not None else st.container()
         if sending:

@@ -175,6 +175,17 @@ function markerNotes(notes, settled) {
     (note) => !(note && note.kind === 'state' && note.active && settled.has(stateKey(note))),
   )
 }
+// 한 번 훑은 표지(문서 차례)에서 같은 상태 칸(`stateKey`)의 마지막 것만 남긴다 — 회차 끝의 다시 내기(토큰 알림
+// `render_token_alert_late`)가 같은 회차 앞 표지를 고쳐 쓴 것이다. 앞 것까지 다루면 같은 문서를 다시 훑을 때마다(회차 시작)
+// 앞 표지가 줄을 닫고 끝 표지가 새 줄을 연다. 사건 알림과 나머지 차례는 그대로다.
+function latestStateNotes(notes) {
+  const list = Array.isArray(notes) ? notes : []
+  const last = new Map()
+  list.forEach((note, index) => {
+    if (note && note.kind === 'state') last.set(stateKey(note), index)
+  })
+  return list.filter((note, index) => !(note && note.kind === 'state') || last.get(stateKey(note)) === index)
+}
 // 상태 알림 줄의 표지 — 'open'(지금도 있음) · 'scope'(범위가 바뀌어 닫힘 — 조건은 새 범위 줄에 그대로일 수 있다) ·
 // 'changed'(같은 범위에서 내용이 바뀌어 닫힘 — 조건은 새 줄에 이어진다) · 'resolved'(조건이 사라짐). 사건 알림 줄은 null.
 // 닫힌 셋은 줄 상태(`row.state`)가 모두 'resolved' 라 「닫힌 것 숨김」 이 함께 감춘다.
@@ -1079,6 +1090,7 @@ function scan(C) {
   const marker = C.data.marker || 'data-capa-alerts'
   const settled = settledStateKeys(C.data.events)
   let changed = false
+  const found = []
   for (const node of document.querySelectorAll(`[${marker}]`)) {
     let notes = null
     try {
@@ -1086,9 +1098,9 @@ function scan(C) {
     } catch (error) {
       continue
     }
-    if (!Array.isArray(notes)) continue
-    for (const note of markerNotes(notes, settled)) if (handle(C, note)) changed = true
+    if (Array.isArray(notes)) found.push(...markerNotes(notes, settled))
   }
+  for (const note of latestStateNotes(found)) if (handle(C, note)) changed = true
   if (changed) persist(C)
   readProcessMark(C)
   ensureToolbar(C)
