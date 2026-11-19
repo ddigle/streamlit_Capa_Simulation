@@ -1,7 +1,8 @@
-# Purpose: 늦게 온 옛 화면 회차 막이의 판정과 탭 · 링크 · 합쳐진 요청 · 뒤로가기 차례를 시험한다.
+# Purpose: 늦게 온 옛 화면 회차 막이의 판정 · 회차 차례와 읽는 Streamlit 내부를 시험한다.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -249,3 +250,74 @@ def test_the_real_streamlit_internals_still_show_the_request_and_body_widgets() 
     before, after = at.session_state["probe_before"], at.session_state["probe_after"]
     assert before is not None and after is not None
     assert any(widget.endswith("guard_probe_text") for widget in after - before)
+
+
+_NAV_APP = """\
+import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+from capa_simulation import stale_page_guard as guard
+
+incoming = guard._incoming_page()
+navigation = st.navigation([st.Page("app_pages/one.py"), st.Page("app_pages/two.py")])
+guard.note_page()
+ctx = get_script_run_ctx()
+st.session_state["probe_runs"] = [
+    *st.session_state.get("probe_runs", []),
+    {
+        "incoming": incoming,
+        "run_hash": "" if ctx is None else ctx.page_script_hash,
+        "incoming_path": guard._page_path(incoming) if incoming else None,
+        "two_hash": guard._page_hash("app_pages/two.py"),
+    },
+]
+before = guard.body_widgets_before()
+navigation.run()
+guard.note_body_widgets(before)
+"""
+
+
+def test_the_real_streamlit_internals_still_show_the_page_of_a_navigation_run(
+    tmp_path: Path,
+) -> None:
+    """화면 쪽 내부 — 회차 요청의 화면 해시(`intended_page_script_hash`), `st.navigation()` 이
+    적은 화면 목록의 `script_path` · 앱 스크립트 자리(`main_script_path`), 이번 회차 화면
+    (`page_script_hash`)도 못 읽으면 막이가 말없이 꺼진다 — `st.navigation` 앱을 실제로 돌려
+    옮긴 회차의 화면 해시 · 경로를 읽는지 본다.
+
+    `app.py` 는 화면 해시를 경로로 바꾸는 일(`_page_path`)을 `st.navigation()` **앞**에서 한다 —
+    같은 세션의 앞 회차가 적은 화면 목록을 읽는다(세션 하나가 화면 목록 칸 하나를 회차마다
+    넘긴다 — 아래 마지막 단언). AppTest 는 회차마다 그 칸을 새로 만들어 여기서는 `st.navigation()`
+    뒤에 읽고, 그 차례 자체는 브라우저 인수 확인(0/N)이 본다."""
+    from streamlit.runtime.app_session import AppSession
+    from streamlit.testing.v1 import AppTest
+
+    pages = tmp_path / "app_pages"
+    pages.mkdir()
+    (pages / "one.py").write_text(
+        'import streamlit as st\n\nst.text_input("하나", key="probe_one_text")\n', encoding="utf-8"
+    )
+    (pages / "two.py").write_text(
+        'import streamlit as st\n\nst.text_input("둘", key="probe_two_text")\n', encoding="utf-8"
+    )
+    (tmp_path / "app.py").write_text(_NAV_APP, encoding="utf-8")
+
+    at = AppTest.from_file(str(tmp_path / "app.py"))
+    at.run()
+    at.switch_page("app_pages/two.py").run()
+
+    assert not at.exception
+    first, moved = at.session_state["probe_runs"]
+    # 주소로 연 첫 회차는 요청에 화면 해시가 없다(막이가 보지 않는 회차).
+    assert first["incoming"] == "" and first["run_hash"]
+    # 옮긴 회차 — 요청의 화면 해시가 서고, `st.navigation()` 이 정한 화면 · 경로로 찾은 화면과
+    # 같다.
+    assert moved["incoming"]
+    assert moved["incoming"] == moved["run_hash"] == moved["two_hash"]
+    assert moved["incoming_path"] == "app_pages/two.py"
+    record = at.session_state[GUARD_KEY]
+    assert record.page == moved["incoming"]
+    assert any(widget.endswith("probe_two_text") for widget in record.widgets[moved["incoming"]])
+    # 실제 서버는 세션(`AppSession`)이 가진 화면 목록 칸 하나를 회차마다 넘긴다 — 앞 회차 목록을
+    # `st.navigation()` 앞에서 읽을 수 있는 까닭이다.
+    assert "pages_manager=self._pages_manager" in inspect.getsource(AppSession._create_scriptrunner)

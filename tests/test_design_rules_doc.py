@@ -3228,6 +3228,9 @@ def test_the_unsaved_guard_requests_are_judged_in_6_35() -> None:
         "UI-STA-02 판정",
         "UI-NTF-09 판정",
         "답 밖 — 구현이 정함",
+        # 「누른 화면 탭이 Space 에 남는 수」 는 같은 날 밤 서버 막이로 닫았다.
+        "고쳐 닫았다",
+        "`stale_page_guard`",
     ):
         assert phrase in floor, phrase
     assert "tests/test_space_floor_state_page.py" in v138

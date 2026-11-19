@@ -160,8 +160,10 @@ def body_widgets_before() -> frozenset[str] | None:
 
 
 def note_body_widgets(before: frozenset[str] | None) -> None:
-    """페이지 본문이 등록한 위젯 id 를 이번 회차 화면 몫으로 적는다 — 본문이 스스로 멈춘
-    회차(`st.stop()`)도 그때까지 등록한 것을 적는다. 하나도 없으면 앞 기록을 둔다."""
+    """페이지 본문이 등록한 위젯 id 를 이번 회차 화면 몫으로 적는다 — 멈춤 예외로 끝난
+    회차(`st.stop()` · 새 요청이 끊은 회차)도 그때까지 등록한 것을 적는다. 하나도 없으면 앞 기록을
+    둔다. 재실행 예외로 끝난 회차(`st.rerun()` · 본문 `st.switch_page`)에는 `app.py` 가 부르지
+    않는다."""
     ctx = get_script_run_ctx(suppress_warning=True)
     if before is None or ctx is None or not ctx.page_script_hash:
         return

@@ -707,7 +707,10 @@ with pinned_connections(DUCKDB_PATH):
     # 끝나면 Streamlit 이 오류 자리 아래 위젯의 미저장 값을 지운다. `st.stop()`·`st.rerun()` 은
     # 지금처럼 지나간다.
     # 페이지 본문이 등록한 위젯 id 를 그 화면 몫으로 적는다 — 늦게 온 옛 화면 회차를 가르는 기준이다
-    # (`stale_page_guard`). 멈춤 · 재실행 예외로 끝나도 그때까지 등록한 것을 적는다.
+    # (`stale_page_guard`). 끝까지 돈 회차와 멈춤 예외로 끝난 회차(`st.stop()` · 오류 카드 뒤
+    # 멈춤 · 새 요청이 끊은 회차 — 빠른 재실행 `runner.fastReruns` 기본값)는 그때까지 등록한 것을
+    # 적는다. 재실행 예외로 끝난 회차(본문 `st.rerun()` · `st.switch_page`)는 적지 않고 앞 기록을
+    # 둔다.
     body_before = body_widgets_before()
     try:
         with equipment_pin:

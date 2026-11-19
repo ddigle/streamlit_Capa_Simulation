@@ -2493,10 +2493,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`stale_verdict` — 프런트의 옮기는 요청은 앱 칸 값만 싣는다) 옮겨 간 화면 경로를 돌려준다(`stale_target`). 기록은 세션 칸
   하나(`GUARD` — 들인 화면 · 옮기러 간 화면 · 화면별 본문 위젯 id)이고 `app.py` 가 세 자리에서 부른다 — 회차 맨 앞
   (`st.navigation()` · 머리 띠 · 부트스트랩 앞 — 떠난 화면 주소가 기록에 쌓이지 않는다), `st.navigation()` 바로 뒤(`note_page`
-  — 주소로 연 회차), 페이지 본문 앞뒤(`body_widgets_before` · `note_body_widgets`). 요청의 위젯 값 · 회차에 등록한 위젯 id 는
-  공개 API 가 없어 Streamlit 내부(`_new_widget_state` · `ctx.shared.widget_ids_this_run`)를 읽고, 못 읽으면 막지 않는다
-  (`streamlit==1.63.0` 고정 — `sidebar_status._only_this_widget_changed` 와 같은 자리). 시계를 쓰지 않는다. 시험
-  `tests/test_stale_page_guard.py`.
+  — 주소로 연 회차), 페이지 본문 앞뒤(`body_widgets_before` · `note_body_widgets`). 요청의 위젯 값 · 회차에 등록한 위젯 id ·
+  요청한 화면 · 화면 목록의 파일 자리는 공개 API 가 없어 Streamlit 내부(`_new_widget_state` · `ctx.shared.widget_ids_this_run` ·
+  `pages_manager.intended_page_script_hash` · `get_pages()` 의 `script_path` · `main_script_path`)를 읽고, 못 읽으면 막지 않는다
+  (`streamlit==1.63.0` 고정 — `sidebar_status._only_this_widget_changed` 와 같은 자리). 회차 맨 앞의 화면 경로 찾기는 같은 세션의
+  앞 회차가 적은 화면 목록을 읽는다(세션이 화면 목록 칸 하나를 회차마다 넘긴다). 시계를 쓰지 않는다. 시험
+  `tests/test_stale_page_guard.py` — 판정 · 가짜 실행 문맥 차례에 더해 읽는 내부를 실제 실행(AppTest — `st.navigation` 앱)으로
+  본다(판을 올려 말없이 꺼지는 것을 잡게).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다. 편집본은 잠긴 원본이면 같은 배열의
   겉껍데기 사본, 아니면 깊은 사본이다(`_session_copy` — 5장 20). 활성 시나리오를 바꾸거나 버리는 길(편집 적용
