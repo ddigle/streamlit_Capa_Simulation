@@ -1636,10 +1636,11 @@ def test_the_plan_apply_notice_survives_a_quick_second_press(
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == []
 
 
-def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
+def test_the_yield_apply_notice_survives_a_quick_second_press(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """수율 탭 「변경사항 적용」 도 같다(2026-10-27 E2E 4/6)."""
+    """수율 탭 「변경사항 적용」 도 같다(2026-10-27 E2E 4/6) — 잠그지 않는 단추의 둘째 누름은
+    서버에 닿되 고친 칸이 없어 아무것도 하지 않고, 성공 알림은 남는다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     grid = _yield_grid(app)
@@ -1648,9 +1649,11 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    revision = app.session_state["active_scenario"]["revision"]
 
-    app.run()
+    app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
+    assert app.session_state["active_scenario"]["revision"] == revision
     assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
 
 
