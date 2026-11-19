@@ -366,14 +366,17 @@ _CROSS_CHECK_HEADERS = {
     "Dynamic가용대수": "일정기준가용대수",
     "Dynamic확보율": "일정기준확보율",
 }
-# 확보율 교차검증 표의 숫자 꼴 — 확보율은 %(다른 화면의 % 표 칸과 같은 소수 둘째 자리 고정 —
-# 그리기는 `percent_table` 을 거친다, 설계 규칙 UI-DAT-12), 차이도 %(표에 넣을 때 100 을 곱한 수 —
-# 「%p」 를 쓰지 않는다, 2026-11-01 사용자 결정).
+# 확보율 교차검증 표의 숫자 꼴 — 확보율은 %(그리기는 `percent_table` 을 거친다, 설계 규칙
+# UI-DAT-12), 차이도 %(표에 넣을 때 100 을 곱한 수 — 「%p」 를 쓰지 않는다, 2026-11-01 사용자 결정).
 _CROSS_CHECK_FORMAT = {
     "Static확보율": percent_column(),
     "일정기준확보율": percent_column(),
     "확보율차이": st.column_config.NumberColumn(format="%+.1f%%"),
 }
+# 두 확보율의 글 자릿수 — 표에 넣을 때 0.1% 단위로 깎은 값(`round(3)`)이라 첫째 자리로 적는다. 둘째
+# 자리로 적으면 깎은 끝 0 이 그대로 보여 같은 줄의 가용 ÷ 소요와 어긋난다(18 ÷ 14 를 「128.60%」 —
+# UI-DAT-07). 차이 칸(첫째 자리)과 같은 자릿수다(UI-DAT-12 예외).
+_CROSS_CHECK_DIGITS = {"Static확보율": 1, "일정기준확보율": 1}
 # 그림을 바꾸는 꼴이 바뀌면 올린다 — 세션에 남은 옛 그림을 쓰지 않는다.
 _SHEET_SCHEMA_VERSION = 3
 _SHEET_MEMO_LIMIT = 4
@@ -1950,9 +1953,9 @@ def _render_securement_cross_check(
     # 적는다 — 깎기 전 값의 차를 깎으면 145.8% · 118.7% 옆에 −27.0% 가 서 검산이 어긋난다(9장
     # 「화면 숫자는 검산되어야 한다」). 곱한 뒤 다시 깎아 끝자리 잡음이 내려받기에 남지 않게 한다.
     display["확보율차이"] = ((display["일정기준확보율"] - display["Static확보율"]) * 100).round(1)
-    # 두 확보율은 위 `round(3)`(0.1% 단위) 값이라 소수 둘째 자리 글의 끝은 늘 0 이다(145.80%) —
-    # 깎은 값을 그대로 적어야 차이 칸 검산이 맞는다.
-    shown, columns = percent_table(labels.frame(display), _CROSS_CHECK_FORMAT)
+    shown, columns = percent_table(
+        labels.frame(display), _CROSS_CHECK_FORMAT, digits=_CROSS_CHECK_DIGITS
+    )
     st.dataframe(
         shown,
         hide_index=True,

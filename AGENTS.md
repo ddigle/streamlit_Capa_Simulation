@@ -7552,6 +7552,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     column_config)` 로 넘긴다. Streamlit 은 읽기 전용이고 `format` 이 없는 칸에서만 Styler 표시 글을 쓰므로 도우미가 그 칸의
     `format` 을 빼고 글(`percent_cell_text`)을 건다. 같은 표의 꼴 없는 실수 칸은 Styler 기본 6자리 글(0.333333 · 1e-7 → 0.000000)이
     되므로 도우미가 Streamlit 기본 꼴 글(소수 넷째 자리까지 · 끝 0 걷음)을 건다 — 다른 숫자 칸에 꼴이 있으면 그 꼴이 이긴다.
+    결정이 있는 고정 자릿수 칸만 `percent_table(…, digits={칸: 자릿수})` 로 그 칸의 자릿수를 따로 적는다(아래 「남긴 꼴」).
     한 줄 선택(`on_select`)과 함께 써도 된다. `NumberColumn(format="percent", step=0.0001)` 은 값을 버림해(CSV · 칸 복사도) 쓰지 않고,
     값을 100 배 한 열 + `"%.2f%%"` 는 칸 복사 · CSV 가 100 배 수로 나가 쓰지 않는다.
   - % 막대 칸 — `percent_progress_column(min_value=, max_value=, …)`(`ProgressColumn` percent + `step` 0.0001). 막대 칸은 Styler 글이
@@ -7562,8 +7563,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     0.13%). 편집기 처음 글(`editText` 98.75%) · 칸 복사(`rawText` 분수) · 하한 · 상한 오류 글(`components/edit_grid._bound_text` —
     「100% 이하로」)은 끝 0 없이 그대로다.
   - 남긴 꼴(결정 있음): 기준 퍼센트 정수 %(위 「판정 기준 표시」 · HOME 설정 편집표 `%.0f`), 공식버전 자동 갱신 「기준」 · 「자동 off」
-    표지, 확보율 교차검증 「확보율차이」 `%+.1f%%`(보이는 두 확보율의 차 — 그 두 확보율은 0.1% 단위로 깎은 값이라 둘째 자리 끝이 늘
-    0), HOME 확보율 보정 「증감 확보율(%)」 `%.1f`. 표 꼴 그림 · 시트(공정 Capa 상세 시트 · 제약 시뮬레이션 계산표 · 필요 단축 칩 ·
+    표지, 확보율 교차검증 「확보율차이」 `%+.1f%%`(보이는 두 확보율의 차)와 그 두 확보율의 첫째 자리(`digits=` — 표에 넣을 때 0.1%
+    단위로 깎은 값이라 둘째 자리로 적으면 깎은 끝 0 이 보여 「128.60%」 가 같은 줄 가용 ÷ 소요 18 ÷ 14 = 128.57% 와 어긋난다 — 9장
+    「화면 숫자는 검산되어야 한다」, 값 · CSV · 차이 검산은 그대로), HOME 확보율 보정 「증감 확보율(%)」 `%.1f`. 표 꼴 그림 · 시트(공정 Capa 상세 시트 · 제약 시뮬레이션 계산표 · 필요 단축 칩 ·
     HOME 주요 공정 판)와 자동 갱신 off 공정 표 「최저 확보율」 글은 지금 꼴이다(`docs/TODO.md` 2장 확인 거리).
   - 가드는 `tests/test_table_percent_cells.py`(도우미 밖 `percent` 칸 꼴 · 끝 0 을 지우는 「…%%」 꼴 0곳 · `percent_column` 을 적은
     화면은 `percent_table` 로 그림 · `st.dataframe` · `st.data_editor` 에 넘긴 칸 설정에 `percent_table` 을 거치지 않은

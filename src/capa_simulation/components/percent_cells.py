@@ -28,6 +28,7 @@ import hashlib
 import math
 from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal
+from functools import partial
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import pandas as pd
@@ -48,9 +49,10 @@ _DEFAULT_MANTISSA: Final = 4
 ColumnWidth = Literal["small", "medium", "large"] | int | None
 
 
-def percent_cell_text(value: object) -> str:
-    """% 칸에 보이는 글(분수 값 → 「63.96%」). 빈 값 · 무한대는 빈 글이다(Streamlit `percent`
-    꼴이 무한대를 빈칸으로 그리던 것과 같다). 수가 아닌 값은 그 글 그대로다."""
+def percent_cell_text(value: object, digits: int = TABLE_PERCENT_DIGITS) -> str:
+    """% 칸에 보이는 글(분수 값 → 「63.96%」 — 소수 `digits` 자리 고정). 빈 값 · 무한대는 빈
+    글이다(Streamlit `percent` 꼴이 무한대를 빈칸으로 그리던 것과 같다). 수가 아닌 값은 그 글
+    그대로다."""
     if value is None or value is pd.NA:
         return ""
     if isinstance(value, str):
@@ -61,7 +63,7 @@ def percent_cell_text(value: object) -> str:
         return str(value)
     if not math.isfinite(number):
         return ""
-    return fixed_percent_text(number, TABLE_PERCENT_DIGITS)
+    return fixed_percent_text(number, digits)
 
 
 def _default_number_text(value: object) -> str:
@@ -155,14 +157,18 @@ def _styler_uuid(columns: pd.Index) -> str:
 
 
 def percent_table(
-    data: pd.DataFrame, column_config: Mapping[str, Any]
+    data: pd.DataFrame,
+    column_config: Mapping[str, Any],
+    *,
+    digits: Mapping[str, int] | None = None,
 ) -> tuple[pd.DataFrame | Styler, dict[str, Any]]:
     """`st.dataframe(shown, column_config=config, …)` 에 넘길 (표, 칸 설정).
 
     `percent_column()` 칸(`format="percent"` 수 칸)이 표에 있으면 그 칸의 `format` 을 빼고
-    Styler 표시 글을 건다. 같은 표의 꼴 없는 실수 칸에는 Streamlit 기본 꼴 글을 건다(Styler
-    6자리 글이 새지 않게). % 칸이 없거나 표가 Styler 상한(`styler.render.max_elements`)을
-    넘으면 받은 그대로다(지금 꼴)."""
+    Styler 표시 글을 건다. 글은 소수 둘째 자리 고정이고, `digits` 에 적은 칸만 그 자릿수다(결정이
+    있는 고정 자릿수 — 설계 규칙 UI-DAT-12 예외). 같은 표의 꼴 없는 실수 칸에는 Streamlit 기본 꼴
+    글을 건다(Styler 6자리 글이 새지 않게). % 칸이 없거나 표가 Styler 상한
+    (`styler.render.max_elements`)을 넘으면 받은 그대로다(지금 꼴)."""
     config = dict(column_config)
     percent = [
         name
@@ -171,7 +177,11 @@ def percent_table(
     ]
     if not percent or data.size > int(pd.get_option("styler.render.max_elements")):
         return data, config
-    formatters: dict[str, Any] = dict.fromkeys(percent, percent_cell_text)
+    fixed = digits or {}
+    formatters: dict[str, Any] = {
+        name: partial(percent_cell_text, digits=fixed.get(name, TABLE_PERCENT_DIGITS))
+        for name in percent
+    }
     for name in data.columns:
         if name in formatters or _has_format(config.get(name)):
             continue

@@ -147,6 +147,23 @@ def test_percent_table_writes_fixed_text_and_leaves_the_data_alone() -> None:
     assert _shown(shown, "대수") == ["1", "22", "333", "4444"], "정수 칸은 기본 글 그대로"
 
 
+def test_a_column_with_a_decided_digit_count_keeps_it() -> None:
+    """결정이 있는 고정 자릿수 칸(`digits` — 확보율 교차검증 두 확보율은 0.1% 단위로 깎은 값이라
+    첫째 자리)만 그 자릿수이고, 같은 표의 다른 % 칸은 둘째 자리다. 값은 그대로다."""
+    frame = pd.DataFrame({"깎은 확보율": [1.286, 1.4, None], "확보율": [1.285714, 1.4, 0.5]})
+    shown, config = percent_table(
+        frame,
+        {"깎은 확보율": percent_column(), "확보율": percent_column()},
+        digits={"깎은 확보율": 1},
+    )
+    assert isinstance(shown, Styler)
+    assert config["깎은 확보율"]["type_config"]["format"] is None
+    assert _shown(shown, "깎은 확보율") == ["128.6%", "140.0%", ""]
+    assert _shown(shown, "확보율") == ["128.57%", "140.00%", "50.00%"]
+    assert percent_cell_text(1.286, 1) == "128.6%"
+    pd.testing.assert_frame_equal(shown.data, frame)  # type: ignore[attr-defined]
+
+
 def test_percent_table_is_the_same_bytes_every_run() -> None:
     """회차마다 같은 표 꼴 — pandas 의 무작위 Styler id 로 표를 다시 보내지 않는다."""
 
