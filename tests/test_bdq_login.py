@@ -254,7 +254,8 @@ def test_a_child_past_its_time_limit_is_unreached(
     # 끊었으니 종료 코드는 없고, 끊기 전까지 받은 단계 줄은 읽는다.
     assert result.diag is not None
     assert (result.diag.exit_code, result.diag.stage) == (None, "login")
-    assert 3.0 <= (result.diag.seconds or 0.0) < 3.0 + bdq_login.CHILD_DRAIN_SECONDS + 5.0
+    # 끊었다 — 하위가 스스로 끝나는 20초에 닿지 않는다(띄우는 데 걸린 몫은 PC 마다 다르다).
+    assert 3.0 <= (result.diag.seconds or 0.0) < 20.0
     assert result.diag.memory is not None
     if sys.platform.startswith("linux"):
         assert result.diag.memory.child_peak is not None and result.diag.memory.child_peak > 0
