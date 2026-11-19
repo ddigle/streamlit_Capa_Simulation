@@ -305,6 +305,11 @@ def draft_counts() -> tuple[int, int, int]:
     return change_counts(edit_grid.draft_of(CELLS_KEY))
 
 
+def draft_pending() -> bool:
+    """저장하지 않은 초안이 있는가(누른 「저장」 이 할 일이 있는지 — 누른 회차에 본다)."""
+    return edit_grid.draft_pending(CELLS_KEY)
+
+
 def plan(table: AccessTable) -> AccessPlan:
     """이 회차 초안의 저장 판."""
     return plan_changes(

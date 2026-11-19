@@ -16,7 +16,8 @@
 빼기(`grade_store.remove_people`) → 등급 바꿈(`change_grades`) → 넣기(`add_people` — 등급마다 한
 번)의 좁히는 차례이고, 저장 판(`services/access_list_plan`)의 문제(빨간 칸 · 계정이 빔 · 꼴이 아님
 · 머리 글 · 겹침 · 등급이 빔)가 하나라도 있으면 아무것도 쓰지 않는다. 등록 시각 · 다시 든 사람 규칙
-· 감사 줄은 저장 함수 그대로다.
+· 감사 줄은 저장 함수 그대로다. 「저장」 은 잠그지 않고 고친 것이 없는 누름은 아무것도 하지 않는다
+(쓰기 · 감사 줄 · 알림 없음 — 설계 규칙 UI-INP-07).
 
 쓰기(저장 · 다시 읽기)는 그 회차에 쿠키에서 다시 검증한 신원(`sso_identity.verified_identity`)을
 넘기고, 저장소 쪽(`auth/grade_store` → `auth/access_store`)이 신원 · 개발자를 쓰는 순간 다시 본다 —
@@ -90,7 +91,6 @@ SAVE_HELP: Final = (
     "바뀐 것 전부(등급 바꿈 · 넣기 · 줄 지우기)를 S3 에 저장합니다 — 뺀 사람의 열린 탭은 다음 "
     "조작에 닫힙니다."
 )
-SAVE_LOCKED_WHY: Final = "고친 칸이 있으면 누를 수 있습니다."
 DISCARD_HELP: Final = "저장하지 않은 고침을 버립니다."
 # 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭 · 단추 줄 자리(`edit_grid.one_line_style`).
 ONE_LINE_MIN_WINDOW_PX: Final = 1500
@@ -372,20 +372,27 @@ def _current_table(cfg: SsoConfig) -> access_list_grid.AccessTable | None:
 
 
 def _save() -> None:
-    """「저장」 콜백 — 보낸 고침을 먼저 반영하고(출납은 300ms 묶음이라 마지막 회차보다 늦다) 저장
-    판을 읽어 문제가 없으면 쓴다. 결과는 수만."""
+    """「저장」 콜백 — 보낸 고침을 먼저 반영하고(단추 콜백이 출납 콜백보다 먼저 돌고, 누름과 함께
+    온 첫 편집은 아직 inbox 에도 없다) 저장 판을 읽어 문제가 없으면 쓴다. 결과는 수만.
+
+    단추는 잠그지 않으므로 누른 회차에 본다 — 반영한 뒤에도 초안이 없으면(고친 것 없는 누름 · 빠른
+    둘째 누름) 아무것도 하지 않는다: 쓰기 · 감사 줄 · 알림 없음(설계 규칙 UI-INP-07). 개발자 ·
+    명단 읽음 · 저장 판 · 저장소 거부의 판정은 할 일이 있는 누름에만 지금처럼 이 회차에 한다."""
     cfg = runtime.config()
     access_list_grid.collect()
+    table = _current_table(cfg)
+    if table is not None:
+        access_list_grid.apply(table)
+    if not access_list_grid.draft_pending():
+        return
     identity = sso_identity.verified_identity()
     if identity is None or not access_store.is_admin(cfg, identity.loginid):
         # 쓰는 순간의 실제 등급 — 저장 함수도 다시 보지만 저장 판(잠긴 줄)보다 먼저 까닭을 가른다.
         queue_flash(ACCESS_LIST_FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
-    table = _current_table(cfg)
     if table is None:
         queue_flash(ACCESS_LIST_FLASH_KEY, UNREAD_MESSAGE, kind="error", popup_only=True)
         return
-    access_list_grid.apply(table)
     plan = access_list_grid.plan(table)
     if plan.problems.any:
         queue_flash(ACCESS_LIST_FLASH_KEY, PROBLEMS_LEAD + plan.problems.text(), kind="error")
@@ -423,8 +430,11 @@ def _render_actions(
     document: ListDocument | None, cfg: SsoConfig, env_admins: frozenset[str]
 ) -> None:
     """표 위 작업 줄 — 저장 · 편집 취소(고친 것이 있을 때) · 다시 읽기 · 「고칠 칸 n개」 · 끝에 버전
-    ·
-    명단 · 개발자 수. 그 바로 아래가 곁 알림 칸이다(저장 판의 문제 · 못 읽음)."""
+    · 명단 · 개발자 수. 그 바로 아래가 곁 알림 칸이다(저장 판의 문제 · 못 읽음).
+
+    「저장」 은 잠그지 않는다 — 고친 칸이 서버에 닿기 전(편집기를 연 채 · 등급을 고르자마자)의
+    누름이 잠긴 단추에 닿아 말없이 버려졌다(설계 규칙 UI-INP-07). 풍선은 늘 하는 일이고, 고친 것이
+    없는 누름은 콜백이 누른 회차에 보고 아무것도 하지 않는다(`_save`)."""
     cells, _, errors = access_list_grid.draft_counts()
     pending = cells > 0 and document is not None
     with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
@@ -433,8 +443,7 @@ def _render_actions(
             icon=":material/save:",
             key=SAVE_KEY,
             type="primary",
-            disabled=not pending,
-            help=SAVE_HELP if pending else SAVE_LOCKED_WHY,
+            help=SAVE_HELP,
             on_click=_save,
         )
         if pending:
