@@ -102,7 +102,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("authz_admin_config", "admin", "개발자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     # 결과 · 까닭과 로그인 하위 프로세스 진단(`container_start_report.ChildDiag.fields` — 수 ·
-    # 이름 · 판 · 앞뒤 메모리 단서(`MEMORY_FIELDS` — MiB · 수)만, 계정 · 비밀번호 없음).
+    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수)만, 계정 · 비밀번호 없음).
     _spec(
         "admin_bdq_login_set",
         "admin",
@@ -123,8 +123,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "oom_after",
         "rss_before",
         "rss_after",
-        "kid_peak_before",
-        "kid_peak_after",
+        "kid_peak",
     ),
     _spec("admin_bdq_login_delete", "admin", "BigDataQuery 자동 로그인 계정 지우기", "result"),
     _spec("admin_sync_push", "admin", "지금 올리기", "result"),
@@ -263,8 +262,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "hour": "시간",
     "hours": "유지(시간)",
     "key": "조각",
-    "kid_peak_after": "하위 최고 RSS 뒤(MiB)",
-    "kid_peak_before": "하위 최고 RSS 앞(MiB)",
+    "kid_peak": "하위 최고 RSS(MiB)",
     "kind": "갈래",
     "entry": "이력 줄",
     "max_hours": "최대 유지(시간)",

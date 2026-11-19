@@ -17,15 +17,17 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 이름(시작 스크립트가 앱에 넘기지 않는 것 · 통합인증 비밀 · `CAPA_BDQ_SECRET_KEY` · `CAPA_S3_*` ·
 `AWS_*`)을 뺀 것이고 표준 입출력은 UTF-8 이다(`child_environment` — 앱 자리의 로캘과 무관하게).
 하위 출력(패키지 배너 포함)은 버리고 표지 한 줄과 단계 줄만 읽는다. 시간 제한이 있고, tty 가 있는
-자리에서도 비밀번호를 표준 입력으로 읽게 새 세션으로 띄운다(제어 터미널 없음).
+자리에서도 비밀번호를 표준 입력으로 읽게 새 세션으로 띄운다(제어 터미널 없음). 기다리는 동안
+`CHILD_POLL_SECONDS` 마다 그 하위 자신의 최고 RSS 를 읽는다(`_run_child` — 새 스레드 없이 같은
+자리에서 되풀이해 기다린다).
 
 **진단**(`child_diag` → `LoginResult.diag` — `ChildDiag`). 하위 프로세스를 띄운 시도마다 종료
 코드 · 시그널 · 걸린 초(부르는 쪽이 잰다), 하위 본문이 마지막으로 들어간 단계와 판(단계 줄 —
 표지 없이 끝나도 남는다), 표준 오류 마지막 traceback 의 예외 종류(`stderr_kind` — 이름만, 계정 ·
 비밀번호가 든 이름은 버린다), 하위 프로세스를 띄우기 바로 앞과 끝난 바로 뒤의 메모리 단서(cgroup
-사용 · 한도 · OOM 종료 수, 앱 RSS, 거둔 하위 프로세스의 최고 RSS — `io/memory_probe`, 못 읽으면
-「모름」)를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막 시도 줄(Admin) · 로그 · 감사
-상세 · 결과 파일 칸이 읽는다.
+사용 · 한도 · OOM 종료 수, 앱 RSS)와 그 하위 자신의 최고 RSS(도는 동안 잰 가장 큰 값)
+— `io/memory_probe`, 못 읽으면 「모름」 — 를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막
+시도 줄(Admin) · 로그 · 감사 상세 · 결과 파일 칸이 읽는다.
 
 **판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었고 같은 하위
 프로세스가 로그인 뒤 잰 남은 분이 `REMAINING_WARNING_MINUTES`(7시간)를 넘으면 성공이다(2026-11-16
@@ -112,6 +114,11 @@ T = TypeVar("T")
 
 # 하위 프로세스 하나의 시간 제한(패키지 import · 로그인 · 남은 시간 재기까지).
 LOGIN_TIMEOUT_SECONDS: Final = 60.0
+# 하위 프로세스를 기다리며 그 하위의 최고 RSS 를 읽는 틈(초).
+CHILD_POLL_SECONDS: Final = 0.1
+# 시간 제한을 넘겨 끊은 뒤 남은 출력을 거두는 상한(초) — 손자 프로세스가 파이프를 쥐어도 멈추지
+# 않는다.
+CHILD_DRAIN_SECONDS: Final = 2.0
 # 프로세스 안 연속 자동 시도 상한 — 하위 프로세스를 띄운 수, 성공에만 0 으로.
 AUTO_ATTEMPT_LIMIT: Final = 3
 # 성공 없이 이어진 닿지 못함 · 확인 못 함의 상한 — 객체에 적어 재시작을 건너 센다. 닿으면 멈춤.
@@ -649,7 +656,7 @@ def child_diag(
     memory: ChildMemory | None = None,
 ) -> ChildDiag:
     """하위 프로세스 한 번의 진단 — 종료 코드 · 시그널 · 걸린 초 · 단계 줄 · 표준 오류 마지막 예외
-    종류 · 앞뒤 메모리 단서(`memory` — `memory_probe.child_memory`). 하위 출력 · 표준 오류 글은 싣지
+    종류 · 메모리 단서(`memory` — `memory_probe.child_memory`). 하위 출력 · 표준 오류 글은 싣지
     않는다."""
     stage, versions = parse_steps(stdout)
     return ChildDiag(
@@ -666,6 +673,90 @@ def child_diag(
 
 def _output_bytes(value: object) -> bytes:
     return value if isinstance(value, bytes) else b""
+
+
+@dataclass(frozen=True)
+class _ChildRun:
+    """하위 프로세스 한 번을 띄워 기다린 결과 — 종료 코드(시간 제한으로 끊었으면 `None`) · 받은
+    출력 · 끊음 · 띄우지 못함 · 그 하위 자신의 최고 RSS(바이트, 못 읽으면 `None`)."""
+
+    exit_code: int | None = None
+    output: bytes = b""
+    errors: bytes = b""
+    timed_out: bool = False
+    spawn_failed: bool = False
+    peak_bytes: int | None = None
+
+
+def _drain(child: subprocess.Popen[bytes], output: bytes, errors: bytes) -> tuple[bytes, bytes]:
+    """끊은 하위의 남은 출력까지 거둔다 — `CHILD_DRAIN_SECONDS` 안에 파이프가 닫히지 않으면 그때까지
+    받은 것."""
+    try:
+        out, err = child.communicate(timeout=CHILD_DRAIN_SECONDS)
+    except subprocess.TimeoutExpired as waiting:
+        if isinstance(waiting.output, bytes):
+            output = waiting.output
+        if isinstance(waiting.stderr, bytes):
+            errors = waiting.stderr
+        return output, errors
+    return _output_bytes(out), _output_bytes(err)
+
+
+def _wait_child(child: subprocess.Popen[bytes], data: bytes, limit: float) -> _ChildRun:
+    """띄운 하위에 입력을 주고 끝날 때까지 기다린다 — `subprocess.run(…, timeout=limit)` 과 같은
+    뜻(넘으면 끊고 받은 출력까지 읽는다)이되, `CHILD_POLL_SECONDS` 마다 그 하위의 최고 RSS 를 읽어
+    가장 큰 값을 쥔다. `communicate` 를 짧은 제한으로 되풀이해 부른다 — 시간 초과를 잡고 다시
+    불러도 출력을 잃지 않고, 파이프가 차서 하위가 막히지 않는다. 입력은 첫 부름에만 준다(그 부름이
+    다 쓰고 닫는다 — 다시 부를 때 입력을 주면 `communicate` 가 거절한다)."""
+    deadline = time.monotonic() + limit
+    peak = memory_probe.process_peak_bytes(child.pid)
+    pending: bytes | None = data
+    output = errors = b""
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            child.kill()
+            output, errors = _drain(child, output, errors)
+            return _ChildRun(output=output, errors=errors, timed_out=True, peak_bytes=peak)
+        try:
+            out, err = child.communicate(pending, timeout=min(CHILD_POLL_SECONDS, left))
+        except subprocess.TimeoutExpired as waiting:
+            pending = None
+            # 받은 데까지의 누적 출력이다(기다림만 넘긴 갈래는 비어 온다 — 앞 값을 둔다).
+            if isinstance(waiting.output, bytes):
+                output = waiting.output
+            if isinstance(waiting.stderr, bytes):
+                errors = waiting.stderr
+            peak = memory_probe.higher(peak, memory_probe.process_peak_bytes(child.pid))
+            continue
+        return _ChildRun(
+            exit_code=child.returncode,
+            output=_output_bytes(out),
+            errors=_output_bytes(err),
+            peak_bytes=peak,
+        )
+
+
+def _run_child(command: list[str], data: bytes, env: dict[str, str], limit: float) -> _ChildRun:
+    """로그인 하위 프로세스 한 번 — 띄우지 못하면 `spawn_failed`. 기다리다 뜻밖의 예외가 나면 끊고
+    그대로 올린다(`subprocess.run` 과 같다)."""
+    try:
+        child = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=os.name == "posix",
+        )
+    except OSError:
+        return _ChildRun(spawn_failed=True)
+    with child:
+        try:
+            return _wait_child(child, data, limit)
+        except BaseException:
+            child.kill()
+            raise
 
 
 def _input_problem(account: str, password: str) -> str | None:
@@ -757,9 +848,6 @@ def attempt_login(
     if target is None:
         return LoginResult(OUTCOME_UNAVAILABLE, REASON_BAD_ACCOUNT)
     limit = LOGIN_TIMEOUT_SECONDS if timeout is None else timeout
-    output = errors = b""
-    exit_code: int | None = None
-    timed_out = spawn_failed = False
     # 앞뒤 다이제스트 사이에 이 프로세스의 「토큰 넣기」 가 끼면 로그인이 토큰을 바꾼 것으로 읽힌다
     # — 그 쓰기를 막은 채 잰다(로그인 잠금 다음 토큰 쓰기 잠금 차례).
     with bdq_token.holding_token_writes():
@@ -767,44 +855,31 @@ def attempt_login(
         # 하위 프로세스 앞뒤 메모리 단서 — 바깥 SIGKILL 을 가를 값(진단 줄). 예외를 내지 않는다.
         memory_before = memory_probe.read()
         started = time.monotonic()
-        try:
-            completed = subprocess.run(
-                login_command(),
-                input=f"{account}\n{account}\n{password}\n".encode(),
-                capture_output=True,
-                env=child_environment(env),
-                timeout=limit,
-                check=False,
-                start_new_session=os.name == "posix",
-            )
-            output = _output_bytes(completed.stdout)
-            errors = _output_bytes(completed.stderr)
-            exit_code = completed.returncode
-        except subprocess.TimeoutExpired as expired:
-            # 끊기 전까지 받은 출력 — 단계 줄 · 판을 읽는다(표지는 보지 않는다).
-            timed_out = True
-            output = _output_bytes(expired.stdout)
-            errors = _output_bytes(expired.stderr)
-        except OSError:
-            spawn_failed = True
+        run = _run_child(
+            login_command(),
+            f"{account}\n{account}\n{password}\n".encode(),
+            child_environment(env),
+            limit,
+        )
         seconds = time.monotonic() - started
         memory_after = memory_probe.read()
         after = file_digest(target)
     result = _judge(
         changed=after is not None and after != before,
-        marker=None if timed_out or spawn_failed else parse_marker(output),
-        timed_out=timed_out,
-        spawn_failed=spawn_failed,
+        # 끊었으면 받은 출력에서 단계 줄 · 판만 읽는다(표지는 보지 않는다).
+        marker=None if run.timed_out or run.spawn_failed else parse_marker(run.output),
+        timed_out=run.timed_out,
+        spawn_failed=run.spawn_failed,
     )
-    if spawn_failed:
+    if run.spawn_failed:
         return result
     diag = child_diag(
-        exit_code,
+        run.exit_code,
         seconds,
-        output,
-        errors,
+        run.output,
+        run.errors,
         secrets=(account, password),
-        memory=memory_probe.child_memory(memory_before, memory_after),
+        memory=memory_probe.child_memory(memory_before, memory_after, run.peak_bytes),
     )
     return replace(result, diag=diag)
 

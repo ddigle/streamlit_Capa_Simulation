@@ -1,19 +1,23 @@
-# Purpose: 로그인 하위 프로세스 앞뒤의 cgroup 메모리 · OOM 종료 수 · RSS 를 읽는다.
+# Purpose: 로그인 하위 프로세스 앞뒤의 cgroup 메모리 · OOM 수 · 앱 RSS 와 하위의 최고 RSS 를 읽는다.
 
 """메모리 단서 — 자동 로그인 하위 프로세스가 바깥 신호(SIGKILL)로 끝났을 때 가를 값.
 
 `io/bdq_login.attempt_login` 이 하위 프로세스를 띄우기 바로 앞과 끝난 바로 뒤에 한 번씩 읽고
-(`read`), 두 읽기를 MiB · 수로 접어(`child_memory`) 진단(`container_start_report.ChildMemory`)에
-싣는다. 앞뒤 OOM 종료 수가 다르면 그 사이 cgroup 이 프로세스를 죽인 것이다 — 진단 줄이 그 수를
-보이고, 이 모듈은 판정하지 않는다.
+(`read`), 하위가 도는 동안 그 하위의 최고 RSS 를 되풀이해 읽어(`process_peak_bytes` — 가장 큰 값을
+쥔다) 셋을 MiB · 수로 접어(`child_memory`) 진단(`container_start_report.ChildMemory`)에 싣는다. 앞뒤
+OOM 종료 수가 다르면 그 사이 cgroup 이 프로세스를 죽인 것이다 — 진단 줄이 그 수를 보이고, 이 모듈은
+판정하지 않는다.
 
 - **cgroup** — v2 면 뿌리의 `memory.current` · `memory.max`(「max」 는 한도 없음) · `memory.events`
   의 `oom_kill` 줄, v1 이면 `memory/` 아래 `memory.usage_in_bytes` · `memory.limit_in_bytes`(아주 큰
   값은 한도 없음) · `memory.oom_control` 의 `oom_kill` 줄. 뿌리는 시작 스크립트의 한도 읽기
   (`scripts/container_start.py` 의 `CGROUP_ROOT`)와 같은 `/sys/fs/cgroup` 이다.
 - **앱 RSS** — `/proc/self/status` 의 `VmRSS`.
-- **하위 최고 RSS** — `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss`(거둔 하위 프로세스 모두의
-  최고 — 앞뒤가 같으면 이번 하위는 그보다 작았다). `resource` 가 없는 자리(Windows)는 모른다.
+- **하위 최고 RSS** — 그 하위 프로세스 자신의 `/proc/<pid>/status` 의 `VmHWM`(exec 뒤 그 프로세스의
+  주소 공간이 닿은 최고). 부르는 쪽이 하위가 끝날 때까지 짧은 틈마다 읽어 가장 큰 값을 쥔다 — 끝나
+  거두기 전(좀비)에는 그 줄이 없어, 마지막 틈 안에 늘어난 몫은 놓칠 수 있다.
+  `getrusage(RUSAGE_CHILDREN)` 은 쓰지 않는다 — Linux 의 하위 `ru_maxrss` 는 exec 앞에 물려받은 부모
+  주소 공간의 최고를 세어 앱 RSS 아래로 내려가지 않는다. `/proc` 가 없는 자리(Windows)는 모른다.
 
 파일이 없거나 못 읽은 값은 `None` 이고 화면에는 「모름」 이다. 표준 라이브러리만 쓴다 — 시작
 스크립트가 앱 의존성을 깔기 전에 이 길을 지난다. 무엇이 나도 예외를 내지 않는다 — 로그인을 막는
@@ -23,7 +27,6 @@
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -32,11 +35,14 @@ from capa_simulation.io.container_start_report import ChildMemory
 
 CGROUP_ROOT: Final = Path("/sys/fs/cgroup")
 PROC_STATUS: Final = Path("/proc/self/status")
+# 하위 프로세스 상태 파일의 뿌리(`<뿌리>/<pid>/status`).
+PROC_ROOT: Final = Path("/proc")
 # v1 의 「한도 없음」 은 아주 큰 수로 온다 — 시작 스크립트와 같은 문턱.
 V1_UNLIMITED_BYTES: Final = 1 << 60
 MIB: Final = 1024 * 1024
 _OOM_LINE: Final = re.compile(r"^oom_kill\s+(\d+)\s*$", re.MULTILINE)
 _RSS_LINE: Final = re.compile(r"^VmRSS:\s+(\d+)\s+kB\s*$", re.MULTILINE)
+_PEAK_LINE: Final = re.compile(r"^VmHWM:\s+(\d+)\s+kB\s*$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -48,7 +54,6 @@ class MemoryReading:
     unlimited: bool = False
     oom_kill: int | None = None
     rss_bytes: int | None = None
-    child_peak_bytes: int | None = None
 
 
 def read(cgroup_root: Path | None = None, status_path: Path | None = None) -> MemoryReading:
@@ -65,13 +70,15 @@ def read(cgroup_root: Path | None = None, status_path: Path | None = None) -> Me
         limit_bytes=limit,
         unlimited=unlimited,
         oom_kill=oom,
-        rss_bytes=_rss(status),
-        child_peak_bytes=children_peak_bytes(),
+        rss_bytes=_line_bytes(status, _RSS_LINE),
     )
 
 
-def child_memory(before: MemoryReading, after: MemoryReading) -> ChildMemory:
-    """앞뒤 두 읽기를 진단 꼴(MiB · 수)로 접는다. 한도는 뒤 읽기를 앞세운다(앞뒤 같은 값이다)."""
+def child_memory(
+    before: MemoryReading, after: MemoryReading, child_peak_bytes: int | None = None
+) -> ChildMemory:
+    """앞뒤 두 읽기와 하위 최고 RSS(`child_peak_bytes` — 바이트, 모르면 `None`)를 진단 꼴(MiB ·
+    수)로 접는다. 한도는 뒤 읽기를 앞세운다(앞뒤 같은 값이다)."""
     limit = after.limit_bytes if after.limit_bytes is not None else before.limit_bytes
     return ChildMemory(
         cgroup_before=_mib(before.cgroup_bytes),
@@ -82,24 +89,23 @@ def child_memory(before: MemoryReading, after: MemoryReading) -> ChildMemory:
         oom_after=after.oom_kill,
         rss_before=_mib(before.rss_bytes),
         rss_after=_mib(after.rss_bytes),
-        child_peak_before=_mib(before.child_peak_bytes),
-        child_peak_after=_mib(after.child_peak_bytes),
+        child_peak=_mib(child_peak_bytes),
     )
 
 
-def children_peak_bytes() -> int | None:
-    """거둔 하위 프로세스들의 최고 RSS(바이트). `resource` 가 없거나 못 읽으면 `None`."""
-    if sys.platform == "win32":
-        return None
-    try:
-        import resource
+def process_peak_bytes(pid: int, proc_root: Path | None = None) -> int | None:
+    """그 프로세스 자신의 최고 RSS(바이트) — `<뿌리>/<pid>/status` 의 `VmHWM`. 뿌리를 주지 않으면
+    모듈 값(`PROC_ROOT` — 시험이 바꿔 끼운다)을 부를 때 읽는다. 끝나 거두기 전(좀비 — 그 줄이 없다)
+    · 없는 프로세스 · `/proc` 가 없는 자리(Windows)는 `None`. 예외를 내지 않는다."""
+    root = PROC_ROOT if proc_root is None else proc_root
+    return _line_bytes(root / str(pid) / "status", _PEAK_LINE)
 
-        peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-    except (ImportError, OSError, ValueError, AttributeError):
-        return None
-    if peak <= 0:
-        return None
-    return int(peak) if sys.platform == "darwin" else int(peak) * 1024
+
+def higher(peak: int | None, sample: int | None) -> int | None:
+    """지금까지의 최고와 새 표본 가운데 큰 것 — 모르는 표본(`None`)은 버린다."""
+    if sample is None:
+        return peak
+    return sample if peak is None or sample > peak else peak
 
 
 def _mib(value: int | None) -> int | None:
@@ -150,7 +156,8 @@ def _cgroup(root: Path) -> tuple[int | None, int | None, bool, int | None]:
     )
 
 
-def _rss(path: Path) -> int | None:
+def _line_bytes(path: Path, line: re.Pattern[str]) -> int | None:
+    """상태 파일의 `<이름>: n kB` 줄 값(바이트). 파일 · 줄이 없으면 `None`."""
     text = _text(path)
-    match = None if text is None else _RSS_LINE.search(text)
+    match = None if text is None else line.search(text)
     return None if match is None else int(match.group(1)) * 1024

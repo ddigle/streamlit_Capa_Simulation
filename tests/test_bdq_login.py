@@ -81,17 +81,18 @@ def mock_s3() -> Iterator[tuple[MockStore, S3Target]]:
 
 
 class Spawned:
-    """로그인 하위 프로세스를 띄운 명령줄 · 환경 · 표준 입력을 적는다(그대로 띄운다)."""
+    """로그인 하위 프로세스를 띄운 명령줄 · 환경 · 파이프 인자를 적는다(그대로 띄운다). 표준 입력은
+    띄운 뒤 파이프로 가므로 인자에 없다."""
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.calls: list[dict[str, Any]] = []
-        real = subprocess.run
+        real = subprocess.Popen
 
         def record(*args: Any, **kwargs: Any) -> Any:
             self.calls.append({"argv": list(args[0]), **kwargs})
             return real(*args, **kwargs)
 
-        monkeypatch.setattr(subprocess, "run", record)
+        monkeypatch.setattr(subprocess, "Popen", record)
 
 
 @pytest.fixture()
@@ -137,8 +138,7 @@ def test_a_right_password_is_ok_with_the_remaining_minutes(fake: FakeBdq, spawne
     assert fake.logins() == 1
     call = spawned.calls[0]
     assert call["start_new_session"] is (os.name == "posix")
-    assert call["capture_output"] is True
-    assert call["timeout"] == bdq_login.LOGIN_TIMEOUT_SECONDS
+    assert (call["stdin"], call["stdout"], call["stderr"]) == (subprocess.PIPE,) * 3
     diag = result.diag
     assert diag is not None
     assert (diag.exit_code, diag.signal, diag.stage, diag.stderr_kind) == (0, "", "time", "")
@@ -243,14 +243,21 @@ def test_a_wrong_password_in_a_connection_shape_is_rejected_not_unreached(
 def test_a_child_past_its_time_limit_is_unreached(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
 ) -> None:
+    """제한을 주지 않으면 `LOGIN_TIMEOUT_SECONDS` 다 — 넘으면 끊고, 끊기 전까지 받은 단계 줄과 그
+    사이 잰 하위 최고 RSS 를 남긴다."""
     scene(monkeypatch, "slow")
     monkeypatch.setenv("FAKE_BDQ_SLOW_SECONDS", "20")
-    result = bdq_login.attempt_login(ACCOUNT, PASSWORD, timeout=3)
+    monkeypatch.setattr(bdq_login, "LOGIN_TIMEOUT_SECONDS", 3.0)
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
     assert result == bdq_login.LoginResult(bdq_login.OUTCOME_UNREACHED, bdq_login.REASON_TIMEOUT)
     assert fake.logins() == 1
     # 끊었으니 종료 코드는 없고, 끊기 전까지 받은 단계 줄은 읽는다.
     assert result.diag is not None
     assert (result.diag.exit_code, result.diag.stage) == (None, "login")
+    assert 3.0 <= (result.diag.seconds or 0.0) < 3.0 + bdq_login.CHILD_DRAIN_SECONDS + 5.0
+    assert result.diag.memory is not None
+    if sys.platform.startswith("linux"):
+        assert result.diag.memory.child_peak is not None and result.diag.memory.child_peak > 0
 
 
 def test_a_changed_token_past_the_time_limit_is_unconfirmed_never_unreached_or_rejected(
@@ -362,13 +369,13 @@ def test_a_token_put_in_while_a_wrong_login_runs_does_not_count_as_a_new_token(
 
     helper = threading.Thread(target=install)
     helper.start()
-    real_run = subprocess.run
+    real_popen = subprocess.Popen
 
-    def run_and_signal(*args: Any, **kwargs: Any) -> Any:
+    def popen_and_signal(*args: Any, **kwargs: Any) -> Any:
         started.set()
-        return real_run(*args, **kwargs)
+        return real_popen(*args, **kwargs)
 
-    monkeypatch.setattr(subprocess, "run", run_and_signal)
+    monkeypatch.setattr(subprocess, "Popen", popen_and_signal)
     result = bdq_login.attempt_login(ACCOUNT, WRONG_PASSWORD, timeout=30)
     helper.join(timeout=30)
     assert result == bdq_login.LoginResult(

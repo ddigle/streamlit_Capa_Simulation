@@ -149,9 +149,9 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
      펼침에는 상태(없음 · 정상 · 멈춤과 까닭) · 마지막 결과와 남은 시간 · 넣은 개발자 앱 ID 앞 두 글자와 시각만 보이고 BDQ 계정
      ID 는 보이지 않는다. 바꾸는 길은 다시 넣기, 없애는 길은 「지우기」 하나다. 마지막 시도가 로그인 하위 프로세스를 띄웠으면 그 아래
      「진단」 값 줄(종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판, 그 뒤에
-     하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위 최고
-     앞→뒤MiB」 — cgroup v2 `memory.current` · `memory.max` · `memory.events` 의 `oom_kill`(v1 은 `memory.usage_in_bytes` ·
-     `memory.limit_in_bytes` · `memory.oom_control`), `/proc/self/status` 의 `VmRSS`, `getrusage(RUSAGE_CHILDREN)` 최고 RSS, 못 읽으면
+     하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서와 그 하위 자신의 최고 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위 최고
+     nMiB」 — cgroup v2 `memory.current` · `memory.max` · `memory.events` 의 `oom_kill`(v1 은 `memory.usage_in_bytes` ·
+     `memory.limit_in_bytes` · `memory.oom_control`), `/proc/self/status` 의 `VmRSS`, 도는 동안 0.1초마다 읽은 그 하위의 `/proc/<pid>/status` `VmHWM` 최고, 못 읽으면
      「모름」)이 서고 같은 칸이 감사 줄(`admin_bdq_login_set`)에 남는다. 종료가 「-9(SIGKILL)」 인데 `oom_kill` 이 앞뒤로 오르면 cgroup 이
      메모리 한도로 죽인 것이고, 그대로면 다른 바깥(사람 · 플랫폼)이 죽인 것이다 — 앱 시간 제한으로 끊으면 종료가 「-」 다 — 시작 때 자동 로그인의 진단은 「서버 시작 점검」 의 「BDQ 자동 로그인
      진단」 줄이다. 하위 프로세스가 결과 표지 없이 끝나면 「로그인 확인 못 함(결과 표지 없음) — 저장 안 함」 이다 — 비밀번호가
