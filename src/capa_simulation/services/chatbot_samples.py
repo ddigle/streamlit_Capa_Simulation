@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from capa_simulation.services.edit_grid import fixed_percent_text
 from capa_simulation.services.performance_actuals import (
     ALL_METRICS,
     EFFICIENCY_METRIC,
@@ -41,6 +42,10 @@ from capa_simulation.services.performance_actuals import (
 
 # 공정 이름을 화면 글자로 적는 함수. 받는 값은 원본 공정명이다.
 ProcessName = Callable[[str], str]
+# 미리 지은 글로 싣는 % 칸의 소수 자릿수 — 표의 % 칸과 같은 둘째 자리 고정이다(설계 규칙
+# UI-DAT-12, `components.percent_cells.TABLE_PERCENT_DIGITS` 와 같은 값 — 서비스는 화면 조각을
+# import 하지 않는다).
+_TABLE_PERCENT_DIGITS = 2
 
 
 @dataclass(frozen=True)
@@ -145,9 +150,18 @@ def _shortfall_answer(
     )
 
 
+def _evidence_value_text(metric: MetricSpec, value: float) -> str:
+    """「왜 부족해?」 근거 표의 기준 · 실적 글 — % 지표(효율 · 수율)는 표의 % 칸과 같은 소수 둘째
+    자리 고정 글, 대수 지표(UPEH)는 그 지표 화면의 값 글이다."""
+    if metric.value_format == "percent":
+        return fixed_percent_text(value, _TABLE_PERCENT_DIGITS)
+    return metric.value_text(value)
+
+
 def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
-    # 지표마다 값의 꼴이 달라(효율·수율은 %, UPEH 는 대수) 칸 서식 하나로 적지 못한다 — 지표
-    # 화면과 같은 글자로 적고 Gap 에 단위를 붙인다.
+    # 지표마다 값의 꼴이 달라(효율·수율은 %, UPEH 는 대수) 칸 서식 하나로 적지 못해 미리 지은 글로
+    # 싣는다. % 글(효율 · 수율 값과 세 지표의 Gap)은 같은 화면 다른 근거 표의 % 칸과 같은 소수 둘째
+    # 자리 고정이다(설계 규칙 UI-DAT-12 — 82.00% · -10.93%).
     rows: list[dict[str, object]] = []
     for metric in ALL_METRICS:
         priority = build_priority_table(monthly, metric, ["공정"])
@@ -155,9 +169,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
         rows.append(
             {
                 "지표": metric.name,
-                "기준": metric.value_text(float(worst[metric.standard_column])),
-                "실적": metric.value_text(float(worst[metric.actual_column])),
-                "Gap": metric.gap_text(float(worst["Gap"])),
+                "기준": _evidence_value_text(metric, float(worst[metric.standard_column])),
+                "실적": _evidence_value_text(metric, float(worst[metric.actual_column])),
+                "Gap": fixed_percent_text(float(worst["Gap"]), _TABLE_PERCENT_DIGITS),
                 "공정": str(worst["공정"]),
             }
         )

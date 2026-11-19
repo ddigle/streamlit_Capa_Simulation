@@ -2733,7 +2733,8 @@
   pandas Styler 표시 글을 건다(같은 표의 꼴 없는 실수 칸은 Streamlit 기본 꼴 글 — Styler 6자리 글이 새지 않게, Styler 상한을 넘는 표는
   지금 꼴, 회차마다 같은 Styler id). 바뀐 자리 — Admin 「부대공정」 시험 계산 확보율 · Space 층 목록 점유율(사용 · 비활성 두 표) · 가용설비
   현황 확보율 교차검증 두 확보율(첫째 자리 고정 — 아래) · Dynamic Capa 공정 우선순위 · 제품·Stack 상세 · 효율 · UPEH · 수율 실적 상세 · 우선순위 표 · Capa Chatbot
-  근거 표. ② 막대 칸 — `percent_progress_column`(`step` 0.0001 — 글 자릿수에만 쓰이고 값 · 막대 · CSV 그대로): Static Capa 두 부족 표
+  근거 표(「왜 부족해?」 의 미리 지은 % 글 — 효율 · 수율 기준 · 실적과 세 지표 Gap — 도 같은 둘째 자리 고정 글 `fixed_percent_text`, UPEH 값은 대수
+  글 그대로). ② 막대 칸 — `percent_progress_column`(`step` 0.0001 — 글 자릿수에만 쓰이고 값 · 막대 · CSV 그대로): Static Capa 두 부족 표
   확보율 · Admin 원천 품질 결측률. ③ 편집 그리드 percent 칸(기준 정보 효율 · 여유율 · Lot/WF 측정률, 생산 계획 수율) — 칸 글 · 고른 칸 합계 ·
   평균 · 적용 전 변경 목록이 둘째 자리 고정이다(`services.edit_grid.fixed_percent_text` ↔ 브라우저 `formatValue` 쌍둥이 — 읽기 표도 같은
   함수라 반올림이 한 벌, 2026-10-24 결정 판 P1 「지금대로」 를 바꿈 — 규칙집 7-1). 편집기 처음 글(98.75%) · 칸 복사(분수) · 붙여넣기

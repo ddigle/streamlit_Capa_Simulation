@@ -14,6 +14,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components import page_header
+from capa_simulation.components.percent_cells import TABLE_PERCENT_DIGITS, percent_cell_text
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.services import chatbot_samples
 from capa_simulation.services.chatbot_samples import SampleAnswer, build_sample_answers
@@ -176,9 +177,9 @@ def test_evidence_numbers_read_like_the_actual_screens() -> None:
     나와 결론의 「-10.9%」·조건의 「Gap … (%)」 와 어긋났고 기준·실적도 0.82 · 0.7107
     이었다(2026-10-30 E2E). 실수 칸은 모두 서식이 있거나 % 표 칸(소수 둘째 자리 고정 글 —
     2026-11-19 보드 m19-e2e-percent)이고 Gap 은 % 표 칸에 칸 이름이 단위를 단다(`Gap (%)`).
-    지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap 에 단위를 붙인다.
-    Gap 단위는 셈(빼기 · 비율)과 상관없이 「%」 다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자
-    결정)."""
+    지표마다 단위가 다른 「왜 부족해?」 표는 미리 지은 글이고 % 글은 % 표 칸과 같은 소수 둘째
+    자리 고정이다(UPEH 값은 대수 글). Gap 단위는 셈(빼기 · 비율)과 상관없이 「%」 다(「%p」 를 쓰지
+    않는다 — 2026-11-01 사용자 결정)."""
     app = _start()
     for index in (1, 2, 3):
         app.button(key=f"capa_chatbot_example_{index}").click().run()
@@ -199,14 +200,26 @@ def test_evidence_numbers_read_like_the_actual_screens() -> None:
 
     cause = frames[[answer.key for answer in answers].index("cause")].value
     assert "단위" not in cause.columns
+    # 미리 지은 글 칸도 % 글은 표의 % 칸과 같은 소수 둘째 자리 고정이다(UI-DAT-12) — 효율 · 수율
+    # 값과 세 지표의 Gap. UPEH 값은 대수 글이다.
     gaps = dict(zip(cause["지표"], cause["Gap"], strict=True))
-    assert re.fullmatch(r"-?\d+\.\d%", gaps["효율"]), gaps
-    assert re.fullmatch(r"-?\d+\.\d%", gaps["UPEH"]), gaps
-    assert re.fullmatch(r"-?\d+\.\d{2}%", gaps["수율"]), gaps
-    efficiency = cause.loc[cause["지표"].eq("효율")].iloc[0]
-    assert str(efficiency["기준"]).endswith("%") and str(efficiency["실적"]).endswith("%")
+    for name in ("효율", "UPEH", "수율"):
+        assert re.fullmatch(r"-?[\d,]+\.\d{2}%", gaps[name]), gaps
+    for name in ("효율", "수율"):
+        row = cause.loc[cause["지표"].eq(name)].iloc[0]
+        for column in ("기준", "실적"):
+            assert re.fullmatch(r"-?[\d,]+\.\d{2}%", str(row[column])), (name, column, row[column])
     upeh = cause.loc[cause["지표"].eq("UPEH")].iloc[0]
     assert "%" not in str(upeh["기준"]) + str(upeh["실적"])
+    # 같은 공정의 같은 값은 첫 답 % 칸 글과 같은 글이다(82.00% 와 82.0% 로 갈리지 않는다).
+    keys = [answer.key for answer in answers]
+    first = answers[keys.index("shortfall")].evidence.set_index("공정")
+    target = answers[keys.index("cause")].question.split(" — ")[0]
+    efficiency = answers[keys.index("cause")].evidence.set_index("지표").loc["효율"]
+    assert target in first.index
+    for column, source in (("기준", "기준 효율"), ("실적", "실적 효율"), ("Gap", "Gap")):
+        assert efficiency[column] == percent_cell_text(first.loc[target, source]), column
+    assert chatbot_samples._TABLE_PERCENT_DIGITS == TABLE_PERCENT_DIGITS
 
 
 def test_clearing_the_conversation_keeps_only_the_first_answer(runs: list[int]) -> None:
