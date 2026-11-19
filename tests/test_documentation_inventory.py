@@ -24,6 +24,9 @@ SHARED_HELPERS = (
     ("capa_simulation.components.profile_caption", "render_heading_value"),
     ("capa_simulation.components.table_toolbar", "file_name_part"),
     ("capa_simulation.korea_time", "kst_clock"),
+    ("capa_simulation.components.percent_cells", "percent_column"),
+    ("capa_simulation.components.percent_cells", "percent_table"),
+    ("capa_simulation.components.percent_cells", "percent_progress_column"),
 )
 
 

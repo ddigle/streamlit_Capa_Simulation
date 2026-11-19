@@ -3318,9 +3318,15 @@ def test_the_morning_1119_board_answers_are_recorded_in_6_36() -> None:
     turned = [line for line in _chapter(document, 7).splitlines() if "m19-e2e-space-leave" in line]
     assert len(turned) == 1, "7-1 에 space-leave 가 바꾼 2026-10-24 답 줄이 하나 있다"
     assert "2026-10-24 페이지 탭 1단계 답" in turned[0] and "6-36" in turned[0]
+    # percent 는 새 규칙 UI-DAT-12 를 세우고 2026-10-24 결정 판 P1 「지금대로」 를 바꾼다(7-1).
+    percent = by_id["m19-e2e-percent"]
+    assert "UI-DAT-12" in percent and "(7-1)" in percent
+    assert "#### UI-DAT-12 · " in document
+    p1 = [line for line in _chapter(document, 7).splitlines() if "m19-e2e-percent" in line]
+    assert len(p1) == 1 and "결정 판 P1 「지금대로」" in p1[0] and "UI-DAT-12" in p1[0]
     history = _chapter(document, 8)
     v139 = history[history.index("- **v1.39 — 2026-11-19.**") :]
-    for phrase in ("6-36", "m19-extra2-avail", "7-1", "규칙 81"):
+    for phrase in ("6-36", "m19-extra2-avail", "7-1", "규칙 82", "UI-DAT-12"):
         assert phrase in v139, phrase
 
 

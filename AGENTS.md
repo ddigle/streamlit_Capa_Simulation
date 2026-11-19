@@ -2140,7 +2140,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 그림은 `build_plan_comparison_dumbbell` 이 만들고 `render_plan_comparison_dumbbell` 은 받은 그림만 그린다(HOME 은
     계획 세부수량 Figure 묶음에 함께 캐시한다).
 - `src/capa_simulation/components/source_quality.py` — 활성 시나리오 원천 78컬럼의 결측률·카디널리티 표다.
-  `load_source_profile` 의 값만 써 새 조인이 없고 등급을 글자로도 적는다.
+  `load_source_profile` 의 값만 써 새 조인이 없고 등급을 글자로도 적는다. 결측률 막대는 `percent_progress_column`(8장 「표의 % 칸」).
+- `src/capa_simulation/components/percent_cells.py` — 표의 % 칸을 소수 둘째 자리 고정 글로 보이게 하는 한 벌 도우미(8장 「표의 %
+  칸」 — 설계 규칙 UI-DAT-12). 읽기 표는 `percent_column` 으로 칸을 적고 `percent_table` 이 (Styler, 칸 설정)을 돌려준다 — 그 칸의
+  `format` 을 빼고 표시 글 `percent_cell_text`(그리드 쌍둥이 `services.edit_grid.fixed_percent_text` 를 부름)를 걸며, 같은 표의 꼴 없는
+  실수 칸에는 Streamlit 기본 꼴 글을 건다. % 칸이 없거나 Styler 상한(`styler.render.max_elements`)을 넘는 표는 받은 그대로, Styler
+  id 는 칸 이름으로 지어 회차마다 같다. 막대 칸은 `percent_progress_column`(`step` = `PERCENT_STEP` 0.0001 — 글 자릿수만).
 - `src/capa_simulation/components/equipment_lifecycle_gantt.py` — 호기별 생애주기 구간 Gantt 를 그리기만 한다(구간은
   `services/equipment_availability.build_equipment_lifecycle_spans`). Plotly 구간 끝이 배타적이라 끝날에 하루를 더한다.
 - `src/capa_simulation/components/wip_status_dashboard.py` — 제품 행 × STEP·공정 열(`P → T`, 숫자 구간 오름차순)의
@@ -7539,6 +7544,30 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   같은 「%」 라 셈 글(`gap_formula`)을 함께 적는다. 문서(README·AGENTS·HANDOFF·CLAUDE·`docs/`)도 기호를 말할 때는 「퍼센트
   포인트 기호」 로, 사용자 메모 인용은 기호 자리만 「[퍼센트 포인트 기호]」 로 적는다 — 런북 7장만 발송한 배포의 기록이라 다음 배포가
   다시 쓸 때까지 그대로다. 가드는 `tests/test_percent_unit_text.py`.
+- **표의 % 칸은 소수 둘째 자리 고정이다 — `components/percent_cells.py` 한 벌**(2026-11-19 아침 확인 보드 m19-e2e-percent (나)
+  「앱의 % 표 칸을 한 번에 소수 둘째 자리」 — 설계 규칙 UI-DAT-12). 125.00% · 605.30% · 0.00% · 1,234.56% · -10.93%, 빈 값은 빈칸이다.
+  Streamlit 1.63 `percent` 꼴은 끝 0 을 지워 줄마다 자릿수가 달라 쓰지 않는다. **보이는 글만 바꾼다** — 저장값 · 계산 · 칸 정렬(원값
+  숫자) · 칸 복사 · 표 도구 막대 CSV(원값 분수) · 붙여넣기 해석은 그대로다. 칸 종류마다 길이 하나다.
+  - 읽기 표(`st.dataframe`) — 칸은 `percent_column(label, help=, width=)` 로 적고 표는 `shown, columns = percent_table(frame,
+    column_config)` 로 넘긴다. Streamlit 은 읽기 전용이고 `format` 이 없는 칸에서만 Styler 표시 글을 쓰므로 도우미가 그 칸의
+    `format` 을 빼고 글(`percent_cell_text`)을 건다. 같은 표의 꼴 없는 실수 칸은 Styler 기본 6자리 글(0.333333 · 1e-7 → 0.000000)이
+    되므로 도우미가 Streamlit 기본 꼴 글(소수 넷째 자리까지 · 끝 0 걷음)을 건다 — 다른 숫자 칸에 꼴이 있으면 그 꼴이 이긴다.
+    한 줄 선택(`on_select`)과 함께 써도 된다. `NumberColumn(format="percent", step=0.0001)` 은 값을 버림해(CSV · 칸 복사도) 쓰지 않고,
+    값을 100 배 한 열 + `"%.2f%%"` 는 칸 복사 · CSV 가 100 배 수로 나가 쓰지 않는다.
+  - % 막대 칸 — `percent_progress_column(min_value=, max_value=, …)`(`ProgressColumn` percent + `step` 0.0001). 막대 칸은 Styler 글이
+    닿지 않고 `step` 은 글 자릿수에만 쓰인다(값 · 막대 · CSV 그대로 — 「뜻이 걸리는 `NumberColumn` 에 `step` 을 두지 않는다」 의
+    버림은 `NumberColumn` 몫이다, 9장).
+  - 편집 그리드 percent 칸 — 칸 글은 `services.edit_grid.fixed_percent_text` ↔ 브라우저 `formatValue` 쌍둥이(`ValueFormat("percent",
+    2)` — 기준 정보 효율 · 여유율 · 측정률, 생산 계획 수율)이고 읽기 표도 같은 함수라 반올림이 한 벌이다(반을 0 에서 먼 쪽 — 0.00125 →
+    0.13%). 편집기 처음 글(`editText` 98.75%) · 칸 복사(`rawText` 분수) · 하한 · 상한 오류 글(`components/edit_grid._bound_text` —
+    「100% 이하로」)은 끝 0 없이 그대로다.
+  - 남긴 꼴(결정 있음): 기준 퍼센트 정수 %(위 「판정 기준 표시」 · HOME 설정 편집표 `%.0f`), 공식버전 자동 갱신 「기준」 · 「자동 off」
+    표지, 확보율 교차검증 「확보율차이」 `%+.1f%%`(보이는 두 확보율의 차 — 그 두 확보율은 0.1% 단위로 깎은 값이라 둘째 자리 끝이 늘
+    0), HOME 확보율 보정 「증감 확보율(%)」 `%.1f`. 표 꼴 그림 · 시트(공정 Capa 상세 시트 · 제약 시뮬레이션 계산표 · 필요 단축 칩 ·
+    HOME 주요 공정 판)와 자동 갱신 off 공정 표 「최저 확보율」 글은 지금 꼴이다(`docs/TODO.md` 2장 확인 거리).
+  - 가드는 `tests/test_table_percent_cells.py`(도우미 밖 `percent` 칸 꼴 · 끝 0 을 지우는 「…%%」 꼴 0곳 · `percent_column` 을 적은
+    화면은 `percent_table` 로 그림 · 그리드 percent 자릿수) · `tests/fixtures/edit_grid_cases.json` `format`(쌍둥이). 화면 시험은
+    `tests/percent_display.py`(`shown_texts` — Styler 표시 글)로 보이는 글을 읽는다.
 - **앱 화면 글에 「사내」 를 쓰지 않는다**(2026-11-03 사용자 결정 — 회사 안에서 쓰는 것이 기본이라 어색하다, 기능 이름
   「사내 모듈」 은 「모듈」). 개발 · 배포 문서와 주석 · docstring 의 사내/사외 **환경** 구분은 그대로다. 가드는
   `tests/test_app_text_wording.py`(앱 안 Guide 마크다운 · 통합인증 화면 · 「서버 시작 점검」 에 실리는 글 — docstring 을 뺀 문자열
@@ -8752,7 +8781,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   천 단위 쉼표는 엄격한 세 자리 묶음만(「1,234.5」 받음, 「1,5」 칸 오류) · percent 표만 「85%」 → 0.85 · 하한 0 · 효율·측정률
   상한 1 · 일수는 정수만 · 설비대수는 빈칸을 0 으로. 숫자·범위·해석 오류는 칸 안(빨강 + 상태 줄 문구 — 적은 글이 그대로 남는다)이고
   「변경사항 적용」 이 고칠 칸 알림으로 멈추며, 업무 규칙 오류(`reference_consistency`)는 적용할 때 문장으로 알린다(오늘과 같다).
-  복사 글은 수 칸 원값(percent 는 분수 — 「88%」 칸은 `0.88`, Guide 에 적음. 「88%」 로 낼지는 TODO 4장 「답 대기」)·분류 칸
+  복사 글은 수 칸 원값(percent 는 분수 — 「88.00%」 칸은 `0.88`, Guide 에 적음. 「88%」 로 낼지는 TODO 4장 「답 대기」)·분류 칸
   표시명의 엑셀 따옴표 TSV(줄 끝 CRLF)이고, 붙여넣기는 값 하나면 고른 범위 전체,
   고른 범위가 덩어리의 정수 배면 되풀이, 아니면 기준 칸부터(잠긴 분류 칸은 건너뜀, 한 번에 15,000칸 — 넘으면 「Excel
   붙여넣기」). 「Excel 붙여넣기」 표 전체 팝업(CSV 양식)은 그대로이고 그 표에 초안이 있으면 첫 줄에 버려질 칸 수를 말한다.
@@ -8809,7 +8838,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   (`tests/test_editor_row_order_guard.py` 가 그 전제를 지킨다).
 - **뜻이 걸리는 `NumberColumn` 에 `step` 을 두지 않는다.** Streamlit 1.63 은 `step` 의 소수 자릿수 아래를 반올림하지 않고
   **버린다**(보이는 값·칸 복사·손 입력·칸 붙여넣기 — 0.001 이면 98.75% 가 98.7%, 0.01 이면 0.333 대가 0.33). `format` 만 두면
-  보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 0~2자리). `step` 이 없으면 **정수 dtype 칸에 증분 1 이 스스로
+  보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 끝 0 을 지운 소수 0~2자리라 표의 % 칸은 8장 「표의 % 칸」 의 도우미로
+  적는다 — % 막대 칸 `ProgressColumn` 의 `step` 은 글 자릿수에만 쓰여 그 도우미가 둔다). `step` 이 없으면 **정수 dtype 칸에 증분 1 이 스스로
   걸리므로** 정수로 올 수 있는 표는 실수로 바꿔 그린다(`month_editor.float_month_columns`). 그 단위로 충분한 칸(일수 1일·
   Cut-off·PKG PLAN 등)만 `step` 을 둔다.
 - **키가 있는 `num_rows="fixed"` 편집표의 정체는 키 + 데이터 서명이다**(Streamlit 1.63 — 칸 이름·Arrow 타입·data kind·
