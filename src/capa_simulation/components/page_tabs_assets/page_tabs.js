@@ -58,6 +58,12 @@ const SETTLE_POLL_MS = 100
 // 옮긴 화면의 탭 줄이 온 뒤 이만큼 지나면 그 회차가 아직 돌아도 기다리던 누름을 보낸다(`<tabs-queue>`). 가벼운 화면은
 // 이 안에 회차가 끝나 전처럼 회차 끝에 보낸다(사외 사본 약 0.7초).
 const MOVED_GRACE_MS = 1000
+// 보낸 고르기가 서버에 닿지 않았다고 볼 때까지(`<tabs-queue>` 의 `lostSelect`). 보낸 뒤 선 회차가 끝나 회차 표지가 이만큼
+// 「돌지 않음」 이면(`LOST_QUIET_MS`) — 고르기가 닿은 회차는 `st.switch_page` 로 일찍 끝나 옮긴 화면 회차가 곧 서고, 그 사이
+// 「돌지 않음」 은 Streamlit 회차 끝 GC(`runner.postScriptGC`) 한 번 몫이다. 보낸 뒤 회차 표지가 한 번도 바뀌지 않았으면(짧은
+// 회차가 한 그리기에 접혔다) 이만큼(`LOST_IDLE_MS`) 기다린다.
+const LOST_QUIET_MS = 600
+const LOST_IDLE_MS = 2000
 const APP_ROOT = '[data-testid="stApp"]'
 // 편집표(glide 격자)와 그 칸 편집기. 편집기는 격자 밖 포털에 뜰 수 있어 그 틀(`gdg-clip-region`)도 본다. 그림자 DOM
 // Components v2 편집 칸(설비 마스터 표 등)은 data 의 `grids` 로 더한다(`<tabs-grid>`).
@@ -203,6 +209,16 @@ function gridSelector(base, keys) {
 // 면 부르는 쪽이 보내기 전에 `sent` 를 부른다(떠나기 확인을 취소하면 부르지 않는다). `settle` 은 끝났으면 기다리던 누름의
 // id(열린 탭이고 지금 탭이 아닐 때만)를, 아니면 null 을 돌려준다. 지금 탭 닫기(옮겨 갈 이웃은 서버가 정한다)도
 // `sent(queue, null, …)` 로 같은 기다림을 건다.
+// 보낸 고르기가 서버에 닿지 않을 때가 있다. Streamlit 1.63 프런트는 앞 회차 끝(`script_finished`)을 받으면 그 그리기를 마친
+// 뒤 지금 요소에 없는 위젯 칸을 지운다(`removeInactiveWidgetState`). Components v2 트리거 칸(`…__events`)은 요소 id 가 아니라
+// 그 사이(끝을 받은 뒤 몇 ms ~ 수십 ms)에 쓴 트리거는 회차 요청(`setTimeout` 0 뒤)이 나가기 전에 지워진다 — 요청은 트리거
+// 없이 나가 서버는 지금 화면을 다시 돌고, 옮긴 화면이 오지 않은 기다림은 `ms` 뒤 말없이 놓였다(누름이 사라짐). 그래서 보낸
+// 뒤 선 회차가 끝나 회차 표지(`run` — `markRun` 이 표지가 바뀐 때를 적는다)가 `quietMs` 동안 「돌지 않음」 인데 옮긴 화면의
+// 탭 줄이 오지 않았으면 닿지 않은 것으로 본다(`lostSelect`). 보낸 뒤 표지가 한 번도 바뀌지 않았으면 `idleMs` 를 기다린다.
+// 닿은 고르기는 늘 화면을 옮긴다 — 그 회차는 `st.switch_page` 로 일찍 끝나고 옮긴 화면 회차가 곧 선다. 닿지 않았으면 그
+// 사이 누른 탭(`waiting` — 마지막 누름)을, 없으면 그 고르기를 한 번만 다시 보낸다(`resendTarget` — 다시 보낸 고르기는
+// `resent` 라 또 보내지 않는다). 그 사이 주소가 바뀌었으면(`path` — 뒤로가기 · 링크) 다른 길로 옮긴 것이라 보내지 않는다.
+// 같은 고르기를 두 번 받아도 서버는 같은 화면으로 옮길 뿐이다(`_on_select` — id 로 정하는 멱등 동작).
 function createSelectQueue() {
   return { flight: null, waiting: null }
 }
@@ -215,9 +231,39 @@ function pressSelect(queue, id, active, now, ms) {
   queue.waiting = null
   return id === active ? 'none' : 'send'
 }
-function sentSelect(queue, id, active, now) {
-  queue.flight = { id, from: active, at: now, arrived: null }
+// `path` 는 보낼 때의 주소, `leave` 는 보내기 전에 물어 지나온 떠나기 글, `resent` 는 다시 보낸 고르기인가다.
+function sentSelect(queue, id, active, now, { path = null, leave = '', resent = false } = {}) {
+  queue.flight = { id, from: active, at: now, arrived: null, path, leave, resent }
   queue.waiting = null
+}
+function scriptRunning(state) {
+  return state === 'running' || state === 'rerunRequested'
+}
+function createRunMark(running) {
+  return { running: Boolean(running), startedAt: -Infinity, changedAt: -Infinity }
+}
+// 회차 표지가 바뀌었다 — 「돈다」 · 「돌지 않음」 이 바뀐 때만 적는다.
+function markRun(run, running, now) {
+  if (run.running === Boolean(running)) return
+  run.running = Boolean(running)
+  run.changedAt = now
+  if (run.running) run.startedAt = now
+}
+function lostSelect(flight, active, path, running, run, now, quietMs, idleMs) {
+  if (flight === null || flight.id === null || flight.resent || flight.arrived !== null) return false
+  if (active !== flight.from || running) return false
+  if (flight.path !== null && path !== flight.path) return false
+  const since = Math.max(flight.at, run.changedAt)
+  return now - since >= (run.startedAt > flight.at ? quietMs : idleMs)
+}
+// 닿지 않은 고르기 뒤 보낼 탭 — {id, again}(`again` 은 같은 고르기를 다시 보냄), 지금 탭이거나 닫힌 탭이면 null. 기다림은 걷는다.
+function resendTarget(queue, active, ids) {
+  const flight = queue.flight
+  const next = queue.waiting !== null ? queue.waiting : flight.id
+  queue.flight = null
+  queue.waiting = null
+  if (next === null || next === active || !ids.includes(next)) return null
+  return { id: next, again: next === flight.id }
 }
 function settleSelect(queue, active, now, ms, ids, busy, graceMs) {
   const flight = queue.flight
@@ -663,6 +709,7 @@ export default function (component) {
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
     moves: createMoveBatch(), moveTimer: 0, dataOrder: null, dataSeen: null,
+    run: createRunMark(false), runWatch: null, runRoot: null,
   })
   // 끄는 중에 새 data 가 왔다(다른 회차가 목록을 바꿨다) — 끌기를 접고 새 data 대로 그린다. 놓은 자리를 보내지 않는다. 포인터는
   // 아직 눌려 있다 — 놓을 때의 click 도 고르기가 아니다(`heldRelease`).
@@ -675,6 +722,17 @@ export default function (component) {
   S.send = setTriggerValue
   S.gridSelector = gridSelector(GRID, data.grids)
   const text = data.text || {}
+  // 회차 표지가 바뀐 때를 적는다 — 보낸 고르기가 닿지 않았는지 볼 때 쓴다(`<tabs-queue>` 의 `lostSelect`). 100ms 마다 보는
+  // `settle` 은 가벼운 화면 회차(수십 ms)를 놓친다. 뿌리가 바뀌었으면 다시 건다.
+  const appRoot = document.querySelector(APP_ROOT)
+  if (appRoot && S.runRoot !== appRoot && typeof MutationObserver === 'function') {
+    if (S.runWatch) S.runWatch.disconnect()
+    const readRun = () => scriptRunning(appRoot.getAttribute('data-test-script-state'))
+    S.run = createRunMark(readRun())
+    S.runWatch = new MutationObserver(() => markRun(S.run, readRun(), Date.now()))
+    S.runWatch.observe(appRoot, { attributes: true, attributeFilter: ['data-test-script-state'] })
+    S.runRoot = appRoot
+  }
 
   setAttr(nav, 'aria-label', text.nav || '')
   const pending = (data.palette && data.palette.pending) || ''
@@ -914,17 +972,20 @@ export default function (component) {
     S.busyTimer = setTimeout(() => setAttr(item.__parts.tab, 'aria-busy', null), BUSY_MS)
   }
   // 화면을 옮기는 누름을 보내기 직전 — 한 번에 하나(`<tabs-queue>`)를 건다. 기록 한 칸은 늘 걸린 지킴이가 맡는다.
-  const moving = (id) => {
-    sentSelect(S.queue, id, S.data.active, Date.now())
+  // `resent` 는 닿지 않은 고르기를 다시 보내는가다(또 보내지 않는다).
+  const moving = (id, resent = false) => {
+    sentSelect(S.queue, id, S.data.active, Date.now(), { path: window.location.pathname, leave: S.data.leave || '', resent })
     clearTimeout(S.settleTimer)
     S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
   }
-  // `opened` 는 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림이다 — 떠나기 확인을 지나 보낼 때만 부른다.
-  const sendSelect = (item, opened = null) => {
+  // `opened` 는 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림이다 — 떠나기 확인을 지나 보낼 때만 부른다. `asked` 는 닿지
+  // 않아 다시 보내는 고르기가 앞서 물어 지나온 떠나기 글이다 — 지금 글이 그대로면 다시 묻지 않는다.
+  const sendSelect = (item, opened = null, asked = null, resent = false) => {
     // 지금 화면에 적용하지 않은 편집표 편집이 있으면 묻는다 — 화면을 떠나면 Streamlit 이 그 편집을 버린다.
-    if (!leaveOk()) return
+    const askedAlready = asked !== null && asked === (S.data.leave || '')
+    if (!askedAlready && !leaveOk()) return
     busy(item)
-    moving(item.dataset.id)
+    moving(item.dataset.id, resent)
     const carried = S.moves.due !== null ? claimDrawn() : {}
     S.send('select', { id: item.dataset.id, epoch: S.data.epoch, ...carried })
     if (opened) opened()
@@ -938,7 +999,12 @@ export default function (component) {
     const root = document.querySelector(APP_ROOT)
     const run = root ? root.getAttribute('data-test-script-state') : null
     const running = run === 'running' || run === 'rerunRequested'
-    const next = settleSelect(S.queue, S.data.active, Date.now(), BUSY_MS, open, running, MOVED_GRACE_MS)
+    const now = Date.now()
+    if (lostSelect(S.queue.flight, S.data.active, window.location.pathname, running, S.run, now, LOST_QUIET_MS, LOST_IDLE_MS)) {
+      resendLost(open)
+      return
+    }
+    const next = settleSelect(S.queue, S.data.active, now, BUSY_MS, open, running, MOVED_GRACE_MS)
     if (S.queue.flight !== null) {
       S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
       return
@@ -949,6 +1015,22 @@ export default function (component) {
     const item = next === null ? null : S.items.get(next)
     if (item) sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)
     else restoreFocus()
+  }
+  // 보낸 고르기가 서버에 닿지 않았다(`lostSelect`) — 그 사이 누른 마지막 탭, 없으면 그 고르기를 한 번 다시 보낸다
+  // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다. 「그 화면으로」 알림은 같은 고르기면 이미
+  // 불렀고, 기다리던 누름의 것이면 들고 간다.
+  function resendLost(open) {
+    const lost = S.queue.flight
+    const target = resendTarget(S.queue, S.data.active, open)
+    const waited = S.waitOpen
+    S.waitOpen = null
+    const item = target === null ? undefined : S.items.get(target.id)
+    if (item === undefined) {
+      restoreFocus()
+      return
+    }
+    const opened = !target.again && waited !== null && waited.id === target.id ? waited.opened : null
+    sendSelect(item, opened, lost.leave, target.again)
   }
   const appRunning = () => {
     const root = document.querySelector(APP_ROOT)
@@ -1547,6 +1629,9 @@ export default function (component) {
     S.onScroll = null
     if (S.resizer) S.resizer.disconnect()
     S.resizer = null
+    if (S.runWatch) S.runWatch.disconnect()
+    S.runWatch = null
+    S.runRoot = null
     S.reveal = null
     if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate
   }
