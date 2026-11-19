@@ -20,6 +20,11 @@
   `()`, 직접 넣은 다섯 밖 목표는 그 값 하나를 더함).
 - 입력 비가동 대수(`manual_downtime_for` — 가용설비 현황 › Preference, 설비 0032)는 두 화면이 같은
   값을 계획 키에 싣는다. 못 읽으면 예외를 그대로 올린다 — 빈 값으로 물러서면 가용이 말없이 커진다.
+- 현재 일정 기준(`SHORTENING_BASIS_KEY` — Static | 설비 마스터, 처음 Static, 2026-11-20 사용자
+  보드 답 Q03 (나))은 두 화면이 같은 세션 칸을 읽고 쓴다(`current_basis`). 계획 키의 끝 칸이고
+  (Static 이면 활성 시나리오의 `RQ_EQP_AVBL` 로 현재 일정을 역산한다), 설비 마스터 기준 계획에도
+  Static 역산을 붙여 호기 줄이 고르지 않은 기준의 일정을 흐린 표지로 함께 그린다
+  (`load_official_shortening`).
 
 아래로 내려가는 부름은 **모듈 속성으로** 한다(`page_bootstrap.load_page_context()`·
 `simulation_cache.…`·`equipment_cache.…`) — 시험이 모듈 속성을 갈아 끼워 부름을 센다. 공정
@@ -28,12 +33,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Final
 
 import pandas as pd
+import streamlit as st
 
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -47,8 +53,15 @@ from capa_simulation.services.equipment_samples import (
 )
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
+from capa_simulation.services.static_qual_schedule import (
+    BASES,
+    BASIS_MASTER,
+    BASIS_STATIC,
+    DEFAULT_BASIS,
+)
 
 __all__ = [
+    "SHORTENING_BASIS_KEY",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
     "SHORTENING_START_KEY",
@@ -56,7 +69,10 @@ __all__ = [
     "Frames",
     "ShorteningDemand",
     "ShorteningStop",
+    "current_basis",
     "load_official_shortening",
+    "settle_basis",
+    "static_availability_of",
     "load_shortening_demand",
     "manual_downtime_for",
     "month_options",
@@ -68,6 +84,8 @@ __all__ = [
 SHORTENING_LEVEL_KEY: Final = "equipment_shortening_level_v1"
 SHORTENING_START_KEY: Final = "equipment_shortening_start_month_v1"
 SHORTENING_END_KEY: Final = "equipment_shortening_end_month_v1"
+# 현재 일정 기준(Static | 설비 마스터) — 필요 단축 일정 · Space 「필요 단축」 보기가 같은 칸을 쓴다.
+SHORTENING_BASIS_KEY: Final = "equipment_shortening_basis_v1"
 
 CUTOFF_FIRST_MESSAGE: Final = (
     "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 있습니다 "
@@ -110,6 +128,29 @@ class ShorteningStop:
     def brief(self, lead: str) -> str:
         """알림창 짧은 글 — 무엇을 못 했는지(`lead`) + 있으면 까닭 꼬리."""
         return f"{lead} — {self.reason}" if self.reason else lead
+
+
+def current_basis() -> str:
+    """세션의 현재 일정 기준 — 없거나 모르는 값이면 처음 값(Static)."""
+    held = st.session_state.get(SHORTENING_BASIS_KEY)
+    return str(held) if held in BASES else DEFAULT_BASIS
+
+
+def settle_basis() -> str:
+    """전환 위젯 앞에서 세션 칸을 잡는다 — 없거나 모르는 값이면 Static 을 적는다."""
+    value = current_basis()
+    if st.session_state.get(SHORTENING_BASIS_KEY) != value:
+        st.session_state[SHORTENING_BASIS_KEY] = value
+    return value
+
+
+def static_availability_of(demand: ShorteningDemand) -> pd.DataFrame | None:
+    """활성 시나리오(미저장 편집 포함)의 Static 가용대수 표(`RQ_EQP_AVBL`) — 없으면 None."""
+    tables = demand.context.active_scenario.get("tables")
+    if not isinstance(tables, Mapping):
+        return None
+    frame = tables.get("RQ_EQP_AVBL")
+    return frame if isinstance(frame, pd.DataFrame) else None
 
 
 def load_shortening_demand() -> ShorteningDemand:
@@ -242,6 +283,7 @@ def load_official_shortening(
     *,
     manual_downtime: ManualDowntime,
     level: float | None = None,
+    basis: str = BASIS_MASTER,
 ) -> simulation_cache.KeyedShorteningPlan:
     """다섯 목표의 공식 계획(UPEH 가정 토큰 `()`)과 그 키. **두 화면의 키를 내는 함수가 이것
     하나다.** `manual_downtime` 은 `manual_downtime_for` 로 읽은 입력 비가동이다(키에 실린다).
@@ -249,9 +291,16 @@ def load_official_shortening(
     `level` 은 화면의 지금 목표다 — 다섯 밖의 직접 넣은 값이면 그 목표 하나를 따로 받아 계획에
     더한다(`simulation_cache.load_required_shortening(level=)`). 두 화면이 같은 길로 더한다.
 
+    `basis` 는 현재 일정 기준(`current_basis()` — 두 화면이 같은 세션 값)이다. Static 이면 활성
+    시나리오의 `RQ_EQP_AVBL` 로 역산한 현재 일정의 계획이고, 그 표가 없으면 `ValueError` 다. 설비
+    마스터면 지금까지의 계획에 Static 역산(`get_static_qual_schedule`)을 붙여 돌려준다 — 호기 줄의
+    흐린 표지 몫이고 숫자 · 호기 · CSV 에는 들지 않는다. 역산을 못 하면(표가 없거나 계약 오류)
+    붙이지 않는다(흐린 표지만 빠진다).
+
     설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다.
     """
     baseline, equipment, downtime = frames
+    static = static_availability_of(demand)
     key = simulation_cache.required_shortening_cache_key(
         demand.key,
         equipment=equipment,
@@ -261,7 +310,28 @@ def load_official_shortening(
         months=tuple(months),
         today=today,
         manual_downtime=manual_downtime,
+        basis=basis,
     )
-    return simulation_cache.load_required_shortening(
-        key, equipment, downtime, baseline, cutoff, required_equipment=demand.loader, level=level
+    if basis == BASIS_STATIC and static is None:
+        raise ValueError("활성 시나리오에 Static 가용대수 표(RQ_EQP_AVBL)가 없습니다.")
+    keyed = simulation_cache.load_required_shortening(
+        key,
+        equipment,
+        downtime,
+        baseline,
+        cutoff,
+        required_equipment=demand.loader,
+        level=level,
+        static_availability=static,
+    )
+    if keyed.plan.static_schedule is not None or static is None:
+        return keyed
+    try:
+        schedule = simulation_cache.get_static_qual_schedule(
+            key, equipment, downtime, baseline, cutoff, _static_availability=static
+        )
+    except ValueError:
+        return keyed
+    return simulation_cache.KeyedShorteningPlan(
+        keyed.key, replace(keyed.plan, static_schedule=schedule)
     )

@@ -630,11 +630,15 @@ def _worked_example() -> ShorteningPlan:
 
 
 def test_the_unit_export_has_the_user_facing_columns_in_order() -> None:
-    """칸 차례는 사용자가 읽는 차례다 — 목표·공정·호기 → 마스터 속성 → 일정 → 효과 → 대상 월."""
+    """칸 차례는 사용자가 읽는 차례다 — 현재 일정 기준 · 목표·공정·호기 → 마스터 속성 → 일정 → 효과
+    →
+    대상 월."""
     frame = unit_export_frame(_worked_example(), (1.0,))
 
     assert tuple(frame.columns) == UNIT_EXPORT_COLUMNS
+    assert set(frame["현재 일정 기준"]) == {"설비 마스터"}
     assert list(frame.columns) == [
+        "현재 일정 기준",
         "목표 확보율(%)",
         "공정",
         "Cut-off(일)",
@@ -893,7 +897,7 @@ def test_the_exports_follow_the_given_process_order_and_scope() -> None:
 
     months = process_month_export_frame(plan, (1.0, 1.1), ["Mold", PROCESS], [MAY])
     assert tuple(months.columns) == PROCESS_MONTH_EXPORT_COLUMNS
-    assert list(months.columns[:2]) == [LEVEL_COLUMN, "공정"]
+    assert list(months.columns[:3]) == ["현재 일정 기준", LEVEL_COLUMN, "공정"]
     assert list(zip(months[LEVEL_COLUMN], months["공정"], strict=True)) == [
         (100, "Mold"),
         (100, PROCESS),

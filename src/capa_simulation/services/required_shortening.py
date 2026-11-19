@@ -135,14 +135,22 @@ from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.securement_cross_check import dynamic_available_equipment
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.securement_threshold import SecurementThresholds, judgment_boundary
+from capa_simulation.services.static_qual_schedule import (
+    BASIS_MASTER,
+    BASIS_STATIC,
+    StaticQualSchedule,
+    basis_label,
+)
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
+    "BASIS_COLUMN",
     "DEFAULT_TARGET_LEVEL",
     "KIND_NEW",
     "KIND_SHORTENED",
     "LEVEL_COLUMN",
+    "OPEN_QUAL",
     "PROCESS_MONTH_COLUMNS",
     "PROCESS_MONTH_EXPORT_COLUMNS",
     "STATUS_CARRIED",
@@ -239,6 +247,14 @@ UNIT_PLAN_COLUMNS = (
   ④ 단축 근거·③ 호기 풍선). CSV·기준선에는 싣지 않는다.
 """
 
+BASIS_COLUMN = "현재 일정 기준"
+"""내보내기 표 맨 앞 칸 — 현재 일정을 무엇으로 잡았나(`Static` · `설비 마스터`, 초안 6장 10)."""
+
+OPEN_QUAL = date(9999, 1, 1)
+"""현재 일정이 없는 후보의 Qual 자리(Static 기준의 남는 호기 — Q11). 어느 구간보다 늦어 당기면 구간
+끝에서부터 덮고(추가N 과 같은 가장 늦은 날), 차례는 날짜 있는 후보 뒤 · 추가N 앞이다. 호기 표 ·
+내보내기는 이 자리를 빈칸(현재 일정 없음 · 단축일수 없음)으로 적는다."""
+
 LEVEL_COLUMN = "목표 확보율(%)"
 """내보내기 표의 목표 칸. 백분율 정수다(`level_percent`) — 다섯 값은 90·100·110·120·130 이고, 달마다
 다른 목표(`MonthlyTarget`)는 그 줄의 달(호기 표는 대상 월)의 목표다."""
@@ -267,6 +283,7 @@ UNIT_MASTER_COLUMNS = (
 """후보 호기(모듈 묶음은 한 대)마다 마스터 속성 한 줄. `설비명` 은 묶음의 모듈 행을 잇는다."""
 
 UNIT_EXPORT_COLUMNS = (
+    BASIS_COLUMN,
     LEVEL_COLUMN,
     "공정",
     "Cut-off(일)",
@@ -286,8 +303,8 @@ UNIT_EXPORT_COLUMNS = (
 )
 """「호기별 단축 일정 CSV」 의 칸. 날짜는 `YYYY-MM-DD`, 달은 `YYYY-MM` 글자다."""
 
-PROCESS_MONTH_EXPORT_COLUMNS = (LEVEL_COLUMN, *PROCESS_MONTH_COLUMNS)
-"""「공정·월 CSV」 의 칸 — 공정 x 월 표 앞에 목표 칸을 붙인다."""
+PROCESS_MONTH_EXPORT_COLUMNS = (BASIS_COLUMN, LEVEL_COLUMN, *PROCESS_MONTH_COLUMNS)
+"""「공정·월 CSV」 의 칸 — 공정 x 월 표 앞에 현재 일정 기준 · 목표 칸을 붙인다."""
 
 _ONE_DAY = timedelta(days=1)
 # 부동소수 끝자리를 털어 내는 자리. `securement_rate._ceil_positive` 와 같은 9자리다 — 0 이어야 할
@@ -313,7 +330,11 @@ class CandidateModule:
         """Qual 을 `day` 전으로 당겼을 때 그날 기여하는가 — 원래 Qual 뒤이거나 비가동이면 아니다."""
         if day > self.qual:
             return False
-        return not any(start <= day and (end is None or day <= end) for start, end in self.blocked)
+        return not self.blocked_on(day)
+
+    def blocked_on(self, day: date) -> bool:
+        """그날(기여일) 비가동이 걸렸나."""
+        return any(start <= day and (end is None or day <= end) for start, end in self.blocked)
 
 
 @dataclass(frozen=True)
@@ -336,6 +357,23 @@ class CandidateUnit:
     def weight_on(self, day: date) -> float:
         """Qual 을 `day` 전으로 당겼을 때 그날 늘어나는 환산 몫(구간일수로 나누기 전)."""
         return sum(module.ratio for module in self.modules if module.contributes_on(day))
+
+    @property
+    def undated(self) -> bool:
+        """현재 일정이 없는 후보인가(`OPEN_QUAL` — Static 기준의 남는 호기)."""
+        return self.qual >= OPEN_QUAL
+
+    def share_in(self, window: WdWindow) -> float:
+        """지금 Qual 로 이 구간에 보태는 환산 몫 — Qual 다음 날부터, 비가동 날은 빼고. 반입일정은
+        보지 않는다(단축 몫과 같은 규칙 — Static 기준의 단축 전 가용)."""
+        if self.undated:
+            return 0.0
+        day = max(self.qual, window.boundary_start) + _ONE_DAY
+        total = 0.0
+        while day <= window.boundary_end:
+            total += sum(module.ratio for module in self.modules if not module.blocked_on(day))
+            day += _ONE_DAY
+        return total / window.days
 
 
 @dataclass(frozen=True)
@@ -477,6 +515,18 @@ class ShorteningPlan:
     싣지 않는다(뺄 가용이 계산에 없다).
     """
 
+    basis: str = BASIS_MASTER
+    """현재 일정 기준(`Static` · `설비 마스터`). 내보내기 맨 앞 칸 · 기준선 표지가 이 값이다."""
+
+    static_schedule: StaticQualSchedule | None = None
+    """Static 역산 결과. Static 기준 계획은 이것이 현재 일정이고, 설비 마스터 기준 계획에는 화면이
+    호기 줄의 흐린 표지(고르지 않은 기준의 일정)를 그리려고 계산 밖에서 붙인다
+    (`shortening_source.load_official_shortening`). 숫자 · 호기 · 내보내기에는 들지 않는다."""
+
+    static_missing: tuple[str, ...] = ()
+    """Static 기준에서 맞댈 수 있었으나 계산할 달에 Static 가용대수가 없어 계산하지 않은 공정(Q13 —
+    「맞대지 못한 공정」 알림의 까닭 「Static 가용 없음」). 설비 마스터 기준은 늘 빈 값이다."""
+
     def at(self, level: TargetLevel) -> LevelPlan:
         """고른 목표의 결과. 미리 계산하지 않은 목표면 KeyError 다.
 
@@ -514,7 +564,12 @@ def plan_with_level(plan: ShorteningPlan, extra: ShorteningPlan) -> ShorteningPl
     (single,) = extra.levels
     if single.monthly_target is not None and single.monthly_target.monthly:
         raise ValueError("달마다 다른 목표는 스칼라 목표로 더하지 않습니다.")
-    if (extra.months, extra.today, extra.processes) != (plan.months, plan.today, plan.processes):
+    if (extra.months, extra.today, extra.processes, extra.basis) != (
+        plan.months,
+        plan.today,
+        plan.processes,
+        plan.basis,
+    ):
         raise ValueError("같은 입력으로 세운 계획이 아니라 목표를 더하지 않습니다.")
     if plan.covers(single.level):
         return plan
@@ -632,6 +687,8 @@ def plan_required_shortening(
     levels: Sequence[TargetLevel] = TARGET_LEVELS,
     spans: pd.DataFrame | None = None,
     manual_downtime: Sequence[ManualRow] = (),
+    basis: str = BASIS_MASTER,
+    static_schedule: StaticQualSchedule | None = None,
 ) -> ShorteningPlan:
     """설비 마스터·비가동·기존보유·Cut-off·소요대수로 목표마다(기본 다섯 값) 단축 일정을 낸다.
 
@@ -645,7 +702,16 @@ def plan_required_shortening(
 
     `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key` — 계산할 달로 좁힌 0 아닌 칸)이다.
     맞댄 공정의 칸만 가용에서 뺀다(`apply_manual_downtime`). 비면 전과 같은 계산이다.
+
+    `basis` 는 현재 일정 기준이다. 기본 `설비 마스터` 는 지금까지의 계산 그대로다. `Static` 이면
+    `static_schedule`(`static_qual_schedule.build_static_qual_schedule` — 같은 마스터 · 기존보유 ·
+    Cut-off · 달 · 오늘로 낸 역산)이 있어야 하고(없으면 `ValueError`) 현재 일정과 단축 전 가용을
+    그 역산으로 바꾼 뒤 같은 단축 계산을 돈다(`_static_inputs`). 맞댄 공정 가운데 계산할 달에 Static
+    행이 없는 공정은 계산하지 않고 `static_missing` 에 둔다(Q13).
     """
+    basis = basis_label(basis)
+    if basis == BASIS_STATIC and static_schedule is None:
+        raise ValueError("Static 기준 계획에는 Static 역산 결과가 있어야 합니다.")
     ordered = tuple(sorted({int(month) for month in months}))
     lookup = cutoff_lookup(cutoff)
     cutoff_days = {process: int(days) for process, days in lookup.items()}
@@ -687,12 +753,30 @@ def plan_required_shortening(
         if process in equipment_processes and process not in lookup
     )
 
-    candidates = [
-        unit for unit in shortening_candidates(equipment, downtime) if unit.process in compared
-    ]
+    static_missing: list[str] = []
+    if basis == BASIS_STATIC and static_schedule is not None:
+        with_static = set(static_schedule.static_processes)
+        static_missing = [process for process in compared if process not in with_static]
+        compared = [process for process in compared if process in with_static]
+        candidates, base_available = _static_inputs(
+            static_schedule,
+            prepared=prepared,
+            downtime=downtime,
+            baseline=baseline,
+            cutoff=cutoff,
+            spans=spans,
+            processes=compared,
+            months=ordered,
+            cutoff_days=cutoff_days,
+        )
+    else:
+        candidates = [
+            unit for unit in shortening_candidates(equipment, downtime) if unit.process in compared
+        ]
+        base_available = dynamic_available_equipment(monthly, weighted=True)
     compared_set = set(compared)
     available, manual_effect = apply_manual_downtime(
-        dynamic_available_equipment(monthly, weighted=True),
+        base_available,
         tuple(
             row
             for row in manual_downtime
@@ -721,7 +805,91 @@ def plan_required_shortening(
         candidate_units=len(candidates),
         unit_master=_unit_master(prepared, candidates),
         manual_downtime=manual_effect,
+        basis=basis,
+        static_schedule=static_schedule if basis == BASIS_STATIC else None,
+        static_missing=tuple(static_missing),
     )
+
+
+def _static_inputs(
+    schedule: StaticQualSchedule,
+    *,
+    prepared: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    spans: pd.DataFrame | None,
+    processes: Sequence[str],
+    months: Sequence[int],
+    cutoff_days: Mapping[str, int],
+) -> tuple[list[CandidateUnit], pd.DataFrame]:
+    """Static 기준의 단축 후보와 단축 전 가용(입력 비가동을 빼기 전).
+
+    - 후보는 역산한 호기 — 날짜를 받은 호기는 그 현재 일정(지난 마감은 오늘 — Q12), 남는 호기는
+      현재 일정 없음(`OPEN_QUAL` — Q11)이다. Qual 이 끝난 호기는 고정이라 후보가 아니다(Q15).
+    - 가용은 역산하지 않는 호기의 설비 일정 기준 가용(같은 엔진 · 비가동 반영 — `spans` 에서 역산
+      모듈 행만 뺀다)에 날짜를 받은 호기의 몫(`CandidateUnit.share_in` — 비가동 날은 빼고 반입일정은
+      보지 않음)을 더한 것이다(Q07 (가) — 비가동은 역산 뒤 가용에서 빠진다).
+    """
+    wanted = set(processes)
+    blocked = _blocked_days(prepare_downtime_for_prepared_equipment(downtime, prepared))
+    current = schedule.static_current()
+    candidates: list[CandidateUnit] = []
+    for unit in schedule.units:
+        if unit.process not in wanted:
+            continue
+        qual = current.get(unit.unit, OPEN_QUAL)
+        candidates.append(
+            CandidateUnit(
+                process=unit.process,
+                unit=unit.unit,
+                modules=tuple(
+                    CandidateModule(
+                        equipment_id=equipment_id,
+                        qual=qual,
+                        ratio=ratio,
+                        blocked=blocked.get(equipment_id, ()),
+                    )
+                    for equipment_id, ratio in unit.modules
+                ),
+            )
+        )
+    candidates.sort(key=lambda unit: (unit.process, unit_order(unit.unit)))
+    dropped = schedule.reversed_ids
+    kept = (
+        spans.loc[
+            ~spans[EQUIPMENT_ID_COLUMN].astype("string").str.strip().isin(dropped).fillna(False)
+        ]
+        if spans is not None and not spans.empty and dropped
+        else (spans if spans is not None else pd.DataFrame())
+    )
+    ratios = {
+        str(unit).strip(): float(ratio)
+        for unit, ratio in zip(
+            prepared[EQUIPMENT_ID_COLUMN], prepared[CONVERSION_RATIO_COLUMN], strict=True
+        )
+    }
+    fixed = dynamic_available_equipment(
+        build_monthly_equipment_availability(
+            kept, baseline, cutoff, months, conversion_ratios=ratios
+        ),
+        weighted=True,
+    )
+    added: list[dict[str, object]] = []
+    for candidate in candidates:
+        if candidate.undated:
+            continue
+        for month in months:
+            share = candidate.share_in(wd_window(month, float(cutoff_days[candidate.process])))
+            if share:
+                added.append({"생산계획년월": month, "공정": candidate.process, "가용대수": share})
+    if not added:
+        return candidates, fixed
+    joined = pd.concat([fixed, pd.DataFrame(added)], ignore_index=True)
+    joined["생산계획년월"] = pd.to_numeric(joined["생산계획년월"]).astype("int64")
+    joined["공정"] = joined["공정"].astype("string").str.strip().astype(object)
+    joined["가용대수"] = pd.to_numeric(joined["가용대수"]).astype("float64")
+    return candidates, joined.groupby(["생산계획년월", "공정"], as_index=False)[["가용대수"]].sum()
 
 
 def _unit_master(prepared: pd.DataFrame, candidates: Sequence[CandidateUnit]) -> pd.DataFrame:
@@ -1105,15 +1273,16 @@ def _unit_rows(process: str, outcome: _ProcessOutcome) -> list[dict[str, object]
     rows: list[dict[str, object]] = []
     moved = [state for state in outcome.states if state.target < state.unit.qual]
     for state in sorted(moved, key=lambda s: (s.unit.qual, unit_order(s.unit.unit))):
+        undated = state.unit.undated
         rows.append(
             {
                 "공정": process,
                 "호기": state.unit.unit,
                 "구분": KIND_SHORTENED,
-                "기존 Qual": state.unit.qual,
+                "기존 Qual": None if undated else state.unit.qual,
                 "목표 Qual": state.target,
                 "기여 시작": state.target + _ONE_DAY,
-                "단축일수": (state.unit.qual - state.target).days,
+                "단축일수": None if undated else (state.unit.qual - state.target).days,
                 "늘어난 환산대수": state.gain,
                 "대상 월": state.pulled_months[0] if state.pulled_months else None,
                 "해소 기여 월": _month_list(state.extra, short_months),
@@ -1243,6 +1412,7 @@ def unit_export_frame(
                 rows.append(
                     _export_row(
                         row,
+                        basis=plan.basis,
                         level=level,
                         cutoff_days=plan.cutoff_days.get(process),
                         master=master,
@@ -1265,6 +1435,7 @@ def unit_export_frame(
 def _export_row(
     row: Mapping[str, object],
     *,
+    basis: str,
     level: TargetLevel,
     cutoff_days: int | None,
     master: Mapping[str, Mapping[str, object]],
@@ -1281,6 +1452,7 @@ def _export_row(
         before, after = gaps.get((process, month), (math.nan, math.nan))
     contributed = "" if blank_cell(row["해소 기여 월"]) else str(row["해소 기여 월"])
     return {
+        BASIS_COLUMN: basis,
         LEVEL_COLUMN: _target_percent(level, month),
         "공정": process,
         "Cut-off(일)": cutoff_days,
@@ -1338,6 +1510,7 @@ def process_month_export_frame(
             chosen.insert(0, LEVEL_COLUMN, pd.Series(percents, index=chosen.index, dtype="int64"))
         else:
             chosen.insert(0, LEVEL_COLUMN, level_percent(level))
+        chosen.insert(0, BASIS_COLUMN, plan.basis)
         blocks.append(chosen)
     if not blocks:
         return pd.DataFrame(columns=list(PROCESS_MONTH_EXPORT_COLUMNS))

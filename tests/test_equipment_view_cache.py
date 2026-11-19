@@ -74,6 +74,7 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
         plan.today.isoformat(),
         (),
         (),
+        "설비 마스터",
     )
     keyed = simulation_cache.KeyedShorteningPlan(key, plan)
     built: list[tuple[float, ...]] = []

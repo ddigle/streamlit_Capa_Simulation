@@ -121,6 +121,13 @@ from capa_simulation.services.standard_target_capacity import (
     exclude_er_required_equipment,
     split_standard_target_required_equipment,
 )
+from capa_simulation.services.static_qual_schedule import (
+    BASIS_MASTER,
+    BASIS_STATIC,
+    StaticQualSchedule,
+    basis_label,
+    build_static_qual_schedule,
+)
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -284,9 +291,9 @@ def _equipment_digest(equipment: pd.DataFrame, given: str | None) -> str:
 
 
 # (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰, 입력 비가동
-# 칸).
+# 칸, 현재 일정 기준).
 RequiredShorteningCacheKey = tuple[
-    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken, ManualDowntimeKey
+    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken, ManualDowntimeKey, str
 ]
 
 
@@ -302,6 +309,7 @@ def required_shortening_cache_key(
     manual_downtime: ManualDowntime,
     upeh: UpehToken = NO_ASSUMPTION,
     equipment_digest: str | None = None,
+    basis: str = BASIS_MASTER,
 ) -> RequiredShorteningCacheKey:
     """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
@@ -323,6 +331,11 @@ def required_shortening_cache_key(
     `equipment_digest` 는 `frame_digest(equipment)` 를 부르는 쪽이 이미 낸 값이다(설비 화면의
     세션 메모 — `equipment_data_workspace.remembered_digest`). 주면 마스터를 다시 해시하지 않고,
     안 주면 지금처럼 낸다 — 키는 같다.
+
+    맨 끝 칸은 **현재 일정 기준**(`static_qual_schedule.BASIS_STATIC` · `BASIS_MASTER`)이다. 기본은
+    설비 마스터 — 공정 Capa 상세 · 제약 시뮬레이션은 그대로다. Static 기준의 Static 가용대수는 세션
+    활성 시나리오의 `RQ_EQP_AVBL`(미저장 편집 포함)이라 시나리오 키(내용 토큰)가 이미 덮는다 — 더
+    싣지 않는다.
     """
     return (
         scenario_key,
@@ -334,6 +347,7 @@ def required_shortening_cache_key(
         today.isoformat(),
         upeh,
         manual_downtime_key(manual_downtime.rows, months),
+        basis_label(basis),
     )
 
 
@@ -341,13 +355,34 @@ def with_upeh_token(
     key: RequiredShorteningCacheKey, token: UpehToken
 ) -> RequiredShorteningCacheKey:
     """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문·입력 비가동 칸을 다시 내지 않는다."""
-    scenario_key, equipment, downtime, baseline, cutoff, months, today, _, manual = key
-    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token, manual)
+    scenario_key, equipment, downtime, baseline, cutoff, months, today, _, manual, basis = key
+    return (
+        scenario_key,
+        equipment,
+        downtime,
+        baseline,
+        cutoff,
+        months,
+        today,
+        token,
+        manual,
+        basis,
+    )
+
+
+def with_basis(key: RequiredShorteningCacheKey, basis: str) -> RequiredShorteningCacheKey:
+    """같은 입력에 현재 일정 기준만 바꾼 키 — 진척 비교가 기준선과 같은 기준의 계획을 받을 때."""
+    return (*key[:9], basis_label(basis))
 
 
 def shortening_key_token(key: RequiredShorteningCacheKey) -> UpehToken:
     """계획 키의 UPEH 가정 토큰(공식이면 `()`)."""
     return key[7]
+
+
+def shortening_key_basis(key: RequiredShorteningCacheKey) -> str:
+    """계획 키의 현재 일정 기준."""
+    return key[9]
 
 
 def assumed_required_equipment(
@@ -2126,10 +2161,26 @@ def _shortening_plan(
     cutoff: pd.DataFrame,
     required_equipment: Callable[[], pd.DataFrame],
     levels: Sequence[float | MonthlyTarget] = TARGET_LEVELS,
+    static_availability: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
     """공식·가정 계획 칸이 함께 쓰는 몸통. 소요대수는 **키의 토큰으로** 가정을 건 로더에서
-    꺼낸다."""
-    _, equipment_digest, downtime_digest, _, _, months, today, token, manual = cache_key
+    꺼낸다. 키의 기준이 Static 이면 Static 역산(`get_static_qual_schedule` — 같은 칸)을 현재
+    일정으로 쓴다 — 그때는 `static_availability`(키의 시나리오의 `RQ_EQP_AVBL`)가 있어야 한다."""
+    _, equipment_digest, downtime_digest, _, _, months, today, token, manual, basis = cache_key
+    schedule: StaticQualSchedule | None = None
+    if basis == BASIS_STATIC:
+        if static_availability is None:
+            raise ValueError(
+                "Static 기준 계획에는 활성 시나리오의 Static 가용대수가 있어야 합니다."
+            )
+        schedule = get_static_qual_schedule(
+            cache_key,
+            equipment,
+            downtime,
+            baseline,
+            cutoff,
+            _static_availability=static_availability,
+        )
     demand = assumed_required_equipment(required_equipment, token)()
     span = span_date_range(months, cutoff) if months else None
     spans = (
@@ -2152,6 +2203,80 @@ def _shortening_plan(
         levels=levels,
         spans=spans,
         manual_downtime=manual,
+        basis=basis,
+        static_schedule=schedule,
+    )
+
+
+def static_schedule_key(key: RequiredShorteningCacheKey) -> RequiredShorteningCacheKey:
+    """Static 역산 칸의 키 — 계획 키에서 UPEH 가정 토큰을 비우고 기준을 Static 으로 맞춘다. 두
+    기준의 계획(설비 마스터 기준 화면의 흐린 표지 · Static 기준의 현재 일정)이 같은 역산 한 벌을
+    나눈다."""
+    return with_basis(with_upeh_token(key, NO_ASSUMPTION), BASIS_STATIC)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _static_qual_schedule(
+    cache_key: RequiredShorteningCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _static_availability: pd.DataFrame,
+) -> StaticQualSchedule:
+    _, equipment_digest, _, _, _, months, today, _, _, _ = cache_key
+    span = span_date_range(months, _cutoff) if months else None
+    empty_downtime = _downtime.iloc[0:0]
+    spans = (
+        get_equipment_lifecycle_spans(
+            (
+                equipment_digest,
+                frame_digest(empty_downtime),
+                span[0].isoformat(),
+                span[1].isoformat(),
+            ),
+            _equipment=_equipment,
+            _downtime=empty_downtime,
+        )
+        if span is not None
+        else None
+    )
+    return build_static_qual_schedule(
+        equipment=_equipment,
+        downtime=_downtime,
+        baseline=_baseline,
+        cutoff=_cutoff,
+        static_availability=_static_availability,
+        months=months,
+        today=date.fromisoformat(today),
+        spans_without_downtime=spans,
+    )
+
+
+def get_static_qual_schedule(
+    cache_key: RequiredShorteningCacheKey,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    *,
+    _static_availability: pd.DataFrame,
+) -> StaticQualSchedule:
+    """필요 단축 일정 Static 역산(`static_qual_schedule.build_static_qual_schedule`) — 캐시 칸.
+
+    키는 `static_schedule_key(cache_key)` 다 — 어느 기준 · 가정 토큰의 키로 불러도 한 칸이다.
+    프레임은 해시하지 않는다(키가 마스터 · 기존보유 · Cut-off 지문 · 달 · 오늘과 시나리오 키를
+    싣고, Static 가용대수는 그 시나리오 키의 내용 토큰이 덮는다). 비가동은 보지 않는다(Q07 (가)) —
+    비가동 없이 만든 세는 구간은 같은 구간 캐시(`get_equipment_lifecycle_spans`)의 빈 비가동 칸이다.
+    설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다.
+    """
+    return _static_qual_schedule(
+        static_schedule_key(cache_key),
+        equipment,
+        downtime,
+        baseline,
+        cutoff,
+        _static_availability=_static_availability,
     )
 
 
@@ -2163,6 +2288,7 @@ def get_required_shortening(
     _baseline: pd.DataFrame,
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
+    _static_availability: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
     """다섯 목표의 필요 단축 일정(**공식 계획**). 목표·공정 선택은 이 결과를 고르기만 하므로 다시
     계산하지 않는다. UPEH 가정 토큰이 든 키는 받지 않는다 — 필요 단축 일정 화면은 가정을 계획에
@@ -2184,7 +2310,13 @@ def get_required_shortening(
     """
     _require_official(shortening_key_token(cache_key), "get_required_shortening")
     return _shortening_plan(
-        cache_key, _equipment, _downtime, _baseline, _cutoff, _required_equipment
+        cache_key,
+        _equipment,
+        _downtime,
+        _baseline,
+        _cutoff,
+        _required_equipment,
+        static_availability=_static_availability,
     )
 
 
@@ -2197,6 +2329,7 @@ def load_required_shortening(
     *,
     required_equipment: Callable[[], pd.DataFrame],
     level: float | None = None,
+    static_availability: pd.DataFrame | None = None,
 ) -> KeyedShorteningPlan:
     """공식 계획을 받아 키와 한 묶음으로 돌려준다. UPEH 가정 토큰이 든 키는 공식 칸이 멈춘다.
 
@@ -2204,10 +2337,16 @@ def load_required_shortening(
     Q2-26) 그 값 하나만 목표 하나 칸(`get_required_shortening_for_target` — 키에 그 값이 든다)에서
     받아 다섯 값 계획에 스칼라 목표로 더한다(`plan_with_level`). 다섯 안의 값이거나 None 이면 다섯
     값 계획 그대로다. 묶음의 키는 다섯 값 계획의 키다 — 키 전용 캐시(CSV · 진척)는 목표를 키에 따로
-    싣는다.
+    싣는다. `static_availability` 는 키의 기준이 Static 일 때 쓰는 활성 시나리오 `RQ_EQP_AVBL` 이다.
     """
     plan = get_required_shortening(
-        key, equipment, downtime, baseline, cutoff, _required_equipment=required_equipment
+        key,
+        equipment,
+        downtime,
+        baseline,
+        cutoff,
+        _required_equipment=required_equipment,
+        _static_availability=static_availability,
     )
     if level is not None and target_preset(level) is None:
         single = get_required_shortening_for_target(
@@ -2217,6 +2356,7 @@ def load_required_shortening(
             baseline,
             cutoff,
             _required_equipment=required_equipment,
+            _static_availability=static_availability,
         )
         plan = plan_with_level(plan, single)
     return KeyedShorteningPlan(key, plan)
@@ -2896,6 +3036,7 @@ def get_required_shortening_for_target(
     _baseline: pd.DataFrame,
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
+    _static_availability: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
     """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요 단축 일정(**공식 계획**).
     `plan.at(목표)` 로 꺼낸다. 필요 단축 일정 · Space 가 직접 넣은 다섯 밖 목표도 모든 달이 같은
@@ -2917,6 +3058,7 @@ def get_required_shortening_for_target(
         _cutoff,
         _required_equipment,
         levels=(MonthlyTarget(default=default, monthly=monthly),),
+        static_availability=_static_availability,
     )
 
 
@@ -3013,9 +3155,18 @@ def process_timeline_key_from_shortening(
     """필요 단축 일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
     # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다. 입력 비가동은 그
     # 공정 칸만 싣는다.
-    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _, manual = (
-        shortening_key
-    )
+    (
+        _,
+        equipment_digest,
+        downtime_digest,
+        baseline_digest,
+        cutoff_digest,
+        months,
+        _,
+        _,
+        manual,
+        _,
+    ) = shortening_key
     return (
         equipment_digest,
         downtime_digest,
