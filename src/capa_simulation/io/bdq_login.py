@@ -22,8 +22,10 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 **진단**(`child_diag` → `LoginResult.diag` — `ChildDiag`). 하위 프로세스를 띄운 시도마다 종료
 코드 · 시그널 · 걸린 초(부르는 쪽이 잰다), 하위 본문이 마지막으로 들어간 단계와 판(단계 줄 —
 표지 없이 끝나도 남는다), 표준 오류 마지막 traceback 의 예외 종류(`stderr_kind` — 이름만, 계정 ·
-비밀번호가 든 이름은 버린다)를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막 시도
-줄(Admin) · 로그 · 감사 상세 · 결과 파일 칸이 읽는다.
+비밀번호가 든 이름은 버린다), 하위 프로세스를 띄우기 바로 앞과 끝난 바로 뒤의 메모리 단서(cgroup
+사용 · 한도 · OOM 종료 수, 앱 RSS, 거둔 하위 프로세스의 최고 RSS — `io/memory_probe`, 못 읽으면
+「모름」)를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막 시도 줄(Admin) · 로그 · 감사
+상세 · 결과 파일 칸이 읽는다.
 
 **판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었고 같은 하위
 프로세스가 로그인 뒤 잰 남은 분이 `REMAINING_WARNING_MINUTES`(7시간)를 넘으면 성공이다(2026-11-16
@@ -87,7 +89,7 @@ from typing import TYPE_CHECKING, Final, Literal, TypeVar
 
 from capa_simulation.auth import names as sso_names
 from capa_simulation.io import bdq_login_store as store
-from capa_simulation.io import bdq_token
+from capa_simulation.io import bdq_token, memory_probe
 from capa_simulation.io.bdq_login_child import MARKER, STEP_MARKER, STEP_STAGES, VERSION_PACKAGES
 from capa_simulation.io.bdq_login_store import LoadResult, LoginSecret, StoredLogin
 from capa_simulation.io.container_start_report import (
@@ -98,6 +100,7 @@ from capa_simulation.io.container_start_report import (
     LOGIN_STANDING,
     LOGIN_STOPPED,
     ChildDiag,
+    ChildMemory,
     LoginStart,
     read_container_start_report,
 )
@@ -643,9 +646,11 @@ def child_diag(
     stderr: bytes,
     *,
     secrets: Iterable[str],
+    memory: ChildMemory | None = None,
 ) -> ChildDiag:
     """하위 프로세스 한 번의 진단 — 종료 코드 · 시그널 · 걸린 초 · 단계 줄 · 표준 오류 마지막 예외
-    종류. 하위 출력 · 표준 오류 글은 싣지 않는다."""
+    종류 · 앞뒤 메모리 단서(`memory` — `memory_probe.child_memory`). 하위 출력 · 표준 오류 글은 싣지
+    않는다."""
     stage, versions = parse_steps(stdout)
     return ChildDiag(
         exit_code=exit_code,
@@ -655,6 +660,7 @@ def child_diag(
         stderr_kind=stderr_kind(stderr, secrets),
         bigdataquery=versions.get("bigdataquery", ""),
         getpass_asterisk=versions.get("getpass_asterisk", ""),
+        memory=memory,
     )
 
 
@@ -758,6 +764,8 @@ def attempt_login(
     # — 그 쓰기를 막은 채 잰다(로그인 잠금 다음 토큰 쓰기 잠금 차례).
     with bdq_token.holding_token_writes():
         before = file_digest(target)
+        # 하위 프로세스 앞뒤 메모리 단서 — 바깥 SIGKILL 을 가를 값(진단 줄). 예외를 내지 않는다.
+        memory_before = memory_probe.read()
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -780,6 +788,7 @@ def attempt_login(
         except OSError:
             spawn_failed = True
         seconds = time.monotonic() - started
+        memory_after = memory_probe.read()
         after = file_digest(target)
     result = _judge(
         changed=after is not None and after != before,
@@ -789,7 +798,14 @@ def attempt_login(
     )
     if spawn_failed:
         return result
-    diag = child_diag(exit_code, seconds, output, errors, secrets=(account, password))
+    diag = child_diag(
+        exit_code,
+        seconds,
+        output,
+        errors,
+        secrets=(account, password),
+        memory=memory_probe.child_memory(memory_before, memory_after),
+    )
     return replace(result, diag=diag)
 
 
