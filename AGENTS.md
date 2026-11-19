@@ -2060,8 +2060,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   폼 안 비밀 칸(`type="password"` · `autocomplete="new-password"` · 라벨 접음) 하나와 「넣기」 뿐이다. 받은 회차에 세션 칸을 곧바로
   떼고(`tests/test_flash_messages.py` 허용 목록), 누른 회차에 신원을 다시 검증해 개발자일 때만 쓴다. 거절은 칸 아래 한 줄
   (`tests/test_data_error_mark.py` BESIDE — 토큰 글 · 길이 없음), 넣음 · 같음은 알림창이고 넣으면 `HOST.finish` 로 닫는다. 만료 1시간
-  전 개발자 알림 `AD-11`(`render_expiry_alert` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
-  `container_start_check.render_token_alert` 가 부른다. 만료를 못 읽으면 서지 않고, BigDataQuery 자동 로그인이 서 있는 동안(`standing`)도
+  전 개발자 알림 `AD-11`(`expiry_alert_note` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
+  `container_start_check.render_token_alert` 가 낸다(회차 끝 다시 내기 `render_token_alert_late` 도 같은 짓기). 만료를 못 읽으면 서지 않고, BigDataQuery 자동 로그인이 서 있는 동안(`standing`)도
   서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
   `app.py` 가 모든 화면 회차에 부르는 자리라 지금 토큰을 읽다 무엇이 나도(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로
   물러서고, 시각대로 못 옮기는 시각은 「알 수 없음」(`_clock`)이다 — 넣기는 쓴 뒤 무엇이 나도 넣음으로 끝난다.

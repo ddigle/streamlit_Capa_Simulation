@@ -134,7 +134,7 @@ def test_unknown_values_read_as_unknown() -> None:
     assert ChildMemory().text == "cgroup 모름 · oom_kill 모름 · 앱 RSS 모름 · 하위 최고 모름"
     partial = ChildMemory(cgroup_after=900, unlimited=True, oom_after=1, rss_before=300)
     assert partial.text == (
-        "cgroup 모름→900/maxMiB · oom_kill 모름→1 · 앱 RSS 300→모름MiB · 하위 최고 모름"
+        "cgroup 모름→900/max · oom_kill 모름→1 · 앱 RSS 300→모름MiB · 하위 최고 모름"
     )
 
 

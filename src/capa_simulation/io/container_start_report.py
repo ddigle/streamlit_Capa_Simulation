@@ -330,7 +330,8 @@ class ChildMemory:
     @property
     def text(self) -> str:
         """화면 값 조각 — 「cgroup 712→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고
-        120→650MiB」. 모르는 값은 「모름」 이고, 한 묶음을 통째로 모르면 「cgroup 모름」 꼴이다."""
+        120→650MiB」(한도 없음은 「/max」). 모르는 값은 「모름」 이고, 한 묶음을 통째로 모르면
+        「cgroup 모름」 꼴이다."""
         if self.cgroup_before is None and self.cgroup_after is None and self.limit is None:
             cgroup = (
                 f"cgroup {UNKNOWN_VALUE}/{MEMORY_UNLIMITED}"
@@ -338,8 +339,8 @@ class ChildMemory:
                 else f"cgroup {UNKNOWN_VALUE}"
             )
         else:
-            cap = MEMORY_UNLIMITED if self.unlimited else _known(self.limit)
-            cgroup = f"cgroup {_pair(self.cgroup_before, self.cgroup_after)}/{cap}MiB"
+            cap = MEMORY_UNLIMITED if self.unlimited else f"{_known(self.limit)}MiB"
+            cgroup = f"cgroup {_pair(self.cgroup_before, self.cgroup_after)}/{cap}"
         return " · ".join(
             (
                 cgroup,
