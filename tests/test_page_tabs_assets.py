@@ -146,7 +146,9 @@ def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     claim = JS[JS.index("const claimDrawn = () => {") :]
     claim = claim[: claim.index("\n  }\n")]
     assert "order: drawn.ids, pins: drawn.pinned, seq: claimOrder(" in claim
-    select = JS[JS.index("const sendSelect = (item, opened = null) => {") :]
+    select = JS[
+        JS.index("const sendSelect = (item, opened = null, asked = null, resent = false) => {") :
+    ]
     select = select[: select.index("\n  }\n")]
     assert "S.moves.due !== null ? claimDrawn() : {}" in select
     click = JS[JS.index("list.onclick = (event) => {") :]
@@ -357,10 +359,12 @@ def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() ->
     assert "const opened = typeof detail.opened === 'function' ? detail.opened : null" in handler
     assert "else if (opened) opened()" in handler
     assert "S.linkOpened = opened\n      link.click()\n      S.linkOpened = null" in handler
-    send = JS[JS.index("const sendSelect = (item, opened = null) => {") :]
+    send = JS[
+        JS.index("const sendSelect = (item, opened = null, asked = null, resent = false) => {") :
+    ]
     send = send[: send.index("\n  }\n")]
     assert (
-        send.index("if (!leaveOk()) return")
+        send.index("if (!askedAlready && !leaveOk()) return")
         < send.index("S.send('select'")
         < send.index("if (opened) opened()")
     )
@@ -654,6 +658,140 @@ def test_a_tap_while_the_moved_screen_still_computes_is_sent_after_a_short_grace
     assert "BUSY_MS, open, running, MOVED_GRACE_MS)" in JS
 
 
+_LOST_RUNNER = """
+const QUIET = 600
+const IDLE = 2000
+const ids = ['home', 'plan', 'ref', 'mod']
+const out = {}
+const send = (q, id, at, extra = {}) => {
+  sentSelect(q, id, 'mod', at, { path: '/mod', ...extra })
+  return q.flight
+}
+// 모듈 화면(mod)의 단추 회차가 막 끝난 뒤 Space(plan) 탭 — 트리거가 지워져
+// 서버는 모듈 화면을 다시 돈다. 회차 표지: 보낼 때는 앞 회차의 「돈다」 가 남아
+// 있다가 → 「돌지 않음」(10) → 트리거 없는 회차 「돈다」(40) → 끝(120).
+let q = createSelectQueue()
+let run = createRunMark(true)
+let f = send(q, 'plan', 0)
+markRun(run, false, 10)
+out.staleEnd = lostSelect(f, 'mod', '/mod', false, run, 700, QUIET, IDLE)
+markRun(run, true, 40)
+out.running = lostSelect(f, 'mod', '/mod', true, run, 700, QUIET, IDLE)
+markRun(run, false, 120)
+out.quiet = [
+  lostSelect(f, 'mod', '/mod', false, run, 719, QUIET, IDLE),
+  lostSelect(f, 'mod', '/mod', false, run, 720, QUIET, IDLE),
+]
+// 기다리던 누름이 없으면 그 고르기를 다시 보낸다 — 다시 보낸 고르기는 또 보내지 않는다.
+out.again = resendTarget(q, 'mod', ids)
+out.cleared = [q.flight, q.waiting]
+f = send(q, 'plan', 800, { resent: true })
+out.resentOnce = lostSelect(f, 'mod', '/mod', false, run, 5000, QUIET, IDLE)
+// 그 사이 누른 탭이 있으면 마지막 누름을 보낸다(마지막 누름이 이긴다) — 닿지 않은 고르기는 버린다.
+q = createSelectQueue()
+f = send(q, 'plan', 0)
+pressSelect(q, 'ref', 'mod', 30, 10000)
+out.last = resendTarget(q, 'mod', ids)
+// 마지막 누름이 지금 화면이거나 닫힌 탭이면 보내지 않는다.
+q = createSelectQueue()
+send(q, 'plan', 0)
+pressSelect(q, 'mod', 'mod', 30, 10000)
+out.backHere = resendTarget(q, 'mod', ids)
+q = createSelectQueue()
+send(q, 'plan', 0)
+out.closedTab = resendTarget(q, 'mod', ['home', 'mod'])
+// 닿은 고르기: 서버가 st.switch_page 로 그 회차를 일찍 끝내고(돌지 않음 — 회차 끝
+// GC) 옮긴 화면 회차가 선다. 옮긴 화면의 탭 줄이 왔으면(arrived · 지금 탭이 바뀜)
+// 닿은 것이다.
+q = createSelectQueue()
+run = createRunMark(false)
+f = send(q, 'plan', 0)
+markRun(run, true, 20)
+markRun(run, false, 60)
+out.switchGap = lostSelect(f, 'mod', '/mod', false, run, 400, QUIET, IDLE)
+markRun(run, true, 450)
+out.arrivedActive = lostSelect(f, 'plan', '/mod', true, run, 2000, QUIET, IDLE)
+f.arrived = 500
+markRun(run, false, 900)
+out.arrived = lostSelect(f, 'mod', '/mod', false, run, 5000, QUIET, IDLE)
+// 보낸 뒤 회차 표지가 한 번도 바뀌지 않았으면(짧은 회차가 한 그리기에 접힘) 더 오래 기다린다.
+q = createSelectQueue()
+run = createRunMark(false)
+f = send(q, 'plan', 0)
+out.idle = [
+  lostSelect(f, 'mod', '/mod', false, run, 1999, QUIET, IDLE),
+  lostSelect(f, 'mod', '/mod', false, run, 2000, QUIET, IDLE),
+]
+// 주소가 바뀌었으면(뒤로가기 · 링크) 다른 길로 옮긴 것이다. 지금 탭 닫기(id
+// 없음)는 다시 보내지 않는다.
+out.otherPath = lostSelect(f, 'mod', '/other', false, run, 5000, QUIET, IDLE)
+q = createSelectQueue()
+f = send(q, null, 0)
+out.closing = lostSelect(f, 'mod', '/mod', false, run, 5000, QUIET, IDLE)
+// 회차 표지는 「돈다」 · 「돌지 않음」 이 바뀐 때만 적는다(돈다 → 다시 청함은 같은 「돈다」).
+run = createRunMark(false)
+markRun(run, scriptRunning('running'), 5)
+markRun(run, scriptRunning('rerunRequested'), 9)
+out.mark = [run.startedAt, run.changedAt, scriptRunning('notRunning'), scriptRunning(null)]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_tab_select_that_never_reached_the_server_is_sent_once_more() -> None:
+    """앞 회차 끝(`script_finished`)을 받은 직후 몇 ms 안에 누른 탭은 Streamlit 1.63
+    프런트가 회차 요청을 보내기 전에 트리거 칸을 지워(`removeInactiveWidgetState` —
+    Components v2 트리거 칸은 요소 id 가 아니다) 서버에 닿지 않았다. 요청은 트리거 없이
+    나가 지금 화면이 다시 돌고 탭 줄은 10초 뒤 기다림을 말없이 놓았다(T1 — 모듈 「하나
+    더」 · Capa Chatbot 추천 질문 직후 Space 탭, CPU 1배 약 5~10ms · 4배 약 25ms 창).
+    보낸 뒤 선 회차가 끝나 `LOST_QUIET_MS` 동안 조용한데 옮긴 화면의 탭 줄이 오지
+    않았으면 그 사이 누른 마지막 탭, 없으면 그 고르기를 한 번만 다시 보낸다. 닿은
+    고르기는 `st.switch_page` 로 회차를 일찍 끝내 옮긴 화면이 곧 서므로 그 사이의 짧은
+    「돌지 않음」 으로는 다시 보내지 않는다."""
+    out = _node(_LOST_RUNNER)
+
+    assert out["staleEnd"] is False
+    assert out["running"] is False
+    assert out["quiet"] == [False, True]
+    assert out["again"] == {"id": "plan", "again": True}
+    assert out["cleared"] == [None, None]
+    assert out["resentOnce"] is False
+    assert out["last"] == {"id": "ref", "again": False}
+    assert out["backHere"] is None
+    assert out["closedTab"] is None
+    assert out["switchGap"] is False
+    assert out["arrivedActive"] is False
+    assert out["arrived"] is False
+    assert out["idle"] == [False, True]
+    assert out["otherPath"] is False
+    assert out["closing"] is False
+    assert out["mark"] == [5, 5, False, False]
+    assert "const LOST_QUIET_MS = 600" in JS and "const LOST_IDLE_MS = 2000" in JS
+
+
+def test_the_lost_select_check_watches_the_run_mark_and_resends_without_asking_again() -> None:
+    """닿지 않은 고르기는 회차 표지가 바뀐 때(`MutationObserver` — 100ms 마다 보는
+    `settle` 은 수십 ms 회차를 놓친다)로 가리고, 기다림 끝(`settleSelect`)보다 먼저
+    본다. 다시 보낼 때 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않고, 떠날 때
+    지켜보기를 걷는다."""
+    settle = JS[JS.index("  function settle() {") :]
+    settle = settle[: settle.index("\n  }\n")]
+    assert settle.index("lostSelect(S.queue.flight") < settle.index("settleSelect(S.queue")
+    assert "resendLost(open)" in settle
+    resend = JS[JS.index("  function resendLost(open) {") :]
+    resend = resend[: resend.index("\n  }\n")]
+    assert "resendTarget(S.queue, S.data.active, open)" in resend
+    assert "sendSelect(item, opened, lost.leave, target.again)" in resend
+    watch = JS[JS.index("const appRoot = document.querySelector(APP_ROOT)") :]
+    watch = watch[: watch.index("\n  }\n")]
+    assert "new MutationObserver(() => markRun(S.run, readRun(), Date.now()))" in watch
+    assert "attributeFilter: ['data-test-script-state']" in watch
+    cleanup = JS[JS.rindex("return () => {") :]
+    assert "if (S.runWatch) S.runWatch.disconnect()" in cleanup
+    moving = JS[JS.index("const moving = (id, resent = false) => {") :]
+    moving = moving[: moving.index("\n  }\n")]
+    assert "path: window.location.pathname, leave: S.data.leave || '', resent" in moving
+
+
 def test_new_data_never_sends_a_trigger_from_inside_the_component_render() -> None:
     """새 data 로 부품이 다시 불릴 때 보낸 이동·붙든 누름은 그 함수 **밖**(다음 차례)에서 본다.
     탭 줄이 온 그리기 안에서 트리거를 보내면 Streamlit 프런트가 그 값을 회차 요청에 싣지 않아
@@ -751,7 +889,7 @@ def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_docume
     """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 누름
     기다림을 건다. 기록 지킴이는 걸고 풀지 않고 늘 걸려 있다 — 문서에 하나다."""
     send_select = JS.index("S.send('select'")
-    assert JS.rindex("moving(item.dataset.id)", 0, send_select) > JS.rindex(
+    assert JS.rindex("moving(item.dataset.id, resent)", 0, send_select) > JS.rindex(
         "busy(item)", 0, send_select
     )
     send_close = JS.index("S.send('close'")
