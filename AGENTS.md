@@ -1452,8 +1452,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사용 층 표(`사용` 칸, 행 고르기 = 층 열기)와 늘 서는 자리 칸 안의 접힌 「비활성 층 n개」 표(거기서도 연다), 표 머리
   `사용 편집` 토글을 켜면 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄(`st.segmented_control` 다섯 — 값은 회차마다 초안에서
   세션에 적고 `default=`·세대 꼬리 없음) · 30줄 편집표다.
-  - 초안(「C1 3F」 → 사유 — 옛 코드 또는 적은 글)·편집 시작 저장본 `(version, rows)`·확인 대기·단추 세대는 세션 칸이고,
-    편집표 칸 편집은 회차마다·콜백 첫머리에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에 사유를 적으면
+  - 편집 중인가(`FLOOR_EDITING` — 2026-11-19 보드 m19-e2e-space-leave (나))·초안(「C1 3F」 → 사유 — 옛 코드 또는 적은 글)·편집
+    시작 저장본 `(version, rows)`·확인 대기·단추 세대는 위젯 밖 세션 칸이고(`사용 편집` 토글 값은 그리기 전에 회차마다
+    `FLOOR_EDITING` 으로 적는다 — 화면을 떠나 위젯 상태가 걷혀도 돌아오면 켜진 채 선다),
+    편집표 칸 편집은 회차마다·콜백 첫머리·편집표 `on_change`(`_fold_from_editor` — 고친 직후 떠나도 남게, 초안만 적고 새 위젯 세우기 · 단추 세대 올림은 본문 몫 — 같은 회차 단추 누름이 옛 세대로 버려지지 않게)에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에 사유를 적으면
     끄기). 칸 편집은 위젯에 남아 접은 초안을 그린 위에 얹혀 보이므로, 다시 세우는 것(`discard_editor`)은 그렇게 보일 값이
     접은 값과 다를 때뿐이다(비활성 층의 사유 지움, 「UNUSED」 처럼 그린 글과 다르게 접히는 글, 이모지 반쪽이 남은 글 등 —
     견주기는 보이는 칸 글로 한다) — 끄기·켜기·사유 적기는 같은 위젯이라 보던 스크롤·초점이 남는다.
@@ -1478,16 +1480,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다시 세우기 **전에** 적는다 — 창 안의 저장은 쓰지 않고 초안을 최신으로 다시 세운 채 거부를 다시 알리고, 동 머리 콜백은
     옛 화면의 동 머리 값(빠른 둘째 누름이 다시 실어 온 내 옛 변경)을 받지 않으며, 알림 칸은 담아 둔 알림이 없으면 그 거부를
     다시 그린다(2026-10-26 E2E 5회차 — 「끄고 저장」 두 번에 알림이 사라지고 다음 저장이 남의 저장을 덮었다,
-    `tests/test_space_floor_state_page.py`). 토글이 꺼진 채 그려지는 회차는 남은 초안을
-    지운다(층을 열면 토글 위젯 상태가 버려진다). 그래서 초안이 있는 동안 다른 층 열기는 먼저 묻는다(2026-11-19 사용자
-    요청 — 앱에 있던 꼴만): FAB 뷰어 · 편집기는 data `openConfirm`(`floor_open_confirm` — 초안이 있을 때만
+    `tests/test_space_floor_state_page.py`). 편집을 끈 채 그려지는 회차는 남은 초안 조각을 지운다. 초안은 화면을 떠나도
+    남지만(위) 같은 화면 안에서 다른 층 열기는 그대로 먼저 묻는다(2026-11-19 사용자
+    요청 — 앱에 있던 꼴만, 보드 m19-guard-floor 「좋음」): FAB 뷰어 · 편집기는 data `openConfirm`(`floor_open_confirm` — 초안이 있을 때만
     `FLOOR_OPEN_CONFIRM`, 탭 줄 떠나기 확인과 같은 꼴의 브라우저 확인 창, epoch 밖)으로 블록 누름 · 선택 칸 [열기] 앞에
     묻고 「확인」 을 `navigate` 의 `discard` 로 함께 보내며, 사이드바 `층 바로 가기` 는 팝오버 안 「변경을 버리고 열기」
     체크(`FLOOR_OPEN_DISCARD_LABEL` — 「변경을 버리고 불러오기」 와 같은 꼴) 뒤에만 고른다. 서버 거름은
     `floor_open_allowed`(`space_status._open_floor` 첫머리) — 묻지 않고 온 열기(확인 글이 닿기 전 누른 블록)는 초안을 두고
-    열지 않으며 층 목록 알림 칸에 경고 한 줄. 같은 화면 안의 뒤로가기 · 주소로 여는 층은 이 거름을 지나지 않는다. `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
-    확인·테마 전환 표지다(`page_tabs.page_unsaved_marks`·`leave_notice` — Space 가 지금 화면일 때만) — `app.py` 가
+    열지 않으며 층 목록 알림 칸에 경고 한 줄. 주소로 여는 층(새 문서 — 새로고침 확인이 묻는다)은 이 거름을 지나지 않는다(층 열기는
+    브라우저 기록을 쌓지 않아 「같은 화면 안의 뒤로가기」 는 없다 — E2E E2-1). `floor_state_draft_count()` · `floor_state_draft_pending()` 은 세션만 읽는
+    Space 탭 점 · 머리 변경 칩(「저장 안 함」 묶음 「층 사용 편집 · 층 n개 저장 안 함」 — 그 화면으로) · 테마 · 새로고침 표지다
+    (`page_tabs.page_unsaved_marks` · `change_summary.session_changes` — **어느 화면에서나**, 탭 줄 떠나기 확인 `leave_notice` 에는
+    넣지 않는다 — 떠나도 잃지 않는다, 층 사용을 고칠 수 없는 화면 등급이면 0) — `app.py` 가
     페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
+  - **되살아난 초안의 거름**은 `settle_floor_state_draft` 다(Space FAB 회차마다 층 목록 · 층 바로 가기보다 먼저). 더는 고칠 수
+    없으면(등급 · 가정 설비 시나리오 · 샘플 화면 — `editable`) 편집을 끄고 초안을 버리고, 다른 화면에서 돌아온 회차(편집 중인데
+    토글 위젯 상태가 켜져 있지 않다)에 초안이 출발한 version 과 저장본이 다르면 남의 저장이면 최신 저장본으로 다시 세운다(편집은
+    켜진 채 — 제 저장이 끊긴 것은 `is_own_save` 로 저장 뒷정리). 바뀐 층이 있던 초안을 버린 회차는 그 수(`FLOOR_DROPPED_SAVED` ·
+    `FLOOR_DROPPED_LOCKED`)를 Space 가 회차 끝(모든 위젯 뒤, 다른 다시 돌기보다 먼저)에 층 목록 알림 칸에 담고
+    (`queue_floor_state_notice`) 앱 전체를 한 번 더 돈다 — 머리 점 · 칩은 페이지보다 먼저 옛 초안으로 섰다(입력 비가동
+    `_settle_draft` 와 같은 까닭). 화면에 머문 채 남이 저장하면 전처럼 「저장」 이 거부하며 다시 세운다(화면에 머문 회차는 거르지
+    않는다 — 칸 편집 회차에 초안을 버리지 않게). 공식 설비 시나리오 안의 리비전만 바뀐 것은 거르지 않는다(층 사용은 리비전과
+    무관 — S6). 「도면에서 보기」 처럼 층 상세로 바로 온 회차는 거르지 않고 FAB 에 와서 거른다.
   - **공식 설비 시나리오에서만 연다**(설비 시나리오 2단계 Q3 — 건물·층은 가정 시나리오가 없다, FAB 전체와 같은 까닭). 가정
     세션과 샘플 fleet 화면에서는 잠근다(값도 끈다 — `locked_reason` 풍선). 끄기 확인은 값 줄 하나와 단추이고(호기 남은 층 · 공식 배치 수 — 뜻은
     `끄고 저장` 풍선), 공식 배치의 호기 수에 더해 가정 설비 시나리오의 배치에서 그 층에 놓인 호기 수를 덧줄로 적는다(`equipment_cache.load_layout_overlay_floor_counts` — 층 사용은
@@ -3565,8 +3579,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그대로라 가리켜도 이웃 탭이 밀리지 않는다. 터치 기기(`hover: none`)는 × 가 늘 보인다(`page_tabs.css`).
   - 점(`page_unsaved_marks`)은 세션만 읽는다 — 붙여넣기 대기·표 초안(기준 정보 그리드)·설비 편집본(가용설비·Space 두 탭)·Past Data 초안·시나리오
     관리 표 초안·VOC 적어 둔 답변(`voc_draft_keeper.kept_reply_count` — VOC 탭에)·가용설비 현황 Preference 입력 비가동
-    초안(`manual_downtime_tab.manual_downtime_draft_count` — 가용설비 현황 탭에, 2026-11-19)은 어느 화면에서나, 편집표의 적용 전 편집과 Space 층 사용 편집 초안(`floor_state_draft_pending` — `사용
-    편집` 토글이 위젯 상태라 화면을 떠나면 초안이 버려진다)·가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
+    초안(`manual_downtime_tab.manual_downtime_draft_count` — 가용설비 현황 탭에, 2026-11-19)·Space 층 사용 편집 초안(`floor_state_draft_pending` — 편집 중인가 ·
+    초안 모두 위젯 밖 칸, Space 탭에, 2026-11-19 보드 m19-e2e-space-leave (나))은 어느 화면에서나, 편집표의 적용 전 편집과 가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
     (`small_editor_edits` — 시나리오 편집 등록부에는 넣지 않는다, 시나리오 저장 경고가 아니다)은 지금 탭에만 찍는다. 지금 화면의 그 둘이 있으면 다른 탭
     누름·지금 탭 × 에서 `confirm` 으로 묻는다(`leave_notice`). 사이드바 링크·뒤로가기에는 묻지 않는다. 시나리오 미저장·
     Cut-off 초안·Qual 계산기는 점 대상이 아니다. 테마 단추의 「저장 안 함」 표지도 이 판정 하나를 쓴다.
@@ -4716,7 +4730,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「그 화면으로」 가 시나리오 관리 「DB 등록」 이다(`screen_error_goto`). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) ·
   `tests/test_no_revision_pages.py`(공식버전 없는 저장소로 모든 화면 — 마크 없음 · 확인 알림) · `alert_marks.place_errors`(오류 없이 그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
-  세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
+  세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안(「저장 안 함」 묶음 — 떠나도 남는다, 2026-11-19) · 작은 편집표 · Past Data · 시나리오 관리 표
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
   가정(100% 아님)을 더해 묶음 셋(떠나면 사라짐 · 저장 안 함 · 가정 사용 중) 차례로 낸다. DB · 캐시를 읽지 않는다. 폼 안 ·
   브라우저 안 초안과 저장 개념이 없는 조건은 들지 않는다(다음 판 후보 — `docs/TODO.md`).

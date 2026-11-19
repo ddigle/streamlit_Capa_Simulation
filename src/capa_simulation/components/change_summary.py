@@ -5,10 +5,10 @@
 바뀐 것이 있을 때만 머리 툴바에 「● 변경 n · 맨 위 한 줄」 칩이 서고(`components/alert_center.py`),
 누르면 화면별 한 줄이 묶음 셋으로 나온다.
 
-1. **화면을 떠나면 사라짐**(`lose`) — 편집표의 적용 전 편집(지금 화면만), Space 층 사용 편집 초안,
-가용설비 현황 작은
+1. **화면을 떠나면 사라짐**(`lose`) — 편집표의 적용 전 편집(지금 화면만), 가용설비 현황 작은
    편집표.
 2. **저장 안 함**(`keep`) — 적용했지만 저장하지 않은 시나리오, 설비 편집본 · FAB 배치 대기,
+Space 층 사용 편집 초안(위젯 밖 세션 칸 — 2026-11-19 보드 m19-e2e-space-leave (나)),
 가용설비 현황 Preference 입력 비가동 초안(세션 칸 — 2026-11-19),
 기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Past Data
    초안, 시나리오 관리 표 초안, VOC 적어 둔 답변(남지 못한 답변). 판 머리 글은 「새로고침에
@@ -25,9 +25,9 @@ Preference 폼 · Cut-off · Admin 표 · 자동 갱신 설정 · Space 적용 �
 판 후보).
 머리 띠 위 줄의 「최신 rN 있음」 · 「공식 vN」 은 상태라 넣지 않는다.
 
-차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 입력
-비가동 미저장 → 표 초안 · 붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 → 설비 가정 → UPEH
-가정.
+차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 층
+사용 미저장 → 입력 비가동 미저장 → 표 초안 · 붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 →
+설비 가정 → UPEH 가정.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from capa_simulation.components.past_data_management import past_data_has_pendin
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import list_has_edits
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
-from capa_simulation.components.space_floor_list import floor_state_draft_pending
+from capa_simulation.components.space_floor_list import floor_state_draft_count
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
@@ -140,11 +140,6 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
             held.append(item("keep", spec, title, text, f"{title} 적용 전"))
         if edits.staged:
             held.append(item("keep", spec, title, "올린 붙여넣기 적용 대기", "붙여넣기 대기"))
-    space_file = Path(SPACE_STATUS.path).name
-    if page_file == space_file and floor_state_draft_pending():
-        lose.append(
-            item("lose", SPACE_STATUS, SPACE_STATUS.title, "층 사용 편집 중", "Space 편집 중")
-        )
     if page_file == Path(AVAILABLE_EQUIPMENT_STATUS.path).name:
         small = small_editor_edits()
         if small:
@@ -178,6 +173,17 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
     if pending_fab_layout() is not None:
         keep.append(
             item("keep", SPACE_STATUS, SPACE_STATUS.title, "FAB 배치 저장 안 함", "설비 미저장")
+        )
+    floors = floor_state_draft_count()
+    if floors:
+        keep.append(
+            item(
+                "keep",
+                SPACE_STATUS,
+                SPACE_STATUS.title,
+                f"층 사용 편집 · 층 {floors:,}개 저장 안 함",
+                "층 사용 미저장",
+            )
         )
     manual = manual_downtime_draft_count()
     if manual:

@@ -116,9 +116,6 @@ from capa_simulation.components.past_data_management import past_data_has_pendin
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
-from capa_simulation.components.space_floor_list import (
-    FLOOR_STATE_LEAVE_LABEL as FLOOR_STATE_LEAVE_LABEL,
-)
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.design import tokens
@@ -226,11 +223,7 @@ EDIT_HOST_KEYS: Final = (
     *PLAN_GRID_HOSTS.values(),
     *MOUNT_KEYS,
 )
-_SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
-# Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름
-# (`FLOOR_STATE_LEAVE_LABEL`)은 편집표 몫과 같은 「제목 · 이름」 꼴이고, Space 의 층 열기 확인과 한
-# 글이라 `space_floor_list` 가 갖는다(여기서 다시 낸다).
 
 
 def tab_icon(spec: PageSpec) -> str:
@@ -268,9 +261,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
       **어느 화면에서나** 그 탭에 찍는다.
     - 편집표(`st.data_editor`)의 적용 전 편집은 위젯 상태라 화면을 떠나면 사라진다. **지금
       화면에만** 찍고, 떠날 때 묻는다(`leave_notice`).
-    - Space 층 사용 편집 초안(`floor_state_draft_pending`)도 같다 — 초안은 세션 칸이지만 `사용 편집`
-      토글이 위젯 상태라 화면을 떠나면 꺼진 채 돌아와 초안을 버린다. Space 가 지금 화면일 때만
-      찍고 떠날 때 묻는다(테마 표지도 이 점으로 본다).
+    - Space 층 사용 편집 초안(`floor_state_draft_pending` — 편집 중인가 · 초안 모두 위젯 밖 세션
+      칸)도 탭을 옮겨도 남아 **어느 화면에서나** Space 탭에 찍는다(떠나도 남아 떠나기 확인에는 넣지
+      않는다 — 2026-11-19 보드 m19-e2e-space-leave (나)).
     - 가용설비 현황 설비 마스터 탭의 작은 편집표 둘(`small_editor_edits` — 기존 보유대수·비가동
       일정)도 편집표라 지금 화면일 때만 찍고 떠날 때 묻는다. 설비 마스터 **표**의 편집은 편집본(세션
       칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
@@ -305,7 +298,7 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     kept = kept_reply_count()
     if kept:
         mark(_page_path(VOC_PAGE_FILE), f"적어 둔 답변 {kept:,}건")
-    if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
+    if floor_state_draft_pending():
         mark(SPACE_STATUS.path, "저장하지 않은 층 사용 편집")
     small = _equipment_small_editors(page_file)
     if small:
@@ -322,18 +315,16 @@ def _equipment_small_editors(page_file: str | None) -> list[str]:
 
 
 def leave_notice(page_file: str | None) -> str:
-    """지금 화면을 떠나면 사라지는 편집(편집표 몫과 Space 층 사용 편집 초안)을 이은 글. 없으면 빈
-    글자 — 탭 줄이 묻지 않는다.
+    """지금 화면을 떠나면 사라지는 편집(편집표 몫 — 가용설비 현황 작은 편집표 둘 포함)을 이은 글.
+    없으면 빈 글자 — 탭 줄이 묻지 않는다.
 
-    붙여넣기 대기·설비 편집본·입력 비가동 초안처럼 세션에 남는 것은 넣지 않는다(떠나도 사라지지
-    않는다).
+    붙여넣기 대기·설비 편집본·입력 비가동 초안·Space 층 사용 편집 초안처럼 세션에 남는 것은 넣지
+    않는다(떠나도 사라지지 않는다).
     """
     if page_file is None:
         return ""
     edits = pending_edit_pages(page_file).get(page_file)
     names = [] if edits is None else list(edits.editors)
-    if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
-        names.append(FLOOR_STATE_LEAVE_LABEL)
     names.extend(_equipment_small_editors(page_file))
     return ", ".join(names)
 

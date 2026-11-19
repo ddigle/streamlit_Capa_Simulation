@@ -93,7 +93,7 @@ SESSION_STATE_SITES: dict[str, int] = {
     "src/capa_simulation/components/shortening_board.py": 12,
     "src/capa_simulation/components/shortening_progress_panel.py": 14,
     "src/capa_simulation/components/side_panel.py": 8,
-    "src/capa_simulation/components/space_floor_list.py": 26,
+    "src/capa_simulation/components/space_floor_list.py": 19,
     "src/capa_simulation/components/space_layout_editor.py": 4,
     "src/capa_simulation/components/space_shortening_view.py": 37,
     "src/capa_simulation/components/sso_expiry.py": 2,
