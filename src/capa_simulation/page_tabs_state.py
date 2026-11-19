@@ -48,6 +48,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.navigation import HOME, IMPLEMENTING_SUFFIX, PageSpec, runtime_specs
+from capa_simulation.stale_page_guard import note_switch
 
 # 연 탭(보이는 차례, `PageSpec.path`)과 그 가운데 고정한 탭. 둘 다 글자 튜플이다 — 코드를 다시 읽은
 # 서버에서도 세션 값이 그대로 읽히게 클래스를 세션에 두지 않는다.
@@ -374,8 +375,18 @@ def refused_at_tab_limit(path: str) -> bool:
     return True
 
 
+def switch_back_to(target: str) -> None:
+    """늦게 온 옛 화면 회차(`stale_page_guard.stale_target`)를 옮겨 간 화면 `target` 으로
+    다시 보낸다 — 탭 이동과 같은 길(테마 인자 유지)이다. 돌아오지 않는다(내비게이션 없는 단독
+    실행 AppTest 는 돌아온다)."""
+    _switch(target)
+
+
 def _switch(target: str) -> None:
     theme_value = st.query_params.get(THEME_QUERY_PARAM)
+    # 옮기러 가는 화면을 적는다 — 그 화면 회차가 서기 전에 떠나는 화면의 옛 메시지가 이 이동을
+    # 덮어도 다음 회차 맨 앞에서 다시 보낸다(`stale_page_guard`).
+    note_switch(target)
     try:
         # 주소를 통째로 바꾼다 — 테마 인자를 싣지 않으면 지워져 다음 로드가 첫 방문이 된다
         # (AGENTS 9장). 떠나는 화면의 다른 주소 인자(공정 Capa 상세의 `process` 등)는 지워지는

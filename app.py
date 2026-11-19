@@ -111,7 +111,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
     render_schema_ahead_warning,
 )
-from capa_simulation.page_tabs_state import note_current_page, tab_label
+from capa_simulation.page_tabs_state import note_current_page, switch_back_to, tab_label
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
@@ -144,6 +144,12 @@ from capa_simulation.sidebar_status import (
     render_sidebar_section,
     sidebar_expander,
 )
+from capa_simulation.stale_page_guard import (
+    body_widgets_before,
+    note_body_widgets,
+    note_page,
+)
+from capa_simulation.stale_page_guard import stale_target as stale_page_target
 from capa_simulation.sync_boot import enable_sync_state_if_managed, heartbeat_if_managed
 
 # 그룹 상자 **안**에서 그 그룹의 대표 페이지를 부르는 이름. 머리글이 이미 그룹 이름을
@@ -241,6 +247,13 @@ grade_ui.install()
 app_run = begin_app_run()
 # 어떤 위젯보다 먼저다 — 그린 위젯의 값이 섞이면 앞 세션의 탭을 가르지 못한다.
 note_session_start()
+# 화면 탭 · 사이드바 링크로 옮긴 뒤 브라우저가 떠난 화면 위젯 값을 실어 늦게 보낸 회차(편집표가 접힌
+# 편집을 걷고 0.15초 뒤 보내는 상태 등)는 그 화면을 다시 그리지 않고 옮겨 간 화면으로 다시 보낸다
+# (`stale_page_guard`). `st.navigation()` · 머리 띠 · 페이지보다 앞이다 — 떠난 화면 주소가 브라우저
+# 기록에 쌓이지 않고 무거운 부트스트랩도 돌지 않는다.
+stale_target = stale_page_target()
+if stale_target is not None:
+    switch_back_to(stale_target)
 st.set_page_config(
     page_title=APP_NAME,
     # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.
@@ -381,6 +394,8 @@ with pinned_connections(DUCKDB_PATH):
 
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")
+    # 주소로 연 회차도 들인 화면으로 적는다(늦게 온 옛 화면 회차 막이 — 위 `stale_page_target`).
+    note_page()
     # 지금 어느 페이지에 있는지는 **파이썬에서** 가른다. 활성 링크에 `aria-current` 도
     # 안정적인 클래스도 없고(emotion 해시뿐) CSS 만으로는 판정할 수 없다. `st.navigation()`
     # 이 이번 rerun 에 그릴 페이지를 그대로 돌려주므로 그 주소로 선택자를 만든다.
@@ -694,6 +709,12 @@ with pinned_connections(DUCKDB_PATH):
     # 알림 `AD-22`). 처리한 실패는 카드 뒤 `st.stop()` 으로 아래 멈춤 길을 탄다 — 끝까지 돈 회차로
     # 끝나면 Streamlit 이 오류 자리 아래 위젯의 미저장 값을 지운다. `st.stop()`·`st.rerun()` 은
     # 지금처럼 지나간다.
+    # 페이지 본문이 등록한 위젯 id 를 그 화면 몫으로 적는다 — 늦게 온 옛 화면 회차를 가르는 기준이다
+    # (`stale_page_guard`). 끝까지 돈 회차와 멈춤 예외로 끝난 회차(`st.stop()` · 오류 카드 뒤
+    # 멈춤 · 새 요청이 끊은 회차 — 빠른 재실행 `runner.fastReruns` 기본값)는 그때까지 등록한 것을
+    # 적는다. 재실행 예외로 끝난 회차(본문 `st.rerun()` · `st.switch_page`)는 적지 않고 앞 기록을
+    # 둔다.
+    body_before = body_widgets_before()
     try:
         with equipment_pin:
             if current_spec is not None and current_spec.module is not None:
@@ -705,6 +726,7 @@ with pinned_connections(DUCKDB_PATH):
                     href=navigation.url_path,
                 )
     except StopException as stop:
+        note_body_widgets(body_before)
         finished = app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))
         # 화면 응답 계측의 끝 — 페이지가 스스로 멈춘 회차만 끝까지 돈 회차로 센다(새 상호작용이 끊은
@@ -712,6 +734,7 @@ with pinned_connections(DUCKDB_PATH):
         if finished:
             note_run_end(run_started)
         raise
+    note_body_widgets(body_before)
     # 토큰 알림 다시 내기 — 화면 본문의 조회가 이 회차에 만든 토큰 실패 · 자동 로그인 멈춤을 같은
     # 회차의 마지막 표지로 낸다(바뀐 것만, 결과 파일이 있는 서버는 늘 이벤트 칸 한 자리 — 회차의
     # 마지막 칸이라 앞 칸 순번을 밀지 않는다). 화면이 `st.stop()` 으로 멈춘 회차는 더 쓸 수 없고
