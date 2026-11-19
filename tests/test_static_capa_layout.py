@@ -26,6 +26,7 @@ from test_reference_data_page import TEST_SCRIPT
 
 from capa_simulation import alerts
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
+from capa_simulation.components.percent_cells import PERCENT_STEP
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -347,6 +348,10 @@ def test_the_tables_hand_the_original_process_and_the_raw_rate_to_the_toolbar_cs
     }
     assert columns["확보율"]["type_config"]["type"] == "progress"
     assert columns["확보율"]["type_config"]["max_value"] == 1.12
+    # 막대 칸 글은 % 표 칸과 같은 소수 둘째 자리 고정이다 — `step` 은 글 자릿수에만 쓰이고 값은
+    # 그대로다(2026-11-19 보드 m19-e2e-percent).
+    assert columns["확보율"]["type_config"]["format"] == "percent"
+    assert columns["확보율"]["type_config"]["step"] == PERCENT_STEP
 
     assert secure.value["공정"].tolist() == ["Process-A"]
     secure_columns = json.loads(secure.proto.columns)

@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from percent_display import shown_texts
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
@@ -173,10 +174,11 @@ def test_the_answers_show_the_same_evidence_as_a_fresh_build() -> None:
 def test_evidence_numbers_read_like_the_actual_screens() -> None:
     """근거 표 숫자 칸은 옆 실적 화면과 같은 꼴이다 — 서식 없이 내면 Gap 이 분수(-0.1093)로
     나와 결론의 「-10.9%」·조건의 「Gap … (%)」 와 어긋났고 기준·실적도 0.82 · 0.7107
-    이었다(2026-10-30 E2E). 실수 칸은 모두 서식이 있고 Gap 은 퍼센트 서식에 칸 이름이 단위를
-    단다(`Gap (%)`). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap
-    에 단위를 붙인다. Gap 단위는 셈(빼기 · 비율)과 상관없이 「%」 다(「%p」 를 쓰지 않는다 —
-    2026-11-01 사용자 결정)."""
+    이었다(2026-10-30 E2E). 실수 칸은 모두 서식이 있거나 % 표 칸(소수 둘째 자리 고정 글 —
+    2026-11-19 보드 m19-e2e-percent)이고 Gap 은 % 표 칸에 칸 이름이 단위를 단다(`Gap (%)`).
+    지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap 에 단위를 붙인다.
+    Gap 단위는 셈(빼기 · 비율)과 상관없이 「%」 다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자
+    결정)."""
     app = _start()
     for index in (1, 2, 3):
         app.button(key=f"capa_chatbot_example_{index}").click().run()
@@ -189,13 +191,11 @@ def test_evidence_numbers_read_like_the_actual_screens() -> None:
         shown = frame.value
         for column in shown.columns:
             if pd.api.types.is_float_dtype(shown[column]):
-                assert config.get(column, {}).get("type_config", {}).get("format"), (
-                    answer.key,
-                    column,
-                )
+                own = config.get(column, {}).get("type_config", {}).get("format")
+                assert own or _fixed_percent(shown_texts(frame, column)), (answer.key, column)
         if "Gap" in shown.columns and pd.api.types.is_float_dtype(shown["Gap"]):
             assert config["Gap"]["label"] == "Gap (%)"
-            assert config["Gap"]["type_config"]["format"] == "percent"
+            assert _fixed_percent(shown_texts(frame, "Gap")), answer.key
 
     cause = frames[[answer.key for answer in answers].index("cause")].value
     assert "단위" not in cause.columns
@@ -358,6 +358,12 @@ def _column_formats(frame: Any) -> dict[str, tuple[str | None, str | None]]:
     }
 
 
+def _fixed_percent(texts: list[str]) -> bool:
+    """보이는 글이 모두 소수 둘째 자리 고정 % 글(빈칸 제외)이다."""
+    filled = [text for text in texts if text]
+    return bool(filled) and all(re.fullmatch(r"-?[\d,]+\.\d{2}%", text) for text in filled)
+
+
 def test_the_evidence_ratios_use_the_same_percent_format_as_the_actual_screens() -> None:
     """근거 표 비율이 0.82·-0.1093 소수로 보였는데 캡션은 「효율 실적 화면의 우선순위 표와 같은
     값」 이다 — 그 표는 82%·-10.93% 꼴이라 서식을 맞춘다(E2E r1). 단위가 줄마다 다른 「왜
@@ -367,10 +373,16 @@ def test_the_evidence_ratios_use_the_same_percent_format_as_the_actual_screens()
         app.button(key=f"capa_chatbot_example_{index}").click().run()
     shortfall, cause, priority, reference = list(app.dataframe)
 
-    assert _column_formats(shortfall)["기준 효율"] == (None, "percent")
-    assert _column_formats(shortfall)["Gap"] == ("Gap (%)", "percent")
-    assert _column_formats(priority)["영향 비중"] == (None, "percent")
-    assert _column_formats(reference)["실적 효율"] == (None, "percent")
+    # % 칸은 실적 화면 표와 같은 % 표 칸 — 칸 설정에서 꼴을 빼고 소수 둘째 자리 고정 글을 단다
+    # (82.00% · -10.93% — 2026-11-19 보드 m19-e2e-percent).
+    assert _column_formats(shortfall)["기준 효율"] == (None, None)
+    assert _column_formats(shortfall)["Gap"] == ("Gap (%)", None)
+    assert _column_formats(priority)["영향 비중"] == (None, None)
+    assert _column_formats(reference)["실적 효율"] == (None, None)
+    assert _fixed_percent(shown_texts(shortfall, "기준 효율"))
+    assert _fixed_percent(shown_texts(shortfall, "Gap"))
+    assert _fixed_percent(shown_texts(priority, "영향 비중"))
+    assert _fixed_percent(shown_texts(reference, "실적 효율"))
     efficiency = cause.value.set_index("지표")
     assert str(efficiency.loc["효율", "기준"]).endswith("%")
     assert str(efficiency.loc["효율", "Gap"]).endswith("%")

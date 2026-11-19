@@ -19,6 +19,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.percent_cells import percent_progress_column
+
 # 결측률 등급 경계. 확보율 임계와 달리 사용자가 바꾸는 값이 아니라 읽기 보조용 고정값이다.
 EMPTY_RATE = 1.0
 SPARSE_RATE = 0.5
@@ -123,9 +125,9 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
         column_config={
             "컬럼": st.column_config.TextColumn(width="large"),
             "원천 타입": st.column_config.TextColumn(width="small"),
-            # 막대 길이가 곧 결측률이다. 78줄을 훑을 때 숫자보다 먼저 눈에 들어온다.
-            MISSING_RATE_COLUMN: st.column_config.ProgressColumn(
-                format="percent",
+            # 막대 길이가 곧 결측률이다. 78줄을 훑을 때 숫자보다 먼저 눈에 들어온다. 글은 % 표
+            # 칸과 같은 소수 둘째 자리 고정이다(설계 규칙 UI-DAT-12).
+            MISSING_RATE_COLUMN: percent_progress_column(
                 width="medium",
                 min_value=0.0,
                 max_value=1.0,

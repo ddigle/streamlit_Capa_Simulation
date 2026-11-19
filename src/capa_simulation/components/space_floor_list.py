@@ -75,6 +75,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.percent_cells import percent_column, percent_table
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
@@ -258,7 +259,8 @@ _TABLE_COLUMNS = {
     _USE_COLUMN: st.column_config.CheckboxColumn(help=_USE_HELP),
     "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),
     "미배치대수": st.column_config.NumberColumn(format="localized", help=_UNPLACED_HELP),
-    "점유율": st.column_config.NumberColumn(format="percent", help=_OCCUPANCY_HELP),
+    # 표 그리기는 `percent_table` 을 거친다 — % 칸은 소수 둘째 자리 고정 글(설계 규칙 UI-DAT-12).
+    "점유율": percent_column(help=_OCCUPANCY_HELP),
 }
 
 # 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 붙는 칸 넷(설비 대수 — 모듈 묶음 한 대). 비활성 층
@@ -930,7 +932,7 @@ def _render_tables(
     `active_only` 칸은 사용 층 표에만 붙는다."""
     active = [placement for placement in placements if states.is_active(placement.key)]
     active_keys = tuple(placement.key for placement in active)
-    st.dataframe(
+    shown, columns = percent_table(
         _table_rows(
             placements,
             canvas_text,
@@ -938,11 +940,15 @@ def _render_tables(
             inactive=False,
             extra_columns=extra_columns,
         ),
+        _column_config(extra_columns, inactive=False),
+    )
+    st.dataframe(
+        shown,
         hide_index=True,
         width="stretch",
         # 단축 호기가 없는 층의 「최대 단축(일)」 은 비어 있다 — 리터럴 "None" 대신 빈칸.
         placeholder="",
-        column_config=_column_config(extra_columns, inactive=False),
+        column_config=columns,
         key=FLOOR_TABLE_KEY,
         on_select=partial(_open_from_table, FLOOR_TABLE_KEY, active_keys, on_open),
         selection_mode="single-row",
@@ -955,7 +961,7 @@ def _render_tables(
         with st.expander(f"비활성 층 {len(inactive)}개", expanded=False, key=INACTIVE_EXPANDER_KEY):
             # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
             toolbar_clearance()
-            st.dataframe(
+            shown, columns = percent_table(
                 _table_rows(
                     placements,
                     canvas_text,
@@ -963,9 +969,13 @@ def _render_tables(
                     inactive=True,
                     extra_columns=extra_columns,
                 ),
+                _column_config(extra_columns, inactive=True),
+            )
+            st.dataframe(
+                shown,
                 hide_index=True,
                 width="stretch",
-                column_config=_column_config(extra_columns, inactive=True),
+                column_config=columns,
                 key=INACTIVE_TABLE_KEY,
                 on_select=partial(
                     _open_from_table,

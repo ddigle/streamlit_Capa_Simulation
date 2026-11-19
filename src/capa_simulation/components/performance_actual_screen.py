@@ -26,6 +26,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.percent_cells import percent_column, percent_table
 from capa_simulation.components.plotly_layout import apply_axis_text_color, chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.sample_data import render_pending_source, render_sample_row
@@ -301,17 +302,21 @@ def _render_detail(
         detail = build_gap_table(view, metric, ["공정", "제품정보", "Stack", "WF 구분"])
         detail = detail.sort_values("Gap").reset_index(drop=True)
         detail["공정"] = labels.series(detail["공정"])
-        st.dataframe(
+        detail_shown, detail_columns = percent_table(
             detail.rename(columns={"제품정보": "제품", "WF 구분": "속성"}),
-            hide_index=True,
-            width="stretch",
-            column_config={
+            {
                 metric.standard_column: _value_column(metric),
                 metric.actual_column: _value_column(metric),
-                "Gap": st.column_config.NumberColumn(f"Gap ({metric.gap_unit})", format="percent"),
+                "Gap": percent_column(f"Gap ({metric.gap_unit})"),
                 "생산수량": st.column_config.NumberColumn(format="%,.0f"),
-                "영향 비중": st.column_config.NumberColumn(format="percent"),
+                "영향 비중": percent_column(),
             },
+        )
+        st.dataframe(
+            detail_shown,
+            hide_index=True,
+            width="stretch",
+            column_config=detail_columns,
         )
 
 
@@ -334,7 +339,7 @@ def _render_actions(
         )
         shown = priority.copy()
         shown["공정"] = labels.series(shown["공정"])
-        st.dataframe(
+        priority_shown, priority_columns = percent_table(
             shown[
                 [
                     "우선순위",
@@ -348,17 +353,21 @@ def _render_actions(
                     "상태",
                 ]
             ],
-            hide_index=True,
-            width="stretch",
-            column_config={
+            {
                 "우선순위": st.column_config.NumberColumn(width="small", format="%d"),
                 metric.standard_column: _value_column(metric),
                 metric.actual_column: _value_column(metric),
-                "Gap": st.column_config.NumberColumn(f"Gap ({metric.gap_unit})", format="percent"),
-                "영향 비중": st.column_config.NumberColumn(format="percent"),
+                "Gap": percent_column(f"Gap ({metric.gap_unit})"),
+                "영향 비중": percent_column(),
                 "연속 미달": st.column_config.NumberColumn("연속 미달(개월)", format="%d"),
                 "점수": st.column_config.NumberColumn(format="%.1f"),
             },
+        )
+        st.dataframe(
+            priority_shown,
+            hide_index=True,
+            width="stretch",
+            column_config=priority_columns,
         )
 
     with st.container(border=True):
@@ -380,7 +389,7 @@ def _render_actions(
 def _value_column(metric: MetricSpec) -> Any:
     """`st.column_config` 는 타입이 아니라 생성 함수라 반환형을 이름으로 적을 수 없다."""
     if metric.value_format == "percent":
-        return st.column_config.NumberColumn(format="percent")
+        return percent_column()
     return st.column_config.NumberColumn(format="%,.0f")
 
 

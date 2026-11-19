@@ -24,6 +24,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.percent_cells import percent_column, percent_table
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.services.chatbot_samples import (
@@ -91,9 +92,15 @@ def _reset_transcript(first_key: str) -> None:
 
 def _evidence_columns(answer: SampleAnswer) -> dict[str, Any]:
     """근거 표 숫자 칸의 꼴 — 대본이 정한 꼴(`SampleAnswer.evidence_formats`)을 칸 설정으로 옮긴다.
-    서식이 없으면 Gap 이 분수(-0.1093)로 나와 결론의 「-10.9%」 와 어긋났다(2026-10-30 E2E)."""
+    서식이 없으면 Gap 이 분수(-0.1093)로 나와 결론의 「-10.9%」 와 어긋났다(2026-10-30 E2E). %
+    칸은 `percent_column` 이라 그릴 때 `percent_table` 을 거쳐 소수 둘째 자리 고정 글이다(설계 규칙
+    UI-DAT-12)."""
     return {
-        column: st.column_config.NumberColumn(spec.label, format=spec.format)
+        column: (
+            percent_column(spec.label)
+            if spec.format == "percent"
+            else st.column_config.NumberColumn(spec.label, format=spec.format)
+        )
         for column, spec in answer.evidence_formats.items()
         if column in answer.evidence.columns
     }
@@ -107,11 +114,12 @@ def _render_answer(answer: SampleAnswer) -> None:
         st.markdown(answer.conclusion)
         with st.expander(":material/table_view: 근거", expanded=True):
             st.caption(answer.evidence_caption)
+            shown, columns = percent_table(answer.evidence, _evidence_columns(answer))
             st.dataframe(
-                answer.evidence,
+                shown,
                 hide_index=True,
                 width="stretch",
-                column_config=_evidence_columns(answer),
+                column_config=columns,
             )
         with st.expander(":material/rule: 사용한 조건과 산식", expanded=False):
             st.markdown("\n".join(f"- {item}" for item in answer.conditions))

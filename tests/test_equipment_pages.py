@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_texts, place_errors, states
+from percent_display import column_formats, shown_texts
 from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
@@ -367,6 +368,14 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
         "캔버스",
     ]
     assert len(floor_table) == len(FLOOR_KEYS)
+    # 점유율은 % 표 칸 — 값은 분수 그대로, 글은 소수 둘째 자리 고정(2026-11-19 보드
+    # m19-e2e-percent). 대수 칸은 제 꼴(localized)이라 Styler 글을 쓰지 않는다.
+    occupancy = shown_texts(app.dataframe[0], "점유율")
+    assert len(occupancy) == len(FLOOR_KEYS)
+    assert all(text[-4:-3] == "." and text.endswith("%") for text in occupancy), occupancy
+    assert floor_table["점유율"].between(0, 1).all()
+    formats = column_formats(app.dataframe[0])
+    assert formats["점유율"] is None and formats["배치대수"] == "localized"
 
     # 동만 고른 세션은 FAB 그대로다(동 단계는 없다).
     app.session_state["space_status_selected_building"] = "C1"

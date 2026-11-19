@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from alert_marks import active_state, data_error_marks, flashed
 from extra_process_fixtures import BOND, bump_version, edited, set_cell, template_files, zip_files
+from percent_display import column_formats, shown_texts
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.data_error_mark import EMPTY_CLASS
@@ -32,6 +33,7 @@ from capa_simulation.components.extra_process_admin import (
     status_line,
     write_lock_reason,
 )
+from capa_simulation.components.percent_cells import percent_cell_text
 from capa_simulation.extra_process_intake import SAME_WORD, SourceFetch, stage_pack
 from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
@@ -191,13 +193,16 @@ def test_a_fake_source_imports_previews_and_applies_a_pack(database: Path) -> No
     rate_frame = next(frame for frame in app.dataframe if "확보율" in frame.value)
     rates = rate_frame.value
     assert {BOND, "DEMO_New_AOI"} == set(rates["공정"])
-    # 확보율은 비율 값 그대로 싣고 꼴만 %(다른 화면과 같은 `percent`) — 비율(6.3903)로 보였다
-    # (2026-11-18 E2E).
-    formats = {
-        name: config.get("type_config", {}).get("format")
-        for name, config in json.loads(rate_frame.proto.columns).items()
-    }
-    assert formats["확보율"] == "percent"
+    # 확보율은 비율 값 그대로 싣고 글만 %(다른 화면의 % 표 칸과 같은 소수 둘째 자리 고정 —
+    # 2026-11-19 보드 m19-e2e-percent) — 비율(6.3903)로 보였고(2026-11-18 E2E), 끝 0 을 지워 줄마다
+    # 자릿수가 달랐다(605.3% · 639.03%).
+    assert column_formats(rate_frame)["확보율"] is None
+    texts = shown_texts(rate_frame, "확보율")
+    assert texts and all(text.endswith("%") and text[-4] == "." for text in texts), texts
+    assert texts == [percent_cell_text(value) for value in rates["확보율"]]
+    # 같은 표의 대수 칸은 Streamlit 기본 꼴 글(소수 넷째 자리까지 · 끝 0 걷음)이다 — Styler 6자리
+    # 글이 새지 않는다.
+    assert all(len(text.partition(".")[2]) <= 4 for text in shown_texts(rate_frame, "소요대수"))
 
     app.button(key=APPLY_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]

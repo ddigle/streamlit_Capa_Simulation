@@ -46,7 +46,8 @@ ProcessName = Callable[[str], str]
 @dataclass(frozen=True)
 class EvidenceFormat:
     """근거 표 숫자 칸 하나의 꼴 — 화면이 `st.column_config.NumberColumn(label, format=…)` 으로
-    옮긴다(서비스는 Streamlit 을 모른다). `label` 이 None 이면 칸 이름 그대로다."""
+    옮긴다(`percent` 는 % 표 칸 도우미 `percent_column` — 서비스는 Streamlit 을 모른다). `label`
+    이 None 이면 칸 이름 그대로다."""
 
     format: str
     label: str | None = None

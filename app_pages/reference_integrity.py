@@ -35,6 +35,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
+from capa_simulation.components.percent_cells import percent_column, percent_table
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.components.status_metric import (
@@ -223,8 +224,17 @@ def _render_summary(
         priority.insert(0, "순위", pd.Series(range(1, len(priority) + 1), dtype="int64"))
         # CSV 출구가 없는 조회 표다. 화면 복사본에만 표시명을 입힌다.
         priority["공정"] = labels.series(priority["공정"])
-        st.dataframe(
+        priority_shown, priority_columns = percent_table(
             priority,
+            {
+                "순위": st.column_config.NumberColumn(width="small", format="%d"),
+                "소요기준": st.column_config.TextColumn(width="small"),
+                "Capa 실현률": percent_column(),
+                "설비 성능 실현률": percent_column(),
+            },
+        )
+        st.dataframe(
+            priority_shown,
             hide_index=True,
             width="stretch",
             row_height=PRIORITY_TABLE_ROW_HEIGHT_PX,
@@ -234,12 +244,7 @@ def _render_summary(
                 + PRIORITY_TABLE_BORDER_PX
                 + tokens.SCROLLBAR_HEIGHT_PX,
             ),
-            column_config={
-                "순위": st.column_config.NumberColumn(width="small", format="%d"),
-                "소요기준": st.column_config.TextColumn(width="small"),
-                "Capa 실현률": st.column_config.NumberColumn(format="percent"),
-                "설비 성능 실현률": st.column_config.NumberColumn(format="percent"),
-            },
+            column_config=priority_columns,
         )
 
     _render_loss_routes()
@@ -476,7 +481,7 @@ def _render_detail(
             filtered,
             ["제품정보", "Stack", "WF 구분"],
         ).sort_values(["Capa 실현률", "제품정보", "Stack"], kind="stable")
-        st.dataframe(
+        detail_shown, detail_columns = percent_table(
             product_detail[
                 [
                     "제품정보",
@@ -492,17 +497,21 @@ def _render_detail(
                     "상태",
                 ]
             ].rename(columns={"제품정보": "제품", "WF 구분": "속성", "실적수량": "실제 실적"}),
-            hide_index=True,
-            width="stretch",
-            column_config={
+            {
                 "표준 Capa": st.column_config.NumberColumn(format="%,.1f"),
                 "실효 Capa": st.column_config.NumberColumn(format="%,.1f"),
                 "실제 실적": st.column_config.NumberColumn(format="%,.1f"),
-                "Capa 실현률": st.column_config.NumberColumn(format="percent"),
-                "효율 Gap": st.column_config.NumberColumn(format="percent"),
-                "UPEH Gap": st.column_config.NumberColumn(format="percent"),
+                "Capa 실현률": percent_column(),
+                "효율 Gap": percent_column(),
+                "UPEH Gap": percent_column(),
                 "재공부족 미활용 Capa": st.column_config.NumberColumn(format="%,.1f"),
             },
+        )
+        st.dataframe(
+            detail_shown,
+            hide_index=True,
+            width="stretch",
+            column_config=detail_columns,
         )
 
 

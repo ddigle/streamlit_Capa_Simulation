@@ -21,6 +21,7 @@ import streamlit as st
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.percent_cells import percent_progress_column
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     PERIOD_SCOPE,
@@ -143,9 +144,8 @@ def _render_shortfall_table(
             # 칸 안 막대 하나면 위에서 몇 줄까지가 진짜 급한 구간인지 훑는 순간 보인다.
             # 길이의 기준은 `_bar_top` 이다 — 판정선이 아니라 그 표 안의 거리를 보이는 눈금이라
             # 표마다 다를 수 있고, 끝까지 차도 그 달 기준에 못 미칠 수 있다(표에 든 것 자체가
-            # 미달이다).
-            "확보율": st.column_config.ProgressColumn(
-                format="percent",
+            # 미달이다). 글은 % 표 칸과 같은 소수 둘째 자리 고정이다(설계 규칙 UI-DAT-12).
+            "확보율": percent_progress_column(
                 width="small",
                 min_value=0.0,
                 max_value=_bar_top(displayed["확보율"], secure_threshold=secure_threshold),

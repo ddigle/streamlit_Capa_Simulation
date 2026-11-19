@@ -58,6 +58,7 @@ from capa_simulation.components import sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.percent_cells import percent_column, percent_table
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.table_toolbar import render_zip_download, toolbar_clearance
 from capa_simulation.extra_process_intake import (
@@ -682,13 +683,15 @@ def _render_preview(preview: PackPreview) -> None:
         placeholder="",
     )
     if not preview.rates.empty:
-        # 확보율은 비율 값이다 — 다른 화면처럼 %(`percent`)로 보인다.
+        # 확보율은 비율 값이다 — 다른 화면의 % 표 칸처럼 소수 둘째 자리 고정 글로 보인다(값은
+        # 그대로 — 설계 규칙 UI-DAT-12).
+        shown, columns = percent_table(preview.rates, {"확보율": percent_column()})
         st.dataframe(
-            preview.rates,
+            shown,
             hide_index=True,
             width="stretch",
             placeholder="",
-            column_config={"확보율": st.column_config.NumberColumn(format="percent")},
+            column_config=columns,
         )
 
 

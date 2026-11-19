@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_texts, note_table, states, table_frame
+from percent_display import column_formats, shown_texts
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
@@ -400,12 +401,17 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     # 차이는 % 수다(비율 −0.15 로 적어 다른 화면의 % 와 단위가 어긋났다 — 2026-10-26 E2E). 「%p」 가
     # 아니라 「%」 다(2026-11-01 사용자 결정).
     assert row["확보율차이"] == -15.0
-    formats = {
-        name: config.get("type_config", {}).get("format")
-        for name, config in json.loads(app.dataframe[0].proto.columns).items()
-    }
-    assert formats["Static확보율"] == formats["일정기준확보율"] == "percent"
+    # 두 확보율은 % 표 칸 — 칸 설정에서 꼴을 빼고 소수 둘째 자리 고정 글을 단다(2026-11-19 보드
+    # m19-e2e-percent). 차이 칸은 「%+.1f%%」 그대로이고 보이는 두 확보율로 검산된다(60.00% −
+    # 45.00% → −15.0%).
+    formats = column_formats(app.dataframe[0])
+    assert formats["Static확보율"] is None and formats["일정기준확보율"] is None
     assert formats["확보율차이"] == "%+.1f%%"
+    assert shown_texts(app.dataframe[0], "Static확보율") == ["60.00%"]
+    assert shown_texts(app.dataframe[0], "일정기준확보율") == ["45.00%"]
+    # 같은 표의 대수 칸은 Streamlit 기본 꼴 글이다(Styler 6자리 「10.000000」 이 아니다).
+    assert shown_texts(app.dataframe[0], "소요대수") == ["10"]
+    assert shown_texts(app.dataframe[0], "일정기준가용대수") == ["4.5"]
 
     _select_view(app, "가용대수 비교")
     assert len(app.get("plotly_chart")) == 1
