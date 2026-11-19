@@ -303,6 +303,33 @@ def test_a_first_edit_that_arrives_with_the_press_is_saved(
     assert "등급 1명" in _flash_text(app)
 
 
+def test_a_bad_first_edit_that_arrives_with_the_press_is_still_judged_at_the_press(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """누름과 함께 온 첫 편집도 누른 회차의 판정을 지난다 — 저장 판의 문제(머리 글 · 겹침)가 있으면
+    쓰지 않고 곁 한 줄로 알리며 고침은 남는다(UI-INP-07 · UI-NTF-03)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    before = requests_named(store, "PUT")
+    app.session_state[HOST] = SimpleNamespace(
+        outbox=outbox(
+            calls,
+            _write(["+1", "+2"], ["계정", "등급"], [["loginid", "실무자"], [USER, "실무자"]]),
+            host=HOST,
+        )
+    )
+
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == before
+    (error,) = [str(item.value) for item in app.error]
+    assert error.startswith(access_list_admin.PROBLEMS_LEAD)
+    for part in ("머리 글", "겹치는 계정 1개"):
+        assert part in error, part
+    assert _draft(app)[0] > 0, "고침은 남는다"
+
+
 def test_a_quick_second_press_saves_once_and_says_nothing_more(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
