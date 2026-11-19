@@ -12,12 +12,21 @@ AppTest 는 그리드 JS 를 못 돌려 대역(`tests/edit_grid_fake`)으로 출
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from alert_marks import active_state, states
-from edit_grid_fake import Calls, deliver_ops, install_fake_edit_grid, last, send_ops, shell_frame
+from edit_grid_fake import (
+    Calls,
+    deliver_ops,
+    install_fake_edit_grid,
+    last,
+    outbox,
+    send_ops,
+    shell_frame,
+)
 from streamlit.testing.v1 import AppTest
 from test_sso_access import assert_absent
 from test_sso_access_s3 import (
@@ -39,6 +48,7 @@ from test_sso_access_s3 import (
     started,
 )
 
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auth import access_store, grade_store, runtime
 from capa_simulation.auth.access import GRADE_ADMIN
 from capa_simulation.auth.identity import IdentityProblem
@@ -52,6 +62,7 @@ __all__ = ["mock_s3"]
 # 가짜 S3 는 `scripts/` 에 있고 그 자리는 `test_sso_access_s3` 를 읽을 때 `sys.path` 에 든다.
 from s3_mock_store import MockStore  # noqa: E402
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HOST = access_list_grid.HOST
 COLUMNS = ["No.", "계정", "이름", "부서", "등록일", "등록 길", "등급"]
 
@@ -134,7 +145,7 @@ def test_the_admin_sees_the_list_as_an_edit_grid_with_new_rows(
     assert kinds[:2] == [access_list_grid.LISTED] * 2
     assert set(kinds[2:]) == {access_list_grid.FRESH}
     save = app.button(key=access_list_admin.SAVE_KEY)
-    assert save.disabled and save.help == access_list_admin.SAVE_LOCKED_WHY
+    assert not save.disabled and save.help == access_list_admin.SAVE_HELP, "늘 켜짐 — UI-INP-07"
     assert not [b for b in app.button if b.key == access_list_admin.DISCARD_KEY]
     assert not list(app.multiselect) and not list(app.get("popover")), "옛 고르기 칸 · 메뉴 없음"
     assert any("버전 1 · 명단 2 · 개발자 1(환경변수 1)" in str(item.value) for item in app.caption)
@@ -240,6 +251,114 @@ def test_the_actions_stand_in_one_row_above_the_grid(
     ]
     save = app.button(key=access_list_admin.SAVE_KEY)
     assert not save.disabled and save.help == access_list_admin.SAVE_HELP
+
+
+def _audit_lines(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """저장 함수가 남기는 감사 줄의 사건 이름(기록기는 시험에서 꺼져 있어 부름만 센다)."""
+    lines: list[str] = []
+    monkeypatch.setattr(audit_recorder, "record", lambda ev, **_: lines.append(ev))
+    return lines
+
+
+def test_a_press_with_nothing_changed_does_nothing(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「저장」 은 늘 켜져 있고(UI-INP-07 — 잠긴 단추에 닿은 첫 누름이 버려졌다) 고친 것이 없는
+    누름은 누른 회차에 보고 아무것도 하지 않는다 — S3 쓰기 · 명단 판 · 감사 줄 · 알림 · 곁 글이
+    없다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    audit = _audit_lines(monkeypatch)
+    puts, body = requests_named(store, "PUT"), store.objects[OBJECT]
+
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == puts
+    assert store.objects[OBJECT] == body
+    assert audit == []
+    assert _flash_text(app) == ""
+    assert not list(app.error)
+    assert _draft(app) == (0, 0, 0)
+    assert not app.button(key=access_list_admin.SAVE_KEY).disabled
+
+
+def test_a_first_edit_that_arrives_with_the_press_is_saved(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고친 칸이 없던 표에서 등급을 고르자마자(편집이 서버에 닿기 전) 누른 「저장」 — 그리드는 그
+    편집을 누름의 click 보다 먼저 보내고 누름은 그 출납 값을 함께 싣고 온다. 단추가 늘 켜져 있어
+    그 누름이 버려지지 않고, 콜백이 출납을 먼저 받아 같은 누름 하나로 그 편집까지 저장한다(잠긴
+    단추였을 때는 합성 표본 브라우저에서 0 · 0.1초 누름이 버려지고 「저장 전 (1)」 이 남았다)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    assert _draft(app) == (0, 0, 0)
+    app.session_state[HOST] = SimpleNamespace(
+        outbox=outbox(calls, _write([OTHER], ["등급"], [["실무자"]]), host=HOST)
+    )
+
+    app = _save(app)
+
+    assert grade_store.grade_of(cfg, OTHER) == "editor"
+    assert _draft(app) == (0, 0, 0)
+    assert "등급 1명" in _flash_text(app)
+
+
+def test_a_bad_first_edit_that_arrives_with_the_press_is_still_judged_at_the_press(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """누름과 함께 온 첫 편집도 누른 회차의 판정을 지난다 — 저장 판의 문제(머리 글 · 겹침)가 있으면
+    쓰지 않고 곁 한 줄로 알리며 고침은 남는다(UI-INP-07 · UI-NTF-03)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    before = requests_named(store, "PUT")
+    app.session_state[HOST] = SimpleNamespace(
+        outbox=outbox(
+            calls,
+            _write(["+1", "+2"], ["계정", "등급"], [["loginid", "실무자"], [USER, "실무자"]]),
+            host=HOST,
+        )
+    )
+
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == before
+    (error,) = [str(item.value) for item in app.error]
+    assert error.startswith(access_list_admin.PROBLEMS_LEAD)
+    for part in ("머리 글", "겹치는 계정 1개"):
+        assert part in error, part
+    assert _draft(app)[0] > 0, "고침은 남는다"
+
+
+def test_a_quick_second_press_saves_once_and_says_nothing_more(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빠른 두 번 누름 — 첫 누름이 저장하고 초안을 걷어, 둘째 누름은 고친 것이 없는 누름이다. 쓰기 ·
+    감사 줄은 한 번이고 둘째 누름은 「바뀐 것이 없습니다」 도 내지 않는다(같은 출납 값은 한 번만
+    받는다)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app, calls = _grid_app(cfg, monkeypatch)
+    audit = _audit_lines(monkeypatch)
+    app.session_state[HOST] = SimpleNamespace(
+        outbox=outbox(calls, {"op": "remove", "rows": [OTHER]}, host=HOST)
+    )
+
+    app = _save(app)
+    puts, written = requests_named(store, "PUT"), list(audit)
+    assert _listed(calls) == {USER: "열람"}
+    assert "뺌 1명" in _flash_text(app)
+    assert written, "저장은 감사 줄을 남긴다"
+
+    app = _save(app)
+
+    assert requests_named(store, "PUT") == puts
+    assert audit == written
+    assert _flash_text(app) == ""
+    assert not list(app.error)
+    assert _listed(calls) == {USER: "열람"}
 
 
 # ------------------------------------------------------------------ 저장
@@ -389,7 +508,6 @@ def test_a_paste_in_another_order_does_not_move_grades_to_other_people(
     assert _draft(app) == (0, 0, 0)
     feed = last(calls, f"{HOST}-feed")
     assert "계정 칸이 다른 줄 2개는 건너뛰었습니다" in feed["toast"]["text"]
-    assert app.button(key=access_list_admin.SAVE_KEY).disabled
     assert requests_named(store, "PUT") == before
     assert not access_store.is_admin(cfg, USER) and not access_store.is_admin(cfg, OTHER)
 
@@ -500,7 +618,7 @@ def test_the_discard_button_drops_the_draft(
     app = app.button(key=access_list_admin.DISCARD_KEY).click().run()
 
     assert _draft(app) == (0, 0, 0)
-    assert app.button(key=access_list_admin.SAVE_KEY).disabled
+    assert not [b for b in app.button if b.key == access_list_admin.DISCARD_KEY]
 
 
 # ------------------------------------------------------------------ 실패
@@ -667,11 +785,12 @@ def test_the_grid_keeps_the_rows_registration_while_the_list_is_unread(
     assert HOST not in plain
 
 
-def test_unread_locks_the_save_and_warns_the_admin_on_any_screen(
+def test_unread_leaves_nothing_to_save_and_warns_the_admin_on_any_screen(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """못 읽은 동안은 개발자만 들어온다 — 표는 표 없는 껍데기로 마운트만 남고 「저장」 이 잠긴다.
-    개발자는 Admin 을 열기 전 어느 화면에서나 알림을 받는다(앱 정보 카드가 낸다)."""
+    """못 읽은 동안은 개발자만 들어온다 — 표는 표 없는 껍데기로 마운트만 남는다. 「저장」 은 잠그지
+    않지만 고칠 표가 없어 누름은 아무것도 하지 않는다(쓰기 · 알림 없음 — UI-INP-07). 개발자는
+    Admin 을 열기 전 어느 화면에서나 알림을 받는다(앱 정보 카드가 낸다)."""
     store, endpoint = mock_s3
     store.force["GET"] = (403, "AccessDenied")
     cfg = s3_config(store, endpoint)
@@ -679,8 +798,13 @@ def test_unread_locks_the_save_and_warns_the_admin_on_any_screen(
 
     app, calls = _grid_app(cfg, monkeypatch)
 
-    assert app.button(key=access_list_admin.SAVE_KEY).disabled
+    assert not app.button(key=access_list_admin.SAVE_KEY).disabled
     assert any(item.value == "접속 명단 읽지 못함" for item in app.caption)
+    puts = requests_named(store, "PUT")
+    app = _save(app)
+    assert requests_named(store, "PUT") == puts
+    assert _flash_text(app) == ""
+    assert not list(app.error)
     assert _shell(calls)["table"] is None
     card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
     note = active_state(card, "AD-08")
@@ -694,3 +818,21 @@ def test_unread_locks_the_save_and_warns_the_admin_on_any_screen(
     card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
     assert [item["active"] for item in states(card, "AD-08")] == [False]
     assert runtime.access_source() is not None
+
+
+def test_the_runbook_and_the_guide_describe_a_save_that_is_always_open() -> None:
+    """늘 켜진 「저장」 을 읽는 글도 같은 꼴로 말한다 — 런북 7장이 접속 명단 편집 표를 보게 하면
+    켜진 「저장」 과 지금 풍선 글(`SAVE_HELP`)을 옮기게 하고, Guide 는 명단을 못 읽은 동안에도
+    「저장」 을 잠긴 단추로 말하지 않는다(UI-INP-07). 사내 에이전트는 7장 글을 화면과 글자 그대로
+    견줘 압축본에 적는다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    for gone in ("저장잠김", "고친 칸이 있으면 누를 수 있습니다", "고친 칸이 있을 때만 열림"):
+        assert gone not in runbook, gone
+    chapter = " ".join(runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0].split())
+    if "「접속 명단」 편집 표" in chapter:
+        assert access_list_admin.SAVE_HELP in chapter
+        assert "저장켜짐 됨" in chapter
+    guide_path = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "admin_area.md"
+    guide = " ".join(guide_path.read_text(encoding="utf-8").split())
+    assert "**저장** — 늘 누를 수 있고" in guide
+    assert "**저장** 이 잠" not in guide

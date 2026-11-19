@@ -223,7 +223,7 @@ def test_the_access_list_is_one_edit_grid_with_four_grades_and_locked_own_rows(
     captions = [str(caption.value) for caption in app.caption]
     assert any("개발자 1(환경변수 1)" in caption for caption in captions), captions
     save = app.button(key=access_list_admin.SAVE_KEY)
-    assert save.disabled and save.help == access_list_admin.SAVE_LOCKED_WHY
+    assert not save.disabled and save.help == access_list_admin.SAVE_HELP, "늘 켜짐 — UI-INP-07"
 
 
 def test_a_save_after_losing_the_developer_grade_changes_nothing(
