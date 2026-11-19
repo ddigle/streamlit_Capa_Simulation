@@ -603,11 +603,18 @@ def _fold() -> Draft:
 
 def _toggle_changed(database_path: str) -> None:
     """`사용 편집` 토글. 켜면 편집 중(`FLOOR_EDITING`) · 초안 = 저장본, 끄면 편집을 끄고
-    초안·base·확인을 버린다."""
-    if EDIT_TOGGLE.peek():
+    초안·base·확인을 버린다.
+
+    위젯 밖 칸(`FLOOR_EDITING`)과 견줘 실제로 바뀐 때만 움직인다 — 켜짐인데 이미 편집 중이거나
+    값이 꺼짐(False)이 아니면(빈 값) 아무것도 하지 않는다. 칸을 고친 직후 화면 탭을 누르면
+    브라우저가 옛 Space 위젯 값(켜짐)을 실은 메시지를 다른 화면을 돈 뒤 한 번 더 보내고, 그 사이
+    토글 위젯 상태가 걷혀 Streamlit 이 바뀐 것으로 보고 이 콜백을 부른다 — 그때 초안을 저장본으로
+    다시 세우면 말없이 버려진다."""
+    value = EDIT_TOGGLE.peek()
+    if value is True and not _editing():
         FLOOR_EDITING.set(True)
         _start(load_floor_states(database_path))
-    else:
+    elif value is False and _editing():
         FLOOR_EDITING.clear()
         _forget()
 

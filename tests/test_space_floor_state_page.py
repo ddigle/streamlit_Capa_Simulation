@@ -1284,13 +1284,15 @@ def _roundtrip_script(database: Path) -> str:
     """Space 페이지를 `app.py` 처럼 감싼 원문 — 세션 칸 `test_away` 가 참이면 다른 화면(HOME)을 본
     회차처럼 Space 를 그리지 않는다(위젯 상태가 걷힌다). 맨 앞에서 화면 탭 점 · 탭 줄 떠나기 확인 ·
     머리 변경 칩 · 초안 층 수를 먼저 센다(페이지보다 먼저 서는 머리의 때맞춤). `test_viewer` 가
-    참이면 그 회차의 화면 등급이 열람이다(`sso_identity.viewer_can` 을 그 회차에만 바꾼다)."""
+    참이면 그 회차의 화면 등급이 열람이다(`sso_identity.viewer_can` 을 그 회차에만 바꾼다).
+    `test_toggle_callback` 이 있으면 그 회차 맨 앞에서 토글 칸을 그 값으로 두고(None 이면 칸을
+    걷고) `사용 편집` 토글 콜백을 한 번 부른다 — 값이 바뀌지 않은 토글로 콜백이 다시 불리는 회차."""
     page = _page_script(PAGE, database)
     body = "\n".join("        " + line for line in page.strip().splitlines())
     return f"""
 import streamlit as st
 
-from capa_simulation.components import sso_identity
+from capa_simulation.components import space_floor_list, sso_identity
 from capa_simulation.components.change_summary import session_changes
 from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
 from capa_simulation.components.space_floor_list import floor_state_draft_count
@@ -1299,6 +1301,13 @@ from capa_simulation.navigation import SPACE_STATUS
 original_can = sso_identity.viewer_can
 if st.session_state.get("test_viewer"):
     sso_identity.viewer_can = lambda action: False
+if "test_toggle_callback" in st.session_state:
+    called = st.session_state.pop("test_toggle_callback")
+    if called is None:
+        st.session_state.pop(space_floor_list.EDIT_TOGGLE_KEY, None)
+    else:
+        st.session_state[space_floor_list.EDIT_TOGGLE_KEY] = called
+    space_floor_list._toggle_changed({str(database)!r})
 try:
     page_file = "home.py" if st.session_state.get("test_away") else "space_status.py"
     st.session_state["count_before_page"] = floor_state_draft_count()
@@ -1437,6 +1446,68 @@ def test_the_editor_callback_folds_without_raising_the_button_generation(tmp_pat
     _come_back(app, tables)
     assert app.session_state[DRAFT_KEY] == {**_C5_UNUSED, "C2 2F": "UNUSED"}
     assert any("바뀐 층 7개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_a_late_switch_message_after_leaving_keeps_the_draft(tmp_path: Path) -> None:
+    """칸을 고친 직후 화면 탭을 누르면 브라우저가 옛 Space 위젯 값(`사용 편집` 켜짐)을 실은 메시지를
+    다른 화면을 돈 뒤에 한 번 더 보낼 수 있다 — 토글 위젯 상태는 그 사이 걷혀 Streamlit 이 바뀐
+    것으로 보고 토글 콜백을 부른다. 이미 편집 중이면 그 콜백은 초안을 저장본으로 다시 세우지 않는다
+    (말없이 버리지 않는다 — 설계 규칙 UI-STA-02 · UI-STA-05)."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    switch = get_widget_state(app.toggle(key=EDIT_TOGGLE_KEY))
+    assert switch is not None
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사유", "창고")
+    tables.run()
+    _ok(app)
+    expected = {**_C5_UNUSED, "C1 3F": "창고"}
+    assert app.session_state[DRAFT_KEY] == expected
+
+    app.session_state["test_away"] = True
+    tables.run()
+    _ok(app)
+    app.session_state["test_away"] = False
+    late = WidgetStates()
+    late.widgets.append(switch)
+    app._run(late)
+    _ok(app)
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == expected
+    assert any("바뀐 층 7개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("called", [True, None])
+def test_the_switch_callback_without_a_real_change_keeps_the_draft(
+    tmp_path: Path, called: bool | None
+) -> None:
+    """토글 콜백이 켜짐(이미 편집 중)이나 빈 값으로 다시 불려도 편집은 켜진 채 초안이 그대로다 —
+    켜기는 편집 중이 아닐 때만, 끄기는 값이 꺼짐일 때만 움직인다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    generation = app.session_state[GENERATION_KEY]
+    app.session_state["test_toggle_callback"] = called
+    tables.run()
+    _ok(app)
+    assert app.session_state[EDITING_KEY] is True
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+    assert app.session_state[GENERATION_KEY] == generation
+    assert any("바뀐 층 6개" in item.value for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_the_switch_callback_with_a_real_off_still_drops_the_draft(tmp_path: Path) -> None:
+    """끈 토글(값 꺼짐)은 그대로 편집을 끄고 초안을 버린다."""
+    database = _database(tmp_path)
+    app, tables = _roundtrip(database)
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(False)
+    tables.run()
+    _ok(app)
+    assert EDITING_KEY not in app.session_state
+    assert DRAFT_KEY not in app.session_state
+    assert not app.toggle(key=EDIT_TOGGLE_KEY).value
     clear_equipment_repository()
 
 
