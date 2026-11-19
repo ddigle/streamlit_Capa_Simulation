@@ -7566,7 +7566,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     0), HOME 확보율 보정 「증감 확보율(%)」 `%.1f`. 표 꼴 그림 · 시트(공정 Capa 상세 시트 · 제약 시뮬레이션 계산표 · 필요 단축 칩 ·
     HOME 주요 공정 판)와 자동 갱신 off 공정 표 「최저 확보율」 글은 지금 꼴이다(`docs/TODO.md` 2장 확인 거리).
   - 가드는 `tests/test_table_percent_cells.py`(도우미 밖 `percent` 칸 꼴 · 끝 0 을 지우는 「…%%」 꼴 0곳 · `percent_column` 을 적은
-    화면은 `percent_table` 로 그림 · 그리드 percent 자릿수) · `tests/fixtures/edit_grid_cases.json` `format`(쌍둥이). 화면 시험은
+    화면은 `percent_table` 로 그림 · `st.dataframe` · `st.data_editor` 에 넘긴 칸 설정에 `percent_table` 을 거치지 않은
+    `percent_column` 이 없음(칸 설정 글 안 · 같은 함수의 이름 · 모듈 상수 · 같은 모듈 함수가 지은 것) · 그리드 percent 자릿수(위치 ·
+    `kind=` · `digits=` 인자)) · `tests/fixtures/edit_grid_cases.json` `format`(쌍둥이). 화면 시험은
     `tests/percent_display.py`(`shown_texts` — Styler 표시 글)로 보이는 글을 읽는다.
 - **앱 화면 글에 「사내」 를 쓰지 않는다**(2026-11-03 사용자 결정 — 회사 안에서 쓰는 것이 기본이라 어색하다, 기능 이름
   「사내 모듈」 은 「모듈」). 개발 · 배포 문서와 주석 · docstring 의 사내/사외 **환경** 구분은 그대로다. 가드는

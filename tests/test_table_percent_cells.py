@@ -6,8 +6,8 @@
 두 겹으로 본다. ① 도우미(`components/percent_cells.py`) — 보이는 글 · 이웃 칸 글 · 표시만 바뀌는
 것(데이터는 그대로라 칸 정렬은 원값 숫자, 표 도구 막대 CSV · 칸 복사는 원값 분수) · 상한을 넘는
 표 · 회차마다 같은 표 꼴. ② 그물 — 화면 코드가 도우미 밖에서 `percent` 칸 꼴이나 끝 0 을 지우는
-% 꼴을 쓰지 않고, `percent_column` 을 쓴 화면은 `percent_table` 로 그리고, 편집 그리드 percent 칸은
-같은 자릿수 · 같은 글 함수를 쓴다.
+% 꼴을 쓰지 않고, `percent_column` 을 쓴 화면은 `percent_table` 로 그리며 표에 넘기는 칸 설정은 그
+도우미가 돌려준 것만이고, 편집 그리드 percent 칸은 같은 자릿수 · 같은 글 함수를 쓴다.
 """
 
 from __future__ import annotations
@@ -21,7 +21,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from pandas.io.formats.style import Styler
-from source_sites import PROJECT_ROOT, called_name, relative, screen_calls, screen_files
+from source_sites import (
+    PROJECT_ROOT,
+    called_name,
+    calls_by_outer,
+    relative,
+    screen_calls,
+    screen_files,
+)
 from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
 from streamlit.elements.lib.pandas_styler_utils import marshall_styler
 from streamlit.proto.ArrowData_pb2 import ArrowData
@@ -224,6 +231,171 @@ def test_screens_that_declare_percent_columns_draw_through_the_helper() -> None:
     assert declared <= drawn, sorted(declared - drawn)
 
 
+_TABLE_CALLS = frozenset({"dataframe", "data_editor"})
+
+
+def _calls_percent_column(node: ast.AST) -> bool:
+    return any(
+        isinstance(item, ast.Call) and called_name(item) == "percent_column"
+        for item in ast.walk(node)
+    )
+
+
+def _is_percent_table(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and called_name(node) == "percent_table"
+
+
+def _bound_values(body: ast.AST, name: str) -> list[ast.expr]:
+    """`body` 안에서 이름 `name` 에 매긴 값(덧셈 매김 · 풀어 매김의 오른쪽 통째 포함)."""
+    values: list[ast.expr] = []
+    for node in ast.walk(body):
+        if isinstance(node, ast.Assign):
+            targets = [
+                item
+                for target in node.targets
+                for item in ast.walk(target)
+                if isinstance(item, ast.Name)
+            ]
+            if any(item.id == name for item in targets):
+                values.append(node.value)
+        elif isinstance(node, ast.AnnAssign | ast.AugAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == name and node.value:
+                values.append(node.value)
+    return values
+
+
+def _raw_percent_config(tree: ast.Module, scope: ast.AST | None, config: ast.expr) -> bool:
+    """표에 넘긴 칸 설정이 `percent_table` 을 거치지 않은 `percent_column` 칸을 싣나 — 칸 설정
+    글 안에 바로 든 것, 같은 함수(없으면 모듈)에서 그 이름에 매긴 값에 든 것, 같은 모듈 함수가
+    지어 돌려준 것."""
+    if _calls_percent_column(config):
+        return True
+    if isinstance(config, ast.Name):
+        local = _bound_values(scope, config.id) if scope is not None else []
+        values = local or [
+            node.value
+            for node in tree.body
+            if isinstance(node, ast.Assign | ast.AnnAssign)
+            and node.value is not None
+            and config.id
+            in {
+                item.id
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+                for item in ast.walk(target)
+                if isinstance(item, ast.Name)
+            }
+        ]
+        return any(
+            _calls_percent_column(value) and not _is_percent_table(value) for value in values
+        )
+    if isinstance(config, ast.Call) and not _is_percent_table(config):
+        builders = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        }
+        builder = builders.get(called_name(config))
+        return builder is not None and _calls_percent_column(builder)
+    return False
+
+
+def test_no_table_takes_a_percent_column_that_skipped_the_helper() -> None:
+    """파일에 `percent_table` 이 있어도 표 하나가 `percent_column` 칸 설정을 `st.dataframe` ·
+    `st.data_editor` 에 바로 넘기면 그 표는 끝 0 을 지우는 옛 꼴이다 — 칸 설정은 `percent_table` 이
+    돌려준 것만 넘긴다."""
+    offenders: list[str] = []
+    seen_tables = 0
+    for path in screen_files(exclude=(HELPER,)):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for _outer, scope, call in calls_by_outer(tree):
+            if called_name(call) not in _TABLE_CALLS:
+                continue
+            config = next(
+                (item.value for item in call.keywords if item.arg == "column_config"), None
+            )
+            if config is None:
+                continue
+            seen_tables += 1
+            if _raw_percent_config(tree, scope, config):
+                offenders.append(f"{relative(path)}:{call.lineno}")
+    assert seen_tables, "그물이 볼 자리가 있다"
+    assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'st.dataframe(frame, column_config={"률": percent_column()})',
+        (
+            "def draw(frame):\n"
+            '    columns = {"률": percent_column()}\n'
+            "    st.dataframe(frame, column_config=columns)"
+        ),
+        (
+            'COLUMNS = {"률": percent_column()}\n'
+            "def draw(frame):\n"
+            "    st.data_editor(frame, column_config=COLUMNS)"
+        ),
+        (
+            "def _columns():\n"
+            '    return {"률": percent_column()}\n'
+            "def draw(frame):\n"
+            "    st.dataframe(frame, column_config=_columns())"
+        ),
+    ],
+)
+def test_the_raw_percent_config_net_sees_each_way_in(source: str) -> None:
+    """그물이 보는 길 넷 — 칸 설정 글 안 · 같은 함수 이름 · 모듈 상수 · 같은 모듈 함수."""
+    tree = ast.parse(source)
+    found = [
+        _raw_percent_config(tree, scope, item.value)
+        for _outer, scope, call in calls_by_outer(tree)
+        if called_name(call) in _TABLE_CALLS
+        for item in call.keywords
+        if item.arg == "column_config"
+    ]
+    assert found == [True]
+
+
+def test_the_raw_percent_config_net_lets_the_helper_output_through() -> None:
+    source = (
+        "def draw(frame):\n"
+        '    shown, columns = percent_table(frame, {"률": percent_column()})\n'
+        "    st.dataframe(shown, column_config=columns)\n"
+    )
+    tree = ast.parse(source)
+    found = [
+        _raw_percent_config(tree, scope, item.value)
+        for _outer, scope, call in calls_by_outer(tree)
+        if called_name(call) in _TABLE_CALLS
+        for item in call.keywords
+        if item.arg == "column_config"
+    ]
+    assert found == [False]
+
+
+def _argument(call: ast.Call, position: int, name: str) -> ast.expr | None:
+    """위치 인자 `position` 번째, 없으면 `name=` 인자."""
+    if len(call.args) > position:
+        return call.args[position]
+    return next((item.value for item in call.keywords if item.arg == name), None)
+
+
+def _percent_formats(tree: ast.AST) -> list[tuple[int, object]]:
+    """(줄, 자릿수) — `ValueFormat` 의 percent 칸. 종류 · 자릿수는 위치 인자나 `kind=` ·
+    `digits=` 로 온다(상수가 아니면 자릿수 None)."""
+    found: list[tuple[int, object]] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and called_name(node) == "ValueFormat"):
+            continue
+        kind = _argument(node, 0, "kind")
+        if isinstance(kind, ast.Constant) and kind.value == "percent":
+            second = _argument(node, 1, "digits")
+            digits = second.value if isinstance(second, ast.Constant) else None
+            found.append((node.lineno, digits))
+    return found
+
+
 def _value_format_digits() -> list[tuple[str, int, object]]:
     roots = [*screen_files(), *sorted((PROJECT_ROOT / "scripts").rglob("*.py"))]
     found: list[tuple[str, int, object]] = []
@@ -232,15 +404,20 @@ def _value_format_digits() -> list[tuple[str, int, object]]:
             # 옛 독스트링의 역슬래시 경고는 이 그물의 일이 아니다.
             warnings.simplefilter("ignore")
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and called_name(node) == "ValueFormat"):
-                continue
-            args = node.args
-            if args and isinstance(args[0], ast.Constant) and args[0].value == "percent":
-                second = args[1] if len(args) > 1 else None
-                digits = second.value if isinstance(second, ast.Constant) else None
-                found.append((relative(path), node.lineno, digits))
+        found.extend((relative(path), line, digits) for line, digits in _percent_formats(tree))
     return found
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'ValueFormat("percent", 1)',
+        'ValueFormat(kind="percent", digits=1)',
+        'eg.ValueFormat("percent", digits=1, max_value=1.0)',
+    ],
+)
+def test_the_grid_digits_net_reads_positional_and_keyword_arguments(source: str) -> None:
+    assert [digits for _line, digits in _percent_formats(ast.parse(source))] == [1]
 
 
 def test_grid_percent_columns_use_the_table_digits() -> None:
