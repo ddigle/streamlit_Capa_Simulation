@@ -285,7 +285,7 @@ Windows(PowerShell):
   `UnicodeDecodeError` 로 깨진다(`tests/test_grade_name_net.py`, 리뷰 `202611181400` 사외요청 1). 저장소 · 사용자 파일은 `encoding="utf-8"`,
   자식 프로세스(`text=True`)는 자식이 쓰는 인코딩이다 — 파이썬 자식은 환경에 `PYTHONIOENCODING=utf-8` 을 주고 `encoding="utf-8"`
   (CI Windows 작업은 그 변수를 물려주고 사내 창은 아닐 수 있어 짝을 맞춘다), 환경을 일부러 좁히거나(⑦) 물려받기를 보는 시험은
-  환경을 그대로 두고 `encoding="utf-8", errors="replace"`, git 은 `"utf-8"`, 로캘로 쓰는 aws 실행기는 `"locale"`. 그물
+  환경을 그대로 두고 `encoding="utf-8", errors="replace"`, git 은 `"utf-8"`, 앱의 aws 실행기는 로캘 그대로 `"locale"`(파이썬 3.10 이 `text=True` 에 쓰는 값). 그물
   `tests/test_explicit_text_encoding.py` 가 `app.py` · `capa_server.py` · `app_pages/` · `src/` · `scripts/` · `tests/` 를 AST 로
   훑는다 — 일부러 뺀 자리는 그 파일의 `ALLOWED` 에 까닭과 함께 두고, 자리가 사라지면 실패한다. ruff `PLW1514` 는 preview 이고
   `(폴더 / 이름).read_text()` · 자식 프로세스를 보지 못해 이 그물이 대신한다. 사외 CI 의 둘째 작업

@@ -232,8 +232,8 @@ class SubprocessCommandRunner:
                 env=merged,
                 capture_output=True,
                 text=True,
-                # aws(파이썬 꾸러미)는 표준 출력을 그 PC 의 로캘 인코딩으로 쓴다 — 같은
-                # 인코딩으로 읽는다.
+                # aws 출력은 그 PC 의 로캘 인코딩으로 읽는다(`text=True` 만 줄 때 파이썬 3.10 이
+                # 쓰는 값과 같다).
                 encoding="locale",
                 errors="replace",  # 사내 PC 의 로캘 밖 바이트 하나로 실행기가 죽지 않는다
                 check=False,

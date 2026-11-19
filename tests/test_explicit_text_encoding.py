@@ -10,7 +10,8 @@
 - 자식 프로세스의 텍스트 출력은 자식이 쓰는 인코딩으로 읽는다. 파이썬 자식은 부르는 쪽이
   환경에 `PYTHONIOENCODING=utf-8` 을 주고 `encoding="utf-8"` 로 읽는다. 환경을 일부러 좁히거나
   물려받기를 보는 시험은 환경을 그대로 두고 `encoding="utf-8", errors="replace"` 로 읽는다.
-  git 은 UTF-8 로 쓴다. 로캘로 쓰는 자식(aws)은 `encoding="locale"` 이다.
+  git 은 UTF-8 로 쓴다. 앱의 aws 실행기는 로캘 그대로 `encoding="locale"` 이다(파이썬 3.10 이
+  `text=True` 에 쓰는 값).
 
 ruff `PLW1514` 는 preview 규칙이고 `(폴더 / 이름).read_text()` 처럼 받는 쪽 꼴을 모르는 부름과
 자식 프로세스(`text=True`)를 보지 못해 이 그물이 대신한다. 사내 `modules/` 와 `review/` 는 훑지
