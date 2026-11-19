@@ -1498,6 +1498,50 @@ def test_the_switch_callback_without_a_real_change_keeps_the_draft(
     clear_equipment_repository()
 
 
+@pytest.mark.parametrize(
+    ("inactive", "expected"),
+    [
+        # 비활성 층에 사유를 친 채 그 줄 사용을 켬 — 켜기가 먼저라 사용이다.
+        ({("C2", "3F"): "UNUSED"}, {}),
+        # 사용 층(사용 칸은 그린 값 그대로 켜짐)에 사유를 적음 — 사유를 적은 뜻이 끄기다.
+        ({}, {"C2 3F": "창고"}),
+    ],
+)
+def test_one_message_with_a_reason_and_the_use_cell_is_folded_once(
+    tmp_path: Path, inactive: dict[tuple[str, str], str], expected: dict[str, str]
+) -> None:
+    """한 메시지에 같은 줄의 사유 · 사용 두 칸이 함께 오면(사유 칸을 친 채 그 줄 사용 칸을 고르고
+    Space) 편집표 `on_change` 가 접은 값을 본문이 다시 접어 뒤집지 않는다 — 칸 편집은 그 위젯이
+    그린 초안 위에 한 번 접힌다."""
+    database = _database(tmp_path, inactive)
+    app, tables = _start_editing(database)
+    key = _editor_key(app)
+    tables.edit(key, _position("C2", "3F"), "사유", "창고")
+    tables.edit(key, _position("C2", "3F"), "사용", True)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == expected
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == expected
+    assert any("바뀐 층 1개" in caption.value for caption in app.caption)
+    clear_equipment_repository()
+
+
+def test_the_head_count_sees_the_folded_edit_on_the_callback_run(tmp_path: Path) -> None:
+    """페이지보다 먼저 서는 머리 점 · 칩의 층 수도 그 회차 콜백이 접은 값을 다시 접지 않는다 —
+    저장된 사유와 같은 글을 친 채 켠 층은 바뀐 층이다."""
+    database = _database(tmp_path, {("C2", "3F"): "창고"})
+    app, tables = _roundtrip(database)
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사유", "창고")
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사용", True)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == _C5_UNUSED
+    assert app.session_state["count_before_page"] == 7
+    clear_equipment_repository()
+
+
 def test_the_switch_callback_with_a_real_off_still_drops_the_draft(tmp_path: Path) -> None:
     """끈 토글(값 꺼짐)은 그대로 편집을 끄고 초안을 버린다."""
     database = _database(tmp_path)

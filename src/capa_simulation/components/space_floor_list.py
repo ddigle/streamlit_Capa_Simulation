@@ -160,6 +160,11 @@ FLOOR_EDITING = SessionSlot(EDITING_KEY, bool)
 DRAFT_KEY = "space_floor_state_draft_v1"
 FLOOR_DRAFT = SessionSlot(DRAFT_KEY, dict)
 BASE_KEY = "space_floor_state_base_v1"
+# 편집표 위젯이 지난번 그린 초안(초안과 같은 꼴). 칸 편집은 이 값 위에 접는다 — 편집표 `on_change`
+# 가 접어 세션 초안이 바뀐 회차에 본문이 같은 편집을 다시 접어도 같은 값이 된다. 새 위젯을 세우면
+# (`_remount`) · 편집을 끄면 걷는다.
+DRAWN_KEY = "space_floor_state_drawn_v1"
+FLOOR_DRAWN = SessionSlot(DRAWN_KEY, dict)
 # 이 세션이 한 층 사용 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
 FLOOR_STATE_SAVE_NAME = "space_floor_states"
 # 동 머리·확인·저장 단추 콜백이 받는 세대. 편집표 위젯 key 세대(`editor_widget_key`)와 늘 함께
@@ -320,20 +325,41 @@ def layer_columns(cells: Mapping[FloorKey, Mapping[str, object]]) -> tuple[Floor
 # ---------------------------------------------------------------- 세션 초안
 
 
-def _stored_draft() -> Draft | None:
-    held = FLOOR_DRAFT.peek()
+def _draft_of(held: Mapping[object, object] | None) -> Draft | None:
+    """세션 칸 꼴(「C1 3F」 → 사유)을 초안으로. 칸이 비었으면 None."""
     if held is None:
         return None
     draft: Draft = {}
     for label, reason in held.items():
-        key = floor_from_label(label)
+        key = floor_from_label(label) if isinstance(label, str) else None
         if key is not None and isinstance(reason, str) and reason:
             draft[key] = reason
     return draft
 
 
+def _labelled(draft: Mapping[FloorKey, str]) -> dict[str, str]:
+    return {floor_label(key): draft[key] for key in FLOOR_KEYS if key in draft}
+
+
+def _stored_draft() -> Draft | None:
+    return _draft_of(FLOOR_DRAFT.peek())
+
+
 def _store_draft(draft: Mapping[FloorKey, str]) -> None:
-    FLOOR_DRAFT.set({floor_label(key): draft[key] for key in FLOOR_KEYS if key in draft})
+    FLOOR_DRAFT.set(_labelled(draft))
+
+
+def _fold_base() -> Draft:
+    """칸 편집을 접을 바탕 — 편집표 위젯이 지난번 그린 초안(`FLOOR_DRAWN`, 없으면 세션 초안).
+
+    칸 편집은 다시 세우기 전까지 위젯에 남아 회차마다 다시 접힌다. 접는 규칙(`_folded_row`)은 그린
+    값과 견주므로 바탕은 늘 그 위젯이 그린 값이어야 한다 — 같은 회차에 편집표 `on_change` 가 먼저
+    접어 세션 초안이 바뀌었어도 본문 · 단추 콜백 · 머리 수가 같은 바탕 위에 접어 같은 값을
+    얻는다."""
+    drawn = _draft_of(FLOOR_DRAWN.peek())
+    if drawn is not None:
+        return drawn
+    return _stored_draft() or {}
 
 
 def _stored_base() -> Base | None:
@@ -366,8 +392,10 @@ def _generation() -> int:
 
 
 def _remount() -> None:
-    """편집표를 새 위젯으로 세우고 단추 세대를 올린다(초안을 먼저 적고 부른다)."""
+    """편집표를 새 위젯으로 세우고 단추 세대를 올린다(초안을 먼저 적고 부른다). 새 위젯은 아직 그린
+    것이 없어 지난 그린 초안도 걷는다."""
     discard_editor(EDITOR_KEY)
+    FLOOR_DRAWN.clear()
     st.session_state[GENERATION_KEY] = _generation() + 1
 
 
@@ -382,6 +410,7 @@ def _start(states: FloorStates) -> None:
 def _forget() -> None:
     """초안·base·확인을 지운다(편집을 끈 회차 — 저장하지 않은 변경은 버린다)."""
     FLOOR_DRAFT.clear()
+    FLOOR_DRAWN.clear()
     st.session_state.pop(CONFIRM_KEY, None)
     forget_seen(BASE_KEY)
 
@@ -413,7 +442,8 @@ def _changed_count() -> int:
     draft, base = _stored_draft(), _stored_base()
     if draft is None or base is None:
         return 0
-    folded, _ = _folded(draft, _widget_edits())
+    edits = _widget_edits()
+    folded = _folded(_fold_base(), edits)[0] if edits else draft
     saved = _base_draft(base)
     return sum(1 for key in FLOOR_KEYS if folded.get(key) != saved.get(key))
 
@@ -568,7 +598,9 @@ def _folded(draft: Draft, edits: Mapping[int, Mapping[str, object]]) -> tuple[Dr
     다시 세우는 것은 다음 회차에 보일 값(접은 값 + 남은 편집)이 접은 값과 다를 때뿐이다 — 비활성
     층의 사유를 지움(보이는 빈 사유 ≠ 「사용 안 함」), 사유를 적은 줄을 다시 켬 등. 끄기(빈 사유는
     그린 데이터가 채운다)·켜기·사용 층의 사유 적기는 같은 위젯이라 보던 스크롤·초점이 남는다.
-    같은 편집을 두 번 접어도 같다(남은 편집은 회차마다 다시 접힌다)."""
+    다시 세우지 않는 편집은 접은 값 위에 다시 접어도 같다(남은 편집은 회차마다 다시 접힌다). 다시
+    세울 편집(사유를 친 채 켬 등)은 접은 값 위에 다시 접으면 뒤집히므로 `draft` 는 늘 그 위젯이 그린
+    초안(`_fold_base`)을 넘긴다."""
     folded = dict(draft)
     remount = False
     for position, change in edits.items():
@@ -591,7 +623,7 @@ def _fold() -> Draft:
     edits = _widget_edits()
     if not edits:
         return draft
-    folded, remount = _folded(draft, edits)
+    folded, remount = _folded(_fold_base(), edits)
     _store_draft(folded)
     if remount:
         _remount()
@@ -622,7 +654,8 @@ def _toggle_changed(database_path: str) -> None:
 def _fold_from_editor() -> None:
     """편집표 `on_change` — 칸 편집을 바로 초안에 접는다. 콜백은 본문보다 먼저 돌아, 칸을 고친 직후
     사이드바 링크 · 뒤로가기로 떠나 본문이 편집표까지 가지 않는 회차에도 고친 칸이 초안에 남는다
-    (입력 비가동 `_fold_edits` 와 같은 까닭). 본문의 `_fold` 가 같은 편집을 다시 접어도 같다.
+    (입력 비가동 `_fold_edits` 와 같은 까닭). 콜백과 본문의 `_fold` 는 같은 바탕(그 위젯이 그린
+    초안 — `_fold_base`) 위에 접어 같은 회차에 두 번 접어도 같은 값이다.
 
     초안만 적고 새 위젯 세우기(`_remount` — 단추 세대를 올린다)는 본문의 `_fold` 에 둔다 — 같은
     회차에 온 「저장」 · 동 머리 · 「되돌리기」 누름이 이 콜백 뒤에 돌면 올라간 세대에 걸려 말없이
@@ -631,7 +664,7 @@ def _fold_from_editor() -> None:
         return
     edits = _widget_edits()
     if edits:
-        folded, _ = _folded(_stored_draft() or {}, edits)
+        folded, _ = _folded(_fold_base(), edits)
         _store_draft(folded)
 
 
@@ -1130,6 +1163,8 @@ def _render_editor(
             for key in FLOOR_KEYS
         ]
     ).astype({_REASON_COLUMN: "string"})
+    # 남은 칸 편집을 다음 회차에 접을 바탕(`_fold_base`) — 이 위젯이 그린 초안.
+    FLOOR_DRAWN.set(_labelled(draft))
     st.data_editor(
         frame,
         key=editor_widget_key(EDITOR_KEY),
