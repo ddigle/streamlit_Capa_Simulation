@@ -1182,9 +1182,16 @@ else:
 # 단추를 그린 뒤 · 아래 「변경사항 적용」 보다 앞이다. 이벤트 칸에 늘 한 자리를 쓴다.
 DIALOG_HOST.render(_paste_picker(current_dataset, current_grid), widget_keys=_paste_widget_keys)
 
-# 「변경사항 적용」 — 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에
-# 초안을 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).
-if current_grid is not None and grid_actions is not None and grid_actions.submitted:
+# 「변경사항 적용」 — 잠그지 않으므로 누른 회차에 본다: 초안이 없으면(고친 것 없는 누름 ·
+# 반영이 초안을 비움) 아무것도 하지 않는다 — 알림도 없다(같은 값 적용으로 리비전만 오르지
+# 않게). 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에 초안을
+# 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).
+if (
+    current_grid is not None
+    and grid_actions is not None
+    and grid_actions.submitted
+    and reference_grid.draft_pending(current_grid.table)
+):
     blocked = reference_grid.error_notice(current_grid, process_labels.label)
     if blocked is not None:
         grid_actions.notice.error(blocked, icon=":material/error:")

@@ -239,8 +239,6 @@ APPLIED_ICON = ":material/published_with_changes:"
 # 버튼에 남긴다(2026-09-28 사용자 결정).
 PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드가 이 계획으로 다시 계산됩니다."
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
-# 잠긴 적용 단추의 풍선은 하는 일이 아니라 까닭이다(설계 규칙 UI-INP-07).
-APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
 # 버려질 편집이 있을 때 등록 단추의 풍선 — 남기는 법. 무엇이 버려지는지는 창 맨 위 값 줄이다.
 VIRTUAL_DROP_HELP = (
     "편집을 남기려면 먼저 그 표의 「변경사항 적용」 을 누릅니다. 붙여넣기는 등록한 뒤 다시 "
@@ -1007,10 +1005,10 @@ def _apply_plan_click(
     그린다(앱 머리 칩 · 탭 점도 적용 뒤 값 — `mark_own_change` 가 방금 적용한 초안을 빼고 센다).
 
     누름과 함께 온 그 표 편집을 먼저 반영하고(`plan_grid.settle_inbox`), 고친 칸도 붙여넣기
-    대기도 없으면(편집을 비운 반영 · 같은 회차의 「편집 취소」) 그린 단추가 잠겼을 때처럼 아무것도
-    하지 않는다. 칸 오류 · 업무 규칙 오류는 작업 줄 아래 알림 칸에 그릴 글로
-    담는다(`plan_grid.refuse`). 닫힌 탭이라 그리드를 짓지 않은 회차의 누름(탭을 바꾸는 사이)도 그
-    표 양식으로 적용한다(`ready` 없음).
+    대기도 없으면(고친 것 없는 누름 · 편집을 비운 반영 · 같은 회차의 「편집 취소」) 아무것도
+    하지 않는다 — 알림도 없다(단추는 잠그지 않는다 — `plan_grid.render_actions`). 칸 오류 ·
+    업무 규칙 오류는 작업 줄 아래 알림 칸에 그릴 글로 담는다(`plan_grid.refuse`). 닫힌 탭이라
+    그리드를 짓지 않은 회차의 누름(탭을 바꾸는 사이)도 그 표 양식으로 적용한다(`ready` 없음).
     """
     if not _still_drawn(drawn):
         return
@@ -1099,8 +1097,9 @@ with pkg_plan_tab:
         or held_flash(PLAN_APPLIED_FLASH_KEY) is not None
     )
     with plan_actions_box:
-        # 고친 칸도 붙여넣기 대기도 없으면 「변경사항 적용」 을 잠근다(같은 값으로 리비전만 올라
-        # `미저장 변경` 이 켜진다). 「편집 취소」 는 적용하지 않은 편집과 붙여넣기 대기분을 함께
+        # 「변경사항 적용」 은 잠그지 않는다 — 고친 칸도 붙여넣기 대기도 없는 누름은 적용 콜백이
+        # 아무것도 하지 않는다(같은 값으로 리비전만 올라 `미저장 변경` 이 켜지지 않게). 「편집
+        # 취소」 는 적용하지 않은 편집과 붙여넣기 대기분을 함께
         # 버린다 — 사이드바 「편집 되돌리기」는 **적용한** 변경이 있을 때만 서서 붙여넣기만 해 둔
         # 표는 버릴 길이 없었다(2026-09-29 2차 리뷰). 적용 · 붙여넣기 · 등록 알림과 적용이 막힌
         # 까닭은 단추 줄 바로 아래다.
@@ -1119,7 +1118,6 @@ with pkg_plan_tab:
                 ),
             ),
             apply_help=PLAN_APPLY_HELP,
-            locked_help=APPLY_LOCKED_HELP,
             paste=PLAN_PASTE_BUTTON,
             more=(VIRTUAL_PRODUCT_BUTTON,),
             more_key="pkg_plan_more",
@@ -1185,7 +1183,6 @@ with yield_tab:
                     ),
                 ),
                 apply_help=YIELD_APPLY_HELP,
-                locked_help=APPLY_LOCKED_HELP,
                 paste=YIELD_PASTE_BUTTON,
                 discard_help="수율 표에서 적용하지 않은 편집을 버립니다.",
                 discard_click=_discard_yield_edits,

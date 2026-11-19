@@ -552,12 +552,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     전송량은 옛 편집표보다 줄고, 각 탭을 처음 열 때 그리드 요소를 받는다). inbox 에 op 가 쌓인 표와 적용이 눌린 표는
     닫힌 탭이어도 양식을 짓는다. PKG PLAN 양식은 붙여넣기 대기 표가 있으면 그 표이고(내용 지문에 대기 표 지문을 더한다), 달 칸을
     수로 읽어 0 을 빈칸으로 싣는다(`plan_grid.zero_as_blank` — 비운 칸은 적용 때 `plan_from_edit_table` 이 0 으로 읽는다). 값 형식은
-    `plan_grid.FORMATS`(PKG PLAN 천 단위 · 소수 없이 · 0 이상, 수율 percent · 상한 1). 「변경사항 적용」 은 고친 칸이나 붙여넣기
-    대기가 있을 때 켜지고, 칸 오류가 남았으면 고칠 칸 알림(`plan_grid.error_notice`)으로 멈추고, 아니면 양식에 초안을 업무 키로
-    덮어(`plan_grid.merged`) 옛 적용 길(`plan_from_edit_table` → `attach_plan_attributes` → `apply_month_updates` · `_apply_yield`)을
+    `plan_grid.FORMATS`(PKG PLAN 천 단위 · 소수 없이 · 0 이상, 수율 percent · 상한 1). 「변경사항 적용」 은 **잠그지 않는다**(고친 칸이
+    서버에 닿기 전 — 편집기를 연 채 · Enter 직후 — 의 누름이 잠긴 단추에 닿아 버려지던 E2E E1-D2, 2026-11-19 아침 확인 보드
+    m19-e2e-first-apply (가) — 풍선은 늘 하는 일이고 잠긴 까닭 풍선이 없다). 칸 오류가 남았으면 고칠 칸
+    알림(`plan_grid.error_notice`)으로 멈추고, 아니면 양식에 초안을 업무 키로 덮어(`plan_grid.merged`) 옛 적용 길(`plan_from_edit_table` → `attach_plan_attributes` → `apply_month_updates` · `_apply_yield`)을
     탄다. **적용은 단추 콜백이다**(`_apply_plan_click` · `_apply_yield_click` — 본문보다 먼저 돌아 누름 하나에 회차 하나가 새 계획으로
     그린다, `st.rerun` 없음). 콜백은 그 표 출납을 먼저 받아 초안에 반영하고(`plan_grid.settle_inbox` — 단추 콜백이 그리드 출납
-    콜백보다 먼저 돈다, 같은 seq 는 한 번), 고친 칸 · 붙여넣기 대기가 없으면 아무것도 하지 않는다. 칸 오류 · 업무 규칙 오류는 글로
+    콜백보다 먼저 돈다, 같은 seq 는 한 번), 고친 칸 · 붙여넣기 대기가 없으면 아무것도 하지 않는다(알림도 없다 — 같은 값 적용으로 리비전만
+    오르지 않게). 편집 직후의 누름은 그 편집까지 적용한다 — 그리드가 편집기 blur · 표 밖 focusout 에서 그 op 를 click 보다 먼저 보내고
+    누름의 rerun 은 그 출납 값을 함께 싣는다(9장 「범용 편집 그리드」). 칸 오류 · 업무 규칙 오류는 글로
     담아(`plan_grid.refuse` — 세션 칸 `SessionSlot` `plan_grid_apply_refusal`) 그 표 작업 줄 아래 알림 칸 한 곳이 같은 회차에
     그린다(`plan_grid.render_actions` — `Actions.notice` 자리, 까닭은 「누른 동작의 실패」 UI-NTF-03). 쓰기 차례는 `apply_month_updates`
     → 완료 표지(`_queue_done`) → 붙여넣기 대기 비움 → `mark_own_change` 이고 「계산 안 된 수요」(`ST-04`)는 그 회차 그리드 뒤에
@@ -607,8 +610,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **편집 표 아홉이 모두 범용 편집 그리드다**(`reference_grid_keys.EDIT_TABLES` — UPEH · 보유대수 · 대여대수 · 가용대수 · 효율 ·
     여유율 · 일수 · Lot·WF측정률). 그 회차에는 고른 표와 inbox 에 op 가 쌓인 표의 양식만 만든다(양식·색인·껍데기는 캐시).
     작업 줄(적용·Excel 붙여넣기·편집 취소·변경 수 — key 는 `f"{editor_key}_apply"` 등 표마다 같은 꼴)을 `reference_actions`
-    에 그리고 그리드에 싣는다. 「변경사항 적용」 은 칸 오류가 남았으면 고칠 칸 알림으로 멈추고, 아니면 양식에 초안을 업무
-    키로 덮어(`merged_template`) `_apply_edit` 길(`to_rows` 업무 규칙 검사 → `apply_month_updates`)을 탄다. 측정률 표가
+    에 그리고 그리드에 싣는다. 「변경사항 적용」 은 잠그지 않고(`reference_grid.apply_button_key` — 생산 계획과 같은 까닭, 2026-11-19
+    보드 m19-e2e-first-apply (가)) 누른 회차에 본다 — 초안이 없으면 아무것도 하지 않고(알림 없음), 칸 오류가 남았으면 고칠 칸 알림으로
+    멈추고, 아니면 양식에 초안을 업무 키로 덮어(`merged_template`) `_apply_edit` 길(`to_rows` 업무 규칙 검사 → `apply_month_updates`)을
+    탄다. 누름과 함께 온 편집은 출납 콜백이 회차 맨 앞에서 inbox 에 쌓고 본문이 단추보다 먼저 반영하므로(`apply_grid_inbox`) 그
+    적용에 든다. 측정률 표가
     통째로 비면 작업 줄 칸에 빈 결과 한 줄(「이 기간에 … 행이 없습니다」 — 1.0 계산은 그 줄의 풍선)을 쓰고 그리드는 빈
     표(머리만)를 싣는다(필터는 서지 않는다). STEP 추가·삭제는
     UPEH·Lot·WF 의 초안·이력을 버리고(팝업이 먼저 경고, 완료 알림에 버린 표) 다른 표 초안은 남긴다.
@@ -7783,7 +7789,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     다시 도는 회차가 같은 id 로 다시 보낸다. 기준 정보 `head_is_stale` 와 같은 꼴이다.
   - 꺼진 단추의 키보드 풍선은 초점 껍데기(3장 `alert_center.py`)가 맡는다 — 화면마다 `tabindex` 를 달지 않는다.
   - **잠긴(disabled) 위젯으로 온 조작은 서버가 버려 코드가 알 수 없다.** 보여 준 회차와 누른
-    회차에 잠금 조건이 달라질 수 있는 제출 버튼은 잠그지 말고 누른 회차에 판정해 알린다.
+    회차에 잠금 조건이 달라질 수 있는 제출 버튼은 잠그지 말고 누른 회차에 판정해 알린다. 브라우저 쪽 값(편집 그리드 출납)이
+    서버에 닿아야 풀리는 잠금도 같다 — 생산 계획 · 기준 정보 「변경사항 적용」 은 첫 편집이 닿기 전의 누름이 버려져(2026-11-19 E2E
+    E1-D2) 잠그지 않고, 고친 칸이 없는 누름은 아무것도 하지 않는다(알림 없음 — 보드 m19-e2e-first-apply (가)).
   - **편집표에 빈칸이 있으면 `placeholder=""` 를 넘긴다.** 기본값은 결측 칸에 `None` 글자를 쓴다
     (`tests/test_data_editor_placeholder.py` 가 소스 전체를 훑는다).
   - **조건부 알림(flash·오류) 뒤에 오는 key 없는 탭·확장 패널은 알림이 생기거나 사라질 때 위치가
@@ -8567,7 +8575,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     시각을 적어(`note_notice` — 아이콘 있는 성공 알림은 `icon=` 도, 성공이 아닌 알림은 `kind=` 도) 그 창 안의 회차가 같은
     꼴로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」·리비전 「이름
     저장」·생산 계획 작업 줄 알림(PKG PLAN·수율 「변경사항 적용」·붙여넣기·가상 제품 등록 — 0.3~0.35초 둘째 누름이 잠긴
-    단추에 닿아 버려지고 그 회차가 알림을 지웠다, 2026-10-27 E2E, `tests/test_load_conversion_plan_apply.py`)·리비전 불러오기
+    단추에 닿아 버려지고 그 회차가 알림을 지웠다, 2026-10-27 E2E, `tests/test_load_conversion_plan_apply.py` — 2026-11-19 부터
+    「변경사항 적용」 은 잠그지 않아 둘째 누름이 고친 칸 없는 누름으로 서버에 닿고 그 회차도 같은 표지로 다시 그린다)·리비전 불러오기
     `scenario_status.load_saved_revision` — HOME 주요 Case 칩을 0.15~0.3초 간격으로 두 번 누르면 둘째 누름은 이미 올린 짝이라
     아무것도 하지 않고 「…을 불러왔습니다.」 를 지웠다, 2026-10-26 E2E. 가용설비 현황 작은 편집표의
     「삭제 확정」 · 일괄 삭제를 되살린 「한 단계 되돌리기」(알림 칸 `GRID_RESULT_KEY`) · 「예시 행 n건 지우기」 의 알림도 — 둘째 누름이 첫 회차가 꺼낸 단추에 닿아 그 알림을
@@ -9010,7 +9019,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `<dialog>.showModal()`(top layer)로 한다 — `position: fixed` 덮개는 긴 회차에 Streamlit 이 요소 칸에 opacity 0.33 을 걸어 머리
   띠·사이드바·탭 줄 밑으로 묻힌다(D2). 복사는 동기 `copy` 이벤트의 `clipboardData` 로만(비동기 `navigator.clipboard` 는 쓰지
   않는다). op 마다 그 표 이력의 `gen` 을 싣고, 초안을 버리면 이력도 지워 다음 `gen` 이 달라 그 전에 보낸 op 는 버려진다. 받은 data
-  로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다.
+  로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다(변경 칩 ·
+  탭 점 · 「적용 전 (1)」 이 300ms 묶음을 기다리지 않고 첫 편집 뒤 한 회차 안에 서게). 표 밖 단추를 누르면 편집기 blur(확정)와 표 밖
+  focusout 이 pointerdown · mousedown 자리에서 보내 click 보다 먼저이고, Streamlit 은 누름의 rerun 에 모든 위젯 상태(그 출납 값
+  포함)를 싣는다 — 그래서 편집기를 연 채 · Enter 직후 누른 「변경사항 적용」(생산 계획 · 기준 정보)은 단추를 잠그지 않는 한 같은
+  누름 하나로 그 편집까지 적용한다(2026-11-19 E2E E1-D2 — 잠긴 단추였을 때는 그 누름이 버려졌다). 0.3초 묶음은 그대로다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘, Space 편집기의 요소·서식 클립보드와 붙일 것 체크,
   Space 「호기 정보」 창의 자리·크기·열림·탭·필터)는
   컴포넌트 안이나 localStorage·sessionStorage(읽기·쓰기 모두 try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야

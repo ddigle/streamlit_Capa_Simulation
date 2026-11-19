@@ -750,13 +750,14 @@ def _action_row_lines(app: AppTest) -> list[str]:
 def test_the_change_count_lives_only_in_the_grid_toolbar(grid_calls: Calls) -> None:
     """고친 수는 도구 막대 「적용 전 (n)」 하나가 말하고 작업 줄은 거듭 적지 않는다(UI-TXT-07).
     양식과 같은 값으로 되돌린 칸은 초안에서 빠져 수도 0 이다(같은 값 적용으로 리비전만 오르는 일을
-    막는 규칙과 같은 뜻)."""
+    막는 규칙과 같은 뜻 — 단추는 잠그지 않고 그 누름이 아무것도 하지 않는다, 2026-11-19 보드
+    m19-e2e-first-apply (가))."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-change-count"), default_timeout=60
     )
     app = _open_tab(app, "효율")
     assert _change_count(grid_calls) == 0
-    assert app.button(key="capa_run_rate_editor_apply").disabled
+    assert not app.button(key="capa_run_rate_editor_apply").disabled
 
     app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.5")
     assert _change_count(grid_calls) == 1
@@ -765,4 +766,6 @@ def test_the_change_count_lives_only_in_the_grid_toolbar(grid_calls: Calls) -> N
 
     app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.9")
     assert _change_count(grid_calls) == 0
-    assert app.button(key="capa_run_rate_editor_apply").disabled
+    app.button(key="capa_run_rate_editor_apply").click().run()
+    assert not app.exception
+    assert "test_month_updates" not in app.session_state
