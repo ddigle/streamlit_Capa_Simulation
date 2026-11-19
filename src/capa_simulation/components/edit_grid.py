@@ -389,7 +389,7 @@ def draft_of(cells_key: str) -> DraftState | None:
 
 
 def draft_pending(cells_key: str) -> bool:
-    """그 표에 적용하지 않은 초안이 있는가(「변경사항 적용」 을 켜는 조건)."""
+    """그 표에 적용하지 않은 초안이 있는가(누른 회차에 적용할 것이 있는지 · 단추 점의 조건)."""
     return change_counts(draft_of(cells_key))[0] > 0
 
 

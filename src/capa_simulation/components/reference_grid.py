@@ -398,7 +398,7 @@ def apply_grid_inbox(tables: Mapping[str, GridTable]) -> bool:
 
 
 def draft_pending(table: str) -> bool:
-    """그 표에 적용하지 않은 그리드 편집이 있는가(「변경사항 적용」 을 켜는 조건 · 단추 점)."""
+    """그 표에 적용하지 않은 그리드 편집이 있는가(누른 적용이 할 일이 있는지 · 단추 점)."""
     return edit_grid.draft_pending(cells_key(table))
 
 
