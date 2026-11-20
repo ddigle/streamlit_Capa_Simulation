@@ -240,14 +240,14 @@ def _too_big(value: object, depth: int = 0) -> str | None:
             if inner is not None:
                 return f"{name}.{field.name}: {inner}"
         return None
-    if isinstance(value, Mapping):
-        items: list[object] = [part for pair in value.items() for part in pair]
-    elif isinstance(value, (Sequence, set, frozenset)):
-        items = list(value)
-    else:
+    if not isinstance(value, (Mapping, Sequence, set, frozenset)):
         return None
     if len(value) > SMALL_ITEMS:
         return f"{name}({len(value)})"
+    if isinstance(value, Mapping):
+        items: list[object] = [part for pair in value.items() for part in pair]
+    else:
+        items = list(value)
     for index, item in enumerate(items):
         inner = _too_big(item, depth + 1)
         if inner is not None:
