@@ -98,7 +98,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/internal_modules.py", ""): (EMPTY,),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
     ("app_pages/process_capa_detail.py", ""): (EMPTY,),
-    ("app_pages/reference_data.py", ""): (EMPTY,),
+    ("app_pages/reference_data.py", "_render_reference_scope"): (EMPTY,),
     ("app_pages/reference_data.py", "_render_step_view"): (EMPTY,),
     ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY,),
     ("app_pages/reference_integrity.py", "_render_guide"): (UNSETTLED, UNSETTLED, UNSETTLED),

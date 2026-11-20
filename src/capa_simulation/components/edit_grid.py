@@ -38,7 +38,7 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -47,6 +47,7 @@ import streamlit as st
 
 from capa_simulation.components import grid_shared
 from capa_simulation.design import tokens
+from capa_simulation.scenario_state import ACTIVE_SCENARIO
 from capa_simulation.services.edit_grid import (
     DROPPED_TOAST,
     LOCKED_TOAST,
@@ -72,6 +73,7 @@ from capa_simulation.services.edit_grid_payload import (
     encode_feed,
 )
 from capa_simulation.services.korean_particle import with_subject_particle
+from capa_simulation.session_slot import SessionSlot
 
 _ASSETS: Final = Path(__file__).with_name("edit_grid_assets")
 GRID_COMPONENT: Final = "capa_edit_grid"
@@ -427,6 +429,32 @@ def history_of(history_key: str) -> HistoryState:
 
 def draft_of(cells_key: str) -> DraftState | None:
     return draft_from(st.session_state.get(cells_key))
+
+
+def draft_present(cells_key: str) -> bool:
+    """그 표 초안 칸이 있는가 — 머리 띠 변경 칩 · 화면 탭 점 · 떠나기 확인이 세는 값이다(출납 콜백이
+    둔 빈 초안 자리도 든다 — `scenario_edit_bar.pending_edit_pages`)."""
+    return SessionSlot(cells_key, object).peek() is not None
+
+
+def head_value(key: str) -> Hashable:
+    """편집기 구역 머리 표지(AGENTS 9장 「구역 회차 규칙」 R2)에 넣는 세션 칸 값 — 목록 · 튜플은
+    튜플로, 그 밖에 해시할 수 없는 값(표 · 사전)은 꼴 이름으로(있음 · 없음만 가른다)."""
+    return _hashable(SessionSlot(key, object).peek())
+
+
+def _hashable(value: object) -> Hashable:
+    if isinstance(value, (list, tuple)):
+        return tuple(_hashable(item) for item in value)
+    if isinstance(value, Hashable):
+        return value
+    return type(value).__name__
+
+
+def scenario_mark() -> str | None:
+    """활성 시나리오 내용 토큰 — 적용 · 등록 · 불러오기가 바꾼다(편집기 구역 머리 표지)."""
+    scenario = ACTIVE_SCENARIO.peek()
+    return None if scenario is None else str(scenario.get("content_token"))
 
 
 def draft_pending(cells_key: str) -> bool:

@@ -73,7 +73,7 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     # 생산 계획 PKG PLAN · 수율 「변경사항 적용」 콜백이 막혀 담은 글(`plan_grid.refuse`)을 그 표
     # 작업 줄 아래 알림 칸에 그리는 한 자리(칸 오류 · 업무 규칙 오류).
     ("src/capa_simulation/components/plan_grid.py", "render_actions"): (1, PRESSED),
-    ("app_pages/reference_data.py", ""): (2, PRESSED),
+    ("app_pages/reference_data.py", "_apply_pressed"): (2, PRESSED),
     ("app_pages/reference_data.py", "_step_dialog"): (1, PRESSED),
     ("src/capa_simulation/components/shortening_cumulative.py", "_dialog_body"): (1, PRESSED),
     ("src/capa_simulation/components/shortening_cumulative.py", "_save_record"): (1, PRESSED),

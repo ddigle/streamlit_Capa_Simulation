@@ -1405,10 +1405,12 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
         order.append("셈")
         return required_equipment.RequiredExclusionCounts(unrouted_loads=3, excluded_routes=5)
 
-    def recorded_grid(table: str, grid: Any, *, hidden: bool = False) -> None:
+    def recorded_grid(
+        table: str, grid: Any, *, hidden: bool = False, scope_key: str | None = None
+    ) -> None:
         if table == "RQ_PKG_PLAN":
             order.append("편집표")
-        draw_grid(table, grid, hidden=hidden)
+        draw_grid(table, grid, hidden=hidden, scope_key=scope_key)
 
     monkeypatch.setattr(required_equipment, "required_exclusion_counts", counted)
     monkeypatch.setattr(plan_grid, "render_grid", recorded_grid)

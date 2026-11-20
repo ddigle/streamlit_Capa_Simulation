@@ -562,7 +562,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알림의 표 이름은 화면 이름(`PKG_PLAN_TAB_NAME` · `YIELD_TAB_NAME`)이고, 대기 표 달 칸은 숫자로 읽어 0 을 빈칸으로 그린다.
   - **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — `components/plan_grid.py`, 이름은
     `plan_grid_keys.py`). 탭마다 그리드 하나(호스트 `plan_grid` · `yield_grid`)이고, 탭 본문은 작업 줄 칸 → 그리드 칸(둘 다 key 붙은
-    늘 서 있는 칸 — `plan_grid.LAYOUTS`) 차례다. 이 세션에 한 번도 연 적 없는 탭은 그리드를 세우지 않고(`plan_grid.mounted` — 그리드
+    늘 서 있는 칸 — `plan_grid.LAYOUTS`) 차례다. **두 칸은 표마다 편집기 구역이다**(9장 「구역 회차 규칙」 — 키 붙은 프래그먼트
+    `load_conversion_plan_scope` · `load_conversion_yield_scope`, PKG PLAN 구역은 적용 뒤 수요 알림 자리까지). 칸 고치기는 그 구역 회차로
+    돌고, 구역 밖이 그리는 값(표마다 초안 칸 있음 · 적용할 초안 있음, 붙여넣기 대기 · 열린 팝업 · 스스로 적용한 표 · 고른 탭 · 활성
+    시나리오 내용 · 조회기간 — `plan_grid.scope_head`)이 바뀌면 출납 · 작업 줄 단추 콜백 끝(`scope_key` — 「⋯」 메뉴는 닫기까지 마친
+    뒤) · 본문 뒤에서 앱 전체 회차로 올린다. 팝업 둘은 구역 밖(탭 안 구역 뒤)이라 여는 콜백이 올려 그린다. 앱 전체 회차의 출납 반영은
+    표 탭 점보다 먼저 대본이 하고(반영이 초안 칸을 비우면 한 번 더 돈다), 구역 회차는 구역 본문이 그 표 출납을 반영한다
+    (`_scope_grid`). 구역 회차의 표 · 인자는 마지막 앱 전체 회차의 것이다(원본을 바꾸는 조작은 머리 표지가 올린다 — 원본은 세션의
+    활성 시나리오라 저장 토큰 견주기는 없다). 구역 회차는 `app.py` 의 실행 핀 밖이라 PKG PLAN 구역 본문이 시나리오 DB 핀
+    (`pinned_connections`)을 스스로 잡는다 — 적용 알림 창 안의 수요 알림이 공정 표시명을 캐시가 빈 회차에 DB 에서 읽는다(수율 구역
+    본문은 DB 를 열지 않는다). 이 세션에 한 번도 연 적 없는 탭은 그리드를 세우지 않고(`plan_grid.mounted` — 그리드
     요소는 등록 JS · CSS 를 싣는다), 연 적 있는 탭이 닫힌 회차에는 양식을 짓지 않고 앞서 보낸 껍데기 · feed 를 그대로 다시 보내(해시
     참조 — `plan_grid_keys.last_key`) 마운트만 남는다. 열린 탭인데 수율 표를 세우지 못한 회차는 표 없는 껍데기다(진입
     전송량은 옛 편집표보다 줄고, 각 탭을 처음 열 때 그리드 요소를 받는다). inbox 에 op 가 쌓인 표와 적용이 눌린 표는
@@ -616,7 +625,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글은 「보유대수」 · 「대여대수」 · 「가용대수」 다(2026-11-12 보드 답 k-b1 — 화면 글만, 표 이름 · 표시순서 범위 · DB 키는 그대로). 그 아래 늘 서 있는 칸
     차례가 계약이다 — 작업 줄 칸(`reference_actions`) → 그리드 자리(`reference_grid_box` — 범용 편집 그리드 마운트 하나,
     `reference_grid_keys.GRID_HOST`) → 읽기 보기 칸(`reference_view` — 「STEP 구성」 을 골랐을 때만 채운다). 세 표를 합쳐 보던
-    「설비대수 현황」 보기는 없다(같은 답 k-b1).
+    「설비대수 현황」 보기는 없다(같은 답 k-b1). 작업 줄 칸 · 그리드 자리는 **편집기 구역**(9장 「구역 회차 규칙」 — 키 붙은
+    프래그먼트 `reference_data_grid_scope`, 대본 앞쪽의 늘 서 있는 칸 안에 대본 끝에서 부른다)이다. 칸 고치기는 그 구역 회차로 돌고,
+    구역 밖이 그리는 값(표마다 초안 칸 있음 · 적용할 초안 있음, 고른 종류 · 그 종류의 「표 조건」 고른 값 · 공용 공정 값, 열린 팝업 ·
+    스스로 적용한 표 · 활성 시나리오 내용 · 조회기간 — `reference_grid.scope_head`)이 바뀌면 본문 뒤(출납) · 콜백 끝(「Excel
+    붙여넣기」 · 「편집 취소」 — `scope_key`)에서 앱 전체 회차로 올린다. **출납 콜백은 올리지 않는다**(9장 「구역 회차 규칙」 R8
+    의 예외) — 「변경사항 적용」 은 본문이 누른 회차에 판정하는 단추라 같은 상호작용의 콜백 끝 올리기(`st.rerun()`)가 그 누름을
+    버린다. 그래서 첫 칸의 초안 있음 표지도 본문 뒤에서 올라, ack 를 그린 구역 회차와 앱 전체 회차 사이 틈은 탭 줄 붙들기의
+    조용함(`HOLD_QUIET_MS`)만 가린다(적용을 콜백으로 옮기면 걷힌다 — 생산 계획 꼴). 구역 회차의 적용은 머리 표지가 본문
+    뒤에서, 앱 전체 회차의 적용은 대본이 붙여넣기 호스트를 그린 뒤 다시 돈다. 「Excel 붙여넣기」 는 구역 안 여는 콜백이 호스트만
+    다시 돌리고(`rerun_fragment_if_alone`), 그러지 못하면 열림 칸이 바뀐 머리 표지가 앱 전체로 올린다. 사이드바 「표 조건」 카드는
+    구역에 넣지 않는다(바꾸면 앱 전체 회차). 구역 본문은 DB 를 열지 않아 DB 핀을 잡지 않는다(적용도 세션의 활성 시나리오에만 쓴다).
     그리드 마운트는 종류와 상관없이 같은 자리에서 그린다(읽기 보기를 골랐으면 표 없는 껍데기 — 다시 마운트되면 보내지 않은
     출납을 잃는다). 작업 줄 칸 안 단추 줄은 key `reference_action_row`(`reference_grid.ACTION_ROW`)이고, 기준 창(창 폭
     `ONE_LINE_MIN_WINDOW_PX` 1221 이상 — 고칠 칸 두 자리로 잰 문턱, 사내 보고 창 1283 포함)에서는 표 도구 막대가 그 줄 오른쪽에 함께 서 표 위가 한 줄이다(`ONE_LINE_STYLE` — 2026-11-07
@@ -3727,7 +3746,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 묶음 쉼은 결정값 상수 `edit_grid.SEND_MS`
     하나가 정하고 껍데기 `limits.sendMs` 로 JS 에 간다(`shell_limits` — `grid_shared.batch_ms`, `eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을 때만 쓰는 대비 값,
     시험 `tests/test_edit_grid_send_js.py`). 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(9장 「구역 회차 규칙」 묶음 길이 —
-    운영 `APP_ENV` 에서는 읽지 않는다). 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
+    운영 `APP_ENV` 에서는 읽지 않는다). 편집기 구역 머리 표지 도우미 `draft_present`(초안 칸 있음 — 칩 · 탭 점이 세는 값) ·
+    `head_value`(세션 칸 값을 해시 가능한 꼴로) · `scenario_mark`(활성 시나리오 내용 토큰)는 세션 칸만 읽는다 — 어댑터의 `scope_head`
+    가 쓴다(구역 회차 시험 `tests/test_grid_scopes.py`). 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
     으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
     사용자가 일부러 버린 길(「편집 취소」 — `discard_table(…, keys)`, `GridKeys.discarded` 칸)은 버린 `gen` 을 적어(최근
     `DISCARDED_GENS` 개) 그 직전 출납 묶음의 op 를 `apply_inbox` 가 토스트 없이 버린다(빈 초안 자리도 걷는다). 세대가 바뀌어도
@@ -4409,7 +4430,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `get_edit_grid_base_within`·`get_edit_grid_base`, 키는 편집 캐시 키·표시순서 지문·표시명 지문), inbox 반영(`apply_grid_inbox` —
   지금 고르지 않은 표의 op 도 그 표에), 사이드바 필터 → feed `filters`(분류 사전 코드 — 브라우저가 거른다), 작업 줄(`render_actions` — 알림 칸은
   `render_flash`, 표 도구 막대와 한 줄로 서는 CSS 는 `ONE_LINE_STYLE` 을 `render_edit_grid(page_style=)` 로 넘긴다, 편집 범위 글은
-  feed `scope`), 고칠 칸 알림(`error_notice` — 앞 다섯 곳을 분류 표시명 · 월로), 초안 되머지(`merged_template`)가 한 곳이다.
+  feed `scope`), 고칠 칸 알림(`error_notice` — 앞 다섯 곳을 분류 표시명 · 월로), 초안 되머지(`merged_template`), 편집기 구역 머리
+  표지(`scope_head` — 세션 칸만 읽는다)가 한 곳이다.
   머리 글은 `COLUMN_LABELS` 의 짧은 이름이다(껍데기는 회차마다 새 dict 라 캐시 본문을 고치지 않는다).
   - 출납 콜백(`collect_outbox`)은 op 를 inbox 에 쌓기만 하고, 초안이 없던 표에는 빈 초안 자리(`{"cells": {}, "bad": {}}`)를
     둔다 — 변경 칩·화면 탭 점은 `app.py` 가 본문보다 먼저 세므로(세션 칸이 None 이 아니면) 빈 자리가 없으면
@@ -4439,7 +4461,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`apply_inbox` — 초안 칸을 비우면 참) · 적용 콜백이 먼저 받는 출납(`settle_inbox` — 같은 seq 는 한 번), 막힌 적용 글(`refuse` — 세션
   칸 `SessionSlot` `plan_grid_apply_refusal`, 그 표 작업 줄 알림 칸이 같은 회차에 그린다), 작업 줄(`render_actions` — 「⋯」 메뉴 `more` ·
   알림 칸은 `render_flash`), 그리드 자리
-  (`render_grid` — 표가 없으면 표 없는 껍데기), 고칠 칸 알림(`error_notice`), 초안 되머지(`merged`)가 한 곳이다. 표 위 칸 key 와
+  (`render_grid` — 표가 없으면 표 없는 껍데기), 고칠 칸 알림(`error_notice`), 초안 되머지(`merged`), 편집기 구역 머리 표지
+  (`scope_head` — 세션 칸만 읽는다) · 콜백 끝 올리기(`render_actions` · `render_grid` 의 `scope_key`)가 한 곳이다. 표 위 칸 key 와
   한 줄 문턱 · 왼쪽 비움은 `LAYOUTS`(고친 뒤 단추 줄 폭으로 잰 샘플 관측 — 설계 규칙집 4장 「생산 계획 표 위 한 줄」).
 - `src/capa_simulation/plan_grid_keys.py` — 생산 계획 그리드의 이름(UI 모름): 표(`PLAN_TABLE` · `YIELD_TABLE`), 호스트 key(`HOSTS`),
   표마다 초안 · 이력 · inbox · ack · 토스트 · 버린 gen 칸, 초안이 있는 표의 양식 지문 칸(`TEMPLATE_DIGESTS_KEY` — 다른 화면의 적용이
@@ -8679,7 +8702,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   회차 끝 뒤 조용함(`HOLD_QUIET_MS` 0.3초)이 차야 놓는다 — ack 를 그린 구역 회차가 본문 뒤에서 앱 전체로 올라가면 두
   회차 사이(회차 끝 GC)도 「돌지 않음」 이고, 그 틈에 놓으면 떠나기 표지가 서기 전이라 테마 단추가 묻지 않고 새로 읽는다.
   그래서 명부에 오르는 편집기는 op 가 머리 표지를 바꾸는 올리기를 콜백 끝(`escalates`)에서 한다 — ack 가 올라간 앱 전체
-  회차에 실린다. 본문 뒤 올리기는 남의 저장(R4) · 본문이 바꾼 표지 몫이다. 명부에 오르지 않는 편집표(glide
+  회차에 실린다. 본문 뒤 올리기는 남의 저장(R4) · 본문이 바꾼 표지 몫이다. 예외는 같은 구역에 본문이 누른 회차에 판정하는
+  단추를 둔 편집기 하나다(기준 정보 그리드 「변경사항 적용」 — 3장) — 출납 콜백 끝 올리기(`st.rerun()`)가 같은 상호작용의
+  그 누름을 버리므로 첫 칸의 표지도 본문 뒤에서 올리고, 그 두 회차 사이 틈은 `HOLD_QUIET_MS` 조용함만 가린다. 적용을
+  콜백으로 옮기면(생산 계획 꼴 — 단추 콜백이 출납을 먼저 받는다) 예외가 걷힌다. 명부에 오르지 않는 편집표(glide
   격자 `st.data_editor`)는 새 data 를 0.4초(`HOLD_MS`) 기다린다. 공용 조각을 잇지 않는 등록은
   `grid_shared.leave_js()` 글을 제 등록 글 앞에 잇는다.
 - **보이는 로딩.** 편집기 구역 본문은 구역 칸(`fragment_scope.box_key(key)` — key 접두 `SCOPE_BOX_PREFIX` `capa_scope_`)

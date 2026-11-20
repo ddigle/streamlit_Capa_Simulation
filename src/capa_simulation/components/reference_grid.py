@@ -33,12 +33,20 @@
   (`merged_template`). 합성 표본 최대는 UPEH
   2,660줄 × 30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 런북 8장 8-11
   (`scripts/inspect_real_data_checks.py --only grid`)이 잰다.
+- **편집기 구역**(AGENTS 9장 「구역 회차 규칙」) — 화면이 작업 줄 칸 · 그리드 칸을 키 붙은
+  프래그먼트(`components/fragment_scope.editor_scope`)로 묶어 칸 고치기를 그 구역 회차로 돌린다.
+  구역 밖이 그리는 값은 `scope_head` 다. 「편집 취소」 · 「Excel 붙여넣기」 콜백은 `scope_key` 를
+  주면 콜백 끝에 그 값이 바뀌었으면 앱 전체 회차로 올린다. **출납 콜백은 올리지 않는다**(AGENTS
+  9장 R8 의 예외) — 「변경사항 적용」 은 본문이 누른 회차에 판정하는 단추라, 같은 상호작용의 콜백이
+  콜백 끝에서 올리면(`st.rerun()`) 그 누름이 버려진다. 출납 반영 · 올리기는 구역 본문 뒤에서 한다 —
+  첫 칸의 ack 를 그린 구역 회차와 올라간 앱 전체 회차 사이 틈은 탭 줄 붙들기의
+  조용함(`HOLD_QUIET_MS`)만 가린다.
 """
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -47,7 +55,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import shared_process
-from capa_simulation.components import edit_grid
+from capa_simulation.components import edit_grid, fragment_scope
 from capa_simulation.components.column_filter import (
     PROCESS_COLUMN,
     apply_column_filters,
@@ -59,6 +67,7 @@ from capa_simulation.components.month_editor import APPLY_NOTICE
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.reference_grid_keys import (
     APPLIED_KEY,
+    DATASET_KEY,
     DISCARDED_KEY,
     EDIT_TABLES,
     GRID_HOST,
@@ -67,6 +76,7 @@ from capa_simulation.reference_grid_keys import (
     cells_key,
     history_key,
 )
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.edit_grid import (
     DUPLICATE_SEPARATOR,
     KEY_SEPARATOR,
@@ -86,6 +96,7 @@ from capa_simulation.services.simulation_cache import (
     get_edit_grid_base,
     get_edit_grid_base_within,
 )
+from capa_simulation.session_slot import SessionSlot
 
 # 변경 목록 이름 — 변경 칩 · 변경 판 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
@@ -397,6 +408,33 @@ def apply_grid_inbox(tables: Mapping[str, GridTable]) -> bool:
     return any(st.session_state.get(cells_key(name)) is None for name in held)
 
 
+def scope_head(
+    *, dialog_key: str, own_change_key: str, filter_keys: Mapping[str, Sequence[str]]
+) -> tuple[Hashable, ...]:
+    """편집기 구역 밖이 그리는 값(AGENTS 9장 「구역 회차 규칙」 R2 — 머리 표지)을 세션 칸에서만
+    읽는다 — 구역 규칙표는 프로세스 공용이라 페이지 회차의 값을 잡지 않는다. 화면이 칸 이름을 묶어
+    넘긴다.
+
+    표마다 초안 칸이 있는가(머리 띠 변경 칩 · 화면 탭 점 · 떠나기 확인) · 적용할 초안이 있는가(종류
+    단추 점), 고른 종류(같은 틱에 구역 회차에 실려 온 종류 단추), 그 종류의 사이드바 「표 조건」
+    고른 값(`filter_keys` — 종류 → 필터 칸 key) · 공용 공정 값, 열린 팝업(`dialog_key` — 붙여넣기
+    호스트가 혼자 돌지 못하면 앱 전체로) · 방금 스스로 적용한 표(`own_change_key`), 활성 시나리오
+    내용(적용) · 조회기간."""
+    dataset = SessionSlot(DATASET_KEY, str).peek()
+    filters = filter_keys.get(dataset, ()) if dataset is not None else ()
+    return (
+        tuple(edit_grid.draft_present(cells_key(table)) for table in EDIT_TABLES),
+        tuple(draft_pending(table) for table in EDIT_TABLES),
+        dataset,
+        tuple(edit_grid.head_value(key) for key in filters),
+        shared_process.version(),
+        edit_grid.head_value(dialog_key),
+        edit_grid.head_value(own_change_key),
+        edit_grid.scenario_mark(),
+        edit_grid.head_value(MONTH_RANGE_KEY),
+    )
+
+
 def draft_pending(table: str) -> bool:
     """그 표에 적용하지 않은 그리드 편집이 있는가(누른 적용이 할 일이 있는지 · 단추 점)."""
     return edit_grid.draft_pending(cells_key(table))
@@ -525,7 +563,8 @@ def render_grid(
     table: GridTable | None, *, key_prefix: str | None = None, scope: str | None = None
 ) -> None:
     """그리드 자리 — 늘 같은 자리에서 부른다(표가 없으면 표 없는 껍데기로 마운트만 남긴다). `scope`
-    는 표 아래 상태 줄의 편집 범위 글이다(`month_editor.scope_text`)."""
+    는 표 아래 상태 줄의 편집 범위 글이다(`month_editor.scope_text`). 출납 콜백은 편집기 구역에서도
+    올리지 않는다(모듈 설명 「편집기 구역」)."""
     filters = filter_codes(table, key_prefix) if table is not None and key_prefix else None
     feed = edit_grid.feed_data(
         GRID_HOST,
@@ -562,7 +601,9 @@ def paste_button_key(table: GridTable) -> str:
     return f"{table.editor_key}_open_paste"
 
 
-def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actions:
+def render_actions(
+    table: GridTable, *, open_paste: Callable[[], None], scope_key: str | None = None
+) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · 「편집 취소」(초안이 있을 때) ·
     「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 칸(거름 밖 표지 · 큰 표 표지 · 알림 자리). 기준
     창에서는 표 도구 막대가 이 줄 오른쪽에 함께 선다(`ONE_LINE_STYLE`). 고친 수는 표 도구 막대
@@ -572,9 +613,14 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
     「변경사항 적용」 은 잠그지 않는다 — 고친 칸이 서버에 닿기 전(편집기를 연 채 · Enter
     직후)의 누름도 받아야 하므로, 초안이 없는 누름은 부르는 쪽이 누른 회차에 보고 아무것도 하지
     않는다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙 — 설계 규칙 UI-INP-07 「누른 회차에
-    판정」, 2026-11-19 아침 확인 보드 m19-e2e-first-apply (가))."""
+    판정」, 2026-11-19 아침 확인 보드 m19-e2e-first-apply (가)). `scope_key`(편집기 구역 key)를
+    주면 「Excel 붙여넣기」 · 「편집 취소」 콜백 끝에 구역 밖이 그린 값이 바뀌었으면 앱 전체 회차로
+    올린다(`fragment_scope.escalates`)."""
     cells, _, errors = draft_counts(table.table)
     pending = cells > 0
+    rise: Callable[[Callable[..., None]], Callable[..., None]] = (
+        (lambda callback: callback) if scope_key is None else fragment_scope.escalates(scope_key)
+    )
     with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
         submitted = st.button(
             "변경사항 적용",
@@ -587,14 +633,14 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
             "Excel 붙여넣기",
             icon=":material/content_paste:",
             key=paste_button_key(table),
-            on_click=open_paste,
+            on_click=rise(open_paste),
         )
         if pending:
             st.button(
                 "편집 취소",
                 icon=edit_grid.DISCARD_ICON,
                 key=f"{table.editor_key}_discard",
-                on_click=discard_draft,
+                on_click=rise(discard_draft),
                 args=(table.table,),
                 help=DISCARD_HELP,
             )
