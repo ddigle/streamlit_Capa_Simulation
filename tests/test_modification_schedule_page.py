@@ -423,7 +423,11 @@ def test_a_deadline_that_cannot_hold_the_window_reports_the_alternatives(
     app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202602)
     _ok(app.run())
 
-    assert _metric(app, "개조 완료") == ("0 / 4대", "기한까지 넣을 수 있는 대수")
+    # 「기한까지 넣을 수 있는 대수」 는 바로 아래 대안 카드 첫 줄이 날짜와 함께 적는다 — 요약 칸은
+    # 값만(2026-11-20 갈래 판정, 설계 규칙 UI-TXT-07). 뜻은 풍선 · Guide 다.
+    assert _metric(app, "개조 완료") == ("0 / 4대", "")
+    finish = next(metric for metric in app.metric if metric.label == "개조 완료")
+    assert "기한(없으면 조회기간 끝)까지 넣을 수 있는 대수" in str(finish.proto.help)
     assert _metric(app, "기한")[0] == "못 맞춤"
     markdown = " ".join(_markdown(app))
     assert "**다 넣지 못했습니다 — 대안**" in markdown

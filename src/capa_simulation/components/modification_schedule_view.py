@@ -709,6 +709,7 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
     """요약 넷 — 개조 완료 · 최대 동시 개조 · 개조 달 최저 확보율 · 기한."""
     conditions = result.conditions
     with metric_row(key=KPI_ROW_KEY):
+        caption1: str | None
         if result.complete and result.finish_day is not None:
             tone1: MetricTone = "good"
             value1 = result.finish_day.isoformat()
@@ -718,15 +719,12 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
                 else f"{len(result.batches)}차수"
             )
         else:
+            # 넣을 수 있는 대수의 뜻과 끝 날(기한 · 조회기간 끝)은 바로 아래 「다 넣지 못했습니다 —
+            # 대안」 카드 첫 줄이 날짜와 함께 적는다 — 회색 줄로 거듭하지 않는다(2026-11-20 갈래
+            # 판정, 설계 규칙 UI-TXT-07 · UI-TXT-01).
             tone1 = "critical"
             value1 = f"{result.placed} / {conditions.units}대"
-            caption1 = (
-                "기한까지 넣을 수 있는 대수"
-                if conditions.deadline is not None
-                and result.shortfall is not None
-                and result.shortfall.by_deadline
-                else "조회기간 끝까지 넣을 수 있는 대수"
-            )
+            caption1 = None
         render_status_metric(
             "개조 완료",
             value1,
@@ -735,7 +733,9 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             caption=caption1,
             help=(
                 "마지막 차수의 비가동 마지막 날과 그 날이 든 W/D 달입니다. 확보율이 W/D 월평균이라 "
-                "「몇 월에 끝나나」 가 답이고, 날은 이 배치의 끝 날입니다."
+                "「몇 월에 끝나나」 가 답이고, 날은 이 배치의 끝 날입니다. 다 넣지 못하면 값은 "
+                "「넣은 대수 / 넣을 대수」 — 기한(없으면 조회기간 끝)까지 넣을 수 있는 대수이고, "
+                "그 끝 날은 아래 대안 카드 첫 줄입니다."
             ),
         )
         render_status_metric(
