@@ -92,7 +92,8 @@ def test_the_editor_book_lives_on_the_window_and_a_failing_judge_is_not_busy() -
 
 # 대역 편집기 — 설비 마스터 표(`grid.js`)의 출납 몇 줄과 같은 꼴: 칸 고침은 묶음
 # 타이머(`SEND_MS`) 뒤 `send`, 떠나기 신호 뒤로는 곧바로, 받은 data 의 ack 로 op 를 걷고 다
-# 걷히면 다시 묶는다. 대본은 이 대역 뒤에 잇는다(`_editor_node`).
+# 걷히면 다시 묶는다. `root` 를 주면 부품 뿌리를 셋째 인자로 넘긴다. 대본은 이 대역 뒤에
+# 잇는다(`_editor_node`).
 _EDITOR_HARNESS = """
   let now = 0
   const timers = []
@@ -120,7 +121,7 @@ _EDITOR_HARNESS = """
   win.addEventListener = (type, fn) => { listeners += 1; add(type, fn) }
   win.removeEventListener = (type, fn) => { listeners -= 1; remove(type, fn) }
   const SEND_MS = 800
-  const mount = (name, sent) => {
+  const mount = (name, sent, root) => {
     const S = { box: createBox(), sentSeq: 0, timer: 0 }
     S.box.base = 'b1'
     const send = () => {
@@ -131,7 +132,8 @@ _EDITOR_HARNESS = """
       S.sentSeq = last.seq
       sent.push(name + ':' + last.seq + '@' + now)
     }
-    S.leave = joinLeaving(win, { busy: () => boxBusy(S.box), flush: send })
+    const hooks = { busy: () => boxBusy(S.box), flush: send }
+    S.leave = root === undefined ? joinLeaving(win, hooks) : joinLeaving(win, hooks, root)
     S.edit = (id) => {
       queueOp(S.box, { op: 'cell', id }, 100, now)
       if (leavingNow(S.leave)) return send()
@@ -262,6 +264,42 @@ def test_an_idle_editor_settles_at_the_leaving_signal_and_keeps_batching_after_s
     assert out["afterLeave"] == ["grid:1@900", "grid:2@900", "grid:3@900"]
     assert out["settled"] == [False, False]
     assert out["idleAgain"] is False
+
+
+_DETACHED_RUNNER = """
+  const out = {}
+  const sent = []
+  const host = { isConnected: true }
+  const grid = mount('grid', sent, host)
+  grid.edit('U1')
+  out.attached = editorsBusy(book())
+  // 내렸는데 정리 함수에서 `drop()` 을 빠뜨렸다 — 뿌리가 문서에서 떨어진 편집기는 busy 가 아니다.
+  host.isConnected = false
+  out.detached = editorsBusy(book())
+  // 뿌리를 넘기지 않는 꼴 · 연결 여부를 모르는 뿌리는 판정 그대로다.
+  const plain = mount('plain', sent)
+  plain.edit('V1')
+  out.plain = editorsBusy(book())
+  plain.leave.drop()
+  const unknown = mount('unknown', sent, {})
+  unknown.edit('W1')
+  out.unknown = editorsBusy(book())
+  unknown.leave.drop()
+  grid.leave.drop()
+  process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_detached_editor_root_is_not_busy() -> None:
+    """편집기가 부품 뿌리(`parentElement`)를 셋째 인자로 넘기면, 그 뿌리가 문서에서 떨어진 뒤의
+    낡은 판정은 busy 가 아니다 — 정리 함수에서 `drop()` 을 빠뜨린 편집기가 떠나는 누름마다
+    붙들기를 `BUSY_MS` 묶지 않는다. 뿌리를 넘기지 않거나 연결 여부를 모르면 판정 그대로다."""
+    out = _editor_node(_DETACHED_RUNNER)
+
+    assert out["attached"] is True
+    assert out["detached"] is False
+    assert out["plain"] is True
+    assert out["unknown"] is True
 
 
 _SCOPE_RUN_RUNNER = """
