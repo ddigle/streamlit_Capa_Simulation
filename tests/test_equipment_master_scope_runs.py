@@ -9,8 +9,11 @@
 - 미저장 편집이 서는 첫 칸은 출납 콜백 끝에서 앱 전체로 올라가고 그 회차의 feed 가 ack 를 싣는다
   (`[[구역], []]`). 미저장 표시가 그대로인 다음 칸은 구역 회차 하나다(구역 밖 델타 없음 · 이벤트 칸
   자리 같음).
-- 「목록 비우기」 · 「조건별」 불러오기는 구역 회차 하나다(불러온 목록은 구역 안에서만 그린다).
-  「새 호기」 초안 · 미저장 표시가 그대로인 「한 단계 되돌리기」 도 구역 회차 하나다.
+- 「목록 비우기」 · 「조건별」 불러오기 · 표 고르기 · 오른쪽 칸 바꿈은 구역 회차 하나다 — 열두
+  갈래가 이벤트 칸에 같은 자리를 쓴다(R5). 「비가동 일정 표에서 고치기」 · 가져오기(표 고르기 ·
+  오른쪽 칸을 바꾸는 콜백) · 「새 호기」 초안 · 미저장 표시가 그대로인 「한 단계 되돌리기」 도 구역
+  회차 하나다. 작은 편집표에 적용하지 않은 편집이 서거나 걷히면 편집표 콜백 끝에서 올라간다 — 같은
+  요청에 「편집본에 적용」 누름이 실리면 그 누름을 버리지 않게 본문이 판정한 뒤 올라간다.
 - 「리비전 저장」 · 「모두 버리기」 · 팝업 열기 · 세션을 옮긴 「최신 rN 불러오기」 · 등급 밖 출납
   거절은 콜백 끝에서 앱 전체로 올라간다.
 - 남이 공통 대장을 저장한 뒤의 칸 고침은 구역 본문을 그린 뒤 올라가고(R4), 그 앱 전체 회차가
@@ -34,14 +37,17 @@ import pytest
 import streamlit as st
 from alert_marks import alert_notes
 from fragment_browser import FragmentBrowser, install_fragment_browser
-from grade_support import preview
+from grade_support import as_grade, grade_page_script, preview
+from grid_fake import install_fake_grid, load, send_ops
 from streamlit.components.v2.bidi_component.main import _make_trigger_id
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
+from test_equipment_assumption_rawdata import _two_scenarios
 from test_equipment_master_save_race import _app, _no_foreign_blame, _value
 from test_equipment_master_tab import RUN_HEAD_KEY
-from test_equipment_scenario_repository import _request, _session, _set
+from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_equipment_scenario_repository import _request, _seeded, _session, _set
 from test_scenario_save_double_press import _first_callback
 
 import capa_simulation.components.write_guard as write_guard
@@ -62,19 +68,22 @@ from capa_simulation.components.equipment_master_tab import (
     LOAD_LATEST_BUTTON_KEY,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
+    SIDE_DETAIL,
     SIDE_KEY,
     SIDE_NEW,
     UNDO_BUTTON_KEY,
 )
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.components.flash import queue_flash
+from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET
-from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
+from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS, EQUIPMENT_ID_COLUMN
 
+PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 SCOPE = emt.MASTER_SCOPE
 MOUNT = "m-scope"
 # 기존 보유대수 작은 편집표의 「편집본에 적용」 단추 key.
@@ -273,6 +282,221 @@ def test_clearing_and_a_conditions_load_stay_in_the_scope(
     assert page.browser.started == [[page.scope]]
     assert [row["id"] for row in page.browser.bidi_data(emg.GRID_KEY)["rows"]] == ["s:DA-02"]
     assert all(message.delta.fragment_id == page.scope for message in _deltas(page))
+
+
+def test_every_table_and_side_writes_the_same_event_slots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 고르기(설비 마스터 · 기존 보유대수 · 비가동 일정) × 오른쪽 칸(호기 상세 · 새 호기 · 저장
+    전 변경 · 저장 이력) 열두 갈래가 이벤트 칸에 같은 자리를 쓴다(R5) — 그리지 않은 갈래(작은
+    편집표 · 저장 구획) 몫은 빈 서식이 채운다."""
+    page, _ = _scope_page(tmp_path, monkeypatch)
+    slots: dict[tuple[str, str], frozenset[int]] = {}
+    for table in emt.TABLES:
+        for side in emt.SIDES:
+            page.app.session_state[emt.TABLE_KEY] = table
+            page.app.session_state[SIDE_KEY] = side
+            page.send(scope=False)
+            slots[(table, side)] = frozenset(_scope_event_slots(page))
+    assert len(set(slots.values())) == 1, slots
+
+
+def _slot_matrix(app: AppTest, browser: FragmentBrowser) -> dict[tuple[str, str], frozenset[int]]:
+    """표 셋 × 오른쪽 칸 넷 — 앱 전체 회차마다 구역이 이벤트 칸에 쓴 자리."""
+    slots: dict[tuple[str, str], frozenset[int]] = {}
+    for table in emt.TABLES:
+        for side in emt.SIDES:
+            app.session_state[emt.TABLE_KEY] = table
+            app.session_state[SIDE_KEY] = side
+            app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+            _ok(app.run())
+            scope = browser.fragment_keyed(SCOPE)
+            slots[(table, side)] = frozenset(
+                list(m.metadata.delta_path)[1]
+                for m in browser.messages
+                if m.WhichOneof("type") == "delta"
+                and m.delta.fragment_id == scope
+                and len(m.metadata.delta_path) == 2
+                and m.metadata.delta_path[0] == RootContainer.EVENT
+            )
+    return slots
+
+
+@pytest.mark.parametrize("grade", [grades.VIEWER, grades.EDITOR, grades.MANAGER])
+def test_every_grade_writes_the_same_number_of_event_slots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """열람 · 실무자 · 관리자 — 저장 구획 · 메뉴 · 작은 편집표 작업 줄이 등급마다 갈려도 열두 갈래가
+    이벤트 칸에 같은 수의 자리를 쓴다(그리지 않은 몫은 빈 서식)."""
+    browser = install_fragment_browser(monkeypatch)
+    install_fake_grid(monkeypatch)
+    repository = _seeded(tmp_path)
+    as_grade(monkeypatch, grade)
+    script = grade_page_script(_page_script(PAGE, repository.database_path))
+    app = AppTest.from_string(script, default_timeout=90)
+    slots = _slot_matrix(app, browser)
+    assert len({len(value) for value in slots.values()}) == 1, slots
+    assert len(set(slots.values())) == 1, slots
+
+
+def test_a_stale_session_with_a_refused_edit_writes_the_same_event_slots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """낡은 세션의 낡기 전 편집이 저장을 막으면 저장 구획 단추 아래에 「최신 rN 불러오기(변경
+    버림)」 와 그 실패 칸이 선다 — 그 칸이 서는 「저장 전 변경」 도 다른 갈래와 같은 자리를 쓴다."""
+    from capa_simulation.components.equipment_master_tab import LOAD_LATEST_BUTTON_KEY
+
+    browser = install_fragment_browser(monkeypatch)
+    grid = install_fake_grid(monkeypatch)
+    repository, setup = _two_scenarios(tmp_path)
+    app = AppTest.from_string(_page_script(PAGE, repository.database_path), default_timeout=90)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    _ok(app.run())
+    load(app, [], kind="all")
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "시나리오 메모", "text": "낡기 전"})
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    slots = _slot_matrix(app, browser)
+    app.session_state[emt.TABLE_KEY] = emt.TABLE_MASTER
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    assert any(item.key == LOAD_LATEST_BUTTON_KEY for item in app.button)
+    assert len(set(slots.values())) == 1, slots
+
+
+def _editor_id(page: _Page, key: str) -> str:
+    """작은 편집표(세대를 붙인 위젯 key 가 `key` 로 시작)를 그린 마지막 메시지의 위젯 id."""
+    for message in reversed(page.browser.emitted or page.browser.messages):
+        if message.WhichOneof("type") != "delta":
+            continue
+        if message.delta.WhichOneof("type") != "new_element":
+            continue
+        kind = message.delta.new_element.WhichOneof("type")
+        widget_id = str(getattr(getattr(message.delta.new_element, kind), "id", "")) if kind else ""
+        if f"-{key}__" in widget_id:
+            return widget_id
+    raise AssertionError(f"{key} 편집표를 그린 메시지가 없다")
+
+
+def _editor_draws(page: _Page, key: str) -> int:
+    """마지막 `run()` 안의 모든 회차가 작은 편집표(세대를 붙인 위젯 key 가 `key` 로 시작)를 그린
+    수 — 구역 회차에 본문이 돌았는지 본다."""
+    drawn = 0
+    for message in page.browser.emitted:
+        if message.WhichOneof("type") != "delta":
+            continue
+        if message.delta.WhichOneof("type") != "new_element":
+            continue
+        kind = message.delta.new_element.WhichOneof("type")
+        widget_id = str(getattr(getattr(message.delta.new_element, kind), "id", "")) if kind else ""
+        if f"-{key}__" in widget_id:
+            drawn += 1
+    return drawn
+
+
+def _editor_rows(widget_id: str, added: list[dict[str, Any]]) -> WidgetState:
+    """작은 편집표 위젯 값 — 더한 줄만(빈 목록이면 편집 없음)."""
+    edit = {"edited_rows": {}, "added_rows": added, "deleted_rows": []}
+    return WidgetState(id=widget_id, string_value=json.dumps(edit))
+
+
+def test_switching_the_table_or_the_side_stays_in_the_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 고르기 · 오른쪽 칸을 바꾸는 누름은 구역 회차 하나다 — 구역이 이벤트 칸에 쓰는 자리는 앱
+    전체 회차와 같다. 작은 편집표에 적용하지 않은 편집이 생기거나 걷히면(탭 점 · 떠나기 확인) 편집표
+    콜백 끝에서 올라간다 — 구역 본문은 돌지 않고 올라간 앱 전체 회차가 편집표를 한 번 그린다(AGENTS
+    9장 R8 — 편집표는 떠나기 명부 밖이다)."""
+    page, _ = _scope_page(tmp_path, monkeypatch)
+    app_slots = _scope_event_slots(page)
+
+    page.app.segmented_control(key=SIDE_KEY).set_value(SIDE_CHANGES)
+    page.send()
+    assert page.browser.started == [[page.scope]]
+    assert _scope_event_slots(page) == app_slots
+
+    page.app.segmented_control(key=emt.TABLE_KEY).set_value(BASELINE_TARGET)
+    page.send()
+    assert page.browser.started == [[page.scope]]
+    assert _scope_event_slots(page) == app_slots
+    assert all(message.delta.fragment_id == page.scope for message in _deltas(page))
+
+    row = {"공정": "DEMO-P", "분류": "DEMO-K", "기존보유대수": 3}
+    page.send(_editor_rows(_editor_id(page, edw.BASELINE_EDITOR_KEY), [row]))
+    assert page.browser.started == [[page.scope], []], "적용하지 않은 편집이 서면 올라간다"
+    assert _editor_draws(page, edw.BASELINE_EDITOR_KEY) == 1, "콜백 끝에서 올라간다"
+    page.send(_editor_rows(_editor_id(page, edw.BASELINE_EDITOR_KEY), []))
+    assert page.browser.started == [[page.scope], []], "그 편집이 걷히면 올라간다"
+    assert _editor_draws(page, edw.BASELINE_EDITOR_KEY) == 1, "콜백 끝에서 올라간다"
+
+    page.app.segmented_control(key=emt.TABLE_KEY).set_value(emt.TABLE_MASTER)
+    page.send()
+    assert page.browser.started == [[page.scope]]
+    assert _scope_event_slots(page) == app_slots
+
+
+def test_a_small_editor_first_edit_with_the_apply_press_in_one_request_is_applied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """작은 편집표의 첫 칸과 「편집본에 적용」 누름이 한 요청에 실리면 편집표 콜백 끝에서 올리지
+    않는다 — 그 올리기는 같은 상호작용의 누름을 버린다. 구역 본문이 누름을 판정해 편집을 편집본에
+    넣고 앱 전체 회차로 끝난다."""
+    page, _ = _scope_page(tmp_path, monkeypatch)
+    page.app.segmented_control(key=emt.TABLE_KEY).set_value(BASELINE_TARGET)
+    page.send()
+    row = {"공정": "DEMO-P", "분류": "DEMO-K", "기존보유대수": 3}
+
+    page.send(
+        _editor_rows(_editor_id(page, edw.BASELINE_EDITOR_KEY), [row]),
+        WidgetState(id=page.browser.widget_id_of(BASELINE_APPLY), trigger_value=True),
+    )
+
+    assert page.browser.started == [[page.scope], []]
+    assert "DEMO-P" in set(page.app.session_state[BUFFER_KEY][0]["공정"]), "누름이 버려졌다"
+
+
+def _detail_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Page:
+    """오른쪽 칸 「호기 상세」 를 연 탭 ①."""
+    page, _ = _scope_page(tmp_path, monkeypatch)
+    page.app.session_state[SIDE_KEY] = SIDE_DETAIL
+    page.send(scope=False)
+    return page
+
+
+def test_going_to_the_downtime_table_stays_in_the_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「비가동 일정 표에서 고치기」(트리거 `goto`)는 표 고르기를 비가동 일정으로, 그 표 설비명
+    거르기를 그 호기로 바꾸는 구역 회차 하나다 — 그 회차가 비가동 일정 작은 편집표를 그린다."""
+    page = _detail_page(tmp_path, monkeypatch)
+    app_slots = _scope_event_slots(page)
+    page.trigger(emg.side_key("detail"), "goto", {"table": DOWNTIME_TARGET, "unit": "DA-01"})
+
+    assert page.browser.started == [[page.scope]]
+    assert page.app.session_state[emt.TABLE_KEY] == DOWNTIME_TARGET
+    unit_filter = filter_widget_key(edw.DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN)
+    assert page.app.session_state[unit_filter] == ["DA-01"]
+    assert _editor_id(page, edw.DOWNTIME_EDITOR_KEY)
+    assert _scope_event_slots(page) == app_slots
+
+
+def test_copying_a_unit_into_a_new_one_stays_in_the_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「이 호기로 새 호기 만들기」(트리거 `copy`)는 그 호기 값을 「새 호기」 초안에 담고 오른쪽
+    칸을 「새 호기」 로 여는 구역 회차 하나다."""
+    page = _detail_page(tmp_path, monkeypatch)
+    app_slots = _scope_event_slots(page)
+    page.trigger(emg.side_key("detail"), "copy", {"id": "s:DA-01"})
+
+    assert page.browser.started == [[page.scope]]
+    assert page.app.session_state[SIDE_KEY] == SIDE_NEW
+    assert page.app.session_state[edw.NEW_UNIT_DRAFT_KEY]["seq"] == 1
+    assert page.browser.widget_id_of(emg.side_key("new"))
+    assert _scope_event_slots(page) == app_slots
 
 
 # ------------------------------------------------------------------ 앱 전체로 오르는 조작

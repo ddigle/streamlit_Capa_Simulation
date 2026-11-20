@@ -60,6 +60,7 @@ from capa_simulation import alerts
 from capa_simulation.components import admin_view, fragment_scope, grade_ui, sso_identity
 from capa_simulation.components import equipment_master_grid as grid_component
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import IDLE_MARKUP
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_CLEAR_KEY,
     _NOTE_KEY,
@@ -300,6 +301,18 @@ C = TypeVar("C", bound=Callable[..., Any])
 # 탭 ① 본문의 편집기 구역 key(AGENTS 9장 「구역 회차 규칙」) — 칸 고치기 · 오른쪽 칸 · 저장 구획
 # 조작은 이 구역만 돈다(`render_equipment_master_scope`). 구역 칸 key 는 `fragment_scope.box_key`.
 MASTER_SCOPE: Final = "equipment_master_scope"
+# 구역 본문은 표 고르기 · 오른쪽 칸 · 상태와 상관없이 이벤트 칸에 같은 수의 자리를 쓴다(AGENTS 9장
+# 「구역 회차 규칙」 R5 — 구역 회차는 이벤트 칸 쓰기 자리를 구역 자리로 되돌린다). 갈래마다 쓰는 수:
+# 작은 편집표(결과 · 안내 알림 칸 + 작업 줄 서식)와 저장 구획(저장 결과 알림 칸 + 「최신 rN
+# 불러오기」 실패 칸). 그 갈래를 그리지 않는 회차는 빈 서식으로 그 수를 채운다(`_fill_event_slots`).
+SMALL_EDITOR_EVENT_SLOTS: Final = 2
+SAVE_SECTION_EVENT_SLOTS: Final = 2
+
+
+def _fill_event_slots(count: int) -> None:
+    """이벤트 칸 자리 `count` 개를 빈 서식으로 채운다 — 그리지 않은 갈래 몫(R5)."""
+    for _ in range(count):
+        st.html(IDLE_MARKUP)
 
 
 def _to_app_run(fn: C) -> C:
@@ -1800,12 +1813,15 @@ def _render_save_section(
         )
     slot = render_flash(SAVE_RESULT_CARRIED_KEY, SAVE_RESULT_KEY)
     # 낡은 세션의 낡기 전 편집(버려질 칸·지운 호기)이 저장을 막으면 그 거절 곁에서 최신으로 옮긴다 —
-    # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다.
+    # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다. 단추 아래 실패 칸이 서지 않는 회차는 그
+    # 자리를 빈 서식으로 채운다(이벤트 칸 자리 수 — `SAVE_SECTION_EVENT_SLOTS`).
     if stale_save_refusal(frames, basis) is not None:
         with slot:
             render_load_latest_button(
                 str(repository.database_path), session, key=LOAD_LATEST_BUTTON_KEY
             )
+    else:
+        _fill_event_slots(1)
 
 
 def _render_new_unit(
@@ -1929,6 +1945,7 @@ def render_equipment_master_tab(
                 acks=acks,
                 carried=carried,
             )
+            _fill_event_slots(SMALL_EDITOR_EVENT_SLOTS)
         else:
             stale = (basis is not None and basis.stale) or session.unmerged
             submit = render_small_editor(
@@ -1941,6 +1958,8 @@ def render_equipment_master_tab(
                 # 삭제를 확정하면 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다 — 오른쪽
                 # 칸이 접혀 있으면 펴고(c6).
                 on_deleted=partial(_switch_side, SIDE_CHANGES),
+                # 적용 전 편집이 서거나 걷히는 칸(탭 점 · 떠나기 확인)은 편집표 콜백 끝에서 올린다.
+                rise=partial(fragment_scope.escalate_if_moved, MASTER_SCOPE),
             )
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
@@ -2023,6 +2042,9 @@ def render_equipment_master_tab(
                 on_copy=_on_copy,
                 read_only=master_lock,
             )
+    # 저장 구획을 그리지 않은 회차는 그 이벤트 칸 자리를 빈 서식으로 채운다(R5).
+    if not (side == SIDE_CHANGES and table_editable(DOWNTIME_TARGET)):
+        _fill_event_slots(SAVE_SECTION_EVENT_SLOTS)
     # 그린 마운트의 자리 거부는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 것은 거둔다(닫은 한
     # 줄이 다시 마운트할 때 되살아나지 않게).
     settle_grid_toasts({"detail"} if side == SIDE_DETAIL else {"new"} if side == SIDE_NEW else ())
@@ -2216,17 +2238,6 @@ def master_head() -> tuple[object, ...]:
     )
 
 
-# 갈래 — 표 고르기 · 오른쪽 칸 고르기(구역 머리 표지가 읽는다).
-_TABLE_CHOICE = SessionSlot(TABLE_KEY, str)
-_SIDE_CHOICE = SessionSlot(SIDE_KEY, str)
-
-
-def _scope_head() -> tuple[object, ...]:
-    """구역 머리 표지 — `master_head` 에 갈래(표 고르기 · 오른쪽 칸)를 더한다. 갈래마다 이벤트 칸
-    자리 수가 다르므로(AGENTS 9장 「구역 회차 규칙」 R5) 갈래를 바꾼 상호작용은 앱 전체로 올린다."""
-    return (*master_head(), _TABLE_CHOICE.peek(), _SIDE_CHOICE.peek())
-
-
 def _pinned_in_scope(fn: C) -> C:
     """구역 회차는 앱 전체 회차의 실행 핀(`app.py`) 밖에서 돈다 — 저장 토큰
     읽기(`_scope_token`)와 본문을 설비 DB 핀 하나 안에서 돌린다(AGENTS 9장 「구역 회차 규칙」
@@ -2248,14 +2259,15 @@ def _pinned_in_scope(fn: C) -> C:
 @grade_ui.in_fragment
 @_pinned_in_scope
 @fragment_scope.editor_scope(
-    MASTER_SCOPE, head=_scope_head, token=_scope_token, one_shot=("drafts_replaced",)
+    MASTER_SCOPE, head=master_head, token=_scope_token, one_shot=("drafts_replaced",)
 )
 def render_equipment_master_scope(*, drafts_replaced: bool = False) -> None:
     """탭 ① 본문 — 편집기 구역(AGENTS 9장 「구역 회차 규칙」). 앱 전체 회차는 페이지가 넘긴
     재료(`render_equipment_master`)로, 구역 회차는 마지막 페이지 회차의 자리에서 다시 세운 재료로
-    그린다(모듈 끝 설명). 구역 밖이 그리는 값(`_scope_head`) · 저장 토큰(`_scope_token`)이
+    그린다(모듈 끝 설명). 구역 밖이 그리는 값(`master_head`) · 저장 토큰(`_scope_token`)이
     바뀐 상호작용은 콜백 끝 · 본문 뒤에서 앱 전체로 올라가 페이지가 세션 · 편집본을 다시 세운다.
-    남의 저장을 본 구역 회차의 작은 편집표 제출은 거절한다(`_drafts_outdated`)."""
+    남의 저장을 본 구역 회차의 작은 편집표 제출은 거절한다(`_drafts_outdated`).
+    표 고르기 · 오른쪽 칸은 이벤트 칸 자리 수가 같아(`_fill_event_slots`) 바꿔도 구역 회차다."""
     materials = _HANDOFF.take()
     if materials is None or fragment_scope.fragment_only_run():
         materials = _rebuilt_materials()

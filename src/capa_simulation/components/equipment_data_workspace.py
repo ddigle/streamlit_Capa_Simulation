@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+from functools import partial
 from typing import Any, Final, Literal, NamedTuple, cast
 from uuid import uuid4
 
@@ -3500,18 +3501,21 @@ def _selectable_editor(
     selection: frozenset[RowKey],
     locked_columns: Sequence[str] = (),
     fixed_rows: bool = False,
+    on_change: Callable[[], None] | None = None,
 ) -> tuple[pd.DataFrame, frozenset[RowKey]]:
     """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다.
 
     `locked_columns` 는 고칠 수 없게 잠글 칸, `fixed_rows` 는 행 추가·삭제를 막는다(낡은 설비
     시나리오 세션 — 설계 4-2). 선택 칸은 늘 고칠 수 있다 — 낡은 세션에서 호기·비가동의 「선택 행
-    삭제」 는 단추가 막는다(`_selection_buttons(delete_locked=)`).
+    삭제」 는 단추가 막는다(`_selection_buttons(delete_locked=)`). `on_change` 는 편집표 칸을 고친
+    회차의 콜백이다(`render_small_editor(rise=…)`).
     """
     display = view.frame.copy()
     display.insert(0, SELECT_COLUMN, _selection_flags(display, target, selection))
     result = st.data_editor(
         display,
         key=editor_widget_key(key),
+        on_change=on_change,
         num_rows="fixed" if fixed_rows else view.row_mode,
         disabled=[column for column in locked_columns if column in display.columns],
         hide_index=True,
@@ -3555,6 +3559,38 @@ def locked_editor(view: TableView, *, key: str, column_config: Mapping[str, Any]
     )
 
 
+class _SmallPresses(NamedTuple):
+    """작은 편집표 작업 줄에서 본문이 누른 회차에 판정하는 단추의 key(`render_small_editor` 의 제출
+    판정 — 「편집본에 적용」 · 「보기 적용」 · 「모두 선택」 · 「선택 해제」 · 「선택 행 삭제」)."""
+
+    apply: str
+    view_apply: str
+    select_matching: str
+    select_clear: str
+    delete_selected: str
+
+
+def _small_presses(slug: str) -> _SmallPresses:
+    return _SmallPresses(
+        apply=f"equipment_{slug}_apply_v1",
+        view_apply=f"equipment_{slug}_view_apply_v1",
+        select_matching=f"equipment_{slug}_select_matching_v1",
+        select_clear=f"equipment_{slug}_select_clear_v1",
+        delete_selected=f"equipment_{slug}_delete_selected_v1",
+    )
+
+
+def _rise_on_cell_edit(slug: str, rise: Callable[[], None]) -> None:
+    """작은 편집표 `on_change` — 칸을 고친 회차의 콜백 끝에서 `rise`(편집기 구역의 머리 표지
+    견주기 · 올리기)를 부른다. 같은 요청에 그 표의 작업 줄 · 삭제 확인 단추 누름(`_small_presses` ·
+    「삭제 확정」 · 「취소」)이 실렸으면 부르지 않는다 — 콜백 끝 올리기는 그 누름을 버린다. 그때는
+    본문이 그 누름을 판정하고 구역이 본문 뒤에서 올린다."""
+    pressed = (*_small_presses(slug), CONFIRM_DELETE_BUTTON_KEY, CANCEL_DELETE_BUTTON_KEY)
+    if any(SessionSlot(key, bool).peek() for key in pressed):
+        return
+    rise()
+
+
 def selection_menu_generation_key(slug: str) -> str:
     """작은 편집표 「선택 ▾」 메뉴의 세대 칸(`SELECTION_MENU_LABEL`)."""
     return f"equipment_{slug}_selection_menu_generation_v1"
@@ -3575,9 +3611,10 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
     일정). 「선택 행 삭제」 는 누르면 메뉴를 닫고 「선택 해제」 는 열어 둔다
     (`SELECTION_MENU_LABEL`) — 단추 key 는 그대로다.
     """
+    presses = _small_presses(slug)
     matching = st.button(
         "모두 선택",
-        key=f"equipment_{slug}_select_matching_v1",
+        key=presses.select_matching,
         icon=":material/checklist:",
         help="「표 보기」 의 필터에 맞는 행을 모두 고릅니다.",
     )
@@ -3589,12 +3626,12 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
     ):
         clear = st.button(
             "선택 해제",
-            key=f"equipment_{slug}_select_clear_v1",
+            key=presses.select_clear,
             icon=":material/deselect:",
         )
         delete = st.button(
             "선택 행 삭제",
-            key=f"equipment_{slug}_delete_selected_v1",
+            key=presses.delete_selected,
             icon=":material/delete:",
             disabled=delete_locked is not None,
             help=literal_markdown(delete_locked) if delete_locked is not None else None,
@@ -4152,6 +4189,7 @@ def render_small_editor(
     undo: Callable[[], None] | None = None,
     on_deleted: Callable[[], None] | None = None,
     read_only: str | None = None,
+    rise: Callable[[], None] | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -4178,7 +4216,12 @@ def render_small_editor(
     UI-INP-07 예외 · UI-NTF-05 — 2026-11-18 접속 등급, 같은 날 구현 확인 보드 「고칠 것」).
     표 위 작은 단추 줄(표 도구 막대)은 그 표를 고치거나 내려받는 등급에만 선다 — 비가동 일정은
     실무자부터, 기존 보유대수는 설비 화면 내려받기 등급부터(`grade_ui.toolbar_scope`). 실무자의
-    비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다."""
+    비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다.
+
+    `rise` 는 편집기 구역 안에서 그릴 때 부르는 쪽이 넘기는 올리기(머리 표지 견주기)다 — 편집표
+    `on_change` 끝에서 부른다(`_rise_on_cell_edit` — 같은 요청에 이 표의 단추 누름이 실리면 부르지
+    않는다). 적용 전 편집이 서거나 걷히는 칸이 그 상호작용에서 곧바로 앱 전체 회차가 되게 한다
+    (AGENTS 9장 R8 — 편집표는 떠나기 명부 밖이다)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -4215,6 +4258,8 @@ def render_small_editor(
 
     apply_clicked = False
     action: str | None = None
+    presses = _small_presses(slug)
+    on_change = partial(_rise_on_cell_edit, slug, rise) if rise is not None else None
     with (
         grade_ui.toolbar_scope(tools_action, f"equipment_small_{slug}_tools_v1"),
         st.container(key=f"equipment_small_{slug}_editor_v1"),
@@ -4225,7 +4270,7 @@ def render_small_editor(
         # 아래 붙어 있어 단추가 그 자리에 닿으면 막대가 덮는다. 다 들지 못하면 「표 보기 ▾」 가
         # 다음 줄로 내려간다(1600 · 1283 창은 한 줄, 1283 창에서 필터가 걸려 「표 보기 · 필터」 면
         # 두 줄 — 샘플 관측).
-        view_apply_key = f"equipment_{slug}_view_apply_v1"
+        view_apply_key = presses.view_apply
         downtime = frames[2]
         with st.container(horizontal=True, gap="small", key=action_row):
             if read_only is None:
@@ -4233,7 +4278,7 @@ def render_small_editor(
                 # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
                 apply_clicked = st.button(
                     "편집본에 적용",
-                    key=f"equipment_{slug}_apply_v1",
+                    key=presses.apply,
                     type="primary",
                     icon=":material/check:",
                     help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
@@ -4300,6 +4345,7 @@ def render_small_editor(
                 target=BASELINE_TARGET,
                 column_config=column_config,
                 selection=selection.get(BASELINE_TARGET, frozenset()),
+                on_change=on_change,
             )
         else:
             edited, checked = _selectable_editor(
@@ -4312,6 +4358,7 @@ def render_small_editor(
                 # 비가동 일정 표 전체가 설비 시나리오 쪽이다 — 낡은 세션에서는 통째로 잠근다.
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
+                on_change=on_change,
             )
     # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
     restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target
