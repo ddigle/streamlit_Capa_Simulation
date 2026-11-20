@@ -3145,7 +3145,7 @@ export default function (component) {
   if (!S.bound) {
     S.bound = true
     // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만. 그리는 중의
-    // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
+    // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
       if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) {
         send(S)

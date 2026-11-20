@@ -2524,7 +2524,7 @@ def _cell_has(screen: Screen, column: int, name: str) -> bool:
 
 
 def _type_into(screen: Screen, column: int, text: str) -> None:
-    """칸을 눌러 고치기 시작하고 글을 쳐 Enter 로 확정한다(출납 — 300ms 뒤 보낸다)."""
+    """칸을 눌러 고치기 시작하고 글을 쳐 Enter 로 확정한다(출납 — 쉼 뒤 보낸다)."""
     _cell(screen, column).click()
     editor = _grid(screen).locator(".emg-ed").first
     editor.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
