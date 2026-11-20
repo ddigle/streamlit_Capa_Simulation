@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import pytest
 from js_runner import run_js_json
 
 from capa_simulation.components import grid_shared, page_tabs
@@ -348,3 +349,21 @@ def test_the_scope_run_marks_share_the_python_names_and_the_tab_strip_installs_t
     assert header.index(fragment_scope.SCOPE_RUN_STYLE) < header.index(
         app_header._status_slot_css()
     )
+
+
+def test_the_batch_length_override_is_for_development_runs_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """묶음 길이 덮어쓰기(`CAPA_DEV_BATCH_MS`)는 개발 · 측정 사본의 실행 줄 전용이다 — 운영
+    `APP_ENV` · 숫자가 아님 · 범위 밖이면 결정값 그대로다."""
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    assert grid_shared.batch_ms(800) == 800
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "1500")
+    assert grid_shared.batch_ms(800) == 1500
+    for raw in ("abc", "10", "60000"):
+        monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, raw)
+        assert grid_shared.batch_ms(800) == 800
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "1500")
+    monkeypatch.setenv("APP_ENV", "prod")
+    assert grid_shared.batch_ms(800) == 800

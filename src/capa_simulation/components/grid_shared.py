@@ -14,10 +14,14 @@
   `capa-leaving` · 편집기 명부(busy) · 편집기 구역 회차 표지(AGENTS 9장 「구역 회차 규칙」 R8). 표
   공용 조각(`SHARED_JS`)에 들어 있고, 공용 조각을 잇지 않는 등록(범용 편집 그리드 · 화면 탭 줄)은
   `leave_js()` 글을 제 등록 글 앞에 잇는다.
+- **묶음 길이**(`batch_ms`) — 편집기가 칸 고침을 모아 보내는 쉼을 편집기마다 결정값 상수로 두고 data
+  로 JS 에 넘긴다. 개발 · 측정 사본은 실행 줄 환경변수 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(운영에서는
+  읽지 않는다).
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final
@@ -30,6 +34,10 @@ SHARED_ASSETS: Final = Path(__file__).with_name("grid_shared_assets")
 LEAVE_JS: Final = "leave.js"
 SHARED_JS: Final = ("nav.js", "outbox.js", "dom.js", LEAVE_JS)
 SHARED_CSS: Final = ("cells.css", "changes.css")
+# 편집기 묶음 길이 덮어쓰기(ms) — 개발 · 측정 사본의 실행 줄 환경변수 전용(`batch_ms`). 운영
+# (`APP_ENV` 운영 값)에서는 읽지 않는다. 받는 범위는 `BATCH_OVERRIDE_RANGE` 다.
+BATCH_OVERRIDE_ENV: Final = "CAPA_DEV_BATCH_MS"
+BATCH_OVERRIDE_RANGE: Final = (50, 5000)
 # 단계 칩 바탕의 옅기 — 단계 색을 바탕 위에 이만큼 얹은 불투명 색(`tokens.opaque_mix`).
 LEVEL_FILL_ALPHA: Final = 0.14
 
@@ -63,6 +71,25 @@ def grid_palette() -> dict[str, str]:
         "level-error": tokens.ALERT_ERROR,
         "level-error-fill": tokens.opaque_mix(tokens.ALERT_ERROR, tokens.SURFACE, LEVEL_FILL_ALPHA),
     }
+
+
+def batch_ms(default_ms: int) -> int:
+    """편집기가 칸 고침을 모아 보내는 쉼(ms) — 결정값 `default_ms`. 개발 실행 줄에
+    `CAPA_DEV_BATCH_MS` 가 있으면(범위 안 정수) 그 값이다(측정 사본에서 묶음 길이를 바꿔 잰다). 운영
+    `APP_ENV` 에서는 늘 결정값이다."""
+    raw = os.environ.get(BATCH_OVERRIDE_ENV, "").strip()
+    if not raw:
+        return default_ms
+    from capa_simulation.auth.config import app_env_is_production
+
+    if app_env_is_production(os.environ.get("APP_ENV")):
+        return default_ms
+    try:
+        value = int(raw)
+    except ValueError:
+        return default_ms
+    low, high = BATCH_OVERRIDE_RANGE
+    return value if low <= value <= high else default_ms
 
 
 def state_value(key: str, name: str) -> object:
