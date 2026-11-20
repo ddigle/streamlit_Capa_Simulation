@@ -43,19 +43,21 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 from collections import Counter
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import astuple, dataclass, replace
 from datetime import date
 from functools import partial
+from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
 import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import admin_view, grade_ui, sso_identity
+from capa_simulation.components import admin_view, fragment_scope, grade_ui, sso_identity
 from capa_simulation.components import equipment_master_grid as grid_component
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
@@ -191,6 +193,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
 )
+from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     latest_equipment_revision_id,
@@ -292,6 +295,27 @@ from capa_simulation.services.space_layout_edit import (
 from capa_simulation.session_slot import SessionSlot
 
 T = TypeVar("T")
+C = TypeVar("C", bound=Callable[..., Any])
+
+# 탭 ① 본문의 편집기 구역 key(AGENTS 9장 「구역 회차 규칙」) — 칸 고치기 · 오른쪽 칸 · 저장 구획
+# 조작은 이 구역만 돈다(`render_equipment_master_scope`). 구역 칸 key 는 `fragment_scope.box_key`.
+MASTER_SCOPE: Final = "equipment_master_scope"
+
+
+def _to_app_run(fn: C) -> C:
+    """그 상호작용을 늘 앱 전체 회차로 — 하는 일이 탭 밖(페이지가 세우는 세션 · 편집본, 팝업
+    호스트)에 닿는 콜백(「리비전 저장」 · 「모두 버리기」 · 팝업 열기). 구역 회차면 콜백 끝에서
+    올리고(R1 — 본문 전이라 위젯 상태가 남는다) 앱 전체 회차면 아무 일도 하지 않는다.
+    `grade_ui.on_press` **위**에 단다."""
+
+    @functools.wraps(fn)
+    def inner(*args: Any, **kwargs: Any) -> Any:
+        result = fn(*args, **kwargs)
+        fragment_scope.escalate()
+        return result
+
+    return cast(C, inner)
+
 
 # 표 고르기(맨 위 줄)와 오른쪽 칸 고르기 — 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 표
 # 고르기 key 는 작은 편집표 판정(`small_editor_edits` — 탭 줄이 페이지보다 먼저 읽는다)도 읽어
@@ -1077,10 +1101,12 @@ def _touches_layout(ops: Sequence[Mapping[str, Any]]) -> bool:
     return False
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_outbox(context: GridContext, layout: LayoutMode) -> None:
     apply_outbox(context, layout)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_load(request: grid_component.LoadRequest) -> None:
     if BUFFER_KEY not in st.session_state:
         return
@@ -1110,6 +1136,7 @@ def _on_load(request: grid_component.LoadRequest) -> None:
     _load_result("success" if result.added else "info", text)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_clear() -> None:
     _store_loaded(())
     st.session_state[MISSING_KEY] = ()
@@ -1121,12 +1148,14 @@ def _open_detail(row_id: str) -> None:
     _switch_side(SIDE_DETAIL)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_new() -> None:
     """첫 화면 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로(설비 마스터를 고치는 등급만)."""
     if table_editable(TABLE_MASTER):
         _switch_side(SIDE_NEW)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_draft(value: grid_component.DraftValue) -> None:
     """「새 호기」 칸이 보낸 초안 — 번호가 세션 초안보다 작지 않을 때만 적는다(늦게 온 옛 초안이
     가져오기·「호기 추가」 뒤 초안을 덮지 않게)."""
@@ -1135,6 +1164,7 @@ def _on_draft(value: grid_component.DraftValue) -> None:
         _store_new_draft(value.seq, value.values)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_copy(request: grid_component.CopyRequest) -> None:
     """가져오기 — 상세 「이 호기로 새 호기 만들기」(빈 초안에 그 호기 값) 또는 「비슷한 호기에서
     값 가져오기」(브라우저 초안 위에 설비명이 같거나 앞부분이 맞는 첫 호기 값). 「새 호기」 칸을
@@ -1171,10 +1201,12 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
     st.session_state[SIDE_HEAD_KEY] = True
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_grid_open(row_id: str) -> None:
     _open_detail(row_id)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_side_open(row_id: str) -> None:
     """「저장 전 변경」 의 고칠 것·호기 이름 — 목록에 없으면 맨 위로 불러와 상세로 연다."""
     if row_id not in grid_loaded_ids():
@@ -1182,11 +1214,13 @@ def _on_side_open(row_id: str) -> None:
     _open_detail(row_id)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_unload(ids: list[str]) -> None:
     drop = set(ids)
     _store_loaded(tuple(row_id for row_id in grid_loaded_ids() if row_id not in drop))
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_goto(table: str, unit: str) -> None:
     """「비가동 일정 표에서 고치기」 — 표 고르기를 그 표로, 그 표 설비명 거르기를 그 이름으로. 그
     표는 이 회차에 아직 그려지지 않아 잃을 편집이 없다 — 적용 보기도 거둬 요청 보기가 그대로
@@ -1197,12 +1231,14 @@ def _on_goto(table: str, unit: str) -> None:
         st.session_state.pop(f"{DOWNTIME_EDITOR_KEY}_applied_view", None)
 
 
+@_to_app_run
 def _on_import_menu() -> None:
     """메뉴 「엑셀·CSV로 한꺼번에」 — 팝업을 열고 메뉴는 세대를 올려 닫는다."""
     open_equipment_import(from_menu=True)
     bump(DATA_MENU_GENERATION_KEY)
 
 
+@_to_app_run
 def _on_dialog(name: str) -> None:
     if name == IMPORT_DIALOG:
         # 첫 화면의 「엑셀·CSV로 한꺼번에」 — 고치는 표가 하나도 없는 등급(열람)은 열지 않는다.
@@ -1216,6 +1252,7 @@ def _on_dialog(name: str) -> None:
 # ------------------------------------------------------------------ 저장 구획 콜백
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다. 표 단계가 없으면 그
     아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다. 그 표에
@@ -1267,6 +1304,7 @@ def _grid_undo(context: GridContext, layout: LayoutMode) -> None:
         carry_layout_memo(before)
 
 
+@_to_app_run
 def _discard_all() -> None:
     """「모두 버리기」 확인 — 편집본을 저장본으로 다시 세운다(FAB 대기분은 남김, 되돌릴 수 없음)."""
     reset_equipment_drafts(keep_fab=True)
@@ -1305,6 +1343,7 @@ def _has_changes(frames: Frames) -> bool:
     )
 
 
+@_to_app_run
 @grade_ui.on_press
 def _save_revision(
     repository: DuckDBEquipmentRepository,
@@ -2120,6 +2159,43 @@ def saved_pair_token() -> Hashable:
     return latest_equipment_revision_id(path), latest_schedule
 
 
+def _seen_pair_token() -> Hashable:
+    """페이지가 세션 · 편집본을 세운 회차에 본 저장 토큰 — 마지막 페이지 회차가 적은 자리의 (세션
+    스냅숏의 공통 대장 리비전, 그 회차 목록이 적은 세션 설비 시나리오의 최신 일정 리비전).
+    `saved_pair_token` 과 같은 꼴이라 그 뒤 저장이 없으면 둘이 같다. DB 를 읽지 않는다. 자리가
+    없으면 None, 고른 설비 시나리오가 없는 세션(페이지가 공통 대장을 읽지 않았다)은 지금 값이다."""
+    place = _PLACE.peek()
+    if place is None:
+        return None
+    scenario = place.session.scenario
+    if scenario is None:
+        return saved_pair_token()
+    common = place.pair[0] if place.pair is not None else None
+    return common, scenario.latest_schedule_revision_id
+
+
+def _scope_token() -> Hashable:
+    """구역의 저장 토큰(AGENTS 9장 「구역 회차 규칙」 R4) — 앱 전체 회차는 페이지가 편집본을 세운
+    회차에 본 값(`_seen_pair_token`)을 찍고, 구역 회차는 지금 값(`saved_pair_token`)을 읽어
+    견준다. 앱 전체 회차도 지금 값을 찍으면 페이지가 편집본을 세운 뒤 · 찍기 전에 든 남의 저장이
+    찍혀 그 뒤 구역 회차가 끝내 알아보지 못한다."""
+    if fragment_scope.fragment_only_run():
+        return saved_pair_token()
+    return _seen_pair_token()
+
+
+def _drafts_outdated() -> bool:
+    """구역 회차에서 편집본이 낡았는가 — 페이지가 편집본을 세운 뒤 남이 저장했다(`_scope_token` 이
+    R4 로 보는 견줌과 같다). 한 번만 쓰는 표지 `drafts_replaced` 는 구역 회차에서 꺼지므로 본문 끝의
+    작은 편집표 제출은 이것으로 거절한다 — 그 편집본은 올라간 앱 전체 회차가 버리고 다시 세운다. 제
+    저장의 뒷정리 대기(`own_save_unsettled`)는 남의 저장이 아니다."""
+    return (
+        fragment_scope.fragment_only_run()
+        and not own_save_unsettled()
+        and saved_pair_token() != _seen_pair_token()
+    )
+
+
 def master_head() -> tuple[object, ...]:
     """탭 ① 밖이 이 탭의 세션에서 읽어 그리는 값 — 머리 띠 변경 칩 · 화면 탭 줄 점 · 떠나기 확인 ·
     테마 표지 · 탭 ① 점(미저장 편집 · FAB 배치 대기 · 작은 편집표 적용 전 편집), 편집본 출발점 ·
@@ -2140,11 +2216,48 @@ def master_head() -> tuple[object, ...]:
     )
 
 
+# 갈래 — 표 고르기 · 오른쪽 칸 고르기(구역 머리 표지가 읽는다).
+_TABLE_CHOICE = SessionSlot(TABLE_KEY, str)
+_SIDE_CHOICE = SessionSlot(SIDE_KEY, str)
+
+
+def _scope_head() -> tuple[object, ...]:
+    """구역 머리 표지 — `master_head` 에 갈래(표 고르기 · 오른쪽 칸)를 더한다. 갈래마다 이벤트 칸
+    자리 수가 다르므로(AGENTS 9장 「구역 회차 규칙」 R5) 갈래를 바꾼 상호작용은 앱 전체로 올린다."""
+    return (*master_head(), _TABLE_CHOICE.peek(), _SIDE_CHOICE.peek())
+
+
+def _pinned_in_scope(fn: C) -> C:
+    """구역 회차는 앱 전체 회차의 실행 핀(`app.py`) 밖에서 돈다 — 저장 토큰
+    읽기(`_scope_token`)와 본문을 설비 DB 핀 하나 안에서 돌린다(AGENTS 9장 「구역 회차 규칙」
+    DB 핀). `editor_scope` **위**, `grade_ui.in_fragment` 아래에 단다 — 토큰은 `editor_scope` 가
+    본문보다 먼저 읽는다. 앱 전체 회차는 실행 핀 안이라 그대로 부른다."""
+
+    @functools.wraps(fn)
+    def inner(*args: Any, **kwargs: Any) -> Any:
+        place = _PLACE.peek()
+        if place is None or not fragment_scope.fragment_only_run():
+            return fn(*args, **kwargs)
+        with pinned_connections(Path(place.database_path)):
+            return fn(*args, **kwargs)
+
+    return cast(C, inner)
+
+
+@st.fragment(key=MASTER_SCOPE)
+@grade_ui.in_fragment
+@_pinned_in_scope
+@fragment_scope.editor_scope(
+    MASTER_SCOPE, head=_scope_head, token=_scope_token, one_shot=("drafts_replaced",)
+)
 def render_equipment_master_scope(*, drafts_replaced: bool = False) -> None:
-    """탭 ① 본문 — 페이지가 넘긴 재료(`render_equipment_master`)로, 넘긴 것이 없으면 마지막 페이지
-    회차의 자리에서 다시 세운 재료로 그린다(모듈 끝 설명)."""
+    """탭 ① 본문 — 편집기 구역(AGENTS 9장 「구역 회차 규칙」). 앱 전체 회차는 페이지가 넘긴
+    재료(`render_equipment_master`)로, 구역 회차는 마지막 페이지 회차의 자리에서 다시 세운 재료로
+    그린다(모듈 끝 설명). 구역 밖이 그리는 값(`_scope_head`) · 저장 토큰(`_scope_token`)이
+    바뀐 상호작용은 콜백 끝 · 본문 뒤에서 앱 전체로 올라가 페이지가 세션 · 편집본을 다시 세운다.
+    남의 저장을 본 구역 회차의 작은 편집표 제출은 거절한다(`_drafts_outdated`)."""
     materials = _HANDOFF.take()
-    if materials is None:
+    if materials is None or fragment_scope.fragment_only_run():
         materials = _rebuilt_materials()
     render_equipment_master_tab(
         repository=materials.repository,
@@ -2154,7 +2267,7 @@ def render_equipment_master_scope(*, drafts_replaced: bool = False) -> None:
         layout_mode=materials.layout_mode,
         today=materials.today,
         confirmation_official=materials.confirmation_official,
-        drafts_replaced=drafts_replaced,
+        drafts_replaced=drafts_replaced or _drafts_outdated(),
     )
 
 
