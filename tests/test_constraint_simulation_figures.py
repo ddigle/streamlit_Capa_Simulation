@@ -22,6 +22,7 @@ import random
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import plotly.io as pio
@@ -846,9 +847,53 @@ def test_the_modification_kpi_says_there_is_nothing_to_modify_without_demand(
     assert value == "11대"
     assert caption is not None and caption.startswith("5번에 나눠 개조 · 첫 비가동 ")
 
+    # 개조를 끈 회차는 「—」 뿐이다 — 그 뜻(비가동 없이 배정만 바꿈)은 풍선 · Guide 다(2026-11-20).
     off = _run(replace(CONDITIONS, modification_days=None))
     cards = _kpi_cards(monkeypatch, off)
-    assert cards["개조 대수"] == ("—", "개조를 끄면 비가동 없이 배정만 바꿉니다")
+    assert cards["개조 대수"] == ("—", None)
+
+
+def test_the_met_kpi_keeps_only_the_empty_result_line_and_the_help_says_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「제약 제품 확보율 충족」 회색 줄은 빈 결과(제약 기간에 제약 제품 소요가 없음)일 때만 선다 —
+    다 맞춤 · 모자란 달 있음은 값과 테두리색, 제약 목표 % 는 그래프 끝 글과 풍선, 모자란 달은 아래
+    「가용이 모자란 달」 구획이 말한다(2026-11-20 갈래 판정 — 설계 규칙 UI-TXT-01 · UI-TXT-03 ·
+    UI-TXT-07). 걷은 뜻은 풍선 · Guide 에 있다."""
+    helps: dict[str, str] = {}
+
+    def capture(label: str, value: str, *, help: str | None = None, **_: object) -> None:
+        helps[label] = help or ""
+
+    met = _kpi_cards(monkeypatch, _run())
+    value, caption = met["제약 제품 확보율 충족"]
+    assert value.endswith("개월") and caption is None
+    # 과개조 표본(명세 2-8 ⑩ — 27.06 전용 6대 중 5대만 배정).
+    short = simulate_constraint(
+        (
+            ConstraintMonthInput(202705, 4.0, 0.0, 5.0, 1.1),
+            ConstraintMonthInput(202706, 8.0, 6.0, 5.0, 1.1),
+        ),
+        replace(CONDITIONS, period_start=202706, period_end=202706, constraint_target=1.0),
+    )
+    assert short.kpis.constrained_met_months < short.kpis.constrained_months
+    assert any(row.short for row in short.months)
+    assert _kpi_cards(monkeypatch, short)["제약 제품 확보율 충족"][1] is None
+    monkeypatch.setattr(view_module, "render_status_metric", capture)
+    render_constraint_kpis(_run(), LABELS)
+    assert f"소요 × {LABELS.target_percent}% 올림" in helps["제약 제품 확보율 충족"]
+    assert "가용이 모자란 달" in helps["제약 제품 확보율 충족"]
+    assert "개조를 끄면 「—」" in helps["개조 대수"]
+    guide = (
+        Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/constraint_simulation.md"
+    ).read_text(encoding="utf-8")
+    for words in (
+        "모든 달을 맞추면 초록 테두리",
+        "모자란 달이 있으면 빨강 테두리",
+        "비가동 없이 배정만",
+        "그래프 오른쪽 끝 「제약 n%」",
+    ):
+        assert words in guide, words
 
 
 def test_a_first_downtime_before_today_is_marked_past_in_the_modification_kpi(

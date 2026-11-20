@@ -450,21 +450,21 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
         count = kpis.constrained_months
         met = kpis.constrained_met_months
         tone1: MetricTone = "neutral" if count == 0 else ("good" if met == count else "critical")
-        if count == 0:
-            caption1 = "제약 기간에 제약 제품 소요가 없습니다"
-        elif met == count:
-            caption1 = f"제약 기간 모든 달에서 {target}% 를 맞춥니다"
-        else:
-            caption1 = "가용이 모자란 달이 있습니다 — 아래 「가용이 모자란 달」"
+        # 회색 줄은 빈 결과(제약 기간에 제약 제품 소요가 없어 값이 「—」)일 때만이다. 다 맞춤 ·
+        # 모자란 달 있음은 값 「n / N개월」 과 테두리색이, 제약 목표 % 는 그래프 오른쪽 끝
+        # 「제약 n%」 와 풍선이, 모자란 달은 바로 아래 「가용이 모자란 달」 구획이 말한다 — 그
+        # 뜻은 풍선 · Guide 다(2026-11-20 갈래 판정, 설계 규칙 UI-TXT-01 · UI-TXT-03 · UI-TXT-07).
         render_status_metric(
             "제약 제품 확보율 충족",
             f"{met} / {count}개월" if count else _EMPTY,
             key="constraint_sim_kpi_met",
             tone=tone1,
-            caption=caption1,
+            caption="제약 기간에 제약 제품 소요가 없습니다" if count == 0 else None,
             help=(
                 "제약 기간 안이고 제약 제품 소요가 있는 달 가운데, 필요 대수"
-                f"(소요 × {target}% 올림)를 다 배정한 달 수입니다."
+                f"(소요 × {target}% 올림)를 다 배정한 달 수입니다. 모든 달을 맞추면 초록, "
+                "모자란 달이 있으면 빨강 테두리이고 그 달은 아래 「가용이 모자란 달」 이 "
+                "적습니다."
             ),
         )
 
@@ -520,8 +520,12 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
         )
 
         splits = result.conditions.splits_dedicated
+        caption4: str | None
         if kpis.max_dedicated is None:
-            value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
+            # 개조를 끈 회차 — 끈 것은 사이드바 「개조 필요」 칸과 머리 줄 「개조 없음」 이 보이고,
+            # 그 뜻(비가동 없이 배정만 바꿈)은 풍선 · Guide 다(2026-11-20 갈래 판정, 설계 규칙
+            # UI-TXT-01).
+            value4, caption4 = _EMPTY, None
         elif splits and kpis.max_dedicated > 0:
             # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다. 회색 줄은
             # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창마다 날짜는 그래프 띠 막대 풍선(표
@@ -553,7 +557,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             help=(
                 "제약 기간 안에서 제약 제품 전용으로 개조하는 가장 큰 대수(환산 대수)입니다 — "
                 "늘어나는 달마다 늘어난 대수만 그 달 앞에 새로 개조하고, 기간 안에서는 줄이지 "
-                "않습니다."
+                "않습니다. 개조를 끄면 「—」 입니다 — 비가동 없이 배정만 바꿉니다."
                 + (
                     " 보유 제약 설비와, 늘어날 전용이 개조 기간 안에 오는 신규 설비는 개조 "
                     "없이 먼저 쓰고(신규는 그 사이 「신규 대기」) 남는 몫만 개조합니다 — 값은 "

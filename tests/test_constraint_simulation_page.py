@@ -884,7 +884,11 @@ def test_the_target_buttons_and_the_typed_value_share_one_value(
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 130
     assert app.number_input(key=_target_input_key(app)).value == 130
     assert "제약 130%" in _header_line(app)
-    assert "130% 를 맞춥니다" in _metric_caption(app, "제약 제품 확보율 충족")
+    # 요약 칸에는 목표 % 를 거듭 적지 않는다 — 그래프 끝 글 「제약 n%」 와 칸 풍선이
+    # 적는다(2026-11-20).
+    met = next(metric for metric in app.metric if metric.label == "제약 제품 확보율 충족")
+    assert "소요 × 130% 올림" in str(met.proto.help)
+    assert "130%" not in str(met.proto.delta)
 
     # 버튼에 없는 값을 적으면 보이는 버튼이 모두 꺼진다(숨은 맞춤 버튼이 켜진 꼴).
     app.number_input(key=_target_input_key(app)).set_value(125)
@@ -1336,7 +1340,10 @@ def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     assert app.button_group(key=CONSTRAINT_MOD_DAYS_PILLS_KEY).disabled
     assert _metric(app, "개조 대수") == "—"
     assert "개조 없음" in _header_line(app)
-    assert _metric_caption(app, "개조 대수") == "개조를 끄면 비가동 없이 배정만 바꿉니다"
+    # 끈 것은 머리 「개조 없음」 과 사이드바 칸이 보인다 — 그 뜻은 풍선 · Guide 다(2026-11-20).
+    assert _metric_caption(app, "개조 대수") == ""
+    card = next(metric for metric in app.metric if metric.label == "개조 대수")
+    assert "개조를 끄면 「—」 입니다 — 비가동 없이 배정만 바꿉니다." in str(card.proto.help)
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(True)
     _ok(app.run())
 
