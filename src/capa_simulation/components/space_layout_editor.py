@@ -125,7 +125,7 @@ SPACE_LOCK_ATTRIBUTE = "data-space-lock"
 # 때 한 번 묻는다(편집기 data `sheetSendMs` — `grid_shared.batch_ms`, 개발 · 측정 사본만 실행 줄
 # `CAPA_DEV_BATCH_MS` 로 덮어쓴다). 첫 칸 · 되돌리기 · 창 밖으로 초점이 나감 · 「적용」 직전 ·
 # 떠나기 신호 · 창 숨김은 쉼을 기다리지 않는다(`editor.js` 의 `// <sheet-send>`).
-SHEET_SEND_MS: Final = 300
+SHEET_SEND_MS: Final = 800
 # 「호기 정보」 창 「확인만」 요청을 마지막으로 받은 자리 ``{"editor", "epoch", "mount", "seq"}``
 # (`_dispatch_sheet_check` — 같은 마운트의 같은 · 옛 seq 를 거른다).
 SHEET_CHECK_SEEN_KEY: Final = "space_sheet_check_seen_v1"
