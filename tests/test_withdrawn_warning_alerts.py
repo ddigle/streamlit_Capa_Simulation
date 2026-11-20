@@ -664,6 +664,11 @@ def _called(call: ast.Call) -> str:
     return func.attr if isinstance(func, ast.Attribute) else ""
 
 
+def _calls(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """함수 안에 `name` 부름이 있나(`alerts.emit` · `emit`)."""
+    return any(isinstance(node, ast.Call) and _called(node) == name for node in ast.walk(function))
+
+
 def _literal_params(function: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, tuple[str, ...]]:
     """`Literal["ST-01", "ST-04"]` 로 적은 매개변수 → 그 글들 — 부르는 쪽이 코드를 고르는 함수."""
     found: dict[str, tuple[str, ...]] = {}
@@ -691,8 +696,10 @@ def codes_sent_by(
     """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이고,
     상태 코드는 모듈 글 묶음(`groups`)을 도는 `for` 의 이름이거나 `Literal` 로 적은 매개변수여도
     된다(묶음 · 그 글들을 모두 보낸다). 상태 알림은 `alerts.state` 와, 여러 표지를 한 자리에 싣는
-    `alerts.state_note`(`alerts.emit` 이 보낸다 — 인자가 같다) 둘 다 센다."""
+    `alerts.state_note`(인자가 같다) 둘 다 센다 — `state_note` 는 표지를 짓기만 하므로 같은 함수가
+    `alerts.emit` 으로 보낼 때만 센다."""
     known = constants or {}
+    sending = ("state", "state_note") if _calls(function, "emit") else ("state",)
     looped = {
         **_literal_params(function),
         **{
@@ -714,7 +721,7 @@ def codes_sent_by(
             alert = _keyword(node, "alert", known)
             kind = _keyword(node, "kind", known) or "success"
             codes.add(str(alert) if alert else alerts.FLASH_CODES[str(kind)])
-        elif route == "state" and _called(node) in ("state", "state_note") and node.args:
+        elif route == "state" and _called(node) in sending and node.args:
             first = _text(node.args[0], known)
             if isinstance(first, str):
                 codes.add(first)
