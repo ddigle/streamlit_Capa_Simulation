@@ -65,6 +65,7 @@ from streamlit.runtime.scriptrunner_utils.script_run_context import (
     get_script_run_ctx,
 )
 
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import keeps_app_run_open
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -100,6 +101,10 @@ class _Spec:
     box: bool
     page: str
     href: str
+    # 세션 칸 — 앱 전체 회차가 찍은 머리 표지 · 저장 토큰, 구역 회차가 남의 저장을 봤다는 표지.
+    head_slot: SessionSlot[object]
+    token_slot: SessionSlot[object]
+    moved_slot: SessionSlot[bool]
 
 
 # 구역 key → 규칙(모듈을 읽을 때 데코레이터가 적는다 — 콜백 `escalates` 가 부르는 순간 찾는다).
@@ -133,18 +138,6 @@ def scope_box(key: str) -> Iterator[None]:
         yield
 
 
-def _head_key(key: str) -> str:
-    return f"{_STATE_PREFIX}{key}:head"
-
-
-def _token_key(key: str) -> str:
-    return f"{_STATE_PREFIX}{key}:token"
-
-
-def _moved_key(key: str) -> str:
-    return f"{_STATE_PREFIX}{key}:moved"
-
-
 def escalate() -> None:
     """구역 회차면 앱 전체 회차로 올린다(R1) — 콜백 안이면 `st.rerun()`, 본문이면
     `st.rerun(scope="app")`. 앱 전체 회차면 아무것도 하지 않는다. 본문에서는 **구역 위젯을 다 그린
@@ -159,7 +152,7 @@ def escalate() -> None:
 def _pending_refusal() -> bool:
     from capa_simulation.components import grade_ui
 
-    return bool(st.session_state.get(grade_ui.PENDING_KEY))
+    return bool(SessionSlot(grade_ui.PENDING_KEY, bool).peek())
 
 
 def scope_moved(key: str) -> bool:
@@ -170,9 +163,9 @@ def scope_moved(key: str) -> bool:
     spec = _SPECS.get(key)
     if spec is None:
         return False
-    if st.session_state.get(_moved_key(key)):
+    if spec.moved_slot.get():
         return True
-    return spec.head is not None and spec.head() != st.session_state.get(_head_key(key))
+    return spec.head is not None and spec.head() != spec.head_slot.peek()
 
 
 def escalate_if_moved(key: str) -> None:
@@ -229,17 +222,16 @@ def check_small_args(args: Sequence[object], kwargs: Mapping[str, object]) -> No
 
 
 def _stamp(spec: _Spec) -> None:
-    state = st.session_state
     if spec.head is not None:
-        state[_head_key(spec.key)] = spec.head()
+        spec.head_slot.set(spec.head())
     if spec.token is not None:
-        state[_token_key(spec.key)] = spec.token()
-    state.pop(_moved_key(spec.key), None)
+        spec.token_slot.set(spec.token())
+    spec.moved_slot.clear()
 
 
 def _check_token(spec: _Spec) -> None:
-    if spec.token is not None and spec.token() != st.session_state.get(_token_key(spec.key)):
-        st.session_state[_moved_key(spec.key)] = True
+    if spec.token is not None and spec.token() != spec.token_slot.peek():
+        spec.moved_slot.set(True)
 
 
 def _current_page() -> tuple[str, str]:
@@ -307,6 +299,9 @@ def editor_scope(
         box=box,
         page=page,
         href=href,
+        head_slot=SessionSlot(f"{_STATE_PREFIX}{key}:head", object),
+        token_slot=SessionSlot(f"{_STATE_PREFIX}{key}:token", object),
+        moved_slot=SessionSlot(f"{_STATE_PREFIX}{key}:moved", bool, lambda: False),
     )
     _SPECS[key] = spec
 
