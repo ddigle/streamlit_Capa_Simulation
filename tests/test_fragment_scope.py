@@ -130,6 +130,56 @@ body(fresh=True)
 """
 )
 
+# 콜백 끝 올리기 — 한 번만 쓰는 인자를 위치 인자로 넘긴다.
+CALLBACK_END_POSITIONAL = (
+    _PRELUDE
+    + """
+
+@fragment_scope.escalates(SCOPE)
+@grade_ui.on_press
+def _on_outbox():
+    _apply()
+
+
+@st.fragment(key=SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(SCOPE, head=head, token=token, one_shot=("fresh",))
+def body(fresh):
+    _draw(fresh)
+
+
+body(True)
+"""
+)
+
+# 바깥 프래그먼트 안의 구역 — 바깥 회차는 구역을 새 인자로 부른다(한 번만 쓰는 인자를 끄지 않는다).
+NESTED = (
+    _PRELUDE
+    + """
+
+@fragment_scope.escalates(SCOPE)
+@grade_ui.on_press
+def _on_outbox():
+    _apply()
+
+
+@st.fragment(key=SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(SCOPE, head=head, token=token, one_shot=("fresh",))
+def body(*, fresh):
+    _draw(fresh)
+
+
+@st.fragment(key="outer_scope")
+def outer():
+    st.button("outer", key="outer_press")
+    body(fresh=st.session_state.get("fresh_next", False))
+
+
+outer()
+"""
+)
+
 # 대조 — 본문 앞에서 올린다(금지된 꼴). 앱 전체 회차가 머리 표지를 찍는다.
 PRE_BODY = (
     _PRELUDE
@@ -210,12 +260,15 @@ def test_a_pre_body_rise_loses_the_ack_of_the_edit_that_raised_it(
     assert browser.bidi_data("probe") == {"ack": None}
 
 
+@pytest.mark.parametrize(
+    "script", [CALLBACK_END, CALLBACK_END_POSITIONAL], ids=["keyword", "positional"]
+)
 def test_an_edit_that_keeps_the_head_marks_stays_a_scope_run(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, script: str
 ) -> None:
     """머리 표지가 그대로인 칸 고치기(두 번째 칸)는 구역 회차 하나로 끝난다 — 앱 전체 회차가 없다.
-    한 번만 쓰는 인자(`one_shot`)는 구역 회차에서 꺼진다(R3)."""
-    app, browser, scope = _start(monkeypatch, CALLBACK_END)
+    한 번만 쓰는 인자(`one_shot`)는 키워드로 넘기든 위치로 넘기든 구역 회차에서 꺼진다(R3)."""
+    app, browser, scope = _start(monkeypatch, script)
     browser.send_state(app, "probe", _op(1))
     assert app.session_state["seen_fresh"] is True, "앱 전체 회차는 넘긴 값 그대로"
     runs = app.session_state["app_runs"]
@@ -226,6 +279,39 @@ def test_an_edit_that_keeps_the_head_marks_stays_a_scope_run(
     assert app.session_state["app_runs"] == runs
     assert browser.bidi_data("probe") == {"ack": 2}
     assert app.session_state["seen_fresh"] is False
+
+
+def test_an_outer_fragment_run_keeps_the_one_shot_argument_it_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """바깥 프래그먼트 회차가 안쪽 구역을 부르면 그 인자는 앞 앱 전체 회차 값이 아니라 새 값이다 —
+    한 번만 쓰는 인자를 끄지 않는다. 구역 자신의 회차에서만 끈다(`own_fragment_run`)."""
+    app, browser, scope = _start(monkeypatch, NESTED)
+    outer = browser.fragment_keyed("outer_scope")
+    assert app.session_state["seen_fresh"] is False
+
+    app.session_state["fresh_next"] = True
+    browser.fragment_queue = [outer]
+    app.button(key="outer_press").click().run(timeout=60)
+
+    assert browser.started == [[outer]]
+    assert app.session_state["seen_fresh"] is True
+
+    browser.send_state(app, "probe", _op(1))
+    browser.send_state(app, "probe", _ops(1, 2))
+    assert browser.started == [[scope]]
+    assert app.session_state["seen_fresh"] is False
+
+
+def test_one_shot_names_must_be_arguments_of_the_scope_body() -> None:
+    """한 번만 쓰는 인자 이름이 본문 함수 인자에 없으면 단 순간 `TypeError` 다(조용히 지나가면 끄지
+    못한다)."""
+
+    def body(fresh: bool) -> None:
+        del fresh
+
+    with pytest.raises(TypeError, match="one_shot"):
+        fragment_scope.editor_scope("probe_unknown", one_shot=("stale",))(body)
 
 
 def test_a_save_by_someone_else_rises_after_the_body(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,7 +23,9 @@
 - **R3 작은 인자**(`check_small_args` · `editor_scope(one_shot=…)`) — 구역 인자는 직전 앱 전체 회차
   값으로 고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 스냅숏(표를 든 dataclass)은
   넘기지 않고 구역 안에서 세션 · 캐시로 다시 읽는다 — 넘기면 `TypeError`. 한 번만 쓰는 표지
-  인자(`drafts_replaced` 꼴)는 구역 회차에서 `False` 로 끈다.
+  인자(`drafts_replaced` 꼴 — 키워드 · 위치 어느 쪽으로 넘겨도)는 그 구역 자신의 회차(저장소가 앞
+  앱 전체 회차 인자로 다시 부름)에서 `False` 로 끈다. 바깥 프래그먼트 · 팝업 회차가 새 인자로 부른
+  구역은 끄지 않는다.
 - **R4 남의 저장**(`editor_scope(token=…)`) — 저장본 쌍 토큰을 값싸게 읽는 함수(갈래가 넘긴다). 앱
   전체 회차가 찍고, 구역 회차는 본문 머리에서 다시 읽어 다르면 표지를 세운다 — 본문 뒤 · 다음 콜백
   끝에서 올린다(앱 전체 회차의 편집본 세우기가 버리고 다시 세운다).
@@ -56,6 +58,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import inspect
 import logging
 from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -119,6 +122,20 @@ def fragment_only_run() -> bool:
     안에서 돈다."""
     ctx = get_script_run_ctx(suppress_warning=True)
     return bool(ctx is not None and ctx.fragment_ids_this_run)
+
+
+def own_fragment_run() -> bool:
+    """지금 도는 프래그먼트가 이 회차가 다시 돌리는 그 프래그먼트인가 — 프래그먼트 저장소가 앞 앱
+    전체 회차의 인자로 다시 부른 회차다. 바깥 프래그먼트 · 팝업 회차가 안쪽 구역을 새 인자로 부를
+    때는 거짓이다(`fragment_only_run` 은 참)."""
+    ctx = get_script_run_ctx(suppress_warning=True)
+    if ctx is None or not ctx.fragment_ids_this_run:
+        return False
+    try:
+        fragment_id = ThreadState.get().fragment_id
+    except RuntimeError:
+        return False
+    return fragment_id is not None and fragment_id in ctx.fragment_ids_this_run
 
 
 def in_callback() -> bool:
@@ -224,6 +241,21 @@ def check_small_args(args: Sequence[object], kwargs: Mapping[str, object]) -> No
             )
 
 
+def _switch_off(
+    signature: inspect.Signature,
+    names: tuple[str, ...],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """한 번만 쓰는 인자(`names`)를 `False` 로 바꾼 인자 — 키워드든 위치든 함수 인자 이름으로 묶어
+    고른다. 넘기지 않은(기본값을 쓰는) 인자는 그대로 둔다."""
+    bound = signature.bind_partial(*args, **kwargs)
+    for name in names:
+        if name in bound.arguments:
+            bound.arguments[name] = False
+    return tuple(bound.args), dict(bound.kwargs)
+
+
 def _stamp(spec: _Spec) -> None:
     if spec.head is not None:
         spec.head_slot.set(spec.head())
@@ -288,8 +320,10 @@ def editor_scope(
     **아래**에 단다(모듈 설명). `key` 는 프래그먼트 key 와 같게 준다.
 
     - 앱 전체 회차: 본문 앞에서 머리 표지(`head`) · 저장 토큰(`token`)을 찍는다.
-    - 구역 회차: 한 번만 쓰는 인자(`one_shot`)를 `False` 로 끄고, 본문 머리에서 토큰을 다시 읽어
-      다르면 표지를 세운다. 본문을 다 그린 뒤 `scope_moved` 면 앱 전체로 올린다.
+    - 구역 회차: 본문 머리에서 토큰을 다시 읽어 다르면 표지를 세운다. 본문을 다 그린 뒤
+      `scope_moved` 면 앱 전체로 올린다. 그 구역 자신의 회차(`own_fragment_run`)면 한 번만 쓰는
+      인자(`one_shot` — 함수 인자 이름, 키워드 · 위치 어느 쪽으로 넘겨도)를 `False` 로 끈다. 없는
+      이름을 주면 단 순간 `TypeError`.
     - 인자는 늘 `check_small_args` 를 지난다. 본문은 `box` 면 구역 칸(`box_key(key)`) 안에 그린다.
     - 본문 오류는 코어 화면 카드로(`page` · `href` — 비우면 지금 화면의 이름 · 주소). 앱 전체
       회차로 끝날 수 있는 본문이라 `sidebar_status.keeps_app_run_open` 을 함께 씌운다.
@@ -309,12 +343,18 @@ def editor_scope(
     _SPECS[key] = spec
 
     def decorate(fn: F) -> F:
+        signature = inspect.signature(fn)
+        unknown = [name for name in spec.one_shot if name not in signature.parameters]
+        if unknown:
+            raise TypeError(f"one_shot 에 함수 인자가 아닌 이름 — {', '.join(unknown)}")
+
         @functools.wraps(fn)
         def inner(*args: Any, **kwargs: Any) -> Any:
             check_small_args(args, kwargs)
             fragment_run = fragment_only_run()
             if fragment_run:
-                kwargs = {**kwargs, **{name: False for name in spec.one_shot if name in kwargs}}
+                if spec.one_shot and own_fragment_run():
+                    args, kwargs = _switch_off(signature, spec.one_shot, args, kwargs)
                 _check_token(spec)
             else:
                 _stamp(spec)

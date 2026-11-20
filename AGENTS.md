@@ -8516,7 +8516,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **R3 구역 인자는 작은 값만**(`check_small_args` — `editor_scope` 가 늘 부른다). 구역 인자는 직전 앱 전체 회차 값으로
   고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 표를 든 dataclass · 긴 목록(`SMALL_ITEMS` 초과)은
   `TypeError` — 구역 안에서 세션 · 캐시로 다시 읽는다. 한 번만 쓰는 표지 인자(`drafts_replaced` 꼴)는
-  `editor_scope(one_shot=…)` 가 구역 회차에서 `False` 로 끈다.
+  `editor_scope(one_shot=…)` 가 그 구역 자신의 회차(`own_fragment_run` — 저장소가 앞 앱 전체 회차 인자로 다시 부름)에서
+  키워드 · 위치 어느 쪽으로 넘겼든 `False` 로 끈다. 바깥 프래그먼트 · 팝업 회차가 새 인자로 부른 구역은 끄지 않는다.
+  함수 인자에 없는 이름은 단 순간 `TypeError`.
 - **R4 남의 저장 확인**(`editor_scope(token=…)`). 저장본 쌍 토큰을 값싸게 읽는 함수를 넘긴다. 앱 전체 회차가 찍고
   구역 회차의 본문 머리가 다시 읽어 다르면 표지를 세운다 — 본문 뒤에서 올려 앱 전체 회차의 편집본 세우기가 버리고
   다시 세운다.
