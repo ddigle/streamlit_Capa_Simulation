@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -874,6 +875,7 @@ def stage_own_save_carry(ids: Mapping[str, str | None], applied: Mapping[str, in
             "applied": {str(mount): int(seq) for mount, seq in applied.items()},
             "written": False,
             "froms": [],
+            "at": time.monotonic(),
         }
     )
 
@@ -947,6 +949,11 @@ def _bind_own_save_carry(*, replaced: bool, seeded_before: object, base_before: 
     carry["rewind"] = True
 
 
+# 저장 누름이 이음 표지를 적은 뒤 옛 편집본에 얹는 op 를 남기는 창(초) — 저장 한 번(쓰기 · 뒷정리)이
+# 넉넉히 드는 시간. 그 뒤에도 이어지지 않은 표지는 쓰기 전에 끊긴 저장이다.
+LATE_OPS_WINDOW_SECONDS: Final = 60.0
+
+
 def note_late_ops(ops: Sequence[Mapping[str, Any]], base: str) -> None:
     """제 「리비전 저장」 누름이 이음 표지를 적은 뒤 · 다시 세우기 전에 그 편집본(`base`)에 얹는 op
     를 이음 표지에 남긴다 — Streamlit 1.63 은 저장 콜백이 DB 에 쓰는 사이 닿은 다음 조작의 회차를
@@ -955,6 +962,10 @@ def note_late_ops(ops: Sequence[Mapping[str, Any]], base: str) -> None:
     그 dict 를 고친다(두 스레드가 같은 객체를 본다)."""
     carry = _carry_for(base)
     if carry is None or "to" in carry or not ops:
+        return
+    staged = carry.get("at")
+    if not isinstance(staged, float) or time.monotonic() - staged > LATE_OPS_WINDOW_SECONDS:
+        # 쓰기 전에 끊겨 이어지지 않을 이음 표지 — 그 뒤 편집을 끝없이 쌓지 않는다.
         return
     carry["late"] = [*carry.get("late", []), *(dict(op) for op in ops)]
 
