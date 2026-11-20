@@ -457,8 +457,8 @@ def _tab_strip_data() -> list[dict[str, Any]]:
     return [first, second]
 
 
-# 부품 이름 → (등록 JS, data 들). 새 편집기 부품은 여기에 한 줄을 더한다 — 느슨한 대역으로 돌지 않는
-# 부품은 그 부품의 node 시험에 bind-once 를 둔다.
+# 부품 이름 → (등록 JS, data 들). 편집기 갈래가 제 부품을 더한다 — 느슨한 대역으로 돌지 않는 부품은
+# 그 부품의 node 시험에 bind-once 를 둔다.
 BIND_ONCE: dict[str, tuple[Callable[[], str], Callable[[], list[dict[str, Any]]]]] = {
     "page_tabs": (_tab_strip_js, _tab_strip_data),
 }
