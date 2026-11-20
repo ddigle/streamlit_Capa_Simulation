@@ -565,6 +565,28 @@ def text_matrix_since(previous: TextMatrix | None, master: pd.DataFrame) -> Text
     return TextMatrix(frame, rows)
 
 
+def changed_positions(previous: pd.DataFrame | None, current: pd.DataFrame) -> list[int] | None:
+    """두 표(같은 칸 · 줄 자리 색인)에서 값이 바뀐 줄 자리 — 줄 수 · 칸 목록이 다르거나 앞 표가
+    없으면 None(통째로 다시 본다). 칸 dtype 이 바뀌어도 None 이다. 빈 값끼리는 같다고 본다."""
+    if (
+        previous is None
+        or len(previous) != len(current)
+        or list(previous.columns) != list(current.columns)
+    ):
+        return None
+    changed = np.zeros(len(current), dtype=bool)
+    for name in current.columns:
+        before, after = previous[name], current[name]
+        if same_column(before, after):
+            continue
+        if before.dtype != after.dtype:
+            return None
+        same = before.eq(after).fillna(False).to_numpy(dtype=bool)
+        both_blank = (before.isna() & after.isna()).to_numpy(dtype=bool)
+        changed |= ~(same | both_blank)
+    return [int(position) for position in changed.nonzero()[0]]
+
+
 def _names(master: pd.DataFrame) -> list[str]:
     if EQUIPMENT_ID_COLUMN not in master.columns:
         return [""] * len(master)
@@ -771,6 +793,11 @@ def prune_overlay(overlay: Mapping[str, str], index: GridIndex) -> dict[str, str
 # ------------------------------------------------------------------ 한 회차의 표 모양
 
 
+# 행 id → (편집본 글 줄, 저장본 글 줄, 바뀐 칸 — 자리 → 저장본 글자). 줄은 그 회차 글 행렬의 줄
+# 객체 그대로다(같은지는 `is` 로 본다).
+ChangedMemo = Mapping[str, tuple[Sequence[str], Sequence[str], Mapping[int, str]]]
+
+
 @dataclass(frozen=True)
 class GridSource:
     """표 모양을 낼 재료. `frames`·`saved` 는 (기존 보유대수, 설비 마스터, 비가동 일정) 이다.
@@ -790,6 +817,9 @@ class GridSource:
     table_errors: Sequence[str] = ()
     others: str = ""
     texts: tuple[Sequence[Sequence[str]], Sequence[Sequence[str]]] | None = None
+    # 앞 회차 표 모양의 줄마다 「바뀐 칸」 재료(`GridView.changed_memo`) — 편집본 · 저장본 글 줄이
+    # 같은 줄 객체면(`text_matrix_since` 는 안 바뀐 줄을 그대로 둔다) 견주지 않고 그 결과를 쓴다.
+    changed_memo: ChangedMemo | None = None
 
 
 @dataclass(frozen=True)
@@ -816,6 +846,8 @@ class GridView:
     errors: tuple[tuple[str | None, str, str, str], ...]
     downtime: pd.DataFrame
     source: GridSource
+    # 다음 회차 `GridSource.changed_memo` 로 넘길 이 회차의 줄마다 「바뀐 칸」 재료.
+    changed_memo: ChangedMemo = field(default_factory=dict)
 
     @property
     def live_count(self) -> int:
@@ -837,7 +869,8 @@ def _overlay_error(
 
 def build_grid_view(source: GridSource, context: GridContext) -> GridView:
     """표 모양을 한 번에 낸다 — 편집본·저장본 글자, 줄마다 바뀐·오류·경고 표지와 잠금, 고칠 것
-    목록."""
+    목록. 「바뀐 칸」 은 앞 회차 재료(`source.changed_memo`)에서 두 글 줄이 그대로인 줄은 견주지
+    않고 그 결과를 쓴다(바뀐 줄만 다시 견준다 — 처음부터 견준 것과 같다)."""
     master = source.frames[1].reset_index(drop=True)
     saved = source.saved[1].reset_index(drop=True)
     index = grid_index(master, saved, source.renames.units)
@@ -848,6 +881,8 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
     marks: dict[str, RowMarks] = {}
     names: dict[str, str] = {}
     tags: dict[str, str] = {}
+    prior = source.changed_memo or {}
+    memo: dict[str, tuple[Sequence[str], Sequence[str], Mapping[int, str]]] = {}
     for row_id, position in index.live.items():
         row = buffer_texts[position]
         values[row_id] = list(row)
@@ -856,7 +891,12 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         saved_position = index.saved.get(row_id)
         if saved_position is not None:
             before = saved_texts[saved_position]
-            changed = {j: before[j] for j in range(len(row)) if row[j] != before[j]}
+            kept = prior.get(row_id)
+            if kept is not None and kept[0] is row and kept[1] is before:
+                changed = dict(kept[2])
+            else:
+                changed = {j: before[j] for j in range(len(row)) if row[j] != before[j]}
+            memo[row_id] = (row, before, dict(changed))
         else:
             tags[row_id] = "new"
         marks[row_id] = RowMarks(changed=changed)
@@ -908,6 +948,7 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         errors=tuple(errors),
         downtime=source.frames[2],
         source=source,
+        changed_memo=memo,
     )
 
 

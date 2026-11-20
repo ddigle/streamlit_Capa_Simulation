@@ -383,6 +383,14 @@ _BUFFER_SESSION_KEY = "equipment_workspace_session_v1"
 # 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 설비 마스터 탭 편집을 놓치지 않게
 # 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
+# 편집본 세 표(기존 보유대수, 설비 마스터, 비가동 일정)마다 그 표 내용이 바뀔 수 있는 쓰기에서만
+# 오르는 세대 — 한 표만 보는 회차 메모(설비 마스터 탭의 다른 두 표 바뀐 행 수 · 표 단위 오류 ·
+# 현재 데이터 내려받기)의 열쇠다. 설비 마스터 칸 하나를 고친 회차가 다른 두 표의 일을 다시 하지
+# 않게 한다. 편집본 세대처럼 세션 안에서 내려가지 않는다(다시 세워도 오른다).
+TABLE_GENERATIONS_KEY = "equipment_workspace_table_generations_v1"
+# 세 표 모두 / 어느 표도 아님(층 배치 대기분처럼 편집본 세 표 밖만 바꾸는 쓰기).
+ALL_TABLES: Final = (True, True, True)
+NO_TABLES: Final = (False, False, False)
 CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
@@ -516,8 +524,16 @@ def _copy_frames(frames: Frames) -> Frames:
     return frames[0].copy(), frames[1].copy(), frames[2].copy()
 
 
-def _bump_buffer_generation() -> None:
+def _bump_buffer_generation(tables: tuple[bool, bool, bool] = ALL_TABLES) -> None:
+    """편집본 세대를 올리고 `tables` 가 참인 표의 세대도 올린다(모르면 셋 다 — 기본값)."""
     st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
+    if any(tables):
+        current = table_generations()
+        st.session_state[TABLE_GENERATIONS_KEY] = (
+            current[0] + int(tables[0]),
+            current[1] + int(tables[1]),
+            current[2] + int(tables[2]),
+        )
 
 
 # 편집본 세 표(기존 보유대수 · 설비 마스터 · 비가동 일정)를 고치는 데 필요한 등급 동작(2026-11-18
@@ -643,6 +659,19 @@ def equipment_buffer_generation() -> int:
     """편집본 세대. 편집본이 바뀔 때마다(설비 마스터 탭 고침·Space 적용·새 리비전) 오른다."""
     value = st.session_state.get(BUFFER_GENERATION_KEY, 0)
     return int(value) if isinstance(value, int) else 0
+
+
+def table_generations() -> tuple[int, int, int]:
+    """편집본 세 표(기존 보유대수, 설비 마스터, 비가동 일정)의 세대 — 그 표를 바꿀 수 있는
+    쓰기에서만 오른다(`TABLE_GENERATIONS_KEY`). 꼴이 다르면 0 셋."""
+    value = st.session_state.get(TABLE_GENERATIONS_KEY)
+    if (
+        isinstance(value, tuple)
+        and len(value) == 3
+        and all(isinstance(item, int) for item in value)
+    ):
+        return value[0], value[1], value[2]
+    return 0, 0, 0
 
 
 # 설비 마스터 탭 회차 메모(`GRID_MEMO_KEY`)의 창구 — 새 메모 칸(표 단위 오류 · 일정 확인 · 다른 표
@@ -1242,15 +1271,21 @@ def _remember_edits(frames: Frames, *, keep_undo: bool = False) -> None:
     # 밖 표의 변경은 넣지 않는다(`_grade_kept`).
     frames = _grade_kept(frames)
     current = st.session_state.get(BUFFER_KEY)
-    unchanged = isinstance(current, tuple) and all(
-        same_frame_content(left, right) for left, right in zip(current, frames, strict=True)
+    changed: tuple[bool, bool, bool] = (
+        (
+            not same_frame_content(current[0], frames[0]),
+            not same_frame_content(current[1], frames[1]),
+            not same_frame_content(current[2], frames[2]),
+        )
+        if isinstance(current, tuple) and len(current) == 3
+        else ALL_TABLES
     )
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
     # 내용이 그대로인 제출(작은 편집표 보기 적용 등)은 세대를 올리지 않는다 — 올리면 「저장 안 한
     # 편집이 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
-    if not unchanged:
-        _bump_buffer_generation()
+    if any(changed):
+        _bump_buffer_generation(changed)
         if not keep_undo:
             _forget_grid_undo()
         _note_if_back_to_saved()
@@ -1353,7 +1388,7 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         if any(applied.frames_changed):
             st.session_state[BUFFER_KEY] = _grade_kept(state.frames)
             _drop_changed_editors(applied.frames_changed)
-        _bump_buffer_generation()
+        _bump_buffer_generation(applied.frames_changed)
     if state.overlay:
         st.session_state[GRID_OVERLAY_KEY] = dict(state.overlay)
     else:
@@ -2087,7 +2122,7 @@ def stage_floor_canvas(
         staged[key] = canvas
     st.session_state[PENDING_CANVASES_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2107,7 +2142,7 @@ def stage_floor_marks(
         staged[key] = marks
     st.session_state[PENDING_MARKS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2128,7 +2163,7 @@ def stage_floor_group_labels(
         staged[key] = dict(labels)
     st.session_state[PENDING_GROUP_LABELS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2148,7 +2183,7 @@ def stage_floor_stack(
         staged[key] = stack
     st.session_state[PENDING_STACKS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2754,15 +2789,17 @@ def _render_current_data_downloads(
     database_path: str,
     scenario_name: str | None,
     edit_note: str,
-    memo_key: tuple[object, ...],
+    memo_keys: tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...]],
     targets: Collection[str] = _TARGETS,
 ) -> None:
     """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 메뉴 「엑셀·CSV」 의 양식 단추
     아래에 같은 차례로 선다. `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글이다.
     `targets` 는 세울 표다(화면 등급 — 실무자는 비가동 일정 하나).
-    내보낼 바이트와 「편집본」 판정은 `memo_key`(편집본 세대·출발점·저장본 토큰) 열쇠로 세션
-    메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms 가
-    들었다(개편 명세 8장).
+    내보낼 바이트와 「편집본」 판정은 **표마다** 그 표 열쇠(`memo_keys` — 설비 마스터 · 기존
+    보유대수 · 비가동 일정 차례, 그 표 세대·출발점·저장본 토큰·리비전)로 세션
+    메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms
+    가 들었고(개편 명세 8장), 설비 마스터 칸 하나를 고친 회차가 다른 두 표를 다시 직렬화하지
+    않는다.
 
     내보내는 것은 **편집 버퍼**(설비 마스터 표가 보여 주는 편집본)이지 저장된 리비전이 아니다.
     사용자가 「지금 보는 것」을 받아야 Excel 에서 고쳐 되돌리는 왕복이 맞아떨어지고, 저장본과 같을
@@ -2799,29 +2836,34 @@ def _render_current_data_downloads(
         return serializers[position](frame)
 
     memo = st.session_state.get(GRID_MEMO_KEY)
-    cached = memo.get("downloads") if isinstance(memo, dict) else None
-    if (
-        isinstance(memo, dict)
-        and memo.get("downloads_key") == memo_key
-        and isinstance(cached, tuple)
-        and len(cached) == 2
+    stored_memo = dict(memo) if isinstance(memo, dict) else {}
+    found: list[tuple[bytes, bool]] = []
+    built = False
+    for position, (frame, saved_frame) in enumerate(
+        (
+            (buffered_equipment, saved_equipment),
+            (buffered_baseline, saved_baseline),
+            (buffered_downtime, saved_downtime),
+        )
     ):
-        payloads, edited = cached
-    else:
-        payloads = tuple(
-            table_bytes(position, frame)
-            for position, frame in enumerate(
-                (buffered_equipment, buffered_baseline, buffered_downtime)
-            )
-        )
-        edited = payloads != tuple(
-            table_bytes(position, frame)
-            for position, frame in enumerate((saved_equipment, saved_baseline, saved_downtime))
-        )
-        stored_memo = dict(memo) if isinstance(memo, dict) else {}
-        stored_memo["downloads_key"] = memo_key
-        stored_memo["downloads"] = (payloads, edited)
+        name = f"downloads_{position}"
+        cached = stored_memo.get(name)
+        if (
+            stored_memo.get(f"{name}_key") == memo_keys[position]
+            and isinstance(cached, tuple)
+            and len(cached) == 2
+        ):
+            found.append(cached)
+            continue
+        payload = table_bytes(position, frame)
+        found.append((payload, payload != table_bytes(position, saved_frame)))
+        stored_memo[f"{name}_key"] = memo_keys[position]
+        stored_memo[name] = found[-1]
+        built = True
+    if built:
         st.session_state[GRID_MEMO_KEY] = stored_memo
+    payloads = tuple(payload for payload, _ in found)
+    edited = any(differs for _, differs in found)
     basis = _saved_basis_words(latest_snapshot, scenario_name) if latest_snapshot else "저장본 없음"
     state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
     # 값 한 줄(무엇을 내려받나), 편집본이 언제 드는지 · 되붙이는 법은 풍선이다(UI-TXT-01).

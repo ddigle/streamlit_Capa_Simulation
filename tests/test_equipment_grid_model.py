@@ -391,6 +391,63 @@ def test_changed_cells_carry_the_saved_text_and_new_rows_are_tagged() -> None:
     assert (counts.cells, counts.new, counts.deleted) == (2, 1, 0)
 
 
+def test_changed_positions_find_only_the_rows_whose_values_changed() -> None:
+    """바뀐 줄 자리 — 빈 값끼리는 같고, 줄 수 · 칸 · dtype 이 다르면 None(통째로 다시 본다)."""
+    before = pd.DataFrame(
+        {
+            "설비명": pd.array(["A", "B", None, "D"], dtype="string"),
+            "반입일정": pd.Series(
+                [pd.Timestamp("2026-01-01"), pd.NaT, pd.NaT, pd.Timestamp("2026-02-01")]
+            ),
+            "반입상태": ["계획", None, "완료", "확정"],
+        }
+    )
+    after = before.copy()
+    assert eg.changed_positions(before, after) == []
+    after.loc[1, "반입일정"] = pd.Timestamp("2026-03-01")
+    after.loc[3, "반입상태"] = "완료"
+    assert eg.changed_positions(before, after) == [1, 3]
+    assert eg.changed_positions(None, after) is None
+    assert eg.changed_positions(before, after.iloc[:3]) is None
+    assert eg.changed_positions(before, after.astype({"반입상태": "string"})) is None
+
+
+def test_a_view_built_on_the_previous_changed_memo_is_the_view_built_from_scratch() -> None:
+    """「바뀐 칸」 은 두 글 줄이 그대로인 줄만 앞 회차 것을 쓴다(`changed_memo`) — 글 행렬을
+    바뀐 줄만 갈아 끼우는(`text_matrix_since`) 다음 회차의 표 모양은 처음부터 낸 것과 같다."""
+    saved = _saved()
+    frames = _copy(saved)
+    frames[1].loc[0, "담당자"] = "담당B"
+    context = eg.GridContext(base="t#1", scenario_name="운영")
+    saved_texts = eg.text_matrix(saved[1])
+    first = eg.text_matrix_since(None, frames[1])
+    view = eg.build_grid_view(
+        eg.GridSource(frames=frames, saved=saved, texts=(first.rows, saved_texts)), context
+    )
+    master = frames[1].copy()
+    master.loc[0, "담당자"] = saved[1].loc[0, "담당자"]
+    master.loc[2, "메모1"] = "새 메모"
+    frames = (frames[0], master, frames[2])
+    second = eg.text_matrix_since(first, master)
+    assert second.rows[1] is first.rows[1] and second.rows[0] is not first.rows[0]
+    reused = eg.build_grid_view(
+        eg.GridSource(
+            frames=frames,
+            saved=saved,
+            texts=(second.rows, saved_texts),
+            changed_memo=view.changed_memo,
+        ),
+        context,
+    )
+    fresh = eg.build_grid_view(eg.GridSource(frames=frames, saved=saved), context)
+    assert reused.marks == fresh.marks and reused.values == fresh.values
+    ids = reused.index.ids
+    assert not reused.marks[ids[0]].changed
+    assert reused.marks[ids[2]].changed == {
+        eg.COLUMN_INDEX["메모1"]: saved_texts[2][eg.COLUMN_INDEX["메모1"]]
+    }
+
+
 def test_deleted_units_show_their_saved_values_and_lock_every_cell() -> None:
     saved = _saved()
     frames = _copy(saved)

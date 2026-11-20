@@ -124,6 +124,7 @@ from capa_simulation.components.equipment_data_workspace import (
     stale_save_refusal,
     stamp_layout_role,
     table_editable,
+    table_generations,
     table_lock,
 )
 from capa_simulation.components.equipment_data_workspace import (
@@ -184,6 +185,7 @@ from capa_simulation.services.equipment_bulk_delete import (
     DOWNTIME_TARGET,
 )
 from capa_simulation.services.equipment_contract import (
+    ACTUAL_STAGES,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
@@ -209,6 +211,7 @@ from capa_simulation.services.equipment_grid import (
     build_grid_view,
     cell_text,
     change_counts,
+    changed_positions,
     changes_data,
     copied_draft,
     copy_source,
@@ -249,10 +252,11 @@ from capa_simulation.services.grid_outbox import this_session
 from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import assumption_group_refusal
 from capa_simulation.services.schedule_confirmation import (
-    CONFIRMATION_KIND_COLUMN,
-    STAGE_COLUMN,
+    CONFIRMATION_INPUT_COLUMNS,
+    CONFIRMATION_KINDS,
+    row_confirmation_words,
+    rowwise_confirmation,
 )
-from capa_simulation.services.simulation_cache import get_schedule_confirmation_issues
 from capa_simulation.services.space_layout_edit import (
     buffer_matches_saved,
     module_layout_message,
@@ -546,6 +550,12 @@ def _buffer_key() -> tuple[object, ...]:
     return (equipment_buffer_generation(), buffer_base(), DRAFT_REVISION.peek())
 
 
+def _table_key(position: int) -> tuple[object, ...]:
+    """편집본 한 표(0 기존 보유대수 · 1 설비 마스터 · 2 비가동 일정)의 내용을 가르는 열쇠 — (그 표
+    세대, 출발점, 저장본 사본 쌍 토큰). 다른 표만 바뀐 회차에는 그대로다(`table_generations`)."""
+    return (table_generations()[position], buffer_base(), DRAFT_REVISION.peek())
+
+
 def _remembered(name: str, key: tuple[object, ...], build: Callable[[], T]) -> T:
     """회차 메모(`GRID_MEMO`)의 `name` 칸 — 열쇠가 같으면 그 값, 다르면 `build()` 로 새로 적는다.
     값은 기본형(튜플 · 글 · 수)만 둔다(모델 인스턴스를 세션에 두지 않는다)."""
@@ -553,7 +563,8 @@ def _remembered(name: str, key: tuple[object, ...], build: Callable[[], T]) -> T
     if memo.get(f"{name}_key") == key and name in memo:
         return cast(T, memo[name])
     value = build()
-    fresh = dict(memo)
+    # 짓는 사이 다른 칸이 메모에 적혔을 수 있다 — 지은 뒤의 메모 위에 적는다.
+    fresh = dict(GRID_MEMO.get())
     fresh[f"{name}_key"] = key
     fresh[name] = value
     GRID_MEMO.set(fresh)
@@ -588,9 +599,9 @@ def _table_errors(
 ) -> list[str]:
     """표 단위로 저장을 막는 것 — 기존 보유대수·비가동 일정(칸 단위로 그리지 않는다)·예시 행·모듈
     묶음 바둑판·가정 세션 묶음 거부·낡은 세션의 지운 호기(개편 명세 5-2·4-5). 앞 셋(편집본 세 표만
-    보는 것)은 편집본 열쇠(`_buffer_key`)로 회차 메모에 한 번 — 뒤 셋은 이름 바꿈 · 묶음 승인 ·
+    보는 것)은 그 표 열쇠로 회차 메모에 한 번(`_frame_errors`) — 뒤 셋은 이름 바꿈 · 묶음 승인 ·
     잠금처럼 편집본 밖 칸도 보아 회차마다 본다."""
-    errors = list(_remembered("frame_errors", _buffer_key(), partial(_frame_errors, frames)))
+    errors = list(_frame_errors(frames))
     violations = saved_master_violations(frames[1])
     if violations:
         errors.append(module_layout_message(violations))
@@ -615,20 +626,19 @@ def _table_errors(
 
 def _frame_errors(frames: Frames) -> tuple[str, ...]:
     """`_table_errors` 의 앞 셋 — 편집본 세 표만 본다(기존 보유대수 · 비가동 일정 정규화 · 예시
-    행)."""
-    errors: list[str] = []
-    try:
-        prepare_equipment_baseline(frames[0])
-    except ValueError as exc:
-        errors.append(f"기존 보유대수 — {exc}")
-    names = frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    try:
-        prepare_downtime_for_prepared_equipment(
-            frames[2], pd.DataFrame({EQUIPMENT_ID_COLUMN: names.dropna().tolist()})
+    행). 기존 보유대수 둘은 그 표 열쇠로, 비가동 일정은 그 표 열쇠 + 설비 마스터 설비명(그 판정의
+    재료 그대로)으로 회차 메모에 한 번이다 — 설비 마스터 칸 하나를 고친 회차가 두 표를 다시 보지
+    않는다."""
+    errors = [*_remembered("baseline_errors", _table_key(0), partial(_baseline_errors, frames[0]))]
+    names = tuple(frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna().tolist())
+    errors.extend(
+        _remembered(
+            "downtime_errors",
+            (*_table_key(2), names),
+            partial(_downtime_errors, frames[2], names),
         )
-    except ValueError as exc:
-        errors.append(f"비가동 일정 — {exc}")
-    examples = _example_row_count(frames)
+    )
+    examples = _remembered("example_rows", _table_key(0), partial(_example_row_count, frames))
     if examples:
         errors.append(
             f"기존 보유대수에 손대지 않은 예시 행 {examples:,}건 — 표 고르기 「기존 보유대수」 "
@@ -638,43 +648,110 @@ def _frame_errors(frames: Frames) -> tuple[str, ...]:
     return tuple(errors)
 
 
+def _baseline_errors(baseline: pd.DataFrame) -> tuple[str, ...]:
+    try:
+        prepare_equipment_baseline(baseline)
+    except ValueError as exc:
+        return (f"기존 보유대수 — {exc}",)
+    return ()
+
+
+def _downtime_errors(downtime: pd.DataFrame, names: tuple[str, ...]) -> tuple[str, ...]:
+    try:
+        prepare_downtime_for_prepared_equipment(
+            downtime, pd.DataFrame({EQUIPMENT_ID_COLUMN: list(names)})
+        )
+    except ValueError as exc:
+        return (f"비가동 일정 — {exc}",)
+    return ()
+
+
 def _alerts(
     master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
 ) -> dict[str, str]:
     """설비명 → 일정 확인 갈래 글(「Qual 미확인 · 반입 실적 누락」) — 저장을 막지 않는다. 가정 설비
-    시나리오면 공식 일정 기준이다(`official`). 편집본 열쇠 · 공식 스냅샷 토큰 · 오늘로 회차 메모에
-    한 번(메모에는 (설비명, 글) 튜플로 둔다)."""
-    key = (*_buffer_key(), official.token if official is not None else None, today.isoformat())
-    pairs = _remembered("alerts", key, partial(_alert_pairs, master, official, today))
+    시나리오면 공식 일정 기준이다(`official`).
+
+    **바뀐 줄만 다시 본다.** 판정은 줄마다 그 줄의 설비명 · 단계 칸과 오늘로만 정해지므로
+    (`row_confirmation_words`) 앞 회차의 판정 재료(그 칸 사본)와 줄마다 견주어 바뀐 줄만 다시
+    판정하고 나머지 줄의 낱말은 그대로 쓴다. 출발점 · 저장본 토큰 · 오늘이 바뀌거나 줄 수가 바뀌면
+    처음부터 본다. 같은 설비명의 낱말은 확인구분 → 단계 차례로 한 번씩 잇는다(통째로 본 일정 확인
+    목록에서 설비명마다 낱말을 모은 것과 같다)."""
+    frame = confirmation_master(master, official)
+    columns = [column for column in CONFIRMATION_INPUT_COLUMNS if column in frame.columns]
+    material = frame.loc[:, columns].reset_index(drop=True)
+    key = (buffer_base(), DRAFT_REVISION.peek(), today.isoformat())
+    memo = GRID_MEMO.get()
+    kept = memo.get("alert_rows")
+    previous = kept if isinstance(kept, dict) and kept.get("key") == key else None
+    prior = previous.get("material") if previous is not None else None
+    positions = changed_positions(prior if isinstance(prior, pd.DataFrame) else None, material)
+    if previous is not None and positions == []:
+        pairs = previous.get("pairs")
+        if isinstance(pairs, tuple):
+            return dict(pairs)
+    names = (
+        material[EQUIPMENT_ID_COLUMN].astype("string").str.strip().tolist()
+        if EQUIPMENT_ID_COLUMN in material.columns
+        else [None] * len(material)
+    )
+    if previous is None or positions is None or not rowwise_confirmation(material):
+        words = row_confirmation_words(material, today=today)
+    else:
+        words = list(previous["words"])
+        fresh = row_confirmation_words(material.iloc[positions], today=today)
+        for position, found in zip(positions, fresh, strict=True):
+            words[position] = found
+    pairs = _alert_pairs(names, words)
+    GRID_MEMO.set(
+        {
+            **memo,
+            "alert_rows": {
+                "key": key,
+                "material": material,
+                "words": tuple(words),
+                "pairs": pairs,
+            },
+        }
+    )
     return dict(pairs)
 
 
+# 일정 확인 낱말의 차례 — 확인구분 → 단계(`row_confirmation_words` 가 한 줄 안에서 낸 차례).
+_ALERT_WORD_ORDER: Final = {
+    f"{stage.label} {kind}": order
+    for order, (kind, stage) in enumerate(
+        (kind, stage) for kind in CONFIRMATION_KINDS for stage in ACTUAL_STAGES
+    )
+}
+
+
 def _alert_pairs(
-    master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
+    names: Sequence[object], words: Sequence[tuple[str, ...]]
 ) -> tuple[tuple[str, str], ...]:
-    issues = get_schedule_confirmation_issues(confirmation_master(master, official), today=today)
-    alerts: dict[str, list[str]] = {}
-    for name, stage, kind in zip(
-        issues[EQUIPMENT_ID_COLUMN].tolist(),
-        issues[STAGE_COLUMN].tolist(),
-        issues[CONFIRMATION_KIND_COLUMN].tolist(),
-        strict=True,
-    ):
-        words = alerts.setdefault(cell_text(name), [])
-        word = f"{stage} {kind}"
-        if word not in words:
-            words.append(word)
-    return tuple((name, " · ".join(words)) for name, words in alerts.items() if name)
+    """줄마다 낱말을 설비명으로 모은 (설비명, 글) — 같은 설비명의 낱말은 차례대로 한 번씩."""
+    found: dict[str, set[str]] = {}
+    for name, row_words in zip(names, words, strict=True):
+        if not row_words or not isinstance(name, str) or not name:
+            continue
+        found.setdefault(cell_text(name), set()).update(row_words)
+    return tuple(
+        (name, " · ".join(sorted(items, key=_ALERT_WORD_ORDER.__getitem__)))
+        for name, items in found.items()
+        if name
+    )
 
 
 def _others(frames: Frames, saved: Frames) -> str:
-    """편집본 밖 두 표 · 층 배치 · FAB 의 저장 전 변경 한 줄. 두 표의 바뀐 행 수는 편집본 열쇠로
-    회차 메모에 한 번이다(층 배치 · FAB 대기분은 세대를 올리지 않아 회차마다 읽는다)."""
+    """편집본 밖 두 표 · 층 배치 · FAB 의 저장 전 변경 한 줄. 두 표의 바뀐 행 수는 표마다 그 표
+    열쇠(`_table_key`)로 회차 메모에 한 번이다 — 설비 마스터만 고친 회차는 두 표를 다시 견주지
+    않는다(층 배치 · FAB 대기분은 표 세대를 올리지 않아 회차마다 읽는다)."""
     parts: list[str] = []
-    baseline, downtime = _remembered(
-        "other_rows",
-        _buffer_key(),
-        lambda: (_changed_rows(saved[0], frames[0]), _changed_rows(saved[2], frames[2])),
+    baseline = _remembered(
+        "baseline_rows", _table_key(0), partial(_changed_rows, saved[0], frames[0])
+    )
+    downtime = _remembered(
+        "downtime_rows", _table_key(2), partial(_changed_rows, saved[2], frames[2])
     )
     if baseline:
         parts.append(f"기존 보유대수 {baseline:,}행")
@@ -701,9 +778,19 @@ def build_view(
     confirmation_official: EquipmentSnapshot | None,
     layout: LayoutMode,
 ) -> GridView:
-    """이 회차의 표 모양 — 세 마운트 data 가 모두 여기서 나온다."""
+    """이 회차의 표 모양 — 세 마운트 data 가 모두 여기서 나온다. 재료는 저마다 바뀐 것만 다시
+    낸다 — 글 행렬(바뀐 칸 · 줄), 칸 결과(바뀐 칸), 일정 확인(바뀐 줄), 표 단위 오류 · 다른 두 표
+    바뀐 행 수(그 표 세대), 「바뀐 칸」 표지(두 글 줄이 그대로인 줄은 앞 회차 것 — 출발점 · 저장본
+    토큰 열쇠로 회차 메모에 둔다)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     saved = _saved_frames()
+    texts = _texts(frames[1], saved[1])
+    changed_key = (buffer_base(), DRAFT_REVISION.peek())
+    memo = GRID_MEMO.get()
+    kept = memo.get("changed_rows")
+    prior = (
+        kept[1] if isinstance(kept, tuple) and len(kept) == 2 and kept[0] == changed_key else None
+    )
     source = GridSource(
         frames=frames,
         saved=saved,
@@ -713,9 +800,12 @@ def build_view(
         alerts=_alerts(frames[1], confirmation_official, today),
         table_errors=tuple(_table_errors(frames, saved, context, layout=layout)),
         others=_others(frames, saved),
-        texts=_texts(frames[1], saved[1]),
+        texts=texts,
+        changed_memo=prior if isinstance(prior, dict) else None,
     )
-    return build_grid_view(source, context)
+    view = build_grid_view(source, context)
+    GRID_MEMO.set({**GRID_MEMO.get(), "changed_rows": (changed_key, view.changed_memo)})
+    return view
 
 
 # ------------------------------------------------------------------ 받기 처리
@@ -1417,7 +1507,13 @@ def _render_data_menu(
             ),
         ):
             if target in editable:
-                render_csv_download(data=payload(), file_name=filename, key=key, label=label)
+                render_csv_download(
+                    data=_remembered(f"template:{filename}", (), payload),
+                    file_name=filename,
+                    key=key,
+                    label=label,
+                )
+        revision_id = latest_snapshot.revision.revision_id if latest_snapshot is not None else None
         _render_current_data_downloads(
             st.session_state[BUFFER_KEY],
             saved=_saved_frames(),
@@ -1425,11 +1521,10 @@ def _render_data_menu(
             database_path=str(repository.database_path),
             scenario_name=scenario_name,
             edit_note=DOWNLOAD_NOTE,
-            memo_key=(
-                equipment_buffer_generation(),
-                buffer_base(),
-                st.session_state.get(DRAFT_REVISION_KEY),
-                latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
+            memo_keys=(
+                (*_table_key(1), revision_id),
+                (*_table_key(0), revision_id),
+                (*_table_key(2), revision_id),
             ),
             targets=exported,
         )
