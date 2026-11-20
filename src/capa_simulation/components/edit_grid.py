@@ -112,7 +112,7 @@ CHANGES_BUTTON: Final = "적용 전"
 # 칸이 없을 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 ·
 # 다시 실행 · 표 밖 누름(focusout) · 창 숨김(visibilitychange) · 떠나기 신호 · 마운트 정리는 쉼을
 # 기다리지 않는다.
-SEND_MS: Final = 300
+SEND_MS: Final = 1000
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 
