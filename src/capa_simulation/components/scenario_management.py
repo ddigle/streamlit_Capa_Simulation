@@ -37,7 +37,7 @@ import streamlit as st
 from capa_simulation import alerts
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.dialog_host import DialogBody, DialogHost
+from capa_simulation.components.dialog_host import IDLE_MARKUP, DialogBody, DialogHost
 from capa_simulation.components.flash import (
     FlashKind,
     queue_flash,
@@ -380,6 +380,11 @@ OPENED_MOVED_MESSAGE = "고른 시나리오가 바뀌어 하지 않았습니다 
 OFFICIAL_PURGED_MESSAGE = (
     "팝업을 연 사이 그 시나리오가 영구 삭제돼 공식버전으로 지정하지 않았습니다."
 )
+# 오른쪽 칸 본문이 이벤트 칸(본문 밖 최상위 칸)에 쓰는 자리는 칸 · 갈래와 상관없이 하나다 — 결과
+# 칸(`render_flash`)이 서지 않는 갈래(연 시나리오 · 리비전 없음 · 공식 이력 · 보관함)는 빈
+# 스타일로 그 자리를 채운다(AGENTS 9장 「프래그먼트·이벤트 칸·토스트」 · 「구역 회차 규칙」 R5 —
+# 구역 회차는 이벤트 칸 쓰기 자리를 구역 자리로 되돌린다).
+SIDE_EVENT_FILLER = IDLE_MARKUP
 # 저장 · 모두 버리기 사이에 고친 것(옛 세대) · 다른 곳에서 차례가 바뀐 뒤의 옮기기.
 OUTBOX_LIMIT = 2000
 ORDER_MOVED_NOTICE = "목록 차례가 바뀌어 그 옮기기는 반영하지 않았습니다."
@@ -857,8 +862,10 @@ def _render_list_management(
             _render_changes(database_path, view)
         elif side == SIDE_HISTORY:
             _render_official_history(view.releases)
+            st.html(SIDE_EVENT_FILLER)
         elif side == SIDE_ARCHIVE:
             _render_archived_scenarios(repository)
+            st.html(SIDE_EVENT_FILLER)
     return official_open
 
 
@@ -875,6 +882,7 @@ def _render_check(
     그린 「넓게 보기」 단추의 열림 값을 돌려준다."""
     opened = _opened_revisions(repository, scenarios, view)
     if opened is None:
+        st.html(SIDE_EVENT_FILLER)
         return ()
     summary, revisions, draft = opened
     return render_input_check_panel(
@@ -1225,6 +1233,7 @@ def _render_detail(
 
     opened = _opened_revisions(repository, scenarios, view)
     if opened is None:
+        st.html(SIDE_EVENT_FILLER)
         return False
     summary, revisions, draft = opened
     revision_by_id = {revision.revision_id: revision for revision in revisions}
@@ -1247,6 +1256,7 @@ def _render_detail(
     picked = revision_by_id.get(picked_id) if picked_id is not None else None
     if not revisions:
         st.caption("이 시나리오에 저장된 리비전이 없습니다.")
+        st.html(SIDE_EVENT_FILLER)
     else:
         # 불러오는 입구가 둘이다 — 이 칸과 사이드바 시나리오 팝업. 확인 절차와 글자를 맞춘다
         # (`components/scenario_status.py`): 미저장 변경이 있으면 버린다는 체크를 받는다.
