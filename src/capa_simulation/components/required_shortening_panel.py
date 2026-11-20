@@ -186,6 +186,7 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
 from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.manual_downtime import (
     manual_effect_band,
@@ -1220,7 +1221,12 @@ def _here() -> str:
     return tab_label(REQUIRED_SHORTENING)
 
 
-def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _StatusNote | None:
+def _undated_note(
+    equipment: pd.DataFrame,
+    chosen: Sequence[str] | None,
+    *,
+    reversed_ids: frozenset[str] = frozenset(),
+) -> _StatusNote | None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비. 0대면 None.
 
     짧은 글은 「일정 미정 N대 (미정구분)」(Main·Static 대비 일정과 같은 표지 —
@@ -1230,15 +1236,29 @@ def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _Sta
     반입만 빈 호기는 Qual 일정이 있어 후보이므로 그 말을 하지 않는다. 범위는 사용기준 밖과 같다:
     공정을 고르면 그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 일정 기준
     가용이 없어 「맞대지 못한 공정」에만 남기 때문이다.
+
+    `reversed_ids` 는 Static 기준 계획이 역산한 모듈 행의 설비명이다
+    (`StaticQualSchedule.reversed_ids` — 설비 마스터 기준은 빈 값). 그 행은 세지 않는다 — 일정
+    미정이어도 역산 마감을 받아 가용에 들거나(반입일정은 보지 않는다) 남는 호기로 추가N 보다 먼저
+    단축 후보가 되어(보드 답 Q08 · Q11 (가)) 위 두 말이 맞지 않는다. 남는 호기는 Static 역산 상태
+    알림(`RS-07`)이 알린다. 역산하지 않는 행(Static 행이 없는 공정 · Qual 이 끝난 것으로 보는
+    호기)은 그대로 센다.
     """
     try:
         undated = simulation_cache.get_undated_equipment(equipment)
     except ValueError:
         return None
-    detail = undated_equipment_mark(undated, processes=chosen)
+    kept: set[str] | None = None
+    if reversed_ids:
+        kept = {
+            str(raw)
+            for raw in undated[EQUIPMENT_ID_COLUMN].dropna()
+            if str(raw).strip() not in reversed_ids
+        }
+    detail = undated_equipment_mark(undated, processes=chosen, unit_ids=kept)
     if detail is None:
         return None
-    note = undated_candidate_note(undated, processes=chosen)
+    note = undated_candidate_note(undated, processes=chosen, unit_ids=kept)
     meaning = UNDATED_HELP + (f" {note}" if note else "")
     return _StatusNote(
         text=f"{detail} — 가용대수에 세지 않음 · {_UNDATED_FIX}",
@@ -1337,10 +1357,19 @@ def _report_status_alerts(
         prepared.context.active_scenario, (months[0], months[-1]) if months else None
     )
 
-    undated = _undated_note(equipment, chosen)
+    # Static 기준은 역산한 일정 미정 호기를 세지 않는다(`_undated_note`). 기준을 범위에 실어 전환이
+    # 앞 줄을 「해소」 가 아니라 「범위 바뀜」 으로 닫는다(`RS-07` 과 같다). 설비 마스터 기준 계획도
+    # 흐린 표지용 역산을 들 수 있어 계획의 기준으로 가른다.
+    plan = prepared.plan
+    reversed_ids = (
+        plan.static_schedule.reversed_ids
+        if plan.basis == BASIS_STATIC and plan.static_schedule is not None
+        else frozenset[str]()
+    )
+    undated = _undated_note(equipment, chosen, reversed_ids=reversed_ids)
     alerts.state(
         "RS-03",
-        scope=fleet,
+        scope={**fleet, "basis": plan.basis},
         content=None if undated is None else undated.content,
         active=undated is not None,
         text=None if undated is None else undated.text,

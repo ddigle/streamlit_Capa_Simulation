@@ -206,6 +206,27 @@ def test_a_spare_unit_without_a_current_date_is_painted_as_needed() -> None:
     assert summary.max_days == 12
 
 
+def test_a_floor_with_only_spare_units_shows_no_longest_days() -> None:
+    """남는 호기뿐인 공정 · 층은 당길 날수가 없다 — 칩 · 층 줄 · FAB 요약 · 층 목록 표가
+    「최대 −0일」 로 읽히지 않게 그 몫을 뺀다(가장 긴 날수 None)."""
+    from capa_simulation.components.space_shortening_view import layer_table_columns
+
+    plan = _plan(
+        {1.1: [_unit("W/B", "WB07", days=None, left=9)]},
+        [_master_row("WB07", "W/B", "C1", "2F")],
+    )
+    layer = build_shortening_layer(plan, 1.1, today=plan.today, imminent_days=30)
+    rows = _rows([("WB07", None, "W/B", "C1", "2F")])
+    result = floor_layer(layer, rows, EMPTY_ROWS, focus=None, dim_others=True)
+    assert result.max_days is None
+    assert result.chips["W/B"] == "W/B · 1대"
+    counts = fab_floor_counts(layer, rows, EMPTY_ROWS)
+    assert counts[("C1", "2F")].units == 1 and counts[("C1", "2F")].max_days is None
+    assert floor_short_line(counts[("C1", "2F")]) == "단축 1대"
+    assert fab_layer_summary(layer, rows, processes=None).max_days is None
+    assert layer_table_columns(counts)[("C1", "2F")]["최대 단축(일)"] is None
+
+
 # ------------------------------------------------------------------ T-U3 모듈 묶음 배지 하나
 
 

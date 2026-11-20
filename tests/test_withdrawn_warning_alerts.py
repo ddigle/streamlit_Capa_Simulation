@@ -690,7 +690,8 @@ def codes_sent_by(
 ) -> set[str]:
     """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이고,
     상태 코드는 모듈 글 묶음(`groups`)을 도는 `for` 의 이름이거나 `Literal` 로 적은 매개변수여도
-    된다(묶음 · 그 글들을 모두 보낸다)."""
+    된다(묶음 · 그 글들을 모두 보낸다). 상태 알림은 `alerts.state` 와, 여러 표지를 한 자리에 싣는
+    `alerts.state_note`(`alerts.emit` 이 보낸다 — 인자가 같다) 둘 다 센다."""
     known = constants or {}
     looped = {
         **_literal_params(function),
@@ -713,7 +714,7 @@ def codes_sent_by(
             alert = _keyword(node, "alert", known)
             kind = _keyword(node, "kind", known) or "success"
             codes.add(str(alert) if alert else alerts.FLASH_CODES[str(kind)])
-        elif route == "state" and _called(node) == "state" and node.args:
+        elif route == "state" and _called(node) in ("state", "state_note") and node.args:
             first = _text(node.args[0], known)
             if isinstance(first, str):
                 codes.add(first)

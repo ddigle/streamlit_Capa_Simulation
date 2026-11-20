@@ -94,6 +94,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
+from capa_simulation.services.static_qual_schedule import reverse_targets
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, NO_PROCESS_MARK
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
@@ -628,6 +629,61 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     assert not any("일정 미정" in str(item.value) for item in narrowed.main.caption)
     assert active_state(narrowed, "RS-03") is None
     assert states(narrowed, "RS-03")
+    clear_equipment_repository()
+
+
+def test_static_basis_does_not_announce_the_undated_units_it_reverses(tmp_path: Path) -> None:
+    """보드 답 Q08 · Q11 (가) — Static 기준은 일정 미정 호기도 역산해 마감을 주거나(가용에 든다 —
+    반입일정은 보지 않는다) 남는 호기로 추가N 보다 먼저 단축 후보에 둔다. 그래서 「가용대수에 세지
+    않음 · 단축 후보에도 들지 않습니다」(`RS-03`)를 내지 않는다. 설비 마스터로 바꾸면 그 알림이 전과
+    같은 글로 서고, 기준이 범위에 들어 전환은 앞 줄을 「범위 바뀜」 으로 닫는다."""
+    database_path = _database(tmp_path)
+    sample = sample_equipment_master()
+    master = pd.concat([sample, sample.iloc[[0]]], ignore_index=True)
+    last = master.index[-1]
+    master.loc[last, "설비명"] = "UNDATED-NEW-01"
+    blank = [
+        "반입일정",
+        "반입실적",
+        "Qual일정",
+        "Qual실적",
+        "Qual상태",
+        "정지일정",
+        "반출/이설일정",
+        "X좌표",
+        "Y좌표",
+    ]
+    master.loc[last, [*blank, "Xsize", "Ysize"]] = None
+    master.loc[last, ["기존설비여부", "보관유무", "레이아웃표시"]] = "N"
+    master.loc[last, "사용기준"] = "HBM"
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(), master, empty_downtime_schedule(), note="일정 미정 호기"
+    )
+    # 전제 — 이 호기는 Static 기준에서 역산된다(Qual 이 끝나지 않았고, 공정에 Cut-off 와 Static
+    # 행이 있다 — `_database` 가 모든 공정에 Cut-off 를, `_run_static` 이 모든 공정 · 달에 Static 을
+    # 싣는다). 아니면 알림이 없는 까닭이 이 규칙이 아니게 된다.
+    (target,) = [unit for unit in reverse_targets(master) if "UNDATED-NEW-01" in unit.equipment_ids]
+    assert target.master_qual is None
+
+    app = _run_static(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_BASIS_KEY] == "Static"
+    assert active_state(app, "RS-03") is None
+    (static_note,) = states(app, "RS-03")
+
+    app = app.sidebar.button_group(key=SHORTENING_BASIS_KEY).set_value("설비 마스터").run()
+    assert not app.exception, [element.message for element in app.exception]
+    note = active_state(app, "RS-03")
+    assert note is not None
+    assert note["short"] == (
+        "일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음 · 설비 마스터 일정 칸"
+    )
+    assert (
+        "날짜가 들어올 때까지 가용대수에 세지 않습니다. 단축 후보에도 들지 않습니다."
+        in note["full"]
+    )
+    assert note["scope"] != static_note["scope"]
     clear_equipment_repository()
 
 

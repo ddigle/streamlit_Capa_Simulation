@@ -557,5 +557,9 @@ def test_a_baseline_keeps_its_basis_and_is_compared_on_that_basis(tmp_path: Path
     assert "현재 일정 기준 Static — 이 기준으로 견줌(전환은 설비 마스터)" in body
     captions = [str(item.value) for item in app.caption]
     assert any("Static 역산 가용(환산) · 오늘" in caption for caption in captions)
-    # 같은 기준이면 견줄 것이 없다 — 변동 없음.
-    assert "변동 없음" in body
+    # 같은 기준이면 견줄 것이 없다 — 합계 변화 칸이 「변동 없음」 이고 악화 · 신규 · 해소가 0 이다.
+    # 「변동 없음 n」 세는 칸은 늘 서므로 그 글만으로는 아무것도 막지 못한다 — 다른 기준(설비
+    # 마스터)의 계획과 견주면 이 표본에서 합계 변화 칸이 바뀌어 아래 단언이 깨진다.
+    assert re.search(r'class="shk-prog-change"[^>]*>변동 없음</span>', body)
+    for label in ("개선", "악화", "신규", "해소"):
+        assert f"<b>{label} 0</b>" in body, label

@@ -652,7 +652,7 @@ def render_fab_layer_summary(
         f"목표 {_percent(space_layer.layer.level)}",
         f"단축 {summary.total}대({' · '.join(where)})",
     ]
-    if summary.total:
+    if summary.max_days is not None:
         parts.append(f"최대 −{summary.max_days}일")
     parts.append(f"기한 지남 {summary.expired}")
     if summary.expired_months:
@@ -894,7 +894,7 @@ def render_floor_layer_panel(
         focus = floor_layer.focus
         scope = "이 층" if focus is None else f"이 층 · {literal_markdown(focus)}"
         parts = [f"{scope} · 목표 {_percent(level)}", f"단축 {len(rows) + len(loose)}대"]
-        if rows or loose:
+        if floor_layer.max_days is not None:
             parts.append(f"최대 −{floor_layer.max_days}일")
         if virtuals:
             parts.append(f"추가 {len(virtuals)}")
@@ -1005,7 +1005,11 @@ def layer_table_columns(counts: Mapping[FloorKey, Any]) -> dict[FloorKey, dict[s
         count = counts.get(key)
         out[key] = {
             "단축 호기": int(count.units) if count is not None else 0,
-            "최대 단축(일)": int(count.max_days) if count is not None and count.units else None,
+            "최대 단축(일)": (
+                int(count.max_days)
+                if count is not None and count.units and count.max_days is not None
+                else None
+            ),
             "기한 지남": int(count.expired) if count is not None else 0,
             "추가 호기": int(count.virtual) if count is not None else 0,
         }

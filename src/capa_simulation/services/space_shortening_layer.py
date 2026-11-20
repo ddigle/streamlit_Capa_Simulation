@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Final
@@ -68,6 +68,7 @@ __all__ = [
     "fab_layer_summary",
     "floor_layer",
     "floor_short_line",
+    "longest_days",
     "shortening_space_floors",
 ]
 
@@ -379,14 +380,24 @@ class FloorLayer:
     focus: str | None = None
 
     @property
-    def max_days(self) -> int:
-        return max((mark.days or 0 for mark in (*self.rows, *self.unplaced)), default=0)
+    def max_days(self) -> int | None:
+        """가장 긴 당길 날수. 당길 날수가 있는 호기가 없으면(남는 호기뿐) None(`longest_days`)."""
+        return longest_days(mark.days for mark in (*self.rows, *self.unplaced))
+
+
+def longest_days(days: Iterable[int | None]) -> int | None:
+    """가장 긴 당길 날수. 날수가 없는 호기(Static 기준의 남는 호기 — 현재 일정이 없어 당길 날수가
+    없다, 보드 답 Q11 (가))는 보지 않고, 그런 호기뿐이면 None 이다 — 「최대 −0일」 로 적지 않게
+    부르는 쪽이 그 글을 뺀다."""
+    dated = [day for day in days if day is not None]
+    return max(dated) if dated else None
 
 
 def _chip_text(process: str, marks: Sequence[ShorteningMark], virtual: int, late: int) -> str:
     parts = [process]
     if marks:
-        parts.append(f"{len(marks)}대 최대 −{max(mark.days or 0 for mark in marks)}일")
+        longest = longest_days(mark.days for mark in marks)
+        parts.append(f"{len(marks)}대" + ("" if longest is None else f" 최대 −{longest}일"))
     if virtual:
         parts.append(f"추가 {virtual}")
     if late:
@@ -508,7 +519,8 @@ class FloorCount:
     """FAB 층 하나의 단축 대수 — 블록 셋째 줄·층 목록 표 칸 넷."""
 
     units: int = 0
-    max_days: int = 0
+    max_days: int | None = None
+    """가장 긴 당길 날수 — 당길 날수가 있는 호기가 없으면 None(`longest_days`)."""
     expired: int = 0
     virtual: int = 0
     unplaced: int = 0
@@ -547,10 +559,12 @@ def fab_floor_counts(
         if spot is None or spot in blocked:
             continue
         tally = tallies.setdefault(
-            spot, {"units": 0, "max": 0, "expired": 0, "virtual": 0, "loose": 0}
+            spot, {"units": 0, "max": 0, "dated": 0, "expired": 0, "virtual": 0, "loose": 0}
         )
         tally["units"] += 1
-        tally["max"] = max(tally["max"], mark.days or 0)
+        if mark.days is not None:
+            tally["max"] = max(tally["max"], mark.days)
+            tally["dated"] += 1
         tally["expired"] += int(mark.bucket == BUCKET_EXPIRED)
         tally["loose"] += int(is_loose)
     by_process = _process_floors(counted)
@@ -559,13 +573,13 @@ def fab_floor_counts(
             continue
         for spot in by_process.get(unit.process, set()) - blocked:
             tally = tallies.setdefault(
-                spot, {"units": 0, "max": 0, "expired": 0, "virtual": 0, "loose": 0}
+                spot, {"units": 0, "max": 0, "dated": 0, "expired": 0, "virtual": 0, "loose": 0}
             )
             tally["virtual"] += 1
     return {
         key: FloorCount(
             units=tally["units"],
-            max_days=tally["max"],
+            max_days=tally["max"] if tally["dated"] else None,
             expired=tally["expired"],
             virtual=tally["virtual"],
             unplaced=tally["loose"],
@@ -576,12 +590,14 @@ def fab_floor_counts(
 
 def floor_short_line(count: FloorCount | None) -> str | None:
     """FAB 층 블록 셋째 줄 「단축 3대 · 최대 −18일 · 지남 1 · 추가 2」. 대수가 없으면 None(빈 줄
-    없음)."""
+    없음). 당길 날수가 있는 호기가 없으면(남는 호기뿐) 「최대」 를 빼고 「단축 n대」 다."""
     if count is None or (count.units == 0 and count.virtual == 0):
         return None
     parts = []
-    if count.units:
+    if count.units and count.max_days is not None:
         parts.append(f"단축 {count.units}대 · 최대 −{count.max_days}일")
+    elif count.units:
+        parts.append(f"단축 {count.units}대")
     if count.expired:
         parts.append(f"지남 {count.expired}")
     if count.virtual:
@@ -596,7 +612,8 @@ class FabSummary:
     total: int
     drawn: int
     unplaced: int
-    max_days: int
+    max_days: int | None
+    """가장 긴 당길 날수 — 당길 날수가 있는 호기가 없으면 None(`longest_days`)."""
     expired: int
     virtual: int
     filtered_out: int
@@ -622,7 +639,7 @@ def fab_layer_summary(
         total=len(scoped),
         drawn=len(on_floor),
         unplaced=len(scoped) - len(on_floor),
-        max_days=max((mark.days or 0 for mark in scoped), default=0),
+        max_days=longest_days(mark.days for mark in scoped),
         expired=sum(1 for mark in scoped if mark.bucket == BUCKET_EXPIRED),
         virtual=sum(1 for unit in layer.virtuals if _in_scope(unit.process, processes)),
         filtered_out=len(layer.marks) - len(scoped),
