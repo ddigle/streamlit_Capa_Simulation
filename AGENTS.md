@@ -2340,7 +2340,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
-  벌), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
+  벌) · 비밀번호를 보내기 전에 끊긴 시작 시도가 몇 번째 다시 시도였나 `retry`(처음 시도 · 옛 파일은 0 — 「서버 시작 점검」 진단 줄 끝 「다시 시도 n/3」), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
   시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
   에 들되 키가 없어 꺼진 줄은 기능 상태라 세지 않는다 `LoginStart.counted`)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
   의 계정 넣는 자리 이름이기도 하다 — 알림 글이 그 이름으로 가리킨다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
