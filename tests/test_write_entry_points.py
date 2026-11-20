@@ -140,6 +140,11 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/extra_process_admin.py", "_write_active", "record_extra_process_write"): (
         SAME_REPLACE
     ),
+    # 「놓인 파일 같음」 도 넣기만 하고, 누른 회차에 판 이력을 다시 읽어 아직 S3 Drive 에 없는
+    # 「새 판」 일 때만 적는다 — 겹친 둘째 누름은 이미 적은 것을 보고 적지 않는다.
+    (f"{_PARTS}/extra_process_admin.py", "_note_placed", "record_extra_process_placed"): (
+        SAME_REPLACE
+    ),
     (
         f"{_PARTS}/equipment_scenario_management.py",
         "_render_branch",

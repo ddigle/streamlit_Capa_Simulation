@@ -22,6 +22,7 @@ from test_extra_process_registration import apply_template, register
 
 from capa_simulation.components.extra_process_admin import (
     APPLY_BUTTON_KEY,
+    IMPORT_BUTTON_KEY,
     NOT_PRODUCTION_REASON,
     REVISION_APPLY_LABEL,
     REVISION_BUTTON_KEY,
@@ -45,6 +46,7 @@ from capa_simulation.persistence.models import (
     EXTRA_KIND_REVISION,
     EXTRA_WRITE_FAILED,
     EXTRA_WRITE_KEPT,
+    EXTRA_WRITE_PLACED_REASON,
     EXTRA_WRITE_WRITTEN,
     ExtraProcessS3Write,
     ExtraProcessState,
@@ -59,6 +61,9 @@ HEAD_KEY = "__rev_head__"
 PUT_FAIL_KEY = "__rev_put_fail__"
 PUTS_KEY = "__rev_puts__"
 SOURCE_KEY = "__rev_source__"
+# 가짜 원천이 받는 바이트(없으면 받기 실패)와 「받을 것이 아직 없음」(까닭, 낱말).
+FETCH_KEY = "__rev_fetch__"
+WAIT_KEY = "__rev_wait__"
 
 
 def _script(database: Path) -> str:
@@ -73,6 +78,7 @@ from capa_simulation.extra_process_intake import (
     RemoteHead,
     SourceFailure,
     SourceFetch,
+    SourceNotReady,
     install_sink,
     install_source,
 )
@@ -104,7 +110,24 @@ class FakeSource:
     place = "가짜 S3"
 
     def fetch(self):
-        raise SourceFailure("없음")
+        waiting = st.session_state.get({WAIT_KEY!r})
+        if waiting:
+            raise SourceNotReady(*waiting)
+        data = st.session_state.get({FETCH_KEY!r})
+        if data is None:
+            raise SourceFailure("닿지 못함")
+        return SourceFetch(
+            data=data,
+            place="가짜 S3",
+            key="extra_process/",
+            etag=st.session_state.get({HEAD_KEY!r}),
+        )
+
+    def head(self):
+        etag = st.session_state.get({HEAD_KEY!r})
+        if etag == "FAIL":
+            raise SourceFailure("닿지 못함")
+        return RemoteHead(etag)
 
 
 original_path = settings.DUCKDB_PATH
@@ -170,6 +193,8 @@ def _app(
     app.session_state[HEAD_KEY] = head
     app.session_state[PUT_FAIL_KEY] = False
     app.session_state[SOURCE_KEY] = source
+    app.session_state[FETCH_KEY] = None
+    app.session_state[WAIT_KEY] = None
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     return app
@@ -329,6 +354,64 @@ def test_a_new_file_on_the_drive_raises_ep02_only_with_a_source(database: Path) 
     app = _app(database, sink=True, head='"새 파일"', source=True)
     assert active_state(app, "EP-02") is not None
     assert any(f"가짜 S3 {NEW_FILE_WORD}" in text for text in _captions(app))
+
+
+def test_with_a_source_and_no_sink_a_new_version_raises_the_drift_alert_until_placed(
+    database: Path,
+) -> None:
+    """원천만 꽂힌 C-DEP(내보내기 없음) — 「새 판 적용」 뒤에는 `EP-05` 대신 판 어긋남 `EP-06`
+    하나가 선다(2026-11-19 보드 답 m19-extra2-newfile (가)). 사람이 양식 내려받기로 받은 새 판을
+    그대로 놓고 가져오면 「놓인 파일 같음」 이 적히고 알림이 풀린다 — 그 파일의 ETag 가 기준이다."""
+    repository = _edited_revision(database)
+    app = _app(database, source=True, head='"판1-파일"')
+    assert active_state(app, "EP-06") is None
+    assert states(app, "EP-06")
+
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+
+    state = repository.load_extra_process_state()
+    active = state.active
+    assert active is not None and active.kind == EXTRA_KIND_REVISION and state.writes == ()
+    drift = active_state(app, "EP-06")
+    assert drift is not None and "양식 내려받기로 새 판을 받아 놓으세요" in drift["short"]
+    assert active_state(app, "EP-05") is None
+    assert not [button for button in app.button if button.key == REWRITE_BUTTON_KEY]
+
+    # 양식 내려받기 → 풀어 그대로 놓은 여섯 장 = 활성 판과 같은 바이트(묶개가 같다).
+    app.session_state[FETCH_KEY] = repository.load_extra_process_content(str(active.sha256))
+    app.session_state[HEAD_KEY] = '"사람이-놓은-새-판"'
+    _click(app, IMPORT_BUTTON_KEY)
+
+    state = repository.load_extra_process_state()
+    (placed,) = state.writes
+    assert placed.placed and placed.result_label == EXTRA_WRITE_PLACED_REASON
+    assert state.baseline == ('"사람이-놓은-새-판"', active.seq)
+    assert state.last_seq == active.seq
+    assert any("판 어긋남을 풉니다" in str(note.value) for note in flashed(app))
+    assert active_state(app, "EP-06") is None
+    assert active_state(app, "EP-02") is None
+    assert str(_history(app).loc[0, "S3 쓰기"]).startswith(EXTRA_WRITE_PLACED_REASON)
+    assert any("가짜 S3 같음" in text for text in _captions(app)), _captions(app)
+
+    # 같은 파일을 다시 가져오면 「바뀐 것 없음」 이고 더 적지 않는다.
+    _click(app, IMPORT_BUTTON_KEY)
+    assert len(repository.load_extra_process_state().writes) == 1
+    assert any("바뀐 것 없음" in str(note.value) for note in flashed(app, "info"))
+
+
+def test_nothing_to_fetch_yet_is_a_note_not_a_failure(database: Path) -> None:
+    """원천이 받을 것이 아직 없다고 하면(여섯 다 없음 · 놓는 중) 알림창 안내 하나와 상태 줄
+    낱말이다 — 가져오기 실패 `EP-01` 을 세우지 않는다."""
+    _edited_revision(database)
+    app = _app(database, source=True, head='"판1-파일"')
+    app.session_state[WAIT_KEY] = ("S3 Drive 에 부대공정 파일을 놓는 중입니다", "놓는 중")
+
+    _click(app, IMPORT_BUTTON_KEY)
+
+    assert any("놓는 중입니다" in str(note.value) for note in flashed(app, "info"))
+    assert not flashed(app, "error")
+    assert any("가짜 S3 놓는 중" in text for text in _captions(app)), _captions(app)
 
 
 def _markdowns(app: AppTest) -> list[str]:

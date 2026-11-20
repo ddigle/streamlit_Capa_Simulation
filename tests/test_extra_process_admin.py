@@ -57,6 +57,8 @@ PACK_KEY = "__extra_pack__"
 NO_SCENARIO_KEY = "__extra_no_scenario__"
 # 가짜 S3 Drive 자리(내보내기 꽂이)의 HEAD ETag — 있으면 꽂고, 가짜 원천도 같은 ETag 로 받는다.
 DRIVE_ETAG_KEY = "__extra_drive_etag__"
+# 가짜 원천이 ETag 를 따로 받지 않은 시험의 ETag(받기 · 머리 보기가 같다).
+PACK_ETAG = '"가짜-판"'
 
 
 def _script(database: Path) -> str:
@@ -87,8 +89,12 @@ class FakeSource:
             data=data,
             place="가짜",
             key="extra_process/current.zip",
-            etag=st.session_state.get({DRIVE_ETAG_KEY!r}),
+            etag=st.session_state.get({DRIVE_ETAG_KEY!r}) or {PACK_ETAG!r},
         )
+
+    def head(self):
+        # 받기와 같은 ETag — 놓인 파일을 받기와 머리 보기가 같게 본다.
+        return RemoteHead(st.session_state.get({DRIVE_ETAG_KEY!r}) or {PACK_ETAG!r})
 
 
 class FakeSink:
@@ -211,10 +217,12 @@ def test_a_fake_source_imports_previews_and_applies_a_pack(database: Path) -> No
     assert state.active.s3_key == "extra_process/current.zip"
     assert any(text.startswith("부대공정 · 판 1 · 공정 2 · 적용 ") for text in _captions(app))
 
-    # 같은 파일을 다시 가져오면 「바뀐 것 없음」 이고 아무것도 쓰지 않는다.
+    # 같은 파일을 다시 가져오면 「바뀐 것 없음」 이고 아무것도 쓰지 않는다(쓰기 기록도 없음 —
+    # 「놓인 파일 같음」 은 S3 Drive 에 쓰지 못한 「새 판」 일 때만).
     app.button(key=IMPORT_BUTTON_KEY).click().run()
     assert any("바뀐 것 없음" in str(note.value) for note in flashed(app))
-    assert _repository(database).load_extra_process_state().last_seq == 1
+    after = _repository(database).load_extra_process_state()
+    assert after.last_seq == 1 and after.writes == ()
 
 
 def test_the_new_file_alert_clears_once_that_file_is_imported_and_applied(database: Path) -> None:

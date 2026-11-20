@@ -3,11 +3,13 @@
 
 """부대공정 판 들이기(Admin 「부대공정」 탭의 화면 밖 몸통 — 설계 3-4 · A7).
 
-**가져오기 원천은 꽂는 자리 하나다**(`ExtraProcessSource` · `install_source`). 정한 원천은 S3 Drive
-의 고정 자리 `extra_process/current.zip` 이지만(설계 3-1), 사내 확인 부대 5(DRM) · 6(같은 버킷)의
-답이 오기 전이라 1단계는 원천을 꽂지 않는다 — 꽂힌 것이 없으면 탭의 가져오기 단추는 서지 않는다. 답
-뒤 S3 Drive 가져오기(A6)가 `fetch()` 하나를 갖춘 원천을 꽂으면 같은 판정 · 미리보기 · 적용 길을
-지난다. 시험은 가짜 원천을 꽂는다.
+**가져오기 원천은 꽂는 자리 하나다**(`ExtraProcessSource` · `install_source` — 받기 `fetch()` 와
+머리 보기 `head()`). 정한 원천은 S3 Drive 의 놓는 자리 `extra_process/` 의 낱장 CSV
+여섯이다(2026-11-20 보드 결정-2 (가) — `extra_process_drive.DriveSource`). C-DEP 진입
+파일(`capa_server.py`)만 꽂고 개발 · 사내 PC · WebIDE(`app.py`)는 꽂지 않는다 — 꽂힌 것이 없으면
+탭의 가져오기 단추는 서지 않는다. 받기가 아직 받을 것이 없다고 하면(`SourceNotReady` — 여섯 다 없음
+· 놓는 중) 실패가 아니라 상태 줄 낱말과 알림창 안내 하나다(`EP-01` 없음). 시험은 가짜 원천 · 가짜 S3
+로 꽂는다.
 
 **받은 파일**(`stage_pack`)은 접수 검증(`extra_process_pack.read_pack_zip`)과 판 번호
 판정(`judge_pack` — 바뀐 것 없음 · 다시 켜기 · 적용 · 뒤로 감)과 지금 판과의 차이 · 앞 판 값으로
@@ -24,10 +26,12 @@
 잠근다(설계 D16 (다)).
 
 **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` · `install_sink` — 설계 3-1 · 3-5 · A6 의 PUT).
-「이 리비전 값을 새 판으로」 가 DB 에 새 판을 넣은 뒤 S3 Drive 파일을 덮는 길이고, 사내 확인(부대 5
-· 6 — DRM · 같은 버킷 · 앱 열쇠로 사람이 놓은 파일을 덮나)의 답 전이라 **앱 코드는 꽂지 않는다 —
-시험만 꽂는다**. 꽂힌 것이 없으면 「새 판으로」 는 DB 새 판만 넣고 S3 를 건드리지 않으며, 「S3 에
-다시 쓰기」 · 알림 `EP-05`(덮지 못함) · `EP-02`(가져오지 않은 새 파일 — HEAD)도 서지 않는다. 쓰기
+「이 리비전 값을 새 판으로」 가 DB 에 새 판을 넣은 뒤 S3 Drive 파일을 덮는 길이고, 놓는 꼴이 낱장
+여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지는 정하지 않아 **앱 코드는 꽂지 않는다 — 시험만 꽂는다**.
+꽂힌 것이 없으면 「새 판으로」 는 DB 새 판만 넣고 S3 를 건드리지 않으며, 「S3 에 다시 쓰기」 · 알림
+`EP-05`(덮지 못함)도 서지 않는다 — 원천이 꽂혀 있으면 그 대신 판 어긋남 알림 `EP-06`(「S3 Drive
+파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」)이 선다. 가져오지 않은 새 파일
+(`EP-02`)은 원천의 `head()` 만으로 선다(2026-11-19 보드 답 — 내보내기와 묶지 않음). 쓰기
 (`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준 ETag(`ExtraProcessState.baseline` — 앱이
 적용했거나 쓴 마지막 파일)와 견줘 같거나 파일이 없을 때만 덮는다 — 다르면 적용하지 않은 사람
 파일이라 덮지 않는다(설계 G5). HEAD 와 PUT 사이 틈은 조건부 쓰기(`If-Match`)가 재어지기 전에는
@@ -63,6 +67,7 @@ from capa_simulation.services.extra_process_merge import (
     process_rows_frame,
 )
 from capa_simulation.services.extra_process_pack import (
+    JUDGE_UNCHANGED,
     ExtraProcessPack,
     PackChanges,
     PackJudgement,
@@ -94,8 +99,17 @@ class SourceFailure(Exception):
         self.reason = reason
 
 
+class SourceNotReady(SourceFailure):
+    """받을 것이 아직 없다 — 여섯 다 없음 · 놓는 중. 실패가 아니다: 상태 줄 낱말(`word`)과 알림창
+    안내(`reason`) 하나이고 `EP-01` 을 세우지 않는다. 지난 판으로 계속 간다."""
+
+    def __init__(self, reason: str, word: str) -> None:
+        super().__init__(reason)
+        self.word = word
+
+
 class ExtraProcessSource(Protocol):
-    """가져오기 원천 — 단추 글 · 자리 이름 · 받기 하나."""
+    """가져오기 원천 — 단추 글 · 자리 이름 · 받기 · 머리 보기(새 파일 감지 `EP-02`)."""
 
     @property
     def label(self) -> str: ...
@@ -105,13 +119,17 @@ class ExtraProcessSource(Protocol):
 
     def fetch(self) -> SourceFetch: ...
 
+    def head(self) -> RemoteHead:
+        """놓인 파일의 ETag(받기의 `SourceFetch.etag` 와 같은 꼴 — 없으면 None)와 놓인 시각."""
+        ...
+
 
 _SOURCE: ExtraProcessSource | None = None
 
 
 def install_source(source: ExtraProcessSource | None) -> None:
-    """가져오기 원천을 꽂는다(`None` 이면 뺀다). 1단계는 꽂지 않는다 — S3 Drive 원천은 사내 답
-    뒤."""
+    """가져오기 원천을 꽂는다(`None` 이면 뺀다). C-DEP 진입 파일이 S3 Drive 원천을 꽂는다
+    (`extra_process_drive.install_drive_source`)."""
     global _SOURCE
     _SOURCE = source
 
@@ -145,8 +163,8 @@ _SINK: ExtraProcessSink | None = None
 
 
 def install_sink(sink: ExtraProcessSink | None) -> None:
-    """내보내기 자리를 꽂는다(`None` 이면 뺀다). 앱 코드는 꽂지 않는다 — 사내 답 뒤, 그때까지는
-    시험만 꽂는다."""
+    """내보내기 자리를 꽂는다(`None` 이면 뺀다). 앱 코드는 꽂지 않는다 — 낱장 여섯을 덮을지 정한
+    뒤, 그때까지는 시험만 꽂는다."""
     global _SINK
     _SINK = sink
 
@@ -261,7 +279,7 @@ def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool
 
     쓸 것은 「새 판으로」 가 만든 내용이다 — 활성 줄이 「새 판」 이거나, 끄기 → 다시 켜기로 같은
     내용(sha)이 다시 활성이 된 때다. 같은 sha 의 어느 판 줄에든 「씀」 기록이 있으면 S3 에 이미
-    있다(판은 sha 로 견준다)."""
+    있다(판은 sha 로 견준다) — 사람이 놓은 같은 파일을 적은 줄(`placed_matches`)도 「씀」 이다."""
     active = state.active
     if active is None or active.sha256 is None:
         return False
@@ -277,8 +295,28 @@ def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool
 
 def needs_write(state: ExtraProcessState) -> bool:
     """활성 판(「새 판으로」 가 만든 내용)을 S3 Drive 에 아직 쓰지 못했나 — 알림 `EP-05` 와 「S3 에
-    다시 쓰기」 의 조건(꽂힌 내보내기가 있을 때만 부른다)."""
+    다시 쓰기」 의 조건(꽂힌 내보내기가 있을 때만 부른다), 내보내기가 없으면 판 어긋남 `EP-06` 의
+    조건."""
     return pending_write(state) is not False
+
+
+def placed_matches(state: ExtraProcessState, staged: StagedPack) -> bool:
+    """받은 파일이 아직 S3 Drive 에 쓰지 못한 활성 판(「새 판으로」 판)과 같은 내용인가 — 사람이
+    양식 내려받기로 받은 새 판을 놓은 것이다. 그러면 그 파일의 ETag 를 「놓인 파일 같음」 으로 적어
+    판 어긋남(`EP-06`) · 「S3 에 다시 쓰기」 를 풀고 기준을 옮긴다. 보통의 「바뀐 것 없음」(적용한
+    파일을 다시 가져옴)은 아무것도 적지 않는다(설계 3-2)."""
+    active = state.active
+    judgement = staged.judgement
+    etag = staged.fetch.etag
+    return (
+        active is not None
+        and judgement is not None
+        and judgement.verdict == JUDGE_UNCHANGED
+        and staged.revision is None
+        and bool(etag)
+        and etag != state.baseline[0]
+        and needs_write(state)
+    )
 
 
 @dataclass(frozen=True)

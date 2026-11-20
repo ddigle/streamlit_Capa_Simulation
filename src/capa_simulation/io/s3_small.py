@@ -8,7 +8,8 @@ KiB 짜리 객체 하나를 앱 프로세스가 직접 주고받는 자리다. �
 것이다. 모듈 데이터 파일(`module_helpers` — 모듈 화면이 부르는 올리기 · 받기)도 이 경계를 쓰고, 그
 쪽만 상한 · 마감을 넓혀 넘긴다(`get_object` · `put_object` 의 `max_bytes` · `deadline_seconds`).
 BigDataQuery 자동 로그인 계정 객체(`io/bdq_login_store`)도 이 경계로 받고 · 쓰고 · 지운다
-(`delete_object`).
+(`delete_object`). 부대공정 S3 Drive 원천(`io/extra_process_drive`)은 낱장 여섯을 받고 머리를 보며,
+놓인 시각(`Last-Modified`)과 저장소 시각(`Date`)을 함께 읽는다(`S3Object` · `head_object`).
 
 - **표준 라이브러리만** 쓴다 — `auth` 가 import 해도 Streamlit · 무거운 모듈이 딸려 오지 않는다.
 - **경로 스타일 주소**(`/<버킷>/<키>`) — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트로 적지 못한다.
@@ -44,6 +45,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Final
 from urllib.parse import SplitResult, quote, urlsplit
 
@@ -95,10 +97,35 @@ class S3Failure(RuntimeError):
 
 @dataclass(frozen=True)
 class S3Object:
-    """받은 객체 — 본문과 ETag(따옴표를 뗀 글. 저장소가 주지 않으면 빈 글)."""
+    """받은 객체 — 본문과 ETag(따옴표를 뗀 글. 저장소가 주지 않으면 빈 글), 놓인 시각
+    (`Last-Modified`)과 답한 때의 저장소 시각(`Date`) — 머리가 없거나 못 읽으면 None."""
 
     body: bytes = field(repr=False)
     etag: str
+    last_modified: datetime | None = None
+    server_time: datetime | None = None
+
+
+@dataclass(frozen=True)
+class S3Head:
+    """머리만 본 객체 — ETag · 놓인 시각 · 저장소 시각(`S3Object` 와 같은 뜻)."""
+
+    etag: str
+    last_modified: datetime | None = None
+    server_time: datetime | None = None
+
+
+def _http_time(value: str | None) -> datetime | None:
+    """HTTP 날짜 머리 → UTC 시각. 없거나 못 읽으면 None."""
+    if not value:
+        return None
+    try:
+        moment = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 def canonical_request(
@@ -274,8 +301,10 @@ def _round_trip(
     *,
     max_bytes: int | None = None,
     deadline_seconds: float | None = None,
+    times: dict[str, datetime | None] | None = None,
 ) -> tuple[int, str, bytes]:
     """요청 하나를 마감 안에서 주고받는다. 본문은 상한을 한 바이트 넘는 데서 읽기를 멈춘다.
+    `times` 를 주면 답의 `Last-Modified` · `Date` 머리를 읽어 담는다.
 
     상한 · 마감을 넘기지 않으면 이 경계의 값(`MAX_OBJECT_BYTES` · `REQUEST_DEADLINE_SECONDS`)이다 —
     부를 때 읽는다.
@@ -293,6 +322,9 @@ def _round_trip(
             connection.request(method, path, body=body or None, headers=dict(headers))
             response = connection.getresponse()
             data = response.read(limit + 1)
+            if times is not None:
+                times["last_modified"] = _http_time(response.getheader("Last-Modified"))
+                times["date"] = _http_time(response.getheader("Date"))
             return response.status, (response.getheader("ETag") or "").strip().strip('"'), data
         finally:
             connection.close()
@@ -319,6 +351,7 @@ def _exchange(
     moment: float | None = None,
     max_bytes: int | None = None,
     deadline_seconds: float | None = None,
+    times: dict[str, datetime | None] | None = None,
 ) -> tuple[int, str, bytes]:
     """요청 하나 — `(상태, ETag, 본문)`. 닿지 못한 것만 여기서 `S3Failure` 로 올린다."""
     parts = urlsplit(target.endpoint_url)
@@ -341,6 +374,7 @@ def _exchange(
             headers,
             max_bytes=max_bytes,
             deadline_seconds=deadline_seconds,
+            times=times,
         )
     except (OSError, ValueError, http.client.HTTPException) as error:
         failure = _failure_of(error)
@@ -371,8 +405,15 @@ def get_object(
     그것을 「파일 없음」 으로 읽으면 멀쩡한 파일을 두고 빈 명단으로 선다. 상한 · 마감은 기본이 이
     경계의 값이고, 조금 큰 객체를 받는 쪽(모듈 데이터 — `module_helpers`)만 넓혀 넘긴다.
     """
+    times: dict[str, datetime | None] = {}
     status, etag, data = _exchange(
-        target, "GET", key, moment=moment, max_bytes=max_bytes, deadline_seconds=deadline_seconds
+        target,
+        "GET",
+        key,
+        moment=moment,
+        max_bytes=max_bytes,
+        deadline_seconds=deadline_seconds,
+        times=times,
     )
     if status == 404 and _error_code(data) == _NO_SUCH_KEY:
         return None
@@ -380,7 +421,12 @@ def get_object(
         raise _rejected(status, data)
     if len(data) > (MAX_OBJECT_BYTES if max_bytes is None else max_bytes):
         raise S3Failure(KIND_TOO_LARGE, status)
-    return S3Object(body=data, etag=etag)
+    return S3Object(
+        body=data,
+        etag=etag,
+        last_modified=times.get("last_modified"),
+        server_time=times.get("date"),
+    )
 
 
 def head_object(target: S3Target, key: str, *, moment: float | None = None) -> str | None:
@@ -389,12 +435,28 @@ def head_object(target: S3Target, key: str, *, moment: float | None = None) -> s
     HEAD 는 본문이 없어 키가 없는지 버킷이 없는지 가르지 못한다 — 버킷이 없으면 뒤이은 PUT 이
     가른다.
     """
-    status, etag, data = _exchange(target, "HEAD", key, moment=moment)
+    found = head_meta(target, key, moment=moment)
+    return None if found is None else found.etag
+
+
+def head_meta(
+    target: S3Target,
+    key: str,
+    *,
+    moment: float | None = None,
+    deadline_seconds: float | None = None,
+) -> S3Head | None:
+    """머리만 보고 ETag · 놓인 시각 · 저장소 시각을 돌려준다 — 없으면 `None`(`head_object` 와 같은
+    판정). 마감은 기본이 이 경계의 값이고, 여러 객체를 한 마감에 보는 쪽이 줄여 넘긴다."""
+    times: dict[str, datetime | None] = {}
+    status, etag, data = _exchange(
+        target, "HEAD", key, moment=moment, deadline_seconds=deadline_seconds, times=times
+    )
     if status == 404:
         return None
     if status != 200:
         raise _rejected(status, data)
-    return etag
+    return S3Head(etag, times.get("last_modified"), times.get("date"))
 
 
 def put_object(

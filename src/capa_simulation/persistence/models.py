@@ -591,6 +591,10 @@ EXTRA_WRITE_LABELS: dict[str, str] = {
     EXTRA_WRITE_KEPT: "덮지 않음",
     EXTRA_WRITE_FAILED: "실패",
 }
+# 「씀」 줄 가운데 앱이 쓴 것이 아니라, 「새 판으로」 판을 사람이 S3 Drive 에 놓아 가져와 보니 활성
+# 판과 같았던 것(설계 「가져오기를 붙이는 날」 — 판 어긋남 알림 `EP-06` 이 풀리고 그 파일의 ETag 가
+# 기준이 된다). 「씀」 결과 그대로 넣고(마이그레이션 없이) 까닭 칸의 이 낱말로 가른다.
+EXTRA_WRITE_PLACED_REASON = "놓인 파일 같음"
 
 
 @dataclass(frozen=True)
@@ -608,7 +612,14 @@ class ExtraProcessS3Write:
     written_by: str | None = None
 
     @property
+    def placed(self) -> bool:
+        """사람이 놓은 같은 파일을 적은 줄인가(앱이 쓴 줄이 아니다)."""
+        return self.result == EXTRA_WRITE_WRITTEN and self.reason == EXTRA_WRITE_PLACED_REASON
+
+    @property
     def result_label(self) -> str:
+        if self.placed:
+            return EXTRA_WRITE_PLACED_REASON
         return EXTRA_WRITE_LABELS.get(self.result, self.result)
 
 

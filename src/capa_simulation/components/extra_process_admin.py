@@ -12,8 +12,12 @@
 UI-TXT-02). 앞 판 값으로 되돌리는 칸이 있으면(G12 — 옛 사본에서 판 번호만 올린 판) 「적용」 앞 확인
 칸을 채워야 「적용」 이 열린다(UI-NTF-09).
 
-**가져오기 단추는 원천이 꽂혀 있을 때만 선다**(`extra_process_intake.installed_source`). 1단계는
-원천을 꽂지 않는다 — S3 Drive 가져오기는 사내 확인 부대 5 · 6 의 답 뒤에 붙인다(설계 9-4).
+**가져오기 단추는 원천이 꽂혀 있을 때만 선다**(`extra_process_intake.installed_source`). C-DEP
+진입 파일만 S3 Drive 원천(`extra_process_drive` — 놓는 자리의 낱장 CSV 여섯)을 꽂는다 — 개발 · 사내
+PC · WebIDE(`app.py`)에는 입력 길이 없어 단추가 없다(설계 D16 (다)). 받을 것이 아직 없으면(여섯 다
+없음 · 놓는 중) 알림창 안내 하나와 상태 줄 낱말이다(`EP-01` 아님). 받은 파일이 아직 S3 Drive 에 쓰지
+못한 「새 판」 과 같은 내용이면(사람이 양식 내려받기로 받은 새 판을 놓음) 그 파일을 「놓인 파일
+같음」 으로 적는다 — 판 어긋남 알림 `EP-06` 이 풀린다.
 
 **쓰는 단추**(가져오기 · 적용 · 끄기 / 다시 켜기)는 C-DEP(`managed` + S3 접속 정보)의 실제
 개발자에게만 열린다(`write_lock_reason`) — 그 밖에는 잠그고 풍선에 까닭을 단다(UI-INP-07). 누른
@@ -34,8 +38,9 @@ UI-TXT-02). 앞 판 값으로 되돌리는 칸이 있으면(G12 — 옛 사본�
 「새 판 적용」 은 DB 에 새 판(갈래 「새 판」)을 먼저 넣고, 내보내기 자리가 꽂혀
 있으면(`extra_process_intake.installed_sink` — 지금 판은 시험만 꽂는다) 그다음 S3 Drive 파일을
 덮는다(`write_back` — 적용하지 않은 사람 파일이면 덮지 않음). 쓰지 못한 동안은 상태 알림 `EP-05` 와
-단추 「S3 에 다시 쓰기」 가 선다. 누를 수 없는 까닭(꺼짐 · 판 없음 · 다른 판 · 섞인 판 · 연도
-Shift · 부대공정 없음 — G4)은 풍선이다.
+단추 「S3 에 다시 쓰기」 가 선다. 내보내기가 없고 원천만 꽂힌 동안(지금 C-DEP)은 그 대신 상태 알림
+`EP-06` 하나다(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」). 누를 수
+없는 까닭(꺼짐 · 판 없음 · 다른 판 · 섞인 판 · 연도 Shift · 부대공정 없음 — G4)은 풍선이다.
 
 **닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 이 탭의 위젯은 단추 · 내려받기 · 확인
 칸뿐이라 버릴 값이 없고, 닫힌 탭이 회차마다 판 이력을 읽지 않게 한다. 세션 칸은 `SessionSlot`
@@ -67,6 +72,7 @@ from capa_simulation.extra_process_intake import (
     RevisionOrigin,
     SourceFailure,
     SourceFetch,
+    SourceNotReady,
     StagedPack,
     WriteOutcome,
     failure_reason,
@@ -75,6 +81,7 @@ from capa_simulation.extra_process_intake import (
     installed_source,
     needs_write,
     pending_write,
+    placed_matches,
     preview_pack,
     previous_content,
     production_place,
@@ -173,8 +180,13 @@ OFF_HELP: Final = (
 )
 RESUME_HELP: Final = "마지막으로 적용한 판을 파일 없이 다시 켭니다 — 다음 등록부터 다시 들어갑니다."
 DOWNLOAD_HELP: Final = (
-    "마지막으로 적용한 판(끈 동안에도)을 양식 ZIP 으로 받습니다 — 판이 없으면 빈 양식입니다. 고친 "
-    "뒤 판 번호를 1 올려 놓습니다."
+    "마지막으로 적용한 판(끈 동안에도)을 양식 ZIP 으로 받습니다 — 판이 없으면 빈 양식입니다. "
+    "풀어서 고친 뒤 00_info.csv 의 판 번호를 1 올리고, 메모장에서 UTF-8 로 저장한 CSV 여섯 장을 "
+    "S3 Drive extra_process 에 이름 그대로 놓습니다(00_info.csv 는 마지막)."
+)
+IMPORT_HELP: Final = (
+    "S3 Drive extra_process 의 CSV 여섯 장을 한 판으로 받아 검사합니다 — 「적용」 을 눌러야 "
+    "바뀝니다. 마지막 파일을 놓고 2분이 지나야 받습니다."
 )
 APPLY_HELP: Final = (
     "이 판을 활성 판으로 둡니다 — 다음 BDQ 등록 · 자동 갱신 · 부대공정 얹기부터 들어가고, "
@@ -305,7 +317,7 @@ def render_extra_process_admin(
             key=IMPORT_BUTTON_KEY,
             icon=":material/cloud_download:",
             disabled=lock is not None,
-            help=lock,
+            help=lock or IMPORT_HELP,
         ):
             _import(repository)
         _render_revision_button(repository, state, lock)
@@ -459,6 +471,11 @@ def _import(repository: DuckDBScenarioRepository) -> None:
             current=_content(repository, state.active),
             before=_content(repository, previous_content(state)),
         )
+    except SourceNotReady as exc:
+        # 받을 것이 아직 없음(여섯 다 없음 · 놓는 중) — 실패가 아니라 안내 하나(EP-01 없음).
+        SEEN.set(SeenSource(source.place, exc.word, now))
+        queue_flash(FLASH_KEY, exc.reason, kind="info", icon=":material/hourglass_empty:")
+        st.rerun()
     except (SourceFailure, *_STAGE_ERRORS) as exc:
         reason = exc.reason if isinstance(exc, SourceFailure) else _stage_error_word(exc)
         SEEN.set(SeenSource(source.place, f"읽지 못함({reason})", now))
@@ -479,10 +496,39 @@ def _import(repository: DuckDBScenarioRepository) -> None:
     HEAD_SEEN.clear()
     if staged.judgement is not None and staged.judgement.verdict == JUDGE_UNCHANGED:
         STAGED.clear()
-        queue_flash(FLASH_KEY, "바뀐 것 없음 — 활성 판과 같은 파일입니다", kind="info")
+        if placed_matches(state, staged):
+            _note_placed(repository, state, staged)
+        else:
+            queue_flash(FLASH_KEY, "바뀐 것 없음 — 활성 판과 같은 파일입니다", kind="info")
     else:
         STAGED.set(staged)
     st.rerun()
+
+
+def _note_placed(
+    repository: DuckDBScenarioRepository, state: ExtraProcessState, staged: StagedPack
+) -> None:
+    """S3 Drive 에 아직 쓰지 못한 「새 판」 과 같은 파일이 놓였다 — 「놓인 파일 같음」 으로 적는다
+    (그 ETag 가 기준이 되고 판 어긋남 `EP-06` · 「S3 에 다시 쓰기」 가 풀린다). 같은 누름이 두 번
+    닿아도 둘째는 판 이력을 다시 읽어 이미 적은 것을 보고 적지 않는다."""
+    active = state.active
+    etag = staged.fetch.etag
+    if active is None or not etag:
+        return
+    try:
+        fresh = repository.load_extra_process_state()
+        if placed_matches(fresh, staged) and fresh.active is not None:
+            repository.record_extra_process_placed(
+                version_seq=fresh.active.seq, etag=etag, written_by=_who()
+            )
+    except BOOTSTRAP_ERRORS as exc:
+        queue_flash(FLASH_KEY, bootstrap_error_message(exc), kind="error", icon=":material/error:")
+        return
+    HEAD_SEEN.clear()
+    queue_flash(
+        FLASH_KEY,
+        f"S3 Drive 에 놓인 파일이 활성 판 {active.version_no} 내용과 같습니다 — 판 어긋남을 풉니다",
+    )
 
 
 def _staged_word(staged: StagedPack) -> str:
@@ -745,15 +791,18 @@ def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
 
 
 def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
-    """상태 알림 `EP-05`(「새 판으로」 뒤 S3 Drive 에 쓰지 못함)와 `EP-02`(가져오지 않은 새 파일).
+    """상태 알림 `EP-05`(「새 판으로」 뒤 S3 Drive 에 쓰지 못함) · `EP-06`(판 어긋남 — 내보내기 없이
+    원천만) · `EP-02`(가져오지 않은 새 파일).
 
-    내보내기 자리가 꽂혀 있을 때만 조건이 선다(지금 판은 시험만 꽂는다). 조건이 없어도 늘 두 번
+    `EP-05` 는 내보내기 자리가 꽂혀 있을 때만(지금 판은 시험만 꽂는다), `EP-06` 은 원천만 꽂혀 있을
+    때만, `EP-02` 는 원천이 꽂혀 있을 때 선다(원천의 머리 보기). 조건이 없어도 늘 세 번
     부른다(해소 — 이벤트 칸 자리 수가 갈래와 상관없이 같다). `state` 가 None(판을 못 읽음 · 쓰는
-    단추가 잠긴 회차)이면 둘 다 조건 없음이다.
+    단추가 잠긴 회차)이면 셋 다 조건 없음이다.
     """
     sink = installed_sink()
     active = None if state is None else state.active
-    found = False if sink is None or state is None else pending_write(state)
+    unwritten = False if state is None else pending_write(state)
+    found = False if sink is None else unwritten
     pending = found is not False
     last = found if isinstance(found, ExtraProcessS3Write) else None
     version = None if active is None else active.version_no
@@ -778,7 +827,30 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
         ),
         tab=tab,
     )
-    word = _new_file_word(state) if sink is not None and state is not None else None
+    source = installed_source()
+    # 판 어긋남(EP-06) — 원천은 있고 내보내기는 없는 동안 「새 판으로」 판을 S3 Drive 에 쓰지
+    # 못했다.
+    drift = sink is None and source is not None and unwritten is not False
+    on_drive = _drive_version(state) if drift and state is not None else None
+    alerts.state(
+        "EP-06",
+        scope={"version": version},
+        content=None if not drift else [on_drive],
+        active=drift,
+        text=(
+            f"S3 Drive 파일은 판 {on_drive} 그대로 — 양식 내려받기로 새 판을 받아 놓으세요"
+            if on_drive is not None
+            else "S3 Drive 에 적용한 파일이 없음 — 양식 내려받기로 새 판을 받아 놓으세요"
+        ),
+        full=(
+            f"「이 리비전 값을 새 판으로」 로 만든 {with_subject_particle(name)} S3 Drive 에 "
+            "없습니다(앱은 S3 Drive 파일을 덮지 않습니다). 「양식 내려받기」 로 받은 CSV 여섯 "
+            "장을 그대로 S3 Drive extra_process 에 놓고 「S3 Drive 에서 가져오기」 를 누르면 "
+            f"풀립니다. 다음 등록 · 자동 갱신은 DB 의 {with_direction_particle(name)} 돕니다."
+        ),
+        tab=tab,
+    )
+    word = _new_file_word(state) if source is not None and state is not None else None
     alerts.state(
         "EP-02",
         scope=None,
@@ -786,33 +858,40 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
         active=word == NEW_FILE_WORD,
         text="S3 Drive 에 가져오지 않은 부대공정 파일이 있음",
         full=(
-            "S3 Drive 의 extra_process/current.zip 이 적용한 판 · 앱이 쓴 파일과 다릅니다 — "
+            "S3 Drive extra_process 의 CSV 여섯 장이 적용한 판 · 앱이 쓴 파일과 다릅니다 — "
             "가져와 검사한 뒤 적용하세요."
         ),
         tab=tab,
     )
 
 
+def _drive_version(state: ExtraProcessState) -> int | None:
+    """앱이 아는 S3 Drive 의 판 — 기준 ETag 를 가진 판(적용한 · 앱이 쓴 · 놓인 같은 파일)의 번호."""
+    owner = state.baseline[1]
+    return next((item.version_no for item in state.history if item.seq == owner), None)
+
+
 def _new_file_word(state: ExtraProcessState) -> str | None:
-    """S3 Drive 자리를 HEAD 로 본 낱말 — `HEAD_INTERVAL` 안에 본 적이 있으면 그 낱말을 잇는다
-    (HEAD 한 번이 회차를 묶지 않게). 가져오기 원천이 없으면 가져올 길이 없어 보지 않는다. 가져오기 ·
-    적용이 성공하면 메모를 비워 다음 회차가 다시 본다 — 같은 세션이 가져와 적용한 파일을 5분 동안
-    「새 파일」 로 잇지 않게(2026-11-19 E2E e3-D2)."""
-    sink = installed_sink()
-    if sink is None or installed_source() is None:
+    """S3 Drive 자리를 원천의 머리 보기(`head`)로 본 낱말 — `HEAD_INTERVAL` 안에 본 적이 있으면 그
+    낱말을 잇는다(머리 보기 한 번이 회차를 묶지 않게). 가져오기 원천이 없으면 가져올 길이 없어 보지
+    않는다(내보내기와 묶지 않음 — 2026-11-19 보드 답). 가져오기 · 적용이 성공하면 메모를 비워 다음
+    회차가 다시 본다 — 같은 세션이 가져와 적용한 파일을 5분 동안 「새 파일」 로 잇지 않게(2026-11-19
+    E2E e3-D2)."""
+    source = installed_source()
+    if source is None:
         return None
     now = datetime.now(KST)
     memo = HEAD_SEEN.get()
     if len(memo) == 2 and isinstance(memo[0], datetime) and now - memo[0] < HEAD_INTERVAL:
         return str(memo[1])
     try:
-        head = sink.head()
+        head = source.head()
     except Exception as exc:  # noqa: BLE001 — 꽂이의 어떤 실패도 탭을 멈추지 않고 「읽지 못함」 이다.
         word = f"읽지 못함({failure_reason(exc)})"
     else:
         word = head_word(head.etag, state, _known_etags())
     HEAD_SEEN.set((now, word))
-    SEEN.set(SeenSource(sink.place, word, now))
+    SEEN.set(SeenSource(source.place, word, now))
     return word
 
 

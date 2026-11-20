@@ -27,6 +27,7 @@ import streamlit as st
 from capa_simulation.audit.boot import start as start_audit
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 from capa_simulation.components.audit_actor import install as install_audit_actor
+from capa_simulation.extra_process_drive import install_drive_source
 from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
 from capa_simulation.io.container_start_report import note_app_ready
 from capa_simulation.object_sync_worker import start_object_sync
@@ -42,6 +43,9 @@ start_audit(sso_config)
 install_audit_actor()
 # 정본 버킷 동기화 일꾼. 시작 받기가 성공한 `managed` 서버에만 선다 — 첫 접속을 기다리지 않는다.
 start_object_sync()
+# 부대공정 S3 Drive 가져오기 원천(놓는 자리의 낱장 CSV 여섯). 꽂기만 하고 S3 에는 묻지 않는다 — 닿을
+# 곳은 누를 때 고르고, `managed` + S3 접속 정보가 없으면 Admin 「부대공정」 이 단추를 잠근다.
+install_drive_source()
 
 app = st.App(
     Path(__file__).with_name("app.py"),

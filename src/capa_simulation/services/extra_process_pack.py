@@ -1,11 +1,17 @@
-# Purpose: 부대공정 양식 ZIP(CSV 여섯 장)을 읽어 접수 검증 V-01 ~ V-14 를 거친 판으로 만들고
-# 양식을 다시 쓴다.
+# Purpose: 부대공정 양식(CSV 여섯 장 — 낱장 한 벌 · ZIP)을 읽어 접수 검증 V-01 ~ V-14 를 거친
+# 판으로 만들고 양식을 다시 쓴다.
 
 """부대공정(BDQ 밖) 생산성 기준정보 양식 — 읽기 · 접수 검증 · 판 번호 판정 · 양식 쓰기.
 
-**한 벌**은 ZIP 하나 안의 CSV 여섯 장이다(`PACK_HEADERS` — 파일 이름은 영문, 머리 칸은 Core_Data
-칸 이름 그대로). ZIP 안의 폴더 이름은 보지 않고 파일 이름으로 찾는다. 글은 UTF-8(BOM 허용)로 읽고
-안 되면 CP949 로 한 번 더 읽는다. 글자 칸은 앞뒤 공백을 떼고 Excel 텍스트 가드 `="..."` 를 벗긴다.
+**한 벌**은 CSV 여섯 장이다(`PACK_HEADERS` — 파일 이름은 영문, 머리 칸은 Core_Data 칸 이름 그대로).
+사람은 S3 Drive 의 놓는 자리에 **낱장 여섯**을 놓는다(2026-11-20 보드 결정-2 (가) — S3 Drive 웹이
+`.zip` 올리기를 막음). 앱 안의 판 한 벌(DB 판 내용 · 양식 내려받기 · 「새 판으로」)은 그 여섯을 묶은
+ZIP 하나다 — 낱장 한 벌은 `bundle_pack_files` 가 `pack_to_zip` 과 같은 꼴(차례 · 고정 시각 · 압축)로
+묶어 같은 길(`read_pack_zip`)을 지난다. 그래서 내려받은 양식을 풀어 그대로 놓은 여섯 장은 그 판과
+같은 바이트(sha)다. ZIP 안의 폴더 이름은 보지 않고 파일 이름으로 찾는다. 글은 UTF-8(BOM 허용)로 읽고
+안 되면 CP949 로 한 번 더 읽는다 — UTF-8 로 읽히지 않은 장의 거절 까닭은 메모장 「UTF-8」 저장을
+가리킨다(Excel 로 저장한 CSV 는 사용자 PC 에서 사내 DRM 머리가 붙는다 — 사내 확인 부대 5). 글자 칸은
+앞뒤 공백을 떼고 Excel 텍스트 가드 `="..."` 를 벗긴다.
 
 **접수 검증**(설계 부록 A — `V-01` ~ `V-14`)은 BDQ 없이 파일만으로 본다. V-01(파일 · 인코딩 · 머리
 칸 · 칸 수)이 어긋나면 뒤 검사를 하지 않고 거절한다. 판 번호 · sha 를 DB 의 판 이력과 견주는 V-02
@@ -19,7 +25,8 @@
 가른다). 01 안의 겹침과 부대공정끼리의 참조만 대소문자를 무시해 본다.
 
 **쓰기.** `pack_to_zip` 은 판을 같은 꼴의 ZIP 으로 다시 쓰고(글자 칸에 Excel 텍스트 가드),
-`template_zip` 은 머리 칸만 든 빈 양식이다. Streamlit 을 import 하지 않는다.
+`template_zip` 은 머리 칸만 든 빈 양식이다. 셋 다 같은 묶개(`_zip_members`)를 지난다 — 같은 장은 늘
+같은 바이트다(표준 라이브러리 deflate 출력이 같은 동안). Streamlit 을 import 하지 않는다.
 """
 
 from __future__ import annotations
@@ -60,6 +67,10 @@ ROUTE_FILE: Final = "02_route.csv"
 PRODUCTIVITY_FILE: Final = "03_productivity.csv"
 EQUIPMENT_FILE: Final = "04_equipment_days.csv"
 RATE_FILE: Final = "05_rate_vital.csv"
+# 묶은 ZIP 안의 장 시각 — 고정이라 같은 장은 늘 같은 바이트(sha)로 묶인다.
+_MEMBER_TIME: Final = (2026, 1, 1, 0, 0, 0)
+# UTF-8 로 읽히지 않은 장의 거절 까닭 — 사람이 고칠 길(메모장 「UTF-8」 저장)을 함께 말한다.
+NOT_UTF8_HINT: Final = "메모장에서 UTF-8 로 다시 저장해 놓으세요"
 PACK_HEADERS: Final[Mapping[str, tuple[str, ...]]] = {
     INFO_FILE: ("항목", "값"),
     PROCESS_FILE: ("공정", "Area_Name", "소요기준", "모듈수", "메모"),
@@ -411,7 +422,7 @@ def judge_pack(
     return PackJudgement(
         JUDGE_BACKWARD,
         f"판 번호({version_no})가 적용한 가장 큰 판({latest_version_no}) 이하인데 내용이 다름 — "
-        "판 번호를 올려 다시 놓으세요",
+        f"{INFO_FILE} 의 판 번호를 올려 다시 놓으세요",
     )
 
 
@@ -501,17 +512,41 @@ def pack_to_zip(pack: ExtraProcessPack) -> bytes:
 
 
 def _zip_tables(rows: Mapping[str, list[list[str]]]) -> bytes:
+    members: dict[str, bytes] = {}
+    for name, header in PACK_HEADERS.items():
+        text = io.StringIO()
+        writer = csv.writer(text, lineterminator="\r\n")
+        writer.writerow(header)
+        writer.writerows(rows.get(name, []))
+        members[name] = ("﻿" + text.getvalue()).encode("utf-8")
+    return _zip_members(members)
+
+
+def bundle_pack_files(files: Mapping[str, bytes]) -> bytes:
+    """낱장 한 벌(파일 이름 → 바이트)을 판 한 벌의 ZIP 으로 묶는다 — 바이트는 고치지 않는다.
+
+    `pack_to_zip` 과 같은 묶개라 내려받은 양식을 풀어 그대로 놓은 여섯 장은 그 판과 같은 바이트다.
+    빠진 장은 묶지 않는다 — 읽기(`read_pack_zip`)가 「파일 없음」 으로 거절한다. 양식 밖 이름은 받지
+    않는다(부르는 쪽이 정해진 이름 여섯으로만 받는다).
+    """
+    unknown = sorted(name for name in files if name not in PACK_HEADERS)
+    if unknown:
+        raise ValueError(f"양식 밖 파일 이름 {len(unknown)}개")
+    return _zip_members(files)
+
+
+def _zip_members(members: Mapping[str, bytes]) -> bytes:
+    """장들을 양식 차례(`PACK_HEADERS`) · 고정 시각 · deflate 로 묶는다 — 같은 장은 늘 같은
+    바이트."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, header in PACK_HEADERS.items():
-            text = io.StringIO()
-            writer = csv.writer(text, lineterminator="\r\n")
-            writer.writerow(header)
-            writer.writerows(rows.get(name, []))
-            # 고정 시각 — 같은 판은 늘 같은 바이트(sha)로 나온다.
-            entry = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+        for name in PACK_HEADERS:
+            body = members.get(name)
+            if body is None:
+                continue
+            entry = zipfile.ZipInfo(name, date_time=_MEMBER_TIME)
             entry.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(entry, ("﻿" + text.getvalue()).encode("utf-8"))
+            archive.writestr(entry, body)
     return buffer.getvalue()
 
 
@@ -593,9 +628,15 @@ class _Checker:
             if raw is None:
                 self.err("V-01", name, None, "", "파일 없음")
                 continue
-            text = _decode(raw)
+            text, utf8 = _decode(raw)
             if text is None:
-                self.err("V-01", name, None, "", "UTF-8 · CP949 로 읽히지 않음(파일 깨짐 · DRM)")
+                self.err(
+                    "V-01",
+                    name,
+                    None,
+                    "",
+                    f"UTF-8 · CP949 로 읽히지 않음(DRM · 파일 깨짐) — {NOT_UTF8_HINT}",
+                )
                 continue
             rows = list(csv.reader(io.StringIO(text)))
             if not rows:
@@ -603,7 +644,11 @@ class _Checker:
                 continue
             got = tuple(cell.strip() for cell in rows[0])
             if got != header:
-                self.err("V-01", name, 1, "", "머리 칸이 양식과 다름")
+                # UTF-8 로 읽히지 않아 CP949 로 읽은 장이면 DRM 머리 · 저장 꼴일 수 있다.
+                reason = "머리 칸이 양식과 다름"
+                if not utf8:
+                    reason += f"(UTF-8 로 읽히지 않음 — DRM · 저장 꼴) — {NOT_UTF8_HINT}"
+                self.err("V-01", name, 1, "", reason)
                 continue
             body: list[tuple[int, _Row]] = []
             for line_no, cells in enumerate(rows[1:], start=2):
@@ -1177,14 +1222,15 @@ def _covered(need: tuple[int, int], have: Sequence[tuple[int, int]]) -> bool:
     return low > high
 
 
-def _decode(raw: bytes) -> str | None:
+def _decode(raw: bytes) -> tuple[str | None, bool]:
+    """(글, UTF-8 로 읽혔나) — UTF-8(BOM 허용), 안 되면 CP949, 둘 다 안 되면 글 None."""
     try:
-        return raw.decode("utf-8-sig")
+        return raw.decode("utf-8-sig"), True
     except UnicodeDecodeError:
         try:
-            return raw.decode("cp949")
+            return raw.decode("cp949"), False
         except UnicodeDecodeError:
-            return None
+            return None, False
 
 
 # --------------------------------------------------------------------------- 판 견주기

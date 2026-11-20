@@ -2102,11 +2102,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 · 리비전 id)을 먼저 넣고, 내보내기 자리가 꽂혀 있으면 그 뒤 S3 Drive 파일을 덮는다(`_write_active` → `write_back` —
     결과는 0038 쓰기 기록 · 알림창 「앱이 덮음 · 판 n · 시각」 / 덮지 않음 경고 / 실패 오류 · 판 이력 「S3 쓰기」 칸). 활성 「새 판」 을
     아직 쓰지 못했으면 상태 알림 `EP-05` 와 단추 「S3 에 다시 쓰기」(누른 회차에 판 이력을 다시 읽어 이미 썼으면 쓰지 않음)가 서고,
-    가져오기 원천도 꽂혀 있으면 5분에 한 번 HEAD 로 「가져오지 않은 새 파일」(`EP-02`)을 본다(`HEAD_SEEN`). 가져오기 · 적용이
+    가져오기 원천이 꽂혀 있으면 5분에 한 번 원천의 머리 보기(`head`)로 「가져오지 않은 새 파일」(`EP-02`)을 본다(`HEAD_SEEN` —
+    내보내기와 묶지 않음, 2026-11-19 보드 답). 가져오기 · 적용이
     성공하면 그 메모를 비워 다음 회차가 다시 본다 — 같은 세션이 가져와 적용한 파일을 5분 동안 「새 파일」 로 잇지 않고 상태
     줄도 그 회차 낱말이다(2026-11-19 E2E e3-D2, 설계 규칙 UI-NTF-02 — 조건이 사라지면 해소). 내보내기가 꽂히지
-    않은 지금 판(운영 포함)은 DB 새 판만 넣고 `EP-05` · `EP-02` · 다시 쓰기 단추가 서지 않는다. 판 이력 표의 「바탕」 칸은 새 판의
-    「시나리오 r번호」 다. 시험 `tests/test_extra_process_revision_admin.py`(가짜 내보내기).
+    않은 지금 판(운영 포함)은 DB 새 판만 넣고 `EP-05` · 다시 쓰기 단추가 서지 않는다 — 원천이 꽂힌 C-DEP 는 그 대신 판 어긋남
+    상태 알림 `EP-06`(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」, 판은 기준 ETag 를 가진 판) 하나가
+    선다. 사람이 그 새 판을 놓아 가져오면 「바뀐 것 없음」 판정에서 `placed_matches` 가 참이라 `_note_placed` 가 쓰기 기록에
+    「놓인 파일 같음」(결과 「씀」 + 까닭 낱말 `EXTRA_WRITE_PLACED_REASON` — 마이그레이션 없음, 감사 결과 `PLACED`)을 넣고 그
+    ETag 가 기준이 되어 `EP-06` 이 풀린다 — 보통의 「바뀐 것 없음」(적용한 파일을 다시 가져옴)은 아무것도 적지 않는다. 받을 것이
+    아직 없으면(`SourceNotReady` — 여섯 다 없음 · 놓는 중) 알림창 안내와 상태 줄 낱말뿐이다(`EP-01` 아님). 판 이력 표의 「바탕」
+    칸은 새 판의 「시나리오 r번호」 다. 시험 `tests/test_extra_process_revision_admin.py`(가짜 내보내기 · 가짜 원천).
 - `src/capa_simulation/components/extra_process_notice.py` — 부대공정 판을 합친 결과 알림 한 꼴. 짧은 글은 「부대공정 2 합침」 ·
   「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만(`popup_only`). 조건이 남는
   동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
@@ -2238,15 +2244,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `save_bigdataquery_scenario(extra=…)` 가 리비전 메모 조각(「부대공정 판 n · k 합침 · m 뺌」)과 데이터셋 출처 줄
     (`provenance_records` → `create_scenario(extra_process=…)`)을 남긴다. 판이 없거나 꺼졌으면 전과 같다.
 - `src/capa_simulation/extra_process_intake.py` — 부대공정 판 들이기의 화면 밖 몸통(세션 없음). 가져오기 원천은 **꽂는 자리 하나**
-  (`ExtraProcessSource` · `install_source`)이고 1단계는 꽂지 않는다 — S3 Drive 원천(설계 A6)은 사내 확인 부대 5(DRM) · 6(같은 버킷)의
-  답 뒤에 `fetch()` 하나로 붙인다(그 전에는 Admin 「부대공정」 의 가져오기 단추가 서지 않는다). 받은 파일 판정(`stage_pack` — 접수
+  (`ExtraProcessSource` · `install_source` — 받기 `fetch()` · 머리 보기 `head()`)이고 C-DEP 진입 파일만 S3 Drive 원천
+  (`extra_process_drive`)을 꽂는다 — 개발 · 사내 PC · WebIDE(`app.py`)에는 입력 길이 없어 Admin 「부대공정」 의 가져오기 단추가
+  서지 않는다. 받을 것이 아직 없음은 `SourceNotReady`(낱말 · 안내 — 실패 아님)다. 받은 파일 판정(`stage_pack` — 접수
   검증 + 판 번호 판정 + 지금 판 · 앞 판과의 차이 `changes`, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산
   (`preview_pack` — 지금 시나리오 표에 이미 든 부대공정을 걷고 합쳐 본다, 저장 안 함, 합친 표의 전체 기간 계산은 한 번 돌려 월별
   확보율 · 경로 수 · 따라가는 공정에서 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다) · C-DEP 판정(`production_place` — 동기화
-  `managed` + 기동 때 읽은 S3 접속 정보). **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` — HEAD · PUT, `install_sink`) — 사내
-  확인(부대 5 · 6) 답 전이라 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
+  `managed` + 기동 때 읽은 S3 접속 정보). **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` — HEAD · PUT, `install_sink`) — 놓는
+  꼴이 낱장 여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지 정하지 않아 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
   ETag(`ExtraProcessState.baseline`)와 견줘 같거나 파일이 없을 때만 덮고, 다르면 덮지 않는다(적용하지 않은 사람 파일 — G5). 상태 줄
-  낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 「새 판」 쓰기 대기 판정(`needs_write`)도 둔다.
+  낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 「새 판」 쓰기 대기 판정(`needs_write`) ·
+  사람이 놓은 같은 새 판 판정(`placed_matches`)도 둔다.
+- `src/capa_simulation/extra_process_drive.py` — 부대공정 S3 Drive 가져오기 원천(설계 A6 — 2026-11-20 보드 결정-2 (가) 「낱장 CSV
+  여섯」). 버킷 `extra_process/` 아래 정해진 이름 여섯(`00_info.csv` ~ `05_rate_vital.csv`)만 GET · HEAD 로 본다 — 목록(LIST)은 앱
+  열쇠로 재지 않은 능력이라 쓰지 않아 다른 이름 · 남는 파일은 보지 않는다(그 장은 「파일 없음」 거절). 받기는 여섯을 받고 머리를
+  한 번 더 본 뒤 `bundle_pack_files` 로 판 한 벌(ZIP — 앱 안의 판 꼴, `pack_to_zip` 과 같은 묶개라 내려받은 양식을 그대로 놓으면
+  같은 sha)로 넘긴다. 여섯 다 없음 · 놓는 중(다시 본 ETag 가 다름 또는 가장 늦게 놓인 장이 저장소 `Date` 로 `SETTLE_SECONDS`
+  120초 안)은 `SourceNotReady`, 일부 빠짐은 접수 검증의 「파일 없음」, 일부만 바뀜은 판 번호 규칙이 가른다. 상한은 여섯 장 합
+  8 MiB, 마감은 받기 · 머리 보기마다 하나이고 첫 실패에서 멈춘다. ETag 는 여섯을 묶은 값(`set_etag` — 모르는 ETag 가 있으면 기준
+  없음)이다. 닿을 곳은 C-DEP 꼴(`managed` + `runtime.config().access_s3`)에서만 있다. `capa_server.py` 가 런타임 전에
+  `install_drive_source` 로 꽂는다(Streamlit 없음 — `tests/test_server_pre_runtime_imports.py`). 시험
+  `tests/test_extra_process_drive.py`(가짜 S3).
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
   - 조회·시계·발행 뒤 정리는 주입받는다. 위험하면 발행하지 않고(`PUBLISH_SKIPPED` — 계산 실패·판정 가능 공정 0·발행 검사
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
@@ -2452,7 +2470,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     갈래 `config`). 값을 읽는 `load_settings` 는 멈추지 않는다(동기화를 쓰지 않는 앱이 설정 오류로 내려앉지 않게). 모드 · 영역은
     `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다. 사내 값의 꼴이 추적 파일에 다시 들어오면
     `tests/test_public_repo_hygiene.py` 가 실패한다(10장).
-- `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일 · 모듈 데이터 파일 — 모듈 쪽은 `module_helpers` 가 상한 8 MiB · 크기에 맞춘 마감을 넘긴다 · BigDataQuery 자동 로그인 계정 객체 `io/bdq_login_store`)를 앱 프로세스가 직접 GET · PUT · HEAD · DELETE(`delete_object` — 없는 키도 성공) 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
+- `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일 · 모듈 데이터 파일 — 모듈 쪽은 `module_helpers` 가 상한 8 MiB · 크기에 맞춘 마감을 넘긴다 · BigDataQuery 자동 로그인 계정 객체 `io/bdq_login_store` · 부대공정 S3 Drive 낱장 여섯 `extra_process_drive`)를 앱 프로세스가 직접 GET · PUT · HEAD · DELETE(`delete_object` — 없는 키도 성공) 하는 경계. 받기 · 머리 보기는 놓인 시각(`Last-Modified`)과 저장소 시각(`Date`)도 읽는다(`S3Object` · `head_meta` — 부대공정 「놓는 중」 판정). 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
 - `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 숫자처럼 보이는 글자 칸(글자로 둔 달 머리 「26.11」 — 숫자로 두면 「26.1」 처럼 끝 0 이 사라진다)은 작성기가 스스로 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText` — `pageMargins` 바로 뒤, 이웃 칸은 범위로 묶음)로 덮어 Excel 의 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을 끈다 — 시트를 짓는 쪽은 범위를 넘기지 않고, 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다(2026-11-11 사용자 실기 Q2-6). 같은 입력은 같은 바이트다. 작성기가 내는 바이트가 바뀌면 통을 세션에 기억하는 세 판(`process_capa_view.SHEET_SCHEMA_VERSION` · `availability_gap_panel.GAP_SHEET_SCHEMA_VERSION` · `calculation_result.SHEET_SCHEMA_VERSION`)을 함께 올린다 — 올리지 않으면 같은 조건의 옛 통이 세션에서 그대로 나온다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
@@ -7313,6 +7331,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 BDQ(Core_Data)에 공정 이름조차 없는 공정을 판 한 벌로 받아 등록 이음매에서 기준정보 표에 펼친다(설계 4-3 · 4-4,
 `services/extra_process_merge.py`). 계산 서비스(부하량 → 대당 Capa → 소요대수 → 확보율)는 고치지 않는다 — 공정이 부하를 받는
 길은 `RQ_REQB` 줄뿐이라 「경로를 계획 변형에서 펼치는 것」 이 곧 계획과 잇는 것이다. 공정마다 **전부 아니면 전무**다(01 의 줄 차례).
+
+**받는 꼴**(2026-11-20 보드 결정-2 (가) — S3 Drive 웹이 `.zip` 을 막음): 사람은 S3 Drive 의 `extra_process` 에 CSV 여섯 장을
+**낱장 그대로** 정해진 이름으로 놓고, 앱(`extra_process_drive`)은 여섯을 한 판으로 묶어(`extra_process_pack.bundle_pack_files` —
+판 내용 · 양식 내려받기 · 「새 판으로」 와 같은 ZIP 꼴 · 같은 묶개) 같은 접수 검증(V-01 ~ V-14)과 판 번호 판정을 지난다. 내려받은
+양식을 풀어 그대로 놓은 여섯 장은 그 판과 같은 바이트(sha)다. UTF-8 로 읽히지 않는 장(Excel 로 저장해 사용자 PC 에서 사내 DRM
+머리가 붙은 꼴 — 사내 확인 부대 5)의 거절 까닭은 메모장 「UTF-8」 저장을 가리킨다(DRM 의 첫 바이트 값은 받지 않아 UTF-8 해독
+실패로만 가른다). 여섯은 한 번에 바뀌지 않으므로 받는 동안 바뀐 장 · 2분 안에 놓인 장이 있으면 「놓는 중」 으로 받지 않고, 일부만
+바꾸고 `00_info.csv` 의 판을 올리지 않은 꼴은 판 번호 규칙이 거절한다. 판 내용 ZIP 읽기(`read_pack_zip`)는 그대로 둔다 — 앱 안의
+판 꼴이고, S3 Drive 가 ZIP 을 받게 되거나 내보내기가 ZIP 하나를 쓰기로 정하면 원천만 바꾼다.
 
 - **R-01 졸업** — 같은 이름(대소문자 무시)이 BDQ 표에 있으면 건너뛴다(BDQ 가 이긴다 — 막지 않으면 `RQ_EQP_AVBL` 이 합산돼 가용이
   두 배가 되거나 키 중복으로 멈춘다).

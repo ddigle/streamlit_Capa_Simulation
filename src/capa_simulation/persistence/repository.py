@@ -64,6 +64,8 @@ from capa_simulation.persistence.models import (
     EXTRA_KIND_RESUME,
     EXTRA_KIND_REVISION,
     EXTRA_REVISION_PLACE,
+    EXTRA_WRITE_PLACED_REASON,
+    EXTRA_WRITE_WRITTEN,
     AutoOfficialUpdateExclusion,
     AutoOfficialUpdateRun,
     AutoOfficialUpdateSettingChange,
@@ -1631,6 +1633,39 @@ class DuckDBScenarioRepository:
             "admin_extra_process_write",
             claimed=author,
             det={"result": result, "version_entry": version_seq, "entry": entry},
+        )
+        return self.load_extra_process_state()
+
+    @grades.gated("admin.area")
+    def record_extra_process_placed(
+        self, *, version_seq: int, etag: str, written_by: str | None
+    ) -> ExtraProcessState:
+        """「새 판으로」 판을 사람이 S3 Drive 에 놓아 가져와 보니 활성 판과 같았음을 넣는다 — 쓰기
+        기록의 「씀」 줄(까닭 `EXTRA_WRITE_PLACED_REASON`)이라 그 파일의 ETag 가 기준이 되고 판
+        어긋남이 풀린다. 앱이 쓴 것이 아니라 감사 결과는 `PLACED` 다."""
+        author = (written_by or "").strip() or None
+        try:
+            with self._write_transaction() as connection:
+                entry = extra_process_store.append_write(
+                    connection,
+                    version_seq=version_seq,
+                    result=EXTRA_WRITE_WRITTEN,
+                    etag=etag,
+                    reason=EXTRA_WRITE_PLACED_REASON,
+                    written_by=author,
+                )
+        except Exception:
+            audit_recorder.record(
+                "admin_extra_process_write",
+                out="fail",
+                claimed=author,
+                det={"result": "PLACED", "version_entry": version_seq},
+            )
+            raise
+        audit_recorder.record(
+            "admin_extra_process_write",
+            claimed=author,
+            det={"result": "PLACED", "version_entry": version_seq, "entry": entry},
         )
         return self.load_extra_process_state()
 

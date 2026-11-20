@@ -285,11 +285,13 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   `DROPPED` · `GRADUATED`) · 규칙(R-01 ~ R-07) · 까닭 · 표별 행 수(JSON) · 메모(연도 Shift 이동량 · 월 머지 쪽 · 덧붙인 달 범위).
   「새 판으로」(2단계 — 갈래 `REVISION`)의 바탕 시나리오 · 리비전은 `base_*_ref` 로 가리키기만 한다. 0037 의 `s3_write_result` 칸은
   쓰지 않는다 — 쓰기 결과는 판을 넣은 뒤에야 알아 아래 0038 표에 넣는다.
-- `extra_process_s3_write`(0038): 「새 판으로」 · 「S3 에 다시 쓰기」 가 S3 Drive 의 `extra_process/current.zip` 을 쓴 결과 한 줄씩(넣기만).
+- `extra_process_s3_write`(0038): 「새 판으로」 · 「S3 에 다시 쓰기」 가 S3 Drive 를 쓴 결과 한 줄씩(넣기만).
   쓴 판(`version_seq` — 판 이력 차례, 가리키기만) · 결과(`WRITTEN` — PUT 이 돌려준 ETag / `KEPT` — 쓰기 직전 HEAD 의 ETag 가 기준과 달라
   덮지 않음, 본 ETag / `FAILED` — 실패한 단계 HEAD · PUT 과 까닭 낱말) · 쓴 사람. 기준 ETag 는 판 이력 줄의 ETag(가져와 적용 · 다시
-  켬)와 이 표의 `WRITTEN` 가운데 마지막 것이다(`models.ExtraProcessState.baseline`). 내보내기 자리가 꽂히기 전(지금 판 — 사내 확인 뒤)에는
-  0행이다.
+  켬)와 이 표의 `WRITTEN` 가운데 마지막 것이다(`models.ExtraProcessState.baseline`). 내보내기 자리는 꽂지 않아(놓는 꼴이 낱장 여섯으로
+  바뀐 뒤 여섯을 덮을지 정하지 않음) 앱이 덮은 줄은 없다 — 아직 S3 Drive 에 없는 「새 판」 과 같은 파일을 사람이 놓아 가져온 「놓인
+  파일 같음」(결과 `WRITTEN` · 까닭 `놓인 파일 같음`) 줄만 생겨 그 ETag 를 기준으로 삼는다(2026-11-20 — 사람은 S3 Drive `extra_process/`
+  에 낱장 CSV 여섯을 놓고, 판 이력의 `s3_key` 는 `extra_process/` · `s3_etag` 는 여섯 ETag 를 묶은 값이다).
 - `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
   시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 
