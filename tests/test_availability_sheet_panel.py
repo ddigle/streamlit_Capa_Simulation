@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -171,6 +172,57 @@ def test_gap_cells_take_the_delta_colours_and_blank_cells_say_why() -> None:
     }
     assert "기준정보(Static)에 없는 공정" in hovers[(MONTHS[1], ROW_GAP_AVAILABLE)]
     assert "보유 4.500 + 대여(비가동) −0.250" in hovers[(MONTHS[0], ROW_SCHEDULE_AVAILABLE)]
+
+
+# 시트 아래에서 걷어 Guide 「시트 표지」 로 옮긴 범례 글(2026-11-20 사용자 답).
+SHEET_LEGEND_LEFT = (
+    "기준정보가 많음",
+    "설비 일정이 많음",
+    "맞댈 수 없는 칸",
+    "공정 Capa 상세 ① 과 같은 면",
+    "기준정보 가용 ≠ 보유 + 대여",
+)
+AVAILABILITY_GUIDE = (
+    Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/available_equipment_status.md"
+)
+
+
+def test_no_legend_line_stands_under_the_sheet_and_the_guide_reads_the_marks() -> None:
+    """시트 아래 회색 범례 한 줄을 걷었다(2026-11-20 사용자 답 — 공정 Capa 상세 「시트 범례」 와
+    같은 꼴, 설계 규칙 UI-TXT-01 · UI-TXT-02). 칸 표지(GAP −/+ 글자색 · 「—」 · ⚠)는 캔버스에 그대로
+    서고(`test_gap_cells_take_the_delta_colours_and_blank_cells_say_why`), 그 뜻은 Guide
+    「분류별 내역 — 9행 시트」 의 「시트 표지」 가 말한다."""
+    app = AppTest.from_function(_panel_app, default_timeout=60).run()
+    assert not app.exception
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    app.segmented_control(key=RESULT_VIEW_KEY).set_value("분류별 내역").run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert chart_spec(app)
+    shown = " ".join(
+        [str(element.proto.body) for element in app.get("html")]
+        + [str(item.value) for elements in (app.markdown, app.caption) for item in elements]
+    )
+    for phrase in SHEET_LEGEND_LEFT:
+        assert phrase not in shown, phrase
+    guide = AVAILABILITY_GUIDE.read_text(encoding="utf-8")
+    start = guide.index("- **시트 표지**")
+    item = guide[start : guide.index("\n- **", start + 1)]
+    for words in (
+        "범례 글이 없습니다",
+        "파란 면",
+        "공정 Capa 상세 ① 과 같은 면",
+        "고른 칸",
+        "기준정보가 많습니다",
+        "설비 일정이 많습니다",
+        "**⚠**",
+        "보유 + 대여",
+        "맞댈 수 없는 칸",
+        "까닭",
+    ):
+        assert words in item, words
+    _, months, _ = _canvas_json()
+    marks = {text for trace in months["data"][2:] for text in trace.get("text") or ()}
+    assert {"−2.50", "+0.75", "—", "7.00 ⚠"} <= marks
 
 
 @pytest.mark.parametrize(

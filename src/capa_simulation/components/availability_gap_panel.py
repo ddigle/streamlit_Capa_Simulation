@@ -993,8 +993,11 @@ def _sheet_heading(
 
 @st.fragment(key=GAP_SHEET_FRAGMENT_KEY)
 def render_availability_sheet(bundle: GapSheetBundle) -> None:
-    """9행 캔버스 → 범례 → 근거 카드. 키 붙은 프래그먼트다. 「내려받기 ▾」(시트 CSV · 시트 엑셀)는
-    패널의 전환 줄 끝이다(`render_sheet_downloads`).
+    """9행 캔버스 → 근거 카드. 키 붙은 프래그먼트다. 「내려받기 ▾」(시트 CSV · 시트 엑셀)는
+    패널의 전환 줄 끝이다(`render_sheet_downloads`). 시트 아래 범례 글은 없다 — 칸 표지(파란
+    면 · 고른 칸 테두리 · GAP 부호색 · ⚠ · 「—」)의 뜻은 Guide 「분류별 내역 — 9행 시트」 의
+    「시트 표지」 다(2026-11-20 사용자 답, 설계 규칙 UI-TXT-01 · UI-TXT-02 — 공정 Capa 상세
+    「시트 범례」 와 같은 꼴).
 
     칸을 누르는 조작은 이것만 다시 돌린다 — 조건 카드에 설 위젯을 바꾸지 않는 본문 조작이다. 시트·
     호기별 기여(`bundle.contributions`, 누른 칸이 설비 일정 기준·GAP 일 때만 부른다)는 직전 앱 전체
@@ -1008,7 +1011,6 @@ def render_availability_sheet(bundle: GapSheetBundle) -> None:
     generation = int(st.session_state.get(GAP_SHEET_GENERATION_KEY, 0) or 0)
     canvas = remembered_sheet_canvas(bundle, cell, generation)
     _render_canvas(bundle, canvas)
-    st.html(sheet_legend_html())
     _render_evidence(bundle, cell)
 
 
@@ -1137,28 +1139,6 @@ def _render_canvas(bundle: GapSheetBundle, canvas: AvailabilitySheetCanvas) -> N
                     ),
                     selection_mode="points",
                 )
-
-
-def sheet_legend_html() -> str:
-    """시트 아래 범례 한 줄(서식 포함)."""
-    swatch = "display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px"
-    items = [
-        f'<span style="{swatch};background:{tokens.SUMMARY_SUPPLY_SURFACE};border:1px solid '
-        f'{tokens.BORDER}"></span>Static = 기준정보(공정 Capa 상세 ① 과 같은 면)',
-        f'<span style="{swatch};border:2px solid {tokens.ACCENT}"></span>고른 칸',
-        f'<span style="color:{tokens.DELTA_DECREASE};font-weight:700">−</span> 기준정보가 많음',
-        f'<span style="color:{tokens.DELTA_INCREASE};font-weight:700">+</span> 설비 일정이 많음',
-        "⚠ 기준정보 가용 ≠ 보유 + 대여",
-        f'<span style="color:{tokens.TEXT_MUTED}">— 맞댈 수 없는 칸(올려 보면 까닭)</span>',
-    ]
-    body = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:6px">{item}</span>'
-        for item in items
-    )
-    return (
-        '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;'
-        f'color:{tokens.TEXT_MUTED}">{body}</div>'
-    )
 
 
 def _sheet_csv(bundle: GapSheetBundle) -> str:

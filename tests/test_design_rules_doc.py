@@ -3499,7 +3499,11 @@ def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
     target = next(line for line in lines if line.startswith("- shk-target-label · "))
     assert "**나 — 합계 칸 라벨 「단축 필요일수 합계 (목표 n%)」**" in target
     assert "사용자 답 「두가지는 너가말한대로 진행해」" in target
-    assert "(아래 shk-target-label 줄)" in record or "아래 shk-target-label 줄" in record
+    assert "아래 shk-target-label 줄" in record
+    legend = next(line for line in lines if line.startswith("- gap-sheet-legend · "))
+    assert "**나 — 걷고 Guide 「분류별 내역 — 9행 시트」 의 「시트 표지」**" in legend
+    assert "사용자 답 「두가지는 너가말한대로 진행해」" in legend
+    assert "아래 gap-sheet-legend 줄" in record
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

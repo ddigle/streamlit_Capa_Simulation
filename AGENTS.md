@@ -5377,6 +5377,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (Static 보유 + 대여 = 합 · GAP = 설비 일정 − Static · 설비 일정 기준 가용 = 보유 + 대여 — `_static_sum_line` · `_gap_line` ·
     `_schedule_available_line`)은 인수가 시트 칸 자릿수이고, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 결과 앞 등호가
     「≈」 다(`formula_text.equals_mark` — 비교 시트 풍선과 같은 길, 인수가 「—」 여도 「≈」, 8장).
+  - 시트 아래 범례 글은 없다 — 칸 표지(파란 면 · 고른 칸 테두리와 굵은 글자 · GAP −/+ 글자색 · ⚠ · 「—」)의 뜻은 Guide
+    「분류별 내역 — 9행 시트」 의 「시트 표지」 다(2026-11-20 사용자 답 — 규칙집 6-39 gap-sheet-legend, 공정 Capa 상세 「시트
+    범례」 와 같은 꼴).
   - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다. 시트 · 호기 목록
     「시트 엑셀」(시트 엑셀 넓히기 2 — 각 CSV 와 「내려받기 ▾」 메뉴 하나, 호기 목록은 목록 아래 제 메뉴)은 화면처럼 표시명이고
     호기 목록 숫자 꼴은 화면 `NumberColumn` 과 같은 자릿수 표(`_UNIT_DIGITS`)에서 나온다(`unit_list_workbook`).
