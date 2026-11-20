@@ -660,8 +660,9 @@ def test_a_baseline_keeps_its_basis_and_is_compared_on_that_basis(tmp_path: Path
         assert f"<b>{label} 0</b>" in body, label
 
 
+@pytest.mark.parametrize(("static", "dated_first"), [(3.0, False), (6.0, True)])
 def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_basis_change(
-    tmp_path: Path,
+    tmp_path: Path, static: float, dated_first: bool
 ) -> None:
     """결과 보드 여쭘-4 a — 기준선과 지금 사이에 한 시점만 Static 기준의 남는 호기(현재 일정 없음)인
     호기는 진척이 아니라 범위 바뀜이다. 카드 배지 「기준 바뀜」, 요약 호기 변동 「기준 바뀜 1」 과
@@ -671,11 +672,12 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
 
     기준선은 앱이 얼린 Static 기준선에서 목표 110% 의 당긴 호기 한 줄만 반대 꼴로 바꿔 새로 저장한
     것이다 — 지금 날짜를 받은 호기면 현재 일정 · 단축일수를 비워 남는 호기로(남는 → 날짜), 지금 남는
-    호기면 9일 늦은 현재 일정을 줘(날짜 → 남는). 표본은 오늘 기준 상대 날짜라 어느 쪽이 서는지가
+    호기면 9일 늦은 현재 일정을 줘(날짜 → 남는). Static 가용 3.0 은 남는 호기가, 6.0 은 날짜를 받은
+    호기가 서는 표본이라 그 꼴의 줄을 먼저 고른다 — 표본은 오늘 기준 상대 날짜라 어느 꼴이 서는지가
     날마다 다를 수 있어 두 방향을 같은 단언으로 본다(방향마다 고정한 시험은
     `test_shortening_progress`)."""
     database_path, _ = _saved_database(tmp_path)
-    app = _run_static(database_path)
+    app = _run_static(database_path, static=static)
     assert not app.exception, [element.message for element in app.exception]
     plain_total = app.session_state[SCREEN_TOTAL_KEY]
     assert isinstance(plain_total, ScreenTotal) and plain_total.basis == "Static"
@@ -688,7 +690,8 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     units = baseline.units.copy()
     pulled = units.loc[units["목표 확보율(%)"].eq(110) & units["구분"].eq(KIND_SHORTENED)]
     assert not pulled.empty, "Static 기준 110% 에 당긴 호기가 있어야 한다"
-    index = pulled.index[0]
+    wanted = pulled.loc[pulled["기존 Qual"].notna() == dated_first]
+    index = (wanted if not wanted.empty else pulled).index[0]
     unit = str(units.at[index, "호기"])
     target = units.at[index, "목표 Qual"]
     assert isinstance(target, date)
@@ -714,7 +717,7 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     )
     clear_shortening_baseline_cache()
 
-    app = _run_static(database_path)
+    app = _run_static(database_path, static=static)
     assert app.session_state[SCREEN_TOTAL_KEY] == plain_total
     app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
     assert not app.exception, [element.message for element in app.exception]
