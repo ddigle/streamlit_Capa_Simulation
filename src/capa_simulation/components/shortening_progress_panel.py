@@ -23,7 +23,8 @@
   호기 줄 위 범례 글이 없다 — 그 뜻은 Guide 「진척 비교」 의 요약 · 카드 줄이다(2026-11-20 사용자
   요청을 같은 꼴 전체로 — 설계 규칙 UI-TXT-01 · PRC-01). 합계에서 뺀 몫 줄과 기준선 칸 출처 줄은
   값이라 그대로다. 고른 목표 확보율은 합계 칸 라벨 「단축 필요일수 합계 (목표 n%)」 에 값으로 선다 —
-  두 줄 카드에 표가 없어 그 라벨이 본문의 목표 % 자리다(2026-11-20 사용자 답 「나」).
+  두 줄 카드에 표가 없어 그 라벨이 본문의 목표 % 자리다(2026-11-20 사용자 답 「나」). 합계 칸이
+  좁으면 괄호 「(목표 n%)」 만 이름 아래 줄로 내려 막대 길이를 지킨다(2026-11-21 갈래 판정).
 - 카드의 달 축은 지금 조회 달을 **보이는 카드의 두 시점 날짜가 모두 들도록 앞뒤로 넓힌** 것이다
   (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
   축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
@@ -187,6 +188,14 @@ UNITS_CONTAINER = "shk-units"
 # 묶음 폭이 이보다 좁으면 붙박인 이름 칸이 끝까지 굴린 결과 칸을 덮는다(이름 칸 + 칸 사이 10 + 결과
 # 칸 + 줄 안쪽 여백 10 · 테 1) — 그때는 이름 칸을 붙박지 않고 줄 전체가 같이 구른다.
 _STICKY_MIN_PX = _NAME_PX + 10 + _RESULT_PX + 10 + 1
+# 요약 합계 칸(`.shk-prog-total`)의 컨테이너 이름. 칸 안쪽 폭이 `_TOTAL_TARGET_WRAP_PX` 보다 좁으면
+# 라벨 괄호 「(목표 n%)」 를 이름 아래 줄로 내린다 — 한 줄 라벨(약 160px)은 줄어들지 않는 이름 칸을
+# 넓혀 과거 · 현재 막대를 그만큼 짧게 하고, 증감 글이 길면 칸 밖으로 밀어낸다. 내리면 이름 칸은
+# 이름 「단축 필요일수 합계」 폭이 된다. 이 폭은 1600 창(칸 약 610px)은 한 줄, 1366 · 1280 창(칸 약
+# 500 · 450px)은 두 줄이 되는 값이다(검수용 합성 샘플 관측). 세 칸이 한 줄에 서면 칸 높이는 옆 칸이
+# 정해 두 줄이어도 그대로다.
+_TOTAL_CONTAINER = "shk-prog-total"
+_TOTAL_TARGET_WRAP_PX = 480
 _MAX_AXIS_LABELS = 12
 # 두 줄 타임라인에 서는 날짜 칸. 카드의 달 축은 이 날짜가 모두 들도록 넓힌다.
 _LANE_DATE_COLUMNS = ("과거 필요 시점", "과거 확보 시점", "현재 필요 시점", "현재 확보 시점")
@@ -789,8 +798,10 @@ def progress_style() -> str:
 .shk-prog-summary {{display:flex;flex-wrap:wrap;gap:12px}}
 .shk-prog-summary > .shk-kpi {{flex:1 1 220px;min-width:0}}
 .shk-prog-summary > .shk-prog-total {{flex:2 1 400px;flex-direction:row;align-items:center;
-  gap:18px}}
+  gap:18px;container:{_TOTAL_CONTAINER} / inline-size}}
 .shk-prog-total-figure {{display:flex;flex-direction:column;gap:2px;flex:none}}
+@container {_TOTAL_CONTAINER} (width < {_TOTAL_TARGET_WRAP_PX}px) {{
+  .shk-prog-target {{display:block}}}}
 .shk-prog-bars {{flex:1 1 140px;display:flex;flex-direction:column;gap:6px;min-width:120px}}
 .shk-prog-bar-row {{display:flex;align-items:center;gap:8px;font-size:12px;
   color:{tokens.TEXT_MUTED};font-variant-numeric:tabular-nums}}
@@ -852,7 +863,8 @@ def progress_summary_markup(
     합계 칸은 라벨 · 값 · 막대와 합계에서 뺀 몫 줄(필요 시점 지남 · 기준 바뀜 — 있을 때만)이다.
     라벨은 「단축 필요일수 합계 (목표 n%)」 — 고른 목표 확보율(`level`)을 값으로 싣는다. 두 줄
     카드에는 표가 없어 이 라벨이 진척 비교 본문의 목표 % 자리다(비교 안 함 화면 카드 표 머리
-    「과부족 (목표 n%)」 와 같은 꼴 — 2026-11-20 사용자 답 「나」, 설계 규칙 UI-TXT-04). 무엇의
+    「과부족 (목표 n%)」 와 같은 꼴 — 2026-11-20 사용자 답 「나」, 설계 규칙 UI-TXT-04). 괄호는
+    `.shk-prog-target` 한 덩이라 칸이 좁으면 이름 아래 줄로 내려간다(`_TOTAL_CONTAINER`). 무엇의
     합인지(공정 범위 · 당긴 호기)는 칸에 적지 않고 Guide 「진척 비교」 의 요약 줄이 말한다(설계
     규칙 UI-TXT-01 · UI-TXT-02 — 비교 안 함 화면의 요약 카드와 같은 꼴).
 
@@ -889,7 +901,7 @@ def progress_summary_markup(
     total = (
         '<div class="shk-kpi shk-prog-total">'
         '<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계 '
-        f"(목표 {level_percent(level)}%)</span>"
+        f'<span class="shk-prog-target">(목표 {level_percent(level)}%)</span></span>'
         f'<span class="shk-kpi-value">{summary.current_days:,}일</span>'
         f"{lapsed_note}{rebased_note}</div>"
         f'<div class="shk-prog-bars">{bars}</div>'

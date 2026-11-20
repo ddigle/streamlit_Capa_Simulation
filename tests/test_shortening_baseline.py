@@ -218,9 +218,13 @@ def test_the_equipment_scenario_source_round_trips_and_shows_in_the_head(tmp_pat
     head = progress_summary_markup(view, loaded, level=1.1)
     assert "설비 공통 r12 · 운영 일정 r9 · 공식 v3" in head
     # 합계 칸 라벨은 고른 목표를 값으로 싣는다 — 반은 올린다(`level_percent`, 121% 경계 1.205).
-    assert '<span class="shk-kpi-label">단축 필요일수 합계 (목표 110%)</span>' in head
+    # 괄호는 좁은 칸에서 이름 아래 줄로 내려가는 한 덩이다(`.shk-prog-target`).
+    assert (
+        '<span class="shk-kpi-label">단축 필요일수 합계 '
+        '<span class="shk-prog-target">(목표 110%)</span></span>'
+    ) in head
     edge = progress_summary_markup(view, loaded, level=1.205)
-    assert "단축 필요일수 합계 (목표 121%)" in edge
+    assert '<span class="shk-prog-target">(목표 121%)</span>' in edge
     old_head = progress_summary_markup(
         view, repository.load_shortening_baseline(older.baseline_id), level=1.1
     )

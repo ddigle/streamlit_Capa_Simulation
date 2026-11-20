@@ -32,6 +32,7 @@ from capa_simulation.components.shortening_progress_panel import (
     SHORTENING_COMPARE_KEY,
     _unit_markup,
     _units_markup,
+    progress_style,
 )
 from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
@@ -213,7 +214,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
 
     assert not app.exception, [element.message for element in app.exception]
     body = _html(app)
-    assert "진척 비교 요약" in body and "단축 필요일수 합계 (목표 110%)" in body
+    assert "진척 비교 요약" in body and _total_label(110) in body
     assert "계획 · LOB 요약" not in body
     cards = _progress_cards(app)
     assert cards, body[:400]
@@ -238,8 +239,8 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     assert not high.exception
     assert set(_progress_csv(high)["목표 확보율(%)"]) == {"130"}
     high_body = _html(high)
-    assert "단축 필요일수 합계 (목표 130%)" in high_body
-    assert "단축 필요일수 합계 (목표 110%)" not in high_body
+    assert _total_label(130) in high_body
+    assert _total_label(110) not in high_body
     assert len(DuckDBEquipmentRepository(database_path).list_shortening_baselines()) == 1
 
     # 「비교 안 함」 으로 돌아가면 진척 비교가 사라지고 계획 화면이 선다.
@@ -773,6 +774,29 @@ def _guide_item(section: str, heading: str) -> str:
     return part[item : part.index("\n- ", item + 1)]
 
 
+def _total_label(percent: int) -> str:
+    """진척 비교 합계 칸 라벨 — 괄호 「(목표 n%)」 는 좁은 칸에서 이름 아래 줄로 내려가는 한
+    덩이다."""
+    return f'단축 필요일수 합계 <span class="shk-prog-target">(목표 {percent}%)</span>'
+
+
+def test_the_total_label_target_drops_below_the_name_on_a_narrow_card() -> None:
+    """합계 칸 라벨의 괄호 「(목표 n%)」 는 한 덩이(`.shk-prog-target`)라, 합계 칸 안쪽 폭이 480px
+    보다 좁으면 이름 아래 줄로 내려간다 — 한 줄 라벨(약 160px)이 줄어들지 않는 이름 칸을 넓혀
+    막대를 짧게 하고 긴 증감 글을 칸 밖으로 밀어내지 않게(2026-11-21 갈래 판정, 설계 규칙
+    UI-ACC-02). 넓은 칸(1600 창)은 한 줄 그대로다. 칸 폭은 합계 칸 자신이 컨테이너로 잰다."""
+    style = progress_style()
+    total_rule = re.search(r"\.shk-prog-summary > \.shk-prog-total \{([^}]*)\}", style)
+    assert total_rule is not None
+    assert "container:shk-prog-total / inline-size" in total_rule.group(1)
+    assert re.search(
+        r"@container shk-prog-total \(width < 480px\) \{\s*\.shk-prog-target \{display:block\}\}",
+        style,
+    )
+    # 이름 칸은 줄지 않는다 — 그래서 라벨 폭이 곧 이름 칸 폭이다.
+    assert ".shk-prog-total-figure {display:flex;flex-direction:column;gap:2px;flex:none}" in style
+
+
 def test_the_progress_view_has_no_unit_legend_or_total_note_and_the_guide_says_them(
     tmp_path: Path,
 ) -> None:
@@ -794,7 +818,7 @@ def test_the_progress_view_has_no_unit_legend_or_total_note_and_the_guide_says_t
     assert 'class="shk-prog-unit"' in body
     total = re.search(
         r'<div class="shk-prog-total-figure"><span class="shk-kpi-label">'
-        r"단축 필요일수 합계 \(목표 110%\)</span>"
+        r'단축 필요일수 합계 <span class="shk-prog-target">\(목표 110%\)</span></span>'
         r'<span class="shk-kpi-value">[^<]+</span>'
         r'((?:<span class="shk-kpi-note">[^<]*</span>)*)</div>',
         body,
