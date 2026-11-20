@@ -12,11 +12,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 from edit_grid_node import FAKE_DOM
 from js_runner import run_js_json
 from test_design_tokens import SMALL_TEXT_MINIMUM, contrast_ratio
 
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import grid_shared
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
 from capa_simulation.design import tokens
 from capa_simulation.services import equipment_grid as eg
@@ -4027,7 +4029,7 @@ const R = {}
 
 
 def test_the_send_interval_comes_from_python_and_the_immediate_paths_stay_immediate() -> None:
-    """묶어 보내기 쉼은 파이썬 값(data `sendMs` — `equipment_master_grid.send_ms`)이다. 깨끗한
+    """묶어 보내기 쉼은 파이썬 값(data `sendMs` — `grid_shared.batch_ms(SEND_MS)`)이다. 깨끗한
     편집본의 첫 op 는 곧바로 가고 그 답이 오기 전 칸은 쉼만큼 모은다. 붙여넣기 · 단추 op · 표 밖
     누름(focusout) · 창 숨김(visibilitychange)은 쉼이 길어도 곧바로 보낸다."""
     result = _node({}, _SEND_MS_RUNNER, source=FAKE_DOM + _fake_dom_source())
@@ -4041,13 +4043,21 @@ def test_the_send_interval_comes_from_python_and_the_immediate_paths_stay_immedi
     assert result["fallback"] == 300
 
 
-def test_the_send_interval_reads_the_dev_override_only_in_range() -> None:
-    """측정 사본 실행 줄 `CAPA_RR_GRID_SEND_MS` 만 쉼을 덮어쓴다 — 50 ~ 5000 정수가 아니면
-    기본값."""
-    assert emg.send_ms({}) == emg.SEND_MS == 300
-    assert emg.send_ms({emg.SEND_MS_ENV: "800"}) == 800
+def test_the_send_interval_reads_only_the_shared_dev_override_in_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """쉼은 결정값 `SEND_MS` 이고, 개발 · 측정 사본 실행 줄 `CAPA_DEV_BATCH_MS` 가 범위(50 ~ 5000
+    정수) 안이면 그 값이다 — 운영 `APP_ENV` 는 덮어쓰기를 읽지 않는다(`grid_shared.batch_ms`).
+    덮어쓰기 이름은 편집기마다 따로 두지 않는다."""
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    assert emg._with_palette({})["sendMs"] == emg.SEND_MS == 300
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "800")
+    assert emg._with_palette({})["sendMs"] == 800
     for text in ("", "abc", "10", "60000", "0.8"):
-        assert emg.send_ms({emg.SEND_MS_ENV: text}) == emg.SEND_MS
+        monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, text)
+        assert emg._with_palette({})["sendMs"] == emg.SEND_MS, text
+    assert not hasattr(emg, "SEND_MS_ENV"), "덮어쓰기 이름은 공용 하나다"
 
 
 # ---------------------------------------------------------------- 「새 호기」 초안 묶어 보내기

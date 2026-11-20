@@ -651,7 +651,7 @@ function receive(S, data) {
     if (S.noteSeq && S.noteSeq <= ack.seq) clearNote(S)
   }
   S.limit = Number((data.limits || {}).outboxCells) || 10000
-  // 묶어 보내기 쉼(ms) — 파이썬이 정한다(`equipment_master_grid.send_ms`). 없으면 SEND_MS.
+  // 묶어 보내기 쉼(ms) — 파이썬이 정한다(`equipment_master_grid.SEND_MS` → `grid_shared.batch_ms`). 없으면 SEND_MS.
   S.sendMs = Number(data.sendMs) > 0 ? Number(data.sendMs) : SEND_MS
   // 편집본에 저장 안 한 편집이 없다(파이썬 판정) — 그때의 첫 op 는 쉼을 기다리지 않는다(`sendsAtOnce`).
   S.clean = data.clean === true

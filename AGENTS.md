@@ -3576,10 +3576,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기다림, 껍데기 · 바뀐 줄이 그대로인 feed 에는 정렬한 표 모양을 다시 짓지 않음, 내릴 때 칸의 feed 를 비움). 지문 없는 data 는
     예전처럼 바로 그린다. 칸 하나 고칠 때 받는 바이트는 합성 표본에서 약 471KB → 36KB 다(샘플 관측 — rr1120 B 측정).
     시험 대역(`tests/grid_fake.py`)은 두 요소를 받아 이은 data 를 표 key 로 적는다.
-  - **묶어 보내기 쉼**은 파이썬 값이다(`SEND_MS` 0.3초 → data `sendMs`, 브라우저 `schedule`). 깨끗한 편집본(data `clean` — 표
-    feed · 호기 상세)의 첫 칸 고침은 쉼 없이 곧바로 가고(`sendsAtOnce`), 여러 칸 붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김도
-    곧바로다. 측정 사본만 실행 줄 환경변수 `CAPA_RR_GRID_SEND_MS`(50 ~ 5000 ms 정수 — `send_ms`)로 덮어쓴다 — **개발 전용**이라
-    운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다.
+  - **묶어 보내기 쉼**은 파이썬 결정값 한 줄이다(`SEND_MS` 0.3초 → data `sendMs` — `grid_shared.batch_ms`, 브라우저
+    `schedule`). 깨끗한 편집본(data `clean` — 표 feed · 호기 상세)의 첫 칸 고침은 쉼 없이 곧바로 가고(`sendsAtOnce`), 여러 칸
+    붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김도 곧바로다. 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(9장
+    「구역 회차 규칙」 묶음 길이 — 운영 `APP_ENV` 는 읽지 않고, 운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다).
   - data 는 `services/equipment_grid` 의 dict + 팔레트(`grid_shared.grid_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는

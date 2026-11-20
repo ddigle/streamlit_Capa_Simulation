@@ -55,7 +55,6 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -128,33 +127,16 @@ def side_key(panel: SidePanel) -> str:
 
 _palette = grid_shared.grid_palette
 
-# 표 · 오른쪽 칸이 칸 고침을 모아 서버로 보내기까지의 쉼(ms) — 브라우저 `schedule` 이 data
-# `sendMs` 로 받는다. 깨끗한 편집본의 첫 op · 붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김은 쉼 없이
-# 곧바로 보낸다.
+# 표 · 오른쪽 칸이 칸 고침을 모아 서버로 보내기까지의 쉼(ms) — 결정값은 이 한 줄이고 브라우저
+# `schedule` 이 data `sendMs` 로 받는다(`grid_shared.batch_ms` — 개발 · 측정 사본은 실행 줄
+# `CAPA_DEV_BATCH_MS` 로 덮어쓴다). 깨끗한 편집본의 첫 op · 붙여넣기 · 단추 op · 표 밖 누름 · 창
+# 숨김은 쉼 없이 곧바로 보낸다.
 SEND_MS: Final = 300
-# 개발 · 측정 사본 전용 — 실행 줄 환경변수로 쉼을 덮어쓴다(50 ~ 5000 ms 정수, 밖이면
-# `SEND_MS`). 운영 실행 줄 · C-DEP 환경변수 표에는 두지 않는다(AGENTS 설비 마스터 절).
-SEND_MS_ENV: Final = "CAPA_RR_GRID_SEND_MS"
-_SEND_MS_RANGE: Final = (50, 5000)
-
-
-def send_ms(environ: Mapping[str, str] | None = None) -> int:
-    """이 회차의 묶어 보내기 쉼(ms) — `SEND_MS`, 실행 줄 `SEND_MS_ENV` 가 범위 안 정수면 그 값."""
-    env = os.environ if environ is None else environ
-    text = env.get(SEND_MS_ENV, "").strip()
-    if not text:
-        return SEND_MS
-    try:
-        value = int(text)
-    except ValueError:
-        return SEND_MS
-    low, high = _SEND_MS_RANGE
-    return value if low <= value <= high else SEND_MS
 
 
 def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:
     """마운트마다 회차의 화면 값 — 팔레트(테마)와 묶어 보내기 쉼."""
-    return {**data, "palette": _palette(), "sendMs": send_ms()}
+    return {**data, "palette": _palette(), "sendMs": grid_shared.batch_ms(SEND_MS)}
 
 
 # 화면 등급 잠금 갈래(`lockSets` · 줄 `locks` · `lockReasons` 의 이름 — 다른 잠금과 겹치지 않는다).
