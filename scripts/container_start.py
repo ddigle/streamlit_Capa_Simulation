@@ -29,7 +29,8 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
   프로세스, 비밀번호는 표준 입력으로만). 성공하면 패키지가 쓴 새 토큰을 둔다. 거절이면 객체에 멈춤을
   쓰고(다시 띄워도 로그인하지 않는다), 닿지 못함 · 패키지 없음 · 멈춤 · 계정 없음 · 꺼짐은 아래 예비
   토큰 길로 간다. 결과는 결과 파일의 `bdq_login` 칸(갈래 · 코드 · 남은 분 · 하위 프로세스 진단
-  `child` — 비밀 없음)이고, 풀린 계정 · 비밀번호는 곧바로 가리개에 들어간다(계정도 통째로 가린다).
+  `child` · 비밀번호를 보내기 전에 끊긴 시도가 몇 번째 다시 시도였나 `retry` — 비밀 없음)이고, 풀린
+  계정 · 비밀번호는 곧바로 가리개에 들어간다(계정도 통째로 가린다).
 1. 로그인 토큰(예비) — `CAPA_BDQ_TOKEN` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
    계정은 계정 하나의 원천이다 — 저장된 자동 로그인 계정이 있으면 그 ID, 없으면
@@ -851,6 +852,7 @@ def auto_login_step(
         "stop_write": started.stop_write,
         "entered_at": "" if stored is None else stored.entered_at,
         "child": None if result is None or result.diag is None else result.diag.fields(),
+        "retry": started.retry,
     }
     return LoginStep(
         cell,

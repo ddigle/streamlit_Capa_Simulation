@@ -212,7 +212,8 @@ def clock_text(value: str) -> str:
 
 def fact_lines(report: ContainerStartReport) -> list[str]:
     """표 아래 한 줄씩 — 깔린 판·토큰 파일·요청자 계정과 자동 로그인 하위 프로세스를 띄웠으면 그
-    진단. 값은 마크다운에 글자 그대로 싣는다."""
+    진단(비밀번호를 보내기 전에 끊긴 다시 시도면 끝에 「다시 시도 n/3」 — Admin 진단 줄과 같은 꼴,
+    처음 시도는 꼬리 없음). 값은 마크다운에 글자 그대로 싣는다."""
     version = report.bigdataquery_version
     account = report.user_name_masked
     if report.token_file_exists is None:
@@ -239,9 +240,11 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
         )
     if report.home_masked:
         lines.append(f"**HOME** · {literal_markdown(report.home_masked)}")
-    child = None if report.bdq_login is None else report.bdq_login.child
-    if child is not None:
-        lines.append(f"**{BDQ_LOGIN_LABEL} 진단** · {literal_markdown(child.text)}")
+    login = report.bdq_login
+    child = None if login is None else login.child
+    if login is not None and child is not None:
+        tail = f" · {bdq_login.retry_text(login.retry)}" if login.retry else ""
+        lines.append(f"**{BDQ_LOGIN_LABEL} 진단** · {literal_markdown(child.text)}{tail}")
     return lines
 
 

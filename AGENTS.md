@@ -2125,8 +2125,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
   최고 nMiB」(하위 최고는 그 하위 하나의 값, 못 읽은 값은 「모름」 — `io/memory_probe`), `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
-  비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 「다시 시도 n/3」(기다리는 중이면 「다음 시각」, 상한으로 멈췄으면
-  「3/3」)과 그 시도의 진단 줄 끝에 같은 짧은 꼴(`bdq_login.retry_text` — `AD-24` 와 같은 낱말)이 붙고, 감사 상세 `retry` 는 넣기 때 걸려 있던
+  비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 기다리는 차례 「다시 시도 n/3」(끊김 n번 뒤 — 기다리는 중이면 「다음 시각」,
+  상한으로 멈췄으면 「3/3」)이, 끊긴 다시 시도의 진단 줄 끝(「서버 시작 점검」 진단 줄도 — 결과 칸 `retry`)에 그 시도 자신의 차례(처음 시도는
+  꼬리 없음)가 같은 짧은 꼴(`bdq_login.retry_text` — `AD-24` 와 같은 낱말)로 붙고, 감사 상세 `retry` 는 넣기 때 걸려 있던
   차례(「n/3」 — 저장되면 넣기가 셈을 비웠다)다(2026-11-20). 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
   다시 검증해 개발자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
@@ -2375,10 +2376,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/bdq_login_store.py` — BigDataQuery 자동 로그인 계정의 저장 객체 한 곳(버킷 `secrets/bdq_login.json` —
   세대 · 스냅샷 · `access/` · `modules/` 밖, 2026-11-16 사용자 결정 D1 · D2). 계정 · 비밀번호 JSON 을 CD 환경변수 `CAPA_BDQ_SECRET_KEY`
   (cryptography Fernet)로 감싼 `cipher` 와 메타(`entered_by` 넣은 개발자 앱 ID 앞 두 글자 · `entered_at` · `state` `ok`/`stopped` ·
-  `stop_reason` · `stopped_at` · `misses` — 성공 없이 이어진 닿지 못함 · 확인 못 함의 수, 없으면 0)다. `managed` 이고 키 꼴이 맞을 때만
+  `stop_reason` · `stopped_at` · `misses` — 성공 없이 이어진 닿지 못함 · 확인 못 함의 수, 없으면 0 · `cuts` — 성공 · 넣기 없이 이어진 비밀번호를
+  보내기 전 끊김의 수, 없으면 0 · `retry_after` — 그 끊김 뒤 다음 자동 시도를 기다리는 KST ISO 시각, 없으면 `null`)다. `managed` 이고 키 꼴이 맞을 때만
   선다(`availability` — 키가 없으면 S3 에 묻지 않는다). 키 없음 · 틀림 · 객체 없음 · 깨짐 · 판 다름 · 풀리지 않음은 모두 「저장된 계정
   없음」 이고 죽지도 멈추지도 않는다. 멈춤 표시(`mark_stopped`) · 자동 시도 앞의 시도 표시(`mark_attempting` — 멈춤 `attempting`, 기억은
-  바꾸지 않음) · 시도 결과(`record_outcome` — 상태 · `misses`)는 `cipher` 를 손대지 않고 메타만 고쳐 쓴다(그 사이 다른 계정으로
+  바꾸지 않음) · 시도 결과(`record_outcome` — 상태 · `misses` · `cuts` · `retry_after`)는 `cipher` 를 손대지 않고 메타만 고쳐 쓴다(그 사이 다른 계정으로
   바뀌었으면 쓰지 않음). 작은 객체 읽기 · 쓰기 · 지우기는 `io/s3_small` 이다. 앱 프로세스는 한 번 읽은 결과를 기억하고(`load_state` ·
   `current` — 저장 · 지우기 · 멈춤 · 결과 쓰기가 바꾼다, S3 를 못 읽었으면 60초 뒤 다시) 계정 원천 `effective_account` · S3 에 묻지
   않는 보기 `peek_state` · `peek_account` 를 낸다. 기억 잠금은 S3 를 기다리며 쥐지 않는다 — S3 읽기는 따로 한 번에 하나(그동안 다른
@@ -2408,7 +2410,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 개발자
   알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). `import_killed` 는
   멈추지 않고(2026-11-20 사용자 답 「쉬고 다시」) 객체의 `cuts` 를 올리고 다음 시도 시각 `retry_after`(`CUT_RETRY_SECONDS` 5 · 10 · 20분 —
-  재시작을 건너 센다)를 적어 그 전 조회 중 자동 시도는 쉰다(시작 로그인은 기다리지 않고 다음 다시 시도로 센다). 다시 시도
+  재시작을 건너 센다)를 적어 그 전에는 자동 시도가 모두 쉰다(조회 중 자동 시도도 재시작으로 뜬 시작 로그인도 — `SKIP_CUT_WAIT`, 시작은
+  로그인 없이 `unavailable`/`import_killed` 로 예비 토큰 길). 다시 시도
   `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 빈다. 자동 시도 연속 3번
   (하위 프로세스를 띄운 수 — `import_killed` 는 빼고) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
   종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —

@@ -18,7 +18,7 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 키 · 같은 버킷이다. 본문은 CD 환경변수 `CAPA_BDQ_SECRET_KEY` 로 감싼 글이다. 세대 · 스냅샷 · `fetch-copy` · `generations` · `rollback` · 하루 한 번
 정리(3장)는 `secrets/` 를 나열 · 복사 · 지우지 않는다 — 되돌리기 · 사본에 실리지 않고, 지우는 길은 Admin 「지우기」 하나다. 키를 바꾸거나 잃으면
 그 객체를 풀 수 없어 「저장된 계정 없음」 이 된다 — Admin Area 에서 계정을 다시 넣는다. 자동 로그인은 로그인할 때마다 이 객체를 두 번 고쳐
-쓴다(로그인 앞의 시도 표시 · 로그인 뒤의 결과 — `cipher` 는 그대로, 메타 `state` · `stop_reason` · `stopped_at` · `misses` 만). 그 PUT 이
+쓴다(로그인 앞의 시도 표시 · 로그인 뒤의 결과 — `cipher` 는 그대로, 메타 `state` · `stop_reason` · `stopped_at` · `misses` · `cuts` · `retry_after` 만). 그 PUT 이
 막히면 로그인하지 않거나(시도 표시) 멈춤으로 남는다(결과) — 버킷 권한을 좁힐 때 이 객체의 GET · PUT · DELETE 를 남긴다.
 
 **두 DB 는 한 쌍이다.** 세대 포인터 하나(`generations/heads/`)가 두 스냅샷을 함께 가리키고 그 PUT 이 게시다. 포인터는 맨 마지막에 쓴다 — 올리는 중 죽으면 앞 세대로 온전히 복구된다. 바뀌지 않은 DB 는

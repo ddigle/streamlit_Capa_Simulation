@@ -17,9 +17,10 @@ UI-NAV-01).
 자동/넣기 · 결과 · 남은 시간)와 그 시도가 하위 프로세스를 띄웠으면 바로 아래 진단 값 줄(종료 코드 ·
 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판 —
 `ChildDiag.text`). 비밀번호를 보내기 전에 끊긴 자동 시도가 있으면(`import_killed` — 2026-11-20
-사용자 답 「쉬고 다시」) 상태 줄 끝에 「다시 시도 n/3」(기다리는 중이면 「다음 시각」 까지, 다시
-시도 상한으로 멈췄으면 「3/3」)과 그 시도의 진단 줄 끝에 같은 짧은 꼴이
-붙는다(`bdq_login.retry_text` — 알림 `AD-24` 와 같은 낱말, UI-CON-02). BDQ 계정 ID 는 어디에도
+사용자 답 「쉬고 다시」) 상태 줄 끝에 기다리는 차례 「다시 시도 n/3」(끊김 n번 뒤 — 기다리는 중이면
+「다음 시각」 까지, 다시 시도 상한으로 멈췄으면 「3/3」)이, 끊긴 다시 시도의 진단 줄 끝에 그 시도
+자신의 차례가 같은 짧은 꼴로 붙는다(처음 시도는 꼬리 없음 — `bdq_login.retry_text`, 알림 `AD-24` 와
+같은 낱말, UI-CON-02). BDQ 계정 ID 는 어디에도
 보이지 않는다. 상태는 저장소 기억(`bdq_login.status` — 앱 기동 때 읽어 둔 것)에서 읽는다.
 
 **넣기(D5).** `st.form(clear_on_submit=True)` — 계정 칸 · 비밀번호 칸(`type="password"`) · 「넣기」.
@@ -231,7 +232,8 @@ def last_line(status: bdq_login.LoginStatus | None) -> str | None:
 
 
 def diag_line(status: bdq_login.LoginStatus | None) -> str | None:
-    """「진단」 값 줄 — 마지막 시도가 하위 프로세스를 띄웠을 때만(아니면 `None`)."""
+    """「진단」 값 줄 — 마지막 시도가 하위 프로세스를 띄웠을 때만(아니면 `None`). 끊긴 다시 시도면
+    끝에 그 시도 자신의 차례(`LastAttempt.retry` — 처음 시도는 꼬리 없음)."""
     last = None if status is None else status.last
     diag = None if last is None else last.result.diag
     if last is None or diag is None:

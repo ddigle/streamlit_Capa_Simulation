@@ -189,6 +189,9 @@ _LOGIN_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,39}(?::[a-z][a-z0-9_]{0,39})?
 _LOGIN_ERROR_KIND: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,199}")
 # 넣은 시각 꼴 — KST ISO(초까지, 시각대 붙음).
 _LOGIN_MOMENT: Final = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}")
+# 다시 시도 차례 칸이 받는 상한(넘지 않는 수) — 이 모듈은 `bdq_login` 을 부르지 않아 그 상한(3)보다
+# 넉넉히 둔다. 꼴이 어긋나거나 넘으면 0(꼬리 없음).
+_LOGIN_RETRY_BOUND: Final = 10
 # 표 줄 까닭 — 아는 코드는 낱말로, 모르는 코드는 그대로.
 _LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
     "token_unchanged": "토큰이 바뀌지 않음",
@@ -513,7 +516,9 @@ class LoginStart:
     `error_kind` — 예외 종류의 `모듈.이름`. `failure_kind` — S3 읽기 실패 분류. `stop_write` —
     객체에 시도 표시 · 결과 · 멈춤을 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음). `entered_at` — 판정한
     저장 객체의 넣은 시각(KST ISO — 비밀이 아니다. 앱 기동이 그 사이 다시 넣은 계정에 멈춤을 잘못
-    넘겨받지 않게 대조한다). `child` — 로그인 하위 프로세스 진단(띄우지 않았으면 `None`)."""
+    넘겨받지 않게 대조한다). `child` — 로그인 하위 프로세스 진단(띄우지 않았으면 `None`). `retry` —
+    비밀번호를 보내기 전에 끊긴 시작 시도가 몇 번째 다시 시도였나(`bdq_login.StartLogin.retry` —
+    처음 시도 · 끊기지 않음 · 옛 파일은 0, 「서버 시작 점검」 진단 줄 꼬리)."""
 
     status: str
     reason: str = ""
@@ -524,6 +529,7 @@ class LoginStart:
     stop_write: str = ""
     entered_at: str = ""
     child: ChildDiag | None = None
+    retry: int = 0
 
     @property
     def shown(self) -> bool:
@@ -661,6 +667,7 @@ def parse_login(data: object) -> LoginStart | None:
         stop_write=_login_code(data.get("stop_write")),
         entered_at=_login_moment(data.get("entered_at")),
         child=parse_child(data.get("child")),
+        retry=_bounded(data.get("retry"), _LOGIN_RETRY_BOUND) or 0,
     )
 
 

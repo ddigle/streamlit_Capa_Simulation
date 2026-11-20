@@ -164,6 +164,7 @@ def test_without_a_key_the_start_is_the_walked_one(
         "stop_write": "",
         "entered_at": "",
         "child": None,
+        "retry": 0,
     }
     steps = _steps(real)
     assert steps[report_contract.STEP_TOKEN] == {"status": "ok", "reason": "토큰 파일을 씀"}
@@ -292,6 +293,48 @@ def test_a_start_login_without_a_marker_records_its_child_diag(
     )
     assert without is not None
     assert not any(line.startswith(label) for line in container_start_check.fact_lines(without))
+
+
+def test_a_cut_retry_at_start_tails_its_turn_on_the_start_diag_line(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """비밀번호를 보내기 전에 끊긴 시작 다시 시도는 결과 칸 `retry` 에 그 시도의 차례를 싣고
+    「서버 시작 점검」 진단 줄 끝에 「다시 시도 n/3」 이 붙는다(Admin 진단 줄과 같은 꼴). 처음
+    시도(차례 0) · 옛 파일(칸 없음) · 꼴이 어긋난 값은 꼬리가 없다."""
+    credentials = place / "config" / ".credential"
+    diag = report_contract.ChildDiag(-9, "SIGKILL", 0.8, "import", "", "-", "-")
+    result = replace(
+        bdq_login.LoginResult(bdq_login.OUTCOME_UNAVAILABLE, bdq_login.REASON_IMPORT_KILLED),
+        diag=diag,
+    )
+    started = bdq_login.StartLogin(
+        "unavailable", bdq_login.REASON_IMPORT_KILLED, result=result, stored=_stored(), retry=2
+    )
+
+    report = _check(
+        {**ALL_ENVIRONMENT, KEY_ENV: new_key()}, credentials, start_login=_login_stub(started)
+    )
+
+    assert _cell(report)["retry"] == 2
+    parsed = report_contract.parse_report(report)
+    assert parsed is not None and parsed.bdq_login is not None
+    assert parsed.bdq_login.retry == 2
+    step = report_contract.login_step(parsed.bdq_login)
+    assert step == report_contract.StartStep("failed", "못 함 — 불러오는 중 끊김 · 예비 토큰")
+    label = f"**{report_contract.BDQ_LOGIN_LABEL} 진단**"
+    lines = container_start_check.fact_lines(parsed)
+    assert lines[-1] == f"{label} · {literal_markdown(diag.text)} · 다시 시도 2/3"
+    _assert_no_login_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
+    for odd in (0, None, True, -1, 99, "2"):
+        cell = {**_cell(report), "retry": odd}
+        if odd is None:
+            del cell["retry"]
+        other = report_contract.parse_report({**report, "bdq_login": cell})
+        assert other is not None and other.bdq_login is not None
+        assert other.bdq_login.retry == 0, odd
+        assert container_start_check.fact_lines(other)[-1] == (
+            f"{label} · {literal_markdown(diag.text)}"
+        )
 
 
 def test_the_child_diag_is_read_leniently() -> None:

@@ -62,11 +62,14 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 
 **보내기 전 끊김의 다시 시도**(2026-11-20 사용자 답). `import_killed` 는 멈추지 않고 객체의 `cuts`
 를 하나 올리고 다음 시도 시각(`retry_after` — `CUT_RETRY_SECONDS` 차례로 늘어나는 간격)을
-적는다(재시작이 셈을 지우지 않는다). 그 시각 전 조회 중 자동 시도는 쉬고(시작 로그인은 기다리지 않고
-다음 다시 시도로 센다 — 새로 뜬 프로세스), 다시 시도 `CUT_RETRY_LIMIT`(3)번이 모두 끊기면
-멈춘다(까닭 `cut_limit` — `AD-23`). 끊김은 비밀번호를 보내지 않았으므로 프로세스 안 연속 시도 수에
-들지 않는다. 셈은 성공 · 넣기(폼 저장)에만 비고, 다른 실패는 셈을 그대로 두고 다음 시도 시각만
-비운다.
+적는다(재시작이 셈을 지우지 않는다). 그 시각 전에는 자동 시도가 모두 쉰다 — 조회 중 자동 시도도,
+재시작으로 뜬 시작 로그인도(`SKIP_CUT_WAIT` — 시작은 로그인 없이 `unavailable`/`import_killed` 로
+예비 토큰 길에 가고, 그 시각 뒤의 조회 중 자동 시도 · 재시작이 다음 다시 시도다). 다시 시도
+`CUT_RETRY_LIMIT`(3)번이 모두 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 끊김은 비밀번호를 보내지
+않았으므로 프로세스 안 연속 시도 수에 들지 않는다. 셈은 성공 · 넣기(폼 저장)에만 비고, 다른 실패는
+셈을 그대로 두고 다음 시도 시각만 비운다. 차례는 둘이다 — 끊긴 시도 자신의 차례(`Attempt.retry` ·
+진단 줄 · 로그 — 그 시도가 몇 번째 다시 시도였나, 처음 시도는 0)와 기다리는 차례(`LoginStatus.retry`
+· 상태 줄 · `AD-24` — 끊김 k번 뒤 다시 시도 k).
 
 **동시성.** 로그인은 프로세스 잠금 하나로 줄 세운다. 토큰 예외를 본 조회는 그 조회 앞의 토큰
 다이제스트를 들고 잠금을 기다리고, 잠금을 얻었을 때 다이제스트가 바뀌었으면(누가 이미 다시 로그인)
@@ -205,6 +208,9 @@ UNCONFIRMED_REJECT_REASONS: Final = frozenset({REASON_NO_MARKER})
 SKIP_STOPPED: Final = "stopped"
 SKIP_ATTEMPT_LIMIT: Final = "attempt_limit"
 SKIP_PAUSED: Final = "paused"
+# 비밀번호를 보내기 전 끊김 뒤 저장된 다음 시도 시각(`retry_after`) 전 — 시작 · 조회 중 모두
+# 기다린다.
+SKIP_CUT_WAIT: Final = "cut_wait"
 # 시도 표시를 쓰지 못함 — 로그인하지 않았다(멈춤 아님 · 쉰다).
 SKIP_UNGUARDED: Final = "unguarded"
 # 객체가 그 사이 다른 계정으로 바뀌었거나 없어짐 — 든 한 벌로 로그인하지 않는다.
@@ -281,8 +287,9 @@ class Attempt:
     """자동 시도 한 번 — 건너뛰었으면 `result` 가 `None` 이고 `skipped` 가 까닭. 객체에 시도 표시 ·
     결과 · 멈춤을 쓰지 못했으면 `stop_write` 가 그 까닭이다(결과를 못 적었으면 프로세스 안 멈춤이
     선다). 이 시도로 멈췄으면 `stopped_reason` 이 그 까닭(거절 · 연속 상한). 비밀번호를 보내기 전에
-    끊겼으면 `retry` 가 그 뒤의 다시 시도 차례(1 ~ `CUT_RETRY_LIMIT` — 상한을 넘겨 멈췄으면
-    상한)."""
+    끊겼으면 `retry` 가 그 시도가 몇 번째 다시 시도였나다(시도 앞 객체의 `cuts` — 처음 시도는 0,
+    다시 시도는 1 ~ `CUT_RETRY_LIMIT`). 기다리는 차례(`LoginStatus.retry` — 끊김 k번 뒤 k)와 다르다:
+    첫 끊김 뒤 이 값은 0 이고 상태는 1 이다."""
 
     result: LoginResult | None
     skipped: str = ""
@@ -324,7 +331,8 @@ StartStatus = Literal[
 class StartLogin:
     """시작 때 로그인 단계. `off` — 기능이 서지 않음, `absent` — 저장된 계정 없음(지금 길),
     `stopped` — 멈춤이라 로그인 없음, 그 밖은 로그인 결과 갈래. `stored` 는 토큰 파일 이름에 쓸
-    계정을 가진 한 벌이다(repr 에 나오지 않는다)."""
+    계정을 가진 한 벌이다(repr 에 나오지 않는다). `retry` 는 비밀번호를 보내기 전에 끊긴 시작 시도가
+    몇 번째 다시 시도였나(`Attempt.retry` — 처음 시도 · 끊기지 않음 · 시도 없음은 0)."""
 
     status: StartStatus
     reason: str = ""
@@ -332,11 +340,13 @@ class StartLogin:
     result: LoginResult | None = None
     stop_write: str = ""
     stored: StoredLogin | None = field(default=None, repr=False)
+    retry: int = 0
 
 
 @dataclass(frozen=True)
 class LastAttempt:
-    """마지막 시도 — KST 시각 · 자동인가 · 결과 · 끊김 뒤 다시 시도 차례(`Attempt.retry`)."""
+    """마지막 시도 — KST 시각 · 자동인가 · 결과 · 끊긴 시도면 그 시도가 몇 번째 다시 시도였나
+    (`Attempt.retry` — 처음 시도는 0)."""
 
     at: str
     auto: bool
@@ -392,7 +402,8 @@ class LoginStatus:
 
     @property
     def retry(self) -> int:
-        """보내기 전 끊김 뒤 다시 시도 차례(0 — 끊김 없음, 상한을 넘겼으면 상한)."""
+        """보내기 전 끊김 뒤 기다리는 다시 시도 차례 — 끊김 k번 뒤 k(0 — 끊김 없음, 상한을 넘겨
+        멈췄으면 마지막으로 쓴 상한). 끊긴 시도 자신의 차례(`LastAttempt.retry`)와 다르다."""
         stored = self.load.stored
         return 0 if stored is None else min(stored.cuts, CUT_RETRY_LIMIT)
 
@@ -1039,7 +1050,9 @@ def _persist_stop(stored: StoredLogin, reason: str, target: S3Target | None) -> 
     return "" if write.ok else _write_failure(write)
 
 
-def _settle(stored: StoredLogin, result: LoginResult, target: S3Target) -> Attempt:
+def _settle(
+    stored: StoredLogin, result: LoginResult, target: S3Target, *, retry: int = 0
+) -> Attempt:
     """하위 프로세스를 띄운 자동 시도의 결과를 객체와 프로세스에 적는다.
 
     성공은 `misses` · `cuts` 0 · 멈춤 풂, 거절은 멈춤, 닿지 못함 · 확인 못 함은 `misses` 하나
@@ -1047,7 +1060,7 @@ def _settle(stored: StoredLogin, result: LoginResult, target: S3Target) -> Attem
     시각(`CUT_RETRY_SECONDS` — 다시 시도 `CUT_RETRY_LIMIT` 번을 넘기면 멈춤), 패키지 · 하위
     프로세스가 서지 못함(로그인 시도 없음)은 그대로다. 끊김 밖의 결과는 다음 시도 시각을 비운다(그
     시각의 다시 시도를 이 시도가 썼다). 결과를 적지 못하면 객체는 앞서 써 둔 시도 표시(멈춤)로 남고
-    이 프로세스도 그 한 벌을 멈춘다."""
+    이 프로세스도 그 한 벌을 멈춘다. `retry` 는 끊긴 이 시도 자신의 차례(`Attempt.retry`)다."""
     stopped = False
     reason: str | None = None
     misses = stored.misses
@@ -1086,7 +1099,6 @@ def _settle(stored: StoredLogin, result: LoginResult, target: S3Target) -> Attem
         _note_trouble(result.outcome, result.reason)
     if stopped or failure:
         _stop_in_process(stored.cipher, reason if reason is not None else REASON_ATTEMPTING)
-    retry = min(cuts, CUT_RETRY_LIMIT) if is_cut(result) else 0
     return Attempt(result, stop_write=failure, stopped_reason=reason or "", retry=retry)
 
 
@@ -1097,15 +1109,16 @@ def _auto_attempt_locked(
     folder: Path | None,
     environ: Mapping[str, str] | None,
     path: str,
-    at_start: bool = False,
 ) -> Attempt:
     """자동 시도 한 번 — `_LOGIN_LOCK` 을 쥔 채 부른다.
 
     멈춤(객체 · 프로세스 안 · 이번 시작이 남긴 것 — `held_reason`)이면 로그인하지 않고, 시작의
-    거절을 아직 객체에 써 보지 않았으면 한 번 써 본다. 연속 상한 · 쉬는 중 · 보내기 전 끊김의 다음
-    시도 시각 전이면 건너뛴다(그 시각은 시작 로그인 — `at_start` — 이 기다리지 않는다). 띄우기 전
-    거절은 시도 표시 없이 돌아온다. 그 밖은 시도 표시를 먼저 쓰고(실패하면 로그인하지 않는다)
-    로그인한 뒤 결과를 적는다(`_settle`). 보내기 전 끊김은 연속 시도 수에서 도로 뺀다."""
+    거절을 아직 객체에 써 보지 않았으면 한 번 써 본다. 연속 상한 · 쉬는 중이면 건너뛰고, 보내기 전
+    끊김의 다음 시도 시각 전이면 `SKIP_CUT_WAIT` 로 건너뛴다(시작 로그인도 그 시각을 기다린다).
+    띄우기 전 거절은 시도 표시 없이 돌아온다. 그 밖은 시도 표시를 먼저 쓰고(실패하면 로그인하지
+    않는다) 로그인한 뒤 결과를 적는다(`_settle`). 보내기 전 끊김은 연속 시도 수에서 도로 빼고, 그
+    시도가 몇 번째 다시 시도였나(시도 앞 `cuts` — 처음 시도는 0)를 마지막 시도 · 로그 · 결과에
+    싣는다."""
     with _STATE_LOCK:
         held = _STATE.held_reason
         write_held = bool(held) and _STATE.held_write and not stored.stopped
@@ -1127,8 +1140,8 @@ def _auto_attempt_locked(
             return Attempt(None, SKIP_ATTEMPT_LIMIT)
         if _monotonic() < _STATE.paused_until:
             return Attempt(None, SKIP_PAUSED)
-    if not at_start and _waiting(stored):
-        return Attempt(None, SKIP_PAUSED)
+    if _waiting(stored):
+        return Attempt(None, SKIP_CUT_WAIT)
     secret = stored.secret
     refused = _precheck(secret.account, secret.password, folder=folder, environ=environ)
     if refused is not None:
@@ -1154,12 +1167,12 @@ def _auto_attempt_locked(
     result = attempt_login(secret.account, secret.password, folder=folder, environ=environ)
     retry = 0
     if is_cut(result):
-        retry = min(stored.cuts + 1, CUT_RETRY_LIMIT)
+        retry = min(stored.cuts, CUT_RETRY_LIMIT)
         with _STATE_LOCK:
             _STATE.streak = max(_STATE.streak - 1, 0)
     _note_last(result, auto=True, retry=retry)
     _log(result, path=path, retry=retry)
-    return _settle(stored, result, resolved)
+    return _settle(stored, result, resolved, retry=retry)
 
 
 def _has_relogin_message(error: BaseException) -> bool:
@@ -1363,9 +1376,11 @@ def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> St
 
     `ok` 면 패키지가 새 토큰을 쓴 것이고, `rejected` 면 멈춤을 저장한다. 닿지 못함 · 확인 못 함이
     연속 상한에 닿았으면 `stopped`(까닭 `miss_limit`), 비밀번호를 보내기 전 끊김이 다시 시도 상한을
-    넘겼으면 `stopped`(까닭 `cut_limit`)다. 보내기 전 끊김의 다음 시도 시각은 기다리지 않는다 — 새로
-    뜬 프로세스의 시작 로그인이 다음 다시 시도다(셈은 이어진다). 시도 표시를 쓰지 못했으면 로그인
-    없이 `unavailable`(까닭 `unguarded`)이다. `unreached` · `unavailable` · `absent` · `stopped` ·
+    넘겼으면 `stopped`(까닭 `cut_limit`)다. 보내기 전 끊김의 다음 시도 시각(객체의 `retry_after`)
+    전이면 로그인하지 않고 `unavailable`(까닭 `import_killed` — 서지 못한 갈래는 그 끊김이고 앱의
+    `AD-24` 가 이어받는다)이다 — 재시작이 간격을 건너뛰지 않게, 그 시각 뒤의 조회 중 자동 시도 ·
+    재시작이 다음 다시 시도다(셈은 이어진다). 시도 표시를 쓰지 못했으면 로그인 없이
+    `unavailable`(까닭 `unguarded`)이다. `unreached` · `unavailable` · `absent` · `stopped` ·
     `off` 는 지금 길(`CAPA_BDQ_TOKEN`)로 가고 `unconfirmed` 는 패키지가 쓴 토큰을 둔다 — 그 판단은
     부르는 쪽 몫이다."""
     off = store.availability(environ)
@@ -1386,13 +1401,15 @@ def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> St
         return StartLogin("stopped", stored.stop_reason or "", stored=stored)
     with _LOGIN_LOCK:
         attempt = _auto_attempt_locked(
-            stored, target=target, folder=folder, environ=environ, path="시작", at_start=True
+            stored, target=target, folder=folder, environ=environ, path="시작"
         )
     result = attempt.result
     written = attempt.stop_write
     if result is None:
         if attempt.skipped in (SKIP_UNGUARDED, SKIP_CHANGED):
             return StartLogin("unavailable", attempt.skipped, stop_write=written, stored=stored)
+        if attempt.skipped == SKIP_CUT_WAIT:
+            return StartLogin("unavailable", REASON_IMPORT_KILLED, stored=stored)
         reason = attempt.skipped
         if stored.misses >= MISS_LIMIT:
             reason = REASON_MISS_LIMIT
@@ -1401,10 +1418,20 @@ def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> St
         return StartLogin("stopped", reason, stop_write=written, stored=stored)
     if attempt.stopped_reason and result.outcome != OUTCOME_REJECTED:
         return StartLogin(
-            "stopped", attempt.stopped_reason, result=result, stop_write=written, stored=stored
+            "stopped",
+            attempt.stopped_reason,
+            result=result,
+            stop_write=written,
+            stored=stored,
+            retry=attempt.retry,
         )
     return StartLogin(
-        result.outcome, result.reason, result=result, stop_write=written, stored=stored
+        result.outcome,
+        result.reason,
+        result=result,
+        stop_write=written,
+        stored=stored,
+        retry=attempt.retry,
     )
 
 
