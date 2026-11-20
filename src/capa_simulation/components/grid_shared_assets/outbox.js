@@ -40,6 +40,11 @@ function rebaseBox(box, base) {
   return had
 }
 
+// 보낼 것이 남았거나 ack 를 기다리는가 — 떠나기 명부의 busy 판정이다(`leave.js` 의 `joinLeaving`). op 는 ack 가 올 때까지 남는다.
+function boxBusy(box) {
+  return box.ops.length > 0
+}
+
 // 아직 ack 가 오지 않은 같은 op(이름과 인자가 모두 같은 것)가 보낼 목록에 있는가. 띠 「넣기」·「밀기」, 상세 「되살리기」 같은
 // 단추의 더블클릭은 둘째 누름이 첫 op 의 회차가 돌아오기 전(단추를 다시 그리기 전)에 닿는다 — 그 누름은 보내지 않는다.
 function hasPendingOp(box, op) {

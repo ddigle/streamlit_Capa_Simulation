@@ -27,6 +27,11 @@
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
 // 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`). 사이드바 화면 링크도 같다 — 터치 톡은 초점이 빠지며 나간 표의 출납
 // 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누른다.
+// 떠나는 누름은 붙들기 판정 **전에** 떠나기 신호(`capa-leaving` — `grid_shared_assets/leave.js`, 등록 글이 이 파일 앞에 잇는다)를
+// 쏜다. 편집기는 묶어 두던 op 를 곧바로 보내고 ack 가 올 때까지 명부에 busy 다 — 손을 뗀 지 오래된 누름이어도 busy 면 붙들고,
+// busy 가 걷히고 회차가 끝날 때까지 기다린다. 명부에 오른 편집기가 busy 였다가 걷힌 붙들기는 「새 data 가 올 때까지 0.4초」 를
+// 기다리지 않는다 — 편집기만 다시 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘 붙었다(회차 끝 뒤 잠깐의 조용함
+// `HOLD_QUIET_MS` 만 둔다). 명부에 오르지 않는 편집표(glide `st.data_editor`)는 전처럼 0.4초를 기다린다.
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
@@ -72,6 +77,10 @@ const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
 const EDIT_MS = 5000
 // 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
 const HOLD_MS = 400
+// 명부에 오른 편집기의 busy 가 걷힌 붙들기는 회차 표지가 이만큼 「돌지 않음」 이면 보낸다 — 구역 회차가 본문 뒤에서 앱 전체로
+// 올라갈 때 두 회차 사이(끝 · 회차 끝 GC · 새 회차 시작 — 사본 64~89ms)와, 회차 끝(`script_finished`) 직후 수십 ms 안에 쓴
+// 트리거를 프런트가 지우는 창(`<tabs-queue>`)을 넘긴다.
+const HOLD_QUIET_MS = 120
 // 닫기·고정 누름 뒤 같은 자리의 둘째 누름을 더블클릭의 꼬리로 보는 창(`<tabs-press>`) — Windows 기본 더블클릭 시간과
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
@@ -171,14 +180,19 @@ function installHistoryGuard() {
 // 묻고 보낸다)·'drop'(버린다)으로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는
 // 기다린다(편집 회차 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다. 누른 뒤 주소(`path`)가
 // 바뀌었으면 사용자가 다른 길로 옮긴 것이다(뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
+// `editors` 는 떠나기 명부 판정이다({busy, seen, quiet, quietMs} — 없으면 위 판정 그대로). 명부의 편집기가 busy(보낼 것 · ack
+// 대기)면 기다린다. 붙든 동안 busy 였다가 걷혔으면(`seen`) 편집 회차가 이미 돌아왔다 — `minMs` 앞이어도 회차 표지가 `quietMs`
+// 동안 「돌지 않음」(`quiet`) 이면 보낸다. 새 data 를 기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
 function editPending(now, editAt, focused, ms) {
   return Boolean(focused) || now - editAt < ms
 }
-function holdVerdict(hold, now, running, data, minMs, maxMs, path) {
+function holdVerdict(hold, now, running, data, minMs, maxMs, path, editors = null) {
   if (hold.path !== path) return 'drop'
   const elapsed = now - hold.at
   if (elapsed >= maxMs) return 'go'
   if (running) return 'wait'
+  if (editors !== null && editors.busy) return 'wait'
+  if (elapsed < minMs && editors !== null && editors.seen) return editors.quiet >= editors.quietMs ? 'go' : 'wait'
   if (elapsed < minMs && data === hold.data) return 'wait'
   return 'go'
 }
@@ -705,7 +719,7 @@ export default function (component) {
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, busyTimer: 0, lastActive: null, onFonts: null, onOpenPage: null,
     onLink: null, linkFlight: null, linkReplay: null, linkOpened: null, queue: createSelectQueue(), waitOpen: null, settleTimer: 0, lastPress: null,
-    onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
+    onEdit: null, editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
     moves: createMoveBatch(), moveTimer: 0, dataOrder: null, dataSeen: null,
@@ -1053,18 +1067,32 @@ export default function (component) {
     const item = S.items.get(S.data.active)
     if (item && !item.hidden) item.__parts.tab.focus({ preventScroll: true })
   }
-  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다.
-  const holding = (item, go) => {
+  // 떠나기 신호를 쏘고 명부의 편집기가 busy 인지 본다 — 편집기는 처리기 안에서 묶어 두던 op 를 곧바로 보낸다(`leave.js`).
+  const leaving = () => {
+    announceLeaving(window)
+    return editorsBusy(editorBook(window))
+  }
+  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다. `seen` 은 붙든
+  // 순간 명부의 편집기가 busy 였는가다.
+  const holding = (item, go, seen = false) => {
     busy(item)
-    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go }
+    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go, seen }
     clearTimeout(S.holdTimer)
     S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+  }
+  // 명부 판정 — busy 를 한 번이라도 봤고 마지막 편집이 glide 격자가 아니면 busy 가 걷힌 뒤 0.4초를 기다리지 않는다(`holdVerdict`).
+  const editorVerdict = (hold) => {
+    const busyNow = editorsBusy(editorBook(window))
+    if (busyNow) hold.seen = true
+    const quiet = S.run.running ? 0 : Date.now() - S.run.changedAt
+    return { busy: busyNow, seen: Boolean(hold.seen) && !S.editGlide, quiet, quietMs: HOLD_QUIET_MS }
   }
   function release() {
     clearTimeout(S.holdTimer)
     const hold = S.hold
     if (!hold) return
-    const verdict = holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS, window.location.pathname)
+    const editors = editorVerdict(hold)
+    const verdict = holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS, window.location.pathname, editors)
     if (verdict === 'wait') {
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return
@@ -1094,7 +1122,8 @@ export default function (component) {
       return
     }
     if (verdict !== 'send') return
-    if (fresh()) {
+    const pending = leaving()
+    if (fresh() && !pending) {
       S.hold = null
       sendSelect(item, opened)
       return
@@ -1104,16 +1133,17 @@ export default function (component) {
       const target = S.items.get(id)
       if (target && !target.hidden && id !== S.data.active) sendSelect(target, opened)
       else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
-    })
+    }, pending)
   }
   const close = (item) => {
     const id = item.dataset.id
     if (item.__parts.close.hidden) return
-    if (id === S.data.active && !fresh()) {
+    const pending = id === S.data.active && leaving()
+    if (id === S.data.active && (!fresh() || pending)) {
       holding(item, () => {
         const target = S.items.get(id)
         if (target && !target.hidden) closeNow(target)
-      })
+      }, pending)
       return
     }
     S.hold = null
@@ -1151,13 +1181,14 @@ export default function (component) {
   // 붙든 동안 탭을 누르면 마지막 누름만 남는다 — 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다.
   const gate = {
     press: () => { S.pressFromGrid = S.gridFocused },
-    // 막 손을 뗀 누름이면 붙들고 참을 돌려준다 — 거짓이면 붙들지 않았으니 부른 쪽이 그대로 잇는다.
+    // 막 손을 뗀 누름이거나 명부의 편집기가 busy 면 붙들고 참을 돌려준다 — 거짓이면 붙들지 않았으니 부른 쪽이 그대로 잇는다.
     hold: (fn) => {
-      if (fresh()) {
+      const pending = leaving()
+      if (fresh() && !pending) {
         S.hold = null
         return false
       }
-      S.hold = { id: null, at: Date.now(), data: S.data, path: window.location.pathname, go: fn }
+      S.hold = { id: null, at: Date.now(), data: S.data, path: window.location.pathname, go: fn, seen: pending }
       clearTimeout(S.holdTimer)
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return true
@@ -1485,7 +1516,11 @@ export default function (component) {
     const inGrid = (node) => Boolean(node && node.closest && node.closest(S.gridSelector))
     S.onEdit = (event) => {
       if (event.type === 'focusin') S.gridFocused = inGrid(event.target)
-      if (inGrid(event.target)) S.editAt = Date.now()
+      if (inGrid(event.target)) {
+        S.editAt = Date.now()
+        // glide 격자(`st.data_editor`)는 떠나기 명부에 오르지 않는다 — 그 편집 뒤 붙들기는 0.4초를 기다린다(`<tabs-hold>`).
+        S.editGlide = Boolean(event.target.closest(GRID))
+      }
     }
     for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.addEventListener(type, S.onEdit, true)
   }

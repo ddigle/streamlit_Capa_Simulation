@@ -42,6 +42,12 @@
   않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다. 붙들기가 끝난 뒤 떠나는 화면이
   보내는 메시지(편집표가 접힌 편집을 걷고 0.15초 뒤 보내는 상태)는 회차 표지로 보이지 않는다 —
   그 메시지가 옮긴 화면을 덮지 않게 서버가 회차 맨 앞에서 거른다(`stale_page_guard`).
+- **떠나는 누름은 먼저 떠나기 신호를 쏜다**(AGENTS 9장 「구역 회차 규칙」 R8). 탭 고르기 · 지금 탭
+  닫기 · 사이드바 화면 링크 · 테마 단추 · 알림 칸 「그 화면으로」 는 붙들기 판정 전에 창 사건
+  `capa-leaving`(`grid_shared_assets/leave.js` — 등록 글이 탭 줄 JS 앞에 잇는다)을 쏜다. 묶어 보내던
+  편집기는 그 자리에서 남은 op 를 보내고 ack 가 올 때까지 떠나기 명부에 busy 다 — 붙들기는 busy 가
+  걷히고 회차가 끝날 때까지(길어야 `BUSY_MS`) 기다린다. busy 였다가 걷힌 붙들기는 새 data 를 0.4초
+  기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
 - **탭 누름은 한 번에 하나.** 다른 탭 고르기·지금 탭 닫기는 트리거를 보내기 전에 JS 가 누름
   기다림을 건다. 옮긴 화면의 탭 줄이 오고 그 회차가 다 돌거나 탭 줄이 온 뒤 1초가 지나기 전에 누른
   탭은 마지막 것만 기다렸다 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 누름은 프런트가 떠나는
@@ -111,7 +117,7 @@ from typing import Any, Final
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import process_field
+from capa_simulation.components import grid_shared, process_field
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
@@ -161,11 +167,18 @@ from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY, rerun_fr
 
 _ASSETS = Path(__file__).with_name("page_tabs_assets")
 
+
+def registered_js() -> str:
+    """등록 JS — 떠나기 신호 조각(`grid_shared.leave_js` — 떠나기 명부 · 구역 회차 표지) 뒤에 탭 줄
+    파일."""
+    return grid_shared.leave_js() + "\n" + (_ASSETS / "page_tabs.js").read_text(encoding="utf-8")
+
+
 _PAGE_TABS = st.components.v2.component(
     "capa_page_tabs",
     html=(_ASSETS / "page_tabs.html").read_text(encoding="utf-8"),
     css=(_ASSETS / "page_tabs.css").read_text(encoding="utf-8"),
-    js=(_ASSETS / "page_tabs.js").read_text(encoding="utf-8"),
+    js=registered_js(),
 )
 
 # 새로고침·테마 단추 뒤 새 세션이 공식 설비 시나리오로 열렸음을 알리는 글(개선 거리 I1). 새로고침은

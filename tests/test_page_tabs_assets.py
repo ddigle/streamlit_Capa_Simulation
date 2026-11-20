@@ -13,12 +13,15 @@ from typing import Any
 
 from js_runner import run_js_json
 
-from capa_simulation.components import page_tabs
+from capa_simulation.components import grid_shared, page_tabs
 
 ASSETS = page_tabs._ASSETS
 HTML = (ASSETS / "page_tabs.html").read_text(encoding="utf-8")
 CSS = (ASSETS / "page_tabs.css").read_text(encoding="utf-8")
 JS = (ASSETS / "page_tabs.js").read_text(encoding="utf-8")
+# 떠나기 신호 조각 — 등록 글이 탭 줄 JS 앞에 잇는다(`page_tabs.registered_js`).
+LEAVE_JS = grid_shared.leave_js()
+_LEAVE_SECTIONS = ("capa-leave", "capa-leave-window")
 
 
 def test_the_strip_sends_only_one_shot_triggers() -> None:
@@ -438,6 +441,10 @@ _SECTIONS = (
 
 def _sections() -> str:
     parts = []
+    for name in _LEAVE_SECTIONS:
+        match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", LEAVE_JS, re.S)
+        assert match, f"leave.js 에 // <{name}> 구획이 없습니다"
+        parts.append(match.group("body"))
     for name in _SECTIONS:
         match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
         assert match, f"page_tabs.js 에 // <{name}> 구획이 없습니다"
@@ -864,9 +871,10 @@ def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
     """다른 탭 고르기와 지금 탭 × 는 묻기(`leaveOk`) 전에 편집표에서 막 손을 뗀 누름인지
     본다. 누르는 순간의 편집표 포커스는 `pointerdown`(포커스가 탭으로 옮기기 전)에서 적는다."""
     select = JS[JS.index("const select = (item, opened = null) => {") :]
-    assert select.index("if (fresh())") < select.index("holding(item")
+    assert select.index("const pending = leaving()") < select.index("if (fresh() && !pending)")
+    assert select.index("if (fresh() && !pending)") < select.index("holding(item")
     close = JS[JS.index("const close = (item) => {") :]
-    assert close.index("!fresh()") < close.index("closeNow(item)")
+    assert close.index("leaving()") < close.index("!fresh()") < close.index("closeNow(item)")
     assert "S.pressFromGrid = S.gridFocused" in JS
     assert "document.addEventListener(type, S.onEdit, true)" in JS
     assert "document.removeEventListener(type, S.onEdit, true)" in JS
@@ -1724,7 +1732,8 @@ def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
     (`S.hold` — `release` 가 `holdVerdict` 로 놓는다)에 싣는다."""
     gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
     assert "press: () => { S.pressFromGrid = S.gridFocused }" in gate
-    assert gate.index("if (fresh())") < gate.index("S.hold = { id: null")
+    assert gate.index("const pending = leaving()") < gate.index("if (fresh() && !pending)")
+    assert gate.index("if (fresh() && !pending)") < gate.index("S.hold = { id: null")
     assert "release()" in gate
     assert "if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate" in JS
     # 붙든 테마 누름은 탭이 아니다 — 놓을 때 탭 표지를 건드리지 않고 부른 쪽을 잇는다.
@@ -1874,6 +1883,7 @@ _GATE_RUNNER = """
     const S = {
       items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
       editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+      run: createRunMark(false),
     }
     return { S, tab, ...mount(S, log) }
   }
@@ -1975,7 +1985,7 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     누름은 버려지고 탭 누름만 잇는다."""
     lines = [
         re.search(rf"^const {name} = .+$", JS, re.M)
-        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
     ]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
     assert len(constants.splitlines()) == len(lines)
@@ -2118,7 +2128,7 @@ _EDIT_HOST_RUNNER = """
     const S = {
       items: new Map(), queue: createSelectQueue(), data: { active: 'a', grids },
       editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
-      gridSelector: gridSelector(GRID, grids),
+      gridSelector: gridSelector(GRID, grids), run: createRunMark(false),
     }
     const T = mount(S, log)
     fire('focusin', target)
@@ -2158,7 +2168,15 @@ def test_a_theme_press_while_typing_in_the_equipment_master_grid_waits_for_the_e
     격자는 그대로 붙들고, 묶음 밖 칸(불러오기)은 붙들지 않는다."""
     lines = [
         re.search(rf"^const {name} = .+$", JS, re.M)
-        for name in ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+        for name in (
+            "GRID",
+            "BUSY_MS",
+            "SETTLE_POLL_MS",
+            "HOLD_MS",
+            "HOLD_QUIET_MS",
+            "EDIT_MS",
+            "APP_ROOT",
+        )
     ]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
     assert len(constants.splitlines()) == len(lines)
@@ -2183,3 +2201,202 @@ def test_a_theme_press_while_typing_in_the_equipment_master_grid_waits_for_the_e
     assert out["withoutHosts"][0] == ["theme"]
     assert out["otherHost"][0] == ["theme"]
     assert out["selector"] == ".base, .st-key-equipment_grid_table"
+
+
+_EDITORS_VERDICT_RUNNER = """
+const out = {}
+const data = { leave: '' }
+const hold = { at: 0, data, path: '/list' }
+const editors = (busy, seen, quiet) => ({ busy, seen, quiet, quietMs: 120 })
+out.verdicts = [
+  // 명부의 편집기가 busy(보낼 것 · ack 대기)면 0.4초가 지나도 기다린다.
+  holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(true, true, 999)),
+  // busy 였다가 걷혔다 — 새 data 없이도 회차 끝 뒤 조용함이 차면 0.4초 전에 보낸다.
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 50)),
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 120)),
+  // 명부가 busy 를 본 적 없으면(glide 격자 · 명부에 오르지 않은 편집기) 전처럼 0.4초를 기다린다.
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, false, 999)),
+  holdVerdict(hold, 400, false, data, 400, 10000, '/list', editors(false, false, 999)),
+  // 회차가 돌면 기다리고, 상한 · 주소 바뀜은 그대로다.
+  holdVerdict(hold, 200, true, data, 400, 10000, '/list', editors(false, true, 999)),
+  holdVerdict(hold, 10000, true, data, 400, 10000, '/list', editors(true, true, 0)),
+  holdVerdict(hold, 200, false, data, 400, 10000, '/', editors(false, true, 999)),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_hold_waits_for_busy_editors_and_skips_the_new_data_wait_once_they_clear() -> None:
+    """붙든 누름은 떠나기 명부의 편집기가 busy 인 동안 기다리고, busy 였다가 걷혔으면 새 data 를
+    0.4초 기다리지 않는다 — 편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘
+    붙었다. 회차 끝 뒤 잠깐의 조용함(`HOLD_QUIET_MS`)만 둔다. 명부가 busy 를 본 적 없는 붙들기는
+    그대로다."""
+    out = _node(_EDITORS_VERDICT_RUNNER)
+
+    assert out["verdicts"] == ["wait", "wait", "go", "wait", "go", "wait", "go", "drop"]
+
+
+_BUSY_GATE_RUNNER = """
+(() => {
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
+  const window = new EventTarget()
+  window.location = { pathname: '/list' }
+  window.CustomEvent = CustomEvent
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item) => log.push('tab:' + item.dataset.id + '@' + (now - S.t0))
+    %(slice)s
+    return { gate, select }
+  }
+  const strip = (log, t0) => {
+    timers.length = 0
+    now = t0
+    scriptState = 'notRunning'
+    const parts = { tab: {}, close: { hidden: false } }
+    const tab = { dataset: { id: 'b' }, hidden: false, __parts: parts }
+    const S = {
+      items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
+      editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null,
+      holdTimer: 0, run: createRunMark(false), t0,
+    }
+    return { S, tab, ...mount(S, log) }
+  }
+  // 묶어 보내는 편집기 대역 — 신호에 곧바로 보내고(`flush`) ack 까지 busy.
+  const editor = (log) => {
+    const E = { queued: 0, sent: 0, acked: 0 }
+    E.handle = joinLeaving(window, {
+      busy: () => E.queued > E.acked,
+      flush: () => { if (E.queued > E.sent) { E.sent = E.queued; log.push('flush') } },
+    })
+    return E
+  }
+  // 신호에 보낸 편집의 구역 회차 — `start` 에 돌기 시작해 `end` 에 ack 를 싣고 끝난다(탭 줄 data 는
+  // 그대로).
+  const scopeRun = (T, E, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    E.acked = E.queued
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
+  const out = {}
+  const at = (log, t0) => (label) => () => log.push(label + '@' + (now - t0))
+
+  // 손을 뗀 지 오래된 누름 · 보낼 것 없음 — 신호만 쏘고 곧바로 잇는다.
+  let log = []
+  let T = strip(log, 0)
+  let E = editor(log)
+  T.gate.go(at(log, 0)('theme'))
+  out.idle = [log.slice(), T.S.hold]
+  E.handle.drop()
+
+  // 손을 뗀 지 오래된 누름이어도 묶어 둔 op 가 있으면 — 신호에 곧바로 보내고 붙든다. 편집 회차가
+  // ack 를 싣고 끝나면 조용함(`HOLD_QUIET_MS`) 뒤, 0.4초 전에 잇는다(새 data 를 기다리지 않는다).
+  log = []
+  T = strip(log, 1000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 1000)('theme'))
+  out.flushed = [log.slice(), T.S.hold !== null]
+  scopeRun(T, E, 1020, 1160)
+  advance(1600)
+  out.busyHeld = log.slice()
+  E.handle.drop()
+
+  // 탭 고르기도 같다 — 신호 · 붙듦 · ack 뒤 조용함.
+  log = []
+  T = strip(log, 2000)
+  E = editor(log)
+  E.queued = 1
+  T.select(T.tab)
+  scopeRun(T, E, 2020, 2160)
+  advance(2600)
+  out.tab = log.slice()
+  E.handle.drop()
+
+  // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 전처럼 새 data 를 0.4초
+  // 기다린다.
+  log = []
+  T = strip(log, 3000)
+  E = editor(log)
+  E.queued = 1
+  T.S.editAt = 3000
+  T.S.editGlide = true
+  T.gate.go(at(log, 3000)('theme'))
+  scopeRun(T, E, 3020, 3160)
+  advance(3600)
+  out.glide = log.slice()
+  E.handle.drop()
+
+  // ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다.
+  log = []
+  T = strip(log, 10000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 10000)('theme'))
+  advance(10000 + BUSY_MS - 200)
+  out.capEarly = log.slice()
+  advance(10000 + BUSY_MS + 200)
+  out.capLate = log.slice().map((item) => item.split('@')[0])
+  E.handle.drop()
+
+  // 내린 편집기(명부에서 빠짐)는 붙들기를 묶지 않는다.
+  log = []
+  T = strip(log, 30000)
+  E = editor(log)
+  E.queued = 1
+  E.handle.drop()
+  T.gate.go(at(log, 30000)('theme'))
+  out.dropped = log.slice()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None:
+    """떠나는 누름(테마 단추 · 사이드바 링크가 지나는 `gate`, 탭 고르기)은 붙들기 판정 **전에**
+    떠나기 신호를 쏜다. 묶어 둔 op 가 있는 편집기는 그 자리에서 보내고 ack 가 올 때까지 busy 라,
+    손을 뗀 지 오래된 누름도 붙든다. 그 편집 회차(구역 회차 — 탭 줄 data 는 그대로)가 ack 를 싣고
+    끝나면 조용함 뒤 0.4초 전에 잇는다. glide 격자 편집 뒤는 전처럼 0.4초를 기다리고, ack 가 끝내
+    오지 않으면 `BUSY_MS` 에서 놓는다."""
+    names = ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
+    lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  const appRunning = () => {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _BUSY_GATE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["idle"] == [["theme@0"], None]
+    assert out["flushed"] == [["flush"], True]
+    assert out["busyHeld"] == ["flush", "theme@300"]
+    assert out["tab"] == ["flush", "tab:b@300"]
+    assert out["glide"] == ["flush", "theme@400"]
+    assert out["capEarly"] == ["flush"]
+    assert out["capLate"] == ["flush", "theme"]
+    assert out["dropped"] == ["theme@0"]

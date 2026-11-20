@@ -10,6 +10,10 @@
 - **자산 잇기**(`joined_assets`) — 등록 글은 공용 조각(`grid_shared_assets/`) 뒤에 화면 파일을
   잇는다. 그림자 DOM 이라 클래스 이름이 다른 등록과 부딪히지 않는다. CSS 는 차례가 뜻을 가른다(같은
   특이도면 뒤가 이긴다) — 공용 조각을 **앞**에 둔다.
+- **떠나기 신호**(`leave.js` — `LEAVE_JS` · `leave_js`) — 화면을 떠나는 누름이 쏘는 창 사건
+  `capa-leaving` · 편집기 명부(busy) · 편집기 구역 회차 표지(AGENTS 9장 「구역 회차 규칙」 R8). 표
+  공용 조각(`SHARED_JS`)에 들어 있고, 공용 조각을 잇지 않는 등록(범용 편집 그리드 · 화면 탭 줄)은
+  `leave_js()` 글을 제 등록 글 앞에 잇는다.
 """
 
 from __future__ import annotations
@@ -23,7 +27,8 @@ import streamlit as st
 from capa_simulation.design import tokens
 
 SHARED_ASSETS: Final = Path(__file__).with_name("grid_shared_assets")
-SHARED_JS: Final = ("nav.js", "outbox.js", "dom.js")
+LEAVE_JS: Final = "leave.js"
+SHARED_JS: Final = ("nav.js", "outbox.js", "dom.js", LEAVE_JS)
 SHARED_CSS: Final = ("cells.css", "changes.css")
 # 단계 칩 바탕의 옅기 — 단계 색을 바탕 위에 이만큼 얹은 불투명 색(`tokens.opaque_mix`).
 LEVEL_FILL_ALPHA: Final = 0.14
@@ -78,6 +83,11 @@ def outbox_mount(value: object) -> str | None:
     if isinstance(value, Mapping) and isinstance(value.get("mount"), str):
         return str(value["mount"])
     return None
+
+
+def leave_js() -> str:
+    """떠나기 신호 조각 글(`leave.js`) — 공용 조각을 잇지 않는 등록이 제 글 앞에 잇는다."""
+    return (SHARED_ASSETS / LEAVE_JS).read_text(encoding="utf-8")
 
 
 def joined_assets(shared: Sequence[str], own: Sequence[Path]) -> str:
