@@ -79,7 +79,7 @@ def test_a_database_at_0033_keeps_every_other_row_and_gets_an_empty_table(
     before = _table_counts(path)
     assert NEW_TABLE not in before
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION,)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 35)
 
     after = _table_counts(path)
     assert after[NEW_TABLE] == 0

@@ -36,6 +36,7 @@ from capa_simulation.services.required_shortening import (
     level_percent,
     target_preset,
 )
+from capa_simulation.services.static_qual_schedule import BASIS_MASTER, basis_label
 
 __all__ = [
     "BASELINE_NAME_MAX_LENGTH",
@@ -146,6 +147,9 @@ class ShorteningBaselineSummary:
     equipment_schedule_revision_no: int | None = None
     equipment_scenario_name: str | None = None
     equipment_release_no: int | None = None
+    schedule_basis: str = BASIS_MASTER
+    """그때 계획의 현재 일정 기준(설비 0035 — 옛 기준선은 NULL 이라 설비 마스터). 진척 비교는 같은
+    기준의 지금 계획과 견준다(2026-11-20 사용자 보드 답 Q14 (가))."""
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,8 @@ class ShorteningBaselineDraft:
     cutoff_days: Mapping[str, int]
     units: pd.DataFrame
     provenance: BaselineProvenance = field(default_factory=BaselineProvenance)
+    schedule_basis: str = BASIS_MASTER
+    """얼린 계획의 현재 일정 기준(`ShorteningPlan.basis`)."""
 
 
 @dataclass(frozen=True)
@@ -258,6 +264,7 @@ def freeze_plan(
         },
         units=baseline_units_frame(plan),
         provenance=provenance or BaselineProvenance(),
+        schedule_basis=basis_label(plan.basis),
     )
 
 

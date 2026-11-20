@@ -119,7 +119,7 @@ equipment_ops.equipment_schedule_revision       시나리오 일정 리비전(�
        ⋯ common_revision_id  → revision         저장 때 함께 본 공통 리비전(「그때 그대로」 보기)
 equipment_ops.equipment_official_release        공식 발행(append-only · release_no 전역)
 equipment_ops.equipment_legacy_boundary         이관 경계 번호(0027 이 1행 · 「이대로 이어 쓰기」 가 덧붙임)
-equipment_ops.shortening_baseline (0021)        + 설비 쪽 출처 칸 넷(0027 — 가리키기만)
+equipment_ops.shortening_baseline (0021)        + 설비 쪽 출처 칸 넷(0027 — 가리키기만) · 현재 일정 기준(0035)
    (⋯ = FK 없는 가리킴. 소유·정합은 저장소가 같은 트랜잭션에서 지킨다)
 
 # data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
@@ -135,7 +135,8 @@ equipment_ops.floor_state_profile  1 ── N floor_state        Space 층 사�
 equipment_ops.manual_downtime_profile 1 ── N manual_downtime  입력 비가동 대수(0032, 행 = 0 아닌 (공정, 생산월), PK 공정·달)
                                      └── N manual_downtime_save   저장 이력(0032, 저장 한 번 = 한 행, PK version)
 equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
-                                     └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다)
+                                     └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다.
+                                                                           머리의 현재 일정 기준 0035 — NULL 은 설비 마스터)
 
 equipment_meta.schema_migration
 ```

@@ -1,4 +1,4 @@
-# Purpose: 필요 단축 일정 기준선(설비 DB 0021·0027)의 머리·공정·호기 행을 읽고 넣고 지우는 SQL.
+# Purpose: 필요 단축 일정 기준선(설비 DB 0021·0027·0035)의 머리·공정·호기 행을 읽고 넣고 지우는 SQL.
 
 """필요 단축 일정 기준선의 SQL.
 
@@ -29,6 +29,7 @@ from capa_simulation.services.shortening_baseline import (
     ShorteningBaselineSummary,
     normalize_baseline_units,
 )
+from capa_simulation.services.static_qual_schedule import BASIS_MASTER, basis_label
 
 __all__ = [
     "BASELINE_UNIT_DB_COLUMNS",
@@ -66,7 +67,7 @@ _SUMMARY_PROJECTION = """
     equipment_revision_id, equipment_revision_no, reference_version, scenario_id, scenario_name,
     scenario_revision_id, scenario_revision_no, scenario_content_token,
     equipment_schedule_revision_ref, equipment_schedule_revision_no, equipment_scenario_name,
-    equipment_release_no
+    equipment_release_no, schedule_basis
 """
 
 
@@ -93,8 +94,8 @@ def insert_baseline(
             equipment_revision_id, equipment_revision_no, reference_version, scenario_id,
             scenario_name, scenario_revision_id, scenario_revision_no, scenario_content_token,
             equipment_schedule_revision_ref, equipment_schedule_revision_no,
-            equipment_scenario_name, equipment_release_no
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            equipment_scenario_name, equipment_release_no, schedule_basis
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             baseline_id,
@@ -116,6 +117,7 @@ def insert_baseline(
             source.equipment_schedule_revision_no,
             source.equipment_scenario_name,
             source.equipment_release_no,
+            basis_label(draft.schedule_basis),
         ],
     )
     if draft.processes:
@@ -243,6 +245,8 @@ def _summary(row: Sequence[object]) -> ShorteningBaselineSummary:
         equipment_schedule_revision_no=_integer(row[16]),
         equipment_scenario_name=_text(row[17]),
         equipment_release_no=_integer(row[18]),
+        # 0035 전에 저장한 기준선은 NULL — 설비 마스터 기준이었다.
+        schedule_basis=basis_label(str(row[19])) if row[19] is not None else BASIS_MASTER,
     )
 
 

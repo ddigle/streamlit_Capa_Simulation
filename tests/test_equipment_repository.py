@@ -66,6 +66,7 @@ def _repository(path: Path) -> DuckDBEquipmentRepository:
         32,
         33,
         34,
+        35,
     )
     assert repository.initialize() == ()
     return repository
@@ -342,6 +343,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         32,
         33,
         34,
+        35,
     )
     snapshot = repository.load_snapshot("legacy-r1")
 
