@@ -5518,8 +5518,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조회 조건 패널 줄 `목표 확보율` — 화면 팝업
   호스트 `SHORTENING_DIALOG_HOST` 와 줄 `LEVEL_FIELD` 를 여기 두고 페이지가 세운다, 2차 보드 Q2-26 · 조건 카드 — 맨 위 `진척 비교`(그림
   메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
-  · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
-  둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 상태 알림
+  · `_view_choices`) · 공정 칸은 이름 줄 + 적용한 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
+  둘 이상이면 풍선이 전체 목록 — 2026-11-09 사용자 검수 g03-2), 안이 공용 공정 팝업과 같은 고르기 판(`PROCESS_BOARD_KEY` —
+  `process_field.mount_process_board`, 2026-11-20 사용자 결정 「여럿 고른 뒤 「적용」 한 번」: 타일 누름은 서버 0회차, 「적용」 ·
+  「선택 해제」 는 트리거 하나 → 콜백 `_apply_processes` 가 회차 앞에서 세션 칸 `SHORTENING_PROCESS_KEY`(위젯 key 아님 — 적용한 값 ·
+  고른 차례)와 공용 프로필(`_save_processes`)을 적어 앱 전체 회차 하나. 판 data `wholeIsAll: false` · `pickOrder` · `clearLabel`
+  「선택 해제」. 고르고 적용하지 않은 동안 「적용」 만 켜짐 — UI-INP-04. 적용하지 않은 고름은 판(브라우저) 안이라 팝오버를 닫거나
+  화면을 떠나면 사라진다 — 거르는 조건이라 잃는 입력이 없고 칸 글은 늘 적용한 값, 공용 공정 팝업이 열 때 고르다 만 판을 비우는 것과
+  같은 꼴. 팝오버 몸통은 닫히면 판을 내리고(초점 · 초안 없음) 창 높이를 넘으면 안에서 굴린다), 상태 알림
   `RS-03` ~ `RS-05`(자리 표지 없음), KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
@@ -5575,8 +5581,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10). 계산
   멈춤 글(수요 멈춤 · 달 범위 멈춤)의 예시 행은 화면 꼴 「YY.MM 공정 양산구분」 이고 공정은 원본 이름이다(`labels=None` ·
   `example_rows=True` — 2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다), 달 범위는 공용 길이 실은 `cause` 로 다시 짓는다).
-  - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
-    쓴다.
+  - 공정을 비우면 목표 미달 공정 전체다(모두 켬은 맞댄 공정 전부 — 비움과 다르다). 조건 셋은 공용 프로필(`0019`)이라 세션이
+    비었을 때만 심고 기간은 `on_change`, 공정은 고르기 판 「적용」 콜백에서만 쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
   - 머리·본문은 「본문 프래그먼트」다 — 기준선·판정 기준은 회차마다 다시 읽고 기준선 쓰기 표지를 보면
     `st.rerun(scope="app")` 한다(`tests/test_shortening_view_fragment.py`·`tests/fragment_browser.py`).

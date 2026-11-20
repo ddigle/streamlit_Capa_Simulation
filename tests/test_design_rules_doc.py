@@ -3443,7 +3443,7 @@ def test_the_shortening_legend_request_is_judged_in_6_39() -> None:
     assert "판 v1.42" in document.split("\n## 1. ")[0]
     assert "6-39 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-39. ") :]
+    record = section[section.index("\n### 6-39. ") : section.index("\n### 6-40. ")]
     assert "「여기도 각각의 요약 값 하단에 회색글씨 설명문구 Guide로 이동」" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     assert lines and lines[0].startswith("- shk-legend · "), lines
@@ -3481,7 +3481,7 @@ def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
     적지 않는다(PRC-02)."""
     document = _text()
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-39. ") :]
+    record = section[section.index("\n### 6-39. ") : section.index("\n### 6-40. ")]
     follow = record[record.index("\n같은 날 후속(갈래 `n1120/guide2x`)") :]
     lines = [line for line in follow.splitlines() if line.startswith("- ")]
     assert lines, follow[:200]
@@ -3504,6 +3504,35 @@ def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
     assert "**나 — 걷고 Guide 「분류별 내역 — 9행 시트」 의 「시트 표지」**" in legend
     assert "사용자 답 「두가지는 너가말한대로 진행해」" in legend
     assert "아래 gap-sheet-legend 줄" in record
+
+
+RERUN_1120_ANSWERS = {
+    "q5-head": "머리 글에서 칸 수 · 층 수를 뺀다",
+    "q6-apply": "여럿 고른 뒤 「적용」 한 번",
+}
+
+
+def test_the_rerun_1120_user_decisions_are_recorded_in_6_40() -> None:
+    """6-40 은 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 갈래 F 가 구현한 사용자 결정 둘이 한
+    줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른 답이 굵게 선다. 필요 단축 일정 「공정」 의 옛
+    답 m19-rr-d5 를 바꾼 것은 7-1 에 선다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-40. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        assert match, line
+        card, answer = match.group(1), match.group(2)
+        found.append(card)
+        assert answer == RERUN_1120_ANSWERS[card], card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(RERUN_1120_ANSWERS)
+    overturned = _chapter(document, 7)
+    assert "m19-rr-d5" in overturned and "6-40" in overturned
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
