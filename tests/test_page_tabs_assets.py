@@ -2214,13 +2214,17 @@ _EDITORS_VERDICT_RUNNER = """
 const out = {}
 const data = { leave: '' }
 const hold = { at: 0, data, path: '/list' }
-const editors = (busy, seen, quiet) => ({ busy, seen, quiet, quietMs: 120 })
+const editors = (busy, seen, quiet) => ({ busy, seen, quiet, quietMs: 300 })
 out.verdicts = [
   // 명부의 편집기가 busy(보낼 것 · ack 대기)면 0.4초가 지나도 기다린다.
   holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(true, true, 999)),
   // busy 였다가 걷혔다 — 새 data 없이도 회차 끝 뒤 조용함이 차면 0.4초 전에 보낸다.
   holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 50)),
-  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 120)),
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 300)),
+  // 0.4초가 지났어도 조용함이 차기 전(ack 를 그린 구역 회차가 앱 전체로 올라가는 두 회차 사이)에는
+  // 놓지 않는다.
+  holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(false, true, 10)),
+  holdVerdict(hold, 900, false, data, 400, 10000, '/list', editors(false, true, 300)),
   // 명부가 busy 를 본 적 없으면(glide 격자 · 명부에 오르지 않은 편집기) 전처럼 0.4초를 기다린다.
   holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, false, 999)),
   holdVerdict(hold, 400, false, data, 400, 10000, '/list', editors(false, false, 999)),
@@ -2236,11 +2240,23 @@ process.stdout.write(JSON.stringify(out))
 def test_a_hold_waits_for_busy_editors_and_skips_the_new_data_wait_once_they_clear() -> None:
     """붙든 누름은 떠나기 명부의 편집기가 busy 인 동안 기다리고, busy 였다가 걷혔으면 새 data 를
     0.4초 기다리지 않는다 — 편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘
-    붙었다. 회차 끝 뒤 잠깐의 조용함(`HOLD_QUIET_MS`)만 둔다. 명부가 busy 를 본 적 없는 붙들기는
-    그대로다."""
+    붙었다. 대신 누른 지 얼마가 지났든 회차 끝 뒤 조용함(`HOLD_QUIET_MS`)이 차야 놓는다 — ack 를
+    그린 구역 회차가 본문 뒤에서 앱 전체로 올라가는 두 회차 사이(회차 끝 GC)에 놓으면 떠나기 표지가
+    서기 전이다. 명부가 busy 를 본 적 없는 붙들기는 그대로다."""
     out = _node(_EDITORS_VERDICT_RUNNER)
 
-    assert out["verdicts"] == ["wait", "wait", "go", "wait", "go", "wait", "go", "drop"]
+    assert out["verdicts"] == [
+        "wait",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "drop",
+    ]
 
 
 _BUSY_GATE_RUNNER = """
@@ -2309,6 +2325,16 @@ _BUSY_GATE_RUNNER = """
     scriptState = 'notRunning'
     markRun(T.S.run, false, now)
   }
+  // ack 를 그린 구역 회차가 본문 뒤에서 올린 앱 전체 회차 — 앞 회차 끝(회차 끝 GC 틈) 뒤 `start` 에
+  // 돌기 시작해 `end` 에 끝난다.
+  const appRun = (T, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
   const out = {}
   const at = (log, t0) => (label) => () => log.push(label + '@' + (now - t0))
 
@@ -2342,6 +2368,21 @@ _BUSY_GATE_RUNNER = """
   scopeRun(T, E, 2020, 2160)
   advance(2600)
   out.tab = log.slice()
+  E.handle.drop()
+
+  // 구역 회차가 0.4초 넘게 돌아 ack 를 싣고 본문 뒤에서 앱 전체로 올라간다 — 두 회차 사이(회차 끝 GC
+  // 100ms)에 놓지 않고, 올라간 앱 전체 회차가 끝난 뒤 조용함이 차야 잇는다.
+  log = []
+  T = strip(log, 5000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 5000)('theme'))
+  scopeRun(T, E, 5020, 5450)
+  advance(5550)
+  out.gapHeld = log.slice()
+  appRun(T, 5550, 5750)
+  advance(6400)
+  out.afterApp = log.slice()
   E.handle.drop()
 
   // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 전처럼 새 data 를 0.4초
@@ -2387,8 +2428,9 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     """떠나는 누름(테마 단추 · 사이드바 링크가 지나는 `gate`, 탭 고르기)은 붙들기 판정 **전에**
     떠나기 신호를 쏜다. 묶어 둔 op 가 있는 편집기는 그 자리에서 보내고 ack 가 올 때까지 busy 라,
     손을 뗀 지 오래된 누름도 붙든다. 그 편집 회차(구역 회차 — 탭 줄 data 는 그대로)가 ack 를 싣고
-    끝나면 조용함 뒤 0.4초 전에 잇는다. glide 격자 편집 뒤는 전처럼 0.4초를 기다리고, ack 가 끝내
-    오지 않으면 `BUSY_MS` 에서 놓는다."""
+    끝나면 조용함(`HOLD_QUIET_MS`) 뒤에 잇는다(새 data 를 기다리지 않는다). 그 회차가 본문 뒤에서 앱
+    전체로 올라가면 두 회차 사이에 놓지 않고 올라간 회차가 끝난 뒤 조용함을 기다린다. glide 격자 편집
+    뒤는 전처럼 0.4초를 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
     names = ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
     lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
@@ -2401,8 +2443,10 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
 
     assert out["idle"] == [["theme@0"], None]
     assert out["flushed"] == [["flush"], True]
-    assert out["busyHeld"] == ["flush", "theme@300"]
-    assert out["tab"] == ["flush", "tab:b@300"]
+    assert out["busyHeld"] == ["flush", "theme@500"]
+    assert out["tab"] == ["flush", "tab:b@500"]
+    assert out["gapHeld"] == ["flush"], "두 회차 사이(0.4초 넘음)에 놓지 않는다"
+    assert out["afterApp"] == ["flush", "theme@1100"]
     assert out["glide"] == ["flush", "theme@400"]
     assert out["capEarly"] == ["flush"]
     assert out["capLate"] == ["flush", "theme"]

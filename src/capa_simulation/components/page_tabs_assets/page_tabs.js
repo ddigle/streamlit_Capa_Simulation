@@ -30,9 +30,11 @@
 // 같은 떠나기 확인(`leave`)을 묻는다.
 // 떠나는 누름은 붙들기 판정 **전에** 떠나기 신호(`capa-leaving` — `grid_shared_assets/leave.js`, 등록 글이 이 파일 앞에 잇는다)를
 // 쏜다. 편집기는 묶어 두던 op 를 곧바로 보내고 ack 가 올 때까지 명부에 busy 다 — 손을 뗀 지 오래된 누름이어도 busy 면 붙들고,
-// busy 가 걷히고 회차가 끝날 때까지 기다린다. 명부에 오른 편집기가 busy 였다가 걷힌 붙들기는 「새 data 가 올 때까지 0.4초」 를
-// 기다리지 않는다 — 편집기만 다시 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘 붙었다(회차 끝 뒤 잠깐의 조용함
-// `HOLD_QUIET_MS` 만 둔다). 명부에 오르지 않는 편집표(glide `st.data_editor`)는 전처럼 0.4초를 기다린다.
+// busy 가 걷히고 회차가 끝날 때까지 기다린다. 명부에 오른 편집기가 busy 였다가 걷힌 붙들기는 누른 지 얼마가 지났든 회차 표지가
+// `HOLD_QUIET_MS` 동안 「돌지 않음」 이어야 놓는다 — ack 를 그린 구역 회차가 본문 뒤에서 앱 전체로 올라가면 두 회차 사이(회차 끝
+// GC)도 「돌지 않음」 이고, 그 틈에 놓으면 머리 띠 · 탭 줄이 아직 옛 떠나기 표지라 묻지 않고 떠난다. 「새 data 가 올 때까지
+// 0.4초」 는 기다리지 않는다(편집기만 다시 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다). 명부에 오르지 않는 편집표(glide
+// `st.data_editor`)는 전처럼 0.4초를 기다린다.
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
@@ -78,10 +80,11 @@ const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
 const EDIT_MS = 5000
 // 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
 const HOLD_MS = 400
-// 명부에 오른 편집기의 busy 가 걷힌 붙들기는 회차 표지가 이만큼 「돌지 않음」 이면 보낸다 — 구역 회차가 본문 뒤에서 앱 전체로
-// 올라갈 때 두 회차 사이(끝 · 회차 끝 GC · 새 회차 시작 — 사본 64~89ms)와, 회차 끝(`script_finished`) 직후 수십 ms 안에 쓴
-// 트리거를 프런트가 지우는 창(`<tabs-queue>`)을 넘긴다.
-const HOLD_QUIET_MS = 120
+// 명부에 오른 편집기의 busy 가 걷힌 붙들기는 회차 표지가 이만큼 「돌지 않음」 이어야 보낸다(누른 지 얼마가 지났든) — 구역 회차가
+// 본문 뒤에서 앱 전체로 올라갈 때 두 회차 사이(끝 · 회차 끝 GC · 새 회차 시작 — 사본 GC 64~89ms, 같은 프로세스의 다른 세션이
+// GIL 을 쥐면 더 길다)와, 회차 끝(`script_finished`) 직후 수십 ms 안에 쓴 트리거를 프런트가 지우는 창(`<tabs-queue>`)을 넘긴다.
+// 그 틈에 놓으면 떠나기 표지가 서기 전이라 묻지 않고 떠나므로 사본 GC 의 세 배 넘게 둔다.
+const HOLD_QUIET_MS = 300
 // 닫기·고정 누름 뒤 같은 자리의 둘째 누름을 더블클릭의 꼬리로 보는 창(`<tabs-press>`) — Windows 기본 더블클릭 시간과
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
@@ -182,8 +185,9 @@ function installHistoryGuard() {
 // 기다린다(편집 회차 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다. 누른 뒤 주소(`path`)가
 // 바뀌었으면 사용자가 다른 길로 옮긴 것이다(뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
 // `editors` 는 떠나기 명부 판정이다({busy, seen, quiet, quietMs} — 없으면 위 판정 그대로). 명부의 편집기가 busy(보낼 것 · ack
-// 대기)면 기다린다. 붙든 동안 busy 였다가 걷혔으면(`seen`) 편집 회차가 이미 돌아왔다 — `minMs` 앞이어도 회차 표지가 `quietMs`
-// 동안 「돌지 않음」(`quiet`) 이면 보낸다. 새 data 를 기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
+// 대기)면 기다린다. 붙든 동안 busy 였다가 걷혔으면(`seen`) 편집 회차가 ack 를 싣고 돌아왔다 — 누른 지 얼마가 지났든 회차 표지가
+// `quietMs` 동안 「돌지 않음」(`quiet`) 이어야 보낸다(그 회차가 앱 전체로 올라가는 두 회차 사이에 놓지 않는다). 새 data 는
+// 기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
 function editPending(now, editAt, focused, ms) {
   return Boolean(focused) || now - editAt < ms
 }
@@ -193,7 +197,7 @@ function holdVerdict(hold, now, running, data, minMs, maxMs, path, editors = nul
   if (elapsed >= maxMs) return 'go'
   if (running) return 'wait'
   if (editors !== null && editors.busy) return 'wait'
-  if (elapsed < minMs && editors !== null && editors.seen) return editors.quiet >= editors.quietMs ? 'go' : 'wait'
+  if (editors !== null && editors.seen) return editors.quiet >= editors.quietMs ? 'go' : 'wait'
   if (elapsed < minMs && data === hold.data) return 'wait'
   return 'go'
 }
@@ -1083,7 +1087,8 @@ export default function (component) {
     clearTimeout(S.holdTimer)
     S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
   }
-  // 명부 판정 — busy 를 한 번이라도 봤고 마지막 편집이 glide 격자가 아니면 busy 가 걷힌 뒤 0.4초를 기다리지 않는다(`holdVerdict`).
+  // 명부 판정 — busy 를 한 번이라도 봤고 마지막 편집이 glide 격자가 아니면 busy 가 걷힌 뒤 새 data 를 0.4초 기다리지 않고 회차
+  // 표지의 조용함(`HOLD_QUIET_MS`)을 본다(`holdVerdict`).
   const editorVerdict = (hold) => {
     const busyNow = editorsBusy(editorBook(window))
     if (busyNow) hold.seen = true
