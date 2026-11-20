@@ -8542,7 +8542,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   센다).
 - **R8 떠나기 신호**(`leave.js`). 화면을 떠나는 누름(탭 줄 고르기 · 지금 탭 닫기 · 사이드바 화면 링크 · 테마 단추 · 알림
   칸 「그 화면으로」)은 붙들기 판정 전에 창 사건 `capa-leaving` 을 쏜다(`announceLeaving`). 옮기는 동안 기다리던 탭 누름과
-  서버에 닿지 않아 다시 보내는 고르기(T1)도 보내기 전에 같은 신호 · 붙들기를 지난다(`page_tabs.js` 의 `leaveThen`). 묶어 보내는 편집기는
+  서버에 닿지 않아 다시 보내는 고르기도 보내기 전에 같은 신호 · 붙들기를 지난다(`page_tabs.js` 의 `leaveThen`). 묶어 보내는 편집기는
   `joinLeaving(window, { busy, flush })` 로 명부(`window.__capaEditors`)에 올라 신호에 남은 op 를 곧바로 보내고, 보낼 것이
   남았거나 ack 가 오지 않은 동안 busy 다(`boxBusy` — 표 공용 출납). 신호 뒤 편집은 묶지 않고(`leavingNow`) 다 걷히면 다시
   묶는다(`settleLeaving`). 탭 줄 붙들기는 busy 가 걷히고 회차가 끝날 때까지(상한 `BUSY_MS`) 기다리고, busy 였다가 걷힌
@@ -8551,8 +8551,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   회차 사이(회차 끝 GC)도 「돌지 않음」 이고, 그 틈에 놓으면 떠나기 표지가 서기 전이라 테마 단추가 묻지 않고 새로 읽는다.
   그래서 명부에 오르는 편집기는 op 가 머리 표지를 바꾸는 올리기를 콜백 끝(`escalates`)에서 한다 — ack 가 올라간 앱 전체
   회차에 실린다. 본문 뒤 올리기는 남의 저장(R4) · 본문이 바꾼 표지 몫이다. 명부에 오르지 않는 glide
-  격자(`st.data_editor`)는 전처럼 0.4초다. 공용 조각을 잇지 않는 등록은 `grid_shared.leave_js()` 글을 제 등록 글 앞에
-  잇는다.
+  격자(`st.data_editor`)는 새 data 를 0.4초(`HOLD_MS`) 기다린다. 공용 조각을 잇지 않는 등록은
+  `grid_shared.leave_js()` 글을 제 등록 글 앞에 잇는다.
 - **보이는 로딩.** 편집기 구역 본문은 구역 칸(`fragment_scope.box_key(key)` — key 접두 `SCOPE_BOX_PREFIX` `capa_scope_`)
   안에 그린다(`editor_scope(box=True)` 기본, 손수 두면 `scope_box`). 회차 표지가 「돈다」 로 바뀐 순간 구역 밖 화면 탭
   줄이 낡음이 아니고 구역 칸 안만 낡음이면 `leave.js` 지킴이(`watchScopeRuns` — 탭 줄이 건다)가 문서 뿌리에
@@ -8561,7 +8561,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **묶음 길이**는 편집기마다 결정값 상수로 두고 data 로 JS 에 넘긴다(`grid_shared.batch_ms`). 개발 · 측정 사본만 실행 줄
   환경변수 `CAPA_DEV_BATCH_MS`(ms)로 덮어쓴다 — 운영 `APP_ENV` 에서는 읽지 않는다. 첫 op(깨끗한 편집본) · 붙여넣기 ·
   단추 op · 표 밖 누름(focusout) · 창 숨김(visibilitychange) · 떠나기 신호는 묶지 않고 곧바로 보낸다. 런타임에 구역을
-  켜고 끄는 스위치는 두지 않는다 — 구역 감싸기는 갈래 끝의 따로 된 커밋이다.
+  켜고 끄는 스위치는 두지 않는다 — 구역 감싸기는 편집기마다 따로 된 커밋이다.
 - 편집기 구역 회차는 `tests/fragment_browser.py` 대역으로 잰다 — Components v2 상태 값은 `send_state(app, key, value)`
   (부품을 그린 델타의 fragment id 로 요청), 부품 data 는 `bidi_data(key)`.
 

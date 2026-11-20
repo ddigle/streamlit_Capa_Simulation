@@ -2224,7 +2224,7 @@ out.verdicts = [
   // 놓지 않는다.
   holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(false, true, 10)),
   holdVerdict(hold, 900, false, data, 400, 10000, '/list', editors(false, true, 300)),
-  // 명부가 busy 를 본 적 없으면(glide 격자 · 명부에 오르지 않은 편집기) 전처럼 0.4초를 기다린다.
+  // 명부가 busy 를 본 적 없으면(glide 격자 · 명부에 오르지 않은 편집기) 새 data 를 0.4초 기다린다.
   holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, false, 999)),
   holdVerdict(hold, 400, false, data, 400, 10000, '/list', editors(false, false, 999)),
   // 회차가 돌면 기다리고, 상한 · 주소 바뀜은 그대로다.
@@ -2239,9 +2239,9 @@ process.stdout.write(JSON.stringify(out))
 def test_a_hold_waits_for_busy_editors_and_skips_the_new_data_wait_once_they_clear() -> None:
     """붙든 누름은 떠나기 명부의 편집기가 busy 인 동안 기다리고, busy 였다가 걷혔으면 새 data 를
     0.4초 기다리지 않는다 — 편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘
-    붙었다. 대신 누른 지 얼마가 지났든 회차 끝 뒤 조용함(`HOLD_QUIET_MS`)이 차야 놓는다 — ack 를
+    붙는다. 대신 누른 지 얼마가 지났든 회차 끝 뒤 조용함(`HOLD_QUIET_MS`)이 차야 놓는다 — ack 를
     그린 구역 회차가 본문 뒤에서 앱 전체로 올라가는 두 회차 사이(회차 끝 GC)에 놓으면 떠나기 표지가
-    서기 전이다. 명부가 busy 를 본 적 없는 붙들기는 그대로다."""
+    서기 전이다. 명부가 busy 를 본 적 없는 붙들기는 새 data 를 0.4초 기다린다."""
     out = _node(_EDITORS_VERDICT_RUNNER)
 
     assert out["verdicts"] == [
@@ -2400,7 +2400,7 @@ _BUSY_GATE_RUNNER = """
   out.foldedAfter = log.slice()
   E.handle.drop()
 
-  // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 전처럼 새 data 를 0.4초
+  // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 새 data 를 0.4초
   // 기다린다.
   log = []
   T = strip(log, 3000)
@@ -2445,7 +2445,7 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     손을 뗀 지 오래된 누름도 붙든다. 그 편집 회차(구역 회차 — 탭 줄 data 는 그대로)가 ack 를 싣고
     끝나면 조용함(`HOLD_QUIET_MS`) 뒤에 잇는다(새 data 를 기다리지 않는다). 그 회차가 본문 뒤에서
     앱 전체로 올라가면 두 회차 사이에 놓지 않고 올라간 회차가 끝난 뒤 조용함을 기다린다. glide 격자
-    편집 뒤는 전처럼 0.4초를 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
+    편집 뒤는 새 data 를 0.4초 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
     names = ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
     lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
@@ -2591,7 +2591,7 @@ _QUEUED_LEAVE_RUNNER = """
   out.queuedAfter = log.slice()
   E.handle.drop()
 
-  // 다시 보냄 — 편집표(glide) 입력이 앞 고르기를 보낸 뒤면 붙들고(명부 밖이라 전처럼 0.4초), 그 전
+  // 다시 보냄 — 편집표(glide) 입력이 앞 고르기를 보낸 뒤면 붙들고(명부 밖이라 0.4초), 그 전
   // 입력(앞 누름의 붙들기가 이미 기다림)이면 곧바로 보낸다.
   log = []
   T = strip(log, 6000)
@@ -2618,10 +2618,10 @@ _QUEUED_LEAVE_RUNNER = """
 
 
 def test_queued_and_resent_selects_flush_editors_and_wait_for_their_ack() -> None:
-    """기다리던 누름(옮기는 동안 누른 탭)과 서버에 닿지 않아 다시 보내는 고르기(T1)도 화면을
+    """기다리던 누름(옮기는 동안 누른 탭)과 서버에 닿지 않아 다시 보내는 고르기도 화면을
     떠난다 — 누르는 자리처럼 떠나기 신호를 쏘고, 묶어 둔 op 가 있는 편집기는 그 자리에서 보내며
     ack 가 오고 조용함(`HOLD_QUIET_MS`)이 찬 뒤에 보낸다. 신호 없이 보내면 그 사이 칸을 고친 op 가
-    묶음 타이머에 남은 채 화면이 옮겨져 부품이 내려가며 사라졌다. 보낼 것이 없으면 곧바로 보내고,
+    묶음 타이머에 남은 채 화면이 옮겨져 부품이 내려가며 사라진다. 보낼 것이 없으면 곧바로 보내고,
     다시 보낸 고르기는 앞서 물어 지나온 떠나기를 그대로 들고 간다. 명부 밖 편집표(glide) 입력은 앞
     고르기를 보낸 뒤의 것만 붙든다."""
     names = (

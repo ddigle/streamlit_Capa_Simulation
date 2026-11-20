@@ -5,8 +5,8 @@
 
 - **출납 ack 지킴(R1)** — Components v2 부품의 상태 값(출납)을 프래그먼트 회차로 보내고, 그
   상호작용이 머리 표지를 바꿔 앱 전체로 올라갈 때 부품이 받는 ack 가 남는지 본다. 콜백
-  끝(`escalates`) · 본문 뒤(`editor_scope`)는 남고, 본문 앞에서 올리면 잃는다(대조 — rerun-1120
-  시범 1차의 함정을 되살린다). 잃는 것은 서버 쪽이다 — 본문을 시작한 회차는 끝에서 그 회차가 그리지
+  끝(`escalates`) · 본문 뒤(`editor_scope`)는 남고, 본문 앞에서 올리면 잃는다(대조 본문이
+  그 함정을 되살린다). 잃는 것은 서버 쪽이다 — 본문을 시작한 회차는 끝에서 그 회차가 그리지
   않은 프래그먼트 위젯 상태를 지운다(`ScriptRunner._on_script_finished` 의
   `remove_stale_widgets=ctx.has_script_started`).
 - **머리 표지가 그대로인 칸 고치기**는 구역 회차 하나로 끝난다. **남의 저장 토큰**(R4)이 바뀌면
@@ -272,8 +272,8 @@ def test_a_pre_body_rise_loses_the_ack_of_the_edit_that_raised_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """대조 — 본문 앞에서 `st.rerun(scope="app")` 으로 올리면 그 회차가 다시 그리지 않은 부품의
-    상태 값(출납)을 회차 끝 정리가 지워, 올라간 앱 전체 회차의 부품은 ack 없이 그려진다(rerun-1120
-    시범 1차). op 는 콜백이 이미 반영했으므로 브라우저는 반영된 op 를 다시 보내게 된다."""
+    상태 값(출납)을 회차 끝 정리가 지워, 올라간 앱 전체 회차의 부품은 ack 없이 그려진다.
+    op 는 콜백이 이미 반영했으므로 브라우저는 반영된 op 를 다시 보내게 된다."""
     app, browser, scope = _start(monkeypatch, PRE_BODY)
 
     browser.send_state(app, "probe", _op(1))
