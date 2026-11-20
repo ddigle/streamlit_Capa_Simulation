@@ -204,8 +204,9 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     tab_markdown: list[Any] = list(summary_tab.get("markdown"))
     card_captions = [str(caption.value) for caption in summary_tab.caption]
-    assert card_captions, "요약 탭에는 손실 카드 글이 선다"
-    assert not any(text.endswith("니다.") for text in card_captions), card_captions
+    # 요약 탭 캡션은 손실 카드 「열기」 링크 물러섬 다섯뿐이다 — 카드 밑 부제 줄(「표준 → 효율 반영」
+    # 등)은 Guide 표가 말한다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39).
+    assert card_captions == ["사이드바에서 열기"] * 5, card_captions
     helps = {
         str(markdown.value): str(markdown.proto.help)
         for markdown in tab_markdown
@@ -284,6 +285,45 @@ def _flex_blocks(block: Any) -> Iterator[Any]:
         if child.type == "flex_container":
             yield child
         yield from _flex_blocks(child)
+
+
+def test_the_loss_route_cards_carry_no_subtitle_and_the_guide_tells_the_waterfall_spot() -> None:
+    """손실 카드는 손실 이름과 「열기」 뿐이다. 그 손실이 워터폴의 어느 두 단계 사이인지 · 칸이
+    없는 둘이 어디 있는지는 늘 같은 뜻이라 카드 밑 회색 부제가 아니라 Guide 「손실을 파고드는
+    화면」 표가 말한다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39)."""
+    from capa_simulation.components.page_guide import load_guide
+
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
+    shown = " ".join(
+        [str(item.value) for item in summary_tab.caption]
+        + [str(item.value) for item in summary_tab.get("markdown")]
+    )
+    titles = ("효율 손실", "UPEH 손실", "수율 손실", "재공부족 미활용", "설비 가용")
+    for title in titles:
+        assert f"**{title}**" in shown, title
+    for subtitle in (
+        "표준 → 효율 반영",
+        "효율 반영 → 실효",
+        "양품 기준 차감",
+        "실효 → 모델 실적",
+        "손실 이전의 전제",
+    ):
+        assert subtitle not in shown, subtitle
+    guide = load_guide("reference_integrity")
+    table = guide[guide.index("#### 손실을 파고드는 화면") :]
+    rows = [line for line in table.splitlines() if line.startswith("| ") and "---" not in line]
+    assert [row.split(" | ")[0].removeprefix("| ") for row in rows[1:]] == list(titles)
+    for text in (
+        "| 효율 손실 | 표준 → 효율 반영(`표준 Capa − 효율 반영 Capa`) | 효율 실적 |",
+        "| UPEH 손실 | 효율 반영 → 실효(`효율 반영 Capa − 실효 Capa`) | UPEH 실적 |",
+        "| 수율 손실 | 양품 기준 차감 — 워터폴에 칸이 따로 없어 기타 Gap 에 듭니다 | 수율 실적 |",
+        "| 재공부족 미활용 | 실효 → 모델 실적(`실효 Capa − 모델 실적 Capa`) | 표준 대비 재공 현황 |",
+        "| 설비 가용 | 손실 이전의 전제 — 워터폴 밖입니다 | 가용설비 현황 |",
+    ):
+        assert text in table, text
 
 
 def test_the_loss_route_cards_wrap_instead_of_staying_five_across() -> None:

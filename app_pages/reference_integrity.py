@@ -102,35 +102,33 @@ PRIORITY_TABLE_BORDER_PX = 3
 PRIORITY_TABLE_MAX_HEIGHT_PX = 365
 
 # 손실 한 칸과 그 칸을 파고드는 화면. 워터폴에 서는 칸은 **그 차례 그대로** 둔다 — 화면 목록이
-# 손실 순서와 다르면 목차 구실을 못 한다. 수율 손실 · 설비 가용은 워터폴에 칸이 없다.
+# 손실 순서와 다르면 목차 구실을 못 한다. 수율 손실 · 설비 가용은 워터폴에 칸이 없다. 카드는 손실
+# 이름과 「열기」 뿐이고, 그 손실이 워터폴의 어느 두 단계 사이인지(효율 손실 = 표준 → 효율 반영 등)는
+# 늘 같은 뜻이라 카드 밑 회색 줄이 아니라 Guide 「손실을 파고드는 화면」 표가 말한다(설계 규칙
+# UI-TXT-01 · 02 — 규칙집 6-39).
 _LOSS_ROUTES = (
     (
         "효율 손실",
-        "표준 → 효율 반영",
         "app_pages/actual_efficiency.py",
         ":material/speed:",
     ),
     (
         "UPEH 손실",
-        "효율 반영 → 실효",
         "app_pages/actual_upeh.py",
         ":material/timer:",
     ),
     (
         "수율 손실",
-        "양품 기준 차감",
         "app_pages/yield_actual.py",
         ":material/percent:",
     ),
     (
         "재공부족 미활용",
-        "실효 → 모델 실적",
         "app_pages/wip_status.py",
         ":material/inventory_2:",
     ),
     (
         "설비 가용",
-        "손실 이전의 전제",
         "app_pages/available_equipment_status.py",
         ":material/precision_manufacturing:",
     ),
@@ -256,10 +254,9 @@ def _render_loss_routes() -> None:
     with st.container(border=True):
         st.markdown("#### :material/alt_route: 손실을 파고드는 화면", help=LOSS_ROUTES_HELP)
         with st.container(horizontal=True, gap="small"):
-            for title, subtitle, page_path, icon in _LOSS_ROUTES:
+            for title, page_path, icon in _LOSS_ROUTES:
                 with st.container(border=True):
                     st.markdown(f"**{title}**")
-                    st.caption(subtitle)
                     render_page_link(page_path, label="열기", icon=icon)
 
 

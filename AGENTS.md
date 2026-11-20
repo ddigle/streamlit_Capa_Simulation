@@ -769,7 +769,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   생기면 바꾼다(`docs/TODO.md` 2장 「생산 진도 화면 내용」). 시험은 머리와 같은 `tests/test_production_progress_page.py`.
 - `app_pages/reference_integrity.py` — `Dynamic Capa` 머리(주소 `dynamic_capa`). 실행 관리가 모은 실적으로 표준 Capa 의
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
-  - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
+  - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다. 카드는 손실 이름 · 「열기」
+    뿐이고 워터폴의 자리(「표준 → 효율 반영」 등)는 Guide 「손실을 파고드는 화면」 표다(규칙집 6-39).
   - 데모는 샘플 스위치(조회 조건 패널 줄 — 공통 줄을 읽지 않아 이 줄이 패널을 세운다)로 끄고 세션에 한 번만 만든다(실DB 를
     붙이면 그 칸 키에 원천 적재 시각을 넣는다). 머리에 배지 줄이 없다(2026-11-09 보드 T8).
   - 부서별 Gap·A/Item 로드맵은 실행 관리 Guide 첫 단락이다(`guides/execution_management.md`) — 맨 위 「실행 관리」 되돌아가기
