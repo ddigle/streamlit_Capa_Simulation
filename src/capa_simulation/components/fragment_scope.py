@@ -216,7 +216,7 @@ def check_small_args(args: Sequence[object], kwargs: Mapping[str, object]) -> No
                     break
         if found is not None:
             raise TypeError(
-                f"구역 인자 {name} 는 작은 값만 넘깁니다({found}) — "
+                f"구역 인자는 작은 값만 넘깁니다({name}: {found}) — "
                 "구역 안에서 세션 · 캐시로 다시 읽습니다"
             )
 
