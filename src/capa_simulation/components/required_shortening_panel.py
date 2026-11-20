@@ -786,12 +786,14 @@ def _render_body(
         assumption=prepared.assumption,
         equipment_basis=equipment_basis,
     )
-    # 「누적 진척 설정」 의 「이번 주 값 넣기」 가 읽는 지금 화면 합계(`shortening_cumulative`).
+    # 「누적 진척 설정」 의 「이번 주 값 넣기」 가 읽는 지금 화면 합계(`shortening_cumulative`) —
+    # 전환이 고른 기준의 계획이다(아래 진척 비교가 기준선의 기준으로 바꿔 그려도 이 값은 그대로).
     remember_screen_total(
         level_plan.units,
         scope,
         level=level,
         selected=bool(selected),
+        basis=plan.basis,
         refusal=None if save is None else save.refusal,
     )
     highlight = current_highlight()

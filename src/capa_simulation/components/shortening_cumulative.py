@@ -22,9 +22,11 @@
   저장에 진 거부만 단추 곁에도 선다.
 - **「이번 주 값 넣기」** 는 본문이 마지막으로 그린 화면의 단축 필요일수
   합계(`remember_screen_total` — `required_shortening_panel._render_body` 가 적는다, 계산은
-  `screen_shortening_days` 하나)로 이번 주 칸을 채운다 — 고쳐 적을 수 있다. 기준선을 남길 수 없는
-  화면(샘플 fleet · 공식 발행 쌍이 아닌 설비 · 미저장 시나리오 편집 · UPEH 가정)이면 잠기고 풍선이
-  까닭을 말한다 — 기록도 모두가 보는 공용 값이라 기준선과 같은 규칙이다.
+  `screen_shortening_days` 하나)로 이번 주 칸을 채운다 — 고쳐 적을 수 있다. 합계는 조건 카드 맨 위
+  현재 일정 기준 전환(Static | 설비 마스터)이 고른 계획이다 — 진척 비교가 기준선과 같은 다른 기준의
+  계획을 보이는 회차에도 전환의 기준이고, 풍선이 그 기준 · 목표 · 공정 수를 말한다. 기준선을 남길
+  수 없는 화면(샘플 fleet · 공식 발행 쌍이 아닌 설비 · 미저장 시나리오 편집 · UPEH 가정)이면 잠기고
+  풍선이 까닭을 말한다 — 기록도 모두가 보는 공용 값이라 기준선과 같은 규칙이다.
 - **등급**(접속 등급 — 설계 규칙 UI-INP-07 예외): 기록은 실무자부터(`shortening.progress_log` —
   기준선과 같다), 최종 목표는 관리자부터(`shortening.progress_goal` — 모두의 기준을 바꾸는 공용 값).
   그 아래 등급은 같은 팝업에서 값만 본다.
@@ -171,6 +173,8 @@ class ScreenTotal:
     level_percent: int
     process_count: int
     selected: bool
+    basis: str
+    """그 합계의 현재 일정 기준(조건 카드 전환 — Static | 설비 마스터)."""
     refusal: str | None = None
 
 
@@ -188,17 +192,20 @@ def remember_screen_total(
     *,
     level: float,
     selected: bool,
+    basis: str,
     refusal: str | None,
 ) -> None:
     """본문(`required_shortening_panel._render_body`)이 회차마다 적는다 — 고른 목표의 계획 · 범위
     공정의 단축 필요일수 합계(`screen_shortening_days`)와, 기준선을 남길 수 없는 화면이면 그
-    까닭."""
+    까닭. `units` 는 현재 일정 기준 전환이 고른 계획(`basis`)의 것이다 — 진척 비교가 기준선의
+    기준으로 바꿔 그리는 계획이 아니다."""
     _SCREEN_TOTAL.set(
         ScreenTotal(
             days=screen_shortening_days(units, scope),
             level_percent=level_percent(level),
             process_count=len(scope),
             selected=selected,
+            basis=basis,
             refusal=refusal,
         )
     )
@@ -671,8 +678,9 @@ def _fill_help(total: ScreenTotal | None, this_week: ProgressWeek) -> str:
         )
     scope = "고른 공정" if total.selected else "맞댄 공정"
     return (
-        f"{this_week.label} 칸을 지금 화면 합계 {_days(total.days)}(목표 {total.level_percent}% · "
-        f"{scope} {total.process_count}개)로 채웁니다. 고쳐 적을 수 있습니다."
+        f"{this_week.label} 칸을 지금 화면 합계 {_days(total.days)}({total.basis} 기준 · "
+        f"목표 {total.level_percent}% · {scope} {total.process_count}개)로 채웁니다. "
+        "고쳐 적을 수 있습니다."
     )
 
 

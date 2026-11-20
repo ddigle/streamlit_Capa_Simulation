@@ -14,9 +14,12 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from alert_marks import flashed, texts
 from streamlit.testing.v1 import AppTest
-from test_required_shortening_tab import _database, _html, _run
+from test_required_shortening_tab import _csv, _database, _html, _run, _run_static
+from test_shortening_progress_tab import _name_input as _baseline_name
+from test_shortening_progress_tab import _save_button as _baseline_save
 from test_shortening_progress_tab import _saved_database
 
 from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
@@ -35,8 +38,11 @@ from capa_simulation.components.shortening_cumulative import (
     ScreenTotal,
     strip_markup,
 )
+from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
+from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.required_shortening import KIND_SHORTENED
 from capa_simulation.services.shortening_progress_log import (
     PROGRESS_DAYS_MAX,
     ProgressEntry,
@@ -288,7 +294,11 @@ def test_a_screen_total_above_the_input_limit_locks_the_fill(tmp_path: Path) -> 
         _dialog_script, args=(str(database_path), date.today().isoformat()), default_timeout=60
     )
     app.session_state[SCREEN_TOTAL_KEY] = ScreenTotal(
-        days=PROGRESS_DAYS_MAX + 20_001, level_percent=110, process_count=70, selected=False
+        days=PROGRESS_DAYS_MAX + 20_001,
+        level_percent=110,
+        process_count=70,
+        selected=False,
+        basis="Static",
     )
     app.run()
     assert not app.exception
@@ -333,4 +343,51 @@ def test_a_goal_with_only_days_is_refused_beside_the_inputs(tmp_path: Path) -> N
     assert not app.exception
     assert [item.value for item in app.warning] == ["목표 일수와 목표 주차를 함께 적으세요."]
     assert DuckDBEquipmentRepository(database_path).load_shortening_progress_log().goal.version == 0
+    clear_equipment_repository()
+
+
+def _shortened_days(units: pd.DataFrame) -> int:
+    """호기별 단축 일정 CSV(화면과 같은 목표 · 공정 · 달)의 당긴 호기 단축일수 합."""
+    chosen = units.loc[units["구분"].eq(KIND_SHORTENED), "단축일수"]
+    return int(pd.to_numeric(chosen, errors="coerce").fillna(0).sum())
+
+
+def test_this_weeks_value_follows_the_basis_switch_even_beside_another_basis_baseline(
+    tmp_path: Path,
+) -> None:
+    """「이번 주 값 넣기」 의 화면 합계는 조건 카드 「Static | 설비 마스터」 전환이 고른 기준의
+    계획이다. 진척 비교가 기준선과 같은 다른 기준의 계획을 보이는 회차(보드 답 Q14 (가))에도 합계는
+    전환의 기준 그대로다 — 풍선이 그 기준을 말한다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run_static(database_path)
+    assert not app.exception, [element.message for element in app.exception]
+    static_total = app.session_state[SCREEN_TOTAL_KEY]
+    assert isinstance(static_total, ScreenTotal) and static_total.refusal is None
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["현재 일정 기준"]) == {"Static"}
+    assert static_total.days == _shortened_days(units) and static_total.basis == "Static"
+
+    # Static 기준선을 남긴다(그때 전환 Static).
+    app = _baseline_name(app).set_value("Static 기준선").run()
+    app = _baseline_save(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+
+    app = app.sidebar.button_group(key=SHORTENING_BASIS_KEY).set_value("설비 마스터").run()
+    assert not app.exception, [element.message for element in app.exception]
+    master_total = app.session_state[SCREEN_TOTAL_KEY]
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["현재 일정 기준"]) == {"설비 마스터"}
+    assert master_total.days == _shortened_days(units) and master_total.basis == "설비 마스터"
+    # 두 기준의 합계가 이 표본에서 달라야 아래 단언이 무엇을 막는다.
+    assert master_total.days != static_total.days
+
+    # 전환은 설비 마스터 그대로 Static 기준선과 견준다 — 본문은 Static 계획, 합계는 설비 마스터.
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert "이 기준으로 견줌(전환은 설비 마스터)" in _html(app)
+    assert app.session_state[SCREEN_TOTAL_KEY] == master_total
+    _open(app)
+    help_text = str(app.button(key=_FILL_BUTTON_KEY).help)
+    assert f"{master_total.days:,}일(설비 마스터 기준 · 목표" in help_text
     clear_equipment_repository()

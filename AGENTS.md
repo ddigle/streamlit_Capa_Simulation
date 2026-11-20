@@ -797,7 +797,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     줄만 둔다). 띠는 진척 비교와 상관없이 KPI(또는 진척 요약) 위에 서고 호기가 없거나 계획이 멈춘 회차에도 선다 — 값은 적은 기록
     기준이라 계획을 읽지 않는다. 「이번 주 값 넣기」 가 읽는 지금 화면 합계는 패널 `_render_body` 가 회차마다 적는다(`remember_screen_total` — 계산은
     `services/shortening_progress_log.screen_shortening_days` 하나, `_render_view` 머리에서 지우고 다시 적어 멈춘 회차에 앞 값이 남지
-    않는다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
+    않는다). 합계는 현재 일정 기준 전환이 고른 계획(`plan.basis` — 풍선에 그 기준)이고, 진척 비교가 기준선과 같은 다른 기준의
+    계획(`_Plan.plan_for`)을 그려도 바뀌지 않는다. 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
     조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
