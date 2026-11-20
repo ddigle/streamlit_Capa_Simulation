@@ -5839,8 +5839,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   모자라면 함께 다음 줄로 가고, 숨긴 위젯 라벨은 「비가동 기준」 · 「④ 단축 보기」 다(UI-LAY-13). 단축 목표 글은 화면에 두지 않고 Guide · 시트 엑셀 머리 값 줄이 적으며(2026-11-12 사용자 메모 k-c4)
   KPI 칩에 거듭 적지 않고, 공정 카드의 기간 규칙은 「공정」 칸 풍선이다. 일정이 서지 않는 자리는 `constraint_equipment_plan.absent_note` 를 함께 쓴다.
   KPI 넷(`render_process_kpis`) 회색 줄은 바뀌는 값 · 기준 표지만이다 — 그 달 · 월 최대 부족 · 「달 수 · Static 기준|UPEH 가정 기준」 ·
-  「가정 전 n」. 늘 같은 「월별 확보 기준」(미달 없을 때) · 「일정은 설비 일정」 · 대책의 「설비 일정 기준」 은 칸 풍선과 Guide 「KPI 넷」
-  이다(2026-11-20 갈래 판정 — 규칙집 6-39 pc-kpi-notes, UI-TXT-01 · UI-TXT-05).
+  「가정 전 n」, 그리고 값에 「일정 n」 이 설 때만 붙는 「 · 일정은 설비 일정」(`cause_caption` — 그 수는 설비 일정 기준이라 앞 기준 표지가
+  덮지 않는다, 2026-11-21 갈래 판정). 늘 같은 「월별 확보 기준」(미달 없을 때) · 대책의 「설비 일정 기준」 은 칸 풍선과 Guide 「KPI 넷」
+  이다(2026-11-20 갈래 판정 — 규칙집 6-39 pc-kpi-notes, UI-TXT-01 · UI-TXT-05 · UI-TXT-04).
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
   - 시트 엑셀 바이트도 세션 칸(`SHEET_MEMO_KEY`, 몇 벌)에 기억한다 — 키(`sheet_memo_key`)는 그림 기억 키에서 그림 세대 · 테마를

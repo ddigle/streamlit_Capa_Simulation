@@ -1985,9 +1985,10 @@ def render_process_kpis(
     """KPI 넷 — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
     값 글자를 짧게 둔다(카드 폭에 한 줄). 값 아래 회색 줄은 바뀌는 값 · 기준 표지만이다 — 그 달,
-    월 최대 부족, 「Static 기준 | UPEH 가정 기준」, 「가정 전 n」. 늘 같은 뜻풀이(월별 확보 기준 ·
-    일정 원인은 설비 일정 · 대책은 설비 일정 기준)는 `?` 풍선과 Guide 다(2026-11-20 갈래 판정, 설계
-    규칙 UI-TXT-01 · UI-TXT-05). 「달 수」 는 단위 없는 값(「대여 3」)의 단위라 남긴다. UPEH 가정이
+    월 최대 부족, 「Static 기준 | UPEH 가정 기준」, 값에 「일정 n」 이 설 때만 붙는 「일정은 설비
+    일정」(`cause_caption`), 「가정 전 n」. 늘 같은 뜻풀이(월별 확보 기준 · 대책은 설비 일정
+    기준)는 `?` 풍선과 Guide 다(2026-11-20 갈래 판정, 설계 규칙 UI-TXT-01 · UI-TXT-05). 「달
+    수」 는 단위 없는 값(「대여 3」)의 단위라 남긴다. UPEH 가정이
     켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 가정 전(Static) 요약의 것이다 — 회색 줄에
     「가정 전 n」 을 함께 적는다(2026-11-12 사용자 답 q2 (가)).
     """
@@ -2049,8 +2050,7 @@ def render_process_kpis(
             "부족 원인",
             cause_summary(kpis, plan),
             key="process_detail_kpi_cause",
-            # 「일정」 원인이 설비 일정 기준이라는 말은 늘 같아 풍선(`CAUSE_HELP`)이 적는다.
-            caption="달 수 · " + ("UPEH 가정 기준" if official is not None else "Static 기준"),
+            caption=cause_caption(plan, assumed=official is not None),
             help=CAUSE_HELP,
         )
         render_status_metric(
@@ -2076,6 +2076,18 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
     ]
     shown = [f"{name} {count}" for name, count in parts if count]
     return " · ".join(shown) if shown else "없음"
+
+
+def cause_caption(plan: Prescription | None, *, assumed: bool) -> str:
+    """부족 원인 회색 줄 — 「달 수 · Static 기준|UPEH 가정 기준」 에, 값에 「일정 n」 이 설 때만
+    「 · 일정은 설비 일정」 을 붙인다.
+
+    `일정` 은 설비 일정 기준 가용으로 센 달이라, 그 값이 서면 앞 기준 표지가 그 수까지 덮지 않는다고
+    밝히는 표지다. 「일정 n」 이 없으면 덮을 값이 없어 붙이지 않는다(2026-11-21 갈래 판정, 설계 규칙
+    UI-TXT-04 · UI-TXT-05). 붙이는 판정은 `cause_summary` 가 「일정 n」 을 싣는 판정과 같다."""
+    basis = "UPEH 가정 기준" if assumed else "Static 기준"
+    schedule = plan is not None and plan.dynamic_short_months > 0
+    return f"달 수 · {basis}" + (" · 일정은 설비 일정" if schedule else "")
 
 
 def prescription_text(plan: Prescription | None) -> str:

@@ -56,6 +56,7 @@ from capa_simulation.components.process_capa_view import (
     ProcessDetailView,
     availability_card,
     canvas_memo_key,
+    cause_caption,
     cause_summary,
     contributing_units,
     demand_card,
@@ -417,7 +418,27 @@ def _kpi_row_app() -> None:
     render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None)
 
 
-def _kpi_row_options_app(shortage: int, assumed: bool) -> None:
+def test_the_cause_caption_marks_the_schedule_basis_only_when_a_schedule_count_stands() -> None:
+    """부족 원인 회색 줄의 「일정은 설비 일정」 은 값에 「일정 n」 이 설 때만 붙는다 — 그 수는 설비
+    일정 기준 가용으로 센 달이라 앞 「Static 기준 | UPEH 가정 기준」 이 덮지 않는다는 표지다. 설비
+    일정 계획이 있어도 일정 부족 달이 없으면 붙지 않는다(2026-11-21 갈래 판정, 설계 규칙
+    UI-TXT-04)."""
+    with_schedule = Prescription(shortened=0, new=0, unresolved_months=0, dynamic_short_months=1)
+    without_schedule = with_schedule._replace(dynamic_short_months=0)
+    assert cause_caption(None, assumed=False) == "달 수 · Static 기준"
+    assert cause_caption(without_schedule, assumed=False) == "달 수 · Static 기준"
+    assert cause_caption(without_schedule, assumed=True) == "달 수 · UPEH 가정 기준"
+    assert cause_caption(with_schedule, assumed=False) == "달 수 · Static 기준 · 일정은 설비 일정"
+    assert cause_caption(with_schedule, assumed=True) == "달 수 · UPEH 가정 기준 · 일정은 설비 일정"
+    # 붙는 판정은 값에 「일정 n」 이 서는 판정과 같다.
+    for plan in (None, without_schedule, with_schedule):
+        shown = "일정 " in cause_summary(_kpis(), plan)
+        assert ("일정은 설비 일정" in cause_caption(plan, assumed=False)) == shown
+
+
+def _kpi_row_options_app(shortage: int, assumed: bool, planned: bool) -> None:
+    from typing import Any, cast
+
     from test_process_capa_canvas import THRESHOLDS
     from test_process_capa_view import _kpis
 
@@ -426,20 +447,32 @@ def _kpi_row_options_app(shortage: int, assumed: bool) -> None:
     render_process_kpis(
         _kpis(shortage_months=shortage),
         thresholds=THRESHOLDS,
-        dynamic=None,
+        # 설비 일정 계획 셈은 시험이 `prescription` 을 갈아 끼워 정한다 — 그림 재료는 읽지 않는다.
+        dynamic=cast(Any, object()) if planned else None,
         official=_kpis(shortage_months=2) if assumed else None,
     )
 
 
+@pytest.mark.parametrize("schedule", [None, 0, 2])
 @pytest.mark.parametrize("assumed", [False, True])
 def test_the_kpi_grey_lines_keep_values_and_basis_marks_and_the_help_says_the_rest(
-    assumed: bool,
+    assumed: bool, schedule: int | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """KPI 회색 줄은 바뀌는 값 · 기준 표지만이다 — 늘 같은 「월별 확보 기준」 · 「일정은 설비
-    일정」 · 「설비 일정 기준」 은 걷고 `?` 풍선과 Guide 가 말한다(2026-11-20 갈래 판정, 설계 규칙
-    UI-TXT-01 · UI-TXT-05). 「Static 기준 | UPEH 가정 기준」 과 「가정 전 n」 은 남고, 「달 수」 는
-    값의 단위라 남는다."""
-    app = AppTest.from_function(_kpi_row_options_app, args=(0, assumed)).run()
+    """KPI 회색 줄은 바뀌는 값 · 기준 표지만이다 — 늘 같은 「월별 확보 기준」 · 대책의 「설비 일정
+    기준」 은 걷고 `?` 풍선과 Guide 가 말한다(2026-11-20 갈래 판정, 설계 규칙 UI-TXT-01 ·
+    UI-TXT-05). 「Static 기준 | UPEH 가정 기준」 과 「가정 전 n」 은 남고, 「달 수」 는 값의 단위라
+    남는다. 부족 원인 꼬리 「일정은 설비 일정」 은 값에 「일정 n」 이 설 때만 붙는 기준 표지다 —
+    설비 일정 계획이 없을 때(`None`)도, 있어도 일정 부족 달이 없을 때(0)도 붙지 않는다(2026-11-21
+    갈래 판정)."""
+    from capa_simulation.components import process_capa_view as view
+
+    if schedule is not None:
+        plan = Prescription(shortened=0, new=0, unresolved_months=0, dynamic_short_months=schedule)
+        monkeypatch.setattr(view, "prescription", lambda dynamic: plan)
+        monkeypatch.setattr(
+            view, "official_prescription", lambda dynamic: plan if assumed else None
+        )
+    app = AppTest.from_function(_kpi_row_options_app, args=(0, assumed, schedule is not None)).run()
     assert not app.exception
     metrics = {metric.label: metric for metric in app.metric}
     shortage = metrics["확보 기준 미달"]
@@ -447,13 +480,16 @@ def test_the_kpi_grey_lines_keep_values_and_basis_marks_and_the_help_says_the_re
     assert shortage.proto.delta == ("가정 전 2개월" if assumed else "")
     assert "확보 기준(월별)" in shortage.proto.help
     cause = metrics["부족 원인"]
-    assert cause.proto.delta == ("달 수 · UPEH 가정 기준" if assumed else "달 수 · Static 기준")
+    assert ("일정 2" in str(cause.value)) == bool(schedule)
+    basis = "달 수 · UPEH 가정 기준" if assumed else "달 수 · Static 기준"
+    assert cause.proto.delta == basis + (" · 일정은 설비 일정" if schedule else "")
     assert "설비 일정 기준 가용" in cause.proto.help
     prescription = metrics["대책"]
-    assert prescription.proto.delta == ""
+    planned_and_assumed = assumed and schedule is not None
+    assert prescription.proto.delta == ("가정 전 목표 충족" if planned_and_assumed else "")
     assert prescription.proto.help.startswith("설비 일정 기준")
     shown = " ".join(str(metric.proto.delta) for metric in app.metric)
-    for gone in ("월별 확보 기준", "일정은 설비 일정", "설비 일정 기준"):
+    for gone in ("월별 확보 기준", "설비 일정 기준"):
         assert gone not in shown, gone
     guide = (
         Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/process_capa_detail.md"
