@@ -43,6 +43,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -1132,6 +1133,71 @@ def grid_data(
         "inserted": [row_id for row_id in inserted if row_id in view.values],
         "open": open_id if open_id is not None and open_id in view.values else None,
     }
+
+
+# 표 마운트 data 가운데 회차마다 바뀌는 작은 칸 — feed 로 간다(`split_grid_data`). 나머지(칸 정의 ·
+# 잠금 · 불러온 줄과 그 글)는 껍데기다.
+GRID_FEED_FIELDS: Final = ("ack", "counts", "moved", "inserted", "open", "clean")
+# feed 에 실을 바뀐 줄 수 상한 — 넘으면 껍데기를 새로 짓는다(feed 가 껍데기만큼 커지지 않게).
+GRID_PATCH_LIMIT: Final = 200
+
+
+def shell_token(shell: Mapping[str, Any]) -> str:
+    """껍데기 지문 — 같은 내용이면 같은 글이다(정렬한 JSON 의 해시). feed 가 제 껍데기를 가른다."""
+    text = json.dumps(shell, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def split_grid_data(
+    data: Mapping[str, Any], previous: Mapping[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """표 마운트 data(`grid_data` + 화면 쪽 칸)를 (껍데기, feed) 로 가른다.
+
+    껍데기는 칸 정의 · 잠금 · 불러온 줄(그 글 · 표지)이고, feed 는 회차마다 바뀌는 작은 칸
+    (`GRID_FEED_FIELDS`)과 **껍데기 뒤 바뀐 줄**(`rows` — 행 id → 줄)이다. 앞 껍데기(`previous`)의
+    줄 밖 칸이 같고 불러온 줄의 id · 차례가 같으면 그 껍데기를 그대로 돌려준다 — 같은 dict 라
+    브라우저가 해시 참조로 받는다(칸 하나를 고친 회차는 feed 만 간다). 바뀐 줄이
+    `GRID_PATCH_LIMIT` 를 넘거나 줄 밖 칸 · 목록이 바뀌면 껍데기를 새로 짓는다(그때 feed 의 줄은
+    비었다). 둘을 다시 이은 것(`join_grid_data`)은 `data` 와 같다."""
+    rows = list(data.get("rows") or [])
+    rest = {key: value for key, value in data.items() if key not in (*GRID_FEED_FIELDS, "rows")}
+    patches: dict[str, Any] = {}
+    shell: dict[str, Any] | None = None
+    if previous is not None and _same_frame(previous, rest, rows):
+        kept = {row["id"]: row for row in previous["rows"]}
+        patches = {row["id"]: row for row in rows if row != kept[row["id"]]}
+        if len(patches) <= GRID_PATCH_LIMIT:
+            shell = dict(previous)
+        else:
+            patches = {}
+    if shell is None:
+        fresh = {**rest, "rows": rows}
+        shell = {**fresh, "shell": shell_token(fresh)}
+    feed: dict[str, Any] = {"shell": shell["shell"], "rows": patches}
+    feed.update({key: data[key] for key in GRID_FEED_FIELDS if key in data})
+    return shell, feed
+
+
+def _same_frame(previous: Mapping[str, Any], rest: Mapping[str, Any], rows: Sequence[Any]) -> bool:
+    """앞 껍데기의 줄 밖 칸이 지금 것과 같고 줄 id 차례가 같은가."""
+    kept = previous.get("rows")
+    if not isinstance(kept, list) or not isinstance(previous.get("shell"), str):
+        return False
+    if {key: value for key, value in previous.items() if key not in ("rows", "shell")} != rest:
+        return False
+    return [row.get("id") for row in kept] == [row.get("id") for row in rows]
+
+
+def join_grid_data(shell: Mapping[str, Any], feed: Mapping[str, Any]) -> dict[str, Any]:
+    """껍데기 + feed → 표 마운트 data(`split_grid_data` 의 거꾸로 — 브라우저 `joinGridData` 와 같은
+    꼴). feed 가 다른 껍데기의 것이면 껍데기만."""
+    joined = {key: value for key, value in shell.items() if key != "shell"}
+    if feed.get("shell") != shell.get("shell"):
+        return joined
+    patches = feed.get("rows") or {}
+    joined["rows"] = [patches.get(row["id"], row) for row in shell.get("rows") or []]
+    joined.update({key: feed[key] for key in GRID_FEED_FIELDS if key in feed})
+    return joined
 
 
 # 불러오기 「조건별」 칸(사용자 R1 — 옛 RawData 표 보기 거르기 13칸).

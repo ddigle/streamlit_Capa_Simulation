@@ -506,6 +506,28 @@ function listScroll(current, top, height, room, pad) {
 }
 // </grid-place>
 
+// <grid-feed>
+// 표 마운트는 껍데기(칸 정의 · 잠금 · 불러온 줄 — 칸 하나를 고친 회차에도 그대로라 다시 오지 않는다)와 feed(ack · 껍데기 뒤
+// 바뀐 줄 · 수 · 옮김 · 연 줄)로 온다. 둘을 이은 것이 표 data 다(파이썬 `equipment_grid.join_grid_data` 와 같은 꼴). feed 가 다른
+// 껍데기의 것이면 null — 그 껍데기가 올 때까지 둔다.
+const FEED_FIELDS = ['ack', 'counts', 'moved', 'inserted', 'open', 'clean']
+function joinGridData(shell, feed) {
+  if (!shell || !feed || feed.shell !== shell.shell) return null
+  const joined = {}
+  for (const [key, value] of Object.entries(shell)) if (key !== 'shell') joined[key] = value
+  const patches = feed.rows || {}
+  const has = (key) => Object.prototype.hasOwnProperty.call(patches, key)
+  joined.rows = (Array.isArray(shell.rows) ? shell.rows : []).map((row) => (has(row.id) ? patches[row.id] : row))
+  for (const key of FEED_FIELDS) if (Object.prototype.hasOwnProperty.call(feed, key)) joined[key] = feed[key]
+  return joined
+}
+
+// 표 모양(정렬한 줄)의 열쇠 — 껍데기와 그 뒤 바뀐 줄이 같으면 같다. 같으면 ack 만 온 회차라 표 모양을 다시 짓지 않는다.
+function rowsKeyOf(shell, feed) {
+  return String(shell.shell) + '|' + JSON.stringify(feed.rows || {})
+}
+// </grid-feed>
+
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
 // 표 밑 「⌨ 키보드 조작」 표지의 풍선.
 const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
@@ -1313,7 +1335,7 @@ function editableIn(S, row, col) {
   return lockOf(row, col, S.model.locks) === null
 }
 
-function drawGrid(host, S, data) {
+function drawGrid(host, S, data, rowsKey) {
   receive(S, data)
   S.data = data
   // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꾸고, 모듈 묶음 같이 쓰기는 형제 줄을 끼워 목록 지문도 바꾼다 — 옮김을
@@ -1360,7 +1382,11 @@ function drawGrid(host, S, data) {
   const lifted = new Map(moved)
   const keptOpen = openAt === null ? null : lifted.has(wasOpen) ? lifted.get(wasOpen) : wasOpen
   if (!keepTop && !S.resetScroll && keptOpen !== null && S.openId === keptOpen) keepTop = { id: keptOpen, top: openAt }
-  S.model = gridModel(S, data)
+  // 껍데기 · 바뀐 줄이 그대로면(ack · 연 줄만 온 회차) 정렬한 표 모양을 그대로 쓴다 — 정렬 · 칸 묶음을 바꾸면 그 자리가 새로 짓는다.
+  if (rowsKey === undefined || !S.model || S.modelKey !== rowsKey) {
+    S.model = gridModel(S, data)
+    S.modelKey = rowsKey
+  }
   const shift = keepTop ? keptRowShift(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.top) : 0
   const known = new Set(S.model.live.map((row) => row.id))
   for (const id of Array.from(S.selected)) if (!known.has(id)) S.selected.delete(id)
@@ -3006,6 +3032,32 @@ function drawChanges(S, root, data) {
   if (data.others) root.appendChild(el('div', 'emg-sec', data.others))
 }
 
+// ---------------------------------------------------------------- 표 껍데기 · feed 받기
+
+// 표 껍데기를 받았다 — 그 껍데기의 feed 가 칸에 있으면 이어 그리고, 없으면 feed 이벤트를 기다린다.
+function takeShell(host, S, shell) {
+  S.shell = shell
+  S.hostKey = /^[\w-]+$/.test(String(shell.host || '')) ? String(shell.host) : ''
+  takeFeed(host, S)
+}
+
+// feed 칸을 읽어 껍데기와 이어 그린다 — 이미 그린 (껍데기, feed) 짝이면 그리지 않는다.
+function feedStore() {
+  return typeof window !== 'undefined' ? window.__capaEquipmentGrid : null
+}
+
+function takeFeed(host, S) {
+  const store = feedStore()
+  const slot = store && S.hostKey ? store[S.hostKey] : null
+  const feed = slot ? slot.feed : null
+  if (!S.shell || !feed || (feed === S.feedData && S.drawnShell === S.shell)) return
+  const data = joinGridData(S.shell, feed)
+  if (!data) return
+  S.feedData = feed
+  S.drawnShell = S.shell
+  drawGrid(host, S, data, rowsKeyOf(S.shell, feed))
+}
+
 // ---------------------------------------------------------------- 마운트
 
 export default function (component) {
@@ -3032,6 +3084,12 @@ export default function (component) {
       if (!S.painting && event.relatedTarget && !host.contains(event.relatedTarget)) S.refocus = null
     })
     listen(S, document, 'visibilitychange', () => send(S))
+    // 표 마운트만 — feed 요소가 칸을 바꿨다(그 껍데기면 이어 그린다).
+    if (data.mode === 'grid' && typeof window !== 'undefined' && window.addEventListener) {
+      listen(S, window, 'capa-equipment-grid', (event) => {
+        if (event.detail === S.hostKey) takeFeed(host, S)
+      })
+    }
     listen(S, document, 'mousedown', (event) => {
       // 그림자 DOM 밖에서 보면 대상이 호스트로 바뀐다 — 지나온 길(composedPath)로 안쪽 누름을 가른다.
       const path = typeof event.composedPath === 'function' ? event.composedPath() : null
@@ -3053,8 +3111,11 @@ export default function (component) {
   if (data.mode === 'loader') {
     drawLoader(host, S, data)
     watchLoaderFit(host, S)
-  } else if (data.mode === 'grid') drawGrid(host, S, data)
-  else drawSide(host, S, data)
+  } else if (data.mode === 'grid') {
+    // 껍데기 지문이 없는 data(한 등록으로 온 표 data)는 그대로 그린다.
+    if (typeof data.shell === 'string') takeShell(host, S, data)
+    else drawGrid(host, S, data)
+  } else drawSide(host, S, data)
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
     send(S)
@@ -3067,7 +3128,15 @@ export default function (component) {
     S.fitObserver = null
     if (S.bandObserver) S.bandObserver.disconnect()
     S.bandObserver = null
-    if (data.mode === 'grid') markSelecting(S, false)
+    if (data.mode === 'grid') {
+      markSelecting(S, false)
+      // 다음 마운트가 이 마운트의 옛 feed 로 먼저 그리지 않게 칸을 비운다(새 feed 가 다시 채운다).
+      const store = feedStore()
+      if (store && S.hostKey && store[S.hostKey]) store[S.hostKey].feed = null
+      S.feedData = null
+      S.drawnShell = null
+      S.modelKey = undefined
+    }
     S.timer = 0
     S.noteTimer = 0
     S.scrollFrame = 0

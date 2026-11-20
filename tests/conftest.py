@@ -647,8 +647,8 @@ def _stub_alert_center(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
-    """설비 마스터 표 컴포넌트(`equipment_master_grid._GRID`)를 아무것도 보내지 않는 대역으로
-    바꾼다.
+    """설비 마스터 표 컴포넌트(`equipment_master_grid._GRID` · 표 feed `_FEED`)를 아무것도 보내지
+    않는 대역으로 바꾼다.
 
     Space 편집기 대역과 같은 까닭이다 — AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest
     에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다. 받은 값을 보는 시험은 제
@@ -667,7 +667,11 @@ def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
             goto=None,
         )
 
+    def _silent_feed(**_: Any) -> None:
+        return None
+
     monkeypatch.setattr(equipment_master_grid, "_GRID", _silent)
+    monkeypatch.setattr(equipment_master_grid, "_FEED", _silent_feed)
 
 
 @pytest.fixture(autouse=True)

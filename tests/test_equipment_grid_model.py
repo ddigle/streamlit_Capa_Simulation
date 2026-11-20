@@ -563,6 +563,56 @@ def test_grid_data_is_plain_json_in_loaded_order() -> None:
     assert eg.grid_data(view, loaded) == eg.grid_data(view, loaded), "같은 입력이면 같은 data"
 
 
+def test_a_cell_edit_keeps_the_shell_and_sends_only_the_changed_row_in_the_feed() -> None:
+    """표 data 는 껍데기(칸 정의 · 잠금 · 불러온 줄)와 feed(ack · 수 · 연 줄 · 껍데기 뒤 바뀐 줄)로
+    간다(`split_grid_data`). 칸 하나를 고친 회차는 앞 껍데기를 그대로 다시 내고(같은 dict — 해시
+    참조) 그 줄만 feed 에 싣는다. 둘을 다시 이으면 원래 data 다. 목록이 바뀌거나 바뀐 줄이 상한을
+    넘으면 껍데기를 새로 짓는다."""
+    saved = _saved()
+    frames = _copy(saved)
+    view = _view(frames, saved)
+    loaded = list(view.index.ids[:4])
+    data = eg.grid_data(view, loaded, ack={"mount": "m-1", "seq": 2}, open_id=loaded[0])
+    shell, feed = eg.split_grid_data(data)
+    assert feed["rows"] == {} and feed["shell"] == shell["shell"]
+    assert not set(eg.GRID_FEED_FIELDS) & set(shell) and "rows" in shell
+    assert eg.join_grid_data(shell, feed) == data
+    assert shell["shell"] == eg.split_grid_data(data)[0]["shell"], "같은 내용이면 같은 지문"
+
+    edited = _copy(frames)
+    edited[1].loc[1, "담당자"] = "담당Z"
+    view2 = _view(edited, saved)
+    data2 = eg.grid_data(view2, loaded, ack={"mount": "m-1", "seq": 3}, open_id=loaded[2])
+    shell2, feed2 = eg.split_grid_data(data2, shell)
+    assert shell2 == shell, "칸 하나 — 껍데기 그대로"
+    assert list(feed2["rows"]) == [loaded[1]]
+    assert feed2["ack"] == {"mount": "m-1", "seq": 3} and feed2["open"] == loaded[2]
+    assert eg.join_grid_data(shell2, feed2) == data2
+    assert json.dumps(feed2, allow_nan=False)
+
+    shorter = eg.grid_data(view2, loaded[:3])
+    shell3, feed3 = eg.split_grid_data(shorter, shell)
+    assert shell3["shell"] != shell["shell"] and feed3["rows"] == {}
+    assert eg.join_grid_data(shell3, feed3) == shorter
+    assert eg.join_grid_data(shell, feed3) == {k: v for k, v in shell.items() if k != "shell"}
+
+
+def test_the_shell_is_rebuilt_when_the_feed_would_carry_too_many_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved = _saved()
+    view = _view(_copy(saved), saved)
+    loaded = list(view.index.ids[:4])
+    shell, _ = eg.split_grid_data(eg.grid_data(view, loaded))
+    edited = _copy(saved)
+    edited[1]["담당자"] = "모두"
+    data = eg.grid_data(_view(edited, saved), loaded)
+    monkeypatch.setattr(eg, "GRID_PATCH_LIMIT", 2)
+    fresh, feed = eg.split_grid_data(data, shell)
+    assert fresh["shell"] != shell["shell"] and feed["rows"] == {}
+    assert eg.join_grid_data(fresh, feed) == data
+
+
 def test_the_side_refusal_line_is_carried_as_it_is() -> None:
     toast = {"id": 4, "text": "「없는」 설비명을 찾지 못했습니다"}
     assert eg.toast_payload(toast) == toast

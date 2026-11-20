@@ -1566,7 +1566,8 @@ def _render_grid_section(
     # 차례는 불러오기 줄 → 값 줄(「목록 비우기」 · 「전체 N대 불러오기」) 다음이 메뉴다.
     with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
         _render_data_menu(repository, latest_snapshot, context.scenario_name)
-    grid_component.render_grid_table(
+    kept = GRID_MEMO.get().get("grid_shell")
+    shell = grid_component.render_grid_table(
         grid_data(
             view,
             loaded,
@@ -1579,7 +1580,11 @@ def _render_grid_section(
         on_open=_on_grid_open,
         on_unload=_on_unload,
         read_only=read_only,
+        shell=kept if isinstance(kept, dict) else None,
     )
+    # 보낸 껍데기 — 다음 회차가 줄 밖 칸 · 목록이 그대로면 그것을 다시 보낸다(브라우저 해시 참조).
+    if not isinstance(kept, dict) or kept.get("shell") != shell["shell"]:
+        GRID_MEMO.set({**GRID_MEMO.get(), "grid_shell": shell})
 
 
 def save_target(basis: EquipmentSaveBasis | None) -> str:

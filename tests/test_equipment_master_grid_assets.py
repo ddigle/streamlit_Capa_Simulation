@@ -3825,3 +3825,146 @@ def test_the_detail_marks_shared_columns_of_a_module_group_and_resends_a_red_val
     assert result["alone"] == []
     rule = re.search(r"\n\.emg-group-tag \{(?P<body>[^}]*)\}", CSS)
     assert rule is not None and "var(--emg-accent)" in rule["body"]
+
+
+# ---------------------------------------------------------------- 표 data 가르기(껍데기 · feed)
+
+FEED_JS = (ASSETS / "feed.js").read_text(encoding="utf-8")
+
+
+def test_the_feed_registration_is_small_and_the_table_waits_for_its_own_shell() -> None:
+    """feed 등록은 작은 JS 하나(주석 줄을 걷는다)이고 칸 · 이벤트 이름이 표 JS 와 같다. 표 key ·
+    feed key 는 고정이고 feed 요소를 숨기는 서식이 메뉴 서식 덩이에 든다(이벤트 칸 자리 수를 늘리지
+    않는다)."""
+    registered = emg.feed_js()
+    assert len(registered.encode("utf-8")) < 1_000
+    assert not any(line.lstrip().startswith("//") for line in registered.splitlines())
+    assert "__capaEquipmentGrid" in registered and "__capaEquipmentGrid" in JS
+    assert "'capa-equipment-grid'" in registered and "'capa-equipment-grid'" in JS
+    assert emg.feed_key() == f"{emg.GRID_KEY}-feed" and "__" not in emg.feed_key()
+    assert f".st-key-{emg.feed_key()} {{ display: none; }}" in emg.tools_menu_style()
+    assert "_FEED(key=feed_key(key)" in SOURCE
+    assert SOURCE.index("_FEED(key=feed_key(key)") < SOURCE.index(
+        "_GRID(\n        key=key,\n        data=sent"
+    )
+
+
+def test_the_browser_joins_shell_and_feed_the_way_python_does() -> None:
+    """브라우저가 잇는 표 data(`joinGridData`) = 파이썬 `join_grid_data` = 가르기 전 data. 다른
+    껍데기의 feed 는 잇지 않는다(null — 그 껍데기를 기다린다)."""
+    from test_equipment_grid_model import _copy, _saved, _view
+
+    saved = _saved()
+    view = _view(_copy(saved), saved)
+    loaded = list(view.index.ids[:3])
+    shell, _ = eg.split_grid_data(eg.grid_data(view, loaded))
+    edited = _copy(saved)
+    edited[1].loc[2, "Model"] = "MODEL-Z"
+    data = eg.grid_data(_view(edited, saved), loaded, ack={"mount": "m-x", "seq": 4})
+    kept, feed = eg.split_grid_data(data, shell)
+    assert kept == shell and feed["rows"]
+    runner = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  joined: joinGridData(input.shell, input.feed),
+  other: joinGridData(input.shell, Object.assign({}, input.feed, { shell: 'other' })),
+}))
+"""
+    match = re.search(r"// <grid-feed>\n(?P<body>.*?)\n// </grid-feed>", JS, re.S)
+    assert match, "grid.js 에 // <grid-feed> 구획이 없습니다"
+    result = _node({"shell": kept, "feed": feed}, runner, source=match.group("body"))
+    assert result["joined"] == eg.join_grid_data(kept, feed) == data
+    assert result["other"] is None
+
+
+_SHELL_FEED_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const data = {")]
+    + FEED_JS.replace("export default function", "globalThis.__feed = function", 1)
+    + """
+const HOST = 'equipment_grid_table'
+const columns = [
+  { name: '설비명', kind: 'name', width: 'name' },
+  { name: 'Model', kind: 'text', width: 'm' },
+]
+const rowOf = (id, name, model) => ({ id, values: [name, model] })
+const shellOf = (token, rows) => ({
+  mode: 'grid', host: HOST, shell: token, base: 'b1', view: 'v-' + token,
+  limits: { outboxCells: 10000, pasteCells: 5000 }, columns, colSets: [['all', '전체', '', [1]]],
+  rows,
+})
+const first = shellOf('s1', [rowOf('a', 'EQ-1', 'x'), rowOf('b', 'EQ-2', 'y')])
+const feed = (token, extra) => globalThis.__feed({
+  data: Object.assign({ host: HOST, shell: token, rows: {} }, extra),
+})
+let builds = 0
+const build = buildGridSkeleton
+buildGridSkeleton = (...args) => {
+  builds += 1
+  return build(...args)
+}
+const component = {
+  parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => sent.push(value.ops.map((op) => op.seq)),
+}
+const R = {}
+;(async () => {
+  // 껍데기가 feed 보다 먼저 왔다 — 그 feed 가 올 때까지 그리지 않는다.
+  const cleanup = globalThis.__mount({ data: first, ...component })
+  const S = host.__emg
+  R.waiting = { model: Boolean(S.model), builds }
+  feed('s1', { ack: {}, counts: { loaded: 2, total: 2, limit: 1000 } })
+  const models = () => S.model.rows.map((row) => row.values[1])
+  R.drawn = { builds, models: models(), count: S.data.counts.loaded }
+  // 칸 하나를 고쳐 보냈다 — 그 줄만 든 feed 가 오면 그 줄이 바뀌고 출납이 걷힌다(껍데기 그대로).
+  enqueue(S, { op: 'cell', id: 'a', col: 'Model', text: 'X' }, [['a', 1, 'X']])
+  send(S)
+  const model = S.model
+  feed('s1', { ack: { mount: S.mount, seq: 1 }, rows: { a: rowOf('a', 'EQ-1', 'X') } })
+  R.patched = {
+    builds, sent: sent.slice(), box: S.box.ops.length, pending: S.pending.size,
+    models: models(), rebuilt: S.model !== model,
+  }
+  // 같은 껍데기 · 같은 바뀐 줄에 연 줄만 바뀐 feed — 표 모양을 다시 짓지 않는다.
+  const kept = S.model
+  feed('s1', { ack: { mount: S.mount, seq: 1 }, rows: { a: rowOf('a', 'EQ-1', 'X') }, open: 'b' })
+  R.openOnly = { builds, same: S.model === kept, open: S.openId }
+  // 다른 껍데기의 feed 는 잇지 않는다.
+  feed('s9', { rows: { a: rowOf('a', 'EQ-1', 'Q') } })
+  R.otherShell = { same: S.model === kept, models: models() }
+  // 새 껍데기가 오면 그 껍데기의 feed 를 기다렸다 잇는다(칸에 남은 다른 껍데기 feed 로
+  // 그리지 않는다).
+  const third = [rowOf('a', 'EQ-1', 'X'), rowOf('b', 'EQ-2', 'y'), rowOf('c', 'EQ-3', 'z')]
+  globalThis.__mount({ data: shellOf('s2', third), ...component })
+  R.newShellWaits = { same: S.model === kept }
+  feed('s2', { ack: { mount: S.mount, seq: 1 } })
+  R.newShell = { builds, models: models() }
+  cleanup()
+  R.cleared = window.__capaEquipmentGrid[HOST].feed
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_table_takes_feed_patches_and_does_not_rebuild_for_an_unchanged_shell() -> None:
+    """표 JS 는 껍데기와 그 껍데기의 feed 를 이어 그린다(B4 data 가르기). feed 의 바뀐 줄이 그 줄을
+    바꾸고 ack 가 출납을 걷는다. 껍데기가 그대로인 회차에는 표 뼈대를 다시 짓지 않고, 바뀐 줄도
+    그대로인 feed(연 줄만 바뀜)에는 정렬한 표 모양도 다시 짓지 않는다. 다른 껍데기의 feed 는 그
+    껍데기가 올 때까지 둔다. 내릴 때 칸의 feed 를 비운다(다음 마운트가 옛 feed 로 먼저 그리지
+    않게)."""
+    result = _node({}, _SHELL_FEED_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["waiting"] == {"model": False, "builds": 0}
+    assert result["drawn"] == {"builds": 1, "models": ["x", "y"], "count": 2}
+    assert result["patched"] == {
+        "builds": 1,
+        "sent": [[1]],
+        "box": 0,
+        "pending": 0,
+        "models": ["X", "y"],
+        "rebuilt": True,
+    }
+    assert result["openOnly"] == {"builds": 1, "same": True, "open": "b"}
+    assert result["otherShell"] == {"same": True, "models": ["X", "y"]}
+    assert result["newShellWaits"] == {"same": True}
+    assert result["newShell"] == {"builds": 1, "models": ["X", "y", "z"]}
+    assert result["cleared"] is None

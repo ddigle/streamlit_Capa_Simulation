@@ -4,7 +4,10 @@
 
 AppTest 는 그 JS 를 못 돌린다. 대역은 마운트마다 받은 data 를 목록에 적고, 세션 칸
 (`FAKE_EVENT_KEY`)에 넣어 둔 (key, 이름, 값)을 그 마운트 key 의 세션 값으로 적은 뒤 받은
-`on_<이름>_change` 콜백을 부른다. 진짜는 콜백이 회차 맨 앞에서 돌지만 대역은 그리는 자리에서
+`on_<이름>_change` 콜백을 부른다. 표 마운트는 껍데기와 feed 두 요소로
+가므로(`split_grid_data`) 브라우저처럼 둘을 이은 data(`join_grid_data`)를 표 key 로 적고, 받은
+그대로의 껍데기 · feed 는 `<key>#shell` · `<key>-feed` 로 따로 적는다. 진짜는 콜백이 회차 맨 앞에서
+돌지만 대역은 그리는 자리에서
 돈다 — `send` 가 한 번 더 돌려 결과를 그린다. 출납 값은 진짜처럼 세션에 남는다(같은 출납이 다시
 와도 seq 기억으로 한 번만 반영한다).
 """
@@ -22,6 +25,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import GRID_RESULT_KEY
+from capa_simulation.services.equipment_grid import join_grid_data
 
 FAKE_EVENT_KEY = "test_fake_grid_event"
 Calls = list[tuple[str, dict[str, Any]]]
@@ -31,12 +35,22 @@ _SEQ = itertools.count(1)
 def install_fake_grid(monkeypatch: pytest.MonkeyPatch) -> Calls:
     """표 컴포넌트를 대역으로 바꾸고 받은 (key, data) 목록을 돌려준다."""
     calls: Calls = []
+    feeds: dict[str, dict[str, Any]] = {}
+
+    def _fake_feed(**kwargs: Any) -> None:
+        data = dict(kwargs["data"])
+        feeds[str(data.get("host"))] = data
+        calls.append((kwargs["key"], data))
 
     def _fake(**kwargs: Any) -> SimpleNamespace:
         import streamlit as st
 
         key = kwargs["key"]
-        calls.append((key, kwargs["data"]))
+        data = kwargs["data"]
+        if isinstance(data, dict) and "shell" in data:
+            calls.append((f"{key}#shell", data))
+            data = join_grid_data(data, feeds.get(key, {}))
+        calls.append((key, data))
         event = st.session_state.get(FAKE_EVENT_KEY)
         if isinstance(event, tuple) and event[0] == key:
             _, name, value = event
@@ -48,6 +62,7 @@ def install_fake_grid(monkeypatch: pytest.MonkeyPatch) -> Calls:
         return SimpleNamespace(outbox=None)
 
     monkeypatch.setattr(emg, "_GRID", _fake)
+    monkeypatch.setattr(emg, "_FEED", _fake_feed)
     return calls
 
 
