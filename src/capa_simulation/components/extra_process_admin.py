@@ -845,8 +845,10 @@ def _report_remote_state(state: ExtraProcessState | None, tab: str) -> None:
         full=(
             f"「이 리비전 값을 새 판으로」 로 만든 {with_subject_particle(name)} S3 Drive 에 "
             "없습니다(앱은 S3 Drive 파일을 덮지 않습니다). 「양식 내려받기」 로 받은 CSV 여섯 "
-            "장을 그대로 S3 Drive extra_process 에 놓고 「S3 Drive 에서 가져오기」 를 누르면 "
-            f"풀립니다. 다음 등록 · 자동 갱신은 DB 의 {with_direction_particle(name)} 돕니다."
+            "장을 열어 다시 저장하지 않고 그대로 S3 Drive extra_process 에 놓고 「S3 Drive 에서 "
+            "가져오기」 를 누르면 풀립니다 — 다시 저장했으면 00_info.csv 의 판을 1 올려 놓고 "
+            "적용합니다. 다음 등록 · 자동 갱신은 DB 의 "
+            f"{with_direction_particle(name)} 돕니다."
         ),
         tab=tab,
     )

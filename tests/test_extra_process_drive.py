@@ -398,3 +398,64 @@ def test_the_admin_tab_imports_and_applies_the_six_files_end_to_end(
     assert active.sha256 == pack_sha256(bundle_pack_files(files))
     assert active_state(app, "EP-02") is None
     assert any("S3 Drive 같음" in str(item.value) for item in app.caption)
+
+
+def test_on_a_managed_server_the_default_source_reaches_the_started_keys(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-DEP 꼴(동기화 `managed` + 기동 때 읽은 S3 명단 키)에서는 꽂힌 기본 원천이 닿을 곳을 스스로
+    고른다 — 시험이 닿을 곳을 주지 않아도 받는다."""
+    from capa_simulation.auth import names, runtime
+    from capa_simulation.io import object_storage
+
+    store, endpoint = mock_s3
+    for name, value in {
+        names.ENV_S3_ACCESS_KEY: store.access_key,
+        names.ENV_S3_SECRET_KEY: store.secret_key,
+        names.ENV_S3_ENDPOINT: endpoint,
+        names.ENV_S3_BUCKET: store.bucket,
+        names.ENV_S3_REGION: store.region,
+        object_storage.MODE_ENV: object_storage.MODE_MANAGED,
+    }.items():
+        monkeypatch.setenv(name, value)
+    runtime.reset()
+    try:
+        files = template_files()
+        _place(store, files)
+        target = drive.app_target()
+        assert target is not None and target.bucket == store.bucket
+        assert DriveSource().fetch().data == bundle_pack_files(files)
+        monkeypatch.setenv(object_storage.MODE_ENV, "local")
+        assert drive.app_target() is None
+    finally:
+        runtime.reset()
+
+
+def test_the_production_entry_installs_the_drive_source() -> None:
+    """C-DEP 진입 파일(`capa_server.py`)을 그대로 import 하면 S3 Drive 원천이 꽂힌다 — 런타임 전
+    길이라 하위 프로세스에서 본다(통합인증 · 명단 환경변수는 빼서 꺼짐 기동)."""
+    import json
+    import os
+    import subprocess
+
+    script = (
+        "import json, capa_server\n"
+        "from capa_simulation.extra_process_intake import installed_source\n"
+        "print(json.dumps(type(installed_source()).__name__))\n"
+    )
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith(("CAPA_", "ADFS_"))
+    }
+    env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
+    env["PYTHONIOENCODING"] = "utf-8"
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        cwd=PROJECT_ROOT,
+        timeout=120,
+        check=True,
+    )
+    assert json.loads(done.stdout.strip().splitlines()[-1]) == "DriveSource"

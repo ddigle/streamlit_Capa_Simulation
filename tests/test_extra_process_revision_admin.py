@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from alert_marks import active_state, flashed, states
 from auto_update_fakes import new_repository, publish_snapshot
-from extra_process_fixtures import BOND
+from extra_process_fixtures import BOND, bump_version
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template, register
 
@@ -53,7 +53,12 @@ from capa_simulation.persistence.models import (
     ExtraProcessVersion,
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
-from capa_simulation.services.extra_process_pack import read_pack_zip
+from capa_simulation.services.extra_process_pack import (
+    bundle_pack_files,
+    pack_sha256,
+    pack_to_zip,
+    read_pack_zip,
+)
 
 OPEN_KEY = "__rev_open__"
 SINK_KEY = "__rev_sink__"
@@ -378,8 +383,11 @@ def test_with_a_source_and_no_sink_a_new_version_raises_the_drift_alert_until_pl
     assert active_state(app, "EP-05") is None
     assert not [button for button in app.button if button.key == REWRITE_BUTTON_KEY]
 
-    # 양식 내려받기 → 풀어 그대로 놓은 여섯 장 = 활성 판과 같은 바이트(묶개가 같다).
-    app.session_state[FETCH_KEY] = repository.load_extra_process_content(str(active.sha256))
+    # 양식 내려받기(그 판을 다시 쓴 ZIP — `_template_bytes` 와 같은 셈) → 풀어 그대로 놓은 여섯 장을
+    # 원천이 묶은 바이트 = 활성 판과 같은 바이트(묶개가 같다).
+    from_download = _placed_from_download(repository, str(active.sha256))
+    assert pack_sha256(from_download) == active.sha256
+    app.session_state[FETCH_KEY] = from_download
     app.session_state[HEAD_KEY] = '"사람이-놓은-새-판"'
     _click(app, IMPORT_BUTTON_KEY)
 
@@ -398,6 +406,55 @@ def test_with_a_source_and_no_sink_a_new_version_raises_the_drift_alert_until_pl
     _click(app, IMPORT_BUTTON_KEY)
     assert len(repository.load_extra_process_state().writes) == 1
     assert any("바뀐 것 없음" in str(note.value) for note in flashed(app, "info"))
+
+
+def test_a_resaved_download_needs_the_version_raised_and_that_also_clears_the_drift(
+    database: Path,
+) -> None:
+    """내려받은 새 판을 메모장으로 다시 저장해(BOM 없음 — 바이트가 달라짐) 그대로 놓으면 판 번호가
+    같아 「판 번호를 올려 다시 놓으세요」 로 거절된다. 판을 1 올려 놓고 적용하면 활성 판이 가져온
+    판(「적용」)이 되어 판 어긋남 `EP-06` 이 풀린다(Guide · 알림 전문의 다른 길)."""
+    repository = _edited_revision(database)
+    app = _app(database, source=True, head='"판1-파일"')
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+    assert active_state(app, "EP-06") is not None
+    active = repository.load_extra_process_state().active
+    assert active is not None and active.version_no == 2
+    members = _download_members(repository, str(active.sha256))
+    resaved = {name: data.removeprefix("\ufeff".encode()) for name, data in members.items()}
+
+    app.session_state[FETCH_KEY] = bundle_pack_files(resaved)
+    app.session_state[HEAD_KEY] = '"다시-저장"'
+    _click(app, IMPORT_BUTTON_KEY)
+    assert any("00_info.csv 의 판 번호를 올려" in str(item.value) for item in app.error)
+    assert not [button for button in app.button if button.key == APPLY_BUTTON_KEY]
+
+    app.session_state[FETCH_KEY] = bundle_pack_files(bump_version(resaved, 3))
+    app.session_state[HEAD_KEY] = '"판을-올림"'
+    _click(app, IMPORT_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+
+    state = repository.load_extra_process_state()
+    assert state.active is not None and state.active.kind == EXTRA_KIND_APPLY
+    assert state.active.version_no == 3 and state.writes == ()
+    assert active_state(app, "EP-06") is None
+
+
+def _download_members(repository: DuckDBScenarioRepository, sha: str) -> dict[str, bytes]:
+    """양식 내려받기 ZIP(그 판을 다시 쓴 것 — Admin `_template_bytes` 와 같은 셈)을 푼 여섯 장."""
+    import io
+    import zipfile
+
+    pack = read_pack_zip(repository.load_extra_process_content(sha)).pack
+    assert pack is not None
+    with zipfile.ZipFile(io.BytesIO(pack_to_zip(pack))) as archive:
+        return {info.filename: archive.read(info) for info in archive.infolist()}
+
+
+def _placed_from_download(repository: DuckDBScenarioRepository, sha: str) -> bytes:
+    """내려받은 양식을 풀어 그대로 놓은 여섯 장을 S3 Drive 원천이 묶은 바이트."""
+    return bundle_pack_files(_download_members(repository, sha))
 
 
 def test_nothing_to_fetch_yet_is_a_note_not_a_failure(database: Path) -> None:
