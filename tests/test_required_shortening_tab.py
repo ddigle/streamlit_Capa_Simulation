@@ -31,6 +31,15 @@ from alert_marks import (
     states,
     table_frame,
 )
+from process_board_press import (
+    apply_board,
+    board_data,
+    board_labels,
+    board_options,
+    clear_board,
+    live_board,
+    press_board,
+)
 from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
@@ -41,7 +50,10 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import (
     LEVEL_FIELD,
     MATCH_RULE_HELP,
+    PROCESS_BOARD_KEY,
+    PROCESS_CLEAR_LABEL,
     PROCESS_FIELD_EMPTY,
+    PROCESS_FIELD_NAME,
     PROCESS_POPOVER_KEY,
     SHARED_FILTER_HELP,
     SHORTENING_END_KEY,
@@ -113,6 +125,13 @@ GUIDE = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "required_shorteni
 # 기준 값 글 — 본문 맨 위에 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(상태 표지는
 # 서지 않고 상태 알림만이다).
 VALUE_LINE_TEXT = "설비 일정 기준 가용(환산) · 오늘"
+
+
+@pytest.fixture(autouse=True)
+def _live_process_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    """조건 카드 「공정」 고르기 판(Components v2)을 회차 안에서 등록한다 — 판 data 를 읽고
+    「적용」 을 누르는 시험이 많다(`process_board_press`)."""
+    live_board(monkeypatch)
 
 
 def _months(count: int = 6) -> list[int]:
@@ -324,7 +343,8 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     assert "column" not in paths[SHORTENING_COMPARE_KEY], paths
     card = paths[SHORTENING_COMPARE_KEY][0]
     assert card not in paths[LEVEL_FIELD.field_key], paths
-    assert "공정 (표시순서)" in {widget.label for widget in app.sidebar.multiselect}
+    assert PROCESS_FIELD_NAME in " ".join(str(item.proto.body) for item in app.sidebar.get("html"))
+    assert board_options(app, PROCESS_BOARD_KEY)
     assert not {"목표 확보율", "진척 비교"} & {widget.label for widget in app.main.selectbox}
     assert not [item for item in app.main.button if item.key == LEVEL_FIELD.field_key]
     downloads = {str(button.key) for button in app.get("download_button")}
@@ -468,46 +488,160 @@ def test_the_card_process_field_reads_the_first_pick_and_the_rest_on_one_line(
 ) -> None:
     """카드의 공정 칸은 고른 칩을 늘어놓지 않고 한 줄 「<처음 고른 공정> 외 n개」 다(2026-11-09
     사용자 검수 g03-2). 하나면 그 이름, 고르지 않았으면 지금의 전체 글이고, 둘 이상이면 풍선이
-    전체 목록이다. 다중 선택 칸은 그 팝오버 안이고 key 는 그대로다. 첫 이름은 표시순서가 아니라
-    처음 고른 공정이다."""
+    전체 목록이다. 고르기 판은 그 팝오버 안이다. 첫 이름은 표시순서가 아니라 처음 고른 공정이다 —
+    판이 누른 차례로 쌓아 보내고(`pickOrder`) 적용한 값 · 판의 지금 값도 그 차례다."""
     app = _run(_database(tmp_path))
     assert _process_popover(app).proto.popover.label == PROCESS_FIELD_EMPTY
     assert not _process_popover(app).proto.popover.help
-    options = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)
+    options = board_options(app, PROCESS_BOARD_KEY)
     assert len(options) >= 3
     picked = [options[2], options[0], options[1]]
     shown = [literal_markdown(name) for name in picked]
 
-    one = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(picked[:1]).run()
+    one = apply_board(app, PROCESS_BOARD_KEY, picked[:1])
     assert not one.exception
     assert _process_popover(one).proto.popover.label == shown[0]
     assert not _process_popover(one).proto.popover.help
 
-    three = one.multiselect(key=SHORTENING_PROCESS_KEY).set_value(picked).run()
+    three = apply_board(one, PROCESS_BOARD_KEY, picked)
     assert not three.exception
     popover = _process_popover(three).proto.popover
     assert popover.label == f"{shown[0]} 외 2개"
     assert popover.help == " · ".join(shown)
     assert "선택" not in popover.label
-    # 칩을 늘어놓는 다중 선택 칸은 카드에 바로 서지 않고 그 팝오버 안이다.
-    paths = _sidebar_block_paths(three, (SHORTENING_PROCESS_KEY,))
-    assert "popover" in paths[SHORTENING_PROCESS_KEY], paths
+    assert three.session_state[SHORTENING_PROCESS_KEY] == picked
+    assert board_data(three, PROCESS_BOARD_KEY)["selected"] == picked
+    # 고르기 판은 카드에 바로 서지 않고 그 팝오버 안이다.
+    found: list[list[str]] = []
+
+    def walk(node: Any, kinds: list[str]) -> None:
+        for child in getattr(node, "children", {}).values():
+            if getattr(child, "type", None) == "bidi_component" and str(child.proto.id).endswith(
+                f"-{PROCESS_BOARD_KEY}"
+            ):
+                found.append(kinds)
+            if hasattr(child, "children"):
+                walk(child, [*kinds, str(child.type)])
+
+    walk(three.sidebar, [])
+    assert len(found) == 1 and "popover" in found[0], found
     clear_equipment_repository()
 
 
 def test_the_process_filter_narrows_the_cards(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
-    options = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)
+    options = board_options(app, PROCESS_BOARD_KEY)
     assert options, "맞댄 공정이 공정 선택지가 되어야 한다"
     chosen = options[0]
 
-    filtered = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]).run()
+    filtered = apply_board(app, PROCESS_BOARD_KEY, [chosen])
 
     assert not filtered.exception
     assert _cards(filtered) == [chosen]
     # 고른 공정은 목표를 채워도 카드가 선다(「목표 충족」 배지).
     satisfied = _choose_level(filtered, 0.9)
     assert _cards(satisfied) == [chosen]
+    clear_equipment_repository()
+
+
+def _runs(app: AppTest) -> int:
+    return int(app.session_state["test_runs"])
+
+
+def test_processes_are_picked_on_the_board_and_applied_once_in_one_app_run(tmp_path: Path) -> None:
+    """2026-11-20 사용자 결정(편집기 다시 로딩 줄이기 Q6) — 공정은 팝오버 안 고르기 판에서 여럿
+    고른 뒤 「적용」 한 번이다. 판을 누르는 동안은 서버가 돌지 않고(판은 브라우저 안 초안 — 시험할
+    회차가 없다), 「적용」 은 트리거 하나라 앱 전체 회차가 한 번이다: 콜백이 회차 앞에서 세션 칸 ·
+    공용 프로필을 적어 그 회차의 한 줄 칸 · 카드 · 판 지금 값이 곧바로 고른 값이다. 판은 고른 차례를
+    지키고 모두 켬을 고르지 않음과 같이 보지 않으며 비우기 단추에 제 이름을 준다."""
+    database_path = _database(tmp_path)
+    app = _run(database_path)
+    data = board_data(app, PROCESS_BOARD_KEY)
+    assert (data["mode"], data["selected"], data["hasShared"]) == ("multi", [], False)
+    assert (data["wholeIsAll"], data["pickOrder"], data["clearLabel"]) == (
+        False,
+        True,
+        PROCESS_CLEAR_LABEL,
+    )
+    options = board_options(app, PROCESS_BOARD_KEY)
+    picked = [options[1], options[0]]
+    before = _runs(app)
+
+    apply_board(app, PROCESS_BOARD_KEY, picked)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert _runs(app) - before == 1
+    assert app.session_state[SHORTENING_PROCESS_KEY] == picked
+    assert _process_popover(app).proto.popover.label == f"{literal_markdown(picked[0])} 외 1개"
+    assert sorted(_cards(app)) == sorted(picked)
+    data = board_data(app, PROCESS_BOARD_KEY)
+    assert (data["selected"], data["hasShared"]) == (picked, True)
+    stored = _profile(database_path)
+    assert (stored.processes, stored.version) == (tuple(picked), 1)
+
+    # 같은 값의 늦은 「적용」(판이 잠그지만 겹쳐 온 누름)은 공용 프로필을 다시 쓰지 않는다.
+    apply_board(app, PROCESS_BOARD_KEY, picked)
+    assert not app.exception
+    assert _profile(database_path).version == 1
+    clear_equipment_repository()
+
+
+def test_applying_every_process_is_not_the_same_as_none(tmp_path: Path) -> None:
+    """이 칸에서 고르지 않음은 「목표 미달 공정 전체」 다 — 모두 켬은 맞댄 공정 전부라 카드가
+    목표를 채운 공정까지 선다(판이 둘을 같이 보지 않게 `wholeIsAll` 을 끈다)."""
+    app = _choose_level(_run(_database(tmp_path)), 0.9)
+    short = _cards(app)
+    options = board_options(app, PROCESS_BOARD_KEY)
+    assert len(short) < len(options), "이 표본은 목표 90% 에서 채운 공정이 있어야 한다"
+
+    app = apply_board(app, PROCESS_BOARD_KEY, options)
+
+    assert not app.exception
+    assert app.session_state[SHORTENING_PROCESS_KEY] == options
+    assert sorted(_cards(app)) == sorted(options)
+    clear_equipment_repository()
+
+
+def test_the_clear_button_empties_the_choice_and_saves_it(tmp_path: Path) -> None:
+    """판의 「선택 해제」(공용 판 「전체」 자리)는 적용한 공정이 있을 때만 켜지고(`hasShared`)
+    누르면 곧바로 비운다 — 한 줄 칸이 「미선택 시 목표 미달 공정 전체」 로 돌아오고 공용 설정도
+    빈다."""
+    database_path = _database(tmp_path)
+    app = _run(database_path)
+    chosen = board_options(app, PROCESS_BOARD_KEY)[0]
+    app = apply_board(app, PROCESS_BOARD_KEY, [chosen])
+    assert board_data(app, PROCESS_BOARD_KEY)["hasShared"] is True
+    before = _runs(app)
+
+    app = clear_board(app, PROCESS_BOARD_KEY)
+
+    assert not app.exception
+    assert _runs(app) - before == 1
+    assert app.session_state[SHORTENING_PROCESS_KEY] == []
+    assert _process_popover(app).proto.popover.label == PROCESS_FIELD_EMPTY
+    assert board_data(app, PROCESS_BOARD_KEY)["hasShared"] is False
+    assert _profile(database_path).processes == ()
+    clear_equipment_repository()
+
+
+def test_an_apply_carrying_a_process_not_on_the_board_keeps_only_the_known_ones(
+    tmp_path: Path,
+) -> None:
+    """공정 표시명이 바뀐 직후 옛 판에서 온 「적용」 처럼 선택지에 없는 값이 섞이면 그 값만 버리고
+    고른 차례는 지킨다 — 사용자가 고르지 않은 값이 세션 · 공용 설정에 들지 않는다. 꼴이 맞지 않는
+    트리거는 아무것도 하지 않는다."""
+    database_path = _database(tmp_path)
+    app = _run(database_path)
+    first, second = board_options(app, PROCESS_BOARD_KEY)[:2]
+
+    app = apply_board(app, PROCESS_BOARD_KEY, [second, "GHOST-PROC", first, second])
+    assert not app.exception
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [second, first]
+    assert _profile(database_path).processes == (second, first)
+
+    app = press_board(app, PROCESS_BOARD_KEY, {"values": "GHOST-PROC"})
+    assert not app.exception
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [second, first]
     clear_equipment_repository()
 
 
@@ -636,10 +770,8 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     assert note["full"].startswith("필요 단축 일정 — 일정 미정 1대")
     assert "가용설비 현황 › 설비 마스터의 일정 칸" in note["full"]
     # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 알림은 해소된다.
-    others = [
-        name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
-    ]
-    narrowed = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(others[:1]).run()
+    others = [name for name in board_options(app, PROCESS_BOARD_KEY) if name != process]
+    narrowed = apply_board(app, PROCESS_BOARD_KEY, others[:1])
     assert not narrowed.exception
     assert not any("일정 미정" in str(item.value) for item in narrowed.main.caption)
     assert active_state(narrowed, "RS-03") is None
@@ -1217,7 +1349,8 @@ def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> N
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state[SHORTENING_START_KEY] == months[1]
     assert app.session_state[SHORTENING_END_KEY] == months[3]
-    assert app.multiselect(key=SHORTENING_PROCESS_KEY).value == [first]
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [first]
+    assert board_data(app, PROCESS_BOARD_KEY)["selected"] == [first]
     assert _cards(app) == [first]
     captions = " ".join(str(item.value) for item in app.sidebar.caption)
     assert "공용 설정" in captions
@@ -1250,8 +1383,8 @@ def test_changing_the_filter_saves_it_for_every_new_session(tmp_path: Path) -> N
     assert (stored.start_month, stored.end_month, stored.processes) == (months[2], months[-1], ())
     assert stored.version == 1
 
-    chosen = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)[1]
-    app = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]).run()
+    chosen = board_options(app, PROCESS_BOARD_KEY)[1]
+    app = apply_board(app, PROCESS_BOARD_KEY, [chosen])
     assert not app.exception
     stored = _profile(database_path)
     assert (stored.start_month, stored.processes) == (months[2], (chosen,))
@@ -1265,11 +1398,11 @@ def test_changing_the_filter_saves_it_for_every_new_session(tmp_path: Path) -> N
     assert not other.exception
     assert other.session_state[SHORTENING_START_KEY] == months[2]
     assert other.session_state[SHORTENING_END_KEY] == months[-1]
-    assert other.multiselect(key=SHORTENING_PROCESS_KEY).value == [chosen]
+    assert board_data(other, PROCESS_BOARD_KEY)["selected"] == [chosen]
     assert _cards(other) == [chosen]
 
-    # 비우면 「미선택 = 목표 미달 공정 전체」가 공용 설정이 된다.
-    cleared = other.multiselect(key=SHORTENING_PROCESS_KEY).set_value([]).run()
+    # 모두 끄고 「적용」 하면 「미선택 = 목표 미달 공정 전체」가 공용 설정이 된다.
+    cleared = apply_board(other, PROCESS_BOARD_KEY, [])
     assert not cleared.exception
     assert _profile(database_path).processes == ()
     clear_equipment_repository()
@@ -1397,9 +1530,10 @@ def test_process_display_names_label_the_screen_but_values_stay_original(tmp_pat
     app = _run(database_path, labels=labels)
 
     assert not app.exception, [element.message for element in app.exception]
-    picker = app.multiselect(key=SHORTENING_PROCESS_KEY)
-    assert "표시-첫공정" in picker.options and first not in picker.options
-    assert picker.value == [first]
+    shown = board_labels(app, PROCESS_BOARD_KEY)
+    assert "표시-첫공정" in shown and first not in shown
+    assert first in board_options(app, PROCESS_BOARD_KEY)
+    assert board_data(app, PROCESS_BOARD_KEY)["selected"] == [first]
     assert app.session_state[SHORTENING_PROCESS_KEY] == [first]
     assert _cards(app) == ["표시-첫공정"]
     body = _html(app)
@@ -1416,7 +1550,7 @@ def test_process_display_names_label_the_screen_but_values_stay_original(tmp_pat
         data = app.session_state["captured_downloads"][key]["data"]
         assert "표시-" not in data.decode("utf-8-sig"), key
 
-    changed = picker.set_value([second]).run()
+    changed = apply_board(app, PROCESS_BOARD_KEY, [second])
     assert not changed.exception
     assert _cards(changed) == ["표시-둘째공정"]
     assert _profile(database_path).processes == (second,)
@@ -1426,19 +1560,20 @@ def test_process_display_names_label_the_screen_but_values_stay_original(tmp_pat
 def test_a_display_name_equal_to_another_process_still_saves_the_chosen_process(
     tmp_path: Path,
 ) -> None:
-    """첫 공정의 표시명이 둘째 공정의 원본 이름과 같으면 multiselect 가 같은 글자 둘 중 첫째로
-    돌아와 다른 공정이 세션·공용 프로필에 들어갔다(병합 전 리뷰). 「표시명 (원본)」 으로 가른다."""
+    """첫 공정의 표시명이 둘째 공정의 원본 이름과 같으면 고르는 칸이 같은 글자 둘 중 첫째로
+    돌아와 다른 공정이 세션·공용 프로필에 들어갔다(병합 전 리뷰). 「표시명 (원본)」 으로 가른다 —
+    판은 원본 값을 보내지만 보이는 글자도 갈라야 사람이 고른다."""
     database_path = _database(tmp_path)
     first, second = _processes()[:2]
 
     app = _run(database_path, labels={first: second})
 
     assert not app.exception, [element.message for element in app.exception]
-    picker = app.multiselect(key=SHORTENING_PROCESS_KEY)
-    assert f"{second} ({first})" in picker.options and second in picker.options
+    shown = board_labels(app, PROCESS_BOARD_KEY)
+    assert f"{second} ({first})" in shown and second in shown
     # 같은 글자 둘 중 어느 쪽이 먼저든 한쪽은 틀렸다 — 둘 다 골라 본다.
     for chosen in (second, first):
-        app = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]).run()
+        app = apply_board(app, PROCESS_BOARD_KEY, [chosen])
         assert not app.exception
         assert app.session_state[SHORTENING_PROCESS_KEY] == [chosen]
         assert _profile(database_path).processes == (chosen,)
@@ -1731,7 +1866,7 @@ def test_a_highlight_from_the_detail_page_tops_the_cards_without_writing_the_sha
     body = _html(app)
     assert 'data-highlight="공정 Capa 상세에서 연 공정"' in body
     assert "공용 설정의 공정 선택 밖 — KPI·CSV 에 들지 않음" in " ".join(_captions(app))
-    assert app.multiselect(key=SHORTENING_PROCESS_KEY).value == [shared]
+    assert board_data(app, PROCESS_BOARD_KEY)["selected"] == [shared]
     # KPI·CSV 는 공용 설정의 공정만이다.
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert set(units["공정"]) <= {shared}

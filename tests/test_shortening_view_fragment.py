@@ -38,6 +38,7 @@ import pytest
 import streamlit as st
 from alert_marks import events
 from fragment_browser import FragmentBrowser, install_fragment_browser
+from process_board_press import apply_board, board_options, live_board
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _cards, _database, _months
 from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
@@ -52,10 +53,10 @@ import capa_simulation.settings as settings
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.required_shortening_panel import (
     LEVEL_FIELD,
+    PROCESS_BOARD_KEY,
     SHORTENING_DIALOG_HOST,
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
-    SHORTENING_PROCESS_KEY,
     SHORTENING_START_KEY,
     VIEW_FRAGMENT_KEY,
 )
@@ -311,15 +312,17 @@ def test_choosing_the_target_opens_on_the_host_and_draws_the_view_run_numbers(
     그 숫자는 같은 목표의 본문 프래그먼트 회차와 바이트까지 같다(2차 보드 Q2-26)."""
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
+    live_board(monkeypatch)
     app = _open(runner)
     assert _view(runner)
-    # 조건 카드 칸과 목표 확보율 값 칸은 모두 프래그먼트 밖이다(그림 메모 g03 · 2차 보드 Q2-26).
+    # 조건 카드 칸(공정은 팝오버 안 고르기 판)과 목표 확보율 값 칸은 모두 프래그먼트 밖이다(그림
+    # 메모 g03 · 2차 보드 Q2-26).
     for key in (
         LEVEL_FIELD.field_key,
         SHORTENING_COMPARE_KEY,
         SHORTENING_START_KEY,
         SHORTENING_END_KEY,
-        SHORTENING_PROCESS_KEY,
+        PROCESS_BOARD_KEY,
     ):
         assert _fragment_of(runner, key) == "", key
     # 머리 「누적 진척」 의 「주차별」 은 띠 프래그먼트 안이다 — 여닫기가 띠만 다시 돈다.
@@ -527,15 +530,19 @@ def test_the_card_filter_is_a_full_run_and_the_next_view_run_keeps_it(
 ) -> None:
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
+    live_board(monkeypatch)
     app = _open(runner)
     before = _cards(app)
     unfiltered = _screen(app, world)
-    options = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)
+    options = board_options(app, PROCESS_BOARD_KEY)
     chosen = next(option for option in options if [option] != before)
 
-    # 공정은 조건 카드다 — 브라우저는 앱 전체 회차를 청한다. 카드가 그 공정 하나로 바뀐다.
+    # 공정은 조건 카드의 고르기 판이다 — 「적용」 은 앱 전체 회차 하나를 청한다. 카드가 그 공정
+    # 하나로 바뀐다.
     runner.fragment_queue = []
-    _run(app, world, lambda app: app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]))
+    world.downloads.clear()
+    apply_board(app, PROCESS_BOARD_KEY, [chosen])
+    _assert_clean(app)
     assert runner.started == [[]]
     assert _cards(app) == [chosen]
     assert _screen(app, world) != unfiltered

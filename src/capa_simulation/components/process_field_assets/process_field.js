@@ -16,6 +16,15 @@
 //
 // 컴포넌트 요소는 회차에 바뀌지 않으므로 회차를 넘는 초안은 뿌리 요소에 단다. 서버가 보낸 선택지 · 지금
 // 값이 바뀐 회차에만 초안과 타일을 다시 세운다.
+//
+// 판을 쓰는 다른 칸(필요 단축 일정 조건 카드 「공정」 — 팝오버 안)은 data 로 셋을 바꾼다. 셋 다 주지 않으면
+// 공용 공정 팝업 그대로다.
+// - `wholeIsAll: false` — 모두 켠 초안을 고르지 않은 것과 같이 보지 않는다(그 칸은 「미선택 = 목표 미달
+//   공정 전체」 라 모두 켬과 뜻이 다르다).
+// - `pickOrder: true` — 초안을 선택지 차례가 아니라 누른 차례로 쌓는다(그 칸의 한 줄 글은 처음 고른 공정이
+//   앞이다). 지금 값(`selected`)의 차례가 첫 초안이다.
+// - `clearLabel` — 「전체」 단추 글(트리거는 같은 `clear`). 그 칸에서는 고른 것을 비우는 단추라 「전체」 가
+//   「모든 공정」 으로 읽히지 않게 이름을 준다.
 
 // <process-picker-core>
 function normalizeText(text) {
@@ -38,6 +47,11 @@ function toggleDraft(draft, value, order) {
   if (held.has(value)) held.delete(value)
   else held.add(value)
   return order.filter((item) => held.has(item))
+}
+
+// 누른 차례로 쌓는 초안 — 켜면 끝에 붙이고 끄면 뺀다(`pickOrder`).
+function togglePicked(draft, value) {
+  return draft.includes(value) ? draft.filter((item) => item !== value) : [...draft, value]
 }
 
 function sameSelection(left, right) {
@@ -111,15 +125,22 @@ export default function (component) {
     .map((value) => String(value))
     .filter((value) => valid.has(value))
   const hasShared = Boolean(data?.hasShared)
+  const wholeIsAll = data?.wholeIsAll !== false
+  const pickOrder = data?.pickOrder === true
+  const clearLabel = typeof data?.clearLabel === 'string' && data.clearLabel ? data.clearLabel : '전체'
+  // 모두 켠 초안을 고르지 않은 것과 같이 볼 공정 수 — 0 이면 그렇게 보지 않는다(`applyState`).
+  const wholeCount = wholeIsAll ? order.length : 0
 
   const state = root.__capaProc || (root.__capaProc = { seen: '', focused: false })
-  const signature = JSON.stringify([mode, options, applied, hasShared])
+  const signature = JSON.stringify([mode, options, applied, hasShared, wholeIsAll, pickOrder, clearLabel])
   if (state.seen !== signature) {
     state.seen = signature
     state.draft = applied.slice()
     state.needle = ''
     state.focus = applied.length ? Math.max(order.indexOf(applied[0]), 0) : 0
     search.value = ''
+    const clearText = Array.from(clearAll.childNodes).find((node) => node.nodeType === Node.TEXT_NODE)
+    if (clearText) clearText.nodeValue = clearLabel
     grid.replaceChildren()
     grid.setAttribute('aria-multiselectable', String(mode === 'multi'))
     options.forEach((option, index) => {
@@ -160,7 +181,7 @@ export default function (component) {
     empty.hidden = shown.length > 0
     count.textContent = countLabel(mode, state.draft.length, options.length)
     actions.hidden = mode !== 'multi'
-    const status = applyState(mode, state.draft, applied, order.length)
+    const status = applyState(mode, state.draft, applied, wholeCount)
     apply.disabled = status !== 'ready'
     clearAll.disabled = !hasShared
     root.dataset.state = status
@@ -174,7 +195,7 @@ export default function (component) {
   }
 
   const applyDraft = () => {
-    if (applyState(mode, state.draft, applied, order.length) !== 'ready') return
+    if (applyState(mode, state.draft, applied, wholeCount) !== 'ready') return
     setTriggerValue('apply', { values: state.draft.slice() })
   }
 
@@ -186,7 +207,7 @@ export default function (component) {
       if (applied[0] !== option.value) setTriggerValue('apply', { values: [option.value] })
       return
     }
-    state.draft = toggleDraft(state.draft, option.value, order)
+    state.draft = pickOrder ? togglePicked(state.draft, option.value) : toggleDraft(state.draft, option.value, order)
     focusTile(tile)
   }
 
@@ -255,9 +276,13 @@ export default function (component) {
   }
 
   render()
-  // 팝업을 연 첫 그림에서 찾기 칸에 초점 — 치면 좁혀지고, Tab 이 「전체」 · 「적용」 · 판으로 간다.
+  // 팝업을 연 첫 그림에서 찾기 칸에 초점 — 치면 좁혀지고, Tab 이 「전체」 · 「적용」 · 판으로 간다. 보이지 않는
+  // 자리(닫힌 팝오버 안에 미리 선 판)에서는 초점을 가져가지 않는다 — 화면의 다른 칸에서 초점을 뺏지 않게.
   if (!state.focused) {
-    state.focused = true
-    requestAnimationFrame(() => search.focus())
+    requestAnimationFrame(() => {
+      if (state.focused || !root.getClientRects().length) return
+      state.focused = true
+      search.focus()
+    })
   }
 }

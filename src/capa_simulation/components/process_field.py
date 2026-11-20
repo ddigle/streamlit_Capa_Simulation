@@ -31,6 +31,12 @@
   블록)에 서서 사이드바에 틈을 만들지 않는다.
 
 한 회차에 값 칸은 하나다 — 같은 전체 회차에 두 번 부르면 둘째부터는 그리지 않고 거를 값만 돌려준다.
+
+판(`process_field_assets/`)은 공용 값 밖의 공정 칸도 쓴다 — 필요 단축 일정 조건 카드 「공정」(팝오버
+안, 2026-11-20 사용자 결정 「여럿 고른 뒤 「적용」 한 번」)이 `mount_process_board` 로 판을 세우고
+「적용」 트리거를 콜백(`on_apply`)에서 받는다(`board_trigger` · `parse_board_apply`). 그 칸은 모두
+켬을 고르지 않음과 같이 보지 않고(`whole_is_all=False`), 누른 차례를 지키며(`pick_order=True`),
+「전체」 단추에 제 이름을 준다(`clear_label`).
 """
 
 from __future__ import annotations
@@ -400,6 +406,100 @@ def render_process_dialog_body() -> None:
     st.rerun()
 
 
+def _board_data(
+    *,
+    mode: str,
+    options: Sequence[str],
+    texts: Sequence[str],
+    selected: Sequence[str],
+    has_shared: bool,
+    whole_is_all: bool = True,
+    pick_order: bool = False,
+    clear_label: str | None = None,
+) -> dict[str, Any]:
+    """판에 보낼 data. 기본값(셋 다 주지 않음)이면 공용 공정 팝업의 판 그대로다 — 셋은 그 밖의 칸이
+    쓴다(모듈 docstring)."""
+    data: dict[str, Any] = {
+        "mode": mode,
+        "options": [
+            {"value": value, "label": text} for value, text in zip(options, texts, strict=True)
+        ],
+        "selected": list(selected),
+        "hasShared": has_shared,
+    }
+    if not whole_is_all:
+        data["wholeIsAll"] = False
+    if pick_order:
+        data["pickOrder"] = True
+    if clear_label:
+        data["clearLabel"] = clear_label
+    return data
+
+
+def parse_board_apply(
+    applied: object, options: Sequence[str], *, mode: str = MULTI, pick_order: bool = False
+) -> PickerResult | None:
+    """판 「적용」 트리거 값(`{"values": [...]}` · `{"clear": true}`)을 읽는다. 고른 값은 받은
+    선택지 안 것만 남기고 겹친 것은 한 번만 — 차례는 선택지 차례, `pick_order` 면 보낸(누른) 차례다.
+    꼴이 맞지 않으면 None 이다."""
+    if not isinstance(applied, Mapping):
+        return None
+    if applied.get("clear") is True:
+        return PickerResult(clear=True)
+    raw = applied.get("values")
+    if not isinstance(raw, list):
+        return None
+    allowed = set(options)
+    if pick_order:
+        values = tuple(dict.fromkeys(str(value) for value in raw if str(value) in allowed))
+    else:
+        picked = {str(value) for value in raw}
+        values = tuple(option for option in options if option in picked)
+    if mode == SINGLE and len(values) != 1:
+        return None
+    return PickerResult(values=values)
+
+
+def board_trigger(key: str) -> object:
+    """판 `key` 의 「적용」 트리거 값 — 판 콜백(`on_apply`) 안에서 읽는다. 없으면 None."""
+    state = st.session_state.get(key)
+    return state.get("apply") if isinstance(state, Mapping) else getattr(state, "apply", None)
+
+
+def mount_process_board(
+    *,
+    key: str,
+    options: Sequence[str],
+    texts: Sequence[str],
+    selected: Sequence[str],
+    has_shared: bool,
+    on_apply: Callable[[], None],
+    whole_is_all: bool = True,
+    pick_order: bool = False,
+    clear_label: str | None = None,
+) -> None:
+    """여러 개 고름 판을 세운다 — 고르는 동안은 서버가 돌지 않고(초안은 브라우저 안), 「적용」 ·
+    「전체」 누름만 트리거 하나로 와 `on_apply` 가 회차 앞(콜백)에서 받는다(`board_trigger` →
+    `parse_board_apply`). 판은 초안이 지금 값(`selected`)과 같으면 「적용」 을 잠근다(설계 규칙
+    UI-INP-04). 시험은 트리거 모음 칸에 값을 넣어 콜백을 부른다(Components v2 는 AppTest 에서
+    누르지 못한다 — `tests/process_board_press.py`)."""
+    _PROCESS_PICKER(
+        key=key,
+        data=_board_data(
+            mode=MULTI,
+            options=options,
+            texts=texts,
+            selected=selected,
+            has_shared=has_shared,
+            whole_is_all=whole_is_all,
+            pick_order=pick_order,
+            clear_label=clear_label,
+        ),
+        on_apply_change=on_apply,
+        width="stretch",
+    )
+
+
 def render_process_picker_apply(
     *,
     mode: str,
@@ -417,31 +517,14 @@ def render_process_picker_apply(
     """
     result = _PROCESS_PICKER(
         key=key,
-        data={
-            "mode": mode,
-            "options": [
-                {"value": value, "label": text} for value, text in zip(options, texts, strict=True)
-            ],
-            "selected": list(selected),
-            "hasShared": has_shared,
-        },
+        data=_board_data(
+            mode=mode, options=options, texts=texts, selected=selected, has_shared=has_shared
+        ),
         on_apply_change=lambda: None,
         width="stretch",
     )
     # 트리거는 `apply` 하나다 — 결과는 dict 라 `clear` 같은 이름은 메서드(`dict.clear`)와 겹친다.
-    applied = getattr(result, "apply", None)
-    if not isinstance(applied, Mapping):
-        return None
-    if applied.get("clear") is True:
-        return PickerResult(clear=True)
-    raw = applied.get("values")
-    if not isinstance(raw, list):
-        return None
-    picked = {str(value) for value in raw}
-    values = tuple(option for option in options if option in picked)
-    if mode == SINGLE and len(values) != 1:
-        return None
-    return PickerResult(values=values)
+    return parse_board_apply(getattr(result, "apply", None), options, mode=mode)
 
 
 def _shown_labels(context: _PickerContext) -> dict[str, str]:

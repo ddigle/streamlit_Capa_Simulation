@@ -47,6 +47,7 @@ from capa_simulation.components import (
     page_failure_card,
     page_tabs,
     paste_form,
+    process_field,
     scenario_list_grid,
     side_panel,
     space_layout_editor,
@@ -758,3 +759,17 @@ def _stub_paste_window(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(paste_form, "_PASTE_WINDOW", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_process_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    """공정 고르기 판(`process_field._PROCESS_PICKER`)을 아무것도 보내지 않는 대역으로 바꾼다 —
+    필요 단축 일정 조건 카드 「공정」 팝오버가 매 회차 그린다. Space 편집기 대역과 같은 까닭(AppTest
+    는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서 진짜 컴포넌트를 부르면 「not
+    registered」로 죽는다). 판을 누르는 시험은 `tests/process_board_press.live_board` 로 회차 안에서
+    진짜 판을 등록해 이 위에 다시 덮는다."""
+
+    def _silent(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(apply=None)
+
+    monkeypatch.setattr(process_field, "_PROCESS_PICKER", _silent)

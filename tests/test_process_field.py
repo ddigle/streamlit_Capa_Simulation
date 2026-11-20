@@ -739,6 +739,72 @@ process.stdout.write(JSON.stringify({
     assert (out["multiCount"], out["singleCount"]) == ("선택 2 / 24", "24개 공정")
 
 
+def test_a_board_that_keeps_pick_order_and_does_not_read_all_as_none() -> None:
+    """판을 쓰는 다른 칸(필요 단축 일정 조건 카드 「공정」 — `pickOrder` · `wholeIsAll: false`)은
+    누른 차례로 쌓고(끄면 빼고 다시 켜면 끝), 모두 켬을 고르지 않음과 같이 보지 않는다 — 판은 그때
+    공정 수 0 을 넘겨 `applyState` 가 둘을 가른다."""
+    out = _node(
+        """
+const order = ['WF', 'Mold', 'Underfill']
+const one = togglePicked([], 'Underfill')
+const two = togglePicked(one, 'WF')
+const back = togglePicked(togglePicked(two, 'Underfill'), 'Underfill')
+process.stdout.write(JSON.stringify({
+  one, two, back,
+  allFromNone: applyState('multi', order, [], 0),
+  noneFromAll: applyState('multi', [], order, 0),
+  sameAnyOrder: applyState('multi', ['Mold', 'WF'], ['WF', 'Mold'], 0),
+  emptyFromOne: applyState('multi', [], ['Mold'], 0),
+}))
+"""
+    )
+    assert out["one"] == ["Underfill"]
+    assert out["two"] == ["Underfill", "WF"]
+    assert out["back"] == ["WF", "Underfill"]
+    assert (out["allFromNone"], out["noneFromAll"]) == ("ready", "ready")
+    assert (out["sameAnyOrder"], out["emptyFromOne"]) == ("same", "ready")
+
+
+def test_the_board_flags_default_to_the_shared_dialog_board() -> None:
+    """판 data 의 셋(`wholeIsAll` · `pickOrder` · `clearLabel`)은 주지 않으면 공용 공정 팝업 판
+    그대로다 — 그 팝업 data 에는 실리지 않는다. 다른 칸이 줄 때만 실린다."""
+    shared = process_field._board_data(
+        mode=process_field.MULTI, options=OPTIONS, texts=OPTIONS, selected=(), has_shared=True
+    )
+    assert set(shared) == {"mode", "options", "selected", "hasShared"}
+    other = process_field._board_data(
+        mode=process_field.MULTI,
+        options=OPTIONS,
+        texts=OPTIONS,
+        selected=("Mold", "WF"),
+        has_shared=True,
+        whole_is_all=False,
+        pick_order=True,
+        clear_label="선택 해제",
+    )
+    assert (other["wholeIsAll"], other["pickOrder"], other["clearLabel"]) == (
+        False,
+        True,
+        "선택 해제",
+    )
+    assert other["selected"] == ["Mold", "WF"]
+    for flag in ("wholeIsAll", "pickOrder", "clearLabel"):
+        assert f"data?.{flag}" in PROCESS_FIELD_JS
+
+
+def test_an_apply_in_pick_order_keeps_the_sent_order_without_strangers_or_repeats() -> None:
+    picked = process_field.parse_board_apply(
+        {"values": ["Underfill", "Ghost", "WF", "Underfill"]}, OPTIONS, pick_order=True
+    )
+    assert picked == PickerResult(values=("Underfill", "WF"))
+    assert process_field.parse_board_apply(
+        {"values": ["Underfill", "WF"]}, OPTIONS
+    ) == PickerResult(values=("WF", "Underfill"))
+    assert process_field.parse_board_apply({"clear": True}, OPTIONS) == PickerResult(clear=True)
+    assert process_field.parse_board_apply(None, OPTIONS) is None
+    assert process_field.parse_board_apply({"values": "WF"}, OPTIONS, pick_order=True) is None
+
+
 def test_searching_matches_the_visible_text_or_the_original_name() -> None:
     out = _node(
         """
