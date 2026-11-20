@@ -647,18 +647,23 @@ with master_tab:
     # 열린 회차에만 그린다(개편 B1 — 표 편집은 세션 칸에 산다). 그 모듈은 표 컴포넌트를 등록하므로
     # 여기서만 불러온다. 작은 편집표 제출은 그 안에서 모든 위젯을 그린 뒤 `st.rerun()` 으로 끝난다.
     if not tab_is_hidden(master_tab):
-        from capa_simulation.components.equipment_master_tab import render_equipment_master_tab
+        from capa_simulation.components.equipment_master_tab import (
+            MasterMaterials,
+            render_equipment_master,
+        )
 
-        render_equipment_master_tab(
-            repository=repository,
-            session=equipment_session,
-            latest_snapshot=latest_snapshot,
-            floor_canvases=floor_canvases,
-            # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식 배치,
-            # 가정이면 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸이 잠긴다.
-            layout_mode=layout_mode,
-            today=today,
-            confirmation_official=official_snapshot,
+        render_equipment_master(
+            MasterMaterials(
+                database_path=equipment_database_path,
+                repository=repository,
+                session=equipment_session,
+                floor_canvases=floor_canvases,
+                # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식
+                # 배치, 가정이면 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸이 잠긴다.
+                layout_mode=layout_mode,
+                today=today,
+                confirmation_official=official_snapshot,
+            ),
             drafts_replaced=drafts_replaced,
         )
     else:

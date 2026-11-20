@@ -43,9 +43,10 @@
 
 from __future__ import annotations
 
+import threading
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import astuple
+from collections.abc import Callable, Hashable, Mapping, Sequence
+from dataclasses import astuple, dataclass, replace
 from datetime import date
 from functools import partial
 from typing import Any, Final, TypeVar, cast
@@ -93,6 +94,7 @@ from capa_simulation.components.equipment_data_workspace import (
     carry_layout_memo,
     carry_until_head_rerun,
     defer_grid_undo,
+    effective_floor_canvases,
     equipment_buffer_generation,
     floor_layout_words,
     foreign_origins,
@@ -104,6 +106,7 @@ from capa_simulation.components.equipment_data_workspace import (
     head_stale_if_unsaved_changed,
     layout_lock_origins,
     layout_memo_mark,
+    live_layout_role,
     note_late_ops,
     official_layout_cells,
     own_save_carry,
@@ -127,11 +130,13 @@ from capa_simulation.components.equipment_data_workspace import (
     settle_grid_toasts,
     settle_grid_undo,
     settle_own_save_carry,
+    small_editor_edits,
     stage_own_save_carry,
     stale_delete_lock,
     stale_save_reasons,
     stale_save_refusal,
     stamp_layout_role,
+    stamped_layout_role,
     table_editable,
     table_generations,
     table_lock,
@@ -177,6 +182,8 @@ from capa_simulation.equipment_scenario_activation import (
     UNMERGED_LOCK_REASON,
     EquipmentSession,
     SpaceEditMode,
+    current_selection,
+    space_edit_mode,
 )
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB
 from capa_simulation.page_bootstrap import (
@@ -184,7 +191,14 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
 )
-from capa_simulation.persistence.equipment_cache import load_floor_states
+from capa_simulation.persistence.equipment_cache import (
+    get_equipment_repository,
+    latest_equipment_revision_id,
+    load_equipment_scenario_catalog,
+    load_floor_layout_canvases,
+    load_floor_states,
+    load_merged_equipment_snapshot,
+)
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
@@ -275,6 +289,7 @@ from capa_simulation.services.space_layout_edit import (
     module_layout_message,
     name_changes,
 )
+from capa_simulation.session_slot import SessionSlot
 
 T = TypeVar("T")
 
@@ -1978,3 +1993,176 @@ def render_equipment_master_tab(
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()
+
+
+# ------------------------------------------------------------------ 탭 ① 진입
+#
+# 탭 본문은 한 함수(`render_equipment_master_scope`)로 들어간다 — 받는 인자는 작은 값(한 번만
+# 쓰는 표지 `drafts_replaced`)뿐이다. 표 · 스냅숏을 든 재료(`MasterMaterials`)는 그 회차 페이지가
+# 세운 것을 스레드 칸으로 넘기고(`render_equipment_master`), 넘긴 것이 없는 회차(탭 본문만 다시
+# 도는 회차)는 마지막 페이지 회차가 적은 자리(`_MasterPlace` — DB 자리 · 저장본 쌍 id · 스냅숏 뺀
+# 세션)로 캐시에서 다시 세운다. 다시 세우기는 세션을 옮기거나 편집본을 세우지 않는다 — 그 일은
+# 페이지 회차(`resolve_equipment_session` · `ensure_equipment_drafts`)의 몫이다. 저장 토큰
+# (`saved_pair_token`)과 머리 표지(`master_head`)는 탭 밖이 본 값과 지금 값을 견주는 재료다.
+
+
+@dataclass(frozen=True)
+class MasterMaterials:
+    """탭 ① 본문이 쓰는 그 회차의 재료 — 페이지가 세운 저장소 · 설비 시나리오 세션(합친 스냅숏
+    포함) · 캔버스 · 배치 편집 권한 · 오늘 · 확인용 공식 스냅숏."""
+
+    database_path: str
+    repository: DuckDBEquipmentRepository
+    session: EquipmentSession
+    floor_canvases: FloorCanvasMap
+    layout_mode: SpaceEditMode
+    today: date
+    confirmation_official: EquipmentSnapshot | None = None
+
+
+SnapshotPair = tuple[str, str | None]
+
+
+@dataclass(frozen=True)
+class _MasterPlace:
+    """마지막 페이지 회차가 적은 탭 ① 재료의 자리 — 세션 칸에 드는 작은 값(표 · 스냅숏 없음)."""
+
+    database_path: str
+    # 스냅숏 · 한 회차 알림(`notice` · `head_dropped`)을 뺀 세션 — 목록은 그 회차 것 그대로.
+    session: EquipmentSession
+    # 세션 스냅숏 · 확인용 공식 스냅숏의 (공통 대장, 일정) 리비전 id 쌍 — 없으면 None.
+    pair: SnapshotPair | None
+    official: SnapshotPair | None
+
+
+MASTER_PLACE_KEY: Final = "equipment_master_place_v1"
+_PLACE = SessionSlot(MASTER_PLACE_KEY, _MasterPlace)
+# 머리 표지가 읽는 칸 — 편집본(있나), 팝업 호스트 열림 칸(어느 팝업).
+_BUFFER = SessionSlot(BUFFER_KEY, tuple)
+_DIALOG_OPEN = SessionSlot(EQUIPMENT_DIALOG_KEY, str)
+
+
+def _pair_of(snapshot: EquipmentSnapshot | None) -> SnapshotPair | None:
+    if snapshot is None:
+        return None
+    schedule = snapshot.schedule.schedule_revision_id if snapshot.schedule is not None else None
+    return snapshot.revision.revision_id, schedule
+
+
+def _place_of(materials: MasterMaterials) -> _MasterPlace:
+    return _MasterPlace(
+        database_path=materials.database_path,
+        session=replace(materials.session, snapshot=None, notice=None, head_dropped=False),
+        pair=_pair_of(materials.session.snapshot),
+        official=_pair_of(materials.confirmation_official),
+    )
+
+
+class _Handoff(threading.local):
+    """페이지 회차가 세운 재료를 같은 회차의 탭 본문에 넘기는 스레드 칸 — 본문이 꺼내 비운다."""
+
+    held: MasterMaterials | None = None
+
+    def give(self, materials: MasterMaterials) -> None:
+        self.held = materials
+
+    def take(self) -> MasterMaterials | None:
+        held, self.held = self.held, None
+        return held
+
+
+_HANDOFF = _Handoff()
+
+
+def _rebuilt_materials() -> MasterMaterials:
+    """마지막 페이지 회차가 적은 자리로 재료를 다시 세운다 — 스냅숏은 쌍 id 캐시에서(리비전 내용은
+    불변), 캔버스 · 배치 편집 권한 · 오늘은 지금 값이다. 자리가 없으면(페이지 회차를 거치지 않음)
+    `RuntimeError`."""
+    place = _PLACE.peek()
+    if place is None:
+        raise RuntimeError("설비 마스터 탭 재료의 자리가 없습니다 — 페이지 회차를 먼저 거칩니다")
+    path = place.database_path
+    snapshot = load_merged_equipment_snapshot(path, *place.pair) if place.pair else None
+    session = replace(place.session, snapshot=snapshot)
+    official: EquipmentSnapshot | None = None
+    if place.official is not None:
+        official = (
+            snapshot
+            if place.official == place.pair
+            else load_merged_equipment_snapshot(path, *place.official)
+        )
+    return MasterMaterials(
+        database_path=path,
+        repository=get_equipment_repository(path),
+        session=session,
+        floor_canvases=effective_floor_canvases(load_floor_layout_canvases(path)),
+        layout_mode=space_edit_mode(session, stamped_role=live_layout_role()),
+        today=date.today(),
+        confirmation_official=official,
+    )
+
+
+def saved_pair_token() -> Hashable:
+    """남의 저장을 알아보는 저장본 쌍 토큰 — (공통 대장 최신 리비전, 세션 설비 시나리오의 최신 일정
+    리비전). 둘 다 쓰기 세대 · DB stat 을 키로 둔 캐시에서 읽어(`latest_equipment_revision_id` ·
+    `load_equipment_scenario_catalog`) 바뀐 것이 없으면 DB 를 열지 않는다. 자리가 없으면 None."""
+    place = _PLACE.peek()
+    if place is None:
+        return None
+    path = place.database_path
+    scenario_id = place.session.scenario_id
+    scenario = (
+        load_equipment_scenario_catalog(path).scenario(scenario_id)
+        if scenario_id is not None
+        else None
+    )
+    latest_schedule = scenario.latest_schedule_revision_id if scenario is not None else None
+    return latest_equipment_revision_id(path), latest_schedule
+
+
+def master_head() -> tuple[object, ...]:
+    """탭 ① 밖이 이 탭의 세션에서 읽어 그리는 값 — 머리 띠 변경 칩 · 화면 탭 줄 점 · 떠나기 확인 ·
+    테마 표지 · 탭 ① 점(미저장 편집 · FAB 배치 대기 · 작은 편집표 적용 전 편집), 편집본 출발점 ·
+    저장본 사본 리비전(저장 · 모두 버리기 · 불러오기 · 남의 저장), 팝업 호스트 열림 칸, 찍힌 배치
+    역할, 세션이 든 설비 시나리오 쌍(사이드바 「설비 시나리오」 줄 · 머리 띠), 제 저장의 뒷정리
+    대기(`own_save_unsettled` — 편집본을 다시 세우는 페이지 회차가 잇는다)."""
+    return (
+        _BUFFER.exists(),
+        has_unsaved_equipment_edits(),
+        pending_fab_layout() is not None,
+        tuple(small_editor_edits()),
+        buffer_base(),
+        DRAFT_REVISION.peek(),
+        _DIALOG_OPEN.peek(),
+        stamped_layout_role(),
+        current_selection(),
+        own_save_unsettled(),
+    )
+
+
+def render_equipment_master_scope(*, drafts_replaced: bool = False) -> None:
+    """탭 ① 본문 — 페이지가 넘긴 재료(`render_equipment_master`)로, 넘긴 것이 없으면 마지막 페이지
+    회차의 자리에서 다시 세운 재료로 그린다(모듈 끝 설명)."""
+    materials = _HANDOFF.take()
+    if materials is None:
+        materials = _rebuilt_materials()
+    render_equipment_master_tab(
+        repository=materials.repository,
+        session=materials.session,
+        latest_snapshot=materials.session.snapshot,
+        floor_canvases=materials.floor_canvases,
+        layout_mode=materials.layout_mode,
+        today=materials.today,
+        confirmation_official=materials.confirmation_official,
+        drafts_replaced=drafts_replaced,
+    )
+
+
+def render_equipment_master(materials: MasterMaterials, *, drafts_replaced: bool = False) -> None:
+    """페이지가 부르는 탭 ① 진입 — 그 회차 재료를 넘기고 자리를 적은 뒤 탭 본문을 그린다."""
+    _PLACE.set(_place_of(materials))
+    _HANDOFF.give(materials)
+    try:
+        render_equipment_master_scope(drafts_replaced=drafts_replaced)
+    finally:
+        _HANDOFF.take()
