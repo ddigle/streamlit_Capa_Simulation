@@ -255,7 +255,10 @@ def test_the_progress_trend_reads_improved_worsened_resolved_and_unchanged() -> 
     assert more_new.label == TREND_WORSENED and "신규 0→1" in more_new.text()
 
 
-def _pulled(rows: list[tuple[str, date, int | None]]) -> pd.DataFrame:
+_Pulled = list[tuple[str, date, int | None]]
+
+
+def _pulled(rows: _Pulled) -> pd.DataFrame:
     """공정 A 의 당긴 호기 표 — (호기, 목표 Qual, 단축일수). 단축일수가 None 이면 Static 기준의
     남는 호기(확보 시점 · 단축일수 없음, 필요 시점만 있음)다."""
     frame = _units_frame([(A, unit, KIND_SHORTENED, target, days) for unit, target, days in rows])
@@ -264,9 +267,7 @@ def _pulled(rows: list[tuple[str, date, int | None]]) -> pd.DataFrame:
     return frame
 
 
-def _compared(
-    past: list[tuple[str, date, int | None]], now: list[tuple[str, date, int | None]]
-) -> pd.DataFrame:
+def _compared(past: _Pulled, now: _Pulled) -> pd.DataFrame:
     return compare_progress(_pulled(past), _pulled(now), current_processes=[A], today=TODAY)
 
 
@@ -298,7 +299,7 @@ def test_a_process_with_a_unit_left_in_the_current_plan_is_not_resolved_on_the_b
     지남」)도 지금 계획에 남아 당겨야 하는 호기라, 다른 호기가 해소돼 일수가 0 이 되어도 해소가
     아니다(바로 옆 「기준 바뀜」 과 같은 「개선 −6일」)."""
     need, late = date(2026, 7, 1), date(2026, 5, 1)
-    cases = {
+    cases: dict[str, tuple[_Pulled, _Pulled, tuple[str, str]]] = {
         "두 시점 모두 남는 호기": (
             [("U1", need, 6), ("U2", need, None)],
             [("U2", need, None)],
