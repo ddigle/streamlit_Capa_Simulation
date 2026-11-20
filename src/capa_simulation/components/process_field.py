@@ -35,8 +35,10 @@
 판(`process_field_assets/`)은 공용 값 밖의 공정 칸도 쓴다 — 필요 단축 일정 조건 카드 「공정」(팝오버
 안, 2026-11-20 사용자 결정 「여럿 고른 뒤 「적용」 한 번」)이 `mount_process_board` 로 판을 세우고
 「적용」 트리거를 콜백(`on_apply`)에서 받는다(`board_trigger` · `parse_board_apply`). 그 칸은 모두
-켬을 고르지 않음과 같이 보지 않고(`whole_is_all=False`), 누른 차례를 지키며(`pick_order=True`),
-「전체」 단추에 제 이름을 준다(`clear_label`).
+켬을 고르지 않음과 같이 보지 않고(`whole_is_all=False`), 누른 차례를 지키며(`pick_order=True` —
+차례만 바꾼 초안도 「적용」 한다), 「전체」 자리 단추가 공용 값을 지우지 않고 판의 초안만 비우며
+(`clear_draft=True` — 비운 초안도 「적용」 이 보낸다), 그 단추에 제 이름을 준다(`clear_label`).
+판 찾기 칸에 글이 있을 때 Esc 는 글만 지운다 — 팝업 · 팝오버 어느 쪽에 두어도 판이 닫히지 않는다.
 """
 
 from __future__ import annotations
@@ -416,9 +418,10 @@ def _board_data(
     has_shared: bool,
     whole_is_all: bool = True,
     pick_order: bool = False,
+    clear_draft: bool = False,
     clear_label: str | None = None,
 ) -> dict[str, Any]:
-    """판에 보낼 data. 기본값(셋 다 주지 않음)이면 공용 공정 팝업의 판 그대로다 — 셋은 그 밖의 칸이
+    """판에 보낼 data. 기본값(넷 다 주지 않음)이면 공용 공정 팝업의 판 그대로다 — 넷은 그 밖의 칸이
     쓴다(모듈 docstring)."""
     data: dict[str, Any] = {
         "mode": mode,
@@ -432,6 +435,8 @@ def _board_data(
         data["wholeIsAll"] = False
     if pick_order:
         data["pickOrder"] = True
+    if clear_draft:
+        data["clearDraft"] = True
     if clear_label:
         data["clearLabel"] = clear_label
     return data
@@ -477,11 +482,13 @@ def mount_process_board(
     on_apply: Callable[[], None],
     whole_is_all: bool = True,
     pick_order: bool = False,
+    clear_draft: bool = False,
     clear_label: str | None = None,
 ) -> None:
     """여러 개 고름 판을 세운다 — 고르는 동안은 서버가 돌지 않고(초안은 브라우저 안), 「적용」 ·
     「전체」 누름만 트리거 하나로 와 `on_apply` 가 회차 앞(콜백)에서 받는다(`board_trigger` →
-    `parse_board_apply`). 판은 초안이 지금 값(`selected`)과 같으면 「적용」 을 잠근다(설계 규칙
+    `parse_board_apply`). `clear_draft` 면 「전체」 자리 단추도 판 안에서 초안만 비워 트리거는
+    「적용」 하나다. 판은 초안이 지금 값(`selected`)과 같으면 「적용」 을 잠근다(설계 규칙
     UI-INP-04). 시험은 트리거 모음 칸에 값을 넣어 콜백을 부른다(Components v2 는 AppTest 에서
     누르지 못한다 — `tests/process_board_press.py`)."""
     _PROCESS_PICKER(
@@ -494,6 +501,7 @@ def mount_process_board(
             has_shared=has_shared,
             whole_is_all=whole_is_all,
             pick_order=pick_order,
+            clear_draft=clear_draft,
             clear_label=clear_label,
         ),
         on_apply_change=on_apply,

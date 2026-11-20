@@ -553,13 +553,15 @@ def test_processes_are_picked_on_the_board_and_applied_once_in_one_app_run(tmp_p
     고른 뒤 「적용」 한 번이다. 판을 누르는 동안은 서버가 돌지 않고(판은 브라우저 안 초안 — 시험할
     회차가 없다), 「적용」 은 트리거 하나라 앱 전체 회차가 한 번이다: 콜백이 회차 앞에서 세션 칸 ·
     공용 프로필을 적어 그 회차의 한 줄 칸 · 카드 · 판 지금 값이 곧바로 고른 값이다. 판은 고른 차례를
-    지키고 모두 켬을 고르지 않음과 같이 보지 않으며 비우기 단추에 제 이름을 준다."""
+    지키고 모두 켬을 고르지 않음과 같이 보지 않으며, 비우기 단추는 판 안의 고름만 비우고 제 이름을
+    받는다."""
     database_path = _database(tmp_path)
     app = _run(database_path)
     data = board_data(app, PROCESS_BOARD_KEY)
     assert (data["mode"], data["selected"], data["hasShared"]) == ("multi", [], False)
-    assert (data["wholeIsAll"], data["pickOrder"], data["clearLabel"]) == (
+    assert (data["wholeIsAll"], data["pickOrder"], data["clearDraft"], data["clearLabel"]) == (
         False,
+        True,
         True,
         PROCESS_CLEAR_LABEL,
     )
@@ -602,18 +604,18 @@ def test_applying_every_process_is_not_the_same_as_none(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
-def test_the_clear_button_empties_the_choice_and_saves_it(tmp_path: Path) -> None:
-    """판의 「선택 해제」(공용 판 「전체」 자리)는 적용한 공정이 있을 때만 켜지고(`hasShared`)
-    누르면 곧바로 비운다 — 한 줄 칸이 「미선택 시 목표 미달 공정 전체」 로 돌아오고 공용 설정도
-    빈다."""
+def test_an_emptied_board_applied_saves_no_process(tmp_path: Path) -> None:
+    """판의 「선택 해제」 는 판 안의 고름만 비운다(서버에 가지 않는다 — 판 JS 마운트 시험). 비운
+    고름을 「적용」 하면 빈 목록 하나가 와 그 회차에 한 줄 칸이 「미선택 시 목표 미달 공정 전체」 로
+    돌아오고 공용 설정도 빈다. 공용 판 꼴의 비우기 트리거(`clear`)도 같이 받는다."""
     database_path = _database(tmp_path)
     app = _run(database_path)
-    chosen = board_options(app, PROCESS_BOARD_KEY)[0]
-    app = apply_board(app, PROCESS_BOARD_KEY, [chosen])
+    first, second = board_options(app, PROCESS_BOARD_KEY)[:2]
+    app = apply_board(app, PROCESS_BOARD_KEY, [first])
     assert board_data(app, PROCESS_BOARD_KEY)["hasShared"] is True
     before = _runs(app)
 
-    app = clear_board(app, PROCESS_BOARD_KEY)
+    app = apply_board(app, PROCESS_BOARD_KEY, [])
 
     assert not app.exception
     assert _runs(app) - before == 1
@@ -621,6 +623,32 @@ def test_the_clear_button_empties_the_choice_and_saves_it(tmp_path: Path) -> Non
     assert _process_popover(app).proto.popover.label == PROCESS_FIELD_EMPTY
     assert board_data(app, PROCESS_BOARD_KEY)["hasShared"] is False
     assert _profile(database_path).processes == ()
+
+    app = apply_board(app, PROCESS_BOARD_KEY, [second])
+    app = clear_board(app, PROCESS_BOARD_KEY)
+    assert not app.exception
+    assert app.session_state[SHORTENING_PROCESS_KEY] == []
+    assert _profile(database_path).processes == ()
+    clear_equipment_repository()
+
+
+def test_a_reordered_apply_moves_the_first_process_and_saves_the_order(tmp_path: Path) -> None:
+    """같은 공정을 차례만 바꿔 「적용」 하면(판이 연다 — 마운트 시험) 한 줄 칸의 첫 이름 · 판 지금
+    값 · 공용 설정 차례가 그 차례로 바뀐다."""
+    database_path = _database(tmp_path)
+    app = _run(database_path)
+    first, second = board_options(app, PROCESS_BOARD_KEY)[:2]
+    app = apply_board(app, PROCESS_BOARD_KEY, [first, second])
+    assert _profile(database_path).processes == (first, second)
+
+    app = apply_board(app, PROCESS_BOARD_KEY, [second, first])
+
+    assert not app.exception
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [second, first]
+    assert _process_popover(app).proto.popover.label == f"{literal_markdown(second)} 외 1개"
+    assert board_data(app, PROCESS_BOARD_KEY)["selected"] == [second, first]
+    stored = _profile(database_path)
+    assert (stored.processes, stored.version) == ((second, first), 2)
     clear_equipment_repository()
 
 

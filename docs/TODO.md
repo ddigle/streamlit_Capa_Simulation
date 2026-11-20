@@ -2996,8 +2996,10 @@
   바뀌는 회차는 첫 편집 · 마지막 되돌림뿐이다(시험이 회차 수 · 머리 글로 잰다). 입력 비가동 `_settle_draft` 는 초안이 있다가 없어질 때만
   앱 전체를 다시 돈다. 두 편집표를 구역(`@st.fragment`)으로 좁히는 일은 하지 않았다 — 공용 도우미가 선 다음 차례다. ② 필요 단축 일정
   조건 카드 공정 팝오버 안이 공용 공정 팝업과 같은 고르기 판(`process_field.mount_process_board` — data `wholeIsAll: false` ·
-  `pickOrder` · `clearLabel` 「선택 해제」)이고 「적용」 콜백(`_apply_processes`)이 세션 칸 · 공용 프로필을 쓴다 — 타일 0회차 · 적용
-  1회차(사본 앱 브라우저로 봄 — 합성 표본). 적용하지 않은 고름은 팝오버를 닫거나 화면을 떠나면 사라진다(거르는 조건 — 칸 글이 늘 적용한
+  `pickOrder`(차례만 바꾼 초안도 적용) · `clearDraft`(「선택 해제」 는 판의 고름만 비움 — 설비 마스터 작은 편집표의 같은 이름 단추와
+  같은 일, 공용 설정은 「적용」 하나가 씀) · `clearLabel` 「선택 해제」)이고 「적용」 콜백(`_apply_processes`)이 세션 칸 · 공용 프로필을
+  쓴다 — 타일 · 「선택 해제」 0회차 · 적용 1회차(사본 앱 브라우저로 봄 — 합성 표본). 찾기 칸에 글이 있을 때 Esc 는 글만 지우고 팝오버는
+  닫히지 않는다(판 JS 의 창 capture 처리기). 적용하지 않은 고름은 팝오버를 닫거나 화면을 떠나면 사라진다(거르는 조건 — 칸 글이 늘 적용한
   값, 공용 공정 팝업과 같은 꼴). 「Static | 설비 마스터」 전환 · 진척 비교 · 누적 진척 띠와 맞물림은 시험으로 잠갔다. 2026-11-19
   m19-rr-d5 (나) 를 바꾼다(규칙집 7-1) — 관련: `components/manual_downtime_tab.py` · `space_floor_list.py` · `change_summary.py` ·
   `page_tabs.py` · `required_shortening_panel.py` · `process_field.py` · `process_field_assets/process_field.js` ·

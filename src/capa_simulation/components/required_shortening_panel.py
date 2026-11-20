@@ -286,7 +286,8 @@ PROCESS_FIELD_EMPTY = "미선택 시 목표 미달 공정 전체"
 PROCESS_POPOVER_KEY = "equipment_shortening_process_popover"
 # 팝오버 안 고르기 판(공용 공정 팝업과 같은 판 — `process_field.mount_process_board`)과 그 판의 고른
 # 것 비우기 단추 글(판의 「전체」 자리 — 이 칸에서 비움은 「목표 미달 공정 전체」 라 「전체」 가
-# 「모든 공정」 으로 읽히지 않게).
+# 「모든 공정」 으로 읽히지 않게). 그 단추는 판 안의 고름만 비우고 저장은 「적용」 이 한다(다른
+# 화면의 「선택 해제」 처럼 고름만 푼다).
 PROCESS_BOARD_KEY = "equipment_shortening_process_board"
 PROCESS_CLEAR_LABEL = "선택 해제"
 # 이름 줄과 한 줄 칸의 꼴 — 이웃 고르기 칸(진척 비교 · 시작 월)처럼 이름은 위젯 라벨
@@ -1153,8 +1154,9 @@ def _render_process_filter(
     카드에는 고른 값 한 줄(「Wafer Saw 외 2개」 — `process_field.first_and_rest`, 하나면 이름,
     고르지 않았으면 「미선택 시 목표 미달 공정 전체」)만 서고, 누르면 뜨는 팝오버 안이 고르기 판이다
     (2026-11-09 사용자 검수 g03-2 — 고른 칩이 카드를 몇 줄씩 늘렸다). 첫 공정은 **가장 먼저 고른
-    공정**이다 — 판이 누른 차례대로 쌓고(`pick_order`) 적용한 값도 그 차례다. 둘 이상이면 한 줄 칸의
-    풍선이 전체 목록이다. 팝오버는 key 가 있어 「적용」 회차에도 열린 채 남는다.
+    공정**이다 — 판이 누른 차례대로 쌓고(`pick_order`) 적용한 값도 그 차례다(같은 공정을 차례만
+    바꿔 고른 것도 「적용」 한다). 둘 이상이면 한 줄 칸의 풍선이 전체 목록이다. 팝오버는 key 가 있어
+    「적용」 회차에도 열린 채 남는다.
 
     **여럿 고른 뒤 「적용」 한 번이다**(2026-11-20 사용자 결정 — 편집기 다시 로딩 줄이기 Q6). 판은
     공용 공정 팝업과 같은 Components v2 판이라(`process_field.mount_process_board`) 타일을 누르는
@@ -1162,11 +1164,13 @@ def _render_process_filter(
     된다(콜백 `_apply_processes` 가 회차 앞에서 세션 칸을 적고 공용 프로필에 남긴다 — 한 줄 칸 글이
     그 회차에 바로 맞는다). 고르고 적용하지 않은 동안은 「적용」 만 켜진다(지금 값과 같으면 잠김 —
     설계 규칙 UI-INP-04, 설명 글은 두지 않는다). 모두 켬은 고르지 않음과 다르다(「미선택 = 목표 미달
-    공정 전체」 — `whole_is_all=False`). 판의 「선택 해제」(공용 판의 「전체」 자리)는 적용한 공정이
-    있을 때만 켜지고 누르면 곧바로 비운다. 적용하지 않은 고름은 판(브라우저) 안에만 있어 팝오버를
-    닫거나 다른 화면에 다녀오면 사라지고 판은 적용한 값으로 다시 선다 — 거르는 조건이라 잃는 입력이
-    없고 한 줄 칸이 늘 적용한 값을 말한다(공용 공정 팝업이 열 때 고르다 만 판을 비우는 것과 같은
-    꼴).
+    공정 전체」 — `whole_is_all=False`). 판의 「선택 해제」(공용 판의 「전체」 자리)는 판에 켠
+    공정이 있을 때만 켜지고 판 안의 고름만 비운다(`clear_draft` — 서버에 가지 않는다). 비운 고름도
+    「적용」 이 보내 그때 「목표 미달 공정 전체」 가 된다 — 이 칸에서 공용 설정을 쓰는 단추는
+    「적용」 하나다. 적용하지 않은 고름은 판(브라우저) 안에만 있어 팝오버를 닫거나 다른 화면에
+    다녀오면 사라지고 판은 적용한 값으로 다시 선다 — 거르는 조건이라 잃는 입력이 없고 한 줄 칸이 늘
+    적용한 값을 말한다(공용 공정 팝업이 열 때 고르다 만 판을 비우는 것과 같은 꼴). 찾기 칸에 글이
+    있을 때 Esc 는 글만 지우고 팝오버는 그대로다.
 
     **세션에 값이 없으면** 공용 프로필의 공정으로 심는다 — 지금 맞댄 공정에 없는 것만 빼고
     (`prune_list_selection` 의 `default`). 프로필에서는 지우지 않는다. 「적용」 이 저장한다(그때도
@@ -1194,6 +1198,7 @@ def _render_process_filter(
             on_apply=partial(_apply_processes, database_path, tuple(ordered)),
             whole_is_all=False,
             pick_order=True,
+            clear_draft=True,
             clear_label=PROCESS_CLEAR_LABEL,
         )
     absent = absent_filter_processes(profile.processes, set(ordered))
@@ -1213,9 +1218,11 @@ def _render_process_filter(
 
 
 def _apply_processes(database_path: str | None, visible: tuple[str, ...]) -> None:
-    """고르기 판 「적용」 · 「선택 해제」 의 콜백 — 회차 앞에서 적용한 공정(고른 차례)을 세션 칸에
-    적고 공용 프로필에 남긴다(`_save_processes`). 선택지에 없는 값은 버린다(공정 표시명이 바뀐 직후
-    옛 판의 누름 — `parse_board_apply`). 꼴이 맞지 않는 트리거는 아무것도 하지 않는다."""
+    """고르기 판 「적용」 의 콜백 — 회차 앞에서 적용한 공정(고른 차례 — 비었으면 「목표 미달 공정
+    전체」)을 세션 칸에 적고 공용 프로필에 남긴다(`_save_processes`). 선택지에 없는 값은 버린다(공정
+    표시명이 바뀐 직후 옛 판의 누름 — `parse_board_apply`). 이 판의 「선택 해제」 는 트리거를 보내지
+    않지만 공용 판 꼴의 비우기 트리거(`clear`)가 오면 비운 「적용」 과 같이 받는다. 꼴이 맞지 않는
+    트리거는 아무것도 하지 않는다."""
     result = parse_board_apply(board_trigger(PROCESS_BOARD_KEY), visible, pick_order=True)
     if result is None:
         return

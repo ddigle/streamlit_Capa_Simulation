@@ -12,19 +12,24 @@
 // 바로 앞이라 판에서 Shift+Tab 한 번이 「적용」 이다 — 공용 값을 지우는 「전체」 에 먼저 닿지 않는다. 판 안에서
 // ←→↑↓ · Home/End 로 옮기고 Enter · Space 가 누름이다(단추의 기본 누름). 누른 뒤에도 초점은 그 타일에 남는다
 // — 타일을 다시 만들지 않고 표지만 바꾼다. Ctrl(⌘)+Enter 는 어디서나 「적용」 이다. 찾기 칸의 Enter · ↓ 는
-// 보이는 첫 타일로 간다. 찾기 칸에 글이 있을 때 Esc 는 글만 지운다(팝업은 그대로).
+// 보이는 첫 타일로 간다. 찾기 칸에 글이 있을 때 Esc 는 글만 지운다(판을 둔 팝업 · 팝오버는 그대로) — 팝오버
+// (`st.popover`)는 열린 동안 문서의 keydown 을 capture 단계에서 받아 닫으므로, 그보다 앞인 창의 capture
+// 단계에서 받는다(`clearSearchOnEscape` — 창마다 한 번 단다).
 //
 // 컴포넌트 요소는 회차에 바뀌지 않으므로 회차를 넘는 초안은 뿌리 요소에 단다. 서버가 보낸 선택지 · 지금
 // 값이 바뀐 회차에만 초안과 타일을 다시 세운다.
 //
-// 판을 쓰는 다른 칸(필요 단축 일정 조건 카드 「공정」 — 팝오버 안)은 data 로 셋을 바꾼다. 셋 다 주지 않으면
+// 판을 쓰는 다른 칸(필요 단축 일정 조건 카드 「공정」 — 팝오버 안)은 data 로 넷을 바꾼다. 넷 다 주지 않으면
 // 공용 공정 팝업 그대로다.
 // - `wholeIsAll: false` — 모두 켠 초안을 고르지 않은 것과 같이 보지 않는다(그 칸은 「미선택 = 목표 미달
 //   공정 전체」 라 모두 켬과 뜻이 다르다).
 // - `pickOrder: true` — 초안을 선택지 차례가 아니라 누른 차례로 쌓는다(그 칸의 한 줄 글은 처음 고른 공정이
-//   앞이다). 지금 값(`selected`)의 차례가 첫 초안이다.
-// - `clearLabel` — 「전체」 단추 글(트리거는 같은 `clear`). 그 칸에서는 고른 것을 비우는 단추라 「전체」 가
-//   「모든 공정」 으로 읽히지 않게 이름을 준다.
+//   앞이다). 지금 값(`selected`)의 차례가 첫 초안이고, 차례만 바뀐 초안도 「적용」 할 수 있다.
+// - `clearDraft: true` — 「전체」 자리 단추가 공용 값을 지우는 트리거(`clear`)를 보내지 않고 판의 초안만
+//   비운다(켠 타일이 있을 때만 켜진다). 비운 초안도 「적용」 이 보낸다 — 고르기는 판에서, 바꾸기는 「적용」
+//   하나다.
+// - `clearLabel` — 「전체」 단추 글. 그 칸에서는 고른 것을 비우는 단추라 「전체」 가 「모든 공정」 으로
+//   읽히지 않게 이름을 준다.
 
 // <process-picker-core>
 function normalizeText(text) {
@@ -54,8 +59,10 @@ function togglePicked(draft, value) {
   return draft.includes(value) ? draft.filter((item) => item !== value) : [...draft, value]
 }
 
-function sameSelection(left, right) {
+// 두 고름이 같은가 — `ordered` 면 차례까지 본다(누른 차례를 지키는 판).
+function sameSelection(left, right, ordered = false) {
   if (left.length !== right.length) return false
+  if (ordered) return left.every((item, index) => item === right[index])
   const held = new Set(left)
   return right.every((item) => held.has(item))
 }
@@ -66,11 +73,12 @@ function countLabel(mode, draftCount, total) {
 }
 
 // 「적용」 상태 — 하나 고름에는 「적용」 이 없다(`none`). 초안이 지금 값 그대로면 `same`. `total` 은 이 화면
-// 공정 수다 — 모두 켠 쪽은 고르지 않은 쪽과 같이 본다(이 화면 몫은 전체).
-function applyState(mode, draft, applied, total) {
+// 공정 수다 — 모두 켠 쪽은 고르지 않은 쪽과 같이 본다(이 화면 몫은 전체). `ordered` 면 차례만 바뀐 초안도
+// 지금 값과 다르다(`pickOrder` 판).
+function applyState(mode, draft, applied, total, ordered = false) {
   if (mode !== 'multi') return 'none'
   const whole = (picked) => (total > 0 && picked.length >= total ? [] : picked)
-  return sameSelection(whole(draft), whole(applied)) ? 'same' : 'ready'
+  return sameSelection(whole(draft), whole(applied), ordered) ? 'same' : 'ready'
 }
 
 // 방향키 한 번의 새 자리(보이는 타일 안 순번). `perRow` 는 화면에서 잰 한 줄 타일 수다. 다루지 않는 키는
@@ -102,6 +110,22 @@ function cleanOptions(raw) {
   }
   return options
 }
+
+// 창의 keydown(capture) — 판 찾기 칸에 글이 있을 때 Esc 는 글만 지우고 더 나아가지 않는다(판을 둔 팝업 ·
+// 팝오버가 닫히지 않는다). 글이 없거나 한글을 치는 중이면 손대지 않는다. 지우기는 그 판이 단
+// `clearSearch` 가 한다.
+function clearSearchOnEscape(event) {
+  if (event.key !== 'Escape' || event.isComposing) return
+  const search = event.target
+  if (!search || typeof search.closest !== 'function' || !search.value) return
+  const root = search.closest('.capa-proc-root')
+  if (!root || root.querySelector('.capa-proc-search') !== search) return
+  const clear = root.__capaProc?.clearSearch
+  if (typeof clear !== 'function') return
+  event.preventDefault()
+  event.stopPropagation()
+  clear()
+}
 // </process-picker-core>
 
 export default function (component) {
@@ -127,12 +151,27 @@ export default function (component) {
   const hasShared = Boolean(data?.hasShared)
   const wholeIsAll = data?.wholeIsAll !== false
   const pickOrder = data?.pickOrder === true
+  const clearDraft = data?.clearDraft === true
   const clearLabel = typeof data?.clearLabel === 'string' && data.clearLabel ? data.clearLabel : '전체'
   // 모두 켠 초안을 고르지 않은 것과 같이 볼 공정 수 — 0 이면 그렇게 보지 않는다(`applyState`).
   const wholeCount = wholeIsAll ? order.length : 0
 
+  if (!window.__capaProcEscape) {
+    window.__capaProcEscape = true
+    window.addEventListener('keydown', clearSearchOnEscape, true)
+  }
+
   const state = root.__capaProc || (root.__capaProc = { seen: '', focused: false })
-  const signature = JSON.stringify([mode, options, applied, hasShared, wholeIsAll, pickOrder, clearLabel])
+  const signature = JSON.stringify([
+    mode,
+    options,
+    applied,
+    hasShared,
+    wholeIsAll,
+    pickOrder,
+    clearDraft,
+    clearLabel,
+  ])
   if (state.seen !== signature) {
     state.seen = signature
     state.draft = applied.slice()
@@ -181,9 +220,9 @@ export default function (component) {
     empty.hidden = shown.length > 0
     count.textContent = countLabel(mode, state.draft.length, options.length)
     actions.hidden = mode !== 'multi'
-    const status = applyState(mode, state.draft, applied, wholeCount)
+    const status = applyState(mode, state.draft, applied, wholeCount, pickOrder)
     apply.disabled = status !== 'ready'
-    clearAll.disabled = !hasShared
+    clearAll.disabled = clearDraft ? state.draft.length === 0 : !hasShared
     root.dataset.state = status
   }
 
@@ -195,8 +234,24 @@ export default function (component) {
   }
 
   const applyDraft = () => {
-    if (applyState(mode, state.draft, applied, wholeCount) !== 'ready') return
+    if (applyState(mode, state.draft, applied, wholeCount, pickOrder) !== 'ready') return
     setTriggerValue('apply', { values: state.draft.slice() })
+  }
+
+  // 초안 비우기(`clearDraft`) — 서버에 가지 않는다. 누른 단추가 잠기므로 초점은 「적용」(열렸으면) 또는
+  // 찾기 칸으로 옮긴다.
+  const emptyDraft = () => {
+    if (!state.draft.length) return
+    state.draft = []
+    render()
+    const next = apply.disabled ? search : apply
+    next.focus()
+  }
+
+  state.clearSearch = () => {
+    search.value = ''
+    state.needle = ''
+    render()
   }
 
   const press = (tile) => {
@@ -221,7 +276,9 @@ export default function (component) {
       applyDraft()
       return
     }
-    if (event.target.closest('.capa-proc-all') && hasShared) setTriggerValue('apply', { clear: true })
+    if (!event.target.closest('.capa-proc-all')) return
+    if (clearDraft) emptyDraft()
+    else if (hasShared) setTriggerValue('apply', { clear: true })
   }
 
   root.oninput = (event) => {
@@ -246,14 +303,7 @@ export default function (component) {
       return
     }
     if (event.target === search) {
-      if (event.key === 'Escape' && search.value) {
-        event.preventDefault()
-        event.stopPropagation()
-        search.value = ''
-        state.needle = ''
-        render()
-        return
-      }
+      // Esc 는 창의 capture 처리기(`clearSearchOnEscape`)가 먼저 받는다.
       if (event.key === 'Enter' || event.key === 'ArrowDown') {
         event.preventDefault()
         focusTile(shownTiles()[0])
