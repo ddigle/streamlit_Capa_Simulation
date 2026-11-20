@@ -62,6 +62,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
 )
 from capa_simulation.services.korean_particle import topic_particle
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import (
     APP_RUN_STATE_KEY,
     CONDITION_DIALOG_FRAGMENT_KEY,
@@ -462,7 +463,7 @@ def parse_board_apply(
 
 def board_trigger(key: str) -> object:
     """판 `key` 의 「적용」 트리거 값 — 판 콜백(`on_apply`) 안에서 읽는다. 없으면 None."""
-    state = st.session_state.get(key)
+    state = SessionSlot(key, object).peek()
     return state.get("apply") if isinstance(state, Mapping) else getattr(state, "apply", None)
 
 

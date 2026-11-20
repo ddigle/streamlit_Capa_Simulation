@@ -82,6 +82,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from functools import partial
+from typing import Final
 
 import pandas as pd
 import streamlit as st
@@ -246,6 +247,7 @@ from capa_simulation.services.undated_equipment import (
 )
 from capa_simulation.services.upeh_assumption import UpehAssumption
 from capa_simulation.services.usage_basis import usage_exclusion_mark
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, rerun_fragment_if_alone
 
@@ -277,6 +279,7 @@ __all__ = [
 # 적용한 공정(원본, 고른 차례) — 위젯 key 가 아니라 세션 칸이다. 팝오버 안 고르기 판의 「적용」 이
 # 적는다(`_apply_processes`).
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
+SHORTENING_PROCESS: Final = SessionSlot(SHORTENING_PROCESS_KEY, list)
 # 조건 카드의 공정 칸 — 이름 줄, 고른 값 한 줄 팝오버(안이 고르기 판), 고르지 않았을 때의 글.
 PROCESS_FIELD_NAME = "공정 (표시순서)"
 PROCESS_FIELD_EMPTY = "미선택 시 목표 미달 공정 전체"
@@ -1216,7 +1219,7 @@ def _apply_processes(database_path: str | None, visible: tuple[str, ...]) -> Non
     result = parse_board_apply(board_trigger(PROCESS_BOARD_KEY), visible, pick_order=True)
     if result is None:
         return
-    st.session_state[SHORTENING_PROCESS_KEY] = [] if result.clear else list(result.values)
+    SHORTENING_PROCESS.set([] if result.clear else list(result.values))
     if database_path is not None:
         _save_processes(database_path, visible)
 
