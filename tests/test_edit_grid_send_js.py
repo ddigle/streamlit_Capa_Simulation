@@ -422,3 +422,119 @@ def test_the_row_remove_button_goes_out_at_once(monkeypatch: pytest.MonkeyPatch)
     assert result["first"] == {"sent": 1}
     assert result["held"] == {"sent": 1}
     assert result["button"] == {"sent": 2, "ops": ["write", "write", "remove"]}
+
+
+# ------------------------------------------------------------------ node — 떠나기 신호(R8)
+
+RUNNER_LEAVE = (
+    RUNNER_HEAD
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const book = editorBook(window)
+  const busy = () => editorsBusy(book)
+  key(q('.eg-scroll'), 'ArrowRight')
+  key(q('.eg-scroll'), 'ArrowRight')
+  R.mounted = { editors: book.entries.size, busy: busy() }
+  // 앞서 고친 칸이 있는 표 — 쉼(5초)에 걸린다. 명부는 busy(보내지 않은 op).
+  edit('61%')
+  R.held = { sent: sent.length, busy: busy() }
+  // 화면을 떠나는 누름이 쏜 신호 — 곧바로 보내고 ack 전까지 busy 다.
+  window.dispatchEvent(new CustomEvent('capa-leaving'))
+  R.left = { sent: sent.length, seqs: seqs(), busy: busy(), leaving: S.leave.leaving }
+  // 신호 뒤 편집은 묶지 않는다.
+  edit('62%')
+  R.after = { sent: sent.length, seqs: seqs(), busy: busy() }
+  // ack 로 보낼 목록이 비면 busy 가 걷히고 다시 묶는다.
+  sendFeed(Object.assign({}, input.feed, { acks: { [S.mount]: 2 } }))
+  R.acked = { box: S.box.ops.length, busy: busy(), leaving: S.leave.leaving }
+  edit('63%')
+  R.again = { sent: sent.length, busy: busy() }
+  // 마운트를 내리면 명부에서 빠진다(남은 op 는 보내고).
+  cleanup()
+  R.down = { sent: sent.length, editors: book.entries.size, busy: busy(), leave: S.leave }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_leaving_signal_sends_at_once_and_holds_busy_until_the_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """떠나기 신호(`capa-leaving`)를 받으면 묶음 쉼(5초) 안의 op 를 곧바로 보내고, ack 가 올 때까지
+    편집기 명부(`window.__capaEditors`)에 busy 다. 신호 뒤 편집은 묶지 않고, ack 로 보낼 목록이
+    비면 다시 묶는다. 마운트를 내리면 명부에서 빠진다."""
+    shell = _shell(monkeypatch, "5000")
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_LEAVE, {"shell": shell, "feed": _feed(EDITED, undo=1)})
+    assert result["mounted"] == {"editors": 1, "busy": False}
+    assert result["held"] == {"sent": 0, "busy": True}
+    assert result["left"] == {"sent": 1, "seqs": [1], "busy": True, "leaving": True}
+    assert result["after"] == {"sent": 2, "seqs": [1, 2], "busy": True}
+    assert result["acked"] == {"box": 0, "busy": False, "leaving": False}
+    assert result["again"] == {"sent": 2, "busy": True}, "ack 뒤 편집은 다시 쉼을 탄다"
+    assert result["down"] == {"sent": 3, "editors": 0, "busy": False, "leave": None}
+
+
+RUNNER_LEAVE_BIND_ONCE = (
+    RUNNER_HEAD
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const book = editorBook(window)
+  R.before = { leaving: winCount['capa-leaving'] || 0, editors: book.entries.size }
+  for (let i = 0; i < 50; i += 1) {
+    sendFeed(Object.assign({}, input.feed))
+    const palette = Object.assign({}, input.shell.palette, { text: 'ink-' + i })
+    mount(Object.assign({}, input.shell, { palette }))
+  }
+  R.after = { leaving: winCount['capa-leaving'] || 0, editors: book.entries.size }
+  const cleanup = mount(input.shell)
+  cleanup()
+  R.down = { leaving: winCount['capa-leaving'] || 0, editors: book.entries.size }
+  // 내린 뒤 다시 마운트하면 다시 한 번 오른다.
+  mount(input.shell)
+  R.again = { leaving: winCount['capa-leaving'] || 0, editors: book.entries.size }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+@pytest.mark.parametrize(
+    "parts", [edit_grid.JS_PARTS, edit_grid.ROWS_JS_PARTS], ids=["grid", "rows"]
+)
+def test_mounting_again_joins_the_editor_book_once(
+    monkeypatch: pytest.MonkeyPatch, parts: tuple[str, ...]
+) -> None:
+    """data 가 바뀔 때마다 default export 를 다시 불러도 떠나기 신호 처리기와 명부 칸은 하나다(앞
+    호출의 정리 함수는 불리지 않는다). 정리 함수가 둘 다 걷고, 다시 마운트하면 다시 하나다."""
+    shell = _shell(monkeypatch, "80")
+    source = FAKE_DOM + mountable(edit_grid.registered_js(parts))
+    result = run_node(source, RUNNER_LEAVE_BIND_ONCE, {"shell": shell, "feed": _feed(EDITED)})
+    assert result["before"] == {"leaving": 1, "editors": 1}
+    assert result["after"] == {"leaving": 1, "editors": 1}
+    assert result["down"] == {"leaving": 0, "editors": 0}
+    assert result["again"] == {"leaving": 1, "editors": 1}
+
+
+def test_the_core_joins_the_leaving_book_in_bind_and_drops_it_in_cleanup() -> None:
+    """글 약속 — 신호 받기는 처리기를 한 번 다는 `egBind` 안이고, 정리 함수가 걷는다. busy 는 보낼
+    목록이 남았는가이고, ack 를 받은 뒤 걷힘을 알린다. 떠나기 뒤 op 는 묶음 타이머를 타지 않는다."""
+    core = (edit_grid._ASSETS / "eg_core.js").read_text(encoding="utf-8")
+    bind = core[core.index("function egBind(") : core.index("function egInside(")]
+    assert (
+        "S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) })" in bind
+    )
+    assert "return S.box.ops.length > 0" in core[core.index("function egBusy(") :]
+    acks = core[core.index("function egTakeAcks(") : core.index("function egApplyFeed(")]
+    assert acks.index("boxAck(S.box, acked)") < acks.index("settleLeaving(S.leave, egBusy(S))")
+    queue = core[core.index("function queueOp(") : core.index("function egPreviewOf(")]
+    assert "leavingNow(S.leave)) sendNow(S)" in queue
+    cleanup = core[core.index("return () => {") :]
+    assert "if (S.leave) S.leave.drop()" in cleanup

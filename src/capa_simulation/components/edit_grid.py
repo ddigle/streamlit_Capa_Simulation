@@ -12,7 +12,10 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 
 - **등록 JS 는 기능별 파일을 이어 붙인다**(`JS_PARTS` 차례 — 주석만 든 줄을 걷는다). 순수 구획 표지
   `// <eg-…>` 는 저장소 파일에 남아 node 시험이 읽는다. 색은 등록 CSS 에 적지 않고 회차마다
-  팔레트(`palette`)로 넘긴다 — 등록 CSS 는 테마를 따라오지 않는다.
+  팔레트(`palette`)로 넘긴다 — 등록 CSS 는 테마를 따라오지 않는다. 맨 앞에는 공용 떠나기 신호
+  조각(`grid_shared_assets/leave.js` 의 `LEAVE_SECTIONS` — 편집기 명부 · 떠나기 신호, AGENTS 9장
+  「구역 회차 규칙」 R8)을 잇는다(`leave_js`) — 화면을 떠나는 누름이 쏜 `capa-leaving` 에 묶음
+  타이머를 멈추고 남은 op 를 곧바로 보내며, ack 가 올 때까지 명부에 busy 다.
 - **편집은 상태 값 `outbox` 하나**(``{"mount", "ops"}`` — 반영 안 된 op 전부, op 마다
   seq·at·table·gen). 트리거는 없다. 콜백(`collect_outbox`)은 새 op 만 세션 inbox 에 쌓고 마운트별
   seq 를 올린다 — 반영(`apply_inbox`)은 본문에서 한다. 콜백 안에서 `st.rerun()`·`st.switch_page` 를
@@ -84,6 +87,9 @@ ROWS_CSS_PARTS: Final = (*CSS_PARTS, "eg_rows.css")
 # 껍데기에 이 칸 가운데 하나가 있으면 줄 규칙 표의 등록으로 그린다.
 ROWS_SHELL_KEYS: Final = ("fmts", "ids", "locks", "rowOps")
 FEED_JS: Final = "feed.js"
+# 등록 글 앞에 잇는 떠나기 신호 조각의 구획(`grid_shared_assets/leave.js`) — 편집기 명부와 신호
+# 받기. 구역 회차 표지 지킴이(`<capa-scope-run…>`)는 화면 탭 줄이 걸므로 싣지 않는다.
+LEAVE_SECTIONS: Final = ("capa-leave", "capa-leave-window")
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = ("outbox",)
 TRIGGER_NAMES: Final[tuple[str, ...]] = ()
@@ -108,20 +114,39 @@ SEND_MS: Final = 300
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 
+def _drop_comment_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not _COMMENT_LINE.match(line))
+
+
 def _joined(parts: Sequence[str], *, drop_comments: bool) -> str:
     texts = []
     for name in parts:
         text = (_ASSETS / name).read_text(encoding="utf-8")
         if drop_comments:
-            text = "\n".join(line for line in text.splitlines() if not _COMMENT_LINE.match(line))
+            text = _drop_comment_lines(text)
         texts.append(text.strip("\n"))
     return "\n".join(text for text in texts if text) + "\n"
 
 
+def leave_js() -> str:
+    """떠나기 신호 조각 — `grid_shared.leave_js()` 글에서 `LEAVE_SECTIONS` 구획만 떼어 잇고 주석만
+    든 줄을 걷는다."""
+    text = grid_shared.leave_js()
+    found = []
+    for name in LEAVE_SECTIONS:
+        match = re.search(
+            rf"// <{re.escape(name)}>\n(?P<body>.*?)// </{re.escape(name)}>", text, re.S
+        )
+        if match is None:
+            raise ValueError(f"떠나기 신호 조각에 구획 {name} 이 없습니다")
+        found.append(_drop_comment_lines(match.group("body")).strip("\n"))
+    return "\n".join(found) + "\n"
+
+
 def registered_js(parts: Sequence[str] = JS_PARTS) -> str:
-    """등록 JS — `parts`(기본 `JS_PARTS`)를 잇고 주석만 든 줄을 걷는다(줄 끝 주석·문자열 안
-    `//` 는 그대로)."""
-    return _joined(parts, drop_comments=True)
+    """등록 JS — 떠나기 신호 조각(`leave_js`) 뒤에 `parts`(기본 `JS_PARTS`)를 잇고 주석만 든 줄을
+    걷는다(줄 끝 주석·문자열 안 `//` 는 그대로)."""
+    return leave_js() + _joined(parts, drop_comments=True)
 
 
 def registered_css(parts: Sequence[str] = CSS_PARTS) -> str:

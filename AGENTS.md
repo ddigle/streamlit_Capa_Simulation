@@ -3629,7 +3629,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   모듈을 읽을 때 세 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
   - **줄 규칙 표의 등록**(`ROWS_COMPONENT` `capa_edit_grid_rows` — 2026-11-18 접속 명단): 껍데기에 `fmts` · `ids` · `locks` ·
     `rowOps` 가 있으면(`uses_rows`) 줄 갈래 `eg_rows.js` · `eg_rows.css` 를 eg_core 앞에 더 실은 등록(`ROWS_JS_PARTS` ·
-    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표가 받는 등록 JS 는 그대로다(예산 120 KB, 줄 규칙 등록 130 KB). 줄 갈래는 글 · 고르기
+    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표가 받는 등록 JS 는 그대로다(예산 120 KB, 줄 규칙 등록 130 KB — 맨 앞 공용 떠나기 조각 `leave_js` 는 그리드 몫 밖 2 KB 이하로 따로 센다). 줄 갈래는 글 · 고르기
     칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
     붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(고른 줄 — 지울 수 없는
     줄은 빼고 까닭 풍선, 모두 지운 줄이면 되살리기), 지운 줄 지움선 · 잠긴 칸 바탕 + 까닭 풍선(`title`) · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 칸
@@ -3663,7 +3663,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「적용 전」 은 `CHANGES_BUTTON` 하나 — 표 없는 껍데기 `texts_for_empty` 도 같은 두 글)과 팔레트
     (`palette` — CSS 의 `var(--eg-*)` 는 모두 여기, 찾기 일치 칸 새 토큰 `GRID_MATCH_FILL`)는 회차마다 껍데기에 싣는다.
   - 자산: 등록 JS 는 기능별 파일을 `JS_PARTS` 차례(`eg_pure` → `eg_select` → `eg_fill` → `eg_toolbar` → `eg_core`)로 잇고 주석만 든
-    줄을 걷는다(`registered_js`). `eg_pure.js` 는 순수 구획 `// <eg-codes>`·`<eg-format>`·`<eg-outbox>`·`<eg-nav>`·`<eg-view>`·
+    줄을 걷는다(`registered_js`). 맨 앞에는 공용 떠나기 신호 조각(`grid_shared_assets/leave.js` 의 `LEAVE_SECTIONS` — `<capa-leave>` ·
+    `<capa-leave-window>`, 9장 「구역 회차 규칙」 R8)을 잇는다(`leave_js`). 마운트는 `egBind` 에서 편집기 명부에 오르고
+    (`joinLeaving` — busy 는 보낼 목록에 op 가 남음, flush 는 `sendNow`) 정리 함수가 내린다. `capa-leaving` 을 받으면 묶음 타이머를
+    멈추고 남은 op 를 곧바로 보내며, 신호 뒤 op 는 묶지 않고(`queueOp` 의 `leavingNow`) ack 로 목록이 비면 다시 묶는다
+    (`egTakeAcks` 의 `settleLeaving`). 시험 `tests/test_edit_grid_send_js.py` · bind-once `tests/test_ccv2_hygiene.py`(`BIND_ONCE`). `eg_pure.js` 는 순수 구획 `// <eg-codes>`·`<eg-format>`·`<eg-outbox>`·`<eg-nav>`·`<eg-view>`·
     `<eg-layout>`·`<eg-changes>` 과 기능 갈고리 표(`feature(def)` — init·keydown·pointerdown·paintCell·paintOverlay·onFeed·onSelect·
     onLayout·cleanup, 차례 select → fill → toolbar)이고, `eg_core.js` 가 마운트·가상 스크롤(줄 30px)·여러 열쇠 칸 고정(누적 폭이 표
     폭의 45% 를 넘는 칸부터 풀림 — 첫 칸은 늘 고정)·칸 편집(Enter·F2·글자 입력, 확정 Enter/Shift+Enter/Tab, 취소 Esc)·한 칸

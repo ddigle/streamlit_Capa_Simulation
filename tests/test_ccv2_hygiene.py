@@ -457,10 +457,60 @@ def _tab_strip_data() -> list[dict[str, Any]]:
     return [first, second]
 
 
+def _edit_grid_js() -> str:
+    from capa_simulation.components import edit_grid
+
+    return edit_grid.registered_js()
+
+
+def _edit_grid_rows_js() -> str:
+    from capa_simulation.components import edit_grid
+
+    return edit_grid.registered_js(edit_grid.ROWS_JS_PARTS)
+
+
+def _two_palettes(shell: dict[str, Any]) -> list[dict[str, Any]]:
+    """같은 표 껍데기 둘 — 색만 다르다(테마를 바꾼 회차처럼 data 가 바뀐다)."""
+    palette = {**shell["palette"], "text": "#000001"}
+    return [shell, {**shell, "palette": palette}]
+
+
+def _edit_grid_data() -> list[dict[str, Any]]:
+    """범용 편집 그리드 껍데기(합성 표 — 분류 둘 · 달 둘)."""
+    import pandas as pd
+
+    from capa_simulation.components import edit_grid
+    from capa_simulation.services import edit_grid as eg
+    from capa_simulation.services.edit_grid_payload import build_base
+
+    months = ("202701", "202702")
+    frame = pd.DataFrame({"공정": ["DEMO_A", "DEMO_B"], "구분": ["양산", "ER"]})
+    for month in months:
+        frame[month] = [0.9, 0.8]
+    spec = eg.GridSpec("RQ_DEMO", "효율", ("공정", "구분"), months, eg.ValueFormat("percent", 2))
+    base = build_base(frame, spec, None)
+    shell = edit_grid.shell_data("demo_grid", base, spec, base_key="k1", changes_label="적용 전")
+    return _two_palettes(shell)
+
+
+def _edit_grid_rows_data() -> list[dict[str, Any]]:
+    """줄 규칙 표 껍데기(접속 명단 꼴 합성 표 — `tests/test_edit_grid_rows.py`)."""
+    from test_edit_grid_rows import RULES, SPEC, _frame
+
+    from capa_simulation.components import edit_grid
+    from capa_simulation.services.edit_grid_payload import build_base
+
+    base = build_base(_frame(), SPEC, None, RULES)
+    shell = edit_grid.shell_data("demo_rows", base, SPEC, base_key="k1", changes_label="저장 전")
+    return _two_palettes(shell)
+
+
 # 부품 이름 → (등록 JS, data 들). 편집기 갈래가 제 부품을 더한다 — 느슨한 대역으로 돌지 않는 부품은
 # 그 부품의 node 시험에 bind-once 를 둔다.
 BIND_ONCE: dict[str, tuple[Callable[[], str], Callable[[], list[dict[str, Any]]]]] = {
     "page_tabs": (_tab_strip_js, _tab_strip_data),
+    "capa_edit_grid": (_edit_grid_js, _edit_grid_data),
+    "capa_edit_grid_rows": (_edit_grid_rows_js, _edit_grid_rows_data),
 }
 
 
