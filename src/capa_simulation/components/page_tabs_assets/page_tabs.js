@@ -1012,7 +1012,8 @@ export default function (component) {
     if (opened) opened()
   }
   // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았거나 잠깐 지났다, 아니면 기다림이 다 됐다) 기다리던 누름을
-  // 보낸다. 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가 끝났다는 알림은 컴포넌트에 오지 않는다.
+  // 보낸다 — 누르는 자리처럼 떠나기 신호 · 붙들기를 지난다(`leaveThen`). 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가
+  // 끝났다는 알림은 컴포넌트에 오지 않는다.
   function settle() {
     clearTimeout(S.settleTimer)
     const open = []
@@ -1034,12 +1035,17 @@ export default function (component) {
     const waited = S.waitOpen
     S.waitOpen = null
     const item = next === null ? null : S.items.get(next)
-    if (item) sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)
-    else restoreFocus()
+    if (!item) {
+      restoreFocus()
+      return
+    }
+    const opened = waited !== null && waited.id === next ? waited.opened : null
+    leaveThen(item, (chosen) => sendSelect(chosen, opened))
   }
   // 보낸 고르기가 서버에 닿지 않았다(`lostSelect`) — 그 사이 누른 마지막 탭, 없으면 그 고르기를 한 번 다시 보낸다
-  // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다. 「그 화면으로」 알림은 같은 고르기면 이미
-  // 불렀고, 기다리던 누름의 것이면 들고 간다.
+  // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다(떠나기 글이 그대로일 때). 그 사이 편집기에 쓴
+  // op 가 있을 수 있어 떠나기 신호 · 붙들기는 다시 지난다(`leaveThen`). 「그 화면으로」 알림은 같은 고르기면 이미 불렀고,
+  // 기다리던 누름의 것이면 들고 간다.
   function resendLost(open) {
     const lost = S.queue.flight
     const target = resendTarget(S.queue, S.data.active, open)
@@ -1051,7 +1057,7 @@ export default function (component) {
       return
     }
     const opened = !target.again && waited !== null && waited.id === target.id ? waited.opened : null
-    sendSelect(item, opened, lost.leave, target.again)
+    leaveThen(item, (chosen) => sendSelect(chosen, opened, lost.leave, target.again))
   }
   const appRunning = () => {
     const root = document.querySelector(APP_ROOT)
@@ -1116,6 +1122,23 @@ export default function (component) {
     const pending = editPending(Date.now(), S.editAt, S.pressFromGrid, EDIT_MS)
     S.pressFromGrid = false
     return !pending
+  }
+  // 기다리던 누름(`settle`)과 닿지 않아 다시 보내는 고르기(`resendLost`)도 화면을 떠난다 — 누르는 자리(`select`)처럼 떠나기
+  // 신호를 쏘고, 명부의 편집기가 busy 거나 편집표에서 막 손을 뗐으면(지금 초점 · 마지막 입력) 붙든 뒤 `send` 를 부른다. 기다리는
+  // 동안 쓴 편집이 묶음 타이머에 남은 채 옮기면 그 op 는 부품이 내려가며 말없이 사라진다. 붙든 동안 그 탭이 닫혔거나 지금 탭이
+  // 됐으면 보내지 않는다.
+  const leaveThen = (item, send) => {
+    const pending = leaving()
+    if (!pending && !editPending(Date.now(), S.editAt, S.gridFocused, EDIT_MS)) {
+      send(item)
+      return
+    }
+    const id = item.dataset.id
+    holding(item, () => {
+      const target = S.items.get(id)
+      if (target && !target.hidden && id !== S.data.active) send(target)
+      else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
+    }, pending)
   }
   // `opened` — 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림(`S.onOpenPage`). 기다리는 누름은 마지막 하나라 그 알림도 그
   // 누름과 함께 갈아 끼운다(`S.waitOpen`). 그 탭으로 이미 가는 중이면 지금 알린다 — 닿으면 `settleSelect` 가 다시 보내지 않는다.

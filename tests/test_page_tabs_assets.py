@@ -380,9 +380,8 @@ def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() ->
     assert "sendSelect(item, opened)" in select and "sendSelect(target, opened)" in select
     settle = JS[JS.index("  function settle() {") :]
     settle = settle[: settle.index("\n  }\n")]
-    assert (
-        "sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)" in settle
-    )
+    assert "const opened = waited !== null && waited.id === next ? waited.opened : null" in settle
+    assert "leaveThen(item, (chosen) => sendSelect(chosen, opened))" in settle
     assert settle.index("if (S.queue.flight !== null) {") < settle.index("S.waitOpen = null")
     link = JS[JS.index("S.onLink = (event) => {") :]
     link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
@@ -791,7 +790,7 @@ def test_the_lost_select_check_watches_the_run_mark_and_resends_without_asking_a
     resend = JS[JS.index("  function resendLost(open) {") :]
     resend = resend[: resend.index("\n  }\n")]
     assert "resendTarget(S.queue, S.data.active, open)" in resend
-    assert "sendSelect(item, opened, lost.leave, target.again)" in resend
+    assert "sendSelect(chosen, opened, lost.leave, target.again)" in resend
     watch = JS[JS.index("const appRoot = document.querySelector(APP_ROOT)") :]
     watch = watch[: watch.index("\n  }\n")]
     assert "new MutationObserver(() => markRun(S.run, readRun(), Date.now()))" in watch
@@ -1626,7 +1625,7 @@ def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves
     # 돌려줄지 본다.
     assert "if (event.detail === 0) S.keyPressAt = Date.now()" in JS
     settle = JS[JS.index("function settle() {") : JS.index("const appRunning = () => {")]
-    assert "else restoreFocus()" in settle
+    assert "if (!item) {\n      restoreFocus()\n      return\n    }" in settle
     # 회차가 아직 돌면(`MOVED_GRACE_MS` 로 기다리던 누름을 먼저 보냈을 수 있다) 다 설 때까지
     # 다시 본다.
     restore = JS[JS.index("function restoreFocus() {") :]
@@ -2451,6 +2450,158 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     assert out["capEarly"] == ["flush"]
     assert out["capLate"] == ["flush", "theme"]
     assert out["dropped"] == ["theme@0"]
+
+
+_QUEUED_LEAVE_RUNNER = """
+(() => {
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = { querySelector: () => ({ getAttribute: () => scriptState }), activeElement: null, body: {} }
+  const window = new EventTarget()
+  window.location = { pathname: '/list' }
+  window.CustomEvent = globalThis.CustomEvent || class extends Event {}
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item, opened = null, asked = null, resent = false) =>
+      log.push('tab:' + item.dataset.id + '@' + (now - S.t0) + (resent ? ':again' : ''))
+    %(slice)s
+    return { settle }
+  }
+  const tab = (id) => ({ dataset: { id }, hidden: false, __parts: { tab: {}, close: { hidden: false } } })
+  const strip = (log, t0) => {
+    timers.length = 0
+    now = t0
+    scriptState = 'notRunning'
+    const S = {
+      items: new Map([['a', tab('a')], ['b', tab('b')], ['c', tab('c')]]),
+      queue: createSelectQueue(), data: { active: 'a', leave: '' }, waitOpen: null, keyPressAt: null,
+      editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null,
+      holdTimer: 0, settleTimer: 0, focusTimer: 0, run: createRunMark(false), t0,
+    }
+    return { S, ...mount(S, log) }
+  }
+  // 묶어 보내는 편집기 대역 — 신호에 곧바로 보내고(`flush`) ack 까지 busy.
+  const editor = (log) => {
+    const E = { queued: 0, sent: 0, acked: 0 }
+    E.handle = joinLeaving(window, {
+      busy: () => E.queued > E.acked,
+      flush: () => { if (E.queued > E.sent) { E.sent = E.queued; log.push('flush') } },
+    })
+    return E
+  }
+  const scopeRun = (T, E, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    E.acked = E.queued
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
+  // 보낸 고르기 b 가 서버에 닿지 않았다 — 보낸 뒤 선 회차(트리거 없는 회차)가 60 에 끝나고 조용하다.
+  const lose = (T) => {
+    sentSelect(T.S.queue, 'b', 'a', T.S.t0, { path: '/list', leave: '' })
+    markRun(T.S.run, true, T.S.t0 + 20)
+    markRun(T.S.run, false, T.S.t0 + 60)
+  }
+  const out = {}
+
+  // 다시 보냄 — 그 사이 묶어 둔 op 가 없으면 곧바로(떠나기 신호만) 다시 보낸다.
+  let log = []
+  let T = strip(log, 0)
+  let E = editor(log)
+  lose(T)
+  advance(700)
+  T.settle()
+  out.resendIdle = log.slice()
+  E.handle.drop()
+
+  // 다시 보냄 — 기다리는 동안 칸을 고쳐 op 가 묶음 타이머에 있다. 떠나기 신호에 곧바로 보내고, 그 ack 가 오고
+  // 조용함이 찬 뒤에 다시 보낸다.
+  log = []
+  T = strip(log, 1000)
+  E = editor(log)
+  lose(T)
+  E.queued = 1
+  advance(1700)
+  T.settle()
+  out.resendHeld = [log.slice(), T.S.hold !== null]
+  scopeRun(T, E, 1720, 1860)
+  advance(2400)
+  out.resendAfter = log.slice()
+  E.handle.drop()
+
+  // 줄 선 누름 — b 로 옮기는 동안 c 를 눌렀다. b 화면의 탭 줄이 오고 그 회차가 끝났을 때 묶어 둔 op 가 있으면
+  // 떠나기 신호 · 붙들기를 지난다.
+  log = []
+  T = strip(log, 3000)
+  E = editor(log)
+  sentSelect(T.S.queue, 'b', 'a', 3000, { path: '/list', leave: '' })
+  pressSelect(T.S.queue, 'c', 'a', 3050, 10000)
+  T.S.data = { active: 'b', leave: '' }
+  E.queued = 1
+  advance(3400)
+  T.settle()
+  out.queuedHeld = log.slice()
+  scopeRun(T, E, 3420, 3560)
+  advance(4100)
+  out.queuedAfter = log.slice()
+  E.handle.drop()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_queued_and_resent_selects_flush_editors_and_wait_for_their_ack() -> None:
+    """기다리던 누름(옮기는 동안 누른 탭)과 서버에 닿지 않아 다시 보내는 고르기(T1)도 화면을
+    떠난다 — 누르는 자리처럼 떠나기 신호를 쏘고, 묶어 둔 op 가 있는 편집기는 그 자리에서 보내며
+    ack 가 오고 조용함(`HOLD_QUIET_MS`)이 찬 뒤에 보낸다. 신호 없이 보내면 그 사이 칸을 고친 op 가
+    묶음 타이머에 남은 채 화면이 옮겨져 부품이 내려가며 사라졌다. 보낼 것이 없으면 곧바로 보내고,
+    다시 보낸 고르기는 앞서 물어 지나온 떠나기를 그대로 들고 간다."""
+    names = (
+        "BUSY_MS",
+        "SETTLE_POLL_MS",
+        "HOLD_MS",
+        "HOLD_QUIET_MS",
+        "EDIT_MS",
+        "APP_ROOT",
+        "LOST_QUIET_MS",
+        "LOST_IDLE_MS",
+        "MOVED_GRACE_MS",
+    )
+    lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  function settle() {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _QUEUED_LEAVE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["resendIdle"] == ["tab:b@700:again"]
+    assert out["resendHeld"] == [["flush"], True]
+    assert out["resendAfter"] == ["flush", "tab:b@1200:again"]
+    assert out["queuedHeld"] == ["flush"]
+    assert out["queuedAfter"] == ["flush", "tab:c@900"]
 
 
 def test_a_sidebar_link_asks_the_same_leave_question_once_on_its_replay() -> None:
