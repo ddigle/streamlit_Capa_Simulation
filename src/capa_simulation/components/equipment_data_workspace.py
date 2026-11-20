@@ -868,7 +868,16 @@ def has_unsaved_equipment_edits() -> bool:
 
 def stage_own_save_carry(ids: Mapping[str, str | None], applied: Mapping[str, int]) -> None:
     """「리비전 저장」 누름이 DB 쓰기 **전에** 이음 표지를 적는다 — 지금 편집본 출발점, 저장 뒤 행
-    id 지도, 마운트별 저장에 든 마지막 seq. 쓰기는 `_save_equipment_frames` 가 이 dict 에 적는다."""
+    id 지도, 마운트별 저장에 든 마지막 seq. 쓰기는 `_save_equipment_frames` 가 이 dict 에 적는다.
+
+    이 편집본을 쓰기 시작했거나(`writing` — 첫 누름의 쓰기가 아직 도는 사이) 이미 쓴(`written` —
+    뒷정리 전에 끊김) 제 저장의 표지가 있으면 새로 적지 않고 그대로 둔다 — 둘째 누름은 새로 쓰지
+    않고 첫 저장의 결과를 잇는다(`write_guard.save_once` · 제 저장 짝). 그러니 저장에 든 seq · 행 id
+    지도는 첫 누름의 것이고, 그 사이 옛 편집본에 얹은 op(`late`)도 다시 세운 편집본에 얹어야 한다 —
+    덮어쓰면 그 op 가 「저장에 든 것」 으로 걸러져 사라진다."""
+    staged = _carry_for(buffer_base())
+    if staged is not None and (staged.get("writing") is True or staged.get("written") is True):
+        return
     OWN_SAVE_CARRY.set(
         {
             "from": buffer_base(),
@@ -2686,16 +2695,21 @@ def _save_equipment_frames(
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     messages = notice_marks()
+
+    def write() -> EquipmentSaveResult:
+        # 쓰기를 시작한 표지 — 이 뒤 같은 출발점의 둘째 누름은 이 저장의 결과를 이으므로 이음
+        # 표지를 새로 적지 않는다(`stage_own_save_carry`). 세션 칸이 아니라 그 dict 를 고친다.
+        if carry is not None:
+            carry["writing"] = True
+        return repository.save_equipment(request)
+
     try:
         # 출발점(`buffer_base`)은 아래 뒷정리(`reset_equipment_drafts`)가 옮긴다. 빠른 두 번 누름의
         # 둘째 회차가 첫 콜백을 DB 쓰기 뒤·뒷정리 전에 끊으면 출발점이 그대로라, 둘째 콜백이 옛
         # 출발점으로 다시 저장하다 거부되고 제 저장을 「다른 사용자가 먼저 저장」 으로 알렸다
         # (2026-10-26 E2E). 같은 출발점의 둘째 누름은 저장하지 않고 첫 결과로 뒷정리·알림을 잇는다.
         result = save_once(
-            EQUIPMENT_SAVE_NAME,
-            (buffer_base(), scenario_id),
-            lambda: repository.save_equipment(request),
-            wrote=_wrote_anything,
+            EQUIPMENT_SAVE_NAME, (buffer_base(), scenario_id), write, wrote=_wrote_anything
         )
     except EquipmentRevisionConflict as exc:
         # 창(`TRAILING_PRESS_SECONDS`)을 지나 닿은 둘째 누름은 저장소가 거부한다 — 그 거부가 제 저장

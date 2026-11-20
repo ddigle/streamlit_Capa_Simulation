@@ -37,6 +37,7 @@ from test_equipment_master_tab import (
     _rows,
 )
 from test_equipment_master_tab_new_unit import _draft
+from test_equipment_save_double_press import _race_save
 from test_equipment_pages import _page_script
 from test_scenario_save_double_press import _first_callback
 
@@ -239,6 +240,49 @@ _FIRST_CELLS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+def _late_cell_while_writing(
+    app: AppTest, grid: Calls, monkeypatch: pytest.MonkeyPatch, cells: tuple[tuple[str, str], ...]
+) -> None:
+    """DA-01 에 `cells` 를 붙여 넣고, 다음 「리비전 저장」 이 DB 에 쓰는 사이(첫 쓰기 한 번만) 다른
+    스레드 회차의 받기 콜백이 DA-02 담당자 칸(seq 2)을 아직 쓰기 전 옛 편집본에 얹게 한다."""
+    kept = _kept_grid_kwargs(monkeypatch)
+    app.run()
+    before = last(grid, emg.GRID_KEY)["base"]
+    first = _op(1, before, op="paste", ids=["s:DA-01"], cols=[c for c, _ in cells], cut=0) | {
+        "rows": [[t for _, t in cells]],
+        "skipped": 0,
+    }
+    send(app, emg.GRID_KEY, "outbox", {"mount": MOUNT, "ops": [first]})
+    late = _op(2, before, op="cell", id="s:DA-02", col="담당자", text="쓰는 사이 친 값")
+    original = DuckDBEquipmentRepository.save_equipment
+    fired: list[bool] = []
+
+    def writing(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> Any:
+        if not fired:
+            fired.append(True)
+            st.session_state[emg.GRID_KEY] = SimpleNamespace(
+                outbox={"mount": MOUNT, "ops": [first, late]}
+            )
+            kept[emg.GRID_KEY]["on_outbox_change"]()
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", writing)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+
+
+def _late_cell_kept(app: AppTest, grid: Calls, cells: tuple[tuple[str, str], ...]) -> None:
+    """저장 전 칸은 저장본에, 쓰는 사이 친 칸은 다시 세운 편집본에 미저장 편집으로 남는다."""
+    assert not app.exception, app.exception
+    for column, text in cells:
+        assert str(_value(app, "DA-01", column))[: len(text)] == text
+    assert _value(app, "DA-02", "담당자") == "쓰는 사이 친 값"
+    assert last(grid, emg.GRID_KEY)["ack"] == {"mount": MOUNT, "seq": 2}
+    _no_foreign_blame(app)
+    assert has_unsaved_equipment_edits_in(app)
+    assert any("저장 전 변경 1건" in text for text in _page_texts(app))
+
+
 @pytest.mark.parametrize("first_cell", list(_FIRST_CELLS))
 @pytest.mark.parametrize("cut", [False, True], ids=["finished", "cut"])
 def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
@@ -250,26 +294,9 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
     저장 뒤 다시 세운 편집본에 다시 얹는다 — 저장 콜백이 끝까지 돌든 쓰기 뒤에 끊기든. 끊긴 저장이
     새 일정 리비전을 썼으면 그 op 는 세션을 옮겨 다시 세운 편집본에 얹는다(옮기기 전 편집본에 얹으면
     다시 세울 때 사라진다)."""
-    kept = _kept_grid_kwargs(monkeypatch)
     app = _app(tmp_path / "equipment.duckdb")
-    before = last(grid, emg.GRID_KEY)["base"]
     cells = _FIRST_CELLS[first_cell]
-    first = _op(1, before, op="paste", ids=["s:DA-01"], cols=[c for c, _ in cells], cut=0) | {
-        "rows": [[t for _, t in cells]],
-        "skipped": 0,
-    }
-    send(app, emg.GRID_KEY, "outbox", {"mount": MOUNT, "ops": [first]})
-    late = _op(2, before, op="cell", id="s:DA-02", col="담당자", text="쓰는 사이 친 값")
-    original = DuckDBEquipmentRepository.save_equipment
-
-    def writing(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> Any:
-        st.session_state[emg.GRID_KEY] = SimpleNamespace(
-            outbox={"mount": MOUNT, "ops": [first, late]}
-        )
-        kept[emg.GRID_KEY]["on_outbox_change"]()
-        return original(self, *args, **kwargs)
-
-    monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", writing)
+    _late_cell_while_writing(app, grid, monkeypatch, cells)
     stale_marks: list[object] = []
     marking = head_stale_if_unsaved_changed
 
@@ -278,8 +305,6 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
         stale_marks.append(st.session_state.get(HEAD_STALE_KEY))
 
     monkeypatch.setattr(emt, "head_stale_if_unsaved_changed", marked)
-    app.session_state[SIDE_KEY] = SIDE_CHANGES
-    app.run()
     if cut:
         _first_callback(
             app,
@@ -291,14 +316,48 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
     else:
         app.button(key=SAVE_BUTTON_KEY).click().run()
 
-    assert not app.exception, app.exception
-    for column, text in cells:
-        assert str(_value(app, "DA-01", column))[: len(text)] == text
-    assert _value(app, "DA-02", "담당자") == "쓰는 사이 친 값"
-    assert last(grid, emg.GRID_KEY)["ack"] == {"mount": MOUNT, "seq": 2}
-    _no_foreign_blame(app)
+    _late_cell_kept(app, grid, cells)
     # 다시 얹은 칸은 저장하지 않은 편집이다 — 본문에서 얹어 머리(변경 칩 · 탭 점 · 떠나기 확인)가
     # 바뀌므로 그 회차 끝에 한 번 다시 돌 표지를 단다.
-    assert has_unsaved_equipment_edits_in(app)
     assert True in stale_marks
-    assert any("저장 전 변경 1건" in text for text in _page_texts(app))
+
+
+def _revision_count(path: Path) -> int:
+    """공통 대장 리비전과 모든 설비 시나리오 일정 리비전 수의 합."""
+    repository = DuckDBEquipmentRepository(path)
+    scenarios = repository.list_equipment_scenarios()
+    return len(repository.list_revisions()) + sum(
+        len(repository.list_schedule_revisions(item.equipment_scenario_id)) for item in scenarios
+    )
+
+
+@pytest.mark.parametrize("first_cell", ["common", "schedule"])
+@pytest.mark.parametrize("timing", ["after-cut", "while-writing"])
+def test_pressing_save_again_keeps_the_cell_typed_while_my_save_wrote(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, timing: str, first_cell: str
+) -> None:
+    """첫 「리비전 저장」 이 쓰는 사이 친 칸이 옛 편집본에 얹힌다. 화면에 저장 결과가 없고 「저장 전
+    변경」 이 그대로라 한 번 더 누른다 — 첫 콜백이 쓰기 뒤 끊긴 뒤(`after-cut`)든 아직 쓰는
+    중(`while-writing` — 둘째 누름의 회차가 다른 스레드로 선다)이든. 둘째 누름은 새로 쓰지 않고 첫
+    저장을 잇는다. 그 누름이 이음 표지를 새로 적으면 쓰는 사이 친 칸의 seq 가 「저장에 든 것」 으로
+    들어가 다시 세운 편집본에 얹히지 않았다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    cells = _FIRST_CELLS[first_cell]
+    _late_cell_while_writing(app, grid, monkeypatch, cells)
+    revisions = _revision_count(path)
+
+    if timing == "after-cut":
+        _first_callback(
+            app,
+            monkeypatch,
+            "_save_revision",
+            cut_after=(DuckDBEquipmentRepository, "save_equipment"),
+        )
+        app.button(key=SAVE_BUTTON_KEY).click().run()
+    else:
+        app.button(key=SAVE_BUTTON_KEY).click()
+        _race_save(app, monkeypatch, callback="_save_revision")
+
+    _late_cell_kept(app, grid, cells)
+    assert _revision_count(path) == revisions + 1

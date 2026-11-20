@@ -3479,7 +3479,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **제 저장 이음**(rerun-1120 바탕 결함 c6 — 「리비전 저장」 직후 친 칸이 버려지고, 바쁜 서버에서는 제 저장을 「다른 사용자가 …
     저장해 … 버렸습니다」 로 알렸다): 「리비전 저장」 콜백은 DB 쓰기 **전에** 이음 표지(`OWN_SAVE_CARRY_KEY` — 그 편집본 출발점 ·
     저장 뒤 행 id 지도 `save_id_map` · 마운트별 저장에 든 seq)를 적고, 쓰기는 `_save_equipment_frames` 가 그 dict 에만 적는다(뒤
-    세션 칸 접근은 fastReruns 에 끊길 수 있다). 쓰지 않았으면 콜백 끝이 걷는다(`settle_own_save_carry`). 뒷정리 전에 끊긴
+    세션 칸 접근은 fastReruns 에 끊길 수 있다). 쓰지 않았으면 콜백 끝이 걷는다(`settle_own_save_carry`). 그 편집본을 쓰기
+    시작했거나(`writing` — 저장소 쓰기 바로 앞) 이미 쓴(`written`) 표지는 같은 출발점의 둘째 「리비전 저장」 누름이 새로 적지
+    않는다 — 둘째 누름은 첫 저장의 결과를 잇기만 하므로(`write_guard.save_once` · 제 저장 짝) 덮어쓰면 그 사이 친 칸이 「저장에 든
+    seq」 로 걸러져 사라진다(첫 쓰기가 도는 중에 다른 스레드로 선 누름도, 쓰기 뒤 끊긴 뒤의 누름도). 뒷정리 전에 끊긴
     회차(`own_save_unsettled` — 그 출발점 그대로이거나 새 일정 리비전으로 세션을 옮길 회차가 남음)의 출납은 seq 를 적기 **전에**
     미루고, 끊긴 제 저장은 알림 창이 지나도 이음 표지로 알아본다(`_settle_own_save`). 제 저장 뒤 다시 세운 편집본(세션을 옮겨 한 번
     더 다시 세운 것도)에 이음 표지가 이어지고(`_bind_own_save_carry`), 그 전 출발점의 op 는 행 id 를 저장 뒤 id 로 옮겨(지운 호기를
@@ -3490,8 +3493,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는 표지에 끝없이 쌓지 않게). 끊긴 저장이 새 일정 리비전을 써 세션을 옮기며 한 번 더 다시 세울 회차(`own_save_unsettled`)에는
     꺼내지 않고 옮긴 뒤의 편집본에서 꺼낸다(옮기기 전 편집본에 얹으면 그 다시 세움이 지운다). 그 옮기기 전 편집본은 저장 본
     값(`_BASE_KEY`)을 남기지 않는다 — 일정만 쓴 저장이면 그 본 값이 저장 전 짝 그대로라 다음 회차의 `_settle_own_save` 가 같은
-    저장을 한 번 더 이어 뒷정리하며 이음 표지를 걷는다(그 편집본은 저장하지 않는다). 탭 본문에서 얹은 출납(미뤄 둔 것 · 다시 얹은 것)이 미저장 표시를 바꾸면 페이지 끝에서 한 번
-    다시 돌아 머리 띠 칩 · 탭 점 · 떠나기 확인을 맞춘다(`head_stale_if_unsaved_changed` → `rerun_if_head_stale`). 그 밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김 — `reset_equipment_drafts` 가 걷는다, 남의 저장 — 걷고 그 옛
+    저장을 한 번 더 이어 뒷정리하며 이음 표지를 걷는다(그 편집본은 저장하지 않는다). 탭 본문에서 얹은 출납(미뤄 둔 것 · 다시
+    얹은 것)이 미저장 표시를 바꾸면 페이지 끝에서 한 번 다시 돌아 머리 띠 칩 · 탭 점 · 떠나기 확인을 맞춘다(`head_stale_if_unsaved_changed` → `rerun_if_head_stale`). 그 밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김 — `reset_equipment_drafts` 가 걷는다, 남의 저장 — 걷고 그 옛
     출발점을 `FOREIGN_ORIGINS_KEY` 에 적는다)에는 얹지 않고, 버린 op 는 까닭대로 센다(`FOREIGN_DROPPED_TOAST` · `DROPPED_TOAST`).
     `tests/test_equipment_master_save_race.py`.
   - **오른쪽 칸 자리 거부 한 줄은 실어 보낸 마운트가 사라지면 거둔다**(`settle_grid_toasts` — 대상은 `detail` · `new` 뿐, 탭 끝에
