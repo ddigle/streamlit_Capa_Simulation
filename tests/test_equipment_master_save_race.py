@@ -42,9 +42,12 @@ from test_scenario_save_double_press import _first_callback
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import equipment_master_tab as emt
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
+    HEAD_STALE_KEY,
     OWN_SAVE_CARRY_KEY,
+    head_stale_if_unsaved_changed,
 )
 from capa_simulation.components.equipment_master_tab import (
     DISCARD_CONFIRM_KEY,
@@ -118,6 +121,18 @@ def _value(app: AppTest, name: str, column: str) -> object:
     values = master.loc[master["설비명"].eq(name), column].tolist()
     assert len(values) == 1, values
     return values[0]
+
+
+def _page_texts(app: AppTest) -> list[str]:
+    """화면의 글(마크다운 · 캡션 — 알약은 마크다운 꼴로 온다)."""
+    return [str(item.value) for item in (*app.markdown, *app.caption)]
+
+
+def has_unsaved_equipment_edits_in(app: AppTest) -> bool:
+    """세운 세대보다 편집본 세대가 오르고 저장본으로 돌아온 세대가 아닌가(미저장 표시 판정)."""
+    seeded = app.session_state["equipment_workspace_seeded_generation_v1"]
+    generation = app.session_state["equipment_workspace_buffer_generation_v1"]
+    return bool(generation > seeded)
 
 
 def _no_foreign_blame(app: AppTest) -> None:
@@ -239,6 +254,14 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", writing)
+    stale_marks: list[object] = []
+    marking = head_stale_if_unsaved_changed
+
+    def marked(before: bool) -> None:
+        marking(before)
+        stale_marks.append(st.session_state.get(HEAD_STALE_KEY))
+
+    monkeypatch.setattr(emt, "head_stale_if_unsaved_changed", marked)
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     if cut:
@@ -257,3 +280,8 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
     assert _value(app, "DA-02", "담당자") == "쓰는 사이 친 값"
     assert last(grid, emg.GRID_KEY)["ack"] == {"mount": MOUNT, "seq": 2}
     _no_foreign_blame(app)
+    # 다시 얹은 칸은 저장하지 않은 편집이다 — 본문에서 얹어 머리(변경 칩 · 탭 점 · 떠나기 확인)가
+    # 바뀌므로 그 회차 끝에 한 번 다시 돌 표지를 단다.
+    assert has_unsaved_equipment_edits_in(app)
+    assert True in stale_marks
+    assert any("저장 전 변경 1건" in text for text in _page_texts(app))

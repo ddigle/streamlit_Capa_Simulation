@@ -384,6 +384,7 @@ _HEAD_HELD_KEY = "equipment_workspace_head_held_v1"
 # 띄운다 — `flash` 의 `again` 과 같은 꼴).
 _HEAD_RESEND_KEY = "equipment_workspace_head_resend_v1"
 _HEAD_RESEND: Final = SessionSlot(_HEAD_RESEND_KEY, list, list)
+_HEAD_STALE: Final = SessionSlot(HEAD_STALE_KEY, bool)
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
 # 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
@@ -1066,6 +1067,15 @@ def _resend_after_head_rerun(code: str | None = None) -> None:
             ),
         ]
     )
+
+
+def head_stale_if_unsaved_changed(before: bool) -> None:
+    """페이지 본문이 머리를 그린 뒤 편집본을 바꿔 미저장 표시(`has_unsaved_equipment_edits` — 변경
+    칩 · 화면 탭 점 · 떠나기 확인)가 `before` 와 달라졌으면 그 화면 끝에서 한 번 다시 돌게
+    한다(`rerun_if_head_stale`) — 설비 마스터 탭이 미뤄 둔 출납 · 제 저장 뒤 다시 얹은 op 를
+    본문에서 얹는 회차."""
+    if has_unsaved_equipment_edits() != before:
+        _HEAD_STALE.set(True)
 
 
 def rerun_if_head_stale() -> None:

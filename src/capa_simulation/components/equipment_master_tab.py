@@ -101,6 +101,7 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_toasts,
     grid_undo_steps,
     has_unsaved_equipment_edits,
+    head_stale_if_unsaved_changed,
     layout_lock_origins,
     layout_memo_mark,
     note_late_ops,
@@ -1831,6 +1832,9 @@ def render_equipment_master_tab(
         floor_canvases=floor_canvases,
         today=today,
     )
+    # 본문에서 얹는 출납(미뤄 둔 것 · 제 저장 뒤 다시 얹는 것)은 머리를 그린 뒤라 미저장 표시가
+    # 바뀌면 페이지 끝에서 한 번 다시 돈다.
+    unsaved_before = has_unsaved_equipment_edits()
     late = take_late_ops()
     if late:
         # 제 저장 뒤 다시 세운 편집본 — 저장 뒤에 곧 버려질 옛 편집본에 얹었던 op 를 이 편집본에
@@ -1838,6 +1842,7 @@ def render_equipment_master_tab(
         _apply_received(late, context, layout)
     if st.session_state.pop(OUTBOX_HELD_KEY, False):
         apply_outbox(context, layout)
+    head_stale_if_unsaved_changed(unsaved_before)
     settle_grid_undo(partial(_grid_undo, context, layout))
     view = build_view(
         context,
