@@ -3294,10 +3294,9 @@ def test_the_morning_1119_board_answers_are_recorded_in_6_36() -> None:
     from capa_simulation.services.extra_process_revision import AVAILABLE_REASON
 
     document = _text()
-    assert "판 v1.39" in document.split("\n## 1. ")[0]
     assert "6-36 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-36. ") :]
+    record = section[section.index("\n### 6-36. ") : section.index("\n### 6-37. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -3331,6 +3330,46 @@ def test_the_morning_1119_board_answers_are_recorded_in_6_36() -> None:
     v139 = history[history.index("- **v1.39 — 2026-11-19.**") :]
     for phrase in ("6-36", "m19-extra2-avail", "7-1", "규칙 82", "UI-DAT-12"):
         assert phrase in v139, phrase
+
+
+# 2026-11-20 필요 단축 일정 「누적 진척」 시안 보드(6-37)의 카드 차례와 고른 답.
+CUMULATIVE_1120_ANSWERS = {
+    "cum-form": "(가) A 한 줄 띠 + 「주차별」 을 누르면 B",
+    "cum-record": "(다) 손으로 적기",
+    "cum-goal": "(가) 사용자가 정함 — 목표 일수와 목표 주차 하나",
+    "cum-scope": "「한 줄 기록」",
+    "cum-place": "(가) 늘 보임(머리 한 줄)",
+}
+
+
+def test_the_cumulative_1120_board_answers_are_recorded_in_6_37() -> None:
+    """v1.40 — 6-37 은 2026-11-20 「누적 진척」 시안 보드 카드 다섯이 보드 차례대로 한 줄씩이고(모두
+    「(2026-11-20 · 규칙 id)」 로 끝남), 고른 답이 굵게 선다. 권장이 아닌 답은 cum-record 하나이고
+    cum-scope 는 다시 물은 답이다. UI-LAY-13 예외에 그 띠가 선다."""
+    document = _text()
+    assert "판 v1.40" in document.split("\n## 1. ")[0]
+    assert "6-37 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-37. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        assert match, line
+        card, answer = match.group(1), match.group(2)
+        found.append(card)
+        assert answer == CUMULATIVE_1120_ANSWERS[card], card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert ("권장이 아닌 답" in line) == (card == "cum-record"), card
+    assert tuple(found) == tuple(CUMULATIVE_1120_ANSWERS)
+    top = document[document.index("#### UI-LAY-13 · ") : document.index("#### UI-INP-01 · ")]
+    assert "「누적 진척」 한 줄 띠" in top and "6-37" in top
+    history = _chapter(document, 8)
+    v140 = history[history.index("- **v1.40 — 2026-11-20.**") :]
+    for phrase in ("6-37", "cum-record", "UI-LAY-13", "규칙 82"):
+        assert phrase in v140, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

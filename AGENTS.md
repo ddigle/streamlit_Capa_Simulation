@@ -791,6 +791,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일)를 쓴다 — 계산기 본문은 이벤트 칸에 쓰지 않는다
     (`qual_deadline_calculator.calculator_style_markup`). 그 뒤 기준선 결과 알림 표지 자리(머리 · 본문 프래그먼트 안)가 팝업을
     여닫을 때 밀리지 않는다(`test_qual_deadline_calculator.py` 가 연 회차·닫은 회차의 이벤트 칸 자리 수를 견준다).
+  - **누적 진척**(2026-11-20 보드 답 누적-1 A · 누적-2 c 손으로 적기 · 누적-3 a · 누적-4 「한 줄 기록」 · 누적-5 a — 규칙집 6-37):
+    본문 맨 위 한 줄 띠와 사이드바 「누적 진척 설정」 상자(Qual 마감 계산기 상자 밑 · 조건 카드 위) → 같은 제목 팝업이다
+    (`components/shortening_cumulative.py` — 페이지는 `CumulativeProgress(host=DIALOG_HOST, …)` 하나를 세워 상자 · 호스트 팝업 · 띠를 부르는
+    줄만 둔다). 띠는 진척 비교와 상관없이 KPI(또는 진척 요약) 위에 서고 계획이 멈춘 회차에도 선다 — 값은 적은 기록 기준이라 계획을
+    읽지 않는다. 「이번 주 값 넣기」 가 읽는 지금 화면 합계는 패널 `_render_body` 가 회차마다 적는다(`remember_screen_total` — 계산은
+    `services/shortening_progress_log.screen_shortening_days` 하나, `_render_view` 머리에서 지우고 다시 적어 멈춘 회차에 앞 값이 남지
+    않는다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
     조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
@@ -4661,6 +4668,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   변동과 상태를 낸다(`compare_progress`·`summarize_progress`·`progress_export_frame`).
   - 짝짓기는 공정 안에서만 — 당긴 호기는 설비명끼리, 「추가N」은 차례끼리다. 지금 범위에 없는 기준선 공정은
     `지금 범위 밖`(해소 아님), 오늘보다 앞선 과거 필요 시점은 `필요 시점 지남` 으로 양쪽 증감에서 뺀다.
+- `src/capa_simulation/services/shortening_progress_log.py` — 필요 단축 일정 「누적 진척」(설비 DB `0036`)의 모델과 값 규칙.
+  기록 한 줄 = ISO 주차(`ProgressWeek` — 해 · 주를 함께, 글은 앱 주차 도우미 `iso_week_calendar.weeknum_label` 의 `YY-W##`, 해 넘김
+  차례가 (해, 주)로 맞음) 하나의 단축 필요일수(사람이 적은 0 이상 정수 — 화면 계산과 잇지 않는다), 최종 목표는 일수 · 주차 하나
+  (`ProgressGoal`). 머리 한 줄 요약(`summarize_log`)은 **기록 기준**이다 — 지금 일수 = 마지막 기록, 지난 기록 대비 = 그 앞 기록과의
+  차(기록이 하나면 없음 — 0 이 아니다), 남은 일수 = 마지막 기록 − 목표, 목표 주차 지남. `screen_shortening_days` 는 「이번 주 값
+  넣기」 가 채우는 지금 화면 합계(고른 목표의 계획에서 범위 공정의 당긴 호기 단축일수 합)이고 진척 비교 요약의 지금 합계 +
+  필요 시점 지남 몫과 같다(시험이 맞댄다). Streamlit · DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는
@@ -5636,6 +5650,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차(`read_baseline_options` 의 읽음 거짓)는 알리지 않는다 — 남은 물음 보드 D4 (나)). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
     콜백은 그린 회차의 세대가 다르면 쓰지 않는다(빠른 두 번 누름). 샘플·미저장 시나리오 편집은 저장을 거절한다.
   - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다.
+- `src/capa_simulation/components/shortening_cumulative.py` — 필요 단축 일정 「누적 진척」 머리 한 줄 띠(키 붙은 프래그먼트
+  `STRIP_FRAGMENT_KEY` — 작은 꺾은선(data URL 그림 — `st.html` 은 인라인 SVG 를 걷는다) · 지금 일수 · 지난 기록 대비 · 첫 기록 →
+  목표 막대 · 남은 일수 · 「주차별」. 펴면 Plotly 꺾은선 + 목표선 — 늘어난 주 ▲, 편 상태는 세션 칸 `WEEKS_OPEN_KEY`)와 사이드바
+  「누적 진척 설정」 상자 · 팝업(그 화면 호스트가 연다 — 기록 표 · 주차 / 단축 필요일수 / 저장자 · 「기록 저장」 · 「이번 주 값
+  넣기」 · 「기록 지우기」, 최종 목표 일수 / 주차 · 「목표 저장」 · 「목표 지우기」). 팝업 칸은 세대 key 라(`widget_generation`)
+  주차를 바꾸거나 넣기 · 저장하면 그 세대의 기본값(저장값 · 넣은 값)으로 새로 선다 — 세션 대입으로 칸을 채우지 않는다. 겹친 저장은
+  그 세대 칸이 처음 본 그 주 값 · 목표 version 과 저장소가 대조한다(`ProgressLogConflictError` · `ProfileVersionConflict` → 곁 +
+  알림창). 성공은 알림창 하나이고 앱 전체 `st.rerun()` 이라 팝업은 열린 채 띠가 새 값으로 선다. 등급은 기록
+  `shortening.progress_log`(실무자부터) · 목표 `shortening.progress_goal`(관리자부터)이고 그 아래는 값만 본다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
   (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽
   끝에 말줄임, 이름은 `dir="ltr"` 한 덩이라 끝(호기 번호)이 남는다 — 남은 물음 보드 D6 (다))을 공정 카드와 진척
@@ -5874,6 +5897,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
   넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`). 설비 쪽 출처 칸 넷(`0027` —
   `equipment_schedule_revision_ref`·`_no`·`equipment_scenario_name`·`equipment_release_no`)은 가리키기만 한다.
+- `src/capa_simulation/persistence/shortening_progress_log_store.py` — 필요 단축 일정 누적 진척(설비 DB `0036`)의 읽기와 주 한 줄
+  넣기 · 고치기 · 지우기, 목표 머리 갈아 쓰기 SQL. 저장소 메서드(`save_shortening_progress_entry` · `delete_shortening_progress_entry` ·
+  `save_shortening_progress_goal`)가 쓰기 잠금 안에서 화면이 본 값 · version 과 대조하고 감사 사건(`data_progress_log_save` ·
+  `data_progress_log_delete` · `data_progress_goal_save`)을 단다. 캐시는 `equipment_cache.load_shortening_progress_log`(DB stat ·
+  쓰기 세대 `shortening_progress` · TTL — 입력 비가동과 같은 꼴).
 - `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
   `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
   견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
@@ -6281,7 +6309,8 @@ RQ_MODULE
    새 전체 스냅샷을 만든다. 설비 시나리오는 설비 DB 안의 독립 시나리오이고 Capa 시나리오와 짝짓지 않는다(E1 — HOME·
    Static 확보율 `RQ_EQP_AVBL` 계산에 들지 않는다). `Summary` › `Static 대비 일정` 탭과 `필요 단축 일정` 화면과 **`Space 현황` 의
    색 기준 `필요 단축` 을 켠 동안**만 시뮬레이션 기준정보·소요대수를 읽어
-   비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
+   비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021`, 누적 진척 기록 · 최종 목표는 설비 DB
+   `0036` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
    공용 공정 표시명 하나다(2026-10-10 사용자 결정 — 설비 마스터 탭을 뺀 탭과 「가용설비 설정」 팝업 표 보기 필터의 보이는 글자).
    페이지가 회차마다

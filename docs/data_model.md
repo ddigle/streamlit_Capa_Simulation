@@ -137,6 +137,8 @@ equipment_ops.manual_downtime_profile 1 ── N manual_downtime  입력 비가�
 equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
                                      └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다.
                                                                            머리의 현재 일정 기준 0035 — NULL 은 설비 마스터)
+equipment_ops.shortening_progress_log                     누적 진척 기록(0036, 행 = ISO 주차 하나의 단축 필요일수, PK 해·주)
+equipment_ops.shortening_progress_goal                    누적 진척 최종 목표(0036, 머리 한 행 — 일수·해·주·version)
 
 equipment_meta.schema_migration
 ```
@@ -528,6 +530,12 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   시나리오·리비전·`content_token` — 모르면 NULL), 공정 표는 그때 맞댄 공정과 Cut-off, 호기 표는
   목표(90~130%)마다 당긴 호기와 가상 호기(「추가N」)다. 외래키는 없다. SQL 은
   `persistence/shortening_baseline_store.py`, 얼리는 규칙은 `services/shortening_baseline.py`.
+- `shortening_progress_log`·`shortening_progress_goal`(마이그레이션 36): 필요 단축 일정 **누적 진척** — 사람이 주마다 적은
+  단축 필요일수 기록(`iso_year`·`iso_week` PK — 해 넘김 차례가 (해, 주)로 맞음, `shortening_days` 0 이상, 마지막 저장자 · 시각)과
+  최종 목표 머리 한 행(`goal_days`·`goal_year`·`goal_week` 함께 있거나 함께 NULL, `version`). 기록은 주 한 줄만 넣기 · 고치기 ·
+  지우기(화면이 본 값과 대조), 목표는 version 대조로 갈아 쓴다(지우기는 칸을 비우고 version+1). 화면 계산과 잇지 않는 손
+  기록이고 리비전 · 설비 시나리오와 무관한 공용 값이라 소유 칸 · 외래키가 없다. SQL 은
+  `persistence/shortening_progress_log_store.py`, 규칙은 `services/shortening_progress_log.py`.
 - `equipment_scenario`·`equipment_schedule_revision`·`equipment_schedule_snapshot`·`equipment_schedule_downtime_snapshot`·
   `equipment_official_release`·`equipment_legacy_boundary`(마이그레이션 27): **설비 시나리오**. 설비 마스터의 일정 일곱 칸
   (제진대·물류·반입·Qual·정지·반출/이설 일정 — 정지·반출/이설의 DB 이름은 `removal_date`·`relocation_date` 그대로 — 과

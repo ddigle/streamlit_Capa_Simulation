@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial
 from typing import Final
+from urllib.parse import quote
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -270,10 +271,17 @@ def _sparkline(log: ProgressLog) -> str:
         f'<circle cx="{end_x:.1f}" cy="{end_y:.1f}" r="3.5" fill="{tokens.ACCENT}" '
         f'stroke="{tokens.SURFACE}" stroke-width="1.5"/>'
     )
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SPARK_WIDTH}" '
+        f'height="{_SPARK_HEIGHT}" viewBox="0 0 {_SPARK_WIDTH} {_SPARK_HEIGHT}">'
+        f"{''.join(parts)}</svg>"
+    )
+    # `st.html` 은 인라인 SVG 를 걷어 낸다 — 그림은 data URL 그림으로 싣는다(공정 Capa 상세 시트
+    # 고른 칸 표지와 같은 길).
     return (
-        f'<svg class="shk-cum-spark" width="{_SPARK_WIDTH}" height="{_SPARK_HEIGHT}" '
-        f'viewBox="0 0 {_SPARK_WIDTH} {_SPARK_HEIGHT}" role="img" aria-label="주차별 기록 '
-        f'{len(entries)}개">{"".join(parts)}</svg>'
+        f'<img class="shk-cum-spark" width="{_SPARK_WIDTH}" height="{_SPARK_HEIGHT}" '
+        f'alt="주차별 기록 {len(entries)}개" '
+        f'src="data:image/svg+xml,{quote(svg, safe="")}">'
     )
 
 
@@ -460,6 +468,8 @@ def weekly_figure(log: ProgressLog) -> go.Figure:
             yshift=-4,
             font={"color": tokens.TEXT, "size": 12},
         )
+    # 마지막 기록이 축 끝이면(목표 주가 앞이거나 없음) 오른쪽에 그 값 글자 자리를 둔다.
+    room = 1.6 if entries and index[entries[-1].week] == len(axis) - 1 else 0.0
     step = max(1, -(-len(axis) // _MAX_AXIS_LABELS))
     ticks = list(range(0, len(axis), step))
     figure.update_layout(
@@ -470,7 +480,7 @@ def weekly_figure(log: ProgressLog) -> go.Figure:
         xaxis={
             "tickvals": ticks,
             "ticktext": [axis[tick].label for tick in ticks],
-            "range": [-0.5, max(len(axis) - 0.5, 0.5)],
+            "range": [-0.5, max(len(axis) - 0.5, 0.5) + room],
             "fixedrange": True,
             "showgrid": False,
             "zeroline": False,
@@ -584,7 +594,7 @@ def _record_frame(log: ProgressLog) -> pd.DataFrame:
     rows = [
         {
             "주차": entry.week.label,
-            "단축 필요일수": entry.days,
+            "단축 필요일수": _days(entry.days),
             "지난 기록 대비": None if change is None else _signed_days(change),
             "저장자": entry.recorded_by or None,
         }
@@ -607,9 +617,6 @@ def _render_records(log: ProgressLog) -> None:
         + tokens.TABLE_HEADER_HEIGHT_PX
         + 3,
         placeholder="",
-        column_config={
-            "단축 필요일수": st.column_config.NumberColumn("단축 필요일수", format="%d일"),
-        },
     )
 
 
@@ -636,7 +643,7 @@ def _save_record(
     try:
         days = normalize_progress_days(value)
     except ProgressLogInvalidError as exc:
-        slot.warning(str(exc), icon=":material/edit_note:")
+        slot.warning(bootstrap_error_message(exc), icon=":material/edit_note:")
         return
     if days == expected:
         # 방금 저장한 같은 값의 빠른 둘째 누름이면 그 성공을 덮지 않는다(write_guard.held_notice).
@@ -655,7 +662,12 @@ def _save_record(
         )
     except ProgressLogConflictError as exc:
         clear_shortening_progress_cache()
-        queue_flash(_RECORD_FLASH_KEY, str(exc), kind="warning", icon=":material/sync_problem:")
+        queue_flash(
+            _RECORD_FLASH_KEY,
+            bootstrap_error_message(exc),
+            kind="warning",
+            icon=":material/sync_problem:",
+        )
         _FILL.clear()
         bump(_RECORD_GENERATION_KEY)
         st.rerun()
@@ -684,7 +696,12 @@ def _delete_record(
         )
     except ProgressLogConflictError as exc:
         clear_shortening_progress_cache()
-        queue_flash(_RECORD_FLASH_KEY, str(exc), kind="warning", icon=":material/sync_problem:")
+        queue_flash(
+            _RECORD_FLASH_KEY,
+            bootstrap_error_message(exc),
+            kind="warning",
+            icon=":material/sync_problem:",
+        )
         bump(_RECORD_GENERATION_KEY)
         st.rerun()
     except BOOTSTRAP_ERRORS as exc:
@@ -887,7 +904,7 @@ def _render_goal_form(log: ProgressLog, today: date, database_path: str) -> None
         try:
             goal = ProgressGoal(normalize_progress_days(days), ProgressWeek.parse(week_label))
         except ProgressLogInvalidError as exc:
-            slot.warning(str(exc), icon=":material/edit_note:")
+            slot.warning(bootstrap_error_message(exc), icon=":material/edit_note:")
             return
         _save_goal(database_path, slot, goal, expected_version, saved_by)
     elif clear and current is not None:
@@ -927,7 +944,7 @@ class CumulativeProgress:
         self.host = host
         self.database_path = database_path
         self._body: Callable[..., None] = st.dialog(
-            CUMULATIVE_TITLE, width="large", icon=CUMULATIVE_ICON, on_dismiss=host.close
+            CUMULATIVE_TITLE, width="medium", icon=CUMULATIVE_ICON, on_dismiss=host.close
         )(in_fragment(keeps_app_run_open(_dialog_body)))
 
     def dialogs(self, *, today: date) -> dict[str, Callable[[], None]]:

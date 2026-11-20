@@ -233,9 +233,11 @@ def _fragment_of(runner: FragmentBrowser, widget_key: str) -> str:
 
 
 def _screen(app: AppTest, world: _World) -> tuple[list[str], dict[str, bytes]]:
-    """머리·본문이 그린 숫자 — 이 탭의 HTML(KPI·LOB·공정 카드)과 CSV 세 벌의 바이트."""
+    """머리·본문이 그린 숫자 — 이 탭의 HTML(KPI·LOB·공정 카드)과 CSV 세 벌의 바이트. 머리 「누적
+    진척」 띠(`shk-cum`)는 본문 프래그먼트 밖 제 프래그먼트라(적은 기록 기준 — 계획을 읽지 않는다)
+    견주지 않는다."""
     html = [str(element.proto.body) for element in app.get("html")]
-    return [body for body in html if "shk-" in body], {
+    return [body for body in html if "shk-" in body and 'class="shk-cum"' not in body], {
         key: world.downloads[key] for key in CSV_KEYS
     }
 
