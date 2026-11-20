@@ -765,12 +765,9 @@ def _render_body(
         # 그릴 것이 없는 빈 상태 — 회색 평문 한 줄, 맞대는 규칙은 풍선(설계 규칙 UI-TXT-04 · D4).
         # 그 줄 오른쪽 끝이 기준 값이다(`_render_basis`).
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.caption(
-                "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
-                "없습니다.",
-                help=MATCH_RULE_HELP,
-            )
-            _render_basis(today)
+            empty_line, empty_help = _empty_plan_line(plan)
+            st.caption(empty_line, help=empty_help)
+            _render_basis(today, plan.basis)
         return
 
     save = _save_context(
@@ -798,6 +795,18 @@ def _render_body(
         if compared.summary.schedule_basis != prepared.basis and prepared.plan_for is not None:
             try:
                 keyed = prepared.plan_for(compared.summary.schedule_basis)
+                # 이 보기의 숫자 · CSV 는 그 기준의 계획이다 — 「기준선 저장」 도 보이는 계획을
+                # 얼린다.
+                save = _save_context(
+                    keyed.plan,
+                    today=today,
+                    context=prepared.context,
+                    database_path=database_path,
+                    revision=revision,
+                    refusal=refusal,
+                    assumption=prepared.assumption,
+                    equipment_basis=equipment_basis,
+                )
             except ValueError as exc:
                 _render_stop(
                     ShorteningStop(
@@ -955,6 +964,22 @@ def _card_order(
     return ranked if matched else ranked[1:]
 
 
+def _empty_plan_line(plan: ShorteningPlan) -> tuple[str, str]:
+    """맞댄 공정이 없는 빈 결과 줄과 풍선 — Static 기준에서 Static 가용대수가 없어 뺀 공정만 있으면
+    그 까닭(보드 답 Q13 — 공정 이름은 「맞대지 못한 공정」 알림 표)."""
+    if plan.static_missing:
+        return (
+            "계산할 달에 Static 가용대수가 있는 공정이 없습니다.",
+            "Static 기준은 기준 정보 월별 가용대수(활성 시나리오)로 현재 일정을 역산합니다 — 그 "
+            "표에 없는 공정은 계산하지 않습니다. 조건 카드 맨 위를 설비 마스터로 바꾸면 설비 "
+            "마스터 Qual일정으로 봅니다.",
+        )
+    return (
+        "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 없습니다.",
+        MATCH_RULE_HELP,
+    )
+
+
 def _scenario_error_text(reason: str | None) -> str:
     return "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다." + (
         f"\n\n{reason}" if reason else ""
@@ -1019,13 +1044,13 @@ def basis_text(today: date, basis: str | None = None) -> str:
     return f"{supply_label(chosen)} · 오늘 {today:%Y-%m-%d}"
 
 
-def _render_basis(today: date) -> None:
+def _render_basis(today: date, basis: str | None = None) -> None:
     """기준 값 작은 글(`basis_text`) — 가로 줄 안에서 부르는 값
     글(`profile_caption.render_row_value` 의 `"push"`). 글은 늘지도 줄지도 않는 한 덩이로 줄 오른쪽
     끝에 서고, 앞 칸들 곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은 자리에서 두
     줄로 접히지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 미는 서식은 같은 캡션 마크다운에
     실려 이 프래그먼트 갈래마다 이벤트 칸 자리 수가 바뀌지 않는다. 글은 앱이 지은 것이다(날짜)."""
-    render_row_value(basis_text(today), place="push")
+    render_row_value(basis_text(today, basis), place="push")
 
 
 def _render_month_range(
@@ -1539,6 +1564,8 @@ def _render_downloads(
     today: date | None = None,
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
+    기준 값 글은 넘겨받은 계획(`keyed`)의 현재 일정 기준이다 — 진척 비교가 전환과 다른 기준의 계획을
+    보일 때도 보이는 숫자와 같은 기준을 적는다.
 
     `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다. `today` 가
     있으면 그 줄 오른쪽 끝에 기준 값 작은 글을 둔다(`_render_basis`) — 본문 맨 위에 따로 줄을
@@ -1578,7 +1605,7 @@ def _render_downloads(
         if extra is not None:
             extra()
         if today is not None:
-            _render_basis(today)
+            _render_basis(today, keyed.plan.basis)
 
 
 def _save_context(

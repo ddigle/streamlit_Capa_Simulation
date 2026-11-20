@@ -182,6 +182,30 @@ def test_the_layer_marks_only_shortened_units_of_the_chosen_target() -> None:
     assert not narrow.marks["WB01"].imminent
 
 
+def test_a_spare_unit_without_a_current_date_is_painted_as_needed() -> None:
+    """Static 기준의 남는 호기(현재 일정 없이 당긴 「단축」 줄 — 2026-11-20 보드 답 Q11 (가))는
+    실제 호기라 도면에 칠한다 — 배지 「필요」 · 가장 큰 구간 색, 층 목록 표의 단축(일)은 빈칸."""
+    from capa_simulation.components.space_shortening_view import _mark_frame
+
+    plan = _plan(
+        {1.1: [_unit("W/B", "WB01", days=12, left=5), _unit("W/B", "WB07", days=None, left=9)]},
+        [_master_row("WB01", "W/B", "C1", "2F"), _master_row("WB07", "W/B", "C1", "2F")],
+    )
+    layer = build_shortening_layer(plan, 1.1, today=plan.today, imminent_days=30)
+    spare = layer.marks["WB07"]
+    assert (spare.days, spare.original_qual, spare.bucket) == (None, None, BUCKET_LARGE)
+    assert (spare.main_text, spare.sub_text) == ("필요", "D-9")
+    assert "현재 일정 없음(남는 호기) → 필요" in spare.tip
+    rows = _rows([("WB01", None, "W/B", "C1", "2F"), ("WB07", None, "W/B", "C1", "2F")])
+    result = floor_layer(layer, rows, EMPTY_ROWS, focus=None, dim_others=True)
+    assert {badge["key"] for badge in result.badges} == {"WB01", "WB07"}
+    assert result.counts == {BUCKET_MEDIUM: 1, BUCKET_LARGE: 1}
+    frame = _mark_frame([layer.marks["WB01"], spare], {})
+    assert frame["단축(일)"].tolist()[0] == 12 and pd.isna(frame["단축(일)"].tolist()[1])
+    summary = fab_layer_summary(layer, rows, processes=None)
+    assert summary.max_days == 12
+
+
 # ------------------------------------------------------------------ T-U3 모듈 묶음 배지 하나
 
 

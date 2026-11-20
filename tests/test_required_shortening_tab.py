@@ -1802,6 +1802,10 @@ def test_static_without_a_static_table_lists_every_process_as_static_missing(
     assert note is not None
     frame = table_frame(note_table(note, "맞대지 못한 공정"))
     assert "Static 가용 없음" in set(frame["구분"])
+    assert any(
+        "계산할 달에 Static 가용대수가 있는 공정이 없습니다." in str(item.value)
+        for item in app.caption
+    )
 
 
 def test_a_leftover_unit_row_reads_needed_with_its_master_date_dimmed() -> None:

@@ -21,7 +21,7 @@ import streamlit.elements.lib.policies as policies
 from alert_marks import flashed
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, TextInput
-from test_required_shortening_tab import _choose_level, _csv, _database, _html, _run
+from test_required_shortening_tab import _choose_level, _csv, _database, _html, _run, _run_static
 
 from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -30,6 +30,7 @@ from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
+from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -534,3 +535,27 @@ def test_a_past_baseline_target_without_a_finished_qual_is_flagged_as_delayed(
     assert "기준선 대비" in board.columns and "이행 지연" in board.columns
     assert int(board["이행 지연"].sum()) == 1
     clear_equipment_repository()
+
+
+def test_a_baseline_keeps_its_basis_and_is_compared_on_that_basis(tmp_path: Path) -> None:
+    """보드 답 Q14 (가) — 기준선은 그때 현재 일정 기준(처음 Static)을 남기고, 전환을 설비 마스터로
+    바꿔도 진척 비교는 그 기준선과 같은 기준(Static)의 계획과 견준다. 요약 기준선 칸에 기준 한 마디,
+    기준 값 글도 보이는 계획의 기준이다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run_static(database_path)
+    assert app.session_state[SHORTENING_BASIS_KEY] == "Static"
+    app = _name_input(app).set_value("Static 기준선").run()
+    app = _save_button(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    assert stored.schedule_basis == "Static"
+
+    app = app.sidebar.button_group(key=SHORTENING_BASIS_KEY).set_value("설비 마스터").run()
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+    body = _html(app)
+    assert "현재 일정 기준 Static — 이 기준으로 견줌(전환은 설비 마스터)" in body
+    captions = [str(item.value) for item in app.caption]
+    assert any("Static 역산 가용(환산) · 오늘" in caption for caption in captions)
+    # 같은 기준이면 견줄 것이 없다 — 변동 없음.
+    assert "변동 없음" in body
