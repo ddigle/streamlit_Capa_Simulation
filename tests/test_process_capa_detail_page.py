@@ -128,8 +128,18 @@ DYNAMIC_PROCESS = "DEMO_Chip_Attach"
 OFFICIAL_BADGE = "Static · Core Data"
 
 
-def _page_script(database_path: Path, equipment_path: Path, *, fail_bootstrap: bool = False) -> str:
+def _page_script(
+    database_path: Path,
+    equipment_path: Path,
+    *,
+    fail_bootstrap: bool = False,
+    today: date | None = None,
+) -> str:
     """`fail_bootstrap` 이면 공통 진입(`load_page_context`)이 오류를 내는 회차를 흉내 낸다.
+
+    `today` 를 주면 페이지의 오늘 한 줄(`today = date.today()` — 설비 일정 계획 · 일정 부족 달
+    판정이 받는 날)만 그날로 박는다. 다른 모듈의 오늘은 그대로다. 시드 축이 2026년 열두 달이라
+    실제 날짜가 넘어가면 일정 부족 달이 지난 달이 되는 시험이 쓴다.
 
     내려받기 단추는 받은 바이트를 세션 `captured_downloads` 에 적어 둔다(시험이 CSV 를 읽는다).
     페이지 링크(`st.page_link`)는 인자를 세션 `captured_page_links` 에 적은 뒤 원본을 부른다 — 단독
@@ -200,8 +210,17 @@ try:
     apply_pending_scenario_preset()
 
     source = Path({str(PAGE)!r})
+    page_source = source.read_text(encoding="utf-8")
+    pinned_today = {None if today is None else today.isoformat()!r}
+    if pinned_today is not None:
+        today_line = "\\ntoday = date.today()\\n"
+        # 페이지의 오늘 줄이 바뀌면 여기서 멈춘다 — 시험의 날짜 고정을 그 줄에 맞춘다.
+        assert page_source.count(today_line) == 1, today_line
+        page_source = page_source.replace(
+            today_line, f"\\ntoday = date.fromisoformat({{pinned_today!r}})\\n", 1
+        )
     exec(
-        compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+        compile(page_source, str(source), "exec"),
         {{"__name__": "__main__"}},
     )
 finally:
@@ -229,7 +248,8 @@ def dynamic_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, P
 
     기존보유가 없고 신규 호기 둘의 Qual 이 축 끝 무렵이라, 그 앞 달은 설비 일정 기준 가용이 0 이다
     (목표 미달 → 단축 계획). 한 호기에는 비가동을 둬 ④ 화살표가 선다. 오늘(실제 날짜)이 축을 지나면
-    모든 달이 「기한 지남」이 되지만 구획은 그대로 선다 — 시험은 개수를 단언하지 않는다.
+    모든 달이 「기한 지남」이 되지만 구획은 그대로 선다 — 시험은 개수를 단언하지 않는다. 일정 부족
+    달을 여는 시험만 페이지의 오늘을 `SCHEDULE_SHORT_TODAY` 로 박는다.
     """
     return _dynamic_pair(tmp_path_factory.mktemp("process_capa_detail_dynamic"))
 
@@ -254,9 +274,11 @@ def _dynamic_pair(root: Path) -> tuple[Path, Path]:
     return root / "scenario.duckdb", equipment_path
 
 
-def _app(databases: tuple[Path, Path], *, fail_bootstrap: bool = False) -> AppTest:
+def _app(
+    databases: tuple[Path, Path], *, fail_bootstrap: bool = False, today: date | None = None
+) -> AppTest:
     return AppTest.from_string(
-        _page_script(*databases, fail_bootstrap=fail_bootstrap), default_timeout=300
+        _page_script(*databases, fail_bootstrap=fail_bootstrap, today=today), default_timeout=300
     )
 
 
@@ -1026,8 +1048,8 @@ def test_the_investment_mark_stands_in_the_evidence_panel_of_an_owned_shortfall_
 # ------------------------------------------------------------------ 설비 일정(참고)
 
 
-def _dynamic_app(dynamic_databases: tuple[Path, Path]) -> AppTest:
-    app = _app(dynamic_databases)
+def _dynamic_app(dynamic_databases: tuple[Path, Path], *, today: date | None = None) -> AppTest:
+    app = _app(dynamic_databases, today=today)
     app.query_params["process"] = DYNAMIC_PROCESS
     return _ok(app.run())
 
@@ -1361,6 +1383,13 @@ def _buttons(app: AppTest) -> set[str]:
     return {str(button.key) for button in app.button}
 
 
+# 일정 부족 달을 여는 시험의 오늘 — `dynamic_databases` 의 기여 호기가 없는 26.11 이 설비 일정 기준
+# 미달 달이고(첫 호기 Qual 26.12.10), 오늘이 든 생산월(Cut-off 10일 — 26.11)이라 단축 대상으로
+# 센다. 실제 날짜로 두면 26.11.21 부터 오늘이 든 생산월이 26.12 라 26.11 이 지난 달이 되어 셀 달이
+# 없다(시드 축이 2026년 열두 달이라 날짜를 옮겨 맞출 수도 없다).
+SCHEDULE_SHORT_TODAY = date(2026, 11, 2)
+
+
 def _open_schedule_short_month(app: AppTest) -> int:
     """근거 패널에 「이 달 일정 부족 — 필요 단축 일정」 이 서는 달을 골라 연다(그 달을 돌려준다)."""
     for month in _months(app):
@@ -1378,7 +1407,7 @@ def test_the_kpi_has_no_next_screen_row_and_the_closing_link_stands_on_a_short_p
     일정 부족 달이 있는 공정에도 맨 아래 링크가 선다 — 근거 패널의 그 달 단추가 서지 않는 달을
     보고 있어도 길이 남는다(2026-11-10 답 Q2-8 — 설계 규칙 UI-LAY-12 예외). 내려받기 둘은
     그대로다."""
-    app = _dynamic_app(dynamic_databases)
+    app = _dynamic_app(dynamic_databases, today=SCHEDULE_SHORT_TODAY)
 
     assert not any("개월 — " in str(button.label) for button in app.button), [
         str(button.label) for button in app.button
@@ -1502,7 +1531,7 @@ def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
 
     단독 실행이라 갈 페이지가 없어 옮기지는 않는다(`StreamlitPageNotFoundError` 를 삼킨다).
     """
-    app = _dynamic_app(dynamic_databases)
+    app = _dynamic_app(dynamic_databases, today=SCHEDULE_SHORT_TODAY)
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     before = repository.load_shortening_filter_profile()
     _open_schedule_short_month(app)
