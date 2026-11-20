@@ -38,16 +38,19 @@
   쓰는 중이거나 Enter 직후에 누르면 그 편집 회차가 돌아오기 전이라 확인 없이 옮겼다. JS 가 그 편집
   회차가 돌아올 때까지 누름을 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 편집표는 glide 격자와
   그림자 DOM Components v2 편집 칸(`EDIT_HOST_KEYS` — data `grids`, 설비 마스터 표·오른쪽 칸과 기준
-  정보 편집 그리드, 시나리오 목록 표)이다. 기준 정보 그리드 초안은 세션 칸이라 떠나도 남아 묻지
-  않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다. 붙들기가 끝난 뒤 떠나는 화면이
-  보내는 메시지(편집표가 접힌 편집을 걷고 0.15초 뒤 보내는 상태)는 회차 표지로 보이지 않는다 —
-  그 메시지가 옮긴 화면을 덮지 않게 서버가 회차 맨 앞에서 거른다(`stale_page_guard`).
+  정보 · 생산 계획 · 접속 명단 편집 그리드, 시나리오 목록 표)이다. 기준 정보 그리드 초안은 세션
+  칸이라 떠나도 남아 묻지 않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다. 붙들기가
+  끝난 뒤 떠나는 화면이 보내는 메시지(편집표가 접힌 편집을 걷고 0.15초 뒤 보내는 상태)는 회차 표지로
+  보이지 않는다 — 그 메시지가 옮긴 화면을 덮지 않게 서버가 회차 맨 앞에서
+  거른다(`stale_page_guard`).
 - **떠나는 누름은 먼저 떠나기 신호를 쏜다**(AGENTS 9장 「구역 회차 규칙」 R8). 탭 고르기 · 지금 탭
   닫기 · 사이드바 화면 링크 · 테마 단추 · 알림 칸 「그 화면으로」 는 붙들기 판정 전에 창 사건
   `capa-leaving`(`grid_shared_assets/leave.js` — 등록 글이 탭 줄 JS 앞에 잇는다)을 쏜다. 묶어 보내던
   편집기는 그 자리에서 남은 op 를 보내고 ack 가 올 때까지 떠나기 명부에 busy 다 — 붙들기는 busy 가
   걷히고 회차가 끝날 때까지(길어야 `BUSY_MS`) 기다린다. busy 였다가 걷힌 붙들기는 새 data 를 0.4초
-  기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
+  기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다). 사이드바 화면 링크도
+  탭 줄과 같은 떠나기 확인(`leave` — 가용설비 현황 작은 편집표 둘 포함)을 묻는다 — 붙든 누름은 다시
+  누를 때 묻는다.
 - **탭 누름은 한 번에 하나.** 다른 탭 고르기·지금 탭 닫기는 트리거를 보내기 전에 JS 가 누름
   기다림을 건다. 옮긴 화면의 탭 줄이 오고 그 회차가 다 돌거나 탭 줄이 온 뒤 1초가 지나기 전에 누른
   탭은 마지막 것만 기다렸다 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 누름은 프런트가 떠나는
@@ -227,12 +230,16 @@ WIP_TITLE = "구현 중"
 WIP_SOURCE = " — {source} 미연결"
 WIP_SAMPLE = " · 화면은 합성 샘플로 미리 봄"
 
+# 접속 명단 편집 그리드의 호스트 key(`access_list_grid.HOST` — 그 모듈은 읽을 때 범용 편집 그리드를
+# 등록해 여기서 불러오지 않는다. 같은지는 시험이 본다).
+ACCESS_LIST_GRID_HOST: Final = "admin-access-grid"
 # 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비 마스터
-# 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 · 생산 계획 범용 편집
-# 그리드(`reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS`). 그림자 DOM 이라 JS 가 바깥 key
-# 칸(`.st-key-<key>`)으로 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지
-# 않는다 — key 가 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집
-# 칸을 새로 두면 여기에 더한다.
+# 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 · 생산 계획 · 접속
+# 명단 범용 편집 그리드(`reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS` ·
+# `ACCESS_LIST_GRID_HOST`), 시나리오 목록 표. 그림자 DOM 이라 JS 가 바깥 key 칸(`.st-key-<key>`)으로
+# 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지 않는다 — key 가
+# 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면
+# 여기에 더한다.
 EDIT_HOST_KEYS: Final = (
     "equipment_grid_table",
     "equipment_grid_side_detail",
@@ -240,6 +247,7 @@ EDIT_HOST_KEYS: Final = (
     "equipment_grid_side_changes",
     REFERENCE_GRID_HOST,
     *PLAN_GRID_HOSTS.values(),
+    ACCESS_LIST_GRID_HOST,
     *MOUNT_KEYS,
 )
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name

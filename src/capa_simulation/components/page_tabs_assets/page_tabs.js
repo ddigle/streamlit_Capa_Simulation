@@ -26,7 +26,8 @@
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
 // 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`). 사이드바 화면 링크도 같다 — 터치 톡은 초점이 빠지며 나간 표의 출납
-// 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누른다.
+// 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누르고, 그때 탭 줄과
+// 같은 떠나기 확인(`leave`)을 묻는다.
 // 떠나는 누름은 붙들기 판정 **전에** 떠나기 신호(`capa-leaving` — `grid_shared_assets/leave.js`, 등록 글이 이 파일 앞에 잇는다)를
 // 쏜다. 편집기는 묶어 두던 op 를 곧바로 보내고 ack 가 올 때까지 명부에 busy 다 — 손을 뗀 지 오래된 누름이어도 busy 면 붙들고,
 // busy 가 걷히고 회차가 끝날 때까지 기다린다. 명부에 오른 편집기가 busy 였다가 걷힌 붙들기는 「새 data 가 올 때까지 0.4초」 를
@@ -1565,8 +1566,20 @@ export default function (component) {
           return
         }
       }
+      // 상한 거름이 연 탭 표지(`S.linkFlight`)를 적기 전 값 — 떠나기 확인을 취소하면 되돌린다.
+      const before = S.linkFlight
       const why = refusal(href.split(/[?#]/)[0])
       if (!why) {
+        // 지금 화면에 적용하지 않은 편집표 편집(`leave` — 가용설비 현황 작은 편집표 둘 포함)이 있으면 탭 줄과 같은 확인을 묻는다.
+        // 붙든 누름은 다시 누를 때(새 data) 묻는다. 지금 화면의 링크는 떠나지 않는다.
+        const here = S.items.get(S.data.active)
+        const staying = here !== undefined && linkPath(href) === linkPath(here.__href)
+        if (!staying && !leaveOk()) {
+          S.linkFlight = before
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         if (opened) opened()
         return
       }

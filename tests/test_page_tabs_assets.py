@@ -388,7 +388,11 @@ def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() ->
     link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
     assert link.index("const opened = S.linkOpened") < link.index("if (event.defaultPrevented")
     assert "gate.hold(() => replayLink(href, opened))" in link
-    assert "if (!why) {\n        if (opened) opened()\n        return\n      }" in link
+    # 상한을 지난 링크 누름은 떠나기 확인을 지난 뒤에만 알린다 — 취소하면 열기 표지를 되돌리고
+    # 부르지 않는다.
+    passed = link[link.index("if (!why) {") : link.index("flash('limit', why)")]
+    assert passed.index("!leaveOk()") < passed.index("S.linkFlight = before")
+    assert passed.index("S.linkFlight = before") < passed.index("if (opened) opened()")
     assert link.index("if (opened) opened()") < link.index("flash('limit', why)")
     replay = JS[JS.index("const replayLink = (href, opened) => {") :]
     replay = replay[: replay.index("\n    }\n")]
@@ -2042,17 +2046,20 @@ def test_the_equipment_master_grid_and_its_side_panels_count_as_edit_tables() ->
     · 생산 계획 범용 편집 그리드의 호스트 key, 시나리오 목록 표 셋이다 — 그 모듈의 key 를 바꾸면 이
     묶음도 같이 바뀌어야 한다(`page_tabs` 는 읽을 때 컴포넌트를 등록하는 그 모듈을 불러오지 않는다).
     탭 줄 data 의 `grids` 로 실려 JS 가 그릴 때마다 선택자를 다시 짓는다."""
+    from capa_simulation.components import access_list_grid
     from capa_simulation.components import equipment_master_grid as emg
     from capa_simulation.components.scenario_list_state import MOUNT_KEYS
     from capa_simulation.page_tabs_state import INITIAL_STRIP
     from capa_simulation.plan_grid_keys import HOSTS
     from capa_simulation.reference_grid_keys import GRID_HOST
 
+    assert page_tabs.ACCESS_LIST_GRID_HOST == access_list_grid.HOST
     assert set(page_tabs.EDIT_HOST_KEYS) == {
         emg.GRID_KEY,
         *(emg.side_key(panel) for panel in emg.SIDE_PANELS),
         GRID_HOST,
         *HOSTS.values(),
+        access_list_grid.HOST,
         *MOUNT_KEYS,
     }
     assert emg.LOADER_KEY not in page_tabs.EDIT_HOST_KEYS
@@ -2400,3 +2407,21 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     assert out["capEarly"] == ["flush"]
     assert out["capLate"] == ["flush", "theme"]
     assert out["dropped"] == ["theme@0"]
+
+
+def test_a_sidebar_link_asks_the_same_leave_question_once_on_its_replay() -> None:
+    """사이드바 화면 링크도 탭 줄과 같은 떠나기 확인(`leave` — 가용설비 현황 작은 편집표 둘의 적용
+    안 한 편집 포함)을 묻는다 — 붙든 누름은 막고 다시 누를 때(새 data) 한 번 묻는다. 상한 거름이
+    적은 열기 표지는 취소하면 되돌리고, 지금 화면의 링크는 묻지 않는다. 알림 칸 「그 화면으로」 의
+    링크 누름도 같은 처리기라 한 번만 묻는다."""
+    link = JS[JS.index("S.onLink = (event) => {") :]
+    link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
+    held = link[link.index("gate.hold(") : link.index("refusal(")]
+    assert "leaveOk" not in held, "붙든 누름에서는 묻지 않는다"
+    passed = link[link.index("if (!why) {") : link.index("flash('limit', why)")]
+    assert "linkPath(href) === linkPath(here.__href)" in passed
+    assert "if (!staying && !leaveOk())" in passed
+    assert link.index("const before = S.linkFlight") < link.index("refusal(")
+    opener = JS[JS.index("S.onOpenPage = (event) => {") :]
+    opener = opener[: opener.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
+    assert "leaveOk" not in opener
