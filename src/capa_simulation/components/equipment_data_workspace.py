@@ -230,10 +230,15 @@ GRID_DETAIL_KEY = "equipment_grid_detail_v1"
 NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
 # 제 「리비전 저장」 이음 표지 — 저장 누름이 DB 쓰기 **전에** 적는 dict 칸(쓰기 뒤에는 그 dict 만
 # 고친다 — 끊겨도 남는다). 저장 직전 편집본에 그렸으나 그 저장 뒤에 닿은 표 op 를 버리지 않고 저장본
-# 위에 얹는 재료다(`carry_own_save_ops`).
+# 위에 얹는 재료다 — 출납으로 다시 온 op 는 `equipment_master_tab._carried` 가 옮겨 얹고, 쓰는 사이
+# 옛 편집본에 이미 얹힌 op 는 `note_late_ops` 가 남겼다가 `take_late_ops` 가 꺼낸다. 같은 출발점에서
+# 쓰기 시작했거나 쓴 표지는 둘째 누름이 다시 적지 않는다(`stage_own_save_carry`).
 # {"from": 저장한 편집본 출발점, "ids": 저장 뒤 행 id 지도(`save_id_map` — 지운 호기 None),
-#  "applied": 마운트별 저장에 든 마지막 seq, "written": 쓰기가 됐는가, "froms": 이어 받는 옛 출발점,
-#  "to": 이어 받는 지금 출발점, "to_seeded": 그 편집본의 씨뿌린 세대}.
+#  "applied": 마운트별 저장에 든 마지막 seq, "at": 적은 때(`time.monotonic` — `late` 를 남기는 창
+#  `LATE_OPS_WINDOW_SECONDS` 의 시작), "writing": 저장소 쓰기를 시작했는가, "written": 쓰기가
+#  됐는가, "late": 적은 뒤 · 다시 세우기 전에 그 편집본에 얹은 op, "froms": 이어 받는 옛 출발점,
+#  "to": 이어 받는 지금 출발점, "to_seeded": 그 편집본의 씨뿌린 세대, "rewind": 이어 받은 뒤
+#  `late` 를 아직 안 꺼냄}.
 OWN_SAVE_CARRY_KEY = "equipment_grid_own_save_carry_v1"
 # 남의 저장으로 다시 세운 편집본의 옛 출발점(최근 몇 개) — 그 출발점에서 온 op 를 버릴 때 그
 # 까닭으로 알린다.
