@@ -114,7 +114,7 @@ _EDITOR_RUNNER = """
   }
   // 창 대역 — 사건 처리기 수를 센다(다시 불러도 늘지 않는가).
   const win = new EventTarget()
-  win.CustomEvent = CustomEvent
+  win.CustomEvent = globalThis.CustomEvent || class extends Event {}
   let listeners = 0
   const add = win.addEventListener.bind(win)
   const remove = win.removeEventListener.bind(win)

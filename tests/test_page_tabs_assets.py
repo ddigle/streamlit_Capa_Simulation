@@ -2267,7 +2267,7 @@ _BUSY_GATE_RUNNER = """
   const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
   const window = new EventTarget()
   window.location = { pathname: '/list' }
-  window.CustomEvent = CustomEvent
+  window.CustomEvent = globalThis.CustomEvent || class extends Event {}
   %(constants)s
   const mount = (S, log) => {
     const setAttr = (element, name, value) => { if (element) element[name] = value }
@@ -2425,3 +2425,93 @@ def test_a_sidebar_link_asks_the_same_leave_question_once_on_its_replay() -> Non
     opener = JS[JS.index("S.onOpenPage = (event) => {") :]
     opener = opener[: opener.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
     assert "leaveOk" not in opener
+
+
+_LINK_LEAVE_RUNNER = """
+(() => {
+  const PAGE_LINK = 'a.page-link'
+  let confirms = 0
+  let answer = true
+  const window = { __capaLeaveGate: null, confirm: () => { confirms += 1; return answer } }
+  const links = []
+  const document = { querySelectorAll: () => links }
+  const S = {
+    linkReplay: null, linkOpened: null, linkFlight: null,
+    items: new Map([['a', { __href: 'page_a' }]]), data: { active: 'a', leave: '' },
+  }
+  const leaveOk = () => !S.data.leave || window.confirm('?')
+  const flashes = []
+  const flash = (kind) => flashes.push(kind)
+  let refused = ''
+  // 상한 거름 대역 — 진짜처럼 지나 보내는 누름의 열기 표지를 적는다.
+  const refusal = (href) => {
+    if (!refused) S.linkFlight = { href }
+    return refused
+  }
+  %(link_path)s
+  %(slice)s
+  const press = (href) => {
+    const event = {
+      button: 0, defaultPrevented: false, prevented: false,
+      target: { closest: () => ({ getAttribute: () => href, target: '' }) },
+      preventDefault() { this.prevented = true },
+      stopPropagation() {},
+    }
+    S.onLink(event)
+    return event.prevented
+  }
+  const reset = (leave) => {
+    confirms = 0
+    answer = true
+    refused = ''
+    S.linkFlight = null
+    S.linkReplay = null
+    S.data = { active: 'a', leave }
+    window.__capaLeaveGate = null
+  }
+  const out = {}
+  reset('')
+  out.clean = [press('page_b'), confirms]
+  reset('비가동 일정')
+  answer = false
+  out.cancel = [press('page_b'), confirms, S.linkFlight]
+  reset('비가동 일정')
+  out.accept = [press('page_b'), confirms, S.linkFlight && S.linkFlight.href]
+  reset('비가동 일정')
+  out.samePage = [press('page_a'), confirms]
+  reset('비가동 일정')
+  refused = '상한'
+  out.limit = [press('page_b'), confirms, flashes.slice()]
+  // 붙든 누름 — 막고 묻지 않는다. 다시 누를 때(같은 링크) 한 번 묻는다.
+  reset('비가동 일정')
+  let held = null
+  window.__capaLeaveGate = { hold: (fn) => { held = fn; return true } }
+  links.push({ getAttribute: () => 'page_b', click: () => press('page_b') })
+  out.held = [press('page_b'), confirms]
+  held()
+  out.replayed = [confirms, S.linkReplay]
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_sidebar_link_leave_question_runs_once_and_restores_the_open_mark_on_cancel() -> None:
+    """사이드바 화면 링크 처리기(`S.onLink`)를 탭 줄 JS 그대로 node 에서 돌린다 — 적용 안 한 편집이
+    없으면 묻지 않고, 있으면 다른 화면 링크에서 한 번 묻는다. 취소하면 누름을 막고 상한 거름의 열기
+    표지를 되돌린다. 지금 화면의 링크 · 상한에 걸린 링크는 묻지 않는다. 붙든 누름은 묻지 않고 다시
+    누를 때 한 번 묻는다."""
+    link_path = re.search(r"^function linkPath\(href\) \{\n.*?\n\}\n", JS, re.M | re.S)
+    assert link_path is not None
+    start = JS.index("    const replayLink = (href, opened) => {")
+    end = JS.index("    document.addEventListener('click', S.onLink, true)")
+    runner = _LINK_LEAVE_RUNNER % {"link_path": link_path.group(0), "slice": JS[start:end]}
+
+    out = _node(runner, prelude="")
+
+    assert out["clean"] == [False, 0]
+    assert out["cancel"] == [True, 1, None]
+    assert out["accept"] == [False, 1, "page_b"]
+    assert out["samePage"] == [False, 0]
+    assert out["limit"] == [True, 0, ["limit"]]
+    assert out["held"] == [True, 0]
+    assert out["replayed"] == [1, None]
