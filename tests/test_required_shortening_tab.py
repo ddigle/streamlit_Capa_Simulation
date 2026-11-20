@@ -1987,3 +1987,29 @@ def test_a_leftover_unit_row_reads_needed_with_its_master_date_dimmed() -> None:
     assert '<span class="shk-new">남는 호기</span>' in visible
     assert 'class="shk-other"' in markup
     assert "설비 마스터 Qual 2027-05-10" in markup
+
+
+def test_a_shortened_unit_row_on_the_master_basis_names_the_static_date_in_its_tooltip() -> None:
+    """설비 마스터 기준의 호기 줄 — 흐린 ○ 는 Static 역산 일정이고, 그 이름 · 날짜는 줄 풍선에
+    선다(줄 위 범례 글은 없다 — 표지의 뜻은 Guide 「호기 줄 표지」)."""
+    row: dict[str, Any] = {
+        "공정": "Die Attach",
+        "호기": "U3",
+        "구분": KIND_SHORTENED,
+        "기존 Qual": date(2027, 4, 20),
+        "목표 Qual": date(2027, 2, 24),
+        "기여 시작": date(2027, 2, 25),
+        "단축일수": 55,
+        "늘어난 환산대수": 0.806,
+        "대상 월": 202703,
+        "해소 기여 월": "202703",
+        "모듈 수": 1,
+    }
+    axis = (date(2027, 1, 1), date(2027, 6, 1))
+    markup = _unit_row(
+        row, axis, "", today=date(2026, 11, 20), other=date(2027, 5, 10), basis=BASIS_MASTER
+    )
+
+    assert 'class="shk-other"' in markup
+    assert f"{other_mark_label(BASIS_MASTER)} 2027-05-10" in markup
+    assert other_mark_label(BASIS_STATIC) not in markup
