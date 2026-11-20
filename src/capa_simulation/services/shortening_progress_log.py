@@ -263,9 +263,10 @@ def screen_shortening_days(units: pd.DataFrame, processes: Sequence[str]) -> int
     """지금 화면의 단축 필요일수 합계 — 고른 목표의 계획(`LevelPlan.units`)에서 범위 공정의 당긴
     호기(`구분` 「단축」) 단축일수 합이다(가상 호기 「추가N」 은 일수가 없다).
 
-    「이번 주 값 넣기」 가 이 값 하나를 쓴다. 진척 비교 요약의 지금
-    합계(`ProgressSummary.current_days`) 는 기준선 대비 필요 시점이 지난 행을 따로 빼 두므로 이 값은
-    그 합 + `lapsed_current_days` 와 같다(시험이 맞댄다)."""
+    「이번 주 값 넣기」 가 이 값 하나를 쓴다 — 진척 비교(기준선)와 상관없는 값이다. 진척 비교 요약의
+    지금 합계(`ProgressSummary.current_days`) 는 기준선 대비 필요 시점이 지난 행과 기준이 바뀐 행(한
+    시점만 남는 호기)을 따로 빼 두므로 이 값은 그 합 + `lapsed_current_days` +
+    `rebased_current_days` 와 같다(시험이 맞댄다)."""
     if units.empty:
         return 0
     chosen = units.loc[units["공정"].isin(list(processes)) & units["구분"].eq(KIND_SHORTENED)]

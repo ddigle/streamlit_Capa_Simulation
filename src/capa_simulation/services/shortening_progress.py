@@ -30,6 +30,7 @@ Qual 이 끝난다)이고, 단축일수 = 확보 − 필요다.
 | 과거에만 | `해소` — 지금 계획에서는 단축 대상이 아니다(가상 호기면 신규 투자가 필요 없다) |
 | 기준선 공정이 지금 맞댄 공정에 없음 | `지금 범위 밖` — 짝짓지 않는다(해소가 아니다) |
 | 과거 필요 시점이 지금의 오늘보다 앞 | `필요 시점 지남` — 견주지 않는다(아래) |
+| 둘 다 있는 당긴 호기, 한쪽만 확보 시점 없음 | `기준 바뀜` — 견주지 않는다(아래) |
 
 **필요 시점 지남.** 지금 계획은 오늘보다 앞으로 당길 수 없다(`required_shortening` 의 바닥이
 `max(구간 시작, 오늘)`). 그래서 기준선을 저장한 뒤 오늘이 지나 과거 필요 시점이 오늘보다 앞이 된
@@ -39,9 +40,20 @@ Qual 이 끝난다)이고, 단축일수 = 확보 − 필요다.
 지난 추가N 은 홀로 서고 남은 추가N 끼리 차례로 짝짓는다(지금 계획에는 오늘보다 앞의 신규 필요가
 없다).
 
+**기준 바뀜**(2026-11-20 결과 보드 여쭘-4 a). Static 기준의 남는 호기(구분 `단축` 인데 확보 시점 ·
+단축일수가 없는 줄 — 현재 일정 없음)는 단축일수를 0일로 셀 수 없다. 그래서 같은 호기가 한 시점에서는
+남는 호기이고 다른 시점에서는 날짜를 받은 호기면(어느 쪽이든) 진척이 아니라 견주는 범위가 바뀐
+것으로 보고 `기준 바뀜` 으로 둔다 — `필요 시점 지남` 과 같이 두 줄은 그대로 보이되
+증감·합계·대수에서 뺀다. 차례는 `지금 범위 밖` → `필요 시점 지남` → `기준 바뀜` 이다(필요 시점이
+지난 호기는 날짜를 받았어도 `필요 시점 지남` — 그 몫은 `lapsed_current_days` 하나에만 든다). 그 밖의
+남는 호기 짝은 그대로다 — 두 시점 모두 남는 호기면 양쪽 0일이라 `변동 없음`(필요 시점 이동만
+적는다), 한쪽에만 있으면 `신규 필요`·`해소` 다. 가상 호기 「추가N」 은 차례끼리만 짝지어 이름 있는
+남는 호기와 섞이지 않는다. 판정은 행의 꼴(확보 시점이 있나)로만 한다 — 설비 마스터 기준 후보는 Qual
+일정이 있어야 들어 남는 호기가 없고, 화면은 늘 기준선과 같은 현재 일정 기준의 계획과 견준다.
+
 `단축일수 증감` 은 현재 − 과거(음수가 줄임)이고, 한쪽에만 있는 당긴 호기는 없는 쪽을 0일로 센다 —
-그래서 공정·전체의 증감이 그대로 합계의 차이다(`필요 시점 지남` 은 양쪽 합계에서 함께 뺀다). 가상
-호기는 단축일수가 없어 비운다.
+그래서 공정·전체의 증감이 그대로 합계의 차이다(`필요 시점 지남` · `기준 바뀜` 은 양쪽 합계에서 함께
+뺀다). 가상 호기는 단축일수가 없어 비운다.
 """
 
 from __future__ import annotations
@@ -70,6 +82,7 @@ __all__ = [
     "PROGRESS_LAPSED",
     "PROGRESS_NEW",
     "PROGRESS_OUT_OF_SCOPE",
+    "PROGRESS_REBASED",
     "PROGRESS_RESOLVED",
     "PROGRESS_UNCHANGED",
     "PROGRESS_WORSENED",
@@ -90,6 +103,7 @@ PROGRESS_RESOLVED = "해소"
 PROGRESS_KEPT_NEW = "신규 유지"
 PROGRESS_OUT_OF_SCOPE = "지금 범위 밖"
 PROGRESS_LAPSED = "필요 시점 지남"
+PROGRESS_REBASED = "기준 바뀜"
 
 PROGRESS_COLUMNS = (
     "공정",
@@ -131,7 +145,9 @@ class ProgressSummary:
 
     `필요 시점 지남` 행은 일수·추가N 대수에서 양쪽 모두 뺀다 — `lapsed` 가 그 대수,
     `lapsed_current_days` 가 그 행들의 지금 단축일수 합(비교 안 함 화면의 합계와 맞춰 볼 수
-    있게)이다.
+    있게)이다. `기준 바뀜` 행도 일수에서 양쪽 모두 뺀다 — `rebased` 가 그 대수,
+    `rebased_current_days` 가 그 행들의 지금 단축일수 합이다(남는 호기 쪽은 0일). 그래서 비교 안 함
+    화면의 합계 = `current_days` + `lapsed_current_days` + `rebased_current_days` 다.
     """
 
     past_days: int = 0
@@ -147,6 +163,8 @@ class ProgressSummary:
     current_virtual: int = 0
     lapsed: int = 0
     lapsed_current_days: int = 0
+    rebased: int = 0
+    rebased_current_days: int = 0
 
     @property
     def change(self) -> int:
@@ -186,8 +204,8 @@ def compare_progress(
 
     `current_processes` 는 지금 계획이 맞댄 공정(`ShorteningPlan.processes`)이다 — 그 밖의 기준선
     공정은 `지금 범위 밖` 이다. `today` 는 지금 계획의 오늘(`ShorteningPlan.today`)이다 — 과거 필요
-    시점이 그보다 앞인 행은 `필요 시점 지남` 이다. 공정은 지금 맞댄 공정 차례, 그 뒤에 범위 밖
-    공정(기준선 차례)이다.
+    시점이 그보다 앞인 행은 `필요 시점 지남` 이다. 한 시점에서만 남는 호기(확보 시점 없음)인 당긴
+    호기는 `기준 바뀜` 이다. 공정은 지금 맞댄 공정 차례, 그 뒤에 범위 밖 공정(기준선 차례)이다.
     공정 안은 당긴 호기를 확보 시점(지금, 없으면 과거) → 호기 번호 차례로, 그 뒤에 가상 호기다.
     """
     scope = [str(process) for process in current_processes]
@@ -218,7 +236,8 @@ def summarize_progress(
         rows = rows.loc[rows["공정"].isin(list(processes))]
     status = rows["상태"]
     lapsed = status.eq(PROGRESS_LAPSED)
-    shortened = rows["구분"].eq(KIND_SHORTENED) & ~lapsed
+    rebased = status.eq(PROGRESS_REBASED)
+    shortened = rows["구분"].eq(KIND_SHORTENED) & ~lapsed & ~rebased
     virtual = rows["구분"].eq(KIND_NEW) & ~lapsed
     return ProgressSummary(
         past_days=_total(rows.loc[shortened, "과거 단축일수"]),
@@ -234,6 +253,8 @@ def summarize_progress(
         current_virtual=int((virtual & rows["현재 필요 시점"].notna()).sum()),
         lapsed=int(lapsed.sum()),
         lapsed_current_days=_total(rows.loc[lapsed, "현재 단축일수"]),
+        rebased=int(rebased.sum()),
+        rebased_current_days=_total(rows.loc[rebased, "현재 단축일수"]),
     )
 
 
@@ -372,10 +393,22 @@ def _row(
     past_secure, current_secure = _secure(past), _secure(current)
     past_days, current_days = _days(past), _days(current)
     lapsed = not out_of_scope and past_need is not None and past_need < today
+    # 한 시점은 남는 호기(확보 시점 없음), 다른 시점은 날짜를 받은 호기 — 진척이 아니라 범위가
+    # 바뀌었다.
+    rebased = (
+        shortened
+        and not out_of_scope
+        and not lapsed
+        and past is not None
+        and current is not None
+        and (past_secure is None) != (current_secure is None)
+    )
     if out_of_scope:
         status = PROGRESS_OUT_OF_SCOPE
     elif lapsed:
         status = PROGRESS_LAPSED
+    elif rebased:
+        status = PROGRESS_REBASED
     elif past is None:
         status = PROGRESS_NEW
     elif current is None:
@@ -391,7 +424,7 @@ def _row(
             if change > 0
             else PROGRESS_UNCHANGED
         )
-    compared = shortened and not out_of_scope and not lapsed
+    compared = shortened and not out_of_scope and not lapsed and not rebased
     delta = (current_days or 0) - (past_days or 0) if compared else None
     return {
         "공정": process,

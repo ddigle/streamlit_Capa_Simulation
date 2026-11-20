@@ -24,6 +24,7 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_LAPSED,
     PROGRESS_NEW,
     PROGRESS_OUT_OF_SCOPE,
+    PROGRESS_REBASED,
     PROGRESS_RESOLVED,
     PROGRESS_UNCHANGED,
     PROGRESS_WORSENED,
@@ -60,6 +61,19 @@ def _virtual(process: str, unit: str, need: date) -> dict[str, object]:
         "공정": process,
         "호기": unit,
         "구분": KIND_NEW,
+        "기존 Qual": None,
+        "목표 Qual": need,
+        "단축일수": None,
+        "모듈 수": 1,
+    }
+
+
+def _spare(process: str, unit: str, need: date) -> dict[str, object]:
+    """Static 기준의 남는 호기 — 당긴 「단축」 줄인데 확보 시점 · 단축일수가 없다(일정 없음)."""
+    return {
+        "공정": process,
+        "호기": unit,
+        "구분": KIND_SHORTENED,
         "기존 Qual": None,
         "목표 Qual": need,
         "단축일수": None,
@@ -425,3 +439,118 @@ def test_a_need_on_today_is_still_compared_and_a_virtual_unit_can_lapse() -> Non
     # 견준 것은 SMP-LG-11 과 추가N 한 쌍 — 지난 둘은 일수·추가N 대수 양쪽에서 빠진다.
     assert (summary.past_days, summary.current_days) == (64, 55)
     assert (summary.past_virtual, summary.current_virtual, summary.lapsed) == (1, 1, 2)
+
+
+# ------------------------------------------------------------------ 기준 바뀜(남는 호기 ↔ 날짜)
+
+
+def test_a_unit_that_was_or_became_a_static_spare_is_counted_apart_as_a_basis_change() -> None:
+    """결과 보드 여쭘-4 a — 남는 호기(현재 일정 없음)와 날짜를 받은 호기가 서로 바뀐 것은 진척이
+    아니라 범위 바뀜이다. `기준 바뀜` 으로 따로 세고 늘고 줆 · 합계 · 개선/악화 대수에서 뺀다.
+
+    네 방향: 남는 → 날짜(전에는 빈칸을 0일로 세어 「10일 늘어남」), 날짜 → 남는(전에는 「14일
+    줄임」), 남는 → 남는(양쪽 0일 — 변동 없음, 필요 시점 이동만), 날짜 → 날짜(그대로 견줌). 한쪽에만
+    있는 남는 호기는 해소 · 신규 필요 그대로이고, 추가N 은 차례끼리만 짝지어 이름 있는 남는 호기와
+    섞이지 않는다.
+    """
+    need = date(2027, 4, 25)
+    past = _frame(
+        [
+            _spare(LG, "SMP-LG-16", need),
+            _real(LG, "SMP-LG-17", need, date(2027, 5, 9)),
+            _spare(LG, "SMP-LG-18", need),
+            _real(LG, "SMP-LG-19", need, date(2027, 5, 15)),
+            _spare(LG, "SMP-LG-20", need),
+            _virtual(LG, "추가1", date(2027, 6, 1)),
+        ]
+    )
+    current = _frame(
+        [
+            _real(LG, "SMP-LG-16", need, date(2027, 5, 5)),
+            _spare(LG, "SMP-LG-17", need),
+            _spare(LG, "SMP-LG-18", date(2027, 5, 1)),
+            _real(LG, "SMP-LG-19", need, date(2027, 5, 7)),
+            _virtual(LG, "추가1", date(2027, 6, 1)),
+            _virtual(LG, "추가2", date(2027, 6, 1)),
+            _spare(DA, "SMP-DA-21", need),
+        ]
+    )
+
+    rows = compare_progress(past, current, current_processes=[LG, DA], today=TODAY)
+
+    units = {**_by_unit(rows, LG), **_by_unit(rows, DA)}
+    assert {name: row["상태"] for name, row in units.items()} == {
+        "SMP-LG-16": PROGRESS_REBASED,
+        "SMP-LG-17": PROGRESS_REBASED,
+        "SMP-LG-18": PROGRESS_UNCHANGED,
+        "SMP-LG-19": PROGRESS_IMPROVED,
+        "SMP-LG-20": PROGRESS_RESOLVED,
+        "추가1": PROGRESS_KEPT_NEW,
+        "추가2": PROGRESS_NEW,
+        "SMP-DA-21": PROGRESS_NEW,
+    }
+    rebased, back = units["SMP-LG-16"], units["SMP-LG-17"]
+    assert _missing(rebased["과거 단축일수"]) and rebased["현재 단축일수"] == 10
+    assert back["과거 단축일수"] == 14 and _missing(back["현재 단축일수"])
+    for row in (rebased, back):
+        # 두 줄은 그대로 보이되 견주지 않는다 — 증감 · 확보 시점 이동이 빈칸, 필요 시점 이동은
+        # 적는다.
+        assert _missing(row["단축일수 증감"]) and _missing(row["확보 시점 이동(일)"])
+        assert row["필요 시점 이동(일)"] == 0
+    assert units["SMP-LG-18"]["단축일수 증감"] == 0
+    assert units["SMP-LG-18"]["필요 시점 이동(일)"] == 6
+    assert units["SMP-LG-19"]["단축일수 증감"] == -8
+
+    summary = summarize_progress(rows)
+    # 견준 당긴 호기는 SMP-LG-18(0 → 0) · 19(20 → 12) · 20(0 → 없음) · SMP-DA-21(없음 → 0) — 기준
+    # 바뀜 둘은 양쪽 합계에서 빠져 증감이 그대로 합계의 차이다.
+    assert (summary.past_days, summary.current_days, summary.change) == (20, 12, -8)
+    assert (summary.improved, summary.worsened, summary.unchanged) == (1, 0, 1)
+    assert (summary.new, summary.resolved, summary.kept_new) == (2, 1, 1)
+    assert (summary.rebased, summary.rebased_current_days, summary.lapsed) == (2, 10, 0)
+    assert (summary.past_virtual, summary.current_virtual) == (1, 2)
+    # 기준 바뀜은 이름 바꿈 의심(같은 공정의 당긴 호기 해소 + 신규 필요)에 들지 않는다.
+    assert rename_suspects(rows) == ()
+
+    frame = progress_export_frame(rows, level=1.1, processes=[LG, DA]).set_index("호기")
+    assert frame.at["SMP-LG-16", "상태"] == "기준 바뀜"
+    assert pd.isna(frame.at["SMP-LG-16", "단축일수 증감"])
+    assert frame.at["SMP-LG-16", "과거 확보 시점"] is None
+    assert frame.at["SMP-LG-16", "현재 확보 시점"] == "2027-05-05"
+
+
+def test_a_basis_change_whose_need_date_passed_is_lapsed_first_and_out_of_scope_stays_outside() -> (
+    None
+):
+    """겹침 — 필요 시점 지남이 기준 바뀜보다 먼저다. 기준선의 필요 시점이 오늘보다 앞이면 날짜를
+    받았어도 지금 계획은 오늘보다 앞으로 당길 수 없어 견줄 수 없다 — 그 몫은 `lapsed_current_days`
+    하나에만 들고 기준 바뀜으로 세지 않는다. 오늘 바로 그날은 견주므로 기준 바뀜이다. 지금 맞대지
+    않는 공정의 남는 호기는 범위 밖이다."""
+    today = date(2027, 1, 5)
+    past = _frame(
+        [
+            _spare(LG, "SMP-LG-16", today - timedelta(days=1)),
+            _spare(LG, "SMP-LG-17", today),
+            _real(LG, "SMP-LG-18", today - timedelta(days=1), date(2027, 1, 20)),
+            _spare("Old Process", "OLD-1", date(2027, 3, 1)),
+        ]
+    )
+    current = _frame(
+        [
+            _real(LG, "SMP-LG-16", today, date(2027, 1, 15)),
+            _real(LG, "SMP-LG-17", today, date(2027, 1, 12)),
+            _spare(LG, "SMP-LG-18", today),
+        ]
+    )
+
+    rows = compare_progress(past, current, current_processes=[LG], today=today)
+
+    by_unit = _by_unit(rows, LG)
+    assert by_unit["SMP-LG-16"]["상태"] == PROGRESS_LAPSED
+    assert by_unit["SMP-LG-17"]["상태"] == PROGRESS_REBASED
+    assert by_unit["SMP-LG-18"]["상태"] == PROGRESS_LAPSED
+    assert _by_unit(rows, "Old Process")["OLD-1"]["상태"] == PROGRESS_OUT_OF_SCOPE
+    summary = summarize_progress(rows, [LG])
+    assert (summary.lapsed, summary.lapsed_current_days) == (2, 10)
+    assert (summary.rebased, summary.rebased_current_days) == (1, 7)
+    assert (summary.past_days, summary.current_days) == (0, 0)

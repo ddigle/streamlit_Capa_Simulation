@@ -289,13 +289,16 @@ def progress_trend(rows: pd.DataFrame) -> ProgressTrend:
     """공정 하나의 진척 비교 행으로 낸 기준선 대비. 지금 계획에서 단축·신규가 모두 사라졌으면
     해소다.
 
-    일수·추가N 은 `summarize_progress` 와 같은 셈이다(`필요 시점 지남` 은 양쪽에서 뺀다).
+    일수·추가N 은 `summarize_progress` 와 같은 셈이다(`필요 시점 지남` · `기준 바뀜` 은 양쪽에서
+    뺀다). `기준 바뀜` 호기는 두 시점 모두 당길 호기라 지금 계획에 남아 있다 — 그런 호기가 있는
+    공정은 일수가 0 이어도 해소가 아니다.
     """
     summary = summarize_progress(rows)
     change = summary.change
     virtual = summary.current_virtual - summary.past_virtual
     had = summary.past_days > 0 or summary.past_virtual > 0
-    if had and summary.current_days == 0 and summary.current_virtual == 0:
+    gone = summary.current_days == 0 and summary.current_virtual == 0 and not summary.rebased
+    if had and gone:
         label = TREND_RESOLVED
     elif change < 0 or (change == 0 and virtual < 0):
         label = TREND_IMPROVED

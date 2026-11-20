@@ -3388,7 +3388,9 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     다섯 모두 a). 머리 문단이 여쭘 다섯을 「여쭘 번호 카드 id 「라벨」」 로 보드 글 그대로 적고,
     코드를 바꾸는 답 둘만 그 구현과 함께 줄 하나씩이다 — 줄 머리는 카드 id · 여쭘 번호, 굵은 글은
     「(a) 라벨」, 끝은 「(2026-11-20 · 규칙 id)」. 여쭘-2 a 는 설비 마스터 표 글 칸 머리 정렬도
-    설비명 칸과 같은 비교 하나이고, 그 답이 UI-CON-04 근거 · 그물에 선다."""
+    설비명 칸과 같은 비교 하나이고, 그 답이 UI-CON-04 근거 · 그물에 선다. 여쭘-4 a 는 진척
+    비교의 남는 호기 ↔ 날짜 호기 바뀜을 「기준 바뀜」 으로 따로 세는 것이고, 그 줄 아래 문단이
+    구현이 답 밖에서 정한 것이며 같은 이름이 Guide 에 선다(UI-CON-02)."""
     document = _text()
     assert "판 v1.41" in document.split("\n## 1. ")[0]
     assert "6-38 에 있다" in _chapter(document, 1)
@@ -3415,14 +3417,21 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
         cited = RULE_TOKEN.findall(match.group(5))
         assert cited and set(cited) <= known, line
         answers[card] = match.group(3)
-    assert "q-ems-lang" in answers
+    assert set(answers) == _RESULT_1120_CODE_ASKS, answers
+    basis = record[record.index("\n- q-prog-blank · ") + 1 :]
+    assert basis.split("\n", 2)[1:2] == [""], "여쭘-4 줄 아래는 빈 줄 하나 뒤 문단이다"
+    assert basis.split("\n", 2)[2].startswith("구현이 답 밖에서 정한 것"), basis[:80]
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/required_shortening.md").read_text(
+        encoding="utf-8"
+    )
+    assert "「기준 바뀜」" in guide
     con04 = next(rule for rule in _rules() if rule.id == "UI-CON-04")
     assert "결과 보드 여쭘-2 a(6-38)" in con04.fields["근거"][0]
     net = "test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values"
     assert net in con04.fields["그물"][0]
     history = _chapter(document, 8)
     v141 = history[history.index("- **v1.41 — 2026-11-20.**") :]
-    for phrase in ("6-38", "여쭘-2 a", "UI-CON-04", "규칙 82"):
+    for phrase in ("6-38", "여쭘-2 a", "여쭘-4 a", "q-prog-blank", "UI-CON-04", "규칙 82"):
         assert phrase in v141, phrase
 
 

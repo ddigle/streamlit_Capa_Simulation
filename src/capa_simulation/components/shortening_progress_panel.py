@@ -24,10 +24,11 @@
   (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
   축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
 
-색은 모두 `design/tokens` 에서 실행마다 읽는다(밝은·어두운 테마). 줄임·해소는 `ACCENT`, 늘어남·
-신규 필요는 `DELTA_INCREASE`(증감 글자색), 변동 없음·신규 유지·범위 밖·필요 시점 지남은
-`TEXT_MUTED` 다. 호기·공정 이름은 사용자가 적은 글이라 모두 이스케이프한다. 공정 이름은 화면만 공정
-표시명이고 짝짓기·CSV 는 원본이다.
+색은 모두 `design/tokens` 에서 실행마다 읽는다(밝은·어두운 테마). 줄임·해소는 `ACCENT`, 늘어남·신규
+필요는 `DELTA_INCREASE`(증감 글자색), 변동 없음·신규 유지·범위 밖·필요 시점 지남·기준 바뀜은
+`TEXT_MUTED` 다. 기준 바뀜(한 시점만 Static 기준의 남는 호기 — 진척이 아니라 범위 바뀜)의 현재 줄은
+좋고 나쁨을 말하지 않는 `TEXT` 다. 호기·공정 이름은 사용자가 적은 글이라 모두 이스케이프한다. 공정
+이름은 화면만 공정 표시명이고 짝짓기·CSV 는 원본이다.
 """
 
 from __future__ import annotations
@@ -98,6 +99,7 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_LAPSED,
     PROGRESS_NEW,
     PROGRESS_OUT_OF_SCOPE,
+    PROGRESS_REBASED,
     PROGRESS_RESOLVED,
     PROGRESS_UNCHANGED,
     PROGRESS_WORSENED,
@@ -867,12 +869,20 @@ def progress_summary_markup(
         if summary.lapsed
         else ""
     )
+    # 한 시점만 남는 호기인 호기도 두 합계에서 뺀다 — 비교 안 함 화면의 합계와 맞춰 볼 수 있게 그
+    # 몫을 적는다(설계 규칙 UI-DAT-07).
+    rebased_note = (
+        f'<span class="shk-kpi-note">기준 바뀜 {summary.rebased}대(현재 '
+        f"{summary.rebased_current_days:,}일) 빼고 견줌</span>"
+        if summary.rebased
+        else ""
+    )
     total = (
         '<div class="shk-kpi shk-prog-total">'
         '<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계</span>'
         f'<span class="shk-kpi-value">{summary.current_days:,}일</span>'
         f'<span class="shk-kpi-note">목표 {level_percent(level)}% · {scope} · 당긴 호기의 합'
-        f"</span>{lapsed_note}</div>"
+        f"</span>{lapsed_note}{rebased_note}</div>"
         f'<div class="shk-prog-bars">{bars}</div>'
         f'<span class="shk-prog-change" style="color:{color}">{_escape(change)}</span></div>'
     )
@@ -887,6 +897,8 @@ def progress_summary_markup(
         counts.append(_count("신규 유지", summary.kept_new, tokens.TEXT_MUTED))
     if summary.lapsed:
         counts.append(_count("필요 시점 지남", summary.lapsed, tokens.TEXT_MUTED))
+    if summary.rebased:
+        counts.append(_count("기준 바뀜", summary.rebased, tokens.TEXT_MUTED))
     units = (
         '<div class="shk-kpi"><span class="shk-kpi-label">호기 변동</span>'
         f'<span class="shk-prog-line">{" · ".join(counts)}</span>'
@@ -1090,6 +1102,8 @@ def _badge(row: dict[str, object], virtual: bool) -> tuple[str, str]:
         return "지금 범위 밖", tokens.TEXT_MUTED
     if status == PROGRESS_LAPSED:
         return "필요 시점 지남", tokens.TEXT_MUTED
+    if status == PROGRESS_REBASED:
+        return "기준 바뀜", tokens.TEXT_MUTED
     assert status == PROGRESS_UNCHANGED, status
     return "변동 없음", tokens.TEXT_MUTED
 
@@ -1123,7 +1137,11 @@ def _unit_markup(
     now_need, now_secure = _day(row["현재 필요 시점"]), _day(row["현재 확보 시점"])
     past_days, now_days = _whole(row["과거 단축일수"]), _whole(row["현재 단축일수"])
     now_color = (
-        tokens.DELTA_INCREASE if status in (PROGRESS_WORSENED, PROGRESS_NEW) else tokens.ACCENT
+        tokens.DELTA_INCREASE
+        if status in (PROGRESS_WORSENED, PROGRESS_NEW)
+        else tokens.TEXT
+        if status == PROGRESS_REBASED
+        else tokens.ACCENT
     )
     past_lane = _lane(past_need, past_secure, axis, virtual=virtual, past=True, color="")
     now_lane = _lane(now_need, now_secure, axis, virtual=virtual, past=False, color=now_color)

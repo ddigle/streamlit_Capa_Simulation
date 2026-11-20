@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from test_required_shortening import JUNE, MAY, _plan, _unit
-from test_shortening_progress import DA, LG, _frame, _real, _virtual
+from test_shortening_progress import DA, LG, _frame, _real, _spare, _virtual
 
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -183,6 +183,46 @@ def test_the_screen_total_is_the_progress_total_plus_the_lapsed_days() -> None:
     assert screen_shortening_days(current, now.processes) == (
         summary.current_days + summary.lapsed_current_days
     )
+
+
+def test_the_screen_total_does_not_follow_basis_changes_against_a_baseline() -> None:
+    """결과 보드 여쭘-4 a — 진척 비교가 남는 호기 ↔ 날짜 호기를 「기준 바뀜」 으로 따로 빼도 화면
+    합계(「이번 주 값 넣기」)는 지금 계획만 더한다 — 어느 기준선과 견주든 같고, 견준 몫 + 필요 시점
+    지남 몫 + 기준 바뀜 몫이다. 세 몫이 다 0 이 아닌 표본이다(SMP-LG-11 견줌 10일 · SMP-LG-12 지남
+    6일 · SMP-LG-13 기준 바뀜 7일, 남는 호기 SMP-LG-14 는 0일)."""
+    today = date(2027, 1, 5)
+    current = _frame(
+        [
+            _real(LG, "SMP-LG-11", date(2027, 2, 1), date(2027, 2, 11)),
+            _real(LG, "SMP-LG-12", today, date(2027, 1, 11)),
+            _real(LG, "SMP-LG-13", date(2027, 3, 1), date(2027, 3, 8)),
+            _spare(LG, "SMP-LG-14", date(2027, 3, 1)),
+        ]
+    )
+    rebased_past = _frame(
+        [
+            _real(LG, "SMP-LG-11", date(2027, 2, 1), date(2027, 2, 15)),
+            _real(LG, "SMP-LG-12", date(2027, 1, 1), date(2027, 1, 11)),
+            _spare(LG, "SMP-LG-13", date(2027, 3, 1)),
+            _real(LG, "SMP-LG-14", date(2027, 3, 1), date(2027, 3, 4)),
+        ]
+    )
+    plain_past = _frame([_real(LG, "SMP-LG-11", date(2027, 2, 1), date(2027, 2, 15))])
+    rebased = summarize_progress(
+        compare_progress(rebased_past, current, current_processes=[LG], today=today)
+    )
+    plain = summarize_progress(
+        compare_progress(plain_past, current, current_processes=[LG], today=today)
+    )
+    assert (rebased.current_days, rebased.lapsed_current_days) == (10, 6)
+    assert (rebased.rebased, rebased.rebased_current_days) == (2, 7)
+    assert plain.rebased == 0 and plain.current_days == 10 + 6 + 7
+    screen = screen_shortening_days(current, [LG])
+    assert screen == 23
+    for summary in (rebased, plain):
+        assert screen == (
+            summary.current_days + summary.lapsed_current_days + summary.rebased_current_days
+        )
 
 
 # ------------------------------------------------------------------ 저장 왕복 · 대조

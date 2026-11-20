@@ -247,6 +247,25 @@ def test_the_progress_trend_reads_improved_worsened_resolved_and_unchanged() -> 
     assert more_new.label == TREND_WORSENED and "신규 0→1" in more_new.text()
 
 
+def test_a_basis_change_is_not_progress_on_the_board() -> None:
+    """결과 보드 여쭘-4 a — 남는 호기 ↔ 날짜 호기(「기준 바뀜」)는 기준선 대비에 늘고 줆으로 들지
+    않는다. 지금 계획에 남아 있는 호기라, 다른 호기가 해소돼 일수가 0 이 되어도 그 공정은 해소가
+    아니다."""
+    only = progress_trend(_progress([_pair(A, "U1", past=None, now=10, status="기준 바뀜")]))
+    assert (only.label, only.change) == (TREND_UNCHANGED, 0)
+    back = progress_trend(_progress([_pair(A, "U1", past=14, now=None, status="기준 바뀜")]))
+    assert (back.label, back.change) == (TREND_UNCHANGED, 0)
+    beside = progress_trend(
+        _progress(
+            [
+                _pair(A, "U1", past=6, now=None, status="해소"),
+                _pair(A, "U2", past=None, now=10, status="기준 바뀜"),
+            ]
+        )
+    )
+    assert (beside.label, beside.text()) == (TREND_IMPROVED, "개선 −6일")
+
+
 def test_with_progress_rows_the_board_fills_the_baseline_columns_and_orders_worse_first() -> None:
     rows = _progress(
         [

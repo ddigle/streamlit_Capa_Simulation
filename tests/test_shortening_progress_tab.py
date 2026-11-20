@@ -25,6 +25,7 @@ from test_required_shortening_tab import _choose_level, _csv, _database, _html, 
 
 from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.shortening_cumulative import SCREEN_TOTAL_KEY, ScreenTotal
 from capa_simulation.components.shortening_progress_panel import (
     BASELINE_SAVE_HELP,
     NO_COMPARISON,
@@ -33,8 +34,12 @@ from capa_simulation.components.shortening_progress_panel import (
 )
 from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
+from capa_simulation.design import tokens
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
-from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_shortening_baseline_cache,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
@@ -51,7 +56,9 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_EXPORT_COLUMNS,
     PROGRESS_IMPROVED,
     PROGRESS_NEW,
+    PROGRESS_REBASED,
     PROGRESS_RESOLVED,
+    PROGRESS_UNCHANGED,
     PROGRESS_WORSENED,
     compare_progress,
 )
@@ -511,6 +518,15 @@ def test_a_static_leftover_unit_reads_as_leftover_not_new_in_both_lanes() -> Non
 
     assert results("DEMO-PMC-016") == (spare_line, "27.05.05 → 27.04.25 <b>−10일</b>")
     assert "신규" not in markup["DEMO-PMC-016"]
+    # 결과 보드 여쭘-4 a — 남는 호기였다가 날짜를 받은 것은 진척이 아니라 범위 바뀜이다. 빈칸을
+    # 0일로 세어 「10일 늘어남」 으로 적지 않고 「기준 바뀜」 배지, 현재 줄은 좋고 나쁨을 말하지
+    # 않는 글자색.
+    assert ">기준 바뀜</span>" in markup["DEMO-PMC-016"]
+    assert "늘어남" not in markup["DEMO-PMC-016"]
+    now_lane = markup["DEMO-PMC-016"].split('<div class="shk-prog-lane">')[2]
+    assert f"background:{tokens.TEXT};" in now_lane
+    assert tokens.DELTA_INCREASE not in now_lane and tokens.ACCENT not in now_lane
+    assert ">변동 없음</span>" in markup["DEMO-PMC-014"]
 
     assert results("추가1") == ("필요 27.04.25 <b>신규</b>",) * 2
     assert "과거 신규 필요 Qual 2027-04-25" in title("추가1")
@@ -642,3 +658,80 @@ def test_a_baseline_keeps_its_basis_and_is_compared_on_that_basis(tmp_path: Path
     assert re.search(r'class="shk-prog-change"[^>]*>변동 없음</span>', body)
     for label in ("개선", "악화", "신규", "해소"):
         assert f"<b>{label} 0</b>" in body, label
+
+
+def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_basis_change(
+    tmp_path: Path,
+) -> None:
+    """결과 보드 여쭘-4 a — 기준선과 지금 사이에 한 시점만 Static 기준의 남는 호기(현재 일정 없음)인
+    호기는 진척이 아니라 범위 바뀜이다. 카드 배지 「기준 바뀜」, 요약 호기 변동 「기준 바뀜 1」 과
+    합계 칸 「기준 바뀜 1대(현재 n일) 빼고 견줌」 이고, 합계 · 증감 · 개선/악화는 그 호기를 빼고
+    견준다(나머지는 같은 계획이라 「변동 없음」). 「이번 주 값 넣기」 의 화면 합계는 진척 비교와
+    상관없이 그대로다.
+
+    기준선은 앱이 얼린 Static 기준선에서 목표 110% 의 당긴 호기 한 줄만 반대 꼴로 바꿔 새로 저장한
+    것이다 — 지금 날짜를 받은 호기면 현재 일정 · 단축일수를 비워 남는 호기로(남는 → 날짜), 지금 남는
+    호기면 9일 늦은 현재 일정을 줘(날짜 → 남는). 표본은 오늘 기준 상대 날짜라 어느 쪽이 서는지가
+    날마다 다를 수 있어 두 방향을 같은 단언으로 본다(방향마다 고정한 시험은
+    `test_shortening_progress`)."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run_static(database_path)
+    assert not app.exception, [element.message for element in app.exception]
+    plain_total = app.session_state[SCREEN_TOTAL_KEY]
+    assert isinstance(plain_total, ScreenTotal) and plain_total.basis == "Static"
+    app = _name_input(app).set_value("Static 기준선").run()
+    app = _save_button(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    repository = DuckDBEquipmentRepository(database_path)
+    (frozen,) = repository.list_shortening_baselines()
+    baseline = repository.load_shortening_baseline(frozen.baseline_id)
+    units = baseline.units.copy()
+    pulled = units.loc[units["목표 확보율(%)"].eq(110) & units["구분"].eq(KIND_SHORTENED)]
+    assert not pulled.empty, "Static 기준 110% 에 당긴 호기가 있어야 한다"
+    index = pulled.index[0]
+    unit = str(units.at[index, "호기"])
+    target = units.at[index, "목표 Qual"]
+    assert isinstance(target, date)
+    if pd.isna(units.at[index, "기존 Qual"]):
+        now_days = 0
+        units.at[index, "기존 Qual"] = target + timedelta(days=9)
+        units.at[index, "단축일수"] = 9
+    else:
+        now_days = int(str(units.at[index, "단축일수"]))
+        units.at[index, "기존 Qual"] = None
+        units.at[index, "단축일수"] = pd.NA
+    stored = repository.save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="남는 호기 기준선",
+            plan_today=frozen.plan_today,
+            start_month=frozen.start_month,
+            end_month=frozen.end_month,
+            processes=baseline.processes,
+            cutoff_days=baseline.cutoff_days,
+            units=normalize_baseline_units(units),
+            schedule_basis="Static",
+        )
+    )
+    clear_shortening_baseline_cache()
+
+    app = _run_static(database_path)
+    assert app.session_state[SCREEN_TOTAL_KEY] == plain_total
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    rows = _progress_csv(app).set_index("호기")
+    assert rows.at[unit, "상태"] == PROGRESS_REBASED
+    assert rows.at[unit, "단축일수 증감"] == ""
+    others = rows.drop(index=unit)
+    assert set(others.loc[others["구분"].eq(KIND_SHORTENED), "상태"]) == {PROGRESS_UNCHANGED}
+    body = _html(app)
+    assert ">기준 바뀜</span>" in body
+    assert re.search(r">기준 바뀜 1</b>", body)
+    assert f"기준 바뀜 1대(현재 {now_days:,}일) 빼고 견줌" in body
+    assert re.search(r'class="shk-prog-change"[^>]*>변동 없음</span>', body)
+    for label in ("개선", "악화", "신규", "해소"):
+        assert f"<b>{label} 0</b>" in body, label
+    # 요약의 지금 합계는 그 호기를 뺀 몫이고, 「이번 주 값 넣기」 합계는 그대로다.
+    assert f'<span class="shk-kpi-value">{plain_total.days - now_days:,}일</span>' in body
+    assert app.session_state[SCREEN_TOTAL_KEY] == plain_total
+    clear_equipment_repository()

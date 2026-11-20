@@ -798,7 +798,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준이라 계획을 읽지 않는다. 「이번 주 값 넣기」 가 읽는 지금 화면 합계는 패널 `_render_body` 가 회차마다 적는다(`remember_screen_total` — 계산은
     `services/shortening_progress_log.screen_shortening_days` 하나, `_render_view` 머리에서 지우고 다시 적어 멈춘 회차에 앞 값이 남지
     않는다). 합계는 현재 일정 기준 전환이 고른 계획(`plan.basis` — 풍선에 그 기준)이고, 진척 비교가 기준선과 같은 다른 기준의
-    계획(`_Plan.plan_for`)을 그려도 바뀌지 않는다. 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
+    계획(`_Plan.plan_for`)을 그려도 바뀌지 않고, 진척 비교가 「필요 시점 지남」 · 「기준 바뀜」 을 합계에서 빼도 그대로다(어느 기준선과도
+    상관없다 — 시험이 맞댄다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
     조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
@@ -4671,13 +4672,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   변동과 상태를 낸다(`compare_progress`·`summarize_progress`·`progress_export_frame`).
   - 짝짓기는 공정 안에서만 — 당긴 호기는 설비명끼리, 「추가N」은 차례끼리다. 지금 범위에 없는 기준선 공정은
     `지금 범위 밖`(해소 아님), 오늘보다 앞선 과거 필요 시점은 `필요 시점 지남` 으로 양쪽 증감에서 뺀다.
+  - **기준 바뀜**(2026-11-20 결과 보드 여쭘-4 a — 규칙집 6-38): 두 시점 모두 있는 당긴 호기 가운데 한 시점만 Static 기준의 남는
+    호기(확보 시점 · 단축일수 빈칸 — 현재 일정 없음)인 것은 진척이 아니라 범위 바뀜이라 `기준 바뀜` 으로 따로 세고 증감 · 양쪽
+    합계 · 개선/악화 대수에서 뺀다(`ProgressSummary.rebased` · `rebased_current_days`). 차례는 범위 밖 → 필요 시점 지남 → 기준
+    바뀜이다(필요 시점이 지난 호기는 날짜를 받았어도 지남). 두 시점 모두 남는 호기면 양쪽 0일 `변동 없음`, 한쪽에만 있으면 `신규
+    필요` · `해소` 그대로, 추가N 은 차례끼리라 섞이지 않는다. 판정은 행의 꼴로만 한다 — 설비 마스터 기준에는 남는 호기가 없고
+    화면은 늘 기준선과 같은 기준의 계획과 견준다. 공정 진척 보드의 기준선 대비(`shortening_watch.progress_trend`)도 같은 셈이고,
+    기준 바뀜 호기가 남은 공정은 일수가 0 이어도 「해소」 가 아니다.
 - `src/capa_simulation/services/shortening_progress_log.py` — 필요 단축 일정 「누적 진척」(설비 DB `0036`)의 모델과 값 규칙.
   기록 한 줄 = ISO 주차(`ProgressWeek` — 해 · 주를 함께, 글은 앱 주차 도우미 `iso_week_calendar.weeknum_label` 의 `YY-W##`, 해 넘김
   차례가 (해, 주)로 맞음) 하나의 단축 필요일수(사람이 적은 0 이상 정수 — 화면 계산과 잇지 않는다), 최종 목표는 일수 · 주차 하나
   (`ProgressGoal`). 머리 한 줄 요약(`summarize_log`)은 **기록 기준**이다 — 지금 일수 = 마지막 기록, 지난 기록 대비 = 그 앞 기록과의
   차(기록이 하나면 없음 — 0 이 아니다), 남은 일수 = 마지막 기록 − 목표, 목표 주차 지남. `screen_shortening_days` 는 「이번 주 값
   넣기」 가 채우는 지금 화면 합계(고른 목표의 계획에서 범위 공정의 당긴 호기 단축일수 합)이고 진척 비교 요약의 지금 합계 +
-  필요 시점 지남 몫과 같다(시험이 맞댄다). Streamlit · DB 를 모른다.
+  필요 시점 지남 몫 + 기준 바뀜 몫과 같다(어느 기준선과 견주든 — 시험이 맞댄다). Streamlit · DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는
@@ -5655,6 +5663,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다. 확보 시점이 없는 줄(◌)의
     오른쪽 글 · 풍선은 추가N 이면 「신규」, Static 기준의 남는 호기(확보 시점 없이 당긴 「단축」 줄)면 본문 호기 줄과 같은 「남는 호기」 다
     (`_lane_text` · `_detail` — 설계 규칙 UI-CON-02).
+  - 「기준 바뀜」(결과 보드 여쭘-4 a — 남는 호기 ↔ 날짜 호기)은 카드 배지 · 요약 「호기 변동」 의 「기준 바뀜 n」(있을 때만)이고, 합계 칸에
+    「필요 시점 지남」 과 같은 꼴의 몫 줄 「기준 바뀜 n대(현재 n일) 빼고 견줌」 을 단다(합계에서 빠진 몫 — UI-DAT-07). 배지는 `TEXT_MUTED`,
+    현재 줄은 좋고 나쁨을 말하지 않는 `TEXT` 다. 까닭은 줄 풍선(과거 · 현재 두 시점)과 Guide 다 — 카드 위 표지 줄은 더하지 않았다.
 - `src/capa_simulation/components/shortening_cumulative.py` — 필요 단축 일정 「누적 진척」 머리 한 줄 띠(키 붙은 프래그먼트
   `STRIP_FRAGMENT_KEY` — 작은 꺾은선(data URL 그림 — `st.html` 은 인라인 SVG 를 걷는다) · 지금 일수 · 지난 기록 대비 · 첫 기록 →
   목표 막대 · 남은 일수 · 「주차별」. 펴면 Plotly 꺾은선 + 목표선 — 늘어난 주 ▲, 편 상태는 세션 칸 `WEEKS_OPEN_KEY`)와 사이드바
@@ -7242,6 +7253,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
    (내용 토큰)가 덮어 더 싣지 않는다. 역산은 `simulation_cache.get_static_qual_schedule` 한 칸을 두 기준이 나눈다(기준 · 가정
    토큰을 비운 키 — `static_schedule_key`). 두 기준의 계획은 따로 캐시돼 왕복은 다시 계산하지 않는다.
 5. 진척 비교 기준선은 그때 기준을 남기고(설비 `0035` — 옛 기준선은 설비 마스터) 늘 같은 기준의 지금 계획과 견준다(Q14 (가)).
+   같은 Static 기준 안에서도 남는 호기가 날짜를 받거나 날짜 호기가 남는 호기가 되면 진척이 아니라 범위 바뀜이라 「기준 바뀜」
+   으로 따로 세고 늘고 줆에서 뺀다(2026-11-20 결과 보드 여쭘-4 a — 위 `shortening_progress.py` 줄).
    새 상태(호기 부족 · 마감 지남 · 남는 호기)는 자리에 그리지 않고 상태 알림 `RS-07` 이다. 일정 미정 알림(`RS-03`)은 Static
    기준이면 역산한 호기(`StaticQualSchedule.reversed_ids`)를 세지 않는다 — 날짜를 받으면 가용에 들고(반입일정은 보지 않음)
    남으면 단축 후보라 「가용대수에 세지 않음 · 단축 후보에도 들지 않음」 이 맞지 않는다. 역산하지 않는 호기만 세고, 범위에
