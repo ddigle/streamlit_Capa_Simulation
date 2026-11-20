@@ -131,7 +131,7 @@ _palette = grid_shared.grid_palette
 # `schedule` 이 data `sendMs` 로 받는다(`grid_shared.batch_ms` — 개발 · 측정 사본은 실행 줄
 # `CAPA_DEV_BATCH_MS` 로 덮어쓴다). 깨끗한 편집본의 첫 op · 붙여넣기 · 단추 op · 표 밖 누름 · 창
 # 숨김은 쉼 없이 곧바로 보낸다.
-SEND_MS: Final = 300
+SEND_MS: Final = 800
 
 
 def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:

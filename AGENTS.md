@@ -3645,7 +3645,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기다림, 껍데기 · 바뀐 줄이 그대로인 feed 에는 정렬한 표 모양을 다시 짓지 않음, 내릴 때 칸의 feed 를 비움). 지문 없는 data 는
     예전처럼 바로 그린다. 칸 하나 고칠 때 받는 바이트는 합성 표본에서 약 471KB → 36KB 다(샘플 관측 — rr1120 B 측정).
     시험 대역(`tests/grid_fake.py`)은 두 요소를 받아 이은 data 를 표 key 로 적는다.
-  - **묶어 보내기 쉼**은 파이썬 결정값 한 줄이다(`SEND_MS` 0.3초 → data `sendMs` — `grid_shared.batch_ms`, 브라우저
+  - **묶어 보내기 쉼**은 파이썬 결정값 한 줄이다(`SEND_MS` 0.8초 → data `sendMs` — `grid_shared.batch_ms`, 브라우저
     `schedule`). 깨끗한 편집본(data `clean` — 표 feed · 호기 상세)의 첫 칸 고침은 쉼 없이 곧바로 가고(`sendsAtOnce`), 여러 칸
     붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김도 곧바로다. 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(9장
     「구역 회차 규칙」 묶음 길이 — 운영 `APP_ENV` 는 읽지 않고, 운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다). 떠나기 신호

@@ -4062,9 +4062,9 @@ def test_the_send_interval_reads_only_the_shared_dev_override_in_range(
     덮어쓰기 이름은 편집기마다 따로 두지 않는다."""
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
-    assert emg._with_palette({})["sendMs"] == emg.SEND_MS == 300
-    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "800")
-    assert emg._with_palette({})["sendMs"] == 800
+    assert emg._with_palette({})["sendMs"] == emg.SEND_MS == 800
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "300")
+    assert emg._with_palette({})["sendMs"] == 300
     for text in ("", "abc", "10", "60000", "0.8"):
         monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, text)
         assert emg._with_palette({})["sendMs"] == emg.SEND_MS, text
