@@ -608,26 +608,26 @@ process.stdout.write(JSON.stringify(R))
 """
 
 # 글 칸에 실제로 섞여 드는 꼴 — 숫자로 시작 · 기호(영문 앞 · 영문 뒤 · ASCII 밖) · 영문(대소문자) ·
-# 한글 · 이름 안 숫자 · 전각 숫자 · 줄바꿈 · 탭 · BMP 밖 글자 · 빈 값 · 겹친 값.
+# 한글 · 이름 안 숫자 · 전각 숫자 · 전각 기호 · 줄바꿈 · 탭 · BMP 밖 글자 · 빈 값 · 겹친 값.
 _MIXED_TEXT = [
     "물류", "FDY", "MI", "Main", "부대", "HBM", "EDP", "범용", "PKG",
     "11월 1주 — 셋업 지연", "D 모듈 도면 숨김", "Qual 지연 — 부품 수급",
     "도면 미표시", "자리 미정",
     "모델-10", "모델-2", "Model-10", "Model-2", "model-2", "12A", "7", "007",
     "-X", "_X", "Zeta", "가", "１２", "줄\n바꿈", "탭\t칸", "x😀", "", "물류", "",
-    "~임시", "※ 확인 필요", "·메모", "(주)A",
+    "~임시", "※ 확인 필요", "·메모", "(주)A", "（주）B",
 ]  # fmt: skip
 
 
 def test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values() -> None:
     """설비 마스터 표 글 칸(글 · 메모 · 고르기)의 머리 정렬은 설비명 칸과 같은 비교 하나다 —
-    이름 안 숫자(0-9)는 수로(「Model-2」 가 「Model-10」 앞), 나머지는 소문자로 바꾼 글자의 코드
-    포인트 차례다. 그래서 숫자로 시작하는 값 → 기호 대부분 → 영문 → 한글이고, 「~」 같은 ASCII 끝
-    기호와 ASCII 밖 기호(※ · 가운뎃점)는 영문 뒤 · 한글 앞, 전각 숫자(「１２」)는 한글 뒤다.
-    대소문자는 가리지 않는다. 그 차례는 파이썬 `natural_name_key` 와 같고, 조건 값 목록 차례
-    (`_sorted_values`)와도 같다. 내림차순은 그 거꾸로이고 빈 값은 늘 아래, 값이 같은 줄은 설비명
-    오름차순이다. 수 · 날짜 칸은 그대로 — 수 칸은 수로(「1e3」 이 「200」 뒤), 날짜 칸은 글자
-    그대로다(2026-11-20 결과 보드 여쭘-2 a)."""
+    이름 안 숫자(0-9)는 수로(「Model-2」 가 「Model-10」 앞), 나머지는 소문자로 바꾼 글자의
+    코드 포인트 차례다. 그래서 숫자로 시작하는 값 → 기호 대부분 → 영문 → 한글이고, 「~」 같은
+    ASCII 끝 기호와 ※ · 가운뎃점 같은 ASCII 밖 기호는 영문 뒤 · 한글 앞, 전각 숫자 · 기호
+    (「１２」 · 「（주）」)는 한글 뒤다. 대소문자는 가리지 않는다. 그 차례는 파이썬
+    `natural_name_key` 와 같고, 조건 값 목록 차례(`_sorted_values`)와도 같다. 내림차순은 그
+    거꾸로이고 빈 값은 늘 아래, 값이 같은 줄은 설비명 오름차순이다. 수 · 날짜 칸은 그대로 — 수
+    칸은 수로(「1e3」 이 「200」 뒤), 날짜 칸은 글자 그대로다(2026-11-20 결과 보드 여쭘-2 a)."""
     kinds = ["text", "memo", "choice", "name"]
     ties = [
         {
@@ -662,7 +662,8 @@ def test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_conditio
     assert text.index("7") < text.index("-X") < text.index("FDY") < text.index("물류")
     assert text.index("Zeta") < text.index("가")
     assert text.index("(주)A") < text.index("Zeta") < text.index("~임시") < text.index("·메모")
-    assert text.index("·메모") < text.index("※ 확인 필요") < text.index("가") < text.index("１２")
+    assert text.index("·메모") < text.index("※ 확인 필요") < text.index("가")
+    assert text.index("가") < text.index("（주）B") and text.index("가") < text.index("１２")
     assert text.index("Model-2") < text.index("Model-10")
     assert text.index("모델-2") < text.index("모델-10")
     assert text.index("Qual 지연 — 부품 수급") < text.index("도면 미표시")
