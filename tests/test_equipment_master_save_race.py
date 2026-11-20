@@ -301,8 +301,13 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
     marking = head_stale_if_unsaved_changed
 
     def marked(before: bool) -> None:
+        # 이 함수가 스스로 단 표지만 센다 — 끊긴 제 저장을 이은 회차는 편집본을 다시 세우며 이미
+        # 표지를 달아 두므로(`ensure_equipment_drafts`) 부르기 전 표지를 비켜 두고 부른 뒤 되돌린다.
+        held = st.session_state.pop(HEAD_STALE_KEY, None)
         marking(before)
         stale_marks.append(st.session_state.get(HEAD_STALE_KEY))
+        if held is not None:
+            st.session_state[HEAD_STALE_KEY] = held
 
     monkeypatch.setattr(emt, "head_stale_if_unsaved_changed", marked)
     if cut:
