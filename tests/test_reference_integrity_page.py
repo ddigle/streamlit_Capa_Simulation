@@ -326,6 +326,19 @@ def test_the_loss_route_cards_carry_no_subtitle_and_the_guide_tells_the_waterfal
     ):
         assert text in table, text
 
+    # 카드는 `요약` 탭이고 워터폴은 다른 탭의 그림이다 — 표의 「워터폴」 이 어느 그림인지 Guide 가
+    # 한 번 적는다. 탭 이름 · 구획 제목을 화면에서 읽어 맞대므로 둘 중 하나가 바뀌면 여기서 깨진다.
+    assert not [item for item in summary_tab.markdown if "waterfall_chart" in str(item.value)]
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
+    assert not app.exception
+    detail_tab = next(tab for tab in app.tabs if tab.label == "공정 상세")
+    marker = ":material/waterfall_chart: "
+    (heading,) = [str(item.value) for item in detail_tab.markdown if marker in str(item.value)]
+    figure = heading.split(marker, 1)[1]
+    said = " ".join(table.split())
+    assert f"아래 표의 워터폴은 `{detail_tab.label}` 탭의 「{figure}」 그림입니다" in said
+
 
 def test_the_loss_route_cards_wrap_instead_of_staying_five_across() -> None:
     """손실 카드 다섯은 좁으면 다음 줄로 내려가는 가로 줄이다 — 다섯 칸 고정이면 창 800 에서 칸이
