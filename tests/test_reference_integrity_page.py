@@ -204,8 +204,8 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     tab_markdown: list[Any] = list(summary_tab.get("markdown"))
     card_captions = [str(caption.value) for caption in summary_tab.caption]
-    # 요약 탭 캡션은 손실 카드 「열기」 링크 물러섬 다섯뿐이다 — 카드 밑 부제 줄(「표준 → 효율 반영」
-    # 등)은 Guide 표가 말한다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39).
+    # 요약 탭 캡션은 손실 카드 「열기」 링크 물러섬 다섯뿐이다 — 카드 밑 부제 줄(「표준 → 효율
+    # 반영」 등)은 Guide 표가 말한다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39).
     assert card_captions == ["사이드바에서 열기"] * 5, card_captions
     helps = {
         str(markdown.value): str(markdown.proto.help)
@@ -299,7 +299,7 @@ def test_the_loss_route_cards_carry_no_subtitle_and_the_guide_tells_the_waterfal
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     shown = " ".join(
         [str(item.value) for item in summary_tab.caption]
-        + [str(item.value) for item in summary_tab.get("markdown")]
+        + [str(item.value) for item in summary_tab.markdown]
     )
     titles = ("효율 손실", "UPEH 손실", "수율 손실", "재공부족 미활용", "설비 가용")
     for title in titles:
@@ -320,7 +320,8 @@ def test_the_loss_route_cards_carry_no_subtitle_and_the_guide_tells_the_waterfal
         "| 효율 손실 | 표준 → 효율 반영(`표준 Capa − 효율 반영 Capa`) | 효율 실적 |",
         "| UPEH 손실 | 효율 반영 → 실효(`효율 반영 Capa − 실효 Capa`) | UPEH 실적 |",
         "| 수율 손실 | 양품 기준 차감 — 워터폴에 칸이 따로 없어 기타 Gap 에 듭니다 | 수율 실적 |",
-        "| 재공부족 미활용 | 실효 → 모델 실적(`실효 Capa − 모델 실적 Capa`) | 표준 대비 재공 현황 |",
+        "| 재공부족 미활용 | 실효 → 모델 실적(`실효 Capa − 모델 실적 Capa`) "
+        "| 표준 대비 재공 현황 |",
         "| 설비 가용 | 손실 이전의 전제 — 워터폴 밖입니다 | 가용설비 현황 |",
     ):
         assert text in table, text
