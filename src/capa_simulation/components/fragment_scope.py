@@ -30,7 +30,8 @@
 - **R4 남의 저장**(`editor_scope(token=…)`) — 저장본 쌍 토큰을 값싸게 읽는 함수(편집기가 넘긴다). 앱
   전체 회차가 찍고, 구역 회차는 본문 머리에서 다시 읽어 다르면 표지를 세운다 — 본문 뒤 · 다음 콜백
   끝에서 올린다(앱 전체 회차의 편집본 세우기가 버리고 다시 세운다).
-- **R6 오류 카드** — 구역 본문의 처리 못 한 오류는 Streamlit 기본 오류 상자 대신 코어 화면 카드
+- **R6 오류 카드** — 구역 회차의 처리 못 한 오류(본문 · 본문 머리 저장 토큰 읽기 · 작은 인자 검사 ·
+  본문 뒤 머리 표지 견주기)는 Streamlit 기본 오류 상자 대신 코어 화면 카드
   (`page_failure_card.render_page_failure`)로 그 구역 자리에 서고 `st.stop()` 으로 끝난다(카드 ·
   기록 · `AD-22` 는 `run_core_page` 와 같다). 등급 거절은 바깥 `grade_ui.in_fragment` 가 받고,
   Streamlit 제어 예외는 그대로 지나간다.
@@ -321,20 +322,30 @@ def _fail(spec: _Spec, error: BaseException) -> NoReturn:
     st.stop()
 
 
-def _run_guarded(spec: _Spec, body: Callable[[], Any]) -> Any:
+@contextmanager
+def _guarded(spec: _Spec) -> Iterator[None]:
+    """안에서 난 처리 못 한 오류를 코어 화면 카드로 받는다(R6) — 등급 거절 · Streamlit 제어 예외
+    (올리기 · 멈춤)는 그대로 지나간다."""
     from streamlit.errors import FragmentHandledException
     from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlException
 
     from capa_simulation.auth import grades
 
     try:
-        return body()
+        yield
     except (ScriptControlException, KeyboardInterrupt, FragmentHandledException):
         raise
     except grades.REFUSALS:
         raise
     except BaseException as error:
         _fail(spec, error)
+
+
+def _run_guarded(spec: _Spec, body: Callable[[], Any]) -> Any:
+    result: Any = None
+    with _guarded(spec):
+        result = body()
+    return result
 
 
 def editor_scope(
@@ -357,8 +368,10 @@ def editor_scope(
       이름을 주면 단 순간 `TypeError`.
     - 인자는 늘 `check_small_args` 를 지난다(걸리면 본문 오류처럼 코어 화면 카드 — 바깥 프래그먼트
       회차가 새 인자로 부를 때도 같다). 본문은 `box` 면 구역 칸(`box_key(key)`) 안에 그린다.
-    - 본문 오류는 코어 화면 카드로(`page` · `href` — 비우면 지금 화면의 이름 · 주소). 앱 전체
-      회차로 끝날 수 있는 본문이라 `sidebar_status.keeps_app_run_open` 을 함께 씌운다.
+    - 본문 오류는 코어 화면 카드로(`page` · `href` — 비우면 지금 화면의 이름 · 주소). 구역 회차의
+      본문 머리 토큰 읽기 · 본문 뒤 머리 표지 견주기도 같다(앱 전체 회차의 찍기는 `run_core_page`
+      가 받는다). 앱 전체 회차로 끝날 수 있는 본문이라 `sidebar_status.keeps_app_run_open` 을 함께
+      씌운다.
     """
     spec = _Spec(
         key=key,
@@ -383,14 +396,14 @@ def editor_scope(
         @functools.wraps(fn)
         def inner(*args: Any, **kwargs: Any) -> Any:
             fragment_run = fragment_only_run()
-            if fragment_run:
-                if spec.one_shot and own_fragment_run():
-                    args, kwargs = _switch_off(signature, spec.one_shot, args, kwargs)
-                _check_token(spec)
-            else:
+            if fragment_run and spec.one_shot and own_fragment_run():
+                args, kwargs = _switch_off(signature, spec.one_shot, args, kwargs)
+            if not fragment_run:
                 _stamp(spec)
 
             def body() -> Any:
+                if fragment_run:
+                    _check_token(spec)
                 check_small_args(args, kwargs)
                 if not spec.box:
                     return fn(*args, **kwargs)
@@ -399,7 +412,8 @@ def editor_scope(
 
             result = _run_guarded(spec, body)
             if fragment_run:
-                escalate_if_moved(key)
+                with _guarded(spec):
+                    escalate_if_moved(key)
             return result
 
         return cast(F, keeps_app_run_open(inner))

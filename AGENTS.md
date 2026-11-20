@@ -8532,8 +8532,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   스타일 `st.html` 수가 같아야 한다(위 「프래그먼트·이벤트 칸·토스트」). 수를 맞추기 전까지 갈래 바꿈은 R2 머리
   표지에 넣어 올린다. 구역 회차에 `st.html` 을 새로 쓰지 않는다 — 구역 회차의 화면 규칙은 앱 전체 회차의 스타일이
   싣는다(`fragment_scope.SCOPE_RUN_STYLE` 꼴).
-- **R6 구역 본문 오류는 코어 화면 카드.** `editor_scope` 가 본문의 처리 못 한 오류를 `page_failure_card.render_page_failure`
-  카드 + `st.stop()` 으로 받는다(기록 · `AD-22` 같다). 등급 거절은 바깥 `in_fragment` 가, Streamlit 제어 예외는 그대로.
+- **R6 구역 본문 오류는 코어 화면 카드.** `editor_scope` 가 구역 회차의 처리 못 한 오류(본문 · 본문 머리 저장 토큰 읽기 ·
+  작은 인자 검사 · 본문 뒤 머리 표지 견주기)를 `page_failure_card.render_page_failure` 카드 + `st.stop()` 으로 받는다(기록 ·
+  `AD-22` 같다). 등급 거절은 바깥 `in_fragment` 가, Streamlit 제어 예외는 그대로. 앱 전체 회차의 머리 표지 · 토큰 찍기는
+  `run_core_page` 가 받고, 콜백 끝 견주기(`escalates`)는 덮지 않는다(다른 콜백 오류와 같다) — 머리 표지 함수는 세션만 읽는다.
 - **R7 Components v2 위생**(`tests/test_ccv2_hygiene.py`). 등록은 모듈 머리 한 줄(등록 글이 프로세스 동안 같다 — 글
   해시마다 blob URL 이 쌓인다), 마운트마다 `key=`, 부품 · 편집표 key 에 seq · 시각 · 난수를 넣지 않는다. default export
   는 data 가 바뀔 때마다 다시 불리고 앞 호출의 정리 함수는 불리지 않는다 — 처리기 · 관찰자는 처음 한 번만 단다(`S.bound`

@@ -53,10 +53,14 @@ st.session_state["app_runs"] = st.session_state.get("app_runs", 0) + 1
 
 
 def head():
+    if st.session_state.get("head_explode"):
+        raise OSError("머리 표지 읽기 실패")
     return (bool(st.session_state["applied"]),)
 
 
 def token():
+    if st.session_state.get("token_explode"):
+        raise OSError("저장 토큰 읽기 실패")
     return st.session_state["token"]
 
 
@@ -250,6 +254,15 @@ def _heads(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.markdown if str(item.value).startswith("head=")]
 
 
+def _block_keys(browser: FragmentBrowser) -> list[str]:
+    """보낸 델타의 칸(블록) key — 코어 화면 카드 칸(`page_failure_card.CARD_KEY`)이 섰는지 본다."""
+    return [
+        message.delta.add_block.id
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.WhichOneof("type") == "add_block"
+    ]
+
+
 @pytest.mark.parametrize("script", [CALLBACK_END, BODY_END], ids=["callback-end", "body-end"])
 def test_a_first_edit_rises_to_the_app_run_and_keeps_the_outbox_ack(
     monkeypatch: pytest.MonkeyPatch, script: str
@@ -408,11 +421,28 @@ def test_a_scope_body_failure_is_the_core_page_card_not_the_default_box(
 
     assert browser.started == [[scope]]
     assert not list(app.exception), "기본 오류 상자가 아니다"
-    keys = [
-        message.delta.add_block.id
-        for message in browser.emitted
-        if message.WhichOneof("type") == "delta" and message.delta.WhichOneof("type") == "add_block"
-    ]
+    keys = _block_keys(browser)
+    assert any(CARD_KEY in key for key in keys), keys
+
+
+@pytest.mark.parametrize("flag", ["token_explode", "head_explode"], ids=["token", "head"])
+def test_a_failing_token_or_head_read_in_a_scope_run_is_the_core_page_card(
+    monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    """구역 회차 본문 머리의 저장 토큰 읽기(R4 — DuckDB 를 읽을 수 있다)와 본문 뒤 머리 표지
+    견주기(R2)가 던져도 본문 오류처럼 코어 화면 카드로 그 구역 자리에 선다(R6) — Streamlit 기본 오류
+    상자가 아니다. 콜백이 머리 표지를 읽지 않는 대본(본문 뒤 올리기)으로 본다."""
+    from capa_simulation.components.page_failure_card import CARD_KEY
+
+    app, browser, scope = _start(monkeypatch, BODY_END)
+    browser.send_state(app, "probe", _op(1))
+    app.session_state[flag] = True
+
+    browser.send_state(app, "probe", _ops(1, 2))
+
+    assert browser.started == [[scope]]
+    assert not list(app.exception), [element.message for element in app.exception]
+    keys = _block_keys(browser)
     assert any(CARD_KEY in key for key in keys), keys
 
 
@@ -466,11 +496,7 @@ def test_a_big_scope_argument_is_the_core_page_card(monkeypatch: pytest.MonkeyPa
     app = AppTest.from_string(BIG_ARGUMENT).run(timeout=60)
 
     assert not list(app.exception), "기본 오류 상자가 아니다"
-    keys = [
-        message.delta.add_block.id
-        for message in browser.emitted
-        if message.WhichOneof("type") == "delta" and message.delta.WhichOneof("type") == "add_block"
-    ]
+    keys = _block_keys(browser)
     assert any(CARD_KEY in key for key in keys), keys
 
 
