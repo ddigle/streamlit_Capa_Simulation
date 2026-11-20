@@ -417,6 +417,55 @@ def _kpi_row_app() -> None:
     render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None)
 
 
+def _kpi_row_options_app(shortage: int, assumed: bool) -> None:
+    from test_process_capa_canvas import THRESHOLDS
+    from test_process_capa_view import _kpis
+
+    from capa_simulation.components.process_capa_view import render_process_kpis
+
+    render_process_kpis(
+        _kpis(shortage_months=shortage),
+        thresholds=THRESHOLDS,
+        dynamic=None,
+        official=_kpis(shortage_months=2) if assumed else None,
+    )
+
+
+@pytest.mark.parametrize("assumed", [False, True])
+def test_the_kpi_grey_lines_keep_values_and_basis_marks_and_the_help_says_the_rest(
+    assumed: bool,
+) -> None:
+    """KPI 회색 줄은 바뀌는 값 · 기준 표지만이다 — 늘 같은 「월별 확보 기준」 · 「일정은 설비
+    일정」 · 「설비 일정 기준」 은 걷고 `?` 풍선과 Guide 가 말한다(2026-11-20 갈래 판정, 설계 규칙
+    UI-TXT-01 · UI-TXT-05). 「Static 기준 | UPEH 가정 기준」 과 「가정 전 n」 은 남고, 「달 수」 는
+    값의 단위라 남는다."""
+    app = AppTest.from_function(_kpi_row_options_app, args=(0, assumed)).run()
+    assert not app.exception
+    metrics = {metric.label: metric for metric in app.metric}
+    shortage = metrics["확보 기준 미달"]
+    assert shortage.value == "없음"
+    assert shortage.proto.delta == ("가정 전 2개월" if assumed else "")
+    assert "확보 기준(월별)" in shortage.proto.help
+    cause = metrics["부족 원인"]
+    assert cause.proto.delta == ("달 수 · UPEH 가정 기준" if assumed else "달 수 · Static 기준")
+    assert "설비 일정 기준 가용" in cause.proto.help
+    prescription = metrics["대책"]
+    assert prescription.proto.delta == ""
+    assert prescription.proto.help.startswith("설비 일정 기준")
+    shown = " ".join(str(metric.proto.delta) for metric in app.metric)
+    for gone in ("월별 확보 기준", "일정은 설비 일정", "설비 일정 기준"):
+        assert gone not in shown, gone
+    guide = (
+        Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/process_capa_detail.md"
+    ).read_text(encoding="utf-8")
+    for words in (
+        "달마다의 확보 기준(월별)",
+        "설비 일정 기준 가용으로 센 달",
+        "대책은 늘 설비 일정 기준",
+    ):
+        assert words in guide, words
+
+
 def _absent_app(status: str) -> None:
     from types import SimpleNamespace
     from typing import Any, cast

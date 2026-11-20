@@ -1984,7 +1984,10 @@ def render_process_kpis(
 ) -> None:
     """KPI 넷 — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
-    값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다. UPEH 가정이
+    값 글자를 짧게 둔다(카드 폭에 한 줄). 값 아래 회색 줄은 바뀌는 값 · 기준 표지만이다 — 그 달,
+    월 최대 부족, 「Static 기준 | UPEH 가정 기준」, 「가정 전 n」. 늘 같은 뜻풀이(월별 확보 기준 ·
+    일정 원인은 설비 일정 · 대책은 설비 일정 기준)는 `?` 풍선과 Guide 다(2026-11-20 갈래 판정, 설계
+    규칙 UI-TXT-01 · UI-TXT-05). 「달 수」 는 단위 없는 값(「대여 3」)의 단위라 남긴다. UPEH 가정이
     켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 가정 전(Static) 요약의 것이다 — 회색 줄에
     「가정 전 n」 을 함께 적는다(2026-11-12 사용자 답 q2 (가)).
     """
@@ -2029,34 +2032,35 @@ def render_process_kpis(
             key="process_detail_kpi_shortage",
             tone="attention" if kpis.shortage_months else "neutral",
             # 회색 줄은 좁은 창에서 끝이 말줄임으로 잘린다 — 끝에 부정(「기간 합 아님」)을 두면
-            # 「기간 합…」 만 남아 거꾸로 읽히므로 그 말은 풍선으로 옮긴다.
+            # 「기간 합…」 만 남아 거꾸로 읽히므로 그 말은 풍선으로 옮긴다. 미달이 없으면 늘 같은
+            # 「월별 확보 기준」 대신 줄을 비운다(가정 전 값만 — 풍선이 기준을 말한다).
             caption=(
-                f"월 최대 {_MINUS}{kpis.max_shortage}대"
+                f"월 최대 {_MINUS}{kpis.max_shortage}대{shortage_note}"
                 if kpis.shortage_months
-                else "월별 확보 기준"
-            )
-            + shortage_note,
+                else (shortage_note.removeprefix(" · ") or None)
+            ),
             help=(
                 "판정이 확보가 아닌 달 수와, 그 달들 가운데 확보 기준까지 모자란 대수의 "
-                "최댓값입니다. 기간 합이 아닙니다 — 같은 설비가 여러 달에 다시 쓰입니다."
+                "최댓값입니다. 판정은 달마다의 확보 기준(월별)으로 냅니다. 기간 합이 아닙니다 — "
+                "같은 설비가 여러 달에 다시 쓰입니다."
             ),
         )
         render_status_metric(
             "부족 원인",
             cause_summary(kpis, plan),
             key="process_detail_kpi_cause",
-            caption="달 수 · "
-            + ("UPEH 가정 기준" if official is not None else "Static 기준")
-            + (" · 일정은 설비 일정" if plan is not None else ""),
+            # 「일정」 원인이 설비 일정 기준이라는 말은 늘 같아 풍선(`CAUSE_HELP`)이 적는다.
+            caption="달 수 · " + ("UPEH 가정 기준" if official is not None else "Static 기준"),
             help=CAUSE_HELP,
         )
         render_status_metric(
             "대책",
             prescription_text(plan),
             key="process_detail_kpi_prescription",
-            caption=f"설비 일정 기준{prescription_note}",
+            # 대책은 늘 설비 일정 기준이라 그 말은 풍선이 적고, 회색 줄은 가정 전 값만이다.
+            caption=prescription_note.removeprefix(" · ") or None,
             help=(
-                "필요 단축 일정과 같은 계산을 이 공정 하나로 본 것입니다 — "
+                "설비 일정 기준 — 필요 단축 일정과 같은 계산을 이 공정 하나로 본 것입니다. "
                 "단축은 Qual 을 당길 호기, 신규는 당겨도 모자라 더 들여야 하는 추가N 입니다."
             ),
         )

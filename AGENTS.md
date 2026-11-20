@@ -5838,6 +5838,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   UI-LAY-11 · 1600 창 「제품별 소요대수」 켬은 그래도 「분류」 칸이 둘째 줄이라 두 줄 — `docs/TODO.md` 4장 물음). 고르기 셋(비가동 기준 · ④ 보기 · 분류)은 저마다 ⓘ · 「분류」 캡션과 한 칸(`_picker_pair` — 줄바꿈 없음)이라 줄이
   모자라면 함께 다음 줄로 가고, 숨긴 위젯 라벨은 「비가동 기준」 · 「④ 단축 보기」 다(UI-LAY-13). 단축 목표 글은 화면에 두지 않고 Guide · 시트 엑셀 머리 값 줄이 적으며(2026-11-12 사용자 메모 k-c4)
   KPI 칩에 거듭 적지 않고, 공정 카드의 기간 규칙은 「공정」 칸 풍선이다. 일정이 서지 않는 자리는 `constraint_equipment_plan.absent_note` 를 함께 쓴다.
+  KPI 넷(`render_process_kpis`) 회색 줄은 바뀌는 값 · 기준 표지만이다 — 그 달 · 월 최대 부족 · 「달 수 · Static 기준|UPEH 가정 기준」 ·
+  「가정 전 n」. 늘 같은 「월별 확보 기준」(미달 없을 때) · 「일정은 설비 일정」 · 대책의 「설비 일정 기준」 은 칸 풍선과 Guide 「KPI 넷」
+  이다(2026-11-20 갈래 판정 — 규칙집 6-39 pc-kpi-notes, UI-TXT-01 · UI-TXT-05).
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
   - 시트 엑셀 바이트도 세션 칸(`SHEET_MEMO_KEY`, 몇 벌)에 기억한다 — 키(`sheet_memo_key`)는 그림 기억 키에서 그림 세대 · 테마를

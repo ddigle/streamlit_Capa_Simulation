@@ -1054,7 +1054,9 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
     # 단축 목표 글은 Guide 가 적는다(2026-11-12 사용자 메모 k-c4) — 표 도구 줄에 서지 않는다. 고르는
     # 위젯도 없다. KPI 칩도 거듭하지 않는다(설계 규칙 UI-TXT-07).
     assert not [element for element in app.caption if "단축 목표" in str(element.value)]
-    assert _metric(app, "대책").delta == "설비 일정 기준"
+    # 대책은 늘 설비 일정 기준이라 회색 줄에 적지 않는다 — 풍선이 적는다(2026-11-20 갈래 판정).
+    assert _metric(app, "대책").delta == ""
+    assert str(_metric(app, "대책").proto.help).startswith("설비 일정 기준")
     # 비가동 기준 고르기는 표 도구 줄에 서고 처음은 Static 이다(q5b (가) · k-c4).
     basis = app.segmented_control(key=BASIS_KEY)
     assert list(basis.options) == ["Static", "일정"] and basis.value == BASIS_STATIC
