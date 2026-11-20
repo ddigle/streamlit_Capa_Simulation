@@ -5,8 +5,10 @@
 // 아무것도 보내지 않고, 확정 뒤 묶어 보낸다. 칸을 쓰거나 줄을 끄는 동안(누르는 동안도) 돌아온 회차는 다시 그리지 않고 받은
 // data 만 들고 있다가 끝나면 그린다 — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 click 이 사라진다.
 // 업무 판정은 파이썬이 한다. 데이터 글은 textContent 로만 넣는다(고정 아이콘은 공용 조각이 그린다).
+// 묶음 길이는 data `sendMs`(파이썬 `scenario_list_grid.LIST_SEND_MS`)다. 깨끗한 편집본의 첫 고침 · 줄 고르기 · 되돌리기 · 표 밖
+// 누름 · 창 숨김 · 떠나기 신호(`leave.js` — 화면을 떠나는 누름)는 묶지 않고 곧바로 보내고, 보낼 것이 남았거나 ack 가 오지 않은
+// 동안 편집기 명부에 busy 다(탭 줄 붙들기가 기다린다 — AGENTS 9장 「구역 회차 규칙」 R8).
 
-const SEND_MS = 300
 const ROW_HEIGHT = 34
 const DRAG_START_PX = 4
 const EDGE_SCROLL_PX = 28
@@ -136,12 +138,29 @@ function canRepaint(S) {
 }
 // </list-gate>
 
+// <list-batch>
+// 묶음 길이 — data `sendMs` 가 없거나 양수가 아니면 `SEND_MS`(ms).
+const SEND_MS = 300
+function batchMs(value) {
+  const ms = Number(value)
+  return Number.isFinite(ms) && ms > 0 ? ms : SEND_MS
+}
+
+// 깨끗한 편집본의 첫 고침인가 — 서버 초안에 고침이 없고(data `clean`) 보낼 목록의 고침 op(이름 · 옮기기)가 방금 넣은 하나뿐이다.
+// 첫 고침은 묶지 않는다 — 화면 탭 점 · 변경 칩 · 떠나기 확인이 묶음만큼 늦게 서지 않게. 보낸 첫 고침의 ack 가 오기 전의 다음
+// 고침부터는 묶는다(보낼 목록에 고침이 둘이다).
+const EDIT_OPS = new Set(['name', 'move'])
+function firstEdit(clean, ops) {
+  return Boolean(clean) && ops.filter((op) => EDIT_OPS.has(op.op)).length === 1
+}
+// </list-batch>
+
 function freshState() {
   return {
     mount: newMount(), box: createBox(), sentSeq: 0, timer: 0, base: null, limit: 2000, data: null, mode: null,
     edit: null, focus: null, drag: null, pressing: false, dirty: false, wantFocus: false, painting: false, listeners: [], bound: false,
     built: null, rowNodes: new Map(), settleTimer: 0, enterAfter: false, suppressClick: false, note: '', view: null,
-    toolsNode: null, headObserver: null, headWatched: null, headTimer: 0, headTries: 0,
+    toolsNode: null, headObserver: null, headWatched: null, headTimer: 0, headTries: 0, sendMs: SEND_MS, leave: null,
   }
 }
 
@@ -153,8 +172,12 @@ function receive(S, data) {
   // 옛 base op 는 서버가 세어 알리고 ack 로 지운다(`rebaseBox`). 낙관 표시는 `liveOps` 가 base 로 걷는다.
   rebaseBox(S.box, base)
   const ack = data.ack || {}
-  if (ack.mount === S.mount && Number.isInteger(ack.seq)) ackBox(S.box, ack.seq)
+  if (ack.mount === S.mount && Number.isInteger(ack.seq)) {
+    ackBox(S.box, ack.seq)
+    settleLeaving(S.leave, boxBusy(S.box))
+  }
   S.limit = Number((data.limits || {}).outboxCells) || S.limit
+  S.sendMs = batchMs(data.sendMs)
 }
 
 // 이미 보낸 op 만 남았으면 보내지 않는다 — 그렇지 않으면 이동 단추 열 번이 회차 열 번이 된다.
@@ -167,9 +190,11 @@ function flush(S) {
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 
+// 고침을 묶는다 — 떠나기 신호를 받은 뒤와 깨끗한 편집본의 첫 고침은 곧바로 보낸다.
 function schedule(S) {
+  if (leavingNow(S.leave) || firstEdit(S.data && S.data.clean, S.box.ops)) return flush(S)
   if (S.timer) clearTimeout(S.timer)
-  S.timer = setTimeout(() => flush(S), SEND_MS)
+  S.timer = setTimeout(() => flush(S), S.sendMs)
 }
 
 function queue(S, op, base) {
@@ -1091,7 +1116,7 @@ export default function (component) {
   if (!S.bound) {
     S.bound = true
     // 부품 밖으로 초점이 나가거나(「변경 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다. 그리는 중의 focusout 은 다시 그려 초점 든
-    // 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
+    // 칸이 사라진 것이다 — 나간 것이 아니라 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
       if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) flush(S)
     })
@@ -1100,6 +1125,16 @@ export default function (component) {
       S.pressing = true
     })
     listen(S, document, 'visibilitychange', () => flush(S))
+    // 화면을 떠나는 누름(탭 줄 · 사이드바 화면 링크 · 테마 단추 · 알림 칸 「그 화면으로」)의 신호 — 남은 op 를 곧바로 보내고, 보낼
+    // 것이 남았거나 ack 가 오지 않은 동안 busy 다(`leave.js`). 떠나기 표지는 ack 를 받을 때 걷으므로, 보낼 것도 기다릴 ack 도
+    // 없으면 그 자리에서 걷는다 — 올 ack 가 없는데 남겨 두면 머문 화면의 다음 고침이 묶이지 않는다.
+    S.leave = joinLeaving(window, {
+      busy: () => boxBusy(S.box),
+      flush: () => {
+        flush(S)
+        settleLeaving(S.leave, boxBusy(S.box))
+      },
+    })
     listen(S, document, 'pointerup', () => onPointerEnd(S, false))
     listen(S, document, 'pointercancel', () => onPointerEnd(S, true))
     // 끄는 중 Esc 는 취소다 — 칸의 키가 문서로 올라오지 않으므로(`stopKeys`) 잡는 단계에서 받는다.
@@ -1117,6 +1152,8 @@ export default function (component) {
     flush(S)
     for (const [target, type, handler, options] of S.listeners) target.removeEventListener(type, handler, options)
     S.listeners = []
+    if (S.leave) S.leave.drop()
+    S.leave = null
     if (S.timer) clearTimeout(S.timer)
     if (S.settleTimer) clearTimeout(S.settleTimer)
     if (S.headTimer) clearTimeout(S.headTimer)

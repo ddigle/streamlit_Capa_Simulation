@@ -754,8 +754,13 @@ def _on_list_outbox() -> None:
 
 def _list_common(draft: ListDraft, key: str) -> dict[str, Any]:
     """세 마운트 data 공통 — 세대 · 그 마운트가 보낸 op 가운데 반영한 마지막 seq · 보낼 목록
-    상한."""
-    common: dict[str, Any] = {"base": draft_base(draft), "limits": {"outboxCells": OUTBOX_LIMIT}}
+    상한 · 저장하지 않은 고침이 없는가(`clean` — 브라우저가 깨끗한 편집본의 첫 고침을 묶지 않고
+    곧바로 보낸다)."""
+    common: dict[str, Any] = {
+        "base": draft_base(draft),
+        "limits": {"outboxCells": OUTBOX_LIMIT},
+        "clean": not has_edits(draft),
+    }
     if not viewer_can("scenario.list_edit"):
         # 값만 — 이름 · 차례 고치기 · 끌기가 없다(설계 규칙 UI-INP-07 예외 · UI-NTF-05).
         common["readonly"] = True
@@ -924,7 +929,7 @@ def _opened_revisions(
 
 def _render_changes(database_path: str, view: _ListView) -> None:
     """「저장 전 변경」 — 수 넷 · 옛 값 → 새 값 · 줄 되돌리기, 그 아래 저장 구획 한 곳(설계 규칙
-    UI-LAY-03). 「변경 저장」 은 잠그지 않는다 — 출납이 300ms 묶음이라 마지막 회차의 판정은
+    UI-LAY-03). 「변경 저장」 은 잠그지 않는다 — 출납이 묶음이라 마지막 회차의 판정은
     브라우저보다 늦다(UI-INP-07). 콜백이 출납을 먼저 접은 뒤 판정해 단추 바로 아래에 알린다."""
     from capa_simulation.components.scenario_list_grid import render_list_mount
 

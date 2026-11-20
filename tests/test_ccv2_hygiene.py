@@ -505,19 +505,56 @@ def _edit_grid_rows_data() -> list[dict[str, Any]]:
     return _two_palettes(shell)
 
 
+def _scenario_list_js() -> str:
+    from capa_simulation.components import scenario_list_grid
+
+    return scenario_list_grid.registered_js()
+
+
+def _scenario_list_data() -> list[dict[str, Any]]:
+    """시나리오 목록 표 — 한 마운트(시나리오 표)가 회차마다 받는 data 둘(고친 이름 · ack 가
+    다르다)."""
+    rows = [
+        {"id": "a", "name": "가", "latest": "r1", "official": "", "updated": ""},
+        {"id": "b", "name": "나", "latest": "r2", "official": "", "updated": ""},
+    ]
+    first = {
+        "mode": "scenarios",
+        "base": "s:0",
+        "orderToken": "t",
+        "open": "a",
+        "rows": rows,
+        "limits": {"outboxCells": 2000},
+        "clean": True,
+        "sendMs": 300,
+        "palette": {},
+    }
+    second = {
+        **first,
+        "clean": False,
+        "rows": [{**rows[0], "name": "새 가", "saved": "가"}, rows[1]],
+        "ack": {"mount": "m-x", "seq": 1},
+    }
+    return [first, second]
+
+
 # 부품 이름 → (등록 JS, data 들). 편집기 갈래가 제 부품을 더한다 — 느슨한 대역으로 돌지 않는 부품은
 # 그 부품의 node 시험에 bind-once 를 둔다.
 BIND_ONCE: dict[str, tuple[Callable[[], str], Callable[[], list[dict[str, Any]]]]] = {
     "page_tabs": (_tab_strip_js, _tab_strip_data),
     "capa_edit_grid": (_edit_grid_js, _edit_grid_data),
     "capa_edit_grid_rows": (_edit_grid_rows_js, _edit_grid_rows_data),
+    "capa_scenario_list_grid": (_scenario_list_js, _scenario_list_data),
 }
 
 
 def _as_script(source: str) -> str:
-    """등록 글(ES 모듈)을 node 대본으로 — `export default function` 을 전역 이름에 단다."""
+    """등록 글(ES 모듈)을 node 대본으로 — `export default function` 을 전역 이름에 달고 부품 글은
+    함수 칸 안에 둔다(모듈처럼 — 부품의 맨 위 이름이 대역의 이름(`listen` 따위)과 부딪히지
+    않는다)."""
     assert source.count("export default function") == 1
-    return source.replace("export default function", "globalThis.__default = function", 1)
+    body = source.replace("export default function", "globalThis.__default = function", 1)
+    return f";(function () {{\n{body}\n}})()\n"
 
 
 @pytest.mark.parametrize("name", sorted(BIND_ONCE))
