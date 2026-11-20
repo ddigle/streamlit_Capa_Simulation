@@ -171,7 +171,7 @@ def test_the_layer_marks_only_shortened_units_of_the_chosen_target() -> None:
     assert (mark.days, mark.left, mark.bucket, mark.imminent) == (12, 5, BUCKET_MEDIUM, True)
     assert (mark.manager, mark.model, mark.modules) == ("담당-WB01", "MODEL-WB01", 1)
     assert (mark.main_text, mark.sub_text) == ("−12일", "D-5")
-    assert "기존 Qual" in mark.tip and "대상 월 2026-11" in mark.tip
+    assert "현재 Qual" in mark.tip and "대상 월 2026-11" in mark.tip
     assert [unit.name for unit in layer.virtuals] == ["추가1"]
     assert layer.unmatched == 1
     other = build_shortening_layer(plan, 1.2, today=plan.today, imminent_days=30)

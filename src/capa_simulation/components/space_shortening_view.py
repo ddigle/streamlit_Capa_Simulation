@@ -457,8 +457,17 @@ def load_space_layer(
             "error", bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
         )
     try:
+        # 현재 일정 기준은 필요 단축 일정과 같은 세션 칸이다(보드 답 Q03 (나) — 두 화면이 늘 같은
+        # 호기를 칠한다).
         keyed = shortening_source.load_official_shortening(
-            demand, frames, cutoff, tuple(months), today, manual_downtime=manual, level=level
+            demand,
+            frames,
+            cutoff,
+            tuple(months),
+            today,
+            manual_downtime=manual,
+            level=level,
+            basis=shortening_source.current_basis(),
         )
     except ValueError as exc:
         return ShorteningStop(
@@ -835,7 +844,12 @@ def _render_picked(
             f"{iso_month_text(mark.month)} 부족을 메웁니다" if mark.month is not None else "—"
         ) + (f" (해소 기여 월 {_months_text(mark.contributes)})" if mark.contributes else "")
         lines = [
-            f"Qual 일정 ~~{mark.original_qual.isoformat()}~~ → **{mark.target_qual.isoformat()}**",
+            (
+                f"Qual 일정 ~~{mark.original_qual.isoformat()}~~ → "
+                f"**{mark.target_qual.isoformat()}**"
+                if mark.original_qual is not None
+                else f"현재 일정 없음(남는 호기) → 필요 **{mark.target_qual.isoformat()}**"
+            ),
             f"목표까지 {mark.sub_text}",
             f"대상 월 {month}",
         ]

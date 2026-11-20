@@ -116,8 +116,11 @@ class ShorteningMark:
 
     unit: str
     process: str
-    days: int
-    original_qual: date
+    days: int | None
+    """당길 날수. Static 기준의 남는 호기(현재 일정 없이 당긴 이름 있는 호기 — 2026-11-20 보드 답
+    Q11 (가))는 None 이다."""
+    original_qual: date | None
+    """현재 Qual 일정. 남는 호기는 None."""
     target_qual: date
     month: int | None
     contributes: str
@@ -130,8 +133,8 @@ class ShorteningMark:
 
     @property
     def main_text(self) -> str:
-        """배지 윗줄 「−12일」."""
-        return f"−{self.days}일"
+        """배지 윗줄 「−12일」 — 남는 호기는 「필요」(당길 현재 일정이 없다)."""
+        return "필요" if self.days is None else f"−{self.days}일"
 
     @property
     def sub_text(self) -> str:
@@ -140,10 +143,16 @@ class ShorteningMark:
 
     @property
     def tip(self) -> str:
-        """배지 풍선 「APW02 · 기존 Qual 2026-11-11 → 목표 2026-11-04 · 대상 월 2026-11」."""
+        """배지 풍선 「APW02 · 현재 Qual 2026-11-11 → 목표 2026-11-04 · 대상 월 2026-11」 — 남는
+        호기는 「현재 일정 없음(남는 호기) → 필요 …」."""
         month = f" · 대상 월 {iso_month_text(self.month)}" if self.month is not None else ""
+        if self.original_qual is None:
+            return (
+                f"{self.unit} · 현재 일정 없음(남는 호기) → 필요 "
+                f"{self.target_qual.isoformat()}{month}"
+            )
         return (
-            f"{self.unit} · 기존 Qual {self.original_qual.isoformat()} → 목표 "
+            f"{self.unit} · 현재 Qual {self.original_qual.isoformat()} → 목표 "
             f"{self.target_qual.isoformat()}{month}"
         )
 
@@ -263,10 +272,10 @@ def build_shortening_layer(
             continue
         if record["구분"] != KIND_SHORTENED or unit in marks:
             continue
+        # 현재 일정이 없는 「단축」 줄은 Static 기준의 남는 호기다 — 실제 호기라 도면에 칠한다(보드
+        # 답 Q11 (가) — 「신규」 는 도면에 없다).
         original = _as_date(record["기존 Qual"])
         days = _as_int(record["단축일수"])
-        if original is None or days is None:
-            continue
         attributes = master.get(unit, {})
         modules = _as_int(attributes.get("모듈 수")) or _as_int(record["모듈 수"]) or 1
         marks[unit] = ShorteningMark(
@@ -281,7 +290,8 @@ def build_shortening_layer(
             manager=_text(attributes.get("담당자")),
             model=_text(attributes.get("Model")),
             left=left,
-            bucket=bucket_of(days, target, today),
+            # 남는 호기는 당길 현재 일정이 없어 가장 큰 구간 색이다(신규를 들이는 것과 같은 무게).
+            bucket=bucket_of(LARGE_FROM if days is None else days, target, today),
             imminent=0 <= left <= imminent_days,
         )
     return ShorteningLayer(
@@ -370,13 +380,13 @@ class FloorLayer:
 
     @property
     def max_days(self) -> int:
-        return max((mark.days for mark in (*self.rows, *self.unplaced)), default=0)
+        return max((mark.days or 0 for mark in (*self.rows, *self.unplaced)), default=0)
 
 
 def _chip_text(process: str, marks: Sequence[ShorteningMark], virtual: int, late: int) -> str:
     parts = [process]
     if marks:
-        parts.append(f"{len(marks)}대 최대 −{max(mark.days for mark in marks)}일")
+        parts.append(f"{len(marks)}대 최대 −{max(mark.days or 0 for mark in marks)}일")
     if virtual:
         parts.append(f"추가 {virtual}")
     if late:
@@ -540,7 +550,7 @@ def fab_floor_counts(
             spot, {"units": 0, "max": 0, "expired": 0, "virtual": 0, "loose": 0}
         )
         tally["units"] += 1
-        tally["max"] = max(tally["max"], mark.days)
+        tally["max"] = max(tally["max"], mark.days or 0)
         tally["expired"] += int(mark.bucket == BUCKET_EXPIRED)
         tally["loose"] += int(is_loose)
     by_process = _process_floors(counted)
@@ -612,7 +622,7 @@ def fab_layer_summary(
         total=len(scoped),
         drawn=len(on_floor),
         unplaced=len(scoped) - len(on_floor),
-        max_days=max((mark.days for mark in scoped), default=0),
+        max_days=max((mark.days or 0 for mark in scoped), default=0),
         expired=sum(1 for mark in scoped if mark.bucket == BUCKET_EXPIRED),
         virtual=sum(1 for unit in layer.virtuals if _in_scope(unit.process, processes)),
         filtered_out=len(layer.marks) - len(scoped),

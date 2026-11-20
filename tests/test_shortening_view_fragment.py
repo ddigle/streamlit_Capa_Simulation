@@ -188,6 +188,9 @@ app_run = begin_app_run()
 {theme_lines}st.session_state[{FULL_RUNS_KEY!r}] = st.session_state.get({FULL_RUNS_KEY!r}, 0) + 1
 st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",
                                                   "{last // 100}-{last % 100:02d}")
+# 프래그먼트 회차의 짜임을 본다 — 현재 일정 기준은 설비 마스터로 둔다(이 흉내 시나리오에는 Static
+# 가용대수 표가 없다).
+st.session_state.setdefault("equipment_shortening_basis_v1", "설비 마스터")
 page_source = Path({str(PAGE)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(PAGE)!r}, "exec"), {{"__name__": "__main__"}})
 app_run.finish()

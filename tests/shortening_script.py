@@ -5,6 +5,11 @@
 컴포넌트가 그 함수를 **부를 때** 모듈에서 찾으므로 두 화면이 같은 흉내를 본다 — Space 「필요 단축」
 보기와 필요 단축 일정의 키 같음 시험(T-P5)이 같은 수요로 돈다. 빈 설비 DB 는 오늘에 맞춘 샘플
 fleet 을 보이므로 그 호기로 계산이 돈다.
+
+현재 일정 기준(Static | 설비 마스터 — 2026-11-20)은 `basis` 로 처음 세션 값을 심는다. 기본은 설비
+마스터다 — 그 앞에 쓴 시험이 설비 마스터 기준의 숫자를 본다. `None` 이면 심지 않아 화면 기본값
+(Static)이다. `static` 을 주면 활성 시나리오에 Static 가용대수 표(`RQ_EQP_AVBL` — 모든 공정 · 달에
+그 값)를 싣는다.
 """
 
 from __future__ import annotations
@@ -32,10 +37,27 @@ def shortening_script(
     sidebar_first: int | None = None,
     sidebar_last: int | None = None,
     labels: dict[str, str] | None = None,
+    basis: str | None = "설비 마스터",
+    static: float | None = None,
 ) -> str:
     simulation_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     months = months_from_today()
     first, last = sidebar_first or months[0], sidebar_last or months[-1]
+    static_tables = (
+        ""
+        if static is None
+        else (
+            'active["tables"]["RQ_EQP_AVBL"] = pd.DataFrame(\n'
+            f'    [{{"생산계획년월": month, "공정": process, "가용대수": {static!r}}}\n'
+            "     for month in months for process in processes]\n)\n"
+        )
+    )
+    token_tail = "" if static is None else f"-static-{static}"
+    basis_seed = (
+        ""
+        if basis is None
+        else f'    st.session_state.setdefault("equipment_shortening_basis_v1", {basis!r})\n'
+    )
     return f"""
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,10 +96,13 @@ reference_tables = {{
     "RQ_PKG_PLAN": pd.DataFrame({{"생산계획년월": months}}),
 }}
 # 소요대수 산출 기준(RQ_REQB)은 데이터 범위만 쓰인다 — 조회기간이 그 밖일 때 알리는 범위.
+# 내용 토큰은 Static 가용대수 표까지 덮는다(앱에서는 표가 바뀌면 새 토큰) — 표를 실은 흉내는
+# 다른 토큰.
 active = {{
-    "content_token": "shortening-test",
+    "content_token": "shortening-test{token_tail}",
     "tables": {{"RQ_REQB": pd.DataFrame({{"생산계획년월": months}})}},
 }}
+{static_tables}
 density = pd.DataFrame({{"생산계획년월": months, "부하량": [12.5 + i for i in range(len(months))]}})
 wafer = pd.DataFrame({{"생산계획년월": months, "Wafer 부하량": [198000.0] * len(months)}})
 
@@ -142,6 +167,7 @@ try:
     st.download_button = record_download_button
     st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",
                                                       "{last // 100}-{last % 100:02d}")
+{basis_seed}
     page_source = Path({str(page)!r}).read_text(encoding="utf-8")
     exec(compile(page_source, {str(page)!r}, "exec"), {{"__name__": "__main__"}})
 finally:

@@ -68,6 +68,7 @@ from capa_simulation.components.shortening_board import (
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
+from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import UNIT_NAME_STYLE, unit_name
 from capa_simulation.components.target_level_field import ENTRY_UNIT_LABEL, entry_style
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
@@ -907,7 +908,7 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
 
     assert '<span class="shk-unit-name"><span dir="ltr">EQ&lt;LONG&gt;-0001</span></span>' in markup
     assert (
-        '<span class="shk-muted">기존</span> 12.10 → <span class="shk-muted">단축</span> 10.07'
+        '<span class="shk-muted">현재</span> 12.10 → <span class="shk-muted">단축</span> 10.07'
     ) in visible
     assert '<div class="shk-result"><span class="shk-cut">−64일</span></div>' in visible
     for gone in ("기여", "+0.29대", "모듈", "26.12.10", "2026"):
@@ -915,7 +916,7 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
     title = re.search(r'title="([^"]*)"', markup)
     assert title is not None
     assert title.group(1) == (
-        "EQ&lt;LONG&gt;-0001 · 기존 Qual 2026-12-10 → 목표 Qual 2026-10-07 · −64일 · "
+        "EQ&lt;LONG&gt;-0001 · 현재 Qual 2026-12-10 → 목표 Qual 2026-10-07 · −64일 · "
         "기여 시작 2026-10-08 · 늘어난 환산대수 +0.29대 · 모듈 2 · 해소 기여 월 26.10"
     )
 
@@ -1086,7 +1087,7 @@ def test_a_row_date_in_another_year_carries_its_year() -> None:
     virtual_visible = _visible(_unit_row(virtual, axis, "", today=today))
 
     assert (
-        '<span class="shk-muted">기존</span> 27.02.25 → <span class="shk-muted">단축</span> 10.08'
+        '<span class="shk-muted">현재</span> 27.02.25 → <span class="shk-muted">단축</span> 10.08'
     ) in shortened_visible
     assert '<span class="shk-muted">필요</span> 28.09.22' in virtual_visible
 
@@ -1749,3 +1750,83 @@ def test_card_link_numbers_are_made_once_per_plan_key_target_and_period(
     assert app.session_state[DETAIL_NUMBERS_KEY][0] == (plan_key, 1.2, months)
     assert _captions(app).count(DETAIL_LINK_FALLBACK) == len(_cards(app))
     clear_equipment_repository()
+
+
+# ---------------------------------------------------------------- 현재 일정 기준(2026-11-20)
+
+
+def _run_static(database_path: Path, *, static: float | None = 3.0) -> AppTest:
+    """세션 기준을 심지 않은 회차 — 화면 기본값(Static). 활성 시나리오에 Static 가용대수를
+    싣는다."""
+    script = shortening_script(database_path, PAGE, basis=None, static=static)
+    return AppTest.from_string(script, default_timeout=120).run()
+
+
+def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
+    tmp_path: Path,
+) -> None:
+    """보드 답 Static-0 · Q01 · Q02 — 조건 카드 맨 위 「Static | 설비 마스터」 전환은 처음 Static
+    이다. 기준 값 글 · CSV 맨 앞 칸이 기준을 따르고, 바꾸면 앱 전체가 다시 돌아 그 기준의 계획이다.
+    호기 줄은 고르지 않은 기준의 일정을 흐린 ○ 로 함께 그린다."""
+    app = _run_static(_database(tmp_path))
+    assert not app.exception, [element.message for element in app.exception]
+    switch = app.sidebar.button_group(key=SHORTENING_BASIS_KEY)
+    assert switch.value == "Static"
+    assert any("Static 역산 가용(환산) · 오늘" in caption for caption in _caption_paths(app))
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert units.columns[0] == "현재 일정 기준" and set(units["현재 일정 기준"]) == {"Static"}
+    _, months = _csv(app, "equipment_shortening_months_csv")
+    assert set(months["현재 일정 기준"]) == {"Static"}
+    body = _html(app)
+    assert "○ 설비 마스터 Qual(흐림)" in body
+    assert 'class="shk-other"' in body
+
+    switch.set_value("설비 마스터").run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_BASIS_KEY] == "설비 마스터"
+    assert any(VALUE_LINE_TEXT in caption for caption in _caption_paths(app))
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["현재 일정 기준"]) == {"설비 마스터"}
+    assert "○ Static 역산(흐림)" in _html(app)
+
+
+def test_static_without_a_static_table_lists_every_process_as_static_missing(
+    tmp_path: Path,
+) -> None:
+    """보드 답 Q13 (가) — Static 가용대수가 없는 공정은 계산하지 않고 맞대지 못한 공정 알림
+    (`RS-02`) 표에 「Static 가용 없음」 으로 둔다. 화면은 멈추지 않는다."""
+    app = _run_static(_database(tmp_path), static=None)
+    assert not app.exception, [element.message for element in app.exception]
+
+    note = active_state(app, "RS-02")
+    assert note is not None
+    frame = table_frame(note_table(note, "맞대지 못한 공정"))
+    assert "Static 가용 없음" in set(frame["구분"])
+
+
+def test_a_leftover_unit_row_reads_needed_with_its_master_date_dimmed() -> None:
+    """보드 답 Q11 (가) — 남는 호기는 현재 일정 없이 「필요 MM.DD」 · 「남는 호기」 이고, 고르지
+    않은 기준(설비 마스터)의 Qual 은 흐린 ○ 로 함께 선다."""
+    row: dict[str, Any] = {
+        "공정": "Die Attach",
+        "호기": "U7",
+        "구분": KIND_SHORTENED,
+        "기존 Qual": None,
+        "목표 Qual": date(2027, 2, 24),
+        "기여 시작": date(2027, 2, 25),
+        "단축일수": None,
+        "늘어난 환산대수": 0.806,
+        "대상 월": 202703,
+        "해소 기여 월": "202703",
+        "모듈 수": 1,
+    }
+    axis = (date(2027, 1, 1), date(2027, 6, 1))
+    markup = _unit_row(
+        row, axis, "", today=date(2026, 11, 20), other=date(2027, 5, 10), basis="Static"
+    )
+    visible = _visible(markup)
+
+    assert '<span class="shk-muted">필요</span> 27.02.24' in visible
+    assert '<span class="shk-new">남는 호기</span>' in visible
+    assert 'class="shk-other"' in markup
+    assert "설비 마스터 Qual 2027-05-10" in markup

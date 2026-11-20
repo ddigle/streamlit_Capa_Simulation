@@ -41,6 +41,7 @@ from capa_simulation.components.shortening_board import (
     highlight_badge,
 )
 from capa_simulation.components.shortening_source import (
+    SHORTENING_BASIS_KEY,
     SHORTENING_LEVEL_KEY,
     SHORTENING_START_KEY,
 )
@@ -430,6 +431,32 @@ def test_both_screens_build_the_same_plan_key_for_the_official_session(
     _turn_on(_ok(later.run()))
     assert plan_keys["keys"][-1][5] == board_key[5][1:]
     assert plan_keys["keys"][-1] != board_key
+
+
+def test_both_screens_share_the_static_basis_switch_and_its_plan_key(
+    tmp_path: Path, plan_keys: dict[str, list[Any]]
+) -> None:
+    """현재 일정 기준(2026-11-20 보드 답 Q03 (나)) — 처음은 Static 이고 필요 단축 일정 · Space
+    「필요 단축」 보기가 같은 세션 칸 · 같은 계획 키(끝 칸 「Static」)를 쓴다. Space 카드에도 같은
+    전환이 서고, 거기서 설비 마스터로 바꾸면 키의 끝 칸만 바뀐다. Static 역산 상태 알림(`RS-07`)은
+    두 화면이 같은 범위 · 같은 지문이다."""
+    _saved_database(tmp_path)
+    database = tmp_path / "equipment.duckdb"
+    shortening = _ok(_app(database, SHORTENING_PAGE, basis=None, static=3.0).run())
+    board_key = plan_keys["keys"][-1]
+    assert board_key[-1] == "Static"
+    assert shortening.session_state[SHORTENING_BASIS_KEY] == "Static"
+    space = _app(database, basis=None, static=3.0)
+    _turn_on(_ok(space.run()))
+    assert plan_keys["keys"][-1] == board_key
+    switch = space.sidebar.button_group(key=SHORTENING_BASIS_KEY)
+    assert switch.value == "Static"
+    (board_note,) = states(shortening, "RS-07")
+    (space_note,) = states(space, "RS-07")
+    assert (space_note["scope"], space_note["fp"]) == (board_note["scope"], board_note["fp"])
+    switch.set_value("설비 마스터")
+    _ok(space.run())
+    assert plan_keys["keys"][-1] == (*board_key[:9], "설비 마스터")
 
 
 def test_an_assumption_session_shares_the_shortening_key_and_names_its_scenario(

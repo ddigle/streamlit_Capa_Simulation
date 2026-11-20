@@ -835,8 +835,13 @@ def progress_summary_markup(
     level: float,
     *,
     selected: bool,
+    current_basis: str | None = None,
 ) -> str:
-    """요약 세 칸 — 단축 필요일수 합계(과거 → 현재 막대 두 줄), 호기 변동, 기준선."""
+    """요약 세 칸 — 단축 필요일수 합계(과거 → 현재 막대 두 줄), 호기 변동, 기준선.
+
+    기준선 칸에 그 기준선의 현재 일정 기준을 적는다 — 진척 비교는 늘 그 기준의 지금 계획과
+    견준다(2026-11-20 보드 답 Q14 (가)). 조건 카드 전환(`current_basis`)과 다르면 「이 기준으로
+    견줌」 을 덧붙인다(설계 규칙 UI-DAT-11 — 전환과 견준 기준이 어긋나 보이지 않게)."""
     summary = view.summary
     top = max(summary.past_days, summary.current_days, 1)
     change, color = _change_text(summary.change)
@@ -907,6 +912,15 @@ def progress_summary_markup(
         origin.append(f"시나리오 {head.scenario_name}{revision}")
     if origin:
         source.append(" · ".join(origin))
+    basis = head.schedule_basis
+    source.append(
+        f"현재 일정 기준 {basis}"
+        + (
+            f" — 이 기준으로 견줌(전환은 {current_basis})"
+            if current_basis is not None and current_basis != basis
+            else ""
+        )
+    )
     detail = "".join(f'<span class="shk-kpi-note">{_escape(line)}</span>' for line in source)
     reference = (
         '<div class="shk-kpi"><span class="shk-kpi-label">기준선</span>'

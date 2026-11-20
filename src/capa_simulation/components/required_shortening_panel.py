@@ -95,6 +95,11 @@ from capa_simulation.components.literal_markdown import literal_markdown, litera
 from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import render_row_value
+from capa_simulation.components.shortening_basis_switch import (
+    other_mark_label,
+    render_basis_switch,
+    supply_label,
+)
 from capa_simulation.components.shortening_board import (
     ShorteningHighlight,
     current_highlight,
@@ -131,6 +136,7 @@ from capa_simulation.components.shortening_source import (
     SHORTENING_START_KEY,
     ShorteningDemand,
     ShorteningStop,
+    current_basis,
     load_official_shortening,
     manual_downtime_for,
     shortening_filter_profile_or_default,
@@ -218,6 +224,7 @@ from capa_simulation.services.shortening_watch import (
     unit_managers,
 )
 from capa_simulation.services.space_shortening_layer import shortening_space_floors
+from capa_simulation.services.static_qual_schedule import BASIS_MASTER, BASIS_STATIC
 from capa_simulation.services.undated_equipment import (
     UNDATED_HELP,
     undated_candidate_note,
@@ -243,7 +250,9 @@ __all__ = [
     "SHORTENING_START_KEY",
     "USAGE_NOTICE_HELP",
     "VIEW_FRAGMENT_KEY",
+    "other_basis_dates",
     "render_required_shortening_tab",
+    "static_states_note",
     "report_unmatched_processes",
 ]
 
@@ -313,6 +322,13 @@ UNMATCHED_TITLE = "맞대지 못한 공정"
 UNMATCHED_NAME_COLUMN = "원본 공정명"
 UNMATCHED_SCENARIO_ONLY = "시나리오에만 있는 공정"
 UNMATCHED_EQUIPMENT_ONLY = "설비 일정에만 있는 공정"
+UNMATCHED_STATIC_MISSING = "Static 가용 없음"
+# Static 역산 상태 알림(`RS-07`)의 표 이름 · 구분 값(보드 답 Q10 · Q11 · Q12 — 자리에 그리지
+# 않는다).
+STATIC_STATE_TITLE = "Static 역산 상태"
+STATIC_SHORTAGE = "Static 대비 호기 부족"
+STATIC_PAST = "Static 마감 지남"
+STATIC_SPARE = "남는 호기"
 CUTOFF_MISSING = "미기재"
 USAGE_NOTICE_HELP = (
     "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 가용대수에서 뺐고 단축 후보에도 들지 "
@@ -394,6 +410,11 @@ class _Plan:
     shown_baselines: tuple[str, ...] | None = None
     """카드 `진척 비교` 상자에 세운 기준선 id 들(상자가 없으면 None) — 본문 프래그먼트 회차가 지금
     목록과 견준다(`_view_choices`)."""
+    basis: str = BASIS_MASTER
+    """조건 카드 맨 위 전환의 현재 일정 기준(Static | 설비 마스터) — 계획이 이 기준이다."""
+    plan_for: Callable[[str], simulation_cache.KeyedShorteningPlan] | None = None
+    """같은 입력으로 다른 기준의 계획을 받는 길 — 진척 비교가 기준선과 같은 기준의 지금 계획과 견줄
+    때(보드 답 Q14 (가)) 프래그먼트 회차에서 부른다(두 기준의 계획은 따로 캐시)."""
 
     @property
     def plan(self) -> ShorteningPlan:
@@ -466,6 +487,10 @@ def render_required_shortening_tab(
     # 머리·본문 자리를 먼저 잡는다 — 조건 카드가 본문 제자리에 서는 자리(카드를 주지 않을 때)에서도
     # 머리가 카드 위에 선다.
     view = st.container()
+    # 카드 맨 위는 현재 일정 기준 전환(Static | 설비 마스터 — 보드 답 Q01 (가), 설계 규칙 UI-LAY-02
+    # 예외 줄). 멈춘 회차에도 같은 자리에 선다 — 무엇을 계산할지 정하는 칸이라 계산보다 먼저다.
+    with controls:
+        basis = render_basis_switch()
     prepared = _prepare(
         equipment=equipment,
         downtime=downtime,
@@ -478,6 +503,7 @@ def render_required_shortening_tab(
         scenario_error=scenario_error,
         controls=controls,
         database_path=equipment_database_path,
+        basis=basis,
     )
     # 맞대지 못한 공정 · 상태 알림은 프래그먼트 밖에서 낸다 — 계획 · 설비 · 공정 선택은 앱 전체
     # 회차에서만 바뀐다.
@@ -512,6 +538,7 @@ def _prepare(
     scenario_error: str | None,
     controls: AbstractContextManager[object],
     database_path: str | None,
+    basis: str = BASIS_MASTER,
 ) -> _Plan | ShorteningStop:
     """조건 카드(시작 월·끝 월·공정)를 그리고 계획을 세운다 — 앱 전체 회차에서만 돈다.
 
@@ -551,17 +578,27 @@ def _prepare(
         return ShorteningStop(
             "error", f"입력 비가동대수를 읽지 못했습니다 — {bootstrap_error_message(exc)}"
         )
+    frames = (baseline, equipment, downtime)
+
+    def plan_for(chosen: str) -> simulation_cache.KeyedShorteningPlan:
+        """같은 입력 · 다섯 목표로 `chosen` 기준의 계획(진척 비교가 기준선과 같은 기준으로 견줄
+        때). 기준선은 다섯 목표만 얼리므로 직접 넣은 목표는 더하지 않는다."""
+        return load_official_shortening(
+            demand, frames, cutoff, tuple(months), today, manual_downtime=manual, basis=chosen
+        )
+
     try:
         # 지금 목표가 다섯 밖의 직접 넣은 값이면 그 값 하나를 더 계산해 계획에 더한다(Space 와 같은
         # 길 — 2026-11-11 사용자 고칠 것 Q2-26). 본문은 같은 세션 칸을 읽는다(`_view_choices`).
         official = load_official_shortening(
             demand,
-            (baseline, equipment, downtime),
+            frames,
             cutoff,
             tuple(months),
             today,
             manual_downtime=manual,
             level=LEVEL_FIELD.current(),
+            basis=basis,
         )
     except ValueError as exc:
         return ShorteningStop(
@@ -592,6 +629,8 @@ def _prepare(
         labels=labels,
         assumption=assumption,
         shown_baselines=shown_baselines,
+        basis=basis,
+        plan_for=plan_for,
     )
 
 
@@ -753,8 +792,24 @@ def _render_body(
         if not compared.has_level(level):
             _render_missing_baseline_level(level, today)
             return
+        # 진척 비교는 기준선과 **같은 기준**의 지금 계획과 견준다(보드 답 Q14 (가)) — 기준 차이가
+        # 진척으로 둔갑하지 않게. 전환과 다르면 그 기준의 계획을 받는다(따로 캐시된 칸).
+        keyed = prepared.official
+        if compared.summary.schedule_basis != prepared.basis and prepared.plan_for is not None:
+            try:
+                keyed = prepared.plan_for(compared.summary.schedule_basis)
+            except ValueError as exc:
+                _render_stop(
+                    ShorteningStop(
+                        "error",
+                        "기준선과 같은 기준의 계획을 세우지 못했습니다 — "
+                        + bootstrap_error_message(exc),
+                    ),
+                    today,
+                )
+                return
         _render_progress(
-            prepared.official,
+            keyed,
             compared,
             level=level,
             months=months,
@@ -768,6 +823,7 @@ def _render_body(
             link_details=link_details,
             equipment_label=link_label,
             inactive_floors=inactive_floors,
+            current_basis=prepared.basis,
         )
         return
 
@@ -784,6 +840,7 @@ def _render_body(
         today=today,
     )
     managers = unit_managers(plan.unit_master)
+    other_dates = other_basis_dates(plan)
     # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
     # 프래그먼트라 목표를 바꿀 때마다 돈다.
     space_floors = (
@@ -838,6 +895,8 @@ def _render_body(
                     plan.today,
                     highlight=highlight_badge(focus) if focus is not None else None,
                     managers=managers,
+                    other_dates=other_dates,
+                    basis=plan.basis,
                 )
             )
             if link_details:
@@ -951,11 +1010,13 @@ def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> t
     return float(level), str(compare)
 
 
-def basis_text(today: date) -> str:
-    """기준 값 — 「설비 일정 기준 가용(환산) · 오늘 2026-11-09」. 따로 줄을 세우지 않고 이웃 줄
-    오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 ·
-    UI-LAY-11)."""
-    return f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
+def basis_text(today: date, basis: str | None = None) -> str:
+    """기준 값 — 「Static 역산 가용(환산) · 오늘 2026-11-20」(설비 마스터 기준이면 「설비 일정 기준
+    가용(환산)」 — 보드 답 Q02 (가)). 따로 줄을 세우지 않고 이웃 줄 오른쪽 끝 작은 글이다
+    (`_render_basis` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 기준을 주지
+    않으면 세션 칸(`current_basis` — 이 회차의 계획과 같은 값)이다."""
+    chosen = current_basis() if basis is None else basis
+    return f"{supply_label(chosen)} · 오늘 {today:%Y-%m-%d}"
 
 
 def _render_basis(today: date) -> None:
@@ -1299,7 +1360,12 @@ def _report_unmatched(
     일이 없어 본문 자리를 두지 않는다.
     """
     if isinstance(prepared, ShorteningStop):
-        alerts.state("RS-02", scope=None, content=None, active=False)
+        alerts.emit(
+            [
+                alerts.state_note("RS-02", scope=None, content=None, active=False),
+                alerts.state_note("RS-07", scope=None, content=None, active=False),
+            ]
+        )
         return
     report_unmatched_processes(
         prepared.plan,
@@ -1316,10 +1382,11 @@ def report_unmatched_processes(
     months: Sequence[int],
     revision: tuple[str | None, int | None],
 ) -> None:
-    """상태 알림 `RS-02` 한 자리 — 필요 단축 일정과 Space 「필요 단축」 보기가 같은 계획 · 같은
-    범위(시뮬레이션 내용 토큰 + 달, 설비 리비전) · 같은 내용(이름 목록)으로 낸다. 한쪽에서 본
-    알림은 다른 쪽에서 다시 뜨지 않는다(AGENTS 9장 「알림 칸」 — 같은 조건을 두 화면이 보면 같은
-    코드 · 같은 범위)."""
+    """상태 알림 `RS-02` 와 `RS-07`(Static 역산 상태 — `static_states_note`)을 한 자리에 — 필요 단축
+    일정과 Space 「필요 단축」 보기가 같은 계획 · 같은 범위(시뮬레이션 내용 토큰 + 달, 설비 리비전)
+    · 같은 내용(이름 목록)으로 낸다. 한쪽에서 본 알림은 다른 쪽에서 다시 뜨지 않는다(AGENTS 9장
+    「알림 칸」 — 같은 조건을 두 화면이 보면 같은 코드 · 같은 범위). 두 알림을 한 표지에 실어 이벤트
+    칸 자리 수는 전과 같다(한 자리)."""
     sim = simulation_scope(active_scenario, (months[0], months[-1]) if months else None)
     equipment_id, equipment_no = revision
     label = sim.label + (f" · 설비 r{equipment_no}" if equipment_no is not None else "")
@@ -1327,6 +1394,8 @@ def report_unmatched_processes(
     groups = (
         (UNMATCHED_SCENARIO_ONLY, plan.required_only),
         (UNMATCHED_EQUIPMENT_ONLY, plan.availability_only),
+        # Static 기준에서 계산할 달에 Static 가용대수가 없어 계산하지 않은 공정(보드 답 Q13 (가)).
+        (UNMATCHED_STATIC_MISSING, plan.static_missing),
     )
     rows = [(group, name) for group, names in groups for name in names]
     frame = pd.DataFrame(rows, columns=["구분", UNMATCHED_NAME_COLUMN])
@@ -1335,10 +1404,15 @@ def report_unmatched_processes(
     parts = [f"{group} {len(names)}개" for group, names in groups if names]
     if uncut:
         parts.append(f"그 가운데 Cut-off 미기재 {len(uncut)}개")
-    alerts.state(
+    unmatched = alerts.state_note(
         "RS-02",
         scope={**sim.scope, "equipment": equipment_id},
-        content=[sorted(plan.required_only), sorted(plan.availability_only), sorted(uncut)],
+        content=[
+            sorted(plan.required_only),
+            sorted(plan.availability_only),
+            sorted(uncut),
+            *([sorted(plan.static_missing)] if plan.static_missing else []),
+        ],
         active=bool(rows),
         text=f"맞대지 못한 공정 {len(rows)}개 — 비교에서 뺌. 목록: {ALARM_ROW_PLACE}",
         full=(
@@ -1359,6 +1433,99 @@ def report_unmatched_processes(
                 },
             )
         ],
+    )
+    alerts.emit(
+        [
+            unmatched,
+            static_states_note(
+                plan, active_scenario=active_scenario, months=months, revision=revision
+            ),
+        ]
+    )
+
+
+def static_states_note(
+    plan: ShorteningPlan,
+    *,
+    active_scenario: ActiveScenario,
+    months: Sequence[int],
+    revision: tuple[str | None, int | None],
+) -> alerts.AlertNote:
+    """Static 기준 계획의 새 상태 셋을 한 알림 `RS-07` 로 — Static 대비 호기 부족(공정 · 달 · 대수,
+    보드 답 Q10) · Static 마감 지남(오늘로 미룬 호기, Q12) · 남는 호기(Static 을 채우고 남은 호기,
+    Q11). 자리에는 그리지 않는다(초안 6장 11, 설계 규칙 UI-NTF-02). 필요 단축 일정과 Space 「필요
+    단축」 보기가 같은 범위 · 같은 내용으로 낸다(`RS-02` 와 같은 길 — 이름은 원본 공정명).
+
+    맞댄 공정(`plan.processes`)만 센다. 설비 마스터 기준이거나 셋 다 없으면 `active=False` 다. 알림
+    하나(`alerts.AlertNote`)를 돌려준다 — `report_unmatched_processes` 가 `RS-02` 와 한 표지에
+    싣는다.
+    """
+    sim = simulation_scope(active_scenario, (months[0], months[-1]) if months else None)
+    equipment_id, equipment_no = revision
+    schedule = plan.static_schedule if plan.basis == BASIS_STATIC else None
+    rows: list[tuple[str, str, str, str]] = []
+    counts = {STATIC_SHORTAGE: 0, STATIC_PAST: 0, STATIC_SPARE: 0}
+    if schedule is not None:
+        wanted = set(plan.processes)
+        for check in schedule.shortages():
+            if check.process in wanted:
+                counts[STATIC_SHORTAGE] += 1
+                rows.append(
+                    (
+                        STATIC_SHORTAGE,
+                        check.process,
+                        month_label(check.month),
+                        f"{check.shortfall:,.2f}대",
+                    )
+                )
+        for item in schedule.past_assignments():
+            if item.process in wanted:
+                counts[STATIC_PAST] += 1
+                rows.append(
+                    (
+                        STATIC_PAST,
+                        item.process,
+                        month_label(item.month),
+                        f"{item.unit} 마감 {item.deadline:%Y-%m-%d} → 현재 {item.current:%Y-%m-%d}",
+                    )
+                )
+        for unit in schedule.leftovers:
+            if unit.process in wanted:
+                counts[STATIC_SPARE] += 1
+                rows.append((STATIC_SPARE, unit.process, "", unit.unit))
+    parts = []
+    if counts[STATIC_SHORTAGE]:
+        parts.append(f"{STATIC_SHORTAGE} {counts[STATIC_SHORTAGE]}칸")
+    if counts[STATIC_PAST]:
+        parts.append(f"{STATIC_PAST} {counts[STATIC_PAST]}대")
+    if counts[STATIC_SPARE]:
+        parts.append(f"{STATIC_SPARE} {counts[STATIC_SPARE]}대")
+    frame = pd.DataFrame(rows, columns=["구분", UNMATCHED_NAME_COLUMN, "월", "내용"])
+    return alerts.state_note(
+        "RS-07",
+        scope={**sim.scope, "equipment": equipment_id, "basis": plan.basis},
+        content=rows,
+        active=bool(rows),
+        text=f"{' · '.join(parts)} — 목록: {ALARM_ROW_PLACE}",
+        full=(
+            f"{_here()} — Static 기준 현재 일정(Static 월별 가용대수 · Cut-off · Qual 순서로 "
+            f"역산)의 상태입니다 — {' · '.join(parts)}. 호기 부족은 Static 을 채울 신규 호기가 "
+            "모자란 달이고(그 몫은 단축 · 추가N 으로 이어집니다), 마감 지남은 역산 마감이 오늘보다 "
+            "앞이라 현재 일정을 오늘로 미룬 호기, 남는 호기는 Static 을 채우고 남아 현재 일정이 "
+            "없는 호기입니다(모자라면 추가N 보다 먼저 씁니다). 목록은 "
+            f"{alarm_table_place(STATIC_STATE_TITLE)} 입니다."
+        ),
+        scope_label=sim.label + (f" · 설비 r{equipment_no}" if equipment_no is not None else ""),
+        tables=[
+            alert_table(
+                frame,
+                title=STATIC_STATE_TITLE,
+                file_name="Capa_Shortening_Static_States.csv",
+                column_help={UNMATCHED_NAME_COLUMN: "공정 표시명이 아니라 원본 공정명입니다."},
+            )
+        ]
+        if rows
+        else [],
     )
 
 
@@ -1492,6 +1659,7 @@ def _render_progress(
     link_details: bool = True,
     equipment_label: str | None = None,
     inactive_floors: frozenset[FloorKey] = frozenset(),
+    current_basis: str | None = None,
 ) -> None:
     """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 진척 보드(기준선 대비·이행 지연) →
     공정 카드(호기마다 두 줄). 카드 링크는 일반 보기와 같다(「공정 Capa 상세에서 근거
@@ -1508,7 +1676,9 @@ def _render_progress(
     st.html(
         _style()
         + progress_style()
-        + progress_summary_markup(view, baseline, level, selected=selected)
+        + progress_summary_markup(
+            view, baseline, level, selected=selected, current_basis=current_basis
+        )
     )
 
     def controls() -> None:
@@ -1972,6 +2142,8 @@ def _card_markup(
     *,
     highlight: str | None = None,
     managers: Mapping[str, str] | None = None,
+    other_dates: Mapping[str, date] | None = None,
+    basis: str = BASIS_MASTER,
 ) -> str:
     """공정 카드 하나. 고르기는 원본 `process` 로, 제목·`aria-label` 은 `display_name`(공정
     표시명)으로 한다 — 표시명이 원본과 다르면 제목 풍선에 원본을 남긴다(CSV `공정` 칸은 원본이다).
@@ -2005,7 +2177,15 @@ def _card_markup(
             + f"{_escape(highlight)}</span></span>"
         )
     table = _card_table(by_month, months, level, thresholds)
-    timeline = _units_markup(units, months, today=today, short=worst < 0, managers=managers)
+    timeline = _units_markup(
+        units,
+        months,
+        today=today,
+        short=worst < 0,
+        managers=managers,
+        other_dates=other_dates,
+        basis=basis,
+    )
     name = _escape(display_name)
     original = f' title="원본 공정명 {_escape(process)}"' if display_name != process else ""
     return (
@@ -2088,6 +2268,18 @@ def _card_table(
     return f'<div class="shk-grid" style="{_grid_style(months)}">{"".join(cells)}</div>'
 
 
+def other_basis_dates(plan: ShorteningPlan) -> dict[str, date]:
+    """호기마다 **고르지 않은 기준**의 현재 일정 — 호기 줄의 흐린 표지(○, 보드 답 Static-0 메모).
+
+    Static 기준 계획이면 설비 마스터 Qual일정, 설비 마스터 기준 계획이면 Static 역산 일정이다(계획에
+    붙은 역산 — `shortening_source.load_official_shortening`). 역산이 없으면(Static 가용대수를 못
+    읽음) 빈 사전 — 흐린 표지만 빠진다."""
+    schedule = plan.static_schedule
+    if schedule is None:
+        return {}
+    return schedule.master_current() if plan.basis == BASIS_STATIC else schedule.static_current()
+
+
 def _units_markup(
     units: pd.DataFrame,
     months: Sequence[int],
@@ -2095,6 +2287,8 @@ def _units_markup(
     today: date,
     short: bool,
     managers: Mapping[str, str] | None = None,
+    other_dates: Mapping[str, date] | None = None,
+    basis: str = BASIS_MASTER,
 ) -> str:
     if not months:
         return ""
@@ -2106,8 +2300,9 @@ def _units_markup(
         else ""
     )
     legend = (
-        '<div class="shk-units-legend">호기별 단축 — ● 기존 Qual · ◀ 목표 Qual · '
-        "◌ 신규 필요 Qual · 칸은 달 · 줄에 올리면 기여 시작·늘어난 환산대수·모듈 수</div>"
+        '<div class="shk-units-legend">호기별 단축 — ● 현재 Qual · ◀ 목표 Qual · '
+        f"○ {other_mark_label(basis)}(흐림) · ◌ 필요 Qual(신규 · 남는 호기) · 칸은 달 · 줄에 "
+        "올리면 기여 시작·늘어난 환산대수·모듈 수</div>"
     )
     if units.empty:
         message = (
@@ -2135,6 +2330,8 @@ def _units_markup(
                 lines + today_mark,
                 today=today,
                 manager=(managers or {}).get(str(row["호기"])),
+                other=(other_dates or {}).get(str(row["호기"])),
+                basis=basis,
             )
         )
     return (
@@ -2151,12 +2348,17 @@ def _unit_row(
     *,
     today: date,
     manager: str | None = None,
+    other: date | None = None,
+    basis: str = BASIS_MASTER,
 ) -> str:
-    """호기 하나를 **한 줄**로 — 이름과 「기존 MM.DD → 단축 MM.DD」, 타임라인, 「−N일」.
+    """호기 하나를 **한 줄**로 — 이름과 「현재 MM.DD → 단축 MM.DD」, 타임라인, 「−N일」.
 
     가상 호기 「추가N」은 이름과 「필요 MM.DD」, 타임라인, 「신규」 다(2026-10-07 사용자 요청).
-    기여 시작일·늘어난 환산대수·모듈 수·해소 기여 월·담당자(설비 마스터)는 줄에서 걷고 줄의
-    풍선(`title`)에 연도까지 남긴다 — CSV 는 모든 칸을 그대로 낸다.
+    Static 기준의 남는 호기(현재 일정 없이 당긴 이름 있는 호기 — 보드 답 Q11 (가))는 이름과 「필요
+    MM.DD」, 「남는 호기」 다. 고르지 않은 기준의 일정(`other`)은 흐린 ○ 로만 함께 그린다(보드 답
+    Static-0 — 당길 몫 ◀ 은 고른 기준에서만). 기여 시작일·늘어난 환산대수·모듈 수·해소 기여
+    월·담당자(설비 마스터)는 줄에서 걷고 줄의 풍선(`title`)에 연도까지 남긴다 — CSV 는 모든 칸을
+    그대로 낸다.
     """
     name = _escape(row["호기"])
     target = row["목표 Qual"]
@@ -2167,9 +2369,13 @@ def _unit_row(
     left = _position(target, axis)
     center = _TRACK_CENTER_PX
     details = [str(row["호기"])]
-    if row["구분"] == KIND_NEW:
+    original = row["기존 Qual"]
+    if row["구분"] == KIND_NEW or not isinstance(original, date):
+        spare = row["구분"] != KIND_NEW
         dates = f'<span class="shk-muted">필요</span> {_month_day(target, today=today)}'
-        details.append(f"신규 필요 Qual {target:%Y-%m-%d}")
+        details.append(
+            f"{'남는 호기 — 현재 일정 없음 · ' if spare else '신규 '}필요 Qual {target:%Y-%m-%d}"
+        )
         # 부족 면색을 채우고 점선 테두리는 글자색이다 — 어두운 테마의 부족색(`STATUS_SHORTAGE`)은
         # 선으로만 그리면 바탕에 묻힌다(2026-10-07 브라우저 확인).
         marks = (
@@ -2177,18 +2383,16 @@ def _unit_row(
             f"width:16px;height:16px;border-radius:50%;border:2px dashed {tokens.TEXT};"
             f'background:{tokens.STATUS_SHORTAGE};box-sizing:border-box"></span>'
         )
-        result = '<span class="shk-new">신규</span>'
+        result = f'<span class="shk-new">{"남는 호기" if spare else "신규"}</span>'
     else:
-        original = row["기존 Qual"]
-        assert isinstance(original, date)
         right = _position(original, axis)
         cut = _whole(row["단축일수"]) or 0
         dates = (
-            f'<span class="shk-muted">기존</span> {_month_day(original, today=today)} → '
+            f'<span class="shk-muted">현재</span> {_month_day(original, today=today)} → '
             f'<span class="shk-muted">단축</span> {_month_day(target, today=today)}'
         )
         details += [
-            f"기존 Qual {original:%Y-%m-%d} → 목표 Qual {target:%Y-%m-%d}",
+            f"현재 Qual {original:%Y-%m-%d} → 목표 Qual {target:%Y-%m-%d}",
             f"−{cut}일",
         ]
         marks = (
@@ -2203,6 +2407,16 @@ def _unit_row(
             f'border:2px solid {tokens.SURFACE_SUBTLE};box-sizing:border-box"></span>'
         )
         result = f'<span class="shk-cut">−{cut}일</span>'
+    if other is not None:
+        details.append(f"{other_mark_label(basis)} {other:%Y-%m-%d}")
+        if axis[0] <= other < axis[1]:
+            # 고르지 않은 기준의 일정 — 속이 빈 흐린 원(표지 위에 겹쳐도 가리지 않게 맨 아래).
+            marks = (
+                f'<span class="shk-other" aria-hidden="true" style="position:absolute;'
+                f"top:{center - 6:g}px;left:calc({_position(other, axis):.3f}% - 6px);width:12px;"
+                f"height:12px;border-radius:50%;border:2px solid {tokens.TEXT_MUTED};"
+                'background:transparent;box-sizing:border-box;opacity:0.45"></span>'
+            ) + marks
     details += [
         f"기여 시작 {start:%Y-%m-%d}",
         f"늘어난 환산대수 {gain}",

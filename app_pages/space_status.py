@@ -85,6 +85,7 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.saved_note import note_placeholder
+from capa_simulation.components.shortening_basis_switch import render_basis_switch
 from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
     compare_payload,
@@ -932,8 +933,10 @@ else:
         )
         basis_groups = color_basis_groups(basis, capa)
         if basis == COLOR_BASIS_SHORTENING:
-            # 필요 단축은 그룹 체크가 없다 — 그 자리에 흐리게 칸과 기준 달 줄이 선다(배치 편집으로
-            # 쉬는 회차에도 칸은 선다 — 고른 값은 편집을 끈 뒤 보기가 쓴다).
+            # 필요 단축은 그룹 체크가 없다 — 그 자리에 현재 일정 기준 전환(필요 단축 일정과 같은
+            # 세션 칸 — 보드 답 Q03 (나)) · 흐리게 칸 · 기준 달 줄이 선다(배치 편집으로 쉬는
+            # 회차에도 칸은 선다 — 고른 값은 편집을 끈 뒤 보기가 쓴다).
+            render_basis_switch()
             layer_dim = render_dim_field()
             layer_basis_slot = st.container()
         enabled: set[str] = set()

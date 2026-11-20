@@ -517,7 +517,7 @@ def test_the_basis_is_the_last_key_cell_and_defaults_to_the_master() -> None:
     assert simulation_cache.shortening_key_basis(static) == BASIS_STATIC
     assert default[:9] == static[:9]
     assert simulation_cache.with_basis(default, BASIS_STATIC) == static
-    assert simulation_cache.with_upeh_token(static, ((90, (JAN,)),))[9] == BASIS_STATIC
+    assert simulation_cache.with_upeh_token(static, (90, (JAN,)))[9] == BASIS_STATIC
     assert simulation_cache.static_schedule_key(default) == static
 
 

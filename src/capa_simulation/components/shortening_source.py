@@ -292,7 +292,8 @@ def load_official_shortening(
     더한다(`simulation_cache.load_required_shortening(level=)`). 두 화면이 같은 길로 더한다.
 
     `basis` 는 현재 일정 기준(`current_basis()` — 두 화면이 같은 세션 값)이다. Static 이면 활성
-    시나리오의 `RQ_EQP_AVBL` 로 역산한 현재 일정의 계획이고, 그 표가 없으면 `ValueError` 다. 설비
+    시나리오의 `RQ_EQP_AVBL` 로 역산한 현재 일정의 계획이고, 그 표가 없으면 모든 공정이 「Static
+    가용 없음」(`ShorteningPlan.static_missing`)인 빈 계획이다. 설비
     마스터면 지금까지의 계획에 Static 역산(`get_static_qual_schedule`)을 붙여 돌려준다 — 호기 줄의
     흐린 표지 몫이고 숫자 · 호기 · CSV 에는 들지 않는다. 역산을 못 하면(표가 없거나 계약 오류)
     붙이지 않는다(흐린 표지만 빠진다).
@@ -313,7 +314,9 @@ def load_official_shortening(
         basis=basis,
     )
     if basis == BASIS_STATIC and static is None:
-        raise ValueError("활성 시나리오에 Static 가용대수 표(RQ_EQP_AVBL)가 없습니다.")
+        # 표가 통째로 없으면 모든 공정이 「Static 가용 없음」 이다(보드 답 Q13 (가) — 계산하지 않고
+        # 맞대지 못한 공정 알림에 둔다). 멈추지 않는다.
+        static = pd.DataFrame({"생산계획년월": [], "공정": [], "가용대수": []})
     keyed = simulation_cache.load_required_shortening(
         key,
         equipment,
