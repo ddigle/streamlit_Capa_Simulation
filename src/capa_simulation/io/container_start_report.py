@@ -218,6 +218,8 @@ _LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
     "remaining_unknown": "남은 시간 모름",
     "remaining_short": "남은 시간 7시간 이하",
     "miss_limit": "닿지 못함 · 확인 못 함 연속 상한",
+    "import_killed": "불러오는 중 끊김",
+    "cut_limit": "불러오는 중 끊김 다시 시도 상한",
     "attempting": "시도 결과를 적지 못함",
     "unguarded": "시도 표시를 쓰지 못함",
     "changed": "계정이 그 사이 바뀜",

@@ -16,9 +16,11 @@ C-DEP(동기화 모드 `managed`)에서 BDQ 토큰이 죽으면 앱이 저장된
 **객체 꼴.** JSON 한 벌 — `v`(판 1) · `cipher`(계정 · 비밀번호 JSON 을 Fernet 으로 감싼 글) ·
 `entered_by`(넣은 관리자 앱 로그인 ID 앞 두 글자) · `entered_at`(KST ISO) · `state`(`ok` ·
 `stopped`) · `stop_reason`(짧은 영문 코드) · `stopped_at` · `misses`(성공 없이 이어진 자동 시도
-가운데 닿지 못함 · 확인 못 함의 수 — 재시작을 건너 센다, 없으면 0). 멈춤 표시 · 시도 표시 · 시도
-결과는 `cipher` 를 손대지 않고 메타만 고쳐 다시 쓴다(`mark_stopped` · `mark_attempting` ·
-`record_outcome` — 키 없이도 된다). 자동 시도는 로그인 **앞에** 객체를 멈춤(`stop_reason`
+가운데 닿지 못함 · 확인 못 함의 수 — 재시작을 건너 센다, 없으면 0) · `cuts`(성공 · 넣기 없이 이어진
+자동 시도 가운데 비밀번호를 보내기 전에 바깥에서 끊긴 수 — 재시작을 건너 센다, 없으면 0) ·
+`retry_after`(그 끊김 뒤 다음 자동 시도를 기다리는 KST ISO 시각, 없으면 `null`). 멈춤 표시 · 시도
+표시 · 시도 결과는 `cipher` 를 손대지 않고 메타만 고쳐 다시 쓴다(`mark_stopped` · `mark_attempting`
+· `record_outcome` — 키 없이도 된다). 자동 시도는 로그인 **앞에** 객체를 멈춤(`stop_reason`
 `attempting`)으로 써 두고 결과로 고쳐 쓴다 — 결과를 적지 못하거나 프로세스가 도중에 끊기면 다음
 시작이 멈춤으로 읽어 다시 로그인하지 않는다(안전한 쪽으로 닫힘). 객체는 세대(`generations/`) ·
 스냅샷 · 접속 명단(`access/`) · 모듈 데이터(`modules/`) 밖의 `secrets/` 아래다 — 동기화 정리 · 이관
@@ -106,6 +108,8 @@ ATTEMPTING_REASON: Final = "attempting"
 # 멈춤 까닭 코드의 꼴 — 짧은 영문 소문자 · 숫자 · 밑줄.
 _REASON_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _FERNET_KEY: Final = re.compile(r"[A-Za-z0-9_-]{43}=")
+# 다음 시도 시각 꼴 — KST ISO(초까지, 시각대 붙음).
+_MOMENT: Final = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}")
 # 넣은 관리자 앱 로그인 ID 에서 남기는 글자 수.
 ENTERED_BY_CHARS: Final = 2
 # KST — 시각대 데이터베이스 없이 고정 +9 시간.
@@ -251,6 +255,8 @@ class StoredLogin:
     stop_reason: str | None = None
     stopped_at: str | None = None
     misses: int = 0
+    cuts: int = 0
+    retry_after: str | None = None
 
     @property
     def stopped(self) -> bool:
@@ -320,6 +326,8 @@ def _document(
     stop_reason: str | None,
     stopped_at: str | None,
     misses: int = 0,
+    cuts: int = 0,
+    retry_after: str | None = None,
 ) -> bytes:
     data = {
         "v": DOCUMENT_VERSION,
@@ -330,6 +338,8 @@ def _document(
         "stop_reason": stop_reason,
         "stopped_at": stopped_at,
         "misses": misses,
+        "cuts": cuts,
+        "retry_after": retry_after,
     }
     return json.dumps(data, ensure_ascii=True, sort_keys=True).encode("ascii")
 
@@ -343,6 +353,23 @@ class _Meta:
     stop_reason: str | None
     stopped_at: str | None
     misses: int
+    cuts: int
+    retry_after: str | None
+
+
+def _count_ok(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def moment_ok(text: str) -> bool:
+    """다음 시도 시각 꼴(KST ISO — 초까지, 시각대 붙음)이고 읽히는가."""
+    if _MOMENT.fullmatch(text) is None:
+        return False
+    try:
+        datetime.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
 
 
 def _optional_text(value: object) -> tuple[bool, str | None]:
@@ -375,7 +402,10 @@ def _parse_meta(body: bytes) -> tuple[_Meta | None, str]:
     reason_ok, stop_reason = _optional_text(data.get("stop_reason"))
     stopped_ok, stopped_at = _optional_text(data.get("stopped_at"))
     misses = data.get("misses", 0)
-    misses_ok = isinstance(misses, int) and not isinstance(misses, bool) and misses >= 0
+    cuts = data.get("cuts", 0)
+    retry_ok, retry_after = _optional_text(data.get("retry_after"))
+    if retry_after is not None and not moment_ok(retry_after):
+        retry_ok = False
     if (
         not isinstance(cipher, str)
         or not cipher
@@ -384,7 +414,9 @@ def _parse_meta(body: bytes) -> tuple[_Meta | None, str]:
         or state not in _STATES
         or not reason_ok
         or not stopped_ok
-        or not misses_ok
+        or not _count_ok(misses)
+        or not _count_ok(cuts)
+        or not retry_ok
     ):
         return None, REASON_BROKEN
     if stop_reason is not None and _REASON_CODE.fullmatch(stop_reason) is None:
@@ -398,6 +430,8 @@ def _parse_meta(body: bytes) -> tuple[_Meta | None, str]:
         stop_reason,
         stopped_at,
         int(misses),
+        int(cuts),
+        retry_after,
     ), ""
 
 
@@ -419,6 +453,8 @@ def parse_document(body: bytes, key: bytes) -> LoadResult:
             stop_reason=meta.stop_reason,
             stopped_at=meta.stopped_at,
             misses=meta.misses,
+            cuts=meta.cuts,
+            retry_after=meta.retry_after,
         )
     )
 
@@ -483,9 +519,11 @@ def _rewrite_meta(
     misses: int | None,
     remember_it: bool,
     at: datetime | None = None,
+    retry: tuple[int, str | None] | None = None,
 ) -> WriteResult:
-    """객체의 `cipher` 는 그대로 두고 상태 · 까닭 · 시각 · `misses`(`None` 이면 그대로)만 고쳐 다시
-    쓴다. 키가 필요 없다.
+    """객체의 `cipher` 는 그대로 두고 상태 · 까닭 · 시각 · `misses`(`None` 이면 그대로) · 끊김
+    셈(`retry` — `cuts` 와 `retry_after` 한 쌍, `None` 이면 그대로)만 고쳐 다시 쓴다. 키가 필요
+    없다.
 
     `cipher` 는 이 프로세스가 든 한 벌의 것이다 — 객체가 그 사이 다른 계정으로 바뀌었으면(관리자가
     다시 넣음) 새 계정을 건드리지 않고 `WRITE_CHANGED`, 없거나 깨졌으면 `WRITE_GONE` 다. 받기 →
@@ -493,6 +531,8 @@ def _rewrite_meta(
     if reason is not None and _REASON_CODE.fullmatch(reason) is None:
         return WriteResult(False, WRITE_BAD_INPUT)
     if misses is not None and misses < 0:
+        return WriteResult(False, WRITE_BAD_INPUT)
+    if retry is not None and (retry[0] < 0 or (retry[1] is not None and not moment_ok(retry[1]))):
         return WriteResult(False, WRITE_BAD_INPUT)
     failure_kind = ""
     try:
@@ -511,6 +551,7 @@ def _rewrite_meta(
     state: StoredState = STATE_STOPPED if stopped else STATE_OK
     stopped_at = kst_text(at) if stopped else None
     count = meta.misses if misses is None else misses
+    cuts, retry_after = (meta.cuts, meta.retry_after) if retry is None else retry
     body = _document(
         meta.cipher,
         meta.entered_by,
@@ -519,6 +560,8 @@ def _rewrite_meta(
         reason if stopped else None,
         stopped_at,
         count,
+        cuts,
+        retry_after,
     )
     try:
         s3_small.put_object(target, OBJECT_KEY, body)
@@ -527,7 +570,9 @@ def _rewrite_meta(
     if failure_kind:
         return WriteResult(False, WRITE_FAILED, failure_kind)
     if remember_it:
-        _remember_meta(cipher, state, reason if stopped else None, stopped_at, count)
+        _remember_meta(
+            cipher, state, reason if stopped else None, stopped_at, count, cuts, retry_after
+        )
     return WriteResult(True)
 
 
@@ -538,7 +583,7 @@ def mark_stopped(
     cipher: str,
     at: datetime | None = None,
 ) -> WriteResult:
-    """멈춤 표시 — 상태 · 까닭 · 시각만 고쳐 다시 쓴다(`misses` 그대로). 성공하면 기억도
+    """멈춤 표시 — 상태 · 까닭 · 시각만 고쳐 다시 쓴다(`misses` · 끊김 셈 그대로). 성공하면 기억도
     멈춤이다."""
     return _rewrite_meta(
         target, cipher, stopped=True, reason=reason, misses=None, remember_it=True, at=at
@@ -567,9 +612,12 @@ def record_outcome(
     stopped: bool,
     reason: str | None,
     misses: int,
+    cuts: int,
+    retry_after: str | None,
     at: datetime | None = None,
 ) -> WriteResult:
-    """자동 시도의 결과를 적는다 — 상태(멈춤이면 까닭) · `misses`. 성공하면 기억도 바꾼다."""
+    """자동 시도의 결과를 적는다 — 상태(멈춤이면 까닭) · `misses` · 끊김 셈(`cuts`)과 다음 시도
+    시각(`retry_after` — 끊김 뒤에만, 그 밖은 `None` 으로 비운다). 성공하면 기억도 바꾼다."""
     return _rewrite_meta(
         target,
         cipher,
@@ -578,6 +626,7 @@ def record_outcome(
         misses=misses,
         remember_it=True,
         at=at,
+        retry=(cuts, retry_after),
     )
 
 
@@ -655,6 +704,8 @@ def _remember_meta(
     reason: str | None,
     stopped_at: str | None,
     misses: int,
+    cuts: int,
+    retry_after: str | None,
 ) -> None:
     """기억한 한 벌이 그 `cipher` 면 메타를 바꾼다(다른 한 벌이면 그대로). 어느 쪽이든 읽는 중인
     S3 결과는 버린다(객체를 막 고쳐 썼다)."""
@@ -669,6 +720,8 @@ def _remember_meta(
                     stop_reason=reason,
                     stopped_at=stopped_at,
                     misses=misses,
+                    cuts=cuts,
+                    retry_after=retry_after,
                 )
             )
 

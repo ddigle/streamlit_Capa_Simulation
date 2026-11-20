@@ -45,7 +45,10 @@ authentication. …」)라 안쪽은 `__context__` 다. 둘 다 `bigdataquery.ex
 - 하위 프로세스가 표지 없이 끝나는 장면 — `exit_on_import`(import 중 `os._exit(4)`) · `exit_hard`
   (`login()` 이 계정 · 비밀번호를 든 예외의 traceback 을 표준 오류에 찍고 `os._exit(3)`) ·
   `stderr_account_line`(예외 줄 자리에 계정을 찍고 `os._exit(3)`) · `signal_kill`(`login()` 중
-  제 프로세스에 SIGKILL — POSIX).
+  제 프로세스에 SIGKILL — POSIX) · `signal_kill_on_import`(import 중 제 프로세스에 SIGKILL —
+  POSIX, 비밀번호를 보내기 전에 바깥이 죽인 꼴).
+- `FAKE_BDQ_KILL_IMPORTS` — `signal_kill_on_import` 를 처음 n번의 import 에만(부른 기록의 `import`
+  수로 센다 — 끊긴 뒤 다시 시도가 성공하는 장면).
 - `FAKE_BDQ_VERSION` — 패키지 `__version__`(기본 `0.0.0+fake`). 낯선 꼴 판이 표지를 깨지 않는지
   본다.
 """
@@ -95,6 +98,15 @@ def _log(event: str) -> None:
     if place:
         with open(place, "a", encoding="utf-8") as handle:
             handle.write(f"{event}\n")
+
+
+def _count(event: str) -> int:
+    """부른 기록에서 그 일이 적힌 수(기록 파일이 없으면 0)."""
+    place = os.environ.get("FAKE_BDQ_LOG", "")
+    if not place or not os.path.isfile(place):
+        return 0
+    with open(place, encoding="utf-8") as handle:
+        return handle.read().splitlines().count(event)
 
 
 def _token_path(account: str) -> Path:
@@ -172,6 +184,10 @@ if "import_fails" in _scenes():
 if "exit_on_import" in _scenes():
     sys.stdout.flush()
     os._exit(4)
+if "signal_kill_on_import" in _scenes() and sys.platform != "win32":
+    _kills = os.environ.get("FAKE_BDQ_KILL_IMPORTS", "")
+    if not _kills or _count("import") <= int(_kills):
+        os.kill(os.getpid(), signal.SIGKILL)
 
 
 class LoginRefused(Exception):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -373,3 +374,72 @@ def test_the_trouble_alert_follows_the_process_and_clears_on_success_or_stop(
     store.remember(_stored(store.STATE_STOPPED, "miss_limit"))
     app.run()
     assert active_state(app, TROUBLE) is None and active_state(app, STOP) is not None
+
+
+def test_a_cut_before_sending_shows_its_retry_turn_and_the_limit_stop_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """보내기 전 끊김(`import_killed`)은 `AD-24` 짧은 글 · 지문에 「다시 시도 n/3」 이 붙고(차례가
+    바뀌면 다시 선다) 전문은 다음 시도 시각과 멈추는 때를 말한다. 다시 시도 상한을 넘긴
+    멈춤(`cut_limit`)은 `AD-23` 짧은 글이 「다시 시도 3/3 끊김」 이고 전문은 계정 잠김 때문이
+    아니라 다시 시도를 다 썼다고 말한다."""
+    _server(tmp_path, monkeypatch)
+    now = datetime(2026, 11, 20, 9, 0, tzinfo=store.KST)
+    monkeypatch.setattr(bdq_login, "_wall", lambda: now)
+    due = "2026-11-20T09:05:00+09:00"
+    store.remember(replace(_stored(), cuts=1, retry_after=due))
+    monkeypatch.setattr(
+        bdq_login,
+        "_STATE",
+        bdq_login._Process(
+            trouble=bdq_login.OUTCOME_UNAVAILABLE, trouble_reason=bdq_login.REASON_IMPORT_KILLED
+        ),
+    )
+    app = AppTest.from_string(SCRIPT).run()
+    note = active_state(app, TROUBLE)
+    assert note is not None
+    assert note["short"] == "BigDataQuery 자동 로그인 시도하지 못함 — 다시 시도 1/3 대기"
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert "불러오는 중 끊김 — 비밀번호를 보내기 전" in note["full"]
+    assert "다시 시도 1/3 — 2026-11-20 09:05:00 뒤" in note["full"]
+    assert "3번이 모두 끊기면 멈춥니다" in note["full"]
+    assert active_state(app, STOP) is None
+    _secret_free(note)
+    first = note["fp"]
+
+    store.remember(replace(_stored(), cuts=2, retry_after="2026-11-20T09:15:00+09:00"))
+    note = active_state(app.run(), TROUBLE)
+    assert note is not None and "다시 시도 2/3" in note["short"] and note["fp"] != first
+
+    store.remember(
+        replace(_stored(store.STATE_STOPPED, bdq_login.REASON_CUT_LIMIT), cuts=4, retry_after=None)
+    )
+    app.run()
+    assert active_state(app, TROUBLE) is None
+    stop = active_state(app, STOP)
+    assert stop is not None
+    assert stop["short"] == "BigDataQuery 자동 로그인 멈춤 — 다시 시도 3/3 끊김"
+    assert len(stop["short"]) <= alerts.SHORT_LIMIT
+    assert "불러오는 중 끊김 다시 시도 상한" in stop["full"]
+    assert "더는 다시 시도하지 않습니다" in stop["full"]
+    assert "계정이 잠기지 않게" not in stop["full"]
+    _secret_free(stop)
+
+
+def test_a_cut_at_start_is_a_standing_trouble_not_a_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시작의 보내기 전 끊김은 멈춤이 아니라 서 있는 채 서지 못함(`AD-24`)이다 — 앱이 아직 기억을
+    읽지 않았으면 시작 기록으로 가르고, 차례는 기억을 읽은 뒤 붙는다."""
+    _server(
+        tmp_path,
+        monkeypatch,
+        {"status": "unavailable", "reason": bdq_login.REASON_IMPORT_KILLED, "key": "ok"},
+    )
+    app = AppTest.from_string(SCRIPT).run()
+    note = active_state(app, TROUBLE)
+    assert note is not None
+    assert note["short"] == "BigDataQuery 자동 로그인 시도하지 못함 — 다시 시도 대기"
+    assert "불러오는 중 끊김 — 비밀번호를 보내기 전" in note["full"]
+    assert "3번이 모두 끊기면 멈춥니다" in note["full"] and "성공 없이" not in note["full"]
+    assert active_state(app, STOP) is None

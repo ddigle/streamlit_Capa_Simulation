@@ -16,8 +16,11 @@ UI-NAV-01).
 로그인 ID 앞 두 글자 · 넣은 시각(멈춤이면 멈춘 시각), 그리고 이 프로세스의 마지막 시도(시각 ·
 자동/넣기 · 결과 · 남은 시간)와 그 시도가 하위 프로세스를 띄웠으면 바로 아래 진단 값 줄(종료 코드 ·
 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판 —
-`ChildDiag.text`). BDQ 계정 ID 는 어디에도 보이지 않는다. 상태는 저장소 기억(`bdq_login.status` — 앱
-기동 때 읽어 둔 것)에서 읽는다.
+`ChildDiag.text`). 비밀번호를 보내기 전에 끊긴 자동 시도가 있으면(`import_killed` — 2026-11-20
+사용자 답 「쉬고 다시」) 상태 줄 끝에 「다시 시도 n/3」(기다리는 중이면 「다음 시각」 까지, 다시
+시도 상한으로 멈췄으면 「3/3」)과 그 시도의 진단 줄 끝에 같은 짧은 꼴이
+붙는다(`bdq_login.retry_text` — 알림 `AD-24` 와 같은 낱말, UI-CON-02). BDQ 계정 ID 는 어디에도
+보이지 않는다. 상태는 저장소 기억(`bdq_login.status` — 앱 기동 때 읽어 둔 것)에서 읽는다.
 
 **넣기(D5).** `st.form(clear_on_submit=True)` — 계정 칸 · 비밀번호 칸(`type="password"`) · 「넣기」.
 칸 라벨은 접고 자리표시 글이 그 이름이다. 「넣기」 의 콜백(`_on_submit` — 본문보다 먼저 돈다)이 두
@@ -181,11 +184,24 @@ def status_line(status: bdq_login.LoginStatus | None) -> str:
         return f"{STATUS_LABEL} · {word}({login_reason_text(reason)})"
     who = f"넣은 사람 {literal_markdown(stored.entered_by) or '-'} · {_clock(stored.entered_at)}"
     if status.state == "ok":
-        return f"{STATUS_LABEL} · {OK_WORD} · {who}"
+        return f"{STATUS_LABEL} · {OK_WORD} · {who}{_retry_tail(status)}"
     reason = status.stop_reason
     detail = login_reason_text(reason) if reason else "까닭 모름"
     stopped_at = stored.stopped_at or (status.last.at if status.last is not None else "")
-    return f"{STATUS_LABEL} · {STOPPED_WORD}({detail}) · {who} · 멈춘 때 {_clock(stopped_at)}"
+    tail = (
+        f" · {bdq_login.retry_text(status.retry)}" if reason == bdq_login.REASON_CUT_LIMIT else ""
+    )
+    return f"{STATUS_LABEL} · {STOPPED_WORD}({detail}) · {who} · 멈춘 때 {_clock(stopped_at)}{tail}"
+
+
+def _retry_tail(status: bdq_login.LoginStatus) -> str:
+    """서 있는 상태 줄 끝 — 보내기 전 끊김 뒤 다시 시도 차례와 기다리는 시각(없으면 빈 글)."""
+    if not status.retry:
+        return ""
+    tail = f" · {bdq_login.retry_text(status.retry)}"
+    if status.retry_at:
+        tail += f" · 다음 {_clock(status.retry_at)}"
+    return tail
 
 
 def result_words(result: bdq_login.LoginResult) -> str:
@@ -218,16 +234,21 @@ def diag_line(status: bdq_login.LoginStatus | None) -> str | None:
     """「진단」 값 줄 — 마지막 시도가 하위 프로세스를 띄웠을 때만(아니면 `None`)."""
     last = None if status is None else status.last
     diag = None if last is None else last.result.diag
-    if diag is None:
+    if last is None or diag is None:
         return None
-    return f"{DIAG_LABEL} · {literal_markdown(diag.text)}"
+    tail = f" · {bdq_login.retry_text(last.retry)}" if last.retry else ""
+    return f"{DIAG_LABEL} · {literal_markdown(diag.text)}{tail}"
 
 
-def _audit_det(result: bdq_login.LoginResult, base: dict[str, object]) -> dict[str, object]:
-    """감사 상세 — 결과 · 까닭에 하위 프로세스 진단의 칸(있으면)을 더한다."""
-    if result.diag is None:
-        return base
-    return {**base, **result.diag.fields()}
+def _audit_det(outcome: bdq_login.FormResult, base: dict[str, object]) -> dict[str, object]:
+    """감사 상세 — 결과 · 까닭에 넣기 때 걸려 있던 다시 시도 차례(`retry` — 「n/3」, 있으면)와 하위
+    프로세스 진단의 칸(있으면)을 더한다."""
+    found = dict(base)
+    if outcome.retry:
+        found["retry"] = bdq_login.retry_fraction(outcome.retry)
+    if outcome.result.diag is not None:
+        found.update(outcome.result.diag.fields())
+    return found
 
 
 def failure_line(result: bdq_login.LoginResult) -> str:
@@ -270,7 +291,7 @@ def _announce(outcome: bdq_login.FormResult) -> None:
     됐는데 저장하지 못했으면 알림창 오류."""
     result = outcome.result
     if outcome.saved:
-        audit_recorder.record(AUDIT_SET, det=_audit_det(result, {"result": "saved", "reason": ""}))
+        audit_recorder.record(AUDIT_SET, det=_audit_det(outcome, {"result": "saved", "reason": ""}))
         queue_flash(FLASH_KEY, f"BigDataQuery {result_words(result)}")
         return
     if result.ok:
@@ -278,7 +299,7 @@ def _announce(outcome: bdq_login.FormResult) -> None:
             AUDIT_SET,
             out="fail",
             det=_audit_det(
-                result, {"result": "save_failed", "reason": _code(outcome.save_failure)}
+                outcome, {"result": "save_failed", "reason": _code(outcome.save_failure)}
             ),
         )
         queue_flash(FLASH_KEY, SAVE_FAILED_MESSAGE, kind="error", popup_only=True)
@@ -286,7 +307,7 @@ def _announce(outcome: bdq_login.FormResult) -> None:
     audit_recorder.record(
         AUDIT_SET,
         out="fail",
-        det=_audit_det(result, {"result": result.outcome, "reason": result.reason}),
+        det=_audit_det(outcome, {"result": result.outcome, "reason": result.reason}),
     )
     queue_flash(FLASH_KEY, failure_line(result), kind="error")
 

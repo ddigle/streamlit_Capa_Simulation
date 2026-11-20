@@ -2033,8 +2033,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   개발자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4.
   하위 프로세스가 표지 없이 끝난 멈춤(`bdq_login.UNCONFIRMED_REJECT_REASONS` — `no_marker`)은 짧은 글이 「… 멈춤 — 로그인 확인 못 함」 이고
   전문이 비밀번호가 틀렸는지 모른다는 것과 진단 줄을 먼저 말한다 — 2026-11-17 사내 리뷰 `202611162130` 발견 4 · 사외요청 1),
+  보내기 전 끊김이 다시 시도 상한을 넘긴 멈춤(`cut_limit`)은 짧은 글이 「… 멈춤 — 다시 시도 3/3 끊김」 이고 전문이 계정 잠김이 아니라
+  다시 시도를 다 썼다는 것과 진단 줄을 말한다(2026-11-20),
   자동 로그인이 멈추지 않은 채 서지 못함 알림 `AD-24`(`login_trouble_note` — 시작 · 조회 중 닿지 못함 · 확인 못 함 · 못 함, 지문은 갈래
-  낱말 하나, 같은 대상 — D6 「알림만」)도 부른다 — `AD-10` 도 할 일이 계정 넣기 · 다시 넣기인 갈래(`_token_alert_target` — 꺼짐 아니고 시작
+  낱말 하나 — 보내기 전 끊김 `import_killed` 은 짧은 글 · 지문에 「다시 시도 n/3」(`bdq_login.retry_text`)이 붙고 전문이 다음 시도 시각을
+  말한다, 같은 대상 — D6 「알림만」)도 부른다 — `AD-10` 도 할 일이 계정 넣기 · 다시 넣기인 갈래(`_token_alert_target` — 꺼짐 아니고 시작
   점검 실패 · 토큰 환경변수 아님)에서는 같은 대상을 들고 간다. 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다(넷의 표지는 `token_alert_notes` 한
   벌이 짓는다). 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` — 무엇이 나도 `off` 로 물러선다). 조회 실패 ·
   조회 중 자동 로그인의 멈춤은 화면 본문의 조회(DB 등록 단추 · 모듈 조회)에서 생기는데 넷은 화면 앞에서 낸다 — 그 회차의 앞 표지는 해소라
@@ -2121,13 +2124,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
-  최고 nMiB」(하위 최고는 그 하위 하나의 값, 못 읽은 값은 「모름」 — `io/memory_probe`), `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다. 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
+  최고 nMiB」(하위 최고는 그 하위 하나의 값, 못 읽은 값은 「모름」 — `io/memory_probe`), `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
+  비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 「다시 시도 n/3」(기다리는 중이면 「다음 시각」, 상한으로 멈췄으면
+  「3/3」)과 그 시도의 진단 줄 끝에 같은 짧은 꼴(`bdq_login.retry_text` — `AD-24` 와 같은 낱말)이 붙고, 감사 상세 `retry` 는 넣기 때 걸려 있던
+  차례(「n/3」 — 저장되면 넣기가 셈을 비웠다)다(2026-11-20). 폼은 `st.form(clear_on_submit=True)` 안 계정 칸 · 비밀번호 칸(`type="password"` · 라벨 접음 · 자리표시 글이 이름) ·
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
   다시 검증해 개발자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
   떠 있는 앱의 계정 원천이 곧바로 새 ID), 로그인 실패는 저장 없이 폼 아래 한 줄 + Alarm(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
   저장 안 함」 · 「로그인 확인 못 함(남은 시간 모름 · 7시간 이하 · 결과 표지 없음) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 · 그 밖의 시도 전 거절은
   「로그인하지 않음(까닭) — 저장 안 함」 — 하위 프로세스가 표지 없이 끝난 거절 `no_marker` 는 「로그인 실패」 가 아니다, 비밀번호를 의심해
-  되풀이하지 않게), 로그인은 됐는데 저장 실패는
+  되풀이하지 않게. 보내기 전 끊김은 「로그인하지 않음(불러오는 중 끊김) — 저장 안 함」 이고 폼은 다시 하지 않는다), 로그인은 됐는데 저장 실패는
   알림창 오류, 빈 칸 · 개발자 아님은 시도 없이 폼 아래 거부(`write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py`
   BESIDE). 같은 세션의 겹쳐 온 둘째 누름은 같은 값이면 시도하지 않는다(`write_guard.save_once` — 출발점은 값의 HMAC 지문, 키는 프로세스마다
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
@@ -2395,11 +2401,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사용자 답), 바뀌었는데 남은 시간을 모르거나 7시간 이하면 `unconfirmed`(성공도 거절도 아님 — 폼은 저장하지 않고 자동 길은 멈추지 않되
   쉬는 시간 · 연속 수에 든다), 그 밖은 표지로 `rejected`(애매해도 — 계정 잠김 방지) · `unreached`(요청을 보내기 전 연결 단계의 양의 증거 —
   OS 연결 errno · 이름 풀기 · `urllib3` 연결 단계 종류 · 그것을 든 응답 없는 `requests` 연결 실패, 또는 하위 프로세스 시간 초과. 종류 이름만
-  연결인 401 · 읽기 시간 초과 · 끊김은 거절) · `unavailable`(패키지 없음 · 시도 전 거절). 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
+  연결인 401 · 읽기 시간 초과 · 끊김은 거절) · `unavailable`(패키지 없음 · 시도 전 거절 · 비밀번호를 보내기 전 바깥 강제 종료 `import_killed` —
+  표지 없이 시그널로 끝났고 받은 마지막 단계 줄이 `PRE_SEND_STAGES`(`import`)인 것만, `killed_before_send` — 하위 본문은 단계 줄 `login` 을
+  내보내지 못하면 `login()` 에 들어가지 않는다). 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
   멈춤(`attempting`)으로 써 두고(쓰지 못하면 로그인하지 않음) 결과로 고쳐 쓴다 — 결과를 적지 못하거나 도중에 끊기면 다음 시작이 로그인하지
   않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 개발자
-  알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). 자동 시도 연속 3번
-  (하위 프로세스를 띄운 수) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
+  알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). `import_killed` 는
+  멈추지 않고(2026-11-20 사용자 답 「쉬고 다시」) 객체의 `cuts` 를 올리고 다음 시도 시각 `retry_after`(`CUT_RETRY_SECONDS` 5 · 10 · 20분 —
+  재시작을 건너 센다)를 적어 그 전 조회 중 자동 시도는 쉰다(시작 로그인은 기다리지 않고 다음 다시 시도로 센다). 다시 시도
+  `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 빈다. 자동 시도 연속 3번
+  (하위 프로세스를 띄운 수 — `import_killed` 는 빼고) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
   종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —
   `casefold` 로 견주고 응답 코드는 보지 않으며 판정에만 쓴다)에서만이다(`is_relogin_error` · `run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
   감싼다). 다시 로그인 뒤 재조회도 토큰 오류일 때의 멈춤은 그 잠금 아래에서 지금 기억한 한 벌이 그 로그인의 한 벌일 때만 쓴다. 폼 제출(`login_from_form` — 실패면
@@ -2416,7 +2427,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   철자 · `remaining_hours` · `remaining_minutes`)을 분으로 합쳐 표지 한 줄(`capa-bdq-login stage=… error=<모듈.이름> net=… minutes=…`)만
   찍는다 — 예외 문구 · 패키지 출력은 싣지 않는다. 표지와 따로 패키지 불러오기 · `login()` · `getTokenTime` 에 들어가기 바로 앞에 단계 줄
   (`capa-bdq-login-step stage=… bigdataquery=<판> getpass_asterisk=<판>` — 판은 불러온 모듈의 `__version__`, 아니면 설치 정보, 낯선 꼴은 `?`)을
-  곧바로 내보낸다 — 표지 없이 끝나도 부르는 쪽이 어디까지 갔는지와 판을 읽고, 낯선 판 글자가 표지를 깨지 않는다. `net`(닿지 못함의 증거 — `is_unreached`)은 요청을 보내기 전 연결 단계의 실패만이고
+  곧바로 내보낸다 — 표지 없이 끝나도 부르는 쪽이 어디까지 갔는지와 판을 읽고, 낯선 판 글자가 표지를 깨지 않는다. 단계 줄 `login` 을 내보내지
+  못하면 `login()` 에 들어가지 않는다(표지 `import` · `capa_step_unwritten` — 「비밀번호를 보내기 전」 판정 `import_killed` 의 근거). `net`(닿지 못함의 증거 — `is_unreached`)은 요청을 보내기 전 연결 단계의 실패만이고
   종류 이름으로 가르지 않는다(errno 없는 `ConnectionError` · 글만 든 `requests` 연결 실패 · 응답을 든 것 · 읽기 시간 초과는 아님).
 - `src/capa_simulation/io/memory_probe.py` — 자동 로그인 하위 프로세스 앞뒤의 메모리 단서와 그 하위 자신의 최고 RSS(사내 리뷰 `202611181400` 사외요청 2 — 하위가
   import 단계에서 바깥 SIGKILL 로 끝난 갈래를 가를 값). `attempt_login` 이 띄우기 바로 앞 · 끝난 바로 뒤에 한 번씩 읽고(`read`), 도는 동안 하위의

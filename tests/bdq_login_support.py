@@ -163,6 +163,7 @@ def use_fake_bdq(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeBdq:
     monkeypatch.delenv("FAKE_BDQ_SCENE", raising=False)
     monkeypatch.delenv("FAKE_BDQ_SLOW_SECONDS", raising=False)
     monkeypatch.delenv("FAKE_BDQ_REVOKED", raising=False)
+    monkeypatch.delenv("FAKE_BDQ_KILL_IMPORTS", raising=False)
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", credential_dir)
     return FakeBdq(credential_dir, log)
 

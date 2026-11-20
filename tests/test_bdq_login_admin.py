@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,7 +41,11 @@ from capa_simulation.components.paste_form import PASTE_CONFIRM_WHY
 from capa_simulation.io import bdq_login
 from capa_simulation.io import bdq_login_store as login_store
 from capa_simulation.io.bdq_login_store import LoginSecret
-from capa_simulation.io.container_start_report import BDQ_LOGIN_LABEL, BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import (
+    BDQ_LOGIN_LABEL,
+    BDQ_USER_NAME_ENV,
+    ChildDiag,
+)
 from capa_simulation.io.object_storage import MODE_ENV
 from capa_simulation.io.s3_small import S3Target
 
@@ -451,6 +456,82 @@ def test_a_login_without_a_marker_is_not_called_a_failure_and_shows_its_diag(
     )
     payload = json.dumps(lines, ensure_ascii=False)
     assert ACCOUNT not in payload and PASSWORD not in payload and "bad password" not in payload
+
+
+def _cut_status(
+    monkeypatch: pytest.MonkeyPatch, cuts: int, *, stopped: bool = False
+) -> bdq_login.LoginStatus:
+    """보내기 전 끊김 셈이 든 저장 객체 · 그 끊김을 마지막 시도로 든 상태 한 벌(합성)."""
+    now = datetime(2026, 11, 20, 9, 0, tzinfo=login_store.KST)
+    monkeypatch.setattr(bdq_login, "_wall", lambda: now)
+    stored = login_store.StoredLogin(
+        secret=LoginSecret(ACCOUNT, PASSWORD),
+        cipher="demo-cipher",
+        entered_by="de",
+        entered_at="2026-11-20T08:00:00+09:00",
+        state=login_store.STATE_STOPPED if stopped else login_store.STATE_OK,
+        stop_reason=bdq_login.REASON_CUT_LIMIT if stopped else None,
+        stopped_at="2026-11-20T09:00:00+09:00" if stopped else None,
+        cuts=cuts,
+        retry_after=None if stopped else "2026-11-20T09:05:00+09:00",
+    )
+    cut = bdq_login.LoginResult(
+        bdq_login.OUTCOME_UNAVAILABLE,
+        bdq_login.REASON_IMPORT_KILLED,
+        diag=ChildDiag(-9, "SIGKILL", 2.6, "import"),
+    )
+    last = bdq_login.LastAttempt(
+        "2026-11-20T09:00:00+09:00", True, cut, min(cuts, bdq_login.CUT_RETRY_LIMIT)
+    )
+    return bdq_login.LoginStatus(
+        load=login_store.LoadResult(stored),
+        last=last,
+        streak=0,
+        paused=not stopped,
+        stopped_in_process=False,
+    )
+
+
+def test_a_cut_before_sending_shows_its_retry_turn_on_the_status_and_diag_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보내기 전 끊김 — 상태 줄은 「정상」 그대로 끝에 「다시 시도 n/3 · 다음 시각」, 진단 줄 끝에
+    같은 짧은 꼴, 마지막 시도는 「로그인하지 않음(불러오는 중 끊김)」 이다(비밀번호를 의심하는 글이
+    아니다). 상한을 넘겨 멈췄으면 「멈춤(…) … 다시 시도 3/3」."""
+    status = _cut_status(monkeypatch, 1)
+    line = bdq_login_admin.status_line(status)
+    assert line.startswith(f"{bdq_login_admin.STATUS_LABEL} · {bdq_login_admin.OK_WORD} · ")
+    assert line.endswith(" · 다시 시도 1/3 · 다음 2026-11-20 09:05:00")
+    diag = bdq_login_admin.diag_line(status)
+    assert diag is not None and diag.endswith(" · 다시 시도 1/3")
+    plain = diag.replace("\\", "")
+    assert "종료 -9(SIGKILL)" in plain and "단계 import" in plain
+    last = bdq_login_admin.last_line(status)
+    assert last is not None and last.endswith("로그인하지 않음(불러오는 중 끊김)")
+
+    stopped = _cut_status(monkeypatch, bdq_login.CUT_RETRY_LIMIT + 1, stopped=True)
+    line = bdq_login_admin.status_line(stopped)
+    assert f"{bdq_login_admin.STOPPED_WORD}(불러오는 중 끊김 다시 시도 상한)" in line
+    assert line.endswith(" · 다시 시도 3/3")
+    diag = bdq_login_admin.diag_line(stopped)
+    assert diag is not None and diag.endswith(" · 다시 시도 3/3")
+
+
+def test_the_audit_detail_carries_the_retry_turn_the_entry_met() -> None:
+    """감사 상세의 `retry` 는 넣기 때 걸려 있던 다시 시도 차례(「n/3」)이고 사건의 허용 키다 —
+    없으면 칸이 없다."""
+    from capa_simulation.audit import events
+
+    spec = next(item for item in events.SPECS if item.name == bdq_login_admin.AUDIT_SET)
+    result = bdq_login.LoginResult(bdq_login.OUTCOME_OK, remaining_minutes=470)
+    with_turn = bdq_login_admin._audit_det(
+        bdq_login.FormResult(result, saved=True, retry=2), {"result": "saved", "reason": ""}
+    )
+    assert recorder.clean_det(spec, with_turn) == {"result": "saved", "reason": "", "retry": "2/3"}
+    without = bdq_login_admin._audit_det(
+        bdq_login.FormResult(result, saved=True), {"result": "saved", "reason": ""}
+    )
+    assert "retry" not in without
 
 
 # --- 감사 · 「그 화면으로」 ----------------------------------------------------------------------

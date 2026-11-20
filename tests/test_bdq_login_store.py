@@ -173,6 +173,8 @@ def test_save_then_load_goes_round_and_the_body_holds_only_the_cipher(
         "stop_reason": None,
         "stopped_at": None,
         "misses": 0,
+        "cuts": 0,
+        "retry_after": None,
     }
     loaded = store.load(target, key)
     assert loaded.reason == "" and loaded.stored is not None
@@ -206,6 +208,11 @@ def test_each_unusable_object_is_simply_no_stored_login(
         ({"cipher": ""}, store.REASON_BROKEN),
         ({"stop_reason": "Bad Reason!"}, store.REASON_BROKEN),
         ({"entered_at": 3}, store.REASON_BROKEN),
+        ({"cuts": -1}, store.REASON_BROKEN),
+        ({"cuts": True}, store.REASON_BROKEN),
+        ({"retry_after": 5}, store.REASON_BROKEN),
+        ({"retry_after": "soon"}, store.REASON_BROKEN),
+        ({"retry_after": "2026-11-20T09:05:00"}, store.REASON_BROKEN),
     ):
         mock.put(store.OBJECT_KEY, json.dumps({**document, **change}).encode())
         assert store.load(target, key) == store.LoadResult(None, reason), change
@@ -256,6 +263,43 @@ def test_the_stop_mark_keeps_the_cipher_and_rewrites_only_the_meta(
     assert loaded.stored.secret == SECRET
     memo = store.current()
     assert memo is not None and memo.stopped and memo.stop_reason == "token_unchanged"
+
+
+def test_the_cut_count_and_the_next_try_are_written_kept_and_read_back(
+    mock_s3: tuple[MockStore, S3Target],
+) -> None:
+    """결과 적기가 끊김 셈과 다음 시도 시각을 쓰고(기억도 바뀐다), 멈춤 · 시도 표시는 그 둘을 그대로
+    둔다. 두 칸이 없는 옛 객체는 0 · 없음으로 읽는다(옛 판이 쓴 것)."""
+    mock, target = mock_s3
+    key = new_key().encode()
+    written = store.save_login(target, key, SECRET, ADMIN_ID)
+    assert written.stored is not None
+    cipher = written.stored.cipher
+    due = "2026-11-20T09:05:00+09:00"
+    recorded = store.record_outcome(
+        target, cipher=cipher, stopped=False, reason=None, misses=0, cuts=1, retry_after=due
+    )
+    assert recorded.ok
+    data = stored_document(mock)
+    assert (data["cuts"], data["retry_after"], data["state"]) == (1, due, "ok")
+    memo = store.current()
+    assert memo is not None and (memo.cuts, memo.retry_after) == (1, due)
+    assert store.mark_attempting(target, cipher=cipher).ok
+    assert store.mark_stopped(target, "token_unchanged", cipher=cipher).ok
+    data = stored_document(mock)
+    assert (data["cuts"], data["retry_after"], data["state"]) == (1, due, "stopped")
+    loaded = store.load(target, key)
+    assert loaded.stored is not None
+    assert (loaded.stored.cuts, loaded.stored.retry_after) == (1, due)
+    refused = store.record_outcome(
+        target, cipher=cipher, stopped=False, reason=None, misses=0, cuts=1, retry_after="soon"
+    )
+    assert not refused.ok and refused.reason == store.WRITE_BAD_INPUT
+    old = {name: value for name, value in data.items() if name not in ("cuts", "retry_after")}
+    mock.put(store.OBJECT_KEY, json.dumps(old).encode())
+    loaded = store.load(target, key)
+    assert loaded.stored is not None
+    assert (loaded.stored.cuts, loaded.stored.retry_after) == (0, None)
 
 
 def test_the_stop_mark_leaves_a_newer_login_alone(mock_s3: tuple[MockStore, S3Target]) -> None:

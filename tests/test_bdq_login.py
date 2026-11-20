@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import io
 import json
 import logging
 import os
@@ -20,7 +21,9 @@ import socket
 import subprocess
 import sys
 import threading
+import types
 from collections.abc import Callable, Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1980,3 +1983,314 @@ def test_a_wrong_password_that_overwrites_the_token_stops_at_the_miss_limit(
         ]
         assert fake.logins() == bdq_login.MISS_LIMIT
         assert stored_meta(mock)["stop_reason"] == bdq_login.REASON_MISS_LIMIT
+
+
+# --- 비밀번호를 보내기 전 끊김 — 쉬고 다시(2026-11-20 사용자 답) ---------------------------
+
+POSIX_ONLY = pytest.mark.skipif(os.name != "posix", reason="시그널 죽음은 POSIX 의 것")
+
+
+class Clocks:
+    """단조 시계(프로세스 안 쉬는 시간)와 벽시계(객체의 다음 시도 시각)를 함께 옮긴다."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.mono = 1000.0
+        self.wall = datetime(2026, 11, 20, 9, 0, tzinfo=store.KST)
+        monkeypatch.setattr(bdq_login, "_monotonic", lambda: self.mono)
+        monkeypatch.setattr(bdq_login, "_wall", lambda: self.wall)
+
+    def advance(self, seconds: float) -> None:
+        self.mono += seconds
+        self.wall += timedelta(seconds=seconds)
+
+
+def _recover() -> bdq_login.Recovery:
+    return bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+
+
+def _auto_on(
+    monkeypatch: pytest.MonkeyPatch, mock_s3: tuple[MockStore, S3Target]
+) -> tuple[MockStore, S3Target]:
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stored_login(target, key)
+    return mock, target
+
+
+def test_only_a_signal_death_before_the_login_step_is_a_cut_before_sending() -> None:
+    """양의 증거만 — 시그널로 끝났고(시간 제한으로 끊으면 종료 코드가 없다) 마지막 단계 줄이
+    비밀번호를 보내기 전(`import`)일 때만. 단계를 모르거나 `login` · `time` 이거나 스스로 끝났으면
+    아니다(그대로 멈춤)."""
+    assert bdq_login.PRE_SEND_STAGES == frozenset({"import"})
+    assert bdq_login.killed_before_send(-9, "import")
+    assert bdq_login.killed_before_send(-15, "import")
+    for exit_code, stage in (
+        (-9, "login"),
+        (-9, "time"),
+        (-9, ""),
+        (4, "import"),
+        (None, "import"),
+    ):
+        assert not bdq_login.killed_before_send(exit_code, stage), (exit_code, stage)
+    assert len(bdq_login.CUT_RETRY_SECONDS) == bdq_login.CUT_RETRY_LIMIT == 3
+    waits = bdq_login.CUT_RETRY_SECONDS
+    assert all(earlier < later for earlier, later in zip(waits, waits[1:], strict=False))
+    assert bdq_login.retry_text(1) == "다시 시도 1/3"
+    assert bdq_login.retry_text(4) == "다시 시도 3/3"
+    assert bdq_login.retry_fraction(2) == "2/3"
+
+
+@POSIX_ONLY
+def test_a_child_killed_while_importing_is_a_cut_not_a_stop(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """패키지를 불러오는 중 바깥 SIGKILL — `login()` 에 들어가지 않았으니(비밀번호를 보내기 전)
+    거절이 아니라 `unavailable`(`import_killed`)이다. 진단은 그대로 남는다."""
+    scene(monkeypatch, "signal_kill_on_import")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert (result.outcome, result.reason) == (
+        bdq_login.OUTCOME_UNAVAILABLE,
+        bdq_login.REASON_IMPORT_KILLED,
+    )
+    assert bdq_login.is_cut(result)
+    assert result.diag is not None
+    assert (result.diag.exit_code, result.diag.signal, result.diag.stage) == (
+        -9,
+        "SIGKILL",
+        "import",
+    )
+    assert fake.imports() == 1 and fake.logins() == 0
+
+
+def test_the_child_does_not_enter_login_when_the_login_step_line_is_not_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「보내기 전」 의 근거 — 단계 줄 `login` 을 내보내지 못하면 `login()` 에 들어가지
+    않는다(부르는 쪽이 받은 마지막 단계 줄이 `import` 면 `login()` 은 불리지 않았다)."""
+    calls: list[str] = []
+    module = types.ModuleType("bigdataquery")
+    module.__dict__.update(
+        login=lambda: calls.append("login"),
+        getTokenTime=lambda _account: {"remaining_hours": 8, "remaining_minutes": 0},
+    )
+    monkeypatch.setitem(sys.modules, "bigdataquery", module)
+    login_step = f"{bdq_login_child.STEP_MARKER} stage=login"
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{ACCOUNT}\n"))
+    line = bdq_login_child.run(lambda text: not text.startswith(login_step))
+    assert calls == []
+    assert line == bdq_login_child.marker_line("import", error=bdq_login_child.STEP_UNWRITTEN)
+    assert bdq_login.parse_marker(line.encode()) is not None
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{ACCOUNT}\n"))
+    assert bdq_login_child.run(lambda _text: True).startswith(
+        bdq_login_child.marker_line("done", minutes=480)
+    )
+    assert calls == ["login"]
+
+
+@POSIX_ONLY
+def test_cuts_before_sending_wait_longer_each_time_and_stop_after_three_retries(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """끊김 1 · 2 · 3번은 멈추지 않고 객체에 셈과 다음 시도 시각(5 · 10 · 20분 뒤)을 적는다 — 그
+    시각 전에는 로그인하지 않는다. 다시 시도 3번도 끊기면(넷째 끊김) 멈춘다(`cut_limit`). 끊김은
+    연속 시도 수에 들지 않고, 비밀번호를 보낸 시도는 한 번도 없다."""
+    mock, _ = _auto_on(monkeypatch, mock_s3)
+    scene(monkeypatch, "signal_kill_on_import")
+    clock = Clocks(monkeypatch)
+    for turn, wait in enumerate(bdq_login.CUT_RETRY_SECONDS, start=1):
+        recovery = _recover()
+        attempt = recovery.attempt
+        assert attempt is not None and attempt.result is not None
+        assert bdq_login.is_cut(attempt.result)
+        assert not recovery.retry and not attempt.stopped_reason and attempt.retry == turn
+        meta = stored_meta(mock)
+        assert (meta["state"], meta["cuts"], meta["stop_reason"]) == ("ok", turn, None)
+        assert meta["retry_after"] == store.kst_text(clock.wall + timedelta(seconds=wait))
+        status = bdq_login.status()
+        assert (status.state, status.retry, status.streak, status.paused) == ("ok", turn, 0, True)
+        assert status.retry_at == meta["retry_after"]
+        assert status.last is not None and status.last.retry == turn
+        view = bdq_login.current_view()
+        assert (view.state, view.trouble, view.trouble_reason, view.retry) == (
+            "ok",
+            bdq_login.OUTCOME_UNAVAILABLE,
+            bdq_login.REASON_IMPORT_KILLED,
+            turn,
+        )
+        clock.advance(wait - 1)
+        early = _recover()
+        assert early.attempt is not None and early.attempt.skipped == bdq_login.SKIP_PAUSED
+        clock.advance(1)
+    assert fake.imports() == bdq_login.CUT_RETRY_LIMIT
+
+    last = _recover()
+    assert last.attempt is not None and last.attempt.result is not None
+    assert last.attempt.stopped_reason == bdq_login.REASON_CUT_LIMIT
+    assert last.attempt.retry == bdq_login.CUT_RETRY_LIMIT
+    meta = stored_meta(mock)
+    assert (meta["state"], meta["stop_reason"], meta["cuts"], meta["retry_after"]) == (
+        "stopped",
+        bdq_login.REASON_CUT_LIMIT,
+        bdq_login.CUT_RETRY_LIMIT + 1,
+        None,
+    )
+    status = bdq_login.status()
+    assert (status.state, status.stop_reason, status.retry) == (
+        "stopped",
+        bdq_login.REASON_CUT_LIMIT,
+        bdq_login.CUT_RETRY_LIMIT,
+    )
+    view = bdq_login.current_view()
+    assert (view.state, view.stop_reason) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+    clock.advance(10_000)
+    again = _recover()
+    assert again.attempt is not None and again.attempt.skipped == bdq_login.SKIP_STOPPED
+    assert fake.imports() == bdq_login.CUT_RETRY_LIMIT + 1
+    assert fake.logins() == 0
+
+
+@POSIX_ONLY
+def test_a_retry_that_gets_through_clears_the_cuts(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """끊김 두 번 뒤 다시 시도가 성공하면 셈 · 다음 시도 시각 · 서지 못함 알림 갈래가 모두 빈다."""
+    mock, _ = _auto_on(monkeypatch, mock_s3)
+    scene(monkeypatch, "signal_kill_on_import")
+    monkeypatch.setenv("FAKE_BDQ_KILL_IMPORTS", "2")
+    clock = Clocks(monkeypatch)
+    for wait in bdq_login.CUT_RETRY_SECONDS[:2]:
+        recovery = _recover()
+        assert recovery.attempt is not None and recovery.attempt.result is not None
+        assert bdq_login.is_cut(recovery.attempt.result)
+        clock.advance(wait)
+    assert stored_meta(mock)["cuts"] == 2
+
+    through = _recover()
+    assert through.retry and through.logged_in
+    meta = stored_meta(mock)
+    assert (meta["state"], meta["cuts"], meta["retry_after"], meta["misses"]) == ("ok", 0, None, 0)
+    status = bdq_login.status()
+    assert (status.state, status.retry, status.retry_at, status.paused) == ("ok", 0, "", False)
+    assert bdq_login.current_view().trouble == ""
+    assert (fake.imports(), fake.logins()) == (3, 1)
+
+
+@POSIX_ONLY
+def test_a_failure_after_sending_stops_at_once_even_between_retries(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """끊김 뒤 다시 시도가 `login()` 안에서 끊기면(비밀번호를 보냈을 수 있음) 다시 시도 셈과
+    상관없이 곧바로 멈춘다(결과 표지 없음 — 계정 잠김 방지)."""
+    mock, _ = _auto_on(monkeypatch, mock_s3)
+    scene(monkeypatch, "signal_kill_on_import")
+    clock = Clocks(monkeypatch)
+    first = _recover()
+    assert first.attempt is not None and first.attempt.retry == 1
+    clock.advance(bdq_login.CUT_RETRY_SECONDS[0])
+
+    scene(monkeypatch, "signal_kill")
+    stopped = _recover()
+    assert stopped.attempt is not None and stopped.attempt.result is not None
+    assert (stopped.attempt.result.outcome, stopped.attempt.result.reason) == (
+        bdq_login.OUTCOME_REJECTED,
+        bdq_login.REASON_NO_MARKER,
+    )
+    assert stopped.attempt.retry == 0
+    meta = stored_meta(mock)
+    assert (meta["state"], meta["stop_reason"]) == ("stopped", bdq_login.REASON_NO_MARKER)
+    clock.advance(10_000)
+    again = _recover()
+    assert again.attempt is not None and again.attempt.skipped == bdq_login.SKIP_STOPPED
+    assert fake.logins() == 1
+
+
+@POSIX_ONLY
+def test_the_cut_count_crosses_restarts_and_the_start_does_not_wait(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """셈은 객체에 있어 재시작이 지우지 않는다 — 시작 로그인은 다음 시도 시각을 기다리지 않고 다음
+    다시 시도로 센다. 넷째 끊김에 멈추고(`cut_limit`) 그 뒤 재시작은 불러오지도 않는다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "signal_kill_on_import")
+        environ = start_environment(mock, endpoint, key)
+        stored_login(target_of(mock, endpoint), key)
+        seen: list[tuple[str, str]] = []
+        for _ in range(bdq_login.CUT_RETRY_LIMIT + 2):
+            bdq_login.forget_state()
+            started = bdq_login.start_login(environ)
+            seen.append((started.status, started.reason))
+        assert seen == [
+            *([("unavailable", bdq_login.REASON_IMPORT_KILLED)] * bdq_login.CUT_RETRY_LIMIT),
+            ("stopped", bdq_login.REASON_CUT_LIMIT),
+            ("stopped", bdq_login.REASON_CUT_LIMIT),
+        ]
+        assert fake.imports() == bdq_login.CUT_RETRY_LIMIT + 1 and fake.logins() == 0
+        meta = stored_meta(mock)
+        assert (meta["state"], meta["stop_reason"]) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+
+
+@POSIX_ONLY
+def test_the_app_after_a_cut_start_waits_for_the_stored_time(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """시작 스크립트의 로그인이 끊긴 뒤 앱 프로세스(프로세스 상태는 비고 객체만 남음)의 조회 중
+    자동 시도는 객체의 다음 시도 시각까지 쉬고, 그 뒤 다시 시도 2/3 으로 센다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "signal_kill_on_import")
+        target = target_of(mock, endpoint)
+        stored_login(target, key)
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert (started.status, started.reason) == ("unavailable", bdq_login.REASON_IMPORT_KILLED)
+        due = stored_meta(mock)["retry_after"]
+        assert isinstance(due, str)
+
+        bdq_login.forget_state()
+        monkeypatch.setattr(store, "app_target", lambda: target)
+        waiting = _recover()
+        assert waiting.attempt is not None and waiting.attempt.skipped == bdq_login.SKIP_PAUSED
+        status = bdq_login.status()
+        assert (status.state, status.retry, status.retry_at) == ("ok", 1, due)
+        assert fake.imports() == 1
+
+        later = datetime.fromisoformat(due)
+        monkeypatch.setattr(bdq_login, "_wall", lambda: later)
+        retried = _recover()
+        assert retried.attempt is not None and retried.attempt.retry == 2
+        assert stored_meta(mock)["cuts"] == 2 and fake.imports() == 2
+
+
+@POSIX_ONLY
+def test_entering_the_account_clears_the_cut_count(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """폼 「넣기」 가 끊기면 저장하지 않고 셈도 그대로다(폼은 다시 하지 않는다). 넣기가 성공해
+    저장되면 셈 · 다음 시도 시각이 빈다 — 결과에 넣기 때 걸려 있던 차례가 남는다(감사 상세)."""
+    mock, _ = _auto_on(monkeypatch, mock_s3)
+    scene(monkeypatch, "signal_kill_on_import")
+    clock = Clocks(monkeypatch)
+    for wait in bdq_login.CUT_RETRY_SECONDS[:2]:
+        _recover()
+        clock.advance(wait)
+    before = stored_meta(mock)
+    assert before["cuts"] == 2
+
+    cut = bdq_login.login_from_form(ACCOUNT, PASSWORD, ADMIN_ID)
+    assert not cut.saved and cut.retry == 2
+    assert (cut.result.outcome, cut.result.reason) == (
+        bdq_login.OUTCOME_UNAVAILABLE,
+        bdq_login.REASON_IMPORT_KILLED,
+    )
+    assert stored_meta(mock) == before
+
+    scene(monkeypatch)
+    entered = bdq_login.login_from_form(ACCOUNT, PASSWORD, ADMIN_ID)
+    assert entered.saved and entered.retry == 2
+    meta = stored_meta(mock)
+    assert (meta["state"], meta["cuts"], meta["retry_after"]) == ("ok", 0, None)
+    assert bdq_login.status().retry == 0
+    assert fake.logins() == 1

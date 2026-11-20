@@ -686,24 +686,44 @@ def login_trouble_note(view: bdq_login.LoginView, *, admin: bool) -> alerts.Aler
     때 · 조회 중 자동 로그인이 서버에 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 채
     서 있으면(`view.trouble`) 선다. 지문은 갈래 낱말 하나다 — 계정 · 까닭 글을 싣지 않는다. 다음
     자동 시도가 성공하거나 멈추거나 폼에서 다시 넣으면 걷힌다. 「그 화면으로」 는 Admin 「BDQ 자동
-    로그인」 펼침까지 연다."""
+    로그인」 펼침까지 연다. 비밀번호를 보내기 전에 끊긴 갈래(`import_killed`)는 짧은 글 · 지문에
+    다시 시도 차례(「다시 시도 n/3」 — `bdq_login.retry_text`)가 붙는다 — 차례가 바뀌면 다시
+    선다."""
     word = _TROUBLE_WORDS.get(view.trouble, "")
     active = view.state == "ok" and bool(word) and admin
+    retry = _cut_retry(view)
+    waiting = bdq_login.retry_text(retry) if retry else "다시 시도"
     return alerts.state_note(
         LOGIN_TROUBLE_ALERT_CODE,
         scope=None,
-        content=[view.trouble] if active else None,
+        content=([view.trouble, retry] if retry else [view.trouble]) if active else None,
         active=active,
-        text=f"BigDataQuery 자동 로그인 {word} — 다시 시도 대기" if active else None,
+        text=f"BigDataQuery 자동 로그인 {word} — {waiting} 대기" if active else None,
         full=_login_trouble_text(view, word) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
         target=bdq_login_target() if active else None,
     )
 
 
+def _cut_retry(view: bdq_login.LoginView) -> int:
+    """서지 못한 갈래가 비밀번호를 보내기 전 끊김이면 그 다시 시도 차례(아니면 0)."""
+    return view.retry if view.trouble_reason == bdq_login.REASON_IMPORT_KILLED else 0
+
+
 def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
     """`AD-24` 전문(평문) — 무엇이 서지 못했고 무엇이 그다음인가. 계정 · 비밀번호가 없다."""
     reason = login_reason_text(view.trouble_reason) if view.trouble_reason else "까닭 모름"
+    if view.trouble_reason == bdq_login.REASON_IMPORT_KILLED:
+        retry = _cut_retry(view)
+        turn = f"{bdq_login.retry_text(retry)} — " if retry else ""
+        due = f"{clock_text(view.retry_at)} 뒤 " if view.retry_at else ""
+        return (
+            f"저장된 BigDataQuery 계정의 자동 로그인이 {word}({reason} — 비밀번호를 "
+            f"보내기 전). {turn}{due}다음 토큰 오류 · 재시작 때 다시 시도하고, 다시 시도 "
+            f"{bdq_login.CUT_RETRY_LIMIT}번이 모두 끊기면 멈춥니다. Admin Area "
+            f"「{BDQ_LOGIN_LABEL}」 의 진단 줄(종료 코드 · 메모리 단서)이 끊긴 모습이고, 계정을 "
+            "다시 넣으면 곧바로 로그인해 봅니다."
+        )
     return (
         f"저장된 BigDataQuery 계정의 자동 로그인이 {word}({reason}). 멈추지 않고 다음 토큰 오류 · "
         f"재시작 때 다시 시도합니다 — 성공 없이 {bdq_login.MISS_LIMIT}번 이어지면 멈춥니다. Admin "
@@ -713,16 +733,33 @@ def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
 
 def _login_stop_short(view: bdq_login.LoginView) -> str:
     """`AD-23` 짧은 글 — 표지 없이 끝난 멈춤은 「로그인 확인 못 함」(비밀번호를 의심하게 하지
-    않는다)."""
+    않는다), 보내기 전 끊김이 다시 시도 상한을 넘긴 멈춤은 「다시 시도 3/3 끊김」."""
     if view.stop_reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
         return "BigDataQuery 자동 로그인 멈춤 — 로그인 확인 못 함"
+    if view.stop_reason == bdq_login.REASON_CUT_LIMIT:
+        limit = bdq_login.retry_text(bdq_login.CUT_RETRY_LIMIT)
+        return f"BigDataQuery 자동 로그인 멈춤 — {limit} 끊김"
     return "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣으세요"
 
 
 def _login_stop_text(view: bdq_login.LoginView) -> str:
     """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다. 표지 없이 끝난 멈춤은
-    로그인이 거절됐는지 모른다는 것과 진단을 볼 자리를 먼저 말한다."""
+    로그인이 거절됐는지 모른다는 것과 진단을 볼 자리를 먼저 말한다. 보내기 전 끊김이 다시 시도
+    상한을 넘긴 멈춤은 계정 잠김 때문이 아니라 다시 시도를 다 썼다는 것과 진단을 볼 자리를
+    말한다."""
     reason = login_reason_text(view.stop_reason) if view.stop_reason else "까닭 모름"
+    unlock = (
+        f"Admin Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 넣어 로그인이 성공하면 풀립니다. "
+        f"그때까지 조회는 예비 토큰(CD 환경변수 {BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
+    )
+    if view.stop_reason == bdq_login.REASON_CUT_LIMIT:
+        return (
+            f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다({reason}). 로그인 하위 "
+            "프로세스가 패키지를 불러오는 중(비밀번호를 보내기 전) 바깥에서 끊겼고, 쉬며 다시 "
+            f"시도한 {bdq_login.CUT_RETRY_LIMIT}번도 모두 끊겼습니다 — Admin Area "
+            f"「{BDQ_LOGIN_LABEL}」 · 「서버 시작 점검」 의 진단 줄(종료 코드 · 메모리 단서)을 "
+            f"먼저 봅니다. 더는 다시 시도하지 않습니다. {unlock}"
+        )
     if view.stop_reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
         head = (
             f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다(로그인 확인 못 함 — {reason}). "
@@ -732,11 +769,7 @@ def _login_stop_text(view: bdq_login.LoginView) -> str:
         )
     else:
         head = f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다({reason})."
-    return (
-        f"{head} 계정이 잠기지 않게 다시 시도하지 않습니다. Admin Area 「{BDQ_LOGIN_LABEL}」 "
-        "에서 계정을 다시 넣어 로그인이 성공하면 풀립니다. 그때까지 조회는 예비 토큰(CD 환경변수 "
-        f"{BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
-    )
+    return f"{head} 계정이 잠기지 않게 다시 시도하지 않습니다. {unlock}"
 
 
 def _token_alert_text(

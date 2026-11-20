@@ -102,13 +102,15 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("authz_admin_config", "admin", "개발자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     # 결과 · 까닭과 로그인 하위 프로세스 진단(`container_start_report.ChildDiag.fields` — 수 ·
-    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수)만, 계정 · 비밀번호 없음).
+    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수)만, 계정 · 비밀번호 없음), 넣기 때 걸려
+    # 있던 보내기 전 끊김의 다시 시도 차례(`retry` — 「n/3」, 없으면 칸 없음).
     _spec(
         "admin_bdq_login_set",
         "admin",
         "BigDataQuery 자동 로그인 계정 넣기",
         "result",
         "reason",
+        "retry",
         "exit",
         "signal",
         "sec",
