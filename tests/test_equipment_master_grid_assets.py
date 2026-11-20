@@ -3960,7 +3960,7 @@ const R = {}
 
 
 def test_the_table_takes_feed_patches_and_does_not_rebuild_for_an_unchanged_shell() -> None:
-    """표 JS 는 껍데기와 그 껍데기의 feed 를 이어 그린다(B4 data 가르기). feed 의 바뀐 줄이 그 줄을
+    """표 JS 는 껍데기와 그 껍데기의 feed 를 이어 그린다(data 가르기). feed 의 바뀐 줄이 그 줄을
     바꾸고 ack 가 출납을 걷는다. 껍데기가 그대로인 회차에는 표 뼈대를 다시 짓지 않고, 바뀐 줄도
     그대로인 feed(연 줄만 바뀜)에는 정렬한 표 모양도 다시 짓지 않는다. 다른 껍데기의 feed 는 그
     껍데기가 올 때까지 둔다. 내릴 때 칸의 feed 를 비운다(다음 마운트가 옛 feed 로 먼저 그리지

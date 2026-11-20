@@ -3512,10 +3512,10 @@ RERUN_1120_ANSWERS = {
 }
 
 
-def test_the_rerun_1120_user_decisions_are_recorded_in_6_40() -> None:
-    """6-40 은 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 갈래 F 가 구현한 사용자 결정 둘이 한
-    줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른 답이 굵게 선다. 필요 단축 일정 「공정」 의 옛
-    답 m19-rr-d5 를 바꾼 것은 7-1 에 선다."""
+def test_the_editor_rerun_user_decisions_are_recorded_in_6_40() -> None:
+    """6-40 은 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 입력 비가동 · 층 사용 머리 글과
+    필요 단축 「공정」 칸의 사용자 결정 둘이 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른
+    답이 굵게 선다. 필요 단축 일정 「공정」 의 옛 답 m19-rr-d5 를 바꾼 것은 7-1 에 선다."""
     document = _text()
     section = _chapter(document, 6)
     record = section[section.index("\n### 6-40. ") :]
