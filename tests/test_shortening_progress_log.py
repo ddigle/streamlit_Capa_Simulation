@@ -35,6 +35,7 @@ from capa_simulation.services.shortening_progress_log import (
 )
 
 TODAY = date(2026, 11, 20)  # 26-W47
+JULY = 202607
 W47 = ProgressWeek(2026, 47)
 
 
@@ -160,13 +161,16 @@ def test_the_screen_total_sums_pulled_units_in_scope_only() -> None:
 
 def test_the_screen_total_is_the_progress_total_plus_the_lapsed_days() -> None:
     """진척 비교 요약의 지금 합계는 필요 시점 지남 행을 따로 빼 둔다 — 화면 합계는 그 둘의
-    합이다."""
+    합이다. 두 몫이 다 0 이 아닌 표본이다 — 5 · 6월 몫(B2 · C3)은 기준선의 필요 시점이 오늘(5/25)
+    앞이라 지남, 7월 몫(D4 · E5)은 지나지 않은 당긴 호기다."""
     units = [
         _unit("A1", date(2026, 5, 1)),
         _unit("B2", date(2026, 5, 31)),
         _unit("C3", date(2026, 6, 15)),
+        _unit("D4", date(2026, 7, 20)),
+        _unit("E5", date(2026, 8, 20)),
     ]
-    required = {MAY: 12 + 20 / 31, JUNE: 12 + 20 / 31}
+    required = {MAY: 12 + 20 / 31, JUNE: 12 + 20 / 31, JULY: 14 + 10 / 31}
     then = _plan(units, required, today=date(2026, 4, 1))
     now = _plan(units, required, today=date(2026, 5, 25))
     frozen = freeze_plan(then, name="이전").units
@@ -175,6 +179,7 @@ def test_the_screen_total_is_the_progress_total_plus_the_lapsed_days() -> None:
     rows = compare_progress(past, current, current_processes=now.processes, today=now.today)
     summary = summarize_progress(rows, now.processes)
     assert summary.lapsed > 0
+    assert summary.current_days > 0 and summary.lapsed_current_days > 0, "두 몫을 함께 건다"
     assert screen_shortening_days(current, now.processes) == (
         summary.current_days + summary.lapsed_current_days
     )
@@ -215,6 +220,9 @@ def test_a_record_is_added_edited_and_deleted_against_what_was_seen(
         repository.delete_shortening_progress_entry(W47, expected_days=96)
     assert repository.load_shortening_progress_log().days_of(W47) == 90
 
+    # 본 값이 없었는데(None — 팝업을 연 뒤 남이 넣음) 지금 기록이 있으면 지우지 않는다.
+    with pytest.raises(ProgressLogConflictError):
+        repository.delete_shortening_progress_entry(W47, expected_days=None)
     assert repository.delete_shortening_progress_entry(W47, expected_days=90)
     assert not repository.delete_shortening_progress_entry(W47, expected_days=90)
     with pytest.raises(ProgressLogInvalidError):

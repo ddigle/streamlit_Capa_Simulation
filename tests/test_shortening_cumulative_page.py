@@ -22,6 +22,7 @@ from test_shortening_progress_tab import _saved_database
 from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
 from capa_simulation.components.shortening_cumulative import (
     _FILL_BUTTON_KEY,
+    _FILL_KEY,
     _GOAL_CLEAR_KEY,
     _GOAL_SAVE_KEY,
     _RECORD_DELETE_KEY,
@@ -35,7 +36,11 @@ from capa_simulation.components.shortening_cumulative import (
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.shortening_progress_log import ProgressGoal, ProgressWeek
+from capa_simulation.services.shortening_progress_log import (
+    PROGRESS_DAYS_MAX,
+    ProgressGoal,
+    ProgressWeek,
+)
 
 THIS_WEEK = ProgressWeek.of(date.today())
 
@@ -187,6 +192,91 @@ def test_a_record_refuses_a_save_when_someone_else_changed_that_week(tmp_path: P
         == 70
     )
     assert any("다른 사용자가 먼저" in text for text in texts(flashed(app, "warning")))
+    clear_equipment_repository()
+
+
+def _stored(database_path: Path) -> int | None:
+    return (
+        DuckDBEquipmentRepository(database_path).load_shortening_progress_log().days_of(THIS_WEEK)
+    )
+
+
+def test_an_unchanged_save_is_judged_by_the_store_not_by_what_the_popup_saw(
+    tmp_path: Path,
+) -> None:
+    """칸이 본 값(100) 그대로 눌러도 그 사이 남이 120 으로 고쳤으면 겹친 저장이다 — 「이미 100일」
+    이라는 사실과 다른 글을 내지 않고 120 을 남긴다."""
+    database_path, _ = _saved_database(tmp_path)
+    _seed(database_path, [(THIS_WEEK, 100)])
+    app = _open(_run(database_path))
+    assert _number(app, "단축 필요일수").value == 100
+    DuckDBEquipmentRepository(database_path).save_shortening_progress_entry(
+        THIS_WEEK, 120, expected_days=100
+    )
+    clear_equipment_repository()
+    app.button(key=_RECORD_SAVE_KEY).click().run()
+    assert not app.exception
+    assert _stored(database_path) == 120
+    assert any("다른 사용자가 먼저" in text for text in texts(flashed(app, "warning")))
+    assert not any("바뀐 것이 없습니다" in text for text in texts(flashed(app)))
+    assert _number(app, "단축 필요일수").value == 120, "칸이 지금 저장본으로 새로 선다"
+    clear_equipment_repository()
+
+
+def test_a_delete_refuses_a_record_this_popup_never_saw(tmp_path: Path) -> None:
+    """팝업을 연 때 그 주가 비어 있었는데 남이 넣고(70) 다시 고쳤으면(80) 「기록 지우기」 는 겹친
+    저장으로 거절한다 — 누른 회차에 새로 읽은 값을 기대값으로 넘기지 않는다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _open(_run(database_path))
+    assert app.button(key=_RECORD_DELETE_KEY).disabled
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_shortening_progress_entry(THIS_WEEK, 70, expected_days=None)
+    clear_equipment_repository()
+    _number(app, "단축 필요일수").set_value(5).run()
+    assert not app.button(key=_RECORD_DELETE_KEY).disabled, "표가 70 을 보여 지우기가 풀린다"
+    repository.save_shortening_progress_entry(THIS_WEEK, 80, expected_days=70)
+    clear_equipment_repository()
+    app.button(key=_RECORD_DELETE_KEY).click().run()
+    assert not app.exception
+    assert _stored(database_path) == 80
+    assert any("다른 사용자가 먼저" in text for text in texts(flashed(app, "warning")))
+    assert not any("기록을 지웠습니다" in text for text in texts(flashed(app)))
+
+    # 거절 뒤 칸이 지금 값(80)을 본 세대로 다시 서므로 다시 누르면 지운다.
+    app.button(key=_RECORD_DELETE_KEY).click().run()
+    assert not app.exception
+    assert _stored(database_path) is None
+    clear_equipment_repository()
+
+
+def _dialog_script(database_path: str, today: str) -> None:
+    """팝업 본문만 — 화면 합계는 시험이 세션 칸에 넣는다(본문이 덮지 않게)."""
+    from datetime import date
+
+    from capa_simulation.components.shortening_cumulative import _dialog_body
+
+    _dialog_body(database_path, date.fromisoformat(today))
+
+
+def test_a_screen_total_above_the_input_limit_locks_the_fill(tmp_path: Path) -> None:
+    """화면 합계가 적을 수 있는 위끝을 넘으면 「이번 주 값 넣기」 는 잠기고 풍선이 까닭을 말한다.
+    눌린 채 남은 넣은 값(세션 칸)이 있어도 칸은 그 값으로 서지 않아 팝업이 멈추지 않는다."""
+    database_path = _database(tmp_path)
+    app = AppTest.from_function(
+        _dialog_script, args=(str(database_path), date.today().isoformat()), default_timeout=60
+    )
+    app.session_state[SCREEN_TOTAL_KEY] = ScreenTotal(
+        days=PROGRESS_DAYS_MAX + 20_001, level_percent=110, process_count=70, selected=False
+    )
+    app.run()
+    assert not app.exception
+    fill = app.button(key=_FILL_BUTTON_KEY)
+    assert fill.disabled and "위끝" in str(fill.help)
+    # 잠기기 전에 넣은 값이 세션 칸에 남은 회차 — 칸은 그 값으로 서지 않는다.
+    app.session_state[_FILL_KEY] = (THIS_WEEK.label, PROGRESS_DAYS_MAX + 20_001)
+    app.run()
+    assert not app.exception
+    assert _number(app, "단축 필요일수").value is None
     clear_equipment_repository()
 
 

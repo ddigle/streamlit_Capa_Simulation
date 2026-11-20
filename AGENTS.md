@@ -5657,7 +5657,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넣기」 · 「기록 지우기」, 최종 목표 일수 / 주차 · 「목표 저장」 · 「목표 지우기」). 팝업 칸은 세대 key 라(`widget_generation`)
   주차를 바꾸거나 넣기 · 저장하면 그 세대의 기본값(저장값 · 넣은 값)으로 새로 선다 — 세션 대입으로 칸을 채우지 않는다. 겹친 저장은
   그 세대 칸이 처음 본 그 주 값 · 목표 version 과 저장소가 대조한다(`ProgressLogConflictError` · `ProfileVersionConflict` → 곁 +
-  알림창). 성공은 알림창 하나이고 앱 전체 `st.rerun()` 이라 팝업은 열린 채 띠가 새 값으로 선다. 등급은 기록
+  알림창). 지우기도 그 본 값을 넘기고(누른 회차에 새로 읽은 값이 아니다 — 본 값이 없던 주를 남이 넣었으면 거절) 「바뀐 것이 없음」
+  도 저장소의 돌려준 값으로 가른다(칸이 본 값과 같아도 그 사이 남이 고쳤으면 겹친 저장). 화면 합계가 일수 칸 위끝
+  (`PROGRESS_DAYS_MAX`)을 넘으면 「이번 주 값 넣기」 는 잠기고 풍선이 까닭을 말한다(남은 넣은 값도 칸에 세우지 않는다). 띠 줄은
+  `wrap=False` 라 「주차별」 은 늘 첫 줄 오른쪽이고, 좁으면 띠 안쪽이 먼저 줄인다 — 목표 칸이 좁으면 「첫 기록 … →」 글을 숨기고
+  (컨테이너 질의), 목표 주차 지남은 남은 일수 아래 작은 줄이다. 성공은 알림창 하나이고 앱 전체 `st.rerun()` 이라 팝업은 열린 채 띠가 새 값으로 선다. 등급은 기록
   `shortening.progress_log`(실무자부터) · 목표 `shortening.progress_goal`(관리자부터)이고 그 아래는 값만 본다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
   (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽

@@ -8,7 +8,8 @@
   않아도 늘 선다(누적-5 a) — 기준선을 고르면 호기 두 줄 카드가 그 아래(본문)다. 값은 모두 **기록
   기준**이다 — 화면에서 공정 · 목표 확보율을 바꿔도 띠 · 선은 그대로다(누적-4 「한 줄 기록」).
   기록이 없으면 점선 표지 「기록 없음」, 목표가 없으면 「최종 목표 미지정」 이다(설계 규칙
-  UI-LAY-10).
+  UI-LAY-10). 띠는 한 줄이다(UI-LAY-13) — 「주차별」 은 줄을 넘기지 않고, 좁으면 띠 안쪽이 먼저
+  줄인다(목표 칸이 좁으면 「첫 기록 … →」 글을 숨김 · 목표 주차 지남은 남은 일수 아래 작은 줄).
 - **「주차별」**(누적-1 A)을 누르면 띠 아래에 주차별 꺾은선 + 목표선이 펼쳐진다(B 시안 — 늘어난 주는
   주황 ▲ 와 「+N」, 줄어든 주는 ●, 마지막 기록에서 목표까지 남은 길은 점선). 띠는 키 붙은
   프래그먼트라 여닫기가 띠만 다시 돌린다(설계 규칙 UI-PRF-01). 편 상태는 세션 칸이라 진척 비교를
@@ -29,7 +30,10 @@
   그 아래 등급은 같은 팝업에서 값만 본다.
 - **겹친 저장**(설계 규칙 UI-STA-05): 기록은 그 주에서 본 값, 목표는 본 version 과 저장소가 쓰기
   잠금 안에서 대조한다. 본 값은 그 세대의 칸을 처음 그린 회차의 저장값이다(팝업 본문은 회차마다
-  저장본을 다시 읽는다 — `dialog_host` 「쓰는 쪽이 지키는 것」 1).
+  저장본을 다시 읽는다 — `dialog_host` 「쓰는 쪽이 지키는 것」 1). 지우기도 그 값으로 대조하고(본
+  값이 없었는데 그 사이 남이 넣은 주는 거절 — 본 적 없는 값을 지우지 않는다), 「바뀐 것이 없음」
+  도 저장소가 지금 값으로 가른다(칸이 본 값과 같아도 남이 고쳤으면 겹친 저장). 화면 합계가 적을
+  수 있는 위끝(`PROGRESS_DAYS_MAX`)을 넘으면 「이번 주 값 넣기」 는 잠기고 풍선이 까닭을 말한다.
 
 저장은 설비 DB `0036`, 캐시는 `equipment_cache.load_shortening_progress_log` 다.
 """
@@ -234,13 +238,20 @@ def _strip_style() -> str:
 .shk-cum-week {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-cum-change {{font-size:12px;font-weight:700;white-space:nowrap;padding:1px 10px;
   border-radius:999px;border:1px solid}}
-.shk-cum-goal {{display:flex;align-items:center;gap:10px;flex:1 1 260px;min-width:0}}
-.shk-cum-route {{display:flex;flex-direction:column;gap:4px;flex:1 1 200px;min-width:0}}
-.shk-cum-route-text {{font-size:12px;color:{tokens.TEXT_MUTED};white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}}
+.shk-cum-goal {{display:flex;align-items:center;gap:10px;flex:1 1 180px;max-width:100%}}
+.shk-cum-route {{display:flex;flex-direction:column;gap:4px;flex:1 1 90px;min-width:120px;
+  container-type:inline-size}}
+.shk-cum-route-text {{display:flex;gap:4px;min-width:0;font-size:12px;color:{tokens.TEXT_MUTED};
+  white-space:nowrap}}
+.shk-cum-route-from,.shk-cum-route-goal {{min-width:0;overflow:hidden;text-overflow:ellipsis}}
+.shk-cum-route-from {{flex:0 1000 auto}}
+.shk-cum-route-goal {{flex:0 1 auto}}
+@container (max-width: 220px) {{ .shk-cum-route-from {{display:none}} }}
 .shk-cum-track {{height:8px;border-radius:4px;background:{tokens.BAR_TRACK};overflow:hidden}}
 .shk-cum-fill {{display:block;height:100%;border-radius:4px;background:{tokens.ACCENT}}}
-.shk-cum-left {{font-size:14px;font-weight:700;white-space:nowrap}}
+.shk-cum-left {{display:flex;flex-direction:column;font-size:14px;font-weight:700;line-height:1.25;
+  white-space:nowrap}}
+.shk-cum-left-note {{font-size:11px;font-weight:600}}
 .shk-cum-mark {{font-size:12px;color:{tokens.TEXT_MUTED};border:1px dashed {tokens.BORDER_STRONG};
   border-radius:6px;padding:1px 10px;white-space:nowrap}}
 </style>
@@ -319,18 +330,22 @@ def _goal_markup(headline: ProgressHeadline) -> str:
     first = headline.first
     if first is None or headline.remaining is None:
         return f'<span class="shk-cum-route-text">{target}</span>'
-    route = f"첫 기록 {_days(first.days)}({html.escape(first.week.label)}) → {target}"
+    start = f"첫 기록 {_days(first.days)}({html.escape(first.week.label)}) →"
+    route = f"{start} {target}"
     share = 0.0 if headline.progress is None else headline.progress * 100
     if headline.reached:
         left, color = "목표 도달", tokens.ACCENT
     else:
+        # 목표 주차 지남은 남은 일수 아래 작은 줄이다 — 띠 높이 안에서 한 줄 폭을 늘리지 않는다.
         left = f"남은 {_days(headline.remaining)}" + (
-            " · 목표 주차 지남" if headline.overdue else ""
+            '<span class="shk-cum-left-note">목표 주차 지남</span>' if headline.overdue else ""
         )
         color = tokens.DELTA_INCREASE if headline.overdue else tokens.TEXT
     return (
         '<span class="shk-cum-goal"><span class="shk-cum-route">'
-        f'<span class="shk-cum-route-text" title="{route}">{route}</span>'
+        f'<span class="shk-cum-route-text" title="{route}">'
+        f'<span class="shk-cum-route-from">{start}</span>'
+        f'<span class="shk-cum-route-goal">{target}</span></span>'
         f'<span class="shk-cum-track"><span class="shk-cum-fill" style="width:{share:.1f}%">'
         "</span></span></span>"
         f'<span class="shk-cum-left" style="color:{color}">{left}</span></span>'
@@ -523,7 +538,9 @@ def _strip_body(database_path: str, today: date) -> None:
         return
     opened = _WEEKS_OPEN.get() and bool(log.entries)
     with st.container(border=True, key=_STRIP_BOX_KEY, gap="small"):
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        # 한 줄 — 「주차별」 은 늘 띠 오른쪽 끝이다(줄을 넘기지 않는다). 좁으면 띠 안쪽이 먼저
+        # 줄인다(첫 기록 글 → 둘째 줄).
+        with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False):
             st.html(strip_markup(log, today), width="stretch")
             st.button(
                 "주차별",
@@ -629,11 +646,29 @@ def _render_records(log: ProgressLog) -> None:
     )
 
 
+def _days_in_range(value: object) -> int | None:
+    """일수 칸에 세울 수 있는 값(0 ~ `PROGRESS_DAYS_MAX` 정수)이면 그 값 — 밖이면 None(칸이 그
+    값으로 서면 Streamlit 이 회차를 멈춘다)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= PROGRESS_DAYS_MAX else None
+
+
+def _fill_locked(total: ScreenTotal | None) -> bool:
+    """「이번 주 값 넣기」 를 잠그나 — 합계가 없음 · 기준선과 같은 거절 · 적을 수 있는 위끝 밖."""
+    return total is None or total.refusal is not None or _days_in_range(total.days) is None
+
+
 def _fill_help(total: ScreenTotal | None, this_week: ProgressWeek) -> str:
     if total is None:
         return "지금 화면의 단축 필요일수 합계가 없습니다 — 계획이 서면 넣습니다."
     if total.refusal is not None:
         return "기준선과 같은 까닭으로 지금 화면 값은 넣지 않습니다 — " + total.refusal
+    if _days_in_range(total.days) is None:
+        return (
+            f"지금 화면 합계 {_days(total.days)}이 적을 수 있는 위끝 {_days(PROGRESS_DAYS_MAX)}을 "
+            "넘어 넣지 않습니다 — 손으로 적습니다."
+        )
     scope = "고른 공정" if total.selected else "맞댄 공정"
     return (
         f"{this_week.label} 칸을 지금 화면 합계 {_days(total.days)}(목표 {total.level_percent}% · "
@@ -654,19 +689,12 @@ def _save_record(
     except ProgressLogInvalidError as exc:
         slot.warning(bootstrap_error_message(exc), icon=":material/edit_note:")
         return
-    if days == expected:
-        # 방금 저장한 같은 값의 빠른 둘째 누름이면 그 성공을 덮지 않는다(write_guard.held_notice).
-        if held_notice(_RECORD_FLASH_KEY) is None:
-            queue_flash(
-                _RECORD_FLASH_KEY,
-                f"바뀐 것이 없습니다 — {week.label} 기록이 이미 {_days(days)}입니다.",
-                kind="info",
-            )
-        st.rerun()
+    # 「바뀐 것이 없음」 도 저장소가 쓰기 잠금 안의 지금 값으로 가른다 — 칸이 본 값과 같아도 그 사이
+    # 남이 고쳤으면 겹친 저장이다(본 값만 보고 「이미 n일」 이라 하지 않는다).
     notices = notice_marks()
     try:
         repository = get_equipment_repository(database_path)
-        repository.save_shortening_progress_entry(
+        wrote = repository.save_shortening_progress_entry(
             week, days, expected_days=expected, recorded_by=saved_by or ""
         )
     except ProgressLogConflictError as exc:
@@ -684,9 +712,19 @@ def _save_record(
         slot.error(f"기록을 저장하지 못했습니다 — {bootstrap_error_message(exc)}")
         return
     clear_shortening_progress_cache()
-    message = f"누적 진척 기록을 저장했습니다 — {week.label} · {_days(days)}."
-    note_notice(notices, _RECORD_FLASH_KEY, message)
-    queue_flash(_RECORD_FLASH_KEY, message)
+    if not wrote:
+        # 지금 저장본이 이미 그 값이다(빠른 둘째 누름 · 남이 같은 값을 적음). 방금 저장한 같은 값의
+        # 빠른 둘째 누름이면 그 성공을 덮지 않는다(write_guard.held_notice).
+        if held_notice(_RECORD_FLASH_KEY) is None:
+            queue_flash(
+                _RECORD_FLASH_KEY,
+                f"바뀐 것이 없습니다 — {week.label} 기록이 이미 {_days(days)}입니다.",
+                kind="info",
+            )
+    else:
+        message = f"누적 진척 기록을 저장했습니다 — {week.label} · {_days(days)}."
+        note_notice(notices, _RECORD_FLASH_KEY, message)
+        queue_flash(_RECORD_FLASH_KEY, message)
     _FILL.clear()
     bump(_RECORD_GENERATION_KEY)
     st.rerun()
@@ -696,8 +734,11 @@ def _delete_record(
     database_path: str,
     slot: DeltaGenerator,
     week: ProgressWeek,
-    expected: int,
+    expected: int | None,
 ) -> None:
+    """그 세대 칸이 처음 본 값(`expected`)으로 지운다 — 누른 회차에 새로 읽은 값을 넘기지 않는다.
+    본 값이 없었는데(팝업을 연 뒤 남이 그 주를 넣음) 지금 기록이 있으면 저장소가 겹친 저장으로
+    거절한다(본 적 없는 값을 지우지 않는다)."""
     notices = notice_marks()
     try:
         deleted = get_equipment_repository(database_path).delete_shortening_progress_entry(
@@ -735,11 +776,8 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
     expected = _seen_days(log, chosen)
     fill = _FILL.peek()
     filled = (
-        fill[1]
-        if fill is not None
-        and len(fill) == 2
-        and fill[0] == chosen.label
-        and isinstance(fill[1], int)
+        _days_in_range(fill[1])
+        if fill is not None and len(fill) == 2 and fill[0] == chosen.label
         else None
     )
     labels = [week.label for week in options]
@@ -764,7 +802,7 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
             min_value=0,
             max_value=PROGRESS_DAYS_MAX,
             step=1,
-            value=filled if filled is not None else expected,
+            value=filled if filled is not None else _days_in_range(expected),
             key=widget_key(_RECORD_DAYS_KEY, _RECORD_GENERATION_KEY),
             placeholder="일",
             width=150,
@@ -788,7 +826,7 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
             icon=":material/input:",
             on_click=_fill_this_week,
             args=(this_week.label, 0 if total is None else total.days),
-            disabled=total is None or total.refusal is not None,
+            disabled=_fill_locked(total),
             help=_fill_help(total, this_week),
         )
         stored = log.days_of(week)
@@ -806,8 +844,8 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
     slot = render_flash(_RECORD_FLASH_KEY)
     if save:
         _save_record(database_path, slot, week, value, expected, saved_by)
-    elif delete and stored is not None:
-        _delete_record(database_path, slot, week, stored if expected is None else expected)
+    elif delete:
+        _delete_record(database_path, slot, week, expected)
 
 
 def _goal_text(log: ProgressLog) -> str:

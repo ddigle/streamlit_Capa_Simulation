@@ -91,8 +91,18 @@ _LOGIN_FAIL_EVENTS: Final = frozenset({"authn_login_fail"})
 _DENIED_EVENTS: Final = frozenset({"authz_fail_access_list"})
 # 등급 값을 싣는 상세 키 — 등급 이름으로(옛 줄의 `admin` · `user` 는 「(옛 기록)」 을 달아) 보인다.
 _GRADE_KEYS: Final = frozenset({"grade_from", "grade_to", "need", "have"})
+# 지우지 못한 줄의 결과 — 「삭제」 칸에 세지 않는다.
+_NOT_DONE_OUTCOMES: Final = frozenset({"fail", "denied"})
+# 「삭제」 칸 — 모두가 보는 공용 값을 지운 사건(누적 진척 기록 지우기도 단축 기준선 지우기처럼
+# 든다).
 _DELETE_EVENTS: Final = frozenset(
-    {"data_scenario_delete", "data_voc_delete", "data_baseline_delete", "user_deleted"}
+    {
+        "data_scenario_delete",
+        "data_voc_delete",
+        "data_baseline_delete",
+        "data_progress_log_delete",
+        "user_deleted",
+    }
 )
 
 
@@ -327,8 +337,13 @@ def _count(day: _Day, line: Mapping[str, Any]) -> None:
         day.work += 1
     if ev == "data_official_publish":
         day.official += 1
-    if ev in _DELETE_EVENTS and det.get("deleted") is not False:
-        # 지울 것이 없었던 지우기(그 사이 다른 세션이 지움 — `deleted` 거짓)는 삭제로 세지 않는다.
+    if (
+        ev in _DELETE_EVENTS
+        and det.get("deleted") is not False
+        and line.get("out") not in _NOT_DONE_OUTCOMES
+    ):
+        # 지울 것이 없었던 지우기(그 사이 다른 세션이 지움 — `deleted` 거짓)와 지우지 못한 줄(겹친
+        # 저장 거절 등 실패 · 등급 거부)은 삭제로 세지 않는다.
         day.deletes += 1
     if line.get("cat") == "admin":
         day.admin += 1

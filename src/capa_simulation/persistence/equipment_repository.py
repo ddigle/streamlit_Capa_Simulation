@@ -2688,11 +2688,14 @@ class DuckDBEquipmentRepository:
         return True
 
     @audited("data_progress_log_delete", work_audit.progress_log_delete)
-    def delete_shortening_progress_entry(self, week: ProgressWeek, *, expected_days: int) -> bool:
+    def delete_shortening_progress_entry(
+        self, week: ProgressWeek, *, expected_days: int | None
+    ) -> bool:
         """누적 진척 기록 한 줄을 지운다. 지웠으면 True, 이미 없었으면 아무것도 쓰지 않고 False.
 
         지금 값이 화면이 본 값(`expected_days`)과 다르면 지우지 않고 `ProgressLogConflictError` 다 —
-        본 적 없는 값을 지우지 않는다.
+        본 적 없는 값을 지우지 않는다. 본 값이 없었는데(None) 지금 기록이 있으면(그 사이 남이 넣음)
+        그것도 거절이다.
         """
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:

@@ -34,6 +34,8 @@ def _line(ts: str, ev: str, actor: str = "demo.user", **extra: Any) -> dict[str,
         "authz_fail_access_list": ("access", "denied"),
         "data_scenario_delete": ("data", "success"),
         "data_voc_delete": ("data", "success"),
+        "data_baseline_delete": ("data", "success"),
+        "data_progress_log_delete": ("data", "success"),
         "data_official_publish": ("data", "success"),
         "user_created": ("admin", "success"),
     }[ev]
@@ -73,6 +75,20 @@ def test_a_delete_that_found_nothing_is_not_counted_as_a_delete() -> None:
         _line("2026-11-13T00:20:00.000Z", "data_voc_delete", det={"deleted": False}),
         _line("2026-11-13T00:21:00.000Z", "data_voc_delete", det={"deleted": True}),
         _line("2026-11-13T00:22:00.000Z", "data_scenario_delete"),
+    ]
+
+    today = view.summary_table(lines, TODAY, TODAY).iloc[0]
+
+    assert (today["삭제"], today["작업"]) == (2, 3)
+
+
+def test_a_progress_record_delete_counts_and_a_refused_delete_does_not() -> None:
+    """누적 진척 기록 지우기는 단축 기준선 지우기처럼 공용 값을 지운 일이라 「삭제」 에 든다. 겹친
+    저장 거절(결과 실패 — 상세 없음)은 지우지 못했으니 세지 않는다."""
+    lines = [
+        _line("2026-11-13T00:20:00.000Z", "data_progress_log_delete", det={"deleted": True}),
+        _line("2026-11-13T00:21:00.000Z", "data_progress_log_delete", out="fail"),
+        _line("2026-11-13T00:22:00.000Z", "data_baseline_delete", det={"deleted": True}),
     ]
 
     today = view.summary_table(lines, TODAY, TODAY).iloc[0]
