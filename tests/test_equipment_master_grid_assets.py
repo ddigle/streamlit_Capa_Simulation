@@ -596,6 +596,75 @@ def test_rows_stand_in_natural_name_order_and_equal_values_follow_the_name() -> 
     ]
 
 
+_TEXT_ORDER_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const pick = (order, values) => order.map((k) => values[k])
+const R = {}
+R.asc = input.kinds.map((kind) => pick(sortOrder(input.mixed, 'asc', kind), input.mixed))
+R.desc = input.kinds.map((kind) => pick(sortOrder(input.mixed, 'desc', kind), input.mixed))
+R.ties = input.ties.map((c) => sortOrder(c.values, c.dir, c.kind, c.names))
+R.cells = input.cells.map((c) => Math.sign(compareCells(c[0], c[1], c[2])))
+process.stdout.write(JSON.stringify(R))
+"""
+
+# 글 칸에 실제로 섞여 드는 꼴 — 숫자로 시작 · 기호 · 영문(대소문자) · 한글 · 이름 안 숫자 ·
+# 전각 숫자 · 줄바꿈 · 탭 · BMP 밖 글자 · 빈 값 · 겹친 값.
+_MIXED_TEXT = [
+    "물류", "FDY", "MI", "Main", "부대", "HBM", "EDP", "범용", "PKG",
+    "11월 1주 — 셋업 지연", "D 모듈 도면 숨김", "Qual 지연 — 부품 수급",
+    "도면 미표시", "자리 미정",
+    "모델-10", "모델-2", "Model-10", "Model-2", "model-2", "12A", "7", "007",
+    "-X", "_X", "Zeta", "가", "１２", "줄\n바꿈", "탭\t칸", "x😀", "", "물류", "",
+]  # fmt: skip
+
+
+def test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values() -> None:
+    """설비 마스터 표 글 칸(글 · 메모 · 고르기)의 머리 정렬은 설비명 칸과 같은 비교 하나다 —
+    숫자 → 기호 → 영문 → 한글, 이름 안 숫자는 수로(「Model-2」 가 「Model-10」 앞), 대소문자는
+    가리지 않는다. 그 차례는 파이썬 `natural_name_key` 와 같고, 조건 값 목록 차례
+    (`_sorted_values`)와도 같다. 내림차순은 그 거꾸로이고 빈 값은 늘 아래, 값이 같은 줄은 설비명
+    오름차순이다. 수 · 날짜 칸은 그대로 — 수 칸은 수로(「1e3」 이 「200」 뒤), 날짜 칸은 글자
+    그대로다(2026-11-20 결과 보드 여쭘-2 a)."""
+    kinds = ["text", "memo", "choice", "name"]
+    ties = [
+        {
+            "values": ["물류", "FDY", "물류", "FDY", "", "Main"],
+            "names": ["호기 10", "B-2", "호기 2", "A-1", "C", "Z"],
+            "kind": kind,
+            "dir": direction,
+        }
+        for kind in ("text", "choice")
+        for direction in ("asc", "desc")
+    ]
+    cells = [
+        ["1e3", "200", "number"],
+        ["1e3", "200", "text"],
+        ["2026-1-5", "2026-01-10", "date"],
+        ["2026-1-5", "2026-01-10", "text"],
+        ["가", "A", "memo"],
+        ["가", "A", "choice"],
+    ]
+    result = _node(
+        {"kinds": kinds, "mixed": _MIXED_TEXT, "ties": ties, "cells": cells}, _TEXT_ORDER_RUNNER
+    )
+    filled = [value for value in _MIXED_TEXT if value]
+    blanks = [value for value in _MIXED_TEXT if not value]
+    ascending = sorted(filled, key=natural_name_key) + blanks
+    descending = sorted(filled, key=natural_name_key, reverse=True) + blanks
+    for kind, asc, desc in zip(kinds, result["asc"], result["desc"], strict=True):
+        assert asc == ascending, kind
+        assert desc == descending, kind
+    text = result["asc"][0]
+    assert list(dict.fromkeys(text)) == eg._sorted_values(_MIXED_TEXT), "조건 값 목록 차례와 같다"
+    assert text.index("7") < text.index("-X") < text.index("FDY") < text.index("물류")
+    assert text.index("Zeta") < text.index("가")
+    assert text.index("Model-2") < text.index("Model-10")
+    assert text.index("모델-2") < text.index("모델-10")
+    assert text.index("Qual 지연 — 부품 수급") < text.index("도면 미표시")
+    assert result["ties"] == [[3, 1, 5, 2, 0, 4], [2, 0, 5, 3, 1, 4]] * 2, "같은 값은 설비명 오름"
+    assert result["cells"] == [1, -1, 1, -1, 1, 1], "수 · 날짜 칸은 제 비교, 글 칸은 영문이 앞"
+
+
 _VIEW_FOLLOW_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 process.stdout.write(JSON.stringify({
@@ -3478,6 +3547,79 @@ def test_the_grid_starts_in_name_order_and_a_sort_breaks_ties_by_name() -> None:
     assert added["top"] == 45 * 34, "그 줄이 표 머리 바로 아래"
     assert result["loaded"]["top"] == 0
     assert result["firstOpen"]["top"] == 0
+
+
+_TEXT_SORT_VIEW_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
+    + r"""
+FakeNode.prototype.focus = function () { document.activeElement = this }
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const columns = [
+  { name: '설비명', kind: 'name', width: 'name' },
+  { name: 'Model', kind: 'text', width: 'text' },
+  { name: '동', kind: 'choice', width: 'short', options: input.options, blank: true },
+  { name: '메모2', kind: 'memo', width: 'memo' },
+]
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+globalThis.__mount({
+  data: {
+    mode: 'grid', base: 'b1', view: input.rows.map((row) => row[0]).join(','),
+    limits: { outboxCells: 10000, pasteCells: 5000 },
+    columns, colSets: [['all', '전체', '', [1, 2, 3]]],
+    rows: input.rows.map(([id, ...values]) => ({ id, values })),
+  },
+  parentElement, setTriggerValue() {}, setStateValue() {},
+})
+const S = host.__emg
+const shown = () => S.model.live.map((row) => row.id)
+const R = {}
+for (const col of [1, 2, 3]) {
+  toggleSort(S, col)
+  R['asc' + col] = shown()
+  toggleSort(S, col)
+  R['desc' + col] = shown()
+  toggleSort(S, col)
+}
+process.stdout.write(JSON.stringify(R))
+"""
+)
+
+
+def test_a_text_header_sorts_its_rows_like_the_name_column() -> None:
+    """설비 마스터 표에서 글 칸(Model) · 고르기 칸(동) · 메모 칸(메모2) 머리를 누르면 보이는
+    줄이 설비명 칸과 같은 차례로 선다 — 영문이 한글 앞, 이름 안 숫자는 수로, 같은 값은 설비명
+    오름차순, 빈 값은 오름 · 내림 모두 아래(2026-11-20 결과 보드 여쭘-2 a)."""
+    rows = [
+        ["s:1", "호기 1", "가람-2", "본관", "도면 미표시"],
+        ["s:2", "호기 2", "DEMO-MDL-10", "C10", "Qual 지연 — 부품 수급"],
+        ["s:3", "호기 3", "DEMO-MDL-9", "C2", "11월 1주 — 셋업 지연"],
+        ["s:4", "호기 4", "가람-10", "본관", ""],
+        ["s:5", "호기 5", "", "C1", "자리 미정"],
+        ["s:6", "호기 6", "나래-1", "", "D 모듈 도면 숨김"],
+        ["s:7", "호기 7", "DEMO-MDL-9", "C10", ""],
+        ["s:8", "호기 8", "7A", "C2", "도면 미표시"],
+    ]
+    options = ["본관", "C10", "C2", "C1"]
+    result = _node(
+        {"rows": rows, "options": options},
+        _TEXT_SORT_VIEW_RUNNER,
+        source=FAKE_DOM + _fake_dom_source(),
+    )
+
+    def expected(col: int, descending: bool) -> list[str]:
+        filled = [row for row in rows if row[col]]
+        by_name = sorted(filled, key=lambda row: natural_name_key(row[1]))
+        ordered = sorted(by_name, key=lambda row: natural_name_key(row[col]), reverse=descending)
+        return [row[0] for row in ordered] + [row[0] for row in rows if not row[col]]
+
+    for col in (1, 2, 3):
+        assert result[f"asc{col}"] == expected(col + 1, False), col
+        assert result[f"desc{col}"] == expected(col + 1, True), col
+    assert result["asc1"] == ["s:8", "s:3", "s:7", "s:2", "s:1", "s:4", "s:6", "s:5"]
+    shown = ["s:5", "s:3", "s:8", "s:2", "s:7", "s:1", "s:4", "s:6"]
+    assert result["asc2"] == shown, "C1 · C2 · C10 · 본관 · 빈 값"
 
 
 _NAME_VIEW_PREFIX = _NAME_SORT_VIEW_RUNNER[

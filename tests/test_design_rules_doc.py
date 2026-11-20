@@ -3347,10 +3347,9 @@ def test_the_cumulative_1120_board_answers_are_recorded_in_6_37() -> None:
     「(2026-11-20 · 규칙 id)」 로 끝남), 고른 답이 굵게 선다. 권장이 아닌 답은 cum-record 하나이고
     cum-scope 는 다시 물은 답이다. UI-LAY-13 예외에 그 띠가 선다."""
     document = _text()
-    assert "판 v1.40" in document.split("\n## 1. ")[0]
     assert "6-37 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-37. ") :]
+    record = section[section.index("\n### 6-37. ") : section.index("\n### 6-38. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -3370,6 +3369,36 @@ def test_the_cumulative_1120_board_answers_are_recorded_in_6_37() -> None:
     v140 = history[history.index("- **v1.40 — 2026-11-20.**") :]
     for phrase in ("6-37", "cum-record", "UI-LAY-13", "규칙 82"):
         assert phrase in v140, phrase
+
+
+def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
+    """v1.41 — 6-38 은 2026-11-20 다음 배포 후보 결과 보드의 답이다(확인 넷 「좋음」 · 여쭘
+    다섯 모두 a). 코드를 바꾸는 답은 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른 답이
+    굵게 선다 — 여쭘-2 a 는 설비 마스터 표 글 칸 머리 정렬도 설비명 칸과 같은 비교 하나이고,
+    그 답이 UI-CON-04 근거 · 그물에 선다."""
+    document = _text()
+    assert "판 v1.41" in document.split("\n## 1. ")[0]
+    assert "6-38 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-38. ") :]
+    assert "확인 넷은 모두 「좋음」" in record and "여쭘 다섯은 모두 a" in record
+    known = {rule.id for rule in _rules()}
+    answers: dict[str, str] = {}
+    for line in (line for line in record.splitlines() if line.startswith("- ")):
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        assert match, line
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        answers[match.group(1)] = match.group(2)
+    assert answers["여쭘-2"] == "a 글 칸 모두 설비명 칸과 같은 차례"
+    con04 = next(rule for rule in _rules() if rule.id == "UI-CON-04")
+    assert "결과 보드 여쭘-2 a(6-38)" in con04.fields["근거"][0]
+    net = "test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values"
+    assert net in con04.fields["그물"][0]
+    history = _chapter(document, 8)
+    v141 = history[history.index("- **v1.41 — 2026-11-20.**") :]
+    for phrase in ("6-38", "여쭘-2 a", "UI-CON-04", "규칙 82"):
+        assert phrase in v141, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

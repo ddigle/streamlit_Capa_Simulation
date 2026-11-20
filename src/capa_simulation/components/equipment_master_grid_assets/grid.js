@@ -222,14 +222,20 @@ function lockedShiftCell(rows, cols, locked) {
 // </grid-plan>
 
 // <grid-sort>
-// 머리 누름 정렬 — 빈 값은 늘 아래, 수 칸은 수로, 글은 한국어 차례(localeCompare 'ko'), 설비명 칸은 설비명 자연 차례.
+// 머리 누름 정렬 — 빈 값은 늘 아래. 글 칸(설비명 · 글 · 메모 · 고르기 — 수 · 날짜 칸 밖 모두)은 설비명 자연 차례
+// (`compareNameKeys`) 하나라 조건 값 목록 차례(파이썬 `_sorted_values`)와 같다. 수 칸은 수로, 날짜 칸과 수 칸의 수 아닌 값은
+// localeCompare 'ko' 그대로다.
+function textSorted(kind) {
+  return kind !== 'number' && kind !== 'date'
+}
+
 function compareCells(left, right, kind) {
   const a = String(left == null ? '' : left)
   const b = String(right == null ? '' : right)
   if (a === '' && b === '') return 0
   if (a === '') return 1
   if (b === '') return -1
-  if (kind === 'name') return compareNameKeys(nameKey(a), nameKey(b))
+  if (textSorted(kind)) return compareNameKeys(nameKey(a), nameKey(b))
   if (kind === 'number') {
     const x = Number(a)
     const y = Number(b)
@@ -239,7 +245,7 @@ function compareCells(left, right, kind) {
 }
 
 // 설비명 자연 차례(…EQ2, EQ10 · 12A, 12B) — 파이썬 `space_layout_edit.natural_name_key`(「전체 불러오기」 가 상한을 자르는
-// 차례)와 같은 규칙이고 Space 편집기 `naturalCompare` 와 같은 꼴이다. 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자를 코드
+// 차례 · 조건 값 목록 차례)와 같은 규칙이고 Space 편집기 `naturalCompare` 와 같은 꼴이다. 글 칸 머리 정렬도 이 차례다. 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자를 코드
 // 포인트로 견주고(한글 음절은 코드 포인트가 곧 가나다 차례, 영문이 한글 앞), 덩이가 같으면 짧은 쪽이
 // 앞, 그래도 같으면 글자 그대로. 빈 이름은 늘 아래다. 열쇠는 줄마다 한 번만 짓는다(`nameKey` — 회차마다 1천 줄을 줄 세운다).
 function nameKey(name) {
@@ -281,7 +287,7 @@ function sortOrder(values, dir, kind, names) {
   const tie = (i, j) => (keys ? compareNameKeys(keys[i], keys[j]) : 0) || i - j
   if (!dir) return keys ? order.sort(tie) : order
   const sign = dir === 'desc' ? -1 : 1
-  const own = kind === 'name' ? (values === names ? keys : values.map(nameKey)) : null
+  const own = textSorted(kind) ? (values === names ? keys : values.map(nameKey)) : null
   const primary = own ? (i, j) => compareNameKeys(own[i], own[j]) : (i, j) => compareCells(values[i], values[j], kind)
   return order.sort((i, j) => {
     const first = primary(i, j)
