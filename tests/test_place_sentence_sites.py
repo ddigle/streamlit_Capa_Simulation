@@ -283,6 +283,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/scenario_transform.py", "render_source_selector"): (EMPTY,),
     ("src/capa_simulation/components/securement_heatmap.py", "render_securement_heatmap"): (EMPTY,),
+    # 누적 진척 설정 팝업의 기록 표 자리 — 기록이 하나도 없을 때.
+    ("src/capa_simulation/components/shortening_cumulative.py", "_render_records"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "render_highlight_notice"): (EMPTY,),

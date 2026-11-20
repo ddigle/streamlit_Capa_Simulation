@@ -39,6 +39,8 @@ CONTRACT_ACTIONS = {
     "home.settings": grades.MANAGER,
     "shortening.baseline": grades.EDITOR,
     "shortening.filter_default": grades.MANAGER,
+    "shortening.progress_log": grades.EDITOR,
+    "shortening.progress_goal": grades.MANAGER,
     "target.availability": grades.MANAGER,
     "auto_update.view": grades.MANAGER,
     "auto_update.edit": grades.DEVELOPER,

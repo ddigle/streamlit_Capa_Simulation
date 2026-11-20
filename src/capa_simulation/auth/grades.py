@@ -105,6 +105,8 @@ ACTIONS: Final[Mapping[str, Action]] = _actions(
     ("home.settings", MANAGER, "HOME 설정을 저장할"),
     ("shortening.baseline", EDITOR, "기준선을 남기거나 지울"),
     ("shortening.filter_default", MANAGER, "모두의 기본 조회 조건을 바꿀"),
+    ("shortening.progress_log", EDITOR, "누적 진척 기록을 남기거나 고칠"),
+    ("shortening.progress_goal", MANAGER, "누적 진척 최종 목표를 바꿀"),
     ("target.availability", MANAGER, "표준 목표 가용설비를 바꿀"),
     ("auto_update.view", MANAGER, "자동 갱신 탭을 볼"),
     ("auto_update.edit", DEVELOPER, "자동 갱신을 바꾸거나 실행할"),
@@ -157,6 +159,8 @@ EVENT_FLOORS: Final[Mapping[str, str]] = _floors(
     (("data_target_save", "data_target_clear"), "target.availability"),
     (("data_baseline_save", "data_baseline_delete"), "shortening.baseline"),
     (("data_shortening_filter_save",), "shortening.filter_default"),
+    (("data_progress_log_save", "data_progress_log_delete"), "shortening.progress_log"),
+    (("data_progress_goal_save",), "shortening.progress_goal"),
     (("data_legacy_trace_ack",), "equipment.legacy_ack"),
 )
 # 바닥 표에 없는 사건의 벽 — 닫힌 쪽(개발자). 시험(`tests/test_grades.py`)이 빠짐을 막는다.

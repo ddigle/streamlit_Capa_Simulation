@@ -30,6 +30,9 @@ LATER_TABLES = (
     "manual_downtime_save",
     # 설비 0034 — Space 겹친 순서.
     "floor_layout_stack",
+    # 설비 0036 — 필요 단축 일정 누적 진척.
+    "shortening_progress_log",
+    "shortening_progress_goal",
 )
 
 
@@ -121,7 +124,7 @@ def test_a_database_at_0027_keeps_every_other_row_and_gets_empty_tables(tmp_path
     assert not set(NEW_TABLES) & set(before)
     assert before["equipment_scenario"] == 1 and before["revision"] == 3
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31, 32, 33, 34, 35)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31, 32, 33, 34, 35, 36)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == {

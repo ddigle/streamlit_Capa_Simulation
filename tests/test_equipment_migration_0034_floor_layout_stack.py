@@ -79,9 +79,14 @@ def test_a_database_at_0033_keeps_every_other_row_and_gets_an_empty_table(
     before = _table_counts(path)
     assert NEW_TABLE not in before
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 35)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 35, 36)
 
     after = _table_counts(path)
     assert after[NEW_TABLE] == 0
-    assert {table: count for table, count in after.items() if table != NEW_TABLE} == before
+    # 뒤 번호 0036(누적 진척 빈 표 둘)도 함께 걸린다 — 이 번호의 표가 아니라 셈에서 뺀다.
+    later = ("shortening_progress_log", "shortening_progress_goal")
+    assert {table: after[table] for table in later} == dict.fromkeys(later, 0)
+    assert {
+        table: count for table, count in after.items() if table != NEW_TABLE and table not in later
+    } == before
     assert DuckDBEquipmentRepository(path).initialize() == ()

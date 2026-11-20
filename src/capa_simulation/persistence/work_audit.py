@@ -283,6 +283,34 @@ def baseline_delete(args: Mapping[str, Any], result: Any) -> WorkNote:
     return WorkNote(tgt=_target("baseline", args.get("baseline_id")), det=_deleted(result))
 
 
+def _week_label(value: Any) -> str | None:
+    """누적 진척 기록의 주차 글(`YY-W##`) — 값(일수)은 싣지 않는다."""
+    return _text(_get(value, "label"))
+
+
+def progress_log_save(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """누적 진척 기록 넣기 · 고치기 — 대상은 주차, 일수는 싣지 않는다."""
+    return WorkNote(
+        tgt=_target("progress_log", _week_label(args.get("week"))),
+        claimed=_text(args.get("recorded_by")) or None,
+    )
+
+
+def progress_log_delete(args: Mapping[str, Any], result: Any) -> WorkNote:
+    return WorkNote(
+        tgt=_target("progress_log", _week_label(args.get("week"))), det=_deleted(result)
+    )
+
+
+def progress_goal_save(args: Mapping[str, Any], result: Any) -> WorkNote:
+    """누적 진척 최종 목표 저장 · 지우기 — 새 version 만(목표 값은 싣지 않는다)."""
+    return WorkNote(
+        tgt=_target("progress_goal", "goal"),
+        det={"version_to": result if isinstance(result, int) else None},
+        claimed=_text(args.get("saved_by")) or None,
+    )
+
+
 def drawing(args: Mapping[str, Any], result: Any) -> WorkNote:
     building, floor = args.get("building"), args.get("floor")
     place = "FAB" if building is None else f"{building} {floor}"

@@ -273,6 +273,7 @@ def migrated(tmp_path: Path) -> tuple[Path, dict[str, list[tuple[object, ...]]]]
         33,
         34,
         35,
+        36,
     )
     return path, before
 

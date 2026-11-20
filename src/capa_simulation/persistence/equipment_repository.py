@@ -63,6 +63,13 @@ from capa_simulation.persistence.shortening_baseline_store import (
     list_baselines,
     load_baseline,
 )
+from capa_simulation.persistence.shortening_progress_log_store import (
+    delete_progress_entry,
+    read_progress_log,
+    stored_progress_days,
+    write_progress_entry,
+    write_progress_goal,
+)
 from capa_simulation.persistence.snapshot_export import CheckpointCopy, checkpoint_copy
 from capa_simulation.services.equipment_contract import (
     AREA_CODE_COLUMN,
@@ -205,6 +212,14 @@ from capa_simulation.services.shortening_filter_profile import (
     merge_filter_processes,
     normalize_filter_month,
     normalize_filter_processes,
+)
+from capa_simulation.services.shortening_progress_log import (
+    ProgressGoal,
+    ProgressLog,
+    ProgressLogConflictError,
+    ProgressWeek,
+    normalize_progress_days,
+    normalize_recorded_by,
 )
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
@@ -2631,6 +2646,101 @@ class DuckDBEquipmentRepository:
             outcome.wrote = delete_baseline(connection, baseline_id)
         return outcome.wrote
 
+    def load_shortening_progress_log(self) -> ProgressLog:
+        """필요 단축 일정 누적 진척 기록 전부와 최종 목표(0036). 저장한 적이 없으면 빈 기록 · 목표
+        없음."""
+        with self._connect() as connection:
+            return read_progress_log(connection)
+
+    @audited("data_progress_log_save", work_audit.progress_log_save)
+    def save_shortening_progress_entry(
+        self,
+        week: ProgressWeek,
+        days: object,
+        *,
+        expected_days: int | None,
+        recorded_by: str = "",
+    ) -> bool:
+        """누적 진척 기록 한 줄(그 주의 단축 필요일수)을 넣거나 고친다. 썼으면 True.
+
+        리비전 없는 공용 현행값이라 그 자리에서 고친다(0036). `expected_days` 는 화면이 그 주에서 본
+        저장값(없었으면 None)이다 — 쓰기 잠금 안의 지금 값과 다르면 아무것도 쓰지 않고
+        `ProgressLogConflictError` 를 올린다(그 사이 남이 그 주를 넣거나 고쳤다). 같은지 보기가
+        먼저다 — 지금 값이 적은 값과 같으면(빠른 두 번 누름의 둘째 · 남이 같은 값을 적음) 쓰지 않고
+        False 다. 일수가 규칙 밖이면 쓰기 전에 `ProgressLogInvalidError`(`ValueError`)다.
+        """
+        value = normalize_progress_days(days)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            stored = stored_progress_days(connection, week)
+            if stored == value:
+                return False
+            if stored != expected_days:
+                raise ProgressLogConflictError(_progress_conflict_message(week, stored))
+            write_progress_entry(
+                connection,
+                week,
+                value,
+                recorded_by=normalize_recorded_by(recorded_by),
+                exists=stored is not None,
+            )
+            outcome.wrote = True
+        return True
+
+    @audited("data_progress_log_delete", work_audit.progress_log_delete)
+    def delete_shortening_progress_entry(self, week: ProgressWeek, *, expected_days: int) -> bool:
+        """누적 진척 기록 한 줄을 지운다. 지웠으면 True, 이미 없었으면 아무것도 쓰지 않고 False.
+
+        지금 값이 화면이 본 값(`expected_days`)과 다르면 지우지 않고 `ProgressLogConflictError` 다 —
+        본 적 없는 값을 지우지 않는다.
+        """
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            stored = stored_progress_days(connection, week)
+            if stored is None:
+                return False
+            if stored != expected_days:
+                raise ProgressLogConflictError(_progress_conflict_message(week, stored))
+            delete_progress_entry(connection, week)
+            outcome.wrote = True
+        return True
+
+    @audited("data_progress_goal_save", work_audit.progress_goal_save)
+    def save_shortening_progress_goal(
+        self,
+        goal: ProgressGoal | None,
+        *,
+        expected_version: int | None,
+        saved_by: str = "",
+    ) -> int | None:
+        """누적 진척 최종 목표(일수 · 주차 하나)를 갈아 쓴다 — None 이면 지운다. 썼으면 새 version,
+        저장본과 같아 쓰지 않았으면 None.
+
+        `expected_version` 은 화면이 편집을 시작할 때 본 version 이다 — 다르면 아무것도 쓰지 않고
+        `ProfileVersionConflict` 다(None 은 대조하지 않는다 — 시험 · 스크립트). 대조가 먼저, 같은지
+        보기가 다음이다(입력 비가동 저장과 같은 차례).
+        """
+        if goal is not None:
+            goal = ProgressGoal(normalize_progress_days(goal.days), goal.week)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            require_profile_version(
+                connection,
+                "shortening_progress_goal",
+                expected_version,
+                label="누적 진척 최종 목표",
+                schema="equipment_ops",
+            )
+            current = read_progress_log(connection).goal
+            if current.goal == goal:
+                return None
+            version = current.version + 1
+            write_progress_goal(
+                connection, goal, version=version, saved_by=normalize_recorded_by(saved_by)
+            )
+            outcome.wrote = True
+        return version
+
     @audited("data_drawing_save", work_audit.drawing)
     def save_floor_layout_canvas(
         self,
@@ -2832,6 +2942,15 @@ class DuckDBEquipmentRepository:
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)
+
+
+def _progress_conflict_message(week: ProgressWeek, stored: int | None) -> str:
+    """누적 진척 기록 대조가 어긋난 글 — 지금 저장본 값을 함께 적는다."""
+    now = "기록 없음" if stored is None else f"{stored:,}일"
+    return (
+        f"다른 사용자가 먼저 {week.label} 기록을 바꿔 이번 저장은 반영하지 않았습니다(지금 {now}). "
+        "최신 기록을 확인한 뒤 다시 저장하세요."
+    )
 
 
 def _require_floor_key(building: str, floor: str) -> None:

@@ -94,6 +94,8 @@ COVERED_ACTIONS = frozenset(
         "home.settings",
         "shortening.baseline",
         "shortening.filter_default",
+        "shortening.progress_log",
+        "shortening.progress_goal",
         "target.availability",
         "auto_update.view",
         "auto_update.edit",
@@ -114,6 +116,7 @@ ROOT_FILES = (
     "src/capa_simulation/components/scenario_status.py",
     "src/capa_simulation/components/scenario_transform.py",
     "src/capa_simulation/components/shortening_progress_panel.py",
+    "src/capa_simulation/components/shortening_cumulative.py",
     "src/capa_simulation/components/required_shortening_panel.py",
     "src/capa_simulation/components/auto_official_update_tab.py",
     "src/capa_simulation/components/bigdataquery_registration.py",
@@ -748,6 +751,31 @@ def test_the_baseline_save_popover_is_from_the_editor(
 
     _clean(app)
     assert ("기준선 저장" in visible_labels(app)) is grades.at_least(grade, grades.EDITOR)
+
+
+CUMULATIVE_SCRIPT = """
+from datetime import date
+
+from capa_simulation.components.shortening_cumulative import _dialog_body
+
+_dialog_body({database!r}, date(2026, 11, 18))
+"""
+
+
+@GRADE_PARAMS
+def test_the_cumulative_record_is_from_the_editor_and_the_goal_from_the_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """「누적 진척 설정」 팝업 — 기록 넣기 · 고치기 · 지우기는 실무자부터(기준선과 같다), 최종
+    목표는 관리자부터다. 그 아래 등급은 기록 표 · 목표 값만 본다."""
+    as_grade(monkeypatch, grade)
+    app = _graded(CUMULATIVE_SCRIPT.format(database=str(tmp_path / "equipment.duckdb"))).run()
+
+    _clean(app)
+    labels = visible_labels(app)
+    assert ("기록 저장" in labels) is grades.at_least(grade, grades.EDITOR)
+    assert ("이번 주 값 넣기" in labels) is grades.at_least(grade, grades.EDITOR)
+    assert ("목표 저장" in labels) is grades.at_least(grade, grades.MANAGER)
 
 
 # ---------------------------------------------------------- 열람의 모든 화면 · 앱 자신의 쓰기

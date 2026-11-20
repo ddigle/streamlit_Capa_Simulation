@@ -73,6 +73,7 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.settings_box import render_settings_box
+from capa_simulation.components.shortening_cumulative import CumulativeProgress
 from capa_simulation.components.shortening_source import (
     load_shortening_demand,
     shortening_frames,
@@ -118,6 +119,11 @@ def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) 
 DIALOG_HOST = SHORTENING_DIALOG_HOST
 QUAL_CALCULATOR_DIALOG = "qual_calculator"
 QUAL_CALCULATOR_BUTTON_KEY = "required_shortening_qual_calculator_v1"
+# 머리 「누적 진척」 띠 · 사이드바 「누적 진척 설정」 상자 · 팝업(같은 호스트가 연다 — 2026-11-20
+# 보드 답 누적-1 ~ 5). 기록 · 목표는 설비 DB 0036 의 공용 값이다.
+CUMULATIVE = CumulativeProgress(
+    host=DIALOG_HOST, database_path=str(EQUIPMENT_DUCKDB_PATH.resolve())
+)
 
 
 @st.dialog(
@@ -152,6 +158,7 @@ render_settings_box(
     ),
     icon=":material/calculate:",
 )
+CUMULATIVE.render_box()
 
 today = date.today()
 # 팝업 호스트 — 매 앱 전체 회차 빠짐없이, 이벤트 칸에 늘 한 자리(모듈 설명). 데이터를 읽기 전이라
@@ -161,10 +168,12 @@ DIALOG_HOST.render(
     {
         QUAL_CALCULATOR_DIALOG: partial(_qual_calculator_dialog, today),
         **{value: body for value, (body, _) in LEVEL_FIELD.dialogs.items()},
+        **CUMULATIVE.dialogs(today=today),
     },
     widget_keys={
         QUAL_CALCULATOR_DIALOG: (PASTE_TEXT_KEY,),
         **{value: keys for value, (_, keys) in LEVEL_FIELD.dialogs.items()},
+        **CUMULATIVE.widget_keys(),
     },
 )
 # 사이드바 조회 조건 패널의 목표 확보율 줄 — 데이터를 읽기 전이라 멈춘 회차에도 선다(설비 DB 를
@@ -247,6 +256,9 @@ except BOOTSTRAP_ERRORS as exc:
     shortening_error = bootstrap_error_message(
         exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH), labels=get_process_labels()
     )
+# 머리 한 줄 「누적 진척」 — 기록 기준이라 계획이 멈춘 회차에도 선다(누적-5 a — 진척 비교와
+# 상관없이).
+CUMULATIVE.render_strip(today=today)
 render_required_shortening_tab(
     equipment=dashboard_equipment,
     downtime=dashboard_downtime,

@@ -62,6 +62,13 @@ from capa_simulation.services.shortening_baseline import (
     ShorteningBaselineSummary,
 )
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
+from capa_simulation.services.shortening_progress_log import (
+    ProgressEntry,
+    ProgressGoal,
+    ProgressGoalState,
+    ProgressLog,
+    ProgressWeek,
+)
 
 
 class _MergedSnapshotPayload(TypedDict):
@@ -221,6 +228,7 @@ _write_generations = {
     "shortening_baseline": 0,
     "floor_state": 0,
     "manual_downtime": 0,
+    "shortening_progress": 0,
 }
 
 
@@ -1038,6 +1046,64 @@ def clear_manual_downtime_cache() -> None:
     _load_manual_downtime_saves_payload.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_shortening_progress_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> dict[str, Any]:
+    del stamp, generation
+    log = get_equipment_repository(database_path).load_shortening_progress_log()
+    goal = log.goal
+    return {
+        "entries": [
+            (entry.week.year, entry.week.week, entry.days, entry.recorded_by, entry.updated_at)
+            for entry in log.entries
+        ],
+        "goal": None
+        if goal.goal is None
+        else (goal.goal.days, goal.goal.week.year, goal.goal.week.week),
+        "version": goal.version,
+        "saved_by": goal.saved_by,
+        "updated_at": goal.updated_at,
+    }
+
+
+def load_shortening_progress_log(database_path: str) -> ProgressLog:
+    """필요 단축 일정 누적 진척 기록 · 최종 목표(`0036`, 리비전 없는 공용 현행값).
+
+    필요 단축 일정 머리 한 줄(회차마다)과 「누적 진척 설정」 팝업이 읽는다. 입력 비가동과 같은
+    방식이다 — 이 앱의 저장(그 팝업의 기록 · 목표 저장 · 지우기)이 성공한 직후
+    `clear_shortening_progress_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스
+    밖의 쓰기를 맡는다. 값은 평범한 튜플로 싣고 지금 클래스로 다시 세운다(핫리로드 뒤 옛 클래스가
+    캐시에 남지 않게 — `_payload` 와 같은 까닭).
+    """
+    payload = _load_shortening_progress_payload(
+        database_path, database_stamp(database_path), _write_generation("shortening_progress")
+    )
+    goal = payload["goal"]
+    return ProgressLog(
+        entries=tuple(
+            ProgressEntry(
+                week=ProgressWeek(year, week),
+                days=days,
+                recorded_by=recorded_by,
+                updated_at=updated_at,
+            )
+            for year, week, days, recorded_by, updated_at in payload["entries"]
+        ),
+        goal=ProgressGoalState(
+            goal=None if goal is None else ProgressGoal(goal[0], ProgressWeek(goal[1], goal[2])),
+            version=payload["version"],
+            saved_by=payload["saved_by"],
+            updated_at=payload["updated_at"],
+        ),
+    )
+
+
+def clear_shortening_progress_cache() -> None:
+    _bump_write_generation("shortening_progress")
+    _load_shortening_progress_payload.clear()
+
+
 def clear_floor_layout_cache() -> None:
     """층·FAB 캔버스·도면 요소·Main 설비명 위치·겹친 순서 캐시를 비운다. 캔버스·요소만 바꾼
     저장(FAB 배치 저장)은 설비 리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과
@@ -1076,4 +1142,5 @@ def clear_equipment_repository() -> None:
     clear_shortening_baseline_cache()
     clear_floor_state_cache()
     clear_manual_downtime_cache()
+    clear_shortening_progress_cache()
     get_equipment_repository.clear()

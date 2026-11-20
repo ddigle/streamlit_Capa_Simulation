@@ -110,6 +110,12 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         PLACE_FORM,
     ),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (1, PLACE_FORM),
+    # 누적 진척 설정 팝업 — 기록 일수 · 목표 일수 · 목표 주차의 입력 곁 거부(빈 칸 · 규칙 밖).
+    ("src/capa_simulation/components/shortening_cumulative.py", "_save_record"): (1, PLACE_FORM),
+    ("src/capa_simulation/components/shortening_cumulative.py", "_render_goal_form"): (
+        2,
+        PLACE_FORM,
+    ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
         1,
         PLACE_CONFIRM,

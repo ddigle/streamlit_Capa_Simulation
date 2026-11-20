@@ -33,12 +33,15 @@ NEW_TABLES = (
     "equipment_schedule_layout_mark",
     "equipment_schedule_layout_label",
 )
-# 뒤 번호(설비 0032 — 입력 비가동 대수, 0034 — Space 겹친 순서)가 함께 만드는 빈 표.
+# 뒤 번호(설비 0032 — 입력 비가동 대수, 0034 — Space 겹친 순서, 0036 — 누적 진척)가 함께
+# 만드는 빈 표.
 LATER_TABLES = (
     "manual_downtime_profile",
     "manual_downtime",
     "manual_downtime_save",
     "floor_layout_stack",
+    "shortening_progress_log",
+    "shortening_progress_goal",
 )
 _EXPECTED_KEYS = {
     "equipment_schedule_layout_unit": ("schedule_revision_id", "unit_key"),
@@ -171,7 +174,7 @@ def test_a_database_at_0029_moves_nothing_and_reads_the_same(tmp_path: Path) -> 
     assert not set(NEW_TABLES) & set(before)
 
     # 뒤 번호 0032(입력 비가동 빈 표 셋)도 함께 걸린다 — 이 번호의 표가 아니라 셈에서 뺀다.
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 32, 33, 34, 35)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 32, 33, 34, 35, 36)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == dict.fromkeys(NEW_TABLES, 0)

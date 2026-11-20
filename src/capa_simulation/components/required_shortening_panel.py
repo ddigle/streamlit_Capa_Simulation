@@ -111,6 +111,10 @@ from capa_simulation.components.shortening_board import (
     render_progress_board,
     render_space_link,
 )
+from capa_simulation.components.shortening_cumulative import (
+    forget_screen_total,
+    remember_screen_total,
+)
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
@@ -684,6 +688,7 @@ def _render_view(
     """
     if consume_baseline_write():
         st.rerun(scope="app")
+    forget_screen_total()
     if isinstance(prepared, ShorteningStop):
         render_baseline_notice()
         _render_stop(prepared, today)
@@ -780,6 +785,14 @@ def _render_body(
         refusal=refusal,
         assumption=prepared.assumption,
         equipment_basis=equipment_basis,
+    )
+    # 「누적 진척 설정」 의 「이번 주 값 넣기」 가 읽는 지금 화면 합계(`shortening_cumulative`).
+    remember_screen_total(
+        level_plan.units,
+        scope,
+        level=level,
+        selected=bool(selected),
+        refusal=None if save is None else save.refusal,
     )
     highlight = current_highlight()
     compared = load_selected_baseline(database_path, compare_id)

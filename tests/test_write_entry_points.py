@@ -272,6 +272,20 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "_delete_baseline",
         "delete_shortening_baseline",
     ): STATE_CHANGE,
+    # 누적 진척 — 기록은 그 세대 칸이 본 그 주의 저장값, 목표는 본 version 과 저장소가 쓰기 잠금
+    # 안에서 대조한다. 같은 값의 둘째 누름은 저장소가 쓰지 않고(False · None) 화면은 첫 성공을
+    # 덮지 않는다(`held_notice`).
+    (f"{_PARTS}/shortening_cumulative.py", "_save_record", "save_shortening_progress_entry"): (
+        VERSION_CHECK
+    ),
+    (
+        f"{_PARTS}/shortening_cumulative.py",
+        "_delete_record",
+        "delete_shortening_progress_entry",
+    ): VERSION_CHECK,
+    (f"{_PARTS}/shortening_cumulative.py", "_save_goal", "save_shortening_progress_goal"): (
+        VERSION_CHECK
+    ),
     (f"{_PARTS}/space_floor_list.py", "_write", "save_floor_states"): VERSION_CHECK,
     # 편집 시작 version 대조 위에, 같은 입력의 꼬리 누름(첫 저장 뒤 새로 그린 표에서 온 둘째
     # 누름 — 저장소는 바뀐 것이 없다고 돌려준다)은 `save_once` 가 첫 결과로 성공을 다시
