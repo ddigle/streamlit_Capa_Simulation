@@ -26,6 +26,7 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pytest
 from fragment_browser import FragmentBrowser, install_fragment_browser
@@ -179,6 +180,26 @@ def outer():
 outer()
 """
 )
+
+# 구역 인자로 표 세 짝을 넘긴다(R3 거절 — 코어 화면 카드).
+BIG_ARGUMENT = """
+import pandas as pd
+import streamlit as st
+from capa_simulation.components import fragment_scope, grade_ui
+
+SCOPE = "probe_scope"
+
+
+@st.fragment(key=SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(SCOPE)
+def body(frames):
+    st.markdown(str(len(frames)))
+
+
+frame = pd.DataFrame({"a": [1]})
+body((frame, frame, frame))
+"""
 
 # 대조 — 본문 앞에서 올린다(금지된 꼴). 앱 전체 회차가 머리 표지를 찍는다.
 PRE_BODY = (
@@ -384,19 +405,46 @@ class _Small:
 
 
 def test_scope_arguments_must_be_small_values() -> None:
-    """구역 인자는 작은 값만 — 표 · 표를 든 dataclass · 긴 목록은 거절하고, 글 · 수 · 짧은 튜플 ·
-    표 없는 dataclass 는 지나간다. 크기를 재지 않고 꼴만 본다."""
+    """구역 인자는 작은 값만 — 표 · 표를 든 dataclass · 표를 든 모음(표 세 짝 튜플 · 목록 · 사전) ·
+    긴 목록은 거절하고, 글 · 수 · 0차원 스칼라(`np.int64` · `pd.Timestamp`) · 짧은 튜플 · 표 없는
+    dataclass 는 지나간다. 크기를 재지 않고 꼴만 본다."""
     frame = pd.DataFrame({"a": [1]})
     fragment_scope.check_small_args(("표",), {"n": 3, "pair": ("a", 1), "small": _Small("x", 1)})
     fragment_scope.check_small_args((), {"long_text": "가" * 10_000})
+    fragment_scope.check_small_args(
+        (np.int64(3), np.float64(0.5), pd.Timestamp("2026-01-01"), pd.NaT, np.dtype("int64")),
+        {"mixed": ("a", np.int64(2), {"k": pd.Timedelta("1D")}), "nested": [(_Small("y", 2),)]},
+    )
     for args, kwargs in (
         ((frame,), {}),
         ((), {"snapshot": _Snapshot("s", frame)}),
         ((), {"ids": list(range(fragment_scope.SMALL_ITEMS + 1))}),
         ((), {"series": frame["a"]}),
+        ((), {"frames": (frame, frame, frame)}),
+        (([frame],), {}),
+        ((), {"by_name": {"a": frame}}),
+        ((), {"deep": [(_Snapshot("s", frame),)]}),
+        ((), {"array": np.array([1, 2])}),
     ):
         with pytest.raises(TypeError, match="작은 값"):
             fragment_scope.check_small_args(args, kwargs)
+
+
+def test_a_big_scope_argument_is_the_core_page_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    """작은 인자 검사에 걸린 구역은 본문 오류처럼 코어 화면 카드로 선다(R6) — Streamlit 기본 오류
+    상자가 아니다."""
+    from capa_simulation.components.page_failure_card import CARD_KEY
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(BIG_ARGUMENT).run(timeout=60)
+
+    assert not list(app.exception), "기본 오류 상자가 아니다"
+    keys = [
+        message.delta.add_block.id
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.WhichOneof("type") == "add_block"
+    ]
+    assert any(CARD_KEY in key for key in keys), keys
 
 
 def test_the_scope_box_key_and_the_run_style_share_one_prefix() -> None:

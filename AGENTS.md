@@ -8514,8 +8514,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   앞에서 찍고, 구역 회차의 콜백 끝(`escalates` — `@grade_ui.on_press` **위**)과 본문 뒤(`editor_scope` 스스로)에서
   견줘 다르면 올린다.
 - **R3 구역 인자는 작은 값만**(`check_small_args` — `editor_scope` 가 늘 부른다). 구역 인자는 직전 앱 전체 회차 값으로
-  고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 표를 든 dataclass · 긴 목록(`SMALL_ITEMS` 초과)은
-  `TypeError` — 구역 안에서 세션 · 캐시로 다시 읽는다. 한 번만 쓰는 표지 인자(`drafts_replaced` 꼴)는
+  고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표(pandas · numpy · pyarrow 의 1차원 이상 값) · 표를 든
+  dataclass · 표를 든 모음(표 세 짝 튜플 · 목록 · 사전 — `SMALL_DEPTH` 까지 안을 본다) · 긴 목록(`SMALL_ITEMS` 초과)은
+  `TypeError`(본문 오류처럼 코어 화면 카드) — 구역 안에서 세션 · 캐시로 다시 읽는다. 0차원 스칼라(`np.int64` ·
+  `pd.Timestamp`)는 작은 값이다. 한 번만 쓰는 표지 인자(`drafts_replaced` 꼴)는
   `editor_scope(one_shot=…)` 가 그 구역 자신의 회차(`own_fragment_run` — 저장소가 앞 앱 전체 회차 인자로 다시 부름)에서
   키워드 · 위치 어느 쪽으로 넘겼든 `False` 로 끈다. 바깥 프래그먼트 · 팝업 회차가 새 인자로 부른 구역은 끄지 않는다.
   함수 인자에 없는 이름은 단 순간 `TypeError`.

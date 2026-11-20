@@ -21,8 +21,9 @@
   본문 뒤에서 올리면 ack 를 그린 구역 회차와 앱 전체 회차 사이(회차 끝 GC)에 탭 줄 붙들기가 회차
   표지의 조용함(`HOLD_QUIET_MS`)만으로 가려야 한다.
 - **R3 작은 인자**(`check_small_args` · `editor_scope(one_shot=…)`) — 구역 인자는 직전 앱 전체 회차
-  값으로 고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 스냅숏(표를 든 dataclass)은
-  넘기지 않고 구역 안에서 세션 · 캐시로 다시 읽는다 — 넘기면 `TypeError`. 한 번만 쓰는 표지
+  값으로 고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 스냅숏(표를 든 dataclass ·
+  튜플 · 목록 · 사전)은 넘기지 않고 구역 안에서 세션 · 캐시로 다시 읽는다 — 넘기면 `TypeError`(코어
+  화면 카드). 0차원 스칼라(`np.int64` · `pd.Timestamp`)는 작은 값이다. 한 번만 쓰는 표지
   인자(`drafts_replaced` 꼴 — 키워드 · 위치 어느 쪽으로 넘겨도)는 그 구역 자신의 회차(저장소가 앞
   앱 전체 회차 인자로 다시 부름)에서 `False` 로 끈다. 바깥 프래그먼트 · 팝업 회차가 새 인자로 부른
   구역은 끄지 않는다.
@@ -93,6 +94,11 @@ SCOPE_RUN_STYLE: Final = (
 )
 # 구역 인자로 넘겨도 되는 모음의 길이 상한(R3) — 그보다 긴 목록 · 사전은 세션 · 캐시로 다시 읽는다.
 SMALL_ITEMS: Final = 32
+# 작은 인자 검사가 모음 · dataclass 안으로 들어가 보는 깊이(R3) — 그보다 깊은 칸은 보지 않는다.
+SMALL_DEPTH: Final = 4
+# 표 꼴을 내는 모듈 — 그 모듈의 값 가운데 1차원 이상(`ndim`, 없으면 길이가 있는 값)이 표다. 0차원
+# 스칼라(`np.int64` · `pd.Timestamp`)는 작은 값이다.
+_TABLE_MODULES: Final = frozenset({"pandas", "numpy", "pyarrow"})
 # 세션 칸 접두 — 구역마다 머리 표지 · 저장 토큰 · 「남의 저장을 봤다」 표지.
 _STATE_PREFIX: Final = "capa_scope_state__"
 _LOGGER = logging.getLogger(__name__)
@@ -210,30 +216,55 @@ def escalates(key: str) -> Callable[[F], F]:
     return decorate
 
 
-def _too_big(value: object) -> str | None:
-    module = type(value).__module__.split(".")[0]
-    if module in {"pandas", "numpy", "pyarrow"}:
-        return type(value).__name__
-    if isinstance(value, (str, bytes)):
+def _table_kind(value: object) -> str | None:
+    """표(pandas · numpy · pyarrow 의 1차원 이상 값)면 그 꼴 이름."""
+    if type(value).__module__.split(".")[0] not in _TABLE_MODULES:
         return None
-    if isinstance(value, (Mapping, Sequence, set, frozenset)) and len(value) > SMALL_ITEMS:
-        return f"{type(value).__name__}({len(value)})"
+    ndim = getattr(value, "ndim", None)
+    table = ndim >= 1 if isinstance(ndim, int) else hasattr(value, "__len__")
+    return type(value).__name__ if table else None
+
+
+def _too_big(value: object, depth: int = 0) -> str | None:
+    """작은 값이 아니면 그 자리(`tuple[1]: DataFrame` 꼴), 작으면 None — 모음 · dataclass 는
+    `SMALL_DEPTH` 까지 안을 본다."""
+    found = _table_kind(value)
+    if found is not None:
+        return found
+    if isinstance(value, (str, bytes, bytearray)) or depth >= SMALL_DEPTH:
+        return None
+    name = type(value).__name__
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        for field in dataclasses.fields(value):
+            inner = _too_big(getattr(value, field.name), depth + 1)
+            if inner is not None:
+                return f"{name}.{field.name}: {inner}"
+        return None
+    if isinstance(value, Mapping):
+        items: list[object] = [part for pair in value.items() for part in pair]
+    elif isinstance(value, (Sequence, set, frozenset)):
+        items = list(value)
+    else:
+        return None
+    if len(value) > SMALL_ITEMS:
+        return f"{name}({len(value)})"
+    for index, item in enumerate(items):
+        inner = _too_big(item, depth + 1)
+        if inner is not None:
+            spot = index // 2 if isinstance(value, Mapping) else index
+            return f"{name}[{spot}]: {inner}"
     return None
 
 
 def check_small_args(args: Sequence[object], kwargs: Mapping[str, object]) -> None:
-    """구역 인자가 작은 값인지 본다(R3) — 표(pandas · numpy · pyarrow), 표를 든 dataclass,
-    `SMALL_ITEMS` 보다 긴 목록 · 사전이면 `TypeError`. 크기를 재지 않고 꼴만 본다."""
+    """구역 인자가 작은 값인지 본다(R3) — 표(pandas · numpy · pyarrow 의 1차원 이상 값),
+    `SMALL_ITEMS` 보다 긴 목록 · 사전이면 `TypeError`. 모음(튜플 · 목록 · 사전 · 집합)과 dataclass
+    는 `SMALL_DEPTH` 까지 안을 본다 — 표 세 짝 튜플도 거절한다. 0차원 스칼라(`np.int64` ·
+    `pd.Timestamp`)는 작은 값이다. 크기를 재지 않고 꼴만 본다."""
     named = [(f"#{index}", value) for index, value in enumerate(args)]
     named.extend(kwargs.items())
     for name, value in named:
         found = _too_big(value)
-        if found is None and dataclasses.is_dataclass(value) and not isinstance(value, type):
-            for field in dataclasses.fields(value):
-                inner = _too_big(getattr(value, field.name))
-                if inner is not None:
-                    found = f"{type(value).__name__}.{field.name}: {inner}"
-                    break
         if found is not None:
             raise TypeError(
                 f"구역 인자는 작은 값만 넘깁니다({name}: {found}) — "
@@ -324,7 +355,8 @@ def editor_scope(
       `scope_moved` 면 앱 전체로 올린다. 그 구역 자신의 회차(`own_fragment_run`)면 한 번만 쓰는
       인자(`one_shot` — 함수 인자 이름, 키워드 · 위치 어느 쪽으로 넘겨도)를 `False` 로 끈다. 없는
       이름을 주면 단 순간 `TypeError`.
-    - 인자는 늘 `check_small_args` 를 지난다. 본문은 `box` 면 구역 칸(`box_key(key)`) 안에 그린다.
+    - 인자는 늘 `check_small_args` 를 지난다(걸리면 본문 오류처럼 코어 화면 카드 — 바깥 프래그먼트
+      회차가 새 인자로 부를 때도 같다). 본문은 `box` 면 구역 칸(`box_key(key)`) 안에 그린다.
     - 본문 오류는 코어 화면 카드로(`page` · `href` — 비우면 지금 화면의 이름 · 주소). 앱 전체
       회차로 끝날 수 있는 본문이라 `sidebar_status.keeps_app_run_open` 을 함께 씌운다.
     """
@@ -350,7 +382,6 @@ def editor_scope(
 
         @functools.wraps(fn)
         def inner(*args: Any, **kwargs: Any) -> Any:
-            check_small_args(args, kwargs)
             fragment_run = fragment_only_run()
             if fragment_run:
                 if spec.one_shot and own_fragment_run():
@@ -360,6 +391,7 @@ def editor_scope(
                 _stamp(spec)
 
             def body() -> Any:
+                check_small_args(args, kwargs)
                 if not spec.box:
                     return fn(*args, **kwargs)
                 with scope_box(key):
