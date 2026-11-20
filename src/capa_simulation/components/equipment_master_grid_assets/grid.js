@@ -204,7 +204,7 @@ function compareCells(left, right, kind) {
 
 // 설비명 자연 차례(…EQ2, EQ10 · 12A, 12B) — 파이썬 `space_layout_edit.natural_name_key`(「전체 불러오기」 가 상한을 자르는
 // 차례)와 같은 규칙이고 Space 편집기 `naturalCompare` 와 같은 꼴이다. 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자를 코드
-// 포인트로 견주고(한글 음절은 코드 포인트가 곧 가나다 차례, 영문이 한글 앞 — 엑셀 오름차순과 같다), 덩이가 같으면 짧은 쪽이
+// 포인트로 견주고(한글 음절은 코드 포인트가 곧 가나다 차례, 영문이 한글 앞), 덩이가 같으면 짧은 쪽이
 // 앞, 그래도 같으면 글자 그대로. 빈 이름은 늘 아래다. 열쇠는 줄마다 한 번만 짓는다(`nameKey` — 회차마다 1천 줄을 줄 세운다).
 function nameKey(name) {
   const text = String(name == null ? '' : name)
