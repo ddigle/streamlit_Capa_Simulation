@@ -215,9 +215,15 @@ def test_the_equipment_scenario_source_round_trips_and_shows_in_the_head(tmp_pat
     view = ProgressView(
         rows=pd.DataFrame(), cards=(), outside=(), summary=ProgressSummary(), axis_months=(202601,)
     )
-    head = progress_summary_markup(view, loaded)
+    head = progress_summary_markup(view, loaded, level=1.1)
     assert "설비 공통 r12 · 운영 일정 r9 · 공식 v3" in head
-    old_head = progress_summary_markup(view, repository.load_shortening_baseline(older.baseline_id))
+    # 합계 칸 라벨은 고른 목표를 값으로 싣는다 — 반은 올린다(`level_percent`, 121% 경계 1.205).
+    assert '<span class="shk-kpi-label">단축 필요일수 합계 (목표 110%)</span>' in head
+    edge = progress_summary_markup(view, loaded, level=1.205)
+    assert "단축 필요일수 합계 (목표 121%)" in edge
+    old_head = progress_summary_markup(
+        view, repository.load_shortening_baseline(older.baseline_id), level=1.1
+    )
     assert "설비 r12" in old_head and "설비 공통" not in old_head
 
 

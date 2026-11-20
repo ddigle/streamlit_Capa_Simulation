@@ -1750,7 +1750,7 @@ def _render_progress(
     st.html(
         _style()
         + progress_style()
-        + progress_summary_markup(view, baseline, current_basis=current_basis)
+        + progress_summary_markup(view, baseline, level=level, current_basis=current_basis)
     )
 
     def controls() -> None:

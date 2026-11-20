@@ -22,7 +22,8 @@
   호기 줄과 같은 이름 — 설계 규칙 UI-CON-02). 합계 칸에는 무엇의 합인지 적는 설명 줄이, 카드에는
   호기 줄 위 범례 글이 없다 — 그 뜻은 Guide 「진척 비교」 의 요약 · 카드 줄이다(2026-11-20 사용자
   요청을 같은 꼴 전체로 — 설계 규칙 UI-TXT-01 · PRC-01). 합계에서 뺀 몫 줄과 기준선 칸 출처 줄은
-  값이라 그대로다.
+  값이라 그대로다. 고른 목표 확보율은 합계 칸 라벨 「단축 필요일수 합계 (목표 n%)」 에 값으로 선다 —
+  두 줄 카드에 표가 없어 그 라벨이 본문의 목표 % 자리다(2026-11-20 사용자 답 「나」).
 - 카드의 달 축은 지금 조회 달을 **보이는 카드의 두 시점 날짜가 모두 들도록 앞뒤로 넓힌** 것이다
   (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
   축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
@@ -843,13 +844,17 @@ def progress_summary_markup(
     view: ProgressView,
     baseline: ShorteningBaseline,
     *,
+    level: float,
     current_basis: str | None = None,
 ) -> str:
     """요약 세 칸 — 단축 필요일수 합계(과거 → 현재 막대 두 줄), 호기 변동, 기준선.
 
     합계 칸은 라벨 · 값 · 막대와 합계에서 뺀 몫 줄(필요 시점 지남 · 기준 바뀜 — 있을 때만)이다.
-    무엇의 합인지(고른 목표 · 공정 범위 · 당긴 호기)는 칸에 적지 않고 Guide 「진척 비교」 의 요약
-    줄이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 — 비교 안 함 화면의 요약 카드와 같은 꼴).
+    라벨은 「단축 필요일수 합계 (목표 n%)」 — 고른 목표 확보율(`level`)을 값으로 싣는다. 두 줄
+    카드에는 표가 없어 이 라벨이 진척 비교 본문의 목표 % 자리다(비교 안 함 화면 카드 표 머리
+    「과부족 (목표 n%)」 와 같은 꼴 — 2026-11-20 사용자 답 「나」, 설계 규칙 UI-TXT-04). 무엇의
+    합인지(공정 범위 · 당긴 호기)는 칸에 적지 않고 Guide 「진척 비교」 의 요약 줄이 말한다(설계
+    규칙 UI-TXT-01 · UI-TXT-02 — 비교 안 함 화면의 요약 카드와 같은 꼴).
 
     기준선 칸에 그 기준선의 현재 일정 기준을 적는다 — 진척 비교는 늘 그 기준의 지금 계획과
     견준다(2026-11-20 보드 답 Q14 (가)). 조건 카드 전환(`current_basis`)과 다르면 「이 기준으로
@@ -883,7 +888,8 @@ def progress_summary_markup(
     )
     total = (
         '<div class="shk-kpi shk-prog-total">'
-        '<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계</span>'
+        '<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계 '
+        f"(목표 {level_percent(level)}%)</span>"
         f'<span class="shk-kpi-value">{summary.current_days:,}일</span>'
         f"{lapsed_note}{rebased_note}</div>"
         f'<div class="shk-prog-bars">{bars}</div>'

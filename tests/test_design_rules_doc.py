@@ -3446,7 +3446,7 @@ def test_the_shortening_legend_request_is_judged_in_6_39() -> None:
     record = section[section.index("\n### 6-39. ") :]
     assert "「여기도 각각의 요약 값 하단에 회색글씨 설명문구 Guide로 이동」" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
-    assert len(lines) == 1, lines
+    assert lines and lines[0].startswith("- shk-legend · "), lines
     match = re.match(
         r"^- (shk-legend) · (.+) → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", lines[0]
     )
@@ -3472,6 +3472,34 @@ def test_the_shortening_legend_request_is_judged_in_6_39() -> None:
     v142 = history[history.index("- **v1.42 — 2026-11-20.**") :]
     for phrase in ("6-39", "UI-TXT-01", "UI-TXT-02", net, "규칙 82"):
         assert phrase in v142, phrase
+
+
+def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
+    """6-39 아래 「같은 날 후속」 문단의 줄 — 줄마다 id · 물음 → **고른 꼴** · 끝
+    「(2026-11-20 · 규칙 id)」 이다. 사용자 답 줄은 답 원문을 밝히고(진척 비교 합계 칸 라벨 —
+    2026-11-20 「두가지는 너가말한대로 진행해」), 그 밖의 줄은 갈래 판정이라 사용자 답이라고
+    적지 않는다(PRC-02)."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-39. ") :]
+    follow = record[record.index("\n같은 날 후속(갈래 `n1120/guide2x`)") :]
+    lines = [line for line in follow.splitlines() if line.startswith("- ")]
+    assert lines, follow[:200]
+    known = {rule.id for rule in _rules()}
+    ids = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        assert match, line[:120]
+        ids.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, cited
+        answered = "사용자 답 「두가지는 너가말한대로 진행해」" in line
+        assert answered or "갈래 판정" in line, match.group(1)
+    assert len(ids) == len(set(ids)), ids
+    target = next(line for line in lines if line.startswith("- shk-target-label · "))
+    assert "**나 — 합계 칸 라벨 「단축 필요일수 합계 (목표 n%)」**" in target
+    assert "사용자 답 「두가지는 너가말한대로 진행해」" in target
+    assert "(아래 shk-target-label 줄)" in record or "아래 shk-target-label 줄" in record
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

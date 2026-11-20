@@ -213,7 +213,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
 
     assert not app.exception, [element.message for element in app.exception]
     body = _html(app)
-    assert "진척 비교 요약" in body and "단축 필요일수 합계" in body
+    assert "진척 비교 요약" in body and "단축 필요일수 합계 (목표 110%)" in body
     assert "계획 · LOB 요약" not in body
     cards = _progress_cards(app)
     assert cards, body[:400]
@@ -231,10 +231,15 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     assert "일 줄임</span>" in body and "일 늘어남</span>" in body
     assert "확보 −5일" in body and "확보 +7일" in body
 
-    # 목표를 바꾸면 그 목표의 기준선 결과와 견준다 — 다시 저장하지 않는다.
+    # 목표를 바꾸면 그 목표의 기준선 결과와 견준다 — 다시 저장하지 않는다. 합계 칸 라벨의 목표
+    # % 도 따라 바뀐다(2026-11-20 사용자 답 「나」 — 두 줄 카드에 표가 없어 이 라벨이 본문의 목표
+    # 자리).
     high = _choose_level(app, 1.3)
     assert not high.exception
     assert set(_progress_csv(high)["목표 확보율(%)"]) == {"130"}
+    high_body = _html(high)
+    assert "단축 필요일수 합계 (목표 130%)" in high_body
+    assert "단축 필요일수 합계 (목표 110%)" not in high_body
     assert len(DuckDBEquipmentRepository(database_path).list_shortening_baselines()) == 1
 
     # 「비교 안 함」 으로 돌아가면 진척 비교가 사라지고 계획 화면이 선다.
@@ -788,7 +793,8 @@ def test_the_progress_view_has_no_unit_legend_or_total_note_and_the_guide_says_t
     assert "진척 비교 요약" in body and _progress_cards(app)
     assert 'class="shk-prog-unit"' in body
     total = re.search(
-        r'<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계</span>'
+        r'<div class="shk-prog-total-figure"><span class="shk-kpi-label">'
+        r"단축 필요일수 합계 \(목표 110%\)</span>"
         r'<span class="shk-kpi-value">[^<]+</span>'
         r'((?:<span class="shk-kpi-note">[^<]*</span>)*)</div>',
         body,
@@ -806,7 +812,14 @@ def test_the_progress_view_has_no_unit_legend_or_total_note_and_the_guide_says_t
     clear_equipment_repository()
 
     summary = _guide_item("진척 비교", "요약")
-    for words in ("당긴 호기의 단축일수", "고른 목표", "지금 맞댄 공정", "뺀 몫", "기준 바뀜"):
+    for words in (
+        "단축 필요일수 합계 (목표 n%)",
+        "당긴 호기의 단축일수",
+        "고른 목표",
+        "지금 맞댄 공정",
+        "뺀 몫",
+        "기준 바뀜",
+    ):
         assert words in summary, words
     card = _guide_item("진척 비교", "카드")
     for words in (
