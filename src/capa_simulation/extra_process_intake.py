@@ -48,6 +48,7 @@ from typing import Final, Protocol
 import pandas as pd
 
 from capa_simulation.persistence.models import (
+    EXTRA_KIND_OFF,
     EXTRA_KIND_REVISION,
     EXTRA_WRITE_FAILED,
     EXTRA_WRITE_KEPT,
@@ -279,13 +280,19 @@ def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool
 
     쓸 것은 「새 판으로」 가 만든 내용이다 — 활성 줄이 「새 판」 이거나, 끄기 → 다시 켜기로 같은
     내용(sha)이 다시 활성이 된 때다. 같은 sha 의 어느 판 줄에든 「씀」 기록이 있으면 S3 에 이미
-    있다(판은 sha 로 견준다) — 사람이 놓은 같은 파일을 적은 줄(`placed_matches`)도 「씀」 이다."""
+    있다(판은 sha 로 견준다) — 사람이 놓은 같은 파일을 적은 줄(`placed_matches`)도 「씀」 이다. 같은
+    sha 의 판 줄이 S3 Drive 에서 가져온 파일의 ETag 를 들고 있어도(끈 동안 그 새 판 파일을 놓아
+    가져와 다시 켬 — `baseline` 이 그 ETag 를 기준으로 삼는 줄) S3 에 이미 있다."""
     active = state.active
     if active is None or active.sha256 is None:
         return False
     same = {item.seq for item in state.history if item.sha256 == active.sha256}
     made_here = any(item.kind == EXTRA_KIND_REVISION for item in state.history if item.seq in same)
     if not made_here:
+        return False
+    if any(
+        item.s3_etag and item.kind != EXTRA_KIND_OFF for item in state.history if item.seq in same
+    ):
         return False
     writes = [item for item in state.writes if item.version_seq in same]
     if any(item.result == EXTRA_WRITE_WRITTEN for item in writes):
@@ -304,12 +311,16 @@ def placed_matches(state: ExtraProcessState, staged: StagedPack) -> bool:
     """받은 파일이 아직 S3 Drive 에 쓰지 못한 활성 판(「새 판으로」 판)과 같은 내용인가 — 사람이
     양식 내려받기로 받은 새 판을 놓은 것이다. 그러면 그 파일의 ETag 를 「놓인 파일 같음」 으로 적어
     판 어긋남(`EP-06`) · 「S3 에 다시 쓰기」 를 풀고 기준을 옮긴다. 보통의 「바뀐 것 없음」(적용한
-    파일을 다시 가져옴)은 아무것도 적지 않는다(설계 3-2)."""
+    파일을 다시 가져옴)은 아무것도 적지 않는다(설계 3-2). 받은 때의 판정(`judgement`)만 믿지 않고
+    `state` 의 활성 판 sha 와 받은 판 sha 를 다시 견준다 — 적는 쪽이 다시 읽은 판 이력으로 부를 때
+    그사이 다른 판이 활성이 되었으면 적지 않는다."""
     active = state.active
     judgement = staged.judgement
     etag = staged.fetch.etag
     return (
         active is not None
+        and active.sha256 is not None
+        and active.sha256 == staged.reading.sha256
         and judgement is not None
         and judgement.verdict == JUDGE_UNCHANGED
         and staged.revision is None

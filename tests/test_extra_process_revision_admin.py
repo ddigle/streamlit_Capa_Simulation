@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from alert_marks import active_state, flashed, states
 from auto_update_fakes import new_repository, publish_snapshot
-from extra_process_fixtures import BOND, bump_version
+from extra_process_fixtures import BOND, bump_version, template_files
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template, register
 
@@ -27,6 +27,7 @@ from capa_simulation.components.extra_process_admin import (
     REVISION_APPLY_LABEL,
     REVISION_BUTTON_KEY,
     REWRITE_BUTTON_KEY,
+    TOGGLE_BUTTON_KEY,
     UNCHANGED_REVISION,
 )
 from capa_simulation.extra_process_intake import (
@@ -34,9 +35,12 @@ from capa_simulation.extra_process_intake import (
     OLD_VERSION_WORD,
     RemoteHead,
     SourceFailure,
+    SourceFetch,
     head_word,
     needs_write,
     pending_write,
+    placed_matches,
+    stage_pack,
     write_back,
 )
 from capa_simulation.persistence.models import (
@@ -441,6 +445,49 @@ def test_a_resaved_download_needs_the_version_raised_and_that_also_clears_the_dr
     assert active_state(app, "EP-06") is None
 
 
+def test_resuming_with_the_placed_new_version_file_clears_the_drift(database: Path) -> None:
+    """끈 동안 「새 판」 을 내려받은 여섯 그대로 놓아 가져오면 「다시 켜기」 판정이고, 적용하면 그
+    「다시 켜기」 줄이 놓인 파일의 ETag 를 들어 S3 Drive 에 있는 것으로 본다 — 판 어긋남 `EP-06` 이
+    풀리고 다시 가져와도 「바뀐 것 없음」 이다(검토 extra-1). 단추로 다시 켜면 파일이 없어 그대로
+    선다."""
+    repository = _edited_revision(database)
+    app = _app(database, source=True, head='"판1-파일"')
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+    active = repository.load_extra_process_state().active
+    assert active is not None and active.version_no == 2
+    download = _placed_from_download(repository, str(active.sha256))
+
+    # 단추로 끄고 다시 켜면 놓인 파일이 없다 — 어긋남은 그대로다.
+    _click(app, TOGGLE_BUTTON_KEY)
+    _click(app, TOGGLE_BUTTON_KEY)
+    button_resumed = repository.load_extra_process_state()
+    assert button_resumed.active is not None and button_resumed.active.kind == EXTRA_KIND_RESUME
+    assert needs_write(button_resumed)
+    assert active_state(app, "EP-06") is not None
+
+    _click(app, TOGGLE_BUTTON_KEY)
+    assert repository.load_extra_process_state().off
+    app.session_state[FETCH_KEY] = download
+    app.session_state[HEAD_KEY] = '"사람이-놓은-판2"'
+    _click(app, IMPORT_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+
+    state = repository.load_extra_process_state()
+    resumed = state.active
+    assert resumed is not None and resumed.kind == EXTRA_KIND_RESUME
+    assert resumed.sha256 == active.sha256 and resumed.s3_etag == '"사람이-놓은-판2"'
+    assert state.writes == () and state.baseline == ('"사람이-놓은-판2"', resumed.seq)
+    assert not needs_write(state)
+    assert active_state(app, "EP-06") is None
+    assert any("가짜 S3 같음" in text for text in _captions(app)), _captions(app)
+
+    _click(app, IMPORT_BUTTON_KEY)
+    assert repository.load_extra_process_state().writes == ()
+    assert any("바뀐 것 없음" in str(note.value) for note in flashed(app, "info"))
+    assert active_state(app, "EP-06") is None
+
+
 def _download_members(repository: DuckDBScenarioRepository, sha: str) -> dict[str, bytes]:
     """양식 내려받기 ZIP(그 판을 다시 쓴 것 — Admin `_template_bytes` 와 같은 셈)을 푼 여섯 장."""
     import io
@@ -674,6 +721,81 @@ def test_off_and_resume_keep_the_written_new_version_the_same() -> None:
     # 기준은 아직 판 1 파일 — 그 ETag 는 활성 판(판 2 내용)에는 「옛 판」 이다.
     assert head_word('"etag-1"', kept, {}) == OLD_VERSION_WORD
     assert not needs_write(ExtraProcessState((applied,)))
+
+
+def test_a_resume_by_the_fetched_new_version_file_is_already_on_the_drive() -> None:
+    """끈 동안 「새 판」 내용 파일을 가져와 다시 켠 줄(ETag 있음)은 S3 Drive 에 그 내용이 있다는
+    뜻이다 — 쓸 것이 없다. 단추로 다시 켠 줄(ETag 없음)은 그대로 쓸 거리다(검토 extra-1)."""
+    applied = _row(1, EXTRA_KIND_APPLY, "a" * 64, '"etag-1"')
+    revised = _row(2, EXTRA_KIND_REVISION, "b" * 64)
+    off = _row(3, EXTRA_KIND_OFF, None)
+
+    by_button = ExtraProcessState((applied, revised, off, _row(4, EXTRA_KIND_RESUME, "b" * 64)))
+    assert pending_write(by_button) is None
+
+    by_file = ExtraProcessState(
+        (applied, revised, off, _row(4, EXTRA_KIND_RESUME, "b" * 64, '"놓인-판2"'))
+    )
+    assert pending_write(by_file) is False
+    assert by_file.baseline == ('"놓인-판2"', 4)
+    assert head_word('"놓인-판2"', by_file, {}) == "같음"
+
+
+def test_placed_matches_rechecks_the_active_version_it_is_given() -> None:
+    """「놓인 파일 같음」 판정은 받은 때의 「바뀐 것 없음」 만 믿지 않는다 — 다시 읽은 판 이력의
+    활성 판이 그사이 다른 내용이 되었으면 거짓이다(검토 extra-3)."""
+    from datetime import datetime
+
+    first = bundle_pack_files(template_files())
+    second = bundle_pack_files(bump_version(template_files(), 2))
+    applied = _row(1, EXTRA_KIND_APPLY, pack_sha256(first), '"set-v1"')
+    revised = _row(2, EXTRA_KIND_REVISION, pack_sha256(second))
+    state = ExtraProcessState((applied, revised))
+    fetched = SourceFetch(data=second, place="S3 Drive", key="extra_process/", etag='"set-v2"')
+    staged = stage_pack(state, fetched, now=datetime(2026, 11, 20, 9, 0))
+    assert placed_matches(state, staged)
+
+    moved = ExtraProcessState((applied, revised, _row(3, EXTRA_KIND_REVISION, "c" * 64)))
+    assert needs_write(moved)
+    assert not placed_matches(moved, staged)
+
+
+def test_note_placed_writes_nothing_when_the_active_version_moved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「놓인 파일 같음」 을 적는 회차가 다시 읽은 활성 판이 받은 판과 다른 내용이면 적지 않고 「그
+    사이 바뀜」 오류 하나만 낸다 — 「판 어긋남을 풉니다」 라고 하지 않는다(검토 extra-3)."""
+    from datetime import datetime
+
+    import capa_simulation.components.extra_process_admin as admin
+
+    first = bundle_pack_files(template_files())
+    second = bundle_pack_files(bump_version(template_files(), 2))
+    applied = _row(1, EXTRA_KIND_APPLY, pack_sha256(first), '"set-v1"')
+    revised = _row(2, EXTRA_KIND_REVISION, pack_sha256(second))
+    state = ExtraProcessState((applied, revised))
+    fetched = SourceFetch(data=second, place="S3 Drive", key="extra_process/", etag='"set-v2"')
+    staged = stage_pack(state, fetched, now=datetime(2026, 11, 20, 9, 0))
+    moved = ExtraProcessState((applied, revised, _row(3, EXTRA_KIND_REVISION, "c" * 64)))
+
+    class _Repository:
+        def load_extra_process_state(self) -> ExtraProcessState:
+            return moved
+
+        def record_extra_process_placed(self, **_kwargs: object) -> ExtraProcessState:
+            raise AssertionError("그사이 바뀐 판에 「놓인 파일 같음」 을 적었다")
+
+    sent: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        admin,
+        "queue_flash",
+        lambda _key, message, **kwargs: sent.append((message, kwargs.get("kind"))),
+    )
+
+    admin._note_placed(_Repository(), state, staged)  # type: ignore[arg-type]
+
+    ((message, kind),) = sent
+    assert kind == "error" and "그 사이 바뀌었습니다" in message and "풉니다" not in message
 
 
 def test_with_a_source_too_the_written_word_survives_the_next_round(database: Path) -> None:

@@ -287,6 +287,26 @@ def test_a_file_that_does_not_read_as_utf8_points_at_notepad(
     assert problem.file == "01_process.csv" and NOT_UTF8_HINT in problem.reason
 
 
+def test_a_sheet_csv_cannot_read_is_rejected_not_raised(mock_s3: tuple[MockStore, str]) -> None:
+    """NUL 이 든 장(DRM · 저장 도구가 붙인 머리 꼴 — UTF-8 · CP949 로는 읽힘)과 칸 하나가 csv
+    상한보다 큰 장은 예외가 아니라 V-01 거절이고 까닭이 메모장 「UTF-8」 저장을 가리킨다(검토
+    extra-2)."""
+    store, endpoint = mock_s3
+    files = template_files()
+    files["01_process.csv"] = files["01_process.csv"] + b"\x00\r\n"
+    files["02_route.csv"] = files["02_route.csv"] + b"x" * 200_000 + b"\r\n"
+    _place(store, files)
+
+    reading = read_pack_zip(_source(store, endpoint).fetch().data)
+
+    assert not reading.accepted
+    reasons = {problem.file: problem.reason for problem in reading.problems}
+    assert set(reasons) == {"01_process.csv", "02_route.csv"}
+    assert reasons["01_process.csv"].startswith("NUL 글자가 들어 있음")
+    assert reasons["02_route.csv"].startswith("CSV 로 읽히지 않음")
+    assert all(NOT_UTF8_HINT in reason for reason in reasons.values())
+
+
 def _applied(sha: str, version_no: int) -> ExtraProcessState:
     return ExtraProcessState(
         (
@@ -398,6 +418,36 @@ def test_the_admin_tab_imports_and_applies_the_six_files_end_to_end(
     assert active.sha256 == pack_sha256(bundle_pack_files(files))
     assert active_state(app, "EP-02") is None
     assert any("S3 Drive 같음" in str(item.value) for item in app.caption)
+
+
+def test_the_admin_tab_shows_a_nul_sheet_in_the_rejection_table(
+    mock_s3: tuple[MockStore, str], tmp_path: Path
+) -> None:
+    """NUL 이 든 장을 놓고 Admin 「부대공정」 「S3 Drive 에서 가져오기」 를 누르면 탭이 예외로
+    멈추지 않고 거절 표(V-01)와 상태 줄 「거절」 이 선다(검토 extra-2)."""
+    from alert_marks import flashed
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.extra_process_admin import IMPORT_BUTTON_KEY
+
+    store, endpoint = mock_s3
+    files = template_files()
+    files["01_process.csv"] = files["01_process.csv"] + b"\x00\r\n"
+    _place(store, files)
+    app = AppTest.from_string(
+        _admin_script(tmp_path / "drive_nul.duckdb", store, endpoint), default_timeout=120
+    )
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    table = next(frame.value for frame in app.dataframe if "까닭" in frame.value)
+    assert list(table["규칙"]) == ["V-01"] and list(table["파일"]) == ["01_process.csv"]
+    assert NOT_UTF8_HINT in str(table.loc[0, "까닭"])
+    assert any("S3 Drive 거절" in str(item.value) for item in app.caption)
+    assert not [note for note in flashed(app, "error") if "가져오지 못했습니다" in str(note.value)]
 
 
 def test_on_a_managed_server_the_default_source_reaches_the_started_keys(

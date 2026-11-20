@@ -17,7 +17,8 @@ UI-TXT-02). 앞 판 값으로 되돌리는 칸이 있으면(G12 — 옛 사본�
 PC · WebIDE(`app.py`)에는 입력 길이 없어 단추가 없다(설계 D16 (다)). 받을 것이 아직 없으면(여섯 다
 없음 · 놓는 중) 알림창 안내 하나와 상태 줄 낱말이다(`EP-01` 아님). 받은 파일이 아직 S3 Drive 에 쓰지
 못한 「새 판」 과 같은 내용이면(사람이 양식 내려받기로 받은 새 판을 놓음) 그 파일을 「놓인 파일
-같음」 으로 적는다 — 판 어긋남 알림 `EP-06` 이 풀린다.
+같음」 으로 적는다 — 판 어긋남 알림 `EP-06` 이 풀린다. 끈 동안이면 그 파일을 가져와 다시 켠 줄이
+ETag 를 들어 같은 뜻이다(`pending_write`).
 
 **쓰는 단추**(가져오기 · 적용 · 끄기 / 다시 켜기)는 C-DEP(`managed` + S3 접속 정보)의 실제
 개발자에게만 열린다(`write_lock_reason`) — 그 밖에는 잠그고 풍선에 까닭을 단다(UI-INP-07). 누른
@@ -510,16 +511,19 @@ def _note_placed(
 ) -> None:
     """S3 Drive 에 아직 쓰지 못한 「새 판」 과 같은 파일이 놓였다 — 「놓인 파일 같음」 으로 적는다
     (그 ETag 가 기준이 되고 판 어긋남 `EP-06` · 「S3 에 다시 쓰기」 가 풀린다). 같은 누름이 두 번
-    닿아도 둘째는 판 이력을 다시 읽어 이미 적은 것을 보고 적지 않는다."""
-    active = state.active
+    닿아도 둘째는 판 이력을 다시 읽어 이미 적은 것을 보고 적지 않는다. 다시 읽은 활성 판이 받은
+    판과 다른 내용이면(그사이 다른 판이 활성이 됨) 적지 않고 「그 사이 바뀜」 오류만 낸다."""
     etag = staged.fetch.etag
-    if active is None or not etag:
+    if state.active is None or not etag:
         return
     try:
         fresh = repository.load_extra_process_state()
-        if placed_matches(fresh, staged) and fresh.active is not None:
+        active = fresh.active
+        if active is None or active.sha256 != staged.reading.sha256:
+            raise ExtraProcessMoved(staged.seen_seq, fresh.last_seq)
+        if placed_matches(fresh, staged):
             repository.record_extra_process_placed(
-                version_seq=fresh.active.seq, etag=etag, written_by=_who()
+                version_seq=active.seq, etag=etag, written_by=_who()
             )
     except BOOTSTRAP_ERRORS as exc:
         queue_flash(FLASH_KEY, bootstrap_error_message(exc), kind="error", icon=":material/error:")

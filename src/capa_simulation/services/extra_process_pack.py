@@ -638,7 +638,22 @@ class _Checker:
                     f"UTF-8 · CP949 로 읽히지 않음(DRM · 파일 깨짐) — {NOT_UTF8_HINT}",
                 )
                 continue
-            rows = list(csv.reader(io.StringIO(text)))
+            if "\x00" in text:
+                # NUL 이 든 장 — DRM · 저장 도구가 붙인 머리 꼴이거나 깨진 파일(csv 가 받지 않음).
+                self.err(
+                    "V-01",
+                    name,
+                    None,
+                    "",
+                    f"NUL 글자가 들어 있음(DRM · 파일 깨짐) — {NOT_UTF8_HINT}",
+                )
+                continue
+            try:
+                rows = list(csv.reader(io.StringIO(text)))
+            except csv.Error:
+                # 칸 하나가 csv 상한보다 큼 · 그 밖에 csv 가 받지 않는 꼴.
+                self.err("V-01", name, None, "", f"CSV 로 읽히지 않음(파일 깨짐) — {NOT_UTF8_HINT}")
+                continue
             if not rows:
                 self.err("V-01", name, None, "", "비어 있음")
                 continue

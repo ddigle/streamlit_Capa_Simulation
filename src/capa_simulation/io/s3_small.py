@@ -8,8 +8,9 @@ KiB 짜리 객체 하나를 앱 프로세스가 직접 주고받는 자리다. �
 것이다. 모듈 데이터 파일(`module_helpers` — 모듈 화면이 부르는 올리기 · 받기)도 이 경계를 쓰고, 그
 쪽만 상한 · 마감을 넓혀 넘긴다(`get_object` · `put_object` 의 `max_bytes` · `deadline_seconds`).
 BigDataQuery 자동 로그인 계정 객체(`io/bdq_login_store`)도 이 경계로 받고 · 쓰고 · 지운다
-(`delete_object`). 부대공정 S3 Drive 원천(`io/extra_process_drive`)은 낱장 여섯을 받고 머리를 보며,
-놓인 시각(`Last-Modified`)과 저장소 시각(`Date`)을 함께 읽는다(`S3Object` · `head_object`).
+(`delete_object`). 부대공정 S3 Drive 원천(`capa_simulation/extra_process_drive.py`)은 낱장
+여섯을 받고 머리를 보며, 놓인 시각(`Last-Modified`)과 저장소 시각(`Date`)을 함께 읽는다
+(`get_object` 의 `S3Object` · `head_meta` 의 `S3Head`).
 
 - **표준 라이브러리만** 쓴다 — `auth` 가 import 해도 Streamlit · 무거운 모듈이 딸려 오지 않는다.
 - **경로 스타일 주소**(`/<버킷>/<키>`) — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트로 적지 못한다.
