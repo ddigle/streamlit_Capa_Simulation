@@ -302,12 +302,39 @@ def test_a_detached_editor_root_is_not_busy() -> None:
     assert out["unknown"] is True
 
 
-# 떠나기 명부에 오르는 편집기 → (부품 JS, 셋째 인자로 넘기는 부품 뿌리 — 편집기 상태를 단 요소).
+# 떠나기 명부에 오르는 편집기 → (부품 JS — 부품 폴더 기준, 셋째 인자로 넘기는 부품 뿌리 — 편집기
+# 상태를 단 요소). `joinLeaving(` 을 부르는 부품 JS 는 모두 여기에 한 줄이 있어야 한다(아래 그물).
 _ENROLLING_EDITORS = {
     "범용 편집 그리드": ("edit_grid_assets/eg_core.js", "S.host"),
     "시나리오 목록 표": ("scenario_list_grid_assets/list.js", "host"),
     "Space 「호기 정보」 창": ("space_layout_editor_assets/editor.js", "host"),
 }
+_COMPONENTS = grid_shared.SHARED_ASSETS.parent
+# 명부에 오르는 부름 — 정의(`function joinLeaving(`) · 설명 글(`` `joinLeaving` ``)은 아니다.
+_JOIN_CALL = r"(?<!function )\bjoinLeaving\("
+
+
+def _join_callers() -> dict[str, int]:
+    """부품 폴더의 JS 가운데 `joinLeaving(` 을 부르는 파일 → 부른 수(정의 `function joinLeaving(` 은
+    빼고)."""
+    found: dict[str, int] = {}
+    for path in sorted(_COMPONENTS.rglob("*.js")):
+        calls = len(re.findall(_JOIN_CALL, path.read_text(encoding="utf-8")))
+        if calls:
+            found[path.relative_to(_COMPONENTS).as_posix()] = calls
+    return found
+
+
+def test_every_join_leaving_caller_is_in_the_enrolling_table() -> None:
+    """`joinLeaving(` 을 부르는 부품 JS 는 모두 `_ENROLLING_EDITORS` 에 있고 파일마다 한 곳에서
+    부른다 — 새 편집기가 명부에 오르면 표에 한 줄을 더해 아래 시험이 부품 뿌리를 넘기는지 본다."""
+    sample = (
+        "function joinLeaving(win, hooks) {}\nS.leave = joinLeaving(window, {})\n// `joinLeaving`"
+    )
+    assert len(re.findall(_JOIN_CALL, sample)) == 1, "그물 대조"
+    callers = _join_callers()
+    assert set(callers) == {path for path, _ in _ENROLLING_EDITORS.values()}, callers
+    assert all(count == 1 for count in callers.values()), callers
 
 
 def _call_arguments(source: str, name: str) -> str:
@@ -326,8 +353,7 @@ def test_every_enrolling_editor_passes_its_root(editor: str) -> None:
     """명부에 오르는 편집기는 모두 셋째 인자로 부품 뿌리(편집기 상태를 단 요소)를 넘긴다 — 위
     시험의 보호(문서에서 떨어진 편집기의 낡은 판정은 busy 가 아니다)가 실제 편집기에 닿는다."""
     path, root = _ENROLLING_EDITORS[editor]
-    source = (grid_shared.SHARED_ASSETS.parent / path).read_text(encoding="utf-8")
-    assert source.count("joinLeaving(") == 1, "명부에 오르는 자리는 한 곳이다"
+    source = (_COMPONENTS / path).read_text(encoding="utf-8")
     arguments = _call_arguments(source, "joinLeaving")
     assert arguments.startswith("window, {"), arguments
     assert arguments.endswith(f"}}, {root}"), arguments
