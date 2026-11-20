@@ -1133,8 +1133,9 @@ def test_the_mounted_shortening_board_keeps_pick_order_and_applies_every_process
 def test_the_shortening_boards_clear_button_only_empties_the_draft_and_apply_sends_it() -> None:
     """필요 단축 일정 판의 「선택 해제」(`clearDraft`)는 다른 화면의 같은 이름 단추처럼 고름만
     푼다 — 서버에 아무것도 보내지 않고 판에 켠 타일만 끈다. 켠 타일이 있을 때만 켜지고(적용한
-    값이 없어도), 누르면 잠기므로 초점이 「적용」(열렸으면) 또는 찾기 칸으로 간다. 비운 초안은
-    「적용」 이 빈 목록으로 보낸다(「목표 미달 공정 전체」)."""
+    값이 없어도), 누르면 잠기므로 초점이 찾기 칸으로 간다 — 「적용」 이 열려도 그리로 가지 않는다
+    (누르고 있던 Enter 의 되풀이가 공용 설정을 쓰지 않게). 비운 초안은 「적용」 이 빈 목록으로
+    보낸다(「목표 미달 공정 전체」)."""
     out = _mount(
         {"op": "mount", "data": _board()},
         {"op": "tile", "value": "WF"},
@@ -1160,7 +1161,7 @@ def test_the_shortening_boards_clear_button_only_empties_the_draft_and_apply_sen
         "open",
         "선택 0 / 3",
     )
-    assert emptied["focus"][-1] == "capa-proc-apply"
+    assert emptied["focus"][-1] == "capa-proc-search"
     assert out["triggers"] == [{"name": "apply", "value": {"values": []}}]
 
 
@@ -1198,14 +1199,13 @@ def test_escape_with_a_search_text_clears_only_the_text_even_inside_a_popover(
 ) -> None:
     """찾기 칸에 글이 있을 때 Esc 는 글만 지우고 판을 둔 팝오버 · 팝업은 닫지 않는다 — 팝오버는
     문서의 keydown 을 capture 단계에서 받아 닫으므로 판은 그보다 앞인 창 capture 단계에서 받는다.
-    글이 없거나 한글을 치는 중의 Esc 는 손대지 않아 팝오버가 닫힌다. 창 처리기는 판을 몇 번 다시
-    세워도 하나다(R7)."""
+    한글을 치는 중의 Esc 는 글을 지우지 않고 팝오버에도 보내지 않는다(조합은 입력기 몫). 글이 없는
+    Esc 는 손대지 않아 팝오버가 닫힌다. 창 처리기는 판을 몇 번 다시 세워도 하나다(R7)."""
     out = _mount(
         {"op": "mount", "data": _board(shortening=shortening)},
         {"op": "tile", "value": "WF"},
         {"op": "type", "text": "mo", "snap": "typed"},
         {"op": "key", "key": "Escape", "composing": True, "snap": "composing"},
-        {"op": "type", "text": "mo"},
         {"op": "key", "key": "Escape", "snap": "cleared"},
         {"op": "mount", "data": _board(shortening=shortening)},
         {"op": "mount", "data": _board(shortening=shortening)},
@@ -1215,10 +1215,10 @@ def test_escape_with_a_search_text_clears_only_the_text_even_inside_a_popover(
         out["snaps"][name] for name in ("typed", "composing", "cleared", "empty")
     )
     assert (typed["search"], typed["shownTiles"]) == ("mo", 1)
-    assert composing["closed"] == 1
-    assert (cleared["search"], cleared["shownTiles"], cleared["closed"]) == ("", len(OPTIONS), 1)
+    assert (composing["search"], composing["closed"]) == ("mo", 0)
+    assert (cleared["search"], cleared["shownTiles"], cleared["closed"]) == ("", len(OPTIONS), 0)
     assert cleared["count"] == "선택 1 / 3"
-    assert (empty["closed"], empty["windowKeydown"]) == (2, 1)
+    assert (empty["closed"], empty["windowKeydown"]) == (1, 1)
 
 
 def test_the_mounted_shared_dialog_board_keeps_option_order_and_locks_every_process() -> None:

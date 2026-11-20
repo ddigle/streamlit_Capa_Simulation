@@ -14,7 +14,8 @@
 // — 타일을 다시 만들지 않고 표지만 바꾼다. Ctrl(⌘)+Enter 는 어디서나 「적용」 이다. 찾기 칸의 Enter · ↓ 는
 // 보이는 첫 타일로 간다. 찾기 칸에 글이 있을 때 Esc 는 글만 지운다(판을 둔 팝업 · 팝오버는 그대로) — 팝오버
 // (`st.popover`)는 열린 동안 문서의 keydown 을 capture 단계에서 받아 닫으므로, 그보다 앞인 창의 capture
-// 단계에서 받는다(`clearSearchOnEscape` — 창마다 한 번 단다).
+// 단계에서 받는다(`clearSearchOnEscape` — 창마다 한 번 단다). 찾기 칸에서 한글을 치는 중의 Esc 는 입력기가
+// 조합을 끝내는 몫이라 지우지 않고 팝업 · 팝오버에도 보내지 않는다.
 //
 // 컴포넌트 요소는 회차에 바뀌지 않으므로 회차를 넘는 초안은 뿌리 요소에 단다. 서버가 보낸 선택지 · 지금
 // 값이 바뀐 회차에만 초안과 타일을 다시 세운다.
@@ -27,7 +28,8 @@
 //   앞이다). 지금 값(`selected`)의 차례가 첫 초안이고, 차례만 바뀐 초안도 「적용」 할 수 있다.
 // - `clearDraft: true` — 「전체」 자리 단추가 공용 값을 지우는 트리거(`clear`)를 보내지 않고 판의 초안만
 //   비운다(켠 타일이 있을 때만 켜진다). 비운 초안도 「적용」 이 보낸다 — 고르기는 판에서, 바꾸기는 「적용」
-//   하나다.
+//   하나다. 누른 단추가 잠기므로 초점은 찾기 칸으로 간다 — 「적용」 으로 옮기면 누르고 있던 Enter 의 되풀이가
+//   곧바로 공용 설정을 쓴다.
 // - `clearLabel` — 「전체」 단추 글. 그 칸에서는 고른 것을 비우는 단추라 「전체」 가 「모든 공정」 으로
 //   읽히지 않게 이름을 준다.
 
@@ -112,16 +114,21 @@ function cleanOptions(raw) {
 }
 
 // 창의 keydown(capture) — 판 찾기 칸에 글이 있을 때 Esc 는 글만 지우고 더 나아가지 않는다(판을 둔 팝업 ·
-// 팝오버가 닫히지 않는다). 글이 없거나 한글을 치는 중이면 손대지 않는다. 지우기는 그 판이 단
-// `clearSearch` 가 한다.
+// 팝오버가 닫히지 않는다). 한글을 치는 중이면 지우지 않고 더 나아가지만 않는다 — 조합을 끝내는 것은
+// 입력기 몫이다. 글이 없으면 손대지 않는다(팝업 · 팝오버가 닫힌다). 지우기는 그 판이 단 `clearSearch` 가
+// 한다.
 function clearSearchOnEscape(event) {
-  if (event.key !== 'Escape' || event.isComposing) return
+  if (event.key !== 'Escape') return
   const search = event.target
-  if (!search || typeof search.closest !== 'function' || !search.value) return
+  if (!search || typeof search.closest !== 'function') return
   const root = search.closest('.capa-proc-root')
   if (!root || root.querySelector('.capa-proc-search') !== search) return
+  if (event.isComposing) {
+    event.stopPropagation()
+    return
+  }
   const clear = root.__capaProc?.clearSearch
-  if (typeof clear !== 'function') return
+  if (!search.value || typeof clear !== 'function') return
   event.preventDefault()
   event.stopPropagation()
   clear()
@@ -238,14 +245,13 @@ export default function (component) {
     setTriggerValue('apply', { values: state.draft.slice() })
   }
 
-  // 초안 비우기(`clearDraft`) — 서버에 가지 않는다. 누른 단추가 잠기므로 초점은 「적용」(열렸으면) 또는
-  // 찾기 칸으로 옮긴다.
+  // 초안 비우기(`clearDraft`) — 서버에 가지 않는다. 누른 단추가 잠기므로 초점은 찾기 칸으로 옮긴다(머리
+  // 설명 — 「적용」 이 아니다).
   const emptyDraft = () => {
     if (!state.draft.length) return
     state.draft = []
     render()
-    const next = apply.disabled ? search : apply
-    next.focus()
+    search.focus()
   }
 
   state.clearSearch = () => {

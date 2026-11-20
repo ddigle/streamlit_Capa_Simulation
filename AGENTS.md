@@ -4706,7 +4706,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸 JS 가 회차 끝에 지금 화면 몫을 바로잡는다. 팝업은 조건 팝업 호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
   dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 판 찾기 칸에 글이 있을 때 Esc 는 글만 지운다 — 판 JS 가 창 capture
-  단계 처리기 하나(`clearSearchOnEscape`, 창마다 한 번 — R7)로 받아 팝업 · 팝오버(문서 capture 에서 닫는다)에 닿지 않는다. 판을 쓰는
+  단계 처리기 하나(`clearSearchOnEscape`, 창마다 한 번 — R7)로 받아 팝업 · 팝오버(문서 capture 에서 닫는다)에 닿지 않는다(한글 조합
+  중의 Esc 는 지우지 않고 팝업 · 팝오버에도 보내지 않는다 — 조합은 입력기 몫). 판을 쓰는
   다른 칸(필요 단축 일정 「공정」)은 `mount_process_board` 의 data 넷으로 바꾼다(그 화면 항목). 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 · 제약 시뮬레이션 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
   `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
   보드 p-stop-row). 불러온 리비전이 없는 빈 상태로 멈췄으면 값 칸은 본문 회색 줄과 같은 글(「공식버전 없음」 등 —
@@ -5544,7 +5545,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `process_field.mount_process_board`, 2026-11-20 사용자 결정 「여럿 고른 뒤 「적용」 한 번」: 타일 누름 · 「선택 해제」 는 서버
   0회차, 「적용」 은 트리거 하나 → 콜백 `_apply_processes` 가 회차 앞에서 세션 칸 `SHORTENING_PROCESS_KEY`(위젯 key 아님 — 적용한 값 ·
   고른 차례)와 공용 프로필(`_save_processes`)을 적어 앱 전체 회차 하나. 판 data `wholeIsAll: false` · `pickOrder`(차례만 바꾼 초안도
-  「적용」) · `clearDraft`(「전체」 자리 단추가 판의 초안만 비움 — 다른 화면의 「선택 해제」 와 같은 일, 저장은 「적용」 하나) ·
+  「적용」) · `clearDraft`(「전체」 자리 단추가 판의 초안만 비움 — 다른 화면의 「선택 해제」 와 같은 일, 저장은 「적용」 하나, 누른 뒤
+  초점은 찾기 칸 — 「적용」 으로 옮기면 누르고 있던 Enter 의 되풀이가 공용 설정을 쓴다) ·
   `clearLabel` 「선택 해제」. 찾기 칸에 글이 있을 때 Esc 는 글만 지움(판 JS 가 창 capture 단계에서 받아 팝오버가 닫히지 않음). 고르고
   적용하지 않은 동안 「적용」 만 켜짐 — UI-INP-04. 적용하지 않은 고름은 판(브라우저) 안이라 팝오버를 닫거나
   화면을 떠나면 사라진다 — 거르는 조건이라 잃는 입력이 없고 칸 글은 늘 적용한 값, 공용 공정 팝업이 열 때 고르다 만 판을 비우는 것과
