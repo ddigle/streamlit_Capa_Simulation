@@ -39,7 +39,6 @@ from datetime import date
 from typing import Final
 
 import pandas as pd
-import streamlit as st
 
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -59,8 +58,10 @@ from capa_simulation.services.static_qual_schedule import (
     BASIS_STATIC,
     DEFAULT_BASIS,
 )
+from capa_simulation.session_slot import SessionSlot
 
 __all__ = [
+    "BASIS_SLOT",
     "SHORTENING_BASIS_KEY",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
@@ -86,6 +87,7 @@ SHORTENING_START_KEY: Final = "equipment_shortening_start_month_v1"
 SHORTENING_END_KEY: Final = "equipment_shortening_end_month_v1"
 # 현재 일정 기준(Static | 설비 마스터) — 필요 단축 일정 · Space 「필요 단축」 보기가 같은 칸을 쓴다.
 SHORTENING_BASIS_KEY: Final = "equipment_shortening_basis_v1"
+BASIS_SLOT: Final = SessionSlot(SHORTENING_BASIS_KEY, str, lambda: DEFAULT_BASIS)
 
 CUTOFF_FIRST_MESSAGE: Final = (
     "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 있습니다 "
@@ -132,15 +134,16 @@ class ShorteningStop:
 
 def current_basis() -> str:
     """세션의 현재 일정 기준 — 없거나 모르는 값이면 처음 값(Static)."""
-    held = st.session_state.get(SHORTENING_BASIS_KEY)
-    return str(held) if held in BASES else DEFAULT_BASIS
+    held = BASIS_SLOT.get()
+    return held if held in BASES else DEFAULT_BASIS
 
 
 def settle_basis() -> str:
-    """전환 위젯 앞에서 세션 칸을 잡는다 — 없거나 모르는 값이면 Static 을 적는다."""
+    """전환 위젯 앞에서 세션 칸을 잡는다 — 없거나 모르는 값이면 Static 을 적는다(위젯을 만들기 전에
+    적는다 — AGENTS 5장 42)."""
     value = current_basis()
-    if st.session_state.get(SHORTENING_BASIS_KEY) != value:
-        st.session_state[SHORTENING_BASIS_KEY] = value
+    if BASIS_SLOT.peek() != value:
+        BASIS_SLOT.set(value)
     return value
 
 
