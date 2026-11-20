@@ -230,18 +230,34 @@ def test_an_edit_sent_before_discard_all_is_not_brought_back(tmp_path: Path, gri
     assert grid_results(app, "warning")[-1] == eg.DROPPED_TOAST.format(count=1)
 
 
+# 저장 전에 고칠 DA-01 칸 — 담당자는 공통 대장만 쓰고, 반입일정은 새 일정 리비전을 써서 끊긴 저장
+# 뒤 세션을 옮기며 한 번 더 다시 세운다(둘 다 고치면 공통 · 일정 리비전을 함께 쓴다).
+_FIRST_CELLS: dict[str, tuple[tuple[str, str], ...]] = {
+    "common": (("담당자", "저장 전 값"),),
+    "schedule": (("반입일정", "2026-12-01"),),
+    "both": (("담당자", "저장 전 값"), ("반입일정", "2026-12-01")),
+}
+
+
+@pytest.mark.parametrize("first_cell", list(_FIRST_CELLS))
 @pytest.mark.parametrize("cut", [False, True], ids=["finished", "cut"])
 def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
-    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, cut: bool
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, cut: bool, first_cell: str
 ) -> None:
     """Streamlit 1.63 은 저장 콜백이 DB 에 쓰는 사이 닿은 다음 조작의 회차를 다른 스레드로 세운다 —
     그 회차의 받기 콜백은 아직 쓰기 전이라 저장 직후 칸을 곧 버려질 옛 편집본에 얹고 ack 를
     그린다(브라우저 c6 에서 본 길 — 브라우저는 그 op 를 버린다). 그 op 를 이음 표지에 남겼다가 제
-    저장 뒤 다시 세운 편집본에 다시 얹는다 — 저장 콜백이 끝까지 돌든 쓰기 뒤에 끊기든."""
+    저장 뒤 다시 세운 편집본에 다시 얹는다 — 저장 콜백이 끝까지 돌든 쓰기 뒤에 끊기든. 끊긴 저장이
+    새 일정 리비전을 썼으면 그 op 는 세션을 옮겨 다시 세운 편집본에 얹는다(옮기기 전 편집본에 얹으면
+    다시 세울 때 사라진다)."""
     kept = _kept_grid_kwargs(monkeypatch)
     app = _app(tmp_path / "equipment.duckdb")
     before = last(grid, emg.GRID_KEY)["base"]
-    first = _op(1, before, op="cell", id="s:DA-01", col="담당자", text="저장 전 값")
+    cells = _FIRST_CELLS[first_cell]
+    first = _op(1, before, op="paste", ids=["s:DA-01"], cols=[c for c, _ in cells], cut=0) | {
+        "rows": [[t for _, t in cells]],
+        "skipped": 0,
+    }
     send(app, emg.GRID_KEY, "outbox", {"mount": MOUNT, "ops": [first]})
     late = _op(2, before, op="cell", id="s:DA-02", col="담당자", text="쓰는 사이 친 값")
     original = DuckDBEquipmentRepository.save_equipment
@@ -276,7 +292,8 @@ def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
         app.button(key=SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, app.exception
-    assert _value(app, "DA-01", "담당자") == "저장 전 값"
+    for column, text in cells:
+        assert str(_value(app, "DA-01", column))[: len(text)] == text
     assert _value(app, "DA-02", "담당자") == "쓰는 사이 친 값"
     assert last(grid, emg.GRID_KEY)["ack"] == {"mount": MOUNT, "seq": 2}
     _no_foreign_blame(app)

@@ -42,6 +42,7 @@ from capa_simulation.components.table_view_controls import (
 )
 from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
+    forget_seen,
     held_notice,
     is_own_save,
     note_notice,
@@ -972,9 +973,13 @@ def note_late_ops(ops: Sequence[Mapping[str, Any]], base: str) -> None:
 
 def take_late_ops() -> list[dict[str, Any]]:
     """이음 표지가 방금 다시 세운 편집본에 이어졌으면 그 사이 옛 편집본에 얹었던 op(한 번만 —
-    저장에 든 seq 이하는 뺀다). 없으면 빈 목록."""
+    저장에 든 seq 이하는 뺀다). 없으면 빈 목록.
+
+    끊긴 제 저장이 새 일정 리비전을 써 세션을 다음 회차에 옮기며 한 번 더 다시 세울
+    회차(`own_save_unsettled`)면 꺼내지 않고 그대로 둔다 — 지금 편집본에 얹으면 그 다시 세움이
+    지우고, 꺼낸 목록은 비어 다시 얹히지 않는다. 옮긴 뒤 다시 세운 편집본에 이어질 때 꺼낸다."""
     carry = own_save_carry()
-    if carry is None or not carry.pop("rewind", False):
+    if carry is None or own_save_unsettled() or not carry.pop("rewind", False):
         return []
     applied = carry.get("applied")
     saved: dict[str, int] = applied if isinstance(applied, dict) else {}
@@ -1319,7 +1324,11 @@ def ensure_equipment_drafts(
         # 제 저장이 새 일정 리비전을 썼다 — 세션을 그리로 옮기는 것은 다음 회차(페이지가
         # `pop_saved_schedule` 로 읽는다)다. 이 회차의 저장본 표지를 남기지 않아 다음 회차가 옮긴
         # 리비전에서 말없이 새로 세운다(남의 저장으로 읽지 않는다). 머리도 그 회차에 다시 그린다.
+        # 옛 일정 리비전에서 세운 이 편집본의 본 값도 남기지 않는다 — 일정만 쓴 저장이면 그 본 값이
+        # 저장 전 짝 그대로라, 다음 회차의 끊긴 저장 잇기(`_settle_own_save`)가 같은 저장을 한 번 더
+        # 이어 뒷정리하며 이음 표지를 걷는다(옮기기 전 편집본은 저장하지 않는다).
         st.session_state.pop(_REVISION_KEY, None)
+        forget_seen(_BASE_KEY)
         st.session_state[HEAD_STALE_KEY] = True
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames

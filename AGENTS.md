@@ -3487,7 +3487,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는다). Streamlit 1.63 은 저장 콜백이 쓰는 사이 닿은 출납의 회차를 다른 스레드로 세워 그 op 를 곧 버려질 옛 편집본에 얹고
     ack 를 그린다 — 받기가 이음 표지를 적은 편집본에 얹는 op 를 그 dict 에 남기고(`note_late_ops`), 이음 표지를 이은 회차의 탭이
     한 번 꺼내 다시 얹는다(`take_late_ops` — 남기는 창은 표지를 적고 `LATE_OPS_WINDOW_SECONDS` 60초, 쓰기 전에 끊겨 이어지지
-    않는 표지에 끝없이 쌓지 않게). 탭 본문에서 얹은 출납(미뤄 둔 것 · 다시 얹은 것)이 미저장 표시를 바꾸면 페이지 끝에서 한 번
+    않는 표지에 끝없이 쌓지 않게). 끊긴 저장이 새 일정 리비전을 써 세션을 옮기며 한 번 더 다시 세울 회차(`own_save_unsettled`)에는
+    꺼내지 않고 옮긴 뒤의 편집본에서 꺼낸다(옮기기 전 편집본에 얹으면 그 다시 세움이 지운다). 그 옮기기 전 편집본은 저장 본
+    값(`_BASE_KEY`)을 남기지 않는다 — 일정만 쓴 저장이면 그 본 값이 저장 전 짝 그대로라 다음 회차의 `_settle_own_save` 가 같은
+    저장을 한 번 더 이어 뒷정리하며 이음 표지를 걷는다(그 편집본은 저장하지 않는다). 탭 본문에서 얹은 출납(미뤄 둔 것 · 다시 얹은 것)이 미저장 표시를 바꾸면 페이지 끝에서 한 번
     다시 돌아 머리 띠 칩 · 탭 점 · 떠나기 확인을 맞춘다(`head_stale_if_unsaved_changed` → `rerun_if_head_stale`). 그 밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김 — `reset_equipment_drafts` 가 걷는다, 남의 저장 — 걷고 그 옛
     출발점을 `FOREIGN_ORIGINS_KEY` 에 적는다)에는 얹지 않고, 버린 op 는 까닭대로 센다(`FOREIGN_DROPPED_TOAST` · `DROPPED_TOAST`).
     `tests/test_equipment_master_save_race.py`.
