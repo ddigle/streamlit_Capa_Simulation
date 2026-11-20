@@ -78,6 +78,8 @@ def _apply():
 def _draw(fresh):
     if st.session_state.get("explode"):
         raise ValueError("구역 본문 오류")
+    if st.session_state.pop("refuse_body", False):
+        raise grades.GradeDenied("official.publish", "manager", "viewer")
     st.session_state["seen_fresh"] = fresh
     ops = _ops()
     ack = ops[-1]["seq"] if ops else None
@@ -366,6 +368,31 @@ def test_a_refused_callback_in_a_scope_run_rises_at_the_callback_end(
     assert browser.bidi_data("probe") == {"ack": 2}
 
 
+def test_a_refusal_in_the_body_before_the_component_loses_its_ack_and_seq_filtering_heals_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """한계 — 구역 본문이 부품을 그리기 **전에** 등급 거절을 내면 그 회차는 부품 상태 값(출납)을
+    다시 그리지 못한 채 끝난다. `in_fragment` 가 올리든 그냥 끝내든 회차 끝 정리(`st.stop` 밖의 모든
+    끝)가 그 상태 값을 지워, 올라간 앱 전체 회차의 부품은 ack 없이 그려진다. 그래서 거절될 수 있는
+    쓰기는 콜백(`on_press` — 콜백 끝 올리기는 상태 값이 남는다)에 두고, 편집기는 마운트별 seq 로
+    겹침을 거른다 — 브라우저가 반영된 op 를 다시 보내도 한 번만 들어가고 그 회차가 ack 를 싣는다."""
+    app, browser, scope = _start(monkeypatch, CALLBACK_END)
+    browser.send_state(app, "probe", _op(1))
+    app.session_state["refuse_body"] = True
+
+    browser.send_state(app, "probe", _ops(1, 2))
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[scope], []]
+    assert [op["seq"] for op in app.session_state["applied"]] == [1, 2]
+    assert browser.bidi_data("probe") == {"ack": None}
+
+    browser.send_state(app, "probe", _ops(1, 2))
+
+    assert [op["seq"] for op in app.session_state["applied"]] == [1, 2]
+    assert browser.bidi_data("probe") == {"ack": 2}
+
+
 def test_a_scope_body_failure_is_the_core_page_card_not_the_default_box(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -487,8 +514,10 @@ def _inner_function(source: str) -> ast.FunctionDef:
     ids=["grade_ui.in_fragment", "fragment_scope.editor_scope"],
 )
 def test_scope_wrappers_never_rise_before_the_body(wrapper: Any, body_call: str) -> None:
-    """감싸기는 본문(`fn` · `_run_guarded`)을 부르는 문장 **앞**에서 `st.rerun` 하지 않는다 — 본문
-    안의 거절을 받은 `except` 칸만 예외다(본문이 이미 돈 뒤다)."""
+    """감싸기는 본문(`fn` · `_run_guarded`)을 부르는 문장 **앞**에서 `st.rerun` 하지 않는다. 본문
+    가운데서 난 거절을 받은 `except` 칸만 예외다 — 본문이 이미 멈춰, 어떻게 끝내도(올리기 · 그냥
+    끝냄) 그 회차가 아직 그리지 못한 위젯 상태 값은 회차 끝 정리가 지운다(한계 —
+    `test_a_refusal_in_the_body_before_the_component_loses_its_ack_and_seq_filtering_heals_it`)."""
     inner = _inner_function(inspect.getsource(wrapper))
     seen_body = False
     for statement in inner.body:
