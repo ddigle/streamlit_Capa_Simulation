@@ -13,8 +13,9 @@
   본문 뒤에서 올린다. **한 번만 쓰는 인자**(R3)는 구역 회차에서 꺼진다. **본문 오류**(R6)는 코어
   화면 카드다.
 - **정적** — `grade_ui.in_fragment` · `fragment_scope.editor_scope` 감싸기는 본문 앞에서 `st.rerun`
-  하지 않고, `editor_scope` 를 단 본문은 `st.rerun` 을 직접 부르지 않으며, `st.fragment` 본문
-  첫머리의 「조건 → 앱 전체 올리기」 는 알려진 자리(목록)뿐이다.
+  하지 않고, `editor_scope` 를 단 본문은 `st.rerun` 을 직접 부르지 않으며, `st.fragment` ·
+  `st.dialog` 본문(데코레이터 꼴 · 호출 꼴) 첫머리의 「조건 → 앱 전체 올리기」 는 알려진
+  자리(목록)뿐이다.
 """
 
 from __future__ import annotations
@@ -705,15 +706,75 @@ def _leading_rise(function: ast.FunctionDef) -> bool:
     return False
 
 
-def _pre_body_rises(functions: list[tuple[str, ast.FunctionDef]]) -> set[tuple[str, str]]:
+def _is_st_call(node: ast.AST, name: str) -> bool:
+    """`st.<name>(…)` 호출."""
+    return isinstance(node, ast.Call) and _dotted(node.func) == ("st", name)
+
+
+def _wrapped_name(node: ast.expr) -> str | None:
+    """감싸기 호출(`in_fragment(keeps_app_run_open(fn))`)의 첫 인자를 따라 들어간 가장 안쪽 함수
+    이름 — 이름이면 그 이름, 속성(`self._pick`)이면 끝 이름."""
+    while isinstance(node, ast.Call) and node.args:
+        node = node.args[0]
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _called_target(node: ast.Call) -> ast.expr | None:
+    """호출 꼴 프래그먼트 · 팝업의 본문 자리 — `st.fragment(fn, key=…)` 의 `fn`,
+    `st.fragment(key=…)(fn)` · `st.dialog(…)(fn)` 의 `fn`. 아니면 None."""
+    if _is_st_call(node, "fragment") and node.args:
+        return node.args[0]
+    maker = node.func
+    if not node.args or not isinstance(maker, ast.Call):
+        return None
+    if _is_st_call(maker, "dialog") or (_is_st_call(maker, "fragment") and not maker.args):
+        return node.args[0]
+    return None
+
+
+def _called_bodies(tree: ast.AST) -> set[str]:
+    """호출 꼴로 프래그먼트 · 팝업 본문이 되는 함수 이름(감싸기 호출 안쪽까지)."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        target = _called_target(node) if isinstance(node, ast.Call) else None
+        name = _wrapped_name(target) if target is not None else None
+        if name is not None:
+            names.add(name)
+    return names
+
+
+def _called_in_sources() -> dict[str, set[str]]:
+    """파일마다 호출 꼴 본문 이름."""
     return {
-        (rel, function.name)
-        for rel, function in functions
-        if {"fragment", "dialog"} & set(_decorator_names(function)) and _leading_rise(function)
+        path.relative_to(ROOT).as_posix(): _called_bodies(
+            ast.parse(path.read_text(encoding="utf-8"))
+        )
+        for path in _source_files()
     }
 
 
-# 그물 대조 — 대입 뒤 올리기 · 팝업 본문 · 도우미 올리기는 잡히고, 그린 뒤 올리기는 잡히지 않는다.
+def _pre_body_rises(
+    functions: list[tuple[str, ast.FunctionDef]], called: dict[str, set[str]]
+) -> set[tuple[str, str]]:
+    """본문 첫머리에서 앱 전체로 올리는 프래그먼트 · 팝업 본문 — 데코레이터 꼴과 호출 꼴(`called` —
+    파일마다 `_called_bodies`) 모두. 같은 파일에 이름이 같은 함수가 여럿이면 모두 본문으로 본다."""
+    return {
+        (rel, function.name)
+        for rel, function in functions
+        if (
+            {"fragment", "dialog"} & set(_decorator_names(function))
+            or function.name in called.get(rel, set())
+        )
+        and _leading_rise(function)
+    }
+
+
+# 그물 대조 — 대입 뒤 올리기 · 팝업 본문 · 도우미 올리기 · 호출 꼴 본문(감싸기 · 메서드 포함)은
+# 잡히고, 그린 뒤 올리기 · 프래그먼트가 아닌 함수는 잡히지 않는다.
 _PRE_BODY_CONTROL = """
 @st.fragment
 def after_assign():
@@ -741,17 +802,61 @@ def drawn_first():
     st.markdown("본문")
     if moved():
         st.rerun(scope="app")
+
+
+def host_body(open_key):
+    if moved():
+        st.rerun(scope="app")
+    draw()
+
+
+def strip_body(path):
+    st.caption("띠")
+    if moved():
+        st.rerun(scope="app")
+
+
+def dialog_body(path):
+    fragment_scope.escalate_if_moved("strip")
+    draw()
+
+
+def plain_helper():
+    if moved():
+        st.rerun()
+
+
+class Field:
+    def __init__(self, host):
+        self._body = st.dialog("목표", on_dismiss=host.close)(keeps_app_run_open(self._pick))
+        self._other = st.dialog("설정")(in_fragment(keeps_app_run_open(dialog_body)))
+
+    def _pick(self):
+        if moved():
+            st.rerun()
+        draw()
+
+    def render(self):
+        st.fragment(host_body, key="host")(self.open_key)
+        st.fragment(strip_body, key="strip")("path")
+        plain_helper()
 """
 
 
 def test_fragments_do_not_rise_before_drawing_their_body() -> None:
     """`st.fragment` · `st.dialog` 본문에서 무언가를 그리기 전에 앱 전체로 올리는 자리는 알려진
-    목록뿐이다(R1 — 본문 앞 올리기 금지). 그물이 헛돌지 않는지 대조 본문으로 먼저 본다."""
-    control = _functions_in(ast.parse(_PRE_BODY_CONTROL), "control")
-    assert _pre_body_rises(control) == {
+    목록뿐이다(R1 — 본문 앞 올리기 금지). 본문은 데코레이터 꼴과 호출
+    꼴(`st.fragment(fn, key=…)(…)` · `st.dialog(…)(감싸기(fn))`) 모두다. 그물이 헛돌지 않는지 대조
+    본문으로 먼저 본다."""
+    tree = ast.parse(_PRE_BODY_CONTROL)
+    control = _functions_in(tree, "control")
+    assert _pre_body_rises(control, {"control": _called_bodies(tree)}) == {
         ("control", "after_assign"),
         ("control", "dialog_rise"),
         ("control", "helper_rise"),
+        ("control", "host_body"),
+        ("control", "dialog_body"),
+        ("control", "_pick"),
     }
 
-    assert _pre_body_rises(_functions()) == KNOWN_PRE_BODY_RISES
+    assert _pre_body_rises(_functions(), _called_in_sources()) == KNOWN_PRE_BODY_RISES
