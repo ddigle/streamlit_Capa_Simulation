@@ -3371,11 +3371,24 @@ def test_the_cumulative_1120_board_answers_are_recorded_in_6_37() -> None:
         assert phrase in v140, phrase
 
 
+# 2026-11-20 결과 보드의 여쭘 카드 다섯 — 카드 id: (여쭘 번호, 고른 a 의 선택지 라벨). 6-38 이 보드
+# 글 그대로 적는다. 코드를 바꾸는 답은 둘이다.
+_RESULT_1120_ASKS: dict[str, tuple[str, str]] = {
+    "q-ems-mark": ("여쭘-1", "지금대로 — 표지 없음"),
+    "q-ems-lang": ("여쭘-2", "모든 글 칸을 설비명과 같은 차례로"),
+    "q-ems-sib": ("여쭘-3", "지금대로 — 설비명 자리"),
+    "q-prog-blank": ("여쭘-4", "「기준 바뀜」 으로 따로 세고 늘고 줆에서 뺌"),
+    "q-extra-sink": ("여쭘-5", "지금대로 — 알림 + 사람이 놓기"),
+}
+_RESULT_1120_CODE_ASKS = frozenset({"q-ems-lang", "q-prog-blank"})
+
+
 def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     """v1.41 — 6-38 은 2026-11-20 다음 배포 후보 결과 보드의 답이다(확인 넷 「좋음」 · 여쭘
-    다섯 모두 a). 코드를 바꾸는 답은 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른 답이
-    굵게 선다 — 여쭘-2 a 는 설비 마스터 표 글 칸 머리 정렬도 설비명 칸과 같은 비교 하나이고,
-    그 답이 UI-CON-04 근거 · 그물에 선다."""
+    다섯 모두 a). 머리 문단이 여쭘 다섯을 「여쭘 번호 카드 id 「라벨」」 로 보드 글 그대로 적고,
+    코드를 바꾸는 답 둘만 그 구현과 함께 줄 하나씩이다 — 줄 머리는 카드 id · 여쭘 번호, 굵은 글은
+    「(a) 라벨」, 끝은 「(2026-11-20 · 규칙 id)」. 여쭘-2 a 는 설비 마스터 표 글 칸 머리 정렬도
+    설비명 칸과 같은 비교 하나이고, 그 답이 UI-CON-04 근거 · 그물에 선다."""
     document = _text()
     assert "판 v1.41" in document.split("\n## 1. ")[0]
     assert "6-38 에 있다" in _chapter(document, 1)
@@ -3383,15 +3396,26 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     record = section[section.index("\n### 6-38. ") :]
     assert "모두 「좋음」" in record and "여쭘 다섯은 모두 a" in record
     assert "고른 글은 보드 선택지 라벨 그대로다" in record
+    head = record.split("\n- ")[0]
+    for card, (number, label) in _RESULT_1120_ASKS.items():
+        assert f"{number} {card} 「{label}」" in head, card
     known = {rule.id for rule in _rules()}
     answers: dict[str, str] = {}
     for line in (line for line in record.splitlines() if line.startswith("- ")):
-        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        match = re.match(
+            r"^- ([\w-]+) · (여쭘-\d) .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line
+        )
         assert match, line
-        cited = RULE_TOKEN.findall(match.group(4))
+        card = match.group(1)
+        assert card in _RESULT_1120_CODE_ASKS, line
+        assert card not in answers, line
+        number, label = _RESULT_1120_ASKS[card]
+        assert match.group(2) == number, line
+        assert match.group(3) == f"(a) {label}", line
+        cited = RULE_TOKEN.findall(match.group(5))
         assert cited and set(cited) <= known, line
-        answers[match.group(1)] = match.group(2)
-    assert answers["q-ems-lang"] == "(a) 모든 글 칸을 설비명과 같은 차례로"
+        answers[card] = match.group(3)
+    assert "q-ems-lang" in answers
     con04 = next(rule for rule in _rules() if rule.id == "UI-CON-04")
     assert "결과 보드 여쭘-2 a(6-38)" in con04.fields["근거"][0]
     net = "test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values"
