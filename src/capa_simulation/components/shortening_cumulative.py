@@ -61,7 +61,14 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.settings_box import render_settings_box
 from capa_simulation.components.widget_generation import bump, generation, widget_key
-from capa_simulation.components.write_guard import held_notice, note_notice, notice_marks
+from capa_simulation.components.write_guard import (
+    held_notice,
+    is_own_save,
+    note_notice,
+    notice_marks,
+    own_save_marks,
+    remember_own_save,
+)
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
@@ -142,6 +149,8 @@ _GOAL_CLEAR_KEY = "shortening_cumulative_goal_clear"
 _RECORD_TABLE_KEY = "shortening_cumulative_record_table"
 _RECORD_FLASH_KEY = "shortening_cumulative_record_flash_v1"
 _GOAL_FLASH_KEY = "shortening_cumulative_goal_flash_v1"
+# 이 세션이 한 최종 목표 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
+_GOAL_SAVE_NAME = "shortening_cumulative_goal"
 
 _TABLE_ROWS_SHOWN = 8
 _SPARK_WIDTH = 150
@@ -806,6 +815,14 @@ def _goal_text(log: ProgressLog) -> str:
     return "미지정" if goal is None else f"{_days(goal.days)} · {goal.week.label}"
 
 
+def _goal_message(goal: ProgressGoal | None) -> str:
+    return (
+        "누적 진척 최종 목표를 지웠습니다."
+        if goal is None
+        else f"누적 진척 최종 목표를 저장했습니다 — {_days(goal.days)} · {goal.week.label}."
+    )
+
+
 def _save_goal(
     database_path: str,
     slot: DeltaGenerator,
@@ -813,13 +830,20 @@ def _save_goal(
     expected_version: int,
     saved_by: str | None,
 ) -> None:
+    # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     notices = notice_marks()
+    save_marks = own_save_marks()
     try:
         version = get_equipment_repository(database_path).save_shortening_progress_goal(
             goal, expected_version=expected_version, saved_by=saved_by or ""
         )
     except ProfileVersionConflict as exc:
         clear_shortening_progress_cache()
+        if is_own_save(_GOAL_SAVE_NAME, expected_version, exc.stored, save_marks):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+            queue_flash(_GOAL_FLASH_KEY, _goal_message(goal))
+            bump(_GOAL_GENERATION_KEY)
+            st.rerun()
         queue_flash(
             _GOAL_FLASH_KEY,
             bootstrap_error_message(exc),
@@ -831,6 +855,8 @@ def _save_goal(
     except BOOTSTRAP_ERRORS as exc:
         slot.error(f"최종 목표를 저장하지 못했습니다 — {bootstrap_error_message(exc)}")
         return
+    if version is not None:
+        remember_own_save(_GOAL_SAVE_NAME, expected_version, version, save_marks)
     clear_shortening_progress_cache()
     if version is None:
         if held_notice(_GOAL_FLASH_KEY) is None:
@@ -838,11 +864,7 @@ def _save_goal(
                 _GOAL_FLASH_KEY, "바뀐 것이 없습니다 — 최종 목표가 그대로입니다.", kind="info"
             )
         st.rerun()
-    message = (
-        "누적 진척 최종 목표를 지웠습니다."
-        if goal is None
-        else f"누적 진척 최종 목표를 저장했습니다 — {_days(goal.days)} · {goal.week.label}."
-    )
+    message = _goal_message(goal)
     note_notice(notices, _GOAL_FLASH_KEY, message)
     queue_flash(_GOAL_FLASH_KEY, message)
     bump(_GOAL_GENERATION_KEY)

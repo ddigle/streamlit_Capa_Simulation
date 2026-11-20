@@ -223,6 +223,10 @@ dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
     today=today,
 )
 
+# 머리 한 줄 「누적 진척」 — 적은 기록 기준이라 호기가 없거나 계획이 멈춘 회차에도 선다(누적-5 a —
+# 진척 비교와 상관없이).
+CUMULATIVE.render_strip(today=today)
+
 # 진척 비교와 거르는 조건(기간·공정)은 사이드바 조건 카드다(목표 확보율은 위의 조회 조건 패널 줄).
 # 맨 위 진척 비교가 본문 머리 줄에서 옮겨 온 자주 쓰는 칸이라 카드는 처음 펼친 채 선다(설계 규칙
 # UI-LAY-06 — HOME 「LOB 표시 조건」 과 같은 까닭, 한 번 접으면 기억 칸을 따른다).
@@ -256,9 +260,6 @@ except BOOTSTRAP_ERRORS as exc:
     shortening_error = bootstrap_error_message(
         exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH), labels=get_process_labels()
     )
-# 머리 한 줄 「누적 진척」 — 기록 기준이라 계획이 멈춘 회차에도 선다(누적-5 a — 진척 비교와
-# 상관없이).
-CUMULATIVE.render_strip(today=today)
 render_required_shortening_tab(
     equipment=dashboard_equipment,
     downtime=dashboard_downtime,

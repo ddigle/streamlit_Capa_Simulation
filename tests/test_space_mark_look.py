@@ -425,7 +425,7 @@ def test_migration_0033_reads_old_marks_with_the_default_look(tmp_path: Path) ->
         )
 
     repository = DuckDBEquipmentRepository(database)
-    assert repository.initialize() == (33, 34, 35)
+    assert repository.initialize() == (33, 34, 35, 36)
 
     (floor,) = repository.load_floor_layout_marks("C1", "1F")
     (fab,) = repository.load_fab_layout_marks()

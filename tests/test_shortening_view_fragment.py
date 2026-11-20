@@ -58,6 +58,10 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_START_KEY,
     VIEW_FRAGMENT_KEY,
 )
+from capa_simulation.components.shortening_cumulative import (
+    _WEEKS_BUTTON_KEY,
+    STRIP_FRAGMENT_KEY,
+)
 from capa_simulation.components.shortening_progress_panel import (
     BASELINE_GONE_ALERT,
     NO_COMPARISON,
@@ -307,6 +311,8 @@ def test_choosing_the_target_opens_on_the_host_and_draws_the_view_run_numbers(
         SHORTENING_PROCESS_KEY,
     ):
         assert _fragment_of(runner, key) == "", key
+    # 머리 「누적 진척」 의 「주차별」 은 띠 프래그먼트 안이다 — 여닫기가 띠만 다시 돈다.
+    assert _fragment_of(runner, _WEEKS_BUTTON_KEY) == runner.fragment_keyed(STRIP_FRAGMENT_KEY)
     full_runs = app.session_state[FULL_RUNS_KEY]
     default = _screen(app, world)
 

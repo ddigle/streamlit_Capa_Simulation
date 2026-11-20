@@ -794,8 +794,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **누적 진척**(2026-11-20 보드 답 누적-1 A · 누적-2 c 손으로 적기 · 누적-3 a · 누적-4 「한 줄 기록」 · 누적-5 a — 규칙집 6-37):
     본문 맨 위 한 줄 띠와 사이드바 「누적 진척 설정」 상자(Qual 마감 계산기 상자 밑 · 조건 카드 위) → 같은 제목 팝업이다
     (`components/shortening_cumulative.py` — 페이지는 `CumulativeProgress(host=DIALOG_HOST, …)` 하나를 세워 상자 · 호스트 팝업 · 띠를 부르는
-    줄만 둔다). 띠는 진척 비교와 상관없이 KPI(또는 진척 요약) 위에 서고 계획이 멈춘 회차에도 선다 — 값은 적은 기록 기준이라 계획을
-    읽지 않는다. 「이번 주 값 넣기」 가 읽는 지금 화면 합계는 패널 `_render_body` 가 회차마다 적는다(`remember_screen_total` — 계산은
+    줄만 둔다). 띠는 진척 비교와 상관없이 KPI(또는 진척 요약) 위에 서고 호기가 없거나 계획이 멈춘 회차에도 선다 — 값은 적은 기록
+    기준이라 계획을 읽지 않는다. 「이번 주 값 넣기」 가 읽는 지금 화면 합계는 패널 `_render_body` 가 회차마다 적는다(`remember_screen_total` — 계산은
     `services/shortening_progress_log.screen_shortening_days` 하나, `_render_view` 머리에서 지우고 다시 적어 멈춘 회차에 앞 값이 남지
     않는다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
