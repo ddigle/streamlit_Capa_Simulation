@@ -4048,3 +4048,89 @@ def test_the_send_interval_reads_the_dev_override_only_in_range() -> None:
     assert emg.send_ms({emg.SEND_MS_ENV: "800"}) == 800
     for text in ("", "abc", "10", "60000", "0.8"):
         assert emg.send_ms({emg.SEND_MS_ENV: text}) == emg.SEND_MS
+
+
+# ---------------------------------------------------------------- 「새 호기」 초안 묶어 보내기
+
+_DRAFT_BATCH_RUNNER = """
+const docListeners = {}
+document.addEventListener = (type, fn) => {
+  ;(docListeners[type] = docListeners[type] || []).push(fn)
+}
+document.removeEventListener = () => {}
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const states = []
+const mount = (data) => globalThis.__mount({
+  data, parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => states.push(name === 'draft'
+    ? [name, value.seq, value.values.slice()]
+    : [name, value.ops.map((op) => op.op)]),
+})
+const panel = (fields) => Object.assign({
+  mode: 'side', panel: 'new', base: 'b1', sendMs: 1000,
+  columns: [
+    { name: '설비명', kind: 'name' }, { name: '공정소분류', kind: 'text' },
+    { name: '보관유무', kind: 'choice', options: ['Y', 'N'] },
+  ],
+  groups: [[0, '호기 정보', 'common', '', [0, 1, 2]]], blank: ['', '', ''], required: [0, 1],
+  tiers: { required: [[0, false], [1, false]] },
+  draft: { seq: 3, values: ['', '', ''] }, checked: 3, errors: {}, warns: {}, locks: {},
+}, fields)
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const field = (k) => host.querySelector('[data-fk="n' + k + '"]')
+const type = (k, text) => {
+  const input = field(k)
+  input.value = text
+  fire(input, 'input')
+  return input
+}
+const buttonOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.textContent.startsWith(label))
+const R = {}
+;(async () => {
+  const cleanup = mount(panel({}))
+  // Enter 로 확정 · 칩 고르기는 곧바로 보내지 않고 쉼(1초)만큼 모은다 — 마지막 초안 하나만 간다.
+  fire(type(0, 'EQ-1'), 'keydown', { key: 'Enter' })
+  fire(host.querySelector('[data-fk="n2=N"]'), 'click')
+  R.held = states.length
+  await wait(1100)
+  R.rest = states.slice()
+  // 칸을 떠나면(초점이 다른 칸으로) 곧바로 보낸다.
+  fire(type(1, 'DA'), 'blur')
+  R.left = states.slice(1)
+  // Enter 로 확정해 둔 초안은 「호기 추가」 직전에 먼저 가고, 「호기 추가」 는 그 초안을 싣는다.
+  fire(type(0, 'EQ-2'), 'keydown', { key: 'Enter' })
+  fire(buttonOf('호기 추가'), 'click')
+  R.add = states.slice(2)
+  // 창이 숨거나 내릴 때도 모아 둔 초안을 곧바로 보낸다.
+  fire(type(0, 'EQ-3'), 'keydown', { key: 'Enter' })
+  for (const run of docListeners.visibilitychange) run()
+  R.hidden = states.slice(4)
+  fire(type(0, 'EQ-4'), 'keydown', { key: 'Enter' })
+  cleanup()
+  R.unmounted = states.slice(5)
+  await wait(1100)
+  R.after = states.length
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_the_new_unit_draft_goes_out_on_leaving_a_field_after_the_quiet_time_or_before_add() -> (
+    None
+):
+    """「새 호기」 초안(39칸)은 칸 확정마다 보내지 않는다(사용자 결정 11-20 Q4) — Enter · 칩으로
+    확정한 초안은 쉼(data `sendMs`) 뒤 · 칸을 떠날 때 · 「호기 추가」 직전 · 창 숨김 · 내릴 때
+    마지막 것 하나만 간다. 「호기 추가」 는 그 마지막 초안을 싣는다(파이썬이 그 초안으로 다시
+    판정해 넣는다)."""
+    runner = _FAKE_DOM + _DRAFT_BATCH_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+    assert result["held"] == 0
+    assert result["rest"] == [["draft", 5, ["EQ-1", "", "N"]]]
+    assert result["left"] == [["draft", 6, ["EQ-1", "DA", "N"]]]
+    assert result["add"] == [["draft", 7, ["EQ-2", "DA", "N"]], ["outbox", ["add"]]]
+    assert result["hidden"] == [["draft", 8, ["EQ-3", "DA", "N"]]]
+    assert result["unmounted"] == [["draft", 9, ["EQ-4", "DA", "N"]]]
+    assert result["after"] == 6

@@ -2754,7 +2754,7 @@ function drawNew(S, root, data) {
     S.nd = { seq: S.nd.seq, values: blank.slice() }
     S.ndTouched.clear()
     S.ndDirty.clear()
-    commitDraft(S)
+    commitDraft(S, true)
     drawSide(S.host, S, S.data)
   })
   // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
@@ -2766,6 +2766,8 @@ function drawNew(S, root, data) {
       drawSide(S.host, S, S.data)
       return
     }
+    // 모아 둔 초안을 먼저 보낸다 — 「호기 추가」 는 그 마지막 초안을 싣고 파이썬이 그 초안으로 다시 판정해 넣는다.
+    flushDraft(S)
     enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice() }, [])
     send(S)
   })
@@ -2788,10 +2790,31 @@ function drawNew(S, root, data) {
   root.appendChild(foot)
 }
 
-function commitDraft(S) {
+// 「새 호기」 칸 확정 — 번호를 올리고 확정한 값(`ndSent`)으로 적는다. 서버로는 칸을 떠날 때 · 쉼(`S.sendMs`) 뒤 · 「호기
+// 추가」 직전에 마지막 초안 하나만 보낸다(`flushDraft`) — 칸마다 회차를 돌리지 않는다. 단추(양식 비우기)는 `now` 로 곧바로.
+function commitDraft(S, now) {
   S.nd = bumpDraft(S.nd, (S.data && S.data.draft && S.data.draft.seq) || 0)
   S.ndSent = S.nd.values.slice()
-  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
+  S.ndQueued = true
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = now ? 0 : setTimeout(() => flushDraft(S), S.sendMs || SEND_MS)
+  if (now) flushDraft(S)
+}
+
+// 확정해 두고 아직 보내지 않은 초안을 곧바로 보낸다(없으면 아무것도 하지 않는다).
+function flushDraft(S) {
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = 0
+  if (!S.ndQueued || !S.setState || !S.nd) return
+  S.ndQueued = false
+  S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
+}
+
+// 보내지 않은 초안을 버린다 — 가져오기(`copy`)는 지금 초안을 함께 싣는다.
+function dropQueuedDraft(S) {
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = 0
+  S.ndQueued = false
 }
 
 function copyRow(S) {
@@ -2809,6 +2832,7 @@ function copyRow(S) {
   go.disabled = !S.copyQuery.trim()
   const fire = () => {
     if (!S.copyQuery.trim()) return
+    dropQueuedDraft(S)
     S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice() } })
   }
   input.addEventListener('input', () => {
@@ -2842,7 +2866,12 @@ function newField(S, column, k, mark) {
   if (mark.tier) label.appendChild(el('span', 'emg-tier is-' + mark.tier + (mark.ok ? ' is-done' : ''), TIER_TAGS[mark.tier]))
   field.appendChild(label)
   field.title = [mark.lock || '', column.help || ''].filter(Boolean).join('\n')
-  // 확정 — 보낸 값(`ndSent`)과 다를 때만. 다시 그린 칸(초점 되돌림)도 보낸 값과 견주므로 친 글을 잃지 않는다.
+  // 칸을 떠나면(그 칸 밖으로 초점이 감 — 다시 그리는 중은 아님) 모아 둔 초안을 곧바로 보낸다 — 체크 상자 · 칸 오류가 그때 선다.
+  field.addEventListener('focusout', (event) => {
+    if (S.painting || (event.relatedTarget && field.contains(event.relatedTarget))) return
+    flushDraft(S)
+  })
+  // 확정 — 확정한 값(`ndSent`)과 다를 때만. 다시 그린 칸(초점 되돌림)도 확정한 값과 견주므로 친 글을 잃지 않는다.
   const commit = (text) => {
     S.nd.values[k] = text
     S.ndTouched.add(k)
@@ -2894,6 +2923,7 @@ function newField(S, column, k, mark) {
     input.addEventListener('blur', () => {
       if (S.painting) return
       commit(input.value)
+      flushDraft(S)
     })
     field.appendChild(input)
   }
@@ -3096,11 +3126,17 @@ export default function (component) {
     // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만. 그리는 중의
     // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
-      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) send(S)
+      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) {
+        send(S)
+        flushDraft(S)
+      }
       // 불러오기 밖(표 칸 등)으로 초점을 옮겼다 — 돌아온 불러오기 회차가 찾기 칸으로 초점을 빼앗지 않는다.
       if (!S.painting && event.relatedTarget && !host.contains(event.relatedTarget)) S.refocus = null
     })
-    listen(S, document, 'visibilitychange', () => send(S))
+    listen(S, document, 'visibilitychange', () => {
+      send(S)
+      flushDraft(S)
+    })
     // 표 마운트만 — feed 요소가 칸을 바꿨다(그 껍데기면 이어 그린다).
     if (data.mode === 'grid' && typeof window !== 'undefined' && window.addEventListener) {
       listen(S, window, 'capa-equipment-grid', (event) => {
@@ -3136,6 +3172,7 @@ export default function (component) {
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
     send(S)
+    flushDraft(S)
     for (const [target, type, handler, options] of S.listeners) target.removeEventListener(type, handler, options)
     S.listeners = []
     if (S.timer) clearTimeout(S.timer)
