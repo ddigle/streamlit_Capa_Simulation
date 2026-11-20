@@ -33,12 +33,16 @@ from capa_simulation.components.shortening_cumulative import (
     CUMULATIVE_TITLE,
     SCREEN_TOTAL_KEY,
     ScreenTotal,
+    strip_markup,
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.shortening_progress_log import (
     PROGRESS_DAYS_MAX,
+    ProgressEntry,
     ProgressGoal,
+    ProgressGoalState,
+    ProgressLog,
     ProgressWeek,
 )
 
@@ -92,6 +96,24 @@ def test_without_records_the_strip_stands_with_marks_and_a_locked_weeks_button(
     # 사이드바 상자 — 상자 = 단추 → 같은 제목 팝업(UI-LAY-01).
     assert CUMULATIVE_TITLE in [button.label for button in app.sidebar.button]
     clear_equipment_repository()
+
+
+def test_the_strip_gives_way_from_the_first_record_and_stacks_the_overdue_note() -> None:
+    """띠는 한 줄(UI-LAY-13) — 「첫 기록 … →」 과 「최종 목표 …」 가 따로 줄어(앞 글이 먼저, 목표
+    칸이 좁으면 컨테이너 질의로 숨김) 목표 글이 남고, 목표 주차 지남은 남은 일수 아래 작은
+    줄이다."""
+    log = ProgressLog(
+        entries=(
+            ProgressEntry(ProgressWeek(2026, 40), 2200),
+            ProgressEntry(ProgressWeek(2026, 46), 1790),
+        ),
+        goal=ProgressGoalState(goal=ProgressGoal(600, ProgressWeek(2026, 44)), version=1),
+    )
+    markup = strip_markup(log, date(2026, 11, 20))
+    assert '<span class="shk-cum-route-from">첫 기록 2,200일(26-W40) →</span>' in markup
+    assert '<span class="shk-cum-route-goal">최종 목표 600일(26-W44)</span>' in markup
+    assert '남은 1,190일<span class="shk-cum-left-note">목표 주차 지남</span>' in markup
+    assert "@container (max-width: 220px)" in markup
 
 
 def test_records_draw_the_latest_days_change_and_what_is_left_to_the_goal(tmp_path: Path) -> None:
