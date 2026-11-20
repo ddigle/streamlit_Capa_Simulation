@@ -14,11 +14,12 @@
   자리).
 - **받는 자리** — 위젯 콜백은 `on_press`(받고 돌아온다 — 콜백 반환값은 버려진다), `st.fragment` ·
   `st.dialog` 함수는 `in_fragment`(받고 앱 전체를 다시 그린다 — 프래그먼트만 도는 회차에는 `app.py`
-  의 `emit` 이 돌지 않는다). 프래그먼트 · 팝업 안 위젯 콜백의 거절은 `on_press` 가 표지를 세우고,
-  이어
-  도는 프래그먼트 본문 첫머리의 `in_fragment` 가 그 표지를 보고 앱 전체를 다시 그린다. 화면
-  본문(전체
-  회차)의 거절은 `page_failure_card.run_core_page` 가 받는다.
+  의 `emit` 이 돌지 않는다). 프래그먼트 · 팝업 안 위젯 콜백의 거절은 `on_press` 가 표지를 세우고 그
+  콜백 끝에서 `st.rerun()` 으로 이 상호작용을 앱 전체 회차로 올린다(본문 전이라 위젯 상태가 남는다
+  — AGENTS 9장 「구역 회차 규칙」 R1). 콜백이 아니라 본문에서 부른 `on_press` 의 거절은 표지만
+  세우고, 그 프래그먼트 본문을 **다 그린 뒤** `in_fragment` 가 올린다 — 본문 앞에서 올리면 그
+  회차가 다시 그리지 않은 위젯 상태 값(Components v2 출납)을 회차 끝 정리가 지워 ack 를 잃는다.
+  화면 본문(전체 회차)의 거절은 `page_failure_card.run_core_page` 가 받는다.
 - **등급 밖 화면 · 탭**(`stop_unless`) — 주소 · 알림 · 기억된 탭 값으로 연 등급 밖 자리는 경고 한 줄
 +
   「HOME 으로」 + 멈춤(Admin Area 잠금과 같은 꼴 — 설계 규칙 UI-INP-07 예외 · UI-CON-03).
@@ -37,10 +38,9 @@ from typing import Any, Final, Literal, TypeVar, cast
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
-from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 
 from capa_simulation.auth import grades
-from capa_simulation.components import sso_identity
+from capa_simulation.components import fragment_scope, sso_identity
 from capa_simulation.components.flash import emit_flash, queue_flash
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -83,7 +83,9 @@ def refuse(exc: grades.GradeDenied | grades.SignInEnded) -> None:
 
 def on_press(fn: F) -> F:
     """위젯 콜백 감싸기 — 등급 거절을 받아 알림을 담고 돌아온다(그 밖의 예외는 그대로). 거절된
-    누름의 반환값은 `None` 이다(콜백 반환값은 Streamlit 이 버린다)."""
+    누름의 반환값은 `None` 이다(콜백 반환값은 Streamlit 이 버린다). 프래그먼트 · 팝업만 도는 회차의
+    콜백이면 콜백 끝에서 앱 전체 회차로 올려 그 회차의 `emit` 이 알림을 낸다(모듈 설명 「받는
+    자리」)."""
 
     @functools.wraps(fn)
     def inner(*args: Any, **kwargs: Any) -> Any:
@@ -92,36 +94,40 @@ def on_press(fn: F) -> F:
         except grades.REFUSALS as exc:
             refuse(exc)
             st.session_state[PENDING_KEY] = True
-            return None
+        if fragment_only_run() and fragment_scope.in_callback():
+            st.rerun()
+        return None
 
     setattr(inner, ON_PRESS_ATTRIBUTE, True)
     return cast(F, inner)
 
 
 def fragment_only_run() -> bool:
-    """지금 회차가 프래그먼트 · 팝업만 다시 도는 회차인가(앱 전체 회차가 아님)."""
-    ctx = get_script_run_ctx(suppress_warning=True)
-    return bool(ctx is not None and ctx.fragment_ids_this_run)
+    """지금 회차가 프래그먼트 · 팝업만 다시 도는 회차인가(앱 전체 회차가 아님) —
+    `fragment_scope.fragment_only_run`."""
+    return fragment_scope.fragment_only_run()
 
 
 def in_fragment(fn: F) -> F:
     """`@st.fragment` · `@st.dialog` 함수 감싸기(그 데코레이터 아래쪽에 단다).
 
-    본문에서 난 등급 거절은 알림을 담고 앱 전체를 다시 그린다. 이 팝업 · 프래그먼트 안 위젯 콜백이
-    거절을 담았으면(`on_press` 의 표지) 프래그먼트만 도는 회차의 본문 첫머리에서 앱 전체를 다시
-    그린다 — 그 회차에는 알림을 낼 자리(`app.py` 의 `emit`)가 돌지 않는다. 앱 전체 회차에서는 그
-    회차의 `emit` 이 내므로 다시 그리지 않는다.
+    본문에서 난 등급 거절은 알림을 담고 앱 전체를 다시 그린다. 거절 표지(`on_press` — 콜백 끝에서
+    올리지 못한 본문 몫)가 남은 채 프래그먼트만 도는 회차면 본문을 **다 그린 뒤** 앱 전체를 다시
+    그린다 — 그 회차에는 알림을 낼 자리(`app.py` 의 `emit`)가 돌지 않는다. 본문 앞에서 올리지
+    않는다(모듈 설명 「받는 자리」). 앱 전체 회차에서는 그 회차의 `emit` 이 내므로 다시 그리지
+    않는다.
     """
 
     @functools.wraps(fn)
     def inner(*args: Any, **kwargs: Any) -> Any:
-        if fragment_only_run() and st.session_state.pop(PENDING_KEY, False):
-            st.rerun(scope="app")
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
         except grades.REFUSALS as exc:
             refuse(exc)
             st.rerun(scope="app")
+        if fragment_only_run() and st.session_state.pop(PENDING_KEY, False):
+            st.rerun(scope="app")
+        return result
 
     setattr(inner, IN_FRAGMENT_ATTRIBUTE, True)
     return cast(F, inner)
