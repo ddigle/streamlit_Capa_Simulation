@@ -3038,7 +3038,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     설계 규칙 UI-NTF-03 — 2026-11-07 답 undo-strip), 마운트에 싣는 `toast` 는 오른쪽 칸 자리 거부 한 줄(막힌 「호기 추가」 · 가져오기
     「찾지 못했습니다」 — `queue_grid_toast`, `toast_payload`)뿐이다. 「호기 추가」 가 넣은 회차는 그 호기를 「호기 상세」 로 연다
     (`GridApplied.added`).
-    `grid_data(open_id=)` 는 상세에 연 줄의 띠다. 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를
+    `grid_data(open_id=)` 는 상세에 연 줄의 띠다. 표 마운트 data 는 껍데기(칸 정의 · 잠금 · 불러온 줄 · 지문 `shell` —
+    `shell_token`)와 feed(`GRID_FEED_FIELDS` — ack · 수 · 옮김 · 끼운 줄 · 연 줄 · 깨끗함 — 와 껍데기 뒤 바뀐 줄)로 가른다
+    (`split_grid_data` — 앞 껍데기의 줄 밖 칸 · 줄 id 차례가 같고 바뀐 줄이 `GRID_PATCH_LIMIT` 이하면 그 껍데기를 그대로, 아니면 새로
+    짓는다. `join_grid_data` 가 거꾸로 이은 것은 원래 data 와 같다 — 브라우저 `joinGridData` 와 같은 꼴). 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를
     64자 고정 폭 글자로 잇는다(`encode_codes` ↔ JS `decodeCodes` — 브라우저는 고른 값을 번호가 아니라 글로 기억한다).
   - 출납: `pending_ops` 가 두 마운트의 상태 값 `outbox` 에서 반영 안 된 op 만 `(at, mount, seq)` 로 고르고, `apply_ops` 가 차례로
     얹는다 — `base` 가 다르면 버림, 잠긴 칸·지운 줄·낡은 세션의 저장본 호기 지우기는 파이썬도 막음, 칸 값은
@@ -3054,8 +3057,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸·호기 되돌리기(`revert`)는 저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 배치 칸 잠금을 보지 않는다(낡기 전에 고친
     일정을 되돌려야 저장이 거부되지 않는다) — 모듈 묶음 좌표·크기만 그대로 두고 알림창으로 알린다. 같이 바뀌는 칸은 지금 묶음
     형제의 그 칸도 저마다의 저장본 값으로 돌린다(새 형제는 막는 열세 칸만 되돌린 줄의 저장본 값으로 맞추고 레이아웃표시는 그대로, 호기
-    되돌리기가 Main 설비도 돌려 묶음을 떠나면 같이 돌리지 않는다). `base` 가 달라 버린 op 는 까닭을
-    가르지 않는 결과 글(`DROPPED_TOAST` — 내 저장·모두 버리기·불러오기·남의 저장)로 알림창에 센다.
+    되돌리기가 Main 설비도 돌려 묶음을 떠나면 같이 돌리지 않는다). `base` 가 달라 버린 op 는 부르는 쪽이 가린
+    까닭의 결과 글(`apply_ops(dropped_toast=)` — 남의 저장 `FOREIGN_DROPPED_TOAST`, 그 밖 `DROPPED_TOAST`)로 알림창에 센다(제 저장
+    직후 op 는 버리지 않고 화면 쪽이 저장본 위로 옮겨 얹는다 — `moved_op`).
   - 되돌리기 `UndoStep` 은 역 patch(조작 뒤 자리)라 나중 것부터만 맞는다 — 표의 조작만 쌓고 다른 길이 편집본을 바꾸면
     목록을 비운다(B1-c). 되돌리기는 「저장 전 변경」 칸의 「한 단계 되돌리기」 하나다(2026-11-07 답 undo-strip). 불러온 목록은 화면 조작으로도 바뀌므로 사진으로 되돌리지 않고
     옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 출납 ·
@@ -3411,8 +3415,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`stLayoutWrapper` 감싸개 · key 가로 칸 `overflow`)에 기대므로 Streamlit 을 올리면 이 CSS(`side_layout_style`)를 다시 본다.
   - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸은 세션 초안(`NEW_UNIT_DRAFT_KEY` — {번호, 39칸 글}, 저장해도
     남는다)을 그 회차 편집본 위에서 `new_unit_check` 로 보고 그린다(합성 3천 대 한 번 약 0.05 s — 샘플 관측, 칸 결과처럼
-    메모하지 않는다). 브라우저는 칸을 확정할 때마다 상태 값 `draft`(번호를 올림)를 보내고 받기 콜백은 번호가 세션 초안보다 작지
-    않을 때만 적는다. 출납을 얹을 때 세션 초안 번호를 `GridState.draft_seq` 로 넘긴다(옛 번호의 `add` 는 서비스가 버림). 「호기
+    메모하지 않는다). 브라우저는 칸을 확정할 때마다 번호를 올려 초안을 모아 두기만 하고, 칸을 떠날 때 · 쉼(`SEND_MS`) 뒤 ·
+    「호기 추가」 직전 · 표 밖 · 창 숨김 · 내릴 때 마지막 초안 하나를 상태 값 `draft` 로 보낸다(「양식 비우기」 는 곧바로 — 2026-11-20
+    사용자 결정 Q4, 체크 상자 · 칸 오류는 그 회차에 선다). 「호기 추가」 는 모아 둔 초안을 먼저 보내고 그 마지막 초안을 실은 `add`
+    op 를 보내며 파이썬이 그 초안으로 다시 판정해 넣는다. 받기 콜백은 번호가 세션 초안보다 작지 않을 때만 적는다. 출납을 얹을 때 세션 초안 번호를 `GridState.draft_seq` 로 넘긴다(옛 번호의 `add` 는 서비스가 버림). 「호기
     추가」(`add` op) 뒤에는 마지막 호기를 「호기 상세」 로 열며, 초안은 번호를 올려 공정소분류·동·층만 남긴다. 막히면 받은 초안을
     세션 초안으로 둔다 — 세션 초안보다 번호가 작은 `add`(버린 두 번 누름)는 보지 않는다(다음 회차에 따로 온 둘째 누름이 넣은 뒤
     초안을 옛 초안으로 덮지 않게). 호기마다의 함께 넣기 고름은 없다(2026-11-05 사용자 답 — 옛 체크 · 경고를 걷었다): 새 호기는 어느 길로
@@ -3426,17 +3432,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 회차에 표 모양(`build_view` → `equipment_grid.build_grid_view`)을 한 번 내고 세 마운트 data 를 그것에서 낸다. 칸 결과
     (`equipment_master_issues` — 저장과 같은 인자: 캔버스·오늘)는 편집본 세대·`buffer_base`·오늘·캔버스 열쇠로 세션 메모
     (`GRID_MEMO_KEY`, 결과는 튜플로 풂 — 다음 칸 고치기의 재료 `issue_state` 는 아래)에 한 번. 표 글자(`text_matrix` — 편집본은 편집본 세대·`buffer_base`, 저장본은 저장본 사본 토큰
-    열쇠 → `GridSource.texts`)와 메뉴 「엑셀·CSV」 현재 데이터 바이트(`_render_current_data_downloads(memo_key=)`)도 같은 메모 칸이다 —
+    열쇠 → `GridSource.texts`)와 메뉴 「엑셀·CSV」 현재 데이터 바이트(`_render_current_data_downloads(memo_keys=)` — 표마다)도 같은 메모 칸이다 —
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본 열쇠가 바뀐 회차(칸 고치기)도 처음부터 내지 않는다 — 칸 결과(`_issues`)는 같은 메모 칸의 재료(`issue_state` —
     `equipment_validation.MasterIssueState`)에서 바뀐 칸 · 그 칸을 보는 규칙만 다시 보고(`equipment_master_issues_since` — 결과 차례
     규칙 → 칸 → 줄 그대로), 편집본 글자 행렬(`_texts`)은 직전 행렬(`buffer_texts_matrix` — `equipment_grid.TextMatrix`)에서 바뀐 칸 ·
     줄만 갈아 끼운다(`text_matrix_since`, 저장본 행렬은 그대로). 「리비전 저장」 판정(`_blocking_count`)은 메모를 거치지 않고 늘
-    처음부터 본다 — 저장이 막힌다 ⇔ 막는 결과. 표 단위 오류 앞 셋(기존 보유대수 · 비가동 일정 정규화 · 예시 행 — `_frame_errors`) ·
-    일정 확인 갈래 글(열쇠에 공식 스냅샷 토큰 · 오늘도) · 다른 두 표의 바뀐 행 수도 편집본 열쇠(`_buffer_key` — 편집본 세대 · 출발점 ·
-    저장본 사본 쌍 토큰)로 같은 회차 메모(창구 `GRID_MEMO`, `_remembered`)에 한 번만 낸다. 묶음 바둑판 · 가정 묶음 거부 · 낡은 세션의
-    지운 호기 · 층 배치 · FAB 대기분은 편집본 밖 칸을 보아 회차마다 보고, 표 모양(`build_grid_view`)은 맥락 전체가 열쇠라 메모하지
-    않는다. 메모의 재료 두 벌(`MasterIssueState` · `TextMatrix`)은 DataFrame 사본을 든 인스턴스라 「모델 인스턴스를 세션에 두지
+    처음부터 본다 — 저장이 막힌다 ⇔ 막는 결과. **표별 세대**(`table_generations` — 편집본 세 표마다 그 표를 바꿀 수 있는 쓰기에서만
+    오른다, 층 배치 대기분은 세 표 밖이라 오르지 않는다)로 한 표만 보는 일을 그 표 열쇠(`_table_key` — 그 표 세대 · 출발점 · 저장본
+    사본 쌍 토큰)에 둔다: 표 단위 오류 앞 셋(기존 보유대수 둘 — 그 표 열쇠, 비가동 일정 정규화 — 그 표 열쇠 + 설비 마스터 설비명),
+    다른 두 표의 바뀐 행 수, 메뉴 「엑셀·CSV」 현재 데이터 바이트(표마다 `memo_keys`) — 설비 마스터 칸 하나를 고친 회차는 다른 두
+    표의 일을 다시 하지 않는다. 양식 바이트도 회차 메모에 한 번이다. 일정 확인 갈래 글(`_alerts`)은 판정 칸(설비명 · 단계 일정 ·
+    실적 · 상태 — `CONFIRMATION_INPUT_COLUMNS`)을 앞 회차 재료와 줄마다 견주어(`equipment_grid.changed_positions`) 바뀐 줄만 다시
+    판정한다(`schedule_confirmation.row_confirmation_words` — 통째 목록과 같은 판정, 날짜 칸이 날짜 형이 아니면 통째로 —
+    `rowwise_confirmation`, 출발점 · 저장본 토큰 · 오늘이 바뀌거나 줄 수가 바뀌면 처음부터). 모두 같은 회차 메모(창구 `GRID_MEMO`,
+    `_remembered` — 짓는 사이 적힌 칸을 덮지 않는다)다. 묶음 바둑판 · 가정 묶음 거부 · 낡은 세션의 지운 호기 · 층 배치 · FAB
+    대기분은 편집본 밖 칸을 보아 회차마다 보고, 표 모양(`build_grid_view`)은 맥락 전체가 입력이되 「바뀐 칸」 은 편집본 · 저장본 글
+    줄이 그대로인 줄의 앞 회차 것을 쓴다(`GridSource.changed_memo` — 출발점 · 저장본 토큰 열쇠로 회차 메모 `changed_rows`). 메모의 재료 두 벌(`MasterIssueState` · `TextMatrix`)은 DataFrame 사본을 든 인스턴스라 「모델 인스턴스를 세션에 두지
     않는다」 관례 밖이다 — 핫리로드 뒤에는 꼴이 달라 처음부터 보고, 기본형으로 풀지는 `docs/TODO.md` 2장 「성능」 결정 거리다.
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 미저장 표시(머리 변경 칩·사이드바 「미저장 변경」·머리 띠·탭 점·떠나기 확인 — 모두 `has_unsaved_equipment_edits`)는
@@ -3453,8 +3465,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고칠 것 줄로, 사이드바 팝업 「저장」 은 경고 글로(`stale_save_refusal`) 보이고, 저장은 `save_equipment_buffer` 의 설비 쪽
     저장 전 검사(`_save_equipment_frames` 첫머리 — FAB 전체 배치 대기분은 별도 쓰기라 그 앞에서 저장되고 거부 글이 함께
     말한다)가 같은 글로 막는다(Space 「배치 저장」 도 — 저장소의 「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시
-    불러오면 공통 편집까지 잃는다, `tests/test_equipment_save_preflight.py`). 일정 확인 갈래는 내용 지문
-    캐시(`get_schedule_confirmation_issues`).
+    불러오면 공통 편집까지 잃는다, `tests/test_equipment_save_preflight.py`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 결과 글은 알림창으로(`GRID_RESULT_KEY` —
     탭 끝 `render_flash(LOAD_RESULT_KEY, GRID_RESULT_KEY)` 칸이 꺼내 낸다), 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와
@@ -3465,6 +3476,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     연 채 base 가 바뀌면 친 글도 옛 base op 로 보낸다(`queueOpenEdit`). 저장 · 모두 버리기 콜백이 편집본을 비운 틈에 온 출납은
     `apply_outbox` 가 건드리지 않고 `OUTBOX_HELD_KEY` 를 남기며, 편집본을 다시 세운 `render_equipment_master_tab` 이 세어
     알린다(다시 세우는 길이 결과 알림 칸을 비우므로). 같은 틈의 한 단계 되돌리기 · 불러오기 · 가져오기는 넘긴다.
+  - **제 저장 이음**(rerun-1120 바탕 결함 c6 — 「리비전 저장」 직후 친 칸이 버려지고, 바쁜 서버에서는 제 저장을 「다른 사용자가 …
+    저장해 … 버렸습니다」 로 알렸다): 「리비전 저장」 콜백은 DB 쓰기 **전에** 이음 표지(`OWN_SAVE_CARRY_KEY` — 그 편집본 출발점 ·
+    저장 뒤 행 id 지도 `save_id_map` · 마운트별 저장에 든 seq)를 적고, 쓰기는 `_save_equipment_frames` 가 그 dict 에만 적는다(뒤
+    세션 칸 접근은 fastReruns 에 끊길 수 있다). 쓰지 않았으면 콜백 끝이 걷는다(`settle_own_save_carry`). 뒷정리 전에 끊긴
+    회차(`own_save_unsettled` — 그 출발점 그대로이거나 새 일정 리비전으로 세션을 옮길 회차가 남음)의 출납은 seq 를 적기 **전에**
+    미루고, 끊긴 제 저장은 알림 창이 지나도 이음 표지로 알아본다(`_settle_own_save`). 제 저장 뒤 다시 세운 편집본(세션을 옮겨 한 번
+    더 다시 세운 것도)에 이음 표지가 이어지고(`_bind_own_save_carry`), 그 전 출발점의 op 는 행 id 를 저장 뒤 id 로 옮겨(지운 호기를
+    가리키면 버림) 지금 `base` 로 얹는다(`_carried` · `equipment_grid.moved_op` — 저장에 든 seq 이하는 빼 넣기 · 붙여넣기가 두 번 들지
+    않는다). 그 밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김 — `reset_equipment_drafts` 가 걷는다, 남의 저장 — 걷고 그 옛
+    출발점을 `FOREIGN_ORIGINS_KEY` 에 적는다)에는 얹지 않고, 버린 op 는 까닭대로 센다(`FOREIGN_DROPPED_TOAST` · `DROPPED_TOAST`).
+    `tests/test_equipment_master_save_race.py`.
   - **오른쪽 칸 자리 거부 한 줄은 실어 보낸 마운트가 사라지면 거둔다**(`settle_grid_toasts` — 대상은 `detail` · `new` 뿐, 탭 끝에
     그린 마운트 이름으로, 탭이 숨은 회차에는 빈 것으로 부른다). 브라우저의 닫은 번호는 마운트마다 새로 시작해 표 고르기·탭·오른쪽 칸
     왕복에 닫은 한 줄이 되살아났다. 아직 실어 보내지 않은 한 줄(숨은 동안 쌓인 것)은 처음 마운트할 때 보인다(실어 보낸 번호
@@ -3534,6 +3556,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `overflow: visible` 을 건다(아니면 sticky 가 줄 기준으로 잡힌다). 순수 구획 `// <splitter-…>`(폭 식·끌기·키)와 마운트(가짜
     DOM)는 `tests/test_equipment_side_panel.py` 가 node 로 돌린다.
   - 등록 글은 표 공용 조각(`components/grid_shared.py` · `grid_shared_assets/` — 칸 상태 · 변경 칸 CSS, 칸 찾기 · 보낼 목록 · DOM 도우미 JS) 뒤에 이 표의 파일을 잇는다(`registered_js` · `registered_css`). 칸 상태 규칙은 특이도가 같아 차례로 이기므로 공용 조각을 앞에 둔다.
+  - **표 마운트는 두 등록**(범용 편집 그리드와 같은 꼴 — CCv2 는 data 가 바뀐 회차마다 등록 JS · CSS 를 요소와 함께 다시
+    보낸다): 표 요소 `_GRID`(껍데기 — 칸 하나를 고친 회차에도 앞 껍데기를 그대로 다시 내 해시 참조로 간다, 탭이 회차 메모
+    `grid_shell` 에 둔다)와 바로 앞의 작은 요소 `_FEED`(`capa_equipment_master_grid_feed` · `feed.js` — key `feed_key()`, 페이지
+    CSS 는 `tools_menu_style` 덩이에 든다)다. feed JS 는 `window.__capaEquipmentGrid[host].feed` 칸에 두고 `capa-equipment-grid`
+    이벤트를 쏘며, 표 JS 는 그 껍데기 지문의 feed 만 이어 그린다(`takeShell` · `takeFeed` · `joinGridData` — 다른 껍데기의 feed 는
+    기다림, 껍데기 · 바뀐 줄이 그대로인 feed 에는 정렬한 표 모양을 다시 짓지 않음, 내릴 때 칸의 feed 를 비움). 지문 없는 data 는
+    예전처럼 바로 그린다. 칸 하나 고칠 때 받는 바이트는 합성 표본에서 약 471KB → 36KB 다(샘플 관측 — rr1120 B 측정).
+    시험 대역(`tests/grid_fake.py`)은 두 요소를 받아 이은 data 를 표 key 로 적는다.
+  - **묶어 보내기 쉼**은 파이썬 값이다(`SEND_MS` 0.3초 → data `sendMs`, 브라우저 `schedule`). 깨끗한 편집본(data `clean` — 표
+    feed · 호기 상세)의 첫 칸 고침은 쉼 없이 곧바로 가고(`sendsAtOnce`), 여러 칸 붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김도
+    곧바로다. 측정 사본만 실행 줄 환경변수 `CAPA_RR_GRID_SEND_MS`(50 ~ 5000 ms 정수 — `send_ms`)로 덮어쓴다 — **개발 전용**이라
+    운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다.
   - data 는 `services/equipment_grid` 의 dict + 팔레트(`grid_shared.grid_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
@@ -3590,8 +3624,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않을 때 켠다(`canAdd` — 판정 전이면 켜 두고 파이썬이 `add` op 를 다시 본다). 판정 글(`hint` — 막힌 까닭 · 가용대수에 아직 안 드는 칸, 더
     말할 것이 없으면 빈 글)은 칸에 늘 두지 않고 그 단추의 풍선이다(`addTip`, `role="tooltip"` · `aria-describedby`, `.emg-tip` — 편집 표 풍선과
     같은 꼴, 300ms). 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸(`.emg-tip-host`)이 호버를 받고 꺼진 동안 탭 자리와 `data-fk` 를 맡는다(UI-TXT-01 ·
-    UI-INP-07). 판정 전 풍선은 둘로 갈린다 — 보낸 초안의 판정을 기다리면 「고친 칸을 확인하는 중입니다」, 아직 보내지 않은 글(확정은 칸을 벗어나거나 Enter)은 아무 확인도
-    돌지 않으므로 빈 필수 칸 이름(판정과 같은 말)이거나 「칸을 벗어나면 확인합니다」 다. 눌러서 거절될 때의 자리 거부 한 줄은 같은 판정 글 그대로다. 칸을 통째로 다시 그리는 칩·함께 넣기 체크·「양식
+    UI-INP-07). 판정 전 풍선은 둘로 갈린다 — 확정한 초안의 판정을 기다리면 「고친 칸을 확인하는 중입니다」, 아직 확정하지 않은 글(확정은 칸을 벗어나거나 Enter)은 아무 확인도
+    돌지 않으므로 빈 필수 칸 이름(판정과 같은 말)이거나 「칸을 벗어나면 확인합니다」 다. 확정한 초안은 모아 두었다가 칸을 떠날
+    때 · 쉼 뒤 · 「호기 추가」 직전 · 표 밖 · 창 숨김 · 내릴 때 하나만 보낸다(`commitDraft` · `flushDraft`, 가져오기는 초안을 싣으므로
+    모아 둔 것을 버린다 — `dropQueuedDraft`). 눌러서 거절될 때의 자리 거부 한 줄은 같은 판정 글 그대로다. 칸을 통째로 다시 그리는 칩·함께 넣기 체크·「양식
     비우기」(상세 칩도)는 `data-fk` 를 달아 초점이 돌아온다(키보드로 채우는 동안 칸 처음으로 가지 않게). 칸 아래쪽에서 누른 조작이 연
     다른 칸(「호기 추가」 → 상세, 「이 호기로 새 호기 만들기」 → 새 호기 칸)은 그 칸이 처음 선 회차에만 칸 머리를 보인다(data 표지
     `revealHead` · `revealHead`·`needsReveal`, `.emg-side` `scroll-margin-top` 이 머리 띠를 비킨다 — 칸 안에서 고치다 받은 거절 한 줄로

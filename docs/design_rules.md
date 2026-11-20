@@ -650,7 +650,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱이 만든 컴포넌트(탭 줄 · 편집기 · 도면 · 사이드바 폭 · 기간 판 · Summary − · +)의 되풀이 입력. 되풀이 조작을 새로 만들 때는 컴포넌트로 만든다(Streamlit 기본 단추 · 슬라이더로 만들지 않는다).
 - 예외: 고른 대상이 다른 누름은 되풀이가 아니다 — 목록 줄 · 호기를 잇달아 고르거나 Ctrl+Z 를 연달아 치면 누른 수만큼 회차가 돈다(지금대로 — 6-11 c10)
 - 판단: 이 키를 열 번 누르면 서버 회차는 몇 번인가?
-- 그물: `scripts/check_deploy_screens.py` page_tabs_frame(묶어 보냄) · 칸 연속 입력 → 보냄 1회(`tests/test_edit_grid_core_dom.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 기준 정보 편집표, `tests/test_equipment_master_grid_assets.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 설비 마스터 표)
+- 그물: `scripts/check_deploy_screens.py` page_tabs_frame(묶어 보냄) · 칸 연속 입력 → 보냄 1회(`tests/test_edit_grid_core_dom.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 기준 정보 편집표, `tests/test_equipment_master_grid_assets.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 설비 마스터 표, 쉼 · 곧바로 보내는 갈래 `::test_the_send_interval_comes_from_python_and_the_immediate_paths_stay_immediate`, 「새 호기」 초안 `::test_the_new_unit_draft_goes_out_on_leaving_a_field_after_the_quiet_time_or_before_add`)
 - 그물 후보: 연속 N회 → 보냄 1회 — 편집표 · 설비 마스터 표 밖의 되풀이 입력 컴포넌트(Ctrl+Z 연속은 6-11 c10 으로 예외)
 - 근거: 검수 frame-u03(2026-11-03) — 「몇번 연속으로 좌우로 움직이는 경우  불필요한 로딩이 발생하거나 멈추는 경우가 있음」, 「남은 물음 11-11」 보드 Q226-stepper (나)(2026-11-11 — 6-16) — 걸음마다 앱 전체가 도는 목표 확보율 직접 입력 칸은 − · + · ⊗ 를 숨기고 Enter · 칸 떠남으로만 적용한다(↑/↓ 키는 고른 글대로 한 걸음 적용)
 - 지금 값: 탭 끌기 묶어 보냄 손 뗀 뒤 0.4초 — 출처 4장
@@ -1233,6 +1233,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 | Summary − · + 단추 | 18px | 검수 home-02 반영 · 「괜찮음」 | UI-CON-01 |
 | Summary 기본 기간 | 지난달부터 6개월 | 검수 home-02 · 사용자 값 | UI-DAT-09 |
 | 탭 끌기 묶어 보냄 | 손 뗀 뒤 0.4초 | 검수 frame-u03 반영 | UI-PRF-02 |
+| 설비 마스터 칸 묶어 보냄 | 쉼 0.3초(파이썬 `equipment_master_grid.SEND_MS` → data) — 깨끗한 편집본의 첫 칸 · 여러 칸 붙여넣기 · 단추 · 표 밖 누름 · 창 숨김은 곧바로, 「새 호기」 초안은 칸을 떠날 때 · 쉼 뒤 · 「호기 추가」 직전 | 2026-11-20 사용자 결정 Q1(0.8초 — 관문 뒤 넣음) · Q4 | UI-PRF-02 |
 | 진행 표시 문턱 | 1초 넘게 멈춘 듯 보이는 계산 | 에이전트 제안 값 · 검수 전 | UI-PRF-05 |
 | 화면 탭 상한 | 10 | AGENTS 3장 `MAX_TABS` | UI-NTF-07 |
 | Alarm 기록 | 이 탭 · 200줄 · 12시간 | 알림 결정 보드 D1 | UI-STA-04 |
