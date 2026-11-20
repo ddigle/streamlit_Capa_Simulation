@@ -95,6 +95,7 @@ from capa_simulation.components.equipment_data_workspace import (
     defer_grid_undo,
     equipment_buffer_generation,
     floor_layout_words,
+    foreign_origins,
     grid_loaded_ids,
     grid_overlay,
     grid_toasts,
@@ -103,6 +104,8 @@ from capa_simulation.components.equipment_data_workspace import (
     layout_lock_origins,
     layout_memo_mark,
     official_layout_cells,
+    own_save_carry,
+    own_save_unsettled,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -121,6 +124,8 @@ from capa_simulation.components.equipment_data_workspace import (
     settle_bulk_restore,
     settle_grid_toasts,
     settle_grid_undo,
+    settle_own_save_carry,
+    stage_own_save_carry,
     stale_delete_lock,
     stale_save_reasons,
     stale_save_refusal,
@@ -199,6 +204,8 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_template,
 )
 from capa_simulation.services.equipment_grid import (
+    DROPPED_TOAST,
+    FOREIGN_DROPPED_TOAST,
     GRID_ROW_LIMIT,
     NAME_INDEX,
     GridApplied,
@@ -226,6 +233,7 @@ from capa_simulation.services.equipment_grid import (
     load_ids,
     loader_data,
     move_ids,
+    moved_op,
     new_unit_check,
     new_unit_data,
     pending_ops,
@@ -840,18 +848,26 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
 
     편집본이 없으면(저장 · 모두 버리기 콜백이 비운 뒤 본문이 다시 세우기 전에 회차가 끊김) 얹을 곳이
     없다 — op 를 건드리지 않고 표지만 남겨, 다시 세운 편집본을 본 본문이 부른다. 결과 알림 칸은 그
-    회차에 다시 세우면서 비우는 칸이라 여기서 세면 사라진다."""
-    if BUFFER_KEY not in st.session_state:
+    회차에 다시 세우면서 비우는 칸이라 여기서 세면 사라진다. 제 「리비전 저장」 이 지금 편집본을
+    이미 썼는데 뒷정리 전에 끊긴 회차(`own_save_unsettled`)도 같다 — 여기 얹으면 다시 세울 때
+    사라진다.
+    미루는 것은 seq 를 적기 **전**이다(다시 부를 때 그 op 를 거르지 않게).
+
+    **제 저장 이음**: 저장 직전 편집본에 그렸으나 그 저장 뒤에 닿은 op(저장 직후 친 칸)는 버리지
+    않는다 — 다시 세운 편집본이 곧 그때 편집본의 저장본이라 행 id 를 저장 뒤 id 로 옮겨(지운 호기를
+    가리키면 뺀다) 지금 `base` 로 얹는다(`_carried`). 그 밖의 옛 `base` op 는 버리고 그 수를 알린다
+    — 남의 저장으로 다시 세운 출발점이면 그렇게 적는다."""
+    if BUFFER_KEY not in st.session_state or own_save_unsettled():
         st.session_state[OUTBOX_HELD_KEY] = True
         return
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
-    ops = _within_grade(this_session(ops, context.base))
+    ops = _carried(_within_grade(this_session(ops, context.base)), context.base)
     if not ops:
         return
     before = layout_memo_mark()
-    result = apply_ops(_grid_state(), ops, context)
+    result = apply_ops(_grid_state(), ops, context, dropped_toast=_dropped_toast(ops, context.base))
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
     _follow_view(result)
@@ -863,6 +879,38 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _carried(ops: list[dict[str, Any]], base: str) -> list[dict[str, Any]]:
+    """제 저장 직전 편집본(이음 표지 `froms`)에 그린 op 를 지금 편집본(`to` — 그 저장본)에 얹는 꼴로
+    옮긴다 — 행 id 는 저장 뒤 id 로(`moved_op`), `base` 는 지금 것으로. 저장에 이미 든 op(마운트별
+    seq — 이음 표지 `applied`)는 뺀다(넣기 · 붙여넣기가 두 번 들지 않게). 지운 호기를 가리키는
+    op 는 옛 `base` 그대로 두어 버린 수로 센다. 이음 표지가 지금 편집본의 것이 아니면 그대로."""
+    carry = own_save_carry()
+    if carry is None or carry.get("to") != base:
+        return ops
+    froms = set(carry.get("froms") or ())
+    ids, applied = carry.get("ids"), carry.get("applied")
+    moved: dict[str, str | None] = ids if isinstance(ids, dict) else {}
+    saved: dict[str, int] = applied if isinstance(applied, dict) else {}
+    result: list[dict[str, Any]] = []
+    for op in ops:
+        if op.get("base") == base or op.get("base") not in froms:
+            result.append(op)
+            continue
+        if int(op.get("seq") or 0) <= int(saved.get(str(op.get("mount")), 0)):
+            continue
+        rebased = moved_op(op, moved)
+        result.append(op if rebased is None else {**rebased, "base": base})
+    return result
+
+
+def _dropped_toast(ops: Sequence[Mapping[str, Any]], base: str) -> str:
+    """버릴 op(옛 `base`)의 까닭 글 — 남의 저장으로 다시 세운 출발점에서 온 것이 있으면 그 글."""
+    foreign = set(foreign_origins())
+    if any(op.get("base") != base and op.get("base") in foreign for op in ops):
+        return FOREIGN_DROPPED_TOAST
+    return DROPPED_TOAST
 
 
 def _within_grade(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1164,7 +1212,7 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     뒤에 끊기면 둘째 누름이 다시 되돌리지 않고 이번 누름이 빈손으로 끝날 뿐이다(다시 누르면
     된다)."""
     apply_outbox(context, layout)
-    if BUFFER_KEY not in st.session_state:
+    if BUFFER_KEY not in st.session_state or own_save_unsettled():
         return
     if press != current_generation(UNDO_PRESS_KEY) or just_written(UNDO_PRESS_KEY):
         return
@@ -1267,6 +1315,9 @@ def _save_revision(
     id_map = save_id_map(grid_index(frames[1], _saved_frames()[1], renames.units), frames[1])
     loaded, detail = grid_loaded_ids(), _detail_id()
     note = st.session_state.get(_NOTE_KEY)
+    # 저장 뒤에 닿을 이 편집본의 op(저장 직후 친 칸)를 저장본 위에 이을 표지 — DB 쓰기 **전에**
+    # 적는다.
+    stage_own_save_carry(id_map, _applied())
     try:
         message = save_equipment_buffer(
             repository,
@@ -1278,6 +1329,7 @@ def _save_revision(
             reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
+        settle_own_save_carry()
         _result(
             "error",
             admin_view.diagnostic_message(
@@ -1285,6 +1337,7 @@ def _save_revision(
             ),
         )
         return
+    settle_own_save_carry()
     if message == NOTHING_SAVED_MESSAGE:
         _result("info", message)
         return

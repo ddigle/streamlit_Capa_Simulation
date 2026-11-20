@@ -767,6 +767,32 @@ def move_ids(ids: Sequence[str], moved: Mapping[str, str | None]) -> tuple[str, 
     return tuple(dict.fromkeys(row_id for row_id in result if row_id))
 
 
+# 행 id 를 싣는 op 칸 — 하나(`id`)와 여럿(`ids`).
+_OP_ID_FIELDS: Final = ("id",)
+_OP_IDS_FIELDS: Final = ("ids",)
+
+
+def moved_op(op: Mapping[str, Any], moved: Mapping[str, str | None]) -> dict[str, Any] | None:
+    """op 의 행 id 를 `moved`(저장 뒤 id 지도 — `save_id_map`)로 옮긴 사본. 지도에 없는 id 는
+    그대로, 지운 호기(None)를 가리키면 None(얹을 줄이 없다)."""
+    result = dict(op)
+    for name in _OP_ID_FIELDS:
+        value = op.get(name)
+        if isinstance(value, str) and value in moved:
+            target = moved[value]
+            if target is None:
+                return None
+            result[name] = target
+    for name in _OP_IDS_FIELDS:
+        values = op.get(name)
+        if isinstance(values, list):
+            targets = [moved.get(item, item) if isinstance(item, str) else item for item in values]
+            if any(target is None for target in targets):
+                return None
+            result[name] = targets
+    return result
+
+
 def all_load_ids(
     master: pd.DataFrame, index: GridIndex, *, limit: int = GRID_ROW_LIMIT
 ) -> list[str]:
@@ -2988,11 +3014,15 @@ def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
 
 DELETE_TOAST: Final = "{count:,}대 지울 목록에 넣음"
 DELETE_NEW_TOAST: Final = "새 호기 {count:,}대 뺌"
-# base 가 바뀌는 때는 여럿이다(내 리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) —
-# 서비스는 그 까닭을 모르므로 가르지 않고 적는다.
+# base 가 바뀌어 버린 op 의 글 — 까닭은 화면이 가른다(`apply_ops` 의 `dropped_toast`). 제 「리비전
+# 저장」 직전 편집본에 그린 op 는 버리지 않고 저장본 위에 얹으므로(설비 마스터 탭 제 저장 이음) 그
+# 까닭은 적지 않는다.
 DROPPED_TOAST: Final = (
-    "편집본을 다시 세운 뒤라(리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) 그 "
-    "전에 보낸 고침 {count}건은 반영하지 않았습니다"
+    "편집본을 다시 세운 뒤라(모두 버리기·설비 시나리오 불러오기 등) 그 전에 보낸 고침 "
+    "{count}건은 반영하지 않았습니다"
+)
+FOREIGN_DROPPED_TOAST: Final = (
+    "다른 사용자가 저장해 편집본을 다시 세운 뒤라 그 전에 보낸 고침 {count}건은 반영하지 않았습니다"
 )
 UNDO_EMPTY_TOAST: Final = "되돌릴 고침이 없습니다"
 
@@ -3291,12 +3321,17 @@ OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
 
 def apply_ops(
-    state: GridState, ops: Sequence[Mapping[str, Any]], context: GridContext
+    state: GridState,
+    ops: Sequence[Mapping[str, Any]],
+    context: GridContext,
+    *,
+    dropped_toast: str = DROPPED_TOAST,
 ) -> GridApplied:
     """출납 op 를 차례대로 편집본에 얹는다(`pending_ops` 가 고른 것).
 
     `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 다시 세운 편집본
-    위에 옛 편집을 얹지 않는다(그 수는 결과 글 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
+    위에 옛 편집을 얹지 않는다(그 수는 결과 글 한 줄 — 글은 부르는 쪽이 까닭을 가려
+    `dropped_toast` 로 준다). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
     지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 배치 편집이 잠긴
     회차(`context.layout_lock`)면 이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 탭 제출과 같은 판정으로
     맞춘다(`locked_layout`). 내용이 그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
@@ -3335,7 +3370,7 @@ def apply_ops(
             # 이름을 바꾸면 행 조각을 든 앞 단계는 옛 이름을 지녀 버린다(그 단계까지 함께).
             work.undo = list(after_row_steps(work.undo))
     if work.dropped:
-        dropped = DROPPED_TOAST.format(count=work.dropped)
+        dropped = dropped_toast.format(count=work.dropped)
         work.toast = f"{work.toast} · {dropped}" if work.toast else dropped
     frames: Frames = (work.baseline, work.master, work.downtime)
     changed = any(work.changed) or work.overlay_changed or work.renames_changed

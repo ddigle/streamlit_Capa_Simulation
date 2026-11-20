@@ -44,6 +44,7 @@ from capa_simulation.components.write_guard import (
     held_notice,
     is_own_save,
     note_notice,
+    noted_notice,
     notice_marks,
     own_save_marks,
     remember_own_save,
@@ -225,6 +226,17 @@ GRID_DETAIL_KEY = "equipment_grid_detail_v1"
 # 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글} — 저장해도 남고(다음 호기를 이어 넣는다)
 # 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
 NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
+# 제 「리비전 저장」 이음 표지 — 저장 누름이 DB 쓰기 **전에** 적는 dict 칸(쓰기 뒤에는 그 dict 만
+# 고친다 — 끊겨도 남는다). 저장 직전 편집본에 그렸으나 그 저장 뒤에 닿은 표 op 를 버리지 않고 저장본
+# 위에 얹는 재료다(`carry_own_save_ops`).
+# {"from": 저장한 편집본 출발점, "ids": 저장 뒤 행 id 지도(`save_id_map` — 지운 호기 None),
+#  "applied": 마운트별 저장에 든 마지막 seq, "written": 쓰기가 됐는가, "froms": 이어 받는 옛 출발점,
+#  "to": 이어 받는 지금 출발점, "to_seeded": 그 편집본의 씨뿌린 세대}.
+OWN_SAVE_CARRY_KEY = "equipment_grid_own_save_carry_v1"
+# 남의 저장으로 다시 세운 편집본의 옛 출발점(최근 몇 개) — 그 출발점에서 온 op 를 버릴 때 그
+# 까닭으로 알린다.
+FOREIGN_ORIGINS_KEY = "equipment_grid_foreign_origins_v1"
+_FOREIGN_ORIGINS_LIMIT = 4
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
@@ -456,12 +468,15 @@ def _clear_editors() -> None:
         st.session_state.pop(f"{key}_applied_view", None)
 
 
-def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
+def reset_equipment_drafts(*, keep_fab: bool = False, keep_own_save_carry: bool = False) -> None:
     """새 저장본으로 돌아갈 때 페이지 draft와 설비 마스터 탭의 입력·편집표 delta를 함께 비운다.
 
     `keep_fab` 이면 미저장 FAB 전체 배치는 남긴다 — 설비 시나리오와 무관한 현행값이라 시나리오를
-    바꿔 불러와도 버릴 까닭이 없다.
+    바꿔 불러와도 버릴 까닭이 없다. `keep_own_save_carry` 는 제 「리비전 저장」 뒷정리만 준다 — 그
+    밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김)은 저장 직전 편집본의 op 를 얹지 않는다.
     """
+    if not keep_own_save_carry:
+        OWN_SAVE_CARRY.clear()
     _clear_editors()
     for key in (
         BASELINE_DRAFT_KEY,
@@ -529,10 +544,12 @@ def _bump_buffer_generation(tables: tuple[bool, bool, bool] = ALL_TABLES) -> Non
     st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
     if any(tables):
         current = table_generations()
-        st.session_state[TABLE_GENERATIONS_KEY] = (
-            current[0] + int(tables[0]),
-            current[1] + int(tables[1]),
-            current[2] + int(tables[2]),
+        TABLE_GENERATIONS.set(
+            (
+                current[0] + int(tables[0]),
+                current[1] + int(tables[1]),
+                current[2] + int(tables[2]),
+            )
         )
 
 
@@ -664,12 +681,8 @@ def equipment_buffer_generation() -> int:
 def table_generations() -> tuple[int, int, int]:
     """편집본 세 표(기존 보유대수, 설비 마스터, 비가동 일정)의 세대 — 그 표를 바꿀 수 있는
     쓰기에서만 오른다(`TABLE_GENERATIONS_KEY`). 꼴이 다르면 0 셋."""
-    value = st.session_state.get(TABLE_GENERATIONS_KEY)
-    if (
-        isinstance(value, tuple)
-        and len(value) == 3
-        and all(isinstance(item, int) for item in value)
-    ):
+    value = TABLE_GENERATIONS.peek()
+    if value is not None and len(value) == 3 and all(isinstance(item, int) for item in value):
         return value[0], value[1], value[2]
     return 0, 0, 0
 
@@ -677,6 +690,13 @@ def table_generations() -> tuple[int, int, int]:
 # 설비 마스터 탭 회차 메모(`GRID_MEMO_KEY`)의 창구 — 새 메모 칸(표 단위 오류 · 일정 확인 · 다른 표
 # 바뀐 행 수 · 칸 결과 재료)은 이 창구로 읽고 쓴다(옛 칸 결과 · 글 행렬 자리는 그대로).
 GRID_MEMO: Final = SessionSlot(GRID_MEMO_KEY, dict, dict)
+# 표별 세대 · 제 저장 이음 표지 · 남의 저장 옛 출발점 · 세운 세대 · 제 저장이 옮길 일정
+# 리비전의 창구.
+TABLE_GENERATIONS: Final = SessionSlot(TABLE_GENERATIONS_KEY, tuple)
+OWN_SAVE_CARRY: Final = SessionSlot(OWN_SAVE_CARRY_KEY, dict)
+FOREIGN_ORIGINS: Final = SessionSlot(FOREIGN_ORIGINS_KEY, tuple)
+_SEEDED_GENERATION: Final = SessionSlot(_SEEDED_GENERATION_KEY, int)
+_SAVED_SCHEDULE: Final = SessionSlot(SAVED_SCHEDULE_KEY, dict)
 # 저장본 사본의 쌍 토큰(`DRAFT_REVISION_KEY`) 읽기 창구.
 DRAFT_REVISION: Final = SessionSlot(DRAFT_REVISION_KEY, str)
 
@@ -841,6 +861,88 @@ def has_unsaved_equipment_edits() -> bool:
         and generation > seeded
         and generation != st.session_state.get(_CLEAN_GENERATION_KEY)
     )
+
+
+def stage_own_save_carry(ids: Mapping[str, str | None], applied: Mapping[str, int]) -> None:
+    """「리비전 저장」 누름이 DB 쓰기 **전에** 이음 표지를 적는다 — 지금 편집본 출발점, 저장 뒤 행
+    id 지도, 마운트별 저장에 든 마지막 seq. 쓰기는 `_save_equipment_frames` 가 이 dict 에 적는다."""
+    OWN_SAVE_CARRY.set(
+        {
+            "from": buffer_base(),
+            "ids": dict(ids),
+            "applied": {str(mount): int(seq) for mount, seq in applied.items()},
+            "written": False,
+            "froms": [],
+        }
+    )
+
+
+def settle_own_save_carry() -> None:
+    """저장 누름 콜백이 끝까지 돈 뒤 — 쓰지 않았으면(오류 · 고친 것 없음) 이음 표지를 걷는다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is None or carry.get("written") is not True:
+        OWN_SAVE_CARRY.clear()
+
+
+def _carry_for(base: str) -> dict[str, Any] | None:
+    """그 출발점에서 적은 이음 표지 dict(세션 칸의 그 객체) — 없거나 다른 출발점이면 None."""
+    carry = OWN_SAVE_CARRY.peek()
+    return carry if carry is not None and carry.get("from") == base else None
+
+
+def own_save_unsettled() -> bool:
+    """제 「리비전 저장」 이 지금 편집본을 이미 DB 에 썼는데 뒷정리(편집본 다시 세우기)가 아직이다 —
+    쓰기 뒤 다음 조작의 회차가 콜백을 끊은 사이(fastReruns). 이 편집본에 op 를 얹으면 다시 세울 때
+    사라지므로 받는 쪽은 다시 세운 뒤로 미룬다(`equipment_master_tab.apply_outbox`). 끊긴 저장이 새
+    일정 리비전을 써 세션을 다음 회차에 옮기는 사이(`SAVED_SCHEDULE_KEY` — 그 회차가 한 번 더 다시
+    세운다)도 같다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is None or carry.get("written") is not True:
+        return False
+    return carry.get("from") == buffer_base() or _SAVED_SCHEDULE.exists()
+
+
+def _own_carry_written_here() -> bool:
+    """이음 표지가 지금 편집본(뒷정리 전)에서 쓴 제 저장의 것인가."""
+    carry = _carry_for(buffer_base())
+    return carry is not None and carry.get("written") is True
+
+
+def own_save_carry() -> dict[str, Any] | None:
+    """다시 세운 편집본에 이어진 이음 표지(`to` 가 있는 것) — 없으면 None."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is not None and carry.get("written") is True and isinstance(carry.get("to"), str):
+        return carry
+    return None
+
+
+def foreign_origins() -> tuple[str, ...]:
+    """남의 저장으로 다시 세운 편집본의 옛 출발점(최근 것 몇 개)."""
+    value = FOREIGN_ORIGINS.peek()
+    return tuple(str(item) for item in value) if value is not None else ()
+
+
+def _bind_own_save_carry(*, replaced: bool, seeded_before: object, base_before: str) -> None:
+    """편집본을 다시 세운 회차의 이음 표지 — 제 저장 뒤 첫 다시 세움(앞 씨뿌림 세대가 없다)이나 그
+    편집본을 다시 세운 것(세대가 이어진 것 — 새 일정 리비전으로 세션을 옮긴 회차)이면 지금
+    출발점으로 잇고, 남의 저장이면 걷고 그 옛 출발점을 남의 저장으로 적는다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if replaced:
+        OWN_SAVE_CARRY.clear()
+        olds = [*foreign_origins(), base_before]
+        if carry is not None:
+            olds.extend(str(item) for item in [carry.get("from"), *carry.get("froms", [])] if item)
+        FOREIGN_ORIGINS.set(tuple(dict.fromkeys(olds))[-_FOREIGN_ORIGINS_LIMIT:])
+        return
+    if carry is None or carry.get("written") is not True:
+        return
+    if "to" in carry and carry.get("to_seeded") != seeded_before:
+        OWN_SAVE_CARRY.clear()
+        return
+    froms = [*carry.get("froms", []), *([carry["to"]] if "to" in carry else [carry["from"]])]
+    carry["froms"] = list(dict.fromkeys(str(item) for item in froms))
+    carry["to"] = buffer_base()
+    carry["to_seeded"] = _SEEDED_GENERATION.peek()
 
 
 def pop_drafts_replaced() -> bool:
@@ -1057,6 +1159,8 @@ def ensure_equipment_drafts(
         # 토큰이 **실제로 바뀐** 경우(다른 사람이 새 리비전을 저장)에만 옛 편집을 버리고 알린다.
         # 처음 세우는 회차(앞 토큰 없음)에 미리 쌓인 층 배치까지 지우면 그 편집이 사라진다.
         replaced = previous is not None and previous != token
+        base_before = buffer_base()
+        seeded_before = _SEEDED_GENERATION.peek()
         if replaced:
             st.session_state[DRAFTS_REPLACED_KEY] = True
         _clear_editors()
@@ -1138,6 +1242,9 @@ def ensure_equipment_drafts(
             _follow_saved_unit_renames(moved)
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+        _bind_own_save_carry(
+            replaced=replaced, seeded_before=seeded_before, base_before=base_before
+        )
         if reapplied is not None and reapplied.reapplied:
             # 다시 얹은 편집은 저장 안 한 편집이다 — 세운 세대보다 한 칸 올린다. 편집기가 적용한
             # 묶음 모양 승인은 다시 얹은 결과에서도 그 모양인 묶음만 새 이름으로 남긴다(위 stale
@@ -1198,6 +1305,11 @@ def _settle_own_save() -> _OwnSaveSettled | None:
         if len(pair) != 2 or pair[0] != expected or pair[1] == expected:
             continue
         message = held_notice(name)
+        if message is None and _own_carry_written_here():
+            # 창(`TRAILING_PRESS_SECONDS`)이 지났어도 이 편집본을 쓴 제 저장 누름의 이음 표지가
+            # 있으면 끊긴 제 저장이다 — 바쁜 서버에서 다음 회차가 늦게 와도 남의 저장으로 읽지
+            # 않는다.
+            message = noted_notice(name) or SAVED_AGAIN_MESSAGE
         if message is None:
             continue
         stored = pair[1]
@@ -2508,6 +2620,9 @@ def _save_equipment_frames(
     )
     own_name = f"{EQUIPMENT_SAVE_NAME}:{scenario_id}"
     expected = (request.base_common_revision_id, request.base_schedule_revision_id or "")
+    # 이음 표지(저장 누름이 적은 dict)는 쓰기 **전에** 잡아 두고 쓰기 뒤에는 그 dict 만 고친다 —
+    # 쓰기 뒤 세션 칸 접근은 다음 조작의 회차가 끊을 수 있다.
+    carry = _carry_for(buffer_base())
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     messages = notice_marks()
@@ -2534,9 +2649,13 @@ def _save_equipment_frames(
             raise
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
         # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.
+        if carry is not None:
+            carry["written"] = True
         moved = current[1] if current[1] and current[1] != expected[1] else None
         _after_equipment_save(scenario_id, moved)
         return held_notice(own_name) or SAVED_AGAIN_MESSAGE
+    if carry is not None and _wrote_anything(result):
+        carry["written"] = True
     if result.wrote_revision:
         # 저장된 값은 이 쓰기의 결과다 — 쓴 뒤 저장소를 다시 읽으면 그 사이 남의 저장이 짝에 들어가
         # 남의 저장 뒤 충돌을 제 저장으로 알아본다(쓰기 잠금 안의 결과라 그대로 지금 최신이다).
@@ -2592,7 +2711,8 @@ def _after_equipment_save(
     # 다음 설비 마스터 탭 회차에 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다).
     # 버리기·남의 저장은 이름이 돌아가므로 버린다.
     followed = st.session_state.get(FOLLOWED_FILTERS_KEY)
-    reset_equipment_drafts()
+    # 이 저장이 쓴 편집본의 이음 표지만 남긴다 — 다음 다시 세움이 그 출발점을 잇는다.
+    reset_equipment_drafts(keep_own_save_carry=_own_carry_written_here())
     if followed:
         st.session_state[FOLLOWED_FILTERS_KEY] = followed
     if schedule_revision_id is not None:

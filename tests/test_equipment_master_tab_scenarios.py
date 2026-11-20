@@ -70,6 +70,7 @@ from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services import equipment_grid as eg
 from capa_simulation.services.korean_particle import object_particle
 
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
@@ -622,7 +623,8 @@ def test_an_outbox_from_before_another_users_save_is_dropped_and_told(
     }
     send(app, emg.GRID_KEY, "outbox", outbox)
     assert _buffer_value(app, "EQ-01", "담당자") != "옛 고침"
-    assert "반영하지 않았습니다" in grid_results(app, "warning")[-1]
+    # 남의 저장으로 다시 세운 출발점이라 그 까닭으로 적는다(제 저장 직후 칸은 버리지 않고 얹는다).
+    assert grid_results(app, "warning")[-1] == eg.FOREIGN_DROPPED_TOAST.format(count=1)
 
 
 def test_a_save_pressed_right_after_another_common_save_says_the_reopen_path(
