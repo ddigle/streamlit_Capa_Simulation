@@ -56,21 +56,18 @@ def test_the_head_draws_without_opening_any_database(monkeypatch: pytest.MonkeyP
 def test_the_table_of_contents_follows_the_sidebar_declaration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """하위 화면 목차는 사이드바 선언 차례 그대로(지금 여덟 — 제약 시뮬레이션까지)이고, 화면마다
-    「보는 것」 한 줄이 붙는다. 선언에 화면이 늘었는데 한 줄을 적지 않으면 화면이 `KeyError` 로 멈춰
-    여기서 걸린다."""
+    """하위 화면 목차는 사이드바 선언 차례 그대로(지금 여덟 — 제약 시뮬레이션까지)이고, 카드는
+    화면 이름 링크 하나다 — 그 화면이 보는 것은 카드 밑 회색 줄이 아니라 Guide 「이 영역의 화면」
+    이다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39)."""
     app, _ = _run_without_databases(monkeypatch)
     captions = [str(caption.value) for caption in app.caption]
 
     links = [caption[len(FALLBACK) :] for caption in captions if caption.startswith(FALLBACK)]
     # 세 영역 비교의 Static·Dynamic 「열기」 둘 + 하위 화면 전부(선언 차례).
     assert links == ["열기", "열기", *(spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES)]
-    for spec in EXECUTION_MANAGEMENT_SUBPAGES:
-        index = captions.index(f"{FALLBACK}{spec.title}")
-        summary = captions[index + 1]
-        assert summary.strip(), spec.path
-        # 목차 글은 화면 이름으로 말한다 — 내부 표 이름이 보이지 않는다.
-        assert "RQ_" not in summary, spec.path
+    # 캡션은 링크 물러섬과 「지금 여기」 뿐이다 — 카드 밑 「보는 것」 줄이 없다.
+    others = [caption for caption in captions if not caption.startswith(FALLBACK)]
+    assert others == [":material/my_location: 지금 여기"], others
     # 「부서별 Gap · A/Item」 · 로드맵은 본문 머리 접힘이 아니라 Guide 첫 단락이다(2026-11-09 사용자
     # 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-LAY-08 · UI-TXT-01).
     assert not any("부서별 Gap · A/Item —" in caption for caption in captions)
@@ -85,8 +82,8 @@ def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
     app, _ = _run_without_databases(monkeypatch)
     captions = [str(caption.value) for caption in app.caption]
 
-    # 캡션은 링크 물러섬 · 목차 「보는 것」 한 줄 · 「지금 여기」 다 — 머리 설명 줄과 영역
-    # 뜻풀이(「…입니다.」), 차례 · 다음 판 문장은 자리에 없다.
+    # 캡션은 링크 물러섬 · 「지금 여기」 다 — 머리 설명 줄과 영역 뜻풀이(「…입니다.」), 차례 ·
+    # 다음 판 문장, 목차 「보는 것」 줄은 자리에 없다.
     for caption in captions:
         assert "합니다." not in caption and "입니다." not in caption, caption
     assert not any("다음 판에서" in caption for caption in captions)
@@ -135,3 +132,25 @@ def test_the_guide_defines_the_three_areas() -> None:
     for spec in EXECUTION_MANAGEMENT_SUBPAGES:
         # 목차는 상태 접미(`(구현중)` 등)를 뗀 이름으로 적는다.
         assert spec.title.split(" (")[0].split(" 실적")[0] in guide, spec.path
+
+
+def test_the_guide_says_what_each_subpage_looks_at() -> None:
+    """목차 카드 밑에 서던 「보는 것」 줄의 뜻은 Guide 「이 영역의 화면」 목록이 말한다 — 화면마다
+    한 줄이고 카드에 화면 이름만 있다는 것도 그 절 머리가 말한다(설계 규칙 UI-TXT-02)."""
+    guide = " ".join(load_guide("execution_management").replace("**", "").split())
+    section = guide[guide.index("#### 이 영역의 화면") : guide.index("#### 가용대수를 부르는 말")]
+    assert "목차 카드에는 화면 이름만 있고 누르면 그 화면이 열립니다." in section
+    for text in (
+        "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지",
+        "그 달을 메울 호기·기간",
+        "단축이 필요한 공정 전부의 진척 관리 한 페이지",
+        "기한 임박·이행 지연",
+        "공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면",
+        "개조 비가동",
+        "설비 일정 기준 가용대수",
+        "Static 대비 일정",
+        "입력 비가동대수",
+        "셋업 이행을 공간·호기로 봅니다(반입 전·지연·미확인 표식)",
+        "기준정보 대비 실적 Gap 과 개선 우선순위",
+    ):
+        assert text in section, text

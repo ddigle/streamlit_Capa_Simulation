@@ -750,8 +750,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 「데이터 Error」 마크 + `ST-20`(`data_error_mark.render_data_error`).
 - `app_pages/execution_management.py` — `실행 관리` 머리. 세 영역 비교·하위 화면 목차를 데이터를 읽지 않고 그린다(정의·업무 활용
   목적·부서별 Gap · A/Item·로드맵은 본문 머리가 아니라 Guide 첫 단락 — 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」).
-  - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 하위 화면이 늘면 `SUBPAGE_SUMMARIES` 도
-    고친다. 설명은 `guides/execution_management.md`.
+  - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 목차 카드는 화면 이름 링크 하나이고 화면마다
+    보는 것은 카드 밑 회색 줄이 아니라 Guide 「이 영역의 화면」 이다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39) — 하위 화면이
+    늘면 그 목록에 한 줄을 더한다. 설명은 `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은

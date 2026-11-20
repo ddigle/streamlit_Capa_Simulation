@@ -5,14 +5,15 @@
 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정) — Static Capa 는 약속, 실행 관리는 그 약속의
 이행, Dynamic Capa 는 실적으로 다시 낸 Capa 다. 이 화면은 실행 관리 그룹의 입구다.
 
-**첫 판은 데이터를 읽지 않는다.** 세 영역 비교와 하위 화면 목차(링크와 그 화면이 보는 것 한 줄)만
-그린다. 시나리오·설비 DB 를 열지 않으므로 사이드바 공통 조건 줄도
-조건 카드도 없다(`navigation.EXECUTION_MANAGEMENT`). 이행 현황판 숫자는 다음 판에서 들어온다 —
+**첫 판은 데이터를 읽지 않는다.** 세 영역 비교와 하위 화면 목차(화면 이름 링크 카드)만 그린다.
+시나리오·설비 DB 를 열지 않으므로 사이드바 공통 조건 줄도 조건 카드도 없다
+(`navigation.EXECUTION_MANAGEMENT`). 이행 현황판 숫자는 다음 판에서 들어온다 —
 약속 기준선을 어느 공식버전으로 볼지 같은 질문을 그 기능 설계 때 정한다. 그 칸은 지금 점선 자리
 하나다(설계 규칙 UI-LAY-10 — `module_slot.slot_html`).
 
-영역의 뜻풀이 · 목차 차례 같은 설명 문장은 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 · 02) — 영역
-이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말이 Guide 에 있다. 실행 관리의 정의 · 업무 활용
+영역의 뜻풀이 · 목차 차례 · 하위 화면이 보는 것 같은 설명 문장은 자리에 늘 두지 않는다(설계 규칙
+UI-TXT-01 · 02) — 영역 이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말과 화면마다 보는 것은 Guide
+「이 영역의 화면」 에 있다. 목차 카드는 화면 이름 링크 하나다. 실행 관리의 정의 · 업무 활용
 목적 · 부서별 Gap · A/Item · 로드맵은 본문 머리에 접어 두지 않고 Guide 첫 단락이 말한다(설계 규칙
 UI-LAY-08 · UI-TXT-01 — 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」).
 """
@@ -32,27 +33,6 @@ from capa_simulation.navigation import (
     STATIC_CAPA,
     PageSpec,
 )
-
-# 하위 화면이 **보는 것** 한 줄. 차례는 사이드바 선언(`EXECUTION_MANAGEMENT_SUBPAGES`)을 따르고,
-# 선언에 화면이 늘면 이 표도 함께 고친다(`tests/test_execution_management_page.py` 가 맞댄다).
-SUBPAGE_SUMMARIES: dict[str, str] = {
-    "app_pages/process_capa_detail.py": (
-        "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지 — 공식 부족 → 메울 호기·기간"
-    ),
-    "app_pages/required_shortening.py": (
-        "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 진척 보드 · 기한 임박 · 이행 지연"
-    ),
-    "app_pages/constraint_simulation.py": (
-        "공정 하나에 미래 제약이 생기면 — 제약 제품 먼저, 기존 제품 확보율 영향과 개조 비가동"
-    ),
-    "app_pages/available_equipment_status.py": (
-        "설비 마스터 편집 · 설비 일정 기준 가용대수 · Static 대비 일정 · 입력 비가동(Preference)"
-    ),
-    "app_pages/space_status.py": "셋업 이행을 공간·호기로 — 반입 전·지연·미확인 표식",
-    "app_pages/actual_efficiency.py": "효율 기준 대비 실적 Gap 과 개선 우선순위",
-    "app_pages/actual_upeh.py": "UPEH 기준 대비 실적 Gap 과 개선 우선순위",
-    "app_pages/yield_actual.py": "수율 기준 대비 실적 Gap 과 개선 우선순위",
-}
 
 # 세 영역 한 줄 비교 — (머리 선언, 한 낱말, 뜻풀이 — 영역 이름 줄의 풍선). 이 화면 자신은 링크 대신
 # 「지금 여기」다.
@@ -110,7 +90,6 @@ def _render_subpages() -> None:
             for column, spec in zip(columns, row, strict=False):
                 with column.container(border=True):
                     render_page_link(spec.path, label=spec.title, icon=spec.icon)
-                    st.caption(SUBPAGE_SUMMARIES[spec.path])
 
 
 # 사이드바 상자 라벨(`EXECUTION_MANAGEMENT.title`)과 같은 글자다 — 두 제목이 같다는 계약은
