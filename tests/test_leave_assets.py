@@ -202,3 +202,149 @@ def test_an_editor_flushes_its_batch_on_the_leaving_signal_and_stays_busy_until_
     assert out["idleSignal"] == [0, False]
     assert out["listeners"] == [2, 2]
     assert out["dropped"] == [0, 0]
+
+
+_SCOPE_RUN_RUNNER = """
+(() => {
+  let now = 0
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  // DOM 대역 — Streamlit 뿌리(회차 표지), 화면 탭 줄(구역 밖 기준 요소), 구역 칸 안 낡음 요소.
+  const makeRoot = () => ({ state: 'notRunning', getAttribute(name) { return this.state } })
+  let root = makeRoot()
+  let tabs = { stale: 'false', getAttribute() { return this.stale } }
+  let insideStale = false
+  const marks = new Set()
+  const doc = {
+    documentElement: {
+      setAttribute: (name) => marks.add(name),
+      removeAttribute: (name) => marks.delete(name),
+      hasAttribute: (name) => marks.has(name),
+    },
+    querySelector: (selector) => {
+      if (selector === '[data-testid="stApp"]') return root
+      if (selector === SCOPE_OUTSIDE) return tabs
+      if (selector === SCOPE_STALE) return insideStale ? {} : null
+      return null
+    },
+  }
+  let observers = 0
+  let disconnects = 0
+  let notify = () => {}
+  class FakeObserver {
+    constructor(fn) { this.fn = fn }
+    observe(target, options) {
+      observers += 1
+      notify = this.fn
+      this.options = options
+    }
+    disconnect() { disconnects += 1 }
+  }
+  const win = { MutationObserver: FakeObserver, setTimeout, clearTimeout }
+  const flip = (state) => { root.state = state; notify() }
+  const marked = () => marks.has(SCOPE_RUN_ATTRIBUTE)
+  const out = {}
+  out.verdicts = [
+    scopeRunVerdict(true, false, true),
+    scopeRunVerdict(true, true, true),
+    scopeRunVerdict(true, false, false),
+    scopeRunVerdict(true, null, true),
+    scopeRunVerdict(false, false, true),
+  ]
+  watchScopeRuns(win, doc)
+  watchScopeRuns(win, doc)
+  out.once = observers
+  // 편집기 구역 회차 — 탭 줄은 낡음이 아니고 구역 칸 안만 낡음이다. 끝나면 실행 표시 전이 뒤
+  // 걷는다.
+  insideStale = true
+  flip('running')
+  out.scope = marked()
+  flip('notRunning')
+  out.lingers = marked()
+  advance(now + SCOPE_RUN_LINGER_MS)
+  out.cleared = marked()
+  // 앱 전체 회차 — 그 순간 탭 줄도 낡음이다.
+  tabs.stale = 'true'
+  flip('running')
+  out.app = marked()
+  flip('notRunning')
+  // 다른 프래그먼트(사이드바 조건 칸 등) — 구역 칸 안에 낡음이 없다.
+  tabs.stale = 'false'
+  insideStale = false
+  flip('running')
+  out.otherFragment = marked()
+  flip('notRunning')
+  // 구역 회차가 본문 뒤에서 앱 전체로 올라감 — 걷기 전에 선 앱 전체 회차는 곧바로 걷는다.
+  insideStale = true
+  flip('running')
+  flip('notRunning')
+  advance(now + 80)
+  tabs.stale = 'true'
+  flip('running')
+  out.escalated = marked()
+  advance(now + 1000)
+  out.escalatedLater = marked()
+  flip('notRunning')
+  // 탭 줄이 서지 않은 화면은 판정하지 않는다.
+  tabs = null
+  flip('running')
+  out.noTabs = marked()
+  flip('notRunning')
+  // Streamlit 뿌리가 바뀌면 다시 건다.
+  root = makeRoot()
+  watchScopeRuns(win, doc)
+  out.rebound = [observers, disconnects]
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_scope_only_run_marks_the_document_and_an_app_run_does_not() -> None:
+    """편집기 구역만 도는 회차 동안 문서 뿌리에 표지를 단다 — 회차 표지가 「돈다」 로 바뀐 순간 구역
+    밖 기준 요소(화면 탭 줄)가 낡음이 아니고 구역 칸 안에 낡음 요소가 있을 때다. 앱 전체 회차(탭
+    줄도 낡음) · 다른 프래그먼트 회차 · 탭 줄이 없는 화면은 달지 않는다. 회차가 끝나면 실행 표시가
+    사라지는 전이 뒤 걷고, 그 사이 선 앱 전체 회차는 곧바로 걷는다. 지킴이는 문서에 하나다."""
+    prelude = "\n".join(
+        [_section(LEAVE_JS, "capa-scope-run"), _section(LEAVE_JS, "capa-scope-run-window")]
+    )
+    out = run_js_json(prelude + "\n" + _SCOPE_RUN_RUNNER, what="구역 회차 표지 JS 시험")
+
+    assert out["verdicts"] == [True, False, False, False, False]
+    assert out["once"] == 1
+    assert [out["scope"], out["lingers"], out["cleared"]] == [True, True, False]
+    assert out["app"] is False and out["otherFragment"] is False
+    assert out["escalated"] is False and out["escalatedLater"] is False
+    assert out["noTabs"] is False
+    assert out["rebound"] == [2, 1]
+
+
+def test_the_scope_run_marks_share_the_python_names_and_the_tab_strip_installs_the_watch() -> None:
+    """구역 칸 접두 · 문서 표지 · 구역 밖 기준 요소는 파이썬(`fragment_scope` · `app_header`)과 같은
+    글이고, 화면 탭 줄이 그릴 때마다 지킴이를 부른다(문서에 하나). 머리 띠 스타일이 구역 회차 규칙을
+    진행 막대 자리 규칙 앞에 싣는다."""
+    from capa_simulation.components import app_header, fragment_scope
+
+    assert f"const SCOPE_BOX_PREFIX = '{fragment_scope.SCOPE_BOX_PREFIX}'" in LEAVE_JS
+    assert f"const SCOPE_RUN_ATTRIBUTE = '{fragment_scope.SCOPE_RUN_ATTRIBUTE}'" in LEAVE_JS
+    assert f"const SCOPE_OUTSIDE = '{app_header.PAGE_TABS_SELECTOR}'" in LEAVE_JS
+    tabs_js = (page_tabs._ASSETS / "page_tabs.js").read_text(encoding="utf-8")
+    assert "watchScopeRuns(window, document)" in tabs_js
+    header = app_header._header_css()
+    assert fragment_scope.SCOPE_RUN_STYLE in header
+    assert header.index(fragment_scope.SCOPE_RUN_STYLE) < header.index(
+        app_header._status_slot_css()
+    )

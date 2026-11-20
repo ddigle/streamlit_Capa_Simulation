@@ -748,6 +748,8 @@ export default function (component) {
     S.runWatch.observe(appRoot, { attributes: true, attributeFilter: ['data-test-script-state'] })
     S.runRoot = appRoot
   }
+  // 편집기 구역만 도는 회차의 실행 표시 · 낡음 흐림을 감추는 문서 표지(`leave.js` 의 `<capa-scope-run-window>` — 문서에 하나).
+  watchScopeRuns(window, document)
 
   setAttr(nav, 'aria-label', text.nav || '')
   const pending = (data.palette && data.palette.pending) || ''

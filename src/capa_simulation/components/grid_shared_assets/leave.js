@@ -77,3 +77,58 @@ function joinLeaving(win, hooks) {
   return handle
 }
 // </capa-leave-window>
+
+// <capa-scope-run>
+// 편집기 구역 회차 판정(순수). Streamlit 1.63 은 회차가 돌기 시작한 순간 앱 전체 회차면 모든 요소를, 프래그먼트 회차면 그
+// 프래그먼트 요소만 낡음(`data-stale`)으로 친다. 그래서 구역 밖 기준 요소(머리 띠 아래 화면 탭 줄 — 프래그먼트 밖)가 낡음이
+// 아니고(`outsideStale` 거짓) 구역 칸(`.st-key-capa_scope_…` — 파이썬 `fragment_scope.SCOPE_BOX_PREFIX`) 안에 낡음 요소가
+// 있으면(`insideStale`) 편집기 구역만 도는 회차다. 기준 요소가 없으면(`null` — 탭 줄이 서지 않은 화면) 판정하지 않는다.
+const SCOPE_BOX_PREFIX = 'capa_scope_'
+const SCOPE_RUN_ATTRIBUTE = 'data-capa-scope-run'
+const SCOPE_OUTSIDE = '.st-key-page_tabs_strip'
+const SCOPE_STALE = '[class*="st-key-' + SCOPE_BOX_PREFIX + '"] [data-stale="true"]'
+// 회차가 끝난 뒤 표지를 걷기까지 — Streamlit 실행 표시가 사라지는 전이(200ms) 동안 다시 보이지 않게.
+const SCOPE_RUN_LINGER_MS = 250
+function scopeRunVerdict(running, outsideStale, insideStale) {
+  return Boolean(running) && outsideStale === false && Boolean(insideStale)
+}
+// </capa-scope-run>
+
+// <capa-scope-run-window>
+// 편집기 구역만 도는 회차 동안 문서 뿌리(`<html>`)에 `SCOPE_RUN_ATTRIBUTE` 를 단다 — 머리 띠 스타일(파이썬
+// `fragment_scope.SCOPE_RUN_STYLE`)이 그동안 실행 표시(달리는 사람 · Stop)와 구역 칸 안 낡음 흐림을 감춘다. 앱 전체 회차 ·
+// 연결 끊김은 그대로다. 판정은 회차 표지(`data-test-script-state`)가 「돈다」 로 바뀐 순간 한 번이다 — 그 순간에는 이번 회차가
+// 보낼 요소가 아직 하나도 오지 않았다. 문서에 지킴이 하나(`window.__capaScopeRun`)이고, Streamlit 뿌리가 바뀌었으면 다시 건다.
+function watchScopeRuns(win, doc) {
+  const root = doc.querySelector('[data-testid="stApp"]')
+  if (!root || typeof win.MutationObserver !== 'function') return
+  const old = win.__capaScopeRun
+  if (old && old.root === root) return
+  if (old && old.observer) old.observer.disconnect()
+  const watch = { root, observer: null, timer: 0 }
+  const mark = doc.documentElement
+  const running = () => {
+    const state = root.getAttribute('data-test-script-state')
+    return state === 'running' || state === 'rerunRequested'
+  }
+  const update = () => {
+    if (running()) {
+      win.clearTimeout(watch.timer)
+      watch.timer = 0
+      const outside = doc.querySelector(SCOPE_OUTSIDE)
+      const outsideStale = outside ? outside.getAttribute('data-stale') === 'true' : null
+      if (scopeRunVerdict(true, outsideStale, doc.querySelector(SCOPE_STALE) !== null)) mark.setAttribute(SCOPE_RUN_ATTRIBUTE, '')
+      else mark.removeAttribute(SCOPE_RUN_ATTRIBUTE)
+      return
+    }
+    if (!mark.hasAttribute(SCOPE_RUN_ATTRIBUTE) || watch.timer) return
+    watch.timer = win.setTimeout(() => {
+      watch.timer = 0
+      if (!running()) mark.removeAttribute(SCOPE_RUN_ATTRIBUTE)
+    }, SCOPE_RUN_LINGER_MS)
+  }
+  watch.observer = new win.MutationObserver(update)
+  watch.observer.observe(root, { attributes: true, attributeFilter: ['data-test-script-state'] })
+  win.__capaScopeRun = watch
+}
+// </capa-scope-run-window>

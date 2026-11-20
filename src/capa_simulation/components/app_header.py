@@ -97,6 +97,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.alerts import MARKER_ATTRIBUTE
+from capa_simulation.components.fragment_scope import SCOPE_RUN_STYLE
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
@@ -553,6 +554,9 @@ _MEASURED_HEADER_RULES = """
 #   15rem 과 같은 틈)이고, 막대가 떠 있는 동안 두 줄 최대 폭은 툴바 폭 + 막대 칸 폭 + 62px(옛
 #   33.5rem · 25rem 의 셈)을 비운다(접으면 + 97px). 가이드 유무로 가르던 10.5rem 갈래도 실측이
 #   대신한다.
+# - 편집기 구역만 도는 회차(`fragment_scope.SCOPE_RUN_STYLE` — 문서 뿌리 표지를 `leave.js` 가
+#   단다)에도 실행 표시를 감추고 구역 칸 안 낡음 흐림을 덮는다. 진행 막대는 HOME 만 쓰고 프래그먼트
+#   밖 자리라 구역 회차에 서지 않는다. 그 규칙은 머리 띠 규칙과 진행 막대 자리 규칙 사이에 붙는다.
 # 선택자는 1.63 의 `data-testid`(`stProgress`·`stMarkdownContainer`·`stProgressBarTrack`·
 # `stStatusWidget`·`stStatusWidgetRunningIcon`)와 `role="progressbar"` 다 — 판올림 뒤 HOME 을 새로
 # 읽어 막대가 띠에 서는지, 오래 도는 실행에서 달리는 사람이 막대와 겹치지 않는지 본다.
@@ -815,6 +819,7 @@ def _header_css(
         )
         + _NARROW_HEADER_RULES
         + _MEASURED_HEADER_RULES
+        + SCOPE_RUN_STYLE
         + _status_slot_css()
         + _status_slot_css(_MEASURED_STATUS_SLOT_TEMPLATE)
         + narrow
