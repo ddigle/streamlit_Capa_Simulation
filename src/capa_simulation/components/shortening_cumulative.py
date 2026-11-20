@@ -83,6 +83,7 @@ from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_shortening_progress_log,
 )
+from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.services.required_shortening import level_percent
 from capa_simulation.services.shortening_progress_log import (
     PROGRESS_DAYS_MAX,
@@ -673,8 +674,9 @@ def _fill_help(total: ScreenTotal | None, this_week: ProgressWeek) -> str:
         return "기준선과 같은 까닭으로 지금 화면 값은 넣지 않습니다 — " + total.refusal
     if _days_in_range(total.days) is None:
         return (
-            f"지금 화면 합계 {_days(total.days)}이 적을 수 있는 위끝 {_days(PROGRESS_DAYS_MAX)}을 "
-            "넘어 넣지 않습니다 — 손으로 적습니다."
+            f"지금 화면 합계 {with_subject_particle(_days(total.days))} 적을 수 있는 위끝 "
+            f"{with_object_particle(_days(PROGRESS_DAYS_MAX))} 넘어 넣지 않습니다 — "
+            "손으로 적습니다."
         )
     scope = "고른 공정" if total.selected else "맞댄 공정"
     return (
