@@ -337,28 +337,31 @@ def _revision_count(path: Path) -> int:
 
 
 @pytest.mark.parametrize("first_cell", ["common", "schedule"])
-@pytest.mark.parametrize("timing", ["after-cut", "while-writing"])
+@pytest.mark.parametrize("timing", ["after-cut", "after-cut-late", "while-writing"])
 def test_pressing_save_again_keeps_the_cell_typed_while_my_save_wrote(
     tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, timing: str, first_cell: str
 ) -> None:
     """첫 「리비전 저장」 이 쓰는 사이 친 칸이 옛 편집본에 얹힌다. 화면에 저장 결과가 없고 「저장 전
-    변경」 이 그대로라 한 번 더 누른다 — 첫 콜백이 쓰기 뒤 끊긴 뒤(`after-cut`)든 아직 쓰는
-    중(`while-writing` — 둘째 누름의 회차가 다른 스레드로 선다)이든. 둘째 누름은 새로 쓰지 않고 첫
-    저장을 잇는다. 그 누름이 이음 표지를 새로 적으면 쓰는 사이 친 칸의 seq 가 「저장에 든 것」 으로
-    들어가 다시 세운 편집본에 얹히지 않았다."""
+    변경」 이 그대로라 한 번 더 누른다 — 첫 콜백이 쓰기 뒤 끊긴 뒤(`after-cut` — 알림 창 안이면
+    `save_once` 가 첫 결과를 돌려주고, 창을 지난 `after-cut-late` 는 저장소가 거부한 것을 제 저장
+    짝으로 알아본다)든 아직 쓰는 중(`while-writing` — 둘째 누름의 회차가 다른 스레드로 선다)이든.
+    둘째 누름은 새로 쓰지 않고 첫 저장을 잇는다. 그 누름이 이음 표지를 새로 적으면 쓰는 사이 친
+    칸의 seq 가 「저장에 든 것」 으로 들어가 다시 세운 편집본에 얹히지 않았다."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     cells = _FIRST_CELLS[first_cell]
     _late_cell_while_writing(app, grid, monkeypatch, cells)
     revisions = _revision_count(path)
 
-    if timing == "after-cut":
+    if timing.startswith("after-cut"):
         _first_callback(
             app,
             monkeypatch,
             "_save_revision",
             cut_after=(DuckDBEquipmentRepository, "save_equipment"),
         )
+        if timing == "after-cut-late":
+            monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
         app.button(key=SAVE_BUTTON_KEY).click().run()
     else:
         app.button(key=SAVE_BUTTON_KEY).click()
