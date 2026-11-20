@@ -1026,6 +1026,7 @@ export default function (component) {
       resendLost(open)
       return
     }
+    const since = S.queue.flight !== null ? S.queue.flight.at : -Infinity
     const next = settleSelect(S.queue, S.data.active, now, BUSY_MS, open, running, MOVED_GRACE_MS)
     if (S.queue.flight !== null) {
       S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
@@ -1040,7 +1041,7 @@ export default function (component) {
       return
     }
     const opened = waited !== null && waited.id === next ? waited.opened : null
-    leaveThen(item, (chosen) => sendSelect(chosen, opened))
+    leaveThen(item, (chosen) => sendSelect(chosen, opened), since)
   }
   // 보낸 고르기가 서버에 닿지 않았다(`lostSelect`) — 그 사이 누른 마지막 탭, 없으면 그 고르기를 한 번 다시 보낸다
   // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다(떠나기 글이 그대로일 때). 그 사이 편집기에 쓴
@@ -1057,7 +1058,7 @@ export default function (component) {
       return
     }
     const opened = !target.again && waited !== null && waited.id === target.id ? waited.opened : null
-    leaveThen(item, (chosen) => sendSelect(chosen, opened, lost.leave, target.again))
+    leaveThen(item, (chosen) => sendSelect(chosen, opened, lost.leave, target.again), lost.at)
   }
   const appRunning = () => {
     const root = document.querySelector(APP_ROOT)
@@ -1124,12 +1125,14 @@ export default function (component) {
     return !pending
   }
   // 기다리던 누름(`settle`)과 닿지 않아 다시 보내는 고르기(`resendLost`)도 화면을 떠난다 — 누르는 자리(`select`)처럼 떠나기
-  // 신호를 쏘고, 명부의 편집기가 busy 거나 편집표에서 막 손을 뗐으면(지금 초점 · 마지막 입력) 붙든 뒤 `send` 를 부른다. 기다리는
-  // 동안 쓴 편집이 묶음 타이머에 남은 채 옮기면 그 op 는 부품이 내려가며 말없이 사라진다. 붙든 동안 그 탭이 닫혔거나 지금 탭이
-  // 됐으면 보내지 않는다.
-  const leaveThen = (item, send) => {
+  // 신호를 쏘고, 명부의 편집기가 busy 거나 편집표에서 막 손을 뗐으면 붙든 뒤 `send` 를 부른다. 기다리는 동안 쓴 편집이 묶음
+  // 타이머에 남은 채 옮기면 그 op 는 부품이 내려가며 말없이 사라진다. 막 손을 뗌은 지금 편집표 초점이거나 앞 고르기를 보낸
+  // 때(`since`) 뒤의 편집표 입력이 `EDIT_MS` 안인 것이다 — 그 전 입력은 앞 누름의 붙들기가 이미 기다렸다. 붙든 동안 그 탭이
+  // 닫혔거나 지금 탭이 됐으면 보내지 않는다.
+  const leaveThen = (item, send, since) => {
     const pending = leaving()
-    if (!pending && !editPending(Date.now(), S.editAt, S.gridFocused, EDIT_MS)) {
+    const typed = S.gridFocused || (S.editAt > since && editPending(Date.now(), S.editAt, false, EDIT_MS))
+    if (!pending && !typed) {
       send(item)
       return
     }

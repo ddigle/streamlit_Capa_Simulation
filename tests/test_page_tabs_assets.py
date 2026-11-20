@@ -381,7 +381,7 @@ def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() ->
     settle = JS[JS.index("  function settle() {") :]
     settle = settle[: settle.index("\n  }\n")]
     assert "const opened = waited !== null && waited.id === next ? waited.opened : null" in settle
-    assert "leaveThen(item, (chosen) => sendSelect(chosen, opened))" in settle
+    assert "leaveThen(item, (chosen) => sendSelect(chosen, opened), since)" in settle
     assert settle.index("if (S.queue.flight !== null) {") < settle.index("S.waitOpen = null")
     link = JS[JS.index("S.onLink = (event) => {") :]
     link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
@@ -790,7 +790,7 @@ def test_the_lost_select_check_watches_the_run_mark_and_resends_without_asking_a
     resend = JS[JS.index("  function resendLost(open) {") :]
     resend = resend[: resend.index("\n  }\n")]
     assert "resendTarget(S.queue, S.data.active, open)" in resend
-    assert "sendSelect(chosen, opened, lost.leave, target.again)" in resend
+    assert "sendSelect(chosen, opened, lost.leave, target.again), lost.at)" in resend
     watch = JS[JS.index("const appRoot = document.querySelector(APP_ROOT)") :]
     watch = watch[: watch.index("\n  }\n")]
     assert "new MutationObserver(() => markRun(S.run, readRun(), Date.now()))" in watch
@@ -2572,6 +2572,28 @@ _QUEUED_LEAVE_RUNNER = """
   advance(4100)
   out.queuedAfter = log.slice()
   E.handle.drop()
+
+  // 다시 보냄 — 편집표(glide) 입력이 앞 고르기를 보낸 뒤면 붙들고(명부 밖이라 전처럼 0.4초), 그 전
+  // 입력(앞 누름의 붙들기가 이미 기다림)이면 곧바로 보낸다.
+  log = []
+  T = strip(log, 6000)
+  E = editor(log)
+  lose(T)
+  T.S.editAt = 6300
+  advance(6700)
+  T.settle()
+  advance(7300)
+  out.glideAfter = log.slice()
+  E.handle.drop()
+  log = []
+  T = strip(log, 8000)
+  E = editor(log)
+  T.S.editAt = 7900
+  lose(T)
+  advance(8700)
+  T.settle()
+  out.glideBefore = log.slice()
+  E.handle.drop()
   process.stdout.write(JSON.stringify(out))
 })()
 """
@@ -2582,7 +2604,8 @@ def test_queued_and_resent_selects_flush_editors_and_wait_for_their_ack() -> Non
     떠난다 — 누르는 자리처럼 떠나기 신호를 쏘고, 묶어 둔 op 가 있는 편집기는 그 자리에서 보내며
     ack 가 오고 조용함(`HOLD_QUIET_MS`)이 찬 뒤에 보낸다. 신호 없이 보내면 그 사이 칸을 고친 op 가
     묶음 타이머에 남은 채 화면이 옮겨져 부품이 내려가며 사라졌다. 보낼 것이 없으면 곧바로 보내고,
-    다시 보낸 고르기는 앞서 물어 지나온 떠나기를 그대로 들고 간다."""
+    다시 보낸 고르기는 앞서 물어 지나온 떠나기를 그대로 들고 간다. 명부 밖 편집표(glide) 입력은 앞
+    고르기를 보낸 뒤의 것만 붙든다."""
     names = (
         "BUSY_MS",
         "SETTLE_POLL_MS",
@@ -2608,6 +2631,8 @@ def test_queued_and_resent_selects_flush_editors_and_wait_for_their_ack() -> Non
     assert out["resendAfter"] == ["flush", "tab:b@1200:again"]
     assert out["queuedHeld"] == ["flush"]
     assert out["queuedAfter"] == ["flush", "tab:c@900"]
+    assert out["glideAfter"] == ["tab:b@1100:again"]
+    assert out["glideBefore"] == ["tab:b@700:again"]
 
 
 def test_a_sidebar_link_asks_the_same_leave_question_once_on_its_replay() -> None:
