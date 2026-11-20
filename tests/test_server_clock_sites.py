@@ -101,6 +101,11 @@ ALLOWED: dict[tuple[str, str, str], tuple[int, str]] = {
         "_master_has_errors",
         "today()",
     ): (1, TODAY),
+    (
+        "src/capa_simulation/components/equipment_master_tab.py",
+        "_rebuilt_materials",
+        "today()",
+    ): (1, TODAY),
     ("src/capa_simulation/components/intro_summary.py", "_current_month", "today()"): (1, TODAY),
     (
         "src/capa_simulation/components/period_field.py",
