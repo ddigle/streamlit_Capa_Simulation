@@ -9,7 +9,8 @@ Streamlit·DB 를 모르는 순수 함수다. 입력은 이미 캐시된 계획(
 
 - **공정 진척 보드**(`process_board`) — 공정마다 한 줄: 첫 부족 달, 월 최대 부족, 당길 호기 수,
   단축일 합계·최대, 신규, 가장 이른 목표 Qual 과 오늘부터 남은 날. 진척 비교 행을 주면 기준선 대비
-  (`progress_trend` — 개선·악화·해소·변동 없음과 단축일 증감)와 이행 지연 대수가 붙는다.
+  (`progress_trend` — 개선·악화·해소·변동 없음과 단축일 증감, 해소는 지금 계획에 그 공정의 호기가
+  하나도 없을 때)와 이행 지연 대수가 붙는다.
 - **카드 차례**(`board_order`) — 표시순서 / 목표 Qual 이른 순 / 최대 부족 큰 순 / 기준선 대비 악화
   먼저. 같으면 표시순서다.
 - **기한 임박**(`imminent_units`) — 지금 계획의 목표 Qual(가상 호기는 필요 Qual)이 오늘부터 N일 안인
@@ -290,14 +291,15 @@ def progress_trend(rows: pd.DataFrame) -> ProgressTrend:
     해소다.
 
     일수·추가N 은 `summarize_progress` 와 같은 셈이다(`필요 시점 지남` · `기준 바뀜` 은 양쪽에서
-    뺀다). `기준 바뀜` 호기는 두 시점 모두 당길 호기라 지금 계획에 남아 있다 — 그런 호기가 있는
-    공정은 일수가 0 이어도 해소가 아니다.
+    뺀다). 해소는 일수가 아니라 지금 계획에 남은 호기로 가른다 — Static 기준의 남는 호기(`변동
+    없음` · `신규 필요`, 단축일수 없음)·`기준 바뀜`·`필요 시점 지남` 호기는 일수에 들지 않아도 지금
+    계획에 남아 있는 당길 호기라, 그런 호기가 하나라도 있는 공정은 일수가 0 이어도 해소가 아니다.
     """
     summary = summarize_progress(rows)
     change = summary.change
     virtual = summary.current_virtual - summary.past_virtual
     had = summary.past_days > 0 or summary.past_virtual > 0
-    gone = summary.current_days == 0 and summary.current_virtual == 0 and not summary.rebased
+    gone = not bool(rows["현재 필요 시점"].notna().any())
     if had and gone:
         label = TREND_RESOLVED
     elif change < 0 or (change == 0 and virtual < 0):

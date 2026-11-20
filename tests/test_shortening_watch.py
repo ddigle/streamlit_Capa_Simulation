@@ -21,7 +21,15 @@ from capa_simulation.services.required_shortening import (
     UNIT_PLAN_COLUMNS,
     LevelPlan,
 )
-from capa_simulation.services.shortening_progress import PROGRESS_COLUMNS
+from capa_simulation.services.shortening_progress import (
+    PROGRESS_COLUMNS,
+    PROGRESS_LAPSED,
+    PROGRESS_NEW,
+    PROGRESS_REBASED,
+    PROGRESS_RESOLVED,
+    PROGRESS_UNCHANGED,
+    compare_progress,
+)
 from capa_simulation.services.shortening_watch import (
     BOARD_COLUMNS,
     BOARD_ORDERS,
@@ -247,23 +255,75 @@ def test_the_progress_trend_reads_improved_worsened_resolved_and_unchanged() -> 
     assert more_new.label == TREND_WORSENED and "신규 0→1" in more_new.text()
 
 
+def _pulled(rows: list[tuple[str, date, int | None]]) -> pd.DataFrame:
+    """공정 A 의 당긴 호기 표 — (호기, 목표 Qual, 단축일수). 단축일수가 None 이면 Static 기준의
+    남는 호기(확보 시점 · 단축일수 없음, 필요 시점만 있음)다."""
+    frame = _units_frame([(A, unit, KIND_SHORTENED, target, days) for unit, target, days in rows])
+    spare = frame["단축일수"].isna()
+    frame.loc[spare, "기존 Qual"] = None
+    return frame
+
+
+def _compared(
+    past: list[tuple[str, date, int | None]], now: list[tuple[str, date, int | None]]
+) -> pd.DataFrame:
+    return compare_progress(_pulled(past), _pulled(now), current_processes=[A], today=TODAY)
+
+
 def test_a_basis_change_is_not_progress_on_the_board() -> None:
     """결과 보드 여쭘-4 a — 남는 호기 ↔ 날짜 호기(「기준 바뀜」)는 기준선 대비에 늘고 줆으로 들지
     않는다. 지금 계획에 남아 있는 호기라, 다른 호기가 해소돼 일수가 0 이 되어도 그 공정은 해소가
     아니다."""
-    only = progress_trend(_progress([_pair(A, "U1", past=None, now=10, status="기준 바뀜")]))
-    assert (only.label, only.change) == (TREND_UNCHANGED, 0)
-    back = progress_trend(_progress([_pair(A, "U1", past=14, now=None, status="기준 바뀜")]))
-    assert (back.label, back.change) == (TREND_UNCHANGED, 0)
-    beside = progress_trend(
-        _progress(
-            [
-                _pair(A, "U1", past=6, now=None, status="해소"),
-                _pair(A, "U2", past=None, now=10, status="기준 바뀜"),
-            ]
-        )
+    need = date(2026, 7, 1)
+    only = _compared([("U1", need, None)], [("U1", need, 10)])
+    assert list(only["상태"]) == [PROGRESS_REBASED]
+    assert (progress_trend(only).label, progress_trend(only).change) == (TREND_UNCHANGED, 0)
+    back = _compared([("U1", need, 14)], [("U1", need, None)])
+    assert list(back["상태"]) == [PROGRESS_REBASED]
+    assert (progress_trend(back).label, progress_trend(back).change) == (TREND_UNCHANGED, 0)
+    beside = _compared([("U1", need, 6), ("U2", need, None)], [("U2", need, 10)])
+    assert set(zip(beside["호기"], beside["상태"], strict=True)) == {
+        ("U1", PROGRESS_RESOLVED),
+        ("U2", PROGRESS_REBASED),
+    }
+    assert (progress_trend(beside).label, progress_trend(beside).text()) == (
+        TREND_IMPROVED,
+        "개선 −6일",
     )
-    assert (beside.label, beside.text()) == (TREND_IMPROVED, "개선 −6일")
+
+
+def test_a_process_with_a_unit_left_in_the_current_plan_is_not_resolved_on_the_board() -> None:
+    """공정 진척 보드의 「해소」 는 지금 계획에 그 공정의 호기가 하나도 없을 때뿐이다 — 단축일수가
+    없거나 견주지 않는 호기(Static 기준의 남는 호기 「변동 없음」 · 「신규 필요」, 「필요 시점
+    지남」)도 지금 계획에 남아 당겨야 하는 호기라, 다른 호기가 해소돼 일수가 0 이 되어도 해소가
+    아니다(바로 옆 「기준 바뀜」 과 같은 「개선 −6일」)."""
+    need, late = date(2026, 7, 1), date(2026, 5, 1)
+    cases = {
+        "두 시점 모두 남는 호기": (
+            [("U1", need, 6), ("U2", need, None)],
+            [("U2", need, None)],
+            ("U2", PROGRESS_UNCHANGED),
+        ),
+        "지금만 남는 호기": (
+            [("U1", need, 6)],
+            [("U3", need, None)],
+            ("U3", PROGRESS_NEW),
+        ),
+        "필요 시점 지남": (
+            [("U1", need, 6), ("U4", late, 5)],
+            [("U4", TODAY, 5)],
+            ("U4", PROGRESS_LAPSED),
+        ),
+    }
+    for name, (past, now, left) in cases.items():
+        rows = _compared(past, now)
+        pairs = set(zip(rows["호기"], rows["상태"], strict=True))
+        assert ("U1", PROGRESS_RESOLVED) in pairs and left in pairs, name
+        trend = progress_trend(rows)
+        assert (trend.label, trend.text()) == (TREND_IMPROVED, "개선 −6일"), name
+    # 지금 계획에 호기가 하나도 없으면 — 기준선에 남는 호기가 함께 있었어도 — 해소다.
+    gone = progress_trend(_compared([("U1", need, 6), ("U2", need, None)], []))
+    assert (gone.label, gone.text()) == (TREND_RESOLVED, "해소")
 
 
 def test_with_progress_rows_the_board_fills_the_baseline_columns_and_orders_worse_first() -> None:
