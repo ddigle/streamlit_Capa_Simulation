@@ -2287,7 +2287,7 @@
     바꿈처럼 구역 밖 값이 바뀔 때만 앱 전체 회차다(AGENTS 3장).
   - 시나리오 목록 묶음 · 떠나기: 이름 · 차례 고침의 묶음 길이는 결정값 상수 `scenario_list_grid.LIST_SEND_MS` 가 정하고(data `sendMs`)
     깨끗한 편집본의 첫 고침 · 줄 고르기 · 되돌리기는 곧바로 보낸다. 네 마운트가 떠나기 신호를 받는다(`joinLeaving`, AGENTS 3장).
-  - 시나리오 목록 묶음 결정값: 남음 — 0.8초(관문에서 잃음이 나오면 0.3초).
+  - 시나리오 목록 묶음 결정값: 0.8초다(`scenario_list_grid.LIST_SEND_MS` — 관문에서 잃음이 나오면 이 값만 빼 0.3초로 둔다).
   - Space 「호기 정보」 묶음 · 떠나기: 창 칸 확인을 잠깐 모아 묻고(결정값 상수 `space_layout_editor.SHEET_SEND_MS` — data
     `sheetSendMs`) 판정이 오지 않으면 한 번 다시 보내며 떠나기 신호를 받는다(`joinLeaving`, AGENTS 3장).
   - Space 「호기 정보」 묶음 결정값: 남음 — 0.8초(관문에서 잃음이 나오면 0.3초).

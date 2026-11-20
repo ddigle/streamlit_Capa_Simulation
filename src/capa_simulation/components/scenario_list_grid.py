@@ -39,7 +39,7 @@ TRIGGER_NAMES: Final = frozenset[str]()
 # 길이). data `sendMs` 로 JS 에 넘기고, 개발 · 측정 사본은 실행 줄 `CAPA_DEV_BATCH_MS` 로
 # 덮어쓴다(`grid_shared.batch_ms`). 깨끗한 편집본의 첫 고침 · 줄 고르기 · 되돌리기 · 표 밖
 # 누름 · 창 숨김 · 떠나기 신호는 묶지 않는다(`list.js`).
-LIST_SEND_MS: Final = 300
+LIST_SEND_MS: Final = 800
 
 # 처음 폭은 줄의 40%(옛 시제품 측정 — 리비전 표 세 칸이 346px 에서 밀리고 416px 이면 든다). 한계는
 # 설비 마스터와 같다. 칸 고르기 다섯은 단추 좌우 안쪽 여백을 12px 로 좁혀 창 1283 의 처음 폭에서 한
