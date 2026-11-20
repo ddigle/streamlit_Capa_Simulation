@@ -98,6 +98,7 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
+    has_unsaved_equipment_edits,
     layout_lock_origins,
     layout_memo_mark,
     official_layout_cells,
@@ -1568,14 +1569,18 @@ def _render_grid_section(
         _render_data_menu(repository, latest_snapshot, context.scenario_name)
     kept = GRID_MEMO.get().get("grid_shell")
     shell = grid_component.render_grid_table(
-        grid_data(
-            view,
-            loaded,
-            ack=acks.get("grid"),
-            moved=carried[0],
-            inserted=carried[1],
-            open_id=_detail_id(),
-        ),
+        {
+            **grid_data(
+                view,
+                loaded,
+                ack=acks.get("grid"),
+                moved=carried[0],
+                inserted=carried[1],
+                open_id=_detail_id(),
+            ),
+            # 깨끗한 편집본의 첫 칸 고침은 묶지 않고 곧바로 보낸다(feed 칸 — 브라우저 `schedule`).
+            "clean": not has_unsaved_equipment_edits(),
+        },
         on_outbox=partial(_on_outbox, context, layout),
         on_open=_on_grid_open,
         on_unload=_on_unload,
@@ -1874,13 +1879,17 @@ def render_equipment_master_tab(
         else:
             grid_component.render_grid_side(
                 "detail",
-                detail_data(
-                    view,
-                    _detail_id(),
-                    ack=acks.get("detail"),
-                    toast=toasts.get("detail"),
-                    reveal_head=reveal_head,
-                ),
+                {
+                    **detail_data(
+                        view,
+                        _detail_id(),
+                        ack=acks.get("detail"),
+                        toast=toasts.get("detail"),
+                        reveal_head=reveal_head,
+                    ),
+                    # 깨끗한 편집본의 첫 칸 고침은 묶지 않고 곧바로 보낸다(표와 같다).
+                    "clean": not has_unsaved_equipment_edits(),
+                },
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,

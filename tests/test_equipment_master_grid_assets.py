@@ -3968,3 +3968,83 @@ def test_the_table_takes_feed_patches_and_does_not_rebuild_for_an_unchanged_shel
     assert result["newShellWaits"] == {"same": True}
     assert result["newShell"] == {"builds": 1, "models": ["X", "y", "z"]}
     assert result["cleared"] is None
+
+
+# ---------------------------------------------------------------- 묶어 보내기 쉼(파이썬 값)
+
+_SEND_MS_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    + """
+const remount = (extra) => globalThis.__mount({
+  data: Object.assign({}, data, extra), ...component,
+})
+const paste = (text, id, col) => {
+  const cell = { dataset: { id, col: String(col) } }
+  const target = {
+    closest: (sel) => (sel.startsWith('.emg-c') ? cell : null),
+    classList: { contains: () => false },
+  }
+  onPaste(S, { target, clipboardData: { getData: () => text }, preventDefault() {} })
+}
+const R = {}
+;(async () => {
+  // 파이썬이 쉼을 1초로 주고 편집본이 깨끗하다 — 첫 칸은 곧바로, 그 답이 오기 전 칸은 1초를 모은다.
+  remount({ sendMs: 1000, clean: true })
+  R.sendMs = S.sendMs
+  typed('a', 1, 'C1', press('Enter'))
+  R.first = sent.length
+  typed('a', 2, 'C2', press('Enter'))
+  typed('b', 2, 'C3', press('Enter'))
+  await tick(400)
+  R.held = sent.length
+  await tick(800)
+  R.quiet = sent.slice()
+  // 답이 왔다(깨끗하지 않음) — 첫 칸도 쉼을 기다린다.
+  remount({ sendMs: 1000, clean: false, ack: { mount: S.mount, seq: 3 } })
+  typed('c', 1, 'D1', press('Enter'))
+  R.dirtyFirst = sent.length
+  // 붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김은 쉼 없이 곧바로 보낸다(앞에 모인 칸도 함께).
+  paste('P1\\nP2', 'b', 2)
+  R.paste = sent.length
+  sendOnce(S, { op: 'restore', ids: ['a'] }, [])
+  R.button = sent.length
+  typed('b', 1, 'OUT', (input) => {
+    document.activeElement = null
+    fire(input, 'focusout', { relatedTarget: null })
+  })
+  R.outside = sent.length
+  typed('c', 1, 'VIS', press('Enter'))
+  for (const run of docListeners.visibilitychange) run()
+  R.hidden = sent.length
+  // 쉼을 주지 않으면 300ms 다.
+  remount({ sendMs: undefined, clean: false })
+  R.fallback = S.sendMs
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_send_interval_comes_from_python_and_the_immediate_paths_stay_immediate() -> None:
+    """묶어 보내기 쉼은 파이썬 값(data `sendMs` — `equipment_master_grid.send_ms`)이다. 깨끗한
+    편집본의 첫 op 는 곧바로 가고 그 답이 오기 전 칸은 쉼만큼 모은다. 붙여넣기 · 단추 op · 표 밖
+    누름(focusout) · 창 숨김(visibilitychange)은 쉼이 길어도 곧바로 보낸다."""
+    result = _node({}, _SEND_MS_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["sendMs"] == 1000
+    assert result["first"] == 1, "깨끗한 편집본의 첫 칸은 곧바로"
+    assert result["held"] == 1, "답이 오기 전 칸은 쉼(1초)만큼 모은다"
+    assert result["quiet"] == [1, 3], "모은 두 칸은 쉼 뒤 한 번에"
+    assert result["dirtyFirst"] == 2, "깨끗하지 않으면 첫 칸도 모은다"
+    assert (result["paste"], result["button"]) == (3, 4)
+    assert (result["outside"], result["hidden"]) == (5, 6)
+    assert result["fallback"] == 300
+
+
+def test_the_send_interval_reads_the_dev_override_only_in_range() -> None:
+    """측정 사본 실행 줄 `CAPA_RR_GRID_SEND_MS` 만 쉼을 덮어쓴다 — 50 ~ 5000 정수가 아니면
+    기본값."""
+    assert emg.send_ms({}) == emg.SEND_MS == 300
+    assert emg.send_ms({emg.SEND_MS_ENV: "800"}) == 800
+    for text in ("", "abc", "10", "60000", "0.8"):
+        assert emg.send_ms({emg.SEND_MS_ENV: text}) == emg.SEND_MS

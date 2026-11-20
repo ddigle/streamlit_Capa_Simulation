@@ -526,6 +526,12 @@ function joinGridData(shell, feed) {
 function rowsKeyOf(shell, feed) {
   return String(shell.shell) + '|' + JSON.stringify(feed.rows || {})
 }
+
+// 쉼을 기다리지 않고 곧바로 보낼 op 인가 — 편집본이 깨끗하고(`clean` — 파이썬 판정) 보내고 답을 못 받은 op 가 없을 때(그
+// 편집본의 첫 op). 그 뒤 답이 오기 전에 고친 칸은 쉼만큼 모은다.
+function sendsAtOnce(clean, ops, sentSeq) {
+  return clean === true && ops.length > 0 && ops.every((op) => op.seq > sentSeq)
+}
 // </grid-feed>
 
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
@@ -645,6 +651,10 @@ function receive(S, data) {
     if (S.noteSeq && S.noteSeq <= ack.seq) clearNote(S)
   }
   S.limit = Number((data.limits || {}).outboxCells) || 10000
+  // 묶어 보내기 쉼(ms) — 파이썬이 정한다(`equipment_master_grid.send_ms`). 없으면 SEND_MS.
+  S.sendMs = Number(data.sendMs) > 0 ? Number(data.sendMs) : SEND_MS
+  // 편집본에 저장 안 한 편집이 없다(파이썬 판정) — 그때의 첫 op 는 쉼을 기다리지 않는다(`sendsAtOnce`).
+  S.clean = data.clean === true
 }
 
 // 이미 보낸 op 만 남았으면 보내지 않는다 — 「호기 추가」 는 그 회차가 「새 호기」 마운트를 내리고 칸 고르기를 「호기 상세」 로
@@ -659,9 +669,16 @@ function send(S) {
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 
+// 칸 고침은 쉼(`S.sendMs`)만큼 모아 한 번에 보낸다 — 깨끗한 편집본의 첫 op 는 곧바로(미저장 표지 · 떠나기 확인이 늦지 않게).
+// 붙여넣기 · 단추 op · 표 밖 누름(focusout) · 창 숨김은 이 길을 거치지 않고 곧바로 보낸다(`send`).
 function schedule(S) {
   if (S.timer) clearTimeout(S.timer)
-  S.timer = setTimeout(() => send(S), SEND_MS)
+  S.timer = 0
+  if (sendsAtOnce(S.clean, S.box.ops, S.sentSeq)) {
+    send(S)
+    return
+  }
+  S.timer = setTimeout(() => send(S), S.sendMs || SEND_MS)
 }
 
 // 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고,
