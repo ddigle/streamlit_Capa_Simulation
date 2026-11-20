@@ -18,6 +18,8 @@
 - 비교 화면은 요약(단축 필요일수 합계 과거 → 현재, 호기 변동, 신규 투자) → CSV 줄 → 범위가 다르면
   한 줄 → 공정 카드다. 카드는 호기마다 **과거**(회색: ◀ 필요 시점 ── ○ 확보 시점)와 **현재**(진하게:
   ◀ ━━ ●) 두 줄이 같은 달 축 위에 선다. 늘어난 호기·새로 필요한 호기의 현재 줄은 증가색이다.
+  확보 시점이 없는 줄은 ◌ 하나다 — 추가N 은 「신규」, Static 기준의 남는 호기는 「남는 호기」(본문
+  호기 줄과 같은 이름 — 설계 규칙 UI-CON-02).
 - 카드의 달 축은 지금 조회 달을 **보이는 카드의 두 시점 날짜가 모두 들도록 앞뒤로 넓힌** 것이다
   (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
   축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
@@ -184,6 +186,9 @@ _MAX_AXIS_LABELS = 12
 _LANE_DATE_COLUMNS = ("과거 필요 시점", "과거 확보 시점", "현재 필요 시점", "현재 확보 시점")
 # 이행 지연 표지(기준선 목표 Qual 이 지났는데 마스터 Qual 미완료).
 _DELAYED = "지연"
+# Static 기준의 남는 호기(확보 시점 없이 당긴 「단축」 줄) — 본문 호기 줄 · Guide 와 같은 이름(설계
+# 규칙 UI-CON-02). 「신규」 는 추가N 에만 쓴다.
+_SPARE = "남는 호기"
 
 
 @dataclass(frozen=True)
@@ -1022,8 +1027,8 @@ def _units_markup(
 ) -> str:
     legend = (
         '<div class="shk-units-legend">호기마다 두 줄 — 과거(기준선, 회색) ◀ 필요 시점 ── ○ 확보 '
-        "시점 · 현재(진하게) ◀ ━━ ● · ◌ 신규 필요 · 칸은 달 · 점선은 오늘 · 오른쪽은 기존 → 필요 "
-        "시점과 단축일수</div>"
+        "시점 · 현재(진하게) ◀ ━━ ● · ◌ 필요 시점(신규 · 남는 호기) · 칸은 달 · 점선은 오늘 · "
+        "오른쪽은 기존 → 필요 시점과 단축일수</div>"
     )
     if rows.empty or not months:
         return (
@@ -1184,17 +1189,22 @@ def _unit_markup(
 def _detail(need: date | None, secure: date | None, days: int | None, *, virtual: bool) -> str:
     if need is None:
         return "없음"
-    if virtual or secure is None:
+    if virtual:
         return f"신규 필요 Qual {need:%Y-%m-%d}"
+    if secure is None:
+        return f"{_SPARE} — 현재 일정 없음 · 필요 Qual {need:%Y-%m-%d}"
     return f"기존 Qual {secure:%Y-%m-%d} → 목표 Qual {need:%Y-%m-%d} · −{days or 0}일"
 
 
 def _lane_text(
     need: date, secure: date | None, days: int | None, *, virtual: bool, today: date
 ) -> str:
-    """줄 오른쪽 글 — 「기존 MM.DD → 필요 MM.DD −N일」, 가상 호기는 「필요 MM.DD 신규」."""
-    if virtual or secure is None:
+    """줄 오른쪽 글 — 「기존 MM.DD → 필요 MM.DD −N일」, 가상 호기는 「필요 MM.DD 신규」, Static
+    기준의 남는 호기(확보 시점 없이 당긴 호기)는 「필요 MM.DD 남는 호기」."""
+    if virtual:
         return f"필요 {month_day(need, today=today)} <b>신규</b>"
+    if secure is None:
+        return f"필요 {month_day(need, today=today)} <b>{_SPARE}</b>"
     return (
         f"{month_day(secure, today=today)} → {month_day(need, today=today)} <b>−{days or 0}일</b>"
     )

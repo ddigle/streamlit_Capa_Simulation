@@ -29,6 +29,7 @@ from capa_simulation.components.shortening_progress_panel import (
     BASELINE_SAVE_HELP,
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
+    _unit_markup,
 )
 from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
@@ -40,7 +41,7 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_baseline,
 )
 from capa_simulation.services.equipment_samples import sample_equipment_master
-from capa_simulation.services.required_shortening import KIND_SHORTENED
+from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED
 from capa_simulation.services.shortening_baseline import (
     BASELINE_UNIT_COLUMNS,
     ShorteningBaselineDraft,
@@ -52,6 +53,7 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_NEW,
     PROGRESS_RESOLVED,
     PROGRESS_WORSENED,
+    compare_progress,
 )
 
 PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
@@ -436,6 +438,83 @@ def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
     assert "이름을 바꿨다면" in flagged.proto.help and process in flagged.proto.help
     assert not any("이름을 바꿨다면" in str(item.value) for item in app.caption)
     clear_equipment_repository()
+
+
+def test_a_static_leftover_unit_reads_as_leftover_not_new_in_both_lanes() -> None:
+    """Static 기준의 남는 호기(확보 시점 없이 당긴 「단축」 줄 — 보드 답 Q11 (가))는 진척 카드 두
+    줄 모두 본문 호기 줄처럼 「필요 MM.DD 남는 호기」 다. 「신규」 는 추가N 에만 쓴다(설계 규칙
+    UI-CON-02 — E2E 검수 D1: 남는 호기가 「필요 27.04.25 신규」 로 적혀 추가N 과 같은 글이었다).
+    기준선에서 남는 호기였다가 지금 현재 일정을 받은 호기는 과거 줄만 「남는 호기」 다."""
+    process = "PMC"
+    columns = ["공정", "호기", "구분", "기존 Qual", "목표 Qual", "단축일수", "모듈 수"]
+
+    def unit(name: str, kind: str, need: date, secure: date | None) -> dict[str, object]:
+        days = None if secure is None else (secure - need).days
+        return {
+            "공정": process,
+            "호기": name,
+            "구분": kind,
+            "기존 Qual": secure,
+            "목표 Qual": need,
+            "단축일수": days,
+            "모듈 수": 1,
+        }
+
+    def frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+        table = pd.DataFrame(rows, columns=columns)
+        for column in ("단축일수", "모듈 수"):
+            table[column] = pd.to_numeric(table[column]).astype("Int64")
+        return table
+
+    need = date(2027, 4, 25)
+    past = frame(
+        [
+            unit("DEMO-PMC-014", KIND_SHORTENED, need, None),
+            unit("DEMO-PMC-016", KIND_SHORTENED, need, None),
+            unit("추가1", KIND_NEW, need, None),
+        ]
+    )
+    current = frame(
+        [
+            unit("DEMO-PMC-014", KIND_SHORTENED, need, None),
+            unit("DEMO-PMC-016", KIND_SHORTENED, need, date(2027, 5, 5)),
+            unit("추가1", KIND_NEW, need, None),
+        ]
+    )
+    today = date(2026, 11, 20)
+    rows = compare_progress(past, current, current_processes=[process], today=today)
+    axis = (date(2027, 1, 1), date(2027, 7, 1))
+    markup = {
+        str(row["호기"]): _unit_markup(row, axis, "", today)
+        for row in (
+            {str(key): value for key, value in record.items()} for record in rows.to_dict("records")
+        )
+    }
+
+    def results(name: str) -> tuple[str, str]:
+        found = re.search(
+            r'<span class="past">(.*?)</span><span class="now">(.*?)</span>', markup[name]
+        )
+        assert found is not None, name
+        return found.group(1), found.group(2)
+
+    def title(name: str) -> str:
+        found = re.search(r'title="([^"]*)"', markup[name])
+        assert found is not None, name
+        return found.group(1)
+
+    spare_line = "필요 27.04.25 <b>남는 호기</b>"
+    assert results("DEMO-PMC-014") == (spare_line, spare_line)
+    assert "신규" not in markup["DEMO-PMC-014"]
+    assert "과거 남는 호기 — 현재 일정 없음 · 필요 Qual 2027-04-25" in title("DEMO-PMC-014")
+    assert "현재 남는 호기 — 현재 일정 없음 · 필요 Qual 2027-04-25" in title("DEMO-PMC-014")
+
+    assert results("DEMO-PMC-016") == (spare_line, "27.05.05 → 27.04.25 <b>−10일</b>")
+    assert "신규" not in markup["DEMO-PMC-016"]
+
+    assert results("추가1") == ("필요 27.04.25 <b>신규</b>",) * 2
+    assert "과거 신규 필요 Qual 2027-04-25" in title("추가1")
+    assert "남는 호기" not in markup["추가1"]
 
 
 def test_the_sample_fleet_cannot_be_saved_as_a_baseline(tmp_path: Path) -> None:

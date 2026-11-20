@@ -5650,7 +5650,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이 세션이 지운 기준선은 지우기 콜백이 먼저 되적거나 옛 화면 두 번째 누름이면 그 칸 · 지우기를 끝낸 표지로 거른다. 목록을 못 읽은
     회차(`read_baseline_options` 의 읽음 거짓)는 알리지 않는다 — 남은 물음 보드 D4 (나)). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
     콜백은 그린 회차의 세대가 다르면 쓰지 않는다(빠른 두 번 누름). 샘플·미저장 시나리오 편집은 저장을 거절한다.
-  - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다.
+  - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다. 확보 시점이 없는 줄(◌)의
+    오른쪽 글 · 풍선은 추가N 이면 「신규」, Static 기준의 남는 호기(확보 시점 없이 당긴 「단축」 줄)면 본문 호기 줄과 같은 「남는 호기」 다
+    (`_lane_text` · `_detail` — 설계 규칙 UI-CON-02).
 - `src/capa_simulation/components/shortening_cumulative.py` — 필요 단축 일정 「누적 진척」 머리 한 줄 띠(키 붙은 프래그먼트
   `STRIP_FRAGMENT_KEY` — 작은 꺾은선(data URL 그림 — `st.html` 은 인라인 SVG 를 걷는다) · 지금 일수 · 지난 기록 대비 · 첫 기록 →
   목표 막대 · 남은 일수 · 「주차별」. 펴면 Plotly 꺾은선 + 목표선 — 늘어난 주 ▲, 편 상태는 세션 칸 `WEEKS_OPEN_KEY`)와 사이드바
