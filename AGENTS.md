@@ -476,12 +476,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `services/access_list_plan.py` — 편집 표 초안 → 저장 판(`plan_changes` — 빼기 · 등급 바꿈 · 넣기와 문제 수 `Problems`, 값은 문제 글에 싣지 않음). 지운 줄은 빼기가 이기고, 표에 없는 키(그 사이 명단에서 빠진 사람)는 읽지 않으며, 새 줄 계정은 `access.entry_key` 로 견주는 꼴. 시험 `tests/test_access_list_plan.py`.
   - `components/grade_ui.py` — 접속 등급의 화면 쪽 창구(9장 「접속 등급」). `install`(판정기 꽂기 — `app.py` 맨 앞 매 회차,
     같은 함수면 그대로 — `capa_server.py` 는 꽂지 않는다) · `emit`(알림 칸 곁 거절 알림 한 자리 `GRADE_FLASH_KEY`) · `refuse`(알림창 · Alarm 한 번 — FL-04 꼴) · 받는 자리
-    `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차면 표지 `PENDING_KEY` 로 앱 전체를 다시 그려 알림) · `in_fragment`(`st.fragment` ·
-    `st.dialog` 함수 — 받고 `st.rerun(scope="app")`) · 주소 · 알림으로 연 등급 밖 화면 · 탭 멈춤 `stop_unless`(경고 한 줄 + 「HOME 으로」 +
+    `on_press`(위젯 콜백 — 받고 돌아온다, 프래그먼트 회차의 콜백이면 표지 `PENDING_KEY` 를 세우고 콜백 끝에서 앱 전체로 올려 알림) ·
+    `in_fragment`(`st.fragment` · `st.dialog` 함수 — 받고 `st.rerun(scope="app")`, 남은 거절 표지는 본문을 다 그린 뒤 본다 — 9장 「구역 회차 규칙」 R1) · 주소 · 알림으로 연 등급 밖 화면 · 탭 멈춤 `stop_unless`(경고 한 줄 + 「HOME 으로」 +
     `st.stop()`, 탭은 `tab_key` · `first_label` 짝으로 한 번 뒤 첫 탭) · 표 도구 막대 내려받기 단추 · 그림 막대 감춤 `toolbar_scope`(칸 key 접두
     `HIDDEN_TOOLS_PREFIX` + `app.py` 가 보내는 `TOOLBAR_STYLE` 한 벌 — 표 막대는 「Download as CSV」 단추만, 찾기 · 크게 보기는 남음, Altair 그림 막대는 「Download as PNG」 · 「Copy Vega-Lite spec」(`CHART_EXPORT_LABELS` — 2026-11-19 E2E E2-3, 「Show data」 · 크게 보기는 남음)) · `chart_config`(Plotly 그림 저장 · 표로 보기 끄기). 화면 본문의 거절은
     `page_failure_card.run_core_page` 가 받는다(다시 그리기 한 번 — 누름 없이 같은 거절이 또 오면 알림을 낸 채 멈춤). 시험
     `tests/test_grade_ui_core.py` · 도우미 `tests/grade_support.py`.
+  - `components/fragment_scope.py` — 편집기 구역 회차 도우미(9장 「구역 회차 규칙」). `editor_scope(key, head=, token=, one_shot=,
+    box=, page=, href=)`(구역 본문 감싸기 — `@st.fragment(key=…)` · `@grade_ui.in_fragment` 아래, 머리 표지 · 저장 토큰 찍기 · 견주기, 본문 뒤
+    올리기, 작은 인자 검사, 오류 카드, 구역 칸) · `escalates(key)`(콜백 끝 올리기 — `on_press` 위) · `escalate` · `escalate_if_moved` ·
+    `scope_moved` · `check_small_args` · `fragment_only_run` · `in_callback` · `box_key` · `scope_box` · `SCOPE_RUN_STYLE`(머리 띠
+    스타일이 싣는 구역 회차 규칙). 머리에서 화면 모듈을 읽지 않는다(`grade_ui` · `page_failure_card` 는 부르는 순간). 시험
+    `tests/test_fragment_scope.py`(프래그먼트 회차 대역 · 본문 앞 올리기 금지 정적 시험).
   - `components/edit_file_tail.py` — 저장하지 않은 기준 정보 · 생산 계획 고침이 있는 동안(`scenario_activation.has_unsaved_scenario_changes()`)
     계산 화면이 그리는 내려받기 파일 이름 끝에 붙이는 꼬리 `_unsaved`(공정 Capa 상세 UPEH 가정 꼬리와 같은 꼴 — 2026-11-17 정한 것). 모든 등급
     같다. 꼬리는 계산 화면이 파일 이름을 넘기는 자리(`edited_file_name`)에서만 붙인다 — 공용 표 부품(`table_toolbar` · `shortening_board` ·
@@ -3731,8 +3737,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
       없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`),
-      그리고 그림자 DOM Components v2 편집 칸(가용설비 현황 설비 마스터 표·오른쪽 칸과 기준 정보 편집 그리드
-      `reference_grid_keys.GRID_HOST` — `page_tabs.EDIT_HOST_KEYS`, 탭 줄 data
+      그리고 그림자 DOM Components v2 편집 칸(가용설비 현황 설비 마스터 표·오른쪽 칸과 기준 정보 · 생산 계획 · 접속 명단 편집 그리드
+      `reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS` · `page_tabs.ACCESS_LIST_GRID_HOST`, 시나리오 목록 표 — `page_tabs.EDIT_HOST_KEYS`, 탭 줄 data
       `grids`)의 바깥 key 칸(`.st-key-<key>`)으로 알아본다(순수 구획 `<tabs-grid>`). 문서 capture 단계에서는 그림자 DOM 안
       칸 편집기의 focusin·keydown 대상이 호스트로 바뀌어 안쪽 클래스로는 맞지 않는다 — 빠졌을 때 설비 마스터 칸에 쓰는 중
       (Enter 전) 누른 테마 단추가 그 편집 회차(누름 뒤 약 0.1초)보다 먼저 와 확인 없이 새로 읽었다(E2E 결함 — 칸 편집기는
@@ -3744,7 +3750,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
       새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
       사이드바 화면 링크도 같은 붙들기를 지난다(`S.onLink` — click 을 막았다가 그 회차 뒤 같은 링크를 다시 누른다, 상한 거름은 다시 누를 때 한 번) — 터치 톡은 초점이 빠지며 나간 표의
-      출납 회차와 거의 함께 닿아 그 회차가 지금 화면 주소로 돌며 이동을 덮었다(2026-11-07 E2E). 붙든 누름(탭 · 닫기 · 테마 · 링크)은 누른 때의
+      출납 회차와 거의 함께 닿아 그 회차가 지금 화면 주소로 돌며 이동을 덮었다(2026-11-07 E2E). 링크 누름도 탭 줄과 같은 떠나기 확인(`leave` — 가용설비 현황 작은 편집표 둘 포함)을
+      다시 누를 때 한 번 묻는다(취소하면 상한 거름의 열기 표지를 되돌린다, 지금 화면의 링크는 묻지 않는다). 떠나는 누름은 모두 붙들기 판정 전에 떠나기 신호 `capa-leaving` 을 쏘고
+      명부의 편집기가 busy 면 손을 뗀 지 오래된 누름도 붙든다(9장 「구역 회차 규칙」 R8 — busy 였다가 걷힌 붙들기는 새 data 를 0.4초 기다리지 않는다). 붙든 누름(탭 · 닫기 · 테마 · 링크)은 누른 때의
       주소(`path`)를 들고, 놓을 때 주소가 달라졌으면 보내지 않고 버린다(`holdVerdict` 의 `drop`) — 뒤로가기 · 본문 `st.switch_page` 는 붙듦을 비우지
       않아, 다시 누르기가 옮겨 간 화면을 덮었다(2026-11-07 E2E).
     - **붙들기가 끝난 뒤 떠나는 화면이 보내는 메시지는 서버가 거른다**(`stale_page_guard`, 2026-11-19 — 칸을 고치자마자 누른
@@ -4299,7 +4307,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   자리(Space 저장 상자의 변경 메모 · 저장자)만 `ESC_COMMIT_PREFIX` key 칸에 넣고, 팝오버 안 단추로 제출하는 자리는 넣지 않는다(Esc 가 취소다). 테마 버튼 iframe 에
   실리고 부모 창 capture 단계에서 Esc 를 먼저 받는 비공식 경로다. 시험은 `tests/test_popover_field_commit.py`.
 - `src/capa_simulation/components/save_section.py` — 저장 구획의 「모두 버리기」 확인 팝오버(`discard_popover` — 설비 마스터 · 시나리오 목록 관리, UI-NTF-09).
-- `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
+- `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`) · 떠나기 조각 글(`leave_js`) · 묶음 길이(`batch_ms` — 개발 실행 줄 `CAPA_DEV_BATCH_MS` 덮어쓰기). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>` — 보낼 목록 · `boxBusy`) · `dom.js` · `leave.js`(떠나기 신호 · 편집기 명부 · 구역 회차 표지 — 9장 「구역 회차 규칙」 R8, 시험 `tests/test_leave_assets.py`) · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
@@ -8486,6 +8494,61 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   알림(자리 셋을 늘 채우던 꼴)도 2026-11-04 에 `flash` 로 옮겼다(설계 규칙 UI-NTF-01). 콜백이 여럿 돌아 알림이 잇따르면 칸을
   여럿 두고 빈 칸부터 담아 덮어쓰지 않는다(`shortening_progress_panel._NOTICE_KEYS` — `render_flash` 는 칸 수와 상관없이
   이벤트 칸에 한 자리다).
+
+### 구역 회차 규칙(편집기를 키 붙은 프래그먼트로 돌릴 때 — R1 ~ R8)
+
+편집기(설비 마스터 표 · 범용 편집 그리드 · 시나리오 목록 · Space 호기 정보)를 `@st.fragment(key=…)` 로 감싸
+칸 하나를 고칠 때 앱 전체 회차 대신 그 구역만 돌린다(편집기 구역 회차). 구역 밖(머리 띠 변경 칩 · 화면 탭 줄 점 ·
+떠나기 확인 · 테마 표지 · 팝업 호스트 · 사이드바)은 그 회차에 다시 그려지지 않는다. 파이썬 도우미는
+`components/fragment_scope.py`, 브라우저 몫은 `components/grid_shared_assets/leave.js` 다.
+
+- **R1 올리기는 위젯 콜백 끝 또는 본문을 다 그린 뒤에만**(`fragment_scope.escalate` · `escalates` ·
+  `escalate_if_moved`). 콜백 끝 `st.rerun()` 은 그 상호작용을 앱 전체 회차로 바꾸고(본문 전이라 위젯 상태가 남는다),
+  본문 뒤 `st.rerun(scope="app")` 은 위젯을 다 그린 뒤다. **본문 앞에서 올리지 않는다** — 본문을 시작한 회차는 끝에서
+  그 회차가 그리지 않은 프래그먼트 위젯 상태를 지워(Components v2 출납 상태 값) ack 를 잃는다(`tests/test_fragment_scope.py`
+  의 대조가 되살린다). `grade_ui.on_press` 는 구역 회차의 콜백이면 거절을 담고 콜백 끝에서 올리고, `grade_ui.in_fragment`
+  는 남은 거절 표지를 본문 뒤에서 본다. `st.fragment` 본문 첫머리의 「조건 → 앱 전체 올리기」 는 알려진 자리
+  (`KNOWN_PRE_BODY_RISES` — 필요 단축 일정 본문 하나, Components v2 상태 값이 없다)만 둔다.
+- **R2 머리 표지 견주기**(`editor_scope(head=…)`). 구역 밖이 그리는 값(미저장 있음/없음 · 작은 편집표 이름 · 출발점 ·
+  편집본 리비전 · 팝업 열림 칸 · 찍힌 배치 역할 …)을 해시 가능한 값으로 돌려주는 함수를 넘긴다. 앱 전체 회차가 본문
+  앞에서 찍고, 구역 회차의 콜백 끝(`escalates` — `@grade_ui.on_press` **위**)과 본문 뒤(`editor_scope` 스스로)에서
+  견줘 다르면 올린다.
+- **R3 구역 인자는 작은 값만**(`check_small_args` — `editor_scope` 가 늘 부른다). 구역 인자는 직전 앱 전체 회차 값으로
+  고정되고 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다. 표 · 표를 든 dataclass · 긴 목록(`SMALL_ITEMS` 초과)은
+  `TypeError` — 구역 안에서 세션 · 캐시로 다시 읽는다. 한 번만 쓰는 표지 인자(`drafts_replaced` 꼴)는
+  `editor_scope(one_shot=…)` 가 구역 회차에서 `False` 로 끈다.
+- **R4 남의 저장 확인**(`editor_scope(token=…)`). 저장본 쌍 토큰을 값싸게 읽는 함수를 넘긴다. 앱 전체 회차가 찍고
+  구역 회차의 본문 머리가 다시 읽어 다르면 표지를 세운다 — 본문 뒤에서 올려 앱 전체 회차의 편집본 세우기가 버리고
+  다시 세운다.
+- **R5 이벤트 칸 자리 수.** 구역 회차는 이벤트 칸 쓰기 자리를 구역 자리로 되돌린다 — 갈래(표 고르기 · 오른쪽 칸)마다
+  스타일 `st.html` 수가 같아야 한다(위 「프래그먼트·이벤트 칸·토스트」). 수를 맞추기 전까지 갈래 바꿈은 R2 머리
+  표지에 넣어 올린다. 구역 회차에 `st.html` 을 새로 쓰지 않는다 — 구역 회차의 화면 규칙은 앱 전체 회차의 스타일이
+  싣는다(`fragment_scope.SCOPE_RUN_STYLE` 꼴).
+- **R6 구역 본문 오류는 코어 화면 카드.** `editor_scope` 가 본문의 처리 못 한 오류를 `page_failure_card.render_page_failure`
+  카드 + `st.stop()` 으로 받는다(기록 · `AD-22` 같다). 등급 거절은 바깥 `in_fragment` 가, Streamlit 제어 예외는 그대로.
+- **R7 Components v2 위생**(`tests/test_ccv2_hygiene.py`). 등록은 모듈 머리 한 줄(등록 글이 프로세스 동안 같다 — 글
+  해시마다 blob URL 이 쌓인다), 마운트마다 `key=`, 부품 · 편집표 key 에 seq · 시각 · 난수를 넣지 않는다. default export
+  는 data 가 바뀔 때마다 다시 불리고 앞 호출의 정리 함수는 불리지 않는다 — 처리기 · 관찰자는 처음 한 번만 단다(`S.bound`
+  꼴). 새 부품은 그 시험의 `BIND_ONCE` 에 한 줄을 더한다(느슨한 DOM 대역으로 50번 부른다).
+- **R8 떠나기 신호**(`leave.js`). 화면을 떠나는 누름(탭 줄 고르기 · 지금 탭 닫기 · 사이드바 화면 링크 · 테마 단추 · 알림
+  칸 「그 화면으로」)은 붙들기 판정 전에 창 사건 `capa-leaving` 을 쏜다(`announceLeaving`). 묶어 보내는 편집기는
+  `joinLeaving(window, { busy, flush })` 로 명부(`window.__capaEditors`)에 올라 신호에 남은 op 를 곧바로 보내고, 보낼 것이
+  남았거나 ack 가 오지 않은 동안 busy 다(`boxBusy` — 표 공용 출납). 신호 뒤 편집은 묶지 않고(`leavingNow`) 다 걷히면 다시
+  묶는다(`settleLeaving`). 탭 줄 붙들기는 busy 가 걷히고 회차가 끝날 때까지(상한 `BUSY_MS`) 기다리고, busy 였다가 걷힌
+  붙들기는 새 data 를 0.4초 기다리지 않는다(구역 회차는 탭 줄 data 를 다시 보내지 않는다 — 회차 끝 뒤 `HOLD_QUIET_MS`
+  만). 명부에 오르지 않는 glide 격자(`st.data_editor`)는 전처럼 0.4초다. 공용 조각을 잇지 않는 등록은
+  `grid_shared.leave_js()` 글을 제 등록 글 앞에 잇는다.
+- **보이는 로딩.** 편집기 구역 본문은 구역 칸(`fragment_scope.box_key(key)` — key 접두 `SCOPE_BOX_PREFIX` `capa_scope_`)
+  안에 그린다(`editor_scope(box=True)` 기본, 손수 두면 `scope_box`). 회차 표지가 「돈다」 로 바뀐 순간 구역 밖 화면 탭
+  줄이 낡음이 아니고 구역 칸 안만 낡음이면 `leave.js` 지킴이(`watchScopeRuns` — 탭 줄이 건다)가 문서 뿌리에
+  `data-capa-scope-run` 을 달고, 그동안 실행 표시(달리는 사람 · Stop)와 구역 칸 안 낡음 흐림을 감춘다(머리 띠 스타일이
+  싣는 `SCOPE_RUN_STYLE`). 앱 전체 회차 · 다른 프래그먼트 회차 · 연결 끊김 표시는 그대로다.
+- **묶음 길이**는 편집기마다 결정값 상수로 두고 data 로 JS 에 넘긴다(`grid_shared.batch_ms`). 개발 · 측정 사본만 실행 줄
+  환경변수 `CAPA_DEV_BATCH_MS`(ms)로 덮어쓴다 — 운영 `APP_ENV` 에서는 읽지 않는다. 첫 op(깨끗한 편집본) · 붙여넣기 ·
+  단추 op · 표 밖 누름(focusout) · 창 숨김(visibilitychange) · 떠나기 신호는 묶지 않고 곧바로 보낸다. 런타임에 구역을
+  켜고 끄는 스위치는 두지 않는다 — 구역 감싸기는 갈래 끝의 따로 된 커밋이다.
+- 편집기 구역 회차는 `tests/fragment_browser.py` 대역으로 잰다 — Components v2 상태 값은 `send_state(app, key, value)`
+  (부품을 그린 델타의 fragment id 로 요청), 부품 data 는 `bidi_data(key)`.
 
 ### 알림 칸(알림창 · Alarm · 변경 칩 — 2026-11-03 결정 보드 D1 ~ D6)
 
