@@ -65,6 +65,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Final
 
 import pandas as pd
@@ -230,6 +231,23 @@ MANUAL_REFUSED_DROPPED_TAIL: Final = " 저장하지 않은 칸 {count}개{hidden
 MANUAL_NO_CELLS_HELP: Final = (
     "설비 마스터를 저장하면 그 공정이 행으로 서고, 열은 사이드바 조회기간의 달입니다."
 )
+
+
+@dataclass(frozen=True)
+class _EditorInputs:
+    """편집 칸(저장 줄 · 알림 칸 · 편집표)이 그리는 데 쓰는 이 화면 입력 — 탭 본문이 회차마다
+    세션 칸(`_EDITOR_INPUTS`)에 적고 편집 칸이 거기서 읽는다. 공정 목록 · 표시명처럼 길이가
+    정해지지 않은 값을 함수 인자로 넘기지 않는다(AGENTS 9장 「구역 회차 규칙」 R3). 저장본
+    (`ManualDowntime`)은 싣지 않고 편집 칸이 캐시로 다시 읽는다."""
+
+    database_path: str
+    snapshot_processes: tuple[str, ...]
+    months: tuple[int, ...]
+    process_labels: ProcessLabels
+    locked_reason: str | None
+
+
+_EDITOR_INPUTS: Final = SessionSlot("equipment_manual_downtime_editor_inputs_v1", _EditorInputs)
 
 
 def manual_editor_key(version: int) -> str:
@@ -536,15 +554,17 @@ def render_manual_downtime_tab(
                 key=MANUAL_VIEW_ONLY_KEY,
             )
     else:
-        _render_editor(
-            database_path=database_path,
-            profile=profile,
-            processes=processes,
-            absent=absent,
-            months=ordered_months,
-            process_labels=process_labels,
-            locked_reason=locked_reason,
+        _EDITOR_INPUTS.set(
+            _EditorInputs(
+                database_path=database_path,
+                snapshot_processes=tuple(str(process) for process in snapshot_processes),
+                months=tuple(ordered_months),
+                process_labels=process_labels,
+                locked_reason=locked_reason,
+            )
         )
+        st.html(f"<style>{toolbar_room_css(MANUAL_SAVE_ROW_KEY)}</style>")
+        _render_editor_scope()
     if not tab_is_hidden(owner_tab):
         with grade_ui.toolbar_scope("equipment.export", MANUAL_HISTORY_TOOLS_KEY):
             _render_history(database_path)
@@ -584,6 +604,34 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
     )
 
 
+def _render_editor_scope() -> None:
+    """편집 칸 — 이 회차 입력(`_EDITOR_INPUTS`)과 캐시로 다시 읽은 저장본으로 그린다. 저장 줄
+    서식은 탭 본문이 이 앞에서 싣는다(스타일만 든 `st.html` — 이벤트 칸 한 자리). 저장본을 읽지
+    못하면(탭 본문이 이미 읽은 값이라 캐시가 그 사이 비고 DB 가 막힌 때뿐) 그리지 않는다 — 다음
+    회차의 탭 본문이 오류 표지를 그린다. 그때도 이벤트 칸에는 알림 칸(`render_flash`)과 같은 한
+    자리를 쓴다."""
+    inputs = _EDITOR_INPUTS.peek()
+    profile: ManualDowntime | None = None
+    if inputs is not None:
+        try:
+            profile = load_manual_downtime(inputs.database_path)
+        except BOOTSTRAP_ERRORS:
+            profile = None
+    if inputs is None or profile is None:
+        st.html("<style></style>")
+        return
+    processes, absent = manual_tab_processes(inputs.snapshot_processes, profile)
+    _render_editor(
+        database_path=inputs.database_path,
+        profile=profile,
+        processes=processes,
+        absent=absent,
+        months=inputs.months,
+        process_labels=inputs.process_labels,
+        locked_reason=inputs.locked_reason,
+    )
+
+
 def _render_editor(
     *,
     database_path: str,
@@ -600,7 +648,6 @@ def _render_editor(
     submitted_base = seen(MANUAL_BASE_VERSION_KEY)
     visible = frozenset((process, int(month)) for process in processes for month in months)
     saved = {cell: units for cell, units in profile.cells.items() if cell in visible}
-    st.html(f"<style>{toolbar_room_css(MANUAL_SAVE_ROW_KEY)}</style>")
     # 폼이 두르던 테두리를 그대로 둔다 — 저장 줄 · 알림 칸 · 표가 한 상자다.
     with st.container(border=True):
         # 작업 줄(저장·되돌리기·저장자·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대

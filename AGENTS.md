@@ -5470,6 +5470,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 첫 결과로 성공을 다시 알린다.
+  - 편집 칸(저장 줄 · 알림 칸 · 편집표 — `_render_editor_scope`)은 이 회차 입력을 함수 인자로 받지 않는다 — 탭 본문이 회차마다 세션 칸
+    `_EDITOR_INPUTS`(경로 · 설비 저장본 공정 · 달 · 공정 표시명 · 잠금 까닭)에 적고 편집 칸이 거기서 읽으며 저장본은 캐시로 다시 읽는다(공정
+    목록 길이가 정해지지 않았다 — 9장 「구역 회차 규칙」 R3). 저장 줄 서식(스타일만 든 `st.html` — `toolbar_room_css`)은 탭 본문이 그 앞에서
+    싣고, 편집 칸이 쓰는 이벤트 칸 자리는 알림 칸(`render_flash`) 하나다(저장본을 못 읽은 갈래는 빈 스타일 하나).
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
   경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 보기 설정은 제출 줄(「Cut-off 저장」 ·

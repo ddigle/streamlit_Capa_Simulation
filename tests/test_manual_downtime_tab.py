@@ -205,6 +205,28 @@ def test_edit_save_and_the_table_redraws_the_saved_values(tmp_path: Path) -> Non
     assert [(save.version, save.changed_cells, save.filled_cells) for save in saves] == [(1, 2, 2)]
 
 
+def test_a_long_process_list_reaches_the_editor_through_the_session_not_arguments(
+    tmp_path: Path,
+) -> None:
+    """편집 칸은 공정 목록 · 표시명 · 저장본을 함수 인자로 받지 않고 탭 본문이 회차마다 적은 세션
+    칸과 캐시로 다시 읽는다(AGENTS 9장 「구역 회차 규칙」 R3 — 구역 인자는 작은 값만). 공정이 많은
+    (실데이터 수십) 화면도 그대로 서고 저장된다."""
+    path = tmp_path / "equipment.duckdb"
+    many = [f"P{index:02d}" for index in range(40)]
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    app.session_state["test_processes"] = many
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    values = _editor_values(app)
+    assert values["공정"] == many
+
+    _edit(app, {(len(many) - 1, "202608"): 0.5})
+    app = _save(app)
+
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((many[-1], 202608, 0.5),), 1)
+
+
 def test_a_save_without_saver_and_memo_shows_a_caption_without_doubled_separators(
     tmp_path: Path,
 ) -> None:
