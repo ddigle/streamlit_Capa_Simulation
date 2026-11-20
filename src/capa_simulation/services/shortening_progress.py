@@ -146,8 +146,10 @@ class ProgressSummary:
     `필요 시점 지남` 행은 일수·추가N 대수에서 양쪽 모두 뺀다 — `lapsed` 가 그 대수,
     `lapsed_current_days` 가 그 행들의 지금 단축일수 합(비교 안 함 화면의 합계와 맞춰 볼 수
     있게)이다. `기준 바뀜` 행도 일수에서 양쪽 모두 뺀다 — `rebased` 가 그 대수,
-    `rebased_current_days` 가 그 행들의 지금 단축일수 합이다(남는 호기 쪽은 0일). 그래서 비교 안 함
-    화면의 합계 = `current_days` + `lapsed_current_days` + `rebased_current_days` 다.
+    `rebased_current_days` 가 그 행들의 지금 단축일수 합이다(남는 호기 쪽은 0일). 그래서 견준 지금
+    계획과 같은 계획이면 비교 안 함 화면의 합계 = `current_days` + `lapsed_current_days` +
+    `rebased_current_days` 다(기준선의 현재 일정 기준이 화면 전환과 다르면 진척 비교는 그 기준의
+    계획과 견주므로 맞지 않는다).
     """
 
     past_days: int = 0

@@ -4685,8 +4685,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차례가 (해, 주)로 맞음) 하나의 단축 필요일수(사람이 적은 0 이상 정수 — 화면 계산과 잇지 않는다), 최종 목표는 일수 · 주차 하나
   (`ProgressGoal`). 머리 한 줄 요약(`summarize_log`)은 **기록 기준**이다 — 지금 일수 = 마지막 기록, 지난 기록 대비 = 그 앞 기록과의
   차(기록이 하나면 없음 — 0 이 아니다), 남은 일수 = 마지막 기록 − 목표, 목표 주차 지남. `screen_shortening_days` 는 「이번 주 값
-  넣기」 가 채우는 지금 화면 합계(고른 목표의 계획에서 범위 공정의 당긴 호기 단축일수 합)이고 진척 비교 요약의 지금 합계 +
-  필요 시점 지남 몫 + 기준 바뀜 몫과 같다(어느 기준선과 견주든 — 시험이 맞댄다). Streamlit · DB 를 모른다.
+  넣기」 가 채우는 지금 화면 합계(고른 목표의 계획에서 범위 공정의 당긴 호기 단축일수 합)이고, 기준선의 현재 일정 기준이 전환과
+  같으면 진척 비교 요약의 지금 합계 + 필요 시점 지남 몫 + 기준 바뀜 몫과 같다(그런 기준선이면 어느 것과 견주든 — 시험이 맞댄다).
+  기준이 다른 기준선이면 진척 비교는 그 기준의 계획(`_Plan.plan_for`)과 견주고 화면 합계는 전환 쪽 계획이라 맞지 않는다.
+  Streamlit · DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는

@@ -265,8 +265,9 @@ def screen_shortening_days(units: pd.DataFrame, processes: Sequence[str]) -> int
 
     「이번 주 값 넣기」 가 이 값 하나를 쓴다 — 진척 비교(기준선)와 상관없는 값이다. 진척 비교 요약의
     지금 합계(`ProgressSummary.current_days`) 는 기준선 대비 필요 시점이 지난 행과 기준이 바뀐 행(한
-    시점만 남는 호기)을 따로 빼 두므로 이 값은 그 합 + `lapsed_current_days` +
-    `rebased_current_days` 와 같다(시험이 맞댄다)."""
+    시점만 남는 호기)을 따로 빼 두므로, 진척 비교가 같은 `units` 와 견줬으면(기준선의 현재 일정
+    기준이 화면 전환과 같음) 이 값은 그 합 + `lapsed_current_days` + `rebased_current_days` 와
+    같다(시험이 맞댄다). 기준이 다른 기준선이면 진척 비교는 그 기준의 계획과 견주어 맞지 않는다."""
     if units.empty:
         return 0
     chosen = units.loc[units["공정"].isin(list(processes)) & units["구분"].eq(KIND_SHORTENED)]

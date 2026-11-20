@@ -187,9 +187,10 @@ def test_the_screen_total_is_the_progress_total_plus_the_lapsed_days() -> None:
 
 def test_the_screen_total_does_not_follow_basis_changes_against_a_baseline() -> None:
     """결과 보드 여쭘-4 a — 진척 비교가 남는 호기 ↔ 날짜 호기를 「기준 바뀜」 으로 따로 빼도 화면
-    합계(「이번 주 값 넣기」)는 지금 계획만 더한다 — 어느 기준선과 견주든 같고, 견준 몫 + 필요 시점
-    지남 몫 + 기준 바뀜 몫이다. 세 몫이 다 0 이 아닌 표본이다(SMP-LG-11 견줌 10일 · SMP-LG-12 지남
-    6일 · SMP-LG-13 기준 바뀜 7일, 남는 호기 SMP-LG-14 는 0일)."""
+    합계(「이번 주 값 넣기」)는 지금 계획만 더한다 — 같은 지금 계획(같은 현재 일정 기준)과 견주면
+    어느 기준선이든 같고, 견준 몫 + 필요 시점 지남 몫 + 기준 바뀜 몫이다(기준이 다른 기준선은
+    진척 비교가 그 기준의 계획과 견주어 이 등식 밖이다). 세 몫이 다 0 이 아닌 표본이다(SMP-LG-11
+    견줌 10일 · SMP-LG-12 지남 6일 · SMP-LG-13 기준 바뀜 7일, 남는 호기 SMP-LG-14 는 0일)."""
     today = date(2027, 1, 5)
     current = _frame(
         [

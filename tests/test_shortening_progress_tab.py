@@ -660,7 +660,7 @@ def test_a_baseline_keeps_its_basis_and_is_compared_on_that_basis(tmp_path: Path
         assert f"<b>{label} 0</b>" in body, label
 
 
-@pytest.mark.parametrize(("static", "dated_first"), [(3.0, False), (6.0, True)])
+@pytest.mark.parametrize(("static", "dated_first"), [(3.0, False), (7.0, True)])
 def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_basis_change(
     tmp_path: Path, static: float, dated_first: bool
 ) -> None:
@@ -672,10 +672,11 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
 
     기준선은 앱이 얼린 Static 기준선에서 목표 110% 의 당긴 호기 한 줄만 반대 꼴로 바꿔 새로 저장한
     것이다 — 지금 날짜를 받은 호기면 현재 일정 · 단축일수를 비워 남는 호기로(남는 → 날짜), 지금 남는
-    호기면 9일 늦은 현재 일정을 줘(날짜 → 남는). Static 가용 3.0 은 남는 호기가, 6.0 은 날짜를 받은
-    호기가 서는 표본이라 그 꼴의 줄을 먼저 고른다 — 표본은 오늘 기준 상대 날짜라 어느 꼴이 서는지가
-    날마다 다를 수 있어 두 방향을 같은 단언으로 본다(방향마다 고정한 시험은
-    `test_shortening_progress`)."""
+    호기면 9일 늦은 현재 일정을 줘(날짜 → 남는). Static 가용 3.0 은 남는 호기가, 7.0 은 날짜를 받은
+    호기가 서는 표본이라 그 꼴의 줄만 고른다 — 7.0 은 남는 → 날짜(지금 n일 > 0)라 요약 지금 합계가
+    그 몫을 뺐는지까지 본다. 표본은 오늘 기준 상대 날짜라 그 꼴이 서지 않는 날에는 다른 꼴로
+    넘어가지 않고 그 방향을 분명히 건너뛴다 — 넘어가면 그 단언이 「화면 합계 − 0」 으로
+    약해진다(방향마다 고정한 시험은 `test_shortening_progress`)."""
     database_path, _ = _saved_database(tmp_path)
     app = _run_static(database_path, static=static)
     assert not app.exception, [element.message for element in app.exception]
@@ -691,18 +692,22 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     pulled = units.loc[units["목표 확보율(%)"].eq(110) & units["구분"].eq(KIND_SHORTENED)]
     assert not pulled.empty, "Static 기준 110% 에 당긴 호기가 있어야 한다"
     wanted = pulled.loc[pulled["기존 Qual"].notna() == dated_first]
-    index = (wanted if not wanted.empty else pulled).index[0]
+    if wanted.empty:
+        shape = "날짜를 받은" if dated_first else "남는"
+        pytest.skip(f"오늘 표본(Static 가용 {static})에는 110% 의 {shape} 당긴 호기가 없다")
+    index = wanted.index[0]
     unit = str(units.at[index, "호기"])
     target = units.at[index, "목표 Qual"]
     assert isinstance(target, date)
-    if pd.isna(units.at[index, "기존 Qual"]):
+    if dated_first:
+        now_days = int(str(units.at[index, "단축일수"]))
+        assert now_days > 0, "남는 → 날짜 방향은 요약 지금 합계가 그 몫을 뺐는지까지 본다"
+        units.at[index, "기존 Qual"] = None
+        units.at[index, "단축일수"] = pd.NA
+    else:
         now_days = 0
         units.at[index, "기존 Qual"] = target + timedelta(days=9)
         units.at[index, "단축일수"] = 9
-    else:
-        now_days = int(str(units.at[index, "단축일수"]))
-        units.at[index, "기존 Qual"] = None
-        units.at[index, "단축일수"] = pd.NA
     stored = repository.save_shortening_baseline(
         ShorteningBaselineDraft(
             name="남는 호기 기준선",
