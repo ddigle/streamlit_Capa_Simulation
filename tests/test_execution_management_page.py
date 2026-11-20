@@ -188,7 +188,12 @@ def test_every_subpage_has_its_own_line_in_the_guide_screen_list() -> None:
     declared = _subpage_names([spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES])
 
     assert _guide_screen_names(guide) == declared
-    # 그물이 비지 않음 — 선언에 화면 하나(Guide 머리 단락에 이름이 이미 있는 「설비 일정」)가
-    # 늘면 목록과 어긋난다.
-    assert "설비 일정" in guide
-    assert _guide_screen_names(guide) != [*declared, "설비 일정"]
+    # 그물이 비지 않음 — 목록에서 화면 줄 하나의 굵은 이름이 빠지거나 실적 묶음 줄에서 하나가
+    # 빠진 Guide 는 선언과 어긋난다. 이름이 Guide 다른 단락에만 있으면(머리 단락의 「설비
+    # 일정」 처럼) 목록 줄로 치지 않는다.
+    assert _guide_screen_names(guide.replace("- **Space 현황**", "- Space 현황")) != declared
+    assert (
+        _guide_screen_names(guide.replace("효율 · UPEH · 수율 실적", "효율 · 수율 실적"))
+        != declared
+    )
+    assert "설비 일정" in guide and "설비 일정" not in _guide_screen_names(guide)
