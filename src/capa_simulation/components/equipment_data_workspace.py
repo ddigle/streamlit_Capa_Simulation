@@ -943,6 +943,36 @@ def _bind_own_save_carry(*, replaced: bool, seeded_before: object, base_before: 
     carry["froms"] = list(dict.fromkeys(str(item) for item in froms))
     carry["to"] = buffer_base()
     carry["to_seeded"] = _SEEDED_GENERATION.peek()
+    carry["rewind"] = True
+
+
+def note_late_ops(ops: Sequence[Mapping[str, Any]], base: str) -> None:
+    """제 「리비전 저장」 누름이 이음 표지를 적은 뒤 · 다시 세우기 전에 그 편집본(`base`)에 얹는 op
+    를 이음 표지에 남긴다 — Streamlit 1.63 은 저장 콜백이 DB 에 쓰는 사이 닿은 다음 조작의 회차를
+    다른 스레드로 세워, 그 회차가 곧 버려질 옛 편집본에 op 를 얹고 ack 를 그린다(브라우저는 그
+    op 를 버린다). 다시 세운 편집본에 이을 때 이것을 다시 얹는다(`take_late_ops`). 세션 칸이 아니라
+    그 dict 를 고친다(두 스레드가 같은 객체를 본다)."""
+    carry = _carry_for(base)
+    if carry is None or "to" in carry or not ops:
+        return
+    carry["late"] = [*carry.get("late", []), *(dict(op) for op in ops)]
+
+
+def take_late_ops() -> list[dict[str, Any]]:
+    """이음 표지가 방금 다시 세운 편집본에 이어졌으면 그 사이 옛 편집본에 얹었던 op(한 번만 —
+    저장에 든 seq 이하는 뺀다). 없으면 빈 목록."""
+    carry = own_save_carry()
+    if carry is None or not carry.pop("rewind", False):
+        return []
+    applied = carry.get("applied")
+    saved: dict[str, int] = applied if isinstance(applied, dict) else {}
+    late = carry.pop("late", [])
+    return [
+        dict(op)
+        for op in late
+        if isinstance(op, dict)
+        and int(op.get("seq") or 0) > int(saved.get(str(op.get("mount")), 0))
+    ]
 
 
 def pop_drafts_replaced() -> bool:

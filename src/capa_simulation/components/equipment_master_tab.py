@@ -103,6 +103,7 @@ from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     layout_lock_origins,
     layout_memo_mark,
+    note_late_ops,
     official_layout_cells,
     own_save_carry,
     own_save_unsettled,
@@ -133,6 +134,7 @@ from capa_simulation.components.equipment_data_workspace import (
     table_editable,
     table_generations,
     table_lock,
+    take_late_ops,
 )
 from capa_simulation.components.equipment_data_workspace import (
     NAME_CHANGES_EXPANDER_KEY as _NAME_CHANGES_KEY,
@@ -863,7 +865,14 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
-    ops = _carried(_within_grade(this_session(ops, context.base)), context.base)
+    ops = _within_grade(this_session(ops, context.base))
+    note_late_ops([op for op in ops if op.get("base") == context.base], context.base)
+    _apply_received(ops, context, layout)
+
+
+def _apply_received(ops: list[dict[str, Any]], context: GridContext, layout: LayoutMode) -> None:
+    """받은 op 를 제 저장 이음(`_carried`)을 거쳐 편집본에 얹고 결과를 적는다."""
+    ops = _carried(ops, context.base)
     if not ops:
         return
     before = layout_memo_mark()
@@ -1822,6 +1831,11 @@ def render_equipment_master_tab(
         floor_canvases=floor_canvases,
         today=today,
     )
+    late = take_late_ops()
+    if late:
+        # 제 저장 뒤 다시 세운 편집본 — 저장 뒤에 곧 버려질 옛 편집본에 얹었던 op 를 이 편집본에
+        # 잇는다.
+        _apply_received(late, context, layout)
     if st.session_state.pop(OUTBOX_HELD_KEY, False):
         apply_outbox(context, layout)
     settle_grid_undo(partial(_grid_undo, context, layout))

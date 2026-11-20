@@ -213,3 +213,47 @@ def test_an_edit_sent_before_discard_all_is_not_brought_back(tmp_path: Path, gri
 
     assert str(_value(app, "DA-02", "담당자")) != "버리기 직전 값"
     assert grid_results(app, "warning")[-1] == eg.DROPPED_TOAST.format(count=1)
+
+
+@pytest.mark.parametrize("cut", [False, True], ids=["finished", "cut"])
+def test_a_cell_landing_on_the_old_buffer_while_my_save_writes_is_taken_again(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, cut: bool
+) -> None:
+    """Streamlit 1.63 은 저장 콜백이 DB 에 쓰는 사이 닿은 다음 조작의 회차를 다른 스레드로 세운다 —
+    그 회차의 받기 콜백은 아직 쓰기 전이라 저장 직후 칸을 곧 버려질 옛 편집본에 얹고 ack 를
+    그린다(브라우저 c6 에서 본 길 — 브라우저는 그 op 를 버린다). 그 op 를 이음 표지에 남겼다가 제
+    저장 뒤 다시 세운 편집본에 다시 얹는다 — 저장 콜백이 끝까지 돌든 쓰기 뒤에 끊기든."""
+    kept = _kept_grid_kwargs(monkeypatch)
+    app = _app(tmp_path / "equipment.duckdb")
+    before = last(grid, emg.GRID_KEY)["base"]
+    first = _op(1, before, op="cell", id="s:DA-01", col="담당자", text="저장 전 값")
+    send(app, emg.GRID_KEY, "outbox", {"mount": MOUNT, "ops": [first]})
+    late = _op(2, before, op="cell", id="s:DA-02", col="담당자", text="쓰는 사이 친 값")
+    original = DuckDBEquipmentRepository.save_equipment
+
+    def writing(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> Any:
+        st.session_state[emg.GRID_KEY] = SimpleNamespace(
+            outbox={"mount": MOUNT, "ops": [first, late]}
+        )
+        kept[emg.GRID_KEY]["on_outbox_change"]()
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", writing)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    if cut:
+        _first_callback(
+            app,
+            monkeypatch,
+            "_save_revision",
+            cut_after=(DuckDBEquipmentRepository, "save_equipment"),
+        )
+        app.run()
+    else:
+        app.button(key=SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    assert _value(app, "DA-01", "담당자") == "저장 전 값"
+    assert _value(app, "DA-02", "담당자") == "쓰는 사이 친 값"
+    assert last(grid, emg.GRID_KEY)["ack"] == {"mount": MOUNT, "seq": 2}
+    _no_foreign_blame(app)
