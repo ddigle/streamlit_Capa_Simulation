@@ -2635,8 +2635,11 @@ def _list_runs(screen: Screen) -> int:
     return int(screen.page.evaluate(_RUN_COUNTER_JS))
 
 
-# 이동 단추 열 번의 회차 상한 — 300ms 묶음으로 보낸 한 번 + 그 회차가 돌아와 다시 부르는 한 번.
+# 이동 단추 열 번의 회차 상한 — 묶음으로 보낸 한 번 + 그 회차가 돌아와 다시 부르는 한 번.
 LIST_MOVE_RUNS: Final = 2
+# 이동 단추 열 번 뒤 묶음이 나가기를 기다리는 시간(ms) — 묶음 길이
+# (`scenario_list_grid.LIST_SEND_MS`, 결정값 0.3 ~ 1.0초)보다 넉넉히.
+LIST_MOVE_WAIT_MS: Final = 1800
 
 
 def check_scenario_list_grid(screen: Screen) -> str:
@@ -2682,7 +2685,7 @@ def check_scenario_list_grid(screen: Screen) -> str:
         before = _list_runs(screen)
         for step in range(10):
             tools.nth(step % 2 if tools.nth(step % 2).is_enabled() else 1 - step % 2).click()
-        page.wait_for_timeout(900)
+        page.wait_for_timeout(LIST_MOVE_WAIT_MS)
         screen.wait_idle()
         runs = _list_runs(screen) - before
         parts.append(f"이동 열 번 회차 {runs}{'' if runs <= LIST_MOVE_RUNS else ' — 묶음 풀림'}")
