@@ -8,6 +8,7 @@
 // rowKeys · colNames · queueOp · sendNow · sendOnce · startEdit · commitEdit · cancelEdit · setStatus · announce · toast ·
 // focusGrid · cellAtPoint · visibleRowCount · setWidths.
 
+// 묶어 보내기 쉼의 대비 값 — 쉼은 껍데기 limits.sendMs(파이썬 `edit_grid.SEND_MS` 하나)가 정하고, 그 칸이 없을 때만 이 값이다.
 const EG_SEND_MS = 300
 const EG_BUFFER_ROWS = 8
 const EG_TIP_MS = 300
@@ -1017,7 +1018,7 @@ function commitEdit(S, move, refocus) {
   const text = editor.value
   S.edit = null
   // 초점을 먼저 표로 옮기고 숨긴다 — 초점 든 칸을 숨기면 브라우저가 대상 없는 focusout 을 내고, 그것이 표 밖으로 나간 것으로
-  // 읽혀 300ms 묶음을 끊는다. refocus 가 false 면 초점이 이미 표 밖이다(blur · 앞 표 넘김 · 머리 누름 · 도구 단추).
+  // 읽혀 출납 묶음을 끊는다. refocus 가 false 면 초점이 이미 표 밖이다(blur · 앞 표 넘김 · 머리 누름 · 도구 단추).
   if (refocus !== false) focusGrid(S)
   editor.hidden = true
   const m = S.model
@@ -1085,7 +1086,7 @@ function egOnPaste(S, event) {
 // ---------------------------------------------------------------- 출납
 
 // op 하나를 쌓는다 — table·gen·seq·at 을 붙이고 화면에는 곧바로 미리보기. 초안이 없던 표의 첫 op 는 기다리지 않고 바로
-// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 300ms 묶음을 기다리지 않고 한 회차 안에 서게). 쌓지 못하면(보낼 칸이 너무 많음) null.
+// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 묶음 쉼을 기다리지 않고 한 회차 안에 서게). 쌓지 못하면(보낼 칸이 너무 많음) null.
 function queueOp(S, op) {
   const m = S.model
   if (!m || !m.table) return null
@@ -1109,7 +1110,7 @@ function queueOp(S, op) {
   const counts = (S.feedData && S.feedData.counts) || {}
   const first = S.box.ops.length === 1 && !Number(counts.cells)
   if (first || op.op === 'undo' || op.op === 'redo') sendNow(S)
-  else egTimer(S, 'send', EG_SEND_MS, () => sendNow(S))
+  else egTimer(S, 'send', egSendMs(S), () => sendNow(S))
   paint(S)
   egWhere(S)
   return queued
@@ -1174,6 +1175,12 @@ function egDropPreview(S, seq) {
     }
   }
   S.pendingBySeq.delete(seq)
+}
+
+// 묶어 보내기 쉼(ms) — 껍데기 limits.sendMs(양수), 없으면 대비 값.
+function egSendMs(S) {
+  const ms = Number(S.limits && S.limits.sendMs)
+  return Number.isFinite(ms) && ms > 0 ? ms : EG_SEND_MS
 }
 
 // 반영 안 된 op 전부를 보낸다 — 아직 한 번도 보내지 않은 op 가 있을 때만(focusout·visibilitychange·정리 함수가 이미 보낸

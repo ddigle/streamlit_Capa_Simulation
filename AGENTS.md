@@ -3646,9 +3646,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **편집은 상태 값 `outbox` 하나**(`STATE_NAMES`, 트리거 없음 — 9장). 콜백 몸통 `collect_outbox` 는 새 op 만 세션 inbox 에
     쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
     표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 브라우저는 ack 를 표와 상관없이 그 마운트의 것으로
-    받는다(표 없는 껍데기 — 읽기 보기 — 나 다른 표의 feed 에서도 출납을 비운다). 보내기(`sendNow` — 300ms 묶음·focusout·
+    받는다(표 없는 껍데기 — 읽기 보기 — 나 다른 표의 feed 에서도 출납을 비운다). 보내기(`sendNow` — 묶음 쉼·첫 op·되돌리기·다시 실행·focusout·
     visibilitychange·정리 함수)는 **아직 한 번도 보내지 않은 op 가 있을 때만** 반영 안 된 op 전부를 싣는다 — 이미 보낸 op 만 남은
-    출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
+    출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 묶음 쉼은 파이썬 상수 `edit_grid.SEND_MS`(0.3초)
+    하나가 정하고 껍데기 `limits.sendMs` 로 JS 에 간다(`shell_limits` — `eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을 때만 쓰는 대비 값,
+    시험 `tests/test_edit_grid_send_js.py`). 실행 줄 환경변수 `CAPA_RR_EG_SEND_MS`(ms 정수 · 상한 `SEND_MS_MAX`)는 측정 사본 전용 덮어쓰기라
+    운영 · 사내 실행 줄에 넣지 않는다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
     으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
     사용자가 일부러 버린 길(「편집 취소」 — `discard_table(…, keys)`, `GridKeys.discarded` 칸)은 버린 `gen` 을 적어(최근
     `DISCARDED_GENS` 개) 그 직전 출납 묶음의 op 를 `apply_inbox` 가 토스트 없이 버린다(빈 초안 자리도 걷는다). 세대가 바뀌어도
