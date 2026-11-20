@@ -523,6 +523,71 @@ export default function (component) {
   const sheetMenuFrom = q('.sle-sheet-menu-from')
   const sheetMenuTo = q('.sle-sheet-menu-to')
   const sheetGrip = q('.sle-sheet-grip')
+  // 창 칸 확인 보내기(`// <sheet-send>`)의 바깥 몫. 묶음 쉼은 파이썬 상수(data `sheetSendMs` — `SHEET_SEND_MS`, 개발 · 측정
+  // 사본만 실행 줄 `CAPA_DEV_BATCH_MS`)이고 없으면 곧바로 보낸다. 판정을 기다리는 시간, 회차가 도는 동안 다시 볼 간격, 다시 보내기
+  // 전 조용한 틈(화면 탭 줄 `LOST_QUIET_MS` 와 같은 값 — 회차 끝 GC 한 번 몫을 넘는다)은 여기 둔다. 회차마다 새로 짓고(`data` ·
+  // `setTriggerValue` 가 회차마다 새로 온다) 타이머 · 떠나기 신호는 늘 마지막 것(`S.sheetEnv`)을 쓴다. 회차 표지가 바뀐 때는
+  // 마운트에 하나인 감시(`S.sheetRunWatch` — 폴 간격 사이의 짧은 회차도 놓치지 않게)와 다시 볼 때 읽은 값으로 적는다
+  // (`S.sheetRun`). 마운트 id(`S.sheetMount`)는 확인 요청 · 판정에 실려 다시 선 편집기(seq 가 처음부터 다시 오른다)의 요청을
+  // 서버가 옛 seq 로 거르지 않게 한다. `tests/test_space_sheet_send_js.py` 가 아래 두 표시 줄 사이(와 정리 함수의
+  // `<sheet-send-unbind>`)를 떼어 대역으로 50번 불러 처리기가 한 벌인지 본다(AGENTS 9장 「구역 회차 규칙」 R7).
+  // <sheet-send-bind>
+  const SHEET_SEND_MS = Number.isInteger(data.sheetSendMs) && data.sheetSendMs > 0 ? data.sheetSendMs : 0
+  const SHEET_RETRY_MS = 1500
+  const SHEET_POLL_MS = 250
+  const SHEET_QUIET_MS = 600
+  const sheetRunRoot = document.querySelector('[data-testid="stApp"]')
+  const readSheetRun = () => {
+    const root = document.querySelector('[data-testid="stApp"]')
+    const state = root ? root.getAttribute('data-test-script-state') : null
+    return state === 'running' || state === 'rerunRequested'
+  }
+  if (!S.sheetSend) S.sheetSend = createSheetSend()
+  if (!S.sheetRun) S.sheetRun = createSheetRun(readSheetRun(), Date.now())
+  if (!S.sheetMount) S.sheetMount = 'sm-' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4)
+  if (SHEET_EDIT && sheetRunRoot && S.sheetRunRoot !== sheetRunRoot && typeof MutationObserver === 'function') {
+    if (S.sheetRunWatch) S.sheetRunWatch.disconnect()
+    S.sheetRunWatch = new MutationObserver(() => markSheetRun(S.sheetRun, readSheetRun(), Date.now()))
+    S.sheetRunWatch.observe(sheetRunRoot, { attributes: true, attributeFilter: ['data-test-script-state'] })
+    S.sheetRunRoot = sheetRunRoot
+  }
+  S.sheetEnv = {
+    sendMs: SHEET_SEND_MS,
+    retryMs: SHEET_RETRY_MS,
+    pollMs: SHEET_POLL_MS,
+    quietMs: SHEET_QUIET_MS,
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    current: () => S.sheetEnv,
+    seq: () => S.sheetSeq || 0,
+    body: () => {
+      const cells = SHEET_EDIT ? sheetEditCells() : null
+      if (!cells || !cells.size) return null
+      return { mount: S.sheetMount, epoch: S.epoch, seq: S.sheetSeq || 0, base: S.sheetBase || 0, cells: sheetEditPayload(cells) }
+    },
+    send: (body) => setTriggerValue('sheetCheck', body),
+    quiet: () => {
+      const now = Date.now()
+      markSheetRun(S.sheetRun, readSheetRun(), now)
+      return sheetRunQuiet(S.sheetRun, now)
+    },
+    settled: () => settleLeaving(S.sheetLeave, sheetSendBusy(S.sheetSend)),
+  }
+  // 떠나기 신호(AGENTS 9장 「구역 회차 규칙」 R8 — 화면을 떠나는 누름)와 창 숨김에 묶어 두던 칸 확인을 곧바로 보낸다. 마운트에 한
+  // 번만 단다(앞 호출의 정리 함수는 불리지 않는다 — R7). 내릴 때 정리 함수가 걷는다.
+  if (SHEET_EDIT && !S.sheetLeave) {
+    S.sheetLeave = joinLeaving(window, {
+      busy: () => sheetSendBusy(S.sheetSend),
+      flush: () => sheetSendFlush(S.sheetSend, S.sheetEnv),
+    })
+  }
+  if (SHEET_EDIT && !S.onSheetHidden) {
+    S.onSheetHidden = () => {
+      if (document.visibilityState === 'hidden') sheetSendFlush(S.sheetSend, S.sheetEnv)
+    }
+    document.addEventListener('visibilitychange', S.onSheetHidden)
+  }
+  // </sheet-send-bind>
   const trayHits = q('.sle-tray-hits')
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
@@ -2738,6 +2803,128 @@ export default function (component) {
     return { swallow: Boolean(swallow), run: false }
   }
   // </sheet-edit>
+  // 「호기 정보」 창 칸 확인 보내기(순수 — 2026-11-20 사용자 결정 Q3 · 설계 규칙집 7-1: 잇달아 고친 칸은 잠깐 모아 보내고, 칸
+  // 떠남 · 「적용」 직전 · 떠나기 신호 때는 곧바로 보낸다). 상자(`box` — `createSheetSend`)는 상태만 쥐고 바깥 몫은 `env` 다:
+  // {sendMs — 묶음 쉼(0 이하면 곧바로), retryMs — 판정을 기다리는 시간, pollMs — 회차가 도는 동안 다시 볼 간격, quietMs — 다시
+  // 보내기 전 회차 표지가 「돌지 않음」 이어야 할 시간, setTimeout · clearTimeout, current — 타이머가 부를 지금 env, seq — 지금 seq,
+  // body — 보낼 요청(고친 칸이 없으면 null), send, quiet — 회차 표지가 「돌지 않음」 이 된 뒤 흐른 ms(도는 동안 null —
+  // `sheetRunQuiet`), settled — 기다림이 걷혔을 때}. 확인은 트리거(`sheetCheck`)라 앞 회차 끝 직후 몇 ms ~ 수십 ms 안에 보낸 것은
+  // 프런트가 요청 전에 지워 서버에 닿지 않을 수 있다(화면 탭 줄 `lostSelect` 와 같은 까닭). 그래서 보낸 seq 의 판정이 `retryMs`
+  // 안에 오지 않으면, 회차가 끝나고 `quietMs` 동안 조용한 뒤에 같은 요청을 한 번만 다시 보낸다 — 다시 보낸 것이 회차 끝 창에 떨어져
+  // 또 지워지지 않게. 서버는 같은 마운트의 같은 · 옛 seq 를 거른다(`_dispatch_sheet_check`). 보낼 것이 남았거나(`due`) 판정을
+  // 기다리는(`wait`) 동안은 떠나기 명부의 busy 다(`leave.js`). `tests/test_space_sheet_send_js.py` 가 아래 두 표시 줄 사이를 떼어
+  // node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <sheet-send>
+  function createSheetSend() {
+    return { due: false, timer: 0, wait: null, retry: 0 }
+  }
+  function sheetSendBusy(box) {
+    return Boolean(box && (box.due || box.wait))
+  }
+  // 칸 고침 하나를 싣는다 — `now` 면 곧바로, 아니면 마지막 고침 뒤 `sendMs` 조용할 때 보낸다.
+  function sheetSendQueue(box, env, now) {
+    box.due = true
+    env.clearTimeout(box.timer)
+    box.timer = 0
+    if (now || !(env.sendMs > 0)) {
+      sheetSendFlush(box, env)
+      return
+    }
+    box.timer = env.setTimeout(() => {
+      box.timer = 0
+      sheetSendFlush(box, env.current())
+    }, env.sendMs)
+  }
+  // 묶음을 곧바로 보낸다. 보낼 것이 없으면 보내지 않고 `settled` 만 부른다 — 기다릴 판정도 없을 때 받은 떠나기 신호가 다음
+  // 고침을 묶지 않는 채로 남지 않게(판정을 기다리는 중이면 busy 라 그대로다).
+  function sheetSendFlush(box, env) {
+    env.clearTimeout(box.timer)
+    box.timer = 0
+    if (!box.due) {
+      env.settled()
+      return
+    }
+    box.due = false
+    const body = env.body()
+    if (body) sheetSendOut(box, env, body, false)
+    else env.settled()
+  }
+  function sheetSendOut(box, env, body, again) {
+    box.wait = { seq: body.seq, body, again }
+    env.send(body)
+    sheetSendArm(box, env, env.retryMs)
+  }
+  function sheetSendArm(box, env, ms) {
+    env.clearTimeout(box.retry)
+    box.retry = env.setTimeout(() => {
+      box.retry = 0
+      sheetSendRetry(box, env.current())
+    }, ms)
+  }
+  // 기다리던 판정이 오지 않았다 — 그 뒤 다시 고쳤으면(seq 가 다름) 그 묶음이 새로 보내므로 걷고, 회차가 돌면 `pollMs` 마다 다시
+  // 본다. 다시 보낸 것도 오지 않았으면 걷는다(「적용」 이 같은 판정을 한 번 더 한다). 아니면 회차 표지가 `quietMs` 동안 「돌지
+  // 않음」 일 때까지 기다렸다가 같은 요청을 한 번 다시 보낸다 — 그 사이 다른 회차가 돌면 그 끝에서 다시 센다.
+  function sheetSendRetry(box, env) {
+    const wait = box.wait
+    if (!wait) return
+    if (wait.seq !== env.seq()) {
+      box.wait = null
+      env.settled()
+      return
+    }
+    const quiet = env.quiet()
+    if (quiet === null) {
+      sheetSendArm(box, env, env.pollMs)
+      return
+    }
+    if (wait.again) {
+      box.wait = null
+      env.settled()
+      return
+    }
+    if (quiet < env.quietMs) {
+      sheetSendArm(box, env, env.quietMs - quiet)
+      return
+    }
+    sheetSendOut(box, env, wait.body, true)
+  }
+  // 「적용」 을 보냈다 — 기다리던 확인의 다시 보냄을 `retryMs` 뒤로 미룬다. 적용 판정(거부면 `sheetRefused`)이 그 칸을 먼저 판정하고,
+  // 받은 거부가 기다림을 걷는다(`sheetSendHeard`) — 다시 보낸 확인이 거부 뒤에 닿아 같은 막힌 칸을 한 번 더 알리지 않게. 적용도
+  // 닿지 않았으면 미룬 뒤에 그대로 다시 보낸다.
+  function sheetSendDefer(box, env) {
+    if (box.wait) sheetSendArm(box, env, env.retryMs)
+  }
+  // 회차 표지(Streamlit 뿌리의 회차 상태)가 「돈다」 · 「돌지 않음」 으로 바뀐 때(`at`)를 적는다 — 다시 보내기 전 조용한 틈을 잰다.
+  function createSheetRun(running, now) {
+    return { running: Boolean(running), at: now }
+  }
+  function markSheetRun(run, running, now) {
+    if (run.running === Boolean(running)) return
+    run.running = Boolean(running)
+    run.at = now
+  }
+  // 회차 표지가 「돌지 않음」 이 된 뒤 흐른 ms — 도는 동안은 null.
+  function sheetRunQuiet(run, now) {
+    return run.running ? null : now - run.at
+  }
+  // 그 seq 까지의 판정이 왔다 — 기다림을 걷는다. 참이면 걷었다.
+  function sheetSendHeard(box, env, seq) {
+    if (!box.wait || !(seq >= box.wait.seq)) return false
+    env.clearTimeout(box.retry)
+    box.retry = 0
+    box.wait = null
+    return true
+  }
+  // 고친 칸이 0개 · 새 도면 · 마운트 내림 — 묶음과 기다림을 모두 걷는다(보내지 않는다).
+  function sheetSendStop(box, env) {
+    env.clearTimeout(box.timer)
+    env.clearTimeout(box.retry)
+    box.timer = 0
+    box.retry = 0
+    box.due = false
+    box.wait = null
+  }
+  // </sheet-send>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
@@ -6572,8 +6759,8 @@ export default function (component) {
     pruneSelection()
     renderItems()
     updateStatus()
-    // 되돌린 창 칸도 다시 판정받는다(빨강이 풀리거나 남는다).
-    if (sheetEdited) sheetEditSend()
+    // 되돌린 창 칸도 곧바로 다시 판정받는다(빨강이 풀리거나 남는다 — 단추 op 는 묶지 않는다).
+    if (sheetEdited) sheetEditSend(true)
   }
 
   // 노란 손잡이 index 를 화면 점 p({x, top})에 끌었을 때 도형 item 의 새 모양 값 — 같은 값이면 null.
@@ -7823,6 +8010,9 @@ export default function (component) {
     // 열린 창 칸은 확정하고 보낸다. 고친 칸은 보내기 전에 지우지 않는다 — 서버가 거부하면 epoch 가 그대로라 편집기가 다시 서지
     // 않는다(시안 결함 — 친 값이 사라졌다). 지우는 것은 받아들인 적용 뒤의 새 epoch 다.
     closeSheetCell(true)
+    // 묶어 두던 칸 확인은 적용보다 먼저 곧바로 보낸다 — 같은 틱의 두 트리거는 한 요청에 실려, 확인이 판정 · 알림을 세우고 적용
+    // 판정(`sheetRefused`)이 막힌 칸을 거른다.
+    sheetSendFlush(S.sheetSend, S.sheetEnv)
     const cells = SHEET_EDIT ? sheetEditPayload(sheetEditCells()) : []
     if (SHEET_EDIT && sheetEditBlocked(sheetEditCells(), S.sheetVerdict || null)) return
     const unitChanges = changes()
@@ -7830,6 +8020,12 @@ export default function (component) {
     const marksChanged = markChangeCount() > 0
     const labelsChanged = groupLabelChangeCount() > 0
     if (!unitChanges.length && !nameChanges.length && !marksChanged && !labelsChanged && !canvasChanged() && !cells.length) return
+    // 이 적용이 판정할 칸의 seq — 막힌 칸으로 거부되면 그 seq 까지의 확인 기다림을 걷는다(`adoptSheetEdit`). 그 거부가 닿기 전에
+    // 확인이 다시 나가지 않게 다시 보냄을 미룬다(`sheetSendDefer`).
+    if (SHEET_EDIT) {
+      S.sheetApplySeq = S.sheetSeq || 0
+      sheetSendDefer(S.sheetSend, S.sheetEnv)
+    }
     setTriggerValue('apply', {
       // 「호기 정보」 창에서 고친 칸 [{id(편집기에 실린 설비명), col, text}] — 판정은 파이썬 `check_sheet_cells`.
       cells,
@@ -9096,6 +9292,8 @@ export default function (component) {
       }
       event.stopPropagation()
     }
+    // 줄 · 단추에서 창 밖으로 초점이 나가면 묶어 두던 칸 확인을 곧바로 보낸다(`sheetLeftSoon`).
+    sheetBox.onfocusout = () => sheetLeftSoon()
     // 창의 빈 곳을 누르면 창이 초점을 받는다. 편집기의 초점 못 받는 자리(도구 줄 · 칸의 빈 곳)를 누른 때도 창에 둔다.
     sheetBox.tabIndex = -1
     host.onclick = keepKeysInSheet
@@ -9171,6 +9369,9 @@ export default function (component) {
   function resetSheetEdit() {
     closeSheetCell(false, null, true)
     S.sheetCells = new Map()
+    // 묶어 두던 확인과 판정 기다림은 버린다(새 도면 · 처음 상태로 — 보낼 칸이 없다).
+    sheetSendStop(S.sheetSend, S.sheetEnv)
+    S.sheetEnv.settled()
     // 칸이 0개가 된 자리 — 늦게 온 앞 판정은 받지 않고, 다음 확인은 앞 판정을 「이미 알린 칸」 으로 쓰지 않는다(`sheetEditSend`).
     S.sheetSeq = (S.sheetSeq || 0) + 1
     S.sheetBase = S.sheetSeq
@@ -9337,7 +9538,11 @@ export default function (component) {
         closeSheetCell(false, 'stay')
       }
     }
-    input.onblur = () => closeSheetCell(true)
+    // 다른 곳 누름은 확정이다. 입력 칸은 이 처리기 안에서 걷혀 창의 focusout 이 닿지 않으므로 칸 떠남도 여기서 본다.
+    input.onblur = () => {
+      closeSheetCell(true)
+      sheetLeftSoon()
+    }
     input.onclick = input.ondblclick = input.onpointerdown = (event) => event.stopPropagation()
   }
   // 열린 칸을 닫는다 — `keep` 이면 확정. `move` 는 커서를 옮길 쪽('stay' 는 제자리에 초점만). `quiet` 이면 칠하지 않는다(새 도면).
@@ -9363,39 +9568,56 @@ export default function (component) {
   function commitSheetCell(id, col, text) {
     const put = sheetEditPut(sheetEditCells(), SHEET_EDIT, id, col, text)
     if (!put.changed) return
+    // 고친 칸이 없던 창의 첫 칸은 묶지 않는다(첫 op — AGENTS 9장 「구역 회차 규칙」 묶음 길이).
+    const first = sheetEditCells().size === 0
     S.sheetCells = put.cells
     S.sheetEditRev = (S.sheetEditRev || 0) + 1
     pushUndo([{ op: 'cell', key: sheetEditKey(id, col), before: put.before }])
     updateStatus()
-    sheetEditSend()
+    sheetEditSend(first)
   }
-  // 칸 확정마다 서버에 「확인만」 묻는다(2026-11-12 시안 보드 답 5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」 · Q1 (가)) —
-  // 고친 칸 전부를 보내 마지막 상태로 판정받으므로 입력 차례를 타지 않고, 편집본에는 넣지 않는다. 판정은 data `sheetVerdict`(같은
-  // seq)로 와 막힌 칸이 친 값 그대로 빨갛게 서고(알림은 파이썬이 낸다) 「적용」 이 잠긴다. 고친 칸이 없으면 묻지 않고 판정을 걷는다.
-  // 고친 칸이 0개가 된 자리의 seq 는 다음 요청들의 `base` 다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 으로 쓴다(칸을 비운 뒤
-  // 같은 막힌 값을 다시 치면 다시 알린다. 앞 판정을 받기 전에 잇달아 친 확인은 같은 base 라 두 번 알리지 않는다).
-  function sheetEditSend() {
+  // 칸을 고치면 서버에 「확인만」 묻는다(2026-11-12 시안 보드 답 5-6 · 2026-11-20 사용자 결정 Q3 — 설계 규칙집 7-1). 잇달아 고친
+  // 칸은 마지막 고침 뒤 묶음 쉼에 한 번이고, 첫 칸 · 되돌리기(`now`) · 창 밖으로 초점이 나감 · 「적용」 직전 · 떠나기 신호 · 창
+  // 숨김은 곧바로다(`// <sheet-send>`). 고친 칸 전부를 보내 마지막 상태로 판정받으므로 입력 차례를
+  // 타지 않고, 편집본에는 넣지 않는다. 판정은 data `sheetVerdict`(같은 마운트 · seq)로 와 막힌 칸이 친 값 그대로 빨갛게 서고(알림은
+  // 파이썬이 낸다) 「적용」 이 잠긴다. seq 는 고칠 때마다 오르고 보낼 때의 seq 가 요청에 실린다. 고친 칸이 없으면 묻지 않고 판정을
+  // 걷는다. 고친 칸이 0개가 된 자리의 seq 는 다음 요청들의 `base` 다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 으로 쓴다(칸을
+  // 비운 뒤 같은 막힌 값을 다시 치면 다시 알린다. 앞 판정을 받기 전에 잇달아 친 확인은 같은 base 라 두 번 알리지 않는다).
+  function sheetEditSend(now) {
     if (!SHEET_EDIT) return
     const cells = sheetEditCells()
     S.sheetSeq = (S.sheetSeq || 0) + 1
     if (!cells.size) {
+      sheetSendStop(S.sheetSend, S.sheetEnv)
+      S.sheetEnv.settled()
       S.sheetBase = S.sheetSeq
       S.sheetVerdict = null
       S.sheetEditRev = (S.sheetEditRev || 0) + 1
       updateStatus()
       return
     }
-    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0, cells: sheetEditPayload(cells) })
+    sheetSendQueue(S.sheetSend, S.sheetEnv, Boolean(now) || leavingNow(S.sheetLeave))
+  }
+  // 초점이 창 밖으로 나갔으면(칸 떠남 — 도면 · 도구 줄 · 화면 밖을 누름) 묶어 두던 확인을 곧바로 보낸다. 창 안에서 칸을 옮기면
+  // (Enter · Tab · 다른 칸 누름) 묶는다. 열린 칸을 닫으며 입력 칸을 걷는 순간 초점이 잠깐 빠졌다가 같은 처리기 안에서 줄로
+  // 돌아오므로, 처리기가 다 끝난 뒤(`setTimeout` 0) 지금 초점으로 본다.
+  function sheetLeftSoon() {
+    window.setTimeout(() => {
+      if (!sheetBox || sheetBox.contains(host.getRootNode().activeElement)) return
+      sheetSendFlush(S.sheetSend, S.sheetEnv)
+    }, 0)
   }
   // 적용 거부(data `sheetRefused` — {epoch, nonce, blocked, follow}, 파이썬 `verdict_payload`)를 한 번 받는다 — 막힌 칸이 빨강 + 까닭
-  // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch).
-  // 칸 확정의 판정(data `sheetVerdict` — {epoch, seq, blocked, follow})은 마지막으로 보낸 요청의 것(seq 짝)만 받는다 — 그 사이 다시
-  // 고쳤으면 다음 판정을 기다린다.
+  // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch). 「적용」 때의 seq(`S.sheetApplySeq`)까지의 확인 기다림도 걷는다.
+  // 칸 확인의 판정(data `sheetVerdict` — {epoch, mount, seq, blocked, follow})은 이 마운트가 마지막으로 보낸 요청의 것(seq 짝)만
+  // 받는다 — 그 사이 다시 고쳤으면 다음 판정을 기다린다. 이 마운트가 보낸 seq 까지의 판정이 오면 다시 보냄 · busy 기다림을 걷는다.
   function adoptSheetEdit() {
     if (!SHEET_EDIT) return
     let changed = false
     const verdict = data.sheetVerdict
-    if (verdict && verdict.epoch === S.epoch && verdict.seq === S.sheetSeq && verdict.seq !== S.sheetVerdictSeq) {
+    const mine = Boolean(verdict) && verdict.epoch === S.epoch && verdict.mount === S.sheetMount
+    if (mine && sheetSendHeard(S.sheetSend, S.sheetEnv, verdict.seq)) S.sheetEnv.settled()
+    if (mine && verdict.seq === S.sheetSeq && verdict.seq !== S.sheetVerdictSeq) {
       S.sheetVerdictSeq = verdict.seq
       S.sheetVerdict = sheetEditVerdict(verdict)
       changed = true
@@ -9404,6 +9626,8 @@ export default function (component) {
     if (refused && refused.epoch === S.epoch && refused.nonce !== S.sheetRefusedNonce) {
       S.sheetRefusedNonce = refused.nonce
       S.sheetVerdict = sheetEditVerdict(refused)
+      // 거부는 「적용」 때 고친 칸 전부의 판정이다 — 그 seq 까지의 확인 기다림을 걷는다(그 뒤 고친 칸의 확인은 그대로 기다린다).
+      if (sheetSendHeard(S.sheetSend, S.sheetEnv, S.sheetApplySeq || 0)) S.sheetEnv.settled()
       changed = true
     }
     if (!changed) return
@@ -9777,5 +10001,16 @@ export default function (component) {
     S.mainRo = null
     if (S.lockFrame) cancelAnimationFrame(S.lockFrame)
     S.lockFrame = 0
+    // 「호기 정보」 창 칸 확인 — 묶음 · 판정 기다림을 걷고(보내지 않는다 — 창 칸은 적용 전 편집이다) 떠나기 명부 · 창 숨김에서 내린다.
+    // <sheet-send-unbind>
+    sheetSendStop(S.sheetSend, S.sheetEnv)
+    if (S.sheetLeave) S.sheetLeave.drop()
+    S.sheetLeave = null
+    if (S.sheetRunWatch) S.sheetRunWatch.disconnect()
+    S.sheetRunWatch = null
+    S.sheetRunRoot = null
+    if (S.onSheetHidden) document.removeEventListener('visibilitychange', S.onSheetHidden)
+    S.onSheetHidden = null
+    // </sheet-send-unbind>
   }
 }

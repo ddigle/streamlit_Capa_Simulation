@@ -1193,8 +1193,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     unit_lock_kinds`)로 data `sheetEdit` 를 싣는다. 적용값 `cells` 는 `parse_editor_apply(sheet_ids=)` 가 꼴만 읽고 차례는
     `apply_layout_edits` → `check_sheet_cells`(표와 같은 인자 — 캔버스 · 오늘) → `apply_name_changes` → `prepare_equipment_master`
     다(칸은 옛 이름으로 온다). 막힌 칸이 있으면 적용 전체를 받지 않고 판정을 세션 `space_sheet_refused_v1` 에 두어 같은 epoch
-    편집기 data `sheetRefused` 로 돌려주며 사건 `EQ-25` 를 담고 한 번 더 돈다(편집기 아래 오류 글 없음). 칸 확정마다 오는
-    「확인만」 은 콜백(`on_sheetCheck_change` → `_check_sheet_request` — 그린 회차의 편집본 · 표 조건 · 잠금 · 캔버스 · 오늘을 쥔
+    편집기 data `sheetRefused` 로 돌려주며 사건 `EQ-25` 를 담고 한 번 더 돈다(편집기 아래 오류 글 없음). 창에서 고친 칸을
+    브라우저가 잠깐 모아 보내는 「확인만」(칸 떠남 · 「적용」 직전 · 떠나기 신호 때는 곧바로 — 2026-11-20 사용자 결정 Q3, 3장
+    `space_layout_editor.py` 「호기 정보」 창)은 콜백(`on_sheetCheck_change` → `_check_sheet_request` — 그린 회차의 편집본 · 표 조건 · 잠금 · 캔버스 · 오늘을 쥔
     `partial`, 편집본 세대가 바뀌었으면 버림)이 본문보다 먼저 같은 `check_sheet_cells` 로 판정해 세션 `space_sheet_verdict_v1`
     에 두고(다음 회차 data `sheetVerdict`) 새로 막힌 칸(설비명 · 칸 · 글 · 규칙이 앞 판정에 없던 것)만 `EQ-25` 로 낸다 — 편집본에는
     넣지 않는다. 앞 판정은 요청의 `base`(브라우저에서 고친 칸이 마지막으로 빈 seq)보다 뒤의 seq 일 때만 쓴다 — 칸을 비운 뒤 같은
@@ -1670,12 +1671,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     되돌리지 않는다. 표지는 pointerdown 마다 새로 정하고 pointerleave 로 풀지 않으며(터치는 손을 떼면 pointerleave 가 click
     보다 먼저다), 키보드 click(detail 0)은 삼키지 않는다. 잠긴 두 단추는 누름을 받지 않아(`.sle-tiphost > button:disabled` 의
     pointer-events 없음) 다른 곳 누름처럼 칸을 확정하고, 확정이 단추를 풀어도 click 은 감싼 칸에 가 단추 동작은 없다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
-    있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({epoch, seq —
-    오르기만 함, base — 고친 칸이 마지막으로 빈 seq `S.sheetBase`, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` —
-    고친 칸이 없으면 묻지 않고 판정을 걷으며 그 seq 가 다음 base 다. 「처음 상태로」(`resetSheetEdit`)도 seq 를 올려 그 자리를 잡는다), 판정은
-    data `sheetVerdict`({epoch, seq, blocked, follow})를 **마지막으로 보낸 seq** 일 때만 받는다. 막힌 칸으로 거부한 적용은 data
-    `sheetRefused`({epoch, nonce, blocked, follow})를 nonce 마다 한 번 받는다. 둘 다 막힌 칸(판정한 글이 지금 친 글과 같을
-    때만)을 빨갛게 짚고 「적용」 을 잠근다(까닭 「「호기 정보」 막힌 칸 n개」). 색은 팔레트 `cell-*`(설비 마스터 표 토큰
+    있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({mount — 편집기가
+    설 때마다 새 id `S.sheetMount`, epoch, seq — 오르기만 함, base — 고친 칸이 마지막으로 빈 seq `S.sheetBase`, cells — 고친 칸
+    전부})로 「확인만」 묻는다(`sheetEditSend` — 고친 칸이 없으면 묻지 않고 판정을 걷으며 그 seq 가 다음 base 다. 「처음
+    상태로」(`resetSheetEdit`)도 seq 를 올려 그 자리를 잡는다). **잇달아 고친 칸은 묶어 묻는다**(2026-11-20 사용자 결정 Q3 —
+    설계 규칙집 7-1, 순수 구획 `// <sheet-send>` · node 시험 `tests/test_space_sheet_send_js.py`): 마지막 고침 뒤 쉼
+    `SHEET_SEND_MS`(data `sheetSendMs` — `grid_shared.batch_ms`, 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS`)에 한 번이고, 첫 칸 ·
+    칸 되돌리기 · 창 밖으로 초점이 나감(`sheetLeftSoon` — 입력 칸 blur · 창 focusout, 처리기가 끝난 뒤 지금 초점으로 봄 — 창 안
+    Enter · Tab · 다른 칸 누름은 묶음) · 「적용」 직전(적용 트리거와 같은 틱이라 한 요청) · 떠나기 신호(`joinLeaving` — 등록 글
+    머리에 `grid_shared.leave_js()`) · 창 숨김은 곧바로다. 트리거라 회차 끝 창에서 잃을 수 있어, 보낸 seq 의 판정이
+    `SHEET_RETRY_MS` 안에 오지 않으면 회차가 끝나고 `SHEET_QUIET_MS`(화면 탭 줄 `LOST_QUIET_MS` 와 같은 0.6초) 동안 조용한 뒤에
+    같은 요청을 한 번만 다시 보내고(회차 표지가 바뀐 때는 마운트에 하나인 뿌리 감시 `S.sheetRunWatch` 가 적는다) 그것도 오지
+    않으면 걷는다 — 보낼 것이 남았거나 판정을 기다리는 동안이 떠나기 명부의 busy 다. 「적용」 을 보내면 기다리던 확인의 다시
+    보냄을 `SHEET_RETRY_MS` 뒤로 미루고(`sheetSendDefer`), 막힌 칸으로 거부한 판정이 오면 「적용」 때 seq(`S.sheetApplySeq`)까지의
+    기다림을 걷는다 — 거부 뒤에 다시 보낸 확인이 같은 막힌 칸을 `EQ-25` 로 한 번 더 내지 않게. 서버는 같은 편집기 · epoch ·
+    마운트의 같은 · 옛 seq 를 거른다(`_dispatch_sheet_check` — 세션 칸 `SHEET_CHECK_SEEN_KEY`). 판정은 data
+    `sheetVerdict`({epoch, mount, seq, blocked, follow})를 **이 마운트가 마지막으로 보낸 seq** 일 때만 받는다. 막힌 칸으로 거부한
+    적용은 data `sheetRefused`({epoch, nonce, blocked, follow})를 nonce 마다 한 번 받는다. 둘 다 막힌 칸(판정한 글이 지금 친 글과
+    같을 때만)을 빨갛게 짚고 「적용」 을 잠근다(까닭 「「호기 정보」 막힌 칸 n개」). 색은 팔레트 `cell-*`(설비 마스터 표 토큰
     `GRID_*`)다.
   - 보기(층 · FAB) 도구 줄의 선택 줄(`.sle-pick`)은 고른 것이 없으면 비어 있다 — 누르기 · 키보드 · 확대 안내는 그 빈 칸의
     풍선(`pickTip` → `title`)이고 자리에 글로 세우지 않는다(설계 규칙 UI-TXT-01, Guide 「층 열기」 · 「호기 정보」).

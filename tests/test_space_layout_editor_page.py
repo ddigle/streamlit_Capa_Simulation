@@ -30,7 +30,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_process_field import share
 from test_space_layout_edit import _master
 
-from capa_simulation.components import space_layout_editor, write_guard
+from capa_simulation.components import grid_shared, space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
@@ -1632,16 +1632,21 @@ def _check(
     seq: int,
     *cells: tuple[str, str, str],
     base: int = 0,
+    mount: str | None = None,
 ) -> list[dict[str, Any]]:
     """창 칸 확인 한 번 — 낸 `EQ-25` 사건(대역은 본문 안에서 콜백을 불러 그 회차 끝 표지 자리가
     보낸다 — 브라우저에서는 콜백이 본문보다 먼저라 머리 알림 칸이 보낸다)을 돌려주고, 한 번 더 돌아
-    판정이 편집기 data 에 실린다. `base` 는 브라우저에서 고친 칸이 마지막으로 빈 seq 다."""
-    app.session_state[FAKE_CHECK_KEY] = {
+    판정이 편집기 data 에 실린다. `base` 는 브라우저에서 고친 칸이 마지막으로 빈 seq, `mount` 는
+    브라우저 편집기가 설 때마다 새로 짓는 id 다(없으면 싣지 않는다)."""
+    check: dict[str, Any] = {
         "epoch": calls[-1]["epoch"],
         "seq": seq,
         "base": base,
         "cells": [{"id": unit, "col": column, "text": text} for unit, column, text in cells],
     }
+    if mount is not None:
+        check["mount"] = mount
+    app.session_state[FAKE_CHECK_KEY] = check
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     sent = events(app, "EQ-25")
@@ -1650,13 +1655,14 @@ def _check(
     return sent + events(app, "EQ-25")
 
 
-def test_each_confirmed_window_cell_is_checked_at_once_and_new_blocks_alarm(
+def test_each_window_check_is_judged_and_new_blocks_alarm(
     tmp_path: Path, checking_calls: list[dict[str, Any]]
 ) -> None:
-    """5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」(Q1 (가)) — 칸을 확정할 때마다 「확인만」
-    판정이 돌아(편집본은 그대로) 다음 회차 편집기 data `sheetVerdict`(같은 seq)로 막힌 칸을 짚고,
-    **새로** 막힌 칸만 알림창 · Alarm(`EQ-25`)에 낸다. 같은 칸 · 같은 글이 다시 막히면 다시 알리지
-    않는다. 물류를 함께 미루면(마지막 상태가 맞으면) 풀린다 — 입력 차례를 타지 않는다."""
+    """5-6 메모 · Q1 (가) · 2026-11-20 사용자 결정 Q3 — 브라우저가 잠깐 모아 보낸 「확인만」
+    요청마다 판정이 돌아(편집본은 그대로) 다음 회차 편집기 data `sheetVerdict`(같은 seq)로 막힌
+    칸을 짚고, **새로** 막힌 칸만 알림창 · Alarm(`EQ-25`)에 낸다. 같은 칸 · 같은 글이 다시
+    막히면 다시 알리지 않는다. 물류를 함께 미루면(마지막 상태가 맞으면) 풀린다 — 입력 차례를 타지
+    않는다."""
     app, _ = _open_editor(tmp_path)
     before = app.session_state[BUFFER_KEY][1].copy()
 
@@ -1711,6 +1717,46 @@ def test_a_check_after_the_window_emptied_alarms_the_same_blocked_cell_again(
     assert checking_calls[-1]["sheetVerdict"]["seq"] == 4
     # 그 뒤로는 base 3 그대로 — 다시 알리지 않는다.
     assert not _check(app, checking_calls, 5, blocked, ("EQ-01", "투자구분", "개발"), base=3)
+    clear_equipment_repository()
+
+
+def test_a_resent_or_older_check_from_the_same_mount_is_dropped_by_seq(
+    tmp_path: Path, checking_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정이 오지 않으면 브라우저가 같은 요청을 한 번 다시 보낸다. 같은 편집기 ·
+    epoch · 마운트에서 이미 받은 seq(다시 보낸 요청)와 그보다 앞 seq(늦게 온 옛 요청)는 판정하지
+    않는다 — 판정 · 알림이 그대로다(`_dispatch_sheet_check`). 다시 선 편집기(새 마운트)는 seq 가
+    처음부터 다시 올라도 받고, 앞 마운트의 판정을 「이미 알린 칸」 으로 쓰지 않는다. 판정은 요청의
+    마운트를 실어 돌려준다. 묶음 쉼은 파이썬 상수 하나가 data 로 넘긴다."""
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    app, _ = _open_editor(tmp_path)
+    assert checking_calls[-1]["sheetSendMs"] == space_layout_editor.SHEET_SEND_MS
+    blocked = ("EQ-01", "반입일정", "2026-08-01")
+    fine = ("EQ-01", "투자구분", "개발")
+
+    assert len(_check(app, checking_calls, 3, blocked, mount="m1")) == 1
+    verdict = checking_calls[-1]["sheetVerdict"]
+    assert verdict["mount"] == "m1" and verdict["seq"] == 3
+    assert [(item["id"], item["col"]) for item in verdict["blocked"]] == [("EQ-01", "반입일정")]
+
+    # 같은 seq(다시 보냄) · 앞 seq(옛 요청) — 칸이 달라도 판정하지 않는다.
+    assert not _check(app, checking_calls, 3, fine, mount="m1")
+    assert checking_calls[-1]["sheetVerdict"] == verdict
+    assert not _check(app, checking_calls, 2, fine, mount="m1")
+    assert checking_calls[-1]["sheetVerdict"] == verdict
+
+    # 다시 선 편집기 — seq 가 작아도 받고, 같은 막힌 칸을 다시 알린다.
+    again = _check(app, checking_calls, 2, blocked, mount="m2")
+    assert len(again) == 1 and again[0]["short"].startswith("EQ-01 반입일정 2026-08-01 — ")
+    verdict = checking_calls[-1]["sheetVerdict"]
+    assert verdict["mount"] == "m2" and verdict["seq"] == 2
+    assert not _check(app, checking_calls, 2, fine, mount="m2")
+    assert checking_calls[-1]["sheetVerdict"] == verdict
+
+    # 같은 마운트의 뒤 seq 는 판정한다.
+    assert not _check(app, checking_calls, 4, fine, mount="m2")
+    verdict = checking_calls[-1]["sheetVerdict"]
+    assert verdict["seq"] == 4 and verdict["blocked"] == []
     clear_equipment_repository()
 
 

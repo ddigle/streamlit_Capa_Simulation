@@ -946,14 +946,29 @@ def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
     assert "sheetCells" in status and "sheetEditBlocked(" in status
     undo = JS[JS.index("  function undo() {") : JS.index("  function adjustedLook(")]
     assert "op.op === 'cell'" in undo and "sheetEditRestore(" in undo
-    assert "if (sheetEdited) sheetEditSend()" in undo
-    # 확정마다 「확인만」(5-6 메모 · Q1 (가)) — 고친 칸 전부를 보내고, 판정은 마지막 seq 의 것만
-    # 받는다.
+    # 되돌린 칸은 단추 op 라 묶지 않고 곧바로 다시 묻는다.
+    assert "if (sheetEdited) sheetEditSend(true)" in undo
+    # 고친 칸은 잠깐 모아 「확인만」(5-6 메모 · Q1 (가) · 2026-11-20 사용자 결정 Q3,
+    # `// <sheet-send>`) — 고친 칸 전부를 보내고, 판정은 이 마운트가 마지막으로 보낸 seq 의 것만
+    # 받는다. 첫 칸은 묶지 않는다.
     commit = JS[JS.index("  function commitSheetCell(") : JS.index("  function adoptSheetEdit(")]
-    assert "sheetEditSend()" in commit
-    assert "setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq," in commit
+    assert "const first = sheetEditCells().size === 0" in commit
+    assert commit.index("const first = sheetEditCells().size === 0") < commit.index(
+        "S.sheetCells = put.cells"
+    )
+    assert "sheetEditSend(first)" in commit
+    assert (
+        "sheetSendQueue(S.sheetSend, S.sheetEnv, Boolean(now) || leavingNow(S.sheetLeave))"
+    ) in commit
+    assert "send: (body) => setTriggerValue('sheetCheck', body)," in JS
+    assert (
+        "return { mount: S.sheetMount, epoch: S.epoch, seq: S.sheetSeq || 0, "
+        "base: S.sheetBase || 0, cells: sheetEditPayload(cells) }"
+    ) in JS
     adopt = JS[JS.index("  function adoptSheetEdit(") :]
-    assert "verdict.seq === S.sheetSeq" in adopt[: adopt.index("\n  }\n")]
+    adopt = adopt[: adopt.index("\n  }\n")]
+    assert "verdict.mount === S.sheetMount" in adopt
+    assert "mine && verdict.seq === S.sheetSeq" in adopt
     # 칸 안의 키는 도면 단축키로 새지 않는다(Delete 로 호기 빼기 등).
     opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
     assert "event.stopPropagation()" in opener
@@ -1079,9 +1094,11 @@ def test_undo_with_an_open_cell_drops_only_the_typed_text_by_touch_or_mouse() ->
     # 「처음 상태로」 의 click 은 그대로 칸 · 배치를 모두 처음으로 돌린다.
     reset = JS[JS.index("  resetButton.onclick = () => {") :]
     assert reset.index("resetSheetEdit()") < reset.index("initFromData()")
-    # 다른 곳 누름(열린 칸의 blur)은 여전히 확정이다.
+    # 다른 곳 누름(열린 칸의 blur)은 여전히 확정이다 — 창 밖이면 묶은 확인을 곧바로 보낸다.
     opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
-    assert "input.onblur = () => closeSheetCell(true)" in opener
+    assert (
+        "input.onblur = () => {\n      closeSheetCell(true)\n      sheetLeftSoon()\n    }" in opener
+    )
 
 
 def test_a_locked_reset_or_undo_press_lands_on_its_wrapper_and_only_commits() -> None:
@@ -1106,12 +1123,12 @@ def test_a_check_carries_the_seq_where_the_window_last_emptied() -> None:
     기억해 다음 확인마다 싣는다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 의 앞 판정으로
     쓴다(`space_status._check_sheet_request`). 「처음 상태로」 도 그 자리를 새로 잡고 seq 를 올려
     늦게 온 앞 판정을 받지 않는다."""
-    send = JS[JS.index("  function sheetEditSend() {") : JS.index("  function adoptSheetEdit(")]
-    empty = send[send.index("if (!cells.size) {") : send.index("setTriggerValue('sheetCheck'")]
+    send = JS[JS.index("  function sheetEditSend(now) {") : JS.index("  function adoptSheetEdit(")]
+    empty = send[send.index("if (!cells.size) {") : send.index("sheetSendQueue(")]
     assert "S.sheetBase = S.sheetSeq" in empty
-    assert (
-        "setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0,"
-    ) in send
+    # 칸이 0개가 되면 묶어 두던 확인 · 판정 기다림도 걷는다(묻지 않는다).
+    assert empty.index("sheetSendStop(S.sheetSend, S.sheetEnv)") < empty.index("return")
+    assert "base: S.sheetBase || 0, cells: sheetEditPayload(cells) }" in JS
     reset = JS[JS.index("  function resetSheetEdit() {") :]
     reset = reset[: reset.index("\n  }\n")]
     assert reset.index("S.sheetSeq = (S.sheetSeq || 0) + 1") < reset.index(
