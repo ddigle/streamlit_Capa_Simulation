@@ -5430,8 +5430,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   위)는 현재 일정 기준 전환(`shortening_basis_switch` — 멈춘 회차에도 같은 자리, 2026-11-20 보드 답 Q01 (가))이고, 호기 줄은
   「현재 MM.DD → 단축 MM.DD」 · 고르지 않은 기준의 일정 흐린 ○(`other_basis_dates`) · 남는 호기 「필요 MM.DD」 「남는 호기」 다.
   호기 줄 위에는 범례 글이 없고(빈 글 카드 포함) 요약 카드 넷은 라벨 · 값만이다 — 표지 · 카드의 뜻은 Guide 「단축 계획」 의
-  「KPI 네 칸의 뜻」 · 「호기 줄 표지」 다(2026-11-20 사용자 요청 — 규칙집 6-39). `.shk-units-legend` · `.shk-kpi-note` 서식은
-  진척 비교(`shortening_progress_panel`)가 쓰므로 `_style` 에 남는다.
+  「KPI 네 칸의 뜻」 · 「호기 줄 표지」 다(2026-11-20 사용자 요청 — 규칙집 6-39). 진척 비교도 같은 꼴이다(PRC-01 횡전개) — 두 줄
+  카드의 호기 줄 위 범례 글이 없고 합계 칸에 무엇의 합인지 적는 설명 줄이 없다(뜻은 Guide 「진척 비교」 의 요약 · 카드).
+  `.shk-kpi-note` 서식은 진척 비교 합계 칸의 뺀 몫 줄 · 기준선 칸 출처 줄(값)이 쓰므로 `_style` 에 남고 `.shk-units-legend` 는
+  걷었다. 목표 % 는 본문에 값으로 남는다 — 카드마다 표 머리 「과부족 (목표 n%)」, 카드가 없으면 빈 결과 줄. 진척 비교 화면은
+  카드가 서는 동안 본문에 목표 % 값이 없다 — 자리를 둘지는 `docs/TODO.md` 2장 열린 줄이다.
   맞대지 못한 공정 `RS-02`(「Static 가용 없음」 포함)와 Static 역산 상태 `RS-07`(`static_states_note`)은 한 표지에 싣는다(두
   화면 같은 지문). 진척 비교는 기준선과 같은 기준의 계획(`_Plan.plan_for`)과 견준다.
 - `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지

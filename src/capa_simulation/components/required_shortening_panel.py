@@ -31,7 +31,8 @@ UI-PRF-01).
 지우지 않는다). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽
 끝이다(`_render_basis`). KPI 카드는 라벨 · 값만이고 공정 카드의 호기 줄 위에 범례 글이
 없다 — 카드마다의 뜻과 호기 줄 표지(● ◀ ○ ◌)는 Guide 「단축 계획」 이 말한다(2026-11-20 사용자
-요청, 설계 규칙 UI-TXT-01).
+요청, 설계 규칙 UI-TXT-01). 진척 비교 화면(`shortening_progress_panel`)의 합계 칸 · 두 줄 카드도
+같은 꼴이다 — 뜻은 Guide 「진척 비교」.
 일정 미정 · 사용기준 밖 · 입력 비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다
 — 짧은 글이 표지 몫(건수)을, 전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계
 규칙 UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비
@@ -1749,9 +1750,7 @@ def _render_progress(
     st.html(
         _style()
         + progress_style()
-        + progress_summary_markup(
-            view, baseline, level, selected=selected, current_basis=current_basis
-        )
+        + progress_summary_markup(view, baseline, current_basis=current_basis)
     )
 
     def controls() -> None:
@@ -2031,7 +2030,6 @@ def _style() -> str:
 .shk-card-body {{margin:0 18px;padding:8px 0 4px}}
 .shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px;
   container:{UNITS_CONTAINER} / inline-size}}
-.shk-units-legend {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-unit {{display:grid;grid-template-columns:{_UNIT_NAME_PX}px minmax({_TRACK_MIN_PX}px,1fr)
   {_UNIT_RESULT_PX}px;align-items:center;gap:10px;background:{tokens.SURFACE_SUBTLE};
   border:1px solid {tokens.BORDER};border-radius:8px;padding:3px 10px}}

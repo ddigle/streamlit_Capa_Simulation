@@ -31,6 +31,7 @@ from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
     _unit_markup,
+    _units_markup,
 )
 from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
@@ -64,6 +65,18 @@ from capa_simulation.services.shortening_progress import (
 )
 
 PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
+GUIDE = Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/required_shortening.md"
+# 진척 비교 화면에서 걷어 Guide 「진척 비교」 로 옮긴 글 — 호기 줄 위 범례 글과 합계 칸 설명 줄
+# (2026-11-20 사용자 요청을 같은 꼴 전체로).
+PROGRESS_LEFT_FOR_GUIDE = (
+    "호기마다 두 줄",
+    "칸은 달",
+    "점선은 오늘",
+    "오른쪽은 기존",
+    "당긴 호기의 합",
+    "지금 맞댄 공정",
+    "목표 110% ·",
+)
 
 
 def _saved_database(tmp_path: Path) -> tuple[Path, pd.DataFrame]:
@@ -743,3 +756,66 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     assert f'<span class="shk-kpi-value">{plain_total.days - now_days:,}일</span>' in body
     assert app.session_state[SCREEN_TOTAL_KEY] == plain_total
     clear_equipment_repository()
+
+
+def _guide_item(section: str, heading: str) -> str:
+    """Guide 원고의 `section` 머리(####) 아래에서 굵은 머리 `heading` 항목 하나(다음 첫 단계
+    항목 앞까지)."""
+    text = GUIDE.read_text(encoding="utf-8")
+    start = text.index(f"#### {section}")
+    part = text[start : text.index("\n#### ", start + 1)]
+    item = part.index(f"- **{heading}**")
+    return part[item : part.index("\n- ", item + 1)]
+
+
+def test_the_progress_view_has_no_unit_legend_or_total_note_and_the_guide_says_them(
+    tmp_path: Path,
+) -> None:
+    """2026-11-20 사용자 요청(요약 값 아래 회색 설명 줄 · 공정 카드 범례 줄을 Guide 로)을 같은 꼴
+    전체로 — 진척 비교의 합계 칸은 라벨 · 값 · 막대와 합계에서 뺀 몫 줄(있을 때만)만이고, 두 줄
+    카드의 호기 줄 위 범례 글도 없다(호기가 없는 카드의 빈 글 위 포함). 걷은 뜻은 Guide
+    「진척 비교」 의 요약 · 카드 줄이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 · PRC-01). 기준선
+    칸의 출처 줄은 값이라 그대로다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+    app = _save_button(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    body = _html(app)
+    assert "진척 비교 요약" in body and _progress_cards(app)
+    assert 'class="shk-prog-unit"' in body
+    total = re.search(
+        r'<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계</span>'
+        r'<span class="shk-kpi-value">[^<]+</span>'
+        r'((?:<span class="shk-kpi-note">[^<]*</span>)*)</div>',
+        body,
+    )
+    assert total is not None
+    notes = re.findall(r'<span class="shk-kpi-note">([^<]*)</span>', total.group(1))
+    assert all(note.endswith(" 빼고 견줌") for note in notes), notes
+    assert "shk-units-legend" not in body
+    for phrase in PROGRESS_LEFT_FOR_GUIDE:
+        assert phrase not in body, phrase
+    assert "현재 일정 기준 " in body and "그날 오늘 " in body
+    empty = _units_markup(pd.DataFrame(), [202601, 202602], today=date(2026, 1, 1))
+    assert 'class="shk-empty"' in empty and "shk-units-legend" not in empty
+    assert "호기마다 두 줄" not in empty
+    clear_equipment_repository()
+
+    summary = _guide_item("진척 비교", "요약")
+    for words in ("당긴 호기의 단축일수", "고른 목표", "지금 맞댄 공정", "뺀 몫", "기준 바뀜"):
+        assert words in summary, words
+    card = _guide_item("진척 비교", "카드")
+    for words in (
+        "◀ 필요 시점 ── ○ 확보 시점",
+        "◀ ━━ ●",
+        "칸은 달",
+        "점선은 오늘",
+        "범례 글이 없습니다",
+        "기존 → 필요 −N일",
+        "점선 원",
+    ):
+        assert words in card, words

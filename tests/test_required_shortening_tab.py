@@ -369,8 +369,8 @@ def _csv(app: AppTest, key: str) -> tuple[dict[str, object], pd.DataFrame]:
 
 def _months_levels(app: AppTest) -> set[str]:
     """공정·월 CSV 의 `목표 확보율(%)` 값 — 본문이 그린 목표. 요약 카드는 라벨 · 값만이라
-    목표를 적지 않고, 공정 카드는 모자란 공정이 없는 목표에서 서지 않으므로 늘 행이 있는 이 파일로
-    본다."""
+    목표를 적지 않고, 본문의 목표 글은 카드 표 머리와 빈 결과 줄로 회차마다 자리가 갈리므로(카드는
+    모자란 공정이 없는 목표에서 서지 않는다) 늘 행이 있는 이 파일로 본다."""
     _, months = _csv(app, "equipment_shortening_months_csv")
     assert not months.empty
     return set(months[LEVEL_COLUMN])
@@ -1960,6 +1960,27 @@ def test_the_summary_notes_and_the_unit_legend_left_the_screen_for_the_guide(
         "칸은 달",
     ):
         assert words in marks.replace("**", ""), words
+
+
+def test_the_target_stays_in_the_body_on_every_card_or_in_the_empty_line(tmp_path: Path) -> None:
+    """요약 카드에서 목표 % 를 걷어도(2026-11-20 사용자 요청 — 규칙집 6-39) 목표는 본문에 값으로
+    남는다 — 카드가 서면 카드마다 표 머리 「과부족 (목표 n%)」, 공정을 비우고 모자란 공정이 없는
+    목표라 카드가 없으면 빈 결과 줄 「목표 n% 에서 모자란 달이 있는 공정이 없습니다.」 다(설계 규칙
+    UI-TXT-04)."""
+    app = _run(_database(tmp_path))
+    assert not app.exception, [element.message for element in app.exception]
+    cards = _cards(app)
+    assert cards
+    body = _html(app)
+    assert body.count('<div class="shk-row">과부족 (목표 110%)</div>') == len(cards)
+
+    # 공정을 비운 채 모자란 공정이 없는 낮은 목표 — 카드가 서지 않는다.
+    app.session_state[SHORTENING_LEVEL_KEY] = 0.5
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert not _cards(app)
+    assert "목표 50% 에서 모자란 달이 있는 공정이 없습니다." in _captions(app)
+    clear_equipment_repository()
 
 
 def test_static_without_a_static_table_lists_every_process_as_static_missing(

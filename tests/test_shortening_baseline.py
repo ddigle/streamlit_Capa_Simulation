@@ -215,11 +215,9 @@ def test_the_equipment_scenario_source_round_trips_and_shows_in_the_head(tmp_pat
     view = ProgressView(
         rows=pd.DataFrame(), cards=(), outside=(), summary=ProgressSummary(), axis_months=(202601,)
     )
-    head = progress_summary_markup(view, loaded, 1.0, selected=False)
+    head = progress_summary_markup(view, loaded)
     assert "설비 공통 r12 · 운영 일정 r9 · 공식 v3" in head
-    old_head = progress_summary_markup(
-        view, repository.load_shortening_baseline(older.baseline_id), 1.0, selected=False
-    )
+    old_head = progress_summary_markup(view, repository.load_shortening_baseline(older.baseline_id))
     assert "설비 r12" in old_head and "설비 공통" not in old_head
 
 
