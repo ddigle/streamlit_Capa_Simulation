@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -75,6 +76,7 @@ from capa_simulation.persistence.equipment_cache import (
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_samples import sample_equipment_master
+from capa_simulation.services.required_shortening import LEVEL_COLUMN
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_baseline import (
     ShorteningBaselineDraft,
@@ -246,6 +248,15 @@ def _screen(app: AppTest, world: _World) -> tuple[list[str], dict[str, bytes]]:
     }
 
 
+def _months_levels(downloads: dict[str, bytes]) -> set[str]:
+    """그 회차 공정·월 CSV 의 `목표 확보율(%)` 값 — 본문이 그린 목표(요약 카드는 라벨 · 값만이라
+    목표를 적지 않는다)."""
+    data = downloads["equipment_shortening_months_csv"].decode("utf-8-sig")
+    months = pd.read_csv(io.StringIO(data), dtype=str, keep_default_na=False)
+    assert not months.empty
+    return set(months[LEVEL_COLUMN])
+
+
 def _run(app: AppTest, world: _World, step: Callable[[AppTest], Any] | None = None) -> None:
     """한 회차. CSV 기록을 비우고 돌려 그 회차가 내보낸 바이트만 남긴다."""
     world.downloads.clear()
@@ -322,7 +333,7 @@ def test_choosing_the_target_opens_on_the_host_and_draws_the_view_run_numbers(
         assert app.session_state[FULL_RUNS_KEY] == full_runs
         assert app.button(key=LEVEL_FIELD.field_key).label == f"{round(level * 100)}%"
         in_full = _screen(app, world)
-        assert f"목표 {round(level * 100)}% 기준" in " ".join(in_full[0])
+        assert _months_levels(in_full[1]) == {str(round(level * 100))}
 
         # 같은 목표의 본문 프래그먼트 회차 — 숫자가 바이트까지 같다.
         view = _view(runner)

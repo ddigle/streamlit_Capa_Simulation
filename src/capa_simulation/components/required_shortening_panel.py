@@ -29,7 +29,9 @@ UI-PRF-01).
 본문 맨 위는 KPI 카드다 — 따로 선 값 줄은 없고 기준 값 「설비 일정 기준 가용(환산) · 오늘」 은 KPI
 아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로,
 지우지 않는다). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽
-끝이다(`_render_basis`).
+끝이다(`_render_basis`). KPI 카드는 라벨 · 값만이고 공정 카드의 호기 줄 위에 범례 글이
+없다 — 카드마다의 뜻과 호기 줄 표지(● ◀ ○ ◌)는 Guide 「단축 계획」 이 말한다(2026-11-20 사용자
+요청, 설계 규칙 UI-TXT-01).
 일정 미정 · 사용기준 밖 · 입력 비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다
 — 짧은 글이 표지 몫(건수)을, 전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계
 규칙 UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비
@@ -855,7 +857,7 @@ def _render_body(
     thresholds = _thresholds()
     # 서식은 KPI 와 한 `st.html` 에 싣는다. 스타일만 든 `st.html` 은 이벤트 칸(본문 밖 최상위
     # 칸)으로 가는데, 이 본문은 프래그먼트라 갈래(일반·진척 비교)마다 그 칸에 쓰는 수가 달라진다.
-    st.html(_style() + _kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
+    st.html(_style() + _kpi_markup(level_plan, scope, short))
     _render_downloads(
         prepared.official,
         scope,
@@ -1991,6 +1993,7 @@ def _style() -> str:
 .shk-kpi-value {{font-family:{display};font-weight:800;font-size:28px;line-height:1.15;
   font-variant-numeric:tabular-nums}}
 .shk-kpi-note {{font-size:11.5px;color:{tokens.TEXT_MUTED}}}
+.shk-kpis > .shk-kpi {{padding:10px 16px;gap:2px}}
 .shk-panel {{background:{tokens.SURFACE};border:1px solid {tokens.BORDER};border-radius:10px;
   padding:14px 18px;display:flex;flex-direction:column;gap:10px;color:{tokens.TEXT}}}
 .shk-title {{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;
@@ -2058,14 +2061,9 @@ def _style() -> str:
 # ------------------------------------------------------------------ KPI
 
 
-def _kpi_markup(
-    level_plan: LevelPlan,
-    level: float,
-    scope: Sequence[str],
-    short: set[str],
-    *,
-    selected: bool,
-) -> str:
+def _kpi_markup(level_plan: LevelPlan, scope: Sequence[str], short: set[str]) -> str:
+    """요약 카드 넷 — 라벨과 값만 선다. 카드마다의 뜻(목표 기준 · 고른/맞댄 공정 중 · 당기는
+    차례 · 추가N)은 Guide 「단축 계획」 의 화면 줄이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
     units = level_plan.units.loc[level_plan.units["공정"].isin(list(scope))]
     moved = units.loc[units["구분"].ne(KIND_NEW)]
     new = units.loc[units["구분"].eq(KIND_NEW)]
@@ -2073,21 +2071,15 @@ def _kpi_markup(
     longest = int(days.max()) if not days.dropna().empty else 0
     short_count = sum(1 for process in scope if process in short)
     tiles = (
-        (
-            "부족 공정",
-            f"{short_count} / {len(scope)}",
-            f"목표 {_percent(level)} 기준, 한 달이라도 모자란 공정"
-            + (" (고른 공정 중)" if selected else " (맞댄 공정 중)"),
-        ),
-        ("단축 대상 호기", f"{len(moved)}대", "Qual 이른 순 → 호기 번호 순으로 당긴 호기"),
-        ("최대 단축", f"{longest}일", "한 호기가 당겨야 하는 가장 긴 날수"),
-        ("신규 필요", f"{len(new)}대", "단축만으로 못 채워 새로 들일 대수(추가N)"),
+        ("부족 공정", f"{short_count} / {len(scope)}"),
+        ("단축 대상 호기", f"{len(moved)}대"),
+        ("최대 단축", f"{longest}일"),
+        ("신규 필요", f"{len(new)}대"),
     )
     cells = "".join(
         f'<div class="shk-kpi"><span class="shk-kpi-label">{_escape(label)}</span>'
-        f'<span class="shk-kpi-value">{_escape(value)}</span>'
-        f'<span class="shk-kpi-note">{_escape(note)}</span></div>'
-        for label, value, note in tiles
+        f'<span class="shk-kpi-value">{_escape(value)}</span></div>'
+        for label, value in tiles
     )
     return f'<div class="shk-kpis" role="group" aria-label="필요 단축 일정 요약">{cells}</div>'
 
@@ -2370,18 +2362,15 @@ def _units_markup(
         if axis[0] <= today < axis[1]
         else ""
     )
-    legend = (
-        '<div class="shk-units-legend">호기별 단축 — ● 현재 Qual · ◀ 목표 Qual · '
-        f"○ {other_mark_label(basis)}(흐림) · ◌ 필요 Qual(신규 · 남는 호기) · 칸은 달 · 줄에 "
-        "올리면 기여 시작·늘어난 환산대수·모듈 수</div>"
-    )
+    # 표지(● ◀ ○ ◌)의 뜻은 줄 위 범례 글로 두지 않고 Guide 「단축 계획」 의 호기 줄 표지 목록이
+    # 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 날짜 · 기여는 줄 풍선이다.
     if units.empty:
         message = (
             "부족한 달이 모두 지난 구간이라 당길 수 있는 호기가 없습니다."
             if short
             else "이 목표에서는 부족한 달이 없어 단축할 호기가 없습니다."
         )
-        return f'<div class="shk-units">{legend}<div class="shk-empty">{message}</div></div>'
+        return f'<div class="shk-units"><div class="shk-empty">{message}</div></div>'
     # 달이 많으면 이름은 건너뛰며 적는다(격자선은 달마다 그대로). 글자가 서로 겹치지 않게 열둘 남짓.
     step = max(1, -(-len(months) // _MAX_AXIS_LABELS))
     labels = "".join(
@@ -2406,7 +2395,7 @@ def _units_markup(
             )
         )
     return (
-        f'<div class="shk-units">{legend}<div class="shk-scroll"><div style="min-width:'
+        f'<div class="shk-units"><div class="shk-scroll"><div style="min-width:'
         f"{_UNIT_NAME_PX + _TRACK_MIN_PX + _UNIT_RESULT_PX + 60}px;display:flex;"
         f'flex-direction:column;gap:4px">{"".join(rows)}</div></div></div>'
     )

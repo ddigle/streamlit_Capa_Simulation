@@ -5429,6 +5429,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   폭이라 사이드바를 펴도 따라간다). 멈춘 회차 조건 카드는 표지 「공정 · 고를 수 없음」 한 줄이다(g4-22). 조건 카드 맨 위(진척 비교
   위)는 현재 일정 기준 전환(`shortening_basis_switch` — 멈춘 회차에도 같은 자리, 2026-11-20 보드 답 Q01 (가))이고, 호기 줄은
   「현재 MM.DD → 단축 MM.DD」 · 고르지 않은 기준의 일정 흐린 ○(`other_basis_dates`) · 남는 호기 「필요 MM.DD」 「남는 호기」 다.
+  호기 줄 위에는 범례 글이 없고(빈 글 카드 포함) 요약 카드 넷은 라벨 · 값만이다 — 표지 · 카드의 뜻은 Guide 「단축 계획」 의
+  「KPI 네 칸의 뜻」 · 「호기 줄 표지」 다(2026-11-20 사용자 요청 — 규칙집 6-39). `.shk-units-legend` · `.shk-kpi-note` 서식은
+  진척 비교(`shortening_progress_panel`)가 쓰므로 `_style` 에 남는다.
   맞대지 못한 공정 `RS-02`(「Static 가용 없음」 포함)와 Static 역산 상태 `RS-07`(`static_states_note`)은 한 표지에 싣는다(두
   화면 같은 지문). 진척 비교는 기준선과 같은 기준의 계획(`_Plan.plan_for`)과 견준다.
 - `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지

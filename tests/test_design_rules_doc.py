@@ -3392,10 +3392,9 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     비교의 남는 호기 ↔ 날짜 호기 바뀜을 「기준 바뀜」 으로 따로 세는 것이고, 그 줄 아래 문단이
     구현이 답 밖에서 정한 것이며 같은 이름이 Guide 에 선다(UI-CON-02)."""
     document = _text()
-    assert "판 v1.41" in document.split("\n## 1. ")[0]
     assert "6-38 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-38. ") :]
+    record = section[section.index("\n### 6-38. ") : section.index("\n### 6-39. ")]
     assert "모두 「좋음」" in record and "여쭘 다섯은 모두 a" in record
     assert "고른 글은 보드 선택지 라벨 그대로다" in record
     head = record.split("\n- ")[0]
@@ -3433,6 +3432,46 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     v141 = history[history.index("- **v1.41 — 2026-11-20.**") :]
     for phrase in ("6-38", "여쭘-2 a", "여쭘-4 a", "q-prog-blank", "UI-CON-04", "규칙 82"):
         assert phrase in v141, phrase
+
+
+def test_the_shortening_legend_request_is_judged_in_6_39() -> None:
+    """v1.42 — 6-39 는 2026-11-20 사용자 요청(필요 단축 일정 요약 카드 설명 줄 · 공정 카드 범례
+    줄을 걷고 Guide 로)의 판정 한 줄이다 — 줄 머리 id · 요청, 굵은 글이 고른 꼴, 끝은
+    「(2026-11-20 · 규칙 id)」. UI-TXT-01 근거가 그 요청을, UI-TXT-02 그물이 옮긴 곳 시험을
+    부르고, Guide 「단축 계획」 에 두 목록이 선다."""
+    document = _text()
+    assert "판 v1.42" in document.split("\n## 1. ")[0]
+    assert "6-39 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-39. ") :]
+    assert "「여기도 각각의 요약 값 하단에 회색글씨 설명문구 Guide로 이동」" in record
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    assert len(lines) == 1, lines
+    match = re.match(
+        r"^- (shk-legend) · (.+) → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", lines[0]
+    )
+    assert match, lines[0]
+    assert match.group(2) == (
+        "2026-11-20 사용자 요청: 필요 단축 일정 요약 카드 설명 줄 · "
+        "공정 카드 범례 줄을 걷고 Guide 로"
+    )
+    assert match.group(3) == "카드는 라벨 · 값만, 뜻은 Guide 「단축 계획」 두 목록"
+    known = {rule.id for rule in _rules()}
+    cited = RULE_TOKEN.findall(match.group(5))
+    assert {"UI-TXT-01", "UI-TXT-02"} <= set(cited) <= known, cited
+    txt01 = next(rule for rule in _rules() if rule.id == "UI-TXT-01")
+    assert "사용자 요청(2026-11-20 — 6-39)" in txt01.fields["근거"][0]
+    txt02 = next(rule for rule in _rules() if rule.id == "UI-TXT-02")
+    net = "test_the_summary_notes_and_the_unit_legend_left_the_screen_for_the_guide"
+    assert net in txt02.fields["그물"][0]
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/required_shortening.md").read_text(
+        encoding="utf-8"
+    )
+    assert "- **KPI 네 칸의 뜻**" in guide and "- **호기 줄 표지**" in guide
+    history = _chapter(document, 8)
+    v142 = history[history.index("- **v1.42 — 2026-11-20.**") :]
+    for phrase in ("6-39", "UI-TXT-01", "UI-TXT-02", net, "규칙 82"):
+        assert phrase in v142, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

@@ -54,6 +54,7 @@ from capa_simulation.components.required_shortening_panel import (
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.shortening_basis_switch import other_mark_label
 from capa_simulation.components.shortening_board import (
     BOARD_BOX_KEY,
     BOARD_HELP,
@@ -94,7 +95,11 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
-from capa_simulation.services.static_qual_schedule import reverse_targets
+from capa_simulation.services.static_qual_schedule import (
+    BASIS_MASTER,
+    BASIS_STATIC,
+    reverse_targets,
+)
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, NO_PROCESS_MARK
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
@@ -104,6 +109,7 @@ from capa_simulation.upeh_assumption_state import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
+GUIDE = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "required_shortening.md"
 # 기준 값 글 — 본문 맨 위에 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(상태 표지는
 # 서지 않고 상태 알림만이다).
 VALUE_LINE_TEXT = "설비 일정 기준 가용(환산) · 오늘"
@@ -361,6 +367,15 @@ def _csv(app: AppTest, key: str) -> tuple[dict[str, object], pd.DataFrame]:
     return captured, frame
 
 
+def _months_levels(app: AppTest) -> set[str]:
+    """공정·월 CSV 의 `목표 확보율(%)` 값 — 본문이 그린 목표. 요약 카드는 라벨 · 값만이라
+    목표를 적지 않고, 공정 카드는 모자란 공정이 없는 목표에서 서지 않으므로 늘 행이 있는 이 파일로
+    본다."""
+    _, months = _csv(app, "equipment_shortening_months_csv")
+    assert not months.empty
+    return set(months[LEVEL_COLUMN])
+
+
 def test_the_page_offers_three_csvs_with_the_unit_schedule(tmp_path: Path) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 공정·월(목표 칸 추가)."""
     app = _run(_database(tmp_path))
@@ -417,14 +432,14 @@ def test_switching_the_target_level_changes_the_result_without_errors(tmp_path: 
     app = _run(_database(tmp_path))
     low = _choose_level(app, 0.9)
     assert not low.exception
-    low_body = _html(low)
+    low_levels = _months_levels(low)
     low_cards = _cards(low)
 
     high = _choose_level(low, 1.3)
     assert not high.exception
     high_body = _html(high)
     assert "과부족 (목표 130%)" in high_body
-    assert "목표 130% 기준" in high_body and "목표 90% 기준" in low_body
+    assert _months_levels(high) == {"130"} and low_levels == {"90"}
     # 목표를 올리면 모자란 공정이 늘거나 같다 — 미선택이면 그 공정이 모두 카드로 선다.
     assert len(_cards(high)) >= len(low_cards)
     assert len(_cards(high)) > 0
@@ -793,7 +808,7 @@ def test_the_target_is_a_panel_value_field_that_opens_a_picker_like_space(tmp_pa
     assert SHORTENING_DIALOG_HOST.open_key not in app.session_state
     assert LEVEL_FIELD.pick_key not in app.session_state
     assert _level_field(app) == ("130%", False)
-    assert "목표 130% 기준" in _html(app)
+    assert _months_levels(app) == {"130"}
     clear_equipment_repository()
 
 
@@ -809,13 +824,13 @@ def test_a_target_from_space_or_a_stale_session_value_is_shown_in_the_field(
     app.run()
     assert not app.exception
     assert _level_field(app) == ("90%", False)
-    assert "목표 90% 기준" in _html(app)
+    assert _months_levels(app) == {"90"}
 
     app.session_state[SHORTENING_LEVEL_KEY] = 0.75
     app.run()
     assert not app.exception
     assert _level_field(app) == ("75%", False)
-    assert "목표 75% 기준" in _html(app)
+    assert _months_levels(app) == {"75"}
 
     for stale in (0.3, 3.5, "목표"):
         app.session_state[SHORTENING_LEVEL_KEY] = stale
@@ -871,7 +886,7 @@ def test_a_target_typed_outside_the_five_plans_that_value_and_keeps_the_five_dow
     assert LEVEL_FIELD.entry_key not in app.session_state
     assert _level_field(app) == ("115%", False)
     body = _html(app)
-    assert "목표 115% 기준" in body and "과부족 (목표 115%)" in body
+    assert "과부족 (목표 115%)" in body
     captured, units = _csv(app, "equipment_shortening_units_csv")
     assert str(captured["file_name"]).startswith("required_shortening_units_115pct_")
     assert set(units[LEVEL_COLUMN]) == {"115"}
@@ -1823,7 +1838,8 @@ def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
 ) -> None:
     """보드 답 Static-0 · Q01 · Q02 — 조건 카드 맨 위 「Static | 설비 마스터」 전환은 처음 Static
     이다. 기준 값 글 · CSV 맨 앞 칸이 기준을 따르고, 바꾸면 앱 전체가 다시 돌아 그 기준의 계획이다.
-    호기 줄은 고르지 않은 기준의 일정을 흐린 ○ 로 함께 그린다."""
+    호기 줄은 고르지 않은 기준의 일정을 흐린 ○ 로 함께 그리고, 그 이름(기준마다 다름)은 줄 풍선에
+    선다 — 줄 위 범례 글은 없다(뜻은 Guide)."""
     app = _run_static(_database(tmp_path))
     assert not app.exception, [element.message for element in app.exception]
     switch = app.sidebar.button_group(key=SHORTENING_BASIS_KEY)
@@ -1834,8 +1850,8 @@ def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
     _, months = _csv(app, "equipment_shortening_months_csv")
     assert set(months["현재 일정 기준"]) == {"Static"}
     body = _html(app)
-    assert "○ 설비 마스터 Qual(흐림)" in body
     assert 'class="shk-other"' in body
+    assert f"{other_mark_label(BASIS_STATIC)} 20" in body
 
     switch.set_value("설비 마스터").run()
     assert not app.exception, [element.message for element in app.exception]
@@ -1843,7 +1859,88 @@ def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
     assert any(VALUE_LINE_TEXT in caption for caption in _caption_paths(app))
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert set(units["현재 일정 기준"]) == {"설비 마스터"}
-    assert "○ Static 역산(흐림)" in _html(app)
+    # 줄 풍선의 흐린 표지 이름은 기준을 따른다 — Static 기준의 이름(설비 마스터 Qual)은 사라진다.
+    # 이 표본의 설비 마스터 기준 호기 줄에는 Static 역산 날짜가 붙지 않아 흐린 ○ 가 서지 않는다.
+    body = _html(app)
+    assert 'class="shk-unit"' in body
+    assert f"{other_mark_label(BASIS_STATIC)} 20" not in body
+
+
+# 요약 카드 넷의 라벨 — 카드에는 라벨과 값만 선다.
+KPI_LABELS = ("부족 공정", "단축 대상 호기", "최대 단축", "신규 필요")
+# 화면에서 걷어 Guide 로 옮긴 글 — 요약 카드 설명 줄 넷과 호기 줄 위 범례 글(2026-11-20 사용자
+# 요청).
+LEFT_FOR_GUIDE = (
+    "한 달이라도 모자란 공정",
+    "고른 공정 중",
+    "맞댄 공정 중",
+    "Qual 이른 순 → 호기 번호 순",
+    "가장 긴 날수",
+    "새로 들일 대수",
+    "호기별 단축 —",
+    "(흐림)",
+    "줄에 올리면",
+)
+
+
+def _guide_part(heading: str) -> str:
+    """Guide 원고에서 굵은 머리 `heading` 줄부터 다음 첫 단계 항목 앞까지."""
+    text = GUIDE.read_text(encoding="utf-8")
+    start = text.index(f"- **{heading}**")
+    end = text.index("\n- ", start + 1)
+    return text[start:end]
+
+
+def test_the_summary_notes_and_the_unit_legend_left_the_screen_for_the_guide(
+    tmp_path: Path,
+) -> None:
+    """2026-11-20 사용자 요청 — 요약 카드 넷은 라벨 · 값만이고(회색 설명 줄 없음) 공정 카드의
+    호기 줄 위 범례 글도 없다. 걷은 뜻은 Guide 「단축 계획」 의 「KPI 네 칸의 뜻」 · 「호기 줄
+    표지」 가 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 흐린 ○ 표지는 그대로다. 호기가 없는 카드의
+    빈 글 위에도 범례가 붙지 않는다."""
+    app = _run_static(_database(tmp_path))
+    assert not app.exception, [element.message for element in app.exception]
+    body = _html(app)
+    tiles = re.findall(
+        r'<div class="shk-kpi"><span class="shk-kpi-label">([^<]+)</span>'
+        r'<span class="shk-kpi-value">[^<]+</span></div>',
+        body,
+    )
+    assert tuple(tiles) == KPI_LABELS
+    assert 'class="shk-kpi-note"' not in body
+    assert 'class="shk-units-legend"' not in body
+    assert 'class="shk-unit"' in body and 'class="shk-other"' in body
+    for phrase in LEFT_FOR_GUIDE:
+        assert phrase not in body, phrase
+    empty = required_shortening_panel._units_markup(
+        pd.DataFrame(), [202601, 202602], today=date(2026, 1, 1), short=True
+    )
+    assert 'class="shk-empty"' in empty and "shk-units-legend" not in empty
+    clear_equipment_repository()
+
+    kpi = _guide_part("KPI 네 칸의 뜻")
+    for words in (
+        *KPI_LABELS,
+        "한 달이라도 모자란 공정",
+        "고른 공정 중",
+        "맞댄 공정 중",
+        "Qual 이른 순 → 호기 번호 순",
+        "가장 긴 날수",
+        "새로 들일 대수(추가N)",
+    ):
+        assert words in kpi, words
+    marks = _guide_part("호기 줄 표지")
+    for words in (
+        "● 현재 Qual",
+        "◀ 목표 Qual",
+        "○",
+        "◌",
+        "필요 Qual",
+        other_mark_label(BASIS_STATIC),
+        other_mark_label(BASIS_MASTER),
+        "칸은 달",
+    ):
+        assert words in marks.replace("**", ""), words
 
 
 def test_static_without_a_static_table_lists_every_process_as_static_missing(
