@@ -493,6 +493,23 @@ def _is_rerun(node: ast.AST) -> bool:
     )
 
 
+# 앱 전체로 올리는 도우미 — 이름으로 불러도(`escalate(…)`) 모듈로
+# 불러도(`fragment_scope.escalate(…)`) 올리기다.
+_RISE_HELPERS = frozenset({"escalate", "escalate_if_moved"})
+
+
+def _is_rise(node: ast.AST) -> bool:
+    """`st.rerun(…)` 또는 올리기 도우미 호출."""
+    if _is_rerun(node):
+        return True
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in _RISE_HELPERS
+    return isinstance(func, ast.Attribute) and func.attr in _RISE_HELPERS
+
+
 def _calls_name(node: ast.AST, name: str) -> bool:
     return any(
         isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == name
@@ -514,7 +531,8 @@ def _inner_function(source: str) -> ast.FunctionDef:
     ids=["grade_ui.in_fragment", "fragment_scope.editor_scope"],
 )
 def test_scope_wrappers_never_rise_before_the_body(wrapper: Any, body_call: str) -> None:
-    """감싸기는 본문(`fn` · `_run_guarded`)을 부르는 문장 **앞**에서 `st.rerun` 하지 않는다. 본문
+    """감싸기는 본문(`fn` · `_run_guarded`)을 부르는 문장 **앞**에서 올리지 않는다(`st.rerun` 도,
+    올리기 도우미 `escalate` · `escalate_if_moved` 도). 본문
     가운데서 난 거절을 받은 `except` 칸만 예외다 — 본문이 이미 멈춰, 어떻게 끝내도(올리기 · 그냥
     끝냄) 그 회차가 아직 그리지 못한 위젯 상태 값은 회차 끝 정리가 지운다(한계 —
     `test_a_refusal_in_the_body_before_the_component_loses_its_ack_and_seq_filtering_heals_it`)."""
@@ -525,10 +543,10 @@ def test_scope_wrappers_never_rise_before_the_body(wrapper: Any, body_call: str)
             seen_body = True
             if isinstance(statement, ast.Try):
                 for part in [*statement.body, *statement.orelse, *statement.finalbody]:
-                    assert not any(_is_rerun(node) for node in ast.walk(part)), "본문과 같은 칸"
+                    assert not any(_is_rise(node) for node in ast.walk(part)), "본문과 같은 칸"
             continue
         if not seen_body:
-            assert not any(_is_rerun(node) for node in ast.walk(statement)), ast.unparse(statement)
+            assert not any(_is_rise(node) for node in ast.walk(statement)), ast.unparse(statement)
     assert seen_body
 
 
@@ -549,57 +567,165 @@ def _decorator_names(function: ast.FunctionDef) -> list[str]:
     return names
 
 
+def _functions_in(tree: ast.Module, rel: str) -> list[tuple[str, ast.FunctionDef]]:
+    return [(rel, node) for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+
+
 def _functions() -> list[tuple[str, ast.FunctionDef]]:
     found: list[tuple[str, ast.FunctionDef]] = []
     for path in _source_files():
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        rel = path.relative_to(ROOT).as_posix()
-        found.extend((rel, node) for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
+        found.extend(_functions_in(tree, path.relative_to(ROOT).as_posix()))
     return found
+
+
+def _direct_rises(functions: list[tuple[str, ast.FunctionDef]]) -> list[tuple[str, str]]:
+    """`editor_scope` 를 단 본문 가운데 `st.rerun` 을 직접 부르는 것."""
+    return [
+        (rel, function.name)
+        for rel, function in functions
+        if "editor_scope" in _decorator_names(function)
+        and any(_is_rerun(node) for node in ast.walk(function))
+    ]
+
+
+# 그물 대조 — 직접 `st.rerun` 하는 구역 본문(잡혀야 한다)과 도우미로 올리는 구역 본문.
+_DIRECT_RISE_CONTROL = """
+@st.fragment(key="bad")
+@grade_ui.in_fragment
+@fragment_scope.editor_scope("bad")
+def bad():
+    draw()
+    st.rerun(scope="app")
+
+
+@st.fragment(key="good")
+@grade_ui.in_fragment
+@fragment_scope.editor_scope("good")
+def good():
+    draw()
+    fragment_scope.escalate()
+"""
 
 
 def test_editor_scope_bodies_rise_only_through_the_helpers() -> None:
     """`editor_scope` 를 단 구역 본문은 `st.rerun` 을 직접 부르지 않는다 — 올리기는 콜백
     끝(`escalates`) · 본문 뒤(`editor_scope` 스스로) · `fragment_scope.escalate`(본문을 다 그린
-    뒤)로만 한다(R1)."""
-    offenders = [
-        (rel, function.name)
-        for rel, function in _functions()
-        if "editor_scope" in _decorator_names(function)
-        and any(_is_rerun(node) for node in ast.walk(function))
-    ]
+    뒤)로만 한다(R1). 그물이 헛돌지 않는지 대조 본문으로 먼저 본다."""
+    control = _functions_in(ast.parse(_DIRECT_RISE_CONTROL), "control")
+    assert _direct_rises(control) == [("control", "bad")]
+
+    offenders = _direct_rises(_functions())
     assert not offenders, offenders
 
 
-# 본문 첫머리에서 「조건 → 앱 전체 올리기」 를 하는 알려진 프래그먼트 — 구역 안에 Components v2
-# 상태 값 부품이 없어 ack 를 잃을 것이 없다(rerun-1120 갈래 A 점검). 새로 더하지 않는다 — 편집기
-# 구역은 `fragment_scope` 로 올린다.
+# 본문을 그리기 전에 「조건 → 앱 전체 올리기」 를 하는 알려진 프래그먼트 · 팝업 — 안에 Components
+# v2 상태 값 부품이 없어 ack 를 잃을 것이 없다. 새로 더하지 않는다 — 편집기 구역은
+# `fragment_scope` 로 올린다.
 KNOWN_PRE_BODY_RISES = {
     # 기준선 저장 · 지우기 표지(`consume_baseline_write`)와 직전 계획에 없는 목표 — 필요 단축 일정
     # 본문.
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_view"),
+    # 확인할 공지가 없으면 팝업을 닫는다 — 안에는 단추 둘뿐이다(공지 관리 확인 팝업).
+    ("src/capa_simulation/components/notice_admin.py", "_confirm_dialog"),
+    # 그린 때의 판정 배지 · 올리기 잠금이 바뀌었으면 앱 회차로 돌아간다 — 안에는 글 · 복사
+    # 단추뿐이다(DB 동기화 펼침의 되풀이 구역).
+    ("src/capa_simulation/components/object_sync_status.py", "_render_live_body"),
 }
+# 그리지 않는 `st.` 부름 — 본문 첫머리에서 이것들만 지난 뒤의 올리기도 「그리기 전」 이다.
+_QUIET_ST = frozenset(
+    {"session_state", "query_params", "rerun", "secrets", "context", "cache_data", "cache_resource"}
+)
+
+
+def _dotted(node: ast.AST) -> tuple[str, ...]:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return tuple(reversed(parts))
+
+
+def _draws(statement: ast.stmt) -> bool:
+    """이 문장이 무언가를 그릴 수 있는가 — `with` · 되풀이 · `try` · 돌려주기, 올리기가 아닌 홀로 선
+    호출, 그리지 않는 것 밖의 `st.` 부름."""
+    if isinstance(statement, (ast.With, ast.For, ast.While, ast.Try, ast.Return)):
+        return True
+    if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+        return not _is_rise(statement.value)
+    return any(
+        isinstance(node, ast.Call)
+        and len(dotted := _dotted(node.func)) > 1
+        and dotted[0] == "st"
+        and dotted[1] not in _QUIET_ST
+        for node in ast.walk(statement)
+    )
 
 
 def _leading_rise(function: ast.FunctionDef) -> bool:
-    """본문 첫 문장들(설명 글 · 다른 문장 앞)의 `if …: st.rerun(…)` — 본문을 그리기 전 올리기."""
+    """본문을 그리기 전(설명 글 · 그리지 않는 대입 뒤, 그리는 첫 문장 앞)의 `if …: <올리기>` 나
+    홀로 선 올리기."""
     for statement in function.body:
         if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
             continue
-        if isinstance(statement, ast.If) and any(_is_rerun(node) for node in ast.walk(statement)):
+        if isinstance(statement, ast.If) and any(_is_rise(node) for node in ast.walk(statement)):
             return True
-        if isinstance(statement, ast.Expr) and _is_rerun(statement.value):
+        if isinstance(statement, ast.Expr) and _is_rise(statement.value):
             return True
-        return False
+        if _draws(statement):
+            return False
     return False
 
 
-def test_fragments_do_not_rise_before_drawing_their_body() -> None:
-    """`st.fragment` 본문 첫머리에서 앱 전체로 올리는 자리는 알려진 목록뿐이다(R1 — 본문 앞 올리기
-    금지)."""
-    found = {
+def _pre_body_rises(functions: list[tuple[str, ast.FunctionDef]]) -> set[tuple[str, str]]:
+    return {
         (rel, function.name)
-        for rel, function in _functions()
-        if "fragment" in _decorator_names(function) and _leading_rise(function)
+        for rel, function in functions
+        if {"fragment", "dialog"} & set(_decorator_names(function)) and _leading_rise(function)
     }
-    assert found == KNOWN_PRE_BODY_RISES
+
+
+# 그물 대조 — 대입 뒤 올리기 · 팝업 본문 · 도우미 올리기는 잡히고, 그린 뒤 올리기는 잡히지 않는다.
+_PRE_BODY_CONTROL = """
+@st.fragment
+def after_assign():
+    token = st.session_state.get("token")
+    if token != seen():
+        st.rerun(scope="app")
+    draw()
+
+
+@st.dialog("편집")
+def dialog_rise():
+    if moved():
+        st.rerun()
+    draw()
+
+
+@st.fragment
+def helper_rise():
+    fragment_scope.escalate()
+    draw()
+
+
+@st.fragment
+def drawn_first():
+    st.markdown("본문")
+    if moved():
+        st.rerun(scope="app")
+"""
+
+
+def test_fragments_do_not_rise_before_drawing_their_body() -> None:
+    """`st.fragment` · `st.dialog` 본문에서 무언가를 그리기 전에 앱 전체로 올리는 자리는 알려진
+    목록뿐이다(R1 — 본문 앞 올리기 금지). 그물이 헛돌지 않는지 대조 본문으로 먼저 본다."""
+    control = _functions_in(ast.parse(_PRE_BODY_CONTROL), "control")
+    assert _pre_body_rises(control) == {
+        ("control", "after_assign"),
+        ("control", "dialog_rise"),
+        ("control", "helper_rise"),
+    }
+
+    assert _pre_body_rises(_functions()) == KNOWN_PRE_BODY_RISES

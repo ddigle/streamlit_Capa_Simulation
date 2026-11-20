@@ -12,9 +12,10 @@
   key 수만큼 `_key_id_mapper` 가 쌓인다.
 - **다시 불러도 처리기 한 번(bind-once)** — CCv2 는 data 가 바뀔 때마다 default export 를 다시
   부르고 앞 호출의 정리 함수는 부르지 않는다. 문서 · 창 · 칸 처리기와 관찰자는 처음 한 번만
-  단다(`S.bound` 꼴). node 로 등록 글을 그대로 50번 부르며 살아 있는 처리기 · 관찰자 수를 센다 — DOM
-  은 느슨한 대역(모르는 속성은 아무 일도 하지 않는 함수)이다. 새 부품은 `BIND_ONCE` 에 한 줄을
-  더한다.
+  단다(`S.bound` 꼴). node 로 등록 글을 그대로 50번 부르며 살아 있는 처리기 · 관찰자 수와, 스스로
+  다시 거는 확인 고리 · 되풀이 타이머 수를 센다(부를 때마다 걸린 한 번짜리 타이머를 한 번씩 돌려
+  끝난 것은 걷는다) — DOM 은 느슨한 대역(모르는 속성은 아무 일도 하지 않는 함수)이다. 새 부품은
+  `BIND_ONCE` 에 한 줄을 더한다.
 """
 
 from __future__ import annotations
@@ -364,10 +365,41 @@ Object.assign(globalThis, {
   getComputedStyle: win.getComputedStyle,
   CustomEvent: win.CustomEvent,
 })
-globalThis.setTimeout = () => 1
-globalThis.clearTimeout = () => {}
-globalThis.setInterval = () => 1
-globalThis.clearInterval = () => {}
+// 타이머 — 되풀이(`setInterval`)는 지울 때까지 남는다. 한 번짜리(`setTimeout`)는 부를 때마다
+// 한 번씩 돌려(`tick`) 끝난 것은 걷고, 스스로 다시 거는 것(살아 있는 확인 고리)만 남긴다. 돌다
+// 던지면 끝난 것으로 본다.
+const timers = new Map()
+let timerId = 0
+const arm = (kind) => (fn) => {
+  timerId += 1
+  timers.set(timerId, { kind, fn })
+  return timerId
+}
+const disarm = (id) => {
+  timers.delete(id)
+}
+const tick = () => {
+  for (const [id, timer] of [...timers]) {
+    if (timer.kind !== 'timeout') continue
+    timers.delete(id)
+    try {
+      if (typeof timer.fn === 'function') timer.fn()
+    } catch (error) {
+      // 느슨한 대역에서 던진 확인은 끝난 것으로 본다.
+    }
+  }
+}
+const pending = (kind) => [...timers.values()].filter((timer) => timer.kind === kind).length
+globalThis.setTimeout = arm('timeout')
+globalThis.clearTimeout = disarm
+globalThis.setInterval = arm('interval')
+globalThis.clearInterval = disarm
+Object.assign(win, {
+  setTimeout: globalThis.setTimeout,
+  clearTimeout: disarm,
+  setInterval: globalThis.setInterval,
+  clearInterval: disarm,
+})
 """
 
 _DRIVE = r"""
@@ -385,7 +417,10 @@ for (let i = 0; i < %(calls)d; i += 1) {
   const data = JSON.parse(JSON.stringify(datas[i %% datas.length]))
   data.__call = i
   cleanup = __default(component(data))
-  if (i === 0 || i === %(calls)d - 1) counts.push([listeners(), observing])
+  tick()
+  if (i === 0 || i === %(calls)d - 1) {
+    counts.push([listeners(), observing, pending('timeout'), pending('interval')])
+  }
 }
 process.stdout.write(JSON.stringify({ counts, cleanup: typeof cleanup }))
 """
@@ -437,8 +472,9 @@ def _as_script(source: str) -> str:
 
 @pytest.mark.parametrize("name", sorted(BIND_ONCE))
 def test_calling_the_default_export_fifty_times_keeps_one_set_of_listeners(name: str) -> None:
-    """data 가 바뀔 때마다 다시 불리는 default export 를 50번 불러도 살아 있는 처리기 · 관찰자 수가
-    첫 호출 뒤와 같다 — 앞 호출의 정리 함수는 불리지 않으므로 처리기는 처음 한 번만 단다."""
+    """data 가 바뀔 때마다 다시 불리는 default export 를 50번 불러도 살아 있는 처리기 · 관찰자 ·
+    확인 고리 · 되풀이 타이머 수가 첫 호출 뒤와 같다 — 앞 호출의 정리 함수는 불리지 않으므로
+    처리기와 타이머는 처음 한 번만 걸거나 지우고 다시 건다."""
     source, datas = BIND_ONCE[name]
     drive = _DRIVE % {"datas": json.dumps(datas()), "calls": 50}
     out = run_js_json(_HARNESS + _as_script(source()) + drive, what=f"{name} bind-once")
@@ -470,5 +506,34 @@ def test_the_bind_once_harness_catches_a_component_that_binds_every_call() -> No
     out = run_js_json(_HARNESS + _as_script(_BINDS_EVERY_CALL) + drive, what="bind-once 대조")
 
     first, last = out["counts"]
-    assert first == [2, 0]
-    assert last == [51, 0]
+    assert first == [2, 0, 0, 0]
+    assert last == [51, 0, 0, 0]
+
+
+_ARMS_EVERY_CALL = """
+export default function (component) {
+  const host = component.parentElement.querySelector('.probe')
+  const S = host.__probe || (host.__probe = { bound: false, rearm: 0 })
+  // 끝나는 한 번짜리 · 지우고 다시 거는 한 번짜리는 쌓이지 않는다.
+  setTimeout(() => {}, 10)
+  clearTimeout(S.rearm)
+  S.rearm = setTimeout(() => {}, 10)
+  // 부를 때마다 새 확인 고리 · 되풀이를 건다 — 쌓인다.
+  const poll = () => { setTimeout(poll, 100) }
+  poll()
+  setInterval(() => {}, 1000)
+  return () => {}
+}
+"""
+
+
+def test_the_bind_once_harness_catches_timers_armed_on_every_call() -> None:
+    """대조 — 부를 때마다 스스로 다시 거는 확인 고리 · 되풀이 타이머를 거는 부품은 50번 뒤 그
+    수만큼 늘어난 것으로 잡힌다. 끝나는 한 번짜리와 지우고 다시 거는 한 번짜리는 세지 않는다(대역이
+    부를 때마다 걸린 한 번짜리를 한 번씩 돌린다)."""
+    drive = _DRIVE % {"datas": json.dumps([{}]), "calls": 50}
+    out = run_js_json(_HARNESS + _as_script(_ARMS_EVERY_CALL) + drive, what="타이머 대조")
+
+    first, last = out["counts"]
+    assert first[2:] == [1, 1]
+    assert last[2:] == [50, 50]

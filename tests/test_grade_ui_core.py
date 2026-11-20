@@ -374,6 +374,7 @@ st.session_state["runs"] = st.session_state.get("runs", 0) + 1
 
 @grade_ui.in_fragment
 def body() -> None:
+    st.session_state["bodies"] = st.session_state.get("bodies", []) + [st.session_state["runs"]]
     st.write("body")
 
 
@@ -521,3 +522,5 @@ def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
     assert app.session_state["runs"] == 2
     assert grade_ui.PENDING_KEY not in app.session_state
     assert "body" in _written(app)
+    # 표지가 남은 첫 회차에도 본문을 다 그린 뒤 올렸다 — 본문 앞에서 올렸으면 첫 회차 본문이 없다.
+    assert app.session_state["bodies"] == [1, 2]
