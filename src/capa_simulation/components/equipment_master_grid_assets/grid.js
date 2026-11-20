@@ -186,13 +186,14 @@ function lockedShiftCell(rows, cols, locked) {
 // </grid-plan>
 
 // <grid-sort>
-// 머리 누름 정렬 — 빈 값은 늘 아래, 수 칸은 수로, 글은 한국어 차례(localeCompare 'ko').
+// 머리 누름 정렬 — 빈 값은 늘 아래, 수 칸은 수로, 글은 한국어 차례(localeCompare 'ko'), 설비명 칸은 설비명 자연 차례.
 function compareCells(left, right, kind) {
   const a = String(left == null ? '' : left)
   const b = String(right == null ? '' : right)
   if (a === '' && b === '') return 0
   if (a === '') return 1
   if (b === '') return -1
+  if (kind === 'name') return compareNameKeys(nameKey(a), nameKey(b))
   if (kind === 'number') {
     const x = Number(a)
     const y = Number(b)
@@ -201,16 +202,65 @@ function compareCells(left, right, kind) {
   return a.localeCompare(b, 'ko')
 }
 
-function sortOrder(values, dir, kind) {
+// 설비명 자연 차례(…EQ2, EQ10 · 12A, 12B) — 파이썬 `space_layout_edit.natural_name_key`(「전체 불러오기」 가 상한을 자르는
+// 차례)와 같은 규칙이고 Space 편집기 `naturalCompare` 와 같은 꼴이다. 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자를 코드
+// 포인트로 견주고(한글 음절은 코드 포인트가 곧 가나다 차례, 영문이 한글 앞 — 엑셀 오름차순과 같다), 덩이가 같으면 짧은 쪽이
+// 앞, 그래도 같으면 글자 그대로. 빈 이름은 늘 아래다. 열쇠는 줄마다 한 번만 짓는다(`nameKey` — 회차마다 1천 줄을 줄 세운다).
+function nameKey(name) {
+  const text = String(name == null ? '' : name)
+  const parts = (text.match(/[0-9]+|[^0-9]+/g) || []).map((part) => (part[0] >= '0' && part[0] <= '9'
+    ? { digit: true, value: part.replace(/^0+/, '') }
+    : { digit: false, value: part.toLowerCase() }))
+  return { text, parts }
+}
+
+// 글자를 코드 포인트로 견준다 — 파이썬 글자 비교와 같다(UTF-16 단위로 견주면 BMP 밖 글자에서 갈린다).
+function codeCompare(a, b) {
+  const pa = Array.from(a)
+  const pb = Array.from(b)
+  for (let i = 0; i < Math.min(pa.length, pb.length); i += 1) {
+    if (pa[i] !== pb[i]) return pa[i].codePointAt(0) - pb[i].codePointAt(0)
+  }
+  return pa.length - pb.length
+}
+
+function compareNameKeys(a, b) {
+  if (a.text === '' || b.text === '') return a.text === b.text ? 0 : a.text === '' ? 1 : -1
+  for (let i = 0; i < Math.min(a.parts.length, b.parts.length); i += 1) {
+    const x = a.parts[i]
+    const y = b.parts[i]
+    if (x.digit !== y.digit) return x.digit ? -1 : 1
+    if (x.digit && x.value.length !== y.value.length) return x.value.length - y.value.length
+    if (x.value !== y.value) return x.digit ? (x.value < y.value ? -1 : 1) : codeCompare(x.value, y.value)
+  }
+  if (a.parts.length !== b.parts.length) return a.parts.length - b.parts.length
+  return codeCompare(a.text, b.text)
+}
+
+// 보이는 줄 차례(원래 자리 번호). 정렬 칸(`dir` — 없으면 설비명 차례 그대로)을 먼저 보고, 값이 같은 줄은 설비명(`names`)
+// 오름차순 — 내림차순이어도 둘째 열쇠는 늘 오름이다. 그래도 같으면 원래 차례. 빈 값은 방향과 상관없이 늘 아래.
+function sortOrder(values, dir, kind, names) {
   const order = values.map((_, index) => index)
-  if (!dir) return order
+  const keys = names ? names.map(nameKey) : null
+  const tie = (i, j) => (keys ? compareNameKeys(keys[i], keys[j]) : 0) || i - j
+  if (!dir) return keys ? order.sort(tie) : order
   const sign = dir === 'desc' ? -1 : 1
+  const own = kind === 'name' ? (values === names ? keys : values.map(nameKey)) : null
+  const primary = own ? (i, j) => compareNameKeys(own[i], own[j]) : (i, j) => compareCells(values[i], values[j], kind)
   return order.sort((i, j) => {
-    const a = values[i]
-    const b = values[j]
-    if (a === '' || b === '') return compareCells(a, b, kind) || i - j
-    return sign * compareCells(a, b, kind) || i - j
+    const first = primary(i, j)
+    return (values[i] === '' || values[j] === '' ? first : sign * first) || tie(i, j)
   })
+}
+
+// 머리를 누른 뒤의 정렬(`null` = 처음 차례 — 설비명 오름차순). 다른 칸은 오름 → 내림 → 처음 차례, 설비명 칸은 처음 차례 ↔
+// 내림이다(처음 차례가 이미 설비명 오름이라 그 누름이 헛돌지 않게). 설비명 오름차순은 늘 `null` 로 적는다.
+function nextSort(current, col, nameCol) {
+  const shown = current || { col: nameCol, dir: 'asc' }
+  let next = null
+  if (shown.col !== col) next = { col, dir: 'asc' }
+  else if (shown.dir === 'asc') next = { col, dir: 'desc' }
+  return next && !(next.col === nameCol && next.dir === 'asc') ? next : null
 }
 // </grid-sort>
 
@@ -233,6 +283,15 @@ function keptView(before, after, moved, inserted) {
 function keptRowShift(ordered, anchor, top) {
   const at = ordered.indexOf(anchor)
   return at < 0 ? 0 : at - top
+}
+
+// 처음으로 돌린 회차에 오른쪽 칸에 연 줄(`open`)이 이 회차에 새로 든 줄이면 그 id — 「호기 추가」 가 넣은 호기 · 목록 밖에서
+// 연 호기는 불러온 목록 맨 위에 들지만 보이는 차례는 설비명 차례라 맨 위가 아닐 수 있어 그 줄까지 스크롤한다. 첫 그리기
+// (`before` 없음)는 아니다. 앞 목록에는 옮김(`moved`)을 얹어 견준다.
+function freshOpen(before, after, moved, open) {
+  if (!before || typeof open !== 'string' || !after.includes(open)) return null
+  const map = new Map(moved)
+  return before.some((id) => (map.has(id) ? map.get(id) : id) === open) ? null : open
 }
 // </grid-view>
 
@@ -1179,13 +1238,15 @@ function gridModel(S, data) {
   S.colSet = set[0]
   const visible = set[3].filter((k) => columns[k] && columns[k].kind !== 'name')
   const nameCol = columns.findIndex((col) => col.kind === 'name')
+  // 처음 차례는 설비명 오름차순이고, 머리로 정렬하면 값이 같은 줄을 설비명 오름차순으로 둔다(`sortOrder`).
+  const names = nameCol >= 0 ? rows.map((row) => String((row.values || [])[nameCol] || '')) : null
   let order = rows.map((_, index) => index)
   if (S.sort) {
     const col = S.sort.col
     const kind = columns[col] ? columns[col].kind : 'text'
-    const values = rows.map((row) => String((row.values || [])[col] || ''))
-    order = sortOrder(values, S.sort.dir, kind)
-  }
+    const values = col === nameCol ? names : rows.map((row) => String((row.values || [])[col] || ''))
+    order = sortOrder(values, S.sort.dir, kind, names)
+  } else if (names) order = sortOrder(names, null, 'name', names)
   const ordered = order.map((index) => rows[index])
   const live = ordered.filter((row) => row.tag !== 'deleted')
   return { columns, rows, ordered, live, visible, nameCol, sets, locks: lockSets(data), reasons: data.lockReasons || {} }
@@ -1214,6 +1275,7 @@ function drawGrid(host, S, data) {
   const view = String(data.view || '')
   // 지킨 보기에서 보던 첫 줄이 새 차례에서 옮겨 간 만큼 스크롤을 옮긴다(`keptRowShift`).
   let keepTop = null
+  let reveal = null
   if (S.view !== view) {
     S.view = view
     const after = Array.isArray(data.rows) ? data.rows.map((row) => row.id) : []
@@ -1222,6 +1284,7 @@ function drawGrid(host, S, data) {
       S.selected = new Set()
       S.anchor = null
       S.resetScroll = true
+      reveal = freshOpen(S.model ? before : null, after, moved, data.open)
     } else if (inserted.length && S.model && S.scroller) {
       const top = Math.floor(S.scroller.scrollTop / ROW_H)
       const seen = S.model.ordered[top]
@@ -1249,7 +1312,10 @@ function drawGrid(host, S, data) {
   paintWindow(S)
   if (S.resetScroll) {
     S.resetScroll = false
-    S.scroller.scrollTop = 0
+    // 새로 든 줄을 오른쪽 칸에 연 회차(`freshOpen`)는 그 줄을 표 머리 바로 아래에 둔다 — 높이는 위 그리기가 세웠다.
+    const at = reveal ? S.model.ordered.findIndex((row) => row.id === reveal) : -1
+    S.scroller.scrollTop = Math.max(at, 0) * ROW_H
+    if (at > 0) paintWindow(S)
   }
 }
 
@@ -1631,16 +1697,15 @@ function headCell(S, k) {
   press.appendChild(el('span', null, column.name + sort))
   if (SCOPE_LABELS[column.scope]) press.appendChild(el('small', null, SCOPE_LABELS[column.scope]))
   press.title = (column.help || '') + ' · 눌러서 정렬'
-  if (S.sort && S.sort.col === k) cell.setAttribute('aria-sort', S.sort.dir === 'asc' ? 'ascending' : 'descending')
+  // 처음 차례(설비명 오름차순)는 늘 참인 기본이라 ▲ 를 달지 않고(설계 규칙 UI-TXT-05) 읽기 도구에만 오름차순이라 알린다.
+  const shown = S.sort || { col: S.model.nameCol, dir: 'asc' }
+  if (shown.col === k) cell.setAttribute('aria-sort', shown.dir === 'asc' ? 'ascending' : 'descending')
   cell.appendChild(press)
   return cell
 }
 
 function toggleSort(S, k) {
-  const current = S.sort
-  if (!current || current.col !== k) S.sort = { col: k, dir: 'asc' }
-  else if (current.dir === 'asc') S.sort = { col: k, dir: 'desc' }
-  else S.sort = null
+  S.sort = nextSort(S.sort, k, S.model.nameCol)
   S.model = gridModel(S, S.data)
   paintHead(S)
   paintWindow(S)

@@ -20,6 +20,7 @@ from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
 from capa_simulation.design import tokens
 from capa_simulation.services import equipment_grid as eg
+from capa_simulation.services.space_layout_edit import natural_name_key
 
 ASSETS = emg._ASSETS
 HTML = (ASSETS / "grid.html").read_text(encoding="utf-8")
@@ -524,6 +525,87 @@ def test_the_pure_sections_behave_as_specified() -> None:
     assert box[2] == 1 and box[3] == [2]
     assert box[4:8] == [False, True, 1, "b2"], "base 가 바뀌어도 든 op 는 서버까지 간다"
     assert box[8] == 6
+
+
+_NAME_ORDER_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const pick = (order, names) => order.map((k) => names[k])
+const R = {}
+R.parity = pick(sortOrder(input.parity, null, 'name', input.parity), input.parity)
+R.cases = input.cases.map((c) => sortOrder(c.values, c.dir, c.kind, c.names))
+R.cycle = input.cycle.map((c) => nextSort(c[0], c[1], c[2]))
+R.fresh = input.fresh.map((c) => freshOpen(c[0], c[1], c[2], c[3]))
+process.stdout.write(JSON.stringify(R))
+"""
+
+
+def test_rows_stand_in_natural_name_order_and_equal_values_follow_the_name() -> None:
+    """설비 마스터 표 처음 차례는 설비명 오름차순 — 파이썬 `natural_name_key`(「전체 불러오기」 가
+    상한을 자르는 차례)와 같은 자연 차례다(숫자는 수로 — 호기 2 가 호기 10 앞, 한글은 가나다, 영문이
+    한글 앞). 머리로 정렬하면 값이 같은 줄은 설비명 오름차순이고 내림차순이어도 둘째 열쇠는
+    오름이다. 빈 값 · 빈 이름은 늘 아래. 머리 누름은 다른 칸이 오름 → 내림 → 처음 차례, 설비명
+    칸이 처음 차례 ↔ 내림이다(2026-11-20 사용자 요청 — Qual 일정 오름차순에서 같은 날 호기가
+    가나다 차례로)."""
+    parity = [
+        "EQ10", "EQ2", "eq3", "EQ02", "EQ2", "호기 10", "호기 2", "가나-1", "나-2", "다-1",
+        "A-1", "a-1", "_X", "-X", "Zeta", "가", "12B", "12A", "12", "12a", "007", "7",
+        "EQ-12D", "EQ-12C", "x😀", "x＀", "DEMO 1", "DEMO-1", "demo1", "Demo1",
+    ]  # fmt: skip
+    dates = ["2026-12-01", "2026-11-01", "2026-12-01", "", "2026-11-01", ""]
+    names = ["호기 10", "B-2", "호기 2", "A-1", "B-10", ""]
+    cases = [
+        {"values": names, "dir": None, "kind": "name", "names": names},
+        {"values": dates, "dir": "asc", "kind": "date", "names": names},
+        {"values": dates, "dir": "desc", "kind": "date", "names": names},
+        {"values": names, "dir": "desc", "kind": "name", "names": names},
+        {"values": ["", "x", ""], "dir": "desc", "kind": "text", "names": ["B", "A", "A2"]},
+        {"values": ["2", "10", "2", "2"], "dir": "asc", "kind": "number", "names": list("QPPP")},
+        {"values": ["b", "a"], "dir": None, "kind": "text"},
+    ]
+    cycle = [
+        [None, 3, 0],
+        [{"col": 3, "dir": "asc"}, 3, 0],
+        [{"col": 3, "dir": "desc"}, 3, 0],
+        [None, 0, 0],
+        [{"col": 0, "dir": "desc"}, 0, 0],
+        [{"col": 3, "dir": "desc"}, 0, 0],
+        [None, 2, -1],
+    ]
+    fresh = [
+        [["a", "b"], ["n", "a", "b"], [], "n"],
+        [["a", "b"], ["n", "a", "b"], [], "a"],
+        [["x", "b"], ["y", "b"], [["x", "y"]], "y"],
+        [["a"], ["a", "n"], [], "q"],
+        [["a"], ["a", "n"], [], None],
+        [None, ["n"], [], "n"],
+    ]
+    result = _node(
+        {"parity": parity, "cases": cases, "cycle": cycle, "fresh": fresh},
+        _NAME_ORDER_RUNNER,
+    )
+    order = result["parity"]
+    assert order == sorted(parity, key=natural_name_key)
+    assert order.index("호기 2") < order.index("호기 10")
+    assert order.index("EQ2") < order.index("EQ10")
+    assert order.index("Zeta") < order.index("가") < order.index("나-2") < order.index("다-1")
+    default, asc, desc, name_desc, blank_ties, numbers, plain = result["cases"]
+    assert default == [3, 1, 4, 2, 0, 5], "A-1 · B-2 · B-10 · 호기 2 · 호기 10 · 빈 이름"
+    assert asc == [1, 4, 2, 0, 3, 5], "같은 날은 설비명 오름 — B-2 · B-10, 호기 2 · 호기 10"
+    assert desc == [2, 0, 1, 4, 3, 5], "내림이어도 같은 날은 설비명 오름, 빈 값은 아래"
+    assert name_desc == [0, 2, 4, 1, 3, 5], "설비명 내림 — 빈 이름은 늘 아래"
+    assert blank_ties == [1, 2, 0], "빈 값끼리도 설비명 오름"
+    assert numbers == [2, 3, 0, 1], "수 칸 동점은 설비명, 같은 이름이면 원래 차례"
+    assert plain == [0, 1], "설비명을 주지 않으면 원래 차례 그대로"
+    assert result["cycle"] == [
+        {"col": 3, "dir": "asc"},
+        {"col": 3, "dir": "desc"},
+        None,
+        {"col": 0, "dir": "desc"},
+        None,
+        None,
+        {"col": 2, "dir": "asc"},
+    ]
+    assert result["fresh"] == ["n", None, None, None, None, None]
 
 
 _CLIPBOARD_RUNNER = """
@@ -3215,6 +3297,106 @@ def test_rows_coming_in_with_a_group_write_keep_the_selection_and_the_scroll() -
     assert result["redLeave"] == []
     assert result["redEnter"] == [["cell", "r2", "Model", "m"]]
     assert result["redPick"] == [["cell", "r2", "Model", "m"], ["cell", "r2", "동", "C1"]]
+
+
+_NAME_SORT_VIEW_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
+    + r"""
+FakeNode.prototype.focus = function () { document.activeElement = this }
+const columns = [
+  { name: '설비명', kind: 'name', width: 'name' },
+  { name: 'Qual일정', kind: 'date', width: 'm' },
+]
+const qual = (k) => (k % 3 === 0 ? '' : k % 2 ? '2026-11-01' : '2026-12-01')
+const make = (rows, top) => ({
+  mode: 'grid', base: 'b1', view: rows.map((row) => row[0]).join(','),
+  limits: { outboxCells: 10000, pasteCells: 5000 },
+  columns, colSets: [['all', '전체', '', [1]]],
+  rows: rows.map(([id, name, date]) => ({ id, values: [name, date] })),
+  ...(top || {}),
+})
+const mountOn = (data) => {
+  const parentElement = new FakeNode('div')
+  const host = parentElement.appendChild(new FakeNode('div'))
+  host.className = 'emg'
+  const component = { parentElement, setTriggerValue() {}, setStateValue() {} }
+  const again = (next) => globalThis.__mount({ data: next, ...component })
+  again(data)
+  return { S: host.__emg, again }
+}
+// 불러온 차례는 이름 차례가 아니다(새로 든 호기가 위로).
+const rows = []
+for (let k = 0; k < 60; k += 1) rows.push(['s:' + k, '호기 ' + ((k * 37) % 60 + 1), qual(k)])
+const { S, again } = mountOn(make(rows))
+const names = () => S.model.ordered.map((row) => row.values[0])
+const pairs = () => S.model.ordered.map((row) => [row.values[1], row.values[0]])
+const head = () => S.head.querySelectorAll('[role="columnheader"]')
+  .map((cell) => [cell.textContent, cell.getAttribute('aria-sort')])
+const R = {}
+R.first = { names: names(), head: head() }
+toggleSort(S, 1)
+R.asc = { pairs: pairs(), head: head() }
+toggleSort(S, 1)
+R.desc = { pairs: pairs(), head: head() }
+toggleSort(S, 1)
+R.cleared = { names: names(), head: head() }
+toggleSort(S, 0)
+R.nameDesc = { names: names(), head: head() }
+toggleSort(S, 0)
+R.nameBack = { names: names(), head: head() }
+// 「호기 추가」 — 새 호기가 불러온 목록 맨 위에 들고 오른쪽 칸에 열린다. 보이는 차례는 설비명
+// 차례라 그 줄까지 굴린다.
+S.scroller.scrollTop = 340
+const fresh = ['n:호기 45B', '호기 45B', '']
+again(make([fresh, ...rows], { open: 'n:호기 45B' }))
+const at = (id) => S.model.ordered.findIndex((row) => row.id === id)
+R.added = { top: S.scroller.scrollTop, at: at('n:호기 45B') }
+// 연 줄이 새로 든 줄이 아닌 불러오기는 지금처럼 맨 위로.
+S.scroller.scrollTop = 340
+again(make([['s:x', '호기 7A', ''], fresh, ...rows], { open: 'n:호기 45B' }))
+R.loaded = { top: S.scroller.scrollTop }
+// 처음 그리기는 연 줄이 있어도 맨 위.
+const other = mountOn(make(rows, { open: 's:5' }))
+R.firstOpen = { top: other.S.scroller.scrollTop }
+process.stdout.write(JSON.stringify(R))
+"""
+)
+
+
+def test_the_grid_starts_in_name_order_and_a_sort_breaks_ties_by_name() -> None:
+    """설비 마스터 표 — 불러온 차례(새로 든 호기가 위)와 상관없이 처음 차례는 설비명 오름차순이고
+    (호기 2 가 호기 10 앞), Qual일정 오름 · 내림에서 같은 날 호기는 설비명 오름차순, 빈 날은
+    아래다. 세 번째 누름은 설비명 차례로 돌아가고, 설비명 머리는 처음 차례 ↔ 내림이다. 처음 차례의
+    설비명 머리는 ▲ 없이 읽기 도구에만 오름차순(설계 규칙 UI-TXT-05). 「호기 추가」 로 새로 든 줄을
+    오른쪽 칸에 연 회차는 설비명 차례에 선 그 줄을 표 머리 바로 아래로 굴리고, 다른 불러오기 ·
+    처음 그리기는 지금처럼 맨 위다(UI-PRF-03 · 2026-11-20 사용자 요청)."""
+    result = _node({}, _NAME_SORT_VIEW_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    natural = [f"호기 {k}" for k in range(1, 61)]
+    assert result["first"]["names"] == natural
+    assert result["first"]["head"] == [["설비명", "ascending"], ["Qual일정", None]]
+
+    def grouped(pairs: list[list[str]], dates: list[str]) -> None:
+        assert [date for date, _ in pairs] == sorted(
+            (date for date, _ in pairs), key=lambda date: (date == "", dates.index(date))
+        )
+        for date in dates:
+            same = [name for when, name in pairs if when == date]
+            assert same == sorted(same, key=natural_name_key), date or "빈 날"
+
+    grouped(result["asc"]["pairs"], ["2026-11-01", "2026-12-01", ""])
+    assert result["asc"]["head"] == [["설비명", None], ["Qual일정 ▲", "ascending"]]
+    grouped(result["desc"]["pairs"], ["2026-12-01", "2026-11-01", ""])
+    assert result["desc"]["head"] == [["설비명", None], ["Qual일정 ▼", "descending"]]
+    assert result["cleared"]["names"] == natural
+    assert result["cleared"]["head"] == result["first"]["head"]
+    assert result["nameDesc"]["names"] == natural[::-1]
+    assert result["nameDesc"]["head"] == [["설비명 ▼", "descending"], ["Qual일정", None]]
+    assert result["nameBack"] == result["first"]
+    added = result["added"]
+    assert added["at"] == 45, "호기 45 와 46 사이"
+    assert added["top"] == 45 * 34, "그 줄이 표 머리 바로 아래"
+    assert result["loaded"]["top"] == 0
+    assert result["firstOpen"]["top"] == 0
 
 
 _GROUP_DETAIL_RUNNER = """
