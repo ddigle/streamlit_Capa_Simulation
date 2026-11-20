@@ -307,6 +307,7 @@ def test_the_condition_popover_keeps_values_by_text_and_focus_across_repaints() 
 def test_pasting_on_the_name_column_spreads_from_the_next_column_or_says_why() -> None:
     paste = _function("onPaste")
     assert "NAME_PASTE_NOTE" in paste and "[model.nameCol].concat(model.visible)" in paste
+    assert "pasteRowsByName(cells, live.map(" in paste and "namePasteRefusal(matched)" in paste
 
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
@@ -534,7 +535,6 @@ const R = {}
 R.parity = pick(sortOrder(input.parity, null, 'name', input.parity), input.parity)
 R.cases = input.cases.map((c) => sortOrder(c.values, c.dir, c.kind, c.names))
 R.cycle = input.cycle.map((c) => nextSort(c[0], c[1], c[2]))
-R.fresh = input.fresh.map((c) => freshOpen(c[0], c[1], c[2], c[3]))
 process.stdout.write(JSON.stringify(R))
 """
 
@@ -571,18 +571,7 @@ def test_rows_stand_in_natural_name_order_and_equal_values_follow_the_name() -> 
         [{"col": 3, "dir": "desc"}, 0, 0],
         [None, 2, -1],
     ]
-    fresh = [
-        [["a", "b"], ["n", "a", "b"], [], "n"],
-        [["a", "b"], ["n", "a", "b"], [], "a"],
-        [["x", "b"], ["y", "b"], [["x", "y"]], "y"],
-        [["a"], ["a", "n"], [], "q"],
-        [["a"], ["a", "n"], [], None],
-        [None, ["n"], [], "n"],
-    ]
-    result = _node(
-        {"parity": parity, "cases": cases, "cycle": cycle, "fresh": fresh},
-        _NAME_ORDER_RUNNER,
-    )
+    result = _node({"parity": parity, "cases": cases, "cycle": cycle}, _NAME_ORDER_RUNNER)
     order = result["parity"]
     assert order == sorted(parity, key=natural_name_key)
     assert order.index("호기 2") < order.index("호기 10")
@@ -605,7 +594,99 @@ def test_rows_stand_in_natural_name_order_and_equal_values_follow_the_name() -> 
         None,
         {"col": 2, "dir": "asc"},
     ]
-    assert result["fresh"] == ["n", None, None, None, None, None]
+
+
+_VIEW_FOLLOW_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  fresh: input.fresh.map((c) => freshOpen(c[0], c[1], c[2], c[3], c[4])),
+  slot: input.slot.map((c) => openSlot(c[0], c[1], c[2], c[3])),
+}))
+"""
+
+
+def test_the_grid_scrolls_to_an_open_row_only_when_it_is_newly_added_or_moved_in_view() -> None:
+    """설비명 차례 표의 스크롤 따라가기 두 판정(UI-PRF-03). `freshOpen` — 처음으로 돌린 회차에
+    표를 연 줄까지 굴리는 것은 「호기 추가」 · 「저장 전 변경」 에서 목록 밖 호기 열기뿐이다: 앞
+    목록 줄이 모두 남은 채 늘기만 했고(옮김을 얹어), 연 줄이 앞 회차에 연 줄이 아닐 때. 「목록
+    비우기」 뒤 연 상세를 둔 채 다시 불러오기 · 저장(새 호기 id 가 n: → s:)은 맨 위다. `openSlot` —
+    앞 그리기에서 창 안에 보이던 연 줄만 지킨 회차에 따라간다(창 밖이면 null)."""
+    fresh = [
+        [["a", "b"], ["n", "a", "b"], [], "n", "a"],
+        [["a", "b"], ["n", "a", "b"], [], "n", None],
+        [["a", "b"], ["n", "a", "b"], [], "a", None],
+        [["x", "b"], ["y", "b"], [["x", "y"]], "y", None],
+        [["a"], ["a", "n"], [], "q", None],
+        [["a"], ["a", "n"], [], None, None],
+        [None, ["n"], [], "n", None],
+        # 「목록 비우기」(연 상세 s40 은 그대로) 뒤 다시 불러오기 — 앞 회차에도 연 줄.
+        [[], ["s1", "s40"], [], "s40", "s40"],
+        # 저장 — 새 호기 n:A 가 s:A 로(옮김이 실리지 않는다), 앞 목록 줄이 빠졌다.
+        [["n:A", "s1"], ["s:A", "s1"], [], "s:A", "n:A"],
+        # 다른 줄이 빠진 같은 회차.
+        [["a", "b"], ["n", "a"], [], "n", "a"],
+        # 옮김으로 들어온 연 줄(새 호기 이름 바꿈 되돌리기)은 새로 든 줄이 아니다.
+        [["x", "b"], ["y", "b", "n"], [["x", "y"]], "y", "x"],
+    ]
+    rows = ["r0", "r1", "r2", "r3", "r4", "r5"]
+    slot = [
+        [rows, "r3", 2, 3],
+        [rows, "r2", 2, 3],
+        [rows, "r4", 2, 3],
+        [rows, "r5", 2, 3],
+        [rows, "r1", 2, 3],
+        [rows, "q", 0, 6],
+        [rows, None, 0, 6],
+    ]
+    result = _node({"fresh": fresh, "slot": slot}, _VIEW_FOLLOW_RUNNER)
+    assert result["fresh"] == ["n", "n", None, None, None, None, None, None, None, None, None]
+    assert result["slot"] == [3, 2, 4, None, None, None, None]
+
+
+_NAME_PASTE_PURE_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({ cases: input.cases.map((c) => {
+  const matched = pasteRowsByName(c.cells, c.rows)
+  return { ...matched, note: namePasteRefusal(matched) }
+}) }))
+"""
+
+
+def test_a_block_pasted_from_the_name_column_finds_its_rows_by_name() -> None:
+    """설비명 칸에서 붙인 덩이(엑셀에서 설비명 열부터 잡은 흔한 꼴)는 보이는 차례가 아니라 붙인
+    첫 열의 설비명으로 줄을 맞댄다(`pasteRowsByName`) — 표는 설비명 자연 차례(호기 2 가 호기 10
+    앞)라 엑셀 차례(글 오름차순 · 찾기 칸에 붙인 차례)와 다를 수 있다. 앞뒤 공백만 떼고 글자 그대로
+    견준다. 빈 설비명 · 표에 없는 이름 · 표에 같은 이름이 둘 · 붙인 글에 두 번이면 붙이지 않고 한 줄
+    (앞 셋만 적는다)."""
+    rows = [
+        ["s:2", "호기 2"],
+        ["s:7", "호기 7"],
+        ["s:10", "호기 10"],
+        ["d1", "겹침"],
+        ["d2", "겹침"],
+    ]
+    cases = [
+        {"cells": [["호기 10", "a"], [" 호기 2 ", "b"], ["호기 7", "c"]], "rows": rows},
+        {"cells": [["호기 10", "a"], ["호기 99", "b"], ["", "c"]], "rows": rows},
+        {"cells": [["겹침", "a"]], "rows": rows},
+        {"cells": [["호기 7", "a"], ["호기 7", "b"]], "rows": rows},
+        {"cells": [["호기 2"]], "rows": rows},
+        {"cells": [["x1"], ["x2"], ["x3"], ["x4"], ["x5"]], "rows": rows},
+        {"cells": [["호기 2", "a"]], "rows": [["s:2", "호기 2"], ["n:호기 2", "호기 2x"]]},
+    ]
+    result = _node({"cases": cases}, _NAME_PASTE_PURE_RUNNER)["cases"]
+    assert result[0] == {"ids": ["s:10", "s:2", "s:7"], "missing": [], "twice": [], "note": ""}
+    assert result[1]["missing"] == ["호기 99", ""]
+    assert result[1]["note"] == (
+        "붙인 설비명 2개를 표에서 찾지 못해 붙이지 않았습니다 — 호기 99, 빈 설비명"
+        " · 찾기 칸으로 불러온 뒤 다시 붙입니다"
+    )
+    assert result[2]["missing"] == ["겹침"], "표에 같은 이름이 둘이면 어느 줄인지 모른다"
+    assert result[3]["twice"] == ["호기 7"] and result[3]["ids"] == ["s:7"]
+    assert result[3]["note"] == "붙인 글에 같은 설비명이 두 번 있어 붙이지 않았습니다 — 호기 7"
+    assert result[4] == {"ids": ["s:2"], "missing": [], "twice": [], "note": ""}
+    assert result[5]["note"].endswith("x1, x2, x3 외 2개 · 찾기 칸으로 불러온 뒤 다시 붙입니다")
+    assert result[6]["ids"] == ["s:2"], "앞부분 일치로 맞대지 않는다"
 
 
 _CLIPBOARD_RUNNER = """
@@ -3397,6 +3478,139 @@ def test_the_grid_starts_in_name_order_and_a_sort_breaks_ties_by_name() -> None:
     assert added["top"] == 45 * 34, "그 줄이 표 머리 바로 아래"
     assert result["loaded"]["top"] == 0
     assert result["firstOpen"]["top"] == 0
+
+
+_NAME_VIEW_PREFIX = _NAME_SORT_VIEW_RUNNER[
+    : _NAME_SORT_VIEW_RUNNER.index("// 불러온 차례는 이름 차례가 아니다")
+]
+
+_NAME_PASTE_RUNNER = (
+    _NAME_VIEW_PREFIX
+    + r"""
+// 찾기 칸에 엑셀 설비명 열(호기 10 · 호기 2 · 호기 7)을 붙여 불러온 목록 — 받은 차례 그대로다.
+const { S } = mountOn(make([['s:10', '호기 10', ''], ['s:2', '호기 2', ''], ['s:7', '호기 7', '']]))
+const paste = (text, id, col) => {
+  const cell = { dataset: { id, col: String(col) } }
+  const target = {
+    closest: (sel) => (sel.startsWith('.emg-c') ? cell : null),
+    classList: { contains: () => false },
+  }
+  S.note = ''
+  const count = S.box.ops.length
+  onPaste(S, { target, clipboardData: { getData: () => text }, preventDefault() {} })
+  const op = S.box.ops.length > count ? S.box.ops[S.box.ops.length - 1] : null
+  return {
+    op: op
+      ? { op: op.op, ids: op.ids, cols: op.cols, rows: op.rows, cut: op.cut, skipped: op.skipped }
+      : null,
+    note: S.note,
+  }
+}
+const R = { visible: S.model.live.map((row) => row.id) }
+const first = S.model.live[0].id
+// 엑셀에서 설비명 열부터 세 줄을 잡아 첫 줄 설비명 칸에 붙인다.
+R.byName = paste('호기 10\t2026-11-01\n호기 2\t2026-12-01\n호기 7\t2027-01-01\n', first, 0)
+R.missing = paste('호기 10\t2026-11-01\n호기 99\t2026-12-01\n', first, 0)
+R.namesOnly = paste('호기 10\n호기 2\n', first, 0)
+R.onDate = paste('2026-11-01\n2026-12-01\n', first, 1)
+process.stdout.write(JSON.stringify(R))
+"""
+)
+
+
+def test_pasting_a_block_from_the_name_column_lands_on_the_named_units() -> None:
+    """찾기 칸에 엑셀 설비명 열을 붙여 불러온 목록(호기 10 · 호기 2 · 호기 7 — 받은 차례)은 표에서
+    설비명 차례(호기 2 · 호기 7 · 호기 10)로 선다. 엑셀에서 설비명 열부터 잡은 덩이를 설비명 칸에
+    붙이면 보이는 차례가 아니라 붙인 설비명으로 줄을 맞대 값이 그 호기에 들고, 설비명 열은 열쇠라
+    「넣지 못한 칸」 으로 세지 않는다. 못 맞대면 op 를 보내지 않고 한 줄, 설비명만 붙이면 지금처럼
+    「설비명은 붙여 넣지 않습니다」. 설비명 밖 칸에서 시작한 붙여넣기는 보이는 차례
+    그대로다(2026-11-20 검토 ems-paste-order)."""
+    result = _node({}, _NAME_PASTE_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["visible"] == ["s:2", "s:7", "s:10"]
+    assert result["byName"]["op"] == {
+        "op": "paste",
+        "ids": ["s:10", "s:2", "s:7"],
+        "cols": ["Qual일정"],
+        "rows": [["2026-11-01"], ["2026-12-01"], ["2027-01-01"]],
+        "cut": 0,
+        "skipped": 0,
+    }
+    assert result["missing"] == {
+        "op": None,
+        "note": "붙인 설비명 1개를 표에서 찾지 못해 붙이지 않았습니다 — 호기 99"
+        " · 찾기 칸으로 불러온 뒤 다시 붙입니다",
+    }
+    name_note = re.search(r"const NAME_PASTE_NOTE = '([^']+)'", JS)
+    assert name_note is not None
+    assert result["namesOnly"] == {"op": None, "note": name_note.group(1)}
+    assert result["onDate"]["op"]["ids"] == ["s:2", "s:7"], "설비명 밖 칸은 보이는 차례"
+
+
+_OPEN_FOLLOW_RUNNER = (
+    _NAME_VIEW_PREFIX
+    + r"""
+const rows = []
+for (let k = 0; k < 60; k += 1) rows.push(['s:' + k, '호기 ' + (k + 1), ''])
+const R = {}
+const renameOpen = (open, top, name) => {
+  const { S, again } = mountOn(make(rows, { open }))
+  S.scroller.scrollTop = top * 34
+  const at = (id) => S.model.ordered.findIndex((row) => row.id === id)
+  const before = at(open) - top
+  const renamed = rows.map((r) => (r[0] === open ? [open, name, ''] : r))
+  again({ ...make(renamed, { open }), view: make(rows).view })
+  return { slot: [before, at(open) - S.scroller.scrollTop / 34], top: S.scroller.scrollTop }
+}
+// 저장본 호기 이름 바꿈(행 id · 목록 지문 그대로) — 창 맨 위에 둔 연 줄, 창 가운데 연 줄
+// (아래로 · 위로).
+R.topRow = renameOpen('s:40', 40, '가-1')
+R.down = renameOpen('s:25', 20, '호기 50A')
+R.up = renameOpen('s:45', 40, '호기 10A')
+// 창 밖에 둔 연 줄은 따라가지 않는다.
+R.outside = renameOpen('s:5', 40, '호기 50A')
+// 새 호기 이름 바꿈 — 행 id 가 옮겨 간다(moved).
+{
+  const withNew = [['n:호기 45B', '호기 45B', ''], ...rows]
+  const { S, again } = mountOn(make(withNew, { open: 'n:호기 45B' }))
+  S.scroller.scrollTop = 45 * 34
+  const moved = { 'n:호기 45B': 'n:가-9' }
+  again(make([['n:가-9', '가-9', ''], ...rows], { open: 'n:가-9', moved }))
+  R.moved = { top: S.scroller.scrollTop, open: S.openId }
+}
+// 「목록 비우기」(연 상세는 그대로) 뒤 다시 불러오기 · 「호기 추가」 뒤 저장(n: → s:)은 맨 위다.
+{
+  const { S, again } = mountOn(make(rows, { open: 's:40' }))
+  again(make([], { open: 's:40' }))
+  S.scroller.scrollTop = 0
+  again(make(rows, { open: 's:40' }))
+  R.reload = S.scroller.scrollTop
+  again(make([['n:호기 30A', '호기 30A', ''], ...rows], { open: 'n:호기 30A' }))
+  R.added = S.scroller.scrollTop
+  S.scroller.scrollTop = 340
+  again(make([['s:호기 30A', '호기 30A', ''], ...rows], { open: 's:호기 30A' }))
+  R.saved = S.scroller.scrollTop
+}
+process.stdout.write(JSON.stringify(R))
+"""
+)
+
+
+def test_the_open_row_keeps_its_place_and_only_an_added_row_is_scrolled_to() -> None:
+    """설비명 차례 표에서 호기 상세로 연 호기의 설비명을 바꾸면 그 줄이 새 차례 자리로 옮겨 간다 —
+    앞 그리기에서 창 안에 보이던 연 줄이면 표가 그 줄을 따라가 창 안 같은 높이에 둔다(위로든
+    아래로든, 저장본 · 새 호기 모두). 창 밖에 둔 연 줄은 따라가지 않는다(스크롤 그대로).
+    처음으로 돌린 회차에 연 줄까지 굴리는 것은 「호기 추가」 뿐이고, 「목록 비우기」 뒤 다시
+    불러오기와 저장은 맨 위다(설계 규칙 UI-PRF-03 — 2026-11-20 검토 ems-rename-jump ·
+    ems-freshopen-extra)."""
+    result = _node({}, _OPEN_FOLLOW_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["topRow"] == {"slot": [0, 0], "top": 0}
+    assert result["down"] == {"slot": [5, 5], "top": 44 * 34}
+    assert result["up"] == {"slot": [5, 5], "top": 5 * 34}
+    assert result["outside"]["top"] == 40 * 34
+    assert result["moved"] == {"top": 0, "open": "n:가-9"}
+    assert result["reload"] == 0
+    assert result["added"] == 30 * 34, "호기 30 다음 자리를 표 머리 바로 아래로"
+    assert result["saved"] == 0
 
 
 _GROUP_DETAIL_RUNNER = """

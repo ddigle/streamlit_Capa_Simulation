@@ -69,6 +69,42 @@ function planPaste(cells, startRow, startCol, rowIds, colNames, editable, limit)
   const total = cells.reduce((sum, line) => sum + line.length, 0)
   return { ids, cols, rows, cut: cells.length - height, skipped, count, tooMany: total > limit }
 }
+
+// 설비명 칸에서 붙인 덩이(엑셀에서 설비명 열부터 잡은 흔한 꼴)의 줄 — 붙인 첫 열의 설비명으로 보이는 줄(`rows` — [id, 설비명])을
+// 맞댄다. 보이는 차례(설비명 자연 차례 · 머리 정렬)는 엑셀 차례와 다를 수 있어 차례로 펴면 값이 다른 호기에 든다. 이름은 앞뒤
+// 공백만 떼고 글자 그대로 견준다(파이썬 `cell_text` 와 같다). 모두 맞대면 붙인 줄 차례의 `ids`, 아니면 못 맞댄 이름 —
+// `missing`(빈 이름 · 보이는 줄에 없음 · 보이는 줄에 같은 이름이 둘)과 `twice`(붙인 글에 두 번) — 하나라도 있으면 붙이지 않는다.
+function pasteRowsByName(cells, rows) {
+  const byName = new Map()
+  for (const [id, name] of rows) {
+    const key = String(name == null ? '' : name).trim()
+    if (key) byName.set(key, byName.has(key) ? null : id)
+  }
+  const ids = []
+  const missing = []
+  const twice = []
+  const seen = new Set()
+  for (const line of cells) {
+    const key = String(line[0] == null ? '' : line[0]).trim()
+    const id = key ? byName.get(key) : null
+    if (!id) missing.push(key)
+    else if (seen.has(key)) twice.push(key)
+    else ids.push(id)
+    seen.add(key)
+  }
+  return { ids, missing, twice }
+}
+
+// 못 맞댄 이름의 브라우저 한 줄 — 앞 셋만 적는다(빈 이름은 「빈 설비명」). 다 맞댔으면 빈 글.
+function namePasteRefusal(matched) {
+  const list = (names) => {
+    const shown = names.slice(0, 3).map((name) => name || '빈 설비명').join(', ')
+    return names.length > 3 ? shown + ' 외 ' + (names.length - 3).toLocaleString() + '개' : shown
+  }
+  if (matched.missing.length) return '붙인 설비명 ' + matched.missing.length.toLocaleString() + '개를 표에서 찾지 못해 붙이지 않았습니다 — ' + list(matched.missing) + ' · 찾기 칸으로 불러온 뒤 다시 붙입니다'
+  if (matched.twice.length) return '붙인 글에 같은 설비명이 두 번 있어 붙이지 않았습니다 — ' + list(matched.twice)
+  return ''
+}
 // </grid-paste>
 
 // <grid-match>
@@ -286,12 +322,25 @@ function keptRowShift(ordered, anchor, top) {
 }
 
 // 처음으로 돌린 회차에 오른쪽 칸에 연 줄(`open`)이 이 회차에 새로 든 줄이면 그 id — 「호기 추가」 가 넣은 호기 · 목록 밖에서
-// 연 호기는 불러온 목록 맨 위에 들지만 보이는 차례는 설비명 차례라 맨 위가 아닐 수 있어 그 줄까지 스크롤한다. 첫 그리기
-// (`before` 없음)는 아니다. 앞 목록에는 옮김(`moved`)을 얹어 견준다.
-function freshOpen(before, after, moved, open) {
+// 연 호기는 불러온 목록 맨 위에 들지만 보이는 차례는 설비명 차례라 맨 위가 아닐 수 있어 그 줄까지 스크롤한다. 그 두 길만
+// 고른다: 앞 목록(`before` — 옮김 `moved` 를 얹어)의 줄이 모두 남은 채 늘기만 했고, 연 줄이 앞 회차에 연 줄(`wasOpen`)이
+// 아니다. 그래서 첫 그리기(`before` 없음) · 「목록 비우기」 뒤 연 상세를 둔 채 다시 불러오기 · 저장(새 호기 id 가 바뀜)은 맨 위다.
+function freshOpen(before, after, moved, open, wasOpen) {
   if (!before || typeof open !== 'string' || !after.includes(open)) return null
   const map = new Map(moved)
-  return before.some((id) => (map.has(id) ? map.get(id) : id) === open) ? null : open
+  const lift = (id) => (map.has(id) ? map.get(id) : id)
+  if (lift(wasOpen) === open) return null
+  const kept = new Set(after)
+  return before.every((id) => kept.has(lift(id)) && lift(id) !== open) ? open : null
+}
+
+// 앞 그리기에서 연 줄(`open`)이 창(`top` 번째 줄부터 `rows` 줄) 안에 보였으면 그 보이는 차례 번호, 아니면 null. 목록을 지킨
+// 회차에 그 줄이 옮겨 가면(처음 차례에서 호기 상세로 설비명을 바꿈 · 정렬한 칸 값을 바꿈) `keptRowShift` 로 따라가 창 안 같은
+// 높이에 둔다(UI-PRF-03). 창 밖이던 연 줄은 따라가지 않는다 — 스크롤은 그대로다.
+function openSlot(ordered, open, top, rows) {
+  if (typeof open !== 'string') return null
+  const at = ordered.indexOf(open)
+  return at >= top && at < top + rows ? at : null
 }
 // </grid-view>
 
@@ -1264,6 +1313,11 @@ function drawGrid(host, S, data) {
   // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꾸고, 모듈 묶음 같이 쓰기는 형제 줄을 끼워 목록 지문도 바꾼다 — 옮김을
   // 먼저 얹고, 목록이 그것으로만 바뀐 회차에는 고름·스크롤을 처음으로 돌리지 않는다(`keptView`).
   const before = S.model ? S.model.rows.map((row) => row.id) : []
+  // 앞 그리기에서 연 줄과 그 줄이 창 안에 보이던 자리(`openSlot`) — 옮김을 얹기 전 id 로 찾는다.
+  const wasOpen = S.openId
+  const openAt = S.model && S.scroller
+    ? openSlot(S.model.ordered.map((row) => row.id), wasOpen, Math.floor(S.scroller.scrollTop / ROW_H), Math.ceil((S.scroller.clientHeight || 600) / ROW_H))
+    : null
   const moved = Object.entries(data.moved || {})
   for (const [from, to] of moved) {
     if (S.selected.delete(from)) S.selected.add(to)
@@ -1284,7 +1338,7 @@ function drawGrid(host, S, data) {
       S.selected = new Set()
       S.anchor = null
       S.resetScroll = true
-      reveal = freshOpen(S.model ? before : null, after, moved, data.open)
+      reveal = freshOpen(S.model ? before : null, after, moved, data.open, wasOpen)
     } else if (inserted.length && S.model && S.scroller) {
       const top = Math.floor(S.scroller.scrollTop / ROW_H)
       const seen = S.model.ordered[top]
@@ -1295,6 +1349,11 @@ function drawGrid(host, S, data) {
   }
   // 상세에 연 줄의 띠는 파이썬이 아는 상세 id 를 따른다(「저장 전 변경」·고칠 것 줄로 연 호기도).
   if (Object.prototype.hasOwnProperty.call(data, 'open')) S.openId = typeof data.open === 'string' ? data.open : null
+  // 목록을 지킨 회차(같은 목록 · 옮김만)에 창 안에 보이던 연 줄이 그대로 열려 있으면 그 줄이 새 차례에서 옮겨 가도 창 안 같은
+  // 높이에 둔다(`openSlot` — 처음 차례에서 호기 상세로 설비명을 바꾼 줄). 끼운 줄 회차는 위 보던 첫 줄 몫 그대로다.
+  const lifted = new Map(moved)
+  const keptOpen = openAt === null ? null : lifted.has(wasOpen) ? lifted.get(wasOpen) : wasOpen
+  if (!keepTop && !S.resetScroll && keptOpen !== null && S.openId === keptOpen) keepTop = { id: keptOpen, top: openAt }
   S.model = gridModel(S, data)
   const shift = keepTop ? keptRowShift(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.top) : 0
   const known = new Set(S.model.live.map((row) => row.id))
@@ -2280,14 +2339,29 @@ function onPaste(S, event) {
   }
   event.preventDefault()
   const live = model.live
-  // 설비명 칸에서 붙이면(엑셀에서 설비명 열부터 잡은 흔한 꼴) 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터 편다.
+  // 설비명 칸에서 붙이면(엑셀에서 설비명 열부터 잡은 흔한 꼴) 옆 칸부터 편다 — 설비명만 붙였으면 넣지 못한 칸으로 센다.
   const order = onName ? [model.nameCol].concat(model.visible) : model.visible
-  const start = { row: live.findIndex((row) => row.id === id), col: order.indexOf(col) }
+  let start = { row: live.findIndex((row) => row.id === id), col: order.indexOf(col) }
   if (start.row < 0 || start.col < 0) return
+  let rowIds = live.map((row) => row.id)
+  let block = cells
+  // 설비명 옆 칸까지 붙였으면 줄은 보이는 차례가 아니라 붙인 설비명으로 맞대고(`pasteRowsByName`) 설비명 열은 열쇠라 세지
+  // 않는다 — 하나라도 못 맞대면 보내지 않고 한 줄.
+  if (onName && cells.some((line) => line.length > 1)) {
+    const matched = pasteRowsByName(cells, live.map((row) => [row.id, (row.values || [])[model.nameCol]]))
+    const refusal = namePasteRefusal(matched)
+    if (refusal) {
+      showNote(S, refusal)
+      return
+    }
+    rowIds = matched.ids
+    block = cells.map((line) => line.slice(1))
+    start = { row: 0, col: 1 }
+  }
   const names = order.map((k) => model.columns[k].name)
   const byName = new Map(order.map((k) => [model.columns[k].name, k]))
   const byId = new Map(live.map((row) => [row.id, row]))
-  const plan = planPaste(cells, start.row, start.col, live.map((row) => row.id), names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
+  const plan = planPaste(block, start.row, start.col, rowIds, names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
   if (plan.tooMany) {
     showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV」 의 「엑셀·CSV로 한꺼번에」 를 씁니다')
     return
