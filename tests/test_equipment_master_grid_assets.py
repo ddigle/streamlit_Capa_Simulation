@@ -4155,3 +4155,156 @@ def test_the_new_unit_draft_goes_out_on_leaving_a_field_after_the_quiet_time_or_
     assert result["hidden"] == [["draft", 8, ["EQ-3", "DA", "N"]]]
     assert result["unmounted"] == [["draft", 9, ["EQ-4", "DA", "N"]]]
     assert result["after"] == 6
+
+
+# ---------------------------------------------------------------- 떠나기 신호(R8)
+
+# 창 처리기를 이름마다 센다 — 떠나기 신호 처리기가 다시 불러도 하나인지 본다.
+_WINDOW_COUNT = """
+const winCount = {}
+const addWindow = window.addEventListener.bind(window)
+const removeWindow = window.removeEventListener.bind(window)
+window.addEventListener = (type, fn, options) => {
+  winCount[type] = (winCount[type] || 0) + 1
+  addWindow(type, fn, options)
+}
+window.removeEventListener = (type, fn, options) => {
+  winCount[type] = (winCount[type] || 0) - 1
+  removeWindow(type, fn, options)
+}
+"""
+
+_LEAVE_RUNNER = (
+    _WINDOW_COUNT
+    + _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    + """
+const R = {}
+;(async () => {
+  const book = editorBook(window)
+  const busy = () => editorsBusy(book)
+  R.mounted = { editors: book.entries.size, busy: busy() }
+  // 앞서 고친 칸이 있는 표 — 쉼에 걸린다. 명부는 busy(보내지 않은 op).
+  typed('a', 1, 'T0', press('Enter'))
+  R.held = { sent: sent.length, busy: busy() }
+  // 화면을 떠나는 누름이 쏜 신호 — 곧바로 보내고 ack 전까지 busy 다.
+  window.dispatchEvent(new CustomEvent('capa-leaving'))
+  R.left = { sent: sent.length, busy: busy(), leaving: S.leave.leaving }
+  // 신호 뒤 고침은 묶지 않는다.
+  typed('a', 2, 'T1', press('Enter'))
+  R.after = { sent: outgoing.map((ops) => ops.map((op) => op[0])), busy: busy() }
+  // ack 로 보낼 목록이 비면 busy 가 걷히고 다시 묶는다.
+  const acked = { ...data, view: 'v2', ack: { mount: S.mount, seq: 2 } }
+  globalThis.__mount({ data: acked, ...component })
+  R.acked = { box: S.box.ops.length, busy: busy(), leaving: S.leave.leaving }
+  typed('b', 1, 'T2', press('Enter'))
+  R.again = { sent: sent.length, busy: busy() }
+  await tick(360)
+  R.quiet = { sent: sent.length }
+  // 다시 불러도(data 가 바뀐 회차) 명부 칸과 창 처리기(떠나기 신호 · feed)는 하나다.
+  for (let i = 0; i < 50; i += 1) {
+    globalThis.__mount({ data: { ...data, view: 'v' + (3 + i) }, ...component })
+  }
+  R.remounted = {
+    editors: book.entries.size,
+    leaving: winCount['capa-leaving'],
+    feed: winCount['capa-equipment-grid'],
+  }
+  // 마운트를 내리면 명부에서 빠진다(남은 op 는 보내고).
+  cleanup()
+  R.down = {
+    editors: book.entries.size, busy: busy(), leave: S.leave, leaving: winCount['capa-leaving'],
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_leaving_signal_sends_the_held_cells_at_once_and_holds_busy_until_the_ack() -> None:
+    """떠나기 신호(`capa-leaving`)를 받으면 묶음 쉼 안의 칸 고침을 곧바로 보내고, ack 가 올 때까지
+    편집기 명부(`window.__capaEditors`)에 busy 다. 신호 뒤 고침은 묶지 않고, ack 로 보낼 목록이
+    비면 다시 묶는다. data 가 바뀔 때마다 default export 를 다시 불러도 명부 칸과 창 처리기는
+    하나이고, 마운트를 내리면 명부에서 빠진다."""
+    result = _node({}, _LEAVE_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["mounted"] == {"editors": 1, "busy": False}
+    assert result["held"] == {"sent": 0, "busy": True}
+    assert result["left"] == {"sent": 1, "busy": True, "leaving": True}
+    assert result["after"] == {"sent": [[1], [1, 2]], "busy": True}, "신호 뒤 칸은 곧바로"
+    assert result["acked"] == {"box": 0, "busy": False, "leaving": False}
+    assert result["again"] == {"sent": 2, "busy": True}, "ack 뒤 고침은 다시 쉼을 탄다"
+    assert result["quiet"] == {"sent": 3}
+    assert result["remounted"] == {"editors": 1, "leaving": 1, "feed": 1}
+    assert result["down"] == {"editors": 0, "busy": False, "leave": None, "leaving": 0}
+
+
+_LEAVE_DRAFT_RUNNER = (
+    "globalThis.window = new EventTarget()\n"
+    + _WINDOW_COUNT
+    + _DRAFT_BATCH_RUNNER[: _DRAFT_BATCH_RUNNER.index("const R = {}")]
+    + """
+const R = {}
+;(async () => {
+  const cleanup = mount(panel({}))
+  const S = host.__emg
+  // Enter 로 확정한 초안은 쉼(1초) 안이다 — 떠나기 신호에 곧바로 간다. 초안은 ack 가 없어 busy 가
+  // 아니고, 보낼 목록도 비어 신호를 받은 자리에서 걷힌다.
+  fire(type(0, 'EQ-1'), 'keydown', { key: 'Enter' })
+  R.held = states.length
+  window.dispatchEvent(new CustomEvent('capa-leaving'))
+  R.left = { states: states.slice(), leaving: S.leave.leaving }
+  await wait(1100)
+  R.quiet = states.length
+  // 머문 뒤 다음 확정은 다시 쉼을 탄다.
+  fire(type(0, 'EQ-2'), 'keydown', { key: 'Enter' })
+  R.again = states.length
+  // 다시 불러도(data 가 바뀐 회차) 명부 칸과 신호 처리기는 하나다.
+  const book = editorBook(window)
+  for (let i = 0; i < 50; i += 1) mount(panel({ checked: 3 + i }))
+  R.remounted = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  cleanup()
+  R.down = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  mount(panel({}))
+  R.back = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_leaving_signal_sends_the_new_unit_draft_and_mounts_join_the_book_once() -> None:
+    """「새 호기」 초안도 떠나기 신호에 곧바로 간다 — ack 가 없는 상태 값이라 busy 에 들지 않고,
+    보낼 것이 남지 않은 편집기는 신호를 받은 자리에서 걷혀 머문 뒤 다음 확정은 다시 쉼을 탄다.
+    data 가 바뀔 때마다 default export 를 다시 불러도 명부 칸과 신호 처리기는 하나이고, 정리 함수가
+    둘 다 걷으며 다시 마운트하면 다시 하나다."""
+    runner = _FAKE_DOM + _LEAVE_DRAFT_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+    assert result["held"] == 0
+    assert result["left"] == {"states": [["draft", 4, ["EQ-1", "", ""]]], "leaving": False}
+    assert result["quiet"] == 1, "보낸 초안은 쉼 뒤에 다시 가지 않는다"
+    assert result["again"] == 1, "머문 뒤 다음 확정은 쉼을 탄다"
+    assert result["remounted"] == {"editors": 1, "leaving": 1}
+    assert result["down"] == {"editors": 0, "leaving": 0}
+    assert result["back"] == {"editors": 1, "leaving": 1}
+
+
+def test_the_grid_joins_the_leaving_book_in_bind_and_drops_it_in_cleanup() -> None:
+    """글 약속 — 신호 받기는 처리기를 한 번 다는 자리(`S.bound`) 안이고 정리 함수가 걷는다. busy 는
+    보낼 목록이 남았는가이고, ack 를 받은 뒤 걷힘을 알린다. 떠나기 뒤 칸 고침 · 초안 확정은 묶음
+    타이머를 타지 않는다."""
+    own = (ASSETS / "grid.js").read_text(encoding="utf-8")
+    bind = own[own.index("if (!S.bound) {") : own.index("if (data.mode === 'loader') {")]
+    assert (
+        "S.leave = joinLeaving(window, { busy: () => gridBusy(S), flush: () => leaveNow(S) }, host)"
+        in bind
+    )
+    assert "return boxBusy(S.box)" in own[own.index("function gridBusy(") :]
+    receive = own[own.index("function receive(") : own.index("function send(")]
+    assert receive.index("ackBox(S.box, ack.seq)") < receive.index(
+        "settleLeaving(S.leave, gridBusy(S))"
+    )
+    schedule = own[own.index("function schedule(") : own.index("function sendOnce(")]
+    assert "leavingNow(S.leave) ||" in schedule
+    commit = own[own.index("function commitDraft(") : own.index("function flushDraft(")]
+    assert "now = now || leavingNow(S.leave)" in commit
+    cleanup = own[own.index("return () => {", own.index(_MOUNT_HEAD)) :]
+    assert "if (S.leave) S.leave.drop()" in cleanup

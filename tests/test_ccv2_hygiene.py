@@ -538,6 +538,36 @@ def _scenario_list_data() -> list[dict[str, Any]]:
     return [first, second]
 
 
+def _equipment_grid_js() -> str:
+    from capa_simulation.components import equipment_master_grid
+
+    return equipment_master_grid.registered_js()
+
+
+def _equipment_grid_data() -> list[dict[str, Any]]:
+    """설비 마스터 표 — 연 호기가 없는 오른쪽 「호기 상세」 마운트가 회차마다 받는 data 둘(깨끗함 ·
+    ack 가 다르다). 표 · 연 호기 칸은 회차마다 띠 단추 · 칸을 새 요소로 다시 지어(옛 요소는 문서에서
+    떨어진다) 느슨한 대역이 떨어진 요소의 처리기까지 센다 — 문서 · 창 처리기는 모든 마운트가 같은
+    자리(`S.bound`)에서 달고, 표 · 「새 호기」 마운트의 bind-once 는 그 부품의 node
+    시험(`tests/test_equipment_master_grid_assets.py`)이 본다."""
+    first: dict[str, Any] = {
+        "mode": "side",
+        "panel": "detail",
+        "base": "b1",
+        "columns": [
+            {"name": "설비명", "kind": "name", "width": "name"},
+            {"name": "Model", "kind": "text", "width": "m"},
+        ],
+        "groups": [[0, "호기 정보", "common", "", [0, 1]]],
+        "unit": None,
+        "clean": True,
+        "sendMs": 300,
+        "palette": {},
+    }
+    second = {**first, "clean": False, "ack": {"mount": "m-x", "seq": 1}}
+    return [first, second]
+
+
 # 부품 이름 → (등록 JS, data 들). 새 편집기 부품은 여기에 한 줄을 더한다 — 느슨한 대역으로 돌지
 # 않는 부품은 그 부품의 node 시험에 bind-once 를 둔다.
 BIND_ONCE: dict[str, tuple[Callable[[], str], Callable[[], list[dict[str, Any]]]]] = {
@@ -545,6 +575,7 @@ BIND_ONCE: dict[str, tuple[Callable[[], str], Callable[[], list[dict[str, Any]]]
     "capa_edit_grid": (_edit_grid_js, _edit_grid_data),
     "capa_edit_grid_rows": (_edit_grid_rows_js, _edit_grid_rows_data),
     "capa_scenario_list_grid": (_scenario_list_js, _scenario_list_data),
+    "capa_equipment_master_grid": (_equipment_grid_js, _equipment_grid_data),
 }
 
 

@@ -5,6 +5,10 @@
 // 잃어도 되는 화면 조작만 트리거다(불러오기 load·clear·new·dialog, 표 open·unload, 오른쪽 칸 open·goto·copy). 업무
 // 검증은 파이썬이 한다 — 여기는 data 가 준 잠금·고를 값·자리 계산만 안다. 데이터 글은 textContent 로만 넣고
 // innerHTML 은 고정 아이콘에만 쓴다. 아래 `// <grid-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
+// 떠나기 신호(AGENTS 9장 「구역 회차 규칙」 R8 — 등록 글 앞에 이은 `leave.js` 조각): 마운트마다 편집기 명부에 오르고
+// (`joinLeaving` — 처리기를 한 번 다는 자리), 창 사건 `capa-leaving` 을 받으면 묶음 타이머를 멈추고 보낼 목록 · 「새 호기」
+// 초안을 곧바로 보낸다. 보낼 목록에 op 가 남은 동안(보내지 않았거나 ack 가 오지 않음) busy 다 — 화면을 떠나는 누름이 그 ack
+// 를 기다린다. 신호 뒤 고침은 묶지 않고, ack 로 목록이 비면 다시 묶는다.
 
 // <grid-paste>
 // 붙인 글을 칸 판으로. 끝 줄바꿈 하나는 떼고 \r 은 버린다. 탭·줄바꿈이 없으면(한 칸) null — 보통 붙여넣기다.
@@ -579,7 +583,7 @@ function freshState() {
     note: '', noteSeq: 0, noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
-    dialogOpener: null, dialogClosed: null,
+    dialogOpener: null, dialogClosed: null, leave: null,
   }
 }
 
@@ -649,6 +653,8 @@ function receive(S, data) {
     for (const [key, item] of S.pending) if (item.seq <= ack.seq) S.pending.delete(key)
     // 기다리던 op 가 돌아왔다 — 진행 한 줄(붙여넣는 중)을 거둔다. 결과는 알림창이 말한다.
     if (S.noteSeq && S.noteSeq <= ack.seq) clearNote(S)
+    // 보낼 목록이 비었으면 떠나기 표지를 걷는다 — 다음 고침은 다시 묶는다.
+    settleLeaving(S.leave, gridBusy(S))
   }
   S.limit = Number((data.limits || {}).outboxCells) || 10000
   // 묶어 보내기 쉼(ms) — 파이썬이 정한다(`equipment_master_grid.SEND_MS` → `grid_shared.batch_ms`). 없으면 SEND_MS.
@@ -669,12 +675,25 @@ function send(S) {
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 
+// 떠나기 명부의 busy — 보낼 목록에 op 가 남았다(보내지 않았거나 ack 가 오지 않음 — op 는 ack 가 올 때까지 남는다).
+// 「새 호기」 초안은 ack 가 없는 상태 값이라 신호에 곧바로 보내고(`leaveNow`) busy 에 넣지 않는다.
+function gridBusy(S) {
+  return boxBusy(S.box)
+}
+
+// 떠나기 신호 — 묶음 타이머를 멈추고 보낼 목록 · 확정해 둔 「새 호기」 초안을 곧바로 보낸다.
+function leaveNow(S) {
+  send(S)
+  flushDraft(S)
+}
+
 // 칸 고침은 쉼(`S.sendMs`)만큼 모아 한 번에 보낸다 — 깨끗한 편집본의 첫 op 는 곧바로(미저장 표지 · 떠나기 확인이 늦지 않게).
-// 붙여넣기 · 단추 op · 표 밖 누름(focusout) · 창 숨김은 이 길을 거치지 않고 곧바로 보낸다(`send`).
+// 떠나기 신호를 받은 뒤(`leavingNow`)도 묶지 않는다. 붙여넣기 · 단추 op · 표 밖 누름(focusout) · 창 숨김 · 떠나기 신호는 이
+// 길을 거치지 않고 곧바로 보낸다(`send` — 떠나기 신호는 `leaveNow`).
 function schedule(S) {
   if (S.timer) clearTimeout(S.timer)
   S.timer = 0
-  if (sendsAtOnce(S.clean, S.box.ops, S.sentSeq)) {
+  if (leavingNow(S.leave) || sendsAtOnce(S.clean, S.box.ops, S.sentSeq)) {
     send(S)
     return
   }
@@ -2791,8 +2810,10 @@ function drawNew(S, root, data) {
 }
 
 // 「새 호기」 칸 확정 — 번호를 올리고 확정한 값(`ndSent`)으로 적는다. 서버로는 칸을 떠날 때 · 쉼(`S.sendMs`) 뒤 · 「호기
-// 추가」 직전에 마지막 초안 하나만 보낸다(`flushDraft`) — 칸마다 회차를 돌리지 않는다. 단추(양식 비우기)는 `now` 로 곧바로.
+// 추가」 직전에 마지막 초안 하나만 보낸다(`flushDraft`) — 칸마다 회차를 돌리지 않는다. 단추(양식 비우기)는 `now` 로, 떠나기
+// 신호를 받은 뒤(`leavingNow`)는 곧바로.
 function commitDraft(S, now) {
+  now = now || leavingNow(S.leave)
   S.nd = bumpDraft(S.nd, (S.data && S.data.draft && S.data.draft.seq) || 0)
   S.ndSent = S.nd.values.slice()
   S.ndQueued = true
@@ -3137,6 +3158,10 @@ export default function (component) {
       send(S)
       flushDraft(S)
     })
+    // 떠나기 명부 — 마운트(불러오기 · 표 · 오른쪽 칸)마다 한 번 오르고 정리 함수가 걷는다. 뿌리는 편집기 상태를 단 요소다.
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      S.leave = joinLeaving(window, { busy: () => gridBusy(S), flush: () => leaveNow(S) }, host)
+    }
     // 표 마운트만 — feed 요소가 칸을 바꿨다(그 껍데기면 이어 그린다).
     if (data.mode === 'grid' && typeof window !== 'undefined' && window.addEventListener) {
       listen(S, window, 'capa-equipment-grid', (event) => {
@@ -3175,6 +3200,8 @@ export default function (component) {
     flushDraft(S)
     for (const [target, type, handler, options] of S.listeners) target.removeEventListener(type, handler, options)
     S.listeners = []
+    if (S.leave) S.leave.drop()
+    S.leave = null
     if (S.timer) clearTimeout(S.timer)
     if (S.noteTimer) clearTimeout(S.noteTimer)
     if (S.scrollFrame) cancelAnimationFrame(S.scrollFrame)

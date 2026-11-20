@@ -308,6 +308,7 @@ _ENROLLING_EDITORS = {
     "범용 편집 그리드": ("edit_grid_assets/eg_core.js", "S.host"),
     "시나리오 목록 표": ("scenario_list_grid_assets/list.js", "host"),
     "Space 「호기 정보」 창": ("space_layout_editor_assets/editor.js", "host"),
+    "설비 마스터 표": ("equipment_master_grid_assets/grid.js", "host"),
 }
 _COMPONENTS = grid_shared.SHARED_ASSETS.parent
 # 명부에 오르는 부름 — 정의(`function joinLeaving(`) · 설명 글(`` `joinLeaving` ``)은 아니다.
