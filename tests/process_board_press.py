@@ -8,6 +8,11 @@
 위젯 상태에 상태 칸(바뀌지 않음)과 트리거 모음 칸(Streamlit `_make_trigger_id(<판 id>, "events")`)을
 더해 돌린다 — 탭 줄 시험(`test_page_tabs._press_strip`)과 같은 길이라 판 콜백(`on_apply`)이 진짜로
 회차 앞에서 돈다.
+
+여기서 넣는 트리거는 판 JS 를 거치지 않는다 — 판이 보낼 값(누른 차례 · 모두 켬)과 「적용」 잠금은
+`tests/test_process_field.py` 의 마운트 시험(가짜 DOM 에서 판 JS 를 그 data 로 돌림)이 본다.
+그래서 판이 잠가 보내지 않을 트리거(같은 값의 늦은 「적용」 · 선택지 밖 값)도 서버 쪽 시험으로
+넣을 수 있다.
 """
 
 from __future__ import annotations
