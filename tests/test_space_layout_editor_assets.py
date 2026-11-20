@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from test_space_module_group import _js_decl, _node
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.page_guide import load_guide
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_STATUSES,
@@ -758,7 +759,8 @@ def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_ch
     """층 보기 도면 상자 맨 위 한 줄(36px)이 기준일 페이더(날짜 칩·트랙·「오늘」)다. 배치 편집은 그
     줄 대신 도구 줄 제목 옆 칩 「YYYY-MM-DD 고정」(핀 아이콘)이다(2026-11-03 결정 D12 — 여백 걷기).
     FAB 에는 없다(`sle-floor-only`). 무대 기본 높이는 층 보기에만 그 줄과 틈만큼 덜어 낸다. 「필요
-    단축」 보기의 고정 줄(`sle-pinned`)은 같은 줄 자리다."""
+    단축」 보기의 고정 줄(`sle-pinned`)은 같은 줄 자리다. 편집 중 날을 바꾸는 법(배치 편집을 끄고
+    페이더)은 칩 풍선과 Guide 가 말한다."""
     row = HTML[HTML.index('<div class="sle-daterow') : HTML.index('<div class="sle-toolbar">')]
     assert HTML.index('class="sle-daterow') < HTML.index('class="sle-toolbar"')
     assert 'class="sle-daterow sle-floor-only sle-view-only"' in row
@@ -773,11 +775,16 @@ def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_ch
     assert "aria-live" not in fader
     assert "setAttr(faderInput, 'aria-valuetext'" in JS
     pinned = row[row.index('class="sle-pinned ') :]
-    assert "sle-edit-only" in pinned and "편집 중 고정" in pinned
-    # 고정 줄 HTML 글은 표지 한 마디다 — 끄면 페이더로 바뀐다는 하는 법 꼬리는 두지 않는다(그
-    # 줄은 층 편집에 서지 않고, 그 말은 도구 줄 칩 풍선 · Guide 몫 — 설계 규칙 UI-TXT-01 · 02,
-    # 규칙집 6-39).
-    assert '<span class="sle-pinned-note">· 편집 중 고정</span>' in pinned
+    # 고정 줄은 「필요 단축」 보기(`is-view.is-pinned`)에만 선다 — 층 편집에는 기준일 줄째
+    # 걷히고(`sle-view-only`) 도구 줄 칩이 기준일을 말하며, 그 보기에서는 JS 가 뒷글을 「 · 오늘
+    # 고정」 으로 쓴다. 그래서 고정 줄의 HTML 기본 글은 어느 보기에서도 화면에 서지 않아 글자를
+    # 맞대지 않는다.
+    assert "sle-edit-only" in pinned
+    assert "display: flex !important" in _rule(".sle.is-view.is-pinned .sle-pinned")
+    assert "host.classList.toggle('is-pinned', ASOF_PINNED)" in JS
+    # 걷은 하는 법 꼬리(「배치 편집을 끄면 페이더로 바꿉니다」)는 HTML 에 두지 않는다 — 그 뜻은
+    # 아래 도구 줄 칩 풍선과 Guide 「기준일은 편집하는 동안 고정」 단락이 말한다(설계 규칙
+    # UI-TXT-01 · 02 — 규칙집 6-39).
     assert "페이더로 바꿉니다" not in HTML
     assert "height: 36px" in _rule(".sle-daterow")
     assert "const DATE_ROW_PX = 36" in JS
@@ -790,6 +797,16 @@ def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_ch
     assert toolbar.index('class="sle-title"') < toolbar.index('class="sle-pinchip ')
     assert 'class="sle-pinchip sle-edit-only sle-floor-only"' in toolbar
     assert 'class="sle-pinchip-date"' in chip and "고정" in chip
+    tag = chip[: chip.index(">")]
+    assert (
+        'title="기준일은 편집하는 동안 고정입니다 — '
+        '바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다"'
+    ) in tag
+    guide = " ".join(load_guide("space_status").replace("**", "").split())
+    assert (
+        "기준일은 편집하는 동안 고정입니다 — 도구 줄 제목 옆 칩 「YYYY-MM-DD 고정」 이 말하고"
+    ) in guide
+    assert "날을 바꾸려면 배치 편집을 끄고 페이더를 씁니다" in guide
     assert "if (!VIEW && !FAB) setText(pinChipDate, S.asOf" in JS
     assert "window.innerHeight - CHROME_PX" in JS
     assert "gap: 8px" in _rule(".sle")

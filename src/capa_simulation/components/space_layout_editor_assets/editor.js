@@ -9427,8 +9427,8 @@ export default function (component) {
   const pinnedRow = q('.sle-pinned')
   const pinnedNote = q('.sle-pinned-note')
   // 고정 줄 뒷글 — 「필요 단축」 보기는 표지 「오늘 고정」 이고 왜 고정인지는 그 줄 풍선 `data.asOfPinned` 다(설계 규칙
-  // UI-TXT-01). 그 밖의 회차는 HTML 글(표지 「· 편집 중 고정」)로 돌리지만 줄이 서지 않는다 — 층 편집은 기준일 줄째 걷히고
-  // 도구 줄 칩이다(결정 D12).
+  // UI-TXT-01). 그 밖의 회차는 HTML 기본 글로 돌리지만 줄이 서지 않아 그 글은 화면에 나오지 않는다 — 층 편집은 기준일 줄째
+  // 걷히고 도구 줄 칩이다(결정 D12).
   if (S.pinnedNoteDefault === undefined) S.pinnedNoteDefault = pinnedNote ? pinnedNote.textContent : ''
   const fabAsOf = q('.sle-asof')
   const fabAsOfDate = q('.sle-asof-date')
