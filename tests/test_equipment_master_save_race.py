@@ -37,8 +37,8 @@ from test_equipment_master_tab import (
     _rows,
 )
 from test_equipment_master_tab_new_unit import _draft
-from test_equipment_save_double_press import _race_save
 from test_equipment_pages import _page_script
+from test_equipment_save_double_press import _race_save
 from test_scenario_save_double_press import _first_callback
 
 import capa_simulation.components.write_guard as write_guard
