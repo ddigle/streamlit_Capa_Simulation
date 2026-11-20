@@ -529,7 +529,8 @@ def test_the_core_joins_the_leaving_book_in_bind_and_drops_it_in_cleanup() -> No
     core = (edit_grid._ASSETS / "eg_core.js").read_text(encoding="utf-8")
     bind = core[core.index("function egBind(") : core.index("function egInside(")]
     assert (
-        "S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) })" in bind
+        "S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) }, S.host)"
+        in bind
     )
     assert "return S.box.ops.length > 0" in core[core.index("function egBusy(") :]
     acks = core[core.index("function egTakeAcks(") : core.index("function egApplyFeed(")]

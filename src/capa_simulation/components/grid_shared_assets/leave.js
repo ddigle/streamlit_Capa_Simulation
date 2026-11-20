@@ -59,8 +59,9 @@ function announceLeaving(win) {
 // 편집기 하나를 명부에 올리고 떠나기 신호를 받는다 — `busy()` 는 보낼 것이 남았거나 ack 를 기다리는가, `flush()` 는 묶음 타이머를
 // 멈추고 남은 op 를 곧바로 보낸다. 보낸 뒤에도 busy 가 아니면(보낼 것도 ack 기다림도 없었다) 곧바로 걷는다(`settleLeaving` 과
 // 같은 뜻 — ack 뒤 스스로 걷는 편집기와 겹쳐도 같다). 돌려준 손잡이(`leaving` · `drop`)는 편집기 상태에 두고, 정리 함수에서
-// `drop()` 한다. `root`(부품 뿌리 — Components v2 의 `parentElement`, 주지 않아도 된다)를 주면 그 뿌리가 문서에서 떨어진
-// 뒤(`isConnected` 거짓)의 판정은 busy 가 아니다 — `drop()` 을 빠뜨린 채 내린 편집기가 떠나는 누름마다 붙들기를 묶지 않게.
+// `drop()` 한다. `root`(부품 뿌리 — 편집기 상태를 단 요소처럼 부품과 함께 문서에서 떨어지는 요소, 주지 않아도 된다)를 주면
+// 그 뿌리가 문서에서 떨어진 뒤(`isConnected` 거짓)의 판정은 busy 가 아니다 — `drop()` 을 빠뜨린 채 내린 편집기가 떠나는 누름마다
+// 붙들기를 묶지 않게. 명부에 오르는 편집기는 모두 넘긴다(`tests/test_leave_assets.py` 의 `_ENROLLING_EDITORS` 에 한 줄).
 function joinLeaving(win, hooks, root = null) {
   const book = editorBook(win)
   const handle = { leaving: false, id: 0, drop: () => {} }

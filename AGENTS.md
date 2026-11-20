@@ -8566,9 +8566,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **R8 떠나기 신호**(`leave.js`). 화면을 떠나는 누름(탭 줄 고르기 · 지금 탭 닫기 · 사이드바 화면 링크 · 테마 단추 · 알림
   칸 「그 화면으로」)은 붙들기 판정 전에 창 사건 `capa-leaving` 을 쏜다(`announceLeaving`). 옮기는 동안 기다리던 탭 누름과
   서버에 닿지 않아 다시 보내는 고르기도 보내기 전에 같은 신호 · 붙들기를 지난다(`page_tabs.js` 의 `leaveThen`). 묶어 보내는 편집기는
-  `joinLeaving(window, { busy, flush }, parentElement)` 로 명부(`window.__capaEditors`)에 올라 신호에 남은 op 를 곧바로
+  `joinLeaving(window, { busy, flush }, root)` 로 명부(`window.__capaEditors`)에 올라 신호에 남은 op 를 곧바로
   보내고, 보낼 것이 남았거나 ack 가 오지 않은 동안 busy 다(`boxBusy` — 표 공용 출납). 정리 함수에서 손잡이를 `drop()` 하고,
-  셋째 인자(부품 뿌리 — 없어도 된다)를 주면 뿌리가 문서에서 떨어진 뒤의 판정은 busy 가 아니다. 신호 뒤 편집은 묶지
+  셋째 인자로 부품 뿌리(편집기 상태를 단 요소 — 부품과 함께 문서에서 떨어진다)를 넘긴다 — 뿌리가 문서에서 떨어진 뒤의
+  판정은 busy 가 아니다(명부에 오르는 편집기는 모두 넘긴다 — `tests/test_leave_assets.py` 의 `_ENROLLING_EDITORS`). 신호 뒤 편집은 묶지
   않고(`leavingNow`) 다 걷히면 다시 묶는다(`settleLeaving`). 신호를 받은 순간 보낼 것도 ack 기다림도 없는 편집기는 그
   자리에서 걷는다 — 화면에 머무는 누름(지금 화면 링크 · 떠나기 확인 취소 · 상한에 막힌 링크)도 신호를 쏘므로, 머문 뒤 다음
   고침도 묶인다. 탭 줄 붙들기는 busy 가 걷히고 회차가 끝날 때까지(상한 `BUSY_MS`) 기다리고, busy 였다가 걷힌

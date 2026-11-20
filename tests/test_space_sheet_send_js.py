@@ -556,6 +556,8 @@ const document = Object.assign(target('document'), {
 })
 const count = (key) => (handlers.get(key) || new Set()).size
 const S = { sheetCells: new Map(), sheetSeq: 0, epoch: 'e1' }
+// 편집기 상태를 단 요소(`.sle`) — 떠나기 명부의 셋째 인자(부품 뿌리).
+const host = { isConnected: true }
 const sheetEditCells = () => S.sheetCells
 const sheetEditPayload = (cells) => [...cells.values()]
 const sent = []
@@ -600,6 +602,11 @@ advance(599)
 out.quietWait = sent.length
 advance(1)
 out.resent = sent.slice(-1)
+// 판정을 기다리는 동안 busy 이고, 부품 뿌리가 문서에서 떨어지면 그 판정은 busy 가 아니다.
+out.rooted = [editorsBusy(editorBook(window))]
+host.isConnected = false
+out.rooted.push(editorsBusy(editorBook(window)))
+host.isConnected = true
 cleanup()
 out.unbound = [count('window:capa-leaving'), count('document:visibilitychange'), clock.timers.size]
 out.unwatched = [watches.cut, S.sheetRunWatch]
@@ -615,8 +622,9 @@ def test_the_editor_binds_the_leave_and_hide_listeners_once_and_unbinds_them() -
     """편집기 default export 는 data 가 바뀔 때마다 다시 불리고 앞 호출의 정리 함수는 불리지 않는다
     — 떠나기 명부 · 창 숨김 처리기 · 회차 표지 감시는 50번 불러도 한 벌이다. 타이머는 늘 마지막
     호출의 바깥 몫(새 `setTriggerValue` · 쉼)으로 보내고, 창 숨김은 묶음을 곧바로 보낸다. 판정이
-    오지 않은 확인은 감시가 적은 회차 끝에서 조용한 틈(`SHEET_QUIET_MS`)을 센 뒤 다시 보낸다. 정리
-    함수는 명부 · 처리기 · 감시 · 타이머를 걷는다."""
+    오지 않은 확인은 감시가 적은 회차 끝에서 조용한 틈(`SHEET_QUIET_MS`)을 센 뒤 다시 보낸다.
+    명부에는 부품 뿌리(`host`)와 함께 올라 뿌리가 문서에서 떨어지면 busy 가 아니다. 정리 함수는
+    명부 · 처리기 · 감시 · 타이머를 걷는다."""
     bind = _section(JS, "sheet-send-bind")
     unbind = _section(JS, "sheet-send-unbind")
     out = _node(_BIND_RUNNER % {"bind": bind, "unbind": unbind}, leave=True)
@@ -629,6 +637,7 @@ def test_the_editor_binds_the_leave_and_hide_listeners_once_and_unbinds_them() -
     assert out["hidden"] == 2
     assert out["quietWait"] == 2
     assert out["resent"] == [[49, "sheetCheck", 2]]
+    assert out["rooted"] == [True, False]
     assert out["unbound"] == [0, 0, 0]
     assert out["unwatched"] == [1, None]
     assert out["afterUnbind"] == 3

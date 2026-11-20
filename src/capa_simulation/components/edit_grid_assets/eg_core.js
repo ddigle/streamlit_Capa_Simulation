@@ -174,7 +174,7 @@ function egBind(S) {
     S.observer = new ResizeObserver(() => egFrame(S, 'layout', () => egLayout(S)))
     S.observer.observe(frame)
   }
-  S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) })
+  S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) }, S.host)
 }
 
 // 떠나기 명부의 busy — 보낼 목록에 op 가 남았다(보내지 않았거나 ack 가 오지 않음 — op 는 ack 가 올 때까지 남는다).

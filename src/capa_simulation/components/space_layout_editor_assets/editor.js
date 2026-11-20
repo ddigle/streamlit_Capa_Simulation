@@ -579,7 +579,7 @@ export default function (component) {
     S.sheetLeave = joinLeaving(window, {
       busy: () => sheetSendBusy(S.sheetSend),
       flush: () => sheetSendFlush(S.sheetSend, S.sheetEnv),
-    })
+    }, host)
   }
   if (SHEET_EDIT && !S.onSheetHidden) {
     S.onSheetHidden = () => {

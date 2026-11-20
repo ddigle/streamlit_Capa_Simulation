@@ -1134,7 +1134,7 @@ export default function (component) {
         flush(S)
         settleLeaving(S.leave, boxBusy(S.box))
       },
-    })
+    }, host)
     listen(S, document, 'pointerup', () => onPointerEnd(S, false))
     listen(S, document, 'pointercancel', () => onPointerEnd(S, true))
     // 끄는 중 Esc 는 취소다 — 칸의 키가 문서로 올라오지 않으므로(`stopKeys`) 잡는 단계에서 받는다.

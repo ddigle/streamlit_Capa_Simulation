@@ -291,8 +291,8 @@ _DETACHED_RUNNER = """
 
 
 def test_a_detached_editor_root_is_not_busy() -> None:
-    """편집기가 부품 뿌리(`parentElement`)를 셋째 인자로 넘기면, 그 뿌리가 문서에서 떨어진 뒤의
-    낡은 판정은 busy 가 아니다 — 정리 함수에서 `drop()` 을 빠뜨린 편집기가 떠나는 누름마다
+    """편집기가 부품 뿌리(편집기 상태를 단 요소)를 셋째 인자로 넘기면, 그 뿌리가 문서에서 떨어진
+    뒤의 낡은 판정은 busy 가 아니다 — 정리 함수에서 `drop()` 을 빠뜨린 편집기가 떠나는 누름마다
     붙들기를 `BUSY_MS` 묶지 않는다. 뿌리를 넘기지 않거나 연결 여부를 모르면 판정 그대로다."""
     out = _editor_node(_DETACHED_RUNNER)
 
@@ -300,6 +300,37 @@ def test_a_detached_editor_root_is_not_busy() -> None:
     assert out["detached"] is False
     assert out["plain"] is True
     assert out["unknown"] is True
+
+
+# 떠나기 명부에 오르는 편집기 → (부품 JS, 셋째 인자로 넘기는 부품 뿌리 — 편집기 상태를 단 요소).
+_ENROLLING_EDITORS = {
+    "범용 편집 그리드": ("edit_grid_assets/eg_core.js", "S.host"),
+    "시나리오 목록 표": ("scenario_list_grid_assets/list.js", "host"),
+    "Space 「호기 정보」 창": ("space_layout_editor_assets/editor.js", "host"),
+}
+
+
+def _call_arguments(source: str, name: str) -> str:
+    """`name(` 으로 여는 호출 하나의 괄호 안 글(중첩 괄호 · 중괄호를 센다)."""
+    start = source.index(f"{name}(") + len(name)
+    depth = 0
+    for index in range(start, len(source)):
+        depth += {"(": 1, "{": 1, ")": -1, "}": -1}.get(source[index], 0)
+        if depth == 0:
+            return source[start + 1 : index]
+    raise AssertionError(f"{name} 호출이 닫히지 않는다")
+
+
+@pytest.mark.parametrize("editor", sorted(_ENROLLING_EDITORS))
+def test_every_enrolling_editor_passes_its_root(editor: str) -> None:
+    """명부에 오르는 편집기는 모두 셋째 인자로 부품 뿌리(편집기 상태를 단 요소)를 넘긴다 — 위
+    시험의 보호(문서에서 떨어진 편집기의 낡은 판정은 busy 가 아니다)가 실제 편집기에 닿는다."""
+    path, root = _ENROLLING_EDITORS[editor]
+    source = (grid_shared.SHARED_ASSETS.parent / path).read_text(encoding="utf-8")
+    assert source.count("joinLeaving(") == 1, "명부에 오르는 자리는 한 곳이다"
+    arguments = _call_arguments(source, "joinLeaving")
+    assert arguments.startswith("window, {"), arguments
+    assert arguments.endswith(f"}}, {root}"), arguments
 
 
 _SCOPE_RUN_RUNNER = """
