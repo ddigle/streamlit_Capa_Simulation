@@ -75,8 +75,12 @@ def test_old_baselines_read_as_master_and_new_ones_keep_their_basis(tmp_path: Pa
     before = _table_counts(path)
 
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (MIGRATION_VERSION,)
-    assert _table_counts(path) == before
+    assert repository.initialize() == (MIGRATION_VERSION, 36)
+    # 뒤 번호 0036(누적 진척 빈 표 둘)도 함께 걸린다 — 이 번호의 표가 아니라 셈에서 뺀다.
+    later = ("shortening_progress_log", "shortening_progress_goal")
+    after = _table_counts(path)
+    assert {table: after[table] for table in later} == dict.fromkeys(later, 0)
+    assert {table: count for table, count in after.items() if table not in later} == before
 
     (old,) = repository.list_shortening_baselines()
     assert old.schedule_basis == BASIS_MASTER

@@ -3,7 +3,7 @@
 """설비 DB 마이그레이션 `0036_shortening_progress_log`.
 
 빈 설비 DB 와, 0034 까지 적용하고 옛 저장 셋을 넣은 DB 둘에 건다. 0036 은 아무것도 옮기지 않는다 —
-표 둘을 만들 뿐이고 다른 표의 행은 그대로다. 0035 는 비어 있다(같은 때 다른 갈래 몫 — 카탈로그).
+표 둘을 만들 뿐이고 다른 표의 행은 그대로다. 바로 앞 번호는 설비 0035(기준선 현재 일정 기준 칸)다.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def test_the_tables_refuse_rows_outside_their_rules(tmp_path: Path, statement: s
 def test_a_database_before_0036_keeps_every_other_row_and_gets_two_empty_tables(
     tmp_path: Path,
 ) -> None:
-    """0035 아래 번호를 모두 건 DB(0035 가 있으면 그것까지) 위에 0036 하나만 선다."""
+    """0035 까지 모두 건 DB 위에 0036 하나만 선다."""
     path = tmp_path / "legacy.duckdb"
     build_legacy_database(path)
     _apply_through(path, MIGRATION_VERSION - 1)
