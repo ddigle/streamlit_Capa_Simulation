@@ -3381,7 +3381,8 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
     assert "6-38 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
     record = section[section.index("\n### 6-38. ") :]
-    assert "확인 넷은 모두 「좋음」" in record and "여쭘 다섯은 모두 a" in record
+    assert "모두 「좋음」" in record and "여쭘 다섯은 모두 a" in record
+    assert "고른 글은 보드 선택지 라벨 그대로다" in record
     known = {rule.id for rule in _rules()}
     answers: dict[str, str] = {}
     for line in (line for line in record.splitlines() if line.startswith("- ")):
@@ -3390,7 +3391,7 @@ def test_the_result_1120_board_answers_are_recorded_in_6_38() -> None:
         cited = RULE_TOKEN.findall(match.group(4))
         assert cited and set(cited) <= known, line
         answers[match.group(1)] = match.group(2)
-    assert answers["여쭘-2"] == "a 글 칸 모두 설비명 칸과 같은 차례"
+    assert answers["q-ems-lang"] == "(a) 모든 글 칸을 설비명과 같은 차례로"
     con04 = next(rule for rule in _rules() if rule.id == "UI-CON-04")
     assert "결과 보드 여쭘-2 a(6-38)" in con04.fields["근거"][0]
     net = "test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_condition_values"
