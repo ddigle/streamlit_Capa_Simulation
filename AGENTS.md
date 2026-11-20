@@ -3567,7 +3567,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     flex 항목은 `stLayoutWrapper:has(> .st-key-…)` 한 겹으로 고르고(`:has` 를 겹치면 규칙이 버려진다), `wrap=False` 가로 칸에
     `overflow: visible` 을 건다(아니면 sticky 가 줄 기준으로 잡힌다). 순수 구획 `// <splitter-…>`(폭 식·끌기·키)와 마운트(가짜
     DOM)는 `tests/test_equipment_side_panel.py` 가 node 로 돌린다.
-  - 등록 글은 표 공용 조각(`components/grid_shared.py` · `grid_shared_assets/` — 칸 상태 · 변경 칸 CSS, 칸 찾기 · 보낼 목록 · DOM 도우미 JS) 뒤에 이 표의 파일을 잇는다(`registered_js` · `registered_css`). 칸 상태 규칙은 특이도가 같아 차례로 이기므로 공용 조각을 앞에 둔다.
+  - 등록 글은 표 공용 조각(`components/grid_shared.py` · `grid_shared_assets/` — 칸 상태 · 변경 칸 CSS, 칸 찾기 · 보낼 목록 · DOM 도우미 · 떠나기 신호 JS) 뒤에 이 표의 파일을 잇는다(`registered_js` · `registered_css`). 칸 상태 규칙은 특이도가 같아 차례로 이기므로 공용 조각을 앞에 둔다.
   - **표 마운트는 두 등록**(범용 편집 그리드와 같은 꼴 — CCv2 는 data 가 바뀐 회차마다 등록 JS · CSS 를 요소와 함께 다시
     보낸다): 표 요소 `_GRID`(껍데기 — 칸 하나를 고친 회차에도 앞 껍데기를 그대로 다시 내 해시 참조로 간다, 탭이 회차 메모
     `grid_shell` 에 둔다)와 바로 앞의 작은 요소 `_FEED`(`capa_equipment_master_grid_feed` · `feed.js` — key `feed_key()`, 페이지
@@ -3579,7 +3579,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **묶어 보내기 쉼**은 파이썬 결정값 한 줄이다(`SEND_MS` 0.3초 → data `sendMs` — `grid_shared.batch_ms`, 브라우저
     `schedule`). 깨끗한 편집본(data `clean` — 표 feed · 호기 상세)의 첫 칸 고침은 쉼 없이 곧바로 가고(`sendsAtOnce`), 여러 칸
     붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김도 곧바로다. 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(9장
-    「구역 회차 규칙」 묶음 길이 — 운영 `APP_ENV` 는 읽지 않고, 운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다).
+    「구역 회차 규칙」 묶음 길이 — 운영 `APP_ENV` 는 읽지 않고, 운영 실행 줄 · C-DEP 환경변수 표에 두지 않는다). 떠나기 신호
+    (9장 R8 — `joinLeaving`)는 아직 잇지 않았다 — 등록 글에 `leave.js` 조각이 실리지만 명부에 오르지 않아, 탭 줄 붙들기는 이 표를
+    명부 밖 편집 칸(`page_tabs.EDIT_HOST_KEYS`)으로 보고 새 data 를 0.4초 기다린다(표 밖 누름이 모은 op 를 곧바로 보낸다).
   - data 는 `services/equipment_grid` 의 dict + 팔레트(`grid_shared.grid_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
@@ -8648,8 +8650,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   회차 끝 뒤 조용함(`HOLD_QUIET_MS` 0.3초)이 차야 놓는다 — ack 를 그린 구역 회차가 본문 뒤에서 앱 전체로 올라가면 두
   회차 사이(회차 끝 GC)도 「돌지 않음」 이고, 그 틈에 놓으면 떠나기 표지가 서기 전이라 테마 단추가 묻지 않고 새로 읽는다.
   그래서 명부에 오르는 편집기는 op 가 머리 표지를 바꾸는 올리기를 콜백 끝(`escalates`)에서 한다 — ack 가 올라간 앱 전체
-  회차에 실린다. 본문 뒤 올리기는 남의 저장(R4) · 본문이 바꾼 표지 몫이다. 명부에 오르지 않는 glide
-  격자(`st.data_editor`)는 새 data 를 0.4초(`HOLD_MS`) 기다린다. 공용 조각을 잇지 않는 등록은
+  회차에 실린다. 본문 뒤 올리기는 남의 저장(R4) · 본문이 바꾼 표지 몫이다. 명부에 오르지 않는 편집표(glide
+  격자 `st.data_editor`, 그리고 떠나기 신호를 아직 잇지 않은 설비 마스터 표 — 묶어 보내지만 표 밖 누름(focusout)이 모은 op 를
+  곧바로 보낸다, 3장)는 새 data 를 0.4초(`HOLD_MS`) 기다린다. 공용 조각을 잇지 않는 등록은
   `grid_shared.leave_js()` 글을 제 등록 글 앞에 잇는다.
 - **보이는 로딩.** 편집기 구역 본문은 구역 칸(`fragment_scope.box_key(key)` — key 접두 `SCOPE_BOX_PREFIX` `capa_scope_`)
   안에 그린다(`editor_scope(box=True)` 기본, 손수 두면 `scope_box`). 회차 표지가 「돈다」 로 바뀐 순간 구역 밖 화면 탭

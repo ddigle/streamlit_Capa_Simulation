@@ -44,6 +44,17 @@ def test_the_editing_channel_is_one_state_value_and_triggers_are_the_declared_se
     assert registered == set(emg.STATE_NAMES) | set(emg.TRIGGER_NAMES)
 
 
+def test_the_table_registration_carries_the_shared_pieces_with_the_leave_piece_first() -> None:
+    """표 등록 JS 는 표 공용 조각(`grid_shared.SHARED_JS` — 떠나기 신호 `leave.js` 포함) 뒤에 이
+    표의 `grid.js` 를 잇는다. feed 등록은 공용 조각 없이 작은 글 하나다."""
+    own = (ASSETS / "grid.js").read_text(encoding="utf-8")
+    leave = grid_shared.leave_js()
+    assert grid_shared.LEAVE_JS in grid_shared.SHARED_JS
+    assert leave in JS and JS.endswith(own)
+    assert JS.index(leave) < JS.index(own)
+    assert leave not in emg.feed_js()
+
+
 def test_ops_the_browser_sends_are_the_ops_python_applies() -> None:
     sent = set(re.findall(r"\{ op: '([a-z]+)'", JS))
     assert (
