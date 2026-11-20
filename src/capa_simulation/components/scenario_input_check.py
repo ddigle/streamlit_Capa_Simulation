@@ -37,6 +37,7 @@ from typing import Any, Final
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components import fragment_scope
 from capa_simulation.components.capacity_gate import input_check_verdict
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -710,7 +711,22 @@ def _go(
     있지 않으면 불러온다 — 미저장 편집 · 적용 전 편집이 있으면 사이드바 시나리오 팝업이 그
     리비전으로 묻고 옮기지 않는다. 불러오기에 실패하면 단추 곁에 알린다. 옮기는 것은 다음 회차
     `app.py` 의 `switch_to_queued_tab` 이다(콜백 안 `st.switch_page` 금지 — AGENTS 9장).
+
+    목록 관리 구역 회차의 누름이면 끝에서 앱 전체로 올린다 — 탭 · 화면 · 사이드바 팝업 · 올라와
+    있는 리비전은 구역 밖이다(AGENTS 9장 「구역 회차 규칙」 R1).
     """
+    _go_to(database_path, drawn_scenario, drawn_revision, arrival, fold)
+    fragment_scope.escalate()
+
+
+def _go_to(
+    database_path: str,
+    drawn_scenario: str,
+    drawn_revision: str,
+    arrival: Arrival,
+    fold: Callable[[], ListDraft],
+) -> None:
+    """「그 화면으로」 의 몸통(`_go`)."""
     # 시나리오 팝업 모듈은 이 화면 모듈을 불러오므로(순환) 누를 때 불러온다.
     from capa_simulation.components.scenario_status import (
         load_saved_revision,

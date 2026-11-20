@@ -20,10 +20,16 @@ append-only 라 고칠 수 있는 것은 시나리오명 · 리비전명 · 순�
 
 표 컴포넌트 모듈은 읽을 때 등록하므로 「목록 관리」 를 그리는 회차에 늦게 불러온다 — 화면 탭 줄은
 `scenario_list_state` 만 읽는다.
+
+목록 관리 두 칸은 편집기 구역(`scenario_list_state.LIST_SCOPE` — AGENTS 9장 「구역 회차 규칙」)이다.
+줄 고르기 · 이름 · 차례 고침 · 오른쪽 칸 조작은 앱 전체가 아니라 그 구역만 돌고, 구역 밖이 그리는
+값(`_list_head`)이 바뀐 상호작용만 앱 전체로 올린다. 「시나리오 작업」 줄의 「저장 전 변경 n건」
+알약은 구역이 그 줄의 바깥 칸에 쓴다(`_render_badge`).
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -33,13 +39,16 @@ from typing import Any, NoReturn, cast
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components import fragment_scope
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import IDLE_MARKUP, DialogBody, DialogHost
 from capa_simulation.components.flash import (
     FlashKind,
+    pending_flash,
     queue_flash,
     render_flash,
     send_to_popup,
@@ -75,6 +84,7 @@ from capa_simulation.components.scenario_list_state import (
     CHANGES_KEY,
     CHECKS_KEY,
     LIST_MODE,
+    LIST_SCOPE,
     MOUNT_KEYS,
     REVISIONS_KEY,
     SIDE_CHECK,
@@ -82,6 +92,7 @@ from capa_simulation.components.scenario_list_state import (
     SIDE_NEXT_KEY,
     TABLE_KEY,
     follow_created_scenario,
+    list_has_edits,
     load_draft,
     remember_shown_order,
     shown_order,
@@ -213,6 +224,7 @@ from capa_simulation.services.scenario_virtual_products import (
     virtual_product_records,
 )
 from capa_simulation.services.virtual_product import VirtualProductRecord
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import keeps_app_run_open
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
@@ -385,6 +397,15 @@ OFFICIAL_PURGED_MESSAGE = (
 # 스타일로 그 자리를 채운다(AGENTS 9장 「프래그먼트·이벤트 칸·토스트」 · 「구역 회차 규칙」 R5 —
 # 구역 회차는 이벤트 칸 쓰기 자리를 구역 자리로 되돌린다).
 SIDE_EVENT_FILLER = IDLE_MARKUP
+# 목록 관리 회차가 맞춘 재료 가운데 구역 밖이 그리는 것 — (「저장 전 변경 n건」 알약이 서는가, 최신
+# 공식 번호). 맞추기(`_settle_list_draft`)가 앱 전체 · 구역 회차마다 적고 머리 표지(`_list_head`)가
+# 읽는다.
+LIST_SHOWN_KEY = "scenario_list_shown_marks"
+_LIST_SHOWN = SessionSlot(LIST_SHOWN_KEY, tuple)
+# 마지막 앱 전체 회차가 「시나리오 작업」 줄 바깥 칸에 알약을 그렸는가 — 구역 회차는 그린 칸에만
+# 다시 쓴다(`_render_badge`).
+LIST_BADGE_KEY = "scenario_list_badge_drawn"
+_LIST_BADGE = SessionSlot(LIST_BADGE_KEY, bool, lambda: False)
 # 저장 · 모두 버리기 사이에 고친 것(옛 세대) · 다른 곳에서 차례가 바뀐 뒤의 옮기기.
 OUTBOX_LIMIT = 2000
 ORDER_MOVED_NOTICE = "목록 차례가 바뀌어 그 옮기기는 반영하지 않았습니다."
@@ -442,12 +463,9 @@ def render_scenario_management(
             # 보이는 글 없이 탭 바로 아래에 선다 — 라벨은 보조 기술이 읽는 이름으로 남는다.
             label_visibility="collapsed",
         )
-        # 수가 0 이면 알약이 없다 — 늘 서 있는 칸 안에 둔다(이 줄의 자리는 그대로).
-        with st.container():
-            if view is not None and view.pending:
-                st.badge(
-                    f"저장 전 변경 {view.pending:,}건", icon=":material/edit_note:", color="orange"
-                )
+        # 수가 0 이면 알약이 없다 — 늘 서 있는 칸 안에 둔다(이 줄의 자리는 그대로). 알약은 목록 관리
+        # 구역이 이 칸에 쓴다(`_render_badge`).
+        badge = st.container()
         # 복제할 때 무엇을 복제하는지는 이 줄 오른쪽 끝 작은 값 글이다 — 폼 위에 따로 줄을 세우지
         # 않는다(2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 곁에 자리가 모자라면
         # 통째로 다음 줄 오른쪽 끝으로 내려간다(2026-11-11 보드 D1 · UI-ACC-02). 다른 작업에서는
@@ -461,8 +479,11 @@ def render_scenario_management(
         forget_extra_overlay()
     official_open = False
     if mode == LIST_MODE:
-        official_open = _render_list_management(
-            repository, database_path, scenarios, _list_view(view), counting=alert_tab is not None
+        _HANDOFF.give(repository, scenarios, _list_view(view))
+        official_open = bool(
+            _render_list_scope(
+                database_path=database_path, counting=alert_tab is not None, badge=badge
+            )
         )
     elif mode == CLONE_MODE:
         _render_clone(repository)
@@ -711,7 +732,9 @@ def _settle_list_draft(
         store_draft(settled)
     problems = list_problems(settled, saved, LIST_RULES)
     counts = change_counts(settled, saved, problems)
-    return _ListView(settled, saved, releases, problems, counts)
+    view = _ListView(settled, saved, releases, problems, counts)
+    _LIST_SHOWN.set((view.pending > 0, releases[0].release_no if releases else 0))
+    return view
 
 
 def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
@@ -752,8 +775,10 @@ def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
     return replace(draft, opened=scenario_id, picked=revision_id)
 
 
+@fragment_scope.escalates(LIST_SCOPE)
 def _on_list_outbox() -> None:
-    """받기 콜백(본문보다 먼저 돈다). 세 마운트가 함께 보낼 수 있어 한 번에 접는다."""
+    """받기 콜백(본문보다 먼저 돈다). 세 마운트가 함께 보낼 수 있어 한 번에 접는다. 구역 회차에서
+    구역 밖 표지(첫 고침 · 마지막 되돌림 · 오른쪽 칸 · 맨 위 알림)가 바뀌면 끝에서 올린다."""
     _fold_outboxes()
 
 
@@ -869,6 +894,116 @@ def _render_list_management(
     return official_open
 
 
+class _Handoff(threading.local):
+    """앱 전체 회차의 탭 머리가 맞춘 목록 관리 재료를 같은 회차의 구역 본문에 넘기는 스레드 칸.
+
+    머리는 맨 위 알림 앞에서 맞춘다(사라진 고침의 알림이 그 회차에 뜬다) — 구역 인자로 넘기면 표를
+    든 재료를 프래그먼트 저장소가 다음 앱 전체 회차까지 쥔다(R3). 구역 본문은 꺼내 비우고, 구역
+    회차는 이 칸을 보지 않고 다시 맞춘다.
+    """
+
+    held: tuple[DuckDBScenarioRepository, Sequence[ScenarioSummary], _ListView] | None = None
+
+    def give(
+        self,
+        repository: DuckDBScenarioRepository,
+        scenarios: Sequence[ScenarioSummary],
+        view: _ListView,
+    ) -> None:
+        self.held = (repository, scenarios, view)
+
+    def take(self) -> tuple[DuckDBScenarioRepository, Sequence[ScenarioSummary], _ListView] | None:
+        held, self.held = self.held, None
+        return held
+
+
+_HANDOFF = _Handoff()
+
+
+def _list_head() -> tuple[object, ...]:
+    """목록 관리 구역 밖이 그리는 값(AGENTS 9장 「구역 회차 규칙」 R2) — 앱 전체 회차가 찍은 값과
+    다르면 구역 회차의 콜백 끝 · 본문 뒤에서 앱 전체로 올린다.
+
+    - 저장하지 않은 이름 · 차례 고침 있음/없음 — 화면 탭 줄 점 · 머리 띠 변경 칩 · 떠나기 확인 ·
+      테마 표지(`scenario_list_state.list_has_edits`).
+    - 맞춘 재료의 알약 있음/없음 · 최신 공식 번호 — 「저장 전 변경 n건」 알약이 서고 사라짐 · 머리
+      띠 「공식 vN」 · 맨 위 공식 없음 알림. 남의 지정 · 보관은 구역 회차의 맞추기가 다시 읽어
+      안다(R4 — 이름 · 차례는 `reconcile` 이 구역 안에서 맞춘다).
+    - 이 회차에 설 오른쪽 칸 — 칸마다 맨 위 칸이 대신 내는 결과 알림(`_notices_without_a_place`).
+    - 올라와 있는 시나리오 · 리비전과 그 이름표 — 머리 띠 · 사이드바(「선택한 리비전 불러오기」 ·
+      끊긴 첫 저장의 뒷정리가 이름표를 바꾼다).
+    - 맨 위 알림 칸이 낼 결과 알림(`FLASH_KEY` · `FLASH_WARNING_KEY`).
+    """
+    return (
+        list_has_edits(),
+        _LIST_SHOWN.peek(),
+        _side_now(),
+        active_persisted_scenario_id(),
+        active_persisted_revision_id(),
+        active_scenario_label(),
+        tuple(key for key in (FLASH_KEY, FLASH_WARNING_KEY) if pending_flash(key) is not None),
+    )
+
+
+def _render_badge(badge: DeltaGenerator, pending: int) -> None:
+    """「저장 전 변경 n건」 알약 — 「시나리오 작업」 줄의 바깥 칸(`badge`)에 목록 관리 구역이 쓴다.
+    Streamlit 1.63 의 구역은 앱 전체 회차에 한 번 쓴 바깥 칸을 구역 회차에도 그 자리에서 다시 쓰므로
+    칸을 고칠 때마다 수가 따라온다. 알약이 서거나 사라지는 상호작용은 앱 전체로 올라가고
+    (`_list_head`), 구역 회차는 마지막 앱 전체 회차가 알약을 그린 칸에만 쓴다."""
+    shown = pending > 0
+    if fragment_scope.fragment_only_run():
+        shown = shown and _LIST_BADGE.get()
+    else:
+        _LIST_BADGE.set(shown)
+    if shown:
+        with badge:
+            st.badge(f"저장 전 변경 {pending:,}건", icon=":material/edit_note:", color="orange")
+
+
+def _settle_in_scope(
+    database_path: str,
+) -> tuple[DuckDBScenarioRepository, Sequence[ScenarioSummary], _ListView]:
+    """구역 회차의 재료 — 출납을 접고 지금 저장본에 다시 맞춘다(`_settle_list_draft`).
+
+    목록을 읽지 못한 오류(`BOOTSTRAP_ERRORS` — 다른 프로세스가 잠깐 쥔 잠금 포함)는 잡지 않는다 —
+    구역 감싸기(`fragment_scope.editor_scope`)가 코어 화면 카드(R6)로 그 구역 자리에 세우고 멈춤으로
+    끝낸다. 멈춘 회차는 서버 세션에서 그리지 못한 구역 위젯의 상태 값(출납)을 지우지 않아 받은
+    op 가 세션에 남는다. 브라우저는 그 구역에서 이번 회차가 다시 그리지 않은 목록 마운트를 걷어
+    다음에 표를 그리는 회차에 새 마운트로 세우므로(AGENTS 9장 R6) 옛 마운트 op 의 ack 는 받을 부품이
+    없다 — 「카드 + 멈춤이면 ack 가 산다」 에 기대지 않는다. 구역 위젯을 그리기 전에 앱 전체로
+    올리지 않는 것은 그러면 회차 끝 정리가 서버 세션의 그 값마저 지우기 때문이다(R1)."""
+    repository = get_scenario_repository(database_path)
+    scenarios = repository.list_scenarios()
+    return repository, scenarios, _settle_list_draft(repository, scenarios)
+
+
+@st.fragment(key=LIST_SCOPE)
+@in_fragment
+@fragment_scope.editor_scope(LIST_SCOPE, head=_list_head)
+def _render_list_scope(*, database_path: str, counting: bool, badge: DeltaGenerator) -> bool:
+    """목록 관리 두 칸의 편집기 구역(모듈 설명 · `_list_head`) — 「공식 지정 팝업이 열려 있어도
+    되는가」(`_render_official_host`)를 돌려준다.
+
+    앱 전체 회차는 탭 머리가 맞춘 재료(`_HANDOFF`)를 쓰고, 구역 회차는 다시 맞춘다. 구역 회차의
+    인자는 마지막 앱 전체 회차의 것이다 — `counting`(이 탭이 열렸는가)은 탭을 바꾸는 앱 전체 회차만
+    바꾸고, `badge` 는 알약을 쓸 바깥 칸이다. 「시나리오 작업」 단추들의 본문 `st.rerun()`(보관 ·
+    되돌리기 · 영구 삭제)은 앱 전체 회차다.
+
+    구역 회차는 `app.py` 의 실행 핀 밖에서 돌므로 본문이 DB 핀(`pinned_connections`)을 스스로
+    잡는다 — 그 회차의 읽기(목록 · 공식 이력 · 리비전 …)가 인스턴스 하나를 나눠 쓴다. 앱 전체
+    회차에서는 겹친 수만 오른다.
+    """
+    with pinned_connections(Path(database_path)):
+        held = _HANDOFF.take()
+        if held is None or fragment_scope.fragment_only_run():
+            held = _settle_in_scope(database_path)
+        repository, scenarios, view = held
+        _render_badge(badge, view.pending)
+        return _render_list_management(
+            repository, database_path, scenarios, view, counting=counting
+        )
+
+
 def _render_check(
     repository: DuckDBScenarioRepository,
     database_path: str,
@@ -894,7 +1029,7 @@ def _render_check(
         mount_data=_list_common(draft, CHECKS_KEY),
         on_outbox=_on_list_outbox,
         fold=_fold_outboxes,
-        open_wide=OFFICIAL_HOST.open,
+        open_wide=_open_host,
         counting=counting,
     )
 
@@ -975,6 +1110,7 @@ def _render_changes(database_path: str, view: _ListView) -> None:
     render_flash(LIST_NOTICE_KEY)
 
 
+@fragment_scope.escalates(LIST_SCOPE)
 def _discard_all(drawn_base: str) -> None:
     """「모두 버리기」 확인 — 이름 · 순서 고침을 비우고 세대를 올린다. 연 시나리오 · 고름은 남는다.
 
@@ -1036,6 +1172,7 @@ def _own_settled(
     )
 
 
+@fragment_scope.escalates(LIST_SCOPE)
 @on_press
 def _save_list_edits(database_path: str, drawn_base: str) -> None:
     """「변경 저장」 콜백 — 시나리오명 · 순서 · 리비전명을 한 트랜잭션으로 쓴다. 하나라도 거부되면
@@ -1400,6 +1537,7 @@ def _parent_label(parent_revision_id: str | None, number_by_id: Mapping[str, int
     return f"r{number_by_id[parent_revision_id]}"
 
 
+@fragment_scope.escalates(LIST_SCOPE)
 def _load_picked_revision(database_path: str, drawn_scenario: str) -> None:
     """「선택한 리비전 불러오기」 콜백. 고른 리비전은 출납을 접은 뒤의 고름이다 — 리비전 줄을 누른
     직후의 단추도 그 리비전에 걸린다. 왼쪽 줄을 누르고 바로 옛 카드 단추를 눌렀거나 고른 리비전이
@@ -1489,9 +1627,10 @@ def _after_revision_rename(renamed: Sequence[RevisionSummary]) -> None:
         rename_active_revision_label(revision.revision_id, revision.revision_name)
 
 
+@fragment_scope.escalates(LIST_SCOPE)
 def _open_official_dialog(drawn_scenario: str, widget_key: str) -> None:
     """「공식으로 지정…」 콜백. 출납을 접은 뒤의 고름으로 연다 — 다른 팝업 칸을 비우고(한 실행에
-    하나) 할 수 있으면 호스트만 다시 돌린다(`DialogHost.open` — 출납도 함께 바뀐 누름은 앱 전체
+    하나) 할 수 있으면 호스트만 다시 돌린다(`_open_host` — 출납도 함께 바뀐 누름은 앱 전체
     회차다). `widget_key` 는 누른 단추의 key 다."""
     draft = _fold_outboxes()
     if draft.opened != drawn_scenario:
@@ -1500,7 +1639,15 @@ def _open_official_dialog(drawn_scenario: str, widget_key: str) -> None:
     if draft.picked is None:
         return
     st.session_state.pop(OFFICIAL_VIEW_KEY, None)
-    OFFICIAL_HOST.open((drawn_scenario, draft.picked), widget_key)
+    _open_host((drawn_scenario, draft.picked), widget_key)
+
+
+def _open_host(value: object, widget_key: str) -> None:
+    """공식 지정 · 「넓게 보기」 팝업을 연다. 호스트만 다시 돌 수 있으면 그 길이고(`DialogHost.open`
+    — 목록 관리 구역 회차의 누름도 호스트만 돈다), 아니면 앱 전체 회차로 연다 — 구역 회차의 콜백이면
+    끝에서 올린다(호스트는 구역 밖이다)."""
+    OFFICIAL_HOST.open(value, widget_key)
+    fragment_scope.escalate()
 
 
 def _close_official_dialog() -> None:
