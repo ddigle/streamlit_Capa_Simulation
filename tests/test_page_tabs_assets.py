@@ -2384,6 +2384,22 @@ _BUSY_GATE_RUNNER = """
   out.afterApp = log.slice()
   E.handle.drop()
 
+  // 짧은 구역 회차가 한 그리기에 접혀 회차 표지가 바뀌지 않은 채 ack 가 오고, 80ms 뒤 앱 전체
+  // 회차가 선다 — busy 가 걷힌 것을 본 때부터 조용함을 세어 그 틈에 놓지 않는다.
+  log = []
+  T = strip(log, 7000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 7000)('theme'))
+  advance(7150)
+  E.acked = E.queued
+  advance(7230)
+  out.foldedGap = log.slice()
+  appRun(T, 7230, 7430)
+  advance(8000)
+  out.foldedAfter = log.slice()
+  E.handle.drop()
+
   // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 전처럼 새 data 를 0.4초
   // 기다린다.
   log = []
@@ -2446,6 +2462,8 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     assert out["tab"] == ["flush", "tab:b@500"]
     assert out["gapHeld"] == ["flush"], "두 회차 사이(0.4초 넘음)에 놓지 않는다"
     assert out["afterApp"] == ["flush", "theme@1100"]
+    assert out["foldedGap"] == ["flush"], "회차 표지가 바뀌지 않아도 ack 직후 틈에 놓지 않는다"
+    assert out["foldedAfter"] == ["flush", "theme@800"]
     assert out["glide"] == ["flush", "theme@400"]
     assert out["capEarly"] == ["flush"]
     assert out["capLate"] == ["flush", "theme"]

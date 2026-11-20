@@ -1095,11 +1095,20 @@ export default function (component) {
     S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
   }
   // 명부 판정 — busy 를 한 번이라도 봤고 마지막 편집이 glide 격자가 아니면 busy 가 걷힌 뒤 새 data 를 0.4초 기다리지 않고 회차
-  // 표지의 조용함(`HOLD_QUIET_MS`)을 본다(`holdVerdict`).
+  // 표지의 조용함(`HOLD_QUIET_MS`)을 본다(`holdVerdict`). 조용함은 회차 표지가 「돌지 않음」 으로 바뀐 때와 busy 가 걷힌 것을 처음
+  // 본 때(`clearedAt` — busy 가 다시 서면 지운다) 가운데 늦은 쪽부터 센다. 짧은 구역 회차는 표지가 한 그리기에 접혀 바뀌지 않을
+  // 수 있다(`LOST_IDLE_MS` 와 같은 까닭) — 그러면 표지만으로는 ack 직후 두 회차 사이도 오래 조용한 것으로 보인다.
   const editorVerdict = (hold) => {
     const busyNow = editorsBusy(editorBook(window))
-    if (busyNow) hold.seen = true
-    const quiet = S.run.running ? 0 : Date.now() - S.run.changedAt
+    const now = Date.now()
+    if (busyNow) {
+      hold.seen = true
+      hold.clearedAt = null
+    } else if (hold.seen && hold.clearedAt == null) {
+      hold.clearedAt = now
+    }
+    const sinceRun = S.run.running ? 0 : now - S.run.changedAt
+    const quiet = hold.clearedAt == null ? sinceRun : Math.min(sinceRun, now - hold.clearedAt)
     return { busy: busyNow, seen: Boolean(hold.seen) && !S.editGlide, quiet, quietMs: HOLD_QUIET_MS }
   }
   function release() {
