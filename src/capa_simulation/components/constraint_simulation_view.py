@@ -462,7 +462,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             caption="제약 기간에 제약 제품 소요가 없습니다" if count == 0 else None,
             help=(
                 "제약 기간 안이고 제약 제품 소요가 있는 달 가운데, 필요 대수"
-                f"(소요 × {target}% 올림)를 다 배정한 달 수입니다. 모든 달을 맞추면 초록, "
+                f"(소요 × {target}% 올림)를 다 배정한 달 수입니다. 모든 달을 맞추면 청록, "
                 "모자란 달이 있으면 빨강 테두리이고 그 달은 아래 「가용이 모자란 달」 이 "
                 "적습니다."
             ),

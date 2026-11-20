@@ -888,7 +888,7 @@ def test_the_met_kpi_keeps_only_the_empty_result_line_and_the_help_says_the_rest
         Path(__file__).resolve().parents[1] / "src/capa_simulation/guides/constraint_simulation.md"
     ).read_text(encoding="utf-8")
     for words in (
-        "모든 달을 맞추면 초록 테두리",
+        "모든 달을 맞추면 청록 테두리",
         "모자란 달이 있으면 빨강 테두리",
         "비가동 없이 배정만",
         "그래프 오른쪽 끝 「제약 n%」",
