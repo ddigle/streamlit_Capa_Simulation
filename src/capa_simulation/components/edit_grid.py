@@ -34,7 +34,6 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -43,6 +42,7 @@ from typing import Any, Final
 
 import streamlit as st
 
+from capa_simulation.components import grid_shared
 from capa_simulation.design import tokens
 from capa_simulation.services.edit_grid import (
     DROPPED_TOAST,
@@ -98,15 +98,13 @@ DISCARD_ICON: Final = ":material/delete_sweep:"
 # UI-LAY-11 — 이름은 짧게, 원래 뜻은 풍선). 「변경」 은 머리 띠 칩(이 세션의 변경 — 건수)의
 # 낱말이라 이 단추에 쓰지 않는다 — 한 화면에 같은 낱말이 다른 수로 서지 않게(UI-CON-02).
 CHANGES_BUTTON: Final = "적용 전"
-# 출납 묶어 보내기 쉼(ms) — 칸을 잇달아 고치면 마지막 고침 뒤 이만큼 조용할 때 한 번에 보낸다. 값은
-# 여기 하나이고 껍데기 `limits.sendMs` 로 JS 에 넘긴다(`eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을
-# 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 · 다시 실행 · 표
-# 밖 누름(focusout) · 창 숨김(visibilitychange) · 마운트 정리는 쉼을 기다리지 않는다.
+# 출납 묶어 보내기 쉼(ms) — 칸을 잇달아 고치면 마지막 고침 뒤 이만큼 조용할 때 한 번에
+# 보낸다. 결정값은 이 한 줄이고 껍데기 `limits.sendMs` 로 JS 에 넘긴다(`grid_shared.batch_ms` —
+# 개발 · 측정 사본은 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다. `eg_core.js` 의 `EG_SEND_MS` 는 그
+# 칸이 없을 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 ·
+# 다시 실행 · 표 밖 누름(focusout) · 창 숨김(visibilitychange) · 떠나기 신호 · 마운트 정리는 쉼을
+# 기다리지 않는다.
 SEND_MS: Final = 300
-# 측정 사본 전용 — 실행 줄 환경변수(ms 정수)로 쉼을 덮어쓴다. 운영 · 사내 실행 줄에는 넣지 않는다.
-SEND_MS_ENV: Final = "CAPA_RR_EG_SEND_MS"
-# 덮어쓰기 상한(ms) — 그보다 크면 상한으로 줄인다.
-SEND_MS_MAX: Final = 10_000
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 
@@ -523,24 +521,11 @@ def shell_data(
     )
 
 
-def send_ms(environ: Mapping[str, str] | None = None) -> int:
-    """출납 묶어 보내기 쉼(ms) — `SEND_MS`, 실행 줄 `SEND_MS_ENV` 가 양의 정수면 그 값(상한
-    `SEND_MS_MAX`). 부를 때마다 읽는다 — 한 프로세스 안에서는 같은 값이라 껍데기가 회차마다 같은
-    dict 로 남는다(해시 참조)."""
-    env = os.environ if environ is None else environ
-    text = env.get(SEND_MS_ENV, "").strip()
-    if not text:
-        return SEND_MS
-    try:
-        value = int(text)
-    except ValueError:
-        return SEND_MS
-    return min(value, SEND_MS_MAX) if value > 0 else SEND_MS
-
-
-def shell_limits(environ: Mapping[str, str] | None = None) -> dict[str, int]:
-    """껍데기 상한 — 칸 수 상한(`LIMITS`)에 묶어 보내기 쉼 `sendMs` 를 더한다."""
-    return {**LIMITS, "sendMs": send_ms(environ)}
+def shell_limits() -> dict[str, int]:
+    """껍데기 상한 — 칸 수 상한(`LIMITS`)에 묶어 보내기 쉼 `sendMs`
+    (`grid_shared.batch_ms(SEND_MS)`)를 더한다. 부를 때마다 읽는다 — 한 프로세스 안에서는 같은
+    값이라 껍데기가 회차마다 같은 dict 로 남는다(해시 참조)."""
+    return {**LIMITS, "sendMs": grid_shared.batch_ms(SEND_MS)}
 
 
 def texts_for_empty(*, changes_label: str) -> dict[str, Any]:

@@ -1,11 +1,11 @@
 # Purpose: 편집 그리드 출납의 묶어 보내기 쉼 · 곧바로 보내는 길 · 한 번만 다는 리스너를 본다.
 
 """묶어 보내기 정책 — 쉼은 `edit_grid.SEND_MS` 하나가 정하고 껍데기 `limits.sendMs` 로 JS 에
-간다(측정 사본은 실행 줄 `CAPA_RR_EG_SEND_MS` 로 덮어씀). 초안 없던 표의 첫 op · 붙여넣기 · 줄
-지우기 단추 · 되돌리기 · 표 밖 누름 · 창 숨김 · 마운트 정리는 쉼을 기다리지 않는다. Streamlit 은
-data 가 바뀔 때마다 default export 를 다시 부르고 앞 호출의 정리 함수는 부르지 않으므로, 다시
-불러도 리스너 · 관찰자는 한 벌이고 걸어 둔 묶음은 한 번만 나간다. 등록 JS 두 벌(보통 · 줄 규칙
-표) 모두 본다."""
+간다(개발 · 측정 사본은 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어씀 — `grid_shared.batch_ms`). 초안
+없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 · 표 밖 누름 · 창 숨김 · 마운트 정리는
+쉼을 기다리지 않는다. Streamlit 은 data 가 바뀔 때마다 default export 를 다시 부르고 앞 호출의
+정리 함수는 부르지 않으므로, 다시 불러도 리스너 · 관찰자는 한 벌이고 걸어 둔 묶음은 한 번만
+나간다. 등록 JS 두 벌(보통 · 줄 규칙 표) 모두 본다."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from edit_grid_node import FAKE_DOM, mountable, run_node
 
-from capa_simulation.components import edit_grid
+from capa_simulation.components import edit_grid, grid_shared
 from capa_simulation.services import edit_grid as eg
 from capa_simulation.services.edit_grid_payload import (
     LIMITS,
@@ -47,10 +47,11 @@ def _base() -> tuple[EditGridBase, eg.GridIndex]:
 
 def _shell(monkeypatch: pytest.MonkeyPatch, send_ms: str | None) -> dict[str, Any]:
     """앱과 같은 길(`shell_data`)로 지은 껍데기 — 실행 줄 덮어쓰기 `send_ms`(None 이면 없음)."""
+    monkeypatch.delenv("APP_ENV", raising=False)
     if send_ms is None:
-        monkeypatch.delenv(edit_grid.SEND_MS_ENV, raising=False)
+        monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
     else:
-        monkeypatch.setenv(edit_grid.SEND_MS_ENV, send_ms)
+        monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, send_ms)
     base, _ = _base()
     return edit_grid.shell_data(HOST, base, SPEC, base_key="k1", changes_label="적용 전 변경")
 
@@ -65,14 +66,20 @@ def _feed(draft: eg.DraftState | None, undo: int = 0) -> dict[str, Any]:
 # ------------------------------------------------------------------ 파이썬 — 쉼 값과 껍데기
 
 
-def test_the_quiet_time_comes_from_one_python_constant_unless_the_run_line_overrides_it() -> None:
-    assert edit_grid.send_ms({}) == edit_grid.SEND_MS
-    assert edit_grid.send_ms({edit_grid.SEND_MS_ENV: " 800 "}) == 800
-    assert edit_grid.send_ms({edit_grid.SEND_MS_ENV: "1500"}) == 1500
-    for wrong in ("", "abc", "0.8", "0", "-300"):
-        assert edit_grid.send_ms({edit_grid.SEND_MS_ENV: wrong}) == edit_grid.SEND_MS, wrong
-    assert edit_grid.send_ms({edit_grid.SEND_MS_ENV: "99999"}) == edit_grid.SEND_MS_MAX
-    assert edit_grid.SEND_MS_ENV == "CAPA_RR_EG_SEND_MS"
+def test_the_quiet_time_comes_from_one_python_constant_unless_the_dev_run_line_overrides_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """쉼은 결정값 `SEND_MS` 이고, 개발 실행 줄 `CAPA_DEV_BATCH_MS` 가 범위 안이면 그 값이다(운영
+    `APP_ENV` 는 덮어쓰기를 읽지 않는다 — `grid_shared.batch_ms`)."""
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    assert edit_grid.shell_limits()["sendMs"] == edit_grid.SEND_MS
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "800")
+    assert edit_grid.shell_limits()["sendMs"] == 800
+    for wrong in ("abc", "0.8", "0", "-300", "99999"):
+        monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, wrong)
+        assert edit_grid.shell_limits()["sendMs"] == edit_grid.SEND_MS, wrong
+    assert not hasattr(edit_grid, "SEND_MS_ENV"), "덮어쓰기 이름은 공용 하나다"
 
 
 def test_the_shell_carries_the_quiet_time_and_stays_the_same_dict_between_runs(
@@ -400,7 +407,8 @@ RUNNER_ROW_BUTTON = (
 def test_the_row_remove_button_goes_out_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     from test_edit_grid_rows import RULES, SPEC, _frame
 
-    monkeypatch.setenv(edit_grid.SEND_MS_ENV, "5000")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "5000")
     base = build_base(_frame(), SPEC, None, RULES)
     shell = edit_grid.shell_data(
         "demo_rows", base, SPEC, base_key="k1", changes_label="저장 전 변경"

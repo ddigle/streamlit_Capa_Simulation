@@ -3648,10 +3648,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 브라우저는 ack 를 표와 상관없이 그 마운트의 것으로
     받는다(표 없는 껍데기 — 읽기 보기 — 나 다른 표의 feed 에서도 출납을 비운다). 보내기(`sendNow` — 묶음 쉼·첫 op·붙여넣기·줄 지우기 단추·되돌리기·다시 실행·focusout·
     visibilitychange·정리 함수)는 **아직 한 번도 보내지 않은 op 가 있을 때만** 반영 안 된 op 전부를 싣는다 — 이미 보낸 op 만 남은
-    출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 묶음 쉼은 파이썬 상수 `edit_grid.SEND_MS`(0.3초)
-    하나가 정하고 껍데기 `limits.sendMs` 로 JS 에 간다(`shell_limits` — `eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을 때만 쓰는 대비 값,
-    시험 `tests/test_edit_grid_send_js.py`). 실행 줄 환경변수 `CAPA_RR_EG_SEND_MS`(ms 정수 · 상한 `SEND_MS_MAX`)는 측정 사본 전용 덮어쓰기라
-    운영 · 사내 실행 줄에 넣지 않는다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
+    출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 묶음 쉼은 결정값 상수 `edit_grid.SEND_MS`
+    하나가 정하고 껍데기 `limits.sendMs` 로 JS 에 간다(`shell_limits` — `grid_shared.batch_ms`, `eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을 때만 쓰는 대비 값,
+    시험 `tests/test_edit_grid_send_js.py`). 개발 · 측정 사본만 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(9장 「구역 회차 규칙」 묶음 길이 —
+    운영 `APP_ENV` 에서는 읽지 않는다). 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
     으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
     사용자가 일부러 버린 길(「편집 취소」 — `discard_table(…, keys)`, `GridKeys.discarded` 칸)은 버린 `gen` 을 적어(최근
     `DISCARDED_GENS` 개) 그 직전 출납 묶음의 op 를 `apply_inbox` 가 토스트 없이 버린다(빈 초안 자리도 걷는다). 세대가 바뀌어도
@@ -9458,10 +9458,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   띠·사이드바·탭 줄 밑으로 묻힌다(D2). 복사는 동기 `copy` 이벤트의 `clipboardData` 로만(비동기 `navigator.clipboard` 는 쓰지
   않는다). op 마다 그 표 이력의 `gen` 을 싣고, 초안을 버리면 이력도 지워 다음 `gen` 이 달라 그 전에 보낸 op 는 버려진다. 받은 data
   로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다(변경 칩 ·
-  탭 점 · 「적용 전 (1)」 이 300ms 묶음을 기다리지 않고 첫 편집 뒤 한 회차 안에 서게). 표 밖 단추를 누르면 편집기 blur(확정)와 표 밖
+  탭 점 · 「적용 전 (1)」 이 묶음 쉼을 기다리지 않고 첫 편집 뒤 한 회차 안에 서게). 표 밖 단추를 누르면 편집기 blur(확정)와 표 밖
   focusout 이 pointerdown · mousedown 자리에서 보내 click 보다 먼저이고, Streamlit 은 누름의 rerun 에 모든 위젯 상태(그 출납 값
   포함)를 싣는다 — 그래서 편집기를 연 채 · Enter 직후 누른 「변경사항 적용」(생산 계획 · 기준 정보)은 단추를 잠그지 않는 한 같은
-  누름 하나로 그 편집까지 적용한다(2026-11-19 E2E E1-D2 — 잠긴 단추였을 때는 그 누름이 버려졌다). 0.3초 묶음은 그대로다.
+  누름 하나로 그 편집까지 적용한다(2026-11-19 E2E E1-D2 — 잠긴 단추였을 때는 그 누름이 버려졌다). 칸 고침 묶음 쉼(`edit_grid.SEND_MS`)은 그대로다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘, Space 편집기의 요소·서식 클립보드와 붙일 것 체크,
   Space 「호기 정보」 창의 자리·크기·열림·탭·필터)는
   컴포넌트 안이나 localStorage·sessionStorage(읽기·쓰기 모두 try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
