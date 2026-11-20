@@ -43,12 +43,12 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
-from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_count
+from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_pending
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import list_has_edits
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
-from capa_simulation.components.space_floor_list import floor_state_draft_count
+from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
@@ -174,25 +174,25 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
         keep.append(
             item("keep", SPACE_STATUS, SPACE_STATUS.title, "FAB 배치 저장 안 함", "설비 미저장")
         )
-    floors = floor_state_draft_count()
-    if floors:
+    # 층 사용 편집 · 입력 비가동 초안은 층 수 · 칸 수를 싣지 않는다 — 있나 없나만(다른 미저장 줄과
+    # 한 꼴, 2026-11-20 사용자 결정). 머리 글이 첫 편집 · 마지막 되돌림에만 바뀐다.
+    if floor_state_draft_pending():
         keep.append(
             item(
                 "keep",
                 SPACE_STATUS,
                 SPACE_STATUS.title,
-                f"층 사용 편집 · 층 {floors:,}개 저장 안 함",
+                "층 사용 편집 저장 안 함",
                 "층 사용 미저장",
             )
         )
-    manual = manual_downtime_draft_count()
-    if manual:
+    if manual_downtime_draft_pending():
         keep.append(
             item(
                 "keep",
                 AVAILABLE_EQUIPMENT_STATUS,
                 AVAILABLE_EQUIPMENT_STATUS.title,
-                f"입력 비가동 {manual:,}칸 저장 안 함",
+                "입력 비가동 저장 안 함",
                 "입력 비가동 미저장",
                 tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
             )

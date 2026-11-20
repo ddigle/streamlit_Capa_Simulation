@@ -43,7 +43,9 @@ from capa_simulation.components.manual_downtime_tab import (
     MANUAL_REVERT_BUTTON,
     MANUAL_REVERT_HIDDEN_HELP,
     MANUAL_SAVE_BUTTON,
+    MANUAL_SAVE_NAME,
     MANUAL_SAVED_BY_KEY,
+    MANUAL_SAVED_MESSAGE,
     MANUAL_UNCHANGED_MESSAGE,
     _folded,
     dropped_text,
@@ -54,7 +56,7 @@ from capa_simulation.components.manual_downtime_tab import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE
-from capa_simulation.components.write_guard import TRAILING_PRESS_SECONDS
+from capa_simulation.components.write_guard import PROFILE_SAVES_KEY, TRAILING_PRESS_SECONDS
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_GAP_TAB,
@@ -79,7 +81,9 @@ def _script(database_path: Path) -> str:
     걷힌다). `test_months` 가 있으면 그 달들을, `test_processes` 가 있으면 그 공정들을 쓴다(조회기간
     · 설비 시나리오를 바꾼 회차). `test_viewer` 가 참이면 입력 비가동을 고칠 수 없는 화면 등급이다
     (`sso_identity.viewer_can` 을 그 회차에만 바꾼다). 맨 앞에서 `app.py` 처럼 초안 칸 수를 먼저
-    센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤)."""
+    센다(`count_before_page` — 탭 점 · 변경 칩 · 테마 표지의 때맞춤). 스크립트가 돈 수(앱 전체 회차
+    — `st.rerun` 으로 다시 돈 것 포함)를 `test_runs` 에 쌓고, `test_head` 가 참이면 그 회차 머리
+    글(화면 탭 점 풍선 · 변경 칩 줄)을 `head_before_page` 에 적는다."""
     return f"""
 import streamlit as st
 
@@ -94,7 +98,17 @@ original_can = sso_identity.viewer_can
 if st.session_state.get("test_viewer"):
     sso_identity.viewer_can = lambda action: False
 try:
+    st.session_state["test_runs"] = st.session_state.get("test_runs", 0) + 1
     st.session_state["count_before_page"] = manual_downtime_draft_count()
+    if st.session_state.get("test_head"):
+        from capa_simulation.components.change_summary import session_changes
+        from capa_simulation.components.page_tabs import page_unsaved_marks
+
+        page_file = "available_equipment_status.py"
+        st.session_state["head_before_page"] = (
+            page_unsaved_marks(page_file),
+            [(item["text"], item["top"]) for item in session_changes(page_file, hrefs={{}})],
+        )
     if st.session_state.get("test_away"):
         st.write("다른 화면")
     else:
@@ -913,3 +927,100 @@ def test_a_screen_without_cells_offers_to_drop_a_leftover_draft(tmp_path: Path) 
     assert _draft(app) == {}
     assert app.session_state["count_before_page"] == 0
     assert not [button for button in app.button if button.label == MANUAL_REVERT_BUTTON]
+
+
+# ------------------------------------------- 머리 글은 있나 없나만(2026-11-20 사용자 결정)
+
+_HEAD_ON = (
+    {AVAILABLE_EQUIPMENT_STATUS.path: "저장하지 않은 입력 비가동"},
+    [("입력 비가동 저장 안 함", "입력 비가동 미저장")],
+)
+_HEAD_OFF: tuple[dict[str, str], list[tuple[str, str]]] = ({}, [])
+
+
+def _step(app: AppTest, tables: BrowserTables) -> tuple[int, object]:
+    """브라우저 조작 하나 — 그 조작으로 스크립트가 돈 수와 그 회차 머리 글."""
+    before = int(app.session_state["test_runs"])
+    tables.run()
+    assert not app.exception, [element.message for element in app.exception]
+    return int(app.session_state["test_runs"]) - before, app.session_state["head_before_page"]
+
+
+def test_the_head_changes_only_on_the_first_edit_and_the_last_revert_without_extra_runs(
+    tmp_path: Path,
+) -> None:
+    """머리 글(화면 탭 점 풍선 · 변경 칩)은 칸 수를 싣지 않는다 — 첫 칸을 고친 회차에 서고, 둘째
+    칸 · 하나를 되돌린 회차에는 그대로이며, 마지막 칸을 되돌린 회차에 걷힌다. 어느 편집도 앱 전체를
+    한 번 더 돌리지 않는다(칸마다 스크립트 한 번)."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    app.session_state["test_head"] = True
+    tables = BrowserTables(app)
+    tables.run()
+    assert not app.exception
+    assert app.session_state["head_before_page"] == _HEAD_OFF
+    row_a = _editor_values(app)["공정"].index("WM")
+
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    assert _step(app, tables) == (1, _HEAD_ON)
+    tables.edit(manual_editor_key(0), 1 - row_a, "202608", 0.5)
+    assert _step(app, tables) == (1, _HEAD_ON)
+    assert app.session_state["count_before_page"] == 2
+    tables.edit(manual_editor_key(0), row_a, "202607", None)
+    assert _step(app, tables) == (1, _HEAD_ON)
+    tables.edit(manual_editor_key(0), 1 - row_a, "202608", None)
+    assert _step(app, tables) == (1, _HEAD_OFF)
+    assert _draft(app) == {}
+
+
+def test_an_own_save_cut_short_with_hidden_cells_left_does_not_rerun_and_still_says_saved(
+    tmp_path: Path,
+) -> None:
+    """저장한 첫 회차가 뒷정리 전에 끊긴 제 저장(`_settle_draft` — 제 저장 짝이 있다)은 보이는 칸만
+    초안에서 빼고 조회기간 밖이라 보이지 않는 칸은 남긴다. 머리는 칸 수를 싣지 않아 「있음」
+    그대로라 앱 전체를 다시 돌지 않고, 성공 알림은 그 회차의 알림 칸이 낸다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    app.session_state["test_months"] = [202607]
+    app.session_state[MANUAL_DRAFT_KEY] = {(A, 202607): 1.5, (A, 202608): 3.0}
+    app.session_state[MANUAL_BASE_VERSION_KEY] = 0
+    stored = DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202607): 1.5}, processes=[A], months=[202607], expected_version=0
+    )
+    assert stored == 1
+    app.session_state[PROFILE_SAVES_KEY] = {MANUAL_SAVE_NAME: (0, 1)}
+    clear_equipment_repository()
+    before = int(app.session_state["test_runs"])
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert int(app.session_state["test_runs"]) - before == 1
+    assert _draft(app) == {(A, 202608): 3.0}
+    assert MANUAL_SAVED_MESSAGE in [item.value for item in successes(app)]
+    assert app.session_state[MANUAL_BASE_VERSION_KEY] == 1
+
+    before = int(app.session_state["test_runs"])
+    app.run()
+    assert not app.exception
+    assert int(app.session_state["test_runs"]) - before == 1
+    assert app.session_state["count_before_page"] == 1
+    assert _draft(app) == {(A, 202608): 3.0}
+
+
+def test_another_save_dropping_every_cell_reruns_once_to_clear_the_head(tmp_path: Path) -> None:
+    """남의 저장이 초안을 모두 버린 회차는 머리가 「있음」 에서 「없음」 으로 바뀌어 앱 전체를 한 번
+    더 돈다 — 다시 돈 회차의 머리는 걷혀 있다."""
+    path = tmp_path / "equipment.duckdb"
+    app = AppTest.from_string(_script(path), default_timeout=60)
+    app.session_state["test_head"] = True
+    tables = BrowserTables(app)
+    tables.run()
+    row_a = _editor_values(app)["공정"].index("WM")
+    tables.edit(manual_editor_key(0), row_a, "202607", 1.5)
+    assert _step(app, tables) == (1, _HEAD_ON)
+
+    DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202608): 9.0}, processes=[A], months=[202608], expected_version=0
+    )
+    clear_equipment_repository()
+    assert _step(app, tables) == (2, _HEAD_OFF)

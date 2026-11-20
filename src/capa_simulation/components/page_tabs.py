@@ -128,7 +128,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
-from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_count
+from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_pending
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
@@ -298,9 +298,10 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
       칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
     - 설비 편집본은 가용설비 현황·Space 현황이 함께 쓰는 한 벌이라 두 탭에 함께 찍는다(세대 기준이라
       되돌린 편집에도 남는다 — 테마 표지와 같은 오탐).
-    - 가용설비 현황 Preference 「입력 비가동」 초안(`manual_downtime_draft_count` — 편집표 칸
+    - 가용설비 현황 Preference 「입력 비가동」 초안(`manual_downtime_draft_pending` — 편집표 칸
       편집을 `on_change` 가 세션에 접은 칸)도 세션 칸이라 **어느 화면에서나** 가용설비 현황 탭에
-      찍는다(떠나도 남아 떠나기 확인에는 넣지 않는다 — 2026-11-19 사용자 요청).
+      찍는다(떠나도 남아 떠나기 확인에는 넣지 않는다 — 2026-11-19 사용자 요청). 풍선은 칸 수를
+      싣지 않는다(층 사용 편집과 한 꼴 — 2026-11-20 사용자 결정).
     - VOC 적어 둔 답변(`kept_reply_count` — 남지 못한 답변을 「닫기」 까지 두는 세션 칸)도 탭을
       옮겨도 남아 **어느 화면에서나** VOC 탭에 찍는다. 새로고침 · 테마 전환에 사라지는 사용자의
       글이다.
@@ -317,9 +318,8 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     if has_unsaved_equipment_edits() or pending_fab_layout() is not None:
         for spec in (AVAILABLE_EQUIPMENT_STATUS, SPACE_STATUS):
             mark(spec.path, "저장하지 않은 설비 편집")
-    manual = manual_downtime_draft_count()
-    if manual:
-        mark(AVAILABLE_EQUIPMENT_STATUS.path, f"저장하지 않은 입력 비가동 {manual:,}칸")
+    if manual_downtime_draft_pending():
+        mark(AVAILABLE_EQUIPMENT_STATUS.path, "저장하지 않은 입력 비가동")
     if past_data_has_pending():
         mark(HOME.path, "저장하지 않은 Past Data")
     if list_has_edits():

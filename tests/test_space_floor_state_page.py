@@ -1309,6 +1309,7 @@ if "test_toggle_callback" in st.session_state:
         st.session_state[space_floor_list.EDIT_TOGGLE_KEY] = called
     space_floor_list._toggle_changed({str(database)!r})
 try:
+    st.session_state["test_runs"] = st.session_state.get("test_runs", 0) + 1
     page_file = "home.py" if st.session_state.get("test_away") else "space_status.py"
     st.session_state["count_before_page"] = floor_state_draft_count()
     st.session_state["marks_before_page"] = page_unsaved_marks(page_file)
@@ -1385,7 +1386,7 @@ def test_a_floor_draft_survives_leaving_and_coming_back_with_the_switch_still_on
         {
             "group": "keep",
             "page": "Space 현황",
-            "text": "층 사용 편집 · 층 6개 저장 안 함",
+            "text": "층 사용 편집 저장 안 함",
             "top": "층 사용 미저장",
             "href": "space",
             "tab": "",
@@ -1405,6 +1406,61 @@ def test_a_floor_draft_survives_leaving_and_coming_back_with_the_switch_still_on
 
 
 _C5_FLOORS = tuple(("C5", floor) for floor in ("1F", "2F", "3F", "4F", "5F", "6F"))
+
+
+def _head(app: AppTest) -> tuple[dict[str, str], list[str]]:
+    """그 회차 페이지 앞에서 센 머리 — Space 탭 점 풍선과 「층 사용 미저장」 변경 칩 줄 글."""
+    return (
+        app.session_state["marks_before_page"],
+        [
+            item["text"]
+            for item in app.session_state["changes_before_page"]
+            if item["top"] == "층 사용 미저장"
+        ],
+    )
+
+
+def _floor_step(app: AppTest, tables: BrowserTables) -> tuple[int, object]:
+    before = int(app.session_state["test_runs"])
+    tables.run()
+    _ok(app)
+    return int(app.session_state["test_runs"]) - before, _head(app)
+
+
+def test_the_floor_head_changes_only_on_the_first_change_and_the_last_revert(
+    tmp_path: Path,
+) -> None:
+    """머리 글(Space 탭 점 풍선 · 변경 칩 「층 사용 편집 저장 안 함」)은 층 수를 싣지 않는다 —
+    첫 층을 끈 회차에 서고, 둘째 층 · 하나를 되돌린 회차에는 그대로이며, 마지막 층을 되돌린 회차에
+    걷힌다(2026-11-20 사용자 결정). 어느 편집도 앱 전체를 한 번 더 돌리지 않는다. 바뀐 층 수는
+    저장 줄 「바뀐 층 n개」 가 말한다."""
+    database = _database(tmp_path)
+    app = AppTest.from_string(_roundtrip_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    _ok(app)
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    _ok(app)
+    off: tuple[dict[str, str], list[str]] = ({}, [])
+    on = (
+        {"app_pages/space_status.py": "저장하지 않은 층 사용 편집"},
+        ["층 사용 편집 저장 안 함"],
+    )
+    assert _head(app) == off
+
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
+    assert _floor_step(app, tables) == (1, on)
+    tables.edit(_editor_key(app), _position("C3", "1F"), "사용", False)
+    assert _floor_step(app, tables) == (1, on)
+    assert any("바뀐 층 2개" in item.value for item in app.caption)
+    tables.edit(_editor_key(app), _position("C2", "2F"), "사용", True)
+    assert _floor_step(app, tables) == (1, on)
+    tables.edit(_editor_key(app), _position("C3", "1F"), "사용", True)
+    assert _floor_step(app, tables) == (1, off)
+    assert any("바뀐 층 0개" in item.value for item in app.caption)
+    clear_equipment_repository()
 
 
 def test_a_cell_edited_right_before_leaving_is_kept_by_the_editor_callback(

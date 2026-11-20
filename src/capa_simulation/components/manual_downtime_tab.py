@@ -18,8 +18,13 @@
   회차의 화면 탭 점 · 변경 칩 · 테마 · 새로고침 확인이 바로 안다), 본문도 편집표 결과로 다시 접는다.
   편집표는 늘 저장본 위에 초안을 얹어 그린다 — 다른 화면에 다녀와도 칸이 그대로 선다. 초안이 있는
   동안 화면 탭 점 · 이 탭 ③ 점 · 머리 변경 칩(「저장 안 함」 묶음)이 서고, 새로고침 · 탭 닫기 · 테마
-  전환이 묻는다. 화면을 옮겨도 초안은 남으므로 탭 줄 떠나기 확인(`page_tabs.leave_notice`)에는 넣지
-  않는다(설계 규칙 UI-STA-02 — 잃을 것이 없으면 묻지 않는다). 조회기간을 바꿔 보이지 않게 된 칸도
+  전환이 묻는다. 머리 글(변경 칩 「입력 비가동 저장 안 함」 · 화면 탭 점 풍선 「저장하지 않은 입력
+  비가동」)은 칸 수를 싣지 않고 초안이 있나 없나만 말한다(`manual_downtime_draft_pending` —
+  2026-11-20 사용자 결정, 다른 미저장 칩 「설비 편집 저장 안 함」 과 한 꼴). 그래서 머리가 바뀌는
+  것은 첫 칸을 고친 회차와 마지막 칸을 되돌린 회차뿐이다 — 둘째 칸부터의 편집은 머리를 바꾸지
+  않는다. 칸 수는 저장 줄 「되돌리기」 풍선 · 버림 알림처럼 이 탭 안에서만 말한다. 화면을 옮겨도
+  초안은 남으므로 탭 줄 떠나기 확인(`page_tabs.leave_notice`)에는 넣지 않는다(설계 규칙 UI-STA-02 —
+  잃을 것이 없으면 묻지 않는다). 조회기간을 바꿔 보이지 않게 된 칸도
   초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 가 초안을 버린다. 표를 그리지 않는 화면 — 열람
   등급의 읽기 표(개발자의 「이 등급으로 보기」 포함)는 초안을 얹지도 버리지도 않고 점 · 칩도 세지
   않는다(`manual_downtime_draft_count` 가 0). 「넣을 칸이 없습니다」 화면은 초안이 있으면
@@ -141,6 +146,7 @@ __all__ = [
     "dropped_text",
     "edited_cells",
     "manual_downtime_draft_count",
+    "manual_downtime_draft_pending",
     "manual_editor_frame",
     "manual_editor_key",
     "manual_tab_processes",
@@ -149,7 +155,7 @@ __all__ = [
 
 MANUAL_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
 # 적은 칸 초안 — (공정, 달) → 값(None = 빈칸), 저장본과 다른 칸만(모듈 docstring). 화면 탭 점 · 변경
-# 칩 · 이 탭 ③ 점이 이것을 센다(`manual_downtime_draft_count`).
+# 칩 · 이 탭 ③ 점은 이것이 있나 없나를 본다(`manual_downtime_draft_pending`).
 MANUAL_DRAFT_KEY: Final = "equipment_manual_downtime_draft_v1"
 MANUAL_DRAFT: Final = SessionSlot(MANUAL_DRAFT_KEY, dict, dict)
 MANUAL_REVERT_KEY: Final = "equipment_manual_downtime_revert"
@@ -236,9 +242,7 @@ Cell = tuple[str, int]
 
 
 def manual_downtime_draft_count() -> int:
-    """저장하지 않은 입력 비가동 칸 수(보이지 않게 된 칸 포함). 세션만 읽는다 — 화면 탭 점 · 변경
-    칩 · 이 화면 ③ 탭 점이 페이지보다 먼저 부른다(칸 편집은 그 회차 첫머리 `on_change` 가 이미
-    접었다).
+    """저장하지 않은 입력 비가동 칸 수(보이지 않게 된 칸 포함). 세션만 읽는다.
 
     입력 비가동을 고칠 수 없는 화면 등급(열람 — 개발자의 「이 등급으로 보기」 포함)이면 0 이다 — 그
     등급은 표를 값만 그려 초안을 보이지도 버리지도 못한다. 초안은 지우지 않고 남아, 고칠 수 있는
@@ -247,6 +251,13 @@ def manual_downtime_draft_count() -> int:
     if not draft or not sso_identity.viewer_can("equipment.manual_downtime"):
         return 0
     return len(draft)
+
+
+def manual_downtime_draft_pending() -> bool:
+    """저장하지 않은 입력 비가동이 있는가(`manual_downtime_draft_count` 가 0 이 아닌가). 화면 탭
+    점 · 변경 칩 · 이 화면 ③ 탭 점이 페이지보다 먼저 부른다(칸 편집은 그 회차 첫머리 `on_change` 가
+    이미 접었다) — 머리 글은 칸 수를 싣지 않는다(모듈 docstring)."""
+    return manual_downtime_draft_count() > 0
 
 
 def _hidden_count(draft: Mapping[Cell, object], visible: frozenset[Cell]) -> int:
@@ -372,10 +383,13 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
     알림창으로 알린다 — 남의 저장 위에 옛 초안을 얹어 보이지 않은 칸을 덮지 않게(9장 「본 값과
     보이는 칸」). 그 뒤(또는 초안이 없으면) 그린 저장본의 version 을 본 값으로 적는다.
 
-    초안 칸 수가 바뀌었으면 본 값을 적은 뒤 앱 전체를 한 번 다시 돌린다 — 화면 탭 점 · 변경 칩 ·
-    ③ 탭 점은 페이지보다 먼저 초안 칸 수를 세어(`manual_downtime_draft_count`) 이 회차에는 옛 수로
-    섰다(설비 편집본의 `rerun_if_head_stale` 와 같은 까닭). 담은 알림은 다시 돈 회차의 알림 칸이 한
-    번 그린다. 다시 돈 회차는 본 값이 저장본과 같아 되풀이되지 않는다."""
+    초안이 있다가 없어졌으면 본 값을 적은 뒤 앱 전체를 한 번 다시 돌린다 — 화면 탭 점 · 변경 칩 ·
+    ③ 탭 점은 페이지보다 먼저 초안이 있나를 보아(`manual_downtime_draft_pending`) 이 회차에는 옛
+    표지로 섰다(설비 편집본의 `rerun_if_head_stale` 와 같은 까닭). 머리는 칸 수를 싣지 않으므로
+    칸 수만 준 회차(제 저장이 보이는 칸만 빼고 보이지 않는 칸이 남음)는 다시 돌지 않는다 — 담은
+    성공 알림은 이 회차의 알림 칸(저장 줄 아래, 이 함수 뒤에 그린다)이 바로 그린다. 남의 저장이
+    초안을 모두 버린 회차는 다시 돌아 버림 알림이 다시 돈 회차의 알림 칸에 한 번 선다. 다시 돈
+    회차는 본 값이 저장본과 같아 되풀이되지 않는다."""
     draft = _draft()
     base = seen(MANUAL_BASE_VERSION_KEY)
     if draft and base != profile.version:
@@ -392,7 +406,7 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
             )
     if not _draft() or base != profile.version:
         remember_seen(MANUAL_BASE_VERSION_KEY, profile.version)
-    if len(_draft()) != len(draft):
+    if bool(_draft()) != bool(draft):
         st.rerun(scope="app")
 
 

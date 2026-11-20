@@ -86,7 +86,7 @@ from capa_simulation.components.equipment_settings_dialog import (
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.manual_downtime_tab import (
-    manual_downtime_draft_count,
+    manual_downtime_draft_pending,
     render_manual_downtime_tab,
 )
 from capa_simulation.components.page_guide import render_page_guide
@@ -312,7 +312,7 @@ mark_pending_tabs(
         if has_unsaved_equipment_edits() or pending_fab_layout() is not None or small_editor_edits()
         else set()
     )
-    | ({EQUIPMENT_PREFERENCE_TAB} if manual_downtime_draft_count() else set()),
+    | ({EQUIPMENT_PREFERENCE_TAB} if manual_downtime_draft_pending() else set()),
 )
 # 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭) — Summary 의 두 안쪽 탭.
 viewing_tab_open = not tab_is_hidden(main_view) or not tab_is_hidden(gap_view)
