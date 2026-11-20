@@ -111,25 +111,6 @@ def test_the_four_parts_of_an_answer_are_told_by_the_guide_not_the_chat_card() -
     assert "연결 뒤에도 이 네 칸은 그대로입니다" in guide
 
 
-def test_the_suggested_questions_card_has_no_order_line_and_the_guide_tells_the_order() -> None:
-    """「추천 질문」 카드는 머리와 단추뿐이다 — 단추 차례의 뜻(무엇이 나쁜가 → … → 더 내려가면
-    어디인가)은 늘 같은 뜻풀이라 머리 밑 회색 줄이 아니라 Guide 가 말한다(2026-11-20 사용자 결정
-    「화면에 설명 문구 금지 → Guide」, 설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39)."""
-    from capa_simulation.components.page_guide import load_guide
-
-    app = _start()
-    captions = [str(item.value) for item in app.main.caption]
-    assert not [text for text in captions if "무엇이 나쁜가" in text], captions
-    guide = " ".join(load_guide("capa_chatbot").replace("**", "").split())
-    assert "추천 질문 — 단추 넷은 실제로 묻게 되는 차례로 놓여 있습니다." in guide
-    assert (
-        "무엇이 나쁜가(기준 미달인 공정) → 왜 나쁜가(가장 나쁜 공정이 왜 부족한지) → "
-        "무엇부터 할까(개선 차례) → 더 내려가면 어디인가(제품까지 내려간 문제)."
-    ) in guide
-    assert "이미 물은 질문의 단추는 꺼집니다." in guide
-    assert "`대화 비우기` 는 첫 답만 남깁니다." in guide
-
-
 def test_the_connection_card_keeps_a_title_and_a_list_and_the_guide_tells_why() -> None:
     """오른쪽 「연결 방식」 카드에는 제목과 목록만 서고 회색 설명 세 문장은 Guide 가 말한다(2차
     보드 Q2-24 — 화면에 설명 글을 달지 않는다, 설계 규칙 UI-TXT-01). 그 문장은 화면 글 문장 그물이

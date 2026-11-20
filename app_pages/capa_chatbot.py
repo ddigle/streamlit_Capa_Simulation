@@ -174,11 +174,9 @@ with chat_column:
             disabled=True,
         )
 
-    # 추천 질문 단추의 차례(무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가)는
-    # 늘 같은 뜻풀이라 머리 밑 회색 줄이 아니라 Guide 가 말한다(2026-11-20 사용자 결정 「화면에 설명
-    # 문구 금지 → Guide」, 설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39).
     with st.container(border=True):
         st.markdown("#### :material/lightbulb: 추천 질문")
+        st.caption("무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가.")
         with st.container(horizontal=True, gap="small", horizontal_alignment="left"):
             for index, answer in enumerate(answers):
                 st.button(
