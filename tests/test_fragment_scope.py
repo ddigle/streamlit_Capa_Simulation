@@ -11,7 +11,7 @@
   `remove_stale_widgets=ctx.has_script_started`).
 - **머리 표지가 그대로인 칸 고치기**는 구역 회차 하나로 끝난다. **남의 저장 토큰**(R4)이 바뀌면
   본문 뒤에서 올린다. **한 번만 쓰는 인자**(R3)는 구역 회차에서 꺼진다. **본문 오류**(R6)는 코어
-  화면 카드다.
+  화면 카드다 — 구역 회차는 그 구역 자리, 화면 감싸기 안 앱 전체 회차는 화면 자리.
 - **정적** — `grade_ui.in_fragment` · `fragment_scope.editor_scope` 감싸기는 본문 앞에서 `st.rerun`
   하지 않고, `editor_scope` 를 단 본문은 `st.rerun` 을 직접 부르지 않으며, `st.fragment` ·
   `st.dialog` 본문(데코레이터 꼴 · 호출 꼴) 첫머리의 「조건 → 앱 전체 올리기」 는 알려진
@@ -206,6 +206,41 @@ def body(frames):
 
 frame = pd.DataFrame({"a": [1]})
 body((frame, frame, frame))
+"""
+
+# 화면 감싸기(`run_core_page`) 안의 구역 — 숨은 탭 안에 있고 보이는 탭보다 먼저 그려진다(R6 앱 전체
+# 회차의 실패).
+PAGE_WRAPPED = """
+import streamlit as st
+from capa_simulation.components import fragment_scope, grade_ui, page_failure_card
+
+SCOPE = "probe_scope"
+
+
+def head():
+    if st.session_state.get("head_explode"):
+        raise OSError("머리 표지 읽기 실패")
+    return (True,)
+
+
+@st.fragment(key=SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(SCOPE, head=head)
+def body():
+    st.markdown("구역 본문")
+    if st.session_state.get("explode"):
+        raise ValueError("구역 본문 오류")
+
+
+def page():
+    hidden, shown = st.tabs(["숨은 탭", "보이는 탭"])
+    with hidden:
+        body()
+    with shown:
+        st.markdown("보이는 탭 본문")
+
+
+page_failure_card.run_core_page(page, page="시험 화면", href="probe")
 """
 
 # 대조 — 본문 앞에서 올린다(금지된 꼴). 앱 전체 회차가 머리 표지를 찍는다.
@@ -445,6 +480,42 @@ def test_a_failing_token_or_head_read_in_a_scope_run_is_the_core_page_card(
     assert not list(app.exception), [element.message for element in app.exception]
     keys = _block_keys(browser)
     assert any(CARD_KEY in key for key in keys), keys
+
+
+@pytest.mark.page_failure_card
+@pytest.mark.parametrize("flag", ["explode", "head_explode"], ids=["body", "head"])
+def test_an_app_run_failure_in_a_scope_is_the_page_card_outside_the_scope(
+    monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    """앱 전체 회차의 구역 오류(R6 — 본문 · 머리 표지 찍기)는 그 구역 자리 카드가 아니라 화면
+    감싸기(`run_core_page`)의 카드다 — 구역 없는 화면과 같이 프래그먼트 밖에 하나 서고 기본 오류
+    상자가 없다. 숨은 탭 안 구역이 보이는 탭보다 먼저 그려져도 카드가 숨은 탭 안에 서지 않는다. 실패
+    기록은 하나이고 종류는 안의 오류다."""
+    from capa_simulation import page_failures
+    from capa_simulation.components.page_failure_card import CARD_KEY
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(PAGE_WRAPPED).run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+    scope = browser.fragment_keyed(SCOPE)
+    app.session_state[flag] = True
+
+    app.run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    cards = [
+        message
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta"
+        and message.delta.WhichOneof("type") == "add_block"
+        and CARD_KEY in message.delta.add_block.id
+    ]
+    assert len(cards) == 1, _block_keys(browser)
+    assert cards[0].delta.fragment_id != scope, "카드가 구역 자리에 섰다"
+    assert not cards[0].delta.fragment_id
+    (failure,) = page_failures.recent_failures()
+    assert failure.kind == ("ValueError" if flag == "explode" else "OSError")
+    assert (failure.page, failure.href) == ("시험 화면", "probe")
 
 
 # ------------------------------------------------------------------ 작은 인자(R3)

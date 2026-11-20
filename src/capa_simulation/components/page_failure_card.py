@@ -42,6 +42,11 @@ d12 (가)).
   실패(`FragmentHandledException` — Streamlit 이 이미 그 안에 그렸다)는 적고 카드 없이 멈춘다.
   `SystemExit` · `CancelledError` 도 카드로 받는다 — 두면 회차 스레드가 끝나 세션이 「실행 중」 에
   머문다(`module_runtime` 과 같은 까닭).
+- **프래그먼트를 지나 오는 실패**(`PageFailureEscape`) — Streamlit 프래그먼트 감싸기는 앱 전체
+  회차에도 본문의 `Exception` 을 모두 받아 그 자리에 기본 오류 상자를 그린다. 편집기 구역
+  (`fragment_scope.editor_scope`)의 앱 전체 회차 오류는 이 감싸기 안이면(`page_wrapped`)
+  `Exception` 이 아닌 껍데기에 실어 그 감싸기를 지나 여기까지 오고, 여기서 벗겨 안의 오류를 다른
+  실패와 같은 카드로 화면 자리에 세운다 — 구역 없는 화면과 같은 자리다.
 - 감싸지 못하는 자리(위젯 콜백 · 프래그먼트만 도는 회차 · `app.py` 의 페이지 앞)는 Streamlit 기본
   오류 상자 그대로이고, 운영 이미지가 그 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의
   `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type`).
@@ -53,6 +58,7 @@ import logging
 import os
 import traceback
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Final
 
@@ -87,6 +93,25 @@ REFUSAL_MARK_KEY: Final = "grade_refusal_mark"
 RECENT_SHOWN: Final = 5
 _LOGGER = logging.getLogger(__name__)
 _HERE: Final = os.path.realpath(__file__)
+# 지금 회차가 `run_core_page` 안에서 도는가 — 프래그먼트를 지나 오는 실패를 받을 자리가 있는지
+# 가른다(`page_wrapped`).
+_PAGE_WRAPPED: ContextVar[bool] = ContextVar("capa_page_wrapped", default=False)
+
+
+class PageFailureEscape(BaseException):
+    """프래그먼트 본문의 처리 못 한 오류를 `run_core_page` 까지 싣는 껍데기(모듈 설명
+    「프래그먼트를 지나 오는 실패」). `Exception` 이 아니라 Streamlit 프래그먼트 감싸기 ·
+    `Exception` 을 받는 자리를 지나간다. `page_wrapped` 가 참일 때만 던진다 — 받을 자리가 없으면
+    회차 스레드까지 간다."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__(error)
+        self.error = error
+
+
+def page_wrapped() -> bool:
+    """지금 회차가 `run_core_page` 안에서 도는가 — 참이면 `PageFailureEscape` 를 던져도 받는다."""
+    return _PAGE_WRAPPED.get()
 
 
 def first_line(exc: BaseException) -> str:
@@ -163,10 +188,14 @@ def _take_refusal(exc: grades.GradeDenied | grades.SignInEnded) -> bool:
 def run_core_page(run: Callable[[], None], *, page: str, href: str) -> None:
     """코어 화면을 `run`(보통 `navigation.run`)으로 돌리며 처리 못 한 오류를 카드로, 등급 거절을
     알림 한 번으로 바꾼다. `page` · `href` 는 이 화면의 이름 · 주소다(기록 · 알림 「그 화면으로」 —
-    HOME 은 빈 글자). 처리한 실패는 `st.stop()` 으로 끝난다(모듈 설명 「멈춤으로 끝낸다」)."""
+    HOME 은 빈 글자). 처리한 실패는 `st.stop()` 으로 끝난다(모듈 설명 「멈춤으로 끝낸다」).
+    프래그먼트를 지나 온 실패(`PageFailureEscape`)는 벗겨 안의 오류를 카드로 세운다."""
     rerun = False
+    wrapped = _PAGE_WRAPPED.set(True)
     try:
         run()
+    except PageFailureEscape as escaped:
+        render_page_failure(_record(page, href, escaped.error), escaped.error)
     except grades.REFUSALS as refused:
         rerun = _take_refusal(refused)
     except FragmentHandledException as handled:
@@ -185,6 +214,8 @@ def run_core_page(run: Callable[[], None], *, page: str, href: str) -> None:
     else:
         st.session_state.pop(REFUSAL_MARK_KEY, None)
         return
+    finally:
+        _PAGE_WRAPPED.reset(wrapped)
     # 예외 처리 칸 밖에서 다시 그리거나 멈춘다 — 제어 예외에 처리한 오류가 이어 붙지 않게.
     if rerun:
         st.rerun()
