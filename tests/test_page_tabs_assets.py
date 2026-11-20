@@ -2369,8 +2369,8 @@ _BUSY_GATE_RUNNER = """
   out.tab = log.slice()
   E.handle.drop()
 
-  // 구역 회차가 0.4초 넘게 돌아 ack 를 싣고 본문 뒤에서 앱 전체로 올라간다 — 두 회차 사이(회차 끝 GC
-  // 100ms)에 놓지 않고, 올라간 앱 전체 회차가 끝난 뒤 조용함이 차야 잇는다.
+  // 구역 회차가 0.4초 넘게 돌아 ack 를 싣고 본문 뒤에서 앱 전체로 올라간다 — 두 회차
+  // 사이(회차 끝 GC 100ms)에 놓지 않고, 올라간 앱 전체 회차가 끝난 뒤 조용함이 차야 잇는다.
   log = []
   T = strip(log, 5000)
   E = editor(log)
@@ -2427,9 +2427,9 @@ def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None
     """떠나는 누름(테마 단추 · 사이드바 링크가 지나는 `gate`, 탭 고르기)은 붙들기 판정 **전에**
     떠나기 신호를 쏜다. 묶어 둔 op 가 있는 편집기는 그 자리에서 보내고 ack 가 올 때까지 busy 라,
     손을 뗀 지 오래된 누름도 붙든다. 그 편집 회차(구역 회차 — 탭 줄 data 는 그대로)가 ack 를 싣고
-    끝나면 조용함(`HOLD_QUIET_MS`) 뒤에 잇는다(새 data 를 기다리지 않는다). 그 회차가 본문 뒤에서 앱
-    전체로 올라가면 두 회차 사이에 놓지 않고 올라간 회차가 끝난 뒤 조용함을 기다린다. glide 격자 편집
-    뒤는 전처럼 0.4초를 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
+    끝나면 조용함(`HOLD_QUIET_MS`) 뒤에 잇는다(새 data 를 기다리지 않는다). 그 회차가 본문 뒤에서
+    앱 전체로 올라가면 두 회차 사이에 놓지 않고 올라간 회차가 끝난 뒤 조용함을 기다린다. glide 격자
+    편집 뒤는 전처럼 0.4초를 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
     names = ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
     lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
@@ -2473,7 +2473,9 @@ _QUEUED_LEAVE_RUNNER = """
     now = to
   }
   let scriptState = 'notRunning'
-  const document = { querySelector: () => ({ getAttribute: () => scriptState }), activeElement: null, body: {} }
+  const document = {
+    querySelector: () => ({ getAttribute: () => scriptState }), activeElement: null, body: {},
+  }
   const window = new EventTarget()
   window.location = { pathname: '/list' }
   window.CustomEvent = globalThis.CustomEvent || class extends Event {}
@@ -2486,14 +2488,17 @@ _QUEUED_LEAVE_RUNNER = """
     %(slice)s
     return { settle }
   }
-  const tab = (id) => ({ dataset: { id }, hidden: false, __parts: { tab: {}, close: { hidden: false } } })
+  const tab = (id) => ({
+    dataset: { id }, hidden: false, __parts: { tab: {}, close: { hidden: false } },
+  })
   const strip = (log, t0) => {
     timers.length = 0
     now = t0
     scriptState = 'notRunning'
     const S = {
       items: new Map([['a', tab('a')], ['b', tab('b')], ['c', tab('c')]]),
-      queue: createSelectQueue(), data: { active: 'a', leave: '' }, waitOpen: null, keyPressAt: null,
+      queue: createSelectQueue(), data: { active: 'a', leave: '' }, waitOpen: null,
+      keyPressAt: null,
       editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null,
       holdTimer: 0, settleTimer: 0, focusTimer: 0, run: createRunMark(false), t0,
     }
@@ -2517,7 +2522,8 @@ _QUEUED_LEAVE_RUNNER = """
     scriptState = 'notRunning'
     markRun(T.S.run, false, now)
   }
-  // 보낸 고르기 b 가 서버에 닿지 않았다 — 보낸 뒤 선 회차(트리거 없는 회차)가 60 에 끝나고 조용하다.
+  // 보낸 고르기 b 가 서버에 닿지 않았다 — 보낸 뒤 선 회차(트리거 없는 회차)가 60 에 끝나고
+  // 조용하다.
   const lose = (T) => {
     sentSelect(T.S.queue, 'b', 'a', T.S.t0, { path: '/list', leave: '' })
     markRun(T.S.run, true, T.S.t0 + 20)
@@ -2535,8 +2541,8 @@ _QUEUED_LEAVE_RUNNER = """
   out.resendIdle = log.slice()
   E.handle.drop()
 
-  // 다시 보냄 — 기다리는 동안 칸을 고쳐 op 가 묶음 타이머에 있다. 떠나기 신호에 곧바로 보내고, 그 ack 가 오고
-  // 조용함이 찬 뒤에 다시 보낸다.
+  // 다시 보냄 — 기다리는 동안 칸을 고쳐 op 가 묶음 타이머에 있다. 떠나기 신호에 곧바로
+  // 보내고, 그 ack 가 오고 조용함이 찬 뒤에 다시 보낸다.
   log = []
   T = strip(log, 1000)
   E = editor(log)
@@ -2550,8 +2556,8 @@ _QUEUED_LEAVE_RUNNER = """
   out.resendAfter = log.slice()
   E.handle.drop()
 
-  // 줄 선 누름 — b 로 옮기는 동안 c 를 눌렀다. b 화면의 탭 줄이 오고 그 회차가 끝났을 때 묶어 둔 op 가 있으면
-  // 떠나기 신호 · 붙들기를 지난다.
+  // 줄 선 누름 — b 로 옮기는 동안 c 를 눌렀다. b 화면의 탭 줄이 오고 그 회차가 끝났을 때
+  // 묶어 둔 op 가 있으면 떠나기 신호 · 붙들기를 지난다.
   log = []
   T = strip(log, 3000)
   E = editor(log)
