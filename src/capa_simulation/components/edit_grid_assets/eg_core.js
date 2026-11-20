@@ -1080,14 +1080,15 @@ function egOnPaste(S, event) {
     setStatus(S, why)
     return
   }
-  queueOp(S, { op: 'write', rows: rowKeys(S, r, r), cols: colNames(S, c, c), values: [[first]] })
+  queueOp(S, { op: 'write', rows: rowKeys(S, r, r), cols: colNames(S, c, c), values: [[first]] }, true)
 }
 
 // ---------------------------------------------------------------- 출납
 
 // op 하나를 쌓는다 — table·gen·seq·at 을 붙이고 화면에는 곧바로 미리보기. 초안이 없던 표의 첫 op 는 기다리지 않고 바로
-// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 묶음 쉼을 기다리지 않고 한 회차 안에 서게). 쌓지 못하면(보낼 칸이 너무 많음) null.
-function queueOp(S, op) {
+// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 묶음 쉼을 기다리지 않고 한 회차 안에 서게). now 면(붙여넣기 · 단추 op) 쉼 없이
+// 곧바로 보낸다. 쌓지 못하면(보낼 칸이 너무 많음) null.
+function queueOp(S, op, now) {
   const m = S.model
   if (!m || !m.table) return null
   if (!S.gen) {
@@ -1109,7 +1110,7 @@ function queueOp(S, op) {
   S.pendingBySeq.set(queued.seq, cells)
   const counts = (S.feedData && S.feedData.counts) || {}
   const first = S.box.ops.length === 1 && !Number(counts.cells)
-  if (first || op.op === 'undo' || op.op === 'redo') sendNow(S)
+  if (now || first || op.op === 'undo' || op.op === 'redo') sendNow(S)
   else egTimer(S, 'send', egSendMs(S), () => sendNow(S))
   paint(S)
   egWhere(S)

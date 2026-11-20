@@ -163,7 +163,7 @@ function fillPaste(S, matrix) {
     return true
   }
   const op = { op: 'write', rows: rowKeys(S, plan.r0, plan.r1), cols: colNames(S, plan.c0, plan.c1), values: plan.values }
-  if (!queueOp(S, op)) return true
+  if (!queueOp(S, op, true)) return true
   if (!plan.tiled) setRange(S, { r: plan.span.r0, c: plan.span.c0 }, { r: plan.span.r1, c: plan.span.c1 })
   fillNotes(S, selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells - locks.n), plan.skipped, plan.clipped, plan.tiled ? selText(S, 'pasteTiled', '') : '', locks.n)
   return true

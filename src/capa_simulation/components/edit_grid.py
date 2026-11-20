@@ -100,8 +100,8 @@ DISCARD_ICON: Final = ":material/delete_sweep:"
 CHANGES_BUTTON: Final = "적용 전"
 # 출납 묶어 보내기 쉼(ms) — 칸을 잇달아 고치면 마지막 고침 뒤 이만큼 조용할 때 한 번에 보낸다. 값은
 # 여기 하나이고 껍데기 `limits.sendMs` 로 JS 에 넘긴다(`eg_core.js` 의 `EG_SEND_MS` 는 그 칸이 없을
-# 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 되돌리기 · 다시 실행 · 표 밖 누름(focusout) · 창
-# 숨김(visibilitychange) · 마운트 정리는 쉼을 기다리지 않는다.
+# 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 · 다시 실행 · 표
+# 밖 누름(focusout) · 창 숨김(visibilitychange) · 마운트 정리는 쉼을 기다리지 않는다.
 SEND_MS: Final = 300
 # 측정 사본 전용 — 실행 줄 환경변수(ms 정수)로 쉼을 덮어쓴다. 운영 · 사내 실행 줄에는 넣지 않는다.
 SEND_MS_ENV: Final = "CAPA_RR_EG_SEND_MS"

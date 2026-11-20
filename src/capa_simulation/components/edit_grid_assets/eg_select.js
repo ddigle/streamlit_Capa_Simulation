@@ -457,7 +457,7 @@ function selPaste(S, matrix) {
     return
   }
   const op = { op: 'write', rows: rowKeys(S, plan.r0, plan.r1), cols: colNames(S, plan.c0, plan.c1), values: plan.values }
-  if (!queueOp(S, op)) return
+  if (!queueOp(S, op, true)) return
   setRange(S, { r: plan.span.r0, c: plan.span.c0 }, { r: plan.span.r1, c: plan.span.c1 })
   const notes = [selText(S, 'pasted', '{n}칸 붙여넣음', plan.cells - locks.n), selLockedNote(S, locks.n)]
   if (plan.skipped) notes.push(selText(S, 'pasteSkipped', '분류 칸 {n}칸은 건너뛰었습니다', plan.skipped))

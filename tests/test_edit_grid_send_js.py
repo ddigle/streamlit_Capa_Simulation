@@ -1,10 +1,11 @@
 # Purpose: 편집 그리드 출납의 묶어 보내기 쉼 · 곧바로 보내는 길 · 한 번만 다는 리스너를 본다.
 
 """묶어 보내기 정책 — 쉼은 `edit_grid.SEND_MS` 하나가 정하고 껍데기 `limits.sendMs` 로 JS 에
-간다(측정 사본은 실행 줄 `CAPA_RR_EG_SEND_MS` 로 덮어씀). 초안 없던 표의 첫 op · 되돌리기 · 표 밖
-누름 · 창 숨김 · 마운트 정리는 쉼을 기다리지 않는다. Streamlit 은 data 가 바뀔 때마다 default
-export 를 다시 부르고 앞 호출의 정리 함수는 부르지 않으므로, 다시 불러도 리스너 · 관찰자는 한
-벌이고 걸어 둔 묶음은 한 번만 나간다. 등록 JS 두 벌(보통 · 줄 규칙 표) 모두 본다."""
+간다(측정 사본은 실행 줄 `CAPA_RR_EG_SEND_MS` 로 덮어씀). 초안 없던 표의 첫 op · 붙여넣기 · 줄
+지우기 단추 · 되돌리기 · 표 밖 누름 · 창 숨김 · 마운트 정리는 쉼을 기다리지 않는다. Streamlit 은
+data 가 바뀔 때마다 default export 를 다시 부르고 앞 호출의 정리 함수는 부르지 않으므로, 다시
+불러도 리스너 · 관찰자는 한 벌이고 걸어 둔 묶음은 한 번만 나간다. 등록 JS 두 벌(보통 · 줄 규칙
+표) 모두 본다."""
 
 from __future__ import annotations
 
@@ -334,3 +335,82 @@ def test_mounting_again_binds_listeners_once_and_keeps_one_pending_batch(
     down = result["down"]
     assert down["own"] == 0 and down["doc"] == 0 and down["observers"] == 0
     assert down["win"] == 0, "창 리스너도 정리 함수가 걷는다"
+
+
+# ------------------------------------------------------------------ node — 붙여넣기 · 단추 op
+
+RUNNER_PASTE = (
+    RUNNER_HEAD
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const scroller = q('.eg-scroll')
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowRight')
+  // 앞서 고친 칸이 있는 표(쉼 5초) — 붙여넣기는 곧바로, 칸 고침은 쉼.
+  fire(scroller, 'paste', { clipboardData: { getData: () => '12%\t13%\r\n' } })
+  const kinds = () => (sent.length ? sent[sent.length - 1][1].ops.map((op) => op.op) : [])
+  R.paste = { sent: sent.length, ops: kinds() }
+  key(scroller, 'ArrowDown')
+  edit('61%')
+  R.cell = { sent: sent.length }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_paste_goes_out_at_once_while_cell_edits_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """붙여넣기는 묶음 쉼을 기다리지 않는다(2026-11-20 사용자 결정 — 쉼을 늘려도 붙여넣기 ·
+    단추 op 는 곧바로)."""
+    shell = _shell(monkeypatch, "5000")
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_PASTE, {"shell": shell, "feed": _feed(EDITED, undo=1)})
+    assert result["paste"] == {"sent": 1, "ops": ["write"]}
+    assert result["cell"] == {"sent": 1}, "칸 고침은 그대로 쉼을 기다린다"
+
+
+RUNNER_ROW_BUTTON = (
+    RUNNER_HEAD
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const button = q('.eg-tb-rows')
+  // 새 줄 이름 칸 첫 고침(초안 없던 표 — 곧바로), 명단 줄 고침(쉼 5초), 줄 지우기 단추(곧바로).
+  setRange(S, { r: 2, c: 2 }, { r: 2, c: 2 })
+  edit('데모 나')
+  R.first = { sent: sent.length }
+  setRange(S, { r: 0, c: 2 }, { r: 0, c: 2 })
+  edit('데모 다')
+  R.held = { sent: sent.length }
+  setRange(S, { r: 0, c: 2 }, { r: 0, c: 2 })
+  fire(button, 'click')
+  R.button = { sent: sent.length, ops: sent[sent.length - 1][1].ops.map((op) => op.op) }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_row_remove_button_goes_out_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from test_edit_grid_rows import RULES, SPEC, _frame
+
+    monkeypatch.setenv(edit_grid.SEND_MS_ENV, "5000")
+    base = build_base(_frame(), SPEC, None, RULES)
+    shell = edit_grid.shell_data(
+        "demo_rows", base, SPEC, base_key="k1", changes_label="저장 전 변경"
+    )
+    history: eg.HistoryState = {"gen": "g1", "undo": [], "redo": []}
+    feed = encode_feed(
+        base.index, None, history, host="demo_rows", base_key="k1", acks={}, toast=None
+    )
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+    result = run_node(source, RUNNER_ROW_BUTTON, {"shell": shell, "feed": feed})
+    assert result["first"] == {"sent": 1}
+    assert result["held"] == {"sent": 1}
+    assert result["button"] == {"sent": 2, "ops": ["write", "write", "remove"]}
