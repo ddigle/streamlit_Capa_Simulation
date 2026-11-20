@@ -75,8 +75,8 @@ export default function (component) {
     .filter((span) => Array.isArray(span) && dayOr(span[0]))
     .map((span) => [span[0], dayOr(span[1])])
   // 기준일 페이더(층 상세 보기, 도면 상자 맨 위 줄)의 오늘·범위(양 끝 포함). 범위는 파이썬
-  // `space_unit_state.as_of_range`(오늘 ±12개월)가 정해 보낸다. 배치 편집(층) 중에는 같은 자리에 「편집 중 고정」 줄이
-  // 선다. FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
+  // `space_unit_state.as_of_range`(오늘 ±12개월)가 정해 보낸다. 배치 편집(층) 중에는 이 줄이 걷히고 도구 줄 칩
+  // 「YYYY-MM-DD 고정」 이 기준일을 말한다(결정 D12). FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
   const TODAY = dayOr(data.today) || ''
   const RANGE = { min: dayOr(data.asOfMin) || '', max: dayOr(data.asOfMax) || '' }
   // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 풍선 글)를 실을 때만이다. 기준일은 오늘로
@@ -9415,8 +9415,8 @@ export default function (component) {
   // 층 상세 보기의 맨 위 줄은 페이더다(오늘 ±12개월, 하루 단위, 가운데 오늘). 끄는 동안 서버 회차는 없다 — 프레임마다
   // (requestAnimationFrame) 판정 부호가 바뀐 상자만 칠하고(`paintAsOf`), 손을 떼면(키는 멈춘 뒤) `setStateValue` 로
   // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·「호기 정보」 창을 맞춘다. 배치 편집(층) 중에는
-  // 같은 자리·같은 높이에 「기준일 … · 편집 중 고정」 줄이 선다. FAB 전체에는 페이더 없이 도구 줄에 기준일·「오늘로」·
-  // 미확인 대수가 선다.
+  // 이 줄이 걷히고 도구 줄 칩이 기준일을 말한다(결정 D12). 같은 자리·같은 높이의 고정 줄(`.sle-pinned`)은 「필요 단축」
+  // 보기의 「기준일 … · 오늘 고정」 이다. FAB 전체에는 페이더 없이 도구 줄에 기준일·「오늘로」·미확인 대수가 선다.
   const faderInput = q('.sle-fader-input')
   const faderTicks = q('.sle-fader-ticks')
   const faderDate = q('.sle-fader-date')
@@ -9426,8 +9426,9 @@ export default function (component) {
   const pinnedDate = q('.sle-pinned-date')
   const pinnedRow = q('.sle-pinned')
   const pinnedNote = q('.sle-pinned-note')
-  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 표지 「오늘 고정」 이고 왜 고정인지는
-  // 그 줄 풍선 `data.asOfPinned` 다(설계 규칙 UI-TXT-01).
+  // 고정 줄 뒷글 — 「필요 단축」 보기는 표지 「오늘 고정」 이고 왜 고정인지는 그 줄 풍선 `data.asOfPinned` 다(설계 규칙
+  // UI-TXT-01). 그 밖의 회차는 HTML 글(표지 「· 편집 중 고정」)로 돌리지만 줄이 서지 않는다 — 층 편집은 기준일 줄째 걷히고
+  // 도구 줄 칩이다(결정 D12).
   if (S.pinnedNoteDefault === undefined) S.pinnedNoteDefault = pinnedNote ? pinnedNote.textContent : ''
   const fabAsOf = q('.sle-asof')
   const fabAsOfDate = q('.sle-asof-date')

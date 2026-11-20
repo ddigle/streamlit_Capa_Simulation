@@ -774,6 +774,11 @@ def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_ch
     assert "setAttr(faderInput, 'aria-valuetext'" in JS
     pinned = row[row.index('class="sle-pinned ') :]
     assert "sle-edit-only" in pinned and "편집 중 고정" in pinned
+    # 고정 줄 HTML 글은 표지 한 마디다 — 끄면 페이더로 바뀐다는 하는 법 꼬리는 두지 않는다(그
+    # 줄은 층 편집에 서지 않고, 그 말은 도구 줄 칩 풍선 · Guide 몫 — 설계 규칙 UI-TXT-01 · 02,
+    # 규칙집 6-39).
+    assert '<span class="sle-pinned-note">· 편집 중 고정</span>' in pinned
+    assert "페이더로 바꿉니다" not in HTML
     assert "height: 36px" in _rule(".sle-daterow")
     assert "const DATE_ROW_PX = 36" in JS
     assert (

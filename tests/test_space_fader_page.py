@@ -267,8 +267,8 @@ def test_the_fab_toolbar_gets_the_as_of_date_and_the_unconfirmed_count(
 def test_the_layout_editor_gets_the_pinned_date_and_no_fader(
     tmp_path: Path, calls: list[dict[str, Any]]
 ) -> None:
-    """배치 편집 중에는 기준일이 고정이다 — 편집기는 세션 기준일을 받아 「편집 중 고정」 줄에 쓰고,
-    기준일을 보낼 길(`on_asOf_change`)이 없다."""
+    """배치 편집 중에는 기준일이 고정이다 — 편집기는 세션 기준일을 받아 도구 줄 칩 「YYYY-MM-DD
+    고정」 에 쓰고, 기준일을 보낼 길(`on_asOf_change`)이 없다."""
     app, today = _open(tmp_path)
     later = today + timedelta(days=10)
     app.session_state[AS_OF_KEY] = later
