@@ -752,7 +752,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   목적·부서별 Gap · A/Item·로드맵은 본문 머리가 아니라 Guide 첫 단락 — 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」).
   - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 목차 카드는 화면 이름 링크 하나이고 화면마다
     보는 것은 카드 밑 회색 줄이 아니라 Guide 「이 영역의 화면」 이다(설계 규칙 UI-TXT-01 · 02 — 규칙집 6-39) — 하위 화면이
-    늘면 그 목록에 한 줄을 더한다. 설명은 `guides/execution_management.md`.
+    늘면 그 목록에 사이드바 차례대로 `- **이름**` 한 줄을 더한다(실적 셋은 묶음 줄 하나 — 빠지면
+    `test_execution_management_page.py::test_every_subpage_has_its_own_line_in_the_guide_screen_list` 가 깨진다). 설명은
+    `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은

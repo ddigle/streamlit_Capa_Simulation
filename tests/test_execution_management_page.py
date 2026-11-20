@@ -7,6 +7,8 @@
 열지 않는 회차는 `tests/test_app_navigation.py` 가 본다.
 """
 
+import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,27 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / EXECUTION_MANAGEMENT.path
 # 단독 실행에는 네비게이션이 없어 `render_page_link` 가 「사이드바에서 …」 글로 물러선다.
 FALLBACK = "사이드바에서 "
+SCREENS_HEADING = "#### 이 영역의 화면"
+
+
+def _guide_screen_names(guide: str) -> list[str]:
+    """Guide 「이 영역의 화면」 절의 `- **이름**` 줄 이름(적힌 차례). 실적 셋은 묶음 줄
+    하나(`- **효율 · UPEH · 수율 실적**`)가 맡아 「효율 실적」 · 「UPEH 실적」 · 「수율 실적」
+    으로 편다."""
+    section = guide[guide.index(SCREENS_HEADING) + len(SCREENS_HEADING) :]
+    section = section.split("\n#### ", 1)[0]
+    names: list[str] = []
+    for name in re.findall(r"^- \*\*([^*]+)\*\*", section, flags=re.MULTILINE):
+        if name.endswith(" 실적"):
+            names.extend(f"{part} 실적" for part in name.removesuffix(" 실적").split(" · "))
+        else:
+            names.append(name)
+    return names
+
+
+def _subpage_names(titles: Sequence[str]) -> list[str]:
+    """선언의 하위 화면 제목에서 상태 접미(`(구현중)` 등)를 뗀 이름."""
+    return [title.split(" (")[0] for title in titles]
 
 
 def _run_without_databases(monkeypatch: pytest.MonkeyPatch) -> tuple[AppTest, list[Any]]:
@@ -154,3 +177,18 @@ def test_the_guide_says_what_each_subpage_looks_at() -> None:
         "기준정보 대비 실적 Gap 과 개선 우선순위",
     ):
         assert text in section, text
+
+
+def test_every_subpage_has_its_own_line_in_the_guide_screen_list() -> None:
+    """목차 카드는 화면 이름뿐이라 화면이 무엇을 보는지는 Guide 「이 영역의 화면」 목록 한 줄만
+    말한다 — 선언(`EXECUTION_MANAGEMENT_SUBPAGES`)의 하위 화면마다 `- **이름**` 줄이 사이드바
+    차례대로 있어야 한다(실적 셋은 묶음 줄 하나). 선언에 화면이 늘고 Guide 를 고치지 않으면
+    이름이 Guide 다른 단락에 있어도 여기서 깨진다(설계 규칙 UI-TXT-02 — 규칙집 6-39)."""
+    guide = load_guide("execution_management")
+    declared = _subpage_names([spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES])
+
+    assert _guide_screen_names(guide) == declared
+    # 그물이 비지 않음 — 선언에 화면 하나(Guide 머리 단락에 이름이 이미 있는 「설비 일정」)가
+    # 늘면 목록과 어긋난다.
+    assert "설비 일정" in guide
+    assert _guide_screen_names(guide) != [*declared, "설비 일정"]
