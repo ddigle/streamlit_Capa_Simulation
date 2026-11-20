@@ -2705,17 +2705,17 @@ def _save_equipment_frames(
         # 쓰는 동안의 표지 — 그 사이 같은 출발점의 둘째 누름은 이 저장의 결과를 이으므로 이음 표지를
         # 새로 적지 않는다(`stage_own_save_carry`). 썼으면 `written` 을 먼저 적고 걷어 두 표지 사이
         # 빈틈이 없다. 쓰지 못했거나(예외) 아무것도 쓰지 않았으면 걷혀 다음 누름이 새로 적는다. 세션
-        # 칸이 아니라 그 dict 를 고친다.
-        if carry is None:
-            return repository.save_equipment(request)
-        carry["writing"] = True
+        # 칸이 아니라 그 dict 를 고친다. 저장소 쓰기는 이 한 곳에서만 부른다.
+        if carry is not None:
+            carry["writing"] = True
         try:
             outcome = repository.save_equipment(request)
-            if _wrote_anything(outcome):
+            if carry is not None and _wrote_anything(outcome):
                 carry["written"] = True
             return outcome
         finally:
-            carry.pop("writing", None)
+            if carry is not None:
+                carry.pop("writing", None)
 
     try:
         # 출발점(`buffer_base`)은 아래 뒷정리(`reset_equipment_drafts`)가 옮긴다. 빠른 두 번 누름의
