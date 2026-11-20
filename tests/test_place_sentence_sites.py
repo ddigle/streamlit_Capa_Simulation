@@ -242,10 +242,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_inputs"): (MARKER,),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (EMPTY,),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
-        EMPTY,
-        EMPTY,
-    ),
+    # 맞댄 공정이 없는 빈 결과 줄은 까닭을 가른 `_empty_plan_line` 의 글을 받아(2026-11-20 Static
+    # 기준 — 「Static 가용 없음」 갈래) 이 그물이 세지 않는다. 남은 하나는 모자란 달 없음 줄이다.
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (EMPTY,),
     (
         "src/capa_simulation/components/required_shortening_panel.py",
         "_render_missing_baseline_level",

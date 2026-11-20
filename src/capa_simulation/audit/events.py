@@ -287,6 +287,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "resolved": "답변 완료",
     "processes": "공정 수",
     "result": "결과",
+    "retry": "다시 시도 차례",
     "rev_from": "판 전",
     "rev_to": "판",
     "revision": "리비전",
