@@ -1834,12 +1834,13 @@ def _run_static(database_path: Path, *, static: float | None = 3.0) -> AppTest:
 
 
 def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """보드 답 Static-0 · Q01 · Q02 — 조건 카드 맨 위 「Static | 설비 마스터」 전환은 처음 Static
     이다. 기준 값 글 · CSV 맨 앞 칸이 기준을 따르고, 바꾸면 앱 전체가 다시 돌아 그 기준의 계획이다.
     호기 줄은 고르지 않은 기준의 일정을 흐린 ○ 로 함께 그리고, 그 이름(기준마다 다름)은 줄 풍선에
-    선다 — 줄 위 범례 글은 없다(뜻은 Guide)."""
+    선다 — 줄 위 범례 글은 없다(뜻은 Guide). 기준은 본문 → 공정 카드 → 호기 줄로 건너가므로 두
+    기준 모두 화면에서 그 이름을 본다."""
     app = _run_static(_database(tmp_path))
     assert not app.exception, [element.message for element in app.exception]
     switch = app.sidebar.button_group(key=SHORTENING_BASIS_KEY)
@@ -1859,10 +1860,28 @@ def test_the_card_opens_on_static_and_switching_to_the_master_redraws_the_plan(
     assert any(VALUE_LINE_TEXT in caption for caption in _caption_paths(app))
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert set(units["현재 일정 기준"]) == {"설비 마스터"}
-    # 줄 풍선의 흐린 표지 이름은 기준을 따른다 — Static 기준의 이름(설비 마스터 Qual)은 사라진다.
-    # 이 표본의 설비 마스터 기준 호기 줄에는 Static 역산 날짜가 붙지 않아 흐린 ○ 가 서지 않는다.
+    # 이 표본의 설비 마스터 기준 호기 줄에는 Static 역산 날짜가 붙지 않는다(표본의 Static 역산 배정
+    # 없음) — 당긴 호기마다 그 목표 Qual 을 고르지 않은 기준의 날짜로 갈아 끼워, 줄 풍선의 흐린 표지
+    # 이름이 기준을 따라 「Static 역산」 인지 화면으로 본다.
+    pulled = units.loc[units["구분"].ne(KIND_NEW)]
+    assert not pulled.empty
+    other = {
+        str(unit): date.fromisoformat(str(day))
+        for unit, day in zip(pulled["호기"], pulled["목표 Qual 완료일"], strict=True)
+    }
+    asked: list[str] = []
+
+    def other_dates(plan: Any) -> dict[str, date]:
+        asked.append(str(plan.basis))
+        return other
+
+    monkeypatch.setattr(required_shortening_panel, "other_basis_dates", other_dates)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert asked and set(asked) == {BASIS_MASTER}
     body = _html(app)
-    assert 'class="shk-unit"' in body
+    assert 'class="shk-other"' in body
+    assert f"{other_mark_label(BASIS_MASTER)} 20" in body
     assert f"{other_mark_label(BASIS_STATIC)} 20" not in body
 
 
