@@ -6,8 +6,9 @@
 // 보내기 **전에** 창 사건 `capa-leaving` 을 쏜다(`announceLeaving`). 편집기는 그 자리에서 묶음 타이머를 멈추고 남은 op 를 곧바로
 // 보낸다(`joinLeaving` 의 `flush`). 보낼 것이 남았거나 ack 가 오지 않은 동안 편집기는 명부에 busy 다 — 탭 줄 붙들기
 // (`page_tabs.js` 의 `<tabs-hold>`)가 그 busy 가 걷히고 회차가 끝날 때까지(길어야 `BUSY_MS`) 기다린 뒤 떠난다. 떠나기 신호 뒤로는
-// 묶지 않고 곧바로 보내며(`leavingNow`), 보낼 것이 다 걷히면(`settleLeaving`) 다시 묶는다 — 떠나기를 취소하고 머문 편집도 다음
-// 묶음부터는 전처럼이다.
+// 묶지 않고 곧바로 보내며(`leavingNow`), 보낼 것이 다 걷히면(`settleLeaving`) 다시 묶는다. 신호를 받은 순간 보낼 것도 ack
+// 기다림도 없는 편집기는 그 자리에서 걷는다 — 화면에 머무는 누름(지금 화면 링크 · 떠나기 확인 취소 · 상한에 막힌 링크)도 신호를
+// 쏘므로, 머문 뒤 다음 고침도 묶인다.
 
 // <capa-leave>
 // 편집기 명부(순수) — 창 칸 하나(`book`)에 편집기마다 busy 판정 함수를 단다. 판정이 던지면 busy 가 아니다(내린 편집기의 낡은
@@ -56,7 +57,9 @@ function announceLeaving(win) {
   win.dispatchEvent(new win.CustomEvent(LEAVING_EVENT))
 }
 // 편집기 하나를 명부에 올리고 떠나기 신호를 받는다 — `busy()` 는 보낼 것이 남았거나 ack 를 기다리는가, `flush()` 는 묶음 타이머를
-// 멈추고 남은 op 를 곧바로 보낸다. 돌려준 손잡이(`leaving` · `drop`)는 편집기 상태에 두고, 정리 함수에서 `drop()` 한다.
+// 멈추고 남은 op 를 곧바로 보낸다. 보낸 뒤에도 busy 가 아니면(보낼 것도 ack 기다림도 없었다) 곧바로 걷는다(`settleLeaving` 과
+// 같은 뜻 — ack 뒤 스스로 걷는 편집기와 겹쳐도 같다). 돌려준 손잡이(`leaving` · `drop`)는 편집기 상태에 두고, 정리 함수에서
+// `drop()` 한다.
 function joinLeaving(win, hooks) {
   const book = editorBook(win)
   const handle = { leaving: false, id: 0, drop: () => {} }
@@ -67,6 +70,13 @@ function joinLeaving(win, hooks) {
     } catch (error) {
       // 보내지 못해도 붙들기는 busy 를 보고 기다린다(상한 `BUSY_MS`).
     }
+    let busy = false
+    try {
+      busy = Boolean(hooks.busy())
+    } catch (error) {
+      // 판정할 수 없는 편집기는 busy 가 아니다(명부와 같다).
+    }
+    settleLeaving(handle, busy)
   }
   handle.id = enrollEditor(book, () => Boolean(hooks.busy()))
   win.addEventListener(LEAVING_EVENT, onLeave)

@@ -92,9 +92,8 @@ def test_the_editor_book_lives_on_the_window_and_a_failing_judge_is_not_busy() -
 
 # 대역 편집기 — 설비 마스터 표(`grid.js`)의 출납 몇 줄과 같은 꼴: 칸 고침은 묶음
 # 타이머(`SEND_MS`) 뒤 `send`, 떠나기 신호 뒤로는 곧바로, 받은 data 의 ack 로 op 를 걷고 다
-# 걷히면 다시 묶는다.
-_EDITOR_RUNNER = """
-(() => {
+# 걷히면 다시 묶는다. 대본은 이 대역 뒤에 잇는다(`_editor_node`).
+_EDITOR_HARNESS = """
   let now = 0
   const timers = []
   const setTimeout = (fn, ms) => {
@@ -146,6 +145,14 @@ _EDITOR_RUNNER = """
     return S
   }
   const book = () => editorBook(win)
+"""
+
+
+def _editor_node(script: str) -> Any:
+    return _node("(() => {\n" + _EDITOR_HARNESS + script + "\n})()")
+
+
+_EDITOR_RUNNER = """
   const out = {}
   const sent = []
   const grid = mount('grid', sent)
@@ -183,7 +190,6 @@ _EDITOR_RUNNER = """
   list.leave.drop()
   out.dropped = [listeners, book().entries.size]
   process.stdout.write(JSON.stringify(out))
-})()
 """
 
 
@@ -191,7 +197,7 @@ def test_an_editor_flushes_its_batch_on_the_leaving_signal_and_stays_busy_until_
     """편집기는 칸 고침을 묶음 타이머로 모으다가 떠나기 신호에 곧바로 보내고 ack 가 올 때까지 명부에
     busy 다. 신호 뒤 편집은 묶지 않고 보내며, 다 걷히면 다시 묶는다. 보낼 것이 없는 편집기는 신호에
     보내지 않는다. 마운트 · 정리를 거듭해도 처리기 · 명부가 늘지 않는다."""
-    out = _node(_EDITOR_RUNNER)
+    out = _editor_node(_EDITOR_RUNNER)
 
     assert out["batched"] == [[], True]
     assert out["flushed"] == [["grid:2@400"], True]
@@ -203,6 +209,59 @@ def test_an_editor_flushes_its_batch_on_the_leaving_signal_and_stays_busy_until_
     assert out["idleSignal"] == [0, False]
     assert out["listeners"] == [2, 2]
     assert out["dropped"] == [0, 0]
+
+
+_IDLE_SIGNAL_RUNNER = """
+  const out = {}
+  const sent = []
+  const grid = mount('grid', sent)
+  const list = mount('list', sent)
+  // 쉬는 편집기(보낼 것도 ack 기다림도 없음)가 신호를 받는다 — 지금 화면 링크 · 떠나기 확인
+  // 취소 · 상한에 막힌 링크처럼 화면에 머무는 누름도 신호를 쏜다.
+  announceLeaving(win)
+  out.idle = [sent.slice(), editorsBusy(book()), leavingNow(grid.leave), leavingNow(list.leave)]
+  // 머문 뒤 다음 고침은 다시 묶음 타이머를 탄다.
+  now = 100
+  grid.edit('U1')
+  out.batched = sent.slice()
+  advance(now + SEND_MS)
+  out.sentLater = sent.slice()
+  // 묶음이 남은 채 받은 신호 — 곧바로 보내고 ack 를 기다리는 동안 걷히지 않는다.
+  grid.receive(1)
+  grid.edit('U2')
+  announceLeaving(win)
+  out.flushed = [sent.slice(), leavingNow(grid.leave), leavingNow(list.leave)]
+  // 이미 보내고 ack 만 기다리는 중에 받은 신호도 걷히지 않는다 — 다음 고침은 곧바로 보낸다.
+  announceLeaving(win)
+  out.waiting = leavingNow(grid.leave)
+  grid.edit('U3')
+  out.afterLeave = sent.slice()
+  // ack 뒤 스스로 걷는 편집기(`settleLeaving`)와 겹쳐도 그대로다 — 다 걷히면 다시 묶는다.
+  grid.receive(3)
+  out.settled = [leavingNow(grid.leave), editorsBusy(book())]
+  announceLeaving(win)
+  out.idleAgain = leavingNow(grid.leave)
+  grid.leave.drop()
+  list.leave.drop()
+  process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_an_idle_editor_settles_at_the_leaving_signal_and_keeps_batching_after_staying() -> None:
+    """보낼 것도 ack 기다림도 없는 편집기는 신호를 받은 자리에서 곧바로 걷는다 — 화면에 머문
+    누름(지금 화면 링크 · 확인 취소 · 상한 거름) 뒤에도 다음 고침은 묶음 타이머를 탄다. 묶음을
+    보낸 편집기 · ack 를 기다리는 편집기가 받은 신호는 걷지 않고(다음 고침은 곧바로), ack 가 다
+    오면 걷는다."""
+    out = _editor_node(_IDLE_SIGNAL_RUNNER)
+
+    assert out["idle"] == [[], False, False, False]
+    assert out["batched"] == []
+    assert out["sentLater"] == ["grid:1@900"]
+    assert out["flushed"] == [["grid:1@900", "grid:2@900"], True, False]
+    assert out["waiting"] is True
+    assert out["afterLeave"] == ["grid:1@900", "grid:2@900", "grid:3@900"]
+    assert out["settled"] == [False, False]
+    assert out["idleAgain"] is False
 
 
 _SCOPE_RUN_RUNNER = """
