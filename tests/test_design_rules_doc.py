@@ -3440,10 +3440,9 @@ def test_the_shortening_legend_request_is_judged_in_6_39() -> None:
     「(2026-11-20 · 규칙 id)」. UI-TXT-01 근거가 그 요청을, UI-TXT-02 그물이 옮긴 곳 시험을
     부르고, Guide 「단축 계획」 에 두 목록이 선다."""
     document = _text()
-    assert "판 v1.42" in document.split("\n## 1. ")[0]
     assert "6-39 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-39. ") :]
+    record = section[section.index("\n### 6-39. ") : section.index("\n### 6-40. ")]
     assert "「여기도 각각의 요약 값 하단에 회색글씨 설명문구 Guide로 이동」" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     assert lines and lines[0].startswith("- shk-legend · "), lines
@@ -3481,7 +3480,7 @@ def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
     적지 않는다(PRC-02)."""
     document = _text()
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-39. ") :]
+    record = section[section.index("\n### 6-39. ") : section.index("\n### 6-40. ")]
     follow = record[record.index("\n같은 날 후속(갈래 `n1120/guide2x`)") :]
     lines = [line for line in follow.splitlines() if line.startswith("- ")]
     assert lines, follow[:200]
@@ -3504,6 +3503,77 @@ def test_the_follow_up_lines_of_6_39_are_answers_or_lane_rulings() -> None:
     assert "**나 — 걷고 Guide 「분류별 내역 — 9행 시트」 의 「시트 표지」**" in legend
     assert "사용자 답 「두가지는 너가말한대로 진행해」" in legend
     assert "아래 gap-sheet-legend 줄" in record
+
+
+# 2026-11-21 확인 보드(6-40)의 카드 — 카드 id: (카드 번호, 굵은 글). 확인은 「좋음」,
+# 여쭘은 고른 선택지의 문자와 보드 라벨 그대로다. 여쭘은 모두 카드 권장(보드의 첫째 선택지)이다.
+CHECK_1121_CARDS: dict[str, tuple[str, str]] = {
+    "c-shk-kpis": ("확인-1", "좋음"),
+    "c-shk-units": ("확인-2", "좋음"),
+    "c-shk-prog": ("확인-3", "좋음"),
+    "c-gap-legend": ("확인-4", "좋음"),
+    "c-cs-kpis": ("확인-5", "좋음"),
+    "c-ms-kpis": ("확인-6", "좋음"),
+    "c-pc-kpis": ("확인-7", "좋음"),
+    "c-exec": ("확인-8", "좋음"),
+    "c-dyn": ("확인-9", "좋음"),
+    "c-ems-lang": ("확인-10", "좋음"),
+    "c-prog-blank": ("확인-11", "좋음"),
+    "q-chatbot": ("여쭘-1", "(a) 걷고 Guide 「추천 질문」 으로"),
+    "q-invest-sort": ("여쭘-2", "(a) 이 칸만 수로(K 천 · M 백만)"),
+    "q-blank-name": ("여쭘-3", "(a) 그대로 「기준 바뀜」"),
+    "q-blank-head": ("여쭘-4", "(b) 머리 증감 풍선에 몫(대수 · 지금 일수)"),
+    "q-floor-scope": ("여쭘-5", "(a) 지금대로"),
+}
+# 같은 판에서 따로 갈래가 구현한 답과 그 갈래 — 여기 줄은 답과 고친 자리만 가리킨다.
+CHECK_1121_CODE_CHANGES = {
+    "q-chatbot": "chatbot",
+    "q-invest-sort": "invest",
+    "q-blank-head": "bhead",
+}
+
+
+def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
+    """v1.43 — 6-40 은 2026-11-21 확인 보드(확인 열하나 · 여쭘 다섯)의 카드 열여섯이 보드
+    차례대로 한 줄씩이고(줄 머리 카드 id · 카드 번호, 끝 「(2026-11-21 · 규칙 id)」), 확인은 모두
+    「좋음」, 여쭘은 보드 선택지 라벨 그대로 굵게 선다. 코드를 바꾸는 셋만 「같은 판에서 구현」 이고
+    갈래 이름을 밝히며, q-chatbot 이 바꾼 2차 보드 Q2-25 는 7-1 에 한 줄이고 그 줄이 6-40 을
+    가리킨다."""
+    document = _text()
+    assert "판 v1.43" in document.split("\n## 1. ")[0]
+    assert "6-40 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-40. ") :]
+    assert "확인 열하나는 모두 「좋음」" in record and "여쭘 다섯은 모두 카드 권장" in record
+    assert "6-38 · 6-39 줄은 그때 기록 그대로" in record
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(
+            r"^- ([\w-]+) · ((?:확인|여쭘)-\d+) .+ → \*\*([^*]+)\*\*.*\((2026-11-21) · ([^()]+)\)$",
+            line,
+        )
+        assert match, line[:120]
+        card = match.group(1)
+        found.append(card)
+        number, answer = CHECK_1121_CARDS[card]
+        assert match.group(2) == number, card
+        assert match.group(3) == answer, card
+        cited = RULE_TOKEN.findall(match.group(5))
+        assert cited and set(cited) <= known, line[:120]
+        changed = "같은 판에서 구현" in line
+        assert changed == (card in CHECK_1121_CODE_CHANGES), card
+        if changed:
+            assert f"(갈래 `n1121/{CHECK_1121_CODE_CHANGES[card]}`)" in line, card
+    assert tuple(found) == tuple(CHECK_1121_CARDS)
+    turned = [line for line in _chapter(document, 7).splitlines() if "q-chatbot a" in line]
+    assert len(turned) == 1, "7-1 에 q-chatbot 이 바꾼 2차 보드 Q2-25 줄이 하나 있다"
+    assert "2차 보드 Q2-25" in turned[0] and "6-40" in turned[0]
+    history = _chapter(document, 8)
+    v143 = history[history.index("- **v1.43 — 2026-11-21.**") :]
+    for phrase in ("6-40", "q-chatbot (a)", "q-invest-sort (a)", "q-blank-head (b)", "규칙 82"):
+        assert phrase in v143, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
