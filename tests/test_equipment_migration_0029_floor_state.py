@@ -33,6 +33,10 @@ LATER_TABLES = (
     # 설비 0036 — 필요 단축 일정 누적 진척.
     "shortening_progress_log",
     "shortening_progress_goal",
+    # 설비 0037 — 누적 진척 넣기 스냅숏.
+    "shortening_progress_snapshot",
+    "shortening_progress_snapshot_process",
+    "shortening_progress_snapshot_unit",
 )
 
 
@@ -132,6 +136,7 @@ def test_a_database_at_0027_keeps_every_other_row_and_gets_empty_tables(tmp_path
         34,
         35,
         36,
+        37,
     )
 
     after = _table_counts(path)

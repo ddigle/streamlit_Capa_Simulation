@@ -6071,6 +6071,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `save_shortening_progress_goal`)가 쓰기 잠금 안에서 화면이 본 값 · version 과 대조하고 감사 사건(`data_progress_log_save` ·
   `data_progress_log_delete` · `data_progress_goal_save`)을 단다. 캐시는 `equipment_cache.load_shortening_progress_log`(DB stat ·
   쓰기 세대 `shortening_progress` · TTL — 입력 비가동과 같은 꼴).
+- `src/capa_simulation/persistence/shortening_progress_snapshot_store.py` — 누적 진척 넣기 스냅숏(설비 DB `0037` — 머리 · 범위
+  공정 · 호기 세 표)의 읽기 · 갈아 쓰기 · 지우기 SQL. 쓰기는 저장소 `save_shortening_progress_entry(…, snapshot=)` 가 기록 줄을 쓴
+  **같은 트랜잭션**에서 부르고(대조에서 지면 둘 다 안 씀) 머리의 `log_updated_at` 은 그 기록 줄 `updated_at` 을 SQL 로 옮겨 적는다 —
+  읽기는 그 값이 지금 기록 줄과 같은 머리만이다. 갈아 쓰기는 새 `snapshot_id`(머리 제자리 · 새 자식 넣고 옛 자식 지움), 같은 수 ·
+  같은 구성 글이면 쓰지 않고 같은 수 · 다른 구성이면 스냅숏만 갈아 쓴다. 넣기 없이 고친 저장은 고치기 전 기록과 함께 쓴 스냅숏을
+  새 기록 시각으로 옮기고(`carry_progress_snapshot` — 그 차이는 까닭 「손 고침」) 그 밖의 머리는 지운다. 기록 지우기는 같은
+  트랜잭션에서 셋 다 지운다(`delete_progress_snapshot`). 캐시는 `equipment_cache.load_shortening_progress_snapshots`(기록과 같은 쓰기
+  세대 `shortening_progress` — `clear_shortening_progress_cache` 가 함께 비움, 「주차별」 을 편 띠만 읽음). 감사 사건은 기록 저장 그대로
+  (`data_progress_log_save` — 호기 표 · 값 원문은 싣지 않는다).
 - `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
   `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
   견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지

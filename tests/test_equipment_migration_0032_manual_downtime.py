@@ -19,8 +19,15 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 
 MIGRATION_VERSION = 32
 NEW_TABLES = ("manual_downtime_profile", "manual_downtime", "manual_downtime_save")
-# 뒤 번호(설비 0034 — Space 겹친 순서)가 함께 만드는 빈 표.
-LATER_TABLES = ("floor_layout_stack", "shortening_progress_log", "shortening_progress_goal")
+# 뒤 번호(설비 0034 — Space 겹친 순서 · 0036 누적 진척 · 0037 넣기 스냅숏)가 함께 만드는 빈 표.
+LATER_TABLES = (
+    "floor_layout_stack",
+    "shortening_progress_log",
+    "shortening_progress_goal",
+    "shortening_progress_snapshot",
+    "shortening_progress_snapshot_process",
+    "shortening_progress_snapshot_unit",
+)
 
 
 def test_a_new_database_gets_three_empty_tables_with_their_constraints(tmp_path: Path) -> None:
@@ -89,7 +96,7 @@ def test_a_database_at_0031_keeps_every_other_row_and_gets_empty_tables(tmp_path
     before = _table_counts(path)
     assert not set(NEW_TABLES) & set(before)
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 33, 34, 35, 36)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 33, 34, 35, 36, 37)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == dict.fromkeys(NEW_TABLES, 0)

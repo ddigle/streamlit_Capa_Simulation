@@ -67,8 +67,16 @@ from capa_simulation.persistence.shortening_progress_log_store import (
     delete_progress_entry,
     read_progress_log,
     stored_progress_days,
+    stored_progress_stamp,
     write_progress_entry,
     write_progress_goal,
+)
+from capa_simulation.persistence.shortening_progress_snapshot_store import (
+    carry_progress_snapshot,
+    delete_progress_snapshot,
+    read_progress_snapshots,
+    same_progress_snapshot,
+    write_progress_snapshot,
 )
 from capa_simulation.persistence.snapshot_export import CheckpointCopy, checkpoint_copy
 from capa_simulation.services.equipment_contract import (
@@ -220,6 +228,10 @@ from capa_simulation.services.shortening_progress_log import (
     ProgressWeek,
     normalize_progress_days,
     normalize_recorded_by,
+)
+from capa_simulation.services.shortening_progress_reasons import (
+    ProgressSnapshot,
+    ProgressSnapshotDraft,
 )
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
@@ -2652,6 +2664,11 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return read_progress_log(connection)
 
+    def load_shortening_progress_snapshots(self) -> tuple[ProgressSnapshot, ...]:
+        """누적 진척 넣기 스냅숏 전부(0037) — 지금 기록 줄과 같은 쓰기에서 선 것만."""
+        with self._connect() as connection:
+            return read_progress_snapshots(connection)
+
     @audited("data_progress_log_save", work_audit.progress_log_save)
     def save_shortening_progress_entry(
         self,
@@ -2660,6 +2677,7 @@ class DuckDBEquipmentRepository:
         *,
         expected_days: int | None,
         recorded_by: str = "",
+        snapshot: ProgressSnapshotDraft | None = None,
     ) -> bool:
         """누적 진척 기록 한 줄(그 주의 단축 필요일수)을 넣거나 고친다. 썼으면 True.
 
@@ -2668,22 +2686,37 @@ class DuckDBEquipmentRepository:
         `ProgressLogConflictError` 를 올린다(그 사이 남이 그 주를 넣거나 고쳤다). 같은지 보기가
         먼저다 — 지금 값이 적은 값과 같으면(빠른 두 번 누름의 둘째 · 남이 같은 값을 적음) 쓰지 않고
         False 다. 일수가 규칙 밖이면 쓰기 전에 `ProgressLogInvalidError`(`ValueError`)다.
+
+        `snapshot` 은 「이번 주 값 넣기」 가 남긴 그 화면 호기 표다(0037) — 기록 줄과 같은 쓰기
+        트랜잭션에서 갈아 쓴다(대조에서 지면 둘 다 쓰지 않는다). 값이 같아도 그 주에 같은 구성의
+        스냅숏이 없으면 스냅숏만 갈아 쓰고 True 다. 넣기 없이 고친 저장은 고치기 전 기록과 함께 쓴
+        스냅숏을 남겨 새 기록 시각으로 옮긴다(그 차이는 까닭 「손 고침」 이다).
         """
         value = normalize_progress_days(days)
+        name = normalize_recorded_by(recorded_by)
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
             stored = stored_progress_days(connection, week)
             if stored == value:
-                return False
+                if snapshot is None or same_progress_snapshot(connection, week, snapshot.digest):
+                    return False
+                write_progress_snapshot(connection, week, snapshot, captured_by=name)
+                outcome.wrote = True
+                return True
             if stored != expected_days:
                 raise ProgressLogConflictError(_progress_conflict_message(week, stored))
+            previous_stamp = stored_progress_stamp(connection, week)
             write_progress_entry(
                 connection,
                 week,
                 value,
-                recorded_by=normalize_recorded_by(recorded_by),
+                recorded_by=name,
                 exists=stored is not None,
             )
+            if snapshot is not None:
+                write_progress_snapshot(connection, week, snapshot, captured_by=name)
+            else:
+                carry_progress_snapshot(connection, week, previous_stamp)
             outcome.wrote = True
         return True
 
@@ -2695,7 +2728,7 @@ class DuckDBEquipmentRepository:
 
         지금 값이 화면이 본 값(`expected_days`)과 다르면 지우지 않고 `ProgressLogConflictError` 다 —
         본 적 없는 값을 지우지 않는다. 본 값이 없었는데(None) 지금 기록이 있으면(그 사이 남이 넣음)
-        그것도 거절이다.
+        그것도 거절이다. 그 주 넣기 스냅숏(0037)도 같은 트랜잭션에서 지운다.
         """
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
@@ -2705,6 +2738,7 @@ class DuckDBEquipmentRepository:
             if stored != expected_days:
                 raise ProgressLogConflictError(_progress_conflict_message(week, stored))
             delete_progress_entry(connection, week)
+            delete_progress_snapshot(connection, week)
             outcome.wrote = True
         return True
 
