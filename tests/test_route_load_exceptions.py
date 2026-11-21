@@ -21,9 +21,13 @@ from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     home_aggregation_wafer_load,
 )
-from capa_simulation.services.load_calculator import calculate_chip_and_wafer_loads
+from capa_simulation.services.load_calculator import (
+    calculate_chip_and_wafer_loads,
+    calculate_wafer_load,
+)
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
+    LOAD_KEYS,
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
@@ -37,6 +41,7 @@ from capa_simulation.services.route_load_exceptions import (
     ROUTE_LOAD_BASIS_MISSING_REASON,
     ROUTE_LOAD_FORMULAS,
     RouteLoadDeclaration,
+    build_route_load_bases,
     route_load_basis,
 )
 from capa_simulation.services.weighted_unit_capacity import effective_process_capacity_long
@@ -48,8 +53,8 @@ _STEPS = ("S10", "S20")
 _NO_PLAN_MONTH = 202603
 _ROUTE_MONTHS = (*demo.MONTHS, _NO_PLAN_MONTH)
 _CAPACITY = 10.0
-# (제품정보, WF 구분) — 표기는 `dummy_series_tables` 그대로(DEMO-HBM 의 Top_Dummy 는 대문자
-# `TOP_DUMMY`).
+# (제품정보, WF 구분) — 표기는 `dummy_series_tables` 그대로다. DEMO-HBM 의 Top_Dummy 는
+# 대문자 `TOP_DUMMY` 다.
 _ROUTES = (
     (demo.HBM, "Buffer"),
     (demo.HBM, "Core"),
@@ -62,9 +67,9 @@ _ROUTES = (
 _DECLARED: RouteLoadDeclaration = {_EXC: BUFFER_X_CORE_CHIP}
 _ROUTE_KEYS = ["공정", "생산계획년월", "STEP_SEQ", "제품정보", "WF 구분"]
 
-# 손으로 푼 DEMO-HBM 부하량. 생산수량 202601 100 · 202602 120. Buffer 는 구분_Chip 1 · Net Die 400 ·
-# EDS 0.9, Core 는 구분_Chip 12 · Net Die 800 · EDS 0.8, BE 는 모두
-# 0.95(`dummy_series_tables._ROUTE_ROWS`).
+# 손으로 푼 DEMO-HBM 부하량(`dummy_series_tables._ROUTE_ROWS`). 생산수량 202601 100 · 202602 120.
+# Buffer 는 구분_Chip 1 · Net Die 400 · EDS 0.9, Core 는 구분_Chip 12 · Net Die 800 · EDS 0.8,
+# BE 는 모두 0.95 다.
 _HBM_QUANTITY = {202601: 100.0, 202602: 120.0}
 
 
@@ -261,6 +266,89 @@ def test_a_missing_buffer_load_with_a_general_core_load_is_a_counted_exclusion()
     counts_on, counts_off = required_exclusion_counts(result), required_exclusion_counts(off)
     assert counts_on.excluded_routes == counts_off.excluded_routes + len(demo.MONTHS) * len(_STEPS)
     assert counts_on._replace(excluded_routes=0) == counts_off._replace(excluded_routes=0)
+
+
+def test_a_top_dummy_route_without_unit_capacity_is_not_counted_as_lost_demand() -> None:
+    """예외는 대당 Capa 를 잇기 전에 걸린다 — 부하 0 이 된 Top_Dummy 경로는 대당 Capa 가 없어도
+    소요대수 밖 수요로 세지 않는다(끔에서는 제 부하가 있어 센다)."""
+    reqb, capacity = _route_tables()
+    lost = (
+        capacity["공정"].eq(_EXC)
+        & capacity["생산계획년월"].eq(202601)
+        & capacity["STEP_SEQ"].eq("S10")
+        & capacity["WF 구분"].eq("TOP_DUMMY")
+    )
+    capacity = capacity.loc[~lost]
+    tables = (reqb, demo.plan(), demo.yields(), demo.chip_qty(), capacity)
+
+    off = calculate_required_equipment(*tables)
+    on = calculate_required_equipment(*tables, route_exceptions=_DECLARED)
+
+    excluded = on.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR]
+    assert isinstance(excluded, pd.DataFrame)
+    row = excluded.loc[excluded["공정"].eq(_EXC) & excluded["WF 구분"].eq("TOP_DUMMY")]
+    assert row["제외사유"].tolist() == ["대당 Capa 없음"]
+    assert row["부하량"].tolist() == [0.0]
+    counts_on, counts_off = required_exclusion_counts(on), required_exclusion_counts(off)
+    assert counts_off.excluded_routes == 1
+    assert counts_on.excluded_routes == 0
+
+
+# 경로가 없는 제품 — DEMO-HBM 과 같은 기준정보를 가진 합성 제품이다(이 시험만 쓴다).
+_UNROUTED_HBM = "DEMO-HBM2"
+
+
+def _with_buffer_spelled_twice(product: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """`product` 의 Buffer 를 `BUFFER` 로 한 벌 더 적은 계획 · `RQ_YLD` · `RQ_CHIP_QTY`.
+
+    같은 부하 키에 Buffer Wafer 부하가 둘 생긴다(옛 리비전이 경로를 두 표기로 저장한 일이 있다).
+    `_UNROUTED_HBM` 이면 DEMO-HBM 의 계획 · 기준정보를 그 이름으로 한 벌 더한 뒤 겹친다.
+    """
+    plan, yields, chip = demo.plan(), demo.yields(), demo.chip_qty()
+    if product == _UNROUTED_HBM:
+        plan = pd.concat(
+            [plan, plan.loc[plan["제품정보"].eq(demo.HBM)].assign(제품정보=product)],
+            ignore_index=True,
+        )
+        yields = pd.concat(
+            [yields, yields.loc[yields["제품정보"].eq(demo.HBM)].assign(제품정보=product)],
+            ignore_index=True,
+        )
+        chip = pd.concat(
+            [chip, chip.loc[chip["제품정보"].eq(demo.HBM)].assign(제품정보=product)],
+            ignore_index=True,
+        )
+    buffer_yield = yields.loc[yields["제품정보"].eq(product) & yields["WF 구분"].eq("Buffer")]
+    buffer_chip = chip.loc[chip["제품정보"].eq(product) & chip["WF 구분"].eq("Buffer")]
+    return (
+        plan,
+        pd.concat([yields, buffer_yield.assign(**{"WF 구분": "BUFFER"})], ignore_index=True),
+        pd.concat([chip, buffer_chip.assign(**{"WF 구분": "BUFFER"})], ignore_index=True),
+    )
+
+
+def test_two_buffer_bases_for_one_key_stop_only_where_a_declared_core_route_uses_it() -> None:
+    """한 부하 키에 바탕이 둘이면 어느 값을 곱할지 모른다 — 선언 공정의 Core 줄이 그 키를 쓸 때만
+    멈추고(끔에서는 그대로 선다), 경로가 없는 다른 제품의 겹침으로는 멈추지 않는다."""
+    reqb, capacity = _route_tables()
+    plan, yields, chip = _with_buffer_spelled_twice(demo.HBM)
+    calculate_required_equipment(reqb, plan, yields, chip, capacity)
+
+    with pytest.raises(ValueError, match="부하 예외 바탕"):
+        calculate_required_equipment(reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED)
+
+    plan, yields, chip = _with_buffer_spelled_twice(_UNROUTED_HBM)
+    wafer = calculate_wafer_load(plan, yields, chip)
+    loads = wafer.rename(columns={"물량": "부하량"}).assign(소요기준="WF")
+    bases = build_route_load_bases(loads, chip, LOAD_KEYS)
+    unrouted_bases = bases.loc[bases["제품정보"].eq(_UNROUTED_HBM)]
+    assert unrouted_bases.duplicated(subset=[*bases.columns[:-1]]).any()
+    result = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED
+    )
+    assert _values(result, _EXC, "Core", month=202601) == pytest.approx(
+        [_core_exception(202601)] * len(_STEPS)
+    )
 
 
 def _assert_same_result(left: pd.DataFrame, right: pd.DataFrame) -> None:
