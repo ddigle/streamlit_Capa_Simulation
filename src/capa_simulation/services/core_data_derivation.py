@@ -30,6 +30,7 @@ ACTIVE_CORE_COLUMNS = (
     "Stack",
     "Customer",
     "Pack Code",
+    "CUSTOM",
     "CS",
     "D_EQ",
     "WF 구분",
@@ -91,6 +92,11 @@ ACTIVE_CORE_COLUMNS = (
 # CS 면 부하가 `RQ_REQB`(키에 CS 가 있다)에 붙지 못해 「경로 없는 계획」으로 빠진다. `RQ_RUN_RATE`·
 # `RQ_VITAL`·UPEH·측정률 키에는 CS 가 없어, 그 코드의 기준값이 고른 분류의 값과 다르면 충돌 보고서에
 # 남고 원천 차례에 따라 한쪽 값으로 합쳐진다.
+# 원천 `CUSTOM` 이 빈 행(NULL · 빈 글자 · 공백뿐)의 표지. 붙여넣기는 빈 칸만 NA 로 읽고
+# (`clipboard_table`) pandas 기본 NA 목록에도 없는 글자라 왕복에서 빈 값으로 바뀌지 않는다. 코드와
+# 시험은 이 글자를 따로 적지 않고 이 상수만 본다.
+CUSTOM_BLANK: Final = "-"
+
 CS_PRODUCTION_CLASSES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "MP": "양산",
@@ -365,6 +371,7 @@ def derive_q_core_data(
     core["양산구분"] = core["CS"].map(dict(CS_PRODUCTION_CLASSES)).astype("string")
     core["가용대수"] = core["설비보유"] - core["설비대여평가"]
     core["WF 구분"] = unify_case_variants(core["WF 구분"])
+    core["CUSTOM"] = normalize_custom_values(core["CUSTOM"])
     # EDP-TSV 의 `Top` 을 `Top_e` 로 가른다. 원천에는 `Top_e` 가 없으므로 입력은 그대로
     # 받고 여기서 한 번만 바꾼다 — 아래로 내려가는 16개 RQ 표와 화면이 전부 같은 값을 본다.
     core = apply_edp_wf_division(core)
@@ -423,3 +430,13 @@ def unify_case_variants(values: pd.Series) -> pd.Series:
         ["folded", "count", "text"], ascending=[True, False, True]
     ).drop_duplicates("folded")
     return folded.map(dict(zip(chosen["folded"], chosen["text"], strict=True))).astype("string")
+
+
+def normalize_custom_values(values: pd.Series) -> pd.Series:
+    """원천 `CUSTOM` 을 업무 키 값으로 맞춘다 — 앞뒤 공백을 떼고 빈 값은 `CUSTOM_BLANK` 로 둔다.
+
+    대소문자만 다른 표기는 `unify_case_variants` 로 한 표기에 모은다. 빈 값을 NA 로 두면 조인 ·
+    접기에서 키가 비어 행이 빠지거나 한 줄로 접히므로, 「부품 구분 없음」 도 글자 하나로 세운다.
+    """
+    text = unify_case_variants(values)
+    return text.where(text.notna() & text.ne(""), CUSTOM_BLANK).astype("string")
