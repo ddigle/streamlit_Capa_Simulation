@@ -165,20 +165,22 @@ def validated_distinct(
     non_keys = [column for column in frame.columns if column not in keys]
     rank = _aligned(row_rank if row_rank is not None else source_row_rank(frame), frame, table_name)
     classes = _aligned_classes(source_classes, frame, table_name)
-    ordered = _informative_first(
+    order = _informative_first(
         frame,
         list(keys),
         non_keys,
         rank.to_numpy(dtype="int64"),
         zero_before_blank=table_name in ZERO_BEFORE_BLANK_TABLES,
     )
+    ordered = frame.take(order)
+    siblings = ordered.duplicated(subset=list(keys), keep=False).to_numpy()
     _collect_conflicting_duplicates(
-        ordered.loc[ordered.duplicated(subset=list(keys), keep=False)],
+        ordered.loc[siblings],
         table_name,
         list(keys),
         non_keys,
         conflict_records,
-        classes,
+        classes.take(order).loc[siblings, [c for c in classes.columns if c not in keys]],
     )
     return ordered.drop_duplicates(subset=list(keys), keep="first").reset_index(drop=True)
 
@@ -193,6 +195,7 @@ def _aligned(rank: pd.Series, frame: pd.DataFrame, table_name: str) -> pd.Series
 def _aligned_classes(
     source_classes: pd.DataFrame | None, frame: pd.DataFrame, table_name: str
 ) -> pd.DataFrame:
+    """구분 칸을 프레임 행 차례(자리)에 맞춘다 — 순위와 같이 원천 index 가 어긋나면 멈춘다."""
     if source_classes is None:
         return frame.loc[:, [c for c in SOURCE_ROW_CLASS_COLUMNS if c in frame.columns]]
     if not frame.index.isin(source_classes.index).all():
@@ -207,8 +210,8 @@ def _informative_first(
     row_rank: npt.NDArray[np.int64],
     *,
     zero_before_blank: bool = False,
-) -> pd.DataFrame:
-    """업무 키가 같은 형제 행 가운데 남길 행을 그룹 안에서 앞으로 보낸다.
+) -> npt.NDArray[np.intp]:
+    """업무 키가 같은 형제 행 가운데 남길 행을 그룹 안에서 앞으로 보내는 행 자리(`take` 용).
 
     업무 키는 Core Data 행을 유일하게 가르지 못한다 — 예를 들어 `RQ_UPEH` 9키에는
     `Capa Code`·`Customer`·`CS`·`Pack Code` 가 없어 한 키에 형제 행이 여럿 온다. 원천이
@@ -230,7 +233,7 @@ def _informative_first(
     `source_row_no` 와 `reference_hash` 가 흔들리지 않는다.
     """
     if not value_columns:
-        return frame
+        return np.arange(len(frame))
     group_number = frame.groupby(keys, dropna=False, sort=False).ngroup().to_numpy()
     usable, zeros = _value_flags(frame, value_columns)
     position = np.arange(len(frame))
@@ -243,17 +246,16 @@ def _informative_first(
         tie_breaks.append(np.where(agree, -np.sum(zeros, axis=0, dtype="int64"), 0))
     # `lexsort` 는 마지막 키가 1순위다. 그룹 → 값이 많은 행 → (0 이 빈 값보다 먼저) → 원천 행 순위
     # → 원천 행 위치.
-    return frame.take(
-        np.lexsort(
-            (
-                position,
-                row_rank,
-                *tie_breaks,
-                -np.sum(usable, axis=0, dtype="int64"),
-                group_number,
-            )
+    order: npt.NDArray[np.intp] = np.lexsort(
+        (
+            position,
+            row_rank,
+            *tie_breaks,
+            -np.sum(usable, axis=0, dtype="int64"),
+            group_number,
         )
     )
+    return order
 
 
 def _real_values_agree(
@@ -318,8 +320,11 @@ def _collect_conflicting_duplicates(
     conflicting_groups = np.flatnonzero(distinct_counts.gt(1).any(axis=1).to_numpy())
     if conflicting_groups.size == 0:
         return
-    conflicting_rows = grouped.ngroup().isin(conflicting_groups)
-    for _, group in frame.loc[conflicting_rows].groupby(keys, dropna=False, sort=False):
+    group_ids = grouped.ngroup().to_numpy()
+    causes = _conflict_causes(frame, group_ids, value_columns, source_classes)
+    conflicting_rows = np.isin(group_ids, conflicting_groups)
+    loop = frame.loc[conflicting_rows].groupby(keys, dropna=False, sort=False)
+    for group_id, (_, group) in zip(conflicting_groups, loop, strict=True):
         conflicting_columns = [
             column for column in value_columns if group[column].nunique(dropna=False) > 1
         ]
@@ -335,12 +340,7 @@ def _collect_conflicting_duplicates(
         record.update(
             {
                 "충돌컬럼": " | ".join(conflicting_columns),
-                CONFLICT_CAUSE_COLUMN: conflict_cause(
-                    group.loc[:, conflicting_columns],
-                    source_classes.loc[
-                        group.index, [c for c in source_classes.columns if c not in keys]
-                    ],
-                ),
+                CONFLICT_CAUSE_COLUMN: causes.get(int(group_id), OTHER_CONFLICT_CAUSE),
                 "후보값": _report_json(candidate_rows.to_dict("records")),
                 "선택값": _report_json(
                     {column: selected[column] for column in conflicting_columns}
@@ -355,21 +355,31 @@ def _collect_conflicting_duplicates(
         conflict_records.append(record)
 
 
-def conflict_cause(values: pd.DataFrame, classes: pd.DataFrame) -> str:
-    """값이 갈린 한 그룹의 원인 — 업무 키 밖 구분 칸 이름(여럿이면 ` | `) 또는 「그 밖」.
+def _conflict_causes(
+    frame: pd.DataFrame,
+    group_ids: npt.NDArray[np.integer[Any]],
+    value_columns: list[str],
+    classes: pd.DataFrame,
+) -> dict[int, str]:
+    """그룹 번호 → 원인(업무 키 밖 구분 칸 이름, 여럿이면 ` | `). 없는 그룹은 「그 밖」 이다.
 
-    구분 칸 c 가 원인인 조건: c 값이 둘 이상이고, c 의 값마다 그 안에서는 갈린 값 칸이 하나로 맞는다
-    (값이 c 값끼리만 다르다). 같은 c 안에서 값이 갈리면(재적재 등) c 탓이 아니다.
+    구분 칸 c 가 원인인 조건: 그룹 안에서 c 값이 둘 이상이고, c 의 값마다 그 안에서는 값 칸이
+    모두 하나로 맞는다(값이 c 값끼리만 다르다). 같은 c 안에서 값이 갈리면(재적재 등) c 탓이
+    아니다. 갈리지 않은 값 칸은 그룹 전체에서 하나라 c 값 안에서도 하나다 — 그래서 값 칸 전부를
+    한 번에 본다. 그룹마다 돌지 않고 구분 칸마다 groupby 한 번이다(`classes` 는 `frame` 과 같은
+    자리 차례).
     """
-    causes: list[str] = []
+    found: dict[int, list[str]] = {}
+    groups = pd.Series(group_ids)
+    values = frame.loc[:, value_columns].reset_index(drop=True)
     for column in classes.columns:
-        by_class = classes[column].astype("string").str.strip().fillna("")
-        if by_class.nunique() < 2:
-            continue
-        agree_inside = values.groupby(by_class.to_numpy(), sort=False).nunique(dropna=False).le(1)
-        if bool(agree_inside.to_numpy().all()):
-            causes.append(str(column))
-    return " | ".join(causes) if causes else OTHER_CONFLICT_CAUSE
+        by_class = classes[column].astype("string").str.strip().fillna("").reset_index(drop=True)
+        varied = by_class.groupby(groups).nunique().ge(2)
+        agree = values.groupby([groups, by_class]).nunique(dropna=False).le(1).all(axis=1)
+        caused = varied & agree.groupby(level=0).all().reindex(varied.index, fill_value=False)
+        for group_id in caused.index[caused.to_numpy()]:
+            found.setdefault(int(group_id), []).append(str(column))
+    return {group_id: " | ".join(names) for group_id, names in found.items()}
 
 
 def conflict_report(
