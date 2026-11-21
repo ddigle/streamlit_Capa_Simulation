@@ -2,7 +2,7 @@
 
 """PKG and wafer monthly volume calculations."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 import pandas as pd
@@ -22,6 +22,7 @@ from capa_simulation.services.frame_contracts import (
 )
 from capa_simulation.services.product_type import (
     DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
+    DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
     PRODUCT_TYPE_COLUMN,
     product_type_of,
@@ -709,8 +710,10 @@ def load_exclusions(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(list(excluded), columns=LOAD_EXCLUSION_COLUMNS)
 
 
-def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
-    """Dummy 산식을 받을 행을 (제품타입, WF 구분) 으로 고른다.
+def wf_division_mask(
+    frame: pd.DataFrame, divisions_by_type: Mapping[str, Sequence[str]]
+) -> pd.Series:
+    """`divisions_by_type` 가 제품타입마다 선언한 `WF 구분` 행을 (제품타입, WF 구분) 으로 고른다.
 
     `WF 구분` 만 보고 고르면 두 제품군이 공유하는 이름 때문에 한쪽 규칙이 다른 쪽에
     적용된다. 지금은 Dummy 가 HBM 에만 있어 결과가 같지만, 규칙을 이름 하나에 걸어 두면
@@ -721,29 +724,48 @@ def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
     `WF 구분` 집합이 겹치지 않아 이름이 곧 제품군을 가리키므로 답이 그 제품군 규칙과 같다.
     빈 행을 어느 제품군에도 맞지 않는다고 일반 산식으로 떨어뜨리면 Dummy 부하가
     1/(1 - EDS_수율) 배 안팎으로 아무 흔적 없이 커진다.
+
+    목록은 둘이다 — Dummy 산식(`DUMMY_DIVISIONS_BY_PRODUCT_TYPE`)과 행을 빼는 Dummy 계열
+    (`DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`). 게이트는 한 함수라 두 목록이 같은 규칙으로 판별된다.
     """
-    division = match_key(calculation["WF 구분"])
-    declared = {
-        scalar_match_key(name)
-        for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values()
-        for name in names
-    }
+    division = match_key(frame["WF 구분"])
+    declared = {scalar_match_key(name) for names in divisions_by_type.values() for name in names}
     by_name = division.isin(declared).fillna(False)
-    if PRODUCT_TYPE_COLUMN not in calculation.columns:
+    if PRODUCT_TYPE_COLUMN not in frame.columns:
         return by_name
 
     # 제품타입도 대소문자를 가리지 않는다. `WF 구분` 만 흡수하고 제품타입은 글자 그대로
     # 맞추면, 원천 표기가 한 글자만 달라도 Dummy 규칙이 통째로 빗나간다.
-    product_type = match_key(product_type_of(calculation))
+    product_type = match_key(product_type_of(frame))
     mask = product_type.eq("") & by_name
-    for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
-        if not dummy_divisions:
+    for declared_type, divisions in divisions_by_type.items():
+        if not divisions:
             continue
-        names = {scalar_match_key(name) for name in dummy_divisions}
+        names = {scalar_match_key(name) for name in divisions}
         mask |= product_type.eq(scalar_match_key(declared_type)) & division.isin(names).fillna(
             False
         )
     return mask
+
+
+def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
+    """Dummy 산식을 받을 행. `Top_Dummy` 는 고르지 않는다(일반 산식)."""
+    return wf_division_mask(calculation, DUMMY_DIVISIONS_BY_PRODUCT_TYPE)
+
+
+def exclude_dummy_series(load: pd.DataFrame) -> pd.DataFrame:
+    """상세 부하량(Chip · Wafer)에서 Dummy 계열(`Dummy` · `Top_Dummy`) 행을 뺀다 — 원천 집계 기준.
+
+    원천 집계는 Wafer 계획에 Dummy 계열을 넣지 않는다. HOME `Wafer 계획` 과 환산 탭 「HOME 집계
+    기준」만 이 함수를 지난다. **산식은 바꾸지 않는다** — 남은 행의 `물량` 은 그대로이고
+    (`Top_Dummy` 가 일반 산식이라는 것도 그대로), 소요대수 · 확보율이 읽는 부하량
+    (`calculate_wafer_load` · `_prepare_load_base`)에는 걸지 않는다.
+
+    제외 목록(attrs)은 원래 프레임 것을 잇는다 — 기준정보가 없어 빠진 계획 행 수는 두 기준에서
+    같다. 받은 프레임은 고치지 않는다.
+    """
+    keep = ~wf_division_mask(load, DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE)
+    return carry_load_exclusions(load, load.loc[keep])
 
 
 def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:

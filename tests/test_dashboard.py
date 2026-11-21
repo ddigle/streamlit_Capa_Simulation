@@ -1,8 +1,10 @@
 # Purpose: HOME 생산계획·Wafer 부하량·Bottleneck 집계를 검증한다.
 
+import dummy_series_tables as demo
 import pandas as pd
 import pytest
 
+from capa_simulation.services import simulation_cache
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     align_detail_with_comparison,
@@ -15,7 +17,11 @@ from capa_simulation.services.dashboard import (
     build_production_dashboard,
     build_production_lob_summary,
 )
-from capa_simulation.services.load_calculator import calculate_wafer_load
+from capa_simulation.services.load_calculator import (
+    calculate_wafer_load,
+    exclude_dummy_series,
+    filter_edp_plan,
+)
 
 
 def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
@@ -476,3 +482,78 @@ def test_detail_comparison_keeps_rows_that_only_the_comparison_has() -> None:
     # 현재 계획에 없는 조합은 결측이고 비교값만 있다.
     assert pd.isna(aligned_current["26.08"].tolist()[1])
     assert aligned_comparison["26.08"].tolist() == pytest.approx([80.0, 40.0])
+
+
+def _monthly_sheets(frame: pd.DataFrame) -> list[float]:
+    return [float(value) for value in frame.sort_values("생산계획년월")["Wafer 부하량"]]
+
+
+def _demo_wafer_load(*, include_edp: bool) -> pd.DataFrame:
+    return calculate_wafer_load(
+        filter_edp_plan(demo.plan(), include_edp), demo.yields(), demo.chip_qty()
+    )
+
+
+def _sum_by_month(load: pd.DataFrame) -> list[float]:
+    return [float(value) for value in load.groupby("생산계획년월")["물량"].sum().sort_index()]
+
+
+def test_home_wafer_without_edp_drops_the_dummy_series_and_also_returns_the_total() -> None:
+    """EDP 를 뺀 HOME 의 월 Wafer · 제품별 수량은 Dummy 계열을 뺀 합이고, 마지막 원소는 거르지
+    않은 합(산출 기준 총량)이다. 제품별 합은 월 합과 한 치도 다르지 않다."""
+    simulation_cache.get_home_lob_without_edp.clear()
+    _density, _detail, monthly_wafer, product_volume, total = (
+        simulation_cache.get_home_lob_without_edp(
+            cache_key=demo.home_key("lob"),
+            _tables=demo.tables(),
+            _display_order=demo.display_order(),
+        )
+    )
+    load = _demo_wafer_load(include_edp=False)
+    assert _monthly_sheets(monthly_wafer) == pytest.approx(
+        _sum_by_month(exclude_dummy_series(load))
+    )
+    assert _monthly_sheets(total) == pytest.approx(_sum_by_month(load))
+    assert all(
+        filtered < unfiltered
+        for filtered, unfiltered in zip(
+            _monthly_sheets(monthly_wafer), _monthly_sheets(total), strict=True
+        )
+    )
+    by_month = product_volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
+    assert [float(value) for value in by_month] == pytest.approx(_monthly_sheets(monthly_wafer))
+    # Dummy 계열만 있는 제품은 HOME 집계에서 Wafer 가 0 이다.
+    only_dummy = product_volume.loc[product_volume["제품정보"].eq(demo.DUMMY_ONLY)]
+    assert only_dummy["Wafer 부하량"].eq(0.0).all()
+    simulation_cache.get_home_lob_without_edp.clear()
+
+
+def test_home_simulation_returns_the_home_wafer_and_the_unfiltered_total_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """셋째 · 여섯째 원소(EDP 포함)는 HOME 집계 기준이고, 일곱째는 거르지 않은 월 합이다."""
+    monkeypatch.setattr(
+        simulation_cache,
+        "get_scenario_capacity_and_demand",
+        lambda *_args, **_kwargs: (pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(
+        simulation_cache, "get_securement_rate", lambda *_args, **_kwargs: pd.DataFrame()
+    )
+    simulation_cache.get_home_simulation.clear()
+    result = simulation_cache.get_home_simulation(
+        cache_key=demo.home_key("simulation"),
+        _tables=demo.tables(),
+        _display_order=demo.display_order(),
+        _reference_tables=demo.tables(),
+    )
+    assert len(result) == 7
+    monthly_wafer, product_volume, total = result[2], result[5], result[6]
+    load = _demo_wafer_load(include_edp=True)
+    assert _monthly_sheets(monthly_wafer) == pytest.approx(
+        _sum_by_month(exclude_dummy_series(load))
+    )
+    assert _monthly_sheets(total) == pytest.approx(_sum_by_month(load))
+    by_month = product_volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
+    assert [float(value) for value in by_month] == pytest.approx(_monthly_sheets(monthly_wafer))
+    simulation_cache.get_home_simulation.clear()

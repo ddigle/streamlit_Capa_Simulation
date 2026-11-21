@@ -10,7 +10,10 @@ from capa_simulation.services.display_order_scopes import (
     TAB_PKG_PLAN,
 )
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.load_calculator import calculate_density_load
+from capa_simulation.services.load_calculator import (
+    calculate_density_load,
+    exclude_dummy_series,
+)
 from capa_simulation.services.month_columns import month_label, year_total_label
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
@@ -164,6 +167,17 @@ def align_detail_with_comparison(
     aligned_current = keys.merge(current, on=dimensions, how="left", validate="one_to_one")
     aligned_comparison = keys.merge(comparison, on=dimensions, how="left", validate="one_to_one")
     return aligned_current, aligned_comparison
+
+
+def home_aggregation_wafer_load(wafer_load: pd.DataFrame) -> pd.DataFrame:
+    """HOME `Wafer 계획` 이 묶는 상세 Wafer 부하량 — Dummy 계열을 뺀 원천 집계 기준.
+
+    HOME 의 Wafer 정의는 이 함수 하나다. 월 합(`build_monthly_wafer_load_from_load`)과 제품별 비중의
+    분모(`product_share.build_product_volume`)가 같은 거른 프레임을 받아 둘의 합이 한 치도 다르지
+    않고, 비교 GAP · 선행 B/O · 입장 화면 Summary 도 이 거른 값 위에서 잰다. 소요대수 · 확보율은
+    거르지 않은 부하량 그대로다(`load_calculator.exclude_dummy_series`).
+    """
+    return exclude_dummy_series(wafer_load)
 
 
 def build_monthly_wafer_load_from_load(wafer: pd.DataFrame) -> pd.DataFrame:

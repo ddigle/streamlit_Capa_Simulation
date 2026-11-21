@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
+import dummy_series_tables as demo
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
@@ -26,7 +27,12 @@ from capa_simulation.components.home_lob_figures import (
     _legend_name_budget_units,
 )
 from capa_simulation.design import tokens
+from capa_simulation.services.dashboard import (
+    build_monthly_wafer_load_from_load,
+    home_aggregation_wafer_load,
+)
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
+from capa_simulation.services.load_calculator import calculate_wafer_load
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_SLOT_COUNT,
@@ -628,3 +634,18 @@ def test_slice_label_inks_read_on_every_product_color(mode: str) -> None:
     ]
     for color, ink in pairs:
         assert contrast(color, ink) >= 4.5, (mode, color, ink)
+
+
+def test_the_wafer_denominator_is_the_home_wafer_plan_without_dummy_series() -> None:
+    """Wafer 도넛의 분모는 `Wafer 계획` 행과 같은 HOME 집계 기준(Dummy 계열 뺌)이다 — 같은 거른
+    프레임에서 묶어 제품별 합이 그 달 월 합과 같다."""
+    load = home_aggregation_wafer_load(
+        calculate_wafer_load(demo.plan(), demo.yields(), demo.chip_qty())
+    )
+    volume = build_product_volume(demo.plan(), load)
+    monthly = build_monthly_wafer_load_from_load(load)
+    by_month = volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
+    assert list(by_month) == pytest.approx(
+        list(monthly.sort_values("생산계획년월")["Wafer 부하량"])
+    )
+    assert volume.loc[volume["제품정보"].eq(demo.DUMMY_ONLY), "Wafer 부하량"].eq(0.0).all()

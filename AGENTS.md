@@ -2779,6 +2779,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 일부 열 붙여넣기(`read_equipment_update`)는 붙여넣은 열만 바꾸고(빈 칸 = 지움) 겹친 머리글을 막는다. 모르는
     머리글은 39열이 다 있거나 옛 36열·옛 38열(`시나리오 메모` 만 없음) 꼴일 때만 알림과 함께 넘기고 그 밖에는 막는다.
 - `src/capa_simulation/services/dashboard.py` — HOME 월별 집계와 B/N 월별 순위(Top 1·Top 5·상세)·Wafer Capa 를 낸다.
+  - HOME 의 Wafer 정의는 `home_aggregation_wafer_load` 하나다 — Dummy 계열(`product_type.DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`)을
+    뺀 원천 집계 기준이고, 월 합과 제품별 비중 분모가 같은 거른 프레임에서 묶인다(6장 「HOME 얹기」).
   - 월 축은 양산 Density 가 있는 달이다 — 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5·연간 Total 에서
     빠진다. 그대로 둔다(2026-10-22 결정 A — 사내 런북 8-9 가 잰 그런 달이 리뷰마다 0 이라 닫고 그 블록은 걷었다). 넓힐 때는 이 파일의 조인 넷과
     `home.py` 축·`home_lob_figures` 위치 조회를 함께 바꾼다 — 조인만 바꾸면 B/N 그림이 `KeyError` 로 멈춘다.
@@ -4296,6 +4298,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다 — 두 층에서 바꾸면 조인 한쪽만 바뀐다.
     입력·DB 에는 `Top_e` 가 없어 표시순서 규칙은 `display_order._with_edp_top_rule` 이 파생한다.
   - 원천 표기는 대문자 `TOP` 이다 — 값 대조는 `frame_contracts.match_key` 로 하고 저장·화면에는 원천 표기를 쓴다.
+  - Dummy 목록은 둘이다 — 산식을 받는 `DUMMY_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy`)과 행을 빼는 Dummy 계열
+    `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy` · `Top_Dummy`, 이름 `TOP_DUMMY_DIVISION`). 두 목록은 따로 고친다
+    (6장 「부하량」).
 - `src/capa_simulation/services/performance_actuals.py` — 효율·UPEH·수율 세 실적 화면이 공유하는 Gap·우선순위
   계산과 합성 데모다(규칙은 6장). Gap 의 뜻은 `MetricSpec` 이 갖고 데모는 `dynamic_capacity.DEMO_PROFILES` 다.
 - `src/capa_simulation/services/legacy_comparison.py` — 원천에 보존된 기존 결과와 신규 계산을 같은 단위로
@@ -6856,6 +6861,14 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 비교는 기존 리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지
 않는다. 정확한 현재 구현은 두 모듈과 `docs/TODO.md`를 기준으로 한다.
 
+**Dummy 계열 목록은 산식 게이트와 별개다**(2026-11-22 사용자 결정). `product_type.py` 의
+`DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy` · `Top_Dummy`, EDP-TSV 없음)은 행을 **뺄 때만** 읽고, 판별은
+산식과 같은 `(제품타입, WF 구분)` 게이트(`load_calculator.wf_division_mask`)다. `Top_Dummy` 는 산식 목록에 없어
+일반식 그대로이고, 산식 목록 · `HBM_WF_DIVISIONS` 는 바꾸지 않는다. 행을 빼는 자리는 HOME 집계
+(`dashboard.home_aggregation_wafer_load` → `load_calculator.exclude_dummy_series`) 하나다 — 원천 집계가 Wafer
+계획에 Dummy 계열을 넣지 않기 때문이다. 소요대수 · 확보율이 읽는 부하량(`calculate_wafer_load` ·
+`_prepare_load_base`)에는 걸지 않는다.
+
 원천에서 CS 가 빈 행은 양산구분(양산·ER)을 정할 수 없어 등록 때 RQ 파생에서 빠진다(7장 — 2026-10-27 사용자 결정).
 그 계획 행의 생산수량은 `RQ_PKG_PLAN` 에 없으므로 부하량·소요대수·확보율 어디에도 들지 않고, 경로 행이면 그 경로가
 `RQ_REQB` 에 없다. **경로 행만 빼도 남은 계획의 소요대수가 줄 수 있다** — 같은 달·제품정보·Stack·Capa Code·Customer 의
@@ -7572,6 +7585,13 @@ BDQ(Core_Data)에 공정 이름조차 없는 공정을 판 한 벌로 받아 등
 
 HOME 은 원데이터 계산 위에 화면 조건을 얹는다. 순서는 원데이터 확보율 → 확보율 보정 → 선행 B/O 이고, 공정 Capa 상세의
 HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
+
+- **HOME `Wafer 계획` 은 Dummy 계열을 뺀 합(원천 집계 기준)이다**(2026-11-22 사용자 결정 — 6장 「부하량」). 같은
+  거른 값을 공식 요약 · 입장 화면 Summary · 선행 B/O · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모가 쓴다.
+  HOME 계산 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_comparison_plan`)가 거른 프레임을 내고,
+  `get_home_simulation` 의 마지막 원소는 거르지 않은 월 합이다. 그대로 두는 자리 — 소요대수 · 확보율 · B/N 순위,
+  필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지는 답을 받기 전이다, `docs/TODO.md`), 같은 HOME
+  표의 `Wafer Capa` · 연간 Total · B/N 의 Wafer Capa(거르지 않은 합 — `get_home_lob_without_edp` 의 마지막 원소).
 
 - **`EDP 포함` 끄기는 LOB 값에만 건다.** `확보율 × 부하량` 꼴 값(Density·Wafer 계획·Wafer Capa·B/N Capa·Top 5)과
   계획 세부수량만 EDP 를 빼고, 소요대수·확보율·B/N 공정 순위는 EDP 를 포함한 전체 계획 그대로다 — 설비가 받는 부하는

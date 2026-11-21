@@ -1889,6 +1889,10 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
     키의 달은 HOME 과 같은 함수(`past_data.display_month_range`)로 낸다 — 조회기간 ∩ 계산 원천
     범위를 **과거 구간(Past Data) 달까지 넓힌** 범위이고, 과거 구간을 넣을지는 HOME 의 `Past Data
     포함` 토글 값을 그대로 따른다. 그래야 HOME 을 본 뒤에는 다시 계산하지 않는다.
+
+    Wafer 는 HOME 집계 기준(Dummy 계열 뺌)이 아니라 같은 결과의 **거르지 않은** 합(산출 기준 총량 —
+    마지막 원소)이다. 이 줄을 HOME 처럼 거를지는 정하지 않았다(`docs/TODO.md` 결정 기록) — 그때는
+    셋째 원소를 읽으면 된다.
     """
     try:
         source = available_month_range(context.reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
@@ -1915,7 +1919,7 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
             end_month=display_range.end,
             display_order=context.reference_tables["RQ_DISPLAY_ORDER"],
         )
-        density, _, wafer, *_ = simulation_cache.get_home_simulation(
+        density, *_, wafer = simulation_cache.get_home_simulation(
             cache_key=home_key,
             _tables=context.active_scenario["tables"],
             _display_order=context.reference_tables["RQ_DISPLAY_ORDER"],

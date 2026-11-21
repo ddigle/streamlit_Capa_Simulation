@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Iterator
 from types import SimpleNamespace
 
+import dummy_series_tables as demo
 import pandas as pd
 import pytest
 import streamlit as st
@@ -15,6 +16,7 @@ from capa_simulation.components.intro_summary import summary_payload
 from capa_simulation.design import tokens
 from capa_simulation.services.official_summary import (
     OfficialSummary,
+    build_comparison_summary,
     build_official_summary,
     default_window_start,
     merge_summary_past,
@@ -33,6 +35,10 @@ from capa_simulation.services.securement_rate import (
     securement_balance,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.services.simulation_cache import (
+    get_home_comparison_plan,
+    get_home_lob_without_edp,
+)
 
 MONTHS = [202610, 202611, 202612, 202701, 202702, 202703]
 THRESHOLDS = SecurementThresholds(1.095, 0.995)
@@ -898,3 +904,42 @@ def test_a_failure_after_reading_the_official_version_keeps_its_identity(
         revision_id="rev",
         revision_no=1,
     )
+
+
+def test_the_summary_gap_ignores_plans_that_differ_only_in_dummy_series() -> None:
+    """입장 화면 Summary 의 GAP 은 HOME GAP 과 같은 함수 · 같은 정의(Dummy 계열 뺌)다 — Dummy 계열
+    Wafer 만 다른 비교 계획은 Wafer GAP 이 없고, 요약의 Wafer 계획도 거른 값이다."""
+    get_home_lob_without_edp.clear()
+    get_home_comparison_plan.clear()
+    tables = demo.tables()
+    key = demo.home_key("summary-gap")
+    density, _detail, wafer, _volume, total = get_home_lob_without_edp(
+        cache_key=key, _tables=tables, _display_order=demo.display_order()
+    )
+    comparison_density, comparison_wafer, _cmp_detail = get_home_comparison_plan(
+        cache_key=key,
+        _tables=tables,
+        _comparison_plan=demo.plan(without=(demo.DUMMY_ONLY,)),
+        _display_order=demo.display_order(),
+        comparison_revision_id="R-CMP",
+        include_edp=False,
+        detail_dimensions=("제품정보", "Stack"),
+    )
+    summary = build_comparison_summary(
+        months=list(demo.MONTHS),
+        monthly_density=density,
+        monthly_wafer=wafer,
+        comparison_density=comparison_density,
+        comparison_wafer=comparison_wafer,
+    )
+    assert summary.wafer_gap == ("", "")
+    assert summary.density_gap == ("", "")
+    assert list(summary.wafer) == pytest.approx(
+        list(wafer.sort_values("생산계획년월")["Wafer 부하량"])
+    )
+    assert all(
+        float(home) < float(unfiltered)
+        for home, unfiltered in zip(wafer["Wafer 부하량"], total["Wafer 부하량"], strict=True)
+    )
+    get_home_lob_without_edp.clear()
+    get_home_comparison_plan.clear()

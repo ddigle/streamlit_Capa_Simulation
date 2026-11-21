@@ -154,7 +154,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, database_path: Path) -> _World:
     monkeypatch.setattr(
         simulation_cache,
         "get_home_simulation",
-        lambda **_kwargs: (density, None, wafer, None, None, None),
+        lambda **_kwargs: (density, None, wafer, None, None, None, wafer),
     )
     monkeypatch.setattr(
         persistence_cache,

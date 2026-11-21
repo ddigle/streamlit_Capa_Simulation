@@ -2539,6 +2539,17 @@
 
 ### 계산
 
+- (2026-11-22) **HOME `Wafer 계획` 은 Dummy 계열(`Dummy` · `Top_Dummy`)을 뺀 합 — 원천 집계 기준**(사용자 결정 — 사내 관측과
+  견줘 원천 집계가 Dummy 계열을 Wafer 계획에 넣지 않음). 산식은 그대로다 — `Top_Dummy` 는 일반식, Dummy 산식 목록 ·
+  `HBM_WF_DIVISIONS` 는 안 바뀜, 빼는 목록 `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE` 은 산식 목록과 따로이고 판별은 같은
+  `(제품타입, WF 구분)` 게이트(EDP-TSV 의 이름만 `Dummy` 인 행은 안 뺌). 함께 바뀌는 곳: 공식 요약 · 입장 화면 Summary · 선행 B/O
+  (변동률은 Density 로만 내 확보율 불변) · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모. 그대로: 소요대수 · 확보율 ·
+  B/N 순위, 필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지 답 대기, 바꿀 때는
+  `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽으면 된다), 같은 HOME 표의 `Wafer Capa` ·
+  연간 Total · B/N 의 Wafer Capa(거르지 않은 합). Wafer 계산값은 저장하지 않아 DB · 마이그레이션 영향은 없고 배포 즉시 모든
+  리비전에 걸린다. 과거 구간(Past Data) `Wafer Total` 손 입력값은 그대로 받는다 — 지금까지 넣은 값이 어느 기준이었는지는 답 대기.
+  관련: `services/product_type.py` · `services/load_calculator.exclude_dummy_series` ·
+  `services/dashboard.home_aggregation_wafer_load` · AGENTS 6장 「부하량」 · 「HOME 얹기」
 - (2026-11-20) **필요 단축 일정 「현재 일정」 기준 — Static(처음 값) | 설비 마스터**(보드 답 Static-0 「좋음」 + 메모, Q01 ~ Q15 모두
   권장 — 초안 `worklog/static-shortening-1119/draft.md`). Static 은 활성 시나리오(미저장 편집 포함)의 `RQ_EQP_AVBL` · 공정별
   Cut-off · Qual 순서(Qual일정 → 번호, 미정은 반입 순)로 Qual 마감 계산기 규칙의 마감을 역산해 현재 일정으로 쓴다(고정 대수는 비가동

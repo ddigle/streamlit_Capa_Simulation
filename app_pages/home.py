@@ -407,6 +407,7 @@ try:
             securement_rate,
             assumed_capacity_defaults,
             product_volume_with_edp,
+            wafer_total,
         ) = get_home_simulation(
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],
@@ -430,6 +431,7 @@ try:
             production_detail,
             monthly_wafer,
             product_volume,
+            wafer_total,
         ) = get_home_lob_without_edp(
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],
@@ -492,6 +494,16 @@ try:
     )
     monthly_wafer = merge_past_months(
         monthly_wafer,
+        past_profile.monthly,
+        value_columns={"Wafer Total": "Wafer 부하량"},
+        start_month=effective_start,
+        end_month=effective_end,
+    )
+    # `Wafer 계획` 행 · 제품별 비중 · GAP · 선행 B/O 는 HOME 집계 기준(Dummy 계열 뺌)이고, 같은 표의
+    # `Wafer Capa` · 연간 Total · B/N 의 Wafer Capa 는 거르지 않은 합(산출 기준 총량)을 읽는다.
+    # 과거 달은 입력값 하나라 두 쪽이 같은 값을 받는다.
+    wafer_total = merge_past_months(
+        wafer_total,
         past_profile.monthly,
         value_columns={"Wafer Total": "Wafer 부하량"},
         start_month=effective_start,
@@ -584,6 +596,7 @@ try:
         unapplied_advance_months = unapplicable_advance_months(advance_ratio)
         monthly_density = apply_advance_to_density(monthly_density, advance_ratio)
         monthly_wafer = apply_advance_to_wafer(monthly_wafer, advance_ratio)
+        wafer_total = apply_advance_to_wafer(wafer_total, advance_ratio)
         # 제품별 Wafer 도 같은 변동률로 나눈다. 달 안의 비중은 그대로지만 조각 hover 의 수량과
         # 분모가 `Wafer 계획` 행과 같아지고, 연간 Total 도넛은 선행이 반영된 달 무게로 선다.
         product_volume = apply_advance_to_wafer(product_volume, advance_ratio)
@@ -999,13 +1012,20 @@ else:
         monthly_top5 = build_monthly_bottleneck_top5_from_ranking(
             bottleneck_ranking,
             monthly_density,
-            monthly_wafer=monthly_wafer,
+            monthly_wafer=wafer_total,
         )
         lob_summary = build_production_lob_summary(
             monthly_density,
             monthly_wafer,
             monthly_bottlenecks,
         )
+        # `Wafer Capa` 만 거르지 않은 합에서 낸다 — 두 요약은 같은 Density 표에 왼쪽으로 붙어 행
+        # 차례가 같다.
+        lob_summary["Wafer Capa"] = build_production_lob_summary(
+            monthly_density,
+            wafer_total,
+            monthly_bottlenecks,
+        )["Wafer Capa"].to_numpy()
         baseline_lob_summary: pd.DataFrame | None = None
         if advance_ratio is not None:
             baseline_bottlenecks = revert_advance_from_securement(
@@ -1041,7 +1061,7 @@ else:
             baseline_lob_summary=baseline_lob_summary,
             comparison_density=comparison_density,
             comparison_wafer=comparison_wafer,
-            year_totals=build_year_totals(monthly_density, monthly_wafer, year_total_labels),
+            year_totals=build_year_totals(monthly_density, wafer_total, year_total_labels),
             top5_rate_band=top5_band_profile.band,
             past_month_labels=past_month_labels,
             product_share_cells=product_share_cells,
@@ -1122,7 +1142,7 @@ else:
         bottleneck_label_figure, bottleneck_month_figure = build_bottleneck_detail_figures(
             monthly_bottleneck_details=build_monthly_bottleneck_details_from_ranking(
                 bottleneck_ranking,
-                monthly_wafer,
+                wafer_total,
                 rank_limit=BOTTLENECK_DETAIL_RANK_LIMIT,
             ),
             month_labels=month_labels,

@@ -22,6 +22,7 @@ from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_DIMENSIONS,
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
+    home_aggregation_wafer_load,
 )
 from capa_simulation.services.display_order import (
     PreparedDisplayOrder,
@@ -1341,12 +1342,23 @@ def get_home_simulation(
     _display_order: pd.DataFrame,
     _reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[
-    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, CapacityAssumptions, pd.DataFrame
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    CapacityAssumptions,
+    pd.DataFrame,
+    pd.DataFrame,
 ]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
 
-    마지막 원소는 제품×월 Wafer·PKG 수량(EDP 포함)이다. 제품별 비중 행이 쓰고, EDP 를 뺀
-    화면에서도 색 칸을 정하는 목록으로 쓴다 — 이미 만든 Wafer 상세 환산을 묶기만 한다.
+    셋째 원소(월 Wafer)와 여섯째 원소(제품×월 Wafer·PKG 수량, EDP 포함)는 HOME 집계 기준 —
+    Dummy 계열을 뺀 같은 상세 프레임(`dashboard.home_aggregation_wafer_load`)에서 묶는다. 여섯째는
+    제품별 비중 행이 쓰고, EDP 를 뺀 화면에서도 색 칸을 정하는 목록으로 쓴다 — 이미 만든 Wafer 상세
+    환산을 묶기만 한다.
+
+    마지막 원소는 **거르지 않은** 월 Wafer 합(산출 기준 총량, EDP 포함)이다. HOME 정의를 따르지
+    않는 자리(필요 단축 일정 「Wafer 계획」 줄)가 읽는다. 저장하지 않는 열몇 행이다.
 
     월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
     자르고 복사한 뒤 버린다(warm rerun 27~36ms 중 93~98%). 키와 프레임을 한 객체에서
@@ -1383,8 +1395,9 @@ def get_home_simulation(
     # 자체를 쓰지 않는다. 시나리오 전체 기간 기준이다(조회기간 밖의 달도 센다).
     assumed_defaults = capacity_assumptions(unit_capacity)
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
-    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
-    product_volume = build_product_volume(_plan, wafer_load)
+    home_wafer_load = home_aggregation_wafer_load(wafer_load)
+    monthly_wafer = build_monthly_wafer_load_from_load(home_wafer_load)
+    product_volume = build_product_volume(_plan, home_wafer_load)
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
     return (
         monthly_density,
@@ -1393,6 +1406,7 @@ def get_home_simulation(
         securement_rate,
         assumed_defaults,
         product_volume,
+        build_monthly_wafer_load_from_load(wafer_load),
     )
 
 
@@ -1401,12 +1415,16 @@ def get_home_lob_without_edp(
     cache_key: HomeSimulationCacheKey,
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """EDP 를 뺀 Density·계획 세부수량·Wafer 부하량·제품별 수량. **소요대수는 만들지 않는다.**
 
     EDP 제외는 LOB 로 표현되는 값, 곧 `확보율 × 부하량` 꼴로 나오는 값에만 건다. 설비가
     받는 부하는 EDP 를 포함한 전체 계획이므로 확보율과 B/N 공정 순위는 바뀌면 안 된다.
     그래서 설비 수요 계산을 다시 돌리지 않고 부하량 쪽만 다시 만든다.
+
+    Wafer 부하량 · 제품별 수량은 `get_home_simulation` 과 같은 HOME 집계 기준(Dummy 계열 뺌)이고,
+    마지막 원소는 EDP 를 뺀 **거르지 않은** 월 Wafer 합이다 — HOME 표의 `Wafer Capa` · 연간 Total ·
+    B/N 의 Wafer Capa 가 읽는다.
 
     토글을 켠 동안에만 불린다. 끈 상태에서는 이 계산 자체가 돌지 않는다.
     """
@@ -1422,8 +1440,14 @@ def get_home_lob_without_edp(
         _display_order,
     )
     _, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, _tables["RQ_CHIP_QTY"])
-    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
-    return monthly_density, production_detail, monthly_wafer, build_product_volume(plan, wafer_load)
+    home_wafer_load = home_aggregation_wafer_load(wafer_load)
+    return (
+        monthly_density,
+        production_detail,
+        build_monthly_wafer_load_from_load(home_wafer_load),
+        build_product_volume(plan, home_wafer_load),
+        build_monthly_wafer_load_from_load(wafer_load),
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -1476,6 +1500,8 @@ def get_home_comparison_plan(
 
     `comparison_revision_id` 는 키에만 쓴다. 프레임 인자는 `_` 로 시작해 해시를 건너뛰므로
     어느 리비전의 계획인지를 이 값이 혼자 책임진다.
+
+    Wafer 는 HOME `Wafer 계획` 과 같은 HOME 집계 기준(Dummy 계열 뺌)이라 GAP 이 같은 정의끼리 잰다.
     """
     del comparison_revision_id
     _, _, start_month, end_month, _ = cache_key
@@ -1494,7 +1520,7 @@ def get_home_comparison_plan(
         filter_month_range(_tables["RQ_YLD"], start_month, end_month, "RQ_YLD"),
         _tables["RQ_CHIP_QTY"],
     )
-    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
+    monthly_wafer = build_monthly_wafer_load_from_load(home_aggregation_wafer_load(wafer_load))
     return monthly_density, monthly_wafer, production_detail
 
 

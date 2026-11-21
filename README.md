@@ -43,6 +43,7 @@ data/equipment_availability.duckdb   공통 호기 대장(호기 정보 · 실�
 소요대수  = 부하량 ÷ 대당 Capa        (RQ_REQB 의 Area·STEP·MCP 경로별로 나눈 뒤 공정으로 합산)
 확보율    = 가용대수(RQ_EQP_AVBL) ÷ 소요대수
 B/N       = 그 달 확보율이 가장 낮은 공정
+HOME Wafer 계획 = Wafer 부하량에서 Dummy 계열(Dummy · Top_Dummy) 행을 뺀 합(원천 집계 기준 — 소요대수는 뺄 것 없이 그대로)
 ```
 
 확보율은 **확보·경고·부족** 셋으로 판정합니다. 기준(정수 %, 기본 110%·100%)은 시나리오와 무관한 공용 설정이고

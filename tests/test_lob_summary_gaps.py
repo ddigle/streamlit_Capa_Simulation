@@ -7,11 +7,15 @@
 선행 반영값으로 GAP 을 재면 남의 계획과의 차이에 내가 넣은 선행 물량이 섞인다.
 """
 
+import dummy_series_tables as demo
 import pandas as pd
 import plotly.graph_objects as go
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.home_lob_figures import _bottleneck_rate_labels
+from capa_simulation.services import simulation_cache
+from capa_simulation.services.load_calculator import calculate_wafer_load, filter_edp_plan
+from capa_simulation.services.plan_gap import WAFER_GAP_FORMAT, WAFER_GAP_SCALE, plan_gap_texts
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602]
@@ -178,3 +182,45 @@ def test_the_gap_inside_a_bar_takes_the_value_color_and_keeps_its_sign() -> None
     assert labels[0].startswith('+4%<br><span style="font-size:')
     assert labels[1].startswith('-3%<br><span style="font-size:')
     assert "color" not in "".join(labels)
+
+
+def _home_and_comparison_wafer(tag: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """현재 계획(세 제품)과 Dummy 계열만 있는 제품을 뺀 비교 계획의 HOME 월 Wafer(EDP 제외)."""
+    simulation_cache.get_home_lob_without_edp.clear()
+    simulation_cache.get_home_comparison_plan.clear()
+    tables = demo.tables()
+    _density, _detail, own_wafer, _volume, _total = simulation_cache.get_home_lob_without_edp(
+        cache_key=demo.home_key(tag),
+        _tables=tables,
+        _display_order=demo.display_order(),
+    )
+    _cmp_density, comparison_wafer, _cmp_detail = simulation_cache.get_home_comparison_plan(
+        cache_key=demo.home_key(tag),
+        _tables=tables,
+        _comparison_plan=demo.plan(without=(demo.DUMMY_ONLY,)),
+        _display_order=demo.display_order(),
+        comparison_revision_id="R-CMP",
+        include_edp=False,
+        detail_dimensions=("제품정보", "Stack"),
+    )
+    simulation_cache.get_home_lob_without_edp.clear()
+    simulation_cache.get_home_comparison_plan.clear()
+    return own_wafer, comparison_wafer
+
+
+def test_two_plans_differing_only_in_dummy_series_rows_have_no_wafer_gap() -> None:
+    """비교 GAP 은 HOME `Wafer 계획` 과 같은 정의(Dummy 계열 뺌)끼리 잰다 — Dummy 계열 Wafer 만 다른
+    두 계획은 GAP 이 없다. 거르지 않은 합끼리였다면 그 제품만큼 GAP 이 섰다."""
+    own, comparison = _home_and_comparison_wafer("gap")
+    own = own.sort_values("생산계획년월").reset_index(drop=True)
+    comparison = comparison.sort_values("생산계획년월").reset_index(drop=True)
+    assert (
+        plan_gap_texts(own, comparison, "Wafer 부하량", WAFER_GAP_FORMAT, scale=WAFER_GAP_SCALE)
+        is None
+    )
+    # 대조: 거르지 않은 합이면 Dummy 계열만 있는 제품의 Wafer 만큼 다르다.
+    unfiltered = calculate_wafer_load(
+        filter_edp_plan(demo.plan(), False), demo.yields(), demo.chip_qty()
+    )
+    only_dummy = unfiltered.loc[unfiltered["제품정보"].eq(demo.DUMMY_ONLY), "물량"].sum()
+    assert only_dummy > 0
