@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
 from capa_simulation.design import tokens
 from capa_simulation.services import equipment_grid as eg
+from capa_simulation.services.space_color_basis import capa_number
 from capa_simulation.services.space_layout_edit import natural_name_key
 
 ASSETS = emg._ASSETS
@@ -669,6 +671,152 @@ def test_text_columns_sort_in_the_same_order_as_the_name_column_and_the_conditio
     assert text.index("Qual 지연 — 부품 수급") < text.index("도면 미표시")
     assert result["ties"] == [[3, 1, 5, 2, 0, 4], [2, 0, 5, 3, 1, 4]] * 2, "같은 값은 설비명 오름"
     assert result["cells"] == [1, -1, 1, -1, 1, 1], "수 · 날짜 칸은 제 비교, 글 칸은 영문이 앞"
+
+
+_CAPA_NUMBER_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({ numbers: input.texts.map(capaNumber) }))
+"""
+
+# 투자Capa 에 드는 꼴 — K · M(대소문자) · 쉼표 · 소수 · 앞뒤 · 사이 공백, 그리고 못 읽는
+# 꼴(음수 · 지수 · 꼬리 둘 · 전각 숫자 · 전각 K · 켈빈 기호 · 단위만 · 소수점 끝 · 빈 값).
+_CAPA_TEXTS = [
+    "322K", "322 k", " 322k ", "322,000", "1.5M", "1.25M", "1,250", "280", "0.5K", "007",
+    "10M", "9m", "1,2,3", "5,", "123,456,789.5M", "", "x", "TBD", "미정", "-5K", "+5", "1e3",
+    "322KB", "K", ".5", "1.", "1.5.2", "1 . 5M", ",5", "0x10", "１２K", "12ｋ", "12\u212a",
+    "12 K M", "12\nK", "\t1.5M\n",
+]  # fmt: skip
+
+
+def test_the_investment_capa_number_reads_like_the_space_color_basis() -> None:
+    """투자Capa 머리 정렬의 수 읽기(`capaNumber`)는 Space 색 기준이 쓰는 파이썬
+    `space_color_basis.capa_number` 와 같은 값을 낸다 — 숫자(쉼표 허용) · 소수와 꼬리
+    K(천) · M(백만) 하나만 읽고, 못 읽으면 null(파이썬 None)이다. 앞뒤 · 사이 공백은 파이썬
+    `str.isspace` 벌이라 BMP 글자 하나하나를 앞뒤 · 사이 · 꼬리에 끼워 맞댄다(JS `\\s` 는
+    U+FEFF 를 넣고 U+001C ~ 001F · U+0085 를 빼 갈린다 — 2026-11-21 확인 보드
+    q-invest-sort a)."""
+    spread = [
+        text
+        for code in range(0x10000)
+        if not 0xD800 <= code <= 0xDFFF
+        for text in (f"{chr(code)}12.5{chr(code)}K{chr(code)}", f"1{chr(code)}")
+    ]
+    texts = _CAPA_TEXTS + spread
+    expected = [capa_number(text) for text in texts]
+    assert all(number is None or math.isfinite(number) for number in expected)
+    result = _node({"texts": texts}, _CAPA_NUMBER_RUNNER)["numbers"]
+    mismatched = [
+        (text, js, py) for text, js, py in zip(texts, result, expected, strict=True) if js != py
+    ]
+    assert not mismatched, mismatched[:10]
+    head = dict(zip(_CAPA_TEXTS, result[: len(_CAPA_TEXTS)], strict=True))
+    assert head["322K"] == head["322 k"] == head["322,000"] == 322_000
+    assert head["1.5M"] == 1_500_000 and head["1,250"] == 1_250 and head["9m"] == 9_000_000
+    assert head["TBD"] is None and head["-5K"] is None and head["１２K"] is None
+    assert capa_number("\x1c5\x1c") == 5 and capa_number("\ufeff5") is None, "공백 벌이 갈리는 글자"
+
+
+_CAPA_SORT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  orders: input.cases.map((c) => sortOrder(c.values, c.dir, 'capa', c.names)),
+  cells: input.cells.map((c) => Math.sign(compareCells(c[0], c[1], 'capa'))),
+}))
+"""
+
+
+def _capa_order(values: list[str], names: list[str], descending: bool) -> list[int]:
+    """투자Capa 머리 정렬의 기대 차례 — 수 → 못 읽는 글(글 차례) → 빈 값, 내림차순은 빈 값만
+    빼고 뒤집음, 값이 같으면 설비명 오름(그래도 같으면 원래 차례)."""
+
+    def number(index: int) -> float:
+        value = capa_number(values[index])
+        assert value is not None
+        return value
+
+    by_name = sorted(range(len(values)), key=lambda index: natural_name_key(names[index]))
+    numbers = [index for index in by_name if capa_number(values[index]) is not None]
+    texts = [index for index in by_name if values[index] and capa_number(values[index]) is None]
+    blanks = [index for index in by_name if not values[index]]
+    numbers = sorted(numbers, key=number, reverse=descending)
+    texts = sorted(texts, key=lambda index: natural_name_key(values[index]), reverse=descending)
+    return (texts + numbers if descending else numbers + texts) + blanks
+
+
+def test_the_investment_capa_head_sorts_by_number_then_text_then_blank() -> None:
+    """설비 마스터 표 「투자Capa」 머리 정렬만 수 차례다(2026-11-21 확인 보드 q-invest-sort a) —
+    「1.5M」 · 「322K」 · 「1,250」 을 K(천) · M(백만)으로 읽어 작은 수부터, 같은 수(「322K」 ·
+    「322,000」 · 「322 k」)는 설비명 오름이다. 수로 읽히지 않는 값은 수 뒤에 글 칸과 같은 글
+    차례(`natural_name_key`), 빈 값은 늘 아래다. 내림차순은 빈 값만 빼고 뒤집는다(못 읽는 글 →
+    큰 수 → 작은 수 — 다른 칸과 같은 「내림차순은 그 거꾸로 · 빈 값은 늘 아래」)."""
+    values = [
+        "1.5M", "322K", "1,250", "1.25M", "9M", "", "10M", "TBD", "322,000", "미정", "0.5k",
+        "322 k", "abc-10", "abc-2", "", "95K",
+    ]  # fmt: skip
+    names = [f"호기 {(index * 7) % len(values) + 1}" for index in range(len(values))]
+    cases = [{"values": values, "names": names, "dir": direction} for direction in ("asc", "desc")]
+    cells = [
+        ["1.5M", "322K"], ["9M", "10M"], ["322K", "322,000"], ["TBD", "1"], ["TBD", "미정"],
+        ["", "TBD"], ["1", ""], ["1.25M", "1.5M"],
+    ]  # fmt: skip
+    result = _node({"cases": cases, "cells": cells}, _CAPA_SORT_RUNNER)
+    asc, desc = result["orders"]
+    assert asc == _capa_order(values, names, descending=False)
+    assert desc == _capa_order(values, names, descending=True)
+    shown = [values[index] for index in asc]
+    assert shown[:3] == ["0.5k", "1,250", "95K"]
+    assert sorted(shown[3:6]) == sorted(["322K", "322,000", "322 k"])
+    assert shown[6:] == ["1.25M", "1.5M", "9M", "10M", "abc-2", "abc-10", "TBD", "미정", "", ""]
+    assert [values[index] for index in desc][:4] == ["미정", "TBD", "abc-10", "abc-2"]
+    assert [values[index] for index in desc][-2:] == ["", ""]
+    assert result["cells"] == [1, -1, 0, 1, -1, 1, -1, -1]
+
+
+_GRID_MODEL_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  orders: input.sorts.map((sort) => gridModel({ colSet: 'all', sort }, input.data)
+    .ordered.map((row) => row.values[input.col])),
+}))
+"""
+
+
+def test_the_grid_model_sorts_only_the_investment_capa_head_by_number() -> None:
+    """칸 정의(`columns_payload`)에서 정렬 표지는 투자Capa 의 `sort: 'capa'` 하나이고 칸 꼴은 글
+    그대로다(고치기 · 붙여넣기 · 호기 상세). 표 모양(`gridModel`)이 그 표지로 머리 정렬을 수 차례로
+    하고, 같은 값을 든 글 칸(Model)은 글 차례 그대로다."""
+    columns = eg.columns_payload(eg.GridContext(base="b"))
+    capa = eg.COLUMN_INDEX["투자Capa"]
+    model = eg.COLUMN_INDEX["Model"]
+    assert {item["name"]: item["sort"] for item in columns if "sort" in item} == {
+        "투자Capa": "capa"
+    }
+    assert columns[capa]["kind"] == "text"
+    values = ["1.5M", "322K", "", "TBD", "1.25M", "9M", "10M"]
+    rows: list[dict[str, Any]] = []
+    for index, value in enumerate(values):
+        cells = [""] * len(columns)
+        cells[eg.NAME_INDEX] = f"EQ-{index}"
+        cells[capa] = cells[model] = value
+        rows.append({"id": f"s:EQ-{index}", "values": cells})
+    data = {
+        "columns": columns,
+        "rows": rows,
+        "colSets": eg.column_sets_payload(),
+        "lockSets": eg.lock_sets_payload(),
+    }
+    sorts = [
+        {"col": capa, "dir": "asc"},
+        {"col": capa, "dir": "desc"},
+        {"col": model, "dir": "asc"},
+    ]
+    source = _sections() + _function("lockSets") + _function("gridModel")
+    result = _node({"data": data, "sorts": sorts, "col": capa}, _GRID_MODEL_RUNNER, source=source)
+    asc, desc, text = result["orders"]
+    assert asc == ["322K", "1.25M", "1.5M", "9M", "10M", "TBD", ""]
+    assert desc == ["TBD", "10M", "9M", "1.5M", "1.25M", "322K", ""]
+    assert text == sorted(filter(None, values), key=natural_name_key) + [""]
+    assert text.index("1.5M") < text.index("1.25M") < text.index("322K"), "글 차례는 그대로"
 
 
 _VIEW_FOLLOW_RUNNER = """

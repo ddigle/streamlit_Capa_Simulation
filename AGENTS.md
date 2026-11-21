@@ -2936,7 +2936,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   같은 인자 — 캔버스 · 오늘) 차이로 **새로** 생긴 막는 결과만 그 칸에 짚는다(입력 차례를 타지 않고 다른 호기의 기존
   오류로 막히지 않는다). 편집본은 고치지 않고 얹은 새 프레임을 돌려준다. `tests/test_space_sheet_edit.py`.
 - `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa·필요 단축 — 셋째 값은 그룹이
-  없다)을 정한다. 색 값은 모른다.
+  없다)을 정한다. 색 값은 모른다. 투자Capa 수 읽기 `capa_number` 는 설비 마스터 표 투자Capa 머리 정렬의 JS `capaNumber` 와 한
+  읽기다 — 고치면 둘을 함께 고친다(`tests/test_equipment_master_grid_assets.py` 가 맞댄다).
 - `src/capa_simulation/services/space_shortening_layer.py` — Space 「필요 단축」 보기의 순수 규칙 — 계획의 단축 호기를 구간
   (1–7일·8–14일·15일 이상·기한 지남)·D-n·임박(필요 단축 일정 「기한 임박」 날수)으로 나누고, 층 행의 「설비키」 로 붙여 배지(설비키마다
   하나)·흐림·「이 층에서 단축할 호기」·자리 없는 호기·추가N(그 공정 호기가 그려진 사용 층마다, FAB 합계 한 번)·층 대수·FAB
@@ -3539,7 +3540,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`nameKey` · `compareNameKeys` — 숫자 덩이는 수로, 글 덩이는 소문자 코드 포인트, Space 편집기 `naturalCompare` 와 같은 꼴 —
     한글 음절은 가나다, 영문이 한글 앞, 시험이 파이썬과 맞댄다). **글 칸 모두**(글 · 메모 · 고르기 — 수 · 날짜 칸 밖 모든 칸,
     `textSorted`)의 머리 정렬도 이 비교 하나다(2026-11-20 결과 보드 여쭘-2 a — 조건 값 목록 `_sorted_values` 와 같은 차례, 시험이
-    파이썬과 맞댄다). 수 칸은 수로, 날짜 칸과 수 칸의 수 아닌 값은 `localeCompare('ko')` 그대로다. 머리 정렬(`sortOrder`)은 그 칸
+    파이썬과 맞댄다). 예외는 칸 정의의 정렬 표지 하나다 — `GridColumn.sort`(`columns_payload` 의 `sort`)가 `capa` 인 투자Capa 는
+    칸 꼴이 글 그대로(고치기 · 붙여넣기 · 호기 상세)이고 머리 정렬만 수 차례다(2026-11-21 확인 보드 q-invest-sort a — `gridModel`
+    이 표지를 칸 꼴보다 먼저 본다). 수 읽기 `capaNumber` 는 Space 색 기준 `space_color_basis.capa_number` 와 같은 읽기(숫자 · 쉼표 ·
+    소수 + 꼬리 K 천 · M 백만, 공백은 파이썬 `str.isspace` 벌 — 시험이 BMP 글자로 맞댄다)이고, 차례는 수 → 못 읽는 글(글 차례) →
+    빈 값, 같은 수(「322K」 · 「322,000」)는 둘째 열쇠로 간다(`compareCapaKeys`). 내림차순은 빈 값만 빼고 뒤집는다(못 읽는 글이
+    위). 수 칸은 수로, 날짜 칸과 수 칸의 수 아닌 값은 `localeCompare('ko')` 그대로다. 머리 정렬(`sortOrder`)은 그 칸
     값 다음 둘째 열쇠가 늘 설비명 오름차순(내림차순에서도)이고 빈 값 · 빈 이름은 늘 아래다. 머리 누름(`nextSort`)은 다른
     칸이 오름 → 내림 → 처음 차례, 설비명 칸이 처음 차례 ↔ 내림이다(설비명 오름은 늘 `S.sort = null`). 처음 차례의 설비명 머리는 ▲ 없이 `aria-sort` 만 단다(설계 규칙
     UI-TXT-05). 고름 · 기준 줄 · 키 이동 · 붙여넣기 범위는 모두 이 보이는 차례(`model.live` · `model.ordered`)다 — 설비명 칸에서

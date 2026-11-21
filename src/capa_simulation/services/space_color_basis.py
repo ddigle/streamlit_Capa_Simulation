@@ -63,7 +63,10 @@ class CapaGroup:
 
 
 def capa_number(value: object) -> float | None:
-    """투자Capa 글자 하나를 수로 읽는다(`322K` → 322000). 못 읽으면 None."""
+    """투자Capa 글자 하나를 수로 읽는다(`322K` → 322000). 못 읽으면 None.
+
+    설비 마스터 표 투자Capa 머리 정렬(`equipment_master_grid_assets/grid.js` `capaNumber`)이 글에
+    같은 읽기를 한다 — 고치면 둘을 함께 고친다(시험이 맞댄다)."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):

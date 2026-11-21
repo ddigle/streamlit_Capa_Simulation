@@ -223,10 +223,37 @@ function lockedShiftCell(rows, cols, locked) {
 
 // <grid-sort>
 // 머리 누름 정렬 — 빈 값은 늘 아래. 글 칸(설비명 · 글 · 메모 · 고르기 — 수 · 날짜 칸 밖 모두)은 설비명 자연 차례
-// (`compareNameKeys`) 하나라 조건 값 목록 차례(파이썬 `_sorted_values`)와 같다. 수 칸은 수로, 날짜 칸과 수 칸의 수 아닌 값은
+// (`compareNameKeys`) 하나라 조건 값 목록 차례(파이썬 `_sorted_values`)와 같다. 다만 칸 정의에 정렬 표지 `sort: 'capa'` 가 있는
+// 칸(투자Capa — 칸 꼴은 글 그대로)만 머리 정렬이 수 차례다(`compareCapaKeys`). 수 칸은 수로, 날짜 칸과 수 칸의 수 아닌 값은
 // localeCompare 'ko' 그대로다.
 function textSorted(kind) {
-  return kind !== 'number' && kind !== 'date'
+  return kind !== 'number' && kind !== 'date' && kind !== 'capa'
+}
+
+// 투자Capa 글의 수 읽기 — 파이썬 `space_color_basis.capa_number`(Space 색 기준)와 같은 읽기다: 앞뒤 공백을 뗀 글이 숫자(쉼표 허용,
+// 소수점 뒤 숫자)와 꼬리 K(천) · M(백만, 대소문자 무시) 하나뿐이면 그 수, 아니면 null. 공백 글자는 파이썬 `str.isspace` 와 같은
+// 벌이다 — JS `\s` · `trim` 은 U+FEFF 를 넣고 U+001C ~ 001F · U+0085 를 빼 파이썬과 갈린다(시험이 맞댄다).
+const CAPA_SPACE = '\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000'
+const CAPA_TRIM = new RegExp('^[' + CAPA_SPACE + ']+|[' + CAPA_SPACE + ']+$', 'g')
+const CAPA_NUMBER = new RegExp('^([0-9][0-9,]*(?:\\.[0-9]+)?)[' + CAPA_SPACE + ']*([KkMm]?)$')
+const CAPA_UNITS = { '': 1, k: 1000, m: 1000000 }
+
+function capaNumber(value) {
+  const match = CAPA_NUMBER.exec(String(value == null ? '' : value).replace(CAPA_TRIM, ''))
+  return match ? Number(match[1].replace(/,/g, '')) * CAPA_UNITS[match[2].toLowerCase()] : null
+}
+
+// 투자Capa 정렬 열쇠 — 수로 읽히면 그 수, 못 읽는 글은 글 차례 열쇠(`nameKey`)로 견준다. 줄마다 한 번만 짓는다.
+function capaKey(value) {
+  return { number: capaNumber(value), name: nameKey(value) }
+}
+
+// 수로 읽히는 값이 작은 수부터이고 같은 수(「322K」 · 「322,000」)는 0 이라 둘째 열쇠(설비명)로 간다. 수로 읽히지 않는 값은 수
+// 뒤에 글 차례(`compareNameKeys`), 빈 값은 맨 뒤다. 내림차순은 `sortOrder` 가 빈 값만 빼고 뒤집는다(못 읽는 글 → 큰 수 → 작은 수).
+function compareCapaKeys(a, b) {
+  if (a.number !== null && b.number !== null) return a.number < b.number ? -1 : a.number > b.number ? 1 : 0
+  if (a.number !== null || b.number !== null) return a.number !== null ? -1 : 1
+  return compareNameKeys(a.name, b.name)
 }
 
 function compareCells(left, right, kind) {
@@ -235,6 +262,7 @@ function compareCells(left, right, kind) {
   if (a === '' && b === '') return 0
   if (a === '') return 1
   if (b === '') return -1
+  if (kind === 'capa') return compareCapaKeys(capaKey(a), capaKey(b))
   if (textSorted(kind)) return compareNameKeys(nameKey(a), nameKey(b))
   if (kind === 'number') {
     const x = Number(a)
@@ -281,14 +309,21 @@ function compareNameKeys(a, b) {
 
 // 보이는 줄 차례(원래 자리 번호). 정렬 칸(`dir` — 없으면 설비명 차례 그대로)을 먼저 보고, 값이 같은 줄은 설비명(`names`)
 // 오름차순 — 내림차순이어도 둘째 열쇠는 늘 오름이다. 그래도 같으면 원래 차례. 빈 값은 방향과 상관없이 늘 아래.
+// `kind` 는 칸 꼴이거나 정렬 표지(`capa`)다.
 function sortOrder(values, dir, kind, names) {
   const order = values.map((_, index) => index)
   const keys = names ? names.map(nameKey) : null
   const tie = (i, j) => (keys ? compareNameKeys(keys[i], keys[j]) : 0) || i - j
   if (!dir) return keys ? order.sort(tie) : order
   const sign = dir === 'desc' ? -1 : 1
-  const own = textSorted(kind) ? (values === names ? keys : values.map(nameKey)) : null
-  const primary = own ? (i, j) => compareNameKeys(own[i], own[j]) : (i, j) => compareCells(values[i], values[j], kind)
+  let primary = (i, j) => compareCells(values[i], values[j], kind)
+  if (kind === 'capa') {
+    const capa = values.map(capaKey)
+    primary = (i, j) => compareCapaKeys(capa[i], capa[j])
+  } else if (textSorted(kind)) {
+    const own = values === names ? keys : values.map(nameKey)
+    primary = (i, j) => compareNameKeys(own[i], own[j])
+  }
   return order.sort((i, j) => {
     const first = primary(i, j)
     return (values[i] === '' || values[j] === '' ? first : sign * first) || tie(i, j)
@@ -1298,7 +1333,8 @@ function gridModel(S, data) {
   let order = rows.map((_, index) => index)
   if (S.sort) {
     const col = S.sort.col
-    const kind = columns[col] ? columns[col].kind : 'text'
+    // 정렬 표지(`sort` — 투자Capa 는 `capa`)가 있으면 칸 꼴 대신 그 차례다.
+    const kind = columns[col] ? columns[col].sort || columns[col].kind : 'text'
     const values = col === nameCol ? names : rows.map((row) => String((row.values || [])[col] || ''))
     order = sortOrder(values, S.sort.dir, kind, names)
   } else if (names) order = sortOrder(names, null, 'name', names)

@@ -68,6 +68,7 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     FLAG_COLUMNS,
+    INVESTMENT_CAPA_COLUMN,
     MEMO_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_ACTUAL_COLUMN,
@@ -177,10 +178,15 @@ ColumnKind = Literal["name", "text", "memo", "date", "number", "choice"]
 ColumnScope = Literal["common", "layout", "scenario", "status"]
 # 칸 폭 갈래(브라우저 CSS `.emg-w-<폭>`) — 시안 2차의 폭 그대로다.
 ColumnWidth = Literal["name", "short", "status", "date", "num", "text", "memo"]
+# 머리 정렬 표지(브라우저 `// <grid-sort>`) — 칸 꼴과 따로다. 빈 글이면 칸 꼴의 차례이고,
+# `capa` 는 글 칸인 투자Capa 의 머리 정렬만 수 차례다(K 천 · M 백만 — Space 색 기준
+# `space_color_basis.capa_number` 와 같은 읽기). 다른 글 칸과 조건 값 목록(`_sorted_values`)은
+# 글 차례 그대로다.
+ColumnSort = Literal["", "capa"]
 
 FLAG_VALUES: Final = ("Y", "N")
 _SHORT_TEXT_COLUMNS = frozenset(
-    {"공정대분류", "공정구분", "투자Capa", "투자구분", "사용기준", "담당자"}
+    {"공정대분류", "공정구분", INVESTMENT_CAPA_COLUMN, "투자구분", "사용기준", "담당자"}
 )
 _MEMO_COLUMNS = frozenset(
     {*MEMO_COLUMNS, "반입/Qual 이력", "호기이력", "설비이력", SCENARIO_MEMO_COLUMN}
@@ -198,7 +204,8 @@ _CHOICES: Mapping[str, tuple[tuple[str, ...], bool]] = {
 @dataclass(frozen=True)
 class GridColumn:
     """표 칸 하나. `options`·`blank` 은 고르는 칸(`choice`)만 — 빈 값을 받는 칸만 「(비움)」 이
-    있다. `suggest` 는 글 칸의 제안(Area Code)이고 목록 밖 값은 막지 않는다(경고)."""
+    있다. `suggest` 는 글 칸의 제안(Area Code)이고 목록 밖 값은 막지 않는다(경고). `sort` 는 머리
+    정렬 표지(`ColumnSort`)다."""
 
     name: str
     kind: ColumnKind
@@ -207,6 +214,7 @@ class GridColumn:
     options: tuple[str, ...] = ()
     blank: bool = True
     suggest: tuple[str, ...] = ()
+    sort: ColumnSort = ""
 
 
 def _column(name: str) -> GridColumn:
@@ -233,6 +241,8 @@ def _column(name: str) -> GridColumn:
         return GridColumn(name, "text", scope, "short", suggest=AREA_CODES)
     if name in _MEMO_COLUMNS:
         return GridColumn(name, "memo", scope, "memo")
+    if name == INVESTMENT_CAPA_COLUMN:
+        return GridColumn(name, "text", scope, "short", sort="capa")
     return GridColumn(name, "text", scope, "short" if name in _SHORT_TEXT_COLUMNS else "text")
 
 
@@ -990,6 +1000,8 @@ def columns_payload(context: GridContext) -> list[dict[str, Any]]:
             }
         if column.suggest:
             item["suggest"] = list(column.suggest)
+        if column.sort:
+            item["sort"] = column.sort
         result.append(item)
     return result
 
