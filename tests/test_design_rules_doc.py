@@ -3629,6 +3629,54 @@ def test_the_cumulative_why_board_answers_are_recorded_in_6_43() -> None:
         assert phrase in v146, phrase
 
 
+# 2026-11-21 풍선 범위 보드(6-40)의 사용자 답 — 줄 id → 고른 선택지 글.
+_TIP_1121_ANSWERS = {
+    "tip-scope": "(가) 마우스를 올리면 뜨는 풍선 전부 — 누르면 여는 팝업 · 알림창은 그대로",
+    "tip-chart": "(나) 그림에 처음 들어올 때만 1초, 그 그림 안에서 옮기면 곧바로",
+    "tip-native": "(가) 그대로 둔다",
+}
+
+
+def test_the_tip_delay_board_answers_are_recorded_in_6_40_and_make_ui_nav_04() -> None:
+    """v1.43 — 6-40 은 누적 진척 까닭 보드 메모 「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도
+    마찬가지로」 와 그 범위를 물은 보드의 답 셋(줄마다 id · 물음 → **고른 답** · 끝 「(2026-11-21 ·
+    규칙 id)」)이다. 메모가 넓힌 말이라 새 규칙 UI-NAV-04 는 MUST 이고, 그 예외가 답 둘(누르면 여는
+    팝업 · 브라우저 기본 풍선)을 말하며 그물이 `tests/test_tip_delay.py` 를 부른다. 판 머리 · 1장
+    안내 · 4장 지금 값 · 8장 판 기록이 함께 선다."""
+    document = _text()
+    assert "판 v1.43" in document.split("\n## 1. ")[0]
+    assert "6-40 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-40. ") :]
+    assert "「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도 마찬가지로」" in record
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    answers: dict[str, str] = {}
+    for line in lines:
+        match = re.match(
+            r"^- (tip-[\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-21) · ([^()]+)\)$", line
+        )
+        assert match, line[:120]
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert "UI-NAV-04" in cited and set(cited) <= known, cited
+        answers[match.group(1)] = match.group(2)
+    assert answers == _TIP_1121_ANSWERS
+    assert "구현이 답 밖에서 정한 것" in record and "사본 앱 측정" in record
+    nav04 = next(rule for rule in _rules() if rule.id == "UI-NAV-04")
+    assert _level_and_state(nav04) == ("MUST", "확정")
+    assert "1초" in nav04.title and "처음 들어올 때만" in nav04.text
+    assert "누르면 여는 팝업" in nav04.fields["예외"][0]
+    assert "브라우저 기본 풍선" in nav04.fields["예외"][0]
+    assert "`tests/test_tip_delay.py`" in nav04.fields["그물"][0]
+    assert "6-40" in nav04.fields["근거"][0]
+    values = _chapter(document, 4)
+    assert "| 풍선 지연 | 마우스를 올리고 1초" in values and "| UI-NAV-04 |" in values
+    history = _chapter(document, 8)
+    v143 = history[history.index("- **v1.43 — 2026-11-21.**") :]
+    for phrase in ("6-40", "UI-NAV-04", "규칙 83", "MUST 48"):
+        assert phrase in v143, phrase
+
+
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
     """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
     보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""
