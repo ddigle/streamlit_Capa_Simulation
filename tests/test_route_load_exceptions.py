@@ -294,6 +294,82 @@ def test_a_top_dummy_route_without_unit_capacity_is_not_counted_as_lost_demand()
     assert counts_on.excluded_routes == 0
 
 
+def _hbm_spelled_upper(frame: pd.DataFrame) -> pd.DataFrame:
+    """DEMO-HBM 의 `WF 구분` 을 원천처럼 대문자(`BUFFER` · `CORE` · `TOP` · `DUMMY` ·
+    `TOP_DUMMY`)로 적은 사본. 다른 제품은 그대로다."""
+    hbm = frame["제품정보"].eq(demo.HBM)
+    division = frame["WF 구분"].astype("string")
+    return frame.assign(**{"WF 구분": division.mask(hbm, division.str.upper()).astype("object")})
+
+
+def test_an_upper_case_source_takes_the_same_exception() -> None:
+    """원천 표기는 대문자다 — 경로 · 수율 · Chip 구성이 모두 `BUFFER` · `CORE` 여도 같은 값을
+    받는다.
+
+    경로 쪽(Core 줄 고르기)과 바탕 쪽(Buffer 부하 · Core `구분_Chip` 고르기)이 저마다 표기를
+    가리지 않아야 한다. 경로 쪽만 글자 그대로 견주면 Core 줄이 일반 산식 값으로 남고, 바탕 쪽만
+    그러면 Core 줄이 「부하 예외 바탕 없음」 으로 빠진다.
+    """
+    reqb, capacity = _route_tables()
+    tables = (
+        _hbm_spelled_upper(reqb),
+        demo.plan(),
+        _hbm_spelled_upper(demo.yields()),
+        _hbm_spelled_upper(demo.chip_qty()),
+        _hbm_spelled_upper(capacity),
+    )
+
+    off = calculate_required_equipment(*tables)
+    result = calculate_required_equipment(*tables, route_exceptions=_DECLARED)
+
+    for month in demo.MONTHS:
+        assert _values(off, _EXC, "CORE", month=month) == pytest.approx(
+            [_core_general(month)] * len(_STEPS)
+        )
+        assert _values(result, _EXC, "CORE", month=month) == pytest.approx(
+            [_core_exception(month)] * len(_STEPS)
+        )
+    assert _values(result, _EXC, "TOP_DUMMY") == [0.0] * (len(_ROUTE_MONTHS) * len(_STEPS))
+    assert _basis_missing(result).empty
+    off_routes, result_routes = _by_route(off), _by_route(result)
+    assert result_routes.index.equals(off_routes.index)
+    division = result_routes.index.get_level_values("WF 구분").str.casefold()
+    changed = result_routes.index.get_level_values("공정").isin([_EXC]) & division.isin(
+        ["core", "top_dummy"]
+    )
+    pd.testing.assert_frame_equal(result_routes.loc[~changed], off_routes.loc[~changed])
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("Capa Code", "DEMO-HBM-CC2"), ("Customer", "DEMO-CUST2"), ("CS", "ES")],
+)
+def test_each_business_key_keeps_its_own_buffer_basis(key: str, value: str) -> None:
+    """바탕 키는 `WF 구분` 만 뺀 부하 키다 — Capa Code · Customer · CS 가 다른 계획은 제 Buffer
+    부하를 바탕으로 가져 섞이지 않는다.
+
+    DEMO-HBM 계획에 그 키 하나만 다르고 생산수량이 다른 행을 더한다(경로는 없다). 선언 공정의
+    Core 줄은 제 계획의 Buffer 부하만 곱한다 — 바탕 키에서 그 칸이 빠지면 한 키에 바탕이 둘이
+    되어 멈춘다.
+    """
+    reqb, capacity = _route_tables()
+    plan = demo.plan()
+    sibling = plan.loc[plan["제품정보"].eq(demo.HBM)]
+    sibling = sibling.assign(생산수량=sibling["생산수량"] * 3)
+    sibling[key] = value
+    plan = pd.concat([plan, sibling], ignore_index=True)
+
+    result = calculate_required_equipment(
+        reqb, plan, demo.yields(), demo.chip_qty(), capacity, route_exceptions=_DECLARED
+    )
+
+    for month in demo.MONTHS:
+        assert _values(result, _EXC, "Core", month=month) == pytest.approx(
+            [_core_exception(month)] * len(_STEPS)
+        )
+    assert _basis_missing(result).empty
+
+
 # 경로가 없는 제품 — DEMO-HBM 과 같은 기준정보를 가진 합성 제품이다(이 시험만 쓴다).
 _UNROUTED_HBM = "DEMO-HBM2"
 
@@ -361,17 +437,19 @@ def _assert_same_result(left: pd.DataFrame, right: pd.DataFrame) -> None:
 @pytest.mark.parametrize(
     ("declaration", "basis"),
     [
-        ({}, "WF"),
         ({"DEMO-ABSENT": BUFFER_X_CORE_CHIP}, "WF"),
         ({_EXC: BUFFER_X_CORE_CHIP}, "CHIP"),
     ],
-    ids=["empty", "absent-process", "chip-basis-only"],
+    ids=["absent-process", "chip-basis-only"],
 )
 def test_a_declaration_that_reaches_no_wafer_route_leaves_the_result_as_today(
     declaration: RouteLoadDeclaration, basis: str
 ) -> None:
-    """선언이 비거나, 선언 공정이 이번 경로에 없거나, 그 공정이 CHIP 경로뿐이면 결과 · attrs 가
-    지금과 같다."""
+    """선언 공정이 이번 경로에 없거나 그 공정이 CHIP 경로뿐이면 결과 · attrs 가 선언 없음과 같다.
+
+    빈 선언이 지금 계산과 같다는 것은 선언을 넘기지 않는 `tests/test_required_equipment.py` 가
+    받친다 — 빈 선언과 기본값은 같은 길이라 여기서 견줘도 드러나는 것이 없다.
+    """
     off = _calculate(basis=basis)
 
     result = _calculate(declaration, basis=basis)
