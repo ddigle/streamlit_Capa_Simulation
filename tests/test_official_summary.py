@@ -14,6 +14,7 @@ import streamlit as st
 
 from capa_simulation.components.intro_summary import summary_payload
 from capa_simulation.design import tokens
+from capa_simulation.services.load_calculator import calculate_wafer_load, filter_edp_plan
 from capa_simulation.services.official_summary import (
     OfficialSummary,
     build_comparison_summary,
@@ -913,7 +914,7 @@ def test_the_summary_gap_ignores_plans_that_differ_only_in_dummy_series() -> Non
     get_home_comparison_plan.clear()
     tables = demo.tables()
     key = demo.home_key("summary-gap")
-    density, _detail, wafer, _volume, total = get_home_lob_without_edp(
+    density, _detail, wafer, _volume = get_home_lob_without_edp(
         cache_key=key, _tables=tables, _display_order=demo.display_order()
     )
     comparison_density, comparison_wafer, _cmp_detail = get_home_comparison_plan(
@@ -937,9 +938,14 @@ def test_the_summary_gap_ignores_plans_that_differ_only_in_dummy_series() -> Non
     assert list(summary.wafer) == pytest.approx(
         list(wafer.sort_values("생산계획년월")["Wafer 부하량"])
     )
+    unfiltered = (
+        calculate_wafer_load(filter_edp_plan(demo.plan(), False), demo.yields(), demo.chip_qty())
+        .groupby("생산계획년월")["물량"]
+        .sum()
+    )
     assert all(
-        float(home) < float(unfiltered)
-        for home, unfiltered in zip(wafer["Wafer 부하량"], total["Wafer 부하량"], strict=True)
+        float(home) < float(unfiltered[month])
+        for month, home in zip(wafer["생산계획년월"], wafer["Wafer 부하량"], strict=True)
     )
     get_home_lob_without_edp.clear()
     get_home_comparison_plan.clear()

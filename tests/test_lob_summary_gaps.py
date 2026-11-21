@@ -189,7 +189,7 @@ def _home_and_comparison_wafer(tag: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     simulation_cache.get_home_lob_without_edp.clear()
     simulation_cache.get_home_comparison_plan.clear()
     tables = demo.tables()
-    _density, _detail, own_wafer, _volume, _total = simulation_cache.get_home_lob_without_edp(
+    _density, _detail, own_wafer, _volume = simulation_cache.get_home_lob_without_edp(
         cache_key=demo.home_key(tag),
         _tables=tables,
         _display_order=demo.display_order(),

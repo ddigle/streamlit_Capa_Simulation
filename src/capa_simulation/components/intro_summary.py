@@ -545,7 +545,7 @@ def _build(
         _display_order=display_order,
         _reference_tables=tables,
     )
-    monthly_density, _detail, monthly_wafer, product_volume, _total = get_home_lob_without_edp(
+    monthly_density, _detail, monthly_wafer, product_volume = get_home_lob_without_edp(
         cache_key=cache_key,
         _tables=tables,
         _display_order=display_order,

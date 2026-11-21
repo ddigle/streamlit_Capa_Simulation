@@ -2545,8 +2545,9 @@
   `(제품타입, WF 구분)` 게이트(EDP-TSV 의 이름만 `Dummy` 인 행은 안 뺌). 함께 바뀌는 곳: 공식 요약 · 입장 화면 Summary · 선행 B/O
   (변동률은 Density 로만 내 확보율 불변) · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모. 그대로: 소요대수 · 확보율 ·
   B/N 순위, 필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지 답 대기, 바꿀 때는
-  `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽으면 된다), 같은 HOME 표의 `Wafer Capa` ·
-  연간 Total · B/N 의 Wafer Capa(거르지 않은 합). Wafer 계산값은 저장하지 않아 DB · 마이그레이션 영향은 없고 배포 즉시 모든
+  `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽으면 된다). 같은 HOME 표의 `Wafer Capa` ·
+  연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 도 거른 월 합에서 낸다(정본 판단 — 같은 표에서 확보율 100% 의 Wafer Capa 가
+  Wafer 계획을 넘지 않게. 사용자가 반대하면 이 몫만 걷는다). Wafer 계산값은 저장하지 않아 DB · 마이그레이션 영향은 없고 배포 즉시 모든
   리비전에 걸린다. 과거 구간(Past Data) `Wafer Total` 손 입력값은 그대로 받는다 — 지금까지 넣은 값이 어느 기준이었는지는 답 대기.
   관련: `services/product_type.py` · `services/load_calculator.exclude_dummy_series` ·
   `services/dashboard.home_aggregation_wafer_load` · AGENTS 6장 「부하량」 · 「HOME 얹기」

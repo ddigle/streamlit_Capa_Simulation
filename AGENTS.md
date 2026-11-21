@@ -7587,11 +7587,12 @@ HOME 은 원데이터 계산 위에 화면 조건을 얹는다. 순서는 원데
 HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **HOME `Wafer 계획` 은 Dummy 계열을 뺀 합(원천 집계 기준)이다**(2026-11-22 사용자 결정 — 6장 「부하량」). 같은
-  거른 값을 공식 요약 · 입장 화면 Summary · 선행 B/O · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모가 쓴다.
+  거른 값을 공식 요약 · 입장 화면 Summary · 선행 B/O · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모가 쓰고,
+  같은 HOME 표의 `Wafer Capa` · 연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 도 그 월 합에서 낸다 — 거르지 않은 합을
+  곱하면 확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘어 표가 스스로 어긋난다(정본 판단, `docs/TODO.md`).
   HOME 계산 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_comparison_plan`)가 거른 프레임을 내고,
   `get_home_simulation` 의 마지막 원소는 거르지 않은 월 합이다. 그대로 두는 자리 — 소요대수 · 확보율 · B/N 순위,
-  필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지는 답을 받기 전이다, `docs/TODO.md`), 같은 HOME
-  표의 `Wafer Capa` · 연간 Total · B/N 의 Wafer Capa(거르지 않은 합 — `get_home_lob_without_edp` 의 마지막 원소).
+  필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지는 답을 받기 전이다, `docs/TODO.md`).
 
 - **`EDP 포함` 끄기는 LOB 값에만 건다.** `확보율 × 부하량` 꼴 값(Density·Wafer 계획·Wafer Capa·B/N Capa·Top 5)과
   계획 세부수량만 EDP 를 빼고, 소요대수·확보율·B/N 공정 순위는 EDP 를 포함한 전체 계획 그대로다 — 설비가 받는 부하는

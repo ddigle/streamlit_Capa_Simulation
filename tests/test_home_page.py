@@ -1175,6 +1175,82 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
         clear_global_advance_load_cache()
 
 
+def test_wafer_capa_year_total_and_bottleneck_wafer_capa_follow_the_home_wafer_plan(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 HOME 표의 `Wafer Capa` · 연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 는
+    `Wafer 계획` 과 같은 HOME 집계 기준(Dummy 계열 뺌) 월 합에서 난다 — 거르지 않은 합이 섞이면
+    확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘는다.
+
+    시드에는 Dummy 계열이 없어 HOME 계산 결과의 거른 월 합만 절반으로 바꿔 넣고(거르지 않은 합은
+    그대로), 화면이 그리는 표 입력이 모두 그 절반을 쓰는지 본다.
+    """
+    import capa_simulation.components.home_figures as home_figures
+    import capa_simulation.services.dashboard as dashboard
+    from capa_simulation.services import simulation_cache
+
+    def halved(frame: pd.DataFrame) -> pd.DataFrame:
+        result = frame.copy()
+        result["Wafer 부하량"] = pd.to_numeric(result["Wafer 부하량"]) * 0.5
+        return result
+
+    original_simulation = simulation_cache.get_home_simulation
+    original_without_edp = simulation_cache.get_home_lob_without_edp
+
+    def simulation(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_simulation(*args, **kwargs))
+        result[2] = halved(result[2])
+        return tuple(result)
+
+    def without_edp(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_without_edp(*args, **kwargs))
+        result[2] = halved(result[2])
+        return tuple(result)
+
+    seen: dict[str, Any] = {}
+    original_lob = home_figures.build_lob_summary_figures
+    original_detail = home_figures.build_bottleneck_detail_figures
+
+    def lob_spy(**kwargs: Any) -> Any:
+        seen["lob"] = kwargs
+        return original_lob(**kwargs)
+
+    def detail_spy(**kwargs: Any) -> Any:
+        seen["detail"] = kwargs
+        return original_detail(**kwargs)
+
+    original_year_totals = dashboard.build_year_totals
+
+    def year_totals_spy(*args: Any, **kwargs: Any) -> Any:
+        seen["year_wafer"] = args[1]
+        return original_year_totals(*args, **kwargs)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", simulation)
+    monkeypatch.setattr(simulation_cache, "get_home_lob_without_edp", without_edp)
+    monkeypatch.setattr(home_figures, "build_lob_summary_figures", lob_spy)
+    monkeypatch.setattr(home_figures, "build_bottleneck_detail_figures", detail_spy)
+    monkeypatch.setattr(dashboard, "build_year_totals", year_totals_spy)
+    # 같은 모듈 DB 의 앞 시험이 같은 키로 남긴 그림이 있으면 표 입력을 만들지 않는다.
+    shared_home_figure_store.clear()
+    _run(seeded_database)
+
+    summary = seen["lob"]["lob_summary"]
+    plan = summary.set_index("생산계획년월")["Wafer 부하량"]
+    rates = summary.set_index("생산계획년월")["확보율"]
+    assert summary["Wafer Capa"].to_numpy() == pytest.approx((plan * rates).to_numpy())
+    top5 = seen["lob"]["monthly_top5"]
+    assert top5["Wafer 부하량"].to_numpy() == pytest.approx(
+        plan.loc[top5["생산계획년월"]].to_numpy()
+    )
+    details = seen["detail"]["monthly_bottleneck_details"]
+    assert details["Wafer 부하량"].to_numpy() == pytest.approx(
+        plan.loc[details["생산계획년월"]].to_numpy()
+    )
+    # 연간 Total 은 표 입력 그대로의 월 합이 그해 더해진 값이다(완결된 해가 없으면 칸이 없다).
+    year_wafer = seen["year_wafer"].set_index("생산계획년월")["Wafer 부하량"]
+    assert year_wafer.loc[plan.index].to_numpy() == pytest.approx(plan.to_numpy())
+
+
 def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
     """LOB 월 Figure 의 Density 칸 오른쪽 끝 글자(선행 입고 실적) — 월 라벨 → (글자, hover, x).
 

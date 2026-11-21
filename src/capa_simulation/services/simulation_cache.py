@@ -1415,16 +1415,15 @@ def get_home_lob_without_edp(
     cache_key: HomeSimulationCacheKey,
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """EDP 를 뺀 Density·계획 세부수량·Wafer 부하량·제품별 수량. **소요대수는 만들지 않는다.**
 
     EDP 제외는 LOB 로 표현되는 값, 곧 `확보율 × 부하량` 꼴로 나오는 값에만 건다. 설비가
     받는 부하는 EDP 를 포함한 전체 계획이므로 확보율과 B/N 공정 순위는 바뀌면 안 된다.
     그래서 설비 수요 계산을 다시 돌리지 않고 부하량 쪽만 다시 만든다.
 
-    Wafer 부하량 · 제품별 수량은 `get_home_simulation` 과 같은 HOME 집계 기준(Dummy 계열 뺌)이고,
-    마지막 원소는 EDP 를 뺀 **거르지 않은** 월 Wafer 합이다 — HOME 표의 `Wafer Capa` · 연간 Total ·
-    B/N 의 Wafer Capa 가 읽는다.
+    Wafer 부하량 · 제품별 수량은 `get_home_simulation` 과 같은 HOME 집계 기준(Dummy 계열 뺌)이다 —
+    같은 HOME 표의 `Wafer Capa` · 연간 Total · B/N 의 Wafer Capa 도 이 월 합에서 난다.
 
     토글을 켠 동안에만 불린다. 끈 상태에서는 이 계산 자체가 돌지 않는다.
     """
@@ -1446,7 +1445,6 @@ def get_home_lob_without_edp(
         production_detail,
         build_monthly_wafer_load_from_load(home_wafer_load),
         build_product_volume(plan, home_wafer_load),
-        build_monthly_wafer_load_from_load(wafer_load),
     )
 
 

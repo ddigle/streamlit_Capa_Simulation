@@ -522,7 +522,7 @@ def _wired(
     monkeypatch.setattr(
         intro_summary,
         "get_home_lob_without_edp",
-        lambda **kwargs: (_density(), None, _wafer(), _volume(), _wafer()),
+        lambda **kwargs: (_density(), None, _wafer(), _volume()),
     )
     monkeypatch.setattr(
         intro_summary, "get_process_labels", lambda: SimpleNamespace(format_func=lambda: str)

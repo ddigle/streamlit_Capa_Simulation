@@ -498,26 +498,23 @@ def _sum_by_month(load: pd.DataFrame) -> list[float]:
     return [float(value) for value in load.groupby("생산계획년월")["물량"].sum().sort_index()]
 
 
-def test_home_wafer_without_edp_drops_the_dummy_series_and_also_returns_the_total() -> None:
-    """EDP 를 뺀 HOME 의 월 Wafer · 제품별 수량은 Dummy 계열을 뺀 합이고, 마지막 원소는 거르지
-    않은 합(산출 기준 총량)이다. 제품별 합은 월 합과 한 치도 다르지 않다."""
+def test_home_wafer_without_edp_drops_the_dummy_series() -> None:
+    """EDP 를 뺀 HOME 의 월 Wafer · 제품별 수량은 Dummy 계열을 뺀 합이다. 제품별 합은 월 합과 한
+    치도 다르지 않다."""
     simulation_cache.get_home_lob_without_edp.clear()
-    _density, _detail, monthly_wafer, product_volume, total = (
-        simulation_cache.get_home_lob_without_edp(
-            cache_key=demo.home_key("lob"),
-            _tables=demo.tables(),
-            _display_order=demo.display_order(),
-        )
+    _density, _detail, monthly_wafer, product_volume = simulation_cache.get_home_lob_without_edp(
+        cache_key=demo.home_key("lob"),
+        _tables=demo.tables(),
+        _display_order=demo.display_order(),
     )
     load = _demo_wafer_load(include_edp=False)
     assert _monthly_sheets(monthly_wafer) == pytest.approx(
         _sum_by_month(exclude_dummy_series(load))
     )
-    assert _monthly_sheets(total) == pytest.approx(_sum_by_month(load))
     assert all(
         filtered < unfiltered
         for filtered, unfiltered in zip(
-            _monthly_sheets(monthly_wafer), _monthly_sheets(total), strict=True
+            _monthly_sheets(monthly_wafer), _sum_by_month(load), strict=True
         )
     )
     by_month = product_volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
@@ -557,3 +554,37 @@ def test_home_simulation_returns_the_home_wafer_and_the_unfiltered_total_last(
     by_month = product_volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
     assert [float(value) for value in by_month] == pytest.approx(_monthly_sheets(monthly_wafer))
     simulation_cache.get_home_simulation.clear()
+
+
+def test_wafer_capa_follows_the_home_wafer_plan_and_stays_within_it_at_full_securement() -> None:
+    """같은 HOME 표의 `Wafer Capa` · B/N Top 5 · 상세 B/N 의 Wafer Capa 는 `Wafer 계획` 과 같은 거른
+    월 합 × 확보율이다 — 거르지 않은 합을 곱하면 확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘어
+    표가 스스로 어긋난다."""
+    simulation_cache.get_home_lob_without_edp.clear()
+    density, _detail, monthly_wafer, _volume = simulation_cache.get_home_lob_without_edp(
+        cache_key=demo.home_key("capa"),
+        _tables=demo.tables(),
+        _display_order=demo.display_order(),
+    )
+    simulation_cache.get_home_lob_without_edp.clear()
+    ranking = build_monthly_bottleneck_ranking(
+        pd.DataFrame(
+            {
+                "생산계획년월": list(demo.MONTHS),
+                "공정": ["DEMO-P1", "DEMO-P1"],
+                "가용대수": [10.0, 10.0],
+                "소요대수": [10.0, 10.0],
+                "확보율": [1.0, 1.0],
+            }
+        )
+    )
+    summary = build_production_lob_summary(
+        density, monthly_wafer, build_monthly_bottlenecks_from_ranking(ranking)
+    )
+    plan = summary["Wafer 부하량"].to_numpy()
+    assert summary["Wafer Capa"].to_numpy() == pytest.approx(plan)
+    assert (summary["Wafer Capa"] <= summary["Wafer 부하량"]).all()
+    top5 = build_monthly_bottleneck_top5_from_ranking(ranking, density, monthly_wafer=monthly_wafer)
+    details = build_monthly_bottleneck_details_from_ranking(ranking, monthly_wafer, rank_limit=5)
+    for frame in (top5, details):
+        assert frame.sort_values("생산계획년월")["Wafer Capa"].to_numpy() == pytest.approx(plan)
