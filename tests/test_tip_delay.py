@@ -295,8 +295,14 @@ const advance = (ms) => {
     if (timer && timer.at <= now) { timers[index] = null; timer.run() }
   })
 }
-const chartA = { isConnected: true, name: 'A' }
-const chartB = { isConnected: true, name: 'B' }
+// 그림 — 칸 key(`st-key-…`)가 같으면 같은 위젯을 다시 세운 그림이다(없으면 key 없는 칸).
+const chart = (name, key) => ({
+  isConnected: true,
+  name,
+  closest: () => ({ className: 'stElementContainer' + (key ? ' st-key-' + key : '') }),
+})
+const chartA = chart('A', 'a')
+const chartB = chart('B', 'b')
 const inside = (chart) => ({ closest: () => chart })
 let step = 0
 const over = (chart, pointerType, at) => listeners.pointerover({
@@ -353,8 +359,8 @@ out.goneStaysCold = warm()
 chartA.isConnected = true
 over(chartB)
 advance(1000)
-// 데워진 그림이 다시 그려져 문서에서 빠지면 그 자리의 새 그림이 웜업을 잇는다.
-const chartB2 = { isConnected: true, name: 'B2' }
+// 데워진 그림이 다시 그려지면(칸 key 가 같은 새 그림) 웜업을 잇는다.
+const chartB2 = chart('B2', 'b')
 chartB.isConnected = false
 over(chartB2)
 out.replacedKeepsWarm = warm()
@@ -363,8 +369,8 @@ advance(5000)
 out.replacedStillWarm = warm()
 // 데우기 전에 빠진 그림은 잇지 않는다 — 새 그림에서 다시 기다린다.
 over(null)
-const chartC = { isConnected: true, name: 'C' }
-const chartC2 = { isConnected: true, name: 'C2' }
+const chartC = chart('C', 'c')
+const chartC2 = chart('C2', 'c')
 over(chartC)
 advance(500)
 chartC.isConnected = false
@@ -376,7 +382,7 @@ out.coldReplacedWarm = warm()
 over(chartB2)
 advance(1000)
 // 마우스는 그대로인데 밑의 그림이 다시 서는 동안 빈 칸이 닿아도(앱 회차) 웜업을 잇는다.
-const chartB3 = { isConnected: true, name: 'B3' }
+const chartB3 = chart('B3', 'b')
 over(chartB2, 'mouse', [500, 500])
 chartB2.isConnected = false
 over(null, 'mouse', [500, 500])
@@ -394,6 +400,36 @@ advance(999)
 out.stillColdWaits = warm()
 advance(1)
 out.stillColdWarm = warm()
+// 굴림으로 멈춘 마우스 밑에 다른 그림(key 다름)이 오면 처음처럼 기다린다.
+const chartD = chart('D', 'd')
+over(chartD, 'mouse', [300, 300])
+advance(1000)
+const chartE = chart('E', 'e')
+over(chartE, 'mouse', [300, 300])
+out.scrolledOtherWaits = warm()
+advance(1000)
+out.scrolledOtherWarm = warm()
+// 그림을 눌러 다른 화면으로 옮긴 뒤(옛 그림 빠짐) 빈 칸을 지나 닿은 다른 그림도 기다린다.
+const chartF = chart('F', 'f')
+over(chartF, 'mouse', [200, 200])
+advance(1000)
+chartF.isConnected = false
+over(null, 'mouse', [200, 200])
+out.navigatedHold = warm()
+const chartG = chart('G', 'g')
+over(chartG, 'mouse', [260, 210])
+out.navigatedOtherWaits = warm()
+advance(1000)
+// key 없는 그림은 다시 세워도 같은 그림인지 모르므로 기다린다.
+over(null)
+const chartU = chart('U', '')
+over(chartU)
+advance(1000)
+chartU.isConnected = false
+over(chart('U2', ''))
+out.unkeyedWaits = warm()
+advance(1000)
+out.unkeyedWarm = warm()
 const before = listeners.pointerover
 eval(SCRIPT)
 out.rerunReplaced = listeners.pointerover !== before && Object.keys(listeners).length === 2
@@ -407,9 +443,10 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     들어온 뒤 지연이 지나야 표지를 달고, 그 그림 안에서는 그대로 두며, 그림 밖 · 다른 그림 · 창
     밖으로 가면 뗀다. 터치는 누른 것이라 곧바로 데운다. 지연은 사용자 정의 속성(`ms` · `s`)을 읽고
     못 읽으면 1초다. 기다리는 동안 그림이 사라지면 데우지 않는다. 데워진 그림이 다시 그려지면(칸을
-    눌러 앱이 다시 돎 — 마우스는 그대로라 그 사이 밑에 닿는 빈 칸도 떠난 것이 아니다) 그 자리의 새
-    그림이 웜업을 잇고, 데우기 전이면 새 그림에서 다시 기다린다.
-    테마 iframe 이 다시 서면 옛 처리기를 떼고 표지를 지운다."""
+    눌러 앱이 다시 돎 — 칸 key 가 같은 새 그림, 그 사이 멈춘 마우스 밑에 닿는 빈 칸도 떠난 것이
+    아니다) 웜업을 잇고, 데우기 전이면 새 그림에서 다시 기다린다. 굴림 · 화면 옮김으로 밑에 온 다른
+    그림(key 다름)과 key 없는 그림은 처음처럼 기다린다. 테마 iframe 이 다시 서면 옛 처리기를 떼고
+    표지를 지운다."""
     script = tip_delay.chart_tip_warmup_script()
     runner = (
         f"const SCRIPT = {json.dumps(script)}\n"
@@ -431,6 +468,9 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     assert out["stillPlaceholderKeepsWarm"] is True and out["stillNewChartKeepsWarm"] is True
     assert out["movingInNewChartWarm"] is True and out["movedOutCools"] is False
     assert out["stillColdWaits"] is False and out["stillColdWarm"] is True
+    assert out["scrolledOtherWaits"] is False and out["scrolledOtherWarm"] is True
+    assert out["navigatedHold"] is True and out["navigatedOtherWaits"] is False
+    assert out["unkeyedWaits"] is False and out["unkeyedWarm"] is True
     assert out["rerunReplaced"] is True and out["rerunCools"] is False
 
 

@@ -4222,7 +4222,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `CHART_WARM_ATTRIBUTE` 가 없을 때만, Plotly 막대 단추 이름은 늘)을 화면 덩어리 끝에 둔다.
   - 그림 웜업 스크립트(`chart_tip_warmup_script` — 고정 문자열, `app.py` 가 테마 툴바 스크립트에 싣는다)는 부모 문서에
     `pointerover` · `pointerout` 하나씩 걸어 그림에 처음 들어온 뒤 지연이 지나면 표지를 달고, 그림 밖 · 다른 그림 · 창 밖이면
-    뗀다. 멈춘 마우스 밑에서 그림이 다시 서면(칸 누름 회차) 잇고, 터치는 곧바로 데운다. 테마 iframe 이 다시 서면 옛 처리기를 뗀다.
+    뗀다. 칸 key(`st-key-…`)가 같은 그림이 다시 서면(칸 누름 회차 — 세우는 동안 멈춘 마우스 밑의 빈 칸도 떠난 것이 아니다)
+    잇고, 굴림 · 화면 옮김으로 밑에 온 다른 그림 · key 없는 그림은 기다린다. 터치는 곧바로 데운다. 테마 iframe 이 다시 서면
+    옛 처리기를 뗀다.
   - 그림자 DOM · 자체 풍선 부품(`grid_shared_assets/cells.css` · `eg_core.js` · Space `editor.js` · `date_panel.js` ·
     `process_picker` · `paste_window.css` · `intro.js`)은 같은 속성을 읽고 못 읽을 때의 기본값도 1초다 — 키보드 초점 · 누름은
     곧바로.
