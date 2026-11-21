@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from test_shortening_progress_reasons import NEED, _day, _draft, _real, _virtual
 
-from capa_simulation.persistence import equipment_cache
+from capa_simulation.persistence import equipment_cache, equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.shortening_baseline import BaselineProvenance
 from capa_simulation.services.shortening_progress_log import (
@@ -102,6 +102,43 @@ def test_a_refused_save_writes_neither_the_record_nor_the_snapshot(
         repository.save_shortening_progress_entry(W47, 30, expected_days=None, snapshot=draft)
     assert repository.load_shortening_progress_log().days_of(W47) == 20
     assert _counts(repository) == (0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    "step", ["write_progress_snapshot", "carry_progress_snapshot", "delete_progress_snapshot"]
+)
+def test_a_failing_snapshot_step_rolls_back_the_record_of_the_same_write(
+    repository: DuckDBEquipmentRepository, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """기록 줄과 스냅숏은 **같은 쓰기 트랜잭션**이다 — 스냅숏 쓰기(넣기 저장) · 옮기기(넣기 없이
+    고침) · 지우기(기록 지우기)가 실패하면 기록 줄도 바뀌지 않는다. 스냅숏 단계를 트랜잭션 밖(저장
+    뒤 따로 부름 등)으로 옮겨 하나만 남는 꼴이 되면 여기서 걸린다."""
+    repository.save_shortening_progress_entry(W46, 30, expected_days=None, snapshot=_week_draft(30))
+    before = [
+        (entry.week, entry.days, entry.updated_at)
+        for entry in repository.load_shortening_progress_log().entries
+    ]
+    counts = _counts(repository)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(step)
+
+    monkeypatch.setattr(equipment_repository, step, fail)
+    with pytest.raises(RuntimeError, match=step):
+        if step == "write_progress_snapshot":
+            repository.save_shortening_progress_entry(
+                W47, 22, expected_days=None, snapshot=_week_draft(22)
+            )
+        elif step == "carry_progress_snapshot":
+            repository.save_shortening_progress_entry(W46, 27, expected_days=30)
+        else:
+            repository.delete_shortening_progress_entry(W46, expected_days=30)
+    after = [
+        (entry.week, entry.days, entry.updated_at)
+        for entry in repository.load_shortening_progress_log().entries
+    ]
+    assert after == before
+    assert _counts(repository) == counts
 
 
 def test_deleting_the_record_deletes_its_snapshot(repository: DuckDBEquipmentRepository) -> None:
