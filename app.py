@@ -100,6 +100,7 @@ from capa_simulation.components.table_toolbar import (
     TABLE_HEADING_ROW_STYLE,
 )
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
+from capa_simulation.components.tip_delay import chart_tip_warmup_script
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.components.widget_generation import note_session_start
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
@@ -328,6 +329,9 @@ render_theme_toggle(
         page_box_reveal_script(),
         # 팝오버 밖 단추가 읽는 글 칸은 Esc 로 닫아도 친 값이 서버에 간다.
         popover_field_commit_script(),
+        # 그림 값 풍선은 그림에 처음 들어올 때만 1초 기다리고 그 그림 안에서는 곧바로 따라간다
+        # (`components/tip_delay.py` — 문서 뿌리 웜업 표지).
+        chart_tip_warmup_script(),
         # 끊긴 탭의 띠 하나 — 서버 재시작(시작 임시 응답) 동안 재시작 띠, 통합인증이 켜진 서버면
         # 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠(같은 스크립트).
         *sso_reconnect_scripts(signed_in),
