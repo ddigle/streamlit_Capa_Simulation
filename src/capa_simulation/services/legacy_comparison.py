@@ -1178,6 +1178,7 @@ def route_factor_by_key(link: RouteLink, factor: RouteFactor) -> pd.Series:
 
 PLAN_FLAG_COLUMN = "계획기초정보여부"
 PROCESS_COLUMN = "공정"
+AREA_COLUMN = "Area_Name"
 
 # 「계획 행으로 접음」 갈래의 지표. 정식 대조의 Wafer 와 같은 기존 컬럼이고, 결과를 한 CSV 에 모아도
 # 정식 대조 행과 섞이지 않게 이름만 다르다.
@@ -1217,10 +1218,11 @@ class PlanRowDiagnostics:
       된다.
     - `cells_with_many_plan_values` — 접는 행의 값이 둘 이상인 칸(같은 값인지는 정식 대조처럼 정확히
       본다). 이 갈래에서도 `값 불일치` 가 된다.
-    - `cells_split_in_one_process` — 접는 행의 값이 하나인 칸 가운데, 그 값과 갈리는 계획 행 밖 행이
-      있고 그 행들이 모두 한 공정인 칸. 「갈린다」 는 |차| > `tolerance` × (두 값 가운데 큰
-      절댓값)이다 — 경로 값 가르기(`route_cells`)와 같은 허용이라 곱 · 나눗셈 뒤의 반올림은 갈림으로
-      치지 않는다.
+    - `cells_split_in_one_process` — 접는 행의 값이 하나인 칸 가운데, 그 값과 갈리는 계획 행 밖 경로
+      행이 있고 그 행들이 모두 한 공정인 칸. 보는 행 · 허용은 경로 값 가르기(`route_cells`)와 같다
+      — `Area_Name` 이 있고 값이 양수인 행만 보고(0 행 · 경로 아닌 행은 갈림으로 치지 않는다),
+      「갈린다」 는 |차| > `tolerance` × (두 값 가운데 큰 절댓값)이라 곱 · 나눗셈 뒤의 반올림은
+      갈림이 아니다.
     """
 
     plan_rows: int
@@ -1247,7 +1249,9 @@ def plan_row_diagnostics(
         )
     )
     require_columns(
-        core, [*grain_list, PLAN_FLAG_COLUMN, PROCESS_COLUMN, value_column], "Core Data"
+        core,
+        [*grain_list, PLAN_FLAG_COLUMN, PROCESS_COLUMN, AREA_COLUMN, value_column],
+        "Core Data",
     )
     frame = core.reset_index(drop=True)
     flagged = plan_row_mask(frame)
@@ -1263,7 +1267,8 @@ def plan_row_diagnostics(
     many = plan_values.nunique().gt(1)
     single = plan_values.first().loc[~many]
 
-    outside = ~in_plan
+    route = match_key(frame.loc[prepared.index, AREA_COLUMN]).ne("")
+    outside = ~in_plan & route & values.gt(0)
     reference = cell.loc[outside].map(single).astype("float64")
     others = values.loc[outside]
     scale = pd.concat([reference.abs(), others.abs()], axis=1).max(axis=1)

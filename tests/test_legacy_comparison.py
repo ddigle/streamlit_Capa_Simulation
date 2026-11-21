@@ -805,9 +805,18 @@ def test_measured_wafer_load_moves_the_measurement_ratios_onto_the_load() -> Non
 # ------------------------------------------------------------------ 계획 행으로 접음
 
 
-def _flagged(value: float, flag: object, process: object, **overrides: object) -> pd.DataFrame:
-    """원천 한 행 — 계획 줄 키는 `_plan_row` 와 같고 계획 표지 · 공정을 준다."""
-    return _plan_row(value, routes=1, 계획기초정보여부=flag, 공정=process, **overrides)
+def _flagged(
+    value: float, flag: object, process: object, area: object = None, **overrides: object
+) -> pd.DataFrame:
+    """원천 한 행 — 계획 줄 키는 `_plan_row` 와 같고 계획 표지 · 공정을 준다.
+
+    `area` 를 비우면 공정이 든 행만 경로 행(`Area_Name` 있음)이다 — 원천 꼴 그대로.
+    """
+    named = isinstance(process, str) and process.strip() != ""
+    shown = area if area is not None else ("Main" if named else pd.NA)
+    return _plan_row(
+        value, routes=1, 계획기초정보여부=flag, 공정=process, Area_Name=shown, **overrides
+    )
 
 
 def test_the_plan_row_fold_reads_the_plan_row_and_leaves_the_route_rows_out() -> None:
@@ -884,20 +893,32 @@ def test_plan_rows_are_read_by_the_flag_rule_and_a_blank_process() -> None:
 
 def test_plan_row_diagnostics_count_rows_and_cells_without_values() -> None:
     """칸마다 하나의 뜻만 심는다 — A 같음 · B 한 공정만 갈림 · C 두 공정 · D 계획 행 값 둘 ·
-    E 계획 행 없음 · F 공정 빈 행이 갈림."""
+    E 계획 행 없음 · F 경로 아닌 행만 갈림 · H 공정 빈 경로 행이 갈림."""
 
-    def cell(product: str, *rows: tuple[float, object, object]) -> pd.DataFrame:
-        return _core(*(_flagged(v, flag, proc, 제품정보=product) for v, flag, proc in rows))
+    def cell(
+        product: str, *rows: tuple[float, object, object] | tuple[float, object, object, object]
+    ) -> pd.DataFrame:
+        return _core(*(_flagged(*row, 제품정보=product) for row in rows))
 
     core = _core(
         # 반올림만큼(0.05%)은 갈림이 아니다. 공정 빈 경로 밖 행(N)이 같은 값이다.
         cell("A", (100.0, "Y", pd.NA), (100.0, "N", "P1"), (100.05, "N", "P2"), (100.0, "N", "")),
-        # 갈리는 행이 모두 P1 — 표기는 맞대기 꼴(`match_key`)로 본다.
-        cell("B", (100.0, "Y", pd.NA), (300.0, "N", "P1"), (300.0, "N", " p1"), (100.0, "N", "P2")),
+        # 갈리는 행이 모두 P1 — 표기는 맞대기 꼴(`match_key`)로 본다. P3 의 0 행은 갈림이 아니다.
+        cell(
+            "B",
+            (100.0, "Y", pd.NA),
+            (300.0, "N", "P1"),
+            (300.0, "N", " p1"),
+            (100.0, "N", "P2"),
+            (0.0, "N", "P3"),
+        ),
         cell("C", (100.0, "Y", pd.NA), (300.0, "N", "P1"), (200.0, "N", "P2")),
         cell("D", (100.0, "Y", pd.NA), (110.0, "Y", pd.NA), (300.0, "N", "P1")),
         cell("E", (50.0, "N", "P1"), (50.0, "N", "P2")),
+        # 공정 빈 N 행은 경로 행(`Area_Name`)이 아니라 갈림을 보지 않는다.
         cell("F", (100.0, "Y", pd.NA), (300.0, "N", pd.NA)),
+        # 경로 행인데 공정이 비면 「한 공정」 이 아니다.
+        cell("H", (100.0, "Y", pd.NA), (300.0, "N", "P1"), (300.0, "N", pd.NA, "Main")),
         # 값이 빈 행은 칸에 들지 않는다.
         cell("G", (float("nan"), "Y", pd.NA)),
     )
@@ -905,10 +926,10 @@ def test_plan_row_diagnostics_count_rows_and_cells_without_values() -> None:
     found = plan_row_diagnostics(core)
 
     assert found == PlanRowDiagnostics(
-        plan_rows=7,
+        plan_rows=8,
         flagged_with_process=0,
-        blank_process_unflagged=2,
-        cells=6,
+        blank_process_unflagged=3,
+        cells=7,
         cells_without_plan_row=1,
         cells_with_many_plan_values=1,
         cells_split_in_one_process=1,
