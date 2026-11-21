@@ -4125,6 +4125,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는 규칙(`GAP_EPSILON`·`visible_gap`·`format_gap`)이다. HOME `home_lob_figures` 와 Summary 가 함께 쓴다.
   비교 계획을 현재 수율 · Chip 표로 환산하기 전에 계획 행의 CUSTOM 을 현재 표에 다시 짝짓는 순수 함수
   (`repair_comparison_plan_custom` — 현재 계획의 같은 Capa Code → 현재 표의 제품 하나 → 원래 값)도 여기 둔다.
+  아직 `get_home_comparison_plan` 이 부르지 않는다 — 계획 표에 CUSTOM 을 싣는 키 승격과 함께 잇는다(TODO 2장 「업무 키 승격」).
 - `src/capa_simulation/components/admin_dialog.py` — Admin Area 편집 탭들이 함께 쓰는 팝업 칸
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
