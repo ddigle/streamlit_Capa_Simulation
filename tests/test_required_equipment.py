@@ -1,5 +1,6 @@
 # Purpose: RQ_REQB 경로 연결과 STEP별 소요대수, 소요대수에 들지 않은 계획 목록을 검증한다.
 
+import dummy_series_tables as demo
 import pandas as pd
 import pytest
 
@@ -7,7 +8,12 @@ from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
 )
-from capa_simulation.services.load_calculator import build_monthly_volume, load_exclusions
+from capa_simulation.services.load_calculator import (
+    build_monthly_volume,
+    calculate_chip_and_wafer_loads,
+    exclude_dummy_series,
+    load_exclusions,
+)
 from capa_simulation.services.required_equipment import (
     CAPACITY_KEYS,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
@@ -1162,3 +1168,103 @@ def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> N
         [202609, "CHIP", UNROUTED_KEY_MISMATCH_REASON],
     ]
     assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=2)
+
+
+# ------------------------------------------------------------------ Dummy 계열의 소요대수
+# HOME `Wafer 계획` 은 Dummy 계열(Dummy · Top_Dummy)을 뺀 합이지만, 소요대수는 설비가 받는
+# 부하라 Dummy 계열 경로의 부하를 그대로 품는다(사용자 결정 2026-11-22 — 소요대수 · 확보율 ·
+# B/N 순위는 그대로). 기대값은 계산기 출력이 아니라 손으로 푼 산식이다 — 부하량 쪽에서 행이
+# 빠지면 경로는 말없이 0 을 받는다.
+_DUMMY_SERIES_CAPACITY = 10.0
+# (제품정보, WF 구분) — 표기는 `dummy_series_tables` 경로 그대로(DEMO-HBM 의 Top_Dummy 는 대문자).
+_DUMMY_SERIES_ROUTES = (
+    (demo.HBM, "Buffer"),
+    (demo.HBM, "Core"),
+    (demo.HBM, "Top"),
+    (demo.HBM, "Dummy"),
+    (demo.HBM, "TOP_DUMMY"),
+    (demo.DUMMY_ONLY, "Dummy"),
+    (demo.DUMMY_ONLY, "Top_Dummy"),
+)
+
+
+def _dummy_series_route_tables(basis: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """한 공정에 두 HBM 제품의 경로를 모두 둔 `RQ_REQB` 와 대당 Capa(경로마다 같은 값)."""
+    keys = [
+        {
+            "생산계획년월": month,
+            "Area_Name": "Main",
+            "공정": "DEMO-PROC",
+            "양산구분": "양산",
+            "제품정보": product,
+            "Stack": "12H",
+            "WF 구분": division,
+            "STEP_SEQ": "S10",
+            "MCP_SEQ": "1",
+            "소요기준": basis,
+        }
+        for month in demo.MONTHS
+        for product, division in _DUMMY_SERIES_ROUTES
+    ]
+    reqb = pd.DataFrame(
+        [
+            {**key, "Capa Code": f"{key['제품정보']}-CC", "Customer": "DEMO-CUST", "CS": "MP"}
+            for key in keys
+        ]
+    )
+    capacity = pd.DataFrame([{**key, "대당 Capa": _DUMMY_SERIES_CAPACITY} for key in keys])
+    return reqb, capacity
+
+
+# 손으로 푼 부하량(202601). 생산수량 DEMO-HBM 100 · DEMO-DONLY 30, 구분_Chip 1, Net Die 800.
+# Top_Dummy 는 일반식, Dummy 는 Dummy 산식(`× (1 - EDS_수율)`)이다.
+_DUMMY_SERIES_LOADS = {
+    "WF": {
+        (demo.HBM, "TOP_DUMMY"): 100 * 1_000 * 1.0 / 0.85 / 0.95 / 800,
+        (demo.HBM, "Dummy"): 100 * 1_000 * 1.0 / 0.8 / 0.95 * (1 - 0.8) / 800,
+        (demo.DUMMY_ONLY, "Top_Dummy"): 30 * 1_000 * 1.0 / 0.85 / 0.95 / 800,
+        (demo.DUMMY_ONLY, "Dummy"): 30 * 1_000 * 1.0 / 0.8 / 0.95 * (1 - 0.8) / 800,
+    },
+    "CHIP": {
+        (demo.HBM, "TOP_DUMMY"): 100 * 1.0 / 0.95,
+        (demo.HBM, "Dummy"): 100 * 1.0 / 0.8 / 0.95 * (1 - 0.8),
+        (demo.DUMMY_ONLY, "Top_Dummy"): 30 * 1.0 / 0.95,
+        (demo.DUMMY_ONLY, "Dummy"): 30 * 1.0 / 0.8 / 0.95 * (1 - 0.8),
+    },
+}
+
+
+@pytest.mark.parametrize("basis", ["WF", "CHIP"])
+def test_dummy_series_routes_keep_their_load_in_required_equipment(basis: str) -> None:
+    """Dummy · Top_Dummy 경로는 HOME 집계에서 빠져도 소요대수에는 제 부하 그대로 든다.
+
+    공정의 달 합은 Dummy 계열을 뺀 부하(HOME 집계 기준)가 아니라 모든 경로 부하로 낸 값이다.
+    """
+    reqb, capacity = _dummy_series_route_tables(basis)
+
+    result = calculate_required_equipment(
+        reqb, demo.plan(), demo.yields(), demo.chip_qty(), capacity
+    )
+
+    january = result.loc[result["생산계획년월"].eq(202601)]
+    by_route = january.set_index(["제품정보", "WF 구분"])
+    for route, load in _DUMMY_SERIES_LOADS[basis].items():
+        assert by_route.loc[route, "부하량"] == pytest.approx(load), route
+        assert by_route.loc[route, "소요대수"] == pytest.approx(load / _DUMMY_SERIES_CAPACITY), (
+            route
+        )
+
+    chip_load, wafer_load = calculate_chip_and_wafer_loads(
+        demo.plan(), demo.yields(), demo.chip_qty()
+    )
+    basis_load = wafer_load if basis == "WF" else chip_load
+    hbm_load = basis_load.loc[basis_load["제품정보"].isin([demo.HBM, demo.DUMMY_ONLY])]
+    totals = result.groupby("생산계획년월")["소요대수"].sum()
+    assert [int(month) for month in totals.index] == list(demo.MONTHS)
+    for month in demo.MONTHS:
+        total = totals.loc[month]
+        month_load = hbm_load.loc[hbm_load["생산계획년월"].eq(month)]
+        everything = month_load["물량"].sum()
+        home_only = exclude_dummy_series(month_load)["물량"].sum()
+        assert everything > home_only
+        assert total == pytest.approx(everything / _DUMMY_SERIES_CAPACITY)
