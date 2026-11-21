@@ -13,10 +13,11 @@
 Plotly 는 점 · 칸마다 풍선 묶음을 새로 세우므로 CSS 만으로는 시트 · 히트맵 칸마다 1초씩 기다린다.
 그래서 문서 `pointerover` 하나가 지금 그림을 기억하고, 그림에 들어온 뒤 1초가 지나면 문서 뿌리에
 웜업 표지(`CHART_WARM_ATTRIBUTE`)를 단다. 표지가 있는 동안 그림 값 풍선 규칙이 빠진다. 다른 그림 ·
-그림 밖으로 옮기거나 창을 떠나면 표지를 뗀다. Altair 풍선(`#vg-tooltip-element`)은 그림 밖 `body`
-끝에 붙으므로 그림 칸에 단 표지로는 고를 수 없어 문서 뿌리에 단다. 터치로 띄운 풍선은 누른 것이라
-곧바로 데운다. 스크립트가 없어도(테마 iframe 이 아직 서지 않은 회차) CSS 가 그림 값 풍선을
-1초 늦춘다 — 그때는 점마다 기다릴 뿐이다.
+그림 밖으로 옮기거나 창을 떠나면 표지를 뗀다. 칸을 눌러 앱이 다시 돌며 그림을 새로 세워도(마우스는
+그 자리 — 세우는 동안 밑에 닿는 빈 칸도 떠난 것이 아니다) 웜업은 새 그림으로 잇는다. Altair
+풍선(`#vg-tooltip-element`)은 그림 밖 `body` 끝에 붙으므로 그림 칸에 단 표지로는 고를 수 없어 문서
+뿌리에 단다. 터치로 띄운 풍선은 누른 것이라 곧바로 데운다. 스크립트가 없어도(테마 iframe 이 아직
+서지 않은 회차) CSS 가 그림 값 풍선을 1초 늦춘다 — 그때는 점마다 기다릴 뿐이다.
 
 **값은 하나다.** 지연은 껍데기 스타일(`app_header.SHELL_STYLE`)의 `:root` 사용자 정의 속성
 `TIP_DELAY_VARIABLE` 하나이고, 그림자 DOM 부품(설비 마스터 · 시나리오 목록 · 편집 그리드 · Space
@@ -146,9 +147,12 @@ _SCRIPT = """
 // <chart-tip-warm>
 // 문서 `pointerover` 가 닿은 그림(`chart` — 그림 밖이면 null)과 지금 그림(`current`)으로 할 일을
 // 정한다. 같은 그림이면 그대로, 그림 밖이면 식히고, 새 그림이면 지연 뒤 데운다 — 터치는 누른 것이라
-// 곧바로 데운다.
-function warmAction(current, chart, pointerType) {
+// 곧바로 데운다. 데워져 있을 때(`warmNow`) 마우스는 그 자리 그대로인데(`still`) 밑의 화면이 바뀐 것
+// — 칸을 눌러 앱이 다시 돌며 그림을 새로 세움 — 은 떠난 것이 아니라 웜업을 잇고 새 그림을 지금
+// 그림으로 삼는다. 데워진 그림이 문서에서 빠진 뒤 처음 닿은 그림(`replaced`)도 같다.
+function warmAction(current, chart, pointerType, warmNow, still, replaced) {
   if (chart === current) return "keep";
+  if (warmNow && (still || (chart && replaced))) return "adopt";
   if (!chart) return "cool";
   return pointerType === "touch" ? "warm" : "arm";
 }
@@ -167,7 +171,7 @@ function tipDelayMs(raw, fallback) {
     parentWindow.clearTimeout(previous.state.timer);
   }
   root.removeAttribute(warm);
-  var state = { current: null, timer: 0 };
+  var state = { current: null, timer: 0, x: NaN, y: NaN };
 
   function cool() {
     parentWindow.clearTimeout(state.timer);
@@ -178,8 +182,18 @@ function tipDelayMs(raw, fallback) {
   function over(event) {
     var target = event.target;
     var chart = target && typeof target.closest === "function" ? target.closest(charts) : null;
-    var action = warmAction(state.current, chart, event.pointerType);
+    var still = event.clientX === state.x && event.clientY === state.y;
+    state.x = event.clientX;
+    state.y = event.clientY;
+    var replaced = Boolean(state.current && !state.current.isConnected);
+    var action = warmAction(
+      state.current, chart, event.pointerType, root.hasAttribute(warm), still, replaced
+    );
     if (action === "keep") return;
+    if (action === "adopt") {
+      if (chart) state.current = chart;
+      return;
+    }
     cool();
     if (action === "cool") return;
     state.current = chart;

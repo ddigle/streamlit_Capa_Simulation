@@ -273,6 +273,7 @@ let property = ' 1000ms'
 const root = {
   setAttribute(name) { attrs.add(name) },
   removeAttribute(name) { attrs.delete(name) },
+  hasAttribute(name) { return attrs.has(name) },
 }
 const doc = {
   documentElement: root,
@@ -297,9 +298,11 @@ const advance = (ms) => {
 const chartA = { isConnected: true, name: 'A' }
 const chartB = { isConnected: true, name: 'B' }
 const inside = (chart) => ({ closest: () => chart })
-const over = (chart, pointerType) => (
-  listeners.pointerover({ target: inside(chart), pointerType: pointerType || 'mouse' })
-)
+let step = 0
+const over = (chart, pointerType, at) => listeners.pointerover({
+  target: inside(chart), pointerType: pointerType || 'mouse',
+  clientX: at ? at[0] : (step += 1), clientY: at ? at[1] : 0,
+})
 const warm = () => attrs.has(ATTRIBUTE)
 const out = {}
 
@@ -350,6 +353,47 @@ out.goneStaysCold = warm()
 chartA.isConnected = true
 over(chartB)
 advance(1000)
+// 데워진 그림이 다시 그려져 문서에서 빠지면 그 자리의 새 그림이 웜업을 잇는다.
+const chartB2 = { isConnected: true, name: 'B2' }
+chartB.isConnected = false
+over(chartB2)
+out.replacedKeepsWarm = warm()
+over(chartB2)
+advance(5000)
+out.replacedStillWarm = warm()
+// 데우기 전에 빠진 그림은 잇지 않는다 — 새 그림에서 다시 기다린다.
+over(null)
+const chartC = { isConnected: true, name: 'C' }
+const chartC2 = { isConnected: true, name: 'C2' }
+over(chartC)
+advance(500)
+chartC.isConnected = false
+over(chartC2)
+advance(999)
+out.coldReplacedWaits = warm()
+advance(1)
+out.coldReplacedWarm = warm()
+over(chartB2)
+advance(1000)
+// 마우스는 그대로인데 밑의 그림이 다시 서는 동안 빈 칸이 닿아도(앱 회차) 웜업을 잇는다.
+const chartB3 = { isConnected: true, name: 'B3' }
+over(chartB2, 'mouse', [500, 500])
+chartB2.isConnected = false
+over(null, 'mouse', [500, 500])
+out.stillPlaceholderKeepsWarm = warm()
+over(chartB3, 'mouse', [500, 500])
+out.stillNewChartKeepsWarm = warm()
+over(chartB3, 'mouse', [510, 500])
+advance(3000)
+out.movingInNewChartWarm = warm()
+over(null, 'mouse', [900, 900])
+out.movedOutCools = warm()
+// 식은 채로 멈춘 마우스 밑에 그림이 서면 처음처럼 기다린다.
+over(chartB3, 'mouse', [900, 900])
+advance(999)
+out.stillColdWaits = warm()
+advance(1)
+out.stillColdWarm = warm()
 const before = listeners.pointerover
 eval(SCRIPT)
 out.rerunReplaced = listeners.pointerover !== before && Object.keys(listeners).length === 2
@@ -362,8 +406,10 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     """그림 웜업 스크립트(테마 iframe 이 부모 문서에 거는 처리기)를 가짜 문서로 돌린다. 그림에
     들어온 뒤 지연이 지나야 표지를 달고, 그 그림 안에서는 그대로 두며, 그림 밖 · 다른 그림 · 창
     밖으로 가면 뗀다. 터치는 누른 것이라 곧바로 데운다. 지연은 사용자 정의 속성(`ms` · `s`)을 읽고
-    못 읽으면 1초다. 기다리는 동안 그림이 사라지면 데우지 않는다. 테마 iframe 이 다시 서면 옛
-    처리기를 떼고 표지를 지운다."""
+    못 읽으면 1초다. 기다리는 동안 그림이 사라지면 데우지 않는다. 데워진 그림이 다시 그려지면(칸을
+    눌러 앱이 다시 돎 — 마우스는 그대로라 그 사이 밑에 닿는 빈 칸도 떠난 것이 아니다) 그 자리의 새
+    그림이 웜업을 잇고, 데우기 전이면 새 그림에서 다시 기다린다.
+    테마 iframe 이 다시 서면 옛 처리기를 떼고 표지를 지운다."""
     script = tip_delay.chart_tip_warmup_script()
     runner = (
         f"const SCRIPT = {json.dumps(script)}\n"
@@ -380,6 +426,11 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     assert out["secondsEarly"] is False and out["secondsLate"] is True
     assert out["fallbackEarly"] is False and out["fallbackLate"] is True
     assert out["goneStaysCold"] is False
+    assert out["replacedKeepsWarm"] is True and out["replacedStillWarm"] is True
+    assert out["coldReplacedWaits"] is False and out["coldReplacedWarm"] is True
+    assert out["stillPlaceholderKeepsWarm"] is True and out["stillNewChartKeepsWarm"] is True
+    assert out["movingInNewChartWarm"] is True and out["movedOutCools"] is False
+    assert out["stillColdWaits"] is False and out["stillColdWarm"] is True
     assert out["rerunReplaced"] is True and out["rerunCools"] is False
 
 
@@ -394,16 +445,89 @@ def test_the_warmup_script_is_a_fixed_string_on_the_theme_toolbar() -> None:
     assert f"parentWindow.{tip_delay.HANDLER_NAME}" in script
 
 
-def test_the_intro_summary_tip_waits_once_per_chart_and_then_follows_at_once() -> None:
+_INTRO_RUNNER = r"""
+const TIP_DELAY_MS = 1000
+const handlers = {}
+const stage = { addEventListener(type, fn) { handlers[type] = fn } }
+const host = {}
+globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' })
+globalThis.window = { innerWidth: 1600, innerHeight: 1000 }
+const tip = { style: { opacity: '0' }, offsetWidth: 120, offsetHeight: 40, innerHTML: '' }
+const timers = []
+let now = 0
+globalThis.setTimeout = (run, ms) => { timers.push({ run, at: now + ms }); return timers.length }
+globalThis.clearTimeout = (id) => { if (id) timers[id - 1] = null }
+const advance = (ms) => {
+  now += ms
+  timers.forEach((timer, index) => {
+    if (timer && timer.at <= now) { timers[index] = null; timer.run() }
+  })
+}
+const mode = 'summary'
+const summary = {}
+// 막대 둘(100 ~ 140 · 160 ~ 200, 위 300 ~ 500)과 점 하나(800, 400).
+const hits = [
+  { k: 'bar', i: 0, x: 100, y: 300, w: 40, h: 200 },
+  { k: 'bar', i: 1, x: 160, y: 300, w: 40, h: 200 },
+  { k: 'line', i: 0, x: 800, y: 400, r: 16 },
+]
+const hitAt = (x, y) => hits.find((h) => (h.k === 'line'
+  ? Math.hypot(x - h.x, y - h.y) <= h.r
+  : x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h)) || null
+const tipHtml = (h) => h.k + h.i
+const move = (x, y) => handlers.pointermove({ clientX: x, clientY: y })
+const shown = () => tip.style.opacity === '1'
+const out = {}
+BLOCK
+move(120, 400)
+advance(999)
+out.coldAt999 = shown()
+advance(1)
+out.warmAt1000 = [shown(), tip.innerHTML]
+move(150, 400)
+out.gapHides = shown()
+move(180, 400)
+out.nextBarAtOnce = [shown(), tip.innerHTML]
+move(150, 292)
+move(180, 400)
+out.nearPadStaysWarm = shown()
+move(600, 900)
+move(120, 400)
+out.outsideCools = shown()
+advance(1000)
+out.rewarmed = shown()
+move(800, 400)
+out.otherChartWaits = shown()
+advance(1000)
+out.otherChartWarm = [shown(), tip.innerHTML]
+move(120, 400)
+advance(300)
+move(600, 900)
+advance(1000)
+move(120, 400)
+out.leftWhileWaitingStaysCold = shown()
+handlers.pointerleave()
+out.leaveHides = shown()
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_intro_summary_tip_waits_once_per_chart_and_cools_outside_it() -> None:
     """입장 화면 Summary 그림 말풍선(커서를 따라가는 글)도 앱 그림 값 풍선과 같은 웜업이다 —
-    그림(맞힌 것의 종류)에 처음 들어오면 앱 전체 지연 뒤에 뜨고, 그 그림 안에서 옮기면 곧바로
-    따라가며, 무대를 떠나면 식는다."""
+    그림(맞힌 것의 종류)에 처음 들어오면 앱 전체 지연 뒤에 뜨고, 그 그림 안(칸 사이 빈 곳 포함)에서
+    옮기면 곧바로 따라가며, 그 그림을 품는 상자 밖 · 다른 그림 · 무대 밖으로 가면 다시 기다린다.
+    처리기 구획을 떼어 가짜 무대로 돌린다."""
     text = (COMPONENTS / "intro_overlay_assets" / "intro.js").read_text(encoding="utf-8")
-    start = text.index("const tipWarm = ")
-    block = text[start : text.index('stage.addEventListener("pointerleave", coolTip);', start)]
-    assert (
-        "if (h.k === tipWarm.kind) {\n      placeTip(h, event.clientX, event.clientY);\n"
-        "      return;\n    }"
-    ) in block
-    assert "}, tipDelayMs());" in block
-    assert "clearTimeout(tipWarm.timer);" in block
+    start = text.index("  const TIP_CHART_PAD_PX = ")
+    end_marker = '  stage.addEventListener("pointerleave", coolTip);'
+    block = text[start : text.index(end_marker, start) + len(end_marker)]
+    out = run_js_json(_INTRO_RUNNER.replace("BLOCK", block), what="입장 화면 말풍선 웜업")
+    assert out["coldAt999"] is False and out["warmAt1000"] == [True, "bar0"]
+    assert out["gapHides"] is False
+    assert out["nextBarAtOnce"] == [True, "bar1"]
+    assert out["nearPadStaysWarm"] is True
+    assert out["outsideCools"] is False and out["rewarmed"] is True
+    assert out["otherChartWaits"] is False and out["otherChartWarm"] == [True, "line0"]
+    assert out["leftWhileWaitingStaysCold"] is False
+    assert out["leaveHides"] is False
+    assert f"const TIP_DELAY_MS = {DELAY};" in text

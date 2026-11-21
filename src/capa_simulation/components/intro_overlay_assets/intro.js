@@ -3190,8 +3190,28 @@ function createOverlay(api, data, initial, syncToolbar) {
   }
   // 그림 값 말풍선은 그림(맞힌 것의 종류 — 선 · 고리 · 막대 · 시트)에 처음 들어올 때만 앱 전체 풍선 지연(껍데기 스타일
   // `--capa-tip-delay`, 못 읽으면 1초)을 기다리고, 그 그림 안에서 옮기면 곧바로 따라간다(설계 규칙 UI-NAV-04 — 앱 그림
-  // 값 풍선과 같은 웜업). 다른 종류로 옮기거나 무대를 떠나면 다시 기다린다. 빈 곳에서는 말풍선만 걷고 웜업은 남는다.
+  // 값 풍선과 같은 웜업). 다른 종류로 옮기거나 그 그림 밖(그 종류 칸을 모두 품는 상자 + `TIP_CHART_PAD_PX`)으로 나가거나
+  // 무대를 떠나면 다시 기다린다. 그림 안 빈 곳(막대 · 점 사이)에서는 말풍선만 걷고 웜업은 남는다.
+  const TIP_CHART_PAD_PX = 12;
   const tipWarm = { kind: "", waiting: "", timer: 0, last: null };
+  function insideChart(kind, x, y) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const h of hits) {
+      if (h.k !== kind) continue;
+      const box = h.k === "seg" ? [h.cx - h.r1, h.cy - h.r1, h.cx + h.r1, h.cy + h.r1]
+        : h.k === "line" ? [h.x - h.r, h.y - h.r, h.x + h.r, h.y + h.r]
+        : [h.x, h.y, h.x + h.w, h.y + h.h];
+      x0 = Math.min(x0, box[0]);
+      y0 = Math.min(y0, box[1]);
+      x1 = Math.max(x1, box[2]);
+      y1 = Math.max(y1, box[3]);
+    }
+    const pad = TIP_CHART_PAD_PX;
+    return x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad;
+  }
   function tipDelayMs() {
     const raw = getComputedStyle(host).getPropertyValue("--capa-tip-delay");
     const match = /^\s*(\d+(?:\.\d+)?)(ms|s)\s*$/.exec(raw || "");
@@ -3216,6 +3236,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     if (!h) {
       tipWarm.last = null;
       tip.style.opacity = "0";
+      const held = tipWarm.kind || tipWarm.waiting;
+      if (held && !insideChart(held, event.clientX, event.clientY)) coolTip();
       return;
     }
     if (h.k === tipWarm.kind) {
