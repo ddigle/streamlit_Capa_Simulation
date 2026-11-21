@@ -7535,6 +7535,31 @@
     미리. ② 런북 일반 장 줄 일곱(4-7 · 6-3 · 6-4 · 시험)을 넣는 때: (가) 이번 배포(키 넣기)와 같은 변경 · (나) 이관하는 다음 배포. 권장 (가) — 모두
     「이관 뒤」 조건이 붙어 지금 넣어도 해가 없다. ③ 사내 Excel · DRM 에서 시트 엑셀이 「복구」 창 없이 열리는지: (가) 7-26 B 에 4) 한 칸(B 3 → 4) · (나)
     7-5 에 「열리지 않으면 발견」 한 줄. 권장 (가).
+  - **문서 개편이 넘긴 코드 · 문서 맞춤 셋**(2026-11-22 사용자 승인 — 문서 개편 결정 12, 저장소 밖 작업 목록에만 있던 줄을 옮김. 사실은 같은 날 main
+    `a1f45fcd` 코드로 다시 확인했다)
+    - **① `page_bootstrap.scenario_capacity_and_demand` 는 부르는 곳이 없는데 AGENTS 가 규칙으로 적는다** — 지금: 정의
+      (`src/capa_simulation/page_bootstrap.py:942`)를 부르는 곳이 없다(`src` · `app_pages` · `tests` · `scripts` 를 `get_` 앞붙이 없는 이름으로 훑으면 정의와
+      같은 파일 970 의 docstring 언급뿐). 같은 처리(계산이 멈추면 사이드바 「계산 멈춤」 · 다시 던짐)는 `stop_calculation_on_error`(같은 파일 965 — 화면 쪽이
+      부름)가 하고, AGENTS 는 3장 `page_bootstrap` 항목(`AGENTS.md:3327` — 옮긴 목록은 5장이라 적었으나 5장에는 없다)에 둘을 함께 규칙으로 적는다. 고를 것:
+      (가) 함수를 지우고 `AGENTS.md:3327` · docstring 970 에서 이름만 뺀다 — 규칙은 `stop_calculation_on_error` 로 남는다 · (나) 함수와 규칙 줄을 그대로
+      둔다. 권장 (가) — 부르지 않는 이름이 규칙에 남으면 새 화면이 어느 쪽을 불러야 하는지 헷갈린다.
+    - **② CLAUDE.md 의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: CLAUDE.md 아키텍처 줄(`CLAUDE.md:210`)은 「서비스 공용 컬럼 계약과 업무 키
+      정규화」 뿐이고, 표 칸 빈칸 판정 `blank_cell`(`src/capa_simulation/services/frame_contracts.py:239` — 실행 관리 서비스 넷이 import)은 AGENTS 3장
+      (`AGENTS.md:2872`)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — CLAUDE.md 는 요약 ·
+      진입점이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을
+      이미 지키고, CLAUDE.md 에 도우미 이름을 하나씩 늘리면 요약이 커진다.
+    - **③ refactor B · E 가 한 벌로 모은 도우미가 AGENTS 공용 도우미 목록에 없다** — 지금: 목록(`tests/test_documentation_inventory.py:14-30`
+      `SHARED_HELPERS` — 이름이 AGENTS 에 없거나 부를 수 없으면 실패, 73)은 refactor A · C · D 몫(`f39d5e51`)과 E 의 둘(`constraint_simulation_figures.axis_bounds`
+      · `percent_or_none`)만 든다. 빠진 것 — B(`e36a012a`): 글 상수 `app_header.STATUS_NEWER`(`src/capa_simulation/components/app_header.py:131` — 시나리오
+      상태 · 설비 시나리오 상태가 부름) · `equipment_data_workspace.grid_loaded_ids`(`src/capa_simulation/components/equipment_data_workspace.py:1196` — 설비
+      마스터 탭이 부름) · `space_layout_edit.finite_or_none`(`src/capa_simulation/services/space_layout_edit.py:210` — Space 편집기 · `layout_overlay` 가 부름),
+      E(`63ac778d`): `constraint_simulation.require_non_negative` · `require_positive` · `require_visible_month`(`src/capa_simulation/services/constraint_simulation.py:1031
+      · 1037 · 1043` — `modification_schedule` 이 부름). 여섯 모두 AGENTS 에 이름이 없다. E 가 만든 출처 띠 글 조각 다섯(`source_scenario_text` 등)은 그 뒤
+      걷혀 지금 코드에 없고, `valid_month`(같은 파일 1018)는 한 파일 안에서만 쓴다. 고를 것: (가) 범위 문장을 정한다 — 「목록은 영역(화면 묶음)을 넘어
+      부르는 함수만, 글 상수와 한 영역 안 도우미는 3장 그 파일 항목에 이름만」 — 그러면 목록은 그대로이고 여섯은 3장 항목(`app_header` ·
+      `equipment_data_workspace` · `space_layout_edit` · `constraint_simulation`)에 이름이 붙는다 · (나) 여섯 모두 목록과 AGENTS 에 더한다(`STATUS_NEWER` 는
+      글 상수라 목록 시험의 「부를 수 있음」 검사를 넓혀야 한다). 권장 (가) — 목록이 사본을 다시 만들기 쉬운 자리(영역을 넘는 함수)만 지키게 하고, 한 영역
+      안 도우미는 그 파일을 고치는 사람이 3장 항목에서 본다.
   - **구현 대기(답은 받음)** — 다-2 입력 비가동 설비 시나리오별(① ~ ⑤ — 다음 배포 뒤 착수, 2장 「입력 비가동 대수」), 다-4 ② 원천 파일 기록(리비전 저장 · 등록
     때 이름 · 수정 시각 · 해시만 — 따로 지시 때, 2장 「시나리오 실행 이력에 …」).
 - 답 대기(괄호는 기록된 권장 — 급하지 않다) — Space 필요 단축 보기 실데이터 규모(2장 「사내 리뷰 `202610271800` 후속」 남은 것 2 —
