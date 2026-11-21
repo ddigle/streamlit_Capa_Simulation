@@ -2485,7 +2485,7 @@ HOME 과 `가용설비 현황` 까지 열어 시뮬레이션 `0037` · `0038` �
         `다름` 은 발견 후보다(받아 풀거나 올리는 길에서 바이트가 바뀜 — 그때 판 어긋남은 판을 1 올린 길로 푼다).
 
         ```powershell
-        $s = Read-Host "받은 판 sha 8자"
+        $s = (Read-Host "받은 판 sha 8자").Trim()
         if ($s.Length -eq 8 -and (Get-FileHash $z).Hash -like "$s*") { '같음' } else { '다름' }
         ```
 
