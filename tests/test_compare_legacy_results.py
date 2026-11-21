@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ import pytest
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
-from capa_simulation.services.legacy_comparison import PLAN_ROW_METRIC
+from capa_simulation.services.legacy_comparison import COMPARISONS, PLAN_ROW_METRIC
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -65,6 +66,13 @@ def _run(monkeypatch: pytest.MonkeyPatch, database: Path) -> int:
     return compare.main()
 
 
+def _printed_count(text: str, pattern: str) -> int:
+    """찍힌 줄에서 `{:,}` 꼴의 수 하나를 읽는다."""
+    found = re.search(pattern, text)
+    assert found is not None, pattern
+    return int(found.group(1).replace(",", ""))
+
+
 def test_a_newer_clone_dataset_is_not_taken_by_default(
     seeded_with_clone: tuple[Path, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -88,8 +96,10 @@ def test_the_plan_row_fold_is_reported_after_the_formal_comparisons(
     """정식 대조 셋 뒤에 「계획 행으로 접음」 Wafer 대조와 그 진단이 찍히고, CSV 에는 지표 이름이
     따로 든다.
 
-    내장 시드는 계획 행과 경로 행에 같은 `WF수(매)` 를 싣는다 — 접어도 값 불일치가 없다.
+    내장 시드는 계획 행과 경로 행에 같은 `WF수(매)` 를 싣는다 — 접어도 값 불일치가 없고, 계획 행이
+    실제로 접혀 정식 Wafer 대조와 같은 수의 키가 기존값을 갖고 맞대어진다.
     """
+    wafer = next(metric for metric in COMPARISONS if metric.legacy_column == "WF수(매)")
     path, _ = seeded_with_clone
     output = tmp_path / "legacy.csv"
     monkeypatch.setattr(
@@ -104,8 +114,13 @@ def test_the_plan_row_fold_is_reported_after_the_formal_comparisons(
     labels = [line for line in text.splitlines() if line.startswith("[") and "]" in line]
     assert labels[-1] == f"[{PLAN_ROW_METRIC.label}]"
     section = text.split(f"[{PLAN_ROW_METRIC.label}]", 1)[1]
+    formal = text.split(f"[{wafer.label}]", 1)[1].split("\n[", 1)[0]
+    matched = _printed_count(section, r"대조 ([\d,]+)건")
+    assert matched > 0
+    assert matched == _printed_count(formal, r"대조 ([\d,]+)건")
     assert " · 값 불일치 0건 " in section
-    assert "계획 행 진단 — 접은 행 " in section
+    assert "신규에만 있음 0건" in section
+    assert _printed_count(section, r"계획 행 진단 — 접은 행 ([\d,]+)\(") > 0
     assert "Y 인데 공정 있음 0행" in section
     assert "계획 행 값 둘 이상 칸 0" in section
     written = pd.read_csv(output, encoding="utf-8-sig")
@@ -113,6 +128,7 @@ def test_the_plan_row_fold_is_reported_after_the_formal_comparisons(
     folded = written.loc[written["지표"].eq(PLAN_ROW_METRIC.label)]
     assert not folded.empty
     assert not folded["값 불일치"].astype(bool).any()
+    assert folded["기존값"].notna().all()
 
 
 def test_without_a_source_dataset_it_says_so(
