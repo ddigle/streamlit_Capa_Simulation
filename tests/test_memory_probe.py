@@ -309,7 +309,12 @@ def test_a_place_without_proc_leaves_the_child_peak_unknown(
     # 같은 뿌리의 프로세스 단서도 모른다 — 뜬 시간 · 열린 파일 · 좀비(스레드는 상태 파일 몫).
     assert result.diag.process is not None
     process = result.diag.process
-    assert (process.app_hours, process.open_files, process.zombies) == (None, None, None)
+    assert (process.app_hours, process.open_files, process.procs, process.zombies) == (
+        None,
+        None,
+        None,
+        None,
+    )
     assert "앱 뜬 지 모름 · " in result.diag.text and result.diag.text.endswith(" · 좀비 모름")
 
 
@@ -373,8 +378,8 @@ def ticks(monkeypatch: pytest.MonkeyPatch) -> int:
 
 def test_process_clues_come_from_a_fake_proc_and_a_v2_cgroup(tmp_path: Path, ticks: int) -> None:
     """뜬 시간은 `uptime` − 시작 틱 ÷ 초당 틱(`comm` 이 괄호 · 공백을 품어도), 스레드는 `Threads`,
-    열린 파일은 `self/fd` 항목 수, pids 는 v2 뿌리의 `pids.current` · `pids.max`, 좀비는 숫자 폴더
-    가운데 상태 `Z` 의 수다."""
+    열린 파일은 `self/fd` 항목 수, pids 는 v2 뿌리의 `pids.current` · `pids.max`, 프로세스는 숫자
+    폴더 가운데 `stat` 을 읽은 수, 좀비는 그 가운데 상태 `Z` 의 수다."""
     # 뜬 지 58464초 = 16.24시간 — 소수 첫째 자리로 접어 16.2(둘째 자리면 16.24 로 갈린다).
     proc = _fake_proc(
         tmp_path / "proc",
@@ -385,8 +390,10 @@ def test_process_clues_come_from_a_fake_proc_and_a_v2_cgroup(tmp_path: Path, tic
     assert memory_probe.age_seconds(proc / "self" / "stat", proc / "uptime") == 58464.0
     cgroup = _pids_v2(tmp_path / "cg", current=48, limit="512")
     found = memory_probe.process_clues(proc, _thread_status(tmp_path), cgroup)
-    assert found == ProcessClues(16.2, 41, 87, 48, 512, False, 2)
-    assert found.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/512 · 좀비 2"
+    assert found == ProcessClues(16.2, 41, 87, 48, 512, False, 2, 4)
+    assert found.text == (
+        "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/512 · 프로세스 4 · 좀비 2"
+    )
 
 
 def test_a_v1_pids_folder_and_an_unlimited_max(tmp_path: Path, ticks: int) -> None:
@@ -399,7 +406,7 @@ def test_a_v1_pids_folder_and_an_unlimited_max(tmp_path: Path, ticks: int) -> No
         True,
         0,
     )
-    assert "pids 49/max · 좀비 0" in found.text
+    assert "pids 49/max · 프로세스 1 · 좀비 0" in found.text
     v2 = _pids_v2(tmp_path / "cg2", current=43, limit="max")
     found = memory_probe.process_clues(proc, _thread_status(tmp_path), v2)
     assert (found.pids, found.pids_limit, found.pids_unlimited) == (43, None, True)
@@ -410,17 +417,21 @@ def test_missing_process_files_are_unknown_and_never_raise(tmp_path: Path, ticks
     (세는 사이 다 사라짐) 좀비 0 이 아니라 모름이다."""
     found = memory_probe.process_clues(tmp_path / "no-proc", tmp_path / "no-status", tmp_path / "x")
     assert found == ProcessClues()
-    assert found.text == ("앱 뜬 지 모름 · 스레드 모름 · 열린 파일 모름 · pids 모름 · 좀비 모름")
+    assert found.text == (
+        "앱 뜬 지 모름 · 스레드 모름 · 열린 파일 모름 · pids 모름 · 프로세스 모름 · 좀비 모름"
+    )
     empty = tmp_path / "empty-proc"
     (empty / "77").mkdir(parents=True)
-    assert memory_probe.process_clues(empty).zombies is None
+    counted = memory_probe.process_clues(empty)
+    assert (counted.procs, counted.zombies) == (None, None)
 
 
 def test_a_vanished_process_is_skipped_while_counting_zombies(tmp_path: Path, ticks: int) -> None:
     proc = _fake_proc(tmp_path / "proc", others={1: "S", 5: "Z"})
     (proc / "6").mkdir()  # 세는 사이 사라진 프로세스 — `stat` 이 없다
     (proc / "self" / "status").write_text("x", encoding="ascii")  # 숫자 아닌 폴더는 보지 않는다
-    assert memory_probe.process_clues(proc, tmp_path / "no-status", tmp_path / "x").zombies == 1
+    found = memory_probe.process_clues(proc, tmp_path / "no-status", tmp_path / "x")
+    assert (found.procs, found.zombies) == (2, 1)
 
 
 @pytest.mark.parametrize(
@@ -471,19 +482,22 @@ def test_the_module_roots_are_read_when_called_for_process_clues(
 ) -> None:
     """뿌리를 주지 않으면 부를 때의 모듈 값(`PROC_ROOT` · `PROC_STATUS` · `CGROUP_ROOT`)을
     읽는다."""
-    monkeypatch.setattr(memory_probe, "PROC_ROOT", _fake_proc(tmp_path / "proc", others={3: "Z"}))
+    monkeypatch.setattr(
+        memory_probe, "PROC_ROOT", _fake_proc(tmp_path / "proc", others={3: "Z", 4: "S"})
+    )
     monkeypatch.setattr(memory_probe, "PROC_STATUS", _thread_status(tmp_path, 12))
     monkeypatch.setattr(
         memory_probe, "CGROUP_ROOT", _pids_v2(tmp_path / "cg", current=16, limit="64")
     )
     found = memory_probe.process_clues()
-    assert (found.threads, found.open_files, found.pids, found.pids_limit, found.zombies) == (
-        12,
-        3,
-        16,
-        64,
-        1,
-    )
+    assert (
+        found.threads,
+        found.open_files,
+        found.pids,
+        found.pids_limit,
+        found.procs,
+        found.zombies,
+    ) == (12, 3, 16, 64, 2, 1)
 
 
 @pytest.mark.parametrize(
@@ -493,7 +507,7 @@ def test_the_module_roots_are_read_when_called_for_process_clues(
         ("_line_number", ("threads",)),
         ("_entry_count", ("open_files",)),
         ("_pids", ("pids", "pids_limit")),
-        ("_zombies", ("zombies",)),
+        ("_processes", ("procs", "zombies")),
     ],
 )
 def test_a_failing_read_falls_back_to_unknown(
@@ -513,6 +527,7 @@ def test_a_failing_read_falls_back_to_unknown(
         whole.open_files,
         whole.pids,
         whole.pids_limit,
+        whole.procs,
         whole.zombies,
     )
 
@@ -545,13 +560,14 @@ def test_the_start_ticks_field_is_right_on_a_real_kernel() -> None:
     assert found.app_hours is not None and found.threads is not None and found.threads >= 1
     assert found.open_files is not None and found.open_files >= 3
     assert found.zombies is not None
+    assert found.procs is not None and found.procs >= 1 and found.procs > found.zombies
 
 
 def test_the_process_fields_round_trip_are_audit_keys_and_fit_the_detail() -> None:
     """결과 파일 칸 · 감사 상세가 같은 이름이고(`PROCESS_FIELDS`), 다시 읽어도 같다. 진단 줄은
     메모리 단서 뒤에 붙고, 감사 상세는 칸이 다 차도 1KB 안이다(줄임 없음)."""
     memory = ChildMemory(700, 980, None, True, 0, 0, 340, 342, 62)
-    process = ProcessClues(16.2, 41, 87, 48, None, True, 0)
+    process = ProcessClues(16.2, 41, 87, 48, None, True, 0, 3)
     diag = ChildDiag(-9, "SIGKILL", 2.9, "import", "", "2.5.0", "1.0.1", memory, process)
     fields = diag.fields()
     assert tuple(name for name in fields if name in report_contract.PROCESS_FIELDS) == (
@@ -563,8 +579,10 @@ def test_the_process_fields_round_trip_are_audit_keys_and_fit_the_detail() -> No
     assert all(name in events.DET_LABELS for name in report_contract.PROCESS_FIELDS)
     assert report_contract.parse_child(json.loads(json.dumps(fields))) == diag
     assert diag.text.endswith(" · 하위 최고 62MiB · " + process.text)
-    assert process.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/max · 좀비 0"
-    assert "app_h=16.2 threads=41 fds=87 pids=48 pids_max=max zombies=0" in diag.code
+    assert process.text == (
+        "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/max · 프로세스 3 · 좀비 0"
+    )
+    assert "app_h=16.2 threads=41 fds=87 pids=48 pids_max=max procs=3 zombies=0" in diag.code
     det = {"result": "unavailable", "reason": "import_killed", "retry": "3/3", **fields}
     kept = recorder.clean_det(spec, det)
     assert recorder.TRUNC_KEY not in kept and set(fields) <= set(kept) | {"stderr"}
@@ -600,12 +618,14 @@ def test_a_record_without_process_fields_reads_as_before() -> None:
         ("pids", -3),
         ("pids_max", "lots"),
         ("pids_max", -1),
+        ("procs", -1),
+        ("procs", "3"),
         ("zombies", False),
         ("zombies", None),
     ],
 )
 def test_an_odd_process_value_empties_only_that_value(field: str, odd: object) -> None:
-    whole = ProcessClues(16.2, 41, 87, 48, 512, False, 0).fields()
+    whole = ProcessClues(16.2, 41, 87, 48, 512, False, 0, 3).fields()
     parsed = report_contract.parse_process({**whole, field: odd})
     assert parsed is not None
     found = parsed.fields()

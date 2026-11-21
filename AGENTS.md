@@ -2147,7 +2147,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
-  최고 nMiB」(하위 최고는 그 하위 하나의 값) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 좀비 n」(2026-11-21 —
+  최고 nMiB」(하위 최고는 그 하위 하나의 값) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」(2026-11-21 —
   막 뜬 pod 는 되고 오래 떠 있던 pod 는 import 중 끊기는 갈래를 가를 값, 재었을 때만 붙고 옛 기록은 지금 줄 그대로), 못 읽은 값은 「모름」 — `io/memory_probe`,
   `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
   비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 기다리는 차례 「다시 시도 n/3」(끊김 n번 뒤 — 기다리는 중이면 「다음 시각」,
@@ -2165,7 +2165,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드 · 하위 프로세스 진단 칸 `exit` · `signal` · `sec` · `stage` · `stderr` · `bigdataquery` ·
-  `getpass_asterisk` 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 여섯 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
+  `getpass_asterisk` 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 일곱 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
   계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
@@ -2377,8 +2377,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
-  `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 좀비 수, 칸 이름 `PROCESS_FIELDS`
-  `app_h` · `threads` · `fds` · `pids` · `pids_max` · `zombies` — 그 칸이 하나도 없는 옛 파일 · 메모리 칸만 든 기록은 `None` 이라 화면 글이 「하위 최고 …」 로 끝나는 지금 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
+  `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 프로세스 수 · 좀비 수, 칸 이름 `PROCESS_FIELDS`
+  `app_h` · `threads` · `fds` · `pids` · `pids_max` · `procs` · `zombies` — 그 칸이 하나도 없는 옛 파일 · 메모리 칸만 든 기록은 `None` 이라 화면 글이 「하위 최고 …」 로 끝나는 지금 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
   벌) · 비밀번호를 보내기 전에 끊긴 시작 시도가 몇 번째 다시 시도였나 `retry`(처음 시도 · 옛 파일은 0 — 「서버 시작 점검」 진단 줄 끝 「다시 시도 n/3」), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
   시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
   에 들되 키가 없어 꺼진 줄은 기능 상태라 세지 않는다 `LoginStart.counted`)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
@@ -2485,10 +2485,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   프로세스)가 뜬 시간(`/proc/self/stat` 22째 칸 시작 틱 — `comm` 이 괄호 · 공백을 품어도 마지막 `)` 뒤부터 가른다 — ÷ `os.sysconf("SC_CLK_TCK")` 를 `/proc/uptime` 에서
   뺌, Windows 는 틱을 묻지 않고 모름 `clock_ticks`), 스레드(`/proc/self/status` 의 `Threads`), 열린 파일(`/proc/self/fd` 항목 수 — 세는 동안 연 것 하나를 품는다),
   cgroup 프로세스 · 스레드 수 · 한도(v2 뿌리 `pids.current` · `pids.max`, 없으면 v1 `pids/` — 커널이 스레드도 하나씩 세어 앱 스레드 수 이상이다. 「max」 는 그 cgroup 에 한도
-  없음이고 pod 단계 한도(`podPidsLimit` — 부모 cgroup)는 컨테이너 안에서 보이지 않을 수 있다), 좀비 수(`/proc` 숫자 폴더의 `stat` 상태 `Z` — 세는 사이
-  사라진 것은 건너뛰고 하나도 못 읽으면 모름). 앱은 시작 스크립트가 `os.execvpe` 로 갈아 끼운 같은 프로세스라 앱의 뜬 시간은 시작 스크립트가 시작한 때부터다.
+  없음이고 pod 단계 한도(`podPidsLimit` — 부모 cgroup)는 컨테이너 안에서 보이지 않을 수 있다), 프로세스 · 좀비 수(`/proc` 숫자 폴더 가운데 `stat` 을 읽은 수 —
+  스레드는 세지 않는다 — 와 그 가운데 상태 `Z` 인 수, 세는 사이 사라진 것은 건너뛰고 하나도 못 읽으면 둘 다 모름 — 늘어난 것이 앱 스레드인지 프로세스인지는
+  pids · 스레드 · 프로세스를 견줘 가른다). 앱은 시작 스크립트가 `os.execvpe` 로 갈아 끼운 같은 프로세스라 앱의 뜬 시간은 시작 스크립트가 시작한 때부터다.
   `/proc/uptime` 만 컨테이너 기준으로 바꿔 보이는 자리(lxcfs 류)는 시작 틱(호스트 부팅 기준)과 1초 넘게 어긋나 「앱 뜬 지」 만 모름이 된다. 뿌리는 같은 모듈 값(`PROC_ROOT` 아래 `uptime` · `self/stat` · `self/fd` · `<pid>/stat`, `PROC_STATUS`, `CGROUP_ROOT`)을
-  부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 좀비 셈 ·
+  부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 프로세스 · 좀비 셈 · 값마다 물러서기 · 아주 큰 시작 틱 ·
   사라진 프로세스 · 한도 없음 · 옛 기록 · 범위 밖 값, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음 · 막 띄운 진짜 하위의 뜬 시간이 몇 초 안).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.

@@ -152,10 +152,10 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
      하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서와 그 하위 자신의 최고 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위 최고
      nMiB」 — cgroup v2 `memory.current` · `memory.max` · `memory.events` 의 `oom_kill`(v1 은 `memory.usage_in_bytes` ·
      `memory.limit_in_bytes` · `memory.oom_control`), `/proc/self/status` 의 `VmRSS`, 도는 동안 0.1초마다 읽은 그 하위의 `/proc/<pid>/status` `VmHWM` 최고, 그 뒤에
-     띄우기 바로 앞 한 번 읽은 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 좀비 n」 — 로그인을 부른 프로세스(앱이면 Streamlit 서버,
+     띄우기 바로 앞 한 번 읽은 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」 — 로그인을 부른 프로세스(앱이면 Streamlit 서버,
      시작 스크립트면 그 프로세스)의 `/proc/self/stat` 시작 틱과 `/proc/uptime` · `/proc/self/status` 의 `Threads` · `/proc/self/fd` 항목 수, cgroup v2 `pids.current` ·
      `pids.max`(v1 은 `pids/` 아래 — 프로세스 · 스레드 수라 앱 스레드 수 이상이다. 「max」 는 그 컨테이너 cgroup 에 한도 없음이고 pod 단계 한도는 여기서 보이지 않을 수 있다),
-     `/proc` 숫자 폴더 가운데 상태 `Z` 의 수, 못 읽으면 「모름」 — 「앱 뜬 지」 만 모름이면 `/proc/uptime` 이 컨테이너 기준으로 바뀌어 보이는 자리다)이 서고 같은 칸이 감사 줄(`admin_bdq_login_set`)에
+     `/proc` 숫자 폴더 가운데 `stat` 을 읽은 수(프로세스 — 스레드는 세지 않는다)와 그 가운데 상태 `Z` 의 수, 못 읽으면 「모름」 — 「앱 뜬 지」 만 모름이면 `/proc/uptime` 이 컨테이너 기준으로 바뀌어 보이는 자리다)이 서고 같은 칸이 감사 줄(`admin_bdq_login_set`)에
      남는다(2026-11-21 사내 확인 — 새 pod 의 시작 로그인은 되고 약 16시간 떠 있던 pod 는 import 중 바깥 SIGKILL 이라, 묵은 pod 와 새 pod 에서 달라지는 값을 함께 본다). 종료가 「-9(SIGKILL)」 인데 `oom_kill` 이 앞뒤로 오르면 cgroup 이
      메모리 한도로 죽인 것이고, 그대로면 다른 바깥(사람 · 플랫폼)이 죽인 것이다 — 앱 시간 제한으로 끊으면 종료가 「-」 다 — 시작 때 자동 로그인의 진단은 「서버 시작 점검」 의 「BDQ 자동 로그인
      진단」 줄이다. 하위 프로세스가 결과 표지 없이 끝나면 「로그인 확인 못 함(결과 표지 없음) — 저장 안 함」 이다 — 비밀번호가

@@ -2071,7 +2071,7 @@ def test_the_callers_process_clues_are_read_once_just_before_the_child(
 ) -> None:
     """하위 프로세스를 띄우기 바로 앞에 한 번만 읽고(뒤 값은 싣지 않는다) 진단 줄 메모리 단서
     뒤 · 결과 칸 · 감사 상세 칸에 싣는다. 계정 · 비밀번호는 없다."""
-    clues = report_contract.ProcessClues(16.2, 41, 87, 48, None, True, 0)
+    clues = report_contract.ProcessClues(16.2, 41, 87, 48, None, True, 0, 3)
     seen: list[int] = []
 
     def reading(*_args: object) -> report_contract.ProcessClues:
@@ -2084,10 +2084,15 @@ def test_the_callers_process_clues_are_read_once_just_before_the_child(
     assert seen == [0]
     assert result.diag is not None and result.diag.process == clues
     assert result.diag.text.endswith(
-        " · 앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/max · 좀비 0"
+        " · 앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/max · 프로세스 3 · 좀비 0"
     )
     fields = result.diag.fields()
-    assert (fields["app_h"], fields["pids_max"], fields["zombies"]) == (16.2, "max", 0)
+    assert (fields["app_h"], fields["pids_max"], fields["procs"], fields["zombies"]) == (
+        16.2,
+        "max",
+        3,
+        0,
+    )
     assert report_contract.parse_child(fields) == result.diag
     assert ACCOUNT not in result.diag.text and PASSWORD not in result.diag.code
 

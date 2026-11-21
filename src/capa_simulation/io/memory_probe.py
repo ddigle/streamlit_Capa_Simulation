@@ -34,8 +34,9 @@ OOM 종료 수가 다르면 그 사이 cgroup 이 프로세스를 죽인 것이�
 - **cgroup 프로세스 · 스레드 수** — cgroup v2 면 뿌리의 `pids.current` · `pids.max`, v1 이면
   `pids/` 아래 같은 이름. 커널은 스레드도 하나씩 세므로 앱 스레드 수 이상이다. 「max」 는 그
   cgroup 에 한도가 없다는 뜻이고, pod 단계(`podPidsLimit` — 컨테이너 cgroup 의 부모)에 걸린 한도는
-  컨테이너 안에서 보이지 않을 수 있다. **좀비** — `/proc` 의 숫자 폴더마다 `stat` 의 상태가 `Z` 인
-  수(세는 사이 사라진 프로세스는 건너뛴다 — 하나도 못 읽으면 모름).
+  컨테이너 안에서 보이지 않을 수 있다. **프로세스 · 좀비** — `/proc` 의 숫자 폴더 가운데 `stat` 을
+  읽은 수(스레드는 세지 않는다)와 그 가운데 상태가 `Z` 인 수(세는 사이 사라진 프로세스는 건너뛴다 —
+  하나도 못 읽으면 둘 다 모름). 늘어난 것이 앱 스레드인지 프로세스인지는 이 셋을 견줘 가른다.
 
 파일이 없거나 못 읽은 값은 `None` 이고 화면에는 「모름」 이다. 표준 라이브러리만 쓴다 — 시작
 스크립트가 앱 의존성을 깔기 전에 이 길을 지난다. 무엇이 나도 예외를 내지 않는다 — 로그인을 막는
@@ -76,6 +77,7 @@ _START_TICKS_DIGITS: Final = 20
 _ZOMBIE: Final = "Z"
 _HOUR_SECONDS: Final = 3600.0
 _NO_PIDS: Final[tuple[int | None, int | None, bool]] = (None, None, False)
+_NO_COUNTS: Final[tuple[int | None, int | None]] = (None, None)
 _T = TypeVar("_T")
 
 
@@ -141,14 +143,15 @@ def process_clues(
     cgroup_root: Path | None = None,
 ) -> ProcessClues:
     """로그인 하위 프로세스를 띄우기 바로 앞의 프로세스 단서를 한 번 읽는다 — 부른 프로세스가 뜬
-    시간 · 스레드 · 열린 파일과 컨테이너의 cgroup 프로세스 · 스레드 수 · 한도 · 좀비 수. 뿌리 ·
-    상태 파일을 주지 않으면 모듈 값(`PROC_ROOT` · `PROC_STATUS` · `CGROUP_ROOT` — 시험이 바꿔
-    끼운다)을 부를 때 읽는다. 예외를 내지 않는다."""
+    시간 · 스레드 · 열린 파일과 컨테이너의 cgroup 프로세스 · 스레드 수 · 한도, 프로세스 · 좀비 수.
+    뿌리 · 상태 파일을 주지 않으면 모듈 값(`PROC_ROOT` · `PROC_STATUS` · `CGROUP_ROOT` — 시험이
+    바꿔 끼운다)을 부를 때 읽는다. 예외를 내지 않는다."""
     proc = PROC_ROOT if proc_root is None else proc_root
     status = PROC_STATUS if status_path is None else status_path
     cgroup = CGROUP_ROOT if cgroup_root is None else cgroup_root
     seconds = _quiet(lambda: age_seconds(proc / "self" / "stat", proc / "uptime"), None)
     pids, limit, unlimited = _quiet(lambda: _pids(cgroup), _NO_PIDS)
+    procs, zombies = _quiet(lambda: _processes(proc), _NO_COUNTS)
     return ProcessClues(
         app_hours=None if seconds is None else round(seconds / _HOUR_SECONDS, 1),
         threads=_quiet(lambda: _line_number(status, _THREADS_LINE), None),
@@ -156,7 +159,8 @@ def process_clues(
         pids=pids,
         pids_limit=limit,
         pids_unlimited=unlimited,
-        zombies=_quiet(lambda: _zombies(proc), None),
+        zombies=zombies,
+        procs=procs,
     )
 
 
@@ -293,13 +297,14 @@ def _pids(root: Path) -> tuple[int | None, int | None, bool]:
     return _number(folder / "pids.current"), limit, unlimited
 
 
-def _zombies(root: Path) -> int | None:
-    """`/proc` 의 숫자 폴더마다 `stat` 상태가 `Z` 인 수. 뿌리를 못 읽거나 `stat` 을 하나도 못 읽으면
-    `None` — 세는 사이 사라진 프로세스는 건너뛴다."""
+def _processes(root: Path) -> tuple[int | None, int | None]:
+    """(프로세스 수, 좀비 수) — `/proc` 의 숫자 폴더 가운데 `stat` 을 읽은 수와 그 가운데 상태가 `Z`
+    인 수. 뿌리를 못 읽거나 `stat` 을 하나도 못 읽으면 둘 다 `None` — 세는 사이 사라진 프로세스는
+    건너뛴다."""
     try:
         entries = [entry for entry in root.iterdir() if entry.name.isdecimal()]
     except OSError:
-        return None
+        return _NO_COUNTS
     seen = zombies = 0
     for entry in entries:
         fields = _stat_fields(entry / "stat")
@@ -308,7 +313,7 @@ def _zombies(root: Path) -> int | None:
         seen += 1
         if fields[_STAT_STATE] == _ZOMBIE:
             zombies += 1
-    return zombies if seen else None
+    return (seen, zombies) if seen else _NO_COUNTS
 
 
 def _line_number(path: Path, line: re.Pattern[str]) -> int | None:

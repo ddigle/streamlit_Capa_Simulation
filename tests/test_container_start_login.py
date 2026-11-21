@@ -302,7 +302,7 @@ def test_a_start_diag_carries_the_memory_and_process_clues_through_the_result_fi
     0 에 가깝다)도 결과 칸 `child` 를 지나 「서버 시작 점검」 진단 줄에 그대로 선다."""
     credentials = place / "config" / ".credential"
     memory = report_contract.ChildMemory(420, 610, 1024, False, 0, 0, 90, 92, 58)
-    process = report_contract.ProcessClues(0.0, 1, 6, 3, None, True, 0)
+    process = report_contract.ProcessClues(0.0, 1, 6, 3, None, True, 0, 2)
     diag = report_contract.ChildDiag(-9, "SIGKILL", 2.6, "import", "", "-", "-", memory, process)
     result = replace(
         bdq_login.LoginResult(bdq_login.OUTCOME_UNAVAILABLE, bdq_login.REASON_IMPORT_KILLED),
@@ -324,7 +324,8 @@ def test_a_start_diag_carries_the_memory_and_process_clues_through_the_result_fi
     line = container_start_check.fact_lines(parsed)[-1]
     assert line == f"{label} · {literal_markdown(diag.text)}"
     assert diag.text.endswith(
-        "하위 최고 58MiB · 앱 뜬 지 0.0시간 · 스레드 1 · 열린 파일 6 · pids 3/max · 좀비 0"
+        "하위 최고 58MiB · 앱 뜬 지 0.0시간 · 스레드 1 · 열린 파일 6 · pids 3/max · "
+        "프로세스 2 · 좀비 0"
     )
     _assert_no_login_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
 
