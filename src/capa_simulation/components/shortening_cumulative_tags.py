@@ -28,6 +28,7 @@ __all__ = [
     "FONT_PX",
     "GAP_TAG_PX",
     "GOAL_CLEAR_PX",
+    "GOAL_LABEL_ROOM_PX",
     "INSET_PX",
     "LINE_HEIGHT_PX",
     "MARK_HALF_PX",
@@ -48,6 +49,7 @@ __all__ = [
     "tag_size",
     "text_width",
     "value_range",
+    "value_ticks",
 ]
 
 THRESHOLD_DAYS = 5
@@ -70,6 +72,9 @@ STEP_PX = 5
 TIER_STEP_PX = 56
 GOAL_CLEAR_PX = 12
 """꼬리표 판 · 지시선이 목표선과 띄우는 최소 거리."""
+GOAL_LABEL_ROOM_PX = 24
+"""목표선 아래 목표 이름 자리 — 이름 판(선 아래 2 ~ 20px)과 그 아래 띄움. 세로축이 0 에서 잘려도
+이만큼은 그림 칸 안에 남긴다(`value_range`)."""
 UP_ROOM_PX = 64
 """가장 높은 점 위 자리 — 세 줄 꼬리표(머리 + 항목 둘)."""
 DOWN_ROOM_PX = 52
@@ -201,7 +206,10 @@ def value_range(
     values: Sequence[float], goal: float | None, plot_height: float
 ) -> tuple[float, float]:
     """세로축 — 목표(없으면 가장 낮은 기록) 아래부터(0 이 아님). 위로 세 줄 꼬리표 자리
-    `UP_ROOM_PX`, 아래로 `DOWN_ROOM_PX` 를 둔다. 0 아래로는 내려가지 않는다."""
+    `UP_ROOM_PX`, 아래로 `DOWN_ROOM_PX` 를 둔다. 0 아래로는 내려가지 않되, 목표가 0일이거나
+    기록보다 아주 낮아 0 에서 잘리면 목표 이름 자리(`GOAL_LABEL_ROOM_PX`)만큼만 0 아래로 내린다 —
+    이름이 그림 칸 밖 가로축 눈금 글 위로 빠지지 않게. 그 칸에는 눈금을 두지 않는다
+    (`value_ticks`)."""
     known = [*values, *([goal] if goal is not None else [])]
     if not known:
         return (0.0, 1.0)
@@ -212,7 +220,25 @@ def value_range(
         high, low = high + pad, low - pad
     data_px = max(plot_height - UP_ROOM_PX - DOWN_ROOM_PX, plot_height * 0.4)
     per_px = (high - low) / data_px
-    return (max(low - DOWN_ROOM_PX * per_px, 0.0), high + UP_ROOM_PX * per_px)
+    bottom = max(low - DOWN_ROOM_PX * per_px, 0.0)
+    if goal is not None:
+        # 0 에서 잘리지 않았으면 목표 아래 자리가 `DOWN_ROOM_PX` 이상이라 그대로다. 잘려도 그림 칸이
+        # 그만큼 짧아져 px 당 일수가 줄 뿐이라 이 자리는 `GOAL_LABEL_ROOM_PX` 이상으로 선다.
+        bottom = min(bottom, float(goal) - GOAL_LABEL_ROOM_PX * per_px)
+    return (bottom, high + UP_ROOM_PX * per_px)
+
+
+def value_ticks(y_range: tuple[float, float]) -> tuple[int, ...] | None:
+    """세로축 눈금 — 축이 0 아래로 내려간 때(목표 이름 자리 — `value_range`)만 0 부터 위로 고른
+    눈금을 정해 0 아래 칸에 「−n일」 눈금이 서지 않게 한다. 그 밖에는 None(Plotly 자동 눈금)."""
+    low, high = y_range
+    if low >= 0:
+        return None
+    raw = max(high, 1.0) / 7
+    magnitude = 10 ** math.floor(math.log10(raw))
+    step = next(factor * magnitude for factor in (1, 2, 5, 10) if factor * magnitude >= raw)
+    whole = max(1, round(step))
+    return tuple(range(0, math.floor(high) + 1, whole))
 
 
 # ---------------------------------------------------------------------- 장애물
@@ -243,7 +269,8 @@ def _goal_boxes(frame: PlotFrame, scene: Scene) -> list[Box]:
     boxes = [Box(0, goal_y - GOAL_CLEAR_PX, frame.width, goal_y + GOAL_CLEAR_PX)]
     if scene.goal_text:
         width = text_width(scene.goal_text, 12) + 6
-        boxes.append(Box(frame.width - width, goal_y + 2, frame.width, goal_y + 20))
+        bottom = goal_y + GOAL_LABEL_ROOM_PX - 4
+        boxes.append(Box(frame.width - width, goal_y + 2, frame.width, bottom))
     return boxes
 
 

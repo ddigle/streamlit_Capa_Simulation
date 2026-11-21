@@ -78,6 +78,7 @@ from capa_simulation.components.shortening_cumulative_tags import (
     TagWish,
     place_tags,
     value_range,
+    value_ticks,
 )
 from capa_simulation.components.widget_generation import bump, generation, widget_key
 from capa_simulation.components.write_guard import (
@@ -564,8 +565,9 @@ def weekly_figure(
 
     선은 기록만 잇는다 — 기록 없는 주는 건너 이어 그린다. 첫 기록은 속 빈 회색 점이다. 세로축은 목표
     (없으면 가장 낮은 기록) 아래부터다(0 이 아님 — 보드 답 q-axis a). 목표가 있으면 목표 일수에 가로
-    점선과 이름(선 아래 오른쪽), 마지막 기록이 목표 주보다 앞이고 도달하지 못했으면 거기서 목표
-    점까지 점선이고, 마지막 기록 값 글은 그 점 오른쪽 위다(점선이 숫자를 지나지 않게).
+    점선과 이름(선 아래 오른쪽 — 목표가 0일 가까이라 축이 0 에서 잘리면 이름 자리만큼 0 아래로
+    내리고 눈금은 0 부터다), 마지막 기록이 목표 주보다 앞이고 도달하지 못했으면 거기서 목표 점까지
+    점선이고, 마지막 기록 값 글은 그 점 오른쪽 위다(점선이 숫자를 지나지 않게).
 
     `changes`(`explain_week_changes` — 넣기 스냅숏이 있는 두 주 사이의 까닭)가 맞는 주는 5일 이상
     오르내렸으면 그 주 점 곁에 곧은 꼬리표(「▲ +15일」 + 항목 둘까지)를 단다 — 자리는
@@ -648,6 +650,7 @@ def weekly_figure(
         )
     step = max(1, -(-len(axis) // _MAX_AXIS_LABELS))
     ticks = list(range(0, len(axis), step))
+    day_ticks = value_ticks(y_range)
     figure.update_layout(
         **chart_canvas_layout(font_size=12),
         height=_CHART_HEIGHT_PX,
@@ -669,6 +672,17 @@ def weekly_figure(
             "gridcolor": tokens.BAR_TRACK,
             "zeroline": False,
             "automargin": False,
+            # 0 아래 칸(목표 이름 자리)에는 눈금이 없다 — 고른 눈금에는 접미사가 붙지 않아 글을
+            # 함께 준다.
+            **(
+                {}
+                if day_ticks is None
+                else {
+                    "tickmode": "array",
+                    "tickvals": list(day_ticks),
+                    "ticktext": [_days(value) for value in day_ticks],
+                }
+            ),
         },
     )
     apply_axis_text_color(figure)

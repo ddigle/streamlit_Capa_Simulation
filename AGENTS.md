@@ -5852,7 +5852,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사이드바 접힘의 그림 칸 어림)에서 하고 결정(줄 · 맞춤 · 단)을 데이터 자리 + 픽셀 띄움(annotation `xshift` · `yshift`)으로 옮겨
   어느 폭에서나 같은 자리다 — 꼬리표는 픽셀 고정 크기이고 주 간격은 폭에 비례해 넓은 칸에서도 겹치지 않는다(`overlaps` 로 넓은
   칸에서 다시 잼 — `tests/test_shortening_cumulative_tags.py`). 세로축(`value_range`)은 목표(없으면 가장 낮은 기록) 아래부터이고
-  위 세 줄 · 아래 두 줄 꼬리표 자리를 둔다. 그림 높이 · 여백은 고정(340px — 「주차별」 을 편 때만 서는 그림)이라 세로 픽셀이 맞는다.
+  위 세 줄 · 아래 두 줄 꼬리표 자리를 둔다. 0 아래로는 내려가지 않되, 목표가 0일 가까이라 0 에서 잘리면 목표 이름(선 아래) 자리
+  (`GOAL_LABEL_ROOM_PX`)만큼만 0 아래로 내리고 그 칸에는 눈금을 두지 않는다(`value_ticks` — 이름이 가로축 눈금 글 위로 빠지지 않게).
+  그림 높이 · 여백은 고정(340px — 「주차별」 을 편 때만 서는 그림)이라 세로 픽셀이 맞는다.
   글 폭은 어림(한글 1em · 그 밖 0.58em)이다. Streamlit 을 모르는 순수 계산이다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
   (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽

@@ -14,6 +14,7 @@ import pytest
 
 from capa_simulation.components.shortening_cumulative import _weekly_layout, weekly_figure
 from capa_simulation.components.shortening_cumulative_tags import (
+    GOAL_LABEL_ROOM_PX,
     MARK_HALF_PX,
     MAX_TAGS,
     NARROW_PLOT_WIDTH_PX,
@@ -124,7 +125,28 @@ def test_the_value_axis_starts_below_the_goal_not_at_zero() -> None:
     assert layout.narrow.y(max(RECORDS)) >= tag_size(("▲ +15일", "가", "가"))[1]
     plain_low, _ = _weekly_layout(_log(goal=None), None, str).y_range
     assert 0 < plain_low < min(RECORDS)
-    assert value_range([5], None, 280)[0] == 0.0, "0 아래로는 내려가지 않는다"
+    assert value_range([5], None, 280)[0] == 0.0, "목표가 없으면 0 아래로는 내려가지 않는다"
+    figure = weekly_figure(_log(), _changes(), label=_label).to_plotly_json()
+    assert "tickvals" not in figure["layout"]["yaxis"], "0 위의 축은 Plotly 자동 눈금"
+
+
+@pytest.mark.parametrize("goal_days", [0, 10])
+def test_a_goal_near_zero_keeps_its_name_inside_the_plot(goal_days: int) -> None:
+    """목표가 0일이거나 기록보다 아주 낮아 세로축이 0 에서 잘리면 목표 이름 자리만큼만 0 아래로
+    내린다 — 이름(선 아래 오른쪽)이 그림 칸 밖 가로축 눈금 글 위로 빠지지 않는다. 0 아래 칸에는
+    눈금이 없다(0 부터 「n일」)."""
+    goal = ProgressGoal(goal_days, ProgressWeek(2026, 52))
+    layout = _weekly_layout(_log(goal=goal), _changes(), _label)
+    low, _ = layout.y_range
+    assert low < 0
+    assert layout.narrow.height - layout.narrow.y(goal_days) >= GOAL_LABEL_ROOM_PX
+    assert overlaps(layout.narrow, layout.scene, layout.placed) == []
+    yaxis = weekly_figure(_log(goal=goal), _changes(), label=_label).to_plotly_json()["layout"][
+        "yaxis"
+    ]
+    ticks = list(yaxis["tickvals"])
+    assert ticks[0] == 0 and all(value >= 0 for value in ticks) and len(ticks) >= 3
+    assert list(yaxis["ticktext"]) == [f"{value:,}일" for value in ticks]
 
 
 def test_a_fall_to_the_lowest_record_without_a_goal_still_gets_its_tag() -> None:
