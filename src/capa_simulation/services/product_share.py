@@ -6,7 +6,9 @@ HOME `Capa LOB 현황` 맨 아래 행은 칸마다 제품별 비중을 도넛 �
 
 - **Wafer**: 분모는 같은 표의 `Wafer 계획` 행 값이다. 그 행은 양산구분을 가리지 않은 전체
   계획의 Wafer 부하량이므로, 제품별 Wafer 부하량(양산+ER 합산)을 더하면 정확히 그 값이 된다.
-  EDP 포함 여부·선행 반영도 그 행과 같은 것을 받는다.
+  EDP 포함 여부·선행 반영도 그 행과 같은 것을 받는다. Dummy 계열(`Dummy` · `Top_Dummy`)을
+  뺀 HOME 집계 기준도 같다 — 두 쪽이 같은 거른 상세 프레임
+  (`dashboard.home_aggregation_wafer_load`)에서 묶인다.
 - **PKG**: 분모는 그 달의 PKG 생산수량 전체다(양산+ER 합산, EDP 는 같은 토글).
 
 **양산구분을 나누지 않는다.** 같은 제품의 양산과 ER 을 더한 뒤 비중을 낸다(사용자 지정).
@@ -141,9 +143,9 @@ def _normalized(frame: pd.DataFrame, value_column: str) -> pd.DataFrame:
 def build_product_volume(plan: pd.DataFrame, wafer_load: pd.DataFrame) -> pd.DataFrame:
     """제품×월 Wafer 부하량과 PKG 생산수량. **양산구분을 나누지 않고 더한다.**
 
-    Wafer 는 `Wafer 계획` 행과 같은 상세 환산 결과(`물량`)에서 묶는다. 그래야 제품별 합이
-    그 행의 값과 한 치도 다르지 않다 — 기준정보가 없어 환산에서 빠진 계획 행은 두 쪽 모두에서
-    빠진다. PKG 는 계획의 `생산수량` 을 그대로 묶는다.
+    Wafer 는 `Wafer 계획` 행과 같은 상세 환산 결과(`물량`, HOME 은 Dummy 계열을 뺀 것)에서
+    묶는다. 그래야 제품별 합이 그 행의 값과 한 치도 다르지 않다 — 기준정보가 없어 환산에서
+    빠진 계획 행은 두 쪽 모두에서 빠진다. PKG 는 계획의 `생산수량` 을 그대로 묶는다.
     """
     require_columns(plan, ["생산계획년월", "제품정보", "생산수량"], "RQ_PKG_PLAN")
     require_columns(wafer_load, ["생산계획년월", "제품정보", "물량"], "Wafer 부하량")
