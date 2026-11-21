@@ -835,7 +835,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       주만 근거가 있고, 그런 주가 5일 이상 오르내렸으면 점 곁 꼬리표(`components/shortening_cumulative_tags.py`) · 큰 ▲ · ▼ ·
       오른 주만 들어오는 구간 굵은 주황 선이다. 근거 없는 주는 늘어난 주 ▲ 와 「+n일」 · 줄어든 주 ● 다. 점 · 꼬리표를 가리키면 그 주 까닭
       전부(여섯 넘으면 앞 다섯 + 「그 밖 k건」) · 합 「합 −n일 = 지난 기록 대비 −n일」 · 덧말(n주 사이 · 추가 호기 대수 · 호기 이름이
-      바뀌었을 수 있는 공정 · 입력 리비전)이 풍선이다(Plotly `hovertext` — 풍선 1초 지연은 앱 전체 풍선 규칙이 맡는다). 세로축은
+      바뀌었을 수 있는 공정 · 입력 바뀜 — 조회 달 · Cut-off · 리비전)이 풍선이다(Plotly `hovertext` — 풍선 1초 지연은 앱 전체 풍선 규칙이 맡는다). 세로축은
       목표 아래부터(0 아님), 목표 이름은 선 아래 오른쪽, 끝 값 글은 점 오른쪽 위다. 꼬리표 글(그림 위 항목)은 사용자가 고른 그림
       글이라 UI-TXT-04 예외다. 사람이 까닭을 고치는 칸(2단계)은 아직 없다(`docs/TODO.md` 2장 열린 줄). 스냅숏을 못 읽으면 까닭 없이
       그린다(`BOOTSTRAP_ERRORS`).
@@ -4821,8 +4821,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   기준 · 목표 확보율이 다르면 호기별로 가르지 않는 한 항목이 첫 자리, 남는 호기 ↔ 날짜 호기도 이 이름) · 기한 지남 · 손 고침((이 주
   기록 − 스냅숏 합) − (앞 기록 − 스냅숏 합)) · 그 밖(풍선의 꼬리 묶음). 항목 합 = 지난 기록 대비가 정수로 맞아야 `balanced` 이고
   그때만 글을 싣는다. 그림 꼬리표 항목(`drawn`)은 그 주 변동과 같은 쪽 · 둘째는 변동의 1/4 이상 · 둘까지이고, 한 공정에 해소 ·
-  신규 필요가 함께면(`rename_suspects`) 그 둘은 그림에 올리지 않는다. 추가N 대수 · 계산 입력 리비전은 합 밖 덧말이다. Streamlit ·
-  DB 를 모른다.
+  신규 필요가 함께면(`rename_suspects`) 그 둘은 그림에 올리지 않는다. 추가N 대수와 입력 바뀜(조회 달 — `scope_difference`, 두
+  범위에 함께 있는 공정의 Cut-off — `WeekChange.cutoffs`, 시나리오 · 설비 일정 · 공통 대장 리비전 — 시나리오 리비전 id 를 모르면
+  `reference_version`)은 합 밖 덧말이다(가름은 바꾸지 않는다 — 진척 비교 「조회 달 다름」 과 같은 결). Streamlit · DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는

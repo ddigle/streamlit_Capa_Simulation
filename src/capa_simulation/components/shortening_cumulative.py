@@ -198,6 +198,8 @@ _CHART_HEIGHT_PX = 340
 _CHART_MARGIN: Final[Mapping[str, int]] = {"l": 56, "r": 24, "t": 24, "b": 36}
 _PLOT_HEIGHT_PX = _CHART_HEIGHT_PX - _CHART_MARGIN["t"] - _CHART_MARGIN["b"]
 _MAX_AXIS_LABELS = 14
+# 까닭 풍선 「입력 바뀜」 줄에 하나씩 적는 Cut-off 바뀐 공정 수의 위끝.
+_CUTOFF_NOTES_MAX = 3
 
 
 @dataclass(frozen=True)
@@ -894,9 +896,24 @@ def _reason_lines(delta: int, reason: WeekChange | None, label: Callable[[str], 
     if reason.virtual is not None:
         lines.append(f"추가 호기 {reason.virtual[0]} → {reason.virtual[1]}대")
     lines += [f"{label(process)} — 호기 이름이 바뀌었을 수 있습니다" for process in reason.renamed]
-    if reason.inputs:
-        lines.append("입력 바뀜 · " + " · ".join(reason.inputs))
+    inputs = [*reason.inputs, *_cutoff_notes(reason.cutoffs, label)]
+    if inputs:
+        lines.append("입력 바뀜 · " + " · ".join(inputs))
     return lines
+
+
+def _cutoff_notes(
+    cutoffs: Sequence[tuple[str, int, int]], label: Callable[[str], str]
+) -> list[str]:
+    """Cut-off 가 바뀐 공정 — 표시명으로 `_CUTOFF_NOTES_MAX` 개까지, 넘으면 「외 n개 공정」."""
+    notes = [
+        f"{label(process)} Cut-off {before} → {after}일"
+        for process, before, after in cutoffs[:_CUTOFF_NOTES_MAX]
+    ]
+    rest = len(cutoffs) - _CUTOFF_NOTES_MAX
+    if rest > 0:
+        notes.append(f"외 {rest}개 공정")
+    return notes
 
 
 def _toggle_weeks() -> None:

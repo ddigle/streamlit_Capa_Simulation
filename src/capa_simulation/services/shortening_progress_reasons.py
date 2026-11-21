@@ -32,8 +32,11 @@
 - **맞춤** — 항목 합이 기록 차이와 정수로 같아야 그린다(`WeekChange.balanced`). 어긋나면 글을
   싣지 않는다(설계 규칙 UI-DAT-07).
 
-추가N(구분 「신규」)은 일수가 없어 합에 넣지 않고 대수 변화만 덧말이다. 공정은 원본 이름으로
-묶고 화면이 표시명으로 바꾼다(UI-DAT-10). 이 모듈은 Streamlit · DB 를 모른다.
+추가N(구분 「신규」)은 일수가 없어 합에 넣지 않고 대수 변화만 덧말이다. 두 스냅숏의 계산
+입력(조회 달 · 범위 공정의 Cut-off · 시나리오 · 설비 일정 · 공통 대장 리비전)이 다르면 그것도 합 밖
+덧말이다(입력 바뀜 — 그 차이로 생긴 호기 몫이 진척 항목에 섞여 있을 수 있음을 풍선이 말한다,
+진척 비교 「조회 달 다름」 과 같은 결). 공정은 원본 이름으로 묶고 화면이 표시명으로
+바꾼다(UI-DAT-10). 이 모듈은 Streamlit · DB 를 모른다.
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ from itertools import pairwise
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import blank_cell
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED
 from capa_simulation.services.shortening_baseline import BaselineProvenance
 from capa_simulation.services.shortening_progress import (
@@ -58,6 +62,7 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_RESOLVED,
     compare_progress,
     rename_suspects,
+    scope_difference,
 )
 from capa_simulation.services.shortening_progress_log import ProgressLog, ProgressWeek
 
@@ -196,7 +201,11 @@ class WeekChange:
     virtual: tuple[int, int] | None = None
     """추가N 대수(앞 주, 이 주) — 다를 때만. 일수가 없어 합 밖이다."""
     inputs: tuple[str, ...] = ()
-    """두 스냅숏의 계산 입력(시나리오 · 설비 일정 · 공통 대장 리비전)이 다르면 그 글 — 합 밖."""
+    """두 스냅숏의 조회 달 · 계산 입력(시나리오 · 설비 일정 · 공통 대장 리비전)이 다르면 그 글 —
+    합 밖."""
+    cutoffs: tuple[tuple[str, int, int], ...] = ()
+    """두 범위에 함께 있는 공정의 Cut-off 일수가 다르면 (원본 이름, 앞 주, 이 주) — 둘 다 알 때만,
+    합 밖. 화면이 공정 표시명으로 적는다."""
 
     @property
     def weeks_between(self) -> int:
@@ -363,7 +372,8 @@ def _explain_pair(
         balanced=sum(item.days for item in ordered) == change,
         renamed=renamed,
         virtual=_virtual_counts(past, current),
-        inputs=_input_notes(past.provenance, current.provenance),
+        inputs=(*_months_notes(past, current), *_input_notes(past.provenance, current.provenance)),
+        cutoffs=_cutoff_changes(past, current),
     )
 
 
@@ -461,11 +471,52 @@ def _virtual_counts(
     return None if before == after else (before, after)
 
 
+def _months_notes(past: ProgressSnapshotDraft, current: ProgressSnapshotDraft) -> tuple[str, ...]:
+    """조회 달이 바뀌었으면 그 글 — 끝 달을 늘리면 그 달 부족으로 새 호기가 들어 「신규 필요」 로
+    보일 수 있다(진척 비교 `scope_note` 의 「조회 달 다름」 과 같은 견줌)."""
+    difference = scope_difference(
+        baseline_months=past.months,
+        baseline_processes=past.processes,
+        months=current.months,
+        processes=current.processes,
+    )
+    if not difference.months_differ:
+        return ()
+    before, after = difference.baseline_months, difference.current_months
+    return (f"조회 달 {_span(before)} → {_span(after)}",)
+
+
+def _span(months: tuple[int, int]) -> str:
+    return f"{month_label(months[0])}–{month_label(months[1])}"
+
+
+def _cutoff_changes(
+    past: ProgressSnapshotDraft, current: ProgressSnapshotDraft
+) -> tuple[tuple[str, int, int], ...]:
+    """두 범위에 함께 있는 공정의 Cut-off 가 다른 자리(이 주 범위 차례) — 한쪽이라도 모르면(None)
+    바뀜으로 보지 않는다."""
+    before = dict(zip(past.processes, past.cutoff_days, strict=False))
+    changed = []
+    for process, after in zip(current.processes, current.cutoff_days, strict=False):
+        previous = before.get(process)
+        if previous is None or after is None or previous == after:
+            continue
+        changed.append((process, previous, after))
+    return tuple(changed)
+
+
 def _input_notes(past: BaselineProvenance, current: BaselineProvenance) -> tuple[str, ...]:
-    """계산 입력이 바뀐 자리 — 둘 다 알 때만 견준다(모르는 출처는 바뀜으로 보지 않는다)."""
+    """계산 입력이 바뀐 자리 — 둘 다 알 때만 견준다(모르는 출처는 바뀜으로 보지 않는다).
+    `reference_version` 은 시나리오 리비전 id 에서 나오는 값(`reference_version_for_revision`)이라
+    리비전 id 를 모를 때(시나리오 이름표가 없는 세션)만 그 대신 견준다 — 값은 적지 않는다."""
+    scenario_known = (
+        past.scenario_revision_id is not None and current.scenario_revision_id is not None
+    )
     pairs = (
         ("시나리오", past.scenario_revision_id, current.scenario_revision_id,
-         past.scenario_revision_no, current.scenario_revision_no),
+         past.scenario_revision_no, current.scenario_revision_no)
+        if scenario_known
+        else ("시나리오", past.reference_version, current.reference_version, None, None),
         ("설비 일정", past.equipment_schedule_revision_ref, current.equipment_schedule_revision_ref,
          past.equipment_schedule_revision_no, current.equipment_schedule_revision_no),
         ("공통 대장", past.equipment_revision_id, current.equipment_revision_id,

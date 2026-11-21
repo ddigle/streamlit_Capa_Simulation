@@ -301,6 +301,24 @@ def test_an_other_bucket_that_nets_to_zero_has_no_up_or_down_mark() -> None:
     assert lines[1].startswith("▲ PRC-01 Qual 밀림 1대 +10일"), lines
 
 
+def test_changed_inputs_are_one_hover_line_with_process_display_names() -> None:
+    """입력 바뀜(조회 달 · 리비전 · Cut-off)은 풍선 한 줄이고 Cut-off 는 공정 표시명으로 셋까지,
+    넘으면 「외 n개 공정」 이다. 합 밖이라 합 줄은 그대로다."""
+    changes = _changes()
+    base = changes[WEEKS[5]]
+    cutoffs = (("PRC-07", 10, 12), ("PRC-05", 7, 6), ("PRC-01", 3, 4), ("PRC-02", 5, 9))
+    changes[WEEKS[5]] = WeekChange(base.week, base.previous, base.change, base.items, True,
+                                   inputs=("조회 달 27.01–27.06 → 27.01–27.09",),
+                                   cutoffs=cutoffs)  # fmt: skip
+    figure = weekly_figure(_log(), changes, label=_label).to_plotly_json()
+    lines = figure["data"][0]["hovertext"][5].split("<br>")
+    assert "합 +15일 = 지난 기록 대비 +15일" in lines
+    assert lines[-1] == (
+        "입력 바뀜 · 조회 달 27.01–27.06 → 27.01–27.09 · DEMO 본딩 Cut-off 10 → 12일 · "
+        "DEMO 절단 Cut-off 7 → 6일 · PRC-01 Cut-off 3 → 4일 · 외 1개 공정"
+    )
+
+
 def test_weeks_without_reasons_keep_the_old_marks_and_say_why_on_hover() -> None:
     """근거 없는 주(넣기 스냅숏이 없음)는 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 이고, 풍선은
     까닭 근거가 없다고 말한다. 까닭 합이 맞지 않는 주는 꼬리표 없이 풍선이 그 사실을 말한다."""

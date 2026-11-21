@@ -88,6 +88,8 @@ def _draft(
     basis: str = BASIS,
     today: date = TODAY,
     provenance: BaselineProvenance | None = None,
+    months: tuple[int, int] = (202701, 202706),
+    cutoff_days: dict[str, int] | None = None,
 ) -> ProgressSnapshotDraft:
     frame = pd.DataFrame(rows, columns=list(SNAPSHOT_UNIT_COLUMNS))
     scope = processes if processes is not None else tuple(dict.fromkeys(frame["공정"]))
@@ -98,7 +100,8 @@ def _draft(
         basis=basis,
         selected=False,
         today=today,
-        months=(202701, 202706),
+        months=months,
+        cutoff_days=cutoff_days,
         provenance=provenance,
     )
 
@@ -399,6 +402,35 @@ def test_extra_virtual_units_and_input_revisions_are_notes_outside_the_sum() -> 
     assert change.items == () and change.change == 0 and change.balanced
     assert change.virtual == (1, 2)
     assert change.inputs == ("시나리오 리비전 r12 → r13",)
+
+
+def test_a_month_range_or_cutoff_change_is_an_input_note_outside_the_sum() -> None:
+    """조회 달 · 범위 공정의 Cut-off 가 다른 두 주 — 가름은 그대로(늘어난 끝 달로 든 호기는 「신규
+    필요」)이고, 바뀐 입력은 합 밖 덧말이다(진척 비교 「조회 달 다름」 과 같은 결). Cut-off 는 두
+    범위에 함께 있고 둘 다 아는 공정만 견준다. 시나리오 리비전 id 를 모르면 `reference_version` 이
+    그 대신이다."""
+    past = _draft(
+        [_real("PRC-01", "EQ-01", NEED, _day(10))],
+        ("PRC-01", "PRC-02", "PRC-03"),
+        cutoff_days={"PRC-01": 10, "PRC-03": 4},
+        provenance=BaselineProvenance(reference_version=11),
+    )
+    current = _draft(
+        [_real("PRC-01", "EQ-01", NEED, _day(10)), _real("PRC-02", "EQ-02", NEED, _day(52))],
+        ("PRC-01", "PRC-02", "PRC-03"),
+        months=(202701, 202709),
+        cutoff_days={"PRC-01": 12, "PRC-02": 7},
+        provenance=BaselineProvenance(reference_version=12),
+    )
+    change = _explain(past, current)
+    assert _tags(change) == [(TAG_NEW, 52, 1, "PRC-02")] and change.balanced
+    assert change.inputs == ("조회 달 27.01–27.06 → 27.01–27.09", "시나리오 리비전")
+    assert change.cutoffs == (("PRC-01", 10, 12),)
+    same = _explain(past, _draft([_real("PRC-01", "EQ-01", NEED, _day(10))],
+                                 ("PRC-01", "PRC-02", "PRC-03"),
+                                 cutoff_days={"PRC-01": 10, "PRC-03": 4},
+                                 provenance=BaselineProvenance(reference_version=11)))  # fmt: skip
+    assert (same.inputs, same.cutoffs) == ((), ())
 
 
 def test_the_draft_keeps_only_scope_rows_and_its_days_are_the_screen_total() -> None:
