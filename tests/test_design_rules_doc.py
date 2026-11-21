@@ -3667,8 +3667,8 @@ def test_the_tip_delay_board_answers_are_recorded_in_6_40_and_make_ui_nav_04() -
     assert "1초" in nav04.title and "처음 들어올 때만" in nav04.text
     assert "누르면 여는 팝업" in nav04.fields["예외"][0]
     assert "브라우저 기본 풍선" in nav04.fields["예외"][0]
-    # 초점으로 연 Streamlit 도움말은 JS 200ms 를 건너뛰어 0.8초에 뜬다(사본 앱 측정 0.84초).
-    assert "초점(키보드 · 누름)으로 열면 0.8초" in nav04.fields["예외"][0]
+    # 키보드 초점으로 연 Streamlit 도움말은 JS 200ms 를 건너뛰어 0.8초에 뜬다(사본 앱 측정 0.84초).
+    assert "키보드 초점으로 열면 0.8초" in nav04.fields["예외"][0]
     assert "초점도 1초" not in record and "초점도 1초" not in nav04.text
     assert "`tests/test_tip_delay.py`" in nav04.fields["그물"][0]
     assert "6-40" in nav04.fields["근거"][0]

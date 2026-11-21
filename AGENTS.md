@@ -4229,7 +4229,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그림은 기다린다. 터치는 곧바로 데운다. 테마 iframe 이 다시 서면 옛 처리기를 뗀다.
   - 그림자 DOM · 자체 풍선 부품(`grid_shared_assets/cells.css` · `eg_core.js` · Space `editor.js` · `date_panel.js` ·
     `process_picker` · `paste_window.css` · `intro.js`)은 같은 속성을 읽고 못 읽을 때의 기본값도 1초다 — 키보드 초점은
-    곧바로, 누름은 날짜 칸 도움말 · Space 배치 편집 표의 잠긴 칸만 곧바로(꺼진 단추 까닭 · 붙여넣기 창 잠긴 칸은 1초).
+    곧바로, 누름은 날짜 칸 도움말 · Space 배치 편집 표의 잠긴 칸 열기만 곧바로(꺼진 단추 까닭 · 붙여넣기 창 잠긴 칸은 1초).
   - Streamlit 풍선 글 상자 testid 셋 · JS 지연(200 · 600ms)과 Plotly 풍선 묶음 · Altair 풍선 id 는 비공식 이름이라 판올림으로
     바뀌면 지연만 조용히 풀린다 — `tests/test_tip_delay.py` 가 설치된 프런트 묶음에서 찾는다.
 - `src/capa_simulation/components/typography.py` — 본문의 페이지 제목·상자 제목·큰 숫자에만
@@ -8532,7 +8532,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   도움말 `onfocus` · Space 배치 편집 표의 잠긴 칸 열기)만 곧바로다. 그림 값 풍선은 그림 단위 웜업(문서 뿌리 `data-capa-chart-warm`)이라 그림 안에서는 곧바로 따라간다 — 칸 꼴 그림을
   새로 만들 때 `.js-plotly-plot` · `stVegaLiteChart` 밖에 그리면 웜업을 받지 못한다. 누르면 여는 팝업 · 팝오버 · 알림창 ·
   브라우저 기본 풍선(`title` · SVG `<title>`)에는 걸지 않는다. Streamlit 풍선은 파이썬으로 지연을 바꿀 수 없어 CSS 로 덧붙인
-  것이라 초점 풍선도 같이 늦고(초점은 Streamlit 이 JS 200ms 없이 곧바로 세워 0.8초), 닫히고 0.5초 안에 다른 풍선으로 가면
+  것이라 초점 풍선도 같이 늦고(키보드 초점은 Streamlit 이 JS 200ms 없이 곧바로 세워 0.8초), 닫히고 0.5초 안에 다른 풍선으로 가면
   0.8초, 요소 툴바(전체화면 등)는 1.8초다(받아들인 대가 —
   규칙집 6-40). 화면 확인 · 가이드 촬영 스크립트가 풍선을 볼 때는 1초 넘게 기다린다(`check_deploy_screens.py` UPEH 머리 풍선은
   3초까지).
