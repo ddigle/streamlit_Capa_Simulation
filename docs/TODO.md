@@ -7558,8 +7558,9 @@
       진입점이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을
       이미 지키고, CLAUDE.md 에 도우미 이름을 하나씩 늘리면 요약이 커진다.
     - **③ refactor B · E 가 한 벌로 모은 도우미가 AGENTS 공용 도우미 목록에 없다** — 지금: 목록(`tests/test_documentation_inventory.py:14-30`
-      `SHARED_HELPERS` — 이름이 AGENTS 에 없거나 부를 수 없으면 실패, 73)은 refactor A · C · D 몫(`f39d5e51`)과 E 의 둘(`constraint_simulation_figures.axis_bounds`
-      · `percent_or_none`)만 든다. 빠진 것 — B(`e36a012a`): 글 상수 `app_header.STATUS_NEWER`(`src/capa_simulation/components/app_header.py:131` — 시나리오
+      `SHARED_HELPERS` 열다섯 — 이름이 AGENTS 에 없거나 부를 수 없으면 실패, 73)에 1101 refactor 몫은 A · C · D 의 셋(`f39d5e51` 이 더함)과 E 의
+      `constraint_simulation_figures.axis_bounds`(`625d6991` — 목록에는 다른 커밋의 `percent_or_none` 과 함께 `1d0bb1ae` 가 더함) 하나뿐이고 B 몫은 없다.
+      빠진 것 — B(`e36a012a`): 글 상수 `app_header.STATUS_NEWER`(`src/capa_simulation/components/app_header.py:131` — 시나리오
       상태 · 설비 시나리오 상태가 부름) · `equipment_data_workspace.grid_loaded_ids`(`src/capa_simulation/components/equipment_data_workspace.py:1196` — 설비
       마스터 탭이 부름) · `space_layout_edit.finite_or_none`(`src/capa_simulation/services/space_layout_edit.py:210` — Space 편집기 · `layout_overlay` 가 부름),
       E(`63ac778d`): `constraint_simulation.require_non_negative` · `require_positive` · `require_visible_month`(`src/capa_simulation/services/constraint_simulation.py:1031
