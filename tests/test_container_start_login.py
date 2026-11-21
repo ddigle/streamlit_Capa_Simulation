@@ -295,6 +295,40 @@ def test_a_start_login_without_a_marker_records_its_child_diag(
     assert not any(line.startswith(label) for line in container_start_check.fact_lines(without))
 
 
+def test_a_start_diag_carries_the_memory_and_process_clues_through_the_result_file(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """시작 로그인의 메모리 · 띄우기 앞 프로세스 단서(시작 스크립트 프로세스 — 막 떴으니 뜬 시간은
+    0 에 가깝다)도 결과 칸 `child` 를 지나 「서버 시작 점검」 진단 줄에 그대로 선다."""
+    credentials = place / "config" / ".credential"
+    memory = report_contract.ChildMemory(420, 610, 1024, False, 0, 0, 90, 92, 58)
+    process = report_contract.ProcessClues(0.0, 1, 6, 3, None, True, 0)
+    diag = report_contract.ChildDiag(-9, "SIGKILL", 2.6, "import", "", "-", "-", memory, process)
+    result = replace(
+        bdq_login.LoginResult(bdq_login.OUTCOME_UNAVAILABLE, bdq_login.REASON_IMPORT_KILLED),
+        diag=diag,
+    )
+    started = bdq_login.StartLogin(
+        "unavailable", bdq_login.REASON_IMPORT_KILLED, result=result, stored=_stored()
+    )
+
+    report = _check(
+        {**ALL_ENVIRONMENT, KEY_ENV: new_key()}, credentials, start_login=_login_stub(started)
+    )
+
+    assert _cell(report)["child"] == diag.fields()
+    parsed = report_contract.parse_report(json.loads(json.dumps(report)))
+    assert parsed is not None and parsed.bdq_login is not None
+    assert parsed.bdq_login.child == diag
+    label = f"**{report_contract.BDQ_LOGIN_LABEL} 진단**"
+    line = container_start_check.fact_lines(parsed)[-1]
+    assert line == f"{label} · {literal_markdown(diag.text)}"
+    assert diag.text.endswith(
+        "하위 최고 58MiB · 앱 뜬 지 0.0시간 · 스레드 1 · 열린 파일 6 · pids 3/max · 좀비 0"
+    )
+    _assert_no_login_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
+
+
 def test_a_cut_retry_at_start_tails_its_turn_on_the_start_diag_line(
     place: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

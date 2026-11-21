@@ -20,7 +20,8 @@ DB 받기와 재서 남긴 수(디스크 · pod · cgroup · 다운 시간). 값
 **자동 로그인 칸**(`bdq_login`)은 BigDataQuery 자동 로그인 단계의 결과다 — 갈래 낱말 · 까닭 코드 ·
 키 꼴 검사 · 남은 분 · 하위 프로세스 진단(`ChildDiag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 ·
 표준 오류 마지막 예외 종류 · 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 `ChildMemory` — MiB ·
-수)뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다).
+수 · 띄우기 바로 앞 프로세스 단서 `ProcessClues` — 앱이 뜬 시간 · 스레드 · 열린 파일 · cgroup
+프로세스 · 좀비 수)뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다).
 「서버 시작 점검」 표 줄(`login_step`) · 진단 값 줄과 앱 기동의 멈춤
 넘겨받기(`bdq_login.start_in_app`) · 알림이 읽는다. 진단 칸 꼴과 그 화면 · 로그 글은 Admin 「BDQ
 자동 로그인」 의 마지막 시도 진단과 함께 쓴다.
@@ -401,6 +402,97 @@ def _bounded(value: object, limit: int) -> int | None:
     return number if number is not None and 0 <= number < limit else None
 
 
+# 프로세스 단서 칸의 받는 범위 — 앱이 뜬 시간(10년 아래) · 스레드 · 열린 파일 · 프로세스 수.
+_PROCESS_HOURS_LIMIT: Final = 87_600.0
+_PROCESS_COUNT_LIMIT: Final = 2**31
+# 프로세스 단서 칸 — 결과 파일 · 감사 상세 · 로그의 이름(차례대로). `pids_max` 의 「max」 는 한도
+# 없음이다.
+PROCESS_FIELDS: Final = ("app_h", "threads", "fds", "pids", "pids_max", "zombies")
+
+
+@dataclass(frozen=True)
+class ProcessClues:
+    """로그인 하위 프로세스를 띄우기 바로 앞의 프로세스 단서 — 시간 · 수뿐이다. 못 읽은 값은 `None`.
+    막 뜬 pod 와 오래 떠 있던 pod 에서 달라질 값이다.
+
+    `app_hours` — 로그인을 부른 프로세스(앱이면 Streamlit 서버, 시작 스크립트면 그 프로세스)가 뜬 지
+    몇 시간(소수 첫째 자리 — `/proc/self/stat` 의 시작 틱과 `/proc/uptime`). `threads` — 그
+    프로세스의 스레드 수(`/proc/self/status` 의 `Threads`). `open_files` — 그 프로세스의 열린 파일
+    수(`/proc/self/fd` 항목 수). `pids` — 컨테이너 cgroup 의 프로세스 수(v2 `pids.current` · v1
+    `pids/pids.current`), `pids_limit` — 그 한도(`pids.max`), `pids_unlimited` — 한도 없음(「max」).
+    `zombies` — 컨테이너 안에서 끝났는데 거두지 않은(상태 Z) 프로세스 수(`/proc/<pid>/stat`)."""
+
+    app_hours: float | None = None
+    threads: int | None = None
+    open_files: int | None = None
+    pids: int | None = None
+    pids_limit: int | None = None
+    pids_unlimited: bool = False
+    zombies: int | None = None
+
+    def fields(self) -> dict[str, object]:
+        """칸 이름(`PROCESS_FIELDS`) → 값. 모르는 값은 `None`."""
+        return dict(
+            zip(
+                PROCESS_FIELDS,
+                (
+                    self.app_hours,
+                    self.threads,
+                    self.open_files,
+                    self.pids,
+                    MEMORY_UNLIMITED if self.pids_unlimited else self.pids_limit,
+                    self.zombies,
+                ),
+                strict=True,
+            )
+        )
+
+    @property
+    def text(self) -> str:
+        """화면 값 조각 — 「앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 5/max · 좀비 0」
+        (한도가 있으면 「pids 5/512」). 모르는 값은 「모름」 이고, pids 를 수 · 한도 모두 모르면
+        「pids 모름」 꼴이다."""
+        hours = UNKNOWN_VALUE if self.app_hours is None else f"{self.app_hours:.1f}시간"
+        if self.pids is None and self.pids_limit is None:
+            pids = (
+                f"pids {UNKNOWN_VALUE}/{MEMORY_UNLIMITED}"
+                if self.pids_unlimited
+                else f"pids {UNKNOWN_VALUE}"
+            )
+        else:
+            cap = MEMORY_UNLIMITED if self.pids_unlimited else _known(self.pids_limit)
+            pids = f"pids {_known(self.pids)}/{cap}"
+        return " · ".join(
+            (
+                f"앱 뜬 지 {hours}",
+                f"스레드 {_known(self.threads)}",
+                f"열린 파일 {_known(self.open_files)}",
+                pids,
+                f"좀비 {_known(self.zombies)}",
+            )
+        )
+
+
+def parse_process(data: Mapping[str, object]) -> ProcessClues | None:
+    """진단 칸의 프로세스 단서를 읽는다. 그 칸이 하나도 없으면(옛 파일 · 재지 않음) `None`. 꼴이
+    어긋난 값은 그 값만 비운다."""
+    if not any(name in data for name in PROCESS_FIELDS):
+        return None
+    hours = _float_or_none(data.get("app_h"))
+    limit = data.get("pids_max")
+    return ProcessClues(
+        app_hours=(
+            round(hours, 1) if hours is not None and 0 <= hours < _PROCESS_HOURS_LIMIT else None
+        ),
+        threads=_bounded(data.get("threads"), _PROCESS_COUNT_LIMIT),
+        open_files=_bounded(data.get("fds"), _PROCESS_COUNT_LIMIT),
+        pids=_bounded(data.get("pids"), _PROCESS_COUNT_LIMIT),
+        pids_limit=_bounded(limit, _PROCESS_COUNT_LIMIT),
+        pids_unlimited=limit == MEMORY_UNLIMITED,
+        zombies=_bounded(data.get("zombies"), _PROCESS_COUNT_LIMIT),
+    )
+
+
 @dataclass(frozen=True)
 class ChildDiag:
     """자동 로그인 하위 프로세스 한 번의 진단 — 수와 짧은 이름뿐이고 계정 · 비밀번호 · 토큰 · 예외
@@ -412,7 +504,8 @@ class ChildDiag:
     — 표준 오류 마지막 traceback 의 예외 종류(`모듈.이름`, 없으면 빈 글). `bigdataquery` ·
     `getpass_asterisk` — 하위 본문이 읽은 판(불러온 모듈의 `__version__`, 아니면 설치 정보 — `-`
     없음 · `?` 낯선 꼴 · 빈 글 모름). `memory` — 하위 프로세스 앞뒤의 메모리 단서(`ChildMemory` —
-    재지 않았으면 `None`)."""
+    재지 않았으면 `None`). `process` — 하위 프로세스를 띄우기 바로 앞의 프로세스 단서(`ProcessClues`
+    — 재지 않았으면 `None`)."""
 
     exit_code: int | None = None
     signal: str = ""
@@ -422,10 +515,11 @@ class ChildDiag:
     bigdataquery: str = ""
     getpass_asterisk: str = ""
     memory: ChildMemory | None = None
+    process: ProcessClues | None = None
 
     def fields(self) -> dict[str, object]:
-        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`. 메모리 단서는
-        재었을 때만 칸이 선다(`MEMORY_FIELDS`)."""
+        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`. 메모리 단서 ·
+        프로세스 단서는 재었을 때만 칸이 선다(`MEMORY_FIELDS` · `PROCESS_FIELDS`)."""
         found: dict[str, object] = {
             "exit": self.exit_code,
             "signal": self.signal or None,
@@ -437,6 +531,8 @@ class ChildDiag:
         }
         if self.memory is not None:
             found.update(self.memory.fields())
+        if self.process is not None:
+            found.update(self.process.fields())
         return found
 
     @property
@@ -451,7 +547,9 @@ class ChildDiag:
     def text(self) -> str:
         """화면 값 조각 — 「종료 0 · 4.1초 · 단계 import · stderr - · bigdataquery 2.5.0 ·
         getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」). 메모리 단서를
-        재었으면 그 뒤에 「cgroup … · oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`)."""
+        재었으면 그 뒤에 「cgroup … · oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`),
+        프로세스 단서를 재었으면 그 뒤에 「앱 뜬 지 … · 스레드 … · 열린 파일 … · pids … · 좀비 …」
+        (`ProcessClues.text`)."""
         if self.exit_code is None:
             ended = "종료 -"
         elif self.signal:
@@ -469,6 +567,8 @@ class ChildDiag:
         ]
         if self.memory is not None:
             parts.append(self.memory.text)
+        if self.process is not None:
+            parts.append(self.process.text)
         return " · ".join(parts)
 
 
@@ -493,6 +593,7 @@ def parse_child(data: object) -> ChildDiag | None:
         bigdataquery=_child_version(data.get("bigdataquery")),
         getpass_asterisk=_child_version(data.get("getpass_asterisk")),
         memory=parse_memory(data),
+        process=parse_process(data),
     )
 
 

@@ -102,8 +102,9 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("authz_admin_config", "admin", "개발자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     # 결과 · 까닭과 로그인 하위 프로세스 진단(`container_start_report.ChildDiag.fields` — 수 ·
-    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수)만, 계정 · 비밀번호 없음), 넣기 때 걸려
-    # 있던 보내기 전 끊김의 다시 시도 차례(`retry` — 「n/3」, 없으면 칸 없음).
+    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수) · 띄우기 앞 프로세스 단서
+    # (`PROCESS_FIELDS` — 시간 · 수)만, 계정 · 비밀번호 없음), 넣기 때 걸려 있던 보내기 전 끊김의
+    # 다시 시도 차례(`retry` — 「n/3」, 없으면 칸 없음).
     _spec(
         "admin_bdq_login_set",
         "admin",
@@ -126,6 +127,12 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "rss_before",
         "rss_after",
         "kid_peak",
+        "app_h",
+        "threads",
+        "fds",
+        "pids",
+        "pids_max",
+        "zombies",
     ),
     _spec("admin_bdq_login_delete", "admin", "BigDataQuery 자동 로그인 계정 지우기", "result"),
     _spec("admin_sync_push", "admin", "지금 올리기", "result"),
@@ -238,6 +245,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "action": "동작",
     "admin_fp": "개발자 지문",
     "admins": "개발자 수",
+    "app_h": "앱 뜬 지(시간)",
     "bigdataquery": "bigdataquery 판",
     "bytes": "바이트",
     "cg_after": "cgroup 뒤(MiB)",
@@ -257,6 +265,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "exit": "종료",
     "expires": "만료",
     "failures": "실패 수",
+    "fds": "열린 파일 수",
     "field": "칸",
     "fields": "칸",
     "getpass_asterisk": "getpass_asterisk 판",
@@ -277,6 +286,8 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "oom_before": "OOM 종료 앞",
     "parent": "부모 리비전",
     "partial": "앞당겨 닫음",
+    "pids": "cgroup 프로세스 수",
+    "pids_max": "cgroup 프로세스 한도",
     "prev_h": "앞 해시",
     "prev_inst": "앞 인스턴스",
     "prev_seq": "앞 순번",
@@ -311,6 +322,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "stderr": "오류 종류",
     "sync": "동기화",
     "tables": "표",
+    "threads": "스레드 수",
     "total": "합계",
     "trunc": "줄임",
     "until": "끝 시각",
@@ -318,6 +330,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "version_entry": "판 이력 줄",
     "version_from": "판 전",
     "version_to": "판",
+    "zombies": "좀비 프로세스 수",
 }
 # 등급 칸 · 상세 등급 값의 표시 — 사람 넷은 등급 이름, 옛 줄의 값은 「(옛 기록)」 을 단다.
 GRADE_VALUE_LABELS: Final[Mapping[str, str]] = {

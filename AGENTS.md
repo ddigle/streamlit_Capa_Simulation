@@ -2147,7 +2147,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
-  최고 nMiB」(하위 최고는 그 하위 하나의 값, 못 읽은 값은 「모름」 — `io/memory_probe`), `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
+  최고 nMiB」(하위 최고는 그 하위 하나의 값) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 좀비 n」(2026-11-21 —
+  막 뜬 pod 는 되고 오래 떠 있던 pod 는 import 중 끊기는 갈래를 가를 값, 재었을 때만 붙고 옛 기록은 지금 줄 그대로), 못 읽은 값은 「모름」 — `io/memory_probe`,
+  `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
   비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 기다리는 차례 「다시 시도 n/3」(끊김 n번 뒤 — 기다리는 중이면 「다음 시각」,
   상한으로 멈췄으면 「3/3」)이, 끊긴 다시 시도의 진단 줄 끝(「서버 시작 점검」 진단 줄도 — 결과 칸 `retry`)에 그 시도 자신의 차례(처음 시도는
   꼬리 없음)가 같은 짧은 꼴(`bdq_login.retry_text` — `AD-24` 와 같은 낱말)로 붙고, 감사 상세 `retry` 는 넣기 때 걸려 있던
@@ -2163,7 +2165,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드 · 하위 프로세스 진단 칸 `exit` · `signal` · `sec` · `stage` · `stderr` · `bigdataquery` ·
-  `getpass_asterisk` 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
+  `getpass_asterisk` 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 여섯 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
   계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
@@ -2374,7 +2376,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   판정한 객체의 넣은 시각 · 하위 프로세스 진단 `child`(`ChildDiag` · `parse_child` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
-  파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
+  파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
+  `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 수 · 한도(「max」 는 한도 없음) · 좀비 수, 칸 이름 `PROCESS_FIELDS`
+  `app_h` · `threads` · `fds` · `pids` · `pids_max` · `zombies` — 그 칸이 하나도 없는 옛 파일 · 메모리 칸만 든 기록은 `None` 이라 화면 글이 「하위 최고 …」 로 끝나는 지금 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
   벌) · 비밀번호를 보내기 전에 끊긴 시작 시도가 몇 번째 다시 시도였나 `retry`(처음 시도 · 옛 파일은 0 — 「서버 시작 점검」 진단 줄 끝 「다시 시도 n/3」), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
   시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
   에 들되 키가 없어 꺼진 줄은 기능 상태라 세지 않는다 `LoginStart.counted`)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
@@ -2430,7 +2434,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `AWS_*` 를 뺀 것이고 표준 입출력은 UTF-8 · `surrogateescape`(앱 자리의 로캘과 무관 — Windows cp949 파이프에서도 표지를 읽고, POSIX C 로캘 기본 오류 처리기와 같다), 출력은 버리고 표지 한 줄과 단계
   줄만 읽는다(표준 오류는 마지막 traceback 의 예외 종류 이름만 — `stderr_kind`, 계정 · 비밀번호를 품은 이름은 버린다). 하위 프로세스를 띄운
   시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판 · 띄우기 바로 앞과 끝난 바로 뒤의
-  메모리 단서와 도는 동안 `CHILD_POLL_SECONDS`(0.1초)마다 잰 그 하위 자신의 최고 RSS(`io/memory_probe` — 바깥 SIGKILL 을 가를 값. `Popen` 뒤
+  메모리 단서와 띄우기 바로 앞 한 번 읽은 프로세스 단서(`memory_probe.process_clues` — 뒤 값은 싣지 않는다), 도는 동안 `CHILD_POLL_SECONDS`(0.1초)마다 잰 그 하위 자신의 최고 RSS(`io/memory_probe` — 바깥 SIGKILL 을 가를 값. `Popen` 뒤
   `communicate` 를 짧은 제한으로 되풀이 — 새 스레드 없음, 시간 제한을 넘기면 끊고 남은 출력을 `CHILD_DRAIN_SECONDS` 까지 거둔다), 결과의 같음 판정 밖)을 남기고 로그 · Admin 진단 줄 · 감사 상세 · 시작 결과 칸
   `child` 가 읽는다. 표지 없음(`no_marker`)은 거절(멈춤)로 다루되 화면 낱말은 「로그인 확인
   못 함」(`UNCONFIRMED_REJECT_REASONS`)이다(시간 제한 60초, 새 세션으로 띄움 — 앞뒤 다이제스트는 이 프로세스의 「토큰 넣기」
@@ -2476,7 +2480,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`/proc/<pid>/status` 의 `VmHWM` — 좀비 · 없는 프로세스 · `/proc` 없는 Windows 는 모름. `getrusage(RUSAGE_CHILDREN)` 은 쓰지 않는다 — Linux 의 하위
   `ru_maxrss` 는 exec 앞에 물려받은 부모 주소 공간의 최고를 세어 앱 RSS 아래로 내려가지 않는다). 못 읽은 값은 `None`
   (화면 「모름」)이고 판정하지 않는다 — 앞뒤 OOM 종료 수가 다르면 그 사이 cgroup 이 죽인 것이라는 읽기는 사람 몫이다. 표준 라이브러리만이고 예외를
-  내지 않는다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc`, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음).
+  내지 않는다. 띄우기 바로 앞에는 프로세스 단서도 한 번 읽는다(`process_clues` → `container_start_report.ProcessClues` — 2026-11-21 사내 확인: 새 pod 는 시작 로그인이 되고
+  약 16시간 떠 있던 pod 는 import 단계에서 바깥 SIGKILL, 2026-11-21 사용자 결정 「이번 배포에 더하기」) — 부른 프로세스(앱이면 Streamlit 서버, 시작 스크립트면 그
+  프로세스)가 뜬 시간(`/proc/self/stat` 22째 칸 시작 틱 — `comm` 이 괄호 · 공백을 품어도 마지막 `)` 뒤부터 가른다 — ÷ `os.sysconf("SC_CLK_TCK")` 를 `/proc/uptime` 에서
+  뺌, Windows 는 틱을 묻지 않고 모름 `clock_ticks`), 스레드(`/proc/self/status` 의 `Threads`), 열린 파일(`/proc/self/fd` 항목 수 — 세는 동안 연 것 하나를 품는다),
+  cgroup 프로세스 수 · 한도(v2 뿌리 `pids.current` · `pids.max`, 없으면 v1 `pids/` — 「max」 는 한도 없음), 좀비 수(`/proc` 숫자 폴더의 `stat` 상태 `Z` — 세는 사이
+  사라진 것은 건너뛰고 하나도 못 읽으면 모름). 뿌리는 같은 모듈 값(`PROC_ROOT` 아래 `uptime` · `self/stat` · `self/fd` · `<pid>/stat`, `PROC_STATUS`, `CGROUP_ROOT`)을
+  부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 좀비 셈 ·
+  사라진 프로세스 · 한도 없음 · 옛 기록 · 범위 밖 값, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음 · 막 띄운 진짜 하위의 뜬 시간이 몇 초 안).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - `aws` 가 찍는 시각은 두 꼴이다 — 목록(XML)은 ISO, HEAD · GET 은 `Last-Modified` 머리 글 그대로(RFC 1123 — `aws` 1 판, 운영 이미지 판).

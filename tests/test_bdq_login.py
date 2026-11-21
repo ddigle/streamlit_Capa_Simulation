@@ -50,7 +50,7 @@ from bdq_login_support import (
 from s3_mock_store import MockStore
 
 from capa_simulation.auth import names as sso_names
-from capa_simulation.io import bdq_login, bdq_login_child, bdq_token
+from capa_simulation.io import bdq_login, bdq_login_child, bdq_token, memory_probe
 from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.bdq_login_store import LoginSecret
@@ -2061,6 +2061,35 @@ def test_a_child_killed_while_importing_is_a_cut_not_a_stop(
         "import",
     )
     assert fake.imports() == 1 and fake.logins() == 0
+    # 끊긴 시도에도 띄우기 앞 프로세스 단서가 실린다 — 묵은 pod 와 새 pod 를 가를 값.
+    assert result.diag.process is not None
+    assert " · 앱 뜬 지 " in result.diag.text
+
+
+def test_the_callers_process_clues_are_read_once_just_before_the_child(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """하위 프로세스를 띄우기 바로 앞에 한 번만 읽고(뒤 값은 싣지 않는다) 진단 줄 메모리 단서
+    뒤 · 결과 칸 · 감사 상세 칸에 싣는다. 계정 · 비밀번호는 없다."""
+    clues = report_contract.ProcessClues(16.2, 41, 87, 5, None, True, 0)
+    seen: list[int] = []
+
+    def reading(*_args: object) -> report_contract.ProcessClues:
+        seen.append(fake.imports())
+        return clues
+
+    monkeypatch.setattr(memory_probe, "process_clues", reading)
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    assert seen == [0]
+    assert result.diag is not None and result.diag.process == clues
+    assert result.diag.text.endswith(
+        " · 앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 5/max · 좀비 0"
+    )
+    fields = result.diag.fields()
+    assert (fields["app_h"], fields["pids_max"], fields["zombies"]) == (16.2, "max", 0)
+    assert report_contract.parse_child(fields) == result.diag
+    assert ACCOUNT not in result.diag.text and PASSWORD not in result.diag.code
 
 
 def test_the_child_does_not_enter_login_when_the_login_step_line_is_not_out(
