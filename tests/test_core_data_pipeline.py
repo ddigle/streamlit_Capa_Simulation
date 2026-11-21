@@ -854,3 +854,22 @@ def test_conflict_causes_split_out_of_key_class_columns_from_reloads() -> None:
 
     assert conflicts.loc["RQ_YLD", "키밖구분"] == "Capa Code"
     assert conflicts.loc["RQ_EQP_OWN", "키밖구분"] == "그 밖"
+
+
+def test_the_conflict_summary_splits_out_of_key_from_other_and_takes_old_reports() -> None:
+    """요약은 표마다 「키밖 갈림 그룹수」 · 「그 밖 갈림 그룹수」 를 센다. 원인 칸이 없는 옛 꼴
+    보고서도 받고 그때 두 칸은 빈 값이다."""
+    conflicts = _prepare(_sibling_source()).reference_conflicts
+
+    summary = summarize_reference_conflicts(conflicts)
+    old_form = summarize_reference_conflicts(conflicts.drop(columns="키밖구분"))
+    counts = {
+        str(row["RQ테이블"]): (int(row["키밖 갈림 그룹수"]), int(row["그 밖 갈림 그룹수"]))
+        for row in summary.to_dict("records")
+    }
+
+    assert counts["RQ_YLD"] == (1, 0)
+    assert counts["RQ_EQP_OWN"] == (0, 1)
+    assert [a + b for a, b in counts.values()] == summary["충돌 업무키 그룹수"].tolist()
+    assert old_form["키밖 갈림 그룹수"].isna().all()
+    assert old_form["그 밖 갈림 그룹수"].isna().all()

@@ -90,8 +90,9 @@ def test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report() ->
     assert not app.get("download_button")
     note = _conflict_note(app)
     assert (note["code"], note["level"], note["kind"]) == ("SC-04", "check", "event")
+    # 원인 칸(「키밖구분」)이 없는 옛 꼴 보고서도 받는다 — 그때는 원인 수를 적지 않는다.
     assert note["short"].startswith(
-        "기준정보 업무 키 충돌 2개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 적용하고"
+        "기준정보 업무 키 충돌 2개 그룹 — 표 「임시처리」 규칙대로 한 행씩 골라 등록했습니다"
     )
     assert "Alarm › 이 줄 「충돌 요약」" in note["full"]
     assert "Alarm › 이 줄 「충돌 상세」" in note["full"]
@@ -110,9 +111,9 @@ def test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report() ->
 
 @pytest.mark.parametrize("table", ["RQ_PKG_PLAN", "RQ_RUN_RATE"])
 def test_the_conflict_alert_points_at_the_rule_its_summary_table_states(table: str) -> None:
-    """알림 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 표마다 「값이 있는 첫 행」
-    (효율 · UPEH 는 0 · 빈 값만 다르면 0 행)이라 원천 첫 행이 아닐 때가 많다(E2E 2026-11-02). 글은
-    요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
+    """알림 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 「값이 있는 행 · 원천 행
+    순위」(효율 · UPEH 는 0 · 빈 값만 다르면 0 행)라 원천 첫 행이 아닐 때가 많다(E2E
+    2026-11-02). 글은 요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
     from capa_simulation.services.reference_conflicts import conflict_resolution
 
     app = AppTest.from_string(REPORT_SCRIPT.replace('"RQ_PKG_PLAN", "RQ_YLD"]', f'"{table}"] * 2'))
@@ -121,9 +122,26 @@ def test_the_conflict_alert_points_at_the_rule_its_summary_table_states(table: s
     assert not app.exception
     note = _conflict_note(app)
     assert "원천 첫 행" not in note["full"]
-    assert "표 「임시처리」 규칙대로 한 행씩 임시 적용하고 등록했습니다" in note["full"]
+    assert "표 「임시처리」 규칙대로 한 행씩 골라 등록했습니다" in note["full"]
     summary = table_frame(note_table(note, registration.CONFLICT_SUMMARY_TITLE))
     assert summary["임시처리"].tolist() == [conflict_resolution(table)]
+
+
+def test_the_conflict_alert_counts_out_of_key_and_other_groups() -> None:
+    """원인 칸이 있으면 그룹 수 뒤에 「(키밖 n · 그 밖 m)」 — 요약 표에도 두 칸이 선다."""
+    script = REPORT_SCRIPT.replace(
+        '"임시처리": [',
+        '"키밖구분": ["Capa Code", "그 밖"],\n                "임시처리": [',
+    )
+    app = AppTest.from_string(script)
+    app.run()
+
+    assert not app.exception
+    note = _conflict_note(app)
+    assert note["short"].startswith("기준정보 업무 키 충돌 2개 그룹(키밖 1 · 그 밖 1) — ")
+    summary = table_frame(note_table(note, registration.CONFLICT_SUMMARY_TITLE))
+    assert summary["키밖 갈림 그룹수"].tolist() == [1, 0]
+    assert summary["그 밖 갈림 그룹수"].tolist() == [0, 1]
 
 
 def test_the_conflict_detail_shows_process_labels_and_keeps_originals_for_the_csv(

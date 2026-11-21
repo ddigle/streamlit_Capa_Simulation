@@ -91,6 +91,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     view_token,
 )
 from capa_simulation.services.core_data_pipeline import (
+    conflict_cause_counts,
     fetch_registration_dataset,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
@@ -1038,19 +1039,28 @@ def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: s
             "file_name": file_name,
         }
         detail_place = f"이 탭 「{CONFLICT_CSV_LABEL}」"
-    # 앞 60자가 결과를 말한다(알림창 짧은 글). 승자는 표마다 「값이 있는 첫 행」 이라 원천 첫
-    # 행이라고 적지 않는다 — 규칙은 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)이 말한다.
+    # 앞 60자가 결과를 말한다(알림창 짧은 글) — 그룹 수와 그 원인 둘(업무 키 밖 구분 칸 · 그 밖).
+    # 승자는 「값이 있는 행 · 원천 행 순위」 라 원천 첫 행이라고 적지 않는다 — 규칙은 요약 표
+    # 「임시처리」 칸(`conflict_resolution` 한 곳)이 말한다.
     queue_flash(
         REGISTRATION_CONFLICT_FLASH_KEY,
-        f"기준정보 업무 키 충돌 {len(conflicts):,}개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 "
-        f"적용하고 등록했습니다. 규칙: {alarm_table_place(CONFLICT_SUMMARY_TITLE)} · 행마다의 값: "
-        f"{detail_place}",
+        f"기준정보 업무 키 충돌 {len(conflicts):,}개 그룹{_conflict_cause_note(conflicts)} — 표 "
+        f"「임시처리」 규칙대로 한 행씩 골라 등록했습니다. 규칙: "
+        f"{alarm_table_place(CONFLICT_SUMMARY_TITLE)} · 행마다의 값: {detail_place}",
         kind="warning",
         icon=":material/warning:",
         alert="SC-04",
         popup_only=True,
         tables=(summary, detail),
     )
+
+
+def _conflict_cause_note(conflicts: pd.DataFrame) -> str:
+    """충돌 그룹 수 뒤의 「(키밖 n · 그 밖 m)」 — 원인 칸이 없는 옛 꼴 보고서면 빈 글이다."""
+    other, out_of_key = conflict_cause_counts(conflicts)
+    if other.empty and out_of_key.empty:
+        return ""
+    return f"(키밖 {int(out_of_key.sum()):,} · 그 밖 {int(other.sum()):,})"
 
 
 def _render_oversized_conflict_download() -> None:
