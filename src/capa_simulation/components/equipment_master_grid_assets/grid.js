@@ -232,15 +232,17 @@ function textSorted(kind) {
 
 // 투자Capa 글의 수 읽기 — 파이썬 `space_color_basis.capa_number`(Space 색 기준)와 같은 읽기다: 앞뒤 공백을 뗀 글이 숫자(쉼표 허용,
 // 소수점 뒤 숫자)와 꼬리 K(천) · M(백만, 대소문자 무시) 하나뿐이면 그 수, 아니면 null. 공백 글자는 파이썬 `str.isspace` 와 같은
-// 벌이다 — JS `\s` · `trim` 은 U+FEFF 를 넣고 U+001C ~ 001F · U+0085 를 빼 파이썬과 갈린다(시험이 맞댄다).
+// 벌이다 — JS `\s` · `trim` 은 U+FEFF 를 넣고 U+001C ~ 001F · U+0085 를 빼 파이썬과 갈린다(시험이 맞댄다). 꼬리는 곱하지 않고
+// 지수(e3 · e6)로 붙여 `Number` 한 번으로 읽는다 — 같은 십진수를 적은 글(「1.005K」 · 「1,005」)이 늘 같은 수다(1.005 × 1000 은
+// 1004.9999… 로 갈려 같은 값이 둘째 열쇠로 가지 않는다).
 const CAPA_SPACE = '\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000'
 const CAPA_TRIM = new RegExp('^[' + CAPA_SPACE + ']+|[' + CAPA_SPACE + ']+$', 'g')
 const CAPA_NUMBER = new RegExp('^([0-9][0-9,]*(?:\\.[0-9]+)?)[' + CAPA_SPACE + ']*([KkMm]?)$')
-const CAPA_UNITS = { '': 1, k: 1000, m: 1000000 }
+const CAPA_EXPONENTS = { '': '', k: 'e3', m: 'e6' }
 
 function capaNumber(value) {
   const match = CAPA_NUMBER.exec(String(value == null ? '' : value).replace(CAPA_TRIM, ''))
-  return match ? Number(match[1].replace(/,/g, '')) * CAPA_UNITS[match[2].toLowerCase()] : null
+  return match ? Number(match[1].replace(/,/g, '') + CAPA_EXPONENTS[match[2].toLowerCase()]) : null
 }
 
 // 투자Capa 정렬 열쇠 — 수로 읽히면 그 수, 못 읽는 글은 글 차례 열쇠(`nameKey`)로 견준다. 줄마다 한 번만 짓는다.

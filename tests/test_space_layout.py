@@ -561,6 +561,9 @@ def test_capa_groups_take_the_teal_ramp_by_number() -> None:
         (" 322k ", 322_000.0),
         ("322,000", 322_000.0),
         ("1.5M", 1_500_000.0),
+        ("1.005K", 1_005.0),
+        ("1,005", 1_005.0),
+        ("0.000506M", 506.0),
         ("280", 280.0),
         (5, 5.0),
         (2.5, 2.5),
@@ -580,6 +583,18 @@ def test_capa_number_reads_thousands_and_millions_only(text: object, number: flo
     assert capa_number(text) == number
 
 
+def test_capa_number_reads_the_same_decimal_as_the_same_number_whatever_the_suffix() -> None:
+    """같은 십진수를 K · M 꼬리나 쉼표로 적은 글은 늘 같은 수다 — 꼬리를 곱하면 「1.005K」 가
+    1004.9999… 로 읽혀 「1,005」 와 다른 그룹 · 다른 정렬 값이 된다."""
+    thousands = [n for n in range(1, 100_000) if capa_number(f"{n // 1000}.{n % 1000:03d}K") != n]
+    millions = [
+        n for n in range(1, 10**7, 101) if capa_number(f"{n // 10**6}.{n % 10**6:06d}m") != n
+    ]
+    assert not thousands, thousands[:5]
+    assert not millions, millions[:5]
+    assert capa_number("1.005K") == capa_number("1,005") == capa_number("1005") == 1_005
+
+
 def test_capa_groups_merge_same_numbers_and_bin_more_than_seven_kinds_into_seven_ranges() -> None:
     """같은 수로 읽히는 글자는 한 그룹(이름은 가장 많이 쓴 글자)이고, 종류가 7을 넘으면 작은 수부터
     7구간에 고르게 나눠 「앞~뒤」로 묶는다. 단은 구간 차례(0~6)다."""
@@ -588,6 +603,11 @@ def test_capa_groups_merge_same_numbers_and_bin_more_than_seven_kinds_into_seven
         ("180K", 180_000.0, 180_000.0),
         ("322K", 322_000.0, 322_000.0),
     ]
+    decimal = capa_groups(pd.Series(["1.005K", "1,005", "0.000506M", "506"]))
+    assert [(group.label, group.low, group.high) for group in decimal] == [
+        ("0.000506M", 506.0, 506.0),
+        ("1,005", 1_005.0, 1_005.0),
+    ], "같은 십진수는 꼬리 · 쉼표가 달라도 한 그룹"
 
     kinds = [f"{value}K" for value in (100, 110, 120, 130, 140, 150, 160, 170, 180, 190)]
     values = pd.Series([*kinds, "x", None, "150K"])

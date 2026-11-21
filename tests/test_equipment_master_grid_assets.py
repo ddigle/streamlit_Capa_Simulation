@@ -684,8 +684,14 @@ _CAPA_TEXTS = [
     "322K", "322 k", " 322k ", "322,000", "1.5M", "1.25M", "1,250", "280", "0.5K", "007",
     "10M", "9m", "1,2,3", "5,", "123,456,789.5M", "", "x", "TBD", "미정", "-5K", "+5", "1e3",
     "322KB", "K", ".5", "1.", "1.5.2", "1 . 5M", ",5", "0x10", "１２K", "12ｋ", "12\u212a",
-    "12 K M", "12\nK", "\t1.5M\n",
+    "12 K M", "12\nK", "\t1.5M\n", "1.005K", "1,005", "0.000506M", "506",
 ]  # fmt: skip
+
+# 같은 십진수를 꼬리 K · M 과 쉼표로 적은 짝(꼬리를 곱하면 「1.005K」 가 1004.9999… 로 갈리는 꼴이
+# 섞인 구간)과 그 수.
+_SAME_NUMBER_PAIRS = [(f"{n // 1000}.{n % 1000:03d}K", f"{n:,}", n) for n in range(1, 5_000)] + [
+    (f"{n // 10**6}.{n % 10**6:06d}M", f"{n:,}", n) for n in range(1, 10**7, 9_973)
+]
 
 
 def test_the_investment_capa_number_reads_like_the_space_color_basis() -> None:
@@ -701,7 +707,8 @@ def test_the_investment_capa_number_reads_like_the_space_color_basis() -> None:
         if not 0xD800 <= code <= 0xDFFF
         for text in (f"{chr(code)}12.5{chr(code)}K{chr(code)}", f"1{chr(code)}")
     ]
-    texts = _CAPA_TEXTS + spread
+    pairs = [text for left, right, _ in _SAME_NUMBER_PAIRS for text in (left, right)]
+    texts = _CAPA_TEXTS + pairs + spread
     expected = [capa_number(text) for text in texts]
     assert all(number is None or math.isfinite(number) for number in expected)
     result = _node({"texts": texts}, _CAPA_NUMBER_RUNNER)["numbers"]
@@ -713,6 +720,16 @@ def test_the_investment_capa_number_reads_like_the_space_color_basis() -> None:
     assert head["322K"] == head["322 k"] == head["322,000"] == 322_000
     assert head["1.5M"] == 1_500_000 and head["1,250"] == 1_250 and head["9m"] == 9_000_000
     assert head["TBD"] is None and head["-5K"] is None and head["１２K"] is None
+    assert head["1.005K"] == head["1,005"] == 1_005 and head["0.000506M"] == head["506"] == 506
+    paired = result[len(_CAPA_TEXTS) : len(_CAPA_TEXTS) + len(pairs)]
+    split = [
+        (left, right, number)
+        for (left, right, number), js_left, js_right in zip(
+            _SAME_NUMBER_PAIRS, paired[0::2], paired[1::2], strict=True
+        )
+        if not js_left == js_right == number
+    ]
+    assert not split, f"같은 십진수가 다른 수로 읽힘: {split[:5]}"
     assert capa_number("\x1c5\x1c") == 5 and capa_number("\ufeff5") is None, "공백 벌이 갈리는 글자"
 
 
@@ -755,12 +772,20 @@ def test_the_investment_capa_head_sorts_by_number_then_text_then_blank() -> None
     ]  # fmt: skip
     names = [f"호기 {(index * 7) % len(values) + 1}" for index in range(len(values))]
     cases = [{"values": values, "names": names, "dir": direction} for direction in ("asc", "desc")]
+    tie = {
+        "values": ["1.005K", "1,005", "0.000506M", "506"],
+        "names": ["EQ-01", "EQ-02", "EQ-03", "EQ-04"],
+    }
+    cases += [{**tie, "dir": direction} for direction in ("asc", "desc")]
     cells = [
         ["1.5M", "322K"], ["9M", "10M"], ["322K", "322,000"], ["TBD", "1"], ["TBD", "미정"],
-        ["", "TBD"], ["1", ""], ["1.25M", "1.5M"],
+        ["", "TBD"], ["1", ""], ["1.25M", "1.5M"], ["1.005K", "1,005"], ["0.000506M", "506"],
     ]  # fmt: skip
     result = _node({"cases": cases, "cells": cells}, _CAPA_SORT_RUNNER)
-    asc, desc = result["orders"]
+    asc, desc, tie_asc, tie_desc = result["orders"]
+    assert tie_asc == [2, 3, 0, 1] and tie_desc == [0, 1, 2, 3], (
+        "같은 십진수는 내림차순이어도 설비명 오름"
+    )
     assert asc == _capa_order(values, names, descending=False)
     assert desc == _capa_order(values, names, descending=True)
     shown = [values[index] for index in asc]
@@ -769,7 +794,7 @@ def test_the_investment_capa_head_sorts_by_number_then_text_then_blank() -> None
     assert shown[6:] == ["1.25M", "1.5M", "9M", "10M", "abc-2", "abc-10", "TBD", "미정", "", ""]
     assert [values[index] for index in desc][:4] == ["미정", "TBD", "abc-10", "abc-2"]
     assert [values[index] for index in desc][-2:] == ["", ""]
-    assert result["cells"] == [1, -1, 0, 1, -1, 1, -1, -1]
+    assert result["cells"] == [1, -1, 0, 1, -1, 1, -1, -1, 0, 0]
 
 
 _GRID_MODEL_RUNNER = """

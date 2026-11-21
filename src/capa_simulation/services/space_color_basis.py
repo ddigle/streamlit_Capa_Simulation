@@ -46,7 +46,9 @@ COLOR_BASES: Final = (COLOR_BASIS_LINE_TYPE, COLOR_BASIS_CAPA, COLOR_BASIS_SHORT
 CAPA_LEVELS: Final = 7
 
 _CAPA_NUMBER = re.compile(r"^([0-9][0-9,]*(?:\.[0-9]+)?)\s*([KkMm]?)$")
-_CAPA_UNITS: Final = {"": 1.0, "k": 1_000.0, "m": 1_000_000.0}
+# 꼬리 K · M 은 곱하지 않고 지수로 붙여 한 번에 읽는다 — 같은 십진수를 적은 글
+# (「1.005K」 · 「1,005」)이 늘 같은 float 가 된다(1.005 × 1000 은 1004.9999… 로 갈린다).
+_CAPA_EXPONENTS: Final = {"": "", "k": "e3", "m": "e6"}
 
 
 @dataclass(frozen=True)
@@ -65,8 +67,10 @@ class CapaGroup:
 def capa_number(value: object) -> float | None:
     """투자Capa 글자 하나를 수로 읽는다(`322K` → 322000). 못 읽으면 None.
 
-    설비 마스터 표 투자Capa 머리 정렬(`equipment_master_grid_assets/grid.js` `capaNumber`)이 글에
-    같은 읽기를 한다 — 고치면 둘을 함께 고친다(시험이 맞댄다)."""
+    쉼표를 뗀 숫자 글에 꼬리 K · M 을 지수(e3 · e6)로 붙여 `float` 한 번으로 읽는다 — 같은 수를 적은
+    글은 꼴이 달라도 같은 값이다(「1.005K」 · 「1,005」 → 1005). 설비 마스터 표 투자Capa 머리
+    정렬(`equipment_master_grid_assets/grid.js` `capaNumber`)이 글에 같은 읽기를 한다 — 고치면 둘을
+    함께 고친다(시험이 맞댄다)."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -75,7 +79,7 @@ def capa_number(value: object) -> float | None:
     match = _CAPA_NUMBER.match(str(value).strip())
     if match is None:
         return None
-    return float(match.group(1).replace(",", "")) * _CAPA_UNITS[match.group(2).casefold()]
+    return float(match.group(1).replace(",", "") + _CAPA_EXPONENTS[match.group(2).casefold()])
 
 
 def capa_numbers(values: pd.Series) -> pd.Series:
