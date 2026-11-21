@@ -1122,6 +1122,72 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
 
 
+def test_with_edp_included_the_wafer_plan_reads_the_filtered_monthly_sum(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`EDP 포함` 을 켜면 HOME 표의 `Wafer 계획` 은 `get_home_simulation` 의 셋째 원소(Dummy
+    계열을 뺀 월 합)다 — 마지막 원소(거르지 않은 월 합)는 필요 단축 일정 줄의 몫이다.
+
+    `EDP 포함` 이 꺼져 있으면 `get_home_lob_without_edp` 가 그 칸을 덮어써, 두 원소를 바꿔 풀어도
+    드러나지 않는다. 시드에는 Dummy 계열이 없어 셋째 원소만 절반으로 바꿔 넣고(마지막 원소는
+    그대로) 표 입력의 `Wafer 부하량` 이 그 값인지 직접 댄다.
+    """
+    import capa_simulation.components.home_figures as home_figures
+    from capa_simulation.services import simulation_cache
+
+    seen: dict[str, Any] = {}
+    original_simulation = simulation_cache.get_home_simulation
+
+    def simulation(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_simulation(*args, **kwargs))
+        filtered = result[2].copy()
+        filtered["Wafer 부하량"] = pd.to_numeric(filtered["Wafer 부하량"]) * 0.5
+        result[2] = filtered
+        seen["filtered"] = filtered
+        seen["unfiltered"] = result[-1]
+        return tuple(result)
+
+    original_lob = home_figures.build_lob_summary_figures
+
+    def lob_spy(**kwargs: Any) -> Any:
+        seen["lob"] = kwargs
+        return original_lob(**kwargs)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", simulation)
+    monkeypatch.setattr(home_figures, "build_lob_summary_figures", lob_spy)
+    # 그림 칸의 키는 바꿔 넣은 값을 모른다 — 앞 시험이 같은 키로 남긴 그림이 있으면 표 입력을 만들지
+    # 않고, 이 시험이 남긴 그림이 뒤 시험에 복원되어서도 안 된다.
+    shared_home_figure_store.clear()
+    try:
+        # 첫 회차가 HOME 토글 칸을 심은 뒤에 켠다(`EDP 포함` 의 기본은 꺼짐).
+        app = _run(seeded_database)
+        seen.clear()
+        app.session_state[EDP_TOGGLE_KEY] = True
+        app.run()
+        assert not list(app.exception)
+        assert app.session_state[EDP_TOGGLE_KEY] is True
+
+        def by_month(frame: pd.DataFrame) -> dict[int, float]:
+            return {
+                int(month): float(value)
+                for month, value in zip(frame["생산계획년월"], frame["Wafer 부하량"], strict=True)
+            }
+
+        plan = by_month(seen["lob"]["lob_summary"])
+        filtered = by_month(seen["filtered"])
+        unfiltered = by_month(seen["unfiltered"])
+        months = sorted(month for month in filtered if month in plan)
+        assert months
+        assert [plan[month] for month in months] == pytest.approx(
+            [filtered[month] for month in months]
+        )
+        assert [plan[month] for month in months] != pytest.approx(
+            [unfiltered[month] for month in months]
+        )
+    finally:
+        shared_home_figure_store.clear()
+
+
 def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
     seeded_database: Path,
 ) -> None:
