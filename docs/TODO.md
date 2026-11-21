@@ -2552,6 +2552,10 @@
   환산 탭 「산출 기준 총량 | HOME 집계 기준」(사용자 요청)의 계산은 `build_monthly_volume(aggregation=)` 이다 — 기본은 총량이라 값 ·
   CSV 가 그대로이고, HOME 집계 기준은 Dummy 계열 행을 0 으로 두지 않고 뺀다(요청이 맡긴 것 — 0 은 표에서 빈칸이라 「값 없음」
   과 구별되지 않음, 합계는 같음). 전환 칸 · 제목 기준 글은 화면 몫(갈래 2).
+  HOME 안 파생 칸 몫을 걷을 때는 커밋 「HOME 표의 Wafer Capa · 연간 Total · B/N 의 Wafer Capa 도 Dummy 계열을 뺀 월 합에서
+  낸다」(가지 `custom-1122/calc` 에서 `8b4c61c5`)와 「Guide home 의 연간 Total 설명을 바로잡는다」(`b45aea3a`)를 **함께**
+  되돌린다 — 뒤 커밋이 앞 커밋의 Guide 줄을 고쳐 앞 것만 되돌리면 `guides/home.md` 에서 부딪힌다. 필요 단축 일정 줄을 HOME
+  처럼 거르게 되면 `guides/required_shortening.md` 의 `계획 · LOB 요약` 설명도 함께 고친다.
   관련: `services/product_type.py` · `services/load_calculator.exclude_dummy_series` ·
   `services/dashboard.home_aggregation_wafer_load` · AGENTS 6장 「부하량」 · 「HOME 얹기」
 - (2026-11-20) **필요 단축 일정 「현재 일정」 기준 — Static(처음 값) | 설비 마스터**(보드 답 Static-0 「좋음」 + 메모, Q01 ~ Q15 모두
