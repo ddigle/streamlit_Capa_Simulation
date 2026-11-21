@@ -945,6 +945,42 @@ def test_plan_row_diagnostics_count_rows_and_cells_without_values() -> None:
     assert int(folded["값 불일치"].sum()) == found.cells_with_many_plan_values
 
 
+def test_a_cell_without_a_plan_row_drops_out_of_the_sum_at_the_default_keys() -> None:
+    """계획 행 없는 칸은 대조 키에 따라 다르게 드러난다 — 기본 키에서 같은 키의 다른 칸에 계획 행이
+    있으면 그 칸 값만 합에서 빠져 「허용 초과」 가 되고, 칸 단위 키에서는 「신규에만 있음」 이다."""
+    core = _core(
+        _flagged(100.0, "Y", pd.NA, **{"Capa Code": "CAPA-A"}),
+        _flagged(100.0, "N", "P1", **{"Capa Code": "CAPA-A"}),
+        _flagged(50.0, "N", "P1", **{"Capa Code": "CAPA-B"}),
+    )
+    rows = plan_row_frame(core)
+
+    formal = summarize_comparison(_compare(core, _calculated(150.0)))
+    folded = compare_metric(rows, _calculated(150.0), PLAN_ROW_METRIC, CONTRACT)
+    summary = summarize_comparison(folded)
+    by_cell = summarize_comparison(
+        compare_metric(
+            rows,
+            pd.concat(
+                [
+                    _calculated(100.0).assign(**{**_PLAN_DEFAULTS, "Capa Code": "CAPA-A"}),
+                    _calculated(50.0).assign(**{**_PLAN_DEFAULTS, "Capa Code": "CAPA-B"}),
+                ],
+                ignore_index=True,
+            ),
+            PLAN_ROW_METRIC,
+            CONTRACT,
+            keys=legacy_grain(CONTRACT),
+        )
+    )
+
+    assert (formal["대조 건수"], formal["허용 초과"]) == (1, 0)
+    assert folded["기존값"].tolist() == [100.0]
+    assert (summary["대조 건수"], summary["허용 초과"], summary["신규에만 있음"]) == (1, 1, 0)
+    assert (by_cell["대조 건수"], by_cell["허용 초과"], by_cell["신규에만 있음"]) == (1, 0, 1)
+    assert plan_row_diagnostics(core).cells_without_plan_row == 1
+
+
 def test_the_plan_row_fold_is_not_a_formal_comparison() -> None:
     """정식 대조 셋은 그대로다 — 이 갈래는 같은 Wafer 컬럼을 다른 지표 이름으로 읽을 뿐이다."""
     wafer = next(metric for metric in COMPARISONS if metric.legacy_column == "WF수(매)")

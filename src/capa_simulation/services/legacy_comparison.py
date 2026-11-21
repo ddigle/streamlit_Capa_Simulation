@@ -1214,8 +1214,11 @@ class PlanRowDiagnostics:
     접기(`_legacy_totals`)와 같다.
 
     - `cells` — 값이 있는 칸.
-    - `cells_without_plan_row` — 값이 있는 접는 행이 없는 칸. 이 갈래에서는 「신규에만 있음」 쪽이
-      된다.
+    - `cells_without_plan_row` — 값이 있는 접는 행이 없는 칸. 이 갈래는 그 칸의 기존 값을 읽지
+      않는다. 대조 키(`compare_metric` 의 `keys`) 하나에 든 칸이 모두 이렇다면 그 키는 기존값이
+      없어 「신규에만 있음」 이 되고(키가 `grain` 과 같으면 늘 이쪽), 같은 키의 다른 칸에 접는
+      행이 있으면(기본 `COMPARISON_KEYS` 는 계획 줄 여럿을 한 키로 묶는다) 이 칸의 값만 합에서
+      빠져 `차이` · 「허용 초과」 로 나타난다.
     - `cells_with_many_plan_values` — 접는 행의 값이 둘 이상인 칸(같은 값인지는 정식 대조처럼 정확히
       본다). 이 갈래에서도 `값 불일치` 가 된다.
     - `cells_split_in_one_process` — 접는 행의 값이 하나인 칸 가운데, 그 값과 갈리는 계획 행 밖 경로
