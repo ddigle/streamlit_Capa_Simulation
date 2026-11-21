@@ -25,11 +25,16 @@ OOM 종료 수가 다르면 그 사이 cgroup 이 프로세스를 죽인 것이�
 
 - **앱이 뜬 시간** — 로그인을 부른 프로세스(앱이면 Streamlit 서버, 시작 스크립트면 그 프로세스)의
   `/proc/self/stat` 시작 틱(22째 칸 — `comm` 이 괄호 · 공백을 품을 수 있어 마지막 `)` 뒤부터
-  가른다)을 `os.sysconf("SC_CLK_TCK")` 로 나눈 초와 `/proc/uptime` 의 차.
+  가른다)을 `os.sysconf("SC_CLK_TCK")` 로 나눈 초와 `/proc/uptime` 의 차. 시작 스크립트는 앱을
+  `os.execvpe` 로 같은 프로세스에 갈아 끼우므로 앱의 뜬 시간은 시작 스크립트가 시작한 때부터다(설치
+  · DB 받기 몇 분을 품는다). `/proc/uptime` 만 컨테이너 기준으로 바꿔 보이는 자리(lxcfs 류)는
+  시작 틱(호스트 부팅 기준)과 기준이 달라 1초 넘게 거꾸로 나와 모름이다.
 - **스레드** — `/proc/self/status` 의 `Threads`. **열린 파일** — `/proc/self/fd` 항목 수(세는
   동안 연 것 하나를 품는다).
-- **프로세스 수** — cgroup v2 면 뿌리의 `pids.current` · `pids.max`(「max」 는 한도 없음), v1
-  이면 `pids/` 아래 같은 이름. **좀비** — `/proc` 의 숫자 폴더마다 `stat` 의 상태가 `Z` 인
+- **cgroup 프로세스 · 스레드 수** — cgroup v2 면 뿌리의 `pids.current` · `pids.max`, v1 이면
+  `pids/` 아래 같은 이름. 커널은 스레드도 하나씩 세므로 앱 스레드 수 이상이다. 「max」 는 그
+  cgroup 에 한도가 없다는 뜻이고, pod 단계(`podPidsLimit` — 컨테이너 cgroup 의 부모)에 걸린 한도는
+  컨테이너 안에서 보이지 않을 수 있다. **좀비** — `/proc` 의 숫자 폴더마다 `stat` 의 상태가 `Z` 인
   수(세는 사이 사라진 프로세스는 건너뛴다 — 하나도 못 읽으면 모름).
 
 파일이 없거나 못 읽은 값은 `None` 이고 화면에는 「모름」 이다. 표준 라이브러리만 쓴다 — 시작
@@ -136,9 +141,9 @@ def process_clues(
     cgroup_root: Path | None = None,
 ) -> ProcessClues:
     """로그인 하위 프로세스를 띄우기 바로 앞의 프로세스 단서를 한 번 읽는다 — 부른 프로세스가 뜬
-    시간 · 스레드 · 열린 파일과 컨테이너의 cgroup 프로세스 수 · 한도 · 좀비 수. 뿌리 · 상태 파일을
-    주지 않으면 모듈 값(`PROC_ROOT` · `PROC_STATUS` · `CGROUP_ROOT` — 시험이 바꿔 끼운다)을 부를 때
-    읽는다. 예외를 내지 않는다."""
+    시간 · 스레드 · 열린 파일과 컨테이너의 cgroup 프로세스 · 스레드 수 · 한도 · 좀비 수. 뿌리 ·
+    상태 파일을 주지 않으면 모듈 값(`PROC_ROOT` · `PROC_STATUS` · `CGROUP_ROOT` — 시험이 바꿔
+    끼운다)을 부를 때 읽는다. 예외를 내지 않는다."""
     proc = PROC_ROOT if proc_root is None else proc_root
     status = PROC_STATUS if status_path is None else status_path
     cgroup = CGROUP_ROOT if cgroup_root is None else cgroup_root
@@ -279,8 +284,8 @@ def _entry_count(path: Path) -> int | None:
 
 
 def _pids(root: Path) -> tuple[int | None, int | None, bool]:
-    """(프로세스 수, 한도, 한도 없음). v2 뿌리의 `pids.current` 를 먼저 보고 없으면 v1
-    `pids/` 다."""
+    """(프로세스 · 스레드 수, 한도, 그 cgroup 에 한도 없음). v2 뿌리의 `pids.current` 를 먼저 보고
+    없으면 v1 `pids/` 다."""
     folder = root if (root / "pids.current").exists() else root / "pids"
     limit_text = (_text(folder / "pids.max") or "").strip()
     unlimited = limit_text == "max"

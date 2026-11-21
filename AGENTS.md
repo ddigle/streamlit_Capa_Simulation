@@ -2377,7 +2377,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
-  `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 수 · 한도(「max」 는 한도 없음) · 좀비 수, 칸 이름 `PROCESS_FIELDS`
+  `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 좀비 수, 칸 이름 `PROCESS_FIELDS`
   `app_h` · `threads` · `fds` · `pids` · `pids_max` · `zombies` — 그 칸이 하나도 없는 옛 파일 · 메모리 칸만 든 기록은 `None` 이라 화면 글이 「하위 최고 …」 로 끝나는 지금 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
   벌) · 비밀번호를 보내기 전에 끊긴 시작 시도가 몇 번째 다시 시도였나 `retry`(처음 시도 · 옛 파일은 0 — 「서버 시작 점검」 진단 줄 끝 「다시 시도 n/3」), 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
   시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
@@ -2484,8 +2484,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   약 16시간 떠 있던 pod 는 import 단계에서 바깥 SIGKILL, 2026-11-21 사용자 결정 「이번 배포에 더하기」) — 부른 프로세스(앱이면 Streamlit 서버, 시작 스크립트면 그
   프로세스)가 뜬 시간(`/proc/self/stat` 22째 칸 시작 틱 — `comm` 이 괄호 · 공백을 품어도 마지막 `)` 뒤부터 가른다 — ÷ `os.sysconf("SC_CLK_TCK")` 를 `/proc/uptime` 에서
   뺌, Windows 는 틱을 묻지 않고 모름 `clock_ticks`), 스레드(`/proc/self/status` 의 `Threads`), 열린 파일(`/proc/self/fd` 항목 수 — 세는 동안 연 것 하나를 품는다),
-  cgroup 프로세스 수 · 한도(v2 뿌리 `pids.current` · `pids.max`, 없으면 v1 `pids/` — 「max」 는 한도 없음), 좀비 수(`/proc` 숫자 폴더의 `stat` 상태 `Z` — 세는 사이
-  사라진 것은 건너뛰고 하나도 못 읽으면 모름). 뿌리는 같은 모듈 값(`PROC_ROOT` 아래 `uptime` · `self/stat` · `self/fd` · `<pid>/stat`, `PROC_STATUS`, `CGROUP_ROOT`)을
+  cgroup 프로세스 · 스레드 수 · 한도(v2 뿌리 `pids.current` · `pids.max`, 없으면 v1 `pids/` — 커널이 스레드도 하나씩 세어 앱 스레드 수 이상이다. 「max」 는 그 cgroup 에 한도
+  없음이고 pod 단계 한도(`podPidsLimit` — 부모 cgroup)는 컨테이너 안에서 보이지 않을 수 있다), 좀비 수(`/proc` 숫자 폴더의 `stat` 상태 `Z` — 세는 사이
+  사라진 것은 건너뛰고 하나도 못 읽으면 모름). 앱은 시작 스크립트가 `os.execvpe` 로 갈아 끼운 같은 프로세스라 앱의 뜬 시간은 시작 스크립트가 시작한 때부터다.
+  `/proc/uptime` 만 컨테이너 기준으로 바꿔 보이는 자리(lxcfs 류)는 시작 틱(호스트 부팅 기준)과 1초 넘게 어긋나 「앱 뜬 지」 만 모름이 된다. 뿌리는 같은 모듈 값(`PROC_ROOT` 아래 `uptime` · `self/stat` · `self/fd` · `<pid>/stat`, `PROC_STATUS`, `CGROUP_ROOT`)을
   부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 좀비 셈 ·
   사라진 프로세스 · 한도 없음 · 옛 기록 · 범위 밖 값, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음 · 막 띄운 진짜 하위의 뜬 시간이 몇 초 안).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한

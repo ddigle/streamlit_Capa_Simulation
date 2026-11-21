@@ -391,13 +391,18 @@ def test_process_clues_come_from_a_fake_proc_and_a_v2_cgroup(tmp_path: Path, tic
 
 def test_a_v1_pids_folder_and_an_unlimited_max(tmp_path: Path, ticks: int) -> None:
     proc = _fake_proc(tmp_path / "proc", others={1: "S"})
-    v1 = _pids_v2(tmp_path / "cg1" / "pids", current=9, limit="max").parent
+    v1 = _pids_v2(tmp_path / "cg1" / "pids", current=49, limit="max").parent
     found = memory_probe.process_clues(proc, _thread_status(tmp_path), v1)
-    assert (found.pids, found.pids_limit, found.pids_unlimited, found.zombies) == (9, None, True, 0)
-    assert "pids 9/max · 좀비 0" in found.text
-    v2 = _pids_v2(tmp_path / "cg2", current=3, limit="max")
+    assert (found.pids, found.pids_limit, found.pids_unlimited, found.zombies) == (
+        49,
+        None,
+        True,
+        0,
+    )
+    assert "pids 49/max · 좀비 0" in found.text
+    v2 = _pids_v2(tmp_path / "cg2", current=43, limit="max")
     found = memory_probe.process_clues(proc, _thread_status(tmp_path), v2)
-    assert (found.pids, found.pids_limit, found.pids_unlimited) == (3, None, True)
+    assert (found.pids, found.pids_limit, found.pids_unlimited) == (43, None, True)
 
 
 def test_missing_process_files_are_unknown_and_never_raise(tmp_path: Path, ticks: int) -> None:
@@ -421,13 +426,16 @@ def test_a_vanished_process_is_skipped_while_counting_zombies(tmp_path: Path, ti
 @pytest.mark.parametrize(
     "stat_text",
     [
-        "",
-        "4242 python S 1 2 3\n",  # 괄호 없음
-        "4242 (python) S 1 2\n",  # 22째 칸까지 못 감
-        _stat_line(4242, "S", 0).replace(" 0 123456", " x 123456"),  # 시작 틱이 수가 아님
-        _stat_line(4242, "S", 10**400),  # 실수로 넘침
-        _stat_line(4242, "S", 0).replace(" 0 123456", f" {'9' * 5000} 123456"),  # 정수 자릿수 상한
-        _stat_line(4242, "S", 10**20),  # 64비트 틱(20자리)보다 긺
+        pytest.param("", id="empty"),
+        pytest.param("4242 python S 1 2 3\n", id="no-paren"),
+        pytest.param("4242 (python) S 1 2\n", id="short"),
+        pytest.param(_stat_line(4242, "S", 0).replace(" 0 123456", " x 123456"), id="not-a-number"),
+        pytest.param(_stat_line(4242, "S", 10**400), id="float-overflow"),
+        pytest.param(
+            _stat_line(4242, "S", 0).replace(" 0 123456", f" {'9' * 5000} 123456"),
+            id="int-digit-limit",
+        ),
+        pytest.param(_stat_line(4242, "S", 10**20), id="over-64bit"),
     ],
 )
 def test_an_odd_stat_leaves_the_app_age_unknown(tmp_path: Path, ticks: int, stat_text: str) -> None:
@@ -466,13 +474,13 @@ def test_the_module_roots_are_read_when_called_for_process_clues(
     monkeypatch.setattr(memory_probe, "PROC_ROOT", _fake_proc(tmp_path / "proc", others={3: "Z"}))
     monkeypatch.setattr(memory_probe, "PROC_STATUS", _thread_status(tmp_path, 12))
     monkeypatch.setattr(
-        memory_probe, "CGROUP_ROOT", _pids_v2(tmp_path / "cg", current=4, limit="64")
+        memory_probe, "CGROUP_ROOT", _pids_v2(tmp_path / "cg", current=16, limit="64")
     )
     found = memory_probe.process_clues()
     assert (found.threads, found.open_files, found.pids, found.pids_limit, found.zombies) == (
         12,
         3,
-        4,
+        16,
         64,
         1,
     )
@@ -543,7 +551,7 @@ def test_the_process_fields_round_trip_are_audit_keys_and_fit_the_detail() -> No
     """결과 파일 칸 · 감사 상세가 같은 이름이고(`PROCESS_FIELDS`), 다시 읽어도 같다. 진단 줄은
     메모리 단서 뒤에 붙고, 감사 상세는 칸이 다 차도 1KB 안이다(줄임 없음)."""
     memory = ChildMemory(700, 980, None, True, 0, 0, 340, 342, 62)
-    process = ProcessClues(16.2, 41, 87, 5, None, True, 0)
+    process = ProcessClues(16.2, 41, 87, 48, None, True, 0)
     diag = ChildDiag(-9, "SIGKILL", 2.9, "import", "", "2.5.0", "1.0.1", memory, process)
     fields = diag.fields()
     assert tuple(name for name in fields if name in report_contract.PROCESS_FIELDS) == (
@@ -555,8 +563,8 @@ def test_the_process_fields_round_trip_are_audit_keys_and_fit_the_detail() -> No
     assert all(name in events.DET_LABELS for name in report_contract.PROCESS_FIELDS)
     assert report_contract.parse_child(json.loads(json.dumps(fields))) == diag
     assert diag.text.endswith(" · 하위 최고 62MiB · " + process.text)
-    assert process.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 5/max · 좀비 0"
-    assert "app_h=16.2 threads=41 fds=87 pids=5 pids_max=max zombies=0" in diag.code
+    assert process.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/max · 좀비 0"
+    assert "app_h=16.2 threads=41 fds=87 pids=48 pids_max=max zombies=0" in diag.code
     det = {"result": "unavailable", "reason": "import_killed", "retry": "3/3", **fields}
     kept = recorder.clean_det(spec, det)
     assert recorder.TRUNC_KEY not in kept and set(fields) <= set(kept) | {"stderr"}
@@ -597,7 +605,7 @@ def test_a_record_without_process_fields_reads_as_before() -> None:
     ],
 )
 def test_an_odd_process_value_empties_only_that_value(field: str, odd: object) -> None:
-    whole = ProcessClues(16.2, 41, 87, 5, 512, False, 0).fields()
+    whole = ProcessClues(16.2, 41, 87, 48, 512, False, 0).fields()
     parsed = report_contract.parse_process({**whole, field: odd})
     assert parsed is not None
     found = parsed.fields()
