@@ -27,6 +27,14 @@ from capa_simulation.services.load_calculator import (
     drop_unplanned_rows,
     plan_quantities,
 )
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+    apply_route_load_exceptions,
+    build_route_load_bases,
+    normalize_route_load_declaration,
+    route_load_targets,
+)
 
 REQB_COLUMNS = [
     "생산계획년월",
@@ -159,8 +167,17 @@ def calculate_required_equipment(
     yield_data: pd.DataFrame,
     chip_qty: pd.DataFrame,
     unit_capacity: pd.DataFrame,
+    *,
+    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
 ) -> pd.DataFrame:
-    """Calculate required equipment for every RQ_REQB row."""
+    """Calculate required equipment for every RQ_REQB row.
+
+    `route_exceptions` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id —
+    `route_load_exceptions`)이다. 비면(기본) 지금 계산 그대로이고, 선언 공정이 이번 경로에 없어도
+    그렇다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 산식 바탕을 지어 경로에 부하량을 붙인
+    바로 뒤에 건다 — 부하량 표 · 경로 없는 계획 셈은 그대로다.
+    """
+    declaration = normalize_route_load_declaration(route_exceptions)
     prepared_reqb, route_products = _prepare_reqb(reqb)
     if prepared_reqb.empty:
         return _empty_required_equipment_result()
@@ -171,11 +188,18 @@ def calculate_required_equipment(
         chip_qty,
         set(prepared_reqb["소요기준"].unique()),
     )
+    exception_loads = (
+        build_route_load_bases(loads, chip_qty, LOAD_KEYS)
+        if route_load_targets(prepared_reqb, declaration).any()
+        else None
+    )
     output = _calculate_required_equipment_from_prepared(
         prepared_reqb,
         loads,
         unit_capacity,
         route_products,
+        route_exceptions=declaration,
+        exception_loads=exception_loads,
     )
     output.attrs[REQUIRED_LOAD_EXCLUSIONS_ATTR] = load_exclusions
     return output
@@ -276,6 +300,9 @@ def _calculate_required_equipment_from_prepared(
     loads: pd.DataFrame,
     unit_capacity: pd.DataFrame,
     route_products: pd.DataFrame,
+    *,
+    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
+    exception_loads: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     capacities = _prepare_capacities(unit_capacity)
 
@@ -291,6 +318,15 @@ def _calculate_required_equipment_from_prepared(
     counted_reqb = prepared_reqb.loc[~uncounted_pkg]
 
     result = _attach_loads(counted_reqb, loads)
+    # 공정별 부하 산출 예외 — 경로에 붙은 부하량만 바꾼다. 바탕이 없어 뺀 줄은 대당 Capa 를 잇기
+    # 전에 빠져 「대당 Capa 없음」 과 겹치지 않는다(`route_load_exceptions`).
+    basis_missing_rows = pd.DataFrame()
+    if exception_loads is not None:
+        applied = apply_route_load_exceptions(result, exception_loads, route_exceptions)
+        result = applied.routes
+        basis_missing_rows = applied.excluded[[*REQB_COLUMNS, "부하량", "제외사유"]].assign(
+            **{"대당 Capa": float("nan")}
+        )[[*REQB_COLUMNS, "부하량", "대당 Capa", "제외사유"]]
     result = result.merge(
         capacities,
         on=CAPACITY_KEYS,
@@ -308,7 +344,9 @@ def _calculate_required_equipment_from_prepared(
     result = result.loc[~excluded_capacity].copy()
     result["소요대수"] = result["부하량"] / result["대당 Capa"]
     output = result[[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]]
-    exclusions = [frame for frame in (uncounted_rows, excluded_rows) if not frame.empty]
+    exclusions = [
+        frame for frame in (uncounted_rows, basis_missing_rows, excluded_rows) if not frame.empty
+    ]
     output.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = (
         pd.concat(exclusions, ignore_index=True)
         if exclusions

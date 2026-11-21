@@ -2730,6 +2730,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/process_rename.py` — 공용 공정 표시명의 정규화·검증·직렬화다(치환은
   `components/process_labels.py` 에만, 8장).
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
+  - `calculate_required_equipment(route_exceptions=)` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)을 받는다.
+    기본은 빈 선언이고 그때 결과 · attrs 는 지금과 같다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 바탕을 지어
+    `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외 목록에 「부하 예외 바탕 없음」 으로 싣는다(6장
+    「공정별 부하 산출 예외」). 아직 어느 호출처도 선언을 넘기지 않는다.
+- `src/capa_simulation/services/route_load_exceptions.py` — 공정별 부하 산출 예외의 순수 계산. 산식 id 목록
+  `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
+  id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
+  `apply_route_load_exceptions`, 경로 추적 근거 글 `route_load_basis`. 공정 이름 · Streamlit · DB 를 모른다
+  (`tests/test_route_load_exceptions.py`).
 - `src/capa_simulation/services/revision_input_check.py` — 저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리
   「점검」)을 짓는 순수 셈. 전체 기간 결과에서 빠진 행을 묶음 · 단계 · 원본 까닭별 수로 모으고 저장 · 지정 검사
   (`required_exclusion_counts`)와 같은 행을 센다. 판정 · 캐시 길은 `capacity_gate.input_check_verdict` →
@@ -4305,6 +4314,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Dummy 목록은 둘이다 — 산식을 받는 `DUMMY_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy`)과 행을 빼는 Dummy 계열
     `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy` · `Top_Dummy`, 이름 `TOP_DUMMY_DIVISION`). 두 목록은 따로 고친다
     (6장 「부하량」).
+  - 공정별 부하 산출 예외가 줄을 가르는 이름 `BUFFER_DIVISION` · `CORE_DIVISION` 도 여기 둔다 — `HBM_WF_DIVISIONS` 튜플은
+    그대로이고, 예외는 Dummy 계열 목록이 아니라 `TOP_DUMMY_DIVISION` 하나를 읽는다(6장 「공정별 부하 산출 예외」).
 - `src/capa_simulation/services/performance_actuals.py` — 효율·UPEH·수율 세 실적 화면이 공유하는 Gap·우선순위
   계산과 합성 데모다(규칙은 6장). Gap 의 뜻은 `MetricSpec` 이 갖고 데모는 `dynamic_capacity.DEMO_PROFILES` 다.
 - `src/capa_simulation/services/legacy_comparison.py` — 원천에 보존된 기존 결과와 신규 계산을 같은 단위로
@@ -7158,6 +7169,45 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 판정을 맞추는 셈(필요대수·과부족·단축 목표 `target_from_thresholds`·개조 일정 배치·UPEH 역산의 닫힌 식·차트 기준선의 자리)은
 판정 경계 `judgment_boundary`(T − 0.5)/100 을 쓰고, 화면의 「여유」(기준 대비 차이)는 `threshold_margin` 이다(확보율 − T,
 판정이 확보인데 음수면 0).
+
+### 공정별 부하 산출 예외
+
+원천이 어떤 공정의 Wafer 경로 부하를 일반 산식과 다른 식으로 낸다(2026-11-22 사용자 결정 「원천 산식 그대로」 — 사내
+관측과 견줘 확인). 식은 **산식 id** 로 코드(`services/route_load_exceptions.py` 의 `ROUTE_LOAD_FORMULAS`)에 두고, 어느
+공정에 거는지는 **선언**(원본 공정명 → 산식 id)으로 받는다. 계산은 선언을 인자로 받는 순수 함수다
+(`required_equipment.calculate_required_equipment(route_exceptions=)`).
+
+```text
+산식 buffer_x_core_chip — 선언 공정의 소요기준 WF 경로 줄만
+Core 줄       부하량 = 같은 부하 키(WF 구분 뺌)의 Buffer Wafer 부하 × 그 제품의 Core 구분_Chip
+Top_Dummy 줄  부하량 = 0 (줄은 남김)
+그 밖 줄      그대로 (Buffer · Top · Dummy)
+```
+
+- (a) 공정 이름은 코드 · 문서 · 시험 · 커밋 · 가지 이름에 두지 않는다 — 공개 저장소이고 이름 지문도 비밀이 아니다.
+  시험은 합성 `DEMO-*` 공정으로 본다. 문서 · 리뷰에서는 「예외 공정」 이라 부른다.
+- (b) 새 예외 꼴이 오면 산식 id 를 더하고 선언으로 건다. `if 공정 == …` 는 두지 않는다.
+- (c) 공정 단위로 건다(STEP 단위 금지). 부하 키에 STEP 이 없어 같은 공정의 STEP 들이 같은 값을 받고 공정 유효 Capa 의
+  원수요 일치 검사를 지난다.
+- (d) 경로에 붙은 부하량만 바꾼다. 부하량 표(`_build_loads`) · 경로 없는 계획 셈 · Wafer 매수 집계(환산 · HOME ·
+  요약 · 제품별 비중 — `calculate_chip_and_wafer_loads` 물량)는 바꾸지 않는다. 걸 자리는 `_attach_loads` 바로 뒤다.
+- (e) 바탕 없음 — Core 줄의 Buffer Wafer 부하나 Core `구분_Chip` 행이 없을 때 일반 Core 부하가 0 이면 0 으로 두고, 0 보다
+  클 때만 그 줄을 빼서 경로 쪽 제외 목록에 「부하 예외 바탕 없음」(부하량 칸은 일반 산식 값)으로 싣는다 — 소요대수 밖
+  수요 건수(`required_exclusion_counts` 의 경로 제외)에 잡힌다. Buffer 부하 · `구분_Chip` 이 0 인 것은 바탕이 있는 것이라
+  0 이다. 바탕을 잇는 키는 `LOAD_KEYS` · `CHIP_KEYS` 에서 `WF 구분` 만 빼서 만든다(업무 키가 넓어지면 따라간다).
+- (f) 선언이 비면 효과 0 이다 — 선언 공정이 이번 경로에 없거나 CHIP 경로뿐이어도 결과 · attrs 가 지금과 같다.
+- (g) 부대공정에는 따라 걸지 않는다. 공정 이름으로만 고르므로 선언 공정을 따라가는 부대공정은 제 이름이라 일반
+  산식이고, 필요하면 그 이름을 선언에 더한다(2026-11-19 사용자 답 Q4 선례).
+- 이름 견줌은 `scalar_match_key`(앞뒤 공백 · 대소문자 무시)이고 `WF 구분` 은 `product_type` 의 `CORE_DIVISION` ·
+  `TOP_DUMMY_DIVISION` 을 `match_key` 로 견준다. 모르는 산식 id · 빈 공정 이름은 멈춘다(조용히 일반 산식으로 떨어지지
+  않는다).
+- (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
+
+**답 대기.** 선언을 어디에 두고(DB 판 이력 표 — 번호는 답 뒤에 정한다) 언제부터 숫자에 걸지(모든 리비전 즉시 / 선언 뒤
+리비전부터)는 사용자 답을 받은 뒤 짓는다. 그때 함께 짓는 것 — 선언 저장 · 읽기, 선언 판 · 지문이 계산 토큰과 공식버전 키에
+드는 캐시 키 자리((h)), 쓰기 자리(C-DEP 운영 자리 + 개발자 등급만 — (i)), 호출처(화면 계산 · 자동 갱신 · 부대공정 R-07 ·
+확인 스크립트)가 선언을 넘기는 것, 그 공정에 한해 바뀌는 결과 목록((j)). 그때까지 어느 호출처도 선언을 넘기지 않아
+앱 숫자는 지금과 같다.
 
 ### Dynamic Capa 프로토타입
 

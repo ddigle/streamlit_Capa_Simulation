@@ -71,6 +71,13 @@ DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE = {
     EDP_PRODUCT_TYPE: (),
 }
 
+# 공정별 부하 산출 예외(`route_load_exceptions`)가 경로 줄을 가르는 HBM 의 이름. 둘 다 위
+# `HBM_WF_DIVISIONS` 에 든 값이고 그 튜플은 그대로 둔다. 예외는 이 둘과 `TOP_DUMMY_DIVISION` 을
+# 하나씩 읽는다 — Dummy 계열 목록 전체를 읽지 않는다. 대조는 `match_key` 로 한다(원천 표기는
+# 대문자일 수 있다).
+BUFFER_DIVISION = "Buffer"
+CORE_DIVISION = "Core"
+
 
 def apply_edp_wf_division(core: pd.DataFrame) -> pd.DataFrame:
     """EDP-TSV 행의 `WF 구분` `Top` 을 `Top_e` 로 바꾼다.

@@ -2558,6 +2558,17 @@
   처럼 거르게 되면 `guides/required_shortening.md` 의 `계획 · LOB 요약` 설명도 함께 고친다.
   관련: `services/product_type.py` · `services/load_calculator.exclude_dummy_series` ·
   `services/dashboard.home_aggregation_wafer_load` · AGENTS 6장 「부하량」 · 「HOME 얹기」
+- (2026-11-22) **예외 공정의 소요대수만 원천 산식으로 — 산식은 코드(산식 id), 어느 공정인지는 선언(데이터)**(사용자 결정
+  「원천 산식 그대로」 — 사내 관측과 견줘 원천이 그 공정의 Wafer 경로를 다른 식으로 냄). 산식 `buffer_x_core_chip`: 선언 공정의
+  소요기준 WF 경로에서 Core 줄 = 같은 부하 키의 Buffer Wafer 부하 × Core `구분_Chip`, Top_Dummy 줄 = 0(줄 남김 — 규칙 사유로
+  빼면 PKG 사유 하나만 견주는 자리들이 묶음 비교가 됨), 그 밖은 그대로. 공정 단위로 걸고 경로 부하량만 바꾼다 — 부하량 표 ·
+  Wafer 매수 집계(환산 · HOME · 요약 · 제품별 비중)는 그대로. 바탕(Buffer 부하 · Core 구분_Chip 행)이 없으면 일반 Core 부하가
+  0 일 때 0, 0 보다 클 때만 세는 제외 「부하 예외 바탕 없음」. 부대공정은 따라 걸리지 않는다(이름으로만 고름 — 11-19 Q4 선례).
+  공정 이름은 코드 · 문서 · 시험 · 커밋에 두지 않는다(공개 저장소 — 다른 안: 코드 상수 이름 · 리비전 기준정보 칸 · 사내
+  환경변수 · 값 무늬 자동 감지는 버림). 지금 지은 것은 순수 계산과 `calculate_required_equipment(route_exceptions=)` 훅(기본 빈
+  선언 = 지금 결과 · 캐시 키 그대로)뿐이다. 선언 저장(DB 판 이력 표) · 캐시 키 · 쓰기 자리 · 호출처 · Admin 화면 · 소급 범위
+  (모든 리비전 즉시 / 선언 뒤 리비전부터)는 답 대기 — 그때까지 앱 숫자는 그대로다. 되돌리기: 선언을 비우면 곧바로 지금 산식.
+  관련: `services/route_load_exceptions.py` · `services/required_equipment.py` · AGENTS 6장 「공정별 부하 산출 예외」
 - (2026-11-20) **필요 단축 일정 「현재 일정」 기준 — Static(처음 값) | 설비 마스터**(보드 답 Static-0 「좋음」 + 메모, Q01 ~ Q15 모두
   권장 — 초안 `worklog/static-shortening-1119/draft.md`). Static 은 활성 시나리오(미저장 편집 포함)의 `RQ_EQP_AVBL` · 공정별
   Cut-off · Qual 순서(Qual일정 → 번호, 미정은 반입 순)로 Qual 마감 계산기 규칙의 마감을 역산해 현재 일정으로 쓴다(고정 대수는 비가동

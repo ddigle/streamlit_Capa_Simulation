@@ -22,6 +22,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 import duckdb
 import pandas as pd
@@ -507,7 +508,17 @@ def test_duplicate_route_keys_ignore_only_the_case_of_wf_division() -> None:
     assert script.duplicate_route_keys(required) == 2
 
 
-def _pkg_inputs(*divisions: str) -> dict[str, pd.DataFrame]:
+class _PkgInputs(TypedDict):
+    """`calculate_required_equipment` 의 다섯 표 인자(선언 인자는 기본값 그대로 둔다)."""
+
+    reqb: pd.DataFrame
+    plan: pd.DataFrame
+    yield_data: pd.DataFrame
+    chip_qty: pd.DataFrame
+    unit_capacity: pd.DataFrame
+
+
+def _pkg_inputs(*divisions: str) -> _PkgInputs:
     """PKG 경로 하나를 `WF 구분` 표기마다 한 행씩 둔 소요대수 입력(생산수량 100, 대당 Capa 50)."""
     route = {
         "생산계획년월": 202608,
