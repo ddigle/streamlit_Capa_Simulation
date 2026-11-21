@@ -4796,6 +4796,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   같으면 진척 비교 요약의 지금 합계 + 필요 시점 지남 몫 + 기준 바뀜 몫과 같다(그런 기준선이면 어느 것과 견주든 — 시험이 맞댄다).
   기준이 다른 기준선이면 진척 비교는 그 기준의 계획(`_Plan.plan_for`)과 견주고 화면 합계는 전환 쪽 계획이라 맞지 않는다.
   Streamlit · DB 를 모른다.
+- `src/capa_simulation/services/shortening_progress_reasons.py` — 누적 진척 「주차별」 오르내림 까닭(2026-11-20 · 21 보드 답
+  — 꼴 중간-1 「점 곁 곧은 꼬리표」, 재료 「자동 + 사람이 고침」 의 1단계 자동 — 규칙집 6-40). 넣기 스냅숏 모델(`ProgressSnapshotDraft` ·
+  `ProgressSnapshot` — 범위 공정의 당긴 호기 · 추가N 행 `SNAPSHOT_UNIT_COLUMNS`, 범위 공정 · Cut-off · 현재 일정 기준 · 목표 확보율 ·
+  그날 오늘 · 조회 달 · 출처 · 구성 글 `snapshot_digest`)과 `snapshot_draft`(계획 호기 표에서 범위 행만 새 표로 — 합은
+  `screen_shortening_days` 와 같다). `explain_week_changes` 는 기록마다 바로 앞 기록 주와만 짝짓고(건너뛴 주는 한 구간) 두 주 모두
+  그 기록과 같은 쓰기의 스냅숏이 있을 때만 `WeekChange` 를 낸다 — 항목은 저장하지 않고 그릴 때 센다. 짝짓기는 진척 비교의
+  `compare_progress` 그대로이고 꼬리표는 열하나다 — Qual 당김 · Qual 밀림 · 필요 늦춰짐 · 필요 당겨짐(호기마다 확보 몫 · 필요 몫 가운데
+  |몫| 이 큰 쪽, 양은 단축일수 차이 — 함께 움직인 순 0 은 버림) · 신규 필요 · 해소(공정마다 묶음) · 범위 바뀜 · 기준 바뀜(현재 일정
+  기준 · 목표 확보율이 다르면 호기별로 가르지 않는 한 항목이 첫 자리, 남는 호기 ↔ 날짜 호기도 이 이름) · 기한 지남 · 손 고침((이 주
+  기록 − 스냅숏 합) − (앞 기록 − 스냅숏 합)) · 그 밖(풍선의 꼬리 묶음). 항목 합 = 지난 기록 대비가 정수로 맞아야 `balanced` 이고
+  그때만 글을 싣는다. 그림 꼬리표 항목(`drawn`)은 그 주 변동과 같은 쪽 · 둘째는 변동의 1/4 이상 · 둘까지이고, 한 공정에 해소 ·
+  신규 필요가 함께면(`rename_suspects`) 그 둘은 그림에 올리지 않는다. 추가N 대수 · 계산 입력 리비전은 합 밖 덧말이다. Streamlit ·
+  DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는
