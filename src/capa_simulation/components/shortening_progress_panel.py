@@ -22,9 +22,12 @@
   호기 줄과 같은 이름 — 설계 규칙 UI-CON-02). 합계 칸에는 무엇의 합인지 적는 설명 줄이, 카드에는
   호기 줄 위 범례 글이 없다 — 그 뜻은 Guide 「진척 비교」 의 요약 · 카드 줄이다(2026-11-20 사용자
   요청을 같은 꼴 전체로 — 설계 규칙 UI-TXT-01 · PRC-01). 합계에서 뺀 몫 줄과 기준선 칸 출처 줄은
-  값이라 그대로다. 고른 목표 확보율은 합계 칸 라벨 「단축 필요일수 합계 (목표 n%)」 에 값으로 선다 —
-  두 줄 카드에 표가 없어 그 라벨이 본문의 목표 % 자리다(2026-11-20 사용자 답 「나」). 합계 칸이
-  좁으면 괄호 「(목표 n%)」 만 이름 아래 줄로 내려 막대 길이를 지킨다(2026-11-21 갈래 판정).
+  값이라 그대로다. 카드 머리 「과거 n일 → 현재 n일」 · 증감도 요약과 같은 셈이라 필요 시점 지남 ·
+  기준 바뀜 호기를 빼고, 그 공정의 몫은 화면 글을 늘리지 않고 증감 풍선에 합계 칸 몫 줄과 같은 글로
+  적는다(2026-11-21 확인 보드 q-blank-head b). 고른 목표 확보율은 합계 칸 라벨 「단축 필요일수
+  합계 (목표 n%)」 에 값으로 선다 — 두 줄 카드에 표가 없어 그 라벨이 본문의 목표 % 자리다
+  (2026-11-20 사용자 답 「나」). 합계 칸이 좁으면 괄호 「(목표 n%)」 만 이름 아래 줄로 내려 막대
+  길이를 지킨다(2026-11-21 갈래 판정).
 - 카드의 달 축은 지금 조회 달을 **보이는 카드의 두 시점 날짜가 모두 들도록 앞뒤로 넓힌** 것이다
   (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
   축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
@@ -884,26 +887,18 @@ def progress_summary_markup(
             ("현재", " now", summary.current_days, tokens.TEXT),
         )
     )
-    lapsed_note = (
-        f'<span class="shk-kpi-note">필요 시점 지난 {summary.lapsed}대(현재 '
-        f"{summary.lapsed_current_days:,}일) 빼고 견줌</span>"
-        if summary.lapsed
-        else ""
-    )
-    # 한 시점만 남는 호기인 호기도 두 합계에서 뺀다 — 비교 안 함 화면의 합계와 맞춰 볼 수 있게 그
-    # 몫을 적는다(설계 규칙 UI-DAT-07).
-    rebased_note = (
-        f'<span class="shk-kpi-note">기준 바뀜 {summary.rebased}대(현재 '
-        f"{summary.rebased_current_days:,}일) 빼고 견줌</span>"
-        if summary.rebased
-        else ""
+    # 필요 시점 지남 · 기준 바뀜 호기는 두 합계에서 뺀다 — 비교 안 함 화면의 합계와 맞춰 볼 수 있게
+    # 그 몫을 적는다(설계 규칙 UI-DAT-07).
+    notes = "".join(
+        f'<span class="shk-kpi-note">{_escape(share)} {_WITHHELD_TAIL}</span>'
+        for share in _withheld_shares(summary)
     )
     total = (
         '<div class="shk-kpi shk-prog-total">'
         '<div class="shk-prog-total-figure"><span class="shk-kpi-label">단축 필요일수 합계 '
         f'<span class="shk-prog-target">(목표 {level_percent(level)}%)</span></span>'
         f'<span class="shk-kpi-value">{summary.current_days:,}일</span>'
-        f"{lapsed_note}{rebased_note}</div>"
+        f"{notes}</div>"
         f'<div class="shk-prog-bars">{bars}</div>'
         f'<span class="shk-prog-change" style="color:{color}">{_escape(change)}</span></div>'
     )
@@ -975,6 +970,28 @@ def _count(label: str, value: int, color: str) -> str:
     return f"<b{style}>{_escape(label)} {value}</b>"
 
 
+_WITHHELD_TAIL = "빼고 견줌"
+
+
+def _withheld_shares(summary: ProgressSummary) -> list[str]:
+    """합계에서 뺀 몫 — 「필요 시점 지난 n대(현재 n일)」 · 「기준 바뀜 n대(현재 n일)」(있는 것만, 이
+    차례). 요약 합계 칸의 몫 줄과 공정 카드 머리 증감 풍선이 같은 글을 쓴다 — 같은 몫이 두 자리에서
+    같은 말로 읽히게(설계 규칙 UI-CON-02 · UI-CON-03)."""
+    shares = []
+    if summary.lapsed:
+        shares.append(f"필요 시점 지난 {summary.lapsed}대(현재 {summary.lapsed_current_days:,}일)")
+    if summary.rebased:
+        shares.append(f"기준 바뀜 {summary.rebased}대(현재 {summary.rebased_current_days:,}일)")
+    return shares
+
+
+def _withheld_help(summary: ProgressSummary) -> str | None:
+    """공정 카드 머리 증감 풍선 — 그 공정 합계에서 뺀 몫을 한 줄로(「필요 시점 지난 1대(현재 5일) ·
+    기준 바뀜 2대(현재 9일) 빼고 견줌」). 뺀 호기가 없으면 None — 풍선을 달지 않는다."""
+    shares = _withheld_shares(summary)
+    return f"{' · '.join(shares)} {_WITHHELD_TAIL}" if shares else None
+
+
 # ------------------------------------------------------------------ 공정 카드
 
 
@@ -991,6 +1008,10 @@ def progress_card_markup(
     highlight: str | None = None,
 ) -> str:
     """공정 카드 하나 — 머리에 공정 합계 과거 → 현재와 증감, 호기마다 두 줄.
+
+    머리 합계는 요약과 같은 셈이라 필요 시점 지남 · 기준 바뀜 호기를 뺀다 — 그런 호기가 있으면 증감
+    글(「n일 줄임」 · 「변동 없음」 …)의 풍선이 그 공정의 몫을 요약 합계 칸 몫 줄과 같은 글로 말한다
+    (「기준 바뀜 1대(현재 9일) 빼고 견줌」 — 없으면 풍선 없음).
 
     `outside` 면 기준선에만 있던 공정이다 — 「지금 범위 밖」 으로 접어 둔다(`<details>`). 제목은
     공정 표시명이고 다르면 풍선에 원본을 남긴다. 달 축은 화면의 모든 카드가 함께 쓰는
@@ -1032,10 +1053,16 @@ def progress_card_markup(
             f'<span class="shk-prog-badge" style="color:{tokens.DELTA_INCREASE};'
             f'border-color:{tokens.DELTA_INCREASE}">{_DELAYED} {len(shown_late)}대</span>'
         )
+    # 머리 합계는 요약과 같은 셈이라 필요 시점 지남 · 기준 바뀜 호기를 뺀다 — 그 몫은 화면 글을
+    # 늘리지 않고 증감 풍선에 적는다(2026-11-21 확인 보드 q-blank-head b — 그런 호기만 있는 공정의
+    # 「변동 없음」 도 같은 풍선, 설계 규칙 UI-DAT-07 · UI-CON-03).
+    withheld = _withheld_help(summary)
+    delta_help = f' title="{_escape(withheld)}"' if withheld is not None else ""
     head_sum = (
         f'<span class="shk-prog-head-sum">{marks}과거 {summary.past_days:,}일 → '
         f"<b>현재 {summary.current_days:,}일</b>"
-        f'<span class="shk-prog-delta" style="color:{color}">{_escape(change)}</span></span>'
+        f'<span class="shk-prog-delta" style="color:{color}"{delta_help}>{_escape(change)}</span>'
+        "</span>"
     )
     focus = (
         f' data-highlight="{_escape(highlight)}" style="border:2px solid {tokens.ACCENT}"'

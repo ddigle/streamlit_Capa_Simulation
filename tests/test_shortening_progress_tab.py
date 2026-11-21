@@ -32,7 +32,9 @@ from capa_simulation.components.shortening_progress_panel import (
     SHORTENING_COMPARE_KEY,
     _unit_markup,
     _units_markup,
+    progress_card_markup,
     progress_style,
+    progress_view,
 )
 from capa_simulation.components.shortening_source import SHORTENING_BASIS_KEY
 from capa_simulation.components.shortening_timeline import unit_name
@@ -57,6 +59,7 @@ from capa_simulation.services.shortening_baseline import (
 from capa_simulation.services.shortening_progress import (
     PROGRESS_EXPORT_COLUMNS,
     PROGRESS_IMPROVED,
+    PROGRESS_LAPSED,
     PROGRESS_NEW,
     PROGRESS_REBASED,
     PROGRESS_RESOLVED,
@@ -755,6 +758,14 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     assert ">기준 바뀜</span>" in body
     assert re.search(r">기준 바뀜 1</b>", body)
     assert f"기준 바뀜 1대(현재 {now_days:,}일) 빼고 견줌" in body
+    # 그 호기가 든 공정 카드 머리도 같은 셈이라 증감은 「변동 없음」 이고, 뺀 몫은 증감 풍선이 요약
+    # 합계 칸과 같은 글로 말한다(2026-11-21 확인 보드 q-blank-head b).
+    (card,) = [
+        chunk
+        for chunk in body.split('<section class="shk-card shk-prog"')[1:]
+        if f'title="{unit} · 상태 기준 바뀜' in chunk
+    ]
+    assert _head_delta(card) == (f"기준 바뀜 1대(현재 {now_days:,}일) 빼고 견줌", "변동 없음")
     assert re.search(r'class="shk-prog-change"[^>]*>변동 없음</span>', body)
     for label in ("개선", "악화", "신규", "해소"):
         assert f"<b>{label} 0</b>" in body, label
@@ -762,6 +773,121 @@ def test_a_unit_whose_static_spare_side_changed_since_the_baseline_reads_as_a_ba
     assert f'<span class="shk-kpi-value">{plain_total.days - now_days:,}일</span>' in body
     assert app.session_state[SCREEN_TOTAL_KEY] == plain_total
     clear_equipment_repository()
+
+
+def _head_delta(card: str) -> tuple[str | None, str]:
+    """공정 카드 머리 증감 글의 (풍선, 글). 풍선이 없으면 None — 호기 줄의 풍선(`shk-prog-unit`
+    title)과 섞이지 않게 머리 증감 칸만 읽는다."""
+    found = re.findall(
+        r'<span class="shk-prog-delta" style="color:[^"]*"(?: title="([^"]*)")?>([^<]*)</span>',
+        card,
+    )
+    assert len(found) == 1, found
+    help_text, change = found[0]
+    return (help_text or None), change
+
+
+def test_the_card_head_delta_help_states_the_withheld_shares_of_its_own_rows() -> None:
+    """2026-11-21 확인 보드 q-blank-head b — 공정 카드 머리(「과거 n일 → 현재 n일」 · 증감)는 요약과
+    같은 셈이라 필요 시점 지남 · 기준 바뀜 호기를 뺀다. 그 몫은 화면 글을 늘리지 않고 증감 풍선에
+    요약 합계 칸 몫 줄과 같은 글(「필요 시점 지난 n대(현재 n일)」 · 「기준 바뀜 n대(현재 n일)」 +
+    「빼고 견줌」)로 적는다 — 두 상태를 함께, 있을 때만. 그런 호기만 있는 공정은 머리가 「과거 0일 →
+    현재 0일 변동 없음」 이고 그 「변동 없음」 풍선이 몫을 말한다. 풍선의 대수는 바로 아래 그 배지가
+    달린 호기 줄 수, 일수는 그 줄들의 현재 단축일수 합이다(필요 시점이 지난 추가N 은 0일로)."""
+    columns = ["공정", "호기", "구분", "기존 Qual", "목표 Qual", "단축일수", "모듈 수"]
+
+    def unit(
+        process: str, name: str, need: date, secure: date | None, *, kind: str = KIND_SHORTENED
+    ) -> dict[str, object]:
+        days = (secure - need).days if secure is not None else None
+        return {
+            "공정": process,
+            "호기": name,
+            "구분": kind,
+            "기존 Qual": secure,
+            "목표 Qual": need,
+            "단축일수": days,
+            "모듈 수": 1,
+        }
+
+    def frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+        table = pd.DataFrame(rows, columns=columns)
+        for column in ("단축일수", "모듈 수"):
+            table[column] = pd.to_numeric(table[column]).astype("Int64")
+        return table
+
+    rebased, lapsed, mixed, plain = "DEMO_REBASE", "DEMO_LAPSE", "DEMO_MIX", "DEMO_PLAIN"
+    today = date(2027, 3, 1)
+    past = frame(
+        [
+            # 남는 → 날짜(지금 10일), 날짜 → 남는(지금 0일).
+            unit(rebased, "DEMO-RB-01", date(2027, 4, 25), None),
+            unit(rebased, "DEMO-RB-02", date(2027, 5, 10), date(2027, 5, 20)),
+            # 기준선 필요 시점이 오늘보다 앞 — 당긴 호기(지금 7일)와 추가N(지금 0일).
+            unit(lapsed, "DEMO-LP-01", date(2027, 2, 10), date(2027, 2, 20)),
+            unit(lapsed, "추가1", date(2027, 2, 15), None, kind=KIND_NEW),
+            # 20일 → 10일 줄임 · 지남(지금 3일) · 기준 바뀜(지금 8일).
+            unit(mixed, "DEMO-MX-01", date(2027, 4, 1), date(2027, 4, 21)),
+            unit(mixed, "DEMO-MX-02", date(2027, 2, 1), date(2027, 2, 6)),
+            unit(mixed, "DEMO-MX-03", date(2027, 5, 1), None),
+            unit(plain, "DEMO-PL-01", date(2027, 6, 1), date(2027, 6, 6)),
+        ]
+    )
+    current = frame(
+        [
+            unit(rebased, "DEMO-RB-01", date(2027, 4, 25), date(2027, 5, 5)),
+            unit(rebased, "DEMO-RB-02", date(2027, 5, 10), None),
+            unit(lapsed, "DEMO-LP-01", today, date(2027, 3, 8)),
+            unit(mixed, "DEMO-MX-01", date(2027, 4, 1), date(2027, 4, 11)),
+            unit(mixed, "DEMO-MX-02", today, date(2027, 3, 4)),
+            unit(mixed, "DEMO-MX-03", date(2027, 5, 1), date(2027, 5, 9)),
+            unit(plain, "DEMO-PL-01", date(2027, 6, 1), date(2027, 6, 10)),
+        ]
+    )
+    processes = [rebased, lapsed, mixed, plain]
+    rows = compare_progress(past, current, current_processes=processes, today=today)
+    view = progress_view(
+        rows, ordered=processes, scope=processes, selected=False, months=[202703, 202704]
+    )
+    assert view.cards == tuple(processes)
+    cards = {
+        process: progress_card_markup(process, process, None, view, today=today)
+        for process in processes
+    }
+
+    def head(process: str) -> str:
+        return cards[process].split('<div class="shk-units">', 1)[0]
+
+    assert "과거 0일 → <b>현재 0일</b>" in head(rebased)
+    assert _head_delta(cards[rebased]) == ("기준 바뀜 2대(현재 10일) 빼고 견줌", "변동 없음")
+    assert "과거 0일 → <b>현재 0일</b>" in head(lapsed)
+    assert _head_delta(cards[lapsed]) == ("필요 시점 지난 2대(현재 7일) 빼고 견줌", "변동 없음")
+    assert "과거 20일 → <b>현재 10일</b>" in head(mixed)
+    assert _head_delta(cards[mixed]) == (
+        "필요 시점 지난 1대(현재 3일) · 기준 바뀜 1대(현재 8일) 빼고 견줌",
+        "10일 줄임",
+    )
+    # 뺀 호기가 없는 공정의 증감에는 풍선이 없다.
+    assert _head_delta(cards[plain]) == (None, "4일 늘어남")
+
+    shares = re.compile(r"(필요 시점 지난|기준 바뀜) (\d+)대\(현재 ([\d,]+)일\)")
+    status_of = {"필요 시점 지난": PROGRESS_LAPSED, "기준 바뀜": PROGRESS_REBASED}
+    for process, markup in cards.items():
+        help_text, _ = _head_delta(markup)
+        stated = {
+            status_of[label]: (int(count), int(days.replace(",", "")))
+            for label, count, days in shares.findall(help_text or "")
+        }
+        badges = re.findall(r'<span class="shk-prog-badge" style="[^"]*">([^<]*)</span>', markup)
+        own = rows.loc[rows["공정"].eq(process)]
+        for status in (PROGRESS_LAPSED, PROGRESS_REBASED):
+            chosen = own.loc[own["상태"].eq(status)]
+            expected = (len(chosen), int(chosen["현재 단축일수"].fillna(0).sum()))
+            assert stated.get(status, (0, 0)) == expected, (process, status)
+            assert badges.count(status) == expected[0], (process, status)
+        # 머리 풍선은 화면 글을 늘리지 않는다 — 머리 글은 「과거 · 현재 · 증감」 그대로다.
+        visible = re.sub(r"<[^>]+>", "", head(process).split('class="shk-prog-head-sum">', 1)[1])
+        assert "빼고 견줌" not in visible, process
 
 
 def _guide_item(section: str, heading: str) -> str:
