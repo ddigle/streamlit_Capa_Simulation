@@ -109,7 +109,9 @@ PKG_UNCOUNTED_REASON = "PKG 기준은 Buffer 로만 계수"
 
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
-# `RQ_REQB` 경로 쪽 제외 — 대당 Capa 가 없거나 0 이하인 경로, PKG 의 Buffer 외 행.
+# `RQ_REQB` 경로 쪽 제외 — 대당 Capa 가 없거나 0 이하인 경로, PKG 의 Buffer 외 행, 공정별 부하 산출
+# 예외의 바탕(Buffer Wafer 부하 · Core `구분_Chip`)이 없는 선언 공정 Core 줄
+# (`route_load_exceptions.ROUTE_LOAD_BASIS_MISSING_REASON`). 까닭은 `제외사유` 칸이 가른다.
 REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR = "excluded_required_equipment_rows"
 # ------------------------------------------------------------------ 소요대수에 들지 않은 계획
 # 경로 쪽 제외와 달리 **계획 쪽**에서 빠진 것 둘이다. 어느 쪽이든 그 수요는 어느 공정의
@@ -157,7 +159,10 @@ class RequiredExclusionCounts(NamedTuple):
     # 부하량은 났는데 `RQ_REQB` 경로 키에 닿지 않은 부하(부하량 키 수). 규칙상 쓰지 않는 조합
     # (`UNROUTED_UNUSED_REASON`)은 세지 않는다.
     unrouted_loads: int = 0
-    # 부하가 붙었는데 대당 Capa 가 없거나 0 이하라 소요대수에서 뺀 경로(`RQ_REQB` 행 수).
+    # 부하가 붙었는데 소요대수에서 뺀 경로(`RQ_REQB` 행 수) — 대당 Capa 가 없거나 0 이하인 것과
+    # 부하 예외 바탕이 없는 것(`ROUTE_LOAD_BASIS_MISSING_REASON`)을 함께 센다. PKG 의 Buffer 외
+    # 행은 세지 않는다. 이 건수를 말하는 화면 글은 아직 대당 Capa 까닭으로만 말한다 — 선언을 잇는
+    # 단계에서 까닭으로 가른다(AGENTS 6장 「공정별 부하 산출 예외」 답 대기).
     excluded_routes: int = 0
 
 
