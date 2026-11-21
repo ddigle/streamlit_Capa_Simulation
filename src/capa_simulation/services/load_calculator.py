@@ -29,6 +29,16 @@ from capa_simulation.services.product_type import (
 )
 
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
+# 월 환산의 집계 기준. `total`(산출 기준 총량)은 모든 `WF 구분` 행을 더하고,
+# `home`(HOME 집계 기준)은 HOME `Wafer 계획` 처럼 Dummy 계열 행을 뺀다
+# (`exclude_dummy_series`). Chip · Wafer 에만 뜻이 있고 PKG · Density 는 두 기준이 같다.
+MonthlyAggregation = Literal["total", "home"]
+MONTHLY_AGGREGATION_TOTAL: MonthlyAggregation = "total"
+MONTHLY_AGGREGATION_HOME: MonthlyAggregation = "home"
+MONTHLY_AGGREGATIONS: tuple[MonthlyAggregation, ...] = (
+    MONTHLY_AGGREGATION_TOTAL,
+    MONTHLY_AGGREGATION_HOME,
+)
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
 LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
@@ -882,6 +892,13 @@ def _pivot_monthly(
     return apply_display_order(pivoted.reset_index(), display_order, PAGE_PLAN, TAB_CONVERSION)
 
 
+def _aggregated(load: pd.DataFrame, aggregation: MonthlyAggregation) -> pd.DataFrame:
+    """집계 기준대로 묶을 상세 부하량. HOME 집계 기준이면 Dummy 계열 행을 뺀다."""
+    if aggregation == MONTHLY_AGGREGATION_HOME:
+        return exclude_dummy_series(load)
+    return load
+
+
 def build_monthly_volume(
     plan: pd.DataFrame,
     yield_data: pd.DataFrame,
@@ -890,12 +907,20 @@ def build_monthly_volume(
     detailed: bool = False,
     density_data: pd.DataFrame | None = None,
     display_order: DisplayOrderInput = None,
+    aggregation: MonthlyAggregation = MONTHLY_AGGREGATION_TOTAL,
 ) -> pd.DataFrame:
     """Return a monthly matrix grouped by production class, product, and stack.
 
     환산 함수에는 **준비하지 않은** 계획을 넘긴다. 준비(`_prepare_plan`)가 빈 생산수량 행을 걷어내며
     제외 목록에 적으므로, 이미 걷어낸 계획을 넘기면 그 기록이 다음 준비에서 빈 목록으로 덮인다.
+
+    `aggregation` 은 Chip · Wafer 의 집계 기준이다. 기본 `total`(산출 기준 총량)은 지금까지와
+    같은 값이고, `home`(HOME 집계 기준)은 묶기 **전에** Dummy 계열 행을 뺀다 — 그 행은 빈칸이
+    아니라 표에서 없어진다. PKG · Density 는 이 인자를 보지 않는다. 제외 목록(attrs)은 거르기
+    전 부하량 것이라 두 기준이 같다.
     """
+    if aggregation not in MONTHLY_AGGREGATIONS:
+        raise ValueError(f"지원하지 않는 집계 기준입니다: {aggregation}")
     if demand_basis == "PKG":
         prepared_plan = _prepare_plan(plan)
         volume = prepared_plan.rename(columns={"생산수량": "물량"})
@@ -904,11 +929,15 @@ def build_monthly_volume(
         return carry_load_exclusions(prepared_plan, _pivot_monthly(volume, detailed, display_order))
     if demand_basis == "Chip":
         chip_load = calculate_chip_load(plan, yield_data, chip_qty)
-        return carry_load_exclusions(chip_load, _pivot_monthly(chip_load, detailed, display_order))
+        return carry_load_exclusions(
+            chip_load,
+            _pivot_monthly(_aggregated(chip_load, aggregation), detailed, display_order),
+        )
     if demand_basis == "Wafer":
         wafer_load = calculate_wafer_load(plan, yield_data, chip_qty)
         return carry_load_exclusions(
-            wafer_load, _pivot_monthly(wafer_load, detailed, display_order)
+            wafer_load,
+            _pivot_monthly(_aggregated(wafer_load, aggregation), detailed, display_order),
         )
     if demand_basis == "Density":
         if density_data is None:

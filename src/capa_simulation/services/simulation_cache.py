@@ -50,7 +50,9 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.load_calculator import (
+    MONTHLY_AGGREGATION_TOTAL,
     DemandBasis,
+    MonthlyAggregation,
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
@@ -1278,8 +1280,10 @@ def get_monthly_volume(
     detailed: bool,
     density_data: pd.DataFrame,
     display_order: pd.DataFrame,
+    aggregation: MonthlyAggregation = MONTHLY_AGGREGATION_TOTAL,
 ) -> pd.DataFrame:
     # Load-calculation cache schema v2: normalize WF type before Dummy detection.
+    # `aggregation`(산출 기준 총량 · HOME 집계 기준)은 해시되는 인자라 기준마다 칸이 갈린다.
     return build_monthly_volume(
         plan=plan,
         yield_data=yield_data,
@@ -1288,6 +1292,7 @@ def get_monthly_volume(
         detailed=detailed,
         density_data=density_data,
         display_order=display_order,
+        aggregation=aggregation,
     )
 
 
@@ -1306,13 +1311,14 @@ def get_monthly_volume_by_key(
     _display_order: pd.DataFrame,
     demand_basis: DemandBasis,
     detailed: bool,
+    aggregation: MonthlyAggregation = MONTHLY_AGGREGATION_TOTAL,
 ) -> pd.DataFrame:
     """`get_monthly_volume` 의 키 꼴 — 다섯 표를 해시하지 않고 `cache_key` 가 그 내용을 대신한다.
 
     값은 `get_monthly_volume` 과 같다(같은 `build_monthly_volume`). `cache_key` 는 다섯 표의 내용을
     모두 가르는 글자여야 한다(시나리오 `content_token` · 기준정보 판 · 표시순서 지문 · 거른 계획의
-    지문 등) — 무엇을 싣는지는 부르는 쪽 몫이다. `demand_basis` · `detailed` 는 키와 함께
-    해시된다.
+    지문 등) — 무엇을 싣는지는 부르는 쪽 몫이다. `demand_basis` · `detailed` · `aggregation` 은 키와
+    함께 해시된다.
     """
     del cache_key
     return build_monthly_volume(
@@ -1323,6 +1329,7 @@ def get_monthly_volume_by_key(
         detailed=detailed,
         density_data=_density_data,
         display_order=_display_order,
+        aggregation=aggregation,
     )
 
 

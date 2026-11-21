@@ -2712,6 +2712,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 ### 계산 서비스
 
 - `src/capa_simulation/services/load_calculator.py` — 계획·수율 편집 변환과 PKG·Chip·Wafer·Density 부하량을 낸다.
+  - 월 환산 `build_monthly_volume` 의 `aggregation` 은 `MonthlyAggregation`(`total` 산출 기준 총량 — 기본, `home` HOME
+    집계 기준)이다. `home` 은 Chip · Wafer 를 묶기 전에 `exclude_dummy_series` 로 Dummy 계열 행을 빼고, PKG · Density 는
+    보지 않으며 제외 목록은 두 기준이 같다. 캐시 래퍼 `simulation_cache.get_monthly_volume` · `get_monthly_volume_by_key`
+    도 같은 인자를 받는다(`tests/test_monthly_volume_basis.py`).
 - `src/capa_simulation/services/unit_capacity.py` — Main/MI 환산 UPEH 와 경로별 대당 Capa 를 계산한다(6장).
   0 이하 멈춤 글(`_assert_positive`)의 「n건」 은 걸린 계산 행 수가 아니라 키 조합, 곧 기준정보 표에서 고칠 칸 수다(빈 값 ·
   숫자 아님 · 연결값 없음 글과 같은 셈 — 계산 멈춤 알림의 「0 이하 칸 n건」 이 그대로 쓴다).
@@ -6865,9 +6869,11 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`(HBM `Dummy` · `Top_Dummy`, EDP-TSV 없음)은 행을 **뺄 때만** 읽고, 판별은
 산식과 같은 `(제품타입, WF 구분)` 게이트(`load_calculator.wf_division_mask`)다. `Top_Dummy` 는 산식 목록에 없어
 일반식 그대로이고, 산식 목록 · `HBM_WF_DIVISIONS` 는 바꾸지 않는다. 행을 빼는 자리는 HOME 집계
-(`dashboard.home_aggregation_wafer_load` → `load_calculator.exclude_dummy_series`) 하나다 — 원천 집계가 Wafer
+(`dashboard.home_aggregation_wafer_load` → `load_calculator.exclude_dummy_series`)와 환산의 HOME 집계 기준
+(`build_monthly_volume(aggregation="home")` — 기본은 거르지 않은 산출 기준 총량) 둘이다 — 원천 집계가 Wafer
 계획에 Dummy 계열을 넣지 않기 때문이다. 소요대수 · 확보율이 읽는 부하량(`calculate_wafer_load` ·
-`_prepare_load_base`)에는 걸지 않는다.
+`_prepare_load_base`)에는 걸지 않는다. HOME 집계 기준에서 Dummy 계열 행은 0 이 아니라 표에서 없어진다 — 0 은 표 ·
+CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
 
 원천에서 CS 가 빈 행은 양산구분(양산·ER)을 정할 수 없어 등록 때 RQ 파생에서 빠진다(7장 — 2026-10-27 사용자 결정).
 그 계획 행의 생산수량은 `RQ_PKG_PLAN` 에 없으므로 부하량·소요대수·확보율 어디에도 들지 않고, 경로 행이면 그 경로가
