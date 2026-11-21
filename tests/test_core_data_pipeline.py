@@ -672,6 +672,19 @@ def test_reqb_rows_that_differ_only_in_spelling_are_registered_once() -> None:
     ]
 
 
+@pytest.mark.parametrize("spellings", [["WF", "Wafer"], ["Wafer", "WF"]])
+def test_reqb_spelling_variants_store_the_same_spelling_in_either_source_order(
+    spellings: list[str],
+) -> None:
+    """표기만 다른 경로 형제는 원천 행 순위로 하나가 남는다 — 정순 · 역순이 같은 표기를 저장한다."""
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["소요기준"] = pd.array(spellings, dtype="string")
+
+    reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
+
+    assert reqb["소요기준"].tolist() == ["WF"]
+
+
 def test_a_blank_lent_evaluation_counts_as_zero_lent_equipment() -> None:
     """대여평가가 비면 0 대로 본다 — 가용대수가 보유대수 그대로다(사내 감사 P7).
 
