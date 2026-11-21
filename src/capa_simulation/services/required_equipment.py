@@ -181,6 +181,10 @@ def calculate_required_equipment(
     `route_load_exceptions`)이다. 비면(기본) 지금 계산 그대로이고, 선언 공정이 이번 경로에 없어도
     그렇다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 산식 바탕을 지어 경로에 부하량을 붙인
     바로 뒤에 건다 — 부하량 표 · 경로 없는 계획 셈은 그대로다.
+
+    기본값(빈 선언)은 호출처가 선언을 넘기기 전까지만 둔다. 선언을 잇는 단계에서 걷어 호출처
+    (화면 계산 · 자동 갱신 · 확인 스크립트)가 모두 넘기게 한다 — 하나를 빠뜨려도 타입 검사가
+    잡게(AGENTS 6장 「공정별 부하 산출 예외」 답 대기).
     """
     declaration = normalize_route_load_declaration(route_exceptions)
     prepared_reqb, route_products = _prepare_reqb(reqb)
@@ -306,8 +310,8 @@ def _calculate_required_equipment_from_prepared(
     unit_capacity: pd.DataFrame,
     route_products: pd.DataFrame,
     *,
-    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
-    exception_loads: pd.DataFrame | None = None,
+    route_exceptions: RouteLoadDeclaration,
+    exception_loads: pd.DataFrame | None,
 ) -> pd.DataFrame:
     capacities = _prepare_capacities(unit_capacity)
 

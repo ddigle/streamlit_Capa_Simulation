@@ -2731,9 +2731,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `components/process_labels.py` 에만, 8장).
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
   - `calculate_required_equipment(route_exceptions=)` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)을 받는다.
-    기본은 빈 선언이고 그때 결과 · attrs 는 지금과 같다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 바탕을 지어
-    `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외 목록에 「부하 예외 바탕 없음」 으로 싣는다(6장
-    「공정별 부하 산출 예외」). 아직 어느 호출처도 선언을 넘기지 않는다.
+    기본은 빈 선언이고(답 전 자리 — 잇는 단계에서 걷는다) 그때 결과 · attrs 는 지금과 같다. 선언 공정의 WF 경로가
+    있을 때만 부하량 표에서 바탕을 지어 `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외 목록에 「부하
+    예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 아직 어느 호출처도 선언을 넘기지 않는다.
 - `src/capa_simulation/services/route_load_exceptions.py` — 공정별 부하 산출 예외의 순수 계산. 산식 id 목록
   `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
   id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
@@ -7220,6 +7220,11 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   `excluded_routes` 로 세어지는데, 그 건수를 말하는 글은 PKG 밖 경로 제외를 모두 대당 Capa 까닭으로 말한다
   (`required_exclusion_message` 의 「대당 Capa 가 없어 뺀 부하 경로」 · `ST-15` 의 「대당 Capa 가 없어 … 기준정보를 채우면」).
   이 줄의 까닭은 Chip 구성 · 수율 쪽이라, 선언을 넘기기 시작하는 같은 변경에서 까닭으로 갈라 말한다.
+- 잇는 단계에서 걷는 기본값 — `calculate_required_equipment` 의 `route_exceptions` 기본값(빈 선언)은 답 전 자리다. 선언을
+  잇는 변경에서 기본값 없는 키워드로 바꿔 호출처(`simulation_cache` · 확인 스크립트 셋 `inspect_revision_calculations` ·
+  `inspect_real_data_checks` · `benchmark_upeh_assumption` · 시험)가 모두 넘기게 한다 — 하나를 빠뜨리면 그 자리만 말없이
+  일반 산식으로 돌아 켬/끔 견줌이 「같음」 으로 거짓 보고되거나 앱과 스크립트의 소요대수가 갈린다. 안쪽
+  `_calculate_required_equipment_from_prepared` 는 지금도 기본값 없이 선언 · 바탕 표를 함께 받는다.
 
 ### Dynamic Capa 프로토타입
 
