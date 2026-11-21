@@ -132,6 +132,11 @@ _MARK_LOOK_TABLES: Final = (
     "fab_layout_mark",
     "equipment_schedule_layout_mark",
 )
+# 설비 `0036` 누적 진척 — 주차 기록 줄 · 최종 목표 머리.
+_PROGRESS_LOG_TABLES: Final = (
+    "shortening_progress_log",
+    "shortening_progress_goal",
+)
 
 # 줄 3 — 바이트 단위와 gzip 을 셀 때 한 번에 읽는 크기.
 _MIB: Final = 1 << 20
@@ -307,7 +312,7 @@ def _has_table(connection: duckdb.DuckDBPyConnection, schema: str, table: str) -
 
 
 def count_line(simulation: duckdb.DuckDBPyConnection, equipment: duckdb.DuckDBPyConnection) -> str:
-    """두 DB 의 마이그레이션 번호와 표마다 행 수 — 끝 다섯 칸의 표 · 칸이 없으면 `None`."""
+    """두 DB 의 마이그레이션 번호와 표마다 행 수 — 뒤쪽 칸의 표 · 칸이 없으면 `None`."""
 
     def sim(table: str) -> object:
         return _first(simulation, f"SELECT count(*) FROM app_meta.{table}")
@@ -398,6 +403,8 @@ def count_line(simulation: duckdb.DuckDBPyConnection, equipment: duckdb.DuckDBPy
         [looks(table) for table in _MARK_LOOK_TABLES],
         "layout_stack",
         stack_counts(),
+        "progress_log",
+        [eq_if(table) for table in _PROGRESS_LOG_TABLES],
     ]
     return " ".join(str(part) for part in parts)
 

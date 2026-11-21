@@ -72,6 +72,7 @@ COUNT_LINE = re.compile(
             ("manual_downtime", _listed(3)),
             ("mark_look", _listed(3)),
             ("layout_stack", _listed(3)),
+            ("progress_log", _listed(2)),
         )
     )
     + "$"
