@@ -174,9 +174,11 @@ with chat_column:
             disabled=True,
         )
 
+    # 단추 넷의 차례(무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가)와
+    # 누르면 어떻게 되는지는 Guide 「추천 질문」 단락이 말한다 — 카드는 머리와 단추뿐이다
+    # (2026-11-21 확인 보드 q-chatbot a, 설계 규칙 UI-TXT-01 · UI-TXT-02).
     with st.container(border=True):
         st.markdown("#### :material/lightbulb: 추천 질문")
-        st.caption("무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가.")
         with st.container(horizontal=True, gap="small", horizontal_alignment="left"):
             for index, answer in enumerate(answers):
                 st.button(

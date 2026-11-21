@@ -111,6 +111,37 @@ def test_the_four_parts_of_an_answer_are_told_by_the_guide_not_the_chat_card() -
     assert "연결 뒤에도 이 네 칸은 그대로입니다" in guide
 
 
+def test_the_suggested_questions_card_has_no_order_line_and_the_guide_tells_the_order() -> None:
+    """「추천 질문」 카드는 머리와 단추뿐이다 — 단추 차례의 뜻(무엇이 나쁜가 → … → 더 내려가면
+    어디인가)과 누르면 어떻게 되는지는 머리 밑 회색 줄이 아니라 Guide 가 말한다(2026-11-21 확인
+    보드 q-chatbot a — 2차 보드 Q2-25 「그대로」 를 바꿈, 설계 규칙 UI-TXT-01 · UI-TXT-02).
+    Guide 가 말하는 차례는 실제 단추 차례이고, 첫 답이 대화에 있어 첫 단추는 꺼져 있다."""
+    from capa_simulation.components.page_guide import load_guide
+
+    app = _start()
+    captions = [str(item.value) for item in app.main.caption]
+    assert not [text for text in captions if "무엇이 나쁜가" in text], captions
+    assert not [item for item in app.main.markdown if "무엇이 나쁜가" in str(item.value)]
+    guide = " ".join(load_guide("capa_chatbot").replace("**", "").split())
+    assert "추천 질문 — 단추 넷은 실제로 묻게 되는 차례로 놓여 있습니다." in guide
+    assert (
+        "무엇이 나쁜가(기준 미달인 공정) → 왜 나쁜가(가장 나쁜 공정이 왜 부족한지) → "
+        "무엇부터 할까(개선 차례) → 더 내려가면 어디인가(제품까지 내려간 문제)."
+    ) in guide
+    assert "단추를 누르면 그 답이 아래에 더해지며 이미 물은 질문의 단추는 꺼집니다." in guide
+    assert "`대화 비우기` 는 첫 답만 남깁니다." in guide
+
+    answers = build_sample_answers()
+    assert [answer.key for answer in answers] == ["shortfall", "cause", "priority", "reference"]
+    buttons = [item for item in app.main.button if str(item.key).startswith("capa_chatbot_example")]
+    labels = [str(item.label) for item in buttons]
+    assert len(labels) == 4, labels
+    fixed = [answers[0].question, answers[2].question, answers[3].question]
+    assert [labels[0], labels[2], labels[3]] == fixed
+    assert labels[1].endswith("— 왜 부족해?"), labels[1]
+    assert [item.disabled for item in buttons] == [True, False, False, False]
+
+
 def test_the_connection_card_keeps_a_title_and_a_list_and_the_guide_tells_why() -> None:
     """오른쪽 「연결 방식」 카드에는 제목과 목록만 서고 회색 설명 세 문장은 Guide 가 말한다(2차
     보드 Q2-24 — 화면에 설명 글을 달지 않는다, 설계 규칙 UI-TXT-01). 그 문장은 화면 글 문장 그물이

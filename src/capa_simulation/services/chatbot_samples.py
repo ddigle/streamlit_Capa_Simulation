@@ -90,7 +90,8 @@ def _gap_format(metric: MetricSpec) -> EvidenceFormat:
 def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
     """추천 질문 네 개와 그 답. 순서는 실제로 묻게 되는 차례다.
 
-    무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 데이터는 믿을 만한가. `process_name` 은
+    무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가(Guide 「추천 질문」 단락과
+    같은 차례). `process_name` 은
     결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명). 세 칸은 마크다운으로 그려지므로
     화면은 마크다운을 막은 표시명을 적는 함수를 넘긴다.
     """
