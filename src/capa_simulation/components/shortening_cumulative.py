@@ -472,7 +472,7 @@ def _axis_weeks(log: ProgressLog) -> tuple[ProgressWeek, ...]:
 
 @dataclass(frozen=True)
 class _WeeklyLayout:
-    """「주차별」 그림의 자리 — 축 · 점 · 까닭 · 피할 것과 가장 좁은 칸에서 정한 꼬리표."""
+    """「주차별」 그림의 자리 — 축 · 점 · 까닭 · 피할 것과 판정 칸에서 정한 꼬리표."""
 
     axis: tuple[ProgressWeek, ...]
     index: Mapping[ProgressWeek, int]
@@ -496,7 +496,7 @@ def _weekly_layout(
     label: Callable[[str], str],
 ) -> _WeeklyLayout:
     """`weekly_figure` 의 자리 셈 — 맞는 까닭(`balanced`)이 있는 주만 꼬리표를 바라고, 근거 없는
-    늘어난 주의 「+N일」 글은 꼬리표가 피할 것이다. 꼬리표 자리는 가장 좁은 칸에서 정한다."""
+    늘어난 주의 「+N일」 글은 꼬리표가 피할 것이다. 꼬리표 자리는 판정 칸에서 정한다."""
     axis = _axis_weeks(log)
     index = {week: position for position, week in enumerate(axis)}
     entries = log.entries
@@ -584,7 +584,7 @@ def weekly_figure(
 
     `changes`(`explain_week_changes` — 넣기 스냅숏이 있는 두 주 사이의 까닭)가 맞는 주는 5일 이상
     오르내렸으면 그 주 점 곁에 곧은 꼬리표(「▲ +15일」 + 항목 둘까지)를 단다 — 자리는
-    `shortening_cumulative_tags.place_tags` 가 가장 좁은 그림 칸에서 정하고, 그 주 점은 큰 ▲ · ▼,
+    `shortening_cumulative_tags.place_tags` 가 판정 그림 칸에서 정하고, 그 주 점은 큰 ▲ · ▼,
     오른 주는 들어오는 구간을 굵은 주황 선으로 칠한다. 그 밖의 근거 있는 주는 작은 ▲(오름) ·
     ●(내림)만이고, 근거 없는 주는 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 다. 점 · 꼬리표를
     가리키면 그 주 까닭 전부 · 「그 밖」 · 합이 풍선에 선다. `label` 은 공정 표시명(원본 → 화면

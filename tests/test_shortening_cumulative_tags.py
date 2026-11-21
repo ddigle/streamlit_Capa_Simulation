@@ -93,7 +93,7 @@ def _label(process: str) -> str:
 
 
 def test_the_example_places_every_rise_and_no_tag_overlaps_at_any_width() -> None:
-    """가장 좁은 그림 칸에서 정한 꼬리표는 겹침이 0 이고, 그 결정(줄 · 맞춤 · 단)을 넓은 칸에 옮겨도
+    """판정 그림 칸에서 정한 꼬리표는 겹침이 0 이고, 그 결정(줄 · 맞춤 · 단)을 넓은 칸에 옮겨도
     겹침 0 이다. 5일 이상 오른 주(+15 · +6)는 모두 선다. 5일 미만(+2 · −4)은 꼬리표가 없다."""
     layout = _weekly_layout(_log(), _changes(), _label)
     placed = layout.placed
