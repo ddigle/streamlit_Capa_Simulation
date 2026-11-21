@@ -2875,6 +2875,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표기 차이는 등록에서 한 표기로 맞추고(`unify_case_variants`) 계산 쪽 조인은 대소문자 무시로 바꾸지 않는다.
   - `공정` 은 표를 만들기 전에 앞뒤 공백을 뗀다(대소문자는 둔다). 표는 원래 글자로 접고 계산은 공백을 떼고 붙여서,
     `P1`·`P1 ` 이 두 행으로 저장되면 그 리비전의 대당 Capa 가 「연결 키가 중복되었습니다」로 늘 멈췄다.
+  - 원천 `CUSTOM` 의 정규화는 여기 한 곳(`normalize_custom_values`)이다 — 앞뒤 공백을 떼고 대소문자 표기를
+    `unify_case_variants` 로 모으며, 빈 값(NULL · 빈 글자 · 공백뿐)은 표지 `CUSTOM_BLANK`(`"-"`) 하나로 세운다. 붙여넣기 ·
+    부대공정 양식 쪽에 따로 정규화를 두지 않는다. 표지는 편집표 붙여넣기 · CSV 왕복에서 빈 값으로 읽히지 않는다
+    (`clipboard_table.TEXT_TABLE_READ_OPTIONS` 는 빈 칸만 NA). 작업 프레임은 CUSTOM 을 싣지만 RQ 표 · 계산 키에는 아직
+    없다(TODO 2장 「업무 키 승격」).
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 첫 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 행 순서를 바꾸지 않는다.
   - 효율·UPEH(`ZERO_BEFORE_BLANK_TABLES`)만 값 개수가 같으면 **0 이 빈 값보다 먼저**다 — 원천 행 차례와 상관없이 같은 행

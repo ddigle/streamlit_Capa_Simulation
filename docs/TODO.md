@@ -1831,6 +1831,23 @@
 
 ### 업무 키 승격
 
+- [ ] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)은 앞 몫만 들어왔다.** 들어온 것:
+  파생 작업 프레임의 CUSTOM 과 빈 값 표지(`core_data_derivation.normalize_custom_values` · `CUSTOM_BLANK`), 비교 계획 행을
+  다시 짝짓는 순수 함수(`plan_gap.repair_comparison_plan_custom` — 아직 어디서도 부르지 않음). CUSTOM 은 아직 어느 RQ 표 ·
+  조인 키에도 없어 결과는 그대로다. 남은 것은 **한 커밋으로** 들어가야 한다 — 표에만 싣고 키에 빠지면 두 부품이 접히거나
+  부하가 두 배가 되는데 알림이 없다:
+  - 계약 `derived_keys` 제품정보가 든 8표 · `reference_transformer` 8표 칸 끝 · 시뮬레이션 마이그레이션(`rev_data` · `ref_data`
+    8표에 칸 더하고 DEFAULT 걷기)과 카탈로그 · 체크섬 줄 · `revision_compatibility` 안전망.
+  - 계산 상수와 리터럴 조인: `load_calculator`(`CLASSIFICATION_COLUMNS` 등 · `on=["제품정보","Stack"]` 두 곳) ·
+    `required_equipment` · `unit_capacity` · `process_capa_detail.ROUTE_KEYS` · `standard_target_capacity`/`weighted_unit_capacity`
+    8키 · 편집 차원 셋 · `scenario_month_merge` · `extra_process_merge`/`extra_process_revision` · `virtual_product` 완결성 ·
+    표시 차례 · `_ROUTE_OWNER_KEYS` · `simulation_cache.get_home_comparison_plan` 에 다시 짝짓기 잇기 · 검수용 합성 견본.
+  - 시험: CUSTOM 이 한 값이면 결과가 지금과 같음 · 두 부품이 접히지 않음 · 마이그레이션 값 불변과 **옛 리비전 계산 결과
+    전후 같음**(값만 보면 조인에서 CUSTOM 을 빠뜨린 표를 못 잡는다) · 복제 시나리오 · 비교 GAP 이 같은 수량에서 0(환산을 거쳐) ·
+    공정 Capa 상세 경로 두 행.
+  - 기존 결과 대조(`legacy_comparison` · `COMPARISON_KEYS`)는 계약 키에 CUSTOM 이 들면 Core Data 칸 검사에서 멈춘다. 대조
+    쪽을 누가 언제 고칠지 키 승격 전에 정한다.
+  - 문서: AGENTS 4장 · 5장 8 · 28 · 6장 조인 키 · 12장, `docs/data_model.md`, README.
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 9키에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
   첫 행」을 골라 실값 유실만 막는다(결정 기록). 선례는 `RQ_PKG_PLAN` 의 `Pack Code` 승격(`2dcbf0a`)이지만 그때는 `0013` 이
@@ -2539,6 +2556,12 @@
 
 ### 계산
 
+- (2026-11-22) **빈 CUSTOM 은 표지 `"-"`(`CUSTOM_BLANK`) 하나로 세운다**(정본 설계 — 키 승격 마이그레이션이 옛 행에 이
+  글자를 넣으면 고칠 수 없어 표지도 영구다. 마이그레이션 전에 다시 확인한다). 빈 값을 NA 로 두면 조인 · 접기에서 행이 빠지거나
+  한 줄로 접힌다. 붙여넣기는 빈 칸만 NA 로 읽고 pandas 기본 NA 목록에도 없는 글자라 편집 왕복에서 빈 값이 되지 않는다.
+  정규화(공백 떼기 · 대소문자 모으기 · 빈 값 → 표지)는 파생 경계 한 곳(`core_data_derivation.normalize_custom_values`)이고
+  코드 · 시험은 글자를 따로 적지 않고 상수만 본다. 옛 리비전은 원천에서 되채우지 않고 모두 표지다 — 비교 GAP 은 다시 짝짓기
+  (같은 Capa Code → 현재 표의 제품 하나 → 원래 값)로 새 리비전과 맞춘다. 남은 일은 2장 「업무 키 승격」.
 - (2026-11-22) **HOME `Wafer 계획` 은 Dummy 계열(`Dummy` · `Top_Dummy`)을 뺀 합 — 원천 집계 기준**(사용자 결정 — 사내 관측과
   견줘 원천 집계가 Dummy 계열을 Wafer 계획에 넣지 않음). 산식은 그대로다 — `Top_Dummy` 는 일반식, Dummy 산식 목록 ·
   `HBM_WF_DIVISIONS` 는 안 바뀜, 빼는 목록 `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE` 은 산식 목록과 따로이고 판별은 같은
