@@ -24,6 +24,7 @@ from capa_simulation.services.core_data_pipeline import (
     PreparedCoreDataset,
     fetch_core_data_dataset,
     prepare_core_data_dataset,
+    reference_conflict_memo,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
@@ -873,3 +874,17 @@ def test_the_conflict_summary_splits_out_of_key_from_other_and_takes_old_reports
     assert [a + b for a, b in counts.values()] == summary["충돌 업무키 그룹수"].tolist()
     assert old_form["키밖 갈림 그룹수"].isna().all()
     assert old_form["그 밖 갈림 그룹수"].isna().all()
+
+
+def test_the_conflict_memo_names_the_group_count_and_its_two_causes() -> None:
+    conflicts = _prepare(_sibling_source()).reference_conflicts
+    other = int(conflicts["키밖구분"].eq("그 밖").sum())
+    out_of_key = len(conflicts) - other
+
+    memo = reference_conflict_memo(conflicts)
+
+    assert memo == f"업무 키 충돌 {len(conflicts)}그룹(키밖 {out_of_key} · 그 밖 {other})"
+    assert reference_conflict_memo(conflicts.drop(columns="키밖구분")) == (
+        f"업무 키 충돌 {len(conflicts)}그룹"
+    )
+    assert reference_conflict_memo(conflicts.iloc[0:0]) == ""

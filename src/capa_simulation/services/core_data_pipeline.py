@@ -179,6 +179,20 @@ def conflict_cause_counts(conflicts: pd.DataFrame) -> tuple[pd.Series, pd.Series
     )
 
 
+def reference_conflict_memo(conflicts: pd.DataFrame) -> str:
+    """리비전 · 실행 기록 메모에 붙이는 충돌 조각 — 「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」.
+
+    충돌이 없으면 빈 글이고, 원인 칸이 없는 옛 꼴 보고서면 괄호를 붙이지 않는다.
+    """
+    if conflicts.empty:
+        return ""
+    memo = f"업무 키 충돌 {len(conflicts):,}그룹"
+    other, out_of_key = conflict_cause_counts(conflicts)
+    if other.empty and out_of_key.empty:
+        return memo
+    return f"{memo}(키밖 {int(out_of_key.sum()):,} · 그 밖 {int(other.sum()):,})"
+
+
 def reference_conflicts_to_csv(conflicts: pd.DataFrame) -> bytes:
     """Encode the complete conflict report for direct Excel-compatible download."""
     return conflicts.to_csv(index=False).encode("utf-8-sig")
