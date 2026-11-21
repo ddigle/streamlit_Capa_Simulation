@@ -238,7 +238,7 @@ def test_the_figure_draws_tags_marks_rising_segments_and_full_reasons_on_hover()
 
 
 def test_weeks_without_reasons_keep_the_old_marks_and_say_why_on_hover() -> None:
-    """근거 없는 주(넣기 스냅숏이 없음)는 전처럼 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 이고, 풍선은
+    """근거 없는 주(넣기 스냅숏이 없음)는 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 이고, 풍선은
     까닭 근거가 없다고 말한다. 까닭 합이 맞지 않는 주는 꼬리표 없이 풍선이 그 사실을 말한다."""
     changes = _changes()
     broken = changes[WEEKS[5]]

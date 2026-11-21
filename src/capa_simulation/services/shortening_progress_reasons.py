@@ -6,7 +6,7 @@
 **스냅숏**(`ProgressSnapshotDraft` · `ProgressSnapshot`)은 「이번 주 값 넣기」 로 기록을 저장할
 때 그 화면이 보던 호기 표다 — 고른 목표의 계획(`LevelPlan.units`)에서 범위 공정의 당긴 호기 ·
 추가N 행과 범위 공정 차례 · Cut-off, 현재 일정 기준 · 목표 확보율 · 그날 오늘 · 조회 달 · 계산의
-출처. 기록 값은 지금처럼 사람이 적은 수 그대로이고(「한 줄 기록」 을 넓힘 — 넣기를 쓴 주에만
+출처. 기록 값은 사람이 적은 수 그대로이고(「한 줄 기록」 을 넓힘 — 넣기를 쓴 주에만
 근거가 곁에 남는다), 손으로 적은 주는 스냅숏이 없다. 저장은 설비 DB `0037`
 (`persistence/shortening_progress_snapshot_store.py`)이다.
 
