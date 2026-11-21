@@ -150,3 +150,7 @@ html[data-capa-paste-dragging] {
   color: #ffffff;
   background: #31333f;
 }
+
+[data-capa-paste-locked]:hover:not(:focus-visible)::after {
+  animation: capa-tip-in 120ms ease-in var(--capa-tip-delay, 1000ms) both;
+}

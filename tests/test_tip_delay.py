@@ -23,13 +23,16 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 import streamlit
 from js_runner import run_js_json
 
 from capa_simulation.components import tip_delay
 from capa_simulation.components.app_header import SHELL_STYLE
+from capa_simulation.components.process_picker import tile_tooltip_style
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+COMPONENTS = PROJECT_ROOT / "src" / "capa_simulation" / "components"
 BUNDLE = Path(streamlit.__file__).parent / "static" / "static" / "js"
 DELAY = tip_delay.TIP_DELAY_MS
 
@@ -174,6 +177,95 @@ def test_the_installed_plotly_and_vega_still_name_their_tip_boxes_as_we_lean_on(
     assert any("vg-tooltip-element" in text for text in _all_bundles())
 
 
+# 부품마다 지연을 읽는 길과 못 읽을 때의 기본값(같은 1초).
+_COMPONENT_DEFAULTS = (
+    ("grid_shared_assets/cells.css", (f"var(--capa-tip-delay, {DELAY}ms)",)),
+    (
+        "paste_window_assets/paste_window.css",
+        (f"animation: capa-tip-in 120ms ease-in var(--capa-tip-delay, {DELAY}ms) both;",),
+    ),
+    (
+        "edit_grid_assets/eg_core.js",
+        (f"const EG_TIP_MS = {DELAY}\n", "const EG_TIP_VARIABLE = '--capa-tip-delay'"),
+    ),
+    (
+        "space_layout_editor_assets/editor.js",
+        (f"const TIP_DELAY_MS = {DELAY}\n", "getPropertyValue('--capa-tip-delay')"),
+    ),
+    (
+        "date_panel_assets/date_panel.js",
+        (f"const TIP_DELAY_MS = {DELAY}\n", "getPropertyValue('--capa-tip-delay')"),
+    ),
+    (
+        "intro_overlay_assets/intro.js",
+        (f"const TIP_DELAY_MS = {DELAY};\n", 'getPropertyValue("--capa-tip-delay")'),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("relative", "needles"), _COMPONENT_DEFAULTS, ids=[row[0] for row in _COMPONENT_DEFAULTS]
+)
+def test_each_own_tip_reads_the_app_delay_and_falls_back_to_the_same_second(
+    relative: str, needles: tuple[str, ...]
+) -> None:
+    """그림자 DOM · 자체 풍선 부품은 같은 사용자 정의 속성을 읽고, 껍데기 스타일이 아직 없을 때의
+    기본값도 `TIP_DELAY_MS` 와 같다 — 값을 바꾸면 여기서 함께 걸린다."""
+    text = (COMPONENTS / relative).read_text(encoding="utf-8")
+    for needle in needles:
+        assert needle in text, (relative, needle)
+
+
+def test_the_paste_window_tip_uses_the_shell_keyframes_name() -> None:
+    """붙여넣기 창은 그림자 DOM 밖(`isolate_styles=False`)이라 껍데기 스타일의 애니메이션을 그대로
+    쓴다 — 창 서식에 제 키프레임을 두지 않는다(서식은 창 이름 아래만 — `test_paste_form`)."""
+    text = (COMPONENTS / "paste_window_assets" / "paste_window.css").read_text(encoding="utf-8")
+    assert f"animation: {tip_delay.TIP_KEYFRAMES} " in text
+    assert "@keyframes" not in text
+
+
+def test_the_home_process_tile_tip_waits_the_app_delay_and_hides_while_waiting() -> None:
+    """HOME 공정 필터 팝업의 공정 단추 풍선(st.html 서식 — 그림자 DOM 밖)도 같은 값을 읽고, 기다리는
+    동안 `visibility` 로 숨는다."""
+    css = tile_tooltip_style(["데모 공정 A"])
+    assert f"ease-out var(--capa-tip-delay, {DELAY}ms) both;" in css
+    assert "from { opacity: 0; visibility: hidden; }" in css
+    assert "to { opacity: 1; visibility: visible; }" in css
+
+
+def test_the_equipment_master_tip_waits_on_hover_and_shows_at_once_on_keyboard_focus() -> None:
+    """설비 마스터 · 시나리오 목록의 꺼진 단추 까닭 풍선(그림자 DOM `cells.css`)은 마우스로 올리면
+    앱 전체 지연 뒤에, 키보드 초점(`:focus-visible`)이면 곧바로 뜬다."""
+    css = (COMPONENTS / "grid_shared_assets" / "cells.css").read_text(encoding="utf-8")
+    hover = re.search(r"\.emg-tip-host:hover > \.emg-tip \{([^{}]*)\}", css)
+    focus = re.search(
+        r"\.emg-tip-host:focus-visible > \.emg-tip,\s*"
+        r"\.emg-btn:focus-visible \+ \.emg-tip \{([^{}]*)\}",
+        css,
+    )
+    assert hover is not None and focus is not None
+    assert "visibility: visible;" in hover.group(1)
+    assert f"transition: visibility 0s linear var(--capa-tip-delay, {DELAY}ms);" in hover.group(1)
+    assert "visibility: visible;" in focus.group(1) and "transition: none;" in focus.group(1)
+    assert css.index(hover.group(0)) < css.index(focus.group(0))
+
+
+def _date_help_block() -> str:
+    text = (COMPONENTS / "date_panel_assets" / "date_panel.js").read_text(encoding="utf-8")
+    start = text.index("  if (helpButton) {")
+    return text[start : text.index("\n  }\n", start)]
+
+
+def test_the_date_help_waits_on_hover_and_opens_at_once_on_press_or_focus() -> None:
+    """날짜 칸 도움말 풍선은 마우스를 올려 둔 뒤 앱 전체 지연이 지나야 뜨고, 누름 · 키보드 초점은
+    곧바로다. 기다림은 단추에 달아 판을 다시 세운 회차의 처리기도 앞 기다림을 걷는다."""
+    block = _date_help_block()
+    assert "helpButton.capaTipWait = setTimeout(show, tipDelayMs(helpButton))" in block
+    assert "helpButton.onfocus = show\n" in block
+    assert "helpButton.onpointerleave = hide\n" in block
+    assert block.count("stopWaiting()") >= 3
+
+
 _WARM_RUNNER = r"""
 const listeners = {}
 const attrs = new Set()
@@ -300,3 +392,18 @@ def test_the_warmup_script_is_a_fixed_string_on_the_theme_toolbar() -> None:
     script = tip_delay.chart_tip_warmup_script()
     assert json.dumps(tip_delay.CHART_SELECTOR) in script
     assert f"parentWindow.{tip_delay.HANDLER_NAME}" in script
+
+
+def test_the_intro_summary_tip_waits_once_per_chart_and_then_follows_at_once() -> None:
+    """입장 화면 Summary 그림 말풍선(커서를 따라가는 글)도 앱 그림 값 풍선과 같은 웜업이다 —
+    그림(맞힌 것의 종류)에 처음 들어오면 앱 전체 지연 뒤에 뜨고, 그 그림 안에서 옮기면 곧바로
+    따라가며, 무대를 떠나면 식는다."""
+    text = (COMPONENTS / "intro_overlay_assets" / "intro.js").read_text(encoding="utf-8")
+    start = text.index("const tipWarm = ")
+    block = text[start : text.index('stage.addEventListener("pointerleave", coolTip);', start)]
+    assert (
+        "if (h.k === tipWarm.kind) {\n      placeTip(h, event.clientX, event.clientY);\n"
+        "      return;\n    }"
+    ) in block
+    assert "}, tipDelayMs());" in block
+    assert "clearTimeout(tipWarm.timer);" in block

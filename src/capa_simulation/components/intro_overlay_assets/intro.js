@@ -45,6 +45,9 @@ const HINT_AFTER_MS = 5000;
 // 계산이 이만큼 넘게 끝나지 않으면 버튼을 켜 HOME 의 진행 막대를 직접 보게 한다.
 const FALLBACK_ENTER_MS = 60000;
 const POLL_MS = 150;
+// Summary 그림 말풍선의 웜업 지연을 껍데기 스타일(`--capa-tip-delay`)에서 못 읽을 때의 값 — 앱 전체 풍선 지연 1초
+// (`components/tip_delay.py`).
+const TIP_DELAY_MS = 1000;
 // 장면 시간표(인트로 시작부터 ms). `scene()` 안에도 같은 값이 있다 — 워커로 보내는 함수는 이 파일의
 // 다른 이름을 보지 못한다. 바꾸면 두 곳을 같이 고친다.
 const REVEAL_AT_MS = 2600;
@@ -3185,20 +3188,55 @@ function createOverlay(api, data, initial, syncToolbar) {
     const before = adv && adv.rate_delta[h.i] ? dim(`${escapeHtml(text.advance_before || "")} ${base.rate}% · ${escapeHtml(adv.rate_delta[h.i])}`) : "";
     return `<b>${escapeHtml(month)}</b> B/N ${escapeHtml(b.process)}<br>확보율 <b>${b.rate}%</b> · ${short}${units}${before}`;
   }
+  // 그림 값 말풍선은 그림(맞힌 것의 종류 — 선 · 고리 · 막대 · 시트)에 처음 들어올 때만 앱 전체 풍선 지연(껍데기 스타일
+  // `--capa-tip-delay`, 못 읽으면 1초)을 기다리고, 그 그림 안에서 옮기면 곧바로 따라간다(설계 규칙 UI-NAV-04 — 앱 그림
+  // 값 풍선과 같은 웜업). 다른 종류로 옮기거나 무대를 떠나면 다시 기다린다. 빈 곳에서는 말풍선만 걷고 웜업은 남는다.
+  const tipWarm = { kind: "", waiting: "", timer: 0, last: null };
+  function tipDelayMs() {
+    const raw = getComputedStyle(host).getPropertyValue("--capa-tip-delay");
+    const match = /^\s*(\d+(?:\.\d+)?)(ms|s)\s*$/.exec(raw || "");
+    return match ? Math.round(parseFloat(match[1]) * (match[2] === "s" ? 1000 : 1)) : TIP_DELAY_MS;
+  }
+  function placeTip(h, x, y) {
+    tip.innerHTML = tipHtml(h);
+    tip.style.opacity = "1";
+    tip.style.left = `${Math.min(x + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${Math.min(y + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
+  }
+  function coolTip() {
+    clearTimeout(tipWarm.timer);
+    tipWarm.kind = "";
+    tipWarm.waiting = "";
+    tipWarm.timer = 0;
+    tipWarm.last = null;
+    tip.style.opacity = "0";
+  }
   stage.addEventListener("pointermove", (event) => {
     const h = mode === "summary" && summary ? hitAt(event.clientX, event.clientY) : null;
     if (!h) {
+      tipWarm.last = null;
       tip.style.opacity = "0";
       return;
     }
-    tip.innerHTML = tipHtml(h);
-    tip.style.opacity = "1";
-    tip.style.left = `${Math.min(event.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
-    tip.style.top = `${Math.min(event.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
-  });
-  stage.addEventListener("pointerleave", () => {
+    if (h.k === tipWarm.kind) {
+      placeTip(h, event.clientX, event.clientY);
+      return;
+    }
     tip.style.opacity = "0";
+    tipWarm.last = { h, x: event.clientX, y: event.clientY };
+    if (tipWarm.waiting === h.k) return;
+    clearTimeout(tipWarm.timer);
+    tipWarm.kind = "";
+    tipWarm.waiting = h.k;
+    tipWarm.timer = setTimeout(() => {
+      tipWarm.kind = tipWarm.waiting;
+      tipWarm.waiting = "";
+      tipWarm.timer = 0;
+      const last = tipWarm.last;
+      if (last && last.h.k === tipWarm.kind && mode === "summary" && summary) placeTip(last.h, last.x, last.y);
+    }, tipDelayMs());
   });
+  stage.addEventListener("pointerleave", coolTip);
 
   /* ------------------------------------------------------------ 입장 → 요약 */
   function cancelAll(elements) {

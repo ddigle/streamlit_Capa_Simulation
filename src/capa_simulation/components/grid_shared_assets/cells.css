@@ -251,9 +251,13 @@ textarea.emg-ed {
   display: none;
 }
 
-.emg-tip-host:hover > .emg-tip,
+.emg-tip-host:hover > .emg-tip {
+  visibility: visible;
+  transition: visibility 0s linear var(--capa-tip-delay, 1000ms);
+}
+
 .emg-tip-host:focus-visible > .emg-tip,
 .emg-btn:focus-visible + .emg-tip {
   visibility: visible;
-  transition: visibility 0s linear 300ms;
+  transition: none;
 }

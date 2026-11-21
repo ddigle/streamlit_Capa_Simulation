@@ -122,6 +122,8 @@ export default function (component) {
   const HANDLE_PX = 9
   // 까닭 풍선과 단추 사이(화면 px).
   const TIP_GAP_PX = 6
+  // 마우스로 올린 칸의 풍선 지연을 껍데기 스타일에서 못 읽을 때의 값(앱 전체 풍선 지연 1초 — `components/tip_delay.py`).
+  const TIP_DELAY_MS = 1000
   // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
   const HALO_GAP_PX = 3
   // 키보드 초점 테(호기·편집의 도면 요소)의 띄움(화면 px). 보기의 선택 후광(HALO_GAP_PX)보다 밖이라 둘이 겹쳐도 따로 보인다.
@@ -396,11 +398,36 @@ export default function (component) {
     tipBox.style.left = `${Math.round(Math.min(Math.max(box.left - frame.left, 0), roomLeft))}px`
     tipBox.style.top = `${Math.round(below + tipBox.offsetHeight > frame.height && above >= 0 ? above : below)}px`
   }
+  // 마우스로 올린 칸은 앱 전체 풍선 지연(껍데기 스타일 `--capa-tip-delay` — 그림자 뿌리도 물려받는다, 못 읽으면 1초) 뒤에 띄운다
+  // (`hoverTip` — 설계 규칙 UI-NAV-04). 키보드 초점 · 잠긴 칸 열기 · 떠 있는 풍선 고쳐 쓰기는 곧바로다(`showTip`).
+  function tipDelayMs() {
+    const raw = typeof getComputedStyle === 'function' ? getComputedStyle(host).getPropertyValue('--capa-tip-delay') : ''
+    const match = /^\s*(\d+(?:\.\d+)?)(ms|s)\s*$/.exec(raw || '')
+    return match ? Math.round(parseFloat(match[1]) * (match[2] === 's' ? 1000 : 1)) : TIP_DELAY_MS
+  }
+  function cancelTipWait() {
+    if (S.tipWait) clearTimeout(S.tipWait)
+    S.tipWait = 0
+    S.tipWaitFor = null
+  }
   function hideTip() {
+    cancelTipWait()
     S.tipFor = null
     tipBox.hidden = true
   }
+  function hoverTip(spot) {
+    if (S.tipFor === spot || S.tipWaitFor === spot) return
+    hideTip()
+    if (!spot.dataset.tip) return
+    S.tipWaitFor = spot
+    S.tipWait = setTimeout(() => {
+      S.tipWait = 0
+      S.tipWaitFor = null
+      if (spot.isConnected) showTip(spot)
+    }, tipDelayMs())
+  }
   function showTip(spot) {
+    cancelTipWait()
     const text = spot.dataset.tip || ''
     if (!text) { hideTip(); return }
     S.tipFor = spot
@@ -421,10 +448,10 @@ export default function (component) {
     setTip(spot, reason)
     if (held) (reason ? spot : button).focus({ preventScroll: true })
   }
-  // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다. 칸은 눌리지 않으므로
+  // 마우스는 올려 둔 동안(지연 뒤), 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다. 칸은 눌리지 않으므로
   // 칸 자신이 받은 Space 는 페이지를 굴리지 않게 막는다(칸 안의 켜진 단추 · 입력 칸이 받은 키는 그대로 간다).
   function bindTip(spot) {
-    spot.onpointerenter = () => showTip(spot)
+    spot.onpointerenter = () => hoverTip(spot)
     spot.onpointerleave = () => { if (!spot.matches(':focus-visible')) hideTip() }
     spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }
     spot.onblur = hideTip
@@ -9021,13 +9048,15 @@ export default function (component) {
       if (cell && pressSheetCell(row.dataset.id, cell.dataset.col)) return
       goToUnit(row.dataset.id)
     }
+    // 배치 편집 표 칸의 풍선이 떠 있거나 뜨기를 기다리는 중인가.
+    const sheetTipHeld = () => [S.tipFor, S.tipWaitFor].some((spot) => Boolean(spot && spot.matches && spot.matches('.sle-sheet-table td')))
     sheetBodyRows.onpointerover = (event) => {
       const cell = SHEET_EDIT && event.target.closest ? event.target.closest('td[data-tip]') : null
-      if (cell) showTip(cell)
-      else if (S.tipFor && S.tipFor.matches && S.tipFor.matches('.sle-sheet-table td')) hideTip()
+      if (cell) hoverTip(cell)
+      else if (sheetTipHeld()) hideTip()
     }
     sheetBodyRows.onpointerleave = () => {
-      if (S.tipFor && S.tipFor.matches && S.tipFor.matches('.sle-sheet-table td')) hideTip()
+      if (sheetTipHeld()) hideTip()
     }
     sheetBodyRows.onkeydown = (event) => {
       const row = event.target.closest ? event.target.closest('tr[data-id]') : null

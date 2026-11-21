@@ -10,7 +10,9 @@
 
 const EG_SEND_MS = 300
 const EG_BUFFER_ROWS = 8
-const EG_TIP_MS = 300
+// 값 칸 머리 풍선의 지연 — 앱 전체 풍선 지연(껍데기 스타일 `--capa-tip-delay`, 그림자 뿌리도 물려받는다)이고 못 읽으면 1초다.
+const EG_TIP_MS = 1000
+const EG_TIP_VARIABLE = '--capa-tip-delay'
 const EG_TOAST_MS = 5000
 const EG_STATUS_MS = 4000
 const EG_MIN_HEIGHT = 360
@@ -739,13 +741,20 @@ function egWhere(S) {
   where.title = text
 }
 
+function egTipDelay(S) {
+  const node = S.dom && S.dom.frame
+  const raw = node && typeof getComputedStyle === 'function' ? getComputedStyle(node).getPropertyValue(EG_TIP_VARIABLE) : ''
+  const match = /^\s*(\d+(?:\.\d+)?)(ms|s)\s*$/.exec(raw || '')
+  return match ? Math.round(parseFloat(match[1]) * (match[2] === 's' ? 1000 : 1)) : EG_TIP_MS
+}
+
 function egOnHeadOver(S, event) {
   const cell = event.target.closest && event.target.closest('.eg-hc')
   const help = S.shell && typeof S.shell.valueHelp === 'string' ? S.shell.valueHelp : ''
   if (!cell || cell.dataset.kind !== 'value' || !help) return
   if (S.tipCell === cell) return
   S.tipCell = cell
-  egTimer(S, 'tip', EG_TIP_MS, () => {
+  egTimer(S, 'tip', egTipDelay(S), () => {
     if (S.tipCell !== cell || !S.dom) return
     const tip = S.dom.tip
     tip.textContent = help
