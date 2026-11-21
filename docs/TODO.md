@@ -2539,6 +2539,14 @@
 
 ### 계산
 
+- (2026-11-22) **기존 결과 대조에 「계획 행으로 접음」 갈래를 더한다**(사용자 요청 F) — 원천 Wafer `WF수(매)` 는 계획 줄 × WF 구분 칸
+  안에서도 경로 행마다 갈려 정식 대조가 그 칸을 `값 불일치` 로 떨어뜨린다. 그래서 같은 Wafer 대조를 계획 행(`계획기초정보여부 = Y`
+  이면서 공정이 빈 행 — 요청 원문 그대로)만 넘겨 한 번 더 한다(`legacy_comparison.plan_row_frame` · 지표 `PLAN_ROW_METRIC`, 사외 디버깅
+  `scripts/compare_legacy_results.py`). 계획 행인데 공정이 든 행은 접지 않고, 넣지 않은 행 · 칸(공정 빈데 계획 행 아님 · 계획 행 없는
+  칸 · 계획 행 값 둘 이상 칸 · 계획 행 밖 갈림이 공정 하나에서만 나는 칸)은 `plan_row_diagnostics` 가 개수로만 센다 — 「갈린다」 는
+  경로 값 가르기와 같은 허용(`ROUTE_SPLIT_TOLERANCE`, 반올림은 갈림 아님)이고 「값 둘 이상」 은 정식 대조처럼 정확히 본다. 정식 대조
+  `COMPARISONS` · `_legacy_totals`(소요대수 대조와 같은 접기)는 그대로다. 사내 확인 스크립트 8-2 의 요약 줄 · 런북 줄은 이 갈래를
+  싣는 변경에서 따로 단다 — 관련: `services/legacy_comparison.py`
 - (2026-11-20) **필요 단축 일정 「현재 일정」 기준 — Static(처음 값) | 설비 마스터**(보드 답 Static-0 「좋음」 + 메모, Q01 ~ Q15 모두
   권장 — 초안 `worklog/static-shortening-1119/draft.md`). Static 은 활성 시나리오(미저장 편집 포함)의 `RQ_EQP_AVBL` · 공정별
   Cut-off · Qual 순서(Qual일정 → 번호, 미정은 반입 순)로 Qual 마감 계산기 규칙의 마감을 역산해 현재 일정으로 쓴다(고정 대수는 비가동

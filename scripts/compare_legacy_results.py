@@ -21,6 +21,9 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
 (Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
 샘플의 사정이다 — 실데이터의 소요대수는 사내 확인 스크립트가 경로 키로 따로 대조한다.
+세 대조 뒤에 같은 Wafer 대조를 **계획 행(계획기초정보여부 Y · 공정 빈)으로 접어** 한 번 더 하고
+(`plan_row_frame` — 지표 이름이 달라 `--output` 에서도 섞이지 않는다), 그 갈래가 넣고 뺀 행 · 칸
+수(`plan_row_diagnostics`)를 찍는다.
 
 **사외 디버깅용이다.** 허용을 넘은 키는 제품정보·Stack 을 그대로 찍는다. 사내 실데이터로는
 `scripts/inspect_real_data_checks.py --only legacy`(런북 8장)를 쓴다 — 같은 대조를 분포로만 찍는다.
@@ -38,12 +41,19 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from capa_simulation.io.core_data_source import load_core_data_contract  # noqa: E402
+from capa_simulation.io.core_data_source import (  # noqa: E402
+    CoreDataContract,
+    load_core_data_contract,
+)
 from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     COMPARISONS,
+    PLAN_ROW_METRIC,
+    LegacyMetric,
     compare_metric,
     difference_distribution,
+    plan_row_diagnostics,
+    plan_row_frame,
     summarize_comparison,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
@@ -135,6 +145,43 @@ def _rate(value: float | None) -> str:
     return "-" if value is None else f"{value:.4%}"
 
 
+def _report_comparison(metric: LegacyMetric, comparison: pd.DataFrame, tolerance: float) -> None:
+    """지표 하나의 요약 · 차이율 분포 · 허용을 넘은 키(앞 다섯)."""
+    summary = summarize_comparison(comparison, tolerance=tolerance)
+    rate = summary["최대 차이율"]
+    print(
+        f"\n[{metric.label}]"
+        f"\n  대조 {summary['대조 건수']:,}건 · 허용 초과 {summary['허용 초과']:,}건"
+        f" · 최대 차이율 {'-' if rate is None else f'{rate:.4%}'}"
+        f"\n  기존 0·신규 있음 {summary['기존 0·신규 있음']:,}건 (비율을 구할 수 없다)"
+        f" · 값 불일치 {summary['값 불일치']:,}건 (기존 쪽을 접을 수 없어 뺐다)"
+        f"\n  신규에만 있음 {summary['신규에만 있음']:,}건 (기존이 비워 둔 자리를 채운다)"
+        f" · 기존에만 있음 {summary['기존에만 있음']:,}건 (신규가 놓친 자리)"
+    )
+    spread = difference_distribution(comparison)
+    over = dict(spread.over)
+    print(
+        f"  차이율 분포 — 중앙 {_rate(spread.median)} · p95 {_rate(spread.p95)}"
+        f" · >0.1% {over[0.001]:,}키 · >1% {over[0.01]:,}키"
+    )
+    worst = comparison.dropna(subset=["차이율"]).nlargest(5, "차이율")
+    if not worst.empty and float(worst["차이율"].iloc[0]) > tolerance:
+        print(worst.to_string(index=False))
+
+
+def _report_plan_rows(core: pd.DataFrame, contract: CoreDataContract) -> None:
+    """「계획 행으로 접음」 이 넣고 뺀 행 · 칸 수(`plan_row_diagnostics`)."""
+    found = plan_row_diagnostics(core, contract=contract)
+    print(
+        f"  계획 행 진단 — 접은 행 {found.plan_rows:,}(Y · 공정 빈)"
+        f" · Y 인데 공정 있음 {found.flagged_with_process:,}행"
+        f" · 공정 빈데 Y 아님 {found.blank_process_unflagged:,}행"
+        f"\n  칸 {found.cells:,} · 계획 행 없는 칸 {found.cells_without_plan_row:,}"
+        f" · 계획 행 값 둘 이상 칸 {found.cells_with_many_plan_values:,}"
+        f" · 계획 행 밖 갈림이 공정 하나뿐인 칸 {found.cells_split_in_one_process:,}"
+    )
+
+
 def main() -> int:
     # Windows 콘솔 기본 코드페이지(cp949)는 이 출력의 기호를 못 쓴다.
     reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -191,27 +238,17 @@ def main() -> int:
     frames: list[pd.DataFrame] = []
     for metric in COMPARISONS:
         comparison = compare_metric(core, calculated[metric.legacy_column], metric, contract)
-        summary = summarize_comparison(comparison, tolerance=args.tolerance)
         frames.append(comparison)
-        rate = summary["최대 차이율"]
-        print(
-            f"\n[{metric.label}]"
-            f"\n  대조 {summary['대조 건수']:,}건 · 허용 초과 {summary['허용 초과']:,}건"
-            f" · 최대 차이율 {'-' if rate is None else f'{rate:.4%}'}"
-            f"\n  기존 0·신규 있음 {summary['기존 0·신규 있음']:,}건 (비율을 구할 수 없다)"
-            f" · 값 불일치 {summary['값 불일치']:,}건 (기존 쪽을 접을 수 없어 뺐다)"
-            f"\n  신규에만 있음 {summary['신규에만 있음']:,}건 (기존이 비워 둔 자리를 채운다)"
-            f" · 기존에만 있음 {summary['기존에만 있음']:,}건 (신규가 놓친 자리)"
-        )
-        spread = difference_distribution(comparison)
-        over = dict(spread.over)
-        print(
-            f"  차이율 분포 — 중앙 {_rate(spread.median)} · p95 {_rate(spread.p95)}"
-            f" · >0.1% {over[0.001]:,}키 · >1% {over[0.01]:,}키"
-        )
-        worst = comparison.dropna(subset=["차이율"]).nlargest(5, "차이율")
-        if not worst.empty and float(worst["차이율"].iloc[0]) > args.tolerance:
-            print(worst.to_string(index=False))
+        _report_comparison(metric, comparison, args.tolerance)
+
+    # 「계획 행으로 접음」 — 같은 Wafer 대조를 계획 행(Y · 공정 빈)만으로 한 번 더 한다.
+    plan_rows = plan_row_frame(core)
+    plan_comparison = compare_metric(
+        plan_rows, calculated[PLAN_ROW_METRIC.legacy_column], PLAN_ROW_METRIC, contract
+    )
+    frames.append(plan_comparison)
+    _report_comparison(PLAN_ROW_METRIC, plan_comparison, args.tolerance)
+    _report_plan_rows(core, contract)
 
     if args.output:
         output = Path(args.output)
