@@ -1,4 +1,4 @@
-# Purpose: 비교 GAP 의 계획 증감 글자 규칙과 비교 계획 CUSTOM 다시 짝짓기를 한 곳에 둔다.
+# Purpose: 계획 증감(선행 B/O 전후·비교 GAP)을 세는 계획 행 맞추기와 글자 규칙을 한 곳에 둔다.
 
 """계획 증감 글자.
 
@@ -10,8 +10,8 @@ GAP 을 적는다. 입장 화면 Summary 도 같은 두 증감을 적는다 — 
 - 증감이 `GAP_EPSILON` 보다 작으면 적지 않는다. 화면에 보이는 자릿수에서 달라지지 않은 칸까지
   `+0.00` 을 달면 무엇이 움직였는지 오히려 안 읽힌다.
 - 형식 자릿수에서 0 으로 보이는 글자(`+0.0K`·`-0.00`)도 적지 않는다(`visible_gap`).
-- 비교 계획은 현재 수율 · Chip 표로 환산하므로, 그 전에 계획 행의 CUSTOM 을 현재 표에 다시
-  짝짓는다(`repair_comparison_plan_custom`).
+- `repair_comparison_plan_custom` 은 비교 계획 행의 CUSTOM 을 현재 계획 · 현재 수율 · Chip 표에
+  맞춰 다시 정하는 순수 함수다. 비교 계획을 현재 표로 환산하기 전에 부르도록 만들었다.
 """
 
 from __future__ import annotations
