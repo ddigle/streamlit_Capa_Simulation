@@ -374,11 +374,15 @@ def test_each_business_key_keeps_its_own_buffer_basis(key: str, value: str) -> N
 _UNROUTED_HBM = "DEMO-HBM2"
 
 
-def _with_buffer_spelled_twice(product: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """`product` 의 Buffer 를 `BUFFER` 로 한 벌 더 적은 계획 · `RQ_YLD` · `RQ_CHIP_QTY`.
+def _with_division_spelled_twice(
+    product: str, division: str
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """`product` 의 `division`(Buffer · Core)을 대문자로 한 벌 더 적은 계획 · `RQ_YLD` ·
+    `RQ_CHIP_QTY`.
 
-    같은 부하 키에 Buffer Wafer 부하가 둘 생긴다(옛 리비전이 경로를 두 표기로 저장한 일이 있다).
-    `_UNROUTED_HBM` 이면 DEMO-HBM 의 계획 · 기준정보를 그 이름으로 한 벌 더한 뒤 겹친다.
+    Buffer 면 같은 부하 키에 Buffer Wafer 부하가, Core 면 같은 제품에 Core `구분_Chip` 이 둘 생긴다
+    (옛 리비전이 같은 `WF 구분` 을 두 표기로 저장한 일이 있다). `_UNROUTED_HBM` 이면 DEMO-HBM 의
+    계획 · 기준정보를 그 이름으로 한 벌 더한 뒤 겹친다.
     """
     plan, yields, chip = demo.plan(), demo.yields(), demo.chip_qty()
     if product == _UNROUTED_HBM:
@@ -394,26 +398,31 @@ def _with_buffer_spelled_twice(product: str) -> tuple[pd.DataFrame, pd.DataFrame
             [chip, chip.loc[chip["제품정보"].eq(demo.HBM)].assign(제품정보=product)],
             ignore_index=True,
         )
-    buffer_yield = yields.loc[yields["제품정보"].eq(product) & yields["WF 구분"].eq("Buffer")]
-    buffer_chip = chip.loc[chip["제품정보"].eq(product) & chip["WF 구분"].eq("Buffer")]
+    spelled = {"WF 구분": division.upper()}
+    twice_yield = yields.loc[yields["제품정보"].eq(product) & yields["WF 구분"].eq(division)]
+    twice_chip = chip.loc[chip["제품정보"].eq(product) & chip["WF 구분"].eq(division)]
     return (
         plan,
-        pd.concat([yields, buffer_yield.assign(**{"WF 구분": "BUFFER"})], ignore_index=True),
-        pd.concat([chip, buffer_chip.assign(**{"WF 구분": "BUFFER"})], ignore_index=True),
+        pd.concat([yields, twice_yield.assign(**spelled)], ignore_index=True),
+        pd.concat([chip, twice_chip.assign(**spelled)], ignore_index=True),
     )
 
 
-def test_two_buffer_bases_for_one_key_stop_only_where_a_declared_core_route_uses_it() -> None:
-    """한 부하 키에 바탕이 둘이면 어느 값을 곱할지 모른다 — 선언 공정의 Core 줄이 그 키를 쓸 때만
-    멈추고(끔에서는 그대로 선다), 경로가 없는 다른 제품의 겹침으로는 멈추지 않는다."""
+@pytest.mark.parametrize("division", ["Buffer", "Core"])
+def test_two_bases_for_one_key_stop_only_where_a_declared_core_route_uses_it(
+    division: str,
+) -> None:
+    """한 부하 키에 바탕이 둘이면(Buffer Wafer 부하든 Core `구분_Chip` 이든) 어느 값을 곱할지 모른다
+    — 선언 공정의 Core 줄이 그 키를 쓸 때만 멈추고(끔에서는 그대로 선다), 경로가 없는 다른 제품의
+    겹침으로는 멈추지 않는다."""
     reqb, capacity = _route_tables()
-    plan, yields, chip = _with_buffer_spelled_twice(demo.HBM)
+    plan, yields, chip = _with_division_spelled_twice(demo.HBM, division)
     calculate_required_equipment(reqb, plan, yields, chip, capacity)
 
     with pytest.raises(ValueError, match="부하 예외 바탕"):
         calculate_required_equipment(reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED)
 
-    plan, yields, chip = _with_buffer_spelled_twice(_UNROUTED_HBM)
+    plan, yields, chip = _with_division_spelled_twice(_UNROUTED_HBM, division)
     wafer = calculate_wafer_load(plan, yields, chip)
     loads = wafer.rename(columns={"물량": "부하량"}).assign(소요기준="WF")
     bases = build_route_load_bases(loads, chip, LOAD_KEYS)
