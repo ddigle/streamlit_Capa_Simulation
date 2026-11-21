@@ -96,7 +96,7 @@ from capa_simulation.persistence.equipment_cache import (
     clear_shortening_progress_cache,
     get_equipment_repository,
     load_shortening_progress_log,
-    load_shortening_progress_snapshots,
+    load_shortening_progress_reasons,
 )
 from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.services.required_shortening import level_percent
@@ -123,7 +123,6 @@ from capa_simulation.services.shortening_progress_reasons import (
     ProgressSnapshotDraft,
     ReasonItem,
     WeekChange,
-    explain_week_changes,
     snapshot_draft,
 )
 from capa_simulation.session_slot import SessionSlot
@@ -506,9 +505,7 @@ def _weekly_layout(
     known = changes or {}
     xs = [index[entry.week] for entry in entries]
     ys = [entry.days for entry in entries]
-    reasons: list[WeekChange | None] = [
-        None if position == 0 else known.get(entry.week) for position, entry in enumerate(entries)
-    ]
+    reasons = [_matching_reason(known, entries, position) for position in range(len(entries))]
     backed = [reason is not None and reason.balanced for reason in reasons]
     # 마지막 기록이 축 끝이면(목표 주가 앞이거나 없음) 오른쪽에 그 값 글자 자리를 둔다.
     room = 1.6 if entries and index[entries[-1].week] == len(axis) - 1 else 0.0
@@ -555,6 +552,20 @@ def _weekly_layout(
         narrow=narrow,
         placed=place_tags(narrow, scene, wishes),
     )
+
+
+def _matching_reason(
+    known: Mapping[ProgressWeek, WeekChange], entries: Sequence[ProgressEntry], position: int
+) -> WeekChange | None:
+    """그 기록의 까닭 — 앞 주 · 증감이 그리는 기록과 맞을 때만(캐시가 다른 때의 기록으로 센 까닭이
+    엉뚱한 주에 붙지 않게). 첫 기록은 까닭이 없다."""
+    if position == 0:
+        return None
+    reason = known.get(entries[position].week)
+    previous = entries[position - 1]
+    if reason is None or reason.previous != previous.week:
+        return None
+    return reason if reason.change == entries[position].days - previous.days else None
 
 
 def weekly_figure(
@@ -958,15 +969,15 @@ def _strip_body(database_path: str, today: date) -> None:
 
 
 def _week_changes(database_path: str, log: ProgressLog) -> dict[ProgressWeek, WeekChange]:
-    """「주차별」 을 편 회차의 까닭 — 넣기 스냅숏을 읽어 그릴 때 센다(저장하지 않는다). 스냅숏을 못
-    읽으면 까닭 없이 그린다 — 기록 선 · 표지는 그대로 선다(까닭은 덧붙이는 값이다)."""
+    """「주차별」 을 편 회차의 까닭 — 넣기 스냅숏 두 주에서 그릴 때 센 값(저장하지 않는다)을 캐시
+    경계(`equipment_cache.load_shortening_progress_reasons` — 기록과 같은 쓰기 세대)에서 받는다.
+    스냅숏을 못 읽으면 까닭 없이 그린다 — 기록 선 · 표지는 그대로 선다(까닭은 덧붙이는 값이다)."""
     if len(log.entries) < 2:
         return {}
     try:
-        snapshots = load_shortening_progress_snapshots(database_path)
+        return load_shortening_progress_reasons(database_path)
     except BOOTSTRAP_ERRORS:
         return {}
-    return explain_week_changes(log, snapshots) if snapshots else {}
 
 
 # ------------------------------------------------------------------ 팝업

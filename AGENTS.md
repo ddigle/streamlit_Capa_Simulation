@@ -829,9 +829,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       「자동 + 사람이 고침」 의 1단계 자동 · q-axis (a) 목표 아래부터 — 규칙집 6-40): 「이번 주 값 넣기」 로 저장한 주는 그 화면의
       호기 표 스냅숏(고른 목표 · 범위 공정의 당긴 호기 · 추가N, 범위 공정 · Cut-off · 기준 · 오늘 · 달 · 출처)이 기록 줄과 같은 쓰기
       트랜잭션에 남는다(설비 DB `0037` — 기록 지우기가 함께 지움, 손으로 적은 주는 없음). 값은 여전히 사람이 적은 수이고 선은 기록
-      수만 잇는다(누적-4 「한 줄 기록」 을 넓힘 — 규칙집 7-1). 「주차별」 을 편 회차에만 스냅숏을 읽어
-      (`equipment_cache.load_shortening_progress_snapshots`) 바로 앞 기록 주와 진척 비교 짝짓기로 견줘 까닭을 센다 — 저장하지
-      않는다(`services/shortening_progress_reasons.explain_week_changes`). 두 주 모두 스냅숏이 있고 항목 합 = 지난 기록 대비가 맞는
+      수만 잇는다(누적-4 「한 줄 기록」 을 넓힘 — 규칙집 7-1). 「주차별」 을 편 회차에만 스냅숏을 읽어 바로 앞 기록 주와 진척 비교
+      짝짓기로 견줘 까닭을 센다 — 저장하지 않는다(`services/shortening_progress_reasons.explain_week_changes`). 띠 프래그먼트는
+      페이지 전체 회차에도 다시 돌아 센 까닭은 캐시 경계 `equipment_cache.load_shortening_progress_reasons`(기록 · 스냅숏과 같은 쓰기
+      세대 · DB stat — 맞으면 스냅숏 표도 읽지 않음)에 담고, 그리는 쪽이 까닭의 앞 주 · 증감을 그리는 기록과 다시 맞춘다
+      (`_matching_reason`). 두 주 모두 스냅숏이 있고 항목 합 = 지난 기록 대비가 맞는
       주만 근거가 있고, 그런 주가 5일 이상 오르내렸으면 점 곁 꼬리표(`components/shortening_cumulative_tags.py`) · 큰 ▲ · ▼ ·
       오른 주만 들어오는 구간 굵은 주황 선이다. 근거 없는 주는 늘어난 주 ▲ 와 「+n일」 · 줄어든 주 ● 다. 점 · 꼬리표를 가리키면 그 주 까닭
       전부(여섯 넘으면 앞 다섯 + 「그 밖 k건」) · 합 「합 −n일 = 지난 기록 대비 −n일」 · 덧말(n주 사이 · 추가 호기 대수 · 호기 이름이
@@ -6111,7 +6113,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   같은 구성 글이면 쓰지 않고 같은 수 · 다른 구성이면 스냅숏만 갈아 쓴다. 넣기 없이 고친 저장은 고치기 전 기록과 함께 쓴 스냅숏을
   새 기록 시각으로 옮기고(`carry_progress_snapshot` — 그 차이는 까닭 「손 고침」) 그 밖의 머리는 지운다. 기록 지우기는 같은
   트랜잭션에서 셋 다 지운다(`delete_progress_snapshot`). 캐시는 `equipment_cache.load_shortening_progress_snapshots`(기록과 같은 쓰기
-  세대 `shortening_progress` — `clear_shortening_progress_cache` 가 함께 비움, 「주차별」 을 편 띠만 읽음). 감사 사건은 기록 저장 그대로
+  세대 `shortening_progress` — `clear_shortening_progress_cache` 가 함께 비움)이고, 띠는 그 위에서 센 까닭 캐시
+  `load_shortening_progress_reasons`(같은 세대 — 「주차별」 을 편 띠만 부름)만 부른다. 감사 사건은 기록 저장 그대로
   (`data_progress_log_save` — 호기 표 · 값 원문은 싣지 않는다).
 - `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
   `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과

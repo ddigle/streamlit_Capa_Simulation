@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from test_shortening_progress_reasons import NEED, _day, _draft, _real
+from test_shortening_progress_reasons import NEED, _day, _draft, _real, _virtual
 
 from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -26,6 +26,7 @@ from capa_simulation.services.shortening_progress_log import (
 from capa_simulation.services.shortening_progress_reasons import (
     TAG_MANUAL,
     TAG_QUAL_EARLIER,
+    TAG_SCOPE,
     ProgressSnapshotDraft,
     explain_week_changes,
 )
@@ -173,3 +174,66 @@ def test_a_header_left_by_code_that_does_not_know_0037_is_ignored_and_dropped(
     assert _counts(repository) == (1, 2, 2)
     assert repository.save_shortening_progress_entry(W47, 27, expected_days=28)
     assert _counts(repository) == (0, 0, 0)
+
+
+def test_the_cached_reasons_equal_the_direct_count_and_skip_the_snapshots_on_a_hit(
+    repository: DuckDBEquipmentRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「주차별」 까닭은 캐시 경계(`load_shortening_progress_reasons`)에서 받는다 — 다시 세운 값이
+    직접 센 `explain_week_changes` 와 같고(덧말 칸까지 — 빠진 칸이 있으면 여기서 어긋난다), 맞은
+    회차는 스냅숏 표를 다시 읽지 않는다. 저장 뒤 캐시를 비우면 새 기록으로 다시 센다."""
+    past = _draft(
+        [
+            _real("PRC-01", "EQ-01", NEED, _day(30)),
+            _real("PRC-02", "EQ-02", NEED, _day(20)),
+            _real("PRC-04", "EQ-04", NEED, _day(10)),
+            _virtual("PRC-01", "추가1", NEED),
+        ],
+        ("PRC-01", "PRC-02", "PRC-04"),
+        cutoff_days={"PRC-01": 10},
+        provenance=BaselineProvenance(scenario_revision_id="DEMO-r3", scenario_revision_no=3),
+    )
+    current = _draft(
+        [
+            _real("PRC-01", "EQ-01", NEED, _day(22)),
+            _real("PRC-02", "EQ-09", NEED, _day(15)),
+            _real("PRC-03", "EQ-03", NEED, _day(6)),
+            _virtual("PRC-01", "추가1", NEED),
+            _virtual("PRC-01", "추가2", NEED),
+        ],
+        ("PRC-01", "PRC-02", "PRC-03"),
+        months=(202701, 202709),
+        cutoff_days={"PRC-01": 12},
+        provenance=BaselineProvenance(scenario_revision_id="DEMO-r4", scenario_revision_no=4),
+    )
+    repository.save_shortening_progress_entry(W46, past.days, expected_days=None, snapshot=past)
+    repository.save_shortening_progress_entry(
+        W47, current.days, expected_days=None, snapshot=current
+    )
+    path = str(repository.database_path)
+    equipment_cache.clear_shortening_progress_cache()
+    direct = explain_week_changes(
+        repository.load_shortening_progress_log(),
+        {snapshot.week: snapshot for snapshot in repository.load_shortening_progress_snapshots()},
+    )
+    cached = equipment_cache.load_shortening_progress_reasons(path)
+    assert cached == direct and set(cached) == {W47}
+    change = cached[W47]
+    assert change.renamed == ("PRC-02",) and change.virtual == (1, 2)
+    assert change.cutoffs == (("PRC-01", 10, 12),) and len(change.inputs) == 2
+    assert any(item.tag == TAG_SCOPE and item.parts for item in change.items)
+
+    def refuse(_path: str) -> object:
+        raise AssertionError("맞은 회차는 스냅숏을 읽지 않는다")
+
+    monkeypatch.setattr(equipment_cache, "load_shortening_progress_snapshots", refuse)
+    assert equipment_cache.load_shortening_progress_reasons(path) == direct
+    monkeypatch.undo()
+    assert repository.save_shortening_progress_entry(
+        W47, current.days - 3, expected_days=current.days
+    )
+    equipment_cache.clear_shortening_progress_cache()
+    again = equipment_cache.load_shortening_progress_reasons(path)[W47]
+    assert again.change == change.change - 3 and again.balanced
+    assert (TAG_MANUAL, -3) in [(item.tag, item.days) for item in again.items]
+    equipment_cache.clear_shortening_progress_cache()

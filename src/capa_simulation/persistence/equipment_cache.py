@@ -21,7 +21,7 @@
 """
 
 import threading
-from dataclasses import fields
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -73,6 +73,9 @@ from capa_simulation.services.shortening_progress_log import (
 from capa_simulation.services.shortening_progress_reasons import (
     ProgressSnapshot,
     ProgressSnapshotDraft,
+    ReasonItem,
+    WeekChange,
+    explain_week_changes,
 )
 
 
@@ -1167,10 +1170,52 @@ def load_shortening_progress_snapshots(database_path: str) -> dict[ProgressWeek,
     return out
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_shortening_progress_reasons_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> list[dict[str, Any]]:
+    del stamp, generation
+    log = load_shortening_progress_log(database_path)
+    if len(log.entries) < 2:
+        return []
+    snapshots = load_shortening_progress_snapshots(database_path)
+    if not snapshots:
+        return []
+    return [asdict(change) for change in explain_week_changes(log, snapshots).values()]
+
+
+def load_shortening_progress_reasons(database_path: str) -> dict[ProgressWeek, WeekChange]:
+    """누적 진척 「주차별」 오르내림 까닭(`explain_week_changes` — 넣기 스냅숏 두 주의 짝짓기) —
+    주 → 까닭. 「주차별」 을 편 띠만 부른다.
+
+    까닭은 저장하지 않고 그릴 때 세지만, 띠 프래그먼트는 페이지 전체 회차에도 다시 돌아 회차마다
+    기록 쌍 전부를 짝짓지 않게 여기서 기록 · 스냅숏과 같은 쓰기 세대(`shortening_progress`) ·
+    DB stat 으로 담아 둔다(`clear_shortening_progress_cache` 가 함께 비운다). 맞으면 스냅숏 표도
+    읽지 않는다. 값은 평범한 dict 로 싣고 지금 클래스로 다시 세운다(`load_shortening_progress_log`
+    와 같은 까닭). 그리는 쪽은 까닭의 앞 주 · 증감이 그리는 기록과 맞는지 다시 본다.
+    """
+    payload = _load_shortening_progress_reasons_payload(
+        database_path, database_stamp(database_path), _write_generation("shortening_progress")
+    )
+    out: dict[ProgressWeek, WeekChange] = {}
+    for row in payload:
+        change = WeekChange(
+            **{
+                **row,
+                "week": ProgressWeek(**row["week"]),
+                "previous": ProgressWeek(**row["previous"]),
+                "items": tuple(ReasonItem(**item) for item in row["items"]),
+            }
+        )
+        out[change.week] = change
+    return out
+
+
 def clear_shortening_progress_cache() -> None:
     _bump_write_generation("shortening_progress")
     _load_shortening_progress_payload.clear()
     _load_shortening_progress_snapshots_payload.clear()
+    _load_shortening_progress_reasons_payload.clear()
 
 
 def clear_floor_layout_cache() -> None:

@@ -319,6 +319,20 @@ def test_changed_inputs_are_one_hover_line_with_process_display_names() -> None:
     )
 
 
+def test_a_reason_that_does_not_match_the_drawn_records_is_not_drawn() -> None:
+    """까닭은 캐시에서 오므로 그리는 기록과 다시 맞춘다 — 앞 주나 증감이 다른 까닭은 근거 없는 주로
+    그린다(엉뚱한 주에 붙지 않게)."""
+    changes = _changes()
+    base = changes[WEEKS[5]]
+    changes[WEEKS[5]] = WeekChange(base.week, base.previous, base.change + 1, base.items, True)
+    base = changes[WEEKS[8]]
+    changes[WEEKS[8]] = WeekChange(base.week, WEEKS[6], base.change, base.items, True)
+    layout = _weekly_layout(_log(), changes, _label)
+    assert layout.reasons[5] is None and layout.reasons[8] is None
+    assert not {5, 8} & set(layout.placed)
+    assert layout.reasons[4] is not None
+
+
 def test_weeks_without_reasons_keep_the_old_marks_and_say_why_on_hover() -> None:
     """근거 없는 주(넣기 스냅숏이 없음)는 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 이고, 풍선은
     까닭 근거가 없다고 말한다. 까닭 합이 맞지 않는 주는 꼬리표 없이 풍선이 그 사실을 말한다."""
