@@ -385,6 +385,17 @@ def test_original_column_names_are_not_flagged() -> None:
     assert display_label_mistakes(rules, labels) == {}
 
 
+def test_a_label_that_is_its_own_column_name_is_not_flagged() -> None:
+    """표시명이 원본 컬럼명과 같은 칸(`CUSTOM`)은 적은 값이 곧 원본이라 묻지 않는다 — 공용 표시명 표
+    (`COLUMN_LABELS`)에 그 칸이 있어도 같다."""
+    from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+
+    assert COLUMN_LABELS["CUSTOM"] == "CUSTOM"
+    rules = pd.DataFrame({"분류컬럼": ["CUSTOM", "거래선"]})
+
+    assert display_label_mistakes(rules, COLUMN_LABELS) == {"거래선": "Customer"}
+
+
 def test_a_frame_without_the_column_field_is_ignored() -> None:
     """편집 표가 비어 컬럼조차 없으면 판정할 것이 없다."""
     assert display_label_mistakes(pd.DataFrame(), {"Customer": "거래선"}) == {}
