@@ -903,8 +903,9 @@ def _render_body(
             labels,
         )
     )
-    # LOB 요약의 읽는 법(Density·Wafer 는 HOME 과 같은 계산, B/N 확보율이 HOME 과 다른 까닭)은
-    # Guide 가 말한다 — 자리에 늘 두지 않는다.
+    # LOB 요약의 읽는 법(Density 는 HOME 과 같은 계산, Wafer 는 Dummy 계열을 빼지 않은 합이라
+    # HOME 과 다를 수 있음, B/N 확보율이 HOME 과 다른 까닭)은 Guide 가 말한다 — 자리에 늘 두지
+    # 않는다.
     if not shown:
         # 목록 구획의 빈 결과는 값(「없음」)이라 평문 한 줄이다(성공 상자 · 하는 법 없음).
         st.caption(f"목표 {_percent(level)} 에서 모자란 달이 있는 공정이 없습니다.")
