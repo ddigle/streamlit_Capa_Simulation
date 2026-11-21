@@ -10,7 +10,8 @@ DB 는 `test_shortening_progress_tab._saved_database`). 일수는 합성 예시(
 from __future__ import annotations
 
 import json
-from datetime import date
+from dataclasses import replace
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,10 @@ from capa_simulation.services.shortening_progress_log import (
     ProgressGoalState,
     ProgressLog,
     ProgressWeek,
+)
+from capa_simulation.services.shortening_progress_reasons import (
+    ProgressSnapshotDraft,
+    snapshot_digest,
 )
 
 THIS_WEEK = ProgressWeek.of(date.today())
@@ -202,6 +207,72 @@ def test_a_record_is_filled_from_the_screen_saved_edited_and_deleted(tmp_path: P
     assert not app.exception
     assert not DuckDBEquipmentRepository(database_path).load_shortening_progress_log().entries
     assert "기록 없음" in _strip(app)
+    clear_equipment_repository()
+
+
+def _earlier_secure(draft: ProgressSnapshotDraft, days: int) -> ProgressSnapshotDraft:
+    """첫 당긴 호기의 확보 시점(기존 Qual)을 `days` 일 늦춘 스냅숏 — 그 주에서 이 주로 오면 「Qual
+    당김」 이다."""
+    records = draft.units.to_dict("records")
+    position = next(
+        index
+        for index, record in enumerate(records)
+        if record["구분"] == KIND_SHORTENED and isinstance(record["기존 Qual"], date)
+    )
+    record = records[position]
+    secure = record["기존 Qual"]
+    assert isinstance(secure, date)
+    records[position] = {
+        **record,
+        "기존 Qual": secure + timedelta(days=days),
+        "단축일수": int(str(record["단축일수"])) + days,
+    }
+    units = pd.DataFrame(records, columns=list(draft.units.columns)).astype(
+        {"단축일수": "Int64", "모듈 수": "Int64"}
+    )
+    moved = replace(draft, units=units, days=draft.days + days)
+    return replace(moved, digest=snapshot_digest(moved))
+
+
+def test_a_filled_save_keeps_the_screen_table_and_the_weeks_chart_tags_the_change(
+    tmp_path: Path,
+) -> None:
+    """「이번 주 값 넣기」 로 저장하면 그 화면 호기 표가 기록과 함께 남고(설비 0037 — 합은 넣은
+    화면 합계, 범위 · 기준은 그 화면), 앞 주도 넣기 근거가 있으면 「주차별」 그림에 그 주 까닭
+    꼬리표가 선다(2026-11-20 · 21 보드 답 중간-1). 기록을 지우면 스냅숏도 지워진다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+    total = app.session_state[SCREEN_TOTAL_KEY]
+    assert isinstance(total, ScreenTotal) and total.refusal is None and total.units is not None
+    _open(app)
+    app.button(key=_FILL_BUTTON_KEY).click().run()
+    app.button(key=_RECORD_SAVE_KEY).click().run()
+    assert not app.exception
+    repository = DuckDBEquipmentRepository(database_path)
+    (snapshot,) = repository.load_shortening_progress_snapshots()
+    assert snapshot.week == THIS_WEEK and snapshot.draft.days == total.days
+    assert snapshot.draft.processes == total.scope and snapshot.draft.basis == total.basis
+    assert not snapshot.draft.units.empty
+
+    past = _earlier_secure(snapshot.draft, 9)
+    previous = THIS_WEEK.shifted(-1)
+    assert repository.save_shortening_progress_entry(
+        previous, past.days, expected_days=None, snapshot=past
+    )
+    clear_equipment_repository()
+    app = _run(database_path)
+    app.button(key=_WEEKS_BUTTON_KEY).click().run()
+    assert not app.exception
+    (figure,) = _charts(app)
+    tags = [note["text"] for note in figure["layout"]["annotations"] if "−9일" in note["text"]]
+    assert len(tags) == 1 and "Qual 당김 1대" in tags[0], figure["layout"]["annotations"]
+    assert "합 −9일 = 지난 기록 대비 −9일" in figure["data"][0]["hovertext"][1]
+    assert figure["data"][0]["marker"]["symbol"][1] == "triangle-down"
+
+    _open(app)
+    app.button(key=_RECORD_DELETE_KEY).click().run()
+    assert not app.exception
+    assert [item.week for item in repository.load_shortening_progress_snapshots()] == [previous]
     clear_equipment_repository()
 
 
