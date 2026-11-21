@@ -849,7 +849,7 @@ def test_shuffled_copies_of_one_source_store_the_same_reference_values() -> None
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_sibling_equipment_tables_pick_the_same_source_row_in_any_order(seed: int) -> None:
-    """보유 · 대여 · 가용이 같은 원천 행을 골라 `보유 − 대여 = 가용` 이 차례와 상관없이 선다."""
+    """값 있는 칸 수가 같은 형제면 보유 · 대여 · 가용이 같은 원천 행을 골라 맞물림이 선다."""
     source = _sibling_source().sample(frac=1.0, random_state=seed).reset_index(drop=True)
 
     tables = _prepare(source).reference_tables
@@ -860,6 +860,36 @@ def test_sibling_equipment_tables_pick_the_same_source_row_in_any_order(seed: in
     assert own - lent == pytest.approx(available)
     # 구분 칸(Capa Code)이 가장 앞선 C1 가운데 보유가 작은 행(10 · 2)이다.
     assert (own, lent) == pytest.approx((10.0, 2.0))
+
+
+def test_a_zero_lent_sibling_keeps_each_tables_real_value_in_either_source_order() -> None:
+    """한 형제만 대여 0 이면 표마다 값이 있는 행을 고른다 — 정순 · 역순이 같은 세 값을 저장한다.
+
+    값 있는 칸 수가 표마다 달라 세 표가 같은 행을 고른다고 보장하지 않는다(맞물림은 답 대기 —
+    TODO 2장). 여기서는 차례와 상관없음과 대여 표가 0 대신 실값을 남기는 것만 고정한다.
+    """
+    rows = []
+    for capa_code, own, lent in (("C1", 10.0, 0.0), ("C2", 10.0, 2.0)):
+        row = _core_data_row()
+        row["Capa Code"] = capa_code
+        row["설비보유"] = own
+        row["설비대여평가"] = lent
+        rows.append(row)
+    source = pd.concat(rows, ignore_index=True)
+
+    stored = []
+    for ordered in (source, source.iloc[::-1].reset_index(drop=True)):
+        tables = _prepare(ordered).reference_tables
+        stored.append(
+            (
+                float(tables["RQ_EQP_OWN"]["설비보유"].iloc[0]),
+                float(tables["RQ_EQP_LENT"]["설비대여평가"].iloc[0]),
+                float(tables["RQ_EQP_AVBL"]["가용대수"].iloc[0]),
+            )
+        )
+
+    assert stored[0] == stored[1]
+    assert stored[0][:2] == pytest.approx((10.0, 2.0))
 
 
 def test_conflict_causes_split_out_of_key_class_columns_from_reloads() -> None:

@@ -31,8 +31,8 @@ from capa_simulation.services.reference_conflicts import (
 
 @dataclass(frozen=True)
 class _SourceRows:
-    """원천 작업 프레임 한 벌의 행 순위와 구분 칸 — 16표가 같은 것을 받아 형제 표도 같은
-    행을 고른다."""
+    """원천 작업 프레임 한 벌의 행 순위와 구분 칸 — 16표가 같은 것을 받아, 값이 있는 칸 수가
+    같은 형제는 표가 달라도 같은 행을 고른다."""
 
     rank: pd.Series
     classes: pd.DataFrame
@@ -91,8 +91,8 @@ def build_reference_tables_with_conflicts(
     # 「양산구분이 비었다」로만 멈춘다.
     reject_unmapped_cs_codes(core)
     # 형제 행 고르기의 순위는 원천 행 전체에서 **한 번** 만든다 — 조회 차례와 상관없이 같은
-    # 행이 이기고, 한 원천 행에서 나온 형제 표(보유 · 대여 · 가용 등)도 같은 행을 고른다. 아래
-    # 빌더는 `core` 의 index(원천 행 번호)를 잇는다.
+    # 행이 이기고, 한 원천 행에서 나온 형제 표(보유 · 대여 · 가용 등)도 표마다 값이 있는 칸
+    # 수가 같으면 같은 행을 고른다. 아래 빌더는 `core` 의 index(원천 행 번호)를 잇는다.
     rows = _SourceRows.of(core)
     conflict_records: list[dict[str, object]] = []
     tables = {

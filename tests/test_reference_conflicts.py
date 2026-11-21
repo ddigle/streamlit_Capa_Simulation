@@ -283,7 +283,7 @@ def test_a_zero_in_another_column_does_not_decide_a_real_upeh_conflict() -> None
 def test_other_tables_pick_zero_or_blank_by_the_one_switch_in_either_order(
     monkeypatch: pytest.MonkeyPatch, zero_over_blank: bool
 ) -> None:
-    """편중률 같은 다른 표의 0 · 빈 값 형제는 `ZERO_OVER_BLANK` 하나가 가른다 — 차례와 상관없다.
+    """편중률 같은 다른 표에서 그 칸만 0 · 빈 값으로 갈린 형제는 `ZERO_OVER_BLANK` 가 가른다.
 
     효율 · UPEH 표(`ZERO_BEFORE_BLANK_TABLES`)는 이 값과 상관없이 0 행이다.
     """

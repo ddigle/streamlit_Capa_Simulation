@@ -91,7 +91,10 @@ def source_row_rank(frame: pd.DataFrame) -> pd.Series:
 
     모든 칸이 같은 행끼리만 원래 위치로 갈리고, 그런 행은 어느 표에서든 같은 값을 낸다.
     표마다가 아니라 원천 행 전체의 순위 하나라서 보유 · 대여 · 가용처럼 한 원천 행에서 나온
-    형제 표도 같은 행을 고른다(`reference_transformer.blank_lent_as_zero`).
+    형제 표도, 표마다 「값이 있는 칸 수」(`_informative_first` 의 앞 키)가 같으면 같은 행을
+    고른다. 한 형제만 대여 0 · 가용 0 이면 그 표만 값이 있는 다른 행을 골라
+    `보유 − 대여 = 가용` 이 서지 않을 수 있다 — 조회 차례와는 상관없이 늘 같은 쪽이다.
+    0 · 빈 값 차례(`ZERO_OVER_BLANK`)도 그 칸보다 앞선 칸이 모두 같은 형제에만 걸린다.
     """
     columns = _rank_columns(frame)
     keys: list[npt.NDArray[Any]] = []
