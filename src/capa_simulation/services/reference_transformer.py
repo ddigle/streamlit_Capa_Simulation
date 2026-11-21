@@ -20,9 +20,41 @@ from capa_simulation.services.core_data_derivation import (
 from capa_simulation.services.display_order_editor import transform_display_order
 from capa_simulation.services.frame_contracts import duplicate_route_rows
 from capa_simulation.services.reference_conflicts import (
+    SOURCE_ROW_CLASS_COLUMNS,
     conflict_report,
+    source_row_rank,
     validated_distinct,
 )
+
+
+@dataclass(frozen=True)
+class _SourceRows:
+    """원천 작업 프레임 한 벌의 행 순위와 구분 칸 — 16표가 같은 것을 받아 형제 표도 같은
+    행을 고른다."""
+
+    rank: pd.Series
+    classes: pd.DataFrame
+
+    @classmethod
+    def of(cls, core: pd.DataFrame) -> _SourceRows:
+        classes = core.loc[:, [c for c in SOURCE_ROW_CLASS_COLUMNS if c in core.columns]]
+        return cls(rank=source_row_rank(core), classes=classes)
+
+    def distinct(
+        self,
+        frame: pd.DataFrame,
+        table_name: str,
+        contract: CoreDataContract,
+        conflict_records: list[dict[str, object]],
+    ) -> pd.DataFrame:
+        return validated_distinct(
+            frame,
+            table_name,
+            contract,
+            conflict_records,
+            row_rank=self.rank,
+            source_classes=self.classes,
+        )
 
 
 @dataclass(frozen=True)
@@ -39,7 +71,7 @@ def build_reference_tables(
     display_order: pd.DataFrame,
     contract: CoreDataContract | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Build the 16 RQ tables, keeping the first row for temporary conflicts."""
+    """Build the 16 RQ tables, keeping one ranked sibling row for business-key conflicts."""
     return build_reference_tables_with_conflicts(source, display_order, contract).tables
 
 
@@ -56,15 +88,20 @@ def build_reference_tables_with_conflicts(
     # 값이 있는데 규칙 밖인 CS 코드는 표를 만들기 전에 코드 이름과 함께 막는다 — 표 검사까지 가면
     # 「양산구분이 비었다」로만 멈춘다.
     reject_unmapped_cs_codes(core)
+    # 형제 행 고르기의 순위는 원천 행 전체에서 **한 번** 만든다 — 조회 차례와 상관없이 같은
+    # 행이 이기고, 한 원천 행에서 나온 형제 표(보유 · 대여 · 가용 등)도 같은 행을 고른다. 아래
+    # 빌더는 `core` 의 index(원천 행 번호)를 잇는다.
+    rows = _SourceRows.of(core)
     conflict_records: list[dict[str, object]] = []
     tables = {
-        "RQ_PKG_PLAN": _rq_pkg_plan(core, selected_contract, conflict_records),
-        "RQ_YLD": _rq_yld(core, selected_contract, conflict_records),
-        "RQ_CHIP_QTY": _rq_chip_qty(core, selected_contract, conflict_records),
-        "RQ_CHIP_EQ": _rq_chip_eq(core, selected_contract, conflict_records),
+        "RQ_PKG_PLAN": _rq_pkg_plan(core, rows, selected_contract, conflict_records),
+        "RQ_YLD": _rq_yld(core, rows, selected_contract, conflict_records),
+        "RQ_CHIP_QTY": _rq_chip_qty(core, rows, selected_contract, conflict_records),
+        "RQ_CHIP_EQ": _rq_chip_eq(core, rows, selected_contract, conflict_records),
         "RQ_DISPLAY_ORDER": transform_display_order(display_order),
         "RQ_EQP_OWN": _monthly_process_table(
             core,
+            rows,
             "RQ_EQP_OWN",
             "설비보유",
             selected_contract,
@@ -72,6 +109,7 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_EQP_LENT": _monthly_process_table(
             core,
+            rows,
             "RQ_EQP_LENT",
             "설비대여평가",
             selected_contract,
@@ -79,14 +117,16 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_EQP_AVBL": _monthly_process_table(
             core,
+            rows,
             "RQ_EQP_AVBL",
             "가용대수",
             selected_contract,
             conflict_records,
         ),
-        "RQ_UPEH": _rq_upeh(core, selected_contract, conflict_records),
+        "RQ_UPEH": _rq_upeh(core, rows, selected_contract, conflict_records),
         "RQ_RUN_RATE": _monthly_process_class_table(
             core,
+            rows,
             "RQ_RUN_RATE",
             "CAPA_RUN_RATE",
             selected_contract,
@@ -94,14 +134,16 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_VITAL": _monthly_process_class_table(
             core,
+            rows,
             "RQ_VITAL",
             "편중률",
             selected_contract,
             conflict_records,
         ),
-        "RQ_MODULE": _rq_module(core, selected_contract, conflict_records),
+        "RQ_MODULE": _rq_module(core, rows, selected_contract, conflict_records),
         "RQ_RUN_DAY": _monthly_process_table(
             core,
+            rows,
             "RQ_RUN_DAY",
             "RUN_DAY",
             selected_contract,
@@ -109,6 +151,7 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_LOT_RATIO": _measurement_ratio_table(
             core,
+            rows,
             "RQ_LOT_RATIO",
             "Lot 측정률",
             selected_contract,
@@ -116,12 +159,13 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_WF_RATIO": _measurement_ratio_table(
             core,
+            rows,
             "RQ_WF_RATIO",
             "WF측정률",
             selected_contract,
             conflict_records,
         ),
-        "RQ_REQB": _rq_reqb(core, selected_contract, conflict_records),
+        "RQ_REQB": _rq_reqb(core, rows, selected_contract, conflict_records),
     }
     tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"] = blank_lent_as_zero(
         tables["RQ_EQP_OWN"], tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"]
@@ -139,6 +183,7 @@ def build_reference_tables_with_conflicts(
 
 def _rq_pkg_plan(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
@@ -157,16 +202,17 @@ def _rq_pkg_plan(
         "Pack Code",
     ]
     result = core.loc[core["계획기초정보여부"].eq("Y"), columns].copy()
-    return validated_distinct(result, "RQ_PKG_PLAN", contract, conflict_records)
+    return rows.distinct(result, "RQ_PKG_PLAN", contract, conflict_records)
 
 
 def _rq_yld(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
     columns = ["생산계획년월", "제품정보", "Stack", "WF 구분", "EDS_수율", "BE_수율"]
-    return validated_distinct(
+    return rows.distinct(
         core.loc[:, columns].copy(),
         "RQ_YLD",
         contract,
@@ -176,11 +222,12 @@ def _rq_yld(
 
 def _rq_chip_qty(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
     columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "Net Die"]
-    return validated_distinct(
+    return rows.distinct(
         core.loc[:, columns].copy(),
         "RQ_CHIP_QTY",
         contract,
@@ -190,16 +237,18 @@ def _rq_chip_qty(
 
 def _rq_chip_eq(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
     columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "구분_EQ"]
     result = core.loc[core["구분_EQ"].notna(), columns].copy()
-    return validated_distinct(result, "RQ_CHIP_EQ", contract, conflict_records)
+    return rows.distinct(result, "RQ_CHIP_EQ", contract, conflict_records)
 
 
 def _monthly_process_table(
     core: pd.DataFrame,
+    rows: _SourceRows,
     table_name: str,
     value_column: str,
     contract: CoreDataContract,
@@ -207,7 +256,7 @@ def _monthly_process_table(
 ) -> pd.DataFrame:
     columns = ["생산계획년월", "공정", value_column]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
-    return validated_distinct(result, table_name, contract, conflict_records)
+    return rows.distinct(result, table_name, contract, conflict_records)
 
 
 def blank_lent_as_zero(
@@ -245,6 +294,7 @@ def blank_lent_as_zero(
 
 def _monthly_process_class_table(
     core: pd.DataFrame,
+    rows: _SourceRows,
     table_name: str,
     value_column: str,
     contract: CoreDataContract,
@@ -252,11 +302,12 @@ def _monthly_process_class_table(
 ) -> pd.DataFrame:
     columns = ["생산계획년월", "공정", "양산구분", value_column]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
-    return validated_distinct(result, table_name, contract, conflict_records)
+    return rows.distinct(result, table_name, contract, conflict_records)
 
 
 def _rq_upeh(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
@@ -275,20 +326,22 @@ def _rq_upeh(
         "ST",
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
-    return validated_distinct(result, "RQ_UPEH", contract, conflict_records)
+    return rows.distinct(result, "RQ_UPEH", contract, conflict_records)
 
 
 def _rq_module(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
     result = _nonblank_rows(core.loc[:, ["공정", "모듈수"]].copy(), "공정")
-    return validated_distinct(result, "RQ_MODULE", contract, conflict_records)
+    return rows.distinct(result, "RQ_MODULE", contract, conflict_records)
 
 
 def _measurement_ratio_table(
     core: pd.DataFrame,
+    rows: _SourceRows,
     table_name: str,
     value_column: str,
     contract: CoreDataContract,
@@ -307,13 +360,14 @@ def _measurement_ratio_table(
         value_column,
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
-    result = validated_distinct(result, table_name, contract, conflict_records)
+    result = rows.distinct(result, table_name, contract, conflict_records)
     result[value_column] = result[value_column].fillna(1.0)
     return result
 
 
 def _rq_reqb(
     core: pd.DataFrame,
+    rows: _SourceRows,
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
@@ -345,7 +399,7 @@ def _rq_reqb(
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "Area_Name")
     # 13컬럼 전부가 업무 키라 `validated_distinct` 가 같은 null·빈값 검사를 같은 메시지로 한다.
-    result = validated_distinct(result, "RQ_REQB", contract, conflict_records)
+    result = rows.distinct(result, "RQ_REQB", contract, conflict_records)
     return result.loc[~duplicate_route_rows(result, columns)].reset_index(drop=True)
 
 

@@ -21,6 +21,7 @@ from capa_simulation.services.core_data_derivation import (
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.core_data_pipeline import (
+    PreparedCoreDataset,
     fetch_core_data_dataset,
     prepare_core_data_dataset,
     reference_conflicts_to_csv,
@@ -566,12 +567,8 @@ def test_a_blank_cs_drop_that_leaves_nothing_to_save_is_refused(
     assert "업무 키에 null" not in message
 
 
-def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> None:
-    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
-    source.loc[1, "생산수량"] = 200.0
-    source.loc[1, "EDS_수율"] = 0.8
-
-    prepared = prepare_core_data_dataset(
+def _prepare(source: pd.DataFrame) -> PreparedCoreDataset:
+    return prepare_core_data_dataset(
         CoreDataBatch(
             simulation_code="SIM-001",
             simulation_name="사내 조회 결과",
@@ -580,15 +577,39 @@ def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> 
         ),
         _display_order(),
     )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_conflicting_business_keys_keep_the_ranked_row_in_either_order_and_report_all_tables(
+    reverse: bool,
+) -> None:
+    """같은 키의 두 원천 행은 원천 행 순위 하나로 고른다 — 정순 · 역순 어느 차례로 와도 같은 행이다.
+
+    두 행은 `생산수량`(100 · 200)에서 먼저 갈린다(구분 칸이 같고, 그다음 칸 차례에서 앞선다). 그래서
+    `RQ_YLD` 도 그 행(수율 1.0)을 고른다 — 표마다 작은 값을 고르는 것이 아니라 행 하나를 고른다.
+    """
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+    source.loc[1, "생산수량"] = 200.0
+    source.loc[1, "EDS_수율"] = 0.8
+    if reverse:
+        source = source.iloc[::-1].reset_index(drop=True)
+    winner_row = 2 if reverse else 1
+
+    prepared = _prepare(source)
     conflicts = prepared.reference_conflicts
     summary = summarize_reference_conflicts(conflicts)
 
     assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
     assert prepared.reference_tables["RQ_YLD"].loc[0, "EDS_수율"] == pytest.approx(1.0)
     assert conflicts["RQ테이블"].tolist() == ["RQ_PKG_PLAN", "RQ_YLD"]
-    assert conflicts["선택원천행번호"].tolist() == [1, 1]
-    assert conflicts["후보원천행번호"].tolist() == ["1 | 2", "1 | 2"]
+    assert conflicts["선택원천행번호"].tolist() == [winner_row, winner_row]
+    assert conflicts["후보원천행번호"].tolist() == [
+        f"{winner_row} | {3 - winner_row}",
+        f"{winner_row} | {3 - winner_row}",
+    ]
     assert conflicts["임시제외행수"].tolist() == [1, 1]
+    # 같은 부품(구분 칸이 모두 같음)이 두 번 실린 재적재라 원인은 「그 밖」이다.
+    assert conflicts["키밖구분"].tolist() == ["그 밖", "그 밖"]
     assert summary[["RQ테이블", "충돌 업무키 그룹수"]].to_dict("records") == [
         {"RQ테이블": "RQ_PKG_PLAN", "충돌 업무키 그룹수": 1},
         {"RQ테이블": "RQ_YLD", "충돌 업무키 그룹수": 1},
@@ -764,3 +785,72 @@ def test_a_zero_and_a_blank_run_rate_sibling_build_the_same_table_in_either_sour
     )
     assert result.empty
     assert set(result.attrs[CAPACITY_EXCLUSIONS_ATTR]["제외사유"]) == {"CAPA_RUN_RATE 0 이하"}
+
+
+def _sibling_source() -> pd.DataFrame:
+    """같은 달 · 공정 · 제품에 형제 원천 행 다섯 — 다른 부품(Capa Code) 둘과 같은 부품의 재적재 셋.
+
+    보유 · 대여는 모두 0 이 아닌 실값이라 「값이 있는 칸 수」 로는 가르지 못하고 원천 행 순위가
+    가른다. 표기만 다른 경로(`WF` · `Wafer`)는 두지 않는다 — 그것은 경로 표의 표기 접기 몫이다.
+    """
+    rows = []
+    for capa_code, own, lent, eds in (
+        ("C2", 12.0, 3.0, 0.97),
+        ("C1", 10.0, 2.0, 0.95),
+        ("C1", 11.0, 4.0, 0.95),
+        ("C3", 9.0, 1.0, 0.99),
+        ("C1", 10.0, 2.0, 0.95),
+    ):
+        row = _core_data_row()
+        row["Capa Code"] = capa_code
+        row["설비보유"] = own
+        row["설비대여평가"] = lent
+        row["EDS_수율"] = eds
+        rows.append(row)
+    return pd.concat(rows, ignore_index=True)
+
+
+def _sorted_tables(prepared: PreparedCoreDataset) -> dict[str, pd.DataFrame]:
+    """그룹 자리(첫 등장 차례)는 원천 차례를 따르므로 업무 키 차례로 세워 견준다."""
+    contract = load_core_data_contract()
+    sorted_tables: dict[str, pd.DataFrame] = {}
+    for name, table in prepared.reference_tables.items():
+        keys = [k for k in contract.derived_keys.get(name, ()) if k in table.columns]
+        ordered = table.sort_values(keys or list(table.columns), kind="stable")
+        sorted_tables[name] = ordered.reset_index(drop=True)
+    return sorted_tables
+
+
+def test_shuffled_copies_of_one_source_store_the_same_reference_values() -> None:
+    """같은 원천을 차례만 무작위로 섞은 열 벌이 모두 같은 RQ 값을 낸다(요청 D)."""
+    source = _sibling_source()
+    expected = _sorted_tables(_prepare(source))
+
+    for seed in range(10):
+        shuffled = source.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+        actual = _sorted_tables(_prepare(shuffled))
+        for name, table in expected.items():
+            pd.testing.assert_frame_equal(actual[name], table, check_dtype=False, obj=name)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_sibling_equipment_tables_pick_the_same_source_row_in_any_order(seed: int) -> None:
+    """보유 · 대여 · 가용이 같은 원천 행을 골라 `보유 − 대여 = 가용` 이 차례와 상관없이 선다."""
+    source = _sibling_source().sample(frac=1.0, random_state=seed).reset_index(drop=True)
+
+    tables = _prepare(source).reference_tables
+
+    own = float(tables["RQ_EQP_OWN"]["설비보유"].iloc[0])
+    lent = float(tables["RQ_EQP_LENT"]["설비대여평가"].iloc[0])
+    available = float(tables["RQ_EQP_AVBL"]["가용대수"].iloc[0])
+    assert own - lent == pytest.approx(available)
+    # 구분 칸(Capa Code)이 가장 앞선 C1 가운데 보유가 작은 행(10 · 2)이다.
+    assert (own, lent) == pytest.approx((10.0, 2.0))
+
+
+def test_conflict_causes_split_out_of_key_class_columns_from_reloads() -> None:
+    """수율은 Capa Code 마다 하나로 맞아 「Capa Code」, 보유는 같은 C1 안에서도 갈려 「그 밖」."""
+    conflicts = _prepare(_sibling_source()).reference_conflicts.set_index("RQ테이블")
+
+    assert conflicts.loc["RQ_YLD", "키밖구분"] == "Capa Code"
+    assert conflicts.loc["RQ_EQP_OWN", "키밖구분"] == "그 밖"
