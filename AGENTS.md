@@ -2480,7 +2480,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`/proc/<pid>/status` 의 `VmHWM` — 좀비 · 없는 프로세스 · `/proc` 없는 Windows 는 모름. `getrusage(RUSAGE_CHILDREN)` 은 쓰지 않는다 — Linux 의 하위
   `ru_maxrss` 는 exec 앞에 물려받은 부모 주소 공간의 최고를 세어 앱 RSS 아래로 내려가지 않는다). 못 읽은 값은 `None`
   (화면 「모름」)이고 판정하지 않는다 — 앞뒤 OOM 종료 수가 다르면 그 사이 cgroup 이 죽인 것이라는 읽기는 사람 몫이다. 표준 라이브러리만이고 예외를
-  내지 않는다. 띄우기 바로 앞에는 프로세스 단서도 한 번 읽는다(`process_clues` → `container_start_report.ProcessClues` — 2026-11-21 사내 확인: 새 pod 는 시작 로그인이 되고
+  내지 않는다. 띄우기 바로 앞에는 프로세스 단서도 한 번 읽는다(`process_clues` → `container_start_report.ProcessClues` — 2026-11-21 사내 확인: 멈춤이 저장된 채 CI/CD 뒤 새 pod 는 「넣기」 가 되고
   약 16시간 떠 있던 pod 는 import 단계에서 바깥 SIGKILL, 2026-11-21 사용자 결정 「이번 배포에 더하기」) — 부른 프로세스(앱이면 Streamlit 서버, 시작 스크립트면 그
   프로세스)가 뜬 시간(`/proc/self/stat` 22째 칸 시작 틱 — `comm` 이 괄호 · 공백을 품어도 마지막 `)` 뒤부터 가른다 — ÷ `os.sysconf("SC_CLK_TCK")` 를 `/proc/uptime` 에서
   뺌, Windows 는 틱을 묻지 않고 모름 `clock_ticks`), 스레드(`/proc/self/status` 의 `Threads`), 열린 파일(`/proc/self/fd` 항목 수 — 세는 동안 연 것 하나를 품는다),
