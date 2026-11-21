@@ -1173,6 +1173,7 @@ def test_an_old_report_has_no_sync_and_no_new_lines(box: SimpleNamespace) -> Non
         {"steps": {"aws_cli": {"status": "모름", "reason": "x"}}},
         {"steps": {"aws_cli": "아님"}, "pull_seconds": "느림", "pull_attempts": True},
         {"disk_free_bytes": "많음", "logical_cores": 1.5, "cpu_limit": "많음"},
+        {"steps": {}, "pull_seconds": 10**400, "cpu_limit": 10**400},  # 실수로 넘침
     ],
 )
 def test_a_broken_sync_part_does_not_lose_the_rest(
@@ -1186,6 +1187,7 @@ def test_a_broken_sync_part_does_not_lose_the_rest(
     assert parsed is not None and parsed.sync is not None
     assert parsed.sync.steps == {}
     assert parsed.sync.pull_seconds is None
+    assert parsed.sync.cpu_limit is None
     assert parsed.sync.disk_free_bytes is None
 
 

@@ -65,6 +65,9 @@ _THREADS_LINE: Final = re.compile(r"^Threads:\s+(\d+)\s*$", re.MULTILINE)
 # `stat` 의 마지막 `)` 뒤 칸 차례 — 3째(상태)가 0, 22째(시작 틱)가 19.
 _STAT_STATE: Final = 0
 _STAT_START_TICKS: Final = 19
+# 시작 틱 칸의 자릿수 상한 — 64비트 틱은 20자리다. 그보다 긴 수는 꼴이 어긋난 값이다(아주 긴 수는
+# 정수 · 실수 바꾸기에서 예외를 낸다).
+_START_TICKS_DIGITS: Final = 20
 _ZOMBIE: Final = "Z"
 _HOUR_SECONDS: Final = 3600.0
 _NO_PIDS: Final[tuple[int | None, int | None, bool]] = (None, None, False)
@@ -154,15 +157,15 @@ def process_clues(
 
 def age_seconds(stat_path: Path, uptime_path: Path) -> float | None:
     """그 `stat` 의 프로세스가 뜬 지 몇 초 — 시작 틱(22째 칸) ÷ 초당 틱(`clock_ticks`)을 부팅 뒤
-    초(`uptime` 의 첫 값)에서 뺀다. 못 읽으면 · 틱을 모르면 · 1초 넘게 거꾸로면 `None`, 반올림으로
-    살짝 거꾸로면 0."""
+    초(`uptime` 의 첫 값)에서 뺀다. 못 읽으면 · 틱을 모르면 · 시작 틱이 수가 아니거나 20자리를
+    넘으면 · 1초 넘게 거꾸로면 `None`, 반올림으로 살짝 거꾸로면 0. 예외를 내지 않는다."""
     fields = _stat_fields(stat_path)
     ticks = clock_ticks()
     uptime = _uptime_seconds(uptime_path)
     if fields is None or ticks is None or uptime is None or len(fields) <= _STAT_START_TICKS:
         return None
     start = fields[_STAT_START_TICKS]
-    if not start.isdecimal():
+    if not start.isdecimal() or len(start) > _START_TICKS_DIGITS:
         return None
     age = uptime - int(start) / ticks
     if age < -1.0:

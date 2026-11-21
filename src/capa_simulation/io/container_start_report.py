@@ -899,7 +899,10 @@ def _int_or_none(value: object) -> int | None:
 def _float_or_none(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:  # 실수로 바꿀 수 없을 만큼 큰 정수 — 꼴이 어긋난 값
+        return None
 
 
 def utc_timestamp() -> str:

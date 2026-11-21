@@ -389,6 +389,10 @@ def test_the_child_diag_is_read_leniently() -> None:
     assert found == report_contract.ChildDiag(getpass_asterisk="?")
     big = report_contract.parse_child({"exit": 3221225477, "sec": 5.678})
     assert big == report_contract.ChildDiag(exit_code=3221225477, seconds=5.7)
+    # 실수로 바꿀 수 없을 만큼 큰 정수도 그 값만 비운다(예외로 「서버 시작 점검」 을 깨지 않는다).
+    huge = report_contract.parse_child({"exit": 0, "sec": 10**400, "app_h": 10**400, "fds": 6})
+    assert huge is not None and huge.exit_code == 0 and huge.seconds is None
+    assert huge.process == report_contract.ProcessClues(open_files=6)
 
 
 @pytest.mark.parametrize(

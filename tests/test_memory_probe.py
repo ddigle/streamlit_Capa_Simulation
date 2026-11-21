@@ -15,6 +15,7 @@ import json
 import math
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -374,16 +375,18 @@ def test_process_clues_come_from_a_fake_proc_and_a_v2_cgroup(tmp_path: Path, tic
     """뜬 시간은 `uptime` − 시작 틱 ÷ 초당 틱(`comm` 이 괄호 · 공백을 품어도), 스레드는 `Threads`,
     열린 파일은 `self/fd` 항목 수, pids 는 v2 뿌리의 `pids.current` · `pids.max`, 좀비는 숫자 폴더
     가운데 상태 `Z` 의 수다."""
+    # 뜬 지 58464초 = 16.24시간 — 소수 첫째 자리로 접어 16.2(둘째 자리면 16.24 로 갈린다).
     proc = _fake_proc(
         tmp_path / "proc",
-        self_start_ticks=(61200 - 16 * 3600 - 720) * ticks,
+        self_start_ticks=(61200 - 16 * 3600 - 864) * ticks + ticks // 4,
         fds=87,
         others={1: "S", 7: "Z", 8: "Z", 9: "R"},
     )
-    cgroup = _pids_v2(tmp_path / "cg", current=5, limit="512")
+    assert memory_probe.age_seconds(proc / "self" / "stat", proc / "uptime") == 58464.0
+    cgroup = _pids_v2(tmp_path / "cg", current=48, limit="512")
     found = memory_probe.process_clues(proc, _thread_status(tmp_path), cgroup)
-    assert found == ProcessClues(16.2, 41, 87, 5, 512, False, 2)
-    assert found.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 5/512 · 좀비 2"
+    assert found == ProcessClues(16.2, 41, 87, 48, 512, False, 2)
+    assert found.text == "앱 뜬 지 16.2시간 · 스레드 41 · 열린 파일 87 · pids 48/512 · 좀비 2"
 
 
 def test_a_v1_pids_folder_and_an_unlimited_max(tmp_path: Path, ticks: int) -> None:
@@ -422,11 +425,15 @@ def test_a_vanished_process_is_skipped_while_counting_zombies(tmp_path: Path, ti
         "4242 python S 1 2 3\n",  # 괄호 없음
         "4242 (python) S 1 2\n",  # 22째 칸까지 못 감
         _stat_line(4242, "S", 0).replace(" 0 123456", " x 123456"),  # 시작 틱이 수가 아님
+        _stat_line(4242, "S", 10**400),  # 실수로 넘침
+        _stat_line(4242, "S", 0).replace(" 0 123456", f" {'9' * 5000} 123456"),  # 정수 자릿수 상한
+        _stat_line(4242, "S", 10**20),  # 64비트 틱(20자리)보다 긺
     ],
 )
 def test_an_odd_stat_leaves_the_app_age_unknown(tmp_path: Path, ticks: int, stat_text: str) -> None:
     proc = _fake_proc(tmp_path / "proc")
     (proc / "self" / "stat").write_text(stat_text, encoding="ascii")
+    assert memory_probe.age_seconds(proc / "self" / "stat", proc / "uptime") is None
     assert memory_probe.process_clues(proc).app_hours is None
 
 
@@ -471,19 +478,44 @@ def test_the_module_roots_are_read_when_called_for_process_clues(
     )
 
 
+@pytest.mark.parametrize(
+    ("helper", "lost"),
+    [
+        ("age_seconds", ("app_hours",)),
+        ("_line_number", ("threads",)),
+        ("_entry_count", ("open_files",)),
+        ("_pids", ("pids", "pids_limit")),
+        ("_zombies", ("zombies",)),
+    ],
+)
 def test_a_failing_read_falls_back_to_unknown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ticks: int
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ticks: int,
+    helper: str,
+    lost: tuple[str, ...],
 ) -> None:
-    """뜻밖의 예외도 그 값만 모름으로 — 로그인을 막는 진단은 없다."""
+    """뜻밖의 예외도 그 값만 모름으로 — 로그인을 막는 진단은 없다. 값마다 따로 물러선다."""
+    proc = _fake_proc(tmp_path / "proc", others={1: "S", 7: "Z"})
+    cgroup = _pids_v2(tmp_path / "cg", current=48, limit="512")
+    whole = memory_probe.process_clues(proc, _thread_status(tmp_path), cgroup)
+    assert None not in (
+        whole.app_hours,
+        whole.threads,
+        whole.open_files,
+        whole.pids,
+        whole.pids_limit,
+        whole.zombies,
+    )
 
     def boom(*_args: object) -> None:
         raise RuntimeError("x")
 
-    monkeypatch.setattr(memory_probe, "_zombies", boom)
-    monkeypatch.setattr(memory_probe, "_pids", boom)
-    found = memory_probe.process_clues(_fake_proc(tmp_path / "proc"), _thread_status(tmp_path))
-    assert (found.zombies, found.pids, found.pids_unlimited) == (None, None, False)
-    assert found.threads == 41
+    monkeypatch.setattr(memory_probe, helper, boom)
+    found = memory_probe.process_clues(proc, _thread_status(tmp_path), cgroup)
+    assert all(getattr(found, name) is None for name in lost)
+    assert found.pids_unlimited is False
+    assert replace(found, **{name: getattr(whole, name) for name in lost}) == whole
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc 의 stat 은 Linux 의 것")
@@ -551,6 +583,7 @@ def test_a_record_without_process_fields_reads_as_before() -> None:
         ("app_h", 87_600.0),
         ("app_h", True),
         ("app_h", "16.2"),
+        ("app_h", 10**400),
         ("threads", -1),
         ("threads", 2**31),
         ("threads", True),
