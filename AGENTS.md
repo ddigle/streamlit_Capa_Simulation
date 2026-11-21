@@ -832,7 +832,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       수만 잇는다(누적-4 「한 줄 기록」 을 넓힘 — 규칙집 7-1). 「주차별」 을 편 회차에만 스냅숏을 읽어
       (`equipment_cache.load_shortening_progress_snapshots`) 바로 앞 기록 주와 진척 비교 짝짓기로 견줘 까닭을 센다 — 저장하지
       않는다(`services/shortening_progress_reasons.explain_week_changes`). 두 주 모두 스냅숏이 있고 항목 합 = 지난 기록 대비가 맞는
-      주만 근거가 있고, 그런 주가 5일 넘게 오르내렸으면 점 곁 꼬리표(`components/shortening_cumulative_tags.py`) · 큰 ▲ · ▼ ·
+      주만 근거가 있고, 그런 주가 5일 이상 오르내렸으면 점 곁 꼬리표(`components/shortening_cumulative_tags.py`) · 큰 ▲ · ▼ ·
       오른 주만 들어오는 구간 굵은 주황 선이다. 근거 없는 주는 늘어난 주 ▲ 와 「+n일」 · 줄어든 주 ● 다. 점 · 꼬리표를 가리키면 그 주 까닭
       전부(여섯 넘으면 앞 다섯 + 「그 밖 k건」) · 합 「합 −n일 = 지난 기록 대비 −n일」 · 덧말(n주 사이 · 추가 호기 대수 · 호기 이름이
       바뀌었을 수 있는 공정 · 입력 리비전)이 풍선이다(Plotly `hovertext` — 풍선 1초 지연은 앱 전체 풍선 규칙이 맡는다). 세로축은
@@ -5845,7 +5845,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   옮겨 담지 않고 넣기를 누를 때만 `snapshot_draft` 가 범위 행을 새 표로 뜬다).
 - `src/capa_simulation/components/shortening_cumulative_tags.py` — 누적 진척 「주차별」 까닭 꼬리표의 자리(2026-11-20 · 21 보드 답
   중간-1 「점 곁 곧은 꼬리표」 — 시안 원고 `opt_point.py` 의 자리 규칙). 꼬리표는 그 주 점 바로 위(오름) · 아래(내림)에 곧은 짧은
-  지시선으로 붙고(주 간격 그대로) 첫 줄 「▲ +n일」 · 「▼ −n일」 + 항목 둘까지다. 5일(`THRESHOLD_DAYS`) 넘게 오르내린 주만,
+  지시선으로 붙고(주 간격 그대로) 첫 줄 「▲ +n일」 · 「▼ −n일」 + 항목 둘까지다. 5일(`THRESHOLD_DAYS`) 이상 오르내린 주만,
   오름 먼저 → 큰 변동 → 최근 주 차례로 다섯(`MAX_TAGS`)까지 놓고, 막히면 항목 하나 → 대수 뗀 항목 하나 → 한 단 바깥(곧은 지시선)
   → 같은 쪽 이웃 하나를 고쳐 놓기 → 숨김(표지 · 풍선만) 차례다. 피할 것은 꺾은선 · 남은 길 점선 · 점 표지 · 끝 값 글 · 목표선 띠
   (±`GOAL_CLEAR_PX`) · 목표 글 · 근거 없는 주의 「+n일」 글이다. **판정은 가장 좁은 그림 칸**(`NARROW_PLOT_WIDTH_PX` — 창 600 ·

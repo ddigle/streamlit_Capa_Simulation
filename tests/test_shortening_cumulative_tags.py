@@ -93,7 +93,7 @@ def _label(process: str) -> str:
 
 def test_the_example_places_every_rise_and_no_tag_overlaps_at_any_width() -> None:
     """가장 좁은 그림 칸에서 정한 꼬리표는 겹침이 0 이고, 그 결정(줄 · 맞춤 · 단)을 넓은 칸에 옮겨도
-    겹침 0 이다. 5일 넘게 오른 주(+15 · +6)는 모두 선다. 5일 미만(+2 · −4)은 꼬리표가 없다."""
+    겹침 0 이다. 5일 이상 오른 주(+15 · +6)는 모두 선다. 5일 미만(+2 · −4)은 꼬리표가 없다."""
     layout = _weekly_layout(_log(), _changes(), _label)
     placed = layout.placed
     rises = {5, 8}
@@ -157,6 +157,26 @@ def test_threshold_and_the_tag_limit() -> None:
     placed = place_tags(frame, scene, wishes)
     assert len(placed) == MAX_TAGS and 0 not in placed
     assert all(tag.up for tag in placed.values()), "오름 먼저"
+
+
+def test_a_change_of_exactly_the_threshold_gets_a_tag() -> None:
+    """문턱은 5일 이상이다(`THRESHOLD_DAYS` — 시안 원고 「이 일수 미만은 표지만」) — 지난 기록 대비
+    +5일 · −5일 주에는 꼬리표가 서고 −4일 주에는 서지 않는다."""
+    records = [200, 200 + THRESHOLD_DAYS, 200, 200 - (THRESHOLD_DAYS - 1)]
+    changes: dict[ProgressWeek, WeekChange] = {}
+    for position in range(1, len(records)):
+        change = records[position] - records[position - 1]
+        tag = TAG_QUAL_LATER if change > 0 else TAG_QUAL_EARLIER
+        changes[WEEKS[position]] = WeekChange(
+            WEEKS[position],
+            WEEKS[position - 1],
+            change,
+            (ReasonItem(tag, change, units=1, process="PRC-01"),),
+            balanced=True,
+        )
+    layout = _weekly_layout(_log(records, goal=None), changes, str)
+    assert set(layout.placed) == {1, 2}
+    assert layout.placed[1].lines[0] == "▲ +5일" and layout.placed[2].lines[0] == "▼ −5일"
 
 
 @pytest.mark.parametrize("seed", range(4))
@@ -235,6 +255,28 @@ def test_the_figure_draws_tags_marks_rising_segments_and_full_reasons_on_hover()
     end_note = next(note for text, note in notes.items() if "(26-W48)" in text)
     assert (end_note["xanchor"], end_note["yanchor"]) == ("left", "bottom")
     assert figure["layout"]["yaxis"]["range"][0] > 0
+
+
+def test_an_other_bucket_that_nets_to_zero_has_no_up_or_down_mark() -> None:
+    """풍선 「그 밖」 묶음의 합이 0일이면 ▲ · ▼ 를 붙이지 않는다(UI-ACC-03 · UI-DAT-05 — ▼ 는
+    줄어듦 표지다). 항목 일곱 가운데 여섯째 · 일곱째가 +3일 · −3일인 주다."""
+    rows = [
+        ("PRC-01", TAG_QUAL_LATER, 10),
+        ("PRC-02", TAG_QUAL_LATER, 8),
+        ("PRC-03", TAG_NEW, 6),
+        ("PRC-04", TAG_NEED_EARLIER, 4),
+        ("PRC-05", TAG_QUAL_LATER, 2),
+        ("PRC-06", TAG_QUAL_LATER, 3),
+        ("PRC-07", TAG_QUAL_EARLIER, -3),
+    ]
+    items = tuple(ReasonItem(tag, days, units=1, process=process) for process, tag, days in rows)
+    change = sum(days for _, _, days in rows)
+    week = WEEKS[1]
+    reason = WeekChange(week, WEEKS[0], change, items, balanced=True)
+    figure = weekly_figure(_log([200, 200 + change], goal=None), {week: reason}).to_plotly_json()
+    lines = figure["data"][0]["hovertext"][1].split("<br>")
+    assert "그 밖 2건 0일" in lines, lines
+    assert lines[1].startswith("▲ PRC-01 Qual 밀림 1대 +10일"), lines
 
 
 def test_weeks_without_reasons_keep_the_old_marks_and_say_why_on_hover() -> None:

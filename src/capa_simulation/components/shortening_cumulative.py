@@ -824,6 +824,16 @@ def _tag_levels(change: WeekChange, label: Callable[[str], str]) -> tuple[tuple[
     return tuple(levels)
 
 
+def _glyph(days: int) -> str:
+    """풍선 항목 앞 표지 — 늘어남 ▲ · 줄어듦 ▼ 이고, 0일(오르내림이 상쇄된 「그 밖」)은 표지가 없다
+    (`_change_markup` 의 같으면 표지 없음과 같다)."""
+    if days > 0:
+        return "▲ "
+    if days < 0:
+        return "▼ "
+    return ""
+
+
 def _item_detail(item: ReasonItem, label: Callable[[str], str]) -> str:
     if item.parts:
         return " · ".join(f"{label(process)} {_signed_days(days)}" for process, days in item.parts)
@@ -861,10 +871,9 @@ def _reason_lines(delta: int, reason: WeekChange | None, label: Callable[[str], 
         lines.append("까닭 근거가 지난 기록 대비와 맞지 않아 싣지 않습니다")
         return lines
     for item in reason.listed():
-        glyph = "▲" if item.days > 0 else "▼"
         detail = _item_detail(item, label)
         lines.append(
-            f"{glyph} {_item_text(item, label)} {_signed_days(item.days)}"
+            f"{_glyph(item.days)}{_item_text(item, label)} {_signed_days(item.days)}"
             + (f" ({detail})" if detail else "")
         )
     lines.append(f"합 {_signed_days(reason.total)} = 지난 기록 대비 {_signed_days(delta)}")
