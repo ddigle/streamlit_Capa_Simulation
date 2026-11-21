@@ -13,9 +13,12 @@
 Plotly 는 점 · 칸마다 풍선 묶음을 새로 세우므로 CSS 만으로는 시트 · 히트맵 칸마다 1초씩 기다린다.
 그래서 문서 `pointerover` 하나가 지금 그림을 기억하고, 그림에 들어온 뒤 1초가 지나면 문서 뿌리에
 웜업 표지(`CHART_WARM_ATTRIBUTE`)를 단다. 표지가 있는 동안 그림 값 풍선 규칙이 빠진다. 다른 그림 ·
-그림 밖으로 옮기거나 창을 떠나면 표지를 뗀다. 칸을 눌러 앱이 다시 돌며 같은 그림을 새로 세우면(칸
-key `st-key-…` 가 같음 — 세우는 동안 멈춘 마우스 밑에 닿는 빈 칸도 떠난 것이 아니다) 웜업을 잇고,
-굴림 · 화면 옮김으로 밑에 온 다른 그림은 처음처럼 기다린다. Altair
+그림 밖으로 옮기거나 창을 떠나면 표지를 뗀다. 멈춘 마우스 밑에 그림 밖이 새로 서는 것은 떠난 것이
+아니다 — 누를 때 Plotly 가 화면 전체에 세우는 덮개(`dragcover`)와 칸을 눌러 앱이 다시 돌며 같은
+그림을 새로 세우는 틈의 빈 칸이 그렇다. 그래서 그림 안에서 옮긴 자리(`pointermove`)와 누른
+자리(`pointerdown`)도 적어 「그 자리 그대로」 를 가른다(그림 안에서 옮기면 `pointerover` 가 없다).
+새로 선 그림이 칸 key `st-key-…` 가 같으면 웜업을 잇고, 굴림 · 화면 옮김으로 밑에 온 다른 그림은
+처음처럼 기다린다. Altair
 풍선(`#vg-tooltip-element`)은 그림 밖 `body` 끝에 붙으므로 그림 칸에 단 표지로는 고를 수 없어 문서
 뿌리에 단다. 터치로 띄운 풍선은 누른 것이라 곧바로 데운다. 스크립트가 없어도(테마 iframe 이 아직
 서지 않은 회차) CSS 가 그림 값 풍선을 1초 늦춘다 — 그때는 점마다 기다릴 뿐이다.
@@ -150,14 +153,26 @@ _SCRIPT = """
 // 정한다. 같은 그림이면 그대로, 그림 밖이면 식히고, 새 그림이면 지연 뒤 데운다 — 터치는 누른 것이라
 // 곧바로 데운다. 데워져 있을 때(`warmNow`) 칸 key 가 같은 그림(`sameKey` — 칸을 눌러 앱이 다시 돌며
 // 같은 그림을 새로 세움)은 웜업을 잇고(`adopt`), 마우스가 그 자리 그대로인데(`still`) 그림 밖이
-// 닿은 것(새로 세우는 틈)은 식히지 않는다(`hold`). 다른 그림(굴림 · 화면 옮김으로 밑에 온 그림
-// 포함)은 처음처럼 기다린다.
+// 닿은 것(누를 때 Plotly 가 세우는 덮개 · 새로 세우는 틈)은 식히지 않는다(`hold`). 다른 그림(굴림 ·
+// 화면 옮김으로 밑에 온 그림 포함)은 처음처럼 기다린다.
 function warmAction(current, chart, pointerType, warmNow, still, sameKey) {
   if (chart === current) return "keep";
   if (warmNow && chart && sameKey) return "adopt";
   if (warmNow && still && !chart) return "hold";
   if (!chart) return "cool";
   return pointerType === "touch" ? "warm" : "arm";
+}
+// 마우스가 그 자리 그대로인가 — 마지막으로 옮기거나 누른 자리(`last`)와 같고, 지금 그림이 아직
+// 문서에 있으면 그 상자 안이다. 브라우저는 요소를 넘는 `pointerover` 를 그 자리의 `pointermove`
+// 보다 먼저 보내므로 옮겨서 닿은 것은 늘 앞 자리와 다르다. 누른 채 그림 밖으로 끌고 가 뗀 자리는
+// 같아도 상자 밖이라 그 자리 그대로가 아니다.
+function stillAt(last, x, y, current) {
+  if (x !== last.x || y !== last.y) return false;
+  if (!current || !current.isConnected || typeof current.getBoundingClientRect !== "function") {
+    return true;
+  }
+  var box = current.getBoundingClientRect();
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
 }
 // 그림 칸 자신의 key 표지(`st-key-…` — 같은 위젯이면 다시 세워도 같다). 없으면 빈 글이다.
 function chartKey(chart) {
@@ -178,6 +193,8 @@ function tipDelayMs(raw, fallback) {
   if (previous) {
     doc.removeEventListener("pointerover", previous.over, true);
     doc.removeEventListener("pointerout", previous.out, true);
+    doc.removeEventListener("pointermove", previous.mark, true);
+    doc.removeEventListener("pointerdown", previous.mark, true);
     parentWindow.clearTimeout(previous.state.timer);
   }
   root.removeAttribute(warm);
@@ -190,12 +207,16 @@ function tipDelayMs(raw, fallback) {
     state.key = "";
     root.removeAttribute(warm);
   }
+  // 마우스가 마지막으로 있던 자리 — 그림 안에서 옮긴 것(`pointerover` 가 없다)과 누른 것도 적는다.
+  function mark(event) {
+    state.x = event.clientX;
+    state.y = event.clientY;
+  }
   function over(event) {
     var target = event.target;
     var chart = target && typeof target.closest === "function" ? target.closest(charts) : null;
-    var still = event.clientX === state.x && event.clientY === state.y;
-    state.x = event.clientX;
-    state.y = event.clientY;
+    var still = stillAt(state, event.clientX, event.clientY, state.current);
+    mark(event);
     var key = chartKey(chart);
     var sameKey = key !== "" && key === state.key;
     var action = warmAction(
@@ -226,9 +247,11 @@ function tipDelayMs(raw, fallback) {
     if (!event.relatedTarget && event.pointerType !== "touch") cool();
   }
 
-  parentWindow.%(handler)s = { over: over, out: out, state: state };
+  parentWindow.%(handler)s = { over: over, out: out, mark: mark, state: state };
   doc.addEventListener("pointerover", over, { capture: true, passive: true });
   doc.addEventListener("pointerout", out, { capture: true, passive: true });
+  doc.addEventListener("pointermove", mark, { capture: true, passive: true });
+  doc.addEventListener("pointerdown", mark, { capture: true, passive: true });
 })();
 """
 

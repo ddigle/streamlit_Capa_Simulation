@@ -309,6 +309,16 @@ const over = (chart, pointerType, at) => listeners.pointerover({
   target: inside(chart), pointerType: pointerType || 'mouse',
   clientX: at ? at[0] : (step += 1), clientY: at ? at[1] : 0,
 })
+// 그림 안에서 옮김 · 누름 — 듣개가 없으면 아무 일도 없다(그때 웜업이 풀리는 것을 값으로 본다).
+const pointer = (type, at) => (listeners[type] || (() => {}))({
+  pointerType: 'mouse', clientX: at[0], clientY: at[1],
+})
+const move = (at) => pointer('pointermove', at)
+const press = (at) => pointer('pointerdown', at)
+// 상자가 있는 그림(왼쪽 · 위 · 오른쪽 · 아래).
+const boxed = (name, key, box) => Object.assign(chart(name, key), {
+  getBoundingClientRect: () => ({ left: box[0], top: box[1], right: box[2], bottom: box[3] }),
+})
 const warm = () => attrs.has(ATTRIBUTE)
 const out = {}
 
@@ -430,9 +440,45 @@ over(chart('U2', ''))
 out.unkeyedWaits = warm()
 advance(1000)
 out.unkeyedWarm = warm()
+// 들어온 자리에서 그림 안으로 옮겨(그림 안에서는 `pointerover` 가 없다) 누르면 Plotly 가 마우스
+// 밑에 세우는 덮개 · 뗀 뒤의 문서 몸(그림 밖)이 그 자리에 닿는다 — 떠난 것이 아니다.
+over(null, 'mouse', [5, 5])
+const chartH = boxed('H', 'h', [400, 300, 900, 700])
+over(chartH, 'mouse', [728, 512])
+advance(1000)
+move([700, 512])
+move([628, 512])
+press([628, 512])
+over(null, 'mouse', [628, 512])
+out.pressAfterMoveHolds = warm()
+over(null, 'mouse', [628, 512])
+over(chartH, 'mouse', [628, 512])
+out.pressReleasedKeeps = warm()
+// 칸 누름 회차 동안 그림 안에서 조금 옮긴 마우스 밑에 같은 그림(key 같음)이 다시 서도 잇는다.
+move([640, 512])
+chartH.isConnected = false
+over(null, 'mouse', [640, 512])
+const chartH2 = boxed('H2', 'h', [400, 300, 900, 700])
+over(chartH2, 'mouse', [640, 512])
+out.pressRerunKeeps = warm()
+// 옮겨서 그림 밖에 닿으면(`pointerover` 가 그 자리의 `pointermove` 보다 먼저 온다) 식힌다.
+move([660, 512])
+over(null, 'mouse', [950, 512])
+out.movedOutAfterMoves = warm()
+// 누른 채 그림 밖으로 끌고 가 떼면 그 자리는 그대로여도 그림 상자 밖이라 식힌다.
+over(chartH2, 'mouse', [700, 500])
+advance(1000)
+press([700, 500])
+over(null, 'mouse', [700, 500])
+move([800, 600])
+move([980, 600])
+over(null, 'mouse', [980, 600])
+out.dragOutReleaseCools = warm()
 const before = listeners.pointerover
+const beforeMark = listeners.pointermove
 eval(SCRIPT)
-out.rerunReplaced = listeners.pointerover !== before && Object.keys(listeners).length === 2
+out.rerunReplaced = listeners.pointerover !== before && listeners.pointermove !== beforeMark
+  && listeners.pointerdown === listeners.pointermove && Object.keys(listeners).length === 4
 out.rerunCools = warm()
 process.stdout.write(JSON.stringify(out))
 """
@@ -444,16 +490,17 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     밖으로 가면 뗀다. 터치는 누른 것이라 곧바로 데운다. 지연은 사용자 정의 속성(`ms` · `s`)을 읽고
     못 읽으면 1초다. 기다리는 동안 그림이 사라지면 데우지 않는다. 데워진 그림이 다시 그려지면(칸을
     눌러 앱이 다시 돎 — 칸 key 가 같은 새 그림, 그 사이 멈춘 마우스 밑에 닿는 빈 칸도 떠난 것이
-    아니다) 웜업을 잇고, 데우기 전이면 새 그림에서 다시 기다린다. 굴림 · 화면 옮김으로 밑에 온 다른
-    그림(key 다름)과 key 없는 그림은 처음처럼 기다린다. 테마 iframe 이 다시 서면 옛 처리기를 떼고
-    표지를 지운다."""
+    아니다) 웜업을 잇고, 데우기 전이면 새 그림에서 다시 기다린다. 들어온 자리에서 그림 안으로
+    옮겨 눌러도(누를 때 Plotly 가 세우는 덮개가 그림 밖으로 닿음 · 회차 동안 조금 옮김) 잇고, 누른
+    채 그림 밖으로 끌고 가 떼면 식힌다. 굴림 · 화면 옮김으로 밑에 온 다른 그림(key 다름)과 key
+    없는 그림은 처음처럼 기다린다. 테마 iframe 이 다시 서면 옛 처리기를 떼고 표지를 지운다."""
     script = tip_delay.chart_tip_warmup_script()
     runner = (
         f"const SCRIPT = {json.dumps(script)}\n"
         f"const ATTRIBUTE = {json.dumps(tip_delay.CHART_WARM_ATTRIBUTE)}\n" + _WARM_RUNNER
     )
     out = run_js_json(runner, what="그림 풍선 웜업 스크립트")
-    assert out["listening"] == ["pointerout", "pointerover"]
+    assert out["listening"] == ["pointerdown", "pointermove", "pointerout", "pointerover"]
     assert out["coldAt999"] is False and out["warmAt1000"] is True
     assert out["stillWarmInside"] is True
     assert out["coolOutside"] is False
@@ -471,6 +518,10 @@ def test_the_chart_warmup_waits_once_per_chart_and_cools_when_the_pointer_leaves
     assert out["scrolledOtherWaits"] is False and out["scrolledOtherWarm"] is True
     assert out["navigatedHold"] is True and out["navigatedOtherWaits"] is False
     assert out["unkeyedWaits"] is False and out["unkeyedWarm"] is True
+    assert out["pressAfterMoveHolds"] is True and out["pressReleasedKeeps"] is True
+    assert out["pressRerunKeeps"] is True
+    assert out["movedOutAfterMoves"] is False
+    assert out["dragOutReleaseCools"] is False
     assert out["rerunReplaced"] is True and out["rerunCools"] is False
 
 
