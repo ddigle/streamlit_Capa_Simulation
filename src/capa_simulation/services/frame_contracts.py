@@ -160,10 +160,16 @@ def duplicate_route_rows(routes: pd.DataFrame, columns: Sequence[str]) -> pd.Ser
     무시한다. 원래 글자로만 접으면 `WF`·`Wafer` 처럼 표기만 다른 두 행이 같은 경로로 두 번 세어져
     그 경로의 소요대수가 두 배가 된다. 전부가 키인 표라 접어도 잃는 값이 없다.
 
-    등록(`reference_transformer._rq_reqb`)이 원천 행 순위 차례로 세운 원천 표를 이것으로 접는다.
-    계산(`required_equipment._prepare_reqb`)은 같은 정규화를 이미 거친 표를 `duplicated` 로 접는다 —
-    정규화를 두 번 하지 않으려는 것이고, 남는 행은 같다(`tests/test_required_equipment.py` 가 대조).
+    등록(`reference_transformer._rq_reqb`)은 같은 키(`route_match_keys`)로 경로마다 원천 행 순위가
+    앞선 행을 남긴다. 계산(`required_equipment._prepare_reqb`)은 같은 정규화를 이미 거친 표를
+    `duplicated` 로 접는다 — 정규화를 두 번 하지 않으려는 것이고, 남는 경로는 같다
+    (`tests/test_required_equipment.py` 가 대조).
     """
+    return route_match_keys(routes, columns).duplicated(keep="first")
+
+
+def route_match_keys(routes: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    """경로 행을 계산이 맞대는 꼴로 줄인 키(`duplicate_route_rows` 와 같은 정규화)."""
     keys = routes[list(columns)].copy()
     for column in keys.columns:
         if column == "생산계획년월":
@@ -174,7 +180,7 @@ def duplicate_route_rows(routes: pd.DataFrame, columns: Sequence[str]) -> pd.Ser
         keys["소요기준"] = normalize_demand_basis(keys["소요기준"])
     if "Area_Name" in keys.columns:
         keys["Area_Name"] = keys["Area_Name"].str.casefold()
-    return keys.duplicated(keep="first")
+    return keys
 
 
 def normalize_demand_basis_value(value: object) -> str:

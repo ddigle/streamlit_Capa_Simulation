@@ -659,7 +659,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_registered_once() -> None:
     """등록도 계산과 같은 정규화로 경로를 접는다(사내 감사 P4).
 
     원래 글자 그대로만 접으면 `WF`·`Wafer`, 앞뒤 공백만 다른 행이 둘로 남고, 계산이 그 둘을 같은
-    경로로 세어 소요대수가 두 배가 된다. 남는 행은 첫 행의 원래 표기다.
+    경로로 세어 소요대수가 두 배가 된다. 남는 행은 원천 행 순위가 앞선 행의 원래 표기다.
     """
     source = pd.concat([_core_data_row()] * 3, ignore_index=True)
     source["소요기준"] = pd.array(["WF", "Wafer", "WF"], dtype="string")
@@ -683,6 +683,17 @@ def test_reqb_spelling_variants_store_the_same_spelling_in_either_source_order(
     reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
 
     assert reqb["소요기준"].tolist() == ["WF"]
+
+
+def test_reqb_route_keeps_its_first_appearance_slot_when_a_later_sibling_ranks_first() -> None:
+    """같은 경로가 Pack Code 만 다른 원천 행으로 두 번 오면 경로 자리는 처음 나온 차례다."""
+    source = pd.concat([_core_data_row()] * 3, ignore_index=True)
+    source["Pack Code"] = pd.array(["P2", "P9", "P1"], dtype="string")
+    source["STEP_SEQ"] = pd.array(["P100", "P200", "P100"], dtype="string")
+
+    reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
+
+    assert reqb["STEP_SEQ"].tolist() == ["P100", "P200"]
 
 
 def test_a_blank_lent_evaluation_counts_as_zero_lent_equipment() -> None:

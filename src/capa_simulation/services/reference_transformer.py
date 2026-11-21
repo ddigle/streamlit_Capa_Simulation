@@ -19,7 +19,7 @@ from capa_simulation.services.core_data_derivation import (
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.display_order_editor import transform_display_order
-from capa_simulation.services.frame_contracts import duplicate_route_rows, require_columns
+from capa_simulation.services.frame_contracts import require_columns, route_match_keys
 from capa_simulation.services.reference_conflicts import (
     SOURCE_ROW_CLASS_COLUMNS,
     conflict_report,
@@ -380,10 +380,10 @@ def _rq_reqb(
     원천에 완전 중복 행이 하나 들어오면 그 경로의 소요대수가 조용히 두 배가 된다.
     13개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
 
-    **계산과 같은 정규화**로 접는다(`frame_contracts.duplicate_route_rows`). `WF`·`Wafer` 처럼
+    **계산과 같은 정규화**로 접는다(`frame_contracts.route_match_keys`). `WF`·`Wafer` 처럼
     표기만 다른 두 행은 계산에서 같은 경로라 접지 않으면 두 번 세어진다. 남는 것은 원천 행
     순위(`reference_conflicts.source_row_rank`)가 가장 앞선 행이고 그 표기는 원천 그대로다 — 조회
-    차례와 상관없이 같은 표기가 저장된다. 남는 행은 원천 자리를 지킨다.
+    차례와 상관없이 같은 표기가 저장된다. 경로의 자리는 그 경로가 처음 나온 차례 그대로다.
     """
     columns = [
         "생산계획년월",
@@ -405,10 +405,12 @@ def _rq_reqb(
     # 먼저 한다 — 표기 접기는 빈 키를 받지 않는다.
     require_columns(result, columns, "RQ_REQB")
     require_non_null(result, columns, "RQ_REQB")
-    ranked = result.take(np.argsort(rows.rank.loc[result.index].to_numpy(), kind="stable"))
-    survivors = ranked.index[~duplicate_route_rows(ranked, columns).to_numpy()]
-    result = result.loc[result.index.isin(survivors)]
-    return rows.distinct(result, "RQ_REQB", contract, conflict_records)
+    # 정규화한 경로마다 원천 행 순위가 가장 앞선 행 하나 — 경로 자리는 첫 등장 차례 그대로다.
+    match = route_match_keys(result, columns)
+    group = match.groupby(list(match.columns), dropna=False, sort=False).ngroup().to_numpy()
+    order = np.lexsort((rows.rank.loc[result.index].to_numpy(), group))
+    first = ~pd.Series(group[order]).duplicated().to_numpy()
+    return rows.distinct(result.take(order[first]), "RQ_REQB", contract, conflict_records)
 
 
 def _nonblank_rows(frame: pd.DataFrame, column: str) -> pd.DataFrame:
