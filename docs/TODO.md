@@ -2595,7 +2595,8 @@
   `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽으면 된다). 같은 HOME 표의 `Wafer Capa` ·
   연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 도 거른 월 합에서 낸다(정본 판단 — 같은 표에서 확보율 100% 의 Wafer Capa 가
   Wafer 계획을 넘지 않게. 사용자가 반대하면 이 몫만 걷는다). Wafer 계산값은 저장하지 않아 DB · 마이그레이션 영향은 없고 배포 즉시 모든
-  리비전에 걸린다. 과거 구간(Past Data) `Wafer Total` 손 입력값은 그대로 받는다 — 지금까지 넣은 값이 어느 기준이었는지는 답 대기.
+  리비전에 걸린다. 과거 구간(Past Data) `Wafer Total` 손 입력값은 그대로 받는다 — 원천 집계 기준(Dummy 계열 없음)으로 넣어 왔고
+  앞으로도 그렇게 넣는다(2026-11-22 Q6 — 경계 달이 이어지므로 다시 넣지 않음, Guide home 「월별 Density · Wafer Total」 한 줄).
   환산 탭 「산출 기준 총량 | HOME 집계 기준」(사용자 요청)의 계산은 `build_monthly_volume(aggregation=)` 이다 — 기본은 총량이라 값 ·
   CSV 가 그대로이고, HOME 집계 기준은 Dummy 계열 행을 0 으로 두지 않고 뺀다(요청이 맡긴 것 — 0 은 표에서 빈칸이라 「값 없음」
   과 구별되지 않음, 합계는 같음). 화면은 환산 조건 카드 소요기준 밑 segmented_control 「집계 기준」(key
