@@ -7662,16 +7662,17 @@
     「이관 뒤」 조건이 붙어 지금 넣어도 해가 없다. ③ 사내 Excel · DRM 에서 시트 엑셀이 「복구」 창 없이 열리는지: (가) 7-26 B 에 4) 한 칸(B 3 → 4) · (나)
     7-5 에 「열리지 않으면 발견」 한 줄. 권장 (가).
   - **문서 개편이 넘긴 코드 · 문서 맞춤 셋**(2026-11-22 사용자 승인 — 문서 개편 결정 12, 저장소 밖 작업 목록에만 있던 줄을 옮김. 사실은 같은 날 main
-    `a1f45fcd` 코드로 다시 확인했다)
+    `a1f45fcd` 코드로 다시 확인했다 — 아래 줄 번호는 모두 그 판의 것이고 뒤 커밋에서 밀리므로 항목 · 함수 이름으로 찾는다)
     - **① `page_bootstrap.scenario_capacity_and_demand` 는 부르는 곳이 없는데 AGENTS 가 규칙으로 적는다** — 지금: 정의
       (`src/capa_simulation/page_bootstrap.py:942`)를 부르는 곳이 없다(`src` · `app_pages` · `tests` · `scripts` 를 `get_` 앞붙이 없는 이름으로 훑으면 정의와
       같은 파일 970 의 docstring 언급뿐). 같은 처리(계산이 멈추면 사이드바 「계산 멈춤」 · 다시 던짐)는 `stop_calculation_on_error`(같은 파일 965 — 화면 쪽이
-      부름)가 하고, AGENTS 는 3장 `page_bootstrap` 항목(`AGENTS.md:3327` — 옮긴 목록은 5장이라 적었으나 5장에는 없다)에 둘을 함께 규칙으로 적는다. 고를 것:
-      (가) 함수를 지우고 `AGENTS.md:3327` · docstring 970 에서 이름만 뺀다 — 규칙은 `stop_calculation_on_error` 로 남는다 · (나) 함수와 규칙 줄을 그대로
+      부름)가 하고, AGENTS 는 3장 `page_bootstrap` 항목의 `scenario_capacity_and_demand`·`stop_calculation_on_error` 줄(`a1f45fcd` 3327 — 옮긴 목록은 5장이라
+      적었으나 5장에는 없다)에 둘을 함께 규칙으로 적는다. 고를 것: (가) 함수를 지우고 그 AGENTS 줄 · `stop_calculation_on_error` docstring(970)에서 이름만
+      뺀다 — 규칙은 `stop_calculation_on_error` 로 남는다 · (나) 함수와 규칙 줄을 그대로
       둔다. 권장 (가) — 부르지 않는 이름이 규칙에 남으면 새 화면이 어느 쪽을 불러야 하는지 헷갈린다.
     - **② CLAUDE.md 의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: CLAUDE.md 아키텍처 줄(`CLAUDE.md:210`)은 「서비스 공용 컬럼 계약과 업무 키
-      정규화」 뿐이고, 표 칸 빈칸 판정 `blank_cell`(`src/capa_simulation/services/frame_contracts.py:239` — 실행 관리 서비스 넷이 import)은 AGENTS 3장
-      (`AGENTS.md:2872`)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — CLAUDE.md 는 요약 ·
+      정규화」 뿐이고, 표 칸 빈칸 판정 `frame_contracts.blank_cell`(`a1f45fcd` 239 — 실행 관리 서비스 넷이 import)은 AGENTS 3장 `frame_contracts` 항목
+      (`a1f45fcd` 2872)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — CLAUDE.md 는 요약 ·
       진입점이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을
       이미 지키고, CLAUDE.md 에 도우미 이름을 하나씩 늘리면 요약이 커진다.
     - **③ refactor B · E 가 한 벌로 모은 도우미가 AGENTS 공용 도우미 목록에 없다** — 지금: 목록(`tests/test_documentation_inventory.py:14-30`
