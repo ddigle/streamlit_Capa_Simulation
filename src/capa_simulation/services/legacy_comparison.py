@@ -16,8 +16,9 @@
 `tests/test_legacy_comparison.py` 가 이 함정을 고정한다.
 
 기존 결과 컬럼이 한 칸 안에서도 갈리면 그때는 접을 수 없다. 조용히 하나를 고르지 않고
-`값 불일치` 로 세어 밖으로 내보낸다 — 실데이터에서는 경로마다 다른 값이 실려 오는 것이
-정상일 수 있고, 그러면 이 대조 자체를 다시 설계해야 한다는 신호다.
+`값 불일치` 로 세어 밖으로 내보낸다. 실데이터의 Wafer `WF수(매)` 가 그렇다 — 경로마다 다른 값이
+실려 온다(아래 「Wafer 경로 값 가르기」). 그래서 그 값을 계획 행에서만 읽는 갈래(아래 「계획 행으로
+접음」)를 따로 두고, 정식 대조의 접기는 그대로 둔다.
 
 **정식 대조(`COMPARISONS`)는 셋이다.**
 
@@ -37,7 +38,9 @@
 Wafer `WF수(매)` 는 사내 실데이터에서 계획 줄 × WF 구분 안에서도 경로 행마다 갈렸다(경로
 값이다). 신규 계산에는 경로마다 갈리는 Wafer 값이 없으므로, 아래 「Wafer 경로 값 가르기」가
 원천 경로 값이 어느 경로 칸을 따라 갈리는지를 개수로 가른다. 계획 줄 대조는 연속성을 위해
-그대로 둔다.
+그대로 둔다. 계획 줄 값은 계획 행(`계획기초정보여부 = Y` 이면서 공정이 빈 행)에 실려 오므로, 「계획
+행으로 접음」 갈래가 그 행만 넘겨 같은 `compare_metric` 을 한 번 더 한다(`plan_row_frame`). 계획 행
+밖 행은 그 갈래에 넣지 않고 `plan_row_diagnostics` 가 개수로만 센다.
 
 사내 실데이터에서는 키별 값을 밖으로 낼 수 없다. 그래서 대조 결과를 **분포로만** 접는
 `difference_distribution`(차이율)·`ratio_distribution`(기존 ÷ 신규) 를 둔다 —
@@ -55,6 +58,7 @@ import numpy as np
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract, load_core_data_contract
+from capa_simulation.services.core_data_derivation import plan_row_mask
 from capa_simulation.services.frame_contracts import (
     match_key,
     normalize_demand_basis,
@@ -1162,6 +1166,129 @@ def route_factor_by_key(link: RouteLink, factor: RouteFactor) -> pd.Series:
     column = "_후보"
     route = link.route.assign(**{column: route_factor_values(link.route, factor)})
     return RouteLink(frame=link.frame, route=route, pairs=link.pairs).numbers(column)
+
+
+# ---------------------------------------------------------------- 계획 행으로 접음
+#
+# 원천 Wafer `WF수(매)` 는 계획 줄 × WF 구분 칸 안에서도 경로 행마다 갈려 정식 대조가 그 칸을
+# `값 불일치` 로 떨어뜨린다(위 「Wafer 경로 값 가르기」). 이 갈래는 그 칸의 값을 **계획 행에서만**
+# 읽는다 — 계획 행(`계획기초정보여부 = Y`)이면서 공정이 빈 행이다(2026-11-22 사용자 요청). 넘기는
+# 행만 다르고 접기 · 대조 · 요약은 `compare_metric` · `summarize_comparison` 그대로다. 정식 대조
+# (`COMPARISONS`)와 `_legacy_totals` 는 바꾸지 않는다 — 소요대수 대조가 같은 접기를 쓴다.
+
+PLAN_FLAG_COLUMN = "계획기초정보여부"
+PROCESS_COLUMN = "공정"
+AREA_COLUMN = "Area_Name"
+
+# 「계획 행으로 접음」 갈래의 지표. 정식 대조의 Wafer 와 같은 기존 컬럼이고, 결과를 한 CSV 에 모아도
+# 정식 대조 행과 섞이지 않게 이름만 다르다.
+PLAN_ROW_METRIC = LegacyMetric(label="Wafer 부하량 (매) · 계획 행", legacy_column="WF수(매)")
+
+
+def _blank_process(frame: pd.DataFrame) -> pd.Series:
+    """공정이 빈(NULL · 빈 글자 · 공백뿐) 행."""
+    return match_key(frame[PROCESS_COLUMN]).eq("").astype(bool)
+
+
+def plan_row_frame(core: pd.DataFrame) -> pd.DataFrame:
+    """「계획 행으로 접음」 갈래가 기존 값을 읽는 행 — 계획 행(`plan_row_mask`)이면서 공정이 빈 행.
+
+    `core` 는 `compare_metric` 과 같은 파생 프레임이다. 계획 행인데 공정이 든 행은 넣지 않고
+    `plan_row_diagnostics` 가 센다. 행 번호(index)는 그대로 둔다.
+    """
+    require_columns(core, [PLAN_FLAG_COLUMN, PROCESS_COLUMN], "Core Data")
+    return core.loc[plan_row_mask(core) & _blank_process(core)].copy()
+
+
+@dataclass(frozen=True)
+class PlanRowDiagnostics:
+    """「계획 행으로 접음」 갈래의 진단. 수만 담는다 — 값 · 공정 이름은 담지 않는다.
+
+    행 수 셋은 넘겨받은 행 전체에서 센다.
+
+    - `plan_rows` — 접는 행(계획 행이면서 공정이 빈 행).
+    - `flagged_with_process` — 계획 행인데 공정이 든 행. 접지 않는다.
+    - `blank_process_unflagged` — 공정이 빈데 계획 행이 아닌 행.
+
+    칸 수 넷은 기존 값이 있는 행만 `grain`(기본 `legacy_grain`)으로 묶어 센다. 묶는 꼴은 정식 대조의
+    접기(`_legacy_totals`)와 같다.
+
+    - `cells` — 값이 있는 칸.
+    - `cells_without_plan_row` — 값이 있는 접는 행이 없는 칸. 이 갈래는 그 칸의 기존 값을 읽지
+      않는다. 대조 키(`compare_metric` 의 `keys`) 하나에 든 칸이 모두 이렇다면 그 키는 기존값이
+      없어 「신규에만 있음」 이 되고(키가 `grain` 과 같으면 늘 이쪽), 같은 키의 다른 칸에 접는
+      행이 있으면(기본 `COMPARISON_KEYS` 는 계획 줄 여럿을 한 키로 묶는다) 이 칸의 값만 합에서
+      빠져 `차이` · 「허용 초과」 로 나타난다.
+    - `cells_with_many_plan_values` — 접는 행의 값이 둘 이상인 칸(같은 값인지는 정식 대조처럼 정확히
+      본다). 이 갈래에서도 `값 불일치` 가 된다.
+    - `cells_split_in_one_process` — 접는 행의 값이 하나인 칸 가운데, 그 값과 갈리는 계획 행 밖 경로
+      행이 있고 그 행들이 모두 한 공정인 칸. 보는 행 · 허용은 경로 값 가르기(`route_cells`)와 같다
+      — `Area_Name` 이 있고 값이 양수인 행만 보고(0 행 · 경로 아닌 행은 갈림으로 치지 않는다),
+      「갈린다」 는 |차| > `tolerance` × (두 값 가운데 큰 절댓값)이라 곱 · 나눗셈 뒤의 반올림은
+      갈림이 아니다.
+    """
+
+    plan_rows: int
+    flagged_with_process: int
+    blank_process_unflagged: int
+    cells: int
+    cells_without_plan_row: int
+    cells_with_many_plan_values: int
+    cells_split_in_one_process: int
+
+
+def plan_row_diagnostics(
+    core: pd.DataFrame,
+    value_column: str = PLAN_ROW_METRIC.legacy_column,
+    grain: Sequence[str] | None = None,
+    *,
+    contract: CoreDataContract | None = None,
+    tolerance: float = ROUTE_SPLIT_TOLERANCE,
+) -> PlanRowDiagnostics:
+    """`plan_row_frame` 이 무엇을 넣고 뺐는지를 개수로 센다(`PlanRowDiagnostics`)."""
+    grain_list = list(
+        dict.fromkeys(
+            grain if grain is not None else legacy_grain(contract or load_core_data_contract())
+        )
+    )
+    require_columns(
+        core,
+        [*grain_list, PLAN_FLAG_COLUMN, PROCESS_COLUMN, AREA_COLUMN, value_column],
+        "Core Data",
+    )
+    frame = core.reset_index(drop=True)
+    flagged = plan_row_mask(frame)
+    blank = _blank_process(frame)
+    folded = flagged & blank
+
+    prepared = _normalized(frame, grain_list, value_column)
+    cell = prepared.groupby(grain_list, sort=False, dropna=False).ngroup()
+    values = prepared[value_column].astype("float64")
+    in_plan = folded.loc[prepared.index]
+
+    plan_values = values.loc[in_plan].groupby(cell.loc[in_plan])
+    many = plan_values.nunique().gt(1)
+    single = plan_values.first().loc[~many]
+
+    route = match_key(frame.loc[prepared.index, AREA_COLUMN]).ne("")
+    outside = ~in_plan & route & values.gt(0)
+    reference = cell.loc[outside].map(single).astype("float64")
+    others = values.loc[outside]
+    scale = pd.concat([reference.abs(), others.abs()], axis=1).max(axis=1)
+    differs = reference.notna() & (others - reference).abs().gt(scale * tolerance)
+    owners = match_key(frame.loc[differs.index[differs], PROCESS_COLUMN])
+    by_cell = owners.groupby(cell.loc[owners.index])
+    one_process = by_cell.nunique().eq(1) & by_cell.first().ne("")
+
+    return PlanRowDiagnostics(
+        plan_rows=int(folded.sum()),
+        flagged_with_process=int((flagged & ~blank).sum()),
+        blank_process_unflagged=int((blank & ~flagged).sum()),
+        cells=int(cell.nunique()),
+        cells_without_plan_row=int(cell.nunique() - len(plan_values)),
+        cells_with_many_plan_values=int(many.sum()),
+        cells_split_in_one_process=int(one_process.sum()),
+    )
 
 
 def _near(values: pd.Series, target: float, tolerance: float) -> pd.Series:

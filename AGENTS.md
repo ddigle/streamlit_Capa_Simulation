@@ -4349,6 +4349,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대조한다(실행 `scripts/compare_legacy_results.py`).
   - 기존 컬럼은 계획 한 줄 × `WF 구분` 에서 접은 뒤 대조 키로 합산한다 — 대조 키에서 접으면 서로 다른 계획
     줄이 뭉개진다. 정식 대조 `COMPARISONS` 는 Wafer·Density·Chip(계획 줄 키) 셋이다.
+  - 「계획 행으로 접음」 갈래(`plan_row_frame` · 지표 `PLAN_ROW_METRIC`)는 같은 Wafer 대조를 계획 행(`plan_row_mask`
+    이면서 공정이 빈 행)만 넘겨 한 번 더 한다 — 원천 `WF수(매)` 가 경로 행마다 갈려 정식 대조가 그 칸을 `값 불일치` 로
+    떨어뜨리기 때문이다. `compare_metric` · `_legacy_totals` · `COMPARISONS` 는 그대로이고(소요대수 대조가 같은 접기를
+    쓴다), 넣지 않은 행 · 칸은 `plan_row_diagnostics` 가 개수로만 센다(계획 행 밖 갈림은 경로 값 가르기와 같은 행 ·
+    허용으로 본다 — `Area_Name` 있고 양수인 행, `ROUTE_SPLIT_TOLERANCE`).
   - 사내 실데이터는 분포·개수로만 가른다(`difference_distribution`·`ratio_groups`·`scaling_check`·
     `fold_route_cells` 등 → `scripts/inspect_real_data_checks.py`).
   - 지표를 더하면 두 스크립트의 계산 사전(`LOAD_BUILDERS`)도 더하고, 산식이 바뀌면 `FORMULA_INPUTS` 도 고친다.

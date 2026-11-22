@@ -1,23 +1,26 @@
-# Purpose: 기존 결과 대조 스크립트가 기본으로 원천 행이 있는 데이터셋을 골라 대조하는지 본다.
+# Purpose: 기존 결과 대조 스크립트의 기본 데이터셋 고르기와 계획 행 갈래 출력을 본다.
 
 """`scripts/compare_legacy_results.py` 는 데이터셋의 원천 행과 그 시나리오의 리비전 1 을 맞춰 본다.
 
 복제·월 병합·연도 이동은 원천 행을 남기지 않는다. 그것이 가장 최근이어도 기본 실행은 원천에서 온
 데이터셋을 골라야 한다 — 그렇지 않으면 복제가 흔한 사외 DB 에서 기본 명령이 늘 「원천 행이
-없습니다」로 끝난다.
+없습니다」로 끝난다. 정식 대조 셋 뒤에는 같은 Wafer 대조를 계획 행으로 접은 갈래와 그 진단이 찍힌다.
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.legacy_comparison import COMPARISONS, PLAN_ROW_METRIC
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -63,6 +66,13 @@ def _run(monkeypatch: pytest.MonkeyPatch, database: Path) -> int:
     return compare.main()
 
 
+def _printed_count(text: str, pattern: str) -> int:
+    """찍힌 줄에서 `{:,}` 꼴의 수 하나를 읽는다."""
+    found = re.search(pattern, text)
+    assert found is not None, pattern
+    return int(found.group(1).replace(",", ""))
+
+
 def test_a_newer_clone_dataset_is_not_taken_by_default(
     seeded_with_clone: tuple[Path, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -75,6 +85,50 @@ def test_a_newer_clone_dataset_is_not_taken_by_default(
     assert code == 0
     first_line = capsys.readouterr().out.splitlines()[0]
     assert first_line.startswith(f"데이터셋 {seed_dataset} · 리비전 1 ")
+
+
+def test_the_plan_row_fold_is_reported_after_the_formal_comparisons(
+    seeded_with_clone: tuple[Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """정식 대조 셋 뒤에 「계획 행으로 접음」 Wafer 대조와 그 진단이 찍히고, CSV 에는 지표 이름이
+    따로 든다.
+
+    내장 시드는 계획 행과 경로 행에 같은 `WF수(매)` 를 싣는다 — 접어도 값 불일치가 없고, 계획 행이
+    실제로 접혀 정식 Wafer 대조와 같은 수의 키가 기존값을 갖고 맞대어진다.
+    """
+    wafer = next(metric for metric in COMPARISONS if metric.legacy_column == "WF수(매)")
+    path, _ = seeded_with_clone
+    output = tmp_path / "legacy.csv"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["compare_legacy_results.py", "--database", str(path), "--output", str(output)],
+    )
+
+    assert compare.main() == 0
+
+    text = capsys.readouterr().out
+    labels = [line for line in text.splitlines() if line.startswith("[") and "]" in line]
+    assert labels[-1] == f"[{PLAN_ROW_METRIC.label}]"
+    section = text.split(f"[{PLAN_ROW_METRIC.label}]", 1)[1]
+    formal = text.split(f"[{wafer.label}]", 1)[1].split("\n[", 1)[0]
+    matched = _printed_count(section, r"대조 ([\d,]+)건")
+    assert matched > 0
+    assert matched == _printed_count(formal, r"대조 ([\d,]+)건")
+    assert " · 값 불일치 0건 " in section
+    assert "신규에만 있음 0건" in section
+    assert _printed_count(section, r"계획 행 진단 — 접은 행 ([\d,]+)\(") > 0
+    assert "Y 인데 공정 있음 0행" in section
+    assert "계획 행 값 둘 이상 칸 0" in section
+    written = pd.read_csv(output, encoding="utf-8-sig")
+    assert PLAN_ROW_METRIC.label in set(written["지표"])
+    folded = written.loc[written["지표"].eq(PLAN_ROW_METRIC.label)]
+    assert not folded.empty
+    assert not folded["값 불일치"].astype(bool).any()
+    assert folded["기존값"].notna().all()
 
 
 def test_without_a_source_dataset_it_says_so(
