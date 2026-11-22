@@ -96,6 +96,7 @@ from capa_simulation.services.dashboard import (  # noqa: E402
     build_monthly_bottleneck_ranking,
     build_monthly_bottlenecks_from_ranking,
     build_production_dashboard,
+    home_aggregation_wafer_load,
 )
 from capa_simulation.services.display_order_csv import (  # noqa: E402
     display_order_from_csv,
@@ -833,10 +834,16 @@ def create_derived(
 
 # ============================================================================== 공용 프로필 재료
 def home_monthly(tables: Mapping[str, pd.DataFrame]) -> tuple[dict[int, float], dict[int, float]]:
-    """HOME 기본(EDP 제외)의 달별 Density(억Gb)·Wafer(매)."""
+    """HOME 기본(EDP 제외)의 달별 Density(억Gb)·Wafer(매).
+
+    Wafer 는 HOME `Wafer 계획` 과 같은 집계 기준(Dummy 계열을 뺀 합 —
+    `home_aggregation_wafer_load`)이라 이 값으로 지은 과거 구간 `Wafer Total` 이 계산 구간 첫 달과
+    같은 정의로 이어진다.
+    """
     plan = filter_edp_plan(tables["RQ_PKG_PLAN"], False)
     monthly, _ = build_production_dashboard(plan, tables["RQ_CHIP_EQ"])
-    _, wafer = calculate_chip_and_wafer_loads(plan, tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
+    _, wafer_load = calculate_chip_and_wafer_loads(plan, tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
+    wafer = home_aggregation_wafer_load(wafer_load)
     density = {
         int(m): float(v) for m, v in zip(monthly["생산계획년월"], monthly["부하량"], strict=True)
     }
