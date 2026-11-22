@@ -536,7 +536,7 @@ def test_wafer_counts_home_aggregation_and_load_table_do_not_move() -> None:
     """경로 부하량만 바뀐다 — 입력 표 · Wafer 매수 집계 · HOME 세 함수 · 부하량 표에서 나온 셈은
     켬/끔에서 같다.
 
-    HOME 계산 캐시 래퍼는 아직 선언을 받지 않는다(답 대기). 여기서는 캐시 없는 세 함수를 선언
+    HOME 계산 캐시 래퍼는 아직 선언을 받지 않는다(잇기 전). 여기서는 캐시 없는 세 함수를 선언
     계산 앞뒤로 같은 입력 객체에서 다시 불러, 훅이 입력을 제자리에서 고치지 않았는지까지 본다.
     """
     reqb, capacity = _route_tables()

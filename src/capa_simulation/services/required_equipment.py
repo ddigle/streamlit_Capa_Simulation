@@ -188,7 +188,7 @@ def calculate_required_equipment(
 
     기본값(빈 선언)은 호출처가 선언을 넘기기 전까지만 둔다. 선언을 잇는 단계에서 걷어 호출처
     (화면 계산 · 자동 갱신 · 확인 스크립트)가 모두 넘기게 한다 — 하나를 빠뜨려도 타입 검사가
-    잡게(AGENTS 6장 「공정별 부하 산출 예외」 답 대기).
+    잡게(AGENTS 6장 「공정별 부하 산출 예외」).
     """
     declaration = normalize_route_load_declaration(route_exceptions)
     prepared_reqb, route_products = _prepare_reqb(reqb)
