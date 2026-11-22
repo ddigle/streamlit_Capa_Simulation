@@ -2,8 +2,8 @@
 
 """사이드바 조건 카드 + Guide 의 첫 샘플(2026-09-28 사용자 결정).
 
-- 환산 조건(소요기준·상세·EDP)은 본문이 아니라 사이드바 조건 카드다. **환산 탭에서만** 서고,
-  **기본은 접힘**, 한 번 편 카드는 **탭을 오가도 편 채**다.
+- 환산 조건(소요기준·집계 기준·상세·EDP)은 본문이 아니라 사이드바 조건 카드다. **환산 탭에서만**
+  서고, **기본은 접힘**, 한 번 편 카드는 **탭을 오가도 편 채**다.
 - 적용 버튼은 표 **위**다(표 아래에 있으면 고친 뒤 보이지 않아 적용을 건너뛴다).
 - 설명은 Guide 대화상자다.
 """
@@ -51,15 +51,19 @@ def _app(database: Path) -> AppTest:
 def _card_widgets(app: AppTest) -> set[str]:
     keys = {widget.key for widget in app.sidebar.selectbox}
     keys |= {widget.key for widget in app.sidebar.toggle}
+    keys |= {widget.key for widget in app.sidebar.segmented_control}
     return {key for key in keys if key}
 
 
 def test_the_conversion_settings_live_in_a_collapsed_sidebar_card(database: Path) -> None:
     app = _app(database)
 
-    assert {"monthly_volume_basis", "monthly_volume_detail", "monthly_volume_edp"} <= (
-        _card_widgets(app)
-    )
+    assert {
+        "monthly_volume_basis",
+        "monthly_volume_aggregation",
+        "monthly_volume_detail",
+        "monthly_volume_edp",
+    } <= _card_widgets(app)
     # 본문에는 더 이상 없다 — 두 곳에서 같은 조건을 만지면 안 된다.
     assert "monthly_volume_basis" not in {widget.key for widget in app.main.selectbox}
     assert app.session_state[CARD_KEY] is False
@@ -171,6 +175,9 @@ def test_the_guide_explains_every_card_setting_and_action() -> None:
     guide = load_guide("load_conversion")
     for label in (
         "소요기준",
+        "집계 기준",
+        "산출 기준 총량",
+        "HOME 집계 기준",
         "상세",
         "EDP",
         "변경사항 적용",

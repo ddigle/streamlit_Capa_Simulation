@@ -551,7 +551,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나라도 없으면 평소처럼 만든다.
 - `app_pages/load_conversion.py` — `생산 계획` 화면. `환산`·`PKG PLAN`·`수율` 탭으로 계획·수율을 편집하고
   부하량 환산을 보인다. 조건 카드·Guide(`page_guide.py`, `guides/load_conversion.md`)를 처음 적용한 화면이다.
-  - 환산 조건은 조건 카드이고 환산은 그 탭이 열렸을 때만 한다. 작업 줄(적용·붙여넣기·가상 제품 등록)은 표 위, 붙여넣기와
+  - 환산 조건은 조건 카드이고 환산은 그 탭이 열렸을 때만 한다. 카드 차례는 소요기준 → 집계 기준(segmented_control
+    `monthly_volume_aggregation` — 「산출 기준 총량」(기본) | 「HOME 집계 기준」, 값은 `load_calculator.MONTHLY_AGGREGATIONS`) →
+    상세 · EDP 다. 집계 기준은 Chip · Wafer 에만 뜻이 있어 PKG · Density 에서는 숨기지 않고 잠그고(까닭 풍선 `AGGREGATION_LOCKED_HELP`)
+    그 동안 계산 · 제목 기준 글 · CSV 이름은 늘 총량이다(칸에 남은 값이 파일 이름에 새거나 캐시 칸을 늘리지 않게 — 한 값
+    `aggregation` 을 셋이 읽는다). Chip · Wafer 표 제목 줄 부가 설명은 「단위: … · <기준>」 이고 HOME 집계 기준일 때만 그 글
+    풍선(`table_toolbar.render_table_heading(caption_help=)`)이 뺀 `WF 구분` 이름(`DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE` 에서
+    읽음)을 말하며 CSV 파일 이름 꼬리 `_HOME` 이 붙는다. 표 · CSV 분류 칸은 `CLASSIFICATION_COLUMNS`(상세면 `WF 구분` 더함)에서
+    낸다 — 계산이 분류 칸을 더하면 저절로 따라간다(`tests/test_load_conversion_aggregation.py`). 작업 줄(적용·붙여넣기·가상 제품 등록)은 표 위, 붙여넣기와
     등록은 세션 키 팝업이다. PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 적용 한 곳이며, 수율 붙여넣기는 바로 적용한다. 붙여넣기 창 · 거부 · 적용
     알림의 표 이름은 화면 이름(`PKG_PLAN_TAB_NAME` · `YIELD_TAB_NAME`)이고, 대기 표 달 칸은 숫자로 읽어 0 을 빈칸으로 그린다.
   - **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — `components/plan_grid.py`, 이름은
@@ -8479,7 +8486,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   맨 위다(카드에 설 칸을 바꾸는 전환 — 그림 메모 g12). 제약 시뮬레이션 「비중 배분 비교」 도 예외로 조건 카드 끝
   「견주기」 다(2026-11-09 보드 C3 — 페이지 상단 문구 최소화, 바꾸면 앱 전체 회차). 산출 결과 대당 Capa 의 「표시 방식」(공정별·STEP별)은
   거꾸로 사용자 요청에 따른 예외로 `표 조건` 카드 첫 칸이다(2026-11-02 사용자 요청(검수표) — 같은 카드의 「집계 수준」 잠금·
-  「공정 필터」 안내가 이 값을 따른다).
+  「공정 필터」 안내가 이 값을 따른다). 생산 계획 환산 「집계 기준」(산출 기준 총량 | HOME 집계 기준)은 보기 전환이 아니라
+  Chip · Wafer 값을 바꾸는 집계 조건이라 소요기준 밑 카드 칸이다(두 기준 값이 같은 PKG · Density 에서는 잠금 — 3장
+  `load_conversion.py`).
 - **페이지 상단은 비운다**(2026-11-09 사용자 규칙 — 설계 규칙 UI-LAY-13). 화면 탭 줄 바로 아래에 그 화면의 핵심 내용이 선다 —
   본문 위에 칩 · 안내 줄 · 값 줄 · 혼자 한 줄 단추 · 위젯 라벨 줄 · 빈 칸 틈을 두지 않는다. 늘 보여야 하는 상태 표지는 머리 띠
   칩(`alert_center` — 변경 칩 · 공정 칩 · 합성 샘플 표지)이나 화면 탭 표지(`page_tabs` · `tab_marks`)로, 값 한 줄은 바로 위 제목 ·

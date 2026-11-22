@@ -756,6 +756,27 @@ def test_the_heading_row_is_one_height_whatever_stands_beside() -> None:
     assert keys == [table_heading_row_key("plain_csv"), table_heading_row_key("menu_csv")]
 
 
+def _caption_help_page() -> None:
+    from capa_simulation.components.table_toolbar import render_table_heading
+
+    render_table_heading(
+        "풍선", caption="단위: 매 · 기준", caption_help="뜻", csv=b"c", file_name="a.csv", key="a"
+    )
+    render_table_heading("맨 글", caption="단위: 매", csv=b"c", file_name="b.csv", key="b")
+    render_table_heading("글 없음", caption_help="버려짐", csv=b"c", file_name="c.csv", key="c")
+
+
+def test_the_heading_caption_carries_its_balloon_only_when_given() -> None:
+    """부가 설명 글의 풍선(`caption_help`)은 준 줄에만 선다 — 부가 설명이 없으면 풍선도 서지
+    않는다(자리 글은 값 · 표지만이고 그 뜻은 풍선 — 설계 규칙 UI-TXT-04)."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_caption_help_page).run()
+    assert not app.exception
+    captions = [(str(item.value), str(item.proto.help)) for item in app.caption]
+    assert captions == [("단위: 매 · 기준", "뜻"), ("단위: 매", "")]
+
+
 def test_the_file_name_part_drops_path_and_reserved_characters() -> None:
     """파일 이름 한 토막(설비 「현재 데이터」 의 시나리오 이름 · 공정 Capa 상세 두 파일의 공정
     이름 — 2026-11-11 남은 물음 보드 B3)."""

@@ -270,6 +270,7 @@ def table_heading_row(
     title: str,
     *,
     caption: str | None = None,
+    caption_help: str | None = None,
     csv: bytes,
     file_name: str,
     key: str,
@@ -282,7 +283,8 @@ def table_heading_row(
     `render_table_heading` 을 쓴다. `sheet` 를 주면 CSV 와 「시트 엑셀」 이 「내려받기 ▾」 메뉴
     하나에 묶인다(`render_download_pair`, 메뉴 key 는 `download_menu_key(key)`) — 주지 않으면 CSV
     단추 하나다. 줄은 `table_heading_row_key(key)` 를 받아 35px 높이로
-    선다(`TABLE_HEADING_ROW_STYLE`).
+    선다(`TABLE_HEADING_ROW_STYLE`). `caption_help` 는 부가 설명 글의 풍선이다 — 부가 설명이 있을
+    때만 서고, 글 뒤 ⓘ 하나로 그 값의 뜻을 말한다(자리 글은 값 · 표지만 — 설계 규칙 UI-TXT-04).
     """
     with st.container(
         horizontal=True,
@@ -292,7 +294,7 @@ def table_heading_row(
     ):
         st.subheader(title, width="content")
         if caption:
-            st.caption(caption, width="content")
+            st.caption(caption, width="content", help=caption_help)
         if sheet is None:
             render_csv_download(data=csv, file_name=file_name, key=key)
         else:
@@ -308,6 +310,7 @@ def render_table_heading(
     title: str,
     *,
     caption: str | None = None,
+    caption_help: str | None = None,
     csv: bytes,
     file_name: str,
     key: str,
@@ -315,6 +318,12 @@ def render_table_heading(
 ) -> None:
     """표 제목 · 부가 설명 · CSV 내보내기 한 줄. 대부분의 표가 이 형태다."""
     with table_heading_row(
-        title, caption=caption, csv=csv, file_name=file_name, key=key, sheet=sheet
+        title,
+        caption=caption,
+        caption_help=caption_help,
+        csv=csv,
+        file_name=file_name,
+        key=key,
+        sheet=sheet,
     ):
         pass

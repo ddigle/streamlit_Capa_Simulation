@@ -44,6 +44,7 @@ data/equipment_availability.duckdb   공통 호기 대장(호기 정보 · 실�
 확보율    = 가용대수(RQ_EQP_AVBL) ÷ 소요대수
 B/N       = 그 달 확보율이 가장 낮은 공정
 HOME Wafer 계획 = Wafer 부하량에서 Dummy 계열(Dummy · Top_Dummy) 행을 뺀 합(원천 집계 기준 — 소요대수는 뺄 것 없이 그대로)
+         생산 계획 환산 탭 「집계 기준」 의 HOME 집계 기준이 같은 거름(기본 산출 기준 총량은 거르지 않음)
 공정별 부하 예외 = 선언한 공정의 Wafer 경로만 산식 id 로(Core = Buffer Wafer × Core 구분_Chip · Top_Dummy 0) — 선언 저장은 답 대기라 아직 걸리지 않음
 ```
 

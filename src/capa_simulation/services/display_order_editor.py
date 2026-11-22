@@ -365,12 +365,15 @@ def display_label_mistakes(
     사용자는 "설정했는데 왜 안 되지" 가 된다. 저장을 막지는 않고 화면이 물어보게 한다.
 
     표시명이 다른 범위에서는 실제 컬럼일 수 있다(`구분` 이 그렇다). 그래서 판정이 아니라
-    **제안**이고, 문구도 단정하지 않는다.
+    **제안**이고, 문구도 단정하지 않는다. 표시명이 원본 컬럼명과 같은 칸(`CUSTOM`)은 적은 값이 곧
+    원본이라 묻지 않는다.
     """
     if "분류컬럼" not in rules.columns:
         return {}
     by_label = {
-        str(label): str(column) for column, label in column_labels.items() if str(label).strip()
+        str(label): str(column)
+        for column, label in column_labels.items()
+        if str(label).strip() and str(label) != str(column)
     }
     typed = {str(value).strip() for value in rules["분류컬럼"].dropna()}
     return {value: by_label[value] for value in sorted(typed) if value in by_label}
