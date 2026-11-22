@@ -365,3 +365,37 @@ def test_basis_missing_routes_are_their_own_alert_apart_from_the_unit_capacity_o
     quiet = {note["code"]: note for note in alert_notes(app)}
     assert quiet["ST-22"]["active"] is False and "tables" not in quiet["ST-22"]
     assert quiet["ST-15"]["active"] is True
+
+
+UNCOUNTED_DEMAND = """
+import streamlit as st
+
+from capa_simulation.components.required_exclusion_notice import alert_uncounted_demand
+from capa_simulation.components.state_alerts import AlertScope
+from capa_simulation.services.required_equipment import RequiredExclusionCounts
+
+alert_uncounted_demand(
+    RequiredExclusionCounts(*st.session_state["counts"]),
+    code=st.session_state["code"],
+    scope=AlertScope({"token": "t1"}, "DEMO · r1 · 조회기간"),
+    scope_name="조회기간",
+    lists=[],
+)
+"""
+
+
+@pytest.mark.parametrize("code", ["ST-01", "ST-04"])
+def test_the_plan_side_fingerprint_keeps_its_four_cells(code: str) -> None:
+    """계획 쪽 알림(`ST-01` · `ST-04`)의 지문 내용은 계획 쪽 세 수와 경로 쪽 합(늘 0) 네 칸이다.
+
+    지문 판정표는 브라우저 탭에 남으므로(`alerts` 모듈 설명) 칸 수가 바뀌면 조건이 그대로여도 열린
+    탭마다 알림이 한 번 다시 뜬다. 경로 쪽 부분 수(`basis_missing_routes`)가 0 이 아니어도 칸이
+    늘지 않는다."""
+    app = AppTest.from_string(UNCOUNTED_DEMAND)
+    app.session_state["counts"] = (2, 1, 3, 5, 4)
+    app.session_state["code"] = code
+    app.run()
+    assert not app.exception
+    (note,) = [item for item in alert_notes(app) if item["code"] == code]
+    assert note["active"] is True
+    assert note["fp"] == alerts.fingerprint(code, {"token": "t1"}, [2, 1, 3, 0])
