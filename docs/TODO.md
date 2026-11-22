@@ -2590,9 +2590,9 @@
   견줘 원천 집계가 Dummy 계열을 Wafer 계획에 넣지 않음). 산식은 그대로다 — `Top_Dummy` 는 일반식, Dummy 산식 목록 ·
   `HBM_WF_DIVISIONS` 는 안 바뀜, 빼는 목록 `DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE` 은 산식 목록과 따로이고 판별은 같은
   `(제품타입, WF 구분)` 게이트(EDP-TSV 의 이름만 `Dummy` 인 행은 안 뺌). 함께 바뀌는 곳: 공식 요약 · 입장 화면 Summary · 선행 B/O
-  (변동률은 Density 로만 내 확보율 불변) · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모. 그대로: 소요대수 · 확보율 ·
-  B/N 순위, 필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지 답 대기, 바꿀 때는
-  `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽으면 된다). 같은 HOME 표의 `Wafer Capa` ·
+  (변동률은 Density 로만 내 확보율 불변) · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모 · 필요 단축 일정 「Wafer 계획」
+  줄(2026-11-22 Q5 — `required_shortening_panel._lob_rows` 가 `get_home_simulation` 셋째 원소를 읽고, 아무도 읽지 않게 된 거르지
+  않은 월 합 원소는 걷었다). 그대로: 소요대수 · 확보율 · B/N 순위. 같은 HOME 표의 `Wafer Capa` ·
   연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 도 거른 월 합에서 낸다(정본 판단 — 같은 표에서 확보율 100% 의 Wafer Capa 가
   Wafer 계획을 넘지 않게. 사용자가 반대하면 이 몫만 걷는다). Wafer 계산값은 저장하지 않아 DB · 마이그레이션 영향은 없고 배포 즉시 모든
   리비전에 걸린다. 과거 구간(Past Data) `Wafer Total` 손 입력값은 그대로 받는다 — 원천 집계 기준(Dummy 계열 없음)으로 넣어 왔고
@@ -2620,8 +2620,8 @@
   묻지 않았고, 행을 뺌 · `_HOME` 꼬리는 정본 판단으로 밝힘) 통과.
   HOME 안 파생 칸 몫을 걷을 때는 커밋 「HOME 표의 Wafer Capa · 연간 Total · B/N 의 Wafer Capa 도 Dummy 계열을 뺀 월 합에서
   낸다」(가지 `custom-1122/calc` 에서 `8b4c61c5`)와 「Guide home 의 연간 Total 설명을 바로잡는다」(`b45aea3a`)를 **함께**
-  되돌린다 — 뒤 커밋이 앞 커밋의 Guide 줄을 고쳐 앞 것만 되돌리면 `guides/home.md` 에서 부딪힌다. 필요 단축 일정 줄을 HOME
-  처럼 거르게 되면 `guides/required_shortening.md` 의 `계획 · LOB 요약` 설명도 함께 고친다.
+  되돌린다 — 뒤 커밋이 앞 커밋의 Guide 줄을 고쳐 앞 것만 되돌리면 `guides/home.md` 에서 부딪힌다. 필요 단축 일정 줄은 HOME
+  과 같은 거른 값이고 `guides/required_shortening.md` 의 `계획 · LOB 요약` 설명도 그렇게 적었다(2026-11-22 Q5).
   관련: `services/product_type.py` · `services/load_calculator.exclude_dummy_series` ·
   `services/dashboard.home_aggregation_wafer_load` · AGENTS 6장 「부하량」 · 「HOME 얹기」
 - (2026-11-22) **예외 공정의 소요대수만 원천 산식으로 — 산식은 코드(산식 id), 어느 공정인지는 선언(데이터)**(사용자 결정

@@ -407,7 +407,6 @@ try:
             securement_rate,
             assumed_capacity_defaults,
             product_volume_with_edp,
-            _unfiltered_wafer,
         ) = get_home_simulation(
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],

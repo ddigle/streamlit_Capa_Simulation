@@ -5575,6 +5575,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
+    Wafer 계획은 HOME `Wafer 계획` 과 같은 셋째 원소(Dummy 계열 뺌 — 6장 「HOME 얹기」)다.
   - 머리·본문은 「본문 프래그먼트」다 — 기준선·판정 기준은 회차마다 다시 읽고 기준선 쓰기 표지를 보면
     `st.rerun(scope="app")` 한다(`tests/test_shortening_view_fragment.py`·`tests/fragment_browser.py`).
   - 계획은 `_Plan.official`(키와 한 묶음) 하나다. `_Plan.assumption` 은 조건 카드의 UPEH 가정이고 머리 아래 알림과
@@ -7692,12 +7693,12 @@ HOME 은 원데이터 계산 위에 화면 조건을 얹는다. 순서는 원데
 HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **HOME `Wafer 계획` 은 Dummy 계열을 뺀 합(원천 집계 기준)이다**(2026-11-22 사용자 결정 — 6장 「부하량」). 같은
-  거른 값을 공식 요약 · 입장 화면 Summary · 선행 B/O · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모가 쓰고,
+  거른 값을 공식 요약 · 입장 화면 Summary · 선행 B/O · 비교 GAP(비교 계획도 같은 정의) · 제품별 비중 Wafer 분모 ·
+  필요 단축 일정 「Wafer 계획」 줄(2026-11-22 답 Q5 — `required_shortening_panel._lob_rows` 가 셋째 원소를 읽는다)이 쓰고,
   같은 HOME 표의 `Wafer Capa` · 연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 도 그 월 합에서 낸다 — 거르지 않은 합을
   곱하면 확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘어 표가 스스로 어긋난다(정본 판단, `docs/TODO.md`).
-  HOME 계산 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_comparison_plan`)가 거른 프레임을 내고,
-  `get_home_simulation` 의 마지막 원소는 거르지 않은 월 합이다. 그대로 두는 자리 — 소요대수 · 확보율 · B/N 순위,
-  필요 단축 일정 「Wafer 계획」 줄(거르지 않은 합 — HOME 처럼 거를지는 답을 받기 전이다, `docs/TODO.md`).
+  HOME 계산 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_comparison_plan`)가 거른 프레임만 내고
+  거르지 않은 월 합은 따로 내지 않는다. 그대로 두는 자리 — 소요대수 · 확보율 · B/N 순위.
 
 - **`EDP 포함` 끄기는 LOB 값에만 건다.** `확보율 × 부하량` 꼴 값(Density·Wafer 계획·Wafer Capa·B/N Capa·Top 5)과
   계획 세부수량만 EDP 를 빼고, 소요대수·확보율·B/N 공정 순위는 EDP 를 포함한 전체 계획 그대로다 — 설비가 받는 부하는

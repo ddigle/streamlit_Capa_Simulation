@@ -1355,17 +1355,13 @@ def get_home_simulation(
     pd.DataFrame,
     CapacityAssumptions,
     pd.DataFrame,
-    pd.DataFrame,
 ]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
 
     셋째 원소(월 Wafer)와 여섯째 원소(제품×월 Wafer·PKG 수량, EDP 포함)는 HOME 집계 기준 —
     Dummy 계열을 뺀 같은 상세 프레임(`dashboard.home_aggregation_wafer_load`)에서 묶는다. 여섯째는
     제품별 비중 행이 쓰고, EDP 를 뺀 화면에서도 색 칸을 정하는 목록으로 쓴다 — 이미 만든 Wafer 상세
-    환산을 묶기만 한다.
-
-    마지막 원소는 **거르지 않은** 월 Wafer 합(산출 기준 총량, EDP 포함)이다. HOME 정의를 따르지
-    않는 자리(필요 단축 일정 「Wafer 계획」 줄)가 읽는다. 저장하지 않는 열몇 행이다.
+    환산을 묶기만 한다. 필요 단축 일정 「Wafer 계획」 줄도 셋째 원소를 읽는다 — HOME 과 같은 정의다.
 
     월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
     자르고 복사한 뒤 버린다(warm rerun 27~36ms 중 93~98%). 키와 프레임을 한 객체에서
@@ -1413,7 +1409,6 @@ def get_home_simulation(
         securement_rate,
         assumed_defaults,
         product_volume,
-        build_monthly_wafer_load_from_load(wafer_load),
     )
 
 

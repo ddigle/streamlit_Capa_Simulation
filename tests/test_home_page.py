@@ -1126,11 +1126,11 @@ def test_with_edp_included_the_wafer_plan_reads_the_filtered_monthly_sum(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`EDP 포함` 을 켜면 HOME 표의 `Wafer 계획` 은 `get_home_simulation` 의 셋째 원소(Dummy
-    계열을 뺀 월 합)다 — 마지막 원소(거르지 않은 월 합)는 필요 단축 일정 줄의 몫이다.
+    계열을 뺀 월 합)다.
 
-    `EDP 포함` 이 꺼져 있으면 `get_home_lob_without_edp` 가 그 칸을 덮어써, 두 원소를 바꿔 풀어도
-    드러나지 않는다. 시드에는 Dummy 계열이 없어 셋째 원소만 절반으로 바꿔 넣고(마지막 원소는
-    그대로) 표 입력의 `Wafer 부하량` 이 그 값인지 직접 댄다.
+    `EDP 포함` 이 꺼져 있으면 `get_home_lob_without_edp` 가 그 칸을 덮어써, 다른 원소를 풀어도
+    드러나지 않는다. 시드에는 Dummy 계열이 없어 셋째 원소만 절반으로 바꿔 넣고 표 입력의
+    `Wafer 부하량` 이 바꾼 값이지 바꾸기 전 값이 아닌지 직접 댄다.
     """
     import capa_simulation.components.home_figures as home_figures
     from capa_simulation.services import simulation_cache
@@ -1140,11 +1140,11 @@ def test_with_edp_included_the_wafer_plan_reads_the_filtered_monthly_sum(
 
     def simulation(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
         result: list[Any] = list(original_simulation(*args, **kwargs))
+        seen["before"] = result[2]
         filtered = result[2].copy()
         filtered["Wafer 부하량"] = pd.to_numeric(filtered["Wafer 부하량"]) * 0.5
         result[2] = filtered
         seen["filtered"] = filtered
-        seen["unfiltered"] = result[-1]
         return tuple(result)
 
     original_lob = home_figures.build_lob_summary_figures
@@ -1175,14 +1175,14 @@ def test_with_edp_included_the_wafer_plan_reads_the_filtered_monthly_sum(
 
         plan = by_month(seen["lob"]["lob_summary"])
         filtered = by_month(seen["filtered"])
-        unfiltered = by_month(seen["unfiltered"])
+        before = by_month(seen["before"])
         months = sorted(month for month in filtered if month in plan)
         assert months
         assert [plan[month] for month in months] == pytest.approx(
             [filtered[month] for month in months]
         )
         assert [plan[month] for month in months] != pytest.approx(
-            [unfiltered[month] for month in months]
+            [before[month] for month in months]
         )
     finally:
         shared_home_figure_store.clear()
@@ -1248,8 +1248,8 @@ def test_wafer_capa_year_total_and_bottleneck_wafer_capa_follow_the_home_wafer_p
     `Wafer 계획` 과 같은 HOME 집계 기준(Dummy 계열 뺌) 월 합에서 난다 — 거르지 않은 합이 섞이면
     확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘는다.
 
-    시드에는 Dummy 계열이 없어 HOME 계산 결과의 거른 월 합만 절반으로 바꿔 넣고(거르지 않은 합은
-    그대로), 화면이 그리는 표 입력이 모두 그 절반을 쓰는지 본다.
+    시드에는 Dummy 계열이 없어 HOME 계산 결과의 거른 월 합만 절반으로 바꿔 넣고, 화면이 그리는
+    표 입력이 모두 그 절반을 쓰는지 본다.
     """
     import capa_simulation.components.home_figures as home_figures
     import capa_simulation.services.dashboard as dashboard

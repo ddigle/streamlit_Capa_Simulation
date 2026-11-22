@@ -1,4 +1,4 @@
-# Purpose: HOME 생산계획·Wafer 부하량·Bottleneck 집계를 검증한다.
+# Purpose: HOME 생산계획·Wafer 부하량(필요 단축 일정 Wafer 줄 포함)·Bottleneck 집계를 검증한다.
 
 import dummy_series_tables as demo
 import pandas as pd
@@ -525,10 +525,11 @@ def test_home_wafer_without_edp_drops_the_dummy_series() -> None:
     simulation_cache.get_home_lob_without_edp.clear()
 
 
-def test_home_simulation_returns_the_home_wafer_and_the_unfiltered_total_last(
+def test_home_simulation_returns_the_home_wafer_without_the_dummy_series(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """셋째 · 여섯째 원소(EDP 포함)는 HOME 집계 기준이고, 일곱째는 거르지 않은 월 합이다."""
+    """셋째 · 여섯째 원소(EDP 포함)는 HOME 집계 기준 — Dummy 계열을 뺀 합이고, 원소는 여섯이다.
+    필요 단축 일정 「Wafer 계획」 줄도 셋째 원소를 읽어 거르지 않은 합을 따로 내지 않는다."""
     monkeypatch.setattr(
         simulation_cache,
         "get_scenario_capacity_and_demand",
@@ -544,16 +545,68 @@ def test_home_simulation_returns_the_home_wafer_and_the_unfiltered_total_last(
         _display_order=demo.display_order(),
         _reference_tables=demo.tables(),
     )
-    assert len(result) == 7
-    monthly_wafer, product_volume, total = result[2], result[5], result[6]
+    assert len(result) == 6
+    monthly_wafer, product_volume = result[2], result[5]
     load = _demo_wafer_load(include_edp=True)
     assert _monthly_sheets(monthly_wafer) == pytest.approx(
         _sum_by_month(exclude_dummy_series(load))
     )
-    assert _monthly_sheets(total) == pytest.approx(_sum_by_month(load))
+    # 견본의 Dummy 계열 행이 달마다 값을 줄인다 — 거르지 않은 합과 같으면 거름이 안 걸린 것이다.
+    assert all(
+        filtered < unfiltered
+        for filtered, unfiltered in zip(
+            _monthly_sheets(monthly_wafer), _sum_by_month(load), strict=True
+        )
+    )
     by_month = product_volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
     assert [float(value) for value in by_month] == pytest.approx(_monthly_sheets(monthly_wafer))
     simulation_cache.get_home_simulation.clear()
+
+
+def test_shortening_wafer_plan_reads_the_home_wafer_without_the_dummy_series(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """필요 단축 일정 `계획 · LOB 요약` 의 Wafer 계획 줄은 HOME `Wafer 계획` 과 같은 값 — 견본의
+    Dummy 계열 행을 뺀 월 합(EDP 포함)이고 거르지 않은 합이 아니다. 흉내 낸 원소가 아니라 실제 HOME
+    계산을 지나므로 풀기 자리가 어긋나면 값이 달라진다."""
+    from capa_simulation.components import required_shortening_panel as panel
+    from capa_simulation.page_bootstrap import PageContext
+
+    monkeypatch.setattr(
+        simulation_cache,
+        "get_scenario_capacity_and_demand",
+        lambda *_args, **_kwargs: (pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(
+        simulation_cache, "get_securement_rate", lambda *_args, **_kwargs: pd.DataFrame()
+    )
+    # 과거 구간 달은 넣지 않는다 — 공용 과거 구간 프로필(DB)을 열지 않는다.
+    monkeypatch.setattr(panel, "home_toggle", lambda _state, _key: False)
+    tables = demo.tables()
+    context = PageContext(
+        reference_version=0,
+        reference_tables=tables,
+        display_order=None,
+        active_scenario={
+            "reference_version": 0,
+            "revision": 0,
+            "content_token": "dummy-series-shortening",
+            "tables": tables,
+        },
+        selected_start_month=demo.MONTHS[0],
+        selected_end_month=demo.MONTHS[-1],
+    )
+    simulation_cache.get_home_simulation.clear()
+    rows = panel._lob_rows(context, list(demo.MONTHS))
+    simulation_cache.get_home_simulation.clear()
+
+    assert rows.error is None
+    wafer = [rows.wafer[month] for month in demo.MONTHS]
+    load = _demo_wafer_load(include_edp=True)
+    assert wafer == pytest.approx(_sum_by_month(exclude_dummy_series(load)))
+    assert all(
+        shown < unfiltered for shown, unfiltered in zip(wafer, _sum_by_month(load), strict=True)
+    )
 
 
 def test_wafer_capa_follows_the_home_wafer_plan_and_stays_within_it_at_full_securement() -> None:

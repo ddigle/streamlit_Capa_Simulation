@@ -509,15 +509,7 @@ def _wired(
     monkeypatch.setattr(
         intro_summary,
         "get_home_simulation",
-        lambda **kwargs: (
-            with_edp,
-            None,
-            wafer_with_edp,
-            _securement(),
-            None,
-            _volume(),
-            wafer_with_edp,
-        ),
+        lambda **kwargs: (with_edp, None, wafer_with_edp, _securement(), None, _volume()),
     )
     monkeypatch.setattr(
         intro_summary,

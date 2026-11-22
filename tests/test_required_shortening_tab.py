@@ -302,9 +302,9 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     assert "일정 기준 B/N 확보율 현재" in body and "일정 기준 B/N 확보율 단축 후" in body
     assert "Dynamic" not in body
     # Density·Wafer 는 HOME 계산 결과를 그대로 쓴다(여기서는 흉내 낸 값). Wafer 는 HOME 집계 기준
-    # (Dummy 계열 뺌 — 흉내 176K)이 아니라 거르지 않은 합(198K)이다.
-    assert "12.50" in body and "198K" in body
-    assert "176K" not in body
+    # (Dummy 계열 뺌 — 흉내 176K)이고 거르지 않은 합(흉내 198K)이 아니다.
+    assert "12.50" in body and "176K" in body
+    assert "198K" not in body
     # 소요 6.0 x 110% 는 샘플 가용으로 모자라는 공정이 있다 — 공정을 안 고르면 그 공정만 카드다.
     assert _cards(app), body[:500]
     # 호기 줄은 한 줄이다 — 늘어난 환산대수 줄과 「(기여 …)」 는 줄에 없고 풍선에만 있다.

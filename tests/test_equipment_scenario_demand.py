@@ -166,9 +166,7 @@ reference_cache.get_effective_reference_version = lambda: state.get("test_refere
 reference_cache.get_effective_reference_tables = lambda: reference_tables
 scenario_state.ensure_active_scenario = lambda _tables, _version: active
 simulation_cache.get_scenario_capacity_and_demand = capacity_and_demand
-simulation_cache.get_home_simulation = lambda **_kwargs: (
-    density, None, wafer, None, None, None, wafer
-)
+simulation_cache.get_home_simulation = lambda **_kwargs: (density, None, wafer, None, None, None)
 persistence_cache.load_global_securement_threshold = lambda _path: SimpleNamespace(
     thresholds=SecurementThresholds(1.095, 0.995)
 )

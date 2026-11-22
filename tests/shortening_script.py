@@ -104,10 +104,13 @@ active = {{
 }}
 {static_tables}
 density = pd.DataFrame({{"생산계획년월": months, "부하량": [12.5 + i for i in range(len(months))]}})
-wafer = pd.DataFrame({{"생산계획년월": months, "Wafer 부하량": [198000.0] * len(months)}})
-# HOME 집계 기준(Dummy 계열 뺌) 월 합은 다른 값으로 둔다 — 이 화면의 「Wafer 계획」 줄은 거르지
-# 않은 합(마지막 원소)을 읽는다.
+# HOME 집계 기준(Dummy 계열 뺌) 월 합 — 이 화면의 「Wafer 계획」 줄이 읽는 셋째 원소.
 home_wafer = pd.DataFrame({{"생산계획년월": months, "Wafer 부하량": [176000.0] * len(months)}})
+# 거르지 않은 합은 다른 값으로 마지막(여섯째, 제품×월 수량 자리) 원소에 둔다 — 마지막 원소를 읽는
+# 풀기로 돌아가면 이 값이 보인다.
+unfiltered_wafer = pd.DataFrame(
+    {{"생산계획년월": months, "Wafer 부하량": [198000.0] * len(months)}}
+)
 
 originals = (
     reference_cache.get_effective_reference_version,
@@ -125,7 +128,7 @@ original_get_process_labels = process_labels_module.get_process_labels
 def home_simulation(**kwargs):
     # HOME 과 같은 키로 부르는지 보려고 받은 키를 잡아 둔다.
     st.session_state["captured_home_key"] = kwargs["cache_key"]
-    return density, None, home_wafer, None, None, None, wafer
+    return density, None, home_wafer, None, None, unfiltered_wafer
 
 
 def missing_scenario(_tables, _version):
