@@ -2817,13 +2817,14 @@ def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone
     「서버 시작 점검」 표의 「토큰 자동 갱신」 줄이 없어져 UI-CON-02 · UI-DAT-11 예외는
     「없음」 으로 돌아갔고 규칙 글 · 4장에 그 줄이 없다. 6-29 token-auto-frame · 6-30 s-C-13 ·
     6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다.
-    판 머리는 v1.34 시험이 본다."""
+    UI-CON-02 예외 칸에는 v1.44 의 다른 예외(6-41 g-basis-name)가 섰다 — 그 칸에 토큰 줄이 없음만
+    본다. 판 머리는 v1.34 시험이 본다."""
     document = _text()
     assert "- **v1.32 — 2026-11-16.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
-    for rule_id in ("UI-CON-02", "UI-DAT-11"):
-        assert rules[rule_id].fields["예외"] == ["없음"], rule_id
+    assert rules["UI-DAT-11"].fields["예외"] == ["없음"]
+    assert "토큰 자동 갱신" not in rules["UI-CON-02"].fields["예외"][0]
     assert "토큰 자동 갱신" not in _chapter(document, 3)
     assert "토큰 자동 갱신" not in _chapter(document, 4)
 
@@ -3540,10 +3541,9 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
     갈래 이름을 밝히며, q-chatbot 이 바꾼 2차 보드 Q2-25 는 7-1 에 한 줄이고 그 줄이 6-40 을
     가리킨다."""
     document = _text()
-    assert "판 v1.43" in document.split("\n## 1. ")[0]
     assert "6-40 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-40. ") :]
+    record = section[section.index("\n### 6-40. ") : section.index("\n### 6-41. ")]
     assert "확인 열하나는 모두 「좋음」" in record and "여쭘 다섯은 모두 카드 권장" in record
     assert "6-38 · 6-39 줄은 그때 기록 그대로" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
@@ -3574,6 +3574,45 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
     v143 = history[history.index("- **v1.43 — 2026-11-21.**") :]
     for phrase in ("6-40", "q-chatbot (a)", "q-invest-sort (a)", "q-blank-head (b)", "규칙 82"):
         assert phrase in v143, phrase
+
+
+GUIDE_LOAD_CONVERSION = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "load_conversion.md"
+
+
+def test_the_a_to_g_requests_open_6_41_with_the_basis_name_exception() -> None:
+    """v1.44 — 6-41 은 사용자 요청 A ~ G(2026-11-22)를 지으며 화면 규칙에 닿은 판정의 절이다.
+    줄마다 머리 판정 id · 굵은 답 · 끝 「(날짜 · 규칙 id)」 이고(뒤 줄은 같은 꼴로 더해진다), 첫
+    줄은 환산 「집계 기준」 값 이름 「산출 기준 총량」 의 UI-CON-02 예외(g-basis-name)다. 규칙
+    UI-CON-02 예외 칸이 그 줄을 가리키고, 줄이 말하는 가름 글이 Guide 「환산 조건」 에 있다."""
+    document = _text()
+    assert "판 v1.44" in document.split("\n## 1. ")[0]
+    assert "6-41 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    assert lines and lines[0].startswith("- g-basis-name · "), lines[:1]
+    known = {rule.id for rule in _rules()}
+    for line in lines:
+        match = re.match(
+            r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-\d{2}) · ([^()]+)\)$", line
+        )
+        assert match, line[:120]
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line[:120]
+    first = lines[0]
+    assert "→ **UI-CON-02 예외 — 사용자가 정한 이름 그대로, Guide · 칸 풍선이 가름**" in first
+    assert "「산출 기준 총량」" in first and "「소요대수 산출 기준」" in first
+    assert "UI-CON-02" in RULE_TOKEN.findall(first.rsplit("(2026-11-22 · ", 1)[1])
+    con02 = {rule.id: rule for rule in _rules()}["UI-CON-02"]
+    exception = con02.fields["예외"][0]
+    assert "「산출 기준 총량」" in exception and "6-41 g-basis-name" in exception
+    assert "6-41" in con02.fields["근거"][0]
+    guide = GUIDE_LOAD_CONVERSION.read_text(encoding="utf-8")
+    assert "**산출 기준 총량**" in guide and "「소요대수 산출 기준」" in guide
+    history = _chapter(document, 8)
+    v144 = history[history.index("- **v1.44 — 2026-11-23.**") :]
+    for phrase in ("6-41", "g-basis-name", "UI-CON-02", "규칙 82"):
+        assert phrase in v144, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
