@@ -73,6 +73,17 @@ def test_the_notice_is_a_shell_state_alert_at_the_end_of_the_registry() -> None:
     assert shell[-3:] == ["GL-07", "GL-08", "GL-09"]
 
 
+def test_the_basis_missing_route_alert_closes_the_static_group_after_the_pkg_rule() -> None:
+    """부하 예외 바탕 없음(`ST-22`, 2026-11-22 사용자 답 Q13)은 같은 탭 경로 쪽 알림(`ST-15` ·
+    `ST-21`)과 같은 Static 무리의 끝 — `ST-21` 바로 뒤에 선다(무리 안에 더한 `ST-21` 선례). 고칠
+    일이 있어 확인 필요 단계의 상태 알림이다."""
+    spec = alerts.spec("ST-22")
+    assert (spec.level, spec.kind) == ("check", "state")
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("ST-22") == codes.index("ST-21") + 1
+    assert codes[codes.index("ST-22") + 1].startswith("HM-")
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):

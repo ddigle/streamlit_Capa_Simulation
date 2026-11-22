@@ -196,6 +196,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("ST-17", "check", "state", "가용대수가 없어 빈칸인 공정 · 주차(표준 목표)"),
     AlertSpec("ST-20", "error", "event", "계산 화면을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("ST-21", "info", "state", "소요기준 PKG 의 Buffer 밖 행 — 규칙대로 세지 않음"),
+    AlertSpec("ST-22", "check", "state", "부하 예외 바탕이 없어 소요대수 산출에서 뺀 경로"),
     AlertSpec("HM-01", "error", "event", "HOME 을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("HM-02", "check", "state", "측정률 행이 없어 중립값 1.0 으로 계산한 경로"),
     AlertSpec("HM-04", "check", "state", "선행 B/O 반영 계획이 0 이하라 적용하지 못한 달"),

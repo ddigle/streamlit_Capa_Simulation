@@ -146,16 +146,19 @@ def test_the_unit_capacity_exclusions_ride_on_the_alarm_row_not_the_page() -> No
 
 
 def test_the_required_tab_alerts_and_carries_its_lists_on_the_alarm_rows() -> None:
-    """소요대수 탭은 열린 회차마다 경로 쪽(`ST-15` · PKG 규칙 `ST-21`)과 계획 쪽(`ST-01` — Static
-    Capa 와 같은 코드 · 같은 범위) 상태 알림을 내고, 목록은 본문 펼침이 아니라 그 알림 줄의 표다
-    (2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」)."""
+    """소요대수 탭은 열린 회차마다 경로 쪽(`ST-15` · PKG 규칙 `ST-21` · 부하 예외 바탕 없음
+    `ST-22`)과 계획 쪽(`ST-01` — Static Capa 와 같은 코드 · 같은 범위) 상태 알림을 내고, 목록은 본문
+    펼침이 아니라 그 알림 줄의 표다(2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」). 선언이
+    없는 시나리오에서 `ST-22` 는 「없음」 이다."""
     app = _open_calc_tab(
         AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
     assert not app.exception
     assert not app.warning
     codes = [note["code"] for note in alert_notes(app) if note.get("kind") == "state"]
-    assert {"ST-15", "ST-21", "ST-01"} <= set(codes)
+    assert {"ST-15", "ST-21", "ST-22", "ST-01"} <= set(codes)
+    (basis,) = [note for note in alert_notes(app) if note["code"] == "ST-22"]
+    assert basis["active"] is False
     assert all(note["tab"] == "소요대수" for note in alert_notes(app) if note.get("tab"))
     assert "ST-14" not in codes and "HM-02" not in codes
     assert not list(app.expander)

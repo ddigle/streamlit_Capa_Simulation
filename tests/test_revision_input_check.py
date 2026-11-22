@@ -50,6 +50,7 @@ from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     UNROUTED_LOADS_ATTR,
     UNROUTED_UNUSED_REASON,
+    calculate_required_equipment,
     required_exclusion_counts,
 )
 from capa_simulation.services.revision_input_check import (
@@ -67,6 +68,10 @@ from capa_simulation.services.revision_input_check import (
     build_input_check,
     calculation_period,
     reason_label,
+)
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 from capa_simulation.services.unit_capacity import (
@@ -194,7 +199,8 @@ def test_the_four_demand_counts_are_the_gate_counts(tables: Tables) -> None:
     outcome = full_capacity_outcome(edited, edited)
     assert outcome.error is None and outcome.required_equipment is not None
     counts = required_exclusion_counts(outcome.required_equipment)
-    assert min(counts) > 0, counts
+    demand = (counts.excluded_plans, counts.blank_plans, counts.unrouted_loads)
+    assert min(*demand, counts.excluded_routes) > 0, counts
 
     check = _check(edited)
 
@@ -207,6 +213,42 @@ def test_the_four_demand_counts_are_the_gate_counts(tables: Tables) -> None:
     assert unrouted.count == counts.unrouted_loads
     assert routes.subtitle == f"그 가운데 부하가 붙은 경로 {counts.excluded_routes:,}"
     assert routes.count is not None and routes.count >= counts.excluded_routes
+
+
+def test_basis_missing_routes_are_a_reason_of_the_route_group_with_the_gate_count(
+    tables: Tables,
+) -> None:
+    """부하 예외 바탕이 없어 뺀 Core 줄은 경로 묶음의 까닭 하나로 선다 — 묶음 수 · 부제는 검사의
+    합(`excluded_routes`)과 같고, 그 까닭의 수는 부분 수(`basis_missing_routes`)다.
+
+    내장 시드에는 Buffer 경로가 없어 WF Core 경로를 가진 공정을 선언하면 그 Core 줄의 바탕이 없다.
+    전체 기간 계산은 아직 선언을 받지 않으므로 계산 함수에 선언을 넘겨 결과를 짓는다.
+    """
+    plain = full_capacity_outcome(tables, tables)
+    assert plain.error is None and plain.unit_capacity is not None
+    assert plain.required_equipment is not None
+    reqb = tables["RQ_REQB"]
+    wafer_core = reqb["소요기준"].eq("WF") & reqb["WF 구분"].eq("Core")
+    declared = calculate_required_equipment(
+        reqb,
+        tables["RQ_PKG_PLAN"],
+        tables["RQ_YLD"],
+        tables["RQ_CHIP_QTY"],
+        plain.unit_capacity,
+        route_exceptions={str(reqb.loc[wafer_core, "공정"].iloc[0]): BUFFER_X_CORE_CHIP},
+    )
+    counts = required_exclusion_counts(declared)
+    assert counts.basis_missing_routes > 0, counts
+    before = required_exclusion_counts(plain.required_equipment)
+    assert counts.excluded_routes == before.excluded_routes + counts.basis_missing_routes
+
+    check = build_input_check(CapacityOutcome(plain.unit_capacity, declared, None), None, None)
+
+    routes = check.group(GROUP_ROUTES)
+    assert routes is not None
+    assert dict(routes.reasons)[ROUTE_LOAD_BASIS_MISSING_REASON] == counts.basis_missing_routes
+    assert reason_label(ROUTE_LOAD_BASIS_MISSING_REASON) == ROUTE_LOAD_BASIS_MISSING_REASON
+    assert routes.subtitle == f"그 가운데 부하가 붙은 경로 {counts.excluded_routes:,}"
 
 
 def test_every_check_group_is_counted_and_the_calculation_says_how_many(tables: Tables) -> None:

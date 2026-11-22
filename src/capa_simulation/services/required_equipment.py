@@ -29,6 +29,7 @@ from capa_simulation.services.load_calculator import (
 )
 from capa_simulation.services.route_load_exceptions import (
     NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
     RouteLoadDeclaration,
     apply_route_load_exceptions,
     build_route_load_bases,
@@ -110,7 +111,7 @@ PKG_UNCOUNTED_REASON = "PKG 기준은 Buffer 로만 계수"
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
 # `RQ_REQB` 경로 쪽 제외 — 대당 Capa 가 없거나 0 이하인 경로, PKG 의 Buffer 외 행, 공정별 부하 산출
-# 예외의 바탕(Buffer Wafer 부하 · Core `구분_Chip`)이 없는 선언 공정 Core 줄
+# 예외의 바탕(Buffer Wafer 부하 · Core `구분_Chip`)이 없거나 한 키에 둘 이상인 선언 공정 Core 줄
 # (`route_load_exceptions.ROUTE_LOAD_BASIS_MISSING_REASON`). 까닭은 `제외사유` 칸이 가른다.
 REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR = "excluded_required_equipment_rows"
 # ------------------------------------------------------------------ 소요대수에 들지 않은 계획
@@ -161,9 +162,12 @@ class RequiredExclusionCounts(NamedTuple):
     unrouted_loads: int = 0
     # 부하가 붙었는데 소요대수에서 뺀 경로(`RQ_REQB` 행 수) — 대당 Capa 가 없거나 0 이하인 것과
     # 부하 예외 바탕이 없는 것(`ROUTE_LOAD_BASIS_MISSING_REASON`)을 함께 센다. PKG 의 Buffer 외
-    # 행은 세지 않는다. 이 건수를 말하는 화면 글은 아직 대당 Capa 까닭으로만 말한다 — 선언을 잇는
-    # 단계에서 까닭으로 가른다(AGENTS 6장 「공정별 부하 산출 예외」 답 대기).
+    # 행은 세지 않는다. 저장 · 지정 검사와 입력 점검이 이 합을 센다.
     excluded_routes: int = 0
+    # `excluded_routes` 가운데 부하 예외 바탕이 없어 뺀 경로(부분 수 — 합에 이미 들어 있다). 화면
+    # 글이 대당 Capa 까닭(합 − 이 수)과 이 까닭을 갈라 말한다 — 고칠 곳이 대당 Capa 기준정보가
+    # 아니라 수율 · Chip 구성이다(AGENTS 6장 「공정별 부하 산출 예외」).
+    basis_missing_routes: int = 0
 
 
 def calculate_required_equipment(
@@ -234,12 +238,15 @@ def count_required_exclusions(
     """`required_exclusion_counts` 의 셈 — attrs 를 이미 꺼낸 제외 목록 셋(부하량에서 빠진 계획·경로
     없는 계획 부하·소요대수에서 뺀 경로)으로 센다. 산출 결과 요약 캐시(`ScenarioResultSummary`)처럼
     프레임 대신 목록만 든 쪽이 같은 셈을 쓴다. 프레임이 아닌 값은 없는 것으로 본다."""
-    excluded_routes = 0
+    excluded_routes = basis_missing_routes = 0
     if isinstance(routes, pd.DataFrame) and {"제외사유", "부하량"} <= set(routes.columns):
         lost = routes["제외사유"].ne(PKG_UNCOUNTED_REASON) & pd.to_numeric(
             routes["부하량"], errors="coerce"
         ).gt(0)
         excluded_routes = int(lost.sum())
+        basis_missing_routes = int(
+            (lost & routes["제외사유"].eq(ROUTE_LOAD_BASIS_MISSING_REASON)).sum()
+        )
     blank_plans = excluded_plans = 0
     if isinstance(load_rows, pd.DataFrame) and "누락 기준정보" in load_rows.columns:
         blank = load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON)
@@ -252,6 +259,7 @@ def count_required_exclusions(
             len(counted_unrouted_loads(unrouted)) if isinstance(unrouted, pd.DataFrame) else 0
         ),
         excluded_routes=excluded_routes,
+        basis_missing_routes=basis_missing_routes,
     )
 
 

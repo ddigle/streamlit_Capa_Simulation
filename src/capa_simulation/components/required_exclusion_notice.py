@@ -3,7 +3,8 @@
 """**0 으로 접은 것을 말하지 않으면 확보율이 조용히 낙관 쪽으로 틀어진다.**
 
 부하량에서 빠진 계획(기준정보 없음), 생산수량이 비어 계획 없음으로 본 계획, `RQ_REQB` 경로에 닿지
-않은 계획 부하, 부하가 붙었는데 대당 Capa 가 없어 뺀 경로 — 모두 계산을 멈추지 않고 이어 가는 대신
+않은 계획 부하, 부하가 붙었는데 대당 Capa 가 없어 뺀 경로, 부하 예외 바탕이 없어 뺀 경로 — 모두
+계산을 멈추지 않고 이어 가는 대신
 그 수요가 어느 공정의 소요대수에도 들지 않는다. 그만큼 소요대수가 작아져 확보율이 실제보다 높게
 나올 수 있다(빈 생산수량이 정말 계획 없음이면 그대로다). 그 제품에 그 소요기준·WF 구분 경로가
 아예 없어 닿지 않은 부하(EDP-TSV 의 PKG 처럼 규칙상 쓰지 않는 조합)는 세지도 그리지도 않는다 — 세면
@@ -12,7 +13,9 @@
 그래서 같은 문장을 여러 자리에서 쓴다(HOME 에는 띄우지 않는다 — 2026-10-19 사용자 요청). 리비전
 저장·공식 발행 검사는 허락하면서 경고, 공식버전 자동 갱신의 발행은 막지 않고 실행 기록 사유 끝에
 붙인다(`auto_official_update_runner` — 「지금 실행」 결과는 화면 발행과 같이 성공 알림 밑의 경고로
-따로 띄운다). 모두 시나리오 전체 기간이다. 그 저장 리비전 하나의 같은 셈
+따로 띄운다). 모두 시나리오 전체 기간이다. 경로 쪽 두 까닭(대당 Capa 없음 · 부하 예외 바탕
+없음)은 고칠 곳이 달라(대당 Capa 기준정보 · 수율과 Chip 구성) 문장 안에서도 갈라
+센다(`basis_missing_routes`). 그 저장 리비전 하나의 같은 셈
 (`required_exclusion_counts`)을 같은 범위로 묶음 수와 행으로 보이는 자리가 시나리오 관리 › 목록
 관리 「점검」 칸이라 그 경고의 목록 자리 · 「그 화면으로」 도 그 칸이다(`REQUIRED_LIST_NOTE` ·
 `REQUIRED_TAB_GOTO` — 2026-11-11 입력 점검 검토 보드 F4 (나)). 산출 결과 소요대수 탭의 목록은
@@ -23,10 +26,11 @@
 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지 않게 두 자리에도 같은 문장을 띄운다 —
 PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림이 서는 회차)와 Static Capa 현황 요약
 맨 위(그 화면의 조회기간 — 미달 건수·필요대수가 그만큼 작게 나올 수 있다). 두 자리는 **계획 쪽
-건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 대당 Capa 기준정보
-몫이라 계획을 고치지 않아도 늘 있을 수 있고(사내 리뷰 `202610271800` 보충 8-2X 에서 0 이 아니었다),
-그대로 실으면 적용할 때마다·현황 요약을 열 때마다 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19
-결정과 같은 까닭). 경로 쪽은 위 자리들(저장·발행 검사 · 목록 관리 「점검」)이 그대로 말한다.
+건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa · 부하 예외 바탕이 없어 뺀 부하 경로)은
+기준정보 몫이라 계획을 고치지 않아도 늘 있을 수 있고(사내 리뷰 `202610271800` 보충 8-2X 에서 0 이
+아니었다), 그대로 실으면 적용할 때마다·현황 요약을 열 때마다 서는 경고가 된다(HOME 에서 이 줄을 뺀
+2026-10-19 결정과 같은 까닭). 경로 쪽은 위 자리들(저장·발행 검사 · 목록 관리 「점검」)이 그대로
+말한다.
 
 **화면 자리는 상태 알림이다**(2026-11-03 결정 보드 D2 (나)). Static Capa · 산출 결과 · 생산 계획은
 이 경고를 자리에 그리지 않고 `alerts.state` 로 낸다 — 내용(건수)이 바뀔 때만 오른쪽 아래 알림창에
@@ -34,15 +38,16 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 있는지를 말한다. 코드는 `ST-01`(계획 쪽 · 조회기간 — Static Capa 와 산출 결과 소요대수 탭이 같은
 코드 · 같은 범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다), `ST-04`(PKG PLAN 적용 뒤 ·
 시나리오 전체 기간), `ST-14`(대당 Capa 제외 기준정보), `ST-15`(대당 Capa 가 없어 소요대수에서 뺀
-경로), `ST-21`(PKG 의 Buffer 밖 행 — 규칙이라 알림 단계)다.
+경로), `ST-21`(PKG 의 Buffer 밖 행 — 규칙이라 알림 단계), `ST-22`(부하 예외 바탕이 없어
+소요대수에서 뺀 경로 — 고칠 곳이 수율 · Chip 구성이라 `ST-15` 와 가른다)다.
 
 **목록도 그 알림의 Alarm 줄 표다**(2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」).
 조건의 내역이라 본문 접힘에 두지 않는다(설계 규칙 UI-TXT-04) — 줄의 「… 보기」 가 펼치고 CSV 를
-내려받는다(화면은 표시명, 파일은 원본). 표 하나는 그 알림의 건수와 같은 행이다 — `ST-15` · `ST-21`
-은 사유로 가르고, `ST-01` · `ST-04` 는 고칠 곳이 다른 계획 쪽 두 목록을 두 표로 싣는다. 표가 알림에
-싣기에 크면(`alerts.TABLE_ROW_LIMIT`) 그 목록만 산출 결과 소요대수 탭 본문 펼침에 남는다
-(`render_oversized_lists`). 고칠 곳은 까닭 칸(`누락 기준정보` · `제외사유`) 머리 풍선과 Guide 가
-말한다(설계 규칙 UI-TXT-01 · 02 · 03).
+내려받는다(화면은 표시명, 파일은 원본). 표 하나는 그 알림의 건수와 같은 행이다 — `ST-15` ·
+`ST-21` · `ST-22` 는 사유로 가르고, `ST-01` · `ST-04` 는 고칠 곳이 다른 계획 쪽 두 목록을 두 표로
+싣는다. 표가 알림에 싣기에 크면(`alerts.TABLE_ROW_LIMIT`) 그 목록만 산출 결과 소요대수 탭 본문
+펼침에 남는다(`render_oversized_lists`). 고칠 곳은 까닭 칸(`누락 기준정보` · `제외사유`) 머리 풍선과
+Guide 가 말한다(설계 규칙 UI-TXT-01 · 02 · 03).
 """
 
 from __future__ import annotations
@@ -83,6 +88,7 @@ from capa_simulation.services.required_equipment import (
     RequiredExclusionCounts,
     counted_unrouted_loads,
 )
+from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_BASIS_MISSING_REASON
 from capa_simulation.session_slot import SessionSlot
 
 # 문장의 범위 말. 저장·발행 검사와 PKG PLAN 적용 알림은 시나리오 전체 기간,
@@ -112,6 +118,7 @@ REQUIRED_TAB_GOTO: Final = (
 CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
 REQUIRED_EXCLUSION_TITLE = "소요대수 제외 기준정보"
 PKG_UNCOUNTED_TITLE = "PKG Buffer 밖 행"
+ROUTE_BASIS_MISSING_TITLE = "부하 예외 바탕 없는 경로"
 LOAD_EXCLUSION_TITLE = "부하량에서 빠진 계획"
 UNROUTED_TITLE = "경로에 닿지 않은 계획 부하"
 # 계획 쪽 목록의 까닭 칸과 그 칸 머리 풍선 — 그 행을 어디서 고치는지(칸 하나의 뜻은 그 칸 곁 풍선 —
@@ -168,9 +175,10 @@ def required_check_target(
 
 
 def plan_side_counts(counts: RequiredExclusionCounts) -> RequiredExclusionCounts:
-    """계획 쪽 건수만 남긴다(경로 쪽 `excluded_routes` 는 0) — PKG PLAN 적용 알림·Static Capa 현황
-    요약처럼 「계획을 고쳤는데 수가 안 바뀐다」 를 말하는 자리가 쓴다(모듈 설명)."""
-    return counts._replace(excluded_routes=0)
+    """계획 쪽 건수만 남긴다(경로 쪽 `excluded_routes` · `basis_missing_routes` 는 0) — PKG PLAN
+    적용 알림·Static Capa 현황 요약처럼 「계획을 고쳤는데 수가 안 바뀐다」 를 말하는 자리가
+    쓴다(모듈 설명)."""
+    return counts._replace(excluded_routes=0, basis_missing_routes=0)
 
 
 def required_exclusion_message(
@@ -185,8 +193,11 @@ def required_exclusion_message(
         parts.append(f"생산수량이 비어 계획 없음으로 본 계획 {counts.blank_plans:,}건")
     if counts.unrouted_loads:
         parts.append(f"RQ_REQB 경로에 닿지 않은 계획 부하 {counts.unrouted_loads:,}건")
-    if counts.excluded_routes:
-        parts.append(f"대당 Capa 가 없어 뺀 부하 경로 {counts.excluded_routes:,}건")
+    capacity_routes = counts.excluded_routes - counts.basis_missing_routes
+    if capacity_routes:
+        parts.append(f"대당 Capa 가 없어 뺀 부하 경로 {capacity_routes:,}건")
+    if counts.basis_missing_routes:
+        parts.append(f"부하 예외 바탕 없음으로 뺀 부하 경로 {counts.basis_missing_routes:,}건")
     if not parts:
         return ""
     message = (
@@ -378,7 +389,9 @@ def alert_uncounted_demand(
     alerts.state(
         code,
         scope=scope.scope,
-        content=list(plan),
+        # 지문 내용은 계획 쪽 세 수와 경로 쪽 합(늘 0) 네 칸이다 — 경로 쪽 부분 수
+        # (`basis_missing_routes`)는 합에 든 수라 넣지 않는다.
+        content=[plan.excluded_plans, plan.blank_plans, plan.unrouted_loads, plan.excluded_routes],
         active=bool(message),
         text=(
             f"소요대수에 안 든 계획 수요 {total:,}건({scope_name}) — 목록: {place}"
@@ -451,17 +464,20 @@ def alert_required_exclusions(
     file_suffix: str,
     memo: Hashable | None = None,
 ) -> tuple[ExclusionList, ...]:
-    """소요대수 산출에서 뺀 경로 — 대당 Capa 가 없는 것(`ST-15`, 기준정보를 고칠 일)과 PKG 의 Buffer
-    밖 행(`ST-21`, 규칙대로 세지 않은 것 — 고칠 것이 없다). 두 사유를 한 문장에 섞으면 고칠 것이
-    없는데 고치러 간다. 소요대수 탭이 열린 회차마다 둘 다 부른다. 목록도 사유로 갈라 각 줄의 표로
-    싣고(표 행 수가 그 알림 건수다) 만든 목록을 돌려준다 — 큰 것은 화면이 본문에 남긴다
-    (`render_oversized_lists`). `memo` 는 `required_exclusions` 내용을 정하는 키다(주면 알림 표를
-    기억한다)."""
+    """소요대수 산출에서 뺀 경로 — 대당 Capa 가 없는 것(`ST-15`, 대당 Capa 기준정보를 고칠 일),
+    PKG 의 Buffer 밖 행(`ST-21`, 규칙대로 세지 않은 것 — 고칠 것이 없다), 부하 예외 바탕이 없는
+    것(`ST-22`, 수율 · Chip 구성을 고치거나 겹친 원천을 다시 등록할 일). 사유를 한 문장에 섞으면
+    고칠 것이 없는데 고치러 가거나 다른 표를 고치러 간다. 소요대수 탭이 열린 회차마다 셋 다
+    부른다. 목록도 사유로 갈라 각 줄의 표로 싣고(표 행 수가 그 알림 건수다) 만든 목록을 돌려준다 —
+    큰 것은 화면이 본문에 남긴다(`render_oversized_lists`). `memo` 는 `required_exclusions` 내용을
+    정하는 키다(주면 알림 표를 기억한다)."""
     if required_exclusions.empty or "제외사유" not in required_exclusions.columns:
         uncounted_pkg = pd.Series(False, index=required_exclusions.index)
+        basis_missing = pd.Series(False, index=required_exclusions.index)
     else:
         uncounted_pkg = required_exclusions["제외사유"].eq(PKG_UNCOUNTED_REASON)
-    capacity_missing = required_exclusions.loc[~uncounted_pkg]
+        basis_missing = required_exclusions["제외사유"].eq(ROUTE_LOAD_BASIS_MISSING_REASON)
+    capacity_missing = required_exclusions.loc[~uncounted_pkg & ~basis_missing]
     capacity_list = (
         _exclusion_list(
             capacity_missing,
@@ -542,4 +558,47 @@ def alert_required_exclusions(
         tab=tab,
         tables=[pkg_table],
     )
-    return tuple(item for item in (capacity_list, pkg_list) if item is not None)
+    basis_rows = required_exclusions.loc[basis_missing]
+    basis_list = (
+        _exclusion_list(
+            basis_rows,
+            title=ROUTE_BASIS_MISSING_TITLE,
+            dimensions=RESULT_DIMENSIONS,
+            file_name=f"Capa_Required_Route_Exception_Basis_{file_suffix}.csv",
+            key="download_required_route_basis_csv",
+            display_order=display_order,
+            labels=labels,
+            memo=memo,
+        )
+        if not basis_rows.empty
+        else None
+    )
+    basis_table = basis_list.table if basis_list is not None else None
+    basis_count = len(basis_rows)
+    basis_page = f"이 탭 「{ROUTE_BASIS_MISSING_TITLE}」"
+    alerts.state(
+        "ST-22",
+        scope=scope.scope,
+        content=basis_count,
+        active=basis_count > 0,
+        text=(
+            f"부하 예외 바탕 없음 {basis_count:,}건 — 목록: "
+            f"{ALARM_ROW_PLACE if basis_table is not None else basis_page}"
+        ),
+        full=(
+            "부하 예외 산식의 바탕(Buffer Wafer 부하 · Core 구분_Chip)이 없거나 한 키에 둘이라 "
+            f"소요대수 산출에서 {basis_count:,}건을 제외했습니다. 목록은 "
+            + (
+                alarm_table_place(ROUTE_BASIS_MISSING_TITLE)
+                if basis_table is not None
+                else basis_page
+            )
+            + " 입니다 — 그 제품의 수율 · Chip 구성(Buffer 행 · Core 구분_Chip)을 채우면 "
+            "소요대수에 듭니다. 같은 WF 구분을 두 표기로 적은 원천이면(목록의 WF 구분 표기로 "
+            "봅니다) 원천을 다시 등록합니다."
+        ),
+        scope_label=scope.label,
+        tab=tab,
+        tables=[basis_table],
+    )
+    return tuple(item for item in (capacity_list, pkg_list, basis_list) if item is not None)

@@ -6,6 +6,7 @@ import pytest
 
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
+    plan_side_counts,
     required_exclusion_message,
 )
 from capa_simulation.services.load_calculator import (
@@ -16,6 +17,7 @@ from capa_simulation.services.load_calculator import (
 )
 from capa_simulation.services.required_equipment import (
     CAPACITY_KEYS,
+    PKG_UNCOUNTED_REASON,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
     UNROUTED_KEY_MISMATCH_REASON,
@@ -24,9 +26,11 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_UNUSED_REASON,
     RequiredExclusionCounts,
     calculate_required_equipment,
+    count_required_exclusions,
     required_equipment_to_month_table,
     required_exclusion_counts,
 )
+from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_BASIS_MISSING_REASON
 from capa_simulation.services.securement_rate import calculate_securement_rate
 
 
@@ -1055,6 +1059,40 @@ def test_exclusion_counts_count_only_routes_that_lose_load() -> None:
     assert required_exclusion_counts(result) == RequiredExclusionCounts(
         excluded_plans=1, unrouted_loads=1, excluded_routes=1
     )
+
+
+def test_basis_missing_routes_are_a_part_of_the_excluded_routes_and_say_their_own_reason() -> None:
+    """부하 예외 바탕 없음은 경로 쪽 합(`excluded_routes`)의 부분 수다 — 합은 그대로 두 까닭을 함께
+    세고(저장 · 지정 검사 · 입력 점검이 보는 수), 문장은 대당 Capa 몫(합 − 부분 수)과 바탕 없음
+    몫을 갈라 말한다. 부하 0 인 줄과 PKG 규칙 줄은 어느 쪽에도 들지 않고, 계획 쪽만 남기는 자리는
+    두 칸을 모두 0 으로 둔다."""
+    routes = pd.DataFrame(
+        {
+            "제외사유": [
+                "대당 Capa 없음",
+                "대당 Capa 0 이하",
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                PKG_UNCOUNTED_REASON,
+            ],
+            "부하량": [5.0, 3.0, 7.0, 2.0, 0.0, 9.0],
+        }
+    )
+
+    counts = count_required_exclusions(None, None, routes)
+
+    assert counts == RequiredExclusionCounts(excluded_routes=4, basis_missing_routes=2)
+    message = required_exclusion_message(counts, scope=FULL_SCOPE)
+    capacity_part = "대당 Capa 가 없어 뺀 부하 경로 2건"
+    assert f"{capacity_part} · 부하 예외 바탕 없음으로 뺀 부하 경로 2건" in message
+    only_basis = count_required_exclusions(None, None, routes.iloc[2:4])
+    assert only_basis == RequiredExclusionCounts(excluded_routes=2, basis_missing_routes=2)
+    only_basis_message = required_exclusion_message(only_basis, scope=FULL_SCOPE)
+    assert "대당 Capa" not in only_basis_message
+    assert "부하 예외 바탕 없음으로 뺀 부하 경로 2건" in only_basis_message
+    assert plan_side_counts(counts) == RequiredExclusionCounts()
+    assert required_exclusion_message(plan_side_counts(counts), scope=FULL_SCOPE) == ""
 
 
 # ------------------------------------------------------------------ 규칙상 쓰지 않는 조합

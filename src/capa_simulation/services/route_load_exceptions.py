@@ -27,12 +27,15 @@
   부하가 0 이면 0 으로 두고(계획 없는 달 · 변형), 0 보다 클 때만 그 줄을 세는 제외
   (`ROUTE_LOAD_BASIS_MISSING_REASON`)로 돌려준다 — 부하량 칸에 일반 산식 값이 남아 소요대수 밖
   수요 건수에 잡힌다. Buffer 부하나 `구분_Chip` 이 0 인 것은 바탕이 있는 것이라 그대로 0 이다.
+- **겹친 바탕도 바탕 없음.** 한 부하 키에 바탕이 둘 이상이면(같은 `WF 구분` 을 두 표기로 적은
+  원천) 어느 값을 곱할지 모른다. 멈추지 않고 그 키를 바탕 표에서 빼서, 그 키를 쓰는 Core 줄만 위
+  바탕 없음 규칙을 탄다(2026-11-22 사용자 답 Q13). 다른 키의 줄은 그대로다.
 - **선언이 비면 아무것도 바꾸지 않는다.**
 - **부대공정에는 따라 걸지 않는다.** 공정 이름으로만 고르므로 선언 공정을 따라가는 부대공정은 제
   이름이라 일반 산식이다. 필요하면 그 이름을 선언에 더한다(2026-11-19 사용자 답 Q4 선례).
 
 Streamlit · 세션 · DB 를 모른다. 선언을 저장하고 호출처까지 넘기는 자리는 아직 없다(AGENTS 6장
-— 답 대기).
+「공정별 부하 산출 예외」).
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ from typing import Final, NamedTuple
 
 import pandas as pd
 
-from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
+from capa_simulation.services.frame_checks import strip_text_columns
 from capa_simulation.services.frame_contracts import match_key, scalar_match_key
 from capa_simulation.services.load_calculator import CHIP_KEYS
 from capa_simulation.services.product_type import (
@@ -82,7 +85,6 @@ ROUTE_LOAD_BASIS_MISSING_REASON: Final = "부하 예외 바탕 없음"
 EXCLUSION_REASON_COLUMN: Final = "제외사유"
 # 바탕 표의 값 칸. 나머지 칸이 모두 경로 줄과 잇는 키다.
 EXCEPTION_LOAD_COLUMN: Final = "예외 부하량"
-_BASIS_KEY_MESSAGE: Final = "부하 예외 바탕(Buffer Wafer 부하 · Core 구분_Chip)의 연결 키가"
 
 _WAFER_BASES: Final = frozenset({"WF", "WAFER"})
 _CHIP_VALUE_COLUMN: Final = "구분_Chip"
@@ -159,8 +161,8 @@ def build_route_load_bases(
     `chip_qty` 는 원래 `RQ_CHIP_QTY` 다 — 사본에서 키를 다듬는다. 제품을 잇는 키는 `CHIP_KEYS`
     에서, 부하 키는 `load_keys` 에서 `WF 구분` 만 빼서 만든다(업무 키가 넓어지면 따라간다).
     `구분_Chip` 이 빈 Core 행은 바탕이 없는 것으로 본다. 한 부하 키에 바탕이 둘 이상이면(같은
-    이름을 두 표기로 적은 원천) 그 키를 쓰는 줄이 있을 때만 `apply_route_load_exceptions` 가
-    멈춘다.
+    이름을 두 표기로 적은 원천) 그대로 둘 다 돌려준다 — `apply_route_load_exceptions` 가 그 키를
+    빼서 그 키를 쓰는 Core 줄만 바탕 없음으로 본다.
     """
     base_keys = [key for key in load_keys if key != WF_DIVISION_COLUMN]
     product_keys = [key for key in CHIP_KEYS if key != WF_DIVISION_COLUMN]
@@ -190,7 +192,8 @@ def apply_route_load_exceptions(
 
     받은 프레임은 고치지 않는다. 돌려주는 `routes` 는 바탕이 없어 뺀 줄을 뺀 사본이고 행 차례는
     그대로다. `excluded` 는 그 뺀 줄(부하량 칸은 일반 산식 값)에 `제외사유` 칸을 더한 것이다. 바탕
-    표(`build_route_load_bases`)의 `예외 부하량` 밖 칸이 모두 잇는 키다.
+    표(`build_route_load_bases`)의 `예외 부하량` 밖 칸이 모두 잇는 키다. 한 키에 바탕이 둘 이상이면
+    그 키의 바탕을 모두 버린다 — 그 키를 쓰는 Core 줄은 바탕이 없는 줄과 같다.
     """
     buffer_x_core_chip = {
         process: formula
@@ -213,7 +216,7 @@ def apply_route_load_exceptions(
     join_keys = [column for column in exception_loads.columns if column != EXCEPTION_LOAD_COLUMN]
     core_keys = routes.loc[core, join_keys]
     needed = exception_loads.merge(core_keys.drop_duplicates(), on=join_keys, how="inner")
-    assert_unique_keys(needed, join_keys, _BASIS_KEY_MESSAGE)
+    needed = needed.loc[~needed.duplicated(subset=join_keys, keep=False)]
     looked_up = core_keys.merge(needed, on=join_keys, how="left", validate="many_to_one")
     exception_load = pd.Series(
         looked_up[EXCEPTION_LOAD_COLUMN].to_numpy(dtype="float64"), index=core_keys.index

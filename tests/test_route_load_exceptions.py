@@ -264,8 +264,11 @@ def test_a_missing_buffer_load_with_a_general_core_load_is_a_counted_exclusion()
     other_core = result.loc[result["공정"].eq(_OTHER) & result["WF 구분"].eq("Core")]
     assert other_core["부하량"].max() == pytest.approx(_core_general(202602))
     counts_on, counts_off = required_exclusion_counts(result), required_exclusion_counts(off)
-    assert counts_on.excluded_routes == counts_off.excluded_routes + len(demo.MONTHS) * len(_STEPS)
-    assert counts_on._replace(excluded_routes=0) == counts_off._replace(excluded_routes=0)
+    lost = len(demo.MONTHS) * len(_STEPS)
+    assert counts_on.excluded_routes == counts_off.excluded_routes + lost
+    assert (counts_on.basis_missing_routes, counts_off.basis_missing_routes) == (lost, 0)
+    routes_side = {"excluded_routes": 0, "basis_missing_routes": 0}
+    assert counts_on._replace(**routes_side) == counts_off._replace(**routes_side)
 
 
 def test_a_top_dummy_route_without_unit_capacity_is_not_counted_as_lost_demand() -> None:
@@ -350,7 +353,7 @@ def test_each_business_key_keeps_its_own_buffer_basis(key: str, value: str) -> N
 
     DEMO-HBM 계획에 그 키 하나만 다르고 생산수량이 다른 행을 더한다(경로는 없다). 선언 공정의
     Core 줄은 제 계획의 Buffer 부하만 곱한다 — 바탕 키에서 그 칸이 빠지면 한 키에 바탕이 둘이
-    되어 멈춘다.
+    되어 그 Core 줄이 「부하 예외 바탕 없음」 으로 빠진다.
     """
     reqb, capacity = _route_tables()
     plan = demo.plan()
@@ -408,32 +411,90 @@ def _with_division_spelled_twice(
     )
 
 
-@pytest.mark.parametrize("division", ["Buffer", "Core"])
-def test_two_bases_for_one_key_stop_only_where_a_declared_core_route_uses_it(
-    division: str,
-) -> None:
-    """한 부하 키에 바탕이 둘이면(Buffer Wafer 부하든 Core `구분_Chip` 이든) 어느 값을 곱할지 모른다
-    — 선언 공정의 Core 줄이 그 키를 쓸 때만 멈추고(끔에서는 그대로 선다), 경로가 없는 다른 제품의
-    겹침으로는 멈추지 않는다."""
-    reqb, capacity = _route_tables()
-    plan, yields, chip = _with_division_spelled_twice(demo.HBM, division)
-    calculate_required_equipment(reqb, plan, yields, chip, capacity)
-
-    with pytest.raises(ValueError, match="부하 예외 바탕"):
-        calculate_required_equipment(reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED)
-
-    plan, yields, chip = _with_division_spelled_twice(_UNROUTED_HBM, division)
+def _overlapped_bases(
+    plan: pd.DataFrame, yields: pd.DataFrame, chip: pd.DataFrame, product: str
+) -> pd.DataFrame:
+    """`product` 의 바탕 표 가운데 부하 키마다 한 줄이 아닌 것 — 견본이 정말 겹쳤는지 먼저 본다."""
     wafer = calculate_wafer_load(plan, yields, chip)
     loads = wafer.rename(columns={"물량": "부하량"}).assign(소요기준="WF")
     bases = build_route_load_bases(loads, chip, LOAD_KEYS)
-    unrouted_bases = bases.loc[bases["제품정보"].eq(_UNROUTED_HBM)]
-    assert unrouted_bases.duplicated(subset=[*bases.columns[:-1]]).any()
+    value = route_load_exceptions.EXCEPTION_LOAD_COLUMN
+    keys = [column for column in bases.columns if column != value]
+    mine = bases.loc[bases["제품정보"].eq(product)]
+    return mine.loc[mine.duplicated(subset=keys, keep=False)]
+
+
+@pytest.mark.parametrize("division", ["Buffer", "Core"])
+def test_two_bases_for_one_key_drop_only_that_core_route_as_basis_missing(
+    division: str,
+) -> None:
+    """한 부하 키에 바탕이 둘이면(Buffer Wafer 부하든 Core `구분_Chip` 이든) 어느 값을 곱할지 모른다
+    — 멈추지 않고 그 키를 쓰는 선언 공정의 Core 줄만 「부하 예외 바탕 없음」 으로 뺀다(2026-11-22
+    사용자 답 Q13). 끔에서는 그대로 서고, 다른 줄은 겹침 없는 켬과 같으며, 경로가 없는 다른 제품의
+    겹침은 선언 공정의 Core 줄에 닿지 않는다.
+
+    견본의 두 바탕은 같은 값이다(같은 행을 대문자로 한 벌 더 적음) — 겹친 키를 빼지 않고 앞의 것을
+    고르면 Core 줄이 예외 부하를 받아 이 시험이 실패한다.
+    """
+    reqb, capacity = _route_tables()
+    plan, yields, chip = _with_division_spelled_twice(demo.HBM, division)
+    assert not _overlapped_bases(plan, yields, chip, demo.HBM).empty
+    off = calculate_required_equipment(reqb, plan, yields, chip, capacity)
+    plain = _calculate(_DECLARED)
+
+    result = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED
+    )
+
+    missing = _basis_missing(result)
+    assert set(missing["공정"]) == {_EXC} and set(missing["WF 구분"]) == {"Core"}
+    assert sorted(zip(missing["생산계획년월"], missing["STEP_SEQ"], strict=True)) == sorted(
+        (month, step) for month in demo.MONTHS for step in _STEPS
+    )
+    for month in demo.MONTHS:
+        loads = missing.loc[missing["생산계획년월"].eq(month), "부하량"]
+        assert loads.tolist() == pytest.approx(_values(off, _EXC, "Core", month=month))
+    lost = len(demo.MONTHS) * len(_STEPS)
+    counts = required_exclusion_counts(result)
+    assert counts.basis_missing_routes == lost
+    assert counts.excluded_routes == required_exclusion_counts(plain).excluded_routes + lost
+    # 계획 없는 달의 Core 줄은 일반 부하가 0 이라 0 으로 남는다(세지 않는다).
+    assert _values(result, _EXC, "Core") == [0.0] * len(_STEPS)
+    # 다른 줄은 겹침 없는 켬과 같다 — 빠진 Core 줄만 없다.
+    kept, plain_routes = _by_route(result), _by_route(plain)
+    assert len(kept) == len(plain_routes) - lost
+    pd.testing.assert_frame_equal(kept, plain_routes.loc[kept.index])
+
+    plan, yields, chip = _with_division_spelled_twice(_UNROUTED_HBM, division)
+    assert not _overlapped_bases(plan, yields, chip, _UNROUTED_HBM).empty
     result = calculate_required_equipment(
         reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED
     )
     assert _values(result, _EXC, "Core", month=202601) == pytest.approx(
         [_core_exception(202601)] * len(_STEPS)
     )
+    assert _basis_missing(result).empty
+
+
+def test_two_bases_for_one_key_with_no_general_core_load_give_zero_without_an_exclusion() -> None:
+    """겹친 키라도 그 Core 줄의 일반 부하가 0 이면(Core `구분_Chip` 이 두 표기 모두 0) 0 으로 두고
+    세지 않는다 — 바탕 없음 규칙과 같다(AGENTS 6장 「공정별 부하 산출 예외」 (e))."""
+    reqb, capacity = _route_tables()
+    plan, yields, chip = _with_division_spelled_twice(demo.HBM, "Core")
+    chip.loc[
+        chip["제품정보"].eq(demo.HBM) & chip["WF 구분"].str.casefold().eq("core"), "구분_Chip"
+    ] = 0.0
+    assert len(_overlapped_bases(plan, yields, chip, demo.HBM)) > 0
+    off = calculate_required_equipment(reqb, plan, yields, chip, capacity)
+    assert _values(off, _EXC, "Core") == [0.0] * (len(_ROUTE_MONTHS) * len(_STEPS))
+
+    result = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED
+    )
+
+    assert _values(result, _EXC, "Core") == [0.0] * (len(_ROUTE_MONTHS) * len(_STEPS))
+    assert _basis_missing(result).empty
+    assert required_exclusion_counts(result).basis_missing_routes == 0
 
 
 def _assert_same_result(left: pd.DataFrame, right: pd.DataFrame) -> None:
