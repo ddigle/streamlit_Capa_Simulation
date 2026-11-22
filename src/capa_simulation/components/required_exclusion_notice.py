@@ -594,8 +594,9 @@ def alert_required_exclusions(
                 else basis_page
             )
             + " 입니다 — 그 제품의 수율 · Chip 구성(Buffer 행 · Core 구분_Chip)을 채우면 "
-            "소요대수에 듭니다. 같은 WF 구분을 두 표기로 적은 원천이면(목록의 WF 구분 표기로 "
-            "봅니다) 원천을 다시 등록합니다."
+            "소요대수에 듭니다. 수율 · Chip 구성에 그 제품의 같은 WF 구분이 두 표기(대소문자만 "
+            "다름)로 있으면 원천을 다시 등록합니다 — 목록의 WF 구분은 경로 쪽 표기라 겹침이 "
+            "보이지 않습니다."
         ),
         scope_label=scope.label,
         tab=tab,

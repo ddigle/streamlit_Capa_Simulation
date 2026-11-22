@@ -347,6 +347,10 @@ def test_basis_missing_routes_are_their_own_alert_apart_from_the_unit_capacity_o
     assert basis["active"] is True and basis["level"] == "check"
     assert basis["short"] == "부하 예외 바탕 없음 2건 — 목록: Alarm › 이 줄"
     assert "수율 · Chip 구성" in basis["full"] and "두 표기" in basis["full"]
+    # 겹친 두 표기는 바탕 표(수율 · Chip 구성)에 있고 목록(경로 줄)의 WF 구분은 경로 쪽 표기다 —
+    # 겹침을 목록에서 보라고 하지 않는다.
+    assert "수율 · Chip 구성에 그 제품의 같은 WF 구분이 두 표기" in basis["full"]
+    assert "목록의 WF 구분 표기로" not in basis["full"]
     table = note_table(basis, "부하 예외 바탕 없는 경로")
     assert table["total"] == 2
     assert table["file"] == "Capa_Required_Route_Exception_Basis_202601_202601.csv"
