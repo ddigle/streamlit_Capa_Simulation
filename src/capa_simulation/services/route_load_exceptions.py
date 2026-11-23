@@ -34,12 +34,15 @@
 - **부대공정에는 따라 걸지 않는다.** 공정 이름으로만 고르므로 선언 공정을 따라가는 부대공정은 제
   이름이라 일반 산식이다. 필요하면 그 이름을 선언에 더한다(2026-11-19 사용자 답 Q4 선례).
 
-Streamlit · 세션 · DB 를 모른다. 선언을 저장하고 호출처까지 넘기는 자리는 아직 없다(AGENTS 6장
+Streamlit · 세션 · DB 를 모른다. 선언은 시뮬레이션 `0040` 판 이력 표에 저장하지만
+(`persistence/route_load_exception_store.py`) 호출처까지 넘기는 자리는 아직 없다(AGENTS 6장
 「공정별 부하 산출 예외」).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Final, NamedTuple
@@ -115,6 +118,25 @@ def normalize_route_load_declaration(declaration: RouteLoadDeclaration) -> dict[
         if normalized.setdefault(key, formula) != formula:
             raise ValueError("부하 예외 선언에 대소문자만 다른 두 공정이 다른 산식으로 있습니다.")
     return normalized
+
+
+def route_load_declaration_json(declaration: RouteLoadDeclaration) -> str:
+    """선언의 정규 글 — 견줌 키 차례로 적은 (공정 견줌 키 → 산식 id) JSON.
+
+    원본 표기가 앞뒤 공백 · 대소문자만 달라도 같은 글이다 — 계산이 같은 선언은 같은 글이라 판 지문
+    (`route_load_declaration_digest`)이 이 글에서 나온다. 검증은 `normalize_route_load_declaration`
+    과 같다.
+    """
+    normalized = normalize_route_load_declaration(declaration)
+    return json.dumps(dict(sorted(normalized.items())), ensure_ascii=False, separators=(",", ":"))
+
+
+def route_load_declaration_digest(declaration: RouteLoadDeclaration) -> str:
+    """선언의 지문(정규 글의 sha256 16진). 빈 선언은 빈 글이다 — 판 이력의 비움 줄과 같은 값."""
+    if not normalize_route_load_declaration(declaration):
+        return ""
+    text = route_load_declaration_json(declaration)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def route_load_formula(process: object, declaration: RouteLoadDeclaration) -> str | None:

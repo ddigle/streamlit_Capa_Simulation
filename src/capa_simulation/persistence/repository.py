@@ -37,6 +37,7 @@ from capa_simulation.persistence import (
     key_process_store,
     past_data_store,
     process_rename_store,
+    route_load_exception_store,
     securement_threshold_store,
     sync_state,
     work_audit,
@@ -86,6 +87,8 @@ from capa_simulation.persistence.models import (
     GlobalTop5Band,
     OfficialReleaseSummary,
     RevisionSummary,
+    RouteLoadExceptionProfile,
+    RouteLoadExceptionState,
     ScenarioCreate,
     ScenarioPreset,
     ScenarioSnapshot,
@@ -1736,6 +1739,62 @@ class DuckDBScenarioRepository:
             det={"kind": kind, "entry": seq, "version": version_no, "processes": process_count},
         )
         return self.load_extra_process_state()
+
+    def load_route_load_exceptions(self) -> RouteLoadExceptionState:
+        """부하 예외 선언 판 이력 전체(오래된 차례) — 마지막 줄이 지금 선언이다.
+
+        배경 스레드(공식버전 자동 갱신)도 캐시 래퍼 없이 이것을 부른다. 저장소는 늘 마이그레이션을
+        마친 DB 를 열므로 표가 없으면 멈춘다.
+        """
+        with self._connect() as connection:
+            state = route_load_exception_store.read_route_load_exceptions(connection)
+        if state is None:
+            raise RuntimeError("부하 예외 선언 판 이력 표(마이그레이션 0040)가 없습니다.")
+        return state
+
+    def load_global_route_load_exceptions(self) -> RouteLoadExceptionProfile:
+        """지금 부하 예외 선언 — 공용 프로필 캐시(`persistence/cache.py`)가 싣는 꼴."""
+        return self.load_route_load_exceptions().profile
+
+    @grades.gated("admin.area")
+    def append_route_load_exceptions(
+        self,
+        *,
+        expected_seq: int,
+        entries: Mapping[str, str],
+        applied_by: str | None,
+        source_place: str | None,
+    ) -> RouteLoadExceptionState:
+        """부하 예외 선언의 새 판을 넣는다(append-only — 빈 사상이면 비움 판).
+
+        `expected_seq` 는 화면이 본 마지막 판 차례다(`RouteLoadExceptionMoved`). 견줌 키로 지금
+        판과 같으면 쓰지 않는다(`RouteLoadExceptionUnchanged`). 선언은 리비전 없이 모든
+        시나리오(공식 포함)의 소요대수 · 확보율을 바꾸는 쓰기라 공식 발행처럼 모으지 않고 COMMIT
+        뒤에 바로 올린다 — 모아 올리는 창 안에서 운영 서버가 다시 떠도 선언이 되돌아가지 않게.
+        """
+        author = (applied_by or "").strip() or None
+        try:
+            with self._write_transaction() as connection:
+                seq = route_load_exception_store.append_route_load_exceptions(
+                    connection,
+                    expected_seq=expected_seq,
+                    entries=entries,
+                    applied_by=author,
+                    source_place=source_place,
+                )
+        except route_load_exception_store.RouteLoadExceptionUnchanged:
+            raise
+        except Exception:
+            audit_recorder.record("admin_route_load_exception", out="fail", claimed=author)
+            raise
+        sync_state.request_upload()
+        # 감사 줄에는 판 차례 · 공정 수만 — 공정 이름 · 산식 · 지문은 싣지 않는다.
+        audit_recorder.record(
+            "admin_route_load_exception",
+            claimed=author,
+            det={"entry": seq, "processes": len(entries)},
+        )
+        return self.load_route_load_exceptions()
 
     def load_source_data(self, scenario_id: str) -> pd.DataFrame:
         with self._connect() as connection:

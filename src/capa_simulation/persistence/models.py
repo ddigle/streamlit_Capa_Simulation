@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
+from types import MappingProxyType
 
 import pandas as pd
 
@@ -698,3 +700,108 @@ class ExtraProcessProvenance:
     reason: str | None = None
     row_counts: str | None = None
     note: str | None = None
+
+
+# 부하 예외 선언 항목 — (원본 공정명, 산식 id) 의 차례 있는 묶음. 공용 프로필 캐시에 그대로 실을
+# 수 있게(AGENTS 5장 21 — 피클 · 해시) 사상이 아니라 튜플로 두고, 계산에 넘길 사상은
+# `declaration` 이다.
+RouteLoadExceptionEntries = tuple[tuple[str, str], ...]
+
+
+def _route_load_declaration(entries: RouteLoadExceptionEntries) -> Mapping[str, str]:
+    return MappingProxyType(dict(entries))
+
+
+@dataclass(frozen=True)
+class RouteLoadExceptionVersion:
+    """부하 예외 선언 판 이력 한 줄(넣기만 — 마이그레이션 0040). 비움 판은 항목이 없고 지문이 빈
+    글이다. 공정명은 원본 표기 그대로이고 견줌은 계산 쪽 대조 키가 한다."""
+
+    seq: int
+    created_at: datetime
+    entries: RouteLoadExceptionEntries
+    digest: str
+    applied_by: str | None = None
+    source_place: str | None = None
+
+    @property
+    def declaration(self) -> Mapping[str, str]:
+        """계산에 넘길 선언(원본 공정명 → 산식 id)."""
+        return _route_load_declaration(self.entries)
+
+    @property
+    def process_count(self) -> int:
+        return len(self.entries)
+
+
+@dataclass(frozen=True)
+class RouteLoadExceptionProfile:
+    """지금 부하 예외 선언 — 공용 프로필 캐시가 싣는 꼴(`persistence/cache.py`).
+
+    한 번도 저장하지 않은 상태가 정상이다. 그때는 판 0 · `created_at=None` · 항목 없음 · 빈
+    지문이고, 비움 판(모두 뺀 저장)도 항목 없음 · 빈 지문이다 — 둘 다 계산에 아무것도 걸지 않는다.
+    """
+
+    seq: int
+    created_at: datetime | None
+    applied_by: str | None
+    entries: RouteLoadExceptionEntries
+    digest: str
+
+    @property
+    def declaration(self) -> Mapping[str, str]:
+        """계산에 넘길 선언(원본 공정명 → 산식 id)."""
+        return _route_load_declaration(self.entries)
+
+    @property
+    def process_count(self) -> int:
+        return len(self.entries)
+
+
+@dataclass(frozen=True)
+class RouteLoadExceptionState:
+    """부하 예외 선언 판 이력 전체(오래된 차례). 마지막 줄이 지금 선언이다."""
+
+    history: tuple[RouteLoadExceptionVersion, ...] = ()
+
+    @property
+    def current(self) -> RouteLoadExceptionVersion | None:
+        """마지막 판 — 이력이 없으면 None."""
+        return self.history[-1] if self.history else None
+
+    @property
+    def seq(self) -> int:
+        """마지막 판의 차례 — 쓰기가 「화면이 본 판」 으로 대조한다(없으면 0)."""
+        current = self.current
+        return 0 if current is None else current.seq
+
+    @property
+    def entries(self) -> RouteLoadExceptionEntries:
+        current = self.current
+        return () if current is None else current.entries
+
+    @property
+    def declaration(self) -> Mapping[str, str]:
+        """지금 선언(원본 공정명 → 산식 id) — 이력이 없으면 빈 사상."""
+        return _route_load_declaration(self.entries)
+
+    @property
+    def digest(self) -> str:
+        current = self.current
+        return "" if current is None else current.digest
+
+    @property
+    def profile(self) -> RouteLoadExceptionProfile:
+        """지금 선언을 공용 프로필 꼴로."""
+        current = self.current
+        if current is None:
+            return RouteLoadExceptionProfile(
+                seq=0, created_at=None, applied_by=None, entries=(), digest=""
+            )
+        return RouteLoadExceptionProfile(
+            seq=current.seq,
+            created_at=current.created_at,
+            applied_by=current.applied_by,
+            entries=current.entries,
+            digest=current.digest,
+        )

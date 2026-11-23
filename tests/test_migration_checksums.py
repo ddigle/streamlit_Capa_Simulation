@@ -74,6 +74,7 @@ _SIMULATION_CHECKSUMS: dict[int, str] = {
     37: "0dc8b6ea4a0cda0bda2c8c383d6cb9f77f7850056a5a8a4d729cc701539f7bae",
     38: "4bf1e287a7644b8bca86f6a846a503c7b059e870010e6fee219620f6c7681cc3",
     39: "9bb290a15080442d5937b60ddaefa9a0424fd255cf9a22747c37933e8f2508dd",
+    40: "62103524ed0b518434423af2a01098740a036509386a764b371e35e4c987248a",
 }
 
 # 가용설비 DB(`persistence/equipment_migrations`).

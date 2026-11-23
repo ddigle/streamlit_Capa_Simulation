@@ -2771,8 +2771,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/route_load_exceptions.py` — 공정별 부하 산출 예외의 순수 계산. 산식 id 목록
   `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
   id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
-  `apply_route_load_exceptions`, 경로 추적 근거 글 `route_load_basis`. 공정 이름 · Streamlit · DB 를 모른다
-  (`tests/test_route_load_exceptions.py`).
+  `apply_route_load_exceptions`, 경로 추적 근거 글 `route_load_basis`, 판 지문 `route_load_declaration_digest`(정규 글
+  `route_load_declaration_json` — 견줌 키 차례의 견줌 키 → 산식 id, 빈 선언은 빈 글). 공정 이름 · Streamlit · DB 를 모른다
+  (`tests/test_route_load_exceptions.py` · `tests/test_route_load_exception_store.py`).
 - `src/capa_simulation/services/revision_input_check.py` — 저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리
   「점검」)을 짓는 순수 셈. 전체 기간 결과에서 빠진 행을 묶음 · 단계 · 원본 까닭별 수로 모으고 저장 · 지정 검사
   (`required_exclusion_counts`)와 같은 행을 센다. 판정 · 캐시 길은 `capacity_gate.input_check_verdict` →
@@ -6084,6 +6085,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (넣기만 — 마지막 줄이 지금 상태, 화면이 본 마지막 차례와 대조 `ExtraProcessMoved`) · 데이터셋 출처(같은 (공정, 판 차례)는 앞
   줄만) · S3 Drive 쓰기 기록(`0038` — 넣기만, `append_write`) SQL. 판 이력 · 내용 · 쓰기 기록 표는 소유 칸이 없어 시나리오를
   지워도 남고, 출처 표는 `dataset_id` 소유라 함께 지워진다.
+- `src/capa_simulation/persistence/route_load_exception_store.py` — 공정별 부하 산출 예외 선언 판 이력(`0040`)의 읽기 · 넣기 SQL.
+  넣기만 하고 마지막 줄이 지금 선언이다(모두 뺀 저장도 비움 판 한 줄). 쓰기는 검증(계산 쪽 정규화 — 모르는 산식 id · 빈 공정
+  이름은 표에 들지 않음) → 화면이 본 판 차례 대조(`RouteLoadExceptionMoved`) → 견줌 키 지문 대조(같으면
+  `RouteLoadExceptionUnchanged` — 쓰지 않음) 차례다. 읽기는 표가 없으면 `None` 이다(확인 스크립트가 여는 `0040` 전 사본 — 표를
+  만들지 않는다). 소유 칸이 없어 시나리오를 지워도 남는다. 저장소 쓰기(`append_route_load_exceptions`)는 `admin.area` 벽 뒤이고
+  COMMIT 뒤에 바로 올림(`sync_state.request_upload`)을 청한다 — 공식 발행과 같은 까닭(리비전 없이 모든 시나리오의 숫자를
+  바꾸는 쓰기라 모아 올리는 창 안에서 운영 서버가 다시 떠도 되돌아가지 않게). 감사 `admin_route_load_exception` 은 판 차례 ·
+  공정 수만 싣는다. 계산은 아직 이 판을 읽지 않는다.
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
@@ -6169,7 +6178,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
     시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.
 - `src/capa_simulation/persistence/migration_runner.py`, `equipment_migration_runner.py` — 각 DB 를 엔진에 묶는 진입점.
-- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열두 종과 설비
+- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열세 종(부하 예외 선언 포함)과 설비
   스냅샷·층/FAB 도면·설비 마스터 탭 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
@@ -6657,6 +6666,7 @@ RQ_MODULE
     글자가 리비전명을 싣는다) 까지 부른다(`tests/test_scenario_management_page.py`·`test_revision_rename.py` 가 지킨다).
     입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
     `intro_summary.forget_intro_summary_check` 도 부른다(새 길은 `tests/test_summary_recheck_paths.py` 에 더한다).
+    부하 예외 선언 판(`0040`)을 넣은 길은 `clear_global_route_load_exceptions_cache()` 를 부른다.
 23. **모든 화면에서 회차마다 그리는 공통 요소는 DB 를 읽지 않는다.** 머리 띠·사이드바 조건 줄은 활성화·확인 때
     세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`newer_active_revision_no`·
     `intro_summary.latest_official_revision` — 확인은 그리기 밖에서 30초에 한 번)만 읽고
@@ -6676,8 +6686,9 @@ RQ_MODULE
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
     표시명·표시순서(직접 편집)·확보율 보정·HOME Capa 요약·Top5 구간은 `require_profile_version` →
     `ProfileVersionConflict`, 판정 기준은
-    `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
-    이다. HOME 주요공정 프리셋은 묶음을 회차마다 다시 읽어 고칠 프리셋만 갈아 끼우므로 직전 회차가 그린 **고칠
+    `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`),
+    넣기만 하는 판 이력(부대공정 판 `0037` · 부하 예외 선언 판 `0040`)은 화면이 본 마지막 판 차례(`expected_seq` —
+    `ExtraProcessMoved` · `RouteLoadExceptionMoved`)이다. HOME 주요공정 프리셋은 묶음을 회차마다 다시 읽어 고칠 프리셋만 갈아 끼우므로 직전 회차가 그린 **고칠
     프리셋**(version·이름·공정 — 「기본으로」 는 화면이 본 기본 프리셋(맨 앞 이름)까지, 답 U2)을 대조해 그것이 바뀌었을 때만 저장·「기본으로」·「삭제」 를 거부하고, 쓰기는 그 회차가
     읽은 version 을 넘긴다(`home_preference._stale_key_process_target`). Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
@@ -6706,7 +6717,9 @@ RQ_MODULE
     (`custom_incompatible_tables` — 빈 값 표지는 통과). `0039` 가 옛 행에 표지를 넣으므로 마이그레이션 뒤에는 걸리지 않는
     안전망이다 — 칸이 없으면 활성화 뒤 계산이 멈추고 빈 값 행은 조인에서 빠지므로 불러오기 전에 막는다.
 29. **시나리오에 딸린 새 표는 소유 컬럼(`scenario_id`·`dataset_id`·`revision_id`) 가운데 하나를 갖는다** — 영구
-    삭제가 `information_schema` 에서 그 컬럼으로 지울 표를 찾으므로 없으면 시나리오를 지워도 행이 남는다.
+    삭제가 `information_schema` 에서 그 컬럼으로 지울 표를 찾으므로 없으면 시나리오를 지워도 행이 남는다. 거꾸로
+    시나리오에 딸리지 않는 공용 이력 표(부대공정 판 `0037` · 부하 예외 선언 판 `0040`)는 소유 컬럼을 두지 않는다 —
+    시나리오를 지워도 남아야 한다.
 30. **리비전 프리셋의 확보·경고 기준은 레거시다.** 판정은 공용 판정 기준 프로필만 보고, 프리셋 값은 그 프로필이
     한 번도 저장되지 않았을 때 기본값을 정하는 데만 최신 공식버전에서 읽는다. 세션 키 `dashboard_*_threshold_percent`
     는 다음 리비전 저장에 실어 보내는 운반용이고, 자동 갱신은 직전 공식버전 프리셋 값을 실어 간다(코드 기본값을
@@ -7330,11 +7343,13 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   `제외사유` 칸에만 있다 — 제목 · 부제는 아직 까닭을 가르지 않는다.
 - (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
 
-**결정 · 아직 짓지 않음.** 선언은 DB 판 이력 표에 두고(번호는 짓는 변경에서 정한다) 저장하는 순간 모든 리비전에 건다 —
-공식버전을 포함한 모든 시나리오의 그 공정 소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가
-남긴다(2026-11-22 사용자 답 Q3 (가)). 짓는 변경에서 함께 짓는 것 — 선언 저장 · 읽기, 선언 판 · 지문이 계산 토큰과 공식버전 키에
-드는 캐시 키 자리((h)), 쓰기 자리(C-DEP 운영 자리 + 개발자 등급만 — (i)), 호출처(화면 계산 · 자동 갱신 · 부대공정 R-07 ·
-확인 스크립트)가 선언을 넘기는 것, 그 공정에 한해 바뀌는 결과 목록((j)). 짓기 전까지 어느 호출처도 선언을 넘기지 않아
+**결정 · 저장만 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
+지금 선언, 모두 뺀 저장도 비움 판 한 줄)에 두고 저장하는 순간 모든 리비전에 건다 — 공식버전을 포함한 모든 시나리오의 그 공정
+소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가 남긴다(2026-11-22 사용자 답 Q3 (가)). 저장 ·
+읽기(`persistence/route_load_exception_store.py` · 저장소 `load_route_load_exceptions` · `append_route_load_exceptions` — COMMIT 뒤
+바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 남은 것 — 선언 판 · 지문이 계산 토큰과 공식버전 키에
+드는 캐시 키 자리((h)), 쓰기 화면(C-DEP 운영 자리 + 개발자 등급만 — (i)), 호출처(화면 계산 · 자동 갱신 · 부대공정 R-07 ·
+확인 스크립트)가 선언을 넘기는 것, 그 공정에 한해 바뀌는 결과 목록((j)). 그 전까지 어느 호출처도 선언을 읽거나 넘기지 않아
 앱 숫자는 지금과 같다.
 - 잇는 단계에서 걷는 기본값 — `calculate_required_equipment` 의 `route_exceptions` 기본값(빈 선언)은 잇기 전 자리다. 선언을
   잇는 변경에서 기본값 없는 키워드로 바꿔 호출처(`simulation_cache` · 확인 스크립트 셋 `inspect_revision_calculations` ·

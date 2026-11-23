@@ -70,6 +70,8 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
 app_meta.extra_process_version N ── 1 app_meta.extra_process_content   (0037 — 부대공정 판 이력 · 내용, 소유 칸 없음)
         └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION). 내용은 sha256 하나에 ZIP 한 벌
 app_meta.extra_process_s3_write N ── 1 app_meta.extra_process_version  (0038 — 판을 S3 Drive 파일로 쓴 결과, 넣기만)
+app_meta.route_load_exception_version                                  (0040 — 부하 예외 선언 판 이력, 소유 칸 없음)
+        └── append-only, 마지막 줄이 지금 선언(모두 뺀 저장도 비움 판 한 줄). 모든 시나리오에 걸린다
 
 result_data.simulation_run                                 (골격만 — 쓰는 코드 없음)
 
@@ -295,6 +297,13 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   바뀐 뒤 여섯을 덮을지 정하지 않음) 앱이 덮은 줄은 없다 — 아직 S3 Drive 에 없는 「새 판」 과 같은 파일을 사람이 놓아 가져온 「놓인
   파일 같음」(결과 `WRITTEN` · 까닭 `놓인 파일 같음`) 줄만 생겨 그 ETag 를 기준으로 삼는다(2026-11-20 — 사람은 S3 Drive `extra_process/`
   에 낱장 CSV 여섯을 놓고, 판 이력의 `s3_key` 는 `extra_process/` · `s3_etag` 는 여섯 ETag 를 묶은 값이다).
+- `route_load_exception_version`(0040): 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)의 판 이력. 넣기만 하고 마지막
+  줄이 지금 선언이다 — 한 줄 = 판 차례(`seq`) · 시각 · 저장한 사람 · 원천 자리 · 항목 JSON 글(원본 공정명 그대로, 공정명 차례) ·
+  항목 수 · 지문(견줌 키 — 앞뒤 공백 · 대소문자 무시 — 로 줄인 선언의 sha256). 모두 뺀 저장도 한 줄(비움 판 — `{}` · 0 · 빈
+  지문, `CHECK` 가 항목 수 0 과 빈 지문을 짝짓는다)이다. 산식 id 를 나열한 `CHECK` 는 두지 않는다 — 고칠 수 없는 표라 산식을
+  더할 때 막히지 않게 저장소가 쓰기 앞에서 계산 쪽 정규화로 검증한다(모르는 산식 id · 빈 공정 이름은 들지 않는다). 쓰기는
+  화면이 본 판 차례와 대조하고 견줌 키로 같은 선언은 쓰지 않는다. 소유 칸이 없어 시나리오를 지워도 남는다(리비전에 딸리지
+  않고 모든 시나리오에 걸리는 공용 값 — 2026-11-22 사용자 답 Q3 (가)). 계산이 이 판을 읽는 길은 아직 없다.
 - `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
   시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 
@@ -644,6 +653,9 @@ Capa 시나리오·리비전
 - 마이그레이션 0039는 `rev_data`·`ref_data` 의 CUSTOM 키 8표에 `CUSTOM` 칸을 기본값 `-` 로 더한 뒤 기본값을 걷는다
   (새 행은 앱이 늘 값을 싣는다). 옛 리비전의 값 칸은 그대로라 계산 결과가 전후 같고(`tests/test_migration_0039_custom.py`),
   되감아 다시 걸어도 같다. 옛 표지 행과 부품을 가른 새 리비전이 만나는 비교 GAP 은 계산이 다시 짝짓는다(AGENTS.md 7장).
+- 마이그레이션 0040은 빈 부하 예외 선언 판 이력 표(`app_meta.route_load_exception_version`)만 만들고 다른 표는 건드리지 않는다
+  (`tests/test_migration_0040_route_load_exception.py`). 확인 스크립트는 사본을 마이그레이션하지 않으므로 0040 전 사본에는 그
+  표가 없다 — 읽기(`route_load_exception_store.read_route_load_exceptions`)는 그때 `None` 이고 표를 만들지 않는다.
 - 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.

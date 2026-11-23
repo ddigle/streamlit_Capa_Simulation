@@ -1,20 +1,24 @@
-# Purpose: 시뮬레이션 DB 를 CUSTOM 칸과 0039 기록을 걷은 0039 전 사본으로 베끼는 시험 도우미다.
+# Purpose: 시뮬레이션 DB 를 0039 의 CUSTOM 칸 · 0040 의 선언 표와 그 기록을 걷은 0039 전 사본으로
+# 베끼는 시험 도우미다.
 
 """0039 전 DB 사본 — 확인 스크립트가 마이그레이션 없이 읽는 옛 사본 꼴.
 
 `0039` 는 리비전 표 여덟과 그 데이터셋 짝 표 여덟의 끝에 `CUSTOM` 칸을 붙이고 옛 행을 모두 빈 값
 표지로 두었다. 저장소로 만든 DB 를 베낀 뒤 그 열여섯 칸을 걷고 마이그레이션 기록에서 `0039` 와 그
-뒤 번호를 지운다. 원천(`raw_data.core_data`)의 `CUSTOM` 은 원천 78컬럼이라 그대로 둔다.
+뒤 번호를 지운다. 원천(`raw_data.core_data`)의 `CUSTOM` 은 원천 78컬럼이라 그대로 둔다. `0040` 이
+만든 부하 예외 선언 판 이력 표(`app_meta.route_load_exception_version`)도 걷는다 — 0038 사본에는 그
+표가 없다.
 
-걷는 것은 `0039` 가 만든 칸뿐이다. 코드에 `0039` 뒤 마이그레이션이 생기면 그 번호가 만든
-물체(표 · 칸)도 걷어야 실제 0038 사본과 같은 꼴이 된다 — 그대로 두면 뒤 번호의 물체를 가진 채
+걷는 것은 `0039` 와 그 뒤 번호가 만든 물체뿐이다. 코드에 뒤 마이그레이션이 더 생기면 그 번호가
+만든 물체(표 · 칸)도 걷어야 실제 0038 사본과 같은 꼴이 된다 — 그대로 두면 뒤 번호의 물체를 가진 채
 최고 번호만 38 인 사본이 되어, 「그 표가 없으면」 갈래를 시험이 타지 않는다. 그래서 걷는 번호를
 `KNOWN_LATER_MIGRATIONS` 에 적고, 코드의 0039 뒤 번호와 다르면
 `tests/test_before_custom_copy.py` 가 먼저 깨진다 — 번호를 더할 때 이 도우미가 그 물체를 걷게
 넓힌다.
 
-걷기 전 칸의 값은 모두 표지여야 한다 — 그래야 0039 를 다시 건 뜻(모든 행 표지)과 걷기 전 DB 가
-같아, 「0039 전 사본의 출력 = 걷기 전 DB 의 출력」 을 견줄 수 있다.
+걷기 전 칸의 값은 모두 표지여야 하고 부하 예외 선언은 비어 있어야 한다(판이 없거나 마지막 판이
+비움) — 그래야 0039 를 다시 건 뜻(모든 행 표지)과 선언 없는 계산이 걷기 전 DB 와 같아, 「0039 전
+사본의 출력 = 걷기 전 DB 의 출력」 을 견줄 수 있다.
 """
 
 from __future__ import annotations
@@ -26,6 +30,11 @@ from typing import Final
 import duckdb
 
 from capa_simulation.persistence.migration_runner import load_migrations
+from capa_simulation.persistence.route_load_exception_store import (
+    ROUTE_LOAD_EXCEPTION_MIGRATION,
+    ROUTE_LOAD_EXCEPTION_SCHEMA,
+    ROUTE_LOAD_EXCEPTION_TABLE,
+)
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.revision_compatibility import (
     CUSTOM_COLUMN,
@@ -34,7 +43,7 @@ from capa_simulation.services.revision_compatibility import (
 )
 
 # 이 도우미가 물체를 걷는 0039 와 그 뒤 마이그레이션 번호 — 코드의 0039 뒤 번호와 같아야 한다.
-KNOWN_LATER_MIGRATIONS: Final = (CUSTOM_MIGRATION,)
+KNOWN_LATER_MIGRATIONS: Final = (CUSTOM_MIGRATION, ROUTE_LOAD_EXCEPTION_MIGRATION)
 
 
 def database_before_custom(source: Path, target: Path) -> Path:
@@ -56,6 +65,12 @@ def database_before_custom(source: Path, target: Path) -> Path:
             }
             assert values <= {CUSTOM_BLANK}, (schema, table, values)
             connection.execute(f'ALTER TABLE {schema}.{table} DROP COLUMN "{CUSTOM_COLUMN}"')
+        declaration = connection.execute(
+            f"SELECT digest FROM {ROUTE_LOAD_EXCEPTION_SCHEMA}.{ROUTE_LOAD_EXCEPTION_TABLE} "
+            "ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        assert declaration is None or declaration[0] == "", declaration
+        connection.execute(f"DROP TABLE {ROUTE_LOAD_EXCEPTION_SCHEMA}.{ROUTE_LOAD_EXCEPTION_TABLE}")
         connection.execute(
             "DELETE FROM app_meta.schema_migration WHERE version >= ?", [CUSTOM_MIGRATION]
         )
