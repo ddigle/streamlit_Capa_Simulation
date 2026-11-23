@@ -2145,7 +2145,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경에서 빼므로 환경을 넘기지 않는다)인 서버의 개발자(`sso_identity.viewer_is_developer` — 「토큰 넣기」 와 같은 문지기) 회차에만 「서버 시작 점검」
   바로 뒤에 서고, 그 밖에는 Streamlit 호출이 없다. 값 줄 둘 — 상태(없음 · 정상 · 멈춤(까닭) · 확인하지 못함(읽지 못함 — 「없음」 과 가른다)) ·
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
-  시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외
+  시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 패키지를 불러온 길(알 때만 —
+  「불러오기 light / full」) · 표준 오류 마지막 예외
   종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
   최고 nMiB」(하위 최고는 그 하위 하나의 값) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」(2026-11-21 —
   막 뜬 pod 는 되고 오래 떠 있던 pod 는 import 중 끊기는 갈래를 가를 값, 재었을 때만 붙고 옛 기록은 지금 줄 그대로), 못 읽은 값은 「모름」 — `io/memory_probe`,
@@ -2165,7 +2166,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드 · 하위 프로세스 진단 칸 `exit` · `signal` · `sec` · `stage` · `stderr` · `bigdataquery` ·
-  `getpass_asterisk` 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 일곱 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
+  `getpass_asterisk` · `load`(알 때만) 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 일곱 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
   계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
@@ -2374,7 +2375,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `data/temp/container_start.json`) 꼴·화면 안내 문장(`step_hint`)이다. 결과 파일의 자동 로그인 칸 `bdq_login`(`LoginStart` ·
   `parse_login` — 갈래 `LOGIN_*`(`unconfirmed` 포함) · 까닭 코드 · 키 꼴 검사 · 남은 분 · 예외 종류 · S3 읽기 분류 · 객체에 결과를 못 씀 ·
   판정한 객체의 넣은 시각 · 하위 프로세스 진단 `child`(`ChildDiag` · `parse_child` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류
-  마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
+  마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 패키지를 불러온 길 `load`(알 때만) · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
   `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 프로세스 수 · 좀비 수, 칸 이름 `PROCESS_FIELDS`
@@ -2433,7 +2434,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   프로세스(`io/bdq_login_child.py` — 표준 라이브러리만, `runpy`)이고 계정 · 비밀번호는 표준 입력으로만, 하위 환경은 비밀 이름 · `CAPA_S3_*` ·
   `AWS_*` 를 뺀 것이고 표준 입출력은 UTF-8 · `surrogateescape`(앱 자리의 로캘과 무관 — Windows cp949 파이프에서도 표지를 읽고, POSIX C 로캘 기본 오류 처리기와 같다), 출력은 버리고 표지 한 줄과 단계
   줄만 읽는다(표준 오류는 마지막 traceback 의 예외 종류 이름만 — `stderr_kind`, 계정 · 비밀번호를 품은 이름은 버린다). 하위 프로세스를 띄운
-  시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판 · 띄우기 바로 앞과 끝난 바로 뒤의
+  시도마다 진단(`child_diag` → `LoginResult.diag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 예외 종류 · 판 · 패키지를 불러온 길 · 띄우기 바로
+  앞과 끝난 바로 뒤의
   메모리 단서와 띄우기 바로 앞 한 번 읽은 프로세스 단서(`memory_probe.process_clues` — 뒤 값은 싣지 않는다), 도는 동안 `CHILD_POLL_SECONDS`(0.1초)마다 잰 그 하위 자신의 최고 RSS(`io/memory_probe` — 바깥 SIGKILL 을 가를 값. `Popen` 뒤
   `communicate` 를 짧은 제한으로 되풀이 — 새 스레드 없음, 시간 제한을 넘기면 끊고 남은 출력을 `CHILD_DRAIN_SECONDS` 까지 거둔다), 결과의 같음 판정 밖)을 남기고 로그 · Admin 진단 줄 · 감사 상세 · 시작 결과 칸
   `child` 가 읽는다. 표지 없음(`no_marker`)은 거절(멈춤)로 다루되 화면 낱말은 「로그인 확인
@@ -2474,13 +2476,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   종류 이름으로 가르지 않는다(errno 없는 `ConnectionError` · 글만 든 `requests` 연결 실패 · 응답을 든 것 · 읽기 시간 초과는 아님).
   **가벼운 불러오기 길**(2026-11-23 사용자 요청 — 리뷰 `202611211432` 발견 1 덧붙임): 패키지 전체 import 는 판 하위 꾸러미(`bigdataquery/py<주판><부판>`)
   `__init__` 의 망 초기화를 하위에서 한 번 더 해 메모리를 크게 쓰므로, 설치 판(`importlib.metadata`)이 `LIGHT_VERSION`(`2.5.0`)이고 판 폴더가 있고
-  끄개 `CAPA_BDQ_LOGIN_LIGHT=off` 가 없으면(`light_folder` — 자리 찾기는 맨 위 이름에만, 패키지 코드를 돌리지 않음) 꾸러미 둘을 빈 꾸러미(`__path__` 만)로
-  `sys.modules` 에 심고 판 하위 꾸러미의 `server_auth` 만 불러와 `login` · `getTokenTime` 을 묶는다(`load_light` — `nest_asyncio.apply()` 는 빈 꾸러미를
-  채우는 자리 `fill_package` 가 부르고, `pyarrow` 는 그 하위에서만 막는다). 그 준비는 모두 단계 줄 `login` 앞이고 무엇이 실패해도(예외 · 속성 없음 ·
-  부를 수 없음) `bigdataquery` · `bigdataquery.*` 모듈과 우리가 둔 `pyarrow` 막음을 걷고 같은 프로세스에서 전체 import 로 간다(`import` 단계 줄을
-  `load=full` 로 한 번 더) — 가벼운 길에만 있는 실패가 `login()` 안(거절 판정 자리)으로 넘어가지 않는다. `login()` 안의 구조 오류는 지금처럼 거절이다.
-  단계 줄 끝 칸 `load` 는 부르는 쪽 `bdq_login._STEP_LINE` · `parse_step`(`StepLine`)과 함께 바꾸고 진단(`ChildDiag.load` — 칸 `load`, 화면 「불러오기
-  light」, 알 때만)에 실린다. `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던 전역을 기대하는지는 pod 확인 거리다(`docs/TODO.md` 1장).
+  끄개 `CAPA_BDQ_LOGIN_LIGHT=off` 가 없으면(`light_folder` — 자리 찾기는 맨 위 이름에만, 패키지 코드를 돌리지 않음) 꾸러미 둘을 빈 꾸러미(`__path__` 만 —
+  판 하위 꾸러미는 맨 위 꾸러미의 속성으로 묶음)로 `sys.modules` 에 심고 판 하위 꾸러미의 `server_auth` 만 불러와 `login` · `getTokenTime` 을 묶는다
+  (`load_light` — `nest_asyncio.apply()` 는 빈 꾸러미를 채우는 자리 `fill_package` 가 부르고, `pyarrow` 는 `server_auth` 를 불러오는 동안만 막았다가
+  묶은 뒤 걷는다 — 그 앞에 이미 불린 것은 막지 않음). 그 준비는 모두 단계 줄 `login` 앞이고 무엇이 실패해도(예외 · 속성 없음 · 부를 수 없음)
+  `bigdataquery` · `bigdataquery.*` 모듈과 우리가 둔 `pyarrow` 막음을 걷고 같은 프로세스에서 전체 import 로 간다(`import` 단계 줄을 `load=full` 로 한 번
+  더) — 준비에서 난 실패는 `login()` 안(거절 판정 자리)으로 넘어가지 않는다. `login()` · `getTokenTime` 이 빈 꾸러미의 꼴(꾸러미 전역 · 속성 · 꾸러미에서
+  이름을 찾는 늦은 import)에 기대 나는 실패는 그 뒤에서 나고 지금처럼 거절 · 확인 못 함이다. 단계 줄 끝 칸 `load` 는 부르는 쪽 `bdq_login._STEP_LINE` ·
+  `parse_step`(`StepLine` — 그 칸이 없는 줄도 단계 · 판은 읽음)과 함께 바꾸고 진단(`ChildDiag.load` — 칸 `load`, 화면 「불러오기 light」, 알 때만)에
+  실린다. `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던 전역을 기대하는지는 pod 확인 거리다(`docs/TODO.md` 1장).
   시험 `tests/test_bdq_login_light.py`(가짜 `tests/bdq_light_support.py` 를 시험마다 임시 자리에 지어 진짜 하위 프로세스로 — 기존 가짜는 설치 정보 ·
   판 폴더가 없어 늘 전체 길).
 - `src/capa_simulation/io/memory_probe.py` — 자동 로그인 하위 프로세스 앞뒤의 메모리 단서와 그 하위 자신의 최고 RSS(사내 리뷰 `202611181400` 사외요청 2 — 하위가
