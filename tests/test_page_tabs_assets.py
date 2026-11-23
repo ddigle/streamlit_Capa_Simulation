@@ -2027,6 +2027,9 @@ _NAV_INSTALL_RUNNER = """
       if (mode === 'pending') {
         return { committed: new Promise(() => {}), finished: new Promise(() => {}) }
       }
+      if (mode === 'committed') {
+        return { committed: Promise.resolve(), finished: new Promise(() => {}) }
+      }
       return { committed: Promise.resolve(), finished: Promise.resolve() }
     },
   }
@@ -2034,12 +2037,25 @@ _NAV_INSTALL_RUNNER = """
   const host = { shadowRoot: { activeElement: editor } }
   const body = {}
   const document = { body, activeElement: body }
+  // glide 칸 편집기(틀 `.gdg-clip-region` 안 입력)와 격자 — 바깥 누름을 받으면 glide 처럼
+  // 격자로 초점을 돌린다.
+  const canvas = { blur() { log.push('blur:canvas'); document.activeElement = body } }
+  const glideInput = {
+    closest(selector) { return selector === '.gdg-clip-region' ? {} : null },
+    blur() { log.push('blur:input') },
+  }
+  body.dispatchEvent = (e) => {
+    log.push(['press', e.kind, e.type, e.bubbles, e.composed].join(':'))
+    if (document.activeElement === glideInput) document.activeElement = canvas
+    return true
+  }
   const gate = {
     answer: false, loss: false, okay: true, fns: [],
     hold(fn) { log.push('hold'); this.fns.push(fn); return this.answer },
     ask() { log.push('ask'); return this.okay },
     loses() { return this.loss },
-    inGrid(node) { return node === host },
+    inGrid(node) { return node === host || node === glideInput || node === canvas },
+    blurred(typed) { log.push('blurred:' + typed) },
   }
   const last = () => gate.fns[gate.fns.length - 1]
   const win = {
@@ -2154,6 +2170,23 @@ _NAV_INSTALL_RUNNER = """
     last()()
     return [log.slice(), guard.replay]
   })
+  // 칸 차이를 모르는 사건(목적지 칸 번호 없음 — delta 0)은 다시 가기가 거절되거나 던져도
+  // history.go 를 부르지 않는다 — go(0) 은 새로고침이라 지키려던 편집과 그 접속의 편집이
+  // 모두 사라진다.
+  mode = 'reject'
+  fire(event({ index: undefined }))
+  out.rejectedNoDelta = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  mode = 'throw'
+  fire(event({ index: undefined }))
+  out.thrownNoDelta = step(() => {
+    last()()
+    return [log.slice(), guard.replay]
+  })
   // 다른 이동이 끊은 다시 가기는 그 이동에 맡긴다.
   mode = 'abort'
   fire(event())
@@ -2163,6 +2196,14 @@ _NAV_INSTALL_RUNNER = """
     await flush()
     return [log.slice(), guard.replay]
   })()
+  // 다시 간 이동의 committed 만 이루어져도(그 사건 · 상한 타이머 없이) 표지를 걷는다.
+  mode = 'committed'
+  fire(event())
+  timers.length = 0
+  last()()
+  const committedMark = guard.replay && guard.replay.key
+  await flush()
+  out.committedOnly = [committedMark, guard.replay, timers.length]
   // 약속이 끝나지 않아도 표지는 상한에 걷힌다.
   mode = 'pending'
   fire(event())
@@ -2179,6 +2220,28 @@ _NAV_INSTALL_RUNNER = """
   runTimers()
   out.pendingCleared = guard.replay
   mode = 'ok'
+  // glide 칸 편집기에 쓰는 중 — blur 로는 확정하지 않으니 body 에 바깥 누름(문서 capture
+  // 단계 pointerdown)을 보내 확정시키고, glide 가 돌린 격자 초점도 뺀 뒤 쓰는 중이었다고
+  // 알리고 붙들기에 묻는다.
+  win.PointerEvent = class {
+    constructor(type, init) { Object.assign(this, init, { type, kind: 'pointer' }) }
+  }
+  win.Event = class {
+    constructor(type, init) { Object.assign(this, init, { type, kind: 'event' }) }
+  }
+  document.activeElement = glideInput
+  out.glide = step(() => [fire(event()), log.slice(), document.activeElement === body])
+  fire(event({}, { cancelable: false }))
+  // PointerEvent 가 없으면 Event 로 같은 사건을 보낸다.
+  delete win.PointerEvent
+  document.activeElement = glideInput
+  out.glideEvent = step(() => [fire(event()), log.slice()])
+  fire(event({}, { cancelable: false }))
+  // 격자에만 초점(열린 칸 편집기 없음)이면 바깥 누름 없이 blur 만 — 쓰는 중이 아니다.
+  document.activeElement = canvas
+  out.gridOnly = step(() => [fire(event()), log.slice()])
+  fire(event({}, { cancelable: false }))
+  document.activeElement = body
   // 붙들기가 던지면 지나 보낸다.
   const hold = gate.hold
   gate.hold = () => { throw new Error('boom') }
@@ -2214,7 +2277,7 @@ def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_
     assert out["listeners"] == ["navigate"]
     assert out["idle"] == [False, ["hold"], None]
     assert out["passes"] == [False, False, False, False, []]
-    assert out["held"] == [True, ["blur", "hold"], "k2", -1]
+    assert out["held"] == [True, ["blur", "blurred:false", "hold"], "k2", -1]
     assert out["again"] == [True, ["hold"], "k1"]
     assert out["stale"] == [[], True]
     assert out["replayed"] == [["ask", "traverseTo:k1"], "k1", None]
@@ -2228,10 +2291,20 @@ def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_
     assert out["losesReplay"] == [False, [], None]
     assert out["rejected"] == [["ask", "traverseTo:k2", "go:-1"], None]
     assert out["thrown"] == [["ask", "traverseTo:k2", "go:-1"], None]
+    assert out["rejectedNoDelta"] == [["ask", "traverseTo:k2"], None]
+    assert out["thrownNoDelta"] == [["ask", "traverseTo:k2"], None]
+    assert out["committedOnly"] == ["k2", None, 1]
     assert out["aborted"] == [["ask", "traverseTo:k2"], None]
     assert out["pendingMark"] == ["k2", 1]
     assert out["olderTimer"] == ["k2", 1]
     assert out["pendingCleared"] is None
+    press = "press:pointer:pointerdown:true:true"
+    assert out["glide"] == [True, [press, "blur:canvas", "blurred:true", "hold"], True]
+    assert out["glideEvent"] == [
+        True,
+        ["press:event:pointerdown:true:true", "blur:canvas", "blurred:true", "hold"],
+    ]
+    assert out["gridOnly"] == [True, ["blur:canvas", "blurred:false", "hold"]]
     assert out["thrownHold"] == [False, None]
     assert out["noGate"] == [False, [], None]
 
@@ -2258,9 +2331,16 @@ def test_the_back_guard_is_a_navigate_listener_on_the_strip_gate_not_a_popstate_
     cleanup = body[body.rindex("  return () => {") :]
     assert "installNavGuard" not in cleanup and "navigate" not in cleanup
     gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
-    assert "ask: () => leaveOk()," in gate
-    assert "loses: () => Boolean(S.data && S.data.leave)," in gate
+    assert "ask: () => navLeaveAsked(S.queue.flight, S.data && S.data.leave) || leaveOk()," in gate
+    loses = "loses: () => Boolean(S.data && S.data.leave) && !navLeaveAsked("
+    assert loses + "S.queue.flight, S.data.leave)," in gate
     assert "node.closest(S.gridSelector)" in gate
+    assert "blurred: (typed) => {" in gate
+    order = [
+        block.index(part) for part in ("pressOutside(doc)", "active.blur()", "gate.blurred(typed)")
+    ]
+    assert order == sorted(order)
+    assert "const NAV_GLIDE_EDITOR = '.gdg-clip-region'" in block
     head = JS[: JS.index("const ICON_FONT")]
     assert "막지 못한다 —" not in head and "Navigation API" in head and "`navigate`" in head
 
@@ -2294,8 +2374,19 @@ _GATE_RUNNER = """
     const setAttr = (element, name, value) => { if (element) element[name] = value }
     const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
     const sendSelect = (item) => log.push('tab:' + item.dataset.id)
+    // 떠나기 확인(탭 줄과 같은 `leaveOk`)과 닫기가 부르는 것의 대역.
+    const leaveOk = () => {
+      if (!S.data.leave) return true
+      log.push('confirm')
+      return S.okay !== false
+    }
+    const nav = { getRootNode: () => ({ activeElement: null }) }
+    const list = { children: [] }
+    const syncControls = () => {}
+    const claimDrawn = () => ({})
+    const moving = () => log.push('moving')
     %(slice)s
-    return { gate, select }
+    return { gate, select, close }
   }
   const strip = (log) => {
     const parts = { tab: {}, close: { hidden: false } }
@@ -2303,7 +2394,8 @@ _GATE_RUNNER = """
     const S = {
       items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
       editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
-      run: createRunMark(false),
+      run: createRunMark(false), gridSelector: 'GRID',
+      send: (type, payload) => log.push(type + ':' + payload.id),
     }
     return { S, tab, ...mount(S, log) }
   }
@@ -2393,6 +2485,56 @@ _GATE_RUNNER = """
   scriptState = 'notRunning'
   out.backTab = [log.slice(), T.S.hold, T.tab.__parts.tab['aria-busy'] || null]
   window.location.pathname = '/list'
+
+  // 브라우저 뒤로 · 앞으로가 쓰는 판정 — 떠나기 확인(`ask`) · 떠나면 사라지는 편집(`loses`) ·
+  // 편집표 안(`inGrid`).
+  timers.length = 0; now = 60000; log = []; T = strip(log)
+  const inside = { closest: (selector) => (selector === 'GRID' ? {} : null) }
+  out.navClean = [T.gate.ask(), T.gate.loses(), log.slice()]
+  T.S.data = { active: 'a', leave: '설비 마스터 · 비가동 일정' }
+  out.navLeave = [T.gate.loses(), T.gate.ask(), log.slice()]
+  // 날아가는 고르기가 같은 떠나기 글을 이미 물어 지나왔으면 다시 묻지 않는다.
+  log.length = 0
+  T.S.queue.flight = { id: 'b', at: now, leave: '설비 마스터 · 비가동 일정' }
+  out.navFlight = [T.gate.loses(), T.gate.ask(), log.slice()]
+  // 떠나기 글이 그 뒤 바뀌었으면 묻는다.
+  T.S.data = { active: 'a', leave: '설비 마스터 · 기존 보유대수' }
+  out.navFlightChanged = [T.gate.loses(), T.gate.ask(), log.slice()]
+  T.S.queue.flight = null
+  out.navGrid = [T.gate.inGrid(inside), T.gate.inGrid(null), T.gate.inGrid({})]
+  // 코드 blur 뒤 — 초점 표지를 지금 활성 요소로 다시 맞추고, 칸 편집기를 닫았으면 쓰는 중에
+  // 누른 것으로 적는다.
+  T.S.data = { active: 'a' }
+  T.S.gridFocused = true
+  document.activeElement = {}
+  T.gate.blurred(false)
+  out.navBlurred = [T.S.gridFocused, T.S.pressFromGrid]
+  document.activeElement = inside
+  T.gate.blurred(false)
+  out.navStillInside = [T.S.gridFocused, T.S.pressFromGrid]
+  document.activeElement = {}
+  T.gate.blurred(true)
+  out.navTyped = [T.S.gridFocused, T.S.pressFromGrid]
+  // 칸 입력 창(`EDIT_MS`)을 넘겨 쓰던 글이어도 붙든다.
+  log.length = 0
+  out.navTypedHeld = T.gate.hold(theme(log))
+  advance(60500)
+  out.navTypedLater = log.slice()
+  delete document.activeElement
+
+  // 붙든 사이 지금 탭이 아닌 탭을 닫아도 붙든 누름은 남는다 — 닫기는 화면을 떠나지 않는다.
+  timers.length = 0; now = 70000; log = []; T = strip(log)
+  T.S.editAt = now
+  out.closeHeld = T.gate.hold(theme(log))
+  const other = {
+    dataset: { id: 'c' }, hidden: false, __parts: { tab: {}, close: { hidden: false } },
+  }
+  T.S.items.set('c', other)
+  T.close(other)
+  out.closeOther = [log.slice(), T.S.hold !== null, other.hidden]
+  T.S.data = { active: 'a' }
+  advance(70500)
+  out.closeOtherLater = [log.slice(), T.S.hold]
   process.stdout.write(JSON.stringify(out))
 })()
 """
@@ -2431,6 +2573,19 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     assert out["backTheme"] == [[], None]
     assert out["backTabBusy"] == "true"
     assert out["backTab"] == [[], None, None]
+    assert out["navClean"] == [True, False, []]
+    assert out["navLeave"] == [True, True, ["confirm"]]
+    assert out["navFlight"] == [False, True, []]
+    assert out["navFlightChanged"] == [True, True, ["confirm"]]
+    assert out["navGrid"] == [True, False, False]
+    assert out["navBlurred"] == [False, False]
+    assert out["navStillInside"] == [True, False]
+    assert out["navTyped"] == [False, True]
+    assert out["navTypedHeld"] is True
+    assert out["navTypedLater"] == ["theme"]
+    assert out["closeHeld"] is True
+    assert out["closeOther"] == [["close:c"], True, True]
+    assert out["closeOtherLater"] == [["close:c", "theme"], None]
 
 
 def test_a_sidebar_link_press_right_after_a_table_edit_waits_for_its_run() -> None:

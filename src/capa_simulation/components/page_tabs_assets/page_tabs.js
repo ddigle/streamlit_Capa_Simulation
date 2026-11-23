@@ -623,6 +623,8 @@ function installUnloadGuard(win, doc) {
 // 붙들기를 갈아 끼웠으면 남은 `held` 는 낡았다. `navRelease` 는 붙들기가 놓일 때 그 번호(`token` — `navToken`)의 목적지를
 // 꺼낸다 — 그 사이 걷혔거나 다른 붙들기로 갈아 끼웠으면 null 이다. `navMark` 는 다시 가기 하나의 표지를 달아 돌려주고,
 // `navUnmark` 는 지금 표지가 그 몫일 때만 걷는다 — 같은 칸으로 다시 간 새 표지를 앞 다시 가기의 상한 타이머가 걷지 않게.
+// `navLeaveAsked` 는 날아가는 고르기(`<tabs-queue>` 의 `flight` — 보낼 때의 떠나기 글 `leave`)가 지금 떠나기 글을 이미 물어
+// 지나왔는가다 — 그 편집은 이미 떠나기로 했으니 뒤로가 같은 확인을 또 묻지 않는다(그 고르기가 닿기 전 탭 줄 data 는 옛 화면 것이다).
 function createNavGuard() {
   return { held: null, replay: null, seq: 0 }
 }
@@ -689,6 +691,10 @@ function navMark(guard, key, now) {
 function navUnmark(guard, mark) {
   if (guard.replay === mark) guard.replay = null
 }
+function navLeaveAsked(flight, leave) {
+  const now = String(leave || '')
+  return flight !== null && flight !== undefined && now !== '' && String(flight.leave || '') === now
+}
 // </tabs-nav>
 
 // <tabs-nav-install>
@@ -696,12 +702,18 @@ function navUnmark(guard, mark) {
 // 지나 보낸다. 붙들기 · 떠나기 확인 · 편집표 판정은 사건 때의 탭 줄 붙들기(`window.__capaLeaveGate` — 탭 줄 · 테마 단추 · 사이드바
 // 링크와 같은 길, 탭 줄이 내려가 없으면 지나 보낸다)를 쓴다. 막기 전에 정한다 — 깊은 활성 요소가 편집표 안(`inGrid`)이면 먼저
 // `blur()` 해 칸이 제 focusout 길로 확정해 보내게 하고(편집기는 ack 까지 명부에 busy), 붙들기(`hold` — 떠나기 신호를 쏘고 기다릴
-// 것이 있으면 붙든다)에 묻는다. 기다릴 것은 없어도 떠나면 사라지는 편집(`loses` — data `leave`)이 있으면 곧바로 놓는 붙들기로
-// 묻는다. 붙들었을 때만 막는다(`preventDefault`) — 쉬는 편집기에서는 지연이 없다. 놓이면(ack · 회차 끝, 길어야 `BUSY_MS`) 탭 줄과
-// 같은 확인(`ask` — 떠나면 사라지는 편집이 있을 때만 묻는다)을 지나 표지를 달고 같은 목적지로 다시 간다(`traverseTo`). 취소면
-// 아무것도 하지 않는다 — 이미 막았으니 주소 · 본문 그대로다. 다시 가기가 거절되면(그 칸이 없어짐) 표지를 걷고 `history.go` 로
-// 한 번, 그것도 안 되면 끝이다. 표지는 다시 간 이동이 닿거나 그 약속이 끝나거나 `NAV_REPLAY_MS` 가 지나면 걷는다.
+// 것이 있으면 붙든다)에 묻는다. glide 칸 편집기(`st.data_editor` — 틀 `NAV_GLIDE_EDITOR`)는 blur 로 확정하지 않고 문서 capture
+// 단계 바깥 누름(pointerdown)과 Enter · Tab 으로만 확정한다 — 탭 줄 누름은 그 pointerdown 이 확정하지만 뒤로는 누름이 없어, 쓰던
+// 글이 그대로 사라졌다. 그래서 활성 요소가 그 틀 안이면 body 에 바깥 누름을 보내 지금 값으로 확정시킨 뒤(glide 는 격자로 초점을
+// 돌린다) 그 초점도 뺀다. 코드 blur 는 focusin 이 없으니 탭 줄 초점 표지를 다시 맞추고, 칸 편집기를 닫았으면 쓰는 중에 누른 것으로
+// 적는다(`blurred` — 칸 입력 창 `EDIT_MS` 를 넘겨 쓰던 글도 붙든다). 기다릴 것은 없어도 떠나면 사라지는 편집(`loses` — data
+// `leave`, 날아가는 고르기가 이미 물은 글이면 뺀다)이 있으면 곧바로 놓는 붙들기로 묻는다. 붙들었을 때만 막는다(`preventDefault`)
+// — 쉬는 편집기에서는 지연이 없다. 놓이면(ack · 회차 끝, 길어야 `BUSY_MS`) 탭 줄과 같은 확인(`ask` — 떠나면 사라지는 편집이 있을
+// 때만 묻는다)을 지나 표지를 달고 같은 목적지로 다시 간다(`traverseTo`). 취소면 아무것도 하지 않는다 — 이미 막았으니 주소 · 본문
+// 그대로다. 다시 가기가 거절되면(그 칸이 없어짐) 표지를 걷고 `history.go` 로 한 번(칸 차이를 모르면 부르지 않는다 — `go(0)` 은
+// 새로고침이다), 그것도 안 되면 끝이다. 표지는 다시 간 이동이 닿거나 그 약속이 끝나거나 `NAV_REPLAY_MS` 가 지나면 걷는다.
 const NAV_REPLAY_MS = 5000
+const NAV_GLIDE_EDITOR = '.gdg-clip-region'
 function installNavGuard(win) {
   const navigation = win.navigation
   if (win.__capaNavGuard || !navigation || typeof navigation.addEventListener !== 'function') return
@@ -740,12 +752,30 @@ function installNavGuard(win) {
     if (gate && typeof gate.ask === 'function' && !gate.ask()) return
     replay(held)
   }
+  const deepActive = (doc) => {
+    let active = doc.activeElement
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement
+    return active
+  }
+  // 문서 capture 단계 바깥 누름 — glide 칸 편집기는 이 pointerdown 에 지금 값으로 확정한다(탭 줄 누름과 같은 길).
+  const pressOutside = (doc) => {
+    const Press = typeof win.PointerEvent === 'function' ? win.PointerEvent : win.Event
+    if (typeof Press !== 'function' || !doc.body || typeof doc.body.dispatchEvent !== 'function') return
+    const init = { bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1, isPrimary: true, pointerType: 'mouse' }
+    doc.body.dispatchEvent(new Press('pointerdown', init))
+  }
   const blurEditor = (gate) => {
     const doc = win.document
-    let active = doc ? doc.activeElement : null
-    if (!active || active === doc.body || typeof gate.inGrid !== 'function' || !gate.inGrid(active)) return
-    while (active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement
-    if (typeof active.blur === 'function') active.blur()
+    const host = doc ? doc.activeElement : null
+    if (!host || host === doc.body || typeof gate.inGrid !== 'function' || !gate.inGrid(host)) return
+    let active = deepActive(doc)
+    const typed = Boolean(active && typeof active.closest === 'function' && active.closest(NAV_GLIDE_EDITOR))
+    if (typed) {
+      pressOutside(doc)
+      active = deepActive(doc)
+    }
+    if (active && active !== doc.body && typeof active.blur === 'function') active.blur()
+    if (typeof gate.blurred === 'function') gate.blurred(typed)
   }
   navigation.addEventListener('navigate', (event) => {
     let nav = null
@@ -1257,8 +1287,8 @@ export default function (component) {
     announceLeaving(window)
     return editorsBusy(editorBook(window))
   }
-  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다. `seen` 은 붙든
-  // 순간 명부의 편집기가 busy 였는가다.
+  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다(지금 탭이 아닌 탭
+  // 닫기는 떠나는 누름이 아니라 붙듦을 그대로 둔다). `seen` 은 붙든 순간 명부의 편집기가 busy 였는가다.
   const holding = (item, go, seen = false) => {
     busy(item)
     S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go, seen }
@@ -1360,7 +1390,8 @@ export default function (component) {
       }, pending)
       return
     }
-    S.hold = null
+    // 지금 탭이 아닌 탭 닫기는 화면을 떠나지 않는다 — 붙든 누름(탭 · 테마 · 링크 · 브라우저 뒤로)을 버리지 않는다.
+    if (id === S.data.active) S.hold = null
     closeNow(item)
   }
   const closeNow = (item) => {
@@ -1411,10 +1442,16 @@ export default function (component) {
       if (!gate.hold(fn)) fn()
     },
     // 브라우저 뒤로·앞으로(`<tabs-nav-install>`)도 같은 판정을 쓴다 — 탭 줄과 같은 떠나기 확인(`ask`), 떠나면 사라지는 편집이
-    // 있는가(`loses`), 편집표(`<tabs-grid>`) 안의 요소인가(`inGrid`).
-    ask: () => leaveOk(),
-    loses: () => Boolean(S.data && S.data.leave),
+    // 있는가(`loses`), 편집표(`<tabs-grid>`) 안의 요소인가(`inGrid`). 날아가는 고르기가 이미 물어 지나온 떠나기 글이면 다시 묻지
+    // 않는다(`navLeaveAsked`). `blurred` 는 뒤로가 편집표 초점을 코드로 뺀 뒤다 — 코드 blur 는 focusin 이 없어 초점 표지를 지금
+    // 활성 요소로 다시 맞추고(남으면 다음 누름이 까닭 없이 붙든다), 칸 편집기를 닫았으면(`typed`) 쓰는 중에 누른 것으로 적는다.
+    ask: () => navLeaveAsked(S.queue.flight, S.data && S.data.leave) || leaveOk(),
+    loses: () => Boolean(S.data && S.data.leave) && !navLeaveAsked(S.queue.flight, S.data.leave),
     inGrid: (node) => Boolean(node && node.closest && node.closest(S.gridSelector)),
+    blurred: (typed) => {
+      S.gridFocused = gate.inGrid(document.activeElement)
+      if (typed) S.pressFromGrid = true
+    },
   }
   window.__capaLeaveGate = gate
   // ---- 끌어서 차례 바꾸기(`<tabs-drag>`). DOM 차례는 놓을 때 한 번만 바꾼다 — 끄는 동안은 끄는 탭이 포인터를 따라가고
