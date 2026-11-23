@@ -216,7 +216,7 @@ def _informative_first(
 ) -> npt.NDArray[np.intp]:
     """업무 키가 같은 형제 행 가운데 남길 행을 그룹 안에서 앞으로 보내는 행 자리(`take` 용).
 
-    업무 키는 Core Data 행을 유일하게 가르지 못한다 — 예를 들어 `RQ_UPEH` 9키에는
+    업무 키는 Core Data 행을 유일하게 가르지 못한다 — 예를 들어 `RQ_UPEH` 10키(CUSTOM 포함)에는
     `Capa Code`·`Customer`·`CS`·`Pack Code` 가 없어 한 키에 형제 행이 여럿 온다. 원천이
     '해당 없음' 을 0 으로 적는 탓에 0 행을 고르면 형제에 실값이 남아 있어도 0 이 저장되고,
     그 0 은 `대당 Capa 0 이하` 로 조용히 제외돼 공정 하나가 통째로 사라진다.

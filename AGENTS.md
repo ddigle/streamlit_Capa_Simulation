@@ -1992,7 +1992,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
   `alert_required_exclusions`)를 낸다. 계획 쪽 두 목록의 분류 칸(`_LOAD_EXCLUSION_DIMENSIONS` · `_UNROUTED_DIMENSIONS`)은
   Stack 뒤에 `CUSTOM` 을 싣고, 경로 쪽 세 목록(`ST-15` · `ST-21` · `ST-22`)은 산출 결과 소요대수 표와 같은
-  `required_equipment.RESULT_DIMENSIONS` 로 분류 칸을 세운다(CUSTOM 도 Stack 뒤).
+  `required_equipment.RESULT_DIMENSIONS` 로 분류 칸을 세운다(차원 상수의 CUSTOM 은 Stack 뒤 — 화면 칸 자리는 표시순서 규칙
+  차례다, 8장).
   - 문장은 `capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다 — 그래서 저장 · 지정 · 복제 · 자동 갱신
     경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
@@ -7733,7 +7734,8 @@ BDQ(Core_Data)에 공정 이름조차 없는 공정을 판 한 벌로 받아 등
 - **R-01 졸업** — 같은 이름(대소문자 무시)이 BDQ 표에 있으면 건너뛴다(BDQ 가 이긴다 — 막지 않으면 `RQ_EQP_AVBL` 이 합산돼 가용이
   두 배가 되거나 키 중복으로 멈춘다).
 - **R-02 참조 공정** — 따라가기 꼴은 참조 공정이 이번 `RQ_REQB` 에 있고 소요기준이 같아야 한다. 참조 경로를 (월 · 양산구분 ·
-  제품 · Stack · Capa Code · Customer · CS · WF 구분)으로 고유하게 접어 이어받는다(참조 공정의 STEP 이 여럿이어도 한 번). PKG 의
+  제품 · Stack · CUSTOM · Capa Code · Customer · CS · WF 구분 — `extra_process_merge._FOLLOW_KEYS`)으로 고유하게 접어 이어받는다
+  (참조 공정의 STEP 이 여럿이어도 한 번, 부품은 부품마다). PKG 의
   Buffer 밖 줄도 함께 와서 셈에 들지 않는다 — 그 수를 보고에 싣는다. 참조 공정 쪽 「대당 Capa 없음 · 0 이하」 로 빠지는 줄은
   부대공정이 자기 생산성으로 세어 두 공정의 셈이 갈린다 — 빼지 않고 미리보기 · 입력 점검 「부대공정」 묶음이 센다
   (`inherited_capacity_gaps`).
@@ -7925,10 +7927,21 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
 - 규칙 열쇠가 같은 행의 **끝 열쇠는 부품(`CUSTOM`) 차례**다(`display_order.apply_display_order` — 원래 행 차례 앞). 차례는
-  `core_data_derivation.custom_sort_key` 하나이고(대소문자 접은 글자 → 원문 오름차순, 빈 값 · 표지 `"-"` 는 끝), 부품 차례를
-  정하는 다른 자리도 이 열쇠만 쓴다. 표에 CUSTOM 칸이 없거나 부품이 한 값이면 차례는 그대로다. 그 범위에 규칙이 하나도
-  없으면 정렬 없이 돌려주므로 동순위 열쇠도 걸리지 않고 원천 차례 그대로다. 끝 열쇠는 규칙 열쇠가 같은 행 **전부**에
-  걸린다 — 제품으로 세우지 않는 표에서는 다른 제품의 행도 CUSTOM 값끼리 모일 수 있다.
+  `core_data_derivation.custom_sort_key` 하나이고(대소문자 접은 글자 → 원문 오름차순, 빈 값 · 표지 `"-"` 는 끝), 표시 차례에서
+  부품을 세우는 자리는 이 열쇠만 쓴다. 기준 정보 「STEP 복제·삭제」 대상 목록 · STEP 보기(`route_step_editor` — 경로 칸 전체를
+  글자 그대로 세운다, 표지가 앞이고 대소문자를 가린다)는 이 열쇠를 쓰지 않아, 표시순서를 지나는 UPEH · 측정률 · 대당 Capa
+  표와 부품 차례가 다를 수 있다.
+  - 끝 열쇠가 차례를 바꾸지 않는 것은 그 표에 CUSTOM 칸이 없거나 CUSTOM 이 **표 전체**에서 한 값일 때뿐이다. 제품마다 부품이
+    하나여도 제품끼리 값이 다르면, 규칙 열쇠가 같은 다른 제품의 행이 CUSTOM 차례로 선다(원천 차례와 다르다).
+  - 끝 열쇠는 규칙 열쇠가 같은 행 **전부**에 걸린다 — 제품으로 세우지 않는 범위(공정 → STEP → MCP 만 정한 기본 프로필
+    등)에서는 다른 제품의 행이 CUSTOM 값끼리 모이고, 제품정보를 사용자지정으로 세우는 범위에서도 목록에 없는 제품은 모두
+    같은 순위(끝)라 CUSTOM 값끼리 모여 제품이 섞인다.
+  - 끝 열쇠가 걸리지 않는 것은 정렬 없이 돌려주는 두 경우다 — 그 범위에 활성 규칙이 하나도 없을 때, 그리고 규칙은 있어도 그
+    분류컬럼이 표에 하나도 없을 때. 원천 차례 그대로다.
+  - 화면 분류 칸 차례(`classification_columns_in_display_order`)는 규칙에 든 칸이 먼저이고 규칙에 없는 칸은 차원 상수 차례로 그
+    뒤다(경로 칸 STEP · MCP 는 끝). 그래서 차원 상수가 Stack 뒤에 둔 CUSTOM 이 화면에서 Stack 바로 뒤에 서는 것은 그 범위
+    규칙이 Stack 뒤 칸을 정하지 않을 때뿐이다 — 규칙이 Stack · WF 구분 · 소요기준 등을 정하면 CUSTOM 은 그 칸들 뒤에 선다(검수용
+    견본 프로필이 그 꼴이다). 공정 Capa 상세 경로 추적처럼 고정 칸 차례(`ROUTE_COLUMNS`)로 그리는 표는 늘 Stack 뒤다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
   (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
   중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·

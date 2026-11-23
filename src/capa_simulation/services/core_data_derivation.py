@@ -450,8 +450,10 @@ def custom_sort_key(value: object) -> tuple[bool, str, str]:
     표지(`CUSTOM_BLANK`)는 끝이다.
 
     `sorted(…, key=custom_sort_key)` 꼴로 쓴다. 파이썬 기본 차례는 `-` 를 글자 앞에 두어 「부품 구분
-    없음」 이 맨 앞에 선다. 빈 값(NA · 빈 글자 · 공백뿐)은 표지와 같이 끝에 둔다. 부품 차례를 정하는
-    자리(`display_order.apply_display_order` 의 동순위 열쇠 등)는 이 열쇠 하나만 쓴다.
+    없음」 이 맨 앞에 선다. 빈 값(NA · 빈 글자 · 공백뿐)은 표지와 같이 끝에 둔다. 표시 차례에서
+    부품을 세우는 자리(`display_order.apply_display_order` 의 동순위 열쇠 등)는 이 열쇠 하나만
+    쓴다 — 경로 칸 전체를 글자 그대로 세우는 `route_step_editor` 목록은 이 열쇠를 쓰지
+    않는다(AGENTS 8장).
     """
     if isinstance(value, str):
         text = value.strip()
