@@ -408,7 +408,7 @@ def test_display_order_custom_rules_come_before_the_part_order() -> None:
 
 
 def test_display_order_ties_keep_the_source_order_without_text_identity() -> None:
-    """CUSTOM 말고 글자 칸이 없어 「CUSTOM 뺀 정체」 를 못 정하는 표는 규칙 뒤 원래 차례만 쓴다."""
+    """CUSTOM 앞에 글자 칸이 없어 부품의 주인을 못 정하는 표는 규칙 뒤 원래 차례만 쓴다."""
     rules = _product_rule(PAGE_CALCULATION, TAB_REQUIRED).assign(분류컬럼="STEP_NO")
     data = pd.DataFrame(
         {
