@@ -95,7 +95,7 @@ from __future__ import annotations
 
 import html
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Final, NamedTuple, cast
@@ -903,21 +903,32 @@ def _product_rows(
     `factors` 를 주면(② — UPEH 가정이 걸린 달 → f) 그 달 값을 ÷f 한다. 가정은 소요대수만 ÷f 하므로
     분류마다 ÷f 해야 줄을 다 더한 값이 부모(가정 소요)와 같다. 부품으로 가른 줄(`CUSTOM` 이 접힌
     값이 아님)은 라벨 칸이 좁으면 부품을 남기고 앞을 줄인다(`Row.label_part`) — 줄 글 자체는
-    이름표 그대로라 시트 엑셀은 다 싣는다.
+    이름표 그대로라 시트 엑셀은 다 싣는다. 같은 제품(이름표에서 부품을 뗀 앞)의 부품 줄끼리는 서로를
+    형제로 넘겨(`Row.label_part_siblings`) 끝을 같이 쓰는 부품도 다른 글이 된다.
     """
+    records = product_demand.to_dict("records")
+    parts = [_split_part(record) for record in records]
+    heads = [
+        str(record.get(PRODUCT_LABEL_COLUMN, "")).removesuffix(f" ({part})") if part else ""
+        for record, part in zip(records, parts, strict=True)
+    ]
+    siblings: dict[str, set[str]] = {}
+    for head, part in zip(heads, parts, strict=True):
+        if part:
+            siblings.setdefault(head, set()).add(part)
     rows: list[_Row] = []
-    for position, record in enumerate(product_demand.to_dict("records")):
+    for position, record in enumerate(records):
         label = str(record.get(PRODUCT_LABEL_COLUMN, ""))
         other = bool(record.get(OTHER_ROW_COLUMN, False))
-        part = record.get(PART_COLUMN)
+        part = parts[position]
         row = _Row(
             f"{prefix}{label}",
             _VALUE,
             PRODUCT_ROW_HEIGHT_PX,
             label=f"└ {label}",
-            label_part=(
-                part if isinstance(part, str) and part != PART_NOT_SPLIT and not other else ""
-            ),
+            label_part=part,
+            label_part_siblings=(tuple(sorted(siblings[heads[position]] - {part})) if part else ()),
+            label_lead="└ " if part else "",
             label_muted=other,
             indent=True,
             label_fill=tokens.SUMMARY_DEMAND_CLASSIFICATION,
@@ -942,6 +953,14 @@ def _product_rows(
             )
         rows.append(row)
     return rows
+
+
+def _split_part(record: Mapping[Hashable, object]) -> str:
+    """분류 행의 가른 부품 — 접힌 값 · 「그 밖」 행은 빈 글자."""
+    part = record.get(PART_COLUMN)
+    if not isinstance(part, str) or part == PART_NOT_SPLIT or bool(record.get(OTHER_ROW_COLUMN)):
+        return ""
+    return part
 
 
 def _available_hover(

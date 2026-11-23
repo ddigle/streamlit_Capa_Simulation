@@ -508,6 +508,110 @@ def test_when_no_product_letter_fits_the_whole_part_stays_behind_an_ellipsis() -
     )
 
 
+# ---------------------------------------------------------------- 형제를 아는 줄임
+
+# 끝 글자를 길게 같이 쓰는 부품 — 「P1」 · 「P2」 · 「P3」 자리에서만 갈린다.
+MIDDLE_PARTS = ("DEMO_P1_CUSTOM_KIT", "DEMO_P2_CUSTOM_KIT", "DEMO_P3_CUSTOM_KIT")
+
+
+def _fitted_group(parts: tuple[str, ...], budget: float) -> list[str]:
+    return [
+        _fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units, siblings=parts)
+        for part in parts
+    ]
+
+
+@pytest.mark.parametrize("parts", [MIDDLE_PARTS[:2], MIDDLE_PARTS])
+def test_parts_that_share_their_end_keep_the_letter_where_they_part(
+    parts: tuple[str, ...],
+) -> None:
+    """끝을 남기는 줄임은 끝을 같이 쓰는 부품끼리 같은 글이 된다 — 형제를 알면 끝에서부터 처음
+    갈리는 글자부터 남기고 뒤를 줄여 서로 다른 글이 되고, 폭 예산 안이다."""
+    budget = _legend_name_budget_units()
+    alone = [_fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units) for part in parts]
+
+    fitted = _fitted_group(parts, budget)
+
+    assert len(set(alone)) == 1, "형제를 모르는 줄임은 이 부품들을 가르지 못한다"
+    assert len(set(fitted)) == len(parts)
+    for text, part in zip(fitted, parts, strict=True):
+        assert text.startswith("(…") and text.endswith("…)")
+        assert part[6] in text
+        assert _text_width_units(text) <= budget
+
+
+def test_parts_that_part_at_their_first_letter_drop_the_leading_ellipsis() -> None:
+    parts = ("A_LONG_SHARED_TAIL_NAME", "B_LONG_SHARED_TAIL_NAME")
+    budget = _legend_name_budget_units()
+
+    fitted = _fitted_group(parts, budget)
+
+    assert fitted[0].startswith("(A_") and fitted[1].startswith("(B_")
+    assert all(text.endswith("…)") and _text_width_units(text) <= budget for text in fitted)
+
+
+@pytest.mark.parametrize("budget_scale", [0.5, 1.0, 2.0, 4.0])
+def test_parts_whose_shortened_labels_already_differ_stay_as_they_were(budget_scale: float) -> None:
+    """끝이 다른 부품 · 형제가 없는 부품은 형제를 알아도 지금 결과 그대로다(부품이 하나뿐인 제품 ·
+    겹치지 않는 부품)."""
+    budget = _legend_name_budget_units() * budget_scale
+    for part in (PART_A, PART_B):
+        alone = _fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units)
+        assert (
+            _fit_part_label(
+                TWO_PART_PRODUCT, part, budget, _text_width_units, siblings=(PART_A, PART_B)
+            )
+            == alone
+        )
+        assert (
+            _fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units, siblings=()) == alone
+        )
+    assert _fit_part_label(
+        TWO_PART_PRODUCT, PART_NOT_SPLIT, budget, _text_width_units, siblings=MIDDLE_PARTS
+    ) == _fit_to_units(TWO_PART_PRODUCT, budget, _text_width_units)
+
+
+def test_the_result_does_not_hang_on_the_sibling_order_or_on_listing_itself() -> None:
+    budget = _legend_name_budget_units()
+    part = MIDDLE_PARTS[0]
+    answers = {
+        _fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units, siblings=siblings)
+        for siblings in (
+            MIDDLE_PARTS,
+            tuple(reversed(MIDDLE_PARTS)),
+            MIDDLE_PARTS[1:],
+            (MIDDLE_PARTS[2], MIDDLE_PARTS[1], part, MIDDLE_PARTS[1]),
+        )
+    }
+    assert len(answers) == 1
+
+
+def test_a_budget_too_small_to_part_them_falls_back_to_the_plain_end() -> None:
+    """갈리는 글자 하나도 남길 폭이 없으면 형제를 모를 때 글로 둔다 — 멈추고 예산을 넘지 않는다."""
+    budget = _text_width_units("(…T)")
+    alone = [
+        _fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units) for part in MIDDLE_PARTS
+    ]
+
+    assert _fitted_group(MIDDLE_PARTS, budget) == alone
+    assert all(_text_width_units(text) <= budget for text in alone)
+
+
+def test_the_lead_stays_in_front_even_when_only_the_part_end_is_left() -> None:
+    """줄 표지 · 구획 이름(`lead`)은 부품만 남는 꼴에서도 앞에 선다. 접힌 부품은 `lead` 까지 한 글로
+    끝을 줄이는 지금 꼴이다."""
+    budget = _legend_name_budget_units()
+    lead = "└ "
+
+    fitted = _fit_part_label(TWO_PART_PRODUCT, PART_A, budget, _text_width_units, lead=lead)
+
+    assert fitted.startswith(f"{lead}(…") and fitted.endswith(f"{PART_A[-1]})")
+    assert _text_width_units(fitted) <= budget
+    assert _fit_part_label(
+        TWO_PART_PRODUCT, PART_NOT_SPLIT, budget, _text_width_units, lead=lead
+    ) == _fit_to_units(f"{lead}{TWO_PART_PRODUCT}", budget, _text_width_units)
+
+
 @pytest.mark.parametrize("part", [PART_A, PART_B])
 def test_on_the_legend_the_part_tail_survives_when_even_the_part_overflows(part: str) -> None:
     """도넛 범례 한 칸(`_legend_name_budget_units`)은 부품 이름만으로도 넘친다 — 앞을 줄이고

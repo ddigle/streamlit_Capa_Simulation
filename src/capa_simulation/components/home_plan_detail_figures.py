@@ -215,17 +215,23 @@ def _cell_surface_rects(
     return rects
 
 
-def _fit_label(value: str, column_px: float, part: str = PART_NOT_SPLIT) -> str:
+def _fit_label(
+    value: str,
+    column_px: float,
+    part: str = PART_NOT_SPLIT,
+    siblings: Collection[str] = (),
+) -> str:
     """분류 이름이 칸에 들면 그대로, 넘으면 끝을 말줄임으로 줄인다.
 
     `part` 를 주면 `value` 는 제품 이름이고 칸 글은 부품 이름표다 — 부품을 남기고 제품 쪽을 먼저
     줄인다(`_fit_part_label`). 접힌 부품이면 이름 그대로 줄인 것과 같다. 부품 이름표는 대문자 ·
     밑줄이 많아 잰 글꼴 폭(`_table_label_width_units`)으로 맞춘다 — 반각 0.6 으로 세면 기본 폭 제품
-    칸(약 182px)에서 첫 글자와 끝 괄호가 칸 경계에 잘렸다.
+    칸(약 182px)에서 첫 글자와 끝 괄호가 칸 경계에 잘렸다. `siblings` 는 표에 함께 선 같은 제품의
+    다른 부품이다(끝을 같이 쓰는 부품끼리 갈리는 글자를 남긴다).
     """
     budget = (column_px - 2 * DETAIL_LABEL_INSET_PX) / DETAIL_VALUE_FONT_SIZE_PX
     if part != PART_NOT_SPLIT:
-        return _fit_part_label(value, part, budget, _table_label_width_units)
+        return _fit_part_label(value, part, budget, _table_label_width_units, siblings=siblings)
     return _fit_to_units(value, budget, _text_width_units)
 
 
@@ -423,10 +429,16 @@ def build_plan_detail_figures(
         for width in detail_dimension_widths
     ]
 
+    # 제품마다 표에 선 부품 — 같은 제품의 부품 이름표끼리 줄인 글이 같아지지 않게 넘긴다.
+    product_parts: dict[str, set[str]] = {}
+    for product, part in label_parts or ():
+        if part != PART_NOT_SPLIT:
+            product_parts.setdefault(product, set()).add(part)
+
     def _fitted(column_index: int, row_index: int, value: str, column_px: float) -> str:
         if value and label_parts is not None and column_index == product_column:
             product, part = label_parts[row_index]
-            return _fit_label(product, column_px, part)
+            return _fit_label(product, column_px, part, product_parts.get(product, ()))
         return _fit_label(value, column_px)
 
     label_value_texts = TableText(

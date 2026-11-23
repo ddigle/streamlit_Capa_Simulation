@@ -363,7 +363,7 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 12
+CANVAS_SCHEMA_VERSION: Final = 13
 # 월 그림에 브라우저가 쥔 칸 선택의 달 — 칸 선택 콜백이 적고(빈 선택이면 지운다) 그림 세대를 올릴 때
 # 지운다(`selection_epoch`).
 CANVAS_PICK_KEY: Final = "process_detail_canvas_pick"

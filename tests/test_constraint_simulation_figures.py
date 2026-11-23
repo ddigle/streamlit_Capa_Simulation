@@ -471,6 +471,32 @@ def test_the_product_title_of_a_part_keeps_the_part_end_and_a_whole_product_stay
     assert plain == "제약 제품 · DEMO-H12A (DEMO_C…"
 
 
+def test_the_product_title_tells_apart_parts_that_share_their_end() -> None:
+    """부품 이름만으로도 제목 칸을 넘치고 끝을 같이 쓰는 두 부품은 고르기의 형제 부품
+    (`ConstraintLabels.part_siblings`)과 끝에서부터 처음 갈리는 글자를 남겨 서로 다른 제목이다."""
+    result = _run()
+    parts = (
+        "DEMO_P1_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+        "DEMO_P2_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+    )
+    titles = []
+    for part in parts:
+        labels = replace(
+            LABELS,
+            product=f"DEMO-H12A ({part})",
+            part=part,
+            part_siblings=tuple(other for other in parts if other != part),
+        )
+        titles.append(
+            _product_title(
+                build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
+            )
+        )
+
+    assert titles[0] != titles[1]
+    assert titles[0].startswith("제약 제품 · (…1_") and titles[1].startswith("제약 제품 · (…2_")
+
+
 def test_the_figures_keep_the_plotly_canonical_spec() -> None:
     """검증을 건너뛰는 길과 전부 검증하는 길이 같은 Figure JSON 을 낸다."""
     result = _run()

@@ -206,6 +206,14 @@ class Row:
     """라벨 끝 「 (부품)」 의 부품(`product_parts.product_part_label`). 주면 라벨 칸이 좁을 때
     그 끝을 남기고 앞을 줄인다(`_fit_part_label`). 비면 끝을 줄인다."""
 
+    label_part_siblings: tuple[str, ...] = ()
+    """같은 제품의 다른 부품(함께 그리는 부품 줄 · 고르기의 형제). 끝을 같이 쓰는 부품끼리 줄인 글이
+    같아지지 않게 갈리는 글자를 남긴다(`_fit_part_label` 의 `siblings`)."""
+
+    label_lead: str = ""
+    """부품 줄 라벨 앞의 줄이지 않는 글(「└ 」 · 「제약 제품 · 」 — `_fit_part_label` 의 `lead`).
+    라벨이 이 글로 시작할 때만 쓴다."""
+
     payload: Any = None
     top: float = 0.0
 
@@ -340,11 +348,14 @@ def title_row(
     label_fill: str | None = None,
     month_fill: str | None = None,
     label_part: str = "",
+    label_part_siblings: tuple[str, ...] = (),
+    label_lead: str = "",
 ) -> Row:
     """구획 제목 줄. 면을 주지 않으면 캔버스 바탕(`CHART_CANVAS`)이다. 누를 수 없다.
 
     `label_part` 는 제목 끝 「 (부품)」 의 부품이다(`Row.label_part` — 넘치면 그 끝을 남기고 앞을
-    줄인다)."""
+    줄인다). `label_part_siblings` 는 같은 제품의 다른 부품, `label_lead` 는 제목 앞의 줄이지 않는
+    글이다(`Row.label_part_siblings` · `Row.label_lead`)."""
     return Row(
         f"{ROW_TITLE_PREFIX}{name}",
         KIND_TITLE,
@@ -353,6 +364,8 @@ def title_row(
         detail=detail,
         detail_lines=title_detail_lines(detail),
         label_part=label_part,
+        label_part_siblings=label_part_siblings,
+        label_lead=label_lead,
         label_bold=True,
         label_fill=tokens.CHART_CANVAS if label_fill is None else label_fill,
         month_fill=tokens.CHART_CANVAS if month_fill is None else month_fill,
@@ -904,5 +917,13 @@ def _fit_row_label(row: Row, budget_units: float) -> str:
     suffix = f" ({row.label_part})"
     if row.label_part and row.label.endswith(suffix):
         head = row.label[: -len(suffix)]
-        return _fit_part_label(head, row.label_part, budget_units, _text_width_units)
+        lead = row.label_lead if head.startswith(row.label_lead) else ""
+        return _fit_part_label(
+            head[len(lead) :],
+            row.label_part,
+            budget_units,
+            _text_width_units,
+            siblings=row.label_part_siblings,
+            lead=lead,
+        )
     return fit(row.label, budget_units)

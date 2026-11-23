@@ -294,7 +294,8 @@ def _product_share_label_annotations(
     """
     entries = product_share_legend(cells)
     # 부품을 가른 제품의 이름표(「DEMO_A (DEMO_CUSTOM_A)」)는 좁은 칸에서 부품을 남기고 줄인다 —
-    # 앞을 남기는 줄임은 한 제품의 두 부품을 같은 글로 만든다(`_fit_part_label`).
+    # 앞을 남기는 줄임은 한 제품의 두 부품을 같은 글로 만든다(`_fit_part_label` — 끝을 같이 쓰는
+    # 형제 부품과는 갈리는 글자를 남긴다).
     parts = {
         piece.product: (piece.base_product or piece.product, piece.part)
         for cell in cells.values()
@@ -302,6 +303,12 @@ def _product_share_label_annotations(
     }
     limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
     shown = entries[:limit]
+    # 같은 제품의 부품끼리 줄인 글이 같아지지 않게 함께 그리는 형제 부품을 넘긴다.
+    shown_parts: dict[str, set[str]] = {}
+    for name, _ in shown:
+        base_product, part = parts.get(name, (name, PART_NOT_SPLIT))
+        if part != PART_NOT_SPLIT:
+            shown_parts.setdefault(base_product, set()).add(part)
     rows = math.ceil(len(shown) / _PRODUCT_SHARE_LEGEND_COLUMNS)
     row_px = _PRODUCT_SHARE_LEGEND_ROW_PX if rows <= 3 else _PRODUCT_SHARE_LEGEND_TIGHT_ROW_PX
     block = _PRODUCT_SHARE_TITLE_LINE_PX + (
@@ -337,7 +344,13 @@ def _product_share_label_annotations(
     for position, (name, slot) in enumerate(shown):
         row, column = divmod(position, _PRODUCT_SHARE_LEGEND_COLUMNS)
         base_product, part = parts.get(name, (name, PART_NOT_SPLIT))
-        fitted = _fit_part_label(base_product, part, name_budget, _text_width_units)
+        fitted = _fit_part_label(
+            base_product,
+            part,
+            name_budget,
+            _text_width_units,
+            siblings=shown_parts.get(base_product, ()),
+        )
         single = len(shown) == 1
         annotations.append(
             {

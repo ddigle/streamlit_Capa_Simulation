@@ -5796,7 +5796,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   결과에서 만드는 순수 함수. 기준이 HOME 이면 계산표 확보율 칸은 `ConstraintLabels.warning_targets` 로 세 단계 판정색, 직접 넣은
   기준은 두 단계(경고 경계가 없다 — 설계 규칙 UI-DAT-03 예외), 제약 제품 칸은 제약 목표 두 단계다(2026-11-07 g4-14). 부품 줄을
   고르면 계산표 「제약 제품 · 이름표」 제목은 `ConstraintLabels.part` → `title_row(label_part=)` 로 라벨 칸에 넘칠 때 부품 끝을
-  남기고 앞을 줄인다(제품 전체 줄은 끝을 줄이는 지금 꼴 — 8장 「합쳐 보는 화면의 부품 이름표」). 곁에 적힌
+  남기고 앞을 줄인다(고르기의 형제 부품은 `ConstraintLabels.part_siblings` — 제품 전체 줄은 끝을 줄이는 지금 꼴, 8장 「합쳐
+  보는 화면의 부품 이름표」). 곁에 적힌
   두 값의 차이는 `rate_delta_text` 이고 적힌 값으로 다시 빼면 어긋날 때만 「≈」 를 붙인다(g4-15). 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 주의 색
   (`STATUS_WARNING`)은 면색이라 글자에 쓰지 않는다 — 오른쪽 끝 「제약 n%」 는 `TEXT`, 제약 제품 점은 `LINE` 테두리. 오른쪽
   끝 두 글(「기준 …」 · 「제약 n%」)은 같은 x 라, 그림 칸이 가장 낮을 때(`END_LABEL_MIN_PLOT_PX` — 범례 줄 수로 칸 높이가
@@ -6021,8 +6022,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
   - 라벨 글은 넘치면 끝을 말줄임으로 줄인다. `Row.label_part`(라벨 끝 「 (부품)」 의 부품)를 준 행은 그 끝을 남기고 앞을
-    줄인다(`home_figure_common._fit_part_label` — 8장 「합쳐 보는 화면의 부품 이름표」). 구획 제목 줄도 같다(`title_row(
-    label_part=)`). `Row.label` 은 그대로라 시트 엑셀은 이름표를 다 싣는다.
+    줄인다(`home_figure_common._fit_part_label` — 8장 「합쳐 보는 화면의 부품 이름표」). 같은 제품의 다른 부품은
+    `Row.label_part_siblings`, 줄이지 않는 앞 글(「└ 」 · 「제약 제품 · 」)은 `Row.label_lead` 다. 구획 제목 줄도
+    같다(`title_row(label_part=, label_part_siblings=, label_lead=)`). `Row.label` 은 그대로라 시트 엑셀은 이름표를 다 싣는다.
   - 라벨 칸은 260px(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`)이고 좁은 창(`NARROW_VIEWPORT_MAX_PX` 640 이하)에서는 150px
     (`NARROW_LABEL_COLUMN_WIDTH_PX` — Streamlit 이 그림을 그리는 가장 좁은 폭)로 준다 — 390px 창에서 달 칸이 한 달도 안
     남았다(E2E r1 #20, 개선 거리 I12). 세 화면이 `split_scroll_columns_style(narrow_label_width_px=…)` 로 주고, 260px 에 맞춘
@@ -8198,7 +8200,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
     `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 제품 글자가 하나도
     들지 않으면 제품 자리를 말줄임만 남기고(「… (DEMO_CUSTOM_A)」), 부품만으로도 넘치면 앞을 줄이고 구별되는 끝을 남긴다
-    (「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.
+    (「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다. 함께 그리는 같은 제품의 부품(`siblings` — 도넛
+    범례에 보이는 항목 · 계획 세부수량 표의 행 · 공정 Capa 상세 부품 줄 · 제약 고르기의 형제)과 끝을 같이 써 줄인 글이
+    같아지면 그 부품들만 끝에서부터 처음 갈리는 글자부터 남기고 뒤를 줄인다(「DEMO_P1_CUSTOM_KIT」 → 「(…1_CUST…)」 —
+    `_fit_part_labels`). 겹치지 않는 부품 · 부품이 하나뿐인 제품은 지금 꼴이고, 갈리는 글자를 남길 폭이 없으면 그대로다.
+    줄 표지 · 구획 이름(`lead` — 「└ 」 · 「제약 제품 · 」)은 부품만 남는 꼴에서도 앞에 선다.
   - 공정 Capa 상세는 「제품별 소요대수」 의 제품 두 분류(「제품정보」 · 「양산구분·제품」)와 근거 카드 ① 의 상위 제품을 같은
     판정 · 같은 이름표로 가른다(분류 행과 카드가 어긋나지 않게 — PRC-01). 분류 줄은 월 시트 엔진의 `Row.label_part` 로
     라벨 칸 줄임이 부품을 남기고, 시트 엑셀에는 이름표 전체가 실린다. 사이드바 제품 거르기는 제품정보 단위라 고르면 그

@@ -50,6 +50,7 @@ from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_PKG,
     PRODUCT_SHARE_SLOT_COUNT,
     ProductShareCell,
+    ProductShareSlice,
     assign_product_slots,
     build_product_share_cells,
     build_product_volume,
@@ -316,6 +317,39 @@ def test_a_narrow_legend_still_tells_the_parts_apart() -> None:
         assert fitted.endswith(f"{label[-2]})")
         assert _text_width_units(fitted) <= budget
     assert [name for name, _ in product_share_legend(cells)][:2] == [LABEL_A, LABEL_B]
+
+
+# 같은 제품의 두 부품이 끝 글자를 길게 같이 쓴다 — 끝을 남기는 줄임만으로는 둘이 같은 글이 된다.
+TAIL_SHARING_PARTS = ("DEMO_P1_CUSTOM_KIT", "DEMO_P2_CUSTOM_KIT")
+
+
+def test_a_narrow_legend_tells_apart_parts_that_share_their_end() -> None:
+    """범례 한 칸에서 끝을 같이 쓰는 두 부품은 끝에서부터 처음 갈리는 글자부터 남긴다 — 서로 다른
+    글이고 칸 폭 안이다. 끝이 다른 부품(「DEMO_CUSTOM_A」 · 「DEMO_CUSTOM_B」)은 지금 꼴
+    그대로다."""
+    labels = [f"{TWO_PART_PRODUCT} ({part})" for part in TAIL_SHARING_PARTS]
+    cell = ProductShareCell(
+        label="26.09",
+        total=2.0,
+        slices=tuple(
+            ProductShareSlice(label, 1.0, 0.5, slot, base_product=TWO_PART_PRODUCT, part=part)
+            for slot, (label, part) in enumerate(zip(labels, TAIL_SHARING_PARTS, strict=True))
+        ),
+    )
+    budget = _legend_name_budget_units()
+
+    annotations = _product_share_label_annotations({"26.09": cell}, "Wafer", row_top=0.3)
+
+    fitted = {
+        entry["hovertext"]: entry["text"].rsplit("</span> ", 1)[1]
+        for entry in annotations[1:]
+        if entry.get("hovertext") in labels
+    }
+    assert set(fitted) == set(labels)
+    assert len(set(fitted.values())) == 2
+    for label, part in zip(labels, TAIL_SHARING_PARTS, strict=True):
+        assert part[6] in fitted[label]  # 「P1」 · 「P2」 의 갈리는 글자
+        assert _text_width_units(fitted[label]) <= budget
 
 
 def test_the_hover_stays_two_lines_and_names_the_part() -> None:

@@ -300,9 +300,11 @@ def test_the_schema_moved_past_the_plan_detail_without_part_rows() -> None:
 
 
 def test_the_schema_moved_past_part_labels_fitted_by_the_half_width_model() -> None:
-    """59 부터 계획 세부수량 제품 칸의 부품 이름표는 잰 글꼴 폭으로 줄여 칸 안에 든다.
+    """59 부터 계획 세부수량 제품 칸의 부품 이름표는 잰 글꼴 폭으로 줄여 칸 안에 들고, 도넛 범례 ·
+    계획 세부수량의 부품 이름표는 끝을 같이 쓰는 같은 제품의 부품과 갈리는 글자를 남긴다.
 
-    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸 경계에서 잘린 이름표)이 새 세션에도 나간다.
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸 경계에서 잘린 · 서로 같은 이름표)이 새 세션에도
+    나간다.
     """
     assert HOME_FIGURE_SCHEMA_VERSION >= 59
 

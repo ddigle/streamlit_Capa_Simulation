@@ -274,6 +274,10 @@ class ConstraintLabels:
     """제약 제품이 부품 줄이면 그 부품 — `product` 는 이름표(「제품 (부품)」)이고 계산표 제목이 라벨
     칸에 넘치면 부품 끝을 남기고 앞을 줄인다. 제품 전체 줄 · 부품을 가르지 않는 제품은 빈 글자다."""
 
+    part_siblings: tuple[str, ...] = ()
+    """고르기에 선 같은 제품의 다른 부품(정렬한 튜플) — 끝을 같이 쓰는 부품끼리 제목이 같아지지 않게
+    갈리는 글자를 남긴다(`month_sheet_canvas.Row.label_part_siblings`)."""
+
 
 class SheetCanvas(NamedTuple):
     """계산표 캔버스 한 쌍. 두 Figure 는 높이가 같고 행이 맞는다."""
@@ -1173,7 +1177,12 @@ def build_sheet_canvas(
             ),
         ),
         title_row(
-            "product", f"제약 제품 · {labels.product}", "제약 기간 안만", label_part=labels.part
+            "product",
+            f"제약 제품 · {labels.product}",
+            "제약 기간 안만",
+            label_part=labels.part,
+            label_part_siblings=labels.part_siblings,
+            label_lead="제약 제품 · ",
         ),
         _row("constrained_demand", "소요대수", rows_in, _constrained_demand_cell),
         _row(

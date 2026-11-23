@@ -984,6 +984,17 @@ labels = ConstraintLabels(
     ),
     today=today,
     part=chosen_product.part or "",
+    part_siblings=tuple(
+        sorted(
+            {
+                choice.part
+                for choice in product_choice_map.values()
+                if choice.product == chosen_product.product
+                and choice.part is not None
+                and choice.part != chosen_product.part
+            }
+        )
+    ),
 )
 period_text = (
     month_label(period.start)

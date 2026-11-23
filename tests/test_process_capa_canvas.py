@@ -555,6 +555,63 @@ def test_a_narrow_label_keeps_the_part_at_the_end_of_a_split_product_row() -> No
     ]
 
 
+# 라벨 칸(약 18.8 단위)에 부품 이름만으로도 넘치고 끝을 길게 같이 쓰는 두 부품.
+TAIL_SHARING_PARTS = (
+    "DEMO_P1_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+    "DEMO_P2_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+)
+
+
+def test_split_product_rows_that_share_their_end_stay_apart_in_a_narrow_label() -> None:
+    """부품 이름만으로도 라벨 칸을 넘치고 끝을 같이 쓰는 두 부품 줄은 끝에서부터 처음 갈리는 글자를
+    남긴다 — 끝을 남기는 줄임만으로는 두 줄이 같은 글이다. 줄 글(행 id · 시트)은 이름표 그대로다."""
+    rows = [
+        {
+            "생산계획년월": month,
+            "공정": PROCESS,
+            "양산구분": "양산",
+            "제품정보": LONG_PART_PRODUCT,
+            "CUSTOM": part,
+            "Stack": "8H",
+            "WF 구분": "DRAM",
+            "소요기준": "HBM",
+            "소요대수": need * 0.5,
+        }
+        for month, need in zip(MONTHS, REQUIRED, strict=True)
+        for part in TAIL_SHARING_PARTS
+    ]
+    product_demand = build_process_product_demand(
+        pd.DataFrame(rows),
+        process=PROCESS,
+        split="제품정보",
+        months=MONTHS,
+        multi_part={LONG_PART_PRODUCT},
+    )
+    canvas = build_process_capa_canvas(
+        process_label="Die Attach",
+        months=MONTHS,
+        summary=_summary(),
+        thresholds=THRESHOLDS,
+        selected_month=None,
+        product_demand=product_demand,
+    )
+    products = [
+        str(item["text"])
+        for item in _annotations(canvas.labels)
+        if str(item["text"]).startswith("└ ")
+    ]
+    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX - PRODUCT_INDENT_PX) / (
+        PRODUCT_FONT_PX
+    )
+
+    assert len(products) == 2 and products[0] != products[1]
+    assert products[0].startswith("└ (…1_") and products[1].startswith("└ (…2_")
+    assert all(_text_width_units(text) <= budget for text in products)
+    assert [row for row in canvas.row_ids if row.startswith(ROW_PRODUCT_PREFIX)] == [
+        f"{ROW_PRODUCT_PREFIX}{LONG_PART_PRODUCT} ({part})" for part in TAIL_SHARING_PARTS
+    ]
+
+
 def _section_rows(row_ids: tuple[str, ...], section: str) -> list[str]:
     """그 구획 제목 줄 밑, 다음 제목 줄 앞까지의 행 id."""
     start = row_ids.index(f"title:{section}") + 1

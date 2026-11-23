@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import html
 import unicodedata
+from collections import Counter
 from collections.abc import Callable, Collection, Container, Mapping, Sequence
 from typing import Any, Final, cast
 
@@ -597,6 +598,9 @@ def _fit_part_label(
     part: str,
     unit_budget: float,
     width: Callable[[str], float],
+    *,
+    siblings: Collection[str] = (),
+    lead: str = "",
 ) -> str:
     """부품 이름표(`product_part_label`)를 폭 예산에 맞춘다 — 부품을 남기고 제품 쪽을 먼저 줄인다.
 
@@ -606,10 +610,102 @@ def _fit_part_label(
     (「… (DEMO_CUSTOM_A)」). 부품도 다 들지 않으면 부품만 남기되 앞을 줄이고 구별되는 끝을 남긴다
     (「(…CUSTOM_A)」 — 필요 단축 일정 호기 이름과 같은 꼴). `_fit_to_units` 는 앞을 남겨 부품부터
     잘라 한 제품의 부품끼리 같은 글이 된다.
+
+    `siblings` 는 같은 제품의 다른 부품(함께 그리는 이름표)이다 — `_fit_part_labels` 를 보라.
+    `lead` 는 이름표 앞에 붙어 줄이지 않는 글(줄 표지 「└ 」 · 구획 이름 「제약 제품 · 」)이다 —
+    부품만 남는 꼴에서도 선다. 접힌 부품이면 `lead` 까지 한 글로 끝을 줄인다(지금 꼴).
     """
+    if part == PART_NOT_SPLIT:
+        return _fit_to_units(f"{lead}{product_part_label(product, part)}", unit_budget, width)
+    inner = unit_budget - width(lead)
+    return f"{lead}{_fit_part_labels(product, {part, *siblings}, inner, width)[part]}"
+
+
+def _fit_part_labels(
+    product: str,
+    parts: Collection[str],
+    unit_budget: float,
+    width: Callable[[str], float],
+) -> dict[str, str]:
+    """같은 제품의 부품 이름표들을 함께 폭 예산에 맞춘다 — 부품 → 줄인 글(접힌 부품은 뺀다).
+
+    부품마다 `_fit_part_label` 의 꼴(형제를 모를 때)로 먼저 줄인다. 끝을 남기는 꼴(「(…끝)」)은
+    끝 글자를 같이 쓰는 부품끼리 같은 글이 된다(「DEMO_A_X_CUSTOM」 · 「DEMO_B_X_CUSTOM」 → 둘 다
+    「(…_X_CUSTOM)」). 그렇게 겹친 부품만 겹친 형제와 끝에서부터 처음 갈리는 글자부터 남기고 뒤를
+    줄인다(「(…A_X_CUS…)」 · 「(…B_X_CUS…)」 — `_distinct_window`). 겹치지 않는 부품 · 형제가 없는
+    부품은 형제를 모를 때와 같은 글이고, 갈리는 자리를 남길 폭이 없거나 남긴 글이 다시 겹치면 그
+    부품도 그대로 둔다. 결과는 부품을 넘긴 차례에 매이지 않는다.
+    """
+    members = sorted({part for part in parts if part != PART_NOT_SPLIT})
+    plain = {part: _fit_split_part(product, part, unit_budget, width) for part in members}
+    fitted = dict(plain)
+    for text in set(plain.values()):
+        same = [part for part in members if plain[part] == text]
+        if len(same) < 2:
+            continue
+        for part in same:
+            window = _distinct_window(
+                part, [other for other in same if other != part], unit_budget, width
+            )
+            if window is not None:
+                fitted[part] = window
+    counts = Counter(fitted.values())
+    return {part: fitted[part] if counts[fitted[part]] == 1 else plain[part] for part in members}
+
+
+def _common_suffix_length(left: str, right: str) -> int:
+    """두 글이 끝에서부터 같은 글자 수."""
+    length = 0
+    for left_character, right_character in zip(reversed(left), reversed(right), strict=False):
+        if left_character != right_character:
+            break
+        length += 1
+    return length
+
+
+def _distinct_window(
+    part: str,
+    rivals: Sequence[str],
+    unit_budget: float,
+    width: Callable[[str], float],
+) -> str | None:
+    """끝을 같이 쓰는 형제(`rivals`)와 갈리는 자리부터 남긴 부품 글(「(…A_X_CUS…)」) — 폭이 없으면
+    None.
+
+    갈리는 자리는 형제마다 끝에서부터 같은 글자 수 가운데 가장 긴 것의 바로 앞 글자다. 그 글자를
+    맨 앞에 두고 뒤를 폭만큼 남긴 뒤 말줄임을 단다(부품 첫 글자부터면 앞 말줄임이 없다). 부품이
+    형제의 끝 전체면(갈리는 글자가 없다) 앞 말줄임 없이 부품을 온전히 둔다(「(X_CUSTOM)」).
+    """
+    ellipsis = BOTTLENECK_NAME_ELLIPSIS
+    start = len(part) - max(_common_suffix_length(part, rival) for rival in rivals) - 1
+    if start < 0:
+        whole = f"({part})"
+        return whole if width(whole) <= unit_budget else None
+    prefix = "(" if start == 0 else f"({ellipsis}"
+    room = unit_budget - width(prefix) - width(f"{ellipsis})")
+    kept: list[str] = []
+    used = 0.0
+    for character in part[start:]:
+        character_units = width(character)
+        if used + character_units > room:
+            break
+        kept.append(character)
+        used += character_units
+    if not kept:
+        return None
+    return f"{prefix}{''.join(kept)}{ellipsis})"
+
+
+def _fit_split_part(
+    product: str,
+    part: str,
+    unit_budget: float,
+    width: Callable[[str], float],
+) -> str:
+    """가른 부품 하나의 이름표를 형제를 모르고 줄인다(`_fit_part_label` 의 꼴)."""
     label = product_part_label(product, part)
-    if part == PART_NOT_SPLIT or width(label) <= unit_budget:
-        return _fit_to_units(label, unit_budget, width)
+    if width(label) <= unit_budget:
+        return label
     ellipsis = BOTTLENECK_NAME_ELLIPSIS
     suffix = f" ({part})"
     room = unit_budget - width(suffix) - width(ellipsis)

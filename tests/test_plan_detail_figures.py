@@ -25,7 +25,10 @@ from capa_simulation.components.home_dimensions import (
     lower_delta_row_height,
     table_row_height,
 )
-from capa_simulation.components.home_figure_common import HOVER_LABEL_FONT_SIZE_PX
+from capa_simulation.components.home_figure_common import (
+    HOVER_LABEL_FONT_SIZE_PX,
+    _table_label_width_units,
+)
 from capa_simulation.components.home_figures import build_plan_detail_figures
 from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
@@ -534,6 +537,39 @@ def test_a_part_label_fits_the_product_cell_at_its_rendered_width(
     for text in texts:
         assert (
             _rendered_px(text, DETAIL_VALUE_FONT_SIZE_PX) <= product_px - 2 * DETAIL_LABEL_INSET_PX
+        ), text
+
+
+@pytest.mark.parametrize(
+    "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
+)
+def test_parts_that_share_their_end_stay_apart_in_the_product_cell(dimensions: list[str]) -> None:
+    """끝 글자를 길게 같이 쓰는 두 부품도 제품 칸에서 서로 다른 글이다 — 끝에서부터 처음 갈리는
+    글자를 남긴다. 실제로 그린 폭은 칸 안이다."""
+    parts = ["DEMO_P1_CUSTOM_KIT_SET", "DEMO_P2_CUSTOM_KIT_SET"]
+    detail = pd.DataFrame(
+        {
+            "제품정보": [TWO_PART_PRODUCT, TWO_PART_PRODUCT],
+            "CUSTOM": parts,
+            "Stack": ["12H", "12H"],
+            "Customer": ["DEMO_CUST-1", "DEMO_CUST-1"],
+            "202608": [1000.0, 1000.0],
+            "202609": [2000.0, 2000.0],
+        }
+    )
+
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
+    )
+
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
+    assert len(texts) == 2 and len(set(texts)) == 2
+    assert "1" in texts[0] and "2" in texts[1]
+    for text in texts:
+        assert _table_label_width_units(text) * DETAIL_VALUE_FONT_SIZE_PX <= (
+            product_px - 2 * DETAIL_LABEL_INSET_PX
         ), text
 
 
