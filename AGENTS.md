@@ -531,11 +531,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록에서 본다(`persistence/cache.scenario_has_revision` — 목록에 없으면 DB 로 한 번 더 본다, 회차마다 DB 를 열지 않는다).
   - **토글 회차는 그림과 상관없는 정렬 · 합치기를 다시 하지 않는다** — 세션 메모(`SessionSlot` `home_sort_memo` — 칸 이름은
     `home_state.HOME_SORT_MEMO_KEY`, 이름마다 두 벌)에 표시순서 준비(키 = HOME 계산 키의 표시순서 지문) · 공정 선택지 차례(공정
-    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 내용 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version)을
-    기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
+    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 내용 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
+    과거 조각의 부품 판정(`product_parts.multi_part_products` — 키 = 내용 토큰)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
+  - 제품별 비중은 부품(`CUSTOM`)이 둘 이상인 제품만 부품마다 조각 · 색 칸 · 범례 이름표다(8장 「합쳐 보는 화면의 부품
+    이름표」 — 조각 합은 그대로 `Wafer 계획`). 판정은 HOME 캐시 두 함수(`get_home_simulation` · `get_home_lob_without_edp`)가
+    받은 리비전 계획 전체(`_tables["RQ_PKG_PLAN"]`)로 하고 수량 프레임의 `CUSTOM` 칸에 접힌 값으로 싣는다 — 캐시 키 ·
+    반환 꼴은 그대로다. 과거 구간 조각은 `past_product_volume(multi_part=)` 가 「제품 (-)」 로 채운다. 범례 줄임은
+    `_fit_part_label` 이다(`tests/test_product_share_parts.py`).
   - HOME 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 리비전마다
     계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」(`components/scenario_input_check.py`)이 저장 리비전 전체 기간으로
     센다(2026-11-11 입력 점검 보드 q7). 측정률 가정 한 줄은 남는다.
@@ -4217,7 +4222,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칩 오른쪽 `.window`(기간 글자 + 18px 네모 둘)이고 끝에서는 `aria-disabled` + 풍선 까닭, 옮긴 뒤 `live` 칸이 새 기간을 읽는다.
     기간 글자는 줄지 않고 칩이 줄며 접힌다. 760px 이하는 둘째 줄(토글 줄) 오른쪽 끝, 520px 이하는 생산계획 이름 띠 오른쪽
     끝(`summaryGrid` 좁은 창 첫 줄 띠 96px — 머리 줄 위 여백 18px 에 맞춘 자리라 그 둘을 바꾸면 함께 본다)이다. 범례는 창 안에
-    조각이 있는 제품만이고 색은 그대로다. 과거 구간 달은 도넛 자리에 「과거 구간」, 풍선·낭독 표에 「과거 구간 입력값」 이다.
+    조각이 있는 제품만이고 색은 그대로다. 부품이 둘 이상인 제품은 HOME 과 같은 이름표(「제품 (부품)」)마다 한 항목이다. 과거 구간 달은 도넛 자리에 「과거 구간」, 풍선·낭독 표에 「과거 구간 입력값」 이다.
   - B/N 확보율 판의 기준선 이름표는 막대 칸(판 위 ~ 막대 바닥, 그 아래 50px 는 공정 이름·상태 띠) 안에서 막대·확보율
     글자·「최저」·기준선·다른 이름표를 피하는 자리를 고르고, 없으면 글자만 피하는 자리에 바탕을 깔아 단다 — 그것도 없으면
     쓰지 않는다. 「최저」 도 판 위로 나가면 쓰지 않는다(낮은 휴대폰 창에서 막대 축이 몇십 px 라 확보율 글자와 기준선이 한 줄에
@@ -8135,6 +8140,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 부품 차례는 `part_order_key`(접힌 값 먼저, 나머지는 위 끝 열쇠와 같은 `custom_sort_key`)다. CUSTOM 뒤 칸(Stack 등)
     규칙이 한 제품의 부품을 번갈아 세우는 표는 표시순서 **뒤**에 `keep_parts_together` 를 건다 — 이웃한 같은 제품 행 덩이
     안에서 부품이 처음 선 차례로 모을 뿐 새 열쇠로 다시 세우지 않는다.
+  - 색은 부품마다 제 칸이다(2026-11-23 보드 답 D2 (가) — 다른 제품처럼, 새 토큰 없음). 같은 제품의 부품은 차례로만 이웃하고
+    이름은 범례 · 풍선 글이 나르며(UI-ACC-03), 칸이 넘치면 부품 단위로 `기타` 에 접힌다 — 한 제품의 부품이 이름 있는 칸과
+    `기타` 에 걸칠 수 있다(`product_share.assign_product_slots`).
   - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
     `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 부품만으로도
     넘치면 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.

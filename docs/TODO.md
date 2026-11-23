@@ -1889,7 +1889,9 @@
   「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나) — 2026-11-23 보드 답 D1 (가) 괄호 · D2 (가) 부품마다 제 색 칸 ·
   D3 (나) 부품마다 + 제품 전체 한 줄). 판정 · 이름표 · 차례 · 접기 · 줄임 도우미(`services/product_parts.py` ·
   `home_figure_common._fit_part_label`)는 들어왔다 — UI-CON-04(한 벌 · `SHARED_HELPERS`) · UI-CON-02(원천 값 그대로) ·
-  UI-ACC-02(부품을 남기는 줄임) · UI-PRF-03(리비전 범위 판정).
+  UI-ACC-02(부품을 남기는 줄임) · UI-PRF-03(리비전 범위 판정). 제품별 비중(HOME 도넛 · 입장 화면 Summary)도 부품마다
+  조각이다 — UI-ACC-01(새 색 없음) · UI-ACC-03(이름은 범례 · 풍선) · UI-DAT-04(20% 문턱 그대로) · UI-DAT-06(과거는 「제품 (-)」) ·
+  UI-DAT-07(조각 합 = Wafer 계획) · UI-DAT-08 · UI-TXT-07 · UI-TXT-08(새 안내 문장 없음 · 한 값 데이터는 바뀜 없음).
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
   행」(같으면 원천 행 순위)을 골라 실값 유실만 막는다(결정 기록). 선례는 `RQ_PKG_PLAN` 의 `Pack Code` 승격(`2dcbf0a`)이지만 그때는 `0013` 이

@@ -192,6 +192,7 @@ from capa_simulation.services.process_selection import (
     revision_processes,
     visible_processes,
 )
+from capa_simulation.services.product_parts import multi_part_products
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASES,
     assign_product_slots,
@@ -550,12 +551,18 @@ try:
     ).copy()
     # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). 그리는 수량에는 잇되, 색 칸을 정하는
     # 목록(`product_volume_with_edp`)에는 섞지 않고 따로 넘긴다 — 과거 전용 제품이 계산 구간
-    # 제품의 칸을 밀어내지 않게(`assign_product_slots`).
+    # 제품의 칸을 밀어내지 않게(`assign_product_slots`). 과거 입력에는 부품이 없어, 부품을 가르는
+    # 제품(리비전 계획 전체로 판정 — 내용 토큰이 정한다)의 과거 조각은 「제품 (-)」 이다.
     past_products = past_product_volume(
         past_profile.plan_detail,
         start_month=effective_start,
         end_month=effective_end,
         exclude_months=calculated_months,
+        multi_part=_remembered(
+            "product_parts",
+            (home_simulation_cache_key[1],),
+            partial(multi_part_products, active_scenario["tables"]["RQ_PKG_PLAN"]),
+        ),
     )
     product_volume = combine_product_volume(product_volume, past_products)
     # 확보율 보정은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·

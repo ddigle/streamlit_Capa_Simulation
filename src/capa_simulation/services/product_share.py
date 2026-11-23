@@ -17,6 +17,12 @@ HOME `Capa LOB 현황` 맨 아래 행은 칸마다 제품별 비중을 도넛 �
 토글이 바뀌어도 같은 제품은 같은 칸(=같은 색)이다. 그래서 칸을 정하는 제품 목록은 EDP 를
 **포함한** 계산 구간 계획이고, 과거 구간에만 있는 제품은 **그 뒤**에 칸을 받는다 — EDP 를 끄거나
 Past Data 를 켜고 꺼도 계산 구간 제품의 색이 앞뒤로 밀리지 않는다.
+
+**부품(`CUSTOM`)이 둘 이상인 제품은 부품마다 조각이다**(`services/product_parts` — 2026-11-23 보드
+답 D1 (가) · D2 (가)). 조각 · 칸의 열쇠는 이름표 글(「DEMO_A (DEMO_CUSTOM_A)」, 부품이 하나뿐인
+제품은 제품 이름)이고 부품은 다른 제품처럼 제 색 칸을 받는다 — 같은 제품의 부품은 차례로만 이웃이고,
+칸이 넘치면 부품 단위로 `기타` 에 접힌다. 판정은 활성 리비전 계획 전체로 하고 수량 프레임의 `CUSTOM`
+칸에 접힌 값으로 싣는다. `CUSTOM` 칸이 없는 수량 프레임은 모두 접힌 것으로 읽는다.
 """
 
 from __future__ import annotations
@@ -32,6 +38,13 @@ from capa_simulation.services.display_order import DisplayOrderInput, apply_disp
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    PART_NOT_SPLIT,
+    part_order_key,
+    product_part_label,
+    split_product_parts,
+)
 
 PRODUCT_SHARE_BASIS_WAFER = "Wafer"
 PRODUCT_SHARE_BASIS_PKG = "PKG"
@@ -43,9 +56,17 @@ PRODUCT_SHARE_VALUE_COLUMNS: Mapping[str, str] = {
     PRODUCT_SHARE_BASIS_WAFER: "Wafer 부하량",
     PRODUCT_SHARE_BASIS_PKG: "생산수량",
 }
-# `과거` 는 Past Data 로 채운 달의 행이다. 그 달의 PKG 는 `과거 계획 세부수량` 입력 그대로라
-# 계산 구간(양산+ER)과 정의가 같다고 보장할 수 없다 — 칸에 표시하고 두 정의를 더하지 않는다.
-PRODUCT_VOLUME_COLUMNS = ("생산계획년월", "제품정보", "Wafer 부하량", "생산수량", "과거")
+# `과거` 는 Past Data 로 채운 달의 행이다. 그 달의 PKG 는 `과거 계획 세부수량` 입력 그대로라 계산
+# 구간(양산+ER)과 정의가 같다고 보장할 수 없다 — 칸에 표시하고 두 정의를 더하지 않는다. `CUSTOM` 은
+# 화면 단위로 접은 부품이다(부품이 하나뿐인 제품은 빈 글자 — `product_parts.split_product_parts`).
+PRODUCT_VOLUME_COLUMNS = (
+    "생산계획년월",
+    "제품정보",
+    "Wafer 부하량",
+    "생산수량",
+    "과거",
+    PART_COLUMN,
+)
 
 # 한 도넛이 갖는 조각 수의 상한이자 색 칸 수. 도넛은 6조각을 넘으면 비중이 읽히지 않고,
 # 범례도 구분 칸(260×100px)에 두 줄 세 칸까지만 들어간다. 제품이 이보다 많으면 물량이 작은
@@ -63,7 +84,8 @@ class ProductSlots(NamedTuple):
     """화면 전체에서 한 번 정한 제품 차례와 색 칸.
 
     `order` 는 조각·범례 차례(표시순서)이고 `slot` 은 색 칸 번호다. `기타` 로 접힌 제품은
-    `folded` 에만 있다.
+    `folded` 에만 있다. 제품 이름은 이름표(`product_parts.product_part_label`)다 — 부품을 가른
+    제품은 부품마다 하나다.
     """
 
     order: tuple[str, ...]
@@ -76,13 +98,20 @@ class ProductSlots(NamedTuple):
 
 
 class ProductShareSlice(NamedTuple):
-    """도넛 조각 하나. `members` 는 `기타` 조각에 든 제품과 각 수량이다."""
+    """도넛 조각 하나. `members` 는 `기타` 조각에 든 제품과 각 수량이다.
+
+    `product` 는 이름표이고, `base_product` · `part` 는 그 이름표를 지은 제품정보 · 접힌
+    부품이다(좁은 범례 칸에서 부품을 남기고 줄이는 데 쓴다 — `home_figure_common._fit_part_label`).
+    `기타` 조각은 빈 글자다.
+    """
 
     product: str
     value: float
     share: float
     slot: int | None
     members: tuple[tuple[str, float], ...] = ()
+    base_product: str = ""
+    part: str = PART_NOT_SPLIT
 
 
 class ProductShareCell(NamedTuple):
@@ -125,33 +154,50 @@ def empty_product_volume() -> pd.DataFrame:
             "Wafer 부하량": pd.Series(dtype="float64"),
             "생산수량": pd.Series(dtype="float64"),
             "과거": pd.Series(dtype="bool"),
+            PART_COLUMN: pd.Series(dtype="string"),
         }
     )
 
 
-def _normalized(frame: pd.DataFrame, value_column: str) -> pd.DataFrame:
+def _normalized(
+    frame: pd.DataFrame, value_column: str, multi_part: Collection[str]
+) -> pd.DataFrame:
+    """달 · 제품정보 · 접힌 부품 · 값 네 칸. 부품은 `split_product_parts` 가 판정대로 접는다."""
+    parts = split_product_parts(frame, multi_part)
     result = pd.DataFrame(
         {
             "생산계획년월": pd.to_numeric(frame["생산계획년월"], errors="coerce").astype("Int64"),
             "제품정보": frame["제품정보"].astype("string").str.strip(),
+            PART_COLUMN: parts[PART_COLUMN].astype("string"),
             value_column: pd.to_numeric(frame[value_column], errors="coerce").astype("float64"),
         }
     )
     return result.dropna(subset=["생산계획년월", "제품정보"])
 
 
-def build_product_volume(plan: pd.DataFrame, wafer_load: pd.DataFrame) -> pd.DataFrame:
+def build_product_volume(
+    plan: pd.DataFrame,
+    wafer_load: pd.DataFrame,
+    *,
+    multi_part: Collection[str] = frozenset(),
+) -> pd.DataFrame:
     """제품×월 Wafer 부하량과 PKG 생산수량. **양산구분을 나누지 않고 더한다.**
 
     Wafer 는 `Wafer 계획` 행과 같은 상세 환산 결과(`물량`, HOME 은 Dummy 계열을 뺀 것)에서
     묶는다. 그래야 제품별 합이 그 행의 값과 한 치도 다르지 않다 — 기준정보가 없어 환산에서
     빠진 계획 행은 두 쪽 모두에서 빠진다. PKG 는 계획의 `생산수량` 을 그대로 묶는다.
+
+    `multi_part` 는 부품을 가를 제품(`product_parts.multi_part_products` — 활성 리비전 계획 전체로
+    판정)이다. 그 제품은 (달, 제품, 부품)마다, 나머지는 부품을 접어 (달, 제품)마다 한 줄이다 — 비어
+    있으면 모두 접혀 부품을 싣기 전과 같다. 나누기만 하므로 달 합은 그대로다.
     """
     require_columns(plan, ["생산계획년월", "제품정보", "생산수량"], "RQ_PKG_PLAN")
     require_columns(wafer_load, ["생산계획년월", "제품정보", "물량"], "Wafer 부하량")
-    wafer = _normalized(wafer_load.rename(columns={"물량": "Wafer 부하량"}), "Wafer 부하량")
-    pkg = _normalized(plan, "생산수량")
-    keys = ["생산계획년월", "제품정보"]
+    wafer = _normalized(
+        wafer_load.rename(columns={"물량": "Wafer 부하량"}), "Wafer 부하량", multi_part
+    )
+    pkg = _normalized(plan, "생산수량", multi_part)
+    keys = ["생산계획년월", "제품정보", PART_COLUMN]
     grouped_wafer = wafer.groupby(keys, as_index=False)["Wafer 부하량"].sum()
     grouped_pkg = pkg.groupby(keys, as_index=False)["생산수량"].sum()
     if grouped_wafer.empty and grouped_pkg.empty:
@@ -172,51 +218,101 @@ def past_product_volume(
     start_month: int,
     end_month: int,
     exclude_months: Collection[int],
+    multi_part: Collection[str] = frozenset(),
 ) -> pd.DataFrame:
     """과거 구간의 제품×월 PKG 생산수량. **Wafer 는 결측이다.**
 
     과거 입력은 월별 `Wafer Total` 하나뿐이라 제품별 Wafer 를 알 수 없다. 0 으로 두면
     「그 달에 Wafer 가 없었다」로 읽히므로 결측으로 두고, Wafer 단위 도넛은 그 달을 비운다.
     DB 계산 결과가 있는 달(`exclude_months`)은 계산이 이긴다 — 다른 과거 병합과 같은 규칙이다.
+
+    과거 입력에는 부품이 없다. 부품을 가르는 제품(`multi_part`)의 과거 조각은 「DEMO_A (-)」
+    하나이고 과거 전용 이름이라 계산 구간 제품 뒤에서 칸을 받는다(`assign_product_slots`).
     """
     if past_detail.empty:
         return empty_product_volume()
-    frame = _normalized(past_detail, "생산수량")
+    frame = _normalized(past_detail, "생산수량", multi_part)
     months = frame["생산계획년월"].astype("int64")
     frame = frame.loc[months.between(start_month, end_month) & ~months.isin(list(exclude_months))]
     if frame.empty:
         return empty_product_volume()
-    grouped = frame.groupby(["생산계획년월", "제품정보"], as_index=False)[["생산수량"]].sum()
+    grouped = frame.groupby(["생산계획년월", "제품정보", PART_COLUMN], as_index=False)[
+        ["생산수량"]
+    ].sum()
     grouped["Wafer 부하량"] = float("nan")
     grouped["과거"] = True
     return grouped[list(PRODUCT_VOLUME_COLUMNS)].reset_index(drop=True)
 
 
-def _positive_totals(volume: pd.DataFrame | None) -> pd.Series:
-    """제품별 PKG 생산수량 합. 0 이하인 제품은 뺀다."""
+_LABEL = "__product_part_label"
+
+
+def _labelled(volume: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, tuple[str, str]]]:
+    """이름표 칸(`_LABEL`)을 붙인 사본과 이름표 → (제품정보, 접힌 부품).
+
+    `CUSTOM` 칸이 없거나 빈 값이면 접힌 것으로 읽는다 — 부품을 싣기 전 프레임(입장 화면 시험 표
+    등)은 제품 이름이 그대로 이름표다.
+    """
+    products = [str(product) for product in volume["제품정보"]]
+    if PART_COLUMN in volume.columns:
+        parts = [part if isinstance(part, str) else PART_NOT_SPLIT for part in volume[PART_COLUMN]]
+    else:
+        parts = [PART_NOT_SPLIT] * len(products)
+    labels = [
+        product_part_label(product, part) for product, part in zip(products, parts, strict=True)
+    ]
+    mapping = dict(zip(labels, zip(products, parts, strict=True), strict=True))
+    return volume.assign(**{_LABEL: labels}), mapping
+
+
+def _positive_totals(
+    volume: pd.DataFrame | None,
+) -> tuple[pd.Series, dict[str, tuple[str, str]]]:
+    """이름표별 PKG 생산수량 합(0 이하는 뺀다)과 이름표 → (제품정보, 접힌 부품)."""
     if volume is None or volume.empty:
-        return pd.Series(dtype="float64")
+        return pd.Series(dtype="float64"), {}
     require_columns(volume, ["제품정보", "생산수량"], "제품별 수량")
+    labelled, parts = _labelled(volume)
     totals = (
-        volume.assign(생산수량=pd.to_numeric(volume["생산수량"], errors="coerce").fillna(0.0))
-        .groupby("제품정보")["생산수량"]
+        labelled.assign(생산수량=pd.to_numeric(labelled["생산수량"], errors="coerce").fillna(0.0))
+        .groupby(_LABEL)["생산수량"]
         .sum()
     )
-    return totals.loc[totals > 0]
+    return totals.loc[totals > 0], parts
 
 
-def _display_ordered(products: Collection[str], display_order: DisplayOrderInput) -> list[str]:
-    """`계획 세부수량` 표와 같은 차례 — 제품명 순으로 세운 뒤 공용 표시순서를 얹는다."""
-    names = sorted(str(name) for name in products)
-    if not names:
+def _display_ordered(
+    labels: Collection[str],
+    parts: Mapping[str, tuple[str, str]],
+    display_order: DisplayOrderInput,
+) -> list[str]:
+    """`계획 세부수량` 표와 같은 차례 — (제품명, 부품 차례)로 세운 뒤 공용 표시순서를 얹는다.
+
+    부품 차례는 `part_order_key`(접힌 값 먼저 · 표지 `-` 끝)다. 표시순서 끝 열쇠도 같은 제품의
+    부품을 같은 열쇠로 이웃하게 세우므로, 규칙이 없어 표를 그대로 돌려줄 때도 미리 세운 차례가
+    답이다.
+    """
+    pairs = sorted(
+        (parts[str(label)] for label in labels),
+        key=lambda pair: (pair[0], part_order_key(pair[1])),
+    )
+    if not pairs:
         return []
     ordered = apply_display_order(
-        pd.DataFrame({"제품정보": names}),
+        pd.DataFrame(
+            {
+                "제품정보": [product for product, _ in pairs],
+                PART_COLUMN: [part for _, part in pairs],
+            }
+        ),
         display_order,
         PAGE_PLAN,
         TAB_PKG_PLAN,
-    )["제품정보"].astype(str)
-    return list(ordered)
+    )
+    return [
+        product_part_label(str(product), str(part))
+        for product, part in zip(ordered["제품정보"], ordered[PART_COLUMN], strict=True)
+    ]
 
 
 def _largest(products: list[str], totals: pd.Series, count: int) -> set[str]:
@@ -242,12 +338,15 @@ def assign_product_slots(
     칸 수를 넘으면 **PKG 생산수량이 작은 제품부터** `기타` 로 접는다(이름 있는 칸 하나를
     `기타` 에 내준다). 과거 전용 제품은 계산 구간 제품이 칸을 다 쓰면 모두 `기타` 다. 물량 순위는
     단위와 무관한 PKG 로 매긴다 — 단위를 바꿀 때 접히는 제품이 달라지면 색이 따라 바뀐다.
+
+    부품을 가른 제품은 부품 하나가 제품 하나처럼 칸을 받고 접힌다(2026-11-23 보드 답 D2 (가)) —
+    한 제품의 부품이 이름 있는 칸과 `기타` 에 걸칠 수 있다.
     """
-    totals = _positive_totals(volume)
-    past_totals = _positive_totals(past_volume)
-    primary = _display_ordered(totals.index, display_order)
+    totals, parts = _positive_totals(volume)
+    past_totals, past_parts = _positive_totals(past_volume)
+    primary = _display_ordered(totals.index, parts, display_order)
     past_only_totals = past_totals.drop(labels=list(totals.index), errors="ignore")
-    past_only = _display_ordered(past_only_totals.index, display_order)
+    past_only = _display_ordered(past_only_totals.index, past_parts, display_order)
     if len(primary) > slot_count:
         kept = _largest(primary, totals, slot_count - 1)
         named = [product for product in primary if product in kept]
@@ -274,6 +373,7 @@ def _cell(
     values: pd.Series,
     slots: ProductSlots,
     *,
+    parts: Mapping[str, tuple[str, str]],
     past: bool = False,
 ) -> ProductShareCell | None:
     """제품별 값(양수만)을 칸 차례대로 조각으로 만든다. 값이 없으면 칸을 비운다."""
@@ -294,7 +394,14 @@ def _cell(
             # 100% 가 아니게 된다. `기타` 로 모은다.
             members.append((str(product), float(value)))
     slices = [
-        ProductShareSlice(product, named[product], named[product] / total, slots.slot[product])
+        ProductShareSlice(
+            product,
+            named[product],
+            named[product] / total,
+            slots.slot[product],
+            base_product=parts.get(product, (product, PART_NOT_SPLIT))[0],
+            part=parts.get(product, (product, PART_NOT_SPLIT))[1],
+        )
         for product in slots.order
         if product in named
     ]
@@ -331,7 +438,7 @@ def build_product_share_cells(
         raise ValueError(f"제품별 비중 단위가 올바르지 않습니다: {basis}")
     column = PRODUCT_SHARE_VALUE_COLUMNS[basis]
     require_columns(volume, ["생산계획년월", "제품정보", column], "제품별 수량")
-    frame = volume.loc[volume[column].notna()].copy()
+    frame, parts = _labelled(volume.loc[volume[column].notna()])
     frame["년월"] = [month_label(int(value)) for value in frame["생산계획년월"]]
     past_flags = (
         frame["과거"].astype(bool)
@@ -340,7 +447,7 @@ def build_product_share_cells(
     )
     past_labels = set(frame.loc[past_flags, "년월"])
     by_label = {
-        str(label): group.groupby("제품정보")[column].sum()
+        str(label): group.groupby(_LABEL)[column].sum()
         for label, group in frame.groupby("년월", sort=False)
     }
     totals = set(year_total_labels)
@@ -348,7 +455,7 @@ def build_product_share_cells(
     for label in month_labels:
         if label in totals or label not in by_label:
             continue
-        cell = _cell(label, by_label[label], slots, past=label in past_labels)
+        cell = _cell(label, by_label[label], slots, parts=parts, past=label in past_labels)
         if cell is not None:
             cells[label] = cell
     for total_label in totals:
@@ -363,7 +470,7 @@ def build_product_share_cells(
         if len(kinds) > 1:
             continue
         year_values = pd.concat([by_label[label] for label in members]).groupby(level=0).sum()
-        cell = _cell(total_label, year_values, slots, past=kinds == {True})
+        cell = _cell(total_label, year_values, slots, parts=parts, past=kinds == {True})
         if cell is not None:
             cells[total_label] = cell
     return cells
@@ -373,11 +480,23 @@ def combine_product_volume(*frames: pd.DataFrame) -> pd.DataFrame:
     """계산 구간과 과거 구간의 제품별 수량을 잇는다. 빈 프레임은 건너뛴다.
 
     빈 프레임까지 `concat` 에 넣으면 pandas 가 결과 dtype 을 정하는 규칙이 바뀐다는 경고를
-    낸다. 비어 있는 쪽은 더할 행이 없으므로 빼도 결과가 같다.
+    낸다. 비어 있는 쪽은 더할 행이 없으므로 빼도 결과가 같다. `CUSTOM` 칸이 없는 프레임은 접힌
+    부품(빈 글자)으로 채운다 — 다른 칸(과거 Wafer 결측 등)은 그대로다.
     """
-    present = [frame[list(PRODUCT_VOLUME_COLUMNS)] for frame in frames if not frame.empty]
+    present = [
+        _with_part_column(frame)[list(PRODUCT_VOLUME_COLUMNS)]
+        for frame in frames
+        if not frame.empty
+    ]
     if not present:
         return empty_product_volume()
     if len(present) == 1:
         return present[0].reset_index(drop=True)
     return pd.concat(present, ignore_index=True)
+
+
+def _with_part_column(frame: pd.DataFrame) -> pd.DataFrame:
+    """`CUSTOM` 칸이 없으면 접힌 부품으로 채운 사본, 있으면 그대로."""
+    if PART_COLUMN in frame.columns:
+        return frame
+    return frame.assign(**{PART_COLUMN: PART_NOT_SPLIT})

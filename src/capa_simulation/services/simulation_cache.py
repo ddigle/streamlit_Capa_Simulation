@@ -89,6 +89,7 @@ from capa_simulation.services.process_equipment_timeline import (
     build_process_equipment_timeline,
     held_unit_choices,
 )
+from capa_simulation.services.product_parts import multi_part_products
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -1488,7 +1489,11 @@ def get_home_simulation(
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
     home_wafer_load = home_aggregation_wafer_load(wafer_load)
     monthly_wafer = build_monthly_wafer_load_from_load(home_wafer_load)
-    product_volume = build_product_volume(_plan, home_wafer_load)
+    # 부품(CUSTOM)을 가를 제품은 리비전 계획 전체(모든 달 · EDP 포함)로 판정한다 — 조회기간 · EDP
+    # 토글로 이름표가 흔들리지 않고, EDP 를 뺀 수량(`get_home_lob_without_edp`)과 같은 이름표다.
+    product_volume = build_product_volume(
+        _plan, home_wafer_load, multi_part=multi_part_products(_tables["RQ_PKG_PLAN"])
+    )
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
     return (
         monthly_density,
@@ -1534,7 +1539,9 @@ def get_home_lob_without_edp(
         monthly_density,
         production_detail,
         build_monthly_wafer_load_from_load(home_wafer_load),
-        build_product_volume(plan, home_wafer_load),
+        build_product_volume(
+            plan, home_wafer_load, multi_part=multi_part_products(_tables["RQ_PKG_PLAN"])
+        ),
     )
 
 

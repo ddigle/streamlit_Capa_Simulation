@@ -53,6 +53,7 @@ from capa_simulation.components.home_figure_common import (
     _capacity_color,
     _column_surface_rects,
     _execution_delta_note,
+    _fit_part_label,
     _fit_to_units,
     _month_surface,
     _paper_hrule,
@@ -78,6 +79,7 @@ from capa_simulation.services.plan_gap import (
     WAFER_GAP_SCALE,
     plan_gap_texts,
 )
+from capa_simulation.services.product_parts import PART_NOT_SPLIT
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_WAFER,
     ProductShareCell,
@@ -291,6 +293,13 @@ def _product_share_label_annotations(
     도넛 안에 적을 자리가 없으므로(지름 80px) 색의 뜻은 여기서 읽는다.
     """
     entries = product_share_legend(cells)
+    # 부품을 가른 제품의 이름표(「DEMO_A (DEMO_CUSTOM_A)」)는 좁은 칸에서 부품을 남기고 줄인다 —
+    # 앞을 남기는 줄임은 한 제품의 두 부품을 같은 글로 만든다(`_fit_part_label`).
+    parts = {
+        piece.product: (piece.base_product or piece.product, piece.part)
+        for cell in cells.values()
+        for piece in cell.slices
+    }
     limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
     shown = entries[:limit]
     rows = math.ceil(len(shown) / _PRODUCT_SHARE_LEGEND_COLUMNS)
@@ -327,7 +336,8 @@ def _product_share_label_annotations(
     ]
     for position, (name, slot) in enumerate(shown):
         row, column = divmod(position, _PRODUCT_SHARE_LEGEND_COLUMNS)
-        fitted = _fit_to_units(name, name_budget, _text_width_units)
+        base_product, part = parts.get(name, (name, PART_NOT_SPLIT))
+        fitted = _fit_part_label(base_product, part, name_budget, _text_width_units)
         single = len(shown) == 1
         annotations.append(
             {
