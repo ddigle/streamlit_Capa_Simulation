@@ -8,7 +8,8 @@
 - **월별 요약**(`build_process_capa_summary`): 총보유·대여·가용·소요·확보율과 그 달 확보기준에 대한
   판정·부호 있는 과부족·부족 원인. 판정·과부족은 판정 기준에 닿으므로 캐시하지 않고 회차마다 만든다.
 - **제품별 소요대수**(`build_process_product_demand`): 소요대수 상세를 분류(제품정보 등)로 합한
-  월 표. 자식 행을 다 더하면 요약의 소요대수와 같다.
+  월 표. 자식 행을 다 더하면 요약의 소요대수와 같다. 제품 분류는 부품(`CUSTOM`)이 둘 이상인 제품만
+  부품마다 한 행이다(`services/product_parts.py` — 근거 카드의 상위 제품도 같은 이름표).
 - **다른 가용의 판정**(`judge_supply`): 설비 일정 기준 가용 · 비가동을 뺀 실가용으로 요약과 같은
   길의 확보율 · 판정 · 과부족(공정 Capa 상세 「② 일정 가용」 · 「③ 비가동」).
 - **HOME 표시 확보율**(`home_display_rates`): HOME 이 원 확보율에 얹는 확보율 보정·선행 B/O 를 같은
@@ -31,13 +32,22 @@ from typing import Final, NamedTuple
 import pandas as pd
 
 from capa_simulation.services.advance_load import apply_advance_to_securement
-from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.execution_capacity import apply_execution_adjustment
 from capa_simulation.services.frame_contracts import (
     DEMAND_BASES,
     normalize_demand_basis,
     require_columns,
+)
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    apply_part_display_order,
+    label_part,
+    part_merged_columns,
+    part_order_key,
+    product_part_label,
+    split_product_parts,
 )
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
@@ -95,10 +105,12 @@ SUMMARY_COLUMNS: Final = [
 ]
 
 # ------------------------------------------------------------------ 제품별 소요대수
-# 분류 이름 → 합할 컬럼. 화면의 「분류」 선택지가 이 차례 그대로다.
+# 분류 이름 → 합할 컬럼. 화면의 「분류」 선택지가 이 차례 그대로다. 제품 두 분류는 끝에 `CUSTOM` 을
+# 두어 부품을 가르는 제품(`multi_part`)만 부품마다 한 행이고, 나머지 제품은 접힌 값 하나라 부품을
+# 싣기 전과 같은 행이다. 선택지 이름은 그대로다 — 세션에 남은 값과 제약 시뮬레이션이 넘기는 값.
 PRODUCT_DEMAND_SPLITS: Final[dict[str, tuple[str, ...]]] = {
-    "제품정보": ("제품정보",),
-    "양산구분·제품": ("양산구분", "제품정보"),
+    "제품정보": ("제품정보", PART_COLUMN),
+    "양산구분·제품": ("양산구분", "제품정보", PART_COLUMN),
     "Stack": ("Stack",),
     "WF 구분": ("WF 구분",),
     "소요기준": ("소요기준",),
@@ -443,6 +455,7 @@ def build_process_product_demand(
     products: Collection[str] = (),
     production_classes: Collection[str] = (),
     limit: int = PRODUCT_ROW_LIMIT,
+    multi_part: Collection[str] = (),
 ) -> pd.DataFrame:
     """공정 하나의 소요대수를 분류(`PRODUCT_DEMAND_SPLITS`)로 합한 월 표.
 
@@ -461,20 +474,31 @@ def build_process_product_demand(
       「그 밖」에 합친다. 남긴 행은 표시순서 그대로다.
     - 「그 밖」 행의 분류 컬럼은 빈 글자, `분류` 는 「그 밖 k개」, `묶은 수` 는 그 행에 묶인 분류값
       가운데 **위에 보이지 않는 것**의 수 k 다(위 행과 겹치는 값은 세지 않는다).
+    - 제품 분류(`CUSTOM` 을 싣는 분류)는 `multi_part`(부품을 가르는 제품정보 — 리비전 계획 전체로
+      낸 `product_parts.multi_part_products`)에 든 제품만 부품마다 한 행이다. 나머지 제품의
+      `CUSTOM` 은 접힌 값(빈 글자)이라 행이 부품을 싣기 전과 같고, 기본(빈 판정)은 모두 접는다.
+      `CUSTOM` 칸이 없는 표는 칸을 채운다(`split_product_parts`). `CUSTOM` 칸은 접힌 값 그대로
+      싣고, `분류` 글만 이름표(「제품 (부품)」)다. 「그 밖」 의 `묶은 수` 와 `limit` 은 부품 하나를
+      한 분류값으로 센다. 거르기(`products`)는 제품정보 단위라 고른 제품의 부품이 모두 든다.
     """
     if split not in PRODUCT_DEMAND_SPLITS:
         raise ValueError(f"지원하지 않는 제품별 소요대수 분류입니다: {split}")
     if limit < 1:
         raise ValueError("제품별 소요대수 행 상한은 1 이상이어야 합니다.")
     dimensions = list(PRODUCT_DEMAND_SPLITS[split])
+    parted = PART_COLUMN in dimensions
+    owners = [column for column in dimensions if column != PART_COLUMN]
     ordered = _ordered_months(months)
     month_columns = [month_column(month) for month in ordered]
     filter_columns = ["양산구분", "제품정보"]
-    text_columns = list(dict.fromkeys([*dimensions, *filter_columns]))
+    text_columns = list(dict.fromkeys([*owners, *filter_columns]))
     needed = list(dict.fromkeys([MONTH, "공정", *text_columns, "소요대수"]))
     require_columns(required_equipment, needed, "소요대수 상세")
+    taken = (
+        [*needed, PART_COLUMN] if parted and PART_COLUMN in required_equipment.columns else needed
+    )
 
-    rows = required_equipment.loc[_process_mask(required_equipment["공정"], process), needed].copy()
+    rows = required_equipment.loc[_process_mask(required_equipment["공정"], process), taken].copy()
     rows[MONTH] = pd.to_numeric(rows[MONTH], errors="coerce")
     rows = rows.loc[rows[MONTH].isin(ordered)].copy()
     rows[MONTH] = rows[MONTH].astype("int64")
@@ -483,15 +507,17 @@ def build_process_product_demand(
     if "소요기준" in dimensions:
         rows["소요기준"] = normalize_demand_basis(rows["소요기준"]).fillna("")
     rows["소요대수"] = pd.to_numeric(rows["소요대수"], errors="coerce").fillna(0.0)
+    if parted:
+        rows = split_product_parts(rows, multi_part)
 
     selected = _selected(rows["제품정보"], products) & _selected(
         rows["양산구분"], production_classes
     )
     kept = _nonzero(_wide(rows.loc[selected], dimensions, ordered), month_columns)
     filtered_out = _nonzero(_wide(rows.loc[~selected], dimensions, ordered), month_columns)
-    kept = apply_display_order(kept, display_order, PAGE_CALCULATION, TAB_REQUIRED).reset_index(
-        drop=True
-    )
+    kept = apply_part_display_order(
+        kept, display_order, PAGE_CALCULATION, TAB_REQUIRED, owner_columns=owners
+    ).reset_index(drop=True)
 
     overflow = kept.iloc[0:0]
     if len(kept) > limit:
@@ -570,9 +596,11 @@ def _nonzero(frame: pd.DataFrame, month_columns: list[str]) -> pd.DataFrame:
 
 
 def _labels(frame: pd.DataFrame, dimensions: list[str]) -> list[str]:
+    """보이는 분류 글 — 분류값을 「 · 」 로 잇고 부품은 제품 글에 녹인다(「양산 · A (부품)」)."""
+    visible, merged = part_merged_columns(frame, dimensions)
     return [
         OTHER_LABEL_SEPARATOR.join(str(value) for value in values)
-        for values in frame[dimensions].itertuples(index=False, name=None)
+        for values in merged[visible].itertuples(index=False, name=None)
     ]
 
 
@@ -601,7 +629,13 @@ class MonthEvidence(NamedTuple):
     required: float
     effective_capacity: float | None
     product_count: int
+    """그 달 소요대수 상세에 행이 있는 제품 수 — 부품을 가르는 제품은 부품마다 센다(`top_products`
+    와 같은 이름표 단위)."""
+
     top_products: pd.DataFrame
+    """소요가 큰 제품(`TOP_PRODUCT_LIMIT` 개) — `제품정보` · `CUSTOM`(접힌 값) · `분류`(제품별
+    소요대수 표와 같은 이름표) · `소요대수` · `비중`."""
+
     assumed_ratio_routes: int
     blank_ratio_routes: int
 
@@ -623,6 +657,7 @@ def build_process_month_trace(
     *,
     process: str,
     month: int,
+    multi_part: Collection[str] = (),
 ) -> ProcessMonthTrace:
     """고른 달의 경로마다 인자와 소요대수, 공정 공통 인자, 제외 경로, 근거 요약.
 
@@ -637,6 +672,8 @@ def build_process_month_trace(
       합 — `effective_process_capacity_long` 과 같은 값이되 그 검증을 다시 하지 않는다. 본 계산이
       강제하지 않는 규칙 위반 데이터에서 근거 패널만 멈추지 않게 한다).
     - 제외 경로(`excluded`)에는 오류 제외와 규칙상 제외를 함께 싣고 `규칙상 제외` 칸으로 가른다.
+    - 근거 요약의 상위 제품 · 제품 수는 `multi_part` 에 든 제품만 부품마다다 — 제품별 소요대수 표
+      (`build_process_product_demand`)와 같은 판정 · 같은 이름표라 분류 행과 어긋나지 않는다.
     """
     key = process.strip()
     target = int(month)
@@ -659,7 +696,7 @@ def build_process_month_trace(
         _month_rows(_process_rows(rows.required_exclusions, key), target),
         _month_rows(_process_rows(rows.capacity_exclusions, key), target),
     )
-    evidence = _evidence(required_rows, routes, excluded)
+    evidence = _evidence(required_rows, routes, excluded, multi_part)
     return ProcessMonthTrace(
         process=key,
         month=target,
@@ -883,7 +920,10 @@ def _excluded_routes(
 
 
 def _evidence(
-    required_rows: pd.DataFrame, routes: pd.DataFrame, excluded: pd.DataFrame
+    required_rows: pd.DataFrame,
+    routes: pd.DataFrame,
+    excluded: pd.DataFrame,
+    multi_part: Collection[str],
 ) -> MonthEvidence:
     required_total = (
         float(pd.to_numeric(required_rows["소요대수"], errors="coerce").sum())
@@ -891,7 +931,11 @@ def _evidence(
         else 0.0
     )
     unique_load = _unique_demand_load(required_rows)
-    top_products = _top_products(required_rows, required_total)
+    products = _product_totals(required_rows, multi_part)
+    top_products = products.head(TOP_PRODUCT_LIMIT).reset_index(drop=True)
+    top_products[SHARE_COLUMN] = (
+        top_products["소요대수"] / required_total if required_total > 0 else float("nan")
+    )
     basis_columns = [f"{column}{RATIO_BASIS_SUFFIX}" for column, _ in RATIO_COLUMNS]
     bases = routes[basis_columns] if not routes.empty else pd.DataFrame(columns=basis_columns)
     rule_excluded = excluded[RULE_EXCLUDED_COLUMN].eq(True)
@@ -902,7 +946,7 @@ def _evidence(
         unique_demand_load=unique_load,
         required=required_total,
         effective_capacity=unique_load / required_total if required_total > 0 else None,
-        product_count=(int(required_rows["제품정보"].nunique()) if not required_rows.empty else 0),
+        product_count=len(products),
         top_products=top_products,
         assumed_ratio_routes=int(bases.isin([RATIO_ASSUMED_MISSING_ROW]).any(axis=1).sum()),
         blank_ratio_routes=int(bases.isin([RATIO_BLANK_OR_ZERO]).any(axis=1).sum()),
@@ -925,25 +969,37 @@ def _unique_demand_load(required_rows: pd.DataFrame) -> float:
     return float(loads.sum())
 
 
-def _top_products(required_rows: pd.DataFrame, required_total: float) -> pd.DataFrame:
+def _product_totals(required_rows: pd.DataFrame, multi_part: Collection[str]) -> pd.DataFrame:
+    """그 달 공정의 제품별 소요 합 — 소요가 큰 차례(같으면 제품 이름 → 부품 차례).
+
+    부품을 가르는 제품(`multi_part`)은 부품마다 한 줄이고 `분류` 는 제품별 소요대수 표와 같은
+    이름표다. 제품정보가 빈 값(NA)인 행은 세지 않는다.
+    """
+    columns = ["제품정보", PART_COLUMN, PRODUCT_LABEL_COLUMN, "소요대수"]
     if required_rows.empty:
         return pd.DataFrame(
             {
                 "제품정보": pd.Series(dtype="string"),
+                PART_COLUMN: pd.Series(dtype="string"),
+                PRODUCT_LABEL_COLUMN: pd.Series(dtype="object"),
                 "소요대수": pd.Series(dtype="float64"),
-                SHARE_COLUMN: pd.Series(dtype="float64"),
             }
         )
-    prepared = _key_frame(required_rows, ["제품정보"])
+    prepared = split_product_parts(_key_frame(required_rows, ["제품정보"]), multi_part)
     prepared["소요대수"] = pd.to_numeric(prepared["소요대수"], errors="coerce").fillna(0.0)
-    grouped = prepared.groupby("제품정보", sort=True)["소요대수"].sum().reset_index()
-    grouped = grouped.sort_values("소요대수", ascending=False, kind="stable").head(
-        TOP_PRODUCT_LIMIT
+    grouped = (
+        prepared.groupby(["제품정보", PART_COLUMN], sort=False)["소요대수"].sum().reset_index()
     )
-    grouped[SHARE_COLUMN] = (
-        grouped["소요대수"] / required_total if required_total > 0 else float("nan")
-    )
-    return grouped.reset_index(drop=True)
+    names = grouped["제품정보"].astype(str).tolist()
+    parts = grouped[PART_COLUMN].tolist()
+    by_name = sorted(range(len(grouped)), key=lambda row: (names[row], part_order_key(parts[row])))
+    grouped = grouped.iloc[by_name].reset_index(drop=True)
+    grouped[PRODUCT_LABEL_COLUMN] = [
+        product_part_label(str(product), label_part(part))
+        for product, part in zip(grouped["제품정보"], grouped[PART_COLUMN], strict=True)
+    ]
+    grouped = grouped.sort_values("소요대수", ascending=False, kind="stable")
+    return grouped.reindex(columns=columns).reset_index(drop=True)
 
 
 # ================================================================== 공용 도우미

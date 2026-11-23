@@ -191,6 +191,7 @@ from capa_simulation.services.process_capa_detail import (
     LENT_COLUMN,
     MISMATCH_COLUMN,
     PRODUCT_DEMAND_SPLITS,
+    PRODUCT_LABEL_COLUMN,
     ROUTE_COLUMNS,
     ROUTE_LOAD_BASIS_COLUMN,
     ProcessCapaKpis,
@@ -362,7 +363,7 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 11
+CANVAS_SCHEMA_VERSION: Final = 12
 # 월 그림에 브라우저가 쥔 칸 선택의 달 — 칸 선택 콜백이 적고(빈 선택이면 지운다) 그림 세대를 올릴 때
 # 지운다(`selection_epoch`).
 CANVAS_PICK_KEY: Final = "process_detail_canvas_pick"
@@ -376,7 +377,7 @@ CANVAS_EPOCH_META: Final = "select_epoch"
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
 SHEET_MEMO_LIMIT: Final = 4
-SHEET_SCHEMA_VERSION: Final = 5
+SHEET_SCHEMA_VERSION: Final = 6
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (
@@ -1546,7 +1547,7 @@ def demand_card(
     if not top.empty:
         parts = [
             f"{name} {value:,.1f}"
-            for name, value in zip(top["제품정보"], top["소요대수"], strict=True)
+            for name, value in zip(top[PRODUCT_LABEL_COLUMN], top["소요대수"], strict=True)
         ]
         rest = evidence.product_count - len(parts)
         notes.append(" · ".join(parts) + (f" · 그 밖 {rest}개" if rest > 0 else ""))

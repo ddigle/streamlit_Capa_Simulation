@@ -2841,14 +2841,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/process_capa_detail.py` — 공정 하나의 월별 요약·제품별 소요·경로 추적을 계산 결과에서 꺼낸다.
   - 새 계산이 없다. 대당 Capa 식을 바꾸면 `route_factor_product` 도 고친다(`tests/test_process_capa_detail.py`).
   - 경로 추적 키 `ROUTE_KEYS` 는 Stack 뒤에 `CUSTOM` 을 싣는다 — 경로 한 줄이 한 부품이고 측정률 키(`RATIO_ROUTE_KEYS`,
-    `PERFORMANCE_KEYS` 에서 냄)와 맞는다. 「제품별 나눔」 의 분류(`PRODUCT_DEMAND_SPLITS`)에는 CUSTOM 이 없어 부품을 합친다.
+    `PERFORMANCE_KEYS` 에서 냄)와 맞는다.
+  - 「제품별 소요대수」 의 제품 두 분류(`PRODUCT_DEMAND_SPLITS` 「제품정보」 · 「양산구분·제품」 — 이름은 그대로)는 끝에
+    `CUSTOM` 을 실어 부품이 둘 이상인 제품(`build_process_product_demand(multi_part=)`)만 부품마다 한 행이다. 나머지 제품은
+    접힌 값이라 행이 부품을 싣기 전과 같고 기본(빈 판정)은 모두 접는다. `분류` 글이 이름표(「양산 · 제품 (부품)」)이고
+    「그 밖」 의 묶은 수 · 12행 상한은 부품 하나를 한 행으로 센다. 표시순서는 `product_parts.apply_part_display_order`(주인 =
+    `CUSTOM` 앞 분류 칸)다. 근거 카드 ① 의 상위 제품 · 제품 수도 같은 판정 · 같은 이름표다(`build_process_month_trace(multi_part=)`
+    — 분류 행과 어긋나지 않게, PRC-01). 판정은 두 캐시 래퍼(`get_process_product_demand` · `get_process_month_trace`)가 받은
+    시나리오 계획 전체로 낸다 — 키 · 반환 꼴은 그대로다(`tests/test_process_capa_detail.py`).
   - 화면 경로 표의 「부하량 근거」 칸(`ROUTE_LOAD_BASIS_COLUMN`)은 `with_route_load_basis` 가 공정이 부하 예외 선언에 있을 때만
     「부하량」 바로 뒤에 끼운다 — 결과 프레임 칸(`ROUTE_COLUMNS`)은 그대로다(6장 「공정별 부하 산출 예외」).
 - `src/capa_simulation/services/constraint_simulation.py` — 제약 시뮬레이션(2026-10-24 결정, 저장하지 않는 미래 가정)의
   순수 계산. 공정 하나의 월별 소요(R)를 제약 제품(`제품정보` 하나)과 기존 제품으로 나누고, 설비 일정 기준 가용(단축 전
   환산 대수)에서 개조 비가동을 빼고 제약 몫을 먼저 정수로 뗀 뒤 기존 제품 확보율·「소요 비중대로」 견주기·요약 넷을 낸다
   (`simulate_constraint`). Streamlit·세션·캐시·DB 를 모르고, pandas 는 어댑터 `constraint_month_inputs`(필요 단축 일정
-  계획의 공정 x 월 표 + `build_process_product_demand(split="제품정보")` 표 → 달마다 입력, 합이 R 과 어긋나거나 제약
+  계획의 공정 x 월 표 + `build_process_product_demand(split="제품정보")` 표 → 달마다 입력 — 부품마다 선 행도 `제품정보` 로
+  맞대 합친다, 합이 R 과 어긋나거나 제약
   제품이 빈 이름이면 `ValueError`·계획에 공정이 없으면 `KeyError`) 하나만 쓴다. 빈 이름을 막는 까닭은 표가 빈 `제품정보` 를
   「그 밖」 이 아닌 한 묶음 행으로 두기 때문이다(제품 선택지도 빈 이름을 뺀다). 「신규 설비는 개조 없이」 의 신규 호기는 달이
   아니라 호기 단위라 어댑터가 싣지 않고 `simulate_constraint(new_units=)` 로 따로 받는다(`NewUnit` — 기여 시작 · 환산 대수 ·
@@ -5999,6 +6007,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   순수 함수다.
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
+  - 라벨 글은 넘치면 끝을 말줄임으로 줄인다. `Row.label_part`(라벨 끝 「 (부품)」 의 부품)를 준 행은 그 끝을 남기고 앞을
+    줄인다(`home_figure_common._fit_part_label` — 8장 「합쳐 보는 화면의 부품 이름표」). `Row.label` 은 그대로라 시트
+    엑셀은 이름표를 다 싣는다.
   - 라벨 칸은 260px(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`)이고 좁은 창(`NARROW_VIEWPORT_MAX_PX` 640 이하)에서는 150px
     (`NARROW_LABEL_COLUMN_WIDTH_PX` — Streamlit 이 그림을 그리는 가장 좁은 폭)로 준다 — 390px 창에서 달 칸이 한 달도 안
     남았다(E2E r1 #20, 개선 거리 I12). 세 화면이 `split_scroll_columns_style(narrow_label_width_px=…)` 로 주고, 260px 에 맞춘
@@ -6026,6 +6037,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     한 길이다. 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)이고 엔진 상수·`canvas_point` 를 이 모듈 이름으로도 내보낸다.
   - 구획 제목 줄에 세부 글을 두지 않는다 — 출처 · 단위는 제목 줄 풍선(`Row.label_hover`)과 Guide 다(k-c1 · k-c2). 시트
     범례도 Guide 「시트 범례」 절이다(k-c5).
+  - 「제품별 소요대수」 분류 줄 글 · 행 id 는 표의 `분류` 그대로다. 부품으로 가른 줄(`CUSTOM` 이 접힌 값이 아님)은
+    `Row.label_part` 를 달아 라벨 칸 줄임이 부품을 남긴다 — 앞을 남겨 자르면 두 부품 줄이 같은 글이 된다.
   - ② 일정 가용 = 총보유대수(달력 월) · 가용대수(기존보유 + 호기 가용 + 호기 비가동 손실 — **비가동 빼기 전**, n1 (가)) ·
     전월 대비 · 소요대수(판정 기준 소요, 「제품별 소요대수」 면 ① 과 함께 분류 행 — q4 (가), 가정이 걸린 달은 ÷f) · 확보율 ·
     확보 기준 과부족. ③ 비가동 = 비가동대수(`downtime_impact` 의 `비가동 손실`) · 실가용대수(`downtime_basis` — Static
@@ -6105,8 +6118,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날
     때만 줄 앞에)
     목표는 `target_label`(정수 「110%」 — 값은 HOME 확보 기준의 판정 경계 1.095, 식 줄은 곱한 값 「109.5%」)로 적는다.
+    ① 의 상위 제품은 근거 요약 `top_products` 의 `분류`(분류 행과 같은 이름표) 글이다.
   - 「구획」 칩(`st.pills`)은 선택지 다섯을 늘 고정하고 칸이 없으면 다섯 모두로 심는다(`seed_sections` — 구획이 넷이던
-    세션은 ③ 을 한 번 편다). 접힘 · 비가동 기준 · ④ 보기는 그림 기억 키에 들고(`CANVAS_SCHEMA_VERSION` 11), 접힌 ④·⑤ 의
+    세션은 ③ 을 한 번 편다). 접힘 · 비가동 기준 · ④ 보기는 그림 기억 키에 들고(`CANVAS_SCHEMA_VERSION` 12), 접힌 ④·⑤ 의
     「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
   - **지금 보는 달 표지(머리 밑줄 · 열 테두리)는 그림에 굽지 않고 그림 위 덧칠이다**(`selected_month_style` — 그 열 자리 SVG
     한 장, 그림에 굽던 것과 같은 자리 · 굵기 · 색, 그림 바깥 테두리를 그 위에 다시 그어 겹침 차례도 같다. 누름은 그림으로
@@ -8165,6 +8179,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
     `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 부품만으로도
     넘치면 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.
+  - 공정 Capa 상세는 「제품별 소요대수」 의 제품 두 분류(「제품정보」 · 「양산구분·제품」)와 근거 카드 ① 의 상위 제품을 같은
+    판정 · 같은 이름표로 가른다(분류 행과 카드가 어긋나지 않게 — PRC-01). 분류 줄은 월 시트 엔진의 `Row.label_part` 로
+    라벨 칸 줄임이 부품을 남기고, 시트 엑셀에는 이름표 전체가 실린다. 사이드바 제품 거르기는 제품정보 단위라 고르면 그
+    제품의 부품이 모두 든다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
   (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
   중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·

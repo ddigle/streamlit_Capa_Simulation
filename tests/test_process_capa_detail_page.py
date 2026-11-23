@@ -26,7 +26,9 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_marks, data_error_texts, events
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT
 from fragment_browser import install_fragment_browser
+from home_two_part_app import publish_two_part_revision
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_required_shortening import _cutoff, _downtime, _master, _unit
@@ -631,6 +633,40 @@ def test_the_product_filter_lists_the_process_products_and_folds_the_rest(
     assert kept in labels
     assert dropped not in labels
     assert "거르기 밖" in labels
+
+
+TWO_PART_PROCESS = "DEMO_Wafer_Inspect"
+
+
+def test_a_two_part_product_splits_the_product_rows_and_the_demand_card(tmp_path: Path) -> None:
+    """두 부품 공식버전 — 「제품별 소요대수」 를 펴면 부품이 둘인 제품만 부품마다 한 줄이고 라벨
+    칸에서도 부품이 갈린다. ① 소요 카드의 상위 제품과 시트 엑셀도 같은 이름표다(PRC-01). 제품
+    거르기는 제품정보 단위 그대로다."""
+    database, equipment = tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb"
+    publish_two_part_revision(database)
+    app = _ok(_app((database, equipment)).run())
+    _process_box(app).set_value(TWO_PART_PROCESS)
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+
+    labels = [f"{TWO_PART_PRODUCT} ({part})" for part in (PART_A, PART_B)]
+    products = app.multiselect(key=PROCESS_DETAIL_PRODUCT_FILTER_KEY).options
+    assert TWO_PART_PRODUCT in products and not set(labels) & set(products)
+    drawn = _label_texts(app)
+    assert f"… ({PART_A})" in drawn and f"… ({PART_B})" in drawn
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert all(label in cards for label in labels)
+    _, book = _sheet(app)
+    sheet = book[DETAIL_SHEET].column(0)
+    assert all(f"└ {label}" in sheet for label in labels)
+
+    app.session_state[PROCESS_DETAIL_SPLIT_KEY] = "양산구분·제품"
+    _ok(app.run())
+    _, book = _sheet(app)
+    assert any(
+        str(value).startswith("└ ") and str(value).endswith(f"· {labels[1]}")
+        for value in book[DETAIL_SHEET].column(0)
+    )
 
 
 def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) -> None:

@@ -196,6 +196,7 @@ from capa_simulation.services.process_equipment_timeline import (
     production_position,
     unit_month_changes,
 )
+from capa_simulation.services.product_parts import PART_COLUMN, PART_NOT_SPLIT
 from capa_simulation.services.required_shortening import TargetLevel
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
@@ -900,17 +901,23 @@ def _product_rows(
     """「제품별 소요대수」 의 분류 줄 — `parents` 는 부모 소요대수 줄의 달별 값이다.
 
     `factors` 를 주면(② — UPEH 가정이 걸린 달 → f) 그 달 값을 ÷f 한다. 가정은 소요대수만 ÷f 하므로
-    분류마다 ÷f 해야 줄을 다 더한 값이 부모(가정 소요)와 같다.
+    분류마다 ÷f 해야 줄을 다 더한 값이 부모(가정 소요)와 같다. 부품으로 가른 줄(`CUSTOM` 이 접힌
+    값이 아님)은 라벨 칸이 좁으면 부품을 남기고 앞을 줄인다(`Row.label_part`) — 줄 글 자체는
+    이름표 그대로라 시트 엑셀은 다 싣는다.
     """
     rows: list[_Row] = []
     for position, record in enumerate(product_demand.to_dict("records")):
         label = str(record.get(PRODUCT_LABEL_COLUMN, ""))
         other = bool(record.get(OTHER_ROW_COLUMN, False))
+        part = record.get(PART_COLUMN)
         row = _Row(
             f"{prefix}{label}",
             _VALUE,
             PRODUCT_ROW_HEIGHT_PX,
             label=f"└ {label}",
+            label_part=(
+                part if isinstance(part, str) and part != PART_NOT_SPLIT and not other else ""
+            ),
             label_muted=other,
             indent=True,
             label_fill=tokens.SUMMARY_DEMAND_CLASSIFICATION,

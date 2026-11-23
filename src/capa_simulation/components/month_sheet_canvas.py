@@ -51,6 +51,7 @@ import plotly.graph_objects as go
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.home_figure_common import (
     _HIDDEN_AXIS,
+    _fit_part_label,
     _fit_to_units,
     _text_width_units,
 )
@@ -200,6 +201,10 @@ class Row:
     hover: str = ""
     label_hover: str = ""
     """줄 이름 칸(라벨 Figure)의 풍선 글. 비면 그 칸에 풍선이 없다."""
+
+    label_part: str = ""
+    """라벨 끝 「 (부품)」 의 부품(`product_parts.product_part_label`). 주면 라벨 칸이 좁을 때
+    그 끝을 남기고 앞을 줄인다(`_fit_part_label`). 비면 끝을 줄인다."""
 
     payload: Any = None
     top: float = 0.0
@@ -402,7 +407,7 @@ def label_figure(rows: Sequence[Row], height: int) -> go.Figure:
         two_lines = bool(row.detail) and row.kind == KIND_UNIT
         annotations.append(
             _label_annotation(
-                fit(row.label, (budget - indent) / font),
+                _fit_row_label(row, (budget - indent) / font),
                 y=middle,
                 shift=7 if two_lines else 0,
                 indent=indent,
@@ -886,3 +891,13 @@ def bold(text: str, strong: bool) -> str:
 
 def fit(text: str, budget_units: float) -> str:
     return _fit_to_units(text, budget_units, _text_width_units)
+
+
+def _fit_row_label(row: Row, budget_units: float) -> str:
+    """라벨 글을 폭 예산에 맞춘다 — `label_part` 가 라벨 끝 「 (부품)」 이면 부품을 남기고 앞을
+    줄인다."""
+    suffix = f" ({row.label_part})"
+    if row.label_part and row.label.endswith(suffix):
+        head = row.label[: -len(suffix)]
+        return _fit_part_label(head, row.label_part, budget_units, _text_width_units)
+    return fit(row.label, budget_units)

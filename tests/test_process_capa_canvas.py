@@ -23,7 +23,13 @@ from test_required_shortening import PROCESS, _baseline, _cutoff, _master, _requ
 
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.home_figure_common import _text_width_units
-from capa_simulation.components.month_sheet_canvas import percent, signed_one
+from capa_simulation.components.month_sheet_canvas import (
+    LABEL_INSET_PX,
+    PRODUCT_FONT_PX,
+    PRODUCT_INDENT_PX,
+    percent,
+    signed_one,
+)
 from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.components.process_capa_canvas import (
     BASIS_SCHEDULE,
@@ -49,6 +55,7 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_HOME_RATE,
     ROW_LIMIT,
     ROW_OWNED,
+    ROW_PRODUCT_PREFIX,
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
@@ -478,6 +485,74 @@ def test_without_schedule_or_home_rates_the_canvas_ends_at_the_reference_row() -
         for item in _annotations(_canvas(products=True).labels)
         if "소요대수" in item["text"]
     )
+
+
+LONG_PART_PRODUCT = "DEMO_PRODUCT_WITH_A_LONG_NAME"
+PART_A, PART_B = "DEMO_CUSTOM_A", "DEMO_CUSTOM_B"
+
+
+def _two_part_products() -> pd.DataFrame:
+    """긴 이름 제품 하나를 두 부품(소요 반씩)으로 가른 「제품정보」 분류 표 — 다른 제품 하나와
+    함께."""
+    rows = [
+        {
+            "생산계획년월": month,
+            "공정": PROCESS,
+            "양산구분": "양산",
+            "제품정보": product,
+            "CUSTOM": part,
+            "Stack": "8H",
+            "WF 구분": "DRAM",
+            "소요기준": "HBM",
+            "소요대수": need * share,
+        }
+        for month, need in zip(MONTHS, REQUIRED, strict=True)
+        for product, part, share in (
+            (LONG_PART_PRODUCT, PART_A, 0.3),
+            (LONG_PART_PRODUCT, PART_B, 0.3),
+            ("PRODUCT_B", "-", 0.4),
+        )
+    ]
+    return build_process_product_demand(
+        pd.DataFrame(rows),
+        process=PROCESS,
+        split="제품정보",
+        months=MONTHS,
+        multi_part={LONG_PART_PRODUCT},
+    )
+
+
+def test_a_narrow_label_keeps_the_part_at_the_end_of_a_split_product_row() -> None:
+    """부품으로 가른 줄은 라벨 칸이 좁으면 제품 쪽을 줄이고 부품을 남긴다 — 앞을 남겨 자르면 두 부품
+    줄이 같은 글이 된다(UI-ACC-02). 접힌 제품 줄은 끝을 줄이는 그대로다."""
+    canvas = build_process_capa_canvas(
+        process_label="Die Attach",
+        months=MONTHS,
+        summary=_summary(),
+        thresholds=THRESHOLDS,
+        selected_month=None,
+        product_demand=_two_part_products(),
+    )
+    products = [
+        str(item["text"])
+        for item in _annotations(canvas.labels)
+        if str(item["text"]).startswith("└ ")
+    ]
+    full = [f"└ {LONG_PART_PRODUCT} ({part})" for part in (PART_A, PART_B)]
+    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX - PRODUCT_INDENT_PX) / (
+        PRODUCT_FONT_PX
+    )
+
+    assert all(_text_width_units(text) > budget for text in full)
+    assert products[2] == "└ PRODUCT_B"
+    first, second = products[:2]
+    assert first != second
+    assert first.endswith(f"… ({PART_A})") and second.endswith(f"… ({PART_B})")
+    assert first.startswith("└ DEMO_") and second.startswith("└ DEMO_")
+    assert all(_text_width_units(text) <= budget for text in (first, second))
+    assert [row for row in canvas.row_ids if row.startswith(ROW_PRODUCT_PREFIX)] == [
+        f"{ROW_PRODUCT_PREFIX}{text[2:]}" for text in [*full, "└ PRODUCT_B"]
+    ]
 
 
 def _section_rows(row_ids: tuple[str, ...], section: str) -> list[str]:

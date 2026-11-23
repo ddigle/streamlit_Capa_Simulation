@@ -82,7 +82,11 @@ from capa_simulation.process_detail_state import FROM_GAP, FROM_HOME, FROM_SHORT
 from capa_simulation.services.process_capa_detail import (
     CAUSE_AVAILABILITY_MISMATCH,
     MISMATCH_COLUMN,
+    PRODUCT_LABEL_COLUMN,
+    CommonFactors,
+    MonthEvidence,
     ProcessCapaKpis,
+    ProcessMonthTrace,
     build_process_capa_summary,
 )
 from capa_simulation.services.process_equipment_timeline import (
@@ -273,6 +277,45 @@ def test_the_demand_card_falls_back_without_a_trace() -> None:
     card = demand_card(None, _record(_summary(), 202611))
     assert "= 41.2 대" in card.formula
     assert card.notes
+
+
+def test_the_demand_card_names_the_top_products_by_their_part_labels() -> None:
+    """① 소요 카드의 상위 제품은 분류 행과 같은 이름표(「제품 (부품)」)로 적고, 「그 밖 k개」 는
+    이름표 단위 제품 수에서 뺀 수다."""
+    top = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_B"],
+            "CUSTOM": ["DEMO_CUSTOM_A", "DEMO_CUSTOM_B", ""],
+            PRODUCT_LABEL_COLUMN: ["DEMO_A (DEMO_CUSTOM_A)", "DEMO_A (DEMO_CUSTOM_B)", "DEMO_B"],
+            "소요대수": [3.1, 2.0, 1.5],
+            "비중": [0.4, 0.26, 0.19],
+        }
+    )
+    evidence = MonthEvidence(
+        route_count=4,
+        excluded_route_count=0,
+        rule_excluded_route_count=0,
+        unique_demand_load=780.0,
+        required=7.8,
+        effective_capacity=100.0,
+        product_count=5,
+        top_products=top,
+        assumed_ratio_routes=0,
+        blank_ratio_routes=0,
+    )
+    trace = ProcessMonthTrace(
+        process="P",
+        month=202611,
+        routes=pd.DataFrame(),
+        common_factors=CommonFactors(pd.DataFrame(), None, None),
+        excluded=pd.DataFrame(),
+        evidence=evidence,
+    )
+
+    card = demand_card(trace, {"소요대수": 7.8})
+    assert "DEMO_A (DEMO_CUSTOM_A) 3.1 · DEMO_A (DEMO_CUSTOM_B) 2.0 · DEMO_B 1.5 · 그 밖 2개" in (
+        card.notes
+    )
 
 
 def test_the_shortening_card_stands_only_when_the_month_is_not_met() -> None:
@@ -784,11 +827,11 @@ def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() ->
     경계 과부족 풍선(8 — 2026-11-01 사용자 결정), 구획 다섯 · 제목 줄 풍선 · 비가동 기준(9 —
     2026-11-12 사용자 답), ④ 「단축 후 확보율」 · 보기 · ⑤ 모듈 묶음 Main 줄과 「└ 모듈명」(10 —
     같은 날 답 q6 · q6b · q7)으로, 지금 보는 달 표지를 그림에서 빼고 세대를 `layout.meta` 에
-    실어(11) 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 11 이다
-    (AGENTS 5장 16)."""
+    실어(11), 제품별 소요대수 분류 줄이 부품마다 이름표 · 부품을 남기는 줄임(12)으로 그림 모양이
+    바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 12 다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 11
+    assert CANVAS_SCHEMA_VERSION == 12
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 

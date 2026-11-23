@@ -3113,7 +3113,8 @@ def get_process_product_demand(
     키는 시나리오 키 + 표시순서 지문(`display_order_digest`) + 공정·분류·달·거르기·상한이다 — 행
     차례가 표시순서(산출 결과 · 소요대수)를 따르므로 지문이 키에 든다. `_display_order` 는
     `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다. 빗나가면 공정 조각
-    (`get_process_calculation_rows`)만 받는다.
+    (`get_process_calculation_rows`)만 받는다. 부품을 가르는 제품은 받은 시나리오 계획 전체
+    (`_scenario_tables["RQ_PKG_PLAN"]`)로 판정한다 — 키의 content_token 이 정하는 값이다.
     """
     del display_order_key
     rows = get_process_calculation_rows(
@@ -3131,6 +3132,7 @@ def get_process_product_demand(
         products=products,
         production_classes=production_classes,
         limit=limit,
+        multi_part=multi_part_products(_scenario_tables["RQ_PKG_PLAN"]),
     )
 
 
@@ -3146,7 +3148,8 @@ def get_process_month_trace(
 
     인자 표는 대당 Capa 계산과 같은 조합이다 — `RQ_MODULE` 은 기준정보에서, 나머지는 시나리오
     표에서 읽는다(`_capacity_tables`). 표는 빗나갈 때만 공정·달로 거른다. 키는 시나리오 키 + 공정·
-    달이다 — 인자 표 내용은 키의 content_token·reference_version 이 정한다.
+    달이다 — 인자 표 내용은 키의 content_token·reference_version 이 정한다. 상위 제품의 부품
+    판정은 제품별 소요대수와 같이 받은 시나리오 계획 전체로 낸다.
     """
     rows = get_process_calculation_rows(
         cache_key,
@@ -3160,7 +3163,13 @@ def get_process_month_trace(
         )
         for name in CAPACITY_INPUT_TABLES
     }
-    return build_process_month_trace(rows, capacity_tables, process=process, month=month)
+    return build_process_month_trace(
+        rows,
+        capacity_tables,
+        process=process,
+        month=month,
+        multi_part=multi_part_products(_scenario_tables["RQ_PKG_PLAN"]),
+    )
 
 
 # 공정 Capa 상세의 설비 일정(참고). 필요 단축 일정 화면과 같은 계산을 공용 판정 기준(달마다 다른
