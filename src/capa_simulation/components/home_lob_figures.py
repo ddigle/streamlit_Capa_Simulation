@@ -159,24 +159,36 @@ def _share_amount(value: float, basis: str) -> str:
 def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
     """조각마다 hover 두 줄. 둘째 줄에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
 
-    `기타` 는 무엇이 모였는지 둘째 줄에 잇는다 — 접었다고 정보를 지우지 않는다. 과거 구간 칸은
-    그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과 정의가 다를 수 있다).
+    `기타` 는 무엇이 모였는지 둘째 줄에 잇는다 — 접었다고 정보를 지우지 않는다. 적는 이름에 부품
+    이름표(「제품 (부품)」)가 끼면 수량을 첫 줄로 올리고 둘째 줄에 이름만 싣는다 — 이름표가 길어
+    한 줄에 이으면 풍선이 넓어진다. `기타` 는 늘 마지막 조각(12시 왼쪽)이라 Plotly 가 풍선을
+    왼쪽으로 펴고, 그림이 가로 스크롤 칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서
+    잘렸다. 과거 구간 칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과
+    정의가 다를 수 있다).
     """
     source = " · 과거 입력값" if cell.past else ""
     texts: list[str] = []
     for piece in cell.slices:
+        head = f"{cell.label} · {piece.product} {piece.share:.1%}"
         amounts = (
             f"{basis} {_share_amount(piece.value, basis)} / "
             f"{_share_amount(cell.total, basis)}{source}"
         )
-        if piece.members:
-            listed = ", ".join(
-                f"{name} {value / cell.total:.1%}"
-                for name, value in piece.members[:_PRODUCT_SHARE_HOVER_MEMBERS]
-            )
-            rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
-            amounts += f" · {listed}" + (f" 외 {rest}" if rest > 0 else "")
-        texts.append(f"{cell.label} · {piece.product} {piece.share:.1%}<br>{amounts}")
+        if not piece.members:
+            texts.append(f"{head}<br>{amounts}")
+            continue
+        listed = ", ".join(
+            f"{name} {value / cell.total:.1%}"
+            for name, value in piece.members[:_PRODUCT_SHARE_HOVER_MEMBERS]
+        )
+        rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
+        names = listed + (f" 외 {rest}" if rest > 0 else "")
+        if any(
+            part != PART_NOT_SPLIT for part in piece.member_parts[:_PRODUCT_SHARE_HOVER_MEMBERS]
+        ):
+            texts.append(f"{head} · {amounts}<br>{names}")
+        else:
+            texts.append(f"{head}<br>{amounts} · {names}")
     return texts
 
 

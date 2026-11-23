@@ -540,7 +540,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름표」 — 조각 합은 그대로 `Wafer 계획`). 판정은 HOME 캐시 두 함수(`get_home_simulation` · `get_home_lob_without_edp`)가
     받은 리비전 계획 전체(`_tables["RQ_PKG_PLAN"]`)로 하고 수량 프레임의 `CUSTOM` 칸에 접힌 값으로 싣는다 — 캐시 키 ·
     반환 꼴은 그대로다. 과거 구간 조각은 `past_product_volume(multi_part=)` 가 「제품 (-)」 로 채운다. 범례 줄임은
-    `_fit_part_label` 이다(`tests/test_product_share_parts.py`).
+    `_fit_part_label` 이다(`tests/test_product_share_parts.py`). `기타` 풍선은 적는 이름에 부품 이름표가 끼면 수량을 첫
+    줄로 올리고 둘째 줄에 이름만 싣는다(두 줄 그대로 — `ProductShareSlice.member_parts`). `기타` 는 늘 마지막 조각이라
+    Plotly 가 풍선을 왼쪽으로 펴고, 가로 스크롤 칸 안이라 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다.
   - 계획 세부수량 · 비교 덤벨도 같은 판정으로 그 제품만 부품마다 줄이다 — 분류 차원이 (제품정보, `CUSTOM`, Stack[, Customer])
     이고 HOME 캐시 네 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_plan_detail` ·
     `get_home_comparison_plan`)가 받은 리비전 계획 전체로 판정해 `build_production_dashboard(multi_part=)` 에 넘긴다. 비교

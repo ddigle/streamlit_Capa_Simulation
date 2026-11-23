@@ -289,6 +289,65 @@ def test_parts_fold_into_other_one_by_one_beyond_the_slot_count() -> None:
     assert sum(piece.value for piece in pieces) == pytest.approx(float(plan["생산수량"].sum()))
 
 
+def _folded_part_cell(names: list[str]) -> ProductShareCell:
+    """칸이 넘쳐 부품 하나(「DEMO_PART (DEMO_CUSTOM_B)」)가 `기타` 에 접힌 칸 — 함께 접히는 제품
+    `names` 는 그 부품보다 작아 풍선에서 부품 뒤에 선다."""
+    others = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT - 1)]
+    rows = [(202609, name, "-", 100.0 + index) for index, name in enumerate(others)]
+    rows += [(202609, name, "-", 0.5 + 0.1 * index) for index, name in enumerate(names)]
+    rows += [(202609, "DEMO_PART", PART_A, 500.0), (202609, "DEMO_PART", PART_B, 2.0)]
+    plan = pd.DataFrame(rows, columns=["생산계획년월", "제품정보", "CUSTOM", "생산수량"])
+    volume = build_product_volume(
+        plan, plan.rename(columns={"생산수량": "물량"}), multi_part=frozenset({"DEMO_PART"})
+    )
+    return build_product_share_cells(
+        volume, "Wafer", assign_product_slots(volume), month_labels=["26.09"]
+    )["26.09"]
+
+
+def _other_hover(cell: ProductShareCell) -> list[str]:
+    traces = product_share_traces(
+        {"26.09": cell}, ["26.09"], basis="Wafer", year_totals=(), past_month_labels=None
+    )
+    hover = next(text for text in traces[0].hovertext if f" · {OTHER_PRODUCT_LABEL} " in text)
+    return str(hover).split("<br>")
+
+
+def test_an_other_hover_naming_a_part_carries_the_amounts_on_its_first_line() -> None:
+    """부품 이름표가 낀 `기타` 풍선은 수량을 첫 줄로 올리고 둘째 줄에 접힌 이름만 싣는다 — 이름표가
+    길어 수량과 이름을 한 줄에 이으면 풍선이 넓어져 왼쪽 고정 구분 칸 밑으로 앞머리가
+    잘렸다(2026-11-24 그림 확인). 두 줄 그대로이고 접힌 이름 · 「외 N」 은 그대로 다 싣는다."""
+    cell = _folded_part_cell(["DEMO_X", "DEMO_Y", "DEMO_Z"])
+
+    first, second = _other_hover(cell)
+
+    assert first.startswith(f"26.09 · {OTHER_PRODUCT_LABEL} ")
+    assert " · Wafer " in first and " / " in first
+    assert " / " not in second
+    assert f"DEMO_PART ({PART_B})" in second
+    assert " 외 " in second
+    joined = f"{first} · {second}"
+    assert _text_width_units(max(first, second, key=_text_width_units)) < _text_width_units(joined)
+
+
+def test_an_other_hover_without_a_part_keeps_its_one_line_of_names() -> None:
+    """부품 이름표가 없는 `기타` 풍선은 지금 꼴(둘째 줄에 수량 · 접힌 이름) 그대로다."""
+    others = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT + 2)]
+    plan = pd.DataFrame(
+        [(202609, name, "-", 10.0 * (index + 1)) for index, name in enumerate(others)],
+        columns=["생산계획년월", "제품정보", "CUSTOM", "생산수량"],
+    )
+    volume = build_product_volume(plan, plan.rename(columns={"생산수량": "물량"}))
+    cell = build_product_share_cells(
+        volume, "Wafer", assign_product_slots(volume), month_labels=["26.09"]
+    )["26.09"]
+
+    first, second = _other_hover(cell)
+
+    assert first == f"26.09 · {OTHER_PRODUCT_LABEL} {cell.slices[-1].share:.1%}"
+    assert second.startswith("Wafer ") and " · DEMO_" in second
+
+
 # ---------------------------------------------------------------- 범례 · 풍선
 
 
