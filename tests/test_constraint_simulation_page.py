@@ -1527,8 +1527,8 @@ def _sheet_product_title(result: ConstraintResult, labels: ConstraintLabels) -> 
 
 def test_the_sheet_title_of_a_part_keeps_the_part_end(tmp_path: Path) -> None:
     """월별 계산표의 「제약 제품 · 이름표」 제목은 부품 줄이면 다른 화면처럼 부품 끝을 남기고 앞을
-    줄인다 — 앞을 남겨 끝을 자르면 어느 부품인지 안 보인다. 제품 전체 줄(이름만)은 지금 꼴
-    그대로다."""
+    줄인다 — 앞을 남겨 끝을 자르면 어느 부품인지 안 보인다. 이 폭에서는 제품 이름 쪽만 줄고 부품은
+    온전히 남는다. 제품 전체 줄(이름만)은 지금 꼴 그대로다."""
     database = tmp_path / "scenario.duckdb"
     publish_two_part_revision(database)
     app = _opened((database, _equipment_database(tmp_path / "equipment.duckdb")))
@@ -1544,7 +1544,7 @@ def test_the_sheet_title_of_a_part_keeps_the_part_end(tmp_path: Path) -> None:
     assert titles[0] != titles[1]
     for title, part in zip(titles, (PART_A, PART_B), strict=True):
         assert title.startswith("제약 제품 · ")
-        assert title.endswith(f"{part[-2:]})"), title
+        assert title.endswith(f"… ({part})"), title
 
 
 # 끝 글자를 길게 같이 쓰는 두 부품 — 형제를 모르는 줄임으로는 계산표 제목이 같은 글이 된다.

@@ -25,10 +25,7 @@ from capa_simulation.components.home_dimensions import (
     lower_delta_row_height,
     table_row_height,
 )
-from capa_simulation.components.home_figure_common import (
-    HOVER_LABEL_FONT_SIZE_PX,
-    _table_label_width_units,
-)
+from capa_simulation.components.home_figure_common import HOVER_LABEL_FONT_SIZE_PX
 from capa_simulation.components.home_figures import build_plan_detail_figures
 from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
@@ -570,8 +567,8 @@ def test_parts_that_share_their_end_stay_apart_in_the_product_cell(dimensions: l
     assert len(texts) == 2 and len(set(texts)) == 2
     assert "1" in texts[0] and "2" in texts[1]
     for text in texts:
-        assert _table_label_width_units(text) * DETAIL_VALUE_FONT_SIZE_PX <= (
-            product_px - 2 * DETAIL_LABEL_INSET_PX
+        assert (
+            _rendered_px(text, DETAIL_VALUE_FONT_SIZE_PX) <= product_px - 2 * DETAIL_LABEL_INSET_PX
         ), text
 
 
