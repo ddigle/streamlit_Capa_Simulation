@@ -1982,7 +1982,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_stop_error` — Capa 오류가 먼저, 통과하면 Density)을 쓰고 `tests/test_gate_density_coverage.py` 그물 안이다. 고른 리비전마다
     부르므로 위 「같은 캐시 칸」 이 아니라 입력 점검 요약 칸(`simulation_cache.get_revision_input_check`, 5장 39)에 두고, 계산은 공유 칸을
     밀지 않는 길(저장소에서 캐시 없이 읽은 표시순서 없는 스냅샷 · 원천 행, 캐시 없는 `full_capacity_outcome`)이다. 경로 키가 없는 옛 리비전은 계산을 부르지 않고
-    그 까닭으로 멈춘다(`revision_block_reason`). 저장된 리비전 그대로를 세고 미저장 편집은 보지 않는다.
+    그 까닭으로 멈춘다(`revision_block_reason`). 저장된 리비전 그대로를 세고 미저장 편집은 보지 않는다. 받은 부하 예외 선언 판으로
+    「부하 예외로 바꾼 경로」 · 「이번 데이터에 없는 선언 공정」 재료(`revision_input_check.route_exception_check` — 그 리비전 `RQ_REQB`
+    공정 · 같은 계산 결과)도 짓는다.
   - 모듈수(`RQ_MODULE`) 멈춤 안내(`module_fix_hint`)는 오류 예시의 공정 칸(`stop_examples.example_processes` — 글자 일부가
     아니라 칸 값 그대로)에 그 시나리오 데이터셋의 부대공정이 있으면 「판을 고쳐 다시 놓고 적용한 뒤 부대공정 얹기」 를 권한다(설계
     A11 — 월 머지는 베이스의 옛 판 모듈수가 이겨 풀지 못한다). 판을 적용하는 Admin 「부대공정」 은 개발자만 열어 그 밖의 화면
@@ -2807,7 +2809,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
   id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
   `apply_route_load_exceptions`, 경로 추적 근거 글 `route_load_basis`, 판 지문 `route_load_declaration_digest`(정규 글
-  `route_load_declaration_json` — 견줌 키 차례의 견줌 키 → 산식 id, 빈 선언은 빈 글). 공정 이름 · Streamlit · DB 를 모른다
+  `route_load_declaration_json` — 견줌 키 차례의 견줌 키 → 산식 id, 빈 선언은 빈 글). 입력 점검 두 묶음의 셈도 여기다 — 산식이
+  부하량을 바꾼 경로 줄 `route_load_changed_rows`(근거 글이 서는 줄과 같다 — 시험이 줄마다 맞댄다)와 이번 데이터에 없는 선언 공정
+  `route_load_missing_processes`(선언 원본 표기 · 차례, Admin 「(이번 데이터에 없음)」 과 같은 견줌). 공정 이름 · Streamlit · DB 를 모른다
   (`tests/test_route_load_exceptions.py` · `tests/test_route_load_exception_store.py`).
 - `src/capa_simulation/services/revision_input_check.py` — 저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리
   「점검」)을 짓는 순수 셈. 전체 기간 결과에서 빠진 행을 묶음 · 단계 · 원본 까닭별 수로 모으고 저장 · 지정 검사
@@ -2816,12 +2820,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   확인 필요 묶음 뒤에 「부대공정」(`GROUP_EXTRA` — 설계 A10)이 선다: 공정마다 판 · 부하 붙은 · 0 경로 · 이어받은 대당 Capa 결손 줄
   (R-02) · 판 섞임(월 머지)이고 수는 부하가 하나도 붙지 않은 공정 + 결손 줄 + 판 섞인 공정이다(부하 0 경로는 부제에만 — 그 달
   계획이 0 인 경로도 든다). 재료(`ExtraProcessCheck`)는 `capacity_gate._extra_check` 가 데이터셋 출처 · 판 내용 · 같은 계산
-  결과로 짓는다. 부대공정이 없는 리비전의 묶음 · 「확인 n」 은 그대로다.
+  결과로 짓는다. 부대공정이 없는 리비전의 묶음 · 「확인 n」 은 그대로다. 부하 예외 선언이 있으면 그 뒤 · 등록 때 뺀 원천 행
+  앞에 확인 필요 「이번 데이터에 없는 선언 공정」(그 리비전 `RQ_REQB` 공정과 견준 수 — 공정 이름은 표 칸에만)과 알림 「부하 예외로
+  바꾼 경로」(산식이 부하량을 바꾼 결과 줄 수 · `WF 구분` 마다 부제 — 표는 결과 `attrs` 를 뗀다)가 선다. 재료(`RouteExceptionCheck` ·
+  `route_exception_check`)는 `capacity_gate.input_check_verdict` 가 넘긴 판으로 짓고, 선언이 빈 리비전 · 뒤 묶음을 접는 멈춘 리비전의
+  묶음은 그대로다. 「그 화면으로」 는 없다(고칠 곳이 Admin 「부하 예외」).
 - `src/capa_simulation/services/securement_rate.py` — 확보율·추가 필요대수·부호 있는 과부족(`securement_balance`)을 낸다.
 - `src/capa_simulation/services/process_capa_detail.py` — 공정 하나의 월별 요약·제품별 소요·경로 추적을 계산 결과에서 꺼낸다.
   - 새 계산이 없다. 대당 Capa 식을 바꾸면 `route_factor_product` 도 고친다(`tests/test_process_capa_detail.py`).
   - 경로 추적 키 `ROUTE_KEYS` 는 Stack 뒤에 `CUSTOM` 을 싣는다 — 경로 한 줄이 한 부품이고 측정률 키(`RATIO_ROUTE_KEYS`,
     `PERFORMANCE_KEYS` 에서 냄)와 맞는다. 「제품별 나눔」 의 분류(`PRODUCT_DEMAND_SPLITS`)에는 CUSTOM 이 없어 부품을 합친다.
+  - 화면 경로 표의 「부하량 근거」 칸(`ROUTE_LOAD_BASIS_COLUMN`)은 `with_route_load_basis` 가 공정이 부하 예외 선언에 있을 때만
+    「부하량」 바로 뒤에 끼운다 — 결과 프레임 칸(`ROUTE_COLUMNS`)은 그대로다(6장 「공정별 부하 산출 예외」).
 - `src/capa_simulation/services/constraint_simulation.py` — 제약 시뮬레이션(2026-10-24 결정, 저장하지 않는 미래 가정)의
   순수 계산. 공정 하나의 월별 소요(R)를 제약 제품(`제품정보` 하나)과 기존 제품으로 나누고, 설비 일정 기준 가용(단축 전
   환산 대수)에서 개조 비가동을 빼고 제약 몫을 먼저 정수로 뗀 뒤 기존 제품 확보율·「소요 비중대로」 견주기·요약 넷을 낸다
@@ -6050,6 +6060,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   이다(2026-11-20 갈래 판정 — 규칙집 6-39 pc-kpi-notes, UI-TXT-01 · UI-TXT-05 · UI-TXT-04).
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
+  - 「경로별 인자」 표(`_render_route_factors`)의 「부하량 근거」 칸은 그 경로 표를 지은 계산 키의 계산 토큰에서 푼 선언
+    (`simulation_cache.token_route_exceptions(view.scenario_key[1])`)으로 그린다 — 근거 글과 숫자가 늘 같은 판이고 `ProcessDetailView`
+    에 따로 칸을 두지 않는다(5장 44). 뜻은 칸 머리 풍선 · Guide 이고 자리 글은 늘리지 않는다. 경로 표는 그림 · 시트 엑셀에 실리지
+    않아 `CANVAS_SCHEMA_VERSION` · `SHEET_SCHEMA_VERSION` 은 그대로다.
   - 시트 엑셀 바이트도 세션 칸(`SHEET_MEMO_KEY`, 몇 벌)에 기억한다 — 키(`sheet_memo_key`)는 그림 기억 키에서 그림 세대 · 테마를
     빼고 머리 값 줄을 더한 것이라 달 칸 누름 · 다른 위젯 회차는 통을 다시 만들지 않는다(콜러블 지연 생성은 쓰지 않는다 — 9장).
     같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 `SHEET_SCHEMA_VERSION` 을 올린다.
@@ -7006,6 +7020,8 @@ RQ_MODULE
     `simulation_cache.calculation_token`)으로만 계산에 들고, 전체 기간 칸(`get_full_capacity_outcome`)과 조회기간 오류 칸
     (`get_period_capacity_error`)이 그 토큰에서 다시 푼다(`token_route_exceptions`). 키만 받는 파생 칸은 빗나가면 키와 프레임만으로
     전체 기간 칸을 부르므로 선언을 따로 넘길 길을 두지 않는다 — 키와 선언이 한 값에서 나와 다른 선언이 같은 칸에 묶이지 않는다.
+    계산 밖에서 토큰을 푸는 자리는 공정 Capa 상세 「경로별 인자」 의 「부하량 근거」 칸 하나다 — 그 경로 표를 지은 키에서 풀어 글이
+    그린 숫자와 같은 판이다(3장 `process_capa_view`).
     불변조건:
     - **빈 선언이면 계산 토큰은 내용 토큰 그대로다** — 선언이 없는 동안 모든 키 · 칸이 선언을 모르던 때와 같다. 앞머리가 내용
       토큰이라 `pristine-` 판정이 그대로 돈다. 접은 토큰은 메모리 캐시 키일 뿐 저장 · 기록하지 않는다.
@@ -7456,16 +7472,25 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   경고 · 입력 점검에 선다. Wafer · Density 집계는 바뀌지 않는다((d)). 이미 얼린 필요 단축 기준선과의 견줌은 선언 순간 그 공정에서
   한 번 튈 수 있다. 재현 근거는 판 이력 표와 자동 갱신 메모 조각(「부하 예외 판 n」)이다.
 - (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
+- (l) 선언이 보이는 자리는 셋이다(HOME 에는 표지가 없다). Admin 「부하 예외」 탭((i)), 공정 Capa 상세 「경로별 인자」 표의 「부하량
+  근거」 칸 — 선언 공정을 볼 때만 「부하량」 바로 뒤에 서고 산식이 바꾼 줄에 근거 글(Core 「Buffer Wafer × Core 구분_Chip」 ·
+  Top_Dummy 「부하 0」), 나머지 줄은 빈 칸이다(`process_capa_detail.with_route_load_basis` — 결과 프레임 칸 그대로, 선언은 그 경로
+  표를 지은 계산 토큰에서 푼다 — 5장 44). 시나리오 관리 › 목록 관리 「점검」 은 선언이 있을 때만 두 묶음을 더 세운다 — 확인 필요
+  「이번 데이터에 없는 선언 공정」(그 리비전 `RQ_REQB` 에 없는 선언 공정 수 — 「확인 n」 에 든다, 공정 이름은 표 칸에만)과 알림
+  「부하 예외로 바꾼 경로」(산식이 부하량을 바꾼 결과 줄 수 · `WF 구분` 마다 부제 — 근거 글이 서는 줄과 같은 셈
+  `route_load_changed_rows`). 바탕 없는 줄은 위 「화면 글」 대로 경로 묶음 까닭이다. 선언이 비면 두 묶음 · 근거 칸이 없어 화면이
+  선언을 모르던 때와 같다.
 
-**결정 · 저장 · 계산 키 · 읽어 넘김 · 쓰기 화면까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
+**결정 · 저장 · 계산 키 · 읽어 넘김 · 쓰기 화면 · 근거 칸 · 입력 점검까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
 지금 선언, 모두 뺀 저장도 비움 판 한 줄)에 두고 저장하는 순간 모든 리비전에 건다 — 공식버전을 포함한 모든 시나리오의 그 공정
 소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가 남긴다(2026-11-22 사용자 답 Q3 (가)). 저장 ·
 읽기(`persistence/route_load_exception_store.py` · 저장소 `load_route_load_exceptions` · `append_route_load_exceptions` — COMMIT 뒤
 바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 선언이 계산에 드는 길도 섰다 — 선언은 계산 토큰으로
 계산 키에 접히고 전체 기간 칸이 키에서 푼다(5장 44). 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME 그림 · 자동 갱신 · 확인
 스크립트 셋 · 부대공정 미리보기는 지금 판을 읽어 넘긴다(공식버전 요약 키 · HOME 그림 키 · 미리보기 메모에 지문 · 접은 토큰을
-싣는다 — 5장 45, (h) · (i) · (j)). 쓰기 화면은 Admin Area 「부하 예외」 탭(C-DEP 운영 자리 + 개발자 등급만 저장)이다. 남은 것은 그
-공정의 「부하량 근거」 칸 · 입력 점검 두 줄이다. 선언이 빈 동안 앱 숫자 · 캐시 키는 선언을 모르던 때와 같다.
+싣는다 — 5장 45, (h) · (i) · (j)). 쓰기 화면은 Admin Area 「부하 예외」 탭(C-DEP 운영 자리 + 개발자 등급만 저장)이고, 그
+공정의 「부하량 근거」 칸과 입력 점검 두 묶음이 선언을 보인다((l)). 선언이 빈 동안 앱 숫자 · 캐시 키 · 화면은 선언을 모르던 때와
+같다.
 - 소요대수 길의 기본값은 걷었다 — `calculate_required_equipment` · `get_capacity_and_demand` · `full_capacity_outcome` ·
   `extra_process_merge.capacity_outcome` · `process_rows_frame` · `load_lines` 와 계산 키 빌더 셋은 선언 칸에 기본값이 없어
   호출처(화면 계산 · 저장/발행/입력 점검 · 자동 갱신 · 부대공정 미리보기 · 확인 스크립트 셋 `inspect_revision_calculations` ·

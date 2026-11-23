@@ -85,7 +85,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from functools import partial
-from typing import Final, NamedTuple
+from typing import Any, Final, NamedTuple
 from urllib.parse import quote
 
 import pandas as pd
@@ -192,8 +192,10 @@ from capa_simulation.services.process_capa_detail import (
     MISMATCH_COLUMN,
     PRODUCT_DEMAND_SPLITS,
     ROUTE_COLUMNS,
+    ROUTE_LOAD_BASIS_COLUMN,
     ProcessCapaKpis,
     ProcessMonthTrace,
+    with_route_load_basis,
 )
 from capa_simulation.services.process_equipment_timeline import (
     NO_COUNTED_UNITS,
@@ -214,6 +216,7 @@ from capa_simulation.services.required_shortening import (
     single_target,
     target_for_month,
 )
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_COLUMN,
@@ -410,6 +413,11 @@ ROUTE_FACTORS_UPEH_MARK: Final = ":material/science: UPEH 가정 미반영 · �
 ROUTE_FACTORS_UPEH_HELP: Final = (
     "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
     "겁니다(대당 Capa ×f 와 같습니다)."
+)
+# 부하 예외 선언 공정의 경로 표에만 서는 「부하량 근거」 칸의 머리 풍선.
+ROUTE_LOAD_BASIS_HELP: Final = (
+    "Admin Area 「부하 예외」 로 선언한 공정입니다 — 산식이 바꾼 줄의 부하량 근거이고, 빈 칸은 "
+    "일반 산식입니다."
 )
 # 설비 일정이 멈춘 알림 전문의 끝. Alarm 줄에는 표 곁이 없어 「위」 라 하지 않고 ① 로 가리킨다.
 DYNAMIC_OFFICIAL_KEPT: Final = "① Static 기준은 그대로입니다."
@@ -1459,7 +1467,13 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         ):
             if view.upeh_token:
                 st.caption(ROUTE_FACTORS_UPEH_MARK, help=ROUTE_FACTORS_UPEH_HELP)
-            _render_route_factors(trace, under_head=not view.upeh_token)
+            # 근거 글의 선언은 이 경로 표를 지은 계산 키에서 푼다 — 숫자와 같은 판이다
+            # (AGENTS 5장 44).
+            _render_route_factors(
+                trace,
+                under_head=not view.upeh_token,
+                route_exceptions=simulation_cache.token_route_exceptions(view.scenario_key[1]),
+            )
 
 
 def step_month(months: Sequence[int], step: int, widget_key: str) -> None:
@@ -1871,8 +1885,13 @@ def evidence_cards_html(cards: Sequence[EvidenceCard]) -> str:
     )
 
 
-def _render_route_factors(trace: ProcessMonthTrace | None, *, under_head: bool) -> None:
+def _render_route_factors(
+    trace: ProcessMonthTrace | None, *, under_head: bool, route_exceptions: RouteLoadDeclaration
+) -> None:
     """경로마다 인자·근거 칸, 공통 인자(양산구분별 효율·여유율, 일수·모듈수), 제외 경로.
+
+    `route_exceptions` 는 경로 표를 지은 계산 키에서 푼 부하 예외 선언이다 — 그 공정이 선언에 있을
+    때만 「부하량」 뒤에 「부하량 근거」 칸이 선다(`with_route_load_basis`).
 
     `under_head` 면 경로 표가 「경로별 인자」 펼침의 첫 요소라 바로 위가 펼침 머리다 — 표 도구
     막대가 머리 오른쪽 끝 아래쪽을 덮어 머리를 누른 손이 막대 단추(찾기 등)에 먹히지 않게 표
@@ -1881,12 +1900,19 @@ def _render_route_factors(trace: ProcessMonthTrace | None, *, under_head: bool) 
     if trace is None:
         render_data_error("경로 인자를 읽지 못했습니다.", code="PD-01")
         return
-    routes = trace.routes.reindex(columns=ROUTE_COLUMNS)
+    routes = with_route_load_basis(
+        trace.routes.reindex(columns=ROUTE_COLUMNS), trace.process, route_exceptions
+    )
     if routes.empty:
         st.caption("이 달 이 공정의 경로가 없습니다.")
     else:
         if under_head:
             toolbar_clearance()
+        column_config: dict[str, Any] = {"ST": "ST(분)"}
+        if ROUTE_LOAD_BASIS_COLUMN in routes.columns:
+            column_config[ROUTE_LOAD_BASIS_COLUMN] = st.column_config.TextColumn(
+                help=ROUTE_LOAD_BASIS_HELP
+            )
         # 경로마다 UPEH(Main)·ST(MI) 가운데 하나만 값이다 — 다른 칸은 비워 둔다. 주지 않으면
         # Streamlit 이 그 칸에 「None」 글자를 그린다.
         st.dataframe(
@@ -1894,7 +1920,7 @@ def _render_route_factors(trace: ProcessMonthTrace | None, *, under_head: bool) 
             hide_index=True,
             width="stretch",
             placeholder="",
-            column_config={"ST": "ST(분)"},
+            column_config=column_config,
             key="process_detail_routes",
         )
     common = trace.common_factors

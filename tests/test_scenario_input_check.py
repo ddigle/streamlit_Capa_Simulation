@@ -96,6 +96,8 @@ from capa_simulation.services.revision_input_check import (
     GROUP_ASSUMED,
     GROUP_CAPACITY,
     GROUP_PLANS,
+    GROUP_ROUTE_CHANGED,
+    GROUP_ROUTE_MISSING,
     GROUP_ROUTES,
     GROUP_RULES,
     GROUP_SOURCE,
@@ -106,8 +108,10 @@ from capa_simulation.services.revision_input_check import (
     RevisionInputCheck,
     build_input_check,
     calculation_period,
+    route_exception_check,
 )
 from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
     NO_ROUTE_LOAD_EXCEPTIONS,
     RouteLoadDeclaration,
 )
@@ -611,6 +615,10 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
     assert two is not None and (two.path, two.value) == (REFERENCE_DATA.path, None)
     assert arrival_for(_group(GROUP_ROUTES, ()), empty) is None
     assert arrival_for(InputCheckGroup(GROUP_STOP, "error", "계산 멈춤", 0), empty) is None
+    # 부하 예외 선언 두 묶음은 고칠 화면이 Admin 「부하 예외」(개발자 몫)라 단추가 없다 — Guide 가
+    # 그 자리를 말한다.
+    for key in (GROUP_ROUTE_MISSING, GROUP_ROUTE_CHANGED):
+        assert arrival_for(_group(key, (("x", 2),)), empty) is None, key
 
 
 def test_the_arrival_tabs_are_the_pages_own_labels() -> None:
@@ -691,6 +699,62 @@ def test_the_wide_view_puts_its_table_right_under_the_caption() -> None:
     """「넓게 보기」 팝업은 표 위 줄이 캡션뿐이라 도구 막대 띄움을 두지 않는다(띄움 계약 —
     누를 것이 있는 줄 아래만)."""
     assert "toolbar_clearance" not in inspect.getsource(render_wide_body)
+
+
+def test_the_route_exception_groups_open_into_label_tables_without_a_go_button(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언 두 묶음도 다른 묶음과 같은 줄로 선다 — 「행 보기」 로 펼친 표는 공정
+    표시명, 「그 화면으로」 는 없고, 「넓게 보기」 · CSV 가 선다. 바꾼 경로 표는 손으로 지은 결과
+    행이다(시드의 WF Core 경로는 바탕이 없어 바꾼 줄이 없다)."""
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    tables = DuckDBScenarioRepository(database).load_revision(base).tables
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    routes = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202602],
+            "공정": ["DEMO-EXC"] * 3,
+            "제품정보": ["DEMO-HBM"] * 3,
+            "WF 구분": ["Core", "Top_Dummy", "Core"],
+            "소요기준": ["WF"] * 3,
+            "부하량": [12.0, 0.0, 14.0],
+        }
+    )
+    route_check = route_exception_check(
+        ["DEMO-EXC"],
+        routes,
+        {"DEMO-EXC": BUFFER_X_CORE_CHIP, "DEMO-GONE": BUFFER_X_CORE_CHIP},
+    )
+    full = build_input_check(plain, None, None, route_check=route_check)
+    keys = (GROUP_ROUTE_MISSING, GROUP_ROUTE_CHANGED)
+    check = RevisionInputCheck(tuple(group for group in full.groups if group.key in keys))
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
+    labels = ProcessLabels(1, {"DEMO-EXC": "DEMO 예외 표시명", "DEMO-GONE": "DEMO 없는 표시명"})
+    monkeypatch.setattr(input_check, "get_process_labels", lambda: labels)
+    app, browser, _ = _check_app(script, monkeypatch)
+    del scenario_id
+
+    for key in keys:
+        assert f"input_check_go_{key}" not in {button.key for button in app.button}
+        app.button(key=f"input_check_rows_{key}").click().run()
+        assert not app.exception
+
+    missing, changed = (table.value for table in app.dataframe)
+    assert list(missing.columns) == ["공정"] and missing["공정"].tolist() == ["DEMO 없는 표시명"]
+    assert list(changed.columns) == ["생산계획년월", "공정", "제품정보", "WF 구분", "부하량"]
+    assert set(changed["공정"]) == {"DEMO 예외 표시명"}
+    assert len(app.get("download_button")) == 2
+    titles = {GROUP_ROUTE_MISSING: "이번 데이터에 없는 선언 공정 · 전체 1행"}
+    titles[GROUP_ROUTE_CHANGED] = "부하 예외로 바꾼 경로 · 전체 3행"
+    for key in keys:
+        app.button(key=f"input_check_wide_{key}_0").click().run()
+        assert not app.exception
+        target = wide_target(app.session_state[OFFICIAL_DIALOG_KEY])
+        assert target is not None and target[4] == f"{key}:0"
+        browser.run()
+        assert not app.exception
+        assert f"r1 · {titles[key]}" in _captions(app)
 
 
 def test_the_rules_row_opens_into_small_subheadings_without_counts(

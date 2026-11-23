@@ -57,17 +57,22 @@ from capa_simulation.services.revision_input_check import (
     GROUP_ASSUMED,
     GROUP_CAPACITY,
     GROUP_PLANS,
+    GROUP_ROUTE_CHANGED,
+    GROUP_ROUTE_MISSING,
     GROUP_ROUTES,
     GROUP_RULES,
     GROUP_SOURCE,
     GROUP_STOP,
     GROUP_UNCOUNTED,
     GROUP_UNROUTED,
+    ROUTE_CHANGED_TITLE,
+    ROUTE_MISSING_TITLE,
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
     calculation_period,
     reason_label,
+    route_exception_check,
 )
 from capa_simulation.services.route_load_exceptions import (
     BUFFER_X_CORE_CHIP,
@@ -311,6 +316,109 @@ def test_rule_rows_are_kept_apart_and_the_groups_split_the_result_lists(tables: 
     assert not rules.flagged
 
 
+# ------------------------------------------------------------------ 부하 예외 선언 두 묶음
+
+_EXC = "DEMO-EXC"
+_GONE = "DEMO-GONE"
+_DECLARED = {_EXC: BUFFER_X_CORE_CHIP, f" {_GONE} ": BUFFER_X_CORE_CHIP}
+
+
+def _declared_routes() -> pd.DataFrame:
+    """선언 공정 `DEMO-EXC` 의 WF 경로 넷(Core 둘 · Top_Dummy · Buffer)과 다른 공정 Core 한 줄 —
+    소요대수 결과 행의 꼴이고 결과처럼 `attrs` 에 제외 목록을 든다."""
+    frame = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202602, 202601, 202601],
+            "공정": [_EXC, _EXC, _EXC, _EXC, "DEMO-PROC"],
+            "제품정보": ["DEMO-HBM"] * 5,
+            "WF 구분": ["Core", "Top_Dummy", "Core", "Buffer", "Core"],
+            "소요기준": ["WF"] * 5,
+            "부하량": [12.0, 0.0, 14.0, 1.0, 3.0],
+        },
+        index=[10, 11, 12, 13, 14],
+    )
+    frame.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame({"제외사유": ["DEMO"]})
+    return frame
+
+
+def test_the_route_check_takes_the_changed_rows_without_the_result_lists() -> None:
+    """바꾼 줄은 산식이 부하량을 바꾼 결과 행(선언 공정의 Core · Top_Dummy)이고 결과의 제외 목록
+    (`attrs`)을 끌고 오지 않는다 — 요약 칸은 묶음 행 · 수만 쥔다. 없는 선언 공정은 선언 원본
+    표기 그대로다. 선언이 비면 재료가 없다."""
+    routes = _declared_routes()
+
+    check = route_exception_check([_EXC, "DEMO-PROC"], routes, _DECLARED)
+
+    assert check is not None
+    assert check.changed["WF 구분"].tolist() == ["Core", "Top_Dummy", "Core"]
+    assert check.changed["부하량"].tolist() == [12.0, 0.0, 14.0]
+    assert check.changed.index.tolist() == [0, 1, 2]
+    assert check.changed.attrs == {}
+    assert list(check.missing.columns) == ["공정"]
+    assert check.missing["공정"].tolist() == [f" {_GONE} "]
+    assert routes.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] is not None
+    assert route_exception_check([_EXC], routes, NO_ROUTE_LOAD_EXCEPTIONS) is None
+
+
+def test_a_declaration_adds_two_groups_after_the_counted_ones(tables: Tables) -> None:
+    """선언이 있으면 확인 필요 「이번 데이터에 없는 선언 공정」 과 알림 「부하 예외로 바꾼 경로」 가
+    확인 묶음 뒤 · 등록 때 뺀 원천 행 앞에 선다. 없는 선언 공정은 「확인 n」 에 들고, 공정 이름은
+    부제가 아니라 표 칸에만 든다."""
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    route_check = route_exception_check([_EXC], _declared_routes(), _DECLARED)
+
+    check = build_input_check(plain, None, None, route_check=route_check)
+
+    assert [group.key for group in check.groups] == [
+        GROUP_STOP,
+        GROUP_CAPACITY,
+        GROUP_ROUTES,
+        GROUP_PLANS,
+        GROUP_UNROUTED,
+        GROUP_ASSUMED,
+        GROUP_ROUTE_MISSING,
+        GROUP_ROUTE_CHANGED,
+        GROUP_SOURCE,
+        GROUP_RULES,
+    ]
+    missing = check.group(GROUP_ROUTE_MISSING)
+    changed = check.group(GROUP_ROUTE_CHANGED)
+    assert missing is not None and changed is not None
+    assert (missing.level, missing.title, missing.count) == ("check", ROUTE_MISSING_TITLE, 1)
+    assert missing.subtitle == "" and _GONE not in missing.subtitle
+    (missing_table,) = missing.tables
+    assert missing_table.frame["공정"].tolist() == [f" {_GONE} "]
+    assert missing_table.preview_columns == ["공정"]
+    assert (changed.level, changed.title, changed.count) == ("info", ROUTE_CHANGED_TITLE, 3)
+    assert changed.subtitle == "Core 2 · Top_Dummy 1"
+    assert not changed.flagged
+    assert check.calculation_label == "됨 · 확인 1"
+
+
+def test_without_a_declaration_or_with_a_stop_the_groups_stay_as_they_were(
+    tables: Tables,
+) -> None:
+    """선언이 비면 묶음 · 「계산」 칸 글이 선언을 모르던 때와 같다. 계산이 멈춘 리비전은 선언이
+    있어도 뒤 묶음을 「셀 수 없음」 하나로 접는다."""
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    assert plain.required_equipment is not None
+    empty = route_exception_check(
+        tables["RQ_REQB"]["공정"], plain.required_equipment, NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    before = _check(tables)
+
+    after = build_input_check(plain, None, None, period=before.period, route_check=empty)
+
+    assert [group.key for group in after.groups] == [group.key for group in before.groups]
+    assert after.calculation_label == before.calculation_label
+    stopped = full_capacity_outcome(
+        _vital_blank(tables), _vital_blank(tables), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    route_check = route_exception_check([_EXC], _declared_routes(), _DECLARED)
+    folded = build_input_check(stopped, None, None, route_check=route_check)
+    assert [group.key for group in folded.groups] == [GROUP_STOP, GROUP_UNCOUNTED, GROUP_SOURCE]
+
+
 # ------------------------------------------------------------------ 멈춤
 
 
@@ -521,6 +629,35 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
     assert density.stop is not None and density.stop.kind == "density"
     assert density.group(GROUP_CAPACITY) is not None and density.group(GROUP_UNCOUNTED) is None
     assert density.calculation_label == "멈춤"
+
+
+def test_the_verdict_counts_the_declaration_it_was_given_against_that_revision(
+    tmp_path: Path,
+) -> None:
+    """입력 점검 판정은 넘긴 선언 판으로 두 묶음도 센다 — 없는 공정은 그 리비전 `RQ_REQB` 공정과
+    견준다. 내장 시드의 WF Core 경로는 Buffer 바탕이 없어 바꾼 줄은 없고(「없음」) 그 줄은 경로
+    묶음의 「부하 예외 바탕 없음」 까닭으로 선다. 빈 선언이면 두 묶음이 없다."""
+    database, scenario_id, revision_id = _seeded(tmp_path)
+    reqb = DuckDBScenarioRepository(database).load_revision(revision_id).tables["RQ_REQB"]
+    wafer_core = reqb["소요기준"].eq("WF") & reqb["WF 구분"].eq("Core")
+    declared = {
+        str(reqb.loc[wafer_core, "공정"].iloc[0]): BUFFER_X_CORE_CHIP,
+        _GONE: BUFFER_X_CORE_CHIP,
+    }
+
+    check = input_check_verdict(str(database), scenario_id, revision_id, route_exceptions=declared)
+    plain = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+
+    missing = check.group(GROUP_ROUTE_MISSING)
+    changed = check.group(GROUP_ROUTE_CHANGED)
+    routes = check.group(GROUP_ROUTES)
+    assert missing is not None and changed is not None and routes is not None
+    assert missing.count == 1 and missing.tables[0].frame["공정"].tolist() == [_GONE]
+    assert changed.count == 0 and changed.count_text == "없음"
+    assert dict(routes.reasons)[ROUTE_LOAD_BASIS_MISSING_REASON] > 0
+    assert plain.group(GROUP_ROUTE_MISSING) is None and plain.group(GROUP_ROUTE_CHANGED) is None
 
 
 def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(

@@ -40,6 +40,7 @@ from capa_simulation.services.process_capa_detail import (
     RATIO_ASSUMED_MISSING_ROW,
     RATIO_BLANK_OR_ZERO,
     ROUTE_COLUMNS,
+    ROUTE_LOAD_BASIS_COLUMN,
     RULE_EXCLUDED_COLUMN,
     ProcessMonthTrace,
     build_process_capa_summary,
@@ -51,9 +52,14 @@ from capa_simulation.services.process_capa_detail import (
     process_calculation_rows,
     process_capa_kpis,
     route_factor_product,
+    with_route_load_basis,
 )
 from capa_simulation.services.required_equipment import PKG_UNCOUNTED_REASON
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+)
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_OWNED_SHORT,
@@ -731,6 +737,40 @@ def test_a_month_without_rows_gives_an_empty_trace(tables: dict[str, pd.DataFram
     assert trace.evidence.effective_capacity is None
 
 
+def test_the_load_basis_column_stands_only_for_a_declared_process() -> None:
+    """「부하량 근거」 칸은 공정이 부하 예외 선언에 있을 때만 「부하량」 바로 뒤에 선다 — 산식이
+    바꾼 줄만 글이 있다. 결과 프레임 칸(`ROUTE_COLUMNS`)은 그대로이고 받은 표를 고치지 않는다."""
+    routes = pd.DataFrame(
+        [
+            {"WF 구분": "Core", "소요기준": "WF", "부하량": 1.0},
+            {"WF 구분": "TOP_DUMMY", "소요기준": "WF", "부하량": 0.0},
+            {"WF 구분": "Buffer", "소요기준": "WF", "부하량": 2.0},
+            {"WF 구분": "Core", "소요기준": "CHIP", "부하량": 3.0},
+        ]
+    ).reindex(columns=ROUTE_COLUMNS)
+    declaration = {" demo-exc": BUFFER_X_CORE_CHIP}
+
+    shown = with_route_load_basis(routes, "DEMO-EXC", declaration)
+
+    load = ROUTE_COLUMNS.index("부하량") + 1
+    assert list(shown.columns) == [
+        *ROUTE_COLUMNS[:load],
+        ROUTE_LOAD_BASIS_COLUMN,
+        *ROUTE_COLUMNS[load:],
+    ]
+    assert shown[ROUTE_LOAD_BASIS_COLUMN].tolist() == [
+        "Buffer Wafer × Core 구분_Chip",
+        "부하 0",
+        "",
+        "",
+    ]
+    assert list(routes.columns) == ROUTE_COLUMNS
+    assert with_route_load_basis(routes, "DEMO-OTHER", declaration) is routes
+    assert with_route_load_basis(routes, "DEMO-EXC", NO_ROUTE_LOAD_EXCEPTIONS) is routes
+    empty = routes.iloc[0:0]
+    assert with_route_load_basis(empty, "DEMO-EXC", declaration) is empty
+
+
 # ------------------------------------------------------------------ 캐시 래퍼
 
 
@@ -754,6 +794,47 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[sc.ScenarioCacheKe
 
     monkeypatch.setattr(sc, "get_scenario_capacity_and_demand", recording)
     yield calls
+
+
+def test_the_trace_of_a_folded_key_carries_the_declaration_to_the_basis_column(
+    tables: dict[str, pd.DataFrame], key: sc.ScenarioCacheKey
+) -> None:
+    """경로 추적 칸은 계산 키의 계산 토큰으로 선언을 받는다 — 화면이 같은 토큰에서 푼 선언으로
+    근거 칸을 그리면 숫자와 글이 같은 판이다. 내장 시드의 WF Core 경로는 Buffer 바탕이 없어 선언하면
+    그 줄이 「부하 예외 바탕 없음」 제외로 옮겨 가고 경로 표에는 근거 칸이 선다(바뀐 줄이 없어 빈
+    글)."""
+    declaration = {WAFER_PROCESS: BUFFER_X_CORE_CHIP}
+    folded: sc.ScenarioCacheKey = (
+        key[0],
+        sc.calculation_token(key[1], declaration),
+        key[2],
+        key[3],
+    )
+
+    plain = sc.get_process_month_trace(
+        key, WAFER_PROCESS, TRACE_MONTH, _scenario_tables=tables, _reference_tables=tables
+    )
+    declared = sc.get_process_month_trace(
+        folded, WAFER_PROCESS, TRACE_MONTH, _scenario_tables=tables, _reference_tables=tables
+    )
+
+    def basis_missing(trace: ProcessMonthTrace) -> int:
+        if trace.excluded.empty:
+            return 0
+        return int(trace.excluded["제외사유"].eq(ROUTE_LOAD_BASIS_MISSING_REASON).sum())
+
+    assert basis_missing(plain) == 0
+    assert basis_missing(declared) > 0
+    assert len(declared.routes) < len(plain.routes)
+    unfolded = sc.token_route_exceptions(folded[1])
+    assert (
+        ROUTE_LOAD_BASIS_COLUMN
+        in with_route_load_basis(declared.routes, declared.process, unfolded).columns
+    )
+    assert (
+        with_route_load_basis(plain.routes, plain.process, sc.token_route_exceptions(key[1]))
+        is plain.routes
+    )
 
 
 def _period_months() -> tuple[int, ...]:

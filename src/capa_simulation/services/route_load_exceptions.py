@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import Final, NamedTuple
 
@@ -173,6 +173,35 @@ def route_load_targets(routes: pd.DataFrame, declaration: RouteLoadDeclaration) 
     declared = match_key(routes["공정"]).isin(list(normalized)).fillna(False)
     wafer = routes["소요기준"].astype("string").str.strip().str.upper().isin(_WAFER_BASES)
     return (declared & wafer.fillna(False)).astype("bool")
+
+
+def route_load_changed_rows(routes: pd.DataFrame, declaration: RouteLoadDeclaration) -> pd.Series:
+    """산식이 부하량을 바꾸는 경로 줄 — 선언 공정의 소요기준 WF 줄 가운데 그 산식이 바꾸는
+    `WF 구분`(산식 `buffer_x_core_chip` 은 Core · Top_Dummy). `route_load_basis` 가 근거 글을 내는
+    줄과 같다. `routes` 는 `공정` · `소요기준` · `WF 구분` 칸이 있는 경로 줄(소요대수 결과)이고 행
+    순서 · 색인은 그대로다(입력 점검 「부하 예외로 바꾼 경로」 의 셈)."""
+    normalized = normalize_route_load_declaration(declaration)
+    changed = pd.Series(False, index=routes.index, dtype="bool")
+    if not normalized or routes.empty:
+        return changed
+    division = match_key(routes[WF_DIVISION_COLUMN])
+    for formula, divisions in _FORMULA_BASIS.items():
+        declared = {process: chosen for process, chosen in normalized.items() if chosen == formula}
+        if declared:
+            rewritten = division.isin(list(divisions)).fillna(False)
+            changed |= route_load_targets(routes, declared) & rewritten
+    return changed.astype("bool")
+
+
+def route_load_missing_processes(
+    processes: Iterable[object], declaration: RouteLoadDeclaration
+) -> tuple[str, ...]:
+    """선언 공정 가운데 `processes`(이번 데이터의 소요기준 공정)에 없는 것 — 선언의 원본 표기,
+    선언 차례. 같은 공정인지는 계산과 같은 견줌 키(앞뒤 공백 · 대소문자)로 본다(Admin 「부하 예외」
+    고르기 칸의 「(이번 데이터에 없음)」 과 같은 판정)."""
+    normalize_route_load_declaration(declaration)
+    present = {scalar_match_key(process) for process in processes}
+    return tuple(process for process in declaration if scalar_match_key(process) not in present)
 
 
 def build_route_load_bases(

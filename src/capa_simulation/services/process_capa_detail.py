@@ -17,6 +17,8 @@
   대당 Capa·소요대수와 그 달 공정 공통 인자. 인자는 공정으로 거른 기준정보 표를 대당 Capa 계산과
   **같은 키**로 붙여 꺼낸다 — `unit_capacity` 는 고치지 않는다. 그래서 대당 Capa 식이 바뀌면
   `route_factor_product` 도 함께 고쳐야 하고, 시험(경로 인자의 곱 = 대당 Capa)이 그 어긋남을 잡는다.
+  화면 표는 부하 예외 선언 공정일 때만 「부하량 근거」 칸을 더한다(`with_route_load_basis` — 결과
+  프레임 칸은 그대로).
 
 공정을 고를 때는 계산과 같은 정규화(앞뒤 공백 떼기)를 지난 값으로 맞댄다.
 """
@@ -40,6 +42,11 @@ from capa_simulation.services.frame_contracts import (
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+)
+from capa_simulation.services.route_load_exceptions import (
+    RouteLoadDeclaration,
+    route_load_basis,
+    route_load_formula,
 )
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
@@ -145,6 +152,9 @@ ROUTE_COLUMNS: Final = [
     "대당 Capa",
     "소요대수",
 ]
+# 화면 경로 표에만 서는 칸 — 선언 공정의 산식이 바꾼 줄의 부하량 근거(`with_route_load_basis`).
+# 결과 프레임(`ROUTE_COLUMNS`)에는 두지 않는다.
+ROUTE_LOAD_BASIS_COLUMN: Final = "부하량 근거"
 EXCLUSION_REASON_COLUMN: Final = "제외사유"
 # 규칙상 빠진 경로(계산 규칙이 일부러 세지 않는 행). 오류 제외와 섞어 세면 정상 공정도 늘 「제외
 # 경로 n」을 띄운다 — 근거 요약은 둘을 따로 센다.
@@ -658,6 +668,29 @@ def build_process_month_trace(
         excluded=excluded,
         evidence=evidence,
     )
+
+
+def with_route_load_basis(
+    routes: pd.DataFrame, process: str, route_exceptions: RouteLoadDeclaration
+) -> pd.DataFrame:
+    """화면 경로 표 — 공정이 부하 예외 선언에 있으면 「부하량」 바로 뒤에 「부하량 근거」 칸을 끼운
+    사본, 없으면 받은 표 그대로다.
+
+    근거 글은 `route_load_basis` 다 — 산식이 바꾼 줄(`buffer_x_core_chip` 의 Core ·
+    Top_Dummy)만 글이 있고 나머지 줄은 일반 산식이라 빈 글이다. 결과 프레임의
+    칸(`ROUTE_COLUMNS`)은 바꾸지 않는다 — `routes` 는 경로 추적(`build_process_month_trace`)의 그 칸
+    그대로이고, `route_exceptions` 는 그 추적을 지은 계산 키에서 푼 선언이라 근거 글과 숫자가 같은
+    판이다.
+    """
+    if routes.empty or route_load_formula(process, route_exceptions) is None:
+        return routes
+    basis = [
+        route_load_basis(process, division, demand_basis, route_exceptions)
+        for division, demand_basis in zip(routes["WF 구분"], routes["소요기준"], strict=True)
+    ]
+    shown = routes.copy()
+    shown.insert(list(shown.columns).index("부하량") + 1, ROUTE_LOAD_BASIS_COLUMN, basis)
+    return shown
 
 
 def route_factor_product(routes: pd.DataFrame) -> pd.Series:

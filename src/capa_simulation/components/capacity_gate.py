@@ -72,6 +72,7 @@ from capa_simulation.services.revision_input_check import (
     blocked_input_check,
     build_input_check,
     calculation_period,
+    route_exception_check,
 )
 from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.simulation_cache import (
@@ -312,7 +313,9 @@ def input_check_verdict(
     쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키 · CUSTOM 칸이
     없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은
     보지 않는다 — 저장된 리비전 그대로다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언
-    판이고 요약 칸 키에 접힌다 — 선언을 저장하면 다음 점검은 새 판으로 다시 센다.
+    판이고 요약 칸 키에 접힌다 — 선언을 저장하면 다음 점검은 새 판으로 다시 센다. 선언이 있으면 같은
+    판으로 「부하 예외로 바꾼 경로」 · 「이번 데이터에 없는 선언 공정」(그 리비전 `RQ_REQB` 공정과
+    견줌)도 센다(`route_exception_check`).
     """
     reference_version = reference_version_for_revision(revision_id)
 
@@ -331,12 +334,20 @@ def input_check_verdict(
             if outcome.error is not None
             else _extra_check(repository, scenario_id, outcome, route_exceptions)
         )
+        route_check = (
+            None
+            if outcome.required_equipment is None
+            else route_exception_check(
+                tables["RQ_REQB"]["공정"].dropna(), outcome.required_equipment, route_exceptions
+            )
+        )
         return build_input_check(
             outcome,
             stop if outcome.error is None else None,
             blank_cs,
             period=period,
             extra=extra,
+            route_check=route_check,
         )
 
     return get_revision_input_check(

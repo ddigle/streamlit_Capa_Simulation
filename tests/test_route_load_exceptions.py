@@ -44,6 +44,8 @@ from capa_simulation.services.route_load_exceptions import (
     RouteLoadDeclaration,
     build_route_load_bases,
     route_load_basis,
+    route_load_changed_rows,
+    route_load_missing_processes,
 )
 from capa_simulation.services.weighted_unit_capacity import effective_process_capacity_long
 
@@ -656,6 +658,61 @@ def test_the_route_basis_text_names_only_the_rows_the_formula_changes(
 ) -> None:
     assert route_load_basis(process, division, basis, _DECLARED) == expected
     assert route_load_basis(process, division, basis, NO_ROUTE_LOAD_EXCEPTIONS) == ""
+
+
+def test_the_changed_rows_are_the_rows_that_carry_a_basis_text() -> None:
+    """입력 점검 「부하 예외로 바꾼 경로」 의 셈은 경로 추적 「부하량 근거」 칸이 글을 내는 줄과
+    같다 — 줄마다 맞대어 두 자리가 갈리지 않게 한다. 선언 공정의 Core · Top_Dummy(두 표기)
+    줄만이다."""
+    result = _calculate(_DECLARED)
+    changed = route_load_changed_rows(result, _DECLARED)
+    texts = [
+        route_load_basis(process, division, basis, _DECLARED)
+        for process, division, basis in zip(
+            result["공정"], result["WF 구분"], result["소요기준"], strict=True
+        )
+    ]
+
+    assert changed.index.equals(result.index)
+    assert changed.tolist() == [bool(text) for text in texts]
+    assert set(result.loc[changed, "공정"]) == {_EXC}
+    assert set(result.loc[changed, "WF 구분"]) == {"Core", "TOP_DUMMY", "Top_Dummy"}
+    assert int(changed.sum()) == 3 * len(_ROUTE_MONTHS) * len(_STEPS)
+    assert not route_load_changed_rows(result, NO_ROUTE_LOAD_EXCEPTIONS).any()
+
+
+def test_the_changed_rows_skip_other_bases_divisions_and_processes() -> None:
+    """소요기준이 WF 가 아닌 줄 · 산식이 바꾸지 않는 `WF 구분` · 선언 밖 공정은 바꾼 줄이 아니다.
+    공정은 견줌 키로 고르고 받은 색인 그대로 돌려준다."""
+    routes = pd.DataFrame(
+        {
+            "공정": [_EXC, _EXC, f" {_EXC.lower()} ", _OTHER, _EXC],
+            "소요기준": ["WF", "CHIP", "Wafer", "WF", "WF"],
+            "WF 구분": ["Core", "Core", "TOP_DUMMY", "Core", "Buffer"],
+        },
+        index=[5, 6, 7, 8, 9],
+    )
+
+    changed = route_load_changed_rows(routes, _DECLARED)
+
+    assert changed.index.tolist() == [5, 6, 7, 8, 9]
+    assert changed.tolist() == [True, False, True, False, False]
+    assert route_load_changed_rows(routes.iloc[0:0], _DECLARED).empty
+
+
+def test_missing_declared_processes_keep_the_declared_spelling_and_order() -> None:
+    """이번 데이터에 없는 선언 공정은 선언의 원본 표기 · 차례로 돌려준다 — 견줌 키로 있는 공정은
+    빠진다(Admin 고르기 칸의 「(이번 데이터에 없음)」 과 같은 판정)."""
+    declaration = {
+        " DEMO-GONE ": BUFFER_X_CORE_CHIP,
+        f" {_EXC.lower()}": BUFFER_X_CORE_CHIP,
+        "DEMO-LOST": BUFFER_X_CORE_CHIP,
+    }
+
+    assert route_load_missing_processes([_EXC, _OTHER], declaration) == (" DEMO-GONE ", "DEMO-LOST")
+    assert route_load_missing_processes([], NO_ROUTE_LOAD_EXCEPTIONS) == ()
+    with pytest.raises(ValueError, match="모르는 산식 id"):
+        route_load_missing_processes([_EXC], {_EXC: "demo_unknown"})
 
 
 def test_formula_ids_carry_no_process_name() -> None:

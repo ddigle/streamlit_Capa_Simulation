@@ -535,6 +535,57 @@ def test_the_missing_input_alarm_points_at_the_official_table_without_a_place_wo
     assert note["full"].endswith(DYNAMIC_OFFICIAL_KEPT)
 
 
+def _route_factors_app(declared: bool) -> None:
+    import pandas as pd
+
+    from capa_simulation.components.process_capa_view import _render_route_factors
+    from capa_simulation.services.process_capa_detail import (
+        ROUTE_COLUMNS,
+        CommonFactors,
+        MonthEvidence,
+        ProcessMonthTrace,
+    )
+    from capa_simulation.services.route_load_exceptions import (
+        BUFFER_X_CORE_CHIP,
+        NO_ROUTE_LOAD_EXCEPTIONS,
+    )
+
+    routes = pd.DataFrame(
+        [
+            {"WF 구분": "Core", "소요기준": "WF", "부하량": 1.0},
+            {"WF 구분": "Buffer", "소요기준": "WF", "부하량": 2.0},
+        ]
+    ).reindex(columns=ROUTE_COLUMNS)
+    trace = ProcessMonthTrace(
+        process="DEMO-EXC",
+        month=202603,
+        routes=routes,
+        common_factors=CommonFactors(pd.DataFrame(), None, None),
+        excluded=pd.DataFrame(),
+        evidence=MonthEvidence(2, 0, 0, 3.0, 0.0, None, 0, pd.DataFrame(), 0, 0),
+    )
+    _render_route_factors(
+        trace,
+        under_head=False,
+        route_exceptions={"DEMO-EXC": BUFFER_X_CORE_CHIP} if declared else NO_ROUTE_LOAD_EXCEPTIONS,
+    )
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_the_route_table_shows_the_load_basis_only_for_a_declared_process(declared: bool) -> None:
+    """경로별 인자 표는 선언 공정일 때만 「부하량 근거」 칸을 더한다 — 자리 글은 늘리지 않는다
+    (설명은 칸 머리 풍선 · Guide)."""
+    app = AppTest.from_function(_route_factors_app, args=(declared,)).run()
+
+    assert not app.exception and not app.caption
+    (table,) = app.dataframe
+    columns = list(table.value.columns)
+    assert ("부하량 근거" in columns) is declared
+    if declared:
+        assert columns[columns.index("부하량") + 1] == "부하량 근거"
+        assert table.value["부하량 근거"].tolist() == ["Buffer Wafer × Core 구분_Chip", ""]
+
+
 def _no_snapshot_app(process_label: str) -> None:
     from types import SimpleNamespace
     from typing import Any, cast
