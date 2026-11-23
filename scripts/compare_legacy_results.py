@@ -18,7 +18,9 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
 만들어지기 때문이다. CS 가 빈 행은 등록과 같이 파생에서 빠지고, 그 수를 머리 줄에 찍는다.
 파생 전에 원천 `CUSTOM` 을 리비전에 맞춘다(`source_custom_aligned` — 리비전 표가 모두 빈 값
-표지면 원천 칸도 표지로).
+표지면 원천 칸도 표지로). DB 가 `0039`(CUSTOM 칸) 전 사본이면 리비전 표를 0039 와 같은 뜻 — 모든
+행이 빈 값 표지 — 으로 채워 읽고(`revision_compatibility.custom_blank_filled`) 첫 줄 뒤에
+`사본 0039 전` 한 줄을 찍는다 — 이 스크립트도 마이그레이션하지 않는다.
 
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
 (Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
@@ -63,6 +65,11 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
+)
+from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
 )
 from capa_simulation.settings import DUCKDB_PATH  # noqa: E402
 
@@ -115,8 +122,20 @@ def _first_revision_id(connection: duckdb.DuckDBPyConnection, dataset_id: str) -
     return str(row[0])
 
 
-def _tables_for(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict[str, pd.DataFrame]:
-    """기술 키를 뺀 RQ 프레임을 계산 서비스가 받는 형태로 돌려준다."""
+def _migration_level(connection: duckdb.DuckDBPyConnection) -> int | None:
+    """DB 의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다."""
+    try:
+        row = connection.execute("SELECT max(version) FROM app_meta.schema_migration").fetchone()
+    except duckdb.Error:
+        return None
+    return None if row is None or row[0] is None else int(row[0])
+
+
+def _tables_for(
+    connection: duckdb.DuckDBPyConnection, revision_id: str, *, fill_custom: bool = False
+) -> dict[str, pd.DataFrame]:
+    """기술 키를 뺀 RQ 프레임을 계산 서비스가 받는 형태로 돌려준다. `fill_custom` 이면(0039 전
+    사본) CUSTOM 키 표에 빈 값 표지 칸을 채운다."""
     tables: dict[str, pd.DataFrame] = {}
     for physical, logical in _NEEDED_TABLES.items():
         query = (
@@ -124,7 +143,7 @@ def _tables_for(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict
             f"FROM rev_data.{physical} WHERE revision_id = ? ORDER BY source_row_no"
         )
         tables[logical] = connection.execute(query, [revision_id]).fetch_df()
-    return tables
+    return custom_blank_filled(tables) if fill_custom else tables
 
 
 def _report_candidate_columns(raw: pd.DataFrame) -> None:
@@ -208,7 +227,9 @@ def main() -> int:
             [dataset_id],
         ).fetch_df()
         revision_id = _first_revision_id(connection, dataset_id)
-        tables = _tables_for(connection, revision_id)
+        level = _migration_level(connection)
+        before_custom = level is not None and level < CUSTOM_MIGRATION
+        tables = _tables_for(connection, revision_id, fill_custom=before_custom)
     finally:
         connection.close()
 
@@ -239,6 +260,11 @@ def main() -> int:
         f" · 경로 일부 빠진 계획 {derived.blank_cs.plans_missing_routes:,}줄"
         f" · 대조 {len(core):,}행"
     )
+    if before_custom:
+        print(
+            f"{BEFORE_CUSTOM_COPY} — 마이그레이션 최고 {level} · CUSTOM 키 표는 0039 와 같이 모든 "
+            "행을 빈 값 표지(-)로 채워 읽었다(DB 는 고치지 않는다)"
+        )
     _report_candidate_columns(raw)
 
     frames: list[pd.DataFrame] = []

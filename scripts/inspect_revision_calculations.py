@@ -17,6 +17,11 @@ Markdown 블록**을 찍는다.
 ÷ 소요대수). 경로 키가 없는 옛 리비전은 앱이 불러오기를 막으므로
 (`revision_compatibility`) 계산하지 않고 「불러오기 막힘」으로 센다.
 
+**0039 전 사본.** 사본의 마이그레이션 최고 번호가 `0039`(CUSTOM 칸) 전이면 CUSTOM 키 표에 칸이
+없다. 이 스크립트는 마이그레이션하지 않으므로 그 표를 0039 와 같은 뜻 — 모든 행이 빈 값 표지 —
+으로 채워 읽고(`revision_compatibility.custom_blank_filled`) 머리에 `사본 0039 전` 한 줄을 찍는다.
+0039 뒤 사본은 채우지 않는다 — 칸이 없으면 계산이 그대로 멈춰 드러난다.
+
 소요대수까지 서면 **저장·발행 검사가 그다음에 보는 Density 환산**도 돌린다
 (`capacity_gate.density_error` — HOME 의 `RQ_PKG_PLAN` × `RQ_CHIP_EQ` 를 조회기간이 아닌
 시나리오 전체 기간으로, EDP 계획까지). 대당 Capa·소요대수는 `구분_EQ` 를 쓰지 않아 `계산` 이
@@ -94,6 +99,9 @@ from capa_simulation.services.required_equipment import (  # noqa: E402
     calculate_required_equipment,
 )
 from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
     route_key_incompatible_tables,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate  # noqa: E402
@@ -385,23 +393,41 @@ def list_revisions(
     return revisions
 
 
+def migration_level(connection: duckdb.DuckDBPyConnection) -> int | None:
+    """사본의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다."""
+    try:
+        row = connection.execute("SELECT max(version) FROM app_meta.schema_migration").fetchone()
+    except duckdb.Error:
+        return None
+    return None if row is None or row[0] is None else int(row[0])
+
+
+def before_custom_migration(level: int | None) -> bool:
+    """CUSTOM 칸(0039) 전 사본인가 — 번호를 읽지 못했으면 채우지 않는다."""
+    return level is not None and level < CUSTOM_MIGRATION
+
+
 def load_tables(
-    connection: duckdb.DuckDBPyConnection, revision: RevisionRow
+    connection: duckdb.DuckDBPyConnection, revision: RevisionRow, *, fill_custom: bool = False
 ) -> dict[str, pd.DataFrame]:
+    """리비전 하나의 16표. `fill_custom` 이면(0039 전 사본) CUSTOM 키 표에 칸을 채운다."""
     if revision.dataset_id is None:
         raise LookupError("데이터셋 없음")
-    return {
+    tables = {
         name: _load_reference_frame(
             connection, name, revision_id=revision.revision_id, dataset_id=revision.dataset_id
         )
         for name in REFERENCE_TABLES
     }
+    return custom_blank_filled(tables) if fill_custom else tables
 
 
-def inspect_revision(connection: duckdb.DuckDBPyConnection, revision: RevisionRow) -> Outcome:
+def inspect_revision(
+    connection: duckdb.DuckDBPyConnection, revision: RevisionRow, *, fill_custom: bool = False
+) -> Outcome:
     started = time.perf_counter()
     try:
-        tables = load_tables(connection, revision)
+        tables = load_tables(connection, revision, fill_custom=fill_custom)
     except Exception as exc:  # 읽지 못한 리비전도 다음 리비전은 잰다
         outcome = Outcome(UNREADABLE, stage="읽기", kind=type(exc).__name__)
     else:
@@ -750,6 +776,14 @@ def _open_read_only(path: Path) -> tuple[duckdb.DuckDBPyConnection | None, str |
         return None, f"`{path.name}` 파일을 열지 못했다 — {type(exc).__name__}", 2
 
 
+def _before_custom_line(level: int | None) -> str:
+    """0039 전 사본 한 줄 — 사본을 고치지 않고 읽을 때만 채웠다는 것."""
+    return (
+        f"- {BEFORE_CUSTOM_COPY} — 마이그레이션 최고 {level} · CUSTOM 키 표는 0039 와 같이 "
+        "모든 행을 빈 값 표지(`-`)로 채워 읽었다(사본은 고치지 않는다)"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _use_utf8_stdout()
     args = parse_args(argv)
@@ -786,6 +820,8 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
     try:
         scenarios = len({revision.scenario_no for revision in revisions})
         archived = len({revision.scenario_no for revision in revisions if revision.archived})
+        level = migration_level(connection)
+        fill_custom = before_custom_migration(level)
         sink.emit(
             "\n".join(
                 [
@@ -793,6 +829,7 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
                     "",
                     f"- 실행 {datetime.now():%Y-%m-%d %H:%M} · DB `{path.name}` · 시나리오 "
                     f"{scenarios:,}(보관 {archived:,}) · 리비전 {len(revisions):,}",
+                    *([_before_custom_line(level)] if fill_custom else []),
                     "",
                     *_table(REVISION_HEADERS, ()),
                 ]
@@ -800,7 +837,7 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
         )
         # 리비전마다 끝나는 대로 한 줄 — 중간에 멈춰도 그때까지의 줄이 남는다.
         for revision in revisions:
-            outcome = inspect_revision(connection, revision)
+            outcome = inspect_revision(connection, revision, fill_custom=fill_custom)
             outcomes.append(outcome)
             sink.emit("| " + " | ".join(revision_row(revision, outcome)) + " |")
     except KeyboardInterrupt:

@@ -48,7 +48,10 @@
   (코드 1). 프로세스를 살피지 못하면 잠금만 보고 그 사실을 한 줄 찍는다 — 런북 1-1 로 앱이
   꺼진 것을 먼저 본다. 사본만 열면 앱을 보지 않는다.
 - **읽기만 한다.** 두 DB 를 `read_only=True` 로 열고 저장소(Repository)를 만들지 않는다 —
-  저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다).
+  저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다). 그래서 시뮬레이션 사본이 `0039`(CUSTOM
+  칸) 전이면 리비전 표를 0039 와 같은 뜻 — CUSTOM 키 표의 모든 행이 빈 값 표지 — 으로 채워 읽고
+  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 칸이 있을 때만 CUSTOM 조건을 붙이며,
+  블록 앞에 `사본 0039 전` 한 줄을 찍는다. 0039 뒤 사본은 채우지 않는다.
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
   코드, 키별 값, 합계 물량, 파일 경로, **예외 문구**를 찍지 않는다 — 이 앱의 오류 문구에는
   설계상 식별값이 박혀 있다. 실패는 예외 종류(클래스 이름)만 적는다. 출력은 리뷰 문서를 거쳐
@@ -256,6 +259,12 @@ from capa_simulation.services.required_equipment import (  # noqa: E402
     UNROUTED_UNUSED_REASON,
     calculate_required_equipment,
     required_exclusion_counts,
+)
+from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_COLUMN,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
 )
 from capa_simulation.services.scenario_transform import (  # noqa: E402
     MONTHLY_TABLES,
@@ -646,6 +655,30 @@ def _versions(connection: duckdb.DuckDBPyConnection, table: str) -> list[int] | 
     except duckdb.Error:
         return None
     return [int(row[0]) for row in rows]
+
+
+def _before_custom(connection: duckdb.DuckDBPyConnection) -> bool:
+    """시뮬레이션 사본이 CUSTOM 칸(0039) 전인가 — 마이그레이션 최고 번호로 본다. 기록 표를 읽지
+    못하면 채우지 않는다(거짓)."""
+    versions = _versions(connection, "app_meta.schema_migration")
+    return versions is not None and max(versions, default=0) < CUSTOM_MIGRATION
+
+
+def _custom_filled(
+    connection: duckdb.DuckDBPyConnection, tables: dict[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """0039 전 사본이면 CUSTOM 키 표에 빈 값 표지 칸을 채운 묶음, 아니면 받은 그대로."""
+    return custom_blank_filled(tables) if _before_custom(connection) else tables
+
+
+def _before_custom_line(connection: duckdb.DuckDBPyConnection) -> str:
+    """블록 앞 한 줄 — 0039 전 사본을 고치지 않고 채워 읽었다는 것."""
+    versions = _versions(connection, "app_meta.schema_migration") or []
+    return (
+        f"- {BEFORE_CUSTOM_COPY} — 시뮬레이션 마이그레이션 최고 {max(versions, default=0)} · "
+        "리비전 표의 CUSTOM 키 표는 0039 와 같이 모든 행을 빈 값 표지(`-`)로 채워 읽고, 손 SQL 은 "
+        "CUSTOM 조건 없이 맞댔다(사본은 고치지 않는다)\n"
+    )
 
 
 def _migration_line(
@@ -1131,7 +1164,11 @@ def _extra_processes(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> 
 def _revision_tables(
     connection: duckdb.DuckDBPyConnection, revision_id: str, dataset_id: str
 ) -> dict[str, pd.DataFrame]:
-    """리비전 하나의 표 — 리비전 표 + 데이터셋 표. 앱이 리비전을 읽는 길과 같은 자리다."""
+    """리비전 하나의 표 — 리비전 표 + 데이터셋 표. 앱이 리비전을 읽는 길과 같은 자리다.
+
+    0039 전 사본이면 CUSTOM 키 표에 칸을 채운다 — 계산(`_calculate_required`)과 원천 맞춤
+    (`source_custom_aligned`) · 8-12 가 모두 이 묶음을 받아 같은 채운 표를 본다.
+    """
     tables: dict[str, pd.DataFrame] = {}
     for logical, physical in REVISION_TABLES.items():
         tables[logical] = load_frame(
@@ -1149,7 +1186,7 @@ def _revision_tables(
             owner_column="dataset_id",
             owner_id=dataset_id,
         )
-    return tables
+    return _custom_filled(connection, tables)
 
 
 def _raw_core_data(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> pd.DataFrame:
@@ -1683,6 +1720,7 @@ def load_st_reference(session: Session) -> StReference | str | None:
             for row in connection.execute(_ST_CANDIDATES_SQL.format(table=quote(table))).fetchall()
         }
         revisions = [str(row[0]) for row in ordered]
+        fill = _before_custom(connection)
         for position in range(len(revisions) - 1, -1, -1):
             revision_id = revisions[position]
             if revision_id == source.revision_id or revision_id not in candidates:
@@ -1694,6 +1732,8 @@ def load_st_reference(session: Session) -> StReference | str | None:
                 owner_column="revision_id",
                 owner_id=revision_id,
             )
+            if fill:
+                upeh = custom_blank_filled({"RQ_UPEH": upeh})["RQ_UPEH"]
             if _mi_rows(upeh):
                 return StReference(upeh=upeh, order=position + 1, total=len(revisions))
     except (duckdb.Error, RuntimeError) as exc:
@@ -3342,21 +3382,30 @@ CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
 # 음수)인 칸 하나에도 그 리비전 계산이 멈췄다. 이 SQL 은 그런 칸을 리비전마다 센다 — 고침이 살린
 # 칸의 규모다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다(`Area_Name` 은 대소문자도
 # 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다. `only_dropped` 가 거짓인 칸은 남는 경로가
-# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12).
-_PERFORMANCE_JOIN: Final = (
-    '{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
-    'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
-    'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
-    'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
-    'AND trim({alias}."Stack") = perf.k AND trim({alias}."CUSTOM") = perf.cu '
-    'AND trim({alias}."WF 구분") = perf.w'
-)
+# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12). `CUSTOM` 은 세 표에 칸이 있을 때만 맞댄다 — 0039 전
+# 사본에는 칸이 없고, 그 사본은 모든 행이 한 값(빈 값 표지)과 같은 뜻이라 빼고 맞대도 같다.
+_PERFORMANCE_TABLES: Final = ("rq_upeh", "rq_lot_ratio", "rq_wf_ratio")
+
+
+def _performance_join(alias: str, *, custom: bool) -> str:
+    """측정률 표(`alias`)를 경로(`perf`)에 붙이는 조건 — 계산과 같은 키."""
+    custom_condition = f'AND trim({alias}."CUSTOM") = perf.cu ' if custom else ""
+    return (
+        f'{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
+        f'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
+        f'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
+        f'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
+        f'AND trim({alias}."Stack") = perf.k {custom_condition}'
+        f'AND trim({alias}."WF 구분") = perf.w'
+    )
+
+
 _BLANK_CAPACITY_CELLS: Final = """
 WITH {picked},
 perf AS MATERIALIZED (
     SELECT u.revision_id, u."생산계획년월" AS m, trim(u."공정") AS p, trim(u."양산구분") AS q,
            lower(trim(u."Area_Name")) AS a, trim(u."STEP_SEQ") AS s, trim(u."MCP_SEQ") AS c,
-           trim(u."제품정보") AS g, trim(u."Stack") AS k, trim(u."CUSTOM") AS cu,
+           trim(u."제품정보") AS g, trim(u."Stack") AS k,{custom_column}
            trim(u."WF 구분") AS w,
            coalesce(lower(trim(u."Area_Name")) = 'main' AND u."UPEH" <= 0, false) AS upeh_out
     FROM rev_data.rq_upeh AS u JOIN picked USING (revision_id)
@@ -3546,28 +3595,48 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
 
     접는 규칙은 등록·계산과 같은 `frame_contracts.duplicate_route_rows` 다(앞뒤 공백 · 소요기준
     `WAFER` · `Area_Name` 대소문자). 리비전마다 따로 읽어 한 번에 한 리비전만 메모리에 둔다.
+    `CUSTOM` 은 칸이 있을 때만 키에 든다 — 0039 전 사본은 칸이 없고 모든 행이 한 값과 같은 뜻이다.
     """
-    columns = ", ".join(f'"{column}"' for column in REQB_COLUMNS)
+    keys = [
+        column
+        for column in REQB_COLUMNS
+        if column != CUSTOM_COLUMN or _custom_columns_present(connection, ("rq_reqb",))
+    ]
+    columns = ", ".join(f'"{column}"' for column in keys)
     found: Counter[str] = Counter()
     for revision_id in _picked_revisions(connection, scope):
         frame = connection.execute(
             f"SELECT {columns} FROM rev_data.rq_reqb WHERE revision_id = ?", [revision_id]
         ).fetch_df()
-        folded = duplicate_route_rows(frame, REQB_COLUMNS) & ~frame.duplicated(subset=REQB_COLUMNS)
+        folded = duplicate_route_rows(frame, keys) & ~frame.duplicated(subset=keys)
         if folded.any():
             found[revision_id] = int(folded.sum())
     return found
 
 
+def _custom_columns_present(connection: duckdb.DuckDBPyConnection, tables: Sequence[str]) -> bool:
+    """`rev_data` 의 그 표들에 CUSTOM 칸이 모두 있는가 — 0039 전 사본이면 거짓이다."""
+    marks = ", ".join("?" for _ in tables)
+    found = _scalar(
+        connection,
+        "SELECT count(DISTINCT table_name) FROM duckdb_columns() "
+        f"WHERE schema_name = 'rev_data' AND column_name = ? AND table_name IN ({marks})",
+        [CUSTOM_COLUMN, *tables],
+    )
+    return found == len(tables)
+
+
 def _blank_capacity_cells(
     connection: duckdb.DuckDBPyConnection, scope: CensusScope, condition: str
 ) -> Counter[str]:
+    custom = _custom_columns_present(connection, _PERFORMANCE_TABLES)
     return _by_owner(
         connection,
         _BLANK_CAPACITY_CELLS.format(
             picked=scope.picked,
-            lot_join=_PERFORMANCE_JOIN.format(alias="lr"),
-            wf_join=_PERFORMANCE_JOIN.format(alias="wr"),
+            custom_column=' trim(u."CUSTOM") AS cu,' if custom else "",
+            lot_join=_performance_join("lr", custom=custom),
+            wf_join=_performance_join("wr", custom=custom),
             condition=condition,
         ),
     )
@@ -3910,14 +3979,16 @@ def census_object_columns(
     """본 리비전마다 리비전 표를 앱이 읽는 길(`load_frame`) 그대로 읽어 객체 칸을 값 종류로 센다.
 
     한 번에 한 리비전의 한 표만 메모리에 둔다. 행이 없는 표는 셀 값이 없어 세지 않는다. `hit` 은
-    `섞임` 칸이 하나라도 있는 리비전 수다. 값 · 칸 이름은 내지 않는다.
+    `섞임` 칸이 하나라도 있는 리비전 수다. 값 · 칸 이름은 내지 않는다. 0039 전 사본은 앱이 0039 를
+    건 뒤 읽을 꼴(CUSTOM 칸 — 글자만)로 채워 센다.
     """
     counts: Counter[str] = Counter()
     hit = 0
     revisions = _picked_revisions(connection, scope)
+    fill = _before_custom(connection)
     for revision_id in revisions:
         mixed_before = counts[OBJECT_MIXED]
-        for physical in REVISION_TABLES.values():
+        for logical, physical in REVISION_TABLES.items():
             frame = load_frame(
                 connection,
                 schema="rev_data",
@@ -3925,6 +3996,8 @@ def census_object_columns(
                 owner_column="revision_id",
                 owner_id=revision_id,
             )
+            if fill:
+                frame = custom_blank_filled({logical: frame})[logical]
             if not len(frame):
                 continue
             for position in range(frame.shape[1]):
@@ -4237,17 +4310,23 @@ def _grid_slice(spec: GridTableSpec, frame: pd.DataFrame, start: int, end: int) 
 def _measure_grid_revision(
     connection: duckdb.DuckDBPyConnection, revision_id: str, tallies: Sequence[GridTally]
 ) -> str | None:
-    """리비전 하나의 아홉 표를 잰다. 기간을 정하지 못하면(UPEH 가 비거나 달 꼴이 틀림) 그 종류."""
-    frames = {
-        tally.spec.table: load_frame(
-            connection,
-            schema="rev_data",
-            table_name=REVISION_TABLES[tally.spec.table],
-            owner_column="revision_id",
-            owner_id=revision_id,
-        )
-        for tally in tallies
-    }
+    """리비전 하나의 아홉 표를 잰다. 기간을 정하지 못하면(UPEH 가 비거나 달 꼴이 틀림) 그 종류.
+
+    0039 전 사본이면 CUSTOM 키 표(UPEH · 측정률 둘)에 칸을 채운다 — 편집 표 차원이 CUSTOM 을 싣는다.
+    """
+    frames = _custom_filled(
+        connection,
+        {
+            tally.spec.table: load_frame(
+                connection,
+                schema="rev_data",
+                table_name=REVISION_TABLES[tally.spec.table],
+                owner_column="revision_id",
+                owner_id=revision_id,
+            )
+            for tally in tallies
+        },
+    )
     try:
         start, end = available_month_range(frames["RQ_UPEH"], "RQ_UPEH")
     except Exception as exc:  # 화면도 이 리비전에서는 편집 표를 세우지 않는다 — 종류만 적는다
@@ -6857,6 +6936,8 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         session.close()
         sink.emit(_LOCK_MESSAGE)
         return 1
+    if session.simulation is not None and _before_custom(session.simulation):
+        sink.emit(_before_custom_line(session.simulation))
     interrupted = False
     try:
         for name in CHECKS:

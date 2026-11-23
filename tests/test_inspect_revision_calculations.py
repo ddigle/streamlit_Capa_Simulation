@@ -27,8 +27,10 @@ from typing import TypedDict
 import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import database_before_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
+from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import (
     REVISION_TABLES,
@@ -39,6 +41,7 @@ from capa_simulation.services.required_equipment import (
     REQB_COLUMNS,
     calculate_required_equipment,
 )
+from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -762,6 +765,92 @@ def test_the_output_file_is_emptied_and_holds_the_same_markdown(
     assert "STALE" not in written
     assert written.startswith("<!-- inspect_revision_calculations.py")
     assert written.strip() == output.strip()
+
+
+def _comparable(output: str) -> list[str]:
+    """실행 시각 · 걸린 초를 뗀 줄 — 같은 DB 를 두 번 돌린 출력을 견준다."""
+    lines = []
+    for line in output.splitlines():
+        if line.startswith(("- 실행 ", "- 걸린 시간 ")):
+            continue
+        if line.startswith("| S"):
+            line = line.rsplit(" | ", 1)[0]
+        lines.append(line)
+    return lines
+
+
+def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 사본(CUSTOM 칸 · 0039 기록 없음)은 마이그레이션하지 않고 0039 와 같은 뜻으로 채워
+    읽는다 — 리비전 줄 · 합계 · 갈래가 0039 뒤 사본과 같고, 머리에 `사본 0039 전` 한 줄만 더 있다.
+    채우지 않으면 모든 리비전이 대당 Capa 의 「컬럼 없음(CUSTOM)」 으로 멈춘다."""
+    before = database_before_custom(simulation_db, tmp_path / "capa_simulation.duckdb")
+    digest = _md5(before)
+
+    code, old = _run(capsys, "--database", str(before))
+    _, new = _run(capsys, "--database", str(simulation_db))
+
+    assert code == 0
+    assert _md5(before) == digest
+    assert SENTINEL not in old
+    marker = [line for line in old.splitlines() if "사본 0039 전" in line]
+    assert marker == [
+        "- 사본 0039 전 — 마이그레이션 최고 38 · CUSTOM 키 표는 0039 와 같이 모든 행을 빈 값 "
+        "표지(`-`)로 채워 읽었다(사본은 고치지 않는다)"
+    ]
+    lines = old.splitlines()
+    assert lines[lines.index(marker[0]) - 1].startswith("- 실행 ")
+    assert "사본 0039 전" not in new
+    assert [line for line in _comparable(old) if line != marker[0]] == _comparable(new)
+    assert "컬럼 없음(CUSTOM)" not in old
+
+
+def test_the_filled_tables_equal_the_tables_of_the_migrated_copy(
+    simulation_db: Path, tmp_path: Path
+) -> None:
+    """채운 표는 0039 뒤 사본에서 읽은 표와 칸 자리 · dtype · 값까지 같다 — 칸은 끝이고 글자
+    객체 칸이다."""
+    before = database_before_custom(simulation_db, tmp_path / "capa_simulation.duckdb")
+    with (
+        duckdb.connect(str(before), read_only=True) as old,
+        duckdb.connect(str(simulation_db), read_only=True) as new,
+    ):
+        assert script.before_custom_migration(script.migration_level(old))
+        assert not script.before_custom_migration(script.migration_level(new))
+        revisions = script.list_revisions(new, active_only=False)
+        assert revisions == script.list_revisions(old, active_only=False)
+        for revision in revisions:
+            filled = script.load_tables(old, revision, fill_custom=True)
+            migrated = script.load_tables(new, revision)
+            assert list(filled) == list(migrated)
+            for name, frame in migrated.items():
+                pd.testing.assert_frame_equal(filled[name], frame, obj=name)
+
+
+def test_a_copy_marked_after_the_custom_migration_is_not_filled(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """채우기는 마이그레이션 번호로만 가른다 — 0039 를 건 것으로 적힌 사본에 칸이 없으면 채우지 않고
+    계산이 그대로 멈춰 드러난다(칸이 없어진 0039 뒤 DB 를 조용히 표지로 덮지 않는다)."""
+    broken = database_before_custom(simulation_db, tmp_path / "capa_simulation.duckdb")
+    with duckdb.connect(str(broken)) as connection:
+        for migration in load_migrations():
+            if migration.version >= CUSTOM_MIGRATION:
+                connection.execute(
+                    "INSERT INTO app_meta.schema_migration (version, name, checksum) "
+                    "VALUES (?, ?, ?)",
+                    [migration.version, migration.name, migration.checksum],
+                )
+
+    code, output = _run(capsys, "--database", str(broken))
+
+    assert code == 0
+    assert "사본 0039 전" not in output
+    assert (
+        "| S1 | r1 | 내장 시드 | - | v1 | 멈춤 — 대당 Capa(ValueError · RQ_UPEH · "
+        "컬럼 없음(CUSTOM)) |" in output
+    )
 
 
 def test_the_script_runs_as_a_program(

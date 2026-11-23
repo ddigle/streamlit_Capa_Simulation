@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import database_before_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.models import ScenarioCreate
@@ -177,3 +178,40 @@ def test_a_constant_source_custom_under_a_blank_revision_compares_like_a_blank_s
     pd.testing.assert_frame_equal(written["constant"], written["blank"])
     assert "신규에만 있음 0건" in printed["blank"]
     assert written["blank"]["기존값"].notna().any()
+
+
+def test_a_copy_before_the_custom_column_compares_like_the_migrated_copy(
+    seeded_with_clone: tuple[Path, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """0039 전 사본(CUSTOM 칸 · 0039 기록 없음)도 마이그레이션하지 않고 0039 와 같은 뜻으로 채워
+    대조한다 — 출력 · 상세 CSV 가 0039 뒤 사본과 같고, 첫 줄 바로 뒤에 `사본 0039 전` 한 줄만 더
+    있다. 채우지 않으면 계산이 「필수 컬럼이 없습니다: CUSTOM」 으로 멈춘다."""
+    source, seed_dataset = seeded_with_clone
+    paths = {
+        "migrated": source,
+        "before": database_before_custom(source, tmp_path / "capa_simulation.duckdb"),
+    }
+    printed: dict[str, list[str]] = {}
+    written: dict[str, pd.DataFrame] = {}
+    for name, path in paths.items():
+        output = tmp_path / f"{name}.csv"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["compare_legacy_results.py", "--database", str(path), "--output", str(output)],
+        )
+        assert compare.main() == 0
+        printed[name] = capsys.readouterr().out.replace(str(output), "<csv>").splitlines()
+        written[name] = pd.read_csv(output, encoding="utf-8-sig")
+
+    before = printed["before"]
+    assert before[0].startswith(f"데이터셋 {seed_dataset} · 리비전 1 ")
+    assert before[1] == (
+        "사본 0039 전 — 마이그레이션 최고 38 · CUSTOM 키 표는 0039 와 같이 모든 행을 빈 값 "
+        "표지(-)로 채워 읽었다(DB 는 고치지 않는다)"
+    )
+    assert [before[0], *before[2:]] == printed["migrated"]
+    pd.testing.assert_frame_equal(written["before"], written["migrated"])

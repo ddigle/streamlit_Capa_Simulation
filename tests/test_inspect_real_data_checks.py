@@ -33,6 +33,7 @@ from typing import Any, Final
 import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import database_before_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
@@ -47,6 +48,7 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSaveRequest,
 )
+from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.core_data_derivation import (
     CUSTOM_BLANK,
@@ -3499,6 +3501,53 @@ def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
         line.startswith("- 사용기준(`equipment_contract.counts_for_capacity`") for line in caught
     ), caught
     assert not [line for line in _summary(output) if pattern.search(line)]
+
+
+def _without_timings(output: str) -> list[str]:
+    """`걸린 시간` 줄을 뗀 출력 줄 — 같은 표를 두 번 잰 출력을 견준다."""
+    return [line for line in output.splitlines() if not line.startswith("- 걸린 시간 ")]
+
+
+def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
+    simulation_db: Path, equipment_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 사본(CUSTOM 칸 · 0039 기록 없음)도 마이그레이션하지 않고 읽는다 — 리비전 표는
+    0039 와 같은 뜻으로 채우고(8-2 · 8-3 계산 · 8-10T · 8-11 · 8-12) 손 SQL(8-10 C8 · C9 · 8-12
+    목록)은 CUSTOM 조건 없이 맞대, 블록 앞 `사본 0039 전` 한 줄과 마이그레이션 번호(8-1 줄 ·
+    요약 `8-1`) 말고는 0039 뒤 사본과 출력이 같다. 채우지 않으면 대조 · 소요대수가 「컬럼
+    없음(CUSTOM)」 으로, 손 SQL 이 `BinderException` 으로 멈춘다."""
+    before = database_before_custom(simulation_db, tmp_path / "capa_simulation.duckdb")
+    digest = _md5(before)
+    arguments = ("--equipment-database", str(equipment_db))
+
+    code, old = _run(capsys, "--database", str(before), *arguments)
+    _, new = _run(capsys, "--database", str(simulation_db), *arguments)
+
+    assert code == 0
+    assert _md5(before) == digest
+    _assert_no_leak(old)
+    marker = (
+        "- 사본 0039 전 — 시뮬레이션 마이그레이션 최고 38 · 리비전 표의 CUSTOM 키 표는 0039 와 "
+        "같이 모든 행을 빈 값 표지(`-`)로 채워 읽고, 손 SQL 은 CUSTOM 조건 없이 맞댔다(사본은 "
+        "고치지 않는다)"
+    )
+    old_lines = _without_timings(old)
+    assert old_lines.count(marker) == 1
+    at = old_lines.index(marker)
+    # 블록 앞 한 줄 — 빈 줄 하나를 두고 첫 블록 머리가 선다.
+    assert old_lines[at + 1] == "" and old_lines[at + 2].startswith("### 8-1.")
+    assert "사본 0039 전" not in new
+    assert not _self_check_pattern().search(marker)
+    assert all("사본 0039 전" not in line for line in _summary(old))
+    moved = ("- 시뮬레이션 DB `", "- 8-1 S ")
+    old_moved = [line for line in old_lines if line.startswith(moved)]
+    code_max = max(migration.version for migration in load_migrations())
+    assert f"(최고 38 · 코드 {code_max}, **코드보다 낮다** — 사본이라" in old_moved[0]
+    assert old_moved[1].startswith(f"- 8-1 S 38/{code_max} · ")
+    rest = [*old_lines[:at], *old_lines[at + 2 :]]
+    assert [line for line in rest if not line.startswith(moved)] == [
+        line for line in _without_timings(new) if not line.startswith(moved)
+    ]
 
 
 def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(

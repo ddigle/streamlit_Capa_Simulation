@@ -4543,6 +4543,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분과, CUSTOM 키 표(`custom_keyed_tables()` — 계약 `derived_keys` 에
     `CUSTOM` 이 든 표)에 CUSTOM 칸이 없거나 값이 빈(NULL · 빈 글자 · 공백뿐) 저장분이다(`custom_incompatible_tables`). 빈 값
     표지 `"-"` 는 통과하고 빈 표는 건너뛴다. 0039 뒤에는 걸리지 않는 안전망이다(5장 28). 값을 추정해 채우지 않는다.
+  - `custom_blank_filled(tables)` 는 마이그레이션하지 않고 0039 전 DB 사본을 여는 확인 스크립트만 부른다(10-1 「0039 전 DB
+    사본」) — 칸이 없는 CUSTOM 키 표(빈 표 포함)에만 표지 칸을 끝에 붙인다. 0039 가 옛 행에 넣는 것과 같은 뜻이고, 칸이 있는 표는
+    빈 값이 있어도 그대로 둬 안전망이 막는다. 스크립트가 견주는 번호(`CUSTOM_MIGRATION`)와 찍는 표지(`BEFORE_CUSTOM_COPY` —
+    「사본 0039 전」)도 여기 둔다. 앱의 불러오기 길은 부르지 않는다.
 - `src/capa_simulation/services/past_data.py` — 적재 시점 이전 과거 구간 입력의 정규화·검증과 계산 결과 병합이다.
   산출하지 않는다 — Capa 는 확보율에서 곧장 나오고 B/N 순위는 확보율 오름차순이다.
   - 같은 달이 양쪽에 있으면 계산이 이긴다. `display_month_range` 는 HOME 계산 캐시 키의 달이라 HOME 과
@@ -9843,6 +9847,15 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   6-3 a · b · c · 6-4 버킷 명령)은 사용자가 Claude 밖의 별도 PowerShell 창에서 친다 — `!` 도 아니다(런북 0장). `inspect_wf_division.py`
   · `inspect_db_counts.py`(7-8)도 `--output` 으로 결과 파일을 남긴다. 사내 권한 템플릿은 그 스크립트들의 런북 꼴 줄을 deny 로 막는다(사용자가 고정한 auto 모드는 allow
   가 없어도 묻지 않고 통과시킬 수 있다 — `tests/test_runbook_no_internal_db_reads.py`).
+- **0039 전 DB 사본도 확인 스크립트가 그대로 읽는다.** 확인 스크립트는 사본을 `read_only` 로 열고 마이그레이션하지 않는다 — 적용
+  전 운영 DB 사본이나 운영 앱이 그 배포로 첫 저장을 하기 전의 버킷 사본처럼 시뮬레이션 마이그레이션 최고 번호가 `0039`(CUSTOM 칸)
+  전이면 CUSTOM 키 표에 칸이 없다. `inspect_revision_calculations.py` · `inspect_real_data_checks.py` · `inspect_db_counts.py`(줄 4) ·
+  `compare_legacy_results.py` 는 그때만 리비전 표를 `revision_compatibility.custom_blank_filled` 로 0039 와 같은 뜻(모든 행 표지
+  `-`)으로 채워 읽고, 손 SQL(`inspect_real_data_checks` 의 측정률 조인 · `RQ_REQB` 접기)은 칸이 있을 때만 CUSTOM 을 맞대며,
+  `사본 0039 전` 한 줄을 찍는다 — 6-3 a 는 머리의 실행 줄 뒤, 8장은 첫 블록 앞, 7-8 은 줄 4 바로 뒤(끝 줄은 그대로 `mixed`), 대조
+  스크립트는 첫 줄 뒤. 그래서 출력은 마이그레이션 번호와 그 한 줄 말고는 0039 를 건 사본과 같다(네 스크립트의 시험이 0039 전으로
+  되감은 사본으로 맞댄다 — `tests/before_custom_copy.py`). 0039 뒤로 적힌 사본은 채우지 않는다 — 칸이 없으면 계산이 그대로 멈춰
+  드러난다.
 - **사내 에이전트는 사내 DB(BigDataQuery · 운영 DB · 사본)를 여는 명령을 스스로 치지 않는다**(2026-11-11 사용자 결정 — 「사내 DB 를
   claude 가 읽게끔 하는 것은 보안위반」, 런북 0장. 2026-10-22 「사본 DB 를 보는 것까지는 괜찮다」 를 대신한다). 데이터가 꼭 필요하면
   사용자에게 먼저 요청하고, 사용자가 별도 창에서 돌린 결과 파일만 읽는다. 그래서 사외가 사내에 묻는 실데이터 질문은 배포를 만들기
@@ -9987,9 +10000,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 6. README, AGENTS, TODO 갱신
 7. **새 업무 키는 한 변경에** — 계약 · 변환 · 마이그레이션(값 불변 · 옛 리비전 계산 전후 같음 시험) · 계산 상수 · 리터럴
    조인 · 편집 차원 · 표시 차례 · 월 머지 · 부대공정 · 가상 제품 · 비교 GAP · `revision_compatibility` 안전망 · 확인 스크립트
-   SQL · 기존 결과 대조 원천 맞춤. 반만 넣으면 두 값이 말없이 접히거나 부하가 두 배가 된다(`CUSTOM` 선례 — 4장). 리터럴
-   표 시험은 손으로 칸을 더하지 않고 계약에서 칸을 붙이는 도우미(`tests/custom_key_tables.py` 의 `with_blank_custom` ·
-   두 부품 견본 `two_part_tables`)를 쓴다.
+   SQL 과 마이그레이션 전 사본 갈래(10-1 「0039 전 DB 사본」) · 기존 결과 대조 원천 맞춤. 반만 넣으면 두 값이 말없이
+   접히거나 부하가 두 배가 된다(`CUSTOM` 선례 — 4장). 리터럴 표 시험은 손으로 칸을 더하지 않고 계약에서 칸을 붙이는
+   도우미(`tests/custom_key_tables.py` 의 `with_blank_custom` · 두 부품 견본 `two_part_tables`)를 쓴다.
 
 ### 계산식 변경
 

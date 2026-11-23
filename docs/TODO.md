@@ -1847,10 +1847,10 @@
 
 ### 업무 키 승격
 
-- [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격과 산출 결과 소요대수 표 ·
-  그 제외 목록의 부품 줄(`required_equipment.RESULT_DIMENSIONS`)은 들어왔다(3장 「계산」 2026-11-23). 남은 것: 확인 스크립트
-  셋이 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워 읽는 갈래, 합쳐 보는 화면(HOME 도넛 · 제품별
-  비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나)).
+- [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격, 산출 결과 소요대수 표 ·
+  그 제외 목록의 부품 줄(`required_equipment.RESULT_DIMENSIONS`), 확인 스크립트가 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워
+  읽는 갈래는 들어왔다(3장 「계산」 2026-11-23). 남은 것: 합쳐 보는 화면(HOME 도넛 · 제품별 비중 · HOME 상세 · 공정 Capa 상세
+  「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나)).
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
   행」(같으면 원천 행 순위)을 골라 실값 유실만 막는다(결정 기록). 선례는 `RQ_PKG_PLAN` 의 `Pack Code` 승격(`2dcbf0a`)이지만 그때는 `0013` 이
@@ -2559,6 +2559,13 @@
 
 ### 계산
 
+- (2026-11-23) **확인 스크립트는 0039 전 DB 사본을 0039 와 같은 뜻으로 채워 읽는다 — 앱은 채우지 않는다** — 마이그레이션하지
+  않는 읽기 전용 스크립트 넷(`inspect_revision_calculations` · `inspect_real_data_checks` · `inspect_db_counts` · 사외 디버깅용
+  `compare_legacy_results`)이 시뮬레이션 마이그레이션 최고 번호가 39 보다 낮을 때만 CUSTOM 키 표에 표지 `-` 칸을 붙이고
+  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 칸이 있을 때만 CUSTOM 을 맞대며, `사본 0039 전` 한 줄을 찍는다. 출력은
+  마이그레이션 번호와 그 한 줄 말고는 0039 를 건 사본과 같다(네 스크립트 시험 — 0039 전으로 되감은 사본). 0039 뒤로 적힌 사본에
+  칸이 없으면 채우지 않고 멈춘다 — 앱의 「추정해 채우지 않는다」(AGENTS 5장 28)와 같은 쪽이다. 0039 는 옛 행을 모두 표지로 두므로
+  채운 값이 그 마이그레이션이 넣을 값과 같다 — 추정이 아니다.
 - (2026-11-23) **산출 결과 소요대수 표와 그 제외 목록도 부품(CUSTOM)마다 한 줄이다** — `required_equipment.RESULT_DIMENSIONS`
   의 Stack 뒤에 CUSTOM 을 둬 같은 화면 대당 Capa 표(`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이 됐다. 그 상수를 쓰는 곳은 월 표
   (`required_equipment_to_month_table`) · 캐시 래퍼(`get_required_month_table`) · 화면의 달 칸 고르기 · 경로 쪽 제외 목록 셋

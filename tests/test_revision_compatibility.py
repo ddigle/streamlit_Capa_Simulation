@@ -4,8 +4,12 @@ import pandas as pd
 import pytest
 from custom_key_tables import custom_keyed_tables as custom_keyed_tables_from_contract
 
+from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.revision_compatibility import (
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
     custom_incompatible_tables,
     custom_keyed_tables,
     revision_block_reason,
@@ -102,3 +106,49 @@ def test_both_reasons_are_given_when_both_contracts_fail() -> None:
 
     assert reason is not None
     assert "STEP·MCP" in reason and "CUSTOM" in reason
+
+
+def test_the_custom_migration_number_is_the_migration_that_adds_the_column() -> None:
+    """확인 스크립트가 견주는 번호는 CUSTOM 칸을 더한 그 마이그레이션이고, 표지 글자도 그 번호다."""
+    migration = next(item for item in load_migrations() if item.version == CUSTOM_MIGRATION)
+
+    assert migration.name == "0039_custom_product_key.sql"
+    assert BEFORE_CUSTOM_COPY == "사본 0039 전"
+
+
+def test_the_blank_filler_adds_the_marker_only_where_a_custom_table_has_no_column() -> None:
+    """0039 와 같은 뜻 — 칸이 없는 CUSTOM 키 표(빈 표 포함)에만 표지 칸을 끝에 붙인다.
+
+    칸이 있는 표는 빈 값이 있어도 같은 객체 그대로다(그것은 안전망이 막는다). CUSTOM 키 표가 아닌
+    표 · 받지 않은 표는 건드리지 않고, 받은 표는 고치지 않는다."""
+    old_upeh = _upeh("S1", "M1").drop(columns=["CUSTOM"])
+    blank_ratio = _upeh("S1", "M1", None)
+    run_rate = pd.DataFrame({"생산계획년월": [202601], "공정": ["P-A"], "CAPA_RUN_RATE": [0.9]})
+    empty_yield = pd.DataFrame(columns=["생산계획년월", "제품정보", "Stack", "WF 구분", "수율"])
+    tables = {
+        "RQ_UPEH": old_upeh,
+        "RQ_LOT_RATIO": blank_ratio,
+        "RQ_RUN_RATE": run_rate,
+        "RQ_YLD": empty_yield,
+    }
+
+    filled = custom_blank_filled(tables)
+
+    assert list(filled) == list(tables)
+    assert list(filled["RQ_UPEH"].columns) == [*old_upeh.columns, "CUSTOM"]
+    assert filled["RQ_UPEH"]["CUSTOM"].tolist() == [CUSTOM_BLANK]
+    pd.testing.assert_frame_equal(filled["RQ_UPEH"].drop(columns=["CUSTOM"]), old_upeh)
+    assert list(filled["RQ_YLD"].columns) == [*empty_yield.columns, "CUSTOM"]
+    assert filled["RQ_YLD"].empty
+    assert filled["RQ_LOT_RATIO"] is blank_ratio
+    assert filled["RQ_RUN_RATE"] is run_rate
+    assert "CUSTOM" not in old_upeh.columns and "CUSTOM" not in empty_yield.columns
+    assert custom_incompatible_tables(filled) == ["RQ_LOT_RATIO"]
+
+
+def test_a_filled_copy_passes_the_safety_net_like_a_migrated_revision() -> None:
+    """채운 0039 전 표는 0039 뒤 저장분처럼 안전망을 지나고, 불러오기를 막을 이유가 없다."""
+    tables = {"RQ_UPEH": _upeh("S1", "M1").drop(columns=["CUSTOM"])}
+
+    assert custom_incompatible_tables(tables) == ["RQ_UPEH"]
+    assert revision_block_reason(custom_blank_filled(tables)) is None
