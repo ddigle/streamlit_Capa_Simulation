@@ -326,8 +326,10 @@ def test_an_other_hover_naming_a_part_carries_the_amounts_on_its_first_line() ->
     assert " / " not in second
     assert f"DEMO_PART ({PART_B})" in second
     assert " 외 " in second
-    joined = f"{first} · {second}"
-    assert _text_width_units(max(first, second, key=_text_width_units)) < _text_width_units(joined)
+    # 옛 꼴의 둘째 줄은 「수량 · 이름들」 — 새 꼴의 가장 넓은 줄이 그보다 좁아야 풍선이 준다.
+    amounts = first[first.index(" · Wafer ") + len(" · ") :]
+    old_widest = _text_width_units(f"{amounts} · {second}")
+    assert max(_text_width_units(first), _text_width_units(second)) < old_widest
 
 
 def test_an_other_hover_without_a_part_keeps_its_one_line_of_names() -> None:
