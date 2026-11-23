@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B
 
 from capa_simulation.io.core_data_source import (
     CoreDataBatch,
@@ -18,6 +19,7 @@ from capa_simulation.io.core_data_source import (
 from capa_simulation.services.core_data_derivation import (
     BlankCsDrop,
     derive_q_core_data,
+    plan_row_mask,
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.core_data_pipeline import (
@@ -510,6 +512,32 @@ def test_blank_cs_copies_of_routes_the_plans_still_have_lose_nothing() -> None:
     assert blank_cs == BlankCsDrop(rows=12, plan_rows=0, plans_missing_routes=0)
     assert blank_cs.memo() == "CS 빈 행 12개(계획 0행 · 경로 12행) 뺌"
     assert "남은 계획" not in blank_cs.notice()
+
+
+def test_a_blank_cs_route_of_one_part_is_not_covered_by_the_other_part() -> None:
+    """경로를 잃은 계획 줄은 부품(CUSTOM)마다 맞댄다 — 한 제품의 부품 A 경로 행만 CS 가 비고 부품 B
+    는 같은 경로를 CS 있는 행으로 가지면, A 의 계획 줄은 그대로 경로를 잃은 줄이다. 맞대는 키
+    (`_ROUTE_OWNER_KEYS`)에서 CUSTOM 이 빠지면 A 의 줄이 B 의 경로를 제 것으로 보아 셈에서 빠진다
+    (합성 시드의 한 제품을 두 부품으로 — 샘플 관측)."""
+    source = _seed_source()
+    product = source["제품정보"].eq("DEMO_PRODUCT_A")
+    source = pd.concat(
+        [
+            source.loc[~product],
+            source.loc[product].assign(CUSTOM=PART_A),
+            source.loc[product].assign(CUSTOM=PART_B),
+        ],
+        ignore_index=True,
+    )
+    part_a_routes = _product_routes(source, "DEMO_PRODUCT_A", "WF") & source["CUSTOM"].eq(PART_A)
+    source.loc[part_a_routes, "CS"] = None
+
+    blank_cs = derive_q_core_data(source).blank_cs
+
+    part_a_plans = plan_row_mask(source) & source["CUSTOM"].eq(PART_A)
+    assert blank_cs == BlankCsDrop(
+        rows=int(part_a_routes.sum()), plan_rows=0, plans_missing_routes=int(part_a_plans.sum())
+    )
 
 
 def test_a_whole_plan_line_with_a_blank_cs_is_counted_as_plan_not_as_lost_routes() -> None:

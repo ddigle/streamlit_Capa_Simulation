@@ -10005,7 +10005,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
    조인 · 편집 차원 · 표시 차례 · 월 머지 · 부대공정 · 가상 제품 · 비교 GAP · `revision_compatibility` 안전망 · 확인 스크립트
    SQL 과 마이그레이션 전 사본 갈래(10-1 「0039 전 DB 사본」) · 기존 결과 대조 원천 맞춤. 반만 넣으면 두 값이 말없이
    접히거나 부하가 두 배가 된다(`CUSTOM` 선례 — 4장). 리터럴 표 시험은 손으로 칸을 더하지 않고 계약에서 칸을 붙이는
-   도우미(`tests/custom_key_tables.py` 의 `with_blank_custom` · 두 부품 견본 `two_part_tables`)를 쓴다.
+   도우미(`tests/custom_key_tables.py` 의 `with_blank_custom` · 두 부품 견본 `two_part_tables`)를 쓴다. 끝단 시험은 다른
+   키로도 갈리는 꼴만 두지 않는다 — 다른 키(Capa Code 등)를 실은 키 목록의 새 키는 다른 키가 같은 꼴
+   (`two_part_tables(split_capa_code=False)`)에서만 값으로 붙들린다. 새 키를 빼는 변이를 걸어 시험이 빨개지는지 본다.
 
 ### 계산식 변경
 

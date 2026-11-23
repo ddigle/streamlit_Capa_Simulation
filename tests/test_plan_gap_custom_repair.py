@@ -10,9 +10,10 @@ CUSTOM 을 싣기 전 리비전의 계획은 모든 행이 빈 값 표지라, �
 from __future__ import annotations
 
 import pandas as pd
-from custom_key_tables import TWO_PART_PRODUCT, two_part_tables
+from custom_key_tables import PART_A, TWO_PART_PRODUCT, custom_keyed_tables, two_part_tables
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
@@ -181,9 +182,10 @@ def test_an_old_blank_custom_plan_has_no_gap_against_the_same_two_part_plan() ->
 
 
 def test_a_capa_code_gone_from_the_current_plan_takes_the_product_step_or_is_left_out() -> None:
-    """옛 계획의 Capa Code 가 현재 계획에 없으면 둘째 단계(현재 표에서 그 제품의 CUSTOM 이 하나)로
-    짝짓는다. 한 부품 제품은 그 값을 받아 GAP 이 없고, 두 부품 제품은 고르지 못해 원래 값(표지)이
-    남는다 — 현재 표에 짝이 없어 환산에서 빠지고 제외 목록이 그 제품을 센다."""
+    """옛 계획의 Capa Code 가 현재 계획에 없으면 첫 단계(같은 Capa Code)로 짝짓지 못한다. 두 부품
+    제품은 둘째 단계(현재 표에서 그 제품의 CUSTOM 이 하나)로도 고르지 못해 원래 값(표지)이 남는다 —
+    현재 표에 짝이 없어 환산에서 빠지고 제외 목록이 그 제품만 센다. 둘째 단계가 한 부품 제품에 값을
+    넣는 것은 아래 시험이 본다(이 견본의 한 부품 제품은 현재 표에서도 표지다)."""
     tables = two_part_tables()
     current = tables["RQ_PKG_PLAN"]
     old = current.assign(CUSTOM=CUSTOM_BLANK, **{"Capa Code": "DEMO_CAPA_GONE"})
@@ -197,3 +199,28 @@ def test_a_capa_code_gone_from_the_current_plan_takes_the_product_step_or_is_lef
     )
     _, wafer = calculate_chip_and_wafer_loads(repaired, tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
     assert set(load_exclusions(wafer)["제품정보"]) == {TWO_PART_PRODUCT}
+
+
+def _one_part_tables(part: str) -> dict[str, pd.DataFrame]:
+    """내장 시드의 CUSTOM 키 표 여덟 CUSTOM 을 모두 `part` 로 바꾼 사본 — 모든 제품이 표지가 아닌
+    부품 하나를 갖는 꼴."""
+    tables = dict(build_builtin_seed_dataset().reference_tables)
+    for name in custom_keyed_tables():
+        tables[name] = tables[name].assign(CUSTOM=part)
+    return tables
+
+
+def test_the_comparison_path_gives_a_single_part_product_its_only_custom() -> None:
+    """옛 계획(모두 표지)의 Capa Code 가 현재 계획에 없고 현재 표의 제품마다 부품이 표지 아닌 값
+    하나면, 비교 길(`get_home_comparison_plan`)이 둘째 단계 — 현재 수율 · Chip 표에서 그 제품의
+    CUSTOM 이 하나 — 로 짝지어 GAP 이 없다. 비교 길이 둘째 단계 표를 넘기지 않으면 표지가 남아
+    계획이 Chip 짝을 못 찾고 환산에서 말없이 빠진다(HOME · Summary GAP 에 거짓 감소)."""
+    tables = _one_part_tables(PART_A)
+    current = tables["RQ_PKG_PLAN"]
+    old = current.assign(CUSTOM=CUSTOM_BLANK, **{"Capa Code": "DEMO_CAPA_GONE"})
+
+    own = _comparison("own-part", tables, current)
+    compared = _comparison("gone-part", tables, old)
+
+    assert own.drop(columns="생산계획년월").select_dtypes("number").to_numpy().sum() > 0
+    pd.testing.assert_frame_equal(compared, own)

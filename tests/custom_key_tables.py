@@ -7,6 +7,8 @@
 - `two_part_tables` — 내장 시드의 한 제품을 두 부품(`DEMO_CUSTOM_A` · `DEMO_CUSTOM_B`)으로 가른 RQ
   16표. 부품마다 Capa Code 가 다르고 계획 수량은 반씩이다. 그래서 B 를 바꾸지 않으면 두 부품의
   합이 시드 한 제품과 같고, 조인이 두 부품 행을 겹쳐 붙이면 그 합이 어긋난다.
+  `split_capa_code=False` 면 두 부품이 같은 Capa Code 를 쓴다 — Capa Code 를 실은 키(부하량 · 원수요
+  키)는 그때 CUSTOM 으로만 두 부품을 가르므로, 그 키의 CUSTOM 은 이 꼴로만 값이 붙들린다.
 """
 
 from __future__ import annotations
@@ -80,12 +82,14 @@ def _seed_tables() -> dict[str, pd.DataFrame]:
     return build_builtin_seed_dataset().reference_tables
 
 
-def two_part_tables(*, vary_b: bool = True) -> dict[str, pd.DataFrame]:
+def two_part_tables(
+    *, vary_b: bool = True, split_capa_code: bool = True
+) -> dict[str, pd.DataFrame]:
     """시드 한 제품(`TWO_PART_PRODUCT`)을 두 부품으로 가른 RQ 16표(사본).
 
-    CUSTOM 키 표 여덟에서 그 제품 행을 A · B 두 벌로 둔다. Capa Code 칸이 있는 표(계획 · 경로)는
-    B 를 `PART_B_CAPA_CODE` 로 바꿔 부품마다 경로가 따로 붙게 하고, 계획 수량은 두 부품이 반씩
-    나눈다.
+    CUSTOM 키 표 여덟에서 그 제품 행을 A · B 두 벌로 둔다. `split_capa_code` 이면 Capa Code 칸이
+    있는 표(계획 · 경로)는 B 를 `PART_B_CAPA_CODE` 로 바꿔 부품마다 경로가 따로 붙게 하고, 아니면
+    두 부품이 시드의 Capa Code 를 함께 쓴다. 계획 수량은 두 부품이 반씩 나눈다.
     `vary_b` 이면 B 의 EDS 수율과 UPEH 만 바꾼다. 다른 제품과 CUSTOM 키가 없는 표는 시드 그대로다.
     """
     tables = {name: frame.copy() for name, frame in _seed_tables().items()}
@@ -96,7 +100,7 @@ def two_part_tables(*, vary_b: bool = True) -> dict[str, pd.DataFrame]:
             raise AssertionError(f"시드 {name} 에 {TWO_PART_PRODUCT} 행이 없습니다.")
         part_a = frame.loc[product].assign(**{CUSTOM_COLUMN: PART_A})
         part_b = frame.loc[product].assign(**{CUSTOM_COLUMN: PART_B})
-        if "Capa Code" in frame.columns:
+        if split_capa_code and "Capa Code" in frame.columns:
             part_b["Capa Code"] = PART_B_CAPA_CODE
         if name == "RQ_PKG_PLAN":
             part_a["생산수량"] = part_a["생산수량"] / 2
@@ -111,12 +115,14 @@ def two_part_tables(*, vary_b: bool = True) -> dict[str, pd.DataFrame]:
     return tables
 
 
-def single_part_tables(part: str, *, vary_b: bool = True) -> dict[str, pd.DataFrame]:
+def single_part_tables(
+    part: str, *, vary_b: bool = True, split_capa_code: bool = True
+) -> dict[str, pd.DataFrame]:
     """`two_part_tables` 에서 그 제품의 한 부품만 남긴 표 — 부품 하나씩 따로 돌린 값과 견준다."""
     if part not in (PART_A, PART_B):
         raise ValueError(f"부품은 {PART_A} 또는 {PART_B} 입니다: {part}")
     other = PART_B if part == PART_A else PART_A
-    tables = two_part_tables(vary_b=vary_b)
+    tables = two_part_tables(vary_b=vary_b, split_capa_code=split_capa_code)
     for name in custom_keyed_tables():
         frame = tables[name]
         tables[name] = frame.loc[frame[CUSTOM_COLUMN].ne(other)].reset_index(drop=True)

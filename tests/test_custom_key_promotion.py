@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Mapping
+from datetime import date
 from uuid import uuid4
 
 import pandas as pd
@@ -57,6 +58,12 @@ from capa_simulation.services.required_equipment import (
     RESULT_DIMENSIONS,
     required_equipment_to_month_table,
 )
+from capa_simulation.services.standard_target_capacity import (
+    PKG_EQUIVALENT_COLUMN,
+    add_pkg_equivalent_standard_target,
+    build_weekly_standard_target_capacity,
+)
+from capa_simulation.services.weighted_unit_capacity import effective_process_capacity_long
 
 
 def test_blank_custom_values_become_the_blank_marker() -> None:
@@ -347,6 +354,83 @@ def test_two_parts_of_one_product_are_calculated_apart() -> None:
         assert float(load(even)["물량"].sum()) == pytest.approx(float(load(seed)["물량"].sum()))
 
 
+def test_two_parts_with_one_capa_code_are_calculated_apart() -> None:
+    """② 의 같은 Capa Code 꼴 — 두 부품이 Capa Code 까지 같으면 부하량 키(`LOAD_KEYS`)는 CUSTOM
+    으로만 두 부품을 가른다. 부품 줄이 부품 하나씩 따로 돌린 값과 같고, B 를 바꾸지 않으면 공정 × 월
+    소요대수 합이 시드와 같다 — 키에서 CUSTOM 이 빠지면 두 부품 부하가 합쳐져 두 경로에 다 붙어 합이
+    불어난다(Capa Code 가 다른 ② 는 그래도 갈라져 통과한다)."""
+    two = two_part_tables(split_capa_code=False)
+    two_unit, two_required = _unit_and_required(two)
+    two_wafer = _wafer(two)
+    for part in (PART_A, PART_B):
+        alone_unit, alone_required = _unit_and_required(
+            single_part_tables(part, split_capa_code=False)
+        )
+        for together, apart in (
+            (two_unit, alone_unit),
+            (two_required, alone_required),
+            (two_wafer, _wafer(single_part_tables(part, split_capa_code=False))),
+        ):
+            rows = _part_rows(together, part)
+            assert not rows.empty
+            pd.testing.assert_frame_equal(rows, _part_rows(apart, part))
+
+    even_required = _unit_and_required(two_part_tables(vary_b=False, split_capa_code=False))[1]
+    pd.testing.assert_series_equal(
+        _process_month_sum(even_required, "소요대수"),
+        _process_month_sum(_unit_and_required(_seed())[1], "소요대수"),
+        check_exact=False,
+    )
+
+
+def _standard_target(tables: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """첫 달 주차의 표준 목표(집계 수준 `WF 구분`)와 PKG 환산 — 모든 공정 · 주차 가용대수 1."""
+    required = _unit_and_required(tables)[1]
+    first = int(pd.to_numeric(tables["RQ_PKG_PLAN"]["생산계획년월"]).min())
+    start = date(first // 100, first % 100, 1)
+    end = date(first // 100, first % 100, 28)
+    weeks = pd.date_range(start, end, freq="W-MON")
+    availability = pd.DataFrame(
+        [
+            {
+                "공정": process,
+                "Weeknum": f"{week.isocalendar().year % 100:02d}-W{week.isocalendar().week:02d}",
+                "가용대수": 1.0,
+            }
+            for process in sorted(required["공정"].dropna().unique())
+            for week in weeks
+        ]
+    )
+    weekly = build_weekly_standard_target_capacity(
+        required, tables["RQ_RUN_DAY"], availability, start, end, "WF 구분"
+    )
+    return add_pkg_equivalent_standard_target(
+        weekly, required, tables["RQ_PKG_PLAN"], "WF 구분"
+    ).reset_index(drop=True)
+
+
+def test_the_standard_target_demand_keeps_both_parts_with_one_capa_code() -> None:
+    """표준 목표의 원수요 키(`DEMAND_ID_COLUMNS` · PKG 환산 연결 `PKG_PLAN_KEYS`)도 두 부품을
+    가른다. 두 부품이 Capa Code 까지 같고 부하가 같으면(B 를 바꾸지 않음) 원수요 키의 CUSTOM 만이 두
+    부품 부하를 따로 센다 — 빠지면 한 부품 부하가 겹친 원수요로 지워져 원수요 부하량이 말없이 반이
+    된다. 두 부품 견본(수량 반씩)의 공정 유효 Capa 원수요 · STEP 소요대수와 표준 목표 PKG 환산은
+    시드와 같다."""
+    seed = _seed()
+    even = two_part_tables(vary_b=False, split_capa_code=False)
+
+    def demand(tables: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+        return effective_process_capacity_long(_unit_and_required(tables)[1], "WF 구분")
+
+    seed_demand = demand(seed)
+    product = seed_demand["제품정보"].eq(TWO_PART_PRODUCT)
+    assert bool(product.any()) and float(seed_demand.loc[product, "원수요_부하량"].sum()) > 0
+    pd.testing.assert_frame_equal(demand(even), seed_demand, check_exact=False)
+
+    seed_target = _standard_target(seed)
+    assert seed_target[PKG_EQUIVALENT_COLUMN].notna().any()
+    pd.testing.assert_frame_equal(_standard_target(even), seed_target, check_exact=False)
+
+
 def _with_pkg_route(tables: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """`_PKG_PROCESS` 의 경로 · 실적 표를 소요기준 PKG · `Buffer` 로 바꾼다(모든 제품)."""
     out = dict(tables)
@@ -369,6 +453,22 @@ def test_pkg_routes_carry_the_load_of_each_part() -> None:
 
     for part in (PART_A, PART_B):
         alone_required = _unit_and_required(_with_pkg_route(single_part_tables(part)))[1]
+        together = _part_rows(two_required.loc[pkg_rows], part)
+        apart = _part_rows(alone_required.loc[alone_required["공정"].eq(_PKG_PROCESS)], part)
+        assert not together.empty
+        assert float(together["부하량"].sum()) > 0
+        pd.testing.assert_frame_equal(together, apart)
+
+
+def test_pkg_routes_carry_the_load_of_each_part_with_one_capa_code() -> None:
+    """③ 의 같은 Capa Code 꼴 — PKG 부하 줄도 Capa Code 가 같은 두 부품을 CUSTOM 으로만 가른다.
+    부품 줄이 부품 하나씩 따로 돌린 값과 같다."""
+    two_required = _unit_and_required(_with_pkg_route(two_part_tables(split_capa_code=False)))[1]
+    pkg_rows = two_required["공정"].eq(_PKG_PROCESS)
+    for part in (PART_A, PART_B):
+        alone_required = _unit_and_required(
+            _with_pkg_route(single_part_tables(part, split_capa_code=False))
+        )[1]
         together = _part_rows(two_required.loc[pkg_rows], part)
         apart = _part_rows(alone_required.loc[alone_required["공정"].eq(_PKG_PROCESS)], part)
         assert not together.empty

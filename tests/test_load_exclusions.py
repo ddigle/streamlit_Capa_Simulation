@@ -2,7 +2,7 @@
 
 import pandas as pd
 import pytest
-from custom_key_tables import with_blank_custom
+from custom_key_tables import PART_A, PART_B, with_blank_custom
 
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
@@ -73,6 +73,30 @@ def test_exclusion_list_names_the_product_and_the_missing_table() -> None:
         "DEMO_NO_CHIP": "RQ_CHIP_QTY",
         "DEMO_NO_YLD": "RQ_YLD",
     }
+
+
+def test_two_parts_left_out_in_the_same_month_are_two_records() -> None:
+    """한 제품의 두 부품이 같은 달에 함께 Chip 짝이 없으면 제외 목록도 부품마다 한 줄이다.
+    레코드에서 부품(CUSTOM)이 빠지면 두 줄이 한 줄로 접혀 환산 제외 목록 · 입력 점검이 한 부품만
+    보인다."""
+    plan = pd.concat(
+        [
+            PLAN.loc[PLAN["제품정보"].eq("DEMO_NO_CHIP")].assign(CUSTOM=part)
+            for part in (PART_A, PART_B)
+        ],
+        ignore_index=True,
+    )
+    yields = YIELD.assign(제품정보="DEMO_NO_CHIP")
+    yields = pd.concat([yields.assign(CUSTOM=part) for part in (PART_A, PART_B)])
+
+    chip_load, wafer_load = calculate_chip_and_wafer_loads(plan, yields, CHIP)
+
+    for load in (chip_load, wafer_load):
+        excluded = load_exclusions(load)
+        assert excluded[["제품정보", "CUSTOM", "누락 기준정보"]].values.tolist() == [
+            ["DEMO_NO_CHIP", PART_A, "RQ_CHIP_QTY"],
+            ["DEMO_NO_CHIP", PART_B, "RQ_CHIP_QTY"],
+        ]
 
 
 def test_load_frames_still_concatenate() -> None:

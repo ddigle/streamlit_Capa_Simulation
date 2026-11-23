@@ -1312,6 +1312,29 @@ def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> N
     assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=2)
 
 
+def test_a_load_whose_part_reaches_no_route_is_a_key_mismatch() -> None:
+    """부품(CUSTOM)만 어긋난 부하도 「경로 키 어긋남」(셈)이다 — 같은 제품 · Stack · 소요기준 · WF
+    구분 경로는 다른 부품에 있으니 고칠 어긋남이다. 어긋남을 가르는 키(`_ROUTE_FAMILY_KEYS`)에
+    CUSTOM 이 들면 그 부하가 「그 소요기준·WF 구분 경로 없음」(세지 않음)으로 숨는다 — 옛 표지
+    계획이 새 부품 경로에 못 닿는 꼴(월 머지 · 연도 이동)이다."""
+    reqb = pd.DataFrame([_route("DEMO-A")])
+    plan = pd.DataFrame([{**_plan_row("DEMO-A"), "CUSTOM": PART_A}])
+
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        _yield_rows("DEMO-A").assign(CUSTOM=PART_A),
+        _chip_rows("DEMO-A").assign(CUSTOM=PART_A),
+        _route_capacity("DEMO-A"),
+    )
+    unrouted = result.attrs[UNROUTED_LOADS_ATTR]
+
+    assert unrouted[["CUSTOM", "제외사유"]].values.tolist() == [
+        [PART_A, UNROUTED_KEY_MISMATCH_REASON]
+    ]
+    assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=1)
+
+
 # ------------------------------------------------------------------ Dummy 계열의 소요대수
 # HOME `Wafer 계획` 은 Dummy 계열(Dummy · Top_Dummy)을 뺀 합이지만, 소요대수는 설비가 받는
 # 부하라 Dummy 계열 경로의 부하를 그대로 품는다(사용자 결정 2026-11-22 — 소요대수 · 확보율 ·

@@ -34,6 +34,7 @@ import duckdb
 import pandas as pd
 import pytest
 from before_custom_copy import database_before_custom, database_marked_after_custom
+from custom_key_tables import PART_A, PART_B, custom_keyed_tables
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
@@ -4652,6 +4653,67 @@ def test_a_copy_marked_after_the_custom_migration_stops_the_hand_sql_too(
     for key in ("fold", "blank"):
         assert _census_row(output, key) == "- | 실패(BinderException) |"
     assert "- 8-12 리비전 목록 실패(BinderException)" in _uncoded(_summary(output))
+
+
+def _plant_two_part_drops(path: Path) -> None:
+    """양산 제품(합성 표본에 하나)을 리비전 표 여덟에서 두 부품으로 가르고, 첫 달 첫 공정의
+    `RQ_RUN_RATE` 를 비운 뒤 그 칸에 붙은 경로를 부품마다 다른 측정률로 뺀다 — 부품 A 는 Lot 측정률
+    음수, 부품 B 는 WF 측정률 음수. 그 칸에 붙은 경로는 그 제품의 두 부품뿐이다."""
+    with duckdb.connect(str(path)) as connection:
+        [(product,)] = connection.execute(
+            'SELECT DISTINCT "제품정보" FROM rev_data.rq_upeh WHERE "양산구분" = \'양산\''
+        ).fetchall()
+        for logical in custom_keyed_tables():
+            table = REVISION_TABLES[logical]
+            connection.execute(
+                f'UPDATE rev_data.{table} SET "CUSTOM" = ? WHERE "제품정보" = ?', [PART_A, product]
+            )
+            connection.execute(
+                f'INSERT INTO rev_data.{table} SELECT * REPLACE (? AS "CUSTOM", '
+                f"source_row_no + 300000 AS source_row_no) FROM rev_data.{table} "
+                'WHERE "제품정보" = ?',
+                [PART_B, product],
+            )
+        cell = connection.execute(
+            'SELECT "생산계획년월", "공정" FROM rev_data.rq_upeh WHERE "제품정보" = ? '
+            "AND upper(trim(\"소요기준\")) NOT IN ('BOX', 'PCB') ORDER BY 1, 2 LIMIT 1",
+            [product],
+        ).fetchone()
+        assert cell is not None
+        month, process = cell
+        connection.execute(
+            'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL WHERE "생산계획년월" = ? '
+            'AND "공정" = ? AND "양산구분" = \'양산\'',
+            [month, process],
+        )
+        for table, column, part in (
+            ("rq_lot_ratio", "Lot 측정률", PART_A),
+            ("rq_wf_ratio", "WF측정률", PART_B),
+        ):
+            connection.execute(
+                f'UPDATE rev_data.{table} SET "{column}" = -1 WHERE "생산계획년월" = ? '
+                'AND "공정" = ? AND "제품정보" = ? AND "CUSTOM" = ?',
+                [month, process, product, part],
+            )
+
+
+def test_the_hand_sql_joins_the_ratios_of_each_part_only(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """8-10 `C9` · 8-12 의 측정률 조인(`_performance_join`)은 계산처럼 CUSTOM 까지 맞댄다. 빈
+    칸에 붙은 두 부품 경로가 저마다 자기 측정률로 빠지면 그 칸은 「빠질 경로만」(`C9` 칸 1)이고
+    8-12 에는 걸리지 않는다. CUSTOM 조건이 빠지면 부품 A 경로가 부품 B 의 (음수 아닌) Lot 측정률 ·
+    자기 WF 측정률과도 짝지어 빠지지 않는 줄이 생겨, 그 칸이 「남는 경로」 로 뒤집힌다(`C9` 이
+    말없이 준다)."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _plant_two_part_drops(path)
+
+    code, output = _census_and_blank(capsys, path)
+
+    assert code == 0
+    assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+    assert "- 8-12 전부 1 · 걸림 0" in _uncoded(_summary(output))
 
 
 def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
