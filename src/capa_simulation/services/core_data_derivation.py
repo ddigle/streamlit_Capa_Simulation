@@ -452,9 +452,10 @@ def custom_sort_key(value: object) -> tuple[bool, str, str]:
     `sorted(…, key=custom_sort_key)` 꼴로 쓴다. 파이썬 기본 차례는 `-` 를 글자 앞에 두어 「부품 구분
     없음」 이 맨 앞에 선다. 빈 값(NA · 빈 글자 · 공백뿐)은 표지와 같이 끝에 둔다. 표시 차례에서
     부품을 세우는 자리는 이 열쇠 하나만 쓴다 — `display_order.apply_display_order` 의 끝 열쇠는
-    규칙 열쇠가 같은 행에서 **한 제품의 부품끼리만**(CUSTOM 말고 글자 칸이 모두 같은 행) 이
-    차례로 세우고, 다른 제품끼리는 CUSTOM 값과 상관없이 원래 차례다. 경로 칸 전체를 글자 그대로
-    세우는 `route_step_editor` 목록은 이 열쇠를 쓰지 않는다(AGENTS 8장).
+    규칙 열쇠가 같은 행에서 **한 제품의 부품끼리만**(규칙 칸과 CUSTOM 앞 글자 칸이 모두 같은
+    행 — CUSTOM 뒤 칸은 보지 않음) 이 차례로 세우고, 다른 제품끼리는 CUSTOM 값과 상관없이 원래
+    차례다. 경로 칸 전체를 글자 그대로 세우는 `route_step_editor` 목록은 이 열쇠를 쓰지
+    않는다(AGENTS 8장).
     """
     if isinstance(value, str):
         text = value.strip()

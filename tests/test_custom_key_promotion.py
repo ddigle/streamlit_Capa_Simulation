@@ -45,8 +45,10 @@ from capa_simulation.services.core_data_derivation import (
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.load_calculator import (
+    build_monthly_volume,
     calculate_chip_and_wafer_loads,
     calculate_density_load,
+    plan_to_edit_table,
 )
 from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
@@ -317,27 +319,26 @@ def test_display_order_single_part_rows_stay_put_among_other_parts() -> None:
     assert result["202701"].tolist() == [1.0, 2.0, 3.0, 5.0, 4.0]
 
 
-def test_display_order_part_groups_split_by_the_other_text_columns() -> None:
-    """CUSTOM 말고 다른 글자 칸(WF 구분)이 다르면 다른 무리다 — 한 제품의 두 부품 × 두 WF 구분은
-    WF 구분마다 두 부품이 이웃한다."""
+def test_display_order_columns_after_custom_follow_inside_each_part() -> None:
+    """CUSTOM 뒤 칸(WF 구분)은 무리를 가르지 않는다 — 한 제품의 두 부품 × 두 WF 구분은 부품마다
+    이웃하고, WF 구분은 부품 안에서 원래 차례다(화면에서 CUSTOM 칸이 WF 구분보다 덜 바뀐다)."""
     data = _route_rows(
         ["DEMO_P1"] * 4, ["DEMO_CUSTOM_B", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_A"]
     ).assign(**{"WF 구분": ["DEMO_WF1", "DEMO_WF2", "DEMO_WF1", "DEMO_WF2"]})
 
     result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
 
-    assert list(zip(result["WF 구분"], result["CUSTOM"], strict=True)) == [
-        ("DEMO_WF1", "DEMO_CUSTOM_A"),
-        ("DEMO_WF1", "DEMO_CUSTOM_B"),
-        ("DEMO_WF2", "DEMO_CUSTOM_A"),
-        ("DEMO_WF2", "DEMO_CUSTOM_B"),
+    assert list(zip(result["CUSTOM"], result["WF 구분"], strict=True)) == [
+        ("DEMO_CUSTOM_A", "DEMO_WF1"),
+        ("DEMO_CUSTOM_A", "DEMO_WF2"),
+        ("DEMO_CUSTOM_B", "DEMO_WF1"),
+        ("DEMO_CUSTOM_B", "DEMO_WF2"),
     ]
 
 
-def test_display_order_parts_gather_only_within_one_capa_code() -> None:
-    """부품마다 Capa Code 가 다르면(PKG PLAN 꼴) 무리가 Capa Code 마다 갈린다 — 같은 Capa Code 의
-    부품만 이웃해 부품 차례(표지 끝)로 서고, 제 Capa Code 를 가진 부품은 원래(피벗) 차례 자리다.
-    피벗이 CUSTOM 글자 그대로 세워 표지가 그 부품보다 앞이어도 표지를 끝으로 옮기지 않는다."""
+def test_display_order_parts_gather_across_the_plan_attributes_after_custom() -> None:
+    """부품마다 Capa Code 가 달라도(PKG PLAN 꼴 — CUSTOM 뒤 칸) 한 제품의 부품은 한 무리라 부품
+    차례(표지 끝)로 선다. 피벗이 CUSTOM 글자 그대로 세워 표지가 앞이어도 표지는 끝이다."""
     data = pd.DataFrame(
         {
             "제품정보": ["DEMO_P1", "DEMO_P1", "DEMO_P1"],
@@ -351,9 +352,9 @@ def test_display_order_parts_gather_only_within_one_capa_code() -> None:
     result = apply_display_order(data, rules, "생산 계획", "PKG PLAN")
 
     assert list(zip(result["CUSTOM"], result["Capa Code"], strict=True)) == [
+        ("DEMO_CUSTOM_A", "DEMO_CAPA_2"),
         ("DEMO_CUSTOM_B", "DEMO_CAPA_1"),
         (CUSTOM_BLANK, "DEMO_CAPA_1"),
-        ("DEMO_CUSTOM_A", "DEMO_CAPA_2"),
     ]
 
 
@@ -420,6 +421,150 @@ def test_display_order_ties_keep_the_source_order_without_text_identity() -> Non
     result = apply_display_order(data, rules, PAGE_CALCULATION, TAB_REQUIRED)
 
     assert result["CUSTOM"].tolist() == ["DEMO_CUSTOM_B", "DEMO_CUSTOM_A"]
+
+
+def test_display_order_rule_columns_after_custom_still_own_the_parts() -> None:
+    """규칙 칸은 화면에서 CUSTOM 왼쪽에 서므로 CUSTOM 뒤 칸이어도 부품의 주인이다 — 사용자지정 목록
+    밖 값(같은 순위 끝)끼리도 그 값마다 부품이 이웃한다."""
+    rules = pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_CALCULATION],
+            "탭 구분": [TAB_REQUIRED],
+            "정렬우선순위": [1],
+            "분류컬럼": ["WF 구분"],
+            "정렬방식": ["사용자지정"],
+            "분류값": ["DEMO_WF0"],
+            "값표시순서": [1],
+            "활성여부": ["Y"],
+        }
+    )
+    data = _route_rows(
+        ["DEMO_P1"] * 4, ["DEMO_CUSTOM_B", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_A"]
+    ).assign(**{"WF 구분": ["DEMO_WF1", "DEMO_WF2", "DEMO_WF1", "DEMO_WF2"]})
+
+    result = apply_display_order(data, rules, PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["WF 구분"], result["CUSTOM"], strict=True)) == [
+        ("DEMO_WF1", "DEMO_CUSTOM_A"),
+        ("DEMO_WF1", "DEMO_CUSTOM_B"),
+        ("DEMO_WF2", "DEMO_CUSTOM_A"),
+        ("DEMO_WF2", "DEMO_CUSTOM_B"),
+    ]
+
+
+def _plan_rows(rows: list[tuple[str, str, str]]) -> pd.DataFrame:
+    """(제품정보, CUSTOM, Customer) 마다 한 달 계획 한 줄 — 나머지 계획 칸은 모두 같다."""
+    return pd.DataFrame(
+        [
+            {
+                "생산계획년월": 202701,
+                "양산구분": "양산",
+                "제품정보": product,
+                "Stack": "8H",
+                "CUSTOM": custom,
+                "Capa Code": "DEMO_CAPA",
+                "Customer": customer,
+                "CS": "DEMO_CS",
+                "Pack Code": "DEMO_PACK",
+                "생산수량": 1.0,
+            }
+            for product, custom, customer in rows
+        ]
+    )
+
+
+def test_the_pkg_plan_grid_puts_each_products_parts_in_part_order() -> None:
+    """PKG PLAN 편집 격자(`plan_to_edit_table`)에서 부품마다 Customer 가 달라도 제품마다 부품 차례로
+    선다 — 한 표 안에서 표지 자리가 제품마다 갈리지 않는다(피벗은 글자 차례라 표지가 앞)."""
+    plan = _plan_rows(
+        [
+            ("DEMO_P1", CUSTOM_BLANK, "DEMO_C1"),
+            ("DEMO_P1", "DEMO_CUSTOM_A", "DEMO_C1"),
+            ("DEMO_P2", CUSTOM_BLANK, "DEMO_C1"),
+            ("DEMO_P2", "DEMO_CUSTOM_A", "DEMO_C2"),
+            ("DEMO_P3", CUSTOM_BLANK, "DEMO_C1"),
+            ("DEMO_P3", "DEMO_CUSTOM_B", "DEMO_C2"),
+            ("DEMO_P3", "DEMO_CUSTOM_A", "DEMO_C3"),
+        ]
+    )
+
+    grid = plan_to_edit_table(plan, _product_rule("생산 계획", "PKG PLAN"))
+
+    assert list(zip(grid["제품정보"], grid["CUSTOM"], strict=True)) == [
+        ("DEMO_P1", "DEMO_CUSTOM_A"),
+        ("DEMO_P1", CUSTOM_BLANK),
+        ("DEMO_P2", "DEMO_CUSTOM_A"),
+        ("DEMO_P2", CUSTOM_BLANK),
+        ("DEMO_P3", "DEMO_CUSTOM_A"),
+        ("DEMO_P3", "DEMO_CUSTOM_B"),
+        ("DEMO_P3", CUSTOM_BLANK),
+    ]
+
+
+def test_the_pkg_plan_grid_and_the_conversion_table_agree_on_the_part_order() -> None:
+    """부품마다 Capa Code 가 달라도 PKG PLAN 격자와 환산 표(Capa Code 칸 없음)가 같은 제품의 부품을
+    같은 차례(표지 끝)로 보인다 — 내장 시드 표시순서 그대로."""
+    tables = two_part_tables(split_capa_code=True)
+    plan = tables["RQ_PKG_PLAN"].copy()
+    plan["CUSTOM"] = plan["CUSTOM"].replace({PART_A: CUSTOM_BLANK})
+    display_order = tables["RQ_DISPLAY_ORDER"]
+
+    def parts(frame: pd.DataFrame) -> list[str]:
+        rows = frame["제품정보"].eq(TWO_PART_PRODUCT).fillna(False).astype("bool")
+        return list(dict.fromkeys(frame.loc[rows, "CUSTOM"].astype(str)))
+
+    grid = plan_to_edit_table(plan, display_order)
+    conversion = build_monthly_volume(
+        plan, tables["RQ_YLD"], tables["RQ_CHIP_QTY"], "PKG", display_order=display_order
+    )
+
+    assert parts(grid) == [PART_B, CUSTOM_BLANK]
+    assert parts(conversion) == [PART_B, CUSTOM_BLANK]
+
+
+def test_the_required_month_table_keeps_the_wf_division_inside_each_part() -> None:
+    """소요대수 「상세」 월 표(분류 칸 string)는 한 제품의 부품마다 이웃하고 WF 구분은 그 안에서
+    원래 차례다 — 화면 칸 차례(… Stack · CUSTOM · WF 구분 …)대로 CUSTOM 이 WF 구분보다 덜 바뀐다."""
+    rows = [
+        (custom, division)
+        for custom in (CUSTOM_BLANK, "DEMO_CUSTOM_A")
+        for division in ("DEMO_WF_CORE", "DEMO_WF_TOP")
+    ]
+    data = pd.DataFrame(
+        [
+            {
+                "생산계획년월": 202701,
+                "Area_Name": "Main",
+                "공정": "DEMO_PROCESS",
+                "양산구분": "양산",
+                "제품정보": "DEMO_P1",
+                "Stack": "8H",
+                "CUSTOM": custom,
+                "Capa Code": "DEMO_CAPA",
+                "Customer": "DEMO_C1",
+                "CS": "DEMO_CS",
+                "WF 구분": division,
+                "STEP_SEQ": "S0100",
+                "MCP_SEQ": "M01",
+                "소요기준": "Wafer",
+                "소요대수": 1.0,
+            }
+            for custom, division in rows
+        ]
+    )
+    text_columns = [column for column in data.columns if column not in ("생산계획년월", "소요대수")]
+    data[text_columns] = data[text_columns].astype("string")
+    table = required_equipment_to_month_table(data)
+    assert all(isinstance(table[column].dtype, pd.StringDtype) for column in RESULT_DIMENSIONS)
+
+    result = apply_display_order(table, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["CUSTOM"], result["WF 구분"], strict=True)) == [
+        ("DEMO_CUSTOM_A", "DEMO_WF_CORE"),
+        ("DEMO_CUSTOM_A", "DEMO_WF_TOP"),
+        (CUSTOM_BLANK, "DEMO_WF_CORE"),
+        (CUSTOM_BLANK, "DEMO_WF_TOP"),
+    ]
 
 
 # ------------------------------------------------------------------ 끝단 — 한 값 · 두 부품
