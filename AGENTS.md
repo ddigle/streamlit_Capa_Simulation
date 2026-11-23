@@ -2482,7 +2482,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   묶은 뒤 걷는다 — 그 앞에 이미 불린 것은 막지 않음). 그 준비는 모두 단계 줄 `login` 앞이고 무엇이 실패해도(예외 · 속성 없음 · 부를 수 없음)
   `bigdataquery` · `bigdataquery.*` 모듈과 우리가 둔 `pyarrow` 막음을 걷고 같은 프로세스에서 전체 import 로 간다(`import` 단계 줄을 `load=full` 로 한 번
   더) — 준비에서 난 실패는 `login()` 안(거절 판정 자리)으로 넘어가지 않는다. `login()` · `getTokenTime` 이 빈 꾸러미의 꼴(꾸러미 전역 · 속성 · 꾸러미에서
-  이름을 찾는 늦은 import)에 기대 나는 실패는 그 뒤에서 나고 지금처럼 거절 · 확인 못 함이다. 단계 줄 끝 칸 `load` 는 부르는 쪽 `bdq_login._STEP_LINE` ·
+  이름을 찾는 늦은 import)이나 막은 동안 불린 모듈(pandas 따위)이 정한 「`pyarrow` 없음」 에 기대 나는 실패는 그 뒤에서 나고 지금처럼 거절 · 확인 못 함이다. 단계 줄 끝 칸 `load` 는 부르는 쪽 `bdq_login._STEP_LINE` ·
   `parse_step`(`StepLine` — 그 칸이 없는 줄도 단계 · 판은 읽음)과 함께 바꾸고 진단(`ChildDiag.load` — 칸 `load`, 화면 「불러오기 light」, 알 때만)에
   실린다. `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던 전역을 기대하는지는 pod 확인 거리다(`docs/TODO.md` 1장).
   시험 `tests/test_bdq_login_light.py`(가짜 `tests/bdq_light_support.py` 를 시험마다 임시 자리에 지어 진짜 하위 프로세스로 — 기존 가짜는 설치 정보 ·

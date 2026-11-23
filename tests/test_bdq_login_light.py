@@ -180,7 +180,7 @@ def test_the_pyarrow_block_lasts_only_while_loading_so_a_late_import_still_works
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq, name: str
 ) -> None:
     """`pyarrow` 는 `server_auth` 를 불러오는 동안만 막는다 — `login()` · `getTokenTime` 이
-    늦게 불러와도 가벼운 길에만 있는 실패가 단계 줄 `login` 뒤(거절 · 확인 못 함)로 나오지
+    직접 늦게 불러와도 가벼운 길에만 있는 실패가 단계 줄 `login` 뒤(거절 · 확인 못 함)로 나오지
     않는다."""
     light_package(monkeypatch, tmp_path, pyarrow=True)
     scene(monkeypatch, name)
