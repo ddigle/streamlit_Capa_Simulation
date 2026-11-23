@@ -34,6 +34,7 @@ from capa_simulation.services.load_calculator import (
     filter_edp_plan,
 )
 from capa_simulation.services.product_parts import PART_NOT_SPLIT, multi_part_products
+from capa_simulation.services.product_share import assign_product_slots, build_product_volume
 
 
 def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
@@ -797,6 +798,101 @@ def test_a_stack_rule_keeps_the_rows_of_one_part_together() -> None:
         ("DEMO_A", PART_B, "12H"),
         ("DEMO_A", PART_B, "8H"),
     ]
+
+
+def _plan_rule(
+    priority: int, column: str, mode: str, value: str | None = None, order: int | None = None
+) -> tuple[object, ...]:
+    return ("생산 계획", "PKG PLAN", priority, column, mode, value, order, "Y")
+
+
+_PLAN_RULE_COLUMNS = [
+    "페이지 구분",
+    "탭 구분",
+    "정렬우선순위",
+    "분류컬럼",
+    "정렬방식",
+    "분류값",
+    "값표시순서",
+    "활성여부",
+]
+_PARTS_IN_KEY_ORDER = [
+    "DEMO_A (DEMO_CUSTOM_X)",
+    "DEMO_A (DEMO_CUSTOM_Z)",
+    "DEMO_B",
+    "DEMO_C (DEMO_CUSTOM_W)",
+    "DEMO_C (DEMO_CUSTOM_Y)",
+]
+_PARTS_IN_RULE_ORDER = [
+    "DEMO_A (DEMO_CUSTOM_Z)",
+    "DEMO_A (DEMO_CUSTOM_X)",
+    "DEMO_B",
+    "DEMO_C (DEMO_CUSTOM_Y)",
+    "DEMO_C (DEMO_CUSTOM_W)",
+]
+
+
+@pytest.mark.parametrize(
+    ("rules", "expected"),
+    [
+        pytest.param([], _PARTS_IN_KEY_ORDER, id="no-rule"),
+        pytest.param(
+            [
+                _plan_rule(1, "제품정보", "오름차순"),
+                _plan_rule(2, "Stack", "사용자지정", "12H", 1),
+                _plan_rule(2, "Stack", "사용자지정", "8H", 2),
+            ],
+            _PARTS_IN_KEY_ORDER,
+            id="product-then-stack",
+        ),
+        pytest.param(
+            [_plan_rule(1, "제품정보", "오름차순"), _plan_rule(2, "CUSTOM", "내림차순")],
+            _PARTS_IN_RULE_ORDER,
+            id="product-then-custom-descending",
+        ),
+        pytest.param([_plan_rule(1, "CUSTOM", "오름차순")], _PARTS_IN_KEY_ORDER, id="custom-only"),
+        pytest.param(
+            [
+                _plan_rule(1, "CUSTOM", "사용자지정", "DEMO_CUSTOM_Y", 1),
+                _plan_rule(1, "CUSTOM", "사용자지정", "DEMO_CUSTOM_Z", 2),
+            ],
+            _PARTS_IN_RULE_ORDER,
+            id="custom-user-order",
+        ),
+    ],
+)
+def test_the_plan_detail_stands_the_parts_in_the_donut_order_under_every_rule(
+    rules: list[tuple[object, ...]], expected: list[str]
+) -> None:
+    """계획 세부수량 띠와 도넛 · 범례 차례는 같은 데이터 · 같은 규칙에서 부품 차례가 같다 — 차례는
+    제품 → 부품 → Stack 이다. 부품마다 Stack 이 겹치지 않아도 Stack 규칙이 부품 차례를 정하지 않고,
+    `CUSTOM` 규칙은 한 제품 안의 부품 차례만 정해 다른 제품의 부품이 사이에 끼지 않는다."""
+    plan = _part_plan(
+        [
+            ("DEMO_A", "DEMO_CUSTOM_X", "8H", 10.0),
+            ("DEMO_A", "DEMO_CUSTOM_Z", "12H", 20.0),
+            ("DEMO_B", "-", "8H", 5.0),
+            ("DEMO_C", "DEMO_CUSTOM_Y", "8H", 7.0),
+            ("DEMO_C", "DEMO_CUSTOM_W", "12H", 3.0),
+        ]
+    )
+    display_order = pd.DataFrame(rules, columns=_PLAN_RULE_COLUMNS) if rules else None
+    multi_part = multi_part_products(plan)
+    wafer = plan[["생산계획년월", "제품정보", "CUSTOM"]].assign(물량=1.0)
+
+    _, detail = build_production_dashboard(
+        plan, _part_density(plan), display_order, multi_part=multi_part
+    )
+    slots = assign_product_slots(
+        build_product_volume(plan, wafer, multi_part=multi_part), display_order
+    )
+
+    labels = [
+        product if part == PART_NOT_SPLIT else f"{product} ({part})"
+        for product, part in zip(detail["제품정보"], detail["CUSTOM"], strict=True)
+    ]
+    assert labels == expected
+    assert list(slots.order) == expected
 
 
 def test_a_comparison_only_dash_row_stands_beside_the_parts_of_its_product() -> None:

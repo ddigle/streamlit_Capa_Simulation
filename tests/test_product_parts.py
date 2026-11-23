@@ -287,6 +287,62 @@ def test_keeping_parts_together_never_moves_rows_across_another_product() -> Non
     assert keep_parts_together(without_custom) is without_custom
 
 
+def test_keeping_parts_together_puts_the_parts_in_part_order_not_in_first_appearance() -> None:
+    """부품마다 Stack 이 겹치지 않으면 Stack 규칙이 부품 차례까지 뒤집어 받는다 — 덩이 안 부품은
+    처음 선 차례가 아니라 부품 차례로 모으고, 한 부품 안의 행 차례는 받은 그대로다."""
+    frame = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_A", "DEMO_B"],
+            "CUSTOM": [PART_B, PART_A, PART_B, PART_NOT_SPLIT],
+            "Stack": ["12H", "8H", "8H", "8H"],
+        }
+    )
+
+    together = keep_parts_together(frame)
+
+    assert together["CUSTOM"].tolist() == [PART_A, PART_B, PART_B, PART_NOT_SPLIT]
+    assert together["Stack"].tolist() == ["8H", "12H", "8H", "8H"]
+
+
+def test_a_custom_rule_orders_the_parts_only_inside_their_product() -> None:
+    """범위의 `CUSTOM` 규칙은 한 제품 안의 부품 차례만 정한다 — 다른 제품의 부품이 사이에 끼거나
+    규칙에 든 부품이 접힌 제품 앞으로 뛰지 않는다."""
+    frame = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_B", "DEMO_C", "DEMO_C"],
+            "CUSTOM": [
+                "DEMO_CUSTOM_X",
+                "DEMO_CUSTOM_Z",
+                PART_NOT_SPLIT,
+                "DEMO_CUSTOM_W",
+                "DEMO_CUSTOM_Y",
+            ],
+        }
+    )
+    rules = pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_PLAN] * 2,
+            "탭 구분": [TAB_PKG_PLAN] * 2,
+            "정렬우선순위": [1, 1],
+            "분류컬럼": ["CUSTOM", "CUSTOM"],
+            "정렬방식": ["사용자지정"] * 2,
+            "분류값": ["DEMO_CUSTOM_Y", "DEMO_CUSTOM_Z"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y"] * 2,
+        }
+    )
+
+    ordered = apply_part_display_order(frame, rules, PAGE_PLAN, TAB_PKG_PLAN)
+
+    assert list(zip(ordered["제품정보"], ordered["CUSTOM"], strict=True)) == [
+        ("DEMO_A", "DEMO_CUSTOM_Z"),
+        ("DEMO_A", "DEMO_CUSTOM_X"),
+        ("DEMO_B", PART_NOT_SPLIT),
+        ("DEMO_C", "DEMO_CUSTOM_Y"),
+        ("DEMO_C", "DEMO_CUSTOM_W"),
+    ]
+
+
 def test_keeping_parts_together_follows_the_owner_columns() -> None:
     """공정 Capa 상세 「양산구분·제품」 처럼 주인이 두 칸이면 두 칸이 같은 이웃 행 덩이에서
     모은다."""

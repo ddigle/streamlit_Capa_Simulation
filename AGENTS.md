@@ -2921,8 +2921,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이름표 `product_part_label`(부품 글자 `label_part`) · 칸 녹이기 `part_merged_columns`(보이는 칸에서 CUSTOM 을 빼고 제품
     칸 글을 이름표로) · 차례 `part_order_key`(접힌 값 먼저, 나머지는 `custom_sort_key` — 열쇠 함수를 두 벌 두지 않는다) ·
     모으기 `keep_parts_together` · 표시순서 `apply_part_display_order`(앞에서 섞인 제품의 부품을 부품 차례로 모으고 —
-    규칙이 없을 때의 답 — 뒤에서 `keep_parts_together`). 좁은 칸 줄임은 `home_figure_common._fit_part_label` 이다. 시험은
-    `tests/test_product_parts.py`.
+    규칙이 없을 때의 답 — `CUSTOM` 규칙을 뺀 표시순서 뒤에 `keep_parts_together`. 부품 차례는 범위의 `CUSTOM` 규칙 →
+    `part_order_key` 하나이고 도넛 · 범례 차례(`product_share.assign_product_slots`)도 이 함수를 지난다). 좁은 칸 줄임은
+    `home_figure_common._fit_part_label` 이다. 시험은 `tests/test_product_parts.py` · 계획 세부수량과 도넛의 부품 차례는
+    `tests/test_dashboard.py`.
 - `src/capa_simulation/services/dynamic_capacity.py` — 실적을 차례로 얹는 Dynamic Capa 손실 분석과 데모(`DemoProfile`)다.
 - `src/capa_simulation/services/wip_status.py` — 재공 DB 연결 계약·STEP 코드 정렬·제품별 표준 가능량 일 전개와 샘플을 낸다.
 - `src/capa_simulation/services/display_order_scopes.py` — 표시순서 규칙이 걸리는 페이지·탭 구분자를 한 곳에 선언한다.
@@ -8179,11 +8181,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `q7-*` 줄이다.
   - 구분은 괄호다 — 가운뎃점은 「양산 · DEMO_A」 · 근거 카드 상위 제품 목록 · 덤벨 줄 이름을 잇는 구분자라 한 제품의 끝이
     읽히지 않는다. 괄호는 「표시명 (원본)」 과 같은 꼴이다.
-  - 부품 차례는 `part_order_key`(접힌 값 먼저, 나머지는 위 끝 열쇠와 같은 `custom_sort_key`)다. CUSTOM 뒤 칸(Stack 등)
-    규칙이 한 제품의 부품을 번갈아 세우는 표는 표시순서 **뒤**에 `keep_parts_together` 를 건다 — 이웃한 같은 제품 행 덩이
-    안에서 부품이 처음 선 차례로 모을 뿐 새 열쇠로 다시 세우지 않는다. 행으로 그리는 표(계획 세부수량)는 앞뒤를 묶은
-    `apply_part_display_order` 를 쓴다 — 규칙이 없으면 표시순서가 받은 차례를 그대로 돌려주므로 앞에서 섞인 제품의 부품을
-    부품 차례로 그 제품 첫 자리에 모아 둔다(덧붙은 비교 · 과거 「제품 (-)」 줄도 그 곁). 부품이 하나뿐인 제품의 행은 제자리다.
+  - 차례는 제품 → 부품 → 그 밖의 칸(Stack 등)이다. 부품 차례는 `part_order_key`(접힌 값 먼저, 나머지는 위 끝 열쇠와 같은
+    `custom_sort_key`)이고, 범위에 `CUSTOM` 규칙이 있으면 그 규칙이 한 제품 안의 부품 차례만 정한다 — 제품 사이를 넘어 부품을
+    떼어 놓지 않는다(규칙집 6-41 q7-order). 행으로 그리는 표(계획 세부수량 · 공정 Capa 상세 분류 행)와 도넛 · 범례 차례는 모두
+    `apply_part_display_order` 를 지난다 — 앞에서 섞인 제품의 부품을 부품 차례로 그 제품 첫 자리에 모으고(규칙이 없으면
+    표시순서가 받은 차례를 그대로 돌려준다. 덧붙은 비교 · 과거 「제품 (-)」 줄도 그 곁), `CUSTOM` 규칙을 뺀 표시순서를 건 뒤
+    `keep_parts_together` 가 이웃한 같은 제품 행 덩이 안을 부품 차례로 모은다(CUSTOM 뒤 칸 규칙이 부품을 번갈아 세우거나 부품
+    차례를 뒤집은 덩이). 한 부품 안의 행 차례와 다른 제품 행은 받은 그대로이고, 부품이 하나뿐인 제품의 행은 제자리다.
   - 색은 부품마다 제 칸이다(2026-11-23 보드 답 D2 (가) — 다른 제품처럼, 새 토큰 없음). 같은 제품의 부품은 차례로만 이웃하고
     이름은 범례 · 풍선 글이 나르며(UI-ACC-03), 칸이 넘치면 부품 단위로 `기타` 에 접힌다 — 한 제품의 부품이 이름 있는 칸과
     `기타` 에 걸칠 수 있다(`product_share.assign_product_slots`).

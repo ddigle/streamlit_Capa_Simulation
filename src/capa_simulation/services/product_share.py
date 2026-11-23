@@ -34,13 +34,14 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.product_parts import (
     PART_COLUMN,
     PART_NOT_SPLIT,
+    apply_part_display_order,
     part_order_key,
     product_part_label,
     split_product_parts,
@@ -288,9 +289,9 @@ def _display_ordered(
 ) -> list[str]:
     """`계획 세부수량` 표와 같은 차례 — (제품명, 부품 차례)로 세운 뒤 공용 표시순서를 얹는다.
 
-    부품 차례는 `part_order_key`(접힌 값 먼저 · 표지 `-` 끝)다. 표시순서 끝 열쇠도 같은 제품의
-    부품을 같은 열쇠로 이웃하게 세우므로, 규칙이 없어 표를 그대로 돌려줄 때도 미리 세운 차례가
-    답이다.
+    표시순서는 계획 세부수량과 같은 `apply_part_display_order` 로 건다 — 부품 차례(범위의 `CUSTOM`
+    규칙 → `part_order_key`, 접힌 값 먼저 · 표지 `-` 끝)와 한 제품의 부품이 이웃하는 것이 그 표와
+    같다. 규칙이 없어 표를 그대로 돌려줄 때는 미리 세운 차례가 답이다.
     """
     pairs = sorted(
         (parts[str(label)] for label in labels),
@@ -298,7 +299,7 @@ def _display_ordered(
     )
     if not pairs:
         return []
-    ordered = apply_display_order(
+    ordered = apply_part_display_order(
         pd.DataFrame(
             {
                 "제품정보": [product for product, _ in pairs],

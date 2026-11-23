@@ -16,8 +16,10 @@
 - 이름표는 접힌 제품이면 제품 이름 그대로, 가른 제품이면 「DEMO_A (DEMO_CUSTOM_A)」 다
   (`product_part_label` — 2026-11-23 보드 답 D1 (가)). 가운뎃점은 이미 「양산 · DEMO_A」 같은
   잇기 구분자라 쓰지 않는다.
-- 차례는 접힌 값이 먼저이고 나머지는 표시 차례 열쇠 `core_data_derivation.custom_sort_key`
-  그대로다(`part_order_key`). 행으로 그리는 표는 공용 표시순서를 `apply_part_display_order` 로 건다.
+- 차례는 제품 → 부품 → 그 밖의 칸(Stack 등)이다. 부품 차례는 접힌 값이 먼저이고 나머지는 표시 차례
+  열쇠 `core_data_derivation.custom_sort_key` 그대로다(`part_order_key`) — 범위에 `CUSTOM` 규칙이
+  있으면 그 규칙이 한 제품 안의 부품 차례만 정하고 제품 사이를 넘어 부품을 떼어 놓지 않는다. 행으로
+  그리는 표와 도넛 · 범례 차례는 둘 다 공용 표시순서를 `apply_part_display_order` 로 건다.
 """
 
 from __future__ import annotations
@@ -28,7 +30,12 @@ from typing import Final
 import pandas as pd
 
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK, custom_sort_key
-from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order import (
+    DisplayOrderInput,
+    PreparedDisplayOrder,
+    apply_display_order,
+    prepare_display_order,
+)
 from capa_simulation.services.frame_contracts import require_columns
 
 PRODUCT_COLUMN: Final = "제품정보"
@@ -122,17 +129,67 @@ def part_order_key(part: object) -> tuple[bool, tuple[bool, str, str]]:
     return (True, custom_sort_key(part))
 
 
+def _without_part_rules(display_order: DisplayOrderInput) -> PreparedDisplayOrder | None:
+    """`CUSTOM` 규칙을 뺀 표시순서 — 합쳐 보는 화면의 행 차례(제품 사이 · Stack 등)를 세울 때 쓴다.
+
+    부품은 제품 칸 글에 녹아 그 제품 곁에서만 서므로, `CUSTOM` 규칙은 한 제품 안의 부품 차례만
+    정한다(`_part_ranks`). 행 전체를 그 규칙으로 세우면 다른 제품의 부품이 한 제품의 부품 사이에
+    끼거나 규칙에 든 부품이 접힌 제품들 앞으로 뛰어 오른다. 규칙이 없으면 받은 것 그대로다.
+    """
+    prepared = prepare_display_order(display_order)
+    if prepared is None:
+        return None
+    rules = prepared.derived_rules
+    part_rules = rules["분류컬럼"].eq(PART_COLUMN).fillna(False).astype("bool")
+    if not bool(part_rules.any()):
+        return prepared
+    kept = prepared.rules["분류컬럼"].ne(PART_COLUMN).fillna(True).astype("bool")
+    return PreparedDisplayOrder(
+        rules=prepared.rules.loc[kept], derived_rules=rules.loc[~part_rules]
+    )
+
+
+def _part_ranks(
+    parts: pd.Series, display_order: DisplayOrderInput, page: str, tab: str | None
+) -> list[int]:
+    """행마다 부품 차례 수 — 그 범위의 `CUSTOM` 규칙(있으면) → `part_order_key`.
+
+    부품 값마다 한 번씩, 부품 칸 하나뿐인 표에 공용 표시순서를 건다 — 다른 칸 규칙은 그 칸이 없어
+    건너뛰므로 `CUSTOM` 규칙만 걸리고, 규칙이 없으면 미리 세운 `part_order_key` 차례가 답이다. 한
+    제품 안의 부품 차례만 정하는 수라 다른 제품의 부품과 견주지 않는다.
+    """
+    codes, uniques = pd.factorize(parts, use_na_sentinel=False)
+    by_key = sorted(range(len(uniques)), key=lambda code: part_order_key(uniques[code]))
+    distinct = pd.DataFrame(
+        {
+            PART_COLUMN: pd.Series([uniques[code] for code in by_key], dtype="object"),
+            "__part_code": by_key,
+        }
+    )
+    ordered = apply_display_order(distinct, display_order, page, tab)
+    rank = {int(code): position for position, code in enumerate(ordered["__part_code"])}
+    return [rank[int(code)] for code in codes]
+
+
 def keep_parts_together(
-    frame: pd.DataFrame, owner_columns: Sequence[str] = (PRODUCT_COLUMN,)
+    frame: pd.DataFrame,
+    owner_columns: Sequence[str] = (PRODUCT_COLUMN,),
+    *,
+    display_order: DisplayOrderInput = None,
+    page: str = "",
+    tab: str | None = None,
 ) -> pd.DataFrame:
-    """이웃한 같은 제품 행 덩이 안에서 한 부품의 행을 모은 사본 — 표시순서를 건 **뒤**에 쓴다.
+    """이웃한 같은 제품 행 덩이 안에서 부품 차례로 한 부품의 행을 모은 사본 — 표시순서를 건 **뒤**에
+    쓴다.
 
     `display_order.apply_display_order` 의 끝 열쇠는 규칙 열쇠가 같은 행에서만 부품을 이웃하게
     세운다. CUSTOM 뒤 칸(Stack 등)에 규칙이 걸리면 한 제품의 부품이 그 칸 값마다 번갈아
-    선다(A/12H/p1, A/12H/p2, A/8H/p1 …). 부품을 제품 칸 글에 녹여 그리는 화면은 한 부품의 행이 한
-    띠에 모여야 하므로, 제품(`owner_columns` 값이 같은 이웃 행) 덩이마다 부품이 처음 선 차례로
-    모은다. 부품 차례도 덩이 안 행 차례도 받은 그대로라 새 열쇠로 다시 세우지 않고, 제품 덩이끼리의
-    차례 · 다른 제품 행은 움직이지 않는다. CUSTOM 칸이 없으면 그대로 돌려준다.
+    선다(A/12H/p1, A/12H/p2, A/8H/p1 …). 부품마다 그 칸 값이 겹치지 않으면 그 칸 규칙이 부품
+    차례까지 뒤집는다(A/12H/p2, A/8H/p1). 부품을 제품 칸 글에 녹여 그리는 화면은 차례가 제품 → 부품
+    → 그 칸이라,
+    제품(`owner_columns` 값이 같은 이웃 행) 덩이마다 부품 차례(`_part_ranks` — 범위의 `CUSTOM`
+    규칙 → `part_order_key`, 도넛 · 범례와 같은 차례)로 모은다. 한 부품 안의 행 차례(Stack 등)와
+    제품 덩이끼리의 차례 · 다른 제품 행은 받은 그대로다. CUSTOM 칸이 없으면 그대로 돌려준다.
     """
     if frame.empty or PART_COLUMN not in frame.columns:
         return frame
@@ -140,23 +197,18 @@ def keep_parts_together(
     require_columns(frame, owners, "제품 부품")
     codes = frame.groupby(owners, dropna=False, sort=False).ngroup()
     run = codes.ne(codes.shift()).cumsum().to_numpy()
-    part_codes, _ = pd.factorize(frame[PART_COLUMN], use_na_sentinel=False)
-    first_seen: dict[tuple[int, int], int] = {}
-    part_rank: list[int] = []
-    for position, key in enumerate(zip(run.tolist(), part_codes.tolist(), strict=True)):
-        part_rank.append(first_seen.setdefault(key, position))
-    keys = pd.DataFrame({"run": run, "part": part_rank, "row": range(len(frame))})
+    ranks = _part_ranks(frame[PART_COLUMN], display_order, page, tab)
+    keys = pd.DataFrame({"run": run, "part": ranks, "row": range(len(frame))})
     order = keys.sort_values(["run", "part", "row"], kind="stable").index
     return frame.iloc[order].reset_index(drop=True)
 
 
-def _mixed_parts_first(frame: pd.DataFrame, owners: list[str]) -> pd.DataFrame:
+def _mixed_parts_first(frame: pd.DataFrame, owners: list[str], ranks: list[int]) -> pd.DataFrame:
     """부품이 둘 이상 섞인 제품(`owners` 값이 같은 행)의 행을 그 제품이 처음 선 자리로 모아 부품
-    차례(`part_order_key` → 원래 행 차례)로 세운 사본. 부품이 하나뿐인 제품의 행은 제자리다."""
+    차례(`ranks` → 원래 행 차례)로 세운 사본. 부품이 하나뿐인 제품의 행은 제자리다."""
     groups = frame.groupby(owners, dropna=False, sort=False).ngroup().tolist()
-    ranks = [part_order_key(part) for part in frame[PART_COLUMN]]
     first: dict[int, int] = {}
-    distinct: dict[int, set[tuple[bool, tuple[bool, str, str]]]] = {}
+    distinct: dict[int, set[int]] = {}
     for position, (group, rank) in enumerate(zip(groups, ranks, strict=True)):
         first.setdefault(group, position)
         distinct.setdefault(group, set()).add(rank)
@@ -179,26 +231,34 @@ def apply_part_display_order(
 ) -> pd.DataFrame:
     """공용 표시순서를 건 표 — 가른 제품의 부품 행은 한 제품 안에서 부품 차례로 모여 선다.
 
-    `display_order.apply_display_order` 앞뒤에 한 번씩 손을 댄다. 차례 열쇠는 둘 다 `part_order_key`
-    (곧 표시순서 끝 열쇠와 같은 `custom_sort_key`)라 같은 표를 다른 규칙으로 두 번 세우지 않는다.
+    차례는 제품 → 부품 → 그 밖의 칸(Stack 등)이다. 부품 차례는 `_part_ranks`(범위의 `CUSTOM`
+    규칙 → `part_order_key`) 하나이고, 행 차례는 `CUSTOM` 규칙을 뺀 표시순서
+    (`_without_part_rules`)가 세운다 — 같은 표를 다른 부품 차례로 두 번 세우지 않는다.
 
     1. 앞: 부품이 둘 이상 섞인 제품의 행을 그 제품이 처음 선 자리로 모아 부품 차례로 세운다 — 그
        범위에 규칙이 없으면 `apply_display_order` 가 받은 차례를 그대로 돌려주므로 이 차례가
        답이다(피벗 · `groupby` 는 표지 `-` 를 글자 앞에 두고 대소문자를 가려 세운다). 덧붙은
        행(비교 · 과거에만 있는 「제품 (-)」 줄)도 그 제품 곁에 선다. 부품이 하나뿐인 제품의 행은
        제자리라 지금 차례 그대로다.
-    2. `apply_display_order` — 규칙이 있으면 끝 열쇠가 같은 부품 차례로 이웃하게 세운다.
-    3. 뒤: `keep_parts_together` — CUSTOM 뒤 칸(Stack 등) 규칙이 번갈아 세운 한 부품의 행을
-       모은다.
+    2. `apply_display_order`(`CUSTOM` 규칙을 뺀 것) — 규칙이 있으면 끝 열쇠가 한 제품의 부품을
+       이웃하게 세운다.
+    3. 뒤: `keep_parts_together` — CUSTOM 뒤 칸(Stack 등) 규칙이 번갈아 세우거나 부품 차례를
+       뒤집은 한 제품 덩이를 부품 차례로 모은다.
 
-    CUSTOM 칸이 없는 표는 `apply_display_order` 와 같다.
+    도넛 · 범례 차례(`product_share.assign_product_slots`)도 (제품, 부품) 두 칸 표로 이 함수를
+    지나므로 같은 데이터 · 같은 규칙에서 계획 세부수량 띠와 부품 차례가 같다. CUSTOM 칸이 없는 표는
+    `apply_display_order` 와 같다.
     """
     owners = list(owner_columns)
     if frame.empty or PART_COLUMN not in frame.columns:
         return apply_display_order(frame, display_order, page, tab)
     require_columns(frame, owners, "제품 부품")
-    ordered = apply_display_order(_mixed_parts_first(frame, owners), display_order, page, tab)
-    return keep_parts_together(ordered, owners)
+    prepared = prepare_display_order(display_order)
+    gathered = _mixed_parts_first(
+        frame, owners, _part_ranks(frame[PART_COLUMN], prepared, page, tab)
+    )
+    ordered = apply_display_order(gathered, _without_part_rules(prepared), page, tab)
+    return keep_parts_together(ordered, owners, display_order=prepared, page=page, tab=tab)
 
 
 def part_merged_columns(frame: pd.DataFrame, dims: Sequence[str]) -> tuple[list[str], pd.DataFrame]:
