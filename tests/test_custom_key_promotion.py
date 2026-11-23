@@ -201,6 +201,204 @@ def test_display_order_keeps_the_source_order_without_rules_or_parts() -> None:
     assert result["Capa Code"].tolist() == ["C2", "C1", "C3"]
 
 
+def _route_rules() -> pd.DataFrame:
+    """산출 결과 소요대수의 공정 → STEP → MCP 오름차순 — 내장 시드 프로필처럼 제품 칸을 정하지 않는
+    규칙."""
+    return pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_CALCULATION] * 3,
+            "탭 구분": [TAB_REQUIRED] * 3,
+            "정렬우선순위": [1, 2, 3],
+            "분류컬럼": ["공정", "STEP_SEQ", "MCP_SEQ"],
+            "정렬방식": ["오름차순"] * 3,
+            "분류값": [None] * 3,
+            "값표시순서": [None] * 3,
+            "활성여부": ["Y"] * 3,
+        }
+    )
+
+
+def _route_rows(products: list[str], customs: list[str]) -> pd.DataFrame:
+    """한 공정 · 한 STEP · 한 MCP 의 소요대수 「상세」 꼴 — 규칙 열쇠가 모두 같다."""
+    count = len(products)
+    return pd.DataFrame(
+        {
+            "공정": ["DEMO_PROCESS"] * count,
+            "제품정보": products,
+            "Stack": ["8H"] * count,
+            "CUSTOM": customs,
+            "STEP_SEQ": ["S0100"] * count,
+            "MCP_SEQ": ["M01"] * count,
+            "202701": [float(index + 1) for index in range(count)],
+        }
+    )
+
+
+def test_display_order_ties_keep_other_products_in_the_source_order() -> None:
+    """규칙이 제품 칸을 정하지 않으면 제품마다 CUSTOM 이 달라도 다른 제품의 행은 원래 차례다 —
+    CUSTOM 글자 차례로 섞이지 않는다."""
+    data = _route_rows(["DEMO_P2", "DEMO_P1"], ["DEMO_CUSTOM_B", "DEMO_CUSTOM_A"])
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert result["제품정보"].tolist() == ["DEMO_P2", "DEMO_P1"]
+
+
+def test_display_order_ties_put_one_products_parts_together_in_part_order() -> None:
+    """한 제품의 부품은 그 제품이 원래 차례에서 처음 선 자리에 이웃해 부품 차례로 서고(표지는 끝),
+    사이에 있던 다른 제품은 그 뒤로 원래 차례를 지킨다."""
+    data = _route_rows(
+        ["DEMO_P1", "DEMO_P3", "DEMO_P1", "DEMO_P2", "DEMO_P1"],
+        [CUSTOM_BLANK, "DEMO_CUSTOM_A", "DEMO_CUSTOM_B", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A"],
+    )
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["제품정보"], result["CUSTOM"], strict=True)) == [
+        ("DEMO_P1", "DEMO_CUSTOM_A"),
+        ("DEMO_P1", "DEMO_CUSTOM_B"),
+        ("DEMO_P1", CUSTOM_BLANK),
+        ("DEMO_P3", "DEMO_CUSTOM_A"),
+        ("DEMO_P2", "DEMO_CUSTOM_B"),
+    ]
+    assert result["202701"].tolist() == [5.0, 3.0, 1.0, 2.0, 4.0]
+
+
+def test_display_order_part_groups_stay_inside_their_rule_tie() -> None:
+    """부품 무리는 규칙 열쇠가 같은 행 안에서만 모인다 — 숫자 규칙 칸(STEP_NO)마다 따로 서므로,
+    한 제품이 앞 STEP 에서 먼저 섰어도 뒤 STEP 에서는 그 STEP 안 원래 차례를 따른다."""
+    rules = _product_rule(PAGE_CALCULATION, TAB_REQUIRED).assign(분류컬럼="STEP_NO")
+    data = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_P1", "DEMO_P1", "DEMO_P2", "DEMO_P1", "DEMO_P1"],
+            "CUSTOM": [
+                "DEMO_CUSTOM_A",
+                "DEMO_CUSTOM_B",
+                "DEMO_CUSTOM_A",
+                "DEMO_CUSTOM_B",
+                "DEMO_CUSTOM_A",
+            ],
+            "STEP_NO": [10, 10, 20, 20, 20],
+        }
+    )
+
+    result = apply_display_order(data, rules, PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["STEP_NO"], result["제품정보"], result["CUSTOM"], strict=True)) == [
+        (10, "DEMO_P1", "DEMO_CUSTOM_A"),
+        (10, "DEMO_P1", "DEMO_CUSTOM_B"),
+        (20, "DEMO_P2", "DEMO_CUSTOM_A"),
+        (20, "DEMO_P1", "DEMO_CUSTOM_A"),
+        (20, "DEMO_P1", "DEMO_CUSTOM_B"),
+    ]
+
+
+def test_display_order_single_part_rows_stay_put_among_other_parts() -> None:
+    """부품이 하나뿐인 제품의 행은 숫자 칸만 다른 같은 제품 행이 떨어져 있어도 제자리다 — 다른
+    제품에 부품이 둘이어도 그 제품의 부품만 움직인다."""
+    data = pd.DataFrame(
+        {
+            "공정": ["DEMO_PROCESS"] * 5,
+            "제품정보": ["DEMO_P1", "DEMO_P2", "DEMO_P1", "DEMO_P3", "DEMO_P3"],
+            "CUSTOM": [
+                "DEMO_CUSTOM_A",
+                "DEMO_CUSTOM_B",
+                "DEMO_CUSTOM_A",
+                "DEMO_CUSTOM_B",
+                "DEMO_CUSTOM_A",
+            ],
+            "STEP_NO": [10, 10, 20, 10, 10],
+            "202701": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert result["202701"].tolist() == [1.0, 2.0, 3.0, 5.0, 4.0]
+
+
+def test_display_order_part_groups_split_by_the_other_text_columns() -> None:
+    """CUSTOM 말고 다른 글자 칸(WF 구분)이 다르면 다른 무리다 — 한 제품의 두 부품 × 두 WF 구분은
+    WF 구분마다 두 부품이 이웃한다."""
+    data = _route_rows(
+        ["DEMO_P1"] * 4, ["DEMO_CUSTOM_B", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_A"]
+    ).assign(**{"WF 구분": ["DEMO_WF1", "DEMO_WF2", "DEMO_WF1", "DEMO_WF2"]})
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["WF 구분"], result["CUSTOM"], strict=True)) == [
+        ("DEMO_WF1", "DEMO_CUSTOM_A"),
+        ("DEMO_WF1", "DEMO_CUSTOM_B"),
+        ("DEMO_WF2", "DEMO_CUSTOM_A"),
+        ("DEMO_WF2", "DEMO_CUSTOM_B"),
+    ]
+
+
+def test_display_order_ties_keep_the_source_order_when_custom_is_one_value() -> None:
+    """CUSTOM 이 표 전체에서 한 값이면 규칙 뒤 차례는 원래 차례 그대로다 — 숫자 칸(값 · 숫자 STEP)만
+    다른 같은 제품의 행이 떨어져 있어도 모으지 않는다."""
+    data = pd.DataFrame(
+        {
+            "공정": ["DEMO_PROCESS"] * 3,
+            "제품정보": ["DEMO_P1", "DEMO_P2", "DEMO_P1"],
+            "CUSTOM": ["DEMO_CUSTOM_A"] * 3,
+            "STEP_NO": [10, 10, 20],
+            "202701": [1.0, 2.0, 3.0],
+        }
+    )
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert result["202701"].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_display_order_custom_rules_come_before_the_part_order() -> None:
+    """사용자지정 규칙이 정한 칸은 규칙이 먼저다. 목록 밖 제품은 규칙 순위가 같아도 제품끼리 원래
+    차례이고, 그 안의 부품만 부품 차례로 선다."""
+    rules = pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_CALCULATION] * 2,
+            "탭 구분": [TAB_REQUIRED] * 2,
+            "정렬우선순위": [1, 1],
+            "분류컬럼": ["제품정보", "제품정보"],
+            "정렬방식": ["사용자지정", "사용자지정"],
+            "분류값": ["DEMO_P2", "DEMO_P1"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y", "Y"],
+        }
+    )
+    data = _route_rows(
+        ["DEMO_P4", "DEMO_P1", "DEMO_P3", "DEMO_P2", "DEMO_P4"],
+        ["DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_A", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A"],
+    )
+
+    result = apply_display_order(data, rules, PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["제품정보"], result["CUSTOM"], strict=True)) == [
+        ("DEMO_P2", "DEMO_CUSTOM_B"),
+        ("DEMO_P1", "DEMO_CUSTOM_A"),
+        ("DEMO_P4", "DEMO_CUSTOM_A"),
+        ("DEMO_P4", "DEMO_CUSTOM_B"),
+        ("DEMO_P3", "DEMO_CUSTOM_A"),
+    ]
+
+
+def test_display_order_ties_keep_the_source_order_without_text_identity() -> None:
+    """CUSTOM 말고 글자 칸이 없어 「CUSTOM 뺀 정체」 를 못 정하는 표는 규칙 뒤 원래 차례만 쓴다."""
+    rules = _product_rule(PAGE_CALCULATION, TAB_REQUIRED).assign(분류컬럼="STEP_NO")
+    data = pd.DataFrame(
+        {
+            "STEP_NO": [10, 10],
+            "CUSTOM": ["DEMO_CUSTOM_B", "DEMO_CUSTOM_A"],
+            "202701": [1.0, 2.0],
+        }
+    )
+
+    result = apply_display_order(data, rules, PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert result["CUSTOM"].tolist() == ["DEMO_CUSTOM_B", "DEMO_CUSTOM_A"]
+
+
 # ------------------------------------------------------------------ 끝단 — 한 값 · 두 부품
 
 # 끝단 시험이 맞대는 계산 결과 칸. 대당 Capa · 소요대수 상세는 CUSTOM 칸을 싣는다.

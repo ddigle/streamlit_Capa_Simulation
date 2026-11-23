@@ -2840,8 +2840,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     대응이어야 한다(`tests/test_display_order_scopes.py`).
 - `src/capa_simulation/services/display_order.py` — `RQ_DISPLAY_ORDER` 기반 행 정렬이다. `prepare_display_order` 가 회차에
   한 번 검증해 `PreparedDisplayOrder` 를 만든다. 캐시는 두지 않는다(`simulation_cache.get_prepared_display_order`).
-  규칙 열쇠가 같은 행의 끝 열쇠는 `CUSTOM` 칸(`CUSTOM_TIE_COLUMN`)의 부품 차례(`custom_sort_key`)이고, 원래 행 차례는 그
-  뒤다(8장).
+  규칙 열쇠가 같은 행의 끝 열쇠(`_part_tie_keys`)는 `CUSTOM` 칸(`CUSTOM_TIE_COLUMN`)만 다른 행 — 한 제품의 부품 — 을
+  그 무리가 처음 선 자리에 이웃해 부품 차례(`custom_sort_key`)로 세우고, 그 밖의 행은 원래 행 차례다(8장).
 - `src/capa_simulation/services/month_filter.py` — YYYYMM 검증과 조회기간 필터다(원천·적재·계산이 같은 달력 검증을 쓴다).
 - `src/capa_simulation/services/capacity_reference_editor.py` — Capa 기준정보 Long/Wide 편집 변환이다. 빈 칸은 「행 없음」이다.
   - 편집표 한 장(`build_reference_edit_table`)은 순수 조합이고 캐시는 `simulation_cache.get_reference_edit_table` 이
@@ -7926,16 +7926,21 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   항상 마지막 분류 계층으로 둔다. 기존 공용 프로필에 두 규칙이 없으면 Repository가
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
-- 규칙 열쇠가 같은 행의 **끝 열쇠는 부품(`CUSTOM`) 차례**다(`display_order.apply_display_order` — 원래 행 차례 앞). 차례는
-  `core_data_derivation.custom_sort_key` 하나이고(대소문자 접은 글자 → 원문 오름차순, 빈 값 · 표지 `"-"` 는 끝), 표시 차례에서
-  부품을 세우는 자리는 이 열쇠만 쓴다. 기준 정보 「STEP 복제·삭제」 대상 목록 · STEP 보기(`route_step_editor` — 경로 칸 전체를
-  글자 그대로 세운다, 표지가 앞이고 대소문자를 가린다)는 이 열쇠를 쓰지 않아, 표시순서를 지나는 UPEH · 측정률 · 대당 Capa
-  표와 부품 차례가 다를 수 있다.
-  - 끝 열쇠가 차례를 바꾸지 않는 것은 그 표에 CUSTOM 칸이 없거나 CUSTOM 이 **표 전체**에서 한 값일 때뿐이다. 제품마다 부품이
-    하나여도 제품끼리 값이 다르면, 규칙 열쇠가 같은 다른 제품의 행이 CUSTOM 차례로 선다(원천 차례와 다르다).
-  - 끝 열쇠는 규칙 열쇠가 같은 행 **전부**에 걸린다 — 제품으로 세우지 않는 범위(공정 → STEP → MCP 만 정한 기본 프로필
-    등)에서는 다른 제품의 행이 CUSTOM 값끼리 모이고, 제품정보를 사용자지정으로 세우는 범위에서도 목록에 없는 제품은 모두
-    같은 순위(끝)라 CUSTOM 값끼리 모여 제품이 섞인다.
+- 규칙 열쇠가 같은 행의 **끝 열쇠는 한 제품의 부품(`CUSTOM`) 차례**다(`display_order._part_tie_keys` — 원래 행 차례 앞). 부품
+  차례는 `core_data_derivation.custom_sort_key` 하나이고(대소문자 접은 글자 → 원문 오름차순, 빈 값 · 표지 `"-"` 는 끝), 표시
+  차례에서 부품을 세우는 자리는 이 열쇠만 쓴다. 기준 정보 「STEP 복제·삭제」 대상 목록 · STEP 보기(`route_step_editor` — 경로
+  칸 전체를 글자 그대로 세운다, 표지가 앞이고 대소문자를 가린다)는 이 열쇠를 쓰지 않아, 표시순서를 지나는 UPEH · 측정률 ·
+  대당 Capa 표와 부품 차례가 다를 수 있다.
+  - 끝 열쇠는 (부품 무리가 원래 차례에서 처음 선 자리, 부품 차례) 둘이다. 한 무리는 규칙 열쇠와 「CUSTOM 뺀 정체」 — 받은 표의
+    글자 칸(dtype object · string)에서 CUSTOM 을 뺀 칸, 숫자 · bool · 날짜 칸은 들지 않음 — 가 모두 같고 CUSTOM 만 다른 행이다.
+    무리 안에 부품 차례가 둘 이상이면 무리 전체가 그 첫 자리에 이웃해 부품 차례로 서고, 그 밖의 행은 제 원래 자리다.
+  - 그래서 제품마다 CUSTOM 이 달라도 **다른 제품끼리는 원래 차례**다 — 제품으로 세우지 않는 범위(공정 → STEP → MCP 만 정한
+    기본 프로필 등)에서도, 제품정보를 사용자지정으로 세우는 범위의 목록 밖 제품(같은 순위 끝)끼리도 CUSTOM 글자 차례로 섞이지
+    않는다. 부품이 하나뿐인 제품의 행, 숫자 칸만 다른 같은 제품의 행도 움직이지 않는다.
+  - CUSTOM 말고 다른 글자 칸(`WF 구분` · `소요기준` · `수율 구분` 등)이 다르면 다른 무리다 — 한 제품의 두 부품 × 두 WF
+    구분은 WF 구분마다 두 부품이 이웃한다(부품마다 한 덩이가 아니다). 숫자 규칙 칸이 다르면 무리도 갈린다.
+  - 끝 열쇠가 차례를 바꾸지 않는 것은 그 표에 CUSTOM 칸이 없을 때, CUSTOM 이 **표 전체**에서 한 값일 때, CUSTOM 말고 글자
+    칸이 없어 정체를 못 정할 때다 — 규칙 뒤는 원래 행 차례만이다.
   - 끝 열쇠가 걸리지 않는 것은 정렬 없이 돌려주는 두 경우다 — 그 범위에 활성 규칙이 하나도 없을 때, 그리고 규칙은 있어도 그
     분류컬럼이 표에 하나도 없을 때. 원천 차례 그대로다.
   - 화면 분류 칸 차례(`classification_columns_in_display_order`)는 규칙에 든 칸이 먼저이고 규칙에 없는 칸은 차원 상수 차례로 그

@@ -28,7 +28,8 @@ DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
 LEGACY_SCOPE_COLUMN = "적용화면"
 DISPLAY_ORDER_MODES = {"사용자지정", "오름차순", "내림차순"}
 ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
-# 규칙 열쇠가 같은 행의 끝 열쇠(원래 행 차례 앞) — 한 제품의 부품(`CUSTOM`)을 늘 같은 차례로 세운다.
+# 규칙 열쇠가 같은 행의 끝 열쇠 칸 — 이 칸만 다른 행(한 제품의 부품)을 이웃해 부품 차례로 세운다
+# (`_part_tie_keys`).
 CUSTOM_TIE_COLUMN = "CUSTOM"
 
 
@@ -173,7 +174,12 @@ def apply_display_order(
     tab: str | None = None,
     value_aliases: dict[str, dict[str, str]] | None = None,
 ) -> pd.DataFrame:
-    """Sort data using active rules for a page and tab."""
+    """Sort data using active rules for a page and tab.
+
+    규칙 열쇠가 같은 행은 끝 열쇠 `_part_tie_keys`(한 제품의 부품만 이웃해 부품 차례) → 원래 행
+    차례로 가른다. 그 범위에 활성 규칙이 없거나 규칙의 분류컬럼이 표에 하나도 없으면 정렬하지 않고
+    돌려준다.
+    """
     prepared = _prepared_rules(display_order)
     if prepared is None:
         return data
@@ -250,12 +256,14 @@ def apply_display_order(
     if not helper_columns:
         return result
 
-    # 규칙 열쇠가 같은 행은 부품 차례(`custom_sort_key` — 빈 값 표지는 끝)로 가른다. 부품이 한
-    # 값이면 모두 같은 열쇠라 차례가 그대로다.
-    if CUSTOM_TIE_COLUMN in result.columns:
-        helper_columns.append("__display_custom_order")
-        ascending.append(True)
-        result["__display_custom_order"] = _custom_ranks(result[CUSTOM_TIE_COLUMN])
+    # 규칙 열쇠가 같은 행에서 한 제품의 부품만 이웃해 부품 차례로 선다. 다른 행은 원래 차례다.
+    tie_keys = _part_tie_keys(result, data, helper_columns)
+    if tie_keys is not None:
+        anchor, part_ranks = tie_keys
+        result["__display_part_anchor"] = anchor
+        result["__display_custom_order"] = part_ranks
+        helper_columns.extend(["__display_part_anchor", "__display_custom_order"])
+        ascending.extend([True, True])
     result["__display_original_order"] = range(len(result))
     sorted_result = result.sort_values(
         [*helper_columns, "__display_original_order"],
@@ -266,6 +274,55 @@ def apply_display_order(
     return sorted_result.drop(columns=[*helper_columns, "__display_original_order"]).reset_index(
         drop=True
     )
+
+
+def _part_tie_keys(
+    result: pd.DataFrame,
+    data: pd.DataFrame,
+    rule_columns: list[str],
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]] | None:
+    """규칙 열쇠가 같은 행의 끝 열쇠 두 칸 — (부품 무리가 선 자리, 부품 차례). 걸 것이 없으면 None.
+
+    「CUSTOM 뺀 정체」 는 받은 표(`data`)의 글자 칸 — dtype 이 object 또는 string 인 칸 — 에서
+    `CUSTOM` 을 뺀 것이다. 월 · 값 같은 숫자 칸과 bool · 날짜 칸, 정렬 도우미 칸은 들지 않는다. 규칙
+    열쇠(`rule_columns`)와 정체 칸이 모두 같고 CUSTOM 만 다른 행이 한 무리(한 제품의 부품)다.
+
+    - 무리 안에 부품 차례(`custom_sort_key`)가 둘 이상이면 무리 전체가 그 무리가 원래 차례에서 처음
+      선 자리에 서고, 그 안은 부품 차례(빈 값 · 표지 `-` 끝) → 원래 차례다.
+    - 그 밖의 행(부품이 하나뿐인 제품 · 숫자 칸만 다른 같은 제품의 행)은 제 원래 자리다 — 제품마다
+      CUSTOM 이 달라도 다른 제품끼리는 원래 차례이고 CUSTOM 글자 차례로 섞이지 않는다.
+    - CUSTOM 말고 다른 글자 칸(`WF 구분` · `소요기준` · `수율 구분` 등)이 다르면 다른 무리다 — 한
+      제품의 두 부품 × 두 WF 구분은 WF 구분마다 두 부품이 이웃한다(부품마다 한 덩이가 아니다).
+    - CUSTOM 칸이 없거나, 정체 칸이 하나도 없거나, 표 전체에서 부품 차례가 한 값이면 None 이다 —
+      규칙 뒤는 원래 차례만이다.
+    """
+    if CUSTOM_TIE_COLUMN not in data.columns:
+        return None
+    identity = [
+        column
+        for column, dtype in data.dtypes.items()
+        if column != CUSTOM_TIE_COLUMN
+        and (pd.api.types.is_object_dtype(dtype) or isinstance(dtype, pd.StringDtype))
+    ]
+    if not identity:
+        return None
+    ranks = _custom_ranks(result[CUSTOM_TIE_COLUMN])
+    if len(ranks) == 0 or ranks.min() == ranks.max():
+        return None
+    # 빈 값(NA)도 한 무리 값으로 센다. 무리가 처음 선 자리는 아래 `np.unique` 가 낸다.
+    groups = (
+        result.groupby([*rule_columns, *identity], dropna=False, sort=False).ngroup().to_numpy()
+    )
+    by_group = pd.Series(ranks).groupby(groups, sort=False)
+    mixed = (by_group.transform("min") != by_group.transform("max")).to_numpy()
+    if not mixed.any():
+        return None
+    _, first_positions = np.unique(groups, return_index=True)
+    positions = np.arange(len(result), dtype=np.int64)
+    anchor: npt.NDArray[np.int64] = np.where(mixed, first_positions[groups], positions).astype(
+        np.int64
+    )
+    return anchor, ranks
 
 
 def _custom_ranks(values: pd.Series) -> npt.NDArray[np.int64]:
