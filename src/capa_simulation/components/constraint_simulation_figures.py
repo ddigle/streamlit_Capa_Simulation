@@ -170,7 +170,7 @@ __all__ = [
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 13
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 14
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -269,6 +269,10 @@ class ConstraintLabels:
     today: date | None = None
     """오늘 — 개조 창 · 신규 대기 첫날이 이보다 앞이면 띠 막대 풍선에 「이미 지난 날짜」 꼬리를 단다
     (`WINDOW_LATE_TEXT` · `WAIT_LATE_TEXT`). None 이면 달지 않는다."""
+
+    part: str = ""
+    """제약 제품이 부품 줄이면 그 부품 — `product` 는 이름표(「제품 (부품)」)이고 계산표 제목이 라벨
+    칸에 넘치면 부품 끝을 남기고 앞을 줄인다. 제품 전체 줄 · 부품을 가르지 않는 제품은 빈 글자다."""
 
 
 class SheetCanvas(NamedTuple):
@@ -1168,7 +1172,9 @@ def build_sheet_canvas(
                 bold=row.baseline_secure is False,
             ),
         ),
-        title_row("product", f"제약 제품 · {labels.product}", "제약 기간 안만"),
+        title_row(
+            "product", f"제약 제품 · {labels.product}", "제약 기간 안만", label_part=labels.part
+        ),
         _row("constrained_demand", "소요대수", rows_in, _constrained_demand_cell),
         _row(
             "need",

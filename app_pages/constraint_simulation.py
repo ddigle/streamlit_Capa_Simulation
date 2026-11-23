@@ -983,6 +983,7 @@ labels = ConstraintLabels(
         else ()
     ),
     today=today,
+    part=chosen_product.part or "",
 )
 period_text = (
     month_label(period.start)

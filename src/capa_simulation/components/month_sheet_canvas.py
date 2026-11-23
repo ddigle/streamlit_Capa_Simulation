@@ -339,8 +339,12 @@ def title_row(
     *,
     label_fill: str | None = None,
     month_fill: str | None = None,
+    label_part: str = "",
 ) -> Row:
-    """구획 제목 줄. 면을 주지 않으면 캔버스 바탕(`CHART_CANVAS`)이다. 누를 수 없다."""
+    """구획 제목 줄. 면을 주지 않으면 캔버스 바탕(`CHART_CANVAS`)이다. 누를 수 없다.
+
+    `label_part` 는 제목 끝 「 (부품)」 의 부품이다(`Row.label_part` — 넘치면 그 끝을 남기고 앞을
+    줄인다)."""
     return Row(
         f"{ROW_TITLE_PREFIX}{name}",
         KIND_TITLE,
@@ -348,6 +352,7 @@ def title_row(
         label=title,
         detail=detail,
         detail_lines=title_detail_lines(detail),
+        label_part=label_part,
         label_bold=True,
         label_fill=tokens.CHART_CANVAS if label_fill is None else label_fill,
         month_fill=tokens.CHART_CANVAS if month_fill is None else month_fill,
@@ -477,7 +482,7 @@ def _title_annotations(row: Row, budget: float, height: int) -> list[dict[str, A
     title_center = (TITLE_LINE_PX if row.detail_lines else TITLE_HEIGHT_PX) / 2
     annotations = [
         _label_annotation(
-            fit(row.label, budget / TITLE_FONT_PX),
+            _fit_row_label(row, budget / TITLE_FONT_PX),
             y=paper_y(title_center),
             shift=0,
             indent=0,

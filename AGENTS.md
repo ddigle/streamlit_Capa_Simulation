@@ -5794,7 +5794,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
   비가동 막대를 W/D 구간 날짜 비례로 놓는다, 표적 막대가 달 누름을 받는다)와 월별 계산표(`month_sheet_canvas` 엔진)를 계산
   결과에서 만드는 순수 함수. 기준이 HOME 이면 계산표 확보율 칸은 `ConstraintLabels.warning_targets` 로 세 단계 판정색, 직접 넣은
-  기준은 두 단계(경고 경계가 없다 — 설계 규칙 UI-DAT-03 예외), 제약 제품 칸은 제약 목표 두 단계다(2026-11-07 g4-14). 곁에 적힌
+  기준은 두 단계(경고 경계가 없다 — 설계 규칙 UI-DAT-03 예외), 제약 제품 칸은 제약 목표 두 단계다(2026-11-07 g4-14). 부품 줄을
+  고르면 계산표 「제약 제품 · 이름표」 제목은 `ConstraintLabels.part` → `title_row(label_part=)` 로 라벨 칸에 넘칠 때 부품 끝을
+  남기고 앞을 줄인다(제품 전체 줄은 끝을 줄이는 지금 꼴 — 8장 「합쳐 보는 화면의 부품 이름표」). 곁에 적힌
   두 값의 차이는 `rate_delta_text` 이고 적힌 값으로 다시 빼면 어긋날 때만 「≈」 를 붙인다(g4-15). 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 주의 색
   (`STATUS_WARNING`)은 면색이라 글자에 쓰지 않는다 — 오른쪽 끝 「제약 n%」 는 `TEXT`, 제약 제품 점은 `LINE` 테두리. 오른쪽
   끝 두 글(「기준 …」 · 「제약 n%」)은 같은 x 라, 그림 칸이 가장 낮을 때(`END_LABEL_MIN_PLOT_PX` — 범례 줄 수로 칸 높이가
@@ -6019,8 +6021,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
   - 라벨 글은 넘치면 끝을 말줄임으로 줄인다. `Row.label_part`(라벨 끝 「 (부품)」 의 부품)를 준 행은 그 끝을 남기고 앞을
-    줄인다(`home_figure_common._fit_part_label` — 8장 「합쳐 보는 화면의 부품 이름표」). `Row.label` 은 그대로라 시트
-    엑셀은 이름표를 다 싣는다.
+    줄인다(`home_figure_common._fit_part_label` — 8장 「합쳐 보는 화면의 부품 이름표」). 구획 제목 줄도 같다(`title_row(
+    label_part=)`). `Row.label` 은 그대로라 시트 엑셀은 이름표를 다 싣는다.
   - 라벨 칸은 260px(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`)이고 좁은 창(`NARROW_VIEWPORT_MAX_PX` 640 이하)에서는 150px
     (`NARROW_LABEL_COLUMN_WIDTH_PX` — Streamlit 이 그림을 그리는 가장 좁은 폭)로 준다 — 390px 창에서 달 칸이 한 달도 안
     남았다(E2E r1 #20, 개선 거리 I12). 세 화면이 `split_scroll_columns_style(narrow_label_width_px=…)` 로 주고, 260px 에 맞춘
@@ -8204,7 +8206,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 제약 시뮬레이션 「제약 제품」 은 부품을 가르는 제품만 이름만 쓴 제품 전체 한 줄 뒤에 부품마다 이름표 줄이다(2026-11-23
     보드 답 D3 (나) — `constraint_simulation.constraint_product_choices`). 이 화면에서만 이름만 쓴 이름이 「그 제품 전체」 를
     뜻하고(다른 화면에서는 가른 제품이 이름만으로 서지 않는다), 세션에 남은 제품 이름 · 첫 값이 부품을 싣기 전과 같은 뜻 ·
-    같은 숫자로 산다. 부품 줄의 Rc 는 그 부품 소요만이다.
+    같은 숫자로 산다. 부품 줄의 Rc 는 그 부품 소요만이다. 계산표 「제약 제품 · 이름표」 제목도 다른 화면처럼 부품 끝을
+    남기고 줄인다(`ConstraintLabels.part`).
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
   (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
   중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·

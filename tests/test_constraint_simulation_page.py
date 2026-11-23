@@ -47,6 +47,7 @@ from capa_simulation.components.constraint_equipment_plan import (
 )
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
+    build_sheet_canvas,
     general_label,
 )
 from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
@@ -1505,6 +1506,41 @@ def test_a_two_part_product_offers_the_whole_product_then_each_part(tmp_path: Pa
     app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(TWO_PART_PRODUCT)
     _ok(app.run())
     assert demands(app) == pytest.approx(whole)
+
+
+def _product_title(app: AppTest) -> str:
+    """월별 계산표 라벨 칸의 「제약 제품 · …」 구획 제목 글(마크업을 뗀 글)."""
+    result, labels = _shown(app)
+    sheet = build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
+    titles = [
+        re.sub(r"<[^>]+>", "", str(item.text))
+        for item in sheet.labels.layout.annotations
+        if "제약 제품 ·" in str(item.text)
+    ]
+    assert len(titles) == 1
+    return titles[0]
+
+
+def test_the_sheet_title_of_a_part_keeps_the_part_end(tmp_path: Path) -> None:
+    """월별 계산표의 「제약 제품 · 이름표」 제목은 부품 줄이면 다른 화면처럼 부품 끝을 남기고 앞을
+    줄인다 — 앞을 남겨 끝을 자르면 어느 부품인지 안 보인다. 제품 전체 줄(이름만)은 지금 꼴
+    그대로다."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database)
+    app = _opened((database, _equipment_database(tmp_path / "equipment.duckdb")))
+
+    whole = _product_title(app)
+    titles = []
+    for part in (PART_A, PART_B):
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(f"{TWO_PART_PRODUCT} ({part})")
+        _ok(app.run())
+        titles.append(_product_title(app))
+
+    assert whole == f"제약 제품 · {TWO_PART_PRODUCT}"
+    assert titles[0] != titles[1]
+    for title, part in zip(titles, (PART_A, PART_B), strict=True):
+        assert title.startswith("제약 제품 · ")
+        assert title.endswith(f"{part[-2:]})"), title
 
 
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(
