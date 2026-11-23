@@ -2468,10 +2468,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   패키지 `login()` 이 읽는다(계정 `input()` · 비밀번호 `getpass` 폴백). 로그인 뒤 `getTokenTime` 의 나뉜 남은 시간(`remaining_days` 두
   철자 · `remaining_hours` · `remaining_minutes`)을 분으로 합쳐 표지 한 줄(`capa-bdq-login stage=… error=<모듈.이름> net=… minutes=…`)만
   찍는다 — 예외 문구 · 패키지 출력은 싣지 않는다. 표지와 따로 패키지 불러오기 · `login()` · `getTokenTime` 에 들어가기 바로 앞에 단계 줄
-  (`capa-bdq-login-step stage=… bigdataquery=<판> getpass_asterisk=<판>` — 판은 불러온 모듈의 `__version__`, 아니면 설치 정보, 낯선 꼴은 `?`)을
+  (`capa-bdq-login-step stage=… bigdataquery=<판> getpass_asterisk=<판> load=<light|full>` — 판은 불러온 모듈의 `__version__`, 아니면 설치 정보, 낯선 꼴은 `?`)을
   곧바로 내보낸다 — 표지 없이 끝나도 부르는 쪽이 어디까지 갔는지와 판을 읽고, 낯선 판 글자가 표지를 깨지 않는다. 단계 줄 `login` 을 내보내지
   못하면 `login()` 에 들어가지 않는다(표지 `import` · `capa_step_unwritten` — 「비밀번호를 보내기 전」 판정 `import_killed` 의 근거). `net`(닿지 못함의 증거 — `is_unreached`)은 요청을 보내기 전 연결 단계의 실패만이고
   종류 이름으로 가르지 않는다(errno 없는 `ConnectionError` · 글만 든 `requests` 연결 실패 · 응답을 든 것 · 읽기 시간 초과는 아님).
+  **가벼운 불러오기 길**(2026-11-23 사용자 요청 — 리뷰 `202611211432` 발견 1 덧붙임): 패키지 전체 import 는 판 하위 꾸러미(`bigdataquery/py<주판><부판>`)
+  `__init__` 의 망 초기화를 하위에서 한 번 더 해 메모리를 크게 쓰므로, 설치 판(`importlib.metadata`)이 `LIGHT_VERSION`(`2.5.0`)이고 판 폴더가 있고
+  끄개 `CAPA_BDQ_LOGIN_LIGHT=off` 가 없으면(`light_folder` — 자리 찾기는 맨 위 이름에만, 패키지 코드를 돌리지 않음) 꾸러미 둘을 빈 꾸러미(`__path__` 만)로
+  `sys.modules` 에 심고 판 하위 꾸러미의 `server_auth` 만 불러와 `login` · `getTokenTime` 을 묶는다(`load_light` — `nest_asyncio.apply()` 는 빈 꾸러미를
+  채우는 자리 `fill_package` 가 부르고, `pyarrow` 는 그 하위에서만 막는다). 그 준비는 모두 단계 줄 `login` 앞이고 무엇이 실패해도(예외 · 속성 없음 ·
+  부를 수 없음) `bigdataquery` · `bigdataquery.*` 모듈과 우리가 둔 `pyarrow` 막음을 걷고 같은 프로세스에서 전체 import 로 간다(`import` 단계 줄을
+  `load=full` 로 한 번 더) — 가벼운 길에만 있는 실패가 `login()` 안(거절 판정 자리)으로 넘어가지 않는다. `login()` 안의 구조 오류는 지금처럼 거절이다.
+  단계 줄 끝 칸 `load` 는 부르는 쪽 `bdq_login._STEP_LINE` · `parse_step`(`StepLine`)과 함께 바꾸고 진단(`ChildDiag.load` — 칸 `load`, 화면 「불러오기
+  light」, 알 때만)에 실린다. `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던 전역을 기대하는지는 pod 확인 거리다(`docs/TODO.md` 1장).
+  시험 `tests/test_bdq_login_light.py`(가짜 `tests/bdq_light_support.py` 를 시험마다 임시 자리에 지어 진짜 하위 프로세스로 — 기존 가짜는 설치 정보 ·
+  판 폴더가 없어 늘 전체 길).
 - `src/capa_simulation/io/memory_probe.py` — 자동 로그인 하위 프로세스 앞뒤의 메모리 단서와 그 하위 자신의 최고 RSS(사내 리뷰 `202611181400` 사외요청 2 — 하위가
   import 단계에서 바깥 SIGKILL 로 끝난 갈래를 가를 값). `attempt_login` 이 띄우기 바로 앞 · 끝난 바로 뒤에 한 번씩 읽고(`read`), 도는 동안 하위의
   최고 RSS 를 되풀이해 읽어(`process_peak_bytes` · `higher`) MiB · 수로 접어(`child_memory` → `container_start_report.ChildMemory`) 진단에 싣는다 — cgroup 사용 · 한도 · OOM 종료 수(v2 뿌리 `memory.current` ·
@@ -9466,6 +9477,12 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 핸들을 물려주지 않는다)으로 부르고 `close_fds=False`·`os.system`·`os.spawn*` 은 쓰지 않는다 — Streamlit 1.63 은 듣는 소켓을
 상속 가능으로 열어(`starlette_server._bind_socket` 의 `set_inheritable(True)`), 핸들을 물려받은 자식은 앱을 끈 뒤에도 8501 을
 쥔다(런북 4-2 「접속이 안 되면」). 모듈은 `subprocess` 를 쓰지 않는다(M10).
+
+**BigDataQuery 로그인 하위의 가벼운 길 끄개(2026-11-23).** 실행 환경변수 `CAPA_BDQ_LOGIN_LIGHT=off`(앞뒤 공백 · 대소문자 무시 —
+`CAPA_SHARE_SESSION_TABLES=off` 와 같은 꼴)면 자동 로그인 하위 프로세스가 늘 패키지 전체를 불러온다(3장 `io/bdq_login_child.py` 「가벼운 불러오기 길」).
+비밀이 아니라 하위 환경 거르기(`bdq_login.CHILD_WITHHELD_ENVIRONMENT`)에 넣지 않고, 하위 본문이 표준 라이브러리로 `os.environ` 에서 읽는다(시작 스크립트의
+시작 로그인도 같은 환경을 넘긴다). C-DEP 는 환경변수 표에 넣고 CI/CD 로 다시 띄운 뒤, 멈춤이 저장돼 있으면 Admin 「BDQ 자동 로그인」 에서 비밀번호를
+다시 넣는다(저장된 멈춤은 재시작을 넘어 남아 시작 로그인이 돌지 않는다).
 
 ## 10-1. 로컬 데이터는 합성 표본이다 — 관측을 업무 사실로 적지 않는다
 

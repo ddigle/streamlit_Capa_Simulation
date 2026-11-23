@@ -114,6 +114,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
 | `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
 | `CAPA_BDQ_SECRET_KEY` | (자동 로그인을 쓸 때만) Fernet 키 44글자 — `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 출력. 동기화 모드가 `managed` 인 서버에서만 쓰인다 | 1. 로그인(자동) |
+| `CAPA_BDQ_LOGIN_LIGHT` | (선택 — 평소에는 넣지 않는다) `off`(앞뒤 공백 · 대소문자 상관없음)면 자동 로그인 하위 프로세스가 가벼운 불러오기 길을 쓰지 않고 늘 패키지 전체를 불러온다(아래 「자동 로그인」 8). 비거나 다른 값이면 가벼운 길을 본다 | 1. 로그인(자동) |
 
 - 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다 — 인덱스 줄의
   `${CAPA_COMPANY_INDEX_URL}` 을 pip · uv 와 같은 꼴로 펼치고, 그 값이 비면 설치를 건너뛰며(`CD 환경변수 … 없음`) `https://주소`
@@ -148,7 +149,8 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
      7시간 이하면 「로그인 확인 못 함 — 저장 안 함」 이다(틀린 비밀번호에 패키지가 파일을 다른 글로 덮는 꼴을 막는다).
      펼침에는 상태(없음 · 정상 · 멈춤과 까닭) · 마지막 결과와 남은 시간 · 넣은 개발자 앱 ID 앞 두 글자와 시각만 보이고 BDQ 계정
      ID 는 보이지 않는다. 바꾸는 길은 다시 넣기, 없애는 길은 「지우기」 하나다. 마지막 시도가 로그인 하위 프로세스를 띄웠으면 그 아래
-     「진단」 값 줄(종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판, 그 뒤에
+     「진단」 값 줄(종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판 ·
+     패키지를 불러온 길 「불러오기 light」(가벼운 길) · 「불러오기 full」(전체 — 아래 8), 그 뒤에
      하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서와 그 하위 자신의 최고 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위 최고
      nMiB」 — cgroup v2 `memory.current` · `memory.max` · `memory.events` 의 `oom_kill`(v1 은 `memory.usage_in_bytes` ·
      `memory.limit_in_bytes` · `memory.oom_control`), `/proc/self/status` 의 `VmRSS`, 도는 동안 0.1초마다 읽은 그 하위의 `/proc/<pid>/status` `VmHWM` 최고, 그 뒤에
@@ -191,6 +193,14 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
   7. **두 계정 이름** — 저장된 계정이 있으면 토큰 파일 이름 · 조회 계정은 그 ID 이고, 예비 `CAPA_BDQ_TOKEN` 도 그 이름의 파일로
      쓴다. `CAPA_BDQ_USER_NAME` 과 저장된 계정 ID 를 같게 둔다 — 다르면 예비 토큰(그 환경변수 계정의 것)이 듣지 않고, 「지우기」
      직후에는 계정 원천이 곧바로 `CAPA_BDQ_USER_NAME` 으로 돌아간다.
+  8. **가벼운 불러오기**(2026-11-23 사용자 요청) — 로그인 하위 프로세스는 앱이 이미 패키지를 불러온 뒤에 뜨는데, 패키지 전체를
+     불러오면 판 하위 꾸러미(`bigdataquery/py310`)의 `__init__` 이 import 때 하는 망 초기화를 하위가 한 번 더 해 pod 메모리 한도를
+     넘을 수 있다. 그래서 설치 판이 `2.5.0` 이고 그 판 폴더가 있으면 하위는 그 `__init__` 을 돌리지 않고 로그인에 쓰는 모듈
+     `server_auth` 만 불러온다(`nest_asyncio.apply()` 는 그대로 부르고, 하위에서는 `pyarrow` 를 막는다). 판이 다르거나 폴더 · `login` ·
+     `getTokenTime` · `nest_asyncio` 가운데 하나라도 없거나 불러오다 실패하면 비밀번호를 보내기 전에 지금처럼 전체를 불러온다. 어느 길로
+     갔는지는 진단 줄 「불러오기 light / full」 이다. **되돌리는 길** — 가벼운 길이 의심되면(진단 줄이 「불러오기 light」 인데 로그인이
+     거절되는 따위) C-DEP 환경변수 표에 `CAPA_BDQ_LOGIN_LIGHT=off` 를 넣고 CI/CD 로 다시 띄운 뒤 Admin Area 「BDQ 자동 로그인」 에서
+     비밀번호를 다시 넣는다 — 거절로 멈춘 것은 객체에 적혀 다시 띄워도 그대로라 시작 로그인이 돌지 않는다.
   - 키를 바꾸거나 잃으면 저장된 계정을 풀 수 없어 「계정 없음」 이 된다 — Admin Area 에서 다시 넣는다. 「서버 시작 점검」 표의
     「BDQ 자동 로그인」 줄이 시작 때 결과다.
 - 토큰은 `/config/.credential/bigdataquery.token.<CAPA_BDQ_USER_NAME>` 에 0600(폴더 0700)으로 쓴다(같은 내용이면
