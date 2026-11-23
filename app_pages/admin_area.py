@@ -1,5 +1,5 @@
-# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·부대공정·접속 기록·공지 탭, 위의 서버 점검·
-# BDQ 자동 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
+# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·부대공정·접속 기록·부하 예외·공지 탭, 위의
+# 서버 점검·BDQ 자동 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
 
 from __future__ import annotations
 
@@ -26,6 +26,9 @@ from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
+from capa_simulation.components.route_load_exception_admin import (
+    render_route_load_exception_admin,
+)
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_identity import (
     ADMIN_ONLY_NOTICE,
@@ -43,6 +46,7 @@ from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import (
     ADMIN_AREA_LOG_TAB,
     ADMIN_AREA_NOTICE_TAB,
+    ADMIN_AREA_ROUTE_EXCEPTION_TAB,
     ADMIN_AREA_TAB_KEY,
     ADMIN_AREA_TABS,
     HOME,
@@ -53,17 +57,19 @@ from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.settings import DUCKDB_PATH
 
-# 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs`
-# 라 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」 은 닫혀 있으면 건너뛴다. 입력 위젯이 든 탭은
+# 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs` 라
+# 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」 은 닫혀 있으면 건너뛴다. 입력 위젯이 든 탭은
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
-# 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
-# (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
-# 「부대공정」 은 늘 서는 탭이고(위젯이 단추 · 내려받기 · 확인 칸뿐이라 닫혀 있으면 건너뜀) 쓰는
-# 단추는 C-DEP 의 개발자에게만 열린다. 다섯째 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의
-# 개발자 회차에만 선다. 맨 끝 「공지」 는 늘 서는 입력 탭이다(2026-11-17 공지 보드 답 decided 2 —
-# DB 를 쓰지 않는다).
+# 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다 (2026-11-11
+# 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째 「부대공정」 은 늘 서는
+# 탭이고(위젯이 단추 · 내려받기 · 확인 칸뿐이라 닫혀 있으면 건너뜀) 쓰는 단추는 C-DEP 의
+# 개발자에게만 열린다. 다섯째 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다.
+# 그 뒤 「부하 예외」 는 늘 서는 입력 탭이라(공정 고르기 칸) 닫혀 있어도 그리고 저장 단추는
+# 「부대공정」 과 같은 판정으로 C-DEP 의 개발자에게만 열린다. 맨 끝 「공지」 는 늘 서는 입력
+# 탭이다(2026-11-17 공지 보드 답 decided 2 — DB 를 쓰지 않는다).
 TAB_NAMES = ADMIN_AREA_TABS
 LOG_TAB = ADMIN_AREA_LOG_TAB
+ROUTE_EXCEPTION_TAB = ADMIN_AREA_ROUTE_EXCEPTION_TAB
 NOTICE_TAB = ADMIN_AREA_NOTICE_TAB
 TABS_KEY = ADMIN_AREA_TAB_KEY
 # 안쪽 탭 묶음을 담는 칸 — 그 안 맨 앞에 「모듈 상태」 팝오버 단추를 두면 탭 줄 오른쪽 끝에 선다
@@ -116,11 +122,12 @@ with tabs_box:
     # 탭 안에만 「데이터 Error」 마크). 명단에서 개발자 등급이 바뀌면 세션 중에도 라벨 목록이
     # 바뀐다 — 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
     shows_log = viewer_can_audit()
-    tab_labels = (*TAB_NAMES, *((LOG_TAB,) if shows_log else ()), NOTICE_TAB)
+    tab_labels = (*TAB_NAMES, *((LOG_TAB,) if shows_log else ()), ROUTE_EXCEPTION_TAB, NOTICE_TAB)
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]
     opened_tabs = stateful_tabs(tab_labels, key=TABS_KEY)
 process_rename_tab, display_order_tab, source_quality_tab, extra_process_tab = opened_tabs[:4]
+route_exception_tab = opened_tabs[-2]
 
 if shows_log:
     log_tab = opened_tabs[len(TAB_NAMES)]
@@ -142,8 +149,14 @@ except BOOTSTRAP_ERRORS as exc:
     # 마크는 DB 를 쓰는 탭 가운데 열린 탭 안에만 선다(같은 글의 알림은 한 번 — 기록 탭이
     # 열린 회차에는 서지 않고, DB 탭을 여는 회차에 선다).
     for database_tab, label in zip(
-        (process_rename_tab, display_order_tab, source_quality_tab, extra_process_tab),
-        TAB_NAMES,
+        (
+            process_rename_tab,
+            display_order_tab,
+            source_quality_tab,
+            extra_process_tab,
+            route_exception_tab,
+        ),
+        (*TAB_NAMES, ROUTE_EXCEPTION_TAB),
         strict=True,
     ):
         if tab_is_hidden(database_tab):
@@ -170,8 +183,14 @@ try:
         .unique()
         .tolist()
     )
+    # 「부하 예외」 의 선택지는 소요기준 원본 공정명이다 — 선언은 원본 표기로 저장하고 견줌은 계산
+    # 쪽 견줌 키가 한다(앞뒤 공백을 떼지 않는다).
+    requirement_processes = sorted(
+        reference_tables["RQ_REQB"]["공정"].dropna().astype(str).unique().tolist()
+    )
 except BOOTSTRAP_ERRORS:
     available_processes = []
+    requirement_processes = []
 
 # 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
 # 회차에만 낸다(닫힌 탭이면 None — `open_tab_name`). 「그 화면으로」 가 그 탭을 연다.
@@ -216,3 +235,12 @@ with extra_process_tab:
         render_extra_process_admin(
             repository, alert_tab=open_tab_name(extra_process_tab, TAB_NAMES[3])
         )
+with route_exception_tab:
+    # 공정별 부하 산출 예외 선언 — 고르기 칸이 있어 닫혀 있어도 그린다(닫힌 회차는 공용 프로필
+    # 캐시만 읽고 판 이력 표는 열린 회차에만 읽는다).
+    render_route_load_exception_admin(
+        repository,
+        requirement_processes,
+        database_path=database_path,
+        alert_tab=open_tab_name(route_exception_tab, ROUTE_EXCEPTION_TAB),
+    )

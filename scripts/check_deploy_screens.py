@@ -278,6 +278,16 @@ LIST_SIDE_DETAIL: Final = "상세"
 LIST_SIDE_ATTR: Final = "data-sls-side"
 LIST_DISCARD_KEY: Final = "scenario_list_discard_v1"
 ADMIN_AREA_PAGE: Final = "admin_area"
+# Admin Area 탭 묶음 칸(`app_pages/admin_area.TABS_BOX_KEY`)과 탭 이름 끝 글자(`navigation` 의
+# `ADMIN_AREA_*_TAB`), 「부하 예외」 탭의 고르기 칸 key 앞머리 · 저장 단추 key
+# (`components/route_load_exception_admin.py`). 앱 모듈을 부르지 않고 값만 옮긴다.
+ADMIN_TABS_BOX_KEY: Final = "admin_area_tabs_box"
+ADMIN_FIRST_TAB: Final = "Proc Rename"
+ADMIN_LOG_TAB: Final = "접속 · 작업 기록"
+ADMIN_ROUTE_EXCEPTION_TAB: Final = "부하 예외"
+ADMIN_NOTICE_TAB: Final = "공지"
+ROUTE_EXCEPTION_PICK_KEY: Final = "admin_route_exception_pick"
+ROUTE_EXCEPTION_SAVE_KEY: Final = "admin_route_exception_save"
 # 공정 Capa 상세(`app_pages/process_capa_detail.py`)와 그 화면의 컨테이너 key(`process_capa_view`·
 # `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
@@ -6073,6 +6083,78 @@ def check_space_zone_fields(screen: Screen) -> str:
     return summarize_space_zone_fields(len(floors), found_at, fields, switched_off)
 
 
+# 「부하 예외」 탭 안의 보이는 고르기 칸 수 · 잠긴 수 · 저장 단추 잠김(단추가 없으면 null). 닫힌
+# 탭의 위젯도 그려 두므로(값을 지키려고) 보이는 것만 센다.
+_ROUTE_EXCEPTION_JS = """(keys) => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  if (!main) return null;
+  const visible = (element) => element && element.getClientRects().length > 0;
+  const picks = [...main.querySelectorAll(`[class*="st-key-${keys.pick}__"]`)].filter(visible);
+  const locked = picks.filter((box) => {
+    const input = box.querySelector("input");
+    return (input && input.disabled) || box.querySelector('[aria-disabled="true"]') !== null;
+  }).length;
+  const button = [...main.querySelectorAll(`.st-key-${keys.save} button`)].find(visible);
+  return { picks: picks.length, locked, save: button ? Boolean(button.disabled) : null };
+}"""
+
+
+def summarize_route_exception_tab(names: Sequence[str], opened: Mapping[str, Any] | None) -> str:
+    """Admin 「부하 예외」 탭 — 탭 자리(「공지」 바로 앞 · 「접속 · 작업 기록」 이 서면 그 바로 뒤),
+    보이는 고르기 칸 수와 잠긴 수, 저장 단추 잠김. `names` 는 Admin 탭 이름(아이콘 글자가 앞에 붙어
+    온다 — 끝 글자로 가른다), `opened` 는 탭을 연 뒤 읽은 칸(`_ROUTE_EXCEPTION_JS`)이다."""
+
+    def place(label: str) -> int | None:
+        return next(
+            (index for index, name in enumerate(names) if name.strip().endswith(label)), None
+        )
+
+    here = place(ADMIN_ROUTE_EXCEPTION_TAB)
+    if here is None:
+        return "탭 없음"
+    notice = place(ADMIN_NOTICE_TAB)
+    log = place(ADMIN_LOG_TAB)
+    parts = ["탭 있음", "공지 앞" if notice == here + 1 else "공지 앞 아님"]
+    if log is not None:
+        parts.append("기록 탭 뒤" if log == here - 1 else "기록 탭 뒤 아님")
+    if not opened:
+        parts.append("칸 읽지 못함")
+        return " · ".join(parts)
+    parts.append(f"고르기 {int(opened.get('picks') or 0)} · 잠김 {int(opened.get('locked') or 0)}")
+    save = opened.get("save")
+    parts.append("저장 없음" if save is None else "저장 잠김" if save else "저장 열림")
+    return " · ".join(parts)
+
+
+def check_route_exception_tab(screen: Screen) -> str:
+    """Admin Area 「부하 예외」 탭(공정별 부하 산출 예외 선언) — 탭이 「공지」 바로 앞에 서는지,
+    열면 산식마다 고르기 칸과 「저장」 단추가 서는지, 확인용 앱(통합인증 꺼짐 · C-DEP 아님)에서는
+    고르기 · 저장이 모두 잠기는지 본다. 고르지도 누르지도 않고(DB 에 쓰지 않는다) 처음 탭으로
+    되돌린다."""
+    screen.open_page(ADMIN_AREA_PAGE)
+    names = (
+        screen.poll(
+            lambda: screen.js(_KEYED_TAB_NAMES_JS, ADMIN_TABS_BOX_KEY),
+            timeout=60,
+            accept=lambda value: bool(value),
+        )
+        or []
+    )
+    if not any(str(name).strip().endswith(ADMIN_ROUTE_EXCEPTION_TAB) for name in names):
+        return summarize_route_exception_tab([str(name) for name in names], None)
+    keys = {"pick": ROUTE_EXCEPTION_PICK_KEY, "save": ROUTE_EXCEPTION_SAVE_KEY}
+    screen.open_tab(ADMIN_ROUTE_EXCEPTION_TAB)
+    try:
+        opened = screen.poll(
+            lambda: screen.js(_ROUTE_EXCEPTION_JS, keys),
+            timeout=30,
+            accept=lambda value: bool(value) and value["picks"] > 0 and value["save"] is not None,
+        )
+    finally:
+        screen.open_tab(ADMIN_FIRST_TAB)
+    return summarize_route_exception_tab([str(name) for name in names], opened)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -6107,6 +6189,7 @@ ITEMS: tuple[Item, ...] = (
     Item("alert_popup", "오른쪽 아래 알림창 한 꼴", check_alert_popup),
     Item("settings_boxes", "사이드바 설정 상자", check_settings_boxes),
     Item("scenario_list_grid", "시나리오 목록 관리 표", check_scenario_list_grid),
+    Item("route_exception_tab", "Admin 부하 예외 탭", check_route_exception_tab),
 )
 
 

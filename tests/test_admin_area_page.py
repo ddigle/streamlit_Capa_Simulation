@@ -32,7 +32,12 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
 from capa_simulation.components.table_toolbar import toolbar_room_css
-from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB, ADMIN_AREA_NOTICE_TAB
+from capa_simulation.navigation import (
+    ADMIN_AREA,
+    ADMIN_AREA_LOG_TAB,
+    ADMIN_AREA_NOTICE_TAB,
+    ADMIN_AREA_ROUTE_EXCEPTION_TAB,
+)
 from capa_simulation.navigation import ADMIN_AREA_TABS as TAB_NAMES
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -102,13 +107,14 @@ def test_admin_area_renders_without_an_active_scenario(
     assert not [subheader.value for subheader in app.subheader]
     # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고 원천 품질이 뒤에 붙어 세 탭이다.
     # 계산 알림을 모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리
-    # 「점검」 칸이 센다(2026-11-11 입력 점검 보드 q7). 탭 이름 곁 수 표지도 없다. 맨 끝은 늘 서는
-    # 「공지」 다(2026-11-17 공지 보드 답 decided 2).
+    # 「점검」 칸이 센다(2026-11-11 입력 점검 보드 q7). 탭 이름 곁 수 표지도 없다. 「공지」 앞은 늘
+    # 서는 「부하 예외」, 맨 끝은 늘 서는 「공지」 다(2026-11-17 공지 보드 답 decided 2).
     assert [tab.label for tab in app.main.tabs] == [
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
         ":material/extension: 부대공정",
+        ":material/rule: 부하 예외",
         ":material/campaign: 공지",
     ]
     bodies = [str(element.proto.body) for element in app.get("html")]
@@ -1056,6 +1062,7 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
         ":material/extension: 부대공정",
+        ":material/rule: 부하 예외",
         ":material/campaign: 공지",
     ]
 
@@ -1418,14 +1425,18 @@ def test_the_module_status_is_a_popover_at_the_tab_row_only_with_modules(
         caption for caption in app.caption if module_registry.DISABLED_ENV_VAR in caption.value
     ]
     assert "앱을 다시 띄운 뒤" in environment.proto.help
-    # 탭은 그대로 셋과 맨 끝 「공지」 다.
-    assert [tab.label for tab in app.main.tabs] == [*TAB_NAMES, ADMIN_AREA_NOTICE_TAB]
+    # 탭은 그대로 앞 넷과 「부하 예외」 · 맨 끝 「공지」 다.
+    assert [tab.label for tab in app.main.tabs] == [
+        *TAB_NAMES,
+        ADMIN_AREA_ROUTE_EXCEPTION_TAB,
+        ADMIN_AREA_NOTICE_TAB,
+    ]
     # 팝오버 단추 칸과 세 탭은 같은 칸(`TABS_BOX_KEY`) 안이고 단추 칸이 앞이다 — 서식이 그 칸 오른쪽
     # 위(탭 줄 높이)에 단추 칸을 얹으므로, 둘이 갈라지면 단추가 탭 위 한 줄로 되돌아간다.
     (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
     tools, tabs = list(box.children.values())
     assert str(tools.proto.id).endswith(f"-{module_status.TOOLS_KEY}")
-    assert tabs.type == "tab_container" and len(tabs.children) == len(TAB_NAMES) + 1
+    assert tabs.type == "tab_container" and len(tabs.children) == len(TAB_NAMES) + 2
 
     monkeypatch.setenv(module_registry.ROOT_ENV_VAR, "off")
     app = AppTest.from_string(script).run(timeout=120)
@@ -1484,7 +1495,11 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     app = AppTest.from_string(_page_script(tmp_path)).run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
 
-    assert [tab.label for tab in app.main.tabs] == [*TAB_NAMES, ADMIN_AREA_NOTICE_TAB]
+    assert [tab.label for tab in app.main.tabs] == [
+        *TAB_NAMES,
+        ADMIN_AREA_ROUTE_EXCEPTION_TAB,
+        ADMIN_AREA_NOTICE_TAB,
+    ]
     assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
     (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
     assert [child.type for child in box.children.values()][0] == "flex_container"
@@ -1546,9 +1561,17 @@ def _log_cards(app: AppTest) -> list[str]:
 @pytest.mark.parametrize(
     ("who", "tabs"),
     [
-        ("dev.user", [*TAB_NAMES, ADMIN_AREA_LOG_TAB, ADMIN_AREA_NOTICE_TAB]),
+        (
+            "dev.user",
+            [
+                *TAB_NAMES,
+                ADMIN_AREA_LOG_TAB,
+                ADMIN_AREA_ROUTE_EXCEPTION_TAB,
+                ADMIN_AREA_NOTICE_TAB,
+            ],
+        ),
         ("other.user", []),
-        (None, [*TAB_NAMES, ADMIN_AREA_NOTICE_TAB]),
+        (None, [*TAB_NAMES, ADMIN_AREA_ROUTE_EXCEPTION_TAB, ADMIN_AREA_NOTICE_TAB]),
     ],
     ids=["admin", "user", "off"],
 )
@@ -1579,6 +1602,9 @@ def test_the_log_tab_reads_no_common_condition_and_only_it_stands_a_card() -> No
     # 「공지」 탭은 시나리오 · 조회기간 줄도 카드도 세우지 않는다.
     assert not ADMIN_AREA.reads_common_conditions_on(ADMIN_AREA_NOTICE_TAB)
     assert not ADMIN_AREA.has_cards_on(ADMIN_AREA_NOTICE_TAB)
+    # 「부하 예외」 는 고르는 공정 목록이 활성 리비전 소요기준이라 시나리오 줄을 세우고 카드는 없다.
+    assert ADMIN_AREA.reads_common_conditions_on(ADMIN_AREA_ROUTE_EXCEPTION_TAB)
+    assert not ADMIN_AREA.has_cards_on(ADMIN_AREA_ROUTE_EXCEPTION_TAB)
 
 
 def test_an_open_log_tab_reads_the_spool_and_shows_the_summary(
@@ -1627,6 +1653,7 @@ def test_the_log_tab_opens_even_when_the_database_cannot(
     assert [tab.label for tab in app.main.tabs] == [
         *TAB_NAMES,
         ADMIN_AREA_LOG_TAB,
+        ADMIN_AREA_ROUTE_EXCEPTION_TAB,
         ADMIN_AREA_NOTICE_TAB,
     ]
     assert data_error_marks(app) == 0, "기록 탭이 열린 회차에는 DB 탭 마크가 서지 않는다"

@@ -430,7 +430,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     링크 그대로 — `role="button"` 은 Space 로 열리지 않는다) · 「문의 <메일> · <창구 글>」 캡션(`CAPA_ACCESS_CONTACT` 는 로그인 ·
     접속 멈춤만 넘긴다 — 둘 다 비면 없음) · 「참고 <사유 낱말> · <UTC 분>」(만료 `sso_expired` · 로그아웃 `sso_revoked` · 쿠키 없음 · 위조 `sso_missing` · 명단 밖 `not_on_list` · 명단 못 읽음 `list_unread` — 뒤 둘은 거절 화면과 같은 낱말 · 계정 바뀜 `sso_account_changed`). 접힌 진단은 없다 — 로그인이 끝난 회차에는 검증된 신원이 없어 개발자 몫이 서지 않는다. 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
     `cloud_off` + 「다시 로그인」, 계정 바뀜은 새 계정 이름 + 「새로고침」(풍선 `REFRESH_TIP`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
-    벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 접속 등급의 신원 → 등급도 여기다 — 쓰는 순간의 벽이 보는 실제 등급 `real_caller`(쿠키만 — 운영 아님 · `as_system` = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자, 실행 문맥 없는 낯선 스레드 = 열람, 운영 + 켜짐 = 신원 등급 · 신원 없음 = 로그인 끝남)와 그리기 판정 `screen_grade` · `viewer_can(action)`(실제 개발자이고 운영 + 켜짐일 때만 「이 등급으로 보기」 `GRADE_PREVIEW_KEY` 를 따른다), 두 번째 벽 `developer_wall_locked`, 카드 셋째 줄 등급 표지(열람 · 실무자만 — 미리 보기 중 「<등급> 화면으로 보는 중」 + 「끝내기」 `end_preview`) — 5장 41 · 9장 「접속 등급」. 개발자 회차 판정 `viewer_is_developer`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, 환경변수 개발자 ∪ 명단 개발자 등급, `AD-10`) · Admin Area 잠금 판정 `admin_area_locked`(운영 서버 `SsoConfig.operational` 이고 개발자가 아님 — `app.py` 가 Support 상자의 Admin Area 링크를 빼고 `app_pages/admin_area.py` 가 「개발자만 여는 화면입니다」 + 「HOME 으로」 뒤 멈춘다, 개발 · WebIDE · 사내 PC 는 연다)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
+    벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 접속 등급의 신원 → 등급도 여기다 — 쓰는 순간의 벽이 보는 실제 등급 `real_caller`(쿠키만 — 운영 아님 · `as_system` = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자, 실행 문맥 없는 낯선 스레드 = 열람, 운영 + 켜짐 = 신원 등급 · 신원 없음 = 로그인 끝남)와 그리기 판정 `screen_grade` · `viewer_can(action)`(실제 개발자이고 운영 + 켜짐일 때만 「이 등급으로 보기」 `GRADE_PREVIEW_KEY` 를 따른다), 두 번째 벽 `developer_wall_locked`, C-DEP 운영 자리 쓰기 잠금 `production_write_lock_reason`(Admin 「부대공정」 · 「부하 예외」 의 쓰는 단추가 함께 쓰는 한 판정 — C-DEP 꼴(`extra_process_intake.production_place`)이 아니면 `NOT_PRODUCTION_REASON`, 실제 개발자가 아니면 등급 거절 글), 카드 셋째 줄 등급 표지(열람 · 실무자만 — 미리 보기 중 「<등급> 화면으로 보는 중」 + 「끝내기」 `end_preview`) — 5장 41 · 9장 「접속 등급」. 개발자 회차 판정 `viewer_is_developer`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, 환경변수 개발자 ∪ 명단 개발자 등급, `AD-10`) · Admin Area 잠금 판정 `admin_area_locked`(운영 서버 `SsoConfig.operational` 이고 개발자가 아님 — `app.py` 가 Support 상자의 Admin Area 링크를 빼고 `app_pages/admin_area.py` 가 「개발자만 여는 화면입니다」 + 「HOME 으로」 뒤 멈춘다, 개발 · WebIDE · 사내 PC 는 연다)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
     최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
@@ -1224,12 +1224,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질` · `부대공정` 네 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
   회차(`sso_identity.viewer_can_audit`)에만 다섯째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
-  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 넷과 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 넷과 「부하 예외」 · 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  「공지」 바로 앞(기록 탭이 서면 그 바로 뒤) 「부하 예외」(`navigation.ADMIN_AREA_ROUTE_EXCEPTION_TAB` — `components/route_load_exception_admin.py`)는
+  늘 서는 입력 탭(공정 고르기 칸)이라 닫혀 있어도 그리고(닫힌 회차는 공용 프로필 캐시만 — 판 이력 표는 열린 회차에만), DB 를 열지 못하면 열린 회차에
+  「데이터 Error」 마크가 선다. 서수로 부르는 앞 다섯(넷째 「부대공정」 · 다섯째 기록 탭 — `extra_process_admin.TAB_LABEL = ADMIN_AREA_TABS[3]`)이
+  그대로이게 `ADMIN_AREA_TABS` 밖 상수이고 페이지는 `opened_tabs[-2]` 로 받는다.
   맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
   여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
-  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 네 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은
-  둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py` 를 그린다. 계산 알림을
+  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 네 탭과 「부하 예외」(고르는 공정 목록이 활성 리비전 소요기준)만
+  시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은 둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(위젯이 단추 · 내려받기 · 확인
@@ -2127,7 +2131,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   있으면 확인 칸을 채워야 열림 — UI-NTF-09) · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의 상태 알림 `EP-03` · `EP-04`. 닫힌
   탭은 `admin_area` 가 그리지 않는다(위젯이 단추 · 내려받기 · 확인 칸뿐 — 닫힌 회차는 DB 를 읽지 않는다). 받은 판을 판정하다 난
   예외는 원천 실패와 같은 `EP-01` 길이다. 세션 칸은 `SessionSlot`(`STAGED` · `SEEN` — `peek`, 메모 `PREVIEW` · `TEMPLATE`). 쓰는
-  단추는 `write_lock_reason`(C-DEP 판정 + `sso_identity.viewer_is_developer`)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
+  단추는 `write_lock_reason`(C-DEP 판정 + 실제 개발자 — 「부하 예외」 탭과 한 판정 `sso_identity.production_write_lock_reason` 을 부르는 얇은 감쌈이고 시험이 이 이름을 바꿔 끼운다)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
   회차에도 다시 판정하며 쓰기는 본문(콜백 아님) · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
   `tests/test_extra_process_admin.py`.
   - **「이 리비전 값을 새 판으로」**(2단계 — 설계 3-5 · A15): 사이드바에 올라와 있는 **저장 리비전**(미저장 편집은 들지 않음 — G1)의
@@ -2190,6 +2194,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
+- `src/capa_simulation/components/route_load_exception_admin.py` — Admin Area 「부하 예외」 탭(공정별 부하 산출 예외 선언 — 6장 (i)). 상태 줄 값
+  한 줄(`status_line` — 「부하 예외 · 판 n · 공정 k · MM-DD HH:MM」, 저장한 적이 없으면 「부하 예외 · 선언 없음」, 공정 이름은 싣지 않음) · 산식
+  (`ROUTE_LOAD_FORMULAS`)마다 다중 선택 하나(선택지는 활성 리비전 `RQ_REQB` 원본 공정명 — 견줌 키가 같은 표기는 하나, 화면 글자는 표시명이 있으면
+  「표시명 (원본)」(UI-DAT-10), 이번 데이터에 없는 선언 · 고른 공정은 선택지에 남기고 「(이번 데이터에 없음)」 — 빠지면 다음 저장이 지운다, 겹친 글자는
+  「 (2)」) · 「저장」 · 열린 회차의 판 이력 표(판 · 언제 · 누가 앞 두 글자 · 공정 표시명 · 산식 — 판마다 공정 한 줄, 비움 판은 빈 한 줄). 고르기 칸은
+  지금 선언으로 채우며 그 판을 본 판(`SEEDED`)으로 둔다 — 남이 새 판을 저장하면 고친 것 없는 칸만 다음 회차에 다시 채우고, 고친 칸으로 누른 저장은
+  `RouteLoadExceptionMoved` 로 쓰지 않고 새 판으로 다시 채운 뒤 알림창 · 곁에 알린다(UI-STA-05). 겹친 둘째 누름은 제 저장 짝
+  (`write_guard.save_remembered` · `is_own_save`)으로 성공을 다시 알리며 칸을 저장된 판으로 다시 채우고, 거부를 보기 전에 닿은 둘째 누름(옛 고른 값 · 다시
+  채운 본 판)은 거부 표지(`note_profile_conflict` · `held_profile_conflict`)로 쓰지 않으며, 지금 선언과 견줌 키가 같은 저장은 새 판 없이 「바뀐 것이 없습니다」(UI-STA-01),
+  모두 뺀 저장은 비움 판 한 줄이라 확인 창이 없다(UI-STA-02). 저장 뒤 공용 프로필을 비우고(`clear_global_route_load_exceptions_cache`) 입장 Summary 확인을
+  잊게 한 뒤(`forget_intro_summary_check`) 알림창 한 줄이다(UI-NTF-03). 쓰기는 본문(콜백 아님) · `write_lock_reason`(`sso_identity.production_write_lock_reason`
+  — 「부대공정」 과 한 판정, 잠긴 동안 고르기 · 단추를 잠그고 풍선에 까닭 UI-INP-07) · 누른 회차에 다시 판정 · 저장소 `admin.area` 벽이다. 세션 칸은
+  `SessionSlot`(`SEEDED`, 고르기 칸 `pick_slot`). 시험 `tests/test_route_load_exception_admin.py`, 화면 확인 `route_exception_tab`.
 - `src/capa_simulation/components/notice_admin.py` — Admin Area 맨 끝 안쪽 탭 「공지」(2026-11-17 공지 보드 답 decided 1 ~ 6). 서 있는
   공지 카드(글 — 평문 · 값 줄 `notice_board.stamp_line` 「개발자 · 17:40 보냄 · 18:20 까지」 · 「거두기」) → 글 상자(라벨 접음 · 자리표
   「공지 글」 · 300자) → 끝 시각(`st.time_input` 10분 걸음 — 칸이 없을 때(Admin Area 를 처음 열 때 · 다른 화면에 다녀와 위젯 값이 걷힌 뒤)
@@ -7427,9 +7444,10 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   단축 기준선은 선언 전 산식으로 얼었고 출처도 날 내용 토큰이라 바꾸지 않는다((j) 의 튐). 빈 선언이면 접은 키는 선언을 모르던 때와
   같은 글이고 지문 칸은 빈 글이다.
 - (i) 쓰기 · 읽기 자리. 쓰기는 저장소 `append_route_load_exceptions` 한 길이다 — `admin.area` 벽 · 화면이 본 판 차례 대조 · 견줌 키
-  지문이 같으면 쓰지 않음 · COMMIT 뒤 바로 올림(`sync_state.request_upload`)이다. 쓰는 화면은 아직 없다 — 둘 자리는 C-DEP 운영 자리 +
-  개발자 등급만이고(부대공정 쓰기 잠금과 같은 판정), 저장 뒤 공용 프로필을 비우고(`clear_global_route_load_exceptions_cache` — 지금
-  부르는 곳은 시험뿐) 입장 Summary 확인을 잊게 한다(`forget_intro_summary_check`). 읽기는 화면(공용 프로필) · 입장 Summary · 자동 갱신(저장소를 바로) · 확인 스크립트 셋(사본 연결)이다 — 자리와
+  지문이 같으면 쓰지 않음 · COMMIT 뒤 바로 올림(`sync_state.request_upload`)이다. 쓰는 화면은 Admin Area 「부하 예외」 탭 하나다
+  (`components/route_load_exception_admin.py`) — C-DEP 운영 자리 + 개발자 등급만이고(부대공정 쓰기 잠금과 한 판정
+  `sso_identity.production_write_lock_reason`), 저장 뒤 공용 프로필을 비우고(`clear_global_route_load_exceptions_cache`) 입장 Summary
+  확인을 잊게 한다(`forget_intro_summary_check`). 읽기는 화면(공용 프로필) · 입장 Summary · 자동 갱신(저장소를 바로) · 확인 스크립트 셋(사본 연결)이다 — 자리와
   차례는 5장 45, 스크립트 출력은 10-1.
 - (j) 선언하면 그 공정에 한해 바뀌는 결과 — 소요대수 · 확보율 · B/N(공식버전을 포함한 모든 시나리오 · 지난 공식버전 숫자까지,
   입장 Summary · HOME 그림 포함), 공정 유효 Capa 의 원수요(`weighted_unit_capacity`), 일 표준 가능량 · PKG 환산(부하 0 이 된
@@ -7439,15 +7457,15 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   한 번 튈 수 있다. 재현 근거는 판 이력 표와 자동 갱신 메모 조각(「부하 예외 판 n」)이다.
 - (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
 
-**결정 · 저장 · 계산 키 · 읽어 넘김까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
+**결정 · 저장 · 계산 키 · 읽어 넘김 · 쓰기 화면까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
 지금 선언, 모두 뺀 저장도 비움 판 한 줄)에 두고 저장하는 순간 모든 리비전에 건다 — 공식버전을 포함한 모든 시나리오의 그 공정
 소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가 남긴다(2026-11-22 사용자 답 Q3 (가)). 저장 ·
 읽기(`persistence/route_load_exception_store.py` · 저장소 `load_route_load_exceptions` · `append_route_load_exceptions` — COMMIT 뒤
 바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 선언이 계산에 드는 길도 섰다 — 선언은 계산 토큰으로
 계산 키에 접히고 전체 기간 칸이 키에서 푼다(5장 44). 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME 그림 · 자동 갱신 · 확인
 스크립트 셋 · 부대공정 미리보기는 지금 판을 읽어 넘긴다(공식버전 요약 키 · HOME 그림 키 · 미리보기 메모에 지문 · 접은 토큰을
-싣는다 — 5장 45, (h) · (i) · (j)). 남은 것은 쓰기 화면(C-DEP 운영 자리 + 개발자 등급만)과 그 공정의 「부하량 근거」 칸 · 입력 점검 두
-줄이다. 선언이 빈 동안 앱 숫자 · 캐시 키는 선언을 모르던 때와 같다.
+싣는다 — 5장 45, (h) · (i) · (j)). 쓰기 화면은 Admin Area 「부하 예외」 탭(C-DEP 운영 자리 + 개발자 등급만 저장)이다. 남은 것은 그
+공정의 「부하량 근거」 칸 · 입력 점검 두 줄이다. 선언이 빈 동안 앱 숫자 · 캐시 키는 선언을 모르던 때와 같다.
 - 소요대수 길의 기본값은 걷었다 — `calculate_required_equipment` · `get_capacity_and_demand` · `full_capacity_outcome` ·
   `extra_process_merge.capacity_outcome` · `process_rows_frame` · `load_lines` 와 계산 키 빌더 셋은 선언 칸에 기본값이 없어
   호출처(화면 계산 · 저장/발행/입력 점검 · 자동 갱신 · 부대공정 미리보기 · 확인 스크립트 셋 `inspect_revision_calculations` ·

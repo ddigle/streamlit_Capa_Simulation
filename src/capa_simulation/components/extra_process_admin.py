@@ -85,7 +85,6 @@ from capa_simulation.extra_process_intake import (
     placed_matches,
     preview_pack,
     previous_content,
-    production_place,
     stage_pack,
     write_back,
 )
@@ -176,8 +175,8 @@ REVISION_APPLY_LABEL: Final = "새 판 적용"
 REWRITE_LABEL: Final = "S3 에 다시 쓰기"
 TEMPLATE_FILE: Final = "extra_process_v{version}.zip"
 BLANK_TEMPLATE_FILE: Final = "extra_process_template.zip"
-# 잠긴 쓰는 단추의 풍선(UI-INP-07) — 무엇이 막는지 한 줄.
-NOT_PRODUCTION_REASON: Final = "운영 서버(C-DEP)에서만 바꿀 수 있습니다"
+# 잠긴 쓰는 단추의 풍선(UI-INP-07) — 무엇이 막는지 한 줄(판정 한 곳 `sso_identity`).
+NOT_PRODUCTION_REASON: Final = sso_identity.NOT_PRODUCTION_REASON
 NOTHING_TO_TOGGLE: Final = "적용한 판이 없습니다"
 # 누르기 전에 알아야 할 결과(UI-NTF-09).
 OFF_HELP: Final = (
@@ -265,14 +264,10 @@ HEAD_INTERVAL: Final = timedelta(minutes=5)
 
 
 def write_lock_reason() -> str | None:
-    """쓰는 단추를 잠그는 까닭 — 열려 있으면 None. 화면과 누른 회차가 함께 부른다."""
-    from capa_simulation.auth import grades
-
-    if not production_place():
-        return NOT_PRODUCTION_REASON
-    if not sso_identity.viewer_is_developer():
-        return grades.refusal_text("admin.area")
-    return None
+    """쓰는 단추를 잠그는 까닭 — 열려 있으면 None. 화면과 누른 회차가 함께 부른다. 판정은
+    「부하 예외」 탭과 같은 `sso_identity.production_write_lock_reason` 하나이고, 이 이름은 시험이
+    바꿔 끼우는 자리다."""
+    return sso_identity.production_write_lock_reason()
 
 
 def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str:

@@ -1947,6 +1947,8 @@ NEW_ITEM_KEYS = [
     "settings_boxes",
     # 2026-11-06 사용자 답 안 3 — 목록 관리 새 표.
     "scenario_list_grid",
+    # 2026-11-22 사용자 답 Q3 — Admin 「부하 예외」 탭(공정별 부하 산출 예외 선언).
+    "route_exception_tab",
 ]
 
 
@@ -3194,6 +3196,68 @@ def test_the_settings_boxes_check_does_not_write() -> None:
     assert "close_dialog()" in source
     for label in ("저장", "채우기"):
         assert f'"{label}' not in source
+
+
+# ------------------------------------------------ Admin 「부하 예외」 탭(`route_exception_tab`)
+
+
+def test_the_route_exception_tab_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 탭 묶음 칸 · 탭 이름 끝 글자 · 고르기 칸 key
+    앞머리 · 저장 단추 key 가 앱과 같다."""
+    from capa_simulation import navigation
+    from capa_simulation.components import route_load_exception_admin as admin
+
+    page = _text(PROJECT_ROOT / "app_pages" / "admin_area.py")
+    assert f'TABS_BOX_KEY = "{screens.ADMIN_TABS_BOX_KEY}"' in page
+    assert navigation.ADMIN_AREA_TABS[0].endswith(f" {screens.ADMIN_FIRST_TAB}")
+    assert navigation.ADMIN_AREA_LOG_TAB.endswith(f" {screens.ADMIN_LOG_TAB}")
+    assert navigation.ADMIN_AREA_ROUTE_EXCEPTION_TAB.endswith(
+        f" {screens.ADMIN_ROUTE_EXCEPTION_TAB}"
+    )
+    assert navigation.ADMIN_AREA_NOTICE_TAB.endswith(f" {screens.ADMIN_NOTICE_TAB}")
+    assert screens.ROUTE_EXCEPTION_PICK_KEY == admin.PICK_KEY
+    assert screens.ROUTE_EXCEPTION_SAVE_KEY == admin.SAVE_BUTTON_KEY
+    assert all(
+        admin.pick_slot(formula).key.startswith(f"{screens.ROUTE_EXCEPTION_PICK_KEY}__")
+        for formula in ("buffer_x_core_chip",)
+    )
+
+
+def test_the_route_exception_summary_is_fixed_words_and_counts() -> None:
+    """탭 자리 · 고르기 칸 수 · 잠김 · 저장 잠김 — 화면 글자는 판정에만 쓰고 정한 글과 수만
+    남는다."""
+    names = [
+        "label Proc Rename",
+        "sort 표시순서 관리",
+        "fact_check 원천 품질",
+        "extension 부대공정",
+        "rule 부하 예외",
+        "campaign 공지",
+    ]
+    opened = {"picks": 1, "locked": 1, "save": True}
+    assert screens.summarize_route_exception_tab(names, opened) == (
+        "탭 있음 · 공지 앞 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
+    with_log = [*names[:4], "history 접속 · 작업 기록", *names[4:]]
+    assert screens.summarize_route_exception_tab(with_log, opened) == (
+        "탭 있음 · 공지 앞 · 기록 탭 뒤 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
+    # 옛 판(탭 없음) · 끝에 둔 판(공지 뒤) · 열었는데 칸을 못 읽음.
+    assert screens.summarize_route_exception_tab(names[:4] + names[5:], None) == "탭 없음"
+    moved = [*names[:4], names[5], names[4]]
+    assert screens.summarize_route_exception_tab(moved, opened).startswith("탭 있음 · 공지 앞 아님")
+    assert screens.summarize_route_exception_tab(names, None) == "탭 있음 · 공지 앞 · 칸 읽지 못함"
+    unlocked = {"picks": 1, "locked": 0, "save": False}
+    assert screens.summarize_route_exception_tab(names, unlocked).endswith("잠김 0 · 저장 열림")
+
+
+def test_the_route_exception_check_does_not_write() -> None:
+    """고르지도 누르지도 않는다(쓰지 않는 항목) — 탭을 열어 읽고 처음 탭으로 되돌린다."""
+    item = next(item for item in ITEMS if item.key == "route_exception_tab")
+    assert not item.writes
+    source = inspect.getsource(screens.check_route_exception_tab)
+    assert ".click(" not in source and "set_value" not in source
+    assert "screen.open_tab(ADMIN_FIRST_TAB)" in source
 
 
 # ------------------------------------------ 가용설비 현황 Preference(`equipment_preference`)
