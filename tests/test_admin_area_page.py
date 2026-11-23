@@ -23,6 +23,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, TextInput
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.data_error_mark import MARK_CLASS
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_rename_management import (
     BASE_VERSION_KEY,
@@ -1505,6 +1506,22 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     assert [child.type for child in box.children.values()][0] == "flex_container"
     assert data_error_marks(app) == 1, "열린 DB 탭 안에만"
     assert [item["active"] for item in states(app, "MO-01")] == [False]
+
+
+def test_the_route_exception_tab_carries_the_mark_when_the_database_cannot_open(
+    tmp_path: Path,
+) -> None:
+    """DB 를 못 열어 멈추는 회차(`AD-07`)에 「부하 예외」 탭을 열면 그 탭 안에 「데이터 Error」
+    마크가 선다 — 까닭 없는 빈 탭이 아니다(설계 규칙 UI-NTF-08)."""
+    # DB 자리가 폴더라 열리지 않는다.
+    app = AppTest.from_string(_page_script(tmp_path))
+    app.session_state["admin_area_active_tab"] = ADMIN_AREA_ROUTE_EXCEPTION_TAB
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    (tab,) = [tab for tab in app.main.tabs if tab.label == ADMIN_AREA_ROUTE_EXCEPTION_TAB]
+    assert sum(MARK_CLASS in str(element.proto.body) for element in tab.get("html")) == 1
+    assert data_error_marks(app) == 1, "열린 「부하 예외」 탭 안에만"
 
 
 # --- 접속 · 작업 기록 탭(관리자 · 일반 · 꺼짐 세 회차) ------------------------------------

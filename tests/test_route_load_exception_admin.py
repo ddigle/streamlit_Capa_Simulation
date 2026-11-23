@@ -20,7 +20,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Multiselect
 
 from capa_simulation.components import route_load_exception_admin as admin
-from capa_simulation.components import write_guard
+from capa_simulation.components import sso_identity, write_guard
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.sso_identity import NOT_PRODUCTION_REASON
 from capa_simulation.navigation import ADMIN_AREA_ROUTE_EXCEPTION_TAB, ADMIN_AREA_TAB_KEY
@@ -35,6 +35,10 @@ from capa_simulation.services.route_load_exceptions import BUFFER_X_CORE_CHIP
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "admin_area.py"
 OPEN_KEY = "__route_exception_open__"
+# 이 표지가 있는 회차는 화면을 그릴 때(첫 판정) 열리고 누른 회차의 다시 판정부터 잠긴다 — 화면을
+# 그린 뒤 잠긴 회차의 누름.
+LOCK_ON_PRESS_KEY = "__route_exception_lock_on_press__"
+PRESS_LOCK_REASON = "DEMO-누른 회차에 잠김"
 PICK = admin.pick_slot(BUFFER_X_CORE_CHIP).key
 # 이번 데이터(시드 소요기준)에 없는 합성 공정.
 MISSING_PROCESS = "DEMO-예외 공정 없음"
@@ -55,6 +59,14 @@ original_lock = admin.write_lock_reason
 settings.DUCKDB_PATH = Path({str(database)!r})
 if st.session_state.get({OPEN_KEY!r}):
     admin.write_lock_reason = lambda: None
+if st.session_state.get({LOCK_ON_PRESS_KEY!r}):
+    judged = []
+
+    def locked_after_drawing():
+        judged.append(1)
+        return None if len(judged) == 1 else {PRESS_LOCK_REASON!r}
+
+    admin.write_lock_reason = locked_after_drawing
 try:
     bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
     source = Path({str(PAGE)!r})
@@ -141,6 +153,49 @@ def test_the_lock_is_the_same_judgement_as_the_extra_process_tab() -> None:
     assert extra_process_admin.NOT_PRODUCTION_REASON == NOT_PRODUCTION_REASON
 
 
+@pytest.mark.parametrize("reason", ["DEMO-잠금 표지", None])
+def test_both_write_tabs_follow_the_one_production_lock(
+    monkeypatch: pytest.MonkeyPatch, reason: str | None
+) -> None:
+    """「부하 예외」 · 「부대공정」 의 잠금은 `sso_identity.production_write_lock_reason` 하나를
+    부른다 — 그 판정을 바꿔 끼우면 두 탭이 함께 따른다(따로 판정하면 갈라진다)."""
+    from capa_simulation.components import extra_process_admin
+
+    monkeypatch.setattr(sso_identity, "production_write_lock_reason", lambda: reason)
+
+    assert admin.write_lock_reason() == reason
+    assert extra_process_admin.write_lock_reason() == reason
+
+
+@pytest.mark.parametrize(
+    ("production", "developer", "expected"),
+    [
+        (False, True, "off"),
+        (False, False, "off"),
+        (True, False, "grade"),
+        (True, True, "open"),
+    ],
+)
+def test_the_production_lock_opens_only_for_a_real_developer_on_the_production_server(
+    monkeypatch: pytest.MonkeyPatch, production: bool, developer: bool, expected: str
+) -> None:
+    """C-DEP 운영 자리가 아니면 `NOT_PRODUCTION_REASON`, 운영 자리라도 실제 개발자가 아니면(「이
+    등급으로 보기」 와 상관없는 실제 판정) 등급 거절 글, 둘 다면 열린다."""
+    from capa_simulation import extra_process_intake
+    from capa_simulation.auth import grades
+
+    monkeypatch.setattr(extra_process_intake, "production_place", lambda: production)
+    monkeypatch.setattr(sso_identity, "viewer_is_developer", lambda: developer)
+    reasons = {
+        "off": NOT_PRODUCTION_REASON,
+        "grade": grades.refusal_text("admin.area"),
+        "open": None,
+    }
+
+    assert sso_identity.production_write_lock_reason() == reasons[expected]
+    assert reasons["grade"] not in (None, NOT_PRODUCTION_REASON)
+
+
 def test_a_save_writes_a_new_version_and_clears_the_shared_profile(database: Path) -> None:
     app = _app(database, open_place=True)
     process = _seed_process()
@@ -165,6 +220,21 @@ def test_a_save_writes_a_new_version_and_clears_the_shared_profile(database: Pat
     assert list(history["판"]) == ["1"]
     assert list(history["공정"]) == [process]
     assert list(history["산식"]) == ["Core = Buffer Wafer × Core 구분_Chip · Top_Dummy 0"]
+
+
+def test_a_press_after_the_lock_closed_writes_nothing(database: Path) -> None:
+    """화면을 그릴 때 열렸어도 누른 회차에 잠금을 다시 판정한다 — 그 사이 잠겼으면 쓰지 않고 그
+    까닭을 알림창에 알린다(UI-INP-07)."""
+    app = _app(database, open_place=True)
+    process = _seed_process()
+    _pick(app).set_value([process])
+    _rerun(app)
+    app.session_state[LOCK_ON_PRESS_KEY] = True
+
+    _save(app)
+
+    assert _seq(database) == 0
+    assert _flashed(app) == [PRESS_LOCK_REASON]
 
 
 def test_an_unchanged_save_writes_nothing(database: Path) -> None:
