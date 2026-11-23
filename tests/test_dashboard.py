@@ -832,6 +832,39 @@ _PARTS_IN_RULE_ORDER = [
 ]
 
 
+def _parted_detail_and_donut(
+    rules: list[tuple[object, ...]],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """세 제품(둘은 부품 둘 — 부품마다 Stack 하나)의 계획 세부수량 (이름표, Stack) 차례와 도넛
+    칸 차례."""
+    plan = _part_plan(
+        [
+            ("DEMO_A", "DEMO_CUSTOM_X", "8H", 10.0),
+            ("DEMO_A", "DEMO_CUSTOM_Z", "12H", 20.0),
+            ("DEMO_B", "-", "8H", 5.0),
+            ("DEMO_C", "DEMO_CUSTOM_Y", "8H", 7.0),
+            ("DEMO_C", "DEMO_CUSTOM_W", "12H", 3.0),
+        ]
+    )
+    display_order = pd.DataFrame(rules, columns=_PLAN_RULE_COLUMNS) if rules else None
+    multi_part = multi_part_products(plan)
+    wafer = plan[["생산계획년월", "제품정보", "CUSTOM"]].assign(물량=1.0)
+
+    _, detail = build_production_dashboard(
+        plan, _part_density(plan), display_order, multi_part=multi_part
+    )
+    slots = assign_product_slots(
+        build_product_volume(plan, wafer, multi_part=multi_part), display_order
+    )
+    rows = [
+        (product if part == PART_NOT_SPLIT else f"{product} ({part})", str(stack))
+        for product, part, stack in zip(
+            detail["제품정보"], detail["CUSTOM"], detail["Stack"], strict=True
+        )
+    ]
+    return rows, list(slots.order)
+
+
 @pytest.mark.parametrize(
     ("rules", "expected"),
     [
@@ -861,38 +894,36 @@ _PARTS_IN_RULE_ORDER = [
         ),
     ],
 )
-def test_the_plan_detail_stands_the_parts_in_the_donut_order_under_every_rule(
+def test_the_plan_detail_and_the_donut_share_the_part_order(
     rules: list[tuple[object, ...]], expected: list[str]
 ) -> None:
     """계획 세부수량 띠와 도넛 · 범례 차례는 같은 데이터 · 같은 규칙에서 부품 차례가 같다 — 차례는
     제품 → 부품 → Stack 이다. 부품마다 Stack 이 겹치지 않아도 Stack 규칙이 부품 차례를 정하지 않고,
     `CUSTOM` 규칙은 한 제품 안의 부품 차례만 정해 다른 제품의 부품이 사이에 끼지 않는다."""
-    plan = _part_plan(
+    rows, donut = _parted_detail_and_donut(rules)
+
+    assert [label for label, _ in rows] == expected
+    assert donut == expected
+
+
+def test_a_stack_rule_ahead_of_the_product_splits_the_plan_detail_by_stack_as_before() -> None:
+    """Stack 규칙이 제품 규칙보다 앞서면 계획 세부수량은 부품을 싣기 전처럼 Stack 마다 나뉘어 선다 —
+    한 제품의 부품도 제 Stack 자리에 서고, Stack 이 없는 도넛 · 범례는 부품 차례 그대로다."""
+    rows, donut = _parted_detail_and_donut(
         [
-            ("DEMO_A", "DEMO_CUSTOM_X", "8H", 10.0),
-            ("DEMO_A", "DEMO_CUSTOM_Z", "12H", 20.0),
-            ("DEMO_B", "-", "8H", 5.0),
-            ("DEMO_C", "DEMO_CUSTOM_Y", "8H", 7.0),
-            ("DEMO_C", "DEMO_CUSTOM_W", "12H", 3.0),
+            _plan_rule(1, "Stack", "사용자지정", "12H", 1),
+            _plan_rule(1, "Stack", "사용자지정", "8H", 2),
         ]
     )
-    display_order = pd.DataFrame(rules, columns=_PLAN_RULE_COLUMNS) if rules else None
-    multi_part = multi_part_products(plan)
-    wafer = plan[["생산계획년월", "제품정보", "CUSTOM"]].assign(물량=1.0)
 
-    _, detail = build_production_dashboard(
-        plan, _part_density(plan), display_order, multi_part=multi_part
-    )
-    slots = assign_product_slots(
-        build_product_volume(plan, wafer, multi_part=multi_part), display_order
-    )
-
-    labels = [
-        product if part == PART_NOT_SPLIT else f"{product} ({part})"
-        for product, part in zip(detail["제품정보"], detail["CUSTOM"], strict=True)
+    assert rows == [
+        ("DEMO_A (DEMO_CUSTOM_Z)", "12H"),
+        ("DEMO_C (DEMO_CUSTOM_W)", "12H"),
+        ("DEMO_A (DEMO_CUSTOM_X)", "8H"),
+        ("DEMO_B", "8H"),
+        ("DEMO_C (DEMO_CUSTOM_Y)", "8H"),
     ]
-    assert labels == expected
-    assert list(slots.order) == expected
+    assert donut == _PARTS_IN_KEY_ORDER
 
 
 def test_a_comparison_only_dash_row_stands_beside_the_parts_of_its_product() -> None:

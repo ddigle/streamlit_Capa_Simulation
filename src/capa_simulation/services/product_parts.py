@@ -246,7 +246,9 @@ def apply_part_display_order(
        뒤집은 한 제품 덩이를 부품 차례로 모은다.
 
     도넛 · 범례 차례(`product_share.assign_product_slots`)도 (제품, 부품) 두 칸 표로 이 함수를
-    지나므로 같은 데이터 · 같은 규칙에서 계획 세부수량 띠와 부품 차례가 같다. CUSTOM 칸이 없는 표는
+    지나므로 같은 데이터 · 같은 규칙에서 계획 세부수량 띠와 부품 차례가 같다. 다만 그 밖의 칸(Stack
+    등) 규칙이 제품 규칙보다 앞선 표는 제품 · 부품 행이 그 칸 값마다 나뉘어 서고, 도넛에는 그 칸이
+    없어 차례가 다르다 — 부품을 싣기 전 제품 차례에서도 같은 갈림이다. CUSTOM 칸이 없는 표는
     `apply_display_order` 와 같다.
     """
     owners = list(owner_columns)
