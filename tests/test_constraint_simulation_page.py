@@ -27,7 +27,9 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_marks, data_error_texts, events, states
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT
 from fragment_browser import install_fragment_browser
+from home_two_part_app import publish_two_part_revision
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
 from streamlit.testing.v1 import AppTest
@@ -1453,6 +1455,56 @@ def test_the_period_follows_the_product_until_the_boxes_are_edited(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202607
     assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+
+
+def test_a_two_part_product_offers_the_whole_product_then_each_part(tmp_path: Path) -> None:
+    """두 부품 공식버전 — 제약 제품 선택지는 이름만 쓴 제품 전체 뒤에 부품마다 「제품 (부품)」
+    줄이고(2026-11-23 보드 답 D3 (나)) 부품이 하나뿐인 제품은 이름 한 줄이다. 첫 값과 세션에 남은
+    제품 이름은 제품 전체(부품 소요의 합)이고, 부품 줄은 그 부품만 제약 제품으로 센다 — 달마다
+    제약 소요 + 기존 소요 = 공정 소요. 그래프 제목 · 머리 줄 글은 고른 이름표 그대로다."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database)
+    databases = (database, _equipment_database(tmp_path / "equipment.duckdb"))
+    labels = [f"{TWO_PART_PRODUCT} ({part})" for part in (PART_A, PART_B)]
+
+    def demands(app: AppTest) -> list[float]:
+        result, _ = _shown(app)
+        for month in result.months:
+            assert month.constrained_demand + month.existing_demand == pytest.approx(
+                month.required, abs=1e-9
+            )
+        return [month.product_demand for month in result.months]
+
+    app = _opened(databases)
+    box = app.selectbox(key=CONSTRAINT_PRODUCT_KEY)
+    options = list(box.options)
+    start = options.index(TWO_PART_PRODUCT)
+    assert options[start : start + 3] == [TWO_PART_PRODUCT, *labels]
+    assert "DEMO PRODUCT B" in options
+    assert not [option for option in options if option.startswith("DEMO PRODUCT B (")]
+    assert box.value == TWO_PART_PRODUCT
+    assert _shown(app)[1].product == TWO_PART_PRODUCT
+    whole = demands(app)
+    assert any(value > 0 for value in whole)
+
+    per_part: list[list[float]] = []
+    for label in labels:
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(label)
+        _ok(app.run())
+        assert _shown(app)[1].product == label
+        per_part.append(demands(app))
+    assert [a + b for a, b in zip(*per_part, strict=True)] == pytest.approx(whole, abs=1e-9)
+    assert all(values != pytest.approx(whole) for values in per_part)
+
+    # 화면을 떠났다 와도 고른 부품 줄은 남고, 세션의 제품 이름은 다시 제품 전체다.
+    app.session_state["_test_page"] = "away"
+    _ok(app.run())
+    app.session_state["_test_page"] = "constraint"
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == labels[-1]
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(TWO_PART_PRODUCT)
+    _ok(app.run())
+    assert demands(app) == pytest.approx(whole)
 
 
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(

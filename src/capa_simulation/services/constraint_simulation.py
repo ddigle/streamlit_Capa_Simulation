@@ -5,8 +5,9 @@
 제약은 특정 제품(제약 제품)만 쓸 수 있게 개조·전용해야 하는 설비다(2026-10-24 사용자 결정). 공정
 하나의 월별 소요대수(R)를 제약 제품(Rc)과 기존 제품(Re = R − Rc)으로 나누고, 설비 일정 기준 가용(A,
 단축 전 환산 대수)에서 **제약 몫을 먼저 떼어 준 뒤** 남는 몫으로 기존 제품 확보율을 낸다.
-Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constraint_month_inputs`) 하나만 쓰고
-계산 몸통은 파이썬 수다.
+Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constraint_month_inputs`)와 제약 제품
+선택지(`constraint_product_choices` · `constraint_product_rows` — 같은 제품별 소요 표를 읽는다)만
+쓰고 계산 몸통은 파이썬 수다.
 
 일곱 가정(사용자 「권장대로」 결정 그대로). `in(m)` 은 제약 기간 안, 「앞 달」 은 **보이는 달
 차례에서 바로 앞 달**이고 그 달도 기간 안일 때만 그 값을 잇는다(기간 첫 달은 0 부터).
@@ -97,6 +98,12 @@ import pandas as pd
 
 from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    PART_NOT_SPLIT,
+    label_part,
+    product_part_label,
+)
 from capa_simulation.services.securement_threshold import THRESHOLD_RANGE, capacity_status
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
@@ -115,6 +122,7 @@ __all__ = [
     "ConstraintKpis",
     "ConstraintMonth",
     "ConstraintMonthInput",
+    "ConstraintProduct",
     "ConstraintResult",
     "DowntimeShare",
     "FillSource",
@@ -127,6 +135,8 @@ __all__ = [
     "UnitModule",
     "WaitingShare",
     "constraint_month_inputs",
+    "constraint_product_choices",
+    "constraint_product_rows",
     "modification_window",
     "require_non_negative",
     "require_positive",
@@ -1561,12 +1571,104 @@ def _existing_rate_key(row: ConstraintMonth) -> float:
 # ================================================================== 어댑터
 
 
+class ConstraintProduct(NamedTuple):
+    """제약 제품 고르기 한 줄의 뜻 — 제품정보와 부품(`CUSTOM`). 부품 `None` 은 그 제품의 모든
+    부품이다."""
+
+    product: str
+    part: str | None = None
+
+
+def _folded_parts(product_demand: pd.DataFrame) -> pd.Series:
+    """제품별 소요 표의 부품 글자(`label_part` — 접힌 값은 빈 글자, 빈 값은 표지). `CUSTOM` 칸이
+    없는 표는 모두 접힌 것으로 읽는다."""
+    if PART_COLUMN not in product_demand.columns:
+        return pd.Series(PART_NOT_SPLIT, index=product_demand.index, dtype="object")
+    return pd.Series(
+        [label_part(part) for part in product_demand[PART_COLUMN]],
+        index=product_demand.index,
+        dtype="object",
+    )
+
+
+def constraint_product_choices(product_demand: pd.DataFrame) -> dict[str, ConstraintProduct]:
+    """제약 제품 선택지 — 화면 값(이름표) → 고른 단위, 제품별 소요 표의 행 차례(산출 결과 · 소요대수
+    표시순서).
+
+    표는 `build_process_product_demand(split="제품정보")` 꼴이다(부품을 가르는 제품만 부품마다 한
+    행 — `CUSTOM` 이 접힌 값이 아니다). 2026-11-23 보드 답 D3 (나):
+
+    - 부품을 가르지 않는 제품은 제품 이름 한 줄이다(그 제품 전체).
+    - 부품을 가르는 제품은 처음 나온 자리에 이름만 쓴 제품 전체 한 줄을 먼저 두고, 이어 그 표의 부품
+      줄(이름표 `product_part_label` — 공정 Capa 상세 분류 행과 같은 글)을 표 차례로 둔다. 그 공정에
+      소요가 있는 부품이 하나뿐이어도 그렇다 — 판정은 리비전 계획 전체라 다른 화면과 이름표가 같다.
+
+    그래서 첫 값 · 세션에 남은 제품 이름은 부품을 싣기 전과 같은 뜻(제품 통째)으로 산다. 빈 이름 ·
+    「그 밖」 행은 뺀다. 같은 이름표가 다시 나오면 앞 줄을 남긴다. `CUSTOM` 칸이 없는 표는 모두 접힌
+    것으로 읽어 제품 이름 줄만 낸다.
+    """
+    if product_demand.empty or "제품정보" not in product_demand.columns:
+        return {}
+    names = product_demand["제품정보"].astype("string").str.strip()
+    others = (
+        product_demand[OTHER_ROW_COLUMN].astype("boolean").fillna(False).astype("bool")
+        if OTHER_ROW_COLUMN in product_demand.columns
+        else pd.Series(False, index=product_demand.index)
+    )
+    choices: dict[str, ConstraintProduct] = {}
+    for name, other, part in zip(
+        names.tolist(), others.tolist(), _folded_parts(product_demand).tolist(), strict=True
+    ):
+        product = "" if name is None or pd.isna(name) else str(name)
+        if not product or other:
+            continue
+        choices.setdefault(product, ConstraintProduct(product))
+        if part != PART_NOT_SPLIT:
+            choices.setdefault(product_part_label(product, part), ConstraintProduct(product, part))
+    return choices
+
+
+def constraint_product_rows(
+    product_demand: pd.DataFrame, product: str, part: str | None = None
+) -> pd.Series:
+    """제품별 소요 표에서 제약 제품 행(bool) — `제품정보` 가 `product` 이고 「그 밖」 이 아닌 행,
+    부품을 주면 `CUSTOM` 도 그 부품인 행(앞뒤 공백을 떼고 견준다 — 표지 `-` 도 부품 하나다).
+
+    `제품정보` 칸이 없으면 고를 행이 없다. 부품을 줬는데 `CUSTOM` 칸이 없는 표는 `ValueError` 다 —
+    부품을 고른 값이 말없이 제품 전체로 넓어지지 않게.
+    """
+    if "제품정보" not in product_demand.columns:
+        return pd.Series(False, index=product_demand.index, dtype="bool")
+    others = (
+        product_demand[OTHER_ROW_COLUMN].astype("boolean").fillna(False).astype("bool")
+        if OTHER_ROW_COLUMN in product_demand.columns
+        else pd.Series(False, index=product_demand.index, dtype="bool")
+    )
+    chosen = (
+        product_demand["제품정보"]
+        .astype("string")
+        .str.strip()
+        .eq(str(product).strip())
+        .fillna(False)
+        .astype("bool")
+        & ~others
+    )
+    if part is None:
+        return chosen
+    if PART_COLUMN not in product_demand.columns:
+        if product_demand.empty:
+            return chosen
+        raise ValueError(f"제품별 소요대수 표에 `CUSTOM` 칸이 없어 부품을 고를 수 없습니다: {part}")
+    return chosen & _folded_parts(product_demand).eq(label_part(part)).astype("bool")
+
+
 def constraint_month_inputs(
     process_months: pd.DataFrame,
     product_demand: pd.DataFrame,
     *,
     process: str,
     product: str,
+    part: str | None = None,
     months: Sequence[int],
     general_target: Callable[[int], float],
 ) -> tuple[ConstraintMonthInput, ...]:
@@ -1577,7 +1679,9 @@ def constraint_month_inputs(
       전). 그 공정 행이 하나도 없으면 `KeyError`, 보이는 달이 빠졌거나 겹치면 `ValueError` 다.
     - `product_demand` 는 `build_process_product_demand(split="제품정보")` 꼴(그 공정, 보이는 달
       칸)이다. **행을 다 더하면 그 공정 소요**라 `|Σ 표 − R| > SUM_TOLERANCE × max(1, R)` 이면
-      `ValueError` 다. Rc 는 `제품정보 == product` 이고 「그 밖」 이 아닌 행이다(없으면 0). 빈
+      `ValueError` 다. Rc 는 `제품정보 == product` 이고 「그 밖」 이 아닌 행이다(없으면 0). `part`
+      (부품 — 2026-11-23 보드 답 D3 (나))를 주면 그 가운데 `CUSTOM == part` 인 행만이고, `None` 이면
+      그 제품의 모든 부품이다(`constraint_product_rows` — 부품을 싣기 전과 같은 값). 빈
       `product` 는 `ValueError` 다 — 표가 빈 제품정보를 「그 밖」 이 아닌 한 묶음 행으로 두므로
       (`fillna("")`) 그 묶음을 제약 제품으로 고르지 않게 한다(제품 선택지도 빈 이름을 뺀다).
       `Rc > R + NEED_TOLERANCE` 도 `ValueError`, `R < Rc ≤ R + NEED_TOLERANCE` 면 Rc = R 로
@@ -1614,20 +1718,13 @@ def constraint_month_inputs(
         raise ValueError(
             "제약 제품이 비었습니다 — 제품정보가 빈 묶음은 제약 제품으로 고를 수 없습니다."
         )
-    names_column = product_demand["제품정보"] if "제품정보" in product_demand.columns else None
-    other_column = (
-        product_demand[OTHER_ROW_COLUMN] if OTHER_ROW_COLUMN in product_demand.columns else None
-    )
-    if names_column is None or other_column is None:
+    if not {"제품정보", OTHER_ROW_COLUMN} <= set(product_demand.columns):
         if not product_demand.empty:
             raise ValueError("제품별 소요대수 표에 `제품정보`·`그 밖` 칸이 없습니다.")
         chosen = pd.Series(dtype="bool")
     else:
-        others = other_column.astype("boolean").fillna(False).astype("bool")
-        chosen = (
-            names_column.astype("string").str.strip().eq(wanted).fillna(False).astype("bool")
-            & ~others
-        )
+        chosen = constraint_product_rows(product_demand, wanted, part)
+    chosen_label = wanted if part is None else product_part_label(wanted, label_part(part))
 
     wanted_months = [int(value) for value in months]
     inputs: list[ConstraintMonthInput] = []
@@ -1649,7 +1746,7 @@ def constraint_month_inputs(
             )
         if constrained > required + NEED_TOLERANCE:
             raise ValueError(
-                f"제품별 소요 합이 공정 소요와 다릅니다 — {month} 「{wanted}」 소요 "
+                f"제품별 소요 합이 공정 소요와 다릅니다 — {month} 「{chosen_label}」 소요 "
                 f"{with_subject_particle(f'{constrained:g}')} 공정 소요 {required:g} 보다 큽니다."
             )
         if constrained > required or (constrained > 0 and table_total - constrained <= 0):

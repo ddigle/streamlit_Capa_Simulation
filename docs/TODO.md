@@ -1901,8 +1901,12 @@
   행 · ① 카드 · 캔버스 줄 · 시트 엑셀이 한 판정 · 한 이름표, 사이드바 제품 거르기만 제품정보 단위로 남김) · UI-CON-02 · UI-CON-04
   (`apply_part_display_order` · `part_merged_columns` 한 벌) · UI-ACC-02(라벨 칸 줄임이 부품을 남기는 `Row.label_part`) ·
   UI-DAT-07(부품 행 합 = 그 제품 한 행 · 행 합 = 공정 소요대수) · UI-STA-03(제품 거르기 · 「분류」 세션 값 그대로) · UI-PRF-03 ·
-  UI-TXT-07 · UI-TXT-08(한 값 데이터는 표 · 캔버스 · 시트 · 카드가 그대로). 제약 시뮬레이션은 같은 표를 제품정보로 맞대 숫자가
-  그대로다(부품 고르기는 다음 몫).
+  UI-TXT-07 · UI-TXT-08(한 값 데이터는 표 · 캔버스 · 시트 · 카드가 그대로).
+  제약 시뮬레이션 「제약 제품」 은 부품을 가르는 제품만 이름만 쓴 제품 전체 한 줄 뒤에 부품마다 「제품 (부품)」 줄이고(D3 (나) —
+  `constraint_product_choices`), 부품 줄의 Rc 는 그 부품 소요만이다(어댑터 `part`) — UI-CON-02(부품 줄 이름표 = 공정 Capa 상세
+  분류 행 글) · UI-CON-04(`product_part_label` 한 벌 · 행 고르기 `constraint_product_rows` 를 어댑터와 첫 소요 달이 함께) ·
+  UI-DAT-07(달마다 Rc + Re = R · 부품 Rc 합 = 제품 전체 Rc) · UI-STA-03(세션에 남은 제품 이름은 같은 뜻 — 제품 전체, 첫 값 그대로) ·
+  UI-TXT-01 · UI-TXT-07(새 안내 문장 없음 — 뜻은 Guide 「대상」 칸) · UI-TXT-08(한 값 데이터는 선택지 · 숫자 그대로) — 통과.
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
   행」(같으면 원천 행 순위)을 골라 실값 유실만 막는다(결정 기록). 선례는 `RQ_PKG_PLAN` 의 `Pack Code` 승격(`2dcbf0a`)이지만 그때는 `0013` 이
