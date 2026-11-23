@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 
 from capa_simulation.components.plotly_layout import table_header_band
 from capa_simulation.design import tokens
+from capa_simulation.services.product_parts import PART_NOT_SPLIT, product_part_label
 from capa_simulation.services.securement_threshold import (
     SecurementThresholds,
 )
@@ -551,6 +552,49 @@ def _fit_to_units(
         kept.append(character)
         used += character_units
     return "".join(kept).rstrip() + BOTTLENECK_NAME_ELLIPSIS
+
+
+def _fit_part_label(
+    product: str,
+    part: str,
+    unit_budget: float,
+    width: Callable[[str], float],
+) -> str:
+    """부품 이름표(`product_part_label`)를 폭 예산에 맞춘다 — 부품을 남기고 제품 쪽을 먼저 줄인다.
+
+    접힌 부품(`PART_NOT_SPLIT`)이면 제품 이름을 `_fit_to_units` 로 줄인 것과 같다. 가른 부품은 끝의
+    「 (부품)」 을 남기고 제품 이름 앞쪽만 남긴 뒤 말줄임을 단다(「DEMO… (DEMO_CUSTOM_A)」). 제품
+    글자를 하나도 남길 수 없으면 부품만 남기되 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 —
+    필요 단축 일정 호기 이름과 같은 꼴). `_fit_to_units` 는 앞을 남겨 부품부터 잘라 한 제품의
+    부품끼리 같은 글이 된다.
+    """
+    label = product_part_label(product, part)
+    if part == PART_NOT_SPLIT or width(label) <= unit_budget:
+        return _fit_to_units(label, unit_budget, width)
+    ellipsis = BOTTLENECK_NAME_ELLIPSIS
+    suffix = f" ({part})"
+    room = unit_budget - width(suffix) - width(ellipsis)
+    head: list[str] = []
+    used = 0.0
+    for character in product:
+        character_units = width(character)
+        if used + character_units > room:
+            break
+        head.append(character)
+        used += character_units
+    kept = "".join(head).rstrip()
+    if kept:
+        return f"{kept}{ellipsis}{suffix}"
+    room = unit_budget - width(f"({ellipsis})")
+    tail: list[str] = []
+    used = 0.0
+    for character in reversed(part):
+        character_units = width(character)
+        if used + character_units > room:
+            break
+        tail.append(character)
+        used += character_units
+    return f"({ellipsis}{''.join(reversed(tail)).lstrip()})"
 
 
 def _truncate_to_units(text: str, unit_budget: float) -> str:

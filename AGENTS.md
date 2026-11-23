@@ -2879,6 +2879,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 월 축은 양산 Density 가 있는 달이다 — 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5·연간 Total 에서
     빠진다. 그대로 둔다(2026-10-22 결정 A — 사내 런북 8-9 가 잰 그런 달이 리뷰마다 0 이라 닫고 그 블록은 걷었다). 넓힐 때는 이 파일의 조인 넷과
     `home.py` 축·`home_lob_figures` 위치 조회를 함께 바꾼다 — 조인만 바꾸면 B/N 그림이 `KeyError` 로 멈춘다.
+- `src/capa_simulation/services/product_parts.py` — 합쳐 보는 화면(HOME 도넛 · 제품별 비중 · HOME 계획 세부수량 · 공정
+  Capa 상세 제품별 나눔 · 제약 시뮬레이션)이 한 제품의 부품(`CUSTOM`)을 가를지 판정하고 이름표 · 차례 · 접기를 내는 한
+  벌이다(8장 「합쳐 보는 화면의 부품 이름표」). 화면 모듈은 사본을 두지 않는다(`tests/test_documentation_inventory.py` 의
+  `SHARED_HELPERS`).
+  - 판정 `multi_part_products` 는 받은 계획(활성 리비전 계획 전체를 넘긴다)에서 CUSTOM 이 둘 이상인 제품정보이고, 이름표가
+    다른 제품의 부품 이름표와 글자가 같은 제품도 든다(조각 · 줄이 합쳐지지 않게). `split_product_parts` 는 나머지 제품의
+    CUSTOM 을 `PART_NOT_SPLIT`(빈 글자)으로 접고, CUSTOM 칸이 없는 표(Past Data)는 칸을 채운다(가르는 제품은 표지 `-`).
+  - 이름표 `product_part_label` · 칸 녹이기 `part_merged_columns`(보이는 칸에서 CUSTOM 을 빼고 제품 칸 글을 이름표로) ·
+    차례 `part_order_key`(접힌 값 먼저, 나머지는 `custom_sort_key` — 열쇠 함수를 두 벌 두지 않는다) · 모으기
+    `keep_parts_together`. 좁은 칸 줄임은 `home_figure_common._fit_part_label` 이다. 시험은 `tests/test_product_parts.py`.
 - `src/capa_simulation/services/dynamic_capacity.py` — 실적을 차례로 얹는 Dynamic Capa 손실 분석과 데모(`DemoProfile`)다.
 - `src/capa_simulation/services/wip_status.py` — 재공 DB 연결 계약·STEP 코드 정렬·제품별 표준 가능량 일 전개와 샘플을 낸다.
 - `src/capa_simulation/services/display_order_scopes.py` — 표시순서 규칙이 걸리는 페이지·탭 구분자를 한 곳에 선언한다.
@@ -8116,6 +8126,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     뒤다(경로 칸 STEP · MCP 는 끝). 그래서 차원 상수가 Stack 뒤에 둔 CUSTOM 이 화면에서 Stack 바로 뒤에 서는 것은 그 범위
     규칙이 Stack 뒤 칸을 정하지 않을 때뿐이다 — 규칙이 Stack · WF 구분 · 소요기준 등을 정하면 CUSTOM 은 그 칸들 뒤에 선다(검수용
     견본 프로필이 그 꼴이다). 공정 Capa 상세 경로 추적처럼 고정 칸 차례(`ROUTE_COLUMNS`)로 그리는 표는 늘 Stack 뒤다.
+- **합쳐 보는 화면의 부품 이름표**는 `services/product_parts.py` 한 벌이다(2026-11-23 보드 답 D1 (가)). CUSTOM 이 둘
+  이상인 제품만 「DEMO_A (DEMO_CUSTOM_A)」(`product_part_label` — 표지는 「DEMO_A (-)」)이고, 부품이 하나뿐인 제품은 지금처럼
+  제품 이름만이다 — 옛 리비전(모두 표지)과 제품마다 실값 하나인 새 등록은 칸 · 색 · 차례 · 숫자까지 지금과 같다. 판정은
+  활성 리비전 계획 전체(모든 달 · EDP 포함 · 거르기 전)라 달 · 토글 · 거르기로 이름표가 흔들리지 않는다(UI-PRF-03).
+  - 구분은 괄호다 — 가운뎃점은 「양산 · DEMO_A」 · 근거 카드 상위 제품 목록 · 덤벨 줄 이름을 잇는 구분자라 한 제품의 끝이
+    읽히지 않는다. 괄호는 「표시명 (원본)」 과 같은 꼴이다.
+  - 부품 차례는 `part_order_key`(접힌 값 먼저, 나머지는 위 끝 열쇠와 같은 `custom_sort_key`)다. CUSTOM 뒤 칸(Stack 등)
+    규칙이 한 제품의 부품을 번갈아 세우는 표는 표시순서 **뒤**에 `keep_parts_together` 를 건다 — 이웃한 같은 제품 행 덩이
+    안에서 부품이 처음 선 차례로 모을 뿐 새 열쇠로 다시 세우지 않는다.
+  - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
+    `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 부품만으로도
+    넘치면 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
   (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
   중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·
