@@ -1357,7 +1357,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     규칙은 `scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS` 한 곳이다(`docs/scenario_merge_shift_implementation.md`).
     Chip 두 표의 보충 키는 부품 단위(`SUPPLEMENT_PRODUCT_KEYS` — 제품정보 · Stack · CUSTOM)이고 계획 결손 점검
     `plan_key_gaps` 도 같은 키다 — 머지는 부품을 다시 짝짓지 않아 옛 리비전(빈 값 표지)과 부품 값이 있는 리비전을 섞으면
-    결손으로 드러난다. 겹침은 고를 칸 곁 값 하나이고 합치기 거부는 그 칸 바로 아래에 선다(표 뒤면 첫 화면 밖이다). 빈 달 · 가상/실제 섞임은 값 줄(뜻은
+    결손으로 드러난다. 결손 줄의 「제품 n개」 는 부품을 접어 제품(제품정보 · Stack)을 센다(`PlanKeyGap.products`) — 키 예시는
+    부품마다다. 겹침은 고를 칸 곁 값 하나이고 합치기 거부는 그 칸 바로 아래에 선다(표 뒤면 첫 화면 밖이다). 빈 달 · 가상/실제 섞임은 값 줄(뜻은
     풍선)이고, 막힌 동안에도 저장 칸은 잠긴 단추로 남는다(`_render_locked_save`). 부대공정도 값 줄 둘이다 — 「부대공정 판 섞임」(두
     원본이 다른 판 — 저장 뒤 「부대공정 얹기」 로 맞춤)과 「부대공정 · BDQ 행 섞임」(한 원본 달은 판 행 · 다른 원본 달은 BDQ 행 —
     `extra_process_merge.month_merge_mixing`, 설계 A14 · D20). 뒤의 것은 저장 출처를 섞임 뺌 줄로 접어(`carried_extra_process(mixed=…)`)
@@ -2734,7 +2735,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `DENSITY_KEYS` · `LOAD_EXCLUSION_COLUMNS`)는 Stack 뒤에 `CUSTOM` 을 싣는다. Chip · Density 펼침 조인은 손으로 적은 키가
     아니라 그 키에서 `WF 구분` 만 뺀 상수(`_CHIP_EXPAND_KEYS` · `_DENSITY_EXPAND_KEYS`)로 잇는다 — 키를 손으로 적으면 업무
     키가 넓어질 때 두 부품이 서로 붙어 부하가 두 배가 된다. `LOAD_EXCLUSION_COLUMNS` 는 끝 칸(누락 기준정보) 앞이 키라
-    (`[:-1]` 로 읽는다) CUSTOM 도 그 앞이다. 수율 범위 예시는 자리가 아니라 칸 이름으로 푼다.
+    (`[:-1]` 로 읽는다) CUSTOM 도 그 앞이다. 수율 범위 예시는 자리가 아니라 칸 이름으로 풀고, 걸린 칸에 빈 값 표지 아닌
+    부품이 있을 때만 Stack 뒤에 CUSTOM 을 싣는다(두 부품의 같은 달 칸이 같은 글로 보이지 않게 — 부품이 없으면 글 그대로).
+    `plan_quantities` 의 숫자 아닌 생산수량 예시(년월 · 제품 · Stack)는 처음부터 계획 키 전부가 아니라(Capa Code · Customer ·
+    CS 도 없다) 그대로 둔다.
 - `src/capa_simulation/services/unit_capacity.py` — Main/MI 환산 UPEH 와 경로별 대당 Capa 를 계산한다(6장).
   0 이하 멈춤 글(`_assert_positive`)의 「n건」 은 걸린 계산 행 수가 아니라 키 조합, 곧 기준정보 표에서 고칠 칸 수다(빈 값 ·
   숫자 아님 · 연결값 없음 글과 같은 셈 — 계산 멈춤 알림의 「0 이하 칸 n건」 이 그대로 쓴다). 경로 키

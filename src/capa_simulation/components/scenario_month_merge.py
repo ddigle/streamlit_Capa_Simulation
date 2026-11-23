@@ -233,7 +233,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     # 섞임과 한 꼴, 설계 규칙 UI-TXT-04).
     for gap in plan_key_gaps(result):
         st.caption(
-            f"**{literal_markdown(gap.table)} 없음** :orange[제품 {len(gap.keys)}개 · 계획 "
+            f"**{literal_markdown(gap.table)} 없음** :orange[제품 {gap.products}개 · 계획 "
             f"{gap.rows}행] · "
             f"{markdown_safe_tildes(gap_examples(gap.keys, escape=literal_markdown))}",
             help=plan_gap_help(gap),

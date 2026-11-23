@@ -282,6 +282,15 @@ class PlanKeyGap(NamedTuple):
         """빠지는 계획 행 수."""
         return sum(count for _, _, count in self.keys)
 
+    @property
+    def products(self) -> int:
+        """빠지는 제품 수 — 부품(`CUSTOM`)은 접어 (제품정보, Stack) 으로 센다. 키 예시는
+        부품마다다."""
+        positions = [
+            index for index, column in enumerate(SUPPLEMENT_PRODUCT_KEYS) if column != "CUSTOM"
+        ]
+        return len({tuple(key[index] for index in positions) for key, _, _ in self.keys})
+
 
 def plan_key_gaps(tables: Mapping[str, pd.DataFrame]) -> tuple[PlanKeyGap, ...]:
     """계획(생산수량 > 0) 제품(부품까지 — `SUPPLEMENT_PRODUCT_KEYS`)이 `RQ_CHIP_QTY`·`RQ_CHIP_EQ`
@@ -325,7 +334,7 @@ def merged_table_gaps(tables: Mapping[str, pd.DataFrame]) -> TableGaps:
             "등록하세요."
         )
     warnings = tuple(
-        f"{gap.table}에 없는 제품 {len(gap.keys)}개 · 계획 {gap.rows}행은 {gap.effect}에서 빠집니다"
+        f"{gap.table}에 없는 제품 {gap.products}개 · 계획 {gap.rows}행은 {gap.effect}에서 빠집니다"
         f"(계산은 멈추지 않습니다): {gap_examples(gap.keys)}."
         for gap in plan_key_gaps(tables)
     )

@@ -2559,6 +2559,14 @@
 
 ### 계산
 
+- (2026-11-23) **수율 범위 오류 예시는 부품이 있을 때만 CUSTOM 을 싣고, 월 머지 결손 줄의 「제품 n개」 는 부품을 접어 센다**
+  — 키 승격 뒤 수율 범위 오류(`load_calculator._validate_yield_range`)는 행 수를 CUSTOM 을 포함한 `YIELD_KEYS` 로 세면서
+  예시에는 부품을 싣지 않아, 한 제품의 두 부품이 같은 달에 걸리면 똑같아 보이는 두 줄이 나왔다(수율 탭에는 CUSTOM 칸이
+  있다). 걸린 칸에 빈 값 표지 아닌 부품이 있을 때만 예시 머리와 줄에 Stack 뒤 CUSTOM 을 싣는다 — 부품이 없는 시나리오의
+  글은 그대로다(옛 시나리오 · 시드). `plan_quantities` 의 숫자 아닌 생산수량 예시는 처음부터 계획 키 전부가 아니어서(Capa
+  Code · Customer · CS 없음) 그대로 둔다. 월 머지 결손 줄(`plan_key_gaps`)의 「제품 n개」 는 키 수(이제 부품 수)가 아니라
+  제품(제품정보 · Stack) 수다(`PlanKeyGap.products`) — 키 예시는 부품마다. 규칙 자체 검토: UI-CON-02(낱말 「CUSTOM」 ·
+  「제품」 을 화면과 같게 — 부품을 「제품」 으로 세지 않음) · UI-TXT-04(값 줄 꼴 그대로, 새 설명 문구 없음) — 통과.
 - (2026-11-23) **확인 스크립트는 0039 전 DB 사본을 0039 와 같은 뜻으로 채워 읽는다 — 앱은 채우지 않는다** — 마이그레이션하지
   않는 읽기 전용 스크립트 넷(`inspect_revision_calculations` · `inspect_real_data_checks` · `inspect_db_counts` · 사외 디버깅용
   `compare_legacy_results`)과 같은 사본으로 도는 6-3 b 시간 스크립트(`benchmark_upeh_assumption` — 저장소로 읽되 마이그레이션하지

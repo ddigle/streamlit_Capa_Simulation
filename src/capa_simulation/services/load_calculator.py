@@ -7,6 +7,7 @@ from typing import Literal
 
 import pandas as pd
 
+from capa_simulation.services.core_data_derivation import custom_sort_key
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 from capa_simulation.services.display_order_scopes import (
     PAGE_PLAN,
@@ -80,6 +81,8 @@ YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY
 YIELD_LOCK_REASON_COLUMN = "사유"
 # 범위 밖 수율 오류에 적는 예시 칸 수. 사용자가 어느 행인지 찾을 수 있으면 된다.
 YIELD_RANGE_EXAMPLE_LIMIT = 5
+# 그 예시의 키 이름표(`YIELD_KEYS` 차례 — 없는 키는 칸 이름 그대로).
+YIELD_EXAMPLE_LABELS = {"생산계획년월": "년월", "제품정보": "제품"}
 # 계산 경로의 범위 밖 수율 오류 끝에 붙이는 고치는 곳. 기준정보 오류는 보지 않는 달이어도 계산을
 # 멈춘다(2026-09-28 사용자 결정) — 대신 어디를 고칠지 알린다.
 YIELD_RANGE_FIX_HINT = (
@@ -481,20 +484,21 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str, *, fix_hint: str 
         return
     invalid_cells = pd.concat(cells, ignore_index=True).drop_duplicates()
     invalid_rows = invalid_cells[YIELD_KEYS].drop_duplicates()
+    # 부품(`CUSTOM`)은 걸린 칸에 빈 값 표지 아닌 부품이 있을 때만 예시에 싣는다 — 두 부품의 같은 달
+    # 칸이 같은 글로 보이지 않게. 부품이 없는 시나리오의 글은 그대로다.
+    show_part = not all(custom_sort_key(value)[0] for value in invalid_cells["CUSTOM"].unique())
+    example_keys = [key for key in YIELD_KEYS if key != "CUSTOM" or show_part]
     examples = [
-        f"{month} · {product} · {stack} · {division} → {kind} {value:.4g}({value * 100:.4g}%)"
-        for month, product, stack, division, kind, value in invalid_cells.loc[
-            :, ["생산계획년월", "제품정보", "Stack", "WF 구분", "구분", "값"]
-        ]
+        f"{' · '.join(str(part) for part in keys)} → {kind} {value:.4g}({value * 100:.4g}%)"
+        for *keys, kind, value in invalid_cells.loc[:, [*example_keys, "구분", "값"]]
         .head(YIELD_RANGE_EXAMPLE_LIMIT)
-        .itertuples(index=False)
+        .itertuples(index=False, name=None)
     ]
     rest = len(invalid_cells) - len(examples)
+    labels = " · ".join(YIELD_EXAMPLE_LABELS.get(key, key) for key in example_keys)
     message = (
         f"{table_name}의 수율은 0 초과 100% 이하여야 합니다: {len(invalid_rows):,}행, "
-        f"예시(년월 · 제품 · Stack · WF 구분) {'; '.join(examples)}"
-        + (f" 외 {rest:,}칸" if rest > 0 else "")
-        + "."
+        f"예시({labels}) {'; '.join(examples)}" + (f" 외 {rest:,}칸" if rest > 0 else "") + "."
     )
     raise ValueError(f"{message} {fix_hint}" if fix_hint else message)
 

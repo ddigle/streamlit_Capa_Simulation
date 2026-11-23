@@ -9,7 +9,7 @@
 
 import pandas as pd
 import pytest
-from custom_key_tables import TWO_PART_PRODUCT, two_part_tables
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
 from test_duckdb_repository import _reference_tables
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -188,6 +188,24 @@ def test_a_blank_custom_plan_against_two_part_chips_is_a_plan_key_gap() -> None:
         for name, keys in NON_MONTHLY_SUPPLEMENT_KEYS.items()
         if name.startswith("RQ_CHIP")
     )
+
+
+def test_a_product_whose_two_parts_are_both_missing_counts_as_one_product() -> None:
+    """두 부품이 함께 Chip 표에 없어도 결손 줄의 「제품 N개」 는 제품(제품정보 · Stack)을 센다 — 키
+    예시는 부품마다 둘이지만 빠지는 제품은 하나다."""
+    tables = two_part_tables()
+    for name in ("RQ_CHIP_QTY", "RQ_CHIP_EQ"):
+        frame = tables[name]
+        tables[name] = frame.loc[frame["제품정보"].ne(TWO_PART_PRODUCT)].reset_index(drop=True)
+
+    gaps = plan_key_gaps(tables)
+
+    assert [gap.table for gap in gaps] == ["RQ_CHIP_QTY", "RQ_CHIP_EQ"]
+    for gap in gaps:
+        assert [key[2] for key, _, _ in gap.keys] == [PART_A, PART_B]
+        assert gap.products == 1
+    for warning in merged_table_gaps(tables).warnings:
+        assert "없는 제품 1개 · 계획 " in warning
 
 
 def test_unimplemented_bases_do_not_need_a_module() -> None:
