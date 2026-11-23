@@ -31,6 +31,7 @@ from capa_simulation.components.home_dimensions import (
 )
 from capa_simulation.components.home_figure_common import (
     HOVER_LABEL_FONT_SIZE_PX,
+    _fit_part_label,
     _fit_to_units,
     _hover_label,
     _paper_hrule,
@@ -56,6 +57,13 @@ from capa_simulation.services.dashboard import (
     DETAIL_DIMENSION_HEADERS,
     DETAIL_DIMENSION_WIDTHS,
     PRODUCTION_DETAIL_DIMENSIONS,
+)
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    PART_NOT_SPLIT,
+    PRODUCT_COLUMN,
+    label_part,
+    part_merged_columns,
 )
 
 # 계획 세부수량 칸의 값 글자. 분류 칸과 월 칸이 같아야 두 칸의 글자가 같은 눈높이에 선다.
@@ -206,10 +214,28 @@ def _cell_surface_rects(
     return rects
 
 
-def _fit_label(value: str, column_px: float) -> str:
-    """분류 이름이 칸에 들면 그대로, 넘으면 끝을 말줄임으로 줄인다."""
+def _fit_label(value: str, column_px: float, part: str = PART_NOT_SPLIT) -> str:
+    """분류 이름이 칸에 들면 그대로, 넘으면 끝을 말줄임으로 줄인다.
+
+    `part` 를 주면 `value` 는 제품 이름이고 칸 글은 부품 이름표다 — 부품을 남기고 제품 쪽을 먼저
+    줄인다(`_fit_part_label`). 접힌 부품이면 이름 그대로 줄인 것과 같다.
+    """
     budget = (column_px - 2 * DETAIL_LABEL_INSET_PX) / DETAIL_VALUE_FONT_SIZE_PX
+    if part != PART_NOT_SPLIT:
+        return _fit_part_label(value, part, budget, _text_width_units)
     return _fit_to_units(value, budget, _text_width_units)
+
+
+def _label_parts(detail: pd.DataFrame, dimensions: Sequence[str]) -> list[tuple[str, str]] | None:
+    """행마다 (제품 이름, 부품) — 부품을 제품 칸 글에 녹이는 표일 때만, 아니면 None."""
+    if PART_COLUMN not in dimensions or PRODUCT_COLUMN not in dimensions:
+        return None
+    if PART_COLUMN not in detail.columns:
+        return None
+    return [
+        ("" if pd.isna(product) else str(product), label_part(part))
+        for product, part in zip(detail[PRODUCT_COLUMN], detail[PART_COLUMN], strict=True)
+    ]
 
 
 def _hover_lines(value: str) -> str:
@@ -283,8 +309,15 @@ def build_plan_detail_figures(
     `detail_dimensions` 는 왼쪽 분류 칸을 정한다. 기본은 제품·Stack 이고 `상세 계획` 을 켜면
     거래선이 더해진다. 머리글과 칸 폭은 컬럼 이름에서 끌어오므로 분류가 늘어도 여기서
     다시 적을 것이 없다.
+
+    부품(`CUSTOM`)은 칸으로 그리지 않는다 — 제품 칸 글이 이름표(「제품 (부품)」, 접힌 부품이면
+    제품 이름)이고 줄무늬 띠 · 굵은 선도 이름표 단위라 부품마다 띠 하나다
+    (`product_parts.part_merged_columns`). 좁은 칸에서는 부품을 남기고 제품 쪽을 먼저 줄인다.
     """
-    dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
+    requested_dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
+    label_parts = _label_parts(production_detail, requested_dimensions)
+    dimensions, merged_detail = part_merged_columns(production_detail, requested_dimensions)
+    product_column = dimensions.index(PRODUCT_COLUMN) if label_parts is not None else -1
     detail_dimension_widths = [DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions]
     # 제품 칸이 끝나는 자리(paper 0~1). **폭에서 계산한다** — `상세 계획` 을 켜면 거래선이
     # 붙어 분모가 2.0 에서 3.0 으로 바뀌는데, 숫자를 박아 두면 그때 선이 엉뚱한 칸
@@ -294,7 +327,7 @@ def build_plan_detail_figures(
     # 줄어드는데 Figure 폭은 `len(month_labels)` 로 잡으므로, 컬럼 폭이 100px 그리드보다
     # 넓어져 헤더가 뒤로 갈수록 밀린다. 요약표와 월이 세로로 어긋나기도 한다.
     detail_month_columns = list(month_labels)
-    displayed_detail = production_detail.copy()
+    displayed_detail = merged_detail.copy()
     detail_dimension_values = [
         ["" if pd.isna(value) else str(value) for value in displayed_detail[column]]
         for column in dimensions
@@ -386,9 +419,20 @@ def build_plan_detail_figures(
         width / sum(detail_dimension_widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
         for width in detail_dimension_widths
     ]
+
+    def _fitted(column_index: int, row_index: int, value: str, column_px: float) -> str:
+        if value and label_parts is not None and column_index == product_column:
+            product, part = label_parts[row_index]
+            return _fit_label(product, column_px, part)
+        return _fit_label(value, column_px)
+
     label_value_texts = TableText(
         cells=[
-            (column_index, centered_value_y[row_index], _fit_label(value, column_px))
+            (
+                column_index,
+                centered_value_y[row_index],
+                _fitted(column_index, row_index, value, column_px),
+            )
             for column_index, (values, column_px) in enumerate(
                 zip(grouped_dimension_values, label_column_px, strict=True)
             )

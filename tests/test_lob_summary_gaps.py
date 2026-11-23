@@ -7,15 +7,25 @@
 선행 반영값으로 GAP 을 재면 남의 계획과의 차이에 내가 넣은 선행 물량이 섞인다.
 """
 
+from uuid import uuid4
+
 import dummy_series_tables as demo
 import pandas as pd
 import plotly.graph_objects as go
+import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.home_lob_figures import _bottleneck_rate_labels
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.dashboard import (
+    PRODUCTION_DETAIL_DIMENSIONS,
+    align_detail_with_comparison,
+)
 from capa_simulation.services.load_calculator import calculate_wafer_load, filter_edp_plan
 from capa_simulation.services.plan_gap import WAFER_GAP_FORMAT, WAFER_GAP_SCALE, plan_gap_texts
+from capa_simulation.services.product_parts import PART_NOT_SPLIT
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602]
@@ -224,3 +234,82 @@ def test_two_plans_differing_only_in_dummy_series_rows_have_no_wafer_gap() -> No
     )
     only_dummy = unfiltered.loc[unfiltered["제품정보"].eq(demo.DUMMY_ONLY), "물량"].sum()
     assert only_dummy > 0
+
+
+def _all_mass_production(plan: pd.DataFrame) -> pd.DataFrame:
+    return plan.assign(양산구분="양산")
+
+
+def _detail_gap_against_an_old_revision(
+    *, split_capa_code: bool
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """두 부품 현재 계획과 부품을 싣기 전 리비전(내장 시드 — 모두 표지)의 계획 세부수량을 HOME 처럼
+    맞댄 두 표(현재, 비교). 비교 계획은 현재 표에 다시 짝지은 뒤 현재 리비전의 부품 판정으로 접힌다.
+
+    세부수량은 양산 Density 가 있는 계획에서만 서므로 시드의 ER 제품도 양산으로 두어 두 리비전에
+    같은 접힌 제품 하나를 더한다."""
+    tables = two_part_tables(split_capa_code=split_capa_code)
+    tables["RQ_PKG_PLAN"] = _all_mass_production(tables["RQ_PKG_PLAN"])
+    old_plan = _all_mass_production(build_builtin_seed_dataset().reference_tables["RQ_PKG_PLAN"])
+    months = sorted({int(month) for month in pd.to_numeric(old_plan["생산계획년월"])})
+    display_order = tables["RQ_DISPLAY_ORDER"]
+    key = simulation_cache.build_home_simulation_cache_key(
+        reference_version=1,
+        scenario_token=f"old-revision-gap-{uuid4().hex}",
+        start_month=months[0],
+        end_month=months[-1],
+        display_order=display_order,
+    )
+    dimensions = list(PRODUCTION_DETAIL_DIMENSIONS)
+    current = simulation_cache.get_home_plan_detail(
+        key, tables, display_order, include_edp=True, include_customer=False
+    )
+    _density, _wafer, comparison = simulation_cache.get_home_comparison_plan(
+        cache_key=key,
+        _tables=tables,
+        _comparison_plan=old_plan,
+        _display_order=display_order,
+        comparison_revision_id="R-OLD",
+        include_edp=True,
+        detail_dimensions=tuple(dimensions),
+    )
+    return align_detail_with_comparison(current, comparison, dimensions, display_order)
+
+
+def _parts(frame: pd.DataFrame) -> list[str]:
+    return frame.loc[frame["제품정보"].eq(TWO_PART_PRODUCT), "CUSTOM"].astype(str).tolist()
+
+
+def _product_month_sums(frame: pd.DataFrame) -> list[float]:
+    months = [column for column in frame.columns if column not in PRODUCTION_DETAIL_DIMENSIONS]
+    rows = frame.loc[frame["제품정보"].eq(TWO_PART_PRODUCT), months]
+    return [float(value) for value in rows.apply(pd.to_numeric, errors="coerce").sum()]
+
+
+def test_rows_an_old_revision_cannot_pair_stay_one_dash_row_and_the_product_gap_is_zero() -> None:
+    """두 부품이 Capa Code 를 함께 쓰면 부품을 싣기 전 리비전의 행은 다시 짝짓기로 부품을 정하지
+    못한다. 그 행은 부품을 가르는 제품에서만 「제품 (-)」 줄로 남아 비교값만(−) 갖고, 부품 줄은
+    현재값만(+) 갖는다. 부품을 나눈 것뿐이라 제품 합의 GAP 은 0 이다."""
+    current, comparison = _detail_gap_against_an_old_revision(split_capa_code=False)
+
+    assert _parts(current) == [PART_A, PART_B, "-"]
+    product = current["제품정보"].eq(TWO_PART_PRODUCT)
+    dash = current["CUSTOM"].eq("-")
+    months = [column for column in current.columns if column not in PRODUCTION_DETAIL_DIMENSIONS]
+    assert current.loc[product & dash, months].isna().all(axis=None)
+    assert comparison.loc[product & ~dash, months].isna().all(axis=None)
+    assert _product_month_sums(current) == pytest.approx(_product_month_sums(comparison))
+    # 부품이 하나뿐인 제품은 접힌 값끼리 같은 행에 붙어 GAP 이 없다.
+    assert current.loc[~product, "CUSTOM"].tolist() == [PART_NOT_SPLIT]
+    assert current.loc[~product, months].to_numpy(dtype=float) == pytest.approx(
+        comparison.loc[~product, months].to_numpy(dtype=float)
+    )
+
+
+def test_rows_an_old_revision_can_pair_land_on_a_part_and_leave_no_dash_row() -> None:
+    """부품마다 Capa Code 가 다르면 옛 행은 같은 Capa Code 의 부품으로 다시 짝지어진다 —
+    「제품 (-)」 줄이 없고, 제품 합의 GAP 은 0 이다."""
+    current, comparison = _detail_gap_against_an_old_revision(split_capa_code=True)
+
+    assert _parts(current) == [PART_A, PART_B]
+    assert _product_month_sums(current) == pytest.approx(_product_month_sums(comparison))

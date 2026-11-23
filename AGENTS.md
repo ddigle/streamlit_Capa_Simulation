@@ -532,7 +532,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **토글 회차는 그림과 상관없는 정렬 · 합치기를 다시 하지 않는다** — 세션 메모(`SessionSlot` `home_sort_memo` — 칸 이름은
     `home_state.HOME_SORT_MEMO_KEY`, 이름마다 두 벌)에 표시순서 준비(키 = HOME 계산 키의 표시순서 지문) · 공정 선택지 차례(공정
     이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 내용 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
-    과거 조각의 부품 판정(`product_parts.multi_part_products` — 키 = 내용 토큰)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
+    과거 열 · 조각의 부품 판정(`product_parts.multi_part_products` — 키 = 내용 토큰, 계획 세부수량 과거 열과 제품별 비중 과거 조각이 한 칸)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
@@ -541,6 +541,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     받은 리비전 계획 전체(`_tables["RQ_PKG_PLAN"]`)로 하고 수량 프레임의 `CUSTOM` 칸에 접힌 값으로 싣는다 — 캐시 키 ·
     반환 꼴은 그대로다. 과거 구간 조각은 `past_product_volume(multi_part=)` 가 「제품 (-)」 로 채운다. 범례 줄임은
     `_fit_part_label` 이다(`tests/test_product_share_parts.py`).
+  - 계획 세부수량 · 비교 덤벨도 같은 판정으로 그 제품만 부품마다 줄이다 — 분류 차원이 (제품정보, `CUSTOM`, Stack[, Customer])
+    이고 HOME 캐시 네 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_plan_detail` ·
+    `get_home_comparison_plan`)가 받은 리비전 계획 전체로 판정해 `build_production_dashboard(multi_part=)` 에 넘긴다. 비교
+    계획은 **현재** 리비전 판정으로 접혀 짝을 못 찾은 행만 「제품 (-)」 줄이고, 과거 열은 `past_plan_detail_to_wide(multi_part=)`
+    가 채운다. 캐시 키 · 반환 꼴은 그대로다(`tests/test_dashboard.py` · `test_plan_detail_figures.py` 의 HOME 진입 ·
+    `test_lob_summary_gaps.py`).
   - HOME 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 리비전마다
     계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」(`components/scenario_input_check.py`)이 저장 리비전 전체 기간으로
     센다(2026-11-11 입력 점검 보드 q7). 측정률 가정 한 줄은 남는다.
@@ -2244,6 +2250,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다. 한쪽에만 있는 분류는 다른 쪽을 0 으로 보고 연결선은 `DELTA_*` 다.
   - 그림은 `build_plan_comparison_dumbbell` 이 만들고 `render_plan_comparison_dumbbell` 은 받은 그림만 그린다(HOME 은
     계획 세부수량 Figure 묶음에 함께 캐시한다).
+  - 분류에 `CUSTOM` 이 있으면 줄 이름의 제품 자리에 녹인다(`product_parts.part_merged_columns` — 「제품 (부품) · Stack」).
 - `src/capa_simulation/components/source_quality.py` — 활성 시나리오 원천 78컬럼의 결측률·카디널리티 표다.
   `load_source_profile` 의 값만 써 새 조인이 없고 등급을 글자로도 적는다. 결측률 막대는 `percent_progress_column`(8장 「표의 % 칸」).
 - `src/capa_simulation/components/percent_cells.py` — 표의 % 칸을 소수 둘째 자리 고정 글로 보이게 하는 한 벌 도우미(8장 「표의 %
@@ -2881,6 +2888,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/dashboard.py` — HOME 월별 집계와 B/N 월별 순위(Top 1·Top 5·상세)·Wafer Capa 를 낸다.
   - HOME 의 Wafer 정의는 `home_aggregation_wafer_load` 하나다 — Dummy 계열(`product_type.DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`)을
     뺀 원천 집계 기준이고, 월 합과 제품별 비중 분모가 같은 거른 프레임에서 묶인다(6장 「HOME 얹기」).
+  - 계획 세부수량 차원은 제품정보 → `CUSTOM` → Stack(→ Customer)이다. 부품은 칸으로 그리지 않고 그림이 제품 칸 글에 녹인다
+    (`DETAIL_DIMENSION_HEADERS` · `DETAIL_DIMENSION_WIDTHS` 에 없다). `multi_part`(부품이 둘 이상인 제품)에 없는 제품은
+    부품을 접어(`product_parts.split_product_parts`) 행이 부품을 싣기 전과 같다 — 기본은 모두 접힘. 표시순서는
+    `product_parts.apply_part_display_order` 로 건다(세부수량 · 비교 맞춤 `align_detail_with_comparison` · 과거 합치기
+    `past_data.merge_past_plan_detail` 세 곳).
   - 월 축은 양산 Density 가 있는 달이다 — 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5·연간 Total 에서
     빠진다. 그대로 둔다(2026-10-22 결정 A — 사내 런북 8-9 가 잰 그런 달이 리뷰마다 0 이라 닫고 그 블록은 걷었다). 넓힐 때는 이 파일의 조인 넷과
     `home.py` 축·`home_lob_figures` 위치 조회를 함께 바꾼다 — 조인만 바꾸면 B/N 그림이 `KeyError` 로 멈춘다.
@@ -2891,9 +2903,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 판정 `multi_part_products` 는 받은 계획(활성 리비전 계획 전체를 넘긴다)에서 CUSTOM 이 둘 이상인 제품정보이고, 이름표가
     다른 제품의 부품 이름표와 글자가 같은 제품도 든다(조각 · 줄이 합쳐지지 않게). `split_product_parts` 는 나머지 제품의
     CUSTOM 을 `PART_NOT_SPLIT`(빈 글자)으로 접고, CUSTOM 칸이 없는 표(Past Data)는 칸을 채운다(가르는 제품은 표지 `-`).
-  - 이름표 `product_part_label` · 칸 녹이기 `part_merged_columns`(보이는 칸에서 CUSTOM 을 빼고 제품 칸 글을 이름표로) ·
-    차례 `part_order_key`(접힌 값 먼저, 나머지는 `custom_sort_key` — 열쇠 함수를 두 벌 두지 않는다) · 모으기
-    `keep_parts_together`. 좁은 칸 줄임은 `home_figure_common._fit_part_label` 이다. 시험은 `tests/test_product_parts.py`.
+  - 이름표 `product_part_label`(부품 글자 `label_part`) · 칸 녹이기 `part_merged_columns`(보이는 칸에서 CUSTOM 을 빼고 제품
+    칸 글을 이름표로) · 차례 `part_order_key`(접힌 값 먼저, 나머지는 `custom_sort_key` — 열쇠 함수를 두 벌 두지 않는다) ·
+    모으기 `keep_parts_together` · 표시순서 `apply_part_display_order`(앞에서 섞인 제품의 부품을 부품 차례로 모으고 —
+    규칙이 없을 때의 답 — 뒤에서 `keep_parts_together`). 좁은 칸 줄임은 `home_figure_common._fit_part_label` 이다. 시험은
+    `tests/test_product_parts.py`.
 - `src/capa_simulation/services/dynamic_capacity.py` — 실적을 차례로 얹는 Dynamic Capa 손실 분석과 데모(`DemoProfile`)다.
 - `src/capa_simulation/services/wip_status.py` — 재공 DB 연결 계약·STEP 코드 정렬·제품별 표준 가능량 일 전개와 샘플을 낸다.
 - `src/capa_simulation/services/display_order_scopes.py` — 표시순서 규칙이 걸리는 페이지·탭 구분자를 한 곳에 선언한다.
@@ -4628,6 +4642,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   산출하지 않는다 — Capa 는 확보율에서 곧장 나오고 B/N 순위는 확보율 오름차순이다.
   - 같은 달이 양쪽에 있으면 계산이 이긴다. `display_month_range` 는 HOME 계산 캐시 키의 달이라 HOME 과
     필요 단축 일정이 같은 함수를 쓴다. 빈칸을 0 으로 삼키지 않는다(`_BLANK_AS_ZERO` 가 칸별 규칙).
+  - 과거 계획 세부수량에는 부품 칸이 없다 — 분류에 `CUSTOM` 이 있으면 `past_plan_detail_to_wide(multi_part=)` 가 채운다
+    (부품을 가르는 제품은 표지 `-` 의 「제품 (-)」 줄, 나머지는 접힌 값이라 계산 구간 행에 붙는다).
 - `src/capa_simulation/components/past_data_management.py` — 「HOME 설정」 팝업의 `Past Data` 탭. 한 버전을 공유하는 세
   표를 그 표 상자 안 붙여넣기 칸(`PAST_PASTE_KEY` — 한 번에 한 표, 팝업 안이라 팝업을 또 열 수 없다)으로 세션에 모았다가
   한 번에 저장한다(부분 저장 없음). 「설정」 팝업을 열고 닫는 콜백이 편 칸을 걷는다(`forget_past_paste`).
@@ -5957,7 +5973,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_home_settings_kept_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace, 끝의 전체 이름 풍선 표적 막대)다. 긴
     제품명·거래선은 끝을 말줄임으로 줄이고(`_fit_label`) 넘칠 수 있는 칸은 전체 이름 풍선(끝의 표적 막대 `_label_hover_bar`)이며, 어림을 넘긴 글자만 제 칸
-    경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
+    경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다. 부품(`CUSTOM`)은 칸이 아니라 제품 칸 글
+    (`part_merged_columns` 이름표)이고 띠 · 굵은 선도 이름표 단위다 — 제품 칸 줄임은 부품을 남기는 `_fit_part_label` 이다.
   - 구획 간격은 두 값이다(2026-11-02 사용자 요청) — 제목 글줄 → 시트 `tokens.SECTION_TITLE_SHEET_GAP_PX`, 앞 시트 →
     다음 제목 글줄 `tokens.SECTION_GAP_PX`. 계획 세부수량 · 주요공정 · 상세 B/N 제목 줄과 월 칸 짝 빈 줄은 띠
     (`home_dimensions.DASHBOARD_TITLE_BAND_PX` = 구획 사이 + 제목 글줄 `DASHBOARD_TITLE_LINE_PX` + 제목→시트, 위 · 아래 안쪽
@@ -8139,7 +8156,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     읽히지 않는다. 괄호는 「표시명 (원본)」 과 같은 꼴이다.
   - 부품 차례는 `part_order_key`(접힌 값 먼저, 나머지는 위 끝 열쇠와 같은 `custom_sort_key`)다. CUSTOM 뒤 칸(Stack 등)
     규칙이 한 제품의 부품을 번갈아 세우는 표는 표시순서 **뒤**에 `keep_parts_together` 를 건다 — 이웃한 같은 제품 행 덩이
-    안에서 부품이 처음 선 차례로 모을 뿐 새 열쇠로 다시 세우지 않는다.
+    안에서 부품이 처음 선 차례로 모을 뿐 새 열쇠로 다시 세우지 않는다. 행으로 그리는 표(계획 세부수량)는 앞뒤를 묶은
+    `apply_part_display_order` 를 쓴다 — 규칙이 없으면 표시순서가 받은 차례를 그대로 돌려주므로 앞에서 섞인 제품의 부품을
+    부품 차례로 그 제품 첫 자리에 모아 둔다(덧붙은 비교 · 과거 「제품 (-)」 줄도 그 곁). 부품이 하나뿐인 제품의 행은 제자리다.
   - 색은 부품마다 제 칸이다(2026-11-23 보드 답 D2 (가) — 다른 제품처럼, 새 토큰 없음). 같은 제품의 부품은 차례로만 이웃하고
     이름은 범례 · 풍선 글이 나르며(UI-ACC-03), 칸이 넘치면 부품 단위로 `기타` 에 접힌다 — 한 제품의 부품이 이름 있는 칸과
     `기타` 에 걸칠 수 있다(`product_share.assign_product_slots`).

@@ -17,7 +17,7 @@
   (`product_part_label` — 2026-11-23 보드 답 D1 (가)). 가운뎃점은 이미 「양산 · DEMO_A」 같은
   잇기 구분자라 쓰지 않는다.
 - 차례는 접힌 값이 먼저이고 나머지는 표시 차례 열쇠 `core_data_derivation.custom_sort_key`
-  그대로다(`part_order_key`).
+  그대로다(`part_order_key`). 행으로 그리는 표는 공용 표시순서를 `apply_part_display_order` 로 건다.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from typing import Final
 import pandas as pd
 
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK, custom_sort_key
+from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 from capa_simulation.services.frame_contracts import require_columns
 
 PRODUCT_COLUMN: Final = "제품정보"
@@ -149,6 +150,57 @@ def keep_parts_together(
     return frame.iloc[order].reset_index(drop=True)
 
 
+def _mixed_parts_first(frame: pd.DataFrame, owners: list[str]) -> pd.DataFrame:
+    """부품이 둘 이상 섞인 제품(`owners` 값이 같은 행)의 행을 그 제품이 처음 선 자리로 모아 부품
+    차례(`part_order_key` → 원래 행 차례)로 세운 사본. 부품이 하나뿐인 제품의 행은 제자리다."""
+    groups = frame.groupby(owners, dropna=False, sort=False).ngroup().tolist()
+    ranks = [part_order_key(part) for part in frame[PART_COLUMN]]
+    first: dict[int, int] = {}
+    distinct: dict[int, set[tuple[bool, tuple[bool, str, str]]]] = {}
+    for position, (group, rank) in enumerate(zip(groups, ranks, strict=True)):
+        first.setdefault(group, position)
+        distinct.setdefault(group, set()).add(rank)
+    anchors = [
+        first[group] if len(distinct[group]) > 1 else position
+        for position, group in enumerate(groups)
+    ]
+    order = sorted(range(len(frame)), key=lambda row: (anchors[row], ranks[row], row))
+    if order == list(range(len(frame))):
+        return frame
+    return frame.iloc[order].reset_index(drop=True)
+
+
+def apply_part_display_order(
+    frame: pd.DataFrame,
+    display_order: DisplayOrderInput,
+    page: str,
+    tab: str,
+    owner_columns: Sequence[str] = (PRODUCT_COLUMN,),
+) -> pd.DataFrame:
+    """공용 표시순서를 건 표 — 가른 제품의 부품 행은 한 제품 안에서 부품 차례로 모여 선다.
+
+    `display_order.apply_display_order` 앞뒤에 한 번씩 손을 댄다. 차례 열쇠는 둘 다 `part_order_key`
+    (곧 표시순서 끝 열쇠와 같은 `custom_sort_key`)라 같은 표를 다른 규칙으로 두 번 세우지 않는다.
+
+    1. 앞: 부품이 둘 이상 섞인 제품의 행을 그 제품이 처음 선 자리로 모아 부품 차례로 세운다 — 그
+       범위에 규칙이 없으면 `apply_display_order` 가 받은 차례를 그대로 돌려주므로 이 차례가
+       답이다(피벗 · `groupby` 는 표지 `-` 를 글자 앞에 두고 대소문자를 가려 세운다). 덧붙은
+       행(비교 · 과거에만 있는 「제품 (-)」 줄)도 그 제품 곁에 선다. 부품이 하나뿐인 제품의 행은
+       제자리라 지금 차례 그대로다.
+    2. `apply_display_order` — 규칙이 있으면 끝 열쇠가 같은 부품 차례로 이웃하게 세운다.
+    3. 뒤: `keep_parts_together` — CUSTOM 뒤 칸(Stack 등) 규칙이 번갈아 세운 한 부품의 행을
+       모은다.
+
+    CUSTOM 칸이 없는 표는 `apply_display_order` 와 같다.
+    """
+    owners = list(owner_columns)
+    if frame.empty or PART_COLUMN not in frame.columns:
+        return apply_display_order(frame, display_order, page, tab)
+    require_columns(frame, owners, "제품 부품")
+    ordered = apply_display_order(_mixed_parts_first(frame, owners), display_order, page, tab)
+    return keep_parts_together(ordered, owners)
+
+
 def part_merged_columns(frame: pd.DataFrame, dims: Sequence[str]) -> tuple[list[str], pd.DataFrame]:
     """CUSTOM 을 제품 칸 글에 녹인 (보이는 분류 칸, 사본) — 부품을 칸으로 그리지 않는 화면용.
 
@@ -165,15 +217,19 @@ def part_merged_columns(frame: pd.DataFrame, dims: Sequence[str]) -> tuple[list[
         return visible, frame
     merged = frame.drop(columns=[PART_COLUMN])
     labels = [
-        product if pd.isna(product) else product_part_label(str(product), _label_part(part))
+        product if pd.isna(product) else product_part_label(str(product), label_part(part))
         for product, part in zip(frame[PRODUCT_COLUMN], frame[PART_COLUMN], strict=True)
     ]
     merged[PRODUCT_COLUMN] = pd.Series(labels, index=frame.index, dtype="object")
     return visible, merged
 
 
-def _label_part(part: object) -> str:
-    """이름표에 붙일 부품 글자 — 접힌 값은 그대로, 빈 값(NA · 공백뿐)은 표지 `-`."""
+def label_part(part: object) -> str:
+    """이름표에 붙일 부품 글자 — 접힌 값은 그대로, 빈 값(NA · 공백뿐)은 표지 `-`.
+
+    `part_merged_columns` 가 이름표를 지을 때와 좁은 칸 줄임(`_fit_part_label`)에 부품을 따로 넘길
+    때 같은 글자를 쓰게 한다.
+    """
     if not isinstance(part, str):
         return CUSTOM_BLANK
     if part == PART_NOT_SPLIT:

@@ -18,6 +18,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import pytest
 from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
+from home_two_part_app import home_script, publish_two_part_revision
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_figure_common import _text_width_units
@@ -49,7 +50,6 @@ from capa_simulation.services.securement_threshold import SecurementThresholds
 
 LABEL_A = product_part_label(TWO_PART_PRODUCT, PART_A)
 LABEL_B = product_part_label(TWO_PART_PRODUCT, PART_B)
-HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 
 
 def _months(tables: Mapping[str, pd.DataFrame]) -> list[int]:
@@ -357,88 +357,11 @@ def test_the_summary_donut_names_each_part_and_still_sums_to_one() -> None:
 # ---------------------------------------------------------------- HOME 진입
 
 
-def _home_script(database_path: Path) -> str:
-    """app.py 의 전역 준비만 재현하고 HOME 을 돌린다 — `Capa LOB 현황` 두 그림을 key 로 남긴다.
-
-    Components v2 가로 스크롤바는 AppTest 인스턴스마다 등록이 남지 않아 빈 스텁으로 둔다."""
-    return f"""
-from pathlib import Path
-
-import streamlit as st
-
-import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
-import capa_simulation.settings as settings
-
-settings.DUCKDB_PATH = Path({str(database_path)!r})
-
-from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
-from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
-
-bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
-apply_pending_scenario_preset()
-
-st.session_state["spy_figures"] = {{}}
-_original_plotly_chart = st.plotly_chart
-
-
-def _spy_plotly_chart(figure, *args, **kwargs):
-    st.session_state["spy_figures"] = {{
-        **st.session_state["spy_figures"],
-        kwargs.get("key"): figure,
-    }}
-    return _original_plotly_chart(figure, *args, **kwargs)
-
-
-st.plotly_chart = _spy_plotly_chart
-_original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
-horizontal_scrollbar.render_horizontal_scrollbar = lambda *_args, **_kwargs: None
-try:
-    page_source = Path({str(HOME_PAGE)!r}).read_text(encoding="utf-8")
-    exec(compile(page_source, {str(HOME_PAGE)!r}, "exec"), {{"__name__": "__main__"}})
-finally:
-    st.plotly_chart = _original_plotly_chart
-    horizontal_scrollbar.render_horizontal_scrollbar = _original_scrollbar
-"""
-
-
-def _publish_two_part_revision(database_path: Path) -> None:
-    """내장 시드를 부트스트랩한 DB 에 두 부품 표를 새 공식버전으로 발행한다."""
-    from capa_simulation.persistence.cache import load_scenario_snapshot
-    from capa_simulation.persistence.models import ScenarioCreate
-    from capa_simulation.persistence.repository import DuckDBScenarioRepository
-    from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
-
-    bootstrap_latest_official_scenario(str(database_path))
-    repository = DuckDBScenarioRepository(database_path)
-    official = repository.latest_official_release()
-    assert official is not None
-    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
-    tables = dict(snapshot.tables)
-    split = two_part_tables()
-    tables.update({name: split[name] for name in tables if name in split})
-    created = repository.create_scenario(
-        ScenarioCreate(
-            scenario_name="두 부품 계획",
-            source_simulation_code="DEMO-TWO-PART",
-            source_simulation_name="두 부품 계획",
-            source_type="DUCKDB_SCENARIO_CLONE",
-            pipeline_version="duckdb-rq-snapshot-v3",
-        ),
-        tables,
-        snapshot.preset,
-    )
-    repository.publish_official_revision(
-        str(created.scenario.scenario_id),
-        str(created.revision.revision_id),
-        release_name="두 부품 계획",
-    )
-
-
 def test_home_draws_one_donut_slice_and_legend_entry_per_part(tmp_path: Path) -> None:
     database_path = tmp_path / "scenario.duckdb"
-    _publish_two_part_revision(database_path)
+    publish_two_part_revision(database_path)
 
-    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
 
     assert not list(app.exception)
     figures = app.session_state["spy_figures"]

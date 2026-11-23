@@ -526,6 +526,16 @@ try:
             partial(prepare_display_order, raw_display_order),
         )
 
+    def _product_parts() -> frozenset[str]:
+        # 과거 입력에는 부품이 없어, 부품을 가르는 제품(리비전 계획 전체로 판정 — 내용 토큰이
+        # 정한다)의 과거 열 · 조각은 「제품 (-)」 이다. 계획 세부수량 과거 열과 제품별 비중 과거
+        # 조각이 한 판정을 쓴다.
+        return _remembered(
+            "product_parts",
+            (home_simulation_cache_key[1],),
+            partial(multi_part_products, active_scenario["tables"]["RQ_PKG_PLAN"]),
+        )
+
     def _merged_detail(detail: pd.DataFrame) -> pd.DataFrame:
         past_detail = past_plan_detail_to_wide(
             past_profile.plan_detail,
@@ -533,6 +543,7 @@ try:
             start_month=effective_start,
             end_month=effective_end,
             exclude_months=calculated_months,
+            multi_part=_product_parts(),
         )
         # 붙일 과거 열이 없으면 합치기가 표를 그대로 돌려주고 정렬하지 않는다(규칙도 보지 않는다).
         return merge_past_plan_detail(
@@ -551,18 +562,13 @@ try:
     ).copy()
     # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). 그리는 수량에는 잇되, 색 칸을 정하는
     # 목록(`product_volume_with_edp`)에는 섞지 않고 따로 넘긴다 — 과거 전용 제품이 계산 구간
-    # 제품의 칸을 밀어내지 않게(`assign_product_slots`). 과거 입력에는 부품이 없어, 부품을 가르는
-    # 제품(리비전 계획 전체로 판정 — 내용 토큰이 정한다)의 과거 조각은 「제품 (-)」 이다.
+    # 제품의 칸을 밀어내지 않게(`assign_product_slots`).
     past_products = past_product_volume(
         past_profile.plan_detail,
         start_month=effective_start,
         end_month=effective_end,
         exclude_months=calculated_months,
-        multi_part=_remembered(
-            "product_parts",
-            (home_simulation_cache_key[1],),
-            partial(multi_part_products, active_scenario["tables"]["RQ_PKG_PLAN"]),
-        ),
+        multi_part=_product_parts(),
     )
     product_volume = combine_product_volume(product_volume, past_products)
     # 확보율 보정은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·

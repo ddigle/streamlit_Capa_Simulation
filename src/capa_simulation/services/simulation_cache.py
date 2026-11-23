@@ -1427,8 +1427,11 @@ def get_production_dashboard(
     plan: pd.DataFrame,
     density_data: pd.DataFrame,
     display_order: pd.DataFrame,
+    multi_part: tuple[str, ...] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    return build_production_dashboard(plan, density_data, display_order)
+    """`multi_part` 는 부품을 가르는 제품정보를 늘어세운 튜플이다 — 집합은 해시가 원소 차례를 타
+    같은 판정이 다른 칸에 들 수 있어 받지 않는다."""
+    return build_production_dashboard(plan, density_data, display_order, multi_part=multi_part)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -1467,11 +1470,16 @@ def get_home_simulation(
     # 월 축이 없는 두 표는 그대로.
     _density_data = _tables["RQ_CHIP_EQ"]
     _chip_qty = _tables["RQ_CHIP_QTY"]
+    # 부품(CUSTOM)을 가를 제품은 리비전 계획 전체(모든 달 · EDP 포함)로 판정한다 — 조회기간 · EDP
+    # 토글로 이름표가 흔들리지 않고, EDP 를 뺀 계산(`get_home_lob_without_edp`) · 세부수량 다른 조합
+    # (`get_home_plan_detail`) · 비교 계획(`get_home_comparison_plan`)과 같은 이름표다.
+    multi_part = multi_part_products(_tables["RQ_PKG_PLAN"])
     # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     monthly_density, production_detail = get_production_dashboard(
         _plan,
         _density_data,
         _display_order,
+        tuple(sorted(multi_part)),
     )
     # 대당 Capa 와 소요대수는 HOME 전용이 아니다. 이 키의 앞 네 칸이 `ScenarioCacheKey` 와
     # 같은 자리라, 같은 시나리오·월 범위면 Static Capa 화면들·공정 Capa 상세와 한 번만 계산한다.
@@ -1489,11 +1497,7 @@ def get_home_simulation(
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
     home_wafer_load = home_aggregation_wafer_load(wafer_load)
     monthly_wafer = build_monthly_wafer_load_from_load(home_wafer_load)
-    # 부품(CUSTOM)을 가를 제품은 리비전 계획 전체(모든 달 · EDP 포함)로 판정한다 — 조회기간 · EDP
-    # 토글로 이름표가 흔들리지 않고, EDP 를 뺀 수량(`get_home_lob_without_edp`)과 같은 이름표다.
-    product_volume = build_product_volume(
-        _plan, home_wafer_load, multi_part=multi_part_products(_tables["RQ_PKG_PLAN"])
-    )
+    product_volume = build_product_volume(_plan, home_wafer_load, multi_part=multi_part)
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
     return (
         monthly_density,
@@ -1528,10 +1532,13 @@ def get_home_lob_without_edp(
         False,
     )
     yield_data = filter_month_range(_tables["RQ_YLD"], start_month, end_month, "RQ_YLD")
+    # 부품 판정은 `get_home_simulation` 과 같은 리비전 계획 전체다.
+    multi_part = multi_part_products(_tables["RQ_PKG_PLAN"])
     monthly_density, production_detail = build_production_dashboard(
         plan,
         _tables["RQ_CHIP_EQ"],
         _display_order,
+        multi_part=multi_part,
     )
     _, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, _tables["RQ_CHIP_QTY"])
     home_wafer_load = home_aggregation_wafer_load(wafer_load)
@@ -1539,9 +1546,7 @@ def get_home_lob_without_edp(
         monthly_density,
         production_detail,
         build_monthly_wafer_load_from_load(home_wafer_load),
-        build_product_volume(
-            plan, home_wafer_load, multi_part=multi_part_products(_tables["RQ_PKG_PLAN"])
-        ),
+        build_product_volume(plan, home_wafer_load, multi_part=multi_part),
     )
 
 
@@ -1573,6 +1578,7 @@ def get_home_plan_detail(
             if include_customer
             else PRODUCTION_DETAIL_DIMENSIONS
         ),
+        multi_part=multi_part_products(_tables["RQ_PKG_PLAN"]),
     )
     return detail
 
@@ -1600,7 +1606,9 @@ def get_home_comparison_plan(
 
     비교 계획 행의 부품(`CUSTOM`)은 환산 전에 현재 계획 · 수율 · Chip 표에 다시 짝짓는다
     (`repair_comparison_plan_custom`) — 부품을 싣기 전 리비전은 모두 빈 값 표지라 그대로는 현재
-    표와 짝이 없다. 캐시 키는 이미 현재 내용 토큰과 비교 리비전 id 를 품는다.
+    표와 짝이 없다. 캐시 키는 이미 현재 내용 토큰과 비교 리비전 id 를 품는다. 세부수량의 부품은
+    **현재** 리비전의 판정으로 접는다 — 두 표가 같은 행에 붙고, 짝을 못 찾은 행은 부품을 가르는
+    제품에서만 「제품 (-)」 줄로 남는다.
     """
     del comparison_revision_id
     _, _, start_month, end_month, _ = cache_key
@@ -1618,6 +1626,7 @@ def get_home_comparison_plan(
         _tables["RQ_CHIP_EQ"],
         _display_order,
         detail_dimensions=list(detail_dimensions),
+        multi_part=multi_part_products(_tables["RQ_PKG_PLAN"]),
     )
     _, wafer_load = calculate_chip_and_wafer_loads(
         plan,

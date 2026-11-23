@@ -26,6 +26,7 @@ from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
 from capa_simulation.services.product_parts import (
     PART_NOT_SPLIT,
+    apply_part_display_order,
     keep_parts_together,
     multi_part_products,
     part_merged_columns,
@@ -303,6 +304,42 @@ def test_keeping_parts_together_follows_the_owner_columns() -> None:
     assert together["CUSTOM"].tolist() == [PART_A, PART_A, PART_B, PART_B]
     assert together["양산구분"].tolist() == ["양산", "양산", "양산", "ER"]
     assert together["WF 구분"].tolist() == ["Core", "Top", "Core", "Core"]
+
+
+def test_without_a_rule_the_display_order_puts_mixed_parts_in_part_order_at_their_owner() -> None:
+    """규칙이 없으면 표시순서는 받은 차례를 그대로 돌려준다 — 부품이 섞인 주인(여기서는 양산구분 ·
+    제품정보 두 칸)의 행만 그 주인이 처음 선 자리로 모여 부품 차례(접힌 값 먼저 · 표지 `-` 끝)로
+    서고, 부품이 하나뿐인 주인의 행은 덧붙은 것까지 제자리다."""
+    frame = pd.DataFrame(
+        {
+            "양산구분": ["양산", "양산", "ER", "양산", "ER"],
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_A", "DEMO_A", "DEMO_B"],
+            "CUSTOM": [CUSTOM_BLANK, PART_B, PART_A, PART_A, PART_NOT_SPLIT],
+        }
+    )
+
+    ordered = apply_part_display_order(
+        frame, None, PAGE_PLAN, TAB_PKG_PLAN, owner_columns=("양산구분", "제품정보")
+    )
+
+    assert list(zip(ordered["양산구분"], ordered["CUSTOM"], strict=True)) == [
+        ("양산", PART_A),
+        ("양산", PART_B),
+        ("양산", CUSTOM_BLANK),
+        ("ER", PART_A),
+        ("ER", PART_NOT_SPLIT),
+    ]
+
+
+def test_part_display_order_matches_the_display_order_on_a_table_without_parts() -> None:
+    """CUSTOM 칸이 없는 표는 표시순서를 건 것과 같다."""
+    frame = pd.DataFrame({"제품정보": ["DEMO_B", "DEMO_A"], "Stack": ["8H", "12H"]})
+    rules = build_builtin_seed_dataset().reference_tables["RQ_DISPLAY_ORDER"]
+
+    pd.testing.assert_frame_equal(
+        apply_part_display_order(frame, rules, PAGE_PLAN, TAB_PKG_PLAN),
+        apply_display_order(frame, rules, PAGE_PLAN, TAB_PKG_PLAN),
+    )
 
 
 # ---------------------------------------------------------------- 칸 녹이기

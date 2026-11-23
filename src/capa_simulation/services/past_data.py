@@ -14,7 +14,7 @@ B/N 순위는 확보율 오름차순이다. 그래서 공정명을 따로 받지
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,7 +22,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
-from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import (
     PAGE_PLAN,
     TAB_PKG_PLAN,
@@ -30,6 +30,11 @@ from capa_simulation.services.display_order_scopes import (
 from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    apply_part_display_order,
+    split_product_parts,
+)
 
 PAST_MONTH_COLUMNS = ("생산계획년월", "Density", "Wafer Total")
 PAST_DETAIL_COLUMNS = ("생산계획년월", "제품정보", "Stack", "Customer", "생산수량")
@@ -418,13 +423,20 @@ def past_plan_detail_to_wide(
     start_month: int,
     end_month: int,
     exclude_months: set[int],
+    multi_part: Collection[str] = (),
 ) -> pd.DataFrame:
     """과거 계획 세부수량을 화면 표와 같은 Wide 모양으로 편다.
 
     분류에 `Customer` 가 없으면 거래선을 합쳐 접는다. 화면이 제품·Stack 으로만 볼 때
     거래선별 행이 그대로 남으면 같은 제품이 여러 줄로 갈린다.
+
+    분류에 `CUSTOM` 이 있으면 과거 입력(부품 칸이 없다)에 부품 칸을 채운다 — 계산 구간이 부품을
+    가르는 제품(`multi_part`)은 부품을 몰라 표지 `-`(「제품 (-)」 줄), 나머지는 접힌 값이라 계산
+    구간과 같은 행에 붙는다(`product_parts.split_product_parts`).
     """
     prepared = prepare_past_table(past_detail, PAST_DETAIL_COLUMNS)
+    if PART_COLUMN in dimensions:
+        prepared = split_product_parts(prepared, multi_part)
     in_range = prepared.loc[
         prepared["생산계획년월"].between(start_month, end_month)
         & ~prepared["생산계획년월"].isin(exclude_months)
@@ -455,7 +467,8 @@ def merge_past_plan_detail(
     과거를 넣는 순간 제품 차례가 가나다순으로 뒤집힌다.
 
     `sort=False` 만으로는 과거에만 있는 분류가 맨 뒤에 붙는다. 표시순서를 한 번 더 세워
-    그 행도 제자리에 놓는다.
+    그 행도 제자리에 놓는다 — 부품을 가르는 제품의 과거 「제품 (-)」 줄은 그 제품의 부품 곁이다
+    (`product_parts.apply_part_display_order`).
     """
     if past_detail.empty:
         return production_detail
@@ -465,4 +478,4 @@ def merge_past_plan_detail(
         .sum(numeric_only=True)
         .reset_index(drop=True)
     )
-    return apply_display_order(merged, display_order, PAGE_PLAN, TAB_PKG_PLAN)
+    return apply_part_display_order(merged, display_order, PAGE_PLAN, TAB_PKG_PLAN)

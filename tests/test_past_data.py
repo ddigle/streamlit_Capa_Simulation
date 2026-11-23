@@ -23,6 +23,7 @@ from capa_simulation.services.past_data import (
     past_table_from_clipboard,
     prepare_past_table,
 )
+from capa_simulation.services.product_parts import PART_NOT_SPLIT
 
 
 def _past_months() -> pd.DataFrame:
@@ -331,6 +332,92 @@ def test_merging_without_past_rows_changes_nothing() -> None:
     )
 
     assert list(merged["제품정보"]) == ["B", "A"]
+
+
+PART_DIMENSIONS = ["제품정보", "CUSTOM", "Stack"]
+
+
+def test_a_past_row_of_a_split_product_becomes_its_dash_row() -> None:
+    """과거 입력에는 부품이 없다 — 계산 구간이 부품을 가르는 제품은 「제품 (-)」 줄(표지 `-`),
+    나머지는 접힌 값이라 계산 구간과 같은 행에 붙는다. 수량은 거래선을 접은 합 그대로다."""
+    past = pd.DataFrame(
+        {
+            "생산계획년월": [202511, 202511, 202511],
+            "제품정보": ["A", "A", "B"],
+            "Stack": ["12H", "12H", "8H"],
+            "Customer": ["C1", "C2", "C1"],
+            "생산수량": [100.0, 60.0, 30.0],
+        }
+    )
+
+    wide = past_plan_detail_to_wide(
+        past,
+        PART_DIMENSIONS,
+        start_month=202511,
+        end_month=202612,
+        exclude_months=set(),
+        multi_part=frozenset({"A"}),
+    )
+
+    rows = wide.set_index(["제품정보", "CUSTOM", "Stack"])["25.11"]
+    assert rows.to_dict() == pytest.approx(
+        {("A", "-", "12H"): 160.0, ("B", PART_NOT_SPLIT, "8H"): 30.0}
+    )
+
+
+def test_without_a_part_judgement_every_past_row_folds() -> None:
+    """판정을 주지 않으면 모두 접힌 값 — 부품 칸 없이 편 표와 같은 행이다."""
+    past = pd.DataFrame(
+        {
+            "생산계획년월": [202511],
+            "제품정보": ["A"],
+            "Stack": ["12H"],
+            "Customer": ["C1"],
+            "생산수량": [100.0],
+        }
+    )
+
+    wide = past_plan_detail_to_wide(
+        past, PART_DIMENSIONS, start_month=202511, end_month=202612, exclude_months=set()
+    )
+    plain = past_plan_detail_to_wide(
+        past, ["제품정보", "Stack"], start_month=202511, end_month=202612, exclude_months=set()
+    )
+
+    assert wide["CUSTOM"].tolist() == [PART_NOT_SPLIT]
+    pd.testing.assert_frame_equal(wide.drop(columns=["CUSTOM"]), plain)
+
+
+def test_the_past_dash_row_of_a_split_product_stands_after_its_parts() -> None:
+    """과거에만 있는 「제품 (-)」 줄은 맨 뒤가 아니라 그 제품의 부품 뒤에 서고, 접힌 제품의 과거
+    열은 제 행에 붙는다."""
+    detail = pd.DataFrame(
+        {
+            "제품정보": ["A", "A", "B"],
+            "CUSTOM": ["DEMO_CUSTOM_A", "DEMO_CUSTOM_B", PART_NOT_SPLIT],
+            "Stack": ["12H", "12H", "8H"],
+            "26.01": [10.0, 20.0, 30.0],
+        }
+    )
+    past = pd.DataFrame(
+        {
+            "제품정보": ["A", "B"],
+            "CUSTOM": ["-", PART_NOT_SPLIT],
+            "Stack": ["12H", "8H"],
+            "25.12": [5.0, 7.0],
+        }
+    )
+
+    merged = merge_past_plan_detail(detail, past, PART_DIMENSIONS)
+
+    assert list(zip(merged["제품정보"], merged["CUSTOM"], strict=True)) == [
+        ("A", "DEMO_CUSTOM_A"),
+        ("A", "DEMO_CUSTOM_B"),
+        ("A", "-"),
+        ("B", PART_NOT_SPLIT),
+    ]
+    assert merged["25.12"].fillna(0.0).tolist() == pytest.approx([0.0, 0.0, 5.0, 7.0])
+    assert merged["26.01"].fillna(0.0).tolist() == pytest.approx([10.0, 20.0, 0.0, 30.0])
 
 
 def _stored_profile_tables() -> dict[str, pd.DataFrame]:

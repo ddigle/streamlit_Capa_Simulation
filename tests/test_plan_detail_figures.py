@@ -10,11 +10,15 @@
 행 한가운데다.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT
+from home_two_part_app import home_script, publish_two_part_revision
+from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
@@ -31,7 +35,12 @@ from capa_simulation.components.home_plan_detail_figures import (
 )
 from capa_simulation.components.plotly_layout import table_text_max_width_px, table_text_y
 from capa_simulation.design import tokens
-from capa_simulation.services.dashboard import DETAIL_DIMENSION_WIDTHS
+from capa_simulation.services.dashboard import (
+    DETAIL_DIMENSION_WIDTHS,
+    PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    PRODUCTION_DETAIL_DIMENSIONS,
+)
+from capa_simulation.services.product_parts import PART_NOT_SPLIT, product_part_label
 
 MONTHS = ["202608", "202609"]
 HEADER_HEIGHT = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
@@ -354,3 +363,157 @@ def test_the_two_column_split_does_not_move_when_the_customer_column_widens() ->
     """거래선 폭은 거래선이 있을 때만 쓴다 — 기본 두 칸의 경계는 그대로다."""
     assert DETAIL_DIMENSION_WIDTHS["제품정보"] / 2.0 == pytest.approx(0.7)
     assert DETAIL_DIMENSION_WIDTHS["Stack"] / 2.0 == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------- 부품(CUSTOM) 갈라 보임
+
+
+def _part_detail() -> pd.DataFrame:
+    """DEMO_A 를 두 부품으로 가르고(부품 A 는 Stack 둘) DEMO_B 는 접힌 표."""
+    return pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_A", "DEMO_B"],
+            "CUSTOM": ["DEMO_CUSTOM_A", "DEMO_CUSTOM_A", "DEMO_CUSTOM_B", PART_NOT_SPLIT],
+            "Stack": ["12H", "8H", "8H", "4H"],
+            "202608": [1000.0, 500.0, 400.0, 300.0],
+            "202609": [2000.0, 0.0, 100.0, 300.0],
+        }
+    )
+
+
+def _named_by_label(detail: pd.DataFrame) -> pd.DataFrame:
+    """부품 칸 대신 제품 칸 글이 이름표인 표."""
+    named = detail.drop(columns=["CUSTOM"])
+    named["제품정보"] = [
+        product_part_label(str(product), str(part))
+        for product, part in zip(detail["제품정보"], detail["CUSTOM"], strict=True)
+    ]
+    return named
+
+
+def _group_rules(figure: go.Figure) -> int:
+    """제품(이름표) 경계의 굵은 선 수."""
+    return sum(
+        1
+        for shape in figure.layout.shapes
+        if shape.type == "line"
+        and shape.line.color == tokens.BORDER_STRONG
+        and shape.line.width == tokens.GROUP_BORDER_WIDTH_PX
+    )
+
+
+def test_each_part_gets_its_own_band_and_rule_like_a_product_named_by_its_label() -> None:
+    """부품은 칸으로 그리지 않는다 — 머리글은 제품 · Stack 그대로이고 줄무늬 띠 · 굵은 선은 이름표
+    단위라, 제품 칸 글을 이름표로 바꾼 표와 칸 면색 · 선이 같다. 한 부품 안의 Stack 경계는 얇은
+    선이다."""
+    label_figure, month_figure = build_plan_detail_figures(
+        production_detail=_part_detail(), month_labels=MONTHS
+    )
+    named_label, named_month = build_plan_detail_figures(
+        production_detail=_named_by_label(_part_detail()),
+        month_labels=MONTHS,
+        detail_dimensions=["제품정보", "Stack"],
+    )
+
+    assert list(label_figure.data[0].text) == ["<b>제품</b>", "<b>Stack</b>"]
+    assert label_figure.layout.shapes == named_label.layout.shapes
+    assert month_figure.layout.shapes == named_month.layout.shapes
+    assert _group_rules(month_figure) == 2
+    assert month_figure.to_json() == named_month.to_json()
+
+
+def test_the_product_cell_names_each_part_and_hovers_the_whole_label() -> None:
+    """제품 칸은 부품마다 이름표 하나(한 부품의 둘째 Stack 행은 비움)이고, 넘칠 수 있는 칸은 전체
+    이름표가 풍선에 뜬다."""
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=_part_detail(), month_labels=MONTHS
+    )
+
+    texts = _value_texts(label_figure)
+    assert "DEMO_B" in texts
+    assert sum(text.endswith("(DEMO_CUSTOM_A)") for text in texts) == 1
+    assert sum(text.endswith("(DEMO_CUSTOM_B)") for text in texts) == 1
+    bars = [trace for trace in label_figure.data if trace.type == "bar"]
+    hovered = {str(name).replace("<br>", " ") for bar in bars for name in bar.hovertext}
+    for whole in ("DEMO_A (DEMO_CUSTOM_A)", "DEMO_A (DEMO_CUSTOM_B)"):
+        assert whole in texts or whole in hovered
+
+
+def test_a_narrow_product_cell_keeps_the_part_and_shortens_the_product_first() -> None:
+    """거래선 칸이 붙어 제품 칸이 좁아지면 앞을 남기는 줄임은 두 부품을 같은 글로 만든다. 부품의
+    구별되는 끝을 남기고 제품 쪽을 먼저 줄인다(UI-ACC-02)."""
+    detail = pd.DataFrame(
+        {
+            "제품정보": [TWO_PART_PRODUCT, TWO_PART_PRODUCT],
+            "CUSTOM": [PART_A, PART_B],
+            "Stack": ["8H", "8H"],
+            "Customer": ["DEMO_CUST-1", "DEMO_CUST-1"],
+            "202608": [1000.0, 1000.0],
+            "202609": [2000.0, 2000.0],
+        }
+    )
+
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=detail,
+        month_labels=MONTHS,
+        detail_dimensions=PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    )
+
+    product_texts = [
+        text for text in _value_texts(label_figure) if text not in {"8H", "DEMO_CUST-1"}
+    ]
+    assert len(product_texts) == 2
+    assert len(set(product_texts)) == 2
+    assert product_texts[0].endswith("CUSTOM_A)") and product_texts[1].endswith("CUSTOM_B)")
+    assert all("…" in text for text in product_texts)
+
+
+@pytest.mark.parametrize("with_comparison", [False, True])
+def test_a_folded_frame_draws_the_same_figures_as_the_frame_without_the_part_column(
+    with_comparison: bool,
+) -> None:
+    """부품이 하나뿐인 제품만 있으면(접힌 값) 부품 칸이 없는 표와 같은 그림이다 — 옛 리비전 ·
+    제품마다 실값 하나인 새 등록은 칸 · 색 · 글자 · 선까지 지금과 같다."""
+    folded = _detail().assign(CUSTOM=PART_NOT_SPLIT)[["제품정보", "CUSTOM", "Stack", *MONTHS]]
+    compared = _comparison().assign(CUSTOM=PART_NOT_SPLIT)[["제품정보", "CUSTOM", "Stack", *MONTHS]]
+
+    with_parts = build_plan_detail_figures(
+        production_detail=folded,
+        month_labels=MONTHS,
+        detail_dimensions=PRODUCTION_DETAIL_DIMENSIONS,
+        comparison_detail=compared if with_comparison else None,
+    )
+    without = build_plan_detail_figures(
+        production_detail=_detail(),
+        month_labels=MONTHS,
+        detail_dimensions=["제품정보", "Stack"],
+        comparison_detail=_comparison() if with_comparison else None,
+    )
+
+    for left, right in zip(with_parts, without, strict=True):
+        assert left.to_json() == right.to_json()
+
+
+def test_home_draws_one_plan_detail_band_per_part(tmp_path: Path) -> None:
+    """두 부품 공식버전을 연 HOME 의 계획 세부수량은 그 제품을 부품마다 한 줄로 그린다(전체 이름표는
+    좁은 제품 칸 대신 풍선이 나른다)."""
+    database_path = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database_path)
+
+    app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception)
+    label_figure = app.session_state["spy_figures"]["production_detail_labels"]
+    texts = _value_texts(label_figure)
+    assert sum(text.endswith(f"({PART_A})") for text in texts) == 1
+    assert sum(text.endswith(f"({PART_B})") for text in texts) == 1
+    hovered = {
+        str(name).replace("<br>", " ")
+        for trace in label_figure.data
+        if trace.type == "bar"
+        for name in trace.hovertext
+    }
+    assert {
+        product_part_label(TWO_PART_PRODUCT, PART_A),
+        product_part_label(TWO_PART_PRODUCT, PART_B),
+    } <= hovered

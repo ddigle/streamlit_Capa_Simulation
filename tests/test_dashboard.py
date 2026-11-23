@@ -1,13 +1,23 @@
 # Purpose: HOME 생산계획·Wafer 부하량(필요 단축 일정 Wafer 줄 포함)·Bottleneck 집계를 검증한다.
 
+from uuid import uuid4
+
 import dummy_series_tables as demo
 import pandas as pd
 import pytest
-from custom_key_tables import with_blank_custom
+from custom_key_tables import (
+    PART_A,
+    PART_B,
+    TWO_PART_PRODUCT,
+    two_part_tables,
+    with_blank_custom,
+)
 
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    PRODUCTION_DETAIL_DIMENSIONS,
     align_detail_with_comparison,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details_from_ranking,
@@ -23,6 +33,7 @@ from capa_simulation.services.load_calculator import (
     exclude_dummy_series,
     filter_edp_plan,
 )
+from capa_simulation.services.product_parts import PART_NOT_SPLIT, multi_part_products
 
 
 def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
@@ -53,7 +64,7 @@ def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
     assert monthly["부하량"].tolist() == pytest.approx(
         [100 * 11 * 24 / 100_000, 200 * 11 * 24 / 100_000]
     )
-    assert list(detail.columns) == ["제품정보", "Stack", "26.08", "26.09"]
+    assert list(detail.columns) == ["제품정보", "CUSTOM", "Stack", "26.08", "26.09"]
     assert detail.loc[0, "26.08"] == pytest.approx(100.0)
     assert detail.loc[0, "26.09"] == pytest.approx(200.0)
 
@@ -92,7 +103,7 @@ def test_production_dashboard_can_split_the_detail_by_customer() -> None:
         detail_dimensions=PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     )
 
-    assert list(detail.columns) == ["제품정보", "Stack", "Customer", "26.08"]
+    assert list(detail.columns) == ["제품정보", "CUSTOM", "Stack", "Customer", "26.08"]
     assert detail["Customer"].tolist() == ["Customer-A", "Customer-B"]
     # 같은 거래선의 두 행은 합쳐지고 다른 거래선은 갈라진다.
     assert detail["26.08"].tolist() == pytest.approx([160.0, 40.0])
@@ -152,7 +163,7 @@ def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
 
     # 같은 규칙이 분류에 거래선이 없는 화면에서는 아무것도 바꾸지 않는다.
     _, base_detail = build_production_dashboard(plan, density_data, display_order)
-    assert list(base_detail.columns) == ["제품정보", "Stack", "26.08"]
+    assert list(base_detail.columns) == ["제품정보", "CUSTOM", "Stack", "26.08"]
 
 
 def test_production_dashboard_uses_pkg_plan_display_order() -> None:
@@ -655,3 +666,205 @@ def test_wafer_capa_follows_the_home_wafer_plan_and_stays_within_it_at_full_secu
     details = build_monthly_bottleneck_details_from_ranking(ranking, monthly_wafer, rank_limit=5)
     for frame in (top5, details):
         assert frame.sort_values("생산계획년월")["Wafer Capa"].to_numpy() == pytest.approx(plan)
+
+
+# ---------------------------------------------------------------- 부품(CUSTOM) 갈라 보임
+
+
+def _part_plan(rows: list[tuple[str, str, str, float]]) -> pd.DataFrame:
+    """(제품정보, CUSTOM, Stack, 생산수량) — 한 달 양산 계획."""
+    return pd.DataFrame(
+        {
+            "생산계획년월": [202608] * len(rows),
+            "양산구분": ["양산"] * len(rows),
+            "제품정보": [row[0] for row in rows],
+            "CUSTOM": [row[1] for row in rows],
+            "Stack": [row[2] for row in rows],
+            "생산수량": [row[3] for row in rows],
+        }
+    )
+
+
+def _part_density(plan: pd.DataFrame) -> pd.DataFrame:
+    density = plan[["제품정보", "CUSTOM", "Stack"]].drop_duplicates().reset_index(drop=True)
+    density["WF 구분"] = "Core"
+    density["구분_Chip"] = 1.0
+    density["구분_EQ"] = 1.0
+    return density
+
+
+def _rows(detail: pd.DataFrame) -> list[tuple[str, str, str]]:
+    return [
+        (str(product), str(part), str(stack))
+        for product, part, stack in zip(
+            detail["제품정보"], detail["CUSTOM"], detail["Stack"], strict=True
+        )
+    ]
+
+
+def test_two_parts_of_a_seed_product_get_their_own_rows_and_add_up_to_the_product() -> None:
+    """두 부품 견본은 그 제품이 부품마다 한 줄이고 두 줄의 합이 시드 한 제품 줄과 같다 — 지금 합을
+    나눈 것이라 숫자는 바뀌지 않는다."""
+    tables = two_part_tables()
+    plan = tables["RQ_PKG_PLAN"]
+    _, detail = build_production_dashboard(
+        plan,
+        tables["RQ_CHIP_EQ"],
+        tables["RQ_DISPLAY_ORDER"],
+        multi_part=multi_part_products(plan),
+    )
+    seed = build_builtin_seed_dataset().reference_tables
+    _, seed_detail = build_production_dashboard(
+        seed["RQ_PKG_PLAN"], seed["RQ_CHIP_EQ"], seed["RQ_DISPLAY_ORDER"]
+    )
+
+    product_rows = detail.loc[detail["제품정보"].eq(TWO_PART_PRODUCT)]
+    assert product_rows["CUSTOM"].tolist() == [PART_A, PART_B]
+    months = [column for column in detail.columns if column not in PRODUCTION_DETAIL_DIMENSIONS]
+    seed_row = seed_detail.loc[seed_detail["제품정보"].eq(TWO_PART_PRODUCT), months]
+    assert product_rows[months].sum().tolist() == pytest.approx(seed_row.sum().tolist())
+    assert set(seed_detail["CUSTOM"]) == {PART_NOT_SPLIT}
+
+
+def test_a_product_with_one_part_keeps_the_rows_it_had_without_the_part_column() -> None:
+    """제품마다 CUSTOM 이 한 값이면(표지든 실값이든) 부품 칸은 접힌 값이고 나머지는 부품 칸 없이
+    묶은 표와 같다."""
+    plan = _part_plan([("DEMO_B", "DEMO_CUSTOM_X", "8H", 30.0), ("DEMO_A", "-", "12H", 70.0)])
+    density = _part_density(plan)
+
+    _, detail = build_production_dashboard(plan, density, multi_part=multi_part_products(plan))
+    _, without = build_production_dashboard(plan, density, detail_dimensions=["제품정보", "Stack"])
+
+    assert set(detail["CUSTOM"]) == {PART_NOT_SPLIT}
+    pd.testing.assert_frame_equal(detail.drop(columns=["CUSTOM"]), without)
+
+
+def test_parts_stand_in_the_part_order_without_a_display_rule() -> None:
+    """규칙이 없으면 표시순서는 받은 차례 그대로라 부품 차례를 미리 세운다 — 대소문자를 접은 글자
+    오름차순, 표지 `-` 는 끝(피벗은 `-` 를 글자 앞에, 대문자를 소문자 앞에 둔다)."""
+    plan = _part_plan(
+        [
+            ("DEMO_A", "-", "8H", 10.0),
+            ("DEMO_A", "DEMO_CUSTOM_B", "8H", 20.0),
+            ("DEMO_A", "demo_custom_a", "8H", 30.0),
+            ("DEMO_B", "-", "8H", 40.0),
+        ]
+    )
+
+    _, detail = build_production_dashboard(
+        plan, _part_density(plan), multi_part=multi_part_products(plan)
+    )
+
+    assert _rows(detail) == [
+        ("DEMO_A", "demo_custom_a", "8H"),
+        ("DEMO_A", "DEMO_CUSTOM_B", "8H"),
+        ("DEMO_A", "-", "8H"),
+        ("DEMO_B", PART_NOT_SPLIT, "8H"),
+    ]
+
+
+def test_a_stack_rule_keeps_the_rows_of_one_part_together() -> None:
+    """Stack 규칙이 걸리면 표시순서 끝 열쇠는 한 제품의 부품을 Stack 마다 번갈아 세운다. 그림은
+    부품을 제품 칸 글에 녹여 이름표 단위로 띠를 두르므로 한 부품의 행이 한 띠에 모여야 한다."""
+    plan = _part_plan(
+        [
+            ("DEMO_A", PART_A, "8H", 10.0),
+            ("DEMO_A", PART_A, "12H", 20.0),
+            ("DEMO_A", PART_B, "8H", 30.0),
+            ("DEMO_A", PART_B, "12H", 40.0),
+        ]
+    )
+    display_order = pd.DataFrame(
+        {
+            "페이지 구분": ["생산 계획"] * 3,
+            "탭 구분": ["PKG PLAN"] * 3,
+            "정렬우선순위": [1, 2, 2],
+            "분류컬럼": ["제품정보", "Stack", "Stack"],
+            "정렬방식": ["오름차순", "사용자지정", "사용자지정"],
+            "분류값": [None, "12H", "8H"],
+            "값표시순서": [None, 1, 2],
+            "활성여부": ["Y"] * 3,
+        }
+    )
+
+    _, detail = build_production_dashboard(
+        plan, _part_density(plan), display_order, multi_part=multi_part_products(plan)
+    )
+
+    assert _rows(detail) == [
+        ("DEMO_A", PART_A, "12H"),
+        ("DEMO_A", PART_A, "8H"),
+        ("DEMO_A", PART_B, "12H"),
+        ("DEMO_A", PART_B, "8H"),
+    ]
+
+
+def test_a_comparison_only_dash_row_stands_beside_the_parts_of_its_product() -> None:
+    """비교 계획에서 짝을 못 찾은 행(부품을 가르는 제품의 「제품 (-)」)은 맨 뒤가 아니라 그 제품의
+    부품 곁, 부품 차례 끝에 선다. 부품이 하나뿐인 제품의 비교에만 있는 행은 지금처럼 뒤에 붙는다."""
+    dimensions = list(PRODUCTION_DETAIL_DIMENSIONS)
+    current = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_A", "DEMO_B"],
+            "CUSTOM": [PART_A, PART_B, PART_NOT_SPLIT],
+            "Stack": ["8H", "8H", "12H"],
+            "26.08": [50.0, 50.0, 40.0],
+        }
+    )
+    comparison = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_A", "DEMO_B", "DEMO_B"],
+            "CUSTOM": ["-", PART_NOT_SPLIT, PART_NOT_SPLIT],
+            "Stack": ["8H", "12H", "4H"],
+            "26.08": [100.0, 40.0, 10.0],
+        }
+    )
+
+    aligned_current, aligned_comparison = align_detail_with_comparison(
+        current, comparison, dimensions
+    )
+
+    assert _rows(aligned_current) == [
+        ("DEMO_A", PART_A, "8H"),
+        ("DEMO_A", PART_B, "8H"),
+        ("DEMO_A", "-", "8H"),
+        ("DEMO_B", PART_NOT_SPLIT, "12H"),
+        ("DEMO_B", PART_NOT_SPLIT, "4H"),
+    ]
+    assert aligned_current["26.08"].fillna(0.0).tolist() == pytest.approx(
+        [50.0, 50.0, 0.0, 40.0, 0.0]
+    )
+    assert aligned_comparison["26.08"].fillna(0.0).tolist() == pytest.approx(
+        [0.0, 0.0, 100.0, 40.0, 10.0]
+    )
+
+
+def test_home_plan_detail_judges_the_parts_on_the_whole_revision_plan() -> None:
+    """조회기간에 한 부품만 남아도 그 제품은 부품 이름으로 선다 — 판정은 리비전 계획 전체라 기간 ·
+    EDP · 거래선 칸으로 이름표가 흔들리지 않는다(UI-PRF-03)."""
+    tables = two_part_tables()
+    plan = tables["RQ_PKG_PLAN"]
+    months = sorted({int(month) for month in pd.to_numeric(plan["생산계획년월"])})
+    late = pd.to_numeric(plan["생산계획년월"]).ge(months[-1])
+    only_b_late = plan["CUSTOM"].ne(PART_B) | late
+    tables["RQ_PKG_PLAN"] = plan.loc[only_b_late].reset_index(drop=True)
+    display_order = tables["RQ_DISPLAY_ORDER"]
+    key = simulation_cache.build_home_simulation_cache_key(
+        reference_version=1,
+        scenario_token=f"plan-detail-parts-{uuid4().hex}",
+        start_month=months[0],
+        end_month=months[-2],
+        display_order=display_order,
+    )
+
+    for include_edp in (True, False):
+        for include_customer in (False, True):
+            detail = simulation_cache.get_home_plan_detail(
+                key,
+                tables,
+                display_order,
+                include_edp=include_edp,
+                include_customer=include_customer,
+            )
+            product_rows = detail.loc[detail["제품정보"].eq(TWO_PART_PRODUCT)]
+            assert product_rows["CUSTOM"].tolist() == [PART_A]
