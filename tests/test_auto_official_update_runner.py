@@ -71,6 +71,7 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     ProcessMinimum,
 )
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
 
@@ -490,10 +491,16 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     real = full_capacity_outcome
     calls: list[int] = []
 
-    def fail_on_publish_check(scenario_tables: object, reference_tables: object) -> CapacityOutcome:
+    def fail_on_publish_check(
+        scenario_tables: object, reference_tables: object, *, route_exceptions: RouteLoadDeclaration
+    ) -> CapacityOutcome:
         calls.append(1)
         if len(calls) == 1:
-            return real(scenario_tables, reference_tables)  # type: ignore[arg-type]
+            return real(
+                scenario_tables,  # type: ignore[arg-type]
+                reference_tables,  # type: ignore[arg-type]
+                route_exceptions=route_exceptions,
+            )
         return CapacityOutcome(None, None, "RQ_RUN_RATE 시험 오류")
 
     monkeypatch.setattr(runner, "full_capacity_outcome", fail_on_publish_check)

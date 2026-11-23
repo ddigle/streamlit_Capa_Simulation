@@ -267,6 +267,7 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
     CUSTOM_MIGRATION,
     custom_blank_filled,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
 from capa_simulation.services.scenario_transform import (  # noqa: E402
     MONTHLY_TABLES,
     missing_calendar_months,
@@ -1539,6 +1540,7 @@ def _required_from(tables: dict[str, pd.DataFrame], unit_capacity: pd.DataFrame)
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
 

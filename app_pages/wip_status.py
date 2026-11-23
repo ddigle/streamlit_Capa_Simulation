@@ -57,6 +57,7 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
     display_order_digest,
@@ -221,7 +222,13 @@ try:
         "RQ_RUN_DAY": scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
     }
     choices = _route_choices(
-        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+        scenario_cache_key(
+            reference_version,
+            active_scenario,
+            start_month,
+            end_month,
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        ),
         active_scenario["tables"],
         reference_tables,
     )
@@ -326,7 +333,13 @@ try:
     # 섞이지 않는다.
     weekly_standard = get_weekly_standard_target_capacity(
         cache_key=standard_target_weekly_cache_key(
-            scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+            scenario_cache_key(
+                reference_version,
+                active_scenario,
+                start_month,
+                end_month,
+                route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+            ),
             availability=availability,
             start_date=start_date,
             end_date=end_date,

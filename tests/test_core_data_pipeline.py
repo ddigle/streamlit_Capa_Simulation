@@ -31,6 +31,7 @@ from capa_simulation.services.core_data_pipeline import (
     summarize_reference_conflicts,
 )
 from capa_simulation.services.reference_transformer import build_reference_tables
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 
 def _core_data_row() -> pd.DataFrame:
@@ -282,6 +283,7 @@ def test_wf_division_spellings_that_differ_only_in_case_become_one_value_before_
         tables["RQ_YLD"],
         tables["RQ_CHIP_QTY"],
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     # 세 공정 모두 같은 계획 100 의 부하를 받는다(구분_Chip·수율 1.0). 두 번 펼쳐지지도 않는다.
     assert required["부하량"].tolist() == [100.0, 100.0, 100.0]
@@ -481,7 +483,7 @@ def test_the_routes_that_lose_their_plan_demand_stay_silent_in_the_exclusion_cou
 
     def wafer_inspect_total(source: pd.DataFrame) -> tuple[float, RequiredExclusionCounts]:
         tables = build_reference_tables(source, load_builtin_display_order())
-        outcome = full_capacity_outcome(tables, tables)
+        outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
         required = outcome.required_equipment
         assert outcome.error is None and required is not None
         total = float(required.loc[required["공정"].eq("DEMO_Wafer_Inspect"), "소요대수"].sum())

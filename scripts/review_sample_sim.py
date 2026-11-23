@@ -116,6 +116,7 @@ from capa_simulation.services.required_equipment import (  # noqa: E402
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     required_exclusion_counts,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
 from capa_simulation.services.scenario_month_merge import (  # noqa: E402
     OverlapPolicy,
     compare_non_monthly_tables,
@@ -373,7 +374,9 @@ def required_by_cell(required: pd.DataFrame) -> dict[Key, float]:
 
 def frame_requirements(frame: pd.DataFrame) -> dict[Key, float]:
     dataset = prepare_core_data_dataset(CoreDataBatch("CAL", "CAL", "CSV_CAL", frame), RULES)
-    _, required = get_capacity_and_demand(dataset.reference_tables)
+    _, required = get_capacity_and_demand(
+        dataset.reference_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     return required_by_cell(required)
 
 
@@ -381,7 +384,7 @@ def table_rates(
     tables: Mapping[str, pd.DataFrame],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(대당 Capa, 소요대수, 확보율) — 전체 기간."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     if (
         outcome.error is not None
         or outcome.required_equipment is None
@@ -394,7 +397,7 @@ def table_rates(
 
 def gate(tables: Mapping[str, pd.DataFrame], label: str) -> None:
     """화면 저장·발행 검사와 같은 셈(전체 기간 Capa + Density) — 통과해야 쓴다."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     error = outcome.error or density_error(tables)
     if error is not None:
         raise RuntimeError(f"{label}: 계산 검사 실패 — {error}")
@@ -1485,7 +1488,7 @@ def run_checks(built: Built, database: Path, notes: Path) -> dict[str, object]:
         "" if latest is None else f"v{latest.release_no} {latest.release_name}",
     )
     v4 = repository.load_revision(built.revisions["S1r3"])
-    outcome = full_capacity_outcome(v4.tables, v4.tables)
+    outcome = full_capacity_outcome(v4.tables, v4.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     LOG.check(
         outcome.error is None, "v4 full_capacity_outcome 오류 없음", str(outcome.error or "")[:200]
     )
@@ -1733,8 +1736,20 @@ def run_checks(built: Built, database: Path, notes: Path) -> dict[str, object]:
     # 계산 멈춤·가상 제품·측정률 가정·파생
     s8r1 = repository.load_revision(built.revisions["S8r1"])
     s8r2 = repository.load_revision(built.revisions["S8r2"])
-    LOG.check(full_capacity_outcome(s8r1.tables, s8r1.tables).error is not None, "S8 r1 계산 멈춤")
-    LOG.check(full_capacity_outcome(s8r2.tables, s8r2.tables).error is None, "S8 r2 계산됨")
+    LOG.check(
+        full_capacity_outcome(
+            s8r1.tables, s8r1.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ).error
+        is not None,
+        "S8 r1 계산 멈춤",
+    )
+    LOG.check(
+        full_capacity_outcome(
+            s8r2.tables, s8r2.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ).error
+        is None,
+        "S8 r2 계산됨",
+    )
     s5r2 = repository.load_revision(built.revisions["S5r2"])
     s5_unit, _, _ = table_rates(s5r2.tables)
     assumed = capacity_assumptions(s5_unit)
@@ -1747,7 +1762,11 @@ def run_checks(built: Built, database: Path, notes: Path) -> dict[str, object]:
     for key in ("S6r1", "S7r1", "S4r1", "S4r2", "S5r1", "S2r2", "S2r3"):
         snapshot = repository.load_revision(built.revisions[key])
         LOG.check(
-            full_capacity_outcome(snapshot.tables, snapshot.tables).error is None, f"{key} 계산됨"
+            full_capacity_outcome(
+                snapshot.tables, snapshot.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            ).error
+            is None,
+            f"{key} 계산됨",
         )
 
     # 목록 꼴

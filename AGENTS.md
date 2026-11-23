@@ -2705,6 +2705,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「시험 계산」 · 「부대공정 얹기」 · DB 등록의 R-07 등록 점검 — `extra_process_merge.capacity_stop` · `capacity_outcome`). 셋은
     한 번 누른 회차에만 돌고 저장 전 표라 공유 칸에 두지 않는다(미리보기는 합친 표의 계산 하나를 두 셈이 함께 쓰고, 얹기는 바탕
     리비전 · 판마다 세션 메모 한 벌).
+  - 계산 키는 빌더 셋으로만 짓는다 — `scenario_cache_key`(조회기간 칸) · `full_scenario_cache_key`(전체 기간 칸 · 입력 점검 칸 ·
+    편집본 칸 걷기) · `build_home_simulation_cache_key`(HOME). 셋 다 부하 예외 선언(`route_exceptions` — 기본값 없음)을 받아 내용
+    토큰에 접은 **계산 토큰**(`calculation_token` — 빈 선언이면 내용 토큰 그대로)을 둘째 칸에 싣고, 전체 기간 칸 · 조회기간 오류
+    칸이 그 토큰에서 선언을 푼다(`token_route_exceptions`, 5장 44). 선언을 접지 않는 편집표 키 `scenario_content_key` 는 생산
+    계획 · 기준 정보 편집표 두 자리만 쓴다. 소요대수 길(`get_capacity_and_demand` · `full_capacity_outcome`)도 선언 칸에 기본값이
+    없다(`tests/test_route_load_exception_keys.py`).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
   - 설비 마스터를 받는 래퍼는 표를 Streamlit 이 해시하지 않는다 — 일정 미정 · 사용기준 밖 · 주차 집계는 `_cached_*` 의 `_`
@@ -2759,9 +2765,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `components/process_labels.py` 에만, 8장).
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
   - `calculate_required_equipment(route_exceptions=)` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)을 받는다.
-    기본은 빈 선언이고(잇기 전 자리 — 잇는 단계에서 걷는다) 그때 결과 · attrs 는 지금과 같다. 선언 공정의 WF 경로가
-    있을 때만 부하량 표에서 바탕을 지어 `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외 목록에 「부하
-    예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 아직 어느 호출처도 선언을 넘기지 않는다.
+    **기본값이 없다** — 호출처가 모두 넘기고 빠뜨리면 mypy 가 잡는다. 빈 선언이면 결과 · attrs 는 일반 산식 그대로다. 선언
+    공정의 WF 경로가 있을 때만 부하량 표에서 바탕을 지어 `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외
+    목록에 「부하 예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 지금 호출처는 모두 빈 선언을 적어 넘긴다 —
+    선언을 읽어 넘기는 자리는 아직 없다(5장 44).
   - 경로 · 부하 · 대당 Capa 를 잇는 키(`REQB_COLUMNS` · `LOAD_KEYS` · `CAPACITY_KEYS`)와 PKG 부하 줄을 짓는 `_build_loads` 의
     칸 목록 · 글자 다듬기 목록은 `CUSTOM` 을 싣는다 — PKG 쪽 칸 목록에서 빠지면 PKG 부하의 CUSTOM 이 비어 경로에 못 붙고
     PKG 소요대수가 말없이 0 이 된다. 경로 없는 부하의 사유를 가르는 `_ROUTE_PRODUCT_KEYS` · `_ROUTE_FAMILY_KEYS` 에는
@@ -2891,7 +2898,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   더한 STEP 까지) · 걷을 공정 가르기(`split_previous` — 출처에 합침만 있는 공정, 합침 · BDQ 에 생김이 함께거나 섞임 뺌 줄
   `MIXED_REASON` 이면 「섞임」) · 겹친 출처 줄 접기(`fold_outcomes` — 월 머지가 잇는 두 원본의 같은 (공정, 판 차례)) · 얹기
   (`overlay_extra_processes` · `overlay_included_processes`) · 미리보기 시험 계산(`process_rows_frame` · `load_lines` — 같은 표의
-  전체 기간 계산 `capacity_outcome` 을 받으면 다시 돌리지 않는다) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄, 합치지
+  전체 기간 계산 `capacity_outcome` 을 받으면 다시 돌리지 않는다. 셋 다 부하 예외 선언 칸에 기본값이 없고, 등록 R-07 판정
+  `capacity_stop` 만 빈 선언으로 돈다 — 선언은 멈춤을 만들지도 풀지도 않는다, 5장 44) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄, 합치지
   못함 `failed`)를 둔다. 표를 제자리에서 고치지 않고 더한 표만 새로 이어 붙인다(나머지 표는 받은 프레임 그대로 — 얹기 · 미리보기는
   걷기가 사본이다). 순수 함수라 자동 갱신 스레드도 부른다. 이어받은 결손 셈(`inherited_capacity_gaps` — R-02, 이미 돌린 계산의
   제외 줄에서 센다 — 등록 길에는 계산을 더하지 않는다)과 월 머지 섞임 가르기(`month_merge_mixing` — 결과 `RQ_REQB` 의 달마다 고른
@@ -6467,8 +6475,8 @@ RQ_MODULE
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
    단위이고 조회기간은 그 결과를 부를 때마다 자른다(자른 결과는 칸에 두지 않는다). 활성 시나리오가 다른 내용으로
-   바뀌거나 버려지면 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 그 dict 의 (reference_version, content_token)으로
-   걷는다 — 편집 적용 · 원본 되돌리기 · 리비전 불러오기와 저장 뒤 활성화 · 시나리오 버리기(`scenario_state._retire_edit_cell`).
+   바뀌거나 버려지면 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 그 dict 의 (reference_version, content_token)에 부하 예외
+   선언을 접은 키(`full_scenario_cache_key`, 44)로 걷는다 — 편집 적용 · 원본 되돌리기 · 리비전 불러오기와 저장 뒤 활성화 · 시나리오 버리기(`scenario_state._retire_edit_cell`).
    편집 토큰은 uuid 라 그 세션의 그 편집본만 쓴다 — 걷은 뒤 옛 dict 로 계산을 다시 부르면 한 번 더 계산할 뿐 값은 같다(편집
    적용 뒤에는 옛 토큰으로 계산을 부르지 않는다 — 본문에서 적용하면 곧바로 앱 전체 회차를 다시 돌리고(`st.rerun` ·
    `DialogHost.finish`), 위젯 콜백에서 적용하면(생산 계획 「변경사항 적용」) 그 회차 본문이 새 토큰으로 그린다.
@@ -6954,6 +6962,26 @@ RQ_MODULE
       `s3_write_result` 칸은 쓰지 않는다)을 고치지 않는다. 기준 ETag 는 적용한 파일(판 이력 줄의 ETag — 가져와 다시 켠 파일 포함)과
       「씀」 기록 가운데 마지막 것이고, 가져와 검사만 한 파일 · 거절된 파일의 ETag 는 기준이 되지 않는다. 내보내기 자리가 꽂히기
       전에는 쓰기 기록이 생기지 않는다.
+44. **부하 예외 선언은 계산 토큰 안에서만 계산에 든다**(31 · 34 와 같은 꼴 — 6장 「공정별 부하 산출 예외」). 선언(원본 공정명 → 산식
+    id — `0040` 판 이력의 마지막 줄)은 계산 키의 둘째 칸인 **계산 토큰**(내용 토큰에 선언의 정규 글을 접은 것 —
+    `simulation_cache.calculation_token`)으로만 계산에 들고, 전체 기간 칸(`get_full_capacity_outcome`)과 조회기간 오류 칸
+    (`get_period_capacity_error`)이 그 토큰에서 다시 푼다(`token_route_exceptions`). 키만 받는 파생 칸은 빗나가면 키와 프레임만으로
+    전체 기간 칸을 부르므로 선언을 따로 넘길 길을 두지 않는다 — 키와 선언이 한 값에서 나와 다른 선언이 같은 칸에 묶이지 않는다.
+    불변조건:
+    - **빈 선언이면 계산 토큰은 내용 토큰 그대로다** — 선언이 없는 동안 모든 키 · 칸이 선언을 모르던 때와 같다. 앞머리가 내용
+      토큰이라 `pristine-` 판정이 그대로 돈다. 접은 토큰은 메모리 캐시 키일 뿐 저장 · 기록하지 않는다.
+    - **계산 키는 빌더로만 짓는다** — `scenario_cache_key` · `full_scenario_cache_key` · `build_home_simulation_cache_key` 는 선언
+      칸에 기본값이 없고, `simulation_cache` 밖에서 (판, 토큰) 튜플을 손으로 짓지 않는다. 소요대수 길
+      (`calculate_required_equipment` · `get_capacity_and_demand` · `full_capacity_outcome` · `extra_process_merge` 의
+      `capacity_outcome` · `process_rows_frame` · `load_lines`)도 기본값이 없다 — 하나를 빠뜨리면 mypy 가 잡는다.
+    - **편집표 키는 선언을 접지 않는다** — 생산 계획 · 기준 정보 편집표의 원본 칸 · 그리드 내용 키 · 양식 지문 도장은
+      `scenario_content_key` 다(그 두 자리만). 접으면 남이 선언을 저장할 때 이 세션의 미저장 초안 양식 키가 바뀐다.
+    - **빈 선언을 그대로 적는 자리는 정해 둔다** — 검수용 합성 견본 스크립트 둘, 등록 R-07 판정(`capacity_stop` — 선언은 멈춤을
+      만들지도 풀지도 않는다), 그리고 아직 선언을 읽지 않는 계산 자리(화면 · 저장/발행/입력 점검 · 입장 Summary · HOME · 자동
+      갱신 · 확인 스크립트 셋 · 편집본 칸 걷기 — 선언을 읽어 넘기면 그 자리를 지운다). 시험이 자리와 수까지 맞댄다
+      (`tests/test_route_load_exception_keys.py`).
+    - **접지 않는 칸** — 활성 시나리오(`ActiveScenario`)의 내용 토큰 자체, 필요 단축 일정 기준선의 출처(설비 DB 에 남는 값),
+      쓰기 지문(시나리오 관리 · 상태), 생산 계획의 그린 원본 대조, 알림 범위(`alerts` · `state_alerts`)는 날 내용 토큰이다.
 
 ## 6. 핵심 계산 규칙
 
@@ -7343,19 +7371,22 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   `제외사유` 칸에만 있다 — 제목 · 부제는 아직 까닭을 가르지 않는다.
 - (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
 
-**결정 · 저장만 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
+**결정 · 저장 · 계산 키까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
 지금 선언, 모두 뺀 저장도 비움 판 한 줄)에 두고 저장하는 순간 모든 리비전에 건다 — 공식버전을 포함한 모든 시나리오의 그 공정
 소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가 남긴다(2026-11-22 사용자 답 Q3 (가)). 저장 ·
 읽기(`persistence/route_load_exception_store.py` · 저장소 `load_route_load_exceptions` · `append_route_load_exceptions` — COMMIT 뒤
-바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 남은 것 — 선언 판 · 지문이 계산 토큰과 공식버전 키에
-드는 캐시 키 자리((h)), 쓰기 화면(C-DEP 운영 자리 + 개발자 등급만 — (i)), 호출처(화면 계산 · 자동 갱신 · 부대공정 R-07 ·
-확인 스크립트)가 선언을 넘기는 것, 그 공정에 한해 바뀌는 결과 목록((j)). 그 전까지 어느 호출처도 선언을 읽거나 넘기지 않아
-앱 숫자는 지금과 같다.
-- 잇는 단계에서 걷는 기본값 — `calculate_required_equipment` 의 `route_exceptions` 기본값(빈 선언)은 잇기 전 자리다. 선언을
-  잇는 변경에서 기본값 없는 키워드로 바꿔 호출처(`simulation_cache` · 확인 스크립트 셋 `inspect_revision_calculations` ·
-  `inspect_real_data_checks` · `benchmark_upeh_assumption` · 시험)가 모두 넘기게 한다 — 하나를 빠뜨리면 그 자리만 말없이
-  일반 산식으로 돌아 켬/끔 견줌이 「같음」 으로 거짓 보고되거나 앱과 스크립트의 소요대수가 갈린다. 안쪽
-  `_calculate_required_equipment_from_prepared` 는 지금도 기본값 없이 선언 · 바탕 표를 함께 받는다.
+바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 선언이 계산에 드는 길도 섰다 — 선언은 계산 토큰으로
+계산 키에 접히고 전체 기간 칸이 키에서 푼다(5장 44). 남은 것 — 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME 그림 · 자동
+갱신 · 확인 스크립트가 같은 판을 읽어 넘기는 것(공식버전 요약 키 · HOME 그림 키에 접은 토큰 · 지문을 싣는 것 포함), 쓰기 화면
+(C-DEP 운영 자리 + 개발자 등급만), 그 공정에 한해 바뀌는 결과 목록. 그 전까지 어느 호출처도 선언을 읽지 않고 빈 선언을 적어
+넘겨 앱 숫자 · 캐시 키는 지금과 같다.
+- 소요대수 길의 기본값은 걷었다 — `calculate_required_equipment` · `get_capacity_and_demand` · `full_capacity_outcome` ·
+  `extra_process_merge.capacity_outcome` · `process_rows_frame` · `load_lines` 와 계산 키 빌더 셋은 선언 칸에 기본값이 없어
+  호출처(화면 계산 · 저장/발행/입력 점검 · 자동 갱신 · 부대공정 미리보기 · 확인 스크립트 셋 `inspect_revision_calculations` ·
+  `inspect_real_data_checks` · `benchmark_upeh_assumption` · 시험)가 모두 적어 넘긴다 — 하나를 빠뜨리면 그 자리만 말없이 일반
+  산식으로 돌아 켬/끔 견줌이 「같음」 으로 거짓 보고되거나 앱과 스크립트의 소요대수가 갈리므로 mypy 가 잡게 했다. 빈 선언을
+  그대로 적어도 되는 자리는 정해 두었다(5장 44). 등록 R-07 판정(`capacity_stop`)은 끝까지 빈 선언이다 — 선언은 멈춤을 만들지도
+  풀지도 않는다(겹친 바탕도 그 줄만 뺀다 — Q13). 새 산식이 멈춤을 낼 수 있게 되면 그 판정에 선언을 넘긴다.
 
 ### Dynamic Capa 프로토타입
 

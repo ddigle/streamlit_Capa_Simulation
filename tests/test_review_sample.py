@@ -36,6 +36,7 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
 from capa_simulation.services.simulation_cache import full_capacity_outcome  # noqa: E402
 
 GUIDE_PLAN = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto" / "lob" / "plan.json"
@@ -123,7 +124,7 @@ def test_the_official_revision_calculates_the_two_part_product_apart(sample_root
         by_part[story.CUSTOM_PART_A] * story.TWO_PART_EDS_FACTOR
     )
 
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is None and outcome.required_equipment is not None
     required = outcome.required_equipment
     product_rows = required.loc[required["제품정보"].eq(product)]

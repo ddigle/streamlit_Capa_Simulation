@@ -14,6 +14,7 @@ from test_duckdb_repository import _reference_tables
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.scenario_month_merge import (
     NON_MONTHLY_SUPPLEMENT_KEYS,
     compare_non_monthly_tables,
@@ -59,7 +60,8 @@ def _within(tables: dict[str, pd.DataFrame], months: tuple[int, ...]) -> dict[st
 
 def _required_by_month(tables: dict[str, pd.DataFrame], months: tuple[int, ...]) -> pd.Series:
     _, required = get_capacity_and_demand(
-        {name: frame.copy(deep=True) for name, frame in tables.items()}
+        {name: frame.copy(deep=True) for name, frame in tables.items()},
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     selected = required.loc[required["생산계획년월"].isin(months)]
     return selected.groupby("생산계획년월")["소요대수"].sum()

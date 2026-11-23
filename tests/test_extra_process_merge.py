@@ -37,6 +37,7 @@ from capa_simulation.services.extra_process_merge import (
     strip_extra_processes,
 )
 from capa_simulation.services.extra_process_pack import read_pack_files
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 Tables = dict[str, pd.DataFrame]
 Files = dict[str, bytes]
@@ -100,8 +101,10 @@ def test_the_template_merges_both_processes_into_the_seed_with_the_same_columns(
 def test_the_preview_counts_routes_and_monthly_rates_for_the_merged_processes() -> None:
     result = merge_extra_processes(_seed(), _active())
 
-    frame = process_rows_frame(result.tables, (BOND, AOI))
-    lines = load_lines(result.tables, (BOND, AOI))
+    frame = process_rows_frame(
+        result.tables, (BOND, AOI), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    lines = load_lines(result.tables, (BOND, AOI), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     assert set(frame["공정"]) == {BOND, AOI}
     assert frame["확보율"].gt(0).all()
@@ -430,12 +433,14 @@ def test_the_preview_counts_reuse_one_full_period_outcome() -> None:
 
     result = merge_extra_processes(_seed(), _active(), check=_never_stops)
     merged = result.report.merged_processes()
-    outcome = capacity_outcome(result.tables)
+    outcome = capacity_outcome(result.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
-    assert process_rows_frame(result.tables, merged, outcome=outcome).equals(
-        process_rows_frame(result.tables, merged)
-    )
-    assert load_lines(result.tables, merged, outcome=outcome) == load_lines(result.tables, merged)
+    assert process_rows_frame(
+        result.tables, merged, outcome=outcome, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).equals(process_rows_frame(result.tables, merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS))
+    assert load_lines(
+        result.tables, merged, outcome=outcome, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ) == load_lines(result.tables, merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
 
 def test_a_failed_merge_is_announced_as_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -468,7 +473,11 @@ def test_inherited_capacity_gaps_count_the_reference_lines_without_unit_capacity
 
     active = _active()
     merged = merge_extra_processes(_seed(), active, check=_never_stops).tables
-    clean = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(merged))
+    clean = inherited_capacity_gaps(
+        active.pack,
+        (BOND, AOI),
+        outcome=capacity_outcome(merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS),
+    )
     assert clean == {BOND: 0, AOI: 0}
 
     gapped = dict(merged)
@@ -494,6 +503,10 @@ def test_inherited_capacity_gaps_count_the_reference_lines_without_unit_capacity
         ].drop_duplicates()
     )
 
-    counts = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(gapped))
+    counts = inherited_capacity_gaps(
+        active.pack,
+        (BOND, AOI),
+        outcome=capacity_outcome(gapped, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS),
+    )
 
     assert expected > 0 and counts == {BOND: expected, AOI: 0}

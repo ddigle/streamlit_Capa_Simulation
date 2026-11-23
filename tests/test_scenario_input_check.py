@@ -107,6 +107,7 @@ from capa_simulation.services.revision_input_check import (
     build_input_check,
     calculation_period,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.simulation_cache import full_capacity_outcome
 
@@ -603,7 +604,7 @@ def test_an_upeh_table_stop_subtitle_ends_with_its_route_count() -> None:
     main = upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])
     upeh.loc[upeh.index[main.to_numpy().nonzero()[0][:2]], "UPEH"] = float("nan")
     edited = {**tables, "RQ_UPEH": upeh}
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     check = build_input_check(
         outcome, None, None, period=calculation_period(edited, INPUT_CHECK_PERIOD_TABLES)
     )

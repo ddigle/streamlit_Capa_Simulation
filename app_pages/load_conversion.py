@@ -137,14 +137,16 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_LOADS_ATTR,
     required_exclusion_counts,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
     frame_digest,
+    full_scenario_cache_key,
     get_full_capacity_outcome,
     get_monthly_volume,
     get_plan_edit_table,
     get_yield_edit_tables,
-    scenario_cache_key,
+    scenario_content_key,
 )
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
@@ -196,7 +198,7 @@ try:
     )
     # 편집표 원본은 (시나리오 내용·편집 기간·표시순서)의 순수 함수라 그 키로 캐시한다. 환산 조건
     # 토글·탭 전환마다 같은 피벗을 다시 하지 않는다.
-    edit_table_key = scenario_cache_key(
+    edit_table_key = scenario_content_key(
         reference_version, active_scenario, effective_start_month, effective_end_month
     )
     display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
@@ -604,7 +606,11 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     try:
         with slot, st.spinner("적용한 계획의 소요대수 반영을 확인하는 중입니다..."):
             outcome = get_full_capacity_outcome(
-                (context.reference_version, str(scenario["content_token"])),
+                full_scenario_cache_key(
+                    context.reference_version,
+                    str(scenario["content_token"]),
+                    route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+                ),
                 _scenario_tables=scenario["tables"],
                 _reference_tables=context.reference_tables,
             )

@@ -30,6 +30,7 @@ from capa_simulation.persistence.repository import REFERENCE_TABLES
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 CUSTOM_VERSION = 39
 CUSTOM_TABLES = (
@@ -196,7 +197,7 @@ def _with_custom(tables: Mapping[str, pd.DataFrame], value: str) -> dict[str, pd
 def _calculated(repository: DuckDBScenarioRepository, revision_id: str) -> list[pd.DataFrame]:
     """저장 리비전의 전체 기간 대당 Capa · 소요대수(CUSTOM 칸 뺌)."""
     tables = repository.load_revision(revision_id).tables
-    outcome = sc.full_capacity_outcome(tables, tables)
+    outcome = sc.full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is None, outcome.error
     assert outcome.unit_capacity is not None and outcome.required_equipment is not None
     return [

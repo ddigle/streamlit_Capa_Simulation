@@ -211,6 +211,7 @@ from capa_simulation.services.required_shortening import (
     ShorteningPlan,
     level_percent,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import (
     DEFAULT_SECURE_THRESHOLD,
     DEFAULT_WARNING_THRESHOLD,
@@ -1916,6 +1917,7 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
             start_month=display_range.start,
             end_month=display_range.end,
             display_order=context.reference_tables["RQ_DISPLAY_ORDER"],
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
         )
         density, _, wafer, *_ = simulation_cache.get_home_simulation(
             cache_key=home_key,

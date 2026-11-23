@@ -63,6 +63,7 @@ from capa_simulation.services.monthly_equipment_availability import span_date_ra
 from capa_simulation.services.required_equipment import calculate_required_equipment
 from capa_simulation.services.required_shortening import TARGET_LEVELS, plan_required_shortening
 from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION, custom_blank_filled
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 from capa_simulation.services.upeh_assumption import (
     PERCENT_MAX,
@@ -166,6 +167,7 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
             yield_data=tables["RQ_YLD"],
             chip_qty=tables["RQ_CHIP_QTY"],
             unit_capacity=unit_capacity,
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
         )
         this_month = today.year * 100 + today.month
         months = sorted(

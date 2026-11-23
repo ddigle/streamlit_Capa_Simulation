@@ -32,7 +32,10 @@ from capa_simulation.services.required_equipment import (
     required_equipment_to_month_table,
     required_exclusion_counts,
 )
-from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_BASIS_MISSING_REASON
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
 
@@ -107,7 +110,9 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     )
     unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     table = required_equipment_to_month_table(result)
 
     assert len(result) == 2
@@ -193,7 +198,9 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
     )
     unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     expected_load = 1831.6 / 0.78 / 0.879 * (1 - 0.78)
     assert result["부하량"].tolist() == pytest.approx([expected_load])
@@ -255,6 +262,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["Area_Name"].tolist() == ["Main"]
@@ -328,6 +336,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
         pd.DataFrame(),
         pd.DataFrame(),
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["STEP_SEQ"].tolist() == ["10", "20"]
@@ -385,7 +394,14 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
     )
     unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, pd.DataFrame(), pd.DataFrame(), unit_capacity)
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     unrouted = result.attrs.get(UNROUTED_LOADS_ATTR)
 
     # Product-B 경로는 계획이 없어 정말 0 이다.
@@ -435,7 +451,12 @@ def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
 
     empty_capacity = pd.DataFrame(columns=[*CAPACITY_KEYS, "대당 Capa"])
     result = calculate_required_equipment(
-        reqb, plan, pd.DataFrame(), pd.DataFrame(), empty_capacity
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        empty_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs["excluded_required_equipment_rows"]
 
@@ -470,6 +491,7 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         pd.DataFrame(),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     table = required_equipment_to_month_table(result)
 
@@ -586,7 +608,9 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
     )
     unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert result.loc[0, "소요기준"] == "WF"
     assert result.loc[0, "부하량"] == pytest.approx(500.0)
@@ -659,7 +683,9 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
         **{"대당 Capa": 25.0}
     )
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     table = required_equipment_to_month_table(result)
 
     assert len(result) == 1
@@ -747,9 +773,16 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
     ).assign(**{"대당 Capa": 25.0})
 
     registered = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)]
-    from_source = calculate_required_equipment(routes, plan, yield_data, chip_qty, unit_capacity)
+    from_source = calculate_required_equipment(
+        routes, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     from_registered = calculate_required_equipment(
-        registered, plan, yield_data, chip_qty, unit_capacity
+        registered,
+        plan,
+        yield_data,
+        chip_qty,
+        unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert len(registered) == 3
@@ -824,7 +857,12 @@ def _pkg_capacity(*divisions: str, capacity: float = 50.0) -> pd.DataFrame:
 def test_required_equipment_pkg_basis_matches_real_wf_gubun_values() -> None:
     """실데이터 재현: PKG 기준 STEP 의 실제 WF 구분은 'PKG' 가 아니라 BUFFER 다."""
     result = calculate_required_equipment(
-        _pkg_reqb("BUFFER"), _pkg_plan(), pd.DataFrame(), pd.DataFrame(), _pkg_capacity("BUFFER")
+        _pkg_reqb("BUFFER"),
+        _pkg_plan(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        _pkg_capacity("BUFFER"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     # 생산수량 100 / 대당 Capa 50 = 2.0. 예전 코드는 부하량·소요대수가 모두 0 이었다.
@@ -847,7 +885,12 @@ def test_pkg_load_ignores_yield_and_chip_composition() -> None:
     yield_data = with_blank_custom(yield_data)
 
     result = calculate_required_equipment(
-        _pkg_reqb("Buffer"), _pkg_plan(), yield_data, pd.DataFrame(), _pkg_capacity("Buffer")
+        _pkg_reqb("Buffer"),
+        _pkg_plan(),
+        yield_data,
+        pd.DataFrame(),
+        _pkg_capacity("Buffer"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["부하량"].tolist() == pytest.approx([100.0])
@@ -866,6 +909,7 @@ def test_pkg_basis_counts_only_buffer_and_reports_the_other_divisions() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         _pkg_capacity(*divisions),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs["excluded_required_equipment_rows"]
 
@@ -916,7 +960,9 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
         ignore_index=True,
     )
 
-    result = calculate_required_equipment(reqb, _pkg_plan(), yield_data, chip_qty, capacity)
+    result = calculate_required_equipment(
+        reqb, _pkg_plan(), yield_data, chip_qty, capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert result["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
     # Chip = 100 × 4 ÷ 0.5 = 800. PKG 는 100 그대로.
@@ -1026,6 +1072,7 @@ def test_load_exclusions_reach_required_equipment() -> None:
         _yield_rows("DEMO-A", "DEMO-B"),
         _chip_rows("DEMO-A"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -1048,6 +1095,7 @@ def test_a_month_without_yield_is_listed_instead_of_a_silent_zero() -> None:
         _yield_rows("DEMO-A"),
         _chip_rows("DEMO-A", "DEMO-X"),
         _route_capacity("DEMO-A", "DEMO-X"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -1073,6 +1121,7 @@ def test_plan_load_that_reaches_no_route_is_listed() -> None:
         _yield_rows("DEMO-A"),
         _chip_rows("DEMO-A"),
         _route_capacity("DEMO-A", basis="WF"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     unrouted = result.attrs.get(UNROUTED_LOADS_ATTR)
 
@@ -1104,6 +1153,7 @@ def test_blank_plan_quantity_reads_as_no_plan_and_is_listed() -> None:
         _yield_rows("DEMO-A", "DEMO-B"),
         _chip_rows("DEMO-A", "DEMO-B"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -1134,6 +1184,7 @@ def test_a_non_numeric_plan_quantity_still_stops_and_names_the_row() -> None:
             _yield_rows("DEMO-A", "DEMO-B"),
             _chip_rows("DEMO-A", "DEMO-B"),
             _route_capacity("DEMO-A"),
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
         )
 
     assert "202608 · DEMO-B · 12H" in str(caught.value)
@@ -1158,6 +1209,7 @@ def test_exclusion_counts_count_only_routes_that_lose_load() -> None:
         _yield_rows("DEMO-A", "DEMO-C"),
         _chip_rows("DEMO-A", "DEMO-C"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts(
@@ -1232,6 +1284,7 @@ def test_a_product_without_pkg_routes_does_not_count_its_pkg_load_as_unrouted() 
         _yield_rows("DEMO-HBM", "DEMO-EDP"),
         _chip_rows("DEMO-HBM", "DEMO-EDP"),
         capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     counts = required_exclusion_counts(result)
 
@@ -1263,6 +1316,7 @@ def test_a_product_whose_pkg_routes_are_not_buffer_is_not_counted_as_unrouted() 
         _yield_rows("DEMO-HBM"),
         _chip_rows("DEMO-HBM"),
         capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts()
@@ -1284,6 +1338,7 @@ def test_a_division_without_any_route_is_not_counted_as_unrouted() -> None:
         yields.reset_index(drop=True),
         chips.reset_index(drop=True),
         _route_capacity("DEMO-A"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts()
@@ -1301,7 +1356,12 @@ def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> N
     )
 
     result = calculate_required_equipment(
-        reqb, plan, yields.reset_index(drop=True), _chip_rows("DEMO-A"), capacity
+        reqb,
+        plan,
+        yields.reset_index(drop=True),
+        _chip_rows("DEMO-A"),
+        capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     unrouted = result.attrs[UNROUTED_LOADS_ATTR]
 
@@ -1326,6 +1386,7 @@ def test_a_load_whose_part_reaches_no_route_is_a_key_mismatch() -> None:
         _yield_rows("DEMO-A").assign(CUSTOM=PART_A),
         _chip_rows("DEMO-A").assign(CUSTOM=PART_A),
         _route_capacity("DEMO-A"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     unrouted = result.attrs[UNROUTED_LOADS_ATTR]
 
@@ -1409,7 +1470,12 @@ def test_dummy_series_routes_keep_their_load_in_required_equipment(basis: str) -
     reqb, capacity = _dummy_series_route_tables(basis)
 
     result = calculate_required_equipment(
-        reqb, demo.plan(), demo.yields(), demo.chip_qty(), capacity
+        reqb,
+        demo.plan(),
+        demo.yields(),
+        demo.chip_qty(),
+        capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     january = result.loc[result["생산계획년월"].eq(202601)]

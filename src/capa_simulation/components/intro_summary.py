@@ -124,6 +124,7 @@ from capa_simulation.services.official_summary import (
     summary_months,
 )
 from capa_simulation.services.past_data import display_month_range
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import (
     IntroSummaryCacheKey,
@@ -538,6 +539,7 @@ def _build(
         start_month=months[0],
         end_month=months[-1],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     _density, _detail, _wafer, securement_rate, _assumed, slot_volume = get_home_simulation(
         cache_key=cache_key,

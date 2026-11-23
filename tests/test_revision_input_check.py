@@ -71,6 +71,7 @@ from capa_simulation.services.revision_input_check import (
 )
 from capa_simulation.services.route_load_exceptions import (
     BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
     ROUTE_LOAD_BASIS_MISSING_REASON,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
@@ -183,7 +184,7 @@ def _density_broken(tables: Tables) -> Tables:
 
 def _check(tables: Tables, blank_cs: pd.DataFrame | None = None) -> RevisionInputCheck:
     """`input_check_verdict` 의 계산 몸통과 같은 차례 — DB · 캐시 없이."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     density = density_error(tables) if outcome.error is None else None
     period = calculation_period(tables, INPUT_CHECK_PERIOD_TABLES)
     return build_input_check(outcome, density, blank_cs, period=period)
@@ -196,7 +197,7 @@ def test_the_four_demand_counts_are_the_gate_counts(tables: Tables) -> None:
     """부하량에서 빠진 계획 · 빈 생산수량 · 경로에 닿지 않은 부하 · 부하 붙은 경로 — 검사 경고의 네
     수가 점검 묶음에서 그대로 나온다(경로 묶음 부제 == 검사의 `excluded_routes`)."""
     edited = _with_every_exclusion(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is None and outcome.required_equipment is not None
     counts = required_exclusion_counts(outcome.required_equipment)
     demand = (counts.excluded_plans, counts.blank_plans, counts.unrouted_loads)
@@ -224,7 +225,7 @@ def test_basis_missing_routes_are_a_reason_of_the_route_group_with_the_gate_coun
     내장 시드에는 Buffer 경로가 없어 WF Core 경로를 가진 공정을 선언하면 그 Core 줄의 바탕이 없다.
     전체 기간 계산은 아직 선언을 받지 않으므로 계산 함수에 선언을 넘겨 결과를 짓는다.
     """
-    plain = full_capacity_outcome(tables, tables)
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert plain.error is None and plain.unit_capacity is not None
     assert plain.required_equipment is not None
     reqb = tables["RQ_REQB"]
@@ -255,7 +256,7 @@ def test_every_check_group_is_counted_and_the_calculation_says_how_many(tables: 
     """확인 필요 다섯이 모두 서면 「됨 · 확인 5」. 대당 Capa 제외 · 측정률 가정도 결과와 같은
     수다."""
     edited = _with_every_exclusion(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.unit_capacity is not None
     exclusions = outcome.unit_capacity.attrs[CAPACITY_EXCLUSIONS_ATTR]
     assumed = capacity_assumptions(outcome.unit_capacity)
@@ -288,7 +289,7 @@ def test_rule_rows_are_kept_apart_and_the_groups_split_the_result_lists(tables: 
     """규칙대로 뺀 것(PKG Buffer 밖 · 쓰지 않는 경로 조합)은 검사가 세지 않는 행이라 확인 묶음에
     섞이지 않는다 — 확인 묶음과 규칙 묶음을 합치면 결과의 제외 목록 둘과 같다."""
     edited = _pkg_route_on_one_product(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.required_equipment is not None
     all_routes = outcome.required_equipment.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR]
     all_unrouted = outcome.required_equipment.attrs[UNROUTED_LOADS_ATTR]
@@ -316,7 +317,7 @@ def test_a_reference_join_stop_keeps_its_route_count_and_folds_the_rest(tables: 
     """기준정보 연결 오류로 멈추면 그 꼴과 수(`problem`)가 결과에 남고 뒤 묶음은 「셀 수 없음」
     하나다."""
     edited = _vital_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is not None
     assert outcome.problem is not None and outcome.problem.rows > 0
 
@@ -336,7 +337,7 @@ def test_an_upeh_table_stop_names_its_stage_and_keeps_its_route_count(tables: Ta
     """경로의 바탕 표(`RQ_UPEH`) 자체의 멈춤도 꼴과 수를 들어 제목이 「계산 멈춤 — 대당 Capa」 다
     (사내 리뷰 202611111500 발견 3)."""
     edited = _main_upeh_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.problem is not None
     assert (outcome.problem.table, outcome.problem.label) == ("RQ_UPEH", "빈 값(UPEH)")
     assert outcome.problem.rows == 1
@@ -352,7 +353,7 @@ def test_an_upeh_table_stop_names_its_stage_and_keeps_its_route_count(tables: Ta
 def test_a_stop_without_a_join_problem_does_not_name_a_stage(tables: Tables) -> None:
     """결과가 어느 단계의 오류인지 말하지 않으면 단계를 지어 붙이지 않는다."""
     edited = _vital_zero(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is not None and outcome.problem is None
 
     check = _check(edited)
@@ -390,7 +391,7 @@ def test_an_old_revision_without_route_keys_stops_without_calculating(
     database, scenario_id, revision_id = _seeded(tmp_path)
     monkeypatch.setattr(capacity_gate, "revision_block_reason", lambda _tables: "옛 리비전")
 
-    def no_calculation(*_args: object) -> CapacityOutcome:
+    def no_calculation(*_args: object, **_kwargs: object) -> CapacityOutcome:
         raise AssertionError("계산을 부르면 안 된다")
 
     monkeypatch.setattr(capacity_gate, "full_capacity_outcome", no_calculation)
@@ -568,7 +569,7 @@ def test_a_read_failure_is_raised_every_time_instead_of_being_kept(tmp_path: Pat
 def test_the_check_and_its_outcome_survive_the_cache_pickle(tables: Tables) -> None:
     """요약 칸은 `st.cache_data` 라 피클로 오간다 — 멈춤의 꼴(`problem`)도 실린다."""
     edited = _vital_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.problem is not None
 
     restored = pickle.loads(pickle.dumps(outcome))

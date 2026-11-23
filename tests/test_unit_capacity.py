@@ -12,6 +12,7 @@ from custom_key_tables import with_blank_custom
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import get_capacity_and_demand
 from capa_simulation.services.unit_capacity import (
     CAPACITY_ASSUMED_MONTHS_ATTR,
@@ -593,7 +594,9 @@ def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() ->
     }
 
     tables = with_blank_custom(tables)
-    cached = pickle.loads(pickle.dumps(get_capacity_and_demand(tables)))
+    cached = pickle.loads(
+        pickle.dumps(get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS))
+    )
     unit_capacity, required_equipment = cached
 
     assert unit_capacity["공정"].tolist() == ["Process-A"]

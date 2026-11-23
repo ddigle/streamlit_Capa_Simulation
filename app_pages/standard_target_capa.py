@@ -100,6 +100,7 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     csv_export_key,
     display_order_digest,
@@ -877,7 +878,13 @@ try:
         name: scenario_month_table(active_scenario, name, start_month, end_month)
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
-    scenario_key = scenario_cache_key(reference_version, active_scenario, start_month, end_month)
+    scenario_key = scenario_cache_key(
+        reference_version,
+        active_scenario,
+        start_month,
+        end_month,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     # 소요대수 프레임은 풀지 않는다 — 예외 행 수와 공정 선택지 재료만 시나리오 키로 꺼낸다. 계산
     # 오류는 여기서 「계산 멈춤」과 함께 먼저 드러난다(실패는 캐시되지 않는다).
     standard_target_summary = stop_calculation_on_error(

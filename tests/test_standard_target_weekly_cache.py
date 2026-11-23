@@ -27,6 +27,7 @@ from capa_simulation.services.display_order_scopes import (
     PAGE_STANDARD_TARGET,
     TAB_TARGET_CAPACITY,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
@@ -367,7 +368,9 @@ def _weekly(
     `get_pkg_equivalent_standard_target`). 재공 현황과 화면의 되돌림이 이 길을 탄다."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         availability=availability,
         start_date=start,
         end_date=end,
@@ -531,7 +534,9 @@ def test_a_wip_call_does_not_leak_into_the_standard_target_result(
 
 
 def test_the_selection_order_does_not_split_the_key() -> None:
-    scenario_key = simulation_cache.scenario_cache_key(1, {"content_token": "t"}, 202608, 202608)
+    scenario_key = simulation_cache.scenario_cache_key(
+        1, {"content_token": "t"}, 202608, 202608, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     keys = {
         simulation_cache.standard_target_weekly_cache_key(
             scenario_key,
@@ -551,7 +556,9 @@ def test_the_selection_order_does_not_split_the_key() -> None:
 
 def _summary(token: str) -> simulation_cache.StandardTargetSummary:
     return simulation_cache.get_standard_target_summary(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         _scenario_tables=_scenario_tables(),
         _reference_tables={},
     )
@@ -671,7 +678,9 @@ def test_a_summary_hit_does_not_split_again(
 
 def _split(token: str) -> tuple[pd.DataFrame, int]:
     return simulation_cache.get_standard_target_split(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         _scenario_tables=_scenario_tables(),
         _reference_tables={},
     )
@@ -735,7 +744,9 @@ def _result(
     """표준 목표 화면이 타는 길(`get_standard_target_weekly_result` — 전체 공정 결과를 거른다)."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         availability=availability,
         start_date=start,
         end_date=end,

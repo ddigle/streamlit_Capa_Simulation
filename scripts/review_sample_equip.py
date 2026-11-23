@@ -89,6 +89,7 @@ from capa_simulation.services.required_shortening import (  # noqa: E402
     ShorteningPlan,
     plan_required_shortening,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
 from capa_simulation.services.schedule_confirmation import (  # noqa: E402
     MISSING_ACTUAL,
     STATUS_UPDATE_NEEDED,
@@ -303,7 +304,9 @@ def read_sim(copy_path: Path) -> SimFacts:
     if release is None:
         raise LookupError("시뮬레이션 DB 에 공식버전이 없습니다.")
     snapshot = repository.load_revision(release.revision_id)
-    outcome = full_capacity_outcome(snapshot.tables, snapshot.tables)
+    outcome = full_capacity_outcome(
+        snapshot.tables, snapshot.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     if outcome.error is not None or outcome.required_equipment is None:
         raise ValueError(f"공식버전 소요대수를 계산하지 못했습니다 — {outcome.error}")
     rows = outcome.required_equipment

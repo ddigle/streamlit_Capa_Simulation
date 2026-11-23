@@ -27,6 +27,10 @@ import streamlit as st
 from capa_simulation import scenario_state
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,10 +54,13 @@ def computed(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     original = sc.full_capacity_outcome
 
     def counted(
-        scenario_tables: Mapping[str, pd.DataFrame], reference_tables: Mapping[str, pd.DataFrame]
+        scenario_tables: Mapping[str, pd.DataFrame],
+        reference_tables: Mapping[str, pd.DataFrame],
+        *,
+        route_exceptions: RouteLoadDeclaration,
     ) -> sc.CapacityOutcome:
         calls.append(1)
-        return original(scenario_tables, reference_tables)
+        return original(scenario_tables, reference_tables, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(sc, "full_capacity_outcome", counted)
     return calls
@@ -75,7 +82,13 @@ def _calculate(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """화면과 같은 길 — 시나리오 키(`scenario_cache_key`)로 조회기간 결과를 받는다."""
     months = _months(scenario["tables"])
-    key = sc.scenario_cache_key(scenario["reference_version"], scenario, months[0], months[-1])
+    key = sc.scenario_cache_key(
+        scenario["reference_version"],
+        scenario,
+        months[0],
+        months[-1],
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     return sc.get_scenario_capacity_and_demand(
         key, _scenario_tables=scenario["tables"], _reference_tables=tables
     )
@@ -286,7 +299,7 @@ def test_the_full_cell_holds_eight_contents(monkeypatch: pytest.MonkeyPatch) -> 
     assert sc.FULL_CAPACITY_MAX_ENTRIES == 8
     calls: list[int] = []
 
-    def cheap(*_args: object) -> sc.CapacityOutcome:
+    def cheap(*_args: object, **_kwargs: object) -> sc.CapacityOutcome:
         calls.append(1)
         return sc.CapacityOutcome(None, None, "칸 상한 시험")
 

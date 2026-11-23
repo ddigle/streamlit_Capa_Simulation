@@ -32,6 +32,7 @@ from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenar
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.scenario_month_merge import merge_scenario_months
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.simulation_cache import (
@@ -124,7 +125,9 @@ def test_the_uncached_core_judges_like_the_cached_check(tables: dict[str, pd.Dat
             _scenario_tables=candidate,
             _reference_tables=candidate,
         )
-        uncached = full_capacity_outcome(candidate, candidate)
+        uncached = full_capacity_outcome(
+            candidate, candidate, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
 
         assert uncached.error == cached.error
         if cached.required_equipment is not None:

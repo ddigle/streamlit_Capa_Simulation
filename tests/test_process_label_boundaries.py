@@ -20,6 +20,7 @@ from capa_simulation.components.process_labels import (
 )
 from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
 
@@ -426,6 +427,7 @@ def test_rename_is_not_part_of_the_calculation_cache_key() -> None:
         start_month=202601,
         end_month=202612,
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert len(key) == 5

@@ -79,6 +79,7 @@ from capa_simulation.services.extra_process_pack import (
     read_pack_zip,
 )
 from capa_simulation.services.extra_process_revision import KeptProcess
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 
 @dataclass(frozen=True)
@@ -433,13 +434,16 @@ def preview_pack(
     active = ActiveExtraPack(ExtraPackVersion(seq, pack.info.version_no, pack.sha256), pack)
     result = overlay_extra_processes(tables, previous_extra, active)
     merged = result.report.merged_processes()
-    outcome = capacity_outcome(result.tables)
+    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
+    outcome = capacity_outcome(result.tables, route_exceptions=route_exceptions)
     return PackPreview(
         changes=changes if changes is not None else pack_changes(pack, current, before),
         ratio=pack.ratio,
         report=result.report,
-        rates=process_rows_frame(result.tables, merged, outcome=outcome),
-        lines=load_lines(result.tables, merged, outcome=outcome),
+        rates=process_rows_frame(
+            result.tables, merged, route_exceptions=route_exceptions, outcome=outcome
+        ),
+        lines=load_lines(result.tables, merged, route_exceptions=route_exceptions, outcome=outcome),
         capacity_gaps=inherited_capacity_gaps(pack, merged, outcome=outcome),
     )
 

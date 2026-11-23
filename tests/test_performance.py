@@ -3,6 +3,7 @@
 import pandas as pd
 
 from capa_simulation.performance import PerformanceTrace
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
 
 
@@ -26,6 +27,7 @@ def test_home_cache_key_is_small_and_tracks_display_order() -> None:
         start_month=202608,
         end_month=202612,
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     same = build_home_simulation_cache_key(
         reference_version=11,
@@ -33,6 +35,7 @@ def test_home_cache_key_is_small_and_tracks_display_order() -> None:
         start_month=202608,
         end_month=202612,
         display_order=display_order.copy(),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     changed_order = display_order.assign(값표시순서=2)
     changed = build_home_simulation_cache_key(
@@ -41,6 +44,7 @@ def test_home_cache_key_is_small_and_tracks_display_order() -> None:
         start_month=202608,
         end_month=202612,
         display_order=changed_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert first == same

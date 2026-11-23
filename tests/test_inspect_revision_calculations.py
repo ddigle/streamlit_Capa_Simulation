@@ -42,6 +42,7 @@ from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
 from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -607,8 +608,12 @@ def test_a_pkg_buffer_route_saved_in_two_spellings_is_counted_after_the_calculat
     그 경로의 소요대수가 두 배다(계산은 이 행을 접지 않는다 — 런북 6-3 a 가 옛 리비전의 수를
     잰다). 글자 그대로 세면 0 이라 이 자리를 놓친다. 계산이 접게 되면 앞 두 단언도 같이 고친다.
     """
-    doubled = calculate_required_equipment(**_pkg_inputs("Buffer", "BUFFER"))
-    single = calculate_required_equipment(**_pkg_inputs("BUFFER"))
+    doubled = calculate_required_equipment(
+        **_pkg_inputs("Buffer", "BUFFER"), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    single = calculate_required_equipment(
+        **_pkg_inputs("BUFFER"), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert doubled["소요대수"].tolist() == pytest.approx([2.0, 2.0])
     assert int(doubled.duplicated(subset=REQB_COLUMNS).sum()) == 0

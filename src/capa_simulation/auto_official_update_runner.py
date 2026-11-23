@@ -116,6 +116,7 @@ from capa_simulation.services.bigdataquery_catalog_view import registration_pref
 from capa_simulation.services.core_data_pipeline import fetch_registration_dataset
 from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.required_equipment import required_exclusion_counts
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
@@ -487,7 +488,9 @@ def _execute(
         log.fixed_at_source = registration.capacity.fixed_at_source
 
     log.advance("judge")
-    outcome = full_capacity_outcome(base.tables, base.tables)
+    outcome = full_capacity_outcome(
+        base.tables, base.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     if outcome.error is not None or outcome.required_equipment is None:
         log.finish(
             STATUS_PUBLISH_SKIPPED,
@@ -617,7 +620,9 @@ def _publish_filtered_revision(
     공식버전 메모(`note`)에는 싣지 않는다 — 화면 발행도 메모는 지정한 사람의 글 그대로다.
     """
     # 화면 발행 검사(`official_publish_verdict`)와 같이 Capa 계산이 통과하면 Density 환산도 본다.
-    outcome = full_capacity_outcome(snapshot.tables, snapshot.tables)
+    outcome = full_capacity_outcome(
+        snapshot.tables, snapshot.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     error = outcome.error or density_error(snapshot.tables)
     if error is not None:
         return error

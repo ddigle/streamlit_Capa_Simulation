@@ -286,7 +286,7 @@ def test_a_top_dummy_route_without_unit_capacity_is_not_counted_as_lost_demand()
     capacity = capacity.loc[~lost]
     tables = (reqb, demo.plan(), demo.yields(), demo.chip_qty(), capacity)
 
-    off = calculate_required_equipment(*tables)
+    off = calculate_required_equipment(*tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     on = calculate_required_equipment(*tables, route_exceptions=_DECLARED)
 
     excluded = on.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR]
@@ -324,7 +324,7 @@ def test_an_upper_case_source_takes_the_same_exception() -> None:
         _hbm_spelled_upper(capacity),
     )
 
-    off = calculate_required_equipment(*tables)
+    off = calculate_required_equipment(*tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     result = calculate_required_equipment(*tables, route_exceptions=_DECLARED)
 
     for month in demo.MONTHS:
@@ -441,7 +441,9 @@ def test_two_bases_for_one_key_drop_only_that_core_route_as_basis_missing(
     reqb, capacity = _route_tables()
     plan, yields, chip = _with_division_spelled_twice(demo.HBM, division)
     assert not _overlapped_bases(plan, yields, chip, demo.HBM).empty
-    off = calculate_required_equipment(reqb, plan, yields, chip, capacity)
+    off = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     plain = _calculate(_DECLARED)
 
     result = calculate_required_equipment(
@@ -487,7 +489,9 @@ def test_two_bases_for_one_key_with_no_general_core_load_give_zero_without_an_ex
         chip["제품정보"].eq(demo.HBM) & chip["WF 구분"].str.casefold().eq("core"), "구분_Chip"
     ] = 0.0
     assert len(_overlapped_bases(plan, yields, chip, demo.HBM)) > 0
-    off = calculate_required_equipment(reqb, plan, yields, chip, capacity)
+    off = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert _values(off, _EXC, "Core") == [0.0] * (len(_ROUTE_MONTHS) * len(_STEPS))
 
     result = calculate_required_equipment(
@@ -519,8 +523,9 @@ def test_a_declaration_that_reaches_no_wafer_route_leaves_the_result_as_today(
 ) -> None:
     """선언 공정이 이번 경로에 없거나 그 공정이 CHIP 경로뿐이면 결과 · attrs 가 선언 없음과 같다.
 
-    빈 선언이 지금 계산과 같다는 것은 선언을 넘기지 않는 `tests/test_required_equipment.py` 가
-    받친다 — 빈 선언과 기본값은 같은 길이라 여기서 견줘도 드러나는 것이 없다.
+    빈 선언이 일반 산식과 같다는 것은 빈 선언을 적어 넘기는 `tests/test_required_equipment.py` 의
+    기대값이, 빈 선언의 캐시 키가 선언을 모르던 때와 같다는 것은
+    `tests/test_route_load_exception_keys.py` 가 받친다.
     """
     off = _calculate(basis=basis)
 
@@ -538,8 +543,9 @@ def test_wafer_counts_home_aggregation_and_load_table_do_not_move() -> None:
     """경로 부하량만 바뀐다 — 입력 표 · Wafer 매수 집계 · HOME 세 함수 · 부하량 표에서 나온 셈은
     켬/끔에서 같다.
 
-    HOME 계산 캐시 래퍼는 아직 선언을 받지 않는다(잇기 전). 여기서는 캐시 없는 세 함수를 선언
-    계산 앞뒤로 같은 입력 객체에서 다시 불러, 훅이 입력을 제자리에서 고치지 않았는지까지 본다.
+    HOME 집계 · 비중은 선언과 무관한 Wafer 매수 집계라 선언을 받지 않는다. 여기서는 캐시 없는 세
+    함수를 선언 계산 앞뒤로 같은 입력 객체에서 다시 불러, 훅이 입력을 제자리에서 고치지 않았는지까지
+    본다.
     """
     reqb, capacity = _route_tables()
     plan, yields, chip = demo.plan(), demo.yields(), demo.chip_qty()
@@ -547,7 +553,9 @@ def test_wafer_counts_home_aggregation_and_load_table_do_not_move() -> None:
     chip_before, wafer_before = calculate_chip_and_wafer_loads(plan, yields, chip)
     home_before = _home_outputs(plan, wafer_before)
 
-    off = calculate_required_equipment(reqb, plan, yields, chip, capacity)
+    off = calculate_required_equipment(
+        reqb, plan, yields, chip, capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     on = calculate_required_equipment(
         reqb, plan, yields, chip, capacity, route_exceptions=_DECLARED
     )

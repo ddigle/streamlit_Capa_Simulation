@@ -71,12 +71,18 @@ from capa_simulation.services.revision_input_check import (
     build_input_check,
     calculation_period,
 )
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
     MONTHLESS_INPUT_TABLES,
     CapacityOutcome,
+    FullScenarioCacheKey,
     full_capacity_outcome,
+    full_scenario_cache_key,
     get_capacity_and_demand,
     get_full_capacity_outcome,
     get_revision_input_check,
@@ -126,7 +132,7 @@ def _calculated_verdict(outcome: CapacityOutcome) -> GateVerdict:
 
 
 def _gate_check(
-    cache_key: tuple[int, str],
+    cache_key: FullScenarioCacheKey,
     scenario_tables: Mapping[str, pd.DataFrame],
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[CapacityOutcome, str | None]:
@@ -177,8 +183,13 @@ def revision_save_verdict(
     labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
     """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다."""
+    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
     edited_outcome, edited = _gate_check(
-        (reference_version, active_scenario["content_token"]),
+        full_scenario_cache_key(
+            reference_version,
+            active_scenario["content_token"],
+            route_exceptions=route_exceptions,
+        ),
         active_scenario["tables"],
         reference_tables,
     )
@@ -190,7 +201,13 @@ def revision_save_verdict(
     base = (
         edited
         if active_scenario["content_token"] == base_token
-        else _gate_check((reference_version, base_token), reference_tables, reference_tables)[1]
+        else _gate_check(
+            full_scenario_cache_key(
+                reference_version, base_token, route_exceptions=route_exceptions
+            ),
+            reference_tables,
+            reference_tables,
+        )[1]
     )
     shown = _shown(edited, labels)
     if base is None:
@@ -252,7 +269,11 @@ def official_publish_verdict(
     snapshot = load_scenario_snapshot(database_path, revision_id)
     reference_version = reference_version_for_revision(revision_id)
     outcome, error = _gate_check(
-        (reference_version, pristine_content_token(reference_version)),
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        ),
         snapshot.tables,
         snapshot.tables,
     )
@@ -283,6 +304,7 @@ def input_check_verdict(
     보지 않는다 — 저장된 리비전 그대로다.
     """
     reference_version = reference_version_for_revision(revision_id)
+    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
 
     def compute() -> RevisionInputCheck:
         repository = get_scenario_repository(database_path)
@@ -292,10 +314,12 @@ def input_check_verdict(
         blocked = revision_block_reason(tables)
         if blocked is not None:
             return blocked_input_check(blocked, blank_cs, period=period)
-        outcome = full_capacity_outcome(tables, tables)
+        outcome = full_capacity_outcome(tables, tables, route_exceptions=route_exceptions)
         stop = _stop_error(outcome, tables)
         extra = (
-            None if outcome.error is not None else _extra_check(repository, scenario_id, outcome)
+            None
+            if outcome.error is not None
+            else _extra_check(repository, scenario_id, outcome, route_exceptions)
         )
         return build_input_check(
             outcome,
@@ -306,12 +330,20 @@ def input_check_verdict(
         )
 
     return get_revision_input_check(
-        (reference_version, pristine_content_token(reference_version)), _compute=compute
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=route_exceptions,
+        ),
+        _compute=compute,
     )
 
 
 def _extra_check(
-    repository: DuckDBScenarioRepository, scenario_id: str, outcome: CapacityOutcome
+    repository: DuckDBScenarioRepository,
+    scenario_id: str,
+    outcome: CapacityOutcome,
+    route_exceptions: RouteLoadDeclaration,
 ) -> ExtraProcessCheck | None:
     """입력 점검 「부대공정」 묶음의 재료(설계 A10) — 그 데이터셋 출처에 부대공정이 없으면 None.
 
@@ -342,7 +374,7 @@ def _extra_check(
     names = [*merged, *(name for name in sorted(mixed) if name not in merged)]
     if not names:
         return None
-    lines = load_lines({}, merged, outcome=outcome)
+    lines = load_lines({}, merged, route_exceptions=route_exceptions, outcome=outcome)
     gaps: dict[str, int] = {}
     for sha in {item.sha256 for item in records if item.outcome == OUTCOME_MERGED}:
         try:
@@ -389,10 +421,11 @@ def derived_save_verdict(
     리비전 저장·발행과 같이 Capa 계산이 통과하면 Density 환산도 본다(`density_error`). `labels` 는
     경고 글 예시 키의 공정 표시명을 낸다.
     """
-    error = _capacity_error(tables) or density_error(tables)
+    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
+    error = _capacity_error(tables, route_exceptions) or density_error(tables)
     if error is None:
         return GateVerdict(True)
-    broken = [source for source in sources if _revision_error(source) is not None]
+    broken = [source for source in sources if _revision_error(source, route_exceptions) is not None]
     if not broken:
         return GateVerdict(
             False,
@@ -503,25 +536,34 @@ def _active_extras() -> tuple[str, ...]:
     return () if scenario_id is None else _scenario_extras(None, (scenario_id,))()
 
 
-def _capacity_error(tables: Mapping[str, pd.DataFrame]) -> str | None:
+def _capacity_error(
+    tables: Mapping[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> str | None:
     """계산 페이지의 전체 기간 계산(`get_full_capacity_outcome`)과 같은 입력으로 한 번 계산한다."""
     try:
         get_capacity_and_demand(
             {
                 name: tables[name].copy(deep=True)
                 for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
-            }
+            },
+            route_exceptions=route_exceptions,
         )
     except ValueError as exc:
         return str(exc)
     return None
 
 
-def _revision_error(snapshot: ScenarioSnapshot) -> str | None:
+def _revision_error(
+    snapshot: ScenarioSnapshot, route_exceptions: RouteLoadDeclaration
+) -> str | None:
     """저장된 리비전을 편집 없이 검사한 오류. 공식 발행 검사와 같은 판정·캐시 칸이다."""
     reference_version = reference_version_for_revision(snapshot.revision.revision_id)
     return _gate_check(
-        (reference_version, pristine_content_token(reference_version)),
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=route_exceptions,
+        ),
         snapshot.tables,
         snapshot.tables,
     )[1]

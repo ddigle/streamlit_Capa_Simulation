@@ -20,6 +20,10 @@ import streamlit as st
 from capa_simulation.frame_sharing import lock_frame, shared_view
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.unit_capacity import (
     CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
@@ -58,7 +62,9 @@ def test_a_period_is_a_slice_of_the_whole_scenario(tables: dict[str, pd.DataFram
     unit, required = sc.get_scenario_capacity_and_demand(
         _key(start, end), _scenario_tables=tables, _reference_tables=tables
     )
-    alone = sc._capacity_outcome(sc._capacity_tables(tables, tables, (start, end)))
+    alone = sc._capacity_outcome(
+        sc._capacity_tables(tables, tables, (start, end)), NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert alone.unit_capacity is not None and alone.required_equipment is not None
     assert unit.equals(alone.unit_capacity.reset_index(drop=True))
@@ -118,9 +124,11 @@ def test_slicing_on_every_call_matches_the_old_sliced_cell(
     computed: list[int] = []
     original = sc.get_capacity_and_demand
 
-    def counted(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def counted(
+        inputs: dict[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         computed.append(1)
-        return original(inputs)
+        return original(inputs, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(sc, "get_capacity_and_demand", counted)
     old_cell = st.cache_data(show_spinner=False, max_entries=16)(
@@ -172,7 +180,9 @@ def test_a_write_to_a_locked_session_table_is_raised_and_never_cached(
     reference = {**tables, "RQ_MODULE": shared_view(module)}
     calls: list[str] = []
 
-    def writes_in_place(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def writes_in_place(
+        inputs: dict[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         calls.append("write")
         target = inputs["RQ_MODULE"]
         target.iloc[0, list(target.columns).index("모듈수")] = 3.0
@@ -186,7 +196,9 @@ def test_a_write_to_a_locked_session_table_is_raised_and_never_cached(
     assert calls == ["write", "write"], "read-only 오류는 칸에 담기지 않아 부를 때마다 다시 돈다"
     assert float(module["모듈수"].iloc[0]) == float(tables["RQ_MODULE"]["모듈수"].iloc[0])
 
-    def breaks_contract(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def breaks_contract(
+        inputs: dict[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         calls.append("contract")
         raise ValueError("RQ_MODULE 계약 위반 시험")
 
@@ -282,9 +294,11 @@ def test_a_failed_calculation_is_cached_rather_than_rerun(
     calls: list[int] = []
     original = sc.get_capacity_and_demand
 
-    def counted(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def counted(
+        inputs: dict[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         calls.append(1)
-        return original(inputs)
+        return original(inputs, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(sc, "get_capacity_and_demand", counted)
     key = (1, f"test-full-period-{uuid4().hex}")

@@ -28,7 +28,6 @@ from capa_simulation.services.load_calculator import (
     plan_quantities,
 )
 from capa_simulation.services.route_load_exceptions import (
-    NO_ROUTE_LOAD_EXCEPTIONS,
     ROUTE_LOAD_BASIS_MISSING_REASON,
     RouteLoadDeclaration,
     apply_route_load_exceptions,
@@ -185,18 +184,18 @@ def calculate_required_equipment(
     chip_qty: pd.DataFrame,
     unit_capacity: pd.DataFrame,
     *,
-    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
+    route_exceptions: RouteLoadDeclaration,
 ) -> pd.DataFrame:
     """Calculate required equipment for every RQ_REQB row.
 
     `route_exceptions` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id —
-    `route_load_exceptions`)이다. 비면(기본) 지금 계산 그대로이고, 선언 공정이 이번 경로에 없어도
+    `route_load_exceptions`)이다. 비면 일반 산식 그대로이고, 선언 공정이 이번 경로에 없어도
     그렇다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 산식 바탕을 지어 경로에 부하량을 붙인
     바로 뒤에 건다 — 부하량 표 · 경로 없는 계획 셈은 그대로다.
 
-    기본값(빈 선언)은 호출처가 선언을 넘기기 전까지만 둔다. 선언을 잇는 단계에서 걷어 호출처
-    (화면 계산 · 자동 갱신 · 확인 스크립트)가 모두 넘기게 한다 — 하나를 빠뜨려도 타입 검사가
-    잡게(AGENTS 6장 「공정별 부하 산출 예외」).
+    **기본값이 없다** — 호출처(화면 계산 · 자동 갱신 · 확인 스크립트 · 시험)가 모두 선언을 넘기고,
+    하나를 빠뜨리면 타입 검사가 잡는다. 빈 선언을 그대로 적어도 되는 자리는 정해 두었다
+    (`tests/test_route_load_exception_keys.py` 의 허용 목록 — AGENTS 5장 44).
     """
     declaration = normalize_route_load_declaration(route_exceptions)
     prepared_reqb, route_products = _prepare_reqb(reqb)

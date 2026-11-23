@@ -53,6 +53,7 @@ from capa_simulation.services.process_capa_detail import (
     route_factor_product,
 )
 from capa_simulation.services.required_equipment import PKG_UNCOUNTED_REASON
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_OWNED_SHORT,
@@ -89,7 +90,7 @@ def _capacity_tables(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
 
 
 def _trace(tables: dict[str, pd.DataFrame], process: str, month: int) -> ProcessMonthTrace:
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=process)
     return build_process_month_trace(rows, _capacity_tables(tables), process=process, month=month)
 
@@ -106,7 +107,7 @@ def test_summary_carries_the_securement_numbers_unchanged(tables: dict[str, pd.D
 
     산출 결과·Static Capa 와 다른 숫자를 내면 안 된다.
     """
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
 
@@ -153,7 +154,7 @@ def test_summary_marks_months_where_owned_minus_lent_is_not_available(
         available["생산계획년월"]
     ).eq(202604)
     available.loc[edited, "가용대수"] = pd.to_numeric(available.loc[edited, "가용대수"]) + 1
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(available, required)
 
     summary = build_process_capa_summary(
@@ -171,7 +172,7 @@ def test_summary_marks_months_where_owned_minus_lent_is_not_available(
 def test_months_without_rows_are_zero_and_keep_the_given_order(
     tables: dict[str, pd.DataFrame],
 ) -> None:
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
 
     summary = build_process_capa_summary(
@@ -290,7 +291,7 @@ def test_product_rows_add_up_to_the_process_demand(
 
     「그 밖」·거르기를 걸어도 아무것도 버리지 않는다.
     """
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
     display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
@@ -328,7 +329,7 @@ def test_product_rows_add_up_to_the_process_demand(
 def test_judging_another_supply_takes_the_summarys_path(tables: dict[str, pd.DataFrame]) -> None:
     """「② 일정 가용」 · 「③ 비가동」 의 판정 칸은 요약과 같은 길이다 — 요약의 가용 · 소요를 넣으면
     요약과 같은 확보율 · 판정 · 과부족이 나온다(월별 예외 기준 달 포함)."""
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
     for process in builtin_seed_processes():
@@ -534,7 +535,7 @@ def test_route_factors_multiply_back_to_the_unit_capacity(tables: dict[str, pd.D
 
 
 def test_route_trace_matches_the_securement_demand(tables: dict[str, pd.DataFrame]) -> None:
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     row = securement.loc[
         securement["공정"].eq(WAFER_PROCESS) & securement["생산계획년월"].eq(TRACE_MONTH)
@@ -672,7 +673,7 @@ def _month_rows_of(rows: pd.DataFrame, process: str, month: int) -> pd.DataFrame
 def test_rule_exclusions_are_counted_apart_from_errors(tables: dict[str, pd.DataFrame]) -> None:
     """PKG 의 Buffer 아닌 행(규칙상 제외)은 오류 제외 수에 들지 않는다 — 정상 공정이 늘 「제외 경로
     n」을 띄우지 않게."""
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
     base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
     pkg = base.copy()
@@ -703,7 +704,7 @@ def test_a_process_with_two_demand_bases_still_gives_its_evidence(
 ) -> None:
     """공정당 소요기준 하나는 본 계산이 강제하지 않는다. 그 데이터에서도 근거 요약은 멈추지 않고
     원수요 키로 중복을 뺀 부하량을 낸다."""
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
     base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
     second_step = base.assign(STEP_SEQ="DEMO-P201")

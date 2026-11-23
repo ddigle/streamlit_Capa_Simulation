@@ -60,6 +60,7 @@ from capa_simulation.services.required_equipment import (
     RESULT_DIMENSIONS,
     required_equipment_to_month_table,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     add_pkg_equivalent_standard_target,
@@ -610,7 +611,7 @@ def _all_custom(tables: Mapping[str, pd.DataFrame], value: str) -> dict[str, pd.
 
 def _outcome(tables: Mapping[str, pd.DataFrame]) -> sc.CapacityOutcome:
     """시나리오 전체 기간의 대당 Capa · 소요대수(캐시 없는 순수 코어)."""
-    outcome = sc.full_capacity_outcome(tables, tables)
+    outcome = sc.full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is None, outcome.error
     return outcome
 
@@ -663,6 +664,7 @@ def _home_results(
         start_month=months[0],
         end_month=months[-1],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     simulation = sc.get_home_simulation(key, tables, display_order, tables)
     without_edp = sc.get_home_lob_without_edp(key, tables, display_order)
@@ -866,7 +868,7 @@ def test_a_table_without_the_custom_column_stops_instead_of_folding(name: str) -
     tables = two_part_tables()
     tables[name] = tables[name].drop(columns=[_CUSTOM])
 
-    outcome = sc.full_capacity_outcome(tables, tables)
+    outcome = sc.full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     messages = [outcome.error or ""]
     try:
         _density(tables)

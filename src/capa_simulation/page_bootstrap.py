@@ -57,6 +57,7 @@ from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_
 from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.settings import (
     DUCKDB_PATH,
@@ -1024,7 +1025,11 @@ def process_page_inputs(database_path: str) -> ProcessPageInputs:
         empty_message=NO_DEMAND_MESSAGE,
     )
     capacity_cache_key = simulation_cache.scenario_cache_key(
-        context.reference_version, active, effective_start, effective_end
+        context.reference_version,
+        active,
+        effective_start,
+        effective_end,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     try:
         securement_rate = simulation_cache.get_scenario_securement_rate(

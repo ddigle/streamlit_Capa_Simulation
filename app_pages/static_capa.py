@@ -49,6 +49,7 @@ from capa_simulation.scenario_state import (
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_equipment import count_required_exclusions
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
@@ -210,7 +211,11 @@ try:
     )
 
     capacity_cache_key = scenario_cache_key(
-        reference_version, active_scenario, effective_start, effective_end
+        reference_version,
+        active_scenario,
+        effective_start,
+        effective_end,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     # 이 화면은 대당 Capa·소요대수 프레임을 쓰지 않는다 — 확보율만 키로 꺼낸다(적중이면 소요대수를
     # 풀지 않고, 빗나가면 그 안에서 한 번만 받는다).

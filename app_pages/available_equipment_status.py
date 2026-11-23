@@ -139,6 +139,7 @@ from capa_simulation.services.equipment_samples import (
 )
 from capa_simulation.services.manual_downtime import ManualDowntime, period_months
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
     check_scenario_capacity,
@@ -502,6 +503,7 @@ with gap_tab, grade_ui.toolbar_scope("equipment.export", "equipment_gap_tools_v1
                 gap_context.active_scenario,
                 gap_context.selected_start_month,
                 gap_context.selected_end_month,
+                route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
             )
             # 로더는 키를 낸 바로 그 표 묶음으로 만든다. 오류 확인과 교차검증이 이 로더 하나를
             # 나눠, 두 캐시가 함께 빗나가는 회차에도 소요대수를 한 번만 푼다.

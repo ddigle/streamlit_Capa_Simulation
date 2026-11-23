@@ -4,6 +4,7 @@
 
 import functools
 import hashlib
+import json
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Hashable, Mapping, Sequence
@@ -108,6 +109,11 @@ from capa_simulation.services.required_shortening import (
     unit_export_frame,
 )
 from capa_simulation.services.revision_input_check import RevisionInputCheck
+from capa_simulation.services.route_load_exceptions import (
+    RouteLoadDeclaration,
+    normalize_route_load_declaration,
+    route_load_declaration_json,
+)
 from capa_simulation.services.route_step_editor import route_step_tables
 from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 from capa_simulation.services.securement_cross_check import (
@@ -211,6 +217,47 @@ def shared_home_figure_store(bundle: str) -> SharedBlobStore:
     return SharedBlobStore(SHARED_HOME_FIGURE_MAX_ENTRIES)
 
 
+# 계산 토큰에서 부하 예외 선언 글이 시작하는 표지. 내용 토큰(uuid hex · `pristine-<판>`)에 나올 수
+# 없는 글자다.
+ROUTE_EXCEPTION_TOKEN_MARK = "|rx:"
+
+
+def calculation_token(content_token: str, route_exceptions: RouteLoadDeclaration) -> str:
+    """내용 토큰에 공정별 부하 산출 예외 선언을 접은 **계산 토큰**(AGENTS 5장 44).
+
+    선언은 이 토큰 안의 값으로만 계산에 든다 — 키만 받는 파생 칸이 빗나가면 키와 프레임만으로 전체
+    기간 칸을 부르는데, 그 칸이 키에서 선언을 다시 푼다(`token_route_exceptions`). 키와 선언이 한
+    값에서 나오므로 다른 선언이 같은 칸에 묶일 길이 없다.
+
+    빈 선언이면 내용 토큰 그대로다 — 선언이 없는 동안 키는 선언을 모르던 때와 같은 글이다. 아니면
+    `<내용 토큰>|rx:<정규 글>` 이고 정규 글은 판 지문과 같은 정규화다(`route_load_declaration_json`
+    — 원본 표기가 앞뒤 공백 · 대소문자만 달라도 같은 토큰). 앞머리는 내용 토큰이라 `pristine-`
+    접두어 판정(`is_pristine_content_token`)이 그대로 돈다. 메모리 캐시 키일 뿐 저장 · 기록하지
+    않는다.
+    """
+    if not normalize_route_load_declaration(route_exceptions):
+        return content_token
+    declaration = route_load_declaration_json(route_exceptions)
+    return f"{content_token}{ROUTE_EXCEPTION_TOKEN_MARK}{declaration}"
+
+
+def token_route_exceptions(token: str) -> dict[str, str]:
+    """계산 토큰에서 부하 예외 선언(공정 견줌 키 → 산식 id)을 푼다 — `calculation_token` 의 거꾸로.
+
+    접지 않은 토큰(빈 선언)은 빈 선언이다. 푼 선언은 다시 검증한다 — 코드가 모르는 산식 id 는
+    `ValueError` 다(`normalize_route_load_declaration`).
+    """
+    _, mark, text = token.partition(ROUTE_EXCEPTION_TOKEN_MARK)
+    if not mark:
+        return {}
+    loaded = json.loads(text)
+    if not isinstance(loaded, dict) or not all(
+        isinstance(name, str) and isinstance(formula, str) for name, formula in loaded.items()
+    ):
+        raise ValueError("계산 토큰의 부하 예외 선언 꼴이 아닙니다.")
+    return normalize_route_load_declaration(loaded)
+
+
 # 활성 시나리오 내용과 월 범위를 대표하는 키. 아래 키 전용 캐시들이 공유한다.
 ScenarioCacheKey = tuple[int, str, int, int]
 
@@ -220,13 +267,51 @@ def scenario_cache_key(
     active_scenario: Mapping[str, object],
     start_month: int,
     end_month: int,
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> ScenarioCacheKey:
-    """(reference_version, content_token, start, end).
+    """(reference_version, 계산 토큰, start, end) — 계산 칸의 키.
 
     `revision` 이 아니라 `content_token` 이다. 세션 편집 번호는 다른 내용에서도 겹치고
-    `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹친다.
+    `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹친다. 둘째 칸은 내용 토큰에
+    부하 예외 선언을 접은 계산 토큰이다(`calculation_token` — 빈 선언이면 내용 토큰 그대로).
+    `route_exceptions` 는 **기본값이 없다** — 소요대수로 떨어지는 칸의 키를 짓는 곳이 선언을
+    빠뜨리면 mypy 가 잡는다. 계산과 무관한 편집표 키는 `scenario_content_key` 다.
+    """
+    return (
+        reference_version,
+        calculation_token(str(active_scenario["content_token"]), route_exceptions),
+        start_month,
+        end_month,
+    )
+
+
+def scenario_content_key(
+    reference_version: int,
+    active_scenario: Mapping[str, object],
+    start_month: int,
+    end_month: int,
+) -> ScenarioCacheKey:
+    """(reference_version, content_token, start, end) — 선언을 접지 않은 **편집표** 키.
+
+    생산 계획 · 기준 정보 편집표 원본 칸과 그리드 내용 키 · 양식 지문 도장이 이 키다
+    (`load_conversion` · `reference_data` 두 자리만). 부하 예외 선언을 접으면 남이 선언을 저장할
+    때 이 세션의 미저장 초안 양식 키가 바뀐다. 편집표는 소요대수로 떨어지지 않으므로 선언이
+    필요 없다 — 계산 칸에는 이 키를 넘기지 않는다(`scenario_cache_key`).
     """
     return (reference_version, str(active_scenario["content_token"]), start_month, end_month)
+
+
+# 시나리오 내용만 대표하는 키. 월 범위가 없다 — 조회기간은 이 결과를 잘라 쓴다.
+FullScenarioCacheKey = tuple[int, str]
+
+
+def full_scenario_cache_key(
+    reference_version: int, content_token: str, *, route_exceptions: RouteLoadDeclaration
+) -> FullScenarioCacheKey:
+    """(reference_version, 계산 토큰) — 전체 기간 칸(`get_full_capacity_outcome`) · 입력 점검 칸 ·
+    편집본 칸 걷기의 키. 손으로 튜플을 짓지 않는다 — 선언을 접는 곳이 여기 하나다."""
+    return (reference_version, calculation_token(str(content_token), route_exceptions))
 
 
 def build_home_simulation_cache_key(
@@ -236,6 +321,7 @@ def build_home_simulation_cache_key(
     start_month: int,
     end_month: int,
     display_order: pd.DataFrame,
+    route_exceptions: RouteLoadDeclaration,
 ) -> HomeSimulationCacheKey:
     """Build a small key covering every mutable HOME calculation input boundary.
 
@@ -244,11 +330,12 @@ def build_home_simulation_cache_key(
     (`revision`)를 넣었는데, 그 번호는 서로 다른 내용에서도 겹친다. 세션 편집은
     0,1,2... 로 올라가고 저장 리비전을 불러오면 그 번호가 그대로 들어오기 때문이다.
     `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹쳤다.
-    시나리오 내용이 바뀔 때마다 새로 발급되는 `content_token` 을 쓴다.
+    시나리오 내용이 바뀔 때마다 새로 발급되는 `content_token` 을 쓴다 — 둘째 칸은 그 토큰에 부하
+    예외 선언을 접은 계산 토큰이다(`calculation_token`, `route_exceptions` 는 기본값 없음).
     """
     return (
         reference_version,
-        scenario_token,
+        calculation_token(scenario_token, route_exceptions),
         start_month,
         end_month,
         display_order_digest(display_order),
@@ -1859,6 +1946,8 @@ MONTHLESS_INPUT_TABLES = (*REFERENCE_INPUT_TABLES, *SCENARIO_MONTHLESS_TABLES)
 
 def get_capacity_and_demand(
     tables: Mapping[str, pd.DataFrame],
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """대당 Capa 와 그에 따른 소요대수를 한 번에 만든다.
 
@@ -1867,6 +1956,8 @@ def get_capacity_and_demand(
     사용자 편집본) 매핑만 받고 출처는 호출자에게 남긴다.
 
     캐시는 전체 기간 칸(`get_full_capacity_outcome`)이 키로 건다. 여기는 계산 순서만 정한다.
+    `route_exceptions` 는 공정별 부하 산출 예외 선언이고 기본값이 없다 — 소요대수로 가는 길은
+    모두 선언을 넘긴다(AGENTS 5장 44).
     """
     unit_capacity = calculate_unit_capacity(
         upeh=tables["RQ_UPEH"],
@@ -1883,6 +1974,7 @@ def get_capacity_and_demand(
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+        route_exceptions=route_exceptions,
     )
     return unit_capacity, required_equipment
 
@@ -1894,9 +1986,6 @@ def get_capacity_and_demand(
 # 편집 적용 · 되돌리기 · 불러오기 · 저장 뒤) — 세션마다 편집본 칸은 지금 것 하나다. 편집본을 쥔 채
 # 끝난 세션의 칸만 상한에서 밀릴 때까지 남는다.
 FULL_CAPACITY_MAX_ENTRIES = 8
-
-# 시나리오 내용만 대표하는 키. 월 범위가 없다 — 조회기간은 이 결과를 잘라 쓴다.
-FullScenarioCacheKey = tuple[int, str]
 
 
 class CapacityOutcome(NamedTuple):
@@ -1946,9 +2035,13 @@ def _copied(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.copy(deep=True)
 
 
-def _capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
+def _capacity_outcome(
+    tables: Mapping[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> CapacityOutcome:
     try:
-        unit_capacity, required_equipment = get_capacity_and_demand(tables)
+        unit_capacity, required_equipment = get_capacity_and_demand(
+            tables, route_exceptions=route_exceptions
+        )
     except ValueError as exc:
         # 기준정보 계약 위반만 결과로 담는다. 다른 예외는 코드 결함이라 그대로 올린다 — 잠긴
         # 세션 표(모듈수 `RQ_MODULE` 은 사본 없이 넘긴다)에 제자리로 쓰다 난 read-only 오류도
@@ -1977,11 +2070,16 @@ def get_full_capacity_outcome(
     그 달을 열 때까지 미루지 않기 위해서다(2026-09-28 사용자 결정). 리비전 저장·공식 발행
     검사도 같은 결과를 본다.
 
-    `cache_key` 는 (reference_version, content_token) 이다. 두 표 묶음은 그 키를 만든 바로
-    그 활성 시나리오·기준정보여야 한다 — `get_scenario_capacity_and_demand` 와 같은 계약이다.
+    `cache_key` 는 (reference_version, 계산 토큰) 이다(`full_scenario_cache_key`). 두 표 묶음은 그
+    키를 만든 바로 그 활성 시나리오·기준정보여야 한다 — `get_scenario_capacity_and_demand` 와 같은
+    계약이다. 부하 예외 선언은 키의 계산 토큰에서 푼다(`token_route_exceptions`) — 선언을 따로
+    받는 길이 없다(AGENTS 5장 44).
     """
-    del cache_key
-    return full_capacity_outcome(_scenario_tables, _reference_tables)
+    return full_capacity_outcome(
+        _scenario_tables,
+        _reference_tables,
+        route_exceptions=token_route_exceptions(cache_key[1]),
+    )
 
 
 def retire_full_capacity_outcome(cache_key: FullScenarioCacheKey) -> None:
@@ -1992,7 +2090,7 @@ def retire_full_capacity_outcome(cache_key: FullScenarioCacheKey) -> None:
     그대로 두면 죽은 편집본 칸이 상한(`FULL_CAPACITY_MAX_ENTRIES`)까지 차 다른 세션이 나눠 쓰는
     리비전 칸을 밀어낸다. pristine 토큰(세션끼리 나누는 리비전 칸)이 아닌지는 부르는 쪽이 가른다 —
     여기는 키 하나를 지울 뿐이다. 키 꼴은 화면 · 저장 검사가 부르는 것과 같다
-    — `(reference_version, content_token)`.
+    — `(reference_version, 계산 토큰)`(`full_scenario_cache_key`).
     """
     get_full_capacity_outcome.clear(cache_key)
 
@@ -2000,6 +2098,8 @@ def retire_full_capacity_outcome(cache_key: FullScenarioCacheKey) -> None:
 def full_capacity_outcome(
     scenario_tables: Mapping[str, pd.DataFrame],
     reference_tables: Mapping[str, pd.DataFrame],
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> CapacityOutcome:
     """`get_full_capacity_outcome` 의 캐시 없는 순수 코어 — 같은 표 묶음, 같은 계산, 같은 실패 판정.
 
@@ -2009,8 +2109,12 @@ def full_capacity_outcome(
     칸(`get_revision_input_check`)에 둔다. 부대공정을 합친 저장 전 표를 보는 셋(Admin
     「부대공정」 시험 계산 · 「부대공정 얹기」 · DB 등록의 R-07 등록 점검 — `extra_process_merge`
     를 거침)은 누른 회차에만 돌아 공유 칸에 두지 않는다.
+
+    `route_exceptions` 는 기본값이 없다 — 캐시 없는 길도 부하 예외 선언을 넘긴다(AGENTS 5장 44).
     """
-    return _capacity_outcome(_capacity_tables(scenario_tables, reference_tables, None))
+    return _capacity_outcome(
+        _capacity_tables(scenario_tables, reference_tables, None), route_exceptions
+    )
 
 
 # 입력 점검 요약 칸 수. 한 칸은 묶음 행(빠진 행 · 규칙대로 뺀 행 · 등록 때 뺀 원천 행)과 수뿐이라
@@ -2026,10 +2130,11 @@ def get_revision_input_check(
 ) -> RevisionInputCheck:
     """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」). 계산은 `_compute` 가 한다.
 
-    `cache_key` 는 (reference_version, pristine content_token) 이다 — 저장 리비전은 append-only 라
-    리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **이 칸 밖의 캐시를 쓰지 않는
-    길**로 계산한다 — 스냅샷(공용 표시순서를 얹지 않은 것) · 등록 때 뺀 원천 행은 저장소에서 캐시
-    없이 읽고, 계산은 캐시 없는 `full_capacity_outcome`(`capacity_gate.input_check_verdict`). 계산
+    `cache_key` 는 (reference_version, pristine 계산 토큰) 이다(`full_scenario_cache_key`) — 저장
+    리비전은 append-only 라 리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **이 칸
+    밖의 캐시를 쓰지 않는 길**로 계산한다 — 스냅샷(공용 표시순서를 얹지 않은 것) · 등록 때 뺀 원천
+    행은 저장소에서 캐시 없이 읽고, 계산은 캐시 없는 `full_capacity_outcome`
+    (`capacity_gate.input_check_verdict`). 계산
     페이지 · 저장 검사가 쓰는 전체 기간 칸(`get_full_capacity_outcome`, 8칸)과 공유 스냅샷 칸(4칸)에
     고른 리비전마다 한 칸씩 들이면 활성 리비전 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시
     계산한다. 몸통은 묶음 행 · 수 · 오류만 남기고 결과 프레임은 버린다. 적중하면 DB 도 읽지 않는다.
@@ -2044,10 +2149,11 @@ def get_period_capacity_error(
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
 ) -> str | None:
-    """전체 계산이 실패했을 때만 부른다. 그 오류가 조회기간 **안**에도 있는지 가른다."""
-    _, _, start_month, end_month = cache_key
+    """전체 계산이 실패했을 때만 부른다. 그 오류가 조회기간 **안**에도 있는지 가른다. 부하 예외
+    선언은 전체 기간 칸과 같이 키의 계산 토큰에서 푼다."""
+    _, token, start_month, end_month = cache_key
     tables = _capacity_tables(_scenario_tables, _reference_tables, (start_month, end_month))
-    return _capacity_outcome(tables).error
+    return _capacity_outcome(tables, token_route_exceptions(token)).error
 
 
 # 조회기간 밖 오류 글(`outside_period_error`)이 고칠 곳으로 드는 말. 모듈수(`RQ_MODULE`)는 기준 정보
@@ -2126,9 +2232,9 @@ def get_scenario_capacity_and_demand(
     `_scenario_tables` 는 키의 content_token 을 발급한 바로 그 active_scenario["tables"]
     여야 한다. 다른 객체를 넘기면 옛 표가 새 토큰에 묶인다.
     """
-    reference_version, content_token, start_month, end_month = cache_key
+    reference_version, token, start_month, end_month = cache_key
     outcome = get_full_capacity_outcome(
-        (reference_version, content_token),
+        (reference_version, token),
         _scenario_tables=_scenario_tables,
         _reference_tables=_reference_tables,
     )

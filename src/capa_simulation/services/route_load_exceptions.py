@@ -34,9 +34,10 @@
 - **부대공정에는 따라 걸지 않는다.** 공정 이름으로만 고르므로 선언 공정을 따라가는 부대공정은 제
   이름이라 일반 산식이다. 필요하면 그 이름을 선언에 더한다(2026-11-19 사용자 답 Q4 선례).
 
-Streamlit · 세션 · DB 를 모른다. 선언은 시뮬레이션 `0040` 판 이력 표에 저장하지만
-(`persistence/route_load_exception_store.py`) 호출처까지 넘기는 자리는 아직 없다(AGENTS 6장
-「공정별 부하 산출 예외」).
+Streamlit · 세션 · DB 를 모른다. 선언은 시뮬레이션 `0040` 판 이력 표에 저장하고
+(`persistence/route_load_exception_store.py`) 계산 키의 계산 토큰으로만 계산에 든다
+(`simulation_cache.calculation_token` — AGENTS 5장 44). 호출처가 판을 읽어 넘기는 자리는 아직 없다 —
+지금은 모두 빈 선언을 적어 넘긴다(AGENTS 6장 「공정별 부하 산출 예외」).
 """
 
 from __future__ import annotations

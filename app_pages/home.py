@@ -198,6 +198,7 @@ from capa_simulation.services.product_share import (
     combine_product_volume,
     past_product_volume,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import (
     SecurementThresholds,
     securement_threshold_caption,
@@ -397,6 +398,7 @@ try:
         start_month=effective_start,
         end_month=effective_end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     home_trace.mark("캐시 키 생성")
     try:

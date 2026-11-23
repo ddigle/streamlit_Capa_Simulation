@@ -13,6 +13,7 @@ from capa_simulation.services.load_calculator import (
     plan_from_edit_table,
     plan_to_edit_table,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
 
 DIMENSIONS = {
@@ -106,9 +107,15 @@ def test_home_cache_key_separates_different_scenario_contents() -> None:
         "display_order": DISPLAY_ORDER,
     }
 
-    first = build_home_simulation_cache_key(scenario_token="token-a", **common)
-    second = build_home_simulation_cache_key(scenario_token="token-b", **common)
-    same = build_home_simulation_cache_key(scenario_token="token-a", **common)
+    first = build_home_simulation_cache_key(
+        scenario_token="token-a", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    second = build_home_simulation_cache_key(
+        scenario_token="token-b", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    same = build_home_simulation_cache_key(
+        scenario_token="token-a", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert first != second
     assert first == same

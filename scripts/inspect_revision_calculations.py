@@ -104,6 +104,7 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
     custom_blank_filled,
     route_key_incompatible_tables,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
 from capa_simulation.services.securement_rate import calculate_securement_rate  # noqa: E402
 from capa_simulation.services.unit_capacity import (  # noqa: E402
     CAPACITY_EXCLUSIONS_ATTR,
@@ -326,6 +327,7 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
             yield_data=tables["RQ_YLD"],
             chip_qty=tables["RQ_CHIP_QTY"],
             unit_capacity=unit_capacity,
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
         )
     except Exception as exc:  # 위와 같다
         return _failed("소요대수", exc)
