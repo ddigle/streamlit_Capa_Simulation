@@ -464,8 +464,77 @@ def test_a_narrow_product_cell_keeps_the_part_and_shortens_the_product_first() -
     ]
     assert len(product_texts) == 2
     assert len(set(product_texts)) == 2
-    assert product_texts[0].endswith("CUSTOM_A)") and product_texts[1].endswith("CUSTOM_B)")
+    assert product_texts[0].endswith("_A)") and product_texts[1].endswith("_B)")
     assert all("…" in text for text in product_texts)
+
+
+# 이 환경의 Chrome 이 표 칸 글꼴 스택(`tokens.FONT_FAMILY`)을 그리는 Liberation Sans 와 fontconfig
+# 기본 DejaVu Sans 보통 꼴의 글자 너비(글자 크기 배수 — 캔버스 `measureText`, 2026-11-24). 그림
+# 글이 실제로 칸에 드는지를 줄임 모형과 따로 잰다(그림 확인에서 「DEM… (DEMO_CUSTOM_A)」 가 기본
+# 폭 칸 경계에서 잘렸다 — 모형 173.6px, 실제 185.6px).
+_RENDERED_EM: dict[str, tuple[float, float]] = {
+    "A": (0.667, 0.684),
+    "B": (0.667, 0.686),
+    "C": (0.722, 0.698),
+    "D": (0.722, 0.77),
+    "E": (0.667, 0.632),
+    "H": (0.722, 0.752),
+    "M": (0.833, 0.863),
+    "O": (0.778, 0.787),
+    "P": (0.667, 0.603),
+    "R": (0.722, 0.695),
+    "S": (0.667, 0.635),
+    "T": (0.611, 0.611),
+    "U": (0.722, 0.732),
+    "1": (0.556, 0.636),
+    "2": (0.556, 0.636),
+    " ": (0.278, 0.318),
+    "(": (0.333, 0.39),
+    ")": (0.333, 0.39),
+    "-": (0.333, 0.361),
+    "_": (0.556, 0.5),
+    "…": (1.0, 1.0),
+}
+
+
+def _rendered_px(text: str, size: float) -> float:
+    return max(sum(_RENDERED_EM[character][font] for character in text) for font in (0, 1)) * size
+
+
+@pytest.mark.parametrize("product", [TWO_PART_PRODUCT, "DEMO-H12A"])
+@pytest.mark.parametrize(
+    "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
+)
+def test_a_part_label_fits_the_product_cell_at_its_rendered_width(
+    product: str, dimensions: list[str]
+) -> None:
+    """상세 계획을 끈 기본 폭(약 182px)에서도 켠 좁은 폭에서도 부품 이름표는 실제로 그린 폭이 제품
+    칸 안(양쪽 여백을 뺀 자리)에 든다 — 칸 경계에서 첫 글자와 끝 괄호가 잘리지 않는다. 두 부품은
+    서로 다른 글이고 부품 끝을 남긴다."""
+    detail = pd.DataFrame(
+        {
+            "제품정보": [product, product],
+            "CUSTOM": [PART_A, PART_B],
+            "Stack": ["12H", "12H"],
+            "Customer": ["DEMO_CUST-1", "DEMO_CUST-1"],
+            "202608": [1000.0, 1000.0],
+            "202609": [2000.0, 2000.0],
+        }
+    )
+
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
+    )
+
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
+    assert len(texts) == 2 and len(set(texts)) == 2
+    assert texts[0].endswith("_A)") and texts[1].endswith("_B)")
+    for text in texts:
+        assert (
+            _rendered_px(text, DETAIL_VALUE_FONT_SIZE_PX) <= product_px - 2 * DETAIL_LABEL_INSET_PX
+        ), text
 
 
 @pytest.mark.parametrize("with_comparison", [False, True])

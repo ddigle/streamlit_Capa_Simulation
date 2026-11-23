@@ -5991,7 +5991,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace, 끝의 전체 이름 풍선 표적 막대)다. 긴
     제품명·거래선은 끝을 말줄임으로 줄이고(`_fit_label`) 넘칠 수 있는 칸은 전체 이름 풍선(끝의 표적 막대 `_label_hover_bar`)이며, 어림을 넘긴 글자만 제 칸
     경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다. 부품(`CUSTOM`)은 칸이 아니라 제품 칸 글
-    (`part_merged_columns` 이름표)이고 띠 · 굵은 선도 이름표 단위다 — 제품 칸 줄임은 부품을 남기는 `_fit_part_label` 이다.
+    (`part_merged_columns` 이름표)이고 띠 · 굵은 선도 이름표 단위다 — 제품 칸 줄임은 부품을 남기는 `_fit_part_label` 이고,
+    부품 이름표만 잰 글꼴 폭(`home_figure_common._table_label_width_units` — 이 환경 Chrome 이 그리는 글꼴 셋의 가장 넓은 폭)으로
+    맞춘다(반각 0.6 은 대문자 · 밑줄 이름표를 좁게 잡아 기본 폭 제품 칸 경계에서 잘렸다). 접힌 이름은 지금 모형 그대로다.
   - 구획 간격은 두 값이다(2026-11-02 사용자 요청) — 제목 글줄 → 시트 `tokens.SECTION_TITLE_SHEET_GAP_PX`, 앞 시트 →
     다음 제목 글줄 `tokens.SECTION_GAP_PX`. 계획 세부수량 · 주요공정 · 상세 B/N 제목 줄과 월 칸 짝 빈 줄은 띠
     (`home_dimensions.DASHBOARD_TITLE_BAND_PX` = 구획 사이 + 제목 글줄 `DASHBOARD_TITLE_LINE_PX` + 제목→시트, 위 · 아래 안쪽
@@ -8192,8 +8194,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     이름은 범례 · 풍선 글이 나르며(UI-ACC-03), 칸이 넘치면 부품 단위로 `기타` 에 접힌다 — 한 제품의 부품이 이름 있는 칸과
     `기타` 에 걸칠 수 있다(`product_share.assign_product_slots`).
   - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
-    `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 부품만으로도
-    넘치면 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.
+    `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 제품 글자가 하나도
+    들지 않으면 제품 자리를 말줄임만 남기고(「… (DEMO_CUSTOM_A)」), 부품만으로도 넘치면 앞을 줄이고 구별되는 끝을 남긴다
+    (「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다.
   - 공정 Capa 상세는 「제품별 소요대수」 의 제품 두 분류(「제품정보」 · 「양산구분·제품」)와 근거 카드 ① 의 상위 제품을 같은
     판정 · 같은 이름표로 가른다(분류 행과 카드가 어긋나지 않게 — PRC-01). 분류 줄은 월 시트 엔진의 `Row.label_part` 로
     라벨 칸 줄임이 부품을 남기고, 시트 엑셀에는 이름표 전체가 실린다. 사이드바 제품 거르기는 제품정보 단위라 고르면 그

@@ -507,6 +507,44 @@ def _text_width_units(text: str) -> float:
     )
 
 
+# 표 칸 글자(`tokens.FONT_FAMILY` 보통 굵기)의 ASCII 글자 너비(글자 크기 배수). 앱이 그 스택의
+# 글꼴 파일을 보내지 않아 PC 에 깔린 글꼴이 그린다 — 이 환경의 Chrome 은 Liberation Sans(Arial 과
+# 같은 폭)로, fontconfig 기본은 DejaVu Sans 로 떨어진다. 둘과 Noto Sans CJK KR 의 보통 꼴을 Chrome
+# 캔버스로 재어 가장 넓은 값을 0.05 단위로 올렸다(2026-11-24). 반각 0.6 으로 세는
+# `_text_width_units` 는 대문자 · 밑줄이 많은 부품 이름표를 실제보다 7% 가량 좁게 잡아 칸 경계에서
+# 잘렸다. 맑은 고딕은 이 환경에 없어 재지 못했다.
+_TABLE_LABEL_WIDTH_EM_CLASSES: Final = (
+    (0.30, "'Iijl"),
+    (0.35, " ,.:;|"),
+    (0.40, "()-/[\\]ft"),
+    (0.45, "!r"),
+    (0.50, '"*'),
+    (0.55, "Jcsz"),
+    (0.60, "?L_kvxy"),
+    (0.65, "0123456789$FT`abdeghnopqu{}"),
+    (0.70, "ABEKPSVXYZ"),
+    (0.75, "CNRU"),
+    (0.80, "&DGHOQ"),
+    (0.85, "#+<=>^w~"),
+    (0.90, "M"),
+    (1.00, "%Wm"),
+    (1.05, "@"),
+)
+_TABLE_LABEL_WIDTH_EM: Final = {
+    character: width
+    for width, characters in _TABLE_LABEL_WIDTH_EM_CLASSES
+    for character in characters
+}
+
+
+def _table_label_width_units(text: str) -> float:
+    """표 칸 글자의 렌더 폭(글자 크기 1px 기준) — 잰 글꼴 가운데 가장 넓은 폭이다.
+
+    ASCII 밖 글자는 1.0 으로 센다 — 한글 · 말줄임(`…`)의 실측 0.92 ~ 1.00 을 덮는다.
+    """
+    return sum(_TABLE_LABEL_WIDTH_EM.get(character, 1.0) for character in text)
+
+
 def _calibri_width_units(text: str) -> float:
     """`FONT_FAMILY_NUMERIC`(Calibri) 의 렌더 폭(글자 크기 1px 기준).
 
@@ -564,9 +602,10 @@ def _fit_part_label(
 
     접힌 부품(`PART_NOT_SPLIT`)이면 제품 이름을 `_fit_to_units` 로 줄인 것과 같다. 가른 부품은 끝의
     「 (부품)」 을 남기고 제품 이름 앞쪽만 남긴 뒤 말줄임을 단다(「DEMO… (DEMO_CUSTOM_A)」). 제품
-    글자를 하나도 남길 수 없으면 부품만 남기되 앞을 줄이고 구별되는 끝을 남긴다(「(…CUSTOM_A)」 —
-    필요 단축 일정 호기 이름과 같은 꼴). `_fit_to_units` 는 앞을 남겨 부품부터 잘라 한 제품의
-    부품끼리 같은 글이 된다.
+    글자를 하나도 남길 수 없으면 제품 자리를 말줄임만 남기고 부품은 온전히 둔다
+    (「… (DEMO_CUSTOM_A)」). 부품도 다 들지 않으면 부품만 남기되 앞을 줄이고 구별되는 끝을 남긴다
+    (「(…CUSTOM_A)」 — 필요 단축 일정 호기 이름과 같은 꼴). `_fit_to_units` 는 앞을 남겨 부품부터
+    잘라 한 제품의 부품끼리 같은 글이 된다.
     """
     label = product_part_label(product, part)
     if part == PART_NOT_SPLIT or width(label) <= unit_budget:
@@ -585,6 +624,8 @@ def _fit_part_label(
     kept = "".join(head).rstrip()
     if kept:
         return f"{kept}{ellipsis}{suffix}"
+    if width(f"{ellipsis}{suffix}") <= unit_budget:
+        return f"{ellipsis}{suffix}"
     room = unit_budget - width(f"({ellipsis})")
     tail: list[str] = []
     used = 0.0

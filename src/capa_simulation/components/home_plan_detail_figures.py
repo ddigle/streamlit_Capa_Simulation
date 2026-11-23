@@ -37,6 +37,7 @@ from capa_simulation.components.home_figure_common import (
     _paper_hrule,
     _paper_month_lines,
     _past_surface,
+    _table_label_width_units,
     _text_width_units,
 )
 from capa_simulation.components.plotly_layout import (
@@ -218,11 +219,13 @@ def _fit_label(value: str, column_px: float, part: str = PART_NOT_SPLIT) -> str:
     """분류 이름이 칸에 들면 그대로, 넘으면 끝을 말줄임으로 줄인다.
 
     `part` 를 주면 `value` 는 제품 이름이고 칸 글은 부품 이름표다 — 부품을 남기고 제품 쪽을 먼저
-    줄인다(`_fit_part_label`). 접힌 부품이면 이름 그대로 줄인 것과 같다.
+    줄인다(`_fit_part_label`). 접힌 부품이면 이름 그대로 줄인 것과 같다. 부품 이름표는 대문자 ·
+    밑줄이 많아 잰 글꼴 폭(`_table_label_width_units`)으로 맞춘다 — 반각 0.6 으로 세면 기본 폭 제품
+    칸(약 182px)에서 첫 글자와 끝 괄호가 칸 경계에 잘렸다.
     """
     budget = (column_px - 2 * DETAIL_LABEL_INSET_PX) / DETAIL_VALUE_FONT_SIZE_PX
     if part != PART_NOT_SPLIT:
-        return _fit_part_label(value, part, budget, _text_width_units)
+        return _fit_part_label(value, part, budget, _table_label_width_units)
     return _fit_to_units(value, budget, _text_width_units)
 
 

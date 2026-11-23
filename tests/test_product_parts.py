@@ -17,6 +17,7 @@ from capa_simulation.components.home_figure_common import (
     _calibri_width_units,
     _fit_part_label,
     _fit_to_units,
+    _table_label_width_units,
     _text_width_units,
 )
 from capa_simulation.components.home_lob_figures import _legend_name_budget_units
@@ -453,6 +454,32 @@ def test_a_folded_part_is_fitted_exactly_like_the_product_name() -> None:
             )
 
 
+# 표 칸 글꼴 스택을 14px 로 Chrome 캔버스에서 잰 폭(px) — Liberation Sans · DejaVu Sans · Noto Sans
+# CJK KR 가운데 가장 넓은 값(2026-11-24).
+_RENDERED_14PX = {
+    "DEM… (DEMO_CUSTOM_A)": 187.9,
+    "DEMO-H12A (DEMO_CUSTOM_A)": 228.3,
+    " (DEMO_CUSTOM_A)": 142.2,
+    "(…CUSTOM_A)": 102.1,
+    "DEMO-H8A": 77.2,
+    "DEMO_CUST-1": 99.9,
+    "DEMO PRODUCT A": 129.7,
+}
+
+
+@pytest.mark.parametrize(("text", "rendered"), list(_RENDERED_14PX.items()))
+def test_the_table_label_width_covers_the_rendered_width_closely(
+    text: str, rendered: float
+) -> None:
+    """표 칸 글자 폭 모형은 잰 폭보다 좁지 않고(칸 경계에서 잘리지 않게) 10% 넘게 넓지도 않다
+    (들어가는 이름까지 줄지 않게). 반각 0.6 모형은 대문자 · 밑줄 이름표를 잰 폭보다 좁게 잡는다."""
+    modelled = _table_label_width_units(text) * 14
+
+    assert rendered <= modelled <= rendered * 1.1
+    if "_" in text:
+        assert _text_width_units(text) * 14 < rendered
+
+
 def test_a_label_that_fits_is_left_whole() -> None:
     assert _fit_part_label("A", "B", 100.0, _text_width_units) == "A (B)"
 
@@ -466,6 +493,19 @@ def test_fitting_shortens_the_product_first_and_keeps_the_part() -> None:
     assert fitted.endswith(f"… ({PART_A})")
     assert fitted.startswith("DEMO")
     assert _text_width_units(fitted) <= budget
+
+
+def test_when_no_product_letter_fits_the_whole_part_stays_behind_an_ellipsis() -> None:
+    """제품 글자를 하나도 남길 수 없어도 부품이 온전히 들면 제품 자리를 말줄임만 남긴다 —
+    「(…부품)」 꼴은 부품이 잘린 것처럼 읽힌다."""
+    budget = _text_width_units(f"… ({PART_A})")
+
+    fitted = _fit_part_label(TWO_PART_PRODUCT, PART_A, budget, _text_width_units)
+
+    assert fitted == f"… ({PART_A})"
+    assert _fit_part_label(TWO_PART_PRODUCT, PART_A, budget - 0.01, _text_width_units).startswith(
+        "(…"
+    )
 
 
 @pytest.mark.parametrize("part", [PART_A, PART_B])
