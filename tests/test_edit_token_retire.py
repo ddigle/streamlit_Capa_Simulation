@@ -157,6 +157,26 @@ def test_an_edit_retires_the_cell_folded_with_the_declaration_this_session_read(
     assert len(computed) == 2, "선언으로 접은 편집본 칸이 걷혔다"
 
 
+def test_an_edit_after_a_newer_declaration_was_read_leaves_the_older_cell_to_the_cap(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """걷기는 이 세션이 **마지막으로 읽은** 판으로 접은 키 하나만 걷는다 — 편집본 칸을 지은 뒤 이
+    세션이 새 판을 읽고(남이 선언을 저장함) 편집하면, 앞 판으로 지은 칸은 걷히지 않고 상한
+    (`FULL_CAPACITY_MAX_ENTRIES`)에서 밀릴 때까지 남는다. 값은 틀리지 않는다(AGENTS 5장 45)."""
+    before = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    after = {"DEMO-P2": BUFFER_X_CORE_CHIP}
+    scenario_state.note_route_exceptions(before)
+    pristine = scenario_state.reset_active_scenario(tables, _version())
+    first = _plan_edit(pristine)
+    _calculate(first, tables, before)
+    assert len(computed) == 1
+
+    scenario_state.note_route_exceptions(after)
+    _table_edit(first)
+    _calculate(first, tables, before)
+    assert len(computed) == 1, "앞 판으로 지은 편집본 칸은 남았다"
+
+
 def test_an_edit_from_the_revision_retires_nothing(
     tables: dict[str, pd.DataFrame], computed: list[int]
 ) -> None:
