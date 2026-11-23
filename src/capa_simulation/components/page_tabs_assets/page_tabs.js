@@ -12,13 +12,17 @@
 // 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
 // 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
 // 앞서 지나 보낸 링크가 연 탭은 그 탭이 탭 줄 data 에 올 때까지 열린 탭으로 센다(`<tabs-links>`).
-// 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
+// 브라우저 뒤로·앞으로가기는 Navigation API 가 있는 브라우저(Chrome · Edge)에서 붙든다(`<tabs-nav>`) — Streamlit 의 `popstate`
+// 처리기가 이 모듈보다 먼저 걸려 먼저 돌아 popstate 로는 막지 못하고(1.63 브라우저 확인), 그보다 먼저 오는 `navigate` 사건의
+// 같은 문서 `traverse` 를 막는다. 떠나기 신호 · 붙들기 · 떠나기 확인은 탭 줄과 같은 길이고, 놓으면 같은 목적지로 다시 간다.
+// API 가 없거나 사건을 막을 수 없으면(사용자 활성 없이 잇달아 누른 뒤로 등) 지나 보낸다 — 상한 거름도 거치지 않는다.
 // 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
 // (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
 // 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고
 // 그 회차가 끝나거나 잠깐 지날 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을
 // 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
-// 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
+// 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`). 뒤로·앞으로 지킴이
+// `<tabs-nav-install>` 은 창을 인자로 받아 node 가 창 대역으로 돌린다.
 // 목록이 옆으로 넘치면(좁은 창·탭이 많을 때) 더 있는 쪽 가장자리를 흐리고 화살표 표지를 단다(`<tabs-edges>`).
 // 키보드 초점은 탭 줄 안에 남긴다(`<tabs-focus>`) — 키보드 초점이 있던 탭을 닫으면 이웃 탭으로 옮기고, 키보드로 화면을 옮긴
 // 뒤 초점이 body 로 빠졌으면 지금 탭으로 돌려준다.
@@ -183,7 +187,7 @@ function installHistoryGuard() {
 // 입력에서 `ms` 가 지나지 않았다. `holdVerdict` 는 붙든 누름({at, data, path})을 'wait'(더 기다린다)·'go'(지금 data 로
 // 묻고 보낸다)·'drop'(버린다)으로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는
 // 기다린다(편집 회차 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다. 누른 뒤 주소(`path`)가
-// 바뀌었으면 사용자가 다른 길로 옮긴 것이다(뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
+// 바뀌었으면 사용자가 다른 길로 옮긴 것이다(지나 보낸 뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
 // `editors` 는 떠나기 명부 판정이다({busy, seen, quiet, quietMs} — 없으면 위 판정 그대로). 명부의 편집기가 busy(보낼 것 · ack
 // 대기)면 기다린다. 붙든 동안 busy 였다가 걷혔으면(`seen`) 편집 회차가 ack 를 싣고 돌아왔다 — 누른 지 얼마가 지났든 회차 표지가
 // `quietMs` 동안 「돌지 않음」(`quiet`) 이어야 보낸다(그 회차가 앱 전체로 올라가는 두 회차 사이에 놓지 않는다). 새 data 는
@@ -603,6 +607,171 @@ function installUnloadGuard(win, doc) {
   })
 }
 // </tabs-unload>
+
+// <tabs-nav>
+// 브라우저 뒤로·앞으로가기를 떠나는 누름처럼 붙든다. Streamlit 1.63 은 `popstate` 를 받자마자 앱 칸 값만 실은 이동 요청을 보낸다
+// — 문서 capture 단계 처리기보다 먼저 걸려 popstate 로는 막지 못한다. 그래서 묶어 두던 op 와 칸 편집기에 쓰던 글(뒤로는 초점을
+// 옮기지 않아 칸이 확정하지 않는다)이 서버에 가기 전에 화면이 바뀌어 말없이 사라졌다. 그보다 먼저 오는 Navigation API `navigate`
+// 사건의 같은 문서 `traverse` 는 막을 수 있다 — 막으면 popstate 도 회차도 없이 주소 · 본문 그대로이고, 같은 목적지로 다시 가면
+// 옮겨진다. `navFacts` 는 사건을 {type, cancelable, sameDocument, from, to, key, delta}(`delta` — 지금 칸에서 목적지 칸까지)로
+// 옮긴다. `navVerdict` 는 'pass'(지나 보냄 — traverse 가 아님 · 막을 수 없음 · 다른 문서 · 같은 화면의 해시만 다름) ·
+// 'replay-pass'(우리가 다시 쏜 이동 — 표지(`replay` — 목적지 key)를 걷고 지나 보냄) · 'try'(떠나기 붙들기에 묻는다)로 가른다.
+// 표지는 목적지가 맞는 사건이 오면 어느 갈래든 걷고 `ms` 가 지나도 걷는다 — 남으면 같은 칸으로 가는 다음 뒤로를 놓친다. 막을 수
+// 없는 이동이 지나가면 기다리던 다시 가기(`held`)도 걷는다. `navHeld` 는 붙들기에 물은 뒤다 — 붙들 것이 없으면(쉬는 편집기 · 열린
+// 칸 없음 · 떠나면 사라지는 편집 없음) 'pass'(지연 0), 붙들었으면 목적지를 이 사건 것으로 적고 'hold'(처음) · 'retarget'(붙든
+// 동안 또 온 이동 — 목적지는 마지막 것 하나, 붙들기도 하나)다. 붙든 동안 온 이동도 붙들기에 다시 묻는다 — 탭 · 링크 누름이
+// 붙들기를 갈아 끼웠으면 남은 `held` 는 낡았다. `navRelease` 는 붙들기가 놓일 때 그 번호(`token` — `navToken`)의 목적지를
+// 꺼낸다 — 그 사이 걷혔거나 다른 붙들기로 갈아 끼웠으면 null 이다.
+function createNavGuard() {
+  return { held: null, replay: null, seq: 0 }
+}
+function navToken(guard) {
+  guard.seq += 1
+  return guard.seq
+}
+function navFacts(event, current, href) {
+  const destination = (event && event.destination) || {}
+  const to = Number.isInteger(destination.index) ? destination.index : -1
+  const at = current && Number.isInteger(current.index) ? current.index : -1
+  return {
+    type: String((event && event.navigationType) || ''),
+    cancelable: Boolean(event && event.cancelable),
+    sameDocument: Boolean(destination.sameDocument),
+    from: String(href || ''),
+    to: String(destination.url || ''),
+    key: String(destination.key || ''),
+    delta: to >= 0 && at >= 0 ? to - at : 0,
+  }
+}
+function navHashOnly(from, to) {
+  try {
+    const here = new URL(from)
+    const there = new URL(to, here)
+    return (
+      here.origin === there.origin && here.pathname === there.pathname && here.search === there.search && here.hash !== there.hash
+    )
+  } catch (error) {
+    return false
+  }
+}
+function navVerdict(guard, nav, now, ms) {
+  if (guard.replay !== null && now - guard.replay.at >= ms) guard.replay = null
+  if (nav.type !== 'traverse') return 'pass'
+  const ours = guard.replay !== null && nav.key !== '' && nav.key === guard.replay.key
+  if (ours) guard.replay = null
+  if (!nav.cancelable) {
+    guard.held = null
+    return 'pass'
+  }
+  if (!nav.sameDocument || navHashOnly(nav.from, nav.to)) return 'pass'
+  return ours ? 'replay-pass' : 'try'
+}
+function navHeld(guard, nav, now, held, token) {
+  if (!held) {
+    guard.held = null
+    return 'pass'
+  }
+  const again = guard.held !== null
+  guard.held = { key: nav.key, delta: nav.delta, at: now, token }
+  return again ? 'retarget' : 'hold'
+}
+function navRelease(guard, token) {
+  const held = guard.held
+  if (held === null || held.token !== token) return null
+  guard.held = null
+  return held
+}
+function navMark(guard, key, now) {
+  guard.replay = { key, at: now }
+}
+function navUnmark(guard, key) {
+  if (guard.replay !== null && guard.replay.key === key) guard.replay = null
+}
+// </tabs-nav>
+
+// <tabs-nav-install>
+// 뒤로·앞으로 지킴이는 문서에 하나다(`window.__capaNavGuard` — 걸고 풀지 않는다). Navigation API 가 없으면 걸지 않아 지금처럼
+// 지나 보낸다. 붙들기 · 떠나기 확인 · 편집표 판정은 사건 때의 탭 줄 붙들기(`window.__capaLeaveGate` — 탭 줄 · 테마 단추 · 사이드바
+// 링크와 같은 길, 탭 줄이 내려가 없으면 지나 보낸다)를 쓴다. 막기 전에 정한다 — 깊은 활성 요소가 편집표 안(`inGrid`)이면 먼저
+// `blur()` 해 칸이 제 focusout 길로 확정해 보내게 하고(편집기는 ack 까지 명부에 busy), 붙들기(`hold` — 떠나기 신호를 쏘고 기다릴
+// 것이 있으면 붙든다)에 묻는다. 기다릴 것은 없어도 떠나면 사라지는 편집(`loses` — data `leave`)이 있으면 곧바로 놓는 붙들기로
+// 묻는다. 붙들었을 때만 막는다(`preventDefault`) — 쉬는 편집기에서는 지연이 없다. 놓이면(ack · 회차 끝, 길어야 `BUSY_MS`) 탭 줄과
+// 같은 확인(`ask` — 떠나면 사라지는 편집이 있을 때만 묻는다)을 지나 표지를 달고 같은 목적지로 다시 간다(`traverseTo`). 취소면
+// 아무것도 하지 않는다 — 이미 막았으니 주소 · 본문 그대로다. 다시 가기가 거절되면(그 칸이 없어짐) 표지를 걷고 `history.go` 로
+// 한 번, 그것도 안 되면 끝이다. 표지는 다시 간 이동이 닿거나 그 약속이 끝나거나 `NAV_REPLAY_MS` 가 지나면 걷는다.
+const NAV_REPLAY_MS = 5000
+function installNavGuard(win) {
+  const navigation = win.navigation
+  if (win.__capaNavGuard || !navigation || typeof navigation.addEventListener !== 'function') return
+  const guard = createNavGuard()
+  win.__capaNavGuard = guard
+  const replay = (held) => {
+    navMark(guard, held.key, Date.now())
+    const clear = () => navUnmark(guard, held.key)
+    const again = () => {
+      clear()
+      try {
+        if (held.delta) win.history.go(held.delta)
+      } catch (error) {
+        // 다시 가지 못하면 끝이다 — 표지는 걷었다.
+      }
+    }
+    let result = null
+    try {
+      result = navigation.traverseTo(held.key)
+    } catch (error) {
+      again()
+      return
+    }
+    const watch = (promise, failed) => {
+      if (promise && typeof promise.then === 'function') promise.then(clear, failed)
+    }
+    // 다른 이동이 끊은 다시 가기(AbortError)는 그 이동에 맡긴다.
+    watch(result && result.committed, (error) => (error && error.name === 'AbortError' ? clear() : again()))
+    watch(result && result.finished, clear)
+    win.setTimeout(clear, NAV_REPLAY_MS)
+  }
+  const release = (token) => () => {
+    const held = navRelease(guard, token)
+    if (held === null) return
+    const gate = win.__capaLeaveGate
+    if (gate && typeof gate.ask === 'function' && !gate.ask()) return
+    replay(held)
+  }
+  const blurEditor = (gate) => {
+    const doc = win.document
+    let active = doc ? doc.activeElement : null
+    if (!active || active === doc.body || typeof gate.inGrid !== 'function' || !gate.inGrid(active)) return
+    while (active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement
+    if (typeof active.blur === 'function') active.blur()
+  }
+  navigation.addEventListener('navigate', (event) => {
+    let nav = null
+    try {
+      nav = navFacts(event, navigation.currentEntry, win.location.href)
+    } catch (error) {
+      return
+    }
+    if (navVerdict(guard, nav, Date.now(), NAV_REPLAY_MS) !== 'try') return
+    const token = navToken(guard)
+    let held = false
+    try {
+      const gate = win.__capaLeaveGate
+      if (gate && typeof gate.hold === 'function') {
+        blurEditor(gate)
+        held = Boolean(gate.hold(release(token)))
+        if (!held && typeof gate.loses === 'function' && gate.loses()) {
+          held = true
+          win.setTimeout(release(token), 0)
+        }
+      }
+    } catch (error) {
+      held = false
+    }
+    if (navHeld(guard, nav, Date.now(), held, token) !== 'pass') event.preventDefault()
+  })
+}
+// </tabs-nav-install>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -1239,6 +1408,11 @@ export default function (component) {
     go: (fn) => {
       if (!gate.hold(fn)) fn()
     },
+    // 브라우저 뒤로·앞으로(`<tabs-nav-install>`)도 같은 판정을 쓴다 — 탭 줄과 같은 떠나기 확인(`ask`), 떠나면 사라지는 편집이
+    // 있는가(`loses`), 편집표(`<tabs-grid>`) 안의 요소인가(`inGrid`).
+    ask: () => leaveOk(),
+    loses: () => Boolean(S.data && S.data.leave),
+    inGrid: (node) => Boolean(node && node.closest && node.closest(S.gridSelector)),
   }
   window.__capaLeaveGate = gate
   // ---- 끌어서 차례 바꾸기(`<tabs-drag>`). DOM 차례는 놓을 때 한 번만 바꾼다 — 끄는 동안은 끄는 탭이 포인터를 따라가고
@@ -1537,6 +1711,9 @@ export default function (component) {
   }
   // 문서를 떠날 때 저장하지 않은 편집이 있으면 브라우저 확인 창(`<tabs-unload>`). 문서에 하나이고 걸고 풀지 않는다.
   installUnloadGuard(window, document)
+  // 브라우저 뒤로·앞으로를 붙드는 `navigate` 지킴이(`<tabs-nav-install>`). 문서에 하나이고 걸고 풀지 않는다 — 붙들기는 사건 때의
+  // `window.__capaLeaveGate` 를 읽는다.
+  installNavGuard(window)
 
   // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)과
   // 앞서 지나 보낸 링크가 여는 탭(`<tabs-links>`)에 없고, 그 둘을 합쳐 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를

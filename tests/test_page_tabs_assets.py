@@ -439,6 +439,7 @@ _SECTIONS = (
     "tabs-wip",
     "tabs-focus",
     "tabs-return",
+    "tabs-nav",
 )
 
 
@@ -1846,6 +1847,412 @@ def test_the_unload_guard_reads_the_theme_button_marker_and_is_installed_by_the_
     # 처리기는 컴포넌트가 내려가도 걷지 않는다(떠날 때의 표지를 그때 읽는다).
     cleanup = body[body.rindex("  return () => {") :]
     assert "beforeunload" not in cleanup
+
+
+_NAV_VERDICT_RUNNER = """
+const out = {}
+const base = {
+  type: 'traverse', cancelable: true, sameDocument: true,
+  from: 'http://app.test/b', to: 'http://app.test/', key: 'k1', delta: -1,
+}
+const g = createNavGuard()
+out.push = navVerdict(g, { ...base, type: 'push' }, 0, 1000)
+out.replace = navVerdict(g, { ...base, type: 'replace' }, 0, 1000)
+out.reload = navVerdict(g, { ...base, type: 'reload' }, 0, 1000)
+out.uncancelable = navVerdict(g, { ...base, cancelable: false }, 0, 1000)
+out.crossDocument = navVerdict(g, { ...base, sameDocument: false }, 0, 1000)
+const site = 'http://app.test'
+const at = (from, to) => navVerdict(g, { ...base, from: site + from, to: site + to }, 0, 1000)
+out.hashOnly = at('/b#x', '/b#y')
+out.hashBack = at('/b#x', '/b')
+out.hashOtherSearch = at('/b?p=1', '/b#y')
+out.otherSearch = at('/b?process=x', '/b')
+out.sameUrl = at('/b', '/b')
+out.badUrl = navHashOnly('not a url', '#x')
+out.traverse = navVerdict(g, base, 0, 1000)
+
+const h = createNavGuard()
+out.idle = [navHeld(h, base, 0, false, navToken(h)), h.held]
+const t1 = navToken(h)
+out.hold = [navHeld(h, base, 10, true, t1), h.held]
+// 붙든 동안 또 온 뒤로도 붙들기에 다시 묻고, 목적지는 마지막 것 하나다.
+out.whileHeld = navVerdict(h, { ...base, key: 'k0' }, 20, 1000)
+const t2 = navToken(h)
+out.retarget = [
+  navHeld(h, { ...base, key: 'k0', delta: -2 }, 20, true, t2),
+  h.held.key, h.held.delta, h.held.token === t2,
+]
+out.staleRelease = [navRelease(h, t1), h.held !== null]
+out.release = navRelease(h, t2)
+out.releaseTwice = [navRelease(h, t2), h.held]
+// 다시 붙들 때 붙들 것이 없으면 기다리던 다시 가기를 걷는다.
+const t3 = navToken(h)
+navHeld(h, base, 30, true, t3)
+out.idleAgain = [navHeld(h, base, 40, false, navToken(h)), h.held, navRelease(h, t3)]
+
+// 다시 쏜 이동의 표지 — 목적지가 맞으면 걷고 지나 보낸다. 같은 칸으로 가는 다음 뒤로는 다시 묻는다.
+navMark(h, 'k0', 100)
+out.replay = [navVerdict(h, { ...base, key: 'k0' }, 150, 1000), h.replay]
+out.nextBack = navVerdict(h, { ...base, key: 'k0' }, 160, 1000)
+navMark(h, 'k0', 200)
+out.otherKey = [navVerdict(h, { ...base, key: 'k9' }, 210, 1000), h.replay !== null]
+navUnmark(h, 'k9')
+out.unmarkOther = h.replay !== null
+navUnmark(h, 'k0')
+out.unmark = h.replay
+navMark(h, 'k0', 300)
+out.expired = [navVerdict(h, { ...base, key: 'k0' }, 1300, 1000), h.replay]
+navMark(h, 'k0', 400)
+const ourPush = { ...base, type: 'push', key: 'k0' }
+out.pushKeepsMark = [navVerdict(h, ourPush, 410, 1000), h.replay !== null]
+const ourUncancelable = { ...base, key: 'k0', cancelable: false }
+out.uncancelableOurs = [navVerdict(h, ourUncancelable, 420, 1000), h.replay]
+navMark(h, 'k0', 500)
+const ourHash = { ...base, key: 'k0', from: 'http://app.test/#a', to: 'http://app.test/#b' }
+out.hashOurs = [navVerdict(h, ourHash, 510, 1000), h.replay]
+navMark(h, '', 600)
+out.emptyKey = navVerdict(h, { ...base, key: '' }, 610, 1000)
+// 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다.
+const t4 = navToken(h)
+navHeld(h, base, 700, true, t4)
+out.uncancelableClears = [
+  navVerdict(h, { ...base, cancelable: false }, 710, 1000), h.held, navRelease(h, t4),
+]
+
+const event = {
+  navigationType: 'traverse', cancelable: true,
+  destination: { url: 'http://app.test/', key: 'k1', index: 2, sameDocument: true },
+}
+out.facts = navFacts(event, { index: 3 }, 'http://app.test/b')
+const ahead = { ...event, destination: { ...event.destination, index: 4 } }
+out.forward = navFacts(ahead, { index: 3 }, 'x').delta
+out.bare = navFacts({ navigationType: 'push', destination: { url: 'http://app.test/c' } }, null, '')
+out.empty = navFacts({}, undefined, undefined)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_back_guard_verdict_holds_only_same_document_cancelable_traverses() -> None:
+    """브라우저 뒤로 · 앞으로 판정(`<tabs-nav>`). Streamlit 1.63 은 `popstate` 를 받자마자 앱 칸
+    값만 실은 이동 요청을 보내 popstate 로는 막지 못한다 — 그보다 먼저 오는 Navigation API
+    `navigate` 의 같은 문서 `traverse` 만 손댄다. traverse 가 아님 · 막을 수 없음 · 다른 문서 ·
+    같은 화면의 해시만 다름은 지나 보내고(조회 인자가 다르면 Streamlit 이 화면을 다시 돌려 붙든다),
+    우리가 다시 쏜
+    이동(표지 + 목적지 key)은 표지를 걷고 지나 보낸다. 표지는 목적지가 맞는 사건이면 어느 갈래든,
+    상한이 지나도 걷힌다 — 같은 칸으로 가는 다음 뒤로를 놓치지 않는다. 붙들 것이 없으면 지나
+    보내고(지연 0), 붙든 동안 또 온 뒤로는 다시 묻고 마지막 목적지 하나만 남긴다 — 낡은 붙들기가
+    놓여도 아무것도 하지 않는다. 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다."""
+    out = _node(_NAV_VERDICT_RUNNER)
+
+    passes = ("push", "replace", "reload", "uncancelable", "crossDocument", "hashOnly", "hashBack")
+    for name in passes:
+        assert out[name] == "pass", name
+    for name in ("hashOtherSearch", "otherSearch", "sameUrl", "traverse"):
+        assert out[name] == "try", name
+    assert out["badUrl"] is False
+    assert out["idle"] == ["pass", None]
+    assert out["hold"] == ["hold", {"key": "k1", "delta": -1, "at": 10, "token": 2}]
+    assert out["whileHeld"] == "try"
+    assert out["retarget"] == ["retarget", "k0", -2, True]
+    assert out["staleRelease"] == [None, True]
+    assert out["release"] == {"key": "k0", "delta": -2, "at": 20, "token": 3}
+    assert out["releaseTwice"] == [None, None]
+    assert out["idleAgain"] == ["pass", None, None]
+    assert out["replay"] == ["replay-pass", None]
+    assert out["nextBack"] == "try"
+    assert out["otherKey"] == ["try", True]
+    assert out["unmarkOther"] is True
+    assert out["unmark"] is None
+    assert out["expired"] == ["try", None]
+    assert out["pushKeepsMark"] == ["pass", True]
+    assert out["uncancelableOurs"] == ["pass", None]
+    assert out["hashOurs"] == ["pass", None]
+    assert out["emptyKey"] == "try"
+    assert out["uncancelableClears"] == ["pass", None, None]
+    assert out["facts"] == {
+        "type": "traverse",
+        "cancelable": True,
+        "sameDocument": True,
+        "from": "http://app.test/b",
+        "to": "http://app.test/",
+        "key": "k1",
+        "delta": -1,
+    }
+    assert out["forward"] == 1
+    assert out["bare"] == {
+        "type": "push",
+        "cancelable": False,
+        "sameDocument": False,
+        "from": "",
+        "to": "http://app.test/c",
+        "key": "",
+        "delta": 0,
+    }
+    assert out["empty"]["type"] == "" and out["empty"]["delta"] == 0
+
+
+_NAV_INSTALL_RUNNER = """
+;(async () => {
+  let now = 1000
+  Date.now = () => now
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) await Promise.resolve()
+  }
+  const timers = []
+  const runTimers = () => {
+    for (const fn of timers.splice(0)) fn()
+  }
+  const log = []
+  const handlers = []
+  let mode = 'ok'
+  const failure = (name) => {
+    const error = new Error(name)
+    error.name = name
+    return error
+  }
+  const rejected = (name) => {
+    const committed = Promise.reject(failure(name))
+    const finished = Promise.reject(failure(name))
+    return { committed, finished }
+  }
+  const navigation = {
+    currentEntry: { index: 3 },
+    addEventListener(type, fn) { handlers.push([type, fn]) },
+    traverseTo(key) {
+      log.push('traverseTo:' + key)
+      if (mode === 'throw') throw failure('InvalidStateError')
+      if (mode === 'reject') return rejected('InvalidStateError')
+      if (mode === 'abort') return rejected('AbortError')
+      if (mode === 'pending') {
+        return { committed: new Promise(() => {}), finished: new Promise(() => {}) }
+      }
+      return { committed: Promise.resolve(), finished: Promise.resolve() }
+    },
+  }
+  const editor = { blur() { log.push('blur') } }
+  const host = { shadowRoot: { activeElement: editor } }
+  const body = {}
+  const document = { body, activeElement: body }
+  const gate = {
+    answer: false, loss: false, okay: true, fns: [],
+    hold(fn) { log.push('hold'); this.fns.push(fn); return this.answer },
+    ask() { log.push('ask'); return this.okay },
+    loses() { return this.loss },
+    inGrid(node) { return node === host },
+  }
+  const last = () => gate.fns[gate.fns.length - 1]
+  const win = {
+    navigation, document, location: { href: 'http://app.test/b' },
+    history: { go(delta) { log.push('go:' + delta) } },
+    setTimeout(fn) { timers.push(fn); return timers.length },
+    __capaLeaveGate: gate,
+  }
+  const event = (destination = {}, over = {}) => {
+    const e = {
+      navigationType: 'traverse', cancelable: true, prevented: false,
+      destination: {
+        url: 'http://app.test/', key: 'k2', index: 2, sameDocument: true, ...destination,
+      },
+      ...over,
+    }
+    e.preventDefault = () => { e.prevented = true }
+    return e
+  }
+  const fire = (e) => {
+    for (const [type, fn] of handlers) if (type === 'navigate') fn(e)
+    return e.prevented
+  }
+  const step = (fn) => {
+    log.length = 0
+    return fn()
+  }
+  const out = {}
+
+  const bare = {}
+  installNavGuard(bare)
+  out.noApi = bare.__capaNavGuard === undefined
+  installNavGuard(win)
+  installNavGuard(win)
+  out.listeners = handlers.map(([type]) => type)
+  const guard = win.__capaNavGuard
+
+  // 쉬는 편집기 — 붙들기가 기다릴 것이 없으면 막지 않는다(지연 0).
+  out.idle = step(() => [fire(event()), log.slice(), guard.held])
+  // traverse 가 아님 · 해시만 다름 · 다른 문서 · 목적지 없음은 붙들기에 묻지 않는다.
+  out.passes = step(() => [
+    fire(event({}, { navigationType: 'push' })),
+    fire(event({ url: 'http://app.test/b#x' })),
+    fire(event({ url: 'http://other.test/', sameDocument: false })),
+    fire({
+      navigationType: 'traverse', cancelable: true, prevented: false,
+      preventDefault() { this.prevented = true },
+    }),
+    log.slice(),
+  ])
+  // 칸에 쓰는 중 — 깊은 활성 요소를 blur 한 뒤 붙들기에 묻고, 붙들었으면 막는다.
+  document.activeElement = host
+  gate.answer = true
+  out.held = step(() => [fire(event()), log.slice(), guard.held.key, guard.held.delta])
+  // 붙든 동안 또 뒤로 — 다시 묻고 목적지는 마지막 것, 낡은 붙들기가 놓여도 아무것도 하지 않는다.
+  document.activeElement = body
+  const older = () => event({ url: 'http://app.test/x', key: 'k1', index: 1 })
+  out.again = step(() => [fire(older()), log.slice(), guard.held.key])
+  out.stale = step(() => {
+    gate.fns[gate.fns.length - 2]()
+    return [log.slice(), guard.held !== null]
+  })
+  // 놓이면 탭 줄과 같은 확인을 지나 표지를 달고 같은 목적지로 다시 간다.
+  out.replayed = step(() => {
+    last()()
+    return [log.slice(), guard.replay && guard.replay.key, guard.held]
+  })
+  // 다시 쏜 이동은 붙들기에 묻지 않고 지나 보내며 표지를 걷는다.
+  out.replayPass = step(() => [fire(older()), log.slice(), guard.replay])
+  await flush()
+  // 같은 칸으로 가는 다음 뒤로는 다시 붙든다.
+  out.nextBack = step(() => [fire(older()), log.slice()])
+  // 확인을 취소하면 다시 가지 않는다 — 이미 막았으니 주소 · 본문 그대로다.
+  gate.okay = false
+  out.cancelled = step(() => {
+    last()()
+    return [log.slice(), guard.replay, guard.held]
+  })
+  gate.okay = true
+  // 붙든 동안 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다.
+  fire(event())
+  out.uncancelable = step(() => [fire(event({}, { cancelable: false })), log.slice(), guard.held])
+  out.afterUncancelable = step(() => {
+    last()()
+    return log.slice()
+  })
+  // 기다릴 것은 없어도 떠나면 사라지는 편집이 있으면 막고 곧바로 놓아 묻는다.
+  gate.answer = false
+  gate.loss = true
+  timers.length = 0
+  out.loses = step(() => [fire(event()), log.slice(), timers.length])
+  out.losesReleased = step(() => {
+    runTimers()
+    return [log.slice(), guard.replay && guard.replay.key]
+  })
+  out.losesReplay = step(() => [fire(event()), log.slice(), guard.replay])
+  await flush()
+  gate.loss = false
+  gate.answer = true
+  // 다시 가기가 거절되면 표지를 걷고 history.go 로 한 번 — 던져도 같다.
+  mode = 'reject'
+  fire(event())
+  out.rejected = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  mode = 'throw'
+  fire(event())
+  out.thrown = step(() => {
+    last()()
+    return [log.slice(), guard.replay]
+  })
+  // 다른 이동이 끊은 다시 가기는 그 이동에 맡긴다.
+  mode = 'abort'
+  fire(event())
+  out.aborted = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  // 약속이 끝나지 않아도 표지는 상한에 걷힌다.
+  mode = 'pending'
+  fire(event())
+  timers.length = 0
+  last()()
+  out.pendingMark = [guard.replay && guard.replay.key, timers.length]
+  runTimers()
+  out.pendingCleared = guard.replay
+  mode = 'ok'
+  // 붙들기가 던지면 지나 보낸다.
+  const hold = gate.hold
+  gate.hold = () => { throw new Error('boom') }
+  out.thrownHold = step(() => [fire(event()), guard.held])
+  gate.hold = hold
+  // 탭 줄이 내려가 붙들기가 없으면 지나 보낸다.
+  delete win.__capaLeaveGate
+  out.noGate = step(() => [fire(event()), log.slice(), guard.held])
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_target() -> None:
+    """뒤로 · 앞으로 지킴이(`<tabs-nav-install>`)를 창 대역으로 돌린다. Navigation API 가 없으면
+    걸지 않고, 문서에 한 번만 건다. 깊은 활성 요소가 편집표 안이면 blur 한 뒤(칸이 제 focusout
+    길로 확정) 탭 줄 붙들기(`__capaLeaveGate.hold`)에 묻고 붙들었을 때만 막는다 — 쉬는 편집기는
+    지연이 없다. 기다릴 것이 없어도 떠나면 사라지는 편집이 있으면 막고 곧바로 놓아 묻는다. 놓이면
+    탭 줄과 같은 확인(`ask`)을 지나 표지를 달고 같은 목적지로 다시 가고(`traverseTo`), 취소면 아무
+    것도 하지 않는다. 붙든 동안 또 온 뒤로는 마지막 목적지 하나로 한 번만 가고, 막을 수 없는 이동은
+    기다리던 다시 가기를 걷는다. 다시 가기가 거절되면 history.go 로 한 번, 다른 이동이 끊었으면
+    맡긴다. 표지는 다시 간 이동이 닿거나 약속이 끝나거나 상한에 걷힌다."""
+    sections = []
+    for name in ("tabs-nav", "tabs-nav-install"):
+        match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
+        assert match, f"page_tabs.js 에 // <{name}> 구획이 없습니다"
+        sections.append(match.group("body"))
+
+    out = _node(_NAV_INSTALL_RUNNER, prelude="\n".join(sections))
+
+    assert out["noApi"] is True
+    assert out["listeners"] == ["navigate"]
+    assert out["idle"] == [False, ["hold"], None]
+    assert out["passes"] == [False, False, False, False, []]
+    assert out["held"] == [True, ["blur", "hold"], "k2", -1]
+    assert out["again"] == [True, ["hold"], "k1"]
+    assert out["stale"] == [[], True]
+    assert out["replayed"] == [["ask", "traverseTo:k1"], "k1", None]
+    assert out["replayPass"] == [False, [], None]
+    assert out["nextBack"] == [True, ["hold"]]
+    assert out["cancelled"] == [["ask"], None, None]
+    assert out["uncancelable"] == [False, [], None]
+    assert out["afterUncancelable"] == []
+    assert out["loses"] == [True, ["hold"], 1]
+    assert out["losesReleased"] == [["ask", "traverseTo:k2"], "k2"]
+    assert out["losesReplay"] == [False, [], None]
+    assert out["rejected"] == [["ask", "traverseTo:k2", "go:-1"], None]
+    assert out["thrown"] == [["ask", "traverseTo:k2", "go:-1"], None]
+    assert out["aborted"] == [["ask", "traverseTo:k2"], None]
+    assert out["pendingMark"] == ["k2", 1]
+    assert out["pendingCleared"] is None
+    assert out["thrownHold"] == [False, None]
+    assert out["noGate"] == [False, [], None]
+
+
+def test_the_back_guard_is_a_navigate_listener_on_the_strip_gate_not_a_popstate_one() -> None:
+    """뒤로 · 앞으로는 popstate 로 막지 않는다 — 캡처 단계 popstate 처리기는 Streamlit 이 이미 이동
+    요청을 보낸 뒤라 못 막고, 다시 쏜 PopStateEvent 는 주소와 본문을 어긋나게 한다. 탭 줄이 그릴 때
+    `navigate` 지킴이를 문서에 한 번 걸고(걸고 풀지 않는다 — 붙들기는 사건 때의 `__capaLeaveGate`
+    를 읽는다), 붙들기 · 확인 · 편집표 판정은 탭 줄 붙들기와 같은 함수다(새 길을 만들지 않는다).
+    머리 설명은 지금 동작(Navigation API 가 있으면 붙듦, 없거나 막을 수 없으면 지나 보냄)을
+    말한다."""
+    assert "'popstate'" not in JS and "PopStateEvent" not in JS
+    install = re.search(r"// <tabs-nav-install>\n(?P<body>.*?)\n// </tabs-nav-install>", JS, re.S)
+    assert install is not None
+    block = install.group("body")
+    assert "navigation.addEventListener('navigate'," in block
+    assert "const navigation = win.navigation" in block
+    assert "win.__capaLeaveGate" in block and "gate.hold(release(token))" in block
+    assert block.index("blurEditor(gate)") < block.index("gate.hold(release(token))")
+    assert "navigation.traverseTo(held.key)" in block and "win.history.go(held.delta)" in block
+    assert "event.preventDefault()" in block
+    body = JS[JS.index("export default function (component) {") :]
+    assert body.count("installNavGuard(window)") == 1
+    cleanup = body[body.rindex("  return () => {") :]
+    assert "installNavGuard" not in cleanup and "navigate" not in cleanup
+    gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
+    assert "ask: () => leaveOk()," in gate
+    assert "loses: () => Boolean(S.data && S.data.leave)," in gate
+    assert "node.closest(S.gridSelector)" in gate
+    head = JS[: JS.index("const ICON_FONT")]
+    assert "막지 못한다 —" not in head and "Navigation API" in head and "`navigate`" in head
 
 
 _GATE_RUNNER = """
