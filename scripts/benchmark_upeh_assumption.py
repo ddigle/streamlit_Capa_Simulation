@@ -27,9 +27,14 @@ Cut-off 로 이번 달부터 시나리오 끝 달까지 다섯 목표 계획을 
 `initialize()`(마이그레이션 — 쓰기)를 부르지 않는다. 설비 DB 사본이 설비 시나리오 표(`0027`) 전이면
 — 사용자 앱이 새 배포로 설비 화면을 아직 열지 않은 사본 — 그 파일을 임시 폴더에 한 번 더 복사해
 거기에만 마이그레이션을 걸고 읽는다(앱이 처음 설비 화면을 열 때 거는 것과 같은 한 벌이다. 받은 사본
-폴더는 그대로 두고, 임시 사본은 끝나면 지운다 — JSON 의 `equipment_migrated_copy`). 값을 찍지
-않는다 — 초·달 수·공정 수·호기 수만 찍고, 실패는 단계와 예외 종류 한 줄이다(문구에는 공정·제품
-이름이 실린다). 사외에서 돌린 수는 합성 표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
+폴더는 그대로 두고, 임시 사본은 끝나면 지운다 — JSON 의 `equipment_migrated_copy`).
+시뮬레이션 사본의 마이그레이션 최고 번호가 `0039`(CUSTOM 칸) 전이면 — 적용 전 운영 DB 사본이나
+첫 저장 전 버킷 사본 — CUSTOM 키 표에 칸이 없다. 그 표는 0039 와 같은 뜻(모든 행이 빈 값
+표지)으로 채워 읽는다(`revision_compatibility.custom_blank_filled` — 확인 스크립트들과 같은 판정,
+JSON 의 `scenario_custom_filled` 가 참이면 `사본 0039 전` 이다). 0039 뒤로 적힌 사본은 채우지
+않는다 — 칸이 없으면 계산이 그대로 멈춰 드러난다. 값을 찍지 않는다 — 초·달 수·공정 수·호기
+수만 찍고, 실패는 단계와 예외 종류 한 줄이다(문구에는 공정·제품 이름이 실린다). 사외에서 돌린
+수는 합성 표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ from capa_simulation.services.equipment_availability import build_equipment_life
 from capa_simulation.services.monthly_equipment_availability import span_date_range
 from capa_simulation.services.required_equipment import calculate_required_equipment
 from capa_simulation.services.required_shortening import TARGET_LEVELS, plan_required_shortening
+from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION, custom_blank_filled
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 from capa_simulation.services.upeh_assumption import (
     PERCENT_MAX,
@@ -113,15 +119,37 @@ def read_official_equipment(path: Path) -> tuple[EquipmentSnapshot | None, pd.Da
         return migrated.load_official_snapshot(), migrated.load_process_cutoff(), True
 
 
+def scenario_migration_level(path: Path) -> int | None:
+    """시뮬레이션 사본의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다.
+
+    저장소 연결과 설정이 다른 `read_only` 연결이라, 저장소가 그 파일을 열기 **전에** 열고 닫는다
+    (DuckDB 는 한 프로세스에서 같은 파일을 다른 설정으로 함께 열지 않는다).
+    """
+    try:
+        with duckdb.connect(str(path), read_only=True) as connection:
+            row = connection.execute(
+                "SELECT max(version) FROM app_meta.schema_migration"
+            ).fetchone()
+    except duckdb.Error:
+        return None
+    return None if row is None or row[0] is None else int(row[0])
+
+
 def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
     """두 계획의 시간과 개수. 실패는 `RuntimeError(단계 · 예외 종류)` 로 줄여 올린다."""
     stage = "시나리오 읽기"
     try:
+        level = scenario_migration_level(data_dir / SCENARIO_DATABASE)
+        # 0039 전 사본 — 마이그레이션하지 않고 0039 와 같은 뜻으로 채워 읽는다. 번호를 읽지 못하면
+        # 채우지 않는다.
+        custom_filled = level is not None and level < CUSTOM_MIGRATION
         scenario = DuckDBScenarioRepository(data_dir / SCENARIO_DATABASE)
         release = scenario.latest_official_release()
         if release is None:
             raise LookupError("공식버전 없음")
         tables = scenario.load_revision(release.revision_id).tables
+        if custom_filled:
+            tables = custom_blank_filled(tables)
         stage = "대당 Capa·소요대수"
         unit_capacity = calculate_unit_capacity(
             upeh=tables["RQ_UPEH"],
@@ -204,6 +232,7 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
         "official_unit_rows": official_units,
         "assumed_unit_rows": assumed_units,
         "equipment_migrated_copy": migrated_copy,
+        "scenario_custom_filled": custom_filled,
         "verdict": (
             f"{LIMIT_SECONDS:g}초 이하 — 1 단위 곧바로 반영 그대로"
             if assumed_total <= LIMIT_SECONDS

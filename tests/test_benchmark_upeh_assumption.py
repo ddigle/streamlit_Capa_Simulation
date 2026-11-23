@@ -10,17 +10,22 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import database_before_custom, database_marked_after_custom
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -123,7 +128,6 @@ def test_a_copy_from_before_0027_is_read_through_a_migrated_temporary_copy(
     """사용자 앱이 새 배포로 설비 화면을 아직 열지 않은 사본(설비 마이그레이션 0025 까지) — 받은
     사본은 그대로 두고 임시 사본에만 마이그레이션을 걸어 잰다(전에는 「설비 읽기 실패 —
     CatalogException」)."""
-    import duckdb
     from test_equipment_migration_0027_scenarios import build_legacy_database
 
     scenario = DuckDBScenarioRepository(tmp_path / benchmark.SCENARIO_DATABASE)
@@ -150,3 +154,52 @@ def test_a_copy_from_before_0027_is_read_through_a_migrated_temporary_copy(
 def test_a_migrated_copy_says_so_only_when_it_was_needed(copy_folder: Path) -> None:
     result = benchmark.measure(copy_folder, percent=110, today=date(2026, 1, 1))
     assert result["equipment_migrated_copy"] is False
+
+
+def _counts(result: dict[str, object]) -> dict[str, object]:
+    """초를 뺀 결과 — 같은 표를 두 번 잰 결과를 견준다."""
+    return {key: value for key, value in result.items() if not str(key).endswith("_seconds")}
+
+
+def _rewound_folder(copy_folder: Path, target: Path, rewind: Callable[[Path, Path], Path]) -> Path:
+    """`copy_folder` 의 시뮬레이션 DB 만 `rewind` 로 되감은 사본 폴더(설비 DB 는 그대로 베낌)."""
+    target.mkdir()
+    rewind(copy_folder / benchmark.SCENARIO_DATABASE, target / benchmark.SCENARIO_DATABASE)
+    shutil.copyfile(
+        copy_folder / benchmark.EQUIPMENT_DATABASE, target / benchmark.EQUIPMENT_DATABASE
+    )
+    return target
+
+
+def test_a_copy_before_the_custom_column_is_read_like_the_migrated_copy(
+    copy_folder: Path, tmp_path: Path
+) -> None:
+    """런북 6-3 b 의 사본이 0039 전(적용 전 운영 DB 사본 · 첫 저장 전 버킷 사본)이어도 CUSTOM 키
+    표를 0039 와 같은 뜻(모든 행이 빈 값 표지)으로 채워 잰다 — 달 · 공정 · 호기 수가 0039 뒤 사본과
+    같고 `scenario_custom_filled` 만 참이다. 받은 사본은 고치지 않는다(마이그레이션 최고 38 그대로).
+    채우지 않으면 「대당 Capa·소요대수 실패」 로 멈춘다."""
+    before = _rewound_folder(copy_folder, tmp_path / "before", database_before_custom)
+    database = before / benchmark.SCENARIO_DATABASE
+    contents = database.read_bytes()
+
+    old = benchmark.measure(before, percent=120, today=date(2026, 1, 1))
+    new = benchmark.measure(copy_folder, percent=120, today=date(2026, 1, 1))
+
+    assert old["scenario_custom_filled"] is True
+    assert new["scenario_custom_filled"] is False
+    assert {**_counts(old), "scenario_custom_filled": False} == _counts(new)
+    assert database.read_bytes() == contents
+    assert benchmark.scenario_migration_level(database) == CUSTOM_MIGRATION - 1
+
+
+def test_a_copy_marked_after_the_custom_migration_is_not_filled(
+    copy_folder: Path, tmp_path: Path
+) -> None:
+    """채우기는 마이그레이션 번호로만 가른다 — 0039 를 건 것으로 적힌 사본에 칸이 없으면 채우지 않고
+    계산이 그대로 멈춰 드러난다(단계와 예외 종류 한 줄)."""
+    broken = _rewound_folder(copy_folder, tmp_path / "broken", database_marked_after_custom)
+
+    with pytest.raises(RuntimeError) as caught:
+        benchmark.measure(broken, percent=110, today=date(2026, 1, 1))
+
+    assert str(caught.value).startswith("대당 Capa·소요대수 실패 — ")

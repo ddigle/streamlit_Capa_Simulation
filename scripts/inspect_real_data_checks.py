@@ -50,8 +50,9 @@
 - **읽기만 한다.** 두 DB 를 `read_only=True` 로 열고 저장소(Repository)를 만들지 않는다 —
   저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다). 그래서 시뮬레이션 사본이 `0039`(CUSTOM
   칸) 전이면 리비전 표를 0039 와 같은 뜻 — CUSTOM 키 표의 모든 행이 빈 값 표지 — 으로 채워 읽고
-  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 칸이 있을 때만 CUSTOM 조건을 붙이며,
-  블록 앞에 `사본 0039 전` 한 줄을 찍는다. 0039 뒤 사본은 채우지 않는다.
+  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 같은 판정으로 CUSTOM 조건을 빼며,
+  블록 앞에 `사본 0039 전` 한 줄을 찍는다. 0039 뒤로 적힌 사본은 채우지도 빼지도 않는다 — 칸이
+  없으면 계산과 손 SQL 이 그대로 멈춰 드러난다.
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
   코드, 키별 값, 합계 물량, 파일 경로, **예외 문구**를 찍지 않는다 — 이 앱의 오류 문구에는
   설계상 식별값이 박혀 있다. 실패는 예외 종류(클래스 이름)만 적는다. 출력은 리뷰 문서를 거쳐
@@ -3382,9 +3383,10 @@ CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
 # 음수)인 칸 하나에도 그 리비전 계산이 멈췄다. 이 SQL 은 그런 칸을 리비전마다 센다 — 고침이 살린
 # 칸의 규모다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다(`Area_Name` 은 대소문자도
 # 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다. `only_dropped` 가 거짓인 칸은 남는 경로가
-# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12). `CUSTOM` 은 세 표에 칸이 있을 때만 맞댄다 — 0039 전
-# 사본에는 칸이 없고, 그 사본은 모든 행이 한 값(빈 값 표지)과 같은 뜻이라 빼고 맞대도 같다.
-_PERFORMANCE_TABLES: Final = ("rq_upeh", "rq_lot_ratio", "rq_wf_ratio")
+# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12). `CUSTOM` 은 0039 전 사본(`_before_custom` —
+# 리비전 표를 채우는 것과 같은 판정)에서만 빼고 맞댄다 — 그 사본에는 칸이 없고, 모든 행이 한
+# 값(빈 값 표지)과 같은 뜻이라 빼고 맞대도 같다. 0039 뒤로 적힌 사본에 칸이 없으면 이 SQL 도
+# 멈춰 드러난다.
 
 
 def _performance_join(alias: str, *, custom: bool) -> str:
@@ -3595,13 +3597,11 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
 
     접는 규칙은 등록·계산과 같은 `frame_contracts.duplicate_route_rows` 다(앞뒤 공백 · 소요기준
     `WAFER` · `Area_Name` 대소문자). 리비전마다 따로 읽어 한 번에 한 리비전만 메모리에 둔다.
-    `CUSTOM` 은 칸이 있을 때만 키에 든다 — 0039 전 사본은 칸이 없고 모든 행이 한 값과 같은 뜻이다.
+    `CUSTOM` 은 0039 전 사본(`_before_custom`)에서만 키에서 뺀다 — 그 사본은 칸이 없고 모든 행이 한
+    값과 같은 뜻이다.
     """
-    keys = [
-        column
-        for column in REQB_COLUMNS
-        if column != CUSTOM_COLUMN or _custom_columns_present(connection, ("rq_reqb",))
-    ]
+    before_custom = _before_custom(connection)
+    keys = [column for column in REQB_COLUMNS if column != CUSTOM_COLUMN or not before_custom]
     columns = ", ".join(f'"{column}"' for column in keys)
     found: Counter[str] = Counter()
     for revision_id in _picked_revisions(connection, scope):
@@ -3614,22 +3614,10 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
     return found
 
 
-def _custom_columns_present(connection: duckdb.DuckDBPyConnection, tables: Sequence[str]) -> bool:
-    """`rev_data` 의 그 표들에 CUSTOM 칸이 모두 있는가 — 0039 전 사본이면 거짓이다."""
-    marks = ", ".join("?" for _ in tables)
-    found = _scalar(
-        connection,
-        "SELECT count(DISTINCT table_name) FROM duckdb_columns() "
-        f"WHERE schema_name = 'rev_data' AND column_name = ? AND table_name IN ({marks})",
-        [CUSTOM_COLUMN, *tables],
-    )
-    return found == len(tables)
-
-
 def _blank_capacity_cells(
     connection: duckdb.DuckDBPyConnection, scope: CensusScope, condition: str
 ) -> Counter[str]:
-    custom = _custom_columns_present(connection, _PERFORMANCE_TABLES)
+    custom = not _before_custom(connection)
     return _by_owner(
         connection,
         _BLANK_CAPACITY_CELLS.format(

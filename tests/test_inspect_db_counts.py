@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom
+from before_custom_copy import database_before_custom, database_marked_after_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components import plan_grid
@@ -166,6 +166,24 @@ def test_a_copy_before_the_custom_column_adds_one_line_right_after_the_plan_line
         tmp_path,
     )
     assert code == 0 and only_plan == [plan, marker]
+
+
+def test_a_copy_marked_after_the_custom_migration_is_not_filled(
+    databases: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """채우기는 마이그레이션 번호로만 가른다 — 0039 를 건 것으로 적힌 사본에 칸이 없으면 채우지 않고
+    줄 4 가 그 리비전을 `skipped` 로 빼며, `사본 0039 전` 한 줄도 없다."""
+    simulation, equipment = databases
+    marked = database_marked_after_custom(simulation, tmp_path / "capa_simulation.duckdb")
+
+    code, lines = _run(
+        ["--database", str(marked), "--equipment-database", str(equipment)], tmp_path
+    )
+
+    assert code == 0
+    assert not [line for line in lines if "사본 0039 전" in line]
+    [plan] = [line for line in lines if line.startswith("plan ")]
+    assert PLAN_LINE.match(plan) and plan.endswith("skipped 1 (ValueError 1)"), plan
 
 
 def _bundle_database(path: Path) -> Path:

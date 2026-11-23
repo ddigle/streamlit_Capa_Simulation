@@ -1848,8 +1848,8 @@
 ### 업무 키 승격
 
 - [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격, 산출 결과 소요대수 표 ·
-  그 제외 목록의 부품 줄(`required_equipment.RESULT_DIMENSIONS`), 확인 스크립트가 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워
-  읽는 갈래는 들어왔다(3장 「계산」 2026-11-23). 남은 것: 합쳐 보는 화면(HOME 도넛 · 제품별 비중 · HOME 상세 · 공정 Capa 상세
+  그 제외 목록의 부품 줄(`required_equipment.RESULT_DIMENSIONS`), 확인 스크립트 · 6-3 b 시간 스크립트가 0039 전 DB 사본의 CUSTOM
+  키 표를 표지로 채워 읽는 갈래는 들어왔다(3장 「계산」 2026-11-23). 남은 것: 합쳐 보는 화면(HOME 도넛 · 제품별 비중 · HOME 상세 · 공정 Capa 상세
   「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나)).
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
@@ -2561,10 +2561,13 @@
 
 - (2026-11-23) **확인 스크립트는 0039 전 DB 사본을 0039 와 같은 뜻으로 채워 읽는다 — 앱은 채우지 않는다** — 마이그레이션하지
   않는 읽기 전용 스크립트 넷(`inspect_revision_calculations` · `inspect_real_data_checks` · `inspect_db_counts` · 사외 디버깅용
-  `compare_legacy_results`)이 시뮬레이션 마이그레이션 최고 번호가 39 보다 낮을 때만 CUSTOM 키 표에 표지 `-` 칸을 붙이고
-  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 칸이 있을 때만 CUSTOM 을 맞대며, `사본 0039 전` 한 줄을 찍는다. 출력은
-  마이그레이션 번호와 그 한 줄 말고는 0039 를 건 사본과 같다(네 스크립트 시험 — 0039 전으로 되감은 사본). 0039 뒤로 적힌 사본에
-  칸이 없으면 채우지 않고 멈춘다 — 앱의 「추정해 채우지 않는다」(AGENTS 5장 28)와 같은 쪽이다. 0039 는 옛 행을 모두 표지로 두므로
+  `compare_legacy_results`)과 같은 사본으로 도는 6-3 b 시간 스크립트(`benchmark_upeh_assumption` — 저장소로 읽되 마이그레이션하지
+  않는다)가 시뮬레이션 마이그레이션 최고 번호가 39 보다 낮을 때만 CUSTOM 키 표에 표지 `-` 칸을 붙이고
+  (`revision_compatibility.custom_blank_filled`), 손 SQL 도 같은 번호 판정으로 CUSTOM 조건을 빼며, `사본 0039 전` 을 남긴다(넷은 한
+  줄, 6-3 b 는 결과 JSON 의 `scenario_custom_filled`). 출력은 마이그레이션 번호와 그 표지 말고는 0039 를 건 사본과 같다(다섯 스크립트
+  시험 — 0039 전으로 되감은 사본, 손 SQL 은 0 이 아닌 칸이 있는 사본으로). 0039 뒤로 적힌 사본에 칸이 없으면 채우지도 빼지도 않고
+  계산 · 손 SQL 이 멈춘다 — 앱의 「추정해 채우지 않는다」(AGENTS 5장 28)와 같은 쪽이다. 되감기 시험 도우미는 0039 의 칸만 걷으므로
+  0039 뒤 번호가 더해지면 그 번호의 물체도 걷게 넓혀야 한다(`tests/test_before_custom_copy.py` 가 먼저 깨진다). 0039 는 옛 행을 모두 표지로 두므로
   채운 값이 그 마이그레이션이 넣을 값과 같다 — 추정이 아니다.
 - (2026-11-23) **산출 결과 소요대수 표와 그 제외 목록도 부품(CUSTOM)마다 한 줄이다** — `required_equipment.RESULT_DIMENSIONS`
   의 Stack 뒤에 CUSTOM 을 둬 같은 화면 대당 Capa 표(`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이 됐다. 그 상수를 쓰는 곳은 월 표

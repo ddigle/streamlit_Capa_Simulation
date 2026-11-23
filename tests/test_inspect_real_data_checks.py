@@ -33,7 +33,7 @@ from typing import Any, Final
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom
+from before_custom_copy import database_before_custom, database_marked_after_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
@@ -4590,6 +4590,68 @@ def blank_stop_db(simulation_db: Path, tmp_path: Path) -> Path:
     path.write_bytes(simulation_db.read_bytes())
     _plant_blank_stop(path)
     return path
+
+
+def _plant_route_fold(path: Path) -> None:
+    """`RQ_REQB` 첫 행을 공정 끝 공백만 다르게 한 줄 더 심는다 — 계산이 앞 행으로 접는 `C8`
+    한 행."""
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO rev_data.rq_reqb SELECT * REPLACE ("
+            '"공정" || \' \' AS "공정", source_row_no + 200000 AS source_row_no) '
+            "FROM rev_data.rq_reqb WHERE rowid = (SELECT min(rowid) FROM rev_data.rq_reqb)"
+        )
+
+
+def _census_and_blank(capsys: pytest.CaptureFixture[str], database: Path) -> tuple[int, str]:
+    return _run(capsys, "--only", "census,blank", "--database", str(database))
+
+
+def test_a_copy_before_the_custom_column_counts_the_hand_sql_like_the_migrated_copy(
+    blank_stop_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 사본에서 CUSTOM 조건을 뺀 손 SQL(8-10 `C8` 접기 · `C9` 측정률 조인 · 8-12
+    목록)도 0039 뒤 사본과 같은 수를 낸다 — 0 이 아닌 칸이 있는 사본으로 견준다(시드 사본은 셋 다
+    0 이라 빼고 맞댄 길이 「멈추지 않음」 만 보인다). 다른 것은 블록 앞 `사본 0039 전` 한
+    줄뿐이다."""
+    _plant_route_fold(blank_stop_db)
+    (tmp_path / "before").mkdir()
+    before = database_before_custom(blank_stop_db, tmp_path / "before" / "capa_simulation.duckdb")
+
+    code, old = _census_and_blank(capsys, before)
+    _, new = _census_and_blank(capsys, blank_stop_db)
+
+    assert code == 0
+    for output in (old, new):
+        assert _census_row(output, "fold") == "1 / 1 리비전 | 행 1 |"
+        assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+        assert "- 8-12 전부 1 · 걸림 1" in _uncoded(_summary(output))
+    old_lines = _without_timings(old)
+    [at] = [index for index, line in enumerate(old_lines) if line.startswith("- 사본 0039 전 ")]
+    assert old_lines[at + 1] == ""
+    assert [*old_lines[:at], *old_lines[at + 2 :]] == _without_timings(new)
+
+
+def test_a_copy_marked_after_the_custom_migration_stops_the_hand_sql_too(
+    blank_stop_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """손 SQL 의 CUSTOM 조건도 리비전 표 채우기와 같이 마이그레이션 번호로만 가른다 — 0039 를
+    건 것으로 적힌 사본에 칸이 없으면 `C8` · `C9` · 8-12 가 CUSTOM 없이 센 수를 말없이 내지 않고
+    실패로 드러난다. `사본 0039 전` 한 줄도 없다."""
+    _plant_route_fold(blank_stop_db)
+    (tmp_path / "marked").mkdir()
+    marked = database_marked_after_custom(
+        blank_stop_db, tmp_path / "marked" / "capa_simulation.duckdb"
+    )
+
+    code, output = _census_and_blank(capsys, marked)
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "사본 0039 전" not in output
+    for key in ("fold", "blank"):
+        assert _census_row(output, key) == "- | 실패(BinderException) |"
+    assert "- 8-12 리비전 목록 실패(BinderException)" in _uncoded(_summary(output))
 
 
 def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(

@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom
+from before_custom_copy import database_before_custom, database_marked_after_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.models import ScenarioCreate
@@ -215,3 +215,31 @@ def test_a_copy_before_the_custom_column_compares_like_the_migrated_copy(
     )
     assert [before[0], *before[2:]] == printed["migrated"]
     pd.testing.assert_frame_equal(written["before"], written["migrated"])
+
+
+def test_a_copy_marked_after_the_custom_migration_is_not_filled(
+    seeded_with_clone: tuple[Path, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """채우기는 마이그레이션 번호로만 가른다 — 0039 를 건 것으로 적힌 사본에 칸이 없으면 채우지 않고
+    계산이 「필수 컬럼이 없습니다: CUSTOM」 으로 멈추며, `사본 0039 전` 한 줄도 없다."""
+    source, _seed_dataset = seeded_with_clone
+    marked = database_marked_after_custom(source, tmp_path / "capa_simulation.duckdb")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "compare_legacy_results.py",
+            "--database",
+            str(marked),
+            "--output",
+            str(tmp_path / "marked.csv"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="필수 컬럼이 없습니다: CUSTOM"):
+        compare.main()
+
+    assert "사본 0039 전" not in capsys.readouterr().out
