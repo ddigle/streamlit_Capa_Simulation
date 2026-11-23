@@ -170,7 +170,7 @@ __all__ = [
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 14
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 15
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52

@@ -632,9 +632,10 @@ def _fit_part_labels(
     부품마다 `_fit_part_label` 의 꼴(형제를 모를 때)로 먼저 줄인다. 끝을 남기는 꼴(「(…끝)」)은
     끝 글자를 같이 쓰는 부품끼리 같은 글이 된다(「DEMO_A_X_CUSTOM」 · 「DEMO_B_X_CUSTOM」 → 둘 다
     「(…_X_CUSTOM)」). 그렇게 겹친 부품만 겹친 형제와 끝에서부터 처음 갈리는 글자부터 남기고 뒤를
-    줄인다(「(…A_X_CUS…)」 · 「(…B_X_CUS…)」 — `_distinct_window`). 겹치지 않는 부품 · 형제가 없는
-    부품은 형제를 모를 때와 같은 글이고, 갈리는 자리를 남길 폭이 없거나 남긴 글이 다시 겹치면 그
-    부품도 그대로 둔다. 결과는 부품을 넘긴 차례에 매이지 않는다.
+    줄인다(「(…A_X_CUS…)」 · 「(…B_X_CUS…)」 — `_distinct_window`). 한 부품이 다른 부품의 끝
+    전체면(「X_CUSTOM」 · 「A_X_CUSTOM」) 짧은 쪽은 첫 글자부터 남긴다(「(X_CUST…)」). 겹치지 않는
+    부품 · 형제가 없는 부품은 형제를 모를 때와 같은 글이고, 갈리는 글자를 하나도 남길 폭이 없거나
+    남긴 글이 다시 겹치면 그 부품도 그대로 둔다. 결과는 부품을 넘긴 차례에 매이지 않는다.
     """
     members = sorted({part for part in parts if part != PART_NOT_SPLIT})
     plain = {part: _fit_split_part(product, part, unit_budget, width) for part in members}
@@ -674,13 +675,16 @@ def _distinct_window(
 
     갈리는 자리는 형제마다 끝에서부터 같은 글자 수 가운데 가장 긴 것의 바로 앞 글자다. 그 글자를
     맨 앞에 두고 뒤를 폭만큼 남긴 뒤 말줄임을 단다(부품 첫 글자부터면 앞 말줄임이 없다). 부품이
-    형제의 끝 전체면(갈리는 글자가 없다) 앞 말줄임 없이 부품을 온전히 둔다(「(X_CUSTOM)」).
+    어느 형제의 끝 전체면(그 형제와 갈리는 글자가 없다 — 「CUSTOM_KIT」 는 「A_CUSTOM_KIT」 의 끝)
+    부품이 시작하는 자리가 갈리는 자리다 — 앞 말줄임 없이 첫 글자부터 남긴다. 다 들면 온전히 두고
+    (「(CUSTOM_KIT)」), 넘치면 뒤를 줄인다(「(CUSTOM_…)」). 끝이 이어진 부품 셋(「CUSTOM_KIT」 ·
+    「A_CUSTOM_KIT」 · 「DEMO_A_CUSTOM_KIT」)이면 가운데 부품도 긴 형제의 끝 전체라 첫 글자부터
+    남는다.
     """
     ellipsis = BOTTLENECK_NAME_ELLIPSIS
-    start = len(part) - max(_common_suffix_length(part, rival) for rival in rivals) - 1
-    if start < 0:
-        whole = f"({part})"
-        return whole if width(whole) <= unit_budget else None
+    start = max(0, len(part) - max(_common_suffix_length(part, rival) for rival in rivals) - 1)
+    if start == 0 and width(f"({part})") <= unit_budget:
+        return f"({part})"
     prefix = "(" if start == 0 else f"({ellipsis}"
     room = unit_budget - width(prefix) - width(f"{ellipsis})")
     kept: list[str] = []

@@ -1028,8 +1028,9 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠하고 첫날이 지난 개조 · 대기 막대 풍선에
     「이미 지난 날짜」 꼬리를 단 판이다(같은 날 답 d11 · 검토 — 같은 배포라 한 번 올렸다). 14 는
     부품 줄을 고른 계산표의 「제약 제품 · 이름표」 제목이 라벨 칸에 넘치면 부품 끝을 남기고 앞을
-    줄인 판이다(2026-11-24 그림 확인)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 14
+    줄인 판이다(2026-11-24 그림 확인). 15 는 그 제목의 부품이 고르기의 형제 부품의 끝 전체일 때
+    첫 글자부터 남긴 판이다(같은 날 검토 — 끝이 이어진 부품 셋이 같은 제목이 되었다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 15
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:

@@ -310,6 +310,15 @@ def test_the_schema_moved_past_part_labels_fitted_by_the_half_width_model() -> N
     assert HOME_FIGURE_SCHEMA_VERSION >= 59
 
 
+def test_the_schema_moved_past_parts_chained_by_their_end() -> None:
+    """60 부터 한 부품이 같은 제품의 다른 부품의 끝 전체면(「CUSTOM_KIT」 · 「A_CUSTOM_KIT」) 그
+    부품 이름표는 첫 글자부터 남는다 — 끝이 이어진 부품 셋이 서로 다른 글이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(서로 같은 이름표)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 60
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

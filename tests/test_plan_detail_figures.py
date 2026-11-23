@@ -482,6 +482,8 @@ _RENDERED_EM: dict[str, tuple[float, float]] = {
     "D": (0.722, 0.77),
     "E": (0.667, 0.632),
     "H": (0.722, 0.752),
+    "I": (0.278, 0.295),
+    "K": (0.667, 0.656),
     "M": (0.833, 0.863),
     "O": (0.778, 0.787),
     "P": (0.667, 0.603),
@@ -570,6 +572,39 @@ def test_parts_that_share_their_end_stay_apart_in_the_product_cell(dimensions: l
     for text in texts:
         assert _table_label_width_units(text) * DETAIL_VALUE_FONT_SIZE_PX <= (
             product_px - 2 * DETAIL_LABEL_INSET_PX
+        ), text
+
+
+@pytest.mark.parametrize(
+    "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
+)
+def test_parts_chained_by_their_end_stay_apart_in_the_product_cell(dimensions: list[str]) -> None:
+    """끝이 이어진 부품 셋(짧은 것이 가운데 것의 끝, 가운데 것이 긴 것의 끝)도 제품 칸에서 서로 다른
+    글이다 — 상세 계획을 켠 좁은 칸에서 짧은 두 부품이 같은 「(…_KIT_SET)」 이 되지 않는다. 실제로
+    그린 폭은 칸 안이다."""
+    parts = ["CUSTOM_KIT_SET", "A_CUSTOM_KIT_SET", "DEMO_A_CUSTOM_KIT_SET"]
+    detail = pd.DataFrame(
+        {
+            "제품정보": [TWO_PART_PRODUCT] * 3,
+            "CUSTOM": parts,
+            "Stack": ["12H"] * 3,
+            "Customer": ["DEMO_CUST-1"] * 3,
+            "202608": [1000.0] * 3,
+            "202609": [2000.0] * 3,
+        }
+    )
+
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
+    )
+
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
+    assert len(texts) == 3 and len(set(texts)) == 3
+    for text in texts:
+        assert (
+            _rendered_px(text, DETAIL_VALUE_FONT_SIZE_PX) <= product_px - 2 * DETAIL_LABEL_INSET_PX
         ), text
 
 

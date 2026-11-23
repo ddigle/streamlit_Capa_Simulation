@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 import pytest
 from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
@@ -595,6 +597,68 @@ def test_a_budget_too_small_to_part_them_falls_back_to_the_plain_end() -> None:
 
     assert _fitted_group(MIDDLE_PARTS, budget) == alone
     assert all(_text_width_units(text) <= budget for text in alone)
+
+
+# 한 부품이 다른 부품의 끝 전체인 사슬 — 짧은 부품은 끝에서 보면 긴 형제와 갈리는 글자가 없다.
+CHAINED_PARTS = (
+    ("CUSTOM_KIT_SET", "A_CUSTOM_KIT_SET", "DEMO_A_CUSTOM_KIT_SET"),
+    ("KIT_SET_LONG", "8H_KIT_SET_LONG", "A_8H_KIT_SET_LONG"),
+)
+# 도넛 범례 한 칸(반각 모형)과 계획 세부수량 상세 계획 켬 제품 칸(잰 글꼴 폭 모형)의 예산.
+CHAIN_BUDGETS = (
+    (_legend_name_budget_units(), _text_width_units),
+    ((1.4 / 3.3 * 260 - 8) / 14, _table_label_width_units),
+)
+
+
+@pytest.mark.parametrize("parts", CHAINED_PARTS, ids=["custom-kit", "kit-long"])
+@pytest.mark.parametrize(("budget", "width"), CHAIN_BUDGETS, ids=["legend", "plan-detail-narrow"])
+def test_parts_chained_by_their_end_still_read_apart(
+    parts: tuple[str, ...], budget: float, width: Callable[[str], float]
+) -> None:
+    """끝이 이어진 부품 셋(짧은 것이 가운데 것의 끝, 가운데 것이 긴 것의 끝)도 서로 다른 글이다 —
+    다른 부품의 끝 전체인 부품은 첫 글자부터 남기고(앞 말줄임 없음) 뒤를 줄인다. 형제를 모르는
+    줄임으로는 짧은 둘이 같은 글이고, 폭 예산 안이며 부품을 넘긴 차례에 매이지 않는다."""
+    alone = [_fit_part_label(TWO_PART_PRODUCT, part, budget, width) for part in parts]
+    fitted = [
+        _fit_part_label(TWO_PART_PRODUCT, part, budget, width, siblings=parts) for part in parts
+    ]
+    backwards = [
+        _fit_part_label(TWO_PART_PRODUCT, part, budget, width, siblings=tuple(reversed(parts)))
+        for part in parts
+    ]
+
+    assert alone[0] == alone[1], "형제를 모르는 줄임은 짧은 두 부품을 가르지 못한다"
+    assert len(set(fitted)) == len(parts)
+    assert backwards == fitted
+    shorter, middle, longest = fitted
+    assert shorter.startswith(f"({parts[0][:3]}") and middle.startswith(f"({parts[1][:3]}")
+    assert longest.startswith("(…") and parts[2][len(parts[2]) - len(parts[1]) - 1] in longest
+    assert all(width(text) <= budget for text in fitted)
+
+
+def test_a_part_that_is_the_end_of_its_one_sibling_starts_from_its_first_letter() -> None:
+    """부품 둘 사슬 — 짧은 쪽이 「(…끝)」 으로 줄면 긴 쪽의 끝과 겹치지는 않아도 무엇이 갈리는지
+    보이지 않는다. 짧은 쪽은 첫 글자부터, 긴 쪽은 갈리는 글자부터 남는다."""
+    parts = CHAINED_PARTS[0][:2]
+    budget = _legend_name_budget_units()
+
+    shorter, longer = _fitted_group(parts, budget)
+
+    assert shorter.startswith(f"({parts[0][:6]}") and shorter.endswith("…)")
+    assert longer.startswith("(…_") and longer.endswith("…)")
+    assert all(_text_width_units(text) <= budget for text in (shorter, longer))
+
+
+def test_a_part_that_fits_whole_from_its_first_letter_drops_the_trailing_ellipsis() -> None:
+    """첫 글자에서 갈리는 부품이 「(부품)」 으로 온전히 들면 뒤 말줄임 없이 다 남긴다 — 끝을 남기는
+    줄임만으로는 둘 다 첫 글자를 잃어 같은 글이다."""
+    parts = ("A_LONG_SHARED_TAIL", "B_LONG_SHARED_TAIL")
+    budget = _text_width_units(f"({parts[0]})")
+    alone = [_fit_part_label(TWO_PART_PRODUCT, part, budget, _text_width_units) for part in parts]
+
+    assert alone[0] == alone[1]
+    assert _fitted_group(parts, budget) == [f"({part})" for part in parts]
 
 
 def test_the_lead_stays_in_front_even_when_only_the_part_end_is_left() -> None:

@@ -829,10 +829,11 @@ def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() ->
     같은 날 답 q6 · q6b · q7)으로, 지금 보는 달 표지를 그림에서 빼고 세대를 `layout.meta` 에
     실어(11), 제품별 소요대수 분류 줄이 부품마다 이름표 · 부품을 남기는 줄임(12)으로, 같은 제품의
     부품 줄끼리 끝을 같이 쓰면 갈리는 글자를 남기고 줄 표지 「└ 」 를 늘 남기는 줄임(13)으로 그림
-    모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 13 이다(AGENTS 5장 16)."""
+    모양이 바뀌었다. 한 부품이 같은 제품의 다른 부품 줄의 끝 전체면 첫 글자부터 남기는 줄임(14)으로
+    또 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 14 다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 13
+    assert CANVAS_SCHEMA_VERSION == 14
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
