@@ -73,7 +73,11 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.page_tabs_state import queue_switch, refused_at_tab_limit
 from capa_simulation.persistence._sql_helpers import pinned_connections
-from capa_simulation.persistence.models import RevisionSummary, ScenarioSummary
+from capa_simulation.persistence.models import (
+    RevisionSummary,
+    RouteLoadExceptionProfile,
+    ScenarioSummary,
+)
 from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS
 from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
@@ -295,15 +299,26 @@ def render_input_check_panel(
     """
     from capa_simulation.components.scenario_list_grid import render_list_mount
 
-    route_exceptions = route_exceptions_of(database_path)
-    if _CHECK_LABELS_ROUTE.peek() != route_exceptions.digest:
-        _CHECK_LABELS.clear()
-        _CHECK_LABELS_ROUTE.set(route_exceptions.digest)
-    table_box = st.container()
-    revision = next((item for item in revisions if item.revision_id == draft.picked), None)
     check: RevisionInputCheck | None = None
     failure: str | None = None
-    if counting and revision is not None:
+    # 선언 판 읽기도 이 칸의 DB 읽기다 — 못 읽으면(파일 잠금 등) 아래 셈 실패와 같은 마크로 줄인다.
+    route_exceptions: RouteLoadExceptionProfile | None
+    try:
+        route_exceptions = route_exceptions_of(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        route_exceptions = None
+        failure = bootstrap_error_message(exc)
+    # 센 글은 그 글을 센 판에서만 산다 — 판이 바뀌었거나 판을 모르면 버리고 다음에 읽은 판으로 센다.
+    seen_digest = None if route_exceptions is None else route_exceptions.digest
+    if _CHECK_LABELS_ROUTE.peek() != seen_digest:
+        _CHECK_LABELS.clear()
+        if seen_digest is None:
+            _CHECK_LABELS_ROUTE.clear()
+        else:
+            _CHECK_LABELS_ROUTE.set(seen_digest)
+    table_box = st.container()
+    revision = next((item for item in revisions if item.revision_id == draft.picked), None)
+    if counting and revision is not None and route_exceptions is not None:
         with st.container():
             try:
                 with st.spinner(SPINNER_TEXT):

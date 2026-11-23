@@ -553,6 +553,28 @@ def test_a_read_failure_is_the_data_error_mark_and_the_table_stays(
     assert "계산 멈춤" not in _heads(app)
 
 
+def test_a_declaration_read_failure_is_the_same_mark_and_drops_the_counted_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언 판을 읽지 못해도(파일 잠금 — 선언 저장 뒤 공용 프로필이 빗나간 회차) 화면이
+    멈추지 않고 같은 「데이터 Error」 마크(`SC-02`)이고 리비전 표는 남는다. 판을 모르니 센 「계산」
+    글은 버린다 — 다음에 읽은 판으로 다시 센다."""
+    script, _ = _seeded(tmp_path)
+    app, browser, calls = _check_app(script, monkeypatch)
+    assert any(calc != ("—", "none") for calc in _calc(calls).values())
+
+    def held(_database_path: str) -> object:
+        raise duckdb.IOException("IO Error: Could not set lock on file")
+
+    monkeypatch.setattr(input_check, "route_exceptions_of", held)
+    browser.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert data_error_marks(app) == 1
+    assert set(_calc(calls).values()) == {("—", "none")}
+    assert "계산 멈춤" not in _heads(app)
+
+
 def test_a_hidden_tab_draws_the_table_without_counting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
