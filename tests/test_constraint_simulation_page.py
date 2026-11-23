@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections.abc import Iterator
@@ -1510,7 +1511,10 @@ def test_a_two_part_product_offers_the_whole_product_then_each_part(tmp_path: Pa
 
 def _product_title(app: AppTest) -> str:
     """월별 계산표 라벨 칸의 「제약 제품 · …」 구획 제목 글(마크업을 뗀 글)."""
-    result, labels = _shown(app)
+    return _sheet_product_title(*_shown(app))
+
+
+def _sheet_product_title(result: ConstraintResult, labels: ConstraintLabels) -> str:
     sheet = build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
     titles = [
         re.sub(r"<[^>]+>", "", str(item.text))
@@ -1541,6 +1545,34 @@ def test_the_sheet_title_of_a_part_keeps_the_part_end(tmp_path: Path) -> None:
     for title, part in zip(titles, (PART_A, PART_B), strict=True):
         assert title.startswith("제약 제품 · ")
         assert title.endswith(f"{part[-2:]})"), title
+
+
+# 끝 글자를 길게 같이 쓰는 두 부품 — 형제를 모르는 줄임으로는 계산표 제목이 같은 글이 된다.
+TAIL_SHARING_PARTS = ("DEMO_P1_SHARED_CUSTOM_KIT", "DEMO_P2_SHARED_CUSTOM_KIT")
+
+
+def test_the_sheet_titles_of_parts_sharing_their_end_stay_apart(tmp_path: Path) -> None:
+    """고르기의 형제 부품(`ConstraintLabels.part_siblings`)이 계산표 제목 줄임에 닿는다 — 끝을 길게
+    같이 쓰는 두 부품도 「제약 제품 · 이름표」 제목이 서로 다른 글이다. 형제를 빼고 그리면 둘이 같은
+    글이다(페이지가 형제를 넘기지 않으면 이 시험이 잡는다)."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database, parts=TAIL_SHARING_PARTS)
+    app = _opened((database, _equipment_database(tmp_path / "equipment.duckdb")))
+
+    titles: list[str] = []
+    alone: list[str] = []
+    for part, other in (TAIL_SHARING_PARTS, TAIL_SHARING_PARTS[::-1]):
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(f"{TWO_PART_PRODUCT} ({part})")
+        _ok(app.run())
+        result, labels = _shown(app)
+        assert labels.part == part and labels.part_siblings == (other,)
+        titles.append(_product_title(app))
+        alone.append(_sheet_product_title(result, dataclasses.replace(labels, part_siblings=())))
+
+    assert alone[0] == alone[1], "형제를 모르는 줄임은 이 두 부품의 제목을 가르지 못한다"
+    assert titles[0] != titles[1]
+    for title, part in zip(titles, TAIL_SHARING_PARTS, strict=True):
+        assert title.startswith("제약 제품 · ") and part[6] in title, title
 
 
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(

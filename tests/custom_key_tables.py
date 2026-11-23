@@ -83,7 +83,10 @@ def _seed_tables() -> dict[str, pd.DataFrame]:
 
 
 def two_part_tables(
-    *, vary_b: bool = True, split_capa_code: bool = True
+    *,
+    vary_b: bool = True,
+    split_capa_code: bool = True,
+    parts: tuple[str, str] = (PART_A, PART_B),
 ) -> dict[str, pd.DataFrame]:
     """시드 한 제품(`TWO_PART_PRODUCT`)을 두 부품으로 가른 RQ 16표(사본).
 
@@ -91,6 +94,7 @@ def two_part_tables(
     있는 표(계획 · 경로)는 B 를 `PART_B_CAPA_CODE` 로 바꿔 부품마다 경로가 따로 붙게 하고, 아니면
     두 부품이 시드의 Capa Code 를 함께 쓴다. 계획 수량은 두 부품이 반씩 나눈다.
     `vary_b` 이면 B 의 EDS 수율과 UPEH 만 바꾼다. 다른 제품과 CUSTOM 키가 없는 표는 시드 그대로다.
+    `parts` 는 A · B 자리에 둘 부품 이름이다(부품 이름표 줄임 시험이 끝을 같이 쓰는 이름을 준다).
     """
     tables = {name: frame.copy() for name, frame in _seed_tables().items()}
     for name in custom_keyed_tables():
@@ -98,8 +102,8 @@ def two_part_tables(
         product = frame["제품정보"].astype("string").eq(TWO_PART_PRODUCT).fillna(False)
         if not bool(product.any()):
             raise AssertionError(f"시드 {name} 에 {TWO_PART_PRODUCT} 행이 없습니다.")
-        part_a = frame.loc[product].assign(**{CUSTOM_COLUMN: PART_A})
-        part_b = frame.loc[product].assign(**{CUSTOM_COLUMN: PART_B})
+        part_a = frame.loc[product].assign(**{CUSTOM_COLUMN: parts[0]})
+        part_b = frame.loc[product].assign(**{CUSTOM_COLUMN: parts[1]})
         if split_capa_code and "Capa Code" in frame.columns:
             part_b["Capa Code"] = PART_B_CAPA_CODE
         if name == "RQ_PKG_PLAN":
