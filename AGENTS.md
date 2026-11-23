@@ -1990,7 +1990,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `render_oversized_lists`. 계획 쪽 둘은 `plan_exclusion_lists` — 고칠 곳은 까닭 칸 머리 풍선 `LOAD_EXCLUSION_HELP` ·
   `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
   `alert_required_exclusions`)를 낸다. 계획 쪽 두 목록의 분류 칸(`_LOAD_EXCLUSION_DIMENSIONS` · `_UNROUTED_DIMENSIONS`)은
-  Stack 뒤에 `CUSTOM` 을 싣는다.
+  Stack 뒤에 `CUSTOM` 을 싣고, 경로 쪽 세 목록(`ST-15` · `ST-21` · `ST-22`)은 산출 결과 소요대수 표와 같은
+  `required_equipment.RESULT_DIMENSIONS` 로 분류 칸을 세운다(CUSTOM 도 Stack 뒤).
   - 문장은 `capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다 — 그래서 저장 · 지정 · 복제 · 자동 갱신
     경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
@@ -2759,8 +2760,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 · 부하 · 대당 Capa 를 잇는 키(`REQB_COLUMNS` · `LOAD_KEYS` · `CAPACITY_KEYS`)와 PKG 부하 줄을 짓는 `_build_loads` 의
     칸 목록 · 글자 다듬기 목록은 `CUSTOM` 을 싣는다 — PKG 쪽 칸 목록에서 빠지면 PKG 부하의 CUSTOM 이 비어 경로에 못 붙고
     PKG 소요대수가 말없이 0 이 된다. 경로 없는 부하의 사유를 가르는 `_ROUTE_PRODUCT_KEYS` · `_ROUTE_FAMILY_KEYS` 에는
-    CUSTOM 이 **없다** — 부품만 어긋난 부하가 「경로 키 어긋남」 으로 갈린다(6장). 산출 결과 표 차원 `RESULT_DIMENSIONS`
-    에도 아직 없다.
+    CUSTOM 이 **없다** — 부품만 어긋난 부하가 「경로 키 어긋남」 으로 갈린다(6장). 산출 결과 소요대수 표와 경로 쪽 제외
+    목록의 분류 칸 `RESULT_DIMENSIONS` 는 Stack 뒤에 `CUSTOM` 을 싣는다 — 같은 화면 대당 Capa 표(`UNIT_CAPACITY_DIMENSIONS`)와
+    같은 칸 묶음이라 「상세」 를 켜면 한 제품의 부품이 부품마다 한 줄이고, 공정 단위 합(「상세」 끔)은 그대로다.
 - `src/capa_simulation/services/route_load_exceptions.py` — 공정별 부하 산출 예외의 순수 계산. 산식 id 목록
   `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
   id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
@@ -6395,7 +6397,8 @@ Chip 구성 · UPEH · 측정률 · 경로가 부품(CUSTOM 값)마다 붙고 �
 Stack 뒤에 둔다(3장 각 모듈). 빈 값은 표지 `"-"`(`core_data_derivation.CUSTOM_BLANK`) 하나이고, 0039 전에 저장한
 리비전 · 데이터셋 표는 모두 표지다(원천에서 되채우지 않음). 한 키라도 빠뜨리면 두 부품이 말없이 한 줄로 접히거나 부하가
 두 배가 되므로, 키를 손으로 적은 조인을 두지 않고 상수에서 낸다(12장 「새 업무 키」). 합쳐 보는 화면(HOME 도넛 · 제품별
-비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)과 산출 결과 소요대수 표는 아직 제품으로 합친다.
+비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)은 아직 제품으로 합친다. 산출 결과 소요대수 「상세」 표와
+그 제외 목록은 대당 Capa STEP별 표처럼 부품마다 한 줄이다(`required_equipment.RESULT_DIMENSIONS` — 공정 합은 같다).
 
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
 수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다. 월 축(`생산계획년월`)이

@@ -78,12 +78,16 @@ CAPACITY_KEYS = [
     "CUSTOM",
     "WF 구분",
 ]
+# 산출 결과 소요대수 표와 그 제외 목록의 분류 칸 — 같은 화면 대당 Capa 표
+# (`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이다. CUSTOM 이 Stack 뒤에 있어야 한 제품의
+# 부품이 한 줄로 합쳐지지 않고 부품마다 한 줄이 된다(공정 합은 같다).
 RESULT_DIMENSIONS = [
     "공정",
     "Area_Name",
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "소요기준",
     "STEP_SEQ",

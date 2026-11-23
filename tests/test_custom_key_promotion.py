@@ -30,6 +30,7 @@ from custom_key_tables import (
 )
 from test_core_data_pipeline import _core_data_row
 
+from capa_simulation.components.exclusion_table import exclusion_export
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.clipboard_table import parse_clipboard_table
@@ -41,6 +42,7 @@ from capa_simulation.services.core_data_derivation import (
     normalize_custom_values,
 )
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
     calculate_density_load,
@@ -49,6 +51,11 @@ from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
     reference_edit_csv_bytes,
     strip_excel_text_guard,
+)
+from capa_simulation.services.required_equipment import (
+    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+    RESULT_DIMENSIONS,
+    required_equipment_to_month_table,
 )
 
 
@@ -193,6 +200,8 @@ def test_display_order_keeps_the_source_order_without_rules_or_parts() -> None:
 _CUSTOM = "CUSTOM"
 # 소요기준 PKG 경로로 바꿔 보는 공정 — 시드에는 PKG 경로가 없다.
 _PKG_PROCESS = "DEMO_Final_Test"
+# `RQ_UPEH` 행(UPEH · ST)을 빼 대당 Capa 가 없게 만드는 공정.
+_NO_CAPACITY_PROCESS = "DEMO_Final_Test"
 
 
 def _seed() -> dict[str, pd.DataFrame]:
@@ -381,3 +390,68 @@ def test_a_table_without_the_custom_column_stops_instead_of_folding(name: str) -
         messages.append(str(error))
 
     assert any(name in message and _CUSTOM in message for message in messages), messages
+
+
+def _month_table(tables: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """산출 결과 소요대수 탭의 월 표(표시순서 정렬 앞)."""
+    return required_equipment_to_month_table(_unit_and_required(tables)[1])
+
+
+def _process_total(table: pd.DataFrame) -> pd.DataFrame:
+    """「상세」 를 끈 소요대수 표 — Area_Name · 공정 단위 합."""
+    months = [column for column in table.columns if column not in RESULT_DIMENSIONS]
+    return table.groupby(["Area_Name", "공정"])[months].sum(min_count=1)
+
+
+def test_the_required_month_table_gives_each_part_a_row_with_the_same_process_total() -> None:
+    """⑤ 산출 결과 소요대수 표(분류 칸 `RESULT_DIMENSIONS`)도 부품마다 한 줄이다.
+
+    B 를 바꾸지 않은 두 부품 견본은 공정 단위 합(「상세」 끔)이 시드와 같고, 그 제품의 줄은 시드 한
+    줄마다 부품 A · B 두 줄이다. B 를 바꾼 견본의 부품 줄은 부품 하나씩 따로 돌린 표의 줄과 같다.
+    """
+    seed_table = _month_table(_seed())
+    even_table = _month_table(two_part_tables(vary_b=False))
+    seed_total = _process_total(seed_table)
+    assert not seed_total.empty and len(seed_total.columns) > 0
+    pd.testing.assert_frame_equal(_process_total(even_table), seed_total, check_exact=False)
+
+    route_keys = [column for column in RESULT_DIMENSIONS if column != _CUSTOM]
+    seed_product = seed_table.loc[seed_table["제품정보"].eq(TWO_PART_PRODUCT)]
+    assert not seed_product.empty
+    assert _CUSTOM in even_table.columns
+    product = even_table.loc[even_table["제품정보"].eq(TWO_PART_PRODUCT)]
+    parts = product.groupby(route_keys, dropna=False)[_CUSTOM].agg(sorted)
+    assert len(parts) == len(seed_product)
+    assert parts.tolist() == [[PART_A, PART_B]] * len(seed_product)
+    assert len(even_table) == len(seed_table) + len(seed_product)
+
+    two_table = _month_table(two_part_tables())
+    months = [column for column in two_table.columns if column not in RESULT_DIMENSIONS]
+    for part in (PART_A, PART_B):
+        alone = _month_table(single_part_tables(part))
+        pd.testing.assert_frame_equal(_part_rows(two_table, part), _part_rows(alone, part))
+    assert not _part_rows(two_table, PART_A)[months].equals(_part_rows(two_table, PART_B)[months])
+
+
+def test_the_required_exclusion_list_carries_the_part_beside_the_stack() -> None:
+    """⑥ 소요대수에서 뺀 경로 목록(`ST-15` — 분류 칸 `RESULT_DIMENSIONS`)도 CUSTOM 을 분류 칸 Stack
+    바로 뒤에 세운다. 두 부품의 대당 Capa 가 함께 없으면 두 부품 줄이 따로 실린다."""
+    tables = two_part_tables()
+    upeh = tables["RQ_UPEH"]
+    lost = upeh["공정"].eq(_NO_CAPACITY_PROCESS) & upeh["제품정보"].eq(TWO_PART_PRODUCT)
+    tables["RQ_UPEH"] = upeh.loc[~lost.fillna(False).astype("bool")].reset_index(drop=True)
+
+    required = _unit_and_required(tables)[1]
+    exclusions = required.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR]
+    exported = exclusion_export(
+        exclusions,
+        dimensions=RESULT_DIMENSIONS,
+        display_order=tables["RQ_DISPLAY_ORDER"],
+        page=PAGE_CALCULATION,
+        tab=TAB_REQUIRED,
+    )
+
+    columns = list(exported.columns)
+    assert columns.index(_CUSTOM) == columns.index("Stack") + 1
+    assert set(exported["공정"]) == {_NO_CAPACITY_PROCESS}
+    assert set(exported[_CUSTOM]) == {PART_A, PART_B}

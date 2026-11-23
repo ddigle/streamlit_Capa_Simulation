@@ -3,7 +3,7 @@
 import dummy_series_tables as demo
 import pandas as pd
 import pytest
-from custom_key_tables import with_blank_custom
+from custom_key_tables import PART_A, PART_B, with_blank_custom
 
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
@@ -34,6 +34,7 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_BASIS_MISSING_REASON
 from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
 
 
 def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
@@ -118,6 +119,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     assert "CS" not in table.columns
     assert table["STEP_SEQ"].tolist() == ["10"]
     assert table["MCP_SEQ"].tolist() == ["1"]
+    assert table["CUSTOM"].tolist() == [CUSTOM_BLANK]
     assert table.loc[0, "202608"] == pytest.approx(2.0)
 
 
@@ -474,6 +476,44 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
     assert result.empty
     assert list(table.columns) == RESULT_DIMENSIONS
     assert RESULT_DIMENSIONS[-2:] == ["STEP_SEQ", "MCP_SEQ"]
+
+
+def test_the_month_table_keeps_one_row_per_part_with_the_same_process_total() -> None:
+    """산출 결과 소요대수 표는 한 제품의 부품(CUSTOM)마다 한 줄이다 — 같은 화면 대당 Capa 표
+    (`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이고 CUSTOM 은 Stack 바로 뒤다. 공정 단위로 합친 값
+    (「상세」 끔)은 부품을 한 줄로 합친 표와 같다."""
+    assert set(RESULT_DIMENSIONS) == set(UNIT_CAPACITY_DIMENSIONS)
+    assert RESULT_DIMENSIONS.index("CUSTOM") == RESULT_DIMENSIONS.index("Stack") + 1
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "Chip",
+    }
+    result = pd.DataFrame(
+        [
+            {**route, "CUSTOM": PART_B, "Capa Code": "CAPA-B", "소요대수": 0.8},
+            {**route, "CUSTOM": PART_A, "소요대수": 1.2},
+        ]
+    )
+
+    table = required_equipment_to_month_table(result)
+    folded = required_equipment_to_month_table(result.assign(CUSTOM=CUSTOM_BLANK))
+
+    assert table["CUSTOM"].tolist() == [PART_A, PART_B]
+    assert table["202608"].tolist() == pytest.approx([1.2, 0.8])
+    assert len(folded) == 1
+    totals = table.groupby(["Area_Name", "공정"], as_index=False)["202608"].sum()
+    assert totals["202608"].tolist() == pytest.approx(folded["202608"].tolist())
 
 
 def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:

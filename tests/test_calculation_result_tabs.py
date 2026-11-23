@@ -164,6 +164,24 @@ def test_the_required_tab_alerts_and_carries_its_lists_on_the_alarm_rows() -> No
     assert not list(app.expander)
 
 
+def test_the_required_detail_and_its_exclusion_list_put_custom_beside_the_stack() -> None:
+    """소요대수 「상세」 표와 그 제외 목록(`ST-15`)은 같은 화면 대당 Capa 표처럼 분류 칸 Stack
+    바로 뒤에 CUSTOM 을 세운다(`RESULT_DIMENSIONS`) — 한 제품의 부품이 한 줄로 합쳐지지 않는다."""
+    app = _open_calc_tab(
+        AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
+    note = active_state(app, "ST-15")
+    assert note is not None
+    columns = list(note_table(note, "소요대수 제외 기준정보")["columns"])
+    assert columns.index("CUSTOM") == columns.index("Stack") + 1
+
+    app.session_state["required_equipment_detail"] = True
+    app.run()
+    assert not app.exception
+    dimensions = list(app.session_state["captured_dimensions::required_equipment_detail_table"])
+    assert dimensions.index("CUSTOM") == dimensions.index("Stack") + 1
+
+
 def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatch) -> None:
     """표 하나의 오류(표시순서 규칙 충돌 등)는 그 표의 탭에만 뜬다. 다른 탭은 그대로 쓴다."""
 

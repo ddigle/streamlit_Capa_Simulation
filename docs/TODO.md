@@ -1847,9 +1847,9 @@
 
 ### 업무 키 승격
 
-- [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격은 들어왔다(3장 「계산」
-  2026-11-23). 남은 것: 산출 결과 소요대수 표 · 그 제외 목록의 분류 칸(`required_equipment.RESULT_DIMENSIONS` — 지금은 부품을
-  합쳐 한 줄), 확인 스크립트 셋이 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워 읽는 갈래, 합쳐 보는 화면(HOME 도넛 · 제품별
+- [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격과 산출 결과 소요대수 표 ·
+  그 제외 목록의 부품 줄(`required_equipment.RESULT_DIMENSIONS`)은 들어왔다(3장 「계산」 2026-11-23). 남은 것: 확인 스크립트
+  셋이 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워 읽는 갈래, 합쳐 보는 화면(HOME 도넛 · 제품별
   비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나)).
 - [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
@@ -2559,14 +2559,23 @@
 
 ### 계산
 
+- (2026-11-23) **산출 결과 소요대수 표와 그 제외 목록도 부품(CUSTOM)마다 한 줄이다** — `required_equipment.RESULT_DIMENSIONS`
+  의 Stack 뒤에 CUSTOM 을 둬 같은 화면 대당 Capa 표(`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이 됐다. 그 상수를 쓰는 곳은 월 표
+  (`required_equipment_to_month_table`) · 캐시 래퍼(`get_required_month_table`) · 화면의 달 칸 고르기 · 경로 쪽 제외 목록 셋
+  (`ST-15` · `ST-21` · `ST-22`)뿐이라 고침은 상수 하나다. 공정 단위 합(「상세」 끔)은 그대로이고 한 제품의 두 부품은 두 줄이다
+  (`tests/test_custom_key_promotion.py` ⑤ · ⑥). 자체 검토(칸이 생기는 곳 — 소요대수 「상세」 표와 그 표 조건 카드 필터 · CSV ·
+  시트 엑셀, 경로 쪽 제외 목록 셋의 알림 표 · CSV): PRC-01(대당 Capa 표 · 계획 쪽 제외 목록과 같은 꼴로 소요대수 쪽 남은 자리를 —
+  찾은 자리 넷 · 고친 곳 상수 하나 · 남긴 것은 합쳐 보는 화면(Q7 (나)) · 그물 위 시험과 `tests/test_calculation_result_tabs.py`)
+  통과 · UI-CON-02(칸 이름은 원천 그대로 「CUSTOM」) 통과 · UI-DAT-06(빈 CUSTOM 은 표지 `-`) 통과 · UI-TXT-01(설명 문구를 더하지
+  않음) 통과.
 - (2026-11-23) **CUSTOM 을 제품 구분 키로 올렸다 — 합산하지 않고 조인 키로 끝까지 간다**(사용자 결정 「CUSTOM 이 다르면 다른
   제품」 · 2026-11-22 답 Q11 — 시뮬레이션 `0039`, 옛 행은 모두 표지 `-` 이고 원천에서 되채우지 않음) — 계약 8표 `derived_keys` ·
   변환 칸 끝 · 계산 상수(Stack 뒤) · 손 키 조인(Chip · Density 펼침은 상수에서 냄) · 편집 차원 · 표시 차례 끝 열쇠
   (`custom_sort_key`) · 월 머지 보충 키 · 부대공정 펼침과 「새 판으로」 갈림 까닭 · 가상 제품 원본 목록 · 비교 GAP 다시 짝짓기
   잇기 · `revision_compatibility` 안전망 · 기존 결과 대조 원천 맞춤(`source_custom_aligned`)을 한 변경으로 넣었다(반만 넣으면 두
   부품이 말없이 접히거나 부하가 두 배). CUSTOM 이 한 값이면 결과가 그대로이고, 두 부품은 부품마다 따로 돌린 값과 같다
-  (`tests/test_custom_key_promotion.py` — PKG 경로 포함). 합쳐 보는 화면과 산출 결과 소요대수 표는 아직 제품으로 합친다(2장
-  「업무 키 승격」). 자체 검토(칸이 생기는 표 — PKG PLAN 격자 · 수율 · UPEH · 측정률 편집표 · 대당 Capa 표 · 환산 탭 · 공정
+  (`tests/test_custom_key_promotion.py` — PKG 경로 포함). 합쳐 보는 화면은 아직 제품으로 합친다(2장 「업무 키 승격」 — 산출 결과
+  소요대수 표는 바로 위 줄). 자체 검토(칸이 생기는 표 — PKG PLAN 격자 · 수율 · UPEH · 측정률 편집표 · 대당 Capa 표 · 환산 탭 · 공정
   Capa 상세 경로 추적 · 계획 쪽 제외 목록, STEP 경로 선택지 글, 부대공정 「새 판으로」 까닭 글, 불러오기 막음 글): UI-DAT-06(빈
   CUSTOM 은 빈칸 · 0 이 아니라 표지 `-` 로 보임 — 옛 시나리오는 모두 `-`) 통과 · UI-DAT-07(경로 추적 한 줄 = 한 부품, 줄마다
   인자 곱 = 대당 Capa · 부하량 ÷ 대당 Capa = 소요대수 — `tests/test_process_capa_detail.py`) 통과 · UI-CON-02(칸 · 선택지 ·
