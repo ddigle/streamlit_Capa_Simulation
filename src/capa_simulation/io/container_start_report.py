@@ -265,6 +265,8 @@ class SyncStart:
 # 짧은 판 글자(`bdq_login_child.VERSION_TEXT`), 시그널은 POSIX 이름. 이 모듈은 하위 본문을 import
 # 하지 않는다 — 같은 꼴을 시험이 맞댄다.
 CHILD_STAGES: Final = ("import", "login", "time")
+# 진단의 불러온 길 — 하위 본문 단계 줄의 끝 칸(`bdq_login_child.STEP_LOADS` 와 같다).
+CHILD_LOADS: Final = ("light", "full")
 _CHILD_VERSION: Final = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}")
 _CHILD_SIGNAL: Final = re.compile(r"SIG[A-Z0-9]{1,12}")
 # 종료 코드 · 초의 받는 범위(Windows 의 종료 코드는 부호 없는 32비트까지 온다).
@@ -514,7 +516,8 @@ class ChildDiag:
     `getpass_asterisk` — 하위 본문이 읽은 판(불러온 모듈의 `__version__`, 아니면 설치 정보 — `-`
     없음 · `?` 낯선 꼴 · 빈 글 모름). `memory` — 하위 프로세스 앞뒤의 메모리 단서(`ChildMemory` —
     재지 않았으면 `None`). `process` — 하위 프로세스를 띄우기 바로 앞의 프로세스 단서(`ProcessClues`
-    — 재지 않았으면 `None`)."""
+    — 재지 않았으면 `None`). `load` — 하위 본문이 패키지를 불러온 길(`CHILD_LOADS` — `light` 가벼운
+    길 · `full` 전체, 단계 줄이 없으면 빈 글 — 그때는 칸이 서지 않는다)."""
 
     exit_code: int | None = None
     signal: str = ""
@@ -525,10 +528,12 @@ class ChildDiag:
     getpass_asterisk: str = ""
     memory: ChildMemory | None = None
     process: ProcessClues | None = None
+    load: str = ""
 
     def fields(self) -> dict[str, object]:
-        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`. 메모리 단서 ·
-        프로세스 단서는 재었을 때만 칸이 선다(`MEMORY_FIELDS` · `PROCESS_FIELDS`)."""
+        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`. 불러온 길은
+        알 때만, 메모리 단서 · 프로세스 단서는 재었을 때만 칸이 선다(`load` · `MEMORY_FIELDS` ·
+        `PROCESS_FIELDS`)."""
         found: dict[str, object] = {
             "exit": self.exit_code,
             "signal": self.signal or None,
@@ -538,6 +543,8 @@ class ChildDiag:
             "bigdataquery": self.bigdataquery or None,
             "getpass_asterisk": self.getpass_asterisk or None,
         }
+        if self.load:
+            found["load"] = self.load
         if self.memory is not None:
             found.update(self.memory.fields())
         if self.process is not None:
@@ -555,10 +562,11 @@ class ChildDiag:
     @property
     def text(self) -> str:
         """화면 값 조각 — 「종료 0 · 4.1초 · 단계 import · stderr - · bigdataquery 2.5.0 ·
-        getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」). 메모리 단서를
-        재었으면 그 뒤에 「cgroup … · oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`),
-        프로세스 단서를 재었으면 그 뒤에 「앱 뜬 지 … · 스레드 … · 열린 파일 … · pids … ·
-        프로세스 … · 좀비 …」(`ProcessClues.text`)."""
+        getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」). 불러온 길을 알면
+        그 뒤에 「불러오기 light」(또는 `full`), 메모리 단서를 재었으면 그 뒤에 「cgroup … ·
+        oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`), 프로세스 단서를 재었으면 그 뒤에
+        「앱 뜬 지 … · 스레드 … · 열린 파일 … · pids … · 프로세스 … ·
+        좀비 …」(`ProcessClues.text`)."""
         if self.exit_code is None:
             ended = "종료 -"
         elif self.signal:
@@ -574,6 +582,8 @@ class ChildDiag:
             f"bigdataquery {self.bigdataquery or '-'}",
             f"getpass_asterisk {self.getpass_asterisk or '-'}",
         ]
+        if self.load:
+            parts.append(f"불러오기 {self.load}")
         if self.memory is not None:
             parts.append(self.memory.text)
         if self.process is not None:
@@ -589,6 +599,7 @@ def parse_child(data: object) -> ChildDiag | None:
     code = _int_or_none(data.get("exit"))
     seconds = _float_or_none(data.get("sec"))
     stage = data.get("stage")
+    load = data.get("load")
     return ChildDiag(
         exit_code=code if code is not None and abs(code) < _CHILD_EXIT_LIMIT else None,
         signal=_matched(_CHILD_SIGNAL, data.get("signal")),
@@ -603,6 +614,7 @@ def parse_child(data: object) -> ChildDiag | None:
         getpass_asterisk=_child_version(data.get("getpass_asterisk")),
         memory=parse_memory(data),
         process=parse_process(data),
+        load=load if isinstance(load, str) and load in CHILD_LOADS else "",
     )
 
 
