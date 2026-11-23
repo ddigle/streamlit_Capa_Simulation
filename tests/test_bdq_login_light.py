@@ -43,6 +43,8 @@ SWITCH = "CAPA_BDQ_LOGIN_LIGHT"
 LIGHT_LOADED = "server_auth ready=0 pyarrow=blocked"
 # 전체 길(판 하위 꾸러미 `__init__` 다음)에서 `pyarrow` 막음 없이 불러온 흔적.
 FULL_LOADED = "server_auth ready=1 pyarrow=open"
+# 가짜 `pyarrow` 를 불러온 흔적.
+ARROW_LOADED = "pyarrow_import"
 
 
 @pytest.fixture(autouse=True)
@@ -72,13 +74,14 @@ def light_package(
     version: str | None = None,
     folder: bool = True,
     nest: bool = True,
+    pyarrow: bool = False,
 ) -> Path:
     """가짜 패키지를 짓고 하위 프로세스가 그 자리만 찾게 한다."""
     root = tmp_path / "light-site"
     if version is None:
-        build_light_package(root, folder=folder, nest=nest)
+        build_light_package(root, folder=folder, nest=nest, pyarrow=pyarrow)
     else:
-        build_light_package(root, version=version, folder=folder, nest=nest)
+        build_light_package(root, version=version, folder=folder, nest=nest, pyarrow=pyarrow)
     monkeypatch.setenv("PYTHONPATH", str(root))
     return root
 
@@ -155,19 +158,113 @@ def test_without_every_light_condition_the_child_takes_the_full_path(
     assert result.diag is not None and result.diag.load == bdq_login_child.LOAD_FULL
 
 
+@pytest.mark.parametrize("name", ["light_import_raises", "light_import_exit"])
 def test_a_server_auth_import_failure_clears_the_shells_and_loads_the_real_package(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq, name: str
 ) -> None:
-    """가벼운 길의 `server_auth` import 가 예외면 심은 빈 꾸러미와 `pyarrow` 막음을 걷고 전체 길로
-    간다 — 빈 꾸러미가 남았으면 `login` 이 없어 `login()` 의 try 안에서 터져 거절이 된다."""
+    """가벼운 길의 `server_auth` import 가 예외(`SystemExit` 까지)면 심은 빈 꾸러미와 `pyarrow`
+    막음을 걷고 전체 길로 간다 — 빈 꾸러미가 남았으면 `login` 이 없어 `login()` 의 try 안에서
+    터져 거절이 된다."""
     light_package(monkeypatch, tmp_path)
-    scene(monkeypatch, "light_import_raises")
+    scene(monkeypatch, name)
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
     assert result.outcome == bdq_login.OUTCOME_OK
     seen = traces(fake)
     assert seen.index(LIGHT_LOADED) < seen.index("package_init") < seen.index(FULL_LOADED)
     assert fake.logins() == 1
     assert result.diag is not None and result.diag.load == bdq_login_child.LOAD_FULL
+
+
+@pytest.mark.parametrize("name", ["login_late_pyarrow", "time_late_pyarrow"])
+def test_the_pyarrow_block_lasts_only_while_loading_so_a_late_import_still_works(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq, name: str
+) -> None:
+    """`pyarrow` 는 `server_auth` 를 불러오는 동안만 막는다 — `login()` · `getTokenTime` 이
+    늦게 불러와도 가벼운 길에만 있는 실패가 단계 줄 `login` 뒤(거절 · 확인 못 함)로 나오지
+    않는다."""
+    light_package(monkeypatch, tmp_path, pyarrow=True)
+    scene(monkeypatch, name)
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    seen = traces(fake)
+    assert "package_init" not in seen and LIGHT_LOADED in seen
+    assert seen.index(LIGHT_LOADED) < seen.index(ARROW_LOADED)
+    assert result.diag is not None
+    assert (result.diag.stage, result.diag.load) == ("time", bdq_login_child.LOAD_LIGHT)
+
+
+@pytest.mark.parametrize(
+    ("names", "load", "loaded"),
+    [
+        pytest.param(
+            ("nest_loads_pyarrow", "login_late_pyarrow"),
+            bdq_login_child.LOAD_LIGHT,
+            ["server_auth ready=0 pyarrow=loaded"],
+            id="light",
+        ),
+        pytest.param(
+            ("nest_loads_pyarrow", "light_import_raises"),
+            bdq_login_child.LOAD_FULL,
+            ["server_auth ready=0 pyarrow=loaded", "server_auth ready=1 pyarrow=loaded"],
+            id="back_to_full",
+        ),
+    ],
+)
+def test_a_pyarrow_loaded_before_the_block_is_neither_blocked_nor_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    fake: FakeBdq,
+    names: tuple[str, ...],
+    load: str,
+    loaded: list[str],
+) -> None:
+    """막기 전에 이미 불린 `pyarrow`(빈 꾸러미를 채우며 불림)는 막지 않고, 전체 길로 돌아갈 때도
+    걷지 않는다 — 같은 모듈을 다시 불러오지 않는다."""
+    light_package(monkeypatch, tmp_path, pyarrow=True)
+    scene(monkeypatch, *names)
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    seen = traces(fake)
+    assert [line for line in seen if line.startswith("server_auth ")] == loaded
+    assert seen.count(ARROW_LOADED) == 1
+    assert result.diag is not None and result.diag.load == load
+
+
+def test_the_light_path_binds_the_version_package_on_the_top_package(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq
+) -> None:
+    """빈 맨 위 꾸러미에 판 하위 꾸러미가 속성으로 묶인다 — `login()` 이 맨 위부터 점 이름으로
+    형제 모듈까지 따라가도 선다(import 가 하던 묶기)."""
+    light_package(monkeypatch, tmp_path)
+    scene(monkeypatch, "login_walks_attributes")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_OK
+    seen = traces(fake)
+    assert "package_init" not in seen and "walked" in seen
+    assert result.diag is not None and result.diag.load == bdq_login_child.LOAD_LIGHT
+
+
+def test_a_light_only_token_time_failure_is_unconfirmed_after_a_real_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakeBdq
+) -> None:
+    """`getTokenTime` 이 빈 꾸러미 탓으로만 실패하면(판 하위 꾸러미 전역을 `from . import` 로
+    찾음) 로그인은 되어 토큰이 바뀌어도 「확인 못 함(남은 시간 모름)」 이다 — 거절이 아니다. 끄개를
+    넣으면 전체 길로 성공한다."""
+    light_package(monkeypatch, tmp_path)
+    scene(monkeypatch, "time_package_global")
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert (result.outcome, result.reason, result.error_kind) == (
+        bdq_login.OUTCOME_UNCONFIRMED,
+        bdq_login.REASON_REMAINING_UNKNOWN,
+        "builtins.ImportError",
+    )
+    assert result.diag is not None
+    assert (result.diag.stage, result.diag.load) == ("time", bdq_login_child.LOAD_LIGHT)
+    assert fake.logins() == 1 and fake.token_path().is_file()
+    monkeypatch.setenv(SWITCH, "off")
+    again = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert again.outcome == bdq_login.OUTCOME_OK
+    assert again.diag is not None and again.diag.load == bdq_login_child.LOAD_FULL
 
 
 @POSIX_ONLY
@@ -325,6 +422,15 @@ def test_every_step_line_parses_with_its_load() -> None:
     assert bdq_login.parse_step(odd.encode()) == bdq_login.StepLine()
     assert bdq_login.parse_steps(odd.encode()) == ("", {})
     assert tuple(bdq_login_child.STEP_LOADS) == report_contract.CHILD_LOADS
+
+
+def test_a_step_line_without_the_load_cell_still_gives_its_stage() -> None:
+    """끝 칸 `load` 가 없는 단계 줄도 단계 · 판을 준다(길은 빈 글) — 하위 본문과 부르는 쪽의 꼴이
+    어긋나도 import 단계 끊김을 「불러오는 중 끊김」 으로 읽는다."""
+    versions = {"bigdataquery": "2.5.0", "getpass_asterisk": "-"}
+    line = f"{bdq_login_child.STEP_MARKER} stage=import bigdataquery=2.5.0 getpass_asterisk=-"
+    assert bdq_login.parse_step(line.encode()) == bdq_login.StepLine("import", "", versions)
+    assert bdq_login.killed_before_send(-9, bdq_login.parse_steps(line.encode())[0])
 
 
 def test_the_diag_carries_the_load_only_when_known() -> None:

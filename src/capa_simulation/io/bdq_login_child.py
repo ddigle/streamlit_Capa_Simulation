@@ -41,13 +41,16 @@ Connection failed: HTTP Response Code :」). 그래서 OS 가 낸 연결 단계 
 **가벼운 불러오기 길**(2026-11-23 사용자 요청). 패키지를 통째로 불러오면 판 하위 꾸러미
 (`bigdataquery/py<주판><부판>`)의 `__init__` 이 import 때 망 초기화를 하고, 앱이 이미 한 그 초기화를
 하위가 한 번 더 해 메모리를 크게 쓴다. `login` · `getTokenTime` 은 그 판 하위 꾸러미의 `server_auth`
-에 있어, 꾸러미 둘을 빈 꾸러미(`__path__` 만)로 심고 `server_auth` 만 불러온다(`load_light` —
-`nest_asyncio.apply()` 는 남기고 `pyarrow` 는 막는다). 설치 판이 `LIGHT_VERSION` 이고 판 폴더가 있고
+에 있어, 꾸러미 둘을 빈 꾸러미(`__path__` 만 — 판 하위 꾸러미는 맨 위 꾸러미의 속성으로 묶는다)로
+심고 `server_auth` 만 불러온다(`load_light` — `nest_asyncio.apply()` 는 남기고 `pyarrow` 는
+`server_auth` 를 불러오는 동안만 막는다). 설치 판이 `LIGHT_VERSION` 이고 판 폴더가 있고
 끄개(`LIGHT_SWITCH_ENV=off`)가 없을 때만 가고(`light_folder`), `server_auth` 에 둘이 부를 수 있는
 것으로 있어야 쓴다. 이 준비는 모두 단계 줄 `login` 앞이고, 무엇이 실패해도 심은 것을 걷고 같은
-프로세스에서 전체 import 로 간다 — 가벼운 길에만 있는 실패가 `login()` 안(부르는 쪽이 거절로
-판정하는 자리)으로 넘어가지 않는다. 단계 줄의 끝 칸 `load` 가 어느 길로 갔는지다(`light` ·
-`full` — 전체로 돌아가면 `import` 단계 줄을 `full` 로 한 번 더 낸다).
+프로세스에서 전체 import 로 간다 — 준비에서 난 실패는 `login()` 안(부르는 쪽이 거절로 판정하는
+자리)으로 넘어가지 않는다. 다만 `login()` · `getTokenTime` 이 돌면서 빈 꾸러미의 꼴(꾸러미 전역 ·
+속성 · 꾸러미에서 이름을 찾는 늦은 import)에 기대 나는 실패는 그 선 뒤에서 나고, 지금 규칙대로
+거절 · 확인 못 함이다. 단계 줄의 끝 칸 `load` 가 어느 길로 갔는지다(`light` · `full` — 전체로
+돌아가면 `import` 단계 줄을 `full` 로 한 번 더 낸다).
 """
 
 from __future__ import annotations
@@ -83,7 +86,7 @@ STEP_LOADS = (LOAD_LIGHT, LOAD_FULL)
 LIGHT_VERSION = "2.5.0"
 LIGHT_PACKAGE = "bigdataquery"
 LIGHT_MODULE = "server_auth"
-# 가벼운 길에서만 막는 모듈(값 `None` — 불러오면 `ImportError`).
+# 가벼운 길에서 `server_auth` 를 불러오는 동안만 막는 모듈(값 `None` — 불러오면 `ImportError`).
 LIGHT_BLOCKED = "pyarrow"
 # 끄개 — 값이 `off`(앞뒤 공백 · 대소문자 무시)면 늘 전체 길. 하위는 앱 환경을 그대로 받는다.
 LIGHT_SWITCH_ENV = "CAPA_BDQ_LOGIN_LIGHT"
@@ -310,38 +313,51 @@ def _block_present() -> bool:
     return LIGHT_BLOCKED in sys.modules and sys.modules.get(LIGHT_BLOCKED) is None
 
 
-def _drop_light(blocked: bool) -> None:
-    """가벼운 길이 심은 것을 걷는다 — `bigdataquery` 와 `bigdataquery.` 로 시작하는 모듈 모두,
-    그리고 우리가 둔 막음(`blocked` 이고 값이 아직 `None` 인 것만)."""
-    for name in list(sys.modules):
-        if name == LIGHT_PACKAGE or name.startswith(f"{LIGHT_PACKAGE}."):
-            sys.modules.pop(name, None)
+def _lift_block(blocked: bool) -> None:
+    """우리가 둔 막음을 걷는다(`blocked` 이고 값이 아직 `None` 인 것만). 막은 동안 불린 모듈이
+    정한 「없음」 은 그대로 남는다."""
     if blocked and _block_present():
         del sys.modules[LIGHT_BLOCKED]
 
 
+def _drop_light(blocked: bool) -> None:
+    """가벼운 길이 심은 것을 걷는다 — `bigdataquery` 와 `bigdataquery.` 로 시작하는 모듈 모두,
+    그리고 우리가 둔 막음(`_lift_block`)."""
+    for name in list(sys.modules):
+        if name == LIGHT_PACKAGE or name.startswith(f"{LIGHT_PACKAGE}."):
+            sys.modules.pop(name, None)
+    _lift_block(blocked)
+
+
 def load_light(places: list[str], folder: str) -> types.SimpleNamespace | None:
-    """가벼운 길 — 빈 꾸러미 둘(`__path__` 만)을 심고 판 하위 꾸러미의 `server_auth` 만 불러와
-    `login` · `getTokenTime` 을 묶는다(`nest_asyncio.apply()` 는 `fill_package` 가 부르고
-    `pyarrow` 는 막는다). 무엇이 실패해도(예외 · 속성 없음 · 부를 수 없음) 심은 것을 걷고 `None`
-    이다 — 부르는 쪽이 같은 프로세스에서 전체 import 로 간다. 단계 줄 `login` 을 내보내기 전에
-    끝난다."""
-    blocked = LIGHT_BLOCKED not in sys.modules
+    """가벼운 길 — 빈 꾸러미 둘(`__path__` 만 — 판 하위 꾸러미는 맨 위 꾸러미의 속성으로 묶는다)을
+    심고 판 하위 꾸러미의 `server_auth` 만 불러와 `login` · `getTokenTime` 을 묶는다
+    (`nest_asyncio.apply()` 는 `fill_package` 가 부른다). `pyarrow` 는 `server_auth` 를 불러오는
+    동안만 막고 묶은 뒤 걷는다 — 그 뒤 `login()` · `getTokenTime` 이 늦게 불러와도 선다. 그 앞에
+    이미 불린 `pyarrow` 는 막지 않는다. 무엇이 실패해도(예외 · 속성 없음 · 부를 수 없음) 심은 것을
+    걷고 `None` 이다 — 부르는 쪽이 같은 프로세스에서 전체 import 로 간다. 단계 줄 `login` 을
+    내보내기 전에 끝난다."""
+    blocked = False
     try:
         top = types.ModuleType(LIGHT_PACKAGE)
         top.__path__ = list(places)
-        name = f"{LIGHT_PACKAGE}.{version_package()}"
+        child = version_package()
+        name = f"{LIGHT_PACKAGE}.{child}"
         package = types.ModuleType(name)
         package.__path__ = [folder]
         fill_package(package)
+        # 하위 꾸러미를 불러온 import 가 부모 속성으로 묶는 일 — 손으로 심어 빠지는 몫이다.
+        setattr(top, child, package)
         sys.modules[LIGHT_PACKAGE] = top
         sys.modules[name] = package
-        if blocked:
+        if LIGHT_BLOCKED not in sys.modules:
             sys.modules[LIGHT_BLOCKED] = None  # type: ignore[assignment]  # 막음 꼴(값 None)
+            blocked = True
         auth = importlib.import_module(f"{name}.{LIGHT_MODULE}")
         login = getattr(auth, "login", None)
         token_time = getattr(auth, "getTokenTime", None)
         if callable(login) and callable(token_time):
+            _lift_block(blocked)
             return types.SimpleNamespace(login=login, getTokenTime=token_time)
     except BaseException:  # 가벼운 길에만 있는 실패는 무엇이든 전체 길로 돌아간다
         pass

@@ -255,12 +255,12 @@ _MARKER_LINE: Final = re.compile(
 # 단계 줄(`bdq_login_child.step_line`) — 표지와 따로 푼다. 꼴이 어긋나면 진단의 단계 · 판 · 길만
 # 빈다. 끝 칸 `load` 는 패키지를 불러온 길이다(`STEP_LOADS`) — 하위 본문과 이 꼴은 함께 바꾼다
 # (`fullmatch` 라 모르는 칸이 서면 단계가 빈 글이 되어 import 단계 끊김을 `import_killed` 로
-# 읽지 못한다).
+# 읽지 못한다). 그 칸이 없는 줄도 받는다(길만 빈 글).
 _VERSION: Final = r"-|\?|[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}"
 _STEP_LINE: Final = re.compile(
     rf"{re.escape(STEP_MARKER)} stage=({'|'.join(STEP_STAGES)})"
     + "".join(rf" {re.escape(name)}=({_VERSION})" for name in VERSION_PACKAGES)
-    + rf" load=({'|'.join(STEP_LOADS)})"
+    + rf"(?: load=({'|'.join(STEP_LOADS)}))?"
 )
 # 표준 오류에서 마지막 traceback 을 찾는 머리와, 그 예외 줄 앞마디(종류 이름)의 꼴.
 _TRACEBACK_HEAD: Final = "Traceback (most recent call last):"
@@ -718,8 +718,8 @@ def parse_marker(output: bytes) -> Marker | None:
 
 @dataclass(frozen=True)
 class StepLine:
-    """하위 표준 출력의 마지막 단계 줄 — 단계 · 패키지를 불러온 길(`STEP_LOADS`) · 배포 → 판. 단계
-    줄이 없거나 꼴이 어긋나면 모두 빈 값이다."""
+    """하위 표준 출력의 마지막 단계 줄 — 단계 · 패키지를 불러온 길(`STEP_LOADS` — 그 칸이 없는
+    줄은 빈 글) · 배포 → 판. 단계 줄이 없거나 꼴이 어긋나면 모두 빈 값이다."""
 
     stage: str = ""
     load: str = ""
@@ -738,7 +738,7 @@ def parse_step(output: bytes) -> StepLine:
     if found is None:
         return StepLine()
     stage, *versions, load = found.groups()
-    return StepLine(stage, load, dict(zip(VERSION_PACKAGES, versions, strict=True)))
+    return StepLine(stage, load or "", dict(zip(VERSION_PACKAGES, versions, strict=True)))
 
 
 def parse_steps(output: bytes) -> tuple[str, dict[str, str]]:

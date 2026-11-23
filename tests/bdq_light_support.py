@@ -18,12 +18,22 @@
   기존 가짜와 같이 표준 입력 두 줄을 읽고 맞으면 토큰 파일을 쓴다(`login`).
 - 대신 모듈 `nest_asyncio` — `nest=True` 면 `apply()` 가 `nest_apply` 를
   남기고, `False` 면 불러올 때 `ImportError`(진짜가 깔려 있어도 없는 꼴).
+- 대신 모듈 `pyarrow`(`pyarrow=True` 일 때만) — 불러오면 `pyarrow_import` 를
+  남긴다(진짜 `pyarrow` 를 하위에서 가린다).
 - 장면(`FAKE_BDQ_SCENE`)은 판 하위 꾸러미 `__init__` 을 거치지 않은
   `server_auth`(가벼운 길)에서만 든다 — 전체 길은 그대로 선다:
-  `light_import_raises`(불러올 때 예외) · `light_import_kill`(불러올 때 제
-  프로세스에 SIGKILL — POSIX) · `light_no_login` · `light_login_not_callable` ·
-  `light_no_token_time` · `light_login_name_error`(`login()` 이 입력을 읽은 뒤
-  `NameError` — 꾸러미 전역을 기대한 꼴).
+  `light_import_raises`(불러올 때 예외) · `light_import_exit`(불러올 때
+  `SystemExit`) · `light_import_kill`(불러올 때 제 프로세스에 SIGKILL — POSIX) ·
+  `light_no_login` · `light_login_not_callable` · `light_no_token_time` ·
+  `light_login_name_error`(`login()` 이 입력을 읽은 뒤 `NameError` — 꾸러미
+  전역을 기대한 꼴).
+- 아래 장면은 빈 꾸러미의 꼴에 기대는 일을 그대로 한다 — 전체 길에서는
+  선다: `login_late_pyarrow` · `time_late_pyarrow`(`login()` ·
+  `getTokenTime` 안에서 `pyarrow` 를 늦게 불러옴) · `login_walks_attributes`
+  (`login()` 안에서 맨 위 꾸러미부터 속성으로 형제 모듈까지 따라감) ·
+  `time_package_global`(`getTokenTime` 안에서 판 하위 꾸러미의 준비 표지를
+  `from . import` 로 찾음) · `nest_loads_pyarrow`(`nest_asyncio.apply()` 가
+  `pyarrow` 를 불러옴 — 막기 전에 이미 불린 꼴).
 """
 
 from __future__ import annotations
@@ -113,8 +123,11 @@ _SCENES = frozenset(
     part.strip() for part in os.environ.get("FAKE_BDQ_SCENE", "").split(",") if part.strip()
 )
 _READY = bool(getattr(sys.modules[__name__.rpartition(".")[0]], "PACKAGE_READY", False))
-_BLOCKED = "pyarrow" in sys.modules and sys.modules["pyarrow"] is None
-trace(f"server_auth ready={int(_READY)} pyarrow={'blocked' if _BLOCKED else 'open'}")
+if "pyarrow" not in sys.modules:
+    _ARROW = "open"
+else:
+    _ARROW = "blocked" if sys.modules["pyarrow"] is None else "loaded"
+trace(f"server_auth ready={int(_READY)} pyarrow={_ARROW}")
 
 
 def _light(name):
@@ -123,6 +136,8 @@ def _light(name):
 
 if _light("light_import_raises"):
     raise RuntimeError("fake server_auth needs the package init")
+if _light("light_import_exit"):
+    raise SystemExit(3)
 if _light("light_import_kill") and sys.platform != "win32":
     os.kill(os.getpid(), signal.SIGKILL)
 
@@ -143,6 +158,12 @@ def _login():
     password = _read_password("Password : ")
     if _light("light_login_name_error"):
         raise NameError("name 'demo_global' is not defined")
+    if "login_late_pyarrow" in _SCENES:
+        import pyarrow
+    if "login_walks_attributes" in _SCENES:
+        import bigdataquery
+
+        getattr(bigdataquery, __name__.split(".")[1]).config.trace("walked")
     digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
     if digest != os.environ.get("FAKE_BDQ_PASSWORD_SHA256", ""):
         print("login failed")
@@ -153,6 +174,10 @@ def _login():
 
 
 def _token_time(user_name):
+    if "time_late_pyarrow" in _SCENES:
+        import pyarrow
+    if "time_package_global" in _SCENES:
+        from . import PACKAGE_READY
     if not _token_path(user_name).is_file():
         raise TokenNotFoundException("no token")
     return {"remaining_days": 0, "remaining_hours": 8, "remaining_minutes": 0}
@@ -173,9 +198,20 @@ def apply(loop=None):
     if place:
         with open(place, "a", encoding="utf-8") as handle:
             handle.write("nest_apply\\n")
+    if "nest_loads_pyarrow" in os.environ.get("FAKE_BDQ_SCENE", "").split(","):
+        import pyarrow
 """
 
 _NEST_MISSING = 'raise ImportError("No module named nest_asyncio (fake)")\n'
+
+_PYARROW = """\
+import os
+
+place = os.environ.get("FAKE_BDQ_LOG", "")
+if place:
+    with open(place, "a", encoding="utf-8") as handle:
+        handle.write("pyarrow_import\\n")
+"""
 
 
 def version_folder_name() -> str:
@@ -194,10 +230,12 @@ def build_light_package(
     version: str = PINNED_VERSION,
     folder: bool = True,
     nest: bool = True,
+    pyarrow: bool = False,
 ) -> Path:
     """가짜 패키지를 `root` 에 짓고 `root` 를 돌려준다(하위 프로세스의 `PYTHONPATH` 자리).
 
     `folder=False` 면 판 하위 꾸러미를 돌고 있는 파이썬과 다른 이름으로 둔다(전체 길은 그대로 선다).
+    `pyarrow=True` 면 대신 모듈 `pyarrow` 를 함께 둔다.
     """
     sub = version_folder_name() if folder else "py00"
     package = root / "bigdataquery"
@@ -213,4 +251,6 @@ def build_light_package(
     _write(package / sub / "exceptions.py", _EXCEPTIONS)
     _write(package / sub / "server_auth.py", _SERVER_AUTH)
     _write(root / "nest_asyncio.py", _NEST_PRESENT if nest else _NEST_MISSING)
+    if pyarrow:
+        _write(root / "pyarrow.py", _PYARROW)
     return root
