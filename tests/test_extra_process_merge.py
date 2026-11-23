@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
 from extra_process_fixtures import AOI, BOND, edited, set_cell, template_files
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -76,7 +77,7 @@ def test_the_template_merges_both_processes_into_the_seed_with_the_same_columns(
         assert list(frame.columns) == list(seed[name].columns), name
         assert frame.dtypes.to_dict() == seed[name].dtypes.to_dict(), name
     upeh = _rows(result.tables, "RQ_UPEH", BOND)
-    assert len(result.tables["RQ_UPEH"].columns) == 12
+    assert len(result.tables["RQ_UPEH"].columns) == 13
     assert set(upeh["소요기준"]) == {"CHIP"}
     assert set(_rows(result.tables, "RQ_UPEH", AOI)["소요기준"]) == {"WF"}
     # 따라가기 꼴은 참조 공정을 지나는 계획 변형 모두 — 12달 × 제품 둘.
@@ -157,6 +158,29 @@ def test_following_a_process_with_two_steps_folds_the_plan_variants_once() -> No
     result = merge_extra_processes(seed, _active(), check=_never_stops)
 
     assert len(_rows(result.tables, "RQ_REQB", BOND)) == 24
+
+
+def _parts(frame: pd.DataFrame) -> set[tuple[str, str]]:
+    return set(frame[["제품정보", "CUSTOM"]].astype(str).itertuples(index=False, name=None))
+
+
+def test_a_specified_route_spreads_to_every_part_and_a_follow_route_inherits_its_parts() -> None:
+    """지정 꼴 줄은 그 제품의 모든 부품에 같은 값으로 펼치고, 따라가기 꼴은 참조 경로의 부품을
+    잇는다 — 양식에는 CUSTOM 칸이 없다."""
+    tables = two_part_tables()
+
+    result = merge_extra_processes(tables, _active(), check=_never_stops)
+
+    assert [item.outcome for item in result.report.outcomes] == [OUTCOME_MERGED, OUTCOME_MERGED]
+    aoi = _rows(result.tables, "RQ_REQB", AOI)
+    product = aoi.loc[aoi["제품정보"].eq(TWO_PART_PRODUCT)]
+    assert set(product["CUSTOM"]) == {PART_A, PART_B}
+    aoi_upeh = _rows(result.tables, "RQ_UPEH", AOI)
+    product_upeh = aoi_upeh.loc[aoi_upeh["제품정보"].eq(TWO_PART_PRODUCT)]
+    by_part = product_upeh.groupby("CUSTOM")["ST"].apply(lambda values: sorted(values.tolist()))
+    assert by_part[PART_A] == by_part[PART_B]
+    reference = _rows(tables, "RQ_REQB", "DEMO_Chip_Attach")
+    assert _parts(_rows(result.tables, "RQ_REQB", BOND)) == _parts(reference)
 
 
 def test_a_missing_or_different_reference_drops_only_that_process() -> None:

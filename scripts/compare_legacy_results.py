@@ -17,6 +17,8 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 읽어 온 원시 행은 `derive_q_core_data` 로 파생 프레임을 만든 뒤에 대조에 넘긴다.
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
 만들어지기 때문이다. CS 가 빈 행은 등록과 같이 파생에서 빠지고, 그 수를 머리 줄에 찍는다.
+파생 전에 원천 `CUSTOM` 을 리비전에 맞춘다(`source_custom_aligned` — 리비전 표가 모두 빈 값
+표지면 원천 칸도 표지로).
 
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
 (Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
@@ -54,6 +56,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     difference_distribution,
     plan_row_diagnostics,
     plan_row_frame,
+    source_custom_aligned,
     summarize_comparison,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
@@ -212,6 +215,9 @@ def main() -> int:
     if raw.empty:
         raise SystemExit(f"데이터셋 {dataset_id} 의 원천 행이 없습니다.")
 
+    # 리비전이 부품(`CUSTOM`)을 가르지 않았으면 원천 CUSTOM 도 표지로 맞춘 뒤 파생한다 — 0039 전
+    # 등록분은 원천 칸에 그때 값이 남아 있어 그대로면 모든 키가 한쪽에만 남는다.
+    raw = source_custom_aligned(raw, tables)
     contract = load_core_data_contract()
     derived = derive_q_core_data(raw, contract)
     core = derived.frame

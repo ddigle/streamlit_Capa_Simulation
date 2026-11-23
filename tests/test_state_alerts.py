@@ -294,6 +294,7 @@ def test_the_area_a_codes_are_registered_with_their_kinds() -> None:
 ROUTE_EXCLUSIONS = """
 import pandas as pd
 import streamlit as st
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.required_exclusion_notice import alert_required_exclusions
@@ -320,6 +321,7 @@ frame = pd.DataFrame(
         "제외사유": reasons,
     }
 )
+frame = with_blank_custom(frame)
 st.session_state["lists"] = [
     item.title
     for item in alert_required_exclusions(

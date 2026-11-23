@@ -17,7 +17,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_columns
+
 PRODUCT_KEY_COLUMNS = ("제품정보", "Stack")
+# 한 제품 키 안의 부품을 가르는 칸 — 복제는 부품을 모두 옮기고, 원본 목록은 부품까지 본다.
+PART_COLUMN = "CUSTOM"
 
 # 복제 대상 후보. 실제로 어떤 테이블을 복제할지는 활성 시나리오가 가진 컬럼으로 정한다.
 CLONE_TABLE_CANDIDATES = (
@@ -64,21 +68,39 @@ def available_source_products(tables: Mapping[str, pd.DataFrame]) -> pd.DataFram
 
     기준정보가 완결된 제품만 원본이 될 수 있으므로, 복제 대상 테이블 전부에 존재하는
     키만 남긴다. 한 곳이라도 비어 있는 제품을 복제하면 그 구멍이 그대로 따라온다.
+
+    복제는 제품 키 단위로 그 제품의 모든 부품(`CUSTOM`)을 함께 옮긴다. 그래서 부품까지 본다 —
+    어느 표에든 나온 (제품정보, Stack, CUSTOM) 묶음이 복제 대상 테이블 **전부**에 있을 때만 그
+    제품 키를 낸다. 부품 하나가 한 표에 없으면 그 제품은 빠진다. 부품이 한 값이면 제품 키만 보던
+    때와 같다. 복제 대상 테이블에 `CUSTOM` 칸이 없으면 멈춘다(부품을 가를 수 없다).
     """
     names = clone_table_names(tables)
     if not names:
         return pd.DataFrame(columns=list(PRODUCT_KEY_COLUMNS))
 
-    common: set[tuple[str, str]] | None = None
+    seen: set[tuple[str, str, str]] = set()
+    common: set[tuple[str, str, str]] | None = None
     for name in names:
-        keys = {
-            (str(product).strip(), str(stack).strip())
-            for product, stack in zip(tables[name]["제품정보"], tables[name]["Stack"], strict=True)
-        }
-        common = keys if common is None else (common & keys)
-    if not common:
+        parts = _product_parts(tables[name], name)
+        seen |= parts
+        common = parts if common is None else (common & parts)
+    assert common is not None
+    broken = {(product, stack) for product, stack, _ in seen - common}
+    products = {(product, stack) for product, stack, _ in common} - broken
+    if not products:
         return pd.DataFrame(columns=list(PRODUCT_KEY_COLUMNS))
-    return pd.DataFrame(sorted(common), columns=list(PRODUCT_KEY_COLUMNS))
+    return pd.DataFrame(sorted(products), columns=list(PRODUCT_KEY_COLUMNS))
+
+
+def _product_parts(frame: pd.DataFrame, table_name: str) -> set[tuple[str, str, str]]:
+    """표 하나의 (제품정보, Stack, CUSTOM) 묶음 — 앞뒤 공백만 뗀다."""
+    require_columns(frame, [*PRODUCT_KEY_COLUMNS, PART_COLUMN], f"{table_name} 가상 제품 복제")
+    return {
+        (str(product).strip(), str(stack).strip(), str(part).strip())
+        for product, stack, part in zip(
+            frame["제품정보"], frame["Stack"], frame[PART_COLUMN], strict=True
+        )
+    }
 
 
 def validate_request(

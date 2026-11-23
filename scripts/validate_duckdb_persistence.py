@@ -8,6 +8,10 @@ pandas 변환은 Power Query 결과와 값까지 같아야 한다. 다만 세 �
 경로 행을 계산과 같은 정규화로 접는다(`frame_contracts.duplicate_route_rows`). Power Query 에는 이
 보정이 없으므로 그 세 표는 Power Query 결과에 **같은 보정을 건 뒤** 견준다. 원천에 빈 대여평가나
 표기만 다른 경로가 없으면 보정 전후가 같다.
+
+앱은 Power Query 에 없는 업무 키 칸 `CUSTOM`(한 제품의 부품 — 마이그레이션 0039)을 여덟 표에 더한다.
+그래서 경로 접기는 Power Query 표에 있는 경로 키 칸만으로 하고, 견줄 때는 앱 표에서 Power Query
+결과에 없는 그 칸만 뺀다(`without_app_only_columns`). 그 밖의 칸이 어긋나면 그대로 실패한다.
 """
 
 from __future__ import annotations
@@ -33,6 +37,9 @@ from capa_simulation.services.reference_transformer import (
 )
 from capa_simulation.services.required_equipment import REQB_COLUMNS
 from capa_simulation.settings import INPUT_DIR, PROJECT_ROOT
+
+# 앱만 더하는 업무 키 칸 — Power Query 결과에는 없다. 견줄 때 앱 표에서 이 칸만 뺀다.
+APP_ONLY_COLUMNS: tuple[str, ...] = ("CUSTOM",)
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,10 +74,21 @@ def with_app_corrections(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFr
         tables["RQ_EQP_OWN"], tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"]
     )
     routes = tables["RQ_REQB"]
-    corrected["RQ_REQB"] = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)].reset_index(
-        drop=True
-    )
+    # Power Query 표에는 앱만 더한 `CUSTOM` 이 없다 — 있는 경로 키 칸만으로 접는다.
+    present = [column for column in REQB_COLUMNS if column in routes.columns]
+    corrected["RQ_REQB"] = routes.loc[~duplicate_route_rows(routes, present)].reset_index(drop=True)
     return corrected
+
+
+def without_app_only_columns(actual: pd.DataFrame, expected: pd.DataFrame) -> pd.DataFrame:
+    """앱 표에서 Power Query 결과에 없는 앱 전용 칸(`APP_ONLY_COLUMNS`)만 뺀 것. 그 밖의 칸은 그대로
+    두어 어긋나면 견줌이 실패한다."""
+    extra = [
+        column
+        for column in APP_ONLY_COLUMNS
+        if column in actual.columns and column not in expected.columns
+    ]
+    return actual.drop(columns=extra)
 
 
 def main() -> None:
@@ -80,7 +98,7 @@ def main() -> None:
     source = build_reference_tables(core_data, xlsb_tables["RQ_DISPLAY_ORDER"])
     for name, expected in with_app_corrections(xlsb_tables).items():
         actual = source[name]
-        assert_frame_values_equal(actual, expected)
+        assert_frame_values_equal(without_app_only_columns(actual, expected), expected)
         print(f"{name}: Power Query match ({len(actual):,} rows)")
 
     start_month, end_month = available_month_range(source["RQ_PKG_PLAN"], "RQ_PKG_PLAN")

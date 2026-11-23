@@ -11,6 +11,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services.load_calculator import (
@@ -41,34 +42,39 @@ _BASE_PLAN = {
 
 def _plan_frame() -> pd.DataFrame:
     """7키가 같고 `Pack Code` 만 다른 계획 두 행. 실데이터 결함을 그대로 옮긴 것이다."""
-    return pd.DataFrame(
-        [
-            {**_BASE_PLAN, "Pack Code": "PK-5JK", "생산수량": 119.93},
-            {**_BASE_PLAN, "Pack Code": "PK-5WC", "생산수량": 72.51},
-        ]
+    return with_blank_custom(
+        pd.DataFrame(
+            [
+                {**_BASE_PLAN, "Pack Code": "PK-5JK", "생산수량": 119.93},
+                {**_BASE_PLAN, "Pack Code": "PK-5WC", "생산수량": 72.51},
+            ]
+        ),
+        "RQ_PKG_PLAN",
     )
 
 
 def _required_equipment() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "생산계획년월": 202608,
-                "공정": "Process-A",
-                "소요기준": "WF",
-                "양산구분": "양산",
-                "제품정보": "Product-A",
-                "Stack": "8H",
-                "Capa Code": "C1",
-                "Customer": "Customer-A",
-                "CS": "MP",
-                "WF 구분": "Core",
-                "부하량": 100.0,
-                "소요대수": 1.0,
-                "STEP_SEQ": step_seq,
-            }
-            for step_seq in ("S1", "S2")
-        ]
+    return with_blank_custom(
+        pd.DataFrame(
+            [
+                {
+                    "생산계획년월": 202608,
+                    "공정": "Process-A",
+                    "소요기준": "WF",
+                    "양산구분": "양산",
+                    "제품정보": "Product-A",
+                    "Stack": "8H",
+                    "Capa Code": "C1",
+                    "Customer": "Customer-A",
+                    "CS": "MP",
+                    "WF 구분": "Core",
+                    "부하량": 100.0,
+                    "소요대수": 1.0,
+                    "STEP_SEQ": step_seq,
+                }
+                for step_seq in ("S1", "S2")
+            ]
+        )
     )
 
 

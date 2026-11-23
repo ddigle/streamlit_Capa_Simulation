@@ -1,9 +1,10 @@
-# Purpose: Power Query 대조 스크립트가 앱의 등록 보정을 Power Query 결과에도 거는지 검증한다.
+# Purpose: Power Query 대조 스크립트가 앱의 보정을 걸고 앱 전용 칸만 빼고 견주는지 검증한다.
 
 """`scripts/validate_duckdb_persistence.py` 는 Windows·Excel 에서만 끝까지 돈다. 그 가운데 Excel 이
 필요 없는 부분 — Power Query 결과에 앱의 보정(빈 대여평가 0 대·표기만 다른 경로 접기)을 거는
-`with_app_corrections` — 만 여기서 본다. 보정을 빠뜨리면 원천에 빈 대여평가나 표기만 다른 경로가
-있을 때 스크립트가 「Power Query match」에서 실패한다.
+`with_app_corrections` — 과 앱만 더한 `CUSTOM` 칸을 빼고 견주는 `without_app_only_columns`
+만 여기서 본다. 보정을 빠뜨리면 원천에 빈 대여평가나 표기만 다른 경로가 있을 때, 칸을 빼지
+않으면 늘 스크립트가 「Power Query match」에서 실패한다.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ def _monthly(column: str, values: list[float | None]) -> pd.DataFrame:
 
 
 def test_power_query_tables_get_the_app_corrections_before_comparison() -> None:
+    # Power Query 표 그대로 — 앱만 더하는 `CUSTOM` 칸이 없는 것이 이 시험의 전제다(칸을 붙이지
+    # 않는다).
     route = {
         "생산계획년월": 202608,
         "Area_Name": "Main",
@@ -72,3 +75,21 @@ def test_power_query_tables_get_the_app_corrections_before_comparison() -> None:
     ]
     assert corrected["RQ_PKG_PLAN"] is plan
     assert power_query["RQ_EQP_LENT"]["설비대여평가"].isna().sum() == 1
+
+
+def test_only_the_app_only_custom_column_is_left_out_of_the_power_query_comparison() -> None:
+    """앱이 더한 `CUSTOM` 은 Power Query 결과에 없을 때만 뺀다 — 다른 칸이 어긋나면 그대로
+    남는다."""
+    script = _script()
+    actual = pd.DataFrame({"공정": ["Process-A"], "CUSTOM": ["-"], "추가": [1]})
+
+    assert script.without_app_only_columns(
+        actual, pd.DataFrame(columns=["공정"])
+    ).columns.tolist() == [
+        "공정",
+        "추가",
+    ]
+    assert script.without_app_only_columns(
+        actual, pd.DataFrame(columns=["공정", "CUSTOM"])
+    ).columns.tolist() == ["공정", "CUSTOM", "추가"]
+    assert actual.columns.tolist() == ["공정", "CUSTOM", "추가"]

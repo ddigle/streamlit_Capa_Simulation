@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services import route_load_exceptions
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     home_aggregation_wafer_load,
@@ -97,6 +98,7 @@ def _route_tables(
             "양산구분": "양산",
             "제품정보": product,
             "Stack": "12H",
+            "CUSTOM": CUSTOM_BLANK,
             "WF 구분": division,
             "STEP_SEQ": step,
             "MCP_SEQ": "1",

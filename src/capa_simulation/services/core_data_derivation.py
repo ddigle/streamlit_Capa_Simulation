@@ -256,7 +256,7 @@ def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
 # CS 가 빈 경로 행을 뺐을 때 남은 계획 줄이 그 경로를 잃었는지 맞대는 키. 계획 쪽은 `RQ_PKG_PLAN`
 # 업무 키에서 CS·양산구분을 뺀 것이다 — 뺀 행에는 CS 가 없어 그 둘로는 어느 계획의 경로였는지 알 수
 # 없다. 경로 쪽은 `RQ_REQB` 의 나머지 칸이다.
-_ROUTE_OWNER_KEYS: Final = ("생산계획년월", "제품정보", "Stack", "Capa Code", "Customer")
+_ROUTE_OWNER_KEYS: Final = ("생산계획년월", "제품정보", "Stack", "Capa Code", "Customer", "CUSTOM")
 _ROUTE_PATH_KEYS: Final = ("Area_Name", "공정", "소요기준", "WF 구분", "STEP_SEQ", "MCP_SEQ")
 
 
@@ -264,7 +264,7 @@ def _plan_lines_losing_routes(core: pd.DataFrame, blank: pd.Series, plan: pd.Ser
     """CS 가 빈 경로 행을 빼서 경로 일부를 잃었을 수 있는 **남은** 계획 줄(`RQ_PKG_PLAN` 키) 수.
 
     `RQ_REQB` 경로 키에는 CS 가 있어 CS 가 빈 경로 행은 어느 계획에도 닿지 못한다. 그 행과 같은
-    달·제품정보·Stack·Capa Code·Customer 의 남은 계획이 같은 경로(Area·공정·소요기준·WF 구분·
+    달·제품정보·Stack·Capa Code·Customer·CUSTOM 의 남은 계획이 같은 경로(Area·공정·소요기준·WF 구분·
     STEP·MCP)를 CS 가 있는 다른 행으로 갖지 않으면, 그 몫의 부하는 남은 경로에만 붙고 빠진 공정은
     그 몫 없이 계산된다. 그 소요기준·WF 구분의 경로가 하나도 남지 않으면 「그 소요기준·WF 구분 경로
     없음」(세지 않는 사유)이 된다 — 어느 쪽도 소요대수 밖 수요 경고(`required_exclusion_counts`)에
@@ -282,7 +282,7 @@ def _plan_lines_losing_routes(core: pd.DataFrame, blank: pd.Series, plan: pd.Ser
         return 0
     owner = list(_ROUTE_OWNER_KEYS)
     path = list(_ROUTE_PATH_KEYS)
-    # 뺀 경로 행의 제품만 맞대면 된다 — 큰 원천에서 열두 칸 글자 키를 모든 행에 만들지 않게 먼저
+    # 뺀 경로 행의 제품만 맞대면 된다 — 큰 원천에서 열세 칸 글자 키를 모든 행에 만들지 않게 먼저
     # 거른다.
     products = core["제품정보"].astype("string").str.strip().str.casefold()
     related = products.isin(products.loc[dropped_routes].dropna().unique())
@@ -306,6 +306,9 @@ def _route_match_keys(core: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
         values = core[column].astype("string").str.strip()
         if column == "소요기준":
             values = normalize_demand_basis(values)
+        if column == "CUSTOM":
+            # 아직 `normalize_custom_values` 전이라 빈 값을 표에 실릴 표지와 같은 글자로 맞댄다.
+            values = values.where(values.notna() & values.ne(""), CUSTOM_BLANK)
         keys[column] = values.str.casefold().fillna("")
     return keys
 
@@ -440,3 +443,22 @@ def normalize_custom_values(values: pd.Series) -> pd.Series:
     """
     text = unify_case_variants(values)
     return text.where(text.notna() & text.ne(""), CUSTOM_BLANK).astype("string")
+
+
+def custom_sort_key(value: object) -> tuple[bool, str, str]:
+    """`CUSTOM` 값 하나의 표시 차례 열쇠 — 대소문자를 접은 글자, 그다음 원문 오름차순이고 빈 값
+    표지(`CUSTOM_BLANK`)는 끝이다.
+
+    `sorted(…, key=custom_sort_key)` 꼴로 쓴다. 파이썬 기본 차례는 `-` 를 글자 앞에 두어 「부품 구분
+    없음」 이 맨 앞에 선다. 빈 값(NA · 빈 글자 · 공백뿐)은 표지와 같이 끝에 둔다. 부품 차례를 정하는
+    자리(`display_order.apply_display_order` 의 동순위 열쇠 등)는 이 열쇠 하나만 쓴다.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+    elif value is None or value is pd.NA or value != value:
+        text = ""
+    else:
+        text = str(value).strip()
+    if text in ("", CUSTOM_BLANK):
+        return (True, "", "")
+    return (False, text.casefold(), text)

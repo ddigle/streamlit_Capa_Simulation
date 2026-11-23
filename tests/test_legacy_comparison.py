@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.legacy_comparison import (
     AGREE_GROUP,
     COMPARISON_KEYS,
@@ -69,6 +70,7 @@ from capa_simulation.services.legacy_comparison import (
     route_factor_by_key,
     route_factor_values,
     scaling_check,
+    source_custom_aligned,
     split_mixed_processes,
     split_route_cells,
     summarize_comparison,
@@ -99,6 +101,7 @@ def _plan_row(value: float, *, routes: int = 31, **overrides: object) -> pd.Data
         "생산계획년월": 202608,
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **_PLAN_DEFAULTS,
         **overrides,
@@ -117,6 +120,7 @@ def _calculated(*values: float, **overrides: object) -> pd.DataFrame:
         "생산계획년월": 202608,
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **overrides,
     }
@@ -209,7 +213,7 @@ def test_zero_legacy_value_is_counted_apart_from_a_ratio_breach() -> None:
 def test_grain_follows_the_pkg_plan_business_key() -> None:
     """기존값이 한 번 기록되는 단위는 계약의 계획 업무 키다. 키가 늘면 대조도 따라간다."""
     assert legacy_grain(CONTRACT) == [*CONTRACT.derived_keys["RQ_PKG_PLAN"], "WF 구분"]
-    assert COMPARISON_KEYS == ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+    assert COMPARISON_KEYS == ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 
 
 def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> None:
@@ -229,6 +233,69 @@ def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> No
     assert comparison["기존값"].iloc[0] == 160.0
     assert bool(comparison["값 불일치"].iloc[0]) is False
     assert summarize_comparison(comparison)["값 불일치"] == 0
+
+
+def test_two_custom_parts_stay_apart_in_the_comparison_keys() -> None:
+    """한 제품의 두 부품(`CUSTOM`)은 대조 키에서 더하지 않는다 — 부품마다 한 줄로 맞댄다."""
+    core = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"), _plan_row(60.0, CUSTOM="DEMO_CUSTOM_B"))
+    calculated = pd.concat(
+        [_calculated(100.0, CUSTOM="DEMO_CUSTOM_A"), _calculated(60.0, CUSTOM="DEMO_CUSTOM_B")],
+        ignore_index=True,
+    )
+
+    comparison = _compare(core, calculated)
+
+    assert comparison["CUSTOM"].tolist() == ["DEMO_CUSTOM_A", "DEMO_CUSTOM_B"]
+    assert comparison["기존값"].tolist() == [100.0, 60.0]
+    assert comparison["차이"].tolist() == [0.0, 0.0]
+
+
+def _custom_tables(*values: object) -> dict[str, pd.DataFrame]:
+    """리비전 표 묶음 — `RQ_PKG_PLAN` 의 `CUSTOM` 이 `values`, 다른 CUSTOM 키 표는 빈 표 ·
+    칸 없음."""
+    return {
+        "RQ_PKG_PLAN": pd.DataFrame({"CUSTOM": list(values)}),
+        "RQ_YLD": pd.DataFrame(columns=["CUSTOM"]),
+        # 0039 전 사본처럼 칸이 없는 표는 표지뿐으로 본다.
+        "RQ_UPEH": pd.DataFrame({"제품정보": ["Product-A"]}),
+    }
+
+
+def test_a_source_custom_follows_a_revision_that_never_split_parts() -> None:
+    """리비전의 CUSTOM 키 표가 모두 표지(빈 값 포함)뿐이면 원천 `CUSTOM` 을 표지로 바꾼 사본으로
+    맞댄다 — 0039 전 등록분은 원천 칸에 그때 값이 남아 있어 그대로면 키가 두 쪽에 갈린다. 원천은
+    고치지 않는다."""
+    raw = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"))
+    unaligned = summarize_comparison(_compare(raw, _calculated(100.0)))
+    assert (unaligned["대조 건수"], unaligned["기존에만 있음"], unaligned["신규에만 있음"]) == (
+        0,
+        1,
+        1,
+    )
+
+    aligned = source_custom_aligned(raw, _custom_tables(CUSTOM_BLANK, " - ", None, ""))
+
+    assert aligned is not raw
+    assert aligned["CUSTOM"].eq(CUSTOM_BLANK).all()
+    assert raw["CUSTOM"].eq("DEMO_CUSTOM_A").all()
+    assert aligned.drop(columns=["CUSTOM"]).equals(raw.drop(columns=["CUSTOM"]))
+    summary = summarize_comparison(_compare(aligned, _calculated(100.0)))
+    assert (summary["대조 건수"], summary["허용 초과"], summary["신규에만 있음"]) == (1, 0, 0)
+
+
+def test_a_source_custom_is_kept_when_the_revision_split_parts() -> None:
+    """리비전 CUSTOM 키 표에 표지 아닌 값이 하나라도 있으면 원천 그대로(같은 객체)다. CUSTOM 키
+    표가 아닌 표의 값 · 원천이 이미 빈 값뿐 · 원천에 칸이 없음도 바꾸지 않는다."""
+    raw = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"))
+    split = {**_custom_tables(CUSTOM_BLANK), "RQ_YLD": pd.DataFrame({"CUSTOM": ["DEMO_CUSTOM_B"]})}
+
+    assert source_custom_aligned(raw, split) is raw
+    outside = {**_custom_tables(CUSTOM_BLANK), "RQ_RUN_RATE": pd.DataFrame({"CUSTOM": ["X"]})}
+    assert source_custom_aligned(raw, outside) is not raw
+    blank_source = _core(_plan_row(100.0, CUSTOM=None))
+    assert source_custom_aligned(blank_source, _custom_tables(CUSTOM_BLANK)) is blank_source
+    without = raw.drop(columns=["CUSTOM"])
+    assert source_custom_aligned(without, _custom_tables(CUSTOM_BLANK)) is without
 
 
 # ------------------------------------------------------------- 분포로만 접기 (사내 실데이터 확인용)
@@ -360,6 +427,7 @@ def _path_key(
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-1",
         "Customer": "고객가",
         "CS": "MP",
@@ -505,6 +573,7 @@ def test_hourly_rate_is_the_rate_the_capacity_calculation_uses() -> None:
             "양산구분": "양산",
             "제품정보": "Product-A",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "WF 구분": "Core",
             "UPEH": [row[3] for row in rows],
             "ST": [row[4] for row in rows],
@@ -603,6 +672,7 @@ def _route_row(
         "생산계획년월": 202608,
         "제품정보": product,
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **_PLAN_DEFAULTS,
         "Area_Name": area,

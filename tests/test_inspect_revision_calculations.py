@@ -34,6 +34,7 @@ from capa_simulation.persistence.repository import (
     REVISION_TABLES,
     DuckDBScenarioRepository,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.required_equipment import (
     REQB_COLUMNS,
     calculate_required_equipment,
@@ -456,6 +457,7 @@ def test_plan_lines_match_the_calculation_keys_not_the_raw_text() -> None:
     keys = {
         "양산구분": "양산",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "C",
         "Customer": "K",
         "CS": "S",
@@ -477,6 +479,30 @@ def test_plan_lines_match_the_calculation_keys_not_the_raw_text() -> None:
     )
 
     assert script.unreached_plan_lines(plan, required) == (3, 1)
+
+
+def test_a_custom_part_that_reaches_nothing_is_not_hidden_by_its_sibling() -> None:
+    """한 제품의 두 부품(`CUSTOM`) 가운데 하나만 소요대수에 닿으면 다른 하나는 닿지 않은 계획 줄이다
+    — 계획 줄 키에 `CUSTOM` 이 없으면 닿은 부품에 접혀 보이지 않는다."""
+    keys = {
+        "생산계획년월": 202601,
+        "양산구분": "양산",
+        "제품정보": "A",
+        "Stack": "8H",
+        "Capa Code": "C",
+        "Customer": "K",
+        "CS": "S",
+    }
+    plan = pd.DataFrame(
+        [
+            {**keys, "CUSTOM": "DEMO_CUSTOM_A", "생산수량": 100.0},
+            {**keys, "CUSTOM": "DEMO_CUSTOM_B", "생산수량": 100.0},
+        ]
+    )
+    required = pd.DataFrame([{**keys, "CUSTOM": "DEMO_CUSTOM_A", "부하량": 5.0}])
+
+    assert "CUSTOM" in script.PLAN_LINE_KEYS
+    assert script.unreached_plan_lines(plan, required) == (2, 1)
 
 
 def test_duplicate_route_keys_count_the_second_and_later_rows() -> None:
@@ -527,6 +553,7 @@ def _pkg_inputs(*divisions: str) -> _PkgInputs:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-A",
         "Customer": "Customer-A",
         "CS": "MP",
@@ -534,7 +561,16 @@ def _pkg_inputs(*divisions: str) -> _PkgInputs:
         "MCP_SEQ": "1",
         "소요기준": "PKG",
     }
-    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan_keys = (
+        "생산계획년월",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "CS",
+    )
     capacity_keys = (
         "생산계획년월",
         "Area_Name",
@@ -545,6 +581,7 @@ def _pkg_inputs(*divisions: str) -> _PkgInputs:
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
     )
     return {
         "reqb": pd.DataFrame([{**route, "WF 구분": division} for division in divisions]),

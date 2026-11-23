@@ -7,13 +7,12 @@
 안 되므로, 느린 참조 구현과 레코드를 그대로 대조한다.
 """
 
-from dataclasses import replace
-
 import pandas as pd
 import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services import reference_conflicts
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.reference_conflicts import (
     OTHER_CONFLICT_CAUSE,
     ZERO_BEFORE_BLANK_RESOLUTION,
@@ -37,6 +36,7 @@ def _plan_rows() -> pd.DataFrame:
         "생산수량": 10.0,
         "제품타입": "HBM",
         "Pack Code": "PK",
+        "CUSTOM": CUSTOM_BLANK,
     }
     rows = [
         {**base},
@@ -104,6 +104,7 @@ def test_rows_that_differ_only_by_pack_code_are_two_plans_not_a_conflict() -> No
         "생산수량": 119.93,
         "제품타입": "HBM",
         "Pack Code": "PK-5JK",
+        "CUSTOM": CUSTOM_BLANK,
     }
     frame = pd.DataFrame([base, {**base, "Pack Code": "PK-5WC", "생산수량": 72.51}])
     records: list[dict[str, object]] = []
@@ -134,6 +135,7 @@ def _upeh_rows(first_upeh: float | None, second_upeh: float | None) -> pd.DataFr
         "WF 구분": "Core",
         "소요기준": "WF",
         "ST": None,
+        "CUSTOM": CUSTOM_BLANK,
     }
     return pd.DataFrame(
         [
@@ -363,7 +365,13 @@ def test_a_row_rank_that_does_not_cover_the_frame_stops_instead_of_scrambling() 
 
 def _yield_siblings() -> pd.DataFrame:
     """RQ_YLD 키가 같은 형제 넷 — Capa Code 마다 수율이 하나로 맞고 Capa Code 끼리만 다르다."""
-    base = {"생산계획년월": 202601, "제품정보": "P", "Stack": "8H", "WF 구분": "Core"}
+    base = {
+        "생산계획년월": 202601,
+        "제품정보": "P",
+        "Stack": "8H",
+        "WF 구분": "Core",
+        "CUSTOM": CUSTOM_BLANK,
+    }
     return pd.DataFrame(
         [
             {**base, "EDS_수율": 0.95, "BE_수율": 1.0},
@@ -405,16 +413,10 @@ def test_a_reload_inside_one_class_value_is_reported_as_other() -> None:
 def test_a_class_column_that_is_a_business_key_never_splits_a_conflict() -> None:
     """구분 칸이 업무 키가 되면 그 칸으로 갈린 형제는 서로 다른 행이라 충돌도 원인도 없다.
 
-    계약 사본에만 CUSTOM 을 키로 더한다 — 실제 계약의 키 승격은 다른 단계의 몫이다.
+    CUSTOM 은 실제 계약의 `RQ_YLD` 업무 키다.
     """
-    contract = load_core_data_contract()
-    keyed = replace(
-        contract,
-        derived_keys={
-            **contract.derived_keys,
-            "RQ_YLD": (*contract.derived_keys["RQ_YLD"], "CUSTOM"),
-        },
-    )
+    keyed = load_core_data_contract()
+    assert "CUSTOM" in keyed.derived_keys["RQ_YLD"]
     frame = _yield_siblings().assign(
         CUSTOM=["DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A"]
     )

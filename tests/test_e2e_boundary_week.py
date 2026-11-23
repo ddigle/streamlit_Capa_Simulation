@@ -19,6 +19,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
@@ -62,21 +63,23 @@ DAILY_STANDARD = 100.0 / 2.0 / RUN_DAY * AVAILABLE_UNITS
 
 def _required_equipment(months: list[int]) -> pd.DataFrame:
     """월마다 한 줄인 소요대수 상세. 경계 주차가 붙는 달이 있는지만 가른다."""
-    return pd.DataFrame(
-        {
-            "생산계획년월": months,
-            "공정": ["Process-A"] * len(months),
-            "소요기준": ["WF"] * len(months),
-            "양산구분": ["양산"] * len(months),
-            "제품정보": ["Product-A"] * len(months),
-            "Stack": ["8H"] * len(months),
-            "Capa Code": ["CAPA-A"] * len(months),
-            "Customer": ["Customer-A"] * len(months),
-            "CS": ["MP"] * len(months),
-            "WF 구분": ["Core"] * len(months),
-            "부하량": [100.0] * len(months),
-            "소요대수": [2.0] * len(months),
-        }
+    return with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": months,
+                "공정": ["Process-A"] * len(months),
+                "소요기준": ["WF"] * len(months),
+                "양산구분": ["양산"] * len(months),
+                "제품정보": ["Product-A"] * len(months),
+                "Stack": ["8H"] * len(months),
+                "Capa Code": ["CAPA-A"] * len(months),
+                "Customer": ["Customer-A"] * len(months),
+                "CS": ["MP"] * len(months),
+                "WF 구분": ["Core"] * len(months),
+                "부하량": [100.0] * len(months),
+                "소요대수": [2.0] * len(months),
+            }
+        )
     )
 
 
@@ -159,6 +162,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from custom_key_tables import with_blank_custom
+
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.components.process_labels as process_labels_module
@@ -196,17 +201,19 @@ scenario_tables = {
             "RUN_DAY": [30.0] * len(MONTHS),
         }
     ),
-    "RQ_PKG_PLAN": pd.DataFrame(
-        {
-            "생산계획년월": MONTHS,
-            "양산구분": ["양산"] * len(MONTHS),
-            "제품정보": ["Product-A"] * len(MONTHS),
-            "Stack": ["8H"] * len(MONTHS),
-            "Capa Code": ["CAPA-A"] * len(MONTHS),
-            "Customer": ["Customer-A"] * len(MONTHS),
-            "CS": ["MP"] * len(MONTHS),
-            "생산수량": [50.0] * len(MONTHS),
-        }
+    "RQ_PKG_PLAN": with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": MONTHS,
+                "양산구분": ["양산"] * len(MONTHS),
+                "제품정보": ["Product-A"] * len(MONTHS),
+                "Stack": ["8H"] * len(MONTHS),
+                "Capa Code": ["CAPA-A"] * len(MONTHS),
+                "Customer": ["Customer-A"] * len(MONTHS),
+                "CS": ["MP"] * len(MONTHS),
+                "생산수량": [50.0] * len(MONTHS),
+            }
+        )
     ),
     "RQ_REQB": pd.DataFrame({"공정": PROCESSES, "양산구분": ["양산"]}),
 }
@@ -238,6 +245,7 @@ required_equipment = pd.DataFrame(
         "소요대수": [2.0] * len(MONTHS),
     }
 )
+required_equipment = with_blank_custom(required_equipment)
 availability = pd.DataFrame(
     {
         "공정": PROCESSES * len(WEEKS),

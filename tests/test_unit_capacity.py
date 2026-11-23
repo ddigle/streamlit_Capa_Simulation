@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -54,6 +55,7 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
             "ST": [None, 36.0],
         }
     )
+    upeh = with_blank_custom(upeh)
     detail_keys = [
         "생산계획년월",
         "Area_Name",
@@ -63,6 +65,7 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "WF 구분",
     ]
     shared_detail = upeh[detail_keys]
@@ -126,6 +129,7 @@ def test_mi_st_is_minutes_per_unit_so_the_hourly_rate_is_sixty_over_st() -> None
             "ST": [None, 2.0, 0.0005, 0.25],
         }
     )
+    upeh = with_blank_custom(upeh)
     route = upeh.drop(columns=["소요기준", "UPEH", "ST"])
     by_month = route[["생산계획년월", "공정", "양산구분"]]
 
@@ -188,6 +192,7 @@ def test_unit_capacity_names_each_excluded_row_by_its_own_cause() -> None:
             "ST": [None, None, None],
         }
     )
+    upeh = with_blank_custom(upeh)
     detail_keys = [
         "생산계획년월",
         "Area_Name",
@@ -197,6 +202,7 @@ def test_unit_capacity_names_each_excluded_row_by_its_own_cause() -> None:
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "WF 구분",
     ]
     shared_detail = upeh[detail_keys]
@@ -237,6 +243,7 @@ def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
             "ST": [None, 36.0],
         }
     )
+    upeh = with_blank_custom(upeh)
 
     result = calculate_unit_capacity(
         upeh,
@@ -268,6 +275,7 @@ DETAIL_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 ]
 # 소요기준 CHIP 은 UPEH 를 Kea 로 환산한다: (100 / 1000) × 24 × 0.8 × 2 × 30
@@ -301,6 +309,7 @@ def _capacity_inputs(
             "ST": [None] * count,
         }
     )
+    upeh = with_blank_custom(upeh)
     detail = upeh[DETAIL_KEYS]
     return {
         "upeh": upeh,
@@ -583,6 +592,7 @@ def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() ->
         ),
     }
 
+    tables = with_blank_custom(tables)
     cached = pickle.loads(pickle.dumps(get_capacity_and_demand(tables)))
     unit_capacity, required_equipment = cached
 
@@ -1108,7 +1118,8 @@ UPEH_TABLE_STOPS: list[tuple[str, Callable[[pd.DataFrame], pd.DataFrame], str, s
         _upeh_spaced_duplicate,
         "RQ_UPEH의 연결 키가 중복되었습니다: [{'생산계획년월': 202608, 'Area_Name': 'Main', "
         "'공정': 'Process-A', 'STEP_SEQ': 'P100', 'MCP_SEQ': '1A', '양산구분': '양산', "
-        "'제품정보': 'Product-A', 'Stack': '12H', 'WF 구분': 'Core', '소요기준': 'CHIP'}]",
+        "'제품정보': 'Product-A', 'Stack': '12H', 'CUSTOM': '-', 'WF 구분': 'Core', "
+        "'소요기준': 'CHIP'}]",
         "연결 키 중복(앞뒤 공백만 다름)",
         "연결 키 중복 키 1 · 행 2 · 앞뒤 공백만 다른 키 1",
     ),

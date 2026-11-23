@@ -40,7 +40,8 @@ MONTHLY_AGGREGATIONS: tuple[MonthlyAggregation, ...] = (
     MONTHLY_AGGREGATION_HOME,
 )
 
-CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
+# `CUSTOM` 은 같은 제품의 부품을 가르는 업무 키다 — 합하지 않고 조인 키로 끝까지 간다.
+CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack", "CUSTOM"]
 LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 # 제품타입별 `WF 구분` 규칙은 `services/product_type.py` 가 단일 근거다.
 # 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
@@ -50,12 +51,13 @@ LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 # 남겨 두면 `attach_plan_attributes` 가 키와 속성 양쪽에서 같은 컬럼을 골라 중복 라벨
 # 프레임을 만들고 바로 다음 `_normalize_text` 가 죽는다.
 PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN]
-# `Pack Code` 는 같은 7키 안에서 생산수량을 가르는 업무 키다. 격자에서 합쳐 보이면
+# `Pack Code` 는 같은 8키 안에서 생산수량을 가르는 업무 키다. 격자에서 합쳐 보이면
 # 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없으므로 행 차원으로 노출한다.
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -68,9 +70,9 @@ PLAN_REQUIRED_COLUMNS = [
     *CLASSIFICATION_COLUMNS,
     "생산수량",
 ]
-YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 YIELD_REQUIRED_COLUMNS = [*YIELD_KEYS, "EDS_수율", "BE_수율"]
-YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "WF 구분"]
+YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 YIELD_VALUE_COLUMNS = ["EDS_수율", "BE_수율"]
 YIELD_DISPLAY_NAMES = {"EDS_수율": "EDS", "BE_수율": "BE"}
 YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY_NAMES.items()}
@@ -84,10 +86,14 @@ YIELD_RANGE_FIX_HINT = (
     "생산 계획 → 수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요 — 그 칸은 수율 표에서 "
     "빈칸으로 보입니다. 그 달이 조회기간 밖이면 사이드바 조회기간을 넓혀야 수율 탭에 나옵니다."
 )
-CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
+CHIP_KEYS = ["제품정보", "Stack", "CUSTOM", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
-DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
+DENSITY_KEYS = ["제품정보", "Stack", "CUSTOM", "WF 구분"]
 DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
+# 계획을 `WF 구분` 으로 펼치는 조인 키 — Chip 구성 키에서 계획에 없는 `WF 구분` 만 뺀 것이다. 손으로
+# 적으면 키가 늘 때 빠져 같은 제품의 다른 부품 행끼리 many_to_many 로 붙어 부하가 겹친다.
+_CHIP_EXPAND_KEYS = [key for key in CHIP_KEYS if key != "WF 구분"]
+_DENSITY_EXPAND_KEYS = [key for key in DENSITY_KEYS if key != "WF 구분"]
 
 # 기준정보가 없어 계산에서 뺀 계획 행을 결과 프레임에 붙여 화면이 목록으로 보여준다.
 # 예전에는 여기서 예외를 던져 계획 행 하나 때문에 페이지 전체가 멈췄다.
@@ -96,7 +102,8 @@ DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 # `pd.concat` 이 attrs 를 동등 비교하다가 "truth value of a DataFrame is ambiguous" 로
 # 죽는다. 부하량 프레임들은 소요대수 계산에서 실제로 concat 된다.
 LOAD_EXCLUSIONS_ATTR = "excluded_load_rows"
-LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "WF 구분", "누락 기준정보"]
+# 마지막 칸이 사유다 — 레코드는 `[:-1]` 자리로 읽는다(`_load_exclusion_rows`).
+LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분", "누락 기준정보"]
 # 생산수량이 빈 계획 행에 다는 사유. **빈 값은 「계획 없음(0)」이다** — 편집 격자·환산·소요대수가
 # 한 뜻으로 읽는다. 다만 원천이 숫자를 빠뜨린 것일 수도 있어 말없이 0 으로 접지 않고 같은 제외
 # 목록에 남긴다.
@@ -476,9 +483,11 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str, *, fix_hint: str 
     invalid_rows = invalid_cells[YIELD_KEYS].drop_duplicates()
     examples = [
         f"{month} · {product} · {stack} · {division} → {kind} {value:.4g}({value * 100:.4g}%)"
-        for month, product, stack, division, kind, value in invalid_cells.head(
-            YIELD_RANGE_EXAMPLE_LIMIT
-        ).itertuples(index=False)
+        for month, product, stack, division, kind, value in invalid_cells.loc[
+            :, ["생산계획년월", "제품정보", "Stack", "WF 구분", "구분", "값"]
+        ]
+        .head(YIELD_RANGE_EXAMPLE_LIMIT)
+        .itertuples(index=False)
     ]
     rest = len(invalid_cells) - len(examples)
     message = (
@@ -588,7 +597,7 @@ def _prepare_load_base(
 
     expanded = prepared_plan.merge(
         prepared_chip,
-        on=["제품정보", "Stack"],
+        on=_CHIP_EXPAND_KEYS,
         how="left",
         validate="many_to_many",
         indicator="_chip_merge",
@@ -832,7 +841,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
 
     calculation = prepared_plan.merge(
         prepared_density,
-        on=["제품정보", "Stack"],
+        on=_DENSITY_EXPAND_KEYS,
         how="left",
         validate="many_to_many",
         indicator="_density_merge",

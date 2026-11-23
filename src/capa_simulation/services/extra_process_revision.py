@@ -20,8 +20,9 @@
   경로는 옮기지 않는다 — 바탕 판에 있는 STEP 의 값만 옮긴다(2026-11-19 사용자 답 Q1). 경로
   견줌은 리비전 표에서 그 공정 행을 걷고 바탕 판을 다시 펼친 경로와 리비전 경로를 맞댄다.
 - **옮기지 못하는 공정**(바탕 판 값 그대로 — 까닭을 미리보기에 싣는다): 공통 값 줄(따라가기 꼴
-  경로 · 공통 값 지정 꼴)인데 리비전에서 제품마다 값이 갈림(G11), 가용대수가 보유 − 대여와
-  다름(가용대수를 따로 고침 — 판은 보유 · 대여만 받는다).
+  경로 · 공통 값 지정 꼴)인데 리비전에서 제품마다 값이 갈림(G11), 생산성 줄 키 안에서 부품
+  (`CUSTOM`)마다 값이 갈림(양식에 그 칸이 없다), 가용대수가 보유 − 대여와 다름(가용대수를 따로
+  고침 — 판은 보유 · 대여만 받는다). 경로 견줌은 부품까지 맞댄다.
 - 측정률 0 은 0 그대로다(G9). 바탕 판에서 합치지 않은 공정(뺌 · BDQ 에 생김)은 그대로 둔다.
 
 Streamlit 을 import 하지 않는다.
@@ -77,8 +78,13 @@ ROUTE_COMPARE_COLUMNS: Final = (
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
+    "CUSTOM",
 )
 SPLIT_PRODUCTS_REASON: Final = "공통 값인데 제품마다 값이 갈림 — 파일을 고쳐 다시 놓으세요"
+# 생산성(03) 양식 줄은 제품 · Stack · WF 구분까지만 가른다 — 리비전에서 한 줄 키 안의 부품
+# (`CUSTOM`)마다 값이 갈리면 한 줄에 담을 수 없다.
+SPLIT_CUSTOM_REASON: Final = "양식에 CUSTOM 칸이 없는데 CUSTOM 마다 값이 갈림 — 옮기지 못함"
+_PART_COLUMN: Final = "CUSTOM"
 AVAILABLE_REASON: Final = "가용대수가 보유 − 대여와 다름 — 판은 보유 · 대여만 받습니다"
 _KEY_COLUMNS: Final = (
     "생산계획년월",
@@ -288,11 +294,12 @@ class _RevisionValues:
 
     def __init__(self, tables: Mapping[str, pd.DataFrame], names: Collection[str]) -> None:
         tables = _only_processes(tables, names)
-        self.productivity = _productivity_lookup(tables)
+        self.productivity, self.split_custom = _productivity_lookup(tables)
         # 공통 값 줄의 견줌 — (달, 공정, STEP, MCP, 양산구분) → 그 앞 칸이 같은 제품마다의 값.
         self.by_prefix: dict[tuple[object, ...], list[dict[str, float | None]]] = {}
         for key, value in self.productivity.items():
             self.by_prefix.setdefault(key[:5], []).append(value)
+        self.split_custom_prefixes = {key[:5] for key in self.split_custom}
         self.equipment = _monthly_lookup(
             tables,
             {
@@ -339,9 +346,17 @@ def _text(value: object) -> str:
 
 def _productivity_lookup(
     tables: Mapping[str, pd.DataFrame],
-) -> dict[tuple[object, ...], dict[str, float | None]]:
-    """(달, 공정, STEP, MCP, 양산구분, 제품, Stack, WF 구분 견줌 꼴) → UPEH · ST · 측정률 둘."""
+) -> tuple[dict[tuple[object, ...], dict[str, float | None]], set[tuple[object, ...]]]:
+    """(달, 공정, STEP, MCP, 양산구분, 제품, Stack, WF 구분 견줌 꼴) → UPEH · ST · 측정률 둘, 그리고
+    부품마다 값이 갈린 키.
+
+    키는 양식 줄과 같은 칸이라 부품(`CUSTOM`)을 싣지 않는다. 같은 키에 다른 부품의 다른 값이 오면
+    덮어쓰지 않고 그 키를 「갈림」 으로 남긴다 — 마지막 행이 이기면 부품 하나의 값이 말없이 판으로
+    올라간다. 부품이 달라도 값이 같으면 갈림이 아니다.
+    """
     found: dict[tuple[object, ...], dict[str, float | None]] = {}
+    split: set[tuple[object, ...]] = set()
+    first: dict[tuple[tuple[object, ...], str], tuple[str, float | None]] = {}
     for name, columns in (
         ("RQ_UPEH", ("UPEH", "ST")),
         ("RQ_LOT_RATIO", ("Lot 측정률",)),
@@ -350,7 +365,7 @@ def _productivity_lookup(
         frame = tables.get(name)
         if frame is None or frame.empty:
             continue
-        for record in frame[[*_KEY_COLUMNS, *columns]].to_dict("records"):
+        for record in frame[[*_KEY_COLUMNS, _PART_COLUMN, *columns]].to_dict("records"):
             month = _number(record["생산계획년월"])
             if month is None:
                 continue
@@ -364,10 +379,18 @@ def _productivity_lookup(
                 _text(record["Stack"]),
                 wf_key(_text(record["WF 구분"])),
             )
+            part = _text(record[_PART_COLUMN])
             slot = found.setdefault(key, {})
             for column in columns:
-                slot[column] = _number(record[column])
-    return found
+                value = _number(record[column])
+                seen = first.get((key, column))
+                if seen is not None and seen[0] != part:
+                    if not _same(seen[1], value):
+                        split.add(key)
+                    continue
+                first[(key, column)] = (part, value)
+                slot[column] = value
+    return found, split
 
 
 def _monthly_lookup(
@@ -511,7 +534,12 @@ def _productivity_at(
 ) -> dict[str, float | None] | None:
     prefix = (month, row.process.strip(), row.step, row.mcp, mass_class)
     if not row.common:
-        return revision.productivity.get((*prefix, row.product, row.stack, wf_key(row.wf)))
+        key = (*prefix, row.product, row.stack, wf_key(row.wf))
+        if key in revision.split_custom:
+            raise _Kept(SPLIT_CUSTOM_REASON)
+        return revision.productivity.get(key)
+    if prefix in revision.split_custom_prefixes:
+        raise _Kept(SPLIT_CUSTOM_REASON)
     found = revision.by_prefix.get(prefix, [])
     if not found:
         return None

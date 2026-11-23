@@ -48,7 +48,11 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentSaveRequest,
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
-from capa_simulation.services.core_data_derivation import build_q_core_data, plan_row_mask
+from capa_simulation.services.core_data_derivation import (
+    CUSTOM_BLANK,
+    build_q_core_data,
+    plan_row_mask,
+)
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
@@ -1125,6 +1129,38 @@ def test_the_legacy_block_counts_blank_cs_rows_dropped_like_the_registration(
     assert "파생 프레임을 만들지 못함" not in output
 
 
+def test_a_constant_source_custom_under_a_blank_revision_counts_like_a_blank_source(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 등록분 — 리비전 표는 모두 빈 값 표지(`-`)인데 원천 `CUSTOM` 칸에 그때 값이 남아 있다.
+
+    대조는 원천을 리비전에 맞춰(`source_custom_aligned`) 원천도 빈 칸인 사본과 같은 수를 찍는다.
+    맞추지 않으면 모든 키가 한쪽에만 남는다."""
+    paths = {name: tmp_path / name / "capa_simulation.duckdb" for name in ("blank", "constant")}
+    for path in paths.values():
+        path.parent.mkdir()
+        path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(paths["constant"])) as connection:
+        assert connection.execute(
+            'SELECT count(*) FROM raw_data.core_data WHERE "CUSTOM" IS NOT NULL'
+        ).fetchone() == (0,)
+        connection.execute('UPDATE raw_data.core_data SET "CUSTOM" = ?', ["DEMO_CUSTOM_A"])
+        assert connection.execute(
+            'SELECT DISTINCT "CUSTOM" FROM rev_data.rq_pkg_plan'
+        ).fetchall() == [("-",)]
+
+    outputs = {}
+    for name, path in paths.items():
+        code, outputs[name] = _run(capsys, "--only", "legacy", "--database", str(path))
+        assert code == 0
+
+    legacy = [line for line in _summary(outputs["blank"]) if line.startswith("- 8-2")]
+    assert any(line.startswith("- 8-2L ") for line in legacy)
+    assert (
+        outputs["constant"].replace(str(paths["constant"]), str(paths["blank"])) == outputs["blank"]
+    )
+
+
 def test_raw_columns_rejoin_the_derived_frame_by_row_number_after_a_drop() -> None:
     """파생 프레임은 CS 가 빈 행을 빼되 원천 행 번호를 그대로 둔다 — 원천 칸은 행 번호로 붙는다."""
     raw = pd.DataFrame({"메이커": ["A", "B", "C", "D"]})
@@ -1945,6 +1981,7 @@ def _detail_rows(
             "CS": "MP",
             "제품정보": f"{SENTINEL}P{index % lines}",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "Capa Code": f"{SENTINEL}CAPA",
             "Customer": f"{SENTINEL}CUST",
             "Pack Code": f"{SENTINEL}PK",
@@ -2489,6 +2526,7 @@ def _day(
             "CS": "MP",
             "제품정보": f"{SENTINEL}P{line}",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "Capa Code": f"{SENTINEL}CAPA",
             "Customer": f"{SENTINEL}CUST",
             "Pack Code": f"{SENTINEL}{pack}",
@@ -3096,7 +3134,8 @@ def _plant_census(simulation: Path, equipment: Path) -> None:
         one("rq_eqp_lent", '"설비대여평가" = NULL', 202608, rows=2)
         connection.execute(
             "INSERT INTO rev_data.rq_yld SELECT revision_id, source_row_no + 100000, "
-            '"생산계획년월", "제품정보", "Stack", upper("WF 구분"), "EDS_수율", "BE_수율" '
+            '"생산계획년월", "제품정보", "Stack", upper("WF 구분"), "EDS_수율", "BE_수율", '
+            '"CUSTOM" '
             'FROM rev_data.rq_yld WHERE "WF 구분" = \'Core\' AND "생산계획년월" = 202609 '
             "ORDER BY source_row_no LIMIT 1"
         )

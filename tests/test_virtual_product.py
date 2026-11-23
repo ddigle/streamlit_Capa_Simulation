@@ -2,7 +2,9 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables, with_blank_custom
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
     load_exclusions,
@@ -18,7 +20,7 @@ from capa_simulation.services.virtual_product import (
 
 def _tables() -> dict[str, pd.DataFrame]:
     months = [202601, 202602]
-    return {
+    tables = {
         "RQ_PKG_PLAN": pd.DataFrame(
             {
                 "생산계획년월": months,
@@ -64,6 +66,7 @@ def _tables() -> dict[str, pd.DataFrame]:
             {"생산계획년월": months, "공정": ["P1"] * 2, "RUN_DAY": [30.0] * 2}
         ),
     }
+    return with_blank_custom(tables)
 
 
 def _request(product: str = "DEMO_NEW") -> VirtualProductRequest:
@@ -125,6 +128,7 @@ def test_source_candidates_require_complete_reference_data() -> None:
                     "제품정보": ["DEMO_PARTIAL"],
                     "Stack": ["8H"],
                     "WF 구분": ["Core"],
+                    "CUSTOM": [CUSTOM_BLANK],
                     "구분_Chip": [4.0],
                     "Net Die": [100.0],
                 }
@@ -186,3 +190,51 @@ def test_cloned_plan_months_are_the_new_products_plan_months() -> None:
 
     assert cloned_plan_months(updates, _request()) == (202601, 202602)
     assert cloned_plan_months({}, _request()) == ()
+
+
+def _seed_stack(tables: dict[str, pd.DataFrame]) -> str:
+    plan = tables["RQ_PKG_PLAN"]
+    return str(plan.loc[plan["제품정보"].eq(TWO_PART_PRODUCT), "Stack"].iloc[0])
+
+
+def test_a_two_part_product_is_cloned_with_both_parts() -> None:
+    """복제는 제품 키 단위라 그 제품의 부품이 모두 새 제품으로 옮겨 간다."""
+    tables = two_part_tables()
+    stack = _seed_stack(tables)
+    request = VirtualProductRequest(TWO_PART_PRODUCT, stack, "DEMO_NEW_PARTS", stack)
+
+    updates = clone_product(tables, request)
+
+    assert set(updates) == set(clone_table_names(tables))
+    for name, frame in updates.items():
+        new_rows = frame.loc[frame["제품정보"].eq("DEMO_NEW_PARTS")]
+        source_rows = tables[name].loc[tables[name]["제품정보"].eq(TWO_PART_PRODUCT)]
+        assert sorted(set(new_rows["CUSTOM"])) == [PART_A, PART_B], name
+        assert len(new_rows) == len(source_rows), name
+
+
+def test_a_product_missing_one_part_in_one_table_is_not_a_source() -> None:
+    """부품 하나가 복제 대상 표 하나에 없으면 그 제품은 원본 목록에서 빠진다 — 복제하면 그 구멍이
+    따라온다. 다른 제품은 그대로 남는다."""
+    tables = two_part_tables()
+    stack = _seed_stack(tables)
+    complete = available_source_products(tables)
+    assert (TWO_PART_PRODUCT, stack) in set(complete.itertuples(index=False, name=None))
+
+    yields = tables["RQ_YLD"]
+    tables["RQ_YLD"] = yields.loc[
+        ~(yields["제품정보"].eq(TWO_PART_PRODUCT) & yields["CUSTOM"].eq(PART_B))
+    ].reset_index(drop=True)
+    partial = available_source_products(tables)
+
+    assert (TWO_PART_PRODUCT, stack) not in set(partial.itertuples(index=False, name=None))
+    assert len(partial) == len(complete) - 1
+
+
+def test_source_candidates_stop_without_the_custom_column() -> None:
+    """부품을 가를 칸이 없으면 제품 키만으로 짝짓지 않고 멈춘다."""
+    tables = _tables()
+    tables["RQ_YLD"] = tables["RQ_YLD"].drop(columns=["CUSTOM"])
+
+    with pytest.raises(ValueError, match="CUSTOM"):
+        available_source_products(tables)

@@ -104,6 +104,7 @@ _VARIANT_KEYS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -118,6 +119,7 @@ _PATH_KEYS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 )
 

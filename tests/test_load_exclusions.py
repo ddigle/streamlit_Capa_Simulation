@@ -2,6 +2,7 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
@@ -14,36 +15,45 @@ from capa_simulation.services.load_calculator import (
 # 통째로 멈췄고, 사용자는 "RQ_YLD가 연결되지 않는 기준이 있습니다" 만 보고 어느 제품이
 # 문제인지 알 수 없었다. 신규 제품을 복제 등록할 때도 같은 벽에 부딪힌다.
 
-PLAN = pd.DataFrame(
-    {
-        "생산계획년월": [202601, 202601, 202601],
-        "양산구분": ["양산"] * 3,
-        "제품정보": ["DEMO_OK", "DEMO_NO_CHIP", "DEMO_NO_YLD"],
-        "Stack": ["8H"] * 3,
-        "Capa Code": ["C1", "C2", "C3"],
-        "Customer": ["DEMO_CUST"] * 3,
-        "CS": ["MP"] * 3,
-        "생산수량": [100.0, 50.0, 70.0],
-    }
+PLAN = with_blank_custom(
+    pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202601],
+            "양산구분": ["양산"] * 3,
+            "제품정보": ["DEMO_OK", "DEMO_NO_CHIP", "DEMO_NO_YLD"],
+            "Stack": ["8H"] * 3,
+            "Capa Code": ["C1", "C2", "C3"],
+            "Customer": ["DEMO_CUST"] * 3,
+            "CS": ["MP"] * 3,
+            "생산수량": [100.0, 50.0, 70.0],
+        }
+    ),
+    "RQ_PKG_PLAN",
 )
-CHIP = pd.DataFrame(
-    {
-        "제품정보": ["DEMO_OK", "DEMO_NO_YLD"],
-        "Stack": ["8H", "8H"],
-        "WF 구분": ["Core", "Core"],
-        "구분_Chip": [4.0, 4.0],
-        "Net Die": [100.0, 100.0],
-    }
+CHIP = with_blank_custom(
+    pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK", "DEMO_NO_YLD"],
+            "Stack": ["8H", "8H"],
+            "WF 구분": ["Core", "Core"],
+            "구분_Chip": [4.0, 4.0],
+            "Net Die": [100.0, 100.0],
+        }
+    ),
+    "RQ_CHIP_QTY",
 )
-YIELD = pd.DataFrame(
-    {
-        "생산계획년월": [202601],
-        "제품정보": ["DEMO_OK"],
-        "Stack": ["8H"],
-        "WF 구분": ["Core"],
-        "EDS_수율": [0.9],
-        "BE_수율": [0.95],
-    }
+YIELD = with_blank_custom(
+    pd.DataFrame(
+        {
+            "생산계획년월": [202601],
+            "제품정보": ["DEMO_OK"],
+            "Stack": ["8H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.9],
+            "BE_수율": [0.95],
+        }
+    ),
+    "RQ_YLD",
 )
 
 
@@ -96,14 +106,17 @@ def test_no_exclusions_yields_an_empty_frame() -> None:
 # Density 만 옛 방식(예외)으로 남아 있었다. 표본에서는 계획의 모든 제품+Stack 이
 # `구분_EQ` 를 가진 행을 하나씩 갖고 있어서 — 비는 것은 Buffer·Dummy 뿐이고 Top·Core·
 # Master 중 하나는 늘 채워져 있다 — 이 분기를 한 번도 밟지 않았다. 그래서 남아 있었다.
-DENSITY = pd.DataFrame(
-    {
-        "제품정보": ["DEMO_OK"],
-        "Stack": ["8H"],
-        "WF 구분": ["Core"],
-        "구분_Chip": [4.0],
-        "구분_EQ": [16.0],
-    }
+DENSITY = with_blank_custom(
+    pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK"],
+            "Stack": ["8H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [4.0],
+            "구분_EQ": [16.0],
+        }
+    ),
+    "RQ_CHIP_EQ",
 )
 
 
@@ -133,36 +146,45 @@ def test_density_monthly_volume_carries_the_exclusion_list() -> None:
 # 조인은 붙는데 칸이 비어 있는 경우. 여기가 제일 위험했다 — 조인 실패와 달리 아무 경고도
 # 없이 부하량이 NaN 이 되고, 뒤의 `groupby().sum()` 이 그것을 0 으로 접어 소요대수가 적게
 # 나왔다. 확보율(가용/소요)은 그만큼 낙관 쪽으로 틀어지는데 제외 목록은 비어 있었다.
-BLANK_CHIP = pd.DataFrame(
-    {
-        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
-        "Stack": ["8H", "8H", "8H"],
-        "WF 구분": ["Core", "Core", "Core"],
-        "구분_Chip": [4.0, 4.0, 4.0],
-        "Net Die": [100.0, None, 100.0],
-    }
+BLANK_CHIP = with_blank_custom(
+    pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+            "Stack": ["8H", "8H", "8H"],
+            "WF 구분": ["Core", "Core", "Core"],
+            "구분_Chip": [4.0, 4.0, 4.0],
+            "Net Die": [100.0, None, 100.0],
+        }
+    ),
+    "RQ_CHIP_QTY",
 )
-BLANK_YIELD = pd.DataFrame(
-    {
-        "생산계획년월": [202601, 202601, 202601],
-        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
-        "Stack": ["8H", "8H", "8H"],
-        "WF 구분": ["Core", "Core", "Core"],
-        "EDS_수율": [0.9, 0.9, None],
-        "BE_수율": [0.95, 0.95, 0.95],
-    }
+BLANK_YIELD = with_blank_custom(
+    pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202601],
+            "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+            "Stack": ["8H", "8H", "8H"],
+            "WF 구분": ["Core", "Core", "Core"],
+            "EDS_수율": [0.9, 0.9, None],
+            "BE_수율": [0.95, 0.95, 0.95],
+        }
+    ),
+    "RQ_YLD",
 )
-BLANK_PLAN = pd.DataFrame(
-    {
-        "생산계획년월": [202601] * 3,
-        "양산구분": ["양산"] * 3,
-        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
-        "Stack": ["8H"] * 3,
-        "Capa Code": ["C1", "C2", "C3"],
-        "Customer": ["DEMO_CUST"] * 3,
-        "CS": ["MP"] * 3,
-        "생산수량": [100.0, 50.0, 70.0],
-    }
+BLANK_PLAN = with_blank_custom(
+    pd.DataFrame(
+        {
+            "생산계획년월": [202601] * 3,
+            "양산구분": ["양산"] * 3,
+            "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+            "Stack": ["8H"] * 3,
+            "Capa Code": ["C1", "C2", "C3"],
+            "Customer": ["DEMO_CUST"] * 3,
+            "CS": ["MP"] * 3,
+            "생산수량": [100.0, 50.0, 70.0],
+        }
+    ),
+    "RQ_PKG_PLAN",
 )
 
 
@@ -210,14 +232,17 @@ def test_density_does_not_stop_on_a_reference_row_no_plan_uses() -> None:
     빈 칸 검사가 **조인 전**에 기준정보 전체를 훑고 있었다. 계획이 쓰지도 않는 행 하나가
     비어 있으면 그 자리에서 예외였다. 조인 뒤로 옮기면 계획이 쓰는 행만 판정에 들어온다.
     """
-    density = pd.DataFrame(
-        {
-            "제품정보": ["DEMO_OK", "DEMO_NOBODY_PLANS"],
-            "Stack": ["8H", "8H"],
-            "WF 구분": ["Core", "Core"],
-            "구분_Chip": [4.0, 4.0],
-            "구분_EQ": [16.0, None],
-        }
+    density = with_blank_custom(
+        pd.DataFrame(
+            {
+                "제품정보": ["DEMO_OK", "DEMO_NOBODY_PLANS"],
+                "Stack": ["8H", "8H"],
+                "WF 구분": ["Core", "Core"],
+                "구분_Chip": [4.0, 4.0],
+                "구분_EQ": [16.0, None],
+            }
+        ),
+        "RQ_CHIP_EQ",
     )
     only_planned = PLAN.loc[PLAN["제품정보"].eq("DEMO_OK")]
 
@@ -229,14 +254,17 @@ def test_density_does_not_stop_on_a_reference_row_no_plan_uses() -> None:
 
 def test_a_blank_density_cell_is_excluded_instead_of_raising() -> None:
     """계획이 실제로 쓰는 행의 빈 칸은 Chip·Wafer 경로와 같이 제외 목록으로 내린다."""
-    density = pd.DataFrame(
-        {
-            "제품정보": ["DEMO_OK", "DEMO_NO_YLD"],
-            "Stack": ["8H", "8H"],
-            "WF 구분": ["Core", "Core"],
-            "구분_Chip": [4.0, 4.0],
-            "구분_EQ": [16.0, None],
-        }
+    density = with_blank_custom(
+        pd.DataFrame(
+            {
+                "제품정보": ["DEMO_OK", "DEMO_NO_YLD"],
+                "Stack": ["8H", "8H"],
+                "WF 구분": ["Core", "Core"],
+                "구분_Chip": [4.0, 4.0],
+                "구분_EQ": [16.0, None],
+            }
+        ),
+        "RQ_CHIP_EQ",
     )
 
     density_load = calculate_density_load(PLAN, density)
@@ -255,14 +283,17 @@ def test_a_nonpositive_density_value_is_still_an_error() -> None:
     `값 없음` 사유로 적으면 라벨이 거짓이 되고, 곱셈 항이라 빼도 합계가 그대로여서
     「줄어든 만큼은 제외 목록에 있다」가 헐거워진다. 오류는 오류로 두되 조인 뒤에 본다.
     """
-    density = pd.DataFrame(
-        {
-            "제품정보": ["DEMO_OK"],
-            "Stack": ["8H"],
-            "WF 구분": ["Core"],
-            "구분_Chip": [4.0],
-            "구분_EQ": [0.0],
-        }
+    density = with_blank_custom(
+        pd.DataFrame(
+            {
+                "제품정보": ["DEMO_OK"],
+                "Stack": ["8H"],
+                "WF 구분": ["Core"],
+                "구분_Chip": [4.0],
+                "구분_EQ": [0.0],
+            }
+        ),
+        "RQ_CHIP_EQ",
     )
     only_planned = PLAN.loc[PLAN["제품정보"].eq("DEMO_OK")]
 

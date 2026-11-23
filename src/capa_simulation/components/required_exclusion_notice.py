@@ -131,15 +131,16 @@ LOAD_EXCLUSION_HELP = (
 )
 UNROUTED_HELP = (
     f"「{UNROUTED_KEY_MISMATCH_REASON}」 — 같은 제품·Stack·소요기준의 경로가 다른 달·양산구분·"
-    "Capa Code·Customer·CS 에는 있으니 계획 키를 봅니다. "
+    "Capa Code·Customer·CS·CUSTOM 에는 있으니 계획 키를 봅니다. "
     f"「{UNROUTED_UNKNOWN_PRODUCT_REASON}」 — 그 제품·Stack 의 경로를 RQ_REQB 에서 봅니다."
 )
 # 목록 표의 분류 컬럼(표시순서가 거는 차례). 월은 표 앞에 그대로 둔다.
-_LOAD_EXCLUSION_DIMENSIONS = ("제품정보", "Stack", "WF 구분")
+_LOAD_EXCLUSION_DIMENSIONS = ("제품정보", "Stack", "CUSTOM", "WF 구분")
 _UNROUTED_DIMENSIONS = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",

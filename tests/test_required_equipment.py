@@ -3,12 +3,14 @@
 import dummy_series_tables as demo
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     plan_side_counts,
     required_exclusion_message,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
@@ -52,6 +54,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "소요기준": ["chip", "CHIP"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -64,6 +67,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "생산수량": [60.0, 40.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -74,6 +78,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -83,6 +88,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -98,6 +104,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "대당 Capa": [200.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
     table = required_equipment_to_month_table(result)
@@ -132,6 +139,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "소요기준": ["CHIP"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -144,6 +152,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "생산수량": [1831.6],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -154,6 +163,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "BE_수율": [0.879],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM4"],
@@ -163,6 +173,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "Net Die": [100.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -178,6 +189,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "대당 Capa": [484.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
 
@@ -204,6 +216,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -216,6 +229,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -231,6 +245,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "대당 Capa": [50.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(
         reqb,
@@ -274,6 +289,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "소요기준": ["PKG", "PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -286,6 +302,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -301,6 +318,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "대당 Capa": [50.0, 50.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(
         reqb,
@@ -334,6 +352,7 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -346,6 +365,7 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -361,6 +381,7 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "대당 Capa": [10.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(reqb, plan, pd.DataFrame(), pd.DataFrame(), unit_capacity)
     unrouted = result.attrs.get(UNROUTED_LOADS_ATTR)
@@ -395,6 +416,7 @@ def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -407,6 +429,7 @@ def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     empty_capacity = pd.DataFrame(columns=[*CAPACITY_KEYS, "대당 Capa"])
     result = calculate_required_equipment(
@@ -437,6 +460,7 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
             "소요기준": ["BOX", "pcb"],
         }
     )
+    reqb = with_blank_custom(reqb)
 
     result = calculate_required_equipment(
         reqb,
@@ -470,6 +494,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "소요기준": ["WF"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -482,6 +507,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -492,6 +518,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -501,6 +528,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -516,6 +544,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "대당 Capa": [25.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
 
@@ -538,6 +567,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-A",
         "Customer": "Customer-A",
         "CS": "MP",
@@ -553,7 +583,16 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             {**route, "Area_Name": "MAIN", "공정": " Process-A "},
         ]
     )
-    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan_keys = (
+        "생산계획년월",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "CS",
+    )
     plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
     yield_data = pd.DataFrame(
         {
@@ -565,6 +604,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -574,6 +614,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame([{key: route[key] for key in CAPACITY_KEYS}]).assign(
         **{"대당 Capa": 25.0}
     )
@@ -603,6 +644,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-A",
         "Customer": "Customer-A",
         "CS": "MP",
@@ -628,7 +670,16 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
         {**route, "공정": "Process-B"},
         {**route, "STEP_SEQ": "20", "Area_Name": "MI"},
     ]
-    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan_keys = (
+        "생산계획년월",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "CS",
+    )
     plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
     yield_data = pd.DataFrame(
         {
@@ -640,6 +691,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -649,6 +701,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         [{key: row[key] for key in CAPACITY_KEYS} for row in canonical]
     ).assign(**{"대당 Capa": 25.0})
@@ -672,7 +725,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
 
 def _pkg_reqb(*divisions: str) -> pd.DataFrame:
     count = len(divisions)
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * count,
             "Area_Name": ["Main"] * count,
@@ -689,10 +742,11 @@ def _pkg_reqb(*divisions: str) -> pd.DataFrame:
             "소요기준": ["PKG"] * count,
         }
     )
+    return with_blank_custom(frame)
 
 
 def _pkg_plan(quantity: float = 100.0) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608],
             "양산구분": ["양산"],
@@ -704,11 +758,12 @@ def _pkg_plan(quantity: float = 100.0) -> pd.DataFrame:
             "생산수량": [quantity],
         }
     )
+    return with_blank_custom(frame)
 
 
 def _pkg_capacity(*divisions: str, capacity: float = 50.0) -> pd.DataFrame:
     count = len(divisions)
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * count,
             "Area_Name": ["Main"] * count,
@@ -723,6 +778,7 @@ def _pkg_capacity(*divisions: str, capacity: float = 50.0) -> pd.DataFrame:
             "대당 Capa": [capacity] * count,
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_required_equipment_pkg_basis_matches_real_wf_gubun_values() -> None:
@@ -748,6 +804,7 @@ def test_pkg_load_ignores_yield_and_chip_composition() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
 
     result = calculate_required_equipment(
         _pkg_reqb("Buffer"), _pkg_plan(), yield_data, pd.DataFrame(), _pkg_capacity("Buffer")
@@ -798,6 +855,7 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
             "Net Die": [1000],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -808,6 +866,7 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     capacity = pd.concat(
         [
             _pkg_capacity("BUFFER"),
@@ -838,6 +897,7 @@ def _route(product: str, capa_code: str = "K1", *, basis: str = "CHIP") -> dict[
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": capa_code,
         "Customer": "Customer-A",
         "CS": "MP",
@@ -856,6 +916,7 @@ def _plan_row(
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": capa_code,
         "Customer": "Customer-A",
         "CS": "MP",
@@ -864,7 +925,7 @@ def _plan_row(
 
 
 def _yield_rows(*products: str) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * len(products),
             "제품정보": list(products),
@@ -874,10 +935,11 @@ def _yield_rows(*products: str) -> pd.DataFrame:
             "BE_수율": [0.9] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def _chip_rows(*products: str) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "제품정보": list(products),
             "Stack": ["12H"] * len(products),
@@ -886,10 +948,11 @@ def _chip_rows(*products: str) -> pd.DataFrame:
             "Net Die": [500.0] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def _route_capacity(*products: str, basis: str = "CHIP") -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * len(products),
             "Area_Name": ["Main"] * len(products),
@@ -904,6 +967,7 @@ def _route_capacity(*products: str, basis: str = "CHIP") -> pd.DataFrame:
             "대당 Capa": [10.0] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_load_exclusions_reach_required_equipment() -> None:
@@ -1236,6 +1300,7 @@ def _dummy_series_route_tables(basis: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             "양산구분": "양산",
             "제품정보": product,
             "Stack": "12H",
+            "CUSTOM": CUSTOM_BLANK,
             "WF 구분": division,
             "STEP_SEQ": "S10",
             "MCP_SEQ": "1",

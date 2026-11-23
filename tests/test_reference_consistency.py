@@ -21,6 +21,7 @@ from collections.abc import Mapping
 import pandas as pd
 import pytest
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
     cleared_keys_in_use,
@@ -47,6 +48,7 @@ def _row(month: int, process: str = "Process-A", stack: str = "8") -> dict[str, 
         "양산구분": "양산",
         "제품정보": "DEMO-A",
         "Stack": stack,
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Top",
     }
 

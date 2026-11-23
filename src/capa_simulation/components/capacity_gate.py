@@ -278,9 +278,9 @@ def input_check_verdict(
     — 스냅샷 · 등록 때 뺀 원천 행은 저장소에서 캐시 없이 읽고(스냅샷은 공용 표시순서를 얹지 않은
     `load_revision(apply_global_display_order=False)`), 계산은 캐시 없는 `full_capacity_outcome`
     이다. 요약 칸이 적중하면 DB 도 읽지 않고, 빠진 칸은 DB 를 한 번 더 읽는다 — 읽기 칸에 리비전을
-    쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키가 없는 옛
-    리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은 보지
-    않는다 — 저장된 리비전 그대로다.
+    쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키 · CUSTOM 칸이
+    없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은
+    보지 않는다 — 저장된 리비전 그대로다.
     """
     reference_version = reference_version_for_revision(revision_id)
 

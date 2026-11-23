@@ -36,6 +36,7 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
 )
+from capa_simulation.services.simulation_cache import full_capacity_outcome  # noqa: E402
 
 GUIDE_PLAN = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto" / "lob" / "plan.json"
 GENERATOR_TIMEOUT_SECONDS = 600
@@ -97,6 +98,42 @@ def test_the_simulation_database_holds_the_story_scenarios_and_four_officials(
     latest = repository.latest_official_release()
     assert latest is not None
     assert (latest.release_no, latest.scenario_name, latest.revision_no) == (4, story.S1_NAME, 3)
+
+
+def test_the_official_revision_calculates_the_two_part_product_apart(sample_root: Path) -> None:
+    """공식 v4 에서 두 부품 제품(`story.TWO_PART`)은 B 부품 변형만 `DEMO_CUSTOM_B` 이고, 수율 ·
+    대당 Capa · 소요대수가 부품마다 따로 난다 — 다른 행은 모두 `DEMO_CUSTOM_A` 다."""
+    repository = DuckDBScenarioRepository(
+        sample_root / generator.DATA_DIR_NAME / generator.SIMULATION_DB_NAME
+    )
+    latest = repository.latest_official_release()
+    assert latest is not None
+    tables = repository.load_revision(latest.revision_id).tables
+    product, part_b_code = story.TWO_PART
+
+    plan = tables["RQ_PKG_PLAN"]
+    assert set(plan["CUSTOM"]) == {story.CUSTOM_PART_A, story.CUSTOM_PART_B}
+    part_b = plan["CUSTOM"].eq(story.CUSTOM_PART_B)
+    assert set(plan.loc[part_b, "제품정보"]) == {product}
+    assert set(plan.loc[part_b, "Capa Code"]) == {part_b_code}
+    yields = tables["RQ_YLD"]
+    product_yields = yields.loc[yields["제품정보"].eq(product)]
+    by_part = product_yields.groupby("CUSTOM")["EDS_수율"].mean()
+    assert by_part[story.CUSTOM_PART_B] == pytest.approx(
+        by_part[story.CUSTOM_PART_A] * story.TWO_PART_EDS_FACTOR
+    )
+
+    outcome = full_capacity_outcome(tables, tables)
+    assert outcome.error is None and outcome.required_equipment is not None
+    required = outcome.required_equipment
+    product_rows = required.loc[required["제품정보"].eq(product)]
+    assert set(product_rows["CUSTOM"]) == {story.CUSTOM_PART_A, story.CUSTOM_PART_B}
+    capacity = product_rows.groupby(["공정", "생산계획년월", "WF 구분", "CUSTOM"])[
+        "대당 Capa"
+    ].first()
+    paired = capacity.unstack("CUSTOM").dropna()
+    assert not paired.empty
+    assert (paired[story.CUSTOM_PART_A] != paired[story.CUSTOM_PART_B]).all()
 
 
 def test_the_equipment_database_holds_three_scenarios_and_the_official_v3(

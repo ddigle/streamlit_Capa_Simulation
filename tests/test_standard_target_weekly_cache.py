@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 from alert_marks import place_errors
+from custom_key_tables import with_blank_custom
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -44,21 +45,23 @@ def required_frame() -> pd.DataFrame:
     """공정 10개 × 원수요 6천 줄 = 6만 행. 행마다 원수요가 달라 한 행이 공정 값을 바꾼다."""
     rows = len(PROCESSES) * ROWS_PER_PROCESS
     index = pd.RangeIndex(rows)
-    return pd.DataFrame(
-        {
-            "생산계획년월": MONTH,
-            "공정": [PROCESSES[i // ROWS_PER_PROCESS] for i in index],
-            "소요기준": "WF",
-            "양산구분": "양산",
-            "제품정보": [f"Prod-{i % ROWS_PER_PROCESS:05d}" for i in index],
-            "Stack": "8H",
-            "Capa Code": "CAPA",
-            "Customer": "Customer",
-            "CS": "MP",
-            "WF 구분": "Core",
-            "부하량": [100.0 + (i % 7) for i in index],
-            "소요대수": [1.0 + (i % 3) * 0.5 for i in index],
-        }
+    return with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": MONTH,
+                "공정": [PROCESSES[i // ROWS_PER_PROCESS] for i in index],
+                "소요기준": "WF",
+                "양산구분": "양산",
+                "제품정보": [f"Prod-{i % ROWS_PER_PROCESS:05d}" for i in index],
+                "Stack": "8H",
+                "Capa Code": "CAPA",
+                "Customer": "Customer",
+                "CS": "MP",
+                "WF 구분": "Core",
+                "부하량": [100.0 + (i % 7) for i in index],
+                "소요대수": [1.0 + (i % 3) * 0.5 for i in index],
+            }
+        )
     )
 
 
@@ -73,6 +76,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from custom_key_tables import with_blank_custom
 
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
@@ -113,6 +117,7 @@ scenario_tables["RQ_PKG_PLAN"] = pd.DataFrame(
         "Capa Code": ["CAPA"], "Customer": ["Customer"], "CS": ["MP"], "생산수량": [50.0],
     }
 )
+scenario_tables["RQ_PKG_PLAN"] = with_blank_custom(scenario_tables["RQ_PKG_PLAN"])
 scenario_tables["RQ_REQB"] = pd.DataFrame(
     {"공정": processes, "양산구분": ["양산"] * len(processes)}
 )
@@ -262,24 +267,26 @@ def _small_required() -> pd.DataFrame:
             rows.append((process, basis, "양산", product, "Core", load, need))
     rows.append(("P-A", "WF", "ER", "Prod-1", "Core", 999.0, 9.0))
     rows.append(("Pre B/D", "WF", "양산", "Prod-1", "Dummy", 50.0, 5.0))
-    return pd.DataFrame(
-        [
-            {
-                "생산계획년월": MONTH,
-                "공정": process,
-                "소요기준": basis,
-                "양산구분": production,
-                "제품정보": product,
-                "Stack": "8H",
-                "Capa Code": "CAPA",
-                "Customer": "Customer",
-                "CS": "MP",
-                "WF 구분": division,
-                "부하량": load,
-                "소요대수": need,
-            }
-            for process, basis, production, product, division, load, need in rows
-        ]
+    return with_blank_custom(
+        pd.DataFrame(
+            [
+                {
+                    "생산계획년월": MONTH,
+                    "공정": process,
+                    "소요기준": basis,
+                    "양산구분": production,
+                    "제품정보": product,
+                    "Stack": "8H",
+                    "Capa Code": "CAPA",
+                    "Customer": "Customer",
+                    "CS": "MP",
+                    "WF 구분": division,
+                    "부하량": load,
+                    "소요대수": need,
+                }
+                for process, basis, production, product, division, load, need in rows
+            ]
+        )
     )
 
 
@@ -291,17 +298,20 @@ def _scenario_tables() -> dict[str, pd.DataFrame]:
         "RQ_RUN_DAY": pd.DataFrame(
             {"생산계획년월": [MONTH] * 3, "공정": SMALL_PROCESSES, "RUN_DAY": [31.0, 30.0, 29.0]}
         ),
-        "RQ_PKG_PLAN": pd.DataFrame(
-            {
-                "생산계획년월": [MONTH, MONTH],
-                "양산구분": ["양산", "양산"],
-                "제품정보": ["Prod-1", "Prod-2"],
-                "Stack": ["8H", "8H"],
-                "Capa Code": ["CAPA", "CAPA"],
-                "Customer": ["Customer", "Customer"],
-                "CS": ["MP", "MP"],
-                "생산수량": [60.0, 40.0],
-            }
+        "RQ_PKG_PLAN": with_blank_custom(
+            pd.DataFrame(
+                {
+                    "생산계획년월": [MONTH, MONTH],
+                    "양산구분": ["양산", "양산"],
+                    "제품정보": ["Prod-1", "Prod-2"],
+                    "Stack": ["8H", "8H"],
+                    "Capa Code": ["CAPA", "CAPA"],
+                    "Customer": ["Customer", "Customer"],
+                    "CS": ["MP", "MP"],
+                    "생산수량": [60.0, 40.0],
+                }
+            ),
+            "RQ_PKG_PLAN",
         ),
         # 공정 필터 선택지의 재료. ER 만 있는 공정은 빠지고 차례는 처음 나온 차례다.
         "RQ_REQB": pd.DataFrame(

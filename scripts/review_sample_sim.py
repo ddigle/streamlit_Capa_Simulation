@@ -1170,7 +1170,16 @@ def build(database: Path) -> Built:
     for request in requests:
         tables.update(clone_product(tables, request))
     plan_table = tables["RQ_PKG_PLAN"].copy()
-    keys = ["생산계획년월", "양산구분", "CS", "Stack", "Capa Code", "Customer", "Pack Code"]
+    keys = [
+        "생산계획년월",
+        "양산구분",
+        "CS",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "Pack Code",
+    ]
     source_rows = plan_table.loc[plan_table["제품정보"].astype("string").eq("DEMO-H16A")].set_index(
         keys
     )["생산수량"]

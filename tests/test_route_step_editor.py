@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 import capa_simulation.services.route_step_editor as route_step_editor
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
     missing_ratio_rows,
@@ -25,6 +26,7 @@ def _route() -> dict[str, str]:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         "소요기준": "CHIP",
     }

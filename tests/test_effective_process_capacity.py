@@ -2,6 +2,7 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_long,
@@ -36,7 +37,7 @@ def _required_equipment() -> pd.DataFrame:
                     "소요대수": load / 100.0,
                 }
             )
-    return pd.DataFrame(rows)
+    return with_blank_custom(pd.DataFrame(rows))
 
 
 def test_effective_capacity_counts_each_original_demand_once_across_steps() -> None:

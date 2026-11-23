@@ -339,7 +339,7 @@ RQ_DISPLAY_ORDER   RQ_MODULE
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
 `config/data_contract.json`의 `derived_keys`에 테이블별로 정의한다.
 `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
-`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_UPEH` 의 `UPEH` 는 Main 행의
+`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분·CUSTOM을 경로 키로 사용한다. `RQ_UPEH` 의 `UPEH` 는 Main 행의
 시간당 처리량, `ST` 는 MI 행의 한 개당 분(min/unit)이다(정의 — 계산은 60 ÷ ST, AGENTS.md 6장). 조인 키로 쓰는 `WF 구분`의
 값은 EDP-TSV 행에서 `Top`이 아니라 `Top_e`다. 원천에는 없는 값이며 `services/product_type.py`의
 규칙에 따라 `build_q_core_data`가 파생 경계에서 한 번만 갈라 붙인다. 0014 이전에 적재한
@@ -358,8 +358,14 @@ RQ_CHIP_QTY  RQ_CHIP_EQ
 ```
 
 `RQ_PKG_PLAN`은 0013 부터 `제품타입`·`Pack Code`를 함께 싣는다. `Pack Code`는 2026-09-12
-부터 업무 키(계약 `derived_keys` 8키의 마지막)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
-DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
+부터 업무 키(계약 `derived_keys`)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
+DDL 순이라 둘 다 원래 칸 뒤에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
+
+제품정보가 든 8표(`RQ_PKG_PLAN`·`RQ_YLD`·`RQ_CHIP_QTY`·`RQ_CHIP_EQ`·`RQ_UPEH`·`RQ_LOT_RATIO`·
+`RQ_WF_RATIO`·`RQ_REQB`)는 0039 부터 `CUSTOM` 을 싣는다 — 제품을 가르는 업무 키(`derived_keys` 의
+마지막)이고 칸도 맨 끝이다. 빈 값은 표지 `-` 하나이고, 0039 가 `rev_data`·`ref_data` 의 옛 행에 이
+표지를 넣었다(원천 `raw_data.core_data` 의 `CUSTOM` 으로 되채우지 않는다). 계산은 이 칸을 합산하지
+않고 조인 키로 쓴다(AGENTS.md 4장).
 
 기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 14개는 `rev_data` 에서만 읽고,
 나머지 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`)은 데이터셋 `ref_data` 를 사용한다. 새 데이터셋은 이
@@ -635,6 +641,9 @@ Capa 시나리오·리비전
   않는다. 표시순서와 달리 리비전 스냅샷 캐시를 비울 이유가 없고, 화면 Figure 캐시는
   프로필 버전 정수를 키 원소로 받아 무효화한다. 시나리오 `content_token`은 재발급하지
   않는다.
+- 마이그레이션 0039는 `rev_data`·`ref_data` 의 CUSTOM 키 8표에 `CUSTOM` 칸을 기본값 `-` 로 더한 뒤 기본값을 걷는다
+  (새 행은 앱이 늘 값을 싣는다). 옛 리비전의 값 칸은 그대로라 계산 결과가 전후 같고(`tests/test_migration_0039_custom.py`),
+  되감아 다시 걸어도 같다. 옛 표지 행과 부품을 가른 새 리비전이 만나는 비교 GAP 은 계산이 다시 짝짓는다(AGENTS.md 7장).
 - 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.

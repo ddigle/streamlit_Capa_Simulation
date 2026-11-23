@@ -4,14 +4,20 @@
 
 CUSTOM 을 싣기 전 리비전의 계획은 모든 행이 빈 값 표지라, 그대로 현재 수율 · Chip 표로 환산하면 두
 부품 제품의 짝이 없다. 여기서는 순수 함수의 차례만 본다 — 다시 짝지은 옛 계획이 현재 계획과 같은
-키를 갖는 것까지다. 환산을 거쳐 GAP 이 0 인 것은 비교 계획 길에 이 함수를 잇는 단계의 시험이다.
+키를 갖는 것까지다. 끝 시험은 비교 계획 길(`get_home_comparison_plan`)을 거쳐 GAP 이 0 인 것을 본다.
 """
 
 from __future__ import annotations
 
 import pandas as pd
+from custom_key_tables import TWO_PART_PRODUCT, two_part_tables
 
+import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.load_calculator import (
+    calculate_chip_and_wafer_loads,
+    load_exclusions,
+)
 from capa_simulation.services.plan_gap import repair_comparison_plan_custom
 
 
@@ -140,3 +146,54 @@ def test_an_ambiguous_capa_code_falls_through_to_the_product() -> None:
     repaired = repair_comparison_plan_custom(old, current_plan, CURRENT_TABLES)
 
     assert repaired["CUSTOM"].tolist() == ["DEMO_CUSTOM_A"]
+
+
+def _comparison(tag: str, tables: dict[str, pd.DataFrame], plan: pd.DataFrame) -> pd.DataFrame:
+    """비교 계획 `plan` 을 현재 `tables` 로 환산한 HOME 월 Density · Wafer(한 표로 이음)."""
+    months = sorted(int(month) for month in tables["RQ_PKG_PLAN"]["생산계획년월"].unique())
+    simulation_cache.get_home_comparison_plan.clear()
+    density, wafer, _detail = simulation_cache.get_home_comparison_plan(
+        cache_key=(0, f"custom-gap-{tag}", months[0], months[-1], "order"),
+        _tables=tables,
+        _comparison_plan=plan,
+        _display_order=tables["RQ_DISPLAY_ORDER"],
+        comparison_revision_id=f"R-{tag}",
+        include_edp=False,
+        detail_dimensions=("제품정보", "Stack"),
+    )
+    simulation_cache.get_home_comparison_plan.clear()
+    return density.merge(wafer, on="생산계획년월", validate="one_to_one")
+
+
+def test_an_old_blank_custom_plan_has_no_gap_against_the_same_two_part_plan() -> None:
+    """CUSTOM 을 싣기 전 리비전(모두 표지)의 같은 수량 계획은 두 부품 현재 표로 환산해도 GAP 이
+    없다 — 비교 길이 환산 전에 다시 짝짓는다. 짝짓지 않으면 두 부품 제품 계획이 Chip 짝을 못 찾아
+    빠진다."""
+    tables = two_part_tables()
+    current = tables["RQ_PKG_PLAN"]
+    old = current.assign(CUSTOM=CUSTOM_BLANK)
+
+    own = _comparison("own", tables, current)
+    compared = _comparison("old", tables, old)
+
+    pd.testing.assert_frame_equal(compared, own)
+    assert own.drop(columns="생산계획년월").select_dtypes("number").to_numpy().sum() > 0
+
+
+def test_a_capa_code_gone_from_the_current_plan_takes_the_product_step_or_is_left_out() -> None:
+    """옛 계획의 Capa Code 가 현재 계획에 없으면 둘째 단계(현재 표에서 그 제품의 CUSTOM 이 하나)로
+    짝짓는다. 한 부품 제품은 그 값을 받아 GAP 이 없고, 두 부품 제품은 고르지 못해 원래 값(표지)이
+    남는다 — 현재 표에 짝이 없어 환산에서 빠지고 제외 목록이 그 제품을 센다."""
+    tables = two_part_tables()
+    current = tables["RQ_PKG_PLAN"]
+    old = current.assign(CUSTOM=CUSTOM_BLANK, **{"Capa Code": "DEMO_CAPA_GONE"})
+    single_part = current.loc[current["제품정보"].ne(TWO_PART_PRODUCT)]
+
+    compared = _comparison("gone", tables, old)
+
+    pd.testing.assert_frame_equal(compared, _comparison("single", tables, single_part))
+    repaired = repair_comparison_plan_custom(
+        old, current, (tables["RQ_YLD"], tables["RQ_CHIP_QTY"], tables["RQ_CHIP_EQ"])
+    )
+    _, wafer = calculate_chip_and_wafer_loads(repaired, tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
+    assert set(load_exclusions(wafer)["제품정보"]) == {TWO_PART_PRODUCT}

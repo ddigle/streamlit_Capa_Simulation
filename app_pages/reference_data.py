@@ -164,6 +164,7 @@ RATIO_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
@@ -607,7 +608,8 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
             suffix += 1
         text = candidate = (
             f"{process_text(row['공정'])} · {row['양산구분']} · {row['제품정보']} · "
-            f"{row['Stack']} · {row['WF 구분']} · {row['Area_Name']} · {row['소요기준']} · "
+            f"{row['Stack']} · {row['CUSTOM']} · {row['WF 구분']} · {row['Area_Name']} · "
+            f"{row['소요기준']} · "
             f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
         )
         suffix = 2

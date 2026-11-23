@@ -22,6 +22,7 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables, with_blank_custom
 
 from capa_simulation.services import builtin_seed
 from capa_simulation.services import simulation_cache as sc
@@ -382,18 +383,20 @@ def test_judging_another_supply_skips_months_without_both_numbers() -> None:
 def _many_products(count: int) -> pd.DataFrame:
     """공정 하나에 제품 `count` 개. 제품 번호가 클수록 소요가 크다."""
     names = [f"P{index:02d}" for index in range(1, count + 1)]
-    return pd.DataFrame(
-        {
-            "생산계획년월": [202601] * count + [202602] * count,
-            "공정": ["Proc"] * (2 * count),
-            "양산구분": ["양산"] * (2 * count),
-            "제품정보": names * 2,
-            "Stack": ["8H"] * (2 * count),
-            "WF 구분": ["Core"] * (2 * count),
-            "소요기준": ["WF"] * (2 * count),
-            "소요대수": [float(index) for index in range(1, count + 1)]
-            + [float(index) / 10 for index in range(1, count + 1)],
-        }
+    return with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": [202601] * count + [202602] * count,
+                "공정": ["Proc"] * (2 * count),
+                "양산구분": ["양산"] * (2 * count),
+                "제품정보": names * 2,
+                "Stack": ["8H"] * (2 * count),
+                "WF 구분": ["Core"] * (2 * count),
+                "소요기준": ["WF"] * (2 * count),
+                "소요대수": [float(index) for index in range(1, count + 1)]
+                + [float(index) / 10 for index in range(1, count + 1)],
+            }
+        )
     )
 
 
@@ -545,6 +548,29 @@ def test_route_trace_matches_the_securement_demand(tables: dict[str, pd.DataFram
     top = trace.evidence.top_products
     assert top["소요대수"].is_monotonic_decreasing
     assert float(top["비중"].sum()) == pytest.approx(1.0)
+
+
+def test_two_parts_of_one_product_trace_as_two_route_rows() -> None:
+    """한 제품이 두 부품(CUSTOM)이면 경로 추적이 부품마다 한 줄이고, 줄마다 검산이 맞는다.
+
+    경로 키에 CUSTOM 이 빠지면 두 부품이 "first" 로 한 줄에 접혀 한 부품의 인자로 다른 부품의
+    부하를 나누게 된다. 견본은 B 부품의 UPEH 만 바꿔 두 줄의 대당 Capa 가 갈린다.
+    """
+    trace = _trace(two_part_tables(), WAFER_PROCESS, TRACE_MONTH)
+    routes = trace.routes
+    parts = routes.loc[routes["제품정보"].eq(TWO_PART_PRODUCT)].sort_values("CUSTOM")
+
+    assert parts["CUSTOM"].tolist() == [PART_A, PART_B]
+    assert parts["REQB 행 수"].tolist() == [1, 1]
+    assert parts["대당 Capa"].nunique() == 2
+    assert route_factor_product(parts).tolist() == pytest.approx(
+        parts["대당 Capa"].tolist(), rel=1e-12
+    )
+    assert (parts["부하량"] / parts["대당 Capa"]).tolist() == pytest.approx(
+        parts["소요대수"].tolist(), rel=1e-12
+    )
+    assert trace.evidence.route_count == len(routes)
+    assert trace.evidence.required == pytest.approx(float(routes["소요대수"].sum()), abs=TOLERANCE)
 
 
 def _with_second_step(tables: dict[str, pd.DataFrame], process: str) -> dict[str, pd.DataFrame]:

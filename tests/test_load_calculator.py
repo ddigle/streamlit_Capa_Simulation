@@ -2,6 +2,7 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
@@ -72,6 +73,7 @@ def test_monthly_pkg_and_wafer_volume() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -82,6 +84,7 @@ def test_monthly_pkg_and_wafer_volume() -> None:
             "BE_수율": [0.9, 0.9],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM라", "HBM라"],
@@ -91,6 +94,7 @@ def test_monthly_pkg_and_wafer_volume() -> None:
             "Net Die": [500, 500],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
 
     pkg = build_monthly_volume(plan, yield_data, chip_qty, "PKG")
     chip = build_monthly_volume(plan, yield_data, chip_qty, "Chip")
@@ -120,6 +124,7 @@ def test_dummy_load_recognizes_uppercase_wf_type_with_outer_whitespace() -> None
             "생산수량": [1831.6],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -130,6 +135,7 @@ def test_dummy_load_recognizes_uppercase_wf_type_with_outer_whitespace() -> None
             "BE_수율": [0.879],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM4"],
@@ -139,6 +145,7 @@ def test_dummy_load_recognizes_uppercase_wf_type_with_outer_whitespace() -> None
             "Net Die": [100.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
 
     chip_load, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, chip_qty)
 
@@ -162,6 +169,7 @@ def test_chip_and_wafer_bundle_prepares_shared_base_once(
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -172,6 +180,7 @@ def test_chip_and_wafer_bundle_prepares_shared_base_once(
             "BE_수율": [0.9],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM라"],
@@ -181,6 +190,7 @@ def test_chip_and_wafer_bundle_prepares_shared_base_once(
             "Net Die": [500],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     original_prepare = load_calculator._prepare_load_base
     call_count = 0
 
@@ -215,11 +225,13 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
             "생산수량": [100.0, 120.0],
         }
     )
+    plan = with_blank_custom(plan)
     wide_plan = plan_to_edit_table(plan)
     assert list(wide_plan.columns[: len(PLAN_EDITOR_DIMENSIONS)]) == [
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "Capa Code",
         "Customer",
         "CS",
@@ -252,6 +264,7 @@ def test_load_display_aggregates_internal_plan_detail_columns() -> None:
             "생산수량": [60.0, 40.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     result = build_monthly_volume(
         plan,
@@ -260,7 +273,7 @@ def test_load_display_aggregates_internal_plan_detail_columns() -> None:
         demand_basis="PKG",
     )
 
-    assert list(result.columns) == ["양산구분", "제품정보", "Stack", "202608"]
+    assert list(result.columns) == ["양산구분", "제품정보", "Stack", "CUSTOM", "202608"]
     assert result.loc[0, "202608"] == pytest.approx(100.0)
 
 
@@ -278,6 +291,7 @@ def test_sparse_pkg_plan_treats_missing_months_as_zero_demand() -> None:
             "생산수량": [100.0, 200.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     wide_plan = plan_to_edit_table(plan)
     hbm_dae = wide_plan.loc[wide_plan["제품정보"].eq("HBM다E")].iloc[0]
@@ -315,6 +329,7 @@ def test_monthly_density_uses_capacity_bearing_chip_types() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     density_data = pd.DataFrame(
         {
             "제품정보": ["HBM다E", "HBM다E"],
@@ -324,6 +339,7 @@ def test_monthly_density_uses_capacity_bearing_chip_types() -> None:
             "구분_EQ": [24.0, 24.0],
         }
     )
+    density_data = with_blank_custom(density_data)
 
     density = build_monthly_volume(
         plan,
@@ -357,6 +373,7 @@ def test_edited_yield_recalculates_chip_volume() -> None:
             "생산수량": [100.0, 100.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608, 202609],
@@ -367,6 +384,7 @@ def test_edited_yield_recalculates_chip_volume() -> None:
             "BE_수율": [0.9, 0.9],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM다E"],
@@ -376,12 +394,14 @@ def test_edited_yield_recalculates_chip_volume() -> None:
             "Net Die": [500],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
 
     wide_yield = yield_to_edit_table(yield_data)
     assert list(wide_yield.columns[: len(YIELD_EDITOR_DIMENSIONS)]) == [
         "수율 구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "WF 구분",
     ]
     assert set(wide_yield["수율 구분"]) == {"BE", "EDS"}
@@ -420,6 +440,7 @@ def test_a_plan_without_pack_code_names_the_empty_column_and_asks_for_reregistra
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     with pytest.raises(ValueError) as error:
         plan_to_edit_table(plan)
@@ -444,6 +465,7 @@ def test_monthly_volume_names_the_row_of_a_non_numeric_plan_quantity() -> None:
             "생산수량": [100.0, "약 50"],
         }
     )
+    plan = with_blank_custom(plan)
 
     with pytest.raises(ValueError, match="숫자가 아닌 값") as caught:
         build_monthly_volume(plan, pd.DataFrame(), pd.DataFrame(), "PKG")

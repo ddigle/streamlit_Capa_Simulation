@@ -21,6 +21,7 @@ from streamlit.testing.v1.element_tree import Error
 
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS, GRID_HOST, cells_key
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.edit_grid import DUPLICATE_SEPARATOR, KEY_SEPARATOR
 from capa_simulation.services.edit_grid_payload import CODE_ALPHABET
 
@@ -38,6 +39,7 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 import capa_simulation.settings as settings
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 
 # 페이지가 판정 기준 같은 공용 프로필을 `settings.DUCKDB_PATH` 에서 읽는다. 그대로 두면 저장소의
 # 실제 DB 를 열고 마이그레이션까지 건다. 프로세스마다 하나인 임시 폴더로 돌린다 — 테스트가 끝나면
@@ -80,6 +82,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "WF 구분": ["BUFFER"],
             "소요기준": ["PKG"],
             "UPEH": [100.0],
@@ -115,6 +118,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "WF 구분": ["BUFFER"],
             "Lot 측정률": [1.0],
         }
@@ -129,6 +133,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "WF 구분": ["BUFFER"],
             "WF측정률": [1.0],
         }
@@ -140,6 +145,7 @@ tables = {
             "CS": ["MP"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
             "Pack Code": ["PK-1"],
@@ -151,6 +157,7 @@ tables = {
             "생산계획년월": [202608],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "WF 구분": ["BUFFER"],
             "EDS_수율": [1.0],
             "BE_수율": [1.0],
@@ -164,6 +171,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
             "CS": ["MP"],
@@ -369,6 +377,7 @@ if STUB_CALCULATIONS:
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
+            "CUSTOM": [CUSTOM_BLANK],
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
             "CS": ["MP"],
@@ -1954,12 +1963,12 @@ def test_clearing_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
 
 
 RATIO_PASTE_HEADER = (
-    "공정\tArea_Name\t양산구분\t제품정보\tStack\tWF 구분\tSTEP_SEQ\tMCP_SEQ\t202608\n"
+    "공정\tArea_Name\t양산구분\t제품정보\tStack\tCUSTOM\tWF 구분\tSTEP_SEQ\tMCP_SEQ\t202608\n"
 )
 
 
 def _ratio_paste_row(process: str, value: str) -> str:
-    return f"{process}\tMain\t양산\tProduct-A\t8H\tBUFFER\tP100\t1A\t{value}\n"
+    return f"{process}\tMain\t양산\tProduct-A\t8H\t{CUSTOM_BLANK}\tBUFFER\tP100\t1A\t{value}\n"
 
 
 def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:

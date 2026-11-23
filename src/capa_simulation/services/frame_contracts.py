@@ -155,7 +155,7 @@ def normalize_demand_basis(values: pd.Series) -> pd.Series:
 def duplicate_route_rows(routes: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
     """앞 행과 **계산이 맞대는 꼴로** 같은 경로 행. 앞 행만 남기려고 쓴다(앞은 부르는 쪽이 세운다).
 
-    `columns` 전부가 키인 경로 표(`RQ_REQB` 13컬럼)를 계산이 붙이는 꼴로 줄여 견준다 — 월은 숫자,
+    `columns` 전부가 키인 경로 표(`RQ_REQB` 14컬럼)를 계산이 붙이는 꼴로 줄여 견준다 — 월은 숫자,
     나머지는 앞뒤 공백을 떼고, 소요기준은 `normalize_demand_basis`, `Area_Name` 은 대소문자를
     무시한다. 원래 글자로만 접으면 `WF`·`Wafer` 처럼 표기만 다른 두 행이 같은 경로로 두 번 세어져
     그 경로의 소요대수가 두 배가 된다. 전부가 키인 표라 접어도 잃는 값이 없다.

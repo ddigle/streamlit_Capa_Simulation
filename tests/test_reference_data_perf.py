@@ -210,6 +210,7 @@ RATIO_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
@@ -305,7 +306,7 @@ def test_the_step_summary_is_sent_with_compact_dtypes() -> None:
     sent = _sent_summary(app)
     number_columns = ["월", "STEP 수", "수요 변형 수"]
     text_columns = [column for column in sent.columns if column not in number_columns]
-    assert text_columns == ["Area", "공정", "양산", "제품", "Stack", "속성", "소요기준"]
+    assert text_columns == ["Area", "공정", "양산", "제품", "Stack", "CUSTOM", "속성", "소요기준"]
     assert all(isinstance(sent[column].dtype, pd.CategoricalDtype) for column in text_columns)
     for column in number_columns:
         dtype = sent[column].dtype

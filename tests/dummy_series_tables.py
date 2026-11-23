@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.display_order_editor import DISPLAY_ORDER_COLUMNS
 from capa_simulation.services.simulation_cache import HomeSimulationCacheKey
@@ -64,11 +65,11 @@ def plan(*, without: tuple[str, ...] = ()) -> pd.DataFrame:
         if product not in without
         for month, quantity in zip(MONTHS, quantities, strict=True)
     ]
-    return pd.DataFrame(rows)
+    return with_blank_custom(pd.DataFrame(rows), "RQ_PKG_PLAN")
 
 
 def yields() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "생산계획년월": month,
@@ -82,10 +83,11 @@ def yields() -> pd.DataFrame:
             for month in MONTHS
         ]
     )
+    return with_blank_custom(frame, "RQ_YLD")
 
 
 def chip_qty() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "제품정보": product,
@@ -97,11 +99,12 @@ def chip_qty() -> pd.DataFrame:
             for product, stack, division, chip, die, _eds, _be in _ROUTE_ROWS
         ]
     )
+    return with_blank_custom(frame, "RQ_CHIP_QTY")
 
 
 def chip_eq() -> pd.DataFrame:
     """Density 기준정보. Dummy 계열만 있는 제품은 두지 않는다(용량을 내지 않는 경로)."""
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "제품정보": [HBM, EDP],
             "Stack": ["12H", "8H"],
@@ -110,6 +113,7 @@ def chip_eq() -> pd.DataFrame:
             "구분_EQ": [24.0, 16.0],
         }
     )
+    return with_blank_custom(frame, "RQ_CHIP_EQ")
 
 
 def display_order() -> pd.DataFrame:

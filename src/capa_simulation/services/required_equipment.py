@@ -44,6 +44,7 @@ REQB_COLUMNS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -57,6 +58,7 @@ LOAD_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -73,6 +75,7 @@ CAPACITY_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 ]
 RESULT_DIMENSIONS = [
@@ -136,7 +139,8 @@ UNROUTED_LOADS_ATTR = "unrouted_required_loads"
 # 늘 뜨고, 그 경고(「확보율이 실제보다 높게」)는 그 경우 사실도 아니다.
 #
 # - 경로 키 어긋남(셈): 같은 (소요기준, 제품정보, Stack, 연결용 WF 구분) 경로가 다른 달·양산구분·
-#   Capa Code·Customer·CS 에는 있는데 이 부하 키만 못 닿았다. 계획 편집·연도 이동·월 병합이 만든다.
+#   CUSTOM·Capa Code·Customer·CS 에는 있는데 이 부하 키만 못 닿았다. 계획 편집·연도 이동·월 병합이
+#   만든다.
 # - RQ_REQB 에 없는 제품(셈): 그 제품정보·Stack 의 경로가 `RQ_REQB` 에 하나도 없다(소요기준·WF 구분
 #   무관). 그 제품의 수요 전체가 어느 공정에도 들지 않는다.
 # - 그 소요기준·WF 구분 경로 없음(세지 않음): 제품은 `RQ_REQB` 에 있는데 이 소요기준·WF 구분의
@@ -403,7 +407,8 @@ def _attach_loads(reqb: pd.DataFrame, loads: pd.DataFrame) -> pd.DataFrame:
     return result.drop(columns=_LOAD_JOIN_COLUMN)
 
 
-# 「경로 키 어긋남」을 가르는 키 — 연결 키에서 달·양산구분·Capa Code·Customer·CS 를 뺀 것.
+# 「경로 키 어긋남」을 가르는 키 — 연결 키에서 달·양산구분·CUSTOM·Capa Code·Customer·CS 를 뺀 것.
+# CUSTOM 이 없어야 부품 값이 어긋난 부하가 「경로 키 어긋남」(셈)으로 갈린다.
 _ROUTE_FAMILY_KEYS = ["소요기준", "제품정보", "Stack", _LOAD_JOIN_COLUMN]
 
 
@@ -488,6 +493,7 @@ def _build_loads(
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "Capa Code",
         "Customer",
         "CS",
@@ -498,7 +504,7 @@ def _build_loads(
     normalize_month_column(prepared_plan, "RQ_PKG_PLAN")
     strip_text_columns(
         prepared_plan,
-        ["양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS"],
+        ["양산구분", "제품정보", "Stack", "CUSTOM", "Capa Code", "Customer", "CS"],
     )
     prepared_plan["생산수량"] = plan_quantities(prepared_plan).astype("float64")
     # 이 경로는 load_calculator._prepare_plan 을 거치지 않으므로 여기서도 제외한다. 빈 생산수량은

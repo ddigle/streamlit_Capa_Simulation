@@ -189,8 +189,8 @@ def _rq_pkg_plan(
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
-    # 순서는 DDL 을 따른다. `제품타입`·`Pack Code` 는 0013 에서 ALTER 로 덧붙였으므로
-    # 테이블에서도 끝에 있다. 순서가 어긋나면 리비전 왕복 비교가 깨진다.
+    # 순서는 DDL 을 따른다. `제품타입`·`Pack Code` 는 0013, `CUSTOM` 은 0039 에서 ALTER 로
+    # 덧붙였으므로 테이블에서도 끝에 있다. 순서가 어긋나면 리비전 왕복 비교가 깨진다.
     columns = [
         "생산계획년월",
         "양산구분",
@@ -202,6 +202,7 @@ def _rq_pkg_plan(
         "생산수량",
         "제품타입",
         "Pack Code",
+        "CUSTOM",
     ]
     result = core.loc[core["계획기초정보여부"].eq("Y"), columns].copy()
     return rows.distinct(result, "RQ_PKG_PLAN", contract, conflict_records)
@@ -213,7 +214,7 @@ def _rq_yld(
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
-    columns = ["생산계획년월", "제품정보", "Stack", "WF 구분", "EDS_수율", "BE_수율"]
+    columns = ["생산계획년월", "제품정보", "Stack", "WF 구분", "EDS_수율", "BE_수율", "CUSTOM"]
     return rows.distinct(
         core.loc[:, columns].copy(),
         "RQ_YLD",
@@ -228,7 +229,7 @@ def _rq_chip_qty(
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
-    columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "Net Die"]
+    columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "Net Die", "CUSTOM"]
     return rows.distinct(
         core.loc[:, columns].copy(),
         "RQ_CHIP_QTY",
@@ -243,7 +244,7 @@ def _rq_chip_eq(
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
-    columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "구분_EQ"]
+    columns = ["제품정보", "Stack", "WF 구분", "구분_Chip", "구분_EQ", "CUSTOM"]
     result = core.loc[core["구분_EQ"].notna(), columns].copy()
     return rows.distinct(result, "RQ_CHIP_EQ", contract, conflict_records)
 
@@ -326,6 +327,7 @@ def _rq_upeh(
         "소요기준",
         "UPEH",
         "ST",
+        "CUSTOM",
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
     return rows.distinct(result, "RQ_UPEH", contract, conflict_records)
@@ -360,6 +362,7 @@ def _measurement_ratio_table(
         "Stack",
         "WF 구분",
         value_column,
+        "CUSTOM",
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "공정")
     result = rows.distinct(result, table_name, contract, conflict_records)
@@ -378,7 +381,7 @@ def _rq_reqb(
     16개 RQ 중 이 표만 업무 키 계약 밖에 있어서 중복 검출도 `drop_duplicates` 도 받지
     않았다. `required_equipment` 가 이 프레임을 왼쪽에 두고 `many_to_one` 으로 붙이므로
     원천에 완전 중복 행이 하나 들어오면 그 경로의 소요대수가 조용히 두 배가 된다.
-    13개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
+    14개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
 
     **계산과 같은 정규화**로 접는다(`frame_contracts.route_match_keys`). `WF`·`Wafer` 처럼
     표기만 다른 두 행은 계산에서 같은 경로라 접지 않으면 두 번 세어진다. 남는 것은 원천 행
@@ -399,9 +402,10 @@ def _rq_reqb(
         "STEP_SEQ",
         "MCP_SEQ",
         "소요기준",
+        "CUSTOM",
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "Area_Name")
-    # 13컬럼 전부가 업무 키라 `validated_distinct` 와 같은 null·빈값 검사를 같은 메시지로
+    # 14컬럼 전부가 업무 키라 `validated_distinct` 와 같은 null·빈값 검사를 같은 메시지로
     # 먼저 한다 — 표기 접기는 빈 키를 받지 않는다.
     require_columns(result, columns, "RQ_REQB")
     require_non_null(result, columns, "RQ_REQB")

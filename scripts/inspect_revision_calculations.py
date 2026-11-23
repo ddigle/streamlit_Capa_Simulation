@@ -130,12 +130,14 @@ SOURCE_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("SCENARIO_MONTH_MERGE", "월 병합"),
     ("SCENARIO_EXTRA_PROCESS", "부대공정 얹기"),
 )
-# 계획 줄 — `RQ_PKG_PLAN` 업무 키에서 Pack Code 를 뺀 것. 부하량이 이 단위로 접힌다.
+# 계획 줄 — `RQ_PKG_PLAN` 업무 키에서 Pack Code 를 뺀 것. 부하량이 이 단위로 접힌다. `CUSTOM`
+# 이 없으면 한 부품이 소요대수에 닿지 않아도 같은 제품의 다른 부품이 닿으면 닿은 것으로 접힌다.
 PLAN_LINE_KEYS: Final[tuple[str, ...]] = (
     "생산계획년월",
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",

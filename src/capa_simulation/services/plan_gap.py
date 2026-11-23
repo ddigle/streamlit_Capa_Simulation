@@ -11,7 +11,8 @@ GAP 을 적는다. 입장 화면 Summary 도 같은 두 증감을 적는다 — 
   `+0.00` 을 달면 무엇이 움직였는지 오히려 안 읽힌다.
 - 형식 자릿수에서 0 으로 보이는 글자(`+0.0K`·`-0.00`)도 적지 않는다(`visible_gap`).
 - `repair_comparison_plan_custom` 은 비교 계획 행의 CUSTOM 을 현재 계획 · 현재 수율 · Chip 표에
-  맞춰 다시 정하는 순수 함수다. 비교 계획을 현재 표로 환산하기 전에 부르도록 만들었다.
+  맞춰 다시 정하는 순수 함수다. `simulation_cache.get_home_comparison_plan` 이 비교 계획을 현재
+  표로 환산하기 전에 부른다(HOME GAP · Summary GAP 이 함께 지난다).
 """
 
 from __future__ import annotations

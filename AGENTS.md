@@ -1355,7 +1355,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     보관은 숨길 뿐 파일을 줄이지 않는다(회수는 영구 삭제 뒤 `scripts/compact_duckdb.py`).
   - 월 머지·연도 Shift 는 원본을 바꾸지 않고 새 시나리오로 저장하며 `capacity_gate` 파생 검사를 먼저 돈다. 무월 표
     규칙은 `scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS` 한 곳이다(`docs/scenario_merge_shift_implementation.md`).
-    겹침은 고를 칸 곁 값 하나이고 합치기 거부는 그 칸 바로 아래에 선다(표 뒤면 첫 화면 밖이다). 빈 달 · 가상/실제 섞임은 값 줄(뜻은
+    Chip 두 표의 보충 키는 부품 단위(`SUPPLEMENT_PRODUCT_KEYS` — 제품정보 · Stack · CUSTOM)이고 계획 결손 점검
+    `plan_key_gaps` 도 같은 키다 — 머지는 부품을 다시 짝짓지 않아 옛 리비전(빈 값 표지)과 부품 값이 있는 리비전을 섞으면
+    결손으로 드러난다. 겹침은 고를 칸 곁 값 하나이고 합치기 거부는 그 칸 바로 아래에 선다(표 뒤면 첫 화면 밖이다). 빈 달 · 가상/실제 섞임은 값 줄(뜻은
     풍선)이고, 막힌 동안에도 저장 칸은 잠긴 단추로 남는다(`_render_locked_save`). 부대공정도 값 줄 둘이다 — 「부대공정 판 섞임」(두
     원본이 다른 판 — 저장 뒤 「부대공정 얹기」 로 맞춤)과 「부대공정 · BDQ 행 섞임」(한 원본 달은 판 행 · 다른 원본 달은 BDQ 행 —
     `extra_process_merge.month_merge_mixing`, 설계 A14 · D20). 뒤의 것은 저장 출처를 섞임 뺌 줄로 접어(`carried_extra_process(mixed=…)`)
@@ -1987,7 +1989,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`required_exclusion_message`), 소요대수 쪽 제외 목록(`ExclusionList` — 알림에 딸린 표와, 표가 커서 None 일 때의 본문 펼침
   `render_oversized_lists`. 계획 쪽 둘은 `plan_exclusion_lists` — 고칠 곳은 까닭 칸 머리 풍선 `LOAD_EXCLUSION_HELP` ·
   `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
-  `alert_required_exclusions`)를 낸다.
+  `alert_required_exclusions`)를 낸다. 계획 쪽 두 목록의 분류 칸(`_LOAD_EXCLUSION_DIMENSIONS` · `_UNROUTED_DIMENSIONS`)은
+  Stack 뒤에 `CUSTOM` 을 싣는다.
   - 문장은 `capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다 — 그래서 저장 · 지정 · 복제 · 자동 갱신
     경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
@@ -2726,17 +2729,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     집계 기준)이다. `home` 은 Chip · Wafer 를 묶기 전에 `exclude_dummy_series` 로 Dummy 계열 행을 빼고, PKG · Density 는
     보지 않으며 제외 목록은 두 기준이 같다. 캐시 래퍼 `simulation_cache.get_monthly_volume` · `get_monthly_volume_by_key`
     도 같은 인자를 받는다(`tests/test_monthly_volume_basis.py`).
+  - 키 상수(`CLASSIFICATION_COLUMNS` · `PLAN_EDITOR_DIMENSIONS` · `YIELD_KEYS` · `YIELD_EDITOR_DIMENSIONS` · `CHIP_KEYS` ·
+    `DENSITY_KEYS` · `LOAD_EXCLUSION_COLUMNS`)는 Stack 뒤에 `CUSTOM` 을 싣는다. Chip · Density 펼침 조인은 손으로 적은 키가
+    아니라 그 키에서 `WF 구분` 만 뺀 상수(`_CHIP_EXPAND_KEYS` · `_DENSITY_EXPAND_KEYS`)로 잇는다 — 키를 손으로 적으면 업무
+    키가 넓어질 때 두 부품이 서로 붙어 부하가 두 배가 된다. `LOAD_EXCLUSION_COLUMNS` 는 끝 칸(누락 기준정보) 앞이 키라
+    (`[:-1]` 로 읽는다) CUSTOM 도 그 앞이다. 수율 범위 예시는 자리가 아니라 칸 이름으로 푼다.
 - `src/capa_simulation/services/unit_capacity.py` — Main/MI 환산 UPEH 와 경로별 대당 Capa 를 계산한다(6장).
   0 이하 멈춤 글(`_assert_positive`)의 「n건」 은 걸린 계산 행 수가 아니라 키 조합, 곧 기준정보 표에서 고칠 칸 수다(빈 값 ·
-  숫자 아님 · 연결값 없음 글과 같은 셈 — 계산 멈춤 알림의 「0 이하 칸 n건」 이 그대로 쓴다).
+  숫자 아님 · 연결값 없음 글과 같은 셈 — 계산 멈춤 알림의 「0 이하 칸 n건」 이 그대로 쓴다). 경로 키
+  `PERFORMANCE_KEYS` 와 결과 차원 `UNIT_CAPACITY_DIMENSIONS` 는 Stack 뒤에 `CUSTOM` 을 싣는다(UPEH · 측정률이 부품마다 붙는다).
 - `src/capa_simulation/services/weighted_unit_capacity.py` — 원수요 부하량 ÷ STEP별 소요대수 합으로 공정별 대당 Capa 를
-  만든다. 소요기준이 둘인 공정은 멈춘다.
+  만든다. 소요기준이 둘인 공정은 멈춘다. 원수요 키 `DEMAND_ID_COLUMNS` 는 `standard_target_capacity.PKG_PLAN_KEYS` 와
+  **함께** CUSTOM 을 싣는다(한쪽만 넓히면 「동일 원수요 키의 부하량이 서로 다릅니다」 로 멈춘다). 집계 계층
+  `WEIGHTED_CAPACITY_HIERARCHY` 에는 CUSTOM 이 없다 — 부품은 그 위에서 합친다.
 - `src/capa_simulation/services/standard_target_capacity.py` — 주차별 일 표준 가능량과 PKG 기준 역산을 낸다. 표준 목표
   전용 제외(ER·`Pre B/D` DUMMY)는 `split_standard_target_required_equipment` 한 번으로 낸다. 두 계산 함수는 기본으로
   분리를 함께 하고, 이미 분리한 프레임(분리 결과 캐시 `get_standard_target_split` 와 그 행을 거른 것)은 `already_split=True`
   로 받아 다시 훑지 않는다 — `simulation_cache` 의 네 표준 목표 래퍼만 쓴다. 분리 안 한 프레임에 켜면 ER·DUMMY 가 섞인다.
 - `src/capa_simulation/services/route_step_editor.py` — 네 경로 표의 MCP·STEP 일괄 복제·삭제와 고유 조합 수를 맡는다.
-  요약·선택지를 함께 낼 때는 `route_step_tables` 로 `RQ_REQB` 를 한 번만 전처리한다.
+  요약·선택지를 함께 낼 때는 `route_step_tables` 로 `RQ_REQB` 를 한 번만 전처리한다. 경로 묶음 키(`ROUTE_GROUP_COLUMNS` ·
+  `PERFORMANCE_ROUTE_COLUMNS`)는 Stack 뒤에 `CUSTOM` 을 싣고, 함께 처리하는 수요 변형은 Capa Code · Customer · CS 셋이다.
 - `src/capa_simulation/services/process_rename.py` — 공용 공정 표시명의 정규화·검증·직렬화다(치환은
   `components/process_labels.py` 에만, 8장).
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
@@ -2744,6 +2756,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기본은 빈 선언이고(잇기 전 자리 — 잇는 단계에서 걷는다) 그때 결과 · attrs 는 지금과 같다. 선언 공정의 WF 경로가
     있을 때만 부하량 표에서 바탕을 지어 `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외 목록에 「부하
     예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 아직 어느 호출처도 선언을 넘기지 않는다.
+  - 경로 · 부하 · 대당 Capa 를 잇는 키(`REQB_COLUMNS` · `LOAD_KEYS` · `CAPACITY_KEYS`)와 PKG 부하 줄을 짓는 `_build_loads` 의
+    칸 목록 · 글자 다듬기 목록은 `CUSTOM` 을 싣는다 — PKG 쪽 칸 목록에서 빠지면 PKG 부하의 CUSTOM 이 비어 경로에 못 붙고
+    PKG 소요대수가 말없이 0 이 된다. 경로 없는 부하의 사유를 가르는 `_ROUTE_PRODUCT_KEYS` · `_ROUTE_FAMILY_KEYS` 에는
+    CUSTOM 이 **없다** — 부품만 어긋난 부하가 「경로 키 어긋남」 으로 갈린다(6장). 산출 결과 표 차원 `RESULT_DIMENSIONS`
+    에도 아직 없다.
 - `src/capa_simulation/services/route_load_exceptions.py` — 공정별 부하 산출 예외의 순수 계산. 산식 id 목록
   `ROUTE_LOAD_FORMULAS`(지금 `buffer_x_core_chip` 하나), 선언 정규화(공정 이름은 `scalar_match_key` 로 견주고 모르는 산식
   id 는 멈춤), 바탕 표 `build_route_load_bases`(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`), 경로 줄에 거는
@@ -2760,6 +2777,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/securement_rate.py` — 확보율·추가 필요대수·부호 있는 과부족(`securement_balance`)을 낸다.
 - `src/capa_simulation/services/process_capa_detail.py` — 공정 하나의 월별 요약·제품별 소요·경로 추적을 계산 결과에서 꺼낸다.
   - 새 계산이 없다. 대당 Capa 식을 바꾸면 `route_factor_product` 도 고친다(`tests/test_process_capa_detail.py`).
+  - 경로 추적 키 `ROUTE_KEYS` 는 Stack 뒤에 `CUSTOM` 을 싣는다 — 경로 한 줄이 한 부품이고 측정률 키(`RATIO_ROUTE_KEYS`,
+    `PERFORMANCE_KEYS` 에서 냄)와 맞는다. 「제품별 나눔」 의 분류(`PRODUCT_DEMAND_SPLITS`)에는 CUSTOM 이 없어 부품을 합친다.
 - `src/capa_simulation/services/constraint_simulation.py` — 제약 시뮬레이션(2026-10-24 결정, 저장하지 않는 미래 가정)의
   순수 계산. 공정 하나의 월별 소요(R)를 제약 제품(`제품정보` 하나)과 기존 제품으로 나누고, 설비 일정 기준 가용(단축 전
   환산 대수)에서 개조 비가동을 빼고 제약 몫을 먼저 정수로 뗀 뒤 기존 제품 확보율·「소요 비중대로」 견주기·요약 넷을 낸다
@@ -2814,10 +2833,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     대응이어야 한다(`tests/test_display_order_scopes.py`).
 - `src/capa_simulation/services/display_order.py` — `RQ_DISPLAY_ORDER` 기반 행 정렬이다. `prepare_display_order` 가 회차에
   한 번 검증해 `PreparedDisplayOrder` 를 만든다. 캐시는 두지 않는다(`simulation_cache.get_prepared_display_order`).
+  규칙 열쇠가 같은 행의 끝 열쇠는 `CUSTOM` 칸(`CUSTOM_TIE_COLUMN`)의 부품 차례(`custom_sort_key`)이고, 원래 행 차례는 그
+  뒤다(8장).
 - `src/capa_simulation/services/month_filter.py` — YYYYMM 검증과 조회기간 필터다(원천·적재·계산이 같은 달력 검증을 쓴다).
 - `src/capa_simulation/services/capacity_reference_editor.py` — Capa 기준정보 Long/Wide 편집 변환이다. 빈 칸은 「행 없음」이다.
   - 편집표 한 장(`build_reference_edit_table`)은 순수 조합이고 캐시는 `simulation_cache.get_reference_edit_table` 이
     건다(`tests/test_reference_data_page.py` 가 표시순서 교체를 본다).
+  - UPEH 편집 차원(`PERFORMANCE_EDITOR_DIMENSIONS`)과 측정률 화면 차원(`app_pages/reference_data.py` `RATIO_DIMENSIONS`)은
+    Stack 뒤에 `CUSTOM` 을 싣는다. 붙여넣기 · CSV 양식이 차원을 따라가므로 CUSTOM 칸이 없는 옛 양식은 막힌다.
 - `src/capa_simulation/services/clipboard_table.py`, `reference_csv.py` — Excel 복사 TSV 파싱과 RQ Wide 표 검증이다.
   - 빈 열은 `drop_empty_unnamed_columns` 가 빼고, 못 읽는 값·범위 밖 값(`assert_edit_value_range`)은 막고 빈 칸은 센다.
 - `src/capa_simulation/services/reference_consistency.py` — 기준정보 편집이 다른 표의 행을 빠뜨렸는지 저장 전에 가린다
@@ -2831,7 +2854,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/reference_transformer.py` — XLSB `Q_Core_Data` 와 15개 Core 파생 Power Query 를 pandas 로
   대체하고 값 충돌 보고서를 함께 낸다(수동 `RQ_DISPLAY_ORDER` 는 `display_order_editor.transform_display_order`).
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수
-    있다 — `scripts/validate_duckdb_persistence.py` 는 같은 보정을 건 뒤 견준다.
+    있다 — `scripts/validate_duckdb_persistence.py` 는 같은 보정을 건 뒤 견준다. Power Query 결과에 없는 앱 전용 칸
+    (`APP_ONLY_COLUMNS` — `CUSTOM`)은 그 견줌에서만 뺀다.
+  - CUSTOM 키 8표(4장)의 칸 목록은 `CUSTOM` 이 **끝**이다 — DDL 차례(0039 가 칸을 끝에 붙임)라 바꾸면 리비전 왕복이
+    깨진다. `RQ_REQB` 는 14칸 모두 키라 CUSTOM 도 빈 값 검사 · 표기 접기 키가 된다.
 - `src/capa_simulation/services/core_data_pipeline.py` — CSV·BigDataQuery 결과를 같은 정규화·RQ 변환 길로 잇는다.
   - 등록 이음매 `fetch_registration_dataset` · `merge_registration_dataset` — 조회 · 변환(② 기준 정보 표) 뒤, 프리셋 · 저장(③) 앞에서
     DB 의 활성 부대공정 판을 16표에 합친다(원천 `source_data` · 원천 해시는 그대로). 화면 DB 등록과 공식버전 자동 갱신이 함께
@@ -2861,6 +2887,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   걷기가 사본이다). 순수 함수라 자동 갱신 스레드도 부른다. 이어받은 결손 셈(`inherited_capacity_gaps` — R-02, 이미 돌린 계산의
   제외 줄에서 센다 — 등록 길에는 계산을 더하지 않는다)과 월 머지 섞임 가르기(`month_merge_mixing` — 결과 `RQ_REQB` 의 달마다 고른
   원본 · 원본마다 출처로 「판 섞임」(다른 sha)과 「판 · BDQ 행 섞임」(한 원본은 출처 줄이 아예 없는 BDQ 행)을 가른다)도 둔다.
+  양식(판)에는 CUSTOM 칸이 없다 — 지정 꼴은 그 제품의 모든 부품에 같은 값으로 펼치고(`_VARIANT_KEYS` · `_PATH_KEYS` 가 CUSTOM
+  을 싣는다), 따라가기 꼴은 참조 경로의 CUSTOM 을 잇는다.
 - `src/capa_simulation/services/extra_process_revision.py` — 「이 리비전 값을 새 판으로」 의 거꾸로 만들기(설계 3-5 · A15, 순수
   함수). **바탕 판 줄에서 시작한다** — 값 줄(03 · 04 · 05)마다 리비전 기간(그 리비전 계획의 달) 안의 달을 리비전 값과 견주고, 같은
   뜻이면(측정률 빈칸 ≡ 1.0 · `달력` ≡ 그 달 날수 · 대여 빈칸 ≡ 0) 바탕 줄을 그대로, 다른 달이 있을 때만 값이 바뀌는 달마다
@@ -2869,7 +2897,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   센다(2026-11-19 사용자 답 Q1 — 리비전 표에서 그 공정을 걷고 바탕 판을 다시 펼친 경로와 맞댄다). 공통 값인데 제품마다 값이 갈린
   공정(G11) · 가용대수를 보유 − 대여와 따로 고친 공정은 옮기지 않고 까닭을 남긴다. 측정률 0 은 0 그대로(G9). 만든 판은 양식 ZIP
   바이트로 다시 접수 검증(`read_pack_zip`)을 지나고, 화면은 그 바이트를 적용까지 그대로 든다(sha 가 바뀌지 않게). 누를 수 없는
-  까닭(`revision_refusal` — G4)도 둔다. 시험 `tests/test_extra_process_revision.py`.
+  까닭(`revision_refusal` — G4)도 둔다. 시험 `tests/test_extra_process_revision.py`. 양식에 CUSTOM 칸이 없으므로 같은 줄 키에
+  부품(CUSTOM)마다 다른 값이 든 공정은 옮기지 않고 까닭 「양식에 CUSTOM 칸이 없는데 CUSTOM 마다 값이 갈림 — 옮기지 못함」
+  (`SPLIT_CUSTOM_REASON`)을 남긴다 — 공통 줄을 먼저 본다. 견주는 리비전 표에는 CUSTOM 칸이 있어야 한다(0039 뒤 저장분은 늘 있다).
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
@@ -2888,8 +2918,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 원천 `CUSTOM` 의 정규화는 여기 한 곳(`normalize_custom_values`)이다 — 앞뒤 공백을 떼고 대소문자 표기를
     `unify_case_variants` 로 모으며, 빈 값(NULL · 빈 글자 · 공백뿐)은 표지 `CUSTOM_BLANK`(`"-"`) 하나로 세운다. 붙여넣기 ·
     부대공정 양식 쪽에 따로 정규화를 두지 않는다. 표지는 편집표 붙여넣기 · CSV 왕복에서 빈 값으로 읽히지 않는다
-    (`clipboard_table.TEXT_TABLE_READ_OPTIONS` 는 빈 칸만 NA). 작업 프레임은 CUSTOM 을 싣지만 RQ 표 · 계산 키에는 아직
-    없다(TODO 2장 「업무 키 승격」).
+    (`clipboard_table.TEXT_TABLE_READ_OPTIONS` 는 빈 칸만 NA). 작업 프레임의 CUSTOM 은 RQ 8표의 업무 키로 계산 끝까지
+    간다(4장 「CUSTOM」). CS 빈 행 셈의 계획 줄 키(`_ROUTE_OWNER_KEYS`)도 CUSTOM 을 싣는다 — 이 길은 정규화 앞이라
+    빈 값을 표지와 같게 맞댄다. 부품 차례 열쇠 `custom_sort_key`(대소문자 접은 글자 → 원문, 빈 값 · 표지는 끝 — 8장)도
+    여기 하나다.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 칸이 많은 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 그룹 자리(첫 등장 차례)를 바꾸지
     않는다.
@@ -2915,6 +2947,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/frame_checks.py` — 중복 키 검사(`assert_unique_keys`)·텍스트 키 strip 의 단일 정의다.
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
+  복제 단위는 제품 키(제품정보 · Stack)이고 그 제품의 모든 부품(CUSTOM)이 함께 옮겨진다. 그래서 원본 목록
+  (`available_source_products`)은 어느 표에든 나온 (제품정보, Stack, CUSTOM) 묶음이 복제 표 **전부**에 있는 제품만 낸다 —
+  부품 하나가 한 표에 없으면 그 제품은 빠지고, CUSTOM 칸이 없는 표면 멈춘다.
 - `src/capa_simulation/services/iso_week_calendar.py` — ISO 주차 캘린더와 `YY-W##` 주차 코드 파싱을 제공한다.
 - `src/capa_simulation/services/korean_particle.py` — 값 뒤 조사(을/를·은/는·이/가·으로/로)를 끝소리로 고르는 단일
   정의다(8장 — `tests/test_particle_sites.py` 가 `scripts/` 출력까지 지킨다). 패키지를 import 하지 않는 스크립트
@@ -4147,7 +4182,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는 규칙(`GAP_EPSILON`·`visible_gap`·`format_gap`)이다. HOME `home_lob_figures` 와 Summary 가 함께 쓴다.
   비교 계획을 현재 수율 · Chip 표로 환산하기 전에 계획 행의 CUSTOM 을 현재 표에 다시 짝짓는 순수 함수
   (`repair_comparison_plan_custom` — 현재 계획의 같은 Capa Code → 현재 표의 제품 하나 → 원래 값)도 여기 둔다.
-  아직 `get_home_comparison_plan` 이 부르지 않는다 — 계획 표에 CUSTOM 을 싣는 키 승격과 함께 잇는다(TODO 2장 「업무 키 승격」).
+  `get_home_comparison_plan` 이 비교 계획을 환산하기 전에 부른다 — 짝이 없는 행은 환산 제외 목록이 센다.
 - `src/capa_simulation/components/admin_dialog.py` — Admin Area 편집 탭들이 함께 쓰는 팝업 칸
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
@@ -4362,6 +4397,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 지표를 더하면 두 스크립트의 계산 사전(`LOAD_BUILDERS`)도 더하고, 산식이 바뀌면 `FORMULA_INPUTS` 도 고친다.
     환산 UPEH 는 `hourly_rate` 가 `unit_capacity.converted_upeh` 를 부르고, `time_agreement`(UPEH × ST ÷ 60)는
     그 모듈의 `ST_MINUTES_PER_HOUR` 를 쓴다 — 식을 복제하지 않는다.
+  - 대조 키 `COMPARISON_KEYS` 는 Stack 뒤에 `CUSTOM` 을 싣고, 계획 줄 키 · 소요대수 대조 키는 계약에서 나와 저절로 싣는다.
+    기존 쪽은 원천(`raw_data`)에서 다시 파생하는데 0039 전 리비전은 CUSTOM 이 모두 빈 값 표지라, 원천에 옛 조회문 값이 남아
+    있으면 모든 키가 한쪽에만 남는다. 그래서 `source_custom_aligned(raw, tables)` — 받은 리비전 표 가운데 CUSTOM 키 표가 모두
+    표지뿐(칸 없음 · 빈 값 포함)이면 원천 CUSTOM 칸을 표지로 바꾼 사본, 아니면 원천 그대로 — 를 파생 앞에서 한 번 부른다
+    (`inspect_real_data_checks.load_source` · `compare_legacy_results.main`). 원천은 고치지 않는다.
 - `src/capa_simulation/components/tab_state.py` — 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정
   `tab_is_hidden` 이다. 차트가 든 탭은 반드시 이것으로 만든다 — 숨은 탭의 Plotly 표는 글자 폭이 0 으로 재진다.
   다른 화면에서 그 화면의 탭 하나로 보낼 때는 기억 칸만 적는다(`remember_open_tab` — 위젯 키는 쓰지 않는다. 안쪽 탭이면
@@ -4498,7 +4538,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그리드가 된 뒤 부르는 화면이 없다 — `tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
   **불러오기 전에** 판정한다(활성화 뒤에 죽으면 되돌릴 길이 없다).
-  - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분이다. 값을 추정해 채우지 않는다.
+  - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분과, CUSTOM 키 표(`custom_keyed_tables()` — 계약 `derived_keys` 에
+    `CUSTOM` 이 든 표)에 CUSTOM 칸이 없거나 값이 빈(NULL · 빈 글자 · 공백뿐) 저장분이다(`custom_incompatible_tables`). 빈 값
+    표지 `"-"` 는 통과하고 빈 표는 건너뛴다. 0039 뒤에는 걸리지 않는 안전망이다(5장 28). 값을 추정해 채우지 않는다.
 - `src/capa_simulation/services/past_data.py` — 적재 시점 이전 과거 구간 입력의 정규화·검증과 계산 결과 병합이다.
   산출하지 않는다 — Capa 는 확보율에서 곧장 나오고 B/N 순위는 확보율 오름차순이다.
   - 같은 달이 양쪽에 있으면 계산이 이긴다. `display_month_range` 는 HOME 계산 캐시 키의 달이라 HOME 과
@@ -6340,11 +6382,20 @@ RQ_CHIP_QTY
 RQ_CHIP_EQ
 ```
 
-`RQ_PKG_PLAN` 업무 키는 계약 `derived_keys` 의 8키다 — 7키에 `Pack Code` 가 더해진다.
-같은 7키 안에서 생산수량을 가르는 값이라 **저장과 편집은 행을 나누고, 합산은 계산 계층이**
+`RQ_PKG_PLAN` 업무 키는 계약 `derived_keys` 의 9키다 — 계획 줄 8키(CUSTOM 포함)에 `Pack Code` 가 더해진다.
+`Pack Code` 는 같은 8키 안에서 생산수량을 가르는 값이라 **저장과 편집은 행을 나누고, 합산은 계산 계층이**
 한다. 부하량·소요대수·HOME 은 Pack Code 없는 키로 `groupby` 하고, PKG 환산은
-`_prepare_pkg_plan_for_equivalent` 가 7키 합계로 접는다. 변환기나 `validated_distinct` 에서
+`_prepare_pkg_plan_for_equivalent` 가 8키 합계로 접는다. 변환기나 `validated_distinct` 에서
 합산하지 않는다 — 거기서 접으면 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없다.
+
+**`CUSTOM` 은 제품을 가르는 업무 키다**(사용자 결정 「CUSTOM 이 다르면 다른 제품」 — 시뮬레이션 `0039`). 제품정보가 든
+8표(`RQ_PKG_PLAN` · `RQ_YLD` · `RQ_CHIP_QTY` · `RQ_CHIP_EQ` · `RQ_UPEH` · `RQ_LOT_RATIO` · `RQ_WF_RATIO` · `RQ_REQB`)의
+`derived_keys` 끝에 있고 표 칸도 끝이다(DDL 차례). Pack Code 와 달리 **합산하지 않고 조인 키로 끝까지 간다** — 수율 ·
+Chip 구성 · UPEH · 측정률 · 경로가 부품(CUSTOM 값)마다 붙고 대당 Capa · 소요대수도 부품마다 난다. 계산 키 상수는
+Stack 뒤에 둔다(3장 각 모듈). 빈 값은 표지 `"-"`(`core_data_derivation.CUSTOM_BLANK`) 하나이고, 0039 전에 저장한
+리비전 · 데이터셋 표는 모두 표지다(원천에서 되채우지 않음). 한 키라도 빠뜨리면 두 부품이 말없이 한 줄로 접히거나 부하가
+두 배가 되므로, 키를 손으로 적은 조인을 두지 않고 상수에서 낸다(12장 「새 업무 키」). 합쳐 보는 화면(HOME 도넛 · 제품별
+비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)과 산출 결과 소요대수 표는 아직 제품으로 합친다.
 
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
 수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다. 월 축(`생산계획년월`)이
@@ -6438,7 +6489,10 @@ RQ_MODULE
    분기를 만든다. 예외는 **이름표인 리비전명** 하나다(2026-10-22 사용자 결정 — `rename_revision`·`apply_scenario_list_edits`,
    비교 후 쓰기, 이력 없음, 시나리오 「최근 수정」 그대로). 계산 캐시 키·공식 발행 행(공식버전명)은 리비전명을 싣지 않아
    이름을 바꿔도 계산이 다시 돌지 않는다. 메모는 시스템 출처 기록(상세 조회기간·월 머지·연도 Shift 출처)이 들어 고치지
-   않는다. 설비 DB 리비전은 이 예외가 없다 — **공통 대장 리비전**(`equipment_ops.revision`, 번호 전역)·**설비 시나리오 일정
+   않는다. 앱 시작 마이그레이션이 옛 리비전 표에 **칸을 더하는 것**(`0013` 의 `제품타입` · `Pack Code`, `0039` 의 `CUSTOM`)은
+   내용 갱신으로 보지 않는다 — 더한 칸의 값이 옛 리비전의 계산 결과를 바꾸지 않아야 하고(`0039` 는 모든 행이 빈 값 표지,
+   원천에서 되채우지 않음), 마이그레이션 시험이 옛 리비전을 저장 · 되감기 · 그 번호만 다시 걸어 계산 전후 같음을 본다
+   (`tests/test_migration_0039_custom.py`). 설비 DB 리비전은 이 예외가 없다 — **공통 대장 리비전**(`equipment_ops.revision`, 번호 전역)·**설비 시나리오 일정
    리비전**(번호는 시나리오마다 r1 부터)·**공식 발행**(`release_no` 전역)이 모두 append-only 이고, 고칠 수 있는 것은 설비
    시나리오 **이름**과 설비 시나리오 일정 리비전의 **리비전명**(`revision_name`, E7 — 2026-10-24 「권장대로」) 둘이다.
    리비전명은 시뮬레이션과 같은 이름표 예외다 — `rename_schedule_revision`(비교 후 쓰기, 비우면 지움, 이력 없음)이 그 한 칸만
@@ -6635,7 +6689,9 @@ RQ_MODULE
 28. **계산 계약을 바꿔 옛 리비전을 쓸 수 없게 되면 `revision_compatibility` 에 판정을 더한다.** 불러오기 **전에**
     막고 이유를 알린다 — 활성화한 뒤 계산이 멈추면 활성 시나리오가 이미 바뀌어 화면에서 되돌릴 길이 없다. 빠진 값을
     추정해 채우지 않는다(지어내면 오류 대신 조용히 틀린 Capa 가 나온다). 지금 막는 `STEP_SEQ`·`MCP_SEQ` 빈
-    저장분은 같은 원천 코드를 다시 등록해 새 시나리오로 저장한다.
+    저장분은 같은 원천 코드를 다시 등록해 새 시나리오로 저장한다. CUSTOM 키 표의 CUSTOM 칸이 없거나 빈 저장분도 막는다
+    (`custom_incompatible_tables` — 빈 값 표지는 통과). `0039` 가 옛 행에 표지를 넣으므로 마이그레이션 뒤에는 걸리지 않는
+    안전망이다 — 칸이 없으면 활성화 뒤 계산이 멈추고 빈 값 행은 조인에서 빠지므로 불러오기 전에 막는다.
 29. **시나리오에 딸린 새 표는 소유 컬럼(`scenario_id`·`dataset_id`·`revision_id`) 가운데 하나를 갖는다** — 영구
     삭제가 `information_schema` 에서 그 컬럼으로 지울 표를 찾으므로 없으면 시나리오를 지워도 행이 남는다.
 30. **리비전 프리셋의 확보·경고 기준은 레거시다.** 판정은 공용 판정 기준 프로필만 보고, 프리셋 값은 그 프로필이
@@ -6924,7 +6980,7 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
 
 원천에서 CS 가 빈 행은 양산구분(양산·ER)을 정할 수 없어 등록 때 RQ 파생에서 빠진다(7장 — 2026-10-27 사용자 결정).
 그 계획 행의 생산수량은 `RQ_PKG_PLAN` 에 없으므로 부하량·소요대수·확보율 어디에도 들지 않고, 경로 행이면 그 경로가
-`RQ_REQB` 에 없다. **경로 행만 빼도 남은 계획의 소요대수가 줄 수 있다** — 같은 달·제품정보·Stack·Capa Code·Customer 의
+`RQ_REQB` 에 없다. **경로 행만 빼도 남은 계획의 소요대수가 줄 수 있다** — 같은 달·제품정보·Stack·Capa Code·Customer·CUSTOM 의
 남은 계획이 그 경로(Area·공정·소요기준·WF 구분·STEP·MCP)를 CS 가 있는 다른 행으로 갖지 않으면 그 부하는 남은 경로에만
 붙고 빠진 공정은 그 몫 없이 계산된다. 그 소요기준·WF 구분의 경로가 하나도 안 남으면 「그 소요기준·WF 구분 경로 없음」
 (세지 않는 사유)이라 HOME·저장·발행의 소요대수 밖 수요 경고(`required_exclusion_counts`)에 잡히지 않을 수 있다. 그래서
@@ -7015,9 +7071,9 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
   공정별 `RQ_REQB` 값을 따른다. STEP별 상세 대당 Capa를 별도로 제공하며 화면용 유효
   Capa를 소요대수·확보율 계산에 재사용하지 않는다.
 - `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`의 경로 식별 키는 생산계획년월·Area·공정·
-  `STEP_SEQ`·`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분이다. 세 기준정보와
+  `STEP_SEQ`·`MCP_SEQ`·양산구분·제품정보·Stack·CUSTOM·WF 구분이다. 세 기준정보와
   `RQ_REQB`는 Area·STEP·MCP를 포함해 정확히 일치하는 경로끼리 연결한다.
-- STEP 수는 생산계획년월·Area·공정·양산·제품·Stack·WF·소요기준 안의
+- STEP 수는 생산계획년월·Area·공정·양산·제품·Stack·CUSTOM·WF·소요기준 안의
   `(MCP_SEQ, STEP_SEQ)` 고유 조합 수로 계산하며 Capa Code·Customer·CS 행 수는 중복
   계수하지 않는다. STEP 추가는 선택한 원본 경로의 모든 수요 변형에 기본 일괄 적용한다.
 
@@ -7062,8 +7118,8 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
 확보율   = RQ_EQP_AVBL 가용대수 ÷ 공정별 소요대수
 ```
 
-소요대수 계산 전에는 Capa Code, Customer, CS를 포함한 상세 부하량으로 `RQ_REQB`에
-연결한다. 화면용 그룹 합산 데이터를 조인 원본으로 재사용하면 안 된다.
+소요대수 계산 전에는 Capa Code, Customer, CS, CUSTOM을 포함한 상세 부하량으로 `RQ_REQB`에
+연결한다(CUSTOM 은 부품마다 다른 경로 · 대당 Capa 로 간다 — 4장). 화면용 그룹 합산 데이터를 조인 원본으로 재사용하면 안 된다.
 동일 공정·제품에 STEP 행이 여러 개면 같은 부하량을 각 STEP의 대당 Capa로 각각 나누고
 STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를 식별 컬럼으로 유지하되
 확보율과 HOME은 공정 수준으로 합산한다.
@@ -7088,7 +7144,8 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
   경로)에 하나도 닿지 않은 부하. attrs `UNROUTED_LOADS_ATTR`. 계획 총 부하 = 경로에 붙은 부하 + 이
   목록이 부하량 키 단위로 맞는다. **사유가 셋이고 앞의 둘만 센다**(`제외사유`).
   - `경로 키 어긋남` — 같은 (소요기준, 제품정보, Stack, 연결용 WF 구분) 경로가 다른 달·양산구분·Capa
-    Code·Customer·CS 에는 있다. 계획 편집·연도 이동·월 병합이 만든다.
+    Code·Customer·CS·CUSTOM 에는 있다. 계획 편집·연도 이동·월 병합이 만든다(부품만 어긋난 부하도 여기다 — 사유를
+    가르는 키에 CUSTOM 을 두지 않는다).
   - `RQ_REQB 에 없는 제품` — 그 제품정보·Stack 의 경로가 소요기준과 무관하게 하나도 없다(BOX·PCB 경로도
     있는 것으로 본다).
   - `그 소요기준·WF 구분 경로 없음`(세지 않음) — 제품은 있는데 그 조합의 경로가 아예 없다. 부하량은
@@ -7820,6 +7877,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   행 번호로 되붙인다.
 - 원천 `제품정보` 는 typed raw 에 그대로 두고, RQ 변환(`core_data_derivation`)에서 BigDataQuery 가 공백 대신 돌려주는
   언더바(`_`)를 공백으로 바꾼 뒤 연속 공백을 하나로 줄인다.
+- **`CUSTOM` 은 빈 값을 표지 `"-"`(`CUSTOM_BLANK`)로 세운 뒤 조인한다**(4장). 빈 값을 NA 로 두면 조인 · 접기에서 행이
+  빠지거나 한 줄로 접힌다. 표지와 부품 값은 서로 짝짓지 않는다 — 옛 리비전(모두 표지)과 부품을 가른 리비전이 만나는
+  자리 가운데 다시 짝짓기(같은 Capa Code → 현재 표의 제품 하나 → 원래 값)는 비교 GAP 한 곳(`plan_gap.repair_comparison_plan_custom`)
+  이고, 월 머지 · 계획 편집이 만든 어긋남은 결손(`plan_key_gaps`) · 환산 제외 · 「경로 키 어긋남」 목록으로 드러낸다.
 - **RQ 업무 키의 값 충돌은 멈추지 않고 「값이 있는 행」을 쓰며, 같으면 원천 행 순위로 고른다**(`reference_transformer`·
   `reference_conflicts`). 숫자 `0` 과 빈 글자는 값 없음이라 형제 행에 실제 값이 있으면 그 값이 저장된다(모두 `0` 이면
   `0`). 효율·UPEH 는 0 행과 빈 값 행만 있으면 0 행이다(2026-11-01 사용자 결정 — 0 은 그 경로만 제외, 빈 값은 계산 전체
@@ -7852,6 +7913,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   항상 마지막 분류 계층으로 둔다. 기존 공용 프로필에 두 규칙이 없으면 Repository가
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
+- 규칙 열쇠가 같은 행의 **끝 열쇠는 부품(`CUSTOM`) 차례**다(`display_order.apply_display_order` — 원래 행 차례 앞). 차례는
+  `core_data_derivation.custom_sort_key` 하나이고(대소문자 접은 글자 → 원문 오름차순, 빈 값 · 표지 `"-"` 는 끝), 부품 차례를
+  정하는 다른 자리도 이 열쇠만 쓴다. 표에 CUSTOM 칸이 없거나 부품이 한 값이면 차례는 그대로다. 그 범위에 규칙이 하나도
+  없으면 정렬 없이 돌려주므로 동순위 열쇠도 걸리지 않고 원천 차례 그대로다. 끝 열쇠는 규칙 열쇠가 같은 행 **전부**에
+  걸린다 — 제품으로 세우지 않는 표에서는 다른 제품의 행도 CUSTOM 값끼리 모일 수 있다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
   (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
   중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·
@@ -9622,7 +9688,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 
 검수용 합성 샘플(`scripts/generate_review_sample.py` — 화면 검수 · 가이드 예시판 시드, `docs/review_sample.md`)도 같다. 그 이야기
 칸 · 판정 분포 · B/N 차례는 `review_sample_story.py` 의 리터럴에 맞춘 **이야기 꼴**이고, 생성기가 끝 점검(시뮬레이션 52 · 설비 22)으로
-지킨다. 부품은 `review_sample_sim.py`(시뮬레이션 DB — 앱 저장 · 등록 · 자동 갱신 공개 함수만, 준비 자리에서 다 만든 뒤 옮김) ·
+지킨다. 이야기에는 CUSTOM 이 둘인 제품 하나(`TWO_PART` — 한 변형만 수율 · UPEH 편차가 다른 부품)가 든다. 부품은 `review_sample_sim.py`(시뮬레이션 DB — 앱 저장 · 등록 · 자동 갱신 공개 함수만, 준비 자리에서 다 만든 뒤 옮김) ·
 `review_sample_equip.py`(설비 DB — 시뮬레이션 DB 사본의 최신 공식 소요 · 가용에서) · `review_sample_modules.py`(시험 견본
 `tests/fixtures/modules/` 여섯 복사) · `review_sample_story.py`(이야기 상수 · 산출 자리 지킴 `refuse_place` — git 작업 트리 안은
 거절) · `review_sample_core_frame.py`(78컬럼 원천)다. 산출은 늘 저장소 밖이고(`git archive` 사본은 받는다) 저장소에 `data/` ·
@@ -9916,6 +9982,11 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 4. 월 필터와 화면 편집 Long/Wide 변환 확인
 5. 누락·중복·범위 테스트 추가
 6. README, AGENTS, TODO 갱신
+7. **새 업무 키는 한 변경에** — 계약 · 변환 · 마이그레이션(값 불변 · 옛 리비전 계산 전후 같음 시험) · 계산 상수 · 리터럴
+   조인 · 편집 차원 · 표시 차례 · 월 머지 · 부대공정 · 가상 제품 · 비교 GAP · `revision_compatibility` 안전망 · 확인 스크립트
+   SQL · 기존 결과 대조 원천 맞춤. 반만 넣으면 두 값이 말없이 접히거나 부하가 두 배가 된다(`CUSTOM` 선례 — 4장). 리터럴
+   표 시험은 손으로 칸을 더하지 않고 계약에서 칸을 붙이는 도우미(`tests/custom_key_tables.py` 의 `with_blank_custom` ·
+   두 부품 견본 `two_part_tables`)를 쓴다.
 
 ### 계산식 변경
 

@@ -54,6 +54,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from custom_key_tables import with_blank_custom
 
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
@@ -108,6 +109,7 @@ scenario_tables["RQ_PKG_PLAN"] = pd.DataFrame(
         "생산수량": [50.0],
     }
 )
+scenario_tables["RQ_PKG_PLAN"] = with_blank_custom(scenario_tables["RQ_PKG_PLAN"])
 scenario_tables["RQ_REQB"] = pd.DataFrame(
     {"공정": ["Process-A", "Process-B"], "양산구분": ["양산", "양산"]}
 )
@@ -139,6 +141,7 @@ required_equipment = pd.DataFrame(
         "소요대수": [1.0],
     }
 )
+required_equipment = with_blank_custom(required_equipment)
 availability = pd.DataFrame(
     {
         "공정": ["Process-A"] * 5,

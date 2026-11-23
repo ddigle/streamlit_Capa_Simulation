@@ -248,6 +248,21 @@ PRODUCT_NAMES: Final = tuple(product.name for product in PRODUCTS)
 NEW_PRODUCT: Final = "DEMO-H16A"  # W44 신제품 — W36·W40 에 없다.
 DISCONTINUED_PRODUCT: Final = "DEMO-H8B"  # 27.06 단종
 DISCONTINUED_LAST_MONTH: Final = 202706
+# CUSTOM(제품 구분 키) — 원천 행마다 `CUSTOM_PART_A` 이고, 두 부품 제품의 한 변형(`TWO_PART` —
+# 제품 · Capa Code)만 `CUSTOM_PART_B` 다. B 부품은 EDS 수율과 환산 UPEH 편차만 다르다 — 같은
+# 제품 · Stack 의 두 부품이 대당 Capa · 소요대수를 따로 내는지 보는 견본이다.
+CUSTOM_PART_A: Final = "DEMO_CUSTOM_A"
+CUSTOM_PART_B: Final = "DEMO_CUSTOM_B"
+TWO_PART: Final = ("DEMO-H12A", "DEMO-CAPA-05")
+TWO_PART_EDS_FACTOR: Final = 0.98
+TWO_PART_UPEH_FACTOR: Final = 1.05
+
+
+def variant_custom(product: Product, variant: Variant) -> str:
+    """원천 행의 CUSTOM — `TWO_PART` 변형만 B 부품이다."""
+    if (product.name, variant.capa_code) == TWO_PART:
+        return CUSTOM_PART_B
+    return CUSTOM_PART_A
 
 
 def product_weight(name: str, month: int) -> float:

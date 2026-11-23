@@ -12,6 +12,7 @@ import math
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.load_calculator import (
     YIELD_KEYS,
@@ -28,7 +29,7 @@ MONTHS = (202601, 202602, 202603)
 
 
 def _source() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "생산계획년월": month,
@@ -42,6 +43,7 @@ def _source() -> pd.DataFrame:
             for month in MONTHS
         ]
     )
+    return with_blank_custom(frame)
 
 
 def _row(frame: pd.DataFrame, product: str, month: int) -> pd.DataFrame:
@@ -157,7 +159,7 @@ def test_a_space_only_yield_cell_reads_as_empty() -> None:
 
 def _plan() -> pd.DataFrame:
     """두 제품의 세 달 계획. DEMO_P1 은 거래선이 둘이라 계산 프레임에서 수율 행이 겹친다."""
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "생산계획년월": month,
@@ -171,10 +173,11 @@ def _plan() -> pd.DataFrame:
             for month in MONTHS
         ]
     )
+    return with_blank_custom(frame)
 
 
 def _chip_qty() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "제품정보": ["DEMO_P1", "DEMO_P2"],
             "Stack": ["8H", "8H"],
@@ -183,6 +186,7 @@ def _chip_qty() -> pd.DataFrame:
             "Net Die": [1_000.0, 1_000.0],
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_an_out_of_range_yield_stops_the_calculation_naming_the_row_and_the_fix() -> None:

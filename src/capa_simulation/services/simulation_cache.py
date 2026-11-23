@@ -73,6 +73,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_contributions,
     span_date_range,
 )
+from capa_simulation.services.plan_gap import repair_comparison_plan_custom
 from capa_simulation.services.process_capa_detail import (
     PRODUCT_ROW_LIMIT,
     ProcessCalculationRows,
@@ -1502,12 +1503,21 @@ def get_home_comparison_plan(
     어느 리비전의 계획인지를 이 값이 혼자 책임진다.
 
     Wafer 는 HOME `Wafer 계획` 과 같은 HOME 집계 기준(Dummy 계열 뺌)이라 GAP 이 같은 정의끼리 잰다.
+
+    비교 계획 행의 부품(`CUSTOM`)은 환산 전에 현재 계획 · 수율 · Chip 표에 다시 짝짓는다
+    (`repair_comparison_plan_custom`) — 부품을 싣기 전 리비전은 모두 빈 값 표지라 그대로는 현재
+    표와 짝이 없다. 캐시 키는 이미 현재 내용 토큰과 비교 리비전 id 를 품는다.
     """
     del comparison_revision_id
     _, _, start_month, end_month, _ = cache_key
     plan = filter_edp_plan(
         filter_month_range(_comparison_plan, start_month, end_month, "RQ_PKG_PLAN"),
         include_edp,
+    )
+    plan = repair_comparison_plan_custom(
+        plan,
+        _tables["RQ_PKG_PLAN"],
+        (_tables["RQ_YLD"], _tables["RQ_CHIP_QTY"], _tables["RQ_CHIP_EQ"]),
     )
     monthly_density, production_detail = build_production_dashboard(
         plan,

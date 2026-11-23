@@ -23,6 +23,7 @@ PERFORMANCE_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",

@@ -3,6 +3,7 @@
 import dummy_series_tables as demo
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services import simulation_cache
 from capa_simulation.services.dashboard import (
@@ -34,6 +35,7 @@ def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
             "생산수량": [100.0, 50.0, 200.0],
         }
     )
+    plan = with_blank_custom(plan)
     density_data = pd.DataFrame(
         {
             "제품정보": ["HBM다E"],
@@ -43,6 +45,7 @@ def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
             "구분_EQ": [24.0],
         }
     )
+    density_data = with_blank_custom(density_data)
 
     monthly, detail = build_production_dashboard(plan, density_data)
 
@@ -71,6 +74,7 @@ def test_production_dashboard_can_split_the_detail_by_customer() -> None:
             "생산수량": [100.0, 40.0, 60.0],
         }
     )
+    plan = with_blank_custom(plan)
     density_data = pd.DataFrame(
         {
             "제품정보": ["HBM다E"],
@@ -80,6 +84,7 @@ def test_production_dashboard_can_split_the_detail_by_customer() -> None:
             "구분_EQ": [24.0],
         }
     )
+    density_data = with_blank_custom(density_data)
 
     _, detail = build_production_dashboard(
         plan,
@@ -112,6 +117,7 @@ def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
             "생산수량": [100.0, 40.0],
         }
     )
+    plan = with_blank_custom(plan)
     density_data = pd.DataFrame(
         {
             "제품정보": ["HBM다E"],
@@ -121,6 +127,7 @@ def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
             "구분_EQ": [24.0],
         }
     )
+    density_data = with_blank_custom(density_data)
     display_order = pd.DataFrame(
         {
             "페이지 구분": ["생산 계획", "생산 계획"],
@@ -158,6 +165,7 @@ def test_production_dashboard_uses_pkg_plan_display_order() -> None:
             "생산수량": [100.0, 200.0, 300.0],
         }
     )
+    plan = with_blank_custom(plan)
     density_data = pd.DataFrame(
         {
             "제품정보": ["제품B", "제품A", "제품A"],
@@ -167,6 +175,7 @@ def test_production_dashboard_uses_pkg_plan_display_order() -> None:
             "구분_EQ": [1.0, 1.0, 1.0],
         }
     )
+    density_data = with_blank_custom(density_data)
     display_order = pd.DataFrame(
         {
             "페이지 구분": ["생산 계획"] * 4,
@@ -435,6 +444,7 @@ def test_dashboard_builds_wafer_lob_summary() -> None:
             "생산수량": [100.0, 50.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -445,6 +455,7 @@ def test_dashboard_builds_wafer_lob_summary() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -454,6 +465,7 @@ def test_dashboard_builds_wafer_lob_summary() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     density = pd.DataFrame({"생산계획년월": [202608], "년월": ["26.08"], "부하량": [10.0]})
     bottleneck = pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "확보율": [1.1]})
 

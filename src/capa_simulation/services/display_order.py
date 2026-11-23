@@ -4,8 +4,11 @@
 
 from dataclasses import dataclass
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
+from capa_simulation.services.core_data_derivation import custom_sort_key
 from capa_simulation.services.frame_contracts import match_key, require_columns, scalar_match_key
 from capa_simulation.services.product_type import (
     EDP_TOP_DIVISION,
@@ -25,6 +28,8 @@ DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
 LEGACY_SCOPE_COLUMN = "적용화면"
 DISPLAY_ORDER_MODES = {"사용자지정", "오름차순", "내림차순"}
 ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
+# 규칙 열쇠가 같은 행의 끝 열쇠(원래 행 차례 앞) — 한 제품의 부품(`CUSTOM`)을 늘 같은 차례로 세운다.
+CUSTOM_TIE_COLUMN = "CUSTOM"
 
 
 @dataclass(frozen=True)
@@ -245,6 +250,12 @@ def apply_display_order(
     if not helper_columns:
         return result
 
+    # 규칙 열쇠가 같은 행은 부품 차례(`custom_sort_key` — 빈 값 표지는 끝)로 가른다. 부품이 한
+    # 값이면 모두 같은 열쇠라 차례가 그대로다.
+    if CUSTOM_TIE_COLUMN in result.columns:
+        helper_columns.append("__display_custom_order")
+        ascending.append(True)
+        result["__display_custom_order"] = _custom_ranks(result[CUSTOM_TIE_COLUMN])
     result["__display_original_order"] = range(len(result))
     sorted_result = result.sort_values(
         [*helper_columns, "__display_original_order"],
@@ -255,6 +266,16 @@ def apply_display_order(
     return sorted_result.drop(columns=[*helper_columns, "__display_original_order"]).reset_index(
         drop=True
     )
+
+
+def _custom_ranks(values: pd.Series) -> npt.NDArray[np.int64]:
+    """`CUSTOM` 값마다 `custom_sort_key` 차례의 정수 — 같은 열쇠(빈 값과 표지 등)는 같은 수다.
+    열쇠는 고유값에만 한 번씩 셈한다."""
+    codes, uniques = pd.factorize(values, use_na_sentinel=False)
+    keys = [custom_sort_key(value) for value in uniques]
+    dense = {key: rank for rank, key in enumerate(sorted(set(keys)))}
+    ranks: npt.NDArray[np.int64] = np.asarray([dense[key] for key in keys], dtype=np.int64)
+    return ranks[codes]
 
 
 def classification_columns_in_display_order(

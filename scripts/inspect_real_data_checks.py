@@ -186,6 +186,7 @@ from capa_simulation.services.frame_contracts import (  # noqa: E402
 from capa_simulation.services.korean_particle import with_object_particle  # noqa: E402
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     AGREE_GROUP,
+    COMPARISON_KEYS,
     COMPARISONS,
     FORMULA_INPUTS,
     GROUP_COLUMN,
@@ -229,6 +230,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     route_factor_by_key,
     route_factor_values,
     scaling_check,
+    source_custom_aligned,
     split_mixed_processes,
     split_route_cells,
     summarize_comparison,
@@ -971,7 +973,8 @@ class SkippedSource:
 
 @dataclass
 class SourceData:
-    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표.
+    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표. `raw` 는 원천 `CUSTOM` 을
+    리비전에 맞춘 것이다(`source_custom_aligned`).
 
     `required` 는 고를 때 이미 돌린 리비전 1 계산(8-2 가 다시 쓴다). `order` 는 원천에서 온
     데이터셋 가운데 최근부터 차례(`--dataset-id` 면 0), `sources` 는 그 수다. `skipped` 는 계산이
@@ -1265,7 +1268,10 @@ def load_source(session: Session) -> SourceData | None:
                 else f"원천에서 온 최근 데이터셋 {len(rows):,}개 모두 리비전 1 이 없다"
             )
             return None
-        raw = _raw_core_data(connection, picked.dataset_id)
+        # 기존 쪽은 이 원천에서 다시 파생한다 — 리비전이 부품을 가르지 않았으면 원천 CUSTOM 도
+        # 표지로 맞춘다(0039 전 등록분은 원천 칸에 그때 값이 남아 있다). 8-2 의 모든 절이 이
+        # `raw` 를 본다.
+        raw = source_custom_aligned(_raw_core_data(connection, picked.dataset_id), picked.tables)
         extras = _extra_processes(connection, picked.dataset_id)
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
@@ -2542,7 +2548,7 @@ def check_legacy(session: Session) -> list[str]:
 
     lines.extend(
         [
-            "**부하량** — 대조 키 `생산계획년월 × 제품정보 × Stack × WF 구분`, Chip 은 계획 줄"
+            f"**부하량** — 대조 키 `{' × '.join(COMPARISON_KEYS)}`, Chip 은 계획 줄"
             "(Pack Code 합산) × WF 구분(값은 계획 줄 × WF 구분에서 접은 뒤 더함).",
             "",
         ]
@@ -3342,14 +3348,16 @@ _PERFORMANCE_JOIN: Final = (
     'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
     'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
     'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
-    'AND trim({alias}."Stack") = perf.k AND trim({alias}."WF 구분") = perf.w'
+    'AND trim({alias}."Stack") = perf.k AND trim({alias}."CUSTOM") = perf.cu '
+    'AND trim({alias}."WF 구분") = perf.w'
 )
 _BLANK_CAPACITY_CELLS: Final = """
 WITH {picked},
 perf AS MATERIALIZED (
     SELECT u.revision_id, u."생산계획년월" AS m, trim(u."공정") AS p, trim(u."양산구분") AS q,
            lower(trim(u."Area_Name")) AS a, trim(u."STEP_SEQ") AS s, trim(u."MCP_SEQ") AS c,
-           trim(u."제품정보") AS g, trim(u."Stack") AS k, trim(u."WF 구분") AS w,
+           trim(u."제품정보") AS g, trim(u."Stack") AS k, trim(u."CUSTOM") AS cu,
+           trim(u."WF 구분") AS w,
            coalesce(lower(trim(u."Area_Name")) = 'main' AND u."UPEH" <= 0, false) AS upeh_out
     FROM rev_data.rq_upeh AS u JOIN picked USING (revision_id)
     WHERE upper(trim(u."소요기준")) NOT IN ('BOX', 'PCB')
@@ -4092,6 +4100,7 @@ _RATIO_DIMENSIONS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
@@ -5510,6 +5519,7 @@ RQ_SOURCE_COLUMNS: Final[tuple[str, ...]] = (
     "CS",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "생산수량",

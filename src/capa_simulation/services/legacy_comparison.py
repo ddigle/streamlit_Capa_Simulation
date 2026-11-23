@@ -42,6 +42,14 @@ Wafer `WF수(매)` 는 사내 실데이터에서 계획 줄 × WF 구분 안에�
 행으로 접음」 갈래가 그 행만 넘겨 같은 `compare_metric` 을 한 번 더 한다(`plan_row_frame`). 계획 행
 밖 행은 그 갈래에 넣지 않고 `plan_row_diagnostics` 가 개수로만 센다.
 
+`CUSTOM`(한 제품의 부품을 가르는 RQ 표 업무 키 — 마이그레이션 0039)은 대조 키와 접는 단위에
+함께 든다 — 두 부품을 한 키로 더하지 않는다. 기존 쪽은 원천(`raw_data.core_data`)에서 다시
+파생하는데, 0039 전에 등록한 데이터셋은 원천 `CUSTOM` 칸에 그때 조회문이 실은 값이 그대로 있고
+리비전 표는 0039 가 넣은 빈 값 표지(`CUSTOM_BLANK`)뿐이다. 그대로 맞대면 모든 키가 한쪽에만
+남는다. 그래서 리비전의 `CUSTOM` 키 표가 모두 표지뿐이면 원천 `CUSTOM` 칸도 표지로 바꾼 사본으로
+대조한다(`source_custom_aligned` — 부르는 쪽이 파생 전에 한 번 건다). 리비전에 표지 아닌 값이
+하나라도 있으면 원천을 그대로 둔다.
+
 사내 실데이터에서는 키별 값을 밖으로 낼 수 없다. 그래서 대조 결과를 **분포로만** 접는
 `difference_distribution`(차이율)·`ratio_distribution`(기존 ÷ 신규) 를 둔다 —
 `scripts/inspect_real_data_checks.py` 가 이 둘로 리뷰 문서에 옮길 집계를 만든다. 대조 키와 접는
@@ -51,14 +59,14 @@ Wafer `WF수(매)` 는 사내 실데이터에서 계획 줄 × WF 구분 안에�
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract, load_core_data_contract
-from capa_simulation.services.core_data_derivation import plan_row_mask
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK, plan_row_mask
 from capa_simulation.services.frame_contracts import (
     match_key,
     normalize_demand_basis,
@@ -66,6 +74,7 @@ from capa_simulation.services.frame_contracts import (
 )
 from capa_simulation.services.load_calculator import CHIP_KEYS, YIELD_KEYS
 from capa_simulation.services.required_equipment import LOAD_KEYS, REQB_COLUMNS
+from capa_simulation.services.revision_compatibility import CUSTOM_COLUMN, custom_keyed_tables
 from capa_simulation.services.unit_capacity import (
     MODULE_KEYS,
     PERFORMANCE_KEYS,
@@ -76,8 +85,8 @@ from capa_simulation.services.unit_capacity import (
     converted_upeh,
 )
 
-# 원천 행과 신규 계산 행을 잇는 키. 둘 다 이 조합을 갖고 있다.
-COMPARISON_KEYS: list[str] = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+# 원천 행과 신규 계산 행을 잇는 키. 둘 다 이 조합을 갖고 있다. `CUSTOM` 은 계산 상수처럼 Stack 뒤다.
+COMPARISON_KEYS: list[str] = ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 
 COMPARISON_COLUMNS: list[str] = [
     *COMPARISON_KEYS,
@@ -98,7 +107,7 @@ class LegacyMetric:
     """대조할 지표 하나. 기존 컬럼과 신규 계산 결과를 같은 단위로 맞춰 둔다.
 
     `plan_line` 이 참이면 대조 키가 `COMPARISON_KEYS` 가 아니라 **계획 줄(Pack Code 합산) ×
-    WF 구분**(`plan_line_keys`)이다. 계획 줄마다 맞대므로 월×제품×Stack 합계보다 엄격하다.
+    WF 구분**(`plan_line_keys`)이다. 계획 줄마다 맞대므로 월×제품×Stack×CUSTOM 합계보다 엄격하다.
     """
 
     label: str
@@ -131,6 +140,38 @@ def plan_line_keys(contract: CoreDataContract) -> list[str]:
 def metric_keys(metric: LegacyMetric, contract: CoreDataContract) -> list[str]:
     """그 지표의 대조 키."""
     return plan_line_keys(contract) if metric.plan_line else list(COMPARISON_KEYS)
+
+
+def source_custom_aligned(raw: pd.DataFrame, tables: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """리비전에 맞춘 원천 — 리비전의 `CUSTOM` 키 표가 모두 빈 값 표지(`CUSTOM_BLANK`)뿐이면 원천
+    `CUSTOM` 칸을 표지로 바꾼 사본, 아니면 원천 그대로(같은 객체)다. 원천은 고치지 않는다.
+
+    0039 전에 등록한 데이터셋은 원천 칸에 그때 조회문이 실은 값이 남아 있고 리비전 표는 0039 가
+    넣은 표지뿐이라, 그대로 파생해 맞대면 모든 키가 한쪽에만 남는다(머리말). 리비전이 부품을 가른
+    적이 없으면 원천도 한 부품으로 본다. 기존 결과를 원천에서 다시 파생하는 자리마다 파생 **전에**
+    한 번 건다.
+
+    `tables` 는 일부만 와도 된다 — 받은 `CUSTOM` 키 표(`custom_keyed_tables`)만 본다. 없는 표 ·
+    빈 표는 건너뛰고, 칸이 없는 표(0039 전 사본)는 표지뿐으로 본다(0039 와 같은 뜻). 빈 값(NULL ·
+    빈 글자 · 공백뿐)은 표지와 같이 본다 — 파생(`normalize_custom_values`)이 원천 빈 값을 표지로
+    두는 것과 같다. 고유값만 본다. 원천에 `CUSTOM` 칸이 없거나 이미 표지 · 빈 값뿐이면 바꿀 것이
+    없어 원천 그대로다.
+    """
+    if CUSTOM_COLUMN not in raw.columns or _only_custom_blank(raw[CUSTOM_COLUMN]):
+        return raw
+    for name in custom_keyed_tables():
+        frame = tables.get(name)
+        if frame is None or frame.empty or CUSTOM_COLUMN not in frame.columns:
+            continue
+        if not _only_custom_blank(frame[CUSTOM_COLUMN]):
+            return raw
+    return raw.assign(**{CUSTOM_COLUMN: CUSTOM_BLANK})
+
+
+def _only_custom_blank(values: pd.Series) -> bool:
+    """`CUSTOM` 칸의 고유값이 모두 표지이거나 빈 값(NULL · 빈 글자 · 공백뿐)인가."""
+    text = pd.Series(values.unique()).astype("string").str.strip().fillna("")
+    return bool(text.isin(("", CUSTOM_BLANK)).all())
 
 
 def compare_metric(
@@ -397,7 +438,7 @@ def _normalized(frame: pd.DataFrame, keys: list[str], value_column: str) -> pd.D
 # 환산이 60 ÷ ST 이므로 그 무리는 ≈1 이 된다. 아래 함수들은 ≈60 무리가 다시 나는지 보는
 # 감시로, 나면 어디서 나는지를 값 없이 개수로 가른다(2026-10-08 사용자 결정). 세 무리 —
 # 기존 ÷ 신규가 ≈60, ≈1(각 ±`NEAR_TOLERANCE`), 그 밖 — 로 나누고 무리마다 속성·공정·산식
-# 인자를 견준다. 입력은 `compare_metric(keys=REQB_COLUMNS)` 결과(경로 키 13)다.
+# 인자를 견준다. 입력은 `compare_metric(keys=REQB_COLUMNS)` 결과(경로 키)다.
 
 SUSPECT_RATIO = 60.0
 SUSPECT_GROUP = "≈60"

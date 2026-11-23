@@ -1,6 +1,7 @@
 # Purpose: capacity reference editor 관련 정상·예외·회귀 동작을 검증한다.
 
 import pandas as pd
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -9,6 +10,7 @@ from capa_simulation.services.capacity_reference_editor import (
     reference_from_edit_table,
     reference_to_edit_table,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.route_step_editor import route_step_catalog
 
 RATIO_DIMENSIONS = [
@@ -19,6 +21,7 @@ RATIO_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 ]
 
@@ -40,6 +43,7 @@ def test_performance_editor_keeps_route_sequence_identity() -> None:
             "ST": [float("nan"), float("nan")],
         }
     )
+    source = with_blank_custom(source)
 
     edit_table = performance_to_edit_table(source)
     restored = performance_from_edit_table(edit_table)
@@ -74,6 +78,7 @@ def test_ratio_editor_keeps_area_and_route_sequence_identity() -> None:
             "Lot 측정률": [1.0, 0.8],
         }
     )
+    source = with_blank_custom(source)
 
     edit_table = reference_to_edit_table(
         source,
@@ -107,6 +112,7 @@ def _upeh_source() -> pd.DataFrame:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "BUFFER",
         "STEP_SEQ": "P100",
         "MCP_SEQ": "1A",

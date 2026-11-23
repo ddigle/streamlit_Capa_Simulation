@@ -26,6 +26,7 @@ PERFORMANCE_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 ]
 UNIT_CAPACITY_DIMENSIONS = [
@@ -35,6 +36,7 @@ UNIT_CAPACITY_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",

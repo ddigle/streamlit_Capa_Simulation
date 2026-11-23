@@ -24,7 +24,7 @@
 저장할 수 있다. 선택한 쪽 표에 월이 빠졌다면 반대쪽으로 보완하지 않고 오류를 표시한다.
 
 월 없는 표는 `scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS` 한 곳의 규칙으로 합친다.
-`RQ_CHIP_QTY`·`RQ_CHIP_EQ`(키 `제품정보 + Stack`)와 `RQ_MODULE`(키 `공정`)은 겹치는 키를 베이스
+`RQ_CHIP_QTY`·`RQ_CHIP_EQ`(키 `제품정보 + Stack + CUSTOM` — 부품 단위)와 `RQ_MODULE`(키 `공정`)은 겹치는 키를 베이스
 값으로 두고 **베이스에 없는 키의 행만 덧붙일 쪽에서 보충**한다. `RQ_DISPLAY_ORDER` 는 계산에
 쓰이지 않고 불러올 때 공용 표시순서가 덮으므로 베이스 그대로다. 베이스 것만 남기면 덧붙인 달이
 쓰는 공정은 모듈수가 없어 대당 Capa 계산이 멈추고(앱에서 고칠 수 없다), 제품(가상 제품 포함)은

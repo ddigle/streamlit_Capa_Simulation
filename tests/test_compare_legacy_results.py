@@ -142,3 +142,38 @@ def test_without_a_source_dataset_it_says_so(
 
     with pytest.raises(SystemExit, match="원천에서 온 데이터셋이 없습니다"):
         _run(monkeypatch, path)
+
+
+def test_a_constant_source_custom_under_a_blank_revision_compares_like_a_blank_source(
+    seeded_with_clone: tuple[Path, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """0039 전 등록분 — 리비전 표는 모두 빈 값 표지(`-`)인데 원천 `CUSTOM` 칸에 그때 값이 남아 있다.
+
+    파생 전에 원천을 리비전에 맞춰(`source_custom_aligned`) 원천도 빈 칸인 사본과 같은 출력 · 같은
+    상세 CSV 를 낸다. 맞추지 않으면 모든 키가 한쪽에만 남는다."""
+    source, _ = seeded_with_clone
+    printed: dict[str, str] = {}
+    written: dict[str, pd.DataFrame] = {}
+    for name in ("blank", "constant"):
+        path = tmp_path / f"{name}.duckdb"
+        path.write_bytes(source.read_bytes())
+        if name == "constant":
+            with duckdb.connect(str(path)) as connection:
+                connection.execute('UPDATE raw_data.core_data SET "CUSTOM" = ?', ["DEMO_CUSTOM_A"])
+        output = tmp_path / f"{name}.csv"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["compare_legacy_results.py", "--database", str(path), "--output", str(output)],
+        )
+        assert compare.main() == 0
+        printed[name] = capsys.readouterr().out.replace(str(output), "<csv>")
+        written[name] = pd.read_csv(output, encoding="utf-8-sig")
+
+    assert printed["constant"] == printed["blank"]
+    pd.testing.assert_frame_equal(written["constant"], written["blank"])
+    assert "신규에만 있음 0건" in printed["blank"]
+    assert written["blank"]["기존값"].notna().any()

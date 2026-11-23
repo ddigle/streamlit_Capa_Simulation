@@ -483,6 +483,9 @@ typed raw 로 그대로 보존합니다.
 
 위 14개는 웹에서 고치고 리비전으로 저장하는 표, 아래 둘은 데이터셋에 붙은 참조 표입니다. 표마다의 키와 저장
 위치는 `AGENTS.md` 4장과 [`docs/data_model.md`](docs/data_model.md), 화면 정렬 규칙은 `AGENTS.md` 8장에 있습니다.
+원천 `CUSTOM` 은 제품을 가르는 업무 키입니다 — 제품정보가 든 8표(계획 · 수율 · Chip · UPEH · 측정률 · 경로)에 실리고, 같은
+제품이라도 CUSTOM 이 다르면 수율 · UPEH · 경로 · 대당 Capa · 소요대수를 따로 계산합니다. 빈 값은 `-` 로 보이고, 이 키를 싣기
+전에 저장한 시나리오는 모두 `-` 입니다.
 **표시순서**는 시나리오와 분리된 공용 DB 프로필 하나이고 `Admin Area → 표시순서 관리` 에서 고칩니다. 처음 만들 때는
 기존 시나리오의 규칙과 선택적 `data/input/RQ_DISPLAY_ORDER.csv` 가운데 더 완전한 쪽을, 둘 다 없으면
 `config/bootstrap_display_order.json` 의 비민감 시드를 씁니다.

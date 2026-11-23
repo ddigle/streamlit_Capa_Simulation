@@ -5,6 +5,7 @@ from typing import TypedDict
 import pandas as pd
 import pytest
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     attach_plan_attributes,
@@ -18,6 +19,7 @@ DIMENSIONS = {
     "양산구분": "양산",
     "제품정보": "DEMO_P1",
     "Stack": "8H",
+    "CUSTOM": CUSTOM_BLANK,
     "Capa Code": "DEMO_C1",
     "Customer": "DEMO_CUST",
     "CS": "DEMO_CS",

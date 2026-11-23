@@ -20,6 +20,7 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
@@ -35,41 +36,50 @@ from capa_simulation.services.product_type import (
     WF_DIVISIONS_BY_PRODUCT_TYPE,
 )
 
-PLAN = pd.DataFrame(
-    {
-        "생산계획년월": [202601, 202601],
-        "양산구분": ["양산", "양산"],
-        "제품정보": ["HBM-A", "EDP-A"],
-        "제품타입": [HBM_PRODUCT_TYPE, EDP_PRODUCT_TYPE],
-        "Stack": ["8H", "8H"],
-        "Capa Code": ["C1", "C2"],
-        "Customer": ["CUST", "CUST"],
-        "CS": ["MP", "MP"],
-        "생산수량": [100.0, 100.0],
-    }
+PLAN = with_blank_custom(
+    pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["HBM-A", "EDP-A"],
+            "제품타입": [HBM_PRODUCT_TYPE, EDP_PRODUCT_TYPE],
+            "Stack": ["8H", "8H"],
+            "Capa Code": ["C1", "C2"],
+            "Customer": ["CUST", "CUST"],
+            "CS": ["MP", "MP"],
+            "생산수량": [100.0, 100.0],
+        }
+    ),
+    "RQ_PKG_PLAN",
 )
 
 
 def _reference(division: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """두 제품이 같은 `WF 구분` 이름을 쓰는 기준정보."""
-    chip = pd.DataFrame(
-        {
-            "제품정보": ["HBM-A", "EDP-A"],
-            "Stack": ["8H", "8H"],
-            "WF 구분": [division, division],
-            "구분_Chip": [4.0, 4.0],
-            "Net Die": [100.0, 100.0],
-        }
+    chip = with_blank_custom(
+        pd.DataFrame(
+            {
+                "제품정보": ["HBM-A", "EDP-A"],
+                "Stack": ["8H", "8H"],
+                "WF 구분": [division, division],
+                "구분_Chip": [4.0, 4.0],
+                "Net Die": [100.0, 100.0],
+            }
+        ),
+        "RQ_CHIP_QTY",
     )
-    yields = pd.DataFrame(
-        {
-            "생산계획년월": [202601, 202601],
-            "제품정보": ["HBM-A", "EDP-A"],
-            "Stack": ["8H", "8H"],
-            "WF 구분": [division, division],
-            "EDS_수율": [0.9, 0.9],
-            "BE_수율": [0.95, 0.95],
-        }
+    yields = with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": [202601, 202601],
+                "제품정보": ["HBM-A", "EDP-A"],
+                "Stack": ["8H", "8H"],
+                "WF 구분": [division, division],
+                "EDS_수율": [0.9, 0.9],
+                "BE_수율": [0.95, 0.95],
+            }
+        ),
+        "RQ_YLD",
     )
     return yields, chip
 

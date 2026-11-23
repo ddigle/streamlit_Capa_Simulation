@@ -20,7 +20,6 @@ from capa_simulation.services.scenario_transform import (
     scenario_months,
     validate_month_axes,
 )
-from capa_simulation.services.virtual_product import PRODUCT_KEY_COLUMNS
 from capa_simulation.settings import format_month
 
 OverlapPolicy = Literal["reject", "base", "donor"]
@@ -33,13 +32,16 @@ OverlapPolicy = Literal["reject", "base", "donor"]
 # 멈추고(`RQ_MODULE` — 앱에서 고칠 수 없다), 제품이 빠지면 그 계획이 부하량에서 조용히 빠진다
 # (`RQ_CHIP_*` — 가상 제품이 대표적이다).
 #
-# - Chip 두 표의 키는 계산이 계획에 붙이는 `제품정보 + Stack` 이다. `WF 구분` 은 한 제품의 행을
-#   펼치는 칸이라 키에 넣지 않는다 — 넣으면 베이스 제품에 덧붙일 쪽의 WF 구분 행이 섞여 그 제품의
-#   부하가 바뀐다. 제품 단위로 통째로 베이스 것이거나 통째로 덧붙일 쪽 것이다.
+# - Chip 두 표의 키는 계산이 계획에 붙이는 `제품정보 + Stack + CUSTOM`(`SUPPLEMENT_PRODUCT_KEYS`)
+#   이다. `WF 구분` 은 한 부품의 행을 펼치는 칸이라 키에 넣지 않는다 — 넣으면 베이스 부품에 덧붙일
+#   쪽의 WF 구분 행이 섞여 그 부품의 부하가 바뀐다. 부품 단위로 통째로 베이스 것이거나 통째로
+#   덧붙일 쪽 것이다. 머지는 부품을 다시 짝짓지 않는다 — 옛 리비전(모두 빈 값 표지)과 부품 값이
+#   있는 리비전을 섞어 계획과 Chip 의 부품이 어긋나면 `plan_key_gaps` 결손으로 드러난다.
 # - `RQ_DISPLAY_ORDER` 는 계산에 쓰이지 않고 불러올 때 공용 표시순서가 덮으므로 베이스 그대로다.
+SUPPLEMENT_PRODUCT_KEYS: tuple[str, ...] = ("제품정보", "Stack", "CUSTOM")
 NON_MONTHLY_SUPPLEMENT_KEYS: Mapping[str, tuple[str, ...]] = {
-    "RQ_CHIP_QTY": PRODUCT_KEY_COLUMNS,
-    "RQ_CHIP_EQ": PRODUCT_KEY_COLUMNS,
+    "RQ_CHIP_QTY": SUPPLEMENT_PRODUCT_KEYS,
+    "RQ_CHIP_EQ": SUPPLEMENT_PRODUCT_KEYS,
     "RQ_MODULE": ("공정",),
 }
 
@@ -282,15 +284,16 @@ class PlanKeyGap(NamedTuple):
 
 
 def plan_key_gaps(tables: Mapping[str, pd.DataFrame]) -> tuple[PlanKeyGap, ...]:
-    """계획(생산수량 > 0) 제품이 `RQ_CHIP_QTY`·`RQ_CHIP_EQ` 에 없는 결손 — 그 계획이 부하량·Density
-    에서 멈추지 않고 빠진다(`merged_table_gaps` 경고의 재료)."""
+    """계획(생산수량 > 0) 제품(부품까지 — `SUPPLEMENT_PRODUCT_KEYS`)이 `RQ_CHIP_QTY`·`RQ_CHIP_EQ`
+    에 없는 결손 — 그 계획이 부하량·Density 에서 멈추지 않고 빠진다(`merged_table_gaps` 경고의
+    재료)."""
     plan = drop_unplanned_rows(tables["RQ_PKG_PLAN"])
     found: list[PlanKeyGap] = []
     for name, effect in (
         ("RQ_CHIP_QTY", "부하량·소요대수"),
         ("RQ_CHIP_EQ", "Density 환산(HOME)"),
     ):
-        keys = _uncovered_keys(plan, PRODUCT_KEY_COLUMNS, tables[name])
+        keys = _uncovered_keys(plan, SUPPLEMENT_PRODUCT_KEYS, tables[name])
         if keys:
             found.append(PlanKeyGap(name, effect, tuple(keys)))
     return tuple(found)

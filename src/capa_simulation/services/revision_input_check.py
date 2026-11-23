@@ -541,8 +541,8 @@ def build_input_check(
 def blocked_input_check(
     reason: str, blank_cs: pd.DataFrame | None, *, period: tuple[int, int] | None = None
 ) -> RevisionInputCheck:
-    """경로 키가 없는 옛 리비전(`revision_compatibility.revision_block_reason`) — 계산을 부르지 않고
-    그 글로 멈춘다."""
+    """경로 키 · CUSTOM 칸이 없는 옛 리비전(`revision_compatibility.revision_block_reason`) — 계산을
+    부르지 않고 그 글로 멈춘다."""
     stop = InputCheckStop("blocked", reason)
     return RevisionInputCheck(
         (_stop_group(stop), _uncounted_group(), _source_group(blank_cs)), period=period, stop=stop

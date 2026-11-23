@@ -1847,24 +1847,11 @@
 
 ### 업무 키 승격
 
-- [ ] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)은 앞 몫만 들어왔다.** 들어온 것:
-  파생 작업 프레임의 CUSTOM 과 빈 값 표지(`core_data_derivation.normalize_custom_values` · `CUSTOM_BLANK`), 비교 계획 행을
-  다시 짝짓는 순수 함수(`plan_gap.repair_comparison_plan_custom` — 아직 어디서도 부르지 않음). CUSTOM 은 아직 어느 RQ 표 ·
-  조인 키에도 없어 결과는 그대로다. 남은 것은 **한 커밋으로** 들어가야 한다 — 표에만 싣고 키에 빠지면 두 부품이 접히거나
-  부하가 두 배가 되는데 알림이 없다:
-  - 계약 `derived_keys` 제품정보가 든 8표 · `reference_transformer` 8표 칸 끝 · 시뮬레이션 마이그레이션(`rev_data` · `ref_data`
-    8표에 칸 더하고 DEFAULT 걷기)과 카탈로그 · 체크섬 줄 · `revision_compatibility` 안전망.
-  - 계산 상수와 리터럴 조인: `load_calculator`(`CLASSIFICATION_COLUMNS` 등 · `on=["제품정보","Stack"]` 두 곳) ·
-    `required_equipment` · `unit_capacity` · `process_capa_detail.ROUTE_KEYS` · `standard_target_capacity`/`weighted_unit_capacity`
-    8키 · 편집 차원 셋 · `scenario_month_merge` · `extra_process_merge`/`extra_process_revision` · `virtual_product` 완결성 ·
-    표시 차례 · `_ROUTE_OWNER_KEYS` · `simulation_cache.get_home_comparison_plan` 에 다시 짝짓기 잇기 · 검수용 합성 견본.
-  - 시험: CUSTOM 이 한 값이면 결과가 지금과 같음 · 두 부품이 접히지 않음 · 마이그레이션 값 불변과 **옛 리비전 계산 결과
-    전후 같음**(값만 보면 조인에서 CUSTOM 을 빠뜨린 표를 못 잡는다) · 복제 시나리오 · 비교 GAP 이 같은 수량에서 0(환산을 거쳐) ·
-    공정 Capa 상세 경로 두 행.
-  - 기존 결과 대조(`legacy_comparison` · `COMPARISON_KEYS`)는 계약 키에 CUSTOM 이 들면 Core Data 칸 검사에서 멈춘다. 대조
-    쪽을 누가 언제 고칠지 키 승격 전에 정한다.
-  - 문서: AGENTS 4장 · 5장 8 · 28 · 6장 조인 키 · 12장, `docs/data_model.md`, README.
-- [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 9키에 `Capa Code`·`Customer`·`CS` 를
+- [~] **CUSTOM 을 제품 구분 키로 올리는 일(사용자 결정 「CUSTOM 이 다르면 다른 제품」)** — 키 승격은 들어왔다(3장 「계산」
+  2026-11-23). 남은 것: 산출 결과 소요대수 표 · 그 제외 목록의 분류 칸(`required_equipment.RESULT_DIMENSIONS` — 지금은 부품을
+  합쳐 한 줄), 확인 스크립트 셋이 0039 전 DB 사본의 CUSTOM 키 표를 표지로 채워 읽는 갈래, 합쳐 보는 화면(HOME 도넛 · 제품별
+  비중 · HOME 상세 · 공정 Capa 상세 「제품별 나눔」 · 제약 시뮬레이션)을 부품마다 갈라 보이기(Q7 (나)).
+- [ ] **근본 해법은 업무 키 승격이다.** `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO` 의 10키(CUSTOM 포함)에 `Capa Code`·`Customer`·`CS` 를
   올릴지 정한다 — 대당 Capa 의 계산 입도를 바꾸는 결정이라 사용자 판단이 필요하다. 지금은 형제 행을 접을 때 「값이 있는
   행」(같으면 원천 행 순위)을 골라 실값 유실만 막는다(결정 기록). 선례는 `RQ_PKG_PLAN` 의 `Pack Code` 승격(`2dcbf0a`)이지만 그때는 `0013` 이
   컬럼을 미리 실어 SQL 이 없었다 — `rq_upeh` 에는 세 컬럼이 없어 새 번호 ALTER 가 필요하다. 2026-09-15 착수 방침은 「호환
@@ -2572,6 +2559,20 @@
 
 ### 계산
 
+- (2026-11-23) **CUSTOM 을 제품 구분 키로 올렸다 — 합산하지 않고 조인 키로 끝까지 간다**(사용자 결정 「CUSTOM 이 다르면 다른
+  제품」 · 2026-11-22 답 Q11 — 시뮬레이션 `0039`, 옛 행은 모두 표지 `-` 이고 원천에서 되채우지 않음) — 계약 8표 `derived_keys` ·
+  변환 칸 끝 · 계산 상수(Stack 뒤) · 손 키 조인(Chip · Density 펼침은 상수에서 냄) · 편집 차원 · 표시 차례 끝 열쇠
+  (`custom_sort_key`) · 월 머지 보충 키 · 부대공정 펼침과 「새 판으로」 갈림 까닭 · 가상 제품 원본 목록 · 비교 GAP 다시 짝짓기
+  잇기 · `revision_compatibility` 안전망 · 기존 결과 대조 원천 맞춤(`source_custom_aligned`)을 한 변경으로 넣었다(반만 넣으면 두
+  부품이 말없이 접히거나 부하가 두 배). CUSTOM 이 한 값이면 결과가 그대로이고, 두 부품은 부품마다 따로 돌린 값과 같다
+  (`tests/test_custom_key_promotion.py` — PKG 경로 포함). 합쳐 보는 화면과 산출 결과 소요대수 표는 아직 제품으로 합친다(2장
+  「업무 키 승격」). 자체 검토(칸이 생기는 표 — PKG PLAN 격자 · 수율 · UPEH · 측정률 편집표 · 대당 Capa 표 · 환산 탭 · 공정
+  Capa 상세 경로 추적 · 계획 쪽 제외 목록, STEP 경로 선택지 글, 부대공정 「새 판으로」 까닭 글, 불러오기 막음 글): UI-DAT-06(빈
+  CUSTOM 은 빈칸 · 0 이 아니라 표지 `-` 로 보임 — 옛 시나리오는 모두 `-`) 통과 · UI-DAT-07(경로 추적 한 줄 = 한 부품, 줄마다
+  인자 곱 = 대당 Capa · 부하량 ÷ 대당 Capa = 소요대수 — `tests/test_process_capa_detail.py`) 통과 · UI-CON-02(칸 · 선택지 ·
+  까닭 · 막음 글 모두 원천 이름 「CUSTOM」 그대로, 빈 값 표지는 `-` 하나) 통과 · UI-TXT-04(새 「옮기지 못함」 까닭은 그 줄의
+  표지 한 마디, 막음 글은 STEP·MCP 막음과 같은 자리 · 같은 꼴) 통과 · UI-TXT-01(화면에 설명 문구를 더하지 않음 — 결손 줄
+  키 예시 · STEP 선택지는 칸 하나씩 길어짐) 통과.
 - (2026-11-22) **업무 키가 같은 형제 행은 원천 행 순위 하나로 고른다 — 조회 차례와 상관없이 같은 행**(요청 D · 정본 설계 ⑦ ⑪) —
   차례는 그룹 → 값이 있는 칸이 많은 행 → (효율 · UPEH 의 0 이 빈 값보다 먼저) → **원천 행 순위**(`source_row_rank`) → 원천 행
   위치. 순위는 원천 작업 프레임 전체에서 한 번 만든다 — 구분 칸(제품정보 · Stack · CUSTOM · Capa Code · Customer · CS · Pack
@@ -2586,13 +2587,13 @@
   리비전 값은 그대로다. **0 과 빈 값**(같은 부품이 두 번 실려 순위의 앞선 칸이 모두 같고 한 칸만 갈림)의 차례는 상수
   `ZERO_OVER_BLANK` 가 가른다 — 「0 을 남김」(2026-11-22 사용자 답 Q4 (가) — 효율 · UPEH 의 0 먼저와 같게, 다른 안 「빈 값을
   남김」 은 버림). 충돌 보고서는 그룹마다 「키밖구분」(업무 키 밖 구분 칸 이름 또는 「그 밖」)을 적는다 — 관련: `services/reference_conflicts.source_row_rank` · `reference_transformer._SourceRows`
-- (2026-11-22) **빈 CUSTOM 은 표지 `"-"`(`CUSTOM_BLANK`) 하나로 세운다**(정본 설계 — 키 승격 마이그레이션이 옛 행에 이
-  글자를 넣으면 고칠 수 없어 표지도 영구다. 마이그레이션 전에 다시 확인한다). 빈 값을 NA 로 두면 조인 · 접기에서 행이 빠지거나
+- (2026-11-22) **빈 CUSTOM 은 표지 `"-"`(`CUSTOM_BLANK`) 하나로 세운다**(정본 설계 — 2026-11-22 사용자 답 Q11 로 확정 · 0039 가
+  옛 행에 넣음(영구) — 옛 행에 넣은 글자는 고칠 수 없어 표지도 영구다). 빈 값을 NA 로 두면 조인 · 접기에서 행이 빠지거나
   한 줄로 접힌다. 붙여넣기는 빈 칸만 NA 로 읽고 pandas 기본 NA 목록에도 없는 글자라 편집 왕복에서 빈 값이 되지 않는다.
   정규화(공백 떼기 · 대소문자 모으기 · 빈 값 → 표지)는 파생 경계 한 곳(`core_data_derivation.normalize_custom_values`)이고
   코드 · 시험은 글자를 따로 적지 않고 상수만 본다. 키 승격 때 옛 리비전은 원천에서 되채우지 않고 모두 표지로 두고, 비교 GAP 은
-  다시 짝짓기(같은 Capa Code → 현재 표의 제품 하나 → 원래 값)로 새 리비전과 맞추기로 정했다 — 둘 다 아직 코드에 없다(2장
-  「업무 키 승격」).
+  다시 짝짓기(같은 Capa Code → 현재 표의 제품 하나 → 원래 값)로 새 리비전과 맞춘다(`get_home_comparison_plan` 이 환산 전에
+  `plan_gap.repair_comparison_plan_custom` 을 부른다).
 - (2026-11-22) **CUSTOM 실값의 바른 숫자는 새 등록부터 공식에 오른다 — 이미 받은 원천 코드는 다시 받지 않는다**(사용자 답 Q1 (가)) —
   원천 CUSTOM 이 실값이 되면 부품마다 다른 수율 · UPEH 가 갈려 숫자가 바뀌지만, 이미 등록한 원천 시뮬레이션 코드는 보관본까지
   시나리오가 하나라 다시 받지 않는다. 그래서 바른 값은 배포 뒤 새 코드 하나를 등록하거나 다음 자동 갱신 회차가 받은 리비전에서
@@ -2944,8 +2945,8 @@
   Dummy 행은 사유를 달아 제외 목록에 남긴다 — 관련: 소요대수
 - (2026-09-05) BOX·PCB 소요기준은 제외가 아니라 `추가 예정`(`UNIMPLEMENTED_BASES`) — 산식이 정해질 때까지 대당 Capa·
   소요대수에서 뺀다(2026-10-10 PCB 산식 보류 재확인) — 관련: `frame_contracts.py`
-- (2026-09-05) `Pack Code` 는 생산수량을 가르는 `RQ_PKG_PLAN` 업무 키(8번째) — 저장·편집은 Pack Code 별 행, 합산은 계산
-  계층이 하고 `PKG_PLAN_KEYS` 는 7키 그대로(2026-09-12 구현) — 관련: 부하량·소요대수(옛 3-5)
+- (2026-09-05) `Pack Code` 는 생산수량을 가르는 `RQ_PKG_PLAN` 업무 키(8번째 — 0039 부터 끝은 CUSTOM) — 저장·편집은 Pack Code 별 행, 합산은 계산
+  계층이 하고 `PKG_PLAN_KEYS` 에는 Pack Code 를 넣지 않는다(2026-09-12 구현 · 0039 부터 CUSTOM 을 더한 8키) — 관련: 부하량·소요대수(옛 3-5)
 - (2026-09-05) 월 경계 ISO 주차는 그 주에 더 많은 일수가 든 달에 귀속한다(월요일 기준 귀속을 대체) — 관련:
   `services/iso_week_calendar.py`
 - (2026-08-29) 확보율·B/N 판정은 실수 소요대수 그대로 두고 Static Capa 추가 설비대수만 최소 정수로 올린다. 월별 B/N 은 유효
@@ -3011,7 +3012,7 @@
 - (2026-09-05) 합성 샘플의 기존 결과 대조 0.0000% 는 산식 검증이 아니다 — 생성기가 `WF수(매)`·`EQ(억Gb)` 를 `생산수량` 과
   같은 계수로 스케일해 일치가 강제된다. 대조는 계획 한 줄 × `WF 구분` 에서 접어 대조 키로 합산한다 — 관련:
   `services/legacy_comparison.py` (옛 3-5)
-- (2026-09-05 확정·09-12 구현) `Pack Code` 는 `RQ_PKG_PLAN` 업무 키다. `PKG_PLAN_KEYS` 는 7키 그대로 두고(연결 상대인
+- (2026-09-05 확정·09-12 구현) `Pack Code` 는 `RQ_PKG_PLAN` 업무 키다. `PKG_PLAN_KEYS` 에는 Pack Code 를 넣지 않고(연결 상대인
   소요대수 상세에 없어 넣으면 `KeyError`) 화면 집계 차원에도 넣지 않는다 — 관련: `tests/test_standard_target_capa_page.py`
   (옛 3-5)
 - (2026-09-15) 업무 키로 형제 행을 접을 때 승자는 「값이 있는 행」이다(숫자 `0`·빈 문자열은 값 없음, 같으면 원천 행 순위 — 2026-11-22). 값을 지어내지
