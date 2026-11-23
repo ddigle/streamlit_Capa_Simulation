@@ -275,8 +275,11 @@
   함께 더했다 — 걸린 규칙 UI-TXT-08(길을 알 때만 칸이 붙음 — 옛 기록 · 단계 줄 없는 시도는 지금 줄 그대로, 통과) · UI-CON-02(「불러오기」 한
   이름 — 진단 줄 · Guide · 감사 칸 이름표 「불러오기 길」, 통과). 끄개 `CAPA_BDQ_LOGIN_LIGHT=off`(늘 전체 길). 시작 스크립트의 import 확인(`container_start.py` `_PROBE_CODE`)과 앱의 불러오기
   (`company_bigdataquery_adapter.load_bigdataquery_module`)는 범위 밖으로 그대로다. **pod 에서 확인할 것 셋**(서버 전용 함수라 사내 PC 에서는
-  못 잰다): ⓐ 가벼운 길로 `login()` 이 되는지 — 진단 줄이 「불러오기 light」 인데 거절이면 `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던
-  전역을 기대하는 것이라 `fill_package` 에 그 값을 채워야 한다(짐작으로 패키지 함수를 부르지 않고 사내 확인 뒤) ⓑ 그 로그인이 쓴 토큰 파일을
+  못 잰다): ⓐ 가벼운 길로 `login()` 과 `getTokenTime` 이 되는지 — 진단 줄이 「불러오기 light」 인데 거절이면 진단의 예외 종류로 가른다: 이름 ·
+  속성 오류(`NameError` · `AttributeError`)면 `server_auth` 가 판 하위 꾸러미 `__init__` 이 만들던 전역을 기대하는 것이라 `fill_package` 에 그 값을
+  채우고(짐작으로 패키지 함수를 부르지 않고 사내 확인 뒤), 불러오기 오류(`ImportError` · `ModuleNotFoundError`)면 하위에서만 막은 `pyarrow` 를
+  `login()` 이 늦게 부르는 것이다(막음은 로그인 · 남은 시간 재기 동안에도 그대로라 가벼운 길에만 있는 실패가 단계 줄 `login` 뒤로 나올 수 있는
+  유일한 자리 — 그때는 막음을 걷는다). 단계 `time` 에서 「확인 못 함」 이면 `getTokenTime` 쪽이다 ⓑ 그 로그인이 쓴 토큰 파일을
   앱의 `getData` 가 그대로 받는지(넣기 성공 뒤 DB 등록 조회) ⓒ 하위 최고 RSS(진단 줄 「하위 최고」)가 전체 불러오기 때보다 크게 주는지.
   **다음 배포 런북 글감**(이번에는 런북을 고치지 않음): 7-40 ⑥ 진단 줄 · 압축본 `자동로그인진단` 에 길 칸(「불러오기 light / full」)을 싣고,
   되돌리는 길 — 끄개 `CAPA_BDQ_LOGIN_LIGHT=off` → CI/CD → Admin 「BDQ 자동 로그인」 에서 비밀번호 다시 넣기(거절로 멈춘 것은 재시작을 넘어
