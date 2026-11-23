@@ -621,7 +621,8 @@ function installUnloadGuard(win, doc) {
 // 칸 없음 · 떠나면 사라지는 편집 없음) 'pass'(지연 0), 붙들었으면 목적지를 이 사건 것으로 적고 'hold'(처음) · 'retarget'(붙든
 // 동안 또 온 이동 — 목적지는 마지막 것 하나, 붙들기도 하나)다. 붙든 동안 온 이동도 붙들기에 다시 묻는다 — 탭 · 링크 누름이
 // 붙들기를 갈아 끼웠으면 남은 `held` 는 낡았다. `navRelease` 는 붙들기가 놓일 때 그 번호(`token` — `navToken`)의 목적지를
-// 꺼낸다 — 그 사이 걷혔거나 다른 붙들기로 갈아 끼웠으면 null 이다.
+// 꺼낸다 — 그 사이 걷혔거나 다른 붙들기로 갈아 끼웠으면 null 이다. `navMark` 는 다시 가기 하나의 표지를 달아 돌려주고,
+// `navUnmark` 는 지금 표지가 그 몫일 때만 걷는다 — 같은 칸으로 다시 간 새 표지를 앞 다시 가기의 상한 타이머가 걷지 않게.
 function createNavGuard() {
   return { held: null, replay: null, seq: 0 }
 }
@@ -683,9 +684,10 @@ function navRelease(guard, token) {
 }
 function navMark(guard, key, now) {
   guard.replay = { key, at: now }
+  return guard.replay
 }
-function navUnmark(guard, key) {
-  if (guard.replay !== null && guard.replay.key === key) guard.replay = null
+function navUnmark(guard, mark) {
+  if (guard.replay === mark) guard.replay = null
 }
 // </tabs-nav>
 
@@ -706,8 +708,8 @@ function installNavGuard(win) {
   const guard = createNavGuard()
   win.__capaNavGuard = guard
   const replay = (held) => {
-    navMark(guard, held.key, Date.now())
-    const clear = () => navUnmark(guard, held.key)
+    const mark = navMark(guard, held.key, Date.now())
+    const clear = () => navUnmark(guard, mark)
     const again = () => {
       clear()
       try {

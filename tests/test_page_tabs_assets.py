@@ -1894,11 +1894,12 @@ out.idleAgain = [navHeld(h, base, 40, false, navToken(h)), h.held, navRelease(h,
 navMark(h, 'k0', 100)
 out.replay = [navVerdict(h, { ...base, key: 'k0' }, 150, 1000), h.replay]
 out.nextBack = navVerdict(h, { ...base, key: 'k0' }, 160, 1000)
-navMark(h, 'k0', 200)
+const mark = navMark(h, 'k0', 200)
 out.otherKey = [navVerdict(h, { ...base, key: 'k9' }, 210, 1000), h.replay !== null]
-navUnmark(h, 'k9')
+// 걷기는 그 다시 가기의 표지일 때만 — 같은 key 의 다른 몫(앞 다시 가기)은 지금 표지를 걷지 않는다.
+navUnmark(h, { key: 'k0', at: 100 })
 out.unmarkOther = h.replay !== null
-navUnmark(h, 'k0')
+navUnmark(h, mark)
 out.unmark = h.replay
 navMark(h, 'k0', 300)
 out.expired = [navVerdict(h, { ...base, key: 'k0' }, 1300, 1000), h.replay]
@@ -2168,6 +2169,13 @@ _NAV_INSTALL_RUNNER = """
   timers.length = 0
   last()()
   out.pendingMark = [guard.replay && guard.replay.key, timers.length]
+  // 다시 간 이동이 닿은 뒤 같은 칸으로 또 붙들어 다시 가도 앞 다시 가기의 상한 타이머는
+  // 새 표지를 걷지 않는다.
+  fire(event())
+  fire(event())
+  last()()
+  timers.shift()()
+  out.olderTimer = [guard.replay && guard.replay.key, timers.length]
   runTimers()
   out.pendingCleared = guard.replay
   mode = 'ok'
@@ -2192,7 +2200,8 @@ def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_
     탭 줄과 같은 확인(`ask`)을 지나 표지를 달고 같은 목적지로 다시 가고(`traverseTo`), 취소면 아무
     것도 하지 않는다. 붙든 동안 또 온 뒤로는 마지막 목적지 하나로 한 번만 가고, 막을 수 없는 이동은
     기다리던 다시 가기를 걷는다. 다시 가기가 거절되면 history.go 로 한 번, 다른 이동이 끊었으면
-    맡긴다. 표지는 다시 간 이동이 닿거나 약속이 끝나거나 상한에 걷힌다."""
+    맡긴다. 표지는 다시 간 이동이 닿거나 약속이 끝나거나 상한에 걷힌다 — 앞 다시 가기의 상한
+    타이머는 같은 칸으로 다시 간 새 표지를 걷지 않는다."""
     sections = []
     for name in ("tabs-nav", "tabs-nav-install"):
         match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
@@ -2221,6 +2230,7 @@ def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_
     assert out["thrown"] == [["ask", "traverseTo:k2", "go:-1"], None]
     assert out["aborted"] == [["ask", "traverseTo:k2"], None]
     assert out["pendingMark"] == ["k2", 1]
+    assert out["olderTimer"] == ["k2", 1]
     assert out["pendingCleared"] is None
     assert out["thrownHold"] == [False, None]
     assert out["noGate"] == [False, [], None]
