@@ -334,6 +334,29 @@ def test_display_order_part_groups_split_by_the_other_text_columns() -> None:
     ]
 
 
+def test_display_order_parts_gather_only_within_one_capa_code() -> None:
+    """부품마다 Capa Code 가 다르면(PKG PLAN 꼴) 무리가 Capa Code 마다 갈린다 — 같은 Capa Code 의
+    부품만 이웃해 부품 차례(표지 끝)로 서고, 제 Capa Code 를 가진 부품은 원래(피벗) 차례 자리다.
+    피벗이 CUSTOM 글자 그대로 세워 표지가 그 부품보다 앞이어도 표지를 끝으로 옮기지 않는다."""
+    data = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_P1", "DEMO_P1", "DEMO_P1"],
+            "CUSTOM": [CUSTOM_BLANK, "DEMO_CUSTOM_A", "DEMO_CUSTOM_B"],
+            "Capa Code": ["DEMO_CAPA_1", "DEMO_CAPA_2", "DEMO_CAPA_1"],
+            "202701": [1.0, 2.0, 3.0],
+        }
+    )
+
+    rules = _product_rule("생산 계획", "PKG PLAN")
+    result = apply_display_order(data, rules, "생산 계획", "PKG PLAN")
+
+    assert list(zip(result["CUSTOM"], result["Capa Code"], strict=True)) == [
+        ("DEMO_CUSTOM_B", "DEMO_CAPA_1"),
+        (CUSTOM_BLANK, "DEMO_CAPA_1"),
+        ("DEMO_CUSTOM_A", "DEMO_CAPA_2"),
+    ]
+
+
 def test_display_order_ties_keep_the_source_order_when_custom_is_one_value() -> None:
     """CUSTOM 이 표 전체에서 한 값이면 규칙 뒤 차례는 원래 차례 그대로다 — 숫자 칸(값 · 숫자 STEP)만
     다른 같은 제품의 행이 떨어져 있어도 모으지 않는다."""
