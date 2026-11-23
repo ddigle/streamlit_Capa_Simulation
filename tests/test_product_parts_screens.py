@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
-from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
+from custom_key_tables import TWO_PART_PRODUCT, two_part_tables
 
 from capa_simulation.components.intro_summary import summary_payload
 from capa_simulation.services import simulation_cache as sc
@@ -30,14 +30,14 @@ from capa_simulation.services.process_capa_detail import build_process_product_d
 from capa_simulation.services.product_parts import (
     multi_part_products,
     part_merged_columns,
-    product_part_label,
 )
 from capa_simulation.services.product_share import OTHER_PRODUCT_LABEL, assign_product_slots
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import get_capacity_and_demand
 
 PROCESSES = ("DEMO_Chip_Attach", "DEMO_Wafer_Inspect")
-PART_LABELS = frozenset(product_part_label(TWO_PART_PRODUCT, part) for part in (PART_A, PART_B))
+# 보드 답 D1 (가) 의 꼴 그대로 적는다 — 이름표 도우미로 지으면 꼴을 되돌려도 기대가 함께 바뀐다.
+PART_LABELS = frozenset({"DEMO PRODUCT A (DEMO_CUSTOM_A)", "DEMO PRODUCT A (DEMO_CUSTOM_B)"})
 
 
 def _months(tables: Mapping[str, pd.DataFrame]) -> list[int]:

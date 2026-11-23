@@ -17,7 +17,13 @@ from uuid import uuid4
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
-from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
+from custom_key_tables import (
+    PART_A,
+    PART_B,
+    TWO_PART_PRODUCT,
+    custom_keyed_tables,
+    two_part_tables,
+)
 from home_two_part_app import home_script, publish_two_part_revision
 from streamlit.testing.v1 import AppTest
 
@@ -35,7 +41,6 @@ from capa_simulation.services.dashboard import home_aggregation_wafer_load
 from capa_simulation.services.load_calculator import calculate_chip_and_wafer_loads
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.official_summary import build_official_summary
-from capa_simulation.services.product_parts import product_part_label
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_SLOT_COUNT,
@@ -48,8 +53,9 @@ from capa_simulation.services.product_share import (
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
-LABEL_A = product_part_label(TWO_PART_PRODUCT, PART_A)
-LABEL_B = product_part_label(TWO_PART_PRODUCT, PART_B)
+# 보드 답 D1 (가) 의 꼴 그대로 적는다 — 이름표 도우미로 지으면 꼴을 되돌려도 기대가 함께 바뀐다.
+LABEL_A = "DEMO PRODUCT A (DEMO_CUSTOM_A)"
+LABEL_B = "DEMO PRODUCT A (DEMO_CUSTOM_B)"
 
 
 def _months(tables: Mapping[str, pd.DataFrame]) -> list[int]:
@@ -137,15 +143,21 @@ def test_the_two_parts_add_up_to_the_product_of_an_unsplit_seed() -> None:
 
 
 def test_the_judgement_does_not_move_with_the_month_range_or_edp() -> None:
-    """이름표는 리비전 계획 전체로 판정한다 — 한 달만 봐도, EDP 를 빼도 같은 이름표다."""
+    """이름표는 리비전 계획 전체로 판정한다 — 조회기간에 한 부품만 남아도, EDP 를 빼도 그 제품은
+    부품 이름으로 선다(UI-PRF-03). B 부품을 마지막 달에만 두고 그 앞까지 보므로, 기간 · EDP 로 거른
+    계획으로 판정하면 부품이 하나라 접힌 제품 이름(빈 부품)이 된다."""
     tables = two_part_tables()
+    plan = tables["RQ_PKG_PLAN"]
     months = _months(tables)
-    _, volume, without_edp = _home(tables)
+    late = pd.to_numeric(plan["생산계획년월"]).ge(months[-1])
+    tables["RQ_PKG_PLAN"] = plan.loc[plan["CUSTOM"].ne(PART_B) | late].reset_index(drop=True)
+    _, volume, without_edp = _home(tables, end=months[-2])
     _, one_month, one_month_without_edp = _home(tables, start=months[3], end=months[3])
 
     for frame in (volume, without_edp, one_month, one_month_without_edp):
         rows = frame.loc[frame["제품정보"].eq(TWO_PART_PRODUCT)]
-        assert set(rows["CUSTOM"]) == {PART_A, PART_B}
+        assert not rows.empty
+        assert set(rows["CUSTOM"]) == {PART_A}
 
 
 # ---------------------------------------------------------------- 한 값 데이터는 그대로
@@ -171,11 +183,13 @@ def test_one_value_data_gives_the_slots_colors_and_order_of_the_frame_without_cu
     seed = build_builtin_seed_dataset().reference_tables
     tables = {name: frame.copy() for name, frame in seed.items()}
     if variant == "one_real_part":
-        plan = tables["RQ_PKG_PLAN"]
-        products = sorted(plan["제품정보"].astype(str).unique())
-        plan["CUSTOM"] = plan["제품정보"].map(
-            {product: f"DEMO_CUSTOM_{index}" for index, product in enumerate(products)}
-        )
+        # 계획만이 아니라 CUSTOM 키 표 모두에 같은 실값을 싣는다 — 계획에만 실으면 수율 · Chip 수
+        # 조인이 비어 Wafer 쪽 견줌이 빈 칸끼리가 된다.
+        products = sorted(tables["RQ_PKG_PLAN"]["제품정보"].astype(str).unique())
+        parts = {product: f"DEMO_CUSTOM_{index}" for index, product in enumerate(products)}
+        for name in custom_keyed_tables():
+            frame = tables[name]
+            frame["CUSTOM"] = frame["제품정보"].astype(str).map(parts)
     plan, wafer = _plan_and_wafer(tables)
     _, judged, _ = _home(tables)
 
@@ -188,6 +202,7 @@ def test_one_value_data_gives_the_slots_colors_and_order_of_the_frame_without_cu
     judged_slots = assign_product_slots(judged, display_order)
 
     assert judged_slots == bare_slots
+    assert float(judged["Wafer 부하량"].sum()) > 0
     for basis in ("Wafer", "PKG"):
         assert _cell_view(
             build_product_share_cells(judged, basis, judged_slots, month_labels=labels)
@@ -228,7 +243,7 @@ def test_the_past_marker_slice_never_pushes_the_calculated_colors() -> None:
     without_past = assign_product_slots(volume, display_order)
     with_past = assign_product_slots(volume, display_order, past_volume=past_volume)
 
-    marker = product_part_label(TWO_PART_PRODUCT, "-")
+    marker = "DEMO PRODUCT A (-)"
     assert with_past.order[: len(without_past.order)] == without_past.order
     assert {name: with_past.slot[name] for name in without_past.order} == dict(without_past.slot)
     assert with_past.order[-1] == marker
@@ -260,11 +275,11 @@ def test_parts_fold_into_other_one_by_one_beyond_the_slot_count() -> None:
     cells = build_product_share_cells(volume, "Wafer", slots, month_labels=["26.09"])
 
     assert len(slots.order) == PRODUCT_SHARE_SLOT_COUNT - 1
-    assert product_part_label("DEMO_PART", PART_A) in slots.order
-    assert product_part_label("DEMO_PART", PART_B) in slots.folded
+    assert "DEMO_PART (DEMO_CUSTOM_A)" in slots.order
+    assert "DEMO_PART (DEMO_CUSTOM_B)" in slots.folded
     pieces = cells["26.09"].slices
     assert pieces[-1].product == OTHER_PRODUCT_LABEL
-    assert product_part_label("DEMO_PART", PART_B) in {name for name, _ in pieces[-1].members}
+    assert "DEMO_PART (DEMO_CUSTOM_B)" in {name for name, _ in pieces[-1].members}
     assert sum(piece.value for piece in pieces) == pytest.approx(float(plan["생산수량"].sum()))
 
 

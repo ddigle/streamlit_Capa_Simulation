@@ -1078,6 +1078,19 @@ def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
     )
 
 
+def test_the_sheet_schema_version_moves_with_the_part_labels() -> None:
+    """6 부터 시트 「제품별 소요대수」 분류 줄은 부품(CUSTOM)이 둘 이상인 제품을 부품마다 이름표
+    줄로 싣는다. 번호를 올리지 않으면 같은 조건의 옛 통(제품 이름 한 줄)이 세션에서 그대로
+    나온다."""
+    from capa_simulation.components.process_capa_view import SHEET_SCHEMA_VERSION
+
+    assert SHEET_SCHEMA_VERSION >= 6
+    key = sheet_memo_key(
+        _view(), expanded=False, split="제품정보", show_all_units=False, show_all_arrows=False
+    )
+    assert key[0] == SHEET_SCHEMA_VERSION
+
+
 def _sheet_heading(
     view: ProcessDetailView,
     collapsed: frozenset[str],

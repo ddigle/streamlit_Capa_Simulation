@@ -281,6 +281,24 @@ def test_the_schema_moved_past_unclipped_plan_detail_text() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 54
 
 
+def test_the_schema_moved_past_the_donut_without_part_slices() -> None:
+    """57 부터 `제품별 비중` 도넛은 부품(CUSTOM)이 둘 이상인 제품을 부품마다 조각 · 범례 이름표로
+    가르고 범례가 부품을 남기고 줄인다.
+
+    같은 내용 토큰에서 그림이 바뀌므로 번호를 올리지 않으면 공용 칸에 남은 옛 그림(제품 한 조각)이
+    새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 57
+
+
+def test_the_schema_moved_past_the_plan_detail_without_part_rows() -> None:
+    """58 부터 계획 세부수량 · 비교 덤벨은 그 제품을 부품마다 줄(이름표 · 띠 · 굵은 선)로 가른다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(제품 한 줄)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 58
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:
