@@ -452,6 +452,24 @@ def test_display_order_rule_columns_after_custom_still_own_the_parts() -> None:
     ]
 
 
+def test_display_order_blank_owner_values_still_make_one_group() -> None:
+    """주인 칸(CUSTOM 앞 글자 칸)의 빈 값(NA)도 한 값으로 센다 — Stack 이 빈 제품의 부품도 그
+    제품이 처음 선 자리에 이웃해 부품 차례로 서고, 다른 제품의 자리를 빼앗지 않는다."""
+    data = _route_rows(
+        ["DEMO_P2", "DEMO_P1", "DEMO_P2", "DEMO_P1"],
+        ["DEMO_CUSTOM_B", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_A"],
+    ).assign(Stack=pd.Series(["8H", None, "8H", None], dtype="object"))
+
+    result = apply_display_order(data, _route_rules(), PAGE_CALCULATION, TAB_REQUIRED)
+
+    assert list(zip(result["제품정보"], result["CUSTOM"], strict=True)) == [
+        ("DEMO_P2", "DEMO_CUSTOM_A"),
+        ("DEMO_P2", "DEMO_CUSTOM_B"),
+        ("DEMO_P1", "DEMO_CUSTOM_A"),
+        ("DEMO_P1", "DEMO_CUSTOM_B"),
+    ]
+
+
 def _plan_rows(rows: list[tuple[str, str, str]]) -> pd.DataFrame:
     """(제품정보, CUSTOM, Customer) 마다 한 달 계획 한 줄 — 나머지 계획 칸은 모두 같다."""
     return pd.DataFrame(
