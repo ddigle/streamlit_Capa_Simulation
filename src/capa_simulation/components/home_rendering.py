@@ -65,9 +65,10 @@ class HomeFigureCacheKey(NamedTuple):
     더하면 어느 묶음이 읽는지 정해 그 키에도 같은 이름으로 넣어야 한다(`tests/
     test_home_figure_cache.py` 가 어느 묶음에도 없는 칸을 잡는다).
 
-    내용은 편집 카운터가 아니라 `content_token` 으로 구분한다. 표시명은 계산 입력이
-    아니라 라벨이므로 계산 캐시 대신 여기서만 버전을 본다. 비교 리비전과 주요공정은
-    사용자가 고른 값이 아니라 **실제 그림에 적용된 값**이다.
+    내용은 편집 카운터가 아니라 `content_token` 으로 구분한다. 부하 예외 선언은 판 지문
+    (`route_exception_digest`)으로 따로 싣는다 — 확보율을 쓰는 묶음만 다시 그린다(AGENTS 5장 45).
+    표시명은 계산 입력이 아니라 라벨이므로 계산 캐시 대신 여기서만 버전을 본다. 비교 리비전과
+    주요공정은 사용자가 고른 값이 아니라 **실제 그림에 적용된 값**이다.
     """
 
     schema_version: int
@@ -82,6 +83,10 @@ class HomeFigureCacheKey(NamedTuple):
     # 프로필 version 만으로는 모자란다. 저장 전에는 version 이 0 에 머물지만 기본값은 최신
     # 공식버전 프리셋을 따라 바뀐다.
     threshold_digest: str
+    # 부하 예외 선언 판의 **내용 지문**(`RouteLoadExceptionProfile.digest` — 빈 선언은 빈 글).
+    # 선언은 리비전 없이 그 공정의 소요대수 · 확보율을 바꾼다(Q3) — 확보율을 칠하는 세 묶음에 든다.
+    # Wafer · Density 는 바꾸지 않아 계획 세부수량에는 들지 않는다.
+    route_exception_digest: str
     include_edp: bool
     plan_detail_customer: bool
     comparison_revision_id: str
@@ -133,6 +138,7 @@ class HomeFigureCacheKey(NamedTuple):
 #   원천·기간·표시순서·과거·월 축   O    O             O         O     (1)
 #   공정 표시명                    O    -             O         O     (2)
 #   판정 기준                      O    -             O         O
+#   부하 예외 선언(판 지문)        O    -             O         O     (8)
 #   공정 필터(B/N 판정 대상)      O    -             -         O     (3)
 #   EDP 포함                       O    O             △         O     (4)
 #   상세 계획(Customer)            -    O             -         -
@@ -154,6 +160,8 @@ class HomeFigureCacheKey(NamedTuple):
 #   (5) Density·Wafer 계획 증감, 세부수량 증감·덤벨. 비교 Density·Wafer 는 분류와 무관하다.
 #   (6) Density·Wafer·확보율에 변동률을 건다. 세부수량에는 걸지 않는다.
 #   (7) Density 칸 글자. 계산은 바꾸지 않는다.
+#   (8) 선언 공정의 소요대수 · 확보율. Wafer · Density 집계는 바꾸지 않는다(AGENTS 6장 「공정별 부하
+#       산출 예외」 (d)).
 #
 # 「O」 칸을 「-」 로 바꾸면 그 조건을 바꿔도 옛 그림이 나온다. 반대로 「-」 를 「O」 로 바꾸는
 # 것은 느려질 뿐 틀리지 않는다 — 확신이 서지 않으면 넓게 둔다.
@@ -181,6 +189,7 @@ class LobFigureKey(NamedTuple):
     base: HomeFigureBaseKey
     process_label_version: int
     threshold_digest: str
+    route_exception_digest: str
     included_processes: tuple[str, ...]
     include_edp: bool
     comparison_revision_id: str
@@ -211,6 +220,7 @@ class KeyProcessFigureKey(NamedTuple):
     base: HomeFigureBaseKey
     process_label_version: int
     threshold_digest: str
+    route_exception_digest: str
     show_advance: bool
     advance_profile_version: int
     advance_ratio_includes_edp: bool
@@ -227,6 +237,7 @@ class BottleneckFigureKey(NamedTuple):
     base: HomeFigureBaseKey
     process_label_version: int
     threshold_digest: str
+    route_exception_digest: str
     included_processes: tuple[str, ...]
     include_edp: bool
     show_advance: bool

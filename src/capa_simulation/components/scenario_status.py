@@ -82,6 +82,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
     prune_choice,
+    route_exceptions_of,
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
@@ -449,6 +450,7 @@ def _render_dialog_body(
         _render_revision_save(
             repository,
             scenario_by_id,
+            database_path=database_path,
             active_scenario_id=active_scenario_id,
             active_revision_id=active_revision_id,
             pending_edits=pending_edits,
@@ -703,6 +705,7 @@ def _render_revision_save(
     repository: DuckDBScenarioRepository,
     scenario_by_id: Mapping[str, ScenarioSummary],
     *,
+    database_path: str,
     active_scenario_id: str | None,
     active_revision_id: str | None,
     pending_edits: Sequence[str] = (),
@@ -786,7 +789,11 @@ def _render_revision_save(
             reference_tables = get_effective_reference_tables()
             active_scenario = ensure_active_scenario(reference_tables, reference_version)
             verdict = revision_save_verdict(
-                reference_version, active_scenario, reference_tables, labels=get_process_labels
+                reference_version,
+                active_scenario,
+                reference_tables,
+                route_exceptions=route_exceptions_of(database_path).declaration,
+                labels=get_process_labels,
             )
             if not verdict.allowed:
                 st.error(markdown_safe_tildes(verdict.message))

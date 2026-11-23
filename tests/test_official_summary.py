@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from types import SimpleNamespace
 
 import dummy_series_tables as demo
@@ -14,6 +14,7 @@ import streamlit as st
 
 from capa_simulation.components.intro_summary import summary_payload
 from capa_simulation.design import tokens
+from capa_simulation.persistence.models import RouteLoadExceptionProfile, RouteLoadExceptionState
 from capa_simulation.services.load_calculator import calculate_wafer_load, filter_edp_plan
 from capa_simulation.services.official_summary import (
     OfficialSummary,
@@ -474,6 +475,9 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         parts=[],
         part_fail=None,
         comparison_target=("S-CMP", "R-CMP"),
+        # 지금 부하 예외 선언 판(공용 프로필) — 빈 판이 기본이다. 요약 계산이 받은 선언을 적어 둔다.
+        route_profile=RouteLoadExceptionState().profile,
+        declarations=[],
     )
 
     def fake_profiles(path: str) -> SimpleNamespace:
@@ -493,8 +497,11 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         release: SimpleNamespace,
         thresholds: SecurementThresholds,
         past: SimpleNamespace,
+        *,
+        route_exceptions: Mapping[str, str],
     ) -> dict[str, object]:
         env.builds.append(release.official_release_id)
+        env.declarations.append(dict(route_exceptions))
         if env.fail is not None:
             raise env.fail
         # 토글 몫이 쓸 재료(`_context`)는 브라우저로 가기 전에 떼어진다.
@@ -535,6 +542,9 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         intro_summary,
         "load_global_past_data",
         lambda path: SimpleNamespace(version=env.versions["past"]),
+    )
+    monkeypatch.setattr(
+        intro_summary, "load_global_route_load_exceptions", lambda path: env.route_profile
     )
     monkeypatch.setattr(intro_summary, "_current_month", lambda: env.month)
     monkeypatch.setattr(intro_summary, "_build", fake_build)
@@ -636,6 +646,56 @@ def test_a_saved_toggle_profile_rebuilds_only_its_own_part(
     assert summary_env.builds == ["rel-1"]
     assert summary_env.parts == [profile]
     assert sent["toggles"][profile]["version"] == 1
+
+
+def _declared_profile(seq: int, process: str) -> RouteLoadExceptionProfile:
+    """합성 공정 하나를 선언한 판 — 지문은 저장 길이 내는 것과 같은 함수로 낸다."""
+    from capa_simulation.services.route_load_exceptions import (
+        BUFFER_X_CORE_CHIP,
+        route_load_declaration_digest,
+    )
+
+    entries = ((process, BUFFER_X_CORE_CHIP),)
+    return RouteLoadExceptionProfile(
+        seq=seq,
+        created_at=None,
+        applied_by=None,
+        entries=entries,
+        digest=route_load_declaration_digest(dict(entries)),
+    )
+
+
+def test_a_saved_route_exception_declaration_rebuilds_the_summary_and_the_advance_part(
+    summary_env: SimpleNamespace,
+) -> None:
+    """부하 예외 선언은 리비전 없이 공식버전의 소요대수 · 확보율을 바꾼다(Q3 (가)) — 판의 지문이
+    요약 키의 일곱째 칸이라 저장하면 요약을 다시 만들고, 요약 계산은 그 판의 선언을 받는다. 토글
+    몫은 확보율을 쓰는 선행 B/O 만 다시 만들고 선행 입고 · GAP(Wafer · Density 만 씀)은 그대로
+    꺼낸다. 비움 판(지문 빈 글)은 선언 전과 같은 칸이다."""
+    module = summary_env.module
+    module.official_summary_data("db")
+    assert summary_env.declarations == [{}]
+    summary_env.parts.clear()
+    summary_env.route_profile = _declared_profile(1, "DEMO-P1")
+    module.forget_intro_summary_check()
+    module.official_summary_data("db")
+    assert summary_env.builds == ["rel-1", "rel-1"]
+    assert summary_env.declarations[-1] == dict(summary_env.route_profile.declaration)
+    assert summary_env.parts == ["advance"]
+    # 다른 공정의 선언은 다른 지문 — 또 다시 만든다.
+    summary_env.parts.clear()
+    summary_env.route_profile = _declared_profile(2, "DEMO-P2")
+    module.forget_intro_summary_check()
+    module.official_summary_data("db")
+    assert summary_env.builds == ["rel-1"] * 3 and summary_env.parts == ["advance"]
+    # 모두 빼고 저장한 비움 판은 지문이 빈 글이라 처음(선언 없음) 칸을 그대로 꺼낸다.
+    summary_env.parts.clear()
+    summary_env.route_profile = RouteLoadExceptionProfile(
+        seq=3, created_at=None, applied_by=None, entries=(), digest=""
+    )
+    module.forget_intro_summary_check()
+    module.official_summary_data("db")
+    assert summary_env.builds == ["rel-1"] * 3 and summary_env.parts == []
 
 
 def test_a_changed_comparison_is_built_after_the_page_and_sent_on_the_next_run(

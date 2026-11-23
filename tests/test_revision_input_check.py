@@ -223,7 +223,8 @@ def test_basis_missing_routes_are_a_reason_of_the_route_group_with_the_gate_coun
     합(`excluded_routes`)과 같고, 그 까닭의 수는 부분 수(`basis_missing_routes`)다.
 
     내장 시드에는 Buffer 경로가 없어 WF Core 경로를 가진 공정을 선언하면 그 Core 줄의 바탕이 없다.
-    전체 기간 계산은 아직 선언을 받지 않으므로 계산 함수에 선언을 넘겨 결과를 짓는다.
+    여기서는 묶음 꼴만 보려고 계산 함수에 선언을 넘겨 결과를 짓는다 — 입력 점검 판정
+    (`input_check_verdict`)이 넘긴 선언 판으로 세는 것은 `tests/test_capacity_gate.py` 가 본다.
     """
     plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert plain.error is None and plain.unit_capacity is not None
@@ -396,7 +397,9 @@ def test_an_old_revision_without_route_keys_stops_without_calculating(
 
     monkeypatch.setattr(capacity_gate, "full_capacity_outcome", no_calculation)
 
-    check = input_check_verdict(str(database), scenario_id, revision_id)
+    check = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert check.stopped and check.stop is not None and check.stop.kind == "blocked"
     stop = check.group(GROUP_STOP)
@@ -491,8 +494,12 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
 
     verdicts = {
         name: (
-            input_check_verdict(str(database), scenario_id, revision_id).stopped,
-            not official_publish_verdict(str(database), revision_id).allowed,
+            input_check_verdict(
+                str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            ).stopped,
+            not official_publish_verdict(
+                str(database), revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            ).allowed,
         )
         for name, revision_id in revisions.items()
     }
@@ -505,7 +512,12 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
     ]
     # Density 만 멈춘 리비전은 멈춤 줄은 두고 뒤 묶음도 센다(2026-11-11 검토 보드 F1 (나)) —
     # 스위치를 바꾸지 않은 출하 기본값 그대로의 길이다.
-    density = input_check_verdict(str(database), scenario_id, revisions["구분_EQ 0"])
+    density = input_check_verdict(
+        str(database),
+        scenario_id,
+        revisions["구분_EQ 0"],
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     assert density.stop is not None and density.stop.kind == "density"
     assert density.group(GROUP_CAPACITY) is not None and density.group(GROUP_UNCOUNTED) is None
     assert density.calculation_label == "멈춤"
@@ -543,9 +555,13 @@ def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(
     monkeypatch.setattr(DuckDBScenarioRepository, "load_revision", counted_revision)
     monkeypatch.setattr(DuckDBScenarioRepository, "load_source_blank_cs_rows", counted_blank)
 
-    first = input_check_verdict(str(database), scenario_id, revision_id)
+    first = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert reads == ["revision", "source"]
-    again = input_check_verdict(str(database), scenario_id, revision_id)
+    again = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert reads == ["revision", "source"]
     assert first.calculation_label == again.calculation_label == "됨"
@@ -563,7 +579,9 @@ def test_a_read_failure_is_raised_every_time_instead_of_being_kept(tmp_path: Pat
 
     for _attempt in range(2):
         with pytest.raises(BOOTSTRAP_ERRORS):
-            input_check_verdict(str(database), scenario_id, missing)
+            input_check_verdict(
+                str(database), scenario_id, missing, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            )
 
 
 def test_the_check_and_its_outcome_survive_the_cache_pickle(tables: Tables) -> None:
@@ -644,7 +662,9 @@ def test_the_registration_drop_is_read_back_as_the_derivation_counted_it(tmp_pat
     assert rows is not None
     assert len(rows) == derived.rows
     assert list(rows.columns) == list(repository.load_source_data(scenario_id).columns)
-    check = input_check_verdict(str(database), scenario_id, revision_id)
+    check = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     source = check.group(GROUP_SOURCE)
     assert source is not None and source.count == derived.rows
     assert source.subtitle == (
@@ -662,7 +682,9 @@ def test_a_scenario_without_a_source_says_dash_instead_of_zero(tmp_path: Path) -
     scenario_id, revision_id = _scenario_with_source(repository, None, "원천 없는 시나리오")
 
     assert repository.load_source_blank_cs_rows(scenario_id) is None
-    source = input_check_verdict(str(database), scenario_id, revision_id).group(GROUP_SOURCE)
+    source = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).group(GROUP_SOURCE)
     assert source is not None and source.count is None and source.count_text == "—"
 
 

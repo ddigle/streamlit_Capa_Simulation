@@ -593,6 +593,55 @@ def test_the_plan_summary_uses_homes_key_with_past_data(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
+def test_the_page_folds_the_read_declaration_into_its_calculation_keys(tmp_path: Path) -> None:
+    """계산 페이지 공통 진입은 그 회차의 부하 예외 선언 판을 읽어 계산 키에 접는다 — 수요 키
+    (`scenario_cache_key`)와 HOME 과 같은 계획 키(`build_home_simulation_cache_key`)의 둘째 칸이
+    내용 토큰에 그 선언을 접은 계산 토큰이다(AGENTS 5장 44 · 45)."""
+    from capa_simulation.persistence.models import RouteLoadExceptionProfile
+    from capa_simulation.services.route_load_exceptions import (
+        BUFFER_X_CORE_CHIP,
+        route_load_declaration_digest,
+    )
+    from capa_simulation.services.simulation_cache import calculation_token
+
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    profile = RouteLoadExceptionProfile(
+        seq=1,
+        created_at=None,
+        applied_by=None,
+        entries=tuple(declaration.items()),
+        digest=route_load_declaration_digest(declaration),
+    )
+    plain = _script(_database(tmp_path))
+    fake = "    lambda _path: RouteLoadExceptionState().profile\n"
+    assert plain.count(fake) == 1
+    script = (
+        plain.replace(fake, f"    lambda _path: {profile!r}\n")
+        .replace(
+            "from capa_simulation.persistence.models import RouteLoadExceptionState\n",
+            "from capa_simulation.persistence.models import (\n"
+            "    RouteLoadExceptionProfile,\n    RouteLoadExceptionState,\n)\n",
+        )
+        .replace(
+            "simulation_cache.get_home_simulation = home_simulation\n",
+            "_fake_demand = simulation_cache.get_scenario_capacity_and_demand\n"
+            "def _recording_demand(cache_key, **kwargs):\n"
+            '    st.session_state.setdefault("captured_demand_keys", []).append(cache_key)\n'
+            "    return _fake_demand(cache_key, **kwargs)\n"
+            "simulation_cache.get_scenario_capacity_and_demand = _recording_demand\n"
+            "simulation_cache.get_home_simulation = home_simulation\n",
+        )
+    )
+    app = AppTest.from_string(script, default_timeout=120).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    folded = calculation_token("shortening-test", declaration)
+    assert app.session_state["captured_home_key"][1] == folded
+    demand_keys = app.session_state["captured_demand_keys"]
+    assert demand_keys and all(key[1] == folded for key in demand_keys)
+    clear_equipment_repository()
+
+
 def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path) -> None:
     """일정 미정 신규 호기는 Dynamic 에도 단축 후보에도 들지 않는다 — 다른 탭과 같은 한 줄로 알린다.
 

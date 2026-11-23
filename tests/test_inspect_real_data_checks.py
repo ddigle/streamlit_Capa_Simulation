@@ -33,7 +33,13 @@ from typing import Any, Final
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom, database_marked_after_custom
+from before_custom_copy import (
+    database_before_custom,
+    database_before_route_exceptions,
+    database_marked_after_custom,
+    database_with_route_exceptions,
+    seed_route_declaration,
+)
 from custom_key_tables import PART_A, PART_B, custom_keyed_tables
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
@@ -67,7 +73,10 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_KEY_MISMATCH_REASON,
     UNROUTED_UNKNOWN_PRODUCT_REASON,
     UNROUTED_UNUSED_REASON,
+    calculate_required_equipment,
 )
+from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.settings import DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -757,7 +766,7 @@ def _plant_sixty_fold(path: Path) -> tuple[int, int, int]:
     session.close()
     assert source is not None
     core = build_q_core_data(source.raw, load_core_data_contract())
-    required = checks._required_equipment(source.tables)
+    required = checks._required_equipment(source.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     def keyed(frame: pd.DataFrame) -> pd.DataFrame:
         keys = pd.DataFrame(
@@ -1030,7 +1039,7 @@ def _plant_route_wafers(path: Path) -> int:
     session.close()
     assert source is not None
     core = build_q_core_data(source.raw, load_core_data_contract())
-    required = checks._required_equipment(source.tables)
+    required = checks._required_equipment(source.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     plan = [key for key in LOAD_KEYS if key != "소요기준"]
     wafer = required.loc[required["소요기준"].eq("WF")]
     loads = _keyed(wafer, plan).assign(부하량=wafer["부하량"].to_numpy()).drop_duplicates(plan)
@@ -1292,7 +1301,9 @@ def _six_three_a(path: Path, dataset_id: str) -> tuple[str, str]:
     없으면 `-`). 꼴 이름은 6-3 a 갈래 표 `꼴` 칸의 글자다."""
     with duckdb.connect(str(path), read_only=True) as connection:
         revision = _revision_one_row(connection, dataset_id)
-        outcome = revisions_script.inspect_revision(connection, revision)
+        outcome = revisions_script.inspect_revision(
+            connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
     assert outcome.status == revisions_script.STOPPED
     shape = "-" if outcome.problem is None else outcome.problem.label
     return f"S{revision.scenario_no} r{revision.revision_no}", shape
@@ -3551,6 +3562,89 @@ def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
     ]
 
 
+def test_the_session_reads_the_copy_declaration_once_and_a_copy_without_the_table_is_empty(
+    simulation_db: Path, tmp_path: Path
+) -> None:
+    """소요대수를 셈하는 블록은 사본의 지금 부하 예외 선언을 나눠 쓴다(`Session.route_exceptions` —
+    같은 `read_only` 연결로 한 번 읽음). 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언이다."""
+    declaration = seed_route_declaration()
+    declared = database_with_route_exceptions(
+        simulation_db, tmp_path / "declared.duckdb", declaration
+    )
+    before = database_before_route_exceptions(simulation_db, tmp_path / "before.duckdb")
+    for path, expected, missing in ((declared, declaration, False), (before, {}, True)):
+        session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+        with duckdb.connect(str(path), read_only=True) as connection:
+            session.simulation = connection
+            assert dict(session.route_exceptions()) == expected
+            assert (session.route_state() is None) is missing
+            session.simulation = None
+            # 한 번 읽은 판을 나눠 쓴다 — 연결을 거둬도 다시 읽지 않는다.
+            assert dict(session.route_exceptions()) == expected
+
+
+def test_a_copy_before_the_declaration_table_counts_with_an_empty_declaration(
+    simulation_db: Path, equipment_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 뒤 · 0040 전 사본은 소요대수를 빈 선언으로 세고 블록 앞에 `사본 0040 전` 한 줄을 찍는다
+    — 그 줄 말고는 0040 뒤 사본과 출력이 같다."""
+    before = database_before_route_exceptions(simulation_db, tmp_path / "capa_simulation.duckdb")
+    arguments = ("--equipment-database", str(equipment_db), "--only", "legacy,reqb,blank")
+
+    code, old = _run(capsys, "--database", str(before), *arguments)
+    _, new = _run(capsys, "--database", str(simulation_db), *arguments)
+
+    assert code == 0
+    marker = (
+        f"- 사본 0040 전 — 시뮬레이션 마이그레이션 최고 {CUSTOM_MIGRATION} · 부하 예외 선언 표가 "
+        "없어 소요대수를 빈 선언으로 셈했다(사본은 고치지 않는다)"
+    )
+    old_lines = _without_timings(old)
+    assert old_lines.count(marker) == 1
+    at = old_lines.index(marker)
+    assert old_lines[at + 1] == ""
+    assert "사본 0040 전" not in new and "사본 0039 전" not in old
+    assert [*old_lines[:at], *old_lines[at + 2 :]] == _without_timings(new)
+
+
+def test_the_copy_declaration_is_named_only_by_count(
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """선언이 있는 사본은 블록 앞에 판 · 공정 수 한 줄을 찍고 공정 이름은 찍지 않는다 — 기존 결과
+    대조 · 소요대수 블록의 소요대수 계산은 모두 그 선언을 받는다."""
+    declaration = seed_route_declaration()
+    declared = database_with_route_exceptions(
+        simulation_db, tmp_path / "capa_simulation.duckdb", declaration
+    )
+    seen: list[dict[str, str]] = []
+    real = calculate_required_equipment
+
+    def spy(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        seen.append(dict(kwargs["route_exceptions"]))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(checks, "calculate_required_equipment", spy)
+    arguments = ("--equipment-database", str(equipment_db), "--only", "legacy,reqb")
+
+    code, with_declaration = _run(capsys, "--database", str(declared), *arguments)
+
+    assert code == 0
+    assert seen and all(item == declaration for item in seen)
+    _assert_no_leak(with_declaration)
+    assert not any(process in with_declaration for process in declaration)
+    marker = (
+        "- 부하 예외 선언 판 1 · 공정 1 — 소요대수를 그 선언으로 셈했다(앱과 같다 · 공정 이름은 "
+        "찍지 않는다)"
+    )
+    lines = _without_timings(with_declaration)
+    assert lines.count(marker) == 1
+    assert lines[lines.index(marker) + 1] == ""
+
+
 def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -4742,7 +4836,9 @@ def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     # 6-3 a 가 적는 수와 같다.
     with duckdb.connect(str(blank_stop_db), read_only=True) as connection:
         [revision] = revisions_script.list_revisions(connection, active_only=False)
-        outcome = revisions_script.inspect_revision(connection, revision)
+        outcome = revisions_script.inspect_revision(
+            connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
         places = checks._blank_stop_places(
             connection, checks._census_scope(connection, all_revisions=False)
         )
@@ -4928,7 +5024,9 @@ def test_the_blank_block_sees_a_stopped_revision_that_is_not_active(
     assert any(line.startswith("- 8-12K S1 r2 RUN_RATE") for line in lines)
     with duckdb.connect(str(path), read_only=True) as connection:
         outcomes = [
-            revisions_script.inspect_revision(connection, revision)
+            revisions_script.inspect_revision(
+                connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            )
             for revision in revisions_script.list_revisions(connection, active_only=False)
         ]
     assert [outcome.problem is not None for outcome in outcomes] == [False, True]

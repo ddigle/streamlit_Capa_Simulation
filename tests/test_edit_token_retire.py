@@ -28,6 +28,7 @@ from capa_simulation import scenario_state
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
     NO_ROUTE_LOAD_EXCEPTIONS,
     RouteLoadDeclaration,
 )
@@ -78,7 +79,9 @@ def _months(tables: Mapping[str, pd.DataFrame]) -> list[int]:
 
 
 def _calculate(
-    scenario: scenario_state.ActiveScenario, tables: Mapping[str, pd.DataFrame]
+    scenario: scenario_state.ActiveScenario,
+    tables: Mapping[str, pd.DataFrame],
+    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """화면과 같은 길 — 시나리오 키(`scenario_cache_key`)로 조회기간 결과를 받는다."""
     months = _months(scenario["tables"])
@@ -87,7 +90,7 @@ def _calculate(
         scenario,
         months[0],
         months[-1],
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=route_exceptions,
     )
     return sc.get_scenario_capacity_and_demand(
         key, _scenario_tables=scenario["tables"], _reference_tables=tables
@@ -133,6 +136,25 @@ def test_an_edit_retires_the_replaced_edit_cell_but_keeps_the_revision_cell(
 
     _calculate(first, tables)
     assert len(computed) == 4, "갈아끼워진 편집본 칸은 걷혔다"
+
+
+def test_an_edit_retires_the_cell_folded_with_the_declaration_this_session_read(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """편집본 칸은 이 세션이 읽은 부하 예외 선언 판으로 접힌 키에 있다 — 걷기도 그 판(세션에 적어 둔
+    판 — `page_bootstrap.route_exceptions_of` 가 적는다)으로 접은 키를 걷고 DB 를 열지
+    않는다."""
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    scenario_state.note_route_exceptions(declaration)
+    pristine = scenario_state.reset_active_scenario(tables, _version())
+    first = _plan_edit(pristine)
+    _calculate(first, tables, declaration)
+    _calculate(first, tables, declaration)
+    assert len(computed) == 1
+
+    _table_edit(first)
+    _calculate(first, tables, declaration)
+    assert len(computed) == 2, "선언으로 접은 편집본 칸이 걷혔다"
 
 
 def test_an_edit_from_the_revision_retires_nothing(

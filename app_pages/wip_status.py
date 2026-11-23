@@ -44,6 +44,7 @@ from capa_simulation.navigation import STANDARD_TARGET_CAPA
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    current_route_exceptions,
     prune_list_selection,
     render_schema_ahead_warning,
 )
@@ -57,7 +58,6 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
     display_order_digest,
@@ -217,6 +217,9 @@ try:
     reference_version = get_effective_reference_version()
     reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
+    # 부하 예외 선언 판은 이 회차에 한 번 읽어 두 계산 키(경로 선택지 · 주차 표준)가 같은 판으로
+    # 접힌다.
+    route_exceptions = current_route_exceptions().declaration
     # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 뒤의 주차 계산이 쓰는 RUN_DAY 만 자른다.
     filtered_tables = {
         "RQ_RUN_DAY": scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
@@ -227,7 +230,7 @@ try:
             active_scenario,
             start_month,
             end_month,
-            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+            route_exceptions=route_exceptions,
         ),
         active_scenario["tables"],
         reference_tables,
@@ -338,7 +341,7 @@ try:
                 active_scenario,
                 start_month,
                 end_month,
-                route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+                route_exceptions=route_exceptions,
             ),
             availability=availability,
             start_date=start_date,

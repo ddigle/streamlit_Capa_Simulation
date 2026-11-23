@@ -214,7 +214,6 @@ from capa_simulation.services.required_shortening import (
     target_from_thresholds,
     unit_export_frame,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     csv_export_key,
@@ -642,7 +641,7 @@ def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
         start_month=display_range.start,
         end_month=display_range.end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=context.route_exceptions.declaration,
     )
     if include_edp:
         density = get_home_simulation(

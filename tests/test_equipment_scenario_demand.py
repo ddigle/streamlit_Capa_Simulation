@@ -86,6 +86,7 @@ import capa_simulation.settings as settings
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.persistence.models import RouteLoadExceptionState
 
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
 settings.DUCKDB_PATH = Path({str(simulation_path)!r})
@@ -157,6 +158,7 @@ originals = (
     simulation_cache.get_home_simulation,
     persistence_cache.load_global_securement_threshold,
     persistence_cache.load_global_past_data,
+    persistence_cache.load_global_route_load_exceptions,
 )
 original_get_process_labels = process_labels_module.get_process_labels
 # 시트 위 가로 스크롤바(Components v2)는 AppTest 에서 등록되지 않는다 — 이 회차 동안만 뺀다.
@@ -172,6 +174,9 @@ persistence_cache.load_global_securement_threshold = lambda _path: SimpleNamespa
 )
 persistence_cache.load_global_past_data = lambda _path: SimpleNamespace(
     monthly=pd.DataFrame({{"생산계획년월": []}})
+)
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
 )
 process_labels_module.get_process_labels = lambda: ProcessLabels(version=1, labels={{}})
 try:
@@ -193,6 +198,7 @@ finally:
         simulation_cache.get_home_simulation,
         persistence_cache.load_global_securement_threshold,
         persistence_cache.load_global_past_data,
+        persistence_cache.load_global_route_load_exceptions,
     ) = originals
     process_labels_module.get_process_labels = original_get_process_labels
     horizontal_scrollbar.render_horizontal_scrollbar = original_scrollbar

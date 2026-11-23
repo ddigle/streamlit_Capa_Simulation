@@ -107,7 +107,10 @@ from capa_simulation.services.revision_input_check import (
     build_input_check,
     calculation_period,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.simulation_cache import full_capacity_outcome
 
@@ -208,9 +211,15 @@ def test_the_check_panel_is_the_second_of_five_and_counts_only_when_open(
     counted: list[str] = []
     real = capacity_gate.input_check_verdict
 
-    def spy(database_path: str, scenario_id: str, revision_id: str) -> RevisionInputCheck:
+    def spy(
+        database_path: str,
+        scenario_id: str,
+        revision_id: str,
+        *,
+        route_exceptions: RouteLoadDeclaration,
+    ) -> RevisionInputCheck:
         counted.append(revision_id)
-        return real(database_path, scenario_id, revision_id)
+        return real(database_path, scenario_id, revision_id, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(input_check, "input_check_verdict", spy)
     app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
@@ -232,6 +241,38 @@ def test_the_check_panel_is_the_second_of_five_and_counts_only_when_open(
     for title in ("계산 멈춤", "대당 Capa 에서 뺀 기준", "부하량에서 빠진 계획", "측정률 1.0 가정"):
         assert title in heads
     assert "규칙대로 셈에서 뺀 것" in {button.label for button in app.button}
+
+
+def test_a_saved_route_exception_declaration_drops_the_counted_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「계산」 칸 글은 그 글을 센 부하 예외 선언 판에서만 산다 — 선언은 리비전 없이 셈을 바꾸므로
+    (2026-11-22 답 Q3 (가)) 선언을 저장하면(공용 프로필 비우기 뒤) 센 글을 모두 버리고 고른
+    리비전부터 새 판으로 다시 센다. 고르지 않은 리비전은 다시 「—」 다."""
+    from before_custom_copy import seed_route_declaration
+
+    from capa_simulation.persistence.cache import clear_global_route_load_exceptions_cache
+
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    edited = _save(database, scenario_id, base, _with_exclusions, "빠짐")
+    clear_global_route_load_exceptions_cache()
+    app, browser, calls = _check_app(script, monkeypatch)
+    first = _draft(app).picked
+    other = base if first == edited else edited
+    browser.send(CHECKS_KEY, {"op": "pick", "owner": scenario_id, "id": other})
+    assert set(app.session_state[CHECK_LABELS_KEY]) == {base, edited}
+
+    DuckDBScenarioRepository(database).append_route_load_exceptions(
+        expected_seq=0, entries=seed_route_declaration(), applied_by=None, source_place="test"
+    )
+    clear_global_route_load_exceptions_cache()
+    browser.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert set(app.session_state[CHECK_LABELS_KEY]) == {other}
+    assert _calc(calls)[str(first)] == ("—", "none")
+    clear_global_route_load_exceptions_cache()
 
 
 def test_a_revision_turns_from_dash_to_its_count_when_picked_and_keeps_it(
@@ -279,7 +320,9 @@ def test_a_stopped_revision_is_marked_and_folds_what_comes_after(
     assert any("· 경로 " in text for text in _captions(app))
     # 부제는 계산 멈춤 알림 짧은 글에서 묶음 이름과 겹치는 머리를 뗀 글이다 — 그 머리가 알림 글과
     # 같아야 떼어진다.
-    check = capacity_gate.input_check_verdict(str(database), scenario_id, stopped)
+    check = capacity_gate.input_check_verdict(
+        str(database), scenario_id, stopped, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert check.stop is not None
     notice = calculation_stop_notice(ValueError(check.stop.error))
     assert notice is not None and notice.text.startswith(STOP_NOTICE_HEAD)
@@ -474,7 +517,7 @@ def test_the_db_registration_group_switches_the_tab_on_this_page(
             ),
         )
     )
-    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args: check)
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
     app, _, _ = _check_app(script, monkeypatch)
 
     app.button(key=f"input_check_go_{GROUP_SOURCE}").click().run()
@@ -674,7 +717,7 @@ def test_the_rules_row_opens_into_small_subheadings_without_counts(
         tables=(InputCheckTable("PKG Buffer 밖", frame, tuple(frame.columns), "제외사유"),),
     )
     check = RevisionInputCheck((rules,))
-    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args: check)
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
     app, _, _ = _check_app(script, monkeypatch)
 
     app.button(key=RULES_TOGGLE_KEY).click().run()

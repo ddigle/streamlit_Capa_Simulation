@@ -1969,6 +1969,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     앞에 둔다 — 알림창 짧은 글이 앞 60자 안팎이다(UI-NTF-06).
   - 계산 페이지와 같은 캐시 칸(`pristine_content_token`)을 쓰고 BigDataQuery 등록·내장 시드는 검사하지 않는다. 새
     쓰기 경로는 `tests/test_capacity_gate.py` 목록에 더한다(`density_error` 는 `tests/test_gate_density_coverage.py`).
+  - 판정 함수 넷(`revision_save_verdict` · `official_publish_verdict` · `input_check_verdict` · `derived_save_verdict`)은 부하 예외
+    선언을 스스로 읽지 않고 부르는 화면이 그 회차에 읽은 판(`route_exceptions` — 기본값 없음)을 받는다 — 키와 계산이 그 한 판으로
+    접혀 계산 페이지와 같은 칸이다(5장 44 · 45). 부르는 화면은 그 DB 경로로 읽은 판(`page_bootstrap.route_exceptions_of`)을
+    넘긴다.
   - 자동 갱신 발행은 순수 코어 `simulation_cache.full_capacity_outcome` 로 같은 검사를 하고 경고를 실행 기록에 붙인다.
   - 입력 점검(`input_check_verdict(database_path, scenario_id, revision_id)` — 시나리오 관리 › 목록 관리 「점검」)도 같은 멈춤 판정
     (`_stop_error` — Capa 오류가 먼저, 통과하면 Density)을 쓰고 `tests/test_gate_density_coverage.py` 그물 안이다. 고른 리비전마다
@@ -2118,7 +2122,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공정 수 · 적용 시각, 끈 동안 「꺼짐 · 마지막 판 n」, 원천을 봤으면 「<자리> <낱말>(hh:mm 에 봄)」) · 가져오기(원천이 꽂혔을 때만) ·
   양식 내려받기(마지막 내용 판 — 끈 동안에도, 없으면 빈 양식) · 끄기 / 다시 켜기(같은 자리) · 받은 판의 거절 표 또는 값 줄(지금 판과의
   차이 · 앞 판 값으로 되돌리는 칸 G12 · 측정률 칸 — 받는 때 `stage_pack` 이 센다, 계산 없음)과 미리보기(「시험 계산」 을 누른 회차에만
-  돌고 (sha, content_token)마다 세션에 둔다 — 시나리오를 못 읽으면 단추 자리에 「데이터 Error」 마크 `AD-07`) · 적용(되돌리는 칸이
+  돌고 (sha, 계산 토큰 — 내용 토큰에 그 회차의 부하 예외 선언을 접은 것)마다 세션에 둔다 — 선언을 저장하면 메모가 빗나간다,
+  시나리오를 못 읽으면 단추 자리에 「데이터 Error」 마크 `AD-07`) · 적용(되돌리는 칸이
   있으면 확인 칸을 채워야 열림 — UI-NTF-09) · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의 상태 알림 `EP-03` · `EP-04`. 닫힌
   탭은 `admin_area` 가 그리지 않는다(위젯이 단추 · 내려받기 · 확인 칸뿐 — 닫힌 회차는 DB 를 읽지 않는다). 받은 판을 판정하다 난
   예외는 원천 실패와 같은 `EP-01` 길이다. 세션 칸은 `SessionSlot`(`STAGED` · `SEEN` — `peek`, 메모 `PREVIEW` · `TEMPLATE`). 쓰는
@@ -2284,7 +2289,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   서지 않는다. 받을 것이 아직 없음은 `SourceNotReady`(낱말 · 안내 — 실패 아님)다. 받은 파일 판정(`stage_pack` — 접수
   검증 + 판 번호 판정 + 지금 판 · 앞 판과의 차이 `changes`, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산
   (`preview_pack` — 지금 시나리오 표에 이미 든 부대공정을 걷고 합쳐 본다, 저장 안 함, 합친 표의 전체 기간 계산은 한 번 돌려 월별
-  확보율 · 경로 수 · 따라가는 공정에서 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다) · C-DEP 판정(`production_place` — 동기화
+  확보율 · 경로 수 · 따라가는 공정에서 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다 — 부하 예외 선언은 부르는 화면이 읽은 판
+  `route_exceptions` 를 받는다) · C-DEP 판정(`production_place` — 동기화
   `managed` + 기동 때 읽은 S3 접속 정보). **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` — HEAD · PUT, `install_sink`) — 놓는
   꼴이 낱장 여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지 정하지 않아 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
   ETag(`ExtraProcessState.baseline`)와 견줘 같거나 파일이 없을 때만 덮고, 다르면 덮지 않는다(적용하지 않은 사람 파일 — G5). 상태 줄
@@ -2305,6 +2311,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
   - 이어받은 수동 off 와 HOME 표지(`auto_off_marks`)는 같은 근거(`_auto_exclusions` — 조상, 복제본은 복제 전 자동
     리비전 2)를 본다. 같은 프로세스의 겹친 회차는 기다리지 않고 돌아간다(`_RUN_LOCK`).
+  - 부하 예외 선언은 「judge」 단계 앞에서 저장소(`load_route_load_exceptions` — 캐시 래퍼 없이)로 한 번 읽어 판정과 발행 검사가 같은
+    판으로 셈한다. 선언이 있으면 실행 기록 사유의 발행 줄 쪽 끝과 리비전 2 · 공식버전 메모에 「부하 예외 판 n」(이름 없음 —
+    `_route_exception_memo`)을 붙여 공식 숫자가 어느 판으로 났는지 되짚는다. 선언이 없으면 조각이 없다.
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
   차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다. 감사 기록기가 켜진
   서버면 감사 할 일(`audit/shipper.py` 의 `AuditTasks` — 비우기 10초 · 올리기 5분 또는 200줄 · 일별 묶음 · 미러)도 같은 고리가
@@ -2618,7 +2627,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `apply_month_updates`·`apply_table_updates` · 원본 되돌리기 `reset_active_scenario` · 불러오기와 저장 뒤
   `activate_scenario_tables` · `clear_active_scenario`)이 갈아끼워지는 **편집본** 토큰의 전체 기간 칸을 걷는다
   (`_retire_edit_cell` → `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다,
-  `tests/test_edit_token_retire.py`). 다른 모듈이 활성 시나리오 칸을 읽는 창구는 `ACTIVE_SCENARIO`(`SessionSlot` 「있거나 없음」 칸 —
+  `tests/test_edit_token_retire.py`). 걷는 키는 이 세션이 마지막으로 읽은 부하 예외 선언(`ROUTE_EXCEPTIONS_SEEN` —
+  `page_bootstrap.route_exceptions_of` 가 `note_route_exceptions` 로 적는다)으로 접은 것이고 걷기는 DB 를 열지 않는다(5장 45).
+  다른 모듈이 활성 시나리오 칸을 읽는 창구는 `ACTIVE_SCENARIO`(`SessionSlot` 「있거나 없음」 칸 —
   `peek`, 5장 42)이고 쓰기는 이 모듈의 함수만 한다.
 - `src/capa_simulation/frame_sharing.py` — 세션끼리 함께 쓰는 표의 numpy 배열(데이터 블록 · 축 · 확장 배열 칸) 잠금
   (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로) · 잠긴
@@ -2767,8 +2778,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `calculate_required_equipment(route_exceptions=)` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)을 받는다.
     **기본값이 없다** — 호출처가 모두 넘기고 빠뜨리면 mypy 가 잡는다. 빈 선언이면 결과 · attrs 는 일반 산식 그대로다. 선언
     공정의 WF 경로가 있을 때만 부하량 표에서 바탕을 지어 `_attach_loads` 바로 뒤에 걸고, 바탕이 없어 뺀 줄은 경로 쪽 제외
-    목록에 「부하 예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 지금 호출처는 모두 빈 선언을 적어 넘긴다 —
-    선언을 읽어 넘기는 자리는 아직 없다(5장 44).
+    목록에 「부하 예외 바탕 없음」 으로 싣는다(6장 「공정별 부하 산출 예외」). 호출처는 지금 선언 판을 읽어 넘긴다 —
+    화면은 계산 토큰에서 풀린 판, 배경 · 스크립트는 저장소 · 사본에서 읽은 판이다(5장 44 · 45).
   - 경로 · 부하 · 대당 Capa 를 잇는 키(`REQB_COLUMNS` · `LOAD_KEYS` · `CAPACITY_KEYS`)와 PKG 부하 줄을 짓는 `_build_loads` 의
     칸 목록 · 글자 다듬기 목록은 `CUSTOM` 을 싣는다 — PKG 쪽 칸 목록에서 빠지면 PKG 부하의 CUSTOM 이 비어 경로에 못 붙고
     PKG 소요대수가 말없이 0 이 된다. 경로 없는 부하의 사유를 가르는 `_ROUTE_PRODUCT_KEYS` · `_ROUTE_FAMILY_KEYS` 에는
@@ -3407,7 +3418,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
-  조회기간과 원천 유효 구간 확정)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+  조회기간과 원천 유효 구간 확정, 지금 부하 예외 선언 판)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+  - `PageContext.route_exceptions` 는 그 회차의 부하 예외 선언 판(`current_route_exceptions` — 부를 때의 `settings.DUCKDB_PATH`
+    공용 프로필, 쓰기 세대 키 칸)이고 계산 키는 `.declaration` 을 빌더에 넘긴다. `PageContext` 를 쓰지 않는 HOME · 표준 대비 재공도
+    `current_route_exceptions` 로, DB 경로를 쥔 화면(사이드바 리비전 저장 · 공식 지정 · 입력 점검 · 복제 · 파생 저장 · 부대공정
+    미리보기)은 그 경로로 읽는다(`route_exceptions_of`). 읽은 판은 세션에도 적는다 — 편집본 칸 걷기가 그 판으로 접은 키를
+    걷는다(5장 45). 공용 프로필 로더는 부를 때 `persistence.cache` 모듈에서 찾는다 — 페이지 시험이 그
+    속성을 바꾼다.
   - 잡은 예외의 화면 문구는 `bootstrap_error_message` 한 곳이다. `duckdb.Error` 는 갈래마다 조치를 바꾼다 — 쥔 PID 가
     적힌 잠금(이 앱 자신이면 새로고침, 다른 프로그램이면 그것을 닫기), 쓰기 실패(DuckDB 영문 고정 문구 `Could not
     write`·`Failed to commit` — 「저장되지 않았습니다. 디스크 공간과 쓰기 권한」), 그 밖의 열기 실패(`IOException` 의
@@ -4186,6 +4203,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `default_window_start`, 서버 날짜 `_current_month`)는 날짜로 바뀌어 서버 캐시 밖(`_look_up`)에서 싣는다.
   - 서버 캐시는 요약(`get_intro_summary_payload`)과 토글 몫(`simulation_cache.shared_intro_toggle_store`) 둘이다.
     GAP 몫이 없으면 「준비 중」으로 보내고 페이지 뒤 `warm_intro_summary` 가 만든다.
+  - 부하 예외 선언은 공식버전 확인 때 공용 프로필로 읽어 판 **지문**이 요약 키 `IntroSummaryCacheKey` 의 일곱째 칸 · 선행 B/O 몫
+    키에 든다(빈 선언은 빈 글 — 선언 전과 같은 칸). 요약 계산(`_build`)은 그 판을 HOME 계산 키에 접어 HOME 과 칸을 나눈다.
+    선행 입고 · GAP 몫은 Wafer · Density 만 써 지문을 넣지 않는다. 지우기(`clear()`)는 없다 — 키가 판을 말한다(5장 45).
   - 확인 주기는 `RECHECK_SECONDS` 이고 무효화는 `forget_intro_summary_check`(`tests/test_summary_recheck_paths.py`)다.
     확인 때 본 `latest_official_revision` 을 머리 띠가 읽는다(이름까지 든 같은 값 `latest_official_identity` 는 HOME 공식
     칩). 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나다.
@@ -4438,7 +4458,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
-- `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
+- `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`, 부하 예외 선언 판이 바뀌면 버림 `CHECK_LABELS_ROUTE_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
 - `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고 줄 「그 화면으로」 를 누른 리비전 칸(`CHECK_TARGET_KEY` — 경고 줄이 대상 `CHECK_TARGET_KIND` 를 들고 다니다 알림 칸이 탭 길을 다 연 회차에 그 콜백이 `queue_check_target` 으로 적고, 같은 회차의 「점검」 칸 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다 · 쓰지 않고 남은 것은 다음 앱 전체 회차 앞에서 알림 칸이 버린다 `expire_check_target` — `CHECK_TARGET_FRESH_KEY`, 2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다. 값만 보는 등급(data `readonly`)에게는 칸 고치기 · 손잡이 · 줄 옮기기 단추 · 「고친 칸 · 막힘」 범례를 그리지 않고(작업 줄은 머리 맞춤 자리라 빈 줄로 남는다) Alt+↑ ↓ 도 옮기지 않으며, 표 밑 「⌨ 키보드 조작」 풍선도 그 등급에게 서는 손짓(누르기 · 방향키 칸 옮기기 · Space · Enter 열기 — `KEYS_HELP_READONLY`)만 말한다 — 표 틀은 `mode` 와 값만 여부로 다시 짓는다(`builtKey` — 「이 등급으로 보기」 를 끝내면 같은 마운트에서 풀린다).
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
@@ -6100,7 +6120,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만들지 않는다). 소유 칸이 없어 시나리오를 지워도 남는다. 저장소 쓰기(`append_route_load_exceptions`)는 `admin.area` 벽 뒤이고
   COMMIT 뒤에 바로 올림(`sync_state.request_upload`)을 청한다 — 공식 발행과 같은 까닭(리비전 없이 모든 시나리오의 숫자를
   바꾸는 쓰기라 모아 올리는 창 안에서 운영 서버가 다시 떠도 되돌아가지 않게). 감사 `admin_route_load_exception` 은 판 차례 ·
-  공정 수만 싣는다. 계산은 아직 이 판을 읽지 않는다.
+  공정 수만 싣는다. 계산은 이 판을 공용 프로필 · 저장소 · 사본 연결로 읽어 넘긴다(5장 45). 확인 스크립트가 선언 표 없는 사본에
+  찍는 표지는 `BEFORE_ROUTE_EXCEPTION_COPY`(`사본 0040 전`)다.
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
@@ -6875,7 +6896,8 @@ RQ_MODULE
     않고, 칸이 빠졌으면 DB 를 한 번 더 읽는다 — 읽기 칸을 두면 요약 칸이 적중한 뒤로 다시 쓰이지 않는 스냅샷이 메모리를 쥔다(2026-11-11
     검토 보드 F6 (나)). 읽기 · 계산 실패는 예외로 올라와 칸에 남지 않는다(화면은 `SC-02` 마크). `simulation_cache` 는 persistence ·
     components 를 import 하지 않으므로 몸통을 인자로 받는다. 「계산」 칸 글은 DB 가 아니라 세션 칸(`CHECK_LABELS_KEY`)이다 — 이 세션에서
-    센 리비전만 글이 서고 나머지는 「—」(q6 (가) — 새 DB 칸 없음). `CapacityOutcome.problem`(기준정보 연결 오류의 꼴과 수 — 값 없는 frozen
+    센 리비전만 글이 서고 나머지는 「—」(q6 (가) — 새 DB 칸 없음). 그 글을 센 부하 예외 선언 판의 지문을 함께 들고
+    (`CHECK_LABELS_ROUTE_KEY`) 판이 바뀌면 센 글을 모두 버린다 — 요약 칸 키는 선언을 접어 새 판으로 다시 센다(45). `CapacityOutcome.problem`(기준정보 연결 오류의 꼴과 수 — 값 없는 frozen
     dataclass 라 피클로 실린다)은 멈춘 리비전의 「경로 n」 을 글을 다시 읽지 않고 세는 재료다.
 40. **접속 · 작업 감사 기록은 두 DB 밖에 추가만 한다**(설계 `audit-1113` 1판 — 결정 기록은 `docs/TODO.md` 몫). 켜짐은
     한 곳이다 — `capa_server.py` 가 통합인증이 켜진 기동에서 `audit/boot.py` 로 켜고(`recorder.enabled()`), 사내 PC · WebIDE ·
@@ -6977,11 +6999,39 @@ RQ_MODULE
     - **편집표 키는 선언을 접지 않는다** — 생산 계획 · 기준 정보 편집표의 원본 칸 · 그리드 내용 키 · 양식 지문 도장은
       `scenario_content_key` 다(그 두 자리만). 접으면 남이 선언을 저장할 때 이 세션의 미저장 초안 양식 키가 바뀐다.
     - **빈 선언을 그대로 적는 자리는 정해 둔다** — 검수용 합성 견본 스크립트 둘, 등록 R-07 판정(`capacity_stop` — 선언은 멈춤을
-      만들지도 풀지도 않는다), 그리고 아직 선언을 읽지 않는 계산 자리(화면 · 저장/발행/입력 점검 · 입장 Summary · HOME · 자동
-      갱신 · 확인 스크립트 셋 · 편집본 칸 걷기 — 선언을 읽어 넘기면 그 자리를 지운다). 시험이 자리와 수까지 맞댄다
+      만들지도 풀지도 않는다), 확인 스크립트 셋의 선언 표 없는 사본 갈래(0039 뒤 · 0040 전 — 빈 선언으로 세고 `사본 0040 전` 을
+      싣는다, 10-1). 그 밖의 계산 자리는 모두 지금 판을 읽어 넘긴다(45). 시험이 자리와 수까지 맞댄다
       (`tests/test_route_load_exception_keys.py`).
     - **접지 않는 칸** — 활성 시나리오(`ActiveScenario`)의 내용 토큰 자체, 필요 단축 일정 기준선의 출처(설비 DB 에 남는 값),
       쓰기 지문(시나리오 관리 · 상태), 생산 계획의 그린 원본 대조, 알림 범위(`alerts` · `state_alerts`)는 날 내용 토큰이다.
+45. **부하 예외 선언은 읽는 자리마다 한 번 읽은 한 판으로 키 · 계산 · 기록을 함께 짓는다**(2026-11-22 사용자 답 Q3 (가) — 저장하는
+    순간 공식을 포함한 모든 시나리오에 곧바로, 6장 「공정별 부하 산출 예외」). 읽는 자리는 넷이다.
+    - **화면** — `PageContext.route_exceptions`(`page_bootstrap.current_route_exceptions` — 부를 때의 `settings.DUCKDB_PATH` 공용
+      프로필, 쓰기 세대 키 칸이라 회차마다 불러도 DB 를 다시 열지 않는다). 한 회차의 계산 칸은 이 한 판으로 접힌다.
+      `PageContext` 밖 HOME · 표준 대비 재공도 같은 함수이고, DB 경로를 쥔 화면(사이드바 리비전 저장 · 공식 지정 · 입력 점검 · 복제 ·
+      파생 저장 · 부대공정 미리보기)은 그 경로로 읽는다(`route_exceptions_of`). 저장/발행/입력 점검 판정 함수는 선언을 스스로 읽지 않고
+      부르는 화면이 넘긴다(기본값 없음).
+    - **입장 Summary** — 공식버전을 확인할 때 공용 프로필로 읽고 판 **지문**을 요약 키(`IntroSummaryCacheKey` 일곱째 칸)와 선행
+      B/O 몫 키에 싣는다(빈 선언은 빈 글 — 키가 선언 전과 같다, `clear()` 는 두지 않는다). 선행 입고 · GAP 몫은 Wafer · Density 만
+      써 싣지 않는다.
+    - **배경 스레드(자동 갱신)** — 「judge」 앞에서 저장소로 한 번(캐시 래퍼 없이 — 9장 「배경 스레드」) 읽어 판정과 발행 검사가 같은
+      판을 쓰고, 선언이 있으면 「부하 예외 판 n」(이름 없음)을 실행 기록 사유 · 리비전 2 · 공식버전 메모에 남긴다.
+    - **확인 스크립트 셋** — 사본의 `read_only` 연결로 한 번(10-1). 표가 없으면 빈 선언과 `사본 0040 전`.
+    불변조건:
+    - **판을 실을 칸** — 입력 점검 「계산」 칸 글(세션 칸)은 그 글을 센 판의 지문을 들고 판이 바뀌면 버린다(39). HOME 그림 키는
+      판 지문 칸(`HomeFigureCacheKey.route_exception_digest`)을 확보율을 칠하는 세 묶음
+      (LOB · 주요공정 · 상세 B/N)에 싣고(계획 세부수량은 Wafer · Density 만 써 싣지 않는다 — 내용 칸은 날 내용 토큰 그대로라
+      `pristine-` 공용 칸 판정이 그대로다), 부대공정 미리보기 메모는 (sha, 계산 토큰)이다. 선언을 저장하면 이 칸들이 빗나가 새 판으로
+      다시 그리고 센다.
+    - **편집본 칸 걷기는 이 세션이 마지막으로 읽은 판으로 접은 키를 걷는다**(`scenario_state.ROUTE_EXCEPTIONS_SEEN` —
+      `route_exceptions_of` 가 적는다). 걷기는 DB 를 열지 않는다. 그 편집본 칸을 지은 회차가 읽은 판이라 그 뒤 남이 선언을
+      바꿔도 이 세션이 지은 칸을 걷는다 — 그 사이 다른 판으로 지은 칸은 상한(`FULL_CAPACITY_MAX_ENTRIES`)에서 밀릴 때까지 남는다
+      (값은 틀리지 않는다).
+    - **공정 이름은 밖으로 내지 않는다** — 접은 계산 토큰에 정규화한 공정 이름이 들지만 메모리 캐시 키 · 세션 칸일 뿐이고 로그 ·
+      성능 기록 · 위젯 키 · 내려받기 이름 · 알림 범위 · 저장(필요 단축 기준선의 출처)에는 싣지 않는다(2026-11-23 훑음 — 그 자리들은
+      날 내용 토큰이거나 키를 싣지 않는다). 기록 · 스크립트 출력은 판 번호 · 공정 수 · 지문뿐이다.
+    - **쓰기 세대는 프로세스 안에서만 돈다** — 저장 길이 공용 프로필을 비우면 같은 프로세스의 다음 회차가 새 판을 읽는다. 다중
+      pod 가 되면 다른 pod 는 제 프로필이 비워질 때까지 옛 판으로 센다(지금 C-DEP 는 한 pod).
 
 ## 6. 핵심 계산 규칙
 
@@ -7369,17 +7419,35 @@ Top_Dummy 줄  부하량 = 0 (줄은 남김)
   따로 묶음을 두지 않는다 — 이 줄은 경로 묶음(제목 「대당 Capa 가 없어 소요대수에서 뺀 경로」 · 부제 「그 가운데 부하가 붙은
   경로 n」)에 들어 수 · 부제는 합 그대로이고, 까닭은 그 묶음의 `reasons`(구조 값 — 화면에 그리지 않음)와 행 보기의
   `제외사유` 칸에만 있다 — 제목 · 부제는 아직 까닭을 가르지 않는다.
+- (h) 키는 세 무리다(5장 44 · 45). **토큰 접기로 덮임** — 조회기간 칸(`ScenarioCacheKey`) · HOME 계산(`HomeSimulationCacheKey`) ·
+  전체 기간 칸(`FullScenarioCacheKey`)과 그것을 품은 키(필요 단축 일정 · Static 대비 일정 교차검증 · 필요 단축 목표 칸), 부대공정
+  미리보기 메모 — 둘째 칸이 계산 토큰이라 선언이 바뀌면 저절로 새 칸이다. **따로 칸** — 공식버전 id 로 짓는 입장 Summary 요약 키
+  (`IntroSummaryCacheKey`)는 판 지문을 일곱째 칸에, 선행 B/O 몫 키는 끝에 싣고, HOME 그림 키는 확보율을 칠하는 세 묶음에 판 지문
+  칸(`route_exception_digest`)을 싣는다. **얼린 것** — 설비 DB 의 필요
+  단축 기준선은 선언 전 산식으로 얼었고 출처도 날 내용 토큰이라 바꾸지 않는다((j) 의 튐). 빈 선언이면 접은 키는 선언을 모르던 때와
+  같은 글이고 지문 칸은 빈 글이다.
+- (i) 쓰기 · 읽기 자리. 쓰기는 저장소 `append_route_load_exceptions` 한 길이다 — `admin.area` 벽 · 화면이 본 판 차례 대조 · 견줌 키
+  지문이 같으면 쓰지 않음 · COMMIT 뒤 바로 올림(`sync_state.request_upload`)이다. 쓰는 화면은 아직 없다 — 둘 자리는 C-DEP 운영 자리 +
+  개발자 등급만이고(부대공정 쓰기 잠금과 같은 판정), 저장 뒤 공용 프로필을 비우고(`clear_global_route_load_exceptions_cache` — 지금
+  부르는 곳은 시험뿐) 입장 Summary 확인을 잊게 한다(`forget_intro_summary_check`). 읽기는 화면(공용 프로필) · 입장 Summary · 자동 갱신(저장소를 바로) · 확인 스크립트 셋(사본 연결)이다 — 자리와
+  차례는 5장 45, 스크립트 출력은 10-1.
+- (j) 선언하면 그 공정에 한해 바뀌는 결과 — 소요대수 · 확보율 · B/N(공식버전을 포함한 모든 시나리오 · 지난 공식버전 숫자까지,
+  입장 Summary · HOME 그림 포함), 공정 유효 Capa 의 원수요(`weighted_unit_capacity`), 일 표준 가능량 · PKG 환산(부하 0 이 된
+  Top_Dummy 경로는 수요 링크에서 빠진다 — `standard_target_capacity` 가 부하량 0 보다 큰 줄만 잇는다), 표준 대비 재공 · 필요 단축
+  일정 · 제약 시뮬레이션, 자동 갱신의 공정 자동 off 판정(확보율 기준). 「부하 예외 바탕 없음」 줄은 소요대수 밖 수요로 저장 · 지정
+  경고 · 입력 점검에 선다. Wafer · Density 집계는 바뀌지 않는다((d)). 이미 얼린 필요 단축 기준선과의 견줌은 선언 순간 그 공정에서
+  한 번 튈 수 있다. 재현 근거는 판 이력 표와 자동 갱신 메모 조각(「부하 예외 판 n」)이다.
 - (k) 기존 공개 이름 예외(표준 목표 `Pre B/D` · 어댑터 `MPGA TEST`)는 그대로 둔다.
 
-**결정 · 저장 · 계산 키까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
+**결정 · 저장 · 계산 키 · 읽어 넘김까지 지음.** 선언은 DB 판 이력 표(시뮬레이션 `0040` `app_meta.route_load_exception_version` — 넣기만, 마지막 줄이
 지금 선언, 모두 뺀 저장도 비움 판 한 줄)에 두고 저장하는 순간 모든 리비전에 건다 — 공식버전을 포함한 모든 시나리오의 그 공정
 소요대수 · 확보율이 곧바로 원천 산식으로 바뀌고, 언제 무엇을 골랐는지는 이력 표가 남긴다(2026-11-22 사용자 답 Q3 (가)). 저장 ·
 읽기(`persistence/route_load_exception_store.py` · 저장소 `load_route_load_exceptions` · `append_route_load_exceptions` — COMMIT 뒤
 바로 올림)와 공용 프로필 캐시(`load_global_route_load_exceptions`)는 섰다. 선언이 계산에 드는 길도 섰다 — 선언은 계산 토큰으로
-계산 키에 접히고 전체 기간 칸이 키에서 푼다(5장 44). 남은 것 — 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME 그림 · 자동
-갱신 · 확인 스크립트가 같은 판을 읽어 넘기는 것(공식버전 요약 키 · HOME 그림 키에 접은 토큰 · 지문을 싣는 것 포함), 쓰기 화면
-(C-DEP 운영 자리 + 개발자 등급만), 그 공정에 한해 바뀌는 결과 목록. 그 전까지 어느 호출처도 선언을 읽지 않고 빈 선언을 적어
-넘겨 앱 숫자 · 캐시 키는 지금과 같다.
+계산 키에 접히고 전체 기간 칸이 키에서 푼다(5장 44). 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME 그림 · 자동 갱신 · 확인
+스크립트 셋 · 부대공정 미리보기는 지금 판을 읽어 넘긴다(공식버전 요약 키 · HOME 그림 키 · 미리보기 메모에 지문 · 접은 토큰을
+싣는다 — 5장 45, (h) · (i) · (j)). 남은 것은 쓰기 화면(C-DEP 운영 자리 + 개발자 등급만)과 그 공정의 「부하량 근거」 칸 · 입력 점검 두
+줄이다. 선언이 빈 동안 앱 숫자 · 캐시 키는 선언을 모르던 때와 같다.
 - 소요대수 길의 기본값은 걷었다 — `calculate_required_equipment` · `get_capacity_and_demand` · `full_capacity_outcome` ·
   `extra_process_merge.capacity_outcome` · `process_rows_frame` · `load_lines` 와 계산 키 빌더 셋은 선언 칸에 기본값이 없어
   호출처(화면 계산 · 저장/발행/입력 점검 · 자동 갱신 · 부대공정 미리보기 · 확인 스크립트 셋 `inspect_revision_calculations` ·
@@ -9936,6 +10004,15 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   사본으로 계산하는 스크립트를 더하면 같은 판정을 지나게 한다. 0039 뒤로 적힌 사본은 채우지도 빼지도 않는다 — 칸이 없으면 계산과 손
   SQL 이 그대로 멈춰 드러난다(되감기 도우미가 0039 뒤 번호의 물체도 걷어야 실제 옛 사본과 같은 꼴이라, 코드에 0039 뒤 번호가 더해지면
   `tests/test_before_custom_copy.py` 가 먼저 깨진다).
+- **확인 스크립트도 사본의 지금 부하 예외 선언으로 소요대수를 센다**(앱이 모든 리비전에 거는 판 — 6장 「공정별 부하 산출 예외」 (i)).
+  소요대수를 세는 셋 — `inspect_revision_calculations.py`(6-3 a) · `inspect_real_data_checks.py`(8장 — 블록이 `Session.route_exceptions`
+  를 나눔) · `benchmark_upeh_assumption.py`(6-3 b) — 은 같은 `read_only` 연결로 `0040` 판 이력을 한 번 읽어
+  (`route_load_exception_store.read_route_load_exceptions`) 넘긴다. 선언이 있으면 판 · 공정 수만 찍고(6-3 a 는 머리의 실행 줄 뒤, 8장은
+  첫 블록 앞, 6-3 b 는 JSON `route_exception_seq` · `route_exception_processes`) 공정 이름은 찍지 않는다. 선언 표가 없는 사본(0039 뒤 ·
+  0040 전 — 함수가 `None`)은 빈 선언으로 세고 같은 자리에 `사본 0040 전`(`BEFORE_ROUTE_EXCEPTION_COPY`) 한 줄, 6-3 b 는
+  `scenario_route_exceptions_missing` 이 참이다. 0039 전 사본은 그 줄을 따로 찍지 않는다 — `사본 0039 전` 이 그 사실까지 말한다. 시험은
+  `tests/before_custom_copy.py` 의 `database_before_route_exceptions`(0040 전으로 되감음) · `database_with_route_exceptions`(시드 공정 하나를
+  선언한 사본)로 맞댄다. 켬/끔 견줌 칸은 아직 없다(`docs/TODO.md` 1장 다음 배포 글감).
 - **사내 에이전트는 사내 DB(BigDataQuery · 운영 DB · 사본)를 여는 명령을 스스로 치지 않는다**(2026-11-11 사용자 결정 — 「사내 DB 를
   claude 가 읽게끔 하는 것은 보안위반」, 런북 0장. 2026-10-22 「사본 DB 를 보는 것까지는 괜찮다」 를 대신한다). 데이터가 꼭 필요하면
   사용자에게 먼저 요청하고, 사용자가 별도 창에서 돌린 결과 파일만 읽는다. 그래서 사외가 사내에 묻는 실데이터 질문은 배포를 만들기

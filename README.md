@@ -46,7 +46,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 HOME Wafer 계획 = Wafer 부하량에서 Dummy 계열(Dummy · Top_Dummy) 행을 뺀 합(원천 집계 기준 — 소요대수는 뺄 것 없이 그대로)
          생산 계획 환산 탭 「집계 기준」 의 HOME 집계 기준이 같은 거름(기본 산출 기준 총량은 거르지 않음)
          필요 단축 일정 「계획 · LOB 요약」 의 Wafer 계획도 같은 값
-공정별 부하 예외 = 선언한 공정의 Wafer 경로만 산식 id 로(Core = Buffer Wafer × Core 구분_Chip · Top_Dummy 0) — 선언 판 이력 표(0040)와 계산 키에 접는 길은 섰고 화면 · 검사는 아직 판을 읽지 않음
+공정별 부하 예외 = 선언한 공정의 Wafer 경로만 산식 id 로(Core = Buffer Wafer × Core 구분_Chip · Top_Dummy 0) — 선언 판 이력 표(0040)의 지금 판을 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME · 자동 갱신 · 확인 스크립트가 읽어 계산 키에 접고 모든 시나리오(공식 포함)에 곧바로 건다(쓰는 화면은 아직 없음)
 ```
 
 확보율은 **확보·경고·부족** 셋으로 판정합니다. 기준(정수 %, 기본 110%·100%)은 시나리오와 무관한 공용 설정이고
@@ -773,7 +773,7 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 
 ## 보조 스크립트
 
-모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다. 확인 스크립트는 사본을 마이그레이션하지 않으므로 `0039`(CUSTOM 칸) 전 사본은 CUSTOM 키 표를 0039 와 같이 빈 값 표지(`-`)로 채워 읽고 `사본 0039 전` 한 줄을 찍습니다(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`inspect_db_counts.py`·`compare_legacy_results.py` — `benchmark_upeh_assumption.py` 는 결과 JSON 의 `scenario_custom_filled`).
+모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다. 확인 스크립트는 사본을 마이그레이션하지 않으므로 `0039`(CUSTOM 칸) 전 사본은 CUSTOM 키 표를 0039 와 같이 빈 값 표지(`-`)로 채워 읽고 `사본 0039 전` 한 줄을 찍습니다(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`inspect_db_counts.py`·`compare_legacy_results.py` — `benchmark_upeh_assumption.py` 는 결과 JSON 의 `scenario_custom_filled`). 소요대수를 세는 셋(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`benchmark_upeh_assumption.py`)은 앱처럼 사본의 지금 부하 예외 선언으로 세고 선언이 있으면 판 · 공정 수만 찍으며(공정 이름 없음), 선언 표가 없는 `0040` 전 사본은 빈 선언으로 세고 `사본 0040 전` 한 줄(6-3 b 는 `scenario_route_exceptions_missing`)을 남깁니다.
 
 | 스크립트 | 하는 일 |
 |---|---|

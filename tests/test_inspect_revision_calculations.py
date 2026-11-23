@@ -22,12 +22,17 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom
+from before_custom_copy import (
+    database_before_custom,
+    database_before_route_exceptions,
+    database_with_route_exceptions,
+    seed_route_declaration,
+)
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.migration_runner import load_migrations
@@ -260,7 +265,7 @@ def test_density_and_securement_are_judged_apart(simulation_db: Path) -> None:
         )
         tables = script.load_tables(connection, shift)
 
-    outcome = script.calculate(_density_broken(tables))
+    outcome = script.calculate(_density_broken(tables), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     assert (outcome.status, outcome.density) == (script.SECUREMENT_STOPPED, script.STOPPED)
     assert script.describe_density(outcome) == "멈춤(ValueError · RQ_CHIP_EQ)"
@@ -309,7 +314,9 @@ def test_a_blank_run_rate_only_on_routes_dropped_anyway_now_calculates(simulatio
     결정 — 0655 결정 7). 사내 8-10 `C9` 가 이 꼴이다."""
     _, tables = _seed_tables(simulation_db)
 
-    outcome = script.calculate(_blank_run_rate(tables, drop_routes=True))
+    outcome = script.calculate(
+        _blank_run_rate(tables, drop_routes=True), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert outcome.status != script.STOPPED
     assert outcome.problem is None
@@ -341,7 +348,7 @@ def test_a_run_rate_stop_is_split_by_its_shape_without_names(
     """
     seed, tables = _seed_tables(simulation_db)
 
-    outcome = script.calculate(damage(tables))
+    outcome = script.calculate(damage(tables), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     assert (outcome.status, outcome.stage, outcome.kind) == (
         script.STOPPED,
@@ -371,7 +378,7 @@ def test_an_upeh_table_stop_is_named_by_its_cell_without_names(simulation_db: Pa
     경로 수가 찍힌다(사내 리뷰 202611111500 발견 3 — S33 r1). 종류는 그대로 `ValueError` 다."""
     seed, tables = _seed_tables(simulation_db)
 
-    outcome = script.calculate(_blank_main_upeh(tables))
+    outcome = script.calculate(_blank_main_upeh(tables), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     assert (outcome.status, outcome.stage, outcome.kind) == (
         script.STOPPED,
@@ -809,6 +816,72 @@ def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
     assert "사본 0039 전" not in new
     assert [line for line in _comparable(old) if line != marker[0]] == _comparable(new)
     assert "컬럼 없음(CUSTOM)" not in old
+
+
+def test_a_copy_before_the_declaration_table_counts_with_an_empty_declaration(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 뒤 · 0040 전 사본(부하 예외 선언 표 · 0040 기록 없음)은 빈 선언으로 센다 — 리비전 줄 ·
+    합계 · 갈래가 0040 뒤 사본과 같고, 머리에 `사본 0040 전` 한 줄만 더 있다. 사본은 고치지
+    않는다."""
+    before = database_before_route_exceptions(simulation_db, tmp_path / "capa_simulation.duckdb")
+    digest = _md5(before)
+
+    code, old = _run(capsys, "--database", str(before))
+    _, new = _run(capsys, "--database", str(simulation_db))
+
+    assert code == 0
+    assert _md5(before) == digest
+    marker = [line for line in old.splitlines() if "사본 0040 전" in line]
+    assert marker == [
+        f"- 사본 0040 전 — 마이그레이션 최고 {CUSTOM_MIGRATION} · 부하 예외 선언 표가 없어 빈 "
+        "선언으로 셈했다(사본은 고치지 않는다)"
+    ]
+    lines = old.splitlines()
+    assert lines[lines.index(marker[0]) - 1].startswith("- 실행 ")
+    assert "사본 0040 전" not in new and "사본 0039 전" not in old
+    assert [line for line in _comparable(old) if line != marker[0]] == _comparable(new)
+
+
+def test_the_copy_declaration_reaches_every_revision_and_is_named_only_by_count(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """앱은 지금 부하 예외 선언을 모든 리비전에 건다 — 스크립트도 사본에서 그 판을 한 번 읽어 모든
+    리비전의 소요대수에 넘기고, 머리에 판 · 공정 수 한 줄을 찍는다(공정 이름은 찍지 않는다)."""
+    declaration = seed_route_declaration()
+    declared = database_with_route_exceptions(
+        simulation_db, tmp_path / "capa_simulation.duckdb", declaration
+    )
+    seen: list[dict[str, str]] = []
+    real = calculate_required_equipment
+
+    def spy(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        seen.append(dict(kwargs["route_exceptions"]))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(script, "calculate_required_equipment", spy)
+    code, with_declaration = _run(capsys, "--database", str(declared))
+
+    assert code == 0
+    assert seen and all(item == declaration for item in seen)
+    marker = [
+        line for line in with_declaration.splitlines() if line.startswith("- 부하 예외 선언 판 ")
+    ]
+    assert marker == [
+        "- 부하 예외 선언 판 1 · 공정 1 — 모든 리비전의 소요대수를 그 선언으로 셈했다(앱과 같다 · "
+        "공정 이름은 찍지 않는다)"
+    ]
+    lines = with_declaration.splitlines()
+    assert lines[lines.index(marker[0]) - 1].startswith("- 실행 ")
+    assert not any(process in with_declaration for process in declaration)
+
+    seen.clear()
+    _, plain = _run(capsys, "--database", str(simulation_db))
+    assert seen and all(item == {} for item in seen)
+    assert "부하 예외 선언" not in plain
 
 
 def test_the_filled_tables_equal_the_tables_of_the_migrated_copy(

@@ -69,6 +69,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     calculation_stop_notice,
+    route_exceptions_of,
 )
 from capa_simulation.page_tabs_state import queue_switch, refused_at_tab_limit
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -104,11 +105,17 @@ from capa_simulation.services.unit_capacity import (
     RUN_RATE_EXCLUSION_REASON,
     UPEH_EXCLUSION_REASON,
 )
+from capa_simulation.session_slot import SessionSlot
 
 # 이 세션에서 센 리비전의 「계산」 칸 — 리비전 id → (글, 단계). 저장 리비전은 내용이 바뀌지 않아
 # 리비전 id 로 둔다. 오래된 것부터 `LABEL_MEMO_LIMIT` 개를 넘으면 뺀다.
 CHECK_LABELS_KEY: Final = "scenario_input_check_labels"
 LABEL_MEMO_LIMIT: Final = 64
+_CHECK_LABELS: Final = SessionSlot(CHECK_LABELS_KEY, dict)
+# 그 글을 센 부하 예외 선언 판의 지문 — 선언은 리비전 없이 셈을 바꾸므로(Q3) 판이 바뀌면 센 글을
+# 모두 버리고 새 판으로 다시 센다(AGENTS 5장 45).
+CHECK_LABELS_ROUTE_KEY: Final = "scenario_input_check_labels_route"
+_CHECK_LABELS_ROUTE: Final = SessionSlot(CHECK_LABELS_ROUTE_KEY, str)
 # 펼친 묶음 — 묶음 id 차례(리비전을 바꿔도 같은 묶음은 펼친 채다).
 CHECK_OPEN_KEY: Final = "scenario_input_check_open"
 # 「그 화면으로」 의 결과 칸 — 그 단추 곁(누른 동작의 실패 · UI-NTF-03).
@@ -288,6 +295,10 @@ def render_input_check_panel(
     """
     from capa_simulation.components.scenario_list_grid import render_list_mount
 
+    route_exceptions = route_exceptions_of(database_path)
+    if _CHECK_LABELS_ROUTE.peek() != route_exceptions.digest:
+        _CHECK_LABELS.clear()
+        _CHECK_LABELS_ROUTE.set(route_exceptions.digest)
     table_box = st.container()
     revision = next((item for item in revisions if item.revision_id == draft.picked), None)
     check: RevisionInputCheck | None = None
@@ -297,7 +308,10 @@ def render_input_check_panel(
             try:
                 with st.spinner(SPINNER_TEXT):
                     check = input_check_verdict(
-                        database_path, summary.scenario_id, revision.revision_id
+                        database_path,
+                        summary.scenario_id,
+                        revision.revision_id,
+                        route_exceptions=route_exceptions.declaration,
                     )
             except BOOTSTRAP_ERRORS as exc:
                 failure = bootstrap_error_message(exc)
@@ -660,7 +674,12 @@ def render_wide_body(database_path: str, value: WideValue) -> None:
     group_key, _, raw_index = where.partition(":")
     try:
         with pinned_connections(Path(database_path)):
-            check = input_check_verdict(database_path, scenario_id, revision_id)
+            check = input_check_verdict(
+                database_path,
+                scenario_id,
+                revision_id,
+                route_exceptions=route_exceptions_of(database_path).declaration,
+            )
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(bootstrap_error_message(exc), code="SC-02", tab=CAPA_SCENARIO_TAB_NAME)
         return

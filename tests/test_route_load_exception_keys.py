@@ -8,8 +8,10 @@
 
 - 빈 선언이면 세 키 빌더 · 편집표 키가 선언을 모르던 때의 튜플과 글자까지 같다.
 - 접기 · 풀기, 두 선언은 두 칸 · 두 결과.
-- 소요대수 길의 선언 칸에 기본값이 없다(빠뜨리면 mypy 가 잡는다).
-- 빈 선언을 그대로 적는 자리는 정해 둔 목록뿐이다.
+- 소요대수 길과 선언을 받는 쪽(판정 넷 · 부대공정 미리보기 · 입장 Summary 요약 계산)의 선언 칸에
+  기본값이 없다(빠뜨리면 mypy 가 잡는다).
+- 빈 선언을 그대로 적는 자리는 정해 둔 목록뿐이고(그 밖은 지금 판을 읽어 넘긴다 — AGENTS 5장 45),
+  글자 그대로의 빈 사상도 넘기지 않는다.
 - `simulation_cache` 밖에서 (판, 토큰) 튜플을 손으로 짓지 않는다.
 - 선언을 접지 않는 편집표 키는 두 편집 화면만 쓴다.
 - 등록 R-07 판정(`capacity_stop`)은 선언을 넘겨도 같다.
@@ -32,6 +34,8 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
+from capa_simulation import extra_process_intake
+from capa_simulation.components import capacity_gate, intro_summary
 from capa_simulation.scenario_state import is_pristine_content_token, pristine_content_token
 from capa_simulation.services import extra_process_merge
 from capa_simulation.services import simulation_cache as sc
@@ -267,6 +271,13 @@ _REQUIRED_DECLARATION: tuple[Callable[..., Any], ...] = (
     sc.scenario_cache_key,
     sc.full_scenario_cache_key,
     sc.build_home_simulation_cache_key,
+    # 선언을 읽어 넘기는 자리의 받는 쪽 — 판정 함수 넷 · 부대공정 미리보기 · 입장 Summary 요약 계산.
+    capacity_gate.revision_save_verdict,
+    capacity_gate.official_publish_verdict,
+    capacity_gate.input_check_verdict,
+    capacity_gate.derived_save_verdict,
+    extra_process_intake.preview_pack,
+    intro_summary._build,
 )
 
 
@@ -286,43 +297,21 @@ def test_the_declaration_has_no_default_on_the_required_equipment_path(
 # ----------------------------------------------------------------- 빈 선언을 적는 자리
 
 # 빈 선언을 그대로 적어도 되는 자리 — 파일 전체(`None`) 또는 (파일, 함수) 와 그 수. 시험(`tests/`)은
-# 이 그물 밖이다.
+# 이 그물 밖이다. 이 밖의 계산 자리는 모두 지금 선언 판을 읽어 넘긴다 — 새 계산 자리도 처음부터 읽어
+# 넘긴다(이 목록에 줄을 더하지 않는다).
 # - 검수용 합성 견본 두 스크립트 — 합성 견본에는 선언이 없다.
 # - `capacity_stop` — 등록 R-07 의 멈춤만 본다. 선언은 멈춤을 만들지도 풀지도 않으므로(겹친 바탕도
 #   그 줄만 빼고 알린다 — 2026-11-22 답 Q13) 빈 선언으로 돈다. 새 산식이 멈춤을 낼 수 있게 되면
 #   그 판정에 선언을 넘기고 이 줄을 지운다(아래 등록 R-07 판정 시험).
+# - 확인 스크립트 셋의 선언 표 없는 사본 갈래(0039 뒤 · 0040 전 — `read_route_load_exceptions` 가
+#   None) — 빈 선언으로 세고 그 사실을 결과에 싣는다(`사본 0040 전`). 표가 있으면 그 판을 넘긴다.
 _PERMANENT_EMPTY: Mapping[tuple[str, str | None], int | None] = {
     ("scripts/review_sample_sim.py", None): None,
     ("scripts/review_sample_equip.py", None): None,
     ("src/capa_simulation/services/extra_process_merge.py", "capacity_stop"): 1,
-}
-# 아직 부하 예외 선언을 읽지 않는 자리 — 화면 · 저장/발행/입력 점검 · 입장 Summary · HOME · 자동
-# 갱신 · 확인 스크립트가 선언을 읽어 넘기면 그 줄을 지운다. 끝에는 이 목록이 빈다(AGENTS 6장
-# 「공정별 부하 산출 예외」). 줄을 더하지 않는다 — 새 계산 자리는 처음부터 선언을 읽어 넘긴다.
-_NOT_YET_READ: Mapping[tuple[str, str], int] = {
-    ("app_pages/available_equipment_status.py", "<module>"): 1,
-    ("app_pages/calculation_result.py", "<module>"): 1,
-    ("app_pages/home.py", "<module>"): 1,
-    ("app_pages/load_conversion.py", "_render_uncounted_demand_after_apply"): 1,
-    ("app_pages/process_capa_detail.py", "home_advance_ratio"): 1,
-    ("app_pages/standard_target_capa.py", "<module>"): 1,
-    ("app_pages/static_capa.py", "<module>"): 1,
-    ("app_pages/wip_status.py", "<module>"): 2,
+    ("scripts/inspect_revision_calculations.py", "_run"): 1,
+    ("scripts/inspect_real_data_checks.py", "route_exceptions"): 1,
     ("scripts/benchmark_upeh_assumption.py", "measure"): 1,
-    ("scripts/inspect_real_data_checks.py", "_required_from"): 1,
-    ("scripts/inspect_revision_calculations.py", "calculate"): 1,
-    ("src/capa_simulation/auto_official_update_runner.py", "_execute"): 1,
-    ("src/capa_simulation/auto_official_update_runner.py", "_publish_filtered_revision"): 1,
-    ("src/capa_simulation/components/capacity_gate.py", "derived_save_verdict"): 1,
-    ("src/capa_simulation/components/capacity_gate.py", "input_check_verdict"): 1,
-    ("src/capa_simulation/components/capacity_gate.py", "official_publish_verdict"): 1,
-    ("src/capa_simulation/components/capacity_gate.py", "revision_save_verdict"): 1,
-    ("src/capa_simulation/components/intro_summary.py", "_build"): 1,
-    ("src/capa_simulation/components/required_shortening_panel.py", "_lob_rows"): 1,
-    ("src/capa_simulation/components/shortening_source.py", "load_shortening_demand"): 1,
-    ("src/capa_simulation/extra_process_intake.py", "preview_pack"): 1,
-    ("src/capa_simulation/page_bootstrap.py", "process_page_inputs"): 1,
-    ("src/capa_simulation/scenario_state.py", "_retire_edit_cell"): 1,
 }
 
 
@@ -340,9 +329,10 @@ def _empty_declaration_uses() -> Counter[tuple[str, str]]:
 
 
 def test_an_empty_declaration_is_written_out_only_where_it_is_allowed() -> None:
-    """빈 선언(`NO_ROUTE_LOAD_EXCEPTIONS`)을 그대로 적는 자리는 위 두 목록과 수까지 같다 — 계산
-    자리가 선언을 읽지 않고 빈 선언으로 덮는 일이 말없이 늘지 않는다. 계산 서비스
-    (`simulation_cache` · `required_equipment`)는 빈 선언을 적지 않는다."""
+    """빈 선언(`NO_ROUTE_LOAD_EXCEPTIONS`)을 그대로 적는 자리는 위 목록과 수까지 같다 — 계산 자리가
+    선언을 읽지 않고 빈 선언으로 덮는 일이 말없이 늘지 않는다(화면 · 저장/발행/입력 점검 · 입장
+    Summary · HOME · 자동 갱신 · 확인 스크립트 셋 · 부대공정 미리보기는 모두 지금 판을 읽어 넘긴다).
+    계산 서비스(`simulation_cache` · `required_equipment`)는 빈 선언을 적지 않는다."""
     uses = _empty_declaration_uses()
     whole_files = {path for (path, owner), _ in _PERMANENT_EMPTY.items() if owner is None}
     counted = {
@@ -350,12 +340,31 @@ def test_an_empty_declaration_is_written_out_only_where_it_is_allowed() -> None:
         for key, count in uses.items()
         if key[0] not in whole_files and key not in _PERMANENT_EMPTY
     }
-    assert counted == dict(_NOT_YET_READ)
+    assert counted == {}
     for key, expected in _PERMANENT_EMPTY.items():
         if key[1] is not None:
             assert uses.get((key[0], key[1]), 0) == expected, key
     assert not any(path == SIMULATION_CACHE for path, _ in uses)
     assert not any(path.endswith("services/required_equipment.py") for path, _ in uses)
+
+
+def test_no_source_hands_a_literal_empty_declaration() -> None:
+    """빈 선언을 글자 그대로(`{}` · `dict()`) 넘기는 자리도 없다 — 빈 선언 상수 자리 그물을 비켜
+    가지 못하게. 선언은 읽은 판의 `.declaration` 이거나 정해 둔 빈 선언 상수다."""
+    offenders = []
+    for path, tree in _sources():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.keyword) or node.arg != "route_exceptions":
+                continue
+            value = node.value
+            literal = isinstance(value, ast.Dict) or (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in {"dict", "MappingProxyType"}
+            )
+            if literal:
+                offenders.append(f"{path}:{node.value.lineno}")
+    assert offenders == []
 
 
 # ----------------------------------------------------------------- 손 키 없음

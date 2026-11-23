@@ -83,9 +83,11 @@ import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
+import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.services.month_filter import filter_month_range
 
 required_equipment = pd.read_pickle(REQUIRED_PATH)
@@ -150,6 +152,7 @@ originals = (
     simulation_cache.get_scenario_capacity_and_demand,
     hierarchical_table.render_hierarchical_monthly_table,
     process_labels_module.get_process_labels,
+    persistence_cache.load_global_route_load_exceptions,
 )
 
 
@@ -178,6 +181,10 @@ simulation_cache.get_scenario_capacity_and_demand = lambda cache_key, **_kwargs:
 )
 hierarchical_table.render_hierarchical_monthly_table = capture_table
 process_labels_module.get_process_labels = lambda: process_labels_module.ProcessLabels()
+# 부하 예외 선언(공용 프로필)도 DB 조회 경계다 — 빈 선언 판을 준다.
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
+)
 
 try:
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
@@ -194,6 +201,7 @@ finally:
         simulation_cache.get_scenario_capacity_and_demand,
         hierarchical_table.render_hierarchical_monthly_table,
         process_labels_module.get_process_labels,
+        persistence_cache.load_global_route_load_exceptions,
     ) = originals
 """
 

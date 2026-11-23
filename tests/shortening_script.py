@@ -72,6 +72,7 @@ import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 import capa_simulation.settings as settings
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
@@ -120,6 +121,7 @@ originals = (
     simulation_cache.get_home_simulation,
     persistence_cache.load_global_securement_threshold,
     persistence_cache.load_global_past_data,
+    persistence_cache.load_global_route_load_exceptions,
 )
 # 공정 표시명. 갈아 끼우지 않으면 진짜 조회가 시뮬레이션 DB 를 만들고 마이그레이션을 모두 건다.
 original_get_process_labels = process_labels_module.get_process_labels
@@ -165,6 +167,10 @@ persistence_cache.load_global_securement_threshold = lambda _path: SimpleNamespa
 persistence_cache.load_global_past_data = lambda _path: SimpleNamespace(
     monthly=pd.DataFrame({{"생산계획년월": {list(past_months)!r}}})
 )
+# 부하 예외 선언(공용 프로필)도 DB 조회 경계다 — 빈 선언 판을 준다.
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
+)
 process_labels_module.get_process_labels = lambda: ProcessLabels(
     version=1, labels={dict(labels or {})!r}
 )
@@ -185,6 +191,7 @@ finally:
         simulation_cache.get_home_simulation,
         persistence_cache.load_global_securement_threshold,
         persistence_cache.load_global_past_data,
+        persistence_cache.load_global_route_load_exceptions,
     ) = originals
     process_labels_module.get_process_labels = original_get_process_labels
     st.download_button = original_download_button

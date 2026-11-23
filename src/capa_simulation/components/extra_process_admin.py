@@ -95,7 +95,11 @@ from capa_simulation.io.reference_cache import (
 )
 from capa_simulation.korea_time import KST
 from capa_simulation.navigation import ADMIN_AREA_TABS
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    route_exceptions_of,
+)
 from capa_simulation.persistence.extra_process_store import ExtraProcessMoved
 from capa_simulation.persistence.models import (
     EXTRA_KIND_REVISION,
@@ -141,6 +145,7 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_subject_particle,
 )
+from capa_simulation.services.simulation_cache import calculation_token
 from capa_simulation.session_slot import SessionSlot
 
 TAB_LABEL: Final = ADMIN_AREA_TABS[3]
@@ -646,13 +651,16 @@ def _preview(
     *,
     run: bool,
 ) -> PackPreview | None:
-    """시험 계산 — 단추를 누른 회차에만 돌리고 (sha, content_token)마다 세션에 둔다."""
+    """시험 계산 — 단추를 누른 회차에만 돌리고 (sha, 계산 토큰)마다 세션에 둔다. 계산 토큰은 활성
+    시나리오 내용 토큰에 그 회차의 부하 예외 선언을 접은 것이다(`calculation_token`) — 선언을
+    저장하면 메모가 빗나가 새 판으로 다시 센다."""
     pack = staged.reading.pack
     if pack is None:
         return None
     try:
         tables = get_effective_reference_tables()
         active = ensure_active_scenario(tables, get_effective_reference_version())
+        route_exceptions = route_exceptions_of(str(repository.database_path)).declaration
     except BOOTSTRAP_ERRORS as exc:
         # 시험 계산 단추가 설 자리 — 까닭 없이 사라지지 않게 마크로 둔다(UI-NTF-08).
         render_data_error(
@@ -662,7 +670,10 @@ def _preview(
             text="시험 계산에 쓸 시나리오를 읽지 못했습니다",
         )
         return None
-    memo_key = (staged.reading.sha256, str(active["content_token"]))
+    memo_key = (
+        staged.reading.sha256,
+        calculation_token(str(active["content_token"]), route_exceptions),
+    )
     memo = PREVIEW.get()
     if len(memo) == 2 and memo[0] == memo_key and isinstance(memo[1], PackPreview):
         return memo[1]
@@ -670,7 +681,7 @@ def _preview(
         return None
     try:
         with st.spinner("시험 계산 중입니다..."):
-            preview = _compute_preview(repository, state, staged, tables)
+            preview = _compute_preview(repository, state, staged, tables, route_exceptions)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc), icon=":material/error:")
         return None
@@ -683,6 +694,7 @@ def _compute_preview(
     state: ExtraProcessState,
     staged: StagedPack,
     tables: Mapping[str, pd.DataFrame],
+    route_exceptions: Mapping[str, str],
 ) -> PackPreview:
     pack = staged.reading.pack
     assert pack is not None
@@ -693,11 +705,24 @@ def _compute_preview(
         else split_previous(repository.load_scenario_extra_process(scenario_id)).stripped
     )
     if staged.changes is not None:
-        return preview_pack(tables, previous, pack, seq=state.last_seq + 1, changes=staged.changes)
+        return preview_pack(
+            tables,
+            previous,
+            pack,
+            seq=state.last_seq + 1,
+            route_exceptions=route_exceptions,
+            changes=staged.changes,
+        )
     current = _content(repository, state.active)
     before = _content(repository, previous_content(state))
     return preview_pack(
-        tables, previous, pack, seq=state.last_seq + 1, current=current, before=before
+        tables,
+        previous,
+        pack,
+        seq=state.last_seq + 1,
+        route_exceptions=route_exceptions,
+        current=current,
+        before=before,
     )
 
 

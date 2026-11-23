@@ -51,7 +51,6 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_master,
 )
 from capa_simulation.services.manual_downtime import ManualDowntime
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.static_qual_schedule import (
     BASES,
@@ -168,7 +167,7 @@ def load_shortening_demand() -> ShorteningDemand:
         context.active_scenario,
         context.selected_start_month,
         context.selected_end_month,
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=context.route_exceptions.declaration,
     )
     loader = simulation_cache.scenario_required_equipment(
         key,

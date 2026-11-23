@@ -93,6 +93,7 @@ from capa_simulation.persistence.cache import (
     load_global_comparison_scenario,
     load_global_display_order,
     load_global_past_data,
+    load_global_route_load_exceptions,
     load_global_securement_threshold,
     load_scenario_plan,
     load_scenario_snapshot,
@@ -104,6 +105,7 @@ from capa_simulation.persistence.models import (
     GlobalPastData,
     OfficialReleaseSummary,
     RevisionSummary,
+    RouteLoadExceptionProfile,
 )
 from capa_simulation.scenario_state import pristine_content_token
 from capa_simulation.services.advance_shipment import advance_shipment_notes
@@ -124,7 +126,7 @@ from capa_simulation.services.official_summary import (
     summary_months,
 )
 from capa_simulation.services.past_data import display_month_range
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import (
     IntroSummaryCacheKey,
@@ -505,6 +507,8 @@ def _build(
     release: OfficialReleaseSummary,
     thresholds: SecurementThresholds,
     past: GlobalPastData | None = None,
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> dict[str, Any]:
     """요약 한 벌(토글 몫 없이). 토글 몫이 쓸 재료를 `_context` 로 함께 둔다 — 보내기 전에 뗀다.
 
@@ -514,6 +518,9 @@ def _build(
     달은 HOME 이 기본 조회기간으로 그리는 달 그대로다 — 계산 원천 범위를 과거 구간(`past`, 없으면
     과거 없음)만큼 넓혀 기본 조회기간으로 자른 범위(`display_month_range`, HOME 과 같은 함수)다.
     그래서 공식 시나리오를 기본 조회기간으로 연 HOME 과 계산 캐시 키가 같다.
+
+    `route_exceptions` 는 요약 키를 지을 때 읽은 그 부하 예외 선언 판이다(`_look_up` — 키의 일곱째
+    칸이 그 판의 지문). HOME 계산 키에 같은 판으로 접혀 HOME 과 칸을 나눈다.
     """
     snapshot = load_scenario_snapshot(database_path, release.revision_id)
     tables = snapshot.tables
@@ -539,7 +546,7 @@ def _build(
         start_month=months[0],
         end_month=months[-1],
         display_order=display_order,
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=route_exceptions,
     )
     _density, _detail, _wafer, securement_rate, _assumed, slot_volume = get_home_simulation(
         cache_key=cache_key,
@@ -603,11 +610,14 @@ def _build_or_unavailable(
     release: OfficialReleaseSummary,
     thresholds: SecurementThresholds,
     past: GlobalPastData,
+    route_exceptions: RouteLoadExceptionProfile,
 ) -> dict[str, Any]:
     """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
     그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
     try:
-        return _build(database_path, release, thresholds, past)
+        return _build(
+            database_path, release, thresholds, past, route_exceptions=route_exceptions.declaration
+        )
     except _TRANSIENT_ERRORS:
         raise
     except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
@@ -725,6 +735,7 @@ def _toggle_parts(
     order_version: int,
     labels: ProcessLabels,
     past_version: int,
+    route_digest: str,
     defer: bool,
 ) -> tuple[dict[str, Any], bool]:
     """토글 셋의 값과, 이번에 「준비 중」으로 남긴 몫이 있는지.
@@ -736,7 +747,9 @@ def _toggle_parts(
     `warm_intro_summary` 가 만든다. 일시적 실패도 「준비 중」으로 두고 남기지 않는다. 표시순서·공정
     표시명 판은 요약 키를 만들 때 읽은 그 값(`order_version`·`labels`)이다 — 따로 다시 읽으면 그
     사이 저장된 판이 요약과 몫에 갈라 들어간다. 과거 구간 판(`past_version`)은 셋 모두에 든다 — 몫이
-    쓰는 달과 계획(재료)이 과거 구간으로 바뀐다.
+    쓰는 달과 계획(재료)이 과거 구간으로 바뀐다. 부하 예외 선언 판 지문(`route_digest` — 요약 키의
+    일곱째 칸과 같은 값)은 선행 B/O 몫에만 든다 — 그 몫은 요약의 확보율(소요대수에서 나옴)을 쓰고,
+    선행 입고 · GAP 은 Wafer · Density 만 쓴다(AGENTS 6장 「공정별 부하 산출 예외」 (d)).
     """
     store = shared_intro_toggle_store()
     profiles = load_toggle_profiles(database_path)
@@ -747,7 +760,7 @@ def _toggle_parts(
             "advance",
             "선행 B/O",
             ("advance", official, order_version, labels.version, thresholds.digest)
-            + (past_version, profiles.advance.version),
+            + (past_version, profiles.advance.version, route_digest),
             lambda: _advance_part(context, profiles.advance, thresholds, labels.format_func()),
             False,
         ),
@@ -830,6 +843,9 @@ def _look_up(
         labels = get_process_labels()
         # 과거 구간은 HOME 기본(켬)처럼 요약의 달·계획을 채운다. version 이 키에 든다.
         past = load_global_past_data(database_path)
+        # 부하 예외 선언은 리비전 없이 공식버전의 소요대수 · 확보율까지 바꾼다(Q3) — 판의 **지문**이
+        # 키에 든다(빈 선언은 빈 글). 요약과 HOME 계산 키가 이 한 판으로 접힌다.
+        route_exceptions = load_global_route_load_exceptions(database_path)
         cache_key: IntroSummaryCacheKey = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
@@ -838,10 +854,13 @@ def _look_up(
             labels.version,
             thresholds.digest,
             past.version,
+            route_exceptions.digest,
         )
         payload = get_intro_summary_payload(
             cache_key,
-            _build=lambda: _build_or_unavailable(database_path, release, thresholds, past),
+            _build=lambda: _build_or_unavailable(
+                database_path, release, thresholds, past, route_exceptions
+            ),
         )
         context = payload.pop(_CONTEXT, None)
         if not payload.get("available") or not isinstance(context, Mapping):
@@ -859,6 +878,7 @@ def _look_up(
             order_version=order_version,
             labels=labels,
             past_version=past.version,
+            route_digest=route_exceptions.digest,
             defer=defer,
         )
         payload["toggles"] = toggles

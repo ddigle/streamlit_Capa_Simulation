@@ -52,7 +52,10 @@
   칸) 전이면 리비전 표를 0039 와 같은 뜻 — CUSTOM 키 표의 모든 행이 빈 값 표지 — 으로 채워 읽고
   (`revision_compatibility.custom_blank_filled`), 손 SQL 은 같은 판정으로 CUSTOM 조건을 빼며,
   블록 앞에 `사본 0039 전` 한 줄을 찍는다. 0039 뒤로 적힌 사본은 채우지도 빼지도 않는다 — 칸이
-  없으면 계산과 손 SQL 이 그대로 멈춰 드러난다.
+  없으면 계산과 손 SQL 이 그대로 멈춰 드러난다. 소요대수는 앱처럼 사본의 지금 부하 예외 선언
+  (`0040` 판 이력의 마지막 줄 — 같은 연결로 한 번 읽음)을 넘겨 셈하고, 선언 표가 없는 사본(0039 뒤 ·
+  0040 전)은 빈 선언으로 셈하며 블록 앞에 `사본 0040 전` 한 줄을 찍는다. 선언이 있으면 판 · 공정 수
+  한 줄(이름 없음)을 찍는다.
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
   코드, 키별 값, 합계 물량, 파일 경로, **예외 문구**를 찍지 않는다 — 이 앱의 오류 문구에는
   설계상 식별값이 박혀 있다. 실패는 예외 종류(클래스 이름)만 적는다. 출력은 리뷰 문서를 거쳐
@@ -133,9 +136,14 @@ from capa_simulation.persistence.equipment_scenario_store import (  # noqa: E402
     schedule_revision_row,
 )
 from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
+from capa_simulation.persistence.models import RouteLoadExceptionState  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
     DATASET_TABLES,
     REVISION_TABLES,
+)
+from capa_simulation.persistence.route_load_exception_store import (  # noqa: E402
+    BEFORE_ROUTE_EXCEPTION_COPY,
+    read_route_load_exceptions,
 )
 from capa_simulation.reference_grid_keys import DATASETS  # noqa: E402
 from capa_simulation.services.bigdataquery_catalog_view import (  # noqa: E402
@@ -267,7 +275,10 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
     CUSTOM_MIGRATION,
     custom_blank_filled,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
+from capa_simulation.services.route_load_exceptions import (  # noqa: E402
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.scenario_transform import (  # noqa: E402
     MONTHLY_TABLES,
     missing_calendar_months,
@@ -611,6 +622,24 @@ class Session:
     notes: list[str] = field(default_factory=list)
     # 공식 설비 시나리오 한 벌(8-1·8-4 가 나눈다 — 한 번만 읽는다). 못 읽었으면 그 까닭 글.
     _official: OfficialEquipment | str | None = None
+    # 시뮬레이션 사본의 부하 예외 선언 판 이력(소요대수를 셈하는 블록이 나눈다 — 한 번만 읽는다).
+    # 선언 표가 없는 사본(0040 전)은 None 이다.
+    _route_state: RouteLoadExceptionState | None = None
+    _route_read: bool = False
+
+    def route_state(self) -> RouteLoadExceptionState | None:
+        """사본의 부하 예외 선언 판 이력 — 같은 `read_only` 연결로 한 번 읽는다(표가 없으면
+        None)."""
+        if not self._route_read:
+            assert self.simulation is not None
+            self._route_state = read_route_load_exceptions(self.simulation)
+            self._route_read = True
+        return self._route_state
+
+    def route_exceptions(self) -> RouteLoadDeclaration:
+        """앱이 모든 리비전에 거는 지금 부하 예외 선언 — 선언 표가 없는 사본이면 빈 선언이다."""
+        state = self.route_state()
+        return NO_ROUTE_LOAD_EXCEPTIONS if state is None else state.declaration
 
     def official_equipment(self) -> OfficialEquipment | str:
         """공식 설비 시나리오(공통 최신 + 최신 공식 발행)를 한 번 읽어 둔다."""
@@ -680,6 +709,27 @@ def _before_custom_line(connection: duckdb.DuckDBPyConnection) -> str:
         f"- {BEFORE_CUSTOM_COPY} — 시뮬레이션 마이그레이션 최고 {max(versions, default=0)} · "
         "리비전 표의 CUSTOM 키 표는 0039 와 같이 모든 행을 빈 값 표지(`-`)로 채워 읽고, 손 SQL 은 "
         "CUSTOM 조건 없이 맞댔다(사본은 고치지 않는다)\n"
+    )
+
+
+def _route_exception_line(session: Session) -> str | None:
+    """블록 앞 한 줄 — 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언으로 셌다는 것, 선언이 있으면
+    판 · 공정 수(이름 없음). 선언 표가 있고 비었으면 줄이 없다. 0039 전 사본은 부르지 않는다
+    (`사본 0039 전` 줄이 그 사실까지 말한다)."""
+    assert session.simulation is not None
+    state = session.route_state()
+    if state is None:
+        versions = _versions(session.simulation, "app_meta.schema_migration") or []
+        return (
+            f"- {BEFORE_ROUTE_EXCEPTION_COPY} — 시뮬레이션 마이그레이션 최고 "
+            f"{max(versions, default=0)} · 부하 예외 선언 표가 없어 소요대수를 빈 선언으로 셈했다"
+            "(사본은 고치지 않는다)\n"
+        )
+    if not state.declaration:
+        return None
+    return (
+        f"- 부하 예외 선언 판 {state.seq} · 공정 {len(state.declaration):,} — 소요대수를 그 "
+        "선언으로 셈했다(앱과 같다 · 공정 이름은 찍지 않는다)\n"
     )
 
 
@@ -1280,7 +1330,7 @@ def load_source(session: Session) -> SourceData | None:
                 imported_at=imported_at,
                 revision_id=loaded[0],
                 tables=loaded[1],
-                required=_calculate_required(loaded[1]),
+                required=_calculate_required(loaded[1], session.route_exceptions()),
                 place=_source_place(numbers, scenario_id, revision_one=True),
             )
             if session.dataset_id or candidate.required.frame is not None:
@@ -1529,18 +1579,26 @@ def _unit_capacity(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
 
 
-def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    return _required_from(tables, _unit_capacity(tables))
+def _required_equipment(
+    tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> pd.DataFrame:
+    return _required_from(tables, _unit_capacity(tables), route_exceptions)
 
 
-def _required_from(tables: dict[str, pd.DataFrame], unit_capacity: pd.DataFrame) -> pd.DataFrame:
+def _required_from(
+    tables: dict[str, pd.DataFrame],
+    unit_capacity: pd.DataFrame,
+    route_exceptions: RouteLoadDeclaration,
+) -> pd.DataFrame:
+    """소요대수 — `route_exceptions` 는 사본의 지금 부하 예외 선언이다
+    (`Session.route_exceptions`)."""
     return calculate_required_equipment(
         reqb=tables["RQ_REQB"],
         plan=tables["RQ_PKG_PLAN"],
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=route_exceptions,
     )
 
 
@@ -2241,14 +2299,16 @@ def _shape_name(required: Required) -> str:
     return NO_SHAPE if required.problem is None else required.problem.label
 
 
-def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
+def _calculate_required(
+    tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> Required:
     """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류 · 꼴만 적는다."""
     try:
         unit_capacity = _unit_capacity(tables)
     except Exception as exc:  # 문구에는 키 값이 실린다
         return _stopped("대당 Capa", exc)
     try:
-        return Required(frame=_required_from(tables, unit_capacity))
+        return Required(frame=_required_from(tables, unit_capacity, route_exceptions))
     except Exception as exc:  # 문구에는 키 값이 실린다
         return _stopped("소요대수", exc)
 
@@ -2614,7 +2674,7 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
     _noted(notes, "8-2L", lambda: [_load_note(load_names, load_results)])
 
-    required = source.required or _calculate_required(tables)
+    required = source.required or _calculate_required(tables, session.route_exceptions())
     try:
         lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
@@ -4716,7 +4776,10 @@ def _attached_keys(upeh: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
 
 
 def measure_blank_stop(
-    place: BlankStopPlace, tables: dict[str, pd.DataFrame], raw: pd.DataFrame | None
+    place: BlankStopPlace,
+    tables: dict[str, pd.DataFrame],
+    raw: pd.DataFrame | None,
+    route_exceptions: RouteLoadDeclaration,
 ) -> BlankStop:
     """리비전 하나 — 멈춘 표의 빈 칸을 남은 경로 · 빠질 경로 · 안 붙음으로 가르고 분포를 센다."""
     try:
@@ -4752,7 +4815,7 @@ def measure_blank_stop(
     loaded: int | None = None
     load_failure: str | None = None
     try:
-        required = _required_from(held, capacity)
+        required = _required_from(held, capacity, route_exceptions)
     except Exception as exc:  # 소요대수가 멈춰도 앞의 수는 남긴다. 문구는 찍지 않는다
         load_failure = _failure(exc)
     else:
@@ -4789,13 +4852,18 @@ def measure_blank_stop(
     )
 
 
-def _load_blank_stop(connection: duckdb.DuckDBPyConnection, place: BlankStopPlace) -> BlankStop:
+def _load_blank_stop(
+    connection: duckdb.DuckDBPyConnection,
+    place: BlankStopPlace,
+    route_exceptions: RouteLoadDeclaration,
+) -> BlankStop:
     """리비전 표와 원천 행을 읽어 잰다. 멈추지 않는 것은 까닭 한 마디로 남긴다."""
     if place.dataset_id is None:
         return BlankStop(place, note="데이터셋 없음")
     try:
         tables = _revision_tables(connection, place.revision_id, place.dataset_id)
-        return measure_blank_stop(place, tables, _raw_core_data(connection, place.dataset_id))
+        raw = _raw_core_data(connection, place.dataset_id)
+        return measure_blank_stop(place, tables, raw, route_exceptions)
     except Exception as exc:  # 한 리비전이 멈춰도 다음 리비전은 잰다. 문구는 찍지 않는다
         return BlankStop(place, note=_failure(exc))
 
@@ -4963,7 +5031,8 @@ def check_blank_stops(session: Session) -> list[str]:
             "",
         ]
     )
-    stops = [_load_blank_stop(connection, place) for place in measured]
+    route_exceptions = session.route_exceptions()
+    stops = [_load_blank_stop(connection, place, route_exceptions) for place in measured]
     for stop in stops:
         session.notes.extend(_blank_stop_notes(stop))
     full = [stop for stop in stops if stop.note is None]
@@ -6928,6 +6997,10 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         return 1
     if session.simulation is not None and _before_custom(session.simulation):
         sink.emit(_before_custom_line(session.simulation))
+    elif session.simulation is not None:
+        route_line = _route_exception_line(session)
+        if route_line is not None:
+            sink.emit(route_line)
     interrupted = False
     try:
         for name in CHECKS:

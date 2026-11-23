@@ -36,8 +36,9 @@
 
 Streamlit · 세션 · DB 를 모른다. 선언은 시뮬레이션 `0040` 판 이력 표에 저장하고
 (`persistence/route_load_exception_store.py`) 계산 키의 계산 토큰으로만 계산에 든다
-(`simulation_cache.calculation_token` — AGENTS 5장 44). 호출처가 판을 읽어 넘기는 자리는 아직 없다 —
-지금은 모두 빈 선언을 적어 넘긴다(AGENTS 6장 「공정별 부하 산출 예외」).
+(`simulation_cache.calculation_token` — AGENTS 5장 44). 호출처는 지금 판을 읽어 넘긴다 — 화면은 공용
+프로필(`page_bootstrap.current_route_exceptions`), 자동 갱신은 저장소, 확인 스크립트는 사본 연결이다
+(AGENTS 5장 45 · 6장 「공정별 부하 산출 예외」).
 """
 
 from __future__ import annotations

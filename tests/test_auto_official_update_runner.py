@@ -71,7 +71,10 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     ProcessMinimum,
 )
-from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
 
@@ -512,6 +515,48 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     assert run.reason is not None and "RQ_RUN_RATE 시험 오류" in run.reason
     assert run.filtered_revision_id is not None and run.official_release_no is None
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
+
+
+def test_the_round_judges_and_checks_with_the_saved_route_exception_declaration(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언은 판정 앞에서 저장소로 한 번 읽어 판정과 발행 검사가 같은 판으로 셈한다(배경
+    스레드라 캐시 래퍼 없이). 실행 기록 사유 · 리비전 2 · 공식버전 메모 끝에 「부하 예외 판 n」 이
+    붙고 공정 이름은 싣지 않는다 — 선언이 없으면 조각이 없다(앞 시험들의 사유 그대로)."""
+    _official_w40(repository)
+    declaration = {WAFER: BUFFER_X_CORE_CHIP}
+    repository.append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    real = full_capacity_outcome
+    seen: list[dict[str, str]] = []
+
+    def spy(
+        scenario_tables: object, reference_tables: object, *, route_exceptions: RouteLoadDeclaration
+    ) -> CapacityOutcome:
+        seen.append(dict(route_exceptions))
+        return real(
+            scenario_tables,  # type: ignore[arg-type]
+            reference_tables,  # type: ignore[arg-type]
+            route_exceptions=route_exceptions,
+        )
+
+    monkeypatch.setattr(runner, "full_capacity_outcome", spy)
+    fake = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+
+    run = _run(repository, fake)
+
+    assert seen == [declaration, declaration]
+    assert run.status == STATUS_PUBLISHED and run.reason is not None
+    head, _warning = runner.split_published_reason(run.reason)
+    assert head.endswith(" · 부하 예외 판 1")
+    assert WAFER not in run.reason
+    release = repository.latest_official_release()
+    assert release is not None and release.note is not None
+    assert release.note.endswith(" · 부하 예외 판 1")
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    assert filtered.revision.note is not None
+    assert filtered.revision.note.endswith(" · 부하 예외 판 1")
 
 
 def test_uncounted_demand_is_published_with_its_count_in_the_run_log(

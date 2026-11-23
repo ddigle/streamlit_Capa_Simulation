@@ -75,6 +75,7 @@ from capa_simulation.persistence.equipment_cache import (
     clear_shortening_baseline_cache,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.required_shortening import LEVEL_COLUMN
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -165,6 +166,11 @@ def _install(monkeypatch: pytest.MonkeyPatch, database_path: Path) -> _World:
         persistence_cache,
         "load_global_past_data",
         lambda _path: SimpleNamespace(monthly=pd.DataFrame({"생산계획년월": []})),
+    )
+    monkeypatch.setattr(
+        persistence_cache,
+        "load_global_route_load_exceptions",
+        lambda _path: RouteLoadExceptionState().profile,
     )
     monkeypatch.setattr(
         process_labels_module, "get_process_labels", lambda: ProcessLabels(version=1, labels={})

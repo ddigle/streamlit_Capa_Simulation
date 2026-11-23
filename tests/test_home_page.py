@@ -3146,3 +3146,46 @@ def test_the_remembered_process_order_is_keyed_by_the_names_and_the_order_digest
     assert counts["apply"] == 1
     ((_, again_digest), again) = app.session_state[HOME_SORT_MEMO_KEY]["process_options"][-1]
     assert again_digest == digest and again == options
+
+
+def test_home_rebuilds_figures_when_the_route_exception_declaration_changes(
+    tmp_path: Path,
+) -> None:
+    """부하 예외 선언은 리비전 없이 공식버전의 소요대수 · 확보율을 바꾼다(2026-11-22 답 Q3 (가)) —
+    HOME 계산 키는 그 판을 접은 계산 토큰이고 그림 키는 같은 판의 지문을 싣는다. 선언을
+    저장하면(공용 프로필 비우기 뒤) 다음 회차가 새 판으로 계산하고, 확보율을 칠하는 세 묶음만 다시
+    그린다(계획 세부수량은 Wafer · Density 만 써 그대로 꺼낸다). 내용 토큰은 그대로라 세션끼리
+    나누는 칸에 든다."""
+    from before_custom_copy import seed_route_declaration
+
+    from capa_simulation.components.home_rendering import HOME_DRAWN_CONDITIONS_KEY
+    from capa_simulation.persistence.cache import (
+        clear_global_route_load_exceptions_cache,
+        get_scenario_repository,
+    )
+
+    database = tmp_path / "scenario.duckdb"
+    clear_global_route_load_exceptions_cache()
+    shared_home_figure_store.clear()
+    app = AppTest.from_string(_home_script(database), default_timeout=300).run()
+    assert not list(app.exception)
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
+    assert _cache_state(app) == "적중"
+    plain = app.session_state[HOME_DRAWN_CONDITIONS_KEY]
+    assert plain.route_exception_digest == ""
+
+    declaration = seed_route_declaration()
+    saved = get_scenario_repository(str(database)).append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    clear_global_route_load_exceptions_cache()
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _cache_state(app) == "생성"
+    assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
+    drawn = app.session_state[HOME_DRAWN_CONDITIONS_KEY]
+    assert drawn.route_exception_digest == saved.digest != ""
+    assert drawn.content_token == plain.content_token
+    clear_global_route_load_exceptions_cache()

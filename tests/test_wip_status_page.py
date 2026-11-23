@@ -24,10 +24,12 @@ import capa_simulation
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.wip_status_dashboard as dashboard
 import capa_simulation.io.reference_cache as reference_cache
+import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
+from capa_simulation.persistence.models import RouteLoadExceptionState
 
 
 today = date.today()
@@ -117,6 +119,7 @@ for week in calendar.to_dict("records"):
 weekly_standard = pd.DataFrame(weekly_rows)
 
 original_reference_version = reference_cache.get_effective_reference_version
+original_route_load_exceptions = persistence_cache.load_global_route_load_exceptions
 original_reference_tables = reference_cache.get_effective_reference_tables
 original_equipment_repository = equipment_cache.get_equipment_repository
 original_ensure_active = scenario_state.ensure_active_scenario
@@ -145,6 +148,9 @@ class FakeEquipmentRepository:
 
 
 reference_cache.get_effective_reference_version = lambda: 1
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
+)
 reference_cache.get_effective_reference_tables = lambda: reference_tables
 equipment_cache.get_equipment_repository = lambda _path: FakeEquipmentRepository()
 scenario_state.ensure_active_scenario = lambda _tables, _version: active
@@ -181,6 +187,7 @@ try:
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
     reference_cache.get_effective_reference_version = original_reference_version
+    persistence_cache.load_global_route_load_exceptions = original_route_load_exceptions
     reference_cache.get_effective_reference_tables = original_reference_tables
     equipment_cache.get_equipment_repository = original_equipment_repository
     scenario_state.ensure_active_scenario = original_ensure_active
@@ -336,3 +343,55 @@ def test_an_empty_equipment_db_stops_with_the_mark_and_the_alarm_opens_the_targe
     # 마크 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
     assert not app.multiselect
     assert not app.metric
+
+
+def test_both_calculation_keys_fold_the_declaration_read_once_this_run() -> None:
+    """표준 대비 재공은 `PageContext` 를 쓰지 않아 회차에 한 번 부하 예외 선언 판을 읽고, 경로
+    선택지 · 주차 표준 두 계산 키가 그 한 판으로 접힌다 — 두 키의 둘째 칸이 같은 계산
+    토큰이다(AGENTS 5장 45)."""
+    from capa_simulation.persistence.models import RouteLoadExceptionProfile
+    from capa_simulation.services.route_load_exceptions import (
+        BUFFER_X_CORE_CHIP,
+        route_load_declaration_digest,
+    )
+    from capa_simulation.services.simulation_cache import calculation_token
+
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    profile = RouteLoadExceptionProfile(
+        seq=1,
+        created_at=None,
+        applied_by=None,
+        entries=tuple(declaration.items()),
+        digest=route_load_declaration_digest(declaration),
+    )
+    fake = "    lambda _path: RouteLoadExceptionState().profile\n"
+    weekly = "simulation_cache.get_weekly_standard_target_capacity = (\n"
+    weekly += "    lambda **_kwargs: weekly_standard.copy()\n)\n"
+    assert TEST_SCRIPT.count(fake) == 1 and TEST_SCRIPT.count(weekly) == 1
+    script = (
+        TEST_SCRIPT.replace(fake, f"    lambda _path: {profile!r}\n")
+        .replace(
+            "from capa_simulation.persistence.models import RouteLoadExceptionState\n",
+            "from capa_simulation.persistence.models import (\n"
+            "    RouteLoadExceptionProfile,\n    RouteLoadExceptionState,\n)\n",
+        )
+        .replace(
+            weekly,
+            weekly + "_fake_demand = simulation_cache.get_scenario_capacity_and_demand\n"
+            "def _recording_demand(*args, **kwargs):\n"
+            '    st.session_state.setdefault("captured_demand_keys", []).append(args[0])\n'
+            "    return _fake_demand(*args, **kwargs)\n"
+            "simulation_cache.get_scenario_capacity_and_demand = _recording_demand\n"
+            "def _recording_weekly(**kwargs):\n"
+            '    st.session_state["captured_weekly_key"] = kwargs["cache_key"]\n'
+            "    return weekly_standard.copy()\n"
+            "simulation_cache.get_weekly_standard_target_capacity = _recording_weekly\n",
+        )
+    )
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    folded = calculation_token("test-wip-status-page", declaration)
+    demand_keys = app.session_state["captured_demand_keys"]
+    assert demand_keys and all(key[1] == folded for key in demand_keys)
+    assert folded in repr(app.session_state["captured_weekly_key"])

@@ -137,7 +137,6 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_LOADS_ATTR,
     required_exclusion_counts,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
     frame_digest,
@@ -609,7 +608,7 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
                 full_scenario_cache_key(
                     context.reference_version,
                     str(scenario["content_token"]),
-                    route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+                    route_exceptions=context.route_exceptions.declaration,
                 ),
                 _scenario_tables=scenario["tables"],
                 _reference_tables=context.reference_tables,

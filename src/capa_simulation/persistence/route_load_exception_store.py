@@ -34,6 +34,9 @@ from capa_simulation.services.route_load_exceptions import (
 
 # 이 표를 만든 시뮬레이션 마이그레이션 번호와 표 자리.
 ROUTE_LOAD_EXCEPTION_MIGRATION: Final = 40
+# 확인 스크립트가 선언 표 없는 사본(0039 뒤 · 0040 전)을 읽었을 때 찍는 표지 — 세 스크립트가 같은
+# 글자를 쓴다. 그 사본은 빈 선언으로 셈한다(`read_route_load_exceptions` 가 None).
+BEFORE_ROUTE_EXCEPTION_COPY: Final = f"사본 {ROUTE_LOAD_EXCEPTION_MIGRATION:04d} 전"
 ROUTE_LOAD_EXCEPTION_SCHEMA: Final = "app_meta"
 ROUTE_LOAD_EXCEPTION_TABLE: Final = "route_load_exception_version"
 

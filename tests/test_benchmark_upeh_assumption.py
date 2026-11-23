@@ -19,12 +19,19 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from before_custom_copy import database_before_custom, database_marked_after_custom
+from before_custom_copy import (
+    database_before_custom,
+    database_before_route_exceptions,
+    database_marked_after_custom,
+    database_with_route_exceptions,
+    seed_route_declaration,
+)
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.required_equipment import calculate_required_equipment
 from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -203,3 +210,48 @@ def test_a_copy_marked_after_the_custom_migration_is_not_filled(
         benchmark.measure(broken, percent=110, today=date(2026, 1, 1))
 
     assert str(caught.value).startswith("대당 Capa·소요대수 실패 — ")
+
+
+def test_a_copy_before_the_declaration_table_is_timed_with_an_empty_declaration(
+    copy_folder: Path, tmp_path: Path
+) -> None:
+    """0039 뒤 · 0040 전 사본(선언 표 없음)은 빈 선언으로 잰다 — 달 · 공정 · 호기 수가 0040 뒤
+    사본과 같고 `scenario_route_exceptions_missing` 만 참이다. 받은 사본은 고치지 않는다."""
+    before = _rewound_folder(copy_folder, tmp_path / "before", database_before_route_exceptions)
+    database = before / benchmark.SCENARIO_DATABASE
+    contents = database.read_bytes()
+
+    old = benchmark.measure(before, percent=120, today=date(2026, 1, 1))
+    new = benchmark.measure(copy_folder, percent=120, today=date(2026, 1, 1))
+
+    assert old["scenario_route_exceptions_missing"] is True
+    assert new["scenario_route_exceptions_missing"] is False
+    assert (old["route_exception_seq"], old["route_exception_processes"]) == (0, 0)
+    assert {**_counts(old), "scenario_route_exceptions_missing": False} == _counts(new)
+    assert database.read_bytes() == contents
+
+
+def test_the_copy_declaration_is_passed_to_the_demand(copy_folder: Path, tmp_path: Path) -> None:
+    """선언이 있는 사본은 그 판으로 소요대수를 센다 — JSON 에 판 · 공정 수만 싣고(이름 없음) 계산은
+    선언을 받는다."""
+    declaration = seed_route_declaration()
+    declared = _rewound_folder(
+        copy_folder,
+        tmp_path / "declared",
+        lambda source, target: database_with_route_exceptions(source, target, declaration),
+    )
+    seen: list[dict[str, str]] = []
+    real = calculate_required_equipment
+
+    def spy(**kwargs: object) -> pd.DataFrame:
+        seen.append(dict(kwargs["route_exceptions"]))  # type: ignore[call-overload]
+        return real(**kwargs)  # type: ignore[arg-type]
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(benchmark, "calculate_required_equipment", spy)
+        result = benchmark.measure(declared, percent=120, today=date(2026, 1, 1))
+
+    assert seen == [declaration]
+    assert (result["route_exception_seq"], result["route_exception_processes"]) == (1, 1)
+    assert result["scenario_route_exceptions_missing"] is False
+    assert not any(process in json.dumps(result, ensure_ascii=False) for process in declaration)

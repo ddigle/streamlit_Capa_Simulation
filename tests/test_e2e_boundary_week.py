@@ -168,10 +168,12 @@ import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
+import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.services.month_filter import filter_month_range
+from capa_simulation.persistence.models import RouteLoadExceptionState
 
 MONTHS = [202601, 202602, 202603, 202604]
 WEEKS = [f"26-W{number:02d}" for number in range(5, 15)]
@@ -255,6 +257,7 @@ availability = pd.DataFrame(
 )
 
 original_reference_version = reference_cache.get_effective_reference_version
+original_route_load_exceptions = persistence_cache.load_global_route_load_exceptions
 original_reference_tables = reference_cache.get_effective_reference_tables
 original_equipment_repository = equipment_cache.get_equipment_repository
 original_ensure_active = scenario_state.ensure_active_scenario
@@ -278,6 +281,9 @@ class FakeEquipmentRepository:
 
 
 reference_cache.get_effective_reference_version = lambda: 1
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
+)
 reference_cache.get_effective_reference_tables = lambda: reference_tables
 equipment_cache.get_equipment_repository = lambda _path: FakeEquipmentRepository()
 scenario_state.ensure_active_scenario = lambda _tables, _version: active
@@ -314,6 +320,7 @@ try:
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
     reference_cache.get_effective_reference_version = original_reference_version
+    persistence_cache.load_global_route_load_exceptions = original_route_load_exceptions
     reference_cache.get_effective_reference_tables = original_reference_tables
     equipment_cache.get_equipment_repository = original_equipment_repository
     scenario_state.ensure_active_scenario = original_ensure_active

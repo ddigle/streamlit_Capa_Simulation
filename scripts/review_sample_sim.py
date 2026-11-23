@@ -812,7 +812,7 @@ def create_derived(
     gate_sources: Sequence[ScenarioSnapshot],
     provenance: str,
 ) -> ScenarioSnapshot:
-    verdict = derived_save_verdict(tables, gate_sources)
+    verdict = derived_save_verdict(tables, gate_sources, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     if not verdict.allowed:
         raise RuntimeError(f"{name}: 파생 저장 검사가 막았습니다 — {verdict.message}")
     if verdict.message:

@@ -41,6 +41,11 @@ from capa_simulation.services.plan_gap import (
     plan_gap_texts,
     visible_gap,
 )
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202610, 202611, 202612, 202701, 202702, 202703]
@@ -484,7 +489,9 @@ class _Release(SimpleNamespace):
 
 
 def _wired(
-    monkeypatch: pytest.MonkeyPatch, past: Any = None
+    monkeypatch: pytest.MonkeyPatch,
+    past: Any = None,
+    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """`_build` 를 가짜 HOME 계산에 물린다. EDP 를 포함한 계획은 일부러 다른 값(+100)이다.
 
@@ -525,7 +532,13 @@ def _wired(
         scenario_name="DEMO",
         official_release_id="O",
     )
-    payload = intro_summary._build("db", release, THRESHOLDS, past)  # type: ignore[arg-type]
+    payload = intro_summary._build(
+        "db",
+        release,  # type: ignore[arg-type]
+        THRESHOLDS,
+        past,
+        route_exceptions=route_exceptions,
+    )
     return payload, seen
 
 
@@ -555,6 +568,19 @@ def test_past_months_widen_the_summary_like_the_default_home(
     assert payload["bn"][1] is None
     context = payload[intro_summary._CONTEXT]
     assert context["months"][0] == 202608 and len(context["months"]) == 9
+
+
+def test_the_summary_folds_the_declaration_it_was_given_into_the_home_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """요약 계산은 받은 부하 예외 선언 판을 HOME 계산 키 빌더에 그대로 넘긴다 — 공식 시나리오를 연
+    HOME 과 같은 판으로 접혀 칸을 나눈다(선언을 읽어 넘기지 않으면 공식버전 확보율이 선언 전 값으로
+    남는다)."""
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    _, plain = _wired(monkeypatch)
+    _, declared = _wired(monkeypatch, route_exceptions=declaration)
+    assert dict(plain["key"]["route_exceptions"]) == {}
+    assert dict(declared["key"]["route_exceptions"]) == declaration
 
 
 def test_the_summary_and_its_parts_use_the_edp_free_plan_of_every_month(

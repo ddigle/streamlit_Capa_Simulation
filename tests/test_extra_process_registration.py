@@ -262,10 +262,16 @@ def test_the_input_check_adds_an_extra_process_group_only_when_extras_were_merge
     merged, _ = register(repository)
 
     without = input_check_verdict(
-        str(database), plain.scenario.scenario_id, plain.revision.revision_id
+        str(database),
+        plain.scenario.scenario_id,
+        plain.revision.revision_id,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     with_extra = input_check_verdict(
-        str(database), merged.scenario.scenario_id, merged.revision.revision_id
+        str(database),
+        merged.scenario.scenario_id,
+        merged.revision.revision_id,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert without.group(GROUP_EXTRA) is None

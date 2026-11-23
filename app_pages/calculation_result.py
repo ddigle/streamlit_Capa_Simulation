@@ -113,7 +113,6 @@ from capa_simulation.services.required_equipment import (
     RESULT_DIMENSIONS,
     count_required_exclusions,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import (
     SECUREMENT_DIMENSIONS,
     securement_rate_to_month_table,
@@ -278,7 +277,7 @@ try:
         active_scenario,
         effective_start,
         effective_end,
-        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        route_exceptions=context.route_exceptions.declaration,
     )
     # 대당 Capa·소요대수 프레임(pickle 약 11MB, 합성 표본의 샘플 관측)은 풀지 않는다. 탭과 무관하게
     # 쓰는 작은 값은 요약 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서

@@ -583,6 +583,7 @@ def test_shortening_wafer_plan_reads_the_home_wafer_without_the_dummy_series(
     계산을 지나므로 풀기 자리가 어긋나면 값이 달라진다."""
     from capa_simulation.components import required_shortening_panel as panel
     from capa_simulation.page_bootstrap import PageContext
+    from capa_simulation.persistence.models import RouteLoadExceptionState
 
     monkeypatch.setattr(
         simulation_cache,
@@ -607,6 +608,7 @@ def test_shortening_wafer_plan_reads_the_home_wafer_without_the_dummy_series(
         },
         selected_start_month=demo.MONTHS[0],
         selected_end_month=demo.MONTHS[-1],
+        route_exceptions=RouteLoadExceptionState().profile,
     )
     simulation_cache.get_home_simulation.clear()
     rows = panel._lob_rows(context, list(demo.MONTHS))

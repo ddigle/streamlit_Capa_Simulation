@@ -430,3 +430,39 @@ def test_the_open_tab_raises_a_state_alert_for_extras_dropped_from_the_official_
     assert dropped is not None and dropped["short"] == "공식 v1 에서 뺀 부대공정 1개"
     assert BOND in dropped["full"]
     assert active_state(app, "EP-04") is None
+
+
+def test_a_saved_route_exception_declaration_misses_the_preview_memo(database: Path) -> None:
+    """시험 계산 메모는 (sha, 계산 토큰)마다 하나다 — 부하 예외 선언을 저장하면(공용 프로필 비우기
+    뒤) 메모가 빗나가 옛 판의 결과를 다시 보이지 않고, 다시 누르면 새 판으로 접은 키로 센다."""
+    from before_custom_copy import seed_route_declaration
+
+    from capa_simulation.components.extra_process_admin import PREVIEW_KEY
+    from capa_simulation.persistence.cache import (
+        clear_global_route_load_exceptions_cache,
+        get_scenario_repository,
+    )
+    from capa_simulation.services.simulation_cache import calculation_token
+
+    clear_global_route_load_exceptions_cache()
+    pack = zip_files(template_files())
+    app = _app(database, open_place=True, pack=pack)
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+    app.button(key=PREVIEW_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    sha, plain_token = app.session_state[PREVIEW_KEY][0]
+    assert any("결과" in frame.value for frame in app.dataframe)
+
+    declaration = seed_route_declaration()
+    get_scenario_repository(str(database)).append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    clear_global_route_load_exceptions_cache()
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("결과" in frame.value for frame in app.dataframe)
+
+    app.button(key=PREVIEW_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PREVIEW_KEY][0] == (sha, calculation_token(plain_token, declaration))
+    clear_global_route_load_exceptions_cache()

@@ -38,8 +38,10 @@ BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 �
 판정(`_stop_error`)을 쓴다. 고른 리비전마다 부르므로 아래 「같은 캐시 칸」 이 아니라 따로 둔
 요약 칸 하나만 쓰고, 스냅샷 · 원천 행은 캐시 없이 읽는다.
 
-검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미
-데워져 있다.
+검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져
+있다. 그러려면 계산 페이지와 같은 부하 예외 선언 판으로 접혀야 하므로, 판정 함수는 선언을 스스로
+읽지 않고 부르는 화면이 그 회차에 읽은 판(`route_exceptions` — 기본값 없음)을 받는다
+(AGENTS 5장 44 · 45).
 """
 
 from __future__ import annotations
@@ -71,10 +73,7 @@ from capa_simulation.services.revision_input_check import (
     build_input_check,
     calculation_period,
 )
-from capa_simulation.services.route_load_exceptions import (
-    NO_ROUTE_LOAD_EXCEPTIONS,
-    RouteLoadDeclaration,
-)
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
@@ -180,10 +179,12 @@ def revision_save_verdict(
     active_scenario: ActiveScenario,
     reference_tables: Mapping[str, pd.DataFrame],
     *,
+    route_exceptions: RouteLoadDeclaration,
     labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
-    """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다."""
-    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
+    """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다.
+    `route_exceptions` 는 부르는 화면이 그 회차에 읽은 부하 예외 선언 판이다 — 편집 뒤 · 편집 전 두
+    계산이 같은 판으로 접힌다."""
     edited_outcome, edited = _gate_check(
         full_scenario_cache_key(
             reference_version,
@@ -262,17 +263,22 @@ def _error_kind(error: str) -> str:
 
 
 def official_publish_verdict(
-    database_path: str, revision_id: str, *, labels: Callable[[], ProcessLabels] | None = None
+    database_path: str,
+    revision_id: str,
+    *,
+    route_exceptions: RouteLoadDeclaration,
+    labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
-    """저장된 리비전을 공식버전으로 지정해도 되는지. `labels` 는 경고 글 예시 키의 공정
-    표시명을 낸다."""
+    """저장된 리비전을 공식버전으로 지정해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을
+    낸다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언 판이다 — 지정하면 그 판으로 모두의
+    HOME 이 계산하므로 같은 판으로 본다."""
     snapshot = load_scenario_snapshot(database_path, revision_id)
     reference_version = reference_version_for_revision(revision_id)
     outcome, error = _gate_check(
         full_scenario_cache_key(
             reference_version,
             pristine_content_token(reference_version),
-            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+            route_exceptions=route_exceptions,
         ),
         snapshot.tables,
         snapshot.tables,
@@ -290,7 +296,11 @@ def official_publish_verdict(
 
 
 def input_check_verdict(
-    database_path: str, scenario_id: str, revision_id: str
+    database_path: str,
+    scenario_id: str,
+    revision_id: str,
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> RevisionInputCheck:
     """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」) — 멈춤 판정은 공식
     발행 검사와 같고(Density 포함), 계산에서 빠진 행을 묶음으로 센다.
@@ -301,10 +311,10 @@ def input_check_verdict(
     이다. 요약 칸이 적중하면 DB 도 읽지 않고, 빠진 칸은 DB 를 한 번 더 읽는다 — 읽기 칸에 리비전을
     쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키 · CUSTOM 칸이
     없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은
-    보지 않는다 — 저장된 리비전 그대로다.
+    보지 않는다 — 저장된 리비전 그대로다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언
+    판이고 요약 칸 키에 접힌다 — 선언을 저장하면 다음 점검은 새 판으로 다시 센다.
     """
     reference_version = reference_version_for_revision(revision_id)
-    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
 
     def compute() -> RevisionInputCheck:
         repository = get_scenario_repository(database_path)
@@ -411,6 +421,7 @@ def derived_save_verdict(
     tables: Mapping[str, pd.DataFrame],
     sources: Sequence[ScenarioSnapshot],
     *,
+    route_exceptions: RouteLoadDeclaration,
     labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
     """월 머지·연도 Shift 결과를 새 시나리오로 저장해도 되는지. 규칙은 리비전 저장과 같다.
@@ -419,9 +430,9 @@ def derived_save_verdict(
     계산한다 — 캐시 칸은 몇 개뿐이고(`FULL_CAPACITY_MAX_ENTRIES`) 저장 뒤 그 시나리오를 열면
     리비전 키로 다시 계산한다. 원본은 결과가 실패할 때만, 공식 발행 검사와 같은 캐시 칸으로 본다.
     리비전 저장·발행과 같이 Capa 계산이 통과하면 Density 환산도 본다(`density_error`). `labels` 는
-    경고 글 예시 키의 공정 표시명을 낸다.
+    경고 글 예시 키의 공정 표시명을 낸다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언
+    판이다 — 결과 · 원본 계산이 같은 판으로 돈다.
     """
-    route_exceptions = NO_ROUTE_LOAD_EXCEPTIONS
     error = _capacity_error(tables, route_exceptions) or density_error(tables)
     if error is None:
         return GateVerdict(True)

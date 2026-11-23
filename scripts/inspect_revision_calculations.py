@@ -22,6 +22,12 @@ Markdown 블록**을 찍는다.
 으로 채워 읽고(`revision_compatibility.custom_blank_filled`) 머리에 `사본 0039 전` 한 줄을 찍는다.
 0039 뒤 사본은 채우지 않는다 — 칸이 없으면 계산이 그대로 멈춰 드러난다.
 
+**부하 예외 선언.** 앱은 지금 선언(`0040` 판 이력의 마지막 줄)을 모든 리비전에 건다(AGENTS 6장
+「공정별 부하 산출 예외」). 이 스크립트도 사본에서 그 판을 한 번 읽어(`read_route_load_exceptions` —
+같은 `read_only` 연결) 모든 리비전의 소요대수에 넘긴다. 선언이 있으면 머리에 판 · 공정 수 한
+줄(이름은 찍지 않는다)을 찍는다. 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언으로 셈하고 머리에
+`사본 0040 전` 한 줄을 찍는다 — 0039 전 사본은 `사본 0039 전` 줄이 그 사실까지 말한다.
+
 소요대수까지 서면 **저장·발행 검사가 그다음에 보는 Density 환산**도 돌린다
 (`capacity_gate.density_error` — HOME 의 `RQ_PKG_PLAN` × `RQ_CHIP_EQ` 를 조회기간이 아닌
 시나리오 전체 기간으로, EDP 계획까지). 대당 Capa·소요대수는 `구분_EQ` 를 쓰지 않아 `계산` 이
@@ -88,9 +94,14 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from capa_simulation.persistence.models import RouteLoadExceptionState  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
     REFERENCE_TABLES,
     _load_reference_frame,
+)
+from capa_simulation.persistence.route_load_exception_store import (  # noqa: E402
+    BEFORE_ROUTE_EXCEPTION_COPY,
+    read_route_load_exceptions,
 )
 from capa_simulation.services.frame_contracts import match_key  # noqa: E402
 from capa_simulation.services.required_equipment import (  # noqa: E402
@@ -104,7 +115,10 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
     custom_blank_filled,
     route_key_incompatible_tables,
 )
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
+from capa_simulation.services.route_load_exceptions import (  # noqa: E402
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate  # noqa: E402
 from capa_simulation.services.unit_capacity import (  # noqa: E402
     CAPACITY_EXCLUSIONS_ATTR,
@@ -303,8 +317,11 @@ def density_check(tables: Mapping[str, pd.DataFrame]) -> tuple[str, str | None, 
     return STOPPED, ValueError.__name__, contract_tables_in(error)
 
 
-def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
-    """앱의 전체 기간 계산과 같은 차례로 돌린다. 예외는 단계와 종류로만 남긴다."""
+def calculate(tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration) -> Outcome:
+    """앱의 전체 기간 계산과 같은 차례로 돌린다. 예외는 단계와 종류로만 남긴다.
+
+    `route_exceptions` 는 사본의 지금 부하 예외 선언 판이다(앱이 모든 리비전에 거는 것과 같다 —
+    `_run` 이 사본에서 한 번 읽는다. 0040 전 사본이면 빈 선언)."""
     blocked = route_key_incompatible_tables(tables)
     if blocked:
         return Outcome(BLOCKED, stage="경로 키 없음", tables=tuple(blocked))
@@ -327,7 +344,7 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
             yield_data=tables["RQ_YLD"],
             chip_qty=tables["RQ_CHIP_QTY"],
             unit_capacity=unit_capacity,
-            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+            route_exceptions=route_exceptions,
         )
     except Exception as exc:  # 위와 같다
         return _failed("소요대수", exc)
@@ -425,7 +442,11 @@ def load_tables(
 
 
 def inspect_revision(
-    connection: duckdb.DuckDBPyConnection, revision: RevisionRow, *, fill_custom: bool = False
+    connection: duckdb.DuckDBPyConnection,
+    revision: RevisionRow,
+    *,
+    route_exceptions: RouteLoadDeclaration,
+    fill_custom: bool = False,
 ) -> Outcome:
     started = time.perf_counter()
     try:
@@ -433,7 +454,7 @@ def inspect_revision(
     except Exception as exc:  # 읽지 못한 리비전도 다음 리비전은 잰다
         outcome = Outcome(UNREADABLE, stage="읽기", kind=type(exc).__name__)
     else:
-        outcome = calculate(tables)
+        outcome = calculate(tables, route_exceptions)
     outcome.seconds = time.perf_counter() - started
     return outcome
 
@@ -786,6 +807,31 @@ def _before_custom_line(level: int | None) -> str:
     )
 
 
+def copy_route_exceptions(
+    connection: duckdb.DuckDBPyConnection,
+) -> RouteLoadExceptionState | None:
+    """사본의 부하 예외 선언 판 이력 — 표가 없으면(0040 전 사본) None 이다(표를 만들지 않는다)."""
+    return read_route_load_exceptions(connection)
+
+
+def route_exception_line(state: RouteLoadExceptionState | None, *, level: int | None) -> str | None:
+    """머리 한 줄 — 0040 전 사본이면 빈 선언으로 셈했다는 것, 선언이 있으면 판 · 공정 수(이름
+    없음). 선언 표가 있고 비었으면 줄이 없다. 0039 전 사본은 부르지 않는다(`사본 0039 전` 줄이
+    함께 말한다)."""
+    if state is None:
+        shown = "-" if level is None else str(level)
+        return (
+            f"- {BEFORE_ROUTE_EXCEPTION_COPY} — 마이그레이션 최고 {shown} · 부하 예외 선언 표가 "
+            "없어 빈 선언으로 셈했다(사본은 고치지 않는다)"
+        )
+    if not state.declaration:
+        return None
+    return (
+        f"- 부하 예외 선언 판 {state.seq} · 공정 {len(state.declaration):,} — 모든 리비전의 "
+        "소요대수를 그 선언으로 셈했다(앱과 같다 · 공정 이름은 찍지 않는다)"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _use_utf8_stdout()
     args = parse_args(argv)
@@ -824,6 +870,11 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
         archived = len({revision.scenario_no for revision in revisions if revision.archived})
         level = migration_level(connection)
         fill_custom = before_custom_migration(level)
+        route_state = copy_route_exceptions(connection)
+        route_exceptions = (
+            NO_ROUTE_LOAD_EXCEPTIONS if route_state is None else route_state.declaration
+        )
+        route_line = None if fill_custom else route_exception_line(route_state, level=level)
         sink.emit(
             "\n".join(
                 [
@@ -832,6 +883,7 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
                     f"- 실행 {datetime.now():%Y-%m-%d %H:%M} · DB `{path.name}` · 시나리오 "
                     f"{scenarios:,}(보관 {archived:,}) · 리비전 {len(revisions):,}",
                     *([_before_custom_line(level)] if fill_custom else []),
+                    *([route_line] if route_line is not None else []),
                     "",
                     *_table(REVISION_HEADERS, ()),
                 ]
@@ -839,7 +891,9 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
         )
         # 리비전마다 끝나는 대로 한 줄 — 중간에 멈춰도 그때까지의 줄이 남는다.
         for revision in revisions:
-            outcome = inspect_revision(connection, revision, fill_custom=fill_custom)
+            outcome = inspect_revision(
+                connection, revision, route_exceptions=route_exceptions, fill_custom=fill_custom
+            )
             outcomes.append(outcome)
             sink.emit("| " + " | ".join(revision_row(revision, outcome)) + " |")
     except KeyboardInterrupt:
