@@ -35,14 +35,19 @@ from capa_simulation.components.home_lob_figures import (
     product_share_traces,
 )
 from capa_simulation.components.intro_summary import summary_payload
+from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.dashboard import home_aggregation_wafer_load
 from capa_simulation.services.load_calculator import calculate_chip_and_wafer_loads
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.official_summary import build_official_summary
+from capa_simulation.services.past_data import PAST_SECUREMENT_COLUMNS, empty_past_table
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
+    PRODUCT_SHARE_BASIS_PKG,
     PRODUCT_SHARE_SLOT_COUNT,
     ProductShareCell,
     assign_product_slots,
@@ -390,3 +395,62 @@ def test_home_draws_one_donut_slice_and_legend_entry_per_part(tmp_path: Path) ->
     ]
     assert any(LABEL_A in text for text in legend)
     assert any(LABEL_B in text for text in legend)
+
+
+def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) -> None:
+    """Past Data 를 켠 HOME 은 부품을 가르는 제품의 과거 달을 「제품 (-)」 조각 · 줄로 그린다 —
+    페이지가 리비전 계획 전체로 낸 판정을 과거 조각(`past_product_volume`)과 계획 세부수량 과거
+    열(`past_plan_detail_to_wide`)에 넘기는지 본다. 판정이 비면 과거가 접힌 제품 이름(그 제품
+    전체처럼 읽히는 줄 · 새 색 칸)으로 선다."""
+    database_path = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database_path)
+    past_months = [202511, 202512]
+    DuckDBScenarioRepository(database_path).replace_global_past_data(
+        {
+            "월별": pd.DataFrame(
+                {
+                    "생산계획년월": past_months,
+                    "Density": [8.0, 9.0],
+                    "Wafer Total": [100_000.0, 110_000.0],
+                }
+            ),
+            "계획": pd.DataFrame(
+                {
+                    "생산계획년월": [month for month in past_months for _ in range(2)],
+                    "제품정보": [TWO_PART_PRODUCT, "DEMO PRODUCT B"] * 2,
+                    "Stack": ["12H"] * 4,
+                    "Customer": ["DEMO-CUST"] * 4,
+                    "생산수량": [100.0, 50.0, 120.0, 60.0],
+                }
+            ),
+            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+        },
+        source="시험",
+    )
+
+    app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
+    # 첫 회차가 리비전 프리셋의 조회기간(계획 달)을 건다 — 과거 달까지 넓힌다. 과거 구간은 제품별
+    # PKG 만 있어 Wafer 단위면 과거 달 도넛이 서지 않는다.
+    app.session_state[MONTH_RANGE_KEY] = ("2025-11", "2026-12")
+    app.session_state[PRODUCT_SHARE_BASIS_KEY] = PRODUCT_SHARE_BASIS_PKG
+    app.run()
+
+    assert not list(app.exception)
+    figures = app.session_state["spy_figures"]
+    marker = "DEMO PRODUCT A (-)"
+    pie_labels = {
+        str(label)
+        for trace in figures["production_lob_months"].data
+        if isinstance(trace, go.Pie)
+        for label in trace.labels
+    }
+    assert marker in pie_labels
+    assert TWO_PART_PRODUCT not in pie_labels
+    hovered = {
+        str(name).replace("<br>", " ")
+        for trace in figures["production_detail_labels"].data
+        if trace.type == "bar"
+        for name in trace.hovertext
+    }
+    assert marker in hovered
+    assert TWO_PART_PRODUCT not in hovered
