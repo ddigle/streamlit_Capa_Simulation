@@ -2255,7 +2255,7 @@ def _pinned_in_scope(fn: C) -> C:
     return cast(C, inner)
 
 
-@st.fragment(key=MASTER_SCOPE)
+@fragment_scope.fragment(MASTER_SCOPE)
 @grade_ui.in_fragment
 @_pinned_in_scope
 @fragment_scope.editor_scope(

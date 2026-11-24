@@ -773,3 +773,11 @@ def _stub_process_board(monkeypatch: pytest.MonkeyPatch) -> None:
         return SimpleNamespace(apply=None)
 
     monkeypatch.setattr(process_field, "_PROCESS_PICKER", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _editor_scopes_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """편집기 구역 끄개(`settings.EDITOR_SCOPES_ENV`)를 시험 창에서 걷는다 — 사내 창에 끄개가 남아
+    있어도 시험은 기본(켬) 꼴로 돈다. 끈 꼴을 보는 시험은 제 `monkeypatch.setenv` 로 이 위에 다시
+    넣는다."""
+    monkeypatch.delenv(settings.EDITOR_SCOPES_ENV, raising=False)

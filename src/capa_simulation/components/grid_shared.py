@@ -16,7 +16,8 @@
   `leave_js()` 글을 제 등록 글 앞에 잇는다.
 - **묶음 길이**(`batch_ms`) — 편집기가 칸 고침을 모아 보내는 쉼을 편집기마다 결정값 상수로 두고 data
   로 JS 에 넘긴다. 개발 · 측정 사본은 실행 줄 환경변수 `CAPA_DEV_BATCH_MS` 로 덮어쓴다(운영에서는
-  읽지 않는다).
+  읽지 않는다). 편집기 구역 끄개(`CAPA_EDITOR_SCOPES=off` — `settings.editor_scopes_enabled`)가
+  꺼지면 덮어쓰기보다 먼저 보아 모든 편집기가 `ORDINARY_SEND_MS` 다.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from typing import Final
 import streamlit as st
 
 from capa_simulation.design import tokens
+from capa_simulation.settings import editor_scopes_enabled
 
 SHARED_ASSETS: Final = Path(__file__).with_name("grid_shared_assets")
 LEAVE_JS: Final = "leave.js"
@@ -38,6 +40,8 @@ SHARED_CSS: Final = ("cells.css", "changes.css")
 # (`APP_ENV` 운영 값)에서는 읽지 않는다. 받는 범위는 `BATCH_OVERRIDE_RANGE` 다.
 BATCH_OVERRIDE_ENV: Final = "CAPA_DEV_BATCH_MS"
 BATCH_OVERRIDE_RANGE: Final = (50, 5000)
+# 편집기 구역 끄개가 꺼졌을 때 모든 편집기의 묶음 쉼(ms) — 칸마다 앱 전체 회차이던 판의 값.
+ORDINARY_SEND_MS: Final = 300
 # 단계 칩 바탕의 옅기 — 단계 색을 바탕 위에 이만큼 얹은 불투명 색(`tokens.opaque_mix`).
 LEVEL_FILL_ALPHA: Final = 0.14
 
@@ -74,9 +78,11 @@ def grid_palette() -> dict[str, str]:
 
 
 def batch_ms(default_ms: int) -> int:
-    """편집기가 칸 고침을 모아 보내는 쉼(ms) — 결정값 `default_ms`. 개발 실행 줄에
-    `CAPA_DEV_BATCH_MS` 가 있으면(범위 안 정수) 그 값이다(측정 사본에서 묶음 길이를 바꿔 잰다). 운영
-    `APP_ENV` 에서는 늘 결정값이다."""
+    """편집기가 칸 고침을 모아 보내는 쉼(ms) — 결정값 `default_ms`. 편집기 구역 끄개가 꺼졌으면
+    무엇보다 먼저 `ORDINARY_SEND_MS` 다. 개발 실행 줄에 `CAPA_DEV_BATCH_MS` 가 있으면(범위 안 정수)
+    그 값이다(측정 사본에서 묶음 길이를 바꿔 잰다). 운영 `APP_ENV` 에서는 덮어쓰기를 읽지 않는다."""
+    if not editor_scopes_enabled():
+        return ORDINARY_SEND_MS
     raw = os.environ.get(BATCH_OVERRIDE_ENV, "").strip()
     if not raw:
         return default_ms

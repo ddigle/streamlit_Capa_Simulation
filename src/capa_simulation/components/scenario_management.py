@@ -977,7 +977,7 @@ def _settle_in_scope(
     return repository, scenarios, _settle_list_draft(repository, scenarios)
 
 
-@st.fragment(key=LIST_SCOPE)
+@fragment_scope.fragment(LIST_SCOPE)
 @in_fragment
 @fragment_scope.editor_scope(LIST_SCOPE, head=_list_head)
 def _render_list_scope(*, database_path: str, counting: bool, badge: DeltaGenerator) -> bool:

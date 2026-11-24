@@ -40,6 +40,7 @@ from fragment_browser import FragmentBrowser, install_fragment_browser
 from grade_support import as_grade, grade_page_script, preview
 from grid_fake import install_fake_grid, load, send_ops
 from streamlit.components.v2.bidi_component.main import _make_trigger_id
+from streamlit.errors import StreamlitAPIException
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
@@ -57,7 +58,7 @@ from capa_simulation.auth import grades
 from capa_simulation.components import equipment_data_workspace as edw
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components import equipment_master_tab as emt
-from capa_simulation.components import grade_ui
+from capa_simulation.components import grade_ui, grid_shared
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
     OWN_SAVE_CARRY_KEY,
@@ -264,6 +265,35 @@ def test_a_first_edit_rises_at_the_callback_end_and_the_next_edit_stays_in_the_s
     assert _value(page.app, "DA-02", "담당자") == "둘째 값"
     assert all(message.delta.fragment_id == page.scope for message in _deltas(page))
     assert _scope_event_slots(page) == app_slots
+
+
+def test_with_scopes_off_a_cell_edit_runs_the_whole_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끄개(`CAPA_EDITOR_SCOPES=off`)면 탭 ① 은 구역을 세우지 않는다 — 미저장이 서는 첫 칸도 미저장
+    표시가 그대로인 다음 칸도 앱 전체 회차 하나(`[[]]`)이고 그 회차의 feed 가 ack 를 싣는다. 묶음
+    쉼은 지난 판 값(`grid_shared.ORDINARY_SEND_MS`)이다."""
+    monkeypatch.setenv(settings.EDITOR_SCOPES_ENV, "off")
+    path = tmp_path / "equipment.duckdb"
+    browser = install_fragment_browser(monkeypatch)
+    _live_grid(monkeypatch)
+    app = _app(path)
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", path)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", path.with_name(f"{path.stem}_simulation.duckdb"))
+    _ok(app.run())
+    with pytest.raises(StreamlitAPIException):
+        browser.fragment_keyed(SCOPE)
+    assert browser.bidi_data(emg.GRID_KEY)["sendMs"] == grid_shared.ORDINARY_SEND_MS
+
+    for name, text in (("DA-01", "첫 값"), ("DA-02", "둘째 값")):
+        base = str(browser.bidi_data(emg.GRID_KEY)["base"])
+        seq = next(_SEQ)
+        op = {"seq": seq, "at": 0, "base": base, **_cell(name, "담당자", text)}
+        app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+        _ok(browser.send_state(app, emg.GRID_KEY, {"outbox": {"mount": MOUNT, "ops": [op]}}))
+        assert browser.started == [[]], name
+        assert browser.bidi_data(emg.feed_key())["ack"] == {"mount": MOUNT, "seq": seq}
+        assert _value(app, name, "담당자") == text
 
 
 def test_clearing_and_a_conditions_load_stay_in_the_scope(

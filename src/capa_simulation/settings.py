@@ -1,4 +1,5 @@
-# Purpose: 공통 설정 상수(이름·경로·기간)와 문의처·메모리 공유 스위치 읽기·운영 DB 자리 판정을 둔다.
+# Purpose: 공통 설정 상수(이름·경로·기간)와 문의처·메모리 공유 스위치 · 편집기 구역 끄개 읽기·운영
+# DB 자리 판정을 둔다.
 
 import os
 import re
@@ -91,6 +92,18 @@ def share_strings_enabled(environ: Mapping[str, str] | None = None) -> bool:
 def share_session_tables_enabled(environ: Mapping[str, str] | None = None) -> bool:
     """세션 표 공유가 켜졌는가 — `SHARE_SESSION_TABLES_ENV` 가 `off` 가 아니면 켬이다."""
     return _memory_share_enabled(SHARE_SESSION_TABLES_ENV, environ)
+
+
+# 편집기 구역 끄개 — 꼴은 위 메모리 공유 스위치와 같다(기본 켬, `off` 일 때만 끔, 부를 때마다 읽음).
+# 끄면 편집기 구역(`components/fragment_scope.fragment`)이 앱 전체 회차 안에서 그냥 그려지고 편집기
+# 묶음 쉼이 `grid_shared.ORDINARY_SEND_MS`(0.3초)로 돌아간다. 운영에서도 읽는다 — 탈이 났을 때만
+# C-DEP 환경변수 표에 넣고 CI/CD 로 다시 띄운다(AGENTS 9장 「구역 회차 규칙」 끄개).
+EDITOR_SCOPES_ENV = "CAPA_EDITOR_SCOPES"
+
+
+def editor_scopes_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """편집기 구역이 켜졌는가 — `EDITOR_SCOPES_ENV` 가 `off` 가 아니면 켬이다."""
+    return _memory_share_enabled(EDITOR_SCOPES_ENV, environ)
 
 
 def format_month(month: int) -> str:

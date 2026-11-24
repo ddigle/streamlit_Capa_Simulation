@@ -1128,7 +1128,7 @@ def _yield_grid_or_none() -> plan_grid.PlanGrid | None:
     return None if default_yield_table is None else _yield_grid_table(default_yield_table)
 
 
-@st.fragment(key=PLAN_SCOPE)
+@fragment_scope.fragment(PLAN_SCOPE)
 @grade_ui.in_fragment
 @fragment_scope.editor_scope(PLAN_SCOPE, head=SCOPE_HEAD)
 def _render_plan_scope(*, hidden: bool) -> None:
@@ -1205,7 +1205,7 @@ def _render_plan_scope(*, hidden: bool) -> None:
             alerts.flush()
 
 
-@st.fragment(key=YIELD_SCOPE)
+@fragment_scope.fragment(YIELD_SCOPE)
 @grade_ui.in_fragment
 @fragment_scope.editor_scope(YIELD_SCOPE, head=SCOPE_HEAD)
 def _render_yield_scope(*, hidden: bool) -> None:

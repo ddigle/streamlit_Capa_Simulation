@@ -31,8 +31,10 @@ import numpy as np
 import pandas as pd
 import pytest
 from fragment_browser import FragmentBrowser, install_fragment_browser
+from streamlit.errors import StreamlitAPIException
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation import settings
 from capa_simulation.components import fragment_scope, grade_ui
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,6 +159,28 @@ def body(fresh):
 
 
 body(True)
+"""
+)
+
+# 끄개 뒤 구역(`fragment_scope.fragment` — 편집기 다섯 자리와 같은 꼴), 콜백 끝 올리기.
+SWITCHED = (
+    _PRELUDE
+    + """
+
+@fragment_scope.escalates(SCOPE)
+@grade_ui.on_press
+def _on_outbox():
+    _apply()
+
+
+@fragment_scope.fragment(SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(SCOPE, head=head, token=token, one_shot=("fresh",))
+def body(*, fresh):
+    _draw(fresh)
+
+
+body(fresh=True)
 """
 )
 
@@ -373,6 +397,59 @@ def test_an_outer_fragment_run_keeps_the_one_shot_argument_it_passes(
     browser.send_state(app, "probe", _ops(1, 2))
     assert browser.started == [[scope]]
     assert app.session_state["seen_fresh"] is False
+
+
+@pytest.mark.parametrize(
+    ("value", "enabled"),
+    [
+        (None, True),
+        ("", True),
+        ("on", True),
+        ("0", True),
+        ("false", True),
+        ("off", False),
+        (" OFF ", False),
+    ],
+)
+def test_only_off_turns_editor_scopes_off(value: str | None, enabled: bool) -> None:
+    """편집기 구역 끄개는 값이 `off`(앞뒤 공백 · 대소문자 무시)일 때만 끈다 — 비었거나 다른 값
+    (`0` · `false` 같은 오타 꼴 포함)이면 켬이다."""
+    environ = {} if value is None else {settings.EDITOR_SCOPES_ENV: value}
+
+    assert settings.editor_scopes_enabled(environ) is enabled
+
+
+def test_with_scopes_off_a_widget_in_a_scope_runs_the_whole_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """끄개 뒤 구역(`fragment_scope.fragment`)은 켬(기본)이면 구역이다 — 첫 칸은 구역 회차로 시작해
+    앱 전체로 오르고, 다음 칸은 구역 회차 하나다. 끄면(`off`) 같은 대본이 프래그먼트를 세우지 않아
+    부품이 구역 밖에 그려지고, 칸마다 앱 전체 회차 하나다(`fragment_ids_this_run == []`). ack ·
+    반영 · 머리 표지는 그 회차에 실리고, 한 번만 쓰는 인자는 구역 회차가 없으니 꺼지지 않는다."""
+    app, browser, scope = _start(monkeypatch, SWITCHED)
+    browser.send_state(app, "probe", _op(1))
+    assert browser.started == [[scope], []]
+    browser.send_state(app, "probe", _ops(1, 2))
+    assert browser.started == [[scope]], "켬이면 머리 표지가 그대로인 칸은 구역 회차 하나"
+
+    monkeypatch.setenv(settings.EDITOR_SCOPES_ENV, "off")
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(SWITCHED).run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+    with pytest.raises(StreamlitAPIException):
+        browser.fragment_keyed(SCOPE)
+
+    browser.send_state(app, "probe", _op(1))
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[]]
+    assert browser.bidi_data("probe") == {"ack": 1}
+    assert _heads(app) == ["head=True"]
+
+    browser.send_state(app, "probe", _ops(1, 2))
+    assert browser.started == [[]], "끄면 머리 표지가 그대로인 칸도 앱 전체 회차"
+    assert browser.bidi_data("probe") == {"ack": 2}
+    assert [op["seq"] for op in app.session_state["applied"]] == [1, 2]
+    assert app.session_state["seen_fresh"] is True
 
 
 def test_one_shot_names_must_be_arguments_of_the_scope_body() -> None:
@@ -714,6 +791,65 @@ def test_editor_scope_bodies_rise_only_through_the_helpers() -> None:
     assert _direct_rises(control) == [("control", "bad")]
 
     offenders = _direct_rises(_functions())
+    assert not offenders, offenders
+
+
+def _decorator_targets(function: ast.FunctionDef) -> list[tuple[str, ...]]:
+    """데코레이터마다 점 이름(`@a.b(…)` · `@a.b` → `("a", "b")`)."""
+    return [
+        _dotted(decorator.func if isinstance(decorator, ast.Call) else decorator)
+        for decorator in function.decorator_list
+    ]
+
+
+def _scopes_past_the_switch(functions: list[tuple[str, ast.FunctionDef]]) -> list[tuple[str, str]]:
+    """`editor_scope` 를 단 구역 본문 가운데 끄개(`fragment_scope.fragment(…)`)를 달지 않았거나
+    `st.fragment` 를 바로 단 것."""
+    return [
+        (rel, function.name)
+        for rel, function in functions
+        if "editor_scope" in _decorator_names(function)
+        and (
+            ("fragment_scope", "fragment") not in _decorator_targets(function)
+            or ("st", "fragment") in _decorator_targets(function)
+        )
+    ]
+
+
+# 그물 대조 — 끄개를 거치는 구역(지나감), `st.fragment` 를 바로 단 구역 · 프래그먼트 없이 단
+# 구역(잡혀야 한다).
+_SWITCH_CONTROL = """
+@fragment_scope.fragment("good")
+@grade_ui.in_fragment
+@fragment_scope.editor_scope("good")
+def good():
+    draw()
+
+
+@st.fragment(key="direct")
+@grade_ui.in_fragment
+@fragment_scope.editor_scope("direct")
+def direct():
+    draw()
+
+
+@grade_ui.in_fragment
+@fragment_scope.editor_scope("bare")
+def bare():
+    draw()
+"""
+
+
+def test_every_editor_scope_goes_through_the_switch() -> None:
+    """`editor_scope` 를 단 구역 본문은 모두 `fragment_scope.fragment(…)` 를 달고 `st.fragment` 를
+    바로 달지 않는다 — 새 구역이 끄개(`CAPA_EDITOR_SCOPES=off`)를 비켜 가지 못하게. 그물이 헛돌지
+    않는지 대조 본문으로 먼저 본다."""
+    control = _functions_in(ast.parse(_SWITCH_CONTROL), "control")
+    assert _scopes_past_the_switch(control) == [("control", "direct"), ("control", "bare")]
+
+    scopes = [(rel, f.name) for rel, f in _functions() if "editor_scope" in _decorator_names(f)]
+    assert scopes, "구역 본문을 하나도 찾지 못했다 — 그물이 헛돈다"
+    offenders = _scopes_past_the_switch(_functions())
     assert not offenders, offenders
 
 

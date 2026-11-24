@@ -30,6 +30,7 @@ import pytest
 import streamlit as st
 from edit_grid_fake import shell_key
 from fragment_browser import FragmentBrowser, install_fragment_browser
+from streamlit.errors import StreamlitAPIException
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _script
@@ -38,8 +39,8 @@ from test_reference_data_page import DATASET, REAL_APPLY_TEST_SCRIPT
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.persistence._sql_helpers as sql_helpers
-from capa_simulation import sidebar_status
-from capa_simulation.components import edit_grid, fragment_scope, write_guard
+from capa_simulation import settings, sidebar_status
+from capa_simulation.components import edit_grid, fragment_scope, grid_shared, write_guard
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.plan_grid_keys import HOSTS, PLAN_TABLE, YIELD_TABLE
 from capa_simulation.plan_grid_keys import cells_key as plan_cells_key
@@ -424,3 +425,56 @@ def test_the_reference_paste_popup_opens_from_inside_the_scope(
 
     assert page.browser.started == ([[scope], [host]] if alone else [[scope], []])
     assert _dialog_drawn(page.browser)
+
+
+# ------------------------------------------------------------------ 끄개(구역 없이 앱 전체 회차)
+
+
+def _send_app_run(page: _Page, host: str, value: dict[str, Any]) -> AppTest:
+    """그리드 출납을 앱 전체 회차로 보낸다 — 끄개를 끄면 부품이 구역 밖에 그려져 브라우저가 앱 전체
+    회차를 청한다."""
+    for key, kept in page.keep.items():
+        page.app.session_state[key] = kept
+    page.browser.fragment_queue = []
+    changed = WidgetState(id=page.browser.widget_id_of(host), json_value=json.dumps(value))
+    return _ok(page.app._run(widget_state=page._states([changed])))
+
+
+@pytest.mark.parametrize("grid", ["pkg-plan", "reference"])
+def test_with_scopes_off_a_grid_edit_runs_the_whole_app(
+    monkeypatch: pytest.MonkeyPatch, plan_database: Path, grid: str
+) -> None:
+    """끄개(`CAPA_EDITOR_SCOPES=off`)면 생산 계획 · 기준 정보 그리드는 구역을 세우지 않는다 — 초안이
+    서는 첫 칸도, 초안이 그대로인 둘째 칸도 앱 전체 회차 하나(`[[]]`)이고 그 회차의 feed 가 ack 를
+    싣는다. 묶음 쉼은 지난 판 값(`grid_shared.ORDINARY_SEND_MS`)이다."""
+    monkeypatch.setenv(settings.EDITOR_SCOPES_ENV, "off")
+    browser = install_fragment_browser(monkeypatch)
+    _live_grids(monkeypatch)
+    if grid == "pkg-plan":
+        app = _ok(AppTest.from_string(_script(plan_database), default_timeout=300).run())
+        app.session_state[TAB_KEY] = TABS[PLAN_TABLE]
+        _ok(app.run())
+        page = _Page(app, browser, {TAB_KEY: TABS[PLAN_TABLE]})
+        host, scope, cells = HOSTS[PLAN_TABLE], PLAN_SCOPE, plan_cells_key(PLAN_TABLE)
+        row, (month, first, second) = shell_key(browser.bidi_data(host), 0), CELLS[PLAN_TABLE]
+    else:
+        app = AppTest.from_string(REAL_APPLY_TEST_SCRIPT, default_timeout=120)
+        app.session_state[DATASET_KEY] = DATASET["일수"]
+        _ok(app.run())
+        page = _Page(app, browser)
+        host, scope, cells = GRID_HOST, REFERENCE_SCOPE, reference_cells_key("RQ_RUN_DAY")
+        (row, month), first, second = RUN_DAY, "20", "21"
+    with pytest.raises(StreamlitAPIException):
+        browser.fragment_keyed(scope)
+    assert browser.bidi_data(host)["limits"]["sendMs"] == grid_shared.ORDINARY_SEND_MS
+
+    edits = [_write(row, month, first)]
+    _send_app_run(page, host, _ops(browser, host, *edits))
+    assert browser.started == [[]]
+    assert _ack(browser, host) == 1
+    assert page.app.session_state[cells]["cells"]
+
+    edits.append(_write(row, month, second))
+    _send_app_run(page, host, _ops(browser, host, *edits))
+    assert browser.started == [[]], "초안이 그대로인 칸도 앱 전체 회차"
+    assert _ack(browser, host) == 2

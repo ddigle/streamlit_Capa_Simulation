@@ -1,12 +1,17 @@
-# Purpose: 편집기 구역(키 붙은 프래그먼트) 회차의 규칙 도우미 — 앱 전체로 올리는 자리 · 머리 표지
-# 견주기 · 작은 인자 · 남의 저장 확인 · 오류 카드.
+# Purpose: 편집기 구역(끄개 뒤 키 붙은 프래그먼트) 회차의 규칙 도우미 — 앱 전체로 올리는 자리 ·
+# 머리 표지 견주기 · 작은 인자 · 남의 저장 확인 · 오류 카드.
 
 """편집기 구역 회차의 공용 도우미 — AGENTS 9장 「구역 회차 규칙」 R1 ~ R6 의 파이썬 몫.
 
-편집기(설비 마스터 표 · 범용 편집 그리드 · 시나리오 목록)를 `@st.fragment(key=…)` 로 감싸면 칸
-하나를 고칠 때 앱 전체 회차 대신 그 구역만 돈다. 구역 밖(머리 띠 변경 칩 · 화면 탭 줄 점 · 떠나기
-확인 · 테마 표지 · 팝업 호스트)은 그 회차에 다시 그려지지 않으므로, 밖이 읽는 값이 바뀐 상호작용은
-앱 전체 회차로 올린다.
+편집기(설비 마스터 표 · 범용 편집 그리드 · 시나리오 목록)를 키 붙은 프래그먼트(`fragment(key)` —
+`@st.fragment(key=…)` 를 끄개 뒤에 둔 것)로 감싸면 칸 하나를 고칠 때 앱 전체 회차 대신 그 구역만
+돈다. 구역 밖(머리 띠 변경 칩 · 화면 탭 줄 점 · 떠나기 확인 · 테마 표지 · 팝업 호스트)은 그 회차에
+다시 그려지지 않으므로, 밖이 읽는 값이 바뀐 상호작용은 앱 전체 회차로 올린다.
+
+- **끄개**(`fragment` · `settings.editor_scopes_enabled` — 환경변수 `CAPA_EDITOR_SCOPES=off`) —
+  끄면 구역 프래그먼트를 거치지 않고 본문을 앱 전체 회차 안에서 그냥 그린다(칸마다 앱 전체 회차).
+  아래 도우미는 구역 회차가 없으니 스스로 쉰다. 묶음 쉼도 함께 0.3초로 돌아간다
+  (`grid_shared.batch_ms`). 운영 물러섬이라 기본은 켬이다.
 
 - **R1 올리는 자리**(`escalate` · `escalates` · `escalate_if_moved`) — 위젯 콜백 끝(`st.rerun()` —
   이 상호작용이 앱 전체 회차가 된다, 본문 전이라 위젯 상태가 남는다) 또는 본문을 다 그린
@@ -48,10 +53,10 @@
   스타일이 앱 전체 회차마다 싣는다).
 
 받는 자리 그물(`tests/grade_support.assert_refusals_caught`)은 데코레이터 이름으로 본다 —
-`editor_scope` 는 `@st.fragment(key=…)` · `@grade_ui.in_fragment` 를 대신하지 않고 그 **아래**에
-단다::
+`editor_scope` 는 `@fragment_scope.fragment(…)` · `@grade_ui.in_fragment` 를 대신하지 않고 그
+**아래**에 단다(편집기 구역은 `st.fragment` 를 바로 달지 않는다 — 끄개를 비켜 간다)::
 
-    @st.fragment(key=SCOPE)
+    @fragment_scope.fragment(SCOPE)
     @grade_ui.in_fragment
     @fragment_scope.editor_scope(SCOPE, head=head_marks, token=saved_pair_token)
     def render_editor_scope(table: str) -> None: ...
@@ -80,6 +85,7 @@ from streamlit.runtime.scriptrunner_utils.script_run_context import (
 )
 
 from capa_simulation.session_slot import SessionSlot
+from capa_simulation.settings import editor_scopes_enabled
 from capa_simulation.sidebar_status import keeps_app_run_open
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -169,6 +175,29 @@ def scope_box(key: str) -> Iterator[None]:
     """구역 본문 칸을 연다 — `editor_scope(box=False)` 로 칸 자리를 손수 정할 때 쓴다."""
     with st.container(key=box_key(key)):
         yield
+
+
+def fragment(key: str) -> Callable[[F], F]:
+    """편집기 구역 프래그먼트 — `@st.fragment(key=key)` 대신 단다(모듈 설명 「끄개」).
+
+    꾸밀 때 `st.fragment(key=key)(fn)` 를 만들어 두고, 부를 때마다 끄개
+    (`settings.editor_scopes_enabled`)를 본다. 켬이면 그 프래그먼트를 부르고, 끔이면 `fn` 을 바로
+    불러 앱 전체 회차 안에서 그냥 그린다 — 구역 회차가 없으니 올리기 도우미 · 한 번만 쓰는 인자 ·
+    구역 회차 표지는 스스로 쉬고, 본문 오류는 앱 전체 회차 길(R6)로 간다. 이름이 `fragment` 인
+    것은 정적 그물이 데코레이터 끝 이름으로 프래그먼트 뿌리를 알아보기 때문이다."""
+
+    def decorate(fn: F) -> F:
+        scoped = st.fragment(key=key)(fn)
+
+        @functools.wraps(fn)
+        def inner(*args: Any, **kwargs: Any) -> Any:
+            if editor_scopes_enabled():
+                return scoped(*args, **kwargs)
+            return fn(*args, **kwargs)
+
+        return cast(F, inner)
+
+    return decorate
 
 
 def escalate() -> None:
@@ -390,7 +419,7 @@ def editor_scope(
     page: str = "",
     href: str = "",
 ) -> Callable[[F], F]:
-    """편집기 구역 본문 감싸기(R1 ~ R4 · R6) — `@st.fragment(key=key)` · `@grade_ui.in_fragment`
+    """편집기 구역 본문 감싸기(R1 ~ R4 · R6) — `@fragment(key)` · `@grade_ui.in_fragment`
     **아래**에 단다(모듈 설명). `key` 는 프래그먼트 key 와 같게 준다.
 
     - 앱 전체 회차: 본문 앞에서 머리 표지(`head`) · 저장 토큰(`token`)을 찍는다.

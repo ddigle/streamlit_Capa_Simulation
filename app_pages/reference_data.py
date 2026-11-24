@@ -1204,7 +1204,7 @@ def _apply_pressed(grid: reference_grid.GridTable, actions: reference_grid.Actio
     return True
 
 
-@st.fragment(key=REFERENCE_SCOPE)
+@fragment_scope.fragment(REFERENCE_SCOPE)
 @grade_ui.in_fragment
 @fragment_scope.editor_scope(REFERENCE_SCOPE, head=SCOPE_HEAD)
 def _render_reference_scope(*, table: str | None, scope: str | None) -> bool:
