@@ -272,7 +272,7 @@ _CHILD_SIGNAL: Final = re.compile(r"SIG[A-Z0-9]{1,12}")
 # 종료 코드 · 초의 받는 범위(Windows 의 종료 코드는 부호 없는 32비트까지 온다).
 _CHILD_EXIT_LIMIT: Final = 2**32
 _CHILD_SECONDS_LIMIT: Final = 86_400.0
-# 메모리 단서 칸의 받는 범위 — MiB(1PiB 아래) · OOM 종료 수.
+# 메모리 단서 칸의 받는 범위 — MiB(1PiB 아래) · OOM 종료 수 · 한도 닿음 수.
 _MEMORY_MIB_LIMIT: Final = 2**30
 _MEMORY_COUNT_LIMIT: Final = 2**31
 # 메모리 단서 칸 — 결과 파일 · 감사 상세 · 로그의 이름(차례대로). 한도 칸의 「max」 는 한도
@@ -286,7 +286,17 @@ MEMORY_FIELDS: Final = (
     "rss_before",
     "rss_after",
     "kid_peak",
+    "oom_src",
+    "hit_before",
+    "hit_after",
 )
+# OOM 종료 수를 읽은 자리(`oom_src` 칸) — v2 `memory.events` · v2 `memory.events.local` · v1(혼합
+# 마운트 포함) `memory/memory.oom_control`. `memory_probe` 가 이 차례로 찾는다.
+OOM_SOURCES: Final = ("events", "events_local", "oom_control")
+# 어느 자리에서도 `oom_kill` 줄을 못 찾은 갈래 — 후보 파일이 하나도 없음 · 읽었는데 줄이 없음 ·
+# 파일은 있는데 읽기 실패. 화면에는 「oom_kill 모름(까닭)」 의 까닭이다.
+OOM_UNKNOWN: Final = ("no_file", "no_line", "unread")
+_OOM_UNKNOWN_TEXT: Final = {"no_file": "파일 없음", "no_line": "줄 없음", "unread": "못 읽음"}
 # 옛 하위 최고 칸(거둔 하위 모두의 `getrusage` 최고 앞뒤 — 앱 주소 공간을 물려받아 앱 RSS 아래로
 # 내려가지 않던 값). 읽을 때 예외 없이 지나치고 새 칸으로 옮기지 않는다.
 LEGACY_MEMORY_FIELDS: Final = ("kid_peak_before", "kid_peak_after")
@@ -304,7 +314,10 @@ class ChildMemory:
     `memory.oom_control` 의 `oom_kill` — 앞뒤가 다르면 그 사이 cgroup 이 프로세스를 죽였다).
     `rss_*` — 앱 프로세스 RSS(`/proc/self/status` 의 `VmRSS`). `child_peak` — 이번 하위 프로세스
     자신의 최고 RSS(그 하위의 `/proc/<pid>/status` 의 `VmHWM` 을 도는 동안 짧은 틈마다 읽은 가장 큰
-    값 — 앞뒤 두 값이 아니라 한 값이다)."""
+    값 — 앞뒤 두 값이 아니라 한 값이다). `oom_source` — OOM 종료 수를 읽은 자리(`OOM_SOURCES`)나
+    못 찾은 갈래(`OOM_UNKNOWN`), 재지 않음 · 옛 기록은 빈 글. `hit_*` — 컨테이너 cgroup 메모리가
+    한도에 닿은 횟수(v2 `memory.events` 의 `max` · v1 `memory.failcnt` — 앞뒤가 다르면 그 사이
+    한도에 닿았다. 닿았다고 늘 강제로 끝내지는 않아 OOM 종료 수와 다른 값이다)."""
 
     cgroup_before: int | None = None
     cgroup_after: int | None = None
@@ -315,9 +328,13 @@ class ChildMemory:
     rss_before: int | None = None
     rss_after: int | None = None
     child_peak: int | None = None
+    oom_source: str = ""
+    hit_before: int | None = None
+    hit_after: int | None = None
 
     def fields(self) -> dict[str, object]:
-        """칸 이름(`MEMORY_FIELDS`) → 값. 모르는 값은 `None`."""
+        """칸 이름(`MEMORY_FIELDS`) → 값. 모르는 수는 `None`, 모르는 OOM 종료 수 자리 낱말은 빈
+        글이다(칸은 늘 선다)."""
         return dict(
             zip(
                 MEMORY_FIELDS,
@@ -330,6 +347,9 @@ class ChildMemory:
                     self.rss_before,
                     self.rss_after,
                     self.child_peak,
+                    self.oom_source,
+                    self.hit_before,
+                    self.hit_after,
                 ),
                 strict=True,
             )
@@ -339,7 +359,9 @@ class ChildMemory:
     def text(self) -> str:
         """화면 값 조각 — 「cgroup 712→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고
         62MiB」(한도 없음은 「/max」). 모르는 값은 「모름」 이고, 한 묶음을 통째로 모르면
-        「cgroup 모름」 꼴이다."""
+        「cgroup 모름」 꼴이다. OOM 종료 수를 앞뒤 모두 모르고 못 찾은 갈래를 알면 그 까닭이 괄호로
+        붙는다 — 「oom_kill 모름(줄 없음)」(읽은 자리는 칸에만 둔다). 한도 닿음 수를 하나라도
+        읽었으면 OOM 종료 수 바로 뒤에 「한도 닿음 3→5」 가 붙는다(둘 다 모르면 붙지 않는다)."""
         if self.cgroup_before is None and self.cgroup_after is None and self.limit is None:
             cgroup = (
                 f"cgroup {UNKNOWN_VALUE}/{MEMORY_UNLIMITED}"
@@ -349,14 +371,20 @@ class ChildMemory:
         else:
             cap = MEMORY_UNLIMITED if self.unlimited else f"{_known(self.limit)}MiB"
             cgroup = f"cgroup {_pair(self.cgroup_before, self.cgroup_after)}/{cap}"
-        return " · ".join(
-            (
-                cgroup,
-                f"oom_kill {_pair(self.oom_before, self.oom_after)}",
-                _pair_part("앱 RSS", self.rss_before, self.rss_after),
-                _single_part("하위 최고", self.child_peak),
-            )
-        )
+        parts = [cgroup, self._oom_part()]
+        if self.hit_before is not None or self.hit_after is not None:
+            parts.append(f"한도 닿음 {_pair(self.hit_before, self.hit_after)}")
+        parts += [
+            _pair_part("앱 RSS", self.rss_before, self.rss_after),
+            _single_part("하위 최고", self.child_peak),
+        ]
+        return " · ".join(parts)
+
+    def _oom_part(self) -> str:
+        cause = _OOM_UNKNOWN_TEXT.get(self.oom_source)
+        if self.oom_before is None and self.oom_after is None and cause is not None:
+            return f"oom_kill {UNKNOWN_VALUE}({cause})"
+        return f"oom_kill {_pair(self.oom_before, self.oom_after)}"
 
 
 def _known(value: int | None) -> str:
@@ -381,8 +409,9 @@ def _pair_part(label: str, before: int | None, after: int | None) -> str:
 
 def parse_memory(data: Mapping[str, object]) -> ChildMemory | None:
     """진단 칸의 메모리 단서를 읽는다. 그 칸이 하나도 없으면(옛 파일 · 재지 않음) `None`. 꼴이
-    어긋난 값은 그 값만 비운다. 옛 하위 최고 칸(`LEGACY_MEMORY_FIELDS`)은 읽지 않는다 — 하위 최고는
-    「모름」 이다."""
+    어긋난 값은 그 값만 비운다 — OOM 종료 수 자리 낱말은 `OOM_SOURCES` · `OOM_UNKNOWN` 에 있을 때만
+    받고, 한도 닿음 수는 OOM 종료 수와 같은 범위다. 옛 하위 최고 칸(`LEGACY_MEMORY_FIELDS`)은 읽지
+    않는다 — 하위 최고는 「모름」 이다."""
     if not any(name in data for name in (*MEMORY_FIELDS, *LEGACY_MEMORY_FIELDS)):
         return None
     limit = data.get("cg_max")
@@ -396,7 +425,14 @@ def parse_memory(data: Mapping[str, object]) -> ChildMemory | None:
         rss_before=_bounded(data.get("rss_before"), _MEMORY_MIB_LIMIT),
         rss_after=_bounded(data.get("rss_after"), _MEMORY_MIB_LIMIT),
         child_peak=_bounded(data.get("kid_peak"), _MEMORY_MIB_LIMIT),
+        oom_source=_oom_word(data.get("oom_src")),
+        hit_before=_bounded(data.get("hit_before"), _MEMORY_COUNT_LIMIT),
+        hit_after=_bounded(data.get("hit_after"), _MEMORY_COUNT_LIMIT),
     )
+
+
+def _oom_word(value: object) -> str:
+    return value if isinstance(value, str) and value in (*OOM_SOURCES, *OOM_UNKNOWN) else ""
 
 
 def _bounded(value: object, limit: int) -> int | None:
@@ -564,8 +600,8 @@ class ChildDiag:
         """화면 값 조각 — 「종료 0 · 4.1초 · 단계 import · stderr - · bigdataquery 2.5.0 ·
         getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」). 불러온 길을 알면
         그 뒤에 「불러오기 light」(또는 `full`), 메모리 단서를 재었으면 그 뒤에 「cgroup … ·
-        oom_kill … · 앱 RSS … · 하위 최고 …」(`ChildMemory.text`), 프로세스 단서를 재었으면 그 뒤에
-        「앱 뜬 지 … · 스레드 … · 열린 파일 … · pids … · 프로세스 … ·
+        oom_kill … · (한도 닿음 … ·) 앱 RSS … · 하위 최고 …」(`ChildMemory.text`), 프로세스 단서를
+        재었으면 그 뒤에 「앱 뜬 지 … · 스레드 … · 열린 파일 … · pids … · 프로세스 … ·
         좀비 …」(`ProcessClues.text`)."""
         if self.exit_code is None:
             ended = "종료 -"

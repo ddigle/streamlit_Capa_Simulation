@@ -534,7 +534,7 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     try:
         answer = bdq_login.run_with_relogin(ask)
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
-        if resolve_user_name() is None and "user_name" in str(error):
+        if resolve_user_name() is None and "user_name" in _link_text(error):
             _log_failure(
                 f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error)
             )
@@ -596,7 +596,7 @@ def is_login_token_failure(error: BaseException) -> bool:
         return True
     if any("token" in type(link).__name__.casefold() for link in chain):
         return True
-    text = " ".join(str(link) for link in chain).casefold()
+    text = " ".join(_link_text(link) for link in chain).casefold()
     return "bigdataquery token" in text or ".credential" in text
 
 
@@ -762,7 +762,7 @@ def _original_text(error: BaseException) -> str:
     """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구. 패키지 문구가 실은
     요청자 계정(저장된 BDQ 계정 ID 는 화면에 보이지 않는다 — D7)은 자르기 전에 가린다 — 조회한
     누구나 보는 글이고 모듈로도 간다."""
-    text = str(error).strip()
+    text = _link_text(error).strip()
     for name in _accounts_to_hide():
         text = text.replace(name, ACCOUNT_MASK)
     if len(text) > _ORIGINAL_TEXT_LIMIT:
@@ -782,6 +782,15 @@ def failure_type_names(error: BaseException) -> tuple[str, ...]:
     return tuple(type(link).__name__ for link in _failure_chain(error))
 
 
+def _link_text(link: BaseException) -> str:
+    """고리 하나의 글. 패키지 예외의 글 만들기(`__str__`)가 깨지면 빈 글이다 — 그 고리는 종류
+    이름으로만 갈리고 판정은 이어 간다(`bdq_login._has_relogin_message` 와 같은 물러섬)."""
+    try:
+        return str(link)
+    except Exception:  # 패키지 예외의 글 만들기가 낼 예외 종류를 모른다
+        return ""
+
+
 def _token_clue(chain: list[BaseException]) -> str | None:
     """갈래 「토큰」 이면 근거 낱말(`_TOKEN_FAILURE_WORDS` 의 것 — 종류 이름으로 가렸으면 빈 글),
     아니면 None. 토큰 예외 종류 이름(`_TOKEN_FAILURE_TYPE_WORDS`)과 다시 로그인 문구
@@ -790,7 +799,7 @@ def _token_clue(chain: list[BaseException]) -> str | None:
     names = " ".join(type(link).__name__ for link in chain).casefold().replace("_", "")
     if any(word in names for word in _TOKEN_FAILURE_TYPE_WORDS):
         return ""
-    text = " ".join(str(link) for link in chain).casefold()
+    text = " ".join(_link_text(link) for link in chain).casefold()
     if any(message and message.casefold() in text for message in bdq_login.RELOGIN_MESSAGES):
         return next((word for word in _TOKEN_FAILURE_WORDS if word in text), "")
     if any(word in names or word in text for word in _QUERY_TEXT_WORDS):
@@ -809,13 +818,13 @@ def _sorted_failure(error: BaseException) -> tuple[str, str]:
     token = _token_clue(chain)
     if token is not None:
         return QUERY_FAILURE_TOKEN, token
-    if any(_BUSY_PATTERN.search(str(link)) for link in chain):
+    if any(_BUSY_PATTERN.search(_link_text(link)) for link in chain):
         return QUERY_FAILURE_BUSY, BUSY_CLUE
     if any(isinstance(link, TimeoutError) for link in chain):
         return QUERY_FAILURE_TIMEOUT, ""
     if any(isinstance(link, ConnectionError) for link in chain):
         return QUERY_FAILURE_CONNECTION, ""
-    haystack = " ".join(f"{type(link).__name__} {link}" for link in chain).casefold()
+    haystack = " ".join(f"{type(link).__name__} {_link_text(link)}" for link in chain).casefold()
     for kind, words in _FAILURE_WORDS:
         for word in words:
             if word in haystack:

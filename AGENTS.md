@@ -2147,8 +2147,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넣은 사람(개발자 앱 ID 앞 두 글자) · 넣은 시각 · 멈춘 시각, 그리고 이 프로세스의 마지막 시도(시각 · 자동/넣기 · 결과 · 남은 시간)와 그
   시도가 하위 프로세스를 띄웠으면 바로 아래 「진단」 값 줄(`diag_line` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 패키지를 불러온 길(알 때만 —
   「불러오기 light / full」) · 표준 오류 마지막 예외
-  종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
-  최고 nMiB」(하위 최고는 그 하위 하나의 값) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」(2026-11-21 —
+  종류 · bigdataquery · getpass_asterisk 판 · 하위 프로세스 앞뒤와 그 하위의 메모리 단서 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 한도 닿음 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위
+  최고 nMiB」(하위 최고는 그 하위 하나의 값, OOM 종료 수를 앞뒤 모두 모르면 「oom_kill 모름(파일 없음 · 줄 없음 · 못 읽음 가운데 하나)」 — 읽은 자리는 칸 `oom_src` 에만, 「한도 닿음」(컨테이너 메모리가 한도에 닿은 횟수)은 하나라도 읽었을 때만) · 띄우기 바로 앞 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」(2026-11-21 —
   막 뜬 pod 는 되고 오래 떠 있던 pod 는 import 중 끊기는 갈래를 가를 값, 재었을 때만 붙고 옛 기록은 지금 줄 그대로), 못 읽은 값은 「모름」 — `io/memory_probe`,
   `container_start_report.ChildDiag.text`) — BDQ 계정 ID 는 보이지 않는다.
   비밀번호를 보내기 전 끊김(`import_killed`)이 있으면 상태 줄 끝에 기다리는 차례 「다시 시도 n/3」(끊김 n번 뒤 — 기다리는 중이면 「다음 시각」,
@@ -2158,7 +2158,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
   다시 검증해 개발자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
   떠 있는 앱의 계정 원천이 곧바로 새 ID), 로그인 실패는 저장 없이 폼 아래 한 줄 + Alarm(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
-  저장 안 함」 · 「로그인 확인 못 함(남은 시간 모름 · 7시간 이하 · 결과 표지 없음) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 · 그 밖의 시도 전 거절은
+  저장 안 함」 · 「로그인 확인 못 함(남은 시간 모름 · 7시간 이하 · 결과 표지 없음) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」(패키지를 불러오지 못함 하나 — 하위 프로세스를 띄우지 못함 · 입력을 읽지 못함은 「로그인하지 않음(까닭) — 저장 안 함」 으로 「서버 시작 점검」 줄 · `AD-24` 와 같은 까닭 낱말) · 그 밖의 시도 전 거절은
   「로그인하지 않음(까닭) — 저장 안 함」 — 하위 프로세스가 표지 없이 끝난 거절 `no_marker` 는 「로그인 실패」 가 아니다, 비밀번호를 의심해
   되풀이하지 않게. 보내기 전 끊김은 「로그인하지 않음(불러오는 중 끊김) — 저장 안 함」 이고 폼은 다시 하지 않는다), 로그인은 됐는데 저장 실패는
   알림창 오류, 빈 칸 · 개발자 아님은 시도 없이 폼 아래 거부(`write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py`
@@ -2166,7 +2166,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드 · 하위 프로세스 진단 칸 `exit` · `signal` · `sec` · `stage` · `stderr` · `bigdataquery` ·
-  `getpass_asterisk` · `load`(알 때만) 와 메모리 단서 칸 여덟 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 일곱 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
+  `getpass_asterisk` · `load`(알 때만) 와 메모리 단서 칸 열하나 `container_start_report.MEMORY_FIELDS` · 프로세스 단서 칸 일곱 `PROCESS_FIELDS` — `ChildDiag.fields`) · `admin_bdq_login_delete`(결과)에는
   계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
   `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
@@ -2319,7 +2319,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
-    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
+    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 갈래 · 근거 낱말 · 토큰 안내(`is_login_token_failure`) · 요청자 계정 안내 판정은
+    고리 글을 만들다 깨지면(패키지 예외의 `__str__`) 빈 글로 보고 종류 이름 · 다른 고리의 글로 가르고, 원문 한 줄(조회 · 패키지
+    불러오기 실패)은 그때 「(문구 없음)」 이다(`_link_text`, 시험 `tests/test_bdq_failure_text.py`). 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
     (`_TOKEN_FAILURE_TYPE_WORDS` — `TokenNotFound…` · 만료를 단 이름, 문법 낱말보다 먼저)이나 분명한 토큰 낱말(`_TOKEN_FAILURE_WORDS`
     — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
     낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 종류 이름의 `token` 하나 · 토큰 자리(`.credential`)만으로는
@@ -2376,7 +2378,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `parse_login` — 갈래 `LOGIN_*`(`unconfirmed` 포함) · 까닭 코드 · 키 꼴 검사 · 남은 분 · 예외 종류 · S3 읽기 분류 · 객체에 결과를 못 씀 ·
   판정한 객체의 넣은 시각 · 하위 프로세스 진단 `child`(`ChildDiag` · `parse_child` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 패키지를 불러온 길 `load`(알 때만) · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
-  한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
+  한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 그 OOM 종료 수를 읽은 자리 낱말 `oom_src`(`OOM_SOURCES` —
+  `events` · `events_local` · `oom_control`, 못 찾은 갈래 `OOM_UNKNOWN` — `no_file` · `no_line` · `unread`, 그 밖의 낱말은 비우고 모르면 빈 글 — 앞뒤 수를 모두 모르고
+  갈래를 알면 화면 「oom_kill 모름(<까닭>)」 — 까닭은 파일 없음 · 줄 없음 · 못 읽음 가운데 하나), 한도 닿음 앞뒤 수 `hit_before` · `hit_after`(OOM 종료 수와 같은 범위, 하나라도 읽었을 때만 화면
+  OOM 종료 수 바로 뒤 「한도 닿음 앞→뒤」 — 둘 다 모르면 줄이 지금 꼴), 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
   `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 프로세스 수 · 좀비 수, 칸 이름 `PROCESS_FIELDS`
   `app_h` · `threads` · `fds` · `pids` · `pids_max` · `procs` · `zombies` — 그 칸이 하나도 없는 옛 파일 · 메모리 칸만 든 기록은 `None` 이라 화면 글이 「하위 최고 …」 로 끝나는 지금 꼴), 화면 글 `text` · 로그 글 `code` · 칸 `fields` 는 Admin 「BDQ 자동 로그인」 진단 줄 · 감사 상세와 한
@@ -2397,7 +2402,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었거나 `local` 인데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(빈 버킷은 알리지 않는다 — 2026-11-12 리뷰 202611111500 보드 R2: 이 스크립트는 C-DEP 이미지에서만 돌아 그 자리의 `local` 은 이관 뒤 빠뜨린 `managed` 와 같다. 결과 파일이 없는 사내 PC · 개발 실행에는 표지가 없다). 그 자리에서 주소 · 버킷 · 프로필 CD 환경변수가 비어 버킷 목록을 못 보았으면 `SY-05` 를 가릴 수 없으니 빈 이름(`head_unchecked`)을 남겨 `SY-06` 이 알린다(이름만 — 2026-11-12 사내 S3 값 걷기 뒤 프로필에 기본값이 없다).
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
   - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말 · 시각 · 횟수만 보인다. 꼴은 앱 밖 화면의 공통 틀(표지 「시작 중」 · 「다시 시도」 · 「점검 중」 · 단계 줄 · 지난 시간 · 다음 시도 n초 · 문의 줄 · 참고 줄 · 접힌 「개발자용 진단」)이고 Streamlit · `design.tokens` 를 불러오지 않아 두 팔레트를 상수로 두고 시험이 토큰과 맞댄다. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 · 값 줄)은 이 화면 몫이고, 표지 낱말 · 색 역할과 「개발자용 진단」 · 「문의」 · 「참고」 는 로그인 화면 틀의 표(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES` — 시작 중 `ALERT_ACTION` · 다시 시도 · 점검 중 `ALERT_CHECK`)를 불러 쓴다(그 모듈은 tokens 를 그릴 때만 부른다 — 2026-11-14 보드 decided 8). 결 값(`tone` — `start` · `retry` · `check`, `/_capa_stage` 셋째 줄)은 그대로 두고 `TONE_CHIPS` 가 틀의 표지 키로 잇는다. 글은 틀 · 띠처럼 띄어쓰기에서만 줄을 바꾸고 띄어쓰기 없는 긴 메일 · 주소만 접는다(본문 규칙의 `word-break: keep-all` · `overflow-wrap: anywhere` — 틀과 같은 두 선언을 시험이 맞댄다, 390 창에서 「시작하지 못했습니 / 다」 로 갈리던 것). 「다시 시도」 판의 제목 · 띠 글은 저장소에 닿지 못함 · 시간 초과일 때만 「저장소에 잠시 닿지 못했습니다」 · 「저장소에 잠시 닿지 못함 · 다시 시도 중」 이고, 원인을 모르는 실패(`other` 등)는 원인을 말하지 않는 「데이터를 잠시 받지 못했습니다」 · 「데이터를 잠시 받지 못함 · 다시 시도 중」 이다(`STORE_NOT_REACHED` — 표지 · 까닭 · 값 줄 · 10분 문의 줄은 같다, UI-DAT-11). 시작 스크립트는 단계 · 시도 · 실패만 알리고(`Stage.begin` · `step` · `attempt` · `fail`) 순수 `stage_view` 하나가 쪽과 `/_capa_stage`(제목 · 값 한 줄 · JSON 셋째 줄)를 함께 낸다. 앱이 뜨면 쪽은 처음 연 주소를 다시 읽는다 — POST 로 받은 쪽 · 콜백 경로만 바탕 주소, 거절 화면의 「접속 권한 신청」 POST 는 「다시 눌러 주세요」 한 줄(`NOTE_REGISTER_LOST` — 판을 갈아 끼워도 쪽 JS 가 옮겨 단다)과 함께 같은 주소를 GET 으로(`return_mode` · `returnWay` — 다시 읽으면 POST 를 다시 보낸다). 다시 받기가 도는 동안의 값 줄 「n번째 받는 중 · 지난 시간」 과 두 노트는 잠시 닿지 못함 · 이관 전 · 되돌리기 갈래(깨짐 · 갈라짐)가 함께 쓰되, 이관 전 · 되돌리기 갈래는 그 시도가 실제 내려받기로 넘어간 뒤만이다 — 받기는 하위 프로세스라 `boot-pull --download-mark` 가 멤버를 받기 직전 결과 파일 옆에 남기는 빈 표지(`container_boot_download`)로 알고, 시작 스크립트가 시도마다 지우며 임시 응답은 상태를 읽을 때 묻는다(`open_stage(download_seen=…)` — 넘어가면 판을 올린다). 받는 동안은 열어 둔 탭의 재시작 띠 글(`/_capa_stage` 셋째 줄 `band`)도 값 줄과 같은 「데이터 받는 중 · n번째 받기」 다(`_pull_band` — 첫 받기 · 다시 받기와 한 글). 받기로 넘어가기 전에 머무는 확인(처음 올리기 전 · 갈라짐 · 깨진 포인터)은 「확인하는 중」 · 「다시 확인하는 중」 이다 — 깨진 멤버(없음 · 크기 · 해시)는 받는 도중에 드러나 되돌리기 전의 300초 확인도 실제 받기라 그동안은 받는 값 줄이다. CI/CD 로 고치는 사람 갈래는 「다시 확인하는 중」 이다, 시험 `tests/test_container_stage.py` · `tests/test_container_start_sync.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
-    ③ 점검 ④ 설치 · 자동 로그인 · 토큰(자동 로그인 — `managed` + 키 + 저장 객체 `ok` 면 저장된 계정으로 한 번 로그인, `auto_login_step` ·
+    ③ 점검 ④ 설치 · 자동 로그인 · 토큰(자동 로그인 — `managed` + 키 + 저장 객체가 `ok` 이거나 보내기 전 끊김으로만 막혔으면(대기 · `cut_limit` — 판정은 `start_login` 안의 `_cut_only_block`) 저장된 계정으로 한 번 로그인, `auto_login_step` ·
     `bdq_login.start_login`. 성공하면 `CAPA_BDQ_TOKEN` 을 쓰지 않고, 그 밖은 예비 토큰 길이며 파일 이름은 계정 하나의 원천(저장된 계정 →
     `CAPA_BDQ_USER_NAME`)이다. 풀린 계정 · 비밀번호 · 키는 가리개에 통째로 들고 키는 하위 프로세스에 넘기지 않는다, 예상하지 못한 예외는
     종류 이름만 남기고 예비 토큰 길 — 시험 `tests/test_container_start_login.py`, 키도 객체도 없는 서버의 잠든 불변식 포함) ⑤ `boot-pull` 되풀이(사람이 손대야 풀리는 갈래 `BOOT_HUMAN_KINDS` 아홉 — 설정 · aws 없음 · 거절 · 버킷 없음 · 디스크 · 깨짐 · 갈라짐 · 어긋남 · 판 새로움 — 은 300초마다 · 화면 표지 「점검 중」. 끝줄의 이름 · 수 칸(필요 · 남은 바이트 · 바뀐 DB · DB 판 · 코드 판 · 세대 — `BootOutcome` 의 더한 칸)은 `parse_boot_line` 이 닫힌 꼴로 다시 보고 임시 화면의 접힌 「개발자용 진단」 에 싣는다 — 모르는 수는 줄을 뺀다) ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
@@ -2451,9 +2456,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 개발자
   알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). `import_killed` 는
   멈추지 않고(2026-11-20 사용자 답 「쉬고 다시」) 객체의 `cuts` 를 올리고 다음 시도 시각 `retry_after`(`CUT_RETRY_SECONDS` 5 · 10 · 20분 —
-  재시작을 건너 센다)를 적어 그 전에는 자동 시도가 모두 쉰다(조회 중 자동 시도도 재시작으로 뜬 시작 로그인도 — `SKIP_CUT_WAIT`, 시작은
-  로그인 없이 `unavailable`/`import_killed` 로 예비 토큰 길). 다시 시도
-  `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 빈다. 자동 시도 연속 3번
+  재시작을 건너 센다)를 적어 조회 중 자동 시도는 그 시각까지 쉬고(`SKIP_CUT_WAIT`), 시작 로그인(`start_login`)은 보내기 전 끊김으로만
+  막혔으면(`_cut_only_block` — 대기 · `cut_limit`) 한 번 바로 한다 — 2026-11-21 사용자(컨테이너 시작마다 한 번 — 그 시도가 거절되면 그
+  까닭의 멈춤이라 다음 시작부터 안 함, 거절 · 표지 없음 · `miss_limit` · `attempting` 멈춤은 그대로 안 함). 다시 시도
+  `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 비고 넘겨도 4 에 머문다 — 결과 적기
+  `_settle` 은 성공이 아니고 그 시도로 멈추지 않았는데 셈이 상한을 넘었으면 `cut_limit` 멈춤으로 남긴다(「정상 + 셈 4」 를 쓰지 않음). 자동 시도 연속 3번
   (하위 프로세스를 띄운 수 — `import_killed` 는 빼고) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
   종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —
   `casefold` 로 견주고 응답 코드는 보지 않으며 판정에만 쓴다)에서만이다(`is_relogin_error` · `run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
@@ -2489,9 +2496,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   판 폴더가 없어 늘 전체 길).
 - `src/capa_simulation/io/memory_probe.py` — 자동 로그인 하위 프로세스 앞뒤의 메모리 단서와 그 하위 자신의 최고 RSS(사내 리뷰 `202611181400` 사외요청 2 — 하위가
   import 단계에서 바깥 SIGKILL 로 끝난 갈래를 가를 값). `attempt_login` 이 띄우기 바로 앞 · 끝난 바로 뒤에 한 번씩 읽고(`read`), 도는 동안 하위의
-  최고 RSS 를 되풀이해 읽어(`process_peak_bytes` · `higher`) MiB · 수로 접어(`child_memory` → `container_start_report.ChildMemory`) 진단에 싣는다 — cgroup 사용 · 한도 · OOM 종료 수(v2 뿌리 `memory.current` ·
-  `memory.max` · `memory.events` 의 `oom_kill`, 없으면 v1 `memory/` 의 `memory.usage_in_bytes` · `memory.limit_in_bytes` · `memory.oom_control`,
-  뿌리는 시작 스크립트의 한도 읽기와 같은 `/sys/fs/cgroup`), 앱 RSS(`/proc/self/status` 의 `VmRSS`), 하위 자신의 최고 RSS
+  최고 RSS 를 되풀이해 읽어(`process_peak_bytes` · `higher`) MiB · 수로 접어(`child_memory` → `container_start_report.ChildMemory`) 진단에 싣는다 — cgroup 사용 · 한도(v2 뿌리 `memory.current` ·
+  `memory.max`, 없으면 v1 `memory/` 의 `memory.usage_in_bytes` · `memory.limit_in_bytes`, 뿌리는 시작 스크립트의 한도 읽기와 같은 `/sys/fs/cgroup`) · OOM 종료 수
+  (`oom_kill` 줄이 처음 나온 자리 — v2 는 `memory.events` → `memory.events.local` → 혼합 마운트의 `memory/memory.oom_control`, v1 은 `memory/memory.oom_control` —
+  와 그 자리 낱말 `OOM_SOURCES`, 어디서도 못 찾으면 수는 모름이고 갈래 `OOM_UNKNOWN` 을 남긴다: 어느 자리를 읽었는데 줄이 없음 `no_line`(옛 커널의
+  `oom_control` 꼴) · 파일은 있는데 읽기 실패 `unread`(`FileNotFoundError` 밖의 `OSError` — 도우미 `_read`) · 후보가 하나도 없음 `no_file` 가운데 앞의 것.
+  접을 때 자리는 뒤 읽기를 앞세우고, cgroup 읽기가 뜻밖의 예외로 통째 물러서면 낱말 없이 지금처럼 「oom_kill 모름」) · 한도 닿음 수(`limit_hits` — 컨테이너 메모리가
+  한도에 닿은 횟수, v2 `memory.events` 의 `max` 줄 · v1 `memory/memory.failcnt`, 다른 자리로 내려가지 않고 못 읽으면 모름. 닿아도 커널이 거둬 버티면 강제로 끝내지 않아
+  OOM 종료 수와 다른 값이고, 접을 때 앞뒤를 따로 싣는다), 앱 RSS(`/proc/self/status` 의 `VmRSS`), 하위 자신의 최고 RSS
   (`/proc/<pid>/status` 의 `VmHWM` — 좀비 · 없는 프로세스 · `/proc` 없는 Windows 는 모름. `getrusage(RUSAGE_CHILDREN)` 은 쓰지 않는다 — Linux 의 하위
   `ru_maxrss` 는 exec 앞에 물려받은 부모 주소 공간의 최고를 세어 앱 RSS 아래로 내려가지 않는다). 못 읽은 값은 `None`
   (화면 「모름」)이고 판정하지 않는다 — 앞뒤 OOM 종료 수가 다르면 그 사이 cgroup 이 죽인 것이라는 읽기는 사람 몫이다. 표준 라이브러리만이고 예외를
@@ -2504,7 +2516,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스레드는 세지 않는다 — 와 그 가운데 상태 `Z` 인 수, 세는 사이 사라진 것은 건너뛰고 하나도 못 읽으면 둘 다 모름 — 늘어난 것이 앱 스레드인지 프로세스인지는
   pids · 스레드 · 프로세스를 견줘 가른다). 앱은 시작 스크립트가 `os.execvpe` 로 갈아 끼운 같은 프로세스라 앱의 뜬 시간은 시작 스크립트가 시작한 때부터다.
   `/proc/uptime` 만 컨테이너 기준으로 바꿔 보이는 자리(lxcfs 류)는 시작 틱(호스트 부팅 기준)과 1초 넘게 어긋나 「앱 뜬 지」 만 모름이 된다. 뿌리는 같은 모듈 값(`PROC_ROOT` 아래 `uptime` · `self/stat` · `self/fd` · `<pid>/stat`, `PROC_STATUS`, `CGROUP_ROOT`)을
-  부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 프로세스 · 좀비 셈 · 값마다 물러서기 · 아주 큰 시작 틱 ·
+  부를 때 읽고, 값마다 무엇이 나도 모름으로 물러선다. 시험 `tests/test_memory_probe.py`(가짜 cgroup 뿌리 v2 · v1 · 없음 · OOM 종료 수 자리 차례 · 못 찾은 갈래 셋과 겹친 갈래 · 낯선 자리 낱말 · 한도 닿음 수(v2 `max` 줄 · v1 `failcnt` · 없음 · 낯선 값 · 앞뒤 따로) · 가짜 `/proc` — 괄호 · 공백 든 `comm` · 프로세스 · 좀비 셈 · 값마다 물러서기 · 아주 큰 시작 틱 ·
   사라진 프로세스 · 한도 없음 · 옛 기록 · 범위 밖 값, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음 · 막 띄운 진짜 하위의 뜬 시간이 몇 초 안).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
@@ -9486,7 +9498,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 `CAPA_SHARE_SESSION_TABLES=off` 와 같은 꼴)면 자동 로그인 하위 프로세스가 늘 패키지 전체를 불러온다(3장 `io/bdq_login_child.py` 「가벼운 불러오기 길」).
 비밀이 아니라 하위 환경 거르기(`bdq_login.CHILD_WITHHELD_ENVIRONMENT`)에 넣지 않고, 하위 본문이 표준 라이브러리로 `os.environ` 에서 읽는다(시작 스크립트의
 시작 로그인도 같은 환경을 넘긴다). C-DEP 는 환경변수 표에 넣고 CI/CD 로 다시 띄운 뒤, 멈춤이 저장돼 있으면 Admin 「BDQ 자동 로그인」 에서 비밀번호를
-다시 넣는다(저장된 멈춤은 재시작을 넘어 남아 시작 로그인이 돌지 않는다).
+다시 넣는다(거절 · 결과 표지 없음 · 닿지 못함 3번 · 시도 결과를 적지 못함으로 멈춘 것은 객체에 적혀 재시작을 넘어 남아 시작 로그인이 돌지
+않는다 — 보내기 전 끊김으로만 막힌 멈춤(`cut_limit`)은 그 CI/CD 의 시작 로그인이 한 번 해 보아 되면 풀린다, 3장 `io/bdq_login.py`).
 
 ## 10-1. 로컬 데이터는 합성 표본이다 — 관측을 업무 사실로 적지 않는다
 

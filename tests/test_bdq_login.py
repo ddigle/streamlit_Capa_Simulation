@@ -2245,14 +2245,14 @@ def test_a_failure_after_sending_stops_at_once_even_between_retries(
 
 
 @POSIX_ONLY
-def test_the_cut_count_crosses_restarts_and_the_start_waits_for_the_stored_time(
+def test_a_new_start_tries_once_inside_the_wait_and_after_the_cut_limit(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
 ) -> None:
-    """셈 · 다음 시도 시각은 객체에 있어 재시작이 지우지 않는다 — 그 시각 전에 다시 뜬 시작 로그인은
-    불러오지도 않고 `unavailable`/`import_killed`(예비 토큰 길 — 저장된 계정은 들고, 결과 · 진단
-    없음)로 돌아오며 시각 뒤의 재시작이 다음 다시 시도다(간격을 건너뛰지 않는다). 시작의 차례는 그
-    시도가 몇 번째 다시 시도였나(처음 0). 넷째 끊김에 멈추고(`cut_limit`) 그 뒤 재시작은 불러오지도
-    않는다."""
+    """셈 · 다음 시도 시각은 객체에 있어 재시작이 지우지 않는다 — 다만 새 서버 시작은 보내기 전
+    끊김으로만 막혔으면 그 시각 · `cut_limit` 멈춤과 상관없이 한 번 바로 불러온다(2026-11-21 사용자
+    결정). 대기 창 안의 재시작도 끊기면 셈이 하나 오르고 다음 시각을 새로 적으며, 넷째 끊김에
+    멈춘다(`cut_limit`). 그 뒤 재시작도 불러오되 또 끊기면 셈은 상한 + 1 에 머물고 멈춤 그대로이며
+    그 시도의 차례는 3 이다(진단 꼬리 「다시 시도 3/3」). 비밀번호를 보낸 시도는 한 번도 없다."""
     with running_mock() as (mock, endpoint):
         key = switch_on(monkeypatch)
         scene(monkeypatch, "signal_kill_on_import")
@@ -2272,35 +2272,198 @@ def test_the_cut_count_crosses_restarts_and_the_start_waits_for_the_stored_time(
                 turn,
             )
             assert cut.result is not None and cut.result.diag is not None
-            assert fake.imports() == turn + 1
+            assert fake.imports() == turn + 1, "대기 창 안 재시작도 불러온다"
             meta = stored_meta(mock)
             assert (meta["state"], meta["cuts"]) == ("ok", turn + 1)
             assert meta["retry_after"] == store.kst_text(clock.wall + timedelta(seconds=wait))
-
             clock.advance(wait - 1)
-            held = restart()
-            assert (held.status, held.reason, held.retry) == (
-                "unavailable",
-                bdq_login.REASON_IMPORT_KILLED,
-                0,
-            )
-            assert held.result is None and held.stored is not None and not held.stop_write
-            assert fake.imports() == turn + 1, "그 시각 전 재시작은 불러오지 않는다"
-            assert stored_meta(mock) == meta
-            clock.advance(1)
 
+        stopped = (
+            "stopped",
+            bdq_login.REASON_CUT_LIMIT,
+            bdq_login.CUT_RETRY_LIMIT + 1,
+            None,
+        )
         last = restart()
         assert (last.status, last.reason, last.retry) == (
             "stopped",
             bdq_login.REASON_CUT_LIMIT,
             bdq_login.CUT_RETRY_LIMIT,
         )
-        clock.advance(10_000)
-        after = restart()
-        assert (after.status, after.reason) == ("stopped", bdq_login.REASON_CUT_LIMIT)
-        assert fake.imports() == bdq_login.CUT_RETRY_LIMIT + 1 and fake.logins() == 0
+        assert fake.imports() == bdq_login.CUT_RETRY_LIMIT + 1
         meta = stored_meta(mock)
-        assert (meta["state"], meta["stop_reason"]) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+        assert (meta["state"], meta["stop_reason"], meta["cuts"], meta["retry_after"]) == stopped
+        for extra in (1, 2):
+            clock.advance(10_000)
+            after = restart()
+            assert (after.status, after.reason, after.retry) == (
+                "stopped",
+                bdq_login.REASON_CUT_LIMIT,
+                bdq_login.CUT_RETRY_LIMIT,
+            )
+            assert after.result is not None and bdq_login.is_cut(after.result)
+            assert after.result.diag is not None
+            assert fake.imports() == bdq_login.CUT_RETRY_LIMIT + 1 + extra
+            meta = stored_meta(mock)
+            assert (meta["state"], meta["stop_reason"], meta["cuts"], meta["retry_after"]) == (
+                stopped
+            )
+        assert fake.logins() == 0
+
+
+def _stop_as(target: S3Target, stored: store.StoredLogin, reason: str, *, misses: int = 0) -> None:
+    """출발 상태를 심는다 — 객체를 그 까닭의 멈춤과 끊김 셈 상한 + 1(넷째 끊김 뒤의 꼴)로 쓰고
+    프로세스 상태를 비운다(새로 뜬 시작 스크립트). 끊김 네 번을 돌리지 않는다."""
+    written = store.record_outcome(
+        target,
+        cipher=stored.cipher,
+        stopped=True,
+        reason=reason,
+        misses=misses,
+        cuts=bdq_login.CUT_RETRY_LIMIT + 1,
+        retry_after=None,
+    )
+    assert written.ok
+    bdq_login.forget_state()
+
+
+def test_a_new_start_after_the_cut_limit_that_gets_through_clears_the_stop(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """`cut_limit` 멈춤이 남은 채 새 서버가 뜨면 시작 로그인이 한 번 해 보고, 되면 멈춤 · 끊김 셈 ·
+    `misses` 가 모두 빈다 — 「넣기」 없이 풀린다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        target = target_of(mock, endpoint)
+        stored = stored_login(target, key)
+        _stop_as(target, stored, bdq_login.REASON_CUT_LIMIT, misses=1)
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert started.status == "ok" and started.result is not None and started.result.ok
+        assert started.retry == 0 and not started.stop_write
+        meta = stored_meta(mock)
+        assert (
+            meta["state"],
+            meta["stop_reason"],
+            meta["cuts"],
+            meta["misses"],
+            meta["retry_after"],
+        ) == ("ok", None, 0, 0, None)
+        status = bdq_login.peek_status()
+        assert status is not None and (status.state, status.retry) == ("ok", 0)
+        assert (fake.imports(), fake.logins()) == (1, 1)
+
+
+@pytest.mark.parametrize(
+    ("case", "outcome", "reason", "misses"),
+    [
+        ("connection", bdq_login.OUTCOME_UNREACHED, bdq_login.REASON_CONNECTION, 1),
+        ("time_raises", bdq_login.OUTCOME_UNCONFIRMED, bdq_login.REASON_REMAINING_UNKNOWN, 1),
+        ("import_fails", bdq_login.OUTCOME_UNAVAILABLE, bdq_login.REASON_IMPORT_FAILED, 0),
+        ("no_child", bdq_login.OUTCOME_UNAVAILABLE, bdq_login.REASON_SPAWN_FAILED, 0),
+    ],
+)
+def test_a_new_start_after_the_cut_limit_that_falls_short_keeps_the_cut_stop(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    tmp_path: Path,
+    case: str,
+    outcome: str,
+    reason: str,
+    misses: int,
+) -> None:
+    """`cut_limit` 멈춤에서 든 시작의 한 번이 성공도 거절도 아니면(닿지 못함 · 확인 못 함 · 패키지를
+    불러오지 못함 · 하위 프로세스를 띄우지 못함) 객체는 `cut_limit` 멈춤으로 남는다 — 시도 앞 객체를
+    `ok` 로 보고 쓰는 결과 적기가 셈이 상한을 넘은 채 「정상」 으로 쓰지 않는다(불변식). 닿지 못함 ·
+    확인 못 함은 `misses` 를 하나 올린다. 시작 줄은 그 시도의 결과를 든 멈춤이고, 다음 시작도 한 번
+    해 본다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        target = target_of(mock, endpoint)
+        stored = stored_login(target, key)
+        _stop_as(target, stored, bdq_login.REASON_CUT_LIMIT)
+        if case == "no_child":
+            missing = str(tmp_path / "no-such-python")
+            monkeypatch.setattr(bdq_login, "login_command", lambda: [missing])
+        else:
+            scene(monkeypatch, case)
+        environ = start_environment(mock, endpoint, key)
+        started = bdq_login.start_login(environ)
+        assert (started.status, started.reason) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+        assert started.result is not None
+        assert (started.result.outcome, started.result.reason) == (outcome, reason)
+        meta = stored_meta(mock)
+        assert (meta["state"], meta["stop_reason"], meta["cuts"], meta["misses"]) == (
+            "stopped",
+            bdq_login.REASON_CUT_LIMIT,
+            bdq_login.CUT_RETRY_LIMIT + 1,
+            misses,
+        )
+        status = bdq_login.peek_status()
+        assert status is not None
+        assert (status.state, status.stop_reason) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+        bdq_login.forget_state()
+        again = bdq_login.start_login(environ)
+        assert (again.status, again.reason) == ("stopped", bdq_login.REASON_CUT_LIMIT)
+        assert again.result is not None and again.result.outcome == outcome
+
+
+def test_a_new_start_rejected_after_the_cut_limit_stops_for_good(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """`cut_limit` 멈춤에서 든 시작의 한 번이 거절되면(비밀번호가 서버에 갔다) 그 까닭의 멈춤이 되어
+    다음 시작부터는 불러오지도 않는다 — 계정 잠김 방지."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        environ = start_environment(mock, endpoint, key)
+        target = target_of(mock, endpoint)
+        fake.write_live_token()
+        stored = stored_login(target, key, password=WRONG_PASSWORD)
+        _stop_as(target, stored, bdq_login.REASON_CUT_LIMIT)
+        first = bdq_login.start_login(environ)
+        assert (first.status, first.reason) == ("rejected", bdq_login.REASON_TOKEN_UNCHANGED)
+        meta = stored_meta(mock)
+        assert (meta["state"], meta["stop_reason"]) == (
+            "stopped",
+            bdq_login.REASON_TOKEN_UNCHANGED,
+        )
+        for _ in range(2):
+            bdq_login.forget_state()
+            again = bdq_login.start_login(environ)
+            assert (again.status, again.reason, again.result) == (
+                "stopped",
+                bdq_login.REASON_TOKEN_UNCHANGED,
+                None,
+            )
+        assert (fake.imports(), fake.logins()) == (1, 1)
+
+
+@pytest.mark.parametrize(
+    ("reason", "misses"),
+    [
+        (bdq_login.REASON_NO_MARKER, 0),
+        (bdq_login.REASON_TOKEN_UNCHANGED, 0),
+        (bdq_login.REASON_MISS_LIMIT, bdq_login.MISS_LIMIT),
+        (bdq_login.REASON_ATTEMPTING, 0),
+        (bdq_login.REASON_CUT_LIMIT, bdq_login.MISS_LIMIT),
+    ],
+)
+def test_a_new_start_does_not_pass_other_stops(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, reason: str, misses: int
+) -> None:
+    """보내기 전 끊김 밖의 멈춤은 끊김 셈이 상한을 넘었어도 새 서버 시작이 로그인하지 않는다 — 결과
+    표지 없음 · 거절(비밀번호를 보냈을 수 있음) · 닿지 못함 상한 · 시도 도중 끊김(`attempting` — 그
+    시도가 비밀번호를 보냈는지 모른다). 닿지 못함 · 확인 못 함이 상한에 닿았으면 `cut_limit`
+    멈춤이어도 같다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        target = target_of(mock, endpoint)
+        stored = stored_login(target, key)
+        _stop_as(target, stored, reason, misses=misses)
+        before = stored_meta(mock)
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert (started.status, started.reason, started.result) == ("stopped", reason, None)
+        assert stored_meta(mock) == before
+        assert (fake.imports(), fake.logins()) == (0, 0)
 
 
 @POSIX_ONLY
