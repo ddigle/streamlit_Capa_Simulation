@@ -2428,7 +2428,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     앞선다) → 패키지 → CUSTOM 원천 표 조회(`build_custom_query`
     · `CUSTOM_QUERY_TEMPLATE` — 기간 없이 코드 하나, 열 이름은 설계 초안이라 사내 확인 거리) · `check_custom_rows` → 본 조회 → 0행 ·
     칸 · 중복 검사 → 이름 바꾸기 → `attach_custom_values`(본 표 CUSTOM 칸만 Capa Code 로 덮는다 — 덮은 프레임이 원천 스냅샷) →
-    MPGA TEST 보정이고, 대조 수는 `CoreDataBatch.custom_check` 로 간다. 본 조회문 `QUERY_TEMPLATE` 은 글자 그대로 두고(지문 시험) 그
+    원천 보정(`apply_source_corrections` — MPGA TEST 모듈수, 원천 묶음 뒤처리 한 곳)이고, 대조 수는 `CoreDataBatch.custom_check`
+    로 간다. 본 조회문 `QUERY_TEMPLATE` 은 글자 그대로 두고(지문 시험) 그
     상수 CUSTOM 칸을 붙이기가 덮는다. CUSTOM 원천 표 조회 실패는 같은 길(`call_get_data`)의 `BigDataQueryCallError` 에 「CUSTOM 원천
     표(CAPA_BDQ_CUSTOM_TABLE) 조회에서 멈췄습니다」 머리를 단 사본(`retold` — 갈래 · 낱말 · 종류 이름은 다시 가르지 않음)이고, SQL
     갈래면 값 · 조회 권한을 보라고 덧붙인다. 원문(`_original_text`)은 요청자 계정과 함께 표 이름(값 전체 · 점 뒤 끝 조각, 3글자

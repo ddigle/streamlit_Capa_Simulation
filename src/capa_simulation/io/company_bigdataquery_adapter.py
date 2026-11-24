@@ -352,9 +352,10 @@ class BigDataQueryCoreDataProvider:
 
         차례: 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → 끄개 · CUSTOM 원천 표 이름 판정 →
         패키지 → CUSTOM 원천 표 조회 · 검사 → 본 조회 → 0행 · 칸 · 중복 검사 → 이름 바꾸기 → CUSTOM
-        붙이기 → MPGA TEST 보정. 표 이름이 없거나 꼴이 틀리면 패키지를 부르기 전에 멈추고, CUSTOM
-        원천 표 답이 0행 · 칸 모자람 · 한 부품에 CUSTOM 둘 이상 · 빈 CUSTOM 이면 본 조회를 부르지
-        않고 멈춘다(`custom_source_check` — 2026-11-22 사용자 답 Q2 (가) · Q9 (가)).
+        붙이기 → 원천 보정(`apply_source_corrections` — MPGA TEST 모듈수). 표 이름이 없거나 꼴이
+        틀리면 패키지를 부르기 전에 멈추고, CUSTOM 원천 표 답이 0행 · 칸 모자람 · 한 부품에 CUSTOM
+        둘 이상 · 빈 CUSTOM 이면 본 조회를 부르지 않고 멈춘다(`custom_source_check` — 2026-11-22
+        사용자 답 Q2 (가) · Q9 (가)).
 
         끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 표 이름을 판정하지 않고 CUSTOM 원천 표를
         묻지 않는다 — 본 조회 뒤 CUSTOM 칸을 모두 구분 없음으로 덮는다(`blank_custom_values`).
@@ -379,7 +380,7 @@ class BigDataQueryCoreDataProvider:
         frame = call_get_data(module, query)
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
-        # 0행 방어는 반드시 rename 앞이다. 뒤에 두면 아래 MPGA TEST 예외가 먼저
+        # 0행 방어는 반드시 rename 앞이다. 뒤에 두면 아래 원천 보정(MPGA TEST 예외)이 먼저
         # `KeyError('모듈수')` 로 터지고, 아예 없으면 빈 프레임이 정규화를 통과해
         # 원인과 먼 문구로 죽는다.
         if frame.empty:
@@ -407,23 +408,33 @@ class BigDataQueryCoreDataProvider:
             if custom is None
             else attach_custom_values(renamed, custom)
         )
-        # TODO: MPGA TEST 원천 모듈수 산정 규칙이 확정되면 제거
-        module_count = pd.to_numeric(renamed["모듈수"], errors="coerce")
-
-        mpga_test_exception = renamed["공정"].astype("string").str.strip().eq(
-            "MPGA TEST"
-        ) & module_count.between(0.95, 0.96, inclusive="both")
-
-        renamed.loc[mpga_test_exception, "모듈수"] = 1
-
         return CoreDataBatch(
             simulation_code=code,
             simulation_name=self.simulation_name,
             source_type="BIGDATAQUERY",
-            frame=renamed,
+            frame=apply_source_corrections(renamed),
             source_registered_at=self.source_registered_at,
             custom_check=custom_check,
         )
+
+
+def apply_source_corrections(frame: pd.DataFrame) -> pd.DataFrame:
+    """원천 묶음을 내기 직전의 뒤처리 — 지금은 MPGA TEST 모듈수 보정 하나다.
+
+    공정이 `MPGA TEST` 이고 모듈수가 0.95 ~ 0.96(양 끝 포함)이면 1 로 본다. 받은 표를 그 자리에서
+    고치고 같은 표를 돌려준다 — 사본을 한 벌 더 들지 않으려고, 부르는 쪽이 제 손으로 지은 표(CUSTOM
+    을 붙여 새로 받은 표)에만 부른다. `공정` · `모듈수` 칸은 부르는 쪽이 먼저 확인한다(없으면
+    `KeyError`).
+    """
+    # TODO: MPGA TEST 원천 모듈수 산정 규칙이 확정되면 제거
+    module_count = pd.to_numeric(frame["모듈수"], errors="coerce")
+
+    mpga_test_exception = frame["공정"].astype("string").str.strip().eq(
+        "MPGA TEST"
+    ) & module_count.between(0.95, 0.96, inclusive="both")
+
+    frame.loc[mpga_test_exception, "모듈수"] = 1
+    return frame
 
 
 def build_query(

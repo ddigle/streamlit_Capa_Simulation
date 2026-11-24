@@ -2461,3 +2461,30 @@ def test_the_failure_text_hides_the_requester_accounts(
         module_helpers.query_bigdataquery("demo_mod", "SELECT 1")
     assert ACCOUNT not in str(from_module.value)
     assert OTHER_ACCOUNT not in str(from_module.value)
+
+
+def test_source_corrections_set_mpga_test_module_count_to_one() -> None:
+    """원천 보정 함수 하나가 MPGA TEST 의 모듈수 0.95 ~ 0.96(양 끝 포함)을 1 로 보고, 범위 밖 값과
+    다른 공정은 그대로 둔다. 받은 표를 그 자리에서 고쳐 같은 표를 돌려준다(사본을 더 들지 않음)."""
+    frame = pd.DataFrame(
+        {
+            "공정": [
+                "MPGA TEST",
+                "MPGA TEST",
+                " MPGA TEST ",
+                "MPGA TEST",
+                "MPGA TEST",
+                "MPGA TEST",
+                "ASSY",
+            ],
+            "모듈수": [0.95, 0.955, 0.96, 0.949, 0.961, 2, 0.955],
+            **_part_columns(7),
+        }
+    )
+    before = frame.copy()
+
+    corrected = adapter.apply_source_corrections(frame)
+
+    assert corrected is frame
+    assert corrected["모듈수"].tolist() == [1, 1, 1, 0.949, 0.961, 2, 0.955]
+    pd.testing.assert_frame_equal(corrected.drop(columns="모듈수"), before.drop(columns="모듈수"))
