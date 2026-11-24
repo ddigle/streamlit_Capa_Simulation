@@ -2319,7 +2319,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
-    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
+    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 갈래 · 근거 낱말 · 토큰 안내(`is_login_token_failure`) · 요청자 계정 안내 판정은
+    고리 글을 만들다 깨지면(패키지 예외의 `__str__`) 빈 글로 보고 종류 이름 · 다른 고리의 글로 가른다(`_link_text`, 시험
+    `tests/test_bdq_failure_text.py`). 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
     (`_TOKEN_FAILURE_TYPE_WORDS` — `TokenNotFound…` · 만료를 단 이름, 문법 낱말보다 먼저)이나 분명한 토큰 낱말(`_TOKEN_FAILURE_WORDS`
     — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
     낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 종류 이름의 `token` 하나 · 토큰 자리(`.credential`)만으로는
