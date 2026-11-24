@@ -128,10 +128,11 @@ def test_admin_area_renders_without_an_active_scenario(
     assert not _start_check_expanders(app)
     # 앱 정보는 이 화면이 아니라 모든 화면 사이드바 맨 아래 카드다(2026-10-07 사용자 결정). 카드는
     # `app.py` 가 그리므로 이 화면만 돌린 여기에는 그 글이 한 줄도 없다.
-    from capa_simulation.settings import APP_VERSION
+    from capa_simulation.settings import APP_NAME, APP_VERSION
 
     assert not any(
-        FAKE_CONTACT in caption.value or APP_VERSION in caption.value for caption in app.caption
+        FAKE_CONTACT in caption.value or f"{APP_NAME} v{APP_VERSION}" in caption.value
+        for caption in app.caption
     )
 
     # 활성 시나리오가 없으면 원천 품질 탭은 열어도 안내만 남긴다 — 화면을 멈추지 않는다.

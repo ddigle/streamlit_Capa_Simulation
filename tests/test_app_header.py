@@ -480,7 +480,7 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
 ) -> None:
     """⋮ 메뉴의 About 이 없고 머리 띠는 시나리오를 싣는다 — 앱 정보는 사이드바 맨 아래 카드뿐이다.
 
-    두 줄이다 — 앱·버전·빌드, 개발 팀·문의처. 보안 등급·인증번호(유효기간)·취급 주의 문장은 싣지
+    두 줄이다 — 앱·판, 개발 팀·문의처. 보안 등급·인증번호(유효기간)·취급 주의 문장은 싣지
     않고, 그것만 쓰는 설정 상수도 두지 않는다(2026-10-07 사용자 결정). 문의처는 환경변수가 있을
     때만 붙는다(아래 시험).
     """
@@ -488,7 +488,7 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
 
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     assert credit_lines(stamp="202610081234") == (
-        f"{APP_NAME} v{APP_VERSION} · 배포 202610081234",
+        f"{APP_NAME} v1.0.202610081234",
         f"개발 {APP_OWNER_TEAM} · {FAKE_CONTACT}",
     )
     text = "\n".join(credit_lines())
@@ -496,9 +496,17 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
         assert removed not in text
     for name in ("APP_SECURITY_LEVEL", "APP_AUTH_CODE", "APP_AUTH_EXPIRY", "APP_HANDLING_NOTE"):
         assert not hasattr(settings, name), name
-    # 머리 띠에는 싣지 않는다.
+    # 머리 띠에는 싣지 않는다 — 문의처와 카드 첫 줄의 판 글(「v1.0」 · 배포 번호 · 「사외 개발」).
+    # 판 글이 카드에 있음을 함께 봐 이 지킴이 헛돌지 않게 한다.
+    from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL
+
+    version = f"v{APP_VERSION}"
+    outside = credit_lines(stamp="")[0]
+    assert version in credit_lines(stamp="202610081234")[0]
+    assert version in outside and OUTSIDE_BUILD_LABEL in outside
     css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
-    assert FAKE_CONTACT not in css and "배포 " not in css
+    for leaked in (FAKE_CONTACT, version, "202610081234", OUTSIDE_BUILD_LABEL):
+        assert leaked not in css, leaked
     assert not hasattr(settings, "APP_BUILD_DATE")
 
 
@@ -534,9 +542,9 @@ def test_without_a_contact_variable_the_credits_name_only_the_team(
 
 
 def test_the_credits_show_the_applied_deploy_stamp_or_say_outside(tmp_path: Path) -> None:
-    """첫 줄 끝은 사내 적용 기록의 배포 번호, 기록이 없으면 「사외 개발」 이다(2026-10-08 사용자
-    결정 — 손으로 적던 빌드일은 배포마다 고치지 않아 2026-09-08 로 남아 있었다). 깨진 기록도
-    「사외 개발」. 기록은 프로세스에서 한 번만 읽으므로 경우마다 다른 경로를 쓴다."""
+    """첫 줄의 판 끝은 사내 적용 기록의 배포 번호, 기록이 없으면 판 머리 뒤에 「사외 개발」 이다
+    (2026-10-08 사용자 결정 — 손으로 적던 빌드일은 배포마다 고치지 않아 2026-09-08 로 남아 있었다).
+    깨진 기록도 「사외 개발」. 기록은 프로세스에서 한 번만 읽으므로 경우마다 다른 경로를 쓴다."""
     from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL
     from capa_simulation.deploy_stamp import deployed_stamp
 
@@ -549,6 +557,33 @@ def test_the_credits_show_the_applied_deploy_stamp_or_say_outside(tmp_path: Path
     broken.write_text("{", encoding="utf-8")
     assert deployed_stamp(broken) is None
     assert credit_lines(stamp="")[0].endswith(f" · {OUTSIDE_BUILD_LABEL}")
+
+
+def test_the_credits_carry_the_release_version_with_the_deploy_stamp(tmp_path: Path) -> None:
+    """정식판 — 첫 줄은 「<앱 이름> v1.0.<배포 번호>」 이고 따로 붙던 「배포 <번호>」 와 시험판 글
+    「demo」 가 없다. 적용 기록이 없는 사외 개발 PC 는 「<앱 이름> v1.0 · 사외 개발」 이다
+    (2026-11-24 사용자 요청). 판은 `settings.app_version` 한 곳이 짓고, 적용 기록을 읽어
+    붙이는 길(`deploy_stamp.deployed_app_version`)도 같은 값을 낸다 — 버킷 세대 포인터 ·
+    도구 감사 줄이 쓴다."""
+    from capa_simulation.deploy_stamp import deployed_app_version
+    from capa_simulation.settings import app_version
+
+    assert APP_VERSION == "1.0"
+    assert app_version("202611251800") == "1.0.202611251800"
+    assert app_version(None) == app_version("") == "1.0"
+
+    first = credit_lines(stamp="202611251800")[0]
+    assert first == f"{APP_NAME} v1.0.202611251800"
+    assert "배포 " not in first and "demo" not in first.lower()
+    outside = credit_lines(stamp="")[0]
+    assert outside == f"{APP_NAME} v1.0 · 사외 개발"
+    assert "demo" not in outside.lower()
+
+    state = tmp_path / ".deploy" / "applied.json"
+    state.parent.mkdir()
+    state.write_text('{"stamp": "202611251800", "commit": "abc"}', encoding="utf-8")
+    assert deployed_app_version(state) == "1.0.202611251800"
+    assert deployed_app_version(tmp_path / "missing" / "applied.json") == "1.0"
 
 
 def test_the_header_names_the_official_version_with_its_source_registration() -> None:

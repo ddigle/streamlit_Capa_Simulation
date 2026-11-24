@@ -279,8 +279,8 @@ def render_compare_select(
     (pop 하면 브라우저가 옛 선택을 계속 보인다 — AGENTS 9장). 보던 기준선이 사라진 것이면 그
     회차에 사건 알림 `RS-06` 을 한 번 낸다(`_report_gone_baseline` — 남은 물음 보드 D4 (나),
     그리지 않고 담기만 한다). `listed` 가 거짓(목록을 읽지 못한 회차)이면 비교는 끄되 지워졌다고
-    알리지 않는다(지워졌는지 모른다). 라벨은 「저장일 · 이름」 이라 회차마다 바뀌지
-    않는다(기준선은 고칠 수 없다). 상자는 조건 카드(앱 전체 회차)에 서고, `on_change` 가 본문
+    알리지 않는다(지워졌는지 모른다). 라벨은 「기준 · 저장일 · 이름」(`baseline_label`)이라 회차마다
+    바뀌지 않는다(기준선은 고칠 수 없다). 상자는 조건 카드(앱 전체 회차)에 서고, `on_change` 가 본문
     프래그먼트만 다시 돌린다(`required_shortening_panel._rerun_view`).
     """
     options = [NO_COMPARISON, *(summary.baseline_id for summary in baselines)]

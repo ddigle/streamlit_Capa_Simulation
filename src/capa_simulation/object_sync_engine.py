@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Final, TypeAlias
 
 from capa_simulation import settings
+from capa_simulation.deploy_stamp import deployed_app_version
 from capa_simulation.io import object_storage
 from capa_simulation.io.object_storage import (
     ObjectStorageClient,
@@ -78,7 +79,6 @@ from capa_simulation.services.object_storage_manifest import (
     PullDecision,
     PushDecision,
 )
-from capa_simulation.settings import APP_VERSION
 
 # HEAD 를 고르는 데 보는 포인터 수. 포인터 키가 내림차순이라 첫 쪽 몇 개가 언제나 최신이다.
 HEAD_LIST_KEYS: Final = 8
@@ -529,7 +529,7 @@ def _publish_members(
             members=members,
             origin=origin,
             token=uuid.uuid4().hex[:8],
-            app_version=APP_VERSION,
+            app_version=deployed_app_version(),
             author=snapshot_export.author_label(),
             created_at_utc=created_at,
             note=note,
@@ -660,7 +660,7 @@ def resolve_keep_mine(
         members=members,
         origin="manual",
         token=uuid.uuid4().hex[:8],
-        app_version=APP_VERSION,
+        app_version=deployed_app_version(),
         author=snapshot_export.author_label(),
         created_at_utc=snapshot_export.utc_timestamp(),
         note="미게시 세대 승격",
@@ -1073,7 +1073,7 @@ def _raise_fence(
         members=pointer.members,
         origin="boot",
         token=uuid.uuid4().hex[:8],
-        app_version=APP_VERSION,
+        app_version=deployed_app_version(),
         author=snapshot_export.author_label(),
         created_at_utc=snapshot_export.utc_timestamp(),
         note=ORIGIN_NOTE_BOOT,
@@ -1283,7 +1283,7 @@ def rollback(
         members=target.members,
         origin="rollback",
         token=uuid.uuid4().hex[:8],
-        app_version=APP_VERSION,
+        app_version=deployed_app_version(),
         author=snapshot_export.author_label(),
         created_at_utc=snapshot_export.utc_timestamp(),
         note=note,

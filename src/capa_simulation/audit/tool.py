@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from capa_simulation import settings
 from capa_simulation.audit import chain, layout, recorder
 from capa_simulation.audit.shipper import ClientBucket
+from capa_simulation.deploy_stamp import deployed_app_version
 from capa_simulation.io.object_storage import ObjectStorageClient, classify_failure
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def tool_line(
         det=det,
         moment=moment or datetime.now(timezone.utc),
         env=ENVIRONMENT,
-        ver=settings.APP_VERSION,
+        ver=deployed_app_version(),
         inst=inst or uuid4().hex[:12],
     )
     return chain.seal(line, seq=1, prev=chain.GENESIS)

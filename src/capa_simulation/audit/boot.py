@@ -33,7 +33,7 @@ ENVIRONMENT = "cdep"
 
 
 def deploy_version() -> str:
-    """배포 표지 — 적용 기록의 stamp(앱 정보 카드와 같은 값), 없으면 앱 판 글."""
+    """배포 표지 — 적용 기록의 stamp(앱 정보 카드 판 끝의 배포 번호와 같은 값), 없으면 판 머리."""
     from capa_simulation.deploy_stamp import deployed_stamp
 
     try:

@@ -39,6 +39,7 @@ from capa_simulation.services.shortening_baseline import (
     normalize_baseline_name,
     normalize_saved_by,
 )
+from capa_simulation.services.static_qual_schedule import BASIS_STATIC
 
 TABLES = ("shortening_baseline", "shortening_baseline_process", "shortening_baseline_unit")
 
@@ -154,7 +155,7 @@ def test_a_saved_baseline_round_trips_and_is_listed_newest_first(tmp_path: Path)
     )
 
     assert first.saved_at == datetime(2026, 9, 30, 9, 15, 30)
-    assert baseline_label(first) == "2026-09-30 · 9월 정기"
+    assert baseline_label(first) == "설비 마스터 · 2026-09-30 · 9월 정기"
     listed = repository.list_shortening_baselines()
     assert [summary.name for summary in listed] == ["10월 정기", "9월 정기"]
     assert listed[1] == first
@@ -229,6 +230,41 @@ def test_the_equipment_scenario_source_round_trips_and_shows_in_the_head(tmp_pat
         view, repository.load_shortening_baseline(older.baseline_id), level=1.1
     )
     assert "설비 r12" in old_head and "설비 공통" not in old_head
+
+
+def test_the_label_leads_with_the_baselines_schedule_basis(tmp_path: Path) -> None:
+    """선택 상자 라벨은 「기준 · 저장일 · 이름」 이고 기준은 그 기준선의 현재 일정 기준이다 — 진척
+    비교는 그 기준의 지금 계획과 견주므로 고를 때부터 보인다(2026-11-24 사용자 요청). 기준 칸이 없는
+    옛 기준선(설비 0035 전에 저장 — NULL)은 「설비 마스터」 로 읽혀 라벨도 그렇다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    with connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.shortening_baseline (
+                baseline_id, baseline_name, saved_at, plan_today, start_month, end_month
+            ) VALUES ('old-1', '11월 정기', ?, ?, 202611, 202704)
+            """,
+            [datetime(2026, 11, 15, 9, 0), date(2026, 11, 15)],
+        )
+    repository.save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="11-24 기준선",
+            plan_today=date(2026, 11, 24),
+            start_month=202611,
+            end_month=202704,
+            processes=(),
+            cutoff_days={},
+            units=pd.DataFrame(),
+            schedule_basis=BASIS_STATIC,
+        ),
+        saved_at=datetime(2026, 11, 24, 8, 30),
+    )
+
+    assert [baseline_label(summary) for summary in repository.list_shortening_baselines()] == [
+        "Static · 2026-11-24 · 11-24 기준선",
+        "설비 마스터 · 2026-11-15 · 11월 정기",
+    ]
 
 
 def test_a_duplicate_or_blank_name_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
