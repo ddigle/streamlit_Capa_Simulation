@@ -102,9 +102,9 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("authz_admin_config", "admin", "개발자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     # 결과 · 까닭과 로그인 하위 프로세스 진단(`container_start_report.ChildDiag.fields` — 수 ·
-    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수 · OOM 종료 수 자리 낱말) · 띄우기 앞
-    # 프로세스 단서(`PROCESS_FIELDS` — 시간 · 수)만, 계정 · 비밀번호 없음), 넣기 때 걸려 있던
-    # 보내기 전 끊김의 다시 시도 차례(`retry` — 「n/3」, 없으면 칸 없음).
+    # 이름 · 판 · 메모리 단서(`MEMORY_FIELDS` — MiB · 수 · OOM 종료 수 자리 낱말 · 한도 닿음 수) ·
+    # 띄우기 앞 프로세스 단서(`PROCESS_FIELDS` — 시간 · 수)만, 계정 · 비밀번호 없음), 넣기 때 걸려
+    # 있던 보내기 전 끊김의 다시 시도 차례(`retry` — 「n/3」, 없으면 칸 없음).
     _spec(
         "admin_bdq_login_set",
         "admin",
@@ -129,6 +129,8 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "rss_after",
         "kid_peak",
         "oom_src",
+        "hit_before",
+        "hit_after",
         "app_h",
         "threads",
         "fds",
@@ -275,6 +277,8 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "grade_from": "등급 전",
     "grade_to": "등급",
     "have": "지금 등급",
+    "hit_after": "한도 닿음 뒤",
+    "hit_before": "한도 닿음 앞",
     "home_cleared": "HOME 지정 비움",
     "hour": "시간",
     "hours": "유지(시간)",

@@ -215,6 +215,44 @@ def test_a_cgroup_read_that_falls_back_whole_leaves_no_oom_word(
     assert " · oom_kill 모름 · " in memory_probe.child_memory(found, found).text
 
 
+def test_the_limit_hits_are_read_from_v2_events_max_and_v1_failcnt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """한도 닿음 수는 v2 `memory.events` 의 `max` 줄 · v1 `memory/memory.failcnt` 다 — OOM 종료 수와
+    다른 값이고, 못 읽으면 모름이다(다른 자리로 내려가지 않는다)."""
+    status = _status(tmp_path)
+    found = memory_probe.read(_v2(tmp_path / "v2", current=MIB, limit="max", oom=2), status)
+    assert (found.limit_hits, found.oom_kill) == (4, 2)
+
+    v1 = _v1(tmp_path / "v1", usage=MIB, limit=1024 * MIB, oom=1)
+    (v1 / "memory" / "memory.failcnt").write_text("17\n", encoding="ascii")
+    found = memory_probe.read(v1, status)
+    assert (found.limit_hits, found.oom_kill) == (17, 1)
+
+    no_max = _v2(tmp_path / "no-max", current=MIB, limit="max", oom=0)
+    (no_max / "memory.events").write_text("low 0\nhigh 9\noom 0\noom_kill 0\n", encoding="ascii")
+    (no_max / "memory.events.local").write_text("max 8\n", encoding="ascii")
+    (no_max / "memory").mkdir()
+    (no_max / "memory" / "memory.failcnt").write_text("9\n", encoding="ascii")
+    found = memory_probe.read(no_max, status)
+    assert (found.limit_hits, found.oom_kill) == (None, 0)
+
+    unread = memory_probe.read(_unknown_v2_events_folder(tmp_path / "unread"), status)
+    assert unread.limit_hits is None
+    without = _v1(tmp_path / "v1-none", usage=MIB, limit=1024 * MIB, oom=0)
+    assert memory_probe.read(without, status).limit_hits is None
+    odd = _v1(tmp_path / "v1-odd", usage=MIB, limit=1024 * MIB, oom=0)
+    (odd / "memory" / "memory.failcnt").write_text("lots\n", encoding="ascii")
+    assert memory_probe.read(odd, status).limit_hits is None
+    assert memory_probe.read(tmp_path / "none", status).limit_hits is None
+
+    def boom(_root: Path) -> None:
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(memory_probe, "_cgroup", boom)
+    assert memory_probe.read(v1, status).limit_hits is None
+
+
 def _proc(root: Path, pid: int, text: str) -> Path:
     folder = root / str(pid)
     folder.mkdir(parents=True)
@@ -327,7 +365,7 @@ def test_the_oom_source_rides_the_result_file_audit_and_log() -> None:
     fields = diag.fields()
     assert fields["oom_src"] == "events_local"
     assert report_contract.parse_child(json.loads(json.dumps(fields))) == diag
-    assert "kid_peak=62 oom_src=events_local app_h=16.2" in diag.code
+    assert "kid_peak=62 oom_src=events_local hit_before=- hit_after=- app_h=16.2" in diag.code
     spec = next(item for item in events.SPECS if item.name == "admin_bdq_login_set")
     det = {"result": "unavailable", "reason": "import_killed", "retry": "3/3", **fields}
     kept = recorder.clean_det(spec, det)
@@ -335,6 +373,89 @@ def test_the_oom_source_rides_the_result_file_audit_and_log() -> None:
     unknown = ChildDiag(-9, "SIGKILL", 2.9, "import", memory=ChildMemory(oom_source="unread"))
     assert unknown.fields()["oom_src"] == "unread"
     assert "oom_kill 모름(못 읽음)" in unknown.text
+
+
+def test_the_memory_text_shows_the_limit_hits_only_when_read() -> None:
+    """한도 닿음 수를 하나라도 읽었을 때만 OOM 종료 수 바로 뒤에 「한도 닿음 앞→뒤」 가 붙는다 — 둘
+    다 모르면(옛 기록 · 재지 않음) 지금 줄 그대로이고, 0 은 모름이 아니라 0 이다. 접을 때 앞뒤를
+    따로 싣는다."""
+    base = ChildMemory(700, 980, 1024, False, 0, 1, 340, 342, 62, "events")
+    assert base.text == (
+        "cgroup 700→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고 62MiB"
+    )
+    assert replace(base, hit_before=3, hit_after=5).text == (
+        "cgroup 700→980/1024MiB · oom_kill 0→1 · 한도 닿음 3→5 · 앱 RSS 340→342MiB · "
+        "하위 최고 62MiB"
+    )
+    assert " · oom_kill 0→1 · 한도 닿음 모름→5 · " in replace(base, hit_after=5).text
+    assert " · oom_kill 0→1 · 한도 닿음 3→모름 · " in replace(base, hit_before=3).text
+    assert " · oom_kill 0→1 · 한도 닿음 0→0 · " in replace(base, hit_before=0, hit_after=0).text
+    assert ChildMemory(oom_source="no_line", hit_before=4, hit_after=4).text == (
+        "cgroup 모름 · oom_kill 모름(줄 없음) · 한도 닿음 4→4 · 앱 RSS 모름 · 하위 최고 모름"
+    )
+    assert "한도 닿음" not in ChildMemory(oom_source="no_line").text
+
+    before = MemoryReading(oom_kill=0, limit_hits=3)
+    after = MemoryReading(oom_kill=0, limit_hits=5)
+    folded = memory_probe.child_memory(before, after)
+    assert (folded.hit_before, folded.hit_after) == (3, 5)
+    gone = memory_probe.child_memory(MemoryReading(), after)
+    assert (gone.hit_before, gone.hit_after) == (None, 5)
+    lost = memory_probe.child_memory(before, MemoryReading())
+    assert (lost.hit_before, lost.hit_after) == (3, None)
+
+
+@pytest.mark.parametrize(
+    "odd",
+    [
+        pytest.param(-1, id="negative"),
+        pytest.param(2**31, id="too-big"),
+        pytest.param(True, id="bool"),
+        pytest.param("4", id="text"),
+        pytest.param(4.0, id="float"),
+        pytest.param(None, id="none"),
+    ],
+)
+def test_an_odd_limit_hit_count_is_dropped_on_read(odd: object) -> None:
+    """한도 닿음 수는 OOM 종료 수와 같은 범위(0 이상 · 2³¹ 아래 정수)만 받고, 꼴이 어긋난 값은 그
+    값만 비운다 — 다른 칸은 그대로 읽는다."""
+    data = {"oom_before": 0, "oom_after": 1, "hit_before": odd, "hit_after": 2**31 - 1}
+    parsed = report_contract.parse_memory(data)
+    assert parsed == ChildMemory(oom_before=0, oom_after=1, hit_after=2**31 - 1)
+    swapped = report_contract.parse_memory({"hit_before": 7, "hit_after": odd})
+    assert swapped == ChildMemory(hit_before=7)
+
+
+def test_the_limit_hits_ride_the_result_file_audit_and_log() -> None:
+    """한도 닿음 수는 결과 파일 칸 · 감사 상세 · 로그의 `hit_before` · `hit_after` 다 — 다시 읽어도
+    같고, 칸마다 받는 가장 큰 값을 실은 진단도 감사 상세 1KB 안이다(줄임 없음)."""
+    top, big = 2**31 - 1, 2**30 - 1
+    memory = ChildMemory(big, big, big, False, top, top, big, big, big, "events_local", top, top)
+    process = ProcessClues(87_599.9, top, top, top, top, False, top, top)
+    diag = ChildDiag(
+        -9,
+        "SIGKILL",
+        86_399.9,
+        "import",
+        "bigdataquery.exceptions.TokenNotFoundException",
+        "2.5.0",
+        "1.0.1",
+        memory,
+        process,
+        "light",
+    )
+    fields = diag.fields()
+    assert (fields["hit_before"], fields["hit_after"]) == (top, top)
+    assert report_contract.parse_child(json.loads(json.dumps(fields))) == diag
+    assert f"oom_src=events_local hit_before={top} hit_after={top} app_h=" in diag.code
+    assert f" · oom_kill {top}→{top} · 한도 닿음 {top}→{top} · 앱 RSS " in diag.text
+    spec = next(item for item in events.SPECS if item.name == "admin_bdq_login_set")
+    det = {"result": "unavailable", "reason": "import_killed", "retry": "3/3", **fields}
+    kept = recorder.clean_det(spec, det)
+    assert recorder.TRUNC_KEY not in kept
+    assert (kept["hit_before"], kept["hit_after"]) == (top, top)
+    assert events.DET_LABELS["hit_before"] == "한도 닿음 앞"
+    assert events.DET_LABELS["hit_after"] == "한도 닿음 뒤"
 
 
 def test_the_memory_fields_round_trip_and_are_audit_keys() -> None:
@@ -423,6 +544,27 @@ def test_a_login_reads_memory_before_and_after_the_child(
     assert calls == [0, 1]
     assert "oom_kill 0→1" in result.diag.text
     assert ACCOUNT not in result.diag.text and PASSWORD not in result.diag.text
+
+
+def test_a_login_carries_the_limit_hits_before_and_after_the_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞뒤 읽기의 한도 닿음 수가 진단 칸과 줄에 실린다 — OOM 종료 수가 그대로여도 그 사이 한도에
+    닿았는지 보인다."""
+    use_fake_bdq(monkeypatch, tmp_path)
+    readings = iter(
+        (
+            MemoryReading(700 * MIB, 1024 * MIB, False, 0, 340 * MIB, "events", 3),
+            MemoryReading(990 * MIB, 1024 * MIB, False, 0, 342 * MIB, "events", 5),
+        )
+    )
+    monkeypatch.setattr(memory_probe, "read", lambda *_args: next(readings))
+    monkeypatch.setattr(memory_probe, "process_peak_bytes", lambda _pid: 62 * MIB)
+    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
+    assert result.diag is not None and result.diag.memory is not None
+    assert (result.diag.memory.hit_before, result.diag.memory.hit_after) == (3, 5)
+    assert " · oom_kill 0→0 · 한도 닿음 3→5 · 앱 RSS 340→342MiB · " in result.diag.text
+    assert (result.diag.fields()["hit_before"], result.diag.fields()["hit_after"]) == (3, 5)
 
 
 # 하위가 자기 메모리를 잡고 잠시 머문다 — 그동안 잰 최고가 그 할당을 넘고 앱 RSS 보다 작아야 한다.
@@ -740,7 +882,7 @@ def test_the_start_ticks_field_is_right_on_a_real_kernel() -> None:
 def test_the_process_fields_round_trip_are_audit_keys_and_fit_the_detail() -> None:
     """결과 파일 칸 · 감사 상세가 같은 이름이고(`PROCESS_FIELDS`), 다시 읽어도 같다. 진단 줄은
     메모리 단서 뒤에 붙고, 감사 상세는 칸이 다 차도 1KB 안이다(줄임 없음)."""
-    memory = ChildMemory(700, 980, None, True, 0, 0, 340, 342, 62)
+    memory = ChildMemory(700, 980, None, True, 0, 0, 340, 342, 62, hit_before=4, hit_after=4)
     process = ProcessClues(16.2, 41, 87, 48, None, True, 0, 3)
     diag = ChildDiag(-9, "SIGKILL", 2.9, "import", "", "2.5.0", "1.0.1", memory, process)
     fields = diag.fields()

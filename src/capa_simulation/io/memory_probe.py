@@ -17,6 +17,10 @@ OOM 종료 수가 다르면 그 사이 cgroup 이 프로세스를 죽인 것이�
   찾으면 그 갈래(`OOM_UNKNOWN`)를 남긴다 — 어느 자리를 읽었는데 줄이 없음(`no_line` — 옛 커널의
   `oom_control` 꼴) · 파일은 있는데 읽기 실패(`unread`) · 후보가 하나도 없음(`no_file`) 가운데
   앞의 것이 먼저다.
+- **한도 닿음 수** — 컨테이너 cgroup 메모리가 한도에 닿은 횟수. v2 면 뿌리의 `memory.events` 의
+  `max` 줄, v1 이면 `memory/memory.failcnt` 다. 닿아도 커널이 메모리를 거둬 버티면 강제로 끝내지
+  않으므로 OOM 종료 수와 다른 값이고, OOM 종료 수를 못 읽는 자리에서도 「그 사이 한도에 닿았나」 를
+  보인다. 다른 자리로 내려가지 않고, 못 읽으면 모름이다.
 - **앱 RSS** — `/proc/self/status` 의 `VmRSS`.
 - **하위 최고 RSS** — 그 하위 프로세스 자신의 `/proc/<pid>/status` 의 `VmHWM`(exec 뒤 그 프로세스의
   주소 공간이 닿은 최고). 부르는 쪽이 하위가 끝날 때까지 짧은 틈마다 읽어 가장 큰 값을 쥔다 — 끝나
@@ -75,6 +79,7 @@ PROC_ROOT: Final = Path("/proc")
 V1_UNLIMITED_BYTES: Final = 1 << 60
 MIB: Final = 1024 * 1024
 _OOM_LINE: Final = re.compile(r"^oom_kill\s+(\d+)\s*$", re.MULTILINE)
+_MAX_LINE: Final = re.compile(r"^max\s+(\d+)\s*$", re.MULTILINE)
 _RSS_LINE: Final = re.compile(r"^VmRSS:\s+(\d+)\s+kB\s*$", re.MULTILINE)
 _PEAK_LINE: Final = re.compile(r"^VmHWM:\s+(\d+)\s+kB\s*$", re.MULTILINE)
 _THREADS_LINE: Final = re.compile(r"^Threads:\s+(\d+)\s*$", re.MULTILINE)
@@ -106,7 +111,8 @@ _T = TypeVar("_T")
 @dataclass(frozen=True)
 class MemoryReading:
     """한 번 읽은 값 — 바이트 · 수. 못 읽은 값은 `None`. `oom_source` — OOM 종료 수를 읽은 자리
-    (`OOM_SOURCES`)나 못 찾은 갈래(`OOM_UNKNOWN`), cgroup 읽기가 통째 물러섰으면 빈 글."""
+    (`OOM_SOURCES`)나 못 찾은 갈래(`OOM_UNKNOWN`), cgroup 읽기가 통째 물러섰으면 빈 글.
+    `limit_hits` — 메모리 한도에 닿은 횟수(v2 `memory.events` 의 `max` · v1 `memory.failcnt`)."""
 
     cgroup_bytes: int | None = None
     limit_bytes: int | None = None
@@ -114,6 +120,7 @@ class MemoryReading:
     oom_kill: int | None = None
     rss_bytes: int | None = None
     oom_source: str = ""
+    limit_hits: int | None = None
 
 
 def read(cgroup_root: Path | None = None, status_path: Path | None = None) -> MemoryReading:
@@ -122,9 +129,9 @@ def read(cgroup_root: Path | None = None, status_path: Path | None = None) -> Me
     root = CGROUP_ROOT if cgroup_root is None else cgroup_root
     status = PROC_STATUS if status_path is None else status_path
     try:
-        cgroup, limit, unlimited, oom, source = _cgroup(root)
+        cgroup, limit, unlimited, oom, source, hits = _cgroup(root)
     except Exception:  # 진단 값 하나 — 무엇이 나도 모름으로 물러선다(갈래 낱말 없이)
-        cgroup, limit, unlimited, oom, source = None, None, False, None, ""
+        cgroup, limit, unlimited, oom, source, hits = None, None, False, None, "", None
     return MemoryReading(
         cgroup_bytes=cgroup,
         limit_bytes=limit,
@@ -132,6 +139,7 @@ def read(cgroup_root: Path | None = None, status_path: Path | None = None) -> Me
         oom_kill=oom,
         rss_bytes=_line_bytes(status, _RSS_LINE),
         oom_source=source,
+        limit_hits=hits,
     )
 
 
@@ -139,7 +147,8 @@ def child_memory(
     before: MemoryReading, after: MemoryReading, child_peak_bytes: int | None = None
 ) -> ChildMemory:
     """앞뒤 두 읽기와 하위 최고 RSS(`child_peak_bytes` — 바이트, 모르면 `None`)를 진단 꼴(MiB ·
-    수)로 접는다. 한도 · OOM 종료 수 자리는 뒤 읽기를 앞세운다(앞뒤 같은 값이다)."""
+    수)로 접는다. 한도 · OOM 종료 수 자리는 뒤 읽기를 앞세우고(앞뒤 같은 값이다), 한도 닿음 수는
+    앞뒤를 따로 싣는다."""
     limit = after.limit_bytes if after.limit_bytes is not None else before.limit_bytes
     return ChildMemory(
         cgroup_before=_mib(before.cgroup_bytes),
@@ -152,6 +161,8 @@ def child_memory(
         rss_after=_mib(after.rss_bytes),
         child_peak=_mib(child_peak_bytes),
         oom_source=after.oom_source or before.oom_source,
+        hit_before=before.limit_hits,
+        hit_after=after.limit_hits,
     )
 
 
@@ -272,14 +283,22 @@ def _oom(root: Path, places: tuple[tuple[Path, str], ...]) -> tuple[int | None, 
     return None, next(word for word in _UNKNOWN_ORDER if word in seen)
 
 
-def _cgroup(root: Path) -> tuple[int | None, int | None, bool, int | None, str]:
-    """(사용, 한도, 한도 없음, OOM 종료 수, 그 수의 자리 낱말). v2 를 먼저 보고 없으면 v1 이다."""
+def _cgroup(root: Path) -> tuple[int | None, int | None, bool, int | None, str, int | None]:
+    """(사용, 한도, 한도 없음, OOM 종료 수, 그 수의 자리 낱말, 한도 닿음 수). v2 를 먼저 보고
+    없으면 v1 이다."""
     if (root / "memory.current").exists():
         limit_text = (_text(root / "memory.max") or "").strip()
         unlimited = limit_text == "max"
         limit = int(limit_text) if limit_text.isdecimal() else None
         oom, source = _oom(root, _V2_OOM_PLACES)
-        return _number(root / "memory.current"), limit, unlimited, oom, source
+        return (
+            _number(root / "memory.current"),
+            limit,
+            unlimited,
+            oom,
+            source,
+            _line_number(root / "memory.events", _MAX_LINE),
+        )
     v1 = root / "memory"
     limit = _number(v1 / "memory.limit_in_bytes")
     unlimited = limit is not None and limit >= V1_UNLIMITED_BYTES
@@ -290,6 +309,7 @@ def _cgroup(root: Path) -> tuple[int | None, int | None, bool, int | None, str]:
         unlimited,
         oom,
         source,
+        _number(v1 / "memory.failcnt"),
     )
 
 
@@ -362,7 +382,8 @@ def _processes(root: Path) -> tuple[int | None, int | None]:
 
 
 def _line_number(path: Path, line: re.Pattern[str]) -> int | None:
-    """상태 파일의 `<이름>: n` 줄 값. 파일 · 줄이 없으면 `None`."""
+    """그 파일의 한 줄 값(`line` 의 첫 묶음 — 상태 파일의 `<이름>: n` · cgroup 의 `<이름> n`).
+    파일 · 줄이 없으면 `None`."""
     text = _text(path)
     match = None if text is None else line.search(text)
     return None if match is None else int(match.group(1))

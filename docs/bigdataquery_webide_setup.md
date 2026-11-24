@@ -151,11 +151,12 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
      ID 는 보이지 않는다. 바꾸는 길은 다시 넣기, 없애는 길은 「지우기」 하나다. 마지막 시도가 로그인 하위 프로세스를 띄웠으면 그 아래
      「진단」 값 줄(종료 코드 · 시그널 · 걸린 초 · 닿은 단계 · 표준 오류 마지막 예외 종류 · bigdataquery · getpass_asterisk 판 ·
      패키지를 불러온 길 「불러오기 light」(가벼운 길) · 「불러오기 full」(전체 — 아래 8), 그 뒤에
-     하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서와 그 하위 자신의 최고 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 앱 RSS 앞→뒤MiB · 하위 최고
-     nMiB」 — cgroup v2 `memory.current` · `memory.max`(v1 은 `memory.usage_in_bytes` · `memory.limit_in_bytes`), `oom_kill` 줄이
+     하위 프로세스를 띄우기 바로 앞 → 끝난 바로 뒤의 메모리 단서와 그 하위 자신의 최고 「cgroup 앞→뒤/한도MiB · oom_kill 앞→뒤 · 한도 닿음 앞→뒤 · 앱 RSS
+     앞→뒤MiB · 하위 최고 nMiB」 — cgroup v2 `memory.current` · `memory.max`(v1 은 `memory.usage_in_bytes` · `memory.limit_in_bytes`), `oom_kill` 줄이
      처음 나온 자리(v2 는 `memory.events` → `memory.events.local` → 혼합 마운트의 `memory/memory.oom_control`, v1 은 `memory.oom_control` —
      읽은 자리는 진단 칸 `oom_src` 에만 남고, 어디서도 못 찾으면 「oom_kill 모름(파일 없음 · 줄 없음 · 못 읽음)」 가운데 하나 — 줄 없음은 그 커널이
-     그 수를 세지 않는 꼴이다), `/proc/self/status` 의 `VmRSS`, 도는 동안 0.1초마다 읽은 그 하위의 `/proc/<pid>/status` `VmHWM` 최고, 그 뒤에
+     그 수를 세지 않는 꼴이다), 한도 닿음(컨테이너 메모리가 한도에 닿은 횟수 — v2 `memory.events` 의 `max` 줄, v1 `memory.failcnt`. 앞→뒤로
+     올랐으면 그 사이 한도에 닿았고, 닿아도 늘 강제로 끝내지는 않는다. 읽었을 때만 붙는다), `/proc/self/status` 의 `VmRSS`, 도는 동안 0.1초마다 읽은 그 하위의 `/proc/<pid>/status` `VmHWM` 최고, 그 뒤에
      띄우기 바로 앞 한 번 읽은 프로세스 단서 「앱 뜬 지 n.n시간 · 스레드 n · 열린 파일 n · pids n/한도 · 프로세스 n · 좀비 n」 — 로그인을 부른 프로세스(앱이면 Streamlit 서버,
      시작 스크립트면 그 프로세스)의 `/proc/self/stat` 시작 틱과 `/proc/uptime` · `/proc/self/status` 의 `Threads` · `/proc/self/fd` 항목 수, cgroup v2 `pids.current` ·
      `pids.max`(v1 은 `pids/` 아래 — 프로세스 · 스레드 수라 앱 스레드 수 이상이다. 「max」 는 그 컨테이너 cgroup 에 한도 없음이고 pod 단계 한도는 여기서 보이지 않을 수 있다),
