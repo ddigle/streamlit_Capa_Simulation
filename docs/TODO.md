@@ -7475,8 +7475,10 @@
   환경이라 보인 회차와 누른 회차가 갈리지 않는 단추 — 눌려도 상세 조회가 같은 판정 글로 멈춰 곁 오류) · UI-NTF-02 통과(자리에
   상태 글 · 상자 없음 — 상태는 `AD-04` 한 길) · UI-NTF-03 통과(누른 결과의 거부는 단추 곁 오류 하나, 저장 뒤 경고 길은 그대로) ·
   UI-TXT-04 통과(자리에는 잠긴 단추 하나 — 내역 · 채울 자리는 Alarm 전문 · Guide) · UI-TXT-08 통과(변수가 있으면 풍선 · 알림 · 줄의
-  실패 없음 — 서버 시작 점검 표의 「정상」 줄은 그 표가 늘 싣는 단계 값) — 관련: `components/bigdataquery_registration.py` ·
-  `components/container_start_check.py` · `alerts.py` · Guide 시나리오 관리 · Admin Area
+  실패 없음 — 서버 시작 점검 표의 「정상」 줄은 그 표가 늘 싣는 단계 값) · UI-TXT-05 통과(저장 거부 글 · `AD-04` 꼬리의 채울 자리는
+  「혼자 쓰는 PC · WebIDE」 로 같은 말 — 화면 글에 「사내」 없음, 값 꼴은 판정대로 「표 이름(표 또는 스키마.표)」 —
+  `test_the_refusal_and_ad04_name_the_same_place_to_fill`) — 관련: `components/bigdataquery_registration.py` ·
+  `io/company_bigdataquery_adapter.py` · `components/container_start_check.py` · `alerts.py` · Guide 시나리오 관리 · Admin Area
 - (2026-11-22) **CUSTOM 원천 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 로만 받고 저장소 · 배포 ZIP · 대화 · 리뷰에 적지 않는다**(설계 B-stop
   §4) — 넣는 자리는 셋이다: 사내 PC 사용자 환경변수(README 4단계 한 줄 — 그 PC 의 앱으로 등록할 때만) · WebIDE 셸
   (`docs/bigdataquery_webide_setup.md` 2-1 — 앱을 띄울 같은 터미널) · C-DEP 환경변수 표(같은 문서 「넣을 환경변수」 — 이 이름을 읽는 판의
