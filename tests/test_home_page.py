@@ -2951,6 +2951,76 @@ def test_a_process_with_only_box_routes_says_outside_calculation_in_the_process_
     assert body.count('content: "계산 밖"') == 1
 
 
+def _title_row_captions(app: AppTest, key: str) -> list[tuple[str, str]]:
+    """구획 제목 줄(`key`) 안의 표지(`st.caption` 글 · 풍선)."""
+    from streamlit.testing.v1.element_tree import Caption
+
+    return [
+        (str(child.value), str(child.proto.help))
+        for child in app.get_by_key(key).children.values()
+        if isinstance(child, Caption)
+    ]
+
+
+def test_the_bottleneck_title_row_carries_the_outside_calculation_mark(tmp_path: Path) -> None:
+    """「상세 B/N 공정」 제목 줄 오른쪽 끝에 「계산 밖 n공정」 표지가 서고 풍선이 까닭과 공정
+    표시명 · 빠진 소요기준을 말한다(2026-11-24 사용자 Q5 (가) — B/N 순위가 그 공정 없이 정해지는
+    자리). 목록은 산출 결과 표 제목 줄 · 공정 필터 단추와 같은 칸이고 경고 알림이 아니다. 표지는 그
+    제목 줄의 자식이라 두 칸의 짝 줄 차례 · 월 칸 빈 줄 높이는 그대로이고, 다른 두 제목 줄에는 서지
+    않는다. 공식버전을 새로 발행하므로 모듈 공용 DB 가 아니라 새 DB 다."""
+    from test_process_capa_detail_page import OUTSIDE_PROCESS, _publish_outside_revision
+
+    from capa_simulation.components.outside_calculation_mark import PERIOD_HEAD, REASON
+
+    database = tmp_path / "outside.duckdb"
+    _publish_outside_revision(database)
+    app = _run(database)
+
+    assert _title_row_captions(app, "bottleneck_title_row") == [
+        ("계산 밖 1공정", f"{REASON}\n\n{PERIOD_HEAD}{literal_markdown(OUTSIDE_PROCESS)} (BOX)")
+    ]
+    assert _title_row_captions(app, "plan_detail_title_row") == []
+    assert _title_row_captions(app, "key_process_title_row") == []
+    label_canvas = app.get_by_key("production_lob_label_canvas")
+    assert [child.key for child in label_canvas.children.values()][-2:] == [
+        "bottleneck_title_row",
+        "bottleneck_detail_labels",
+    ]
+    spacer = app.get_by_key("bottleneck_title_spacer")
+    assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_BAND_PX
+    # 범위 이름(`scope_label`)에는 고정물 시나리오 이름 「계산 밖 공정 계획」 이 들어 글 칸만 본다.
+    assert not any(
+        "계산 밖" in f"{note.get('short', '')} {note.get('full', '')}" for note in alert_notes(app)
+    )
+
+
+def test_no_outside_calculation_mark_stands_on_the_bottleneck_title_row(
+    seeded_database: Path,
+) -> None:
+    """조회기간에 소요기준 BOX · PCB 경로가 없으면(내장 시드) 「상세 B/N 공정」 제목 줄에 표지를
+    그리지 않는다(UI-TXT-08)."""
+    app = _run(seeded_database)
+
+    assert _title_row_captions(app, "bottleneck_title_row") == []
+
+
+def test_a_title_row_mark_neither_wraps_nor_shrinks_and_sits_level_with_the_title() -> None:
+    """제목 줄 표지는 높이를 못박은 한 줄 안에 선다 — 표지 칸은 내용 폭에 묶여 줄지 않고(구분 칸의
+    `min-width:0` 이 ⓘ 를 글 밑으로 떨어뜨리지 않게) 글은 줄을 바꾸지 않으며, 캡션 문단의 위 · 아래
+    여백을 걷어 제목과 같은 눈높이다(260px 사본 실측: 「계산 밖 12공정 ⓘ」 까지 제목 말줄임 없이
+    들고 두 글의 가운데 높이가 같음). 모자라면 말줄임은 제목 쪽이다."""
+    from capa_simulation.components.home_rendering import dashboard_title_row_style
+
+    style = dashboard_title_row_style()
+    caption = '[data-testid="stCaptionContainer"]'
+    holder = f'[data-testid="stElementContainer"]:has({caption})'
+    assert _css_rule(style, f".st-key-bottleneck_title_row {holder}") == "flex: none;"
+    assert _css_rule(style, f".st-key-bottleneck_title_row {caption}") == "margin-bottom: 0;"
+    assert _css_rule(style, f".st-key-bottleneck_title_row {caption} > p") == (
+        "margin: 0; white-space: nowrap;"
+    )
+
+
 def _display_tab_editors(database: str) -> None:
     """HOME 설정 「Capa 요약 · 표시」 탭의 세 상자만(Capa 요약 · B/N Top5 구간 · 주요공정
     프리셋)."""

@@ -1,7 +1,8 @@
 # Purpose: 계산에서 빠진 BOX · PCB 소요기준 공정을 알리는 「계산 밖」 표지와 풍선 글을 짓는다.
 
-"""계산 밖 표지 — 표 제목 줄 부가 설명 칸에 다는 짧은 글과 풍선(정식판 1.0 마감 2번 C — 2026-11-24
-사용자 「권장안 그대로」: PCB 산식이 아니라 표지).
+"""계산 밖 표지 — 표 제목 줄 부가 설명 칸 · HOME 「상세 B/N 공정」 제목 줄 끝에 다는 짧은 글과
+풍선(정식판 1.0 마감 2번 C — 2026-11-24 사용자 「권장안 그대로」: PCB 산식이 아니라 표지. HOME
+제목 줄 자리도 같은 날 답).
 
 소요기준 BOX · PCB 경로는 산식이 정해질 때까지 대당 Capa · 소요대수 · 확보율 계산에서 빠진다
 (`frame_contracts.UNIMPLEMENTED_BASES` — 제외가 아니라 추가 예정, AGENTS 11장). 그 공정은 표에 줄이
@@ -34,7 +35,7 @@ from capa_simulation.services.frame_contracts import UnimplementedProcess
 
 # 표지 낱말 — 산출 결과 표 제목 줄 · 다른 화면의 계산 밖 표지가 같이 쓴다.
 OUTSIDE_CALCULATION: Final = "계산 밖"
-# 표 제목 줄 부가 설명 칸의 표지(값 — 조건이 있을 때만 선다).
+# 표 제목 줄 부가 설명 칸 · HOME 「상세 B/N 공정」 제목 줄 끝의 표지(값 — 조건이 있을 때만 선다).
 MARK: Final = f"{OUTSIDE_CALCULATION} {{n}}공정"
 # 풍선 첫 줄 — 까닭.
 REASON: Final = (
