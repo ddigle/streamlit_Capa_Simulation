@@ -4572,7 +4572,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이면서 공정이 빈 행)만 넘겨 한 번 더 한다 — 원천 `WF수(매)` 가 경로 행마다 갈려 정식 대조가 그 칸을 `값 불일치` 로
     떨어뜨리기 때문이다. `compare_metric` · `_legacy_totals` · `COMPARISONS` 는 그대로이고(소요대수 대조가 같은 접기를
     쓴다), 넣지 않은 행 · 칸은 `plan_row_diagnostics` 가 개수로만 센다(계획 행 밖 갈림은 경로 값 가르기와 같은 행 ·
-    허용으로 본다 — `Area_Name` 있고 양수인 행, `ROUTE_SPLIT_TOLERANCE`).
+    허용으로 본다 — `Area_Name` 있고 양수인 행, `ROUTE_SPLIT_TOLERANCE`). 사내 확인 스크립트는 같은 갈래를 요약 `8-2P` 로
+    싣는다(10-1).
   - 사내 실데이터는 분포·개수로만 가른다(`difference_distribution`·`ratio_groups`·`scaling_check`·
     `fold_route_cells` 등 → `scripts/inspect_real_data_checks.py`).
   - 지표를 더하면 두 스크립트의 계산 사전(`LOAD_BUILDERS`)도 더하고, 산식이 바뀌면 `FORMULA_INPUTS` 도 고친다.
@@ -10140,7 +10141,10 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - **실데이터로만 답이 나오는 질문은 사내에서 잰다.** `scripts/inspect_real_data_checks.py` 가 두 DB 를
   `read_only` 로 열어(저장소 `initialize()` 는 마이그레이션을 걸어 쓰므로 부르지 않는다) 기존 결과 대조
   분포(ST 정의 대조 UPEH × ST ÷ 60 — 리비전 1 에 그런 MI 행이 없으면 가장 최근에 저장한 리비전 가운데 그런 것을 저장 차례
-  k/N 으로 대신 본다 — ·소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·
+  k/N 으로 대신 본다 — ·소요대수 ≈60 배 무리 가르기 포함. 8-2 끝의 「계획 행으로 접음」 대조 · 원천 집계 대비 달 비 · 환산 탭
+  두 집계 기준의 달 합 · Dummy 계열 행(요약 `8-2P`)과 업무 키 충돌 키밖 / 그 밖 · Capa Code 하나에 CUSTOM 둘 이상(`8-2K`) — 두 줄 머리
+  `종류 n` 은 원천 CUSTOM 종류이고 리비전에 맞추기(`source_custom_aligned`) **앞**의 원천으로 센다(`SourceData.custom`))·원천
+  `RQ_REQB` 소요기준·설비 DB·
   BigDataQuery(8-9 HOME 월 축 블록은 닫을 조건이 서서 걷었다 — 번호는 다시 쓰지 않는다)와
   「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(8-10 센서스 — 기본은 활성·공식버전 대상 리비전, `--census-all-revisions`
   면 전부. 줄마다 근거가 되는 `docs/TODO.md` 결정 번호와 그 가운데 잰 부분을 꼬리표로 단다 — 수는 근거일 뿐이라 0 이어도 결정을
