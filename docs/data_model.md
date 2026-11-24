@@ -239,7 +239,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   `ACTIVE`·`ARCHIVED`(보관) 둘이다 — 보관은 목록에서 숨길 뿐 행을 그대로 두고(`repository.archive_scenario`·
   `restore_scenario`), 보관한 시나리오에는 새 리비전을 저장할 수 없다. 보관본은 목록 관리의
   오른쪽 「보관함」 칸에서 되돌리거나 영구 삭제한다.
-- `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
+- `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`(스크립트 적재 ·
+  DB 등록 탭 원천 CSV 올림 `CSV_CORE_DATA_UPLOAD` — 칸에 CHECK 가 없어 마이그레이션 없이 선다)·
   `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`·
   `SCENARIO_EXTRA_PROCESS`(부대공정 얹기)),
   원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)
