@@ -762,7 +762,7 @@ def _original_text(error: BaseException) -> str:
     """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구. 패키지 문구가 실은
     요청자 계정(저장된 BDQ 계정 ID 는 화면에 보이지 않는다 — D7)은 자르기 전에 가린다 — 조회한
     누구나 보는 글이고 모듈로도 간다."""
-    text = str(error).strip()
+    text = _link_text(error).strip()
     for name in _accounts_to_hide():
         text = text.replace(name, ACCOUNT_MASK)
     if len(text) > _ORIGINAL_TEXT_LIMIT:
