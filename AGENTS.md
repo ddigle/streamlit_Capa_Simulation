@@ -2970,6 +2970,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸이 그 토큰에서 선언을 푼다(`token_route_exceptions`, 5장 44). 선언을 접지 않는 편집표 키 `scenario_content_key` 는 생산
     계획 · 기준 정보 편집표 두 자리만 쓴다. 소요대수 길(`get_capacity_and_demand` · `full_capacity_outcome`)도 선언 칸에 기본값이
     없다(`tests/test_route_load_exception_keys.py`).
+  - 계산 밖 공정 칸(`get_unimplemented_basis_processes` — 소요기준 BOX · PCB 경로가 있는 공정, 11장)은 계산 칸이 아니라 빌더 셋
+    밖이다. 키는 활성 시나리오 `content_token` + 조회기간 스칼라이고 부하 예외 선언을 접지 않는다(선언이 목록을 바꾸지 않음).
+    `RQ_REQB` 는 `_` 인자(프레임 또는 빗나갈 때만 부르는 로더)다(`tests/test_scenario_result_cache.py`).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
   - 설비 마스터를 받는 래퍼는 표를 Streamlit 이 해시하지 않는다 — 일정 미정 · 사용기준 밖 · 주차 집계는 `_cached_*` 의 `_`
@@ -3301,6 +3304,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 필수 컬럼 검증·업무 키 정규화의 단일 정의다(14-5).
   정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`). 표 칸 빈칸 판정(None·`pd.NA`·
   NaN·NaT — 빈 글자·0 은 값이다)도 `blank_cell` 하나다.
+  조회기간 안 계산 밖 공정(소요기준 BOX · PCB 경로가 있는 공정 — `UnimplementedProcess` 의 공정 · 빠진 소요기준 · `whole`)의
+  목록도 `unimplemented_basis_processes` 하나다. 두 계산이 행을 버리는 꼴(앞뒤 공백 · 대문자 · `UNIMPLEMENTED_BASES`)로 세고 받은
+  표를 고치지 않으며, 달을 못 읽는 행 · 공정이 빈 행은 세지 않아 멈춤 길을 더하지 않는다(11장).
 - `src/capa_simulation/services/frame_checks.py` — 중복 키 검사(`assert_unique_keys`)·텍스트 키 strip 의 단일 정의다.
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
@@ -11017,6 +11023,10 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   기준이 확정되면 넣는다. 경계는 `frame_contracts.DEMAND_BASES` 와
   `frame_contracts.UNIMPLEMENTED_BASES` 다. 뒤의 것은 대당 Capa·소요대수·기준정보 적용 검사가
   모두 import 하는 한 벌이다 — 넣을 때 한 곳만 고치면 세 경로가 같은 행을 본다.
+  조회기간 안 계산 밖 공정 목록도 그 곁 한 곳(`frame_contracts.unimplemented_basis_processes`, 캐시
+  `simulation_cache.get_unimplemented_basis_processes`)이다. 세는 꼴이 두 계산이 버리는 꼴과 같아 목록의 공정과 계산이 버린 경로가
+  어긋나지 않고, 계산 숫자는 바꾸지 않으며, 넣을 때 그 집합만 고치면 목록도 함께 따라간다(`tests/test_frame_contracts.py` ·
+  `tests/test_required_equipment.py`).
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지

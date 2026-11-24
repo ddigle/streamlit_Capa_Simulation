@@ -32,6 +32,10 @@ from capa_simulation.services.display_order_scopes import (
     TAB_REQUIRED,
     TAB_UNIT_CAPACITY,
 )
+from capa_simulation.services.frame_contracts import (
+    UnimplementedProcess,
+    unimplemented_basis_processes,
+)
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -512,3 +516,44 @@ def test_the_step_table_follows_a_new_content_token(tables: dict[str, pd.DataFra
     processes = sorted(set(edited_unit["공정"].astype(str)))
     assert not before.equals(after)
     pd.testing.assert_frame_equal(after, _old_step_table(edited_unit, display_order, processes))
+
+
+def test_the_outside_calculation_cell_reads_the_routes_once_per_token_and_period(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """계산 밖 공정 칸(`get_unimplemented_basis_processes`)은 내용 토큰 + 조회기간이 키다 — 적중이면
+    `RQ_REQB` 로더를 부르지 않고, 기간이나 토큰이 바뀌면 다시 센다. 값은 칸 없이 센 것과 같다."""
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [START, START + 1, 202606],
+            "공정": ["DEMO_P1", "DEMO_BOX_A", "DEMO_BOX_LATE"],
+            "소요기준": ["WF", "BOX", "PCB"],
+        }
+    )
+    loads: list[int] = []
+
+    def loader() -> pd.DataFrame:
+        loads.append(len(loads))
+        return reqb
+
+    token = f"test-outside-calculation-{uuid4().hex}"
+
+    first = sc.get_unimplemented_basis_processes(token, START, END, _reqb=loader)
+    again = sc.get_unimplemented_basis_processes(token, START, END, _reqb=loader)
+
+    assert first == again == unimplemented_basis_processes(reqb, start_month=START, end_month=END)
+    assert first == (UnimplementedProcess(process="DEMO_BOX_A", bases=("BOX",), whole=True),)
+    assert len(loads) == 1
+
+    wider = sc.get_unimplemented_basis_processes(token, START, 202606, _reqb=loader)
+    edited = sc.get_unimplemented_basis_processes(
+        f"{token}-edited", START, END, _reqb=lambda: reqb.iloc[:1]
+    )
+
+    assert len(loads) == 2
+    assert [item.process for item in wider] == ["DEMO_BOX_A", "DEMO_BOX_LATE"]
+    assert edited == ()
+    seed = tables["RQ_REQB"]
+    assert sc.get_unimplemented_basis_processes(
+        f"{token}-seed", START, END, _reqb=seed
+    ) == unimplemented_basis_processes(seed, start_month=START, end_month=END)

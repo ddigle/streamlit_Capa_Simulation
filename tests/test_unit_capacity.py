@@ -1251,3 +1251,17 @@ def test_an_upeh_value_stop_fires_even_on_a_route_dropped_anyway() -> None:
     assert _join_error(zero).problem == ReferenceJoinProblem(
         "RQ_UPEH", JOIN_NONPOSITIVE, columns=("ST",), keys=1, rows=1
     )
+
+
+def test_box_rows_spelled_loosely_leave_the_unit_capacity_as_it_is() -> None:
+    """UPEH 의 BOX · PCB 행은 표기만 달라도(` box ` · `pcb`) 빠지고 남은 경로의 대당 Capa 는
+    그대로다 — 계산 밖 목록(`frame_contracts.unimplemented_basis_processes`)이 세는 꼴(앞뒤 공백을
+    떼고 대문자)과 같다."""
+    plain = calculate_unit_capacity(**_capacity_inputs(["Process-A"]))
+    inputs = _capacity_inputs(["Process-A", "DEMO_BOX_ONLY", "DEMO_PCB_ONLY"])
+    inputs["upeh"] = inputs["upeh"].assign(소요기준=["CHIP", " box ", "pcb"])
+
+    mixed = calculate_unit_capacity(**inputs)
+
+    pd.testing.assert_frame_equal(mixed, plain)
+    assert mixed["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])

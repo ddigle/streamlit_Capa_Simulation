@@ -3618,6 +3618,14 @@
   Dummy 행은 사유를 달아 제외 목록에 남긴다 — 관련: 소요대수
 - (2026-09-05) BOX·PCB 소요기준은 제외가 아니라 `추가 예정`(`UNIMPLEMENTED_BASES`) — 산식이 정해질 때까지 대당 Capa·
   소요대수에서 뺀다(2026-10-10 PCB 산식 보류 재확인) — 관련: `frame_contracts.py`
+- (2026-11-24) **조회기간 안 계산 밖 공정(소요기준 BOX · PCB 경로가 있는 공정) 목록은 그 경계 곁 한 곳에서 낸다**(정식판 1.0 마감 —
+  같은 날 사용자 「권장안 그대로」: PCB 산식이 아니라 화면 표지) — `frame_contracts.unimplemented_basis_processes`(공정 · 빠진
+  소요기준 · `whole` = 조회기간 안 그 공정 경로가 모두 계산 밖인가)와 캐시 `simulation_cache.get_unimplemented_basis_processes`(키는
+  활성 시나리오 `content_token` + 조회기간이고 부하 예외 선언을 접지 않음 — 목록이 선언과 무관, `RQ_REQB` 는 `_` 인자). 두 계산이
+  행을 버리는 꼴(앞뒤 공백 · 대문자 · `UNIMPLEMENTED_BASES`)로 세어 목록과 버린 경로가 어긋나지 않고(`tests/test_required_equipment.py`
+  가 대조), 계산 숫자는 그대로다. 달을 못 읽는 행 · 공정이 빈 행은 세지 않아 멈춤 길을 더하지 않는다. 한 공정 한 소요기준을 어긴
+  원천(PKG 경로와 BOX 경로가 한 공정)은 `whole` 거짓으로 갈린다. 화면 표지는 이 목록을 쓰는 다음 일이고, 기존 시험 기대는 바꾸지
+  않았다 — 관련: `frame_contracts.py` · `simulation_cache.py`
 - (2026-09-05) `Pack Code` 는 생산수량을 가르는 `RQ_PKG_PLAN` 업무 키(8번째 — 0039 부터 끝은 CUSTOM) — 저장·편집은 Pack Code 별 행, 합산은 계산
   계층이 하고 `PKG_PLAN_KEYS` 에는 Pack Code 를 넣지 않는다(2026-09-12 구현 · 0039 부터 CUSTOM 을 더한 8키) — 관련: 부하량·소요대수(옛 3-5)
 - (2026-09-05) 월 경계 ISO 주차는 그 주에 더 많은 일수가 든 달에 귀속한다(월요일 기준 귀속을 대체) — 관련:
