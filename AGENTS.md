@@ -2367,6 +2367,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사유의 발행 줄 쪽 끝 · 리비전 2 · 공식버전 메모의 조각 차례는 원천 조각(`_RunLog.source_memo` — CUSTOM 원천 대조 · 업무 키
     충돌, `scenario_registration.source_check_memo`) · CS 빈 행 · 부대공정 판 · 부하 예외 판이다. 소요대수 밖 수요 경고는 그 뒤
     `_WARNING_SEPARATOR` 로 잇고 `split_published_reason` 이 경고 머리로만 가른다 — 대조 조각 안의 「—」 는 가르지 않는다.
+  - 회차를 멈춘 예외는 traceback 과 함께 로그에 남기되(`_log_failure_trace`), BigDataQuery 조회 실패(`BigDataQueryCallError`)면 예외
+    사슬을 따라가지 않는다 — 감싼 패키지 원문(`__cause__`)에는 요청자 계정 · CUSTOM 원천 표 이름이 가리지 않은 채 든다. 그 실패를
+    실행 기록에 쓰지 못한 줄도 문맥이 그 조회 실패라 같이 끊는다(`test_a_custom_query_failure_keeps_the_table_name_out_of_the_log`).
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
   차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다. 감사 기록기가 켜진
   서버면 감사 할 일(`audit/shipper.py` 의 `AuditTasks` — 비우기 10초 · 올리기 5분 또는 200줄 · 일별 묶음 · 미러)도 같은 고리가

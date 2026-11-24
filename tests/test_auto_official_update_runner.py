@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Sequence
 from datetime import date, datetime
@@ -33,6 +34,7 @@ from auto_update_fakes import official_w40 as _official_w40
 from auto_update_fakes import publish_snapshot as _publish
 from auto_update_fakes import register_code as _register
 from auto_update_fakes import source_frame as _source
+from conftest import DEMO_CUSTOM_TABLE
 
 import capa_simulation.auto_official_update_runner as runner
 import capa_simulation.services.auto_official_update as rules
@@ -834,7 +836,7 @@ def test_a_run_without_the_custom_table_variable_fails_in_register_and_the_next_
     main = _source()
     cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
     custom = cells.assign(CUSTOM="DEMO_CUSTOM_A").loc[:, list(CUSTOM_SOURCE_COLUMNS)]
-    table = "demo_schema.demo_custom"
+    table = DEMO_CUSTOM_TABLE
     asked: list[str] = []
     loads: list[str] = []
 
@@ -876,6 +878,57 @@ def test_a_run_without_the_custom_table_variable_fails_in_register_and_the_next_
     assert asked == [adapter.build_custom_query("SIM-W41"), asked[1]]
     assert "'SIM-W41'" in asked[1]
     assert runner.received_codes(repository) == {"SIM-W41"}
+
+
+class _PackageError(Exception):
+    """사내 패키지 예외 종류 흉내 — 문구에 조회한 표 이름을 싣는다."""
+
+
+@pytest.mark.parametrize("record_fails", [False, True], ids=["회차 멈춤 줄", "기록 실패 줄"])
+def test_a_custom_query_failure_keeps_the_table_name_out_of_the_log(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    record_fails: bool,
+) -> None:
+    """CUSTOM 원천 표 조회가 실패하면 실행 기록 사유가 표 이름을 가리듯 로그도 감싼 패키지
+    원문(`__cause__` — 표 이름이 그대로 든다)을 싣지 않는다. 회차 멈춤 줄과, 그 실패를 기록하지
+    못했을 때의 줄(그 예외의 문맥이 조회 실패다) 모두다. 합성 표 이름이다."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    named = f"'{DEMO_CUSTOM_TABLE.upper()}' (table {DEMO_CUSTOM_TABLE.split('.')[-1].title()})"
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        raise _PackageError(f"AnalysisException: Could not resolve table reference: {named}")
+
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: SimpleNamespace(getData=get_data)
+    )
+    if record_fails:
+
+        def refuse(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("실행 기록을 쓰지 못함")
+
+        monkeypatch.setattr(runner._RunLog, "finish", refuse)
+    caplog.set_level(logging.ERROR, logger=runner.__name__)
+
+    run = run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=AutoUpdateSources(fetch_catalog=catalog.fetch_catalog),
+        clock=_clock,
+    ).run
+
+    logged = caplog.text.casefold()
+    schema, name = DEMO_CUSTOM_TABLE.casefold().split(".")
+    assert "단계에서 멈췄습니다" in caplog.text
+    assert schema not in logged and name not in logged
+    assert ("실패를 기록하지 못했습니다" in caplog.text) is record_fails
+    assert run is not None
+    if not record_fails:
+        assert (run.status, run.stage) == (STATUS_ERROR, "register")
+        assert run.reason is not None and adapter.CUSTOM_TABLE_MASK in run.reason
+        assert schema not in run.reason.casefold() and name not in run.reason.casefold()
 
 
 def test_a_registration_failure_keeps_nothing_half_made(

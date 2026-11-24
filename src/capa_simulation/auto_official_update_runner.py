@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -57,6 +58,7 @@ from capa_simulation.components.required_exclusion_notice import (
 )
 from capa_simulation.io.bigdataquery_catalog import fetch_simulation_catalog
 from capa_simulation.io.company_bigdataquery_adapter import (
+    BigDataQueryCallError,
     BigDataQueryCoreDataProvider,
     QueryWindow,
     registration_detail_window,
@@ -286,7 +288,9 @@ def run_auto_official_update(
             # `SystemExit` 처럼 Exception 밖의 것도 실제 사유로 남긴 뒤 다시 올린다 — 실행 흐름
             # 신호(KeyboardInterrupt·Streamlit 의 rerun/stop)를 삼키지 않는다. 배경 스레드는
             # 예약 쪽이 받아 스레드를 지킨다(`auto_update_scheduler`).
-            _LOGGER.exception(
+            _log_failure_trace(
+                exc,
+                exc,
                 "공식버전 자동 갱신 회차 %s %s 단계에서 멈췄습니다.",
                 with_subject_particle(str(run_id)),
                 log.stage,
@@ -377,8 +381,25 @@ class _RunLog:
         label = STAGE_LABELS.get(self.stage, self.stage)
         try:
             self.finish(STATUS_ERROR, f"{label} 단계에서 멈췄습니다 — {_error_text(exc)}")
-        except Exception:
-            _LOGGER.exception("자동 갱신 회차 %s 의 실패를 기록하지 못했습니다.", self.run_id)
+        except Exception as error:
+            _log_failure_trace(
+                error, exc, "자동 갱신 회차 %s 의 실패를 기록하지 못했습니다.", self.run_id
+            )
+
+
+def _log_failure_trace(
+    error: BaseException, stopped: BaseException, message: str, *args: object
+) -> None:
+    """`error` 를 traceback 과 함께 로그에 남긴다. 회차를 멈춘 예외(`stopped`)가 BigDataQuery 조회
+    실패면 예외 사슬을 따라가지 않는다 — 그 실패가 감싼 패키지 원문(`__cause__`)에는 요청자 계정 ·
+    CUSTOM 원천 표 이름이 가리지 않은 채 든다. 그 실패의 글은 어댑터가 이미 가렸고 갈래 · 종류는
+    어댑터 로그(`_log_failure`)가 남겼다. 기록하지 못한 실패(`error`)는 문맥이 그 조회 실패라 같이
+    끊는다."""
+    if not isinstance(stopped, BigDataQueryCallError):
+        _LOGGER.error(message, *args, exc_info=error)
+        return
+    trace = traceback.format_exception(type(error), error, error.__traceback__, chain=False)
+    _LOGGER.error(message + "\n%s", *args, "".join(trace).rstrip())
 
 
 def _error_text(exc: BaseException) -> str:
