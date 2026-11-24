@@ -4059,11 +4059,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
   색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
-  — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 운영 서버에서는 화면 등급 개발자에게만
-  선다 — 다른 사람의 커버는 `Detail` · `Summary` 두 단추다(2026-11-24 정식판 마감 2-A 의 티저 몫 — 합성 수치가 든 대회 사본,
-  판정은 `intro_summary.teaser_payload` · JS 는 `teaser.available` 만 본다). 셋 모두 티저의 `TEASER.pause()`
+  — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 셋 모두 티저의 `TEASER.pause()`
   로 재생을 멈춘다 — 티저는 재생 때 남은 소리를 미리 잡아 두므로 층만 숨기면 40초 끝까지 소리가 난다. 다시 열면 멈춘 자리에
   서 있고 티저 안 `Space` 로 잇는다. 티저가 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다.
+  운영 서버에서는 `Introduce` 단추가 화면 등급 개발자에게만 선다 — 다른 사람의 커버는 `Detail` · `Summary` 두 단추다
+  (2026-11-24 정식판 마감 2-A 의 티저 몫 — 합성 수치가 든 대회 사본, 판정은 `intro_summary.teaser_payload` · JS 는
+  `teaser.available` 만 본다).
   `site/contest-deck/index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
   - Components v2 하나이고 자산은 `intro_overlay_assets/`(`intro.html`·`intro.css`·`intro.js`)다. 움직임은 워커
     OffscreenCanvas 에서 돈다 — 워커로 가는 `scene()`·`summaryGrid()` 는 그 파일의 다른 이름을 쓰지 않는다.
