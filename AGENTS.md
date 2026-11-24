@@ -2380,7 +2380,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   마지막 예외 종류 · bigdataquery · getpass_asterisk 판 · 패키지를 불러온 길 `load`(알 때만) · 하위 프로세스 앞뒤 메모리 단서 `memory`(`ChildMemory` · `parse_memory` — cgroup 사용 ·
   한도(「max」 는 한도 없음) · OOM 종료 수 · 앱 RSS 앞뒤와 그 하위 자신의 최고 RSS 한 값, MiB · 수, 그 OOM 종료 수를 읽은 자리 낱말 `oom_src`(`OOM_SOURCES` —
   `events` · `events_local` · `oom_control`, 못 찾은 갈래 `OOM_UNKNOWN` — `no_file` · `no_line` · `unread`, 그 밖의 낱말은 비우고 모르면 빈 글 — 앞뒤 수를 모두 모르고
-  갈래를 알면 화면 「oom_kill 모름(파일 없음 · 줄 없음 · 못 읽음)」), 한도 닿음 앞뒤 수 `hit_before` · `hit_after`(OOM 종료 수와 같은 범위, 하나라도 읽었을 때만 화면
+  갈래를 알면 화면 「oom_kill 모름(<까닭>)」 — 까닭은 파일 없음 · 줄 없음 · 못 읽음 가운데 하나), 한도 닿음 앞뒤 수 `hit_before` · `hit_after`(OOM 종료 수와 같은 범위, 하나라도 읽었을 때만 화면
   OOM 종료 수 바로 뒤 「한도 닿음 앞→뒤」 — 둘 다 모르면 줄이 지금 꼴), 칸 이름 `MEMORY_FIELDS` — 그 칸이 하나도 없는 옛
   파일은 `None` 이라 화면 글도 옛 꼴, 옛 하위 최고 앞뒤 칸 `LEGACY_MEMORY_FIELDS` 는 예외 없이 지나치고 옮기지 않는다) · 띄우기 바로 앞 프로세스 단서 `process`(`ProcessClues` ·
   `parse_process` — 부른 프로세스가 뜬 시간(소수 첫째 자리) · 스레드 · 열린 파일 · cgroup 프로세스 · 스레드 수 · 한도(「max」 는 그 cgroup 에 한도 없음) · 프로세스 수 · 좀비 수, 칸 이름 `PROCESS_FIELDS`
@@ -2499,7 +2499,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   최고 RSS 를 되풀이해 읽어(`process_peak_bytes` · `higher`) MiB · 수로 접어(`child_memory` → `container_start_report.ChildMemory`) 진단에 싣는다 — cgroup 사용 · 한도(v2 뿌리 `memory.current` ·
   `memory.max`, 없으면 v1 `memory/` 의 `memory.usage_in_bytes` · `memory.limit_in_bytes`, 뿌리는 시작 스크립트의 한도 읽기와 같은 `/sys/fs/cgroup`) · OOM 종료 수
   (`oom_kill` 줄이 처음 나온 자리 — v2 는 `memory.events` → `memory.events.local` → 혼합 마운트의 `memory/memory.oom_control`, v1 은 `memory/memory.oom_control` —
-  와 그 자리 낱말 `OOM_SOURCES`, 어디서도 못 찾으면 수는 모름이고 갈래 `OOM_UNKNOWN` 를 남긴다: 어느 자리를 읽었는데 줄이 없음 `no_line`(옛 커널의
+  와 그 자리 낱말 `OOM_SOURCES`, 어디서도 못 찾으면 수는 모름이고 갈래 `OOM_UNKNOWN` 을 남긴다: 어느 자리를 읽었는데 줄이 없음 `no_line`(옛 커널의
   `oom_control` 꼴) · 파일은 있는데 읽기 실패 `unread`(`FileNotFoundError` 밖의 `OSError` — 도우미 `_read`) · 후보가 하나도 없음 `no_file` 가운데 앞의 것.
   접을 때 자리는 뒤 읽기를 앞세우고, cgroup 읽기가 뜻밖의 예외로 통째 물러서면 낱말 없이 지금처럼 「oom_kill 모름」) · 한도 닿음 수(`limit_hits` — 컨테이너 메모리가
   한도에 닿은 횟수, v2 `memory.events` 의 `max` 줄 · v1 `memory/memory.failcnt`, 다른 자리로 내려가지 않고 못 읽으면 모름. 닿아도 커널이 거둬 버티면 강제로 끝내지 않아
