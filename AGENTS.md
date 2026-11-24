@@ -544,11 +544,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     답 q7-past-slice (나) — `ProductSlots.lenders`, 칸 수 · 다른 제품 칸 · `기타` 접힘 그대로, 그 제품의 부품이 모두 접혔으면
     지금 규칙, 빌려 준 부품과 한 도넛에 함께 서면 그 칸만 `ProductSlots.fallback`, 범례는 칸마다 한 줄). 범례 줄임은
     `_fit_part_label` 이다(`tests/test_product_share_parts.py`). `기타` 풍선은 늘 첫 줄 「달 · 기타 비중 · 수량」, 둘째
-    줄 모인 이름(셋까지 · 나머지 「외 N」 — 이름은 줄이지 않음, 이름 수 상한은 답 밖이라 사용자 확인 대기 — 규칙집 6-41
-    q7-hover-cap)이다 — 이름에 부품 이름표가 끼든 말든 한 꼴이다
+    줄부터 모인 이름이다 — 이름은 줄이지 않고 다 적되 한 줄에 셋, 넘긴 줄 끝에 쉼표, 이름 줄 넷(이름 열둘)을 넘는
+    이름만 마지막 줄 끝 「외 N」(`_other_member_lines` · `_PRODUCT_SHARE_HOVER_NAME_LINES` — 같은 날 그림 보드 4 답
+    q7-hover-cap (나), `tests/test_product_share.py`). 이름에 부품 이름표가 끼든 말든 한 꼴이다
     (2026-11-24 그림 보드 3 답 q7-other-hover (나) — LOB · PKG · 과거 달 도넛이 같은 `_product_share_hover`, 입장 화면
     Summary 조각 풍선은 이름 · 비중 한 줄의 따로 그리기라 해당 없음). `기타` 는 늘 마지막 조각이라 Plotly 가 풍선을
-    왼쪽으로 펴고, 가로 스크롤 칸 안이라 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 둘째 줄을 짧게 둔다.
+    왼쪽으로 펴고, 가로 스크롤 칸 안이라 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 한 줄 이름을 셋으로
+    짧게 둔다. 풍선은 조각 기준점 위아래로 반씩 펴져 그림 아래 밖은 잘린다 — 이름 줄 상한이 그 몫이고, 기타가 도넛
+    절반을 크게 넘는 달은 상한 안에서도 아래가 잘린다(규칙집 6-41 q7-hover-rest).
   - 계획 세부수량 · 비교 덤벨도 같은 판정으로 그 제품만 부품마다 줄이다 — 분류 차원이 (제품정보, `CUSTOM`, Stack[, Customer])
     이고 HOME 캐시 네 함수(`get_home_simulation` · `get_home_lob_without_edp` · `get_home_plan_detail` ·
     `get_home_comparison_plan`)가 받은 리비전 계획 전체로 판정해 `build_production_dashboard(multi_part=)` 에 넘긴다. 비교

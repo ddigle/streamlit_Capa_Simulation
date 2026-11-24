@@ -119,12 +119,16 @@ _PRODUCT_SHARE_LEGEND_X = (0.06, 0.53)
 # 테두리와 이만큼 떨어진다.
 _PRODUCT_SHARE_LEGEND_GUTTER_PX = 6
 _PRODUCT_SHARE_LEGEND_SWATCH = "■ "
-# hover 글자 크기와 줄 수. 도넛이 그림 맨 아래에 붙어 있어(아래 여백 0) 6시 방향 조각의 hover
-# 는 기준점 아래로 18px 남짓밖에 자리가 없다 — Plotly 는 pie hover 를 그림 안으로 밀어 넣지
-# 않고 잘라 버린다. **두 줄**과 이 크기면 그 안에 든다. 줄을 늘리지 않는다.
+# hover 글자 크기. 도넛이 그림 맨 아래에 붙어 있어(아래 여백 0) 6시 방향 조각의 hover 는
+# 기준점 아래로 18px 남짓밖에 자리가 없다 — Plotly 는 pie hover 를 그림 안으로 밀어 넣지 않고
+# 잘라 버린다. 이름 있는 조각의 hover 는 **두 줄**이라 이 크기면 그 안에 든다.
 _PRODUCT_SHARE_HOVER_FONT_SIZE_PX = 12
-# `기타` hover 에 이름을 적는 제품 수. 나머지는 「외 N」으로 줄인다(둘째 줄에 함께 적는다).
-_PRODUCT_SHARE_HOVER_MEMBERS = 3
+# `기타` hover 둘째 줄부터 모인 이름을 다 적되 한 줄에 이 수만큼 적고 다음 줄로 넘긴다 — 줄이
+# 옆으로 넓어지면 왼쪽 고정 구분 칸 밑으로 앞머리가 잘린다.
+_PRODUCT_SHARE_HOVER_NAMES_PER_LINE = 3
+# `기타` hover 의 이름 줄 수 상한. Plotly 는 hover 를 기준점 위아래로 반씩 펴서 이름 줄이 늘수록
+# 아래가 그림 밖으로 잘린다 — 넘는 이름은 마지막 줄 끝 「외 N」 으로 묶는다.
+_PRODUCT_SHARE_HOVER_NAME_LINES = 4
 # 단위별 hover 수량 표기. Wafer 는 매 → K, PKG 생산수량은 이미 K(Kea) 단위다.
 _PRODUCT_SHARE_SCALE = {PRODUCT_SHARE_BASIS_WAFER: 1_000.0}
 
@@ -156,17 +160,33 @@ def _share_amount(value: float, basis: str) -> str:
     return f"{value / _PRODUCT_SHARE_SCALE.get(basis, 1.0):,.1f}K"
 
 
-def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
-    """조각마다 hover 두 줄. 수량에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+def _other_member_lines(members: Sequence[tuple[str, float]], total: float) -> str:
+    """`기타` hover 둘째 줄부터의 이름 줄. 이름 셋마다 줄을 넘기고 넘긴 줄 끝에 쉼표를 남긴다.
 
-    이름 있는 조각은 첫 줄 「달 · 이름 비중」, 둘째 줄 수량이다. `기타` 는 늘 첫 줄 「달 · 기타
-    비중 · 수량」, 둘째 줄 모인 이름과 각 비중이다 — 이름에 부품 이름표가 끼든 말든 한 꼴이다
-    (2026-11-24 그림 보드 3 답 q7-other-hover (나)). 접었다고 정보를 지우지 않고 이름을 줄이지
-    않는다(이름은 `_PRODUCT_SHARE_HOVER_MEMBERS` 까지 적고 나머지는 「외 N」). 수량을 첫 줄에 두는
+    이름은 `_PRODUCT_SHARE_HOVER_NAME_LINES` 줄까지 적고, 넘는 이름은 마지막 줄 끝 「외 N」 이다.
+    """
+    per_line = _PRODUCT_SHARE_HOVER_NAMES_PER_LINE
+    limit = per_line * _PRODUCT_SHARE_HOVER_NAME_LINES
+    names = [f"{name} {value / total:.1%}" for name, value in members[:limit]]
+    lines = [", ".join(names[start : start + per_line]) for start in range(0, len(names), per_line)]
+    rest = len(members) - limit
+    if rest > 0:
+        lines[-1] += f" 외 {rest}"
+    return ",<br>".join(lines)
+
+
+def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
+    """조각마다 hover. 수량에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+
+    이름 있는 조각은 두 줄 — 첫 줄 「달 · 이름 비중」, 둘째 줄 수량이다. `기타` 는 늘 첫 줄 「달 ·
+    기타 비중 · 수량」, 둘째 줄부터 모인 이름과 각 비중이다 — 이름에 부품 이름표가 끼든 말든 한
+    꼴이다(2026-11-24 그림 보드 3 답 q7-other-hover (나)). 접었다고 정보를 지우지 않고 이름을
+    줄이지 않는다. 이름은 다 적되 셋마다 다음 줄로 넘기고, 이름 줄이
+    `_PRODUCT_SHARE_HOVER_NAME_LINES` 를 넘으면 나머지만 「외 N」 이다(같은 날 그림 보드 4 답
+    q7-hover-cap (나) — `_other_member_lines`). 수량을 첫 줄에 두고 한 줄 이름을 셋으로 두는
     까닭: `기타` 는 늘 마지막 조각(12시 왼쪽)이라 Plotly 가 풍선을 왼쪽으로 펴고, 그림이 가로 스크롤
-    칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 둘째 줄을 이름만으로 짧게
-    둔다. 과거 구간 칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과
-    정의가 다를 수 있다).
+    칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 줄을 짧게 둔다. 과거 구간
+    칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과 정의가 다를 수 있다).
     """
     source = " · 과거 입력값" if cell.past else ""
     texts: list[str] = []
@@ -179,12 +199,7 @@ def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
         if not piece.members:
             texts.append(f"{head}<br>{amounts}")
             continue
-        listed = ", ".join(
-            f"{name} {value / cell.total:.1%}"
-            for name, value in piece.members[:_PRODUCT_SHARE_HOVER_MEMBERS]
-        )
-        rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
-        names = listed + (f" 외 {rest}" if rest > 0 else "")
+        names = _other_member_lines(piece.members, cell.total)
         texts.append(f"{head} · {amounts}<br>{names}")
     return texts
 

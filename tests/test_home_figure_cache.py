@@ -359,6 +359,15 @@ def test_the_schema_moved_past_the_widened_product_cell() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 64
 
 
+def test_the_schema_moved_past_the_other_hover_with_three_names() -> None:
+    """65 부터 `기타` 풍선은 둘째 줄부터 모인 이름을 다 적되 셋마다 줄을 나누고, 이름 줄 넷(이름
+    열둘)을 넘는 이름만 「외 N」 으로 묶는다(그림 보드 4 답 q7-hover-cap (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(이름 셋 + 「외 N」 한 줄)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 65
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

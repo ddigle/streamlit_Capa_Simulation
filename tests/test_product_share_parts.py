@@ -517,23 +517,26 @@ def _other_hover(cell: ProductShareCell) -> list[str]:
 
 
 def test_an_other_hover_naming_a_part_carries_the_amounts_on_its_first_line() -> None:
-    """부품 이름표가 낀 `기타` 풍선은 수량을 첫 줄로 올리고 둘째 줄에 접힌 이름만 싣는다 — 이름표가
-    길어 수량과 이름을 한 줄에 이으면 풍선이 넓어져 왼쪽 고정 구분 칸 밑으로 앞머리가
-    잘렸다(2026-11-24 그림 확인). 두 줄 그대로이고 접힌 이름 · 「외 N」 은 그대로 다 싣는다. 부품이
-    없는 `기타` 풍선도 같은 꼴이다(아래 시험)."""
+    """부품 이름표가 낀 `기타` 풍선은 수량을 첫 줄로 올리고 둘째 줄부터 접힌 이름만 싣는다 —
+    이름표가 길어 수량과 이름을 한 줄에 이으면 풍선이 넓어져 왼쪽 고정 구분 칸 밑으로 앞머리가
+    잘렸다(2026-11-24 그림 확인). 접힌 이름은 셋마다 줄을 나눠 다 싣는다(같은 날 그림 보드 4 답
+    q7-hover-cap (나)). 부품이 없는 `기타` 풍선도 같은 꼴이다(아래 시험)."""
     cell = _folded_part_cell(["DEMO_X", "DEMO_Y", "DEMO_Z"])
 
-    first, second = _other_hover(cell)
+    first, *names = _other_hover(cell)
 
     assert first.startswith(f"26.09 · {OTHER_PRODUCT_LABEL} ")
     assert " · Wafer " in first and " / " in first
-    assert " / " not in second
-    assert f"DEMO_PART ({PART_B})" in second
-    assert " 외 " in second
+    assert all(" / " not in line for line in names)
+    assert f"DEMO_PART ({PART_B})" in names[0]
+    # 접힌 넷(부품 하나 + 셋)은 이름 줄 둘에 다 서고 「외 N」 이 없다.
+    joined = "".join(names)
+    assert len(names) == 2 and " 외 " not in joined
+    assert all(f"{name} " in joined for name in ("DEMO_X", "DEMO_Y", "DEMO_Z"))
     # 옛 꼴의 둘째 줄은 「수량 · 이름들」 — 새 꼴의 가장 넓은 줄이 그보다 좁아야 풍선이 준다.
     amounts = first[first.index(" · Wafer ") + len(" · ") :]
-    old_widest = _text_width_units(f"{amounts} · {second}")
-    assert max(_text_width_units(first), _text_width_units(second)) < old_widest
+    old_widest = _text_width_units(f"{amounts} · {names[0]}")
+    assert max(_text_width_units(line) for line in (first, *names)) < old_widest
 
 
 def test_an_other_hover_without_a_part_takes_the_same_two_lines() -> None:

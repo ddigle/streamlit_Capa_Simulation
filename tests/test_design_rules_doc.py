@@ -3673,6 +3673,36 @@ def test_the_q7_picture_board_answers_join_6_41() -> None:
         assert phrase in v145, phrase
 
 
+def test_the_board4_other_hover_answer_joins_the_board3_line() -> None:
+    """그림 보드 4 q7-hover-cap (나) 「이름을 다 — 셋마다 줄을 나눔」 은 그 꼴을 낳은 보드 3 줄
+    q7-other-hover 에 잇고, 사용자 확인을 기다리던 답 밖 줄 q7-hover-cap 은 잰 잘림을 적는 답 밖 줄
+    q7-hover-rest 로 바뀐다(판은 v1.45 그대로). 줄이 부르는 코드 이름이 코드에 있다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") :].split("\n### ", 2)[1]
+    heads = {
+        line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
+    }
+    other = heads["q7-other-hover"]
+    assert "그림 보드 4 q7-hover-cap 으로 물었다 → **(나) 이름을 다 — 셋마다 줄을 나눔**" in other
+    assert "이름 줄은 넷(이름 열둘)까지" in other and "q7-hover-rest" in other
+    assert "q7-hover-cap" not in heads and "사용자 확인 대기" not in other
+    rest = heads["q7-hover-rest"]
+    assert rest.split(" — ", 1)[0].endswith("답 밖에서 정한 것")
+    known = {rule.id for rule in _rules()}
+    cited = RULE_TOKEN.findall(rest.rsplit("(2026-11-24 · ", 1)[1])
+    assert cited and set(cited) <= known
+    code = (PROJECT_ROOT / "src/capa_simulation/components/home_lob_figures.py").read_text(
+        encoding="utf-8"
+    )
+    for name in ("_other_member_lines", "_PRODUCT_SHARE_HOVER_NAME_LINES"):
+        assert name in other, name
+        assert re.search(rf"^(def {name}\(|{name} = )", code, re.MULTILINE), name
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :].split("\n- **v1.", 1)[0]
+    assert "q7-hover-cap (나)" in v145 and "q7-hover-rest" in v145
+
+
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
     """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
     보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""
