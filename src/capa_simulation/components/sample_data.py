@@ -11,8 +11,16 @@
 
 스위치가 두 요구를 한자리에서 만족시킨다. 켜면 「연결 후」가 보이고, 끄면 「연결 전」이
 보인다. 같은 자리에서 둘을 비교할 수 있으니 무엇이 채워질 자리인지도 함께 드러난다.
-**기본은 켜짐**이다 — 처음 들어온 사람에게 빈 화면보다 채워진 화면이 더 많은 것을
-말한다. 대신 켜져 있는 동안에는 화면 맨 위에 샘플이라고 적는다.
+**기본은 켜짐**이다(운영 서버는 끔 — 아래) — 처음 들어온 사람에게 빈 화면보다 채워진 화면이
+더 많은 것을 말한다. 대신 켜져 있는 동안에는 화면 맨 위에 샘플이라고 적는다.
+
+**운영 서버에서는 처음 값이 끔이다**(`sample_default` — 2026-11-24 정식판 마감 2-A, 사용자가 고른
+정식판 마감 2번 권장안 A 「샘플은 기본 끔」). 판정은 내장 시드 막이
+(`scenario_activation.builtin_seed_allowed`)와 같은 뿌리 `SsoConfig.operational` 이고 등급 · 「이
+등급으로 보기」 를 보지 않는다 — 개발자도 처음엔 「… 연결 대기」 자리를 본다. 스위치는 누구에게나
+그대로 있어 켜면 그 세션 동안 켜짐이다. 개발 PC · 사내 WebIDE · 사내 PC · 시험은 켜짐 그대로다
+(데모 · 검수 · 가이드 촬영이 그 화면을 쓴다). 처음 값을 읽는 자리(`sample_switch_on` · 두 스위치의
+`carry_shared_widget_value`)는 모두 이 함수 하나를 부른다.
 
 **세션 키 하나를 그룹 전체가 공유한다.** 페이지를 옮길 때마다 다시 켜야 한다면 스위치가
 아니라 방해물이다. Streamlit 은 한 번에 한 페이지만 돌리므로 같은 키의 위젯이 여러
@@ -35,6 +43,7 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.module_slot import slot_html
 from capa_simulation.services.korean_particle import with_subject_particle
@@ -62,11 +71,19 @@ PENDING_SLOT_CLASS = "pending-source-slot"
 PENDING_SLOT_MIN_HEIGHT = "72px"
 
 
+def sample_default() -> bool:
+    """「샘플 데이터」 스위치의 처음 값 — 운영 서버(`SsoConfig.operational`)는 끔, 그 밖(개발 PC ·
+    사내 WebIDE · 사내 PC · 시험)은 켜짐. 회차마다 부른다 — 설정은 import 뒤에 정해진다
+    (`capa_server` 의 시작 · 시험의 `runtime.reset`)."""
+    return not sso_runtime.config().operational
+
+
 def sample_switch_on() -> bool:
     """이 회차의 「샘플 데이터」 스위치 값 — 스위치를 그리기 전(머리 띠 표지 · 설비 표본)에 읽는다.
-    스위치를 누른 회차에도 세션 값이 이미 새 값이다. 처음 연 세션은 켜짐(`render_sample_switch` 의
-    기본값)이다."""
-    return bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
+    스위치를 누른 회차에도 세션 값이 이미 새 값이다. 아직 스위치를 그리지 않은 세션은 처음 값
+    (`sample_default`)이다."""
+    value = st.session_state.get(SAMPLE_TOGGLE_KEY)
+    return sample_default() if value is None else bool(value)
 
 
 def sample_switch_help(source: str) -> str:
@@ -88,7 +105,7 @@ def render_sample_row(*, key: str, source: str) -> bool:
     공통 줄이 없는 화면은 이 줄이 패널을 세우므로(`sidebar_status.defer_page_condition_slots`) 조건
     카드보다 **먼저** 부른다. `key` 는 화면마다 다른 이름이다 — 다른 화면에서 넘어온 회차에 공유
     값을 다시 적는 자리로 쓴다(`carry_shared_widget_value`)."""
-    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=True, owner=key)
+    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=sample_default(), owner=key)
     with (
         page_condition_slot(0).container(),
         st.container(key=SAMPLE_FIELD_KEY, gap=None),
@@ -112,7 +129,7 @@ def render_sample_switch(*, key: str, source: str) -> bool:
     `key` 는 화면마다 다르므로 그리는 자리의 이름으로도 쓴다. 다른 화면에서 넘어온 회차에
     값을 다시 적지 않으면 그 회차의 스위치가 기본값(꺼짐)으로 선다(`shared_widget_state`).
     """
-    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=True, owner=key)
+    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=sample_default(), owner=key)
     with st.container(border=True, key=key):
         with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
             enabled = st.toggle(

@@ -160,6 +160,15 @@ class PageSpec:
             or self.title.endswith(f" {IMPLEMENTING_SUFFIX}")
         )
 
+    @property
+    def unfinished(self) -> bool:
+        """운영 서버에서 개발자에게만 세우는 코어 화면인가 — 원천 미연결(`pending_source`)이거나
+        만드는 중(`in_progress`)이라고 선언한 코어 화면(2026-11-24 정식판 마감 2-A). 라벨
+        「(구현중)」 은 보지 않는다 — 모듈 화면(L0 · L1 의 꼬리)은 운영에서 쓰며 키우는 화면이라
+        밖이다. 숨길지는 `sso_identity.unfinished_hidden` 이 정하고 `app.py` 가 넘긴다
+        (`build_navigation_pages`)."""
+        return self.module is None and (self.pending_source is not None or self.in_progress)
+
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
         if self.condition_tabs is None:
@@ -711,6 +720,10 @@ class NavigationPages:
     # 모듈 색인 화면. 켜진 모듈이 있으면 `groups` 끝 모듈 상자의 머리이고, 없으면 상자 없이
     # 등록만 된다(주소로는 열린다).
     internal_modules: st.Page | None = None
+    # 사이드바에서 뺐지만 등록은 하는 화면 — 운영 서버의 개발자가 아닌 회차의 구현 중 화면
+    # (`PageSpec.unfinished`). 주소 · 탭 · 알림으로 열면 `app.py` 가 본문 대신 멈춘다 — 등록에서
+    # 빼면 Streamlit 의 「Page not found」 팝업이 뜨고 HOME 으로 떨어진다.
+    unlisted: tuple[st.Page, ...] = ()
 
     def spec_for(self, url_path: str) -> PageSpec | None:
         """주소로 선언을 찾는다. **`st.navigation()` 이 돈 뒤에만** 부른다.
@@ -732,7 +745,14 @@ class NavigationPages:
             and not any(page is self.internal_modules for page in grouped)
             else []
         )
-        return [self.home, *grouped, *loose, self.admin_area, *self.admin_box_pages]
+        return [
+            self.home,
+            *grouped,
+            *self.unlisted,
+            *loose,
+            self.admin_area,
+            *self.admin_box_pages,
+        ]
 
 
 def _module_pages() -> list[tuple[st.Page, PageSpec]]:
@@ -757,17 +777,29 @@ def _module_pages() -> list[tuple[st.Page, PageSpec]]:
     return pairs
 
 
-def build_navigation_pages() -> NavigationPages:
-    """선언을 실제 `st.Page` 객체로 만든다. 켜진 모듈이 있으면 모듈 상자를 끝에 더한다."""
+def build_navigation_pages(*, hide_unfinished: bool = False) -> NavigationPages:
+    """선언을 실제 `st.Page` 객체로 만든다. 켜진 모듈이 있으면 모듈 상자를 끝에 더한다.
+
+    `hide_unfinished`(`sso_identity.unfinished_hidden` — 운영 서버의 개발자가 아닌 회차)가 참이면
+    구현 중 화면(`PageSpec.unfinished`)을 그릴 상자에서 뺀다 — 머리가 그런 그룹은 상자째, 아니면 그
+    하위만. 뺀 화면은 `unlisted` 로 옮겨 등록은 그대로다(주소가 산다).
+    """
     pages: dict[PageSpec, st.Page] = {spec: spec.to_page() for spec in ALL_SPECS}
-    groups = [
-        SidebarGroup(
-            slug=group.slug,
-            main=pages[group.main],
-            subpages=tuple(pages[spec] for spec in group.subpages),
+    groups: list[SidebarGroup] = []
+    unlisted: list[st.Page] = []
+    for group in SIDEBAR_GROUPS:
+        if hide_unfinished and group.main.unfinished:
+            unlisted.extend(pages[spec] for spec in (group.main, *group.subpages))
+            continue
+        hidden = tuple(spec for spec in group.subpages if hide_unfinished and spec.unfinished)
+        unlisted.extend(pages[spec] for spec in hidden)
+        groups.append(
+            SidebarGroup(
+                slug=group.slug,
+                main=pages[group.main],
+                subpages=tuple(pages[spec] for spec in group.subpages if spec not in hidden),
+            )
         )
-        for group in SIDEBAR_GROUPS
-    ]
     module_pairs = _module_pages()
     if module_pairs:
         groups.append(
@@ -784,4 +816,5 @@ def build_navigation_pages() -> NavigationPages:
         admin_box_pages=tuple(pages[spec] for spec in ADMIN_BOX_PAGES),
         specs=(*((page, spec) for spec, page in pages.items()), *module_pairs),
         internal_modules=pages[INTERNAL_MODULES],
+        unlisted=tuple(unlisted),
     )

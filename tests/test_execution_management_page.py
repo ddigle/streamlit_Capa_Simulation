@@ -3,8 +3,10 @@
 """실행 관리 머리 — 첫 판은 데이터를 읽지 않는다(2026-10-17 사용자 결정).
 
 화면을 단독으로 띄워 DB 연결을 막아 둔 채 그려지는지, 하위 화면(여덟)이 사이드바 선언 차례 그대로
-목차에 서는지, Guide 가 정의(「실행 관리」)를 싣는지 본다. 앱 안에서 링크 수·사이드바 상자·DB 를
-열지 않는 회차는 `tests/test_app_navigation.py` 가 본다.
+목차에 서는지, Guide 가 정의(「실행 관리」)를 싣는지 본다. 운영 서버(통합인증 켜짐)의 개발자가 아닌
+회차에는 구현 중 화면 카드 · 이행 현황판 자리가 빠지는지도 본다(2026-11-24 정식판 마감 2-A — 등급은
+`grade_support` 의 합성 계정). 앱 안에서 링크 수·사이드바 상자·DB 를 열지 않는 회차는
+`tests/test_app_navigation.py` 가 본다.
 """
 
 import re
@@ -14,8 +16,11 @@ from typing import Any
 
 import duckdb
 import pytest
+from grade_support import as_grade
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.auth import grades
+from capa_simulation.components import sso_identity
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
 from capa_simulation.navigation import (
     DYNAMIC_CAPA,
@@ -60,6 +65,15 @@ def _run_without_databases(monkeypatch: pytest.MonkeyPatch) -> tuple[AppTest, li
 
     monkeypatch.setattr(duckdb, "connect", refuse)
     return AppTest.from_file(str(PAGE), default_timeout=60).run(), opened
+
+
+def _dashboard_slots(app: AppTest) -> list[str]:
+    """이행 현황판 점선 자리(`em-dashboard-slot`)의 HTML 본문."""
+    return [
+        str(element.proto.body)
+        for element in app.get("html")
+        if "em-dashboard-slot" in str(element.proto.body)
+    ]
 
 
 def test_the_head_draws_without_opening_any_database(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,15 +132,48 @@ def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
     ):
         assert helps[f"**{spec.title}** · {word}"], spec.title
     assert "사이드바 차례 그대로" in str(helps["#### :material/list_alt: 이 영역의 화면"])
-    slots = [
-        str(element.proto.body)
-        for element in app.get("html")
-        if "em-dashboard-slot" in str(element.proto.body)
-    ]
+    slots = _dashboard_slots(app)
     assert len(slots) == 1
     assert "<strong>이행 현황판 자리</strong>" in slots[0]
     assert "<span>부서별 Gap · A/Item 숫자 · 다음 판</span>" in slots[0]
     assert "border:2px dashed" in slots[0]
+
+
+def test_draft_cards_and_the_dashboard_slot_are_developer_only_on_the_operational_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 서버(통합인증 켜짐)의 실무자에게는 목차에 구현 중 화면(실적 셋) 카드가 없어 다섯이고, 맨
+    아래 이행 현황판 점선 자리도 없다. 세 영역의 Dynamic Capa 는 카드 · 이름 · 풍선이 그대로이고
+    「열기」 만 없다(설계 규칙 UI-INP-07 예외 — 숨긴 자리가 값을 보이던 곳이면 값만). 같은 서버의
+    개발자는 지금처럼 여덟 · 「열기」 둘 · 자리 하나다(UI-LAY-10 예외 — 2026-11-24 정식판 마감 2-A).
+    판정은 사이드바와 같은 `sso_identity.unfinished_hidden` 하나다."""
+    for grade in (grades.EDITOR, grades.DEVELOPER):
+        as_grade(monkeypatch, grade)
+        developer = grade == grades.DEVELOPER
+        assert sso_identity.unfinished_hidden() is (not developer)
+        app, opened = _run_without_databases(monkeypatch)
+
+        assert not app.exception, [element.message for element in app.exception]
+        assert opened == []
+        captions = [str(caption.value) for caption in app.caption]
+        links = [caption[len(FALLBACK) :] for caption in captions if caption.startswith(FALLBACK)]
+        shown = [
+            spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES if developer or not spec.unfinished
+        ]
+        assert len(shown) == (8 if developer else 5)
+        opens = ["열기", "열기"] if developer else ["열기"]
+        assert links == [*opens, *shown], grade
+        assert len(_dashboard_slots(app)) == (1 if developer else 0), grade
+        helps = {str(item.value): item.help for item in app.markdown}
+        for spec, word in (
+            (STATIC_CAPA, "약속"),
+            (EXECUTION_MANAGEMENT, "이행"),
+            (DYNAMIC_CAPA, "실적"),
+        ):
+            assert helps[f"**{spec.title}** · {word}"], (grade, spec.title)
+        others = [caption for caption in captions if not caption.startswith(FALLBACK)]
+        assert others == [":material/my_location: 지금 여기"], (grade, others)
+    assert DYNAMIC_CAPA.unfinished and not STATIC_CAPA.unfinished
 
 
 def test_the_guide_defines_the_three_areas() -> None:
@@ -175,8 +222,26 @@ def test_the_guide_says_what_each_subpage_looks_at() -> None:
         "입력 비가동대수",
         "셋업 이행을 공간·호기로 봅니다(반입 전·지연·미확인 표식)",
         "기준정보 대비 실적 Gap 과 개선 우선순위",
+        "실적 DB 연결 전 — 합성 샘플, 운영 서버에서는 개발자에게만 보입니다",
     ):
         assert text in section, text
+
+
+def test_the_guide_reads_true_for_every_viewer() -> None:
+    """Guide 는 보는 사람마다 다를 수 없다 — 운영 서버의 개발자가 아니면 맨 아래 점선 자리가
+    없으므로 그 자리를 가리키지 않고 「아직 들어오지 않았습니다」 로 말하며, 운영 서버에서
+    개발자에게만 서는 실적 셋 · Dynamic Capa 는 그렇다고 적는다(2026-11-24 정식판 마감 2-A —
+    설계 규칙 UI-TXT-01 — 화면 자리에는 설명 글을 더하지 않는다)."""
+    raw = load_guide("execution_management")
+    guide = " ".join(raw.replace("**", "").split())
+
+    assert "이행 현황판 숫자(부서별 Gap · A/Item)는 아직 들어오지 않았습니다." in guide
+    assert "다음 판에서" not in guide
+    assert "맨 아래 점선" not in guide
+    (dynamic_row,) = [
+        line for line in raw.splitlines() if line.startswith(f"| **{DYNAMIC_CAPA.title}** · 실적 |")
+    ]
+    assert "운영 서버에서는 개발자에게만 보입니다" in dynamic_row
 
 
 def test_every_subpage_has_its_own_line_in_the_guide_screen_list() -> None:

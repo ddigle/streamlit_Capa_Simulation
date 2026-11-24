@@ -1,5 +1,6 @@
 # Purpose: Streamlit 앱의 공식 시나리오 활성화, 공통 사이드바·조회기간과 페이지 탐색을 구성한다.
 
+import functools
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
@@ -90,6 +91,7 @@ from capa_simulation.components.sso_identity import (
     admin_area_locked,
     require_signed_in,
     sso_credit_line,
+    unfinished_hidden,
 )
 from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.sso_refresh import sso_refresh_scripts
@@ -392,7 +394,11 @@ with pinned_connections(DUCKDB_PATH):
     # 읽는다(규칙 23). 머리 띠보다 먼저다.
     check_active_scenario_latest(str(DUCKDB_PATH.resolve()))
 
-    pages = build_navigation_pages()
+    # 운영 서버의 개발자가 아닌 회차는 구현 중 화면(`PageSpec.unfinished`)을 사이드바에서 뺀다 —
+    # 등록은 그대로라 주소 · 탭 · 알림으로는 들어오고, 그 회차는 아래에서 본문 대신 멈춘다
+    # (2026-11-24 정식판 마감 2-A). 판정은 `sso_identity.unfinished_hidden` 하나다.
+    hide_unfinished = unfinished_hidden()
+    pages = build_navigation_pages(hide_unfinished=hide_unfinished)
     navigation = st.navigation(pages.ordered, position="hidden")
     # 주소로 연 회차도 들인 화면으로 적는다(늦게 온 옛 화면 회차 막이 — 위 `stale_page_target`).
     note_page()
@@ -404,6 +410,9 @@ with pinned_connections(DUCKDB_PATH):
     # 페이지만 가리키므로 선택자로 쓸 수 있다.
     active_href = navigation.url_path
     current_spec = pages.spec_for(navigation.url_path)
+    # 숨긴 구현 중 화면으로 들어온 회차 — 본문 · 조회 조건 줄 · 「합성 샘플」 표지 없이 Admin Area
+    # 와 같은 멈춤(「개발자만 여는 화면입니다」 + 「HOME 으로」)만 선다. 화면 탭은 연 화면이라 선다.
+    locked = hide_unfinished and current_spec is not None and current_spec.unfinished
     # 모듈 화면은 코어 등록부(적용 전 편집·탭 점 — `app_pages/<파일 이름>` 꼴)에 들지 않는다.
     # 모듈 파일 이름이 `home.py` 같으면 코어 화면의 편집 표지가 잘못 붙는다.
     page_file = (
@@ -565,9 +574,14 @@ with pinned_connections(DUCKDB_PATH):
     # `navigation.PageSpec` 의 선언이 말한다. 세우지 않은 줄의 값은 사라지지 않는다 — 시나리오는
     # 세션의 활성 리비전, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 라 그 조건을 읽는 화면으로
     # 돌아오면 그대로 선다.
-    reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
+    # 멈추는 회차(`locked`)는 화면이 아무 조건도 읽지 않으므로 어느 줄 · 칸도 세우지 않는다.
+    reads_common_here = not locked and (
+        current_spec is None or current_spec.reads_common_conditions_on(active_tab)
+    )
     # 조회기간만 읽는 탭(가용설비 현황 「Preference」)은 시나리오 줄 없이 조회기간 줄만 세운다.
-    period_only_here = current_spec is not None and current_spec.reads_period_only_on(active_tab)
+    period_only_here = (
+        not locked and current_spec is not None and current_spec.reads_period_only_on(active_tab)
+    )
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = (reads_common_here or period_only_here) and (
         current_spec is None or current_spec.reads_period
@@ -576,10 +590,12 @@ with pinned_connections(DUCKDB_PATH):
     # `equipment_scenario_tabs`).
     # **여기서는 칸만 세운다** — 줄은 페이지가 `resolve_equipment_session` 뒤에 그린다. `app.py` 는
     # 설비 DB 를 열지 않는다(사이드바가 그리는 동안 저장소 호출 0).
-    shows_equipment = current_spec is not None and current_spec.reads_equipment_scenario_on(
-        active_tab
+    shows_equipment = (
+        not locked
+        and current_spec is not None
+        and current_spec.reads_equipment_scenario_on(active_tab)
     )
-    has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
+    has_cards = not locked and current_spec is not None and current_spec.has_cards_on(active_tab)
     # 제목은 **늘 페이지보다 먼저, 같은 자리에** 세운다 — 회차마다 지웠다 다시 세우면 rerun 동안
     # 제목이 사라지고 아래 상자가 한 줄 올라갔다 내려온다. 카드만 세우는 화면이 카드 전에 멈추는
     # 드문 오류 경로(VOC·설비 DB 를 못 읽음)에서 제목만 남는 것은 사이드바 CSS 가 감춘다 — 제목
@@ -647,7 +663,9 @@ with pinned_connections(DUCKDB_PATH):
         changes=session_changes(
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
         ),
-        current=current_spec,
+        # 멈추는 회차는 그 화면이 돌지 않으므로 화면 몫 표지(합성 샘플 · 공정 칩 짐작)를 싣지
+        # 않는다.
+        current=None if locked else current_spec,
         canon=not_canonical_code(),
         # 공식버전 없음 `SC-01` 의 해소 — 위 요약이 이 회차에 확인한 세션 값이다(DB 를 읽지 않는다).
         official_known=latest_official_revision() is not None,
@@ -720,8 +738,15 @@ with pinned_connections(DUCKDB_PATH):
             if current_spec is not None and current_spec.module is not None:
                 run_module_page(navigation.run, current_spec)
             else:
+                # 숨긴 구현 중 화면은 화면 파일을 돌리지 않고 Admin Area 와 같은 멈춤만 그린다 —
+                # 화면 파일마다 줄을 두지 않아 새로 `pending_source` · `in_progress` 를 단 화면도
+                # 덮인다.
                 run_core_page(
-                    navigation.run,
+                    (
+                        functools.partial(grade_ui.stop_unless, "screen.unfinished", place="page")
+                        if locked
+                        else navigation.run
+                    ),
                     page="" if current_spec is None else tab_label(current_spec),
                     href=navigation.url_path,
                 )

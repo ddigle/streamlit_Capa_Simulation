@@ -350,6 +350,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_scenario_status.py`)·공정(`components/process_field.py` — 공용 공정 칸, 2026-11-08 공정 공유 1차) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
     는 설비 DB 를 열지 않는다(9장).
+  - 운영 서버의 개발자가 아닌 회차(`sso_identity.unfinished_hidden` — 「이 등급으로 보기」 동안 포함, 운영 + 통합인증 꺼짐은
+    모두)는 구현 중 화면(`navigation.PageSpec.unfinished`)을 사이드바에서 빼고(`build_navigation_pages(hide_unfinished=True)` —
+    등록은 `NavigationPages.unlisted` 로 그대로), 주소 · 탭 · 알림으로 그 화면에 든 회차(`locked`)는 화면 파일 대신
+    `grade_ui.stop_unless("screen.unfinished", place="page")` 를 `run_core_page` 로 돌린다(Admin Area 와 같은 멈춤). 그 회차는 조회
+    조건 구역 · 패널 · 설비 시나리오 칸을 세우지 않고 알림 칸에 화면 선언을 넘기지 않는다(「합성 샘플」 표지 · 공정 칩 짐작 없음).
+    화면 탭은 선다. 개발 · WebIDE · 사내 PC · 시험(운영 아님)은 그대로다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」).
 - `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py` — 앱 스크립트는 `app.py` 하나 그대로). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로 여섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다. 통합인증 기동 바로 뒤
@@ -444,6 +450,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
     비는 그 세션 변경 목록을 볼 마지막 자리) — 다만 판 안 「그 화면으로」 는 옮기지 못하고 판만 닫는다. 정상 회차 요소 차례는
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
+    구현 중 화면 숨김 판정 `unfinished_hidden` 도 여기다 — 동작 `screen.unfinished`(개발자 몫, `admin_area_locked` 와 한 뿌리 ·
+    「이 등급으로 보기」 를 따름)를 화면 등급으로 할 수 없으면 참이고, `app.py` 가 그 값으로 사이드바에서 구현 중 화면
+    (`navigation.PageSpec.unfinished`)을 빼고 주소 · 탭 · 알림으로 연 회차를 멈추며, 실행 관리 머리가 같은 값으로 목차의 그 화면
+    카드와 이행 현황판 자리를 걷는다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」, 시험 `tests/test_grade_ui_core.py`). 입장 화면
+    Introduce 티저도 같은 동작으로 가린다(`intro_summary.teaser_payload` — 가져오기 고리라 `grade_hooks.viewer_can` 으로).
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
     「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴 — 띠 글은 문지기가 그 401 에 단 까닭 낱말 머리(`names.REASON_HEADER` —
@@ -491,7 +502,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `admin_view.diagnostic_message`)를 부를 때 쓰는 늦게 읽는 얇은 대리. `sso_identity` 가 모듈 머리에서 `app_header` 를 읽고 그 길이 입장 화면 →
     HOME 그리기 → `home_preference` · `home_main_cases` · `past_data_management` 까지 닿아, 그 부품이 머리에서 창구 이름을 꺼내면 덜 읽힌
     모듈로 앱이 서지 않는다. 이 모듈은 머리에서 화면 모듈을 읽지 않고 부르는 순간 창구를 읽어 넘긴다 — 동작 · 데코레이터 이름이 창구와 같아
-    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`.
+    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`. 입장 화면 요약
+    (`intro_summary` — `app_header` 가 머리에서 읽는다)도 티저 값의 판정을 이것으로 부른다(2026-11-24 정식판 마감 2-A).
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다. 다만 운영 서버의 Admin Area 는 개발자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
@@ -759,12 +771,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
+  - 운영 서버의 개발자가 아닌 회차(`sso_identity.unfinished_hidden` — 사이드바에서 구현 중 화면을 빼는 판정과 같은 하나를 한 번
+    부른다)에는 맨 아래 이행 현황판 점선 자리를 그리지 않고, 목차에서 구현 중 화면(`PageSpec.unfinished` — 실적 셋) 카드를 빼
+    다섯이다. 세 영역의 Dynamic Capa 는 카드를 걷지 않고 이름 · 풍선만 남긴다(「열기」 없음 — UI-INP-07 예외 「값만」). 선언
+    `EXECUTION_MANAGEMENT_SUBPAGES` 는 그대로다 — Guide 목록 대조가 선언 전체를 본다. Guide 는 보는 사람마다 다를 수 없어 자리를
+    가리키지 않고 실적 셋 · Dynamic 이 운영 서버에서는 개발자에게만 보인다고 적는다(2026-11-24 정식판 마감 2-A — 시험
+    `test_execution_management_page.py` · `test_grade_ui_core.py`).
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
-  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
-  자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
+  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(제목 「모듈 화면 자리」 · 표지
+  「모듈 연결 대기」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
   읽지 않아 공통 조건 줄도 조건 카드도 없다). 그리는 것은 `components/module_slot.py` 의 `render_module_slot_page` 한 벌이고 이 파일은
   제 이름 한 줄만 넘긴다. 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
-  `docs/TODO.md` 2장 「생산 진도 화면 내용」. 하위 샘플 셋이 있어 사이드바 상자는 다른 계산 그룹처럼 펼침 상자이고 이 화면은 그 안
+  `docs/TODO.md` 2장 「생산 진도 화면 내용」. 그래서 자리 표지는 약속 문장이 아니라 원천 미연결 화면과 같은 「… 연결 대기」
+  꼴이다(UI-LAY-10 · UI-CON-03, 2026-11-24 정식판 마감 2-A). 하위 샘플 셋이 있어 사이드바 상자는 다른 계산 그룹처럼 펼침 상자이고 이 화면은 그 안
   「현황 요약」 이다. 시험은 `tests/test_production_progress_page.py`.
 - `app_pages/production_sample_1.py` · `production_sample_2.py` · `production_sample_3.py` — 생산 진도 하위 「샘플 페이지 1 · 2 · 3」
   (2026-11-04 검수 의견 prog-01 「생산진도 상자 내에 샘플 페이지 1,2,3 넣고 펼치는 상자로 반영」 · prog-02 「샘플페이지 1,2,3 화면에
@@ -1922,6 +1941,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   읽는다). 설비 화면(가용설비 · 필요 단축 일정 · Space)은 아직 본문 상자 `render_sample_switch` 다 — 켠 쪽만 표지를 달고 끈 쪽은
   스위치만 선다. 끈 상태의 자리표시자는 제목 + 점선 자리(`module_slot.slot_html`) + 표지 「<source> 연결 대기」 한 줄이고, `expects`
   와 `more_help` 는 제목 풍선이다(2026-11-07 답 desc-blocks). 호기 없이 끈 화면은 표지 「조회할 호기 없음」(`NO_UNITS_MARK`)이다.
+  처음 값은 `sample_default` 한 함수다 — 운영 서버(`SsoConfig.operational` — 내장 시드 막이 `builtin_seed_allowed` 와 같은 뿌리, 등급은
+  보지 않음)는 끔, 개발 PC · 사내 WebIDE · 사내 PC · 시험은 켜짐(2026-11-24 정식판 마감 2-A). 스위치를 그리기 전에 읽는 자리는 세션 칸을
+  직접 읽지 않고 `sample_switch_on` 을 부른다(시험 `tests/test_sample_switch_default.py`).
 - `src/capa_simulation/components/performance_actual_screen.py` — 효율·UPEH·수율 실적 화면 한 벌로 `MetricSpec` 만
   갈아 끼운다.
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭은 그리지 않는다. 상세 분석의 조회 조건(분석 기간 · 공정 ·
@@ -3298,7 +3320,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     미연결 화면은 `PageSpec.pending_source`(그 화면이 스위치 · 머리 띠 표지 · 탭 풍선에 주는 원천 이름)를 선언하고,
     `PageSpec.implementing`(라벨 `(구현중)` · 그 선언 · 만드는 중 선언 `in_progress` — Dynamic Capa 는 그룹 머리라 라벨에 달지
     않는다, 생산 진도 · 샘플 페이지 셋은 원천도 접미도 없어 `in_progress`)이 화면 탭 「구현중」 표지의, `pending_source` 가 머리 띠
-    「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 (가) — 그물 `tests/test_page_tabs.py`).
+    「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 (가) — 그물 `tests/test_page_tabs.py`). 운영 서버에서 개발자에게만 세우는 화면은
+    `PageSpec.unfinished`(코어 화면이고 `pending_source` 또는 `in_progress` — 라벨 `(구현중)` 은 보지 않아 L0 · L1 모듈 화면은
+    밖)이고, `build_navigation_pages(hide_unfinished=True)` 는 그 화면을 그릴 상자에서 빼(머리가 그런 그룹은 상자째)
+    `NavigationPages.unlisted` 로 옮긴다 — 등록은 그대로라 주소가 산다(빼면 Streamlit 「Page not found」). 이 모듈은 `sso_identity`
+    를 읽지 않고 `app.py` 가 판정 값을 넘긴다(2026-11-24 정식판 마감 2-A, 시험 `tests/test_app_navigation.py`).
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
     `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 미룬 패널 화면(실적 셋 ·
@@ -4066,6 +4092,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 셋 모두 티저의 `TEASER.pause()`
   로 재생을 멈춘다 — 티저는 재생 때 남은 소리를 미리 잡아 두므로 층만 숨기면 40초 끝까지 소리가 난다. 다시 열면 멈춘 자리에
   서 있고 티저 안 `Space` 로 잇는다. 티저가 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다.
+  운영 서버에서는 `Introduce` 단추가 화면 등급 개발자에게만 선다 — 다른 사람의 커버는 `Detail` · `Summary` 두 단추다
+  (2026-11-24 정식판 마감 2-A 의 티저 몫 — 합성 수치가 든 대회 사본, 판정은 `intro_summary.teaser_payload` · JS 는
+  `teaser.available` 만 본다).
   `site/contest-deck/index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
   - Components v2 하나이고 자산은 `intro_overlay_assets/`(`intro.html`·`intro.css`·`intro.js`)다. 움직임은 워커
     OffscreenCanvas 에서 돈다 — 워커로 가는 `scene()`·`summaryGrid()` 는 그 파일의 다른 이름을 쓰지 않는다.
@@ -4112,7 +4141,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `services/official_summary.py`.
   - 티저 본문(약 1MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 읽어 싣는다(`teaser_payload`) — 받은 값
     JS 가 `teaser` 를 떼어 따로 넘기므로 워커로 가는 요약에는 티저가 없다. Streamlit 정적 경로는 HTML 을 글자로 보내
-    쓸 수 없어 이 길이다.
+    쓸 수 없어 이 길이다. 운영 서버에서는 구현 중 화면 숨김(`sso_identity.unfinished_hidden`)과 같은 동작
+    `screen.unfinished` 를 할 수 없는 회차에 달라고 해도 `available: false` 다(표지는 그 회차에 걷음 — 2026-11-24 정식판 마감
+    2-A 의 티저 몫). 등급 창구는 늦게 읽는 대리 `grade_hooks` 로 부른다(`sso_identity` → `app_header` → 이 모듈 고리).
   - 모든 페이지 앞에서 돌므로 어떤 예외도 내보내지 않는다(`available: false` 와 까닭). 공식 리비전의 결정적
     키로 HOME 과 같은 캐시를 쓰고, 판정 기준은 공용 프로필(`load_global_securement_threshold`)이다.
   - 값은 공식버전의 **모든 달**이다 — HOME 기본 조회기간(`settings.MONTH_SELECTION_*`)으로 `display_month_range`(HOME 과 같은
@@ -4311,9 +4342,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/module_slot.py` — 아직 없는 화면 · 칸이 들어올 점선 자리 한 벌(`slot_html` — 제목 ·
-  표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
-  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가
-  그것을 부른다. 그 자리만 든 화면 한 벌
+  표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 제목 「모듈 화면 자리」 ·
+  표지 「모듈 연결 대기」(원천 미연결 화면의 「… 연결 대기」 와 같은 꼴 — 그리는 길이 없어 약속 문장을 두지 않는다), 테두리
+  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」(운영
+  서버에서는 개발자에게만)가 그것을 부른다. 그 자리만 든 화면 한 벌
   (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 성숙도는 화면 탭 「구현중」 표지 · `PageSpec.in_progress`, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
   같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
   진도 화면 내용」).
@@ -6798,7 +6830,8 @@ RQ_MODULE
     (새 등급 「관리자」 는 옛 공식 지정자 뜻 — 옛 뜻 「관리자」 는 「개발자」, 역할 「앱 관리자」 는 「앱 관리자(개발자)」, 「저장소 관리자」 는
     그대로). 불변조건:
     - **어디서 가르나.** 운영 아님(개발 `app.py` · WebIDE · 사내 PC) = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자 몫까지(개발자 몫만 막힘 — 기록도
-      없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 등급 시험은 모두 「운영 + 켜짐」 판정을
+      없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 그래서 운영 + 꺼짐이면 구현 중
+      화면 · 입장 화면 Introduce 티저(`screen.unfinished` — 개발자 몫)도 모두에게 숨는다(2026-11-24 정식판 마감 2-A). 등급 시험은 모두 「운영 + 켜짐」 판정을
       거친다(`tests/grade_support.operational_grades` — 넷 계정의 등급을 단언, 헛돌기 막음).
     - **명단 파일 꼴 · 저장 값은 그대로다.** 등급 칸은 `user` · `admin` 둘(`admin` = 개발자) — 앞 ZIP 이 다시 써도 깨지지 않게. 열람 · 실무자 ·
       관리자는 같은 버킷 · 같은 디렉터리의 등급 파일(`grades.json` — 적는 값 `editor` · `manager` 둘, **열람 = 줄 없음**, 줄마다 그 사람의
@@ -9352,7 +9385,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 — UI-NTF-05). 가용설비 현황 › 설비 마스터의
   세 표는 모든 등급이 같은 편집 표를 보고 권한 없는 표 · 칸만 잠근다(2026-11-18 구현 확인 보드 「고칠 것」 — 설비 마스터 표는 `read_only_data`
   잠금 갈래 `grade` + 편집 도구를 세우지 않는 `readOnly`, 작은 편집표 둘은 `locked_editor` — 같은 칸 꼴을 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이). 탭
-  값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다.
+  값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다. 입장 화면
+  Introduce 티저도 같다(동작 `screen.unfinished` — `intro_summary.teaser_payload` 가 `available: false` 로 보낸다, 2026-11-24 정식판 마감 2-A).
 - **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
   `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험
   `tests/test_grades.py` 가 표를 잠근다).
@@ -9367,7 +9401,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `grades.require` 는 알림을 담지 않는다(`write_guard` 잠금 안에서도 불린다). 로그인이 끝난 신원은 등급 거절과 섞지 않는다(`SignInEnded` —
   「로그인이 끝나 저장하지 않았습니다 — 다시 로그인하세요」).
 - **주소 · 알림으로 연 등급 밖 화면 · 탭**은 `grade_ui.stop_unless`(「개발자만 여는 화면입니다」 · 「실무자부터 여는 탭입니다」 + 「HOME
-  으로」). 화면은 Admin Area 하나이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
+  으로」). 화면은 Admin Area 와 운영 서버의 구현 중 화면(`PageSpec.unfinished` — 화면 파일이 아니라 `app.py` 가 선언으로 멈춘다,
+  2026-11-24 정식판 마감 2-A)이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
 - **설비 화면 내려받기 감추기는 벽이 아니다** — 앱이 그리는 단추는 세우지 않고, 표 도구 막대 · 그림 막대는 `grade_ui.toolbar_scope` ·
   `chart_config` 로 감춘다(Altair 그림은 칸 안 도구 막대의 그림 저장 · 그림 정의 복사 단추 — `toolbar_scope` 칸 안에 그린다). Alarm 표의 CSV 는 `state_alerts.alert_table(csv=False)` 표지가 표와 함께 따라간다. 칸 복사 · 캡처 · 인쇄 ·
   계산 화면 호기 줄 파일로는 나간다(정한 것). 「Print」 는 모든 등급에 둔다.
@@ -9725,7 +9760,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - Dynamic Capa는 현재 데모 프로토타입이며 실적효율·생산실적 DB 조회, 원천 컬럼 매핑,
   누적 이력 저장소와 표준 Capa 리비전 연결은 미구현이다.
 - 원천이 붙지 않은 화면은 **샘플 스위치**(`components/sample_data.py`)를 갖는다. 기본은
-  켜짐이고 켜져 있는 동안 합성 샘플이라고 알린다(구현 중 화면은 머리 띠 표지 — 스위치는 사이드바 조회 조건 패널 줄, 설비
+  켜짐이고(운영 서버는 처음 끔 — `sample_default`, 2026-11-24 정식판 마감 2-A) 켜져 있는 동안 합성 샘플이라고 알린다(구현 중
+  화면은 머리 띠 표지 — 스위치는 사이드바 조회 조건 패널 줄, 설비
   화면은 본문 스위치 상자의 표지). 끄면 그 화면이 무엇을 기다리는지(「… 연결 대기」)만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
   **새 미연결 화면을 만들면 이 스위치를 붙인다** — 빈 껍데기는 만들 가치를 설명하지 못하고,
   표식 없는 합성 표본은 실적처럼 읽힌다. 입력이 없는 결정론적 데모(Dynamic Capa 데모 행·Chatbot 대본)는 세션에 한

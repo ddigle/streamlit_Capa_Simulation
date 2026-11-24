@@ -4,10 +4,11 @@
 스크립트를 넣으면 반영될 페이지 영역만 표시해둬」). 하위 샘플 페이지 셋은 머리 화면 그대로 이름만
 다르다(2026-11-04 검수 의견 prog-02 「샘플페이지 1,2,3 화면에 이대로 임시 반영」).
 
-화면마다 단독으로 띄워 DB 연결을 막은 채 머리말 아래에 점선 테두리 「모듈 화면 자리」 하나만 서는지,
-옛 「준비 중」 한 줄과 설명 줄 · 배지 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리가
-같은지, 자리 색이 밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은
-`tests/test_app_navigation.py` 가 본다.
+화면마다 단독으로 띄워 DB 연결을 막은 채 머리말 아래에 점선 테두리 「모듈 화면 자리」 하나(표지
+「모듈 연결 대기」 — 원천 미연결 화면의 「… 연결 대기」 와 같은 꼴)만 서는지, 옛 「준비 중」 한 줄과
+약속 문장 · 설명 줄 · 배지 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리가 같은지, 자리 색이
+밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은 `tests/test_app_navigation.py` 가
+본다.
 """
 
 from pathlib import Path
@@ -29,7 +30,7 @@ from capa_simulation.navigation import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGES = (PRODUCTION_PROGRESS, *PRODUCTION_PROGRESS_SUBPAGES)
 SLOT_TITLE = "모듈 화면 자리"
-SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩니다."
+SLOT_TEXT = "모듈 연결 대기"
 
 
 def _run(spec: PageSpec) -> AppTest:
@@ -91,6 +92,8 @@ def test_each_page_draws_one_module_slot_without_opening_any_database(
     assert "화면 초안" not in body
     # 옛 빈 화면의 한 줄은 걷혔다.
     assert "준비 중" not in body
+    # 모듈이 그리는 길이 아직 없으니 무엇을 하면 들어온다는 약속 문장도 없다.
+    assert "스크립트" not in body
 
 
 def test_the_sample_pages_look_exactly_like_the_head_but_for_the_name() -> None:

@@ -2927,3 +2927,67 @@ def test_a_module_page_has_no_core_page_file(
 
     assert seen == ["home.py", None]
     assert "모듈 home" in [str(element.value) for element in app.markdown]
+
+
+# ------------------------------------------------- 구현 중 화면(2026-11-24 정식판 마감 2-A)
+UNFINISHED_PATHS = frozenset(
+    {
+        CAPA_CHATBOT.path,
+        "app_pages/actual_efficiency.py",
+        "app_pages/actual_upeh.py",
+        "app_pages/yield_actual.py",
+        PRODUCTION_PROGRESS.path,
+        *(spec.path for spec in PRODUCTION_PROGRESS_SUBPAGES),
+        DYNAMIC_CAPA.path,
+        WIP_STATUS.path,
+    }
+)
+
+
+def test_unfinished_is_exactly_the_core_draft_screens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 서버에서 개발자에게만 세우는 화면은 원천 미연결 · 만드는 중이라고 선언한 코어 화면
+    열이다 — 라벨 「(구현중)」 은 보지 않아 L0 · L1 모듈 화면(꼬리 「(구현중)」)은 밖이다."""
+    from capa_simulation import module_registry, navigation
+
+    assert {spec.path for spec in ALL_SPECS if spec.unfinished} == UNFINISHED_PATHS
+    assert len(UNFINISHED_PATHS) == 10
+    monkeypatch.setenv(
+        module_registry.ROOT_ENV_VAR, str(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    )
+    modules = navigation.module_page_specs()
+    assert modules, "합성 모듈 견본이 화면을 낸다"
+    for spec in modules:
+        assert spec.implementing and spec.title.endswith(IMPLEMENTING_SUFFIX), spec.title
+        assert not spec.unfinished, spec.title
+
+
+def test_hidden_unfinished_pages_stay_registered() -> None:
+    """숨겨도 등록은 그대로다 — 모든 코어 화면이 `st.navigation` 목록에 한 번씩 들고(주소가 산다),
+    그릴 상자에서만 빠진다. 머리가 구현 중인 그룹(Capa Chatbot · 생산 진도 · Dynamic Capa)은 상자째,
+    실행 관리는 실적 셋만 빠져 다섯이 남는다. 기본값은 지금 목록 그대로다."""
+    from capa_simulation.navigation import PageSpec, build_navigation_pages
+
+    def paths(pages: Any) -> tuple[list[str], dict[int, PageSpec]]:
+        spec_of = {id(page): spec for page, spec in pages.specs}
+        return [spec_of[id(page)].path for page in pages.ordered], spec_of
+
+    shown = build_navigation_pages()
+    ordered, _ = paths(shown)
+    assert ordered == [spec.path for spec in ALL_SPECS]
+    assert shown.unlisted == ()
+
+    hidden = build_navigation_pages(hide_unfinished=True)
+    ordered, spec_of = paths(hidden)
+    assert sorted(ordered) == sorted(spec.path for spec in ALL_SPECS)
+    assert len(ordered) == len(set(ordered))
+    assert [group.slug for group in hidden.groups] == [
+        "scenario_management",
+        "static_capa",
+        "execution_management",
+    ]
+    (execution,) = [group for group in hidden.groups if group.slug == "execution_management"]
+    assert [spec_of[id(page)].path for page in execution.subpages] == [
+        spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES if not spec.unfinished
+    ]
+    assert len(execution.subpages) == 5
+    assert {spec_of[id(page)].path for page in hidden.unlisted} == UNFINISHED_PATHS

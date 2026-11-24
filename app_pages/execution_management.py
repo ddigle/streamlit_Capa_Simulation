@@ -11,6 +11,13 @@
 약속 기준선을 어느 공식버전으로 볼지 같은 질문을 그 기능 설계 때 정한다. 그 칸은 지금 점선 자리
 하나다(설계 규칙 UI-LAY-10 — `module_slot.slot_html`).
 
+운영 서버의 개발자가 아닌 회차(`sso_identity.unfinished_hidden` — 사이드바에서 구현 중 화면을 빼는
+판정과 같은 하나)에는 그 점선 자리를 그리지 않고, 목차에서 구현 중 화면(`PageSpec.unfinished` —
+실적 셋) 카드를 뺀다. 세 영역의 Dynamic Capa 는 앱의 틀이라 카드를 걷지 않고 이름 · 풍선만
+남긴다(「열기」 없음 — 설계 규칙 UI-INP-07 예외 「숨긴 자리가 값을 보이던 곳이면 값만」). 하위 화면
+선언(`EXECUTION_MANAGEMENT_SUBPAGES`)은 그대로다 — Guide 목록 대조가 선언 전체를 본다. 개발 · 사내
+WebIDE · 사내 PC 와 운영 서버의 개발자는 지금처럼 다 본다(2026-11-24 정식판 마감 2-A).
+
 영역의 뜻풀이 · 목차 차례 · 하위 화면이 보는 것 같은 설명 문장은 자리에 늘 두지 않는다(설계 규칙
 UI-TXT-01 · 02) — 영역 이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말과 화면마다 보는 것은 Guide
 「이 영역의 화면」 에 있다. 목차 카드는 화면 이름 링크 하나다. 실행 관리의 정의 · 업무 활용
@@ -26,6 +33,7 @@ from capa_simulation.components.module_slot import slot_html
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
+from capa_simulation.components.sso_identity import unfinished_hidden
 from capa_simulation.navigation import (
     DYNAMIC_CAPA,
     EXECUTION_MANAGEMENT,
@@ -56,18 +64,19 @@ AREAS: tuple[tuple[PageSpec, str, str], ...] = (
         "단기 병목을 운영합니다.",
     ),
 )
-# 목차 한 줄에 놓는 카드 수. 여덟 화면이 세 줄로 선다.
+# 목차 한 줄에 놓는 카드 수. 여덟 화면이 세 줄로 선다(구현 중 화면을 뺀 회차는 다섯 — 두 줄).
 COLUMNS_PER_ROW = 3
 # 목차 제목의 풍선 — 차례의 뜻(자리에 늘 두지 않는다).
 SUBPAGES_HELP = "사이드바 차례 그대로입니다. 약속에 가까운 설비 이행부터 성능 실적 순입니다."
-# 이행 현황판 숫자가 들어올 칸 — 점선 자리 하나(제목 · 표지 한 줄).
+# 이행 현황판 숫자가 들어올 칸 — 점선 자리 하나(제목 · 표지 한 줄). 구현 중 화면을 숨기는 회차에는
+# 없다.
 DASHBOARD_SLOT_TITLE = "이행 현황판 자리"
 DASHBOARD_SLOT_TEXT = "부서별 Gap · A/Item 숫자 · 다음 판"
 DASHBOARD_SLOT_CLASS = "em-dashboard-slot"
 DASHBOARD_SLOT_MIN_HEIGHT = "140px"
 
 
-def _render_areas() -> None:
+def _render_areas(*, hide_unfinished: bool) -> None:
     with st.container(border=True):
         st.markdown("#### :material/account_tree: 세 영역")
         columns = st.columns(len(AREAS), gap="small")
@@ -76,14 +85,18 @@ def _render_areas() -> None:
                 st.markdown(f"**{spec.title}** · {word}", help=line)
                 if spec is EXECUTION_MANAGEMENT:
                     st.caption(":material/my_location: 지금 여기")
-                else:
+                elif not (hide_unfinished and spec.unfinished):
                     render_page_link(spec.path, label="열기", icon=spec.icon)
 
 
-def _render_subpages() -> None:
+def _render_subpages(*, hide_unfinished: bool) -> None:
     with st.container(border=True):
         st.markdown("#### :material/list_alt: 이 영역의 화면", help=SUBPAGES_HELP)
-        specs = list(EXECUTION_MANAGEMENT_SUBPAGES)
+        specs = [
+            spec
+            for spec in EXECUTION_MANAGEMENT_SUBPAGES
+            if not (hide_unfinished and spec.unfinished)
+        ]
         for start in range(0, len(specs), COLUMNS_PER_ROW):
             row = specs[start : start + COLUMNS_PER_ROW]
             columns = st.columns(COLUMNS_PER_ROW, gap="small")
@@ -96,14 +109,16 @@ def _render_subpages() -> None:
 # `tests/test_app_navigation.py` 가 AST 로 첫 인자를 읽어 본다.
 render_page_header("실행 관리")
 render_page_guide("execution_management", title="실행 관리")
-_render_areas()
-_render_subpages()
-st.html(
-    slot_html(
-        DASHBOARD_SLOT_TITLE,
-        DASHBOARD_SLOT_TEXT,
-        css_class=DASHBOARD_SLOT_CLASS,
-        min_height=DASHBOARD_SLOT_MIN_HEIGHT,
-        print_min_height=DASHBOARD_SLOT_MIN_HEIGHT,
+hide_unfinished = unfinished_hidden()
+_render_areas(hide_unfinished=hide_unfinished)
+_render_subpages(hide_unfinished=hide_unfinished)
+if not hide_unfinished:
+    st.html(
+        slot_html(
+            DASHBOARD_SLOT_TITLE,
+            DASHBOARD_SLOT_TEXT,
+            css_class=DASHBOARD_SLOT_CLASS,
+            min_height=DASHBOARD_SLOT_MIN_HEIGHT,
+            print_min_height=DASHBOARD_SLOT_MIN_HEIGHT,
+        )
     )
-)

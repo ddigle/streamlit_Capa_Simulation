@@ -54,6 +54,7 @@ CONTRACT_ACTIONS = {
     "equipment.legacy_ack": grades.DEVELOPER,
     "diag.full": grades.DEVELOPER,
     "admin.area": grades.DEVELOPER,
+    "screen.unfinished": grades.DEVELOPER,
 }
 
 

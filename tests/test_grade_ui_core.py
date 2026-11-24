@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from alert_marks import active_state, states
@@ -47,7 +48,7 @@ from capa_simulation.components import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "app_pages" / "admin_area.py"
-COVERED_ACTIONS = frozenset({"admin.area", "diag.full"})
+COVERED_ACTIONS = frozenset({"admin.area", "diag.full", "screen.unfinished"})
 # 이 갈래가 받는 자리를 다는 뿌리 파일(장부 쓰기에 이르는 콜백 · 팝업 · 프래그먼트).
 ROOT_FILES = (
     "app.py",
@@ -344,6 +345,225 @@ def test_this_lane_roots_catch_refusals() -> None:
 
 def test_the_covered_actions_are_known() -> None:
     assert COVERED_ACTIONS <= set(grades.ACTIONS)
+
+
+# ------------------------------------------------- 구현 중 화면(2026-11-24 정식판 마감 2-A)
+# 머리가 구현 중이라 운영 서버의 개발자가 아니면 통째로 빠지는 사이드바 상자
+# (`navigation.SIDEBAR_GROUPS`).
+UNFINISHED_BOXES = ("capa_chatbot_box", "production_progress_box", "dynamic_capa_box")
+STOP_NOTICE = grades.stop_text("screen.unfinished", place="page")
+
+
+def _sidebar_keys(app: AppTest) -> list[str]:
+    """사이드바 최상위 칸의 key(화면 차례) — key 를 준 컨테이너 · 확장 패널은 id 끝이 그 key 다."""
+    keys: list[str] = []
+    for node in app.sidebar.children.values():
+        identifier = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        keys.append(identifier.rsplit("-", 1)[-1] if identifier else "")
+    return keys
+
+
+def _sidebar_links(app: AppTest) -> list[str]:
+    return [str(link.proto.label) for link in app.sidebar.get("page_link")]
+
+
+def _execution_box_links(app: AppTest) -> list[str]:
+    """실행 관리 상자 안 하위 화면 링크(머리 「현황 요약」 링크 뒤)."""
+    from streamlit.testing.v1.element_tree import Expander, Status
+
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT
+
+    (box,) = [
+        element
+        for element in app.sidebar
+        if isinstance(element, (Status, Expander)) and element.label == EXECUTION_MANAGEMENT.title
+    ]
+    return [str(link.proto.label) for link in box.get("page_link")][1:]
+
+
+def _unfinished_shown(app: AppTest) -> dict[str, bool]:
+    """구현 중 화면이 사이드바에 서 있나 — 상자 셋과 실행 관리 안 실적 셋 링크."""
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT_SUBPAGES
+
+    keys, links = _sidebar_keys(app), _sidebar_links(app)
+    shown = {box: box in keys for box in UNFINISHED_BOXES}
+    shown.update(
+        {
+            spec.title: spec.title in links
+            for spec in EXECUTION_MANAGEMENT_SUBPAGES
+            if spec.unfinished
+        }
+    )
+    return shown
+
+
+def _finished_execution_titles(*, all_of_them: bool) -> list[str]:
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT_SUBPAGES
+
+    return [
+        spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES if all_of_them or not spec.unfinished
+    ]
+
+
+@GRADE_PARAMS
+def test_only_the_developer_sees_the_unfinished_screens_in_the_sidebar(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    """운영 서버(통합인증 켜짐)에서 구현 중 화면은 개발자에게만 사이드바에 선다 — Capa Chatbot ·
+    생산 진도 · Dynamic Capa 상자와 실행 관리의 실적 셋. 그 밖의 등급은 실행 관리 하위가 다섯이다.
+    Support 상자의 VOC 는 누구에게나 그대로다(설계 규칙 UI-INP-07 예외 — 등급 밖 기능은 숨김)."""
+    as_grade(monkeypatch, grade)
+    app = real_app().run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    developer = grade == grades.DEVELOPER
+    assert _unfinished_shown(app) == dict.fromkeys(_unfinished_shown(app), developer)
+    assert len(_unfinished_shown(app)) == 6
+    assert _execution_box_links(app) == _finished_execution_titles(all_of_them=developer)
+    assert len(_execution_box_links(app)) == (8 if developer else 5)
+    assert "VOC" in _sidebar_links(app)
+    assert sso_identity.unfinished_hidden() is (not developer)
+    assert sso_identity.viewer_can("screen.unfinished") is developer
+
+
+def test_a_preview_hides_the_unfinished_screens_too(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「이 등급으로 보기」 동안은 보는 등급의 사이드바다 — 구현 중 화면이 빠지고, 앱 정보 카드
+    「끝내기」 로 돌아오면 다시 선다."""
+    as_grade(monkeypatch, grades.DEVELOPER)
+    app = real_app()
+    app.session_state[sso_identity.GRADE_PREVIEW_KEY] = grades.MANAGER
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not any(_unfinished_shown(app).values()), _unfinished_shown(app)
+    assert _execution_box_links(app) == _finished_execution_titles(all_of_them=False)
+    assert "Admin Area" not in _sidebar_links(app)
+
+    app.button(key=sso_identity.PREVIEW_END_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert sso_identity.GRADE_PREVIEW_KEY not in app.session_state
+    assert all(_unfinished_shown(app).values()), _unfinished_shown(app)
+    assert _execution_box_links(app) == _finished_execution_titles(all_of_them=True)
+
+
+def _recording_alert_center(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """알림 칸 data 를 회차마다 적는다(그리는 컴포넌트는 그대로)."""
+    from capa_simulation.components import alert_center
+
+    sent: list[dict[str, Any]] = []
+    real_data = alert_center.alert_center_data
+
+    def recording(**kwargs: Any) -> dict[str, Any]:
+        data = real_data(**kwargs)
+        sent.append(data)
+        return data
+
+    monkeypatch.setattr(alert_center, "alert_center_data", recording)
+    return sent
+
+
+@pytest.mark.parametrize("page", ["dynamic_capa", "wip_status"])
+def test_an_unfinished_screen_opened_by_address_stops_like_the_admin_area(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch, page: str
+) -> None:
+    """숨긴 화면을 주소 · 탭 · 알림으로 열면 본문 대신 Admin Area 와 같은 멈춤이다(「개발자만 여는
+    화면입니다」 + 「HOME 으로」 — UI-CON-03). 화면 파일이 돌지 않아 「샘플 데이터」 스위치가 없고,
+    사이드바 조회 조건 구역(재공은 시나리오를 읽는 선언이다)도 머리 띠 「합성 샘플」 표지도 서지
+    않는다 — 스위치를 켠 세션이어도. 같은 주소의 개발자는 본문 · 패널 · 표지가 그대로 선다."""
+    from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+    from capa_simulation.navigation import CONDITIONS_SECTION, DYNAMIC_CAPA, WIP_STATUS
+    from capa_simulation.sidebar_status import CONDITIONS_BOX_KEY
+
+    spec = {"dynamic_capa": DYNAMIC_CAPA, "wip_status": WIP_STATUS}[page]
+    sent = _recording_alert_center(monkeypatch)
+    for grade in (grades.EDITOR, grades.DEVELOPER):
+        as_grade(monkeypatch, grade)
+        app = real_app()
+        app.session_state[SAMPLE_TOGGLE_KEY] = True
+        app.run()
+        app.switch_page(spec.path).run()
+
+        assert not list(app.exception), [element.message for element in app.exception]
+        stopped = grade != grades.DEVELOPER
+        warnings = [str(item.value) for item in app.main.warning]
+        assert (warnings == [STOP_NOTICE]) is stopped, warnings
+        home_links = [str(link.proto.label) for link in app.main.get("page_link")]
+        assert (home_links == [sso_identity.HOME_LINK_LABEL]) is stopped, home_links
+        assert (SAMPLE_TOGGLE_KEY in [toggle.key for toggle in app.toggle]) is not stopped
+        keys = _sidebar_keys(app)
+        assert (CONDITIONS_BOX_KEY in keys) is not stopped, keys
+        assert (CONDITIONS_SECTION.key in keys) is not stopped, keys
+        assert sent[-1]["sample"] is not stopped
+    assert STOP_NOTICE == sso_identity.ADMIN_ONLY_NOTICE == "개발자만 여는 화면입니다"
+
+
+def test_off_the_operational_server_every_unfinished_screen_stands(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영 아님(개발 `app.py` · 사내 WebIDE · 사내 PC · 시험)은 지금처럼 열 화면이 모두 사이드바에
+    서고 본문이 돈다. 화면 탭 상한(10)에 걸리지 않게 다섯씩 따로 연다."""
+    from capa_simulation.navigation import ALL_SPECS
+
+    unrestricted(monkeypatch)
+    unfinished = [spec for spec in ALL_SPECS if spec.unfinished]
+    assert len(unfinished) == 10
+    for chunk in (unfinished[:5], unfinished[5:]):
+        app = real_app().run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert all(_unfinished_shown(app).values()), _unfinished_shown(app)
+        for spec in chunk:
+            app.switch_page(spec.path).run()
+            assert not list(app.exception), [element.message for element in app.exception]
+            assert STOP_NOTICE not in [str(item.value) for item in app.warning], spec.path
+            assert all(_unfinished_shown(app).values()), spec.path
+    assert not sso_identity.unfinished_hidden()
+
+
+def test_the_production_server_with_sso_off_hides_them_from_everyone(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영(`APP_ENV`)인데 통합인증이 꺼진 서버는 관리자 몫까지라 구현 중 화면이 아무에게도 서지
+    않는다 — Admin Area 가 모두에게 잠긴 것과 같다(그 상태 자체가 `AD-02`)."""
+    from grade_support import operational_sso_off
+
+    operational_sso_off(monkeypatch)
+    app = real_app().run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not any(_unfinished_shown(app).values()), _unfinished_shown(app)
+    assert _execution_box_links(app) == _finished_execution_titles(all_of_them=False)
+    assert "Admin Area" not in _sidebar_links(app)
+    assert sso_identity.unfinished_hidden()
+
+
+def test_the_execution_head_drops_the_draft_cards_and_the_slot_for_all_but_the_developer(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실제 `app.py` 의 실행 관리 머리 — 운영 서버의 실무자는 목차 링크가 다섯(실적 셋 없음)이고 세
+    영역의 「열기」 는 Static Capa 하나(Dynamic Capa 는 이름 · 풍선만)이며 이행 현황판 점선 자리가
+    없다. 같은 서버의 개발자는 여덟 · 「열기」 둘 · 자리 하나다(2026-11-24 정식판 마감 2-A — 설계
+    규칙 UI-INP-07 예외 · UI-LAY-10 예외). 판정은 사이드바와 같은 `unfinished_hidden` 하나다."""
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT
+
+    for grade in (grades.EDITOR, grades.DEVELOPER):
+        as_grade(monkeypatch, grade)
+        app = real_app().run()
+        app.switch_page(EXECUTION_MANAGEMENT.path).run()
+
+        assert not list(app.exception), [element.message for element in app.exception]
+        developer = grade == grades.DEVELOPER
+        labels = [str(link.proto.label) for link in app.main.get("page_link")]
+        opens = ["열기", "열기"] if developer else ["열기"]
+        assert labels == [*opens, *_finished_execution_titles(all_of_them=developer)], grade
+        slots = [
+            element
+            for element in app.main.get("html")
+            if "em-dashboard-slot" in str(element.proto.body)
+        ]
+        assert len(slots) == (1 if developer else 0), grade
+        assert sso_identity.unfinished_hidden() is (not developer)
 
 
 # ------------------------------------------------------------------ 화면 쪽 창구(grade_ui) 계약

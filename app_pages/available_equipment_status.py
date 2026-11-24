@@ -94,8 +94,8 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
     NO_UNITS_MARK,
-    SAMPLE_TOGGLE_KEY,
     render_sample_switch,
+    sample_switch_on,
 )
 from capa_simulation.components.state_alerts import equipment_scope, tab_name
 from capa_simulation.components.tab_marks import mark_pending_tabs
@@ -331,7 +331,7 @@ if latest_snapshot is None and not tab_is_hidden(main_view):
         cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))
-show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
+show_sample_fleet = sample_switch_on()
 if using_dashboard_sample and viewing_tab_open:
     with sample_notice.container():
         show_sample_fleet = render_sample_switch(

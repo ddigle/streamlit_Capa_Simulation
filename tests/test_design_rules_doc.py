@@ -3540,10 +3540,9 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
     갈래 이름을 밝히며, q-chatbot 이 바꾼 2차 보드 Q2-25 는 7-1 에 한 줄이고 그 줄이 6-40 을
     가리킨다."""
     document = _text()
-    assert "판 v1.43" in document.split("\n## 1. ")[0]
     assert "6-40 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-40. ") :]
+    record = section[section.index("\n### 6-40. ") : section.index("\n### 6-42. ")]
     assert "확인 열하나는 모두 「좋음」" in record and "여쭘 다섯은 모두 카드 권장" in record
     assert "6-38 · 6-39 줄은 그때 기록 그대로" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
@@ -3589,3 +3588,87 @@ def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> Non
     ):
         assert old not in rules_part, old
     assert "「개발자용 진단」" in rules_part and "「공지 · 개발자 · 17:40」" in rules_part
+
+
+# 2026-11-24 정식판 마감 2-A(6-42)의 줄 — 줄 id: 굵은 글(고른 꼴).
+CLOSEOUT_2A_LINES = {
+    "screens-hide": "운영 서버에서는 화면 등급 개발자만 사이드바에 세운다",
+    "screens-address": "Admin Area 와 같은 멈춤 — 「개발자만 여는 화면입니다」 + 「HOME 으로」",
+    "screens-modules": "숨기지 않는다",
+    "screens-sso-off": "모두에게 숨는다",
+    "screens-preview-blink": "받아들이고 `docs/TODO.md` 2장에 남긴다",
+    "screens-exec-head": (
+        "운영 서버의 개발자가 아니면 이행 현황판 자리 · 실적 셋 목차 카드를 그리지 않고 세 영역의 "
+        "Dynamic Capa 카드는 이름 · 풍선만 남긴다"
+    ),
+    "screens-teaser": (
+        "운영 서버에서는 화면 등급 개발자만 세운다 — 다른 사람의 입장 화면은 "
+        "Detail · Summary 두 단추"
+    ),
+}
+
+
+def test_the_closeout_2a_hidden_unfinished_screens_are_judged_in_6_42() -> None:
+    """v1.45 — 6-42 는 2026-11-24 정식판 마감 2-A(운영 서버에서 구현 중 화면을 개발자에게만)를 입힌
+    판정이다 — 줄마다 줄 id · 무엇, 굵은 글이 고른 꼴, 끝은 「(2026-11-24 · 규칙 id)」. UI-LAY-10 의
+    예외가 운영 서버 한 줄이고 그물이 그 시험을, UI-INP-07 예외가 구현 중 화면을 부른다."""
+    document = _text()
+    assert "판 v1.45" in document.split("\n## 1. ")[0]
+    assert "6-42 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-42. ") :]
+    assert "갈래는 `close-1124/screens` 다" in record
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-24) · ([^()]+)\)$", line)
+        assert match, line[:120]
+        found.append(match.group(1))
+        assert match.group(2) == CLOSEOUT_2A_LINES[match.group(1)], match.group(1)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line[:120]
+    assert tuple(found) == tuple(CLOSEOUT_2A_LINES)
+    rules = {rule.id: rule for rule in _rules()}
+    lay10 = rules["UI-LAY-10"]
+    assert lay10.fields["예외"][0].startswith("운영 서버(`SsoConfig.operational`")
+    assert "6-42" in lay10.fields["예외"][0] and "6-42" in lay10.fields["근거"][0]
+    net = "test_only_the_developer_sees_the_unfinished_screens_in_the_sidebar"
+    assert net in lay10.fields["그물"][0]
+    assert "운영 서버의 구현 중 화면" in rules["UI-INP-07"].fields["예외"][0]
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    for phrase in ("6-42", "UI-LAY-10", "UI-INP-07", net, "규칙 82"):
+        assert phrase in v145, phrase
+
+
+def test_the_closeout_2a_execution_head_slot_is_in_the_rule_exceptions() -> None:
+    """v1.45 — 실행 관리 머리의 이행 현황판 자리(다음 판 점선)도 운영 서버에서는 개발자에게만 선다 —
+    UI-LAY-10 예외가 그 자리를 부르고 그물이 실행 관리 머리 시험을, UI-INP-07 예외가 값만 남는 세
+    영역 Dynamic Capa 카드를 부르며, 판 기록이 그 시험을 적는다."""
+    rules = {rule.id: rule for rule in _rules()}
+    net = "test_draft_cards_and_the_dashboard_slot_are_developer_only_on_the_operational_server"
+    lay10 = rules["UI-LAY-10"]
+    assert "실행 관리 머리의 이행 현황판 자리" in lay10.fields["예외"][0]
+    assert net in lay10.fields["그물"][0]
+    inp07 = rules["UI-INP-07"].fields["예외"][0]
+    assert "실행 관리 머리의 이행 현황판 자리" in inp07
+    assert "Dynamic Capa 카드는 이름 · 풍선만 남는다" in inp07
+    history = _chapter(_text(), 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    assert net in v145
+
+
+def test_the_closeout_2a_teaser_line_withdraws_the_bundled_decision_on_the_server_only() -> None:
+    """v1.45 — 6-42 끝 줄 screens-teaser 는 지난 결정(2026-10-19 Introduce 내장)을 운영 서버에서만
+    거둔 사용자 답이다 — 구현 중 화면과 같은 동작이고, 따라하기 창은 그대로이며, 판 기록이 그
+    시험을 적는다."""
+    section = _chapter(_text(), 6)
+    record = section[section.index("\n### 6-42. ") :]
+    line = next(item for item in record.splitlines() if item.startswith("- screens-teaser · "))
+    for phrase in ("2026-10-19", "`screen.unfinished`", "따라하기 창", "`teaser.available`"):
+        assert phrase in line, phrase
+    assert "입장 화면 티저 몫" in record.split("\n- ")[0]
+    history = _chapter(_text(), 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    assert "test_the_operational_server_offers_the_teaser_only_to_the_developer" in v145
