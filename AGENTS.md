@@ -1938,6 +1938,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   읽는다). 설비 화면(가용설비 · 필요 단축 일정 · Space)은 아직 본문 상자 `render_sample_switch` 다 — 켠 쪽만 표지를 달고 끈 쪽은
   스위치만 선다. 끈 상태의 자리표시자는 제목 + 점선 자리(`module_slot.slot_html`) + 표지 「<source> 연결 대기」 한 줄이고, `expects`
   와 `more_help` 는 제목 풍선이다(2026-11-07 답 desc-blocks). 호기 없이 끈 화면은 표지 「조회할 호기 없음」(`NO_UNITS_MARK`)이다.
+  처음 값은 `sample_default` 한 함수다 — 운영 서버(`SsoConfig.operational` — 내장 시드 막이 `builtin_seed_allowed` 와 같은 뿌리, 등급은
+  보지 않음)는 끔, 개발 PC · 사내 WebIDE · 사내 PC · 시험은 켜짐(2026-11-24 정식판 마감 2-A). 스위치를 그리기 전에 읽는 자리는 세션 칸을
+  직접 읽지 않고 `sample_switch_on` 을 부른다(시험 `tests/test_sample_switch_default.py`).
 - `src/capa_simulation/components/performance_actual_screen.py` — 효율·UPEH·수율 실적 화면 한 벌로 `MetricSpec` 만
   갈아 끼운다.
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭은 그리지 않는다. 상세 분석의 조회 조건(분석 기간 · 공정 ·
@@ -9707,7 +9710,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - Dynamic Capa는 현재 데모 프로토타입이며 실적효율·생산실적 DB 조회, 원천 컬럼 매핑,
   누적 이력 저장소와 표준 Capa 리비전 연결은 미구현이다.
 - 원천이 붙지 않은 화면은 **샘플 스위치**(`components/sample_data.py`)를 갖는다. 기본은
-  켜짐이고 켜져 있는 동안 합성 샘플이라고 알린다(구현 중 화면은 머리 띠 표지 — 스위치는 사이드바 조회 조건 패널 줄, 설비
+  켜짐이고(운영 서버는 처음 끔 — `sample_default`, 2026-11-24 정식판 마감 2-A) 켜져 있는 동안 합성 샘플이라고 알린다(구현 중
+  화면은 머리 띠 표지 — 스위치는 사이드바 조회 조건 패널 줄, 설비
   화면은 본문 스위치 상자의 표지). 끄면 그 화면이 무엇을 기다리는지(「… 연결 대기」)만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
   **새 미연결 화면을 만들면 이 스위치를 붙인다** — 빈 껍데기는 만들 가치를 설명하지 못하고,
   표식 없는 합성 표본은 실적처럼 읽힌다. 입력이 없는 결정론적 데모(Dynamic Capa 데모 행·Chatbot 대본)는 세션에 한

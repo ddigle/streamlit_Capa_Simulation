@@ -12,7 +12,7 @@
 SESSION_STATE_SITES: dict[str, int] = {
     "app.py": 9,
     "app_pages/admin_area.py": 2,
-    "app_pages/available_equipment_status.py": 5,
+    "app_pages/available_equipment_status.py": 4,
     "app_pages/calculation_result.py": 1,
     "app_pages/capa_chatbot.py": 7,
     "app_pages/constraint_simulation.py": 8,
@@ -21,7 +21,7 @@ SESSION_STATE_SITES: dict[str, int] = {
     "app_pages/process_capa_detail.py": 4,
     "app_pages/reference_data.py": 13,
     "app_pages/reference_integrity.py": 2,
-    "app_pages/required_shortening.py": 2,
+    "app_pages/required_shortening.py": 1,
     "app_pages/scenario_management.py": 2,
     "app_pages/space_status.py": 49,
     "app_pages/standard_target_capa.py": 29,

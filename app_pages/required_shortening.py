@@ -69,8 +69,8 @@ from capa_simulation.components.required_shortening_panel import (
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
     NO_UNITS_MARK,
-    SAMPLE_TOGGLE_KEY,
     render_sample_switch,
+    sample_switch_on,
 )
 from capa_simulation.components.settings_box import render_settings_box
 from capa_simulation.components.shortening_cumulative import CumulativeProgress
@@ -210,7 +210,7 @@ render_equipment_scenario_row(equipment_session)
 baseline, equipment, downtime = calculation_drafts()
 using_dashboard_sample = st.session_state[EQUIPMENT_DRAFT_KEY].empty
 
-show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
+show_sample_fleet = sample_switch_on()
 if using_dashboard_sample:
     show_sample_fleet = render_sample_switch(key="shortening_sample_switch", source="설비 운영 DB")
 # 합성값은 조회에만 쓴다(가용설비 현황 Main 과 같은 fleet). Space 「필요 단축」 보기가 같은 함수로
