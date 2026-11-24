@@ -1,6 +1,6 @@
-# Purpose: 원천 CSV 를 흘려 읽어 머리 · 칸 수 · 코드를 보고 고른 코드 행만 Core Data 계약으로 읽는다
+# Purpose: 원천 CSV 를 흘려 읽어 요약하고 고른 코드 행을 Core Data 계약으로 읽어 원천 묶음을 낸다
 
-"""원천 CSV 읽기 — 올릴 때 요약(흘려 읽기 한 번)과 저장 때 고른 코드 행 읽기.
+"""원천 CSV 읽기 — 올릴 때 요약(흘려 읽기 한 번), 저장 때 고른 코드 행 읽기와 원천 묶음(공급자).
 
 - 요약(`summarize_source_csv`)은 `csv` 모듈로 줄마다 지나며 수만 센다. 표를 짓지 않고, 해독한 전체
   글도 사본(`getvalue()`)도 쥐지 않는다. 그 한 번으로 인코딩 · 머리 맞춤 · 줄마다 칸 수 · 코드 · 행
@@ -11,6 +11,10 @@
   숫자 열은 `round_trip` 으로 읽어 최단 표기 글자가 적은 실수를 그대로 돌려받는다.
 - 남는 열 셋(`SOURCE_CSV_EXTRA_COLUMNS`)과 값 없는 이름 없는 열(줄 끝 쉼표)은 읽지 않고 알리지
   않는다. 그 밖의 모르는 열 · 모자란 계약 열 · 겹친 머리는 멈춘다.
+- 공급자(`SourceCsvCoreDataProvider`)는 DB 등록 공급자와 같은 원천 묶음(`CoreDataBatch`)을 낸다 —
+  설비대수변화관리는 비우고(DB 조회문의 빈 글자 상수와 같음), CUSTOM 은 파일 값을 둘째 표와 같은
+  판정 · 정규화로 붙이고(`custom_rows_of` · `FILE_WORDS`), 원천 보정은 DB 길과 같은 함수
+  (`apply_source_corrections`)다. CUSTOM 원천 표 · 끄개 · 조회 SQL · 패키지는 보지 않는다.
 - 스크립트용 `read_core_data_csv` 는 경로만 받고 곧바로 78열 검사를 해 남는 열 셋을 뺄 수 없다 —
   같은 계약 객체를 쓰는 이 읽기를 따로 둔다.
 """
@@ -20,16 +24,29 @@ from __future__ import annotations
 import codecs
 import csv
 import io
-from collections.abc import Hashable, Iterator, Sequence
+import math
+import re
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import BinaryIO, Final, Protocol
 
 import pandas as pd
 
+from capa_simulation.io.company_bigdataquery_adapter import (
+    apply_source_corrections,
+    is_valid_simulation_code,
+)
 from capa_simulation.io.core_data_source import (
     QUOTE_STYLES,
+    CoreDataBatch,
     CoreDataContract,
     load_core_data_contract,
+)
+from capa_simulation.services.custom_source_check import (
+    FILE_WORDS,
+    attach_custom_values,
+    custom_rows_of,
 )
 
 # 원천 웹 CSV 에만 오는 열 셋 — 계약 78열 밖이라 읽지 않는다(늘 오는 열이라 알리지도 않는다).
@@ -40,8 +57,24 @@ SOURCE_CSV_SOURCE_TYPE: Final = "CSV_CORE_DATA_UPLOAD"
 # 엄한 UTF-8 이 CP949 한글을 받아들이는 일은 드물고, 거꾸로는 깨진 글로 읽힐 수 있다.
 SOURCE_CSV_ENCODINGS: Final = ("utf-8-sig", "cp949")
 
+# DB 조회가 숫자로 넘길 수 있는 계약 글자 칸 — 파일에서 그 칸의 값이 모두 숫자 글자이면 DB 길이
+# 숫자 칸을 받은 꼴(실수 칸)로 넘겨, 정규화가 두 길에 같은 글자(정수꼴 `3` → `3.0`)를 짓게 한다
+# (`align_number_text_columns`). DB 조회가 이 칸들을 글자로 넘긴다고 확인되면 이 묶음을 비운다 —
+# 그때는 파일 글자 그대로가 DB 길과 같다.
+SOURCE_CSV_NUMBER_TEXT_COLUMNS: Final = (
+    "Step수",
+    "Shot Time",
+    "Shot수",
+    "Index Time",
+    "Para",
+    "STEP_SEQ",
+    "MCP_SEQ",
+)
+
 SIMULATION_ID_COLUMN: Final = "시뮬레이션 ID"
 PLAN_ID_COLUMN: Final = "PLAN ID"
+# 원천 웹 파일에도 값이 오지만 DB 조회문은 빈 글자 상수로 받는 칸 — 두 길이 같게 비운다.
+EQUIPMENT_CHANGE_COLUMN: Final = "설비대수변화관리"
 
 EMPTY_FILE_TEXT: Final = "빈 파일입니다 — 원천 웹에서 받은 시나리오 CSV 를 올리세요."
 DECODE_TEXT: Final = (
@@ -53,11 +86,17 @@ CHANGED_FILE_TEXT: Final = "올린 파일이 바뀌었습니다 — 파일을 �
 FIELD_COUNT_TAIL: Final = "잘렸거나 손으로 고친 줄이 있습니다."
 BROKEN_LINE_TAIL: Final = "닫히지 않은 따옴표 같은 깨진 줄이 있습니다."
 COLUMNS_TAIL: Final = "원천 CSV 꼴이 바뀌었으면 앱 관리자(개발자)에게 열 이름을 알려 주세요."
+# 코드 꼴 거부 글 — DB 등록 공급자(`company_bigdataquery_adapter`)와 같은 글이다.
+BLANK_CODE_TEXT: Final = "시뮬레이션 코드는 비어 있을 수 없습니다."
+UNSAVABLE_CODE_TEXT: Final = "시뮬레이션 코드는 영문·숫자와 '.', '_', '-'만 사용할 수 있습니다."
 
 # 멈춤 글에 이름을 늘어놓는 수 — 그 뒤는 「외 n개」.
 _NAME_LIMIT: Final = 10
 # 읽지 않는 칸(남는 열 · 이름 없는 열)에 pandas 가 쓸 이름 — 계약 이름과 겹치지 않는 자리 이름.
 _SKIP_NAME: Final = "__source_csv_skip_{position}"
+# DB 가 숫자로 넘긴 칸을 원천 웹이 적은 꼴 — 앞자리 0 · 앞뒤 공백 · `+` · 글자가 없다. 그런 값이
+# 든 칸은 DB 도 글자로 넘긴 칸이다.
+_PLAIN_NUMBER: Final = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 
 
 class SourceCsvError(ValueError):
@@ -208,6 +247,85 @@ def read_source_csv_rows(
     picked = picked.reset_index(drop=True)
     picked[SIMULATION_ID_COLUMN] = picked[SIMULATION_ID_COLUMN].astype("string").str.strip()
     return picked
+
+
+def align_number_text_columns(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    """계약 글자 칸 가운데 `columns` 를 DB 길이 숫자 칸을 받은 꼴로 맞춘다 — 받은 표를 고친다.
+
+    칸마다 통째로 본다. 빈 값이 아닌 값이 모두 숫자 글자(`3` · `2.5` · `1E-5`)면 실수 칸
+    (float64)으로 바꾸고, 하나라도 아니면(앞자리 0 · 앞뒤 공백 · 글자 — DB 도 글자로 넘긴 칸) 읽은
+    글자 그대로 둔다. 실수는 글자마다 `float` 로 바꾼다(바르게 반올림 — `round_trip` 과 같은 값).
+    정규화(`normalize_core_data`)가 이 칸을 글자로 바꿀 때 DB 길이 숫자로 받은 칸과 같은 글자
+    (`3.0` · `2.5` · `1e-05`)가 된다. 빈 값은 빈 값 그대로다.
+    """
+    for column in columns:
+        values = frame[column].astype("string").tolist()
+        texts = [value for value in values if isinstance(value, str)]
+        if not all(_PLAIN_NUMBER.fullmatch(text) is not None for text in texts):
+            continue
+        numbers = [float(value) if isinstance(value, str) else math.nan for value in values]
+        frame[column] = pd.Series(numbers, index=frame.index, dtype="float64")
+    return frame
+
+
+class SourceCsvCoreDataProvider:
+    """올린 원천 CSV 의 코드 하나를 DB 등록과 같은 원천 묶음으로 낸다(`CoreDataProvider` 규약).
+
+    `open_buffer` 는 저장 회차에 올린 파일을 돌려준다(올림 칸이 비었으면 None). `summary` 는 올릴 때
+    지은 요약이다. `custom_kinds` 는 `fetch` 전에는 None 이고, 끝나면 붙은 CUSTOM 값 종류 수
+    (`CustomSourceCheck.kinds` — 대소문자 표기를 하나로 모은 뒤)다 — 화면이 리비전 메모를 짓는다.
+    묶음에는 대조(`custom_check`)를 싣지 않는다 — CUSTOM 을 같은 파일에서 세어 붙여 어긋날 칸이 없다
+    (None 은 「대조 없음」 이지 끄개의 「붙이지 않음」 이 아니다).
+    """
+
+    def __init__(
+        self,
+        open_buffer: Callable[[], BinaryIO | None],
+        summary: SourceCsvSummary,
+        *,
+        simulation_name: str,
+        source_registered_at: datetime | None = None,
+    ) -> None:
+        self._open_buffer = open_buffer
+        self.summary = summary
+        self.simulation_name = simulation_name
+        self.source_registered_at = source_registered_at
+        self.custom_kinds: int | None = None
+
+    def fetch(self, simulation_code: str) -> CoreDataBatch:
+        """고른 코드의 원천 묶음 — DB 등록 공급자의 `fetch` 와 같은 자리에서 같은 판정을 부른다.
+
+        차례: 코드(앞뒤 공백 뗌 · 저장할 수 있는 꼴) → 파일 다시 흘려 읽기(요약과 다르거나 없으면
+        「올린 파일이 바뀌었습니다」) → 고른 코드 행(0행이면 멈춤) → 숫자 글자 칸 맞춤
+        (`align_number_text_columns`) → 설비대수변화관리 비움 → CUSTOM 붙이기(파일에서 센 답 ·
+        `FILE_WORDS`) → 원천 보정(`apply_source_corrections`). 멈춤은 `SourceCsvError` 이거나 CUSTOM
+        판정의 `ValueError` 다.
+        """
+        self.custom_kinds = None
+        code = simulation_code.strip()
+        if not is_valid_simulation_code(code):
+            raise SourceCsvError(UNSAVABLE_CODE_TEXT if code else BLANK_CODE_TEXT)
+        buffer = self._open_buffer()
+        if buffer is None:
+            raise SourceCsvError(CHANGED_FILE_TEXT)
+        summary = summarize_source_csv(buffer, file_id=self.summary.file_id)
+        if summary != self.summary:
+            raise SourceCsvError(CHANGED_FILE_TEXT)
+        rows = read_source_csv_rows(buffer, summary, code)
+        if rows.empty:
+            raise SourceCsvError(f"올린 파일에 시뮬레이션 코드 {code} 의 행이 없습니다.")
+        align_number_text_columns(rows, SOURCE_CSV_NUMBER_TEXT_COLUMNS)
+        rows[EQUIPMENT_CHANGE_COLUMN] = pd.Series("", index=rows.index, dtype="string")
+        rows, check = attach_custom_values(rows, custom_rows_of(rows), words=FILE_WORDS)
+        self.custom_kinds = check.kinds
+        return CoreDataBatch(
+            simulation_code=code,
+            simulation_name=self.simulation_name,
+            source_type=SOURCE_CSV_SOURCE_TYPE,
+            frame=apply_source_corrections(rows),
+            source_registered_at=self.source_registered_at,
+            custom_check=None,
+        )
 
 
 def _header_encoding(buffer: BinaryIO, contract: CoreDataContract) -> str:

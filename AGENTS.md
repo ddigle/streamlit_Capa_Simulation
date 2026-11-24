@@ -2406,7 +2406,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `CoreDataProvider` 규약이다. CSV 는 스크립트가 `read_core_data_csv` 로 읽고 화면 입구는 없다.
   - `CoreDataBatch` 끝 칸 `custom_check` 는 CUSTOM 원천 표 대조 수(`custom_source_check.CustomSourceCheck`)이고 기본 None 이다
     (CSV · 시드 · 가짜 공급자). 그 모듈이 `core_data_derivation` → 이 모듈을 부르므로 import 는 `TYPE_CHECKING` 안이다.
-- `src/capa_simulation/io/source_csv.py` — 원천 웹에서 받은 시나리오 CSV 읽기다. 같은 계약 객체(`load_core_data_contract`)를 쓰고
+- `src/capa_simulation/io/source_csv.py` — 원천 웹에서 받은 시나리오 CSV 읽기와 그 원천 묶음 공급자다. 같은 계약 객체(`load_core_data_contract`)를 쓰고
   `read_core_data_csv` 는 그대로 둔다(경로만 받고 곧바로 78열 검사라 남는 열 셋을 뺄 수 없다).
   - 요약 `summarize_source_csv` → `SourceCsvSummary`(수 KB — 표 · 해독한 글 없음): `csv` 모듈로 한 번 흘려 읽는다(`strict=True`
     — 닫히지 않은 따옴표도 깨진 줄). 인코딩은 첫 머리 줄 바이트로 UTF-8(BOM) → 계약 인코딩 차례로 정하고, 정한 뒤 안 풀리는
@@ -2416,6 +2416,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     닫히지 않게).
   - 행 `read_source_csv_rows`: 고른 코드 행만 계약 78열 차례로(정규화 전) — 글자 열 `string`, 결측은 빈칸만, 숫자 `round_trip`,
     `header=0, names=` · `index_col=False`. 행 수가 요약과 다르면 멈춘다. 멈춤은 모두 `SourceCsvError`(`ValueError`) 한 글이다.
+  - 공급자 `SourceCsvCoreDataProvider`(`CoreDataProvider` 규약): `fetch` 가 코드(앞뒤 공백 뗌 · 어댑터의 `is_valid_simulation_code`)
+    → 파일 다시 흘려 읽기(요약과 다르면 「올린 파일이 바뀌었습니다」) → 고른 코드 행 → 숫자 글자 칸 맞춤 → 설비대수변화관리 빈 글자
+    (DB 조회문 상수와 같음) → CUSTOM 붙이기(`custom_rows_of` 답 · `FILE_WORDS` — 둘째 표와 같은 판정 · 정규화) → 원천 보정
+    (어댑터 `apply_source_corrections`) 차례로 DB 등록과 같은 `CoreDataBatch` 를 낸다. `custom_check` 는 None(대조 없음 — 끄개의
+    「붙이지 않음」 아님)이고 CUSTOM 값 종류 수는 `custom_kinds` 로 남긴다(화면이 메모를 짓는다). CUSTOM 원천 표 · 끄개 · 조회 SQL ·
+    패키지 판정은 부르지 않는다.
+  - 숫자 글자 칸 맞춤 `align_number_text_columns`: `SOURCE_CSV_NUMBER_TEXT_COLUMNS`(DB 조회가 숫자로 넘길 수 있는 계약 글자 칸
+    일곱) 가운데 값이 모두 숫자 글자인 칸은 실수 칸으로 넘겨 정규화가 DB 길과 같은 글자(정수꼴 `3` → `3.0`)를 짓는다. 앞자리 0 ·
+    앞뒤 공백 · 글자가 하나라도 든 칸은 그대로다. DB 조회가 이 칸들을 글자로 넘긴다고 확인되면 묶음을 비운다(그때는 파일 글자
+    그대로가 DB 와 같다 — 두 꼴 모두 `tests/test_source_csv.py` 의 두 길 같음 시험이 본다).
   - 원천 유형 `SOURCE_CSV_SOURCE_TYPE`(`CSV_CORE_DATA_UPLOAD`). 시험 견본은 `tests/source_csv_samples.py`(내장 합성 시드 값).
 - `src/capa_simulation/io/company_bigdataquery_adapter.py` — 사내 SQL·컬럼 매핑 전용 접속부로, 결과를 CSV 로 남기지 않고
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).

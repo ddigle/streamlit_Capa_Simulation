@@ -1,15 +1,23 @@
-# Purpose: 원천 CSV 요약(인코딩 · 머리 · 칸 수 · 코드)과 고른 코드 행 읽기를 합성 견본으로 본다.
+# Purpose: 원천 CSV 요약 · 고른 코드 행 읽기 · 공급자(DB 길과 같은 묶음)를 합성 견본으로 본다.
 
 from __future__ import annotations
 
 import dataclasses
 import io
+import math
 import random
+import re
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
+from types import SimpleNamespace
+from typing import BinaryIO
 
 import pandas as pd
 import pytest
+from conftest import DEMO_CUSTOM_TABLE
 from source_csv_samples import (
     DEMO_CODE,
+    cell_text,
     contract_names,
     demo_core_rows,
     file_columns,
@@ -18,12 +26,16 @@ from source_csv_samples import (
     source_csv_bytes,
 )
 
+from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.io import source_csv
 from capa_simulation.io.core_data_source import (
+    CoreDataBatch,
     core_data_hash,
     load_core_data_contract,
     normalize_core_data,
 )
 from capa_simulation.io.source_csv import (
+    BLANK_CODE_TEXT,
     BROKEN_LINE_TAIL,
     CHANGED_FILE_TEXT,
     COLUMNS_TAIL,
@@ -32,14 +44,27 @@ from capa_simulation.io.source_csv import (
     HEADER_ONLY_TEXT,
     SOURCE_CSV_ENCODINGS,
     SOURCE_CSV_EXTRA_COLUMNS,
+    SOURCE_CSV_NUMBER_TEXT_COLUMNS,
+    SOURCE_CSV_SOURCE_TYPE,
+    UNSAVABLE_CODE_TEXT,
     SourceCsvCode,
+    SourceCsvCoreDataProvider,
     SourceCsvError,
     SourceCsvSummary,
     _fold_header,
     read_source_csv_rows,
     summarize_source_csv,
 )
-from capa_simulation.services.builtin_seed import build_builtin_core_data
+from capa_simulation.services.builtin_seed import (
+    build_builtin_core_data,
+    load_builtin_display_order,
+)
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.core_data_pipeline import (
+    PreparedCoreDataset,
+    prepare_core_data_dataset,
+)
+from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS
 
 WIDTH = len(file_columns())
 
@@ -498,3 +523,347 @@ def test_the_buffer_stays_open_and_a_second_summary_is_the_same() -> None:
         summarize_source_csv(broken, file_id="demo-file")
     assert not broken.closed
     assert broken.tell() == 0
+
+
+# ---------------------------------------------------------------- 공급자 · 두 길 같음
+
+# 부품(Capa Code)마다 파일 · 둘째 표에 싣는 CUSTOM(합성).
+PART_CUSTOM: Mapping[str, str] = {"DEMO_CAPA_A": "DEMO_CUSTOM_A", "DEMO_CAPA_B": "DEMO_CUSTOM_B"}
+# DB 조회문이 CUSTOM 칸에 싣는 상수 자리(합성) — 붙이기가 덮는다.
+DB_QUERY_CONSTANT = "DEMO_CONSTANT"
+# 두 길이 다르게 받을 수 있는 칸(계약 글자 칸의 숫자)에 넣는 값 — 공정마다 정수 · 소수(합성).
+SHOT_TIME_BY_PROCESS: Mapping[str, object] = {"DEMO_Chip_Attach": 3, "DEMO_Wafer_Inspect": 2.5}
+# 시드에서 값이 모두 숫자 글자인 계약 글자 칸 — 숫자 꼴 DB 답이 숫자로 넘긴다. 경로 순번 둘
+# (STEP_SEQ · MCP_SEQ)은 시드 값에 글자가 들어 DB 도 글자로만 넘길 수 있다.
+SEED_NUMBER_TEXT_COLUMNS = ("Step수", "Shot Time", "Shot수", "Index Time", "Para")
+
+
+def _with_custom(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """견본 행의 CUSTOM 을 부품마다 `PART_CUSTOM` 으로 채운다(시드는 비어 있어 그대로면 멈춘다)."""
+    for row in rows:
+        row["CUSTOM"] = PART_CUSTOM[row["Capa Code"]]
+    return rows
+
+
+def _provider(
+    data: bytes,
+    *,
+    simulation_name: str = "DEMO 원천",
+    source_registered_at: datetime | None = None,
+) -> SourceCsvCoreDataProvider:
+    return SourceCsvCoreDataProvider(
+        lambda: io.BytesIO(data),
+        _summary(data),
+        simulation_name=simulation_name,
+        source_registered_at=source_registered_at,
+    )
+
+
+def _fetched(rows: list[dict[str, str]], code: str = DEMO_CODE) -> CoreDataBatch:
+    return _provider(source_csv_bytes(rows)).fetch(code)
+
+
+def _two_path_seed() -> pd.DataFrame:
+    """두 길에 넣을 원천 — 내장 시드에 코드 · 부품 CUSTOM · 공정마다 Shot Time(정수 · 소수)."""
+    seed = build_builtin_core_data()
+    seed["시뮬레이션 ID"] = DEMO_CODE
+    seed["CUSTOM"] = seed["Capa Code"].map(PART_CUSTOM)
+    seed["Shot Time"] = pd.Series(
+        [
+            SHOT_TIME_BY_PROCESS.get(name) if isinstance(name, str) else None
+            for name in seed["공정"]
+        ],
+        index=seed.index,
+        dtype=object,
+    )
+    return seed
+
+
+def _csv_of(seed: pd.DataFrame) -> bytes:
+    """원천 웹 꼴 CSV — 값마다 글자(정수는 정수꼴 `3`, 실수는 최단 표기)."""
+    names = contract_names()
+    rows = [{name: cell_text(record[name]) for name in names} for record in seed.to_dict("records")]
+    return source_csv_bytes(rows)
+
+
+def _blank(value: object) -> bool:
+    return value is None or value is pd.NA or (isinstance(value, float) and math.isnan(value))
+
+
+def _db_answer(seed: pd.DataFrame, numbers: Sequence[str]) -> pd.DataFrame:
+    """가짜 DB 조회의 본 답 — 값마다 제 꼴이다(숫자 칸은 실수 · 정수, 글자 칸은 글자, 빈 값은 None ·
+    NaN). `numbers` 의 계약 글자 칸은 숫자(빈 값 NaN 인 실수 칸)로 넘긴다. CUSTOM 은 조회문 상수,
+    설비대수변화관리는 조회문의 빈 글자다 — 글자로 옮긴 표가 아니라서 두 길 같음이 맞춤을 붙든다."""
+    answer: dict[str, pd.Series] = {}
+    for column in load_core_data_contract().columns:
+        values = seed[column.name].tolist()
+        if column.dtype == "string" and column.name not in numbers:
+            answer[column.name] = pd.Series(
+                [None if _blank(value) else str(value) for value in values], dtype=object
+            )
+        elif column.dtype == "integer" and not any(_blank(value) for value in values):
+            answer[column.name] = pd.Series([int(value) for value in values], dtype="int64")
+        else:
+            answer[column.name] = pd.Series(
+                [math.nan if _blank(value) else float(value) for value in values], dtype="float64"
+            )
+    frame = pd.DataFrame(answer)
+    frame["CUSTOM"] = DB_QUERY_CONSTANT
+    frame["설비대수변화관리"] = ""
+    return frame
+
+
+def _db_fetch(monkeypatch: pytest.MonkeyPatch, main: pd.DataFrame) -> CoreDataBatch:
+    """가짜 DB 조회 두 답(본 답 · 둘째 표 답)으로 DB 등록 공급자의 `fetch` 를 돌린다."""
+    cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    cells["CUSTOM"] = cells["Capa Code"].map(PART_CUSTOM)
+    custom = cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)]
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        return (custom if DEMO_CUSTOM_TABLE in param else main).copy()
+
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: SimpleNamespace(getData=get_data)
+    )
+    return adapter.BigDataQueryCoreDataProvider("DEMO 원천").fetch(DEMO_CODE)
+
+
+def _prepared(batch: CoreDataBatch) -> PreparedCoreDataset:
+    return prepare_core_data_dataset(batch, load_builtin_display_order())
+
+
+@pytest.mark.parametrize(
+    ("db_numbers", "align"),
+    [
+        pytest.param(SEED_NUMBER_TEXT_COLUMNS, True, id="db-hands-numbers"),
+        pytest.param((), False, id="db-hands-text"),
+    ],
+)
+def test_csv_and_db_paths_give_the_same_source_hash_and_sixteen_tables(
+    monkeypatch: pytest.MonkeyPatch, db_numbers: tuple[str, ...], align: bool
+) -> None:
+    """같은 원천을 DB 길(제 꼴 값)과 CSV 길(글자)로 받으면 원천 해시 · 16표 · 충돌 · CUSTOM 종류가
+    같다.
+
+    DB 조회가 계약 글자 칸을 숫자로 넘기는 꼴은 지금 묶음(맞춤 켬)으로, 글자로 넘기는 꼴은 묶음을
+    비운 채로 견준다 — 어느 꼴로 확인되든 묶음 한 줄만 바뀐다.
+    """
+    if not align:
+        monkeypatch.setattr(source_csv, "SOURCE_CSV_NUMBER_TEXT_COLUMNS", ())
+    seed = _two_path_seed()
+    db_batch = _db_fetch(monkeypatch, _db_answer(seed, db_numbers))
+    provider = _provider(_csv_of(seed))
+    csv_batch = provider.fetch(DEMO_CODE)
+    db = _prepared(db_batch)
+    csv = _prepared(csv_batch)
+
+    assert core_data_hash(csv.source_data) == core_data_hash(db.source_data)
+    assert len(db.reference_tables) == 16
+    assert list(csv.reference_tables) == list(db.reference_tables)
+    for name, table in db.reference_tables.items():
+        pd.testing.assert_frame_equal(csv.reference_tables[name], table, obj=name)
+    pd.testing.assert_frame_equal(csv.reference_conflicts, db.reference_conflicts)
+    assert db_batch.custom_check is not None
+    assert provider.custom_kinds == db_batch.custom_check.kinds == len(set(PART_CUSTOM.values()))
+    shot_times = sorted(csv.source_data["Shot Time"].dropna().unique().tolist())
+    assert shot_times == (["2.5", "3.0"] if db_numbers else ["2.5", "3"])
+
+
+def test_without_the_number_alignment_a_db_path_handing_numbers_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """묶음을 비우면 숫자를 넘기는 DB 길과 원천 해시가 갈린다(파일 `3` · DB `3.0`) — 위 시험의
+    같음이 맞춤에서 온다는 것을 견준다."""
+    seed = _two_path_seed()
+    db = _prepared(_db_fetch(monkeypatch, _db_answer(seed, SEED_NUMBER_TEXT_COLUMNS)))
+    monkeypatch.setattr(source_csv, "SOURCE_CSV_NUMBER_TEXT_COLUMNS", ())
+    csv = _prepared(_provider(_csv_of(seed)).fetch(DEMO_CODE))
+
+    assert core_data_hash(csv.source_data) != core_data_hash(db.source_data)
+    assert sorted(csv.source_data["Shot Time"].dropna().unique().tolist()) == ["2.5", "3"]
+    assert sorted(db.source_data["Shot Time"].dropna().unique().tolist()) == ["2.5", "3.0"]
+
+
+def test_the_number_text_columns_are_the_seven_contract_text_columns() -> None:
+    text_columns = {
+        column.name for column in load_core_data_contract().columns if column.dtype == "string"
+    }
+    assert set(SOURCE_CSV_NUMBER_TEXT_COLUMNS) <= text_columns
+    assert SOURCE_CSV_NUMBER_TEXT_COLUMNS == (
+        "Step수",
+        "Shot Time",
+        "Shot수",
+        "Index Time",
+        "Para",
+        "STEP_SEQ",
+        "MCP_SEQ",
+    )
+
+
+def test_number_text_columns_take_the_float_text_the_db_path_gives() -> None:
+    """값이 모두 숫자 글자인 칸은 DB 가 숫자로 넘긴 칸과 같은 글자가 된다 — 실수는 글자마다 바르게
+    반올림한다(`pd.to_numeric` 은 마지막 비트에서 어긋나는 값 `0.03948295481882092` 를 넣었다)."""
+    rows = _with_custom(demo_core_rows(4))
+    cells = [
+        ("3", "2.5", "1E-5"),
+        ("12", "0", ""),
+        ("", "-1", "7.25"),
+        ("1", "3.0", "0.03948295481882092"),
+    ]
+    for row, (step, para, shots) in zip(rows, cells, strict=True):
+        row.update({"Step수": step, "Para": para, "Shot수": shots, "Index Time": ""})
+    batch = _fetched(rows)
+    assert batch.frame["Step수"].dtype == "float64"
+    frame = normalize_core_data(batch.frame)
+
+    assert frame["Step수"].tolist() == ["3.0", "12.0", pd.NA, "1.0"]
+    assert frame["Para"].tolist() == ["2.5", "0.0", "-1.0", "3.0"]
+    assert frame["Shot수"].tolist() == ["1e-05", pd.NA, "7.25", "0.03948295481882092"]
+    assert frame["Index Time"].isna().all()
+
+
+def test_a_number_text_column_with_a_leading_zero_letters_or_spaces_stays_as_read() -> None:
+    rows = _with_custom(demo_core_rows(3))
+    rows[0].update({"MCP_SEQ": "007", "Step수": " 3", "Para": "2", "Shot수": "+1"})
+    rows[1].update({"MCP_SEQ": "3", "Step수": "4", "Para": "x1", "Shot수": "2"})
+    rows[2].update({"MCP_SEQ": "5", "Step수": "5", "Para": "1", "Shot수": "NA"})
+    frame = normalize_core_data(_fetched(rows).frame)
+
+    assert frame["MCP_SEQ"].tolist() == ["007", "3", "5"]
+    assert frame["Step수"].tolist() == [" 3", "4", "5"]
+    assert frame["Para"].tolist() == ["2", "x1", "1"]
+    assert frame["Shot수"].tolist() == ["+1", "2", "NA"]
+    assert frame["STEP_SEQ"].tolist() == [row["STEP_SEQ"] or pd.NA for row in rows]
+
+
+def test_provider_blanks_equipment_change_and_keeps_file_custom() -> None:
+    rows = _with_custom(demo_core_rows(6))
+    for index, row in enumerate(rows):
+        row["설비대수변화관리"] = ("0", "Y", "")[index % 3]
+    frame = _fetched(rows).frame
+
+    assert frame["설비대수변화관리"].tolist() == [""] * len(rows)
+    assert frame["CUSTOM"].tolist() == [PART_CUSTOM[row["Capa Code"]] for row in rows]
+    assert CUSTOM_BLANK not in set(frame["CUSTOM"])
+
+
+def test_provider_batch_carries_no_custom_check() -> None:
+    at = datetime(2026, 11, 24, 9, 30)
+    provider = _provider(
+        source_csv_bytes(_with_custom(demo_core_rows(4))),
+        simulation_name="DEMO 원천명",
+        source_registered_at=at,
+    )
+    assert provider.custom_kinds is None
+    batch = provider.fetch(DEMO_CODE)
+
+    assert batch.custom_check is None
+    assert batch.source_type == SOURCE_CSV_SOURCE_TYPE
+    assert batch.simulation_code == DEMO_CODE
+    assert batch.simulation_name == "DEMO 원천명"
+    assert batch.source_registered_at == at
+    assert provider.custom_kinds == len({PART_CUSTOM[row] for row in batch.frame["Capa Code"]})
+
+
+def test_provider_rereads_and_stops_when_the_file_changed() -> None:
+    rows = _with_custom(demo_core_rows(4))
+    summary = _summary(source_csv_bytes(rows))
+    changed = source_csv_bytes(rows[:3])
+    broken = source_csv_bytes(rows[:3], raw_lines={3: "DEMO"})
+
+    def stop(open_buffer: Callable[[], BinaryIO | None]) -> str:
+        provider = SourceCsvCoreDataProvider(open_buffer, summary, simulation_name="DEMO 원천")
+        with pytest.raises(SourceCsvError) as caught:
+            provider.fetch(DEMO_CODE)
+        assert provider.custom_kinds is None
+        return str(caught.value)
+
+    assert stop(lambda: io.BytesIO(changed)) == CHANGED_FILE_TEXT
+    assert stop(lambda: None) == CHANGED_FILE_TEXT
+    # 다시 흘려 읽기는 올릴 때와 같은 판정 · 같은 글이다.
+    assert stop(lambda: io.BytesIO(broken)) == _stop(broken)
+
+
+def test_provider_strips_the_code_and_rejects_unsavable_codes() -> None:
+    rows = _with_custom([*demo_core_rows(2), *demo_core_rows(2, code="DEMO SIM 2")])
+    provider = _provider(source_csv_bytes(rows))
+    assert [code.code for code in provider.summary.codes] == [DEMO_CODE, "DEMO SIM 2"]
+
+    batch = provider.fetch(f"  {DEMO_CODE} ")
+    assert batch.simulation_code == DEMO_CODE
+    assert len(batch.frame) == 2
+    for code, text in (("DEMO SIM 2", UNSAVABLE_CODE_TEXT), ("  ", BLANK_CODE_TEXT)):
+        with pytest.raises(SourceCsvError) as caught:
+            provider.fetch(code)
+        assert str(caught.value) == text
+        # 거부 글은 DB 등록 공급자의 코드 검증 글과 같다.
+        with pytest.raises(ValueError, match=re.escape(text)):
+            adapter.build_query("SELECT '{simulation_code}'", code)
+
+
+def test_provider_stops_when_the_picked_code_has_no_rows() -> None:
+    with pytest.raises(SourceCsvError) as caught:
+        _fetched(_with_custom(demo_core_rows(3)), code="DEMO-SIM-9")
+    assert str(caught.value) == "올린 파일에 시뮬레이션 코드 DEMO-SIM-9 의 행이 없습니다."
+
+
+def test_provider_applies_the_same_mpga_correction() -> None:
+    rows = _with_custom(demo_core_rows(5))
+    cells = [
+        ("MPGA TEST", "0.955"),
+        ("MPGA TEST", "0.95"),
+        ("MPGA TEST", "0.96"),
+        ("MPGA TEST", "0.94"),
+        ("DEMO_Chip_Attach", "0.955"),
+    ]
+    for row, (process, modules) in zip(rows, cells, strict=True):
+        row.update({"공정": process, "모듈수": modules})
+    assert _fetched(rows).frame["모듈수"].tolist() == [1, 1, 1, 0.94, 0.955]
+
+
+def test_provider_counts_custom_kinds_after_case_unification() -> None:
+    rows = demo_core_rows(6)
+    spellings = {"DEMO_CAPA_A": ("DEMO_HBM", "demo_hbm"), "DEMO_CAPA_B": ("Demo_Hbm", "Demo_Hbm")}
+    for index, row in enumerate(rows):
+        row["CUSTOM"] = spellings[row["Capa Code"]][index % 2]
+    provider = _provider(source_csv_bytes(rows))
+    batch = provider.fetch(DEMO_CODE)
+
+    assert provider.custom_kinds == 1
+    assert batch.frame["CUSTOM"].nunique() == 1
+
+
+def test_provider_stops_with_file_words_when_a_part_has_a_blank_custom() -> None:
+    rows = _with_custom(demo_core_rows(4))
+    rows[0]["CUSTOM"] = ""
+    provider = _provider(source_csv_bytes(rows))
+    with pytest.raises(ValueError, match="^CSV 파일에 CUSTOM 이 빈 Capa Code"):
+        provider.fetch(DEMO_CODE)
+    assert provider.custom_kinds is None
+
+
+def test_provider_reads_no_custom_table_switch_sql_or_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CSV 길은 CUSTOM 원천 표 환경변수 · 끄개 · 조회 SQL · 패키지 판정을 부르지 않는다 — 넷
+    모두 「안 됨」 이어도 파일 CUSTOM 으로 묶음을 낸다(끄개를 내려도 부품이 갈린다)."""
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("원천 CSV 길이 DB 등록 판정을 불렀다")
+
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    for name in (
+        "custom_table_problem",
+        "custom_source_problem",
+        "custom_source_on",
+        "is_bigdataquery_adapter_configured",
+        "is_bigdataquery_package_available",
+        "load_bigdataquery_module",
+    ):
+        monkeypatch.setattr(adapter, name, refuse)
+    rows = _with_custom(demo_core_rows(4))
+    batch = _fetched(rows)
+
+    assert batch.custom_check is None
+    assert batch.frame["CUSTOM"].tolist() == [PART_CUSTOM[row["Capa Code"]] for row in rows]
