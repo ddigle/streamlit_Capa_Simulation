@@ -72,6 +72,7 @@ from capa_simulation.services.equipment_contract import (
 from capa_simulation.services.legacy_comparison import COMPARISON_KEYS, COMPARISONS, plan_row_frame
 from capa_simulation.services.load_calculator import calculate_wafer_load
 from capa_simulation.services.product_type import (
+    BUFFER_DIVISION,
     EDP_PRODUCT_TYPE,
     HBM_PRODUCT_TYPE,
     TOP_DUMMY_DIVISION,
@@ -1775,6 +1776,58 @@ def test_the_route_exception_block_follows_the_source_formula_on_the_declared_ro
     )
     assert "| `Core` | 12 | 0 | 12 | 0 | 0 |" in output
     assert "| 그 밖 | 12 | 11 | 0 | 0 | 0 |" in output
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def _buffer_and_second_wf_process_source(frame: pd.DataFrame) -> pd.DataFrame:
+    """제품 A 는 HBM 으로 `Buffer` · `Top_Dummy` 줄을 더 싣고(선언 공정의 Core 줄이 바탕을 얻는다),
+    소요기준이 WF 가 아닌 공정 하나를 WF 로 — 선언 밖에도 소요기준 WF 경로가 있는 표본."""
+    hbm = _with_divisions(
+        frame, "PRODUCT_A", HBM_PRODUCT_TYPE, [BUFFER_DIVISION, TOP_DUMMY_DIVISION]
+    )
+    basis = hbm["소요기준"].astype("string").str.strip().str.upper()
+    process = hbm["공정"].astype("string")
+    (other, *_) = sorted(set(process.loc[basis.ne("WF").fillna(False)].dropna()))
+    hbm.loc[process.eq(other).fillna(False).astype(bool), "소요기준"] = "WF"
+    return hbm
+
+
+def test_the_route_exception_block_reads_only_the_declared_process_where_core_has_a_buffer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """선언 공정에 Buffer 줄이 있으면 Core 줄이 바탕(Buffer Wafer × Core 구분_Chip)을 얻어 신규에
+    서고 Top_Dummy 는 0 이다 — 원천 경로 값을 신규 값으로 실으면 `Core` · `TD0` · 그 밖(Buffer ·
+    시드의 Base)이 모두 든다. 선언 밖 공정의 소요기준 WF 경로는 원천 쪽에서도 빠진다 — 섞이면 그
+    키가 `기존에만` 으로 무리의 수를 부풀린다."""
+    declaration = _touching_declaration()
+    seeded = _seed_variant(
+        tmp_path / "seed" / "capa_simulation.duckdb", _buffer_and_second_wf_process_source
+    )
+    target = tmp_path / "declared" / "capa_simulation.duckdb"
+    target.parent.mkdir()
+    path = database_with_route_exceptions(seeded, target, declaration)
+    reqb = _source_of(path).tables["RQ_REQB"]
+    declared = route_load_targets(reqb, declaration)
+    wafer_routes = reqb["소요기준"].astype("string").str.strip().str.upper().eq("WF")
+    # 표본이 설계대로인지 — 선언 밖 공정에도 소요기준 WF 경로가 있고, 선언 경로에 세 무리가 있다.
+    assert (wafer_routes & ~declared).fillna(False).astype(bool).any()
+    divisions = reqb.loc[declared, "WF 구분"].astype("string").str.casefold().value_counts()
+    core, top_dummy = int(divisions["core"]), int(divisions[TOP_DUMMY_DIVISION.casefold()])
+    other = int(divisions.sum()) - core - top_dummy
+    assert min(core, top_dummy, int(divisions[BUFFER_DIVISION.casefold()])) > 0
+    assert _plant_declared_route_wafers(path, declaration) == int(divisions.sum())
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert _summary_line(output, "8-2E") == (
+        f"- 8-2E 선언 1 · Core {core}/{core} · TD0 {top_dummy}/{top_dummy} · 그밖 {other}/{other}"
+        " · Top비 -(0)"
+    )
+    assert f"| `Core` | {core} | {core} | 0 | 0 | 0 |" in output
+    assert f"| `Top_Dummy` | {top_dummy} | {top_dummy} | 0 | 0 | 0 |" in output
+    assert f"| 그 밖 | {other} | {other} | 0 | 0 | 0 |" in output
     assert checks.check_transcript(_summary(output)) == []
 
 
