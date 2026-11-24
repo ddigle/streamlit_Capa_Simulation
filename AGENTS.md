@@ -531,8 +531,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록에서 본다(`persistence/cache.scenario_has_revision` — 목록에 없으면 DB 로 한 번 더 본다, 회차마다 DB 를 열지 않는다).
   - **토글 회차는 그림과 상관없는 정렬 · 합치기를 다시 하지 않는다** — 세션 메모(`SessionSlot` `home_sort_memo` — 칸 이름은
     `home_state.HOME_SORT_MEMO_KEY`, 이름마다 두 벌)에 표시순서 준비(키 = HOME 계산 키의 표시순서 지문) · 공정 선택지 차례(공정
-    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 내용 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
-    과거 열 · 조각의 부품 판정(`product_parts.multi_part_products` — 키 = 내용 토큰, 계획 세부수량 과거 열과 제품별 비중 과거 조각이 한 칸)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
+    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 계산 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
+    과거 열 · 조각의 부품 판정(`product_parts.multi_part_products` — 키 = HOME 계산 키의 계산 토큰(5장 44 — 판정은 그 앞머리 내용 토큰이 정한다), 계획 세부수량 과거 열과 제품별 비중 과거 조각이 한 칸)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
@@ -6137,7 +6137,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목표는 `target_label`(정수 「110%」 — 값은 HOME 확보 기준의 판정 경계 1.095, 식 줄은 곱한 값 「109.5%」)로 적는다.
     ① 의 상위 제품은 근거 요약 `top_products` 의 `분류`(분류 행과 같은 이름표) 글이다.
   - 「구획」 칩(`st.pills`)은 선택지 다섯을 늘 고정하고 칸이 없으면 다섯 모두로 심는다(`seed_sections` — 구획이 넷이던
-    세션은 ③ 을 한 번 편다). 접힘 · 비가동 기준 · ④ 보기는 그림 기억 키에 들고(`CANVAS_SCHEMA_VERSION` 12), 접힌 ④·⑤ 의
+    세션은 ③ 을 한 번 편다). 접힘 · 비가동 기준 · ④ 보기는 그림 기억 키에 들고(`CANVAS_SCHEMA_VERSION` 14), 접힌 ④·⑤ 의
     「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
   - **지금 보는 달 표지(머리 밑줄 · 열 테두리)는 그림에 굽지 않고 그림 위 덧칠이다**(`selected_month_style` — 그 열 자리 SVG
     한 장, 그림에 굽던 것과 같은 자리 · 굵기 · 색, 그림 바깥 테두리를 그 위에 다시 그어 겹침 차례도 같다. 누름은 그림으로
