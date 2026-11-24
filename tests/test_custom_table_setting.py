@@ -2,8 +2,9 @@
 
 """CUSTOM 원천 표 환경변수(`CAPA_BDQ_CUSTOM_TABLE`)와 「서버 시작 점검」.
 
-DB 등록 · 자동 갱신의 상세 조회가 쓰는 판정(`company_bigdataquery_adapter.custom_table_problem`)
-하나를 Admin 「서버 시작 점검」 의 「CUSTOM 원천 표」 줄이 이 프로세스의 지금 환경으로 읽는다 —
+DB 등록 · 자동 갱신의 상세 조회가 쓰는 판정(`company_bigdataquery_adapter.custom_source_problem`
+— 끄개가 켜졌을 때만 표 이름 판정 `custom_table_problem`) 하나를 Admin 「서버 시작 점검」 의
+「CUSTOM 원천 표」 줄이 이 프로세스의 지금 환경으로 읽는다 —
 없거나 꼴이 틀리면 「실패」 라 펼침 제목이 「실패 있음」 이 되고 개발자 알림 `AD-01` 이 선다.
 값(사내 표 이름)은 표 · 복사 글 · 알림 어디에도 싣지 않는다. 같은 판정의 DB 등록 탭 저장 단추
 잠금 · `AD-04` 는 `tests/test_bigdataquery_registration.py` 가 본다. 끄개
@@ -102,15 +103,16 @@ def _start_check(app: AppTest) -> tuple[str, pd.DataFrame]:
 def test_the_start_row_follows_the_same_judgement_as_the_detail_query(
     monkeypatch: pytest.MonkeyPatch, value: str | None, problem: str | None
 ) -> None:
-    """줄은 상세 조회와 같은 판정(`custom_table_problem`)을 지금 환경에서 읽는다 — 정규식을 따로
-    두지 않는다. 쓸 수 있으면 「정상」 이고 변수 이름만, 아니면 「실패」 와 판정 글에 막히는 것을
-    잇는다."""
+    """줄은 상세 조회와 같은 판정(`custom_source_problem` — conftest 가 끄개를 지워 켬이라 표 이름
+    판정 `custom_table_problem` 과 같은 답)을 지금 환경에서 읽는다 — 정규식을 따로 두지 않는다.
+    쓸 수 있으면 「정상」 이고 변수 이름만, 아니면 「실패」 와 판정 글에 막히는 것을 잇는다."""
     if value is None:
         monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
     else:
         monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
 
     assert adapter.custom_table_problem() == problem
+    assert adapter.custom_source_problem() == problem
     label, status, reason = custom_table_step()
     assert label == CUSTOM_TABLE_STEP_LABEL
     if problem is None:

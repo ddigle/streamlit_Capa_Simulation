@@ -6244,12 +6244,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이다. 탭 맨 위 소제목은 없다(g2-25). 설정 줄 「BigDataQuery 설정」 도
     없다 — 다 준비됐으면 그리지 않고 빠진 것은 상태 알림 `AD-04` 만이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」,
     설계 규칙 UI-TXT-08 · UI-NTF-02). CUSTOM 원천 표 환경변수(`CAPA_BDQ_CUSTOM_TABLE`)가 없거나 꼴이 틀리면(상세 조회와 같은 판정
-    `custom_table_problem` 을 회차마다 한 번 읽는다) 저장 단추가 잠기고 풍선(`custom_locked_help`)이 그 변수 이름으로 까닭을 말하며,
+    `custom_source_problem` 을 회차마다 한 번 읽는다 — 끄개가 켜졌을 때만 `custom_table_problem`) 저장 단추가 잠기고 풍선(`custom_locked_help`)이 그 변수 이름으로 까닭을 말하며,
     `AD-04` 전문에 한 줄(`custom_table_notice` — 막히는 것과 채울 자리, 값은 싣지 않음)이 든다 — 전문 차례는 조회 SQL → CUSTOM 원천 표
     → 패키지(패키지 줄은 조회 SQL 이 다 섰을 때만), 짧은 글은 그 가운데 앞선 하나(`_configuration_short`), 저장 단추 풍선도 조회 SQL →
     CUSTOM 원천 표 → 고른 코드 차례로 앞선 하나다. 목록 조회는 그 표를 쓰지 않아 잠그지 않는다. 잠긴 단추가 눌려도 상세 조회가
     패키지를 부르기 전에 같은 판정 글로 멈춰 단추 곁 오류가 된다(설계 규칙 UI-INP-07 — 판정이 프로세스 환경이라 보인 회차와 누른
-    회차가 갈리지 않는다). 판정은 `custom_source_problem` 이라 CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 변수가 없어도
+    회차가 갈리지 않는다). CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 그 판정이 None 이라 변수가 없어도
     단추가 열리고 `AD-04` 에 그 줄이 없다(잠글 까닭이 없다). 그때 저장하면 저장 알림 뒤 셋째 칸(`REGISTRATION_CUSTOM_FLASH_KEY` — 켬이면
     `SC-05`, 끔이면 `SC-06`, 한 등록에 하나라 충돌 칸 index 1 그대로)에 사건 알림 `SC-06` 이 표 없이 알림창 · Alarm 에만 선다(전문 끝
     「끄개 CAPA_BDQ_CUSTOM_SOURCE=off · 시뮬레이션 코드 <코드>」 — 표 이름 · 값 없음, 시험
