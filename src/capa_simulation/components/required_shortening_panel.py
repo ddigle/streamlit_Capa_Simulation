@@ -791,6 +791,7 @@ def _render_body(
     )
     # 「누적 진척 설정」 의 「이번 주 값 넣기」 가 읽는 지금 화면 합계(`shortening_cumulative`) —
     # 전환이 고른 기준의 계획이다(아래 진척 비교가 기준선의 기준으로 바꿔 그려도 이 값은 그대로).
+    # 계획의 오늘 · 조회 달 · Cut-off · 출처는 넣기가 곁에 남기는 스냅숏(설비 0037)의 재료다.
     remember_screen_total(
         level_plan.units,
         scope,
@@ -798,6 +799,10 @@ def _render_body(
         selected=bool(selected),
         basis=plan.basis,
         refusal=None if save is None else save.refusal,
+        today=plan.today,
+        months=months,
+        cutoff_days=plan.cutoff_days,
+        provenance=None if save is None else save.provenance,
     )
     highlight = current_highlight()
     compared = load_selected_baseline(database_path, compare_id)

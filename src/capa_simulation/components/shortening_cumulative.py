@@ -43,8 +43,8 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from functools import partial
 from typing import Final
@@ -65,7 +65,21 @@ from capa_simulation.components.plotly_layout import (
     chart_canvas_layout,
     hover_chart_config,
 )
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.settings_box import render_settings_box
+from capa_simulation.components.shortening_cumulative_tags import (
+    FONT_PX,
+    MARK_HALF_PX,
+    NARROW_PLOT_WIDTH_PX,
+    PAD_PX,
+    PlacedTag,
+    PlotFrame,
+    Scene,
+    TagWish,
+    place_tags,
+    value_range,
+    value_ticks,
+)
 from capa_simulation.components.widget_generation import bump, generation, widget_key
 from capa_simulation.components.write_guard import (
     held_notice,
@@ -82,11 +96,14 @@ from capa_simulation.persistence.equipment_cache import (
     clear_shortening_progress_cache,
     get_equipment_repository,
     load_shortening_progress_log,
+    load_shortening_progress_reasons,
 )
 from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.services.required_shortening import level_percent
+from capa_simulation.services.shortening_baseline import BaselineProvenance
 from capa_simulation.services.shortening_progress_log import (
     PROGRESS_DAYS_MAX,
+    ProgressEntry,
     ProgressGoal,
     ProgressHeadline,
     ProgressLog,
@@ -98,6 +115,15 @@ from capa_simulation.services.shortening_progress_log import (
     record_week_options,
     screen_shortening_days,
     summarize_log,
+)
+from capa_simulation.services.shortening_progress_reasons import (
+    TAG_BASIS,
+    TAG_LAPSED,
+    TAG_OTHER,
+    ProgressSnapshotDraft,
+    ReasonItem,
+    WeekChange,
+    snapshot_draft,
 )
 from capa_simulation.session_slot import SessionSlot
 from capa_simulation.sidebar_status import keeps_app_run_open
@@ -146,6 +172,9 @@ _SAVED_BY_PREFIX = "shortening_cumulative"
 # 고른 기록 주차(`YY-W##`) · 「이번 주 값 넣기」 가 넣은 (주차, 일수) · 그 세대 칸이 처음 본 저장값.
 _CHOSEN_WEEK_KEY = "shortening_cumulative_chosen_week_v1"
 _FILL_KEY = "shortening_cumulative_fill_v1"
+# 「이번 주 값 넣기」 가 그 화면에서 떠 둔 스냅숏(주차, `ProgressSnapshotDraft`) — 그 주를 저장할 때
+# 곁에 # 남긴다(설비 0037). 다른 주를 고르거나 저장 · 지우면 걷는다.
+_FILL_SNAPSHOT_KEY = "shortening_cumulative_fill_snapshot_v1"
 _RECORD_SEEN_KEY = "shortening_cumulative_record_seen_v1"
 _GOAL_SEEN_KEY = "shortening_cumulative_goal_seen_v1"
 _RECORD_SAVE_KEY = "shortening_cumulative_record_save"
@@ -162,13 +191,23 @@ _GOAL_SAVE_NAME = "shortening_cumulative_goal"
 _TABLE_ROWS_SHOWN = 8
 _SPARK_WIDTH = 150
 _SPARK_HEIGHT = 32
-_CHART_HEIGHT_PX = 260
+# 「주차별」 그림 — 높이 · 여백은 고정이다(꼬리표 자리를 픽셀로 정한다 —
+# `shortening_cumulative_tags`).
+_CHART_HEIGHT_PX = 340
+_CHART_MARGIN: Final[Mapping[str, int]] = {"l": 56, "r": 24, "t": 24, "b": 36}
+_PLOT_HEIGHT_PX = _CHART_HEIGHT_PX - _CHART_MARGIN["t"] - _CHART_MARGIN["b"]
 _MAX_AXIS_LABELS = 14
+# 까닭 풍선 「입력 바뀜」 줄에 하나씩 적는 Cut-off 바뀐 공정 수의 위끝.
+_CUTOFF_NOTES_MAX = 3
 
 
 @dataclass(frozen=True)
 class ScreenTotal:
-    """본문이 마지막으로 그린 화면의 단축 필요일수 합계와 그 범위 · 넣지 않을 까닭."""
+    """본문이 마지막으로 그린 화면의 단축 필요일수 합계와 그 범위 · 넣지 않을 까닭.
+
+    `units` 이하는 넣기 스냅숏(설비 0037)의 재료다 — 고른 목표의 계획 호기 표(참조만 — 잠긴 표일 수
+    있어 고치지 않는다) · 범위 공정 · 그 계획의 오늘 · 조회 달 · Cut-off · 계산의 출처. 넣기를 누를
+    때만 스냅숏으로 옮긴다(`snapshot_draft`)."""
 
     days: int
     level_percent: int
@@ -177,12 +216,35 @@ class ScreenTotal:
     basis: str
     """그 합계의 현재 일정 기준(조건 카드 전환 — Static | 설비 마스터)."""
     refusal: str | None = None
+    units: pd.DataFrame | None = field(default=None, compare=False, repr=False)
+    scope: tuple[str, ...] = ()
+    plan_today: date | None = None
+    months: tuple[int, int] | None = None
+    cutoff_days: tuple[tuple[str, int], ...] = ()
+    provenance: BaselineProvenance | None = None
+
+    def snapshot(self) -> ProgressSnapshotDraft | None:
+        """넣기로 남길 스냅숏 — 재료가 없으면(시험이 합계만 세운 칸 등) None 이다."""
+        if self.units is None or self.plan_today is None or self.months is None:
+            return None
+        return snapshot_draft(
+            self.units,
+            self.scope,
+            level_percent=self.level_percent,
+            basis=self.basis,
+            selected=self.selected,
+            today=self.plan_today,
+            months=self.months,
+            cutoff_days=dict(self.cutoff_days),
+            provenance=self.provenance,
+        )
 
 
 _SCREEN_TOTAL: Final[SessionSlot[ScreenTotal]] = SessionSlot(SCREEN_TOTAL_KEY, ScreenTotal)
 _WEEKS_OPEN: Final[SessionSlot[bool]] = SessionSlot(WEEKS_OPEN_KEY, bool, lambda: False)
 _CHOSEN_WEEK: Final[SessionSlot[str]] = SessionSlot(_CHOSEN_WEEK_KEY, str)
 _FILL: Final[SessionSlot[tuple[object, ...]]] = SessionSlot(_FILL_KEY, tuple)
+_FILL_SNAPSHOT: Final[SessionSlot[tuple[object, ...]]] = SessionSlot(_FILL_SNAPSHOT_KEY, tuple)
 _RECORD_SEEN: Final[SessionSlot[tuple[object, ...]]] = SessionSlot(_RECORD_SEEN_KEY, tuple)
 _GOAL_SEEN: Final[SessionSlot[tuple[object, ...]]] = SessionSlot(_GOAL_SEEN_KEY, tuple)
 
@@ -195,11 +257,16 @@ def remember_screen_total(
     selected: bool,
     basis: str,
     refusal: str | None,
+    today: date | None = None,
+    months: Sequence[int] = (),
+    cutoff_days: Mapping[str, int] | None = None,
+    provenance: BaselineProvenance | None = None,
 ) -> None:
     """본문(`required_shortening_panel._render_body`)이 회차마다 적는다 — 고른 목표의 계획 · 범위
     공정의 단축 필요일수 합계(`screen_shortening_days`)와, 기준선을 남길 수 없는 화면이면 그
     까닭. `units` 는 현재 일정 기준 전환이 고른 계획(`basis`)의 것이다 — 진척 비교가 기준선의
-    기준으로 바꿔 그리는 계획이 아니다."""
+    기준으로 바꿔 그리는 계획이 아니다. 계획의 오늘 · 조회 달 · Cut-off · 출처는 넣기 스냅숏의
+    재료이고, 표는 참조로만 든다(회차마다 옮겨 담지 않는다)."""
     _SCREEN_TOTAL.set(
         ScreenTotal(
             days=screen_shortening_days(units, scope),
@@ -208,6 +275,14 @@ def remember_screen_total(
             selected=selected,
             basis=basis,
             refusal=refusal,
+            units=units,
+            scope=tuple(str(process) for process in scope),
+            plan_today=today,
+            months=(int(months[0]), int(months[-1])) if months else None,
+            cutoff_days=tuple(
+                (str(process), int(days)) for process, days in (cutoff_days or {}).items()
+            ),
+            provenance=provenance,
         )
     )
 
@@ -395,36 +470,137 @@ def _axis_weeks(log: ProgressLog) -> tuple[ProgressWeek, ...]:
     return tuple(start.shifted(offset) for offset in range(start.weeks_until(end) + 1))
 
 
-def weekly_figure(log: ProgressLog) -> go.Figure:
-    """주차별 꺾은선 + 목표선(B 시안). 선은 기록만 잇는다 — 기록 없는 주는 건너 이어 그린다. 첫
-    기록은 속 빈 회색 점, 줄어든 주는 ●, 늘어난 주는 주황 ▲ 와 「+N」 이다. 목표가 있으면 목표
-    일수에 가로 점선과 이름, 마지막 기록이 목표 주보다 앞이고 도달하지 못했으면 거기서 목표 점까지
-    점선."""
+@dataclass(frozen=True)
+class _WeeklyLayout:
+    """「주차별」 그림의 자리 — 축 · 점 · 까닭 · 피할 것과 판정 칸에서 정한 꼬리표."""
+
+    axis: tuple[ProgressWeek, ...]
+    index: Mapping[ProgressWeek, int]
+    xs: list[int]
+    ys: list[int]
+    reasons: list[WeekChange | None]
+    last: ProgressEntry | None
+    plain: tuple[tuple[int, str], ...]
+    projection: tuple[tuple[float, float], tuple[float, float]] | None
+    x_range: tuple[float, float]
+    y_range: tuple[float, float]
+    scene: Scene
+    wishes: tuple[TagWish, ...]
+    narrow: PlotFrame
+    placed: Mapping[int, PlacedTag]
+
+
+def _weekly_layout(
+    log: ProgressLog,
+    changes: Mapping[ProgressWeek, WeekChange] | None,
+    label: Callable[[str], str],
+) -> _WeeklyLayout:
+    """`weekly_figure` 의 자리 셈 — 맞는 까닭(`balanced`)이 있는 주만 꼬리표를 바라고, 근거 없는
+    늘어난 주의 「+N일」 글은 꼬리표가 피할 것이다. 꼬리표 자리는 판정 칸에서 정한다."""
     axis = _axis_weeks(log)
     index = {week: position for position, week in enumerate(axis)}
     entries = log.entries
-    changes = log.changes()
+    deltas = log.changes()
     goal = log.goal.goal
+    known = changes or {}
     xs = [index[entry.week] for entry in entries]
     ys = [entry.days for entry in entries]
-    colors, symbols, sizes = [], [], []
-    for position, change in enumerate(changes):
-        if position == 0:
-            colors.append(tokens.SURFACE)
-            symbols.append("circle")
-            sizes.append(9)
-        elif change is not None and change > 0:
-            colors.append(tokens.DELTA_INCREASE)
-            symbols.append("triangle-up")
-            sizes.append(12)
-        else:
-            colors.append(tokens.ACCENT)
-            symbols.append("circle")
-            sizes.append(9)
+    reasons = [_matching_reason(known, entries, position) for position in range(len(entries))]
+    backed = [reason is not None and reason.balanced for reason in reasons]
+    # 마지막 기록이 축 끝이면(목표 주가 앞이거나 없음) 오른쪽에 그 값 글자 자리를 둔다.
+    room = 1.6 if entries and index[entries[-1].week] == len(axis) - 1 else 0.0
+    x_range = (-0.5, max(len(axis) - 0.5, 0.5) + room)
+    y_range = value_range(ys, None if goal is None else goal.days, _PLOT_HEIGHT_PX)
+    last = entries[-1] if entries else None
+    projection: tuple[tuple[float, float], tuple[float, float]] | None = (
+        ((index[last.week], last.days), (index[goal.week], goal.days))
+        if goal is not None and last is not None and last.week < goal.week and last.days > goal.days
+        else None
+    )
+    plain = tuple(
+        (position, _signed_days(delta))
+        for position, delta in enumerate(deltas)
+        if delta is not None and delta > 0 and not backed[position]
+    )
+    scene = Scene(
+        points=tuple(zip(xs, ys, strict=True)),
+        projection=projection,
+        goal_days=None if goal is None else goal.days,
+        goal_text="" if goal is None else _goal_line_text(goal),
+        end_text="" if last is None else _end_text(last.days, last.week),
+        plain_labels=plain,
+    )
+    wishes = tuple(
+        TagWish(position, reason.change, _tag_levels(reason, label))
+        for position, reason in enumerate(reasons)
+        if reason is not None and reason.balanced and reason.change != 0
+    )
+    narrow = PlotFrame(NARROW_PLOT_WIDTH_PX, _PLOT_HEIGHT_PX, x_range, y_range)
+    return _WeeklyLayout(
+        axis=axis,
+        index=index,
+        xs=xs,
+        ys=ys,
+        reasons=reasons,
+        last=last,
+        plain=plain,
+        projection=projection,
+        x_range=x_range,
+        y_range=y_range,
+        scene=scene,
+        wishes=wishes,
+        narrow=narrow,
+        placed=place_tags(narrow, scene, wishes),
+    )
+
+
+def _matching_reason(
+    known: Mapping[ProgressWeek, WeekChange], entries: Sequence[ProgressEntry], position: int
+) -> WeekChange | None:
+    """그 기록의 까닭 — 앞 주 · 증감이 그리는 기록과 맞을 때만(캐시가 다른 때의 기록으로 센 까닭이
+    엉뚱한 주에 붙지 않게). 첫 기록은 까닭이 없다."""
+    if position == 0:
+        return None
+    reason = known.get(entries[position].week)
+    previous = entries[position - 1]
+    if reason is None or reason.previous != previous.week:
+        return None
+    return reason if reason.change == entries[position].days - previous.days else None
+
+
+def weekly_figure(
+    log: ProgressLog,
+    changes: Mapping[ProgressWeek, WeekChange] | None = None,
+    *,
+    label: Callable[[str], str] = str,
+) -> go.Figure:
+    """주차별 꺾은선 + 목표선(B 시안) + 오르내린 주의 까닭 꼬리표(2026-11-21 보드 답 중간-1).
+
+    선은 기록만 잇는다 — 기록 없는 주는 건너 이어 그린다. 첫 기록은 속 빈 회색 점이다. 세로축은 목표
+    (없으면 가장 낮은 기록) 아래부터다(0 이 아님 — 보드 답 q-axis a). 목표가 있으면 목표 일수에 가로
+    점선과 이름(선 아래 오른쪽 — 목표가 0일 가까이라 축이 0 에서 잘리면 이름 자리만큼 0 아래로
+    내리고 눈금은 0 부터다), 마지막 기록이 목표 주보다 앞이고 도달하지 못했으면 거기서 목표 점까지
+    점선이고, 마지막 기록 값 글은 그 점 오른쪽 위다(점선이 숫자를 지나지 않게).
+
+    `changes`(`explain_week_changes` — 넣기 스냅숏이 있는 두 주 사이의 까닭)가 맞는 주는 5일 이상
+    오르내렸으면 그 주 점 곁에 곧은 꼬리표(「▲ +15일」 + 항목 둘까지)를 단다 — 자리는
+    `shortening_cumulative_tags.place_tags` 가 판정 그림 칸에서 정하고, 그 주 점은 큰 ▲ · ▼,
+    오른 주는 들어오는 구간을 굵은 주황 선으로 칠한다. 그 밖의 근거 있는 주는 작은 ▲(오름) ·
+    ●(내림)만이고, 근거 없는 주는 늘어난 주 ▲ 와 「+N일」 · 줄어든 주 ● 다. 점 · 꼬리표를
+    가리키면 그 주 까닭 전부 · 「그 밖」 · 합이 풍선에 선다. `label` 은 공정 표시명(원본 → 화면
+    글)이다.
+    """
+    layout = _weekly_layout(log, changes, label)
+    axis, index, entries, deltas = layout.axis, layout.index, log.entries, log.changes()
+    xs, ys, reasons, placed = layout.xs, layout.ys, layout.reasons, layout.placed
+    goal, last, plain, projection = log.goal.goal, layout.last, layout.plain, layout.projection
+    x_range, y_range, narrow = layout.x_range, layout.y_range, layout.narrow
     hover = [
-        f"{entry.week.label} · {_days(entry.days)}"
-        + ("" if change is None else f" · 지난 기록 대비 {_signed_days(change)}")
-        for entry, change in zip(entries, changes, strict=True)
+        _point_hover(entry, delta, reason, label)
+        for entry, delta, reason in zip(entries, deltas, reasons, strict=True)
+    ]
+    marks = [
+        _marker(position, delta, placed.get(position)) for position, delta in enumerate(deltas)
     ]
     figure = go.Figure()
     figure.add_trace(
@@ -433,49 +609,34 @@ def weekly_figure(log: ProgressLog) -> go.Figure:
             y=ys,
             mode="lines+markers",
             line={"color": tokens.ACCENT, "width": 2},
-            marker={
-                "color": colors,
-                "symbol": symbols,
-                "size": sizes,
-                "line": {
-                    "color": [tokens.TEXT_MUTED] + [tokens.SURFACE] * (len(xs) - 1),
-                    "width": 2,
-                },
-            },
+            marker=_marker_style(marks),
             hovertext=hover,
             hoverinfo="text",
             showlegend=False,
         )
     )
-    rises = [
-        (x, y, change)
-        for x, y, change in zip(xs, ys, changes, strict=True)
-        if change is not None and change > 0
-    ]
-    if rises:
+    if plain:
         figure.add_trace(
             go.Scatter(
-                x=[x for x, _, _ in rises],
-                y=[y for _, y, _ in rises],
+                x=[xs[position] for position, _ in plain],
+                y=[ys[position] for position, _ in plain],
                 mode="text",
-                text=[_signed_days(change) for _, _, change in rises],
+                text=[text for _, text in plain],
                 textposition="top center",
                 textfont={"color": tokens.DELTA_INCREASE, "size": 12},
                 hoverinfo="skip",
                 showlegend=False,
             )
         )
-    top = max([*ys, goal.days if goal is not None else 0, 1])
     if goal is not None:
         figure.add_hline(
             y=goal.days,
             line={"color": tokens.TEXT, "width": 1.5, "dash": "dash"},
-            annotation_text=f"최종 목표 {_days(goal.days)} · {goal.week.label}",
-            annotation_position="top right",
+            annotation_text=_goal_line_text(goal),
+            annotation_position="bottom right",
             annotation_font={"color": tokens.TEXT, "size": 12},
         )
-        last = entries[-1] if entries else None
-        if last is not None and last.week < goal.week and last.days > goal.days:
+        if projection is not None and last is not None:
             figure.add_trace(
                 go.Scatter(
                     x=[index[last.week], index[goal.week]],
@@ -487,46 +648,283 @@ def weekly_figure(log: ProgressLog) -> go.Figure:
                     showlegend=False,
                 )
             )
-    if entries:
-        last = entries[-1]
+    _draw_tags(figure, placed, xs, ys, marks, hover, narrow.days_per_px)
+    if last is not None:
         figure.add_annotation(
             x=index[last.week],
             y=last.days,
             text=f"<b>{_days(last.days)}</b> ({last.week.label})",
             showarrow=False,
             xanchor="left",
-            yanchor="top",
+            yanchor="bottom",
             xshift=8,
-            yshift=-4,
+            yshift=5,
             font={"color": tokens.TEXT, "size": 12},
         )
-    # 마지막 기록이 축 끝이면(목표 주가 앞이거나 없음) 오른쪽에 그 값 글자 자리를 둔다.
-    room = 1.6 if entries and index[entries[-1].week] == len(axis) - 1 else 0.0
     step = max(1, -(-len(axis) // _MAX_AXIS_LABELS))
     ticks = list(range(0, len(axis), step))
+    day_ticks = value_ticks(y_range)
     figure.update_layout(
         **chart_canvas_layout(font_size=12),
         height=_CHART_HEIGHT_PX,
-        margin={"l": 48, "r": 24, "t": 24, "b": 36},
+        margin=dict(_CHART_MARGIN),
         hovermode="closest",
         xaxis={
             "tickvals": ticks,
             "ticktext": [axis[tick].label for tick in ticks],
-            "range": [-0.5, max(len(axis) - 0.5, 0.5) + room],
+            "range": list(x_range),
             "fixedrange": True,
             "showgrid": False,
             "zeroline": False,
+            "automargin": False,
         },
         yaxis={
-            "range": [0, top * 1.18],
+            "range": list(y_range),
             "fixedrange": True,
             "ticksuffix": "일",
             "gridcolor": tokens.BAR_TRACK,
             "zeroline": False,
+            "automargin": False,
+            # 0 아래 칸(목표 이름 자리)에는 눈금이 없다 — 고른 눈금에는 접미사가 붙지 않아 글을
+            # 함께 준다.
+            **(
+                {}
+                if day_ticks is None
+                else {
+                    "tickmode": "array",
+                    "tickvals": list(day_ticks),
+                    "ticktext": [_days(value) for value in day_ticks],
+                }
+            ),
         },
     )
     apply_axis_text_color(figure)
     return figure
+
+
+@dataclass(frozen=True)
+class _Mark:
+    """점 하나의 표지 — 색 · 모양 · 크기 · 테 색."""
+
+    color: str
+    symbol: str
+    size: int
+    edge: str
+
+
+def _marker(position: int, delta: int | None, tag: PlacedTag | None) -> _Mark:
+    """첫 기록은 속 빈 회색 점, 꼬리표가 선 주는 큰 ▲ · ▼, 그 밖에 늘어난 주는 작은 ▲, 줄어든 주는
+    ●(토큰은 부를 때 읽는다)."""
+    if position == 0:
+        return _Mark(tokens.SURFACE, "circle", 9, tokens.TEXT_MUTED)
+    if tag is not None:
+        if tag.up:
+            return _Mark(tokens.DELTA_INCREASE, "triangle-up", 17, tokens.SURFACE)
+        return _Mark(tokens.ACCENT, "triangle-down", 17, tokens.SURFACE)
+    if delta is not None and delta > 0:
+        return _Mark(tokens.DELTA_INCREASE, "triangle-up", 12, tokens.SURFACE)
+    return _Mark(tokens.ACCENT, "circle", 9, tokens.SURFACE)
+
+
+def _marker_style(marks: Sequence[_Mark]) -> dict[str, object]:
+    return {
+        "color": [mark.color for mark in marks],
+        "symbol": [mark.symbol for mark in marks],
+        "size": [mark.size for mark in marks],
+        "line": {"color": [mark.edge for mark in marks], "width": 2},
+    }
+
+
+def _draw_tags(
+    figure: go.Figure,
+    placed: Mapping[int, PlacedTag],
+    xs: Sequence[int],
+    ys: Sequence[int],
+    marks: Sequence[_Mark],
+    hover: Sequence[str],
+    days_per_px: float,
+) -> None:
+    """꼬리표(annotation — 데이터 자리 + 픽셀 띄움) · 곧은 지시선(데이터 단위 선 도형) · 오른 주의
+    굵은 주황 구간과 그 끝 점 표지를 그린다. 구간은 꺾은선 위 · 점 아래라 끝 점을 다시 얹는다."""
+    if not placed:
+        return
+    rises = sorted(position for position, tag in placed.items() if tag.up and position > 0)
+    if rises:
+        seg_x: list[int | None] = []
+        seg_y: list[int | None] = []
+        for position in rises:
+            seg_x += [xs[position - 1], xs[position], None]
+            seg_y += [ys[position - 1], ys[position], None]
+        figure.add_trace(
+            go.Scatter(
+                x=seg_x,
+                y=seg_y,
+                mode="lines",
+                line={"color": tokens.DELTA_INCREASE, "width": 3.6},
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        ends = sorted({end for position in rises for end in (position - 1, position)})
+        figure.add_trace(
+            go.Scatter(
+                x=[xs[end] for end in ends],
+                y=[ys[end] for end in ends],
+                mode="markers",
+                marker=_marker_style([marks[end] for end in ends]),
+                hovertext=[hover[end] for end in ends],
+                hoverinfo="text",
+                showlegend=False,
+            )
+        )
+    for position, tag in sorted(placed.items()):
+        sign = 1 if tag.up else -1
+        value = ys[position]
+        figure.add_shape(
+            type="line",
+            xref="x",
+            yref="y",
+            x0=xs[position],
+            x1=xs[position],
+            y0=value + sign * MARK_HALF_PX * days_per_px,
+            y1=value + sign * tag.lift_px * days_per_px,
+            line={"color": tokens.BORDER_STRONG, "width": 1},
+        )
+        color = tokens.DELTA_INCREASE if tag.up else tokens.ACCENT
+        head, *rest = tag.lines
+        text = "<br>".join(
+            [f'<span style="color:{color}"><b>{html.escape(head)}</b></span>']
+            + [html.escape(line) for line in rest]
+        )
+        anchor = {"middle": "center", "start": "left", "end": "right"}[tag.anchor]
+        figure.add_annotation(
+            x=xs[position],
+            y=value,
+            text=text,
+            showarrow=False,
+            xanchor=anchor,
+            align=anchor,
+            xshift=tag.shift_px,
+            yanchor="bottom" if tag.up else "top",
+            yshift=sign * tag.lift_px,
+            bgcolor=tokens.CHART_CANVAS,
+            borderpad=PAD_PX,
+            font={"color": tokens.TEXT_MUTED, "size": FONT_PX},
+            hovertext=hover[position],
+        )
+
+
+def _goal_line_text(goal: ProgressGoal) -> str:
+    return f"최종 목표 {_days(goal.days)} · {goal.week.label}"
+
+
+def _end_text(days: int, week: ProgressWeek) -> str:
+    return f"{_days(days)} ({week.label})"
+
+
+def _item_text(item: ReasonItem, label: Callable[[str], str], *, units: bool = True) -> str:
+    """항목 글 — 진척 항목은 「공정 꼬리표 n대」, 그 밖은 꼬리표(대수 · 건수가 있으면 붙임)."""
+    count = f" {item.units}대" if units and item.units else ""
+    if item.tag == TAG_OTHER:
+        return f"{TAG_OTHER} {item.count}건"
+    if item.process is not None:
+        return f"{label(item.process)} {item.tag}{count}"
+    if item.tag in (TAG_LAPSED, TAG_BASIS):
+        return f"{item.tag}{count}"
+    return item.tag
+
+
+def _tag_levels(change: WeekChange, label: Callable[[str], str]) -> tuple[tuple[str, ...], ...]:
+    """꼬리표 줄을 줄이는 차례 — 항목 둘 → 항목 하나 → 대수를 뗀 항목 하나."""
+    items = change.drawn()
+    if not items:
+        return ()
+    head = ("▲ " if change.change > 0 else "▼ ") + _signed_days(change.change)
+    texts = [_item_text(item, label) for item in items]
+    levels: list[tuple[str, ...]] = []
+    if len(texts) >= 2:
+        levels.append((head, texts[0], texts[1]))
+    levels.append((head, texts[0]))
+    short = _item_text(items[0], label, units=False)
+    if short != texts[0]:
+        levels.append((head, short))
+    return tuple(levels)
+
+
+def _glyph(days: int) -> str:
+    """풍선 항목 앞 표지 — 늘어남 ▲ · 줄어듦 ▼ 이고, 0일(오르내림이 상쇄된 「그 밖」)은 표지가 없다
+    (`_change_markup` 의 같으면 표지 없음과 같다)."""
+    if days > 0:
+        return "▲ "
+    if days < 0:
+        return "▼ "
+    return ""
+
+
+def _item_detail(item: ReasonItem, label: Callable[[str], str]) -> str:
+    if item.parts:
+        return " · ".join(f"{label(process)} {_signed_days(days)}" for process, days in item.parts)
+    return item.note
+
+
+def _point_hover(
+    entry: ProgressEntry,
+    delta: int | None,
+    reason: WeekChange | None,
+    label: Callable[[str], str],
+) -> str:
+    """점 · 꼬리표 풍선 — 그 주 값 · 지난 기록 대비, 그리고 까닭 항목 전부 · 「그 밖」 · 합과
+    덧말."""
+    lines = [
+        f"{entry.week.label} · {_days(entry.days)}"
+        + ("" if delta is None else f" · 지난 기록 대비 {_signed_days(delta)}")
+    ]
+    if delta is not None:
+        lines += _reason_lines(delta, reason, label)
+    return "<br>".join(html.escape(line) for line in lines)
+
+
+def _reason_lines(delta: int, reason: WeekChange | None, label: Callable[[str], str]) -> list[str]:
+    if reason is None:
+        return (
+            ["까닭 근거 없음 — 「이번 주 값 넣기」 로 저장한 두 주 사이만 셉니다"] if delta else []
+        )
+    lines = []
+    if reason.weeks_between > 1:
+        lines.append(
+            f"{reason.previous.label} → {reason.week.label} · {reason.weeks_between}주 사이"
+        )
+    if not reason.balanced:
+        lines.append("까닭 근거가 지난 기록 대비와 맞지 않아 싣지 않습니다")
+        return lines
+    for item in reason.listed():
+        detail = _item_detail(item, label)
+        lines.append(
+            f"{_glyph(item.days)}{_item_text(item, label)} {_signed_days(item.days)}"
+            + (f" ({detail})" if detail else "")
+        )
+    lines.append(f"합 {_signed_days(reason.total)} = 지난 기록 대비 {_signed_days(delta)}")
+    if reason.virtual is not None:
+        lines.append(f"추가 호기 {reason.virtual[0]} → {reason.virtual[1]}대")
+    lines += [f"{label(process)} — 호기 이름이 바뀌었을 수 있습니다" for process in reason.renamed]
+    inputs = [*reason.inputs, *_cutoff_notes(reason.cutoffs, label)]
+    if inputs:
+        lines.append("입력 바뀜 · " + " · ".join(inputs))
+    return lines
+
+
+def _cutoff_notes(
+    cutoffs: Sequence[tuple[str, int, int]], label: Callable[[str], str]
+) -> list[str]:
+    """Cut-off 가 바뀐 공정 — 표시명으로 `_CUTOFF_NOTES_MAX` 개까지, 넘으면 「외 n개 공정」."""
+    notes = [
+        f"{label(process)} Cut-off {before} → {after}일"
+        for process, before, after in cutoffs[:_CUTOFF_NOTES_MAX]
+    ]
+    rest = len(cutoffs) - _CUTOFF_NOTES_MAX
+    if rest > 0:
+        notes.append(f"외 {rest}개 공정")
+    return notes
 
 
 def _toggle_weeks() -> None:
@@ -560,12 +958,26 @@ def _strip_body(database_path: str, today: date) -> None:
                 width="content",
             )
         if opened:
+            changes = _week_changes(database_path, log)
+            label = get_process_labels().label if changes else str
             st.plotly_chart(
-                weekly_figure(log),
+                weekly_figure(log, changes, label=label),
                 key=_WEEKS_CHART_KEY,
                 config=hover_chart_config(),
                 width="stretch",
             )
+
+
+def _week_changes(database_path: str, log: ProgressLog) -> dict[ProgressWeek, WeekChange]:
+    """「주차별」 을 편 회차의 까닭 — 넣기 스냅숏 두 주에서 그릴 때 센 값(저장하지 않는다)을 캐시
+    경계(`equipment_cache.load_shortening_progress_reasons` — 기록과 같은 쓰기 세대)에서 받는다.
+    스냅숏을 못 읽으면 까닭 없이 그린다 — 기록 선 · 표지는 그대로 선다(까닭은 덧붙이는 값이다)."""
+    if len(log.entries) < 2:
+        return {}
+    try:
+        return load_shortening_progress_reasons(database_path)
+    except BOOTSTRAP_ERRORS:
+        return {}
 
 
 # ------------------------------------------------------------------ 팝업
@@ -589,16 +1001,36 @@ def _choose_week(widget: str) -> None:
     picked = SessionSlot(widget, str).peek()
     if picked is not None:
         _CHOSEN_WEEK.set(picked)
-    _FILL.clear()
+    _forget_fill()
     bump(_RECORD_GENERATION_KEY)
 
 
-def _fill_this_week(week_label: str, days: int) -> None:
+def _fill_this_week(week_label: str, days: int, total: ScreenTotal | None = None) -> None:
     """「이번 주 값 넣기」 콜백 — 이번 주를 고르고 그 칸을 지금 화면 합계로 채운다(고쳐 적을 수
-    있다)."""
+    있다). 그 화면의 호기 표를 스냅숏으로 떠 두어 그 주를 저장할 때 곁에 남긴다(설비 0037 — 칸을
+    고쳐 적어도 남기고, 그 차이는 까닭 「손 고침」 이다)."""
     _CHOSEN_WEEK.set(week_label)
     _FILL.set((week_label, days))
+    draft = None if total is None else total.snapshot()
+    if draft is None:
+        _FILL_SNAPSHOT.clear()
+    else:
+        _FILL_SNAPSHOT.set((week_label, draft))
     bump(_RECORD_GENERATION_KEY)
+
+
+def _forget_fill() -> None:
+    _FILL.clear()
+    _FILL_SNAPSHOT.clear()
+
+
+def _fill_snapshot(week: ProgressWeek) -> ProgressSnapshotDraft | None:
+    """그 주에 넣기가 떠 둔 스냅숏(없으면 None)."""
+    held = _FILL_SNAPSHOT.peek()
+    if held is None or len(held) != 2 or held[0] != week.label:
+        return None
+    draft = held[1]
+    return draft if isinstance(draft, ProgressSnapshotDraft) else None
 
 
 def _seen_days(log: ProgressLog, week: ProgressWeek) -> int | None:
@@ -693,6 +1125,7 @@ def _save_record(
     value: object,
     expected: int | None,
     saved_by: str | None,
+    snapshot: ProgressSnapshotDraft | None = None,
 ) -> None:
     try:
         days = normalize_progress_days(value)
@@ -705,7 +1138,7 @@ def _save_record(
     try:
         repository = get_equipment_repository(database_path)
         wrote = repository.save_shortening_progress_entry(
-            week, days, expected_days=expected, recorded_by=saved_by or ""
+            week, days, expected_days=expected, recorded_by=saved_by or "", snapshot=snapshot
         )
     except ProgressLogConflictError as exc:
         clear_shortening_progress_cache()
@@ -715,7 +1148,7 @@ def _save_record(
             kind="warning",
             icon=":material/sync_problem:",
         )
-        _FILL.clear()
+        _forget_fill()
         bump(_RECORD_GENERATION_KEY)
         st.rerun()
     except BOOTSTRAP_ERRORS as exc:
@@ -735,7 +1168,7 @@ def _save_record(
         message = f"누적 진척 기록을 저장했습니다 — {week.label} · {_days(days)}."
         note_notice(notices, _RECORD_FLASH_KEY, message)
         queue_flash(_RECORD_FLASH_KEY, message)
-    _FILL.clear()
+    _forget_fill()
     bump(_RECORD_GENERATION_KEY)
     st.rerun()
 
@@ -774,7 +1207,7 @@ def _delete_record(
         queue_flash(_RECORD_FLASH_KEY, message)
     elif held_notice(_RECORD_FLASH_KEY) is None:
         queue_flash(_RECORD_FLASH_KEY, f"이미 지워진 기록입니다 — {week.label}.", kind="info")
-    _FILL.clear()
+    _forget_fill()
     bump(_RECORD_GENERATION_KEY)
     st.rerun()
 
@@ -835,7 +1268,7 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
             key=_FILL_BUTTON_KEY,
             icon=":material/input:",
             on_click=_fill_this_week,
-            args=(this_week.label, 0 if total is None else total.days),
+            args=(this_week.label, 0 if total is None else total.days, total),
             disabled=_fill_locked(total),
             help=_fill_help(total, this_week),
         )
@@ -853,7 +1286,9 @@ def _render_record_form(log: ProgressLog, today: date, database_path: str) -> No
         )
     slot = render_flash(_RECORD_FLASH_KEY)
     if save:
-        _save_record(database_path, slot, week, value, expected, saved_by)
+        _save_record(
+            database_path, slot, week, value, expected, saved_by, snapshot=_fill_snapshot(week)
+        )
     elif delete:
         _delete_record(database_path, slot, week, expected)
 
@@ -1036,7 +1471,7 @@ class CumulativeProgress:
     def open_cumulative_settings(self) -> None:
         """사이드바 상자의 콜백 — 지난번 고른 주 · 넣은 값을 걷고 칸 세대를 올려 저장본에서 연다."""
         _CHOSEN_WEEK.clear()
-        _FILL.clear()
+        _forget_fill()
         bump(_RECORD_GENERATION_KEY)
         bump(_GOAL_GENERATION_KEY)
         self.host.open(CUMULATIVE_DIALOG, CUMULATIVE_BUTTON_KEY)

@@ -20,6 +20,8 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 MIGRATION_VERSION = 36
 LOG_TABLE = "shortening_progress_log"
 GOAL_TABLE = "shortening_progress_goal"
+# 뒤 번호 설비 0037 의 표(넣기 스냅숏 셋) — 이 시험의 「다른 표 행은 그대로」 밖이다.
+SNAPSHOT_PREFIX = "shortening_progress_snapshot"
 
 
 def _columns(path: Path, table: str) -> list[tuple[str, str, bool]]:
@@ -96,18 +98,21 @@ def test_the_tables_refuse_rows_outside_their_rules(tmp_path: Path, statement: s
 def test_a_database_before_0036_keeps_every_other_row_and_gets_two_empty_tables(
     tmp_path: Path,
 ) -> None:
-    """0035 까지 모두 건 DB 위에 0036 하나만 선다."""
+    """0035 까지 모두 건 DB 위에 0036 이 서고, 그 뒤 번호(설비 0037 넣기 스냅숏 빈 표 셋)가 함께
+    걸린다."""
     path = tmp_path / "legacy.duckdb"
     build_legacy_database(path)
     _apply_through(path, MIGRATION_VERSION - 1)
     before = _table_counts(path)
     assert LOG_TABLE not in before and GOAL_TABLE not in before
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION,)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 37)
 
     after = _table_counts(path)
     assert (after[LOG_TABLE], after[GOAL_TABLE]) == (0, 0)
     assert {
-        table: count for table, count in after.items() if table not in (LOG_TABLE, GOAL_TABLE)
+        table: count
+        for table, count in after.items()
+        if table not in (LOG_TABLE, GOAL_TABLE) and not table.startswith(SNAPSHOT_PREFIX)
     } == before
     assert DuckDBEquipmentRepository(path).initialize() == ()

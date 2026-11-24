@@ -139,6 +139,8 @@ equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      �
                                                                            머리의 현재 일정 기준 0035 — NULL 은 설비 마스터)
 equipment_ops.shortening_progress_log                     누적 진척 기록(0036, 행 = ISO 주차 하나의 단축 필요일수, PK 해·주)
 equipment_ops.shortening_progress_goal                    누적 진척 최종 목표(0036, 머리 한 행 — 일수·해·주·version)
+equipment_ops.shortening_progress_snapshot 1 ── N shortening_progress_snapshot_process   누적 진척 넣기 스냅숏(0037 — 머리 = 기록
+                                             └── N shortening_progress_snapshot_unit      주 하나, PK 해·주. 넣기로 저장한 주만)
 
 equipment_meta.schema_migration
 ```
@@ -536,6 +538,13 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   지우기(화면이 본 값과 대조), 목표는 version 대조로 갈아 쓴다(지우기는 칸을 비우고 version+1). 화면 계산과 잇지 않는 손
   기록이고 리비전 · 설비 시나리오와 무관한 공용 값이라 소유 칸 · 외래키가 없다. SQL 은
   `persistence/shortening_progress_log_store.py`, 규칙은 `services/shortening_progress_log.py`.
+- `shortening_progress_snapshot`·`shortening_progress_snapshot_process`·`shortening_progress_snapshot_unit`(마이그레이션 37):
+  누적 진척 **넣기 스냅숏** — 「이번 주 값 넣기」 로 그 주 기록을 저장할 때 그 화면이 보던 고른 목표의 호기 표(범위 공정 · Cut-off ·
+  당긴 호기와 추가N — 진척 비교 짝짓기가 읽는 칸)를 기록 줄과 같은 쓰기 트랜잭션에서 남긴다. 머리 PK 는 기록과 같은 해·주이고
+  `log_updated_at` 이 그 기록 줄의 `updated_at` 과 같을 때만 읽는다(옛 코드가 그 주를 고치면 버림). 기록 값은 0036 그대로 사람이
+  적은 수이고 손으로 적은 주는 스냅숏이 없다. 갈아 쓰기는 새 `snapshot_id`(머리 제자리 UPDATE · 새 자식 INSERT · 옛 자식 DELETE),
+  기록 지우기는 같은 트랜잭션에서 셋 다 지운다. 「주차별」 그림의 까닭 항목은 저장하지 않고 그릴 때 바로 앞 기록 주의 스냅숏과
+  견줘 센다. SQL 은 `persistence/shortening_progress_snapshot_store.py`, 가름은 `services/shortening_progress_reasons.py`.
 - `equipment_scenario`·`equipment_schedule_revision`·`equipment_schedule_snapshot`·`equipment_schedule_downtime_snapshot`·
   `equipment_official_release`·`equipment_legacy_boundary`(마이그레이션 27): **설비 시나리오**. 설비 마스터의 일정 일곱 칸
   (제진대·물류·반입·Qual·정지·반출/이설 일정 — 정지·반출/이설의 DB 이름은 `removal_date`·`relocation_date` 그대로 — 과

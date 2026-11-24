@@ -3575,6 +3575,60 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
         assert phrase in v143, phrase
 
 
+# 2026-11-20 · 21 누적 진척 까닭 보드 — 카드 id: (날짜, 고른 답 굵은 글). 1차 q-look 은 권장이 아닌
+# 답이고 # 그 메모로 2차를 다시 물었다. 2차 풍선 여쭘(q2-tip-*)은 앱 전체 풍선 지연 갈래가 적는다.
+_CUMULATIVE_WHY_ANSWERS: dict[str, tuple[str, str]] = {
+    "q-look": ("2026-11-20", "시안 A — 점 곁 꼬리표"),
+    "q-source": ("2026-11-20", "자동 + 사람이 고침"),
+    "q-axis": ("2026-11-20", "목표 아래부터"),
+    "q2-look": ("2026-11-21", "중간-1 점 곁 곧은 꼬리표 (A 쪽)"),
+}
+
+
+def test_the_cumulative_why_board_answers_are_recorded_in_6_43() -> None:
+    """v1.46 — 6-43 은 2026-11-20 · 21 누적 진척 「주차별」 까닭 시안 보드 두 차례의 답이다.
+    카드마다 한 줄(「- 카드 id · 물음 → **고른 답** … (날짜 · 규칙 id)」)이고 권장이 아닌 답은
+    q-look 하나다. 그 줄 아래 문단이 구현이 답 밖에서 정한 것이고, UI-TXT-04 예외가 그 꼬리표를, 7-1
+    이 뒤집힌 「한 줄 기록」 을 적는다. Guide 「누적 진척」 에 까닭 낱말이 선다."""
+    document = _text()
+    assert "판 v1.46" in document.split("\n## 1. ")[0]
+    assert "6-43 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-43. ") :]
+    assert "「A안이랑 B안의 적절한 중간을 원함」" in record
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in (line for line in record.splitlines() if line.startswith("- ")):
+        match = re.match(
+            r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-2[01]) · ([^()]+)\)$", line
+        )
+        assert match, line[:120]
+        card = match.group(1)
+        found.append(card)
+        day, answer = _CUMULATIVE_WHY_ANSWERS[card]
+        assert (match.group(3), match.group(2)) == (day, answer), card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line[:120]
+        assert ("권장이 아닌 답" in line) == (card == "q-look"), card
+    assert tuple(found) == tuple(_CUMULATIVE_WHY_ANSWERS)
+    rest = record[record.index("\n- q2-look · ") + 1 :]
+    assert rest.split("\n", 2)[2].startswith("구현이 답 밖에서 정한 것"), rest[:80]
+    txt04 = next(rule for rule in _rules() if rule.id == "UI-TXT-04")
+    assert "오르내림 까닭 꼬리표" in txt04.fields["예외"][0] and "6-43" in txt04.fields["예외"][0]
+    reversed_ = _chapter(document, 7)
+    reversed_ = reversed_[reversed_.index("### 7-1. ") : reversed_.index("### 7-2. ")]
+    assert "누적-4 「한 줄 기록」" in reversed_ and "`0037`" in reversed_
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/required_shortening.md").read_text(
+        encoding="utf-8"
+    )
+    for word in ("Qual 당김 · Qual 밀림", "필요 늦춰짐 · 필요 당겨짐", "손 고침", "기한 지남"):
+        assert word in guide, word
+    history = _chapter(document, 8)
+    v146 = history[history.index("- **v1.46 — 2026-11-21.**") :]
+    for phrase in ("6-43", "q-look", "q2-look", "UI-TXT-04", "7-1", "규칙 82"):
+        assert phrase in v146, phrase
+
+
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
     """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
     보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""
@@ -3613,10 +3667,9 @@ def test_the_closeout_2a_hidden_unfinished_screens_are_judged_in_6_42() -> None:
     판정이다 — 줄마다 줄 id · 무엇, 굵은 글이 고른 꼴, 끝은 「(2026-11-24 · 규칙 id)」. UI-LAY-10 의
     예외가 운영 서버 한 줄이고 그물이 그 시험을, UI-INP-07 예외가 구현 중 화면을 부른다."""
     document = _text()
-    assert "판 v1.45" in document.split("\n## 1. ")[0]
     assert "6-42 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-42. ") :]
+    record = section[section.index("\n### 6-42. ") : section.index("\n### 6-43. ")]
     assert "갈래는 `close-1124/screens` 다" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -3664,7 +3717,7 @@ def test_the_closeout_2a_teaser_line_withdraws_the_bundled_decision_on_the_serve
     거둔 사용자 답이다 — 구현 중 화면과 같은 동작이고, 따라하기 창은 그대로이며, 판 기록이 그
     시험을 적는다."""
     section = _chapter(_text(), 6)
-    record = section[section.index("\n### 6-42. ") :]
+    record = section[section.index("\n### 6-42. ") : section.index("\n### 6-43. ")]
     line = next(item for item in record.splitlines() if item.startswith("- screens-teaser · "))
     for phrase in ("2026-10-19", "`screen.unfinished`", "따라하기 창", "`teaser.available`"):
         assert phrase in line, phrase

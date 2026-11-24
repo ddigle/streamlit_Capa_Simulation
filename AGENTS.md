@@ -824,7 +824,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `services/shortening_progress_log.screen_shortening_days` 하나, `_render_view` 머리에서 지우고 다시 적어 멈춘 회차에 앞 값이 남지
     않는다). 합계는 현재 일정 기준 전환이 고른 계획(`plan.basis` — 풍선에 그 기준)이고, 진척 비교가 기준선과 같은 다른 기준의
     계획(`_Plan.plan_for`)을 그려도 바뀌지 않고, 진척 비교가 「필요 시점 지남」 · 「기준 바뀜」 을 합계에서 빼도 그대로다(어느 기준선과도
-    상관없다 — 시험이 맞댄다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다.
+    상관없다 — 시험이 맞댄다). 기록 · 목표는 설비 DB `0036` 공용 현행값이다(넣기 스냅숏은 `0037` — 아래).
+    - **「주차별」 오르내림 까닭**(2026-11-20 · 21 보드 답 q-look (a) → 2차 q2-look 중간-1 「점 곁 곧은 꼬리표」 · q-source (a)
+      「자동 + 사람이 고침」 의 1단계 자동 · q-axis (a) 목표 아래부터 — 규칙집 6-43): 「이번 주 값 넣기」 로 저장한 주는 그 화면의
+      호기 표 스냅숏(고른 목표 · 범위 공정의 당긴 호기 · 추가N, 범위 공정 · Cut-off · 기준 · 오늘 · 달 · 출처)이 기록 줄과 같은 쓰기
+      트랜잭션에 남는다(설비 DB `0037` — 기록 지우기가 함께 지움, 손으로 적은 주는 없음). 값은 여전히 사람이 적은 수이고 선은 기록
+      수만 잇는다(누적-4 「한 줄 기록」 을 넓힘 — 규칙집 7-1). 「주차별」 을 편 회차에만 스냅숏을 읽어 바로 앞 기록 주와 진척 비교
+      짝짓기로 견줘 까닭을 센다 — 저장하지 않는다(`services/shortening_progress_reasons.explain_week_changes`). 띠 프래그먼트는
+      페이지 전체 회차에도 다시 돌아 센 까닭은 캐시 경계 `equipment_cache.load_shortening_progress_reasons`(기록 · 스냅숏과 같은 쓰기
+      세대 · DB stat — 맞으면 스냅숏 표도 읽지 않음)에 담고, 그리는 쪽이 까닭의 앞 주 · 증감을 그리는 기록과 다시 맞춘다
+      (`_matching_reason`). 두 주 모두 스냅숏이 있고 항목 합 = 지난 기록 대비가 맞는
+      주만 근거가 있고, 그런 주가 5일 이상 오르내렸으면 점 곁 꼬리표(`components/shortening_cumulative_tags.py`) · 큰 ▲ · ▼ ·
+      오른 주만 들어오는 구간 굵은 주황 선이다. 근거 없는 주는 늘어난 주 ▲ 와 「+n일」 · 줄어든 주 ● 다. 점 · 꼬리표를 가리키면 그 주 까닭
+      전부(여섯 넘으면 앞 다섯 + 「그 밖 k건」) · 합 「합 −n일 = 지난 기록 대비 −n일」 · 덧말(n주 사이 · 추가 호기 대수 · 호기 이름이
+      바뀌었을 수 있는 공정 · 입력 바뀜 — 조회 달 · Cut-off · 리비전)이 풍선이다(Plotly `hovertext` — 풍선 1초 지연은 앱 전체 풍선 규칙이 맡는다). 세로축은
+      목표 아래부터(0 아님), 목표 이름은 선 아래 오른쪽, 끝 값 글은 점 오른쪽 위다. 꼬리표 글(그림 위 항목)은 사용자가 고른 그림
+      글이라 UI-TXT-04 예외다. 사람이 까닭을 고치는 칸(2단계)은 아직 없다(`docs/TODO.md` 2장 열린 줄). 스냅숏을 못 읽으면 까닭 없이
+      그린다(`BOOTSTRAP_ERRORS`).
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
     조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
@@ -4796,6 +4812,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   같으면 진척 비교 요약의 지금 합계 + 필요 시점 지남 몫 + 기준 바뀜 몫과 같다(그런 기준선이면 어느 것과 견주든 — 시험이 맞댄다).
   기준이 다른 기준선이면 진척 비교는 그 기준의 계획(`_Plan.plan_for`)과 견주고 화면 합계는 전환 쪽 계획이라 맞지 않는다.
   Streamlit · DB 를 모른다.
+- `src/capa_simulation/services/shortening_progress_reasons.py` — 누적 진척 「주차별」 오르내림 까닭(2026-11-20 · 21 보드 답
+  — 꼴 중간-1 「점 곁 곧은 꼬리표」, 재료 「자동 + 사람이 고침」 의 1단계 자동 — 규칙집 6-43). 넣기 스냅숏 모델(`ProgressSnapshotDraft` ·
+  `ProgressSnapshot` — 범위 공정의 당긴 호기 · 추가N 행 `SNAPSHOT_UNIT_COLUMNS`, 범위 공정 · Cut-off · 현재 일정 기준 · 목표 확보율 ·
+  그날 오늘 · 조회 달 · 출처 · 구성 글 `snapshot_digest`)과 `snapshot_draft`(계획 호기 표에서 범위 행만 새 표로 — 합은
+  `screen_shortening_days` 와 같다). `explain_week_changes` 는 기록마다 바로 앞 기록 주와만 짝짓고(건너뛴 주는 한 구간) 두 주 모두
+  그 기록과 같은 쓰기의 스냅숏이 있을 때만 `WeekChange` 를 낸다 — 항목은 저장하지 않고 그릴 때 센다. 짝짓기는 진척 비교의
+  `compare_progress` 그대로이고 꼬리표는 열하나다 — Qual 당김 · Qual 밀림 · 필요 늦춰짐 · 필요 당겨짐(호기마다 확보 몫 · 필요 몫 가운데
+  |몫| 이 큰 쪽, 양은 단축일수 차이 — 함께 움직인 순 0 은 버림) · 신규 필요 · 해소(공정마다 묶음) · 범위 바뀜 · 기준 바뀜(현재 일정
+  기준 · 목표 확보율이 다르면 호기별로 가르지 않는 한 항목이 첫 자리, 남는 호기 ↔ 날짜 호기도 이 이름) · 기한 지남 · 손 고침((이 주
+  기록 − 스냅숏 합) − (앞 기록 − 스냅숏 합)) · 그 밖(풍선의 꼬리 묶음). 항목 합 = 지난 기록 대비가 정수로 맞아야 `balanced` 이고
+  그때만 글을 싣는다. 그림 꼬리표 항목(`drawn`)은 그 주 변동과 같은 쪽 · 둘째는 변동의 1/4 이상 · 둘까지이고, 한 공정에 해소 ·
+  신규 필요가 함께면(`rename_suspects`) 그 둘은 그림에 올리지 않는다. 추가N 대수와 입력 바뀜(조회 달 — `scope_difference`, 두
+  범위에 함께 있는 공정의 Cut-off — `WeekChange.cutoffs`, 시나리오 · 설비 일정 · 공통 대장 리비전 — 시나리오 리비전 id 를 모르면
+  `reference_version`)은 합 밖 덧말이다(가름은 바꾸지 않는다 — 진척 비교 「조회 달 다름」 과 같은 결). Streamlit · DB 를 모른다.
 - `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
   (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
   (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다. 카드 상세 링크 숫자는
@@ -5800,7 +5830,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     UI-ACC-02).
 - `src/capa_simulation/components/shortening_cumulative.py` — 필요 단축 일정 「누적 진척」 머리 한 줄 띠(키 붙은 프래그먼트
   `STRIP_FRAGMENT_KEY` — 작은 꺾은선(data URL 그림 — `st.html` 은 인라인 SVG 를 걷는다) · 지금 일수 · 지난 기록 대비 · 첫 기록 →
-  목표 막대 · 남은 일수 · 「주차별」. 펴면 Plotly 꺾은선 + 목표선 — 늘어난 주 ▲, 편 상태는 세션 칸 `WEEKS_OPEN_KEY`)와 사이드바
+  목표 막대 · 남은 일수 · 「주차별」. 펴면 Plotly 꺾은선 + 목표선 — 늘어난 주 ▲, 편 상태는 세션 칸 `WEEKS_OPEN_KEY`. 편 회차에만
+  넣기 스냅숏(설비 `0037`)을 읽어 오르내린 주의 까닭 꼬리표를 단다 — 아래 `shortening_cumulative_tags.py` · 「누적 진척」 절)와 사이드바
   「누적 진척 설정」 상자 · 팝업(그 화면 호스트가 연다 — 기록 표 · 주차 / 단축 필요일수 / 저장자 · 「기록 저장」 · 「이번 주 값
   넣기」 · 「기록 지우기」, 최종 목표 일수 / 주차 · 「목표 저장」 · 「목표 지우기」). 팝업 칸은 세대 key 라(`widget_generation`)
   주차를 바꾸거나 넣기 · 저장하면 그 세대의 기본값(저장값 · 넣은 값)으로 새로 선다 — 세션 대입으로 칸을 채우지 않는다. 겹친 저장은
@@ -5810,7 +5841,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`PROGRESS_DAYS_MAX`)을 넘으면 「이번 주 값 넣기」 는 잠기고 풍선이 까닭을 말한다(남은 넣은 값도 칸에 세우지 않는다). 띠 줄은
   `wrap=False` 라 「주차별」 은 늘 첫 줄 오른쪽이고, 좁으면 띠 안쪽이 먼저 줄인다 — 목표 칸이 좁으면 「첫 기록 … →」 글을 숨기고
   (컨테이너 질의), 목표 주차 지남은 남은 일수 아래 작은 줄이다. 성공은 알림창 하나이고 앱 전체 `st.rerun()` 이라 팝업은 열린 채 띠가 새 값으로 선다. 등급은 기록
-  `shortening.progress_log`(실무자부터) · 목표 `shortening.progress_goal`(관리자부터)이고 그 아래는 값만 본다.
+  `shortening.progress_log`(실무자부터) · 목표 `shortening.progress_goal`(관리자부터)이고 그 아래는 값만 본다. 「이번 주 값 넣기」 는
+  그 화면 합계와 함께 호기 표 스냅숏을 세션 칸(`_FILL_SNAPSHOT` — (주차, `ProgressSnapshotDraft`))에 떠 두고 그 주 「기록 저장」 이
+  저장소에 넘긴다(칸을 고쳐 적어도 남김 — 그 차이는 까닭 「손 고침」). 다른 주를 고르거나 저장 · 지우기 · 팝업 다시 열기는 넣은
+  값과 함께 걷는다(`_forget_fill`). 본문이 회차마다 적는 `ScreenTotal` 은 고른 목표의 계획 호기 표를 참조로만 든다(잠긴 표 —
+  옮겨 담지 않고 넣기를 누를 때만 `snapshot_draft` 가 범위 행을 새 표로 뜬다).
+- `src/capa_simulation/components/shortening_cumulative_tags.py` — 누적 진척 「주차별」 까닭 꼬리표의 자리(2026-11-20 · 21 보드 답
+  중간-1 「점 곁 곧은 꼬리표」 — 보드 시안 원고(저장소 밖 opt_point)의 자리 규칙). 꼬리표는 그 주 점 바로 위(오름) · 아래(내림)에 곧은 짧은
+  지시선으로 붙고(주 간격 그대로) 첫 줄 「▲ +n일」 · 「▼ −n일」 + 항목 둘까지다. 5일(`THRESHOLD_DAYS`) 이상 오르내린 주만,
+  오름 먼저 → 큰 변동 → 최근 주 차례로 다섯(`MAX_TAGS`)까지 놓고, 막히면 항목 하나 → 대수 뗀 항목 하나 → 한 단 바깥(곧은 지시선)
+  → 같은 쪽 이웃 하나를 고쳐 놓기 → 숨김(표지 · 풍선만) 차례다. 피할 것은 꺾은선 · 남은 길 점선 · 점 표지 · 끝 값 글 · 목표선 띠
+  (±`GOAL_CLEAR_PX`) · 목표 글 · 근거 없는 주의 「+n일」 글이다. **판정은 판정 그림 칸**(`NARROW_PLOT_WIDTH_PX` 450px — 창 600 ·
+  사이드바 접힘의 그림 칸 어림)에서 하고 결정(줄 · 맞춤 · 단)을 데이터 자리 + 픽셀 띄움(annotation `xshift` · `yshift`)으로 옮겨
+  어느 폭에서나 같은 자리다 — 꼬리표는 픽셀 고정 크기이고 주 간격은 폭에 비례해 판정 칸 이상의 넓은 칸에서도 겹치지 않는다
+  (`overlaps` 로 넓은 칸에서 다시 잼 — `tests/test_shortening_cumulative_tags.py`). 그림 칸이 판정 칸보다 좁으면(사이드바를 편 창
+  약 900px 아래 — 창 820 에서 약 370px) 겹침 판정 밖이고 글 폭 어림의 여유 안에서만 맞는다(`docs/TODO.md` 2장 「한 판 뒤 볼 것」 —
+  판정 칸을 줄이면 넓은 창의 꼬리표도 준다). 세로축(`value_range`)은 목표(없으면 가장 낮은 기록) 아래부터이고
+  위 세 줄 · 아래 두 줄 꼬리표 자리를 둔다. 0 아래로는 내려가지 않되, 목표가 0일 가까이라 0 에서 잘리면 목표 이름(선 아래) 자리
+  (`GOAL_LABEL_ROOM_PX`)만큼만 0 아래로 내리고 그 칸에는 눈금을 두지 않는다(`value_ticks` — 이름이 가로축 눈금 글 위로 빠지지 않게).
+  그림 높이 · 여백은 고정(340px — 「주차별」 을 편 때만 서는 그림)이라 세로 픽셀이 맞는다.
+  글 폭은 어림(한글 1em · 그 밖 0.58em)이다. Streamlit 을 모르는 순수 계산이다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
   (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽
   끝에 말줄임, 이름은 `dir="ltr"` 한 덩이라 끝(호기 번호)이 남는다 — 남은 물음 보드 D6 (다))을 공정 카드와 진척
@@ -6058,6 +6108,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `save_shortening_progress_goal`)가 쓰기 잠금 안에서 화면이 본 값 · version 과 대조하고 감사 사건(`data_progress_log_save` ·
   `data_progress_log_delete` · `data_progress_goal_save`)을 단다. 캐시는 `equipment_cache.load_shortening_progress_log`(DB stat ·
   쓰기 세대 `shortening_progress` · TTL — 입력 비가동과 같은 꼴).
+- `src/capa_simulation/persistence/shortening_progress_snapshot_store.py` — 누적 진척 넣기 스냅숏(설비 DB `0037` — 머리 · 범위
+  공정 · 호기 세 표)의 읽기 · 갈아 쓰기 · 지우기 SQL. 쓰기는 저장소 `save_shortening_progress_entry(…, snapshot=)` 가 기록 줄을 쓴
+  **같은 트랜잭션**에서 부르고(대조에서 지면 둘 다 안 씀) 머리의 `log_updated_at` 은 그 기록 줄 `updated_at` 을 SQL 로 옮겨 적는다 —
+  읽기는 그 값이 지금 기록 줄과 같은 머리만이다. 갈아 쓰기는 새 `snapshot_id`(머리 제자리 · 새 자식 넣고 옛 자식 지움), 같은 수 ·
+  같은 구성 글이면 쓰지 않고 같은 수 · 다른 구성이면 스냅숏만 갈아 쓴다. 넣기 없이 고친 저장은 고치기 전 기록과 함께 쓴 스냅숏을
+  새 기록 시각으로 옮기고(`carry_progress_snapshot` — 그 차이는 까닭 「손 고침」) 그 밖의 머리는 지운다. 기록 지우기는 같은
+  트랜잭션에서 셋 다 지운다(`delete_progress_snapshot`). 캐시는 `equipment_cache.load_shortening_progress_snapshots`(기록과 같은 쓰기
+  세대 `shortening_progress` — `clear_shortening_progress_cache` 가 함께 비움)이고, 띠는 그 위에서 센 까닭 캐시
+  `load_shortening_progress_reasons`(같은 세대 — 「주차별」 을 편 띠만 부름)만 부른다. 감사 사건은 기록 저장 그대로
+  (`data_progress_log_save` — 호기 표 · 값 원문은 싣지 않는다).
 - `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
   `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
   견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
@@ -6466,7 +6526,7 @@ RQ_MODULE
    Static 확보율 `RQ_EQP_AVBL` 계산에 들지 않는다). `Summary` › `Static 대비 일정` 탭과 `필요 단축 일정` 화면과 **`Space 현황` 의
    색 기준 `필요 단축` 을 켠 동안**만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021`, 누적 진척 기록 · 최종 목표는 설비 DB
-   `0036` 이다) 설비 운영
+   `0036`, 그 넣기 스냅숏은 설비 DB `0037` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
    공용 공정 표시명 하나다(2026-10-10 사용자 결정 — 설비 마스터 탭을 뺀 탭과 「가용설비 설정」 팝업 표 보기 필터의 보이는 글자).
    페이지가 회차마다

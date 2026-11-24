@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import duckdb
 
 from capa_simulation.services.shortening_progress_log import (
@@ -26,6 +28,7 @@ __all__ = [
     "delete_progress_entry",
     "read_progress_log",
     "stored_progress_days",
+    "stored_progress_stamp",
     "write_progress_entry",
     "write_progress_goal",
 ]
@@ -93,6 +96,22 @@ def stored_progress_days(connection: duckdb.DuckDBPyConnection, week: ProgressWe
         [week.year, week.week],
     ).fetchone()
     return None if row is None else int(row[0])
+
+
+def stored_progress_stamp(
+    connection: duckdb.DuckDBPyConnection, week: ProgressWeek
+) -> datetime | None:
+    """그 주 기록 줄의 저장 시각(없으면 None) — 넣기 스냅숏(0037)이 그 줄과 같은 쓰기에서 섰는지
+    가른다."""
+    row = connection.execute(
+        """
+        SELECT updated_at
+        FROM equipment_ops.shortening_progress_log
+        WHERE iso_year = ? AND iso_week = ?
+        """,
+        [week.year, week.week],
+    ).fetchone()
+    return None if row is None else row[0]
 
 
 def write_progress_entry(

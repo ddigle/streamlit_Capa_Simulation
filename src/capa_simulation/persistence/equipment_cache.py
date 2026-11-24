@@ -21,7 +21,7 @@
 """
 
 import threading
-from dataclasses import fields
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -58,6 +58,7 @@ from capa_simulation.services.floor_state import FloorStates
 from capa_simulation.services.layout_overlay import LayoutOverlay, Place
 from capa_simulation.services.manual_downtime import ManualDowntime, ManualDowntimeSave
 from capa_simulation.services.shortening_baseline import (
+    BaselineProvenance,
     ShorteningBaseline,
     ShorteningBaselineSummary,
 )
@@ -68,6 +69,13 @@ from capa_simulation.services.shortening_progress_log import (
     ProgressGoalState,
     ProgressLog,
     ProgressWeek,
+)
+from capa_simulation.services.shortening_progress_reasons import (
+    ProgressSnapshot,
+    ProgressSnapshotDraft,
+    ReasonItem,
+    WeekChange,
+    explain_week_changes,
 )
 
 
@@ -1099,9 +1107,115 @@ def load_shortening_progress_log(database_path: str) -> ProgressLog:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_shortening_progress_snapshots_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> list[dict[str, Any]]:
+    del stamp, generation
+    snapshots = get_equipment_repository(database_path).load_shortening_progress_snapshots()
+    return [
+        {
+            "week": (snapshot.week.year, snapshot.week.week),
+            "log_updated_at": snapshot.log_updated_at,
+            "captured_at": snapshot.captured_at,
+            "captured_by": snapshot.captured_by,
+            "days": snapshot.draft.days,
+            "level_percent": snapshot.draft.level_percent,
+            "basis": snapshot.draft.basis,
+            "selected": snapshot.draft.selected,
+            "today": snapshot.draft.today,
+            "months": snapshot.draft.months,
+            "processes": snapshot.draft.processes,
+            "cutoff_days": snapshot.draft.cutoff_days,
+            "units": snapshot.draft.units,
+            "provenance": dict(vars(snapshot.draft.provenance)),
+            "digest": snapshot.draft.digest,
+        }
+        for snapshot in snapshots
+    ]
+
+
+def load_shortening_progress_snapshots(database_path: str) -> dict[ProgressWeek, ProgressSnapshot]:
+    """누적 진척 넣기 스냅숏(`0037`) — 주 → 스냅숏. 「주차별」 을 편 띠만 읽는다.
+
+    기록과 같은 쓰기 세대(`shortening_progress`)에 묶여 `clear_shortening_progress_cache` 가 함께
+    비운다. 값은 평범한 dict 로 싣고 지금 클래스로 다시 세운다(`load_shortening_progress_log` 와
+    같은 까닭). 호기 표는 읽는 쪽이 고치지 않는다(까닭 셈은 새 표를 만든다).
+    """
+    payload = _load_shortening_progress_snapshots_payload(
+        database_path, database_stamp(database_path), _write_generation("shortening_progress")
+    )
+    out: dict[ProgressWeek, ProgressSnapshot] = {}
+    for row in payload:
+        week = ProgressWeek(*row["week"])
+        out[week] = ProgressSnapshot(
+            week=week,
+            draft=ProgressSnapshotDraft(
+                days=row["days"],
+                level_percent=row["level_percent"],
+                basis=row["basis"],
+                selected=row["selected"],
+                today=row["today"],
+                months=row["months"],
+                processes=row["processes"],
+                cutoff_days=row["cutoff_days"],
+                units=row["units"],
+                provenance=BaselineProvenance(**row["provenance"]),
+                digest=row["digest"],
+            ),
+            log_updated_at=row["log_updated_at"],
+            captured_at=row["captured_at"],
+            captured_by=row["captured_by"],
+        )
+    return out
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_shortening_progress_reasons_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> list[dict[str, Any]]:
+    del stamp, generation
+    log = load_shortening_progress_log(database_path)
+    if len(log.entries) < 2:
+        return []
+    snapshots = load_shortening_progress_snapshots(database_path)
+    if not snapshots:
+        return []
+    return [asdict(change) for change in explain_week_changes(log, snapshots).values()]
+
+
+def load_shortening_progress_reasons(database_path: str) -> dict[ProgressWeek, WeekChange]:
+    """누적 진척 「주차별」 오르내림 까닭(`explain_week_changes` — 넣기 스냅숏 두 주의 짝짓기) —
+    주 → 까닭. 「주차별」 을 편 띠만 부른다.
+
+    까닭은 저장하지 않고 그릴 때 세지만, 띠 프래그먼트는 페이지 전체 회차에도 다시 돌아 회차마다
+    기록 쌍 전부를 짝짓지 않게 여기서 기록 · 스냅숏과 같은 쓰기 세대(`shortening_progress`) ·
+    DB stat 으로 담아 둔다(`clear_shortening_progress_cache` 가 함께 비운다). 맞으면 스냅숏 표도
+    읽지 않는다. 값은 평범한 dict 로 싣고 지금 클래스로 다시 세운다(`load_shortening_progress_log`
+    와 같은 까닭). 그리는 쪽은 까닭의 앞 주 · 증감이 그리는 기록과 맞는지 다시 본다.
+    """
+    payload = _load_shortening_progress_reasons_payload(
+        database_path, database_stamp(database_path), _write_generation("shortening_progress")
+    )
+    out: dict[ProgressWeek, WeekChange] = {}
+    for row in payload:
+        change = WeekChange(
+            **{
+                **row,
+                "week": ProgressWeek(**row["week"]),
+                "previous": ProgressWeek(**row["previous"]),
+                "items": tuple(ReasonItem(**item) for item in row["items"]),
+            }
+        )
+        out[change.week] = change
+    return out
+
+
 def clear_shortening_progress_cache() -> None:
     _bump_write_generation("shortening_progress")
     _load_shortening_progress_payload.clear()
+    _load_shortening_progress_snapshots_payload.clear()
+    _load_shortening_progress_reasons_payload.clear()
 
 
 def clear_floor_layout_cache() -> None:
