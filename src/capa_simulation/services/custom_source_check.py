@@ -1,4 +1,4 @@
-# Purpose: BigDataQuery 본 표에 CUSTOM 원천 표의 값을 Capa Code 로 붙이고 두 표 행 수를 대조한다.
+# Purpose: 본 표에 CUSTOM 원천 답(둘째 표 · 원천 CSV)을 Capa Code 로 붙이고 행 수를 대조한다.
 
 """CUSTOM 원천 표 붙이기와 대조(Streamlit 없음 — 화면 등록과 자동 갱신이 같은 판정을 받는다).
 
@@ -26,6 +26,11 @@ Capa Code 는 앞뒤 공백만 떼어 맞대고(대소문자는 둔다), 생산�
 등록한다(`CustomSourceCheck.warns`) — 붙이기가 Capa Code 단위라 값에는 영향이 없다. 칸 대조의 본 표
 수는 받은 행 그대로(완전 중복 행 포함 — 등록이 그대로 싣는다)이고, 완전 중복을 접은 수는 합계로만
 남긴다(`main_distinct_rows`).
+
+원천 CSV 는 CUSTOM 이 본 표 칸에 실려 온다 — 그 표를 같은 꼴의 답으로 센 뒤(`custom_rows_of` —
+빈 CUSTOM 줄 · 빈 달 줄도 한 줄로 남긴다) 같은 두 함수에 넣어 같은 규칙으로 멈춘다. 멈춤 글의
+자리 낱말만 원천마다 다르다(`CustomSourceWords` — 둘째 표는 기본값 `TABLE_WORDS`, 파일은
+`FILE_WORDS`).
 
 끄개(어댑터의 `CAPA_BDQ_CUSTOM_SOURCE=off`)를 내린 등록은 CUSTOM 원천 표를 묻지 않는다 — 본 표
 CUSTOM 칸을 모두 빈 값 표지(`CUSTOM_BLANK`)로 덮고(`blank_custom_values`) 대조는 「붙이지 않음」
@@ -67,6 +72,39 @@ SWITCHED_OFF_NOTICE: Final = (
     "CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다 — CUSTOM 원천 표를 묻지 않아 모든 부품의 "
     f"CUSTOM 이 구분 없음({CUSTOM_BLANK})이고, 리비전 메모에 「CUSTOM 원천 붙이지 않음」 이 "
     "남습니다. 이 코드는 끄개를 걷은 뒤에도 부품을 나눠 다시 받을 수 없습니다."
+)
+
+
+@dataclass(frozen=True)
+class CustomSourceWords:
+    """멈춤 글(둘 이상 · 빈 값 · 못 찾음)에서 원천마다 다른 낱말 — 판정은 같고 글만 갈린다.
+
+    - `place` 답이 온 자리 — 글 머리 「<자리>에서 · <자리>에」 의 자리다(뒤 조사는 끝소리를 타지
+      않는 「에 · 에서」 뿐이다).
+    - `several_fix` 한 Capa Code 에 CUSTOM 이 둘 이상일 때 · `missing_fix` 본 표 Capa Code 가 답에
+      없을 때의 끝 문장(고칠 곳).
+
+    0행 · 칸 모자람 · 행수 글은 둘째 표 글 그대로다 — 원천 CSV 는 그 답을 본 표에서 세므로
+    (`custom_rows_of`) 그 판정에 닿지 않는다.
+    """
+
+    place: str
+    several_fix: str
+    missing_fix: str
+
+
+# 둘째 표(CUSTOM 원천 표 조회)의 낱말 — 두 공개 함수의 기본값이다.
+TABLE_WORDS: Final = CustomSourceWords(
+    place="CUSTOM 원천 표",
+    several_fix="CUSTOM 원천 표를 바로잡은 뒤 다시 등록하세요.",
+    missing_fix="CUSTOM 원천 표에 그 부품이 적재됐는지 확인한 뒤 다시 등록하세요.",
+)
+# 원천 CSV(파일 행에서 센 답)의 낱말. 못 찾음은 답을 같은 표에서 세어 닿지 않지만, 닿으면 같은
+# 고침 글이다.
+FILE_WORDS: Final = CustomSourceWords(
+    place="CSV 파일",
+    several_fix="원천에서 바로잡아 CSV 를 다시 받은 뒤 올리세요.",
+    missing_fix="원천에서 바로잡아 CSV 를 다시 받은 뒤 올리세요.",
 )
 
 
@@ -140,13 +178,15 @@ class CustomSourceCheck:
         )
 
 
-def check_custom_rows(custom: pd.DataFrame) -> pd.DataFrame:
+def check_custom_rows(
+    custom: pd.DataFrame, *, words: CustomSourceWords = TABLE_WORDS
+) -> pd.DataFrame:
     """CUSTOM 원천 표 조회 결과를 검사하고 맞춘 표를 돌려준다 — 본 조회 앞에서 부른다.
 
     0행 · 칸 모자람 · `행수` 숫자 아님 · 한 Capa Code 에 CUSTOM 둘 이상 · 빈 CUSTOM 은
-    `ValueError` 다. 돌려주는 표는 칸이 `CUSTOM_SOURCE_COLUMNS` 뿐이고 Capa Code(앞뒤 공백 뗌, 빈
-    값은 빈 글자) · 생산계획년월(글자) · CUSTOM(정규화) · 행수(정수)다. 같은 표를 다시 넣어도 같은
-    표가 나온다.
+    `ValueError` 다. 둘 이상 · 빈 CUSTOM 글의 자리 낱말은 `words` 다. 돌려주는 표는 칸이
+    `CUSTOM_SOURCE_COLUMNS` 뿐이고 Capa Code(앞뒤 공백 뗌, 빈 값은 빈 글자) · 생산계획년월(글자) ·
+    CUSTOM(정규화) · 행수(정수)다. 같은 표를 다시 넣어도 같은 표가 나온다.
     """
     if custom.empty:
         raise ValueError(
@@ -168,22 +208,22 @@ def check_custom_rows(custom: pd.DataFrame) -> pd.DataFrame:
         }
     ).reset_index(drop=True)
     listed = checked.loc[checked[CODE_COLUMN].ne("")]
-    _reject_several_values(listed)
-    _reject_blank_values(listed)
+    _reject_several_values(listed, words)
+    _reject_blank_values(listed, words)
     return checked
 
 
 def attach_custom_values(
-    frame: pd.DataFrame, custom: pd.DataFrame
+    frame: pd.DataFrame, custom: pd.DataFrame, *, words: CustomSourceWords = TABLE_WORDS
 ) -> tuple[pd.DataFrame, CustomSourceCheck]:
     """본 표 CUSTOM 칸을 CUSTOM 원천 표의 값으로 덮고 두 표를 대조한다.
 
-    `custom` 은 `check_custom_rows` 를 지나지 않은 답이어도 된다 — 여기서 다시 검사한다. 본 표에
-    Capa Code · 생산계획년월 칸이 없거나 본 표의 Capa Code 가 CUSTOM 원천 표에 없으면 `ValueError`
-    다. 돌려주는 표는 받은 표의 사본이고 CUSTOM 칸만 다르다(행 수 · 차례 · index · 칸 차례가 같고,
-    받은 표의 CUSTOM 칸이 글자 dtype 이면 그 dtype 을 지킨다).
+    `custom` 은 `check_custom_rows` 를 지나지 않은 답이어도 된다 — 여기서 같은 `words` 로 다시
+    검사한다. 본 표에 Capa Code · 생산계획년월 칸이 없거나 본 표의 Capa Code 가 CUSTOM 원천 표에
+    없으면 `ValueError` 다. 돌려주는 표는 받은 표의 사본이고 CUSTOM 칸만 다르다(행 수 · 차례 ·
+    index · 칸 차례가 같고, 받은 표의 CUSTOM 칸이 글자 dtype 이면 그 dtype 을 지킨다).
     """
-    checked = check_custom_rows(custom)
+    checked = check_custom_rows(custom, words=words)
     absent = [column for column in (CODE_COLUMN, MONTH_COLUMN) if column not in frame.columns]
     if absent:
         raise ValueError(f"본 표에 CUSTOM 을 붙일 칸이 없습니다: {', '.join(absent)}")
@@ -196,7 +236,7 @@ def attach_custom_values(
     attached = codes.map(lookup)
     not_found = listed & attached.isna()
     if bool(not_found.any()):
-        _reject_missing_codes(frame, codes, months, not_found)
+        _reject_missing_codes(frame, codes, months, not_found, words)
     values = attached.where(listed, CUSTOM_BLANK)
     result = _with_custom(frame, values)
     cells = _cell_differences(codes.loc[listed], months.loc[listed], known)
@@ -211,6 +251,35 @@ def attach_custom_values(
         cells=cells,
     )
     return result, check
+
+
+def custom_rows_of(frame: pd.DataFrame) -> pd.DataFrame:
+    """CUSTOM 이 본 표 칸에 실려 온 원천(원천 CSV)을 CUSTOM 원천 표 답 꼴로 센다(칸
+    `CUSTOM_SOURCE_COLUMNS`) — 그 답을 `attach_custom_values(..., words=FILE_WORDS)` 에 넣어 둘째
+    표와 같은 판정을 지나게 한다.
+
+    (Capa Code, 생산계획년월, CUSTOM) 마다 행 수이고 차례는 처음 나온 차례다. Capa Code · CUSTOM 의
+    빈 값(NA)은 빈 글자로 채우고, 생산계획년월의 빈 값은 그대로 한 줄로 센다(`dropna=False`). 기본
+    묶기는 빈 열쇠 줄을 버려, 한 부품에 값 든 줄과 빈 줄이 섞이면 빈 줄이 그 값으로 조용히 채워지고
+    빈 줄만인 부품은 「없는 Capa Code」 라는 틀린 글로 멈춘다. 앞뒤 공백 · 대소문자는 여기서 접지
+    않는다 — 검사(`check_custom_rows`)가 둘째 표 답과 같이 접는다. 세는 칸이 없으면 `ValueError` 다.
+    """
+    absent = [
+        column
+        for column in (CODE_COLUMN, MONTH_COLUMN, CUSTOM_COLUMN)
+        if column not in frame.columns
+    ]
+    if absent:
+        raise ValueError(f"본 표에 CUSTOM 을 셀 칸이 없습니다: {', '.join(absent)}")
+    keys = pd.DataFrame(
+        {
+            CODE_COLUMN: frame[CODE_COLUMN].astype("string").fillna("").reset_index(drop=True),
+            MONTH_COLUMN: frame[MONTH_COLUMN].reset_index(drop=True),
+            CUSTOM_COLUMN: frame[CUSTOM_COLUMN].astype("string").fillna("").reset_index(drop=True),
+        }
+    )
+    counted = keys.groupby([CODE_COLUMN, MONTH_COLUMN, CUSTOM_COLUMN], dropna=False, sort=False)
+    return counted.size().rename(ROWS_COLUMN).reset_index().loc[:, list(CUSTOM_SOURCE_COLUMNS)]
 
 
 def blank_custom_values(frame: pd.DataFrame) -> tuple[pd.DataFrame, CustomSourceCheck]:
@@ -290,7 +359,7 @@ def _more_text(total: int) -> str:
     return f" 외 {rest:,}종" if rest > 0 else ""
 
 
-def _reject_several_values(listed: pd.DataFrame) -> None:
+def _reject_several_values(listed: pd.DataFrame, words: CustomSourceWords) -> None:
     """한 Capa Code 에 빈 값이 아닌 CUSTOM 이 둘 이상이면 부품 · 값 · 달 예시와 함께 멈춘다."""
     filled = listed.loc[listed[CUSTOM_COLUMN].ne(CUSTOM_BLANK)]
     counts = filled.groupby(CODE_COLUMN)[CUSTOM_COLUMN].nunique()
@@ -306,15 +375,14 @@ def _reject_several_values(listed: pd.DataFrame) -> None:
         ]
         shown.append(f"`{code}`({' / '.join(parts)})")
     raise ValueError(
-        "CUSTOM 원천 표에서 한 Capa Code 에 CUSTOM 이 둘 이상이라 등록하지 않았습니다: "
+        f"{words.place}에서 한 Capa Code 에 CUSTOM 이 둘 이상이라 등록하지 않았습니다: "
         + ", ".join(shown)
         + _more_text(len(several))
-        + ". 한 부품(Capa Code)의 CUSTOM 은 달마다 같아야 합니다 — CUSTOM 원천 표를 바로잡은 뒤 "
-        "다시 등록하세요."
+        + f". 한 부품(Capa Code)의 CUSTOM 은 달마다 같아야 합니다 — {words.several_fix}"
     )
 
 
-def _reject_blank_values(listed: pd.DataFrame) -> None:
+def _reject_blank_values(listed: pd.DataFrame, words: CustomSourceWords) -> None:
     """줄은 있는데 CUSTOM 이 빈 Capa Code 가 있으면 부품 · 달 예시와 함께 멈춘다."""
     blank = listed.loc[listed[CUSTOM_COLUMN].eq(CUSTOM_BLANK)]
     if blank.empty:
@@ -325,7 +393,7 @@ def _reject_blank_values(listed: pd.DataFrame) -> None:
         for code in codes[:CUSTOM_EXAMPLE_LIMIT]
     ]
     raise ValueError(
-        "CUSTOM 원천 표에 CUSTOM 이 빈 Capa Code 가 있어 등록하지 않았습니다: "
+        f"{words.place}에 CUSTOM 이 빈 Capa Code 가 있어 등록하지 않았습니다: "
         + ", ".join(shown)
         + _more_text(len(codes))
         + f" — {_MERGED_NOTE}"
@@ -333,7 +401,11 @@ def _reject_blank_values(listed: pd.DataFrame) -> None:
 
 
 def _reject_missing_codes(
-    frame: pd.DataFrame, codes: pd.Series, months: pd.Series, not_found: pd.Series
+    frame: pd.DataFrame,
+    codes: pd.Series,
+    months: pd.Series,
+    not_found: pd.Series,
+    words: CustomSourceWords,
 ) -> None:
     """CUSTOM 원천 표에 없는 Capa Code 를 행 수가 많은 차례로 부품 · 행 · 달 예시와 함께 멈춘다.
 
@@ -355,8 +427,8 @@ def _reject_missing_codes(
             size = f"{size}(계획 {int(rows['plan'].sum()):,}행)"
         shown.append(f"`{code}` {size} {_months_text(rows[MONTH_COLUMN])}")
     raise ValueError(
-        "CUSTOM 원천 표에 없는 Capa Code 가 있어 등록하지 않았습니다: "
+        f"{words.place}에 없는 Capa Code 가 있어 등록하지 않았습니다: "
         + ", ".join(shown)
         + _more_text(len(ordered))
-        + f" — {_MERGED_NOTE} CUSTOM 원천 표에 그 부품이 적재됐는지 확인한 뒤 다시 등록하세요."
+        + f" — {_MERGED_NOTE} {words.missing_fix}"
     )

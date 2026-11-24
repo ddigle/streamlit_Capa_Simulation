@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 import pytest
 
@@ -20,12 +22,16 @@ from capa_simulation.services.custom_source_check import (
     CUSTOM_EXAMPLE_LIMIT,
     CUSTOM_ROWS_COLUMN,
     CUSTOM_SOURCE_COLUMNS,
+    FILE_WORDS,
     MAIN_ROWS_COLUMN,
     SWITCHED_OFF_NOTICE,
+    TABLE_WORDS,
     CustomSourceCheck,
+    CustomSourceWords,
     attach_custom_values,
     blank_custom_values,
     check_custom_rows,
+    custom_rows_of,
 )
 
 PART_A = "DEMO_CAPA_A"
@@ -375,3 +381,215 @@ def test_a_switched_off_check_says_so_in_memo_and_notice_and_has_no_cells() -> N
     assert blank_custom_values(bare)[0]["CUSTOM"].tolist() == [CUSTOM_BLANK] * 3
     custom = _custom([(PART_A, 202611, CUSTOM_A, 1), (PART_B, 202612, CUSTOM_B, 2)])
     assert attach_custom_values(main, custom)[1].attached
+
+
+def _file(rows: list[tuple[object, object, object]]) -> pd.DataFrame:
+    """원천 CSV 에서 읽은 본 표 — (Capa Code, 생산계획년월, CUSTOM) 행마다 CUSTOM 이 파일 값이다.
+    글자 칸은 글자 dtype 이고 빈 칸은 NA, 생산계획년월은 pandas 가 고른 수 dtype(빈 칸이 있으면
+    실수)이다 — `io/source_csv.read_source_csv_rows` 가 내는 꼴."""
+    return pd.DataFrame(
+        {
+            "Capa Code": pd.array([row[0] for row in rows], dtype="string"),
+            "생산계획년월": [row[1] for row in rows],
+            "CUSTOM": pd.array([row[2] for row in rows], dtype="string"),
+            "계획기초정보여부": pd.array(["Y"] * len(rows), dtype="string"),
+            "생산수량": [1.0] * len(rows),
+        }
+    )
+
+
+def _stop_text(call: Callable[[], object]) -> str:
+    with pytest.raises(ValueError) as stopped:
+        call()
+    return str(stopped.value)
+
+
+def _attach_from_file(frame: pd.DataFrame) -> tuple[pd.DataFrame, CustomSourceCheck]:
+    """원천 CSV 길 — 파일 행에서 센 답을 같은 붙이기에 파일 낱말로 넣는다."""
+    return attach_custom_values(frame, custom_rows_of(frame), words=FILE_WORDS)
+
+
+@pytest.mark.parametrize("words", [{}, {"words": TABLE_WORDS}], ids=["낱말 없음", "TABLE_WORDS"])
+def test_table_words_are_the_default_and_keep_the_stop_texts(
+    words: dict[str, CustomSourceWords],
+) -> None:
+    """낱말을 주지 않은 둘째 표 길(어댑터 · 자동 갱신)의 멈춤 글 셋은 원천 낱말이 생기기 전 글과
+    한 글자도 다르지 않고, `TABLE_WORDS` 를 준 것과 같다."""
+    several = _custom([(PART_A, 202611, CUSTOM_A, 1), (PART_A, 202612, CUSTOM_B, 1)])
+    blank = _custom([(PART_A, 202611, CUSTOM_A, 1), (PART_B, 202611, None, 1)])
+    gone = "DEMO_CAPA_GONE"
+    missing_main = _main([(PART_A, 202611, "Y"), (gone, 202611, "Y")])
+    missing_custom = _custom([(PART_A, 202611, CUSTOM_A, 1)])
+    merged = f"그대로 등록하면 그 부품은 구분 없음({CUSTOM_BLANK})으로 합쳐집니다."
+    expected = {
+        "several": (
+            "CUSTOM 원천 표에서 한 Capa Code 에 CUSTOM 이 둘 이상이라 등록하지 않았습니다: "
+            f"`{PART_A}`(`{CUSTOM_A}` 202611 / `{CUSTOM_B}` 202612). 한 부품(Capa Code)의 "
+            "CUSTOM 은 달마다 같아야 합니다 — CUSTOM 원천 표를 바로잡은 뒤 다시 등록하세요."
+        ),
+        "blank": (
+            "CUSTOM 원천 표에 CUSTOM 이 빈 Capa Code 가 있어 등록하지 않았습니다: "
+            f"`{PART_B}` 202611 — {merged}"
+        ),
+        "missing": (
+            "CUSTOM 원천 표에 없는 Capa Code 가 있어 등록하지 않았습니다: "
+            f"`{gone}` 1행(계획 1행) 202611 — {merged} CUSTOM 원천 표에 그 부품이 적재됐는지 "
+            "확인한 뒤 다시 등록하세요."
+        ),
+    }
+    main = _main([(PART_A, 202611, "Y")])
+
+    assert _stop_text(lambda: check_custom_rows(several, **words)) == expected["several"]
+    assert _stop_text(lambda: attach_custom_values(main, several, **words)) == expected["several"]
+    assert _stop_text(lambda: check_custom_rows(blank, **words)) == expected["blank"]
+    missing = _stop_text(lambda: attach_custom_values(missing_main, missing_custom, **words))
+    assert missing == expected["missing"]
+
+
+def test_file_words_name_the_csv_file_in_the_several_values_stop() -> None:
+    """원천 CSV 길에서 한 부품의 CUSTOM 이 달마다 다르면 같은 규칙으로 멈추고, 글은 「CSV 파일」 을
+    자리로 원천에서 다시 받으라고 말한다(둘째 표 낱말은 싣지 않는다). 답을 같은 표에서 세어 닿지
+    않는 못 찾음도 닿으면 같은 낱말이다."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (PART_A, 202612, CUSTOM_B),
+            (PART_B, 202611, CUSTOM_B),
+        ]
+    )
+
+    message = _stop_text(lambda: _attach_from_file(frame))
+
+    assert message == (
+        "CSV 파일에서 한 Capa Code 에 CUSTOM 이 둘 이상이라 등록하지 않았습니다: "
+        f"`{PART_A}`(`{CUSTOM_A}` 202611 / `{CUSTOM_B}` 202612). 한 부품(Capa Code)의 CUSTOM 은 "
+        "달마다 같아야 합니다 — 원천에서 바로잡아 CSV 를 다시 받은 뒤 올리세요."
+    )
+    assert "CUSTOM 원천 표" not in message
+    unlisted = _file([(PART_A, 202611, CUSTOM_A), (PART_B, 202611, CUSTOM_B)])
+    answer = custom_rows_of(unlisted.iloc[:1])
+    missing = _stop_text(lambda: attach_custom_values(unlisted, answer, words=FILE_WORDS))
+    assert missing.startswith("CSV 파일에 없는 Capa Code 가 있어 등록하지 않았습니다: ")
+    assert missing.endswith(f" {FILE_WORDS.missing_fix}")
+    assert "CUSTOM 원천 표" not in missing
+
+
+def test_custom_rows_of_keeps_blank_custom_and_blank_month_rows() -> None:
+    """파일 행에서 센 답은 (Capa Code, 생산계획년월, CUSTOM) 마다 한 줄이고 빈 CUSTOM 줄 · 빈 달
+    줄을 버리지 않는다 — 빈 CUSTOM(NA · 빈 글자)은 빈 글자 한 줄로 모이고, 행수 합이 파일 행 수다.
+    값이 다 찬 파일이면 붙인 뒤 두 표 칸이 늘 맞는다(어긋난 칸 0)."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (PART_A, 202611, CUSTOM_A),
+            (PART_A, None, CUSTOM_A),
+            (PART_B, 202611, None),
+            (PART_B, 202611, ""),
+            (None, 202612, None),
+        ]
+    )
+
+    answer = custom_rows_of(frame)
+
+    assert answer.columns.tolist() == list(CUSTOM_SOURCE_COLUMNS)
+    assert int(answer["행수"].sum()) == len(frame)
+    months = ["(빈 달)" if pd.isna(month) else f"{int(month)}" for month in answer["생산계획년월"]]
+    assert list(
+        zip(answer["Capa Code"], months, answer["CUSTOM"], answer["행수"], strict=True)
+    ) == [
+        (PART_A, "202611", CUSTOM_A, 2),
+        (PART_A, "(빈 달)", CUSTOM_A, 1),
+        (PART_B, "202611", "", 2),
+        ("", "202612", "", 1),
+    ]
+
+    filled = frame.iloc[:3]
+    attached, check = _attach_from_file(filled)
+
+    assert attached["CUSTOM"].tolist() == [CUSTOM_A] * 3
+    assert check.custom_rows == check.main_rows == 3
+    assert (check.one_side_cells, check.count_mismatch_cells) == (0, 0)
+    assert not check.warns and check.cells.empty
+
+
+def test_a_part_with_filled_and_blank_custom_rows_stops_with_file_words() -> None:
+    """한 부품에 CUSTOM 이 든 줄과 빈 줄(NA · 공백뿐)이 섞이면 빈 줄을 그 값으로 채우지 않고 멈춘다
+    — 둘째 표의 빈 CUSTOM 과 같은 규칙이고 자리는 「CSV 파일」 이다."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (PART_A, 202612, None),
+            (PART_A, 202701, "  "),
+            (PART_B, 202611, CUSTOM_B),
+        ]
+    )
+
+    message = _stop_text(lambda: _attach_from_file(frame))
+
+    assert message == (
+        "CSV 파일에 CUSTOM 이 빈 Capa Code 가 있어 등록하지 않았습니다: "
+        f"`{PART_A}` 202612 · 202701 — 그대로 등록하면 그 부품은 구분 없음({CUSTOM_BLANK})으로 "
+        "합쳐집니다."
+    )
+
+
+def test_a_part_with_only_blank_custom_rows_stops_as_blank_not_missing() -> None:
+    """빈 CUSTOM 줄만 있는 부품도 같은 빈 값 글로 멈춘다 — 답에서 그 부품이 빠져 「없는 Capa
+    Code … 적재됐는지 확인」 이라는 틀린 글로 멈추지 않는다."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (PART_B, 202611, None),
+            (PART_B, 202612, None),
+        ]
+    )
+
+    message = _stop_text(lambda: _attach_from_file(frame))
+
+    assert message.startswith("CSV 파일에 CUSTOM 이 빈 Capa Code 가 있어 등록하지 않았습니다: ")
+    assert f"`{PART_B}` 202611 · 202612" in message
+    assert f"`{PART_A}`" not in message
+    assert "없는 Capa Code" not in message
+    assert "적재됐는지" not in message
+
+
+def test_rows_without_capa_code_get_the_blank_marker_from_file_counts() -> None:
+    """Capa Code 가 빈 파일 행은 짝짓지 않는다 — 파일 CUSTOM 이 무엇이든 빈 값 표지이고 멈춤 ·
+    칸 대조 · 종류에서 빠진다(둘째 표 길의 빈 Capa Code 행과 같다). 답의 행수는 그 행도 센다."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (None, 202611, None),
+            ("  ", 202612, "DEMO_CUSTOM_STRAY"),
+            (PART_A, 202612, CUSTOM_A),
+        ]
+    )
+
+    attached, check = _attach_from_file(frame)
+
+    assert attached["CUSTOM"].tolist() == [CUSTOM_A, CUSTOM_BLANK, CUSTOM_BLANK, CUSTOM_A]
+    assert check.kinds == 1
+    assert check.custom_rows == 4
+    assert not check.warns
+    assert check.cells.empty
+
+
+def test_case_variants_in_the_file_become_one_spelling() -> None:
+    """파일 안에서 앞뒤 공백 · 대소문자만 다른 CUSTOM 은 한 값이다 — 멈추지 않고 둘째 표 길과 같은
+    한 표기(답 줄에서 가장 많이 쓰인 것)로 붙고, 글자 dtype 칸은 그 dtype 을 지킨다."""
+    frame = _file(
+        [
+            (PART_A, 202611, CUSTOM_A),
+            (PART_A, 202612, f"  {CUSTOM_A.lower()} "),
+            (PART_B, 202611, CUSTOM_A),
+            (PART_B, 202612, CUSTOM_A),
+        ]
+    )
+
+    attached, check = _attach_from_file(frame)
+
+    assert custom_rows_of(frame)["CUSTOM"].nunique() == 2
+    assert attached["CUSTOM"].tolist() == [CUSTOM_A] * 4
+    assert attached["CUSTOM"].dtype == frame["CUSTOM"].dtype
+    assert check.kinds == 1
+    assert not check.warns

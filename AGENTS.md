@@ -3096,9 +3096,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빈 값을 표지와 같게 맞댄다. 부품 차례 열쇠 `custom_sort_key`(대소문자 접은 글자 → 원문, 빈 값 · 표지는 끝 — 8장)도
     여기 하나다.
 - `src/capa_simulation/services/custom_source_check.py` — BigDataQuery 본 표에 CUSTOM 원천 표의 값을 Capa Code 로 붙이고 두 표 행
-  수를 대조한다(Streamlit 없음). `check_custom_rows` 는 CUSTOM 원천 표 답(`CUSTOM_SOURCE_COLUMNS`)을 본 조회 앞에서 검사하고,
-  `attach_custom_values` 는 다시 검사한 뒤 본 표 CUSTOM 칸만 조회표 map 으로 덮는다(행을 이어 붙이지 않는다 — 행 수 · 차례 ·
-  index 그대로).
+  수를 대조한다(Streamlit 없음 — 원천 CSV 는 파일에서 센 답으로 같은 판정을 받는다). `check_custom_rows` 는 CUSTOM 원천 표
+  답(`CUSTOM_SOURCE_COLUMNS`)을 본 조회 앞에서 검사하고, `attach_custom_values` 는 다시 검사한 뒤 본 표 CUSTOM 칸만 조회표 map
+  으로 덮는다(행을 이어 붙이지 않는다 — 행 수 · 차례 · index 그대로).
   - 멈춤(2026-11-22 사용자 답 Q2 (가) · Q9 (가)): 0행 · 칸 모자람 · 한 Capa Code 에 CUSTOM 둘 이상(달마다 다른 것 포함) ·
     줄은 있는데 CUSTOM 이 빈 값(빈 값 표지 글자 그대로 포함) · 본 표 Capa Code 가 CUSTOM 원천 표에 없음. 예시는 부품 · 달로
     `CUSTOM_EXAMPLE_LIMIT` 까지다. CUSTOM 의 앞뒤 공백 · 대소문자는 `normalize_custom_values` 로 접고, Capa Code 는 앞뒤 공백만
@@ -3113,6 +3113,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `SWITCHED_OFF_MEMO`(「CUSTOM 원천 붙이지 않음 — 부품 구분 없음(-)」 — 변수 이름 없음, 목록 메모 칸은 모두가 본다), `notice()` 는
     `SWITCHED_OFF_NOTICE`(DB 등록 사건 알림 `SC-06` 글 — 앞 60자가 「CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다」, 표 없음,
     끄개 이름 · 코드는 `_queue_custom_source_check` 가 끝에 붙인다)다. 시험 `tests/test_custom_source_check.py::test_a_switched_off_check_says_so_in_memo_and_notice_and_has_no_cells`.
+  - 원천 낱말 · 파일에서 센 답: 멈춤 글 셋(둘 이상 · 빈 값 · 못 찾음)의 자리 낱말은 `CustomSourceWords`(`place` · `several_fix` ·
+    `missing_fix`)이고 판정은 같다. 두 공개 함수의 `words=` 기본값 `TABLE_WORDS` 는 둘째 표 글 그대로이고(어댑터 · 자동 갱신은 낱말을
+    주지 않는다), 원천 CSV 는 `FILE_WORDS`(「CSV 파일」 · 「원천에서 바로잡아 CSV 를 다시 받은 뒤 올리세요.」)다. 0행 · 칸 모자람 ·
+    행수 글은 둘째 표 글 하나다. `custom_rows_of` 는 CUSTOM 이 본 표 칸에 실려 온 원천을 같은 꼴 답(`CUSTOM_SOURCE_COLUMNS`)으로
+    센다 — Capa Code · CUSTOM 의 NA 는 빈 글자로 채우고 `dropna=False` 로 묶어 빈 CUSTOM 줄 · 빈 달 줄을 잃지 않는다(잃으면 한
+    부품의 빈 줄이 값 든 줄로 조용히 채워지거나, 빈 줄만인 부품이 「없는 Capa Code」 라는 틀린 글로 멈춘다). 공백 · 대소문자 접기는
+    검사가 둘째 표 답과 같이 한다. 시험 `tests/test_custom_source_check.py` 의 `test_table_words_are_the_default_and_keep_the_stop_texts` ·
+    `test_custom_rows_of_keeps_blank_custom_and_blank_month_rows` 등 일곱.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 칸이 많은 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 그룹 자리(첫 등장 차례)를 바꾸지
     않는다.
