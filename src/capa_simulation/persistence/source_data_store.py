@@ -14,6 +14,7 @@ from capa_simulation.io.core_data_source import (
 from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.services.korean_particle import with_subject_particle
+from capa_simulation.services.source_bridge import compared_source_hashes
 
 
 def validate_declared_source_metadata(
@@ -42,10 +43,11 @@ def validate_immutable_source_code(
     connection: duckdb.DuckDBPyConnection,
     simulation_code: str,
     source_data_hash: str,
+    source_type: str,
 ) -> None:
     rows = connection.execute(
         """
-        SELECT DISTINCT d.source_data_hash
+        SELECT DISTINCT d.source_data_hash, d.source_type
         FROM app_meta.scenario s
         JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
         WHERE s.source_simulation_code = ?
@@ -53,7 +55,11 @@ def validate_immutable_source_code(
         """,
         [simulation_code],
     ).fetchall()
-    existing_hashes = {str(row[0]) for row in rows}
+    # 원천 CSV 는 다리다 — DB 원천을 받을 때는 같은 코드의 CSV 원천과 견주지 않는다
+    # (`source_bridge`).
+    existing_hashes = compared_source_hashes(
+        ((str(row[0]), str(row[1])) for row in rows), source_type
+    )
     if existing_hashes and source_data_hash not in existing_hashes:
         # 보관본도 원천을 가지므로 여기서 함께 본다. 상세 조회 기간을 바꿔 같은 코드를 다시 받는
         # 사람은 이 문구를 만난다 — 「새 리비전」은 원천을 다시 받지 않으니 다시 받는 길도 적는다

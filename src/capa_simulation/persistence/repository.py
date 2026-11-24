@@ -1388,6 +1388,7 @@ class DuckDBScenarioRepository:
                     connection,
                     metadata.source_simulation_code,
                     source_data_hash,
+                    metadata.source_type,
                 )
             connection.execute(
                 """

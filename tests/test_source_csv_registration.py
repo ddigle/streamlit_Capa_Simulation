@@ -207,7 +207,7 @@ def test_uploading_a_csv_fills_the_form_and_saves_a_csv_scenario(tmp_path: Path)
     assert any(caption.value.startswith("**원천 CSV** · 코드 1 · ") for caption in app.caption)
     assert _field(app, "시뮬레이션 코드").value == DEMO_CODE
     assert _field(app, "원천 시뮬레이션명").value == DEMO_CODE
-    assert _field(app, "저장할 시나리오명").value == f"{DEMO_CODE} ({DEMO_CODE})"
+    assert _field(app, "저장할 시나리오명").value == f"{DEMO_CODE} ({DEMO_CODE}) · CSV"
     assert _field(app, "초기 리비전명").value == "초기 리비전"
     assert _field(app, "원천 등록시점 (선택)").value == ""
     note = str(app.text_area[0].value)
@@ -219,7 +219,7 @@ def test_uploading_a_csv_fills_the_form_and_saves_a_csv_scenario(tmp_path: Path)
 
     assert not place_errors(app), place_errors(app)
     assert [str(item.value) for item in successes(app)] == [
-        f"{DEMO_CODE} ({DEMO_CODE})을 저장하고 r1을 올렸습니다."
+        f"{DEMO_CODE} ({DEMO_CODE}) · CSV를 저장하고 r1을 올렸습니다."
     ]
     [scenario] = _scenarios(database)
     assert scenario.source_type == SOURCE_CSV_SOURCE_TYPE
@@ -492,7 +492,7 @@ def test_a_second_press_of_the_csv_save_creates_once(
     _ok(app)
     assert press.tries == 1
     names = [scenario.scenario_name for scenario in _scenarios(database)]
-    assert names == [f"{DEMO_CODE} ({DEMO_CODE})"]
+    assert names == [f"{DEMO_CODE} ({DEMO_CODE}) · CSV"]
     assert [str(item.value) for item in app.error] in ([], [route.SAME_NAME_TEXT])
 
 

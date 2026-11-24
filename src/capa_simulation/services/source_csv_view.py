@@ -7,8 +7,9 @@ Streamlit 을 import 하지 않고 세션 상태도 만지지 않는다 — DB �
 같은 자리다. 목록 표는 DB 목록과 같은 칸 이름 · 표지(등록여부 · 저장가능)를 쓰고, 파일에 없는
 시뮬레이션명 · PLAN명 · 원천 등록시각 칸은 세우지 않는다. 등록 칸 처음 값은 DB 폼이 이름 빈 행을
 채우는 꼴과 같다 — 원천 시뮬레이션명은 코드, 시나리오명은 「<원천명> (<코드>)」(원천 웹 파일
-이름에는 시뮬레이션명 · 주차가 없다). 원천 등록시점 칸의 꼴 판정은 DB 폼의 검증 정규식 · 서버 판정과
-같다 — DB 등록 화면 파일을 import 하지 않으려고 이 파일에 둔다."""
+이름에는 시뮬레이션명 · 주차가 없다)에 다리 꼬리(`source_bridge.BRIDGE_NAME_TAIL`)를 단 것이다.
+원천 등록시점 칸의 꼴 판정은 DB 폼의 검증 정규식 · 서버 판정과 같다 — DB 등록 화면 파일을 import
+하지 않으려고 이 파일에 둔다."""
 
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     UNREGISTERED_LABEL,
     UNSAVABLE_LABEL,
 )
+from capa_simulation.services.source_bridge import BRIDGE_NAME_TAIL
 
 SOURCE_CSV_DISPLAY_COLUMNS: Final[tuple[str, ...]] = (
     "등록여부",
@@ -105,8 +107,9 @@ def code_rows(summary: SourceCsvSummary, code: str) -> int:
 def source_csv_prefill(summary: SourceCsvSummary, code: str) -> SourceCsvPrefill:
     """고른 코드로 등록 칸 여섯을 채운다 — DB 폼이 이름 빈 행을 채우는 꼴과 같다.
 
-    원천 시뮬레이션명은 코드, 시나리오명은 「<원천명> (<코드>)」 다 — 원천 웹 파일 이름에는
-    시뮬레이션명 · 주차가 없다(내려받은 날짜 · 시각뿐). 원천 등록시점은 빈칸이다(선택). 메모는 그
+    원천 시뮬레이션명은 코드, 시나리오명은 「<원천명> (<코드>) · CSV」 다 — 원천 웹 파일 이름에는
+    시뮬레이션명 · 주차가 없다(내려받은 날짜 · 시각뿐). 끝 꼬리는 다음 날 같은 코드를 DB 로 받는
+    시나리오의 이름과 겹치지 않게 단다(`source_bridge`). 원천 등록시점은 빈칸이다(선택). 메모는 그
     코드의 PLAN 을 파일 차례대로 「 · 」 로 잇는다(빈 PLAN 은 뺀다).
     """
     plans = [entry.plan for entry in summary.codes if entry.code == code and entry.plan]
@@ -114,7 +117,7 @@ def source_csv_prefill(summary: SourceCsvSummary, code: str) -> SourceCsvPrefill
     return SourceCsvPrefill(
         simulation_code=code,
         source_name=code,
-        scenario_name=f"{code} ({code})",
+        scenario_name=f"{code} ({code}){BRIDGE_NAME_TAIL}",
         revision_name=DEFAULT_REVISION_NAME,
         registered_at="",
         note=f"원천 PLAN {plan_text}" if plan_text else "",

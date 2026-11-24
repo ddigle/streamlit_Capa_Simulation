@@ -112,6 +112,7 @@ from capa_simulation.services.core_data_pipeline import (
 )
 from capa_simulation.services.custom_source_check import CustomSourceCheck
 from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.source_bridge import settled_source_codes
 
 # Alarm 줄에 싣기에 큰 충돌 상세만 이 칸에 남아 탭 맨 아래 CSV 단추로 내려받는다.
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
@@ -334,7 +335,7 @@ def render_bigdataquery_registration(
         custom_problem=custom_problem,
         alert_tab=alert_tab,
     )
-    registered_codes, existing_names = _registered_scenarios(repository)
+    registered_codes, db_registered_codes, existing_names = _registered_scenarios(repository)
     # 찾기 칸과 그 표의 작업은 표 위 한 줄이다 — 기준 창보다 좁으면 줄이 내려앉는다(설계 규칙
     # UI-LAY-11 · UI-ACC-02). 조회의 거부 · 스피너와 조회 결과 줄은 이 줄 바로 아래 · 표 바로 위다.
     st.html(CATALOG_TOOLBAR_STYLE)
@@ -360,7 +361,7 @@ def render_bigdataquery_registration(
         # 되살리지 않는다. CSV 길 회차에는 DB 폼을 그리지 않아 채워도 버려지므로 부르지 않는다.
         _restore_dropped_prefill()
         _render_catalog_form(toolbar, configured=catalog_ready)
-        _render_catalog_list(toolbar, registered_codes=registered_codes)
+        _render_catalog_list(toolbar, registered_codes=db_registered_codes)
         _render_registration_form(
             repository,
             database_path,
@@ -514,10 +515,12 @@ def _configuration_short(*, query_ready: bool, custom_problem: str | None) -> st
 
 def _registered_scenarios(
     repository: DuckDBScenarioRepository,
-) -> tuple[frozenset[str], frozenset[str]]:
-    """(이미 등록된 원천 코드, 이미 쓰인 시나리오명).
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """(이미 등록된 원천 코드, 그 가운데 DB 목록이 등록됨으로 셀 코드, 이미 쓰인 시나리오명).
 
-    매 렌더 다시 계산한다. 세션 프레임에 구워 두면 저장 직후 목록의 `등록여부` 가 낡는다.
+    DB 목록은 원천 CSV 로만 받은 코드를 등록됨으로 세지 않는다 — DB 에 오면 평소처럼 받는 다리다
+    (`source_bridge`). CSV 목록은 모든 원천 코드로 센다. 매 렌더 다시 계산한다. 세션 프레임에 구워
+    두면 저장 직후 목록의 `등록여부` 가 낡는다.
     """
     try:
         # 보관본까지 본다. 숨은 시나리오를 못 보면 같은 원천 코드로 하나가 더 생긴다.
@@ -529,9 +532,10 @@ def _registered_scenarios(
             tab=QUERY_TAB_NAME,
             text="등록된 시나리오를 읽지 못했습니다",
         )
-        return frozenset(), frozenset()
+        return frozenset(), frozenset(), frozenset()
     return (
         frozenset(str(scenario.source_simulation_code) for scenario in scenarios),
+        settled_source_codes(scenarios),
         frozenset(str(scenario.scenario_name) for scenario in scenarios),
     )
 

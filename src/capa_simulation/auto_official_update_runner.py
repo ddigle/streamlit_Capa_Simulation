@@ -122,6 +122,7 @@ from capa_simulation.services.required_equipment import required_exclusion_count
 from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
+from capa_simulation.services.source_bridge import settled_source_codes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -433,10 +434,9 @@ def _execute(
     catalog = sources.fetch_catalog(window)
 
     log.advance("select")
-    existing_codes = {
-        summary.source_simulation_code
-        for summary in repository.list_scenarios(include_archived=True)
-    }
+    # 원천 CSV 로만 받은 코드는 「등록됨」 으로 세지 않는다 — DB 에 오면 평소처럼 받는다
+    # (`source_bridge`).
+    existing_codes = settled_source_codes(repository.list_scenarios(include_archived=True))
     received = received_codes(repository)
     selection = select_candidate(
         catalog,

@@ -88,8 +88,9 @@ def test_prefill_joins_every_plan_of_the_code() -> None:
 
 def test_prefill_names_come_from_the_code_like_the_db_form_with_a_blank_name() -> None:
     """원천 웹 파일 이름에는 시뮬레이션명 · 주차가 없다 — 이름 처음 값은 파일 이름이 아니라 코드다.
-    DB 폼이 이름 빈 목록 행을 채우는 꼴(원천명 = 코드, 시나리오명 「<원천명> (<코드>)」)과 같고,
-    리비전명은 같은 처음 값, 등록시점은 빈칸이다."""
+    DB 폼이 이름 빈 목록 행을 채우는 꼴(원천명 = 코드, 시나리오명 「<원천명> (<코드>)」)과 같고
+    시나리오명 끝에만 다리 꼬리 「 · CSV」 가 붙는다. 리비전명은 같은 처음 값, 등록시점은
+    빈칸이다."""
     summary = _summary(SourceCsvCode("DEMO-SIM-1", "P1", 1))
     db = registration_prefill(
         CatalogRow("DEMO-SIM-1", "", "P1", "", "", True), catalog_window_label="(합성)"
@@ -98,8 +99,11 @@ def test_prefill_names_come_from_the_code_like_the_db_form_with_a_blank_name() -
     prefill = source_csv_prefill(summary, "DEMO-SIM-1")
 
     assert prefill.simulation_code == "DEMO-SIM-1"
-    assert (prefill.source_name, prefill.scenario_name) == (db.source_name, db.scenario_name)
-    assert prefill.scenario_name == "DEMO-SIM-1 (DEMO-SIM-1)"
+    assert (prefill.source_name, prefill.scenario_name) == (
+        db.source_name,
+        f"{db.scenario_name} · CSV",
+    )
+    assert prefill.scenario_name == "DEMO-SIM-1 (DEMO-SIM-1) · CSV"
     assert prefill.revision_name == db.revision_name
     assert prefill.registered_at == ""
 
