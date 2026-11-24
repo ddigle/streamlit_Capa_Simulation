@@ -3165,7 +3165,7 @@
   것이라 꼴은 두고, 받아들일지는 따로 묻는다.
 - (2026-11-24) **운영 서버의 입장 화면 Introduce 를 개발자에게만 — 다른 사람의 입장 화면은 Detail · Summary 두 단추**(정식판 마감 2-A 의
   티저 몫 — 지난 결정(2026-10-19 「Introduce 는 내장 40초 티저」)을 운영 서버에서 거두는 일이라 따로 물었고 같은 날 사용자가 「권장대로」 답함, 같은
-  물음의 HOME Guide 옆 따라하기 창은 지금처럼, 갈래 `close-1124/screens`, 규칙집 6-42 screens-teaser · v1.45, 걸린 규칙 UI-INP-07 · UI-TXT-01 ·
+  물음의 HOME Guide 옆 따라하기 창은 지금처럼, 갈래 `close-1124/screens`, 규칙집 6-42 screens-teaser · v1.46, 걸린 규칙 UI-INP-07 · UI-TXT-01 ·
   UI-TXT-02 · UI-CON-02 · UI-LAY-13 · PRC-02) — 커버 셋째 단추 「Introduce」 가 띄우는 티저(`intro_overlay_assets/capa-teaser.html`)는 합성 수치가 든
   10-19 쇼케이스 사본이라 그 뒤 바뀐 화면을 반영하지 않는다. 운영 서버(`SsoConfig.operational`)에서는 매 회차 요약 칸의 티저 값
   (`intro_summary.teaser_payload`)이 구현 중 화면 숨김(`sso_identity.unfinished_hidden`)과 같은 동작 `screen.unfinished` 를 화면 등급으로 할 수
@@ -3253,7 +3253,7 @@
   말은 README · AGENTS · 모듈 설명에만) 통과. 규칙 글 · 6-42 는 그대로 참이라 규칙집은 고치지 않았다. 따라하기 예시판 그림은 운영 아님에서 찍어
   그대로다.
 - (2026-11-24) **실행 관리 머리 — 이행 현황판 자리 · 실적 셋 목차 카드를 운영 서버에서 개발자에게만**(정식판 마감 2-A 의 실행 관리 머리 몫, 갈래
-  `close-1124/screens`, 규칙집 6-42 screens-exec-head · v1.45, 걸린 규칙 UI-INP-07 · UI-LAY-10 · UI-TXT-01 · UI-TXT-02 · UI-CON-03 · UI-LAY-13 ·
+  `close-1124/screens`, 규칙집 6-42 screens-exec-head · v1.46, 걸린 규칙 UI-INP-07 · UI-LAY-10 · UI-TXT-01 · UI-TXT-02 · UI-CON-03 · UI-LAY-13 ·
   UI-PRF-03) — 데이터를 읽지 않는 실행 관리 머리가 사이드바와 같은 판정(`sso_identity.unfinished_hidden`)을 한 번 불러, 운영 서버의 개발자가 아닌
   회차에는 맨 아래 점선 「이행 현황판 자리」 를 그리지 않고 목차에서 구현 중 화면(`PageSpec.unfinished` — 효율 · UPEH · 수율 실적) 카드를 빼 다섯
   (두 줄)으로 세운다. 세 영역의 Dynamic Capa 카드는 앱의 틀이라 걷지 않고 이름 · 「실적」 · 풍선만 남긴다(「열기」 없음). 하위 화면 선언
@@ -3269,7 +3269,7 @@
   등급 안 카드 수는 회차마다 같다 — 바뀌는 것은 미리 보기를 켜고 끄는 회차뿐) 통과. 따라하기 예시판 그림은 운영 아님에서 찍어 그대로다.
 - (2026-11-24) **운영 서버의 구현 중 화면은 개발자에게만 — 사이드바에서 빼고 주소로 열면 멈춘다**(정식판 마감 2-A — 2026-11-24 사용자가 정식판 마감
   2번을 권장안대로 이번 판에 넣으라고 함, 그 A 「운영 서버는 미완성 화면 개발자만 · 샘플 기본 끔」 의 구현 중 화면 몫, 갈래 `close-1124/screens`, 규칙집
-  6-42 · v1.45, 걸린 규칙 UI-INP-07 · UI-LAY-10 · UI-CON-03 · UI-LAY-05 · UI-PRF-03 · UI-TXT-01 · UI-TXT-02 · UI-LAY-13 · UI-NTF-05) — 원천 미연결 ·
+  6-42 · v1.46, 걸린 규칙 UI-INP-07 · UI-LAY-10 · UI-CON-03 · UI-LAY-05 · UI-PRF-03 · UI-TXT-01 · UI-TXT-02 · UI-LAY-13 · UI-NTF-05) — 원천 미연결 ·
   만드는 중인 코어 화면 열(Capa Chatbot · 효율 · UPEH · 수율 실적 · 생산 진도 머리와 샘플 셋 · Dynamic Capa · 표준 대비 재공 현황 —
   `navigation.PageSpec.unfinished`)을 운영 서버(`SsoConfig.operational`)에서는 화면 등급 개발자에게만 사이드바에 세운다(동작 `screen.unfinished` —
   판정은 `sso_identity.unfinished_hidden` 하나, 「이 등급으로 보기」 를 따름, 운영 + 통합인증 꺼짐은 모두에게 숨음). 그 밖의 사람에게는 Capa Chatbot ·
