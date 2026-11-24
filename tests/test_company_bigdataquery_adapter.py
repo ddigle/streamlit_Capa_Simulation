@@ -1336,12 +1336,28 @@ def test_the_switch_off_needs_no_custom_table_variable(
 def test_the_switch_is_judged_after_the_unconfigured_sql_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """끄개 판정은 본 조회문 짓기(미설정 SQL 검사) 뒤다 — 끄개를 내려도 「SQL 미설정」 글이
-    그대로이고 패키지를 부르지 않는다(켬이고 변수가 없을 때 SQL 글이 먼저인 것은 변수 없음 갈래
+    """끄개 판정은 본 조회문 짓기(미설정 SQL 검사) 뒤다 — 미설정 SQL 이면 끄개를 읽기 전에
+    멈춰(`custom_source_problem` · `custom_source_on` 을 부르지 않음) 끄개를 내려도 「SQL 미설정」
+    글이 그대로이고 패키지를 부르지 않는다. 끔이면 판정이 늘 None 이라 글만으로는 차례가 갈리지
+    않아 판정 함수가 불렸는지를 본다(켬이고 변수가 없을 때 SQL 글이 먼저인 것은 변수 없음 갈래
     시험이 본다)."""
     _switch_off(monkeypatch)
     monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
     imported = _counting_import(monkeypatch)
+    judged: list[str] = []
+    switch_on = adapter.custom_source_on
+    source_problem = adapter.custom_source_problem
+
+    def spied_switch_on(environ: Mapping[str, str] | None = None) -> bool:
+        judged.append("custom_source_on")
+        return switch_on(environ)
+
+    def spied_source_problem(environ: Mapping[str, str] | None = None) -> str | None:
+        judged.append("custom_source_problem")
+        return source_problem(environ)
+
+    monkeypatch.setattr(adapter, "custom_source_on", spied_switch_on)
+    monkeypatch.setattr(adapter, "custom_source_problem", spied_source_problem)
     unconfigured = adapter.BigDataQueryCoreDataProvider(
         "사내 조회",
         query_template=f"SELECT {adapter.UNCONFIGURED_MARKER} WHERE x = '{{simulation_code}}'",
@@ -1350,7 +1366,17 @@ def test_the_switch_is_judged_after_the_unconfigured_sql_check(
     with pytest.raises(RuntimeError, match="SQL이 아직 설정되지 않았습니다"):
         unconfigured.fetch("SIM-001")
 
+    assert judged == []
     assert imported == []
+    # 갈아 끼운 판정 함수를 상세 조회가 실제로 부르는지 — 설정된 SQL 이면 같은 끔 길이 판정한다.
+    main = _two_part_main()
+    monkeypatch.setattr(
+        adapter,
+        "load_bigdataquery_module",
+        lambda: _module(_answers(main, _custom_for(main), asked=[])),
+    )
+    adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+    assert judged[0] == "custom_source_problem"
 
 
 def test_catalog_sql_is_not_mixed_into_the_detail_template() -> None:
