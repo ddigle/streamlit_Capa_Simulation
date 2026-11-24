@@ -303,6 +303,19 @@ Artifactory 인덱스 주소(`https://…/simple` 통째, 계정·토큰 없이)
 
 이 한 줄만 붙여 넣고 묻는 자리에 주소를 붙여 넣습니다(다음 줄을 함께 붙이면 그 줄이 값으로 들어갑니다).
 
+이 PC 의 앱으로 시나리오 관리 `DB 등록` 을 할 때는 CUSTOM 원천 표 이름도 사용자 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 에 넣습니다 — DB 등록이
+부품(`Capa Code`)마다의 `CUSTOM` 을 그 표에서 읽습니다. 값은 영문 · 숫자 · 밑줄로 된 `스키마.표` 꼴의 사내 값이라 저장소 · 배포 ZIP · 대화 ·
+리뷰에 적지 않습니다. 넣은 뒤에는 위와 같이 **새 창**에서 앱을 다시 띄웁니다(떠 있던 앱은 넣은 값을 보지 못합니다). 등록하지 않는 PC 는 넣지
+않아도 됩니다.
+
+```powershell
+[Environment]::SetEnvironmentVariable("CAPA_BDQ_CUSTOM_TABLE", (Read-Host "CUSTOM 원천 표"), "User")
+```
+
+이 줄도 한 줄만 붙여 넣고 묻는 자리에 표 이름을 넣습니다. 값이 없거나 꼴이 틀리면 `DB 등록` 탭의 `DB 조회 후 시나리오 저장` 이 잠기고(풍선이
+그 변수 이름을 말합니다) 머리 `Alarm` 의 `AD-04` 가 채울 자리를 적습니다 — 목록 조회는 그대로 됩니다. WebIDE 는 셸에서 넣고
+(`docs/bigdataquery_webide_setup.md` 2-1), C-DEP CD 는 배포 설정의 환경변수 표에 넣습니다(아래).
+
 ```powershell
 uv pip install -r requirements-company.txt
 ```
@@ -320,9 +333,13 @@ uv pip install -r requirements-company.txt
   extra·group 을 해석하므로 사내 인덱스에 닿지 못하는 개발 PC 에서 `uv lock` 이 죽습니다. 덕분에 배포 ZIP 에서
   빼야 할 파일이 없습니다.
 - 패키지가 없어도 앱은 뜹니다. 시나리오 관리 `DB 등록` 탭만 안내를 띄우고 멈춥니다.
+- `CAPA_BDQ_CUSTOM_TABLE` 이 없거나 꼴이 틀려도 앱은 뜹니다. 그동안 DB 등록은 저장이 잠기고, 공식버전 자동 갱신은 그 회차가 등록
+  단계에서 멈춰 시나리오를 만들지 않습니다(값을 넣은 뒤 다음 회차가 같은 코드를 다시 받습니다).
 - C-DEP CD(배포 서버)에는 셸이 없어 위 명령을 칠 수 없습니다. 배포 설정의 환경변수 표에 값을 넣으면 이미지의 시작
   스크립트(`scripts/container_start.py`)가 설치·로그인 토큰을 갖추고 결과를 Admin Area 「서버 시작 점검」에 남깁니다 —
-  넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」. 토큰이 만료되면 개발자가 같은 펼침의
+  넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」. CUSTOM 원천 표 이름(`CAPA_BDQ_CUSTOM_TABLE`)도 그 표에
+  넣습니다 — 없으면 DB 등록 · 자동 갱신이 멈추고, 같은 펼침의 `CUSTOM 원천 표` 줄이 `실패` 라 개발자 알림 `AD-01` 이 뜹니다(넣고
+  CI/CD 를 다시 누르면 풀립니다). 토큰이 만료되면 개발자가 같은 펼침의
   「토큰 넣기」 로 새 토큰을 넣어 다음 조회부터 쓰게 합니다(다시 띄우면 환경변수 값으로 돌아갑니다 — 같은 문서 「토큰 값 얻는 법」).
   `CAPA_BDQ_SECRET_KEY` 를 넣은 `managed` 서버는 개발자가 Admin Area 「BDQ 자동 로그인」 에 계정을 넣어 두면 시작마다, 그리고 조회가
   토큰 파일이 없거나 토큰이 만료 · 무효여서(패키지 문구 「You have invalid token」 — 응답 코드는 보지 않음, 실측은 400) 막힐 때
@@ -834,7 +851,7 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 | `docs/review_sample.md` | 검수용 합성 샘플 — 만드는 법 · 만드는 것(시나리오 · 공식버전 · 설비 DB · 모듈 견본) · 이야기 칸 · 끝 점검 · 앱 띄우기 |
 | `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(가이드는 사외 완성 — 사외 뼈대 · 사내 완성은 쉼), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
 | `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 기본 Sonnet · Opus 구간 넷(0-2)·사내 DB 를 여는 줄은 사용자 별도 창(0장)·실 DB 사본 확인(6-3)·실데이터 확인(8장) 포함. 사내 탐색(9장)은 걷었고 따라하기 가이드 사내판 만들기(10장)는 쉼 |
-| `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
+| `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 · CUSTOM 원천 표 설정 |
 | `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·접속 명단·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
 | `docs/audit_log_operations.md` | 접속 · 작업 기록 운영 — 역할 · 매일 · 월간 점검 · 분기 · 이상 징후 기준 · 사건 때 조사 · 내부관리계획에 적을 값 |
