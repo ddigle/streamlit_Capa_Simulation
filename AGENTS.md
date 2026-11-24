@@ -2378,6 +2378,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/excel_reader.py` — 초기 이관·병행 검증 도구용 `RQ_*` Excel Table 읽기다(앱 런타임은 안 쓴다).
 - `src/capa_simulation/io/core_data_source.py` — CSV·사내 조회가 공유하는 78컬럼 계약·정규화·해시·프로파일과
   `CoreDataProvider` 규약이다. CSV 는 스크립트가 `read_core_data_csv` 로 읽고 화면 입구는 없다.
+  - `CoreDataBatch` 끝 칸 `custom_check` 는 CUSTOM 원천 표 대조 수(`custom_source_check.CustomSourceCheck`)이고 기본 None 이다
+    (CSV · 시드 · 가짜 공급자). 그 모듈이 `core_data_derivation` → 이 모듈을 부르므로 import 는 `TYPE_CHECKING` 안이다.
 - `src/capa_simulation/io/company_bigdataquery_adapter.py` — 사내 SQL·컬럼 매핑 전용 접속부로, 결과를 CSV 로 남기지 않고
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서
@@ -3031,6 +3033,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     간다(4장 「CUSTOM」). CS 빈 행 셈의 계획 줄 키(`_ROUTE_OWNER_KEYS`)도 CUSTOM 을 싣는다 — 이 길은 정규화 앞이라
     빈 값을 표지와 같게 맞댄다. 부품 차례 열쇠 `custom_sort_key`(대소문자 접은 글자 → 원문, 빈 값 · 표지는 끝 — 8장)도
     여기 하나다.
+- `src/capa_simulation/services/custom_source_check.py` — BigDataQuery 본 표에 CUSTOM 원천 표의 값을 Capa Code 로 붙이고 두 표 행
+  수를 대조한다(Streamlit 없음). `check_custom_rows` 는 CUSTOM 원천 표 답(`CUSTOM_SOURCE_COLUMNS`)을 본 조회 앞에서 검사하고,
+  `attach_custom_values` 는 다시 검사한 뒤 본 표 CUSTOM 칸만 조회표 map 으로 덮는다(행을 이어 붙이지 않는다 — 행 수 · 차례 ·
+  index 그대로).
+  - 멈춤(2026-11-22 사용자 답 Q2 (가) · Q9 (가)): 0행 · 칸 모자람 · 한 Capa Code 에 CUSTOM 둘 이상(달마다 다른 것 포함) ·
+    줄은 있는데 CUSTOM 이 빈 값(빈 값 표지 글자 그대로 포함) · 본 표 Capa Code 가 CUSTOM 원천 표에 없음. 예시는 부품 · 달로
+    `CUSTOM_EXAMPLE_LIMIT` 까지다. CUSTOM 의 앞뒤 공백 · 대소문자는 `normalize_custom_values` 로 접고, Capa Code 는 앞뒤 공백만
+    떼며, 생산계획년월은 양쪽을 같은 글자(`202611`)로 맞댄다. Capa Code 가 빈 행은 짝짓지 않는다(본 표는 빈 값 표지).
+  - 알림만: 한쪽에만 있는 (Capa Code, 생산계획년월) 칸 · 행 수가 다른 칸(본 표는 받은 행 그대로 센다) — `CustomSourceCheck`
+    의 `warns` · `notice()` · `memo()`(늘 「CUSTOM 원천 대조 — 종류 n · …」) · `cells`.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 칸이 많은 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 그룹 자리(첫 등장 차례)를 바꾸지
     않는다.
