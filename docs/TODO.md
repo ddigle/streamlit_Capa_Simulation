@@ -2936,11 +2936,18 @@
   「Static · 2026-11-24 · 11-24 기준선」 — 기준 글은 요약 기준선 칸과 같은 `schedule_basis`, 기준 칸이 없는 옛 기준선은 설비 마스터).
   어느 기준으로 견주나는 그대로다. 라벨은 `shortening_baseline.baseline_label` 한 곳이고 선택 상자와 `RS-06` 전문(`_COMPARE_NAMES_KEY`)이
   같은 라벨을 쓴다. Guide 「진척 비교」 고르기 줄이 꼴을 적는다. 시험: `tests/test_shortening_baseline.py::test_the_label_leads_with_the_baselines_schedule_basis`
-  · `tests/test_shortening_view_fragment.py::test_the_compare_box_names_each_baseline_with_its_schedule_basis`. 자체 검토: UI-CON-02(기준
-  글은 전환 · 요약 기준선 칸과 같은 낱말 「Static」 · 「설비 마스터」) 통과 · UI-CON-04(라벨 꼴은 한 함수 — 선택지와 `RS-06` 전문이 같이
-  바뀜, 시험) 통과 · UI-TXT-01 · UI-TXT-04(설명 글을 더하지 않고 선택지 값 글만 늘었다) 통과 · UI-TXT-07(고른 뒤에는 닫힌 칸과 요약
-  기준선 칸에 같은 기준이 함께 서지만 닫힌 칸 글은 고른 기준선의 이름표이고 고를 때 보여야 하는 값이라 둔다 — 요약 칸은 「이 기준으로
-  견줌」 까지 말한다) 통과 · UI-ACC-02(사이드바 칸은 한 줄 말줄임 — 기준 · 저장일이 앞이라 줄어드는 것은 이름 끝) 통과.
+  · `tests/test_shortening_view_fragment.py::test_the_compare_box_names_each_baseline_with_its_schedule_basis`, 옛 라벨 글을 기대하던
+  `tests/test_shortening_progress_tab.py::test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit` ·
+  `tests/test_shortening_baseline_notice.py::test_a_compared_baseline_that_vanished_is_announced_once_with_its_name` 은 새 꼴로. 자체 검토:
+  UI-CON-02(기준 글은 전환 · 요약 기준선 칸과 같은 낱말 「Static」 · 「설비 마스터」) 통과 · UI-CON-04(라벨 꼴은 한 함수 — 선택지와 `RS-06`
+  전문이 같이 바뀜, 시험) 통과 · UI-TXT-01 · UI-TXT-04(설명 글을 더하지 않고 선택지 값 글만 늘었다) 통과 · UI-TXT-07(고른 뒤에는 닫힌 칸과
+  요약 기준선 칸에 같은 기준이 함께 서지만 닫힌 칸 글은 고른 기준선의 이름표이고 고를 때 보여야 하는 값이라 둔다 — 요약 칸은 「이 기준으로
+  견줌」 까지 말한다) 통과 · UI-ACC-02 예외(같은 날 `git archive` 사본 앱 · 합성 검수 샘플 · 창 1600×1000 · 기본 폭 사이드바 300px 에서
+  잼) — 상자 215px 에 글 자리는 닫힌 칸 약 171 ~ 185px · 펼친 목록 약 191 ~ 205px 이고 글 끝은 말줄임표 없이 잘린다(`text-overflow: clip`).
+  「설비 마스터 · 2026-10-20 · 10월 3주 기준선」 은 닫힌 칸에 「… · 10월 3주」(이름 9자 중 6자), 펼친 목록에 「… · 10월 3주 기준」(8자)까지
+  서고, 앞머리가 짧은 「Static · 2026-11-24 · 11-24 기준선」 은 다 든다. 기준 · 저장일은 늘 남지만 같은 기준 · 같은 날의 이름이 앞 예닐곱 자
+  뒤에서만 다르면(예 「11월 정기」 · 「11월 정기 수정」) 닫힌 칸에서는 가르지 못한다 — 호기 이름처럼 구별되는 끝을 남기는 갈래(UI-ACC-02
+  근거 「남은 물음 11-11」 보드 D6)와 달리 사용자 요청 꼴(기준 · 저장일 앞)을 따른 것이라 꼴은 두고, 받아들일지는 따로 묻는다.
 - (2026-11-21) **화면 탭 고르기가 앞 회차 끝 직후에 사라지면 한 번 다시 보낸다**(T1 — 2026-11-20 측정 · 같은 날 사용자 「넣음(권장)」
   으로 이번 배포에 싣는다, 걸린 규칙 UI-PRF-01 · UI-PRF-02) — 앞 회차 `script_finished` 직후 몇 ms(CPU 1배 약 5 ~ 10ms · 4배 약 25ms)
   안에 누른 탭은 Streamlit 1.63 프런트가 회차 요청을 보내기 전에 트리거 칸(`…page_tabs_strip__events`)을 지워(`removeInactiveWidgetState`)

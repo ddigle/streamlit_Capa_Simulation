@@ -233,7 +233,7 @@ def test_a_compared_baseline_that_vanished_is_announced_once_with_its_name() -> 
         "보던 기준선 「V 하나」가 지워져 진척 비교를 껐습니다",
     )
     assert note["full"].startswith(
-        "「진척 비교」 에서 보던 기준선 「2026-11-10 · V 하나」가 목록에서"
+        "「진척 비교」 에서 보던 기준선 「설비 마스터 · 2026-11-10 · V 하나」가 목록에서"
     )
     assert not app.caption and not app.markdown and not app.warning and not app.info
 

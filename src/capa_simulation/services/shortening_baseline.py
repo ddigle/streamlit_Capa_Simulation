@@ -241,8 +241,8 @@ def baseline_label(summary: ShorteningBaselineSummary) -> str:
 
     기준은 그 기준선의 현재 일정 기준(`schedule_basis` — 요약 기준선 칸과 같은 글, 옛 기준선은
     설비 마스터)이다 — 진척 비교는 그 기준의 지금 계획과 견주므로 고를 때부터 보인다. 기준선은
-    고칠 수 없어 라벨도 바뀌지 않는다. 기준 · 저장일이 앞이라 긴 이름은 끝에서 말줄임되고
-    기준 · 저장일은 남는다."""
+    고칠 수 없어 라벨도 바뀌지 않는다. 기준 · 저장일이 앞이라 칸보다 긴 라벨은 이름 끝이
+    잘리고(말줄임표 없이) 기준 · 저장일은 남는다."""
     return f"{summary.schedule_basis} · {summary.saved_at:%Y-%m-%d} · {summary.name}"
 
 
