@@ -2932,6 +2932,16 @@
 
 ### 화면
 
+- (2026-11-24) **Space 필요 단축 보기 기준 줄 풍선의 「설비 샘플(데모)」 를 「설비 합성 샘플」 로**(정식판 마감 2-A 와 같은 결정 범위, 갈래
+  `close-1124/screens`, 걸린 규칙 UI-CON-02 · UI-TXT-01 · UI-NTF-05) — Space 색 기준 `필요 단축` 을 켠 동안 사이드바 `Space 조건` 카드의 기준 달
+  줄(`space_shortening_view.render_layer_basis`) 풍선이 설비 마스터가 비어 샘플 fleet 을 그린 회차에 「필요 단축 · 설비 샘플(데모) 기준 · …」 였다. 앱
+  전체가 이 개념을 「합성 샘플」(머리 띠 표지 · 구현 중 탭 풍선 · 「합성 샘플 실적 아님」)로 부르므로 「설비 합성 샘플」 로 맞췄다. 운영 서버는 앞
+  커밋으로 샘플이 처음 끔이라 드물게만 보인다. 시험: 필요 단축 보기 켬 시험(빈 설비 DB)이 풍선의 「설비 합성 샘플 기준」 을 보고, 이름 바꿈 사전
+  `RENAMED`(`tests/test_one_concept_one_name.py`)에 옛 꼴 한 줄을 더했다(바꾼 기대 없음). 자체 검토: UI-CON-02(화면 글에 「(데모)」 꼴 0곳) 부분 —
+  「설비 샘플」 이 세 곳 남는다(필요 단축 일정 상태 알림 범위 이름 「설비 샘플 · 공정 …」(`required_shortening_panel`), Space FAB 대기분 저장 막음 글
+  `space_status.SAMPLE_SAVE_BLOCKED`, 필요 단축 일정 Guide 「설비 샘플이면 두 링크 모두 없습니다」). 이 변경이 이름 댄 자리 밖이라 그대로 두고 남은
+  일로 넘긴다 · UI-TXT-01(새 글 없음 — 풍선의 낱말 하나) 통과 · UI-NTF-05(샘플을 보는 동안 머리 띠 표지 · 풍선 그대로) 통과. 따라하기 예시판 그림은
+  풍선 글이라 바뀌지 않는다.
 - (2026-11-24) **운영 서버의 「샘플 데이터」 처음 값을 끔으로 — 개발 · WebIDE · 사내 PC 는 켜짐 그대로**(정식판 마감 2-A 의 「샘플은 기본 끔」 몫, 갈래
   `close-1124/screens`, 걸린 규칙 UI-LAY-10 · UI-NTF-05 · UI-STA-03 · UI-STA-04 · UI-INP-07 · UI-LAY-05 · UI-TXT-01 · UI-TXT-02) — 스위치의 처음 값이
   한 함수 `sample_data.sample_default` 다 — 운영 서버(`SsoConfig.operational` — 내장 시드 막이 `builtin_seed_allowed` 와 같은 뿌리)면 끔이고 등급 ·

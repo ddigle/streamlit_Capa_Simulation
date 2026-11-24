@@ -355,6 +355,8 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     assert not any("필요 단축 일정과 같은 계산" in text for text in _texts(app))
     [tip] = _basis_tips(app)
     assert f"오늘 {date.today().isoformat()}" in tip
+    # 빈 설비 DB 의 샘플 fleet 은 앱 전체가 쓰는 이름 「합성 샘플」 로 부른다(UI-CON-02).
+    assert "필요 단축 · 설비 합성 샘플 기준 · " in tip, tip
     bodies = len(plan_keys["bodies"])
     assert bodies == 1
 

@@ -532,7 +532,7 @@ def render_layer_basis(session: EquipmentSession, space_layer: SpaceLayer, *, sa
     months = space_layer.months
     span = f"{iso_month_text(months[0])}~{iso_month_text(months[-1])}" if months else "달 없음"
     equipment = (
-        "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
+        "설비 합성 샘플" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
     )
     unsaved = " (미저장 편집 포함)" if has_unsaved_scenario_changes() else ""
     st.caption(
