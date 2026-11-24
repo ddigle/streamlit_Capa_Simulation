@@ -397,6 +397,9 @@ def test_keep_and_unkeep_are_wired_to_their_audit_events(script: ModuleType) -> 
     keep = events.spec_of("admin_sync_keep")
     unkeep = events.spec_of("admin_sync_unkeep")
     assert keep is not None and keep.det_keys == {"seq_to", "keep_until", "result"}
+    # 기록 보기의 상세 칸 이름은 도구 출력 · 운영 문서와 같은 「기한」 이다(공지의 「끝 시각」 과
+    # 다른 칸).
+    assert events.DET_LABELS["keep_until"] == "기한"
     assert unkeep is not None and unkeep.det_keys == {"seq_to", "result"}
     with pytest.raises(SystemExit):
         script.parse_args(["keep"])
