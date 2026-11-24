@@ -19,11 +19,11 @@ import streamlit as st
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
-    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_PANEL_TITLE_GAP_PX,
     DASHBOARD_TITLE_BAND_PX,
     DASHBOARD_TITLE_LINE_PX,
 )
+from capa_simulation.components.home_plan_detail_figures import plan_detail_label_width_px
 from capa_simulation.components.home_preference import (
     SECTION_BAR_GAP_PX,
     SECTION_TITLE_FONT_PX,
@@ -342,8 +342,10 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 계획 세부수량 제품 칸의 부품 이름표를 잰 글꼴 폭으로 줄여 칸 안에 두고, 도넛 범례 · 계획
 # 세부수량의 부품 이름표가 끝을 같이 쓰는 같은 제품의 부품과 갈리는 글자를 남기며, `기타` 풍선이
 # 부품 이름표가 낀 이름을 둘째 줄에 따로 싣는 것, 60 은 한 부품이 같은 제품의 다른 부품의 끝
-# 전체일 때 그 부품 이름표가 첫 글자부터 남는 것(끝이 이어진 부품 셋이 서로 다른 글).
-HOME_FIGURE_SCHEMA_VERSION = 60
+# 전체일 때 그 부품 이름표가 첫 글자부터 남는 것(끝이 이어진 부품 셋이 서로 다른 글), 61 은 부품을
+# 가른 제품이 있는 계획 세부수량의 제품 칸을 가장 긴 부품 이름표가 다 들 만큼(상한까지) 넓히고 그
+# 폭을 분류 칸 그림 `layout.width` 에 싣는 것(HOME 구분 컬럼이 그 폭으로 선다).
+HOME_FIGURE_SCHEMA_VERSION = 61
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -862,6 +864,10 @@ def render_home_figures(
     if tab_is_hidden(owner_tab) or figures is None:
         return
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
+    # 네 구획이 한 구분 컬럼을 쓴다. 계획 세부수량이 부품 이름표에 맞춰 제품 칸을 넓힌 그림이면
+    # 그 폭이고(나머지 세 구획의 라벨 그림은 칸 폭을 따라 늘어난다), 아니면
+    # `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 다.
+    label_width_px = plan_detail_label_width_px(figures.plan_detail_labels)
 
     # 구분 컬럼은 px 로 고정한다. 비율로 두면 창이 좁을 때 구획 제목이 잘리고, 조회
     # 월이 적을 때는 반대로 필요 이상 넓어진다. 비율은 CSS 적용 전 첫 그리기용이다.
@@ -869,12 +875,12 @@ def render_home_figures(
         split_scroll_columns_style(
             label_key="production_lob_label_canvas",
             month_key="production_lob_month_region",
-            label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            label_width_px=label_width_px,
         )
     )
     label_column, month_column = st.columns(
         [
-            DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            label_width_px,
             visible_month_count * tokens.MONTH_COLUMN_WIDTH_PX,
         ],
         gap=None,

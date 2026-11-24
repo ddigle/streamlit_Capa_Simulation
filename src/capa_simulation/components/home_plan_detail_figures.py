@@ -11,11 +11,17 @@
 (`plotly_layout.table_text_layer`). 넘칠 수 있는 칸은 마우스를 올리면 전체 이름이 뜬다
 (`_label_hover_bar`) — 풍선은 그림 밖으로 나가지 못해 그림 폭을 넘는 이름은 줄을 나눈다. 비교
 시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면 행 높이가 부푼다.
+
+부품을 가른 제품이 있는 표만 제품 칸을 가장 긴 부품 이름표가 다 들 만큼 넓힌다(상한
+`tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX` — `_widened_label_columns`). 분류 칸 그림이 그만큼
+넓어지고 그 폭을 `layout.width` 에 실어 HOME 분류 칸이 같은 폭으로 선다
+(`plan_detail_label_width_px`).
 """
 
 from __future__ import annotations
 
 import html
+import math
 from collections.abc import Collection, Iterable, Sequence
 from itertools import groupby
 from typing import Any
@@ -65,6 +71,7 @@ from capa_simulation.services.product_parts import (
     PRODUCT_COLUMN,
     label_part,
     part_merged_columns,
+    product_part_label,
 )
 
 # 계획 세부수량 칸의 값 글자. 분류 칸과 월 칸이 같아야 두 칸의 글자가 같은 눈높이에 선다.
@@ -247,16 +254,62 @@ def _label_parts(detail: pd.DataFrame, dimensions: Sequence[str]) -> list[tuple[
     ]
 
 
-def _hover_lines(value: str) -> str:
+def _widened_label_columns(
+    widths: Sequence[float],
+    label_parts: Sequence[tuple[str, str]] | None,
+    product_column: int,
+) -> tuple[int, list[float]]:
+    """분류 칸 그림 폭(px)과 칸 폭 — 부품을 가른 제품이 있으면 제품 칸만 넓힌다.
+
+    가른 부품의 이름표(「DEMO_A (DEMO_CUSTOM_A)」) 가운데 가장 긴 것이 잰 글꼴 폭
+    (`_table_label_width_units`)으로 제품 칸 양쪽 여백 안에 다 드는 만큼 넓히되
+    `tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX` 를 넘지 않는다. 다른 칸(Stack · 거래선)의 px 폭은
+    그대로라 그림 폭이 넓힌 만큼 커진다. 넓힐 것이 없으면(가른 부품이 없거나 기본 폭에 다 든다) 받은
+    칸 폭과 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 를 그대로 돌려준다 — 그림이 넓히기 전과 같다.
+    """
+    split_labels = [
+        product_part_label(product, part)
+        for product, part in label_parts or ()
+        if part != PART_NOT_SPLIT
+    ]
+    if not split_labels:
+        return DASHBOARD_LABEL_COLUMN_WIDTH_PX, list(widths)
+    base_px = [width / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX for width in widths]
+    needed_px = (
+        max(_table_label_width_units(label) for label in split_labels) * DETAIL_VALUE_FONT_SIZE_PX
+        + 2 * DETAIL_LABEL_INSET_PX
+    )
+    extra_px = min(
+        max(0, math.ceil(needed_px - base_px[product_column])),
+        tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX,
+    )
+    if extra_px == 0:
+        return DASHBOARD_LABEL_COLUMN_WIDTH_PX, list(widths)
+    base_px[product_column] += extra_px
+    return DASHBOARD_LABEL_COLUMN_WIDTH_PX + extra_px, base_px
+
+
+def plan_detail_label_width_px(label_figure: go.Figure) -> int:
+    """계획 세부수량 분류 칸 그림이 그려질 폭(px) — HOME 분류 칸이 이 폭으로 선다.
+
+    제품 칸을 넓힌 그림만 `layout.width` 를 싣는다(`_widened_label_columns`). 없으면
+    `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 다. 공용 칸에서 다시 세운 그림도 레이아웃을 그대로 든다.
+    """
+    width = label_figure.layout.width
+    return DASHBOARD_LABEL_COLUMN_WIDTH_PX if width is None else int(width)
+
+
+def _hover_lines(value: str, max_px: float = DETAIL_HOVER_LINE_MAX_PX) -> str:
     """풍선 글을 그림 폭에 드는 줄로 나눠 `<br>` 로 잇는다.
 
     띄어쓰기에서 나누고, 한 줄을 넘는 낱말은 그 자리에서 끊는다. 글은 이스케이프해 돌려준다.
+    `max_px` 는 한 줄의 폭 상한이다 — 넓힌 그림은 그 폭에서 9px 를 뺀 값을 준다.
     """
     lines: list[str] = []
     line = ""
     for character in value:
         width = table_text_max_width_px(line + character, HOVER_LABEL_FONT_SIZE_PX)
-        if width > DETAIL_HOVER_LINE_MAX_PX:
+        if width > max_px:
             head, space, tail = line.rpartition(" ")
             lines.append(head if space else line)
             line = tail if space else ""
@@ -272,14 +325,16 @@ def _label_hover_bar(
     row_tops: Sequence[float],
     row_height: float,
     xaxis: str,
+    width_px: int = DASHBOARD_LABEL_COLUMN_WIDTH_PX,
 ) -> go.Bar | None:
     """제 칸을 넘칠 수 있는 분류 이름의 전체 글 풍선. 그런 칸이 없으면 None 이다.
 
     칸을 덮는 보이지 않는 막대에 건다(`_grid_hover_target_bar` 와 같은 표적) — 글자 trace 에 걸면
     글자 가운데 점 둘레에서만 뜬다. Plotly 는 마우스 밑 맨 위 축 영역의 trace 만 보므로 자르는 축
-    (`table_text_layer`)보다 위에 놓인 전폭 축 `xaxis` 에 얹는다.
+    (`table_text_layer`)보다 위에 놓인 전폭 축 `xaxis` 에 얹는다. `width_px` 는 분류 칸 그림 폭이다.
     """
-    px_per_unit = DASHBOARD_LABEL_COLUMN_WIDTH_PX / sum(column_widths)
+    px_per_unit = width_px / sum(column_widths)
+    line_max_px = DETAIL_HOVER_LINE_MAX_PX + (width_px - DASHBOARD_LABEL_COLUMN_WIDTH_PX)
     cells = [
         (column, row, value)
         for column, column_values in enumerate(values)
@@ -297,7 +352,7 @@ def _label_hover_bar(
         width=row_height,
         xaxis=xaxis,
         marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
-        hovertext=[_hover_lines(value) for _, _, value in cells],
+        hovertext=[_hover_lines(value, line_max_px) for _, _, value in cells],
         hoverinfo="text",
         showlegend=False,
     )
@@ -321,13 +376,19 @@ def build_plan_detail_figures(
 
     부품(`CUSTOM`)은 칸으로 그리지 않는다 — 제품 칸 글이 이름표(「제품 (부품)」, 접힌 부품이면
     제품 이름)이고 줄무늬 띠 · 굵은 선도 이름표 단위라 부품마다 띠 하나다
-    (`product_parts.part_merged_columns`). 좁은 칸에서는 부품을 남기고 제품 쪽을 먼저 줄인다.
+    (`product_parts.part_merged_columns`). 가른 부품이 있으면 제품 칸만 가장 긴 부품 이름표가 다 들
+    만큼(상한까지) 넓히고 분류 칸 그림 폭이 그만큼 커진다(`_widened_label_columns` — 그 폭은 분류 칸
+    그림의 `layout.width`). 상한을 넘는 이름표는 부품을 남기고 제품 쪽을 먼저 줄인다.
     """
     requested_dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
     label_parts = _label_parts(production_detail, requested_dimensions)
     dimensions, merged_detail = part_merged_columns(production_detail, requested_dimensions)
     product_column = dimensions.index(PRODUCT_COLUMN) if label_parts is not None else -1
-    detail_dimension_widths = [DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions]
+    label_width_px, detail_dimension_widths = _widened_label_columns(
+        [DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions],
+        label_parts,
+        product_column,
+    )
     # 제품 칸이 끝나는 자리(paper 0~1). **폭에서 계산한다** — `상세 계획` 을 켜면 거래선이
     # 붙어 분모가 2.0 에서 3.0 으로 바뀌는데, 숫자를 박아 두면 그때 선이 엉뚱한 칸
     # 경계로 밀린다. 실제로 그렇게 밀려 있었다.
@@ -425,8 +486,7 @@ def build_plan_detail_figures(
         font=header_font,
     )
     label_column_px = [
-        width / sum(detail_dimension_widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
-        for width in detail_dimension_widths
+        width / sum(detail_dimension_widths) * label_width_px for width in detail_dimension_widths
     ]
 
     # 제품마다 표에 선 부품 — 같은 제품의 부품 이름표끼리 줄인 글이 같아지지 않게 넘긴다.
@@ -455,11 +515,12 @@ def build_plan_detail_figures(
         ],
         font=value_font,
     )
-    # 분류 칸은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 폭으로 그려진다(`home_rendering` 이 못박는다).
+    # 분류 칸은 `label_width_px` 폭으로 그려진다(`home_rendering` 이 이 그림의 폭으로 못박는다 —
+    # 넓히지 않으면 `DASHBOARD_LABEL_COLUMN_WIDTH_PX`).
     label_texts, label_text_layout = table_text_layer(
         [header_texts, label_value_texts],
         column_widths=detail_dimension_widths,
-        width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+        width_px=label_width_px,
         height_px=detail_figure_height,
     )
     # 자르는 축 다음 번호 — 뒤 번호 축의 영역이 위에 놓여 칸 어디서든 풍선 막대가 마우스를 받는다.
@@ -470,6 +531,13 @@ def build_plan_detail_figures(
         row_tops=row_tops,
         row_height=detail_row_height,
         xaxis=f"x{label_hover_axis}",
+        width_px=label_width_px,
+    )
+    # 넓힌 그림만 제 폭을 싣는다 — HOME 분류 칸이 이 폭으로 선다(`plan_detail_label_width_px`).
+    widened_layout: dict[str, Any] = (
+        {"width": label_width_px, "autosize": False}
+        if label_width_px != DASHBOARD_LABEL_COLUMN_WIDTH_PX
+        else {}
     )
     detail_label_figure = figure_from_spec(
         {
@@ -477,6 +545,7 @@ def build_plan_detail_figures(
             "layout": {
                 **detail_layout,
                 **label_text_layout,
+                **widened_layout,
                 "dragmode": False,
                 "hovermode": "closest",
                 "hoverlabel": _hover_label(),

@@ -932,6 +932,12 @@ TABLE_ROW_HEIGHT_PX: Final = 27
 # — 같이 올리면 월 축 정렬과 글자 기준선이 한꺼번에 어긋난다.
 MONTH_GRID_ROW_HEIGHT_PX: Final = 30
 MONTH_COLUMN_WIDTH_PX: Final = 100
+# HOME 계획 세부수량 제품 칸을 넓히는 폭의 상한. 부품을 가른 제품이 있는 표만 제품 칸을 가장 긴 부품
+# 이름표가 다 들 만큼 넓히고(2026-11-24 그림 보드 3 답 q7-narrow-label (다) —
+# `home_plan_detail_figures`), HOME 분류 칸 전체가 그만큼 넓어져 오른쪽 달 칸을 민다. 달 칸 한 칸
+# 폭까지만 밀어 Stack · 거래선 칸과 달 칸이 화면 밖으로 밀려나지 않게 한다. 넘는 이름표는 부품을
+# 남기고 제품 쪽부터 줄인다.
+PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX: Final = MONTH_COLUMN_WIDTH_PX
 SCROLLBAR_HEIGHT_PX: Final = 10
 # 구획 제목과 그 시트 사이(제목 글줄 상자 아래 끝 → 시트 위 끝)와 구획 사이(앞 시트 아래 끝 → 다음
 # 제목 글줄 상자 위 끝). HOME 대시보드 네 구획(Capa LOB 현황 · 계획 세부수량 · 주요공정 · 상세 B/N

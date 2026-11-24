@@ -11,6 +11,7 @@ from alert_marks import alert_notes, data_error_marks, data_error_texts, place_e
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_PANEL_TITLE_GAP_PX,
     DASHBOARD_TITLE_BAND_PX,
     DASHBOARD_TITLE_LINE_PX,
@@ -1866,6 +1867,22 @@ def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
         "bottleneck_title_spacer",
         "bottleneck_detail_months",
     ]
+
+
+def test_the_label_column_keeps_its_width_without_a_split_part(seeded_database: Path) -> None:
+    """내장 시드(부품을 가른 제품 없음)의 HOME 구분 컬럼은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX`
+    그대로다 — 계획 세부수량 제품 칸을 넓히는 것은 부품을 가른 제품이 있을 때뿐이다(그림 보드 3 답
+    q7-narrow-label)."""
+    app = _run(seeded_database)
+
+    pinned = [
+        str(element.proto.body)
+        for element in app.get("html")
+        if ".st-key-production_lob_label_canvas)" in str(element.proto.body)
+    ]
+    assert len(pinned) == 1
+    assert f"flex: 0 0 {DASHBOARD_LABEL_COLUMN_WIDTH_PX}px" in pinned[0]
+    assert app.session_state["spy_figures"]["production_detail_labels"].layout.width is None
 
 
 def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> None:

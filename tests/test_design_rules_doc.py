@@ -3583,9 +3583,9 @@ def test_the_a_to_g_requests_open_6_41_with_the_basis_name_exception() -> None:
     """v1.44 — 6-41 은 사용자 요청 A ~ G(2026-11-22)를 지으며 화면 규칙에 닿은 판정의 절이다.
     줄마다 머리 판정 id · 굵은 답 · 끝 「(날짜 · 규칙 id)」 이고(뒤 줄은 같은 꼴로 더해진다), 첫
     줄은 환산 「집계 기준」 값 이름 「산출 기준 총량」 의 UI-CON-02 예외(g-basis-name)다. 규칙
-    UI-CON-02 예외 칸이 그 줄을 가리키고, 줄이 말하는 가름 글이 Guide 「환산 조건」 에 있다."""
+    UI-CON-02 예외 칸이 그 줄을 가리키고, 줄이 말하는 가름 글이 Guide 「환산 조건」 에 있다. 판
+    머리는 v1.45 시험이 본다."""
     document = _text()
-    assert "판 v1.44" in document.split("\n## 1. ")[0]
     assert "6-41 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
     record = section[section.index("\n### 6-41. ") :]
@@ -3613,6 +3613,48 @@ def test_the_a_to_g_requests_open_6_41_with_the_basis_name_exception() -> None:
     v144 = history[history.index("- **v1.44 — 2026-11-23.**") :]
     for phrase in ("6-41", "g-basis-name", "UI-CON-02", "규칙 82"):
         assert phrase in v144, phrase
+
+
+BOARD3_CARDS = ("q7-narrow-label", "q7-other-hover", "q7-past-slice")
+
+
+def _board3_lines(document: str) -> dict[str, str]:
+    """6-41 의 그림 보드 3 줄 — 보드 카드 id → 줄."""
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") :]
+    return {
+        line.split(" · ", 1)[0][2:]: line
+        for line in record.splitlines()
+        if line.startswith("- ") and line.split(" · ", 1)[0][2:] in BOARD3_CARDS
+    }
+
+
+def test_the_q7_picture_board_answers_join_6_41() -> None:
+    """v1.45 — Q7 갈라 보임 화면을 찍어 본 2026-11-24 그림 보드 3 의 답(모두 권장)은 6-41 에 보드
+    카드 id 를 줄 머리로 잇는다. 첫 줄 q7-narrow-label 은 (다) 「계획 세부수량 제품 칸만 넓힘」
+    이고 4장 「부품 이름표」 줄이 넓힘의 상한(달 칸 한 칸)을 적는다. 1장 안내 · 6-41 머리글이 보드
+    3 을 가리킨다."""
+    document = _text()
+    assert "판 v1.45" in document.split("\n## 1. ")[0]
+    assert "2026-11-24 그림 보드 3" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") :]
+    assert "2026-11-24 그림 보드 3" in record.split("\n- ", 1)[0]
+    lines = _board3_lines(document)
+    assert "q7-narrow-label" in lines
+    narrow = lines["q7-narrow-label"]
+    assert "→ **(다) 계획 세부수량 제품 칸만 넓힘**" in narrow
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" in narrow and "(2026-11-24 · " in narrow
+    known = {rule.id for rule in _rules()}
+    cited = RULE_TOKEN.findall(narrow.rsplit("(2026-11-24 · ", 1)[1])
+    assert cited and set(cited) <= known
+    current = _chapter(document, 4)
+    row = next(line for line in current.splitlines() if line.startswith("| 부품 이름표 |"))
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" in row and "100px" in row
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    for phrase in ("6-41", "q7-narrow-label", "규칙 82"):
+        assert phrase in v145, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:

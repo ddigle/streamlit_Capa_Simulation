@@ -543,11 +543,13 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     }
     assert marker in pie_labels
     assert TWO_PART_PRODUCT not in pie_labels
-    hovered = {
+    # 계획 세부수량 제품 칸은 부품 이름표에 맞춰 넓어져(그림 보드 3 답 q7-narrow-label) 「(-)」 줄
+    # 이름이 칸에 다 들면 풍선 없이 칸 글로 선다 — 칸 글과 풍선을 함께 본다.
+    named = {
         str(name).replace("<br>", " ")
         for trace in figures["production_detail_labels"].data
-        if trace.type == "bar"
-        for name in trace.hovertext
+        if trace.type in {"bar", "scatter"}
+        for name in (trace.hovertext if trace.type == "bar" else trace.text)
     }
-    assert marker in hovered
-    assert TWO_PART_PRODUCT not in hovered
+    assert marker in named
+    assert TWO_PART_PRODUCT not in named

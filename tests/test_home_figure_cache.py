@@ -319,6 +319,16 @@ def test_the_schema_moved_past_parts_chained_by_their_end() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 60
 
 
+def test_the_schema_moved_past_the_plan_detail_with_a_narrow_product_cell() -> None:
+    """61 부터 부품을 가른 제품이 있는 계획 세부수량은 제품 칸을 가장 긴 부품 이름표가 다 들
+    만큼(상한까지) 넓히고 그 폭을 분류 칸 그림에 실어 HOME 구분 컬럼이 그 폭으로 선다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(폭이 없는 그림 — 구분 컬럼이 넓어지지 않고 이름표가
+    줄어 선다)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 61
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

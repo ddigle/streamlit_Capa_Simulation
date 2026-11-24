@@ -5999,6 +5999,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`part_merged_columns` 이름표)이고 띠 · 굵은 선도 이름표 단위다 — 제품 칸 줄임은 부품을 남기는 `_fit_part_label` 이고,
     부품 이름표만 잰 글꼴 폭(`home_figure_common._table_label_width_units` — 이 환경 Chrome 이 그리는 글꼴 셋의 가장 넓은 폭)으로
     맞춘다(반각 0.6 은 대문자 · 밑줄 이름표를 좁게 잡아 기본 폭 제품 칸 경계에서 잘렸다). 접힌 이름은 지금 모형 그대로다.
+    가른 부품이 있으면 제품 칸만 가장 긴 부품 이름표가 그 모형으로 다 들 만큼 넓히고(상한
+    `tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX` — 달 칸 한 칸, 넘는 이름표는 위 줄임 — `_widened_label_columns`) Stack ·
+    거래선 칸은 px 폭 그대로라 분류 칸 그림이 그만큼 넓어진다. 그 폭은 분류 칸 그림 `layout.width` 에 실리고
+    `render_home_figures` 가 `plan_detail_label_width_px` 로 읽어 네 구획이 함께 쓰는 구분 컬럼을 그 폭으로 못박는다 — 나머지
+    세 구획의 라벨 그림(그림 · 글자는 그대로)은 칸 폭을 따라 늘어난다. 가른 부품이 없으면 그림 · 폭이 넓히기 전과 같다
+    (2026-11-24 그림 보드 3 답 q7-narrow-label (다) — 상세 계획 · GAP · 옛 리비전 GAP 도 같은 규칙, 도넛 범례 · 제약
+    계산표 제목은 그대로).
   - 구획 간격은 두 값이다(2026-11-02 사용자 요청) — 제목 글줄 → 시트 `tokens.SECTION_TITLE_SHEET_GAP_PX`, 앞 시트 →
     다음 제목 글줄 `tokens.SECTION_GAP_PX`. 계획 세부수량 · 주요공정 · 상세 B/N 제목 줄과 월 칸 짝 빈 줄은 띠
     (`home_dimensions.DASHBOARD_TITLE_BAND_PX` = 구획 사이 + 제목 글줄 `DASHBOARD_TITLE_LINE_PX` + 제목→시트, 위 · 아래 안쪽
@@ -8199,7 +8206,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 색은 부품마다 제 칸이다(2026-11-23 보드 답 D2 (가) — 다른 제품처럼, 새 토큰 없음). 같은 제품의 부품은 차례로만 이웃하고
     이름은 범례 · 풍선 글이 나르며(UI-ACC-03), 칸이 넘치면 부품 단위로 `기타` 에 접힌다 — 한 제품의 부품이 이름 있는 칸과
     `기타` 에 걸칠 수 있다(`product_share.assign_product_slots`).
-  - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. 좁은 칸 줄임은
+  - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. HOME 계획 세부수량만 줄이기 전에
+    제품 칸을 가장 긴 부품 이름표가 다 들 만큼 넓힌다(상한 달 칸 한 칸 — 2026-11-24 그림 보드 3 답 q7-narrow-label (다),
+    3장 HOME Figure 가족 줄). 좁은 칸 줄임은
     `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 제품 글자가 하나도
     들지 않으면 제품 자리를 말줄임만 남기고(「… (DEMO_CUSTOM_A)」), 부품만으로도 넘치면 앞을 줄이고 구별되는 끝을 남긴다
     (「(…CUSTOM_A)」 — UI-ACC-02). 접힌 부품은 `_fit_to_units` 와 같다. 함께 그리는 같은 제품의 부품(`siblings` — 도넛
