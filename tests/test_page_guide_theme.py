@@ -103,6 +103,22 @@ def test_guide_window_follows_the_app_theme_whatever_the_letter_case(board: str)
     assert results == expected
 
 
+def test_the_theme_button_tip_carries_no_review_words() -> None:
+    """가이드 창 머리의 밝기 단추 풍선은 「밝게 / 어둡게」 뿐이다 — 「시안 확인용」 같은 시안
+    검수 때의 말을 싣지 않는다. 틀과 예시판의 풍선이 같다."""
+    button = re.compile(r'<button class="tm" id="tm" title="(?P<tip>[^"]*)">')
+    tips: dict[str, str] = {}
+    for name, path in BOARDS.items():
+        match = button.search(path.read_text(encoding="utf-8"))
+        assert match, f"밝기 단추가 없습니다 — {name}"
+        tips[name] = match.group("tip")
+
+    for name, tip in tips.items():
+        assert "시안" not in tip, f"밝기 단추 풍선에 시안 검수 말이 있습니다 — {name}: {tip}"
+        assert "확인용" not in tip, f"밝기 단추 풍선에 시안 검수 말이 있습니다 — {name}: {tip}"
+    assert tips["틀"] == tips["예시판"] == "밝게 / 어둡게"
+
+
 def test_the_example_board_is_assembled_from_the_current_template() -> None:
     """예시판에서 데이터 자리를 걷어 내면 틀과 같다. 틀을 고쳤으면 예시판을 다시 조립한다
     (`scripts/build_page_guide.py --example --assemble-only`, 작업 폴더가 없으면 촬영부터)."""
