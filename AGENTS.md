@@ -761,6 +761,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     키 · 지문을 받아 기억하고(`memo=`), 알림을 내는 일(`alerts.state`)은 회차마다 한다. 접힌 「히트맵」 상자 안 그림은 그대로
     짓는다 — 상자 여닫기가 빈 구역 회차라 본문이 돌지 않아, 펼 때만 지으려면 펼침이 앱 회차를 불러야 한다(`docs/TODO.md` 2장
     「성능」 C3 결정 거리).
+  - 조회기간에 소요기준 BOX · PCB 경로가 있는 공정(계산 밖 — 11장)이 있으면 세 표 제목 줄(대당 Capa 공정별 · STEP별 · 소요대수 ·
+    확보율)의 부가 설명 칸에 「계산 밖 n공정」 표지가 서고 까닭 · 공정 표시명 · 빠진 소요기준은 그 풍선(`caption_help`)이다
+    (`components/outside_calculation_mark.py` — 2026-11-24 사용자 「권장안 그대로」, 설계 규칙 UI-TXT-04). 경고 알림이 아니다 —
+    고칠 수 없는데 늘 서는 상태다(UI-NTF-05). 목록은 `simulation_cache.get_unimplemented_basis_processes`(선언을 접지 않은 내용
+    토큰 + 계산과 같은 유효 조회기간) 한 번이고 풍선 차례는 공정 칸 선택지와 같은 표시순서다. n 은 공용 공정 거름과 상관없이
+    조회기간 전체의 수라 세 탭이 같고, 없으면 그리지 않는다(UI-TXT-08). 「STEP별로 그릴 공정이 없습니다」 빈 결과 · CSV · 시트
+    머리 값에는 싣지 않는다(`tests/test_calculation_result_tabs.py`).
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(Guide 첫 단락, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -2114,6 +2121,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     A11 — 월 머지는 베이스의 옛 판 모듈수가 이겨 풀지 못한다). 판을 적용하는 Admin 「부대공정」 은 개발자만 열어 그 밖의 화면
     등급(`sso_identity.viewer_can("admin.area")`)에는 「개발자가 판을 고쳐 적용한 뒤 부대공정 얹기」 로 할 수 있는 일만 적는다(규칙
     6-34 SC-01). 출처는 모듈수 오류일 때만 읽는다(`_scenario_extras` · `_active_extras` — 다섯 부르는 곳이 시나리오를 넘긴다).
+- `src/capa_simulation/components/outside_calculation_mark.py` — 소요기준 BOX · PCB 경로가 계산에서 빠진 공정(계산 밖 — 11장)을
+  알리는 표 제목 줄 표지 「계산 밖 n공정」 과 그 풍선 글(까닭 + 「이 기간: 표시명 (BOX) · …」, 경로 일부만 빠진 공정은 「— 일부
+  경로」, 열 개 넘으면 「외 n공정」)을 짓는 순수 함수 `outside_calculation_mark` 다. 공정 차례는 부르는 쪽이 준 원본 공정 표시순서이고
+  표시명은 차례를 정한 뒤 붙이며 마크다운 글자를 막는다(`literal_markdown`). 없으면 None — 표지 낱말은 「계산 밖」 하나다
+  (`OUTSIDE_CALCULATION`, 설계 규칙 UI-CON-02). 지금 부르는 곳은 산출 결과 세 표 제목 줄이다(`tests/test_outside_calculation_mark.py`).
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
   두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
@@ -7799,7 +7811,8 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
   그대로 적는다. 피클 왕복에서도 꼴을 잃지 않는다(`__reduce__`).
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
-- BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
+- BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조). 화면은 경고 알림이 아니라 표지 +
+  풍선이다 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」(`components/outside_calculation_mark.py`)
 - 기본 화면용 공정별 대당 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
   집계한다. 동일한 대당 Capa의 STEP이 늘면 공정별 대당 Capa는 그 수에 반비례해 감소한다.
@@ -11026,7 +11039,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   조회기간 안 계산 밖 공정 목록도 그 곁 한 곳(`frame_contracts.unimplemented_basis_processes`, 캐시
   `simulation_cache.get_unimplemented_basis_processes`)이다. 세는 꼴이 두 계산이 버리는 꼴과 같아 목록의 공정과 계산이 버린 경로가
   어긋나지 않고, 계산 숫자는 바꾸지 않으며, 넣을 때 그 집합만 고치면 목록도 함께 따라간다(`tests/test_frame_contracts.py` ·
-  `tests/test_required_equipment.py`).
+  `tests/test_required_equipment.py`). 화면 표지는 산출 결과 세 표 제목 줄 「계산 밖 n공정」 + 풍선이다(경고 알림 아님 —
+  `components/outside_calculation_mark.py`, 3장 `calculation_result.py`).
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지

@@ -48,6 +48,40 @@ UNROUTED_PLAN_RESULT_SCRIPT = (
     .replace('"test-capacity-standards-page"', '"test-capacity-unrouted-plan-page"')
 )
 assert "ADD_UNROUTED_PLAN = True" in UNROUTED_PLAN_RESULT_SCRIPT
+# 소요기준 BOX · PCB 경로를 더한 시나리오 — 경로가 모두 BOX 인 공정(Process-Box)과, PKG 경로
+# 곁에 표기만 다른 PCB 경로(`pcb `)가 섞인 공정(Process-A — 표시명 「가공」). 계산을 실제로 돌려
+# 두 계산이 그 경로를 버린 결과 위에 표지가 서는지 본다. 내용 토큰은 따로 둔다 — 계산 밖 칸은
+# 토큰 + 조회기간이 키다.
+OUTSIDE_ROUTES = """
+outside_routes = []
+for overrides in (
+    {"공정": "Process-Box", "STEP_SEQ": "P700", "MCP_SEQ": "7A", "소요기준": "BOX"},
+    {"STEP_SEQ": "P800", "MCP_SEQ": "8A", "소요기준": "pcb "},
+):
+    outside_route = tables["RQ_REQB"].iloc[0].to_dict()
+    outside_route.update(overrides)
+    outside_routes.append(outside_route)
+tables["RQ_REQB"] = pd.concat(
+    [tables["RQ_REQB"], pd.DataFrame(outside_routes)], ignore_index=True
+)
+
+active = {
+"""
+OUTSIDE_CALCULATION_RESULT_SCRIPT = (
+    TEST_SCRIPT.replace('PAGE_NAME = "reference_data.py"', 'PAGE_NAME = "calculation_result.py"')
+    .replace("STUB_CALCULATIONS = True", "STUB_CALCULATIONS = False")
+    .replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+    .replace('"test-capacity-standards-page"', '"test-capacity-outside-calculation-page"')
+    .replace("\nactive = {\n", OUTSIDE_ROUTES, 1)
+)
+assert "outside_routes" in OUTSIDE_CALCULATION_RESULT_SCRIPT
+# 세 표 제목 줄 부가 설명 칸의 계산 밖 표지와 그 풍선(설계 규칙 UI-TXT-04 — 숨은 데이터는
+# 표지 + 풍선).
+OUTSIDE_MARK = "계산 밖 2공정"
+OUTSIDE_HELP = (
+    "소요기준 BOX · PCB 공정은 산식이 정해질 때까지 대당 Capa · 소요대수 · 확보율 계산에 넣지 "
+    "않습니다(추가 예정).\n\n이 기간: Process\\-Box (BOX) · 가공 (PCB — 일부 경로)"
+)
 
 
 def _record(monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...]) -> list[str]:
@@ -422,3 +456,47 @@ def test_the_unit_capacity_exclusion_table_is_remembered_by_the_result_key(
     app.run()
     assert built == ["page"]
     assert _note_tables(app, "ST-14") == first
+
+
+def _outside_marks(app: AppTest) -> list[tuple[str, str]]:
+    """화면의 계산 밖 표지(글 · 풍선) — 표 제목 줄 부가 설명 칸의 `st.caption`."""
+    return [
+        (str(item.value), str(item.proto.help))
+        for item in app.caption
+        if str(item.value).startswith("계산 밖")
+    ]
+
+
+def test_the_three_result_tables_carry_an_outside_calculation_mark_with_its_balloon() -> None:
+    """조회기간에 소요기준 BOX · PCB 경로가 있는 공정이 있으면 대당 Capa · 소요대수 · 확보율 표
+    제목 줄에 같은 「계산 밖 n공정」 표지가 서고, 풍선이 까닭과 공정 표시명 · 빠진 소요기준을
+    말한다 — 경로 일부만 빠진 공정은 「— 일부 경로」. 경고 알림은 아니고(UI-NTF-05), 표는 두
+    계산이 그 경로를 버린 그대로다."""
+    app = AppTest.from_string(OUTSIDE_CALCULATION_RESULT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    expected = [(OUTSIDE_MARK, OUTSIDE_HELP)]
+    assert _outside_marks(app) == expected
+    assert app.session_state["captured_processes::unit_capacity_monthly_table"] == ["Process-A"]
+
+    _open_calc_tab(app, REQUIRED_TAB)
+    assert _outside_marks(app) == expected
+    assert app.session_state["captured_processes::required_equipment_summary_table"] == [
+        "Process-A"
+    ]
+
+    _open_calc_tab(app, SECUREMENT_TAB)
+    assert _outside_marks(app) == expected
+    assert app.session_state["captured_processes::securement_rate_monthly_table"] == ["Process-A"]
+    assert not any("계산 밖" in str(note) for note in alert_notes(app))
+
+
+def test_no_outside_calculation_mark_stands_without_box_or_pcb_routes() -> None:
+    """BOX · PCB 경로가 없으면 세 표 제목 줄에 표지를 그리지 않는다(UI-TXT-08)."""
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert _outside_marks(app) == []
+
+    for tab in (REQUIRED_TAB, SECUREMENT_TAB):
+        _open_calc_tab(app, tab)
+        assert _outside_marks(app) == []

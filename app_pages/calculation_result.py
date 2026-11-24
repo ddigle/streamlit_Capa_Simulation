@@ -28,6 +28,11 @@ Q2-7). 지금 화면 상태(보기 · 집계 수준 · 공정 거름 · 표 조�
 
 확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 조회 조건의 공정이 히트맵에도 걸린다
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
+
+조회기간에 소요기준 BOX · PCB 경로가 있는 공정(계산 밖 — 산식이 정해질 때까지 계산에 넣지
+않는다)이 있으면 세 표 제목 줄의 부가 설명 칸에 「계산 밖 n공정」 표지가 서고 까닭 · 공정은 그
+풍선이 말한다(`components/outside_calculation_mark.py` — 2026-11-24 사용자 「권장안 그대로」, 경고
+알림이 아니다). n 은 공용 공정 거름과 상관없이 조회기간 전체의 수라 세 탭이 같다.
 """
 
 from functools import partial
@@ -56,6 +61,7 @@ from capa_simulation.components.monthly_table_workbook import (
     MonthlySheetRequest,
     monthly_table_workbook,
 )
+from capa_simulation.components.outside_calculation_mark import outside_calculation_mark
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_field import (
@@ -127,6 +133,7 @@ from capa_simulation.services.simulation_cache import (
     get_scenario_result_summary,
     get_scenario_securement_rate,
     get_step_unit_capacity_table,
+    get_unimplemented_basis_processes,
     scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
@@ -341,6 +348,32 @@ else:
         TAB_UNIT_CAPACITY,
         _display_order=display_order,
     )
+    # 계산 밖 공정(소요기준 BOX · PCB 경로) — 키는 선언을 접지 않은 내용 토큰 + 계산과 같은 유효
+    # 조회기간이다. 세 표 제목 줄이 같은 표지를 쓰고, 풍선의 공정 차례는 공정 칸 선택지와 같은
+    # 표시순서다.
+    outside_processes = get_unimplemented_basis_processes(
+        str(active_scenario["content_token"]),
+        effective_start,
+        effective_end,
+        _reqb=active_scenario["tables"]["RQ_REQB"],
+    )
+    outside_mark = outside_calculation_mark(
+        outside_processes,
+        label=process_labels.label,
+        order=(
+            get_display_ordered_values(
+                pd.DataFrame({"공정": [item.process for item in outside_processes]}),
+                display_order_key,
+                PAGE_CALCULATION,
+                TAB_UNIT_CAPACITY,
+                _display_order=display_order,
+            )
+            if outside_processes
+            else ()
+        ),
+    )
+    outside_caption = None if outside_mark is None else outside_mark.caption
+    outside_help = None if outside_mark is None else outside_mark.help
 
     if open_tab is unit_capacity_tab:
         with table_card(CARD_NAME):
@@ -543,6 +576,8 @@ else:
                 )
                 render_table_heading(
                     output_title,
+                    caption=outside_caption,
+                    caption_help=outside_help,
                     csv=capacity_csv,
                     file_name=edited_file_name(f"{capacity_file}.csv"),
                     key="download_unit_capacity_csv",
@@ -696,6 +731,8 @@ else:
             )
             with table_heading_row(
                 "소요대수",
+                caption=outside_caption,
+                caption_help=outside_help,
                 csv=required_csv,
                 file_name=edited_file_name(f"{required_file}.csv"),
                 key=(
@@ -761,6 +798,8 @@ else:
             )
             render_table_heading(
                 "확보율",
+                caption=outside_caption,
+                caption_help=outside_help,
                 csv=securement_csv,
                 file_name=edited_file_name(
                     f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv"
