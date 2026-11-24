@@ -1,4 +1,4 @@
-# Purpose: 앱 전체 올리기 상한 200MB 와 그보다 낮은 설비 CSV 칸 고유 상한을 고정한다.
+# Purpose: 앱 전체 올리기 상한 200MB 와 그보다 낮은 설비 CSV · 원천 CSV 칸 고유 상한을 고정한다.
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 from test_equipment_data_workspace import _app, _open_import
 
 from capa_simulation.components.equipment_data_workspace import CSV_UPLOAD_LIMIT_MB
+from capa_simulation.components.source_csv_registration import SOURCE_CSV_UPLOAD_LIMIT_MB
 from capa_simulation.settings import PROJECT_ROOT
 
 
@@ -37,6 +38,15 @@ def test_the_equipment_csv_upload_box_has_its_own_limit_below_the_server_limit(
     assert [element.proto.label for element in uploaders] == ["또는 CSV 파일 업로드"]
     assert CSV_UPLOAD_LIMIT_MB == 50
     assert uploaders[0].proto.max_upload_size_mb == CSV_UPLOAD_LIMIT_MB
+    assert CSV_UPLOAD_LIMIT_MB < _server_upload_limit_mb()
+
+
+def test_the_source_csv_upload_box_has_its_own_limit_below_the_server_limit() -> None:
+    """DB 등록 탭 「CSV 파일」 길의 원천 CSV 칸도 제 상한(50MB — 설비 CSV 칸과 같은 값 · 제
+    상수)으로 막는다. 두 칸 상한 모두 앱 전체 상한보다 낮다 — 칸이 실제로 그 값을 싣는지는
+    `tests/test_source_csv_registration.py` 가 본다."""
+    assert SOURCE_CSV_UPLOAD_LIMIT_MB == 50
+    assert SOURCE_CSV_UPLOAD_LIMIT_MB < _server_upload_limit_mb()
     assert CSV_UPLOAD_LIMIT_MB < _server_upload_limit_mb()
 
 

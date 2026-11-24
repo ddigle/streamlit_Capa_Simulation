@@ -1,6 +1,10 @@
-# Purpose: BigDataQuery 시뮬레이션 코드 조회와 시나리오 등록을 두 단계로 제공한다.
+# Purpose: DB 등록 탭 — 원천 종류 단추와 BigDataQuery 코드 조회 · 시나리오 등록 두 단계를 제공한다.
 
 """기간으로 시뮬레이션 코드를 찾고, 고른 코드로 시나리오를 등록하는 화면.
+
+표 위 작업 줄 맨 앞 원천 종류 단추(`DB 조회 · CSV 파일`)가 길을 가른다. `CSV 파일` 이면 이 파일의
+목록 · 등록 폼 대신 `source_csv_registration` 이 원천 CSV 길을 그리고, 저장 결과 칸 · 부대공정 칩 ·
+저장 뒤 처리(`finish_registration`)는 이 파일의 것을 `RegistrationSteps` 로 넘겨 함께 쓴다.
 
 1단계는 기간 조회와 스크롤 목록, 2단계는 자동 입력된 등록 폼이다. 저장 경로는
 `fetch_core_data_dataset → 프리셋 → save_bigdataquery_scenario → 활성화 → flash(충돌 보고 포함)` 다.
@@ -45,6 +49,11 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
+from capa_simulation.components.source_csv_registration import (
+    RegistrationSteps,
+    forget_source_csv,
+    render_source_csv_route,
+)
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -74,6 +83,7 @@ from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
 from capa_simulation.scenario_registration import (
+    BigDataQueryRegistration,
     load_active_extra_pack,
     registration_note,
     save_bigdataquery_scenario,
@@ -94,6 +104,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     view_token,
 )
 from capa_simulation.services.core_data_pipeline import (
+    RegistrationDataset,
     conflict_cause_counts,
     fetch_registration_dataset,
     reference_conflicts_to_csv,
@@ -198,6 +209,12 @@ PICK_HIDDEN_HELP: Final = (
     "고른 행이 지금 검색 결과에 없습니다 — 아래 등록 폼의 값은 그대로 유지됩니다."
 )
 
+# 작업 줄 맨 앞 원천 종류 단추 — 처음 값은 DB 조회다(`_render_source_route`).
+SOURCE_ROUTE_KEY = "bigdataquery_source_route"
+SOURCE_ROUTE_DB: Final = "DB 조회"
+SOURCE_ROUTE_CSV: Final = "CSV 파일"
+SOURCE_ROUTES: Final = (SOURCE_ROUTE_DB, SOURCE_ROUTE_CSV)
+
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
 CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
@@ -301,8 +318,6 @@ def render_bigdataquery_registration(
     않는다."""
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
     _consume_reset_request()
-    # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
-    _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
@@ -324,18 +339,64 @@ def render_bigdataquery_registration(
     toolbar = st.container(
         key=CATALOG_TOOLBAR_KEY, horizontal=True, gap="small", vertical_alignment="bottom"
     )
-    _render_catalog_form(toolbar, configured=catalog_ready)
-    _render_catalog_list(toolbar, registered_codes=registered_codes)
-    _render_registration_form(
-        repository,
-        database_path,
-        configured=detail_ready,
-        custom_problem=custom_problem,
-        existing_names=existing_names,
-    )
+    # 원천 종류 단추가 작업 줄 맨 앞이다(설계 규칙 UI-LAY-07 — 탭 대신 종류 단추). `CSV 파일` 길은
+    # 조회 SQL · CUSTOM 원천 표 · 끄개 · 패키지 판정과 상관없이 열린다 — 위 `AD-04` 는 DB 상태라 두
+    # 길 모두 그대로 낸다(CSV 로 바꿨다고 걷으면 「해소」 로 읽힌다).
+    if _render_source_route(toolbar) == SOURCE_ROUTE_CSV:
+        render_source_csv_route(
+            repository,
+            database_path,
+            toolbar=toolbar,
+            registered_codes=registered_codes,
+            existing_names=existing_names,
+            steps=registration_steps(),
+        )
+    else:
+        # DB 조회 길로 바꾼 회차에 올린 원천 CSV 를 놓는다(바이트 · 요약) — 다시 오면 다시 올린다.
+        forget_source_csv()
+        # 리셋 소비와 같은 까닭으로 DB 폼 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은
+        # 되살리지 않는다. CSV 길 회차에는 DB 폼을 그리지 않아 채워도 버려지므로 부르지 않는다.
+        _restore_dropped_prefill()
+        _render_catalog_form(toolbar, configured=catalog_ready)
+        _render_catalog_list(toolbar, registered_codes=registered_codes)
+        _render_registration_form(
+            repository,
+            database_path,
+            configured=detail_ready,
+            custom_problem=custom_problem,
+            existing_names=existing_names,
+        )
     # 큰 충돌 상세의 CSV 단추는 한 런에 딱 한 번만 그린다. 저장 실패 분기에서 한 번 더 부르면
     # 같은 다운로드 key 가 두 번 나와 `StreamlitDuplicateElementKey` 로 탭이 죽는다.
     _render_oversized_conflict_download()
+
+
+def _render_source_route(toolbar: DeltaGenerator) -> str:
+    """작업 줄 맨 앞 원천 종류 단추(`DB 조회 · CSV 파일`) — 고른 길. 고른 값은 그 세션 동안
+    남는다."""
+    with toolbar:
+        route = st.segmented_control(
+            "원천",
+            SOURCE_ROUTES,
+            default=SOURCE_ROUTE_DB,
+            key=SOURCE_ROUTE_KEY,
+            persist_state="session",
+            # 선택 해제를 허용하면 길이 None 이 된다.
+            required=True,
+            width="content",
+        )
+    return SOURCE_ROUTE_CSV if route == SOURCE_ROUTE_CSV else SOURCE_ROUTE_DB
+
+
+def registration_steps() -> RegistrationSteps:
+    """「CSV 파일」 길이 DB 등록과 나눠 쓰는 자리 · 처리(`RegistrationSteps`)."""
+    return RegistrationSteps(
+        begin=forget_conflict_report,
+        result_slot=registration_result_slot,
+        reveal=_reveal_notice,
+        extra_chip=render_extra_chip,
+        finish=finish_registration,
+    )
 
 
 def catalog_list_key(token: str, nonce: int, keyword: str, scope: str) -> str:
@@ -809,14 +870,7 @@ def _render_registration_form(
             ),
         )
         st.text_area("등록 메모", key=form_field_key(FORM_NOTE_KEY), height=90)
-        extra_version = _active_extra_version(repository)
-        if extra_version is not None:
-            st.badge(
-                EXTRA_CHIP_TEMPLATE.format(version=extra_version),
-                icon=":material/extension:",
-                color="gray",
-                help=EXTRA_CHIP_HELP,
-            )
+        render_extra_chip(repository)
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
             icon=":material/cloud_download:",
@@ -825,21 +879,42 @@ def _render_registration_form(
             disabled=locked_help is not None,
             help=locked_help,
         )
-    # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
-    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CUSTOM 원천 대조 · CS 빈 행 · 대당 Capa
-    # 멈춤)는 알림창 · Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨
-    # 위에 두면 단추가 폼 맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은
-    # 알림이 없어도 서서 아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
-    # 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
-    queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
-    notice = render_flash(*REGISTRATION_FLASH_KEYS)
-    if queued:
-        _reveal_notice(notice)
+    notice = registration_result_slot()
     if submitted:
         with notice:
             _save_scenario(repository, database_path, existing_names=existing_names)
         # 저장하면 다음 회차로 넘어가므로(`st.rerun`) 여기까지 오면 칸에 저장하지 못한 까닭이 섰다.
         _reveal_notice(notice)
+
+
+def registration_result_slot() -> DeltaGenerator:
+    """저장 결과 칸 — 누른 저장 단추 바로 아래 늘 서 있는 한 칸(`flash` — 버튼과 같은 상자, VOC 글
+    올리기와 같은 꼴). 두 원천 길(DB 조회 · CSV 파일)이 같은 칸 · 같은 flash 키를 쓴다 — 한 회차에
+    한 길만 그리므로 한 번만 소비한다.
+
+    성공 · 저장 뒤 경고(업무 키 충돌 · CUSTOM 원천 대조 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
+    Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가 폼
+    맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도 서서
+    아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
+    스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다 — 저장 단추를 누른 회차는
+    부르는 쪽이 저장 뒤 한 번 더 세운다."""
+    queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
+    notice = render_flash(*REGISTRATION_FLASH_KEYS)
+    if queued:
+        _reveal_notice(notice)
+    return notice
+
+
+def render_extra_chip(repository: DuckDBScenarioRepository) -> None:
+    """활성 부대공정 판이 있으면 저장 단추 위 칩 「부대공정 판 n」 — 두 원천 길의 폼이 같다."""
+    extra_version = _active_extra_version(repository)
+    if extra_version is not None:
+        st.badge(
+            EXTRA_CHIP_TEMPLATE.format(version=extra_version),
+            icon=":material/extension:",
+            color="gray",
+            help=EXTRA_CHIP_HELP,
+        )
 
 
 def _active_extra_version(repository: DuckDBScenarioRepository) -> int | None:
@@ -872,7 +947,7 @@ def _save_scenario(
     # 돌리고 저장소 벽(`create_scenario`)은 그 뒤에 선다 — 목록 조회와 같이 누른 순간 실제 등급으로
     # 먼저 본다(DB 등록 — 실무자부터). 거절은 화면 본문의 받는 자리가 알림창 · Alarm 으로 낸다.
     grades.require("scenario.db_register")
-    st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
+    forget_conflict_report()
     scenario_name = str(st.session_state.get(form_field_key(FORM_SCENARIO_NAME_KEY), "")).strip()
     if scenario_name in existing_names:
         # 같은 이름이 둘이면 사이드바에서 구분되지 않는다. 사내 조회 한 번을 아끼려고
@@ -942,11 +1017,33 @@ def _save_scenario(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    finish_registration(repository, registration, registration_data)
+    # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
+    _request_reset()
+    st.rerun()
+
+
+def forget_conflict_report() -> None:
+    """앞 등록이 남긴 큰 충돌 상세(탭 맨 아래 CSV 단추)를 버린다 — 저장을 누른 회차 맨 앞(두 원천
+    길)."""
+    st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
+
+
+def finish_registration(
+    repository: DuckDBScenarioRepository,
+    registration: BigDataQueryRegistration,
+    registration_data: RegistrationDataset,
+) -> None:
+    """저장한 등록의 뒤 처리 — 두 원천 길(DB 조회 · CSV 파일)이 같다.
+
+    새 리비전을 활성화하고 목록이 따라가게 한 뒤 성공 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` ·
+    CUSTOM 원천 대조 `SC-05`/`SC-06` · CS 빈 행 · 부대공정 · 대당 Capa 멈춤)를 담는다. CUSTOM 대조는
+    원천 묶음의 `custom_check` 그대로다 — None(대조 없음 — CSV · 시드 · 가짜 공급자)이면 아무것도
+    내지 않는다. 폼 비우기와 `st.rerun()` 은 각 길이 부른다."""
+    prepared = registration_data.prepared
     snapshot = registration.snapshot
     activate_persisted_snapshot(snapshot)
     follow_created_scenario(repository, snapshot.scenario.scenario_id)
-    # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
-    _request_reset()
     queue_flash(
         REGISTRATION_FLASH_KEY,
         f"{with_object_particle(snapshot.scenario.scenario_name)} 저장하고 "
@@ -982,7 +1079,6 @@ def _save_scenario(
             icon=":material/warning:",
             popup_only=True,
         )
-    st.rerun()
 
 
 def _stored_result() -> CatalogResult | None:

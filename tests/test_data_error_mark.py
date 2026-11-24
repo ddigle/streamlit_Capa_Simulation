@@ -104,6 +104,16 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
         2,
         BESIDE,
     ),
+    # 원천 CSV 길(DB 등록 탭 「CSV 파일」) — 못 읽은 파일은 올림 칸 아래 거부 한 줄, 저장 회차의
+    # 거부 · 실패는 저장 단추 아래 결과 칸(DB 등록 `_save_scenario` 와 같은 꼴).
+    ("src/capa_simulation/components/source_csv_registration.py", "render_source_csv_route"): (
+        1,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/source_csv_registration.py", "_save_source_csv_scenario"): (
+        5,
+        PRESSED,
+    ),
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
         1,
         PRESSED,

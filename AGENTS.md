@@ -2403,7 +2403,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_duckdb_repository.py` 의 `broken_seed` 시험).
 - `src/capa_simulation/io/excel_reader.py` — 초기 이관·병행 검증 도구용 `RQ_*` Excel Table 읽기다(앱 런타임은 안 쓴다).
 - `src/capa_simulation/io/core_data_source.py` — CSV·사내 조회가 공유하는 78컬럼 계약·정규화·해시·프로파일과
-  `CoreDataProvider` 규약이다. CSV 는 스크립트가 `read_core_data_csv` 로 읽고 화면 입구는 없다.
+  `CoreDataProvider` 규약이다. 스크립트의 CSV 는 `read_core_data_csv` 로 읽는다 — 화면 입구(DB 등록 탭 「CSV 파일」 길)의 원천
+  CSV 는 `io/source_csv.py` 가 같은 계약 객체로 읽는다(함수는 스크립트용 그대로).
   - `CoreDataBatch` 끝 칸 `custom_check` 는 CUSTOM 원천 표 대조 수(`custom_source_check.CustomSourceCheck`)이고 기본 None 이다
     (CSV · 시드 · 가짜 공급자). 그 모듈이 `core_data_derivation` → 이 모듈을 부르므로 import 는 `TYPE_CHECKING` 안이다.
 - `src/capa_simulation/io/source_csv.py` — 원천 웹에서 받은 시나리오 CSV 읽기와 그 원천 묶음 공급자다. 같은 계약 객체(`load_core_data_contract`)를 쓰고
@@ -3087,6 +3088,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
   만드는 순수 계층이다(Streamlit import 없음). 코드·PLAN 당 한 행만 남긴다.
+- `src/capa_simulation/services/source_csv_view.py` — 원천 CSV 요약(`SourceCsvSummary`)을 DB 등록 탭 「CSV 파일」 길의 값으로 바꾸는
+  순수 계층이다(Streamlit import 없음). 목록 표(`build_source_csv_display_frame` — (코드, PLAN) 마다 한 행 · 등록여부 · 저장가능 ·
+  행 수, DB 목록과 같은 표지), 값 줄(「**원천 CSV** · 코드 k · n행」), 처음 고른 행(코드가 하나면 첫 행), 등록 칸 처음 값
+  (`source_csv_prefill` — 원천 시뮬레이션명 = 코드 · 시나리오명 「<코드> (<코드>)」 로 DB 폼이 이름 빈 행을 채우는 꼴과 같다, 원천 웹
+  파일 이름에는 시뮬레이션명 · 주차가 없다 — 메모는 그 코드의 PLAN 모두), 리비전 메모(`source_csv_note` — 「CSV 파일 <이름>」 ·
+  「CUSTOM 파일 값 — 종류 n」, 파일 이름은 `safe_file_name` 로 경로 · 제어 글자를 떼고 60자), 원천 등록시점 판정
+  (`optional_registered_at` — DB 폼 `_optional_datetime` 과 같은 판정 · 같은 칸 정규식, 하나로 모으기는 1.0.x).
 - `src/capa_simulation/services/auto_official_update.py` — 공식버전 자동 갱신의 규칙(주차·후보·판정·설정·예약·표지)을
   정하는 순수 함수다(차례·기록은 `auto_official_update_runner.py`).
   - 후보(`select_candidate`)는 키워드가 맞고 주차(`W##`)가 더 크거나 같은 주차에서 더 늦게 생긴 코드다(생긴 시각 = 가장
@@ -5429,7 +5437,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ImportReview` 는 「편집본에 넣기」 때 입력·등록할 표·편집본이 달라졌으면 넣지 않고 미리보기를 다시 만든다(마스터 입력
     `read_equipment_update`, `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
-    올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)은 200MB(Streamlit 기본값 — 2026-11-17 메모리
+    올리기 전에 막는다)를 쓴다. DB 등록 탭 원천 CSV 칸도 같은 값의 제 상수(`source_csv_registration.SOURCE_CSV_UPLOAD_LIMIT_MB`)다. 서버 전체 상한(`config.toml` `maxUploadSize`)은 200MB(Streamlit 기본값 — 2026-11-17 메모리
     보드 q-upload)이고 칸 고유 상한은 그보다 낮게만 둔다 — 올린 파일은 통째로 서버 메모리 바이트라 큰 파일 하나가 컨테이너
     메모리 한도(1GiB)를 넘기면 앱이 다시 선다. 모듈 올리기 칸도 그 값을 물려받는다(`docs/module_guide.md` 3-9,
     `tests/test_equipment_csv_upload_limit.py`).
@@ -6294,6 +6302,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의
     값으로 다시 채운다(상세 조회 기간은 세션에 남으므로 건드리지 않는다). 날짜 칸 둘(목록 `조회일`, 폼 위 `상세 조회 기간`)은
     「적용」 트리거를 바로 받아야 해 `st.form` 밖이고(`components/date_panel.py`), 목록 조회는 폼 없이 단추 하나다.
+  - DB 등록 탭 표 위 작업 줄 맨 앞에 원천 종류 단추 「원천」(`DB 조회 · CSV 파일` — `SOURCE_ROUTE_KEY`, 처음 값 DB 조회 ·
+    `persist_state="session"` · `required`)가 선다(설계 규칙 UI-LAY-07). `CSV 파일` 이면 목록 · 등록 폼 대신
+    `source_csv_registration.render_source_csv_route` 를 부른다. `AD-04` 는 길과 상관없이 회차마다 낸다(DB 상태다). 저장 결과 칸
+    (`registration_result_slot`) · 부대공정 칩(`render_extra_chip`) · 저장 뒤 처리(`finish_registration` — 활성화 · 목록 따라감 ·
+    성공 알림 · SC-04 · CUSTOM 대조 · CS 빈 행 · 부대공정 · 대당 Capa)는 두 길이 함께 쓰고 `registration_steps()` 로 넘긴다. DB
+    조회 길 회차는 올린 원천 CSV 를 놓는다(`forget_source_csv`) — 폼 되살리기(`_restore_dropped_prefill`)는 DB 길 회차에만 돈다.
+- `src/capa_simulation/components/source_csv_registration.py` — DB 등록 탭 「CSV 파일」 길(원천 웹에서 받은 시나리오 CSV 로 시나리오
+  등록)이다. DB 등록 화면 파일을 import 하지 않는다(그 파일이 부른다 — 나눠 쓰는 칸 · 처리는 `RegistrationSteps`).
+  - 작업 줄의 올림 칸 「원천 CSV」(라벨 접음 · 폭 고정 · 칸 고유 상한 `SOURCE_CSV_UPLOAD_LIMIT_MB` 50MB)에 올리면 파일 id 가 바뀐
+    회차에만 한 번 흘려 읽어(`summarize_source_csv`) 요약 · 거부 글을 세션 칸(`SourceCsvUpload` — `SessionSlot`, 바이트 · 표 없음)에
+    둔다(설계 규칙 UI-PRF-01). 못 읽으면 올림 칸 아래 거부 한 줄(입력 곁)이고 목록은 없다. 읽혔으면 값 줄 · 목록(DB 목록과 같은
+    꼴 — 한 행 고르기, key 에 파일 id)이 서고 코드가 하나면 첫 행이 골라진 채다. 고른 코드가 바뀌면 등록 칸 세대를 올려 그
+    코드의 처음 값으로 채운다(같은 코드의 다른 PLAN 행은 다시 채우지 않음).
+  - 등록 칸은 DB 폼에서 상세 조회 기간 하나를 뺀 꼴(시뮬레이션 코드 잠김 · 원천 시뮬레이션명 · 시나리오명 · 리비전명 · 원천
+    등록시점 (선택) · 메모)이고 파일이 없어도 선다. 저장 단추 「CSV 파일로 시나리오 저장」 은 파일 없음 · 못 읽은 파일 · 코드 안
+    고름 · 저장 불가 코드(DB 목록과 같은 `UNSAVABLE_REASON`)면 잠기고 까닭 풍선을 단다(UI-INP-07). 조회 SQL · CUSTOM 원천 표 ·
+    끄개 · 패키지는 잠그지 않는다. 열린 단추에는 풍선이 없다(DB 저장 단추와 같다).
+  - 저장(`_save_source_csv_scenario` — 폼 `if submitted:` 본문, 쓰기 장부 `NAME_UNIQUE`)은 등급 → 같은 이름(파일을 읽기 전) →
+    빈 필수 칸 → 등록시점 꼴 → 공급자(`SourceCsvCoreDataProvider`) → `fetch_registration_dataset` → 프리셋 →
+    `save_bigdataquery_scenario`(메모 `source_csv_note`) → `finish_registration` 이다. 원천 유형은 `CSV_CORE_DATA_UPLOAD`, 대조
+    (`custom_check`)는 None 이라 `SC-05` · `SC-06` · 끔 메모가 서지 않는다. 저장하면 · DB 조회 길로 바꾸면 · 올림 칸이 비면(× ·
+    다른 화면에 다녀옴) 업로드 관리자가 쥔 바이트를 지운다(`drop_uploaded_file` — Streamlit 1.63 관리자는 브라우저의 지우기 요청이나
+    세션 끝에만 지운다. `st.chat_input` 과 같은 꼴로 메모리 관리자일 때만 `remove_file` 을 부르는 내부 API 라 Streamlit 을
+    올리면 다시 본다). 저장 뒤에는 올림 칸 세대를 올려 빈 칸으로 선다. 시험은 `tests/test_source_csv_registration.py` ·
+    `tests/test_source_csv_view.py`.
 
 ### 영속성 모듈
 

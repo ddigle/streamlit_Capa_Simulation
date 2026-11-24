@@ -545,7 +545,7 @@ MARKDOWN_EXAMPLE_PLACES = {
     ("src/capa_simulation/page_bootstrap.py", "calculation_stop_notice"),
     ("src/capa_simulation/components/capacity_gate.py", "_shown"),
     ("src/capa_simulation/components/scenario_input_check.py", "_subtitle"),
-    ("src/capa_simulation/components/bigdataquery_registration.py", "_save_scenario"),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "finish_registration"),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_hold_run_result"),
 }
 

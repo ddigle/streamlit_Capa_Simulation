@@ -105,6 +105,13 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/bigdataquery_registration.py", "_save_scenario", "save_bigdataquery_scenario"): (
         NAME_UNIQUE
     ),
+    # 원천 CSV 등록(DB 등록 탭 「CSV 파일」 길)은 DB 등록과 같은 저장 길 — 파일을 읽기 전에 같은
+    # 이름을 막고 저장소도 거절한다(겹친 둘째 누름은 같은 이름 거절로 끝난다 — DB 등록과 같은 대가).
+    (
+        f"{_PARTS}/source_csv_registration.py",
+        "_save_source_csv_scenario",
+        "save_bigdataquery_scenario",
+    ): NAME_UNIQUE,
     (f"{_PARTS}/cutoff_management.py", "render_cutoff_management", "save_process_cutoff"): (
         VERSION_CHECK
     ),
