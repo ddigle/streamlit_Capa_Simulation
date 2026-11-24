@@ -38,6 +38,7 @@ from capa_simulation.persistence import DuckDBScenarioRepository, ScenarioCreate
 from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence.migration_runner import apply_migrations, load_migrations
 from capa_simulation.persistence.repository import DATASET_TABLES, REVISION_TABLES
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -176,9 +177,29 @@ def _plant_all(con: duckdb.DuckDBPyConnection, dataset_id: str, revision_id: str
 
 
 def _rewind_and_apply(con: duckdb.DuckDBPyConnection) -> None:
-    """`0033` 만 되감아 다시 적용한다. 사본을 심은 뒤 그 파일만 돌리는 방법이다."""
+    """`0033` 만 되감아 다시 적용한다. 사본을 심은 뒤 그 파일만 돌리는 방법이다.
+
+    실제 차례에서 `0033` 은 `CUSTOM` 칸(0039)보다 먼저 돈다. 되감을 때도 그 차례를 지켜
+    `ref_data` 의 그 칸을 잠시 빼고 걸었다가, 0039 와 같은 두 문장으로 다시 더한다.
+    """
+    custom_tables = _ref_tables_with_custom(con)
+    for table in custom_tables:
+        con.execute(f'ALTER TABLE ref_data.{table} DROP COLUMN "CUSTOM"')
     con.execute("DELETE FROM app_meta.schema_migration WHERE version = ?", [CLEANUP_VERSION])
     assert apply_migrations(con).applied == (CLEANUP_VERSION,)
+    for table in custom_tables:
+        con.execute(
+            f"ALTER TABLE ref_data.{table} ADD COLUMN \"CUSTOM\" VARCHAR DEFAULT '{CUSTOM_BLANK}'"
+        )
+        con.execute(f'ALTER TABLE ref_data.{table} ALTER COLUMN "CUSTOM" DROP DEFAULT')
+
+
+def _ref_tables_with_custom(con: duckdb.DuckDBPyConnection) -> list[str]:
+    rows = con.execute(
+        "SELECT table_name FROM information_schema.columns "
+        "WHERE table_schema = 'ref_data' AND column_name = 'CUSTOM' ORDER BY table_name"
+    ).fetchall()
+    return [str(row[0]) for row in rows]
 
 
 def _copy_rows(con: duckdb.DuckDBPyConnection, table: str, dataset_id: str) -> int:
@@ -457,13 +478,16 @@ def test_diagnostic_scripts_count_the_copies_that_remain(
 
 
 def _column_specs(con: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str, bool]]:
-    """(열, 형식, NULL 허용) — 소유 열만 뺀 전부. `0033` 이 맞대는 열이 곧 이것이어야 한다."""
+    """(열, 형식, NULL 허용) — 소유 열만 뺀 전부. `0033` 이 맞대는 열이 곧 이것이어야 한다.
+
+    `CUSTOM`(0039)은 `0033` 뒤에 더한 칸이라 `0033` 이 맞대지 않는다 — 여기서도 뺀다.
+    """
     specs = [
         (str(name), str(data_type), bool(nullable))
         for name, data_type, nullable in con.execute(
             "SELECT column_name, data_type, is_nullable FROM duckdb_columns() "
             "WHERE schema_name = 'ref_data' AND table_name = ? AND column_name <> 'dataset_id' "
-            "ORDER BY column_index",
+            "AND column_name <> 'CUSTOM' ORDER BY column_index",
             [table],
         ).fetchall()
     ]
@@ -472,7 +496,7 @@ def _column_specs(con: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str,
         for (name,) in con.execute(
             "SELECT column_name FROM duckdb_columns() "
             "WHERE schema_name = 'rev_data' AND table_name = ? AND column_name <> 'revision_id' "
-            "ORDER BY column_index",
+            "AND column_name <> 'CUSTOM' ORDER BY column_index",
             [table],
         ).fetchall()
     ]

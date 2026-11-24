@@ -27,6 +27,7 @@ from capa_simulation.services.required_shortening import (
     STATUS_EXPIRED,
     plan_from_availability,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
@@ -79,6 +80,7 @@ def _capacity_and_demand(tables: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame,
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     return unit_capacity, required
 

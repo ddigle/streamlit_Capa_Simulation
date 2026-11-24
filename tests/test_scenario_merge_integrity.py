@@ -9,14 +9,18 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
 from test_duckdb_repository import _reference_tables
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.scenario_month_merge import (
     NON_MONTHLY_SUPPLEMENT_KEYS,
     compare_non_monthly_tables,
     merge_scenario_months,
     merged_table_gaps,
+    plan_key_gaps,
 )
 from capa_simulation.services.scenario_transform import (
     MONTHLY_TABLES,
@@ -56,7 +60,8 @@ def _within(tables: dict[str, pd.DataFrame], months: tuple[int, ...]) -> dict[st
 
 def _required_by_month(tables: dict[str, pd.DataFrame], months: tuple[int, ...]) -> pd.Series:
     _, required = get_capacity_and_demand(
-        {name: frame.copy(deep=True) for name, frame in tables.items()}
+        {name: frame.copy(deep=True) for name, frame in tables.items()},
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     selected = required.loc[required["생산계획년월"].isin(months)]
     return selected.groupby("생산계획년월")["소요대수"].sum()
@@ -162,6 +167,47 @@ def test_gap_check_blocks_a_module_gap_and_warns_about_planned_products_without_
         assert name in warning and "Product-Z · 8H" in warning
         assert "Product-Unplanned" not in warning
     assert merged_table_gaps(_reference_tables()) == ((), ())
+
+
+def test_a_blank_custom_plan_against_two_part_chips_is_a_plan_key_gap() -> None:
+    """머지는 부품을 다시 짝짓지 않는다 — 계획은 빈 값 표지인데 Chip 두 표는 부품 값뿐이면 그 계획이
+    결손으로 뜬다(키는 제품 · Stack · 부품)."""
+    tables = two_part_tables()
+    plan = tables["RQ_PKG_PLAN"]
+    product = plan["제품정보"].eq(TWO_PART_PRODUCT)
+    tables["RQ_PKG_PLAN"] = plan.assign(CUSTOM=plan["CUSTOM"].where(~product, CUSTOM_BLANK))
+    stack = str(plan.loc[product, "Stack"].iloc[0])
+
+    gaps = plan_key_gaps(tables)
+
+    assert [gap.table for gap in gaps] == ["RQ_CHIP_QTY", "RQ_CHIP_EQ"]
+    for gap in gaps:
+        assert [key for key, _, _ in gap.keys] == [(TWO_PART_PRODUCT, stack, CUSTOM_BLANK)]
+        assert gap.rows == int((product & plan["생산수량"].gt(0)).sum())
+    assert plan_key_gaps(two_part_tables()) == ()
+    assert all(
+        keys == ("제품정보", "Stack", "CUSTOM")
+        for name, keys in NON_MONTHLY_SUPPLEMENT_KEYS.items()
+        if name.startswith("RQ_CHIP")
+    )
+
+
+def test_a_product_whose_two_parts_are_both_missing_counts_as_one_product() -> None:
+    """두 부품이 함께 Chip 표에 없어도 결손 줄의 「제품 N개」 는 제품(제품정보 · Stack)을 센다 — 키
+    예시는 부품마다 둘이지만 빠지는 제품은 하나다."""
+    tables = two_part_tables()
+    for name in ("RQ_CHIP_QTY", "RQ_CHIP_EQ"):
+        frame = tables[name]
+        tables[name] = frame.loc[frame["제품정보"].ne(TWO_PART_PRODUCT)].reset_index(drop=True)
+
+    gaps = plan_key_gaps(tables)
+
+    assert [gap.table for gap in gaps] == ["RQ_CHIP_QTY", "RQ_CHIP_EQ"]
+    for gap in gaps:
+        assert [key[2] for key, _, _ in gap.keys] == [PART_A, PART_B]
+        assert gap.products == 1
+    for warning in merged_table_gaps(tables).warnings:
+        assert "없는 제품 1개 · 계획 " in warning
 
 
 def test_unimplemented_bases_do_not_need_a_module() -> None:

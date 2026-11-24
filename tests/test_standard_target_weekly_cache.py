@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 from alert_marks import place_errors
+from custom_key_tables import with_blank_custom
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -26,6 +27,7 @@ from capa_simulation.services.display_order_scopes import (
     PAGE_STANDARD_TARGET,
     TAB_TARGET_CAPACITY,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
@@ -44,21 +46,23 @@ def required_frame() -> pd.DataFrame:
     """공정 10개 × 원수요 6천 줄 = 6만 행. 행마다 원수요가 달라 한 행이 공정 값을 바꾼다."""
     rows = len(PROCESSES) * ROWS_PER_PROCESS
     index = pd.RangeIndex(rows)
-    return pd.DataFrame(
-        {
-            "생산계획년월": MONTH,
-            "공정": [PROCESSES[i // ROWS_PER_PROCESS] for i in index],
-            "소요기준": "WF",
-            "양산구분": "양산",
-            "제품정보": [f"Prod-{i % ROWS_PER_PROCESS:05d}" for i in index],
-            "Stack": "8H",
-            "Capa Code": "CAPA",
-            "Customer": "Customer",
-            "CS": "MP",
-            "WF 구분": "Core",
-            "부하량": [100.0 + (i % 7) for i in index],
-            "소요대수": [1.0 + (i % 3) * 0.5 for i in index],
-        }
+    return with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": MONTH,
+                "공정": [PROCESSES[i // ROWS_PER_PROCESS] for i in index],
+                "소요기준": "WF",
+                "양산구분": "양산",
+                "제품정보": [f"Prod-{i % ROWS_PER_PROCESS:05d}" for i in index],
+                "Stack": "8H",
+                "Capa Code": "CAPA",
+                "Customer": "Customer",
+                "CS": "MP",
+                "WF 구분": "Core",
+                "부하량": [100.0 + (i % 7) for i in index],
+                "소요대수": [1.0 + (i % 3) * 0.5 for i in index],
+            }
+        )
     )
 
 
@@ -73,14 +77,17 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from custom_key_tables import with_blank_custom
 
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
+import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.services.month_filter import filter_month_range
 
 required_equipment = pd.read_pickle(REQUIRED_PATH)
@@ -113,6 +120,7 @@ scenario_tables["RQ_PKG_PLAN"] = pd.DataFrame(
         "Capa Code": ["CAPA"], "Customer": ["Customer"], "CS": ["MP"], "생산수량": [50.0],
     }
 )
+scenario_tables["RQ_PKG_PLAN"] = with_blank_custom(scenario_tables["RQ_PKG_PLAN"])
 scenario_tables["RQ_REQB"] = pd.DataFrame(
     {"공정": processes, "양산구분": ["양산"] * len(processes)}
 )
@@ -144,6 +152,7 @@ originals = (
     simulation_cache.get_scenario_capacity_and_demand,
     hierarchical_table.render_hierarchical_monthly_table,
     process_labels_module.get_process_labels,
+    persistence_cache.load_global_route_load_exceptions,
 )
 
 
@@ -172,6 +181,10 @@ simulation_cache.get_scenario_capacity_and_demand = lambda cache_key, **_kwargs:
 )
 hierarchical_table.render_hierarchical_monthly_table = capture_table
 process_labels_module.get_process_labels = lambda: process_labels_module.ProcessLabels()
+# 부하 예외 선언(공용 프로필)도 DB 조회 경계다 — 빈 선언 판을 준다.
+persistence_cache.load_global_route_load_exceptions = (
+    lambda _path: RouteLoadExceptionState().profile
+)
 
 try:
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
@@ -188,6 +201,7 @@ finally:
         simulation_cache.get_scenario_capacity_and_demand,
         hierarchical_table.render_hierarchical_monthly_table,
         process_labels_module.get_process_labels,
+        persistence_cache.load_global_route_load_exceptions,
     ) = originals
 """
 
@@ -262,24 +276,26 @@ def _small_required() -> pd.DataFrame:
             rows.append((process, basis, "양산", product, "Core", load, need))
     rows.append(("P-A", "WF", "ER", "Prod-1", "Core", 999.0, 9.0))
     rows.append(("Pre B/D", "WF", "양산", "Prod-1", "Dummy", 50.0, 5.0))
-    return pd.DataFrame(
-        [
-            {
-                "생산계획년월": MONTH,
-                "공정": process,
-                "소요기준": basis,
-                "양산구분": production,
-                "제품정보": product,
-                "Stack": "8H",
-                "Capa Code": "CAPA",
-                "Customer": "Customer",
-                "CS": "MP",
-                "WF 구분": division,
-                "부하량": load,
-                "소요대수": need,
-            }
-            for process, basis, production, product, division, load, need in rows
-        ]
+    return with_blank_custom(
+        pd.DataFrame(
+            [
+                {
+                    "생산계획년월": MONTH,
+                    "공정": process,
+                    "소요기준": basis,
+                    "양산구분": production,
+                    "제품정보": product,
+                    "Stack": "8H",
+                    "Capa Code": "CAPA",
+                    "Customer": "Customer",
+                    "CS": "MP",
+                    "WF 구분": division,
+                    "부하량": load,
+                    "소요대수": need,
+                }
+                for process, basis, production, product, division, load, need in rows
+            ]
+        )
     )
 
 
@@ -291,17 +307,20 @@ def _scenario_tables() -> dict[str, pd.DataFrame]:
         "RQ_RUN_DAY": pd.DataFrame(
             {"생산계획년월": [MONTH] * 3, "공정": SMALL_PROCESSES, "RUN_DAY": [31.0, 30.0, 29.0]}
         ),
-        "RQ_PKG_PLAN": pd.DataFrame(
-            {
-                "생산계획년월": [MONTH, MONTH],
-                "양산구분": ["양산", "양산"],
-                "제품정보": ["Prod-1", "Prod-2"],
-                "Stack": ["8H", "8H"],
-                "Capa Code": ["CAPA", "CAPA"],
-                "Customer": ["Customer", "Customer"],
-                "CS": ["MP", "MP"],
-                "생산수량": [60.0, 40.0],
-            }
+        "RQ_PKG_PLAN": with_blank_custom(
+            pd.DataFrame(
+                {
+                    "생산계획년월": [MONTH, MONTH],
+                    "양산구분": ["양산", "양산"],
+                    "제품정보": ["Prod-1", "Prod-2"],
+                    "Stack": ["8H", "8H"],
+                    "Capa Code": ["CAPA", "CAPA"],
+                    "Customer": ["Customer", "Customer"],
+                    "CS": ["MP", "MP"],
+                    "생산수량": [60.0, 40.0],
+                }
+            ),
+            "RQ_PKG_PLAN",
         ),
         # 공정 필터 선택지의 재료. ER 만 있는 공정은 빠지고 차례는 처음 나온 차례다.
         "RQ_REQB": pd.DataFrame(
@@ -357,7 +376,9 @@ def _weekly(
     `get_pkg_equivalent_standard_target`). 재공 현황과 화면의 되돌림이 이 길을 탄다."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         availability=availability,
         start_date=start,
         end_date=end,
@@ -521,7 +542,9 @@ def test_a_wip_call_does_not_leak_into_the_standard_target_result(
 
 
 def test_the_selection_order_does_not_split_the_key() -> None:
-    scenario_key = simulation_cache.scenario_cache_key(1, {"content_token": "t"}, 202608, 202608)
+    scenario_key = simulation_cache.scenario_cache_key(
+        1, {"content_token": "t"}, 202608, 202608, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     keys = {
         simulation_cache.standard_target_weekly_cache_key(
             scenario_key,
@@ -541,7 +564,9 @@ def test_the_selection_order_does_not_split_the_key() -> None:
 
 def _summary(token: str) -> simulation_cache.StandardTargetSummary:
     return simulation_cache.get_standard_target_summary(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         _scenario_tables=_scenario_tables(),
         _reference_tables={},
     )
@@ -661,7 +686,9 @@ def test_a_summary_hit_does_not_split_again(
 
 def _split(token: str) -> tuple[pd.DataFrame, int]:
     return simulation_cache.get_standard_target_split(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         _scenario_tables=_scenario_tables(),
         _reference_tables={},
     )
@@ -725,7 +752,9 @@ def _result(
     """표준 목표 화면이 타는 길(`get_standard_target_weekly_result` — 전체 공정 결과를 거른다)."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
-        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        simulation_cache.scenario_cache_key(
+            1, {"content_token": token}, 202607, 202609, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        ),
         availability=availability,
         start_date=start,
         end_date=end,

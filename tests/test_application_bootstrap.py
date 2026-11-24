@@ -24,6 +24,7 @@ from capa_simulation.services.builtin_seed import (
     builtin_seed_processes,
 )
 from capa_simulation.services.required_equipment import calculate_required_equipment
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 
@@ -75,6 +76,7 @@ def test_builtin_seed_runs_the_capacity_calculation_chain() -> None:
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required_equipment)
 

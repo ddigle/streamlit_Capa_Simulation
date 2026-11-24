@@ -877,7 +877,13 @@ try:
         name: scenario_month_table(active_scenario, name, start_month, end_month)
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
-    scenario_key = scenario_cache_key(reference_version, active_scenario, start_month, end_month)
+    scenario_key = scenario_cache_key(
+        reference_version,
+        active_scenario,
+        start_month,
+        end_month,
+        route_exceptions=context.route_exceptions.declaration,
+    )
     # 소요대수 프레임은 풀지 않는다 — 예외 행 수와 공정 선택지 재료만 시나리오 키로 꺼낸다. 계산
     # 오류는 여기서 「계산 멈춤」과 함께 먼저 드러난다(실패는 캐시되지 않는다).
     standard_target_summary = stop_calculation_on_error(

@@ -53,6 +53,7 @@ EXPECTED_DEPENDENTS: dict[str, frozenset[str]] = {
     "display_order_digest": ALL,
     "included_processes": frozenset({LOB, BOTTLENECK}),
     "threshold_digest": frozenset({LOB, KEY_PROCESS, BOTTLENECK}),
+    "route_exception_digest": frozenset({LOB, KEY_PROCESS, BOTTLENECK}),
     "plan_detail_customer": frozenset({PLAN}),
     "comparison_revision_id": frozenset({LOB, PLAN}),
     "show_advance": frozenset({LOB, KEY_PROCESS, BOTTLENECK}),
@@ -90,6 +91,7 @@ def conditions(monkeypatch: pytest.MonkeyPatch) -> HomeFigureCacheKey:
         display_order_digest="display-order",
         included_processes=("DEMO_A", "DEMO_B"),
         threshold_digest="threshold-digest",
+        route_exception_digest="",
         include_edp=False,
         plan_detail_customer=True,
         comparison_revision_id="comparison-revision",
@@ -277,6 +279,103 @@ def test_the_schema_moved_past_unclipped_plan_detail_text() -> None:
     세션에도 나간다.
     """
     assert HOME_FIGURE_SCHEMA_VERSION >= 54
+
+
+def test_the_schema_moved_past_the_donut_without_part_slices() -> None:
+    """57 부터 `제품별 비중` 도넛은 부품(CUSTOM)이 둘 이상인 제품을 부품마다 조각 · 범례 이름표로
+    가르고 범례가 부품을 남기고 줄인다.
+
+    같은 내용 토큰에서 그림이 바뀌므로 번호를 올리지 않으면 공용 칸에 남은 옛 그림(제품 한 조각)이
+    새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 57
+
+
+def test_the_schema_moved_past_the_plan_detail_without_part_rows() -> None:
+    """58 부터 계획 세부수량 · 비교 덤벨은 그 제품을 부품마다 줄(이름표 · 띠 · 굵은 선)로 가른다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(제품 한 줄)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 58
+
+
+def test_the_schema_moved_past_part_labels_fitted_by_the_half_width_model() -> None:
+    """59 부터 계획 세부수량 제품 칸의 부품 이름표는 잰 글꼴 폭으로 줄여 칸 안에 들고, 도넛 범례 ·
+    계획 세부수량의 부품 이름표는 끝을 같이 쓰는 같은 제품의 부품과 갈리는 글자를 남기며, `기타`
+    풍선은 부품 이름표가 낀 이름을 둘째 줄에 따로 싣는다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸 경계에서 잘린 · 서로 같은 이름표)이 새 세션에도
+    나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 59
+
+
+def test_the_schema_moved_past_parts_chained_by_their_end() -> None:
+    """60 부터 한 부품이 같은 제품의 다른 부품의 끝 전체면(「CUSTOM_KIT」 · 「A_CUSTOM_KIT」) 그
+    부품 이름표는 첫 글자부터 남는다 — 끝이 이어진 부품 셋이 서로 다른 글이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(서로 같은 이름표)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 60
+
+
+def test_the_schema_moved_past_the_plan_detail_with_a_narrow_product_cell() -> None:
+    """61 부터 부품을 가른 제품이 있는 계획 세부수량은 제품 칸을 가장 긴 부품 이름표가 다 들
+    만큼(상한까지) 넓히고 그 폭을 분류 칸 그림에 실어 HOME 구분 컬럼이 그 폭으로 선다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(폭이 없는 그림 — 구분 컬럼이 넓어지지 않고 이름표가
+    줄어 선다)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 61
+
+
+def test_the_schema_moved_past_the_two_shapes_of_the_other_hover() -> None:
+    """62 부터 `기타` 풍선은 부품 이름표가 끼었는지와 무관하게 첫 줄 「달 · 기타 비중 · 수량」,
+    둘째 줄 이름의 한 꼴이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(부품이 없는 `기타` 풍선은 수량이 둘째 줄)이 새
+    세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 62
+
+
+def test_the_schema_moved_past_the_past_marker_folded_into_other() -> None:
+    """63 부터 과거 달 「제품 (-)」 조각은 그 제품의 부품 가운데 이름 있는 칸을 받은 첫 부품의 색
+    칸을 빌리고, 범례는 칸마다 한 줄이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸이 모자라 `기타` 로 접힌 · 새 색을 받은 「(-)」
+    조각)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 63
+
+
+def test_the_schema_moved_past_the_widened_product_cell() -> None:
+    """64 부터 부품을 가른 제품이 있어도 계획 세부수량 제품 칸을 넓히지 않는다 — 분류 칸 그림이 폭을
+    싣지 않고 HOME 구분 컬럼은 늘 같은 폭이다(그림 보드 4 답 q7-shared-col (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 61 ~ 63 의 그림(폭을 실은 그림 — 구분 컬럼이 넓어지고
+    달 칸이 밀림)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 64
+
+
+def test_the_schema_moved_past_the_other_hover_with_three_names() -> None:
+    """65 부터 `기타` 풍선은 둘째 줄부터 모인 이름을 다 적되 셋마다 줄을 나누고, 이름 줄 넷(이름
+    열둘)을 넘는 이름만 「외 N」 으로 묶는다(그림 보드 4 답 q7-hover-cap (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(이름 셋 + 「외 N」 한 줄)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 65
+
+
+def test_the_schema_moved_past_the_marker_line_in_the_legend() -> None:
+    """66 부터 색 칸을 빌린 과거 달 「제품 (-)」 조각이 그려진 화면(Past Data 를 켬)의 범례는 빌려
+    준 부품 줄 곁에 같은 색으로 「제품 (-)」 줄을 하나 더 둔다(그림 보드 4 답 q7-past-legend (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(빌린 칸은 부품 이름표 줄 하나 — 과거 달 조각이
+    범례로는 그 부품으로 읽힘)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 66
 
 
 def test_each_bundle_evicts_its_own_least_recently_read_entry(

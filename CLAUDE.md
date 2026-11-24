@@ -203,7 +203,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   (AGENTS.md 5장 4·9장 「배경 스레드」). 예약 하나와 동기화 일꾼 하나뿐이고 더 세우지 않는다.
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼(스레드 `capa-object-sync`). `capa_server.py` 가
   시작 때 세우고 `managed` + 시작 받기의 부트 기록(`sync_boot`)이 있을 때만 선다 — `app.py` 개발 실행 · 사내 PC · 시험에는 없다.
-  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행은 바로 올리며 하루 한 번 정리한다. 감사 기록이 켜진 서버면 같은 고리에서 감사
+  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행 · 부하 예외 선언 판 저장은 바로 올리며 하루 한 번 정리한다. 감사 기록이 켜진 서버면 같은 고리에서 감사
   스풀 비우기(10초) · 올리기(5분 또는 200줄 — DB 올리기보다 먼저, DB 멈춤과 상관없이) · 일별 묶음 · 미러도 한다(`audit/shipper.py` —
   새 스레드 없음, 감사 실패는 DB 실패 수를 건드리지 않는다). Streamlit 을 import 하지 않고 캐시를 건드리지
   않는다. 차례는 `object_sync_engine.py`(유실을 막는 순서), 판정은 `services/object_storage_manifest.py`.
@@ -230,6 +230,9 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
   **계산·Figure 캐시 키는 반드시 `content_token`**을 본다 — `revision` 번호는 내용이 달라도
   겹칠 수 있다. 큰 DataFrame 을 `st.cache_data` 해시 인자로 넘기지 않는다 — Streamlit 1.63 은 5만 행 넘는
   DataFrame 을 1만 행 표본으로만 해시해 한 행 편집을 놓친다(`_` 인자 + 키는 `content_token`·`frame_digest`).
+- 부하 예외 선언(Admin 「부하 예외」 — 시나리오 밖 공용 판, 시뮬레이션 `0040`)이 드는 계산 키는 `content_token` 에 그 판을
+  접은 **계산 토큰**이고 `simulation_cache` 의 키 빌더로만 짓는다. 읽는 자리마다 한 판을 읽어 키와 계산에 같이 넘긴다 —
+  AGENTS 5장 44 · 45.
 - 리비전 **내용**은 append-only다(시뮬레이션 DB). 과거 리비전의 표·프리셋은 갱신하지 않고 새 전체 리비전으로만 저장한다.
   이름표인 리비전명만 고칠 수 있다. 공식버전 발행도 append-only.
 - 미저장 세션 편집과 저장 리비전을 구분한다. 미저장 편집은 세션 종료 시 사라진다.

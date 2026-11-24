@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B
 
 from capa_simulation.io.core_data_source import (
     CoreDataBatch,
@@ -18,15 +19,19 @@ from capa_simulation.io.core_data_source import (
 from capa_simulation.services.core_data_derivation import (
     BlankCsDrop,
     derive_q_core_data,
+    plan_row_mask,
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.core_data_pipeline import (
+    PreparedCoreDataset,
     fetch_core_data_dataset,
     prepare_core_data_dataset,
+    reference_conflict_memo,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
 from capa_simulation.services.reference_transformer import build_reference_tables
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 
 def _core_data_row() -> pd.DataFrame:
@@ -278,6 +283,7 @@ def test_wf_division_spellings_that_differ_only_in_case_become_one_value_before_
         tables["RQ_YLD"],
         tables["RQ_CHIP_QTY"],
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     # 세 공정 모두 같은 계획 100 의 부하를 받는다(구분_Chip·수율 1.0). 두 번 펼쳐지지도 않는다.
     assert required["부하량"].tolist() == [100.0, 100.0, 100.0]
@@ -477,7 +483,7 @@ def test_the_routes_that_lose_their_plan_demand_stay_silent_in_the_exclusion_cou
 
     def wafer_inspect_total(source: pd.DataFrame) -> tuple[float, RequiredExclusionCounts]:
         tables = build_reference_tables(source, load_builtin_display_order())
-        outcome = full_capacity_outcome(tables, tables)
+        outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
         required = outcome.required_equipment
         assert outcome.error is None and required is not None
         total = float(required.loc[required["공정"].eq("DEMO_Wafer_Inspect"), "소요대수"].sum())
@@ -508,6 +514,32 @@ def test_blank_cs_copies_of_routes_the_plans_still_have_lose_nothing() -> None:
     assert blank_cs == BlankCsDrop(rows=12, plan_rows=0, plans_missing_routes=0)
     assert blank_cs.memo() == "CS 빈 행 12개(계획 0행 · 경로 12행) 뺌"
     assert "남은 계획" not in blank_cs.notice()
+
+
+def test_a_blank_cs_route_of_one_part_is_not_covered_by_the_other_part() -> None:
+    """경로를 잃은 계획 줄은 부품(CUSTOM)마다 맞댄다 — 한 제품의 부품 A 경로 행만 CS 가 비고 부품 B
+    는 같은 경로를 CS 있는 행으로 가지면, A 의 계획 줄은 그대로 경로를 잃은 줄이다. 맞대는 키
+    (`_ROUTE_OWNER_KEYS`)에서 CUSTOM 이 빠지면 A 의 줄이 B 의 경로를 제 것으로 보아 셈에서 빠진다
+    (합성 시드의 한 제품을 두 부품으로 — 샘플 관측)."""
+    source = _seed_source()
+    product = source["제품정보"].eq("DEMO_PRODUCT_A")
+    source = pd.concat(
+        [
+            source.loc[~product],
+            source.loc[product].assign(CUSTOM=PART_A),
+            source.loc[product].assign(CUSTOM=PART_B),
+        ],
+        ignore_index=True,
+    )
+    part_a_routes = _product_routes(source, "DEMO_PRODUCT_A", "WF") & source["CUSTOM"].eq(PART_A)
+    source.loc[part_a_routes, "CS"] = None
+
+    blank_cs = derive_q_core_data(source).blank_cs
+
+    part_a_plans = plan_row_mask(source) & source["CUSTOM"].eq(PART_A)
+    assert blank_cs == BlankCsDrop(
+        rows=int(part_a_routes.sum()), plan_rows=0, plans_missing_routes=int(part_a_plans.sum())
+    )
 
 
 def test_a_whole_plan_line_with_a_blank_cs_is_counted_as_plan_not_as_lost_routes() -> None:
@@ -566,12 +598,8 @@ def test_a_blank_cs_drop_that_leaves_nothing_to_save_is_refused(
     assert "업무 키에 null" not in message
 
 
-def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> None:
-    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
-    source.loc[1, "생산수량"] = 200.0
-    source.loc[1, "EDS_수율"] = 0.8
-
-    prepared = prepare_core_data_dataset(
+def _prepare(source: pd.DataFrame) -> PreparedCoreDataset:
+    return prepare_core_data_dataset(
         CoreDataBatch(
             simulation_code="SIM-001",
             simulation_name="사내 조회 결과",
@@ -580,15 +608,39 @@ def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> 
         ),
         _display_order(),
     )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_conflicting_business_keys_keep_the_ranked_row_in_either_order_and_report_all_tables(
+    reverse: bool,
+) -> None:
+    """같은 키의 두 원천 행은 원천 행 순위 하나로 고른다 — 정순 · 역순 어느 차례로 와도 같은 행이다.
+
+    두 행은 `생산수량`(100 · 200)에서 먼저 갈린다(구분 칸이 같고, 그다음 칸 차례에서 앞선다). 그래서
+    `RQ_YLD` 도 그 행(수율 1.0)을 고른다 — 표마다 작은 값을 고르는 것이 아니라 행 하나를 고른다.
+    """
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+    source.loc[1, "생산수량"] = 200.0
+    source.loc[1, "EDS_수율"] = 0.8
+    if reverse:
+        source = source.iloc[::-1].reset_index(drop=True)
+    winner_row = 2 if reverse else 1
+
+    prepared = _prepare(source)
     conflicts = prepared.reference_conflicts
     summary = summarize_reference_conflicts(conflicts)
 
     assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
     assert prepared.reference_tables["RQ_YLD"].loc[0, "EDS_수율"] == pytest.approx(1.0)
     assert conflicts["RQ테이블"].tolist() == ["RQ_PKG_PLAN", "RQ_YLD"]
-    assert conflicts["선택원천행번호"].tolist() == [1, 1]
-    assert conflicts["후보원천행번호"].tolist() == ["1 | 2", "1 | 2"]
+    assert conflicts["선택원천행번호"].tolist() == [winner_row, winner_row]
+    assert conflicts["후보원천행번호"].tolist() == [
+        f"{winner_row} | {3 - winner_row}",
+        f"{winner_row} | {3 - winner_row}",
+    ]
     assert conflicts["임시제외행수"].tolist() == [1, 1]
+    # 같은 부품(구분 칸이 모두 같음)이 두 번 실린 재적재라 원인은 「그 밖」이다.
+    assert conflicts["키밖구분"].tolist() == ["그 밖", "그 밖"]
     assert summary[["RQ테이블", "충돌 업무키 그룹수"]].to_dict("records") == [
         {"RQ테이블": "RQ_PKG_PLAN", "충돌 업무키 그룹수": 1},
         {"RQ테이블": "RQ_YLD", "충돌 업무키 그룹수": 1},
@@ -637,7 +689,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_registered_once() -> None:
     """등록도 계산과 같은 정규화로 경로를 접는다(사내 감사 P4).
 
     원래 글자 그대로만 접으면 `WF`·`Wafer`, 앞뒤 공백만 다른 행이 둘로 남고, 계산이 그 둘을 같은
-    경로로 세어 소요대수가 두 배가 된다. 남는 행은 첫 행의 원래 표기다.
+    경로로 세어 소요대수가 두 배가 된다. 남는 행은 원천 행 순위가 앞선 행의 원래 표기다.
     """
     source = pd.concat([_core_data_row()] * 3, ignore_index=True)
     source["소요기준"] = pd.array(["WF", "Wafer", "WF"], dtype="string")
@@ -648,6 +700,30 @@ def test_reqb_rows_that_differ_only_in_spelling_are_registered_once() -> None:
     assert reqb[["공정", "소요기준"]].to_dict("records") == [
         {"공정": "Process-A", "소요기준": "WF"}
     ]
+
+
+@pytest.mark.parametrize("spellings", [["WF", "Wafer"], ["Wafer", "WF"]])
+def test_reqb_spelling_variants_store_the_same_spelling_in_either_source_order(
+    spellings: list[str],
+) -> None:
+    """표기만 다른 경로 형제는 원천 행 순위로 하나가 남는다 — 정순 · 역순이 같은 표기를 저장한다."""
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["소요기준"] = pd.array(spellings, dtype="string")
+
+    reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
+
+    assert reqb["소요기준"].tolist() == ["WF"]
+
+
+def test_reqb_route_keeps_its_first_appearance_slot_when_a_later_sibling_ranks_first() -> None:
+    """같은 경로가 Pack Code 만 다른 원천 행으로 두 번 오면 경로 자리는 처음 나온 차례다."""
+    source = pd.concat([_core_data_row()] * 3, ignore_index=True)
+    source["Pack Code"] = pd.array(["P2", "P9", "P1"], dtype="string")
+    source["STEP_SEQ"] = pd.array(["P100", "P200", "P100"], dtype="string")
+
+    reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
+
+    assert reqb["STEP_SEQ"].tolist() == ["P100", "P200"]
 
 
 def test_a_blank_lent_evaluation_counts_as_zero_lent_equipment() -> None:
@@ -764,3 +840,135 @@ def test_a_zero_and_a_blank_run_rate_sibling_build_the_same_table_in_either_sour
     )
     assert result.empty
     assert set(result.attrs[CAPACITY_EXCLUSIONS_ATTR]["제외사유"]) == {"CAPA_RUN_RATE 0 이하"}
+
+
+def _sibling_source() -> pd.DataFrame:
+    """같은 달 · 공정 · 제품에 형제 원천 행 다섯 — 다른 부품(Capa Code) 둘과 같은 부품의 재적재 셋.
+
+    보유 · 대여는 모두 0 이 아닌 실값이라 「값이 있는 칸 수」 로는 가르지 못하고 원천 행 순위가
+    가른다. 표기만 다른 경로(`WF` · `Wafer`)는 두지 않는다 — 그것은 경로 표의 표기 접기 몫이다.
+    """
+    rows = []
+    for capa_code, own, lent, eds in (
+        ("C2", 12.0, 3.0, 0.97),
+        ("C1", 10.0, 2.0, 0.95),
+        ("C1", 11.0, 4.0, 0.95),
+        ("C3", 9.0, 1.0, 0.99),
+        ("C1", 10.0, 2.0, 0.95),
+    ):
+        row = _core_data_row()
+        row["Capa Code"] = capa_code
+        row["설비보유"] = own
+        row["설비대여평가"] = lent
+        row["EDS_수율"] = eds
+        rows.append(row)
+    return pd.concat(rows, ignore_index=True)
+
+
+def _sorted_tables(prepared: PreparedCoreDataset) -> dict[str, pd.DataFrame]:
+    """그룹 자리(첫 등장 차례)는 원천 차례를 따르므로 업무 키 차례로 세워 견준다."""
+    contract = load_core_data_contract()
+    sorted_tables: dict[str, pd.DataFrame] = {}
+    for name, table in prepared.reference_tables.items():
+        keys = [k for k in contract.derived_keys.get(name, ()) if k in table.columns]
+        ordered = table.sort_values(keys or list(table.columns), kind="stable")
+        sorted_tables[name] = ordered.reset_index(drop=True)
+    return sorted_tables
+
+
+def test_shuffled_copies_of_one_source_store_the_same_reference_values() -> None:
+    """같은 원천을 차례만 무작위로 섞은 열 벌이 모두 같은 RQ 값을 낸다(요청 D)."""
+    source = _sibling_source()
+    expected = _sorted_tables(_prepare(source))
+
+    for seed in range(10):
+        shuffled = source.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+        actual = _sorted_tables(_prepare(shuffled))
+        for name, table in expected.items():
+            pd.testing.assert_frame_equal(actual[name], table, check_dtype=False, obj=name)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_sibling_equipment_tables_pick_the_same_source_row_in_any_order(seed: int) -> None:
+    """값 있는 칸 수가 같은 형제면 보유 · 대여 · 가용이 같은 원천 행을 골라 맞물림이 선다."""
+    source = _sibling_source().sample(frac=1.0, random_state=seed).reset_index(drop=True)
+
+    tables = _prepare(source).reference_tables
+
+    own = float(tables["RQ_EQP_OWN"]["설비보유"].iloc[0])
+    lent = float(tables["RQ_EQP_LENT"]["설비대여평가"].iloc[0])
+    available = float(tables["RQ_EQP_AVBL"]["가용대수"].iloc[0])
+    assert own - lent == pytest.approx(available)
+    # 구분 칸(Capa Code)이 가장 앞선 C1 가운데 보유가 작은 행(10 · 2)이다.
+    assert (own, lent) == pytest.approx((10.0, 2.0))
+
+
+def test_a_zero_lent_sibling_keeps_each_tables_real_value_in_either_source_order() -> None:
+    """한 형제만 대여 0 이면 표마다 값이 있는 행을 고른다 — 정순 · 역순이 같은 세 값을 저장한다.
+
+    값 있는 칸 수가 표마다 달라 세 표가 같은 행을 고른다고 보장하지 않는다(맞물림은 답 대기 —
+    TODO 2장). 여기서는 차례와 상관없음과 대여 표가 0 대신 실값을 남기는 것만 고정한다.
+    """
+    rows = []
+    for capa_code, own, lent in (("C1", 10.0, 0.0), ("C2", 10.0, 2.0)):
+        row = _core_data_row()
+        row["Capa Code"] = capa_code
+        row["설비보유"] = own
+        row["설비대여평가"] = lent
+        rows.append(row)
+    source = pd.concat(rows, ignore_index=True)
+
+    stored = []
+    for ordered in (source, source.iloc[::-1].reset_index(drop=True)):
+        tables = _prepare(ordered).reference_tables
+        stored.append(
+            (
+                float(tables["RQ_EQP_OWN"]["설비보유"].iloc[0]),
+                float(tables["RQ_EQP_LENT"]["설비대여평가"].iloc[0]),
+                float(tables["RQ_EQP_AVBL"]["가용대수"].iloc[0]),
+            )
+        )
+
+    assert stored[0] == stored[1]
+    assert stored[0][:2] == pytest.approx((10.0, 2.0))
+
+
+def test_conflict_causes_split_out_of_key_class_columns_from_reloads() -> None:
+    """수율은 Capa Code 마다 하나로 맞아 「Capa Code」, 보유는 같은 C1 안에서도 갈려 「그 밖」."""
+    conflicts = _prepare(_sibling_source()).reference_conflicts.set_index("RQ테이블")
+
+    assert conflicts.loc["RQ_YLD", "키밖구분"] == "Capa Code"
+    assert conflicts.loc["RQ_EQP_OWN", "키밖구분"] == "그 밖"
+
+
+def test_the_conflict_summary_splits_out_of_key_from_other_and_takes_old_reports() -> None:
+    """요약은 표마다 「키밖 갈림 그룹수」 · 「그 밖 갈림 그룹수」 를 센다. 원인 칸이 없는 옛 꼴
+    보고서도 받고 그때 두 칸은 빈 값이다."""
+    conflicts = _prepare(_sibling_source()).reference_conflicts
+
+    summary = summarize_reference_conflicts(conflicts)
+    old_form = summarize_reference_conflicts(conflicts.drop(columns="키밖구분"))
+    counts = {
+        str(row["RQ테이블"]): (int(row["키밖 갈림 그룹수"]), int(row["그 밖 갈림 그룹수"]))
+        for row in summary.to_dict("records")
+    }
+
+    assert counts["RQ_YLD"] == (1, 0)
+    assert counts["RQ_EQP_OWN"] == (0, 1)
+    assert [a + b for a, b in counts.values()] == summary["충돌 업무키 그룹수"].tolist()
+    assert old_form["키밖 갈림 그룹수"].isna().all()
+    assert old_form["그 밖 갈림 그룹수"].isna().all()
+
+
+def test_the_conflict_memo_names_the_group_count_and_its_two_causes() -> None:
+    conflicts = _prepare(_sibling_source()).reference_conflicts
+    other = int(conflicts["키밖구분"].eq("그 밖").sum())
+    out_of_key = len(conflicts) - other
+
+    memo = reference_conflict_memo(conflicts)
+
+    assert memo == f"업무 키 충돌 {len(conflicts)}그룹(키밖 {out_of_key} · 그 밖 {other})"
+    assert reference_conflict_memo(conflicts.drop(columns="키밖구분")) == (
+        f"업무 키 충돌 {len(conflicts)}그룹"
+    )
+    assert reference_conflict_memo(conflicts.iloc[0:0]) == ""

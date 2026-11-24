@@ -27,6 +27,8 @@ SHARED_HELPERS = (
     ("capa_simulation.components.percent_cells", "percent_column"),
     ("capa_simulation.components.percent_cells", "percent_table"),
     ("capa_simulation.components.percent_cells", "percent_progress_column"),
+    ("capa_simulation.services.product_parts", "product_part_label"),
+    ("capa_simulation.services.product_parts", "part_merged_columns"),
 )
 
 

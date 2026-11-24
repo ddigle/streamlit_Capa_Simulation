@@ -38,8 +38,10 @@ BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 �
 판정(`_stop_error`)을 쓴다. 고른 리비전마다 부르므로 아래 「같은 캐시 칸」 이 아니라 따로 둔
 요약 칸 하나만 쓰고, 스냅샷 · 원천 행은 캐시 없이 읽는다.
 
-검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미
-데워져 있다.
+검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져
+있다. 그러려면 계산 페이지와 같은 부하 예외 선언 판으로 접혀야 하므로, 판정 함수는 선언을 스스로
+읽지 않고 부르는 화면이 그 회차에 읽은 판(`route_exceptions` — 기본값 없음)을 받는다
+(AGENTS 5장 44 · 45).
 """
 
 from __future__ import annotations
@@ -70,13 +72,17 @@ from capa_simulation.services.revision_input_check import (
     blocked_input_check,
     build_input_check,
     calculation_period,
+    route_exception_check,
 )
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
     MONTHLESS_INPUT_TABLES,
     CapacityOutcome,
+    FullScenarioCacheKey,
     full_capacity_outcome,
+    full_scenario_cache_key,
     get_capacity_and_demand,
     get_full_capacity_outcome,
     get_revision_input_check,
@@ -126,7 +132,7 @@ def _calculated_verdict(outcome: CapacityOutcome) -> GateVerdict:
 
 
 def _gate_check(
-    cache_key: tuple[int, str],
+    cache_key: FullScenarioCacheKey,
     scenario_tables: Mapping[str, pd.DataFrame],
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[CapacityOutcome, str | None]:
@@ -174,11 +180,18 @@ def revision_save_verdict(
     active_scenario: ActiveScenario,
     reference_tables: Mapping[str, pd.DataFrame],
     *,
+    route_exceptions: RouteLoadDeclaration,
     labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
-    """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다."""
+    """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다.
+    `route_exceptions` 는 부르는 화면이 그 회차에 읽은 부하 예외 선언 판이다 — 편집 뒤 · 편집 전 두
+    계산이 같은 판으로 접힌다."""
     edited_outcome, edited = _gate_check(
-        (reference_version, active_scenario["content_token"]),
+        full_scenario_cache_key(
+            reference_version,
+            active_scenario["content_token"],
+            route_exceptions=route_exceptions,
+        ),
         active_scenario["tables"],
         reference_tables,
     )
@@ -190,7 +203,13 @@ def revision_save_verdict(
     base = (
         edited
         if active_scenario["content_token"] == base_token
-        else _gate_check((reference_version, base_token), reference_tables, reference_tables)[1]
+        else _gate_check(
+            full_scenario_cache_key(
+                reference_version, base_token, route_exceptions=route_exceptions
+            ),
+            reference_tables,
+            reference_tables,
+        )[1]
     )
     shown = _shown(edited, labels)
     if base is None:
@@ -245,14 +264,23 @@ def _error_kind(error: str) -> str:
 
 
 def official_publish_verdict(
-    database_path: str, revision_id: str, *, labels: Callable[[], ProcessLabels] | None = None
+    database_path: str,
+    revision_id: str,
+    *,
+    route_exceptions: RouteLoadDeclaration,
+    labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
-    """저장된 리비전을 공식버전으로 지정해도 되는지. `labels` 는 경고 글 예시 키의 공정
-    표시명을 낸다."""
+    """저장된 리비전을 공식버전으로 지정해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을
+    낸다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언 판이다 — 지정하면 그 판으로 모두의
+    HOME 이 계산하므로 같은 판으로 본다."""
     snapshot = load_scenario_snapshot(database_path, revision_id)
     reference_version = reference_version_for_revision(revision_id)
     outcome, error = _gate_check(
-        (reference_version, pristine_content_token(reference_version)),
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=route_exceptions,
+        ),
         snapshot.tables,
         snapshot.tables,
     )
@@ -269,7 +297,11 @@ def official_publish_verdict(
 
 
 def input_check_verdict(
-    database_path: str, scenario_id: str, revision_id: str
+    database_path: str,
+    scenario_id: str,
+    revision_id: str,
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> RevisionInputCheck:
     """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」) — 멈춤 판정은 공식
     발행 검사와 같고(Density 포함), 계산에서 빠진 행을 묶음으로 센다.
@@ -278,9 +310,12 @@ def input_check_verdict(
     — 스냅샷 · 등록 때 뺀 원천 행은 저장소에서 캐시 없이 읽고(스냅샷은 공용 표시순서를 얹지 않은
     `load_revision(apply_global_display_order=False)`), 계산은 캐시 없는 `full_capacity_outcome`
     이다. 요약 칸이 적중하면 DB 도 읽지 않고, 빠진 칸은 DB 를 한 번 더 읽는다 — 읽기 칸에 리비전을
-    쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키가 없는 옛
-    리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은 보지
-    않는다 — 저장된 리비전 그대로다.
+    쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키 · CUSTOM 칸이
+    없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은
+    보지 않는다 — 저장된 리비전 그대로다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언
+    판이고 요약 칸 키에 접힌다 — 선언을 저장하면 다음 점검은 새 판으로 다시 센다. 선언이 있으면 같은
+    판으로 「부하 예외로 바꾼 경로」 · 「이번 데이터에 없는 선언 공정」(그 리비전 `RQ_REQB` 공정과
+    견줌)도 센다(`route_exception_check`).
     """
     reference_version = reference_version_for_revision(revision_id)
 
@@ -292,10 +327,19 @@ def input_check_verdict(
         blocked = revision_block_reason(tables)
         if blocked is not None:
             return blocked_input_check(blocked, blank_cs, period=period)
-        outcome = full_capacity_outcome(tables, tables)
+        outcome = full_capacity_outcome(tables, tables, route_exceptions=route_exceptions)
         stop = _stop_error(outcome, tables)
         extra = (
-            None if outcome.error is not None else _extra_check(repository, scenario_id, outcome)
+            None
+            if outcome.error is not None
+            else _extra_check(repository, scenario_id, outcome, route_exceptions)
+        )
+        route_check = (
+            None
+            if outcome.required_equipment is None
+            else route_exception_check(
+                tables["RQ_REQB"]["공정"].dropna(), outcome.required_equipment, route_exceptions
+            )
         )
         return build_input_check(
             outcome,
@@ -303,15 +347,24 @@ def input_check_verdict(
             blank_cs,
             period=period,
             extra=extra,
+            route_check=route_check,
         )
 
     return get_revision_input_check(
-        (reference_version, pristine_content_token(reference_version)), _compute=compute
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=route_exceptions,
+        ),
+        _compute=compute,
     )
 
 
 def _extra_check(
-    repository: DuckDBScenarioRepository, scenario_id: str, outcome: CapacityOutcome
+    repository: DuckDBScenarioRepository,
+    scenario_id: str,
+    outcome: CapacityOutcome,
+    route_exceptions: RouteLoadDeclaration,
 ) -> ExtraProcessCheck | None:
     """입력 점검 「부대공정」 묶음의 재료(설계 A10) — 그 데이터셋 출처에 부대공정이 없으면 None.
 
@@ -342,7 +395,7 @@ def _extra_check(
     names = [*merged, *(name for name in sorted(mixed) if name not in merged)]
     if not names:
         return None
-    lines = load_lines({}, merged, outcome=outcome)
+    lines = load_lines({}, merged, route_exceptions=route_exceptions, outcome=outcome)
     gaps: dict[str, int] = {}
     for sha in {item.sha256 for item in records if item.outcome == OUTCOME_MERGED}:
         try:
@@ -379,6 +432,7 @@ def derived_save_verdict(
     tables: Mapping[str, pd.DataFrame],
     sources: Sequence[ScenarioSnapshot],
     *,
+    route_exceptions: RouteLoadDeclaration,
     labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
     """월 머지·연도 Shift 결과를 새 시나리오로 저장해도 되는지. 규칙은 리비전 저장과 같다.
@@ -387,12 +441,13 @@ def derived_save_verdict(
     계산한다 — 캐시 칸은 몇 개뿐이고(`FULL_CAPACITY_MAX_ENTRIES`) 저장 뒤 그 시나리오를 열면
     리비전 키로 다시 계산한다. 원본은 결과가 실패할 때만, 공식 발행 검사와 같은 캐시 칸으로 본다.
     리비전 저장·발행과 같이 Capa 계산이 통과하면 Density 환산도 본다(`density_error`). `labels` 는
-    경고 글 예시 키의 공정 표시명을 낸다.
+    경고 글 예시 키의 공정 표시명을 낸다. `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언
+    판이다 — 결과 · 원본 계산이 같은 판으로 돈다.
     """
-    error = _capacity_error(tables) or density_error(tables)
+    error = _capacity_error(tables, route_exceptions) or density_error(tables)
     if error is None:
         return GateVerdict(True)
-    broken = [source for source in sources if _revision_error(source) is not None]
+    broken = [source for source in sources if _revision_error(source, route_exceptions) is not None]
     if not broken:
         return GateVerdict(
             False,
@@ -503,25 +558,34 @@ def _active_extras() -> tuple[str, ...]:
     return () if scenario_id is None else _scenario_extras(None, (scenario_id,))()
 
 
-def _capacity_error(tables: Mapping[str, pd.DataFrame]) -> str | None:
+def _capacity_error(
+    tables: Mapping[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> str | None:
     """계산 페이지의 전체 기간 계산(`get_full_capacity_outcome`)과 같은 입력으로 한 번 계산한다."""
     try:
         get_capacity_and_demand(
             {
                 name: tables[name].copy(deep=True)
                 for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
-            }
+            },
+            route_exceptions=route_exceptions,
         )
     except ValueError as exc:
         return str(exc)
     return None
 
 
-def _revision_error(snapshot: ScenarioSnapshot) -> str | None:
+def _revision_error(
+    snapshot: ScenarioSnapshot, route_exceptions: RouteLoadDeclaration
+) -> str | None:
     """저장된 리비전을 편집 없이 검사한 오류. 공식 발행 검사와 같은 판정·캐시 칸이다."""
     reference_version = reference_version_for_revision(snapshot.revision.revision_id)
     return _gate_check(
-        (reference_version, pristine_content_token(reference_version)),
+        full_scenario_cache_key(
+            reference_version,
+            pristine_content_token(reference_version),
+            route_exceptions=route_exceptions,
+        ),
         snapshot.tables,
         snapshot.tables,
     )[1]

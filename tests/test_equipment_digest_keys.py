@@ -16,6 +16,7 @@ from datetime import date
 import pandas as pd
 import pytest
 import streamlit as st
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.display_order_editor import DISPLAY_ORDER_COLUMNS
@@ -200,33 +201,42 @@ def test_a_digest_and_no_digest_share_one_cache_slot(monkeypatch: pytest.MonkeyP
 
 def _volume_inputs() -> dict[str, pd.DataFrame]:
     return {
-        "plan": pd.DataFrame(
-            {
-                "생산계획년월": [202608],
-                "양산구분": ["양산"],
-                "제품정보": ["HBM라"],
-                "Stack": ["12H"],
-                "생산수량": [100.0],
-            }
+        "plan": with_blank_custom(
+            pd.DataFrame(
+                {
+                    "생산계획년월": [202608],
+                    "양산구분": ["양산"],
+                    "제품정보": ["HBM라"],
+                    "Stack": ["12H"],
+                    "생산수량": [100.0],
+                }
+            ),
+            "RQ_PKG_PLAN",
         ),
-        "yield_data": pd.DataFrame(
-            {
-                "생산계획년월": [202608, 202608],
-                "제품정보": ["HBM라", "HBM라"],
-                "Stack": ["12H", "12H"],
-                "WF 구분": ["Core", "Dummy"],
-                "EDS_수율": [0.8, 0.8],
-                "BE_수율": [0.9, 0.9],
-            }
+        "yield_data": with_blank_custom(
+            pd.DataFrame(
+                {
+                    "생산계획년월": [202608, 202608],
+                    "제품정보": ["HBM라", "HBM라"],
+                    "Stack": ["12H", "12H"],
+                    "WF 구분": ["Core", "Dummy"],
+                    "EDS_수율": [0.8, 0.8],
+                    "BE_수율": [0.9, 0.9],
+                }
+            ),
+            "RQ_YLD",
         ),
-        "chip_qty": pd.DataFrame(
-            {
-                "제품정보": ["HBM라", "HBM라"],
-                "Stack": ["12H", "12H"],
-                "WF 구분": ["Core", "Dummy"],
-                "구분_Chip": [11, 1],
-                "Net Die": [500, 500],
-            }
+        "chip_qty": with_blank_custom(
+            pd.DataFrame(
+                {
+                    "제품정보": ["HBM라", "HBM라"],
+                    "Stack": ["12H", "12H"],
+                    "WF 구분": ["Core", "Dummy"],
+                    "구분_Chip": [11, 1],
+                    "Net Die": [500, 500],
+                }
+            ),
+            "RQ_CHIP_QTY",
         ),
         "density_data": pd.DataFrame(),
         "display_order": pd.DataFrame(columns=list(DISPLAY_ORDER_COLUMNS)),

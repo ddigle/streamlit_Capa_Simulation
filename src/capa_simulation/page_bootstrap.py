@@ -30,9 +30,10 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-# 페이지 테스트가 이 두 모듈의 속성을 교체해 활성 리비전을 흉내낸다. 이름을 직접
+# 페이지 테스트가 이 모듈들의 속성을 교체해 활성 리비전 · 공용 프로필을 흉내낸다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.io.reference_cache as reference_cache
+import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts, settings
@@ -48,6 +49,7 @@ from capa_simulation.persistence.cache import (
     load_global_securement_threshold,
 )
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
+from capa_simulation.persistence.models import RouteLoadExceptionProfile
 from capa_simulation.reference_grid_keys import DATASETS, EDIT_TABLES
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_registration import PLAN_TABLES, ROUTE_TABLES
@@ -735,6 +737,26 @@ class PageContext:
     active_scenario: ActiveScenario
     selected_start_month: int
     selected_end_month: int
+    route_exceptions: RouteLoadExceptionProfile
+    """이 회차의 부하 예외 선언 판(공용 — 모든 시나리오에 걸린다, AGENTS 5장 44 · 45). 계산 키는
+    `.declaration` 을 빌더에 넘긴다 — 한 회차의 모든 계산 칸이 이 한 판으로 접힌다."""
+
+
+def route_exceptions_of(database_path: str) -> RouteLoadExceptionProfile:
+    """그 시뮬레이션 DB 의 지금 부하 예외 선언 판 — 공용 프로필 캐시(쓰기 세대 키 칸이라 회차마다
+    불러도 DB 를 다시 열지 않는다). 읽은 판은 세션에도 적어 둔다 — 편집본 칸 걷기가 그 판으로 접은
+    키를 걷는다(`scenario_state.note_route_exceptions`). DB 경로를 쥔 화면(사이드바 리비전 저장 ·
+    공식 지정 · 입력 점검 · 복제 · 파생 저장 · 부대공정 미리보기)은 그 경로로 부른다."""
+    profile = persistence_cache.load_global_route_load_exceptions(database_path)
+    scenario_state.note_route_exceptions(profile.declaration)
+    return profile
+
+
+def current_route_exceptions() -> RouteLoadExceptionProfile:
+    """부를 때의 `settings.DUCKDB_PATH` 의 지금 부하 예외 선언 판(`route_exceptions_of` — 시험이
+    설정을 바꾼다). 계산 페이지 공통 진입과 `PageContext` 를 쓰지 않는 화면(HOME · 표준 대비 재공)이
+    이것으로 읽는다."""
+    return route_exceptions_of(str(settings.DUCKDB_PATH.resolve()))
 
 
 def selected_month_range() -> tuple[int, int]:
@@ -875,7 +897,8 @@ def prune_named_choice(key: str, names: Mapping[str, str], *, default: str) -> N
 
 
 def load_page_context() -> PageContext:
-    """활성 리비전·표시순서·활성 시나리오와 선택 조회기간을 한 번에 준비한다."""
+    """활성 리비전·표시순서·활성 시나리오와 선택 조회기간, 지금 부하 예외 선언 판을 한 번에
+    준비한다."""
     reference_version = reference_cache.get_effective_reference_version()
     reference_tables = reference_cache.get_effective_reference_tables()
     display_order = simulation_cache.get_prepared_display_order(
@@ -890,6 +913,7 @@ def load_page_context() -> PageContext:
         active_scenario=active_scenario,
         selected_start_month=selected_start_month,
         selected_end_month=selected_end_month,
+        route_exceptions=current_route_exceptions(),
     )
 
 
@@ -1024,7 +1048,11 @@ def process_page_inputs(database_path: str) -> ProcessPageInputs:
         empty_message=NO_DEMAND_MESSAGE,
     )
     capacity_cache_key = simulation_cache.scenario_cache_key(
-        context.reference_version, active, effective_start, effective_end
+        context.reference_version,
+        active,
+        effective_start,
+        effective_end,
+        route_exceptions=context.route_exceptions.declaration,
     )
     try:
         securement_rate = simulation_cache.get_scenario_securement_rate(

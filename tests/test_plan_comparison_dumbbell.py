@@ -91,3 +91,64 @@ def test_only_the_compared_months_count() -> None:
     # 26.07 만 보면 A 는 같고 B 만 20 늘었다.
     assert list(figure.data[0].y) == ["B"]
     assert every_month is not None and "A" in list(every_month.data[0].y)
+
+
+PART_DIMENSIONS = ["제품정보", "CUSTOM", "Stack"]
+
+
+def _part_detail(rows: list[tuple[str, str, float]]) -> pd.DataFrame:
+    """(제품정보, CUSTOM, 값) — Stack 은 모두 8H."""
+    return pd.DataFrame(
+        {
+            "제품정보": [row[0] for row in rows],
+            "CUSTOM": [row[1] for row in rows],
+            "Stack": ["8H"] * len(rows),
+            "26.01": [row[2] for row in rows],
+        }
+    )
+
+
+def test_a_split_product_names_each_part_like_the_detail_table() -> None:
+    """부품을 가르는 제품의 줄 이름은 세부수량 표와 같은 이름표(「제품 (부품) · Stack」)이고 부품을
+    칸으로 잇지 않는다. 접힌 제품은 지금처럼 제품 이름이다. 짝을 못 찾은 비교 행은 「제품 (-)」 줄의
+    − 로, 부품 줄은 + 로 갈려 보이고 제품 합은 맞는다."""
+    figure = build_plan_comparison_dumbbell(
+        _part_detail(
+            [
+                ("DEMO_A", "DEMO_CUSTOM_A", 60.0),
+                ("DEMO_A", "DEMO_CUSTOM_B", 40.0),
+                ("DEMO_B", "", 30.0),
+            ]
+        ),
+        _part_detail([("DEMO_A", "-", 100.0), ("DEMO_B", "", 20.0)]),
+        dimensions=PART_DIMENSIONS,
+    )
+
+    assert figure is not None
+    names = list(figure.data[0].y)
+    assert set(names) == {
+        "DEMO_A (DEMO_CUSTOM_A) · 8H",
+        "DEMO_A (DEMO_CUSTOM_B) · 8H",
+        "DEMO_A (-) · 8H",
+        "DEMO_B · 8H",
+    }
+    differences = dict(zip(names, figure.data[1].text, strict=True))
+    assert differences["DEMO_A (-) · 8H"] == "-100"
+    assert differences["DEMO_A (DEMO_CUSTOM_A) · 8H"] == "+60"
+    assert differences["DEMO_B · 8H"] == "+10"
+
+
+def test_a_folded_frame_draws_the_same_dumbbell_as_the_frame_without_parts() -> None:
+    """부품이 하나뿐인 제품만 있으면(접힌 값) 부품 칸이 없는 표와 같은 그림이다."""
+    current = _part_detail([("DEMO_A", "", 100.0), ("DEMO_B", "", 30.0)])
+    comparison = _part_detail([("DEMO_A", "", 80.0), ("DEMO_B", "", 50.0)])
+
+    with_parts = build_plan_comparison_dumbbell(current, comparison, dimensions=PART_DIMENSIONS)
+    without = build_plan_comparison_dumbbell(
+        current.drop(columns=["CUSTOM"]),
+        comparison.drop(columns=["CUSTOM"]),
+        dimensions=["제품정보", "Stack"],
+    )
+
+    assert with_parts is not None and without is not None
+    assert with_parts.to_json() == without.to_json()

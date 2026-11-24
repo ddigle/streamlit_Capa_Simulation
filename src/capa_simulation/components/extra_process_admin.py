@@ -85,7 +85,6 @@ from capa_simulation.extra_process_intake import (
     placed_matches,
     preview_pack,
     previous_content,
-    production_place,
     stage_pack,
     write_back,
 )
@@ -95,7 +94,11 @@ from capa_simulation.io.reference_cache import (
 )
 from capa_simulation.korea_time import KST
 from capa_simulation.navigation import ADMIN_AREA_TABS
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    route_exceptions_of,
+)
 from capa_simulation.persistence.extra_process_store import ExtraProcessMoved
 from capa_simulation.persistence.models import (
     EXTRA_KIND_REVISION,
@@ -141,6 +144,7 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_subject_particle,
 )
+from capa_simulation.services.simulation_cache import calculation_token
 from capa_simulation.session_slot import SessionSlot
 
 TAB_LABEL: Final = ADMIN_AREA_TABS[3]
@@ -171,8 +175,8 @@ REVISION_APPLY_LABEL: Final = "새 판 적용"
 REWRITE_LABEL: Final = "S3 에 다시 쓰기"
 TEMPLATE_FILE: Final = "extra_process_v{version}.zip"
 BLANK_TEMPLATE_FILE: Final = "extra_process_template.zip"
-# 잠긴 쓰는 단추의 풍선(UI-INP-07) — 무엇이 막는지 한 줄.
-NOT_PRODUCTION_REASON: Final = "운영 서버(C-DEP)에서만 바꿀 수 있습니다"
+# 잠긴 쓰는 단추의 풍선(UI-INP-07) — 무엇이 막는지 한 줄(판정 한 곳 `sso_identity`).
+NOT_PRODUCTION_REASON: Final = sso_identity.NOT_PRODUCTION_REASON
 NOTHING_TO_TOGGLE: Final = "적용한 판이 없습니다"
 # 누르기 전에 알아야 할 결과(UI-NTF-09).
 OFF_HELP: Final = (
@@ -260,14 +264,10 @@ HEAD_INTERVAL: Final = timedelta(minutes=5)
 
 
 def write_lock_reason() -> str | None:
-    """쓰는 단추를 잠그는 까닭 — 열려 있으면 None. 화면과 누른 회차가 함께 부른다."""
-    from capa_simulation.auth import grades
-
-    if not production_place():
-        return NOT_PRODUCTION_REASON
-    if not sso_identity.viewer_is_developer():
-        return grades.refusal_text("admin.area")
-    return None
+    """쓰는 단추를 잠그는 까닭 — 열려 있으면 None. 화면과 누른 회차가 함께 부른다. 판정은
+    「부하 예외」 탭과 같은 `sso_identity.production_write_lock_reason` 하나이고, 이 이름은 시험이
+    바꿔 끼우는 자리다."""
+    return sso_identity.production_write_lock_reason()
 
 
 def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str:
@@ -646,13 +646,16 @@ def _preview(
     *,
     run: bool,
 ) -> PackPreview | None:
-    """시험 계산 — 단추를 누른 회차에만 돌리고 (sha, content_token)마다 세션에 둔다."""
+    """시험 계산 — 단추를 누른 회차에만 돌리고 (sha, 계산 토큰)마다 세션에 둔다. 계산 토큰은 활성
+    시나리오 내용 토큰에 그 회차의 부하 예외 선언을 접은 것이다(`calculation_token`) — 선언을
+    저장하면 메모가 빗나가 새 판으로 다시 센다."""
     pack = staged.reading.pack
     if pack is None:
         return None
     try:
         tables = get_effective_reference_tables()
         active = ensure_active_scenario(tables, get_effective_reference_version())
+        route_exceptions = route_exceptions_of(str(repository.database_path)).declaration
     except BOOTSTRAP_ERRORS as exc:
         # 시험 계산 단추가 설 자리 — 까닭 없이 사라지지 않게 마크로 둔다(UI-NTF-08).
         render_data_error(
@@ -662,7 +665,10 @@ def _preview(
             text="시험 계산에 쓸 시나리오를 읽지 못했습니다",
         )
         return None
-    memo_key = (staged.reading.sha256, str(active["content_token"]))
+    memo_key = (
+        staged.reading.sha256,
+        calculation_token(str(active["content_token"]), route_exceptions),
+    )
     memo = PREVIEW.get()
     if len(memo) == 2 and memo[0] == memo_key and isinstance(memo[1], PackPreview):
         return memo[1]
@@ -670,7 +676,7 @@ def _preview(
         return None
     try:
         with st.spinner("시험 계산 중입니다..."):
-            preview = _compute_preview(repository, state, staged, tables)
+            preview = _compute_preview(repository, state, staged, tables, route_exceptions)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc), icon=":material/error:")
         return None
@@ -683,6 +689,7 @@ def _compute_preview(
     state: ExtraProcessState,
     staged: StagedPack,
     tables: Mapping[str, pd.DataFrame],
+    route_exceptions: Mapping[str, str],
 ) -> PackPreview:
     pack = staged.reading.pack
     assert pack is not None
@@ -693,11 +700,24 @@ def _compute_preview(
         else split_previous(repository.load_scenario_extra_process(scenario_id)).stripped
     )
     if staged.changes is not None:
-        return preview_pack(tables, previous, pack, seq=state.last_seq + 1, changes=staged.changes)
+        return preview_pack(
+            tables,
+            previous,
+            pack,
+            seq=state.last_seq + 1,
+            route_exceptions=route_exceptions,
+            changes=staged.changes,
+        )
     current = _content(repository, state.active)
     before = _content(repository, previous_content(state))
     return preview_pack(
-        tables, previous, pack, seq=state.last_seq + 1, current=current, before=before
+        tables,
+        previous,
+        pack,
+        seq=state.last_seq + 1,
+        route_exceptions=route_exceptions,
+        current=current,
+        before=before,
     )
 
 

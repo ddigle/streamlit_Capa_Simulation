@@ -278,6 +278,16 @@ LIST_SIDE_DETAIL: Final = "상세"
 LIST_SIDE_ATTR: Final = "data-sls-side"
 LIST_DISCARD_KEY: Final = "scenario_list_discard_v1"
 ADMIN_AREA_PAGE: Final = "admin_area"
+# Admin Area 탭 묶음 칸(`app_pages/admin_area.TABS_BOX_KEY`)과 탭 이름 끝 글자(`navigation` 의
+# `ADMIN_AREA_*_TAB`), 「부하 예외」 탭의 고르기 칸 key 앞머리 · 저장 단추 key
+# (`components/route_load_exception_admin.py`). 앱 모듈을 부르지 않고 값만 옮긴다.
+ADMIN_TABS_BOX_KEY: Final = "admin_area_tabs_box"
+ADMIN_FIRST_TAB: Final = "Proc Rename"
+ADMIN_LOG_TAB: Final = "접속 · 작업 기록"
+ADMIN_ROUTE_EXCEPTION_TAB: Final = "부하 예외"
+ADMIN_NOTICE_TAB: Final = "공지"
+ROUTE_EXCEPTION_PICK_KEY: Final = "admin_route_exception_pick"
+ROUTE_EXCEPTION_SAVE_KEY: Final = "admin_route_exception_save"
 # 공정 Capa 상세(`app_pages/process_capa_detail.py`)와 그 화면의 컨테이너 key(`process_capa_view`·
 # `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
@@ -514,6 +524,24 @@ SCENARIO_TABS_KEY: Final = "scenario_management_tabs"
 SCENARIO_TABS: Final = ("Capa 시나리오", "설비 시나리오", "DB 등록", "자동 갱신")
 # 설비 시나리오 탭의 시나리오 표 머리 칸(`equipment_scenario_management.scenario_rows`).
 EQUIPMENT_SCENARIO_TABLE_ANCHOR: Final = "설비 시나리오"
+# 「DB 등록」 탭의 저장 단추 글(`bigdataquery_registration` 의 폼 제출 단추 — key 가 없어 글로
+# 찾는다)과 목록 조회 단추 key(`CATALOG_QUERY_BUTTON_KEY`). 앱 모듈을 부르지 않고 값만 옮긴다.
+REGISTRATION_SAVE_LABEL: Final = "DB 조회 후 시나리오 저장"
+REGISTRATION_CATALOG_KEY: Final = "bigdataquery_catalog_query"
+# 생산 계획(`app_pages/load_conversion.py`) 환산 탭과 그 사이드바 「환산 조건」 카드 — 소요기준
+# 칸 이름표, 집계 기준 전환 key(`AGGREGATION_KEY`)와 두 선택지 글(`AGGREGATION_NAMES`), 전환이
+# 잠기는 소요기준(PKG)과 풀리는 소요기준(Wafer), 환산 표 제목 줄 key(`table_heading_row_key` 에 CSV
+# 단추 key 를 넣은 것). 화면 파일이라 부르지 않고 값만 옮기며 시험이 그 글과 대 본다.
+LOAD_CONVERSION_PAGE: Final = "load_conversion"
+LOAD_CONVERSION_TAB: Final = "환산"
+LOAD_CONVERSION_CARD_KEY: Final = f"{CONDITION_CARD_PREFIX}load_conversion"
+LOAD_BASIS_LABEL: Final = "소요기준"
+LOAD_BASIS_LOCKED: Final = "PKG"
+LOAD_BASIS_OPEN: Final = "Wafer"
+LOAD_AGGREGATION_KEY: Final = "monthly_volume_aggregation"
+LOAD_AGGREGATION_TOTAL: Final = "산출 기준 총량"
+LOAD_AGGREGATION_HOME: Final = "HOME 집계 기준"
+LOAD_HEADING_ROW_KEY: Final = "table_heading_row_download_conversion_csv"
 # 탭 안 두 전환(`st.segmented_control`)의 위젯 key 와 시트를 여는 선택지.
 GAP_RESULT_VIEW_KEY: Final = "equipment_gap_result_view_v1"
 GAP_SHEET_VIEW: Final = "분류별 내역"
@@ -1029,6 +1057,12 @@ SSO_ENVIRONMENT: Final = (
     "CAPA_S3_REGION",
     "CAPA_ACCESS_S3_OBJECT",
 )
+# CUSTOM 원천 표 환경변수(`company_bigdataquery_adapter.BDQ_CUSTOM_TABLE_ENV`)와 그 끄개
+# (`CAPA_BDQ_CUSTOM_SOURCE` — `off` 면 둘째 표를 묻지 않는다). 확인용 자식 앱에는 둘 다 넘기지
+# 않는다 — `registration_custom_lock` 이 「변수 없음」 의 저장 잠김을 보는데, 사내 창에 표 이름이나
+# 끄개가 남아 있으면 단추가 열려 잠김 확인이 뒤집힌다. 무거운 import 를 피해 글자로 적고 시험이
+# 어댑터와 대 본다.
+BDQ_CUSTOM_ENVIRONMENT: Final = ("CAPA_BDQ_CUSTOM_TABLE", "CAPA_BDQ_CUSTOM_SOURCE")
 
 
 def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -1038,11 +1072,12 @@ def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[s
     (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다. 사용자 앱을 띄운
     창에서 이 스크립트를 돌려도 자식은 예약 스레드를 세우지 않는다(`AUTO_UPDATE_ENV_VAR`).
     모듈은 부모 환경과 상관없이 끈다(`MODULES_ROOT_ENV_VAR`). 통합인증 환경변수도 뺀다
-    (`SSO_ENVIRONMENT` — 자식은 통합인증 꺼짐으로 뜬다).
+    (`SSO_ENVIRONMENT` — 자식은 통합인증 꺼짐으로 뜬다). CUSTOM 원천 표 이름과 그 끄개도 뺀다
+    (`BDQ_CUSTOM_ENVIRONMENT` — 자식의 DB 등록 저장 단추는 늘 잠긴다).
     """
     env = dict(os.environ if base is None else base)
     env.pop(AUTO_UPDATE_ENV_VAR, None)
-    for name in SSO_ENVIRONMENT:
+    for name in (*SSO_ENVIRONMENT, *BDQ_CUSTOM_ENVIRONMENT):
         env.pop(name, None)
     env[MODULES_ROOT_ENV_VAR] = "off"
     source = str(root / "src")
@@ -6076,6 +6111,367 @@ def check_space_zone_fields(screen: Screen) -> str:
     return summarize_space_zone_fields(len(floors), found_at, fields, switched_off)
 
 
+# 「부하 예외」 탭 안의 보이는 고르기 칸 수 · 잠긴 수 · 저장 단추 잠김(단추가 없으면 null). 닫힌
+# 탭의 위젯도 그려 두므로(값을 지키려고) 보이는 것만 센다.
+_ROUTE_EXCEPTION_JS = """(keys) => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  if (!main) return null;
+  const visible = (element) => element && element.getClientRects().length > 0;
+  const picks = [...main.querySelectorAll(`[class*="st-key-${keys.pick}__"]`)].filter(visible);
+  const locked = picks.filter((box) => {
+    const input = box.querySelector("input");
+    return (input && input.disabled) || box.querySelector('[aria-disabled="true"]') !== null;
+  }).length;
+  const button = [...main.querySelectorAll(`.st-key-${keys.save} button`)].find(visible);
+  return { picks: picks.length, locked, save: button ? Boolean(button.disabled) : null };
+}"""
+
+
+def summarize_route_exception_tab(names: Sequence[str], opened: Mapping[str, Any] | None) -> str:
+    """Admin 「부하 예외」 탭 — 탭 자리(「공지」 바로 앞 · 「접속 · 작업 기록」 이 서면 그 바로 뒤),
+    보이는 고르기 칸 수와 잠긴 수, 저장 단추 잠김. `names` 는 Admin 탭 이름(아이콘 글자가 앞에 붙어
+    온다 — 끝 글자로 가른다), `opened` 는 탭을 연 뒤 읽은 칸(`_ROUTE_EXCEPTION_JS`)이다."""
+
+    def place(label: str) -> int | None:
+        return next(
+            (index for index, name in enumerate(names) if name.strip().endswith(label)), None
+        )
+
+    here = place(ADMIN_ROUTE_EXCEPTION_TAB)
+    if here is None:
+        return "탭 없음"
+    notice = place(ADMIN_NOTICE_TAB)
+    log = place(ADMIN_LOG_TAB)
+    parts = ["탭 있음", "공지 앞" if notice == here + 1 else "공지 앞 아님"]
+    if log is not None:
+        parts.append("기록 탭 뒤" if log == here - 1 else "기록 탭 뒤 아님")
+    if not opened:
+        parts.append("칸 읽지 못함")
+        return " · ".join(parts)
+    parts.append(f"고르기 {int(opened.get('picks') or 0)} · 잠김 {int(opened.get('locked') or 0)}")
+    save = opened.get("save")
+    parts.append("저장 없음" if save is None else "저장 잠김" if save else "저장 열림")
+    return " · ".join(parts)
+
+
+def check_route_exception_tab(screen: Screen) -> str:
+    """Admin Area 「부하 예외」 탭(공정별 부하 산출 예외 선언) — 탭이 「공지」 바로 앞에 서는지,
+    열면 산식마다 고르기 칸과 「저장」 단추가 서는지, 확인용 앱(통합인증 꺼짐 · C-DEP 아님)에서는
+    고르기 · 저장이 모두 잠기는지 본다. 고르지도 누르지도 않고(DB 에 쓰지 않는다) 처음 탭으로
+    되돌린다."""
+    screen.open_page(ADMIN_AREA_PAGE)
+    names = (
+        screen.poll(
+            lambda: screen.js(_KEYED_TAB_NAMES_JS, ADMIN_TABS_BOX_KEY),
+            timeout=60,
+            accept=lambda value: bool(value),
+        )
+        or []
+    )
+    if not any(str(name).strip().endswith(ADMIN_ROUTE_EXCEPTION_TAB) for name in names):
+        return summarize_route_exception_tab([str(name) for name in names], None)
+    keys = {"pick": ROUTE_EXCEPTION_PICK_KEY, "save": ROUTE_EXCEPTION_SAVE_KEY}
+    screen.open_tab(ADMIN_ROUTE_EXCEPTION_TAB)
+    try:
+        opened = screen.poll(
+            lambda: screen.js(_ROUTE_EXCEPTION_JS, keys),
+            timeout=30,
+            accept=lambda value: bool(value) and value["picks"] > 0 and value["save"] is not None,
+        )
+    finally:
+        screen.open_tab(ADMIN_FIRST_TAB)
+    return summarize_route_exception_tab([str(name) for name in names], opened)
+
+
+# 사이드바 「환산 조건」 카드의 집계 기준 전환 — 고른 선택지 글, 선택지가 모두 잠겼는가, 선택지 수.
+# 전환이 없으면 null.
+_AGGREGATION_JS = """(key) => {
+  const box = document.querySelector(`[data-testid="stSidebar"] .st-key-${key}`);
+  if (!box) return null;
+  let options = [...box.querySelectorAll('[role="radio"]')];
+  if (!options.length) options = [...box.querySelectorAll("button")];
+  const off = (option) => option.disabled || option.getAttribute("aria-disabled") === "true";
+  const chosen = options.find((option) => option.getAttribute("aria-checked") === "true");
+  return {
+    chosen: chosen ? chosen.innerText.trim() : "",
+    locked: options.length > 0 && options.every(off),
+    options: options.length,
+  };
+}"""
+# 환산 표 제목 줄의 기준 글(`st.caption`)과 그 글 칸에 풍선(ⓘ)이 섰는가. 줄이 없으면 null.
+_CONVERSION_CAPTION_JS = """(key) => {
+  const row = document.querySelector(`[data-testid="stMain"] .st-key-${key}`);
+  if (!row) return null;
+  const caption = row.querySelector('[data-testid="stCaptionContainer"]');
+  if (!caption) return { text: "", help: false };
+  const holder = caption.closest('[data-testid="stElementContainer"]') || caption;
+  const tips = '[data-testid="stTooltipIcon"], [data-testid="stTooltipHoverTarget"]';
+  return {
+    text: caption.innerText.replace(/\\s+/g, " ").trim(),
+    help: holder.querySelector(tips) !== null,
+  };
+}"""
+
+
+@dataclass(frozen=True)
+class AggregationLook:
+    """한 소요기준에서 본 환산 조건 — 집계 기준 전환이 잠겼나, 고른 선택지 글(판정에만 쓴다), 환산
+    표 제목 줄 기준 글의 낱말(`aggregation_word`)과 그 글에 풍선이 섰는가."""
+
+    locked: bool
+    chosen: str
+    word: str
+    help: bool = False
+
+
+def aggregation_word(caption: Mapping[str, Any] | None) -> str:
+    """환산 표 제목 줄 기준 글이 어느 집계 기준을 말하나 — 「HOME」 · 「총량」 · 「기준 없음」(PKG ·
+    Density 처럼 단위만), 줄이 없으면 「제목 줄 없음」. 글자는 판정에만 쓴다."""
+    if caption is None:
+        return "제목 줄 없음"
+    text = str(caption.get("text") or "")
+    if LOAD_AGGREGATION_HOME in text:
+        return "HOME"
+    if LOAD_AGGREGATION_TOTAL in text:
+        return "총량"
+    return "기준 없음"
+
+
+def summarize_load_conversion_basis(
+    pkg: AggregationLook | None,
+    wafer: AggregationLook | None = None,
+    home: AggregationLook | None = None,
+    back: AggregationLook | None = None,
+) -> str:
+    """생산 계획 환산 집계 기준 한 줄 — PKG 에서 잠기고 제목에 기준 낱말이 없는가, Wafer 에서
+    풀리고 제목이 「총량」 인가, 「HOME 집계 기준」 을 고르면 제목이 「HOME」 이고 그 글에 풍선이
+    서는가, PKG 로 돌아가면 다시 잠기는가. 못 간 단계부터는 적지 않는다."""
+    if pkg is None:
+        return "집계 기준 칸 없음"
+
+    def lock(look: AggregationLook) -> str:
+        return "잠김" if look.locked else "열림"
+
+    def tip(look: AggregationLook) -> str:
+        return "풍선 있음" if look.help else "풍선 없음"
+
+    parts = [f"PKG {lock(pkg)}(제목 {pkg.word})"]
+    if wafer is not None:
+        parts.append(f"Wafer {lock(wafer)}(제목 {wafer.word} · {tip(wafer)})")
+    if home is not None:
+        parts.append(f"HOME 고름(제목 {home.word} · {tip(home)})")
+    if back is not None:
+        parts.append(f"PKG 다시 {lock(back)}(제목 {back.word})")
+    same = (
+        pkg.locked
+        and pkg.word == "기준 없음"
+        and wafer is not None
+        and not wafer.locked
+        and wafer.word == "총량"
+        and not wafer.help
+        and home is not None
+        and home.word == "HOME"
+        and home.help
+        and back is not None
+        and back.locked
+        and back.word == "기준 없음"
+    )
+    return f"{' · '.join(parts)} — 정한 동작과 {'같음' if same else '다름'}"
+
+
+def _aggregation_look(
+    screen: Screen, accept: Callable[[AggregationLook], bool]
+) -> AggregationLook | None:
+    """지금의 집계 기준 전환과 환산 표 제목 줄을 `accept` 를 넘을 때까지(앞 회차의 그림이 남아
+    있을 수 있다) 읽는다. 전환이 없으면 None."""
+
+    def read() -> AggregationLook | None:
+        control = screen.js(_AGGREGATION_JS, LOAD_AGGREGATION_KEY)
+        if not control:
+            return None
+        caption = screen.js(_CONVERSION_CAPTION_JS, LOAD_HEADING_ROW_KEY)
+        return AggregationLook(
+            locked=bool(control["locked"]),
+            chosen=str(control["chosen"]),
+            word=aggregation_word(caption),
+            help=bool((caption or {}).get("help")),
+        )
+
+    found: AggregationLook | None = screen.poll(
+        read, timeout=30, accept=lambda look: look is not None and accept(look)
+    )
+    return found
+
+
+def _choose_basis(screen: Screen, option: str) -> str | None:
+    """소요기준 칸에서 `option` 을 고르고 고르기 전의 값을 돌려준다(칸이 없으면 None — 고르지
+    않는다). 이미 그것이면 고르지 않는다. 고른 것은 세션 값이라 DB 에 쓰지 않는다."""
+    before = screen.selectbox_value(LOAD_BASIS_LABEL)
+    if before is not None and before != option:
+        screen.choose_by_typing(LOAD_BASIS_LABEL, option)
+    return before
+
+
+def _choose_aggregation(screen: Screen, option: str) -> None:
+    options = screen.page.locator(
+        f'[data-testid="stSidebar"] .st-key-{LOAD_AGGREGATION_KEY} [role="radio"]'
+    )
+    options.filter(has_text=option).first.click()
+    screen.wait_idle()
+
+
+def check_load_conversion_basis(screen: Screen) -> str:
+    """생산 계획 → 환산 탭의 사이드바 「환산 조건」 집계 기준 전환 — 소요기준 PKG 에서 잠기고,
+    Wafer 에서 풀려 환산 표 제목 줄 기준 글이 「산출 기준 총량」 이며, 「HOME 집계 기준」 을 고르면
+    그 글이 바뀌고 풍선이 서고, PKG 로 돌아가면 다시 잠기는지 본다. 고른 값은 세션에만 살고
+    (DB 에 쓰지 않는다) 끝에(읽다 깨져도) 집계 기준 → 소요기준 차례로 되돌린다 — PKG 에서는
+    전환이 잠겨 소요기준을 먼저 되돌리면 집계 기준을 되돌릴 수 없다."""
+    screen.step("페이지 열기")
+    screen.open_page(LOAD_CONVERSION_PAGE)
+    screen.open_tab(LOAD_CONVERSION_TAB)
+    with opened_card(screen, LOAD_CONVERSION_CARD_KEY) as found:
+        if not found:
+            return "환산 조건 카드 없음"
+        first = _aggregation_look(screen, lambda look: True)
+        if first is None:
+            return summarize_load_conversion_basis(None)
+        before_basis: str | None = None
+        try:
+            screen.step("PKG")
+            before_basis = _choose_basis(screen, LOAD_BASIS_LOCKED)
+            pkg = _aggregation_look(screen, lambda look: look.locked and look.word == "기준 없음")
+            if pkg is None:
+                return summarize_load_conversion_basis(None)
+            screen.step("Wafer")
+            _choose_basis(screen, LOAD_BASIS_OPEN)
+            wafer = _aggregation_look(
+                screen, lambda look: not look.locked and look.word != "기준 없음"
+            )
+            if wafer is None or wafer.locked:
+                return summarize_load_conversion_basis(pkg, wafer)
+            if wafer.chosen != LOAD_AGGREGATION_TOTAL:
+                _choose_aggregation(screen, LOAD_AGGREGATION_TOTAL)
+                wafer = _aggregation_look(screen, lambda look: look.word == "총량")
+                if wafer is None:
+                    return summarize_load_conversion_basis(pkg)
+            screen.step("HOME 집계 기준")
+            _choose_aggregation(screen, LOAD_AGGREGATION_HOME)
+            home = _aggregation_look(screen, lambda look: look.word == "HOME" and look.help)
+            screen.step("PKG 다시")
+            _choose_basis(screen, LOAD_BASIS_LOCKED)
+            back = _aggregation_look(screen, lambda look: look.locked and look.word == "기준 없음")
+            return summarize_load_conversion_basis(pkg, wafer, home, back)
+        finally:
+            screen.step("되돌리기")
+            if before_basis is not None:
+                _choose_basis(screen, LOAD_BASIS_OPEN)
+                now = _aggregation_look(screen, lambda look: not look.locked)
+                if now is not None and not now.locked and first.chosen not in ("", now.chosen):
+                    _choose_aggregation(screen, first.chosen)
+                _choose_basis(screen, before_basis)
+
+
+# 「DB 등록」 탭의 보이는 저장 단추가 잠겼나와 목록 조회 단추가 잠겼나(단추가 없으면 null). 도움말을
+# 준 단추는 숨은 사본이 함께 있어 보이는 것만 본다(`_main_button`).
+_REGISTRATION_BUTTONS_JS = """(arg) => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  if (!main) return null;
+  const visible = (element) => element && element.getClientRects().length > 0;
+  const save = [...main.querySelectorAll('[data-testid="stFormSubmitButton"] button')]
+    .filter(visible)
+    .find((button) => button.innerText.includes(arg.save));
+  const catalog = [...main.querySelectorAll(`.st-key-${arg.catalog} button`)].find(visible);
+  return {
+    save: save ? Boolean(save.disabled) : null,
+    catalog: catalog ? Boolean(catalog.disabled) : null,
+  };
+}"""
+# 마우스를 올린 뒤 선 풍선(보이는 것 하나)의 글. 판정에만 쓴다.
+TOOLTIP_CONTENT_SELECTOR: Final = '[data-testid="stTooltipContent"]'
+
+
+def summarize_custom_table_lock(
+    tab: bool, buttons: Mapping[str, Any] | None, help_text: str | None = None
+) -> str:
+    """「DB 등록」 탭 한 줄 — 확인용 앱(CUSTOM 원천 표 환경변수를 뺀 자식)에서 저장 단추가 잠기고 그
+    풍선이 변수 이름을 대는가, 그 표를 쓰지 않는 목록 조회는 열려 있는가. 풍선 글은 찍지 않는다."""
+    if not tab:
+        return "DB 등록 탭 없음"
+    if not buttons or buttons.get("save") is None:
+        return "DB 등록 탭 있음 · 저장 단추 없음"
+    parts = ["DB 등록 탭 있음"]
+    if not buttons["save"]:
+        parts.append("저장 열림")
+    elif not help_text:
+        parts.append("저장 잠김 · 풍선 못 읽음")
+    elif BDQ_CUSTOM_ENVIRONMENT[0] in help_text:
+        parts.append("저장 잠김 · 풍선에 변수 이름 있음")
+    else:
+        parts.append("저장 잠김 · 풍선에 변수 이름 없음")
+    catalog = buttons.get("catalog")
+    parts.append(
+        "목록 조회 없음" if catalog is None else "목록 조회 잠김" if catalog else "목록 조회 열림"
+    )
+    return " · ".join(parts)
+
+
+def _hover_text(screen: Screen, target: Any) -> str:
+    """`target` 가운데에 포인터를 옮겨 선 풍선의 글(없으면 빈 글자). 잠긴 단추에는 `hover()` 가
+    누를 수 있기를 기다릴 수 있어 포인터를 직접 옮기고, 끝에 그 위로 비켜 풍선을 걷는다."""
+    target.scroll_into_view_if_needed()
+    box = target.bounding_box()
+    if box is None:
+        return ""
+    page = screen.page
+    x, y = float(box["x"]), float(box["y"])
+    page.mouse.move(x + float(box["width"]) / 2, y + float(box["height"]) / 2)
+    tip = page.locator(TOOLTIP_CONTENT_SELECTOR).locator("visible=true")
+    text = screen.poll(
+        lambda: tip.first.inner_text().strip() if tip.count() else "", timeout=5, accept=bool
+    )
+    page.mouse.move(x, max(y - 80, 1.0))
+    return str(text or "")
+
+
+def check_custom_table_lock(screen: Screen) -> str:
+    """시나리오 관리 「DB 등록」 탭 — 확인용 자식 앱은 CUSTOM 원천 표 환경변수와 그 끄개를 받지
+    않으므로(`app_environment`) 「DB 조회 후 시나리오 저장」 이 잠기고 그 풍선이 변수 이름을 대는지,
+    목록 조회 단추는 잠기지 않는지 본다. 누르지 않고(DB 에도 사내 DB 에도 닿지 않는다) 처음 탭으로
+    되돌린다."""
+    screen.step("페이지 열기")
+    screen.open_page(SCENARIO_MANAGEMENT_PAGE)
+    names = (
+        screen.poll(
+            lambda: screen.js(_KEYED_TAB_NAMES_JS, SCENARIO_TABS_KEY),
+            timeout=60,
+            accept=lambda value: bool(value),
+        )
+        or []
+    )
+    if not any(str(name).strip().endswith(SCENARIO_TABS[2]) for name in names):
+        return summarize_custom_table_lock(False, None)
+    arg = {"save": REGISTRATION_SAVE_LABEL, "catalog": REGISTRATION_CATALOG_KEY}
+    screen.open_tab(SCENARIO_TABS[2])
+    try:
+        screen.step("저장 단추")
+        buttons = screen.poll(
+            lambda: screen.js(_REGISTRATION_BUTTONS_JS, arg),
+            timeout=60,
+            accept=lambda value: bool(value) and value["save"] is not None,
+        )
+        help_text: str | None = None
+        if buttons and buttons.get("save"):
+            screen.step("풍선")
+            button = screen.page.locator(
+                '[data-testid="stMain"] [data-testid="stFormSubmitButton"] button:visible',
+                has_text=REGISTRATION_SAVE_LABEL,
+            ).first
+            help_text = _hover_text(screen, button)
+        return summarize_custom_table_lock(True, buttons, help_text)
+    finally:
+        screen.open_tab(SCENARIO_TABS[0])
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -6110,6 +6506,9 @@ ITEMS: tuple[Item, ...] = (
     Item("alert_popup", "오른쪽 아래 알림창 한 꼴", check_alert_popup),
     Item("settings_boxes", "사이드바 설정 상자", check_settings_boxes),
     Item("scenario_list_grid", "시나리오 목록 관리 표", check_scenario_list_grid),
+    Item("route_exception_tab", "Admin 부하 예외 탭", check_route_exception_tab),
+    Item("load_conversion_basis", "생산 계획 환산 집계 기준 전환", check_load_conversion_basis),
+    Item("registration_custom_lock", "DB 등록 CUSTOM 원천 표 없음 잠김", check_custom_table_lock),
 )
 
 

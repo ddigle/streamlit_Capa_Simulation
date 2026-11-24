@@ -1,7 +1,8 @@
 [server]
 # 앱 전체 올리기 상한(MB) — Streamlit 기본값과 같다. 올린 파일은 통째로 서버 메모리 바이트가 되어, 큰 파일
 # 하나가 컨테이너 메모리 한도(1GiB)를 넘기면 앱이 다시 서고 모든 사람의 저장 전 편집이 사라진다. 칸마다 더
-# 낮은 상한은 칸에서 준다(설비 CSV 50 — `components/equipment_data_workspace.CSV_UPLOAD_LIMIT_MB`).
+# 낮은 상한은 칸에서 준다(설비 CSV 50 — `components/equipment_data_workspace.CSV_UPLOAD_LIMIT_MB`, 원천 CSV 50 —
+# `components/source_csv_registration.SOURCE_CSV_UPLOAD_LIMIT_MB`).
 maxUploadSize = 200
 # `static/` 의 파일을 `app/static/…` 으로 보낸다. 페이지 제목·상자 제목·큰 숫자의 Archivo 부분
 # 글꼴(`static/fonts/`, `components/typography.py`)이 여기로 온다 — 사내 PC 는 외부 글꼴 서버에 못 나간다.

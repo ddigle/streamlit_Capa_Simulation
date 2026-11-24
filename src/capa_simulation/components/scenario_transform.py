@@ -30,6 +30,7 @@ from capa_simulation.page_bootstrap import (
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     prune_choice,
+    route_exceptions_of,
 )
 from capa_simulation.persistence.cache import load_scenario_snapshot
 from capa_simulation.persistence.models import (
@@ -310,7 +311,12 @@ def render_derived_save(
     if not submitted or already_saved:
         return
     with st.spinner("저장 전에 결과의 Capa 계산을 검사하는 중입니다..."):
-        verdict = derived_save_verdict(tables, gate_sources or (source,), labels=get_process_labels)
+        verdict = derived_save_verdict(
+            tables,
+            gate_sources or (source,),
+            route_exceptions=route_exceptions_of(str(repository.database_path)).declaration,
+            labels=get_process_labels,
+        )
     if not verdict.allowed:
         st.error(markdown_safe_tildes(verdict.message))
         return

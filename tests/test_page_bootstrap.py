@@ -5,6 +5,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+import streamlit
 
 from capa_simulation import alerts, page_bootstrap, settings
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
@@ -19,6 +20,7 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.persistence._migration_core import MigrationChanged, MigrationFailed
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.reference_grid_keys import DATASETS
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import pristine_content_token
@@ -40,6 +42,7 @@ def _context(start: int, end: int) -> PageContext:
         },
         selected_start_month=start,
         selected_end_month=end,
+        route_exceptions=RouteLoadExceptionState().profile,
     )
 
 
@@ -880,3 +883,38 @@ def test_prune_list_selection_drops_values_the_current_options_no_longer_have(
     state["filter"] = "A"
     assert page_bootstrap.prune_list_selection("filter", ["A", "B"]) == []
     assert state["filter"] == []
+
+
+def test_the_current_route_exception_declaration_is_read_from_the_simulation_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계산 페이지 공통 진입의 부하 예외 선언 판은 부를 때의 `settings.DUCKDB_PATH` 공용 프로필이다
+    — 저장하면(공용 프로필 비우기 뒤) 다음 회차가 새 판을 읽고, 읽은 판을 세션에 적어 편집본 칸
+    걷기가 그 판으로 접은 키를 걷는다(AGENTS 5장 44 · 45)."""
+    from auto_update_fakes import new_repository
+
+    from capa_simulation import scenario_state
+    from capa_simulation.persistence import cache as scenario_cache
+    from capa_simulation.services.route_load_exceptions import BUFFER_X_CORE_CHIP
+
+    database = tmp_path / "route_read.duckdb"
+    repository = new_repository(database)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    scenario_cache.clear_global_route_load_exceptions_cache()
+    monkeypatch.setattr(streamlit, "session_state", {})
+
+    empty = page_bootstrap.current_route_exceptions()
+    assert (empty.seq, dict(empty.declaration), empty.digest) == (0, {}, "")
+    assert scenario_state.ROUTE_EXCEPTIONS_SEEN.get() == {}
+
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    saved = repository.append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    scenario_cache.clear_global_route_load_exceptions_cache()
+
+    profile = page_bootstrap.current_route_exceptions()
+    assert profile == saved.profile
+    assert dict(profile.declaration) == declaration and profile.digest
+    assert scenario_state.ROUTE_EXCEPTIONS_SEEN.get() == declaration
+    scenario_cache.clear_global_route_load_exceptions_cache()

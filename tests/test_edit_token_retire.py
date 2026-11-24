@@ -27,6 +27,11 @@ import streamlit as st
 from capa_simulation import scenario_state
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,10 +55,13 @@ def computed(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     original = sc.full_capacity_outcome
 
     def counted(
-        scenario_tables: Mapping[str, pd.DataFrame], reference_tables: Mapping[str, pd.DataFrame]
+        scenario_tables: Mapping[str, pd.DataFrame],
+        reference_tables: Mapping[str, pd.DataFrame],
+        *,
+        route_exceptions: RouteLoadDeclaration,
     ) -> sc.CapacityOutcome:
         calls.append(1)
-        return original(scenario_tables, reference_tables)
+        return original(scenario_tables, reference_tables, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(sc, "full_capacity_outcome", counted)
     return calls
@@ -71,11 +79,19 @@ def _months(tables: Mapping[str, pd.DataFrame]) -> list[int]:
 
 
 def _calculate(
-    scenario: scenario_state.ActiveScenario, tables: Mapping[str, pd.DataFrame]
+    scenario: scenario_state.ActiveScenario,
+    tables: Mapping[str, pd.DataFrame],
+    route_exceptions: RouteLoadDeclaration = NO_ROUTE_LOAD_EXCEPTIONS,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """화면과 같은 길 — 시나리오 키(`scenario_cache_key`)로 조회기간 결과를 받는다."""
     months = _months(scenario["tables"])
-    key = sc.scenario_cache_key(scenario["reference_version"], scenario, months[0], months[-1])
+    key = sc.scenario_cache_key(
+        scenario["reference_version"],
+        scenario,
+        months[0],
+        months[-1],
+        route_exceptions=route_exceptions,
+    )
     return sc.get_scenario_capacity_and_demand(
         key, _scenario_tables=scenario["tables"], _reference_tables=tables
     )
@@ -120,6 +136,45 @@ def test_an_edit_retires_the_replaced_edit_cell_but_keeps_the_revision_cell(
 
     _calculate(first, tables)
     assert len(computed) == 4, "갈아끼워진 편집본 칸은 걷혔다"
+
+
+def test_an_edit_retires_the_cell_folded_with_the_declaration_this_session_read(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """편집본 칸은 이 세션이 읽은 부하 예외 선언 판으로 접힌 키에 있다 — 걷기도 그 판(세션에 적어 둔
+    판 — `page_bootstrap.route_exceptions_of` 가 적는다)으로 접은 키를 걷고 DB 를 열지
+    않는다."""
+    declaration = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    scenario_state.note_route_exceptions(declaration)
+    pristine = scenario_state.reset_active_scenario(tables, _version())
+    first = _plan_edit(pristine)
+    _calculate(first, tables, declaration)
+    _calculate(first, tables, declaration)
+    assert len(computed) == 1
+
+    _table_edit(first)
+    _calculate(first, tables, declaration)
+    assert len(computed) == 2, "선언으로 접은 편집본 칸이 걷혔다"
+
+
+def test_an_edit_after_a_newer_declaration_was_read_leaves_the_older_cell_to_the_cap(
+    tables: dict[str, pd.DataFrame], computed: list[int]
+) -> None:
+    """걷기는 이 세션이 **마지막으로 읽은** 판으로 접은 키 하나만 걷는다 — 편집본 칸을 지은 뒤 이
+    세션이 새 판을 읽고(남이 선언을 저장함) 편집하면, 앞 판으로 지은 칸은 걷히지 않고 상한
+    (`FULL_CAPACITY_MAX_ENTRIES`)에서 밀릴 때까지 남는다. 값은 틀리지 않는다(AGENTS 5장 45)."""
+    before = {"DEMO-P1": BUFFER_X_CORE_CHIP}
+    after = {"DEMO-P2": BUFFER_X_CORE_CHIP}
+    scenario_state.note_route_exceptions(before)
+    pristine = scenario_state.reset_active_scenario(tables, _version())
+    first = _plan_edit(pristine)
+    _calculate(first, tables, before)
+    assert len(computed) == 1
+
+    scenario_state.note_route_exceptions(after)
+    _table_edit(first)
+    _calculate(first, tables, before)
+    assert len(computed) == 1, "앞 판으로 지은 편집본 칸은 남았다"
 
 
 def test_an_edit_from_the_revision_retires_nothing(
@@ -286,7 +341,7 @@ def test_the_full_cell_holds_eight_contents(monkeypatch: pytest.MonkeyPatch) -> 
     assert sc.FULL_CAPACITY_MAX_ENTRIES == 8
     calls: list[int] = []
 
-    def cheap(*_args: object) -> sc.CapacityOutcome:
+    def cheap(*_args: object, **_kwargs: object) -> sc.CapacityOutcome:
         calls.append(1)
         return sc.CapacityOutcome(None, None, "칸 상한 시험")
 

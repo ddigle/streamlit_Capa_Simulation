@@ -50,23 +50,34 @@ from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     UNROUTED_LOADS_ATTR,
     UNROUTED_UNUSED_REASON,
+    calculate_required_equipment,
     required_exclusion_counts,
 )
 from capa_simulation.services.revision_input_check import (
     GROUP_ASSUMED,
     GROUP_CAPACITY,
     GROUP_PLANS,
+    GROUP_ROUTE_CHANGED,
+    GROUP_ROUTE_MISSING,
     GROUP_ROUTES,
     GROUP_RULES,
     GROUP_SOURCE,
     GROUP_STOP,
     GROUP_UNCOUNTED,
     GROUP_UNROUTED,
+    ROUTE_CHANGED_TITLE,
+    ROUTE_MISSING_TITLE,
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
     calculation_period,
     reason_label,
+    route_exception_check,
+)
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 from capa_simulation.services.unit_capacity import (
@@ -178,7 +189,7 @@ def _density_broken(tables: Tables) -> Tables:
 
 def _check(tables: Tables, blank_cs: pd.DataFrame | None = None) -> RevisionInputCheck:
     """`input_check_verdict` 의 계산 몸통과 같은 차례 — DB · 캐시 없이."""
-    outcome = full_capacity_outcome(tables, tables)
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     density = density_error(tables) if outcome.error is None else None
     period = calculation_period(tables, INPUT_CHECK_PERIOD_TABLES)
     return build_input_check(outcome, density, blank_cs, period=period)
@@ -191,10 +202,11 @@ def test_the_four_demand_counts_are_the_gate_counts(tables: Tables) -> None:
     """부하량에서 빠진 계획 · 빈 생산수량 · 경로에 닿지 않은 부하 · 부하 붙은 경로 — 검사 경고의 네
     수가 점검 묶음에서 그대로 나온다(경로 묶음 부제 == 검사의 `excluded_routes`)."""
     edited = _with_every_exclusion(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is None and outcome.required_equipment is not None
     counts = required_exclusion_counts(outcome.required_equipment)
-    assert min(counts) > 0, counts
+    demand = (counts.excluded_plans, counts.blank_plans, counts.unrouted_loads)
+    assert min(*demand, counts.excluded_routes) > 0, counts
 
     check = _check(edited)
 
@@ -209,11 +221,48 @@ def test_the_four_demand_counts_are_the_gate_counts(tables: Tables) -> None:
     assert routes.count is not None and routes.count >= counts.excluded_routes
 
 
+def test_basis_missing_routes_are_a_reason_of_the_route_group_with_the_gate_count(
+    tables: Tables,
+) -> None:
+    """부하 예외 바탕이 없어 뺀 Core 줄은 경로 묶음의 까닭 하나로 선다 — 묶음 수 · 부제는 검사의
+    합(`excluded_routes`)과 같고, 그 까닭의 수는 부분 수(`basis_missing_routes`)다.
+
+    내장 시드에는 Buffer 경로가 없어 WF Core 경로를 가진 공정을 선언하면 그 Core 줄의 바탕이 없다.
+    여기서는 묶음 꼴만 보려고 계산 함수에 선언을 넘겨 결과를 짓는다 — 입력 점검 판정
+    (`input_check_verdict`)이 넘긴 선언 판으로 세는 것은 `tests/test_capacity_gate.py` 가 본다.
+    """
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    assert plain.error is None and plain.unit_capacity is not None
+    assert plain.required_equipment is not None
+    reqb = tables["RQ_REQB"]
+    wafer_core = reqb["소요기준"].eq("WF") & reqb["WF 구분"].eq("Core")
+    declared = calculate_required_equipment(
+        reqb,
+        tables["RQ_PKG_PLAN"],
+        tables["RQ_YLD"],
+        tables["RQ_CHIP_QTY"],
+        plain.unit_capacity,
+        route_exceptions={str(reqb.loc[wafer_core, "공정"].iloc[0]): BUFFER_X_CORE_CHIP},
+    )
+    counts = required_exclusion_counts(declared)
+    assert counts.basis_missing_routes > 0, counts
+    before = required_exclusion_counts(plain.required_equipment)
+    assert counts.excluded_routes == before.excluded_routes + counts.basis_missing_routes
+
+    check = build_input_check(CapacityOutcome(plain.unit_capacity, declared, None), None, None)
+
+    routes = check.group(GROUP_ROUTES)
+    assert routes is not None
+    assert dict(routes.reasons)[ROUTE_LOAD_BASIS_MISSING_REASON] == counts.basis_missing_routes
+    assert reason_label(ROUTE_LOAD_BASIS_MISSING_REASON) == ROUTE_LOAD_BASIS_MISSING_REASON
+    assert routes.subtitle == f"그 가운데 부하가 붙은 경로 {counts.excluded_routes:,}"
+
+
 def test_every_check_group_is_counted_and_the_calculation_says_how_many(tables: Tables) -> None:
     """확인 필요 다섯이 모두 서면 「됨 · 확인 5」. 대당 Capa 제외 · 측정률 가정도 결과와 같은
     수다."""
     edited = _with_every_exclusion(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.unit_capacity is not None
     exclusions = outcome.unit_capacity.attrs[CAPACITY_EXCLUSIONS_ATTR]
     assumed = capacity_assumptions(outcome.unit_capacity)
@@ -246,7 +295,7 @@ def test_rule_rows_are_kept_apart_and_the_groups_split_the_result_lists(tables: 
     """규칙대로 뺀 것(PKG Buffer 밖 · 쓰지 않는 경로 조합)은 검사가 세지 않는 행이라 확인 묶음에
     섞이지 않는다 — 확인 묶음과 규칙 묶음을 합치면 결과의 제외 목록 둘과 같다."""
     edited = _pkg_route_on_one_product(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.required_equipment is not None
     all_routes = outcome.required_equipment.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR]
     all_unrouted = outcome.required_equipment.attrs[UNROUTED_LOADS_ATTR]
@@ -267,6 +316,109 @@ def test_rule_rows_are_kept_apart_and_the_groups_split_the_result_lists(tables: 
     assert not rules.flagged
 
 
+# ------------------------------------------------------------------ 부하 예외 선언 두 묶음
+
+_EXC = "DEMO-EXC"
+_GONE = "DEMO-GONE"
+_DECLARED = {_EXC: BUFFER_X_CORE_CHIP, f" {_GONE} ": BUFFER_X_CORE_CHIP}
+
+
+def _declared_routes() -> pd.DataFrame:
+    """선언 공정 `DEMO-EXC` 의 WF 경로 넷(Core 둘 · Top_Dummy · Buffer)과 다른 공정 Core 한 줄 —
+    소요대수 결과 행의 꼴이고 결과처럼 `attrs` 에 제외 목록을 든다."""
+    frame = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202602, 202601, 202601],
+            "공정": [_EXC, _EXC, _EXC, _EXC, "DEMO-PROC"],
+            "제품정보": ["DEMO-HBM"] * 5,
+            "WF 구분": ["Core", "Top_Dummy", "Core", "Buffer", "Core"],
+            "소요기준": ["WF"] * 5,
+            "부하량": [12.0, 0.0, 14.0, 1.0, 3.0],
+        },
+        index=[10, 11, 12, 13, 14],
+    )
+    frame.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame({"제외사유": ["DEMO"]})
+    return frame
+
+
+def test_the_route_check_takes_the_changed_rows_without_the_result_lists() -> None:
+    """바꾼 줄은 산식이 부하량을 바꾼 결과 행(선언 공정의 Core · Top_Dummy)이고 결과의 제외 목록
+    (`attrs`)을 끌고 오지 않는다 — 요약 칸은 묶음 행 · 수만 쥔다. 없는 선언 공정은 선언 원본
+    표기 그대로다. 선언이 비면 재료가 없다."""
+    routes = _declared_routes()
+
+    check = route_exception_check([_EXC, "DEMO-PROC"], routes, _DECLARED)
+
+    assert check is not None
+    assert check.changed["WF 구분"].tolist() == ["Core", "Top_Dummy", "Core"]
+    assert check.changed["부하량"].tolist() == [12.0, 0.0, 14.0]
+    assert check.changed.index.tolist() == [0, 1, 2]
+    assert check.changed.attrs == {}
+    assert list(check.missing.columns) == ["공정"]
+    assert check.missing["공정"].tolist() == [f" {_GONE} "]
+    assert routes.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] is not None
+    assert route_exception_check([_EXC], routes, NO_ROUTE_LOAD_EXCEPTIONS) is None
+
+
+def test_a_declaration_adds_two_groups_after_the_counted_ones(tables: Tables) -> None:
+    """선언이 있으면 확인 필요 「이번 데이터에 없는 선언 공정」 과 알림 「부하 예외로 바꾼 경로」 가
+    확인 묶음 뒤 · 등록 때 뺀 원천 행 앞에 선다. 없는 선언 공정은 「확인 n」 에 들고, 공정 이름은
+    부제가 아니라 표 칸에만 든다."""
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    route_check = route_exception_check([_EXC], _declared_routes(), _DECLARED)
+
+    check = build_input_check(plain, None, None, route_check=route_check)
+
+    assert [group.key for group in check.groups] == [
+        GROUP_STOP,
+        GROUP_CAPACITY,
+        GROUP_ROUTES,
+        GROUP_PLANS,
+        GROUP_UNROUTED,
+        GROUP_ASSUMED,
+        GROUP_ROUTE_MISSING,
+        GROUP_ROUTE_CHANGED,
+        GROUP_SOURCE,
+        GROUP_RULES,
+    ]
+    missing = check.group(GROUP_ROUTE_MISSING)
+    changed = check.group(GROUP_ROUTE_CHANGED)
+    assert missing is not None and changed is not None
+    assert (missing.level, missing.title, missing.count) == ("check", ROUTE_MISSING_TITLE, 1)
+    assert missing.subtitle == "" and _GONE not in missing.subtitle
+    (missing_table,) = missing.tables
+    assert missing_table.frame["공정"].tolist() == [f" {_GONE} "]
+    assert missing_table.preview_columns == ["공정"]
+    assert (changed.level, changed.title, changed.count) == ("info", ROUTE_CHANGED_TITLE, 3)
+    assert changed.subtitle == "Core 2 · Top_Dummy 1"
+    assert not changed.flagged
+    assert check.calculation_label == "됨 · 확인 1"
+
+
+def test_without_a_declaration_or_with_a_stop_the_groups_stay_as_they_were(
+    tables: Tables,
+) -> None:
+    """선언이 비면 묶음 · 「계산」 칸 글이 선언을 모르던 때와 같다. 계산이 멈춘 리비전은 선언이
+    있어도 뒤 묶음을 「셀 수 없음」 하나로 접는다."""
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    assert plain.required_equipment is not None
+    empty = route_exception_check(
+        tables["RQ_REQB"]["공정"], plain.required_equipment, NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    before = _check(tables)
+
+    after = build_input_check(plain, None, None, period=before.period, route_check=empty)
+
+    assert [group.key for group in after.groups] == [group.key for group in before.groups]
+    assert after.calculation_label == before.calculation_label
+    stopped = full_capacity_outcome(
+        _vital_blank(tables), _vital_blank(tables), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    route_check = route_exception_check([_EXC], _declared_routes(), _DECLARED)
+    folded = build_input_check(stopped, None, None, route_check=route_check)
+    assert [group.key for group in folded.groups] == [GROUP_STOP, GROUP_UNCOUNTED, GROUP_SOURCE]
+
+
 # ------------------------------------------------------------------ 멈춤
 
 
@@ -274,7 +426,7 @@ def test_a_reference_join_stop_keeps_its_route_count_and_folds_the_rest(tables: 
     """기준정보 연결 오류로 멈추면 그 꼴과 수(`problem`)가 결과에 남고 뒤 묶음은 「셀 수 없음」
     하나다."""
     edited = _vital_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is not None
     assert outcome.problem is not None and outcome.problem.rows > 0
 
@@ -294,7 +446,7 @@ def test_an_upeh_table_stop_names_its_stage_and_keeps_its_route_count(tables: Ta
     """경로의 바탕 표(`RQ_UPEH`) 자체의 멈춤도 꼴과 수를 들어 제목이 「계산 멈춤 — 대당 Capa」 다
     (사내 리뷰 202611111500 발견 3)."""
     edited = _main_upeh_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.problem is not None
     assert (outcome.problem.table, outcome.problem.label) == ("RQ_UPEH", "빈 값(UPEH)")
     assert outcome.problem.rows == 1
@@ -310,7 +462,7 @@ def test_an_upeh_table_stop_names_its_stage_and_keeps_its_route_count(tables: Ta
 def test_a_stop_without_a_join_problem_does_not_name_a_stage(tables: Tables) -> None:
     """결과가 어느 단계의 오류인지 말하지 않으면 단계를 지어 붙이지 않는다."""
     edited = _vital_zero(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.error is not None and outcome.problem is None
 
     check = _check(edited)
@@ -348,12 +500,14 @@ def test_an_old_revision_without_route_keys_stops_without_calculating(
     database, scenario_id, revision_id = _seeded(tmp_path)
     monkeypatch.setattr(capacity_gate, "revision_block_reason", lambda _tables: "옛 리비전")
 
-    def no_calculation(*_args: object) -> CapacityOutcome:
+    def no_calculation(*_args: object, **_kwargs: object) -> CapacityOutcome:
         raise AssertionError("계산을 부르면 안 된다")
 
     monkeypatch.setattr(capacity_gate, "full_capacity_outcome", no_calculation)
 
-    check = input_check_verdict(str(database), scenario_id, revision_id)
+    check = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert check.stopped and check.stop is not None and check.stop.kind == "blocked"
     stop = check.group(GROUP_STOP)
@@ -448,8 +602,12 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
 
     verdicts = {
         name: (
-            input_check_verdict(str(database), scenario_id, revision_id).stopped,
-            not official_publish_verdict(str(database), revision_id).allowed,
+            input_check_verdict(
+                str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            ).stopped,
+            not official_publish_verdict(
+                str(database), revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            ).allowed,
         )
         for name, revision_id in revisions.items()
     }
@@ -462,10 +620,44 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
     ]
     # Density 만 멈춘 리비전은 멈춤 줄은 두고 뒤 묶음도 센다(2026-11-11 검토 보드 F1 (나)) —
     # 스위치를 바꾸지 않은 출하 기본값 그대로의 길이다.
-    density = input_check_verdict(str(database), scenario_id, revisions["구분_EQ 0"])
+    density = input_check_verdict(
+        str(database),
+        scenario_id,
+        revisions["구분_EQ 0"],
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     assert density.stop is not None and density.stop.kind == "density"
     assert density.group(GROUP_CAPACITY) is not None and density.group(GROUP_UNCOUNTED) is None
     assert density.calculation_label == "멈춤"
+
+
+def test_the_verdict_counts_the_declaration_it_was_given_against_that_revision(
+    tmp_path: Path,
+) -> None:
+    """입력 점검 판정은 넘긴 선언 판으로 두 묶음도 센다 — 없는 공정은 그 리비전 `RQ_REQB` 공정과
+    견준다. 내장 시드의 WF Core 경로는 Buffer 바탕이 없어 바꾼 줄은 없고(「없음」) 그 줄은 경로
+    묶음의 「부하 예외 바탕 없음」 까닭으로 선다. 빈 선언이면 두 묶음이 없다."""
+    database, scenario_id, revision_id = _seeded(tmp_path)
+    reqb = DuckDBScenarioRepository(database).load_revision(revision_id).tables["RQ_REQB"]
+    wafer_core = reqb["소요기준"].eq("WF") & reqb["WF 구분"].eq("Core")
+    declared = {
+        str(reqb.loc[wafer_core, "공정"].iloc[0]): BUFFER_X_CORE_CHIP,
+        _GONE: BUFFER_X_CORE_CHIP,
+    }
+
+    check = input_check_verdict(str(database), scenario_id, revision_id, route_exceptions=declared)
+    plain = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+
+    missing = check.group(GROUP_ROUTE_MISSING)
+    changed = check.group(GROUP_ROUTE_CHANGED)
+    routes = check.group(GROUP_ROUTES)
+    assert missing is not None and changed is not None and routes is not None
+    assert missing.count == 1 and missing.tables[0].frame["공정"].tolist() == [_GONE]
+    assert changed.count == 0 and changed.count_text == "없음"
+    assert dict(routes.reasons)[ROUTE_LOAD_BASIS_MISSING_REASON] > 0
+    assert plain.group(GROUP_ROUTE_MISSING) is None and plain.group(GROUP_ROUTE_CHANGED) is None
 
 
 def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(
@@ -500,9 +692,13 @@ def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(
     monkeypatch.setattr(DuckDBScenarioRepository, "load_revision", counted_revision)
     monkeypatch.setattr(DuckDBScenarioRepository, "load_source_blank_cs_rows", counted_blank)
 
-    first = input_check_verdict(str(database), scenario_id, revision_id)
+    first = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert reads == ["revision", "source"]
-    again = input_check_verdict(str(database), scenario_id, revision_id)
+    again = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert reads == ["revision", "source"]
     assert first.calculation_label == again.calculation_label == "됨"
@@ -520,13 +716,15 @@ def test_a_read_failure_is_raised_every_time_instead_of_being_kept(tmp_path: Pat
 
     for _attempt in range(2):
         with pytest.raises(BOOTSTRAP_ERRORS):
-            input_check_verdict(str(database), scenario_id, missing)
+            input_check_verdict(
+                str(database), scenario_id, missing, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            )
 
 
 def test_the_check_and_its_outcome_survive_the_cache_pickle(tables: Tables) -> None:
     """요약 칸은 `st.cache_data` 라 피클로 오간다 — 멈춤의 꼴(`problem`)도 실린다."""
     edited = _vital_blank(tables)
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     assert outcome.problem is not None
 
     restored = pickle.loads(pickle.dumps(outcome))
@@ -601,7 +799,9 @@ def test_the_registration_drop_is_read_back_as_the_derivation_counted_it(tmp_pat
     assert rows is not None
     assert len(rows) == derived.rows
     assert list(rows.columns) == list(repository.load_source_data(scenario_id).columns)
-    check = input_check_verdict(str(database), scenario_id, revision_id)
+    check = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     source = check.group(GROUP_SOURCE)
     assert source is not None and source.count == derived.rows
     assert source.subtitle == (
@@ -619,7 +819,9 @@ def test_a_scenario_without_a_source_says_dash_instead_of_zero(tmp_path: Path) -
     scenario_id, revision_id = _scenario_with_source(repository, None, "원천 없는 시나리오")
 
     assert repository.load_source_blank_cs_rows(scenario_id) is None
-    source = input_check_verdict(str(database), scenario_id, revision_id).group(GROUP_SOURCE)
+    source = input_check_verdict(
+        str(database), scenario_id, revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).group(GROUP_SOURCE)
     assert source is not None and source.count is None and source.count_text == "—"
 
 

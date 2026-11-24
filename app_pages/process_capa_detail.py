@@ -641,6 +641,7 @@ def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
         start_month=display_range.start,
         end_month=display_range.end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        route_exceptions=context.route_exceptions.declaration,
     )
     if include_edp:
         density = get_home_simulation(

@@ -23,7 +23,11 @@ from capa_simulation.services.extra_process_merge import (
     merge_extra_processes,
 )
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.reference_conflicts import conflict_resolution
+from capa_simulation.services.reference_conflicts import (
+    CONFLICT_CAUSE_COLUMN,
+    OTHER_CONFLICT_CAUSE,
+    conflict_resolution,
+)
 from capa_simulation.services.reference_transformer import (
     build_reference_tables_with_conflicts,
 )
@@ -33,6 +37,8 @@ _LOGGER = logging.getLogger(__name__)
 CONFLICT_SUMMARY_COLUMNS = [
     "RQ테이블",
     "충돌 업무키 그룹수",
+    "키밖 갈림 그룹수",
+    "그 밖 갈림 그룹수",
     "충돌 원천행수",
     "임시 제외행수",
     "임시처리",
@@ -135,7 +141,10 @@ def fetch_registration_dataset(
 
 
 def summarize_reference_conflicts(conflicts: pd.DataFrame) -> pd.DataFrame:
-    """Summarize temporary business-key conflict resolution by RQ table."""
+    """RQ 표마다 업무 키 충돌을 센다 — 업무 키 밖 구분 칸으로 갈린 그룹(「키밖」)과 그 밖을 나눈다.
+
+    「키밖구분」 칸이 없는 옛 꼴 보고서도 받는다 — 그때 두 칸은 빈 값이다(원인을 모른다).
+    """
     if conflicts.empty:
         return pd.DataFrame(columns=CONFLICT_SUMMARY_COLUMNS)
     require_columns(conflicts, ["RQ테이블", "충돌행수", "임시제외행수"], "RQ 충돌 보고서")
@@ -150,8 +159,38 @@ def summarize_reference_conflicts(conflicts: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index(drop=True)
     )
+    other_counts, out_of_key_counts = conflict_cause_counts(conflicts)
+    summary["키밖 갈림 그룹수"] = summary["RQ테이블"].map(out_of_key_counts).astype("Int64")
+    summary["그 밖 갈림 그룹수"] = summary["RQ테이블"].map(other_counts).astype("Int64")
     summary["임시처리"] = summary["RQ테이블"].map(conflict_resolution)
     return summary[CONFLICT_SUMMARY_COLUMNS]
+
+
+def conflict_cause_counts(conflicts: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """RQ 표마다 (「그 밖」 그룹 수, 키밖 그룹 수). 「키밖구분」 칸이 없으면 둘 다 빈 Series 다."""
+    if CONFLICT_CAUSE_COLUMN not in conflicts.columns:
+        empty = pd.Series(dtype="Int64")
+        return empty, empty
+    other = conflicts[CONFLICT_CAUSE_COLUMN].astype("string").eq(OTHER_CONFLICT_CAUSE)
+    tables = conflicts["RQ테이블"]
+    return (
+        other.groupby(tables, sort=False).sum().astype("Int64"),
+        (~other).groupby(tables, sort=False).sum().astype("Int64"),
+    )
+
+
+def reference_conflict_memo(conflicts: pd.DataFrame) -> str:
+    """리비전 · 실행 기록 메모에 붙이는 충돌 조각 — 「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」.
+
+    충돌이 없으면 빈 글이고, 원인 칸이 없는 옛 꼴 보고서면 괄호를 붙이지 않는다.
+    """
+    if conflicts.empty:
+        return ""
+    memo = f"업무 키 충돌 {len(conflicts):,}그룹"
+    other, out_of_key = conflict_cause_counts(conflicts)
+    if other.empty and out_of_key.empty:
+        return memo
+    return f"{memo}(키밖 {int(out_of_key.sum()):,} · 그 밖 {int(other.sum()):,})"
 
 
 def reference_conflicts_to_csv(conflicts: pd.DataFrame) -> bytes:

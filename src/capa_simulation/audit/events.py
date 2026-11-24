@@ -165,6 +165,8 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "version_entry",
         "entry",
     ),
+    # 부하 예외 선언 판 — 이력 차례 · 공정 수뿐이고 공정 이름 · 산식 · 지문은 싣지 않는다.
+    _spec("admin_route_load_exception", "admin", "부하 예외 선언 판", "entry", "processes"),
     # --- 작업 ---------------------------------------------------------------------------------
     _spec("data_scenario_create", "data", "시나리오 만들기", "source", "rows"),
     _spec("data_scenario_rename", "data", "시나리오 이름 바꾸기"),

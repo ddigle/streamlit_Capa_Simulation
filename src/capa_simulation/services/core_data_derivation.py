@@ -30,6 +30,7 @@ ACTIVE_CORE_COLUMNS = (
     "Stack",
     "Customer",
     "Pack Code",
+    "CUSTOM",
     "CS",
     "D_EQ",
     "WF 구분",
@@ -90,7 +91,12 @@ ACTIVE_CORE_COLUMNS = (
 # 코드를 더할 때 볼 것 둘. 원천에서 그 코드가 계획 행(`계획기초정보여부=Y`)에만 붙고 경로 행은 다른
 # CS 면 부하가 `RQ_REQB`(키에 CS 가 있다)에 붙지 못해 「경로 없는 계획」으로 빠진다. `RQ_RUN_RATE`·
 # `RQ_VITAL`·UPEH·측정률 키에는 CS 가 없어, 그 코드의 기준값이 고른 분류의 값과 다르면 충돌 보고서에
-# 남고 원천 차례에 따라 한쪽 값으로 합쳐진다.
+# 남고 원천 행 순위(`reference_conflicts.source_row_rank`)로 한쪽 값으로 합쳐진다.
+# 원천 `CUSTOM` 이 빈 행(NULL · 빈 글자 · 공백뿐)의 표지. 붙여넣기는 빈 칸만 NA 로 읽고
+# (`clipboard_table`) pandas 기본 NA 목록에도 없는 글자라 왕복에서 빈 값으로 바뀌지 않는다. 코드와
+# 시험은 이 글자를 따로 적지 않고 이 상수만 본다.
+CUSTOM_BLANK: Final = "-"
+
 CS_PRODUCTION_CLASSES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "MP": "양산",
@@ -250,7 +256,7 @@ def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
 # CS 가 빈 경로 행을 뺐을 때 남은 계획 줄이 그 경로를 잃었는지 맞대는 키. 계획 쪽은 `RQ_PKG_PLAN`
 # 업무 키에서 CS·양산구분을 뺀 것이다 — 뺀 행에는 CS 가 없어 그 둘로는 어느 계획의 경로였는지 알 수
 # 없다. 경로 쪽은 `RQ_REQB` 의 나머지 칸이다.
-_ROUTE_OWNER_KEYS: Final = ("생산계획년월", "제품정보", "Stack", "Capa Code", "Customer")
+_ROUTE_OWNER_KEYS: Final = ("생산계획년월", "제품정보", "Stack", "Capa Code", "Customer", "CUSTOM")
 _ROUTE_PATH_KEYS: Final = ("Area_Name", "공정", "소요기준", "WF 구분", "STEP_SEQ", "MCP_SEQ")
 
 
@@ -258,7 +264,7 @@ def _plan_lines_losing_routes(core: pd.DataFrame, blank: pd.Series, plan: pd.Ser
     """CS 가 빈 경로 행을 빼서 경로 일부를 잃었을 수 있는 **남은** 계획 줄(`RQ_PKG_PLAN` 키) 수.
 
     `RQ_REQB` 경로 키에는 CS 가 있어 CS 가 빈 경로 행은 어느 계획에도 닿지 못한다. 그 행과 같은
-    달·제품정보·Stack·Capa Code·Customer 의 남은 계획이 같은 경로(Area·공정·소요기준·WF 구분·
+    달·제품정보·Stack·Capa Code·Customer·CUSTOM 의 남은 계획이 같은 경로(Area·공정·소요기준·WF 구분·
     STEP·MCP)를 CS 가 있는 다른 행으로 갖지 않으면, 그 몫의 부하는 남은 경로에만 붙고 빠진 공정은
     그 몫 없이 계산된다. 그 소요기준·WF 구분의 경로가 하나도 남지 않으면 「그 소요기준·WF 구분 경로
     없음」(세지 않는 사유)이 된다 — 어느 쪽도 소요대수 밖 수요 경고(`required_exclusion_counts`)에
@@ -276,7 +282,7 @@ def _plan_lines_losing_routes(core: pd.DataFrame, blank: pd.Series, plan: pd.Ser
         return 0
     owner = list(_ROUTE_OWNER_KEYS)
     path = list(_ROUTE_PATH_KEYS)
-    # 뺀 경로 행의 제품만 맞대면 된다 — 큰 원천에서 열두 칸 글자 키를 모든 행에 만들지 않게 먼저
+    # 뺀 경로 행의 제품만 맞대면 된다 — 큰 원천에서 열세 칸 글자 키를 모든 행에 만들지 않게 먼저
     # 거른다.
     products = core["제품정보"].astype("string").str.strip().str.casefold()
     related = products.isin(products.loc[dropped_routes].dropna().unique())
@@ -300,6 +306,9 @@ def _route_match_keys(core: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
         values = core[column].astype("string").str.strip()
         if column == "소요기준":
             values = normalize_demand_basis(values)
+        if column == "CUSTOM":
+            # 아직 `normalize_custom_values` 전이라 빈 값을 표에 실릴 표지와 같은 글자로 맞댄다.
+            values = values.where(values.notna() & values.ne(""), CUSTOM_BLANK)
         keys[column] = values.str.casefold().fillna("")
     return keys
 
@@ -365,6 +374,7 @@ def derive_q_core_data(
     core["양산구분"] = core["CS"].map(dict(CS_PRODUCTION_CLASSES)).astype("string")
     core["가용대수"] = core["설비보유"] - core["설비대여평가"]
     core["WF 구분"] = unify_case_variants(core["WF 구분"])
+    core["CUSTOM"] = normalize_custom_values(core["CUSTOM"])
     # EDP-TSV 의 `Top` 을 `Top_e` 로 가른다. 원천에는 `Top_e` 가 없으므로 입력은 그대로
     # 받고 여기서 한 번만 바꾼다 — 아래로 내려가는 16개 RQ 표와 화면이 전부 같은 값을 본다.
     core = apply_edp_wf_division(core)
@@ -423,3 +433,36 @@ def unify_case_variants(values: pd.Series) -> pd.Series:
         ["folded", "count", "text"], ascending=[True, False, True]
     ).drop_duplicates("folded")
     return folded.map(dict(zip(chosen["folded"], chosen["text"], strict=True))).astype("string")
+
+
+def normalize_custom_values(values: pd.Series) -> pd.Series:
+    """원천 `CUSTOM` 을 업무 키 값으로 맞춘다 — 앞뒤 공백을 떼고 빈 값은 `CUSTOM_BLANK` 로 둔다.
+
+    대소문자만 다른 표기는 `unify_case_variants` 로 한 표기에 모은다. 빈 값을 NA 로 두면 조인 ·
+    접기에서 키가 비어 행이 빠지거나 한 줄로 접히므로, 「부품 구분 없음」 도 글자 하나로 세운다.
+    """
+    text = unify_case_variants(values)
+    return text.where(text.notna() & text.ne(""), CUSTOM_BLANK).astype("string")
+
+
+def custom_sort_key(value: object) -> tuple[bool, str, str]:
+    """`CUSTOM` 값 하나의 표시 차례 열쇠 — 대소문자를 접은 글자, 그다음 원문 오름차순이고 빈 값
+    표지(`CUSTOM_BLANK`)는 끝이다.
+
+    `sorted(…, key=custom_sort_key)` 꼴로 쓴다. 파이썬 기본 차례는 `-` 를 글자 앞에 두어 「부품 구분
+    없음」 이 맨 앞에 선다. 빈 값(NA · 빈 글자 · 공백뿐)은 표지와 같이 끝에 둔다. 표시 차례에서
+    부품을 세우는 자리는 이 열쇠 하나만 쓴다 — `display_order.apply_display_order` 의 끝 열쇠는
+    규칙 열쇠가 같은 행에서 **한 제품의 부품끼리만**(규칙 칸과 CUSTOM 앞 글자 칸이 모두 같은
+    행 — CUSTOM 뒤 칸은 보지 않음) 이 차례로 세우고, 다른 제품끼리는 CUSTOM 값과 상관없이 원래
+    차례다. 경로 칸 전체를 글자 그대로 세우는 `route_step_editor` 목록은 이 열쇠를 쓰지
+    않는다(AGENTS 8장).
+    """
+    if isinstance(value, str):
+        text = value.strip()
+    elif value is None or value is pd.NA or value != value:
+        text = ""
+    else:
+        text = str(value).strip()
+    if text in ("", CUSTOM_BLANK):
+        return (True, "", "")
+    return (False, text.casefold(), text)

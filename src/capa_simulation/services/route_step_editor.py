@@ -22,6 +22,7 @@ ROUTE_GROUP_COLUMNS = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "소요기준",
 )
@@ -35,6 +36,7 @@ PERFORMANCE_ROUTE_COLUMNS = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 )
 REQB_VARIANT_COLUMNS = ("Capa Code", "Customer", "CS")

@@ -79,6 +79,7 @@ from capa_simulation.services.extra_process_pack import (
     read_pack_zip,
 )
 from capa_simulation.services.extra_process_revision import KeptProcess
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 
 
 @dataclass(frozen=True)
@@ -422,6 +423,7 @@ def preview_pack(
     pack: ExtraProcessPack,
     *,
     seq: int,
+    route_exceptions: RouteLoadDeclaration,
     current: ExtraProcessPack | None = None,
     before: ExtraProcessPack | None = None,
     changes: PackChanges | None = None,
@@ -429,17 +431,21 @@ def preview_pack(
     """지금 활성 시나리오의 표(`tables`)에 판을 합쳐 본다 — 그 시나리오에 이미 든 부대공정
     (`previous_extra` — 출처에 합침만 있는 것, `split_previous`)은 먼저 걷는다(얹기와 같은 길).
     저장하지 않는다. `seq` 는 미리보기에 쓸 판 차례(아직 적용 전이면 다음 차례)다. `changes` 는
-    받은 때 센 차이(`StagedPack.changes`)이고 없으면 `current` · `before` 로 센다."""
+    받은 때 센 차이(`StagedPack.changes`)이고 없으면 `current` · `before` 로 센다.
+    `route_exceptions` 는 부르는 화면이 읽은 부하 예외 선언 판이다 — 미리보기 대당 Capa · 부하 줄이
+    계산 화면과 같은 판으로 돈다."""
     active = ActiveExtraPack(ExtraPackVersion(seq, pack.info.version_no, pack.sha256), pack)
     result = overlay_extra_processes(tables, previous_extra, active)
     merged = result.report.merged_processes()
-    outcome = capacity_outcome(result.tables)
+    outcome = capacity_outcome(result.tables, route_exceptions=route_exceptions)
     return PackPreview(
         changes=changes if changes is not None else pack_changes(pack, current, before),
         ratio=pack.ratio,
         report=result.report,
-        rates=process_rows_frame(result.tables, merged, outcome=outcome),
-        lines=load_lines(result.tables, merged, outcome=outcome),
+        rates=process_rows_frame(
+            result.tables, merged, route_exceptions=route_exceptions, outcome=outcome
+        ),
+        lines=load_lines(result.tables, merged, route_exceptions=route_exceptions, outcome=outcome),
         capacity_gaps=inherited_capacity_gaps(pack, merged, outcome=outcome),
     )
 

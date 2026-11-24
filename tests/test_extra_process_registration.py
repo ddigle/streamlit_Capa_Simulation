@@ -44,6 +44,7 @@ from capa_simulation.services.core_data_pipeline import fetch_registration_datas
 from capa_simulation.services.dashboard import build_monthly_bottleneck_ranking
 from capa_simulation.services.extra_process_merge import OUTCOME_DROPPED, OUTCOME_MERGED
 from capa_simulation.services.extra_process_pack import read_pack_zip
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.simulation_cache import full_capacity_outcome
 
@@ -133,7 +134,9 @@ def test_registering_with_the_active_pack_brings_both_processes_into_the_revisio
     assert snapshot.revision.note is not None and memo in snapshot.revision.note
     # 프리셋(전 공정)이 부대공정을 저절로 넣는다 — HOME LOB · B/N · Summary 의 포함 공정.
     assert {BOND, AOI} <= set(snapshot.preset.included_processes)
-    outcome = full_capacity_outcome(snapshot.tables, snapshot.tables)
+    outcome = full_capacity_outcome(
+        snapshot.tables, snapshot.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert outcome.error is None and outcome.required_equipment is not None
     securement = calculate_securement_rate(
         snapshot.tables["RQ_EQP_AVBL"], outcome.required_equipment
@@ -259,10 +262,16 @@ def test_the_input_check_adds_an_extra_process_group_only_when_extras_were_merge
     merged, _ = register(repository)
 
     without = input_check_verdict(
-        str(database), plain.scenario.scenario_id, plain.revision.revision_id
+        str(database),
+        plain.scenario.scenario_id,
+        plain.revision.revision_id,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     with_extra = input_check_verdict(
-        str(database), merged.scenario.scenario_id, merged.revision.revision_id
+        str(database),
+        merged.scenario.scenario_id,
+        merged.revision.revision_id,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert without.group(GROUP_EXTRA) is None

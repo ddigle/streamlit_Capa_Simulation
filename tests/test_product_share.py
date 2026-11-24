@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
+import dummy_series_tables as demo
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
@@ -24,14 +25,21 @@ from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.home_lob_figures import (
     PRODUCT_SHARE_LEGEND_FONT_SIZE_PX,
     _legend_name_budget_units,
+    product_share_traces,
 )
 from capa_simulation.design import tokens
+from capa_simulation.services.dashboard import (
+    build_monthly_wafer_load_from_load,
+    home_aggregation_wafer_load,
+)
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
+from capa_simulation.services.load_calculator import calculate_wafer_load
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_SLOT_COUNT,
     SHARE_LABEL_MIN_PERCENT,
     ProductShareCell,
+    ProductShareSlice,
     assign_product_slots,
     build_product_share_cells,
     build_product_volume,
@@ -457,8 +465,10 @@ def test_a_tiny_slice_is_drawn_wide_enough_to_see_and_point_at() -> None:
     assert "0.5%" in tiny_hover
 
 
-def test_hover_is_two_lines_so_the_bottom_slices_are_not_clipped() -> None:
-    """도넛이 그림 맨 아래에 붙어 있어 6시 방향 조각의 hover 는 자리가 좁다 — 두 줄로 묶는다."""
+def test_named_hovers_stay_two_lines_and_the_other_hover_names_every_folded_product() -> None:
+    """도넛이 그림 맨 아래에 붙어 있어 6시 방향 조각의 hover 는 자리가 좁다 — 이름 있는 조각은 두
+    줄로 묶는다. `기타` 는 접힌 이름을 다 적되 셋마다 줄을 나눈다(2026-11-24 그림 보드 4 답
+    q7-hover-cap (나) — 접힌 넷이면 이름 줄 둘이고 「외 N」 이 없다)."""
     products = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT + 3)]
     plan = _plan([(202609, name, "양산", 10.0 * (i + 1)) for i, name in enumerate(products)])
     wafer = _wafer([(202609, name, "양산", 100.0 * (i + 1)) for i, name in enumerate(products)])
@@ -469,9 +479,66 @@ def test_hover_is_two_lines_so_the_bottom_slices_are_not_clipped() -> None:
     _, month_figure = _figures(cells, ["26.09"])
     pie = _pies(month_figure)[0]
 
-    assert all(text.count("<br>") == 1 for text in pie.hovertext)
     other = next(text for text in pie.hovertext if OTHER_PRODUCT_LABEL in text)
-    assert "외 1" in other  # 접힌 넷 중 셋만 이름을 적는다
+    named = [text for text in pie.hovertext if text != other]
+    assert named and all(text.count("<br>") == 1 for text in named)
+    _, *name_lines = other.split("<br>")
+    assert len(name_lines) == 2 and " 외 " not in other  # 접힌 넷 — 셋 + 하나
+    for name in products[:4]:
+        assert f"{name} " in other
+
+
+def _other_cell(count: int) -> ProductShareCell:
+    """이름 있는 조각 다섯과 접힌 이름 `count` 개(큰 차례)의 `기타` 조각 하나인 칸."""
+    members = tuple((f"DEMO_F{index:02d}", float(count - index)) for index in range(count))
+    other = sum(value for _, value in members)
+    total = 500.0 + other
+    named = tuple(
+        ProductShareSlice(f"DEMO_N{slot}", 100.0, 100.0 / total, slot) for slot in range(5)
+    )
+    folded = ProductShareSlice(OTHER_PRODUCT_LABEL, other, other / total, None, members)
+    return ProductShareCell("26.09", total, (*named, folded))
+
+
+def _other_name_lines(cell: ProductShareCell) -> list[str]:
+    traces = product_share_traces(
+        {"26.09": cell}, ["26.09"], basis="Wafer", year_totals=(), past_month_labels=None
+    )
+    hover = str(traces[0].hovertext[-1])
+    assert hover.startswith(f"26.09 · {OTHER_PRODUCT_LABEL} ")
+    return hover.split("<br>")[1:]
+
+
+def test_the_other_hover_breaks_its_names_three_to_a_line() -> None:
+    """`기타` 풍선은 둘째 줄부터 이름을 셋씩 적고 넘긴 줄 끝에 쉼표를 남긴다(그림 보드 4 답
+    q7-hover-cap (나) — 한 줄 이름은 보드 3 때처럼 셋이라 풍선이 옆으로 넓어지지 않는다)."""
+    cell = _other_cell(7)
+
+    lines = _other_name_lines(cell)
+
+    total = cell.total
+    assert lines == [
+        f"DEMO_F00 {7 / total:.1%}, DEMO_F01 {6 / total:.1%}, DEMO_F02 {5 / total:.1%},",
+        f"DEMO_F03 {4 / total:.1%}, DEMO_F04 {3 / total:.1%}, DEMO_F05 {2 / total:.1%},",
+        f"DEMO_F06 {1 / total:.1%}",
+    ]
+
+
+def test_the_other_hover_counts_names_past_four_lines_as_the_rest() -> None:
+    """이름 줄은 넷(이름 열둘)까지다 — 이름이 많은 합성 견본으로 재어 보니 풍선 아래가 그림 밖으로
+    잘려 넘는 이름만 마지막 줄 끝 「외 N」 으로 묶는다(그림 보드 4 카드 q7-hover-cap 의 「아직 못 본
+    것」). 열둘이면 다 적는다."""
+    twelve = _other_name_lines(_other_cell(12))
+    assert len(twelve) == 4 and " 외 " not in "".join(twelve)
+    assert twelve[-1].startswith("DEMO_F09 ") and not twelve[-1].endswith(",")
+
+    fifteen = _other_name_lines(_other_cell(15))
+    assert len(fifteen) == 4 and all(line.count("DEMO_F") == 3 for line in fifteen)
+    assert fifteen[-1].startswith("DEMO_F09 ") and fifteen[-1].endswith(" 외 3")
+    joined = "".join(fifteen)
+    assert "DEMO_F11 " in joined
+    for hidden in ("DEMO_F12", "DEMO_F13", "DEMO_F14"):
+        assert hidden not in joined
 
 
 def _past(rows: list[tuple[int, str, float]]) -> pd.DataFrame:
@@ -628,3 +695,18 @@ def test_slice_label_inks_read_on_every_product_color(mode: str) -> None:
     ]
     for color, ink in pairs:
         assert contrast(color, ink) >= 4.5, (mode, color, ink)
+
+
+def test_the_wafer_denominator_is_the_home_wafer_plan_without_dummy_series() -> None:
+    """Wafer 도넛의 분모는 `Wafer 계획` 행과 같은 HOME 집계 기준(Dummy 계열 뺌)이다 — 같은 거른
+    프레임에서 묶어 제품별 합이 그 달 월 합과 같다."""
+    load = home_aggregation_wafer_load(
+        calculate_wafer_load(demo.plan(), demo.yields(), demo.chip_qty())
+    )
+    volume = build_product_volume(demo.plan(), load)
+    monthly = build_monthly_wafer_load_from_load(load)
+    by_month = volume.groupby("생산계획년월")["Wafer 부하량"].sum().sort_index()
+    assert list(by_month) == pytest.approx(
+        list(monthly.sort_values("생산계획년월")["Wafer 부하량"])
+    )
+    assert volume.loc[volume["제품정보"].eq(demo.DUMMY_ONLY), "Wafer 부하량"].eq(0.0).all()

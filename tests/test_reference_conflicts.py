@@ -11,10 +11,14 @@ import pandas as pd
 import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
+from capa_simulation.services import reference_conflicts
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.reference_conflicts import (
-    TEMPORARY_CONFLICT_RESOLUTION,
+    OTHER_CONFLICT_CAUSE,
     ZERO_BEFORE_BLANK_RESOLUTION,
     conflict_resolution,
+    row_rank_resolution,
+    source_row_rank,
     validated_distinct,
 )
 
@@ -32,6 +36,7 @@ def _plan_rows() -> pd.DataFrame:
         "생산수량": 10.0,
         "제품타입": "HBM",
         "Pack Code": "PK",
+        "CUSTOM": CUSTOM_BLANK,
     }
     rows = [
         {**base},
@@ -99,6 +104,7 @@ def test_rows_that_differ_only_by_pack_code_are_two_plans_not_a_conflict() -> No
         "생산수량": 119.93,
         "제품타입": "HBM",
         "Pack Code": "PK-5JK",
+        "CUSTOM": CUSTOM_BLANK,
     }
     frame = pd.DataFrame([base, {**base, "Pack Code": "PK-5WC", "생산수량": 72.51}])
     records: list[dict[str, object]] = []
@@ -129,6 +135,7 @@ def _upeh_rows(first_upeh: float | None, second_upeh: float | None) -> pd.DataFr
         "WF 구분": "Core",
         "소요기준": "WF",
         "ST": None,
+        "CUSTOM": CUSTOM_BLANK,
     }
     return pd.DataFrame(
         [
@@ -243,45 +250,179 @@ def test_upeh_siblings_that_differ_only_in_which_column_is_zero_pick_the_same_ro
     assert forward["UPEH"].tolist() == [0.0]
 
 
-def test_a_real_value_still_beats_zero_and_real_value_conflicts_keep_the_source_order() -> None:
+def test_a_real_value_still_beats_zero_and_real_value_conflicts_pick_by_row_rank() -> None:
+    """실값끼리 갈리면 원천 행 순위(작은 값 먼저)로 고른다 — 어느 차례로 와도 같은 행이다."""
     contract = load_core_data_contract()
 
     assert validated_distinct(_run_rate_rows(None, 0.8), "RQ_RUN_RATE", contract, [])[
         "CAPA_RUN_RATE"
     ].tolist() == [0.8]
-    assert validated_distinct(_run_rate_rows(0.7, 0.8), "RQ_RUN_RATE", contract, [])[
-        "CAPA_RUN_RATE"
-    ].tolist() == [0.7]
+    for first, second in ((0.7, 0.8), (0.8, 0.7)):
+        assert validated_distinct(_run_rate_rows(first, second), "RQ_RUN_RATE", contract, [])[
+            "CAPA_RUN_RATE"
+        ].tolist() == [0.7]
 
 
 def test_a_zero_in_another_column_does_not_decide_a_real_upeh_conflict() -> None:
-    """UPEH 실값끼리 다른 형제는 ST 의 0 · 빈 값과 상관없이 지금처럼 원천 행 차례다.
+    """UPEH 실값끼리 다른 형제는 ST 의 0 · 빈 값이 아니라 원천 행 순위가 가른다.
 
     0 이 빈 값보다 먼저인 규칙은 0 과 빈 값만 다른 형제를 위한 것이다 — 실값 충돌의 승자까지 다른
-    컬럼의 0 으로 바꾸면 결정 밖의 동작이다.
+    컬럼의 0 으로 바꾸면 결정 밖의 동작이다. 순위는 차례와 상관없어 정순 · 역순이 같은 행을 고른다.
     """
     rows = _upeh_rows(50.0, 60.0)
-    rows["ST"] = [0.0, None]
+    rows["ST"] = [None, 0.0]
     contract = load_core_data_contract()
 
     forward = validated_distinct(rows, "RQ_UPEH", contract, [])
     backward = validated_distinct(rows.iloc[::-1].reset_index(drop=True), "RQ_UPEH", contract, [])
 
-    assert forward["UPEH"].tolist() == [50.0]
-    assert backward["UPEH"].tolist() == [60.0]
+    assert forward["UPEH"].tolist() == backward["UPEH"].tolist() == [50.0]
+    # ST 의 0 행(60)이 아니라 UPEH 의 작은 값(50) 행이다.
+    assert forward["ST"].isna().tolist() == [True]
 
 
-def test_other_tables_keep_the_source_order_until_their_zero_is_confirmed() -> None:
-    """편중률(여유율) 같은 다른 표는 지금대로다 — 0 의 뜻을 확인하면 `ZERO_BEFORE_BLANK_TABLES` 에
-    더한다."""
+@pytest.mark.parametrize("zero_over_blank", [True, False])
+def test_other_tables_pick_zero_or_blank_by_the_one_switch_in_either_order(
+    monkeypatch: pytest.MonkeyPatch, zero_over_blank: bool
+) -> None:
+    """편중률 같은 다른 표에서 그 칸만 0 · 빈 값으로 갈린 형제는 `ZERO_OVER_BLANK` 가 가른다.
+
+    효율 · UPEH 표(`ZERO_BEFORE_BLANK_TABLES`)는 이 값과 상관없이 0 행이다.
+    """
+    monkeypatch.setattr(reference_conflicts, "ZERO_OVER_BLANK", zero_over_blank)
     contract = load_core_data_contract()
     base = {"생산계획년월": 202606, "공정": "Process-A", "양산구분": "양산"}
     zero_first = pd.DataFrame([{**base, "편중률": 0.0}, {**base, "편중률": None}])
+    blank_first = zero_first.iloc[::-1].reset_index(drop=True)
     records: list[dict[str, object]] = []
 
-    assert validated_distinct(zero_first, "RQ_VITAL", contract, records)["편중률"].tolist() == [0.0]
-    blank_first = zero_first.iloc[::-1].reset_index(drop=True)
-    assert validated_distinct(blank_first, "RQ_VITAL", contract, [])["편중률"].isna().tolist() == [
-        True
-    ]
-    assert records[0]["임시처리"] == TEMPORARY_CONFLICT_RESOLUTION
+    for frame in (zero_first, blank_first):
+        kept = validated_distinct(frame, "RQ_VITAL", contract, records)["편중률"]
+        assert kept.isna().tolist() == [not zero_over_blank]
+        assert validated_distinct(
+            _run_rate_rows(*frame["편중률"].tolist()), "RQ_RUN_RATE", contract, []
+        )["CAPA_RUN_RATE"].tolist() == [0.0]
+    assert records[0]["임시처리"] == row_rank_resolution() == conflict_resolution("RQ_VITAL")
+    assert ("0 · 빈 값" in row_rank_resolution()) is zero_over_blank
+
+
+# ------------------------- 원천 행 순위 — 조회 차례와 상관없이 같은 행(요청 D). BigDataQuery
+# 조회에는 차례가 없어, 원천 행 위치가 승자를 정하던 때는 같은 원천이 조회마다 다른 값으로
+# 저장될 수 있었다.
+
+
+def test_source_row_rank_puts_class_columns_first_and_ignores_row_order() -> None:
+    frame = pd.DataFrame(
+        {
+            "생산수량": [1.0, 9.0, 5.0],
+            "Capa Code": ["C2", "C1", "C1"],
+            "제품정보": ["P", "P", "P"],
+        }
+    )
+
+    rank = source_row_rank(frame)
+    shuffled = source_row_rank(frame.iloc[[2, 0, 1]])
+
+    # Capa Code 가 생산수량보다 먼저다 — C1 두 행(5 → 9) 다음에 C2.
+    assert rank.tolist() == [2, 1, 0]
+    assert shuffled.sort_index().tolist() == rank.tolist()
+
+
+@pytest.mark.parametrize("zero_over_blank", [True, False])
+def test_source_row_rank_orders_real_values_then_zero_and_blank_by_the_switch(
+    monkeypatch: pytest.MonkeyPatch, zero_over_blank: bool
+) -> None:
+    monkeypatch.setattr(reference_conflicts, "ZERO_OVER_BLANK", zero_over_blank)
+    frame = pd.DataFrame({"EDS_수율": [None, 0.0, 0.97, 0.95]})
+
+    order = source_row_rank(frame).sort_values().index.tolist()
+
+    assert order == ([3, 2, 1, 0] if zero_over_blank else [3, 2, 0, 1])
+
+
+def test_text_columns_rank_by_stripped_text_with_blanks_last() -> None:
+    frame = pd.DataFrame({"공정": [None, " B", "A ", "", "A"]})
+
+    order = source_row_rank(frame).sort_values().index.tolist()
+
+    # 뗀 글자 차례(A · A · B), 공백만 다른 두 A 는 원래 글자 차례("A" < "A "), 빈 값은 끝.
+    assert order[:3] == [4, 2, 1]
+    assert set(order[3:]) == {0, 3}
+
+
+def test_a_row_rank_that_does_not_cover_the_frame_stops_instead_of_scrambling() -> None:
+    rows = _upeh_rows(50.0, 60.0)
+
+    with pytest.raises(ValueError, match="원천 행 번호"):
+        validated_distinct(
+            rows,
+            "RQ_UPEH",
+            load_core_data_contract(),
+            [],
+            row_rank=pd.Series([0], index=[0]),
+        )
+
+
+def _yield_siblings() -> pd.DataFrame:
+    """RQ_YLD 키가 같은 형제 넷 — Capa Code 마다 수율이 하나로 맞고 Capa Code 끼리만 다르다."""
+    base = {
+        "생산계획년월": 202601,
+        "제품정보": "P",
+        "Stack": "8H",
+        "WF 구분": "Core",
+        "CUSTOM": CUSTOM_BLANK,
+    }
+    return pd.DataFrame(
+        [
+            {**base, "EDS_수율": 0.95, "BE_수율": 1.0},
+            {**base, "EDS_수율": 0.97, "BE_수율": 1.0},
+            {**base, "EDS_수율": 0.95, "BE_수율": 1.0},
+            {**base, "EDS_수율": 0.97, "BE_수율": 1.0},
+        ]
+    )
+
+
+def test_a_conflict_split_by_an_out_of_key_class_column_is_named() -> None:
+    classes = pd.DataFrame({"Capa Code": ["C2", "C1", "C2", "C1"], "Customer": ["K"] * 4})
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(
+        _yield_siblings(),
+        "RQ_YLD",
+        load_core_data_contract(),
+        records,
+        source_classes=classes,
+    )
+
+    assert records[0]["키밖구분"] == "Capa Code"
+    assert len(distinct) == 1
+
+
+def test_a_reload_inside_one_class_value_is_reported_as_other() -> None:
+    """한 Capa Code 안에서 값이 갈리면(재적재 등) 구분 칸 탓이 아니다 — 「그 밖」."""
+    classes = pd.DataFrame({"Capa Code": ["C1", "C1", "C2", "C2"], "Customer": ["K"] * 4})
+    records: list[dict[str, object]] = []
+
+    validated_distinct(
+        _yield_siblings(), "RQ_YLD", load_core_data_contract(), records, source_classes=classes
+    )
+
+    assert records[0]["키밖구분"] == OTHER_CONFLICT_CAUSE == "그 밖"
+
+
+def test_a_class_column_that_is_a_business_key_never_splits_a_conflict() -> None:
+    """구분 칸이 업무 키가 되면 그 칸으로 갈린 형제는 서로 다른 행이라 충돌도 원인도 없다.
+
+    CUSTOM 은 실제 계약의 `RQ_YLD` 업무 키다.
+    """
+    keyed = load_core_data_contract()
+    assert "CUSTOM" in keyed.derived_keys["RQ_YLD"]
+    frame = _yield_siblings().assign(
+        CUSTOM=["DEMO_CUSTOM_B", "DEMO_CUSTOM_A", "DEMO_CUSTOM_B", "DEMO_CUSTOM_A"]
+    )
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(frame, "RQ_YLD", keyed, records)
+
+    assert records == []
+    assert sorted(distinct["EDS_수율"]) == [0.95, 0.97]

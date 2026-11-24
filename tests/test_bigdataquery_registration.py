@@ -14,6 +14,7 @@ from alert_marks import (
     successes,
     table_frame,
 )
+from conftest import DEMO_CUSTOM_TABLE
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
 
@@ -22,8 +23,18 @@ from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.components.state_alerts import alarm_table_place
+from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.custom_source_check import (
+    CELL_COLUMNS,
+    CUSTOM_SOURCE_COLUMNS,
+    SWITCHED_OFF_MEMO,
+    SWITCHED_OFF_NOTICE,
+    CustomSourceCheck,
+)
 from capa_simulation.services.scenario_list_edits import ListDraft
 
 
@@ -90,8 +101,9 @@ def test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report() ->
     assert not app.get("download_button")
     note = _conflict_note(app)
     assert (note["code"], note["level"], note["kind"]) == ("SC-04", "check", "event")
+    # 원인 칸(「키밖구분」)이 없는 옛 꼴 보고서도 받는다 — 그때는 원인 수를 적지 않는다.
     assert note["short"].startswith(
-        "기준정보 업무 키 충돌 2개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 적용하고"
+        "기준정보 업무 키 충돌 2개 그룹 — 표 「임시처리」 규칙대로 한 행씩 골라 등록했습니다"
     )
     assert "Alarm › 이 줄 「충돌 요약」" in note["full"]
     assert "Alarm › 이 줄 「충돌 상세」" in note["full"]
@@ -110,9 +122,9 @@ def test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report() ->
 
 @pytest.mark.parametrize("table", ["RQ_PKG_PLAN", "RQ_RUN_RATE"])
 def test_the_conflict_alert_points_at_the_rule_its_summary_table_states(table: str) -> None:
-    """알림 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 표마다 「값이 있는 첫 행」
-    (효율 · UPEH 는 0 · 빈 값만 다르면 0 행)이라 원천 첫 행이 아닐 때가 많다(E2E 2026-11-02). 글은
-    요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
+    """알림 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 「값이 있는 행 · 원천 행
+    순위」(효율 · UPEH 는 0 · 빈 값만 다르면 0 행)라 원천 첫 행이 아닐 때가 많다(E2E
+    2026-11-02). 글은 요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
     from capa_simulation.services.reference_conflicts import conflict_resolution
 
     app = AppTest.from_string(REPORT_SCRIPT.replace('"RQ_PKG_PLAN", "RQ_YLD"]', f'"{table}"] * 2'))
@@ -121,9 +133,26 @@ def test_the_conflict_alert_points_at_the_rule_its_summary_table_states(table: s
     assert not app.exception
     note = _conflict_note(app)
     assert "원천 첫 행" not in note["full"]
-    assert "표 「임시처리」 규칙대로 한 행씩 임시 적용하고 등록했습니다" in note["full"]
+    assert "표 「임시처리」 규칙대로 한 행씩 골라 등록했습니다" in note["full"]
     summary = table_frame(note_table(note, registration.CONFLICT_SUMMARY_TITLE))
     assert summary["임시처리"].tolist() == [conflict_resolution(table)]
+
+
+def test_the_conflict_alert_counts_out_of_key_and_other_groups() -> None:
+    """원인 칸이 있으면 그룹 수 뒤에 「(키밖 n · 그 밖 m)」 — 요약 표에도 두 칸이 선다."""
+    script = REPORT_SCRIPT.replace(
+        '"임시처리": [',
+        '"키밖구분": ["Capa Code", "그 밖"],\n                "임시처리": [',
+    )
+    app = AppTest.from_string(script)
+    app.run()
+
+    assert not app.exception
+    note = _conflict_note(app)
+    assert note["short"].startswith("기준정보 업무 키 충돌 2개 그룹(키밖 1 · 그 밖 1) — ")
+    summary = table_frame(note_table(note, registration.CONFLICT_SUMMARY_TITLE))
+    assert summary["키밖 갈림 그룹수"].tolist() == [1, 0]
+    assert summary["그 밖 갈림 그룹수"].tolist() == [0, 1]
 
 
 def test_the_conflict_detail_shows_process_labels_and_keeps_originals_for_the_csv(
@@ -303,6 +332,175 @@ def test_the_buttons_a_missing_query_locks_say_why_in_their_balloons(
     save = _save_button(app)
     assert save.disabled is (not detail_ready)
     assert (save.help or None) == (None if detail_ready else registration.DETAIL_LOCKED_HELP)
+
+
+# 표 이름 꼴이 아닌 합성 값 — 값은 풍선 · 알림 어디에도 실리지 않아야 한다.
+MALFORMED_CUSTOM_TABLE = "데모 원천.표"
+
+
+def _set_custom_table(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """CUSTOM 원천 표 환경변수 — None 이면 지운다(conftest 가 합성 값을 넣어 둔다)."""
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+
+
+@pytest.mark.parametrize(
+    ("value", "problem"),
+    [
+        (None, adapter.CUSTOM_TABLE_MISSING),
+        (MALFORMED_CUSTOM_TABLE, adapter.CUSTOM_TABLE_MALFORMED),
+    ],
+    ids=["없음", "꼴 틀림"],
+)
+def test_the_save_button_is_locked_with_the_variable_in_its_help_when_missing(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, problem: str
+) -> None:
+    """CUSTOM 원천 표 환경변수가 없거나 꼴이 틀리면 저장 단추가 잠기고 풍선이 그 변수 이름으로
+    까닭을 말한다 — 자리에 상자를 세우지 않는다(설계 규칙 UI-INP-07 · UI-NTF-02). 풍선은 조회 SQL
+    → CUSTOM 원천 표 → 고른 코드 차례로 앞선 까닭 하나이고, 값은 싣지 않는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    _set_custom_table(monkeypatch, value)
+
+    app = _run()
+
+    save = _save_button(app)
+    assert save.disabled
+    assert save.help == registration.custom_locked_help(problem)
+    assert adapter.BDQ_CUSTOM_TABLE_ENV in save.help
+    assert MALFORMED_CUSTOM_TABLE not in save.help
+    assert not app.error and not app.warning
+    # 고른 코드가 저장할 수 없는 코드여도 앞선 까닭(환경변수)을 말한다.
+    row = CatalogRow("DEMO SIM#9", "저장 불가 줄", "P9", "PLAN 9", "2026-09-02", False)
+    pick = registration.CatalogPick(row=row, window=QueryWindow(date(2026, 9, 1), date(2026, 9, 8)))
+    assert _save_button(_run(**{registration.CATALOG_PICK_KEY: pick})).help == (
+        registration.custom_locked_help(problem)
+    )
+    # 상세 조회 SQL 이 없으면 그것이 먼저다.
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: False)
+    assert _save_button(_run()).help == registration.DETAIL_LOCKED_HELP
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "package_ready", "order"),
+    [
+        (True, True, ("CUSTOM",)),
+        (True, False, ("CUSTOM", "패키지")),
+        (False, True, ("SQL", "CUSTOM")),
+    ],
+    ids=["CUSTOM 만", "CUSTOM + 패키지", "SQL + CUSTOM"],
+)
+def test_ad04_names_the_missing_custom_table_variable(
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_ready: bool,
+    package_ready: bool,
+    order: tuple[str, ...],
+) -> None:
+    """변수가 없으면 상태 알림 `AD-04` 가 서고 전문에 그 변수 이름과 채울 자리가 든다 — 자리에는
+    아무것도 그리지 않는다(설계 규칙 UI-NTF-02 · UI-TXT-08). 전문은 조회 SQL → CUSTOM 원천 표 →
+    패키지 차례이고 짧은 글은 그 가운데 앞선 하나다(알림창 한 줄 안 — `alerts.SHORT_LIMIT`)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: catalog_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: package_ready)
+    _set_custom_table(monkeypatch, None)
+
+    app = _run()
+
+    assert not app.error and not app.warning
+    assert not any(adapter.BDQ_CUSTOM_TABLE_ENV in str(item.value) for item in app.caption)
+    note = active_state(app, "AD-04")
+    assert note is not None
+    full = str(note["full"])
+    assert registration.custom_table_notice(adapter.CUSTOM_TABLE_MISSING) in full
+    assert "README 「초기 설정」 4단계" in full and "배포 설정의 환경변수 표" in full
+    pieces = {
+        "SQL": "조회 SQL이 아직 설정되지 않았습니다",
+        "CUSTOM": adapter.CUSTOM_TABLE_MISSING,
+        "패키지": "bigdataquery 패키지가 없어",
+    }
+    positions = [full.index(pieces[name]) for name in order]
+    assert positions == sorted(positions)
+    assert all(pieces[name] not in full for name in pieces.keys() - set(order))
+    short = registration.SQL_MISSING_SHORT if "SQL" in order else registration.CUSTOM_TABLE_SHORT
+    assert note["short"] == short
+    assert len(registration.CUSTOM_TABLE_SHORT) <= alerts.SHORT_LIMIT
+
+
+@pytest.mark.parametrize("value", ["", MALFORMED_CUSTOM_TABLE], ids=["없음", "꼴 틀림"])
+def test_the_refusal_and_ad04_name_the_same_place_to_fill(value: str) -> None:
+    """저장 거부 글(상세 조회가 패키지 앞에서 멈춘 글)과 `AD-04` 줄은 까닭 뒤 채울 자리를 같은 말로
+    적고, 화면 글이라 「사내」 를 쓰지 않는다(2026-11-03 사용자 결정 — 어댑터 · 이 화면 모듈은
+    `test_app_text_wording` 이 훑지 않는다). 표 이름 꼴은 판정과 같이 스키마 없는 이름도 받는다고
+    적는다."""
+    with pytest.raises(RuntimeError) as raised:
+        adapter.build_custom_query("SIM-001", value)
+    refusal = str(raised.value)
+    problem = adapter.custom_table_problem(value)
+    assert problem is not None and refusal.startswith(problem)
+    notice = registration.custom_table_notice(problem)
+    place = refusal.split(" — ", 1)[1]
+    assert place == notice.split(" — ", 1)[1]
+    assert "표 이름(표 또는 스키마.표)" in place
+    assert "사내" not in refusal and "사내" not in notice
+    assert "사내" not in registration.custom_locked_help(problem)
+
+
+def test_the_save_button_opens_with_the_switch_off_and_no_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내리면 변수가 없어도 저장 단추가 열리고(잠글
+    까닭이 없다 — 설계 규칙 UI-INP-07) `AD-04` 에 CUSTOM 원천 표 줄이 없다 — 다른 준비가 다 됐으면
+    `AD-04` 자체가 서지 않는다(UI-TXT-08). 패키지가 없으면 그 줄만 남는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+
+    app = _run()
+
+    save = _save_button(app)
+    assert not save.disabled and not save.help
+    assert active_state(app, "AD-04") is None
+    assert not app.error and not app.warning
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: False)
+    note = active_state(_run(), "AD-04")
+    assert note is not None
+    assert note["short"] == registration.PACKAGE_MISSING_SHORT
+    assert adapter.BDQ_CUSTOM_TABLE_ENV not in str(note["full"])
+
+
+def test_ad04_does_not_carry_a_malformed_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """꼴이 틀린 값은 사내 표 이름이거나 잘못 붙여 넣은 다른 값일 수 있어 전문에도 싣지 않는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    _set_custom_table(monkeypatch, MALFORMED_CUSTOM_TABLE)
+
+    note = active_state(_run(), "AD-04")
+
+    assert note is not None
+    assert str(note["full"]).startswith(adapter.CUSTOM_TABLE_MALFORMED)
+    assert note["short"] == registration.CUSTOM_TABLE_SHORT
+    assert not [text for text in (note["short"], note["full"]) if "데모" in str(text)]
+
+
+def test_the_catalog_search_stays_open_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """목록 조회는 CUSTOM 원천 표를 쓰지 않아 변수가 없어도 잠그지 않는다 — 코드를 찾아 두고 변수를
+    넣은 뒤 저장할 수 있다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    _set_custom_table(monkeypatch, None)
+
+    app = _run()
+
+    query = app.button(key=registration.CATALOG_QUERY_BUTTON_KEY)
+    assert not query.disabled and not query.help
+    assert _save_button(app).disabled
 
 
 @pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])
@@ -609,8 +807,8 @@ def test_a_package_that_fails_to_import_does_not_stop_the_catalog_query(
 
 
 def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_the_table() -> None:
-    """조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과 줄은 그 아래 표 바로 위다
-    (설계 규칙 UI-LAY-11)."""
+    """원천 종류 단추(맨 앞) · 조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과
+    줄은 그 아래 표 바로 위다(설계 규칙 UI-LAY-11)."""
     app = _run()
 
     row = next(
@@ -620,7 +818,7 @@ def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_th
         and block.proto.flex_container.direction == 2
     )
     labels = [text for _, text in _drawn_in_order(row)]
-    assert labels == ["시뮬레이션 코드 조회", "검색", "표시 범위"]
+    assert labels == ["원천", "시뮬레이션 코드 조회", "검색", "표시 범위"]
     assert row.proto.flex_container.wrap
     assert registration.CATALOG_TOOLBAR_KEY in registration.CATALOG_TOOLBAR_STYLE
 
@@ -1088,12 +1286,14 @@ class FakeProvider:
             extra = frame.loc[[int(index)]].copy()
             extra["생산수량"] = pd.to_numeric(extra["생산수량"]) + 1
             frame = pd.concat([frame, extra], ignore_index=True)
+        # 시험이 주면 CUSTOM 원천 표 대조 수를 싣는다 — 실제 어댑터가 BigDataQuery 등록마다 싣는 칸.
         return CoreDataBatch(
             simulation_code=simulation_code,
             simulation_name=self._name,
             source_type="BIGDATAQUERY",
             frame=frame,
             source_registered_at=self._registered_at,
+            custom_check=st.session_state.get("__custom_check__"),
         )
 
 
@@ -1411,6 +1611,338 @@ def test_a_failed_save_queues_no_conflict_report(
     assert not app.exception
     assert [str(item.value) for item in app.error] == ["저장을 막았습니다."]
     assert registration.REGISTRATION_CONFLICT_FLASH_KEY not in app.session_state
+
+
+def _custom_check(*, mismatch: bool) -> CustomSourceCheck:
+    """내장 시드 원천에 부품마다 다른 CUSTOM 을 단 CUSTOM 원천 표 답으로 붙여 본 대조 수.
+
+    `mismatch` 면 첫 칸의 행수를 하나 늘리고(행 수 다른 칸) 달이 둘 이상인 부품의 마지막 칸을
+    뺀다(한쪽에만 있는 칸 — 부품은 남아 못 찾음이 아니다). 합성 시드 — 샘플 관측."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+    from capa_simulation.services.custom_source_check import attach_custom_values
+
+    source = build_builtin_seed_dataset().source_data
+    cells = source.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    codes = sorted(str(code) for code in cells["Capa Code"].unique())
+    parts = {code: f"DEMO_CUSTOM_{index}" for index, code in enumerate(codes, start=1)}
+    cells["CUSTOM"] = cells["Capa Code"].astype(str).map(parts)
+    if mismatch:
+        cells["행수"] = cells["행수"].mask(cells.index == 0, cells["행수"] + 1)
+        several = cells["Capa Code"].duplicated(keep=False)
+        cells = cells.drop(index=cells.index[several][-1])
+    return attach_custom_values(source, cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)])[1]
+
+
+def _custom_registration_app(database: Path, **session: object) -> AppTest:
+    """폼 값을 채우고 시험이 준 원천 꼴(`__custom_check__` · `__duplicate_rows__` 등)로 화면 저장
+    경로를 한 번 돌린다."""
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    for key, value in session.items():
+        app.session_state[key] = value
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 12)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 22)
+    return app.run()
+
+
+def _saved_note(database: Path) -> str:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    return repository.load_revision(scenario.active_revision_id).revision.note or ""
+
+
+def test_a_custom_mismatch_saves_and_warns_in_alarm_with_the_cell_table(tmp_path: Path) -> None:
+    """두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나도 CUSTOM 은 Capa Code 로 붙여 값에는
+    영향이 없어 등록은 한다(요청 — 알리고 등록). 저장 알림 · 충돌 칸 다음 셋째 칸에 사건 알림
+    `SC-05` 가 알림창 · Alarm 에만 서고(자리에는 아무것도 그리지 않는다 — UI-NTF-03), 그 Alarm 줄의
+    표 「CUSTOM 대조」 가 어긋난 칸마다 두 표 행 수를 싣는다. 같은 수가 리비전 메모에 남는다."""
+    from capa_simulation.components.flash import FlashNote
+
+    check = _custom_check(mismatch=True)
+    assert (check.count_mismatch_cells, check.one_side_cells) == (1, 1)
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(database, __custom_check__=check)
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert not app.warning and not app.dataframe
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    keys = registration.REGISTRATION_FLASH_KEYS
+    assert keys.index(registration.REGISTRATION_CONFLICT_FLASH_KEY) == 1
+    assert keys.index(registration.REGISTRATION_CUSTOM_FLASH_KEY) == 2
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.kind, note.alert, note.popup_only) == ("warning", "SC-05", True)
+    assert note.message.startswith(check.notice())
+    assert alarm_table_place(registration.CUSTOM_CELLS_TITLE) in note.message
+    [table] = note.tables
+    assert table["title"] == registration.CUSTOM_CELLS_TITLE
+    cells = table_frame(table)
+    assert list(cells.columns) == list(CELL_COLUMNS)
+    assert len(cells) == check.count_mismatch_cells + check.one_side_cells
+    assert check.memo() in _saved_note(database)
+
+
+def test_an_oversized_custom_cell_table_leaves_only_the_counts_in_the_alert(tmp_path: Path) -> None:
+    """어긋난 칸이 Alarm 줄에 싣기에 많으면(`alerts.TABLE_ROW_LIMIT` 초과) 표 없이 수만 싣는다 —
+    수는 알림 글과 리비전 메모가 함께 든다."""
+    import pandas as pd
+
+    from capa_simulation.components.flash import FlashNote
+
+    count = alerts.TABLE_ROW_LIMIT + 1
+    cells = pd.DataFrame(
+        {
+            CELL_COLUMNS[0]: [f"DEMO-{index:05d}" for index in range(count)],
+            CELL_COLUMNS[1]: ["202611"] * count,
+            CELL_COLUMNS[2]: [1] * count,
+            CELL_COLUMNS[3]: [0] * count,
+        }
+    )
+    check = CustomSourceCheck(
+        main_rows=count,
+        main_distinct_rows=count,
+        custom_rows=0,
+        kinds=2,
+        one_side_cells=count,
+        count_mismatch_cells=0,
+        cells=cells,
+    )
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(database, __custom_check__=check)
+
+    assert not app.exception
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.alert, note.popup_only, note.tables) == ("SC-05", True, ())
+    assert note.message == check.notice()
+    assert check.memo() in _saved_note(database)
+
+
+def test_the_revision_memo_orders_custom_and_conflict_pieces_before_capacity(
+    tmp_path: Path,
+) -> None:
+    """리비전 메모 끝 조각 차례는 CUSTOM 원천 대조 · 업무 키 충돌 · CS 빈 행 · (부대공정) · 대당
+    Capa 멈춤이다 — 원천을 받은 그대로 알린 것이 먼저, 저장 뒤 계산이 끝(설계 B-stop §2). 대조 칸이
+    모두 맞으면 메모 조각만 남고 `SC-05` 는 서지 않는다. 합성 시드 — 샘플 관측."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    source = build_builtin_seed_dataset().source_data
+    plan = int(source.index[source["계획기초정보여부"].eq("Y")][0])
+    process = "DEMO_Wafer_Inspect"
+    month = int(source.loc[source["공정"].eq(process), "생산계획년월"].min())
+    stopped = source["공정"].eq(process) & source["생산계획년월"].eq(month)
+    blank = int(source.index[source["계획기초정보여부"].eq("N") & ~stopped][-1])
+    check = _custom_check(mismatch=False)
+    assert not check.warns
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(
+        database,
+        __custom_check__=check,
+        __duplicate_rows__=[plan],
+        __blank_cs__={blank: None},
+        __blank_cells__=[(int(row), "CAPA_RUN_RATE") for row in source.index[stopped]],
+    )
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert registration.REGISTRATION_CUSTOM_FLASH_KEY not in app.session_state
+    note = _saved_note(database)
+    assert note.startswith(
+        f"상세 조회기간 2026-11-12 ~ 2026-11-22 · {check.memo()} · 업무 키 충돌 "
+    )
+    positions = [
+        note.index(piece)
+        for piece in (check.memo(), "업무 키 충돌 ", "CS 빈 행 1개(", "대당 Capa 계산 멈춤(")
+    ]
+    assert positions == sorted(positions)
+    assert note.rindex(" · 대당 Capa 계산 멈춤(") > note.rindex("CS 빈 행 1개(")
+
+
+# 실제 어댑터(`BigDataQueryCoreDataProvider`)로 화면 저장 경로를 한 번 돈다 — 패키지 자리만 가짜다.
+# 본 답은 내장 시드 원천이고, CUSTOM 원천 표 답은 그 (Capa Code, 생산계획년월) 칸 행 수에 시험이 준
+# 부품별 CUSTOM(`__custom__`)을 단 것이다. 표 이름은 conftest 가 환경변수에 넣는 합성 값이다.
+REAL_ADAPTER_SAVE_SCRIPT = f"""
+from pathlib import Path
+from types import SimpleNamespace
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+TABLE = {DEMO_CUSTOM_TABLE!r}
+main = build_builtin_seed_dataset().source_data.copy()
+cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+cells["CUSTOM"] = cells["Capa Code"].map(st.session_state["__custom__"])
+custom = cells.loc[:, ["Capa Code", "생산계획년월", "CUSTOM", "행수"]]
+
+
+def get_data(*, param, **_kwargs):
+    return (custom if TABLE in param else main).copy()
+
+
+database_path = st.session_state["__database__"]
+if not st.session_state.get("__saved__"):
+    st.session_state["__saved__"] = True
+    original = adapter.load_bigdataquery_module
+    adapter.load_bigdataquery_module = lambda: SimpleNamespace(getData=get_data)
+    try:
+        registration._save_scenario(
+            DuckDBScenarioRepository(Path(database_path)),
+            database_path,
+            existing_names=frozenset(),
+        )
+    finally:
+        adapter.load_bigdataquery_module = original
+"""
+
+
+def test_the_saved_source_frame_carries_the_looked_up_custom(tmp_path: Path) -> None:
+    """실제 어댑터를 지난 화면 등록은 CUSTOM 원천 표로 덮은 프레임을 원천 스냅샷
+    (`raw_data.core_data`)으로 저장한다 — 조회문 상수가 아니다. 기존 결과 대조 · 확인 스크립트는
+    원천 스냅샷에서 다시 파생하므로, 원천과 리비전의 CUSTOM 키 표가 같은 부품 값이어야 새 등록이
+    저절로 맞는다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    database = _registration_database(tmp_path)
+    source = build_builtin_seed_dataset().source_data
+    codes = sorted(str(code) for code in source["Capa Code"].dropna().unique())
+    parts = {code: f"DEMO_CUSTOM_{index}" for index, code in enumerate(codes, start=1)}
+    app = AppTest.from_string(REAL_ADAPTER_SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = parts
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W47"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W47"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W47 (SIM-W47)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-12 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 5)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 15)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    raw = repository.load_source_data(scenario.scenario_id)
+    assert len(raw) == len(source)
+    assert raw["CUSTOM"].tolist() == [parts[str(code)] for code in source["Capa Code"]]
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    for table in ("RQ_PKG_PLAN", "RQ_REQB"):
+        assert set(snapshot.tables[table]["CUSTOM"]) == set(parts.values()), table
+
+
+@pytest.mark.parametrize("value", [None, MALFORMED_CUSTOM_TABLE], ids=["없음", "꼴 틀림"])
+def test_a_save_pressed_without_the_variable_stands_the_same_refusal_beside_the_button(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """잠긴 단추가 눌려 저장 길에 닿아도(풍선과 같은 판정) 상세 조회가 패키지를 부르기 전에 멈추고
+    같은 까닭이 단추 곁 오류로 선다 — 패키지를 불러오지도, 사내 DB 를 묻지도, 저장하지도 않으며
+    값은 싣지 않는다."""
+    database = _registration_database(tmp_path)
+    _set_custom_table(monkeypatch, value)
+    asked = "def get_data(*, param, **_kwargs):\n"
+    loaded = "lambda: SimpleNamespace(getData=get_data)"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == REAL_ADAPTER_SAVE_SCRIPT.count(loaded) == 1
+    script = REAL_ADAPTER_SAVE_SCRIPT.replace(
+        asked, asked + '    st.session_state["__asked__"] = True\n'
+    ).replace(
+        loaded,
+        'lambda: (st.session_state.__setitem__("__loaded__", True), '
+        "SimpleNamespace(getData=get_data))[1]",
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = {}
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.run()
+
+    assert not app.exception
+    problem = adapter.CUSTOM_TABLE_MISSING if value is None else adapter.CUSTOM_TABLE_MALFORMED
+    [error] = place_errors(app)
+    assert error.startswith(problem)
+    assert MALFORMED_CUSTOM_TABLE not in error
+    assert "__loaded__" not in app.session_state and "__asked__" not in app.session_state
+    assert registration.REGISTRATION_FLASH_KEY not in app.session_state
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    assert DuckDBScenarioRepository(database).list_scenarios() == []
+
+
+def test_a_switched_off_registration_saves_raises_sc06_and_writes_the_memo_piece(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끄개를 내린 화면 등록은 실제 어댑터를 지나 CUSTOM 원천 표를 묻지 않고(변수가 없어도)
+    저장한다. 원천 스냅샷과 리비전 표의 CUSTOM 은 모두 구분 없음이고, 리비전 메모에 「CUSTOM 원천
+    붙이지 않음」 조각이 남는다(끄개 이름은 없다). 저장 알림 다음 셋째 칸(충돌 칸 index 1
+    그대로)에 사건 알림 `SC-06` 이 표 없이 알림창 · Alarm 에만 서고(UI-NTF-03), 전문 끝에 끄개
+    이름 · 시뮬레이션 코드가 있다 — 표 이름은 묻지 않아 어디에도 없다. 합성 시드 — 샘플 관측."""
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = _registration_database(tmp_path)
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    asked = "def get_data(*, param, **_kwargs):\n"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == 1
+    script = REAL_ADAPTER_SAVE_SCRIPT.replace(
+        asked, asked + '    st.session_state.setdefault("__asked__", []).append(param)\n'
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = {}
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 12)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 22)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    [query] = app.session_state["__asked__"]
+    assert "'SIM-W48'" in query and DEMO_CUSTOM_TABLE not in query
+    keys = registration.REGISTRATION_FLASH_KEYS
+    assert keys.index(registration.REGISTRATION_CONFLICT_FLASH_KEY) == 1
+    assert keys.index(registration.REGISTRATION_CUSTOM_FLASH_KEY) == 2
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.kind, note.alert, note.popup_only, note.tables) == ("warning", "SC-06", True, ())
+    assert note.message.startswith(SWITCHED_OFF_NOTICE)
+    assert note.message.endswith(
+        f"끄개 {adapter.BDQ_CUSTOM_SOURCE_ENV}=off · 시뮬레이션 코드 SIM-W48"
+    )
+    assert alerts.short_text(alerts.plain_text(note.message)).startswith(
+        "CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다"
+    )
+    assert DEMO_CUSTOM_TABLE not in note.message
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    assert set(repository.load_source_data(scenario.scenario_id)["CUSTOM"]) == {CUSTOM_BLANK}
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    for table in ("RQ_PKG_PLAN", "RQ_REQB"):
+        assert set(snapshot.tables[table]["CUSTOM"]) == {CUSTOM_BLANK}, table
+    saved = _saved_note(database)
+    assert f"상세 조회기간 2026-11-12 ~ 2026-11-22 · {SWITCHED_OFF_MEMO}" in saved
+    assert adapter.BDQ_CUSTOM_SOURCE_ENV not in saved
 
 
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(

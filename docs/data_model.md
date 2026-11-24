@@ -70,6 +70,8 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
 app_meta.extra_process_version N ── 1 app_meta.extra_process_content   (0037 — 부대공정 판 이력 · 내용, 소유 칸 없음)
         └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION). 내용은 sha256 하나에 ZIP 한 벌
 app_meta.extra_process_s3_write N ── 1 app_meta.extra_process_version  (0038 — 판을 S3 Drive 파일로 쓴 결과, 넣기만)
+app_meta.route_load_exception_version                                  (0040 — 부하 예외 선언 판 이력, 소유 칸 없음)
+        └── append-only, 마지막 줄이 지금 선언(모두 뺀 저장도 비움 판 한 줄). 모든 시나리오에 걸린다
 
 result_data.simulation_run                                 (골격만 — 쓰는 코드 없음)
 
@@ -239,7 +241,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   `ACTIVE`·`ARCHIVED`(보관) 둘이다 — 보관은 목록에서 숨길 뿐 행을 그대로 두고(`repository.archive_scenario`·
   `restore_scenario`), 보관한 시나리오에는 새 리비전을 저장할 수 없다. 보관본은 목록 관리의
   오른쪽 「보관함」 칸에서 되돌리거나 영구 삭제한다.
-- `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
+- `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`(스크립트 적재 ·
+  DB 등록 탭 원천 CSV 올림 `CSV_CORE_DATA_UPLOAD` — 칸에 CHECK 가 없어 마이그레이션 없이 선다)·
   `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`·
   `SCENARIO_EXTRA_PROCESS`(부대공정 얹기)),
   원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)
@@ -297,6 +300,15 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   바뀐 뒤 여섯을 덮을지 정하지 않음) 앱이 덮은 줄은 없다 — 아직 S3 Drive 에 없는 「새 판」 과 같은 파일을 사람이 놓아 가져온 「놓인
   파일 같음」(결과 `WRITTEN` · 까닭 `놓인 파일 같음`) 줄만 생겨 그 ETag 를 기준으로 삼는다(2026-11-20 — 사람은 S3 Drive `extra_process/`
   에 낱장 CSV 여섯을 놓고, 판 이력의 `s3_key` 는 `extra_process/` · `s3_etag` 는 여섯 ETag 를 묶은 값이다).
+- `route_load_exception_version`(0040): 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)의 판 이력. 넣기만 하고 마지막
+  줄이 지금 선언이다 — 한 줄 = 판 차례(`seq`) · 시각 · 저장한 사람 · 원천 자리 · 항목 JSON 글(원본 공정명 그대로, 공정명 차례) ·
+  항목 수 · 지문(견줌 키 — 앞뒤 공백 · 대소문자 무시 — 로 줄인 선언의 sha256). 모두 뺀 저장도 한 줄(비움 판 — `{}` · 0 · 빈
+  지문, `CHECK` 가 항목 수 0 과 빈 지문을 짝짓는다)이다. 산식 id 를 나열한 `CHECK` 는 두지 않는다 — 고칠 수 없는 표라 산식을
+  더할 때 막히지 않게 저장소가 쓰기 앞에서 계산 쪽 정규화로 검증한다(모르는 산식 id · 빈 공정 이름은 들지 않는다). 쓰기는
+  화면이 본 판 차례와 대조하고 견줌 키로 같은 선언은 쓰지 않는다. 소유 칸이 없어 시나리오를 지워도 남는다(리비전에 딸리지
+  않고 모든 시나리오에 걸리는 공용 값 — 2026-11-22 사용자 답 Q3 (가)). 계산은 지금 판을 계산 토큰으로 접어 읽으므로(AGENTS 5장
+  44 · 45) 판을 저장하는 순간 공식버전을 포함한 모든 시나리오의 그 공정 소요대수 · 확보율이 바뀐다 — 판이 없거나 비움 판이면
+  선언 전 숫자 그대로다.
 - `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
   시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 
@@ -341,7 +353,7 @@ RQ_DISPLAY_ORDER   RQ_MODULE
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
 `config/data_contract.json`의 `derived_keys`에 테이블별로 정의한다.
 `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
-`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_UPEH` 의 `UPEH` 는 Main 행의
+`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분·CUSTOM을 경로 키로 사용한다. `RQ_UPEH` 의 `UPEH` 는 Main 행의
 시간당 처리량, `ST` 는 MI 행의 한 개당 분(min/unit)이다(정의 — 계산은 60 ÷ ST, AGENTS.md 6장). 조인 키로 쓰는 `WF 구분`의
 값은 EDP-TSV 행에서 `Top`이 아니라 `Top_e`다. 원천에는 없는 값이며 `services/product_type.py`의
 규칙에 따라 `build_q_core_data`가 파생 경계에서 한 번만 갈라 붙인다. 0014 이전에 적재한
@@ -360,8 +372,14 @@ RQ_CHIP_QTY  RQ_CHIP_EQ
 ```
 
 `RQ_PKG_PLAN`은 0013 부터 `제품타입`·`Pack Code`를 함께 싣는다. `Pack Code`는 2026-09-12
-부터 업무 키(계약 `derived_keys` 8키의 마지막)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
-DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
+부터 업무 키(계약 `derived_keys`)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
+DDL 순이라 둘 다 원래 칸 뒤에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
+
+제품정보가 든 8표(`RQ_PKG_PLAN`·`RQ_YLD`·`RQ_CHIP_QTY`·`RQ_CHIP_EQ`·`RQ_UPEH`·`RQ_LOT_RATIO`·
+`RQ_WF_RATIO`·`RQ_REQB`)는 0039 부터 `CUSTOM` 을 싣는다 — 제품을 가르는 업무 키(`derived_keys` 의
+마지막)이고 칸도 맨 끝이다. 빈 값은 표지 `-` 하나이고, 0039 가 `rev_data`·`ref_data` 의 옛 행에 이
+표지를 넣었다(원천 `raw_data.core_data` 의 `CUSTOM` 으로 되채우지 않는다). 계산은 이 칸을 합산하지
+않고 조인 키로 쓴다(AGENTS.md 4장).
 
 기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 14개는 `rev_data` 에서만 읽고,
 나머지 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`)은 데이터셋 `ref_data` 를 사용한다. 새 데이터셋은 이
@@ -384,7 +402,9 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 
 동일 시뮬레이션 코드는 불변 원천으로 취급한다. 행 순서와 무관한 multiset 데이터 해시가
 같으면 같은 코드를 다른 시나리오로 다시 등록할 수 있고(원천 행도 그 데이터셋에 다시 적는다),
-해시가 다르면 등록을 거부한다(보관본 포함). 복제·연도 이동·월 병합은 원천 행을 적지 않는다 —
+해시가 다르면 등록을 거부한다(보관본 포함). 원천 CSV 올림(`CSV_CORE_DATA_UPLOAD`)은 다리라
+그 밖 원천을 받을 때는 같은 코드의 CSV 원천 해시와 견주지 않는다 — 한 코드에 CSV · DB 원천 두
+벌이 설 수 있다(`services/source_bridge.py` · 사용자 결정 Q-C1 (나)). 복제·연도 이동·월 병합은 원천 행을 적지 않는다 —
 이 데이터셋들의 `source_row_count` 는 0 이고, 원천을 읽는 쪽(`repository.load_source_data`)은
 「원천 Core Data 가 저장되어 있지 않다」로 알린다.
 
@@ -616,7 +636,7 @@ Capa 시나리오·리비전
 - Rundown·실가동·설비 Down·기타 제약시간의 실제 컬럼, 상호배타성 및 하루/설비 기준 시간
   합계 검증은 실적효율 DB 연결 단계에서 확정한다.
 - **수율 실적**도 같은 원칙을 따른다 — 시나리오마다 복제하지 않는 누적 이력이고, 기준은 리비전의
-  `RQ_YLD`(월·제품정보·Stack·WF 구분의 `EDS_수율`·`BE_수율`)다. 실적을 `RQ_YLD` 에 덮어쓰지
+  `RQ_YLD`(월·제품정보·Stack·CUSTOM·WF 구분의 `EDS_수율`·`BE_수율`)다. 실적을 `RQ_YLD` 에 덮어쓰지
   않는다. 원천 컬럼·키·집계(투입 가중)·정정 규칙은 아직 계약 전이다(`docs/TODO.md` 「수율 실적
   DB 계약」). 지금 `수율 실적` 화면의 값은 합성 데모(`services/performance_actuals.py`)다.
 
@@ -644,6 +664,12 @@ Capa 시나리오·리비전
   않는다. 표시순서와 달리 리비전 스냅샷 캐시를 비울 이유가 없고, 화면 Figure 캐시는
   프로필 버전 정수를 키 원소로 받아 무효화한다. 시나리오 `content_token`은 재발급하지
   않는다.
+- 마이그레이션 0039는 `rev_data`·`ref_data` 의 CUSTOM 키 8표에 `CUSTOM` 칸을 기본값 `-` 로 더한 뒤 기본값을 걷는다
+  (새 행은 앱이 늘 값을 싣는다). 옛 리비전의 값 칸은 그대로라 계산 결과가 전후 같고(`tests/test_migration_0039_custom.py`),
+  되감아 다시 걸어도 같다. 옛 표지 행과 부품을 가른 새 리비전이 만나는 비교 GAP 은 계산이 다시 짝짓는다(AGENTS.md 7장).
+- 마이그레이션 0040은 빈 부하 예외 선언 판 이력 표(`app_meta.route_load_exception_version`)만 만들고 다른 표는 건드리지 않는다
+  (`tests/test_migration_0040_route_load_exception.py`). 확인 스크립트는 사본을 마이그레이션하지 않으므로 0040 전 사본에는 그
+  표가 없다 — 읽기(`route_load_exception_store.read_route_load_exceptions`)는 그때 `None` 이고 표를 만들지 않는다.
 - 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.

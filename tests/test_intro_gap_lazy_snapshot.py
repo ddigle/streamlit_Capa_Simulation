@@ -28,6 +28,7 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import get_home_comparison_plan
 
 
@@ -121,7 +122,9 @@ def _summary(seeded: _Seeded) -> tuple[OfficialReleaseSummary, dict[str, Any]]:
     release = scenario_cache.get_scenario_repository(database_path).latest_official_release()
     assert release is not None
     thresholds = scenario_cache.load_global_securement_threshold(database_path).thresholds
-    payload = intro_summary._build(database_path, release, thresholds)
+    payload = intro_summary._build(
+        database_path, release, thresholds, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     context = payload[intro_summary._CONTEXT]
     assert isinstance(context, dict)
     return release, context

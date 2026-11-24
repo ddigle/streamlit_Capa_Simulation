@@ -17,6 +17,21 @@ Markdown 블록**을 찍는다.
 ÷ 소요대수). 경로 키가 없는 옛 리비전은 앱이 불러오기를 막으므로
 (`revision_compatibility`) 계산하지 않고 「불러오기 막힘」으로 센다.
 
+**0039 전 사본.** 사본의 마이그레이션 최고 번호가 `0039`(CUSTOM 칸) 전이면 CUSTOM 키 표에 칸이
+없다. 이 스크립트는 마이그레이션하지 않으므로 그 표를 0039 와 같은 뜻 — 모든 행이 빈 값 표지 —
+으로 채워 읽고(`revision_compatibility.custom_blank_filled`) 머리에 `사본 0039 전` 한 줄을 찍는다.
+0039 뒤 사본은 채우지 않는다 — 칸이 없으면 계산이 그대로 멈춰 드러난다.
+
+**부하 예외 선언.** 앱은 지금 선언(`0040` 판 이력의 마지막 줄)을 모든 리비전에 건다(AGENTS 6장
+「공정별 부하 산출 예외」). 이 스크립트도 사본에서 그 판을 한 번 읽어(`read_route_load_exceptions` —
+같은 `read_only` 연결) 모든 리비전의 소요대수에 넘긴다. 선언이 있으면 머리에 판 · 공정 수 한
+줄(이름은 찍지 않는다)을 찍는다. 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언으로 셈하고 머리에
+`사본 0040 전` 한 줄을 찍는다 — 0039 전 사본은 `사본 0039 전` 줄이 그 사실까지 말한다. 공식버전 줄
+바로 뒤에는 최신 공식 리비전 하나를 선언 켬 · 끔으로 셈해 견준 한 줄(`- 부하 예외 — 선언 n · 바뀐 줄
+m · 그밖 다른키 k · HOME Wafer 다른달 h`, 선언이 없으면 `선언 없음`)을 찍는다. 끔 계산은 선언이 그
+리비전의 WF 경로에 닿을 때만 돈다. HOME Wafer 계획은 선언을 받지 않는 길이라 그 칸은 지금 코드에서
+늘 0 이다(그 길이 바뀌면 드러난다).
+
 소요대수까지 서면 **저장·발행 검사가 그다음에 보는 Density 환산**도 돌린다
 (`capacity_gate.density_error` — HOME 의 `RQ_PKG_PLAN` × `RQ_CHIP_EQ` 를 조회기간이 아닌
 시나리오 전체 기간으로, EDP 계획까지). 대당 Capa·소요대수는 `구분_EQ` 를 쓰지 않아 `계산` 이
@@ -78,23 +93,43 @@ from pathlib import Path
 from typing import Final, TextIO
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from capa_simulation.persistence.models import RouteLoadExceptionState  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
     REFERENCE_TABLES,
     _load_reference_frame,
 )
+from capa_simulation.persistence.route_load_exception_store import (  # noqa: E402
+    BEFORE_ROUTE_EXCEPTION_COPY,
+    read_route_load_exceptions,
+)
+from capa_simulation.services.dashboard import (  # noqa: E402
+    build_monthly_wafer_load_from_load,
+    home_aggregation_wafer_load,
+)
 from capa_simulation.services.frame_contracts import match_key  # noqa: E402
+from capa_simulation.services.load_calculator import calculate_chip_and_wafer_loads  # noqa: E402
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     calculate_required_equipment,
 )
 from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
     route_key_incompatible_tables,
+)
+from capa_simulation.services.route_load_exceptions import (  # noqa: E402
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+    route_load_changed_rows,
+    route_load_targets,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate  # noqa: E402
 from capa_simulation.services.unit_capacity import (  # noqa: E402
@@ -130,12 +165,14 @@ SOURCE_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("SCENARIO_MONTH_MERGE", "월 병합"),
     ("SCENARIO_EXTRA_PROCESS", "부대공정 얹기"),
 )
-# 계획 줄 — `RQ_PKG_PLAN` 업무 키에서 Pack Code 를 뺀 것. 부하량이 이 단위로 접힌다.
+# 계획 줄 — `RQ_PKG_PLAN` 업무 키에서 Pack Code 를 뺀 것. 부하량이 이 단위로 접힌다. `CUSTOM`
+# 이 없으면 한 부품이 소요대수에 닿지 않아도 같은 제품의 다른 부품이 닿으면 닿은 것으로 접힌다.
 PLAN_LINE_KEYS: Final[tuple[str, ...]] = (
     "생산계획년월",
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -292,8 +329,11 @@ def density_check(tables: Mapping[str, pd.DataFrame]) -> tuple[str, str | None, 
     return STOPPED, ValueError.__name__, contract_tables_in(error)
 
 
-def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
-    """앱의 전체 기간 계산과 같은 차례로 돌린다. 예외는 단계와 종류로만 남긴다."""
+def calculate(tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration) -> Outcome:
+    """앱의 전체 기간 계산과 같은 차례로 돌린다. 예외는 단계와 종류로만 남긴다.
+
+    `route_exceptions` 는 사본의 지금 부하 예외 선언 판이다(앱이 모든 리비전에 거는 것과 같다 —
+    `_run` 이 사본에서 한 번 읽는다. 0040 전 사본이면 빈 선언)."""
     blocked = route_key_incompatible_tables(tables)
     if blocked:
         return Outcome(BLOCKED, stage="경로 키 없음", tables=tuple(blocked))
@@ -316,6 +356,7 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
             yield_data=tables["RQ_YLD"],
             chip_qty=tables["RQ_CHIP_QTY"],
             unit_capacity=unit_capacity,
+            route_exceptions=route_exceptions,
         )
     except Exception as exc:  # 위와 같다
         return _failed("소요대수", exc)
@@ -383,29 +424,230 @@ def list_revisions(
     return revisions
 
 
+def migration_level(connection: duckdb.DuckDBPyConnection) -> int | None:
+    """사본의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다."""
+    try:
+        row = connection.execute("SELECT max(version) FROM app_meta.schema_migration").fetchone()
+    except duckdb.Error:
+        return None
+    return None if row is None or row[0] is None else int(row[0])
+
+
+def before_custom_migration(level: int | None) -> bool:
+    """CUSTOM 칸(0039) 전 사본인가 — 번호를 읽지 못했으면 채우지 않는다."""
+    return level is not None and level < CUSTOM_MIGRATION
+
+
 def load_tables(
-    connection: duckdb.DuckDBPyConnection, revision: RevisionRow
+    connection: duckdb.DuckDBPyConnection, revision: RevisionRow, *, fill_custom: bool = False
 ) -> dict[str, pd.DataFrame]:
+    """리비전 하나의 16표. `fill_custom` 이면(0039 전 사본) CUSTOM 키 표에 칸을 채운다."""
     if revision.dataset_id is None:
         raise LookupError("데이터셋 없음")
-    return {
+    tables = {
         name: _load_reference_frame(
             connection, name, revision_id=revision.revision_id, dataset_id=revision.dataset_id
         )
         for name in REFERENCE_TABLES
     }
+    return custom_blank_filled(tables) if fill_custom else tables
 
 
-def inspect_revision(connection: duckdb.DuckDBPyConnection, revision: RevisionRow) -> Outcome:
+def inspect_revision(
+    connection: duckdb.DuckDBPyConnection,
+    revision: RevisionRow,
+    *,
+    route_exceptions: RouteLoadDeclaration,
+    fill_custom: bool = False,
+) -> Outcome:
     started = time.perf_counter()
     try:
-        tables = load_tables(connection, revision)
+        tables = load_tables(connection, revision, fill_custom=fill_custom)
     except Exception as exc:  # 읽지 못한 리비전도 다음 리비전은 잰다
         outcome = Outcome(UNREADABLE, stage="읽기", kind=type(exc).__name__)
     else:
-        outcome = calculate(tables)
+        outcome = calculate(tables, route_exceptions)
     outcome.seconds = time.perf_counter() - started
     return outcome
+
+
+# ------------------------------------------------------------------------- 부하 예외 켬 · 끔
+#
+# 사용자 요청 E 의 확인 줄(「그 밖의 공정 소요대수 · HOME Wafer 계획이 이 변경 전후 같음」 —
+# 2026-11-22 답 Q8 ⑤). 최신 공식 리비전 하나를 지금 선언 켬 · 끔으로 셈해 견준다.
+
+# 켬 · 끔에서 견주는 소요대수 결과의 값 칸.
+COMPARED_VALUES: Final[tuple[str, ...]] = ("부하량", "소요대수")
+EXCEPTION_LINE_HEAD: Final = "- 부하 예외 — "
+NO_DECLARATION: Final = "선언 없음"
+_ON: Final = " 켬"
+_OFF: Final = " 끔"
+
+
+@dataclass(frozen=True)
+class ExceptionComparison:
+    """최신 공식 리비전 하나의 켬 · 끔 견줌 — 경로 키 · 달의 수만 든다(이름 · 값 없음).
+
+    - `changed` — 산식이 바꾸는 줄(`route_load_changed_rows` — 선언 공정의 소요기준 WF `Core` ·
+      `Top_Dummy`) 가운데 값이 달라졌거나 한쪽에만 있는(바탕이 없어 켬에서 빠진) 경로 키.
+    - `other` — 그 밖의 경로 키 가운데 그런 것. 0 이어야 한다.
+    - `home_months` — HOME `Wafer 계획` 달 합이 켬 · 끔에서 다른 달. 0 이어야 한다.
+    """
+
+    changed: int
+    other: int
+    home_months: int
+
+
+def home_wafer_months(tables: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    """HOME `Wafer 계획` 의 달 합 — 앱 HOME 과 같은 함수 차례(Chip · Wafer 부하량 →
+    `home_aggregation_wafer_load` → `build_monthly_wafer_load_from_load`)를 시나리오 전체 기간으로.
+
+    이 길은 부하 예외 선언을 받지 않는다(Wafer 매수 집계는 선언 밖 — AGENTS 6장 「공정별 부하 산출
+    예외」 (d)). 그래서 켬 · 끔 달 합이 다른 달은 지금 코드에서 늘 0 이고, 그 길이 선언을 받게
+    바뀌거나 계산이 입력 표를 제자리에서 고치면 드러난다.
+    """
+    _, wafer = calculate_chip_and_wafer_loads(
+        tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"]
+    )
+    return build_monthly_wafer_load_from_load(home_aggregation_wafer_load(wafer))
+
+
+def differing_months(before: pd.DataFrame, after: pd.DataFrame) -> int:
+    """두 HOME Wafer 달 합(`home_wafer_months`)에서 값이 다르거나 한쪽에만 있는 달 수."""
+    month, value = "생산계획년월", "Wafer 부하량"
+    merged = before[[month, value]].merge(
+        after[[month, value]], on=month, how="outer", suffixes=(_OFF, _ON), indicator=True
+    )
+    left = pd.to_numeric(merged[value + _OFF], errors="coerce").to_numpy(dtype="float64")
+    right = pd.to_numeric(merged[value + _ON], errors="coerce").to_numpy(dtype="float64")
+    same = np.isclose(left, right, rtol=1e-9, atol=1e-9, equal_nan=True)
+    return int((merged["_merge"].ne("both").to_numpy() | ~same).sum())
+
+
+def _keyed_values(required: pd.DataFrame) -> pd.DataFrame:
+    """경로 키(`REQB_COLUMNS`)마다 값 칸의 합 — 결과에 같은 키가 둘 이상이어도(옛 리비전의 겹친 경로
+    키) 견줄 수 있게 더한다."""
+    keyed = required.loc[:, [*REQB_COLUMNS, *COMPARED_VALUES]].copy()
+    for column in REQB_COLUMNS:
+        if column == "생산계획년월":
+            keyed[column] = pd.to_numeric(keyed[column], errors="coerce").astype("Int64")
+        else:
+            keyed[column] = keyed[column].astype("string")
+    for column in COMPARED_VALUES:
+        keyed[column] = pd.to_numeric(keyed[column], errors="coerce")
+    return keyed.groupby(REQB_COLUMNS, as_index=False, dropna=False)[list(COMPARED_VALUES)].sum(
+        min_count=1
+    )
+
+
+def required_differences(
+    on: pd.DataFrame, off: pd.DataFrame, declaration: RouteLoadDeclaration
+) -> tuple[int, int]:
+    """(바뀐 줄, 그밖 다른키) — 켬 · 끔 소요대수 결과를 경로 키로 맞대 값(`COMPARED_VALUES`)이
+    다르거나 한쪽에만 있는 키를, 산식이 바꾸는 줄(`route_load_changed_rows`)과 그 밖으로 가른다."""
+    merged = _keyed_values(on).merge(
+        _keyed_values(off), on=REQB_COLUMNS, how="outer", suffixes=(_ON, _OFF), indicator=True
+    )
+    differs = merged["_merge"].ne("both")
+    for column in COMPARED_VALUES:
+        left = merged[column + _ON].to_numpy(dtype="float64", na_value=np.nan)
+        right = merged[column + _OFF].to_numpy(dtype="float64", na_value=np.nan)
+        same = np.isclose(left, right, rtol=1e-9, atol=1e-9, equal_nan=True)
+        differs = differs | pd.Series(~same, index=merged.index)
+    rewritten = route_load_changed_rows(merged, declaration)
+    return int((differs & rewritten).sum()), int((differs & ~rewritten).sum())
+
+
+def compare_route_exceptions(
+    tables: Mapping[str, pd.DataFrame], declaration: RouteLoadDeclaration
+) -> ExceptionComparison:
+    """리비전 하나를 선언 켬 · 끔으로 셈해 견준다(`ExceptionComparison`).
+
+    끔 계산은 선언이 그 리비전의 소요기준 WF 경로에 닿을 때만 돈다 — 닿지 않으면 소요대수 계산이
+    같은 판정(`route_load_targets`)으로 예외를 걸지 않아 켬 · 끔 결과가 같으므로 두 수가 0 이다.
+    HOME Wafer 달 합은 끔 쪽을 선언 계산 앞에서, 켬 쪽을 그 뒤에서 같은 표 묶음으로 따로 잰다.
+    """
+    home_off = home_wafer_months(tables)
+    changed = other = 0
+    if route_load_targets(tables["RQ_REQB"], declaration).any():
+        unit_capacity = calculate_unit_capacity(
+            upeh=tables["RQ_UPEH"],
+            run_rate=tables["RQ_RUN_RATE"],
+            vital=tables["RQ_VITAL"],
+            module=tables["RQ_MODULE"],
+            run_day=tables["RQ_RUN_DAY"],
+            lot_ratio=tables["RQ_LOT_RATIO"],
+            wf_ratio=tables["RQ_WF_RATIO"],
+        )
+
+        def required(chosen: RouteLoadDeclaration) -> pd.DataFrame:
+            return calculate_required_equipment(
+                reqb=tables["RQ_REQB"],
+                plan=tables["RQ_PKG_PLAN"],
+                yield_data=tables["RQ_YLD"],
+                chip_qty=tables["RQ_CHIP_QTY"],
+                unit_capacity=unit_capacity,
+                route_exceptions=chosen,
+            )
+
+        off = required(NO_ROUTE_LOAD_EXCEPTIONS)
+        on = required(declaration)
+        changed, other = required_differences(on, off, declaration)
+    home_on = home_wafer_months(tables)
+    return ExceptionComparison(
+        changed=changed, other=other, home_months=differing_months(home_off, home_on)
+    )
+
+
+def _latest_official(
+    revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]
+) -> tuple[RevisionRow, Outcome] | None:
+    """공식버전 이력이 가리키는 리비전 가운데 가장 늦게 발행한 것과 그 결과. 이력이 없으면 None."""
+    official = [
+        (revision, outcome)
+        for revision, outcome in zip(revisions, outcomes, strict=True)
+        if revision.official
+    ]
+    if not official:
+        return None
+    return max(official, key=lambda pair: max(pair[0].official))
+
+
+def exception_comparison_line(
+    connection: duckdb.DuckDBPyConnection,
+    revisions: Sequence[RevisionRow],
+    outcomes: Sequence[Outcome],
+    declaration: RouteLoadDeclaration,
+    *,
+    fill_custom: bool = False,
+) -> str:
+    """공식버전 줄 곁 한 줄 — `- 부하 예외 — 선언 n · 바뀐 줄 m · 그밖 다른키 k · HOME Wafer
+    다른달 h`.
+
+    선언이 비면 `선언 없음` 이다(선언 표가 없는 0040 전 사본도 같다 — 머리 줄이 그 사실을 말한다).
+    공식버전 이력이 없거나 최신 공식의 소요대수가 서지 않았으면(멈춤 · 불러오기 막힘 · 읽지 못함)
+    견주지 않고 그 까닭만, 견주다 멈추면 예외 종류만 적는다.
+    """
+    if not declaration:
+        return EXCEPTION_LINE_HEAD + NO_DECLARATION
+    head = f"{EXCEPTION_LINE_HEAD}선언 {len(declaration):,}"
+    latest = _latest_official(revisions, outcomes)
+    if latest is None:
+        return f"{head} · 공식버전 이력 없음"
+    revision, outcome = latest
+    if outcome.status not in (CALCULATED, SECUREMENT_STOPPED):
+        return f"{head} · 견주지 못함(최신 공식 {outcome.status})"
+    try:
+        compared = compare_route_exceptions(
+            load_tables(connection, revision, fill_custom=fill_custom), declaration
+        )
+    except Exception as exc:  # 문구는 찍지 않는다 — 공식버전 줄과 표는 그대로 남긴다
+        return f"{head} · 견주지 못함({failure_kind(exc)})"
+    return (
+        f"{head} · 바뀐 줄 {compared.changed:,} · 그밖 다른키 {compared.other:,} · "
+        f"HOME Wafer 다른달 {compared.home_months:,}"
+    )
 
 
 # ------------------------------------------------------------------------------------ 출력
@@ -483,9 +725,10 @@ def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]
         for revision, outcome in zip(revisions, outcomes, strict=True)
         if revision.official
     ]
-    if not official:
+    newest = _latest_official(revisions, outcomes)
+    if newest is None:
         return "- 공식버전 — 이력 없음"
-    latest, latest_outcome = max(official, key=lambda pair: max(pair[0].official))
+    latest, latest_outcome = newest
     statuses = Counter(outcome.status for _, outcome in official)
     counted = " · ".join(
         f"{status} {statuses[status]:,}" for status in STATUSES if statuses[status]
@@ -502,8 +745,14 @@ def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]
 
 
 def summary_lines(
-    revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome], *, active_only: bool
+    revisions: Sequence[RevisionRow],
+    outcomes: Sequence[Outcome],
+    *,
+    active_only: bool,
+    exception_line: str | None = None,
 ) -> list[str]:
+    """합계 표 · 공식버전 줄 · 멈춘 리비전의 갈래. `exception_line` 은 공식버전 줄 바로 뒤에 두는
+    부하 예외 켬 · 끔 한 줄(`exception_comparison_line`)이다."""
     groups = _totals(revisions, outcomes)
     overall = Totals()
     for totals in groups.values():
@@ -537,6 +786,7 @@ def summary_lines(
         *_table(headers, rows),
         "",
         _official_line(revisions, outcomes),
+        *([exception_line] if exception_line is not None else []),
     ]
     stops = Counter(
         (
@@ -658,6 +908,13 @@ READING_GUIDE: Final[tuple[str, ...]] = (
     "`RQ_REQB` 업무 키(`WF 구분` 은 대소문자 무시)가 두 번 이상 계산된 행 수다 — 한 경로가 "
     "`WF 구분` 표기만 달리 두 행으로 저장된 옛 리비전이고, 두 행이 모두 부하량을 받으면 그 "
     "경로의 소요대수가 두 배다. 둘 다 0 이 아니어도 계산은 선다 — 수를 그대로 옮긴다.",
+    "- `부하 예외` 줄은 최신 공식 리비전 하나를 지금 선언 켬 · 끔으로 다시 셈해 견준 것이다"
+    "(선언이 없으면 `선언 없음`). `바뀐 줄` 은 산식이 바꾸는 줄(선언 공정의 소요기준 WF `Core` · "
+    "`Top_Dummy`) 가운데 부하량 · 소요대수가 달라졌거나 바탕이 없어 빠진 경로 키 수이고, `그밖 "
+    "다른키` 는 그 밖의 경로 키 가운데 달라진 수다 — 0 이어야 한다. `HOME Wafer 다른달` 은 HOME "
+    "Wafer 계획 달 합이 켬 · 끔에서 다른 달 수로 0 이어야 한다 — HOME Wafer 는 선언을 받지 않는 "
+    "길(Chip · Wafer 부하량)이라 지금 코드에서는 늘 0 이고, 그 길이 바뀌면 드러난다. 선언이 그 "
+    "리비전의 WF 경로에 닿지 않으면 끔 계산을 하지 않고 두 수가 0 이다.",
     "- 시나리오·리비전은 만든 차례 번호다(이름이 아니다). 같은 DB 를 다시 돌리면 같은 "
     "번호가 나온다.",
 )
@@ -748,6 +1005,39 @@ def _open_read_only(path: Path) -> tuple[duckdb.DuckDBPyConnection | None, str |
         return None, f"`{path.name}` 파일을 열지 못했다 — {type(exc).__name__}", 2
 
 
+def _before_custom_line(level: int | None) -> str:
+    """0039 전 사본 한 줄 — 사본을 고치지 않고 읽을 때만 채웠다는 것."""
+    return (
+        f"- {BEFORE_CUSTOM_COPY} — 마이그레이션 최고 {level} · CUSTOM 키 표는 0039 와 같이 "
+        "모든 행을 빈 값 표지(`-`)로 채워 읽었다(사본은 고치지 않는다)"
+    )
+
+
+def copy_route_exceptions(
+    connection: duckdb.DuckDBPyConnection,
+) -> RouteLoadExceptionState | None:
+    """사본의 부하 예외 선언 판 이력 — 표가 없으면(0040 전 사본) None 이다(표를 만들지 않는다)."""
+    return read_route_load_exceptions(connection)
+
+
+def route_exception_line(state: RouteLoadExceptionState | None, *, level: int | None) -> str | None:
+    """머리 한 줄 — 0040 전 사본이면 빈 선언으로 셈했다는 것, 선언이 있으면 판 · 공정 수(이름
+    없음). 선언 표가 있고 비었으면 줄이 없다. 0039 전 사본은 부르지 않는다(`사본 0039 전` 줄이
+    함께 말한다)."""
+    if state is None:
+        shown = "-" if level is None else str(level)
+        return (
+            f"- {BEFORE_ROUTE_EXCEPTION_COPY} — 마이그레이션 최고 {shown} · 부하 예외 선언 표가 "
+            "없어 빈 선언으로 셈했다(사본은 고치지 않는다)"
+        )
+    if not state.declaration:
+        return None
+    return (
+        f"- 부하 예외 선언 판 {state.seq} · 공정 {len(state.declaration):,} — 모든 리비전의 "
+        "소요대수를 그 선언으로 셈했다(앱과 같다 · 공정 이름은 찍지 않는다)"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _use_utf8_stdout()
     args = parse_args(argv)
@@ -784,6 +1074,13 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
     try:
         scenarios = len({revision.scenario_no for revision in revisions})
         archived = len({revision.scenario_no for revision in revisions if revision.archived})
+        level = migration_level(connection)
+        fill_custom = before_custom_migration(level)
+        route_state = copy_route_exceptions(connection)
+        route_exceptions = (
+            NO_ROUTE_LOAD_EXCEPTIONS if route_state is None else route_state.declaration
+        )
+        route_line = None if fill_custom else route_exception_line(route_state, level=level)
         sink.emit(
             "\n".join(
                 [
@@ -791,6 +1088,8 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
                     "",
                     f"- 실행 {datetime.now():%Y-%m-%d %H:%M} · DB `{path.name}` · 시나리오 "
                     f"{scenarios:,}(보관 {archived:,}) · 리비전 {len(revisions):,}",
+                    *([_before_custom_line(level)] if fill_custom else []),
+                    *([route_line] if route_line is not None else []),
                     "",
                     *_table(REVISION_HEADERS, ()),
                 ]
@@ -798,9 +1097,15 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
         )
         # 리비전마다 끝나는 대로 한 줄 — 중간에 멈춰도 그때까지의 줄이 남는다.
         for revision in revisions:
-            outcome = inspect_revision(connection, revision)
+            outcome = inspect_revision(
+                connection, revision, route_exceptions=route_exceptions, fill_custom=fill_custom
+            )
             outcomes.append(outcome)
             sink.emit("| " + " | ".join(revision_row(revision, outcome)) + " |")
+        # 공식버전 줄 곁 켬 · 끔 한 줄 — 연결이 열린 동안 최신 공식 하나를 다시 읽어 견준다.
+        exception_line = exception_comparison_line(
+            connection, revisions, outcomes, route_exceptions, fill_custom=fill_custom
+        )
     except KeyboardInterrupt:
         sink.emit(f"\n- 멈췄다 — 중단(KeyboardInterrupt) · 리비전 {len(outcomes):,}개까지 잼\n")
         raise
@@ -810,7 +1115,12 @@ def _run(args: argparse.Namespace, sink: _Sink) -> int:
         "\n".join(
             [
                 "",
-                *summary_lines(revisions, outcomes, active_only=bool(args.active_only)),
+                *summary_lines(
+                    revisions,
+                    outcomes,
+                    active_only=bool(args.active_only),
+                    exception_line=exception_line,
+                ),
                 *READING_GUIDE,
                 f"- 걸린 시간 {time.perf_counter() - started:.1f}초",
             ]

@@ -20,7 +20,10 @@
   기간 `RQ_REQB`·시나리오 키·확보율·달·공정 선택지). 확보율 프레임은 선택지·달에만 쓴다.
 - **소요대수** — 공정 합은 계획의 `소요대수`, 제품별은 `get_process_product_demand(split="제품정보",
   limit=CONSTRAINT_PRODUCT_LIMIT)`(행을 다 더하면 그 공정 소요). 한 제품정보의 모든 양산구분이
-  든다(D4).
+  든다(D4). 제약 제품 선택지는 같은 표로 낸다(`constraint_product_choices`) — 부품(`CUSTOM`)을
+  가르는 제품은 이름만 쓴 제품 전체 한 줄 뒤에 부품마다 「제품 (부품)」 줄이고(2026-11-23 보드 답
+  D3 (나)), 고른 값은 이름표 글이라 그래프 제목 · 머리 줄에 그대로 지나고 어댑터에는 (제품정보,
+  부품)으로 넘긴다.
 - **설비 일정 기준 가용(단축 전)** — 사이드바 세션 설비 시나리오(D6)의 계산 세 표·Cut-off 로 공정
   Capa 상세 ②~④ 와 같은 계획 칸(`load_required_shortening_for_target` — 공식 칸, 목표는 키
   맞춤용 HOME 확보 기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
@@ -197,16 +200,19 @@ from capa_simulation.services.constraint_simulation import (
     OWNED_UNITS_RANGE,
     TARGET_RANGE,
     ConstraintConditions,
+    ConstraintProduct,
     ConstraintResult,
     HeldUnit,
     NewUnit,
     UnitModule,
     constraint_month_inputs,
+    constraint_product_choices,
+    constraint_product_rows,
     simulate_constraint,
 )
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
+from capa_simulation.services.process_capa_detail import month_column
 from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.process_equipment_timeline import (
     HeldUnitChoice,
@@ -486,30 +492,12 @@ if schedule_mode:
     st.stop()
 
 
-def product_choices(table: pd.DataFrame) -> list[str]:
-    """제약 제품 선택지 — 제품별 소요 표(산출 결과 · 소요대수 표시순서)의 제품정보. 빈 이름·「그
-    밖」 은 뺀다."""
-    if table.empty or "제품정보" not in table.columns:
-        return []
-    names = table["제품정보"].astype("string").str.strip()
-    others = (
-        table[OTHER_ROW_COLUMN].astype("boolean").fillna(False).astype("bool")
-        if OTHER_ROW_COLUMN in table.columns
-        else pd.Series(False, index=table.index)
-    )
-    chosen: list[str] = []
-    for name, other in zip(names.tolist(), others.tolist(), strict=True):
-        text = "" if name is None or pd.isna(name) else str(name)
-        if text and not other and text not in chosen:
-            chosen.append(text)
-    return chosen
-
-
-def first_demand_month(table: pd.DataFrame, product: str | None) -> int:
-    """그 제품의 첫 소요 달(보이는 달). 없으면 첫 달 — 제약 시작의 기본값(D8)."""
-    if product is None or table.empty or "제품정보" not in table.columns:
+def first_demand_month(table: pd.DataFrame, choice: ConstraintProduct | None) -> int:
+    """고른 제약 제품(부품을 고른 줄이면 그 부품)의 첫 소요 달(보이는 달). 없으면 첫 달 — 제약
+    시작의 기본값(D8)."""
+    if choice is None or table.empty or "제품정보" not in table.columns:
         return months[0]
-    rows = table.loc[table["제품정보"].astype("string").str.strip().eq(product).fillna(False)]
+    rows = table.loc[constraint_product_rows(table, choice.product, choice.part).to_numpy()]
     for month in months:
         column = month_column(month)
         if column in rows.columns and float(pd.to_numeric(rows[column], errors="coerce").sum()) > 0:
@@ -518,6 +506,9 @@ def first_demand_month(table: pd.DataFrame, product: str | None) -> int:
 
 
 product_table = pd.DataFrame()
+# 제약 제품 선택지 — 화면 값(이름표) → 고른 단위(제품 전체 또는 그 부품 — 2026-11-23 보드 답 D3
+# (나)).
+product_choice_map: dict[str, ConstraintProduct] = {}
 product_options: list[str] = []
 # 제품별 소요를 읽지 못한 까닭(빈 글자 = 읽음). 카드에는 짧은 캡션, 본문에는 이 글을 싣는다 —
 # 「소요가 있는 제품이 없다」 와 가른다.
@@ -540,7 +531,8 @@ with card:
             )
         except BOOTSTRAP_ERRORS as exc:
             product_table, product_error = pd.DataFrame(), bootstrap_error_message(exc)
-        product_options = product_choices(product_table)
+        product_choice_map = constraint_product_choices(product_table)
+        product_options = list(product_choice_map)
     prune_choice(
         CONSTRAINT_PRODUCT_KEY,
         product_options,
@@ -560,7 +552,8 @@ with card:
         settle_period(
             months,
             default_start=first_demand_month(
-                product_table, str(selected_product) if selected_product is not None else None
+                product_table,
+                None if selected_product is None else product_choice_map.get(str(selected_product)),
             ),
         )
         if months
@@ -875,6 +868,7 @@ if equipment_plan is None or selected_product is None:
     render_idle_held_picker()
     st.stop()
 product = str(selected_product)
+chosen_product = product_choice_map.get(product, ConstraintProduct(product))
 plan = equipment_plan.plan
 target_level = equipment_plan.target_level
 # 보유 「호기 고르기」(개조 끔이면 잠긴다 — 고름은 세션에 남고 계산에 걸리지 않는다). 고른 호기는
@@ -945,7 +939,8 @@ try:
         plan.at(target_level).process_months,
         product_table,
         process=process,
-        product=product,
+        product=chosen_product.product,
+        part=chosen_product.part,
         months=months,
         general_target=general_target,
     )
@@ -988,6 +983,18 @@ labels = ConstraintLabels(
         else ()
     ),
     today=today,
+    part=chosen_product.part or "",
+    part_siblings=tuple(
+        sorted(
+            {
+                choice.part
+                for choice in product_choice_map.values()
+                if choice.product == chosen_product.product
+                and choice.part is not None
+                and choice.part != chosen_product.part
+            }
+        )
+    ),
 )
 period_text = (
     month_label(period.start)

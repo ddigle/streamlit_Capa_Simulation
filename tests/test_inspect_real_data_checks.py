@@ -23,7 +23,7 @@ import sys
 import time
 import types
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -33,7 +33,16 @@ from typing import Any, Final
 import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import (
+    database_before_custom,
+    database_before_route_exceptions,
+    database_marked_after_custom,
+    database_with_route_exceptions,
+    seed_route_declaration,
+)
+from custom_key_tables import PART_A, PART_B, custom_keyed_tables
 
+from capa_simulation import application_bootstrap
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
 from capa_simulation.io.company_bigdataquery_adapter import (
@@ -47,19 +56,39 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSaveRequest,
 )
+from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
-from capa_simulation.services.core_data_derivation import build_q_core_data, plan_row_mask
+from capa_simulation.services import builtin_seed
+from capa_simulation.services.core_data_derivation import (
+    CUSTOM_BLANK,
+    build_q_core_data,
+    plan_row_mask,
+)
+from capa_simulation.services.dashboard import home_aggregation_wafer_load
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
-from capa_simulation.services.legacy_comparison import COMPARISONS
+from capa_simulation.services.legacy_comparison import COMPARISON_KEYS, COMPARISONS, plan_row_frame
+from capa_simulation.services.load_calculator import calculate_wafer_load
+from capa_simulation.services.product_type import (
+    BUFFER_DIVISION,
+    EDP_PRODUCT_TYPE,
+    HBM_PRODUCT_TYPE,
+    TOP_DUMMY_DIVISION,
+)
 from capa_simulation.services.required_equipment import (
     LOAD_KEYS,
     REQB_COLUMNS,
     UNROUTED_KEY_MISMATCH_REASON,
     UNROUTED_UNKNOWN_PRODUCT_REASON,
     UNROUTED_UNUSED_REASON,
+    calculate_required_equipment,
+)
+from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    route_load_targets,
 )
 from capa_simulation.settings import DUCKDB_PATH
 
@@ -334,7 +363,7 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     # 저장·발행 검사가 알리고 목록 관리 「점검」 이 세는 「소요대수에 들지 않은 수요」를 같은 셈으로
     # 센다.
     assert "- 소요대수에 들지 않은 수요(리비전 1 전체 기간) — " in output
-    assert "| 경로 키 13 · 같은 경로 반복을 접음 | 72 |" in output
+    assert f"| 경로 키 {len(REQB_COLUMNS)} · 같은 경로 반복을 접음 | 72 |" in output
     # 기존 값이 표지값 하나라 60 배 무리가 없다 — 가르기는 한 줄로 끝난다.
     assert "- ≈60 배 가르기 — 비율이 정의된 경로 키 72 가운데 ≈60 이 없어 건너뛴다" in output
     # ST 정의 대조는 ≈60 무리와 무관하게 늘 찍힌다. 내장 시드는 Main 은 UPEH, MI 는 ST 만 적는다.
@@ -750,7 +779,7 @@ def _plant_sixty_fold(path: Path) -> tuple[int, int, int]:
     session.close()
     assert source is not None
     core = build_q_core_data(source.raw, load_core_data_contract())
-    required = checks._required_equipment(source.tables)
+    required = checks._required_equipment(source.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     def keyed(frame: pd.DataFrame) -> pd.DataFrame:
         keys = pd.DataFrame(
@@ -1023,7 +1052,7 @@ def _plant_route_wafers(path: Path) -> int:
     session.close()
     assert source is not None
     core = build_q_core_data(source.raw, load_core_data_contract())
-    required = checks._required_equipment(source.tables)
+    required = checks._required_equipment(source.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     plan = [key for key in LOAD_KEYS if key != "소요기준"]
     wafer = required.loc[required["소요기준"].eq("WF")]
     loads = _keyed(wafer, plan).assign(부하량=wafer["부하량"].to_numpy()).drop_duplicates(plan)
@@ -1088,7 +1117,7 @@ def test_route_wafer_values_are_split_by_the_column_that_carries_them(
     assert "| `Lot 측정률` | " in output
     # 신규(계획 줄 Wafer)와 경로 키로 맞대면 기존÷신규가 WF 경로의 Step수 를 따라간다. 측정률은
     # 1 이 아니어도 따라가지 않는다.
-    assert "| WF 경로 키 13 · 신규 `부하량` |" in output
+    assert f"| WF 경로 키 {len(REQB_COLUMNS)} · 신규 `부하량` |" in output
     assert re.search(r"\| `Step수` \| (\d+) \| \1 \| \1 \| 0 \| 0 \|", output)
     assert re.search(r"\| `WF측정률` \| (\d+) \| \1 \| 0 \| 0 \| 0 \|", output)
     # 전송용 요약 — Wafer 경로 줄은 갈리는 칸 · 맞대기 중앙 · 가장 잘 따라가는 칸과 그 ≈ 칸 / 칸 ≠1.
@@ -1123,6 +1152,683 @@ def test_the_legacy_block_counts_blank_cs_rows_dropped_like_the_registration(
         "(등록과 같은 규칙)." in output
     )
     assert "파생 프레임을 만들지 못함" not in output
+
+
+def test_a_constant_source_custom_under_a_blank_revision_counts_like_a_blank_source(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 등록분 — 리비전 표는 모두 빈 값 표지(`-`)인데 원천 `CUSTOM` 칸에 그때 값이 남아 있다.
+
+    대조는 원천을 리비전에 맞춰(`source_custom_aligned`) 원천도 빈 칸인 사본과 같은 수를 찍는다.
+    맞추지 않으면 모든 키가 한쪽에만 남는다."""
+    paths = {name: tmp_path / name / "capa_simulation.duckdb" for name in ("blank", "constant")}
+    for path in paths.values():
+        path.parent.mkdir()
+        path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(paths["constant"])) as connection:
+        assert connection.execute(
+            'SELECT count(*) FROM raw_data.core_data WHERE "CUSTOM" IS NOT NULL'
+        ).fetchone() == (0,)
+        connection.execute('UPDATE raw_data.core_data SET "CUSTOM" = ?', ["DEMO_CUSTOM_A"])
+        assert connection.execute(
+            'SELECT DISTINCT "CUSTOM" FROM rev_data.rq_pkg_plan'
+        ).fetchall() == [("-",)]
+
+    outputs = {}
+    for name, path in paths.items():
+        code, outputs[name] = _run(capsys, "--only", "legacy", "--database", str(path))
+        assert code == 0
+
+    legacy = [line for line in _summary(outputs["blank"]) if line.startswith("- 8-2")]
+    assert any(line.startswith("- 8-2L ") for line in legacy)
+    assert (
+        outputs["constant"].replace(str(paths["constant"]), str(paths["blank"])) == outputs["blank"]
+    )
+
+
+def _summary_line(output: str, key: str) -> str:
+    """요약에서 그 키의 줄(확인 코드 뗌) 하나."""
+    (line,) = [line for line in _uncoded(_summary(output)) if line.startswith(f"- {key} ")]
+    return line
+
+
+def _seed_copy(simulation_db: Path, tmp_path: Path, name: str) -> Path:
+    path = tmp_path / name / "capa_simulation.duckdb"
+    path.parent.mkdir()
+    path.write_bytes(simulation_db.read_bytes())
+    return path
+
+
+def test_the_plan_row_line_reads_plan_rows_only_where_route_rows_split(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사용자 요청 F — 원천 경로 행의 `WF수(매)` 가 갈려 정식 Wafer 대조가 그 칸을 `값 불일치` 로
+    떨어뜨려도 계획 행(계획기초정보여부 Y · 공정 빈)만 읽는 「계획 행으로 접음」 은 모든 키를 맞대
+    요약 `8-2P` 의 `불일치` 가 0 이다(계획 행 값은 그대로 둔 표본)."""
+    path = _seed_copy(simulation_db, tmp_path, "routes")
+    _plant_route_wafers(path)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert re.search(r"^\| Wafer `WF수\(매\)` \| 0 \|.*\| [1-9]\d* \| 0 \| 0 \|$", output, re.M)
+    assert re.search(
+        r"^\| Wafer `WF수\(매\)` · 계획 행 \| [1-9]\d* \|.*\| 0 \| 0 \| 0 \| 0 \|$", output, re.M
+    )
+    assert "- 계획 행 진단 — 접은 행 24 · 계획 행인데 공정 있음 0행 · " in output
+    assert _summary_line(output, "8-2P").startswith("- 8-2P 종류 1 · 불일치 0 · 달 ")
+
+
+def test_the_custom_kinds_are_counted_on_the_source_before_it_is_aligned(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """원천 CUSTOM 종류 · Capa Code 하나에 둘 이상(8-2P · 8-2K 머리)은 리비전에 맞추기
+    (`source_custom_aligned`) **앞**의 원천으로 센다 — 리비전이 모두 빈 값 표지라 대조는 원천을
+    표지로 맞춰 보지만(다른 줄은 빈 원천과 같다), 머리 칸은 원천에 실린 값의 수다. 대소문자 · 앞뒤
+    공백만 다른 값은 하나로 센다. 값은 찍지 않는다."""
+    paths = {name: _seed_copy(simulation_db, tmp_path, name) for name in ("blank", "parts")}
+    with duckdb.connect(str(paths["parts"])) as connection:
+        first_month = 'SELECT min("생산계획년월") FROM raw_data.core_data'
+        for product, value, first in (
+            ("%PRODUCT_A", f"{SENTINEL}CU-A", f" {SENTINEL.lower()}cu-a "),
+            ("%PRODUCT_B", f"{SENTINEL}CU-B", f"{SENTINEL}CU-C"),
+        ):
+            connection.execute(
+                'UPDATE raw_data.core_data SET "CUSTOM" = ? WHERE "제품정보" LIKE ?',
+                [value, product],
+            )
+            connection.execute(
+                'UPDATE raw_data.core_data SET "CUSTOM" = ? WHERE "제품정보" LIKE ? '
+                f'AND "생산계획년월" = ({first_month})',
+                [first, product],
+            )
+        assert connection.execute(
+            'SELECT DISTINCT "CUSTOM" FROM rev_data.rq_pkg_plan'
+        ).fetchall() == [(CUSTOM_BLANK,)]
+
+    outputs = {}
+    for name, path in paths.items():
+        code, outputs[name] = _run(capsys, "--only", "legacy", "--database", str(path))
+        assert code == 0
+        _assert_no_leak(outputs[name])
+
+    blank, parts = outputs["blank"], outputs["parts"]
+    assert _summary_line(parts, "8-2K") == "- 8-2K 종류 3 · 충돌 0 · Capa둘이상 1"
+    assert _summary_line(blank, "8-2K") == "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0"
+    plan_parts = _summary_line(parts, "8-2P").split(" · ", 1)
+    plan_blank = _summary_line(blank, "8-2P").split(" · ", 1)
+    assert (plan_parts[0], plan_blank[0]) == ("- 8-2P 종류 3", "- 8-2P 종류 1")
+    assert plan_parts[1] == plan_blank[1]
+    assert (
+        "- 원천 CUSTOM 종류 3(Capa Code 가 빈 행 뺌) · Capa Code 하나에 CUSTOM 이 둘 이상인 부품 1"
+        in parts
+    )
+
+    def without_heads(output: str, path: Path) -> list[str]:
+        heads = ("- 8-2P ", "- 8-2K ", "- 원천 CUSTOM 종류 ")
+        text = output.replace(str(path), "<db>")
+        return [line for line in text.splitlines() if not line.startswith(heads)]
+
+    assert without_heads(parts, paths["parts"]) == without_heads(blank, paths["blank"])
+
+
+def test_source_custom_counts_skip_blank_codes_and_fold_spellings() -> None:
+    """종류는 Capa Code 가 빈 행을 빼고 `normalize_custom_values` 로 센다 — 빈 값은 표지 하나, 앞뒤
+    공백 · 대소문자만 다른 것은 하나. 둘 이상은 빈 값이 아닌 CUSTOM 이 갈린 Capa Code 수다."""
+    raw = pd.DataFrame(
+        {
+            "Capa Code": ["K1", "K1", "K2", "K2", "K3", " ", None],
+            "CUSTOM": ["A", " a ", "B", "B2", None, "C", "D"],
+        }
+    )
+
+    assert checks.source_custom_counts(raw) == checks.SourceCustom(kinds=4, split_codes=1)
+    assert checks.source_custom_counts(raw.drop(columns="Capa Code")) == checks.SourceCustom(
+        kinds=6
+    )
+    assert checks.source_custom_counts(raw.drop(columns="CUSTOM")) == checks.SourceCustom()
+
+
+def test_dummy_series_rows_follow_the_app_list_and_count_the_spellings_it_misses() -> None:
+    """Dummy 계열은 HOME 집계와 같은 목록 · 게이트로 센다(제품타입이 빈 행은 이름으로). dummy 꼴
+    (대소문자 · 공백 · 밑줄 · 붙임표 무시)인데 앱이 보지 않은 행은 `못봄` 이고, EDP-TSV 의 「Dummy」
+    이름 행만 뺀다."""
+    core = pd.DataFrame(
+        {
+            "제품타입": ["HBM", "", "HBM", "HBM", "HBM", "EDP-TSV", "EDP-TSV", "DEMO"],
+            "WF 구분": [
+                "DUMMY",
+                "Dummy",
+                "Top_Dummy",
+                "Top Dummy",
+                "top-dummy",
+                "Dummy",
+                "Top_Dummy",
+                "Core",
+            ],
+        }
+    )
+
+    assert checks.dummy_series_rows(core) == checks.DummyRows(dummy=2, top_dummy=1, unrecognized=3)
+
+
+def test_dummy_rows_of_the_source_reach_the_plan_row_line(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """원천의 Dummy · Top_Dummy 행과 앱 목록 밖 표기(`TOP DUMMY` — 공백) 행이 요약 `8-2P` 의
+    `D` · `T` · `못봄` 칸에 행 수로 선다. 이름은 계약 어휘만 찍는다."""
+    path = _seed_copy(simulation_db, tmp_path, "dummy")
+    picks = (
+        ("%PRODUCT_A", "min", "Dummy", "HBM"),
+        ("%PRODUCT_B", "min", "Top_Dummy", "HBM"),
+        ("%PRODUCT_B", "max", "TOP DUMMY", None),
+    )
+    counts = []
+    with duckdb.connect(str(path)) as connection:
+        for product, edge, division, product_type in picks:
+            where = (
+                f'"제품정보" LIKE ? AND "생산계획년월" = (SELECT {edge}("생산계획년월") '
+                "FROM raw_data.core_data)"
+            )
+            row = connection.execute(
+                f"SELECT count(*) FROM raw_data.core_data WHERE {where}", [product]
+            ).fetchone()
+            assert row is not None and row[0] > 0
+            counts.append(int(row[0]))
+            connection.execute(
+                f'UPDATE raw_data.core_data SET "WF 구분" = ?, '
+                f'"제품타입" = coalesce(?, "제품타입") WHERE {where}',
+                [division, product_type, product],
+            )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert not _self_check_pattern().search(_summary_line(output, "8-2P"))
+    dummy, top, missed = counts
+    assert _summary_line(output, "8-2P").endswith(f" · D {dummy} · T {top} · 못봄 {missed}")
+    assert (
+        f"- `WF 구분` Dummy 계열(앱 목록) — Dummy {dummy}행 · Top_Dummy {top}행 · dummy 꼴인데 "
+        f"앱이 Dummy 계열로 보지 않은 행 {missed}(EDP 의 Dummy 이름 행 뺌)"
+    ) in output
+
+
+def test_the_conflict_line_puts_out_of_key_groups_before_the_rest(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """요약 `8-2K` 의 충돌은 리비전에 맞춘 원천을 등록과 같은 길로 다시 파생해 센 묶음이고, 키밖
+    (업무 키 밖 구분 칸 하나로 갈림)과 그 밖(재적재 등)을 그 차례로 둔다.
+
+    제품 A 의 첫 달 행은 Capa Code 를 새로 달고 `구분_Chip` 을 두 배로 — `RQ_CHIP_QTY` ·
+    `RQ_CHIP_EQ` 에서 한 묶음씩 Capa Code 로 갈린다(키밖 2). 제품 B 의 한 행은 `Net Die` 만 바꿔
+    같은 코드 안에서 갈린다(`RQ_CHIP_QTY` 그 밖 1). 두 수가 달라 칸이 뒤바뀌면 드러난다."""
+    path = _seed_copy(simulation_db, tmp_path, "conflicts")
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "Capa Code" = "Capa Code" || \'X\', '
+            '"구분_Chip" = "구분_Chip" * 2 WHERE "제품정보" LIKE \'%PRODUCT_A\' AND '
+            '"생산계획년월" = (SELECT min("생산계획년월") FROM raw_data.core_data)'
+        )
+        connection.execute(
+            'UPDATE raw_data.core_data SET "Net Die" = "Net Die" + 1 WHERE source_row_no = ('
+            "SELECT min(source_row_no) FROM raw_data.core_data "
+            "WHERE \"제품정보\" LIKE '%PRODUCT_B')"
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        _summary_line(output, "8-2K") == "- 8-2K 종류 1 · 충돌 3 = 키밖 2 + 그밖 1 · Capa둘이상 0"
+    )
+    assert checks.check_transcript(_summary(output)) == []
+    assert "- 업무 키 충돌 3묶음 — 키밖 2 · 그 밖 1" in output
+    assert "| `RQ_CHIP_QTY` | 2 | 1 | 1 | " in output
+    assert "| `RQ_CHIP_EQ` | 1 | 1 | 0 | " in output
+
+
+def test_the_plan_row_and_conflict_lines_stay_short_and_check_at_real_widths() -> None:
+    """손으로 옮기는 줄이라 실데이터 꼴의 큰 수(여섯 자리 행 수 · 두 해 넘는 달)에서도 확인 코드까지
+    90 자 안이고, 확인 코드 · 줄 안 식이 다시 셈과 맞는다. 원천 `WF수(매)` 가 빈 꼴도 같다."""
+    wide = checks.PlanRowNote(
+        custom=checks.SourceCustom(kinds=2),
+        home=checks.SameMonths(same=36, months=36),
+        total=checks.SameMonths(same=36, months=36),
+        dummy=checks.DummyRows(dummy=123_456, top_dummy=12_345, unrecognized=0),
+        mismatch=0,
+        largest=0.0005,
+        off=0,
+    )
+    notes = [
+        wide.line(),
+        replace(wide, mismatch=None).line(),
+        checks.custom_key_note(checks.SourceCustom(kinds=2, split_codes=0), 12_345, (12_000, 345)),
+        checks.custom_key_note(checks.SourceCustom(kinds=1), 0, None),
+    ]
+    lines = [line for line in checks.summary_lines(notes) if line.startswith("- 8-2")]
+
+    assert len(lines) == 4
+    assert max(len(line) for line in lines) <= 90, lines
+    assert checks.check_transcript(lines) == []
+    assert _uncoded(lines) == [
+        "- 8-2P 종류 2 · 불일치 0 · 달 0.05% · 넘음 0 · G 36/36 · 총 36/36 · D 123,456 · T 12,345 "
+        "· 못봄 0",
+        "- 8-2P 종류 2 · 빔 · G 36/36 · 총 36/36 · D 123,456 · T 12,345 · 못봄 0",
+        "- 8-2K 종류 2 · 충돌 12,345 = 키밖 12,000 + 그밖 345 · Capa둘이상 0",
+        "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0",
+    ]
+
+
+def _month_comparison(*rows: tuple[float | None, float | None, bool]) -> pd.DataFrame:
+    """(기존값, 신규값, 값 불일치) 줄로 지은, 키가 생산계획년월 하나인 `compare_metric` 꼴."""
+    frame = _route_comparison(*(("-", legacy, fresh, mismatch) for legacy, fresh, mismatch in rows))
+    months = [str(202601 + offset) for offset in range(len(rows))]
+    return frame.drop(columns="WF 구분").assign(생산계획년월=months)
+
+
+def test_months_off_counts_every_month_outside_the_tolerance() -> None:
+    """`넘음` 은 ±0.1% 안에 들지 못한 달 수다 — 한쪽에만 있는 달 · 접지 못한 달 · 원천 0 인데 앱이
+    있는 달도 넘고, 두 쪽 모두 0 인 달은 든다. 허용 오차는 넘겨받는다."""
+    monthly = _month_comparison(
+        (100.0, 100.0, False),
+        (100.0, 100.05, False),
+        (0.0, 0.0, False),
+        (100.0, 101.0, False),
+        (None, 50.0, False),
+        (50.0, None, False),
+        (0.0, 5.0, False),
+        (100.0, 100.0, True),
+    )
+
+    assert checks.months_off(monthly) == 5
+    assert checks.months_off(monthly, tolerance=0.02) == 4
+    assert checks.months_off(monthly.iloc[:3]) == 0
+    assert checks.months_off(monthly.iloc[0:0]) == 0
+
+
+def test_same_months_counts_equal_months_over_the_union_of_both_sides() -> None:
+    """`G` · `총` 은 두 달 합이 같은 달 수 / 두 쪽 달의 합집합 수다 — 값이 다른 달과 한쪽에만 있는
+    달은 같지 않고, 더한 차례에 따른 반올림만 다르면 같다."""
+    left = pd.Series({"202601": 0.1 + 0.2, "202602": 2.0, "202603": 3.0})
+    right = pd.Series({"202601": 0.3, "202602": 2.5, "202604": 4.0})
+
+    assert checks.same_months(left, right) == checks.SameMonths(same=1, months=4)
+    assert checks.same_months(left, right).cell("G") == "G 1/4"
+    assert checks.same_months(left, left) == checks.SameMonths(same=3, months=3)
+    empty = pd.Series(dtype="float64")
+    assert checks.same_months(empty, empty) == checks.SameMonths(same=0, months=0)
+
+
+def _seed_variant(path: Path, change: Callable[[pd.DataFrame], pd.DataFrame]) -> Path:
+    """내장 합성 시드 원천을 `change` 로 고쳐 앱과 같은 길(파생 → 리비전 1 → 공식)로 등록하고 이름을
+    표지값으로 바꾼 DB — 원천과 리비전 표가 함께 바뀐다. 모듈 범위 `simulation_db` 는 건드리지
+    않는다."""
+    frame = change(builtin_seed.build_builtin_core_data())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(builtin_seed, "build_builtin_core_data", lambda: frame.copy())
+        prepared = builtin_seed.build_builtin_seed_dataset()
+        assert prepared.reference_conflicts.empty
+        patch.setattr(application_bootstrap, "build_builtin_seed_dataset", lambda: prepared)
+        path.parent.mkdir(parents=True)
+        repository = DuckDBScenarioRepository(path)
+        repository.initialize()
+        assert ensure_initial_scenario(repository).status == "created_builtin_seed"
+    _plant_sentinels(path)
+    return path
+
+
+def _product_rows(frame: pd.DataFrame, product: str) -> pd.Series:
+    return frame["제품정보"].astype("string").str.endswith(product).fillna(False).astype(bool)
+
+
+def _with_divisions(
+    frame: pd.DataFrame, product: str, product_type: str, divisions: Sequence[str]
+) -> pd.DataFrame:
+    """`product` 로 끝나는 제품의 행(계획 행 · 경로 행)을 `product_type` 으로 바꾸고, 그 행을
+    `WF 구분` 만 `divisions` 로 바꿔 하나씩 더 싣는다 — 원천처럼 계획 줄마다 `WF 구분` 줄이
+    여럿이다."""
+    chosen = _product_rows(frame, product)
+    changed = frame.copy()
+    changed.loc[chosen, "제품타입"] = product_type
+    copies = [changed.loc[chosen].assign(**{"WF 구분": division}) for division in divisions]
+    return pd.concat([changed, *copies], ignore_index=True)
+
+
+def _set_source_wafers(path: Path, values: Sequence[tuple[int, float]]) -> None:
+    """(파생 프레임 행 번호, 값) 마다 원천 행 `WF수(매)` 를 고친다 — 파생 행 번호는 원천 행
+    차례다."""
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "WF수(매)" = ? WHERE source_row_no = ?',
+            [[value, row_numbers[index]] for index, value in values],
+        )
+
+
+def _source_of(path: Path) -> checks.SourceData:
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    return source
+
+
+def _app_wafer(source: checks.SourceData) -> pd.DataFrame:
+    tables = source.tables
+    return calculate_wafer_load(tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
+
+
+def _plant_plan_row_wafers(path: Path) -> int:
+    """계획 행(계획기초정보여부 Y · 공정 빈)의 `WF수(매)` 를 앱 Wafer 부하량(같은 계획 줄 × WF
+    구분 — `COMPARISON_KEYS`)으로 다시 싣는다 — 원천 계획 행 집계와 앱 계산이 같은 표본. 시드 원천
+    값은 수율을 나누지 않아 앱 값과 늘 달라 `넘음 0` 을 만들지 못한다. 돌려주는 것은 다시 실은 행
+    수."""
+    source = _source_of(path)
+    wafer = _app_wafer(source)
+    keys = list(COMPARISON_KEYS)
+    loads = (
+        _keyed(wafer, keys)
+        .assign(물량=pd.to_numeric(wafer["물량"]).to_numpy())
+        .groupby(keys, as_index=False)["물량"]
+        .sum()
+    )
+    plan_rows = plan_row_frame(build_q_core_data(source.raw, load_core_data_contract()))
+    merged = (
+        _keyed(plan_rows, keys)
+        .assign(_행=plan_rows.index)
+        .merge(loads, on=keys, how="inner", validate="one_to_one")
+    )
+    assert len(merged) == len(plan_rows)
+    _set_source_wafers(
+        path,
+        [(int(row), float(load)) for row, load in zip(merged["_행"], merged["물량"], strict=True)],
+    )
+    return len(merged)
+
+
+def _hbm_dummy_and_edp_source(frame: pd.DataFrame) -> pd.DataFrame:
+    """제품 A 는 HBM 으로 `Dummy` · `Top_Dummy` 줄을 더 싣고, 제품 B 는 EDP-TSV 로 — 달 대조의 두
+    빼기(Dummy 계열 · EDP)와 환산 두 기준(HOME 집계 · 총량)이 갈리는 표본."""
+    hbm = _with_divisions(frame, "PRODUCT_A", HBM_PRODUCT_TYPE, ["Dummy", TOP_DUMMY_DIVISION])
+    hbm.loc[_product_rows(hbm, "PRODUCT_B"), "제품타입"] = EDP_PRODUCT_TYPE
+    return hbm
+
+
+def _division_count(path: Path, division: str) -> int:
+    with duckdb.connect(str(path), read_only=True) as connection:
+        row = connection.execute(
+            'SELECT count(*) FROM raw_data.core_data WHERE "WF 구분" = ?', [division]
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def test_the_plan_row_line_sums_months_without_dummy_series_and_edp_on_both_sides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사용자 요청 F · 답 Q8 ② — 원천과 리비전에 HBM `Dummy` · `Top_Dummy` 줄과 EDP-TSV 제품이 함께
+    있고 계획 행 값이 앱 Wafer 부하량과 같으면 요약 `8-2P` 는 `달 0.00% · 넘음 0` 이다(달 대조가 두
+    쪽 모두 Dummy 계열과 EDP 를 뺀다 — 한쪽만 빼면 모든 달이 넘는다). 총량 ≠ HOME 집계인 표본에서
+    `G` · `총` 은 모든 달이 같다(환산 「HOME 집계 기준」 은 HOME Wafer 계획과, 「산출 기준 총량」 은
+    신규 Wafer 부하량 합과). 한 계획 행을 1% 틀면 그 달 하나만 넘는다."""
+    path = _seed_variant(tmp_path / "dummy" / "capa_simulation.duckdb", _hbm_dummy_and_edp_source)
+    _plant_plan_row_wafers(path)
+    wafer = _app_wafer(_source_of(path))
+    total = checks._monthly_sums(wafer)
+    home = checks._monthly_sums(home_aggregation_wafer_load(wafer))
+    # 표본이 설계대로인지 — 달마다 총량과 HOME 집계가 다르고, 앱 Wafer 에 EDP 행이 있다.
+    months = len(total)
+    assert months > 1 and set(total.index) == set(home.index)
+    assert all(abs(total[month] - home[month]) > 1 for month in total.index)
+    assert checks._edp_rows(wafer).any()
+    dummy, top = _division_count(path, "Dummy"), _division_count(path, TOP_DUMMY_DIVISION)
+    assert dummy > 0 and top > 0
+    nudged = tmp_path / "nudged" / "capa_simulation.duckdb"
+    nudged.parent.mkdir()
+    shutil.copyfile(path, nudged)
+    with duckdb.connect(str(nudged)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "WF수(매)" = "WF수(매)" * 1.01 WHERE source_row_no = ('
+            "SELECT min(source_row_no) FROM raw_data.core_data WHERE "
+            "\"계획기초정보여부\" = 'Y' AND coalesce(trim(\"공정\"), '') = '' "
+            "AND \"WF 구분\" = 'Core')"
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+    nudged_code, nudged_output = _run(capsys, "--only", "legacy", "--database", str(nudged))
+
+    assert (code, nudged_code) == (0, 0)
+    _assert_no_leak(output)
+    tail = f"G {months}/{months} · 총 {months}/{months} · D {dummy} · T {top} · 못봄 0"
+    assert _summary_line(output, "8-2P") == f"- 8-2P 종류 1 · 불일치 0 · 달 0.00% · 넘음 0 · {tail}"
+    assert _summary_line(nudged_output, "8-2P") == (
+        f"- 8-2P 종류 1 · 불일치 0 · 달 0.99% · 넘음 1 · {tail}"
+    )
+    assert f"- 달 비 — 달 {months} 가운데 ±0.1% 안에 들지 못한 달 0(" in output
+    assert checks.check_transcript(_summary(nudged_output)) == []
+
+
+def test_the_route_key_label_counts_the_route_keys() -> None:
+    """경로 키로 맞댄 대조의 이름은 `RQ_REQB` 업무 키(`REQB_COLUMNS`)의 칸 수를 따른다 — CUSTOM 이
+    키가 되며 13 이 14 가 됐다. 스크립트에 수를 박은 「경로 키 n」 글은 남지 않는다."""
+    source = (PROJECT_ROOT / "scripts" / "inspect_real_data_checks.py").read_text(encoding="utf-8")
+
+    assert checks.ROUTE_KEY_LABEL == f"경로 키 {len(REQB_COLUMNS)}"
+    assert "CUSTOM" in REQB_COLUMNS
+    assert re.findall(r"경로 키 \d+", source) == []
+
+
+def _route_comparison(*rows: tuple[str, float | None, float | None, bool]) -> pd.DataFrame:
+    """(WF 구분, 기존값, 신규값, 값 불일치) 줄로 지은 `compare_metric` 꼴의 합성 결과."""
+    frame = pd.DataFrame(rows, columns=["WF 구분", "기존값", "신규값", "값 불일치"])
+    frame["기존값"] = pd.to_numeric(frame["기존값"])
+    frame["신규값"] = pd.to_numeric(frame["신규값"])
+    frame["차이"] = frame["신규값"] - frame["기존값"]
+    denominator = frame["기존값"].abs()
+    frame["차이율"] = (frame["차이"].abs() / denominator).where(denominator.gt(0))
+    return frame
+
+
+def test_the_route_exception_line_counts_each_wf_division_within_a_tenth_of_a_percent() -> None:
+    """`8-2E` — 선언 공정의 WF 경로 키를 `Core` · `Top_Dummy` · 그 밖으로 가르고 ±0.1% 안에 든
+    키를 센다. 두 쪽 모두 0 인 Top_Dummy 키는 들고, 한쪽에만 있는 키(바탕 없음으로 신규에서 빠진
+    Core 줄)와 접지 못한 키는 들지 못한다. `Top비` 는 그 밖 가운데 Top 키의 기존 ÷ 신규 중앙이다.
+    `WF 구분` 은 대소문자를 가리지 않는다."""
+    comparison = _route_comparison(
+        ("Core", 100.0, 100.0, False),
+        ("CORE", 100.0, 100.05, False),
+        ("Core", 100.0, 101.0, False),
+        ("Core", 100.0, None, False),
+        ("TOP_DUMMY", 0.0, 0.0, False),
+        ("Top_Dummy", 5.0, 0.0, False),
+        ("Buffer", 50.0, 50.0, False),
+        ("Buffer", None, 50.0, True),
+        ("DUMMY", 10.0, 10.0, False),
+        ("TOP", 30.0, 30.0, False),
+        ("Top", 31.0, 30.0, False),
+        ("Top", 20.0, 20.0, False),
+    )
+
+    note = checks.route_exception_note(comparison, 2)
+
+    assert note.line() == "- 8-2E 선언 2 · Core 2/4 · TD0 1/2 · 그밖 4/6 · Top비 1.000(3)"
+    assert checks._route_exception_rows(comparison) == [
+        ["`Core`", "4", "2", "1", "0", "0"],
+        ["`Top_Dummy`", "2", "1", "0", "0", "0"],
+        ["그 밖", "6", "4", "0", "0", "1"],
+        ["그 밖 가운데 `Top`", "3", "2", "0", "0", "0"],
+    ]
+    empty = checks.route_exception_note(comparison.iloc[0:0], 1)
+    assert empty.line() == "- 8-2E 선언 1 · Core 0/0 · TD0 0/0 · 그밖 0/0 · Top비 -(0)"
+
+
+def test_the_route_exception_line_stays_short_and_checks_at_real_widths() -> None:
+    """손으로 옮기는 줄이라 실데이터 꼴의 네 자리 키 수에서도 확인 코드까지 90 자 안이고, 확인
+    코드가 다시 셈과 맞으며 줄 안 식(` = `)이 없다. 선언이 없거나 멈춘 꼴도 같다."""
+    wide = checks.RouteExceptionNote(
+        declared=1,
+        core=checks.KeyAgreement(within=9_998, keys=9_999),
+        top_dummy=checks.KeyAgreement(within=9_999, keys=9_999),
+        other=checks.KeyAgreement(within=9_997, keys=9_999),
+        top_ratio=1.0004,
+        top_keys=9_999,
+    )
+    notes = [
+        wide.line(),
+        checks._note("8-2E", "선언 없음"),
+        checks._note("8-2E", "선언 1", "빔"),
+        checks._note("8-2E", "선언 1", "실패(KeyError)"),
+    ]
+    lines = [line for line in checks.summary_lines(notes) if line.startswith("- 8-2E")]
+
+    assert len(lines) == 4
+    assert max(len(line) for line in lines) <= 90, lines
+    assert checks.check_transcript(lines) == []
+    assert not any(" = " in line for line in lines)
+    assert _uncoded(lines)[0] == (
+        "- 8-2E 선언 1 · Core 9,998/9,999 · TD0 9,999/9,999 · 그밖 9,997/9,999 · Top비 1.000(9,999)"
+    )
+
+
+def _plant_declared_route_wafers(path: Path, declaration: dict[str, str]) -> int:
+    """선언 공정의 소요기준 WF 경로 행 `WF수(매)` 를 선언을 건 신규 `부하량` 으로 다시 싣는다(같은
+    계획 줄 × WF 구분). 신규 쪽에 없는 줄(바탕 없음으로 빠진 Core)은 그대로 둔다. 돌려주는 것은
+    다시 실은 원천 행 수."""
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    core = build_q_core_data(source.raw, load_core_data_contract())
+    required = checks._required_equipment(source.tables, route_exceptions=declaration)
+    plan = [key for key in LOAD_KEYS if key != "소요기준"]
+    wafer = required.loc[route_load_targets(required, declaration)]
+    loads = _keyed(wafer, plan).assign(부하량=wafer["부하량"].to_numpy()).drop_duplicates(plan)
+    routes = core.loc[core["Area_Name"].notna()]
+    routes = routes.loc[route_load_targets(routes, declaration)]
+    merged = _keyed(routes, plan).assign(_행=routes.index).merge(loads, on=plan, how="inner")
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "WF수(매)" = ? WHERE source_row_no = ?',
+            [
+                [float(load), row_numbers[int(index)]]
+                for index, load in zip(merged["_행"], merged["부하량"], strict=True)
+            ],
+        )
+    return len(merged)
+
+
+def _nudge_one_route_wafer(path: Path, process: str, division: str) -> None:
+    """선언 공정의 그 `WF 구분` 경로 행 하나(가장 이른 달)의 `WF수(매)` 를 1% 키운다."""
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "WF수(매)" = "WF수(매)" * 1.01 WHERE source_row_no = ('
+            'SELECT min(source_row_no) FROM raw_data.core_data WHERE "공정" = ? '
+            'AND "WF 구분" = ? AND "생산계획년월" = ('
+            'SELECT min("생산계획년월") FROM raw_data.core_data WHERE "공정" = ?))',
+            [process, division, process],
+        )
+
+
+def _touching_declaration() -> dict[str, str]:
+    """시드 선언을 이 DB 의 표지값 붙은 공정 이름으로 — 시드의 WF 경로에 실제로 닿는다."""
+    prefix = RENAMED_COLUMNS["공정"]
+    return {f"{prefix}{process}": formula for process, formula in seed_route_declaration().items()}
+
+
+def test_the_route_exception_block_follows_the_source_formula_on_the_declared_routes(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사용자 요청 E · 답 Q8 ③ — 선언 공정의 WF 경로를 원천 `WF수(매)` 와 선언을 건 신규
+    `부하량` 으로 맞댄다. 원천 경로 값을 신규 값으로 실으면 그 밖(시드의 Base)이 들고 한 키를 1%
+    틀면 그 키만 빠진다. 시드에는 Buffer 가 없어 선언 공정의 Core 줄이 바탕 없음으로 신규에서
+    빠지므로 Core 는 모두 `기존에만` 이다. 공정 이름은 찍지 않는다."""
+    declaration = _touching_declaration()
+    (process,) = declaration
+    target = tmp_path / "declared" / "capa_simulation.duckdb"
+    target.parent.mkdir()
+    path = database_with_route_exceptions(simulation_db, target, declaration)
+    assert _plant_declared_route_wafers(path, declaration) == 12
+    _nudge_one_route_wafer(path, process, "Base")
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        _summary_line(output, "8-2E")
+        == "- 8-2E 선언 1 · Core 0/12 · TD0 0/0 · 그밖 11/12 · Top비 -(0)"
+    )
+    assert "| `Core` | 12 | 0 | 12 | 0 | 0 |" in output
+    assert "| 그 밖 | 12 | 11 | 0 | 0 | 0 |" in output
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def _buffer_and_second_wf_process_source(frame: pd.DataFrame) -> pd.DataFrame:
+    """제품 A 는 HBM 으로 `Buffer` · `Top_Dummy` 줄을 더 싣고(선언 공정의 Core 줄이 바탕을 얻는다),
+    소요기준이 WF 가 아닌 공정 하나를 WF 로 — 선언 밖에도 소요기준 WF 경로가 있는 표본."""
+    hbm = _with_divisions(
+        frame, "PRODUCT_A", HBM_PRODUCT_TYPE, [BUFFER_DIVISION, TOP_DUMMY_DIVISION]
+    )
+    basis = hbm["소요기준"].astype("string").str.strip().str.upper()
+    process = hbm["공정"].astype("string")
+    (other, *_) = sorted(set(process.loc[basis.ne("WF").fillna(False)].dropna()))
+    hbm.loc[process.eq(other).fillna(False).astype(bool), "소요기준"] = "WF"
+    return hbm
+
+
+def test_the_route_exception_block_reads_only_the_declared_process_where_core_has_a_buffer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """선언 공정에 Buffer 줄이 있으면 Core 줄이 바탕(Buffer Wafer × Core 구분_Chip)을 얻어 신규에
+    서고 Top_Dummy 는 0 이다 — 원천 경로 값을 신규 값으로 실으면 `Core` · `TD0` · 그 밖(Buffer ·
+    시드의 Base)이 모두 든다. 선언 밖 공정의 소요기준 WF 경로는 원천 쪽에서도 빠진다 — 섞이면 그
+    키가 `기존에만` 으로 무리의 수를 부풀린다."""
+    declaration = _touching_declaration()
+    seeded = _seed_variant(
+        tmp_path / "seed" / "capa_simulation.duckdb", _buffer_and_second_wf_process_source
+    )
+    target = tmp_path / "declared" / "capa_simulation.duckdb"
+    target.parent.mkdir()
+    path = database_with_route_exceptions(seeded, target, declaration)
+    reqb = _source_of(path).tables["RQ_REQB"]
+    declared = route_load_targets(reqb, declaration)
+    wafer_routes = reqb["소요기준"].astype("string").str.strip().str.upper().eq("WF")
+    # 표본이 설계대로인지 — 선언 밖 공정에도 소요기준 WF 경로가 있고, 선언 경로에 세 무리가 있다.
+    assert (wafer_routes & ~declared).fillna(False).astype(bool).any()
+    divisions = reqb.loc[declared, "WF 구분"].astype("string").str.casefold().value_counts()
+    core, top_dummy = int(divisions["core"]), int(divisions[TOP_DUMMY_DIVISION.casefold()])
+    other = int(divisions.sum()) - core - top_dummy
+    assert min(core, top_dummy, int(divisions[BUFFER_DIVISION.casefold()])) > 0
+    assert _plant_declared_route_wafers(path, declaration) == int(divisions.sum())
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert _summary_line(output, "8-2E") == (
+        f"- 8-2E 선언 1 · Core {core}/{core} · TD0 {top_dummy}/{top_dummy} · 그밖 {other}/{other}"
+        " · Top비 -(0)"
+    )
+    assert f"| `Core` | {core} | {core} | 0 | 0 | 0 |" in output
+    assert f"| `Top_Dummy` | {top_dummy} | {top_dummy} | 0 | 0 | 0 |" in output
+    assert f"| 그 밖 | {other} | {other} | 0 | 0 | 0 |" in output
+    assert checks.check_transcript(_summary(output)) == []
 
 
 def test_raw_columns_rejoin_the_derived_frame_by_row_number_after_a_drop() -> None:
@@ -1253,7 +1959,9 @@ def _six_three_a(path: Path, dataset_id: str) -> tuple[str, str]:
     없으면 `-`). 꼴 이름은 6-3 a 갈래 표 `꼴` 칸의 글자다."""
     with duckdb.connect(str(path), read_only=True) as connection:
         revision = _revision_one_row(connection, dataset_id)
-        outcome = revisions_script.inspect_revision(connection, revision)
+        outcome = revisions_script.inspect_revision(
+            connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
     assert outcome.status == revisions_script.STOPPED
     shape = "-" if outcome.problem is None else outcome.problem.label
     return f"S{revision.scenario_no} r{revision.revision_no}", shape
@@ -1937,7 +2645,7 @@ def _detail_rows(
     code: str, rows: int, version: int, *, first: int = 0, lines: int = 4
 ) -> list[dict[str, object]]:
     """상세 SQL 이 돌려줄 행 — 경로 `first` 부터 `rows` 개. 계획 줄 키는 `제품정보` 로 `lines` 개로
-    갈리고 경로 키 13 은 행마다 다르다. 이름은 표지값이다."""
+    갈리고 경로 키는 행마다 다르다. 이름은 표지값이다."""
     return [
         {
             "시뮬레이션 ID": code,
@@ -1945,6 +2653,7 @@ def _detail_rows(
             "CS": "MP",
             "제품정보": f"{SENTINEL}P{index % lines}",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "Capa Code": f"{SENTINEL}CAPA",
             "Customer": f"{SENTINEL}CUST",
             "Pack Code": f"{SENTINEL}PK",
@@ -2489,6 +3198,7 @@ def _day(
             "CS": "MP",
             "제품정보": f"{SENTINEL}P{line}",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "Capa Code": f"{SENTINEL}CAPA",
             "Customer": f"{SENTINEL}CUST",
             "Pack Code": f"{SENTINEL}{pack}",
@@ -3096,7 +3806,8 @@ def _plant_census(simulation: Path, equipment: Path) -> None:
         one("rq_eqp_lent", '"설비대여평가" = NULL', 202608, rows=2)
         connection.execute(
             "INSERT INTO rev_data.rq_yld SELECT revision_id, source_row_no + 100000, "
-            '"생산계획년월", "제품정보", "Stack", upper("WF 구분"), "EDS_수율", "BE_수율" '
+            '"생산계획년월", "제품정보", "Stack", upper("WF 구분"), "EDS_수율", "BE_수율", '
+            '"CUSTOM" '
             'FROM rev_data.rq_yld WHERE "WF 구분" = \'Core\' AND "생산계획년월" = 202609 '
             "ORDER BY source_row_no LIMIT 1"
         )
@@ -3462,6 +4173,136 @@ def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
     assert not [line for line in _summary(output) if pattern.search(line)]
 
 
+def _without_timings(output: str) -> list[str]:
+    """`걸린 시간` 줄을 뗀 출력 줄 — 같은 표를 두 번 잰 출력을 견준다."""
+    return [line for line in output.splitlines() if not line.startswith("- 걸린 시간 ")]
+
+
+def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
+    simulation_db: Path, equipment_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 사본(CUSTOM 칸 · 0039 기록 없음)도 마이그레이션하지 않고 읽는다 — 리비전 표는
+    0039 와 같은 뜻으로 채우고(8-2 · 8-3 계산 · 8-10T · 8-11 · 8-12) 손 SQL(8-10 C8 · C9 · 8-12
+    목록)은 CUSTOM 조건 없이 맞대, 블록 앞 `사본 0039 전` 한 줄과 마이그레이션 번호(8-1 줄 ·
+    요약 `8-1`) 말고는 0039 뒤 사본과 출력이 같다. 채우지 않으면 대조 · 소요대수가 「컬럼
+    없음(CUSTOM)」 으로, 손 SQL 이 `BinderException` 으로 멈춘다."""
+    before = database_before_custom(simulation_db, tmp_path / "capa_simulation.duckdb")
+    digest = _md5(before)
+    arguments = ("--equipment-database", str(equipment_db))
+
+    code, old = _run(capsys, "--database", str(before), *arguments)
+    _, new = _run(capsys, "--database", str(simulation_db), *arguments)
+
+    assert code == 0
+    assert _md5(before) == digest
+    _assert_no_leak(old)
+    marker = (
+        "- 사본 0039 전 — 시뮬레이션 마이그레이션 최고 38 · 리비전 표의 CUSTOM 키 표는 0039 와 "
+        "같이 모든 행을 빈 값 표지(`-`)로 채워 읽고, 손 SQL 은 CUSTOM 조건 없이 맞댔다(사본은 "
+        "고치지 않는다)"
+    )
+    old_lines = _without_timings(old)
+    assert old_lines.count(marker) == 1
+    at = old_lines.index(marker)
+    # 블록 앞 한 줄 — 빈 줄 하나를 두고 첫 블록 머리가 선다.
+    assert old_lines[at + 1] == "" and old_lines[at + 2].startswith("### 8-1.")
+    assert "사본 0039 전" not in new
+    assert not _self_check_pattern().search(marker)
+    assert all("사본 0039 전" not in line for line in _summary(old))
+    moved = ("- 시뮬레이션 DB `", "- 8-1 S ")
+    old_moved = [line for line in old_lines if line.startswith(moved)]
+    code_max = max(migration.version for migration in load_migrations())
+    assert f"(최고 38 · 코드 {code_max}, **코드보다 낮다** — 사본이라" in old_moved[0]
+    assert old_moved[1].startswith(f"- 8-1 S 38/{code_max} · ")
+    rest = [*old_lines[:at], *old_lines[at + 2 :]]
+    assert [line for line in rest if not line.startswith(moved)] == [
+        line for line in _without_timings(new) if not line.startswith(moved)
+    ]
+
+
+def test_the_session_reads_the_copy_declaration_once_and_a_copy_without_the_table_is_empty(
+    simulation_db: Path, tmp_path: Path
+) -> None:
+    """소요대수를 셈하는 블록은 사본의 지금 부하 예외 선언을 나눠 쓴다(`Session.route_exceptions` —
+    같은 `read_only` 연결로 한 번 읽음). 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언이다."""
+    declaration = seed_route_declaration()
+    declared = database_with_route_exceptions(
+        simulation_db, tmp_path / "declared.duckdb", declaration
+    )
+    before = database_before_route_exceptions(simulation_db, tmp_path / "before.duckdb")
+    for path, expected, missing in ((declared, declaration, False), (before, {}, True)):
+        session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+        with duckdb.connect(str(path), read_only=True) as connection:
+            session.simulation = connection
+            assert dict(session.route_exceptions()) == expected
+            assert (session.route_state() is None) is missing
+            session.simulation = None
+            # 한 번 읽은 판을 나눠 쓴다 — 연결을 거둬도 다시 읽지 않는다.
+            assert dict(session.route_exceptions()) == expected
+
+
+def test_a_copy_before_the_declaration_table_counts_with_an_empty_declaration(
+    simulation_db: Path, equipment_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 뒤 · 0040 전 사본은 소요대수를 빈 선언으로 세고 블록 앞에 `사본 0040 전` 한 줄을 찍는다
+    — 그 줄 말고는 0040 뒤 사본과 출력이 같다."""
+    before = database_before_route_exceptions(simulation_db, tmp_path / "capa_simulation.duckdb")
+    arguments = ("--equipment-database", str(equipment_db), "--only", "legacy,reqb,blank")
+
+    code, old = _run(capsys, "--database", str(before), *arguments)
+    _, new = _run(capsys, "--database", str(simulation_db), *arguments)
+
+    assert code == 0
+    marker = (
+        f"- 사본 0040 전 — 시뮬레이션 마이그레이션 최고 {CUSTOM_MIGRATION} · 부하 예외 선언 표가 "
+        "없어 소요대수를 빈 선언으로 셈했다(사본은 고치지 않는다)"
+    )
+    old_lines = _without_timings(old)
+    assert old_lines.count(marker) == 1
+    at = old_lines.index(marker)
+    assert old_lines[at + 1] == ""
+    assert "사본 0040 전" not in new and "사본 0039 전" not in old
+    assert [*old_lines[:at], *old_lines[at + 2 :]] == _without_timings(new)
+
+
+def test_the_copy_declaration_is_named_only_by_count(
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """선언이 있는 사본은 블록 앞에 판 · 공정 수 한 줄을 찍고 공정 이름은 찍지 않는다 — 기존 결과
+    대조 · 소요대수 블록의 소요대수 계산은 모두 그 선언을 받는다."""
+    declaration = seed_route_declaration()
+    declared = database_with_route_exceptions(
+        simulation_db, tmp_path / "capa_simulation.duckdb", declaration
+    )
+    seen: list[dict[str, str]] = []
+    real = calculate_required_equipment
+
+    def spy(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        seen.append(dict(kwargs["route_exceptions"]))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(checks, "calculate_required_equipment", spy)
+    arguments = ("--equipment-database", str(equipment_db), "--only", "legacy,reqb")
+
+    code, with_declaration = _run(capsys, "--database", str(declared), *arguments)
+
+    assert code == 0
+    assert seen and all(item == declaration for item in seen)
+    _assert_no_leak(with_declaration)
+    assert not any(process in with_declaration for process in declaration)
+    marker = (
+        "- 부하 예외 선언 판 1 · 공정 1 — 소요대수를 그 선언으로 셈했다(앱과 같다 · 공정 이름은 "
+        "찍지 않는다)"
+    )
+    lines = _without_timings(with_declaration)
+    assert lines.count(marker) == 1
+    assert lines[lines.index(marker) + 1] == ""
+
+
 def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -3485,6 +4326,9 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-2R",
         "8-2X",
         "8-2B",
+        "8-2P",
+        "8-2K",
+        "8-2E",
         "8-3",
         "8-4",
         "8-4s",
@@ -3504,19 +4348,28 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert re.fullmatch(r"- 8-1 S (\d+)/\1 · E (\d+)/\2 · R 1 · O 1", bare[0]), bare[0]
     assert bare[4].startswith("- 8-2R 100.00% · ")
     assert bare[6] == "- 8-2B 0"
-    assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
-    assert bare[10] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
-    assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
-    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[12]), bare[12]
+    # 합성 표본은 CUSTOM 이 빈 값 하나 · Dummy 계열 없음 · 충돌 없음이라 그 칸이 0 · 1 이다.
+    assert re.fullmatch(
+        r"- 8-2P 종류 1 · 불일치 0 · 달 [\d.]+% · 넘음 \d+ · G (\d+)/\1 · 총 (\d+)/\2 · D 0 · T 0 "
+        r"· 못봄 0",
+        bare[7],
+    ), bare[7]
+    assert bare[8] == "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0"
+    # 합성 표본 사본에는 부하 예외 선언이 없다.
+    assert bare[9] == "- 8-2E 선언 없음"
+    assert bare[12] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
+    assert bare[13] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
+    assert bare[14] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[15]), bare[15]
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[13],
-    ), bare[13]
-    assert bare[14] == "- 8-12 전부 1 · 걸림 0"
+        bare[16],
+    ), bare[16]
+    assert bare[17] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 5
-    )  # 8-3 · 8-4 · 8-4u · 8-10T · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
+    )  # 8-3 · 8-4 · 8-4u · 8-10T · 8-11 (경로 갈래 0 이라 8-2B, 충돌 0 이라 8-2K 는 식 없음)
 
 
 def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
@@ -4504,6 +5357,129 @@ def blank_stop_db(simulation_db: Path, tmp_path: Path) -> Path:
     return path
 
 
+def _plant_route_fold(path: Path) -> None:
+    """`RQ_REQB` 첫 행을 공정 끝 공백만 다르게 한 줄 더 심는다 — 계산이 앞 행으로 접는 `C8`
+    한 행."""
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO rev_data.rq_reqb SELECT * REPLACE ("
+            '"공정" || \' \' AS "공정", source_row_no + 200000 AS source_row_no) '
+            "FROM rev_data.rq_reqb WHERE rowid = (SELECT min(rowid) FROM rev_data.rq_reqb)"
+        )
+
+
+def _census_and_blank(capsys: pytest.CaptureFixture[str], database: Path) -> tuple[int, str]:
+    return _run(capsys, "--only", "census,blank", "--database", str(database))
+
+
+def test_a_copy_before_the_custom_column_counts_the_hand_sql_like_the_migrated_copy(
+    blank_stop_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0039 전 사본에서 CUSTOM 조건을 뺀 손 SQL(8-10 `C8` 접기 · `C9` 측정률 조인 · 8-12
+    목록)도 0039 뒤 사본과 같은 수를 낸다 — 0 이 아닌 칸이 있는 사본으로 견준다(시드 사본은 셋 다
+    0 이라 빼고 맞댄 길이 「멈추지 않음」 만 보인다). 다른 것은 블록 앞 `사본 0039 전` 한
+    줄뿐이다."""
+    _plant_route_fold(blank_stop_db)
+    (tmp_path / "before").mkdir()
+    before = database_before_custom(blank_stop_db, tmp_path / "before" / "capa_simulation.duckdb")
+
+    code, old = _census_and_blank(capsys, before)
+    _, new = _census_and_blank(capsys, blank_stop_db)
+
+    assert code == 0
+    for output in (old, new):
+        assert _census_row(output, "fold") == "1 / 1 리비전 | 행 1 |"
+        assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+        assert "- 8-12 전부 1 · 걸림 1" in _uncoded(_summary(output))
+    old_lines = _without_timings(old)
+    [at] = [index for index, line in enumerate(old_lines) if line.startswith("- 사본 0039 전 ")]
+    assert old_lines[at + 1] == ""
+    assert [*old_lines[:at], *old_lines[at + 2 :]] == _without_timings(new)
+
+
+def test_a_copy_marked_after_the_custom_migration_stops_the_hand_sql_too(
+    blank_stop_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """손 SQL 의 CUSTOM 조건도 리비전 표 채우기와 같이 마이그레이션 번호로만 가른다 — 0039 를
+    건 것으로 적힌 사본에 칸이 없으면 `C8` · `C9` · 8-12 가 CUSTOM 없이 센 수를 말없이 내지 않고
+    실패로 드러난다. `사본 0039 전` 한 줄도 없다."""
+    _plant_route_fold(blank_stop_db)
+    (tmp_path / "marked").mkdir()
+    marked = database_marked_after_custom(
+        blank_stop_db, tmp_path / "marked" / "capa_simulation.duckdb"
+    )
+
+    code, output = _census_and_blank(capsys, marked)
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "사본 0039 전" not in output
+    for key in ("fold", "blank"):
+        assert _census_row(output, key) == "- | 실패(BinderException) |"
+    assert "- 8-12 리비전 목록 실패(BinderException)" in _uncoded(_summary(output))
+
+
+def _plant_two_part_drops(path: Path) -> None:
+    """양산 제품(합성 표본에 하나)을 리비전 표 여덟에서 두 부품으로 가르고, 첫 달 첫 공정의
+    `RQ_RUN_RATE` 를 비운 뒤 그 칸에 붙은 경로를 부품마다 다른 측정률로 뺀다 — 부품 A 는 Lot 측정률
+    음수, 부품 B 는 WF 측정률 음수. 그 칸에 붙은 경로는 그 제품의 두 부품뿐이다."""
+    with duckdb.connect(str(path)) as connection:
+        [(product,)] = connection.execute(
+            'SELECT DISTINCT "제품정보" FROM rev_data.rq_upeh WHERE "양산구분" = \'양산\''
+        ).fetchall()
+        for logical in custom_keyed_tables():
+            table = REVISION_TABLES[logical]
+            connection.execute(
+                f'UPDATE rev_data.{table} SET "CUSTOM" = ? WHERE "제품정보" = ?', [PART_A, product]
+            )
+            connection.execute(
+                f'INSERT INTO rev_data.{table} SELECT * REPLACE (? AS "CUSTOM", '
+                f"source_row_no + 300000 AS source_row_no) FROM rev_data.{table} "
+                'WHERE "제품정보" = ?',
+                [PART_B, product],
+            )
+        cell = connection.execute(
+            'SELECT "생산계획년월", "공정" FROM rev_data.rq_upeh WHERE "제품정보" = ? '
+            "AND upper(trim(\"소요기준\")) NOT IN ('BOX', 'PCB') ORDER BY 1, 2 LIMIT 1",
+            [product],
+        ).fetchone()
+        assert cell is not None
+        month, process = cell
+        connection.execute(
+            'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL WHERE "생산계획년월" = ? '
+            'AND "공정" = ? AND "양산구분" = \'양산\'',
+            [month, process],
+        )
+        for table, column, part in (
+            ("rq_lot_ratio", "Lot 측정률", PART_A),
+            ("rq_wf_ratio", "WF측정률", PART_B),
+        ):
+            connection.execute(
+                f'UPDATE rev_data.{table} SET "{column}" = -1 WHERE "생산계획년월" = ? '
+                'AND "공정" = ? AND "제품정보" = ? AND "CUSTOM" = ?',
+                [month, process, product, part],
+            )
+
+
+def test_the_hand_sql_joins_the_ratios_of_each_part_only(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """8-10 `C9` · 8-12 의 측정률 조인(`_performance_join`)은 계산처럼 CUSTOM 까지 맞댄다. 빈
+    칸에 붙은 두 부품 경로가 저마다 자기 측정률로 빠지면 그 칸은 「빠질 경로만」(`C9` 칸 1)이고
+    8-12 에는 걸리지 않는다. CUSTOM 조건이 빠지면 부품 A 경로가 부품 B 의 (음수 아닌) Lot 측정률 ·
+    자기 WF 측정률과도 짝지어 빠지지 않는 줄이 생겨, 그 칸이 「남는 경로」 로 뒤집힌다(`C9` 이
+    말없이 준다)."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _plant_two_part_drops(path)
+
+    code, output = _census_and_blank(capsys, path)
+
+    assert code == 0
+    assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+    assert "- 8-12 전부 1 · 걸림 0" in _uncoded(_summary(output))
+
+
 def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -4530,7 +5506,9 @@ def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     # 6-3 a 가 적는 수와 같다.
     with duckdb.connect(str(blank_stop_db), read_only=True) as connection:
         [revision] = revisions_script.list_revisions(connection, active_only=False)
-        outcome = revisions_script.inspect_revision(connection, revision)
+        outcome = revisions_script.inspect_revision(
+            connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
         places = checks._blank_stop_places(
             connection, checks._census_scope(connection, all_revisions=False)
         )
@@ -4716,7 +5694,9 @@ def test_the_blank_block_sees_a_stopped_revision_that_is_not_active(
     assert any(line.startswith("- 8-12K S1 r2 RUN_RATE") for line in lines)
     with duckdb.connect(str(path), read_only=True) as connection:
         outcomes = [
-            revisions_script.inspect_revision(connection, revision)
+            revisions_script.inspect_revision(
+                connection, revision, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+            )
             for revision in revisions_script.list_revisions(connection, active_only=False)
         ]
     assert [outcome.problem is not None for outcome in outcomes] == [False, True]

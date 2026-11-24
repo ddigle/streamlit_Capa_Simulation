@@ -1491,7 +1491,7 @@ def test_a_second_apply_retires_the_first_edit_cell_and_no_run_refills_it(
     def cell_is_there(key: tuple[Any, str]) -> bool:
         ran: list[int] = []
 
-        def probe(*_args: object) -> simulation_cache.CapacityOutcome:
+        def probe(*_args: object, **_kwargs: object) -> simulation_cache.CapacityOutcome:
             ran.append(1)
             return simulation_cache.CapacityOutcome(None, None, "칸 확인")
 

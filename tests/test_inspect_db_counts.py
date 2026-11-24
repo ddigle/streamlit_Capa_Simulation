@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from before_custom_copy import database_before_custom, database_marked_after_custom
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components import plan_grid
@@ -134,6 +135,55 @@ def test_the_five_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: 
         "unit_mixed groups 0; read ps 0+0 pl 0+0 line 0+0 inv 0+0 bldg 0+0 floor 0+0; "
         "save area 0+0 maker 0+0 model 0+0 capa 0+0 owner 0+0 store 0+0 exist 0+0; show 0+0"
     )
+
+
+def test_a_copy_before_the_custom_column_adds_one_line_right_after_the_plan_line(
+    databases: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """0039 전 사본 — 줄 4 는 두 표의 CUSTOM 칸을 0039 와 같이 채워 재 0039 뒤 사본과 같은 수를
+    내고, 그 바로 뒤에 `사본 0039 전` 한 줄이 선다. 다섯 줄의 꼴은 그대로이고 끝 줄은 여전히
+    `mixed` 다. 채우지 않으면 줄 4 는 리비전마다 `skipped` 로 빠진다."""
+    simulation, equipment = databases
+    before = database_before_custom(simulation, tmp_path / "capa_simulation.duckdb")
+
+    code, old = _run(["--database", str(before), "--equipment-database", str(equipment)], tmp_path)
+    _, new = _run(["--database", str(simulation), "--equipment-database", str(equipment)], tmp_path)
+
+    assert code == 0
+    assert len(old) == len(new) + 1 == 7, old
+    counts, _bundles, sim_size, eq_size, plan, marker, mixed = old
+    assert COUNT_LINE.match(counts) and counts.startswith("migration 38 ")
+    assert SIZE_LINE.match(sim_size) and SIZE_LINE.match(eq_size)
+    assert PLAN_LINE.match(plan) and plan == new[4]
+    assert marker == (
+        "사본 0039 전 — migration 38; plan 은 두 표의 CUSTOM 칸을 0039 와 같이 빈 값 표지(-)로 "
+        "채워 쟀다"
+    )
+    assert mixed == new[5]
+    assert old[1] == new[1]
+    code, only_plan = _run(
+        ["--only", "plan", "--database", str(before), "--equipment-database", str(equipment)],
+        tmp_path,
+    )
+    assert code == 0 and only_plan == [plan, marker]
+
+
+def test_a_copy_marked_after_the_custom_migration_is_not_filled(
+    databases: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """채우기는 마이그레이션 번호로만 가른다 — 0039 를 건 것으로 적힌 사본에 칸이 없으면 채우지 않고
+    줄 4 가 그 리비전을 `skipped` 로 빼며, `사본 0039 전` 한 줄도 없다."""
+    simulation, equipment = databases
+    marked = database_marked_after_custom(simulation, tmp_path / "capa_simulation.duckdb")
+
+    code, lines = _run(
+        ["--database", str(marked), "--equipment-database", str(equipment)], tmp_path
+    )
+
+    assert code == 0
+    assert not [line for line in lines if "사본 0039 전" in line]
+    [plan] = [line for line in lines if line.startswith("plan ")]
+    assert PLAN_LINE.match(plan) and plan.endswith("skipped 1 (ValueError 1)"), plan
 
 
 def _bundle_database(path: Path) -> Path:

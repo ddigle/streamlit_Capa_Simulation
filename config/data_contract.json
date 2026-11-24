@@ -330,23 +330,27 @@
       "Stack",
       "Capa Code",
       "Customer",
-      "Pack Code"
+      "Pack Code",
+      "CUSTOM"
     ],
     "RQ_YLD": [
       "생산계획년월",
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_CHIP_QTY": [
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_CHIP_EQ": [
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_DISPLAY_ORDER": [
       "페이지 구분",
@@ -376,7 +380,8 @@
       "양산구분",
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_RUN_RATE": [
       "생산계획년월",
@@ -404,7 +409,8 @@
       "양산구분",
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_WF_RATIO": [
       "생산계획년월",
@@ -415,7 +421,8 @@
       "양산구분",
       "제품정보",
       "Stack",
-      "WF 구분"
+      "WF 구분",
+      "CUSTOM"
     ],
     "RQ_REQB": [
       "생산계획년월",
@@ -430,7 +437,8 @@
       "WF 구분",
       "STEP_SEQ",
       "MCP_SEQ",
-      "소요기준"
+      "소요기준",
+      "CUSTOM"
     ]
   }
 }

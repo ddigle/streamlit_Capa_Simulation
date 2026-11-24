@@ -167,6 +167,7 @@ def load_shortening_demand() -> ShorteningDemand:
         context.active_scenario,
         context.selected_start_month,
         context.selected_end_month,
+        route_exceptions=context.route_exceptions.declaration,
     )
     loader = simulation_cache.scenario_required_equipment(
         key,

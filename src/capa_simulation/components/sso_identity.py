@@ -460,6 +460,27 @@ def developer_wall_locked() -> bool:
     return runtime.config().operational and not viewer_is_developer()
 
 
+# 운영 서버(C-DEP)에서만 여는 쓰기 단추의 잠긴 풍선(UI-INP-07) — 무엇이 막는지 한 줄.
+NOT_PRODUCTION_REASON: Final = "운영 서버(C-DEP)에서만 바꿀 수 있습니다"
+
+
+def production_write_lock_reason() -> str | None:
+    """C-DEP 운영 자리의 실제 개발자에게만 여는 쓰기 단추를 잠그는 까닭 — 열려 있으면 None.
+
+    C-DEP 꼴(동기화 `managed` + 기동 때 읽은 S3 접속 정보 —
+    `extra_process_intake.production_place`)이 아니면 `NOT_PRODUCTION_REASON`, 실제
+    개발자(`viewer_is_developer`)가 아니면 등급 거절 글이다. Admin 「부대공정」 · 「부하 예외」 가
+    이 판정 하나를 쓰고, 화면과 누른 회차가 함께 부른다.
+    """
+    from capa_simulation.extra_process_intake import production_place
+
+    if not production_place():
+        return NOT_PRODUCTION_REASON
+    if not viewer_is_developer():
+        return grades.refusal_text("admin.area")
+    return None
+
+
 def viewer_can_audit() -> bool:
     """접속 · 작업 기록을 볼 수 있는가 — 감사 기록을 남기는 서버(`audit.recorder.enabled()` —
     통합인증 켜짐 기동)이고 보는 사람이 실제 개발자(`viewer_is_developer`)이며 미리 보기 중이

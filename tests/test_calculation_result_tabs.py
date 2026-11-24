@@ -146,19 +146,40 @@ def test_the_unit_capacity_exclusions_ride_on_the_alarm_row_not_the_page() -> No
 
 
 def test_the_required_tab_alerts_and_carries_its_lists_on_the_alarm_rows() -> None:
-    """소요대수 탭은 열린 회차마다 경로 쪽(`ST-15` · PKG 규칙 `ST-21`)과 계획 쪽(`ST-01` — Static
-    Capa 와 같은 코드 · 같은 범위) 상태 알림을 내고, 목록은 본문 펼침이 아니라 그 알림 줄의 표다
-    (2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」)."""
+    """소요대수 탭은 열린 회차마다 경로 쪽(`ST-15` · PKG 규칙 `ST-21` · 부하 예외 바탕 없음
+    `ST-22`)과 계획 쪽(`ST-01` — Static Capa 와 같은 코드 · 같은 범위) 상태 알림을 내고, 목록은 본문
+    펼침이 아니라 그 알림 줄의 표다(2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」). 선언이
+    없는 시나리오에서 `ST-22` 는 「없음」 이다."""
     app = _open_calc_tab(
         AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
     assert not app.exception
     assert not app.warning
     codes = [note["code"] for note in alert_notes(app) if note.get("kind") == "state"]
-    assert {"ST-15", "ST-21", "ST-01"} <= set(codes)
+    assert {"ST-15", "ST-21", "ST-22", "ST-01"} <= set(codes)
+    (basis,) = [note for note in alert_notes(app) if note["code"] == "ST-22"]
+    assert basis["active"] is False
     assert all(note["tab"] == "소요대수" for note in alert_notes(app) if note.get("tab"))
     assert "ST-14" not in codes and "HM-02" not in codes
     assert not list(app.expander)
+
+
+def test_the_required_detail_and_its_exclusion_list_put_custom_beside_the_stack() -> None:
+    """소요대수 「상세」 표와 그 제외 목록(`ST-15`)은 같은 화면 대당 Capa 표처럼 분류 칸 Stack
+    바로 뒤에 CUSTOM 을 세운다(`RESULT_DIMENSIONS`) — 한 제품의 부품이 한 줄로 합쳐지지 않는다."""
+    app = _open_calc_tab(
+        AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
+    note = active_state(app, "ST-15")
+    assert note is not None
+    columns = list(note_table(note, "소요대수 제외 기준정보")["columns"])
+    assert columns.index("CUSTOM") == columns.index("Stack") + 1
+
+    app.session_state["required_equipment_detail"] = True
+    app.run()
+    assert not app.exception
+    dimensions = list(app.session_state["captured_dimensions::required_equipment_detail_table"])
+    assert dimensions.index("CUSTOM") == dimensions.index("Stack") + 1
 
 
 def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatch) -> None:

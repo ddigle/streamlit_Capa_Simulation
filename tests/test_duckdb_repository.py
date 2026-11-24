@@ -34,6 +34,7 @@ from capa_simulation.persistence.repository import (
     REFERENCE_TABLES,
     REVISION_TABLES,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.display_order_editor import (
     ROUTE_SEQUENCE_COLUMNS,
     ROUTE_SEQUENCE_SCOPES,
@@ -41,9 +42,20 @@ from capa_simulation.services.display_order_editor import (
 )
 from capa_simulation.services.reference_transformer import build_reference_tables
 
+CUSTOM_KEYED_TABLES = (
+    "RQ_PKG_PLAN",
+    "RQ_YLD",
+    "RQ_CHIP_QTY",
+    "RQ_CHIP_EQ",
+    "RQ_UPEH",
+    "RQ_LOT_RATIO",
+    "RQ_WF_RATIO",
+    "RQ_REQB",
+)
+
 
 def _reference_tables() -> dict[str, pd.DataFrame]:
-    return {
+    tables = {
         "RQ_PKG_PLAN": pd.DataFrame(
             {
                 "생산계획년월": [202608],
@@ -193,6 +205,10 @@ def _reference_tables() -> dict[str, pd.DataFrame]:
             }
         ),
     }
+    # 제품정보가 든 여덟 표는 CUSTOM 을 끝 칸으로 싣는다(0039). 한 값이면 계산이 지금과 같다.
+    for name in CUSTOM_KEYED_TABLES:
+        tables[name] = tables[name].assign(CUSTOM=CUSTOM_BLANK)
+    return tables
 
 
 def _metadata(name: str = "Scenario A") -> ScenarioCreate:
@@ -1326,9 +1342,10 @@ def test_same_simulation_code_rejects_changed_raw_snapshot(tmp_path: Path) -> No
         )
 
     assert len(repository.list_scenarios()) == 1
-    # 상세 조회 기간을 바꿔 다시 받으려는 사람에게 「새 리비전」은 답이 아니다.
+    # 상세 조회 기간이나 파일을 바꿔 다시 받으려는 사람에게 「새 리비전」은 답이 아니다.
     # 다시 받는 길(보관 뒤 영구 삭제)을 함께 적는다.
     assert "보관한 뒤 영구 삭제" in str(caught.value)
+    assert "상세 조회 기간이나 파일을 바꿔" in str(caught.value)
 
 
 def test_same_simulation_code_can_be_physically_copied_when_raw_is_identical(

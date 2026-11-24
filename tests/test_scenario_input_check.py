@@ -96,6 +96,8 @@ from capa_simulation.services.revision_input_check import (
     GROUP_ASSUMED,
     GROUP_CAPACITY,
     GROUP_PLANS,
+    GROUP_ROUTE_CHANGED,
+    GROUP_ROUTE_MISSING,
     GROUP_ROUTES,
     GROUP_RULES,
     GROUP_SOURCE,
@@ -106,6 +108,12 @@ from capa_simulation.services.revision_input_check import (
     RevisionInputCheck,
     build_input_check,
     calculation_period,
+    route_exception_check,
+)
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
 )
 from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.simulation_cache import full_capacity_outcome
@@ -207,9 +215,15 @@ def test_the_check_panel_is_the_second_of_five_and_counts_only_when_open(
     counted: list[str] = []
     real = capacity_gate.input_check_verdict
 
-    def spy(database_path: str, scenario_id: str, revision_id: str) -> RevisionInputCheck:
+    def spy(
+        database_path: str,
+        scenario_id: str,
+        revision_id: str,
+        *,
+        route_exceptions: RouteLoadDeclaration,
+    ) -> RevisionInputCheck:
         counted.append(revision_id)
-        return real(database_path, scenario_id, revision_id)
+        return real(database_path, scenario_id, revision_id, route_exceptions=route_exceptions)
 
     monkeypatch.setattr(input_check, "input_check_verdict", spy)
     app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
@@ -231,6 +245,38 @@ def test_the_check_panel_is_the_second_of_five_and_counts_only_when_open(
     for title in ("계산 멈춤", "대당 Capa 에서 뺀 기준", "부하량에서 빠진 계획", "측정률 1.0 가정"):
         assert title in heads
     assert "규칙대로 셈에서 뺀 것" in {button.label for button in app.button}
+
+
+def test_a_saved_route_exception_declaration_drops_the_counted_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「계산」 칸 글은 그 글을 센 부하 예외 선언 판에서만 산다 — 선언은 리비전 없이 셈을 바꾸므로
+    (2026-11-22 답 Q3 (가)) 선언을 저장하면(공용 프로필 비우기 뒤) 센 글을 모두 버리고 고른
+    리비전부터 새 판으로 다시 센다. 고르지 않은 리비전은 다시 「—」 다."""
+    from before_custom_copy import seed_route_declaration
+
+    from capa_simulation.persistence.cache import clear_global_route_load_exceptions_cache
+
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    edited = _save(database, scenario_id, base, _with_exclusions, "빠짐")
+    clear_global_route_load_exceptions_cache()
+    app, browser, calls = _check_app(script, monkeypatch)
+    first = _draft(app).picked
+    other = base if first == edited else edited
+    browser.send(CHECKS_KEY, {"op": "pick", "owner": scenario_id, "id": other})
+    assert set(app.session_state[CHECK_LABELS_KEY]) == {base, edited}
+
+    DuckDBScenarioRepository(database).append_route_load_exceptions(
+        expected_seq=0, entries=seed_route_declaration(), applied_by=None, source_place="test"
+    )
+    clear_global_route_load_exceptions_cache()
+    browser.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert set(app.session_state[CHECK_LABELS_KEY]) == {other}
+    assert _calc(calls)[str(first)] == ("—", "none")
+    clear_global_route_load_exceptions_cache()
 
 
 def test_a_revision_turns_from_dash_to_its_count_when_picked_and_keeps_it(
@@ -278,7 +324,9 @@ def test_a_stopped_revision_is_marked_and_folds_what_comes_after(
     assert any("· 경로 " in text for text in _captions(app))
     # 부제는 계산 멈춤 알림 짧은 글에서 묶음 이름과 겹치는 머리를 뗀 글이다 — 그 머리가 알림 글과
     # 같아야 떼어진다.
-    check = capacity_gate.input_check_verdict(str(database), scenario_id, stopped)
+    check = capacity_gate.input_check_verdict(
+        str(database), scenario_id, stopped, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert check.stop is not None
     notice = calculation_stop_notice(ValueError(check.stop.error))
     assert notice is not None and notice.text.startswith(STOP_NOTICE_HEAD)
@@ -473,7 +521,7 @@ def test_the_db_registration_group_switches_the_tab_on_this_page(
             ),
         )
     )
-    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args: check)
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
     app, _, _ = _check_app(script, monkeypatch)
 
     app.button(key=f"input_check_go_{GROUP_SOURCE}").click().run()
@@ -502,6 +550,28 @@ def test_a_read_failure_is_the_data_error_mark_and_the_table_stays(
 
     assert data_error_marks(app)
     assert any(name == CHECKS_KEY for name, _ in calls)
+    assert "계산 멈춤" not in _heads(app)
+
+
+def test_a_declaration_read_failure_is_the_same_mark_and_drops_the_counted_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언 판을 읽지 못해도(파일 잠금 — 선언 저장 뒤 공용 프로필이 빗나간 회차) 화면이
+    멈추지 않고 같은 「데이터 Error」 마크(`SC-02`)이고 리비전 표는 남는다. 판을 모르니 센 「계산」
+    글은 버린다 — 다음에 읽은 판으로 다시 센다."""
+    script, _ = _seeded(tmp_path)
+    app, browser, calls = _check_app(script, monkeypatch)
+    assert any(calc != ("—", "none") for calc in _calc(calls).values())
+
+    def held(_database_path: str) -> object:
+        raise duckdb.IOException("IO Error: Could not set lock on file")
+
+    monkeypatch.setattr(input_check, "route_exceptions_of", held)
+    browser.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert data_error_marks(app) == 1
+    assert set(_calc(calls).values()) == {("—", "none")}
     assert "계산 멈춤" not in _heads(app)
 
 
@@ -567,6 +637,10 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
     assert two is not None and (two.path, two.value) == (REFERENCE_DATA.path, None)
     assert arrival_for(_group(GROUP_ROUTES, ()), empty) is None
     assert arrival_for(InputCheckGroup(GROUP_STOP, "error", "계산 멈춤", 0), empty) is None
+    # 부하 예외 선언 두 묶음은 고칠 화면이 Admin 「부하 예외」(개발자 몫)라 단추가 없다 — Guide 가
+    # 그 자리를 말한다.
+    for key in (GROUP_ROUTE_MISSING, GROUP_ROUTE_CHANGED):
+        assert arrival_for(_group(key, (("x", 2),)), empty) is None, key
 
 
 def test_the_arrival_tabs_are_the_pages_own_labels() -> None:
@@ -603,7 +677,7 @@ def test_an_upeh_table_stop_subtitle_ends_with_its_route_count() -> None:
     main = upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])
     upeh.loc[upeh.index[main.to_numpy().nonzero()[0][:2]], "UPEH"] = float("nan")
     edited = {**tables, "RQ_UPEH": upeh}
-    outcome = full_capacity_outcome(edited, edited)
+    outcome = full_capacity_outcome(edited, edited, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     check = build_input_check(
         outcome, None, None, period=calculation_period(edited, INPUT_CHECK_PERIOD_TABLES)
     )
@@ -649,6 +723,62 @@ def test_the_wide_view_puts_its_table_right_under_the_caption() -> None:
     assert "toolbar_clearance" not in inspect.getsource(render_wide_body)
 
 
+def test_the_route_exception_groups_open_into_label_tables_without_a_go_button(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언 두 묶음도 다른 묶음과 같은 줄로 선다 — 「행 보기」 로 펼친 표는 공정
+    표시명, 「그 화면으로」 는 없고, 「넓게 보기」 · CSV 가 선다. 바꾼 경로 표는 손으로 지은 결과
+    행이다(시드의 WF Core 경로는 바탕이 없어 바꾼 줄이 없다)."""
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    tables = DuckDBScenarioRepository(database).load_revision(base).tables
+    plain = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    routes = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202601, 202602],
+            "공정": ["DEMO-EXC"] * 3,
+            "제품정보": ["DEMO-HBM"] * 3,
+            "WF 구분": ["Core", "Top_Dummy", "Core"],
+            "소요기준": ["WF"] * 3,
+            "부하량": [12.0, 0.0, 14.0],
+        }
+    )
+    route_check = route_exception_check(
+        ["DEMO-EXC"],
+        routes,
+        {"DEMO-EXC": BUFFER_X_CORE_CHIP, "DEMO-GONE": BUFFER_X_CORE_CHIP},
+    )
+    full = build_input_check(plain, None, None, route_check=route_check)
+    keys = (GROUP_ROUTE_MISSING, GROUP_ROUTE_CHANGED)
+    check = RevisionInputCheck(tuple(group for group in full.groups if group.key in keys))
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
+    labels = ProcessLabels(1, {"DEMO-EXC": "DEMO 예외 표시명", "DEMO-GONE": "DEMO 없는 표시명"})
+    monkeypatch.setattr(input_check, "get_process_labels", lambda: labels)
+    app, browser, _ = _check_app(script, monkeypatch)
+    del scenario_id
+
+    for key in keys:
+        assert f"input_check_go_{key}" not in {button.key for button in app.button}
+        app.button(key=f"input_check_rows_{key}").click().run()
+        assert not app.exception
+
+    missing, changed = (table.value for table in app.dataframe)
+    assert list(missing.columns) == ["공정"] and missing["공정"].tolist() == ["DEMO 없는 표시명"]
+    assert list(changed.columns) == ["생산계획년월", "공정", "제품정보", "WF 구분", "부하량"]
+    assert set(changed["공정"]) == {"DEMO 예외 표시명"}
+    assert len(app.get("download_button")) == 2
+    titles = {GROUP_ROUTE_MISSING: "이번 데이터에 없는 선언 공정 · 전체 1행"}
+    titles[GROUP_ROUTE_CHANGED] = "부하 예외로 바꾼 경로 · 전체 3행"
+    for key in keys:
+        app.button(key=f"input_check_wide_{key}_0").click().run()
+        assert not app.exception
+        target = wide_target(app.session_state[OFFICIAL_DIALOG_KEY])
+        assert target is not None and target[4] == f"{key}:0"
+        browser.run()
+        assert not app.exception
+        assert f"r1 · {titles[key]}" in _captions(app)
+
+
 def test_the_rules_row_opens_into_small_subheadings_without_counts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -673,7 +803,7 @@ def test_the_rules_row_opens_into_small_subheadings_without_counts(
         tables=(InputCheckTable("PKG Buffer 밖", frame, tuple(frame.columns), "제외사유"),),
     )
     check = RevisionInputCheck((rules,))
-    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args: check)
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args, **_kwargs: check)
     app, _, _ = _check_app(script, monkeypatch)
 
     app.button(key=RULES_TOGGLE_KEY).click().run()

@@ -11,6 +11,7 @@ from alert_marks import alert_notes, data_error_marks, data_error_texts, place_e
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_PANEL_TITLE_GAP_PX,
     DASHBOARD_TITLE_BAND_PX,
     DASHBOARD_TITLE_LINE_PX,
@@ -1122,6 +1123,72 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
 
 
+def test_with_edp_included_the_wafer_plan_reads_the_filtered_monthly_sum(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`EDP 포함` 을 켜면 HOME 표의 `Wafer 계획` 은 `get_home_simulation` 의 셋째 원소(Dummy
+    계열을 뺀 월 합)다.
+
+    `EDP 포함` 이 꺼져 있으면 `get_home_lob_without_edp` 가 그 칸을 덮어써, 다른 원소를 풀어도
+    드러나지 않는다. 시드에는 Dummy 계열이 없어 셋째 원소만 절반으로 바꿔 넣고 표 입력의
+    `Wafer 부하량` 이 바꾼 값이지 바꾸기 전 값이 아닌지 직접 댄다.
+    """
+    import capa_simulation.components.home_figures as home_figures
+    from capa_simulation.services import simulation_cache
+
+    seen: dict[str, Any] = {}
+    original_simulation = simulation_cache.get_home_simulation
+
+    def simulation(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_simulation(*args, **kwargs))
+        seen["before"] = result[2]
+        filtered = result[2].copy()
+        filtered["Wafer 부하량"] = pd.to_numeric(filtered["Wafer 부하량"]) * 0.5
+        result[2] = filtered
+        seen["filtered"] = filtered
+        return tuple(result)
+
+    original_lob = home_figures.build_lob_summary_figures
+
+    def lob_spy(**kwargs: Any) -> Any:
+        seen["lob"] = kwargs
+        return original_lob(**kwargs)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", simulation)
+    monkeypatch.setattr(home_figures, "build_lob_summary_figures", lob_spy)
+    # 그림 칸의 키는 바꿔 넣은 값을 모른다 — 앞 시험이 같은 키로 남긴 그림이 있으면 표 입력을 만들지
+    # 않고, 이 시험이 남긴 그림이 뒤 시험에 복원되어서도 안 된다.
+    shared_home_figure_store.clear()
+    try:
+        # 첫 회차가 HOME 토글 칸을 심은 뒤에 켠다(`EDP 포함` 의 기본은 꺼짐).
+        app = _run(seeded_database)
+        seen.clear()
+        app.session_state[EDP_TOGGLE_KEY] = True
+        app.run()
+        assert not list(app.exception)
+        assert app.session_state[EDP_TOGGLE_KEY] is True
+
+        def by_month(frame: pd.DataFrame) -> dict[int, float]:
+            return {
+                int(month): float(value)
+                for month, value in zip(frame["생산계획년월"], frame["Wafer 부하량"], strict=True)
+            }
+
+        plan = by_month(seen["lob"]["lob_summary"])
+        filtered = by_month(seen["filtered"])
+        before = by_month(seen["before"])
+        months = sorted(month for month in filtered if month in plan)
+        assert months
+        assert [plan[month] for month in months] == pytest.approx(
+            [filtered[month] for month in months]
+        )
+        assert [plan[month] for month in months] != pytest.approx(
+            [before[month] for month in months]
+        )
+    finally:
+        shared_home_figure_store.clear()
+
+
 def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
     seeded_database: Path,
 ) -> None:
@@ -1173,6 +1240,82 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
             source="테스트",
         )
         clear_global_advance_load_cache()
+
+
+def test_wafer_capa_year_total_and_bottleneck_wafer_capa_follow_the_home_wafer_plan(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 HOME 표의 `Wafer Capa` · 연간 Total · B/N Top 5 · 상세 B/N 의 Wafer Capa 는
+    `Wafer 계획` 과 같은 HOME 집계 기준(Dummy 계열 뺌) 월 합에서 난다 — 거르지 않은 합이 섞이면
+    확보율 100% 에서 Wafer Capa 가 Wafer 계획을 넘는다.
+
+    시드에는 Dummy 계열이 없어 HOME 계산 결과의 거른 월 합만 절반으로 바꿔 넣고, 화면이 그리는
+    표 입력이 모두 그 절반을 쓰는지 본다.
+    """
+    import capa_simulation.components.home_figures as home_figures
+    import capa_simulation.services.dashboard as dashboard
+    from capa_simulation.services import simulation_cache
+
+    def halved(frame: pd.DataFrame) -> pd.DataFrame:
+        result = frame.copy()
+        result["Wafer 부하량"] = pd.to_numeric(result["Wafer 부하량"]) * 0.5
+        return result
+
+    original_simulation = simulation_cache.get_home_simulation
+    original_without_edp = simulation_cache.get_home_lob_without_edp
+
+    def simulation(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_simulation(*args, **kwargs))
+        result[2] = halved(result[2])
+        return tuple(result)
+
+    def without_edp(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_without_edp(*args, **kwargs))
+        result[2] = halved(result[2])
+        return tuple(result)
+
+    seen: dict[str, Any] = {}
+    original_lob = home_figures.build_lob_summary_figures
+    original_detail = home_figures.build_bottleneck_detail_figures
+
+    def lob_spy(**kwargs: Any) -> Any:
+        seen["lob"] = kwargs
+        return original_lob(**kwargs)
+
+    def detail_spy(**kwargs: Any) -> Any:
+        seen["detail"] = kwargs
+        return original_detail(**kwargs)
+
+    original_year_totals = dashboard.build_year_totals
+
+    def year_totals_spy(*args: Any, **kwargs: Any) -> Any:
+        seen["year_wafer"] = args[1]
+        return original_year_totals(*args, **kwargs)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", simulation)
+    monkeypatch.setattr(simulation_cache, "get_home_lob_without_edp", without_edp)
+    monkeypatch.setattr(home_figures, "build_lob_summary_figures", lob_spy)
+    monkeypatch.setattr(home_figures, "build_bottleneck_detail_figures", detail_spy)
+    monkeypatch.setattr(dashboard, "build_year_totals", year_totals_spy)
+    # 같은 모듈 DB 의 앞 시험이 같은 키로 남긴 그림이 있으면 표 입력을 만들지 않는다.
+    shared_home_figure_store.clear()
+    _run(seeded_database)
+
+    summary = seen["lob"]["lob_summary"]
+    plan = summary.set_index("생산계획년월")["Wafer 부하량"]
+    rates = summary.set_index("생산계획년월")["확보율"]
+    assert summary["Wafer Capa"].to_numpy() == pytest.approx((plan * rates).to_numpy())
+    top5 = seen["lob"]["monthly_top5"]
+    assert top5["Wafer 부하량"].to_numpy() == pytest.approx(
+        plan.loc[top5["생산계획년월"]].to_numpy()
+    )
+    details = seen["detail"]["monthly_bottleneck_details"]
+    assert details["Wafer 부하량"].to_numpy() == pytest.approx(
+        plan.loc[details["생산계획년월"]].to_numpy()
+    )
+    # 연간 Total 은 표 입력 그대로의 월 합이 그해 더해진 값이다(완결된 해가 없으면 칸이 없다).
+    year_wafer = seen["year_wafer"].set_index("생산계획년월")["Wafer 부하량"]
+    assert year_wafer.loc[plan.index].to_numpy() == pytest.approx(plan.to_numpy())
 
 
 def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
@@ -1724,6 +1867,22 @@ def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
         "bottleneck_title_spacer",
         "bottleneck_detail_months",
     ]
+
+
+def test_the_label_column_keeps_its_pinned_width(seeded_database: Path) -> None:
+    """HOME 구분 컬럼은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 로 못박히고 계획 세부수량 분류 칸 그림은
+    제 폭을 싣지 않는다. 부품을 가른 제품이 있는 공식버전도 같은 폭이다(그림 보드 4 답
+    q7-shared-col (나) — `tests/test_plan_detail_figures.py` 가 두 부품 견본으로 본다)."""
+    app = _run(seeded_database)
+
+    pinned = [
+        str(element.proto.body)
+        for element in app.get("html")
+        if ".st-key-production_lob_label_canvas)" in str(element.proto.body)
+    ]
+    assert len(pinned) == 1
+    assert f"flex: 0 0 {DASHBOARD_LABEL_COLUMN_WIDTH_PX}px" in pinned[0]
+    assert app.session_state["spy_figures"]["production_detail_labels"].layout.width is None
 
 
 def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> None:
@@ -3004,3 +3163,46 @@ def test_the_remembered_process_order_is_keyed_by_the_names_and_the_order_digest
     assert counts["apply"] == 1
     ((_, again_digest), again) = app.session_state[HOME_SORT_MEMO_KEY]["process_options"][-1]
     assert again_digest == digest and again == options
+
+
+def test_home_rebuilds_figures_when_the_route_exception_declaration_changes(
+    tmp_path: Path,
+) -> None:
+    """부하 예외 선언은 리비전 없이 공식버전의 소요대수 · 확보율을 바꾼다(2026-11-22 답 Q3 (가)) —
+    HOME 계산 키는 그 판을 접은 계산 토큰이고 그림 키는 같은 판의 지문을 싣는다. 선언을
+    저장하면(공용 프로필 비우기 뒤) 다음 회차가 새 판으로 계산하고, 확보율을 칠하는 세 묶음만 다시
+    그린다(계획 세부수량은 Wafer · Density 만 써 그대로 꺼낸다). 내용 토큰은 그대로라 세션끼리
+    나누는 칸에 든다."""
+    from before_custom_copy import seed_route_declaration
+
+    from capa_simulation.components.home_rendering import HOME_DRAWN_CONDITIONS_KEY
+    from capa_simulation.persistence.cache import (
+        clear_global_route_load_exceptions_cache,
+        get_scenario_repository,
+    )
+
+    database = tmp_path / "scenario.duckdb"
+    clear_global_route_load_exceptions_cache()
+    shared_home_figure_store.clear()
+    app = AppTest.from_string(_home_script(database), default_timeout=300).run()
+    assert not list(app.exception)
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
+    assert _cache_state(app) == "적중"
+    plain = app.session_state[HOME_DRAWN_CONDITIONS_KEY]
+    assert plain.route_exception_digest == ""
+
+    declaration = seed_route_declaration()
+    saved = get_scenario_repository(str(database)).append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    clear_global_route_load_exceptions_cache()
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _cache_state(app) == "생성"
+    assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
+    drawn = app.session_state[HOME_DRAWN_CONDITIONS_KEY]
+    assert drawn.route_exception_digest == saved.digest != ""
+    assert drawn.content_token == plain.content_token
+    clear_global_route_load_exceptions_cache()

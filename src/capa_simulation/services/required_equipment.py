@@ -27,6 +27,14 @@ from capa_simulation.services.load_calculator import (
     drop_unplanned_rows,
     plan_quantities,
 )
+from capa_simulation.services.route_load_exceptions import (
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+    RouteLoadDeclaration,
+    apply_route_load_exceptions,
+    build_route_load_bases,
+    normalize_route_load_declaration,
+    route_load_targets,
+)
 
 REQB_COLUMNS = [
     "생산계획년월",
@@ -35,6 +43,7 @@ REQB_COLUMNS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -48,6 +57,7 @@ LOAD_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -64,14 +74,19 @@ CAPACITY_KEYS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 ]
+# 산출 결과 소요대수 표와 그 제외 목록의 분류 칸 — 같은 화면 대당 Capa 표
+# (`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이다. CUSTOM 이 Stack 뒤에 있어야 한 제품의
+# 부품이 한 줄로 합쳐지지 않고 부품마다 한 줄이 된다(공정 합은 같다).
 RESULT_DIMENSIONS = [
     "공정",
     "Area_Name",
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "소요기준",
     "STEP_SEQ",
@@ -101,7 +116,9 @@ PKG_UNCOUNTED_REASON = "PKG 기준은 Buffer 로만 계수"
 
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
-# `RQ_REQB` 경로 쪽 제외 — 대당 Capa 가 없거나 0 이하인 경로, PKG 의 Buffer 외 행.
+# `RQ_REQB` 경로 쪽 제외 — 대당 Capa 가 없거나 0 이하인 경로, PKG 의 Buffer 외 행, 공정별 부하 산출
+# 예외의 바탕(Buffer Wafer 부하 · Core `구분_Chip`)이 없거나 한 키에 둘 이상인 선언 공정 Core 줄
+# (`route_load_exceptions.ROUTE_LOAD_BASIS_MISSING_REASON`). 까닭은 `제외사유` 칸이 가른다.
 REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR = "excluded_required_equipment_rows"
 # ------------------------------------------------------------------ 소요대수에 들지 않은 계획
 # 경로 쪽 제외와 달리 **계획 쪽**에서 빠진 것 둘이다. 어느 쪽이든 그 수요는 어느 공정의
@@ -125,7 +142,8 @@ UNROUTED_LOADS_ATTR = "unrouted_required_loads"
 # 늘 뜨고, 그 경고(「확보율이 실제보다 높게」)는 그 경우 사실도 아니다.
 #
 # - 경로 키 어긋남(셈): 같은 (소요기준, 제품정보, Stack, 연결용 WF 구분) 경로가 다른 달·양산구분·
-#   Capa Code·Customer·CS 에는 있는데 이 부하 키만 못 닿았다. 계획 편집·연도 이동·월 병합이 만든다.
+#   CUSTOM·Capa Code·Customer·CS 에는 있는데 이 부하 키만 못 닿았다. 계획 편집·연도 이동·월 병합이
+#   만든다.
 # - RQ_REQB 에 없는 제품(셈): 그 제품정보·Stack 의 경로가 `RQ_REQB` 에 하나도 없다(소요기준·WF 구분
 #   무관). 그 제품의 수요 전체가 어느 공정에도 들지 않는다.
 # - 그 소요기준·WF 구분 경로 없음(세지 않음): 제품은 `RQ_REQB` 에 있는데 이 소요기준·WF 구분의
@@ -149,8 +167,14 @@ class RequiredExclusionCounts(NamedTuple):
     # 부하량은 났는데 `RQ_REQB` 경로 키에 닿지 않은 부하(부하량 키 수). 규칙상 쓰지 않는 조합
     # (`UNROUTED_UNUSED_REASON`)은 세지 않는다.
     unrouted_loads: int = 0
-    # 부하가 붙었는데 대당 Capa 가 없거나 0 이하라 소요대수에서 뺀 경로(`RQ_REQB` 행 수).
+    # 부하가 붙었는데 소요대수에서 뺀 경로(`RQ_REQB` 행 수) — 대당 Capa 가 없거나 0 이하인 것과
+    # 부하 예외 바탕이 없는 것(`ROUTE_LOAD_BASIS_MISSING_REASON`)을 함께 센다. PKG 의 Buffer 외
+    # 행은 세지 않는다. 저장 · 지정 검사와 입력 점검이 이 합을 센다.
     excluded_routes: int = 0
+    # `excluded_routes` 가운데 부하 예외 바탕이 없어 뺀 경로(부분 수 — 합에 이미 들어 있다). 화면
+    # 글이 대당 Capa 까닭(합 − 이 수)과 이 까닭을 갈라 말한다 — 고칠 곳이 대당 Capa 기준정보가
+    # 아니라 수율 · Chip 구성이다(AGENTS 6장 「공정별 부하 산출 예외」).
+    basis_missing_routes: int = 0
 
 
 def calculate_required_equipment(
@@ -159,8 +183,21 @@ def calculate_required_equipment(
     yield_data: pd.DataFrame,
     chip_qty: pd.DataFrame,
     unit_capacity: pd.DataFrame,
+    *,
+    route_exceptions: RouteLoadDeclaration,
 ) -> pd.DataFrame:
-    """Calculate required equipment for every RQ_REQB row."""
+    """Calculate required equipment for every RQ_REQB row.
+
+    `route_exceptions` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id —
+    `route_load_exceptions`)이다. 비면 일반 산식 그대로이고, 선언 공정이 이번 경로에 없어도
+    그렇다. 선언 공정의 WF 경로가 있을 때만 부하량 표에서 산식 바탕을 지어 경로에 부하량을 붙인
+    바로 뒤에 건다 — 부하량 표 · 경로 없는 계획 셈은 그대로다.
+
+    **기본값이 없다** — 호출처(화면 계산 · 자동 갱신 · 확인 스크립트 · 시험)가 모두 선언을 넘기고,
+    하나를 빠뜨리면 타입 검사가 잡는다. 빈 선언을 그대로 적어도 되는 자리는 정해 두었다
+    (`tests/test_route_load_exception_keys.py` 의 허용 목록 — AGENTS 5장 44).
+    """
+    declaration = normalize_route_load_declaration(route_exceptions)
     prepared_reqb, route_products = _prepare_reqb(reqb)
     if prepared_reqb.empty:
         return _empty_required_equipment_result()
@@ -171,11 +208,18 @@ def calculate_required_equipment(
         chip_qty,
         set(prepared_reqb["소요기준"].unique()),
     )
+    exception_loads = (
+        build_route_load_bases(loads, chip_qty, LOAD_KEYS)
+        if route_load_targets(prepared_reqb, declaration).any()
+        else None
+    )
     output = _calculate_required_equipment_from_prepared(
         prepared_reqb,
         loads,
         unit_capacity,
         route_products,
+        route_exceptions=declaration,
+        exception_loads=exception_loads,
     )
     output.attrs[REQUIRED_LOAD_EXCLUSIONS_ATTR] = load_exclusions
     return output
@@ -201,12 +245,15 @@ def count_required_exclusions(
     """`required_exclusion_counts` 의 셈 — attrs 를 이미 꺼낸 제외 목록 셋(부하량에서 빠진 계획·경로
     없는 계획 부하·소요대수에서 뺀 경로)으로 센다. 산출 결과 요약 캐시(`ScenarioResultSummary`)처럼
     프레임 대신 목록만 든 쪽이 같은 셈을 쓴다. 프레임이 아닌 값은 없는 것으로 본다."""
-    excluded_routes = 0
+    excluded_routes = basis_missing_routes = 0
     if isinstance(routes, pd.DataFrame) and {"제외사유", "부하량"} <= set(routes.columns):
         lost = routes["제외사유"].ne(PKG_UNCOUNTED_REASON) & pd.to_numeric(
             routes["부하량"], errors="coerce"
         ).gt(0)
         excluded_routes = int(lost.sum())
+        basis_missing_routes = int(
+            (lost & routes["제외사유"].eq(ROUTE_LOAD_BASIS_MISSING_REASON)).sum()
+        )
     blank_plans = excluded_plans = 0
     if isinstance(load_rows, pd.DataFrame) and "누락 기준정보" in load_rows.columns:
         blank = load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON)
@@ -219,6 +266,7 @@ def count_required_exclusions(
             len(counted_unrouted_loads(unrouted)) if isinstance(unrouted, pd.DataFrame) else 0
         ),
         excluded_routes=excluded_routes,
+        basis_missing_routes=basis_missing_routes,
     )
 
 
@@ -276,6 +324,9 @@ def _calculate_required_equipment_from_prepared(
     loads: pd.DataFrame,
     unit_capacity: pd.DataFrame,
     route_products: pd.DataFrame,
+    *,
+    route_exceptions: RouteLoadDeclaration,
+    exception_loads: pd.DataFrame | None,
 ) -> pd.DataFrame:
     capacities = _prepare_capacities(unit_capacity)
 
@@ -291,6 +342,15 @@ def _calculate_required_equipment_from_prepared(
     counted_reqb = prepared_reqb.loc[~uncounted_pkg]
 
     result = _attach_loads(counted_reqb, loads)
+    # 공정별 부하 산출 예외 — 경로에 붙은 부하량만 바꾼다. 바탕이 없어 뺀 줄은 대당 Capa 를 잇기
+    # 전에 빠져 「대당 Capa 없음」 과 겹치지 않는다(`route_load_exceptions`).
+    basis_missing_rows = pd.DataFrame()
+    if exception_loads is not None:
+        applied = apply_route_load_exceptions(result, exception_loads, route_exceptions)
+        result = applied.routes
+        basis_missing_rows = applied.excluded[[*REQB_COLUMNS, "부하량", "제외사유"]].assign(
+            **{"대당 Capa": float("nan")}
+        )[[*REQB_COLUMNS, "부하량", "대당 Capa", "제외사유"]]
     result = result.merge(
         capacities,
         on=CAPACITY_KEYS,
@@ -308,7 +368,9 @@ def _calculate_required_equipment_from_prepared(
     result = result.loc[~excluded_capacity].copy()
     result["소요대수"] = result["부하량"] / result["대당 Capa"]
     output = result[[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]]
-    exclusions = [frame for frame in (uncounted_rows, excluded_rows) if not frame.empty]
+    exclusions = [
+        frame for frame in (uncounted_rows, basis_missing_rows, excluded_rows) if not frame.empty
+    ]
     output.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = (
         pd.concat(exclusions, ignore_index=True)
         if exclusions
@@ -348,7 +410,8 @@ def _attach_loads(reqb: pd.DataFrame, loads: pd.DataFrame) -> pd.DataFrame:
     return result.drop(columns=_LOAD_JOIN_COLUMN)
 
 
-# 「경로 키 어긋남」을 가르는 키 — 연결 키에서 달·양산구분·Capa Code·Customer·CS 를 뺀 것.
+# 「경로 키 어긋남」을 가르는 키 — 연결 키에서 달·양산구분·CUSTOM·Capa Code·Customer·CS 를 뺀 것.
+# CUSTOM 이 없어야 부품 값이 어긋난 부하가 「경로 키 어긋남」(셈)으로 갈린다.
 _ROUTE_FAMILY_KEYS = ["소요기준", "제품정보", "Stack", _LOAD_JOIN_COLUMN]
 
 
@@ -433,6 +496,7 @@ def _build_loads(
         "양산구분",
         "제품정보",
         "Stack",
+        "CUSTOM",
         "Capa Code",
         "Customer",
         "CS",
@@ -443,7 +507,7 @@ def _build_loads(
     normalize_month_column(prepared_plan, "RQ_PKG_PLAN")
     strip_text_columns(
         prepared_plan,
-        ["양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS"],
+        ["양산구분", "제품정보", "Stack", "CUSTOM", "Capa Code", "Customer", "CS"],
     )
     prepared_plan["생산수량"] = plan_quantities(prepared_plan).astype("float64")
     # 이 경로는 load_calculator._prepare_plan 을 거치지 않으므로 여기서도 제외한다. 빈 생산수량은

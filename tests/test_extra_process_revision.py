@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_B
 from extra_process_fixtures import AOI, BOND, template_files
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -37,6 +38,7 @@ from capa_simulation.services.extra_process_pack import (
 )
 from capa_simulation.services.extra_process_revision import (
     AVAILABLE_REASON,
+    SPLIT_CUSTOM_REASON,
     SPLIT_PRODUCTS_REASON,
     RevisionPack,
     merged_processes,
@@ -196,6 +198,44 @@ def test_split_product_values_on_a_follow_route_keep_the_process_on_the_base() -
 
     assert [(item.process, item.reason) for item in result.kept] == [(BOND, SPLIT_PRODUCTS_REASON)]
     assert result.moved == (AOI,)
+    assert result.reading.pack is not None
+    assert pack_changes(result.reading.pack, _base()).changed_cells == 0
+
+
+def _with_part_b(tables: Tables, process: str, **values: float) -> Tables:
+    """그 공정 UPEH 행을 부품 B 로 한 벌 더 둔다(값은 `values` 만 바꿈) — 양식 줄 키는 같다."""
+    copy = dict(tables)
+    upeh = copy["RQ_UPEH"]
+    part = upeh.loc[upeh["공정"].eq(process)].assign(CUSTOM=PART_B, **values)
+    copy["RQ_UPEH"] = pd.concat([upeh, part], ignore_index=True)
+    return copy
+
+
+def test_values_split_by_custom_on_a_follow_route_keep_the_process_on_the_base() -> None:
+    """공통 값 줄도 부품마다 갈린 값을 한 값으로 접지 않는다 — 마지막 행이 이기면 다른 제품의 값과
+    우연히 같아 「갈림 없음」 으로 지나갈 수 있다."""
+    result = _build(_with_part_b(_revision(), BOND, UPEH=70000.0))
+
+    assert [(item.process, item.reason) for item in result.kept] == [(BOND, SPLIT_CUSTOM_REASON)]
+    assert result.moved == (AOI,)
+    assert result.reading.pack is not None
+    assert pack_changes(result.reading.pack, _base()).changed_cells == 0
+
+
+def test_values_split_by_custom_on_a_product_row_keep_the_process_on_the_base() -> None:
+    """제품을 지정한 줄도 같은 키에 부품마다 다른 값이면 옮기지 않는다(양식에 CUSTOM 칸이 없다)."""
+    result = _build(_with_part_b(_revision(), AOI, ST=99.0))
+
+    assert [(item.process, item.reason) for item in result.kept] == [(AOI, SPLIT_CUSTOM_REASON)]
+    assert result.moved == (BOND,)
+
+
+def test_the_same_values_on_every_custom_part_still_move() -> None:
+    """부품이 달라도 값이 같으면 갈림이 아니다 — 고치지 않은 리비전과 같이 바뀐 칸이 없다."""
+    result = _build(_with_part_b(_with_part_b(_revision(), AOI), BOND))
+
+    assert result.kept == ()
+    assert result.moved == (BOND, AOI)
     assert result.reading.pack is not None
     assert pack_changes(result.reading.pack, _base()).changed_cells == 0
 

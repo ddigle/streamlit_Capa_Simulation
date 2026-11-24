@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import dummy_series_tables as demo
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import generate_review_sample as generator  # noqa: E402
 import review_sample_modules as modules_step  # noqa: E402
+import review_sample_sim as sim_step  # noqa: E402
 import review_sample_story as story  # noqa: E402
 
 from capa_simulation import module_registry, navigation  # noqa: E402
@@ -30,6 +32,12 @@ from capa_simulation.persistence.equipment_repository import (  # noqa: E402
     DuckDBEquipmentRepository,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository  # noqa: E402
+from capa_simulation.services.load_calculator import (  # noqa: E402
+    calculate_chip_and_wafer_loads,
+    filter_edp_plan,
+)
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS  # noqa: E402
+from capa_simulation.services.simulation_cache import full_capacity_outcome  # noqa: E402
 
 GUIDE_PLAN = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto" / "lob" / "plan.json"
 GENERATOR_TIMEOUT_SECONDS = 600
@@ -93,6 +101,42 @@ def test_the_simulation_database_holds_the_story_scenarios_and_four_officials(
     assert (latest.release_no, latest.scenario_name, latest.revision_no) == (4, story.S1_NAME, 3)
 
 
+def test_the_official_revision_calculates_the_two_part_product_apart(sample_root: Path) -> None:
+    """공식 v4 에서 두 부품 제품(`story.TWO_PART`)은 B 부품 변형만 `DEMO_CUSTOM_B` 이고, 수율 ·
+    대당 Capa · 소요대수가 부품마다 따로 난다 — 다른 행은 모두 `DEMO_CUSTOM_A` 다."""
+    repository = DuckDBScenarioRepository(
+        sample_root / generator.DATA_DIR_NAME / generator.SIMULATION_DB_NAME
+    )
+    latest = repository.latest_official_release()
+    assert latest is not None
+    tables = repository.load_revision(latest.revision_id).tables
+    product, part_b_code = story.TWO_PART
+
+    plan = tables["RQ_PKG_PLAN"]
+    assert set(plan["CUSTOM"]) == {story.CUSTOM_PART_A, story.CUSTOM_PART_B}
+    part_b = plan["CUSTOM"].eq(story.CUSTOM_PART_B)
+    assert set(plan.loc[part_b, "제품정보"]) == {product}
+    assert set(plan.loc[part_b, "Capa Code"]) == {part_b_code}
+    yields = tables["RQ_YLD"]
+    product_yields = yields.loc[yields["제품정보"].eq(product)]
+    by_part = product_yields.groupby("CUSTOM")["EDS_수율"].mean()
+    assert by_part[story.CUSTOM_PART_B] == pytest.approx(
+        by_part[story.CUSTOM_PART_A] * story.TWO_PART_EDS_FACTOR
+    )
+
+    outcome = full_capacity_outcome(tables, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    assert outcome.error is None and outcome.required_equipment is not None
+    required = outcome.required_equipment
+    product_rows = required.loc[required["제품정보"].eq(product)]
+    assert set(product_rows["CUSTOM"]) == {story.CUSTOM_PART_A, story.CUSTOM_PART_B}
+    capacity = product_rows.groupby(["공정", "생산계획년월", "WF 구분", "CUSTOM"])[
+        "대당 Capa"
+    ].first()
+    paired = capacity.unstack("CUSTOM").dropna()
+    assert not paired.empty
+    assert (paired[story.CUSTOM_PART_A] != paired[story.CUSTOM_PART_B]).all()
+
+
 def test_the_equipment_database_holds_three_scenarios_and_the_official_v3(
     sample_root: Path,
 ) -> None:
@@ -154,6 +198,31 @@ def test_the_guide_plan_edits_the_story_cell() -> None:
     before = story.STORY_AVAILABLE / story.STORY_REQUIRED * 100
     after = (story.STORY_AVAILABLE + delta) / story.STORY_REQUIRED * 100
     assert (round(before, 1), round(after, 1)) == (96.1, 102.1)
+
+
+def test_the_past_wafer_total_rests_on_the_home_wafer_plan_without_the_dummy_series() -> None:
+    """과거 구간 `Wafer Total` 의 바탕(`home_monthly` 의 달별 Wafer)은 HOME `Wafer 계획` 과 같은
+    집계 기준이다 — EDP 를 뺀 계획에서 Dummy 계열(`Dummy` · `Top_Dummy`) 행을 뺀 합이라 과거 구간과
+    계산 구간의 경계 달이 이어진다.
+
+    생성기 끝 점검은 과거 구간 Wafer 를 읽지 않으므로 Dummy 계열이 든 합성 표
+    (`dummy_series_tables`)로 그 함수를 직접 본다. 견본이 정말 거르는지(거른 합이 거르지 않은 합보다
+    작은지)도 함께 본다.
+    """
+    tables = demo.tables()
+    _density, wafers = sim_step.home_monthly(tables)
+
+    plan = filter_edp_plan(tables["RQ_PKG_PLAN"], False)
+    _chip, wafer_load = calculate_chip_and_wafer_loads(
+        plan, tables["RQ_YLD"], tables["RQ_CHIP_QTY"]
+    )
+    dummy = wafer_load["WF 구분"].str.strip().str.casefold().isin({"dummy", "top_dummy"})
+    kept = wafer_load.loc[~dummy].groupby("생산계획년월")["물량"].sum()
+    everything = wafer_load.groupby("생산계획년월")["물량"].sum()
+    assert sorted(wafers) == list(demo.MONTHS)
+    for month in demo.MONTHS:
+        assert wafers[month] == pytest.approx(float(kept[month]))
+        assert wafers[month] < float(everything[month])
 
 
 def test_a_root_inside_a_git_work_tree_is_refused_before_anything_is_written(

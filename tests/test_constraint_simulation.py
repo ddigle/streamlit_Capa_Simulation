@@ -24,9 +24,11 @@ from capa_simulation.services.constraint_simulation import (
     IMPACT_TOLERANCE,
     ConstraintConditions,
     ConstraintMonthInput,
+    ConstraintProduct,
     ConstraintResult,
     DowntimeShare,
     constraint_month_inputs,
+    constraint_product_choices,
     modification_window,
     required_units,
     secure,
@@ -898,6 +900,144 @@ def test_the_adapter_folds_float_noise_onto_the_process_demand() -> None:
     result = simulate_constraint([row], ConstraintConditions(202706, 202706, 1.2, None, 0))
     assert result.month(202706).existing_demand == 0.0
     assert result.month(202706).existing_rate is None
+
+
+# ------------------------------------------------------------------ ⑯-2 부품 고르기(D3 (나))
+
+PARTED_PRODUCT = "DEMO_A"
+SINGLE_PRODUCT = "DEMO_B"
+PART_A = "DEMO_CUSTOM_A"
+PART_B = "DEMO_CUSTOM_B"
+PARTED_MONTHS = (202706, 202707)
+
+
+def _parted_required() -> pd.DataFrame:
+    """TC Bonding 소요 — DEMO_A 는 부품 둘과 빈 값(표지 `-`), DEMO_B 는 부품 하나. 달 합은
+    `_plan_rows` 의 R(43 · 44)과 같다. DEMO_A 제품 전체는 6 · 6, 부품 A 3.5 · 4(ER 포함),
+    B 1.5 · 2, `-` 1 · 0."""
+    rows = [
+        (PARTED_PRODUCT, PART_A, "양산", 202706, 3.0),
+        (PARTED_PRODUCT, PART_A, "ER", 202706, 0.5),
+        (PARTED_PRODUCT, PART_B, "양산", 202706, 1.5),
+        (PARTED_PRODUCT, None, "양산", 202706, 1.0),
+        (PARTED_PRODUCT, PART_A, "양산", 202707, 4.0),
+        (PARTED_PRODUCT, PART_B, "양산", 202707, 2.0),
+        (SINGLE_PRODUCT, "DEMO_CUSTOM_C", "양산", 202706, 37.0),
+        (SINGLE_PRODUCT, "DEMO_CUSTOM_C", "양산", 202707, 38.0),
+    ]
+    frame = pd.DataFrame(
+        rows, columns=["제품정보", "CUSTOM", "양산구분", "생산계획년월", "소요대수"]
+    )
+    frame["공정"] = "TC Bonding"
+    return frame
+
+
+def _parted_table(multi_part: frozenset[str] = frozenset({PARTED_PRODUCT})) -> pd.DataFrame:
+    """제품별 소요 표 — 기본은 DEMO_A 만 부품을 가른다. 빈 판정이면 부품을 싣기 전과 같은 표다."""
+    return build_process_product_demand(
+        _parted_required(),
+        process="TC Bonding",
+        split="제품정보",
+        months=PARTED_MONTHS,
+        limit=10_000,
+        multi_part=multi_part,
+    )
+
+
+def _parted_inputs(
+    table: pd.DataFrame, product: str, part: str | None = None
+) -> tuple[ConstraintMonthInput, ...]:
+    return constraint_month_inputs(
+        _plan_rows(),
+        table,
+        process="TC Bonding",
+        product=product,
+        part=part,
+        months=PARTED_MONTHS,
+        general_target=lambda _month: 1.1,
+    )
+
+
+def _demands(inputs: tuple[ConstraintMonthInput, ...]) -> list[float]:
+    return [row.constrained_demand for row in inputs]
+
+
+def test_the_choices_put_the_whole_product_first_then_each_part() -> None:
+    """부품을 가르는 제품은 이름만 쓴 제품 전체 한 줄 뒤에 부품 줄(표지 `-` 는 끝), 부품이 하나뿐인
+    제품은 이름 한 줄이다. 부품 줄 이름표는 공정 Capa 상세 분류 행 글과 같다."""
+    table = _parted_table()
+    choices = constraint_product_choices(table)
+
+    labels = [f"{PARTED_PRODUCT} ({part})" for part in (PART_A, PART_B, "-")]
+    assert list(choices) == [PARTED_PRODUCT, *labels, SINGLE_PRODUCT]
+    assert list(choices.values()) == [
+        ConstraintProduct(PARTED_PRODUCT),
+        ConstraintProduct(PARTED_PRODUCT, PART_A),
+        ConstraintProduct(PARTED_PRODUCT, PART_B),
+        ConstraintProduct(PARTED_PRODUCT, "-"),
+        ConstraintProduct(SINGLE_PRODUCT),
+    ]
+    assert set(labels) == set(table.loc[table["CUSTOM"].ne(""), "분류"])
+
+
+@pytest.mark.parametrize("drop_custom", [False, True], ids=["folded", "no_custom_column"])
+def test_without_parts_the_choices_are_the_product_names_as_before(drop_custom: bool) -> None:
+    """부품을 가르지 않는 표(한 값 데이터 · `CUSTOM` 칸이 없는 옛 표)는 지금 선택지 그대로 — 제품
+    이름만, 모두 제품 전체다."""
+    table = _parted_table(frozenset())
+    if drop_custom:
+        table = table.drop(columns=["CUSTOM"])
+    choices = constraint_product_choices(table)
+
+    assert list(choices) == [PARTED_PRODUCT, SINGLE_PRODUCT]
+    assert all(choice.part is None for choice in choices.values())
+
+
+def test_a_part_choice_takes_only_that_part_and_the_name_alone_takes_the_whole_product() -> None:
+    """부품 줄의 Rc 는 그 부품 소요만이고 부품마다의 Rc 를 더하면 제품 전체다. 이름만 쓴 줄(세션에
+    남은 제품 이름)은 부품을 싣기 전 표의 같은 이름과 같은 값이다."""
+    parted = _parted_table()
+    whole = _demands(_parted_inputs(parted, PARTED_PRODUCT))
+    parts = {
+        part: _demands(_parted_inputs(parted, PARTED_PRODUCT, part))
+        for part in (PART_A, PART_B, "-")
+    }
+
+    assert whole == pytest.approx([6.0, 6.0], abs=1e-12)
+    assert whole == pytest.approx(
+        _demands(_parted_inputs(_parted_table(frozenset()), PARTED_PRODUCT))
+    )
+    assert parts[PART_A] == pytest.approx([3.5, 4.0], abs=1e-12)
+    assert parts[PART_B] == pytest.approx([1.5, 2.0], abs=1e-12)
+    assert parts["-"] == pytest.approx([1.0, 0.0], abs=1e-12)
+    assert [sum(values) for values in zip(*parts.values(), strict=True)] == pytest.approx(whole)
+    # 부품을 가르지 않는 제품의 이름 줄은 부품 지정이 없어도 그대로다.
+    assert _demands(_parted_inputs(parted, SINGLE_PRODUCT)) == pytest.approx([37.0, 38.0])
+
+
+def test_rc_plus_re_is_r_for_every_choice() -> None:
+    """고른 줄마다 달마다 제약 소요 + 기존 소요 = 공정 소요다(UI-DAT-07) — 부품 줄도 나머지 부품은
+    기존 제품으로 센다."""
+    table = _parted_table()
+    for label, choice in constraint_product_choices(table).items():
+        inputs = _parted_inputs(table, choice.product, choice.part)
+        result = simulate_constraint(
+            inputs, ConstraintConditions(PARTED_MONTHS[0], PARTED_MONTHS[-1], 1.2, None, 0)
+        )
+        for row, month in zip(inputs, result.months, strict=True):
+            assert month.product_demand == row.constrained_demand, label
+            assert month.constrained_demand + month.existing_demand == pytest.approx(
+                month.required, abs=1e-12
+            ), label
+
+
+def test_a_part_choice_on_a_table_without_custom_is_rejected() -> None:
+    """부품을 고른 값이 `CUSTOM` 칸 없는 표에서 말없이 제품 전체로 넓어지지 않는다."""
+    table = _parted_table().drop(columns=["CUSTOM"])
+
+    with pytest.raises(ValueError, match="`CUSTOM` 칸이 없어 부품을 고를 수 없습니다"):
+        _parted_inputs(table, PARTED_PRODUCT, PART_A)
+    assert _demands(_parted_inputs(table, PARTED_PRODUCT)) == pytest.approx([6.0, 6.0])
 
 
 # ------------------------------------------------------------------ ⑰ Cut-off 소수

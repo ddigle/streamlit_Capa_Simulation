@@ -53,6 +53,7 @@ from capa_simulation.components.home_figure_common import (
     _capacity_color,
     _column_surface_rects,
     _execution_delta_note,
+    _fit_part_label,
     _fit_to_units,
     _month_surface,
     _paper_hrule,
@@ -78,6 +79,7 @@ from capa_simulation.services.plan_gap import (
     WAFER_GAP_SCALE,
     plan_gap_texts,
 )
+from capa_simulation.services.product_parts import PART_NOT_SPLIT
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_WAFER,
     ProductShareCell,
@@ -95,8 +97,9 @@ LOB_BAR_LABEL_FONT_SIZE_PX = 22
 
 
 # `제품별 비중` 구분 칸. 제목 한 줄 아래에 두 칸짜리 범례가 선다. 조각은 `기타` 를 넣어 여섯
-# 까지지만, 계산 구간 제품이 여섯이고 과거 구간에만 있는 제품이 `기타` 로 접히면 일곱이 되므로
-# 네 줄까지 받는다.
+# 까지지만, 계산 구간 제품이 여섯이고 과거 구간에만 있는 제품이 `기타` 로 접히면 일곱이 되고, 과거
+# 달 「제품 (-)」 이 부품의 색 칸을 빌린 화면은 그 줄이 더 서므로 네 줄(여덟 항목)까지 받는다 —
+# 넘치면 더한 「제품 (-)」 줄부터 뺀다(`_legend_rows_within_limit`).
 PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
 PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
 PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
@@ -117,12 +120,16 @@ _PRODUCT_SHARE_LEGEND_X = (0.06, 0.53)
 # 테두리와 이만큼 떨어진다.
 _PRODUCT_SHARE_LEGEND_GUTTER_PX = 6
 _PRODUCT_SHARE_LEGEND_SWATCH = "■ "
-# hover 글자 크기와 줄 수. 도넛이 그림 맨 아래에 붙어 있어(아래 여백 0) 6시 방향 조각의 hover
-# 는 기준점 아래로 18px 남짓밖에 자리가 없다 — Plotly 는 pie hover 를 그림 안으로 밀어 넣지
-# 않고 잘라 버린다. **두 줄**과 이 크기면 그 안에 든다. 줄을 늘리지 않는다.
+# hover 글자 크기. 도넛이 그림 맨 아래에 붙어 있어(아래 여백 0) 6시 방향 조각의 hover 는
+# 기준점 아래로 18px 남짓밖에 자리가 없다 — Plotly 는 pie hover 를 그림 안으로 밀어 넣지 않고
+# 잘라 버린다. 이름 있는 조각의 hover 는 **두 줄**이라 이 크기면 그 안에 든다.
 _PRODUCT_SHARE_HOVER_FONT_SIZE_PX = 12
-# `기타` hover 에 이름을 적는 제품 수. 나머지는 「외 N」으로 줄인다(둘째 줄에 함께 적는다).
-_PRODUCT_SHARE_HOVER_MEMBERS = 3
+# `기타` hover 둘째 줄부터 모인 이름을 다 적되 한 줄에 이 수만큼 적고 다음 줄로 넘긴다 — 줄이
+# 옆으로 넓어지면 왼쪽 고정 구분 칸 밑으로 앞머리가 잘린다.
+_PRODUCT_SHARE_HOVER_NAMES_PER_LINE = 3
+# `기타` hover 의 이름 줄 수 상한. Plotly 는 hover 를 기준점 위아래로 반씩 펴서 이름 줄이 늘수록
+# 아래가 그림 밖으로 잘린다 — 넘는 이름은 마지막 줄 끝 「외 N」 으로 묶는다.
+_PRODUCT_SHARE_HOVER_NAME_LINES = 4
 # 단위별 hover 수량 표기. Wafer 는 매 → K, PKG 생산수량은 이미 K(Kea) 단위다.
 _PRODUCT_SHARE_SCALE = {PRODUCT_SHARE_BASIS_WAFER: 1_000.0}
 
@@ -154,27 +161,47 @@ def _share_amount(value: float, basis: str) -> str:
     return f"{value / _PRODUCT_SHARE_SCALE.get(basis, 1.0):,.1f}K"
 
 
-def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
-    """조각마다 hover 두 줄. 둘째 줄에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+def _other_member_lines(members: Sequence[tuple[str, float]], total: float) -> str:
+    """`기타` hover 둘째 줄부터의 이름 줄. 이름 셋마다 줄을 넘기고 넘긴 줄 끝에 쉼표를 남긴다.
 
-    `기타` 는 무엇이 모였는지 둘째 줄에 잇는다 — 접었다고 정보를 지우지 않는다. 과거 구간 칸은
-    그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과 정의가 다를 수 있다).
+    이름은 `_PRODUCT_SHARE_HOVER_NAME_LINES` 줄까지 적고, 넘는 이름은 마지막 줄 끝 「외 N」 이다.
+    """
+    per_line = _PRODUCT_SHARE_HOVER_NAMES_PER_LINE
+    limit = per_line * _PRODUCT_SHARE_HOVER_NAME_LINES
+    names = [f"{name} {value / total:.1%}" for name, value in members[:limit]]
+    lines = [", ".join(names[start : start + per_line]) for start in range(0, len(names), per_line)]
+    rest = len(members) - limit
+    if rest > 0:
+        lines[-1] += f" 외 {rest}"
+    return ",<br>".join(lines)
+
+
+def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
+    """조각마다 hover. 수량에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+
+    이름 있는 조각은 두 줄 — 첫 줄 「달 · 이름 비중」, 둘째 줄 수량이다. `기타` 는 늘 첫 줄 「달 ·
+    기타 비중 · 수량」, 둘째 줄부터 모인 이름과 각 비중이다 — 이름에 부품 이름표가 끼든 말든 한
+    꼴이다(2026-11-24 그림 보드 3 답 q7-other-hover (나)). 접었다고 정보를 지우지 않고 이름을
+    줄이지 않는다. 이름은 다 적되 셋마다 다음 줄로 넘기고, 이름 줄이
+    `_PRODUCT_SHARE_HOVER_NAME_LINES` 를 넘으면 나머지만 「외 N」 이다(같은 날 그림 보드 4 답
+    q7-hover-cap (나) — `_other_member_lines`). 수량을 첫 줄에 두고 한 줄 이름을 셋으로 두는
+    까닭: `기타` 는 늘 마지막 조각(12시 왼쪽)이라 Plotly 가 풍선을 왼쪽으로 펴고, 그림이 가로 스크롤
+    칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 줄을 짧게 둔다. 과거 구간
+    칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과 정의가 다를 수 있다).
     """
     source = " · 과거 입력값" if cell.past else ""
     texts: list[str] = []
     for piece in cell.slices:
+        head = f"{cell.label} · {piece.product} {piece.share:.1%}"
         amounts = (
             f"{basis} {_share_amount(piece.value, basis)} / "
             f"{_share_amount(cell.total, basis)}{source}"
         )
-        if piece.members:
-            listed = ", ".join(
-                f"{name} {value / cell.total:.1%}"
-                for name, value in piece.members[:_PRODUCT_SHARE_HOVER_MEMBERS]
-            )
-            rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
-            amounts += f" · {listed}" + (f" 외 {rest}" if rest > 0 else "")
-        texts.append(f"{cell.label} · {piece.product} {piece.share:.1%}<br>{amounts}")
+        if not piece.members:
+            texts.append(f"{head}<br>{amounts}")
+            continue
+        names = _other_member_lines(piece.members, cell.total)
+        texts.append(f"{head} · {amounts}<br>{names}")
     return texts
 
 
@@ -266,17 +293,68 @@ def product_share_legend(cells: Mapping[str, ProductShareCell]) -> list[tuple[st
 
     EDP 를 끈 화면에서는 EDP 제품이 칸을 가진 채 조각이 없다. 범례에 두면 그리지 않은
     제품을 알리는 셈이라 뺀다(색 칸은 그대로 비워 둔다 — 남은 제품이 색을 바꾸지 않는다).
+
+    과거 달 「제품 (-)」 이 부품의 색 칸을 빌려 그려졌으면(`ProductShareSlice.lender`) 빌려 준
+    부품 줄 곁에 **같은 칸 번호(같은 색)로 「제품 (-)」 줄을 하나 더** 둔다 — 범례만 보고도 과거 달
+    조각을 부품이 아니라 그 제품의 과거로 읽게(2026-11-24 그림 보드 4 답 q7-past-legend (나)). 더한
+    줄은 그 제품의 그려진 부품 줄 가운데 마지막 줄 바로 뒤다(부품 차례에서 표지 `-` 가 끝인 것과
+    같다). 과거 달 조각은 Past Data 를 켠 화면에만 그려지므로 끄면 그 줄도 없다. 빌려 준 부품이
+    그려지지 않았으면(EDP 를 끈 화면의 EDP 전용 부품) 그 칸 줄은 빌린 이름 하나다. 여덟 항목 상한은
+    그리는 쪽이 건다(`_legend_rows_within_limit`).
     """
-    seen: dict[str, int | None] = {}
+    owners: dict[int, str] = {}
+    borrowers: dict[int, str] = {}
+    products: dict[str, str] = {}
+    others: dict[str, None] = {}
     for cell in cells.values():
         for piece in cell.slices:
-            seen.setdefault(piece.product, piece.slot)
-    named = sorted(
-        ((name, slot) for name, slot in seen.items() if slot is not None),
-        key=lambda item: item[1] if item[1] is not None else -1,
-    )
-    others = [(name, slot) for name, slot in seen.items() if slot is None]
-    return [*named, *others]
+            if piece.slot is None:
+                others.setdefault(piece.product, None)
+                continue
+            products.setdefault(piece.product, piece.base_product or piece.product)
+            if piece.lender:
+                borrowers.setdefault(piece.slot, piece.product)
+            else:
+                owners.setdefault(piece.slot, piece.product)
+    ranked: list[tuple[tuple[int, int], str, int]] = [
+        ((slot, 0), name, slot) for slot, name in owners.items()
+    ]
+    for slot, name in borrowers.items():
+        if slot not in owners:
+            ranked.append(((slot, 0), name, slot))
+            continue
+        last = max(
+            (index for index, owner in owners.items() if products[owner] == products[name]),
+            default=slot,
+        )
+        ranked.append(((last, 1), name, slot))
+    named = [(name, slot) for _, name, slot in sorted(ranked)]
+    return [*named, *((name, None) for name in others)]
+
+
+def _legend_rows_within_limit(
+    entries: Sequence[tuple[str, int | None]],
+) -> list[tuple[str, int | None]]:
+    """범례 칸에 그릴 항목 — 두 칸 × 네 줄(여덟 항목)을 넘으면 **더한 「제품 (-)」 줄부터** 뺀다.
+
+    더한 줄은 앞 항목과 칸 번호가 같은 줄(과거 달 「제품 (-)」 — `product_share_legend`)이다.
+    뒤에서부터 빼므로 그려진 색은 모두 제 줄을 지키고 `기타` 줄도 남는다(이름 있는 칸 여섯 +
+    `기타` 는 일곱). 그래도 넘치면 뒤를 자른다.
+    """
+    limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
+    excess = len(entries) - limit
+    if excess <= 0:
+        return list(entries)
+    seen: set[int] = set()
+    added: list[int] = []
+    for index, (_, slot) in enumerate(entries):
+        if slot is None:
+            continue
+        if slot in seen:
+            added.append(index)
+        seen.add(slot)
+    dropped = set(added[-excess:])
+    return [entry for index, entry in enumerate(entries) if index not in dropped][:limit]
 
 
 def _product_share_label_annotations(
@@ -291,8 +369,22 @@ def _product_share_label_annotations(
     도넛 안에 적을 자리가 없으므로(지름 80px) 색의 뜻은 여기서 읽는다.
     """
     entries = product_share_legend(cells)
-    limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
-    shown = entries[:limit]
+    # 부품을 가른 제품의 이름표(「DEMO_A (DEMO_CUSTOM_A)」)는 좁은 칸에서 부품을 남기고 줄인다 —
+    # 앞을 남기는 줄임은 한 제품의 두 부품을 같은 글로 만든다(`_fit_part_label` — 끝을 같이 쓰는
+    # 형제 부품과는 갈리는 글자를 남긴다).
+    parts = {
+        piece.product: (piece.base_product or piece.product, piece.part)
+        for cell in cells.values()
+        for piece in cell.slices
+    }
+    shown = _legend_rows_within_limit(entries)
+    # 같은 제품의 부품끼리 줄인 글이 같아지지 않게 함께 그리는 형제 부품을 넘긴다(과거 달
+    # 「제품 (-)」 줄의 표지 `-` 도 함께 그리는 형제다).
+    shown_parts: dict[str, set[str]] = {}
+    for name, _ in shown:
+        base_product, part = parts.get(name, (name, PART_NOT_SPLIT))
+        if part != PART_NOT_SPLIT:
+            shown_parts.setdefault(base_product, set()).add(part)
     rows = math.ceil(len(shown) / _PRODUCT_SHARE_LEGEND_COLUMNS)
     row_px = _PRODUCT_SHARE_LEGEND_ROW_PX if rows <= 3 else _PRODUCT_SHARE_LEGEND_TIGHT_ROW_PX
     block = _PRODUCT_SHARE_TITLE_LINE_PX + (
@@ -327,7 +419,14 @@ def _product_share_label_annotations(
     ]
     for position, (name, slot) in enumerate(shown):
         row, column = divmod(position, _PRODUCT_SHARE_LEGEND_COLUMNS)
-        fitted = _fit_to_units(name, name_budget, _text_width_units)
+        base_product, part = parts.get(name, (name, PART_NOT_SPLIT))
+        fitted = _fit_part_label(
+            base_product,
+            part,
+            name_budget,
+            _text_width_units,
+            siblings=shown_parts.get(base_product, ()),
+        )
         single = len(shown) == 1
         annotations.append(
             {

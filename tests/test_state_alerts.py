@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, note_table, table_frame
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts
@@ -281,10 +281,127 @@ def test_a_database_ahead_of_the_code_is_a_state_alert_per_database() -> None:
 
 def test_the_area_a_codes_are_registered_with_their_kinds() -> None:
     """2단계 a 의 코드 — 상태(바뀔 때만) · 사건(한 번)이 맞게 등록됐다."""
-    states = {"ST-01", "ST-04", "ST-05", "ST-06", "ST-14", "ST-15", "ST-17", "ST-21", "HM-02"}
+    states = {"ST-01", "ST-04", "ST-05", "ST-06", "ST-14", "ST-15", "ST-17", "ST-21", "ST-22"}
+    states |= {"HM-02"}
     states |= {"HM-04", "SB-19", "SB-20", "GL-02", "GL-06"}
     events = {"ST-09", "ST-20", "HM-01", "SB-14"}
     assert {code for code in states if alerts.spec(code).kind == "state"} == states
     assert {code for code in events if alerts.spec(code).kind == "event"} == events
     assert alerts.spec("ST-21").level == "info"
     assert {alerts.spec(code).level for code in ("ST-20", "HM-01")} == {"error"}
+
+
+ROUTE_EXCLUSIONS = """
+import pandas as pd
+import streamlit as st
+from custom_key_tables import with_blank_custom
+
+from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.required_exclusion_notice import alert_required_exclusions
+from capa_simulation.components.state_alerts import AlertScope
+
+reasons = st.session_state.get(
+    "reasons",
+    ["대당 Capa 없음", "부하 예외 바탕 없음", "부하 예외 바탕 없음", "PKG 기준은 Buffer 로만 계수"],
+)
+frame = pd.DataFrame(
+    {
+        "생산계획년월": [202601] * len(reasons),
+        "공정": ["DEMO-P1"] * len(reasons),
+        "Area_Name": ["Main"] * len(reasons),
+        "양산구분": ["양산"] * len(reasons),
+        "제품정보": ["DEMO-HBM"] * len(reasons),
+        "Stack": ["12H"] * len(reasons),
+        "WF 구분": ["Core", "Core", "CORE", "Core"][: len(reasons)],
+        "소요기준": ["WF", "WF", "WF", "PKG"][: len(reasons)],
+        "STEP_SEQ": [f"S{index}" for index in range(len(reasons))],
+        "MCP_SEQ": ["1"] * len(reasons),
+        "부하량": [5.0, 7.0, 2.0, 0.0][: len(reasons)],
+        "대당 Capa": [float("nan")] * len(reasons),
+        "제외사유": reasons,
+    }
+)
+frame = with_blank_custom(frame)
+st.session_state["lists"] = [
+    item.title
+    for item in alert_required_exclusions(
+        frame,
+        scope=AlertScope({"token": "t1"}, "DEMO · r1 · 조회기간"),
+        tab="소요대수",
+        display_order=None,
+        labels=ProcessLabels(version=0, labels={}),
+        file_suffix="202601_202601",
+    )
+]
+"""
+
+
+def test_basis_missing_routes_are_their_own_alert_apart_from_the_unit_capacity_one() -> None:
+    """부하 예외 바탕이 없어 뺀 경로(`ST-22`)는 대당 Capa 가 없어 뺀 경로(`ST-15`)에 섞이지 않는다 —
+    고칠 곳이 수율 · Chip 구성이다(2026-11-22 사용자 답 Q13). 표 행 수가 그 알림 건수이고 CSV 이름도
+    따로다. 소요대수 탭이 열린 회차마다 셋이 늘 서고, 그런 줄이 없으면 `ST-22` 는 「없음」 이다."""
+    app = AppTest.from_string(ROUTE_EXCLUSIONS).run()
+    assert not app.exception and not app.warning
+    notes = {note["code"]: note for note in alert_notes(app)}
+    assert set(notes) == {"ST-15", "ST-21", "ST-22"}
+    capacity, basis = notes["ST-15"], notes["ST-22"]
+    assert capacity["short"].startswith("대당 Capa 가 없어 소요대수에서 뺀 경로 1건")
+    assert basis["active"] is True and basis["level"] == "check"
+    assert basis["short"] == "부하 예외 바탕 없음 2건 — 목록: Alarm › 이 줄"
+    assert "수율 · Chip 구성" in basis["full"] and "두 표기" in basis["full"]
+    # 겹친 두 표기는 바탕 표(수율 · Chip 구성)에 있고 목록(경로 줄)의 WF 구분은 경로 쪽 표기다 —
+    # 겹침을 목록에서 보라고 하지 않는다.
+    assert "수율 · Chip 구성에 그 제품의 같은 WF 구분이 두 표기" in basis["full"]
+    assert "목록의 WF 구분 표기로" not in basis["full"]
+    table = note_table(basis, "부하 예외 바탕 없는 경로")
+    assert table["total"] == 2
+    assert table["file"] == "Capa_Required_Route_Exception_Basis_202601_202601.csv"
+    assert set(table_frame(table)["제외사유"]) == {"부하 예외 바탕 없음"}
+    assert set(table_frame(note_table(capacity, "소요대수 제외 기준정보"))["제외사유"]) == {
+        "대당 Capa 없음"
+    }
+    assert app.session_state["lists"] == [
+        "소요대수 제외 기준정보",
+        "PKG Buffer 밖 행",
+        "부하 예외 바탕 없는 경로",
+    ]
+
+    app.session_state["reasons"] = ["대당 Capa 없음"]
+    app.run()
+    quiet = {note["code"]: note for note in alert_notes(app)}
+    assert quiet["ST-22"]["active"] is False and "tables" not in quiet["ST-22"]
+    assert quiet["ST-15"]["active"] is True
+
+
+UNCOUNTED_DEMAND = """
+import streamlit as st
+
+from capa_simulation.components.required_exclusion_notice import alert_uncounted_demand
+from capa_simulation.components.state_alerts import AlertScope
+from capa_simulation.services.required_equipment import RequiredExclusionCounts
+
+alert_uncounted_demand(
+    RequiredExclusionCounts(*st.session_state["counts"]),
+    code=st.session_state["code"],
+    scope=AlertScope({"token": "t1"}, "DEMO · r1 · 조회기간"),
+    scope_name="조회기간",
+    lists=[],
+)
+"""
+
+
+@pytest.mark.parametrize("code", ["ST-01", "ST-04"])
+def test_the_plan_side_fingerprint_keeps_its_four_cells(code: str) -> None:
+    """계획 쪽 알림(`ST-01` · `ST-04`)의 지문 내용은 계획 쪽 세 수와 경로 쪽 합(늘 0) 네 칸이다.
+
+    지문 판정표는 브라우저 탭에 남으므로(`alerts` 모듈 설명) 칸 수가 바뀌면 조건이 그대로여도 열린
+    탭마다 알림이 한 번 다시 뜬다. 경로 쪽 부분 수(`basis_missing_routes`)가 0 이 아니어도 칸이
+    늘지 않는다."""
+    app = AppTest.from_string(UNCOUNTED_DEMAND)
+    app.session_state["counts"] = (2, 1, 3, 5, 4)
+    app.session_state["code"] = code
+    app.run()
+    assert not app.exception
+    (note,) = [item for item in alert_notes(app) if item["code"] == code]
+    assert note["active"] is True
+    assert note["fp"] == alerts.fingerprint(code, {"token": "t1"}, [2, 1, 3, 0])

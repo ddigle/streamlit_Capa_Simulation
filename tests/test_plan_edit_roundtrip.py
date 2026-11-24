@@ -5,6 +5,7 @@ from typing import TypedDict
 import pandas as pd
 import pytest
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     attach_plan_attributes,
@@ -12,12 +13,14 @@ from capa_simulation.services.load_calculator import (
     plan_from_edit_table,
     plan_to_edit_table,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
 
 DIMENSIONS = {
     "양산구분": "양산",
     "제품정보": "DEMO_P1",
     "Stack": "8H",
+    "CUSTOM": CUSTOM_BLANK,
     "Capa Code": "DEMO_C1",
     "Customer": "DEMO_CUST",
     "CS": "DEMO_CS",
@@ -104,9 +107,15 @@ def test_home_cache_key_separates_different_scenario_contents() -> None:
         "display_order": DISPLAY_ORDER,
     }
 
-    first = build_home_simulation_cache_key(scenario_token="token-a", **common)
-    second = build_home_simulation_cache_key(scenario_token="token-b", **common)
-    same = build_home_simulation_cache_key(scenario_token="token-a", **common)
+    first = build_home_simulation_cache_key(
+        scenario_token="token-a", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    second = build_home_simulation_cache_key(
+        scenario_token="token-b", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    same = build_home_simulation_cache_key(
+        scenario_token="token-a", **common, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert first != second
     assert first == same

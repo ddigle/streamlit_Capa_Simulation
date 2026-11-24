@@ -1,26 +1,36 @@
 # Purpose: HOME의 생산계획·Wafer 부하량·Bottleneck 순위·Capa 대시보드 데이터를 집계한다.
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 import pandas as pd
 
-from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import (
     PAGE_PLAN,
     TAB_PKG_PLAN,
 )
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.load_calculator import calculate_density_load
+from capa_simulation.services.load_calculator import (
+    calculate_density_load,
+    exclude_dummy_series,
+)
 from capa_simulation.services.month_columns import month_label, year_total_label
+from capa_simulation.services.product_parts import (
+    PART_COLUMN,
+    apply_part_display_order,
+    split_product_parts,
+)
 
-PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
+# 제품 → 부품(`CUSTOM`) → Stack. 부품은 칸으로 그리지 않는다 — 그림이 제품 칸 글에 녹여
+# 「제품 (부품)」 이름표 하나로 쓰고(`product_parts.part_merged_columns`), 부품이 하나뿐인 제품은
+# 접힌 값(빈 글자)이라 지금처럼 제품 이름만이다.
+PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", PART_COLUMN, "Stack"]
 
 # `상세 계획` 을 켜면 거래선을 가장 아래 분류로 더한다. `Customer` 는 `RQ_PKG_PLAN` 의 1급
 # 컬럼이라 조인이 아니라 묶는 키 하나가 늘어나는 것뿐이다.
 PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS = [*PRODUCTION_DETAIL_DIMENSIONS, "Customer"]
 
 # 화면 머리글. 원본 컬럼명을 그대로 쓰면 `제품정보` 가 칸을 넘는다. 계약 컬럼명은 그대로
-# 두고 표시 글자만 여기서 정한다.
+# 두고 표시 글자만 여기서 정한다. 부품 칸은 그리지 않아 머리글 · 폭이 없다.
 DETAIL_DIMENSION_HEADERS = {"제품정보": "제품", "Stack": "Stack", "Customer": "거래선"}
 
 # 라벨 칸 안에서 분류 컬럼이 나눠 갖는 폭. 제품명이 길고 Stack 은 짧다. 거래선은 끝 글자로 갈리는
@@ -34,8 +44,15 @@ def build_production_dashboard(
     display_order: pd.DataFrame | None = None,
     *,
     detail_dimensions: list[str] | None = None,
+    multi_part: Collection[str] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build mass-production Density totals and PKG Plan detail by the given dimensions."""
+    """Build mass-production Density totals and PKG Plan detail by the given dimensions.
+
+    분류에 `CUSTOM` 이 있으면 세부수량은 (제품, 부품, …)으로 묶는다 — `multi_part`(부품이 둘
+    이상인 제품정보, `product_parts.multi_part_products` 로 리비전 계획 전체에서 낸 것)에 없는
+    제품은 부품을 접은 값(빈 글자)이라 묶음 · 행이 부품을 싣기 전과 같다. 기본(빈 판정)은 모두
+    접는다. Density 는 접지 않은 계획 그대로다.
+    """
     dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
     density = calculate_density_load(plan, density_data)
     production_class = density["양산구분"].astype("string").str.strip()
@@ -54,7 +71,9 @@ def build_production_dashboard(
     )
     monthly["년월"] = monthly["생산계획년월"].map(_month_label)
 
-    production_plan = plan.copy()
+    production_plan = (
+        split_product_parts(plan, multi_part) if PART_COLUMN in dimensions else plan.copy()
+    )
     production_plan["양산구분"] = production_plan["양산구분"].astype("string").str.strip()
     for column in dimensions:
         production_plan[column] = production_plan[column].astype("string").str.strip()
@@ -80,7 +99,7 @@ def build_production_dashboard(
     detail = detail.rename(columns={month: _month_label(int(month)) for month in raw_month_columns})
     month_columns = [_month_label(int(month)) for month in sorted(raw_month_columns)]
     detail = detail[[*dimensions, *month_columns]]
-    detail = apply_display_order(detail, display_order, PAGE_PLAN, TAB_PKG_PLAN)
+    detail = apply_part_display_order(detail, display_order, PAGE_PLAN, TAB_PKG_PLAN)
     return monthly, detail
 
 
@@ -150,7 +169,8 @@ def align_detail_with_comparison(
     것이 비교의 목적이다. 그 행의 현재 수량은 결측이고 비교값만 있다.
 
     행이 늘었으므로 표시순서를 다시 건다. 새 행이 맨 뒤에 붙으면 같은 제품의 행이 표
-    위아래로 흩어진다.
+    위아래로 흩어진다. 부품을 가르는 제품의 비교에만 있는 줄(짝을 못 찾은 「제품 (-)」)도 그
+    제품의 부품 곁에 선다(`apply_part_display_order`).
     """
     missing = [column for column in dimensions if column not in current.columns]
     if missing:
@@ -160,10 +180,23 @@ def align_detail_with_comparison(
     keys = pd.concat(
         [current[dimensions], comparison[dimensions]], ignore_index=True
     ).drop_duplicates()
-    keys = apply_display_order(keys, display_order, PAGE_PLAN, TAB_PKG_PLAN).reset_index(drop=True)
+    keys = apply_part_display_order(keys, display_order, PAGE_PLAN, TAB_PKG_PLAN).reset_index(
+        drop=True
+    )
     aligned_current = keys.merge(current, on=dimensions, how="left", validate="one_to_one")
     aligned_comparison = keys.merge(comparison, on=dimensions, how="left", validate="one_to_one")
     return aligned_current, aligned_comparison
+
+
+def home_aggregation_wafer_load(wafer_load: pd.DataFrame) -> pd.DataFrame:
+    """HOME `Wafer 계획` 이 묶는 상세 Wafer 부하량 — Dummy 계열을 뺀 원천 집계 기준.
+
+    HOME 의 Wafer 정의는 이 함수 하나다. 월 합(`build_monthly_wafer_load_from_load`)과 제품별 비중의
+    분모(`product_share.build_product_volume`)가 같은 거른 프레임을 받아 둘의 합이 한 치도 다르지
+    않고, 비교 GAP · 선행 B/O · 입장 화면 Summary 도 이 거른 값 위에서 잰다. 소요대수 · 확보율은
+    거르지 않은 부하량 그대로다(`load_calculator.exclude_dummy_series`).
+    """
+    return exclude_dummy_series(wafer_load)
 
 
 def build_monthly_wafer_load_from_load(wafer: pd.DataFrame) -> pd.DataFrame:

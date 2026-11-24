@@ -42,9 +42,11 @@ from capa_simulation.components import (
     access_list_grid,
     admin_view,
     grade_ui,
+    route_load_exception_admin,
     sso_identity,
     sso_status,
 )
+from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_FORMULAS
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "app_pages" / "admin_area.py"
@@ -220,7 +222,11 @@ def test_the_access_list_is_one_edit_grid_with_four_grades_and_locked_own_rows(
     labels = visible_labels(app)
     for gone in ("등급 바꾸기", "추가", "지우기", "관리자로", "일반으로", "사람 고르기"):
         assert gone not in labels, gone
-    assert not list(app.multiselect)
+    # 옛 「사람 고르기」 다중 선택이 없다 — 남는 다중 선택은 같은 화면 「부하 예외」 탭의 산식마다
+    # 공정 고르기 칸뿐이다(닫힌 탭에도 서야 값이 남는다).
+    assert sorted(str(box.key) for box in app.multiselect) == sorted(
+        route_load_exception_admin.pick_slot(formula).key for formula in ROUTE_LOAD_FORMULAS
+    )
     captions = [str(caption.value) for caption in app.caption]
     assert any("개발자 1(환경변수 1)" in caption for caption in captions), captions
     save = app.button(key=access_list_admin.SAVE_KEY)

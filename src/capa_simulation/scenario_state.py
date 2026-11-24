@@ -2,6 +2,7 @@
 
 """Per-session active scenario built from editable reference tables."""
 
+from collections.abc import Mapping
 from typing import Final, TypedDict, cast
 from uuid import uuid4
 
@@ -16,6 +17,13 @@ ACTIVE_SCENARIO_KEY = "active_scenario"
 # 다른 모듈이 활성 시나리오 칸을 읽는 창구(AGENTS 5장 42) — 「있거나 없음」 칸이라 `peek` 로
 # 읽는다. 쓰기는 이 모듈의 함수(활성화 · 편집 적용 · 지우기)만 한다.
 ACTIVE_SCENARIO: Final = SessionSlot(ACTIVE_SCENARIO_KEY, dict)
+# 이 세션이 마지막으로 읽은 부하 예외 선언(원본 공정명 → 산식 id — 화면이 판을 읽을 때마다
+# `page_bootstrap.route_exceptions_of` 가 덮어 적는다). 편집본 칸 걷기(`_retire_edit_cell`)가
+# 이 판으로 접은 키 하나를 걷고 DB 를 열지 않는다. 걷는 회차가 이미 새 판을 읽었으면 앞 판으로
+# 지은 편집본 칸은 걷히지 않고 상한에서 밀릴 때까지 남는다(값은 틀리지 않는다). 비었으면 빈
+# 선언이다.
+ROUTE_EXCEPTIONS_SEEN_KEY = "active_route_exceptions_seen"
+ROUTE_EXCEPTIONS_SEEN: Final = SessionSlot(ROUTE_EXCEPTIONS_SEEN_KEY, dict, dict)
 # 이 세션에서 복제 등록한 가상 제품 목록. 리비전을 저장할 때 함께 기록해
 # 공식버전 발행 시 실적과 대조할 수 없는 데이터가 섞였는지 알 수 있게 한다.
 VIRTUAL_PRODUCTS_KEY = "session_virtual_products"
@@ -205,6 +213,12 @@ def scenario_month_table(
     )
 
 
+def note_route_exceptions(declaration: Mapping[str, str]) -> None:
+    """이 회차에 계산 키로 접는 부하 예외 선언을 적어 둔다(앞 판은 덮는다) — 편집본 칸 걷기가
+    마지막에 적힌 판으로 접은 키를 걷는다."""
+    ROUTE_EXCEPTIONS_SEEN.set(dict(declaration))
+
+
 def _retire_edit_cell(previous: object) -> None:
     """갈아끼워지거나 버려지는 활성 시나리오가 **편집본**이면 그 전체 기간 결과 칸 하나를 걷는다.
 
@@ -213,13 +227,17 @@ def _retire_edit_cell(previous: object) -> None:
     세션끼리 나누는 리비전 칸을 밀어낸다. 바꾸는 길 넷(편집 적용 `_next_edit_token` · 원본 되돌리기
     `reset_active_scenario` · 리비전 불러오기 · 저장 뒤 활성화 `activate_scenario_tables`)과 버리는
     길(`clear_active_scenario`)이 부른다. 키는 **갈아끼워지는 dict 의** (reference_version,
-    content_token)이다 — 다른 리비전을 불러올 때는 새 번호와 다르다. pristine 토큰 칸(세션끼리
-    나누는 리비전 결과)은 걷지 않는다. 부르는 쪽은 새 시나리오를 다 지은 뒤 세션에 넣기 바로 앞에
-    부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 걷은 뒤 옛 dict 로 계산을
-    다시 부르면 그 칸을 한 번 더 계산할 뿐 값은 같다 — 편집 적용 길은 곧바로 앱 전체 회차를 다시
-    돌린다는 것을 `tests/test_edit_token_retire.py` 의 정적 그물이 보고, 되돌리기 · 불러오기 ·
-    저장 뒤 · 버리기를 부르는 곳(콜백 · `st.rerun` · 알림만 남기는 관리 화면)은 그물 없이 코드로
-    따라갔다.
+    content_token)에 부하 예외 선언을 접은 것이다(`full_scenario_cache_key`) — 다른 리비전을 불러올
+    때는 새 번호와 다르다. 선언은 이 세션이 마지막으로 읽은 판(`ROUTE_EXCEPTIONS_SEEN`)이고 DB 를
+    다시 읽지 않는다. 편집을 적용하는 회차도 본문 앞에서 지금 판을 읽어 그 칸을 덮으므로, 편집본
+    칸을 지은 뒤 남이 선언을 저장했으면 걷는 키는 새 판으로 접혀 앞 판으로 지은 칸은 걷히지 않고
+    상한에서 밀릴 때까지 남는다(값은 틀리지 않는다 — `tests/test_edit_token_retire.py`). pristine
+    토큰 칸(세션끼리 나누는 리비전 결과)은 걷지 않는다. 부르는 쪽은 새 시나리오를 다 지은 뒤 세션에
+    넣기 바로 앞에 부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 걷은 뒤
+    옛 dict 로 계산을 다시 부르면 그 칸을 한 번 더 계산할 뿐 값은 같다 — 편집 적용 길은 곧바로 앱
+    전체 회차를 다시 돌린다는 것을 `tests/test_edit_token_retire.py` 의 정적 그물이 보고, 되돌리기 ·
+    불러오기 · 저장 뒤 · 버리기를 부르는 곳(콜백 · `st.rerun` · 알림만 남기는 관리 화면)은 그물 없이
+    코드로 따라갔다.
     편집본을 쥔 채 끝난 세션의 칸은 상한에서 밀릴 때까지 남는다.
     """
     if not isinstance(previous, dict):
@@ -231,9 +249,16 @@ def _retire_edit_cell(previous: object) -> None:
         and isinstance(old_version, int)
         and not is_pristine_content_token(old_token)
     ):
-        from capa_simulation.services.simulation_cache import retire_full_capacity_outcome
+        from capa_simulation.services.simulation_cache import (
+            full_scenario_cache_key,
+            retire_full_capacity_outcome,
+        )
 
-        retire_full_capacity_outcome((old_version, old_token))
+        retire_full_capacity_outcome(
+            full_scenario_cache_key(
+                old_version, old_token, route_exceptions=ROUTE_EXCEPTIONS_SEEN.get()
+            )
+        )
 
 
 def _next_edit_token(previous: ActiveScenario) -> str:

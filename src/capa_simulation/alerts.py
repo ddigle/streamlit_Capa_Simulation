@@ -196,6 +196,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("ST-17", "check", "state", "가용대수가 없어 빈칸인 공정 · 주차(표준 목표)"),
     AlertSpec("ST-20", "error", "event", "계산 화면을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("ST-21", "info", "state", "소요기준 PKG 의 Buffer 밖 행 — 규칙대로 세지 않음"),
+    AlertSpec("ST-22", "check", "state", "부하 예외 바탕이 없어 소요대수 산출에서 뺀 경로"),
     AlertSpec("HM-01", "error", "event", "HOME 을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("HM-02", "check", "state", "측정률 행이 없어 중립값 1.0 으로 계산한 경로"),
     AlertSpec("HM-04", "check", "state", "선행 B/O 반영 계획이 0 이하라 적용하지 못한 달"),
@@ -237,7 +238,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음 · 실패한 단계"),
     AlertSpec("AD-02", "action", "state", "운영인데 통합인증이 꺼짐"),
     AlertSpec("AD-03", "action", "state", "통합인증 서명 인증서 만료 임박"),
-    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
+    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · CUSTOM 원천 표 · 패키지 없음"),
     AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
     AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
     AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
@@ -286,6 +287,14 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # DB 등록 저장 뒤의 충돌 보고 — 요약 · 상세는 그 Alarm 줄의 표다
     # (`bigdataquery_registration._queue_reference_conflict_report`).
     AlertSpec("SC-04", "check", "event", "DB 등록 — 기준정보 업무 키 값 충돌을 임시 처리함"),
+    # DB 등록 저장 뒤 CUSTOM 원천 표와 본 표의 칸 행 수 대조 — 표 「CUSTOM 대조」 는 그 Alarm 줄의
+    # 표다(`bigdataquery_registration._queue_custom_source_check`, 2,000행을 넘으면 표 없이 수만).
+    AlertSpec(
+        "SC-05", "check", "event", "DB 등록 — CUSTOM 원천 표와 행 수가 다른 칸이 있음(등록함)"
+    ),
+    # 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)로 CUSTOM 원천 표를 묻지 않고 부품 구분 없이 등록함 — 표
+    # 없음, 전문 끝에 끄개 이름 · 코드(`bigdataquery_registration._queue_custom_source_check`).
+    AlertSpec("SC-06", "check", "event", "DB 등록 — CUSTOM 원천 끄개로 부품 구분 없이 등록함"),
     # 정본 버킷 동기화(`components/object_sync_status.py`). 값 없이 갈래 낱말만 싣는다.
     AlertSpec("SY-01", "action", "state", "동기화 꺼짐 — 설정 오류"),
     AlertSpec("SY-02", "error", "state", "저장이 정본에 올라가지 못함"),

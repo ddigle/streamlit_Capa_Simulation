@@ -126,7 +126,7 @@ from capa_simulation.services.simulation_cache import (
     frame_digest,
     get_reference_edit_table,
     get_route_step_tables,
-    scenario_cache_key,
+    scenario_content_key,
 )
 from capa_simulation.sidebar_status import table_card
 
@@ -167,6 +167,7 @@ RATIO_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
@@ -345,7 +346,7 @@ try:
     # 막혔다(2026-09-29 버그 보고 횡전개). 설비대수 세 표·부하량 환산 화면과 같은 규칙이다.
     # 조각은 쓰는 자리에서만 자른다(`_EditSlices`).
     edit_slices = _EditSlices(active_scenario, effective_start_month, effective_end_month)
-    edit_cache_key = scenario_cache_key(
+    edit_cache_key = scenario_content_key(
         reference_version, active_scenario, effective_start_month, effective_end_month
     )
     edit_display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
@@ -611,7 +612,8 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
             suffix += 1
         text = candidate = (
             f"{process_text(row['공정'])} · {row['양산구분']} · {row['제품정보']} · "
-            f"{row['Stack']} · {row['WF 구분']} · {row['Area_Name']} · {row['소요기준']} · "
+            f"{row['Stack']} · {row['CUSTOM']} · {row['WF 구분']} · {row['Area_Name']} · "
+            f"{row['소요기준']} · "
             f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
         )
         suffix = 2

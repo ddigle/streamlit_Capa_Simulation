@@ -111,6 +111,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     calculation_stop_notice,
+    current_route_exceptions,
     selected_month_range,
     stopped_field_value,
 )
@@ -191,6 +192,7 @@ from capa_simulation.services.process_selection import (
     revision_processes,
     visible_processes,
 )
+from capa_simulation.services.product_parts import multi_part_products
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASES,
     assign_product_slots,
@@ -391,12 +393,16 @@ try:
     home_trace.mark("기준정보·시나리오")
     loading.advance()
 
+    # 부하 예외 선언 판은 이 회차에 한 번 읽는다 — 계산 키(접은 계산 토큰)와 그림 키(판 지문)가 같은
+    # 판이다.
+    route_exceptions = current_route_exceptions()
     home_simulation_cache_key = build_home_simulation_cache_key(
         reference_version=reference_version,
         scenario_token=active_scenario["content_token"],
         start_month=effective_start,
         end_month=effective_end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        route_exceptions=route_exceptions.declaration,
     )
     home_trace.mark("캐시 키 생성")
     try:
@@ -520,6 +526,16 @@ try:
             partial(prepare_display_order, raw_display_order),
         )
 
+    def _product_parts() -> frozenset[str]:
+        # 과거 입력에는 부품이 없어, 부품을 가르는 제품(리비전 계획 전체로 판정 — 내용 토큰이
+        # 정한다)의 과거 열 · 조각은 「제품 (-)」 이다. 계획 세부수량 과거 열과 제품별 비중 과거
+        # 조각이 한 판정을 쓴다.
+        return _remembered(
+            "product_parts",
+            (home_simulation_cache_key[1],),
+            partial(multi_part_products, active_scenario["tables"]["RQ_PKG_PLAN"]),
+        )
+
     def _merged_detail(detail: pd.DataFrame) -> pd.DataFrame:
         past_detail = past_plan_detail_to_wide(
             past_profile.plan_detail,
@@ -527,6 +543,7 @@ try:
             start_month=effective_start,
             end_month=effective_end,
             exclude_months=calculated_months,
+            multi_part=_product_parts(),
         )
         # 붙일 과거 열이 없으면 합치기가 표를 그대로 돌려주고 정렬하지 않는다(규칙도 보지 않는다).
         return merge_past_plan_detail(
@@ -551,6 +568,7 @@ try:
         start_month=effective_start,
         end_month=effective_end,
         exclude_months=calculated_months,
+        multi_part=_product_parts(),
     )
     product_volume = combine_product_volume(product_volume, past_products)
     # 확보율 보정은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
@@ -916,6 +934,8 @@ figure_conditions = HomeFigureCacheKey(
     display_order_digest=home_simulation_cache_key[-1],
     included_processes=tuple(included_processes),
     threshold_digest=thresholds.digest,
+    # 계산 키에 접은 그 판의 지문 — 선언을 저장하면 확보율을 칠하는 세 묶음을 다시 그린다.
+    route_exception_digest=route_exceptions.digest,
     include_edp=include_edp,
     plan_detail_customer=plan_detail_customer,
     # 비교는 이 한 값으로 충분하다. 「껐다」와 「켰지만 못 붙였다」는 그림이 똑같으므로

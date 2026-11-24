@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import random
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ import pytest
 from capa_simulation.components.capacity_gate import (
     GateVerdict,
     derived_save_verdict,
+    input_check_verdict,
     official_publish_verdict,
     revision_save_verdict,
 )
@@ -32,10 +34,17 @@ from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenar
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.scenario_month_merge import merge_scenario_months
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.simulation_cache import (
     full_capacity_outcome,
+    get_capacity_and_demand,
     get_full_capacity_outcome,
 )
 
@@ -71,7 +80,9 @@ def _edited(version: int, tables: dict[str, pd.DataFrame]) -> ActiveScenario:
 def test_a_scenario_that_calculates_saves_without_a_word(tables: dict[str, pd.DataFrame]) -> None:
     version = _version()
 
-    verdict = revision_save_verdict(version, _edited(version, tables), tables)
+    verdict = revision_save_verdict(
+        version, _edited(version, tables), tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert verdict.allowed and verdict.message is None
 
@@ -81,7 +92,12 @@ def test_an_edit_that_breaks_the_calculation_is_not_saved(
 ) -> None:
     version = _version()
 
-    verdict = revision_save_verdict(version, _edited(version, _broken(tables)), tables)
+    verdict = revision_save_verdict(
+        version,
+        _edited(version, _broken(tables)),
+        tables,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
 
     assert not verdict.allowed
     assert verdict.message is not None and "이번 편집이 깨뜨린" in verdict.message
@@ -101,11 +117,14 @@ def test_an_error_that_was_already_there_does_not_block_the_save(
     version = _version()
     broken = _broken(tables)
 
-    edited = revision_save_verdict(version, _edited(version, broken), broken)
+    edited = revision_save_verdict(
+        version, _edited(version, broken), broken, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     untouched = revision_save_verdict(
         version,
         {**_edited(version, broken), "content_token": pristine_content_token(version)},
         broken,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     for verdict in (edited, untouched):
@@ -124,12 +143,96 @@ def test_the_uncached_core_judges_like_the_cached_check(tables: dict[str, pd.Dat
             _scenario_tables=candidate,
             _reference_tables=candidate,
         )
-        uncached = full_capacity_outcome(candidate, candidate)
+        uncached = full_capacity_outcome(
+            candidate, candidate, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
 
         assert uncached.error == cached.error
         if cached.required_equipment is not None:
             assert uncached.required_equipment is not None
             pd.testing.assert_frame_equal(uncached.required_equipment, cached.required_equipment)
+
+
+def _seed_declaration(tables: dict[str, pd.DataFrame]) -> dict[str, str]:
+    """내장 시드의 WF Core 경로 공정 하나를 선언한다 — 시드에는 Buffer 경로가 없어 그 Core 줄이
+    「부하 예외 바탕 없음」 으로 빠진다(소요대수 밖 수요 — 멈춤은 아니다, Q13)."""
+    reqb = tables["RQ_REQB"]
+    core = reqb["소요기준"].eq("WF") & reqb["WF 구분"].eq("Core")
+    return {str(reqb.loc[core, "공정"].iloc[0]): BUFFER_X_CORE_CHIP}
+
+
+def test_the_save_and_publish_gates_judge_with_the_declaration_they_are_given(
+    tables: dict[str, pd.DataFrame], tmp_path: Path
+) -> None:
+    """저장 · 발행 · 입력 점검 판정은 부르는 화면이 넘긴 부하 예외 선언 판으로 셈한다 — 선언하면 그
+    공정의 Core 줄이 바탕 없이 빠져 소요대수 밖 수요로 알리고, 빈 선언은 말없이 지난다. 선언은
+    멈춤을 만들지 않는다(2026-11-22 답 Q13)."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.services.revision_input_check import GROUP_ROUTES
+
+    declaration = _seed_declaration(tables)
+    version = _version()
+    plain = revision_save_verdict(
+        version, _edited(version, tables), tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    declared = revision_save_verdict(
+        version, _edited(version, tables), tables, route_exceptions=declaration
+    )
+    assert plain.allowed and plain.message is None
+    assert declared.allowed and declared.exclusion
+    assert declared.message is not None and ROUTE_LOAD_BASIS_MISSING_REASON in declared.message
+
+    database = tmp_path / "declared_gate.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    clean = official_publish_verdict(
+        str(database), release.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    warned = official_publish_verdict(
+        str(database), release.revision_id, route_exceptions=declaration
+    )
+    assert clean.allowed and clean.message is None
+    assert warned.allowed and warned.message is not None
+    assert ROUTE_LOAD_BASIS_MISSING_REASON in warned.message
+
+    def route_reasons(route_exceptions: RouteLoadDeclaration) -> dict[str, int]:
+        check = input_check_verdict(
+            str(database),
+            release.scenario_id,
+            release.revision_id,
+            route_exceptions=route_exceptions,
+        )
+        assert not check.stopped
+        group = check.group(GROUP_ROUTES)
+        return {} if group is None else dict(group.reasons)
+
+    assert ROUTE_LOAD_BASIS_MISSING_REASON not in route_reasons(NO_ROUTE_LOAD_EXCEPTIONS)
+    assert route_reasons(declaration)[ROUTE_LOAD_BASIS_MISSING_REASON] > 0
+
+
+def test_the_derived_save_gate_calculates_with_the_declaration_it_is_given(
+    tables: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """월 머지 · 연도 Shift 저장 검사도 넘긴 선언 판으로 계산한다 — 선언은 멈춤을 만들지 않아 판정은
+    같고(Q13), 계산이 받은 선언으로 그 판을 본다."""
+    from capa_simulation.components import capacity_gate
+
+    seen: list[dict[str, str]] = []
+    real = get_capacity_and_demand
+
+    def spy(
+        scenario_tables: Mapping[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        seen.append(dict(route_exceptions))
+        return real(scenario_tables, route_exceptions=route_exceptions)
+
+    monkeypatch.setattr(capacity_gate, "get_capacity_and_demand", spy)
+    declaration = _seed_declaration(tables)
+
+    assert derived_save_verdict(tables, (), route_exceptions=declaration) == GateVerdict(True)
+    assert seen == [declaration]
 
 
 def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None:
@@ -150,8 +253,12 @@ def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None
         parent_revision_id=release.revision_id,
     )
 
-    assert official_publish_verdict(str(database), release.revision_id).allowed
-    refused = official_publish_verdict(str(database), broken.revision.revision_id)
+    assert official_publish_verdict(
+        str(database), release.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).allowed
+    refused = official_publish_verdict(
+        str(database), broken.revision.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert not refused.allowed
     assert refused.message is not None and "RQ_RUN_RATE" in refused.message
 
@@ -175,7 +282,10 @@ def test_a_different_error_after_the_edit_is_not_called_the_old_one(
     version = _version()
 
     verdict = revision_save_verdict(
-        version, _edited(version, _vital_broken(tables)), _broken(tables)
+        version,
+        _edited(version, _vital_broken(tables)),
+        _broken(tables),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert verdict.allowed
@@ -205,7 +315,10 @@ def test_the_same_error_with_another_count_is_not_called_a_different_one(
     version = _version()
 
     verdict = revision_save_verdict(
-        version, _edited(version, _vital_blank(tables, 1)), _vital_blank(tables, 2)
+        version,
+        _edited(version, _vital_blank(tables, 1)),
+        _vital_blank(tables, 2),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert verdict.allowed
@@ -231,13 +344,17 @@ def test_a_save_warning_reads_its_examples_with_display_names(
     )
 
     plain = revision_save_verdict(
-        version, _edited(version, _vital_blank(tables, 1)), _vital_blank(tables, 2)
+        version,
+        _edited(version, _vital_blank(tables, 1)),
+        _vital_blank(tables, 2),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     named = revision_save_verdict(
         version,
         _edited(version, _vital_blank(tables, 1)),
         _vital_blank(tables, 2),
         labels=lambda: labels,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert plain.message is not None and named.message is not None
@@ -258,7 +375,13 @@ def test_a_passing_check_never_reads_the_display_names(tables: dict[str, pd.Data
         raise AssertionError("통과하는 검사가 표시명을 읽었다")
 
     version = _version()
-    assert revision_save_verdict(version, _edited(version, tables), tables, labels=unread).allowed
+    assert revision_save_verdict(
+        version,
+        _edited(version, tables),
+        tables,
+        labels=unread,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    ).allowed
 
 
 def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -282,7 +405,12 @@ def test_an_edit_that_stops_the_home_density_is_not_saved(
     """
     version = _version()
 
-    verdict = revision_save_verdict(version, _edited(version, _density_broken(tables)), tables)
+    verdict = revision_save_verdict(
+        version,
+        _edited(version, _density_broken(tables)),
+        tables,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
 
     assert not verdict.allowed
     assert verdict.message is not None and "RQ_CHIP_EQ.구분_EQ" in verdict.message
@@ -306,7 +434,9 @@ def test_a_revision_whose_density_stops_cannot_become_official(tmp_path: Path) -
         parent_revision_id=release.revision_id,
     )
 
-    refused = official_publish_verdict(str(database), broken.revision.revision_id)
+    refused = official_publish_verdict(
+        str(database), broken.revision.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert not refused.allowed
     assert refused.message is not None and "RQ_CHIP_EQ.구분_EQ" in refused.message
@@ -353,7 +483,9 @@ def test_a_save_that_leaves_demand_out_of_the_requirement_says_how_much(
     assert callable(edit)
     version = _version()
 
-    verdict = revision_save_verdict(version, _edited(version, edit(tables)), tables)
+    verdict = revision_save_verdict(
+        version, _edited(version, edit(tables)), tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert verdict.allowed and verdict.exclusion
     assert verdict.message is not None and phrase in verdict.message
@@ -385,7 +517,9 @@ def test_a_product_without_pkg_routes_does_not_make_every_save_warn(
 
     edited = _edited(version, _pkg_route_on_one_product(tables))
 
-    verdict = revision_save_verdict(version, edited, tables)
+    verdict = revision_save_verdict(
+        version, edited, tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert verdict.allowed and verdict.message is None
 
@@ -409,8 +543,12 @@ def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_pat
         parent_revision_id=release.revision_id,
     )
 
-    clean = official_publish_verdict(str(database), release.revision_id)
-    warned = official_publish_verdict(str(database), dropped.revision.revision_id)
+    clean = official_publish_verdict(
+        str(database), release.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    warned = official_publish_verdict(
+        str(database), dropped.revision.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert clean.allowed and clean.message is None
     assert warned.allowed
@@ -513,11 +651,17 @@ def test_a_derived_result_that_breaks_the_calculation_is_not_saved(
     healthy = _snapshot(repository, "계산되는 원본", tables)
     broken = _snapshot(repository, "계산 안 되는 원본", _broken(tables))
 
-    assert derived_save_verdict(tables, (healthy,)) == GateVerdict(True)
-    refused = derived_save_verdict(_broken(tables), (healthy,))
+    assert derived_save_verdict(
+        tables, (healthy,), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ) == GateVerdict(True)
+    refused = derived_save_verdict(
+        _broken(tables), (healthy,), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert not refused.allowed
     assert refused.message is not None and "RQ_RUN_RATE" in refused.message
-    inherited = derived_save_verdict(_broken(tables), (healthy, broken))
+    inherited = derived_save_verdict(
+        _broken(tables), (healthy, broken), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     assert inherited.allowed
     assert inherited.message is not None and "공식버전으로 지정할 수 없습니다" in inherited.message
 
@@ -541,7 +685,9 @@ def test_the_derived_save_warning_says_the_result_first_within_the_popup_length(
         for index in range(2)
     ]
 
-    verdict = derived_save_verdict(_broken(tables), (healthy, *long_names))
+    verdict = derived_save_verdict(
+        _broken(tables), (healthy, *long_names), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert verdict.message is not None
     short = short_text(plain_text(verdict.message))
@@ -593,7 +739,9 @@ def test_a_merge_left_without_a_module_points_to_a_new_merge(tmp_path: Path) -> 
     )
 
     for revision_id in (stuck.revision.revision_id, resaved.revision.revision_id):
-        refused = official_publish_verdict(str(database), revision_id)
+        refused = official_publish_verdict(
+            str(database), revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+        )
         assert not refused.allowed
         assert refused.message is not None and "RQ_MODULE" in refused.message
         assert "다시 머지" in refused.message
@@ -602,7 +750,9 @@ def test_a_merge_left_without_a_module_points_to_a_new_merge(tmp_path: Path) -> 
         "다시 머지",
         merge_scenario_months(base_tables, donor_tables, second[0], second[-1]),
     )
-    assert official_publish_verdict(str(database), remerged.revision.revision_id).allowed
+    assert official_publish_verdict(
+        str(database), remerged.revision.revision_id, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).allowed
 
 
 # 공식버전 발행(`publish_official_revision`)을 부르는 자리. 앞의 둘은 위 쓰기 경로 목록이 검사

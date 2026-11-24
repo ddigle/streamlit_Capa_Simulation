@@ -15,6 +15,11 @@ DB 를 모른다. 계산(`simulation_cache.full_capacity_outcome`)과 멈춤 판
 - **단계**는 넷이다 — 오류(계산 멈춤) · 확인 필요(빠진 행 네 묶음과 측정률 1.0 가정) · 알림(등록 때
   뺀 원천 행) · 규칙(규칙대로 뺀 것). 「계산」 칸의 「확인 n」 은 수가 0 이 아닌 확인 필요 묶음
   수다(`RevisionInputCheck.calculation_label`).
+- **부하 예외 선언**이 있으면 두 묶음이 더 선다 — 확인 필요 「이번 데이터에 없는 선언
+  공정」(그 리비전 소요기준에 없는 선언 공정 수)과 알림 「부하 예외로 바꾼 경로」(산식이
+  부하량을 바꾼 소요대수 결과 줄 수 — `route_load_changed_rows`). 선언이 빈 리비전과 뒤 묶음을
+  「셀 수 없음」 으로 접는 멈춘 리비전의 묶음은 그대로다(`RouteExceptionCheck`). 바탕이 없어 뺀
+  줄은 경로 묶음 까닭(「부하 예외 바탕 없음」)에 저절로 선다.
 - **까닭**은 원본 값과 수로 든다 — 화면 표시명은 그릴 때 `reason_label` 로 바꾸고 CSV 는 원본 값
   그대로다(설계 규칙 UI-DAT-10).
 - **멈춘 리비전**은 앞 단계가 멈춰 뒤 묶음을 세지 못한다 — 묶음 하나(「셀 수 없음」)로 접는다.
@@ -25,7 +30,7 @@ DB 를 모른다. 계산(`simulation_cache.full_capacity_outcome`)과 멈춤 판
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
@@ -38,6 +43,7 @@ from capa_simulation.services.load_calculator import (
     PLAN_QUANTITY_BLANK_REASON,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.product_type import WF_DIVISION_COLUMN
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -46,6 +52,12 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_REASON_COLUMN,
     UNROUTED_UNUSED_REASON,
     counted_unrouted_loads,
+)
+from capa_simulation.services.route_load_exceptions import (
+    RouteLoadDeclaration,
+    normalize_route_load_declaration,
+    route_load_changed_rows,
+    route_load_missing_processes,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -71,6 +83,8 @@ GROUP_SOURCE: Final = "source"
 GROUP_RULES: Final = "rules"
 GROUP_UNCOUNTED: Final = "uncounted"
 GROUP_EXTRA: Final = "extra"
+GROUP_ROUTE_MISSING: Final = "route_missing"
+GROUP_ROUTE_CHANGED: Final = "route_changed"
 
 # 묶음 이름 · 부제 · 수 자리 글 — 시안 글자 그대로다.
 STOP_TITLE: Final = "계산 멈춤"
@@ -83,6 +97,8 @@ SOURCE_TITLE: Final = "등록 때 뺀 원천 행"
 RULES_TITLE: Final = "규칙대로 셈에서 뺀 것"
 UNCOUNTED_TITLE: Final = "대당 Capa 에서 뺀 기준 · 소요대수 · 계획 · 가정"
 EXTRA_TITLE: Final = "부대공정"
+ROUTE_MISSING_TITLE: Final = "이번 데이터에 없는 선언 공정"
+ROUTE_CHANGED_TITLE: Final = "부하 예외로 바꾼 경로"
 UNCOUNTED_SUBTITLE: Final = "앞 단계가 멈춰 그 뒤 묶음은 세지 못함"
 PKG_RULE_TITLE: Final = "PKG Buffer 밖"
 UNUSED_RULE_TITLE: Final = "쓰지 않는 경로 조합"
@@ -130,6 +146,9 @@ EXTRA_COLUMNS: Final = (
     "판 섞임",
 )
 EXTRA_PREVIEW: Final = EXTRA_COLUMNS
+# 「이번 데이터에 없는 선언 공정」 표의 칸 — 선언의 원본 공정명 한 칸.
+ROUTE_MISSING_COLUMNS: Final = ("공정",)
+ROUTE_CHANGED_PREVIEW: Final = ("생산계획년월", "공정", "제품정보", WF_DIVISION_COLUMN, "부하량")
 
 # 원천의 계획 행 표시 칸 — 등록 때 뺀 행을 계획 · 경로로 가른다(`plan_row_mask`).
 SOURCE_PLAN_FLAG_COLUMN: Final = "계획기초정보여부"
@@ -211,6 +230,15 @@ class ExtraProcessCheck:
     A10). 「판 섞임」 은 0/1 이다."""
 
     frame: pd.DataFrame
+
+
+@dataclass(frozen=True, eq=False)
+class RouteExceptionCheck:
+    """부하 예외 선언 두 묶음의 재료(`route_exception_check`) — 산식이 부하량을 바꾼 소요대수 결과
+    줄(결과 `attrs` 없음)과 이번 데이터에 없는 선언 공정(`ROUTE_MISSING_COLUMNS` — 원본 공정명)."""
+
+    changed: pd.DataFrame
+    missing: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -500,6 +528,53 @@ def _extra_group(extra: ExtraProcessCheck) -> InputCheckGroup:
     )
 
 
+def route_exception_check(
+    processes: Iterable[object],
+    required_equipment: pd.DataFrame,
+    route_exceptions: RouteLoadDeclaration,
+) -> RouteExceptionCheck | None:
+    """「부하 예외로 바꾼 경로」 · 「이번 데이터에 없는 선언 공정」 의 재료 — 선언이 비면
+    None(두 묶음이 서지 않는다).
+
+    `processes` 는 그 리비전 소요기준(`RQ_REQB`)의 공정, `required_equipment` 는 그 선언으로 계산한
+    소요대수 결과다. 바꾼 줄은 결과 행을 그대로 옮기되 `attrs`(제외 목록 셋)는 떼어 둔다 — 입력 점검
+    요약 칸은 묶음 행 · 수만 쥔다(`simulation_cache.get_revision_input_check`).
+    """
+    if not normalize_route_load_declaration(route_exceptions):
+        return None
+    changed = required_equipment.loc[
+        route_load_changed_rows(required_equipment, route_exceptions)
+    ].reset_index(drop=True)
+    changed.attrs = {}
+    missing = route_load_missing_processes(processes, route_exceptions)
+    return RouteExceptionCheck(
+        changed, pd.DataFrame({"공정": list(missing)}, columns=list(ROUTE_MISSING_COLUMNS))
+    )
+
+
+def _route_groups(check: RouteExceptionCheck) -> tuple[InputCheckGroup, InputCheckGroup]:
+    """선언이 있는 리비전의 두 묶음 — 확인 필요 「이번 데이터에 없는 선언 공정」(공정 수) · 알림
+    「부하 예외로 바꾼 경로」(결과 줄 수, 부제는 `WF 구분` 마다 수). 공정 이름은 부제에 싣지 않고 표
+    칸으로만 든다 — 화면은 표시명, CSV 는 원본이다."""
+    divisions = _reason_counts(check.changed, WF_DIVISION_COLUMN)
+    missing = InputCheckGroup(
+        GROUP_ROUTE_MISSING,
+        "check",
+        ROUTE_MISSING_TITLE,
+        len(check.missing),
+        tables=(InputCheckTable(ROUTE_MISSING_TITLE, check.missing, ROUTE_MISSING_COLUMNS),),
+    )
+    changed = InputCheckGroup(
+        GROUP_ROUTE_CHANGED,
+        "info",
+        ROUTE_CHANGED_TITLE,
+        len(check.changed),
+        " · ".join(f"{division} {count:,}" for division, count in divisions),
+        tables=(InputCheckTable(ROUTE_CHANGED_TITLE, check.changed, ROUTE_CHANGED_PREVIEW),),
+    )
+    return missing, changed
+
+
 def build_input_check(
     outcome: CapacityResult,
     density_error: str | None,
@@ -507,6 +582,7 @@ def build_input_check(
     *,
     period: tuple[int, int] | None = None,
     extra: ExtraProcessCheck | None = None,
+    route_check: RouteExceptionCheck | None = None,
 ) -> RevisionInputCheck:
     """전체 기간 계산 결과 · Density 검사 오류 · 등록 때 뺀 원천 행(원천 없으면 None)으로 점검을
     짓는다.
@@ -515,7 +591,10 @@ def build_input_check(
     차례).
     `period` 는 그 리비전 계산이 본 달 범위(`calculation_period`)다. `extra` 는 그 리비전
     데이터셋에 합친 부대공정의 재료이고, 있을 때만 「부대공정」 묶음이 확인 필요 묶음 뒤에 선다 —
-    부대공정이 없는 리비전의 묶음 · 「확인 n」 은 그대로다.
+    부대공정이 없는 리비전의 묶음 · 「확인 n」 은 그대로다. `route_check` 는 부하 예외 선언 두
+    묶음의 재료(`route_exception_check` — 선언이 비면 None)이고, 있을 때만 두 묶음이 부대공정 뒤 ·
+    등록 때 뺀 원천 행 앞에 선다. 뒤 묶음을 「셀 수 없음」 한 줄로 접는 멈춘 리비전에는 두 묶음도
+    세우지 않는다(HOME Density 환산만 멈춰 뒤 묶음을 세는 리비전에는 선다).
     """
     source = _source_group(blank_cs)
     if outcome.error is not None:
@@ -533,16 +612,17 @@ def build_input_check(
         )
     checks, rules = _counted_groups(outcome.unit_capacity, outcome.required_equipment)
     extras = () if extra is None or extra.frame.empty else (_extra_group(extra),)
+    routes = () if route_check is None else _route_groups(route_check)
     return RevisionInputCheck(
-        (_stop_group(stop), *checks, *extras, source, rules), period=period, stop=stop
+        (_stop_group(stop), *checks, *extras, *routes, source, rules), period=period, stop=stop
     )
 
 
 def blocked_input_check(
     reason: str, blank_cs: pd.DataFrame | None, *, period: tuple[int, int] | None = None
 ) -> RevisionInputCheck:
-    """경로 키가 없는 옛 리비전(`revision_compatibility.revision_block_reason`) — 계산을 부르지 않고
-    그 글로 멈춘다."""
+    """경로 키 · CUSTOM 칸이 없는 옛 리비전(`revision_compatibility.revision_block_reason`) — 계산을
+    부르지 않고 그 글로 멈춘다."""
     stop = InputCheckStop("blocked", reason)
     return RevisionInputCheck(
         (_stop_group(stop), _uncounted_group(), _source_group(blank_cs)), period=period, stop=stop

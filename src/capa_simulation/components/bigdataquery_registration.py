@@ -1,6 +1,10 @@
-# Purpose: BigDataQuery 시뮬레이션 코드 조회와 시나리오 등록을 두 단계로 제공한다.
+# Purpose: DB 등록 탭 — 원천 종류 단추와 BigDataQuery 코드 조회 · 시나리오 등록 두 단계를 제공한다.
 
 """기간으로 시뮬레이션 코드를 찾고, 고른 코드로 시나리오를 등록하는 화면.
+
+표 위 작업 줄 맨 앞 원천 종류 단추(`DB 조회 · CSV 파일`)가 길을 가른다. `CSV 파일` 이면 이 파일의
+목록 · 등록 폼 대신 `source_csv_registration` 이 원천 CSV 길을 그리고, 저장 결과 칸 · 부대공정 칩 ·
+저장 뒤 처리(`finish_registration`)는 이 파일의 것을 `RegistrationSteps` 로 넘겨 함께 쓴다.
 
 1단계는 기간 조회와 스크롤 목록, 2단계는 자동 입력된 등록 폼이다. 저장 경로는
 `fetch_core_data_dataset → 프리셋 → save_bigdataquery_scenario → 활성화 → flash(충돌 보고 포함)` 다.
@@ -45,6 +49,11 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
+from capa_simulation.components.source_csv_registration import (
+    RegistrationSteps,
+    forget_source_csv,
+    render_source_csv_route,
+)
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -55,10 +64,13 @@ from capa_simulation.io.bigdataquery_catalog import (
     is_bigdataquery_catalog_configured,
 )
 from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_CUSTOM_SOURCE_ENV,
+    CUSTOM_SOURCE_OFF,
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
     BigDataQueryCoreDataProvider,
     QueryWindow,
+    custom_source_problem,
     is_bigdataquery_adapter_configured,
     is_bigdataquery_package_available,
     registration_detail_window,
@@ -71,6 +83,7 @@ from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
 from capa_simulation.scenario_registration import (
+    BigDataQueryRegistration,
     load_active_extra_pack,
     registration_note,
     save_bigdataquery_scenario,
@@ -91,11 +104,15 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     view_token,
 )
 from capa_simulation.services.core_data_pipeline import (
+    RegistrationDataset,
+    conflict_cause_counts,
     fetch_registration_dataset,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
+from capa_simulation.services.custom_source_check import CustomSourceCheck
 from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.source_bridge import settled_source_codes
 
 # Alarm 줄에 싣기에 큰 충돌 상세만 이 칸에 남아 탭 맨 아래 CSV 단추로 내려받는다.
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
@@ -106,6 +123,12 @@ REGISTRATION_CONFLICT_FLASH_KEY = "bigdataquery_registration_conflict_flash"
 CONFLICT_SUMMARY_TITLE: Final = "충돌 요약"
 CONFLICT_DETAIL_TITLE: Final = "충돌 상세"
 CONFLICT_CSV_LABEL: Final = "기준정보 업무 키 충돌 CSV 다운로드"
+# 저장은 됐지만 CUSTOM 원천 표와 본 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋날 때의 경고 —
+# 알림창 · Alarm 에만(충돌 경고 뒤). 칸마다의 행 수는 그 Alarm 줄의
+# 표다(`_queue_custom_source_check`). 끄개로 CUSTOM 원천 표를 묻지 않은 등록의 알림(`SC-06`)도 이
+# 칸이다 — 한 등록에는 둘 가운데 하나만 선다.
+REGISTRATION_CUSTOM_FLASH_KEY = "bigdataquery_registration_custom_flash"
+CUSTOM_CELLS_TITLE: Final = "CUSTOM 대조"
 # 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 뒤).
 REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 # 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고(`RegistrationCapacityCheck`) — 알림창 ·
@@ -117,6 +140,7 @@ REGISTRATION_EXTRA_FLASH_KEY = "bigdataquery_registration_extra_flash"
 REGISTRATION_FLASH_KEYS: Final = (
     REGISTRATION_FLASH_KEY,
     REGISTRATION_CONFLICT_FLASH_KEY,
+    REGISTRATION_CUSTOM_FLASH_KEY,
     REGISTRATION_DROP_FLASH_KEY,
     REGISTRATION_EXTRA_FLASH_KEY,
     REGISTRATION_CAPACITY_FLASH_KEY,
@@ -164,10 +188,35 @@ CATALOG_LOCKED_HELP: Final = (
 DETAIL_LOCKED_HELP: Final = (
     "상세 조회 SQL 이 설정되지 않아 조회 · 저장할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
 )
+# CUSTOM 원천 표 환경변수를 쓸 수 없어(없음 · 꼴 틀림 — `custom_source_problem`, 끄개를 내렸으면
+# 판정하지 않는다) 잠긴 저장 단추 풍선의 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_locked_help`). 목록
+# 조회는 그 표를 쓰지 않아 잠그지 않는다.
+CUSTOM_LOCKED_TAIL: Final = " 조회 · 저장이 막힙니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+# 상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_table_notice`).
+# 막히는 것은 DB 조회 길뿐이다(CSV 파일 길은 파일의 CUSTOM 을 쓴다). 값(사내 표 이름)은 어디에도
+# 싣지 않는다.
+CUSTOM_NOTICE_TAIL: Final = (
+    " 부품(Capa Code)의 CUSTOM 을 읽지 못해 DB 조회 · 저장이 막힙니다 — 영문 · 숫자 · 밑줄로 "
+    "된 표 이름(표 또는 스키마.표)을 넣고 앱을 다시 띄우세요(혼자 쓰는 PC · WebIDE 는 README "
+    "「초기 설정」 4단계, C-DEP 는 배포 설정의 환경변수 표)."
+)
+# `AD-04` 짧은 글 — 조회 SQL → CUSTOM 원천 표 → 패키지 차례로 앞선 하나(`_configuration_short`).
+# 막힘 낱말은 DB 조회 길만 말한다 — CSV 파일 길은 이 설정과 상관없이 열린다.
+SQL_MISSING_SHORT: Final = "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — DB 조회 · 등록이 막힘"
+CUSTOM_TABLE_SHORT: Final = "CUSTOM 원천 표 환경변수를 쓸 수 없어 DB 조회 · 저장이 막힘"
+PACKAGE_MISSING_SHORT: Final = (
+    "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
+)
 # 고른 행이 검색에 가려졌을 때의 표지 풍선.
 PICK_HIDDEN_HELP: Final = (
     "고른 행이 지금 검색 결과에 없습니다 — 아래 등록 폼의 값은 그대로 유지됩니다."
 )
+
+# 작업 줄 맨 앞 원천 종류 단추 — 처음 값은 DB 조회다(`_render_source_route`).
+SOURCE_ROUTE_KEY = "bigdataquery_source_route"
+SOURCE_ROUTE_DB: Final = "DB 조회"
+SOURCE_ROUTE_CSV: Final = "CSV 파일"
+SOURCE_ROUTES: Final = (SOURCE_ROUTE_DB, SOURCE_ROUTE_CSV)
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -272,35 +321,85 @@ def render_bigdataquery_registration(
     않는다."""
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
     _consume_reset_request()
-    # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
-    _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
+    # CUSTOM 원천 표 환경변수 판정은 상세 조회(`fetch`)와 같은 함수다 — 상태 알림과 저장 단추가
+    # 한 번 읽은 판정을 함께 쓴다. 이 프로세스의 환경이라 보인 회차와 누른 회차가 갈리지 않는다.
+    # 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 판정하지 않아(None) 잠금도 알림 줄도 없다.
+    custom_problem = custom_source_problem()
     _report_configuration(
         catalog_ready=catalog_ready,
         detail_ready=detail_ready,
         package_ready=is_bigdataquery_package_available(),
+        custom_problem=custom_problem,
         alert_tab=alert_tab,
     )
-    registered_codes, existing_names = _registered_scenarios(repository)
+    registered_codes, db_registered_codes, existing_names = _registered_scenarios(repository)
     # 찾기 칸과 그 표의 작업은 표 위 한 줄이다 — 기준 창보다 좁으면 줄이 내려앉는다(설계 규칙
     # UI-LAY-11 · UI-ACC-02). 조회의 거부 · 스피너와 조회 결과 줄은 이 줄 바로 아래 · 표 바로 위다.
     st.html(CATALOG_TOOLBAR_STYLE)
     toolbar = st.container(
         key=CATALOG_TOOLBAR_KEY, horizontal=True, gap="small", vertical_alignment="bottom"
     )
-    _render_catalog_form(toolbar, configured=catalog_ready)
-    _render_catalog_list(toolbar, registered_codes=registered_codes)
-    _render_registration_form(
-        repository,
-        database_path,
-        configured=detail_ready,
-        existing_names=existing_names,
-    )
+    # 원천 종류 단추가 작업 줄 맨 앞이다(설계 규칙 UI-LAY-07 — 탭 대신 종류 단추). `CSV 파일` 길은
+    # 조회 SQL · CUSTOM 원천 표 · 끄개 · 패키지 판정과 상관없이 열린다 — 위 `AD-04` 는 DB 상태라 두
+    # 길 모두 그대로 낸다(CSV 로 바꿨다고 걷으면 「해소」 로 읽힌다).
+    if _render_source_route(toolbar) == SOURCE_ROUTE_CSV:
+        render_source_csv_route(
+            repository,
+            database_path,
+            toolbar=toolbar,
+            registered_codes=registered_codes,
+            existing_names=existing_names,
+            steps=registration_steps(),
+        )
+    else:
+        # DB 조회 길로 바꾼 회차에 올린 원천 CSV 를 놓는다(바이트 · 요약) — 다시 오면 다시 올린다.
+        forget_source_csv()
+        # 리셋 소비와 같은 까닭으로 DB 폼 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은
+        # 되살리지 않는다. CSV 길 회차에는 DB 폼을 그리지 않아 채워도 버려지므로 부르지 않는다.
+        _restore_dropped_prefill()
+        _render_catalog_form(toolbar, configured=catalog_ready)
+        _render_catalog_list(toolbar, registered_codes=db_registered_codes)
+        _render_registration_form(
+            repository,
+            database_path,
+            configured=detail_ready,
+            custom_problem=custom_problem,
+            existing_names=existing_names,
+        )
     # 큰 충돌 상세의 CSV 단추는 한 런에 딱 한 번만 그린다. 저장 실패 분기에서 한 번 더 부르면
     # 같은 다운로드 key 가 두 번 나와 `StreamlitDuplicateElementKey` 로 탭이 죽는다.
     _render_oversized_conflict_download()
+
+
+def _render_source_route(toolbar: DeltaGenerator) -> str:
+    """작업 줄 맨 앞 원천 종류 단추(`DB 조회 · CSV 파일`) — 고른 길. 고른 값은 그 세션 동안
+    남는다."""
+    with toolbar:
+        route = st.segmented_control(
+            "원천",
+            SOURCE_ROUTES,
+            default=SOURCE_ROUTE_DB,
+            key=SOURCE_ROUTE_KEY,
+            persist_state="session",
+            # 선택 해제를 허용하면 길이 None 이 된다.
+            required=True,
+            width="content",
+        )
+    return SOURCE_ROUTE_CSV if route == SOURCE_ROUTE_CSV else SOURCE_ROUTE_DB
+
+
+def registration_steps() -> RegistrationSteps:
+    """「CSV 파일」 길이 DB 등록과 나눠 쓰는 자리 · 처리(`RegistrationSteps`)."""
+    return RegistrationSteps(
+        begin=forget_conflict_report,
+        result_slot=registration_result_slot,
+        reveal=_reveal_notice,
+        extra_chip=render_extra_chip,
+        finish=finish_registration,
+    )
 
 
 def catalog_list_key(token: str, nonce: int, keyword: str, scope: str) -> str:
@@ -347,51 +446,81 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
     return "조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
 
 
+def custom_table_notice(problem: str) -> str:
+    """상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 — 까닭(`custom_source_problem`) 한 문장과 막히는 것 ·
+    채울 자리. 값은 싣지 않는다."""
+    return problem + CUSTOM_NOTICE_TAIL
+
+
+def custom_locked_help(problem: str) -> str:
+    """CUSTOM 원천 표 환경변수를 쓸 수 없어 잠긴 저장 단추의 풍선(설계 규칙 UI-INP-07)."""
+    return problem + CUSTOM_LOCKED_TAIL
+
+
 def _report_configuration(
     *,
     catalog_ready: bool,
     detail_ready: bool,
     package_ready: bool,
+    custom_problem: str | None = None,
     alert_tab: str | None = "",
 ) -> None:
-    """BigDataQuery 설정(목록 · 상세 조회 SQL · 패키지) — 준비가 안 됐으면 무엇이 빠졌고 어디를
-    채우는지를 상태 알림(`AD-04` — 알림창 · Alarm)으로 낸다. 자리에는 아무것도 그리지 않는다 — 다
-    준비됐으면 알릴 것이 없고(설계 규칙 UI-TXT-08), 빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 —
-    상태 경고는 자리에 세우지 않는다, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 조회
-    SQL 이 없어 잠긴 단추는 그 풍선이 까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 ·
-    이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
-    notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
-    if notice is None and not package_ready:
-        notice = (
+    """BigDataQuery 설정(목록 · 상세 조회 SQL · CUSTOM 원천 표 환경변수 · 패키지) — 준비가 안
+    됐으면 무엇이 빠졌고 어디를 채우는지를 상태 알림(`AD-04` — 알림창 · Alarm)으로 낸다. 전문은
+    조회 SQL → CUSTOM 원천 표 → 패키지 차례로 빠진 것마다 한 줄이다(패키지 줄은 조회 SQL 이 다 섰을
+    때만). 자리에는 아무것도 그리지 않는다 — 다 준비됐으면 알릴 것이 없고(설계 규칙 UI-TXT-08),
+    빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 — 상태 경고는 자리에 세우지 않는다, 2026-11-09
+    사용자 규칙 「상단 여백 · 문구 최소화」). 조회 SQL · CUSTOM 원천 표가 없어 잠긴 단추는 그 풍선이
+    까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 · 이벤트 칸 한 자리) — 닫힌
+    탭(`alert_tab` None)이면 알리지 않는다."""
+    lines: list[str] = []
+    query_notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
+    if query_notice is not None:
+        lines.append(query_notice)
+    if custom_problem is not None:
+        lines.append(custom_table_notice(custom_problem))
+    if query_notice is None and not package_ready:
+        package_notice = (
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
             "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
         hint = start_check_hint(STEP_INSTALL)
         if hint:
-            notice = f"{notice}\n\n{hint}"
+            package_notice = f"{package_notice}\n\n{hint}"
+        lines.append(package_notice)
+    notice = "\n\n".join(lines) if lines else None
     if alert_tab is not None:
         alerts.state(
             "AD-04",
             scope=None,
             content=notice,
             active=notice is not None,
-            text=(
-                "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
-                if notice is not None and not (catalog_ready and detail_ready)
-                else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
+            text=_configuration_short(
+                query_ready=query_notice is None, custom_problem=custom_problem
             ),
             full=alerts.plain_text(notice) if notice else None,
             tab=alert_tab,
         )
 
 
+def _configuration_short(*, query_ready: bool, custom_problem: str | None) -> str:
+    """`AD-04` 짧은 글 — 조회 SQL → CUSTOM 원천 표 → 패키지 차례로 앞선 하나."""
+    if not query_ready:
+        return SQL_MISSING_SHORT
+    if custom_problem is not None:
+        return CUSTOM_TABLE_SHORT
+    return PACKAGE_MISSING_SHORT
+
+
 def _registered_scenarios(
     repository: DuckDBScenarioRepository,
-) -> tuple[frozenset[str], frozenset[str]]:
-    """(이미 등록된 원천 코드, 이미 쓰인 시나리오명).
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """(이미 등록된 원천 코드, 그 가운데 DB 목록이 등록됨으로 셀 코드, 이미 쓰인 시나리오명).
 
-    매 렌더 다시 계산한다. 세션 프레임에 구워 두면 저장 직후 목록의 `등록여부` 가 낡는다.
+    DB 목록은 원천 CSV 로만 받은 코드를 등록됨으로 세지 않는다 — DB 에 오면 평소처럼 받는 다리다
+    (`source_bridge`). CSV 목록은 모든 원천 코드로 센다. 매 렌더 다시 계산한다. 세션 프레임에 구워
+    두면 저장 직후 목록의 `등록여부` 가 낡는다.
     """
     try:
         # 보관본까지 본다. 숨은 시나리오를 못 보면 같은 원천 코드로 하나가 더 생긴다.
@@ -403,9 +532,10 @@ def _registered_scenarios(
             tab=QUERY_TAB_NAME,
             text="등록된 시나리오를 읽지 못했습니다",
         )
-        return frozenset(), frozenset()
+        return frozenset(), frozenset(), frozenset()
     return (
         frozenset(str(scenario.source_simulation_code) for scenario in scenarios),
+        settled_source_codes(scenarios),
         frozenset(str(scenario.scenario_name) for scenario in scenarios),
     )
 
@@ -694,6 +824,7 @@ def _render_registration_form(
     database_path: str,
     *,
     configured: bool,
+    custom_problem: str | None,
     existing_names: frozenset[str],
 ) -> None:
     for key, value in FORM_DEFAULTS.items():
@@ -702,8 +833,15 @@ def _render_registration_form(
     st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
     # 저장 불가는 목록 표 「저장가능」 칸이 값으로, 까닭은 잠긴 저장 단추 풍선이 말한다(설계 규칙
-    # UI-INP-07 — 막힘을 상자로 세우지 않는다).
+    # UI-INP-07 — 막힘을 상자로 세우지 않는다). 풍선은 조회 SQL → CUSTOM 원천 표 → 고른 코드 차례로
+    # 앞선 까닭 하나다.
     unsavable = pick is not None and not pick.row.savable
+    if not configured:
+        locked_help: str | None = DETAIL_LOCKED_HELP
+    elif custom_problem is not None:
+        locked_help = custom_locked_help(custom_problem)
+    else:
+        locked_help = UNSAVABLE_REASON if unsavable else None
     # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의
     # 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값 줄이 생기고
     # 빠져도 아래 폼의 자리가 밀리지 않는다. 날짜 칸은 「적용」 트리거를 바로 받아야 해 폼 밖이다 —
@@ -738,37 +876,51 @@ def _render_registration_form(
             ),
         )
         st.text_area("등록 메모", key=form_field_key(FORM_NOTE_KEY), height=90)
-        extra_version = _active_extra_version(repository)
-        if extra_version is not None:
-            st.badge(
-                EXTRA_CHIP_TEMPLATE.format(version=extra_version),
-                icon=":material/extension:",
-                color="gray",
-                help=EXTRA_CHIP_HELP,
-            )
+        render_extra_chip(repository)
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
             icon=":material/cloud_download:",
             type="primary",
             width="stretch",
-            disabled=not configured or unsavable,
-            help=DETAIL_LOCKED_HELP if not configured else UNSAVABLE_REASON if unsavable else None,
+            disabled=locked_help is not None,
+            help=locked_help,
         )
-    # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
-    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
-    # Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가
-    # 폼 맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도
-    # 서서 아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
-    # 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
-    queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
-    notice = render_flash(*REGISTRATION_FLASH_KEYS)
-    if queued:
-        _reveal_notice(notice)
+    notice = registration_result_slot()
     if submitted:
         with notice:
             _save_scenario(repository, database_path, existing_names=existing_names)
         # 저장하면 다음 회차로 넘어가므로(`st.rerun`) 여기까지 오면 칸에 저장하지 못한 까닭이 섰다.
         _reveal_notice(notice)
+
+
+def registration_result_slot() -> DeltaGenerator:
+    """저장 결과 칸 — 누른 저장 단추 바로 아래 늘 서 있는 한 칸(`flash` — 버튼과 같은 상자, VOC 글
+    올리기와 같은 꼴). 두 원천 길(DB 조회 · CSV 파일)이 같은 칸 · 같은 flash 키를 쓴다 — 한 회차에
+    한 길만 그리므로 한 번만 소비한다.
+
+    성공 · 저장 뒤 경고(업무 키 충돌 · CUSTOM 원천 대조 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
+    Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가 폼
+    맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도 서서
+    아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
+    스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다 — 저장 단추를 누른 회차는
+    부르는 쪽이 저장 뒤 한 번 더 세운다."""
+    queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
+    notice = render_flash(*REGISTRATION_FLASH_KEYS)
+    if queued:
+        _reveal_notice(notice)
+    return notice
+
+
+def render_extra_chip(repository: DuckDBScenarioRepository) -> None:
+    """활성 부대공정 판이 있으면 저장 단추 위 칩 「부대공정 판 n」 — 두 원천 길의 폼이 같다."""
+    extra_version = _active_extra_version(repository)
+    if extra_version is not None:
+        st.badge(
+            EXTRA_CHIP_TEMPLATE.format(version=extra_version),
+            icon=":material/extension:",
+            color="gray",
+            help=EXTRA_CHIP_HELP,
+        )
 
 
 def _active_extra_version(repository: DuckDBScenarioRepository) -> int | None:
@@ -801,7 +953,7 @@ def _save_scenario(
     # 돌리고 저장소 벽(`create_scenario`)은 그 뒤에 선다 — 목록 조회와 같이 누른 순간 실제 등급으로
     # 먼저 본다(DB 등록 — 실무자부터). 거절은 화면 본문의 받는 자리가 알림창 · Alarm 으로 낸다.
     grades.require("scenario.db_register")
-    st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
+    forget_conflict_report()
     scenario_name = str(st.session_state.get(form_field_key(FORM_SCENARIO_NAME_KEY), "")).strip()
     if scenario_name in existing_names:
         # 같은 이름이 둘이면 사이드바에서 구분되지 않는다. 사내 조회 한 번을 아끼려고
@@ -871,20 +1023,43 @@ def _save_scenario(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    finish_registration(repository, registration, registration_data)
+    # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
+    _request_reset()
+    st.rerun()
+
+
+def forget_conflict_report() -> None:
+    """앞 등록이 남긴 큰 충돌 상세(탭 맨 아래 CSV 단추)를 버린다 — 저장을 누른 회차 맨 앞(두 원천
+    길)."""
+    st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
+
+
+def finish_registration(
+    repository: DuckDBScenarioRepository,
+    registration: BigDataQueryRegistration,
+    registration_data: RegistrationDataset,
+) -> None:
+    """저장한 등록의 뒤 처리 — 두 원천 길(DB 조회 · CSV 파일)이 같다.
+
+    새 리비전을 활성화하고 목록이 따라가게 한 뒤 성공 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` ·
+    CUSTOM 원천 대조 `SC-05`/`SC-06` · CS 빈 행 · 부대공정 · 대당 Capa 멈춤)를 담는다. CUSTOM 대조는
+    원천 묶음의 `custom_check` 그대로다 — None(대조 없음 — CSV · 시드 · 가짜 공급자)이면 아무것도
+    내지 않는다. 폼 비우기와 `st.rerun()` 은 각 길이 부른다."""
+    prepared = registration_data.prepared
     snapshot = registration.snapshot
     activate_persisted_snapshot(snapshot)
     follow_created_scenario(repository, snapshot.scenario.scenario_id)
-    # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
-    _request_reset()
     queue_flash(
         REGISTRATION_FLASH_KEY,
         f"{with_object_particle(snapshot.scenario.scenario_name)} 저장하고 "
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "올렸습니다.",
     )
-    # 아래 세 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
+    # 아래 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
     # UI-NTF-03 · AMB-05 (나) — 저장 단추 밑에는 그리지 않는다).
     _queue_reference_conflict_report(prepared.reference_conflicts, prepared.batch.simulation_code)
+    _queue_custom_source_check(prepared.batch.custom_check, prepared.batch.simulation_code)
     if prepared.blank_cs.dropped:
         # 저장은 됐다 — 막지 않고 알린다. 같은 수가 리비전 메모에도 남는다.
         queue_flash(
@@ -910,7 +1085,6 @@ def _save_scenario(
             icon=":material/warning:",
             popup_only=True,
         )
-    st.rerun()
 
 
 def _stored_result() -> CatalogResult | None:
@@ -1017,7 +1191,7 @@ def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: s
     알림 글이 그 자리를 부른다(`_render_oversized_conflict_download`)."""
     if conflicts.empty:
         return
-    safe_code = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._") or "query"
+    safe_code = _file_code(simulation_code)
     timestamp = datetime.now().strftime("%Y%m%d%H%M")
     file_name = f"RQ_업무키_충돌_{safe_code}_{timestamp}.csv"
     summary = alert_table(
@@ -1038,19 +1212,79 @@ def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: s
             "file_name": file_name,
         }
         detail_place = f"이 탭 「{CONFLICT_CSV_LABEL}」"
-    # 앞 60자가 결과를 말한다(알림창 짧은 글). 승자는 표마다 「값이 있는 첫 행」 이라 원천 첫
-    # 행이라고 적지 않는다 — 규칙은 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)이 말한다.
+    # 앞 60자가 결과를 말한다(알림창 짧은 글) — 그룹 수와 그 원인 둘(업무 키 밖 구분 칸 · 그 밖).
+    # 승자는 「값이 있는 행 · 원천 행 순위」 라 원천 첫 행이라고 적지 않는다 — 규칙은 요약 표
+    # 「임시처리」 칸(`conflict_resolution` 한 곳)이 말한다.
     queue_flash(
         REGISTRATION_CONFLICT_FLASH_KEY,
-        f"기준정보 업무 키 충돌 {len(conflicts):,}개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 "
-        f"적용하고 등록했습니다. 규칙: {alarm_table_place(CONFLICT_SUMMARY_TITLE)} · 행마다의 값: "
-        f"{detail_place}",
+        f"기준정보 업무 키 충돌 {len(conflicts):,}개 그룹{_conflict_cause_note(conflicts)} — 표 "
+        f"「임시처리」 규칙대로 한 행씩 골라 등록했습니다. 규칙: "
+        f"{alarm_table_place(CONFLICT_SUMMARY_TITLE)} · 행마다의 값: {detail_place}",
         kind="warning",
         icon=":material/warning:",
         alert="SC-04",
         popup_only=True,
         tables=(summary, detail),
     )
+
+
+def _file_code(simulation_code: str) -> str:
+    """등록 보고 CSV 파일 이름에 넣는 코드 — 파일 이름에 쓸 수 없는 글자를 밑줄로 바꾼다."""
+    return re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._") or "query"
+
+
+def _queue_custom_source_check(check: CustomSourceCheck | None, simulation_code: str) -> None:
+    """저장한 등록의 CUSTOM 원천 대조 — 두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나면 사건
+    알림 `SC-05` 와 그 Alarm 줄의 표 「CUSTOM 대조」(칸마다 본 표 · CUSTOM 원천 표 행 수)로 낸다.
+
+    CUSTOM 은 Capa Code 로 붙여 값에는 영향이 없어 등록은 했다 — 막지 않고 알린다(요청 그대로).
+    대조가 없거나(CSV · 시드 · 가짜 공급자) 어긋난 칸이 없으면 아무것도 내지 않는다. 표가 커서
+    Alarm 줄에 싣지 못하면(`alert_table` 이 None) 표 없이 수만 싣는다 — 같은 수가 리비전 메모에도
+    남는다.
+
+    끄개로 CUSTOM 원천 표를 묻지 않은 등록(`attached` 거짓)은 등록마다 사건 알림 `SC-06` 하나다 —
+    표 없이, 전문 끝에 끄개 이름과 시뮬레이션 코드를 싣는다(값 · 표 이름은 없다 — 묻지 않았다).
+    물러선 것을 숨기지 않는다(설계 규칙 UI-NTF-05 — 같은 사실이 리비전 메모에도 남는다)."""
+    if check is None or not check.warns:
+        return
+    if not check.attached:
+        queue_flash(
+            REGISTRATION_CUSTOM_FLASH_KEY,
+            f"{check.notice()} 끄개 {BDQ_CUSTOM_SOURCE_ENV}={CUSTOM_SOURCE_OFF} · 시뮬레이션 코드 "
+            f"{simulation_code}",
+            kind="warning",
+            icon=":material/warning:",
+            alert="SC-06",
+            popup_only=True,
+        )
+        return
+    # 파일 이름의 분은 KST 다(`korea_time` — 서버 시각대를 따르지 않는다).
+    safe_code = _file_code(simulation_code)
+    table = alert_table(
+        check.cells,
+        title=CUSTOM_CELLS_TITLE,
+        file_name=f"CUSTOM_대조_{safe_code}_{datetime.now(KST).strftime('%Y%m%d%H%M')}.csv",
+    )
+    message = check.notice()
+    if table is not None:
+        message = f"{message} 칸마다의 행 수: {alarm_table_place(CUSTOM_CELLS_TITLE)}"
+    queue_flash(
+        REGISTRATION_CUSTOM_FLASH_KEY,
+        message,
+        kind="warning",
+        icon=":material/warning:",
+        alert="SC-05",
+        popup_only=True,
+        tables=(table,),
+    )
+
+
+def _conflict_cause_note(conflicts: pd.DataFrame) -> str:
+    """충돌 그룹 수 뒤의 「(키밖 n · 그 밖 m)」 — 원인 칸이 없는 옛 꼴 보고서면 빈 글이다."""
+    other, out_of_key = conflict_cause_counts(conflicts)
+    if other.empty and out_of_key.empty:
+        return ""
+    return f"(키밖 {int(out_of_key.sum()):,} · 그 밖 {int(other.sum()):,})"
 
 
 def _render_oversized_conflict_download() -> None:

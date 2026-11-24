@@ -927,7 +927,7 @@ def _render_body(
             labels,
         )
     )
-    # LOB 요약의 읽는 법(Density·Wafer 는 HOME 과 같은 계산, B/N 확보율이 HOME 과 다른 까닭)은
+    # LOB 요약의 읽는 법(Density · Wafer 는 HOME 과 같은 계산, B/N 확보율이 HOME 과 다른 까닭)은
     # Guide 가 말한다 — 자리에 늘 두지 않는다.
     if not shown:
         # 목록 구획의 빈 결과는 값(「없음」)이라 평문 한 줄이다(성공 상자 · 하는 법 없음).
@@ -1943,6 +1943,8 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
     키의 달은 HOME 과 같은 함수(`past_data.display_month_range`)로 낸다 — 조회기간 ∩ 계산 원천
     범위를 **과거 구간(Past Data) 달까지 넓힌** 범위이고, 과거 구간을 넣을지는 HOME 의 `Past Data
     포함` 토글 값을 그대로 따른다. 그래야 HOME 을 본 뒤에는 다시 계산하지 않는다.
+
+    Wafer 는 HOME `Wafer 계획` 과 같은 셋째 원소다 — HOME 집계 기준(Dummy 계열을 뺀 합, EDP 포함).
     """
     try:
         source = available_month_range(context.reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
@@ -1968,6 +1970,7 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
             start_month=display_range.start,
             end_month=display_range.end,
             display_order=context.reference_tables["RQ_DISPLAY_ORDER"],
+            route_exceptions=context.route_exceptions.declaration,
         )
         density, _, wafer, *_ = simulation_cache.get_home_simulation(
             cache_key=home_key,

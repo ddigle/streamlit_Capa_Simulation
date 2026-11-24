@@ -105,6 +105,13 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/bigdataquery_registration.py", "_save_scenario", "save_bigdataquery_scenario"): (
         NAME_UNIQUE
     ),
+    # 원천 CSV 등록(DB 등록 탭 「CSV 파일」 길)은 DB 등록과 같은 저장 길 — 파일을 읽기 전에 같은
+    # 이름을 막고 저장소도 거절한다(겹친 둘째 누름은 같은 이름 거절로 끝난다 — DB 등록과 같은 대가).
+    (
+        f"{_PARTS}/source_csv_registration.py",
+        "_save_source_csv_scenario",
+        "save_bigdataquery_scenario",
+    ): NAME_UNIQUE,
     (f"{_PARTS}/cutoff_management.py", "render_cutoff_management", "save_process_cutoff"): (
         VERSION_CHECK
     ),
@@ -145,6 +152,14 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/extra_process_admin.py", "_note_placed", "record_extra_process_placed"): (
         SAME_REPLACE
     ),
+    # 부하 예외 선언 판 이력도 넣기만 하고, 고르기 칸을 채운 판(화면이 본 판)과 대조해 남의 먼저
+    # 쓰기를 쓰지 않는다(`route_load_exception_store.RouteLoadExceptionMoved`). 같은 단추의 겹친
+    # 둘째 누름은 제 저장 짝(`write_guard.save_remembered`)으로 가려 성공을 다시 알린다.
+    (
+        f"{_PARTS}/route_load_exception_admin.py",
+        "_save",
+        "append_route_load_exceptions",
+    ): VERSION_CHECK,
     (
         f"{_PARTS}/equipment_scenario_management.py",
         "_render_branch",

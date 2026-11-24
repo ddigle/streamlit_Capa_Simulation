@@ -517,9 +517,13 @@ MODULE_GROUP_SLUG: Final = "internal_modules"
 # 「부대공정」 은 BDQ 밖 공정의 판(시뮬레이션 DB 판 이력)을 보이고 쓰는 단추는 C-DEP 의 개발자에게만
 # 연다(`components/extra_process_admin.py`). 다음 「접속
 # · 작업 기록」 은 통합인증이 켜진 서버의 관리자 회차에만 서고 (`sso_identity.viewer_can_audit`)
-# 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다. 맨 끝 「공지」 는 늘 서고(Admin Area
-# 를 여는 사람 — 운영 서버는 관리자) 시나리오 · 조건 카드가 없다 (2026-11-17 공지 보드 답 decided
-# 2). 사이드바(`app.py`)가 열린 탭을 봐야 해서 라벨을 여기 한 곳에 두고 페이지가 읽는다.
+# 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다. 그 뒤 「부하 예외」 는 늘 서고 공정별
+# 부하 산출 예외 선언(모든 시나리오에 거는 공용 판 이력)을 보이며, 고르는 공정 목록이 활성 리비전의
+# 소요기준을 읽어 시나리오 줄을 세운다 — 저장 단추는 「부대공정」 과 같은 판정으로 C-DEP 의
+# 개발자에게만 연다(`components/route_load_exception_admin.py`). 서수로 부르는 앞 다섯이 그대로이게
+# `ADMIN_AREA_TABS` 밖 상수다. 맨 끝 「공지」 는 늘 서고(Admin Area 를 여는 사람 — 운영 서버는
+# 관리자) 시나리오 · 조건 카드가 없다 (2026-11-17 공지 보드 답 decided 2). 사이드바(`app.py`)가 열린
+# 탭을 봐야 해서 라벨을 여기 한 곳에 두고 페이지가 읽는다.
 ADMIN_AREA_TAB_KEY = "admin_area_active_tab"
 ADMIN_AREA_TABS = (
     ":material/label: Proc Rename",
@@ -528,6 +532,7 @@ ADMIN_AREA_TABS = (
     ":material/extension: 부대공정",
 )
 ADMIN_AREA_LOG_TAB = ":material/history: 접속 · 작업 기록"
+ADMIN_AREA_ROUTE_EXCEPTION_TAB = ":material/rule: 부하 예외"
 ADMIN_AREA_NOTICE_TAB = ":material/campaign: 공지"
 # 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다. 조회기간은 읽지 않는다.
 ADMIN_AREA = PageSpec(
@@ -539,9 +544,14 @@ ADMIN_AREA = PageSpec(
     condition_tabs=ConditionTabs(
         ADMIN_AREA_TAB_KEY,
         first=ADMIN_AREA_TABS[0],
-        labels=frozenset(ADMIN_AREA_TABS),
+        labels=frozenset((*ADMIN_AREA_TABS, ADMIN_AREA_ROUTE_EXCEPTION_TAB)),
         card_labels=frozenset({ADMIN_AREA_LOG_TAB}),
-        tabs=(*ADMIN_AREA_TABS, ADMIN_AREA_LOG_TAB, ADMIN_AREA_NOTICE_TAB),
+        tabs=(
+            *ADMIN_AREA_TABS,
+            ADMIN_AREA_LOG_TAB,
+            ADMIN_AREA_ROUTE_EXCEPTION_TAB,
+            ADMIN_AREA_NOTICE_TAB,
+        ),
     ),
 )
 # VOC 는 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 속하지 않는다. 관리

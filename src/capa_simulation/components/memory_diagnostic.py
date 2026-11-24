@@ -173,8 +173,3 @@ def memory_limit_step(setting: MemoryLimitSetting | None = None) -> tuple[str, s
         reason = f"{MEMORY_LIMIT_ENV} 없음 — DuckDB 기본"
         return MEMORY_LIMIT_STEP_LABEL, STATUS_LABELS[STATUS_SKIPPED], reason
     return MEMORY_LIMIT_STEP_LABEL, STATUS_LABELS[STATUS_OK], f"DB 마다 {current.value}"
-
-
-def memory_limit_failed(setting: MemoryLimitSetting | None = None) -> bool:
-    """한도 칸 값이 틀려 기본으로 물러섰는가 — 펼침 제목 판정과 `AD-01` 이 본다."""
-    return memory_limit_step(setting)[1] == STATUS_LABELS[STATUS_FAILED]

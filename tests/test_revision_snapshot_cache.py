@@ -669,6 +669,7 @@ _PROFILE_KINDS = (
     "key_process",
     "execution_capacity",
     "past_data",
+    "route_load_exceptions",
 )
 
 

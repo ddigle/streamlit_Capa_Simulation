@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -32,6 +34,7 @@ from auto_update_fakes import official_w40 as _official_w40
 from auto_update_fakes import publish_snapshot as _publish
 from auto_update_fakes import register_code as _register
 from auto_update_fakes import source_frame as _source
+from conftest import DEMO_CUSTOM_TABLE
 
 import capa_simulation.auto_official_update_runner as runner
 import capa_simulation.services.auto_official_update as rules
@@ -44,8 +47,9 @@ from capa_simulation.auto_official_update_runner import (
     current_official_baseline,
     run_auto_official_update,
 )
+from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
-from capa_simulation.io.core_data_source import CoreDataProvider
+from capa_simulation.io.core_data_source import CoreDataBatch, CoreDataProvider
 from capa_simulation.persistence.models import (
     AutoOfficialUpdateRun,
     ScenarioCreate,
@@ -70,6 +74,20 @@ from capa_simulation.services.auto_official_update import (
     AutoUpdateConfig,
     MissingOfficialWeek,
     ProcessMinimum,
+)
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.core_data_pipeline import (
+    prepare_core_data_dataset,
+    reference_conflict_memo,
+)
+from capa_simulation.services.custom_source_check import (
+    CUSTOM_SOURCE_COLUMNS,
+    SWITCHED_OFF_MEMO,
+    attach_custom_values,
+)
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    RouteLoadDeclaration,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
@@ -490,10 +508,16 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     real = full_capacity_outcome
     calls: list[int] = []
 
-    def fail_on_publish_check(scenario_tables: object, reference_tables: object) -> CapacityOutcome:
+    def fail_on_publish_check(
+        scenario_tables: object, reference_tables: object, *, route_exceptions: RouteLoadDeclaration
+    ) -> CapacityOutcome:
         calls.append(1)
         if len(calls) == 1:
-            return real(scenario_tables, reference_tables)  # type: ignore[arg-type]
+            return real(
+                scenario_tables,  # type: ignore[arg-type]
+                reference_tables,  # type: ignore[arg-type]
+                route_exceptions=route_exceptions,
+            )
         return CapacityOutcome(None, None, "RQ_RUN_RATE 시험 오류")
 
     monkeypatch.setattr(runner, "full_capacity_outcome", fail_on_publish_check)
@@ -505,6 +529,48 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     assert run.reason is not None and "RQ_RUN_RATE 시험 오류" in run.reason
     assert run.filtered_revision_id is not None and run.official_release_no is None
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
+
+
+def test_the_round_judges_and_checks_with_the_saved_route_exception_declaration(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부하 예외 선언은 판정 앞에서 저장소로 한 번 읽어 판정과 발행 검사가 같은 판으로 셈한다(배경
+    스레드라 캐시 래퍼 없이). 실행 기록 사유 · 리비전 2 · 공식버전 메모 끝에 「부하 예외 판 n」 이
+    붙고 공정 이름은 싣지 않는다 — 선언이 없으면 조각이 없다(앞 시험들의 사유 그대로)."""
+    _official_w40(repository)
+    declaration = {WAFER: BUFFER_X_CORE_CHIP}
+    repository.append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    real = full_capacity_outcome
+    seen: list[dict[str, str]] = []
+
+    def spy(
+        scenario_tables: object, reference_tables: object, *, route_exceptions: RouteLoadDeclaration
+    ) -> CapacityOutcome:
+        seen.append(dict(route_exceptions))
+        return real(
+            scenario_tables,  # type: ignore[arg-type]
+            reference_tables,  # type: ignore[arg-type]
+            route_exceptions=route_exceptions,
+        )
+
+    monkeypatch.setattr(runner, "full_capacity_outcome", spy)
+    fake = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+
+    run = _run(repository, fake)
+
+    assert seen == [declaration, declaration]
+    assert run.status == STATUS_PUBLISHED and run.reason is not None
+    head, _warning = runner.split_published_reason(run.reason)
+    assert head.endswith(" · 부하 예외 판 1")
+    assert WAFER not in run.reason
+    release = repository.latest_official_release()
+    assert release is not None and release.note is not None
+    assert release.note.endswith(" · 부하 예외 판 1")
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    assert filtered.revision.note is not None
+    assert filtered.revision.note.endswith(" · 부하 예외 판 1")
 
 
 def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
@@ -583,6 +649,65 @@ def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warni
     assert filtered.revision.note == release.note == f"{auto_memo} · {memo}"
     assert base.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
     assert repository.load_source_row_count(base.scenario.scenario_id) == len(SEED_SOURCE)
+
+
+def test_the_run_reason_and_official_note_carry_custom_and_conflict_memos(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """자동 갱신도 화면 등록과 같은 원천 조각 — CUSTOM 원천 대조(BigDataQuery 등록이면 늘)와
+    업무 키 충돌 — 을 리비전 1 메모, 실행 기록 사유의 발행 줄 끝(CS 빈 행 조각 앞), 리비전 2 ·
+    공식버전 메모에 남긴다(설계 B-stop §2). 소요대수 밖 수요 경고와 섞이지 않는다 — 대조 조각 안의
+    「—」 가 사유를 가르지 않는다. 합성 시드 — 샘플 관측."""
+    _official_w40(repository)
+    frame = _source(blank_first_plan=True)
+    plans = frame.index[frame["계획기초정보여부"].eq("Y")]
+    routes = frame.index[frame["계획기초정보여부"].eq("N")]
+    twin = frame.loc[[plans[-2]]].copy()
+    twin["생산수량"] = pd.to_numeric(twin["생산수량"]) + 1
+    frame = pd.concat([frame, twin], ignore_index=True)
+    frame.loc[routes[-1], "CS"] = "  "
+    cells = frame.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    cells["CUSTOM"] = "DEMO_CUSTOM_" + cells["Capa Code"].astype(str)
+    cells["행수"] = cells["행수"].mask(cells.index == 0, cells["행수"] + 1)
+    check = attach_custom_values(frame, cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)])[1]
+    assert check.warns
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-W41",
+            simulation_name="PSM W41",
+            source_type="BIGDATAQUERY",
+            frame=frame,
+        ),
+        repository.load_global_display_order().rules,
+    )
+    conflict_memo = reference_conflict_memo(prepared.reference_conflicts)
+    assert conflict_memo.startswith("업무 키 충돌 ")
+    blank_memo = prepared.blank_cs.memo()
+    assert blank_memo.startswith("CS 빈 행 1개(")
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame},
+        checks={"SIM-W41": check},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_PUBLISHED, "done")
+    assert run.reason is not None
+    pieces = f"{check.memo()} · {conflict_memo} · {blank_memo}"
+    head, warning = runner.split_published_reason(run.reason)
+    assert head.startswith("공식 v2 지정 · W41 SIM-W41 · 자동 갱신 · ")
+    assert head.endswith(f" · {pieces}")
+    assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
+    assert check.memo() not in warning and conflict_memo not in warning
+    base = repository.load_revision(str(run.base_revision_id))
+    assert base.revision.note is not None
+    assert base.revision.note.endswith(f"상세 조회기간 2026-10-05 ~ 2026-10-15 · {pieces}")
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    release = repository.latest_official_release()
+    assert release is not None
+    auto_memo = "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+    assert filtered.revision.note == release.note == f"{auto_memo} · {pieces}"
 
 
 def test_a_source_with_every_cs_blank_stops_at_registration_with_the_reason(
@@ -699,6 +824,163 @@ def test_a_catalog_failure_is_recorded_with_its_stage(
         "목록 조회 단계에서 멈췄습니다 — 현재 환경에 bigdataquery 패키지가 없습니다."
     )
     assert result.run.finished_at == NOW
+
+
+def test_a_run_without_the_custom_table_variable_fails_in_register_and_the_next_run_retries_the_code(  # noqa: E501 — 이름이 설계 그대로다
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CUSTOM 원천 표 환경변수가 없으면 실제 상세 조회 공급자(`bigdataquery_detail_provider`)가
+    패키지를 부르기 전에 멈춰 회차가 등록 단계 오류로 끝난다. 시나리오를 만들지 않아 받은 코드에
+    들지 않으므로 변수를 넣은 다음 회차가 같은 코드를 다시 받는다. 가짜는 조회 실행 자리(패키지)
+    뿐이다."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    main = _source()
+    cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    custom = cells.assign(CUSTOM="DEMO_CUSTOM_A").loc[:, list(CUSTOM_SOURCE_COLUMNS)]
+    table = DEMO_CUSTOM_TABLE
+    asked: list[str] = []
+    loads: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        return (custom if table in param else main).copy()
+
+    def load() -> SimpleNamespace:
+        loads.append("bigdataquery")
+        return SimpleNamespace(getData=get_data)
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", load)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    sources = AutoUpdateSources(fetch_catalog=catalog.fetch_catalog)
+    assert sources.detail_provider is runner.bigdataquery_detail_provider
+
+    first = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert first is not None
+    assert (first.status, first.stage) == (STATUS_ERROR, "register")
+    assert first.reason is not None
+    assert first.reason.startswith(
+        f"상세 조회·등록 단계에서 멈췄습니다 — {adapter.CUSTOM_TABLE_MISSING}"
+    )
+    assert first.created_scenario_id is None
+    assert (loads, asked) == ([], [])
+    assert runner.received_codes(repository) == set()
+
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, table)
+    second = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert second is not None
+    assert (second.simulation_code, second.status) == ("SIM-W41", STATUS_PUBLISHED)
+    assert second.created_scenario_id is not None
+    assert asked == [adapter.build_custom_query("SIM-W41"), asked[1]]
+    assert "'SIM-W41'" in asked[1]
+    assert runner.received_codes(repository) == {"SIM-W41"}
+
+
+def test_a_switched_off_run_registers_blank_parts_and_carries_the_switch_memo(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내리면 실제 상세 조회 공급자
+    (`bigdataquery_detail_provider`)가 CUSTOM 원천 표를 묻지 않고(변수가 없어도) 모든 부품을 구분
+    없음으로 등록한다. 자동 갱신은 그대로 공식으로 올리고(2026-11-24 사용자 답 Q2 (가))
+    「CUSTOM 원천 붙이지 않음」 조각이 리비전 1 메모 · 실행 기록 사유의 발행 줄 쪽 · 리비전 2 ·
+    공식버전 메모에 남는다(끄개 이름은 없다). 가짜는 조회 실행 자리(패키지)뿐이다. 합성 시드 —
+    샘플 관측."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    main = _source()
+    asked: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        return main.copy()
+
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: SimpleNamespace(getData=get_data)
+    )
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    sources = AutoUpdateSources(fetch_catalog=catalog.fetch_catalog)
+    assert sources.detail_provider is runner.bigdataquery_detail_provider
+
+    run = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert run is not None
+    assert (run.simulation_code, run.status, run.stage) == ("SIM-W41", STATUS_PUBLISHED, "done")
+    [query] = asked
+    assert "'SIM-W41'" in query and DEMO_CUSTOM_TABLE not in query
+    assert run.reason is not None
+    head, _warning = runner.split_published_reason(run.reason)
+    assert head.startswith("공식 v2 지정 · W41 SIM-W41 · 자동 갱신 · ")
+    assert f" · {SWITCHED_OFF_MEMO}" in head
+    assert adapter.BDQ_CUSTOM_SOURCE_ENV not in run.reason
+    base = repository.load_revision(str(run.base_revision_id))
+    assert base.revision.note is not None
+    assert f"상세 조회기간 2026-10-05 ~ 2026-10-15 · {SWITCHED_OFF_MEMO}" in base.revision.note
+    assert set(repository.load_source_data(base.scenario.scenario_id)["CUSTOM"]) == {CUSTOM_BLANK}
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    release = repository.latest_official_release()
+    assert release is not None
+    assert filtered.revision.note == release.note
+    assert release.note is not None and f" · {SWITCHED_OFF_MEMO}" in release.note
+
+
+class _PackageError(Exception):
+    """사내 패키지 예외 종류 흉내 — 문구에 조회한 표 이름을 싣는다."""
+
+
+@pytest.mark.parametrize("record_fails", [False, True], ids=["회차 멈춤 줄", "기록 실패 줄"])
+def test_a_custom_query_failure_keeps_the_table_name_out_of_the_log(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    record_fails: bool,
+) -> None:
+    """CUSTOM 원천 표 조회가 실패하면 실행 기록 사유가 표 이름을 가리듯 로그도 감싼 패키지
+    원문(`__cause__` — 표 이름이 그대로 든다)을 싣지 않는다. 회차 멈춤 줄과, 그 실패를 기록하지
+    못했을 때의 줄(그 예외의 문맥이 조회 실패다) 모두다. 합성 표 이름이다."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    named = f"'{DEMO_CUSTOM_TABLE.upper()}' (table {DEMO_CUSTOM_TABLE.split('.')[-1].title()})"
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        raise _PackageError(f"AnalysisException: Could not resolve table reference: {named}")
+
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: SimpleNamespace(getData=get_data)
+    )
+    if record_fails:
+
+        def refuse(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("실행 기록을 쓰지 못함")
+
+        monkeypatch.setattr(runner._RunLog, "finish", refuse)
+    caplog.set_level(logging.ERROR, logger=runner.__name__)
+
+    run = run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=AutoUpdateSources(fetch_catalog=catalog.fetch_catalog),
+        clock=_clock,
+    ).run
+
+    logged = caplog.text.casefold()
+    schema, name = DEMO_CUSTOM_TABLE.casefold().split(".")
+    assert "단계에서 멈췄습니다" in caplog.text
+    assert schema not in logged and name not in logged
+    assert ("실패를 기록하지 못했습니다" in caplog.text) is record_fails
+    assert run is not None
+    if not record_fails:
+        assert (run.status, run.stage) == (STATUS_ERROR, "register")
+        assert run.reason is not None and adapter.CUSTOM_TABLE_MASK in run.reason
+        assert schema not in run.reason.casefold() and name not in run.reason.casefold()
 
 
 def test_a_registration_failure_keeps_nothing_half_made(

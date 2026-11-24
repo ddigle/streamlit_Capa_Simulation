@@ -73,6 +73,45 @@ def test_the_notice_is_a_shell_state_alert_at_the_end_of_the_registry() -> None:
     assert shell[-3:] == ["GL-07", "GL-08", "GL-09"]
 
 
+def test_the_basis_missing_route_alert_closes_the_static_group_after_the_pkg_rule() -> None:
+    """부하 예외 바탕 없음(`ST-22`, 2026-11-22 사용자 답 Q13)은 같은 탭 경로 쪽 알림(`ST-15` ·
+    `ST-21`)과 같은 Static 무리의 끝 — `ST-21` 바로 뒤에 선다(무리 안에 더한 `ST-21` 선례). 고칠
+    일이 있어 확인 필요 단계의 상태 알림이다."""
+    spec = alerts.spec("ST-22")
+    assert (spec.level, spec.kind) == ("check", "state")
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("ST-22") == codes.index("ST-21") + 1
+    assert codes[codes.index("ST-22") + 1].startswith("HM-")
+
+
+def test_the_custom_source_event_follows_the_conflict_event() -> None:
+    """DB 등록 뒤 CUSTOM 원천 표와 행 수가 다른 칸(알리고 등록함 — 설계 B-stop §1-8)은 같은 저장 뒤
+    사건인 업무 키 충돌(`SC-04`)의 다음 번호이고 그 바로 뒤에 선다(무리 안에 더한 `ST-22` 선례).
+    고칠 입력이 그 자리에 없는 동작 뒤 경고라 확인 필요 단계의 사건 알림이다."""
+    spec = alerts.spec("SC-05")
+    assert (spec.level, spec.kind, spec.title) == (
+        "check",
+        "event",
+        "DB 등록 — CUSTOM 원천 표와 행 수가 다른 칸이 있음(등록함)",
+    )
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("SC-05") == codes.index("SC-04") + 1
+
+
+def test_the_switched_off_custom_event_follows_the_custom_mismatch_event() -> None:
+    """CUSTOM 원천 끄개로 CUSTOM 원천 표를 묻지 않고 부품 구분 없이 등록함은 같은 저장 뒤 사건인
+    CUSTOM 원천 대조(`SC-05`)의 다음 번호이고 그 바로 뒤에 선다 — 뜻이 달라 한 개념 한 이름으로
+    따로 둔다. 숫자를 믿기 전에 알 일이라 확인 필요 단계의 사건 알림이다."""
+    spec = alerts.spec("SC-06")
+    assert (spec.level, spec.kind, spec.title) == (
+        "check",
+        "event",
+        "DB 등록 — CUSTOM 원천 끄개로 부품 구분 없이 등록함",
+    )
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("SC-06") == codes.index("SC-05") + 1
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):

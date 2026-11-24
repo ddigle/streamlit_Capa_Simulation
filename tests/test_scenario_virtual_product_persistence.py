@@ -1,15 +1,30 @@
 # Purpose: 신규 시나리오의 가상제품 이력과 16표 동시 저장 및 실패 시 전체 롤백을 검증한다.
 
+from dataclasses import asdict
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 import pytest
+from custom_key_tables import (
+    PART_A,
+    PART_B,
+    TWO_PART_PRODUCT,
+    custom_keyed_tables,
+    two_part_tables,
+)
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.persistence._sql_helpers import connect, quote
 from capa_simulation.persistence.models import ScenarioPreset
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.builtin_seed import BUILTIN_SEED_MONTHS, builtin_seed_processes
+from capa_simulation.services.virtual_product import (
+    VirtualProductRecord,
+    VirtualProductRequest,
+    clone_product,
+    records_to_frame,
+)
 
 
 def _record(product: str = "Product-A") -> dict[str, str]:
@@ -164,3 +179,37 @@ def test_default_new_scenario_still_has_no_virtual_history(tmp_path: Path) -> No
         assert repository.list_virtual_products(snapshot.revision.revision_id).empty
     for name in default.tables:
         pd.testing.assert_frame_equal(default.tables[name], explicit_empty.tables[name])
+
+
+def test_a_two_part_product_clone_is_stored_with_both_parts(tmp_path: Path) -> None:
+    """두 부품 제품을 복제해 새 시나리오로 저장하면 다시 읽은 여덟 표에 두 부품이 모두 있다.
+
+    이력은 제품 키(제품정보 · Stack) 한 줄이다 — 부품은 복제 단위가 아니다."""
+    tables = two_part_tables()
+    plan = tables["RQ_PKG_PLAN"]
+    stack = str(plan.loc[plan["제품정보"].eq(TWO_PART_PRODUCT), "Stack"].iloc[0])
+    request = VirtualProductRequest(TWO_PART_PRODUCT, stack, "DEMO_NEW_PARTS", stack)
+    cloned = {**tables, **clone_product(tables, request)}
+    record = VirtualProductRecord.from_request(request)
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(
+        min(BUILTIN_SEED_MONTHS), max(BUILTIN_SEED_MONTHS), builtin_seed_processes()
+    )
+
+    created = repository.create_scenario(
+        _metadata("두 부품 복제"), cloned, preset, virtual_products=[asdict(record)]
+    )
+
+    reloaded = DuckDBScenarioRepository(tmp_path / "scenario.duckdb").load_revision(
+        created.revision.revision_id, apply_global_display_order=False
+    )
+    for name in custom_keyed_tables():
+        frame = reloaded.tables[name]
+        new_rows = frame.loc[frame["제품정보"].eq("DEMO_NEW_PARTS")]
+        source_rows = frame.loc[frame["제품정보"].eq(TWO_PART_PRODUCT)]
+        assert sorted(set(new_rows["CUSTOM"])) == [PART_A, PART_B], name
+        assert len(new_rows) == len(source_rows), name
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(created.revision.revision_id),
+        records_to_frame((record,)),
+    )

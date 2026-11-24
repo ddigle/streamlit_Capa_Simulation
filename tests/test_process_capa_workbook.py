@@ -52,6 +52,7 @@ from capa_simulation.components.process_capa_workbook import (
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.process_capa_detail import build_process_product_demand
 from capa_simulation.services.process_equipment_timeline import ROW_SHORTENED, UNIT_EVENT_COLUMNS
 
 MINUS = "−"
@@ -264,6 +265,38 @@ def test_folded_sections_and_the_product_toggle_follow_the_screen() -> None:
     assert "소요대수 ▾" in opened and "└ PRODUCT_A" in opened
     assert "④ 단축 ▾" in opened and "EQ-21" in opened
     assert "확보율 (HOME 표시)" in opened
+
+
+def test_split_part_rows_carry_their_whole_label_into_the_sheet() -> None:
+    """부품으로 가른 분류 줄은 라벨 칸에서 줄여도 시트에는 이름표 전체(「제품 (부품)」)가 실린다."""
+    product = "DEMO_PRODUCT_WITH_A_LONG_NAME"
+    parts = ("DEMO_CUSTOM_A", "DEMO_CUSTOM_B")
+    frame = pd.DataFrame(
+        [
+            {
+                "생산계획년월": month,
+                "공정": LABEL,
+                "양산구분": "양산",
+                "제품정보": product,
+                "CUSTOM": part,
+                "소요대수": need / 2,
+            }
+            for month, need in zip(MONTHS, REQUIRED, strict=True)
+            for part in parts
+        ]
+    )
+    demand = build_process_product_demand(
+        frame, process=LABEL, split="제품정보", months=MONTHS, multi_part={product}
+    )
+
+    labels = [
+        str(value)
+        for value in _detail(_request(product_demand=demand)).column(0)
+        if value is not None
+    ]
+    whole = [f"└ {product} ({part})" for part in parts]
+    # ① Static 과 ② 일정 가용의 소요대수가 함께 펼친다.
+    assert [label for label in labels if label.startswith(f"└ {product[:4]}")] == whole * 2
 
 
 def test_the_units_and_downtime_rows_are_words_where_the_marks_are() -> None:

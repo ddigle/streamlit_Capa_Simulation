@@ -1,15 +1,25 @@
 # Purpose: RQ_REQB 경로 연결과 STEP별 소요대수, 소요대수에 들지 않은 계획 목록을 검증한다.
 
+import dummy_series_tables as demo
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, with_blank_custom
 
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
+    plan_side_counts,
     required_exclusion_message,
 )
-from capa_simulation.services.load_calculator import build_monthly_volume, load_exclusions
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.load_calculator import (
+    build_monthly_volume,
+    calculate_chip_and_wafer_loads,
+    exclude_dummy_series,
+    load_exclusions,
+)
 from capa_simulation.services.required_equipment import (
     CAPACITY_KEYS,
+    PKG_UNCOUNTED_REASON,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
     UNROUTED_KEY_MISMATCH_REASON,
@@ -18,10 +28,16 @@ from capa_simulation.services.required_equipment import (
     UNROUTED_UNUSED_REASON,
     RequiredExclusionCounts,
     calculate_required_equipment,
+    count_required_exclusions,
     required_equipment_to_month_table,
     required_exclusion_counts,
 )
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
 
 
 def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
@@ -42,6 +58,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "소요기준": ["chip", "CHIP"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -54,6 +71,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "생산수량": [60.0, 40.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -64,6 +82,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -73,6 +92,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -88,8 +108,11 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "대당 Capa": [200.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     table = required_equipment_to_month_table(result)
 
     assert len(result) == 2
@@ -101,6 +124,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     assert "CS" not in table.columns
     assert table["STEP_SEQ"].tolist() == ["10"]
     assert table["MCP_SEQ"].tolist() == ["1"]
+    assert table["CUSTOM"].tolist() == [CUSTOM_BLANK]
     assert table.loc[0, "202608"] == pytest.approx(2.0)
 
 
@@ -122,6 +146,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "소요기준": ["CHIP"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -134,6 +159,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "생산수량": [1831.6],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -144,6 +170,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "BE_수율": [0.879],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["HBM4"],
@@ -153,6 +180,7 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "Net Die": [100.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -168,8 +196,11 @@ def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
             "대당 Capa": [484.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     expected_load = 1831.6 / 0.78 / 0.879 * (1 - 0.78)
     assert result["부하량"].tolist() == pytest.approx([expected_load])
@@ -194,6 +225,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -206,6 +238,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -221,6 +254,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
             "대당 Capa": [50.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(
         reqb,
@@ -228,6 +262,7 @@ def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["Area_Name"].tolist() == ["Main"]
@@ -264,6 +299,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "소요기준": ["PKG", "PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -276,6 +312,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -291,6 +328,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
             "대당 Capa": [50.0, 50.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
     result = calculate_required_equipment(
         reqb,
@@ -298,6 +336,7 @@ def test_required_equipment_increases_when_a_process_route_has_more_steps() -> N
         pd.DataFrame(),
         pd.DataFrame(),
         unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["STEP_SEQ"].tolist() == ["10", "20"]
@@ -324,6 +363,7 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -336,6 +376,7 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -351,8 +392,16 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
             "대당 Capa": [10.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, pd.DataFrame(), pd.DataFrame(), unit_capacity)
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
     unrouted = result.attrs.get(UNROUTED_LOADS_ATTR)
 
     # Product-B 경로는 계획이 없어 정말 0 이다.
@@ -385,6 +434,7 @@ def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
             "소요기준": ["PKG"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -397,10 +447,16 @@ def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     empty_capacity = pd.DataFrame(columns=[*CAPACITY_KEYS, "대당 Capa"])
     result = calculate_required_equipment(
-        reqb, plan, pd.DataFrame(), pd.DataFrame(), empty_capacity
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        empty_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs["excluded_required_equipment_rows"]
 
@@ -427,6 +483,7 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
             "소요기준": ["BOX", "pcb"],
         }
     )
+    reqb = with_blank_custom(reqb)
 
     result = calculate_required_equipment(
         reqb,
@@ -434,12 +491,51 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         pd.DataFrame(),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     table = required_equipment_to_month_table(result)
 
     assert result.empty
     assert list(table.columns) == RESULT_DIMENSIONS
     assert RESULT_DIMENSIONS[-2:] == ["STEP_SEQ", "MCP_SEQ"]
+
+
+def test_the_month_table_keeps_one_row_per_part_with_the_same_process_total() -> None:
+    """산출 결과 소요대수 표는 한 제품의 부품(CUSTOM)마다 한 줄이다 — 같은 화면 대당 Capa 표
+    (`UNIT_CAPACITY_DIMENSIONS`)와 같은 칸 묶음이고 CUSTOM 은 Stack 바로 뒤다. 공정 단위로 합친 값
+    (「상세」 끔)은 부품을 한 줄로 합친 표와 같다."""
+    assert set(RESULT_DIMENSIONS) == set(UNIT_CAPACITY_DIMENSIONS)
+    assert RESULT_DIMENSIONS.index("CUSTOM") == RESULT_DIMENSIONS.index("Stack") + 1
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "Chip",
+    }
+    result = pd.DataFrame(
+        [
+            {**route, "CUSTOM": PART_B, "Capa Code": "CAPA-B", "소요대수": 0.8},
+            {**route, "CUSTOM": PART_A, "소요대수": 1.2},
+        ]
+    )
+
+    table = required_equipment_to_month_table(result)
+    folded = required_equipment_to_month_table(result.assign(CUSTOM=CUSTOM_BLANK))
+
+    assert table["CUSTOM"].tolist() == [PART_A, PART_B]
+    assert table["202608"].tolist() == pytest.approx([1.2, 0.8])
+    assert len(folded) == 1
+    totals = table.groupby(["Area_Name", "공정"], as_index=False)["202608"].sum()
+    assert totals["202608"].tolist() == pytest.approx(folded["202608"].tolist())
 
 
 def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
@@ -460,6 +556,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "소요기준": ["WF"],
         }
     )
+    reqb = with_blank_custom(reqb)
     plan = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -472,6 +569,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "생산수량": [100.0],
         }
     )
+    plan = with_blank_custom(plan)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -482,6 +580,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -491,6 +590,7 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -506,8 +606,11 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
             "대당 Capa": [25.0],
         }
     )
+    unit_capacity = with_blank_custom(unit_capacity)
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert result.loc[0, "소요기준"] == "WF"
     assert result.loc[0, "부하량"] == pytest.approx(500.0)
@@ -528,6 +631,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-A",
         "Customer": "Customer-A",
         "CS": "MP",
@@ -543,7 +647,16 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             {**route, "Area_Name": "MAIN", "공정": " Process-A "},
         ]
     )
-    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan_keys = (
+        "생산계획년월",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "CS",
+    )
     plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
     yield_data = pd.DataFrame(
         {
@@ -555,6 +668,7 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -564,11 +678,14 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame([{key: route[key] for key in CAPACITY_KEYS}]).assign(
         **{"대당 Capa": 25.0}
     )
 
-    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    result = calculate_required_equipment(
+        reqb, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     table = required_equipment_to_month_table(result)
 
     assert len(result) == 1
@@ -593,6 +710,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
         "양산구분": "양산",
         "제품정보": "Product-A",
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-A",
         "Customer": "Customer-A",
         "CS": "MP",
@@ -618,7 +736,16 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
         {**route, "공정": "Process-B"},
         {**route, "STEP_SEQ": "20", "Area_Name": "MI"},
     ]
-    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan_keys = (
+        "생산계획년월",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "CUSTOM",
+        "Capa Code",
+        "Customer",
+        "CS",
+    )
     plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
     yield_data = pd.DataFrame(
         {
@@ -630,6 +757,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
             "BE_수율": [1.0],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     chip_qty = pd.DataFrame(
         {
             "제품정보": ["Product-A"],
@@ -639,14 +767,22 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
             "Net Die": [500.0],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     unit_capacity = pd.DataFrame(
         [{key: row[key] for key in CAPACITY_KEYS} for row in canonical]
     ).assign(**{"대당 Capa": 25.0})
 
     registered = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)]
-    from_source = calculate_required_equipment(routes, plan, yield_data, chip_qty, unit_capacity)
+    from_source = calculate_required_equipment(
+        routes, plan, yield_data, chip_qty, unit_capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     from_registered = calculate_required_equipment(
-        registered, plan, yield_data, chip_qty, unit_capacity
+        registered,
+        plan,
+        yield_data,
+        chip_qty,
+        unit_capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert len(registered) == 3
@@ -662,7 +798,7 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
 
 def _pkg_reqb(*divisions: str) -> pd.DataFrame:
     count = len(divisions)
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * count,
             "Area_Name": ["Main"] * count,
@@ -679,10 +815,11 @@ def _pkg_reqb(*divisions: str) -> pd.DataFrame:
             "소요기준": ["PKG"] * count,
         }
     )
+    return with_blank_custom(frame)
 
 
 def _pkg_plan(quantity: float = 100.0) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608],
             "양산구분": ["양산"],
@@ -694,11 +831,12 @@ def _pkg_plan(quantity: float = 100.0) -> pd.DataFrame:
             "생산수량": [quantity],
         }
     )
+    return with_blank_custom(frame)
 
 
 def _pkg_capacity(*divisions: str, capacity: float = 50.0) -> pd.DataFrame:
     count = len(divisions)
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * count,
             "Area_Name": ["Main"] * count,
@@ -713,12 +851,18 @@ def _pkg_capacity(*divisions: str, capacity: float = 50.0) -> pd.DataFrame:
             "대당 Capa": [capacity] * count,
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_required_equipment_pkg_basis_matches_real_wf_gubun_values() -> None:
     """실데이터 재현: PKG 기준 STEP 의 실제 WF 구분은 'PKG' 가 아니라 BUFFER 다."""
     result = calculate_required_equipment(
-        _pkg_reqb("BUFFER"), _pkg_plan(), pd.DataFrame(), pd.DataFrame(), _pkg_capacity("BUFFER")
+        _pkg_reqb("BUFFER"),
+        _pkg_plan(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        _pkg_capacity("BUFFER"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     # 생산수량 100 / 대당 Capa 50 = 2.0. 예전 코드는 부하량·소요대수가 모두 0 이었다.
@@ -738,9 +882,15 @@ def test_pkg_load_ignores_yield_and_chip_composition() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
 
     result = calculate_required_equipment(
-        _pkg_reqb("Buffer"), _pkg_plan(), yield_data, pd.DataFrame(), _pkg_capacity("Buffer")
+        _pkg_reqb("Buffer"),
+        _pkg_plan(),
+        yield_data,
+        pd.DataFrame(),
+        _pkg_capacity("Buffer"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert result["부하량"].tolist() == pytest.approx([100.0])
@@ -759,6 +909,7 @@ def test_pkg_basis_counts_only_buffer_and_reports_the_other_divisions() -> None:
         pd.DataFrame(),
         pd.DataFrame(),
         _pkg_capacity(*divisions),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs["excluded_required_equipment_rows"]
 
@@ -788,6 +939,7 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
             "Net Die": [1000],
         }
     )
+    chip_qty = with_blank_custom(chip_qty)
     yield_data = pd.DataFrame(
         {
             "생산계획년월": [202608],
@@ -798,6 +950,7 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
             "BE_수율": [0.5],
         }
     )
+    yield_data = with_blank_custom(yield_data)
     capacity = pd.concat(
         [
             _pkg_capacity("BUFFER"),
@@ -807,7 +960,9 @@ def test_pkg_rows_keep_their_reqb_order_next_to_chip_rows() -> None:
         ignore_index=True,
     )
 
-    result = calculate_required_equipment(reqb, _pkg_plan(), yield_data, chip_qty, capacity)
+    result = calculate_required_equipment(
+        reqb, _pkg_plan(), yield_data, chip_qty, capacity, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
 
     assert result["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
     # Chip = 100 × 4 ÷ 0.5 = 800. PKG 는 100 그대로.
@@ -828,6 +983,7 @@ def _route(product: str, capa_code: str = "K1", *, basis: str = "CHIP") -> dict[
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": capa_code,
         "Customer": "Customer-A",
         "CS": "MP",
@@ -846,6 +1002,7 @@ def _plan_row(
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "12H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": capa_code,
         "Customer": "Customer-A",
         "CS": "MP",
@@ -854,7 +1011,7 @@ def _plan_row(
 
 
 def _yield_rows(*products: str) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * len(products),
             "제품정보": list(products),
@@ -864,10 +1021,11 @@ def _yield_rows(*products: str) -> pd.DataFrame:
             "BE_수율": [0.9] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def _chip_rows(*products: str) -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "제품정보": list(products),
             "Stack": ["12H"] * len(products),
@@ -876,10 +1034,11 @@ def _chip_rows(*products: str) -> pd.DataFrame:
             "Net Die": [500.0] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def _route_capacity(*products: str, basis: str = "CHIP") -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608] * len(products),
             "Area_Name": ["Main"] * len(products),
@@ -894,6 +1053,7 @@ def _route_capacity(*products: str, basis: str = "CHIP") -> pd.DataFrame:
             "대당 Capa": [10.0] * len(products),
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_load_exclusions_reach_required_equipment() -> None:
@@ -912,6 +1072,7 @@ def test_load_exclusions_reach_required_equipment() -> None:
         _yield_rows("DEMO-A", "DEMO-B"),
         _chip_rows("DEMO-A"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -934,6 +1095,7 @@ def test_a_month_without_yield_is_listed_instead_of_a_silent_zero() -> None:
         _yield_rows("DEMO-A"),
         _chip_rows("DEMO-A", "DEMO-X"),
         _route_capacity("DEMO-A", "DEMO-X"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -959,6 +1121,7 @@ def test_plan_load_that_reaches_no_route_is_listed() -> None:
         _yield_rows("DEMO-A"),
         _chip_rows("DEMO-A"),
         _route_capacity("DEMO-A", basis="WF"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     unrouted = result.attrs.get(UNROUTED_LOADS_ATTR)
 
@@ -990,6 +1153,7 @@ def test_blank_plan_quantity_reads_as_no_plan_and_is_listed() -> None:
         _yield_rows("DEMO-A", "DEMO-B"),
         _chip_rows("DEMO-A", "DEMO-B"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     excluded = result.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
 
@@ -1020,6 +1184,7 @@ def test_a_non_numeric_plan_quantity_still_stops_and_names_the_row() -> None:
             _yield_rows("DEMO-A", "DEMO-B"),
             _chip_rows("DEMO-A", "DEMO-B"),
             _route_capacity("DEMO-A"),
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
         )
 
     assert "202608 · DEMO-B · 12H" in str(caught.value)
@@ -1044,11 +1209,46 @@ def test_exclusion_counts_count_only_routes_that_lose_load() -> None:
         _yield_rows("DEMO-A", "DEMO-C"),
         _chip_rows("DEMO-A", "DEMO-C"),
         _route_capacity("DEMO-A", "DEMO-B"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts(
         excluded_plans=1, unrouted_loads=1, excluded_routes=1
     )
+
+
+def test_basis_missing_routes_are_a_part_of_the_excluded_routes_and_say_their_own_reason() -> None:
+    """부하 예외 바탕 없음은 경로 쪽 합(`excluded_routes`)의 부분 수다 — 합은 그대로 두 까닭을 함께
+    세고(저장 · 지정 검사 · 입력 점검이 보는 수), 문장은 대당 Capa 몫(합 − 부분 수)과 바탕 없음
+    몫을 갈라 말한다. 부하 0 인 줄과 PKG 규칙 줄은 어느 쪽에도 들지 않고, 계획 쪽만 남기는 자리는
+    두 칸을 모두 0 으로 둔다."""
+    routes = pd.DataFrame(
+        {
+            "제외사유": [
+                "대당 Capa 없음",
+                "대당 Capa 0 이하",
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                ROUTE_LOAD_BASIS_MISSING_REASON,
+                PKG_UNCOUNTED_REASON,
+            ],
+            "부하량": [5.0, 3.0, 7.0, 2.0, 0.0, 9.0],
+        }
+    )
+
+    counts = count_required_exclusions(None, None, routes)
+
+    assert counts == RequiredExclusionCounts(excluded_routes=4, basis_missing_routes=2)
+    message = required_exclusion_message(counts, scope=FULL_SCOPE)
+    capacity_part = "대당 Capa 가 없어 뺀 부하 경로 2건"
+    assert f"{capacity_part} · 부하 예외 바탕 없음으로 뺀 부하 경로 2건" in message
+    only_basis = count_required_exclusions(None, None, routes.iloc[2:4])
+    assert only_basis == RequiredExclusionCounts(excluded_routes=2, basis_missing_routes=2)
+    only_basis_message = required_exclusion_message(only_basis, scope=FULL_SCOPE)
+    assert "대당 Capa" not in only_basis_message
+    assert "부하 예외 바탕 없음으로 뺀 부하 경로 2건" in only_basis_message
+    assert plan_side_counts(counts) == RequiredExclusionCounts()
+    assert required_exclusion_message(plan_side_counts(counts), scope=FULL_SCOPE) == ""
 
 
 # ------------------------------------------------------------------ 규칙상 쓰지 않는 조합
@@ -1084,6 +1284,7 @@ def test_a_product_without_pkg_routes_does_not_count_its_pkg_load_as_unrouted() 
         _yield_rows("DEMO-HBM", "DEMO-EDP"),
         _chip_rows("DEMO-HBM", "DEMO-EDP"),
         capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     counts = required_exclusion_counts(result)
 
@@ -1115,6 +1316,7 @@ def test_a_product_whose_pkg_routes_are_not_buffer_is_not_counted_as_unrouted() 
         _yield_rows("DEMO-HBM"),
         _chip_rows("DEMO-HBM"),
         capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts()
@@ -1136,6 +1338,7 @@ def test_a_division_without_any_route_is_not_counted_as_unrouted() -> None:
         yields.reset_index(drop=True),
         chips.reset_index(drop=True),
         _route_capacity("DEMO-A"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     assert required_exclusion_counts(result) == RequiredExclusionCounts()
@@ -1153,7 +1356,12 @@ def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> N
     )
 
     result = calculate_required_equipment(
-        reqb, plan, yields.reset_index(drop=True), _chip_rows("DEMO-A"), capacity
+        reqb,
+        plan,
+        yields.reset_index(drop=True),
+        _chip_rows("DEMO-A"),
+        capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     unrouted = result.attrs[UNROUTED_LOADS_ATTR]
 
@@ -1162,3 +1370,133 @@ def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> N
         [202609, "CHIP", UNROUTED_KEY_MISMATCH_REASON],
     ]
     assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=2)
+
+
+def test_a_load_whose_part_reaches_no_route_is_a_key_mismatch() -> None:
+    """부품(CUSTOM)만 어긋난 부하도 「경로 키 어긋남」(셈)이다 — 같은 제품 · Stack · 소요기준 · WF
+    구분 경로는 다른 부품에 있으니 고칠 어긋남이다. 어긋남을 가르는 키(`_ROUTE_FAMILY_KEYS`)에
+    CUSTOM 이 들면 그 부하가 「그 소요기준·WF 구분 경로 없음」(세지 않음)으로 숨는다 — 옛 표지
+    계획이 새 부품 경로에 못 닿는 꼴(월 머지 · 연도 이동)이다."""
+    reqb = pd.DataFrame([_route("DEMO-A")])
+    plan = pd.DataFrame([{**_plan_row("DEMO-A"), "CUSTOM": PART_A}])
+
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        _yield_rows("DEMO-A").assign(CUSTOM=PART_A),
+        _chip_rows("DEMO-A").assign(CUSTOM=PART_A),
+        _route_capacity("DEMO-A"),
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
+    unrouted = result.attrs[UNROUTED_LOADS_ATTR]
+
+    assert unrouted[["CUSTOM", "제외사유"]].values.tolist() == [
+        [PART_A, UNROUTED_KEY_MISMATCH_REASON]
+    ]
+    assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=1)
+
+
+# ------------------------------------------------------------------ Dummy 계열의 소요대수
+# HOME `Wafer 계획` 은 Dummy 계열(Dummy · Top_Dummy)을 뺀 합이지만, 소요대수는 설비가 받는
+# 부하라 Dummy 계열 경로의 부하를 그대로 품는다(사용자 결정 2026-11-22 — 소요대수 · 확보율 ·
+# B/N 순위는 그대로). 기대값은 계산기 출력이 아니라 손으로 푼 산식이다 — 부하량 쪽에서 행이
+# 빠지면 경로는 말없이 0 을 받는다.
+_DUMMY_SERIES_CAPACITY = 10.0
+# (제품정보, WF 구분) — 표기는 `dummy_series_tables` 경로 그대로(DEMO-HBM 의 Top_Dummy 는 대문자).
+_DUMMY_SERIES_ROUTES = (
+    (demo.HBM, "Buffer"),
+    (demo.HBM, "Core"),
+    (demo.HBM, "Top"),
+    (demo.HBM, "Dummy"),
+    (demo.HBM, "TOP_DUMMY"),
+    (demo.DUMMY_ONLY, "Dummy"),
+    (demo.DUMMY_ONLY, "Top_Dummy"),
+)
+
+
+def _dummy_series_route_tables(basis: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """한 공정에 두 HBM 제품의 경로를 모두 둔 `RQ_REQB` 와 대당 Capa(경로마다 같은 값)."""
+    keys = [
+        {
+            "생산계획년월": month,
+            "Area_Name": "Main",
+            "공정": "DEMO-PROC",
+            "양산구분": "양산",
+            "제품정보": product,
+            "Stack": "12H",
+            "CUSTOM": CUSTOM_BLANK,
+            "WF 구분": division,
+            "STEP_SEQ": "S10",
+            "MCP_SEQ": "1",
+            "소요기준": basis,
+        }
+        for month in demo.MONTHS
+        for product, division in _DUMMY_SERIES_ROUTES
+    ]
+    reqb = pd.DataFrame(
+        [
+            {**key, "Capa Code": f"{key['제품정보']}-CC", "Customer": "DEMO-CUST", "CS": "MP"}
+            for key in keys
+        ]
+    )
+    capacity = pd.DataFrame([{**key, "대당 Capa": _DUMMY_SERIES_CAPACITY} for key in keys])
+    return reqb, capacity
+
+
+# 손으로 푼 부하량(202601). 생산수량 DEMO-HBM 100 · DEMO-DONLY 30, 구분_Chip 1, Net Die 800.
+# Top_Dummy 는 일반식, Dummy 는 Dummy 산식(`× (1 - EDS_수율)`)이다.
+_DUMMY_SERIES_LOADS = {
+    "WF": {
+        (demo.HBM, "TOP_DUMMY"): 100 * 1_000 * 1.0 / 0.85 / 0.95 / 800,
+        (demo.HBM, "Dummy"): 100 * 1_000 * 1.0 / 0.8 / 0.95 * (1 - 0.8) / 800,
+        (demo.DUMMY_ONLY, "Top_Dummy"): 30 * 1_000 * 1.0 / 0.85 / 0.95 / 800,
+        (demo.DUMMY_ONLY, "Dummy"): 30 * 1_000 * 1.0 / 0.8 / 0.95 * (1 - 0.8) / 800,
+    },
+    "CHIP": {
+        (demo.HBM, "TOP_DUMMY"): 100 * 1.0 / 0.95,
+        (demo.HBM, "Dummy"): 100 * 1.0 / 0.8 / 0.95 * (1 - 0.8),
+        (demo.DUMMY_ONLY, "Top_Dummy"): 30 * 1.0 / 0.95,
+        (demo.DUMMY_ONLY, "Dummy"): 30 * 1.0 / 0.8 / 0.95 * (1 - 0.8),
+    },
+}
+
+
+@pytest.mark.parametrize("basis", ["WF", "CHIP"])
+def test_dummy_series_routes_keep_their_load_in_required_equipment(basis: str) -> None:
+    """Dummy · Top_Dummy 경로는 HOME 집계에서 빠져도 소요대수에는 제 부하 그대로 든다.
+
+    공정의 달 합은 Dummy 계열을 뺀 부하(HOME 집계 기준)가 아니라 모든 경로 부하로 낸 값이다.
+    """
+    reqb, capacity = _dummy_series_route_tables(basis)
+
+    result = calculate_required_equipment(
+        reqb,
+        demo.plan(),
+        demo.yields(),
+        demo.chip_qty(),
+        capacity,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+    )
+
+    january = result.loc[result["생산계획년월"].eq(202601)]
+    by_route = january.set_index(["제품정보", "WF 구분"])
+    for route, load in _DUMMY_SERIES_LOADS[basis].items():
+        assert by_route.loc[route, "부하량"] == pytest.approx(load), route
+        assert by_route.loc[route, "소요대수"] == pytest.approx(load / _DUMMY_SERIES_CAPACITY), (
+            route
+        )
+
+    chip_load, wafer_load = calculate_chip_and_wafer_loads(
+        demo.plan(), demo.yields(), demo.chip_qty()
+    )
+    basis_load = wafer_load if basis == "WF" else chip_load
+    hbm_load = basis_load.loc[basis_load["제품정보"].isin([demo.HBM, demo.DUMMY_ONLY])]
+    totals = result.groupby("생산계획년월")["소요대수"].sum()
+    assert [int(month) for month in totals.index] == list(demo.MONTHS)
+    for month in demo.MONTHS:
+        total = totals.loc[month]
+        month_load = hbm_load.loc[hbm_load["생산계획년월"].eq(month)]
+        everything = month_load["물량"].sum()
+        home_only = exclude_dummy_series(month_load)["물량"].sum()
+        assert everything > home_only
+        assert total == pytest.approx(everything / _DUMMY_SERIES_CAPACITY)

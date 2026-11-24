@@ -12,7 +12,9 @@ import math
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, with_blank_custom
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.load_calculator import (
     YIELD_KEYS,
     YIELD_LOCK_REASON_COLUMN,
@@ -28,7 +30,7 @@ MONTHS = (202601, 202602, 202603)
 
 
 def _source() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "생산계획년월": month,
@@ -42,6 +44,7 @@ def _source() -> pd.DataFrame:
             for month in MONTHS
         ]
     )
+    return with_blank_custom(frame)
 
 
 def _row(frame: pd.DataFrame, product: str, month: int) -> pd.DataFrame:
@@ -157,7 +160,7 @@ def test_a_space_only_yield_cell_reads_as_empty() -> None:
 
 def _plan() -> pd.DataFrame:
     """두 제품의 세 달 계획. DEMO_P1 은 거래선이 둘이라 계산 프레임에서 수율 행이 겹친다."""
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "생산계획년월": month,
@@ -171,10 +174,11 @@ def _plan() -> pd.DataFrame:
             for month in MONTHS
         ]
     )
+    return with_blank_custom(frame)
 
 
 def _chip_qty() -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "제품정보": ["DEMO_P1", "DEMO_P2"],
             "Stack": ["8H", "8H"],
@@ -183,6 +187,7 @@ def _chip_qty() -> pd.DataFrame:
             "Net Die": [1_000.0, 1_000.0],
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_an_out_of_range_yield_stops_the_calculation_naming_the_row_and_the_fix() -> None:
@@ -204,6 +209,36 @@ def test_an_out_of_range_yield_stops_the_calculation_naming_the_row_and_the_fix(
     assert "202602 · DEMO_P2 · 8H · Core → BE 1.2(120%)" in message
     assert "생산 계획 → 수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요" in message
     assert "조회기간" in message
+
+
+def _parts(frame: pd.DataFrame) -> pd.DataFrame:
+    """DEMO_P1 의 행을 두 부품(`PART_A` · `PART_B`)으로 가른 사본 — 다른 제품은 빈 값 표지
+    그대로."""
+    p1 = frame["제품정보"].eq("DEMO_P1")
+    return pd.concat(
+        [frame.loc[~p1], frame.loc[p1].assign(CUSTOM=PART_A), frame.loc[p1].assign(CUSTOM=PART_B)],
+        ignore_index=True,
+    )
+
+
+def test_an_out_of_range_yield_of_a_part_names_the_part() -> None:
+    """부품(CUSTOM)이 있는 칸이 걸리면 예시가 부품을 Stack 뒤에 싣는다 — 두 부품의 같은 달 칸이
+    같은 글로 보이지 않아 수율 탭의 어느 줄을 고칠지 글로 가른다. 부품이 없는 칸만 걸리면 글은
+    그대로다(위 시험)."""
+    source = _parts(_source())
+    month = source["생산계획년월"].eq(202603)
+    source.loc[month & source["CUSTOM"].eq(PART_B), "EDS_수율"] = 0.0
+    source.loc[source["제품정보"].eq("DEMO_P2") & month, "BE_수율"] = 1.2
+
+    with pytest.raises(ValueError) as caught:
+        calculate_wafer_load(_parts(_plan()), source, _parts(_chip_qty()))
+
+    message = str(caught.value)
+    assert "2행" in message
+    assert "예시(년월 · 제품 · Stack · CUSTOM · WF 구분)" in message
+    assert f"202603 · DEMO_P1 · 8H · {PART_B} · Core → EDS 0(0%)" in message
+    assert f"202603 · DEMO_P2 · 8H · {CUSTOM_BLANK} · Core → BE 1.2(120%)" in message
+    assert PART_A not in message
 
 
 def test_a_missing_yield_is_still_left_out_rather_than_stopping_the_calculation() -> None:

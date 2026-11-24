@@ -2,13 +2,14 @@
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.weighted_unit_capacity import effective_process_capacity_long
 
 
 def _two_bases_for_one_process() -> pd.DataFrame:
     """같은 공정에 WF·CHIP 두 소요기준이 들어온 소요대수 상세."""
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
             "공정": ["Process-A", "Process-A"],
@@ -24,6 +25,7 @@ def _two_bases_for_one_process() -> pd.DataFrame:
             "소요대수": [0.6, 0.2],
         }
     )
+    return with_blank_custom(frame)
 
 
 def test_effective_capacity_rejects_multiple_bases_for_one_process() -> None:

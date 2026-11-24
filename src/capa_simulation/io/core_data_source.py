@@ -11,7 +11,7 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import pandas as pd
 
@@ -19,6 +19,11 @@ from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
 from capa_simulation.settings import PROJECT_ROOT
+
+if TYPE_CHECKING:
+    # 실행 import 로 두면 고리가 생긴다 — 대조 모듈이 부르는 `core_data_derivation` 이 이
+    # 모듈을 부른다.
+    from capa_simulation.services.custom_source_check import CustomSourceCheck
 
 # 확장자만 YAML 이고 내용도 파서도 JSON 이었다. 실제 형식에 맞춰 이름을 바꿨다.
 DATA_CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
@@ -57,6 +62,9 @@ class CoreDataBatch:
     source_type: str
     frame: pd.DataFrame
     source_registered_at: datetime | None = None
+    # 본 표와 CUSTOM 원천 표의 대조 수(`custom_source_check.attach_custom_values`). 붙인
+    # 공급자만 채우고 그 밖(CSV · 시드 · 가짜 공급자)은 None 이라 메모도 알림도 없다.
+    custom_check: CustomSourceCheck | None = None
 
     def __post_init__(self) -> None:
         for field_name, label in (

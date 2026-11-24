@@ -2817,13 +2817,14 @@ def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone
     「서버 시작 점검」 표의 「토큰 자동 갱신」 줄이 없어져 UI-CON-02 · UI-DAT-11 예외는
     「없음」 으로 돌아갔고 규칙 글 · 4장에 그 줄이 없다. 6-29 token-auto-frame · 6-30 s-C-13 ·
     6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다.
-    판 머리는 v1.34 시험이 본다."""
+    UI-CON-02 예외 칸에는 v1.44 의 다른 예외(6-41 g-basis-name)가 섰다 — 그 칸에 토큰 줄이 없음만
+    본다. 판 머리는 v1.34 시험이 본다."""
     document = _text()
     assert "- **v1.32 — 2026-11-16.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
-    for rule_id in ("UI-CON-02", "UI-DAT-11"):
-        assert rules[rule_id].fields["예외"] == ["없음"], rule_id
+    assert rules["UI-DAT-11"].fields["예외"] == ["없음"]
+    assert "토큰 자동 갱신" not in rules["UI-CON-02"].fields["예외"][0]
     assert "토큰 자동 갱신" not in _chapter(document, 3)
     assert "토큰 자동 갱신" not in _chapter(document, 4)
 
@@ -3542,7 +3543,7 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
     document = _text()
     assert "6-40 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-40. ") : section.index("\n### 6-42. ")]
+    record = section[section.index("\n### 6-40. ") : section.index("\n### 6-41. ")]
     assert "확인 열하나는 모두 「좋음」" in record and "여쭘 다섯은 모두 카드 권장" in record
     assert "6-38 · 6-39 줄은 그때 기록 그대로" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
@@ -3573,6 +3574,169 @@ def test_the_check_1121_board_answers_are_recorded_in_6_40() -> None:
     v143 = history[history.index("- **v1.43 — 2026-11-21.**") :]
     for phrase in ("6-40", "q-chatbot (a)", "q-invest-sort (a)", "q-blank-head (b)", "규칙 82"):
         assert phrase in v143, phrase
+
+
+GUIDE_LOAD_CONVERSION = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "load_conversion.md"
+
+
+def test_the_a_to_g_requests_open_6_41_with_the_basis_name_exception() -> None:
+    """v1.44 — 6-41 은 사용자 요청 A ~ G(2026-11-22)를 지으며 화면 규칙에 닿은 판정의 절이다.
+    줄마다 머리 판정 id · 굵은 답 · 끝 「(날짜 · 규칙 id)」 이고(뒤 줄은 같은 꼴로 더해진다), 첫
+    줄은 환산 「집계 기준」 값 이름 「산출 기준 총량」 의 UI-CON-02 예외(g-basis-name)다. 규칙
+    UI-CON-02 예외 칸이 그 줄을 가리키고, 줄이 말하는 가름 글이 Guide 「환산 조건」 에 있다."""
+    document = _text()
+    assert "6-41 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") : section.index("\n### 6-42. ")]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    assert lines and lines[0].startswith("- g-basis-name · "), lines[:1]
+    known = {rule.id for rule in _rules()}
+    for line in lines:
+        match = re.match(
+            r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-\d{2}) · ([^()]+)\)$", line
+        )
+        assert match, line[:120]
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line[:120]
+    first = lines[0]
+    assert "→ **UI-CON-02 예외 — 사용자가 정한 이름 그대로, Guide · 칸 풍선이 가름**" in first
+    assert "「산출 기준 총량」" in first and "「소요대수 산출 기준」" in first
+    assert "UI-CON-02" in RULE_TOKEN.findall(first.rsplit("(2026-11-22 · ", 1)[1])
+    con02 = {rule.id: rule for rule in _rules()}["UI-CON-02"]
+    exception = con02.fields["예외"][0]
+    assert "「산출 기준 총량」" in exception and "6-41 g-basis-name" in exception
+    assert "6-41" in con02.fields["근거"][0]
+    guide = GUIDE_LOAD_CONVERSION.read_text(encoding="utf-8")
+    assert "**산출 기준 총량**" in guide and "「소요대수 산출 기준」" in guide
+    history = _chapter(document, 8)
+    v144 = history[history.index("- **v1.44 — 2026-11-23.**") :]
+    for phrase in ("6-41", "g-basis-name", "UI-CON-02", "규칙 82"):
+        assert phrase in v144, phrase
+
+
+BOARD3_CARDS = ("q7-narrow-label", "q7-other-hover", "q7-past-slice")
+
+
+def _board3_lines(document: str) -> dict[str, str]:
+    """6-41 의 그림 보드 3 줄 — 보드 카드 id → 줄."""
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") : section.index("\n### 6-42. ")]
+    return {
+        line.split(" · ", 1)[0][2:]: line
+        for line in record.splitlines()
+        if line.startswith("- ") and line.split(" · ", 1)[0][2:] in BOARD3_CARDS
+    }
+
+
+def test_the_q7_picture_board_answers_join_6_41() -> None:
+    """v1.45 — Q7 갈라 보임 화면을 찍어 본 2026-11-24 그림 보드 3 의 답(모두 권장)은 6-41 에 보드
+    카드 id 를 줄 머리로 잇는다. 첫 줄 q7-narrow-label 은 (다) 「계획 세부수량 제품 칸만 넓힘」
+    이었고 같은 날 저녁 그림 보드 4 q7-shared-col (나) 「넓히지 않음」 이 그 줄에 이어져 지금 답이다
+    — 그 줄 · 4장 「부품 이름표」 줄에 걷은 상한 토큰이 남지 않고, 7-1 이 뒤집힘을 남긴다. 1장
+    안내 · 6-41 머리글이 보드 3 과 그 카드 id 를 가리킨다."""
+    document = _text()
+    assert "2026-11-24 그림 보드 3" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") : section.index("\n### 6-42. ")]
+    assert "2026-11-24 그림 보드 3" in record.split("\n- ", 1)[0]
+    assert "(`q7-narrow-label` · `q7-other-hover` · `q7-past-slice`)" in record.split("\n- ", 1)[0]
+    lines = _board3_lines(document)
+    assert "q7-narrow-label" in lines
+    narrow = lines["q7-narrow-label"]
+    assert "→ **(다) 계획 세부수량 제품 칸만 넓힘**" in narrow
+    assert "그림 보드 4 q7-shared-col 로 물었다 → **(나) 넓히지 않음" in narrow
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" not in narrow and "(2026-11-24 · " in narrow
+    known = {rule.id for rule in _rules()}
+    cited = RULE_TOKEN.findall(narrow.rsplit("(2026-11-24 · ", 1)[1])
+    assert cited and set(cited) <= known
+    current = _chapter(document, 4)
+    row = next(line for line in current.splitlines() if line.startswith("| 부품 이름표 |"))
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" not in row and "q7-shared-col (나)" in row
+    assert "넓히지 않음" in row
+    turned = _chapter(document, 7).split("\n### 7-2. ")[0]
+    assert "q7-narrow-label (다)" in turned and "q7-shared-col (나)" in turned
+    for card in BOARD3_CARDS:
+        if card not in lines:
+            continue
+        cited = RULE_TOKEN.findall(lines[card].rsplit("(2026-11-24 · ", 1)[1])
+        assert cited and set(cited) <= known, card
+    if "q7-other-hover" in lines:
+        assert "→ **(나) 모든 기타 풍선을 같은 꼴로**" in lines["q7-other-hover"]
+    if "q7-past-slice" in lines:
+        assert "→ **(나) 그 제품 첫 부품의 색 칸을 빌림**" in lines["q7-past-slice"]
+        turned = _chapter(document, 7).split("\n### 7-2. ")[0]
+        assert "q7-past-slice (나)" in turned
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    for phrase in ("6-41", "규칙 82", "q7-shared-col", *lines):
+        assert phrase in v145, phrase
+
+
+def test_the_board4_other_hover_answer_joins_the_board3_line() -> None:
+    """그림 보드 4 q7-hover-cap (나) 「이름을 다 — 셋마다 줄을 나눔」 은 그 꼴을 낳은 보드 3 줄
+    q7-other-hover 에 잇고, 사용자 확인을 기다리던 답 밖 줄 q7-hover-cap 은 잰 잘림을 적는 답 밖 줄
+    q7-hover-rest 로 바뀐다(판은 v1.45 그대로). 줄이 부르는 코드 이름이 코드에 있다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") : section.index("\n### 6-42. ")]
+    heads = {
+        line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
+    }
+    other = heads["q7-other-hover"]
+    assert "그림 보드 4 q7-hover-cap 으로 물었다 → **(나) 이름을 다 — 셋마다 줄을 나눔**" in other
+    assert "이름 줄은 넷(이름 열둘)까지" in other and "q7-hover-rest" in other
+    assert "q7-hover-cap" not in heads and "사용자 확인 대기" not in other
+    rest = heads["q7-hover-rest"]
+    assert rest.split(" — ", 1)[0].endswith("답 밖에서 정한 것")
+    known = {rule.id for rule in _rules()}
+    cited = RULE_TOKEN.findall(rest.rsplit("(2026-11-24 · ", 1)[1])
+    assert cited and set(cited) <= known
+    code = (PROJECT_ROOT / "src/capa_simulation/components/home_lob_figures.py").read_text(
+        encoding="utf-8"
+    )
+    for name in ("_other_member_lines", "_PRODUCT_SHARE_HOVER_NAME_LINES"):
+        assert name in other, name
+        assert re.search(rf"^(def {name}\(|{name} = )", code, re.MULTILINE), name
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :].split("\n- **v1.", 1)[0]
+    assert "q7-hover-cap (나)" in v145 and "q7-hover-rest" in v145
+
+
+def test_the_board4_past_legend_answer_joins_the_board3_line() -> None:
+    """그림 보드 4 q7-past-legend (나) 「Past Data 를 켠 화면에서 「제품 (-)」 줄을 같은 색으로
+    하나 더」 는 그 꼴을 낳은 보드 3 줄 q7-past-slice 에 잇고, 「범례는 칸마다 한 줄」 을 굵은 답에
+    두던 답 밖 줄 q7-slice-rest 는 그 몫을 걷고 답을 지으며 정한 몫(더한 줄 자리 · 넘치면 그
+    줄부터 뺌)을 싣는다(판은 v1.45 그대로). 줄이 부르는 코드 이름이 코드에 있다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") : section.index("\n### 6-42. ")]
+    heads = {
+        line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
+    }
+    past = heads["q7-past-slice"]
+    assert (
+        "그림 보드 4 q7-past-legend 로 물었다 → **(나) Past Data 를 켠 화면에서 「제품 (-)」 줄을 "
+        "같은 색으로 하나 더**"
+    ) in past
+    assert "q7-slice-rest" in past and "q7-past-legend" not in heads
+    rest = heads["q7-slice-rest"]
+    assert rest.split(" — ", 1)[0].endswith("답 밖에서 정한 것")
+    bold = re.findall(r"\*\*([^*]+)\*\*", rest)
+    assert bold and "칸마다 한 줄" not in bold[0] and "그 줄부터 뺌" in bold[0]
+    assert "q7-past-legend" in rest
+    known = {rule.id for rule in _rules()}
+    for line in (past, rest):
+        cited = RULE_TOKEN.findall(line.rsplit("(2026-11-24 · ", 1)[1])
+        assert cited and set(cited) <= known
+    code = (PROJECT_ROOT / "src/capa_simulation/components/home_lob_figures.py").read_text(
+        encoding="utf-8"
+    )
+    for name, line in (("product_share_legend", past), ("_legend_rows_within_limit", rest)):
+        assert name in line, name
+        assert re.search(rf"^def {name}\(", code, re.MULTILINE), name
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :].split("\n- **v1.", 1)[0]
+    assert "q7-past-legend (나)" in v145 and "범례 칸마다 한 줄 · " not in v145
 
 
 # 2026-11-20 · 21 누적 진척 까닭 보드 — 카드 id: (날짜, 고른 답 굵은 글). 1차 q-look 은 권장이 아닌

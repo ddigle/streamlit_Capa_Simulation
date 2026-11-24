@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from custom_key_tables import with_blank_custom
 
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.standard_target_capacity import (
@@ -50,7 +51,7 @@ def _required_equipment() -> pd.DataFrame:
                     "STEP_SEQ": step_seq,
                 }
             )
-    return pd.DataFrame(rows)
+    return with_blank_custom(pd.DataFrame(rows))
 
 
 def test_iso_week_calendar_gives_the_boundary_week_to_the_month_with_more_days() -> None:
@@ -322,6 +323,7 @@ def test_pkg_equivalent_uses_unique_pkg_plan_over_original_demand_load() -> None
             "생산수량": [30.0, 20.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     result = add_pkg_equivalent_standard_target(
         weekly_target=weekly_target,
@@ -382,6 +384,7 @@ def test_process_summary_uses_product_mix_and_always_excludes_er() -> None:
             },
         ]
     )
+    required_equipment = with_blank_custom(required_equipment)
     result = build_weekly_standard_target_capacity(
         required_equipment=required_equipment,
         run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [10.0]}),
@@ -433,6 +436,7 @@ def test_logic_analysis_explains_one_process_week_with_product_wf_mix() -> None:
             },
         ]
     )
+    required_equipment = with_blank_custom(required_equipment)
 
     target, contributions = build_standard_target_logic_analysis(
         required_equipment=required_equipment,
@@ -490,6 +494,7 @@ def test_pre_bd_standard_target_excludes_dummy_from_product_mix() -> None:
             },
         ]
     )
+    required_equipment = with_blank_custom(required_equipment)
     run_day = pd.DataFrame({"생산계획년월": [202608], "공정": ["Pre B/D"], "RUN_DAY": [10.0]})
     availability = pd.DataFrame({"공정": ["Pre B/D"], "Weeknum": ["26-W32"], "가용대수": [2.0]})
 
@@ -609,7 +614,7 @@ def _mixed_required_equipment() -> pd.DataFrame:
                 "소요대수": 1.0,
             }
         )
-    return pd.DataFrame(rows)
+    return with_blank_custom(pd.DataFrame(rows))
 
 
 def _mixed_weekly_target(
@@ -669,6 +674,7 @@ def test_an_already_split_frame_gives_the_same_weekly_target_and_pkg_equivalent(
             "생산수량": [30.0, 20.0, 40.0, 10.0],
         }
     )
+    plan = with_blank_custom(plan)
     expected_pkg = add_pkg_equivalent_standard_target(
         weekly_target=expected,
         required_equipment=required_equipment,
@@ -713,6 +719,7 @@ def test_logic_analysis_ignores_other_months_and_spelling_differences() -> None:
             )
         ]
     )
+    clean = with_blank_custom(clean)
     messy = clean.copy()
     messy["공정"] = [" Process-A ", "Process-A"]
     messy["소요기준"] = ["Wafer", " wf "]
@@ -822,6 +829,7 @@ def test_pkg_equivalent_sums_plan_rows_that_differ_only_by_pack_code() -> None:
             "생산수량": [20.0, 10.0, 20.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     result = add_pkg_equivalent_standard_target(
         weekly_target=weekly_target,
@@ -926,6 +934,7 @@ def test_pkg_equivalent_reads_a_blank_plan_quantity_as_no_plan() -> None:
             "생산수량": [30.0, None, 20.0],
         }
     )
+    plan = with_blank_custom(plan)
 
     result = add_pkg_equivalent_standard_target(
         weekly_target=weekly_target,
@@ -968,6 +977,7 @@ def test_pkg_equivalent_names_the_row_of_a_non_numeric_plan_quantity() -> None:
             "생산수량": [30.0, "약 20"],
         }
     )
+    plan = with_blank_custom(plan)
 
     with pytest.raises(ValueError, match="숫자가 아닌 값") as caught:
         add_pkg_equivalent_standard_target(

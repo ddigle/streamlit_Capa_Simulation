@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -57,6 +58,7 @@ from capa_simulation.components.required_exclusion_notice import (
 )
 from capa_simulation.io.bigdataquery_catalog import fetch_simulation_catalog
 from capa_simulation.io.company_bigdataquery_adapter import (
+    BigDataQueryCallError,
     BigDataQueryCoreDataProvider,
     QueryWindow,
     registration_detail_window,
@@ -79,6 +81,7 @@ from capa_simulation.scenario_registration import (
     load_active_extra_pack,
     registration_note,
     save_bigdataquery_scenario,
+    source_check_memo,
 )
 from capa_simulation.services.auto_official_update import (
     CATALOG_WINDOW_DAYS,
@@ -116,8 +119,10 @@ from capa_simulation.services.bigdataquery_catalog_view import registration_pref
 from capa_simulation.services.core_data_pipeline import fetch_registration_dataset
 from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.required_equipment import required_exclusion_counts
+from capa_simulation.services.route_load_exceptions import RouteLoadDeclaration
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
+from capa_simulation.services.source_bridge import settled_source_codes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -284,7 +289,9 @@ def run_auto_official_update(
             # `SystemExit` 처럼 Exception 밖의 것도 실제 사유로 남긴 뒤 다시 올린다 — 실행 흐름
             # 신호(KeyboardInterrupt·Streamlit 의 rerun/stop)를 삼키지 않는다. 배경 스레드는
             # 예약 쪽이 받아 스레드를 지킨다(`auto_update_scheduler`).
-            _LOGGER.exception(
+            _log_failure_trace(
+                exc,
+                exc,
                 "공식버전 자동 갱신 회차 %s %s 단계에서 멈췄습니다.",
                 with_subject_particle(str(run_id)),
                 log.stage,
@@ -316,6 +323,10 @@ class _RunLog:
         self.stage = "claim"
         # 리비전 1 을 저장했으면 그 시나리오명. 발행까지 가지 못하고 끝나면 사유 끝에 적는다.
         self.registered_name: str | None = None
+        # 등록이 받은 원천을 그대로 두고 알린 것(「CUSTOM 원천 대조 — 종류 n · …」 · 「업무 키
+        # 충돌 n그룹(…)」 — `source_check_memo`, 리비전 1 메모와 같은 조각). 어느 결과로 끝나든
+        # 사유의 발행 줄 쪽 끝 맨 앞과 리비전 2 · 공식버전 메모에 붙인다.
+        self.source_memo = ""
         # 등록이 CS 가 빈 행을 빼고 저장했으면 그 수(`BlankCsDrop.memo`). 어느 결과로 끝나든 사유의
         # 발행 줄 쪽 끝에 붙인다 — 소요대수 밖 수요 경고(`split_published_reason`)와 섞지 않는다.
         self.blank_cs_memo = ""
@@ -323,6 +334,10 @@ class _RunLog:
         # `ExtraMergeReport.memo`). 판이 없으면 빈 글이다. CS 빈 행 조각처럼 사유의 발행 줄 쪽 끝과
         # 리비전 2 · 공식버전 메모에 붙인다.
         self.extra_memo = ""
+        # 판정 · 발행 검사가 쓴 부하 예외 선언 판(「부하 예외 판 n」 — 이름 없음,
+        # `_route_exception_memo`). 선언이 없으면 빈 글이다. 공식 숫자가 어느 판으로 났는지 되짚는
+        # 근거라 CS 빈 행 조각처럼 사유의 발행 줄 쪽 끝과 리비전 2 · 공식버전 메모에 붙인다.
+        self.route_memo = ""
         # 등록 때 돌려 본 대당 Capa 가 멈췄으면 푸는 길(`RegistrationCapacityCheck.fix_hint` — 화면
         # 등록의 경고 띠와 같은 글). 지정까지 가지 못하고 끝나면 어느 갈래든 사유 끝(등록한
         # 시나리오를 남겼다는 글 앞)에 한 번 붙인다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
@@ -340,7 +355,8 @@ class _RunLog:
         self._repository.update_auto_official_update_run(self.run_id, values)
 
     def finish(self, status: RunStatus, reason: str, **values: object) -> None:
-        tail = " · ".join(part for part in (self.blank_cs_memo, self.extra_memo) if part)
+        pieces = (self.source_memo, self.blank_cs_memo, self.extra_memo, self.route_memo)
+        tail = " · ".join(part for part in pieces if part)
         if tail:
             head, warning = split_published_reason(reason)
             head = f"{head.rstrip().rstrip('.')} · {tail}"
@@ -366,8 +382,25 @@ class _RunLog:
         label = STAGE_LABELS.get(self.stage, self.stage)
         try:
             self.finish(STATUS_ERROR, f"{label} 단계에서 멈췄습니다 — {_error_text(exc)}")
-        except Exception:
-            _LOGGER.exception("자동 갱신 회차 %s 의 실패를 기록하지 못했습니다.", self.run_id)
+        except Exception as error:
+            _log_failure_trace(
+                error, exc, "자동 갱신 회차 %s 의 실패를 기록하지 못했습니다.", self.run_id
+            )
+
+
+def _log_failure_trace(
+    error: BaseException, stopped: BaseException, message: str, *args: object
+) -> None:
+    """`error` 를 traceback 과 함께 로그에 남긴다. 회차를 멈춘 예외(`stopped`)가 BigDataQuery 조회
+    실패면 예외 사슬을 따라가지 않는다 — 그 실패가 감싼 패키지 원문(`__cause__`)에는 요청자 계정 ·
+    CUSTOM 원천 표 이름이 가리지 않은 채 든다. 그 실패의 글은 어댑터가 이미 가렸고 갈래 · 종류는
+    어댑터 로그(`_log_failure`)가 남겼다. 기록하지 못한 실패(`error`)는 문맥이 그 조회 실패라 같이
+    끊는다."""
+    if not isinstance(stopped, BigDataQueryCallError):
+        _LOGGER.error(message, *args, exc_info=error)
+        return
+    trace = traceback.format_exception(type(error), error, error.__traceback__, chain=False)
+    _LOGGER.error(message + "\n%s", *args, "".join(trace).rstrip())
 
 
 def _error_text(exc: BaseException) -> str:
@@ -401,10 +434,9 @@ def _execute(
     catalog = sources.fetch_catalog(window)
 
     log.advance("select")
-    existing_codes = {
-        summary.source_simulation_code
-        for summary in repository.list_scenarios(include_archived=True)
-    }
+    # 원천 CSV 로만 받은 코드는 「등록됨」 으로 세지 않는다 — DB 에 오면 평소처럼 받는다
+    # (`source_bridge`).
+    existing_codes = settled_source_codes(repository.list_scenarios(include_archived=True))
     received = received_codes(repository)
     selection = select_candidate(
         catalog,
@@ -480,6 +512,7 @@ def _execute(
         base_revision_id=base.revision.revision_id,
     )
     log.registered_name = base.scenario.scenario_name
+    log.source_memo = source_check_memo(prepared)
     log.blank_cs_memo = prepared.blank_cs.memo()
     log.extra_memo = registration_data.extra.memo()
     if registration.capacity.stopped:
@@ -487,7 +520,12 @@ def _execute(
         log.fixed_at_source = registration.capacity.fixed_at_source
 
     log.advance("judge")
-    outcome = full_capacity_outcome(base.tables, base.tables)
+    # 부하 예외 선언은 판정 앞에서 한 번 읽어 판정과 발행 검사가 같은 판을 쓴다 — 배경 스레드라 캐시
+    # 래퍼 없이 저장소를 바로 읽는다(AGENTS 9장 「배경 스레드」).
+    route_state = repository.load_route_load_exceptions()
+    route_exceptions = route_state.declaration
+    log.route_memo = _route_exception_memo(route_state.seq, route_exceptions)
+    outcome = full_capacity_outcome(base.tables, base.tables, route_exceptions=route_exceptions)
     if outcome.error is not None or outcome.required_equipment is None:
         log.finish(
             STATUS_PUBLISH_SKIPPED,
@@ -523,9 +561,11 @@ def _execute(
         inherited_off_count=len(inherited),
     )
     log.note(auto_off_count=len(auto_off), inherited_off_count=len(inherited))
-    # 공식버전이 되는 리비전 2 와 발행 메모에도 CS 빈 행 조각을 잇는다 — 공식버전 목록·리비전 2 만
-    # 보는 사람도 원천 일부를 뺀 판인 줄 알게. 실행 기록 사유에는 `finish` 가 따로 붙인다.
-    saved_note = " · ".join(part for part in (memo, log.blank_cs_memo, log.extra_memo) if part)
+    # 공식버전이 되는 리비전 2 와 발행 메모에도 원천 조각 · CS 빈 행 조각을 잇는다 — 공식버전
+    # 목록·리비전 2 만 보는 사람도 원천 일부를 뺀 판 · 충돌을 골라 접은 판인 줄 알게. 실행 기록
+    # 사유에는 `finish` 가 같은 차례로 따로 붙인다.
+    notes = (memo, log.source_memo, log.blank_cs_memo, log.extra_memo, log.route_memo)
+    saved_note = " · ".join(part for part in notes if part)
     # 확보율이 있어 판정할 수 있는 포함 공정. `RQ_REQB` 에만 있고 확보율 행이 없는 공정은 B/N 에
     # 나오지 않으므로, 그것만 남으면 B/N 이 빈 공식버전이 된다.
     judged_included = [process for process in included if process in minimums]
@@ -566,6 +606,7 @@ def _execute(
             release_name=official_release_name(filtered.scenario.scenario_name),
             note=saved_note,
             expected_latest_release_no=baseline.release_no,
+            route_exceptions=route_exceptions,
         )
     except OfficialReleaseMoved as exc:
         log.finish(STATUS_PUBLISH_SKIPPED, str(exc))
@@ -603,6 +644,7 @@ def _publish_filtered_revision(
     release_name: str,
     note: str,
     expected_latest_release_no: int,
+    route_exceptions: RouteLoadDeclaration,
 ) -> _PublishedRelease | str:
     """발행 검사(공식 발행 화면과 같은 전체 기간 Capa 계산·Density 환산)를 지나면 발행한다. 실패하면
     그 오류 글.
@@ -615,9 +657,12 @@ def _publish_filtered_revision(
     지나면 공식버전과 함께 소요대수에 들지 않은 수요 경고를 돌려준다. 화면 발행 검사
     (`capacity_gate._calculated_verdict`)와 같이 막지 않는다 — 부르는 쪽이 실행 기록 사유에 붙인다.
     공식버전 메모(`note`)에는 싣지 않는다 — 화면 발행도 메모는 지정한 사람의 글 그대로다.
+    `route_exceptions` 는 판정 단계가 읽은 그 부하 예외 선언 판이다 — 다시 읽지 않는다.
     """
     # 화면 발행 검사(`official_publish_verdict`)와 같이 Capa 계산이 통과하면 Density 환산도 본다.
-    outcome = full_capacity_outcome(snapshot.tables, snapshot.tables)
+    outcome = full_capacity_outcome(
+        snapshot.tables, snapshot.tables, route_exceptions=route_exceptions
+    )
     error = outcome.error or density_error(snapshot.tables)
     if error is not None:
         return error
@@ -630,6 +675,13 @@ def _publish_filtered_revision(
         expected_latest_release_no=expected_latest_release_no,
     )
     return _PublishedRelease(release, warning)
+
+
+def _route_exception_memo(seq: int, route_exceptions: RouteLoadDeclaration) -> str:
+    """판정 · 발행 검사가 쓴 부하 예외 선언 판 조각 — 「부하 예외 판 n」(공정 이름은 싣지 않는다).
+    선언이 비었으면 빈 글이다(조각 없음 = 선언 없이 셈) — 비움 판도 판 번호 대신 조각 없음으로
+    남는다."""
+    return f"부하 예외 판 {seq}" if route_exceptions else ""
 
 
 def _uncounted_demand_warning(outcome: CapacityOutcome) -> str:

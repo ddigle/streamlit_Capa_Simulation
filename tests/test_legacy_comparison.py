@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.legacy_comparison import (
     AGREE_GROUP,
     COMPARISON_KEYS,
@@ -28,6 +29,7 @@ from capa_simulation.services.legacy_comparison import (
     GROUP_COLUMN,
     MANY_VALUES,
     OTHER_GROUP,
+    PLAN_ROW_METRIC,
     RATIO_COLUMN,
     SUSPECT_GROUP,
     WAFER_ROUTE_FACTORS,
@@ -36,6 +38,7 @@ from capa_simulation.services.legacy_comparison import (
     FactorFold,
     FormulaInput,
     LegacyMetric,
+    PlanRowDiagnostics,
     ProcessConsistency,
     ResultFold,
     RouteCells,
@@ -58,6 +61,8 @@ from capa_simulation.services.legacy_comparison import (
     measured_wafer_load,
     median_ratio,
     plan_line_keys,
+    plan_row_diagnostics,
+    plan_row_frame,
     process_consistency,
     ratio_distribution,
     ratio_groups,
@@ -65,6 +70,7 @@ from capa_simulation.services.legacy_comparison import (
     route_factor_by_key,
     route_factor_values,
     scaling_check,
+    source_custom_aligned,
     split_mixed_processes,
     split_route_cells,
     summarize_comparison,
@@ -95,6 +101,7 @@ def _plan_row(value: float, *, routes: int = 31, **overrides: object) -> pd.Data
         "생산계획년월": 202608,
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **_PLAN_DEFAULTS,
         **overrides,
@@ -113,6 +120,7 @@ def _calculated(*values: float, **overrides: object) -> pd.DataFrame:
         "생산계획년월": 202608,
         "제품정보": "Product-A",
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **overrides,
     }
@@ -205,7 +213,7 @@ def test_zero_legacy_value_is_counted_apart_from_a_ratio_breach() -> None:
 def test_grain_follows_the_pkg_plan_business_key() -> None:
     """기존값이 한 번 기록되는 단위는 계약의 계획 업무 키다. 키가 늘면 대조도 따라간다."""
     assert legacy_grain(CONTRACT) == [*CONTRACT.derived_keys["RQ_PKG_PLAN"], "WF 구분"]
-    assert COMPARISON_KEYS == ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+    assert COMPARISON_KEYS == ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 
 
 def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> None:
@@ -225,6 +233,69 @@ def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> No
     assert comparison["기존값"].iloc[0] == 160.0
     assert bool(comparison["값 불일치"].iloc[0]) is False
     assert summarize_comparison(comparison)["값 불일치"] == 0
+
+
+def test_two_custom_parts_stay_apart_in_the_comparison_keys() -> None:
+    """한 제품의 두 부품(`CUSTOM`)은 대조 키에서 더하지 않는다 — 부품마다 한 줄로 맞댄다."""
+    core = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"), _plan_row(60.0, CUSTOM="DEMO_CUSTOM_B"))
+    calculated = pd.concat(
+        [_calculated(100.0, CUSTOM="DEMO_CUSTOM_A"), _calculated(60.0, CUSTOM="DEMO_CUSTOM_B")],
+        ignore_index=True,
+    )
+
+    comparison = _compare(core, calculated)
+
+    assert comparison["CUSTOM"].tolist() == ["DEMO_CUSTOM_A", "DEMO_CUSTOM_B"]
+    assert comparison["기존값"].tolist() == [100.0, 60.0]
+    assert comparison["차이"].tolist() == [0.0, 0.0]
+
+
+def _custom_tables(*values: object) -> dict[str, pd.DataFrame]:
+    """리비전 표 묶음 — `RQ_PKG_PLAN` 의 `CUSTOM` 이 `values`, 다른 CUSTOM 키 표는 빈 표 ·
+    칸 없음."""
+    return {
+        "RQ_PKG_PLAN": pd.DataFrame({"CUSTOM": list(values)}),
+        "RQ_YLD": pd.DataFrame(columns=["CUSTOM"]),
+        # 0039 전 사본처럼 칸이 없는 표는 표지뿐으로 본다.
+        "RQ_UPEH": pd.DataFrame({"제품정보": ["Product-A"]}),
+    }
+
+
+def test_a_source_custom_follows_a_revision_that_never_split_parts() -> None:
+    """리비전의 CUSTOM 키 표가 모두 표지(빈 값 포함)뿐이면 원천 `CUSTOM` 을 표지로 바꾼 사본으로
+    맞댄다 — 0039 전 등록분은 원천 칸에 그때 값이 남아 있어 그대로면 키가 두 쪽에 갈린다. 원천은
+    고치지 않는다."""
+    raw = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"))
+    unaligned = summarize_comparison(_compare(raw, _calculated(100.0)))
+    assert (unaligned["대조 건수"], unaligned["기존에만 있음"], unaligned["신규에만 있음"]) == (
+        0,
+        1,
+        1,
+    )
+
+    aligned = source_custom_aligned(raw, _custom_tables(CUSTOM_BLANK, " - ", None, ""))
+
+    assert aligned is not raw
+    assert aligned["CUSTOM"].eq(CUSTOM_BLANK).all()
+    assert raw["CUSTOM"].eq("DEMO_CUSTOM_A").all()
+    assert aligned.drop(columns=["CUSTOM"]).equals(raw.drop(columns=["CUSTOM"]))
+    summary = summarize_comparison(_compare(aligned, _calculated(100.0)))
+    assert (summary["대조 건수"], summary["허용 초과"], summary["신규에만 있음"]) == (1, 0, 0)
+
+
+def test_a_source_custom_is_kept_when_the_revision_split_parts() -> None:
+    """리비전 CUSTOM 키 표에 표지 아닌 값이 하나라도 있으면 원천 그대로(같은 객체)다. CUSTOM 키
+    표가 아닌 표의 값 · 원천이 이미 빈 값뿐 · 원천에 칸이 없음도 바꾸지 않는다."""
+    raw = _core(_plan_row(100.0, CUSTOM="DEMO_CUSTOM_A"))
+    split = {**_custom_tables(CUSTOM_BLANK), "RQ_YLD": pd.DataFrame({"CUSTOM": ["DEMO_CUSTOM_B"]})}
+
+    assert source_custom_aligned(raw, split) is raw
+    outside = {**_custom_tables(CUSTOM_BLANK), "RQ_RUN_RATE": pd.DataFrame({"CUSTOM": ["X"]})}
+    assert source_custom_aligned(raw, outside) is not raw
+    blank_source = _core(_plan_row(100.0, CUSTOM=None))
+    assert source_custom_aligned(blank_source, _custom_tables(CUSTOM_BLANK)) is blank_source
+    without = raw.drop(columns=["CUSTOM"])
+    assert source_custom_aligned(without, _custom_tables(CUSTOM_BLANK)) is without
 
 
 # ------------------------------------------------------------- 분포로만 접기 (사내 실데이터 확인용)
@@ -356,6 +427,7 @@ def _path_key(
         "양산구분": "양산",
         "제품정보": product,
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "Capa Code": "CAPA-1",
         "Customer": "고객가",
         "CS": "MP",
@@ -501,6 +573,7 @@ def test_hourly_rate_is_the_rate_the_capacity_calculation_uses() -> None:
             "양산구분": "양산",
             "제품정보": "Product-A",
             "Stack": "8H",
+            "CUSTOM": CUSTOM_BLANK,
             "WF 구분": "Core",
             "UPEH": [row[3] for row in rows],
             "ST": [row[4] for row in rows],
@@ -599,6 +672,7 @@ def _route_row(
         "생산계획년월": 202608,
         "제품정보": product,
         "Stack": "8H",
+        "CUSTOM": CUSTOM_BLANK,
         "WF 구분": "Core",
         **_PLAN_DEFAULTS,
         "Area_Name": area,
@@ -796,3 +870,192 @@ def test_measured_wafer_load_moves_the_measurement_ratios_onto_the_load() -> Non
     load = measured_wafer_load(required, tables)
 
     assert load.tolist() == pytest.approx([2.0, 10.0, 10.0])
+
+
+# ------------------------------------------------------------------ 계획 행으로 접음
+
+
+def _flagged(
+    value: float, flag: object, process: object, area: object = None, **overrides: object
+) -> pd.DataFrame:
+    """원천 한 행 — 계획 줄 키는 `_plan_row` 와 같고 계획 표지 · 공정을 준다.
+
+    `area` 를 비우면 공정이 든 행만 경로 행(`Area_Name` 있음)이다 — 원천 꼴 그대로.
+    """
+    named = isinstance(process, str) and process.strip() != ""
+    shown = area if area is not None else ("Main" if named else pd.NA)
+    return _plan_row(
+        value, routes=1, 계획기초정보여부=flag, 공정=process, Area_Name=shown, **overrides
+    )
+
+
+def test_the_plan_row_fold_reads_the_plan_row_and_leaves_the_route_rows_out() -> None:
+    """같은 칸의 경로 행 값이 계획 행과 달라도 이 갈래는 계획 행 값 하나로 맞댄다."""
+    core = _core(_flagged(100.0, "Y", pd.NA), _flagged(300.0, "N", "P1"))
+    calculated = _calculated(100.0)
+
+    formal = summarize_comparison(_compare(core, calculated))
+    folded = compare_metric(plan_row_frame(core), calculated, PLAN_ROW_METRIC, CONTRACT)
+    summary = summarize_comparison(folded)
+
+    # 정식 대조는 그대로 — 칸 안이 갈려 접지 못한다.
+    assert (formal["값 불일치"], formal["대조 건수"]) == (1, 0)
+    assert (summary["값 불일치"], summary["대조 건수"], summary["허용 초과"]) == (0, 1, 0)
+    assert folded["차이"].tolist() == [0.0]
+    assert set(folded["지표"]) == {PLAN_ROW_METRIC.label}
+    assert plan_row_diagnostics(core).cells_split_in_one_process == 1
+
+
+def test_a_plan_flagged_row_with_a_process_is_counted_not_folded() -> None:
+    core = _core(_flagged(100.0, "Y", pd.NA), _flagged(300.0, "Y", "P1"))
+
+    rows = plan_row_frame(core)
+    folded = compare_metric(rows, _calculated(100.0), PLAN_ROW_METRIC, CONTRACT)
+    found = plan_row_diagnostics(core)
+
+    assert rows.index.tolist() == [0]
+    assert folded["기존값"].tolist() == [100.0]
+    assert (found.plan_rows, found.flagged_with_process, found.blank_process_unflagged) == (1, 1, 0)
+
+
+def test_a_dummy_series_plan_row_of_zero_is_a_zero_legacy_value() -> None:
+    """원천이 Dummy 계열 계획 행을 0 으로 실으면 「기존 0·신규 있음」 이다 — 허용 초과와 섞지
+    않는다."""
+    core = _core(
+        _flagged(100.0, "Y", pd.NA),
+        _flagged(0.0, "Y", pd.NA, **{"WF 구분": "Dummy"}),
+        _flagged(0.0, "Y", pd.NA, **{"WF 구분": "Top_Dummy"}),
+    )
+    calculated = pd.concat(
+        [
+            _calculated(100.0),
+            _calculated(5.0, **{"WF 구분": "Dummy"}),
+            _calculated(7.0, **{"WF 구분": "Top_Dummy"}),
+        ],
+        ignore_index=True,
+    )
+
+    summary = summarize_comparison(
+        compare_metric(plan_row_frame(core), calculated, PLAN_ROW_METRIC, CONTRACT)
+    )
+
+    assert (summary["대조 건수"], summary["기존 0·신규 있음"], summary["허용 초과"]) == (3, 2, 0)
+
+
+def test_plan_rows_are_read_by_the_flag_rule_and_a_blank_process() -> None:
+    """표지는 앞뒤 공백 · 대소문자를 무시하고(`plan_row_mask`), 공정은 NULL · 빈 글자 · 공백뿐이면
+    빈다."""
+    core = _core(
+        _flagged(1.0, " y ", pd.NA),
+        _flagged(2.0, "Y", ""),
+        _flagged(3.0, "Y", "   "),
+        _flagged(4.0, "Y", "P1"),
+        _flagged(5.0, "N", pd.NA),
+        _flagged(6.0, pd.NA, pd.NA),
+    )
+    core.index = [10, 11, 12, 13, 14, 15]
+
+    rows = plan_row_frame(core)
+
+    assert rows.index.tolist() == [10, 11, 12]
+    assert rows["WF수(매)"].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_plan_row_diagnostics_count_rows_and_cells_without_values() -> None:
+    """칸마다 하나의 뜻만 심는다 — A 같음 · B 한 공정만 갈림 · C 두 공정 · D 계획 행 값 둘 ·
+    E 계획 행 없음 · F 경로 아닌 행만 갈림 · H 공정 빈 경로 행이 갈림."""
+
+    def cell(
+        product: str, *rows: tuple[float, object, object] | tuple[float, object, object, object]
+    ) -> pd.DataFrame:
+        return _core(*(_flagged(*row, 제품정보=product) for row in rows))
+
+    core = _core(
+        # 반올림만큼(0.05%)은 갈림이 아니다. 공정 빈 경로 밖 행(N)이 같은 값이다.
+        cell("A", (100.0, "Y", pd.NA), (100.0, "N", "P1"), (100.05, "N", "P2"), (100.0, "N", "")),
+        # 갈리는 행이 모두 P1 — 표기는 맞대기 꼴(`match_key`)로 본다. P3 의 0 행은 갈림이 아니다.
+        cell(
+            "B",
+            (100.0, "Y", pd.NA),
+            (300.0, "N", "P1"),
+            (300.0, "N", " p1"),
+            (100.0, "N", "P2"),
+            (0.0, "N", "P3"),
+        ),
+        cell("C", (100.0, "Y", pd.NA), (300.0, "N", "P1"), (200.0, "N", "P2")),
+        cell("D", (100.0, "Y", pd.NA), (110.0, "Y", pd.NA), (300.0, "N", "P1")),
+        cell("E", (50.0, "N", "P1"), (50.0, "N", "P2")),
+        # 공정 빈 N 행은 경로 행(`Area_Name`)이 아니라 갈림을 보지 않는다.
+        cell("F", (100.0, "Y", pd.NA), (300.0, "N", pd.NA)),
+        # 경로 행인데 공정이 비면 「한 공정」 이 아니다.
+        cell("H", (100.0, "Y", pd.NA), (300.0, "N", "P1"), (300.0, "N", pd.NA, "Main")),
+        # 값이 빈 행은 칸에 들지 않는다.
+        cell("G", (float("nan"), "Y", pd.NA)),
+    )
+
+    found = plan_row_diagnostics(core)
+
+    assert found == PlanRowDiagnostics(
+        plan_rows=8,
+        flagged_with_process=0,
+        blank_process_unflagged=3,
+        cells=7,
+        cells_without_plan_row=1,
+        cells_with_many_plan_values=1,
+        cells_split_in_one_process=1,
+    )
+    # 이 갈래의 `값 불일치` 칸이 진단의 「계획 행 값 둘 이상」 과 같다.
+    folded = compare_metric(
+        plan_row_frame(core),
+        _calculated(1.0).assign(**_PLAN_DEFAULTS),
+        PLAN_ROW_METRIC,
+        CONTRACT,
+        keys=legacy_grain(CONTRACT),
+    )
+    assert int(folded["값 불일치"].sum()) == found.cells_with_many_plan_values
+
+
+def test_a_cell_without_a_plan_row_drops_out_of_the_sum_at_the_default_keys() -> None:
+    """계획 행 없는 칸은 대조 키에 따라 다르게 드러난다 — 기본 키에서 같은 키의 다른 칸에 계획 행이
+    있으면 그 칸 값만 합에서 빠져 「허용 초과」 가 되고, 칸 단위 키에서는 「신규에만 있음」 이다."""
+    core = _core(
+        _flagged(100.0, "Y", pd.NA, **{"Capa Code": "CAPA-A"}),
+        _flagged(100.0, "N", "P1", **{"Capa Code": "CAPA-A"}),
+        _flagged(50.0, "N", "P1", **{"Capa Code": "CAPA-B"}),
+    )
+    rows = plan_row_frame(core)
+
+    formal = summarize_comparison(_compare(core, _calculated(150.0)))
+    folded = compare_metric(rows, _calculated(150.0), PLAN_ROW_METRIC, CONTRACT)
+    summary = summarize_comparison(folded)
+    by_cell = summarize_comparison(
+        compare_metric(
+            rows,
+            pd.concat(
+                [
+                    _calculated(100.0).assign(**{**_PLAN_DEFAULTS, "Capa Code": "CAPA-A"}),
+                    _calculated(50.0).assign(**{**_PLAN_DEFAULTS, "Capa Code": "CAPA-B"}),
+                ],
+                ignore_index=True,
+            ),
+            PLAN_ROW_METRIC,
+            CONTRACT,
+            keys=legacy_grain(CONTRACT),
+        )
+    )
+
+    assert (formal["대조 건수"], formal["허용 초과"]) == (1, 0)
+    assert folded["기존값"].tolist() == [100.0]
+    assert (summary["대조 건수"], summary["허용 초과"], summary["신규에만 있음"]) == (1, 1, 0)
+    assert (by_cell["대조 건수"], by_cell["허용 초과"], by_cell["신규에만 있음"]) == (1, 0, 1)
+    assert plan_row_diagnostics(core).cells_without_plan_row == 1
+
+
+def test_the_plan_row_fold_is_not_a_formal_comparison() -> None:
+    """정식 대조 셋은 그대로다 — 이 갈래는 같은 Wafer 컬럼을 다른 지표 이름으로 읽을 뿐이다."""
+    wafer = next(metric for metric in COMPARISONS if metric.legacy_column == "WF수(매)")
+
+    assert PLAN_ROW_METRIC not in COMPARISONS
+    assert PLAN_ROW_METRIC.legacy_column == wafer.legacy_column
+    assert PLAN_ROW_METRIC.label != wafer.label
+    assert not PLAN_ROW_METRIC.plan_line

@@ -21,6 +21,10 @@
 | 4 | `plan` | 생산 계획 PKG PLAN · 수율 그리드 양식의 줄 · 달 · 칸 수와 본문 바이트의 최대 |
 | 5 | `mixed` | 최신 설비 리비전의 모듈 묶음 가운데 같이 바뀌는 칸마다 값이 갈린 묶음 수 |
 
+시뮬레이션 사본이 `0039`(CUSTOM 칸) 전이면 넷째 줄은 두 표의 CUSTOM 칸을 0039 와 같은 뜻 — 모든
+행이 빈 값 표지 — 으로 채워 재고(`revision_compatibility.custom_blank_filled`), 그 줄 바로 뒤에
+`사본 0039 전` 한 줄을 더 찍는다. 다섯 줄의 꼴과 차례는 그대로이고 끝 줄은 여전히 `mixed`(줄 5)다.
+
 **지키는 것 셋** — 실데이터 확인(`inspect_real_data_checks.py`)과 같다.
 
 - **앱을 끄고 돌린다.** 운영 DB 자리(`settings.is_operational_database_place`)를 열면 사용자 앱
@@ -80,6 +84,11 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
 from capa_simulation.services.month_filter import (  # noqa: E402
     available_month_range,
     filter_month_range,
+)
+from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
 )
 from capa_simulation.services.space_layout_edit import module_tile_deviation  # noqa: E402
 from capa_simulation.services.unit_capacity import failure_kind  # noqa: E402
@@ -577,16 +586,30 @@ def plan_size(table: str, template: pd.DataFrame, dimensions: tuple[str, ...]) -
     return PlanSize(len(template), len(months), build_base(template, spec, None).size)
 
 
-def plan_line(simulation: duckdb.DuckDBPyConnection) -> str:
+def migration_level(simulation: duckdb.DuckDBPyConnection) -> int | None:
+    """시뮬레이션 사본의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다."""
+    try:
+        level = _first(simulation, "SELECT max(version) FROM app_meta.schema_migration")
+    except duckdb.Error:
+        return None
+    return None if level is None else int(cast(int, level))
+
+
+def before_custom_migration(level: int | None) -> bool:
+    """CUSTOM 칸(0039) 전 사본인가 — 번호를 읽지 못했으면 채우지 않는다."""
+    return level is not None and level < CUSTOM_MIGRATION
+
+
+def plan_line(simulation: duckdb.DuckDBPyConnection, *, fill_custom: bool = False) -> str:
     """생산 계획 그리드 두 표의 크기 — 본 리비전(시나리오마다 활성 리비전과 공식버전 대상)마다 재서
     표마다 줄 · 달 · 칸 수와 본문 KB 의 최대. 기간을 정하지 못하거나 양식을 짓지 못한 리비전은
-    `skipped` 에 예외 종류만 센다."""
+    `skipped` 에 예외 종류만 센다. `fill_custom` 이면(0039 전 사본) 두 표에 CUSTOM 칸을 채운다."""
     revisions = [str(row[0]) for row in simulation.execute(_PICKED_REVISIONS).fetchall()]
     sizes: dict[str, list[PlanSize]] = {PLAN_TABLE: [], YIELD_TABLE: []}
     skipped: dict[str, int] = {}
     for revision_id in revisions:
-        frames = [
-            load_frame(
+        frames = {
+            table: load_frame(
                 simulation,
                 schema="rev_data",
                 table_name=REVISION_TABLES[table],
@@ -594,9 +617,11 @@ def plan_line(simulation: duckdb.DuckDBPyConnection) -> str:
                 owner_id=revision_id,
             )
             for table in (PLAN_TABLE, YIELD_TABLE)
-        ]
+        }
+        if fill_custom:
+            frames = custom_blank_filled(frames)
         try:
-            templates = plan_templates(*frames)
+            templates = plan_templates(frames[PLAN_TABLE], frames[YIELD_TABLE])
             measured = {
                 table: plan_size(table, template, dimensions)
                 for table, (template, dimensions) in templates.items()
@@ -750,8 +775,16 @@ def _sizes(databases: _Databases, packed: Mapping[Path, int]) -> list[str]:
 
 
 def _plan(databases: _Databases, _packed: Mapping[Path, int]) -> list[str]:
+    """줄 4 — 0039 전 사본이면 그 바로 뒤에 `사본 0039 전` 한 줄(끝 줄은 그대로 `mixed`)."""
     assert databases.simulation is not None
-    return [plan_line(databases.simulation)]
+    level = migration_level(databases.simulation)
+    if not before_custom_migration(level):
+        return [plan_line(databases.simulation)]
+    return [
+        plan_line(databases.simulation, fill_custom=True),
+        f"{BEFORE_CUSTOM_COPY} — migration {level}; plan 은 두 표의 CUSTOM 칸을 0039 와 같이 "
+        "빈 값 표지(-)로 채워 쟀다",
+    ]
 
 
 def _mixed(databases: _Databases, _packed: Mapping[Path, int]) -> list[str]:

@@ -108,6 +108,10 @@ from capa_simulation.scenario_state import (
 )
 from capa_simulation.services.korean_particle import direction_particle, with_object_particle
 from capa_simulation.services.load_calculator import (
+    CLASSIFICATION_COLUMNS,
+    MONTHLY_AGGREGATION_HOME,
+    MONTHLY_AGGREGATION_TOTAL,
+    MONTHLY_AGGREGATIONS,
     PLAN_EDITOR_DIMENSIONS,
     PLAN_QUANTITY_BLANK_REASON,
     YIELD_EDITOR_DIMENSIONS,
@@ -115,6 +119,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_LOCK_REASON_COLUMN,
     YIELD_VALUE_COLUMNS,
     DemandBasis,
+    MonthlyAggregation,
     attach_plan_attributes,
     count_plan_value_changes,
     filter_edp_plan,
@@ -124,6 +129,10 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.product_type import (
+    DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE,
+    WF_DIVISION_COLUMN,
+)
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.required_equipment import (
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
@@ -133,11 +142,12 @@ from capa_simulation.services.required_equipment import (
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
     frame_digest,
+    full_scenario_cache_key,
     get_full_capacity_outcome,
     get_monthly_volume,
     get_plan_edit_table,
     get_yield_edit_tables,
-    scenario_cache_key,
+    scenario_content_key,
 )
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
@@ -190,7 +200,7 @@ try:
     )
     # 편집표 원본은 (시나리오 내용·편집 기간·표시순서)의 순수 함수라 그 키로 캐시한다. 환산 조건
     # 토글·탭 전환마다 같은 피벗을 다시 하지 않는다.
-    edit_table_key = scenario_cache_key(
+    edit_table_key = scenario_content_key(
         reference_version, active_scenario, effective_start_month, effective_end_month
     )
     display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
@@ -414,6 +424,38 @@ LOCKED_YIELD_GUIDE = (
     "HOME·소요대수·확보율 계산을 멈춥니다. 그 달 칸에 EDS·BE 를 모두 넣어 적용하면 고쳐집니다 — "
     "비워 두면 원본 그대로 남습니다."
 )
+# 환산 조건 「집계 기준」 — Chip · Wafer 를 어느 집계로 볼지. 값은 계산 상수
+# (`MONTHLY_AGGREGATIONS`)이고 글자는 사용자가 정한 두 이름이다(「산출 기준」 이 다른 자리
+# 낱말과 겹치는 것은 풍선 · Guide 가 가른다 — 설계 규칙 UI-CON-02). 두 기준의 값이 같은
+# 소요기준(PKG · Density)에서는 숨기지 않고 잠근다 — 카드 높이가 그대로이고 까닭은 칸
+# 풍선이다(UI-INP-07 · UI-PRF-03). 잠긴 동안 계산 · 제목 · CSV 이름은 늘 총량이고, 고른 값은
+# 칸에 남아 Chip · Wafer 로 돌아오면 다시 걸린다.
+AGGREGATION_KEY = "monthly_volume_aggregation"
+AGGREGATION_LABEL = "집계 기준"
+AGGREGATION_NAMES: dict[MonthlyAggregation, str] = {
+    MONTHLY_AGGREGATION_TOTAL: "산출 기준 총량",
+    MONTHLY_AGGREGATION_HOME: "HOME 집계 기준",
+}
+AGGREGATED_BASES: frozenset[DemandBasis] = frozenset({"Chip", "Wafer"})
+# HOME 집계 기준이 빼는 `WF 구분` — 이름은 공용 목록에서 읽는다(목록이 늘면 풍선도 따라간다).
+DUMMY_SERIES_NAMES = " · ".join(
+    f"{product_type} 의 {' · '.join(names)}"
+    for product_type, names in DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE.items()
+    if names
+)
+AGGREGATION_HELP = (
+    "산출 기준 총량은 모든 `WF 구분` 행의 합으로, 소요대수 · 확보율이 읽는 부하량과 같습니다. "
+    f"HOME 집계 기준은 HOME 「Wafer 계획」 처럼 Dummy 계열({DUMMY_SERIES_NAMES}) 행을 뺀 "
+    "합입니다."
+)
+AGGREGATION_LOCKED_HELP = "PKG · Density 는 두 기준의 값이 같습니다 — Chip · Wafer 에서 고릅니다."
+# 표 제목 줄 기준 글의 풍선 — HOME 집계 기준일 때만 단다(총량은 지금까지와 같은 값이라
+# 말할 것이 없다).
+HOME_AGGREGATION_CAPTION_HELP = (
+    f"Dummy 계열({DUMMY_SERIES_NAMES}) 행을 뺀 합 — HOME 「Wafer 계획」 과 같은 집계입니다."
+)
+# HOME 집계 기준 CSV 는 파일 이름 꼬리로 가른다(같은 소요기준 · 기간의 총량 파일과 덮어쓰지 않게).
+HOME_AGGREGATION_FILE_TAIL = "_HOME"
 conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(TAB_LABELS, key=TAB_KEY)
 
 
@@ -568,7 +610,11 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     try:
         with slot, st.spinner("적용한 계획의 소요대수 반영을 확인하는 중입니다..."):
             outcome = get_full_capacity_outcome(
-                (context.reference_version, str(scenario["content_token"])),
+                full_scenario_cache_key(
+                    context.reference_version,
+                    str(scenario["content_token"]),
+                    route_exceptions=context.route_exceptions.declaration,
+                ),
                 _scenario_tables=scenario["tables"],
                 _reference_tables=context.reference_tables,
             )
@@ -1312,6 +1358,20 @@ if not tab_is_hidden(conversion_tab):
             key="monthly_volume_basis",
             persist_state="session",
         )
+        aggregation_locked = demand_basis not in AGGREGATED_BASES
+        # 칸 정체성은 key 라(Streamlit 1.63) 잠금 · 풍선이 바뀌어도 고른 값은 그대로다. `required` —
+        # 고른 단추를 다시 눌러도 선택이 풀리지 않는다.
+        chosen_aggregation = st.segmented_control(
+            AGGREGATION_LABEL,
+            options=MONTHLY_AGGREGATIONS,
+            format_func=AGGREGATION_NAMES.__getitem__,
+            default=MONTHLY_AGGREGATION_TOTAL,
+            required=True,
+            key=AGGREGATION_KEY,
+            persist_state="session",
+            disabled=aggregation_locked,
+            help=AGGREGATION_LOCKED_HELP if aggregation_locked else AGGREGATION_HELP,
+        )
         with st.container(horizontal=True, gap="medium"):
             show_detail = st.toggle(
                 "상세",
@@ -1323,6 +1383,14 @@ if not tab_is_hidden(conversion_tab):
                 key="monthly_volume_edp",
                 persist_state="session",
             )
+    # 계산 · 제목 기준 글 · CSV 이름이 함께 읽는 집계 기준 하나. 잠긴 소요기준에서는 늘
+    # 총량이다 — 칸에 남은 「HOME 집계 기준」 이 PKG · Density 파일 이름에 새거나 같은 값의
+    # 캐시 칸을 하나 더 만들지 않는다.
+    aggregation: MonthlyAggregation = (
+        MONTHLY_AGGREGATION_HOME
+        if not aggregation_locked and chosen_aggregation == MONTHLY_AGGREGATION_HOME
+        else MONTHLY_AGGREGATION_TOTAL
+    )
 
     with conversion_tab:
         try:
@@ -1335,6 +1403,7 @@ if not tab_is_hidden(conversion_tab):
                 detailed=show_detail,
                 density_data=scenario_table(active_scenario, "RQ_CHIP_EQ"),
                 display_order=reference_tables["RQ_DISPLAY_ORDER"],
+                aggregation=aggregation,
             )
         except ValueError as exc:
             render_data_error(bootstrap_error_message(exc), code="ST-20", tab=CONVERSION_TAB_NAME)
@@ -1363,10 +1432,22 @@ if not tab_is_hidden(conversion_tab):
         }[demand_basis]
         conversion_decimal_places = 2 if demand_basis == "Density" else 0
 
+        # Chip · Wafer 는 제목 기준 글이 지금 집계 기준을 말한다(설계 규칙 UI-DAT-11 — 두 기준 모두
+        # 같은 자리 · 같은 꼴). 뺀 행의 이름은 HOME 집계 기준일 때만 그 글의 풍선이다.
+        heading_caption = f"단위: {unit}"
+        heading_caption_help: str | None = None
+        if demand_basis in AGGREGATED_BASES:
+            heading_caption = f"{heading_caption} · {AGGREGATION_NAMES[aggregation]}"
+        if aggregation == MONTHLY_AGGREGATION_HOME:
+            heading_caption_help = HOME_AGGREGATION_CAPTION_HELP
+        file_tail = HOME_AGGREGATION_FILE_TAIL if aggregation == MONTHLY_AGGREGATION_HOME else ""
+
         with st.container(border=True):
-            classification_columns = {"양산구분", "제품정보", "Stack"}
+            # 분류 칸은 환산이 묶는 칸(`CLASSIFICATION_COLUMNS`, 상세면 `WF 구분` 더함)과
+            # 같은 목록에서 낸다 — 계산이 분류 칸을 더하면 표 · CSV 가 저절로 따라간다.
+            classification_columns = set(CLASSIFICATION_COLUMNS)
             if show_detail:
-                classification_columns.add("WF 구분")
+                classification_columns.add(WF_DIVISION_COLUMN)
             displayed_classification_columns = [
                 column for column in monthly_volume.columns if column in classification_columns
             ]
@@ -1381,10 +1462,11 @@ if not tab_is_hidden(conversion_tab):
             ).encode("utf-8-sig")
             render_table_heading(
                 "환산",
-                caption=f"단위: {unit}",
+                caption=heading_caption,
+                caption_help=heading_caption_help,
                 csv=conversion_csv,
                 file_name=edited_file_name(
-                    f"Capa_Conversion_{demand_basis}_{effective_start_month}_"
+                    f"Capa_Conversion_{demand_basis}{file_tail}_{effective_start_month}_"
                     f"{effective_end_month}.csv"
                 ),
                 key="download_conversion_csv",

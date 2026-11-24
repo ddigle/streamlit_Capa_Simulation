@@ -144,6 +144,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     missing_official_note,
     prune_named_choice,
+    route_exceptions_of,
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
@@ -1887,7 +1888,10 @@ def _render_official(
         # 멈춘다. 검사는 HOME 과 같은 캐시 칸을 써서, 통과하면 HOME 이 이미 데워져 있다.
         with st.spinner("공식버전으로 지정할 수 있는지 Capa 계산을 확인하는 중입니다..."):
             verdict = official_publish_verdict(
-                database_path, revision_id, labels=get_process_labels
+                database_path,
+                revision_id,
+                route_exceptions=route_exceptions_of(database_path).declaration,
+                labels=get_process_labels,
             )
         if not verdict.allowed:
             st.error(markdown_safe_tildes(verdict.message))
@@ -2466,6 +2470,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 get_effective_reference_version(),
                 active_scenario,
                 reference_tables,
+                route_exceptions=route_exceptions_of(str(repository.database_path)).declaration,
                 labels=get_process_labels,
             )
             if not verdict.allowed:

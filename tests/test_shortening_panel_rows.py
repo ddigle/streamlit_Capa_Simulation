@@ -34,6 +34,7 @@ from capa_simulation.components.shortening_progress_panel import (
     progress_style,
 )
 from capa_simulation.page_bootstrap import PageContext
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.required_shortening import ShorteningPlan
@@ -137,6 +138,7 @@ def _context_with(display_order: pd.DataFrame) -> PageContext:
         },
         selected_start_month=202610,
         selected_end_month=202612,
+        route_exceptions=RouteLoadExceptionState().profile,
     )
 
 

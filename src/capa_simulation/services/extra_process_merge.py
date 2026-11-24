@@ -64,6 +64,10 @@ from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
 )
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate
 
 if TYPE_CHECKING:
@@ -104,6 +108,7 @@ _VARIANT_KEYS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -118,20 +123,24 @@ _PATH_KEYS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
 )
 
 CapacityCheck = Callable[[Mapping[str, pd.DataFrame]], str | None]
 
 
-def capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
+def capacity_outcome(
+    tables: Mapping[str, pd.DataFrame], *, route_exceptions: RouteLoadDeclaration
+) -> CapacityOutcome:
     """세션 없는 전체 기간 계산(`simulation_cache.full_capacity_outcome`). 그 모듈은 캐시 래퍼를
     만들며 Streamlit 을 끌어오므로 부를 때만 import 한다 — 이 모듈을 import 하는 등록 길 · 사내
     스크립트가 Streamlit 없이 서게(실행 문맥 없는 캐시 경고가 표준 오류에 찍히지 않게). 미리보기는
-    한 번 계산해 `process_rows_frame` · `load_lines` 에 함께 넘긴다."""
+    한 번 계산해 `process_rows_frame` · `load_lines` 에 함께 넘긴다. `route_exceptions` 는 부하 예외
+    선언이고 기본값이 없다(AGENTS 5장 44)."""
     from capa_simulation.services.simulation_cache import full_capacity_outcome
 
-    return full_capacity_outcome(tables, tables)
+    return full_capacity_outcome(tables, tables, route_exceptions=route_exceptions)
 
 
 @dataclass(frozen=True)
@@ -236,8 +245,13 @@ class MergeResult:
 
 
 def capacity_stop(tables: Mapping[str, pd.DataFrame]) -> str | None:
-    """대당 Capa → 소요대수 → 확보율까지 돌려 멈추면 그 글(자동 갱신 판정과 같은 길)."""
-    outcome = capacity_outcome(tables)
+    """대당 Capa → 소요대수 → 확보율까지 돌려 멈추면 그 글(자동 갱신 판정과 같은 길).
+
+    부하 예외 선언은 **빈 선언**으로 돈다 — 이 판정은 등록 R-07 의 멈춤만 보고, 선언은 멈춤을
+    만들지도 풀지도 않는다(겹친 바탕도 그 줄만 빼고 알린다 — 2026-11-22 답 Q13). 새 산식이 멈춤을
+    낼 수 있게 되면 그때 선언을 넘긴다(`tests/test_route_load_exception_keys.py` 허용 목록).
+    """
+    outcome = capacity_outcome(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     if outcome.error is not None:
         return outcome.error
     if outcome.required_equipment is None:
@@ -463,12 +477,14 @@ def process_rows_frame(
     tables: Mapping[str, pd.DataFrame],
     processes: Collection[str],
     *,
+    route_exceptions: RouteLoadDeclaration,
     outcome: CapacityOutcome | None = None,
 ) -> pd.DataFrame:
     """미리보기 시험 계산 — 고른 공정의 월별 소요대수 · 가용대수 · 확보율(멈추면 빈 표).
-    `outcome` 은 같은 표로 이미 돌린 전체 기간 계산이다(없으면 여기서 돌린다)."""
+    `outcome` 은 같은 표 · 같은 부하 예외 선언(`route_exceptions` — 기본값 없음)으로 이미 돌린 전체
+    기간 계산이다(없으면 여기서 그 선언으로 돌린다)."""
     if outcome is None:
-        outcome = capacity_outcome(tables)
+        outcome = capacity_outcome(tables, route_exceptions=route_exceptions)
     columns = ["공정", "생산계획년월", "소요대수", "가용대수", "확보율"]
     if outcome.required_equipment is None:
         return pd.DataFrame(columns=columns)
@@ -485,12 +501,13 @@ def load_lines(
     tables: Mapping[str, pd.DataFrame],
     processes: Collection[str],
     *,
+    route_exceptions: RouteLoadDeclaration,
     outcome: CapacityOutcome | None = None,
 ) -> dict[str, tuple[int, int]]:
     """공정마다 (부하가 붙은 경로 수, 부하 0 경로 수) — 미리보기 · 입력 점검이 센다(설계 4-4 끝).
-    `outcome` 은 `process_rows_frame` 과 같다."""
+    `outcome` · `route_exceptions` 는 `process_rows_frame` 과 같다."""
     if outcome is None:
-        outcome = capacity_outcome(tables)
+        outcome = capacity_outcome(tables, route_exceptions=route_exceptions)
     counts: dict[str, tuple[int, int]] = {name: (0, 0) for name in processes}
     required = outcome.required_equipment
     if required is None:

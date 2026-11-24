@@ -32,6 +32,7 @@ from capa_simulation.scenario_activation import (
     ACTIVE_PERSISTED_SCENARIO_ID_KEY,
 )
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
@@ -627,7 +628,8 @@ def test_plans_left_out_of_the_chip_tables_stand_as_value_lines(sources: Sources
         name: next(item for item in app.caption if item.value.startswith(f"**{name}"))
         for name in (literal_markdown("RQ_CHIP_QTY"), literal_markdown("RQ_CHIP_EQ"))
     }
-    key = f"{literal_markdown('Product~Z')} · 8H(2028-01\\~2028-02)"
+    blank = literal_markdown(CUSTOM_BLANK)
+    key = f"{literal_markdown('Product~Z')} · 8H · {blank}(2028-01\\~2028-02)"
     for name, effect in (("RQ_CHIP_QTY", "부하량·소요대수"), ("RQ_CHIP_EQ", "Density 환산(HOME)")):
         line = lines[literal_markdown(name)]
         assert line.value.startswith(f"**{literal_markdown(name)} 없음** :orange[제품 1개 · 계획 ")

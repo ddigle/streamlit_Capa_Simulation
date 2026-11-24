@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 import pytest
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables
 from extra_process_fixtures import AOI, BOND, edited, set_cell, template_files
 
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
@@ -36,6 +37,7 @@ from capa_simulation.services.extra_process_merge import (
     strip_extra_processes,
 )
 from capa_simulation.services.extra_process_pack import read_pack_files
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 Tables = dict[str, pd.DataFrame]
 Files = dict[str, bytes]
@@ -76,7 +78,7 @@ def test_the_template_merges_both_processes_into_the_seed_with_the_same_columns(
         assert list(frame.columns) == list(seed[name].columns), name
         assert frame.dtypes.to_dict() == seed[name].dtypes.to_dict(), name
     upeh = _rows(result.tables, "RQ_UPEH", BOND)
-    assert len(result.tables["RQ_UPEH"].columns) == 12
+    assert len(result.tables["RQ_UPEH"].columns) == 13
     assert set(upeh["소요기준"]) == {"CHIP"}
     assert set(_rows(result.tables, "RQ_UPEH", AOI)["소요기준"]) == {"WF"}
     # 따라가기 꼴은 참조 공정을 지나는 계획 변형 모두 — 12달 × 제품 둘.
@@ -99,8 +101,10 @@ def test_the_template_merges_both_processes_into_the_seed_with_the_same_columns(
 def test_the_preview_counts_routes_and_monthly_rates_for_the_merged_processes() -> None:
     result = merge_extra_processes(_seed(), _active())
 
-    frame = process_rows_frame(result.tables, (BOND, AOI))
-    lines = load_lines(result.tables, (BOND, AOI))
+    frame = process_rows_frame(
+        result.tables, (BOND, AOI), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    lines = load_lines(result.tables, (BOND, AOI), route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
     assert set(frame["공정"]) == {BOND, AOI}
     assert frame["확보율"].gt(0).all()
@@ -157,6 +161,29 @@ def test_following_a_process_with_two_steps_folds_the_plan_variants_once() -> No
     result = merge_extra_processes(seed, _active(), check=_never_stops)
 
     assert len(_rows(result.tables, "RQ_REQB", BOND)) == 24
+
+
+def _parts(frame: pd.DataFrame) -> set[tuple[str, str]]:
+    return set(frame[["제품정보", "CUSTOM"]].astype(str).itertuples(index=False, name=None))
+
+
+def test_a_specified_route_spreads_to_every_part_and_a_follow_route_inherits_its_parts() -> None:
+    """지정 꼴 줄은 그 제품의 모든 부품에 같은 값으로 펼치고, 따라가기 꼴은 참조 경로의 부품을
+    잇는다 — 양식에는 CUSTOM 칸이 없다."""
+    tables = two_part_tables()
+
+    result = merge_extra_processes(tables, _active(), check=_never_stops)
+
+    assert [item.outcome for item in result.report.outcomes] == [OUTCOME_MERGED, OUTCOME_MERGED]
+    aoi = _rows(result.tables, "RQ_REQB", AOI)
+    product = aoi.loc[aoi["제품정보"].eq(TWO_PART_PRODUCT)]
+    assert set(product["CUSTOM"]) == {PART_A, PART_B}
+    aoi_upeh = _rows(result.tables, "RQ_UPEH", AOI)
+    product_upeh = aoi_upeh.loc[aoi_upeh["제품정보"].eq(TWO_PART_PRODUCT)]
+    by_part = product_upeh.groupby("CUSTOM")["ST"].apply(lambda values: sorted(values.tolist()))
+    assert by_part[PART_A] == by_part[PART_B]
+    reference = _rows(tables, "RQ_REQB", "DEMO_Chip_Attach")
+    assert _parts(_rows(result.tables, "RQ_REQB", BOND)) == _parts(reference)
 
 
 def test_a_missing_or_different_reference_drops_only_that_process() -> None:
@@ -406,12 +433,14 @@ def test_the_preview_counts_reuse_one_full_period_outcome() -> None:
 
     result = merge_extra_processes(_seed(), _active(), check=_never_stops)
     merged = result.report.merged_processes()
-    outcome = capacity_outcome(result.tables)
+    outcome = capacity_outcome(result.tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
-    assert process_rows_frame(result.tables, merged, outcome=outcome).equals(
-        process_rows_frame(result.tables, merged)
-    )
-    assert load_lines(result.tables, merged, outcome=outcome) == load_lines(result.tables, merged)
+    assert process_rows_frame(
+        result.tables, merged, outcome=outcome, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ).equals(process_rows_frame(result.tables, merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS))
+    assert load_lines(
+        result.tables, merged, outcome=outcome, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    ) == load_lines(result.tables, merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
 
 
 def test_a_failed_merge_is_announced_as_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -444,7 +473,11 @@ def test_inherited_capacity_gaps_count_the_reference_lines_without_unit_capacity
 
     active = _active()
     merged = merge_extra_processes(_seed(), active, check=_never_stops).tables
-    clean = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(merged))
+    clean = inherited_capacity_gaps(
+        active.pack,
+        (BOND, AOI),
+        outcome=capacity_outcome(merged, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS),
+    )
     assert clean == {BOND: 0, AOI: 0}
 
     gapped = dict(merged)
@@ -470,6 +503,10 @@ def test_inherited_capacity_gaps_count_the_reference_lines_without_unit_capacity
         ].drop_duplicates()
     )
 
-    counts = inherited_capacity_gaps(active.pack, (BOND, AOI), outcome=capacity_outcome(gapped))
+    counts = inherited_capacity_gaps(
+        active.pack,
+        (BOND, AOI),
+        outcome=capacity_outcome(gapped, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS),
+    )
 
     assert expected > 0 and counts == {BOND: expected, AOI: 0}

@@ -59,6 +59,25 @@ DUMMY_DIVISIONS_BY_PRODUCT_TYPE = {
     EDP_PRODUCT_TYPE: (),
 }
 
+# 원천 집계가 Wafer 계획에 넣지 않는 `WF 구분`(Dummy 계열). **위 산식 목록과 따로 적는다** —
+# 산식은 `Dummy` 하나만 받고 `Top_Dummy` 는 일반 산식 그대로다. 이 목록은 행을 **뺄 때만**
+# 읽는다: HOME 집계(`dashboard.home_aggregation_wafer_load`)와 환산 탭 「HOME 집계 기준」
+# (`load_calculator.build_monthly_volume`)이 `load_calculator.exclude_dummy_series` 로 거른다.
+# 소요대수 · 확보율 · 환산 탭 기본(산출 기준 총량)은 이 목록을 보지 않는다. 판별은 산식과 같은
+# `(제품타입, WF 구분)` 게이트이고 대소문자를 가리지 않는다.
+TOP_DUMMY_DIVISION = "Top_Dummy"
+DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE = {
+    HBM_PRODUCT_TYPE: ("Dummy", TOP_DUMMY_DIVISION),
+    EDP_PRODUCT_TYPE: (),
+}
+
+# 공정별 부하 산출 예외(`route_load_exceptions`)가 경로 줄을 가르는 HBM 의 이름. 둘 다 위
+# `HBM_WF_DIVISIONS` 에 든 값이고 그 튜플은 그대로 둔다. 예외는 이 둘과 `TOP_DUMMY_DIVISION` 을
+# 하나씩 읽는다 — Dummy 계열 목록 전체를 읽지 않는다. 대조는 `match_key` 로 한다(원천 표기는
+# 대문자일 수 있다).
+BUFFER_DIVISION = "Buffer"
+CORE_DIVISION = "Core"
+
 
 def apply_edp_wf_division(core: pd.DataFrame) -> pd.DataFrame:
     """EDP-TSV 행의 `WF 구분` `Top` 을 `Top_e` 로 바꾼다.

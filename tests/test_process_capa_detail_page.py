@@ -26,7 +26,9 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_marks, data_error_texts, events
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT
 from fragment_browser import install_fragment_browser
+from home_two_part_app import publish_two_part_revision
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_required_shortening import _cutoff, _downtime, _master, _unit
@@ -115,6 +117,7 @@ from capa_simulation.process_detail_state import (
     shortening_card_query_params,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.process_capa_detail import ROUTE_LOAD_BASIS_COLUMN
 from capa_simulation.services.required_shortening import UNIT_EXPORT_COLUMNS
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
@@ -450,6 +453,48 @@ def test_the_route_factor_table_leaves_the_other_basis_cell_blank(
     assert table.proto.HasField("placeholder") and table.proto.placeholder == ""
 
 
+def test_a_saved_declaration_adds_the_load_basis_column_on_the_declared_process_only(
+    tmp_path: Path,
+) -> None:
+    """부하 예외 선언을 저장한 DB 로 선언 공정을 열면 「경로별 인자」 표의 「부하량」 바로 뒤에
+    「부하량 근거」 칸이 선다 — 화면이 그 경로 표를 지은 계산 키에서 선언을 풀어 넘긴다(AGENTS
+    5장 44 · 6장 (l)). 선언 밖 공정은 칸이 없다. 시드에는 Buffer 경로가 없어 선언 공정의 Core 줄은
+    「부하 예외 바탕 없음」 으로 빠지므로 칸이 서는 것만 본다. 선언이 다른 시험의 숫자를 바꾸지 않게
+    모듈 DB 대신 따로 된 DB 를 쓴다."""
+    from before_custom_copy import seed_route_declaration
+
+    declaration = seed_route_declaration()
+    (process,) = declaration
+    pair = (tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    repository = DuckDBScenarioRepository(pair[0])
+    repository.initialize()
+    repository.append_route_load_exceptions(
+        expected_seq=0, entries=declaration, applied_by=None, source_place="test"
+    )
+    app = _ok(_app(pair).run())
+    assert process in _process_box(app).options
+    _process_box(app).set_value(process)
+    _ok(app.run())
+
+    columns = list(_route_table(app).value.columns)
+    assert columns[columns.index("부하량") + 1] == ROUTE_LOAD_BASIS_COLUMN
+
+    other = next(option for option in _process_box(app).options if option != process)
+    _process_box(app).set_value(other)
+    _ok(app.run())
+    assert ROUTE_LOAD_BASIS_COLUMN not in _route_table(app).value.columns
+
+
+def _route_table(app: AppTest) -> Any:
+    """「경로별 인자」 표 — UPEH · ST · 환산 UPEH 칸을 가진 표 하나."""
+    (table,) = [
+        element
+        for element in app.dataframe
+        if {"UPEH", "ST", "환산_UPEH"} <= set(element.value.columns)
+    ]
+    return table
+
+
 def _route_factor_children(app: AppTest) -> list[Any]:
     """「경로별 인자」 펼침 안 요소(그리는 차례). 아이콘을 단 펼침은 AppTest 가 `status` 로
     읽는다."""
@@ -588,6 +633,40 @@ def test_the_product_filter_lists_the_process_products_and_folds_the_rest(
     assert kept in labels
     assert dropped not in labels
     assert "거르기 밖" in labels
+
+
+TWO_PART_PROCESS = "DEMO_Wafer_Inspect"
+
+
+def test_a_two_part_product_splits_the_product_rows_and_the_demand_card(tmp_path: Path) -> None:
+    """두 부품 공식버전 — 「제품별 소요대수」 를 펴면 부품이 둘인 제품만 부품마다 한 줄이고 라벨
+    칸에서도 부품이 갈린다. ① 소요 카드의 상위 제품과 시트 엑셀도 같은 이름표다(PRC-01). 제품
+    거르기는 제품정보 단위 그대로다."""
+    database, equipment = tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb"
+    publish_two_part_revision(database)
+    app = _ok(_app((database, equipment)).run())
+    _process_box(app).set_value(TWO_PART_PROCESS)
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+
+    labels = [f"{TWO_PART_PRODUCT} ({part})" for part in (PART_A, PART_B)]
+    products = app.multiselect(key=PROCESS_DETAIL_PRODUCT_FILTER_KEY).options
+    assert TWO_PART_PRODUCT in products and not set(labels) & set(products)
+    drawn = _label_texts(app)
+    assert f"… ({PART_A})" in drawn and f"… ({PART_B})" in drawn
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert all(label in cards for label in labels)
+    _, book = _sheet(app)
+    sheet = book[DETAIL_SHEET].column(0)
+    assert all(f"└ {label}" in sheet for label in labels)
+
+    app.session_state[PROCESS_DETAIL_SPLIT_KEY] = "양산구분·제품"
+    _ok(app.run())
+    _, book = _sheet(app)
+    assert any(
+        str(value).startswith("└ ") and str(value).endswith(f"· {labels[1]}")
+        for value in book[DETAIL_SHEET].column(0)
+    )
 
 
 def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) -> None:

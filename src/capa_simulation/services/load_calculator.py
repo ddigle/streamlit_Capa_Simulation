@@ -2,11 +2,12 @@
 
 """PKG and wafer monthly volume calculations."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 import pandas as pd
 
+from capa_simulation.services.core_data_derivation import custom_sort_key
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 from capa_simulation.services.display_order_scopes import (
     PAGE_PLAN,
@@ -22,14 +23,26 @@ from capa_simulation.services.frame_contracts import (
 )
 from capa_simulation.services.product_type import (
     DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
+    DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
     PRODUCT_TYPE_COLUMN,
     product_type_of,
 )
 
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
+# 월 환산의 집계 기준. `total`(산출 기준 총량)은 모든 `WF 구분` 행을 더하고,
+# `home`(HOME 집계 기준)은 HOME `Wafer 계획` 처럼 Dummy 계열 행을 뺀다
+# (`exclude_dummy_series`). Chip · Wafer 에만 뜻이 있고 PKG · Density 는 두 기준이 같다.
+MonthlyAggregation = Literal["total", "home"]
+MONTHLY_AGGREGATION_TOTAL: MonthlyAggregation = "total"
+MONTHLY_AGGREGATION_HOME: MonthlyAggregation = "home"
+MONTHLY_AGGREGATIONS: tuple[MonthlyAggregation, ...] = (
+    MONTHLY_AGGREGATION_TOTAL,
+    MONTHLY_AGGREGATION_HOME,
+)
 
-CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
+# `CUSTOM` 은 같은 제품의 부품을 가르는 업무 키다 — 합하지 않고 조인 키로 끝까지 간다.
+CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack", "CUSTOM"]
 LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 # 제품타입별 `WF 구분` 규칙은 `services/product_type.py` 가 단일 근거다.
 # 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
@@ -39,12 +52,13 @@ LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 # 남겨 두면 `attach_plan_attributes` 가 키와 속성 양쪽에서 같은 컬럼을 골라 중복 라벨
 # 프레임을 만들고 바로 다음 `_normalize_text` 가 죽는다.
 PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN]
-# `Pack Code` 는 같은 7키 안에서 생산수량을 가르는 업무 키다. 격자에서 합쳐 보이면
+# `Pack Code` 는 같은 8키 안에서 생산수량을 가르는 업무 키다. 격자에서 합쳐 보이면
 # 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없으므로 행 차원으로 노출한다.
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",
@@ -57,9 +71,9 @@ PLAN_REQUIRED_COLUMNS = [
     *CLASSIFICATION_COLUMNS,
     "생산수량",
 ]
-YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 YIELD_REQUIRED_COLUMNS = [*YIELD_KEYS, "EDS_수율", "BE_수율"]
-YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "WF 구분"]
+YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "CUSTOM", "WF 구분"]
 YIELD_VALUE_COLUMNS = ["EDS_수율", "BE_수율"]
 YIELD_DISPLAY_NAMES = {"EDS_수율": "EDS", "BE_수율": "BE"}
 YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY_NAMES.items()}
@@ -67,16 +81,22 @@ YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY
 YIELD_LOCK_REASON_COLUMN = "사유"
 # 범위 밖 수율 오류에 적는 예시 칸 수. 사용자가 어느 행인지 찾을 수 있으면 된다.
 YIELD_RANGE_EXAMPLE_LIMIT = 5
+# 그 예시의 키 이름표(`YIELD_KEYS` 차례 — 없는 키는 칸 이름 그대로).
+YIELD_EXAMPLE_LABELS = {"생산계획년월": "년월", "제품정보": "제품"}
 # 계산 경로의 범위 밖 수율 오류 끝에 붙이는 고치는 곳. 기준정보 오류는 보지 않는 달이어도 계산을
 # 멈춘다(2026-09-28 사용자 결정) — 대신 어디를 고칠지 알린다.
 YIELD_RANGE_FIX_HINT = (
     "생산 계획 → 수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요 — 그 칸은 수율 표에서 "
     "빈칸으로 보입니다. 그 달이 조회기간 밖이면 사이드바 조회기간을 넓혀야 수율 탭에 나옵니다."
 )
-CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
+CHIP_KEYS = ["제품정보", "Stack", "CUSTOM", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
-DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
+DENSITY_KEYS = ["제품정보", "Stack", "CUSTOM", "WF 구분"]
 DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
+# 계획을 `WF 구분` 으로 펼치는 조인 키 — Chip 구성 키에서 계획에 없는 `WF 구분` 만 뺀 것이다. 손으로
+# 적으면 키가 늘 때 빠져 같은 제품의 다른 부품 행끼리 many_to_many 로 붙어 부하가 겹친다.
+_CHIP_EXPAND_KEYS = [key for key in CHIP_KEYS if key != "WF 구분"]
+_DENSITY_EXPAND_KEYS = [key for key in DENSITY_KEYS if key != "WF 구분"]
 
 # 기준정보가 없어 계산에서 뺀 계획 행을 결과 프레임에 붙여 화면이 목록으로 보여준다.
 # 예전에는 여기서 예외를 던져 계획 행 하나 때문에 페이지 전체가 멈췄다.
@@ -85,7 +105,8 @@ DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 # `pd.concat` 이 attrs 를 동등 비교하다가 "truth value of a DataFrame is ambiguous" 로
 # 죽는다. 부하량 프레임들은 소요대수 계산에서 실제로 concat 된다.
 LOAD_EXCLUSIONS_ATTR = "excluded_load_rows"
-LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "WF 구분", "누락 기준정보"]
+# 마지막 칸이 사유다 — 레코드는 `[:-1]` 자리로 읽는다(`_load_exclusion_rows`).
+LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "CUSTOM", "WF 구분", "누락 기준정보"]
 # 생산수량이 빈 계획 행에 다는 사유. **빈 값은 「계획 없음(0)」이다** — 편집 격자·환산·소요대수가
 # 한 뜻으로 읽는다. 다만 원천이 숫자를 빠뜨린 것일 수도 있어 말없이 0 으로 접지 않고 같은 제외
 # 목록에 남긴다.
@@ -463,18 +484,21 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str, *, fix_hint: str 
         return
     invalid_cells = pd.concat(cells, ignore_index=True).drop_duplicates()
     invalid_rows = invalid_cells[YIELD_KEYS].drop_duplicates()
+    # 부품(`CUSTOM`)은 걸린 칸에 빈 값 표지 아닌 부품이 있을 때만 예시에 싣는다 — 두 부품의 같은 달
+    # 칸이 같은 글로 보이지 않게. 부품이 없는 시나리오의 글은 그대로다.
+    show_part = not all(custom_sort_key(value)[0] for value in invalid_cells["CUSTOM"].unique())
+    example_keys = [key for key in YIELD_KEYS if key != "CUSTOM" or show_part]
     examples = [
-        f"{month} · {product} · {stack} · {division} → {kind} {value:.4g}({value * 100:.4g}%)"
-        for month, product, stack, division, kind, value in invalid_cells.head(
-            YIELD_RANGE_EXAMPLE_LIMIT
-        ).itertuples(index=False)
+        f"{' · '.join(str(part) for part in keys)} → {kind} {value:.4g}({value * 100:.4g}%)"
+        for *keys, kind, value in invalid_cells.loc[:, [*example_keys, "구분", "값"]]
+        .head(YIELD_RANGE_EXAMPLE_LIMIT)
+        .itertuples(index=False, name=None)
     ]
     rest = len(invalid_cells) - len(examples)
+    labels = " · ".join(YIELD_EXAMPLE_LABELS.get(key, key) for key in example_keys)
     message = (
         f"{table_name}의 수율은 0 초과 100% 이하여야 합니다: {len(invalid_rows):,}행, "
-        f"예시(년월 · 제품 · Stack · WF 구분) {'; '.join(examples)}"
-        + (f" 외 {rest:,}칸" if rest > 0 else "")
-        + "."
+        f"예시({labels}) {'; '.join(examples)}" + (f" 외 {rest:,}칸" if rest > 0 else "") + "."
     )
     raise ValueError(f"{message} {fix_hint}" if fix_hint else message)
 
@@ -577,7 +601,7 @@ def _prepare_load_base(
 
     expanded = prepared_plan.merge(
         prepared_chip,
-        on=["제품정보", "Stack"],
+        on=_CHIP_EXPAND_KEYS,
         how="left",
         validate="many_to_many",
         indicator="_chip_merge",
@@ -709,8 +733,10 @@ def load_exclusions(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(list(excluded), columns=LOAD_EXCLUSION_COLUMNS)
 
 
-def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
-    """Dummy 산식을 받을 행을 (제품타입, WF 구분) 으로 고른다.
+def wf_division_mask(
+    frame: pd.DataFrame, divisions_by_type: Mapping[str, Sequence[str]]
+) -> pd.Series:
+    """`divisions_by_type` 가 제품타입마다 선언한 `WF 구분` 행을 (제품타입, WF 구분) 으로 고른다.
 
     `WF 구분` 만 보고 고르면 두 제품군이 공유하는 이름 때문에 한쪽 규칙이 다른 쪽에
     적용된다. 지금은 Dummy 가 HBM 에만 있어 결과가 같지만, 규칙을 이름 하나에 걸어 두면
@@ -721,29 +747,48 @@ def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
     `WF 구분` 집합이 겹치지 않아 이름이 곧 제품군을 가리키므로 답이 그 제품군 규칙과 같다.
     빈 행을 어느 제품군에도 맞지 않는다고 일반 산식으로 떨어뜨리면 Dummy 부하가
     1/(1 - EDS_수율) 배 안팎으로 아무 흔적 없이 커진다.
+
+    목록은 둘이다 — Dummy 산식(`DUMMY_DIVISIONS_BY_PRODUCT_TYPE`)과 행을 빼는 Dummy 계열
+    (`DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`). 게이트는 한 함수라 두 목록이 같은 규칙으로 판별된다.
     """
-    division = match_key(calculation["WF 구분"])
-    declared = {
-        scalar_match_key(name)
-        for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values()
-        for name in names
-    }
+    division = match_key(frame["WF 구분"])
+    declared = {scalar_match_key(name) for names in divisions_by_type.values() for name in names}
     by_name = division.isin(declared).fillna(False)
-    if PRODUCT_TYPE_COLUMN not in calculation.columns:
+    if PRODUCT_TYPE_COLUMN not in frame.columns:
         return by_name
 
     # 제품타입도 대소문자를 가리지 않는다. `WF 구분` 만 흡수하고 제품타입은 글자 그대로
     # 맞추면, 원천 표기가 한 글자만 달라도 Dummy 규칙이 통째로 빗나간다.
-    product_type = match_key(product_type_of(calculation))
+    product_type = match_key(product_type_of(frame))
     mask = product_type.eq("") & by_name
-    for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
-        if not dummy_divisions:
+    for declared_type, divisions in divisions_by_type.items():
+        if not divisions:
             continue
-        names = {scalar_match_key(name) for name in dummy_divisions}
+        names = {scalar_match_key(name) for name in divisions}
         mask |= product_type.eq(scalar_match_key(declared_type)) & division.isin(names).fillna(
             False
         )
     return mask
+
+
+def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
+    """Dummy 산식을 받을 행. `Top_Dummy` 는 고르지 않는다(일반 산식)."""
+    return wf_division_mask(calculation, DUMMY_DIVISIONS_BY_PRODUCT_TYPE)
+
+
+def exclude_dummy_series(load: pd.DataFrame) -> pd.DataFrame:
+    """상세 부하량(Chip · Wafer)에서 Dummy 계열(`Dummy` · `Top_Dummy`) 행을 뺀다 — 원천 집계 기준.
+
+    원천 집계는 Wafer 계획에 Dummy 계열을 넣지 않는다. HOME `Wafer 계획` 과 환산 탭 「HOME 집계
+    기준」만 이 함수를 지난다. **산식은 바꾸지 않는다** — 남은 행의 `물량` 은 그대로이고
+    (`Top_Dummy` 가 일반 산식이라는 것도 그대로), 소요대수 · 확보율이 읽는 부하량
+    (`calculate_wafer_load` · `_prepare_load_base`)에는 걸지 않는다.
+
+    제외 목록(attrs)은 원래 프레임 것을 잇는다 — 기준정보가 없어 빠진 계획 행 수는 두 기준에서
+    같다. 받은 프레임은 고치지 않는다.
+    """
+    keep = ~wf_division_mask(load, DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE)
+    return carry_load_exclusions(load, load.loc[keep])
 
 
 def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
@@ -800,7 +845,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
 
     calculation = prepared_plan.merge(
         prepared_density,
-        on=["제품정보", "Stack"],
+        on=_DENSITY_EXPAND_KEYS,
         how="left",
         validate="many_to_many",
         indicator="_density_merge",
@@ -860,6 +905,13 @@ def _pivot_monthly(
     return apply_display_order(pivoted.reset_index(), display_order, PAGE_PLAN, TAB_CONVERSION)
 
 
+def _aggregated(load: pd.DataFrame, aggregation: MonthlyAggregation) -> pd.DataFrame:
+    """집계 기준대로 묶을 상세 부하량. HOME 집계 기준이면 Dummy 계열 행을 뺀다."""
+    if aggregation == MONTHLY_AGGREGATION_HOME:
+        return exclude_dummy_series(load)
+    return load
+
+
 def build_monthly_volume(
     plan: pd.DataFrame,
     yield_data: pd.DataFrame,
@@ -868,12 +920,20 @@ def build_monthly_volume(
     detailed: bool = False,
     density_data: pd.DataFrame | None = None,
     display_order: DisplayOrderInput = None,
+    aggregation: MonthlyAggregation = MONTHLY_AGGREGATION_TOTAL,
 ) -> pd.DataFrame:
     """Return a monthly matrix grouped by production class, product, and stack.
 
     환산 함수에는 **준비하지 않은** 계획을 넘긴다. 준비(`_prepare_plan`)가 빈 생산수량 행을 걷어내며
     제외 목록에 적으므로, 이미 걷어낸 계획을 넘기면 그 기록이 다음 준비에서 빈 목록으로 덮인다.
+
+    `aggregation` 은 Chip · Wafer 의 집계 기준이다. 기본 `total`(산출 기준 총량)은 지금까지와
+    같은 값이고, `home`(HOME 집계 기준)은 묶기 **전에** Dummy 계열 행을 뺀다 — 그 행은 빈칸이
+    아니라 표에서 없어진다. PKG · Density 는 이 인자를 보지 않는다. 제외 목록(attrs)은 거르기
+    전 부하량 것이라 두 기준이 같다.
     """
+    if aggregation not in MONTHLY_AGGREGATIONS:
+        raise ValueError(f"지원하지 않는 집계 기준입니다: {aggregation}")
     if demand_basis == "PKG":
         prepared_plan = _prepare_plan(plan)
         volume = prepared_plan.rename(columns={"생산수량": "물량"})
@@ -882,11 +942,15 @@ def build_monthly_volume(
         return carry_load_exclusions(prepared_plan, _pivot_monthly(volume, detailed, display_order))
     if demand_basis == "Chip":
         chip_load = calculate_chip_load(plan, yield_data, chip_qty)
-        return carry_load_exclusions(chip_load, _pivot_monthly(chip_load, detailed, display_order))
+        return carry_load_exclusions(
+            chip_load,
+            _pivot_monthly(_aggregated(chip_load, aggregation), detailed, display_order),
+        )
     if demand_basis == "Wafer":
         wafer_load = calculate_wafer_load(plan, yield_data, chip_qty)
         return carry_load_exclusions(
-            wafer_load, _pivot_monthly(wafer_load, detailed, display_order)
+            wafer_load,
+            _pivot_monthly(_aggregated(wafer_load, aggregation), detailed, display_order),
         )
     if demand_basis == "Density":
         if density_data is None:

@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections.abc import Iterator
@@ -27,7 +28,9 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_marks, data_error_texts, events, states
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT
 from fragment_browser import install_fragment_browser
+from home_two_part_app import publish_two_part_revision
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
 from streamlit.testing.v1 import AppTest
@@ -45,6 +48,7 @@ from capa_simulation.components.constraint_equipment_plan import (
 )
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
+    build_sheet_canvas,
     general_label,
 )
 from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
@@ -94,6 +98,10 @@ from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.constraint_simulation import ConstraintResult
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import ShorteningPlan, plan_required_shortening
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    normalize_route_load_declaration,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / CONSTRAINT_SIMULATION.path
@@ -407,6 +415,58 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
     # (2026-11-09 보드 T4).
     links = app.session_state["captured_page_links"]
     assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
+
+
+# 시드에 없는 공정 하나의 부하 예외 선언 — 숫자는 그대로 두고 계산 토큰만 접힌다.
+OUT_OF_DATA_DECLARATION = {"DEMO-예외 공정": BUFFER_X_CORE_CHIP}
+
+
+def test_the_plan_cell_and_the_product_demand_read_one_declaration_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R(설비 일정 계획 칸 — `load_required_shortening_for_target`)과 Rc(제품별 소요 —
+    `get_process_product_demand`)는 따로 받는 칸이다. 두 칸이 같은 판이어야 Rc ≤ R 이고
+    Re = R − Rc 가 맞으므로 둘 다 같은 계산 키(`page_inputs.capacity_cache_key` — 부하 예외 선언을
+    접은 계산 토큰)로 받는다. 선언을 저장한 DB 에서 두 길이 받은 시나리오 키가 같고 그 토큰에
+    선언이 접혀 있는지 본다 — 한 길만 선언을 떼면 Admin 이 선언을 저장한 뒤 R 은 앞 판의 칸, Rc 는
+    새 판이 된다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.persistence.cache import get_scenario_repository
+
+    scenario_path = tmp_path / "scenario.duckdb"
+    ensure_initial_scenario(get_scenario_repository(str(scenario_path)))
+    DuckDBScenarioRepository(scenario_path).append_route_load_exceptions(
+        expected_seq=0, entries=OUT_OF_DATA_DECLARATION, applied_by=None, source_place="test"
+    )
+    databases = (scenario_path, _equipment_database(tmp_path / "equipment.duckdb"))
+    plan_keys: list[simulation_cache.ScenarioCacheKey] = []
+    demand_keys: list[simulation_cache.ScenarioCacheKey] = []
+    load_plan = simulation_cache.load_required_shortening_for_target
+    product_demand = simulation_cache.get_process_product_demand
+
+    def record_plan(
+        key: simulation_cache.RequiredShorteningTargetCacheKey, *args: Any, **kwargs: Any
+    ) -> ShorteningPlan:
+        plan_keys.append(key[0][0])
+        return load_plan(key, *args, **kwargs)
+
+    def record_demand(
+        cache_key: simulation_cache.ScenarioCacheKey, *args: Any, **kwargs: Any
+    ) -> pd.DataFrame:
+        demand_keys.append(cache_key)
+        return product_demand(cache_key, *args, **kwargs)
+
+    monkeypatch.setattr(simulation_cache, "load_required_shortening_for_target", record_plan)
+    monkeypatch.setattr(simulation_cache, "get_process_product_demand", record_demand)
+    _opened(databases)
+
+    assert plan_keys and demand_keys
+    assert set(plan_keys) == set(demand_keys)
+    ((_, token, *_),) = set(demand_keys)
+    assert simulation_cache.ROUTE_EXCEPTION_TOKEN_MARK in token
+    assert simulation_cache.token_route_exceptions(token) == normalize_route_load_declaration(
+        OUT_OF_DATA_DECLARATION
+    )
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:
@@ -1469,6 +1529,122 @@ def test_the_period_follows_the_product_until_the_boxes_are_edited(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202607
     assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+
+
+def test_a_two_part_product_offers_the_whole_product_then_each_part(tmp_path: Path) -> None:
+    """두 부품 공식버전 — 제약 제품 선택지는 이름만 쓴 제품 전체 뒤에 부품마다 「제품 (부품)」
+    줄이고(2026-11-23 보드 답 D3 (나)) 부품이 하나뿐인 제품은 이름 한 줄이다. 첫 값과 세션에 남은
+    제품 이름은 제품 전체(부품 소요의 합)이고, 부품 줄은 그 부품만 제약 제품으로 센다 — 달마다
+    제약 소요 + 기존 소요 = 공정 소요. 그래프 제목 · 머리 줄 글은 고른 이름표 그대로다."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database)
+    databases = (database, _equipment_database(tmp_path / "equipment.duckdb"))
+    labels = [f"{TWO_PART_PRODUCT} ({part})" for part in (PART_A, PART_B)]
+
+    def demands(app: AppTest) -> list[float]:
+        result, _ = _shown(app)
+        for month in result.months:
+            assert month.constrained_demand + month.existing_demand == pytest.approx(
+                month.required, abs=1e-9
+            )
+        return [month.product_demand for month in result.months]
+
+    app = _opened(databases)
+    box = app.selectbox(key=CONSTRAINT_PRODUCT_KEY)
+    options = list(box.options)
+    start = options.index(TWO_PART_PRODUCT)
+    assert options[start : start + 3] == [TWO_PART_PRODUCT, *labels]
+    assert "DEMO PRODUCT B" in options
+    assert not [option for option in options if option.startswith("DEMO PRODUCT B (")]
+    assert box.value == TWO_PART_PRODUCT
+    assert _shown(app)[1].product == TWO_PART_PRODUCT
+    whole = demands(app)
+    assert any(value > 0 for value in whole)
+
+    per_part: list[list[float]] = []
+    for label in labels:
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(label)
+        _ok(app.run())
+        assert _shown(app)[1].product == label
+        per_part.append(demands(app))
+    assert [a + b for a, b in zip(*per_part, strict=True)] == pytest.approx(whole, abs=1e-9)
+    assert all(values != pytest.approx(whole) for values in per_part)
+
+    # 화면을 떠났다 와도 고른 부품 줄은 남고, 세션의 제품 이름은 다시 제품 전체다.
+    app.session_state["_test_page"] = "away"
+    _ok(app.run())
+    app.session_state["_test_page"] = "constraint"
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == labels[-1]
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(TWO_PART_PRODUCT)
+    _ok(app.run())
+    assert demands(app) == pytest.approx(whole)
+
+
+def _product_title(app: AppTest) -> str:
+    """월별 계산표 라벨 칸의 「제약 제품 · …」 구획 제목 글(마크업을 뗀 글)."""
+    return _sheet_product_title(*_shown(app))
+
+
+def _sheet_product_title(result: ConstraintResult, labels: ConstraintLabels) -> str:
+    sheet = build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
+    titles = [
+        re.sub(r"<[^>]+>", "", str(item.text))
+        for item in sheet.labels.layout.annotations
+        if "제약 제품 ·" in str(item.text)
+    ]
+    assert len(titles) == 1
+    return titles[0]
+
+
+def test_the_sheet_title_of_a_part_keeps_the_part_end(tmp_path: Path) -> None:
+    """월별 계산표의 「제약 제품 · 이름표」 제목은 부품 줄이면 다른 화면처럼 부품 끝을 남기고 앞을
+    줄인다 — 앞을 남겨 끝을 자르면 어느 부품인지 안 보인다. 이 폭에서는 제품 이름 쪽만 줄고 부품은
+    온전히 남는다. 제품 전체 줄(이름만)은 지금 꼴 그대로다."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database)
+    app = _opened((database, _equipment_database(tmp_path / "equipment.duckdb")))
+
+    whole = _product_title(app)
+    titles = []
+    for part in (PART_A, PART_B):
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(f"{TWO_PART_PRODUCT} ({part})")
+        _ok(app.run())
+        titles.append(_product_title(app))
+
+    assert whole == f"제약 제품 · {TWO_PART_PRODUCT}"
+    assert titles[0] != titles[1]
+    for title, part in zip(titles, (PART_A, PART_B), strict=True):
+        assert title.startswith("제약 제품 · ")
+        assert title.endswith(f"… ({part})"), title
+
+
+# 끝 글자를 길게 같이 쓰는 두 부품 — 형제를 모르는 줄임으로는 계산표 제목이 같은 글이 된다.
+TAIL_SHARING_PARTS = ("DEMO_P1_SHARED_CUSTOM_KIT", "DEMO_P2_SHARED_CUSTOM_KIT")
+
+
+def test_the_sheet_titles_of_parts_sharing_their_end_stay_apart(tmp_path: Path) -> None:
+    """고르기의 형제 부품(`ConstraintLabels.part_siblings`)이 계산표 제목 줄임에 닿는다 — 끝을 길게
+    같이 쓰는 두 부품도 「제약 제품 · 이름표」 제목이 서로 다른 글이다. 형제를 빼고 그리면 둘이 같은
+    글이다(페이지가 형제를 넘기지 않으면 이 시험이 잡는다)."""
+    database = tmp_path / "scenario.duckdb"
+    publish_two_part_revision(database, parts=TAIL_SHARING_PARTS)
+    app = _opened((database, _equipment_database(tmp_path / "equipment.duckdb")))
+
+    titles: list[str] = []
+    alone: list[str] = []
+    for part, other in (TAIL_SHARING_PARTS, TAIL_SHARING_PARTS[::-1]):
+        app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(f"{TWO_PART_PRODUCT} ({part})")
+        _ok(app.run())
+        result, labels = _shown(app)
+        assert labels.part == part and labels.part_siblings == (other,)
+        titles.append(_product_title(app))
+        alone.append(_sheet_product_title(result, dataclasses.replace(labels, part_siblings=())))
+
+    assert alone[0] == alone[1], "형제를 모르는 줄임은 이 두 부품의 제목을 가르지 못한다"
+    assert titles[0] != titles[1]
+    for title, part in zip(titles, TAIL_SHARING_PARTS, strict=True):
+        assert title.startswith("제약 제품 · ") and part[6] in title, title
 
 
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(

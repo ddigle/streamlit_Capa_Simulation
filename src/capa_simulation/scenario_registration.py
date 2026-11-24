@@ -4,9 +4,10 @@
 
 화면(`components/bigdataquery_registration.py`)은 폼 값을 읽고 조회 중 안내를 그리고 저장한 뒤 그
 세션에서 새 리비전을 활성화한다. 자동 갱신은 세션이 없는 배경 작업이다. 둘 다 저장 자체 — 원천
-메타데이터·파이프라인 버전·리비전 메모의 상세 조회기간과 CS 가 비어 뺀 행 수, 저장 전에 한 번 돌려
-본 대당 Capa 의 멈춤(`RegistrationCapacityCheck`) — 는 여기 한 곳에서 정한다. 그래서 자동으로 받은
-시나리오와 손으로 받은 시나리오가 같은 꼴로 남는다.
+메타데이터·파이프라인 버전·리비전 메모의 상세 조회기간과 원천 조각(CUSTOM 원천 대조 · 업무 키 충돌 —
+`source_check_memo`), CS 가 비어 뺀 행 수, 저장 전에 한 번 돌려 본 대당 Capa 의
+멈춤(`RegistrationCapacityCheck`) — 는 여기 한 곳에서 정한다. 그래서 자동으로 받은 시나리오와 손으로
+받은 시나리오가 같은 꼴로 남는다.
 
 Streamlit 을 import 하지 않고 세션을 읽지 않는다. 프리셋은 부르는 쪽이 만든다 — 화면은 세션의 레거시
 확보·경고 값을 실은 `capture_full_data_scenario_preset`, 자동 갱신은 세션 없는
@@ -31,7 +32,10 @@ from capa_simulation.persistence.models import (
     ScenarioSnapshot,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
-from capa_simulation.services.core_data_pipeline import PreparedCoreDataset
+from capa_simulation.services.core_data_pipeline import (
+    PreparedCoreDataset,
+    reference_conflict_memo,
+)
 from capa_simulation.services.extra_process_merge import (
     ActiveExtraPack,
     ExtraMergeReport,
@@ -283,6 +287,22 @@ class BigDataQueryRegistration:
     capacity: RegistrationCapacityCheck
 
 
+def source_check_memo(prepared: PreparedCoreDataset) -> str:
+    """원천을 받은 그대로 두고 알린 것의 메모 조각 — CUSTOM 원천 대조(BigDataQuery 등록이면 늘
+    — `CustomSourceCheck.memo`)와 업무 키 충돌(있을 때만 — `reference_conflict_memo`)을 그 차례로
+    잇는다.
+
+    리비전 1 메모(`save_bigdataquery_scenario`)와 자동 갱신의 실행 기록 사유 · 리비전 2 · 공식버전
+    메모가 같은 조각을 쓴다. CSV · 시드 · 가짜 공급자는 대조가 없고(None) 충돌이 없으면 빈 글이다.
+    """
+    check = prepared.batch.custom_check
+    parts = (
+        "" if check is None else check.memo(),
+        reference_conflict_memo(prepared.reference_conflicts),
+    )
+    return " · ".join(part for part in parts if part)
+
+
 def registration_note(note: str, window: QueryWindow) -> str:
     """리비전 1 메모 — 적은 메모 뒤에 실제로 조회한 상세 기간을 붙인다.
 
@@ -354,10 +374,11 @@ def save_bigdataquery_scenario(
     """조회·변환을 마친 원천을 새 시나리오와 리비전 1 로 저장한다. 세션을 활성화하지 않는다.
 
     저장하기 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다 —
-    부르는 쪽이 결과의 `capacity` 로 등록한 사람에게 알린다. CS 가 비어 표에서 뺀 행 수
-    (`BlankCsDrop.memo`)와 대당 Capa 멈춤의 꼴·개수(`RegistrationCapacityCheck.memo`)는 리비전 메모
-    끝에 붙인다 — 저장한 리비전에 남는 기록이다. 이름 중복(보관본 포함)·원천 코드 불변 검사는
-    저장소가 쓰기 트랜잭션 안에서 한다.
+    부르는 쪽이 결과의 `capacity` 로 등록한 사람에게 알린다. 리비전 메모 끝에는 저장한 리비전에
+    남는 기록을 이 차례로 붙인다 — CUSTOM 원천 대조 · 업무 키 충돌(`source_check_memo`), CS 가
+    비어 표에서 뺀 행 수(`BlankCsDrop.memo`), 부대공정 판(`ExtraMergeReport.memo`), 대당 Capa
+    멈춤의 꼴·개수(`RegistrationCapacityCheck.memo` — 늘 끝). 이름 중복(보관본 포함)·원천 코드
+    불변 검사는 저장소가 쓰기 트랜잭션 안에서 한다.
 
     `extra` 는 `prepared` 에 이미 합친 부대공정 판의 보고다
     (`core_data_pipeline.fetch_registration_dataset`) — 메모 조각(「부대공정 판 3 · 2 합침」)과
@@ -367,7 +388,8 @@ def save_bigdataquery_scenario(
         prepared.reference_tables, blank_cs_routes=prepared.blank_cs.route_rows
     )
     extra_memo = "" if extra is None else extra.memo()
-    memos = [memo for memo in (prepared.blank_cs.memo(), extra_memo, capacity.memo()) if memo]
+    pieces = (source_check_memo(prepared), prepared.blank_cs.memo(), extra_memo, capacity.memo())
+    memos = [memo for memo in pieces if memo]
     if memos:
         note = " · ".join(part for part in (note.strip(), *memos) if part)
     snapshot = repository.create_scenario(

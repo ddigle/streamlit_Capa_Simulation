@@ -210,7 +210,11 @@ try:
     )
 
     capacity_cache_key = scenario_cache_key(
-        reference_version, active_scenario, effective_start, effective_end
+        reference_version,
+        active_scenario,
+        effective_start,
+        effective_end,
+        route_exceptions=context.route_exceptions.declaration,
     )
     # 이 화면은 대당 Capa·소요대수 프레임을 쓰지 않는다 — 확보율만 키로 꺼낸다(적중이면 소요대수를
     # 풀지 않고, 빗나가면 그 안에서 한 번만 받는다).

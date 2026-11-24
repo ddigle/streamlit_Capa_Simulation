@@ -17,15 +17,21 @@ HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례로
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from uuid import uuid4
 
 import pandas as pd
 import pytest
+from before_custom_copy import seed_route_declaration
+from custom_key_tables import PART_A, PART_B, TWO_PART_PRODUCT, two_part_tables, with_blank_custom
 
 from capa_simulation.services import builtin_seed
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset, builtin_seed_processes
+from capa_simulation.services.constraint_simulation import (
+    constraint_month_inputs,
+    constraint_product_choices,
+)
 from capa_simulation.services.display_order import prepare_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.process_capa_detail import (
@@ -39,6 +45,7 @@ from capa_simulation.services.process_capa_detail import (
     RATIO_ASSUMED_MISSING_ROW,
     RATIO_BLANK_OR_ZERO,
     ROUTE_COLUMNS,
+    ROUTE_LOAD_BASIS_COLUMN,
     RULE_EXCLUDED_COLUMN,
     ProcessMonthTrace,
     build_process_capa_summary,
@@ -50,8 +57,15 @@ from capa_simulation.services.process_capa_detail import (
     process_calculation_rows,
     process_capa_kpis,
     route_factor_product,
+    with_route_load_basis,
 )
+from capa_simulation.services.product_parts import PART_NOT_SPLIT, multi_part_products
 from capa_simulation.services.required_equipment import PKG_UNCOUNTED_REASON
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    ROUTE_LOAD_BASIS_MISSING_REASON,
+)
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_OWNED_SHORT,
@@ -88,7 +102,7 @@ def _capacity_tables(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
 
 
 def _trace(tables: dict[str, pd.DataFrame], process: str, month: int) -> ProcessMonthTrace:
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=process)
     return build_process_month_trace(rows, _capacity_tables(tables), process=process, month=month)
 
@@ -105,7 +119,7 @@ def test_summary_carries_the_securement_numbers_unchanged(tables: dict[str, pd.D
 
     산출 결과·Static Capa 와 다른 숫자를 내면 안 된다.
     """
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
 
@@ -152,7 +166,7 @@ def test_summary_marks_months_where_owned_minus_lent_is_not_available(
         available["생산계획년월"]
     ).eq(202604)
     available.loc[edited, "가용대수"] = pd.to_numeric(available.loc[edited, "가용대수"]) + 1
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(available, required)
 
     summary = build_process_capa_summary(
@@ -170,7 +184,7 @@ def test_summary_marks_months_where_owned_minus_lent_is_not_available(
 def test_months_without_rows_are_zero_and_keep_the_given_order(
     tables: dict[str, pd.DataFrame],
 ) -> None:
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
 
     summary = build_process_capa_summary(
@@ -289,7 +303,7 @@ def test_product_rows_add_up_to_the_process_demand(
 
     「그 밖」·거르기를 걸어도 아무것도 버리지 않는다.
     """
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
     display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
@@ -327,7 +341,7 @@ def test_product_rows_add_up_to_the_process_demand(
 def test_judging_another_supply_takes_the_summarys_path(tables: dict[str, pd.DataFrame]) -> None:
     """「② 일정 가용」 · 「③ 비가동」 의 판정 칸은 요약과 같은 길이다 — 요약의 가용 · 소요를 넣으면
     요약과 같은 확보율 · 판정 · 과부족이 나온다(월별 예외 기준 달 포함)."""
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     months = _months(required)
     for process in builtin_seed_processes():
@@ -382,18 +396,20 @@ def test_judging_another_supply_skips_months_without_both_numbers() -> None:
 def _many_products(count: int) -> pd.DataFrame:
     """공정 하나에 제품 `count` 개. 제품 번호가 클수록 소요가 크다."""
     names = [f"P{index:02d}" for index in range(1, count + 1)]
-    return pd.DataFrame(
-        {
-            "생산계획년월": [202601] * count + [202602] * count,
-            "공정": ["Proc"] * (2 * count),
-            "양산구분": ["양산"] * (2 * count),
-            "제품정보": names * 2,
-            "Stack": ["8H"] * (2 * count),
-            "WF 구분": ["Core"] * (2 * count),
-            "소요기준": ["WF"] * (2 * count),
-            "소요대수": [float(index) for index in range(1, count + 1)]
-            + [float(index) / 10 for index in range(1, count + 1)],
-        }
+    return with_blank_custom(
+        pd.DataFrame(
+            {
+                "생산계획년월": [202601] * count + [202602] * count,
+                "공정": ["Proc"] * (2 * count),
+                "양산구분": ["양산"] * (2 * count),
+                "제품정보": names * 2,
+                "Stack": ["8H"] * (2 * count),
+                "WF 구분": ["Core"] * (2 * count),
+                "소요기준": ["WF"] * (2 * count),
+                "소요대수": [float(index) for index in range(1, count + 1)]
+                + [float(index) / 10 for index in range(1, count + 1)],
+            }
+        )
     )
 
 
@@ -499,6 +515,153 @@ def test_an_unknown_split_is_refused() -> None:
         )
 
 
+# ------------------------------------------------------------------ 제품별 소요대수 — 부품
+
+
+PART_SPLITS = ("제품정보", "양산구분·제품")
+
+
+def _part_label(part: str) -> str:
+    return f"{TWO_PART_PRODUCT} ({part})"
+
+
+def _process_demand(required: pd.DataFrame, process: str, months: list[int]) -> list[float]:
+    rows = required.loc[_process_rows_of(required, process)]
+    totals = rows.groupby(pd.to_numeric(rows["생산계획년월"]))["소요대수"].sum()
+    return [float(totals.get(month, 0.0)) for month in months]
+
+
+@pytest.mark.parametrize("split", PART_SPLITS)
+def test_two_part_rows_split_one_product_and_add_up_to_the_parent(split: str) -> None:
+    """부품이 둘인 제품만 부품마다 한 행(이름표 「제품 (부품)」 — 이웃하고 부품 차례)이고, 두
+    행의 합은 접은 표의 그 제품 한 행과 같다. 다른 제품의 행은 그대로이고 모든 행의 합은 공정
+    소요대수다."""
+    split_tables = two_part_tables()
+    _, required = get_capacity_and_demand(split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    months = _months(required)
+    multi_part = multi_part_products(split_tables["RQ_PKG_PLAN"])
+    display_order = prepare_display_order(split_tables["RQ_DISPLAY_ORDER"])
+    assert multi_part == {TWO_PART_PRODUCT}
+
+    for process in builtin_seed_processes():
+
+        def demand(parts: frozenset[str], process: str = process) -> pd.DataFrame:
+            return build_process_product_demand(
+                required,
+                process=process,
+                split=split,
+                months=months,
+                display_order=display_order,
+                multi_part=parts,
+            )
+
+        parted, folded = demand(multi_part), demand(frozenset())
+        mine = parted["제품정보"].eq(TWO_PART_PRODUCT).to_numpy()
+        if not mine.any():
+            continue
+        assert parted.loc[mine, "CUSTOM"].tolist() == [PART_A, PART_B]
+        labels = parted.loc[mine, PRODUCT_LABEL_COLUMN].tolist()
+        assert [label.split(" · ")[-1] for label in labels] == [
+            _part_label(PART_A),
+            _part_label(PART_B),
+        ]
+        positions = [int(position) for position in parted.index[mine]]
+        assert positions == list(range(positions[0], positions[0] + 2))
+        assert parted.loc[~mine, "CUSTOM"].eq(PART_NOT_SPLIT).all()
+        assert folded["CUSTOM"].eq(PART_NOT_SPLIT).all()
+
+        columns = [month_column(month) for month in months]
+        whole = folded.loc[folded["제품정보"].eq(TWO_PART_PRODUCT), columns]
+        assert parted.loc[mine, columns].sum().tolist() == pytest.approx(
+            whole.sum().tolist(), abs=TOLERANCE, rel=0
+        )
+        others = parted.loc[~mine].drop(columns="CUSTOM").reset_index(drop=True)
+        pd.testing.assert_frame_equal(
+            others,
+            folded.loc[folded["제품정보"].ne(TWO_PART_PRODUCT)]
+            .drop(columns="CUSTOM")
+            .reset_index(drop=True),
+        )
+        assert [float(parted[column].sum()) for column in columns] == pytest.approx(
+            _process_demand(required, process, months), abs=TOLERANCE, rel=0
+        )
+
+
+@pytest.mark.parametrize("split", PART_SPLITS)
+def test_one_custom_value_per_product_keeps_the_rows_of_the_blank_marker(
+    tables: dict[str, pd.DataFrame], split: str
+) -> None:
+    """제품마다 CUSTOM 이 실값 하나뿐인 데이터는 부품을 가르지 않는다 — 분류 · 숫자 · 차례가 표지
+    `-` 하나인 데이터와 같고 CUSTOM 칸은 접힌 값이다."""
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    months = _months(required)
+    display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
+    names = sorted(required["제품정보"].dropna().astype(str).unique())
+    real = {name: f"DEMO_CUSTOM_{index}" for index, name in enumerate(names)}
+    one_value = required.assign(CUSTOM=required["제품정보"].map(real))
+    plan = tables["RQ_PKG_PLAN"].assign(CUSTOM=tables["RQ_PKG_PLAN"]["제품정보"].map(real))
+    assert multi_part_products(plan) == frozenset()
+
+    for process in builtin_seed_processes():
+        blank = build_process_product_demand(
+            required, process=process, split=split, months=months, display_order=display_order
+        )
+        valued = build_process_product_demand(
+            one_value,
+            process=process,
+            split=split,
+            months=months,
+            display_order=display_order,
+            multi_part=multi_part_products(plan),
+        )
+        pd.testing.assert_frame_equal(valued, blank)
+        assert valued["CUSTOM"].eq(PART_NOT_SPLIT).all()
+
+
+def _many_products_with_two_parts(count: int, product: str) -> pd.DataFrame:
+    """`_many_products` 에서 제품 하나를 두 부품(소요 반씩)으로 가른 표."""
+    frame = _many_products(count)
+    mine = frame["제품정보"].eq(product)
+    halves = frame.loc[mine].assign(소요대수=frame.loc[mine, "소요대수"] / 2)
+    return pd.concat(
+        [frame.loc[~mine], halves.assign(CUSTOM=PART_A), halves.assign(CUSTOM=PART_B)],
+        ignore_index=True,
+    )
+
+
+def test_each_part_counts_as_one_row_for_the_limit_and_the_other_count() -> None:
+    """12행 상한은 부품 하나를 한 행으로 세고, 「그 밖」 의 묶은 수도 부품(이름표) 단위다 — 한
+    제품의 부품 하나만 「그 밖」 으로 넘어갈 수 있다. 제품 거르기는 고른 제품의 부품을 모두
+    담는다."""
+    frame = _many_products_with_two_parts(12, "P01")
+
+    demand = build_process_product_demand(
+        frame, process="Proc", split="제품정보", months=[202601], multi_part={"P01"}
+    )
+    assert demand[PRODUCT_LABEL_COLUMN].tolist() == [
+        f"P01 ({PART_A})",
+        *(f"P{index:02d}" for index in range(2, 13)),
+        "그 밖 1개",
+    ]
+    assert demand[GROUPED_COUNT_COLUMN].iloc[-1] == 1
+    assert demand["202601"].iloc[-1] == pytest.approx(0.5)
+    assert demand["202601"].sum() == pytest.approx(sum(range(1, 13)))
+
+    chosen = build_process_product_demand(
+        frame,
+        process="Proc",
+        split="제품정보",
+        months=[202601],
+        products=["P01"],
+        multi_part={"P01"},
+    )
+    assert chosen[PRODUCT_LABEL_COLUMN].tolist() == [
+        f"P01 ({PART_A})",
+        f"P01 ({PART_B})",
+        "그 밖 11개 (거르기 밖 포함)",
+    ]
+
+
 # ------------------------------------------------------------------ 경로 추적
 
 
@@ -531,7 +694,7 @@ def test_route_factors_multiply_back_to_the_unit_capacity(tables: dict[str, pd.D
 
 
 def test_route_trace_matches_the_securement_demand(tables: dict[str, pd.DataFrame]) -> None:
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     row = securement.loc[
         securement["공정"].eq(WAFER_PROCESS) & securement["생산계획년월"].eq(TRACE_MONTH)
@@ -547,6 +710,29 @@ def test_route_trace_matches_the_securement_demand(tables: dict[str, pd.DataFram
     assert float(top["비중"].sum()) == pytest.approx(1.0)
 
 
+def test_two_parts_of_one_product_trace_as_two_route_rows() -> None:
+    """한 제품이 두 부품(CUSTOM)이면 경로 추적이 부품마다 한 줄이고, 줄마다 검산이 맞는다.
+
+    경로 키에 CUSTOM 이 빠지면 두 부품이 "first" 로 한 줄에 접혀 한 부품의 인자로 다른 부품의
+    부하를 나누게 된다. 견본은 B 부품의 UPEH 만 바꿔 두 줄의 대당 Capa 가 갈린다.
+    """
+    trace = _trace(two_part_tables(), WAFER_PROCESS, TRACE_MONTH)
+    routes = trace.routes
+    parts = routes.loc[routes["제품정보"].eq(TWO_PART_PRODUCT)].sort_values("CUSTOM")
+
+    assert parts["CUSTOM"].tolist() == [PART_A, PART_B]
+    assert parts["REQB 행 수"].tolist() == [1, 1]
+    assert parts["대당 Capa"].nunique() == 2
+    assert route_factor_product(parts).tolist() == pytest.approx(
+        parts["대당 Capa"].tolist(), rel=1e-12
+    )
+    assert (parts["부하량"] / parts["대당 Capa"]).tolist() == pytest.approx(
+        parts["소요대수"].tolist(), rel=1e-12
+    )
+    assert trace.evidence.route_count == len(routes)
+    assert trace.evidence.required == pytest.approx(float(routes["소요대수"].sum()), abs=TOLERANCE)
+
+
 def _with_second_step(tables: dict[str, pd.DataFrame], process: str) -> dict[str, pd.DataFrame]:
     """공정 하나에 STEP 을 하나 더 붙인다. 둘째 STEP 은 UPEH 가 두 배라 소요가 절반이다."""
     edited = dict(tables)
@@ -559,6 +745,45 @@ def _with_second_step(tables: dict[str, pd.DataFrame], process: str) -> dict[str
             added["UPEH"] = pd.to_numeric(added["UPEH"]) * 2
         edited[name] = pd.concat([table, added], ignore_index=True)
     return edited
+
+
+def test_the_top_products_name_the_parts_like_the_product_rows() -> None:
+    """① 근거 카드의 상위 제품은 제품별 소요대수 분류 행과 같은 판정 · 같은 이름표 · 같은 숫자다
+    (PRC-01). 제품 수도 이름표 단위로 센다."""
+    split_tables = two_part_tables()
+    unit, required = get_capacity_and_demand(
+        split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    multi_part = multi_part_products(split_tables["RQ_PKG_PLAN"])
+    rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
+    trace = build_process_month_trace(
+        rows,
+        _capacity_tables(split_tables),
+        process=WAFER_PROCESS,
+        month=TRACE_MONTH,
+        multi_part=multi_part,
+    )
+    demand = build_process_product_demand(
+        required,
+        process=WAFER_PROCESS,
+        split="제품정보",
+        months=[TRACE_MONTH],
+        multi_part=multi_part,
+        limit=10_000,
+    )
+
+    top = trace.evidence.top_products
+    shown = dict(zip(demand[PRODUCT_LABEL_COLUMN], demand[month_column(TRACE_MONTH)], strict=True))
+    assert {_part_label(PART_A), _part_label(PART_B)} <= set(top[PRODUCT_LABEL_COLUMN])
+    for label, value in zip(top[PRODUCT_LABEL_COLUMN], top["소요대수"], strict=True):
+        assert value == pytest.approx(shown[label], abs=TOLERANCE, rel=0)
+    assert top.loc[top["제품정보"].eq(TWO_PART_PRODUCT), "CUSTOM"].tolist() == [PART_A, PART_B]
+    assert trace.evidence.product_count == len(shown)
+    assert float(top["비중"].sum()) == pytest.approx(1.0)
+
+    whole = _trace(split_tables, WAFER_PROCESS, TRACE_MONTH).evidence
+    assert TWO_PART_PRODUCT in set(whole.top_products[PRODUCT_LABEL_COLUMN])
+    assert whole.product_count == trace.evidence.product_count - 1
 
 
 def test_unique_demand_is_counted_once_across_steps(tables: dict[str, pd.DataFrame]) -> None:
@@ -646,7 +871,7 @@ def _month_rows_of(rows: pd.DataFrame, process: str, month: int) -> pd.DataFrame
 def test_rule_exclusions_are_counted_apart_from_errors(tables: dict[str, pd.DataFrame]) -> None:
     """PKG 의 Buffer 아닌 행(규칙상 제외)은 오류 제외 수에 들지 않는다 — 정상 공정이 늘 「제외 경로
     n」을 띄우지 않게."""
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
     base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
     pkg = base.copy()
@@ -677,7 +902,7 @@ def test_a_process_with_two_demand_bases_still_gives_its_evidence(
 ) -> None:
     """공정당 소요기준 하나는 본 계산이 강제하지 않는다. 그 데이터에서도 근거 요약은 멈추지 않고
     원수요 키로 중복을 뺀 부하량을 낸다."""
-    unit, required = get_capacity_and_demand(tables)
+    unit, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
     base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
     second_step = base.assign(STEP_SEQ="DEMO-P201")
@@ -704,6 +929,40 @@ def test_a_month_without_rows_gives_an_empty_trace(tables: dict[str, pd.DataFram
     assert trace.evidence.effective_capacity is None
 
 
+def test_the_load_basis_column_stands_only_for_a_declared_process() -> None:
+    """「부하량 근거」 칸은 공정이 부하 예외 선언에 있을 때만 「부하량」 바로 뒤에 선다 — 산식이
+    바꾼 줄만 글이 있다. 결과 프레임 칸(`ROUTE_COLUMNS`)은 그대로이고 받은 표를 고치지 않는다."""
+    routes = pd.DataFrame(
+        [
+            {"WF 구분": "Core", "소요기준": "WF", "부하량": 1.0},
+            {"WF 구분": "TOP_DUMMY", "소요기준": "WF", "부하량": 0.0},
+            {"WF 구분": "Buffer", "소요기준": "WF", "부하량": 2.0},
+            {"WF 구분": "Core", "소요기준": "CHIP", "부하량": 3.0},
+        ]
+    ).reindex(columns=ROUTE_COLUMNS)
+    declaration = {" demo-exc": BUFFER_X_CORE_CHIP}
+
+    shown = with_route_load_basis(routes, "DEMO-EXC", declaration)
+
+    load = ROUTE_COLUMNS.index("부하량") + 1
+    assert list(shown.columns) == [
+        *ROUTE_COLUMNS[:load],
+        ROUTE_LOAD_BASIS_COLUMN,
+        *ROUTE_COLUMNS[load:],
+    ]
+    assert shown[ROUTE_LOAD_BASIS_COLUMN].tolist() == [
+        "Buffer Wafer × Core 구분_Chip",
+        "부하 0",
+        "",
+        "",
+    ]
+    assert list(routes.columns) == ROUTE_COLUMNS
+    assert with_route_load_basis(routes, "DEMO-OTHER", declaration) is routes
+    assert with_route_load_basis(routes, "DEMO-EXC", NO_ROUTE_LOAD_EXCEPTIONS) is routes
+    empty = routes.iloc[0:0]
+    assert with_route_load_basis(empty, "DEMO-EXC", declaration) is empty
+
+
 # ------------------------------------------------------------------ 캐시 래퍼
 
 
@@ -727,6 +986,47 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[sc.ScenarioCacheKe
 
     monkeypatch.setattr(sc, "get_scenario_capacity_and_demand", recording)
     yield calls
+
+
+def test_the_trace_of_a_folded_key_carries_the_declaration_to_the_basis_column(
+    tables: dict[str, pd.DataFrame], key: sc.ScenarioCacheKey
+) -> None:
+    """경로 추적 칸은 계산 키의 계산 토큰으로 선언을 받는다 — 화면이 같은 토큰에서 푼 선언으로
+    근거 칸을 그리면 숫자와 글이 같은 판이다. 내장 시드의 WF Core 경로는 Buffer 바탕이 없어 선언하면
+    그 줄이 「부하 예외 바탕 없음」 제외로 옮겨 가고 경로 표에는 근거 칸이 선다(바뀐 줄이 없어 빈
+    글)."""
+    declaration = {WAFER_PROCESS: BUFFER_X_CORE_CHIP}
+    folded: sc.ScenarioCacheKey = (
+        key[0],
+        sc.calculation_token(key[1], declaration),
+        key[2],
+        key[3],
+    )
+
+    plain = sc.get_process_month_trace(
+        key, WAFER_PROCESS, TRACE_MONTH, _scenario_tables=tables, _reference_tables=tables
+    )
+    declared = sc.get_process_month_trace(
+        folded, WAFER_PROCESS, TRACE_MONTH, _scenario_tables=tables, _reference_tables=tables
+    )
+
+    def basis_missing(trace: ProcessMonthTrace) -> int:
+        if trace.excluded.empty:
+            return 0
+        return int(trace.excluded["제외사유"].eq(ROUTE_LOAD_BASIS_MISSING_REASON).sum())
+
+    assert basis_missing(plain) == 0
+    assert basis_missing(declared) > 0
+    assert len(declared.routes) < len(plain.routes)
+    unfolded = sc.token_route_exceptions(folded[1])
+    assert (
+        ROUTE_LOAD_BASIS_COLUMN
+        in with_route_load_basis(declared.routes, declared.process, unfolded).columns
+    )
+    assert (
+        with_route_load_basis(plain.routes, plain.process, sc.token_route_exceptions(key[1]))
+        is plain.routes
+    )
 
 
 def _period_months() -> tuple[int, ...]:
@@ -785,6 +1085,89 @@ def test_wrappers_match_the_pure_functions(
     assert cached_trace.evidence._replace(top_products=blank) == expected_trace.evidence._replace(
         top_products=blank
     )
+
+
+def test_the_wrappers_judge_parts_from_the_scenario_plan(key: sc.ScenarioCacheKey) -> None:
+    """두 캐시 래퍼는 받은 시나리오 계획 전체로 부품을 판정한다 — 순수 함수에 그 판정을 준 값과
+    같다."""
+    split_tables = two_part_tables()
+    multi_part = multi_part_products(split_tables["RQ_PKG_PLAN"])
+    unit, required = sc.get_scenario_capacity_and_demand(
+        key, _scenario_tables=split_tables, _reference_tables=split_tables
+    )
+    rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
+
+    for split in PART_SPLITS:
+        cached = sc.get_process_product_demand(
+            key,
+            "no-order",
+            WAFER_PROCESS,
+            split,
+            _period_months(),
+            _scenario_tables=split_tables,
+            _reference_tables=split_tables,
+            _display_order=None,
+        )
+        expected = build_process_product_demand(
+            rows.required_equipment,
+            process=WAFER_PROCESS,
+            split=split,
+            months=_period_months(),
+            multi_part=multi_part,
+        )
+        pd.testing.assert_frame_equal(cached, expected)
+        assert cached["CUSTOM"].isin([PART_A, PART_B]).sum() == 2
+
+    trace = sc.get_process_month_trace(
+        key,
+        WAFER_PROCESS,
+        TRACE_MONTH,
+        _scenario_tables=split_tables,
+        _reference_tables=split_tables,
+    )
+    assert {_part_label(PART_A), _part_label(PART_B)} <= set(
+        trace.evidence.top_products[PRODUCT_LABEL_COLUMN]
+    )
+
+
+def test_splitting_parts_keeps_the_constraint_demand_of_the_whole_product() -> None:
+    """제약 시뮬레이션은 같은 분류 「제품정보」 표를 읽는다 — 부품 행으로 갈라도 제품정보로 맞대므로
+    그 제품의 제약 소요는 접은 표와 같다(부품 단위 고르기는 제약 화면의 몫)."""
+    split_tables = two_part_tables()
+    _, required = get_capacity_and_demand(split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    months = _months(required)
+    parent = _process_demand(required, WAFER_PROCESS, months)
+    process_months = pd.DataFrame(
+        {
+            "공정": WAFER_PROCESS,
+            "생산계획년월": months,
+            "소요대수": parent,
+            "가용대수": [1.0] * len(months),
+        }
+    )
+
+    def constrained(parts: frozenset[str]) -> list[float]:
+        table = build_process_product_demand(
+            required,
+            process=WAFER_PROCESS,
+            split="제품정보",
+            months=months,
+            limit=10_000,
+            multi_part=parts,
+        )
+        inputs = constraint_month_inputs(
+            process_months,
+            table,
+            process=WAFER_PROCESS,
+            product=TWO_PART_PRODUCT,
+            months=months,
+            general_target=lambda month: 1.1,
+        )
+        return [row.constrained_demand for row in inputs]
+
+    parted = constrained(multi_part_products(split_tables["RQ_PKG_PLAN"]))
+    assert parted == pytest.approx(constrained(frozenset()), abs=TOLERANCE, rel=0)
+    assert all(value > 0 for value in parted)
 
 
 def test_changing_split_filter_or_month_does_not_unpickle_the_scenario_frames(
@@ -916,3 +1299,227 @@ def test_home_display_rates_follow_the_home_chain() -> None:
     )
     assert both[202611] == pytest.approx(1.05 * 0.5)
     assert both[202612] == pytest.approx(1.25)
+
+
+# ------------------------------------------------------------------ 부품 × 부하 예외 선언
+
+# 두 부품 견본에 더하는 그 제품의 Buffer 칩 구성 · 수율(합성 값). EDS 수율은 부품마다 다르게 두고
+# Core 의 B 배율(`PART_B_EDS_YIELD_FACTOR`)과도 다르게 두어 두 부품의 산식 배율이 갈린다.
+BUFFER_NET_DIE = 600
+BUFFER_BE_YIELD = 0.97
+BUFFER_EDS_YIELD = {PART_A: 0.9, PART_B: 0.75}
+
+
+def _two_part_tables_with_buffer() -> dict[str, pd.DataFrame]:
+    """두 부품 견본에 그 제품의 Buffer 칩 구성 · 수율 행을 부품마다 더한 표.
+
+    견본은 두 부품이 Capa Code 를 함께 쓰는 꼴이라(`split_capa_code=False`) 부하 키가 `CUSTOM`
+    으로만 갈린다. 그래서 선언 산식의 바탕(부하 키마다 Buffer Wafer 부하 × Core `구분_Chip`)이
+    부품마다 따로 서는 것은 바탕 키에 `CUSTOM` 이 들 때뿐이다 — 빠지면 두 부품의 바탕이 한 키에
+    겹쳐 그 Core 줄이 「부하 예외 바탕 없음」 으로 빠진다(AGENTS 6장 「공정별 부하 산출 예외」 (e)).
+    """
+    tables = two_part_tables(split_capa_code=False)
+    chip = tables["RQ_CHIP_QTY"]
+    buffer_chip = chip.loc[chip["제품정보"].eq(TWO_PART_PRODUCT)].copy()
+    buffer_chip["WF 구분"] = "Buffer"
+    buffer_chip["구분_Chip"] = 1
+    buffer_chip["Net Die"] = BUFFER_NET_DIE
+    tables["RQ_CHIP_QTY"] = pd.concat([chip, buffer_chip], ignore_index=True)
+    yields = tables["RQ_YLD"]
+    buffer_yields = yields.loc[yields["제품정보"].eq(TWO_PART_PRODUCT)].copy()
+    buffer_yields["WF 구분"] = "Buffer"
+    buffer_yields["EDS_수율"] = buffer_yields["CUSTOM"].map(BUFFER_EDS_YIELD)
+    buffer_yields["BE_수율"] = BUFFER_BE_YIELD
+    tables["RQ_YLD"] = pd.concat([yields, buffer_yields], ignore_index=True)
+    return tables
+
+
+def _hand_exception_ratio(tables: dict[str, pd.DataFrame], part: str, month: int) -> float:
+    """선언 공정 Core 경로 부하량의 손 산식 배율 — (Buffer Wafer × Core `구분_Chip`) ÷ 일반 Core
+    Wafer.
+
+    Wafer = 생산수량 × 1000 × `구분_Chip` ÷ EDS ÷ BE ÷ Net Die 라 생산수량이 지워진다. 대당 Capa 는
+    선언과 무관하므로 소요대수(= 부하량 ÷ 대당 Capa)도 같은 배율로 바뀐다.
+    """
+
+    def value(name: str, division: str, column: str) -> float:
+        frame = tables[name]
+        picked = (
+            frame["제품정보"].eq(TWO_PART_PRODUCT)
+            & frame["CUSTOM"].eq(part)
+            & frame["WF 구분"].eq(division)
+        )
+        if "생산계획년월" in frame.columns:
+            picked &= pd.to_numeric(frame["생산계획년월"]).eq(month)
+        values = pd.to_numeric(frame.loc[picked.fillna(False).to_numpy(), column])
+        assert len(values) == 1, (name, division, column)
+        return float(values.sum())
+
+    def wafer(division: str) -> float:
+        return (
+            value("RQ_CHIP_QTY", division, "구분_Chip")
+            / value("RQ_YLD", division, "EDS_수율")
+            / value("RQ_YLD", division, "BE_수율")
+            / value("RQ_CHIP_QTY", division, "Net Die")
+        )
+
+    return wafer("Buffer") * value("RQ_CHIP_QTY", "Core", "구분_Chip") / wafer("Core")
+
+
+def test_a_route_load_declaration_flows_into_the_part_rows_and_their_cache_cells() -> None:
+    """부품이 둘인 제품이 부하 예외 선언 공정을 지날 때 — 선언(계산 토큰)과 부품 갈라 보임(Q7)이
+    함께 닿는 자리다. 선언은 내장 시드 견본의 선언(`seed_route_declaration` — 시드 첫 WF Core
+    공정)이다.
+
+    - (a) 같은 선언에서 부품 행의 합은 접은 표의 그 제품 행과 같다(제품 두 분류 모두).
+    - (b) 선언이 있으면 부품 행이 부품마다 그 부품의 Buffer Wafer × Core `구분_Chip` 으로 바뀐다 —
+      선언 없는 부품 행에 견준 배율이 손으로 푼 산식 배율이고 두 부품의 배율이 다르다.
+    - (c) 계산 키는 빌더(`scenario_cache_key`)로만 짓는다. 선언 판이 바뀌면 키가 바뀌고(비움 판은
+      선언 없음과 같은 키), 공정 Capa 상세 두 래퍼와 제약 시뮬레이션이 같은 길로 읽는 표가 그 판의
+      숫자다 — 근거 ① 상위 제품과 제약 어댑터의 부품 Rc 가 같은 판의 부품 행과 같고, 두 판의 칸이
+      섞이지 않는다.
+    """
+    tables = _two_part_tables_with_buffer()
+    declaration = seed_route_declaration()
+    ((process, formula),) = declaration.items()
+    assert process == WAFER_PROCESS
+    # 판이 바뀜 — 이번 데이터에 없는 공정 하나를 더한 판. 이 공정의 숫자는 같아도 키는 다르다.
+    widened = {**declaration, "DEMO-예외 공정": formula}
+    months = _months(tables["RQ_PKG_PLAN"])
+    columns = [month_column(month) for month in months]
+    scenario = {"content_token": f"test-parts-route-exception-{uuid4().hex}"}
+
+    def key(route_exceptions: Mapping[str, str]) -> sc.ScenarioCacheKey:
+        return sc.scenario_cache_key(
+            1, scenario, months[0], months[-1], route_exceptions=route_exceptions
+        )
+
+    plain_key, declared_key, widened_key = (
+        key(NO_ROUTE_LOAD_EXCEPTIONS),
+        key(declaration),
+        key(widened),
+    )
+    assert key({}) == plain_key
+    assert len({plain_key, declared_key, widened_key}) == 3
+    assert {(item[0], item[2], item[3]) for item in (plain_key, declared_key, widened_key)} == {
+        (plain_key[0], plain_key[2], plain_key[3])
+    }
+
+    display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
+    digest = sc.display_order_digest(tables["RQ_DISPLAY_ORDER"])
+
+    def demand(cache_key: sc.ScenarioCacheKey, split: str = "제품정보") -> pd.DataFrame:
+        return sc.get_process_product_demand(
+            cache_key,
+            digest,
+            process,
+            split,
+            tuple(months),
+            _scenario_tables=tables,
+            _reference_tables=tables,
+            _display_order=display_order,
+            limit=10_000,
+        )
+
+    def part_values(table: pd.DataFrame) -> dict[str, list[float]]:
+        """부품 → 보이는 달마다 그 부품 행의 값(표 차례)."""
+        mine = table.loc[table["제품정보"].eq(TWO_PART_PRODUCT).to_numpy()]
+        return {
+            str(part): [float(item) for item in values]
+            for part, values in zip(
+                mine["CUSTOM"].tolist(), mine[columns].to_numpy().tolist(), strict=True
+            )
+        }
+
+    plain, declared = demand(plain_key), demand(declared_key)
+
+    # (a) 같은 선언 — 부품 행의 합 = 접은 제품 행.
+    rows = sc.get_process_calculation_rows(
+        declared_key, process, _scenario_tables=tables, _reference_tables=tables
+    )
+    for split in PART_SPLITS:
+        parted = demand(declared_key, split)
+        folded = build_process_product_demand(
+            rows.required_equipment,
+            process=process,
+            split=split,
+            months=months,
+            display_order=display_order,
+            limit=10_000,
+        )
+        mine = parted["제품정보"].eq(TWO_PART_PRODUCT).to_numpy()
+        assert parted.loc[mine, "CUSTOM"].tolist() == [PART_A, PART_B], split
+        assert folded["CUSTOM"].eq(PART_NOT_SPLIT).all(), split
+        whole = folded.loc[folded["제품정보"].eq(TWO_PART_PRODUCT), columns]
+        assert parted.loc[mine, columns].sum().tolist() == pytest.approx(
+            whole.sum().tolist(), abs=TOLERANCE, rel=0
+        ), split
+
+    # (b) 선언이 부품 갈래까지 — 부품마다 손 산식 배율.
+    plain_parts, declared_parts = part_values(plain), part_values(declared)
+    assert list(declared_parts) == [PART_A, PART_B]
+    ratios: dict[str, set[float]] = {PART_A: set(), PART_B: set()}
+    for part in (PART_A, PART_B):
+        for month, base, value in zip(months, plain_parts[part], declared_parts[part], strict=True):
+            if base <= 0:
+                continue
+            ratio = _hand_exception_ratio(tables, part, month)
+            ratios[part].add(round(ratio, 12))
+            assert value == pytest.approx(base * ratio, rel=1e-9), (part, month)
+    assert ratios[PART_A] and ratios[PART_B]
+    assert ratios[PART_A].isdisjoint(ratios[PART_B])
+
+    # (c) 판마다 제 칸 — 같은 숫자의 판(widened)도 제 칸이고, 앞 판의 칸은 그대로 남는다.
+    pd.testing.assert_frame_equal(demand(widened_key), declared)
+    pd.testing.assert_frame_equal(demand(plain_key), plain)
+    month = next(
+        month
+        for index, month in enumerate(months)
+        if all(plain_parts[part][index] > 0 for part in (PART_A, PART_B))
+    )
+    for cache_key, table in ((plain_key, plain), (declared_key, declared), (widened_key, declared)):
+        trace = sc.get_process_month_trace(
+            cache_key, process, month, _scenario_tables=tables, _reference_tables=tables
+        )
+        top = dict(
+            zip(
+                trace.evidence.top_products[PRODUCT_LABEL_COLUMN].tolist(),
+                trace.evidence.top_products["소요대수"].tolist(),
+                strict=True,
+            )
+        )
+        shown = dict(
+            zip(
+                table[PRODUCT_LABEL_COLUMN].tolist(),
+                table[month_column(month)].tolist(),
+                strict=True,
+            )
+        )
+        for part in (PART_A, PART_B):
+            assert float(top[_part_label(part)]) == pytest.approx(
+                float(shown[_part_label(part)]), abs=TOLERANCE, rel=0
+            ), (cache_key[1], part)
+
+        process_months = pd.DataFrame(
+            {
+                "공정": process,
+                "생산계획년월": months,
+                "소요대수": [float(table[column].sum()) for column in columns],
+                "가용대수": [1.0] * len(months),
+            }
+        )
+        choices = constraint_product_choices(table)
+        for part in (PART_A, PART_B):
+            choice = choices[_part_label(part)]
+            inputs = constraint_month_inputs(
+                process_months,
+                table,
+                process=process,
+                product=choice.product,
+                part=choice.part,
+                months=months,
+                general_target=lambda _month: 1.1,
+            )
+            assert [item.constrained_demand for item in inputs] == pytest.approx(
+                part_values(table)[part], abs=TOLERANCE, rel=0
+            ), (cache_key[1], part)

@@ -27,6 +27,7 @@ import streamlit as st
 from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.services.product_parts import part_merged_columns
 
 CURRENT_NAME = "현재"
 COMPARISON_NAME = "비교"
@@ -72,8 +73,12 @@ def build_plan_comparison_dumbbell(
     `months` 는 견줄 달(HOME 의 `gap_month_labels` — DB 계산 구간)이다. 과거 구간 달은 현재 쪽에만
     공용 프로필 값이 병합되고 비교 쪽에는 없어, 함께 더하면 과거 입력 전액이 거짓 차이로 잡힌다 —
     표의 GAP 이 그 달을 건너뛰는 것과 같은 규칙이다(2026-10-08 사용자 결정). 주지 않으면 모든 달 칸.
+
+    부품(`CUSTOM`)은 줄 이름의 제품 자리에 녹인다 — 줄 이름은 세부수량 표와 같은 이름표
+    (「제품 (부품) · Stack」, 접힌 부품이면 제품 이름)다(`product_parts.part_merged_columns`).
     """
-    keys = list(dimensions)
+    keys, current_detail = part_merged_columns(current_detail, dimensions)
+    _, comparison_detail = part_merged_columns(comparison_detail, dimensions)
     if not keys or current_detail.empty and comparison_detail.empty:
         return None
     if any(column not in current_detail.columns for column in keys):

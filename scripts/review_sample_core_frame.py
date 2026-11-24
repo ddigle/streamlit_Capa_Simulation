@@ -5,7 +5,8 @@
 Pack Code × Stack) 2~3개, 변형별 경로, TC Bonding Core 의 둘째 STEP, 원천판(W36·W40·W43·W44·
 HYBRID), W44 quirk 9종. UPEH(Main)·ST(MI, 분)는 환산 UPEH(= 60 ÷ ST, CHIP·PKG 는 ÷ 1000)에서
 거꾸로 내고, 환산 UPEH 는 `upeh_scale[(달, 공정)]` × 제품·WF 구분별 고정 편차(0.94~1.06) × STEP
-배수다 — 보정(`review_sample_sim.calibrate`)이 `upeh_scale` 만 바꾼다.
+배수다 — 보정(`review_sample_sim.calibrate`)이 `upeh_scale` 만 바꾼다. CUSTOM 은 변형마다
+`story.variant_custom` 이고, B 부품 행은 EDS 수율 · 환산 UPEH 에 부품 편차를 한 번 더 곱한다.
 
 앱 패키지는 `load_core_data_contract` 하나만 쓴다(컬럼 목록).
 """
@@ -39,6 +40,22 @@ def production_class(cs: str) -> str:
 def route_factor(process: str, product: str, stack: str, division: str) -> float:
     """제품·WF 구분별 고정 UPEH 편차(0.94~1.06) — 달·변형과 무관(업무 키 충돌 없음)."""
     return 0.94 + 0.12 * story.stable_fraction("upeh", process, product, stack, division)
+
+
+def part_eds_factor(product: story.Product, variant: story.Variant) -> float:
+    """B 부품의 EDS 수율 편차(그 밖은 1).
+
+    부품 값(CUSTOM)에 걸어 수율 키가 같은 행끼리 값이 갈리지 않는다."""
+    if story.variant_custom(product, variant) == story.CUSTOM_PART_B:
+        return story.TWO_PART_EDS_FACTOR
+    return 1.0
+
+
+def part_upeh_factor(product: story.Product, variant: story.Variant) -> float:
+    """B 부품의 환산 UPEH 편차(그 밖은 1)."""
+    if story.variant_custom(product, variant) == story.CUSTOM_PART_B:
+        return story.TWO_PART_UPEH_FACTOR
+    return 1.0
 
 
 def process_divisions(process: story.Process, product: story.Product) -> tuple[str, ...]:
@@ -104,8 +121,10 @@ class _Builder:
             scale *= story.W40_PRODUCT_FACTORS.get(product.name, 1.0)
         return scale
 
-    def yields(self, product: story.Product, month: int) -> tuple[float | None, float | None]:
-        eds: float | None = product.eds
+    def yields(
+        self, product: story.Product, variant: story.Variant, month: int
+    ) -> tuple[float | None, float | None]:
+        eds: float | None = product.eds * part_eds_factor(product, variant)
         be: float | None = product.be
         if self.quirks:
             if (product.name, month) == story.QUIRK_NO_YIELD:
@@ -186,7 +205,7 @@ class _Builder:
         net_die: int,
         gb: int | None,
     ) -> dict[str, object]:
-        eds, be = self.yields(product, month)
+        eds, be = self.yields(product, variant, month)
         height = story.stack_height(variant.stack)
         row: dict[str, object] = dict.fromkeys(self.columns, pd.NA)
         plan = 0.0 if quantity is None else quantity
@@ -229,7 +248,7 @@ class _Builder:
                 "BE_수율": pd.NA if be is None else be,
                 "CUM_수율": pd.NA if eds is None or be is None else round(eds * be, 6),
                 "시뮬레이션 누락여부": "N",
-                "CUSTOM": "ST_DEMO",
+                "CUSTOM": story.variant_custom(product, variant),
                 "BONDING": "TC",
             }
         )
@@ -303,6 +322,7 @@ class _Builder:
             self.upeh_scale.get((month, process.name), 1.0)
             * route_factor(process.name, product.name, variant.stack, division)
             * step_factor
+            * part_upeh_factor(product, variant)
         )
         per_kea = process.basis in ("CHIP", "PKG")
         if self.quirks and (product.name, process.name) == story.QUIRK_ZERO_UPEH:

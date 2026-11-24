@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import date, timedelta
@@ -434,6 +435,66 @@ def test_the_chart_point_reads_the_month_of_the_clicked_target() -> None:
     assert chart_point_month({"selection": {"points": []}}) is None
     assert chart_point_month(None) is None
     assert chart_point_month({"selection": {"points": [{"customdata": "글"}]}}) is None
+
+
+def _product_title(sheet: Any) -> str:
+    return next(
+        re.sub(r"<[^>]+>", "", str(item.text))
+        for item in sheet.labels.layout.annotations
+        if "제약 제품 ·" in str(item.text)
+    )
+
+
+def test_the_product_title_of_a_part_keeps_the_part_end_and_a_whole_product_stays() -> None:
+    """부품 줄의 계산표 제목은 넘치면 부품 끝을 남기고 앞(제품 쪽)을 줄인다. 부품이 없는 이름(제품
+    전체 · 부품을 가르지 않는 제품)은 끝을 줄이는 지금 꼴 그대로다."""
+    result = _run()
+    product = "DEMO-H12A"
+    titles = {}
+    for part in ("DEMO_CUSTOM_A", "DEMO_CUSTOM_B"):
+        labels = replace(LABELS, product=f"{product} ({part})", part=part)
+        titles[part] = _product_title(
+            build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
+        )
+    plain = _product_title(
+        build_sheet_canvas(
+            result,
+            replace(LABELS, product=f"{product} (DEMO_CUSTOM_A)"),
+            selected_month=None,
+            show_proportional=False,
+        )
+    )
+
+    assert titles["DEMO_CUSTOM_A"].endswith(" (DEMO_CUSTOM_A)")
+    assert titles["DEMO_CUSTOM_B"].endswith(" (DEMO_CUSTOM_B)")
+    assert all(title.startswith("제약 제품 · D") for title in titles.values())
+    assert plain == "제약 제품 · DEMO-H12A (DEMO_C…"
+
+
+def test_the_product_title_tells_apart_parts_that_share_their_end() -> None:
+    """부품 이름만으로도 제목 칸을 넘치고 끝을 같이 쓰는 두 부품은 고르기의 형제 부품
+    (`ConstraintLabels.part_siblings`)과 끝에서부터 처음 갈리는 글자를 남겨 서로 다른 제목이다."""
+    result = _run()
+    parts = (
+        "DEMO_P1_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+        "DEMO_P2_CUSTOM_KIT_FOR_THE_LONG_SHARED_TAIL",
+    )
+    titles = []
+    for part in parts:
+        labels = replace(
+            LABELS,
+            product=f"DEMO-H12A ({part})",
+            part=part,
+            part_siblings=tuple(other for other in parts if other != part),
+        )
+        titles.append(
+            _product_title(
+                build_sheet_canvas(result, labels, selected_month=None, show_proportional=False)
+            )
+        )
+
+    assert titles[0] != titles[1]
+    assert titles[0].startswith("제약 제품 · (…1_") and titles[1].startswith("제약 제품 · (…2_")
 
 
 def test_the_figures_keep_the_plotly_canonical_spec() -> None:
@@ -965,8 +1026,11 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다). 13 은 고른 달 계산
     카드를 걷어 달 칸 풍선 끝의 「누르면 이 달 계산」 을 빼고(2026-11-08 사용자 그림 메모 g12)
     기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠하고 첫날이 지난 개조 · 대기 막대 풍선에
-    「이미 지난 날짜」 꼬리를 단 판이다(같은 날 답 d11 · 검토 — 같은 배포라 한 번 올렸다)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 13
+    「이미 지난 날짜」 꼬리를 단 판이다(같은 날 답 d11 · 검토 — 같은 배포라 한 번 올렸다). 14 는
+    부품 줄을 고른 계산표의 「제약 제품 · 이름표」 제목이 라벨 칸에 넘치면 부품 끝을 남기고 앞을
+    줄인 판이다(2026-11-24 그림 확인). 15 는 그 제목의 부품이 고르기의 형제 부품의 끝 전체일 때
+    첫 글자부터 남긴 판이다(같은 날 검토 — 끝이 이어진 부품 셋이 같은 제목이 되었다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 15
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:

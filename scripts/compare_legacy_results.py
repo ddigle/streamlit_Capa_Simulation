@@ -17,10 +17,17 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 읽어 온 원시 행은 `derive_q_core_data` 로 파생 프레임을 만든 뒤에 대조에 넘긴다.
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
 만들어지기 때문이다. CS 가 빈 행은 등록과 같이 파생에서 빠지고, 그 수를 머리 줄에 찍는다.
+파생 전에 원천 `CUSTOM` 을 리비전에 맞춘다(`source_custom_aligned` — 리비전 표가 모두 빈 값
+표지면 원천 칸도 표지로). DB 가 `0039`(CUSTOM 칸) 전 사본이면 리비전 표를 0039 와 같은 뜻 — 모든
+행이 빈 값 표지 — 으로 채워 읽고(`revision_compatibility.custom_blank_filled`) 첫 줄 뒤에
+`사본 0039 전` 한 줄을 찍는다 — 이 스크립트도 마이그레이션하지 않는다.
 
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
 (Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
 샘플의 사정이다 — 실데이터의 소요대수는 사내 확인 스크립트가 경로 키로 따로 대조한다.
+세 대조 뒤에 같은 Wafer 대조를 **계획 행(계획기초정보여부 Y · 공정 빈)으로 접어** 한 번 더 하고
+(`plan_row_frame` — 지표 이름이 달라 `--output` 에서도 섞이지 않는다), 그 갈래가 넣고 뺀 행 · 칸
+수(`plan_row_diagnostics`)를 찍는다.
 
 **사외 디버깅용이다.** 허용을 넘은 키는 제품정보·Stack 을 그대로 찍는다. 사내 실데이터로는
 `scripts/inspect_real_data_checks.py --only legacy`(런북 8장)를 쓴다 — 같은 대조를 분포로만 찍는다.
@@ -38,18 +45,31 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from capa_simulation.io.core_data_source import load_core_data_contract  # noqa: E402
+from capa_simulation.io.core_data_source import (  # noqa: E402
+    CoreDataContract,
+    load_core_data_contract,
+)
 from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     COMPARISONS,
+    PLAN_ROW_METRIC,
+    LegacyMetric,
     compare_metric,
     difference_distribution,
+    plan_row_diagnostics,
+    plan_row_frame,
+    source_custom_aligned,
     summarize_comparison,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
+)
+from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
 )
 from capa_simulation.settings import DUCKDB_PATH  # noqa: E402
 
@@ -102,8 +122,20 @@ def _first_revision_id(connection: duckdb.DuckDBPyConnection, dataset_id: str) -
     return str(row[0])
 
 
-def _tables_for(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict[str, pd.DataFrame]:
-    """기술 키를 뺀 RQ 프레임을 계산 서비스가 받는 형태로 돌려준다."""
+def _migration_level(connection: duckdb.DuckDBPyConnection) -> int | None:
+    """DB 의 마이그레이션 최고 번호. 기록 표를 읽지 못하면 None 이다."""
+    try:
+        row = connection.execute("SELECT max(version) FROM app_meta.schema_migration").fetchone()
+    except duckdb.Error:
+        return None
+    return None if row is None or row[0] is None else int(row[0])
+
+
+def _tables_for(
+    connection: duckdb.DuckDBPyConnection, revision_id: str, *, fill_custom: bool = False
+) -> dict[str, pd.DataFrame]:
+    """기술 키를 뺀 RQ 프레임을 계산 서비스가 받는 형태로 돌려준다. `fill_custom` 이면(0039 전
+    사본) CUSTOM 키 표에 빈 값 표지 칸을 채운다."""
     tables: dict[str, pd.DataFrame] = {}
     for physical, logical in _NEEDED_TABLES.items():
         query = (
@@ -111,7 +143,7 @@ def _tables_for(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict
             f"FROM rev_data.{physical} WHERE revision_id = ? ORDER BY source_row_no"
         )
         tables[logical] = connection.execute(query, [revision_id]).fetch_df()
-    return tables
+    return custom_blank_filled(tables) if fill_custom else tables
 
 
 def _report_candidate_columns(raw: pd.DataFrame) -> None:
@@ -133,6 +165,43 @@ def _report_candidate_columns(raw: pd.DataFrame) -> None:
 
 def _rate(value: float | None) -> str:
     return "-" if value is None else f"{value:.4%}"
+
+
+def _report_comparison(metric: LegacyMetric, comparison: pd.DataFrame, tolerance: float) -> None:
+    """지표 하나의 요약 · 차이율 분포 · 허용을 넘은 키(앞 다섯)."""
+    summary = summarize_comparison(comparison, tolerance=tolerance)
+    rate = summary["최대 차이율"]
+    print(
+        f"\n[{metric.label}]"
+        f"\n  대조 {summary['대조 건수']:,}건 · 허용 초과 {summary['허용 초과']:,}건"
+        f" · 최대 차이율 {'-' if rate is None else f'{rate:.4%}'}"
+        f"\n  기존 0·신규 있음 {summary['기존 0·신규 있음']:,}건 (비율을 구할 수 없다)"
+        f" · 값 불일치 {summary['값 불일치']:,}건 (기존 쪽을 접을 수 없어 뺐다)"
+        f"\n  신규에만 있음 {summary['신규에만 있음']:,}건 (기존이 비워 둔 자리를 채운다)"
+        f" · 기존에만 있음 {summary['기존에만 있음']:,}건 (신규가 놓친 자리)"
+    )
+    spread = difference_distribution(comparison)
+    over = dict(spread.over)
+    print(
+        f"  차이율 분포 — 중앙 {_rate(spread.median)} · p95 {_rate(spread.p95)}"
+        f" · >0.1% {over[0.001]:,}키 · >1% {over[0.01]:,}키"
+    )
+    worst = comparison.dropna(subset=["차이율"]).nlargest(5, "차이율")
+    if not worst.empty and float(worst["차이율"].iloc[0]) > tolerance:
+        print(worst.to_string(index=False))
+
+
+def _report_plan_rows(core: pd.DataFrame, contract: CoreDataContract) -> None:
+    """「계획 행으로 접음」 이 넣고 뺀 행 · 칸 수(`plan_row_diagnostics`)."""
+    found = plan_row_diagnostics(core, contract=contract)
+    print(
+        f"  계획 행 진단 — 접은 행 {found.plan_rows:,}(Y · 공정 빈)"
+        f" · Y 인데 공정 있음 {found.flagged_with_process:,}행"
+        f" · 공정 빈데 Y 아님 {found.blank_process_unflagged:,}행"
+        f"\n  칸 {found.cells:,} · 계획 행 없는 칸 {found.cells_without_plan_row:,}"
+        f" · 계획 행 값 둘 이상 칸 {found.cells_with_many_plan_values:,}"
+        f" · 계획 행 밖 갈림이 공정 하나뿐인 칸 {found.cells_split_in_one_process:,}"
+    )
 
 
 def main() -> int:
@@ -158,13 +227,18 @@ def main() -> int:
             [dataset_id],
         ).fetch_df()
         revision_id = _first_revision_id(connection, dataset_id)
-        tables = _tables_for(connection, revision_id)
+        level = _migration_level(connection)
+        before_custom = level is not None and level < CUSTOM_MIGRATION
+        tables = _tables_for(connection, revision_id, fill_custom=before_custom)
     finally:
         connection.close()
 
     if raw.empty:
         raise SystemExit(f"데이터셋 {dataset_id} 의 원천 행이 없습니다.")
 
+    # 리비전이 부품(`CUSTOM`)을 가르지 않았으면 원천 CUSTOM 도 표지로 맞춘 뒤 파생한다 — 0039 전
+    # 등록분은 원천 칸에 그때 값이 남아 있어 그대로면 모든 키가 한쪽에만 남는다.
+    raw = source_custom_aligned(raw, tables)
     contract = load_core_data_contract()
     derived = derive_q_core_data(raw, contract)
     core = derived.frame
@@ -186,32 +260,27 @@ def main() -> int:
         f" · 경로 일부 빠진 계획 {derived.blank_cs.plans_missing_routes:,}줄"
         f" · 대조 {len(core):,}행"
     )
+    if before_custom:
+        print(
+            f"{BEFORE_CUSTOM_COPY} — 마이그레이션 최고 {level} · CUSTOM 키 표는 0039 와 같이 모든 "
+            "행을 빈 값 표지(-)로 채워 읽었다(DB 는 고치지 않는다)"
+        )
     _report_candidate_columns(raw)
 
     frames: list[pd.DataFrame] = []
     for metric in COMPARISONS:
         comparison = compare_metric(core, calculated[metric.legacy_column], metric, contract)
-        summary = summarize_comparison(comparison, tolerance=args.tolerance)
         frames.append(comparison)
-        rate = summary["최대 차이율"]
-        print(
-            f"\n[{metric.label}]"
-            f"\n  대조 {summary['대조 건수']:,}건 · 허용 초과 {summary['허용 초과']:,}건"
-            f" · 최대 차이율 {'-' if rate is None else f'{rate:.4%}'}"
-            f"\n  기존 0·신규 있음 {summary['기존 0·신규 있음']:,}건 (비율을 구할 수 없다)"
-            f" · 값 불일치 {summary['값 불일치']:,}건 (기존 쪽을 접을 수 없어 뺐다)"
-            f"\n  신규에만 있음 {summary['신규에만 있음']:,}건 (기존이 비워 둔 자리를 채운다)"
-            f" · 기존에만 있음 {summary['기존에만 있음']:,}건 (신규가 놓친 자리)"
-        )
-        spread = difference_distribution(comparison)
-        over = dict(spread.over)
-        print(
-            f"  차이율 분포 — 중앙 {_rate(spread.median)} · p95 {_rate(spread.p95)}"
-            f" · >0.1% {over[0.001]:,}키 · >1% {over[0.01]:,}키"
-        )
-        worst = comparison.dropna(subset=["차이율"]).nlargest(5, "차이율")
-        if not worst.empty and float(worst["차이율"].iloc[0]) > args.tolerance:
-            print(worst.to_string(index=False))
+        _report_comparison(metric, comparison, args.tolerance)
+
+    # 「계획 행으로 접음」 — 같은 Wafer 대조를 계획 행(Y · 공정 빈)만으로 한 번 더 한다.
+    plan_rows = plan_row_frame(core)
+    plan_comparison = compare_metric(
+        plan_rows, calculated[PLAN_ROW_METRIC.legacy_column], PLAN_ROW_METRIC, contract
+    )
+    frames.append(plan_comparison)
+    _report_comparison(PLAN_ROW_METRIC, plan_comparison, args.tolerance)
+    _report_plan_rows(core, contract)
 
     if args.output:
         output = Path(args.output)

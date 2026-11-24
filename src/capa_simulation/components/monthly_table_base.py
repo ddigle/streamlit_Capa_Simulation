@@ -86,6 +86,9 @@ COLUMN_LABELS = {
     "Capa Code": "PKG Code",
     "Customer": "거래선",
     "수율 구분": "구분",
+    # 원천 칸 이름 그대로 보인다(칸 이름 계약 — 설계 규칙 UI-CON-02). 분류 칸으로 들어오는
+    # 표마다 같은 머리글이게 이 표에 둔다.
+    "CUSTOM": "CUSTOM",
 }
 
 

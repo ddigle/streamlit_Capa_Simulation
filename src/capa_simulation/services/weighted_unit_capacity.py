@@ -21,6 +21,7 @@ DEMAND_ID_COLUMNS = [
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "CS",

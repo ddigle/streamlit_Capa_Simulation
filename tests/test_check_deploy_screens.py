@@ -605,6 +605,28 @@ def test_the_child_app_starts_with_sso_off() -> None:
     assert env["OTHER"] == "y"
 
 
+def test_the_child_app_starts_without_the_custom_source_table_or_its_switch() -> None:
+    """사내 창에 CUSTOM 원천 표 이름이나 그 끄개가 남아 있어도 자식 앱은 둘 다 받지 않는다 —
+    `registration_custom_lock` 이 보는 「변수 없음」 저장 잠김이 창마다 뒤집히지 않게. 이름은 무거운
+    import 를 피해 글자로 적었으니 어댑터와 대 본다(끄개 상수는 그 판이 든 뒤부터 대 본다)."""
+    from capa_simulation.io import company_bigdataquery_adapter as adapter
+
+    switch = getattr(adapter, "BDQ_CUSTOM_SOURCE_ENV", "CAPA_BDQ_CUSTOM_SOURCE")
+    assert screens.BDQ_CUSTOM_ENVIRONMENT == (adapter.BDQ_CUSTOM_TABLE_ENV, switch)
+    base = {
+        adapter.BDQ_CUSTOM_TABLE_ENV: "demo_schema.demo_custom",
+        switch: "off",
+        "OTHER": "y",
+    }
+
+    env = screens.app_environment(PROJECT_ROOT, base)
+
+    assert not set(screens.BDQ_CUSTOM_ENVIRONMENT) & set(env)
+    assert env["OTHER"] == "y"
+    assert base[adapter.BDQ_CUSTOM_TABLE_ENV] == "demo_schema.demo_custom", "부모 환경은 그대로"
+    assert adapter.custom_table_problem(env.get(adapter.BDQ_CUSTOM_TABLE_ENV, "")) is not None
+
+
 @pytest.mark.parametrize("parent", [None, "", "/somewhere/modules", "OFF"])
 def test_the_child_app_starts_without_internal_modules(parent: str | None) -> None:
     """자식 앱은 모듈 뿌리를 늘 `off` 로 받는다 — 부모 창에 다른 값이 있어도 덮는다.
@@ -1947,6 +1969,12 @@ NEW_ITEM_KEYS = [
     "settings_boxes",
     # 2026-11-06 사용자 답 안 3 — 목록 관리 새 표.
     "scenario_list_grid",
+    # 2026-11-22 사용자 답 Q3 — Admin 「부하 예외」 탭(공정별 부하 산출 예외 선언).
+    "route_exception_tab",
+    # 2026-11-22 사용자 요청 G — 생산 계획 환산 「집계 기준」 전환(산출 기준 총량 | HOME 집계 기준).
+    "load_conversion_basis",
+    # 2026-11-22 사용자 답 Q2 · Q9 — CUSTOM 원천 표 환경변수가 없으면 DB 등록 저장 잠김.
+    "registration_custom_lock",
 ]
 
 
@@ -3194,6 +3222,210 @@ def test_the_settings_boxes_check_does_not_write() -> None:
     assert "close_dialog()" in source
     for label in ("저장", "채우기"):
         assert f'"{label}' not in source
+
+
+# ------------------------------------------------ Admin 「부하 예외」 탭(`route_exception_tab`)
+
+
+def test_the_route_exception_tab_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 탭 묶음 칸 · 탭 이름 끝 글자 · 고르기 칸 key
+    앞머리 · 저장 단추 key 가 앱과 같다."""
+    from capa_simulation import navigation
+    from capa_simulation.components import route_load_exception_admin as admin
+
+    page = _text(PROJECT_ROOT / "app_pages" / "admin_area.py")
+    assert f'TABS_BOX_KEY = "{screens.ADMIN_TABS_BOX_KEY}"' in page
+    assert navigation.ADMIN_AREA_TABS[0].endswith(f" {screens.ADMIN_FIRST_TAB}")
+    assert navigation.ADMIN_AREA_LOG_TAB.endswith(f" {screens.ADMIN_LOG_TAB}")
+    assert navigation.ADMIN_AREA_ROUTE_EXCEPTION_TAB.endswith(
+        f" {screens.ADMIN_ROUTE_EXCEPTION_TAB}"
+    )
+    assert navigation.ADMIN_AREA_NOTICE_TAB.endswith(f" {screens.ADMIN_NOTICE_TAB}")
+    assert screens.ROUTE_EXCEPTION_PICK_KEY == admin.PICK_KEY
+    assert screens.ROUTE_EXCEPTION_SAVE_KEY == admin.SAVE_BUTTON_KEY
+    assert all(
+        admin.pick_slot(formula).key.startswith(f"{screens.ROUTE_EXCEPTION_PICK_KEY}__")
+        for formula in ("buffer_x_core_chip",)
+    )
+
+
+def test_the_route_exception_summary_is_fixed_words_and_counts() -> None:
+    """탭 자리 · 고르기 칸 수 · 잠김 · 저장 잠김 — 화면 글자는 판정에만 쓰고 정한 글과 수만
+    남는다."""
+    names = [
+        "label Proc Rename",
+        "sort 표시순서 관리",
+        "fact_check 원천 품질",
+        "extension 부대공정",
+        "rule 부하 예외",
+        "campaign 공지",
+    ]
+    opened = {"picks": 1, "locked": 1, "save": True}
+    assert screens.summarize_route_exception_tab(names, opened) == (
+        "탭 있음 · 공지 앞 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
+    with_log = [*names[:4], "history 접속 · 작업 기록", *names[4:]]
+    assert screens.summarize_route_exception_tab(with_log, opened) == (
+        "탭 있음 · 공지 앞 · 기록 탭 뒤 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
+    # 옛 판(탭 없음) · 끝에 둔 판(공지 뒤) · 열었는데 칸을 못 읽음.
+    assert screens.summarize_route_exception_tab(names[:4] + names[5:], None) == "탭 없음"
+    moved = [*names[:4], names[5], names[4]]
+    assert screens.summarize_route_exception_tab(moved, opened).startswith("탭 있음 · 공지 앞 아님")
+    assert screens.summarize_route_exception_tab(names, None) == "탭 있음 · 공지 앞 · 칸 읽지 못함"
+    unlocked = {"picks": 1, "locked": 0, "save": False}
+    assert screens.summarize_route_exception_tab(names, unlocked).endswith("잠김 0 · 저장 열림")
+
+
+def test_the_route_exception_check_does_not_write() -> None:
+    """고르지도 누르지도 않는다(쓰지 않는 항목) — 탭을 열어 읽고 처음 탭으로 되돌린다."""
+    item = next(item for item in ITEMS if item.key == "route_exception_tab")
+    assert not item.writes
+    source = inspect.getsource(screens.check_route_exception_tab)
+    assert ".click(" not in source and "set_value" not in source
+    assert "screen.open_tab(ADMIN_FIRST_TAB)" in source
+
+
+# ---------------------------------------- 생산 계획 환산 집계 기준(`load_conversion_basis`)
+
+
+def test_the_load_conversion_basis_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 화면 주소 · 탭 이름 · 조건 카드 · 소요기준
+    칸 · 집계 기준 key 와 두 선택지 글 · 환산 표 제목 줄 key 가 앱과 같다. 화면 파일은 부르면
+    페이지가 돌아 글로 대 본다."""
+    from capa_simulation.components.table_toolbar import table_heading_row_key
+    from capa_simulation.navigation import LOAD_CONVERSION
+    from capa_simulation.services.load_calculator import (
+        MONTHLY_AGGREGATION_HOME,
+        MONTHLY_AGGREGATION_TOTAL,
+    )
+
+    assert LOAD_CONVERSION.href == screens.LOAD_CONVERSION_PAGE
+    page = _text(PROJECT_ROOT / "app_pages" / f"{screens.LOAD_CONVERSION_PAGE}.py")
+    assert f'CONVERSION_TAB_NAME = "{screens.LOAD_CONVERSION_TAB}"' in page
+    assert f'TAB_CONVERSION = ":material/calculate: {screens.LOAD_CONVERSION_TAB}"' in page
+    card = screens.LOAD_CONVERSION_CARD_KEY.removeprefix(screens.CONDITION_CARD_PREFIX)
+    assert f'condition_card("환산 조건", name="{card}")' in page
+    assert f'st.selectbox(\n            "{screens.LOAD_BASIS_LABEL}",' in page
+    assert (
+        f'demand_basis_options: tuple[DemandBasis, ...] = ("{screens.LOAD_BASIS_LOCKED}", "Chip", '
+        f'"{screens.LOAD_BASIS_OPEN}", "Density")'
+    ) in page
+    assert 'AGGREGATED_BASES: frozenset[DemandBasis] = frozenset({"Chip", "Wafer"})' in page
+    assert f'AGGREGATION_KEY = "{screens.LOAD_AGGREGATION_KEY}"' in page
+    assert f'MONTHLY_AGGREGATION_TOTAL: "{screens.LOAD_AGGREGATION_TOTAL}",' in page
+    assert f'MONTHLY_AGGREGATION_HOME: "{screens.LOAD_AGGREGATION_HOME}",' in page
+    assert MONTHLY_AGGREGATION_TOTAL != MONTHLY_AGGREGATION_HOME
+    heading = re.search(r'render_table_heading\(\n\s+"환산",.*?key="([^"]+)"', page, re.S)
+    assert heading is not None
+    assert table_heading_row_key(heading.group(1)) == screens.LOAD_HEADING_ROW_KEY
+    assert "caption_help=heading_caption_help" in page
+
+
+def _look(locked: bool, word: str, *, help: bool = False, chosen: str = "") -> Any:
+    return screens.AggregationLook(locked=locked, chosen=chosen, word=word, help=help)
+
+
+def test_the_load_conversion_basis_summary_is_fixed_words() -> None:
+    """잠김 · 열림 · 제목 낱말 · 풍선 있음/없음 — 화면 글자는 판정에만 쓰고 정한 글만 남는다."""
+    pkg = _look(True, "기준 없음")
+    wafer = _look(False, "총량", chosen=screens.LOAD_AGGREGATION_TOTAL)
+    home = _look(False, "HOME", help=True, chosen=screens.LOAD_AGGREGATION_HOME)
+    assert screens.summarize_load_conversion_basis(pkg, wafer, home, pkg) == (
+        "PKG 잠김(제목 기준 없음) · Wafer 열림(제목 총량 · 풍선 없음) · HOME 고름(제목 HOME · "
+        "풍선 있음) · PKG 다시 잠김(제목 기준 없음) — 정한 동작과 같음"
+    )
+    assert screens.summarize_load_conversion_basis(None) == "집계 기준 칸 없음"
+    # 옛 판(PKG 에서 잠기지 않음) · Wafer 에서 안 풀림 · HOME 인데 풍선 없음 · 돌아가도 안 잠김.
+    assert screens.summarize_load_conversion_basis(
+        _look(False, "기준 없음"), wafer, home, pkg
+    ).startswith("PKG 열림(제목 기준 없음)")
+    stuck = screens.summarize_load_conversion_basis(pkg, _look(True, "기준 없음"))
+    assert (
+        stuck
+        == "PKG 잠김(제목 기준 없음) · Wafer 잠김(제목 기준 없음 · 풍선 없음) — 정한 동작과 다름"
+    )
+    no_tip = screens.summarize_load_conversion_basis(pkg, wafer, _look(False, "HOME"), pkg)
+    assert "HOME 고름(제목 HOME · 풍선 없음)" in no_tip and no_tip.endswith("다름")
+    open_again = screens.summarize_load_conversion_basis(pkg, wafer, home, _look(False, "총량"))
+    assert open_again.endswith("PKG 다시 열림(제목 총량) — 정한 동작과 다름")
+
+
+def test_the_aggregation_word_reads_the_caption_basis() -> None:
+    assert screens.aggregation_word(None) == "제목 줄 없음"
+    assert screens.aggregation_word({"text": "단위: Kea", "help": False}) == "기준 없음"
+    total = {"text": f"단위: 매 · {screens.LOAD_AGGREGATION_TOTAL}"}
+    assert screens.aggregation_word(total) == "총량"
+    home = {"text": f"단위: 매 · {screens.LOAD_AGGREGATION_HOME}"}
+    assert screens.aggregation_word(home) == "HOME"
+
+
+def test_the_load_conversion_basis_check_restores_the_session_choices() -> None:
+    """세션 값만 바꾸는 쓰지 않는 항목이다 — 저장 · 적용을 누르지 않고, 끝에(읽다 깨져도) 집계
+    기준을 먼저 · 소요기준을 나중에 되돌린다(PKG 에서는 전환이 잠겨 거꾸로면 못 되돌린다)."""
+    item = next(item for item in ITEMS if item.key == "load_conversion_basis")
+    assert not item.writes
+    source = inspect.getsource(screens.check_load_conversion_basis)
+    assert "set_value" not in source and "저장" not in source and "적용" not in source
+    restore = source.split("finally:", 1)[1]
+    assert restore.index("_choose_aggregation(screen, first.chosen)") < restore.index(
+        "_choose_basis(screen, before_basis)"
+    )
+    assert "with opened_card(screen, LOAD_CONVERSION_CARD_KEY)" in source
+
+
+# ------------------------------------------ DB 등록 CUSTOM 원천 표 잠김(`registration_custom_lock`)
+
+
+def test_the_registration_custom_lock_contract_matches_the_app() -> None:
+    """저장 단추 글 · 목록 조회 단추 key · 탭 이름이 앱과 같고, 변수가 없을 때 그 단추 풍선이
+    변수 이름을 댄다 — 항목이 풍선에서 찾는 글이다."""
+    from capa_simulation.components import bigdataquery_registration as registration
+    from capa_simulation.io import company_bigdataquery_adapter as adapter
+
+    component = _text(COMPONENTS / "bigdataquery_registration.py")
+    assert f'st.form_submit_button(\n            "{screens.REGISTRATION_SAVE_LABEL}",' in component
+    assert component.count(f'"{screens.REGISTRATION_SAVE_LABEL}"') == 1
+    assert screens.REGISTRATION_CATALOG_KEY == registration.CATALOG_QUERY_BUTTON_KEY
+    assert screens.BDQ_CUSTOM_ENVIRONMENT[0] == adapter.BDQ_CUSTOM_TABLE_ENV
+    for problem in (adapter.CUSTOM_TABLE_MISSING, adapter.CUSTOM_TABLE_MALFORMED):
+        assert screens.BDQ_CUSTOM_ENVIRONMENT[0] in registration.custom_locked_help(problem)
+    assert adapter.custom_table_problem("") == adapter.CUSTOM_TABLE_MISSING
+    page = _text(PROJECT_ROOT / "app_pages" / f"{screens.SCENARIO_MANAGEMENT_PAGE}.py")
+    assert screens.SCENARIO_TABS[2] in page
+
+
+def test_the_registration_custom_lock_summary_is_fixed_words() -> None:
+    """잠김 · 풍선의 변수 이름 있음/없음 · 목록 조회 열림 — 풍선 글은 판정에만 쓰고 찍지 않는다."""
+    help_text = "CUSTOM 원천 표 환경변수(CAPA_BDQ_CUSTOM_TABLE)가 없습니다. 조회 · 저장이 막힙니다"
+    locked = {"save": True, "catalog": False}
+    assert screens.summarize_custom_table_lock(True, locked, help_text) == (
+        "DB 등록 탭 있음 · 저장 잠김 · 풍선에 변수 이름 있음 · 목록 조회 열림"
+    )
+    assert screens.summarize_custom_table_lock(False, None) == "DB 등록 탭 없음"
+    assert screens.summarize_custom_table_lock(True, {"save": None, "catalog": None}) == (
+        "DB 등록 탭 있음 · 저장 단추 없음"
+    )
+    # 변수가 새어 든 자식 · 다른 까닭으로 잠김 · 풍선을 못 읽음 · 목록 조회도 잠김.
+    opened = screens.summarize_custom_table_lock(True, {"save": False, "catalog": False})
+    assert opened == "DB 등록 탭 있음 · 저장 열림 · 목록 조회 열림"
+    other = screens.summarize_custom_table_lock(True, locked, "상세 조회 SQL 이 설정되지 않아")
+    assert "저장 잠김 · 풍선에 변수 이름 없음" in other
+    assert "풍선 못 읽음" in screens.summarize_custom_table_lock(True, locked, "")
+    both = screens.summarize_custom_table_lock(True, {"save": True, "catalog": True}, help_text)
+    assert both.endswith("목록 조회 잠김")
+    assert help_text not in screens.summarize_custom_table_lock(True, locked, help_text)
+
+
+def test_the_registration_custom_lock_check_does_not_press() -> None:
+    """누르지 않는다(쓰지 않는 항목 — DB 에도 사내 DB 에도 닿지 않는다) — 포인터만 올려 풍선을 읽고
+    처음 탭으로 되돌린다."""
+    item = next(item for item in ITEMS if item.key == "registration_custom_lock")
+    assert not item.writes
+    for function in (screens.check_custom_table_lock, screens._hover_text):
+        source = inspect.getsource(function)
+        assert ".click(" not in source and "set_value" not in source and ".press(" not in source
+    assert "screen.open_tab(SCENARIO_TABS[0])" in inspect.getsource(screens.check_custom_table_lock)
 
 
 # ------------------------------------------ 가용설비 현황 Preference(`equipment_preference`)

@@ -28,6 +28,7 @@ from capa_simulation.services.builtin_seed import (
     load_builtin_display_order,
 )
 from capa_simulation.services.core_data_pipeline import prepare_core_data_dataset
+from capa_simulation.services.custom_source_check import CustomSourceCheck
 
 NOW = datetime(2026, 10, 15, 7, 0)
 WAFER = "DEMO_Wafer_Inspect"
@@ -94,6 +95,8 @@ def catalog_frame(*rows: tuple[str, str, str]) -> pd.DataFrame:
 class FakeProvider:
     request: DetailRequest
     frame: pd.DataFrame
+    # CUSTOM 원천 표 대조 수 — 실제 어댑터가 BigDataQuery 등록마다 싣는 칸(없으면 None).
+    custom_check: CustomSourceCheck | None = None
 
     def fetch(self, simulation_code: str) -> CoreDataBatch:
         return CoreDataBatch(
@@ -102,15 +105,18 @@ class FakeProvider:
             source_type="BIGDATAQUERY",
             frame=self.frame.copy(),
             source_registered_at=self.request.registered_at,
+            custom_check=self.custom_check,
         )
 
 
 @dataclass
 class FakeBigDataQuery:
-    """목록·상세 조회 가짜. 부른 기간과 요청을 남긴다."""
+    """목록·상세 조회 가짜. 부른 기간과 요청을 남긴다. `checks` 는 코드마다 실을 CUSTOM 원천
+    대조다."""
 
     catalog: pd.DataFrame
     frames: dict[str, pd.DataFrame] = field(default_factory=dict)
+    checks: dict[str, CustomSourceCheck] = field(default_factory=dict)
     catalog_windows: list[QueryWindow] = field(default_factory=list)
     requests: list[DetailRequest] = field(default_factory=list)
 
@@ -120,7 +126,8 @@ class FakeBigDataQuery:
 
     def provider(self, request: DetailRequest) -> CoreDataProvider:
         self.requests.append(request)
-        return FakeProvider(request, self.frames.get(request.simulation_code, source_frame()))
+        code = request.simulation_code
+        return FakeProvider(request, self.frames.get(code, source_frame()), self.checks.get(code))
 
     @property
     def sources(self) -> AutoUpdateSources:

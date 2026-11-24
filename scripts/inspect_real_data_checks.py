@@ -48,7 +48,14 @@
   (코드 1). 프로세스를 살피지 못하면 잠금만 보고 그 사실을 한 줄 찍는다 — 런북 1-1 로 앱이
   꺼진 것을 먼저 본다. 사본만 열면 앱을 보지 않는다.
 - **읽기만 한다.** 두 DB 를 `read_only=True` 로 열고 저장소(Repository)를 만들지 않는다 —
-  저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다).
+  저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다). 그래서 시뮬레이션 사본이 `0039`(CUSTOM
+  칸) 전이면 리비전 표를 0039 와 같은 뜻 — CUSTOM 키 표의 모든 행이 빈 값 표지 — 으로 채워 읽고
+  (`revision_compatibility.custom_blank_filled`), 손 SQL 은 같은 판정으로 CUSTOM 조건을 빼며,
+  블록 앞에 `사본 0039 전` 한 줄을 찍는다. 0039 뒤로 적힌 사본은 채우지도 빼지도 않는다 — 칸이
+  없으면 계산과 손 SQL 이 그대로 멈춰 드러난다. 소요대수는 앱처럼 사본의 지금 부하 예외 선언
+  (`0040` 판 이력의 마지막 줄 — 같은 연결로 한 번 읽음)을 넘겨 셈하고, 선언 표가 없는 사본(0039 뒤 ·
+  0040 전)은 빈 선언으로 셈하며 블록 앞에 `사본 0040 전` 한 줄을 찍는다. 선언이 있으면 판 · 공정 수
+  한 줄(이름 없음)을 찍고, 8-2 끝 `8-2E` 가 선언 공정의 WF 경로를 원천 `WF수(매)` 와 맞댄다.
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
   코드, 키별 값, 합계 물량, 파일 경로, **예외 문구**를 찍지 않는다 — 이 앱의 오류 문구에는
   설계상 식별값이 박혀 있다. 실패는 예외 종류(클래스 이름)만 적는다. 출력은 리뷰 문서를 거쳐
@@ -129,9 +136,14 @@ from capa_simulation.persistence.equipment_scenario_store import (  # noqa: E402
     schedule_revision_row,
 )
 from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
+from capa_simulation.persistence.models import RouteLoadExceptionState  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
     DATASET_TABLES,
     REVISION_TABLES,
+)
+from capa_simulation.persistence.route_load_exception_store import (  # noqa: E402
+    BEFORE_ROUTE_EXCEPTION_COPY,
+    read_route_load_exceptions,
 )
 from capa_simulation.reference_grid_keys import DATASETS  # noqa: E402
 from capa_simulation.services.bigdataquery_catalog_view import (  # noqa: E402
@@ -146,9 +158,16 @@ from capa_simulation.services.capacity_reference_editor import (  # noqa: E402
 )
 from capa_simulation.services.core_data_derivation import (  # noqa: E402
     CS_PRODUCTION_CLASSES,
+    CUSTOM_BLANK,
     derive_q_core_data,
+    normalize_custom_values,
     plan_row_mask,
 )
+from capa_simulation.services.core_data_pipeline import (  # noqa: E402
+    conflict_cause_counts,
+    summarize_reference_conflicts,
+)
+from capa_simulation.services.dashboard import home_aggregation_wafer_load  # noqa: E402
 from capa_simulation.services.edit_grid import GridSpec, ValueFormat  # noqa: E402
 from capa_simulation.services.edit_grid_payload import build_base  # noqa: E402
 from capa_simulation.services.equipment_contract import (  # noqa: E402
@@ -182,16 +201,22 @@ from capa_simulation.services.frame_contracts import (  # noqa: E402
     duplicate_route_rows,
     match_key,
     normalize_demand_basis,
+    scalar_match_key,
 )
-from capa_simulation.services.korean_particle import with_object_particle  # noqa: E402
+from capa_simulation.services.korean_particle import (  # noqa: E402
+    with_direction_particle,
+    with_object_particle,
+)
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     AGREE_GROUP,
+    COMPARISON_KEYS,
     COMPARISONS,
     FORMULA_INPUTS,
     GROUP_COLUMN,
     NEAR_TARGETS,
     NEAR_TOLERANCE,
     OTHER_GROUP,
+    PLAN_ROW_METRIC,
     RATIO_GROUPS,
     ROUTE_SPLIT_TOLERANCE,
     SUSPECT_GROUP,
@@ -222,6 +247,8 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     legacy_grain,
     measured_wafer_load,
     median_ratio,
+    plan_row_diagnostics,
+    plan_row_frame,
     process_consistency,
     ratio_distribution,
     ratio_groups,
@@ -229,21 +256,37 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     route_factor_by_key,
     route_factor_values,
     scaling_check,
+    source_custom_aligned,
     split_mixed_processes,
     split_route_cells,
     summarize_comparison,
     time_agreement,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
+    MONTHLY_AGGREGATION_HOME,
+    build_monthly_volume,
     calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
+    wf_division_mask,
 )
 from capa_simulation.services.month_filter import (  # noqa: E402
     available_month_range,
     filter_month_range,
 )
-from capa_simulation.services.product_type import WF_DIVISIONS_BY_PRODUCT_TYPE  # noqa: E402
+from capa_simulation.services.product_type import (  # noqa: E402
+    CORE_DIVISION,
+    DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE,
+    EDP_PRODUCT_TYPE,
+    PRODUCT_TYPE_COLUMN,
+    SOURCE_TOP_DIVISION,
+    TOP_DUMMY_DIVISION,
+    WF_DIVISION_COLUMN,
+    WF_DIVISIONS_BY_PRODUCT_TYPE,
+)
+from capa_simulation.services.reference_transformer import (  # noqa: E402
+    build_reference_tables_with_conflicts,
+)
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -254,6 +297,17 @@ from capa_simulation.services.required_equipment import (  # noqa: E402
     UNROUTED_UNUSED_REASON,
     calculate_required_equipment,
     required_exclusion_counts,
+)
+from capa_simulation.services.revision_compatibility import (  # noqa: E402
+    BEFORE_CUSTOM_COPY,
+    CUSTOM_COLUMN,
+    CUSTOM_MIGRATION,
+    custom_blank_filled,
+)
+from capa_simulation.services.route_load_exceptions import (  # noqa: E402
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    RouteLoadDeclaration,
+    route_load_targets,
 )
 from capa_simulation.services.scenario_transform import (  # noqa: E402
     MONTHLY_TABLES,
@@ -338,7 +392,11 @@ LOAD_BUILDERS: Final[dict[str, tuple[str, LoadBuilder]]] = {
     ),
 }
 
-# 소요대수 ≈60 배 가르기. 섞인 공정을 가를 후보 — 경로 키 13 가운데 공정·소요기준을 뺀 것과,
+# 경로 키로 맞댄 대조의 이름 — 수는 경로 키(`REQB_COLUMNS` — `RQ_REQB` 업무 키)의 칸 수에서 낸다.
+ROUTE_KEY_LABEL: Final = f"경로 키 {len(REQB_COLUMNS)}"
+
+# 소요대수 ≈60 배 가르기. 섞인 공정을 가를 후보 — 경로 키(`REQB_COLUMNS`) 가운데 공정·소요기준·
+# CUSTOM 을 뺀 것과,
 # 원천에만 있는 설비 칸(키에 값이 여럿이면 한 묶음으로 센다).
 SPLIT_ATTRIBUTES: Final[tuple[str, ...]] = (
     "Area_Name",
@@ -598,6 +656,24 @@ class Session:
     notes: list[str] = field(default_factory=list)
     # 공식 설비 시나리오 한 벌(8-1·8-4 가 나눈다 — 한 번만 읽는다). 못 읽었으면 그 까닭 글.
     _official: OfficialEquipment | str | None = None
+    # 시뮬레이션 사본의 부하 예외 선언 판 이력(소요대수를 셈하는 블록이 나눈다 — 한 번만 읽는다).
+    # 선언 표가 없는 사본(0040 전)은 None 이다.
+    _route_state: RouteLoadExceptionState | None = None
+    _route_read: bool = False
+
+    def route_state(self) -> RouteLoadExceptionState | None:
+        """사본의 부하 예외 선언 판 이력 — 같은 `read_only` 연결로 한 번 읽는다(표가 없으면
+        None)."""
+        if not self._route_read:
+            assert self.simulation is not None
+            self._route_state = read_route_load_exceptions(self.simulation)
+            self._route_read = True
+        return self._route_state
+
+    def route_exceptions(self) -> RouteLoadDeclaration:
+        """앱이 모든 리비전에 거는 지금 부하 예외 선언 — 선언 표가 없는 사본이면 빈 선언이다."""
+        state = self.route_state()
+        return NO_ROUTE_LOAD_EXCEPTIONS if state is None else state.declaration
 
     def official_equipment(self) -> OfficialEquipment | str:
         """공식 설비 시나리오(공통 최신 + 최신 공식 발행)를 한 번 읽어 둔다."""
@@ -644,6 +720,51 @@ def _versions(connection: duckdb.DuckDBPyConnection, table: str) -> list[int] | 
     except duckdb.Error:
         return None
     return [int(row[0]) for row in rows]
+
+
+def _before_custom(connection: duckdb.DuckDBPyConnection) -> bool:
+    """시뮬레이션 사본이 CUSTOM 칸(0039) 전인가 — 마이그레이션 최고 번호로 본다. 기록 표를 읽지
+    못하면 채우지 않는다(거짓)."""
+    versions = _versions(connection, "app_meta.schema_migration")
+    return versions is not None and max(versions, default=0) < CUSTOM_MIGRATION
+
+
+def _custom_filled(
+    connection: duckdb.DuckDBPyConnection, tables: dict[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """0039 전 사본이면 CUSTOM 키 표에 빈 값 표지 칸을 채운 묶음, 아니면 받은 그대로."""
+    return custom_blank_filled(tables) if _before_custom(connection) else tables
+
+
+def _before_custom_line(connection: duckdb.DuckDBPyConnection) -> str:
+    """블록 앞 한 줄 — 0039 전 사본을 고치지 않고 채워 읽었다는 것."""
+    versions = _versions(connection, "app_meta.schema_migration") or []
+    return (
+        f"- {BEFORE_CUSTOM_COPY} — 시뮬레이션 마이그레이션 최고 {max(versions, default=0)} · "
+        "리비전 표의 CUSTOM 키 표는 0039 와 같이 모든 행을 빈 값 표지(`-`)로 채워 읽고, 손 SQL 은 "
+        "CUSTOM 조건 없이 맞댔다(사본은 고치지 않는다)\n"
+    )
+
+
+def _route_exception_line(session: Session) -> str | None:
+    """블록 앞 한 줄 — 선언 표가 없는 사본(0039 뒤 · 0040 전)은 빈 선언으로 셌다는 것, 선언이 있으면
+    판 · 공정 수(이름 없음). 선언 표가 있고 비었으면 줄이 없다. 0039 전 사본은 부르지 않는다
+    (`사본 0039 전` 줄이 그 사실까지 말한다)."""
+    assert session.simulation is not None
+    state = session.route_state()
+    if state is None:
+        versions = _versions(session.simulation, "app_meta.schema_migration") or []
+        return (
+            f"- {BEFORE_ROUTE_EXCEPTION_COPY} — 시뮬레이션 마이그레이션 최고 "
+            f"{max(versions, default=0)} · 부하 예외 선언 표가 없어 소요대수를 빈 선언으로 셈했다"
+            "(사본은 고치지 않는다)\n"
+        )
+    if not state.declaration:
+        return None
+    return (
+        f"- 부하 예외 선언 판 {state.seq} · 공정 {len(state.declaration):,} — 소요대수를 그 "
+        "선언으로 셈했다(앱과 같다 · 공정 이름은 찍지 않는다)\n"
+    )
 
 
 def _migration_line(
@@ -969,9 +1090,49 @@ class SkippedSource:
     shape: str = NO_SHAPE
 
 
+# 원천 칸 `Capa Code` — 부품 하나의 코드. CUSTOM 종류 · 둘 이상은 이 칸이 빈 행을 빼고 센다.
+CAPA_CODE_COLUMN: Final = "Capa Code"
+
+
+@dataclass(frozen=True)
+class SourceCustom:
+    """원천 `CUSTOM` 의 수 — 리비전에 맞추기(`source_custom_aligned`) **앞**의 원천에서 센다. 값은
+    담지 않는다(요약 `8-2P` · `8-2K` 머리 칸).
+
+    - `kinds` — `Capa Code` 가 빈 행을 뺀 원천의 CUSTOM 종류 수. `normalize_custom_values` 로
+      맞춰 센다 — 빈 값은 표지(`CUSTOM_BLANK`) 하나로, 앞뒤 공백 · 대소문자만 다른 것은 하나로.
+      0039 전에 등록한 데이터셋은 그때 조회문 값 하나라 1 이고, CUSTOM 원천 표로 받은 새 등록은
+      부품 수다(등록 메모 「CUSTOM 원천 대조 — 종류 n」 과 같은 셈). 원천에 칸이 없으면 0,
+      `Capa Code` 칸이 없으면 모든 행으로 센다.
+    - `split_codes` — 빈 값이 아닌 CUSTOM 이 둘 이상인 `Capa Code` 수(등록이 멈추는 꼴이라 새
+      등록은 0).
+    """
+
+    kinds: int = 0
+    split_codes: int = 0
+
+
+def source_custom_counts(raw: pd.DataFrame) -> SourceCustom:
+    """`SourceCustom` 을 센다 — `raw` 는 리비전에 맞추기 전의 원천이다."""
+    if CUSTOM_COLUMN not in raw.columns:
+        return SourceCustom()
+    values = normalize_custom_values(raw[CUSTOM_COLUMN])
+    if CAPA_CODE_COLUMN not in raw.columns:
+        return SourceCustom(kinds=int(values.nunique()))
+    codes = raw[CAPA_CODE_COLUMN].astype("string").str.strip().fillna("")
+    listed = codes.ne("").astype(bool)
+    filled = listed & values.ne(CUSTOM_BLANK).fillna(False).astype(bool)
+    per_code = values.loc[filled].groupby(codes.loc[filled]).nunique()
+    return SourceCustom(
+        kinds=int(values.loc[listed].nunique()), split_codes=int(per_code.gt(1).sum())
+    )
+
+
 @dataclass
 class SourceData:
-    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표.
+    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표. `raw` 는 원천 `CUSTOM` 을
+    리비전에 맞춘 것이다(`source_custom_aligned`). `custom` 은 맞추기 **앞** 원천의 CUSTOM 수다
+    (`SourceCustom` — 맞춘 뒤에는 0039 전 등록분의 조회문 값이 표지로 바뀌어 셀 수 없다).
 
     `required` 는 고를 때 이미 돌린 리비전 1 계산(8-2 가 다시 쓴다). `order` 는 원천에서 온
     데이터셋 가운데 최근부터 차례(`--dataset-id` 면 0), `sources` 는 그 수다. `skipped` 는 계산이
@@ -991,6 +1152,7 @@ class SourceData:
     skipped: tuple[SkippedSource, ...] = ()
     fell_back: bool = False
     place: str | None = None
+    custom: SourceCustom = field(default_factory=SourceCustom)
 
     def label_lines(self) -> list[str]:
         """블록 머리의 데이터셋 줄 — 고른 데이터셋 한 줄과 건너뛴 데이터셋마다 한 줄."""
@@ -1128,7 +1290,11 @@ def _extra_processes(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> 
 def _revision_tables(
     connection: duckdb.DuckDBPyConnection, revision_id: str, dataset_id: str
 ) -> dict[str, pd.DataFrame]:
-    """리비전 하나의 표 — 리비전 표 + 데이터셋 표. 앱이 리비전을 읽는 길과 같은 자리다."""
+    """리비전 하나의 표 — 리비전 표 + 데이터셋 표. 앱이 리비전을 읽는 길과 같은 자리다.
+
+    0039 전 사본이면 CUSTOM 키 표에 칸을 채운다 — 계산(`_calculate_required`)과 원천 맞춤
+    (`source_custom_aligned`) · 8-12 가 모두 이 묶음을 받아 같은 채운 표를 본다.
+    """
     tables: dict[str, pd.DataFrame] = {}
     for logical, physical in REVISION_TABLES.items():
         tables[logical] = load_frame(
@@ -1146,7 +1312,7 @@ def _revision_tables(
             owner_column="dataset_id",
             owner_id=dataset_id,
         )
-    return tables
+    return _custom_filled(connection, tables)
 
 
 def _raw_core_data(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> pd.DataFrame:
@@ -1238,7 +1404,7 @@ def load_source(session: Session) -> SourceData | None:
                 imported_at=imported_at,
                 revision_id=loaded[0],
                 tables=loaded[1],
-                required=_calculate_required(loaded[1]),
+                required=_calculate_required(loaded[1], session.route_exceptions()),
                 place=_source_place(numbers, scenario_id, revision_one=True),
             )
             if session.dataset_id or candidate.required.frame is not None:
@@ -1265,7 +1431,12 @@ def load_source(session: Session) -> SourceData | None:
                 else f"원천에서 온 최근 데이터셋 {len(rows):,}개 모두 리비전 1 이 없다"
             )
             return None
-        raw = _raw_core_data(connection, picked.dataset_id)
+        # 기존 쪽은 이 원천에서 다시 파생한다 — 리비전이 부품을 가르지 않았으면 원천 CUSTOM 도
+        # 표지로 맞춘다(0039 전 등록분은 원천 칸에 그때 값이 남아 있다). 8-2 의 모든 절이 이
+        # `raw` 를 보고, 원천 CUSTOM 의 수(8-2P · 8-2K 머리)만 맞추기 앞에서 센다.
+        source_raw = _raw_core_data(connection, picked.dataset_id)
+        custom = source_custom_counts(source_raw)
+        raw = source_custom_aligned(source_raw, picked.tables)
         extras = _extra_processes(connection, picked.dataset_id)
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
@@ -1306,6 +1477,7 @@ def load_source(session: Session) -> SourceData | None:
         skipped=tuple(item for item in skipped if item.order != picked.order),
         fell_back=fell_back,
         place=picked.place if fell_back else None,
+        custom=custom,
     )
     return session._source
 
@@ -1484,17 +1656,26 @@ def _unit_capacity(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
 
 
-def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    return _required_from(tables, _unit_capacity(tables))
+def _required_equipment(
+    tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> pd.DataFrame:
+    return _required_from(tables, _unit_capacity(tables), route_exceptions)
 
 
-def _required_from(tables: dict[str, pd.DataFrame], unit_capacity: pd.DataFrame) -> pd.DataFrame:
+def _required_from(
+    tables: dict[str, pd.DataFrame],
+    unit_capacity: pd.DataFrame,
+    route_exceptions: RouteLoadDeclaration,
+) -> pd.DataFrame:
+    """소요대수 — `route_exceptions` 는 사본의 지금 부하 예외 선언이다
+    (`Session.route_exceptions`)."""
     return calculate_required_equipment(
         reqb=tables["RQ_REQB"],
         plan=tables["RQ_PKG_PLAN"],
         yield_data=tables["RQ_YLD"],
         chip_qty=tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+        route_exceptions=route_exceptions,
     )
 
 
@@ -1565,7 +1746,7 @@ def _requirement_section(
     month_process = ["생산계획년월", "공정", "소요기준"]
     results = [
         _guarded(
-            "경로 키 13 · 같은 경로 반복을 접음",
+            f"{ROUTE_KEY_LABEL} · 같은 경로 반복을 접음",
             lambda: compare_metric(
                 compared, required, metric, contract, keys=REQB_COLUMNS, grain=finest
             ),
@@ -1677,6 +1858,7 @@ def load_st_reference(session: Session) -> StReference | str | None:
             for row in connection.execute(_ST_CANDIDATES_SQL.format(table=quote(table))).fetchall()
         }
         revisions = [str(row[0]) for row in ordered]
+        fill = _before_custom(connection)
         for position in range(len(revisions) - 1, -1, -1):
             revision_id = revisions[position]
             if revision_id == source.revision_id or revision_id not in candidates:
@@ -1688,6 +1870,8 @@ def load_st_reference(session: Session) -> StReference | str | None:
                 owner_column="revision_id",
                 owner_id=revision_id,
             )
+            if fill:
+                upeh = custom_blank_filled({"RQ_UPEH": upeh})["RQ_UPEH"]
             if _mi_rows(upeh):
                 return StReference(upeh=upeh, order=position + 1, total=len(revisions))
     except (duckdb.Error, RuntimeError) as exc:
@@ -1939,7 +2123,7 @@ def _ratio_breakdown(
     link = RouteLink.build(frame, route)
     sizes = {group: groups.size(group) for group in RATIO_GROUPS}
     lines = [
-        "**소요대수 ≈60 배 가르기** — 위 `경로 키 13` 대조의 키를 기존÷신규 ≈60 · ≈1(각 ±"
+        f"**소요대수 ≈60 배 가르기** — 위 `{ROUTE_KEY_LABEL}` 대조의 키를 기존÷신규 ≈60 · ≈1(각 ±"
         f"{NEAR_TOLERANCE:.0%}) · 그 밖 세 무리로 나눠 60 배가 어디서 나는지 개수로 본다. "
         "ST 를 분 단위로 읽는 정의 뒤에도 남은 무리다 — 판정하지 않는다.",
         "",
@@ -2192,14 +2376,16 @@ def _shape_name(required: Required) -> str:
     return NO_SHAPE if required.problem is None else required.problem.label
 
 
-def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
+def _calculate_required(
+    tables: dict[str, pd.DataFrame], route_exceptions: RouteLoadDeclaration
+) -> Required:
     """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류 · 꼴만 적는다."""
     try:
         unit_capacity = _unit_capacity(tables)
     except Exception as exc:  # 문구에는 키 값이 실린다
         return _stopped("대당 Capa", exc)
     try:
-        return Required(frame=_required_from(tables, unit_capacity))
+        return Required(frame=_required_from(tables, unit_capacity, route_exceptions))
     except Exception as exc:  # 문구에는 키 값이 실린다
         return _stopped("소요대수", exc)
 
@@ -2311,16 +2497,17 @@ def _wafer_route_comparison(
         return compare_metric(wf_route, wf_fresh, metric, contract, keys=REQB_COLUMNS, grain=finest)
 
     results = [
-        _guarded("WF 경로 키 13 · 신규 `부하량`", lambda: compared("부하량")),
+        _guarded(f"WF {ROUTE_KEY_LABEL} · 신규 `부하량`", lambda: compared("부하량")),
         _guarded(
-            "WF 경로 키 13 · 신규 `부하량 × Lot 측정률 × WF측정률`",
+            f"WF {ROUTE_KEY_LABEL} · 신규 `부하량 × Lot 측정률 × WF측정률`",
             lambda: compared("측정 반영 부하량"),
         ),
     ]
     lines = [
-        "신규와 경로 키 13 으로 맞대기 — 소요기준 WF 경로만(CHIP·PKG 경로의 `부하량` 은 "
-        "Wafer 가 아니다). 같은 경로 반복은 접고 Pack Code 는 더한다(소요대수와 같은 접기). "
-        "둘째 줄은 측정률을 부하 쪽으로 옮긴 값이다(소요대수가 실제로 나누는 부하).",
+        f"신규와 {with_direction_particle(ROUTE_KEY_LABEL)} 맞대기 — 소요기준 WF 경로만"
+        "(CHIP·PKG 경로의 `부하량` 은 Wafer 가 아니다). 같은 경로 반복은 접고 Pack Code 는 "
+        "더한다(소요대수와 같은 접기). 둘째 줄은 측정률을 부하 쪽으로 옮긴 값이다(소요대수가 "
+        "실제로 나누는 부하).",
         "",
         *_table(_DIFFERENCE_HEADERS, [_difference_row(result) for result in results]),
         "",
@@ -2392,7 +2579,7 @@ def _wafer_route_section(
 ) -> list[str]:
     """Wafer `WF수(매)` 를 경로 단위로 본다(2026-10-10 사용자 결정).
 
-    원천 안에서 경로 값이 무엇으로 갈리는지 가르고, 신규 계산과 경로 키 13 으로 맞댄다.
+    원천 안에서 경로 값이 무엇으로 갈리는지 가르고, 신규 계산과 경로 키(`REQB_COLUMNS`)로 맞댄다.
     """
     column = "WF수(매)"
     notes = [] if notes is None else notes
@@ -2497,6 +2684,510 @@ def _load_note(names: Sequence[str], results: Sequence[ComparisonResult]) -> str
     return _note("8-2L", *cells)
 
 
+# ---------------------------------------------------------------------------------- 8-2P · 8-2K
+#
+# 「계획 행으로 접음」 대조(사용자 요청 F)와 같은 줄에 덧붙인 확인 칸(2026-11-22 답 Q8 —
+# 원천 CUSTOM 종류 · Dummy 계열 행 · 충돌 키밖 · 그 밖)을 짓는다. 요약 줄은 손으로 옮기는
+# 몫이라 짧은 칸 이름만 싣고 뜻은 런북 8-6 범례가 맡는다. 판정은 넣지 않는다 — 사외가
+# `종류 n` 으로 기대를 가른다.
+
+PLAN_MONTH_COLUMN: Final = "생산계획년월"
+WAFER_LOAD_COLUMN: Final = "WF수(매)"
+# 원천 `WF 구분` 의 dummy 꼴 — 대소문자를 없애고 공백 · 밑줄 · 붙임표를 뗀 이름에 이 낱말이
+# 들면 dummy 꼴이다(앱 목록의 `Dummy` · `Top_Dummy` 를 같은 규칙으로 줄인 공통 조각).
+DUMMY_STEM: Final = scalar_match_key("Dummy")
+_DIVISION_SEPARATORS: Final = r"[\s_\-]+"
+
+
+def _edp_rows(frame: pd.DataFrame) -> pd.Series:
+    """`제품타입` 이 EDP-TSV 인 행(대소문자 무시). 칸이 없으면 모두 거짓이다."""
+    if PRODUCT_TYPE_COLUMN not in frame.columns:
+        return pd.Series(False, index=frame.index, dtype=bool)
+    return (
+        match_key(frame[PRODUCT_TYPE_COLUMN])
+        .eq(scalar_match_key(EDP_PRODUCT_TYPE))
+        .fillna(False)
+        .astype(bool)
+    )
+
+
+def _dummy_series(frame: pd.DataFrame) -> pd.Series:
+    """앱이 Dummy 계열로 보는 행 — HOME 집계와 같은 목록 · 게이트
+    (`DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`)."""
+    return (
+        wf_division_mask(frame, DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE).fillna(False).astype(bool)
+    )
+
+
+@dataclass(frozen=True)
+class DummyRows:
+    """파생 프레임의 Dummy 계열 행 수(값 · 이름 없음 — 요약 `8-2P` 의 `D` · `T` · `못봄`).
+
+    - `dummy` · `top_dummy` — 앱이 Dummy 계열로 보는 행(`_dummy_series`)을 `Top_Dummy` 와 그
+      밖으로 가른 수.
+    - `unrecognized` — 원천 `WF 구분` 이 dummy 꼴(`DUMMY_STEM`)인데 앱이 Dummy 계열로 보지 않은
+      행. EDP-TSV 의 「Dummy」 이름 행은 뺀다(EDP-TSV 에는 Dummy 계열이 없다). 0 이 아니면 표기가
+      앱 목록과 어긋나 HOME 집계에서 빠지지 않은 행이 있다는 뜻이다.
+    """
+
+    dummy: int
+    top_dummy: int
+    unrecognized: int
+
+
+def dummy_series_rows(core: pd.DataFrame) -> DummyRows:
+    """`DummyRows` 를 센다 — `core` 는 파생 프레임(등록과 같은 행)이다."""
+    series = _dummy_series(core)
+    division = match_key(core[WF_DIVISION_COLUMN])
+    top = series & division.eq(scalar_match_key(TOP_DUMMY_DIVISION)).fillna(False).astype(bool)
+    folded = division.str.replace(_DIVISION_SEPARATORS, "", regex=True)
+    dummy_like = folded.str.contains(DUMMY_STEM, regex=False).fillna(False).astype(bool)
+    edp_dummy = _edp_rows(core) & folded.eq(DUMMY_STEM).fillna(False).astype(bool)
+    return DummyRows(
+        dummy=int((series & ~top).sum()),
+        top_dummy=int(top.sum()),
+        unrecognized=int((dummy_like & ~series & ~edp_dummy).sum()),
+    )
+
+
+def _monthly_sums(load: pd.DataFrame) -> pd.Series:
+    """상세 부하량의 달마다 `물량` 합 — index 는 달 글자(`202611` 꼴)."""
+    months = pd.to_numeric(load[PLAN_MONTH_COLUMN], errors="coerce").astype("Int64")
+    values = pd.to_numeric(load["물량"], errors="coerce")
+    sums = values.groupby(months).sum()
+    sums.index = [str(int(month)) for month in sums.index]
+    return sums
+
+
+def _volume_month_sums(volume: pd.DataFrame) -> pd.Series:
+    """환산 표(`build_monthly_volume`)의 달 칸마다 합 — 그 표의 달 칸 이름이 달 글자다."""
+    frame = volume.rename(columns=str)
+    months = [column for column in frame.columns if column.isdigit()]
+    return pd.Series(
+        {month: float(pd.to_numeric(frame[month], errors="coerce").sum()) for month in months},
+        dtype="float64",
+    )
+
+
+@dataclass(frozen=True)
+class SameMonths:
+    """두 달 합이 같은 달 수 `same` 와 두 쪽 달의 합집합 수 `months`. 한쪽에만 있는 달은
+    다르다."""
+
+    same: int
+    months: int
+
+    def cell(self, label: str) -> str:
+        return f"{label} {self.same:,}/{self.months:,}"
+
+
+def same_months(left: pd.Series, right: pd.Series) -> SameMonths:
+    """달 글자 index 의 두 합을 견준다 — 더한 차례에 따른 반올림만 다르면 같다."""
+    months = sorted(set(left.index) | set(right.index))
+    same = sum(
+        1
+        for month in months
+        if month in left.index
+        and month in right.index
+        and math.isclose(float(left[month]), float(right[month]), rel_tol=1e-9, abs_tol=1e-6)
+    )
+    return SameMonths(same=same, months=len(months))
+
+
+def keys_within(comparison: pd.DataFrame, tolerance: float = TIGHT_TOLERANCE) -> pd.Series:
+    """`compare_metric` 결과에서 ±`tolerance` 안에 든 키 — 양쪽에 값이 있고 접을 수 있었으며
+    차이율이 허용 안이거나 차이가 0 인 키다. 두 쪽이 모두 0 인 키는 든다(차이율이 없어 차이로 본다).
+
+    한쪽에만 있는 키 · 원천을 접지 못한 키(`값 불일치`) · 원천 0 인데 앱이 있는 키는 들지 못한다.
+    """
+    legacy = pd.to_numeric(comparison["기존값"], errors="coerce")
+    fresh = pd.to_numeric(comparison["신규값"], errors="coerce")
+    matched = ~comparison["값 불일치"].astype(bool) & legacy.notna() & fresh.notna()
+    rate = pd.to_numeric(comparison["차이율"], errors="coerce")
+    gap = pd.to_numeric(comparison["차이"], errors="coerce")
+    return (matched & (rate.le(tolerance) | gap.eq(0)).fillna(False)).astype(bool)
+
+
+def months_off(monthly: pd.DataFrame, tolerance: float = TIGHT_TOLERANCE) -> int:
+    """달마다 맞댄 대조(`compare_metric` 의 키가 생산계획년월 하나)에서 ±`tolerance` 안에 들지
+    못한 달 수(`keys_within` 의 나머지).
+
+    한쪽에만 있는 달 · 원천을 접지 못한 달(`값 불일치`) · 원천 0 인데 앱이 있는 달도 든다. 두
+    쪽이 모두 0 인 달은 든 것으로 본다.
+    """
+    return int(len(monthly) - keys_within(monthly, tolerance).sum())
+
+
+@dataclass(frozen=True)
+class PlanRowNote:
+    """요약 `8-2P` 한 줄의 수 — `종류 n · 불일치 k · 달 x% · 넘음 m · G a/N · 총 b/N · D a · T b
+    · 못봄 c`.
+
+    `mismatch` 가 None 이면 원천 `WF수(매)` 가 비어 셋째까지의 대조 칸 대신 「빔」 하나다.
+    `mismatch` 는 계획 행 대조(`COMPARISON_KEYS`)의 `값 불일치` 키 수, `largest` 는 달 비의 차이율
+    최대, `off` 는 ±0.1% 안에 들지 못한 달 수(`months_off`)다.
+    """
+
+    custom: SourceCustom
+    home: SameMonths
+    total: SameMonths
+    dummy: DummyRows
+    mismatch: int | None = None
+    largest: float | None = None
+    off: int = 0
+
+    def line(self) -> str:
+        cells = [f"종류 {self.custom.kinds:,}"]
+        if self.mismatch is None:
+            cells.append("빔")
+        else:
+            cells.extend(
+                [
+                    f"불일치 {self.mismatch:,}",
+                    f"달 {_percent(self.largest, 2)}",
+                    f"넘음 {self.off:,}",
+                ]
+            )
+        cells.extend(
+            [
+                self.home.cell("G"),
+                self.total.cell("총"),
+                f"D {self.dummy.dummy:,}",
+                f"T {self.dummy.top_dummy:,}",
+                f"못봄 {self.dummy.unrecognized:,}",
+            ]
+        )
+        return _note("8-2P", *cells)
+
+
+def custom_key_note(custom: SourceCustom, total: int, causes: tuple[int, int] | None) -> str:
+    """요약 `8-2K` 한 줄 — `종류 n · 충돌 t = 키밖 a + 그밖 b · Capa둘이상 s`.
+
+    `causes` 는 (키밖, 그 밖) 묶음 수다. 충돌이 없거나 원인 칸이 없는 옛 꼴이면(None) 식 없이
+    `충돌 t` 다 — 줄 안 식(`합 = 항 + 항`)은 둘로 가를 수 있을 때만 둔다.
+    """
+    conflict = f"충돌 {total:,}"
+    if total and causes is not None:
+        outside, rest = causes
+        conflict += f" = 키밖 {outside:,} + 그밖 {rest:,}"
+    return _note("8-2K", f"종류 {custom.kinds:,}", conflict, f"Capa둘이상 {custom.split_codes:,}")
+
+
+def _plan_row_section(
+    core: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    contract: CoreDataContract,
+    custom: SourceCustom,
+    notes: list[str],
+) -> list[str]:
+    """Wafer 「계획 행으로 접음」 대조 · 원천 집계 대비 달 비 · 환산 탭 달 합 · Dummy 계열
+    행(요약 `8-2P`)."""
+    kinds = f"종류 {custom.kinds:,}"
+    lines = [
+        "**Wafer 계획 행으로 접음** — 원천 `WF수(매)` 를 계획 행(계획기초정보여부 "
+        "Y · 공정 빈)에서만 읽어 같은 대조를 한 번 더 한다. 둘째 줄은 달마다 그 계획 행의 원천 "
+        "집계와 앱 HOME Wafer 계획을 맞댄 것이다 — 두 쪽 모두 EDP 와 Dummy 계열을 뺀다.",
+        "",
+    ]
+    try:
+        plan, yields, chips = tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"]
+        wafer = calculate_wafer_load(plan, yields, chips)
+        home_wafer = home_aggregation_wafer_load(wafer)
+        home_volume = build_monthly_volume(
+            plan, yields, chips, "Wafer", aggregation=MONTHLY_AGGREGATION_HOME
+        )
+        total_volume = build_monthly_volume(plan, yields, chips, "Wafer")
+        home_same = same_months(_volume_month_sums(home_volume), _monthly_sums(home_wafer))
+        total_same = same_months(_volume_month_sums(total_volume), _monthly_sums(wafer))
+        note = PlanRowNote(
+            custom=custom, home=home_same, total=total_same, dummy=dummy_series_rows(core)
+        )
+        dummy = note.dummy
+        if _filled(core, WAFER_LOAD_COLUMN):
+            plan_rows = plan_row_frame(core)
+            keyed = compare_metric(plan_rows, wafer, PLAN_ROW_METRIC, contract)
+            source_side = plan_rows.loc[~(_edp_rows(plan_rows) | _dummy_series(plan_rows))]
+            app_side = home_aggregation_wafer_load(wafer.loc[~_edp_rows(wafer)])
+            monthly = compare_metric(
+                source_side, app_side, PLAN_ROW_METRIC, contract, keys=[PLAN_MONTH_COLUMN]
+            )
+            note = replace(
+                note,
+                mismatch=cast(int, summarize_comparison(keyed)["값 불일치"]),
+                largest=difference_distribution(monthly).maximum,
+                off=months_off(monthly),
+            )
+            found = plan_row_diagnostics(core, contract=contract)
+            rows = [
+                ComparisonResult(f"Wafer `{WAFER_LOAD_COLUMN}` · 계획 행", keyed),
+                ComparisonResult("달 — 원천 집계 ↔ HOME Wafer 계획", monthly),
+            ]
+            lines.extend(
+                [
+                    *_table(_DIFFERENCE_HEADERS, [_difference_row(row) for row in rows]),
+                    "",
+                    f"- 계획 행 진단 — 접은 행 {found.plan_rows:,} · 계획 행인데 공정 있음 "
+                    f"{found.flagged_with_process:,}행 · 공정 빈데 계획 행 아님 "
+                    f"{found.blank_process_unflagged:,}행 · 칸 {found.cells:,} · 계획 행 없는 "
+                    f"칸 {found.cells_without_plan_row:,} · 계획 행 값 둘 이상 칸 "
+                    f"{found.cells_with_many_plan_values:,} · 계획 행 밖 갈림이 공정 하나뿐인 "
+                    f"칸 {found.cells_split_in_one_process:,}",
+                    f"- 달 비 — 달 {len(monthly):,} 가운데 ±{TIGHT_TOLERANCE:.1%} 안에 들지 "
+                    f"못한 달 {note.off:,}(한쪽에만 있는 달 · 접지 못한 달 포함) · 차이율 최대 "
+                    f"{_percent(note.largest, 2)}",
+                ]
+            )
+        else:
+            lines.append("- 원천 `WF수(매)` 가 비어 있다")
+        lines.extend(
+            [
+                "- 환산 탭 달 합 — 「HOME 집계 기준」 이 HOME Wafer 계획과 같은 달 "
+                f"{home_same.same:,}/{home_same.months:,} · 「산출 기준 총량」 이 신규 Wafer "
+                f"부하량 합과 같은 달 {total_same.same:,}/{total_same.months:,}",
+                f"- `{WF_DIVISION_COLUMN}` Dummy 계열(앱 목록) — Dummy {dummy.dummy:,}행 · "
+                f"{TOP_DUMMY_DIVISION} {dummy.top_dummy:,}행 · dummy 꼴인데 앱이 Dummy "
+                f"계열로 보지 않은 행 {dummy.unrecognized:,}(EDP 의 Dummy 이름 행 뺌)",
+                "",
+            ]
+        )
+    except Exception as exc:  # 이 절이 멈춰도 8-2K 와 다음 블록은 잰다
+        notes.append(_note("8-2P", kinds, _failure(exc)))
+        return [*lines, f"- 계획 행으로 접음 — {_failure(exc)}", ""]
+    notes.append(note.line())
+    return lines
+
+
+def _conflict_rows(conflicts: pd.DataFrame) -> list[list[str]]:
+    """RQ 표마다 충돌 묶음 · 키밖 · 그 밖 · 충돌 원천 행 수 — 표 이름은 계약 어휘다."""
+
+    def counted(value: object) -> str:
+        number = cast("float | None", value)
+        return "-" if pd.isna(number) else f"{int(number):,}"
+
+    summary = summarize_reference_conflicts(conflicts)
+    return [
+        [
+            f"`{row['RQ테이블']}`",
+            counted(row["충돌 업무키 그룹수"]),
+            counted(row["키밖 갈림 그룹수"]),
+            counted(row["그 밖 갈림 그룹수"]),
+            counted(row["충돌 원천행수"]),
+        ]
+        for _, row in summary.iterrows()
+    ]
+
+
+def _custom_key_section(
+    source: SourceData, contract: CoreDataContract, notes: list[str]
+) -> list[str]:
+    """원천 CUSTOM 종류 · Capa Code 하나에 둘 이상 · 업무 키 충돌 키밖 / 그 밖(요약 `8-2K`)."""
+    custom = source.custom
+    kinds = f"종류 {custom.kinds:,}"
+    lines = [
+        "**CUSTOM · 업무 키 충돌** — CUSTOM 수는 리비전에 맞추기 앞의 원천으로 센다. 충돌은 "
+        "리비전에 맞춘 원천을 등록과 같은 길로 다시 파생해 센 묶음이고, 업무 키 밖 구분 칸 "
+        "하나로 갈린 것(키밖)과 그 밖(재적재 등)으로 가른다.",
+        "",
+        f"- 원천 CUSTOM 종류 {custom.kinds:,}(Capa Code 가 빈 행 뺌) · Capa Code 하나에 CUSTOM "
+        f"이 둘 이상인 부품 {custom.split_codes:,}",
+    ]
+    try:
+        display_order = source.tables.get("RQ_DISPLAY_ORDER", pd.DataFrame())
+        conflicts = build_reference_tables_with_conflicts(
+            source.raw, display_order, contract
+        ).conflicts
+        other, out_of_key = conflict_cause_counts(conflicts)
+    except Exception as exc:  # 다시 파생이 멈춰도 블록의 나머지와 요약은 지킨다
+        notes.append(_note("8-2K", kinds, _failure(exc)))
+        return [*lines, f"- 업무 키 충돌 — {_failure(exc)}", ""]
+    total = len(conflicts)
+    # `conflict_cause_counts` 는 (그 밖, 키밖) 차례다 — 줄은 키밖을 앞에 둔다.
+    causes = None if other.empty and out_of_key.empty else (int(out_of_key.sum()), int(other.sum()))
+    if total and causes is not None:
+        lines.append(f"- 업무 키 충돌 {total:,}묶음 — 키밖 {causes[0]:,} · 그 밖 {causes[1]:,}")
+    else:
+        lines.append(f"- 업무 키 충돌 {total:,}묶음")
+    if total:
+        headers = ["RQ 표", "충돌 묶음", "키밖", "그 밖", "충돌 원천 행"]
+        lines.extend(["", *_table(headers, _conflict_rows(conflicts))])
+    notes.append(custom_key_note(custom, total, causes))
+    return [*lines, ""]
+
+
+# ---------------------------------------------------------------------------------- 8-2E
+#
+# 공정별 부하 산출 예외(사용자 요청 E · 2026-11-22 답 Q8 ③)가 원천 산식을 따라가는지 본다 — 지금
+# 선언 공정의 소요기준 WF 경로만 원천 경로 `WF수(매)` 와 선언을 건 신규 `부하량` 을 경로 키로
+# 맞댄다(위 Wafer 경로 맞대기와 같은 접기). 원천은 그 공정의 Core 를 Buffer Wafer × Core 구분_Chip
+# 으로, Top_Dummy 를 0 으로 실어 보낸다는 관측이고 나머지 `WF 구분` 은 일반 산식이다. 켬 · 끔
+# 견줌(그 밖의 공정 소요대수 · HOME Wafer 계획이 같은지)은 6-3 a
+# (`inspect_revision_calculations.py`)가 맡는다.
+
+ROUTE_EXCEPTION_METRIC: Final = LegacyMetric(
+    label="부하 예외 경로", legacy_column=WAFER_LOAD_COLUMN, new_column="부하량"
+)
+
+
+@dataclass(frozen=True)
+class KeyAgreement:
+    """`WF 구분` 무리 하나에서 ±0.1% 안에 든 키 `within` 와 그 무리의 키 `keys`."""
+
+    within: int
+    keys: int
+
+    def cell(self, label: str) -> str:
+        return f"{label} {self.within:,}/{self.keys:,}"
+
+
+@dataclass(frozen=True)
+class RouteExceptionNote:
+    """요약 `8-2E` 한 줄의 수 — `선언 n · Core a/N · TD0 b/N · 그밖 c/N · Top비 x(m)`.
+
+    `core` · `top_dummy` · `other` 는 선언 공정의 WF 경로 키를 `WF 구분` 으로 가른 세 무리(`Core` ·
+    `Top_Dummy` · 그 밖 — Buffer · Top · Dummy 와 그 밖 표기)다. `top_ratio` 는 그 밖 가운데 `Top`
+    키의 기존 ÷ 신규 중앙(두 값이 모두 양수인 키 `top_keys` 개 — 없으면 None)이다.
+    """
+
+    declared: int
+    core: KeyAgreement
+    top_dummy: KeyAgreement
+    other: KeyAgreement
+    top_ratio: float | None
+    top_keys: int
+
+    def line(self) -> str:
+        ratio = "-" if self.top_ratio is None else f"{self.top_ratio:.3f}"
+        return _note(
+            "8-2E",
+            f"선언 {self.declared:,}",
+            self.core.cell("Core"),
+            self.top_dummy.cell("TD0"),
+            self.other.cell("그밖"),
+            f"Top비 {ratio}({self.top_keys:,})",
+        )
+
+
+def _division_rows(comparison: pd.DataFrame, division: str) -> pd.Series:
+    """`WF 구분` 이 `division` 인 키(대소문자 · 앞뒤 공백 무시)."""
+    return (
+        match_key(comparison[WF_DIVISION_COLUMN])
+        .eq(scalar_match_key(division))
+        .fillna(False)
+        .astype(bool)
+    )
+
+
+def _agreement(within: pd.Series, rows: pd.Series) -> KeyAgreement:
+    return KeyAgreement(within=int((within & rows).sum()), keys=int(rows.sum()))
+
+
+def route_exception_note(comparison: pd.DataFrame, declared: int) -> RouteExceptionNote:
+    """선언 공정의 WF 경로를 경로 키로 맞댄 `compare_metric` 결과를 `WF 구분` 무리로 가른다.
+
+    든 키는 `keys_within`(±0.1%, 두 쪽 모두 0 인 키도 든다)이다 — `Top_Dummy` 는 신규가 0 이라
+    원천도 0 인 키만 든다. 바탕이 없어 소요대수에서 뺀 Core 줄은 신규 쪽에 없어 들지 못한다.
+    """
+    within = keys_within(comparison)
+    core = _division_rows(comparison, CORE_DIVISION)
+    top_dummy = _division_rows(comparison, TOP_DUMMY_DIVISION)
+    other = ~(core | top_dummy)
+    top = ratio_distribution(comparison.loc[_division_rows(comparison, SOURCE_TOP_DIVISION)])
+    return RouteExceptionNote(
+        declared=declared,
+        core=_agreement(within, core),
+        top_dummy=_agreement(within, top_dummy),
+        other=_agreement(within, other),
+        top_ratio=top.median,
+        top_keys=top.keys,
+    )
+
+
+def _route_exception_rows(comparison: pd.DataFrame) -> list[list[str]]:
+    """무리마다 키 · ±0.1% 안 · 기존에만 · 신규에만 · 값 불일치(`WF 구분` 이름은 계약 어휘)."""
+    within = keys_within(comparison)
+    core = _division_rows(comparison, CORE_DIVISION)
+    top_dummy = _division_rows(comparison, TOP_DUMMY_DIVISION)
+    groups = (
+        (f"`{CORE_DIVISION}`", core),
+        (f"`{TOP_DUMMY_DIVISION}`", top_dummy),
+        ("그 밖", ~(core | top_dummy)),
+        (f"그 밖 가운데 `{SOURCE_TOP_DIVISION}`", _division_rows(comparison, SOURCE_TOP_DIVISION)),
+    )
+    rows = []
+    for label, chosen in groups:
+        summary = summarize_comparison(comparison.loc[chosen])
+        rows.append(
+            [
+                label,
+                _count(int(chosen.sum())),
+                _count(int((within & chosen).sum())),
+                _count(cast(int, summary["기존에만 있음"])),
+                _count(cast(int, summary["신규에만 있음"])),
+                _count(cast(int, summary["값 불일치"])),
+            ]
+        )
+    return rows
+
+
+def _route_exception_section(
+    core: pd.DataFrame,
+    required: Required,
+    grain: Sequence[str],
+    contract: CoreDataContract,
+    declaration: RouteLoadDeclaration,
+    notes: list[str],
+) -> list[str]:
+    """선언 공정의 WF 경로 — 원천 `WF수(매)` ↔ 선언을 건 신규 `부하량`(요약 `8-2E`)."""
+    if not declaration:
+        notes.append(_note("8-2E", "선언 없음"))
+        return ["**부하 예외 경로** — 지금 선언이 없어 맞댈 경로가 없다", ""]
+    declared = f"선언 {len(declaration):,}"
+    within = f"±{TIGHT_TOLERANCE:.1%} 안"
+    lines = [
+        "**부하 예외 경로** — 지금 선언 공정의 소요기준 WF 경로만 원천 `WF수(매)` 와 선언을 건 "
+        f"신규 `부하량` 을 {with_direction_particle(ROUTE_KEY_LABEL)} 맞댄다(위 Wafer 경로 "
+        f"맞대기와 같은 접기). 산식은 `{CORE_DIVISION}` 줄을 Buffer Wafer × Core 구분_Chip 으로, "
+        f"`{TOP_DUMMY_DIVISION}` 줄을 0 으로 바꾸고 그 밖은 일반 산식이다. 든 키는 {within} — "
+        f"바탕이 없어 소요대수에서 뺀 `{CORE_DIVISION}` 줄은 `기존에만` 에 든다. 공정 이름은 찍지 "
+        "않는다.",
+        "",
+    ]
+    if required.frame is None:
+        notes.append(_note("8-2E", declared, _short(required.failure)))
+        return [*lines, f"- 신규 계산 {required.failure} — 경로 키로 맞대지 않았다", ""]
+    if not _filled(core, WAFER_LOAD_COLUMN):
+        notes.append(_note("8-2E", declared, "빔"))
+        return [*lines, "- 원천 `WF수(매)` 가 비어 있다", ""]
+    try:
+        route = _route_frame(core)
+        fresh = required.frame
+        comparison = compare_metric(
+            route.loc[route_load_targets(route, declaration)],
+            fresh.loc[route_load_targets(fresh, declaration)],
+            ROUTE_EXCEPTION_METRIC,
+            contract,
+            keys=REQB_COLUMNS,
+            grain=[*grain, *REQB_COLUMNS],
+        )
+        note = route_exception_note(comparison, len(declaration))
+        rows = _route_exception_rows(comparison)
+    except Exception as exc:  # 이 절이 멈춰도 블록의 나머지와 요약은 지킨다
+        notes.append(_note("8-2E", declared, _failure(exc)))
+        return [*lines, f"- 부하 예외 경로 — {_failure(exc)}", ""]
+    ratio = "-" if note.top_ratio is None else f"{note.top_ratio:.4g}"
+    lines.extend(
+        [
+            *_table(["`WF 구분`", "키", within, "기존에만", "신규에만", "값 불일치"], rows),
+            "",
+            f"- `{SOURCE_TOP_DIVISION}` 줄 기존÷신규 — 두 값이 모두 양수인 키 {note.top_keys:,} · "
+            f"중앙 {ratio}",
+            "",
+        ]
+    )
+    notes.append(note.line())
+    return lines
+
+
 def check_legacy(session: Session) -> list[str]:
     lines = _heading("8-2", "기존 결과 대조 — 분포만", "legacy")
     notes = session.notes
@@ -2542,7 +3233,7 @@ def check_legacy(session: Session) -> list[str]:
 
     lines.extend(
         [
-            "**부하량** — 대조 키 `생산계획년월 × 제품정보 × Stack × WF 구분`, Chip 은 계획 줄"
+            f"**부하량** — 대조 키 `{' × '.join(COMPARISON_KEYS)}`, Chip 은 계획 줄"
             "(Pack Code 합산) × WF 구분(값은 계획 줄 × WF 구분에서 접은 뒤 더함).",
             "",
         ]
@@ -2565,7 +3256,7 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
     _noted(notes, "8-2L", lambda: [_load_note(load_names, load_results)])
 
-    required = source.required or _calculate_required(tables)
+    required = source.required or _calculate_required(tables, session.route_exceptions())
     try:
         lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
@@ -2582,6 +3273,11 @@ def check_legacy(session: Session) -> list[str]:
         )
     )
     lines.extend(_pcb_section(raw, core, grain))
+    lines.extend(_plan_row_section(core, tables, contract, source.custom, notes))
+    lines.extend(_custom_key_section(source, contract, notes))
+    lines.extend(
+        _route_exception_section(core, required, grain, contract, session.route_exceptions(), notes)
+    )
     lines.extend(
         [
             f"- ≈ 는 기준의 ±{NEAR_TOLERANCE:.0%} 안. 기준 "
@@ -3336,20 +4032,32 @@ CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
 # 음수)인 칸 하나에도 그 리비전 계산이 멈췄다. 이 SQL 은 그런 칸을 리비전마다 센다 — 고침이 살린
 # 칸의 규모다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다(`Area_Name` 은 대소문자도
 # 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다. `only_dropped` 가 거짓인 칸은 남는 경로가
-# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12).
-_PERFORMANCE_JOIN: Final = (
-    '{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
-    'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
-    'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
-    'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
-    'AND trim({alias}."Stack") = perf.k AND trim({alias}."WF 구분") = perf.w'
-)
+# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12). `CUSTOM` 은 0039 전 사본(`_before_custom` —
+# 리비전 표를 채우는 것과 같은 판정)에서만 빼고 맞댄다 — 그 사본에는 칸이 없고, 모든 행이 한
+# 값(빈 값 표지)과 같은 뜻이라 빼고 맞대도 같다. 0039 뒤로 적힌 사본에 칸이 없으면 이 SQL 도
+# 멈춰 드러난다.
+
+
+def _performance_join(alias: str, *, custom: bool) -> str:
+    """측정률 표(`alias`)를 경로(`perf`)에 붙이는 조건 — 계산과 같은 키."""
+    custom_condition = f'AND trim({alias}."CUSTOM") = perf.cu ' if custom else ""
+    return (
+        f'{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
+        f'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
+        f'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
+        f'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
+        f'AND trim({alias}."Stack") = perf.k {custom_condition}'
+        f'AND trim({alias}."WF 구분") = perf.w'
+    )
+
+
 _BLANK_CAPACITY_CELLS: Final = """
 WITH {picked},
 perf AS MATERIALIZED (
     SELECT u.revision_id, u."생산계획년월" AS m, trim(u."공정") AS p, trim(u."양산구분") AS q,
            lower(trim(u."Area_Name")) AS a, trim(u."STEP_SEQ") AS s, trim(u."MCP_SEQ") AS c,
-           trim(u."제품정보") AS g, trim(u."Stack") AS k, trim(u."WF 구분") AS w,
+           trim(u."제품정보") AS g, trim(u."Stack") AS k,{custom_column}
+           trim(u."WF 구분") AS w,
            coalesce(lower(trim(u."Area_Name")) = 'main' AND u."UPEH" <= 0, false) AS upeh_out
     FROM rev_data.rq_upeh AS u JOIN picked USING (revision_id)
     WHERE upper(trim(u."소요기준")) NOT IN ('BOX', 'PCB')
@@ -3538,14 +4246,18 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
 
     접는 규칙은 등록·계산과 같은 `frame_contracts.duplicate_route_rows` 다(앞뒤 공백 · 소요기준
     `WAFER` · `Area_Name` 대소문자). 리비전마다 따로 읽어 한 번에 한 리비전만 메모리에 둔다.
+    `CUSTOM` 은 0039 전 사본(`_before_custom`)에서만 키에서 뺀다 — 그 사본은 칸이 없고 모든 행이 한
+    값과 같은 뜻이다.
     """
-    columns = ", ".join(f'"{column}"' for column in REQB_COLUMNS)
+    before_custom = _before_custom(connection)
+    keys = [column for column in REQB_COLUMNS if column != CUSTOM_COLUMN or not before_custom]
+    columns = ", ".join(f'"{column}"' for column in keys)
     found: Counter[str] = Counter()
     for revision_id in _picked_revisions(connection, scope):
         frame = connection.execute(
             f"SELECT {columns} FROM rev_data.rq_reqb WHERE revision_id = ?", [revision_id]
         ).fetch_df()
-        folded = duplicate_route_rows(frame, REQB_COLUMNS) & ~frame.duplicated(subset=REQB_COLUMNS)
+        folded = duplicate_route_rows(frame, keys) & ~frame.duplicated(subset=keys)
         if folded.any():
             found[revision_id] = int(folded.sum())
     return found
@@ -3554,12 +4266,14 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
 def _blank_capacity_cells(
     connection: duckdb.DuckDBPyConnection, scope: CensusScope, condition: str
 ) -> Counter[str]:
+    custom = not _before_custom(connection)
     return _by_owner(
         connection,
         _BLANK_CAPACITY_CELLS.format(
             picked=scope.picked,
-            lot_join=_PERFORMANCE_JOIN.format(alias="lr"),
-            wf_join=_PERFORMANCE_JOIN.format(alias="wr"),
+            custom_column=' trim(u."CUSTOM") AS cu,' if custom else "",
+            lot_join=_performance_join("lr", custom=custom),
+            wf_join=_performance_join("wr", custom=custom),
             condition=condition,
         ),
     )
@@ -3902,14 +4616,16 @@ def census_object_columns(
     """본 리비전마다 리비전 표를 앱이 읽는 길(`load_frame`) 그대로 읽어 객체 칸을 값 종류로 센다.
 
     한 번에 한 리비전의 한 표만 메모리에 둔다. 행이 없는 표는 셀 값이 없어 세지 않는다. `hit` 은
-    `섞임` 칸이 하나라도 있는 리비전 수다. 값 · 칸 이름은 내지 않는다.
+    `섞임` 칸이 하나라도 있는 리비전 수다. 값 · 칸 이름은 내지 않는다. 0039 전 사본은 앱이 0039 를
+    건 뒤 읽을 꼴(CUSTOM 칸 — 글자만)로 채워 센다.
     """
     counts: Counter[str] = Counter()
     hit = 0
     revisions = _picked_revisions(connection, scope)
+    fill = _before_custom(connection)
     for revision_id in revisions:
         mixed_before = counts[OBJECT_MIXED]
-        for physical in REVISION_TABLES.values():
+        for logical, physical in REVISION_TABLES.items():
             frame = load_frame(
                 connection,
                 schema="rev_data",
@@ -3917,6 +4633,8 @@ def census_object_columns(
                 owner_column="revision_id",
                 owner_id=revision_id,
             )
+            if fill:
+                frame = custom_blank_filled({logical: frame})[logical]
             if not len(frame):
                 continue
             for position in range(frame.shape[1]):
@@ -4092,6 +4810,7 @@ _RATIO_DIMENSIONS: Final = (
     "양산구분",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "WF 구분",
     "STEP_SEQ",
     "MCP_SEQ",
@@ -4228,17 +4947,23 @@ def _grid_slice(spec: GridTableSpec, frame: pd.DataFrame, start: int, end: int) 
 def _measure_grid_revision(
     connection: duckdb.DuckDBPyConnection, revision_id: str, tallies: Sequence[GridTally]
 ) -> str | None:
-    """리비전 하나의 아홉 표를 잰다. 기간을 정하지 못하면(UPEH 가 비거나 달 꼴이 틀림) 그 종류."""
-    frames = {
-        tally.spec.table: load_frame(
-            connection,
-            schema="rev_data",
-            table_name=REVISION_TABLES[tally.spec.table],
-            owner_column="revision_id",
-            owner_id=revision_id,
-        )
-        for tally in tallies
-    }
+    """리비전 하나의 아홉 표를 잰다. 기간을 정하지 못하면(UPEH 가 비거나 달 꼴이 틀림) 그 종류.
+
+    0039 전 사본이면 CUSTOM 키 표(UPEH · 측정률 둘)에 칸을 채운다 — 편집 표 차원이 CUSTOM 을 싣는다.
+    """
+    frames = _custom_filled(
+        connection,
+        {
+            tally.spec.table: load_frame(
+                connection,
+                schema="rev_data",
+                table_name=REVISION_TABLES[tally.spec.table],
+                owner_column="revision_id",
+                owner_id=revision_id,
+            )
+            for tally in tallies
+        },
+    )
     try:
         start, end = available_month_range(frames["RQ_UPEH"], "RQ_UPEH")
     except Exception as exc:  # 화면도 이 리비전에서는 편집 표를 세우지 않는다 — 종류만 적는다
@@ -4638,7 +5363,10 @@ def _attached_keys(upeh: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
 
 
 def measure_blank_stop(
-    place: BlankStopPlace, tables: dict[str, pd.DataFrame], raw: pd.DataFrame | None
+    place: BlankStopPlace,
+    tables: dict[str, pd.DataFrame],
+    raw: pd.DataFrame | None,
+    route_exceptions: RouteLoadDeclaration,
 ) -> BlankStop:
     """리비전 하나 — 멈춘 표의 빈 칸을 남은 경로 · 빠질 경로 · 안 붙음으로 가르고 분포를 센다."""
     try:
@@ -4674,7 +5402,7 @@ def measure_blank_stop(
     loaded: int | None = None
     load_failure: str | None = None
     try:
-        required = _required_from(held, capacity)
+        required = _required_from(held, capacity, route_exceptions)
     except Exception as exc:  # 소요대수가 멈춰도 앞의 수는 남긴다. 문구는 찍지 않는다
         load_failure = _failure(exc)
     else:
@@ -4711,13 +5439,18 @@ def measure_blank_stop(
     )
 
 
-def _load_blank_stop(connection: duckdb.DuckDBPyConnection, place: BlankStopPlace) -> BlankStop:
+def _load_blank_stop(
+    connection: duckdb.DuckDBPyConnection,
+    place: BlankStopPlace,
+    route_exceptions: RouteLoadDeclaration,
+) -> BlankStop:
     """리비전 표와 원천 행을 읽어 잰다. 멈추지 않는 것은 까닭 한 마디로 남긴다."""
     if place.dataset_id is None:
         return BlankStop(place, note="데이터셋 없음")
     try:
         tables = _revision_tables(connection, place.revision_id, place.dataset_id)
-        return measure_blank_stop(place, tables, _raw_core_data(connection, place.dataset_id))
+        raw = _raw_core_data(connection, place.dataset_id)
+        return measure_blank_stop(place, tables, raw, route_exceptions)
     except Exception as exc:  # 한 리비전이 멈춰도 다음 리비전은 잰다. 문구는 찍지 않는다
         return BlankStop(place, note=_failure(exc))
 
@@ -4885,7 +5618,8 @@ def check_blank_stops(session: Session) -> list[str]:
             "",
         ]
     )
-    stops = [_load_blank_stop(connection, place) for place in measured]
+    route_exceptions = session.route_exceptions()
+    stops = [_load_blank_stop(connection, place, route_exceptions) for place in measured]
     for stop in stops:
         session.notes.extend(_blank_stop_notes(stop))
     full = [stop for stop in stops if stop.note is None]
@@ -5510,6 +6244,7 @@ RQ_SOURCE_COLUMNS: Final[tuple[str, ...]] = (
     "CS",
     "제품정보",
     "Stack",
+    "CUSTOM",
     "Capa Code",
     "Customer",
     "생산수량",
@@ -5599,7 +6334,7 @@ def plan_line_key_columns() -> list[str]:
 
 
 def finest_key_columns() -> list[str]:
-    """가장 잘게 나눈 키 — 계획 줄 키 ∪ 경로 키 13(`Pack Code` 포함).
+    """가장 잘게 나눈 키 — 계획 줄 키(`Pack Code` 포함) ∪ 경로 키(`REQB_COLUMNS`).
 
     원천이 Pack Code 마다 같은 경로를 되풀이하므로 경로 키만으로는 행을 가르지 못한다.
     """
@@ -6847,6 +7582,12 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         session.close()
         sink.emit(_LOCK_MESSAGE)
         return 1
+    if session.simulation is not None and _before_custom(session.simulation):
+        sink.emit(_before_custom_line(session.simulation))
+    elif session.simulation is not None:
+        route_line = _route_exception_line(session)
+        if route_line is not None:
+            sink.emit(route_line)
     interrupted = False
     try:
         for name in CHECKS:

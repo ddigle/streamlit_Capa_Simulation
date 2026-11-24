@@ -2,11 +2,11 @@
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열두 종
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열세 종
 (표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·Capa 요약·Top5 대역·
-주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다. 비교 시나리오 후보
-목록과 비교 시나리오의 리비전 목록(HOME 이 회차마다 세션의 비교 짝을 대 보는 것)은 비교 대상
-프로필과 한 세대를 쓴다.
+주요공정·확보율 보정·과거 구간·확보율 판정 기준·부하 예외 선언)을 여기서만 캐시한다. 비교
+시나리오 후보 목록과 비교 시나리오의 리비전 목록(HOME 이 회차마다 세션의 비교 짝을 대 보는 것)은
+비교 대상 프로필과 한 세대를 쓴다.
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
@@ -42,6 +42,7 @@ from capa_simulation.persistence.models import (
     GlobalTop5Band,
     MainCaseTargets,
     RevisionSummary,
+    RouteLoadExceptionProfile,
     ScenarioPreset,
     ScenarioSnapshot,
     ScenarioSummary,
@@ -90,6 +91,7 @@ _write_generations: dict[str, int] = {
         "key_process",
         "execution_capacity",
         "past_data",
+        "route_load_exceptions",
         "snapshot",
         "plan",
     )
@@ -705,6 +707,35 @@ def clear_global_past_data_cache() -> None:
     past_table_csv.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_route_load_exceptions_payload(
+    database_path: str, generation: WriteGeneration
+) -> dict[str, Any]:
+    del generation
+    profile = get_scenario_repository(database_path).load_global_route_load_exceptions()
+    return _payload(profile, RouteLoadExceptionProfile)
+
+
+def load_global_route_load_exceptions(database_path: str) -> RouteLoadExceptionProfile:
+    """지금 부하 예외 선언(공용 — 모든 시나리오에 걸린다). 쓰기 세대 키 칸이라 회차마다 불러도 DB 를
+    다시 열지 않는다."""
+    return RouteLoadExceptionProfile(
+        **_load_global_route_load_exceptions_payload(
+            database_path, _write_generation("route_load_exceptions")
+        )
+    )
+
+
+def clear_global_route_load_exceptions_cache() -> None:
+    """부하 예외 선언 프로필만 비운다.
+
+    선언은 어떤 `RQ_*` 표에도 오버레이되지 않아 리비전 스냅샷 캐시는 건드리지 않는다. 판을 넣은 저장
+    길이 부른다.
+    """
+    _bump_write_generation("route_load_exceptions")
+    _load_global_route_load_exceptions_payload.clear()
+
+
 def clear_global_advance_load_cache() -> None:
     """선행 B/O 프로필만 비운다.
 
@@ -750,6 +781,7 @@ def clear_scenario_repository() -> None:
     _load_global_summary_note_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()
+    _load_global_route_load_exceptions_payload.clear()
     _load_global_display_order_payload.clear()
     _load_global_process_rename_payload.clear()
     _clear_snapshot_payloads()

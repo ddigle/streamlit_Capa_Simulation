@@ -299,7 +299,8 @@ def end_cycle(*, carried: bool) -> None:
 
 
 def request_upload() -> None:
-    """공식 발행 COMMIT 뒤에 부른다 — 모으지 않고 바로 올린다. 등록이 없으면 아무 일도 없다."""
+    """공식 발행 · 부하 예외 선언 판 COMMIT 뒤에 부른다 — 모으지 않고 바로 올린다. 등록이 없으면
+    아무 일도 없다."""
     global _UPLOAD_REQUESTED
     if not _ENABLED:
         return

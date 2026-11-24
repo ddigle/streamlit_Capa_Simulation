@@ -40,6 +40,7 @@ from capa_simulation.components.scenario_status import (
 )
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.page_bootstrap import forget_page_dialogs
+from capa_simulation.persistence.models import RouteLoadExceptionState
 from capa_simulation.persistence.repository import RevisionUnchanged
 from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY, pristine_content_token
 from capa_simulation.services.virtual_product import VirtualProductRecord
@@ -195,6 +196,8 @@ def sidebar_replacements() -> dict[str, Any]:
     # 가짜의 모양이 제각각이라(함수·람다·클래스) 값 타입을 하나로 좁히지 않는다.
     return {
         "get_scenario_repository": lambda _path: FakeRepository(),
+        # 저장 검사에 넘기는 부하 예외 선언 판(공용 프로필 — DB 조회 경계) — 빈 판.
+        "route_exceptions_of": lambda _path: RouteLoadExceptionState().profile,
         # 시나리오를 여는 길의 로더(`load_saved_revision` 이 부른다) — 공유 · 잠금은 따로 검증한다
         # (`test_session_table_sharing.py`).
         "load_scenario_snapshot_for_activation": load_snapshot,
