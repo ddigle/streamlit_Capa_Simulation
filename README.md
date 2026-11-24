@@ -22,7 +22,7 @@ HBM·EDP-TSV PKG 라인의 월별 부하량, 대당 Capa, 소요대수, 확보�
 ## 무엇을 계산하나
 
 ```text
-Core_Data (사내 BigDataQuery / 개발용 data/input/Core_Data.csv / 내장 합성 시드)
+Core_Data (사내 BigDataQuery / 원천 CSV 올림 / 개발용 data/input/Core_Data.csv / 내장 합성 시드)
   → 78컬럼 검증 + pandas 로 RQ 16개 표 변환
   → data/capa_simulation.duckdb   시나리오 · 리비전(내용 불변) · 공식버전 · 공용 표시순서
   → 최신 공식버전 또는 고른 리비전 → 사용자별 활성 시나리오(세션)
