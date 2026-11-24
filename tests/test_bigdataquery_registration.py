@@ -23,6 +23,7 @@ from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.state_alerts import alarm_table_place
+from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
 from capa_simulation.services.custom_source_check import (
@@ -327,6 +328,131 @@ def test_the_buttons_a_missing_query_locks_say_why_in_their_balloons(
     save = _save_button(app)
     assert save.disabled is (not detail_ready)
     assert (save.help or None) == (None if detail_ready else registration.DETAIL_LOCKED_HELP)
+
+
+# 표 이름 꼴이 아닌 합성 값 — 값은 풍선 · 알림 어디에도 실리지 않아야 한다.
+MALFORMED_CUSTOM_TABLE = "데모 원천.표"
+
+
+def _set_custom_table(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """CUSTOM 원천 표 환경변수 — None 이면 지운다(conftest 가 합성 값을 넣어 둔다)."""
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+
+
+@pytest.mark.parametrize(
+    ("value", "problem"),
+    [
+        (None, adapter.CUSTOM_TABLE_MISSING),
+        (MALFORMED_CUSTOM_TABLE, adapter.CUSTOM_TABLE_MALFORMED),
+    ],
+    ids=["없음", "꼴 틀림"],
+)
+def test_the_save_button_is_locked_with_the_variable_in_its_help_when_missing(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, problem: str
+) -> None:
+    """CUSTOM 원천 표 환경변수가 없거나 꼴이 틀리면 저장 단추가 잠기고 풍선이 그 변수 이름으로
+    까닭을 말한다 — 자리에 상자를 세우지 않는다(설계 규칙 UI-INP-07 · UI-NTF-02). 풍선은 조회 SQL
+    → CUSTOM 원천 표 → 고른 코드 차례로 앞선 까닭 하나이고, 값은 싣지 않는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    _set_custom_table(monkeypatch, value)
+
+    app = _run()
+
+    save = _save_button(app)
+    assert save.disabled
+    assert save.help == registration.custom_locked_help(problem)
+    assert adapter.BDQ_CUSTOM_TABLE_ENV in save.help
+    assert MALFORMED_CUSTOM_TABLE not in save.help
+    assert not app.error and not app.warning
+    # 고른 코드가 저장할 수 없는 코드여도 앞선 까닭(환경변수)을 말한다.
+    row = CatalogRow("DEMO SIM#9", "저장 불가 줄", "P9", "PLAN 9", "2026-09-02", False)
+    pick = registration.CatalogPick(row=row, window=QueryWindow(date(2026, 9, 1), date(2026, 9, 8)))
+    assert _save_button(_run(**{registration.CATALOG_PICK_KEY: pick})).help == (
+        registration.custom_locked_help(problem)
+    )
+    # 상세 조회 SQL 이 없으면 그것이 먼저다.
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: False)
+    assert _save_button(_run()).help == registration.DETAIL_LOCKED_HELP
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "package_ready", "order"),
+    [
+        (True, True, ("CUSTOM",)),
+        (True, False, ("CUSTOM", "패키지")),
+        (False, True, ("SQL", "CUSTOM")),
+    ],
+    ids=["CUSTOM 만", "CUSTOM + 패키지", "SQL + CUSTOM"],
+)
+def test_ad04_names_the_missing_custom_table_variable(
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_ready: bool,
+    package_ready: bool,
+    order: tuple[str, ...],
+) -> None:
+    """변수가 없으면 상태 알림 `AD-04` 가 서고 전문에 그 변수 이름과 채울 자리가 든다 — 자리에는
+    아무것도 그리지 않는다(설계 규칙 UI-NTF-02 · UI-TXT-08). 전문은 조회 SQL → CUSTOM 원천 표 →
+    패키지 차례이고 짧은 글은 그 가운데 앞선 하나다(알림창 한 줄 안 — `alerts.SHORT_LIMIT`)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: catalog_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: package_ready)
+    _set_custom_table(monkeypatch, None)
+
+    app = _run()
+
+    assert not app.error and not app.warning
+    assert not any(adapter.BDQ_CUSTOM_TABLE_ENV in str(item.value) for item in app.caption)
+    note = active_state(app, "AD-04")
+    assert note is not None
+    full = str(note["full"])
+    assert registration.custom_table_notice(adapter.CUSTOM_TABLE_MISSING) in full
+    assert "README 「초기 설정」 4단계" in full and "배포 설정의 환경변수 표" in full
+    pieces = {
+        "SQL": "조회 SQL이 아직 설정되지 않았습니다",
+        "CUSTOM": adapter.CUSTOM_TABLE_MISSING,
+        "패키지": "bigdataquery 패키지가 없어",
+    }
+    positions = [full.index(pieces[name]) for name in order]
+    assert positions == sorted(positions)
+    assert all(pieces[name] not in full for name in pieces.keys() - set(order))
+    short = registration.SQL_MISSING_SHORT if "SQL" in order else registration.CUSTOM_TABLE_SHORT
+    assert note["short"] == short
+    assert len(registration.CUSTOM_TABLE_SHORT) <= alerts.SHORT_LIMIT
+
+
+def test_ad04_does_not_carry_a_malformed_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """꼴이 틀린 값은 사내 표 이름이거나 잘못 붙여 넣은 다른 값일 수 있어 전문에도 싣지 않는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    _set_custom_table(monkeypatch, MALFORMED_CUSTOM_TABLE)
+
+    note = active_state(_run(), "AD-04")
+
+    assert note is not None
+    assert str(note["full"]).startswith(adapter.CUSTOM_TABLE_MALFORMED)
+    assert note["short"] == registration.CUSTOM_TABLE_SHORT
+    assert not [text for text in (note["short"], note["full"]) if "데모" in str(text)]
+
+
+def test_the_catalog_search_stays_open_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """목록 조회는 CUSTOM 원천 표를 쓰지 않아 변수가 없어도 잠그지 않는다 — 코드를 찾아 두고 변수를
+    넣은 뒤 저장할 수 있다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    _set_custom_table(monkeypatch, None)
+
+    app = _run()
+
+    query = app.button(key=registration.CATALOG_QUERY_BUTTON_KEY)
+    assert not query.disabled and not query.help
+    assert _save_button(app).disabled
 
 
 @pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])
@@ -1669,6 +1795,40 @@ def test_the_saved_source_frame_carries_the_looked_up_custom(tmp_path: Path) -> 
     snapshot = repository.load_revision(scenario.active_revision_id)
     for table in ("RQ_PKG_PLAN", "RQ_REQB"):
         assert set(snapshot.tables[table]["CUSTOM"]) == set(parts.values()), table
+
+
+@pytest.mark.parametrize("value", [None, MALFORMED_CUSTOM_TABLE], ids=["없음", "꼴 틀림"])
+def test_a_save_pressed_without_the_variable_stands_the_same_refusal_beside_the_button(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """잠긴 단추가 눌려 저장 길에 닿아도(풍선과 같은 판정) 상세 조회가 패키지를 부르기 전에 멈추고
+    같은 까닭이 단추 곁 오류로 선다 — 사내 DB 를 묻지 않고 저장하지 않으며 값은 싣지 않는다."""
+    database = _registration_database(tmp_path)
+    _set_custom_table(monkeypatch, value)
+    asked = "def get_data(*, param, **_kwargs):\n"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == 1
+    script = REAL_ADAPTER_SAVE_SCRIPT.replace(
+        asked, asked + '    st.session_state["__asked__"] = True\n'
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = {}
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.run()
+
+    assert not app.exception
+    problem = adapter.CUSTOM_TABLE_MISSING if value is None else adapter.CUSTOM_TABLE_MALFORMED
+    [error] = place_errors(app)
+    assert error.startswith(problem)
+    assert MALFORMED_CUSTOM_TABLE not in error
+    assert "__asked__" not in app.session_state
+    assert registration.REGISTRATION_FLASH_KEY not in app.session_state
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    assert DuckDBScenarioRepository(database).list_scenarios() == []
 
 
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(

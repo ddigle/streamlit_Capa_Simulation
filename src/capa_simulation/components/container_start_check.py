@@ -18,6 +18,12 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
 (읽기 전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
 
+**CUSTOM 원천 표** — 동기화 줄 뒤 · 메모리 한도 줄 앞 「CUSTOM 원천 표」 줄(`custom_table_step`)은
+이 프로세스의 지금 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 을 DB 등록 · 자동 갱신의 상세 조회와 같은 판정
+(`company_bigdataquery_adapter.custom_table_problem`)으로 본다 — 값을 읽는 것이 이 앱 프로세스라
+결과 파일이 아니라 지금 환경이 바른 판정이다. 없거나 꼴이 틀리면 「실패」 라 제목 판정
+`start_verdict` 와 `AD-01` 에 든다. 까닭에는 변수 이름만 싣고 값(사내 표 이름)은 싣지 않는다.
+
 **메모리** — 표 끝 「DuckDB 메모리 한도」 줄(지금 연결 설정의 한도 칸 판정 — 틀린 값이면
 「실패」 라 제목 판정 `start_verdict` 와 `AD-01` 에 든다)과 사실 줄 끝 메모리 값 줄(RSS · 세션 ·
 `cache_data` · DB 마다 DuckDB 회차 끝 표본)은 `memory_diagnostic` 이 짓는다. 둘 다 결과 파일이
@@ -93,25 +99,25 @@ from capa_simulation.components.diagnostic_copy import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.load_diagnostic import load_lines, load_signal
-from capa_simulation.components.memory_diagnostic import (
-    MEMORY_LIMIT_STEP_LABEL,
-    memory_limit_failed,
-    memory_limit_step,
-    memory_lines,
-)
+from capa_simulation.components.memory_diagnostic import memory_limit_step, memory_lines
 from capa_simulation.components.sso_status import (
     CLOCK_FORMAT,
     sso_start_step,
     started_environment_caption,
 )
 from capa_simulation.io import bdq_login, bdq_token
-from capa_simulation.io.company_bigdataquery_adapter import last_query_failed_on_token
+from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_CUSTOM_TABLE_ENV,
+    custom_table_problem,
+    last_query_failed_on_token,
+)
 from capa_simulation.io.container_start_report import (
     BDQ_LOGIN_LABEL,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     STATUS_FAILED,
     STATUS_LABELS,
+    STATUS_OK,
     STEP_LABELS,
     STEP_TOKEN,
     STEPS,
@@ -171,6 +177,8 @@ _ADDRESS = re.compile(
     r"|(?<![\w.-])\d{1,3}(?:\.\d{1,3}){3}(?![\w-]|\.[\w-])"
 )
 _GIB = 1024**3
+# 동기화 줄 뒤 · 메모리 한도 줄 앞의 「CUSTOM 원천 표」 줄(`custom_table_step`).
+CUSTOM_TABLE_STEP_LABEL = "CUSTOM 원천 표"
 # pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
 POD_TAIL_CHARS = 5
 
@@ -246,6 +254,24 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
         tail = f" · {bdq_login.retry_text(login.retry)}" if login.retry else ""
         lines.append(f"**{BDQ_LOGIN_LABEL} 진단** · {literal_markdown(child.text)}{tail}")
     return lines
+
+
+def custom_table_step() -> tuple[str, str, str]:
+    """「서버 시작 점검」 표의 「CUSTOM 원천 표」 줄 `(단계, 결과, 까닭)` — 결과 파일이 아니라 이
+    프로세스의 지금 환경변수를 상세 조회와 같은 판정(`custom_table_problem`)으로 본다. 없거나 꼴이
+    틀리면 「실패」(DB 등록 · 자동 갱신이 멈춘다)이고, 까닭은 그 판정 글에 막히는 것을 잇는다. 값은
+    싣지 않는다."""
+    problem = custom_table_problem()
+    if problem is None:
+        return CUSTOM_TABLE_STEP_LABEL, STATUS_LABELS[STATUS_OK], f"{BDQ_CUSTOM_TABLE_ENV} 있음"
+    reason = f"{problem.removesuffix('.')} — DB 등록 · 자동 갱신이 멈춥니다"
+    return CUSTOM_TABLE_STEP_LABEL, STATUS_LABELS[STATUS_FAILED], reason
+
+
+def live_steps() -> tuple[tuple[str, str, str], ...]:
+    """결과 파일이 아니라 이 프로세스의 지금 설정에서 판정하는 표 끝 두 줄 — 「CUSTOM 원천 표」 ·
+    「DuckDB 메모리 한도」(끝 줄)."""
+    return custom_table_step(), memory_limit_step()
 
 
 def login_rows(report: ContainerStartReport) -> list[tuple[str, str, str]]:
@@ -383,11 +409,10 @@ def render_container_start_check() -> None:
         return
     title = f"서버 시작 점검 · {start_verdict(report)}"
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
-    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다). 끝 줄
-    # 「DuckDB 메모리 한도」 도 지금 연결 설정의 판정이다(`memory_diagnostic.memory_limit_step`).
+    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다). 끝 두 줄
+    # 「CUSTOM 원천 표」 · 「DuckDB 메모리 한도」 도 지금 환경 · 연결 설정의 판정이다(`live_steps`).
     steps = build_step_table(
-        report,
-        (sso_start_step(), *login_rows(report), *sync_rows(report), memory_limit_step()),
+        report, (sso_start_step(), *login_rows(report), *sync_rows(report), *live_steps())
     )
     # 사실 줄 끝의 메모리 · 부하 값 줄은 「지금 토큰」 처럼 이 프로세스의 지금 값이다
     # (`memory_diagnostic` · `load_diagnostic`).
@@ -412,9 +437,10 @@ def render_container_start_check() -> None:
 
 
 def start_verdict(report: ContainerStartReport) -> str:
-    """펼침 제목 끝 판정 — 결과 파일의 판정(`report_verdict`)에, 지금 연결 설정의 DuckDB 한도 칸이
-    틀렸으면 「실패 있음」 을 더한다(그 줄은 `AD-01` 에도 든다)."""
-    return "실패 있음" if memory_limit_failed() else report_verdict(report)
+    """펼침 제목 끝 판정 — 결과 파일의 판정(`report_verdict`)에, 지금 환경 · 연결 설정에서 판정한
+    줄(CUSTOM 원천 표 환경변수 · DuckDB 한도 칸)이 실패면 「실패 있음」 을 더한다(그 줄은 `AD-01`
+    에도 든다 — `live_failed_steps`)."""
+    return "실패 있음" if live_failed_steps() else report_verdict(report)
 
 
 def _render_missing_report() -> None:
@@ -481,12 +507,10 @@ def failed_start_steps(report: ContainerStartReport) -> list[tuple[str, str]]:
 
 
 def live_failed_steps() -> list[tuple[str, str]]:
-    """결과 파일이 아니라 이 프로세스의 지금 설정에서 실패한 단계의 (이름, 까닭) — DuckDB 메모리
-    한도 칸이 틀려 기본으로 물러섰을 때 하나."""
-    if not memory_limit_failed():
-        return []
-    _, _, reason = memory_limit_step()
-    return [(MEMORY_LIMIT_STEP_LABEL, reason)]
+    """결과 파일이 아니라 이 프로세스의 지금 설정에서 실패한 단계의 (이름, 까닭) — 표 차례로 CUSTOM
+    원천 표 환경변수가 없거나 꼴이 틀림, DuckDB 메모리 한도 칸이 틀려 기본으로 물러섬."""
+    failed = STATUS_LABELS[STATUS_FAILED]
+    return [(name, reason) for name, status, reason in live_steps() if status == failed]
 
 
 def start_check_alert_possible() -> bool:

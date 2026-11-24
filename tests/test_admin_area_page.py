@@ -1033,11 +1033,12 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     [expander] = _start_check_expanders(app)
     assert "실패" in expander
     [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
-    # 넷째 줄 「통합인증」 과 끝 줄 「DuckDB 메모리 한도」 는 결과 파일이 아니라 지금 설정에서
-    # 판정한다(시험 환경은 둘 다 없음).
-    assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀", "건너뜀"]
+    # 넷째 줄 「통합인증」 과 끝 두 줄 「CUSTOM 원천 표」 · 「DuckDB 메모리 한도」 는 결과 파일이
+    # 아니라 지금 설정에서 판정한다(시험 환경은 통합인증 · 한도 칸이 없고 CUSTOM 원천 표는 합성 값).
+    assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀", "정상", "건너뜀"]
     assert steps.value["단계"].iloc[3] == "통합인증"
-    assert steps.value["단계"].iloc[4] == "DuckDB 메모리 한도"
+    assert steps.value["단계"].iloc[4] == "CUSTOM 원천 표"
+    assert steps.value["단계"].iloc[5] == "DuckDB 메모리 한도"
     # 까닭 칸은 잘리지 않게 넓고 세 칸 합은 창 1283 의 표 폭(샘플 관측 918px) 안이다(g8-21).
     widths = {
         name: column["width"]
@@ -1123,6 +1124,7 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
         "ECS 연결",
         "버킷 목록",
         "DB 받기",
+        "CUSTOM 원천 표",
         "DuckDB 메모리 한도",
     ]
     assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"

@@ -7425,6 +7425,17 @@
   단추 밑에 그리지 않음) · UI-NTF-02 통과(자리에 상태 글 · 표 없음 — 표는 Alarm 줄) · UI-NTF-05 통과(숫자를 믿기 전에 알 일 — 알림창 ·
   Alarm · 메모 셋에 남음) · UI-TXT-08 통과(어긋난 칸이 없으면 알림 없음 — 메모 조각은 화면이 아니라 기록) — 관련:
   `components/bigdataquery_registration.py` · `scenario_registration.py` · `auto_official_update_runner.py` · `alerts.py`
+- (2026-11-22) **CUSTOM 원천 표 환경변수가 없거나 꼴이 틀리면 DB 등록 탭의 `DB 조회 후 시나리오 저장` 을 잠그고 상태 알림
+  `AD-04` · 서버 시작 점검 「CUSTOM 원천 표」 줄(실패면 `AD-01`)로 알린다**(설계 B-stop §1-9 — 상세 조회와 같은 판정
+  `custom_table_problem` 하나를 셋이 읽는다). 목록 조회는 그 표를 쓰지 않아 잠그지 않는다. `AD-04` 전문은 조회 SQL → CUSTOM 원천
+  표 → 패키지 차례이고 짧은 글 · 저장 단추 풍선은 그 가운데 앞선 하나다. 서버 시작 점검 줄은 앱 프로세스의 지금 환경으로 판정하고
+  (값을 읽는 것이 그 프로세스의 상세 조회라서) 시작 스크립트 결과 파일에는 칸을 두지 않는다. 값(사내 표 이름)은 풍선 · 알림 · 표 ·
+  복사 글 어디에도 싣지 않는다. 걸린 규칙 자체 검토 — UI-INP-07 통과(지금만 못 하는 조작이라 잠그고 까닭 풍선, 판정이 프로세스
+  환경이라 보인 회차와 누른 회차가 갈리지 않는 단추 — 눌려도 상세 조회가 같은 판정 글로 멈춰 곁 오류) · UI-NTF-02 통과(자리에
+  상태 글 · 상자 없음 — 상태는 `AD-04` 한 길) · UI-NTF-03 통과(누른 결과의 거부는 단추 곁 오류 하나, 저장 뒤 경고 길은 그대로) ·
+  UI-TXT-04 통과(자리에는 잠긴 단추 하나 — 내역 · 채울 자리는 Alarm 전문 · Guide) · UI-TXT-08 통과(변수가 있으면 풍선 · 알림 · 줄의
+  실패 없음 — 서버 시작 점검 표의 「정상」 줄은 그 표가 늘 싣는 단계 값) — 관련: `components/bigdataquery_registration.py` ·
+  `components/container_start_check.py` · `alerts.py` · Guide 시나리오 관리 · Admin Area
 - (2026-09-08) BigDataQuery 목록 조회는 사용자가 준 `SELECT DISTINCT` 를 그대로 두고 `{start_date}`·`{end_date}` 만
   채운다(상한 366일). 어댑터는 조회 결과를 파일로 쓰지 않는다. 같은 시나리오명은 저장 전에 막고 같은 원천 코드는 경고만
   한다 — 관련: `io/bigdataquery_catalog.py` (옛 3-8)

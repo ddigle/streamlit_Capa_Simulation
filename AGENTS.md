@@ -2056,8 +2056,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + `managed` 서버의 「BDQ 자동
   로그인」 줄 `login_rows`(시작 때 결과 — `container_start_report.login_step`) + S3 키 · `managed` 가 있는 서버의
-  동기화 줄 다섯 `sync_rows` — AWS 프로필 · aws CLI · ECS 연결 · 버킷 목록 · DB 받기 + 끝 줄 「DuckDB 메모리 한도」 — 지금 연결 설정의
-  한도 칸 판정 `memory_diagnostic.memory_limit_step`, 틀린 값이면 「실패」 라 제목 판정 `start_verdict` 와 `AD-01` 에 든다)와 「시작 때 있던
+  동기화 줄 다섯 `sync_rows` — AWS 프로필 · aws CLI · ECS 연결 · 버킷 목록 · DB 받기 + 「CUSTOM 원천 표」 — 이 프로세스의 지금 환경변수
+  `CAPA_BDQ_CUSTOM_TABLE` 을 상세 조회와 같은 판정 `company_bigdataquery_adapter.custom_table_problem` 으로 본 줄 `custom_table_step`, 없거나
+  꼴이 틀리면 「실패」(까닭은 변수 이름과 막히는 것뿐 — 값 없음), 시작 스크립트 결과 파일에는 칸을 두지 않는다 + 끝 줄 「DuckDB 메모리 한도」
+  — 지금 연결 설정의 한도 칸 판정 `memory_diagnostic.memory_limit_step`. 지금 판정한 두 줄(`live_steps`)이 「실패」 면 제목 판정
+  `start_verdict` 와 `AD-01` 에 든다)와 「시작 때 있던
   통합인증 환경변수」 캡션(이름만)·디스크 · pod · 한도 · DuckDB 기본값 · 다운 시간 값(`sync_fact_lines`)·깔린 판·
   토큰 파일 수정 시각·자리·실행 사용자·HOME·시작 자동 로그인이 하위 프로세스를 띄웠으면 그 진단 값 줄(「BDQ 자동 로그인 진단」 —
   `LoginStart.child`)·비어 있던 환경변수·사실 줄 끝 메모리 값 줄(`memory_diagnostic.memory_lines` — 이 프로세스의
@@ -2067,7 +2070,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
   시작 점검 개발자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
   화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다 —
-  와 지금 설정에서 실패한 단계 `live_failed_steps` — DuckDB 메모리 한도 칸이 틀림)를
+  와 지금 설정에서 실패한 단계 `live_failed_steps` — 표 차례로 CUSTOM 원천 표 환경변수가 없거나 꼴이 틀림 · DuckDB 메모리 한도 칸이 틀림)를
   개발자 몫(`admin_view.developer_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area 의 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_start_check` · 알림 칸 받는 쪽 `start_check`, 설계 규칙 UI-NAV-01). 결과 파일도
   CD 전용 환경변수도 없는 프로세스(`start_check_alert_possible` — 프로세스 동안 그대로)는 Streamlit 호출이 없다. Admin 펼침은 이 알림을 따로
   내지 않는다.
@@ -2403,6 +2406,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     갈래면 값 · 조회 권한을 보라고 덧붙인다. 원문(`_original_text`)은 요청자 계정과 함께 표 이름(값 전체 · 점 뒤 끝 조각, 3글자
     이상, 대소문자 무시)을 `CUSTOM_TABLE_MASK` 로 한 번에 가린다(`_texts_to_hide` · `_hide_texts`) — 자동 갱신 실행 기록 사유가
     원문을 그대로 남긴다. 시험은 `tests/conftest.py` autouse 가 합성 값 `demo_schema.demo_custom` 을 넣고 「없음」 갈래만 직접 지운다.
+    같은 판정(`custom_table_problem`)을 DB 등록 탭의 저장 단추 잠금 · `AD-04` 와 Admin 「서버 시작 점검」 의 「CUSTOM 원천 표」 줄
+    (`AD-01`)이 읽는다 — 그 줄 · 제목 판정 · `AD-01` 은 `tests/test_custom_table_setting.py`, 잠금 · `AD-04` 는
+    `tests/test_bigdataquery_registration.py` 가 본다.
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
@@ -6213,7 +6219,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     밖·등록 폼 위의 `st.dataframe(on_select="rerun")` 이다. 저장 막힘은 빨간 상자 없이 꺼진 저장 단추 풍선이고(`UNSAVABLE_REASON`),
     조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이다. 탭 맨 위 소제목은 없다(g2-25). 설정 줄 「BigDataQuery 설정」 도
     없다 — 다 준비됐으면 그리지 않고 빠진 것은 상태 알림 `AD-04` 만이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」,
-    설계 규칙 UI-TXT-08 · UI-NTF-02). 등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
+    설계 규칙 UI-TXT-08 · UI-NTF-02). CUSTOM 원천 표 환경변수(`CAPA_BDQ_CUSTOM_TABLE`)가 없거나 꼴이 틀리면(상세 조회와 같은 판정
+    `custom_table_problem` 을 회차마다 한 번 읽는다) 저장 단추가 잠기고 풍선(`custom_locked_help`)이 그 변수 이름으로 까닭을 말하며,
+    `AD-04` 전문에 한 줄(`custom_table_notice` — 막히는 것과 채울 자리, 값은 싣지 않음)이 든다 — 전문 차례는 조회 SQL → CUSTOM 원천 표
+    → 패키지(패키지 줄은 조회 SQL 이 다 섰을 때만), 짧은 글은 그 가운데 앞선 하나(`_configuration_short`), 저장 단추 풍선도 조회 SQL →
+    CUSTOM 원천 표 → 고른 코드 차례로 앞선 하나다. 목록 조회는 그 표를 쓰지 않아 잠그지 않는다. 잠긴 단추가 눌려도 상세 조회가
+    패키지를 부르기 전에 같은 판정 글로 멈춰 단추 곁 오류가 된다(설계 규칙 UI-INP-07 — 판정이 프로세스 환경이라 보인 회차와 누른
+    회차가 갈리지 않는다). 등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
     선다(9장 「폼 안 칸에 세션으로 값을 써 넣지 않는다」). 빈 칸 저장은 빈 칸을 모아 곁 한 줄로 거부한다(「필수 칸이 비어 있습니다:
     …」 — 복제와 같은 꼴). 글자 칸은 입력 초안이라 `persist_state` 가 없어
     그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의

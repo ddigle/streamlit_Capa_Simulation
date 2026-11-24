@@ -59,6 +59,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     DETAIL_WINDOW_DAYS_BEFORE,
     BigDataQueryCoreDataProvider,
     QueryWindow,
+    custom_table_problem,
     is_bigdataquery_adapter_configured,
     is_bigdataquery_package_available,
     registration_detail_window,
@@ -171,6 +172,23 @@ CATALOG_LOCKED_HELP: Final = (
 )
 DETAIL_LOCKED_HELP: Final = (
     "상세 조회 SQL 이 설정되지 않아 조회 · 저장할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+)
+# CUSTOM 원천 표 환경변수를 쓸 수 없어(없음 · 꼴 틀림 — `custom_table_problem`) 잠긴 저장 단추
+# 풍선의 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_locked_help`). 목록 조회는 그 표를 쓰지 않아
+# 잠그지 않는다.
+CUSTOM_LOCKED_TAIL: Final = " 조회 · 저장이 막힙니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+# 상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_table_notice`).
+# 값(사내 표 이름)은 어디에도 싣지 않는다.
+CUSTOM_NOTICE_TAIL: Final = (
+    " 부품(Capa Code)의 CUSTOM 을 읽지 못해 상세 조회 · 저장이 막힙니다 — 영문 · 숫자 · 밑줄로 "
+    "된 스키마.표 값을 넣고 앱을 다시 띄우세요(혼자 쓰는 PC · WebIDE 는 README 「초기 설정」 "
+    "4단계, C-DEP 는 배포 설정의 환경변수 표)."
+)
+# `AD-04` 짧은 글 — 조회 SQL → CUSTOM 원천 표 → 패키지 차례로 앞선 하나(`_configuration_short`).
+SQL_MISSING_SHORT: Final = "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
+CUSTOM_TABLE_SHORT: Final = "CUSTOM 원천 표 환경변수를 쓸 수 없어 DB 조회 · 저장이 막힘"
+PACKAGE_MISSING_SHORT: Final = (
+    "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
 )
 # 고른 행이 검색에 가려졌을 때의 표지 풍선.
 PICK_HIDDEN_HELP: Final = (
@@ -285,10 +303,14 @@ def render_bigdataquery_registration(
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
+    # CUSTOM 원천 표 환경변수 판정은 상세 조회(`fetch`)와 같은 함수다 — 상태 알림과 저장 단추가
+    # 한 번 읽은 판정을 함께 쓴다. 이 프로세스의 환경이라 보인 회차와 누른 회차가 갈리지 않는다.
+    custom_problem = custom_table_problem()
     _report_configuration(
         catalog_ready=catalog_ready,
         detail_ready=detail_ready,
         package_ready=is_bigdataquery_package_available(),
+        custom_problem=custom_problem,
         alert_tab=alert_tab,
     )
     registered_codes, existing_names = _registered_scenarios(repository)
@@ -304,6 +326,7 @@ def render_bigdataquery_registration(
         repository,
         database_path,
         configured=detail_ready,
+        custom_problem=custom_problem,
         existing_names=existing_names,
     )
     # 큰 충돌 상세의 CSV 단추는 한 런에 딱 한 번만 그린다. 저장 실패 분기에서 한 번 더 부르면
@@ -355,43 +378,71 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
     return "조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
 
 
+def custom_table_notice(problem: str) -> str:
+    """상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 — 까닭(`custom_table_problem`) 한 문장과 막히는 것 ·
+    채울 자리. 값은 싣지 않는다."""
+    return problem + CUSTOM_NOTICE_TAIL
+
+
+def custom_locked_help(problem: str) -> str:
+    """CUSTOM 원천 표 환경변수를 쓸 수 없어 잠긴 저장 단추의 풍선(설계 규칙 UI-INP-07)."""
+    return problem + CUSTOM_LOCKED_TAIL
+
+
 def _report_configuration(
     *,
     catalog_ready: bool,
     detail_ready: bool,
     package_ready: bool,
+    custom_problem: str | None = None,
     alert_tab: str | None = "",
 ) -> None:
-    """BigDataQuery 설정(목록 · 상세 조회 SQL · 패키지) — 준비가 안 됐으면 무엇이 빠졌고 어디를
-    채우는지를 상태 알림(`AD-04` — 알림창 · Alarm)으로 낸다. 자리에는 아무것도 그리지 않는다 — 다
-    준비됐으면 알릴 것이 없고(설계 규칙 UI-TXT-08), 빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 —
-    상태 경고는 자리에 세우지 않는다, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 조회
-    SQL 이 없어 잠긴 단추는 그 풍선이 까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 ·
-    이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
-    notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
-    if notice is None and not package_ready:
-        notice = (
+    """BigDataQuery 설정(목록 · 상세 조회 SQL · CUSTOM 원천 표 환경변수 · 패키지) — 준비가 안
+    됐으면 무엇이 빠졌고 어디를 채우는지를 상태 알림(`AD-04` — 알림창 · Alarm)으로 낸다. 전문은
+    조회 SQL → CUSTOM 원천 표 → 패키지 차례로 빠진 것마다 한 줄이다(패키지 줄은 조회 SQL 이 다 섰을
+    때만). 자리에는 아무것도 그리지 않는다 — 다 준비됐으면 알릴 것이 없고(설계 규칙 UI-TXT-08),
+    빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 — 상태 경고는 자리에 세우지 않는다, 2026-11-09
+    사용자 규칙 「상단 여백 · 문구 최소화」). 조회 SQL · CUSTOM 원천 표가 없어 잠긴 단추는 그 풍선이
+    까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 · 이벤트 칸 한 자리) — 닫힌
+    탭(`alert_tab` None)이면 알리지 않는다."""
+    lines: list[str] = []
+    query_notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
+    if query_notice is not None:
+        lines.append(query_notice)
+    if custom_problem is not None:
+        lines.append(custom_table_notice(custom_problem))
+    if query_notice is None and not package_ready:
+        package_notice = (
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
             "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
         hint = start_check_hint(STEP_INSTALL)
         if hint:
-            notice = f"{notice}\n\n{hint}"
+            package_notice = f"{package_notice}\n\n{hint}"
+        lines.append(package_notice)
+    notice = "\n\n".join(lines) if lines else None
     if alert_tab is not None:
         alerts.state(
             "AD-04",
             scope=None,
             content=notice,
             active=notice is not None,
-            text=(
-                "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
-                if notice is not None and not (catalog_ready and detail_ready)
-                else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
+            text=_configuration_short(
+                query_ready=query_notice is None, custom_problem=custom_problem
             ),
             full=alerts.plain_text(notice) if notice else None,
             tab=alert_tab,
         )
+
+
+def _configuration_short(*, query_ready: bool, custom_problem: str | None) -> str:
+    """`AD-04` 짧은 글 — 조회 SQL → CUSTOM 원천 표 → 패키지 차례로 앞선 하나."""
+    if not query_ready:
+        return SQL_MISSING_SHORT
+    if custom_problem is not None:
+        return CUSTOM_TABLE_SHORT
+    return PACKAGE_MISSING_SHORT
 
 
 def _registered_scenarios(
@@ -702,6 +753,7 @@ def _render_registration_form(
     database_path: str,
     *,
     configured: bool,
+    custom_problem: str | None,
     existing_names: frozenset[str],
 ) -> None:
     for key, value in FORM_DEFAULTS.items():
@@ -710,8 +762,15 @@ def _render_registration_form(
     st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
     # 저장 불가는 목록 표 「저장가능」 칸이 값으로, 까닭은 잠긴 저장 단추 풍선이 말한다(설계 규칙
-    # UI-INP-07 — 막힘을 상자로 세우지 않는다).
+    # UI-INP-07 — 막힘을 상자로 세우지 않는다). 풍선은 조회 SQL → CUSTOM 원천 표 → 고른 코드 차례로
+    # 앞선 까닭 하나다.
     unsavable = pick is not None and not pick.row.savable
+    if not configured:
+        locked_help: str | None = DETAIL_LOCKED_HELP
+    elif custom_problem is not None:
+        locked_help = custom_locked_help(custom_problem)
+    else:
+        locked_help = UNSAVABLE_REASON if unsavable else None
     # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의
     # 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값 줄이 생기고
     # 빠져도 아래 폼의 자리가 밀리지 않는다. 날짜 칸은 「적용」 트리거를 바로 받아야 해 폼 밖이다 —
@@ -759,8 +818,8 @@ def _render_registration_form(
             icon=":material/cloud_download:",
             type="primary",
             width="stretch",
-            disabled=not configured or unsavable,
-            help=DETAIL_LOCKED_HELP if not configured else UNSAVABLE_REASON if unsavable else None,
+            disabled=locked_help is not None,
+            help=locked_help,
         )
     # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
     # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CUSTOM 원천 대조 · CS 빈 행 · 대당 Capa

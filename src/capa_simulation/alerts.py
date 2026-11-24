@@ -238,7 +238,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음 · 실패한 단계"),
     AlertSpec("AD-02", "action", "state", "운영인데 통합인증이 꺼짐"),
     AlertSpec("AD-03", "action", "state", "통합인증 서명 인증서 만료 임박"),
-    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
+    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · CUSTOM 원천 표 · 패키지 없음"),
     AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
     AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
     AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
