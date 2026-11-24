@@ -118,6 +118,103 @@ def test_the_module_roots_are_read_when_called(
     assert found.oom_kill == 5 and found.rss_bytes == 348160 * 1024
 
 
+# 옛 커널의 `memory.events` · `memory.oom_control` 꼴 — `oom_kill` 줄이 없다.
+_EVENTS_WITHOUT_OOM_KILL = "low 0\nhigh 0\nmax 4\noom 1\n"
+_OOM_CONTROL_WITHOUT_OOM_KILL = "oom_kill_disable 0\nunder_oom 0\n"
+
+
+def test_the_oom_count_falls_back_from_events_to_events_local_and_v1(tmp_path: Path) -> None:
+    """`oom_kill` 줄이 처음 나온 자리를 쓰고 그 자리 낱말을 남긴다 — v2 `memory.events` →
+    `memory.events.local` → 혼합 마운트의 v1 `memory/memory.oom_control`, v1 은 그 하나다."""
+    status = _status(tmp_path)
+    found = memory_probe.read(_v2(tmp_path / "events", current=MIB, limit="max", oom=2), status)
+    assert (found.oom_kill, found.oom_source) == (2, "events")
+
+    local = _v2(tmp_path / "local", current=MIB, limit="max", oom=0)
+    (local / "memory.events").write_text(_EVENTS_WITHOUT_OOM_KILL, encoding="ascii")
+    (local / "memory.events.local").write_text("oom 1\noom_kill 3\n", encoding="ascii")
+    found = memory_probe.read(local, status)
+    assert (found.oom_kill, found.oom_source) == (3, "events_local")
+
+    mixed = _v2(tmp_path / "mixed", current=MIB, limit="max", oom=0)
+    (mixed / "memory.events").write_text(_EVENTS_WITHOUT_OOM_KILL, encoding="ascii")
+    (mixed / "memory").mkdir()
+    (mixed / "memory" / "memory.oom_control").write_text(
+        _OOM_CONTROL_WITHOUT_OOM_KILL + "oom_kill 7\n", encoding="ascii"
+    )
+    found = memory_probe.read(mixed, status)
+    assert (found.oom_kill, found.oom_source) == (7, "oom_control")
+
+    found = memory_probe.read(_v1(tmp_path / "v1", usage=MIB, limit=1024 * MIB, oom=1), status)
+    assert (found.oom_kill, found.oom_source) == (1, "oom_control")
+    assert {"events", "events_local", "oom_control"} == set(report_contract.OOM_SOURCES)
+
+
+def _unknown_v2_events_folder(root: Path) -> Path:
+    _v2(root, current=MIB, limit="max", oom=0)
+    (root / "memory.events").unlink()
+    (root / "memory.events").mkdir()  # 읽으면 IsADirectoryError(Windows 는 PermissionError)
+    return root
+
+
+def _unknown_mixed(root: Path) -> Path:
+    _unknown_v2_events_folder(root)
+    (root / "memory.events.local").write_text(_EVENTS_WITHOUT_OOM_KILL, encoding="ascii")
+    return root
+
+
+def _unknown_v1_old_kernel(root: Path) -> Path:
+    _v1(root, usage=MIB, limit=1024 * MIB, oom=0)
+    (root / "memory" / "memory.oom_control").write_text(
+        _OOM_CONTROL_WITHOUT_OOM_KILL, encoding="ascii"
+    )
+    return root
+
+
+def _unknown_v2_without_events(root: Path) -> Path:
+    _v2(root, current=MIB, limit="max", oom=0)
+    (root / "memory.events").unlink()
+    return root
+
+
+@pytest.mark.parametrize(
+    ("build", "word", "cause"),
+    [
+        pytest.param(lambda root: root, "no_file", "파일 없음", id="no-cgroup"),
+        pytest.param(_unknown_v2_without_events, "no_file", "파일 없음", id="v2-no-file"),
+        pytest.param(_unknown_v1_old_kernel, "no_line", "줄 없음", id="v1-old-kernel"),
+        pytest.param(_unknown_v2_events_folder, "unread", "못 읽음", id="v2-unread"),
+        pytest.param(_unknown_mixed, "no_line", "줄 없음", id="unread-and-no-line"),
+    ],
+)
+def test_an_unknown_oom_count_says_which_way_it_failed(
+    tmp_path: Path, build: Any, word: str, cause: str
+) -> None:
+    """어디서도 `oom_kill` 줄을 못 찾으면 수는 모름이고 그 갈래를 남긴다 — 후보가 하나도 없음
+    (`no_file`) · 읽었는데 줄이 없음(`no_line`) · 파일은 있는데 읽기 실패(`unread`). 여럿이면 읽은
+    자리의 사실(줄 없음)이 앞이다. 화면은 앞뒤 모두 모를 때 그 까닭을 괄호로 붙인다."""
+    found = memory_probe.read(build(tmp_path / "cg"), _status(tmp_path))
+    assert (found.oom_kill, found.oom_source) == (None, word)
+    assert word in report_contract.OOM_UNKNOWN
+    memory = memory_probe.child_memory(found, found)
+    assert memory.oom_source == word
+    assert f" · oom_kill 모름({cause}) · " in memory.text
+
+
+def test_a_cgroup_read_that_falls_back_whole_leaves_no_oom_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """cgroup 읽기가 뜻밖의 예외로 통째 물러서면 갈래 낱말 없이 지금처럼 「oom_kill 모름」 이다."""
+
+    def boom(_root: Path) -> None:
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(memory_probe, "_cgroup", boom)
+    found = memory_probe.read(tmp_path / "cg", _status(tmp_path))
+    assert (found.oom_kill, found.oom_source) == (None, "")
+    assert " · oom_kill 모름 · " in memory_probe.child_memory(found, found).text
+
+
 def _proc(root: Path, pid: int, text: str) -> Path:
     folder = root / str(pid)
     folder.mkdir(parents=True)
@@ -161,6 +258,83 @@ def test_unknown_values_read_as_unknown() -> None:
     assert partial.text == (
         "cgroup 모름→900/max · oom_kill 모름→1 · 앱 RSS 300→모름MiB · 하위 최고 모름"
     )
+
+
+def test_the_memory_text_names_the_unknown_oom_cause() -> None:
+    """앞뒤 모두 모르고 못 찾은 갈래를 알 때만 까닭이 괄호로 붙는다. 읽은 자리는 칸에만 두고,
+    한쪽만 아는 수 · 자리 낱말이 있는데 수를 모르는 기록은 지금 꼴 그대로다. 접을 때 자리는 뒤
+    읽기를 앞세운다."""
+    assert ChildMemory(oom_source="no_line").text == (
+        "cgroup 모름 · oom_kill 모름(줄 없음) · 앱 RSS 모름 · 하위 최고 모름"
+    )
+    assert ChildMemory(oom_source="no_file").text.startswith(
+        "cgroup 모름 · oom_kill 모름(파일 없음)"
+    )
+    assert "oom_kill 모름(못 읽음)" in ChildMemory(oom_source="unread").text
+    known = ChildMemory(700, 980, 1024, False, 0, 1, 340, 342, 62, "events_local")
+    assert known.text == (
+        "cgroup 700→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고 62MiB"
+    )
+    assert " · oom_kill 0→모름 · " in ChildMemory(oom_before=0, oom_source="no_line").text
+    assert " · oom_kill 모름 · " in ChildMemory(oom_source="events").text
+
+    before = MemoryReading(oom_kill=0, oom_source="events")
+    assert memory_probe.child_memory(before, MemoryReading()).oom_source == "events"
+    after = MemoryReading(oom_kill=1, oom_source="events_local")
+    gone = MemoryReading(oom_source="no_file")
+    assert memory_probe.child_memory(gone, after).oom_source == "events_local"
+    assert memory_probe.child_memory(before, gone).oom_source == "no_file"
+    assert memory_probe.child_memory(MemoryReading(), MemoryReading()).oom_source == ""
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        pytest.param("bogus", id="unknown-word"),
+        pytest.param("events" * 1000, id="long-text"),
+        pytest.param("EVENTS", id="other-case"),
+        pytest.param(3, id="number"),
+        pytest.param(True, id="bool"),
+        pytest.param(["events"], id="list"),
+    ],
+)
+def test_an_odd_oom_source_word_is_dropped_on_read(word: object) -> None:
+    """자리 낱말은 `OOM_SOURCES` · `OOM_UNKNOWN` 에 있을 때만 받고, 모르는 낱말 · 긴 글 · 수는 빈
+    값이다 — 다른 칸은 그대로 읽는다."""
+    parsed = report_contract.parse_memory({"oom_before": 0, "oom_after": 1, "oom_src": word})
+    assert parsed == ChildMemory(oom_before=0, oom_after=1)
+    for known in (*report_contract.OOM_SOURCES, *report_contract.OOM_UNKNOWN):
+        assert report_contract.parse_memory({"oom_src": known}) == ChildMemory(oom_source=known)
+
+
+def test_the_oom_source_rides_the_result_file_audit_and_log() -> None:
+    """자리 낱말은 결과 파일 칸 · 감사 상세 · 로그의 `oom_src` 다 — 다시 읽어도 같고, 칸이 다 찬
+    진단(가장 긴 자리 낱말 · 예외 종류 · 불러온 길 · 프로세스 단서)도 감사 상세 1KB 안이다."""
+    memory = ChildMemory(700, 980, None, True, 0, 1, 340, 342, 62, "events_local")
+    process = ProcessClues(16.2, 41, 87, 48, None, True, 0, 3)
+    diag = ChildDiag(
+        -9,
+        "SIGKILL",
+        2.9,
+        "import",
+        "bigdataquery.exceptions.TokenNotFoundException",
+        "2.5.0",
+        "1.0.1",
+        memory,
+        process,
+        "light",
+    )
+    fields = diag.fields()
+    assert fields["oom_src"] == "events_local"
+    assert report_contract.parse_child(json.loads(json.dumps(fields))) == diag
+    assert "kid_peak=62 oom_src=events_local app_h=16.2" in diag.code
+    spec = next(item for item in events.SPECS if item.name == "admin_bdq_login_set")
+    det = {"result": "unavailable", "reason": "import_killed", "retry": "3/3", **fields}
+    kept = recorder.clean_det(spec, det)
+    assert recorder.TRUNC_KEY not in kept and kept["oom_src"] == "events_local"
+    unknown = ChildDiag(-9, "SIGKILL", 2.9, "import", memory=ChildMemory(oom_source="unread"))
+    assert unknown.fields()["oom_src"] == "unread"
+    assert "oom_kill 모름(못 읽음)" in unknown.text
 
 
 def test_the_memory_fields_round_trip_and_are_audit_keys() -> None:

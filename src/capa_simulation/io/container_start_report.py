@@ -286,7 +286,15 @@ MEMORY_FIELDS: Final = (
     "rss_before",
     "rss_after",
     "kid_peak",
+    "oom_src",
 )
+# OOM 종료 수를 읽은 자리(`oom_src` 칸) — v2 `memory.events` · v2 `memory.events.local` · v1(혼합
+# 마운트 포함) `memory/memory.oom_control`. `memory_probe` 가 이 차례로 찾는다.
+OOM_SOURCES: Final = ("events", "events_local", "oom_control")
+# 어느 자리에서도 `oom_kill` 줄을 못 찾은 갈래 — 후보 파일이 하나도 없음 · 읽었는데 줄이 없음 ·
+# 파일은 있는데 읽기 실패. 화면에는 「oom_kill 모름(까닭)」 의 까닭이다.
+OOM_UNKNOWN: Final = ("no_file", "no_line", "unread")
+_OOM_UNKNOWN_TEXT: Final = {"no_file": "파일 없음", "no_line": "줄 없음", "unread": "못 읽음"}
 # 옛 하위 최고 칸(거둔 하위 모두의 `getrusage` 최고 앞뒤 — 앱 주소 공간을 물려받아 앱 RSS 아래로
 # 내려가지 않던 값). 읽을 때 예외 없이 지나치고 새 칸으로 옮기지 않는다.
 LEGACY_MEMORY_FIELDS: Final = ("kid_peak_before", "kid_peak_after")
@@ -304,7 +312,8 @@ class ChildMemory:
     `memory.oom_control` 의 `oom_kill` — 앞뒤가 다르면 그 사이 cgroup 이 프로세스를 죽였다).
     `rss_*` — 앱 프로세스 RSS(`/proc/self/status` 의 `VmRSS`). `child_peak` — 이번 하위 프로세스
     자신의 최고 RSS(그 하위의 `/proc/<pid>/status` 의 `VmHWM` 을 도는 동안 짧은 틈마다 읽은 가장 큰
-    값 — 앞뒤 두 값이 아니라 한 값이다)."""
+    값 — 앞뒤 두 값이 아니라 한 값이다). `oom_source` — OOM 종료 수를 읽은 자리(`OOM_SOURCES`)나
+    못 찾은 갈래(`OOM_UNKNOWN`), 재지 않음 · 옛 기록은 빈 글."""
 
     cgroup_before: int | None = None
     cgroup_after: int | None = None
@@ -315,9 +324,11 @@ class ChildMemory:
     rss_before: int | None = None
     rss_after: int | None = None
     child_peak: int | None = None
+    oom_source: str = ""
 
     def fields(self) -> dict[str, object]:
-        """칸 이름(`MEMORY_FIELDS`) → 값. 모르는 값은 `None`."""
+        """칸 이름(`MEMORY_FIELDS`) → 값. 모르는 수는 `None`, 모르는 OOM 종료 수 자리 낱말은 빈
+        글이다(칸은 늘 선다)."""
         return dict(
             zip(
                 MEMORY_FIELDS,
@@ -330,6 +341,7 @@ class ChildMemory:
                     self.rss_before,
                     self.rss_after,
                     self.child_peak,
+                    self.oom_source,
                 ),
                 strict=True,
             )
@@ -339,7 +351,8 @@ class ChildMemory:
     def text(self) -> str:
         """화면 값 조각 — 「cgroup 712→980/1024MiB · oom_kill 0→1 · 앱 RSS 340→342MiB · 하위 최고
         62MiB」(한도 없음은 「/max」). 모르는 값은 「모름」 이고, 한 묶음을 통째로 모르면
-        「cgroup 모름」 꼴이다."""
+        「cgroup 모름」 꼴이다. OOM 종료 수를 앞뒤 모두 모르고 못 찾은 갈래를 알면 그 까닭이 괄호로
+        붙는다 — 「oom_kill 모름(줄 없음)」(읽은 자리는 칸에만 둔다)."""
         if self.cgroup_before is None and self.cgroup_after is None and self.limit is None:
             cgroup = (
                 f"cgroup {UNKNOWN_VALUE}/{MEMORY_UNLIMITED}"
@@ -352,11 +365,17 @@ class ChildMemory:
         return " · ".join(
             (
                 cgroup,
-                f"oom_kill {_pair(self.oom_before, self.oom_after)}",
+                self._oom_part(),
                 _pair_part("앱 RSS", self.rss_before, self.rss_after),
                 _single_part("하위 최고", self.child_peak),
             )
         )
+
+    def _oom_part(self) -> str:
+        cause = _OOM_UNKNOWN_TEXT.get(self.oom_source)
+        if self.oom_before is None and self.oom_after is None and cause is not None:
+            return f"oom_kill {UNKNOWN_VALUE}({cause})"
+        return f"oom_kill {_pair(self.oom_before, self.oom_after)}"
 
 
 def _known(value: int | None) -> str:
@@ -381,8 +400,8 @@ def _pair_part(label: str, before: int | None, after: int | None) -> str:
 
 def parse_memory(data: Mapping[str, object]) -> ChildMemory | None:
     """진단 칸의 메모리 단서를 읽는다. 그 칸이 하나도 없으면(옛 파일 · 재지 않음) `None`. 꼴이
-    어긋난 값은 그 값만 비운다. 옛 하위 최고 칸(`LEGACY_MEMORY_FIELDS`)은 읽지 않는다 — 하위 최고는
-    「모름」 이다."""
+    어긋난 값은 그 값만 비운다 — OOM 종료 수 자리 낱말은 `OOM_SOURCES` · `OOM_UNKNOWN` 에 있을 때만
+    받는다. 옛 하위 최고 칸(`LEGACY_MEMORY_FIELDS`)은 읽지 않는다 — 하위 최고는 「모름」 이다."""
     if not any(name in data for name in (*MEMORY_FIELDS, *LEGACY_MEMORY_FIELDS)):
         return None
     limit = data.get("cg_max")
@@ -396,7 +415,12 @@ def parse_memory(data: Mapping[str, object]) -> ChildMemory | None:
         rss_before=_bounded(data.get("rss_before"), _MEMORY_MIB_LIMIT),
         rss_after=_bounded(data.get("rss_after"), _MEMORY_MIB_LIMIT),
         child_peak=_bounded(data.get("kid_peak"), _MEMORY_MIB_LIMIT),
+        oom_source=_oom_word(data.get("oom_src")),
     )
+
+
+def _oom_word(value: object) -> str:
+    return value if isinstance(value, str) and value in (*OOM_SOURCES, *OOM_UNKNOWN) else ""
 
 
 def _bounded(value: object, limit: int) -> int | None:
