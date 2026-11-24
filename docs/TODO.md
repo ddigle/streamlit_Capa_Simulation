@@ -7500,6 +7500,13 @@
 - (2026-10-26) 배포 빌더는 런북 7장 압축본 기대 `A n = 기록 n + 미기록 0 + 안함 0` 의 n 이 `check_deploy_screens.py` 항목 수와 다르면
   멈춘다(시험 빌드도). 7장 A 표 대조 시험은 7장을 그 배포의 기록으로 두려고 앞머리만 같아도 통과시키므로, 낡은 7장으로 다음 배포를
   만드는 것은 빌더가 막는다 — 관련: `scripts/build_deploy_package.py` · `docs/wsl_dev_environment.md` 5장
+- (2026-11-24) **사내 화면 확인 자식 앱(`check_deploy_screens.app_environment` — 따라하기 가이드 촬영 앱도 같은 함수)은 CUSTOM 원천 표
+  환경변수 `CAPA_BDQ_CUSTOM_TABLE` 과 그 끄개 `CAPA_BDQ_CUSTOM_SOURCE` 를 받지 않는다**(정식판 마감 묶음 계획 6장 F6 — 끄개 이름을
+  쓰는 판이 들기 전에도 이름만 걷는다). 화면 확인 `registration_custom_lock` 은 「변수 없음」 의 저장 잠김을 보는데, 스크립트를 친 창에
+  표 이름이 있거나 끄개가 `off` 면 단추가 열려 같은 배포가 창마다 다른 결과를 낸다. 편집기 구역 끄개(`CAPA_EDITOR_SCOPES`)는 걷지
+  않는다 — 꺼도 화면 확인 항목의 있음/없음이 같다. 가이드 촬영은 지금 DB 등록 탭을 찍지 않는다 — 찍게 되면 잠긴 단추로 찍힌다. 화면
+  자체는 바꾸지 않아 규칙 자체 검토는 없다 — 관련: `scripts/check_deploy_screens.py` · `tests/test_check_deploy_screens.py` · 2장
+  「다음 배포 — 화면 확인 항목」
 - (2026-10-20) 브라우저 메시지 캐시는 `config.toml` `[global]` 나이 20·문턱 1,000B 로 둔다. 회차 끝 강제 GC 는 끄지 않고
   `gc.freeze()` 도 쓰지 않는다(세션 순환 soak 에서 RSS 가 높게 머묾 / 세션 누수) — 관련: AGENTS 9장 「스크립트와 컴포넌트」
 - (2026-10-13) 사외 개발·운영은 데스크탑 WSL 하나(서피스 개발 환경은 지우고 병행하지 않는다) — 배포 ZIP 빌드·확인·태그·
@@ -7611,13 +7618,6 @@
   UI-TXT-08 통과(켬이면 아무것도 더 그리지 않음 — 화면 글 · 단추 · 줄이 늘지 않음) · PRC-07 규칙 안(새 꼴 · 애매한 것 없음 — 보드
   없음) — 관련: `io/company_bigdataquery_adapter.py` · `services/custom_source_check.py` · `components/bigdataquery_registration.py` ·
   `components/container_start_check.py` · `alerts.py` · Guide 시나리오 관리 · Admin Area · AGENTS 3장 · 7장 · 10장
-- (2026-11-24) **사내 화면 확인 자식 앱(`check_deploy_screens.app_environment` — 따라하기 가이드 촬영 앱도 같은 함수)은 CUSTOM 원천 표
-  환경변수 `CAPA_BDQ_CUSTOM_TABLE` 과 그 끄개 `CAPA_BDQ_CUSTOM_SOURCE` 를 받지 않는다**(정식판 마감 묶음 계획 6장 F6 — 끄개 이름을
-  쓰는 판이 들기 전에도 이름만 걷는다). 화면 확인 `registration_custom_lock` 은 「변수 없음」 의 저장 잠김을 보는데, 스크립트를 친 창에
-  표 이름이 있거나 끄개가 `off` 면 단추가 열려 같은 배포가 창마다 다른 결과를 낸다. 편집기 구역 끄개(`CAPA_EDITOR_SCOPES`)는 걷지
-  않는다 — 꺼도 화면 확인 항목의 있음/없음이 같다. 가이드 촬영은 지금 DB 등록 탭을 찍지 않는다 — 찍게 되면 잠긴 단추로 찍힌다. 화면
-  자체는 바꾸지 않아 규칙 자체 검토는 없다 — 관련: `scripts/check_deploy_screens.py` · `tests/test_check_deploy_screens.py` · 2장
-  「다음 배포 — 화면 확인 항목」
 - (2026-09-08) BigDataQuery 목록 조회는 사용자가 준 `SELECT DISTINCT` 를 그대로 두고 `{start_date}`·`{end_date}` 만
   채운다(상한 366일). 어댑터는 조회 결과를 파일로 쓰지 않는다. 같은 시나리오명은 저장 전에 막고 같은 원천 코드는 경고만
   한다 — 관련: `io/bigdataquery_catalog.py` (옛 3-8)
