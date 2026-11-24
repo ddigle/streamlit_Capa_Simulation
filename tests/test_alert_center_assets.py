@@ -1106,6 +1106,123 @@ console.log(JSON.stringify(out))
     assert "hidePopup(C, `state:${other}`)" in state
 
 
+def test_a_state_row_dropped_by_the_keep_comes_back_quietly_while_the_condition_stays() -> None:
+    """열린 상태 줄은 처음 선 시각에서 바뀌지 않아 조건이 이어져도 보관(200줄 · 12시간)에서 걷히고,
+    상태 표는 따로 남아 같은 지문을 「같음」 으로 본다 — 오래 연 탭에서 조건이 남은 채 Alarm 에서
+    사라졌다(2026-11-24 사용자 「권장안 그대로」 — 보관 값은 그대로). 「같음」 인데 그 줄이 없으면
+    알림창 없이 줄만 다시 세운다 — 처음은 상태 표가 기억한 시각(그 칸이 없는 옛 표는 지금)을
+    잇고, 안 읽음은 늘지 않고, 계기 칸이 까닭을 말한다(설계 규칙 UI-NTF-02 — UI-NTF-08 의 걷힌
+    오류 줄과 같은 꼴). 다시 선 줄도 조건이 사라지면 「해소」 로 닫힌다."""
+    assert alert_center.TEXT["cause_back"] == "보관에서 걷힌 뒤 조건이 이어져 다시 세움"
+    text = json.dumps(alert_center.TEXT, ensure_ascii=False)
+    out = _node(
+        _js_function("showPopup")
+        + _js_function("hidePopup")
+        + _js_function("rowFor")
+        + _js_function("resolveRow")
+        + _js_function("text")
+        + _js_function("handleState")
+        + _POPUP_FAKES
+        + f"\nconst TEXT = {text}\n"
+        + """
+const hour = 3600000
+const out = {}
+let popped = []
+const spy = (C, key, note) => {
+  popped.push(note.short)
+  showPopup(C, key, note, false)
+}
+const center = () => {
+  const C = fresh()
+  C.rows = []
+  C.states = {}
+  C.data.text = TEXT
+  return C
+}
+const demand = (active) => ({
+  code: 'ST-04', kind: 'state', level: 'check', scope: 's1', fp: active ? 'fp-29' : '', active,
+  short: active ? '수요 29건' : '', tables: active ? [{ title: '수요', rows: [[1]] }] : [],
+})
+const key = stateKey(demand(true))
+const C = center()
+const firstAt = clock
+handleState(C, demand(true), spy)
+out.opened = [...popped]
+expire(C, `state:${key}`)
+clock += 13 * hour
+C.rows = pruneRows(C.rows, clock, 200, 12 * hour)
+out.kept = [C.rows.length, Boolean(C.states[key] && C.states[key].active)]
+out.returned = handleState(C, demand(true), spy)
+const back = C.rows[0] || {}
+out.back = {
+  rows: C.rows.length,
+  popped: popped.length,
+  shown: shown(C),
+  firstKept: back.first === firstAt,
+  lastNow: back.last === clock,
+  unread: back.unread,
+  cause: back.cause,
+  state: back.state,
+  tables: validTables(back.tables).length,
+  entryRow: C.states[key].row === back.id,
+}
+out.again = [handleState(C, demand(true), spy), C.rows.length, popped.length]
+clock += 60000
+out.resolved = handleState(C, demand(false), spy)
+out.closed = [back.state, back.resolvedWhy, back.resolvedAt === clock]
+const legacy = center()
+legacy.states[key] = { code: 'ST-04', fp: 'fp-29', active: true, row: 'dropped' }
+popped = []
+out.legacy = [handleState(legacy, demand(true), spy), legacy.rows.length, popped.length]
+out.legacyFirst = legacy.rows[0].first === clock
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["opened"] == ["수요 29건"]
+    assert out["kept"] == [0, True]
+    assert out["returned"] is True
+    assert out["back"] == {
+        "rows": 1,
+        "popped": 1,
+        "shown": [],
+        "firstKept": True,
+        "lastNow": True,
+        "unread": False,
+        "cause": "보관에서 걷힌 뒤 조건이 이어져 다시 세움",
+        "state": "open",
+        "tables": 1,
+        "entryRow": True,
+    }
+    # 줄이 다시 선 뒤의 같은 지문은 전처럼 할 일이 없다 — 회차마다 줄이 늘지 않는다.
+    assert out["again"] == [False, 1, 1]
+    assert out["resolved"] is True
+    assert out["closed"] == ["resolved", "gone", True]
+    assert out["legacy"] == [True, 1, 0]
+    assert out["legacyFirst"] is True
+    state = _js_function("handleState")
+    assert "row: row.id, first: now }" in state
+    same = state[state.index("if (verdict === 'same') {") :]
+    assert "rowFor(note, now)" in same and "back.unread = false" in same
+    assert "popup(" not in same
+
+
+def test_a_notice_row_dropped_from_the_keep_comes_back_with_its_hold() -> None:
+    """서 있는 공지 줄(`hold`)은 12시간 보관에서 빠지지만 200줄에 밀려 걷힐 수는 있다. 같은
+    공지가 다시 오면 상태 길이 줄을 알림창 없이 다시 세우고 공지 길이 그 새 줄에 보관 표지를
+    다시 단다."""
+    out = _notice_run(
+        """
+const C = fresh(TEXT)
+applyNotice(C, standing('p1', 1, 'n1', clock + 30 * MINUTE))
+const before = popups.length
+C.rows = []
+applyNotice(C, standing('p1', 2, 'n1', clock + 30 * MINUTE))
+console.log(JSON.stringify({ before, after: popups.length, rows: rowsOf(C) }))
+"""
+    )
+    assert out == {"before": 1, "after": 1, "rows": [["open", "", True]]}
+
+
 def test_a_goto_target_is_sent_once_after_the_tab_path_and_its_run_are_done() -> None:
     """대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)) — 대상은 줄에서
     꼴을 보고(`goTarget`) 받는 쪽이 아는 종류만(`knownTarget` — data `goto_kinds`) 들고 가, 탭 길을

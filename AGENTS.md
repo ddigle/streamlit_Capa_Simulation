@@ -5514,6 +5514,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면을 단다. 화면을 그리지 못한 오류의 알림은 `page_error_note`(같은 글이면 같은 id · `keep` — Alarm 줄을 지키라는 표지, 알림 칸 JS 의
   `keptRowMissing`)이고 자리 마크와 한 칸에 싣는 표지가 `hidden_marker` 다(`components/data_error_mark.py` — 아래). 분석 기록(L2)은 자리만 있다
   (`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
+  보관(`HISTORY_ROWS` · `HISTORY_HOURS`)에서 걷힌 열린 상태 줄은 같은 지문이 다시 오면 알림창 없이 다시 선다(알림 칸 JS `handleState` — 9장 「알림 칸」).
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
@@ -9786,6 +9787,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   닫힌 탭 · 접힌 펼침 안의 조건은 그 탭이 열린 회차에만 부른다. `tests/test_alert_sites.py` 가 경고 상자를 직접 그리는
   자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 2단계(a · b)가 상태 경고를 모두 옮겨
   남은 자리는 자리 글 까닭(`REASONS`) 하나를 든다. 새 경고 자리를 더하려면 상태 알림인지 먼저 가린다.
+  지문이 같아도 그 Alarm 줄이 보관(아래 「기록(L1)」)에서 걷혔으면 알림창 · 안 읽음 없이 줄만 다시 세운다 — 처음 시각은 상태 표가
+  기억한 것을 잇고 로그 계기 칸은 「보관에서 걷힌 뒤 조건이 이어져 다시 세움」(`alert_center.TEXT` 의 `cause_back`)이다(2026-11-24
+  사용자 「권장안 그대로」 — 자리 마크 오류의 걷힌 줄 `keptRowMissing` 과 같은 꼴, 설계 규칙 UI-NTF-02 · UI-NTF-08).
 - **화면에 상태 문장을 달지 않는다**(2026-11-04 사용자 원칙 — Space 결정 보드 답 「저런 식으로 인터페이스에 설명 문구를 다는
   걸 지양」). 경고 상자만이 아니라 조작 상자 · 머리 띠 끝에 붙인 짧은 상태 줄(「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
   m개」 같은)도 상태 알림으로 내고 그 자리에는 조작만 둔다 — 꼭 필요한 설명은 풍선 · Guide 다. 예: Space 「Space 도면」 상자
@@ -9933,6 +9937,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   옮기지 않는다(`role=status` · polite). 대화상자가 열린 동안 호스트에 `inert` 가 붙지만 그리기는 그대로다.
 - **기록(L1)은 이 브라우저 탭 `sessionStorage`** 다(D1 (가) — 200줄 · 12시간, 새로고침 · 테마 전환에도 남음). 서버 분석 기록(L2)은
   usage-log 1단계와 함께 만든다(D6 — 자리만 `alerts.record_server_event`).
+  열린 상태 줄도 이 보관에 걸린다 — 줄 시각은 처음 선 때라 조건이 이어져도 12시간 뒤(더 새 줄 200개에 밀리면 그때) 걷힌다. 상태 표는 따로 남아 같은 조건이 다시
+  오면 그 줄이 알림창 없이 다시 선다(위 「상태 경고는 자리에 그리지 않는다」). 보관 값(200줄 · 12시간)은 그대로다.
 - **서버 재시작 알림**(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가) — `GL-07`, 사건 · 확인 필요). 재시작 뒤 세션은 새것이라 파이썬만으로는
   재시작과 첫 접속을 가르지 못해 브라우저가 판정한다(`TAB-02` 와 같은 길) — 프로세스마다 한 번 정하는 부트 표지(`alert_center.BOOT_MARK`)와
   등록부를 지나 미리 만든 알림(`alerts.server_restart_note`)을 data 에 싣고, JS(`bootChanged`)가 이 탭 `sessionStorage` 의 앞 표지와

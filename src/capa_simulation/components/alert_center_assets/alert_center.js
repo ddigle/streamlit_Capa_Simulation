@@ -18,7 +18,8 @@
 //   구석으로 옮겨 「×n」 을 붙이고 창 가장자리 테두리가 그 칸으로 모인다(D4 A — 한 겹 · 450ms · easeOutQuad · 한 번만). 움직임
 //   줄이기에서는 움직이지 않는 윤곽만 1.6초 선다.
 // - 기록(L1)은 이 브라우저 탭의 `sessionStorage` 다(D1 (가) — 200줄 · 12시간). 새로고침 · 테마 전환(새 세션)에도 남고 탭을 닫으면
-//   사라진다. 읽기 · 쓰기는 모두 try/catch — 막힌 브라우저에서는 이 문서 안에만 쌓인다. 서버에는 아무것도 보내지 않는다(L2 는
+//   사라진다. 열린 상태 줄이 그 보관에서 걷힌 뒤 같은 지문이 다시 오면 알림창 없이 줄만 다시 세운다(`handleState` 의 'same' —
+//   계기 `cause_back`). 읽기 · 쓰기는 모두 try/catch — 막힌 브라우저에서는 이 문서 안에만 쌓인다. 서버에는 아무것도 보내지 않는다(L2 는
 //   usage-log 와 함께 — D6).
 // - 다시 붙은 탭(2026-11-07 2차 보드 R1 (가)): 프런트는 마지막 회차가 앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는
 //   프래그먼트의 요청을 회차 없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. 앱 뿌리의 연결 표지(`data-test-connection-state`)가
@@ -947,7 +948,7 @@ function handleState(C, note, popup = showPopup) {
     const row = rowFor(note, now)
     if (!row.cause) row.cause = verdict === 'new' ? text(C).cause_new || '' : text(C).cause_change || ''
     C.rows.unshift(row)
-    C.states[key] = { code: String(note.code), fp: String(note.fp || ''), active: true, row: row.id }
+    C.states[key] = { code: String(note.code), fp: String(note.fp || ''), active: true, row: row.id, first: now }
     popup(C, `state:${key}`, note, false)
     return true
   }
@@ -957,10 +958,22 @@ function handleState(C, note, popup = showPopup) {
     return true
   }
   if (verdict === 'same') {
-    // 같은 지문인데 줄에 표가 없으면(더 새 같은 코드 줄이 표를 가져갔다가 걷힘 · 저장소가 넘쳐 빠짐) 다시 붙인다.
     const row = C.rows.find((item) => item.id === entry.row)
+    // 열린 줄이 보관(줄 수 · 시간 — `pruneRows`)에서 걷혔는데 조건이 이어지면 줄만 다시 세운다. 지문이 같아 알림창 · 안 읽음은
+    // 늘리지 않고, 처음은 상태 표가 기억한 시각(그 칸이 없는 옛 표는 지금)을 잇고, 계기 칸이 까닭을 말한다 — 자리 마크 오류의
+    // 걷힌 줄(`keptRowMissing`)과 같은 꼴이다.
+    if (!row) {
+      const back = rowFor(note, now)
+      back.cause = text(C).cause_back || ''
+      back.first = typeof entry.first === 'number' ? entry.first : now
+      back.unread = false
+      C.rows.unshift(back)
+      entry.row = back.id
+      return true
+    }
+    // 같은 지문인데 줄에 표가 없으면(더 새 같은 코드 줄이 표를 가져갔다가 걷힘 · 저장소가 넘쳐 빠짐) 다시 붙인다.
     const tables = validTables(note.tables)
-    if (row && tables.length && !validTables(row.tables).length) {
+    if (tables.length && !validTables(row.tables).length) {
       row.tables = tables
       return true
     }
