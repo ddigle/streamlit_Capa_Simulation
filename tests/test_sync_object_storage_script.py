@@ -396,7 +396,7 @@ def test_keep_and_unkeep_are_wired_to_their_audit_events(script: ModuleType) -> 
         assert events.spec_of(event) is not None, event
     keep = events.spec_of("admin_sync_keep")
     unkeep = events.spec_of("admin_sync_unkeep")
-    assert keep is not None and keep.det_keys == {"seq_to", "until", "result"}
+    assert keep is not None and keep.det_keys == {"seq_to", "keep_until", "result"}
     assert unkeep is not None and unkeep.det_keys == {"seq_to", "result"}
     with pytest.raises(SystemExit):
         script.parse_args(["keep"])
@@ -482,7 +482,7 @@ def test_keep_and_unkeep_leave_audit_pieces(
     until = kept[-1].rsplit("기한 ", 1)[1]
     (keep_line,) = _tool_lines(rig, "admin_sync_keep")
     assert (keep_line["out"], keep_line["env"], keep_line["verified"]) == ("success", "tool", False)
-    assert keep_line["det"] == {"seq_to": 1, "until": until, "result": "ok"}
+    assert keep_line["det"] == {"seq_to": 1, "keep_until": until, "result": "ok"}
     assert "DEMO_SECRET_NOTE" not in str(keep_line)
     assert released[0] == "풀림 : seq 1 · 표지 1"
     assert released[-1] == "전송용 요약: unkeep 통과; 종료 0; 풀림 seq 1 · 표지 1"

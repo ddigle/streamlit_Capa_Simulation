@@ -921,7 +921,7 @@ def command_keep(args: argparse.Namespace) -> int:
     until = outcome.marker.until.isoformat()
     simulation = pointer.members["simulation"]
     equipment = pointer.members["equipment"]
-    _AUDIT_DETAIL.update(seq_to=pointer.seq, until=until)
+    _AUDIT_DETAIL.update(seq_to=pointer.seq, keep_until=until)
     print(f"지킴 : seq {pointer.seq} · 기한 ~{until}")
     print(
         f"멤버 : {DATASET_LABELS['simulation']} {simulation.seq}(판 {simulation.migration_version})"
