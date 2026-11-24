@@ -10,7 +10,7 @@
 
 - **끄개**(`fragment` · `settings.editor_scopes_enabled` — 환경변수 `CAPA_EDITOR_SCOPES=off`) —
   끄면 구역 프래그먼트를 거치지 않고 본문을 앱 전체 회차 안에서 그냥 그린다(칸마다 앱 전체 회차).
-  아래 도우미는 구역 회차가 없으니 스스로 쉰다. 묶음 쉼도 함께 0.3초로 돌아간다
+  아래 도우미는 구역 회차가 없으니 스스로 쉰다. 묶음 쉼도 함께 모두 0.3초다
   (`grid_shared.batch_ms`). 운영 물러섬이라 기본은 켬이다.
 
 - **R1 올리는 자리**(`escalate` · `escalates` · `escalate_if_moved`) — 위젯 콜백 끝(`st.rerun()` —

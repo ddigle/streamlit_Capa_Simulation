@@ -40,7 +40,8 @@ SHARED_CSS: Final = ("cells.css", "changes.css")
 # (`APP_ENV` 운영 값)에서는 읽지 않는다. 받는 범위는 `BATCH_OVERRIDE_RANGE` 다.
 BATCH_OVERRIDE_ENV: Final = "CAPA_DEV_BATCH_MS"
 BATCH_OVERRIDE_RANGE: Final = (50, 5000)
-# 편집기 구역 끄개가 꺼졌을 때 모든 편집기의 묶음 쉼(ms) — 칸마다 앱 전체 회차이던 판의 값.
+# 편집기 구역 끄개가 꺼졌을 때 모든 편집기의 묶음 쉼(ms) — 구역 없이 칸마다 앱 전체 회차로 돌 때의
+# 값이다. Space 「호기 정보」 창도 이 쉼으로 묶는다.
 ORDINARY_SEND_MS: Final = 300
 # 단계 칩 바탕의 옅기 — 단계 색을 바탕 위에 이만큼 얹은 불투명 색(`tokens.opaque_mix`).
 LEVEL_FILL_ALPHA: Final = 0.14

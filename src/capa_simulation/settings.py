@@ -95,7 +95,7 @@ def share_session_tables_enabled(environ: Mapping[str, str] | None = None) -> bo
 
 # 편집기 구역 끄개 — 꼴은 위 메모리 공유 스위치와 같다(기본 켬, `off` 일 때만 끔, 부를 때마다 읽음).
 # 끄면 편집기 구역(`components/fragment_scope.fragment`)이 앱 전체 회차 안에서 그냥 그려지고 편집기
-# 묶음 쉼이 `grid_shared.ORDINARY_SEND_MS`(0.3초)로 돌아간다. 운영에서도 읽는다 — 탈이 났을 때만
+# 묶음 쉼이 모두 `grid_shared.ORDINARY_SEND_MS`(0.3초)다. 운영에서도 읽는다 — 탈이 났을 때만
 # C-DEP 환경변수 표에 넣고 CI/CD 로 다시 띄운다(AGENTS 9장 「구역 회차 규칙」 끄개).
 EDITOR_SCOPES_ENV = "CAPA_EDITOR_SCOPES"
 

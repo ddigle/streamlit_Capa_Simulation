@@ -1,10 +1,10 @@
-# Purpose: 편집기 구역 끄개(`CAPA_EDITOR_SCOPES=off`)가 편집기 넷의 묶음 쉼을 지난 판 값으로
-# 되돌리는지 본다.
+# Purpose: 편집기 구역 끄개(`CAPA_EDITOR_SCOPES=off`)가 편집기 넷의 묶음 쉼을 모두
+# `ORDINARY_SEND_MS` 로 두는지 본다.
 
 """편집기 묶음 쉼(`grid_shared.batch_ms`)과 편집기 구역 끄개(`settings.editor_scopes_enabled`).
 
 끄개가 꺼지면 범용 편집 그리드 · 설비 마스터 표 · 시나리오 목록 · Space 「호기 정보」 창 넷의 쉼이
-모두 `grid_shared.ORDINARY_SEND_MS`(0.3초 — 구역 없이 칸마다 앱 전체 회차이던 판의 값)다. 개발 ·
+모두 `grid_shared.ORDINARY_SEND_MS`(0.3초 — 구역 없이 칸마다 앱 전체 회차로 돌 때의 값)다. 개발 ·
 측정 사본의 실행 줄 덮어쓰기(`CAPA_DEV_BATCH_MS`)보다 먼저 본다. 켬(기본)이면 편집기마다 결정값이고
 덮어쓰기도 그대로다(그 몫의 자세한 갈래는 편집기마다 시험이 본다).
 """
