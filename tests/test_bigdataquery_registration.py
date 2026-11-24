@@ -424,6 +424,25 @@ def test_ad04_names_the_missing_custom_table_variable(
     assert len(registration.CUSTOM_TABLE_SHORT) <= alerts.SHORT_LIMIT
 
 
+@pytest.mark.parametrize("value", ["", MALFORMED_CUSTOM_TABLE], ids=["없음", "꼴 틀림"])
+def test_the_refusal_and_ad04_name_the_same_place_to_fill(value: str) -> None:
+    """저장 거부 글(상세 조회가 패키지 앞에서 멈춘 글)과 `AD-04` 줄은 까닭 뒤 채울 자리를 같은 말로
+    적고, 화면 글이라 「사내」 를 쓰지 않는다(2026-11-03 사용자 결정 — 어댑터 · 이 화면 모듈은
+    `test_app_text_wording` 이 훑지 않는다). 표 이름 꼴은 판정과 같이 스키마 없는 이름도 받는다고
+    적는다."""
+    with pytest.raises(RuntimeError) as raised:
+        adapter.build_custom_query("SIM-001", value)
+    refusal = str(raised.value)
+    problem = adapter.custom_table_problem(value)
+    assert problem is not None and refusal.startswith(problem)
+    notice = registration.custom_table_notice(problem)
+    place = refusal.split(" — ", 1)[1]
+    assert place == notice.split(" — ", 1)[1]
+    assert "표 이름(표 또는 스키마.표)" in place
+    assert "사내" not in refusal and "사내" not in notice
+    assert "사내" not in registration.custom_locked_help(problem)
+
+
 def test_ad04_does_not_carry_a_malformed_value(monkeypatch: pytest.MonkeyPatch) -> None:
     """꼴이 틀린 값은 사내 표 이름이거나 잘못 붙여 넣은 다른 값일 수 있어 전문에도 싣지 않는다."""
     monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)

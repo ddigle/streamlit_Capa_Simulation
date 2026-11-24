@@ -135,7 +135,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `CAPA_COMPANY_INDEX_URL` | 사내 Artifactory 인덱스 주소(`https://…/simple` 통째 — 자격증명 없이, 사내 PC 와 같은 값). 사내 값이라 저장소에 없다. **이 이름을 읽는 판을 싣는 CI/CD 전에 넣는다** — 없으면 설치를 건너뛰어 BigDataQuery 조회가 멈춘다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 | 0. 설치 |
 | `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
 | `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
-| `CAPA_BDQ_CUSTOM_TABLE` | CUSTOM 원천 표 이름(`스키마.표` — 사내 값이라 저장소에 없다, WebIDE 2-1 과 같은 값). **이 이름을 읽는 판을 싣는 CI/CD 전에 넣는다** — 없거나 꼴이 틀리면 DB 등록 저장이 잠기고 자동 갱신 회차가 등록 단계에서 멈추며 「서버 시작 점검」 이 「실패 있음」(개발자 알림 `AD-01`)이 된다. 넣고 CI/CD 를 한 번 더 누르면 풀린다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 | 2-1. 등록 |
+| `CAPA_BDQ_CUSTOM_TABLE` | CUSTOM 원천 표 이름(`표` 또는 `스키마.표` — 사내 값이라 저장소에 없다, WebIDE 2-1 과 같은 값). **이 이름을 읽는 판을 싣는 CI/CD 전에 넣는다** — 없거나 꼴이 틀리면 DB 등록 저장이 잠기고 자동 갱신 회차가 등록 단계에서 멈추며 「서버 시작 점검」 이 「실패 있음」(개발자 알림 `AD-01`)이 된다. 넣고 CI/CD 를 한 번 더 누르면 풀린다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 | 2-1. 등록 |
 | `CAPA_BDQ_SECRET_KEY` | (자동 로그인을 쓸 때만) Fernet 키 44글자 — `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 출력. 동기화 모드가 `managed` 인 서버에서만 쓰인다 | 1. 로그인(자동) |
 
 - 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다 — 인덱스 줄의

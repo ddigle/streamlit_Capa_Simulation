@@ -10052,7 +10052,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·
 state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 모듈은 통합인증 환경변수를 읽지 않는다.
 
-**BigDataQuery CUSTOM 원천 표(2026-11-22).** DB 등록 · 자동 갱신이 부품(`Capa Code`)마다의 `CUSTOM` 을 읽는 둘째 표의 이름(스키마.표)도
+**BigDataQuery CUSTOM 원천 표(2026-11-22).** DB 등록 · 자동 갱신이 부품(`Capa Code`)마다의 `CUSTOM` 을 읽는 둘째 표의 이름(표 또는 스키마.표)도
 사내 값이다 — 파일 · 시험 · 문서 · 커밋 메시지 · 브랜치 이름에 적지 않고 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 로만 받는다(사내 PC 사용자
 환경변수 — README 4단계 · WebIDE 셸 — `docs/bigdataquery_webide_setup.md` 2-1 · C-DEP 환경변수 표 — 같은 문서 「넣을 환경변수」). 어댑터의 조회문
 틀(`CUSTOM_QUERY_TEMPLATE`)에는 자리만 있고, 값은 부를 때마다 읽어 표 이름 꼴 정규식 하나로 거른다(3장 어댑터 · `custom_table_problem`).

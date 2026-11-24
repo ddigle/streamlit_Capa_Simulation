@@ -55,9 +55,9 @@ DETAIL_WINDOW_DAYS_BEFORE: Final = 7
 DETAIL_WINDOW_DAYS_AFTER: Final = 3
 # 조회 요청자의 사내 계정을 넣는 환경변수 `BDQ_USER_NAME_ENV` 는 C-DEP CD 시작 스크립트도 읽어
 # `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
-# CUSTOM 원천 표 이름(스키마.표)을 넣는 환경변수. 표 이름은 저장소 · 배포 ZIP 에 두지 않고 이
-# 값으로만 받는다 — `fetch` 가 부를 때마다 읽어 화면 등록과 자동 갱신이 같은 판정을 받는다
-# (`custom_table_problem`).
+# CUSTOM 원천 표 이름(표 또는 스키마.표)을 넣는 환경변수. 표 이름은 저장소 · 배포 ZIP 에 두지
+# 않고 이 값으로만 받는다 — `fetch` 가 부를 때마다 읽어 화면 등록과 자동 갱신이 같은 판정을
+# 받는다(`custom_table_problem`).
 BDQ_CUSTOM_TABLE_ENV: Final = "CAPA_BDQ_CUSTOM_TABLE"
 # 표 이름 꼴 — 영문 · 숫자 · 밑줄 낱말 하나 또는 점으로 이은 둘. `\w` 는 한글도 받아 쓰지 않는다.
 # 값은 조회문에 그대로 끼우므로 이 꼴이 조회문에 들어가는 글의 유일한 거름이다.
@@ -428,8 +428,8 @@ CUSTOM_TABLE_MALFORMED: Final = (
 )
 _CUSTOM_TABLE_ADVICE: Final = (
     " 부품(Capa Code)의 CUSTOM 을 읽지 못해 등록하지 않았습니다 — 영문 · 숫자 · 밑줄로 된 "
-    "스키마.표 값을 넣고 앱을 다시 띄우세요(사내 PC · WebIDE 는 README 「초기 설정」 4단계, "
-    "C-DEP 는 배포 설정의 환경변수 표)."
+    "표 이름(표 또는 스키마.표)을 넣고 앱을 다시 띄우세요(혼자 쓰는 PC · WebIDE 는 README "
+    "「초기 설정」 4단계, C-DEP 는 배포 설정의 환경변수 표)."
 )
 
 
