@@ -57,7 +57,11 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 아니라 내장). 값에 `teaser` 칸(티저가 있는지)을 늘 싣고, 티저 본문(약 1MB)은 입장 화면이 `teaser`
 trigger 로 달라고 한 회차에만 한 번 읽어 싣는다(`_teaser_requested`) — 모든 접속이 첫 로딩에 티저를
 받지 않게. 받은 티저는 탭이 들고 있고 다음 회차의 값에는 다시 싣지 않는다. 받은 값 JS 는 `teaser` 를
-떼어 요약과 따로 넘긴다 — 요약은 워커로 가므로 티저를 싣지 않는다.
+떼어 요약과 따로 넘긴다 — 요약은 워커로 가므로 티저를 싣지 않는다. 운영 서버에서는 화면 등급
+개발자에게만 티저가 있다(`teaser_payload` — 구현 중 화면 숨김과 같은 동작 `screen.unfinished`,
+2026-11-24 정식판 마감 2-A 의 티저 몫). 그 밖의 사람에게는 `available: false` 라 커버 단추가
+Detail · Summary 둘이다. 등급 창구는 늦게 읽는 대리 `grade_hooks` 로 부른다 — `sso_identity` 가
+모듈 머리에서 `app_header` → 이 모듈을 읽어 머리에서 읽으면 고리다.
 """
 
 from __future__ import annotations
@@ -72,6 +76,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components import grade_hooks
 from capa_simulation.components.intro_overlay import (
     BRAND,
     BRAND_SUBTITLE,
@@ -1017,10 +1022,17 @@ def _teaser_requested() -> None:
 def teaser_payload() -> dict[str, Any]:
     """`teaser` 칸. 티저가 있는지는 늘, 본문은 달라고 한 회차에만 싣는다(표지는 그 회차에 걷는다).
 
-    티저를 못 읽으면(파일이 없거나 깨짐) 없는 것으로 보낸다 — Introduce 가 서지 않을 뿐 앱은
-    그대로다.
+    운영 서버에서는 화면 등급 개발자에게만 있다 — 구현 중 화면 숨김
+    (`sso_identity.unfinished_hidden`)과 같은 동작 `screen.unfinished` 를 할 수 없는 회차
+    (「이 등급으로 보기」 동안 포함, 운영 + 통합인증 꺼짐은 모두)는 달라고 해도 없는 것으로 보내
+    Introduce 가 서지 않는다(2026-11-24 정식판 마감 2-A 의 티저 몫 — 다른 사람의 입장 화면은
+    Detail · Summary 두 단추). 표지는 그 회차에도 걷는다 — 숨긴 동안 단 표지가 남아 뒤 회차에
+    본문을 싣지 않게. 티저를 못 읽으면(파일이 없거나 깨짐) 없는 것으로 보낸다 — Introduce 가
+    서지 않을 뿐 앱은 그대로다.
     """
     requested = bool(st.session_state.pop(_TEASER_KEY, False))
+    if not grade_hooks.viewer_can("screen.unfinished"):
+        return {"available": False}
     if not INTRODUCE_TEASER_PATH.is_file():
         return {"available": False}
     if not requested:

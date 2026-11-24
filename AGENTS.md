@@ -453,7 +453,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     구현 중 화면 숨김 판정 `unfinished_hidden` 도 여기다 — 동작 `screen.unfinished`(개발자 몫, `admin_area_locked` 와 한 뿌리 ·
     「이 등급으로 보기」 를 따름)를 화면 등급으로 할 수 없으면 참이고, `app.py` 가 그 값으로 사이드바에서 구현 중 화면
     (`navigation.PageSpec.unfinished`)을 빼고 주소 · 탭 · 알림으로 연 회차를 멈추며, 실행 관리 머리가 같은 값으로 목차의 그 화면
-    카드와 이행 현황판 자리를 걷는다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」, 시험 `tests/test_grade_ui_core.py`).
+    카드와 이행 현황판 자리를 걷는다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」, 시험 `tests/test_grade_ui_core.py`). 입장 화면
+    Introduce 티저도 같은 동작으로 가린다(`intro_summary.teaser_payload` — 가져오기 고리라 `grade_hooks.viewer_can` 으로).
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
     「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴 — 띠 글은 문지기가 그 401 에 단 까닭 낱말 머리(`names.REASON_HEADER` —
@@ -501,7 +502,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `admin_view.diagnostic_message`)를 부를 때 쓰는 늦게 읽는 얇은 대리. `sso_identity` 가 모듈 머리에서 `app_header` 를 읽고 그 길이 입장 화면 →
     HOME 그리기 → `home_preference` · `home_main_cases` · `past_data_management` 까지 닿아, 그 부품이 머리에서 창구 이름을 꺼내면 덜 읽힌
     모듈로 앱이 서지 않는다. 이 모듈은 머리에서 화면 모듈을 읽지 않고 부르는 순간 창구를 읽어 넘긴다 — 동작 · 데코레이터 이름이 창구와 같아
-    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`.
+    받는 자리 그물(`grade_support.assert_refusals_caught`)이 그대로 본다. 시험 `tests/test_grade_ui_calc.py`. 입장 화면 요약
+    (`intro_summary` — `app_header` 가 머리에서 읽는다)도 티저 값의 판정을 이것으로 부른다(2026-11-24 정식판 마감 2-A).
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다. 다만 운영 서버의 Admin Area 는 개발자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않는다 — 켜기 전 미리 보기 길은 없고 켜려다 막히면 설정 화면이 같은 표로 말한다, `docs/sso_setup.md` 5장. 운영인데 꺼짐 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다 — `render_off_in_production_alert`, 잠긴 회차에도 Alarm 으로 닿게)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
@@ -4057,7 +4059,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
   색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
-  — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 셋 모두 티저의 `TEASER.pause()`
+  — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 운영 서버에서는 화면 등급 개발자에게만
+  선다 — 다른 사람의 커버는 `Detail` · `Summary` 두 단추다(2026-11-24 정식판 마감 2-A 의 티저 몫 — 합성 수치가 든 대회 사본,
+  판정은 `intro_summary.teaser_payload` · JS 는 `teaser.available` 만 본다). 셋 모두 티저의 `TEASER.pause()`
   로 재생을 멈춘다 — 티저는 재생 때 남은 소리를 미리 잡아 두므로 층만 숨기면 40초 끝까지 소리가 난다. 다시 열면 멈춘 자리에
   서 있고 티저 안 `Space` 로 잇는다. 티저가 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다.
   `site/contest-deck/index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
@@ -4106,7 +4110,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `services/official_summary.py`.
   - 티저 본문(약 1MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 읽어 싣는다(`teaser_payload`) — 받은 값
     JS 가 `teaser` 를 떼어 따로 넘기므로 워커로 가는 요약에는 티저가 없다. Streamlit 정적 경로는 HTML 을 글자로 보내
-    쓸 수 없어 이 길이다.
+    쓸 수 없어 이 길이다. 운영 서버에서는 구현 중 화면 숨김(`sso_identity.unfinished_hidden`)과 같은 동작
+    `screen.unfinished` 를 할 수 없는 회차에 달라고 해도 `available: false` 다(표지는 그 회차에 걷음 — 2026-11-24 정식판 마감
+    2-A 의 티저 몫). 등급 창구는 늦게 읽는 대리 `grade_hooks` 로 부른다(`sso_identity` → `app_header` → 이 모듈 고리).
   - 모든 페이지 앞에서 돌므로 어떤 예외도 내보내지 않는다(`available: false` 와 까닭). 공식 리비전의 결정적
     키로 HOME 과 같은 캐시를 쓰고, 판정 기준은 공용 프로필(`load_global_securement_threshold`)이다.
   - 값은 공식버전의 **모든 달**이다 — HOME 기본 조회기간(`settings.MONTH_SELECTION_*`)으로 `display_month_range`(HOME 과 같은
@@ -6791,7 +6797,7 @@ RQ_MODULE
     그대로). 불변조건:
     - **어디서 가르나.** 운영 아님(개발 `app.py` · WebIDE · 사내 PC) = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자 몫까지(개발자 몫만 막힘 — 기록도
       없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 그래서 운영 + 꺼짐이면 구현 중
-      화면(`screen.unfinished` — 개발자 몫)도 모두에게 숨는다(2026-11-24 정식판 마감 2-A). 등급 시험은 모두 「운영 + 켜짐」 판정을
+      화면 · 입장 화면 Introduce 티저(`screen.unfinished` — 개발자 몫)도 모두에게 숨는다(2026-11-24 정식판 마감 2-A). 등급 시험은 모두 「운영 + 켜짐」 판정을
       거친다(`tests/grade_support.operational_grades` — 넷 계정의 등급을 단언, 헛돌기 막음).
     - **명단 파일 꼴 · 저장 값은 그대로다.** 등급 칸은 `user` · `admin` 둘(`admin` = 개발자) — 앞 ZIP 이 다시 써도 깨지지 않게. 열람 · 실무자 ·
       관리자는 같은 버킷 · 같은 디렉터리의 등급 파일(`grades.json` — 적는 값 `editor` · `manager` 둘, **열람 = 줄 없음**, 줄마다 그 사람의
@@ -9345,7 +9351,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리가 값을 보이던 곳이면 값만 남긴다(HOME 설정 창 · 「비교 · 주요 Case」 · Cut-off · 자동 갱신 탭 — UI-NTF-05). 가용설비 현황 › 설비 마스터의
   세 표는 모든 등급이 같은 편집 표를 보고 권한 없는 표 · 칸만 잠근다(2026-11-18 구현 확인 보드 「고칠 것」 — 설비 마스터 표는 `read_only_data`
   잠금 갈래 `grade` + 편집 도구를 세우지 않는 `readOnly`, 작은 편집표 둘은 `locked_editor` — 같은 칸 꼴을 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이). 탭
-  값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다.
+  값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다. 입장 화면
+  Introduce 티저도 같다(동작 `screen.unfinished` — `intro_summary.teaser_payload` 가 `available: false` 로 보낸다, 2026-11-24 정식판 마감 2-A).
 - **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
   `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험
   `tests/test_grades.py` 가 표를 잠근다).

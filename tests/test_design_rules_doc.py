@@ -3601,6 +3601,10 @@ CLOSEOUT_2A_LINES = {
         "운영 서버의 개발자가 아니면 이행 현황판 자리 · 실적 셋 목차 카드를 그리지 않고 세 영역의 "
         "Dynamic Capa 카드는 이름 · 풍선만 남긴다"
     ),
+    "screens-teaser": (
+        "운영 서버에서는 화면 등급 개발자만 세운다 — 다른 사람의 입장 화면은 "
+        "Detail · Summary 두 단추"
+    ),
 }
 
 
@@ -3653,3 +3657,18 @@ def test_the_closeout_2a_execution_head_slot_is_in_the_rule_exceptions() -> None
     history = _chapter(_text(), 8)
     v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
     assert net in v145
+
+
+def test_the_closeout_2a_teaser_line_withdraws_the_bundled_decision_on_the_server_only() -> None:
+    """v1.45 — 6-42 끝 줄 screens-teaser 는 지난 결정(2026-10-19 Introduce 내장)을 운영 서버에서만
+    거둔 사용자 답이다 — 구현 중 화면과 같은 동작이고, 따라하기 창은 그대로이며, 판 기록이 그
+    시험을 적는다."""
+    section = _chapter(_text(), 6)
+    record = section[section.index("\n### 6-42. ") :]
+    line = next(item for item in record.splitlines() if item.startswith("- screens-teaser · "))
+    for phrase in ("2026-10-19", "`screen.unfinished`", "따라하기 창", "`teaser.available`"):
+        assert phrase in line, phrase
+    assert "입장 화면 티저 몫" in record.split("\n- ")[0]
+    history = _chapter(_text(), 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    assert "test_the_operational_server_offers_the_teaser_only_to_the_developer" in v145

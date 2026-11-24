@@ -13,6 +13,7 @@ import streamlit as st
 from js_runner import run_js_json
 
 import capa_simulation.components.intro_overlay as intro_overlay
+from capa_simulation.auth import grades
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.design import tokens
 from capa_simulation.settings import APP_LABEL, APP_NAME, APP_SUBTITLE
@@ -1280,6 +1281,111 @@ def test_the_introduce_deck_is_sent_only_on_the_run_that_asked_for_it(
     monkeypatch.setattr(intro_summary, "INTRODUCE_TEASER_PATH", tmp_path / "missing.html")
     intro_summary._teaser_requested()
     assert intro_summary.teaser_payload() == {"available": False}
+
+
+def _demo_teaser(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from capa_simulation.components import intro_summary
+
+    deck = tmp_path / "capa-teaser.html"
+    deck.write_text("<title>DEMO deck</title>", encoding="utf-8")
+    monkeypatch.setattr(st, "session_state", {})
+    monkeypatch.setattr(intro_summary, "INTRODUCE_TEASER_PATH", deck)
+
+
+def test_the_operational_server_offers_the_teaser_only_to_the_developer(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영 서버(통합인증 켜짐)에서 Introduce 티저(합성 수치가 든 혁신대회 사본)는 화면 등급
+    개발자에게만 있다 — 그 밖의 등급은 달라고 해도 `available` 거짓 · 본문 없음이라 커버 단추가
+    Detail · Summary 둘이다(2026-11-24 사용자 답 — 정식판 마감 2-A 의 티저 몫). 판정은 구현 중 화면
+    숨김과 같은 동작 `screen.unfinished` 이고, 숨긴 회차에 단 표지도 그 회차에 걷혀 뒤 회차(개발자로
+    보더라도)에 본문을 싣지 않는다."""
+    from grade_support import as_grade
+
+    from capa_simulation.components import intro_summary, sso_identity
+
+    _demo_teaser(tmp_path, monkeypatch)
+    for grade in (grades.VIEWER, grades.EDITOR, grades.MANAGER):
+        as_grade(monkeypatch, grade)
+        assert sso_identity.unfinished_hidden()
+        assert intro_summary.teaser_payload() == {"available": False}, grade
+        intro_summary._teaser_requested()
+        assert intro_summary.teaser_payload() == {"available": False}, grade
+        assert intro_summary._TEASER_KEY not in st.session_state
+
+    as_grade(monkeypatch, grades.DEVELOPER)
+    assert not sso_identity.unfinished_hidden()
+    assert intro_summary.teaser_payload() == {"available": True}
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": True, "html": "<title>DEMO deck</title>"}
+
+
+def test_the_teaser_follows_the_preview_and_hides_from_everyone_with_sso_off(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「이 등급으로 보기」 동안은 보는 등급을 따라 개발자에게도 티저가 없고, 운영인데 통합인증이
+    꺼진 서버는 관리자 몫까지라 아무에게도 없다 — 구현 중 화면 숨김과 같다."""
+    from grade_support import operational_sso_off, preview
+
+    from capa_simulation.components import intro_summary
+
+    _demo_teaser(tmp_path, monkeypatch)
+    preview(monkeypatch, grades.MANAGER)
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": False}
+
+    operational_sso_off(monkeypatch)
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": False}
+
+
+def test_off_the_operational_server_the_teaser_stays(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영 아님(개발 `app.py` · 사내 WebIDE · 사내 PC · 시험)은 지금처럼 누구에게나 티저가 있고
+    달라고 한 회차에 본문을 싣는다 — 입장 화면 단추는 셋 그대로다. 요약 칸도 그 값을 싣는다."""
+    from grade_support import unrestricted
+
+    from capa_simulation.components import intro_summary
+
+    _demo_teaser(tmp_path, monkeypatch)
+    unrestricted(monkeypatch)
+    assert intro_summary.teaser_payload() == {"available": True}
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": True, "html": "<title>DEMO deck</title>"}
+
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(st, "html", lambda body: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        intro_summary, "official_summary_data", lambda path: {"available": False, "reason": "x"}
+    )
+    intro_summary.render_intro_summary("db")
+    assert calls[0]["data"]["teaser"] == {"available": True}
+
+
+def test_the_summary_slot_carries_no_teaser_for_the_operational_editor(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """매 회차 요약 칸(`render_intro_summary`)이 운영 서버 실무자에게는 티저가 없다는 값을 싣는다 —
+    입장 화면 JS 는 그 값(`teaser.available`)만 보고 Introduce 를 세우지 않는다."""
+    from grade_support import as_grade
+
+    from capa_simulation.components import intro_summary
+
+    _demo_teaser(tmp_path, monkeypatch)
+    as_grade(monkeypatch, grades.EDITOR)
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(st, "html", lambda body: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        intro_summary, "official_summary_data", lambda path: {"available": False, "reason": "x"}
+    )
+    intro_summary._teaser_requested()
+    intro_summary.render_intro_summary("db")
+    assert calls[0]["data"]["teaser"] == {"available": False}
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert "const showIntroduce = can && teaser.available;" in js
 
 
 def test_the_summary_payload_hands_the_deck_aside_from_the_worker_summary() -> None:

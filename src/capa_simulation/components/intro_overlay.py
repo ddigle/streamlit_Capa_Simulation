@@ -22,7 +22,12 @@ HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려�
   퍼지며 티저가 드러나고, 머리 `←`·`Esc` 는 원이 그 단추로 접히며 커버로, `Detail` 은 곧장 앱으로
   간다. 티저 본문은 처음 누를 때 `intro_summary` 의 `teaser` trigger 로 한 번 받아 blob 주소로
   띄운다 — Streamlit 정적 경로는 HTML 을 글자로 보내 쓸 수 없다. 티저가 열린 동안 장면 워커는 쉰다.
-  Summary 처럼 들어갈 준비가 끝나면 선다 — 로딩 중 받기 rerun 은 첫 실행을 끊는다.
+  Summary 처럼 들어갈 준비가 끝나면 선다 — 로딩 중 받기 rerun 은 첫 실행을 끊는다. 운영 서버에서는
+  화면 등급 개발자에게만 선다 — 티저는 합성 수치가 든 혁신대회 사본이라, 다른 사람의 커버는 Detail ·
+  Summary 두 단추다(2026-11-24 사용자 답 — 정식판 마감 2-A 의 티저 몫, 2026-10-19 내장 결정을 운영
+  서버에서만 거둔다). 판정은 `intro_summary.teaser_payload` 가 구현 중 화면 숨김과 같은 동작
+  `screen.unfinished` 로 하고 입장 화면 JS 는 `teaser.available` 만 본다. 개발 PC · 사내 WebIDE ·
+  사내 PC 는 셋 그대로다.
 
 원래 화면으로 들어간 뒤에는 사이드바 머리칸의 앱 이름 라벨(`S.PKG CAPA` / `AX Management` 두 줄 —
 `intro_summary.summary_label_script`)이 같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접히며
@@ -112,9 +117,9 @@ TITLE_LINES = (BRAND, BRAND_SUBTITLE)
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
 # 커버의 셋째 단추 — 40초 티저를 입장 화면 안에 띄운다(2026-10-19 사용자 결정, 티저는
-# `intro_summary` 가 달라고 한 회차에만 보낸다). 티저는 쇼케이스 `contest/dist/capa-teaser.html` 을
-# CR 을 빼고 복사한 한 파일이다 — 외부 요청 없이 사내 오프라인에서 선다. 고칠 때는 쇼케이스 원본을
-# 고쳐 다시 복사한다.
+# `intro_summary` 가 달라고 한 회차에만 보낸다 — 운영 서버에서는 개발자에게만). 티저는 쇼케이스
+# `contest/dist/capa-teaser.html` 을 CR 을 빼고 복사한 한 파일이다 — 외부 요청 없이 사내
+# 오프라인에서 선다. 고칠 때는 쇼케이스 원본을 고쳐 다시 복사한다.
 INTRODUCE_LABEL = "Introduce"
 INTRODUCE_TEASER_PATH = _ASSETS / "capa-teaser.html"
 # 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 앱 이름 라벨(`intro_summary`). id 는
