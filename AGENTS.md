@@ -776,11 +776,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가리키지 않고 실적 셋 · Dynamic 이 운영 서버에서는 개발자에게만 보인다고 적는다(2026-11-24 정식판 마감 2-A — 시험
     `test_execution_management_page.py` · `test_grade_ui_core.py`).
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
-  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
-  자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
+  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(제목 「모듈 화면 자리」 · 표지
+  「모듈 연결 대기」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
   읽지 않아 공통 조건 줄도 조건 카드도 없다). 그리는 것은 `components/module_slot.py` 의 `render_module_slot_page` 한 벌이고 이 파일은
   제 이름 한 줄만 넘긴다. 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
-  `docs/TODO.md` 2장 「생산 진도 화면 내용」. 하위 샘플 셋이 있어 사이드바 상자는 다른 계산 그룹처럼 펼침 상자이고 이 화면은 그 안
+  `docs/TODO.md` 2장 「생산 진도 화면 내용」. 그래서 자리 표지는 약속 문장이 아니라 원천 미연결 화면과 같은 「… 연결 대기」
+  꼴이다(UI-LAY-10 · UI-CON-03, 2026-11-24 정식판 마감 2-A). 하위 샘플 셋이 있어 사이드바 상자는 다른 계산 그룹처럼 펼침 상자이고 이 화면은 그 안
   「현황 요약」 이다. 시험은 `tests/test_production_progress_page.py`.
 - `app_pages/production_sample_1.py` · `production_sample_2.py` · `production_sample_3.py` — 생산 진도 하위 「샘플 페이지 1 · 2 · 3」
   (2026-11-04 검수 의견 prog-01 「생산진도 상자 내에 샘플 페이지 1,2,3 넣고 펼치는 상자로 반영」 · prog-02 「샘플페이지 1,2,3 화면에
@@ -4301,7 +4302,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/module_slot.py` — 아직 없는 화면 · 칸이 들어올 점선 자리 한 벌(`slot_html` — 제목 ·
-  표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
+  표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 제목 「모듈 화면 자리」 ·
+  표지 「모듈 연결 대기」(원천 미연결 화면의 「… 연결 대기」 와 같은 꼴 — 그리는 길이 없어 약속 문장을 두지 않는다), 테두리
   `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」(운영
   서버에서는 개발자에게만)가 그것을 부른다. 그 자리만 든 화면 한 벌
   (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 성숙도는 화면 탭 「구현중」 표지 · `PageSpec.in_progress`, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨

@@ -9,9 +9,11 @@
 넘긴다(`render_module_slot_page`).
 
 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
-`docs/TODO.md` 2장 「생산 진도 화면 내용」. 시나리오 · 설비 DB 를 열지 않으므로 이 자리를 그리는
-화면은 사이드바 공통 조건 줄도 조건 카드도 없다(`navigation.PRODUCTION_PROGRESS` ·
-`PRODUCTION_PROGRESS_SUBPAGES`).
+`docs/TODO.md` 2장 「생산 진도 화면 내용」. 그래서 자리 표지는 무엇을 하면 들어온다는 약속 문장이
+아니라 원천이 아직 붙지 않은 화면과 같은 꼴의 「모듈 연결 대기」 한 줄이다(설계 규칙 UI-LAY-10 ·
+UI-CON-03 — `sample_data.render_pending_source` 의 「… 연결 대기」, 2026-11-24 정식판 마감 2-A).
+시나리오 · 설비 DB 를 열지 않으므로 이 자리를 그리는 화면은 사이드바 공통 조건 줄도 조건 카드도
+없다(`navigation.PRODUCTION_PROGRESS` · `PRODUCTION_PROGRESS_SUBPAGES`).
 
 점선 자리 꼴은 `slot_html` 한 벌이다 — 모듈 화면 자리와 실행 관리 머리의 「이행 현황판
 자리」(다음 판에 숫자가 들어올 칸)가 제목 · 표지 · 높이만 넘긴다(설계 규칙 UI-LAY-10 ·
@@ -27,9 +29,9 @@ import streamlit as st
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.design import tokens
 
-# 자리 글 — 제목 한 줄과 안내 한 줄. 화면 확인·따라하기 가이드가 이 글을 보지 않는다.
+# 자리 글 — 제목 한 줄과 표지 한 줄. 화면 확인·따라하기 가이드가 이 글을 보지 않는다.
 MODULE_SLOT_TITLE = "모듈 화면 자리"
-MODULE_SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩니다."
+MODULE_SLOT_TEXT = "모듈 연결 대기"
 # 머리말 아래를 거의 채우는 높이 — 창이 낮아도 360px 은 선다.
 MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 270px))"
 
