@@ -13,6 +13,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from capa_simulation import alerts
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.custom_source_check import (
     CELL_COLUMNS,
@@ -20,6 +21,7 @@ from capa_simulation.services.custom_source_check import (
     CUSTOM_ROWS_COLUMN,
     CUSTOM_SOURCE_COLUMNS,
     MAIN_ROWS_COLUMN,
+    CustomSourceCheck,
     attach_custom_values,
     check_custom_rows,
 )
@@ -293,6 +295,30 @@ def test_memo_always_names_kinds_and_notice_only_on_mismatch() -> None:
     assert uneven.memo() == "CUSTOM 원천 대조 — 종류 2 · 행 수 다른 칸 1 · 한쪽에만 있는 칸 0"
     assert "행 수 다른 칸 1 · 한쪽에만 있는 칸 0" in uneven.notice()
     assert "등록했습니다" in uneven.notice()
+
+
+@pytest.mark.parametrize(
+    ("mismatch", "one_side"), [(1, 0), (2, 1), (9_999, 9_999)], ids=["하나", "둘 셋", "네 자리"]
+)
+def test_the_notice_short_text_leads_with_the_cell_counts(mismatch: int, one_side: int) -> None:
+    """알림창 짧은 글(60자에서 자름)만 읽어도 어긋난 칸 수와 두 갈래 수가 보인다(설계 규칙
+    UI-NTF-06 — 무엇을 · 건수). 칸마다 네 자리 수까지다."""
+    check = CustomSourceCheck(
+        main_rows=1,
+        main_distinct_rows=1,
+        custom_rows=1,
+        kinds=1,
+        one_side_cells=one_side,
+        count_mismatch_cells=mismatch,
+        cells=pd.DataFrame(columns=list(CELL_COLUMNS)),
+    )
+
+    short = alerts.short_text(check.notice())
+
+    assert short.startswith(
+        f"CUSTOM 원천 대조 어긋난 칸 {mismatch + one_side:,}개(행 수 다른 칸 {mismatch:,} · "
+        f"한쪽에만 있는 칸 {one_side:,}"
+    )
 
 
 def test_missing_columns_in_the_custom_answer_stop_with_column_names() -> None:

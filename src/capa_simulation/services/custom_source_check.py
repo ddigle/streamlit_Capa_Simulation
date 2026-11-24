@@ -81,13 +81,16 @@ class CustomSourceCheck:
         return self.one_side_cells + self.count_mismatch_cells > 0
 
     def notice(self) -> str:
-        """등록 결과 알림. 알릴 칸이 없으면 빈 글."""
+        """등록 결과 알림. 알릴 칸이 없으면 빈 글. 어긋난 칸 수가 맨 앞이다 — 알림창 짧은 글
+        (`alerts.short_text` — 60자)이 칸마다 네 자리 수까지 그 수를 싣는다."""
         if not self.warns:
             return ""
+        cells = self.count_mismatch_cells + self.one_side_cells
         return (
-            "CUSTOM 원천 표와 본 표의 (Capa Code · 생산계획년월) 칸 행 수가 어긋납니다 — 행 수 "
-            f"다른 칸 {self.count_mismatch_cells:,} · 한쪽에만 있는 칸 {self.one_side_cells:,}. "
-            "CUSTOM 은 Capa Code 로 붙이므로 값에는 영향이 없어 등록했습니다."
+            f"CUSTOM 원천 대조 어긋난 칸 {cells:,}개(행 수 다른 칸 {self.count_mismatch_cells:,} · "
+            f"한쪽에만 있는 칸 {self.one_side_cells:,}) — 본 표와 CUSTOM 원천 표의 (Capa Code · "
+            "생산계획년월) 칸 행 수가 다릅니다. CUSTOM 은 Capa Code 로 붙이므로 값에는 영향이 없어 "
+            "등록했습니다."
         )
 
     def memo(self) -> str:
