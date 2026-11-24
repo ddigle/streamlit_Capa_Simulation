@@ -3343,7 +3343,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `forget_page_dialogs`·`count_page_visit` 은 `app.py` 가 페이지가 바뀐 회차에 부른다(팝업 열림 칸 버림·방문
     차례 올림). 앞의 것은 팝업 여는 콜백도 부르지만 뒤의 것은 그 회차에만 부른다 — `page_visit` 으로 「다시
     들어왔다」를 아는 화면이 같은 페이지의 rerun 에서 위젯 아닌 칸을 거두지 않게.
-- `src/capa_simulation/settings.py`, `sidebar_status.py` — 앱 이름·경로·조회기간 상수와 운영 DB 자리 판정
+- `src/capa_simulation/settings.py`, `sidebar_status.py` — 앱 이름·판·경로·조회기간 상수, 배포 번호를 붙인 앱 판(`settings.app_version`)과 운영 DB 자리 판정
   (`settings.is_operational_database_place` — 사본 전용 스크립트의 거절과 점검 스크립트의 앱 프로세스 확인이 쓴다)과, 사이드바의
   구역 제목·조건 패널 칸·조회기간 상태 표시·접힘을 기억하는 상자·조건 카드(`sidebar_status`)다.
   - 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 조건 패널의 페이지 칸(`page_condition_slot`)은
@@ -4150,11 +4150,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_app_navigation.py`). HOME 칠한 주요 Case 칩의 같은 색 규칙(`home_main_case_chips.chip_style`)은 칩 모양
     규칙과 함께 그대로 둔다.
 - `src/capa_simulation/deploy_stamp.py` — 사내 적용 기록(`.deploy/applied.json`)의 배포 번호 읽기. 앱 카드와 감사 기동이 같이
-  쓴다. 감사 기동은 `capa_server.py` 가 Streamlit 런타임 **전에** 부르므로 이 모듈은 `components` 를 import 하지 않는다 —
+  쓰고, 그 번호를 붙인 앱 판(`deployed_app_version` — `settings.app_version`, 「1.0.<stamp>」 · 기록이 없으면 「1.0」)은 앱 카드 첫 줄 ·
+  버킷 세대 포인터(`object_sync_engine` 의 `app_version`) · 도구 감사 줄(`audit/tool` 의 `ver`)이 같이 쓴다. 감사 기동은 `capa_server.py` 가 Streamlit 런타임 **전에** 부르므로 이 모듈은 `components` 를 import 하지 않는다 —
   런타임 전에 `st.components.v2.component(...)` 를 부르는 화면 조각을 불러오면 그 컴포넌트가 등록되지 않아 앱이 첫
   화면에서 멈춘다. `tests/test_server_pre_runtime_imports.py` 가 진입점의 런타임 전 길을 지킨다.
-- `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
-  사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 문의처 메일은 사람을 가리키는 사내 값이라
+- `src/capa_simulation/components/app_credits.py` — 앱 이름·판과 개발 팀·문의처 두 줄을 모든 화면
+  사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 첫 줄은 「<앱 이름> v1.0.<배포 번호>」(판 머리
+  `APP_VERSION` + 적용 기록의 배포 번호 — `settings.app_version`, 2026-11-24 정식판 요청)이고 적용 기록이 없는 사외 개발 PC 는
+  「<앱 이름> v1.0 · 사외 개발」 이다. 문의처 메일은 사람을 가리키는 사내 값이라
   저장소에 없고 환경변수 `CAPA_APP_CONTACT_EMAIL`(`settings.app_contact_email()` — 부를 때마다 읽음, 사내 PC 사용자 환경변수 ·
   C-DEP 환경변수 표)로만 받는다 — 비면 둘째 줄은 「개발 <팀>」 만이다(2026-11-12 보드 답 ⑤-9). 통합인증 줄이 붙으면 캡션이
   원문 HTML 이므로 메일 꼴(`이름@도메인.최상위`)이 아닌 값은 비운 것과 같다. 시험은 `tests/conftest.py` 가

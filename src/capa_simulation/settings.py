@@ -1,4 +1,4 @@
-# Purpose: 공통 설정 상수(이름·경로·기간)와 문의처·메모리 공유 스위치 읽기·운영 DB 자리 판정을 둔다.
+# Purpose: 공통 설정 상수(이름·판·경로·기간)와 앱 판 짓기·문의처·공유 스위치 읽기·운영 DB 자리 판정.
 
 import os
 import re
@@ -18,10 +18,14 @@ APP_NAME = f"{APP_LABEL} {APP_SUBTITLE}"
 # 있으면 선택기의 허용 범위를 넓혀, 머지·연도 이동으로 만든 기간도 조회하게 한다.
 MONTH_SELECTION_START = 202501
 MONTH_SELECTION_END = 203012
-# 앱의 버전·빌드일과 누가 만들었는지(담당 조직·문의처) 알리는 메타다. 보여 주는 곳은 모든 화면
-# 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는
-# 감추고, 머리 띠는 적용 중인 시나리오를 싣는다. 담당 조직은 실제 값이다.
-APP_VERSION = "0.9.0-demo"
+# 앱의 판과 누가 만들었는지(담당 조직·문의처) 알리는 메타다. 보여 주는 곳은 모든 화면 사이드바
+# 맨 아래의 앱 정보 카드(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는 감추고, 머리 띠는
+# 적용 중인 시나리오를 싣는다. 담당 조직은 실제 값이다.
+# `APP_VERSION` 은 판 머리다(정식판 — 2026-11-24 사용자 요청). 보이고 적는 판은 적용된 배포 번호를
+# 붙인 `app_version(stamp)` 이다 — 앱 정보 카드 첫 줄 · 버킷 세대 포인터 · 도구 감사 줄이 같은 값을
+# 쓴다(`deploy_stamp.deployed_app_version`). `pyproject.toml` 의 version 은 이 값과 따로다(락 ·
+# 사내 `uv run --no-sync` 에 걸린다).
+APP_VERSION = "1.0"
 APP_OWNER_TEAM = "S.PKG 제조팀"
 # 문의처 메일은 사람을 가리키는 사내 값이라 저장소에 두지 않는다(공개 저장소) — 사내 PC 사용자
 # 환경변수 · C-DEP 환경변수 표의 이 이름으로만 받는다(`app_contact_email`). 비면 카드는 팀 이름만
@@ -56,6 +60,12 @@ CORE_DATA_CSV_PATH = INPUT_DIR / "Core_Data.csv"
 # Area 「서버 시작 점검」·BigDataQuery 안내)이 이 파일을 읽는다. 개발·사내 PC 에는 없다.
 # `data/temp/` 라 git·이미지에 실리지 않는다.
 CONTAINER_START_REPORT_PATH = DATA_DIR / "temp" / "container_start.json"
+
+
+def app_version(stamp: str | None) -> str:
+    """적용된 배포 번호를 붙인 앱 판 — 「1.0.<stamp>」. 배포 번호가 없거나 비면(적용 기록이 없는
+    사외 개발 PC) 판 머리 「1.0」 만이다."""
+    return f"{APP_VERSION}.{stamp}" if stamp else APP_VERSION
 
 
 def app_contact_email(environ: Mapping[str, str] | None = None) -> str:
