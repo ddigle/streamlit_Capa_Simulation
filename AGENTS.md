@@ -2406,6 +2406,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `CoreDataProvider` 규약이다. CSV 는 스크립트가 `read_core_data_csv` 로 읽고 화면 입구는 없다.
   - `CoreDataBatch` 끝 칸 `custom_check` 는 CUSTOM 원천 표 대조 수(`custom_source_check.CustomSourceCheck`)이고 기본 None 이다
     (CSV · 시드 · 가짜 공급자). 그 모듈이 `core_data_derivation` → 이 모듈을 부르므로 import 는 `TYPE_CHECKING` 안이다.
+- `src/capa_simulation/io/source_csv.py` — 원천 웹에서 받은 시나리오 CSV 읽기다. 같은 계약 객체(`load_core_data_contract`)를 쓰고
+  `read_core_data_csv` 는 그대로 둔다(경로만 받고 곧바로 78열 검사라 남는 열 셋을 뺄 수 없다).
+  - 요약 `summarize_source_csv` → `SourceCsvSummary`(수 KB — 표 · 해독한 글 없음): `csv` 모듈로 한 번 흘려 읽는다(`strict=True`
+    — 닫히지 않은 따옴표도 깨진 줄). 인코딩은 첫 머리 줄 바이트로 UTF-8(BOM) → 계약 인코딩 차례로 정하고, 정한 뒤 안 풀리는
+    바이트는 다시 읽지 않고 멈춘다. 머리는 날 머리를 공백 · 대소문자를 접어 맞추고(겹침 · 모르는 열 · 모자란 계약 열은 멈춤, 남는
+    열 셋 `SOURCE_CSV_EXTRA_COLUMNS` · 값 없는 이름 없는 열은 읽지 않음), 줄마다 칸 수를 머리와 견주고(어긋난 줄 멈춤 — pandas 는
+    그런 줄을 조용히 받는다), (시뮬레이션 ID, PLAN ID) 를 앞뒤 공백을 뗀 값으로 센다. 감싼 글 읽개는 늘 `detach` 한다(올린 파일이
+    닫히지 않게).
+  - 행 `read_source_csv_rows`: 고른 코드 행만 계약 78열 차례로(정규화 전) — 글자 열 `string`, 결측은 빈칸만, 숫자 `round_trip`,
+    `header=0, names=` · `index_col=False`. 행 수가 요약과 다르면 멈춘다. 멈춤은 모두 `SourceCsvError`(`ValueError`) 한 글이다.
+  - 원천 유형 `SOURCE_CSV_SOURCE_TYPE`(`CSV_CORE_DATA_UPLOAD`). 시험 견본은 `tests/source_csv_samples.py`(내장 합성 시드 값).
 - `src/capa_simulation/io/company_bigdataquery_adapter.py` — 사내 SQL·컬럼 매핑 전용 접속부로, 결과를 CSV 로 남기지 않고
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서
