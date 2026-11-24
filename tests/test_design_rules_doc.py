@@ -3640,13 +3640,12 @@ def test_the_tip_delay_board_answers_are_recorded_in_6_44_and_make_ui_nav_04() -
     """v1.48 — 6-44 은 누적 진척 까닭 보드 메모 「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도
     마찬가지로」 와 그 범위를 물은 보드의 답 셋(줄마다 id · 물음 → **고른 답** · 끝 「(2026-11-21 ·
     규칙 id)」)이다. 메모가 넓힌 말이라 새 규칙 UI-NAV-04 는 MUST 이고, 그 예외가 답 둘(누르면 여는
-    팝업 · 브라우저 기본 풍선)을 말하며 그물이 `tests/test_tip_delay.py` 를 부른다. 판 머리 · 1장
-    안내 · 4장 지금 값 · 8장 판 기록이 함께 선다."""
+    팝업 · 브라우저 기본 풍선)을 말하며 그물이 `tests/test_tip_delay.py` 를 부른다. 1장 안내 · 4장
+    지금 값 · 8장 판 기록이 함께 선다."""
     document = _text()
-    assert "판 v1.48" in document.split("\n## 1. ")[0]
     assert "6-44 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-44. ") :]
+    record = section[section.index("\n### 6-44. ") : section.index("\n### 6-45. ")]
     assert "「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도 마찬가지로」" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -3685,13 +3684,16 @@ RERUN_1120_ANSWERS = {
 }
 
 
-def test_the_editor_rerun_user_decisions_are_recorded_in_6_40() -> None:
-    """6-40 은 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 입력 비가동 · 층 사용 머리 글과
-    필요 단축 「공정」 칸의 사용자 결정 둘이 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른
-    답이 굵게 선다. 필요 단축 일정 「공정」 의 옛 답 m19-rr-d5 를 바꾼 것은 7-1 에 선다."""
+def test_the_editor_rerun_user_decisions_are_recorded_in_6_45() -> None:
+    """v1.49 — 6-45 는 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 입력 비가동 · 층 사용 머리
+    글과 필요 단축 「공정」 칸의 사용자 결정 둘이 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남)
+    고른 답이 굵게 선다. 필요 단축 일정 「공정」 의 옛 답 m19-rr-d5 를 바꾼 것은 7-1 에 서고
+    6-45 를 가리킨다. 판 머리 · 1장 안내 · 8장 판 기록이 함께 선다."""
     document = _text()
+    assert "판 v1.49" in document.split("\n## 1. ")[0]
+    assert "6-45 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-40. ") :]
+    record = section[section.index("\n### 6-45. ") :]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -3705,7 +3707,14 @@ def test_the_editor_rerun_user_decisions_are_recorded_in_6_40() -> None:
         assert cited and set(cited) <= known, line
     assert tuple(found) == tuple(RERUN_1120_ANSWERS)
     overturned = _chapter(document, 7)
-    assert "m19-rr-d5" in overturned and "6-40" in overturned
+    turned = [line for line in overturned.splitlines() if "m19-rr-d5" in line]
+    assert len(turned) == 1, "7-1 에 m19-rr-d5 를 바꾼 줄이 하나 있다"
+    rest = overturned[overturned.index(turned[0]) :].split("\n- ", 1)[0]
+    assert "(6-45 — UI-INP-04 · UI-PRF-01)" in rest, rest[-120:]
+    history = _chapter(document, 8)
+    v149 = history[history.index("- **v1.49 — 2026-11-20.**") :]
+    for phrase in ("6-45", "Q5 (가)", "Q6", "m19-rr-d5", "규칙 83", "MUST 48"):
+        assert phrase in v149, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
