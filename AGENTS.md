@@ -6325,7 +6325,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`custom_check`)는 None 이라 `SC-05` · `SC-06` · 끔 메모가 서지 않는다. 저장하면 · DB 조회 길로 바꾸면 · 올림 칸이 비면(× ·
     다른 화면에 다녀옴) 업로드 관리자가 쥔 바이트를 지운다(`drop_uploaded_file` — Streamlit 1.63 관리자는 브라우저의 지우기 요청이나
     세션 끝에만 지운다. `st.chat_input` 과 같은 꼴로 메모리 관리자일 때만 `remove_file` 을 부르는 내부 API 라 Streamlit 을
-    올리면 다시 본다). 저장 뒤에는 올림 칸 세대를 올려 빈 칸으로 선다. 시험은 `tests/test_source_csv_registration.py` ·
+    올리면 다시 본다) — 그때 등록 칸도 새 세대로 비운다(놓은 파일의 코드 · 이름이 남지 않게). 저장 뒤에는 올림 칸 세대를 올려
+    빈 칸으로 선다. 시험은 `tests/test_source_csv_registration.py` ·
     `tests/test_source_csv_view.py`.
 
 ### 영속성 모듈

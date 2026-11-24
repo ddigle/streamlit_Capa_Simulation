@@ -237,7 +237,36 @@ def test_uploading_a_csv_fills_the_form_and_saves_a_csv_scenario(tmp_path: Path)
     assert app.session_state["__held__"] == 0
     assert route.SOURCE_CSV_STATE_KEY not in app.session_state
     assert not app.dataframe
-    assert _button(app, SAVE_LABEL).disabled
+    assert _button(app, SAVE_LABEL).help == route.NO_FILE_HELP
+    _assert_blank_form(app)
+
+
+def _assert_blank_form(app: AppTest) -> None:
+    """등록 칸이 처음 값(빈 칸 · 리비전명 처음 값)이다 — 놓은 파일의 값이 남지 않았다."""
+    assert {widget.label: widget.value for widget in app.text_input} == {
+        "시뮬레이션 코드": "",
+        "원천 시뮬레이션명": "",
+        "저장할 시나리오명": "",
+        "초기 리비전명": "초기 리비전",
+        "원천 등록시점 (선택)": "",
+    }
+    assert [area.value for area in app.text_area] == [""]
+
+
+def test_clearing_the_upload_drops_the_file_and_blanks_the_form(tmp_path: Path) -> None:
+    """올림 칸의 × 로 지우면 목록이 사라지고 업로드 관리자의 바이트를 지우며 등록 칸도 처음 값으로
+    선다 — 지운 파일의 코드 · 이름이 남은 채 잠긴 단추가 서지 않는다."""
+    app = _upload(_csv_route(_app(_database(tmp_path))), source_csv_bytes(_rows()))
+    assert _field(app, "시뮬레이션 코드").value == DEMO_CODE
+
+    app.file_uploader[0].set_value(None)
+    app = _ok(app.run())
+
+    assert not app.dataframe
+    assert route.SOURCE_CSV_STATE_KEY not in app.session_state
+    assert app.session_state["__held__"] == 0
+    assert _button(app, SAVE_LABEL).help == route.NO_FILE_HELP
+    _assert_blank_form(app)
 
 
 def test_the_registered_at_field_is_saved_as_source_registered_at(tmp_path: Path) -> None:

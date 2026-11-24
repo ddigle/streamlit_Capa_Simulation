@@ -191,14 +191,16 @@ def render_source_csv_route(
 def forget_source_csv() -> None:
     """올린 원천 CSV 를 놓는다 — 업로드 관리자가 쥔 바이트를 지우고 요약 칸을 비운다.
 
-    저장 뒤 · DB 조회 길로 바꾼 회차 · 올림 칸이 빈 회차(칸의 × · 다른 화면에 다녀옴)에 부른다. 놓을
-    것이 없으면 아무것도 하지 않는다.
+    저장 뒤 · DB 조회 길로 바꾼 회차 · 올림 칸이 빈 회차(칸의 × · 다른 화면에 다녀옴)에 부른다. 등록
+    칸도 새 세대로 세운다 — 놓은 파일의 코드 · 이름이 빈 올림 칸 아래 남지 않게(그 회차에 이미 그린
+    칸이면 다음 회차부터). 놓을 것이 없으면 아무것도 하지 않는다.
     """
     state = STATE_SLOT.peek()
     if state is None:
         return
     drop_uploaded_file(state.file_id)
     STATE_SLOT.clear()
+    bump(SOURCE_CSV_FORM_GENERATION_KEY)
 
 
 def drop_uploaded_file(file_id: str) -> None:
