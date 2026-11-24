@@ -28,7 +28,7 @@ from __future__ import annotations
 import io
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -70,6 +70,7 @@ from capa_simulation.components.shortening_progress_panel import (
     gone_baseline_text,
 )
 from capa_simulation.components.target_level_field import entry_out_of_range
+from capa_simulation.persistence._sql_helpers import connect
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_shortening_baseline_cache,
@@ -563,8 +564,8 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
     assert "기준선을 저장했습니다" in _notices(app)
-    # 앱 전체 회차가 그린 카드의 `진척 비교` 상자에 방금 저장한 기준선이 선다(선택지 글자는 이름 ·
-    # 저장일).
+    # 앱 전체 회차가 그린 카드의 `진척 비교` 상자에 방금 저장한 기준선이 선다(선택지 글자는 기준 ·
+    # 저장일 · 이름).
     assert len(list(app.selectbox(key=SHORTENING_COMPARE_KEY).options)) == 2
 
     # 그 기준선을 고르면 칸의 콜백이 본문 프래그먼트만 다시 돌린다 — 진척 비교로 바뀐다.
@@ -653,6 +654,68 @@ def test_a_baseline_another_session_saved_joins_the_card_on_the_next_view_run(
     assert list(picker.options) == ["비교 안 함", baseline_label(other)]
     assert picker.value == NO_COMPARISON
     assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
+    clear_equipment_repository()
+
+
+def test_the_compare_box_names_each_baseline_with_its_schedule_basis(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """카드 `진척 비교` 선택지는 「기준 · 저장일 · 이름」 이고 기준은 그 기준선의 현재 일정
+    기준이다 — 전환(이 시험은 설비 마스터)과 다른 Static 기준선도 「Static」 으로 선다(2026-11-24
+    사용자 요청 — 진척 비교는 그 기준의 지금 계획과 견주므로 고를 때부터 보인다). 기준 칸이 없는
+    옛 기준선(설비 0035 전에 저장 — NULL)은 「설비 마스터」 다. 보던 기준선이 지워진 회차의
+    `RS-06` 전문도 같은 라벨이다."""
+    runner = _runner(request)
+    database_path, _ = _saved_database(tmp_path)
+    world = _install(monkeypatch, database_path)
+    repository = DuckDBEquipmentRepository(database_path)
+    with connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.shortening_baseline (
+                baseline_id, baseline_name, saved_at, plan_today, start_month, end_month
+            ) VALUES ('old-1', '11월 정기', ?, ?, ?, ?)
+            """,
+            [datetime(2026, 11, 15, 9, 0), date(2026, 11, 15), _months()[0], _months()[-1]],
+        )
+    static = repository.save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="11-24 기준선",
+            plan_today=date(2026, 11, 24),
+            start_month=_months()[0],
+            end_month=_months()[-1],
+            processes=(),
+            cutoff_days={},
+            units=pd.DataFrame(),
+            schedule_basis="Static",
+        ),
+        saved_at=datetime(2026, 11, 24, 8, 30),
+    )
+    clear_shortening_baseline_cache()
+
+    app = _open(runner)
+    picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
+    assert list(picker.options) == [
+        "비교 안 함",
+        "Static · 2026-11-24 · 11-24 기준선",
+        "설비 마스터 · 2026-11-15 · 11월 정기",
+    ]
+    assert picker.value == NO_COMPARISON
+
+    # 그 Static 기준선을 보던 중 다른 세션이 지웠다 — 앱 전체 회차가 「비교 안 함」 으로 되적으며
+    # 알리는 전문의 이름도 같은 라벨이다(앞 회차가 상자에 세운 라벨).
+    app.session_state[SHORTENING_COMPARE_KEY] = static.baseline_id
+    repository.delete_shortening_baseline(static.baseline_id)
+    clear_shortening_baseline_cache()
+    runner.fragment_queue = []
+    _run(app, world)
+    picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
+    assert picker.value == NO_COMPARISON
+    assert list(picker.options) == ["비교 안 함", "설비 마스터 · 2026-11-15 · 11월 정기"]
+    (gone,) = events(app, BASELINE_GONE_ALERT)
+    assert gone["full"].startswith(
+        "「진척 비교」 에서 보던 기준선 「Static · 2026-11-24 · 11-24 기준선」이 목록에서"
+    )
     clear_equipment_repository()
 
 

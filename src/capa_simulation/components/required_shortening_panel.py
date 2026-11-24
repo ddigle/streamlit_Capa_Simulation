@@ -1014,9 +1014,9 @@ def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     목표 확보율은 조회 조건 패널 줄이다(`LEVEL_FIELD` — 페이지가 세운다, 2차 보드 Q2-26).
     `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다.
 
-    상자는 카드 폭을 다 쓰는 칸이다 — 기준선 라벨(「저장일 · 이름」)이 반 칸에서는 닫힌 칸 · 펼친
-    목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가 없으면 None)이다 — 본문
-    프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
+    상자는 카드 폭을 다 쓰는 칸이다 — 기준선 라벨(「기준 · 저장일 · 이름」)이 반 칸에서는 닫힌 칸 ·
+    펼친 목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가 없으면 None)이다 —
+    본문 프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
     read = read_baseline_options(database_path)
     if read is None:
         return None
