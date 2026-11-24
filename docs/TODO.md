@@ -342,7 +342,8 @@
     정상이다(화면 확인 항목은 더하지 않음).
   - **CUSTOM 원천 표 열 이름 — 사내 확인 거리(갈래 1-5 B)**: `company_bigdataquery_adapter.CUSTOM_QUERY_TEMPLATE` 의 열 이름(부품 ·
     계획 년월 · CUSTOM · 시뮬레이션 ID 칸)은 설계 초안 그대로이고 사내에서 확인하지 않았다. 다르면 CUSTOM 원천 표 조회가 SQL 갈래
-    (「CUSTOM 원천 표(CAPA_BDQ_CUSTOM_TABLE) 조회에서 멈췄습니다」)로 멈춰 DB 등록과 자동 갱신이 다음 ZIP 까지 멈춘다 — 배포 앞에
+    (「CUSTOM 원천 표(CAPA_BDQ_CUSTOM_TABLE) 조회에서 멈췄습니다」)로 멈춰 DB 등록과 자동 갱신이 고친 ZIP 까지, 또는 아래 B4S 끄개를
+    넣고 CI/CD 를 누를 때까지 멈춘다(물을 것과 차례는 아래 「B4S — 1a 가 멈췄을 때 갈래」 줄) — 배포 앞에
     사용자에게 그 표의 열 이름을 확인받고, 배포 날에는 7-0 차례 1a 첫 등록이 드러낸다. 표 이름은 리뷰에 옮기지 않는다.
   - **맨 앞 사용자 몫 +1 — C-DEP 환경변수 `CAPA_BDQ_CUSTOM_TABLE`(갈래 1-5 B, 이 ZIP 을 실은 CI/CD 앞)**: C-DEP 배포 설정의 환경변수 표에
     `CAPA_BDQ_CUSTOM_TABLE` 한 칸을 넣는다 — 값은 CUSTOM 원천 표 이름(표 또는 스키마.표)이고 사용자가 C-DEP 화면에서 직접 넣으며 대화 · 리뷰에 적지
