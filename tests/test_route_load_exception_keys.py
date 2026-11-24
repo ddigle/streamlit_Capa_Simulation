@@ -305,11 +305,14 @@ def test_the_declaration_has_no_default_on_the_required_equipment_path(
 #   그 판정에 선언을 넘기고 이 줄을 지운다(아래 등록 R-07 판정 시험).
 # - 확인 스크립트 셋의 선언 표 없는 사본 갈래(0039 뒤 · 0040 전 — `read_route_load_exceptions` 가
 #   None) — 빈 선언으로 세고 그 사실을 결과에 싣는다(`사본 0040 전`). 표가 있으면 그 판을 넘긴다.
+# - 6-3 a 의 선언 켬 · 끔 견줌(`compare_route_exceptions`) — 끔 쪽은 「선언이 없을 때」 를
+#   셈하는 것이 목적이라 빈 선언을 적는다(2026-11-22 답 Q8 ⑤). 켬 쪽은 사본의 판을 넘긴다.
 _PERMANENT_EMPTY: Mapping[tuple[str, str | None], int | None] = {
     ("scripts/review_sample_sim.py", None): None,
     ("scripts/review_sample_equip.py", None): None,
     ("src/capa_simulation/services/extra_process_merge.py", "capacity_stop"): 1,
     ("scripts/inspect_revision_calculations.py", "_run"): 1,
+    ("scripts/inspect_revision_calculations.py", "compare_route_exceptions"): 1,
     ("scripts/inspect_real_data_checks.py", "route_exceptions"): 1,
     ("scripts/benchmark_upeh_assumption.py", "measure"): 1,
 }
