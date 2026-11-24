@@ -10229,7 +10229,10 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   2026-10-27 E2E, 가용설비 현황 Preference · HOME 판정 기준 표가 같다). 확인용 앱은
   `127.0.0.1` 에서만 듣고, 자식의
   `PYTHONPATH` 맨 앞에 이 저장소의 `src` 를 두며, 스크립트가 강제로 끝나도 남지 않게 Windows Job Object
-  (Linux `PR_SET_PDEATHSIG`)로 묶는다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로
+  (Linux `PR_SET_PDEATHSIG`)로 묶는다. 자식 환경(`app_environment` — 따라하기 가이드 촬영 앱도 같은 함수)에서는 자동 갱신 예약 허락 ·
+  통합인증 환경변수와 CUSTOM 원천 표 두 변수(`CAPA_BDQ_CUSTOM_TABLE` · 끄개 `CAPA_BDQ_CUSTOM_SOURCE`)를 걷고 모듈은 끈다 — 스크립트를 친
+  창의 값이 결과를 바꾸지 않게(`registration_custom_lock` 은 「변수 없음」 의 DB 등록 저장 잠김을 본다). 환경변수를 더 걷으려면 그
+  튜플과 시험 한 줄을 함께 고친다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로
   거절·사전 확인·앱 수명·항목 실행·결과 꼴·main 흐름)를 보고, 항목이 찾는 선택자·화면 글자 가운데 일부
   (입장 화면 호스트·사이드바 라벨 id, Space 서랍 클래스, 항목이 찾는 라벨 글자)가 앱 코드·자산에 그대로
   있는지만 대조한다 — 화면에서의 동작은 대조하지 않는다(사외 브라우저 실측과 사내 실행이 본다).
