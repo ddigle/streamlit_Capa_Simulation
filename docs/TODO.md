@@ -6462,11 +6462,9 @@
   쓰기는 1.0 확인 뒤로 둔다. `keep` 의 끝 줄(전송용 요약 — seq · 두 멤버 · 두 판 · 기한)이 지킨 세대의 기록이다 — 되돌릴 날 사내 PC 의 옛 도구는 지킴을
   모른다. 운영 문서는 `docs/objectstore_setup.md` 3 · 4 · 7 · 8장 · 「하지 않은 것」 이고, 런북 몫(6-4 「세대 지킴」 · 7장 차례 1 지킴 줄 · 압축본 `지킴`)은
   1.0 런북 7장 글감이다.
-  **남은 것 — 바꿀지 정할 기존 시험 기대 셋**: 정리 목록 접두가 `PRUNE_PREFIXES` 와 같다는 둘(`test_object_sync_engine::test_prune_never_lists_outside_its_prefixes` ·
-  `test_bucket_secret_boundary::test_the_worker_upload_watch_and_daily_prune_never_reach_the_secret` — 지킴 표지 접두 `generations/keep/` 하나가 는다,
-  같음 단언은 그대로 두고 그 접두만 더한 집합과 견줄 것)과 하위 명령 집합 하나(`test_sync_object_storage_script::test_every_subcommand_is_wired` —
-  `keep` · `unkeep`)는 설계가 바꿀 기대로 이름을 대지 않아 이 가지에서 고치지 않았다 — 그대로면 그 셋이 실패한다. 배포 통합에서 바꿀지 정하고,
-  바꾸면 이 구절을 걷는다.
+  바꾼 기존 시험 기대 셋(총괄 승인 2026-11-24 — 지킴 표지 접두 `generations/keep/` 하나와 하위 명령 `keep` · `unkeep` 이 는 데서 바로 나오는 값):
+  `test_object_sync_engine::test_prune_never_lists_outside_its_prefixes` · `test_bucket_secret_boundary::test_the_worker_upload_watch_and_daily_prune_never_reach_the_secret`
+  (정리 목록 접두 = `PRUNE_PREFIXES` + 지킴 표지 접두) · `test_sync_object_storage_script::test_every_subcommand_is_wired`(`keep` · `unkeep`).
 - (2026-11-24) **정식판 1.0 이 잘못됐을 때 물러서는 차례 — 되돌림 판은 마지막 길**(사용자 같은 날 정식판 마감 2번 B 권장안 · 묶음 물음 Q3 (가),
   가지 `ops/keep-1124` — 2장 「런북 앞 장 정리 거리」 ⑥ 닫음). 앞 ZIP 을 그대로 다시 적용하는 길은 계속 없다(적용기가 적용 기록 이하 stamp 를 멈추고,
   운영 서버는 받은 데이터 판이 코드보다 새로우면 앱을 띄우지 않는다). 그래서 위에서부터 고른다: ① 끄개(C-DEP 환경변수 + CI/CD — 1.0 은 실린 것만

@@ -225,7 +225,7 @@ def test_the_worker_upload_watch_and_daily_prune_never_reach_the_secret(
         for method, raw in rig.mock.requests[before:]
         if method == "GET" and not _key_of(raw)
     }
-    assert lists == set(manifest.PRUNE_PREFIXES), lists
+    assert lists == {*manifest.PRUNE_PREFIXES, manifest.KEEP_PREFIX}, lists
 
 
 def test_the_checker_flags_every_way_to_the_secret(rig: SimpleNamespace, tmp_path: Path) -> None:

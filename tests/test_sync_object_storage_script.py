@@ -55,6 +55,8 @@ def test_every_subcommand_is_wired(script: ModuleType) -> None:
         "fetch-copy",
         "rollback",
         "generations",
+        "keep",
+        "unkeep",
         "boot-pull",
         "audit-list",
     }

@@ -1556,7 +1556,7 @@ def test_prune_never_lists_outside_its_prefixes(rig: SimpleNamespace) -> None:
     engine.prune(rig.client, include_orphans=True)
 
     prefixes = {key for op, key in rig.store.operations() if op == "list-objects-v2"}
-    assert prefixes == set(manifest.PRUNE_PREFIXES)
+    assert prefixes == {*manifest.PRUNE_PREFIXES, manifest.KEEP_PREFIX}
     assert "access/access_list.json" in rig.store.objects
 
 
