@@ -1367,7 +1367,7 @@ def _report_status_alerts(
     scope = [process for process in ordered if process in selected] if selected else ordered
     chosen = scope if selected else None
     equipment_id, equipment_no = revision
-    equipment_label = f"설비 r{equipment_no}" if equipment_no is not None else "설비 샘플"
+    equipment_label = f"설비 r{equipment_no}" if equipment_no is not None else "설비 합성 샘플"
     fleet = {"equipment": equipment_id, "processes": sorted(selected) or None}
     fleet_label = equipment_label + (f" · 공정 {len(selected)}개" if selected else " · 공정 전체")
     months = prepared.months
