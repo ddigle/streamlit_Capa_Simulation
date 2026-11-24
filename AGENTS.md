@@ -2451,9 +2451,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 개발자
   알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). `import_killed` 는
   멈추지 않고(2026-11-20 사용자 답 「쉬고 다시」) 객체의 `cuts` 를 올리고 다음 시도 시각 `retry_after`(`CUT_RETRY_SECONDS` 5 · 10 · 20분 —
-  재시작을 건너 센다)를 적어 그 전에는 자동 시도가 모두 쉰다(조회 중 자동 시도도 재시작으로 뜬 시작 로그인도 — `SKIP_CUT_WAIT`, 시작은
-  로그인 없이 `unavailable`/`import_killed` 로 예비 토큰 길). 다시 시도
-  `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 빈다. 자동 시도 연속 3번
+  재시작을 건너 센다)를 적어 조회 중 자동 시도는 그 시각까지 쉬고(`SKIP_CUT_WAIT`), 시작 로그인(`start_login`)은 보내기 전 끊김으로만
+  막혔으면(`_cut_only_block` — 대기 · `cut_limit`) 한 번 바로 한다 — 2026-11-21 사용자(컨테이너 시작마다 한 번 — 그 시도가 거절되면 그
+  까닭의 멈춤이라 다음 시작부터 안 함, 거절 · 표지 없음 · `miss_limit` · `attempting` 멈춤은 그대로 안 함). 다시 시도
+  `CUT_RETRY_LIMIT`(3)번도 끊기면 멈춘다(까닭 `cut_limit` — `AD-23`). 셈은 성공 · 폼 저장에만 비고 넘겨도 4 에 머문다 — 결과 적기
+  `_settle` 은 성공이 아니고 그 시도로 멈추지 않았는데 셈이 상한을 넘었으면 `cut_limit` 멈춤으로 남긴다(「정상 + 셈 4」 를 쓰지 않음). 자동 시도 연속 3번
   (하위 프로세스를 띄운 수 — `import_killed` 는 빼고) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
   종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —
   `casefold` 로 견주고 응답 코드는 보지 않으며 판정에만 쓴다)에서만이다(`is_relogin_error` · `run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
