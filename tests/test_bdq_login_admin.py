@@ -268,6 +268,22 @@ def test_a_login_that_could_not_be_judged_says_so_and_saves_nothing(
     _no_secret_left(app, ACCOUNT, PASSWORD)
 
 
+@pytest.mark.parametrize(
+    ("reason", "words"),
+    [
+        (bdq_login.REASON_SPAWN_FAILED, "로그인하지 않음(하위 프로세스를 띄우지 못함)"),
+        (bdq_login.REASON_NO_INPUT, "로그인하지 않음(입력을 읽지 못함)"),
+        (bdq_login.REASON_IMPORT_FAILED, "패키지 없음"),
+    ],
+)
+def test_the_result_words_name_a_child_that_could_not_run(reason: str, words: str) -> None:
+    """띄우지 못함 · 입력을 읽지 못함은 「서버 시작 점검」 줄과 같은 까닭 낱말이고 「패키지
+    없음」 은 패키지를 불러오지 못한 시도 하나다 — 틀린 회복 길(패키지 다시 깔기)로 이끌지 않게."""
+    result = bdq_login.LoginResult(bdq_login.OUTCOME_UNAVAILABLE, reason)
+
+    assert bdq_login_admin.result_words(result) == words
+
+
 def test_blank_values_are_refused_without_a_login(
     server: tuple[MockStore, S3Target, str], fake: FakeBdq
 ) -> None:

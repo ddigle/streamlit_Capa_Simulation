@@ -32,8 +32,10 @@ UI-NAV-01).
 낸다(「BigDataQuery 로그인 됨 · 남은 n시간 n분」). 그때 멈춤이 풀리고 떠 있는 앱의 계정 원천이
 곧바로 새 ID 다(저장소 기억 — 조회 · 토큰 파일 · 남은 시간). 로그인이 실패하면 저장하지 않고 앞 저장
 · 상태를 그대로 두며 실패 한 줄을 폼 아래에 둔다(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
-저장 안 함」 · 「로그인 확인 못 함(까닭) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 — Alarm 에도
-남는다). 하위 프로세스가 표지 없이 끝난 거절(`no_marker`)은 「로그인 실패」 가 아니라 「로그인
+저장 안 함」 · 「로그인 확인 못 함(까닭) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 ·
+「로그인하지 않음(까닭) — 저장 안 함」 — Alarm 에도 남는다. 하위 프로세스를 띄우지 못함 · 입력을
+읽지 못함은 「패키지 없음」 이 아니라 「서버 시작 점검」 줄 · `AD-24` 와 같은 까닭 낱말이다 —
+UI-CON-02). 하위 프로세스가 표지 없이 끝난 거절(`no_marker`)은 「로그인 실패」 가 아니라 「로그인
 확인 못 함(결과 표지 없음)」 이다 — 비밀번호를 의심해 되풀이하지 않게. 로그인은 됐는데 저장하지
 못했으면 알림창 오류다(그 자리에 고칠 입력이 없다 — UI-NTF-03). 빈 칸 · 개발자 아님은 시도 없이
 폼 아래 거부 한 줄이다(`write_guard.queue_refusal` → 본문 `take_refusal`). 같은 세션의 겹쳐 온 둘째
@@ -140,10 +142,9 @@ NOT_ADMIN_DELETE_MESSAGE: Final = "개발자만 계정을 지울 수 있습니�
 
 AUDIT_SET: Final = "admin_bdq_login_set"
 AUDIT_DELETE: Final = "admin_bdq_login_delete"
-# 패키지 · 하위 프로세스가 서지 못한 까닭 — 결과 줄은 「패키지 없음」.
-_PACKAGE_REASONS: Final = frozenset(
-    {bdq_login.REASON_IMPORT_FAILED, bdq_login.REASON_SPAWN_FAILED, bdq_login.REASON_NO_INPUT}
-)
+# 하위 프로세스가 패키지를 불러오지 못한 까닭 — 결과 줄은 「패키지 없음」. 띄우지 못함 · 입력을
+# 읽지 못함은 「서버 시작 점검」 줄 · `AD-24` 와 같은 까닭 낱말의 「로그인하지 않음(까닭)」 이다.
+_PACKAGE_REASON: Final = bdq_login.REASON_IMPORT_FAILED
 # 저장소 읽기 까닭 가운데 「없음」 으로 읽는 것과 「확인하지 못함」 으로 읽는 것.
 _ABSENT_REASONS: Final = frozenset({"", login_store.REASON_NO_OBJECT})
 _UNREAD_REASONS: Final = frozenset(
@@ -218,7 +219,7 @@ def result_words(result: bdq_login.LoginResult) -> str:
         return "서버에 닿지 못함"
     if result.outcome == bdq_login.OUTCOME_UNCONFIRMED:
         return f"로그인 확인 못 함({login_reason_text(result.reason)})"
-    if result.reason in _PACKAGE_REASONS:
+    if result.reason == _PACKAGE_REASON:
         return "패키지 없음"
     return f"로그인하지 않음({login_reason_text(result.reason)})"
 
