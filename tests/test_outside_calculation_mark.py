@@ -8,6 +8,7 @@ from __future__ import annotations
 from capa_simulation.components.outside_calculation_mark import (
     OutsideCalculationMark,
     outside_calculation_mark,
+    whole_outside_bases,
     whole_outside_basis,
 )
 from capa_simulation.services.frame_contracts import UnimplementedProcess
@@ -78,3 +79,22 @@ def test_only_a_process_whose_routes_are_all_outside_names_its_basis() -> None:
     assert whole_outside_basis(processes, "DEMO_MIX") is None
     assert whole_outside_basis(processes, "DEMO_PKG") is None
     assert whole_outside_basis((), "DEMO_BOX_A") is None
+
+
+def test_the_tile_picker_gets_the_outside_basis_of_each_option_by_its_original_key() -> None:
+    """공정마다 단추가 서는 자리(HOME 공정 필터)는 선택지 전부에 같은 판정을 한 번에 건다 — 키는
+    받은 원본 공정 글자 그대로이고 경로가 모두 계산 밖인 공정만 든다. 목록이 비면 빈 사전이다."""
+    processes = (
+        UnimplementedProcess(process="DEMO_BOX_A", bases=("BOX", "PCB"), whole=True),
+        UnimplementedProcess(process="DEMO_MIX", bases=("BOX",), whole=False),
+        UnimplementedProcess(process="DEMO_PCB_Z", bases=("PCB",), whole=True),
+    )
+
+    assert whole_outside_bases(
+        processes, ["DEMO_PKG", "DEMO_BOX_A", "DEMO_MIX", " DEMO_PCB_Z"]
+    ) == {
+        "DEMO_BOX_A": "BOX · PCB",
+        " DEMO_PCB_Z": "PCB",
+    }
+    assert whole_outside_bases((), ["DEMO_BOX_A"]) == {}
+    assert whole_outside_bases(processes, []) == {}

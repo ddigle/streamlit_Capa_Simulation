@@ -74,6 +74,7 @@ from capa_simulation.components.home_settings import (
     render_home_settings_box,
 )
 from capa_simulation.components.loading_progress import LoadingProgress
+from capa_simulation.components.outside_calculation_mark import whole_outside_bases
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.past_data_management import (
@@ -210,6 +211,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_lob_without_edp,
     get_home_plan_detail,
     get_home_simulation,
+    get_unimplemented_basis_processes,
 )
 from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import DUCKDB_PATH
@@ -768,6 +770,7 @@ def show_process_filter_dialog(
     start_month: int,
     end_month: int,
     auto_off_marks: Mapping[str, str] | None = None,
+    outside_bases: Mapping[str, str] | None = None,
 ) -> None:
     draft_selection = st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, [])
     if not isinstance(draft_selection, list):
@@ -828,6 +831,7 @@ def show_process_filter_dialog(
         format_func=process_labels.unique_format_func(options),
         on_toggle=toggle_process_dialog_selection,
         marks=auto_off_marks,
+        outside=outside_bases,
     )
     if apply_selection:
         # 이번 조회기간에 보이지 않던 공정은 팝업이 건드리지 않았다 — 그대로 둔다.
@@ -852,9 +856,16 @@ def _process_filter_dialog(
     thresholds: SecurementThresholds,
     start_month: int,
     end_month: int,
+    content_token: str,
+    reqb: pd.DataFrame,
 ) -> None:
-    """공정 필터 팝업을 연다 — 공정 단추 묶음(구역 · 최저 확보율)과 자동 갱신 표지는 여는 회차에만
-    만든다. 앱 전체 회차마다 만들지 않는다(DB 를 더 열지 않는다)."""
+    """공정 필터 팝업을 연다 — 공정 단추 묶음(구역 · 최저 확보율)과 자동 갱신 · 계산 밖 표지는 여는
+    회차에만 만든다. 앱 전체 회차마다 만들지 않는다(DB 를 더 열지 않는다).
+
+    계산 밖 표지는 산출 결과 표 제목 줄과 같은 목록 칸(`get_unimplemented_basis_processes` — 선언을
+    접지 않은 내용 토큰 + 계산과 같은 유효 조회기간)에서 경로가 모두 계산 밖인 공정만 고른다
+    (`whole_outside_bases` — 원본 공정 키). `content_token` · `reqb` 는 그 회차 활성 시나리오의
+    것이다."""
     show_process_filter_dialog(
         options,
         build_process_picker_summary(
@@ -869,6 +880,11 @@ def _process_filter_dialog(
         end_month,
         # 공식버전 자동 갱신이 이 리비전(과 조상)에서 확보율로 뺀 공정의 표지.
         load_auto_off_marks(str(DUCKDB_PATH.resolve())),
+        # 소요기준 BOX · PCB 경로만 있어 계산 밖인 공정의 표지(「확보율 없음」 구역 단추).
+        whole_outside_bases(
+            get_unimplemented_basis_processes(content_token, start_month, end_month, _reqb=reqb),
+            options,
+        ),
     )
 
 
@@ -1326,6 +1342,8 @@ if process_options:
         thresholds,
         effective_start,
         effective_end,
+        str(active_scenario["content_token"]),
+        active_scenario["tables"]["RQ_REQB"],
     )
 if key_process_dialog is not None:
     home_dialogs[HOME_KEY_PROCESS_DIALOG] = key_process_dialog

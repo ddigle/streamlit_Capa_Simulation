@@ -2916,6 +2916,41 @@ def test_shortfall_tiles_carry_the_period_minimum_rate_beside_the_name() -> None
     assert "flex: none;" in body
 
 
+def test_a_process_with_only_box_routes_says_outside_calculation_in_the_process_filter(
+    tmp_path: Path,
+) -> None:
+    """경로가 모두 소요기준 BOX 인 공정(계산 밖)은 확보율이 없어 공정 필터 팝업 「확보율 없음」
+    구역에 서고, 그 단추에 「계산 밖」 이 붙으며 풍선이 그 소요기준 까닭을 말한다(정식판 1.0 마감
+    2번 C). 목록은 산출 결과 표 제목 줄 표지와 같은 칸(활성 시나리오 내용 토큰 + 계산 조회기간)이고
+    여는 회차에 HOME 이 넘긴 인자로 그린다. 다른 공정 단추는 그대로다. 공식버전을 새로 발행하므로
+    모듈 공용 DB 가 아니라 새 DB 다."""
+    from test_process_capa_detail_page import OUTSIDE_PROCESS, _publish_outside_revision
+
+    database = tmp_path / "outside.duckdb"
+    _publish_outside_revision(database)
+    app = _run(database)
+    assert OUTSIDE_PROCESS in app.session_state[PROCESS_SELECTION_KEY]
+
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    tiles = [
+        str(button.key).removeprefix("home_bn_process_tile_")
+        for button in app.button
+        if str(button.key).startswith("home_bn_process_tile_")
+    ]
+    index = tiles.index(OUTSIDE_PROCESS)
+    # 구역 차례(미달 → 충족 → 확보율 없음)의 끝 묶음에 선다.
+    unavailable = next(
+        str(item.value) for item in app.markdown if str(item.value).startswith("**확보율 없음 · ")
+    )
+    count = int(unavailable.removeprefix("**확보율 없음 · ").removesuffix("**"))
+    assert index >= len(tiles) - count
+    body = " ".join(str(element.proto.body) for element in app.get("html"))
+    assert f'.st-key-home_bn_tile_{index} button::after {{ content: "계산 밖"; }}' in body
+    assert "소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정)." in body
+    assert body.count('content: "계산 밖"') == 1
+
+
 def _display_tab_editors(database: str) -> None:
     """HOME 설정 「Capa 요약 · 표시」 탭의 세 상자만(Capa 요약 · B/N Top5 구간 · 주요공정
     프리셋)."""

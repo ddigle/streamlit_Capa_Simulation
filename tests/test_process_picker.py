@@ -1,10 +1,12 @@
-# Purpose: 공정 선택 요약의 기간 최소값·판정 경계·결측 처리와 원본 키·순서 보존을 검증한다.
+# Purpose: 공정 선택 요약의 최소값·판정 경계·결측·원본 키·순서와 계산 밖 단추 글을 검증한다.
 
 from dataclasses import FrozenInstanceError
 
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.process_picker import tile_rate_text, tile_tooltip_text
 from capa_simulation.services.process_picker import (
     ProcessPickerItem,
     build_process_picker_summary,
@@ -199,3 +201,71 @@ def test_the_shortfall_order_keeps_only_shortfall_processes_lowest_rate_first() 
 
     assert [item.process for item in shortfall_order(items)] == ["DEMO-C", "DEMO-E", "DEMO-A"]
     assert shortfall_order(()) == ()
+
+
+NO_RATE = "조회기간에 유효한 확보율이 없어 판정하지 않습니다."
+OUTSIDE_BOX = "소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정)."
+
+
+def test_only_an_unavailable_outside_tile_swaps_its_rate_and_reason() -> None:
+    """「확보율 없음」 구역의 계산 밖 공정만 단추 끝 글이 「계산 밖」 이고 풍선의 확보율 없음 줄이
+    그 소요기준 까닭이다(정식판 1.0 마감 2번 C). 유효한 확보율이 있는 단추(과거 구간 달 등)는
+    소요기준 글을 받아도 「97%」 · 확보율 줄 그대로다 — 판정이 그 값으로 선다."""
+    unavailable = ProcessPickerItem("DEMO_BOX", None, None, 0, "unavailable")
+    shortfall = ProcessPickerItem("DEMO_BOX", 0.965, 202601, 1, "shortfall")
+    sufficient = ProcessPickerItem("DEMO_BOX", 1.2, 202601, 1, "sufficient")
+
+    assert tile_rate_text(unavailable, outside="BOX") == "계산 밖"
+    assert tile_rate_text(unavailable) is None
+    assert tile_rate_text(shortfall, outside="BOX") == "97%"
+    assert tile_rate_text(sufficient, outside="BOX") is None
+
+    lines = tile_tooltip_text(unavailable, "포장", enabled=True, outside="BOX").split("\n")
+    assert lines == ["포장", "원본 공정: DEMO_BOX", OUTSIDE_BOX, "ON · 누르면 제외"]
+    assert NO_RATE in tile_tooltip_text(unavailable, "포장", enabled=True)
+    assert "소요기준 BOX · PCB — 산식이" in tile_tooltip_text(
+        unavailable, "포장", enabled=False, outside="BOX · PCB"
+    )
+    kept = tile_tooltip_text(shortfall, "포장", enabled=True, outside="BOX")
+    assert "기간 최저 96.5%" in kept and "계산 밖" not in kept
+
+
+def test_an_outside_calculation_tile_says_so_in_the_unavailable_group() -> None:
+    """HOME 공정 필터 팝업 — 「확보율 없음」 구역에 선 계산 밖 공정 단추는 이름 오른쪽에 「계산 밖」
+    이 붙고(최저 확보율과 같은 `::after` 자리) 풍선이 그 소요기준 까닭을 말한다. 단추 라벨은 표시명,
+    소요기준 글의 키 · 콜백은 원본 공정이다. 같은 구역의 다른 공정 · 다른 구역은 그대로다."""
+
+    def script() -> None:
+        import streamlit as st
+
+        from capa_simulation.components.process_picker import render_process_picker
+        from capa_simulation.services.process_picker import ProcessPickerItem
+
+        render_process_picker(
+            [
+                ProcessPickerItem("DEMO_A", 0.965, 202601, 3, "shortfall"),
+                ProcessPickerItem("DEMO_BOX", None, None, 0, "unavailable"),
+                ProcessPickerItem("DEMO_C", None, None, 0, "unavailable"),
+            ],
+            {"DEMO_BOX"},
+            format_func=lambda process: {"DEMO_A": "몰드", "DEMO_BOX": "포장", "DEMO_C": "검사"}[
+                process
+            ],
+            on_toggle=lambda process: st.session_state.update(toggled=process),
+            outside={"DEMO_BOX": "BOX"},
+        )
+
+    app = AppTest.from_function(script).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert [button.label for button in app.button] == ["몰드", "포장", "검사"]
+    body = " ".join(str(element.proto.body) for element in app.get("html"))
+    assert '.st-key-home_bn_tile_0 button::after { content: "97%"; }' in body
+    assert '.st-key-home_bn_tile_1 button::after { content: "계산 밖"; }' in body
+    assert "home_bn_tile_2 button::after" not in body
+    assert f"원본 공정: DEMO_BOX\\A {OUTSIDE_BOX}\\A ON · 누르면 제외" in body
+    assert f"원본 공정: DEMO_C\\A {NO_RATE}" in body
+    assert "**확보율 없음 · 2**" in [str(item.value) for item in app.markdown]
+
+    app.button(key="home_bn_process_tile_DEMO_BOX").click().run()
+    assert app.session_state["toggled"] == "DEMO_BOX"

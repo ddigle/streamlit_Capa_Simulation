@@ -536,6 +536,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
     공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
     프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `Capa 요약 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
+  - 공정 필터 팝업 「확보율 없음」 구역의 계산 밖 공정(경로가 모두 소요기준 BOX · PCB — 11장) 단추는 이름 오른쪽 「계산 밖」 과 풍선 줄
+    「소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정).」 이다(2026-11-24 사용자 「권장안 그대로」). 목록은 산출 결과 표
+    제목 줄 표지와 같은 칸(`get_unimplemented_basis_processes` — 선언을 접지 않은 내용 토큰 + 계산 조회기간)이고 여는 회차에만
+    고른다(`_process_filter_dialog` → `whole_outside_bases` — 원본 공정 키, `show_process_filter_dialog(outside_bases=)`). 구역 · 켜고 끄기 ·
+    판정은 그대로다(`tests/test_home_page.py` 의 `only_box_routes_says_outside_calculation_in_the_process_filter`).
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -2135,6 +2140,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공정 하나를 말하는 자리의 글도 여기다 — `whole_outside_basis`(목록과 원본 공정명 → 경로가 모두 계산 밖이면 빠진 소요기준 글,
     둘이면 「BOX · PCB」, 아니면 None)와 `BASIS_MARK`(「계산 밖(소요기준 BOX)」). 부르는 곳은 공정 Capa 상세 ③ 판정 카드다
     (`process_capa_view._unjudged_text`).
+  - 공정마다 단추가 서는 자리는 `whole_outside_bases`(선택지 원본 공정 → 그 글, 글이 선 공정만)와 풍선 줄 `BASIS_REASON`(「소요기준 BOX —
+    산식이 정해질 때까지 계산 밖입니다(추가 예정).」)을 쓴다. 부르는 곳은 HOME 공정 필터 팝업이다(`process_picker`).
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
   두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
@@ -5127,6 +5134,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_picker.py` — 위 요약을 세 구역의 공정 버튼으로 그린다(긴 표시명은
   한 줄 말줄임, 자동 갱신이 뺀 공정은 `marks` 표지).
   - 콜백·위젯 키에는 원본 공정명을 쓴다. 설명 풍선은 `help` 가 아니라 순번 칸(`home_bn_tile_<i>`)의 CSS `:hover` 다.
+  - 계산 밖 공정(`outside` — 원본 공정 → 빠진 소요기준 글)은 「확보율 없음」 구역 단추에서만 미달 최저 확보율과 같은 `::after`
+    자리에 「계산 밖」(`tile_rate_text`)이고 풍선의 확보율 없음 줄이 그 소요기준 까닭(`tile_tooltip_text` — 글은
+    `outside_calculation_mark.BASIS_REASON`)이다. 유효한 확보율이 있는 단추(과거 구간 달 등)는 그대로다(`tests/test_process_picker.py`).
 - `src/capa_simulation/services/month_columns.py` — 월 축과 연간 Total 열의 규칙이다. Total 은 1~12월이 모두
   조회범위 안인 해만 갖고 그 해 12월 바로 뒤에 들어간다.
   - 축은 하나다 — 표·차트·스크롤 폭이 같은 라벨 목록을 본다. 월 칸 표기 `YY.MM` 은 `month_label` 한 벌이다.
@@ -7826,7 +7836,8 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조). 화면은 경고 알림이 아니라 표지 +
   풍선이다 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」(`components/outside_calculation_mark.py`) · 공정 Capa 상세 ③ 판정
-  카드 「계산 밖(소요기준 BOX) — 판정하지 않습니다」(경로가 모두 계산 밖인 공정만)
+  카드 「계산 밖(소요기준 BOX) — 판정하지 않습니다」(경로가 모두 계산 밖인 공정만) · HOME 공정 필터 팝업 「확보율 없음」 구역 단추
+  「계산 밖」(같은 공정만)
 - 기본 화면용 공정별 대당 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
   집계한다. 동일한 대당 Capa의 STEP이 늘면 공정별 대당 Capa는 그 수에 반비례해 감소한다.
@@ -11055,7 +11066,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   어긋나지 않고, 계산 숫자는 바꾸지 않으며, 넣을 때 그 집합만 고치면 목록도 함께 따라간다(`tests/test_frame_contracts.py` ·
   `tests/test_required_equipment.py`). 화면 표지는 산출 결과 세 표 제목 줄 「계산 밖 n공정」 + 풍선이다(경고 알림 아님 —
   `components/outside_calculation_mark.py`, 3장 `calculation_result.py`). 경로가 모두 계산 밖인 공정을 고른 공정 Capa 상세 ③
-  판정 카드는 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다(3장 `process_capa_detail.py`).
+  판정 카드는 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다(3장 `process_capa_detail.py`). 같은 공정은 HOME 공정
+  필터 팝업 「확보율 없음」 구역 단추에 「계산 밖」 이 붙고 풍선이 그 소요기준을 말한다(3장 `home.py` · `process_picker.py`).
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지

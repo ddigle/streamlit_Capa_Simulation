@@ -19,12 +19,14 @@ UI-TXT-04)이다. 사용자가 고칠 수 없는데 늘 서는 상태라 경고 
 
 공정 하나를 말하는 자리(공정 Capa 상세 ③ 판정 카드)는 그 공정의 경로가 조회기간 안에서 모두
 계산 밖(`whole`)일 때만 「계산 밖(소요기준 BOX)」 을 쓴다(`whole_outside_basis` · `BASIS_MARK`).
-경로 일부만 빠진 공정은 남은 경로로 판정이 서므로 그 자리 글은 그대로다.
+경로 일부만 빠진 공정은 남은 경로로 판정이 서므로 그 자리 글은 그대로다. 공정마다 단추가 서는 자리
+(HOME 공정 필터 팝업 「확보율 없음」 구역)는 같은 판정을 선택지 전부에 한 번에 건다
+(`whole_outside_bases` — 단추 끝 글은 `OUTSIDE_CALCULATION`, 풍선 줄은 `BASIS_REASON`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Final, NamedTuple
 
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -46,6 +48,11 @@ PARTIAL: Final = " — 일부 경로"
 NAME_LIMIT: Final = 10
 # 공정 하나를 말하는 자리의 표지 — 「계산 밖(소요기준 BOX)」(`whole_outside_basis` 의 글을 넣는다).
 BASIS_MARK: Final = f"{OUTSIDE_CALCULATION}(소요기준 {{bases}})"
+# 공정 하나의 풍선 줄 — 「소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정).」
+# (HOME 공정 필터 단추가 「조회기간에 유효한 확보율이 없어 …」 대신 쓴다).
+BASIS_REASON: Final = (
+    f"소요기준 {{bases}} — 산식이 정해질 때까지 {OUTSIDE_CALCULATION}입니다(추가 예정)."
+)
 
 
 class OutsideCalculationMark(NamedTuple):
@@ -92,3 +99,17 @@ def whole_outside_basis(processes: Sequence[UnimplementedProcess], process: str)
         if item.process == name:
             return " · ".join(item.bases) if item.whole else None
     return None
+
+
+def whole_outside_bases(
+    processes: Sequence[UnimplementedProcess], options: Iterable[str]
+) -> dict[str, str]:
+    """선택지(원본 공정명 — 받은 글자 그대로 키)마다 `whole_outside_basis` 를 건 것 가운데 글이 선
+    것만 — 공정마다 단추가 서는 자리가 한 번에 받는다. 계산 밖 공정이 없으면 빈 사전이다."""
+    if not processes:
+        return {}
+    return {
+        option: basis
+        for option in options
+        if (basis := whole_outside_basis(processes, option)) is not None
+    }
