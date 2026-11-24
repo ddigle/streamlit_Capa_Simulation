@@ -27,9 +27,12 @@ from capa_simulation.components.state_alerts import alarm_table_place
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.custom_source_check import (
     CELL_COLUMNS,
     CUSTOM_SOURCE_COLUMNS,
+    SWITCHED_OFF_MEMO,
+    SWITCHED_OFF_NOTICE,
     CustomSourceCheck,
 )
 from capa_simulation.services.scenario_list_edits import ListDraft
@@ -442,6 +445,31 @@ def test_the_refusal_and_ad04_name_the_same_place_to_fill(value: str) -> None:
     assert "표 이름(표 또는 스키마.표)" in place
     assert "사내" not in refusal and "사내" not in notice
     assert "사내" not in registration.custom_locked_help(problem)
+
+
+def test_the_save_button_opens_with_the_switch_off_and_no_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내리면 변수가 없어도 저장 단추가 열리고(잠글
+    까닭이 없다 — 설계 규칙 UI-INP-07) `AD-04` 에 CUSTOM 원천 표 줄이 없다 — 다른 준비가 다 됐으면
+    `AD-04` 자체가 서지 않는다(UI-TXT-08). 패키지가 없으면 그 줄만 남는다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+
+    app = _run()
+
+    save = _save_button(app)
+    assert not save.disabled and not save.help
+    assert active_state(app, "AD-04") is None
+    assert not app.error and not app.warning
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: False)
+    note = active_state(_run(), "AD-04")
+    assert note is not None
+    assert note["short"] == registration.PACKAGE_MISSING_SHORT
+    assert adapter.BDQ_CUSTOM_TABLE_ENV not in str(note["full"])
 
 
 def test_ad04_does_not_carry_a_malformed_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1855,6 +1883,66 @@ def test_a_save_pressed_without_the_variable_stands_the_same_refusal_beside_the_
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
     assert DuckDBScenarioRepository(database).list_scenarios() == []
+
+
+def test_a_switched_off_registration_saves_raises_sc06_and_writes_the_memo_piece(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끄개를 내린 화면 등록은 실제 어댑터를 지나 CUSTOM 원천 표를 묻지 않고(변수가 없어도)
+    저장한다. 원천 스냅샷과 리비전 표의 CUSTOM 은 모두 구분 없음이고, 리비전 메모에 「CUSTOM 원천
+    붙이지 않음」 조각이 남는다(끄개 이름은 없다). 저장 알림 다음 셋째 칸(충돌 칸 index 1
+    그대로)에 사건 알림 `SC-06` 이 표 없이 알림창 · Alarm 에만 서고(UI-NTF-03), 전문 끝에 끄개
+    이름 · 시뮬레이션 코드가 있다 — 표 이름은 묻지 않아 어디에도 없다. 합성 시드 — 샘플 관측."""
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = _registration_database(tmp_path)
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    asked = "def get_data(*, param, **_kwargs):\n"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == 1
+    script = REAL_ADAPTER_SAVE_SCRIPT.replace(
+        asked, asked + '    st.session_state.setdefault("__asked__", []).append(param)\n'
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = {}
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 12)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 22)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    [query] = app.session_state["__asked__"]
+    assert "'SIM-W48'" in query and DEMO_CUSTOM_TABLE not in query
+    keys = registration.REGISTRATION_FLASH_KEYS
+    assert keys.index(registration.REGISTRATION_CONFLICT_FLASH_KEY) == 1
+    assert keys.index(registration.REGISTRATION_CUSTOM_FLASH_KEY) == 2
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.kind, note.alert, note.popup_only, note.tables) == ("warning", "SC-06", True, ())
+    assert note.message.startswith(SWITCHED_OFF_NOTICE)
+    assert note.message.endswith(
+        f"끄개 {adapter.BDQ_CUSTOM_SOURCE_ENV}=off · 시뮬레이션 코드 SIM-W48"
+    )
+    assert alerts.short_text(alerts.plain_text(note.message)).startswith(
+        "CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다"
+    )
+    assert DEMO_CUSTOM_TABLE not in note.message
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    assert set(repository.load_source_data(scenario.scenario_id)["CUSTOM"]) == {CUSTOM_BLANK}
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    for table in ("RQ_PKG_PLAN", "RQ_REQB"):
+        assert set(snapshot.tables[table]["CUSTOM"]) == {CUSTOM_BLANK}, table
+    saved = _saved_note(database)
+    assert f"상세 조회기간 2026-11-12 ~ 2026-11-22 · {SWITCHED_OFF_MEMO}" in saved
+    assert adapter.BDQ_CUSTOM_SOURCE_ENV not in saved
 
 
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(

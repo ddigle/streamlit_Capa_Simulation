@@ -55,11 +55,13 @@ from capa_simulation.io.bigdataquery_catalog import (
     is_bigdataquery_catalog_configured,
 )
 from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_CUSTOM_SOURCE_ENV,
+    CUSTOM_SOURCE_OFF,
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
     BigDataQueryCoreDataProvider,
     QueryWindow,
-    custom_table_problem,
+    custom_source_problem,
     is_bigdataquery_adapter_configured,
     is_bigdataquery_package_available,
     registration_detail_window,
@@ -111,7 +113,8 @@ CONFLICT_DETAIL_TITLE: Final = "충돌 상세"
 CONFLICT_CSV_LABEL: Final = "기준정보 업무 키 충돌 CSV 다운로드"
 # 저장은 됐지만 CUSTOM 원천 표와 본 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋날 때의 경고 —
 # 알림창 · Alarm 에만(충돌 경고 뒤). 칸마다의 행 수는 그 Alarm 줄의
-# 표다(`_queue_custom_source_check`).
+# 표다(`_queue_custom_source_check`). 끄개로 CUSTOM 원천 표를 묻지 않은 등록의 알림(`SC-06`)도 이
+# 칸이다 — 한 등록에는 둘 가운데 하나만 선다.
 REGISTRATION_CUSTOM_FLASH_KEY = "bigdataquery_registration_custom_flash"
 CUSTOM_CELLS_TITLE: Final = "CUSTOM 대조"
 # 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 뒤).
@@ -173,9 +176,9 @@ CATALOG_LOCKED_HELP: Final = (
 DETAIL_LOCKED_HELP: Final = (
     "상세 조회 SQL 이 설정되지 않아 조회 · 저장할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
 )
-# CUSTOM 원천 표 환경변수를 쓸 수 없어(없음 · 꼴 틀림 — `custom_table_problem`) 잠긴 저장 단추
-# 풍선의 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_locked_help`). 목록 조회는 그 표를 쓰지 않아
-# 잠그지 않는다.
+# CUSTOM 원천 표 환경변수를 쓸 수 없어(없음 · 꼴 틀림 — `custom_source_problem`, 끄개를 내렸으면
+# 판정하지 않는다) 잠긴 저장 단추 풍선의 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_locked_help`). 목록
+# 조회는 그 표를 쓰지 않아 잠그지 않는다.
 CUSTOM_LOCKED_TAIL: Final = " 조회 · 저장이 막힙니다 — 채울 자리는 Alarm 그 줄이 적습니다."
 # 상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_table_notice`).
 # 값(사내 표 이름)은 어디에도 싣지 않는다.
@@ -305,7 +308,8 @@ def render_bigdataquery_registration(
     detail_ready = is_bigdataquery_adapter_configured()
     # CUSTOM 원천 표 환경변수 판정은 상세 조회(`fetch`)와 같은 함수다 — 상태 알림과 저장 단추가
     # 한 번 읽은 판정을 함께 쓴다. 이 프로세스의 환경이라 보인 회차와 누른 회차가 갈리지 않는다.
-    custom_problem = custom_table_problem()
+    # 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 판정하지 않아(None) 잠금도 알림 줄도 없다.
+    custom_problem = custom_source_problem()
     _report_configuration(
         catalog_ready=catalog_ready,
         detail_ready=detail_ready,
@@ -379,7 +383,7 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
 
 
 def custom_table_notice(problem: str) -> str:
-    """상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 — 까닭(`custom_table_problem`) 한 문장과 막히는 것 ·
+    """상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 — 까닭(`custom_source_problem`) 한 문장과 막히는 것 ·
     채울 자리. 값은 싣지 않는다."""
     return problem + CUSTOM_NOTICE_TAIL
 
@@ -1134,8 +1138,23 @@ def _queue_custom_source_check(check: CustomSourceCheck | None, simulation_code:
     CUSTOM 은 Capa Code 로 붙여 값에는 영향이 없어 등록은 했다 — 막지 않고 알린다(요청 그대로).
     대조가 없거나(CSV · 시드 · 가짜 공급자) 어긋난 칸이 없으면 아무것도 내지 않는다. 표가 커서
     Alarm 줄에 싣지 못하면(`alert_table` 이 None) 표 없이 수만 싣는다 — 같은 수가 리비전 메모에도
-    남는다."""
+    남는다.
+
+    끄개로 CUSTOM 원천 표를 묻지 않은 등록(`attached` 거짓)은 등록마다 사건 알림 `SC-06` 하나다 —
+    표 없이, 전문 끝에 끄개 이름과 시뮬레이션 코드를 싣는다(값 · 표 이름은 없다 — 묻지 않았다).
+    물러선 것을 숨기지 않는다(설계 규칙 UI-NTF-05 — 같은 사실이 리비전 메모에도 남는다)."""
     if check is None or not check.warns:
+        return
+    if not check.attached:
+        queue_flash(
+            REGISTRATION_CUSTOM_FLASH_KEY,
+            f"{check.notice()} 끄개 {BDQ_CUSTOM_SOURCE_ENV}={CUSTOM_SOURCE_OFF} · 시뮬레이션 코드 "
+            f"{simulation_code}",
+            kind="warning",
+            icon=":material/warning:",
+            alert="SC-06",
+            popup_only=True,
+        )
         return
     # 파일 이름의 분은 KST 다(`korea_time` — 서버 시각대를 따르지 않는다).
     safe_code = _file_code(simulation_code)

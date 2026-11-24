@@ -2057,8 +2057,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + `managed` 서버의 「BDQ 자동
   로그인」 줄 `login_rows`(시작 때 결과 — `container_start_report.login_step`) + S3 키 · `managed` 가 있는 서버의
   동기화 줄 다섯 `sync_rows` — AWS 프로필 · aws CLI · ECS 연결 · 버킷 목록 · DB 받기 + 「CUSTOM 원천 표」 — 이 프로세스의 지금 환경변수
-  `CAPA_BDQ_CUSTOM_TABLE` 을 상세 조회와 같은 판정 `company_bigdataquery_adapter.custom_table_problem` 으로 본 줄 `custom_table_step`, 없거나
-  꼴이 틀리면 「실패」(까닭은 변수 이름과 막히는 것뿐 — 값 없음), 시작 스크립트 결과 파일에는 칸을 두지 않는다 + 끝 줄 「DuckDB 메모리 한도」
+  `CAPA_BDQ_CUSTOM_TABLE` 을 상세 조회와 같은 판정 `company_bigdataquery_adapter.custom_source_problem` 으로 본 줄 `custom_table_step`, 없거나
+  꼴이 틀리면 「실패」(까닭은 변수 이름과 막히는 것뿐 — 값 없음), CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 변수와 상관없이
+  「건너뜀」(`CUSTOM_SOURCE_SKIPPED_REASON` — 실패가 아니라 `AD-01` 에 들지 않는다), 시작 스크립트 결과 파일에는 칸을 두지 않는다 + 끝 줄 「DuckDB 메모리 한도」
   — 지금 연결 설정의 한도 칸 판정 `memory_diagnostic.memory_limit_step`. 지금 판정한 두 줄(`live_steps`)이 「실패」 면 제목 판정
   `start_verdict` 와 `AD-01` 에 든다)와 「시작 때 있던
   통합인증 환경변수」 캡션(이름만)·디스크 · pod · 한도 · DuckDB 기본값 · 다운 시간 값(`sync_fact_lines`)·깔린 판·
@@ -2312,7 +2313,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     부르는 쪽 몫이다.
   - 리비전 1 메모 끝 조각 차례는 CUSTOM 원천 대조 · 업무 키 충돌 · CS 빈 행 · 부대공정 판 · 대당 Capa 멈춤(늘 끝)이다. 앞
     둘은 `source_check_memo` 한 곳 — 「CUSTOM 원천 대조 — 종류 n · 행 수 다른 칸 m · 한쪽에만 있는 칸 k」(BigDataQuery 등록이면
-    늘 — `CustomSourceCheck.memo`, CSV · 시드 · 가짜 공급자는 None 이라 없음) · 「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」(있을
+    늘 — `CustomSourceCheck.memo`, CUSTOM 원천 끄개로 묻지 않은 등록은 같은 자리에 「CUSTOM 원천 붙이지 않음 — 부품 구분 없음(-)」,
+    CSV · 시드 · 가짜 공급자는 None 이라 없음) · 「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」(있을
     때만 — `core_data_pipeline.reference_conflict_memo`)이고, 자동 갱신이 같은 함수로 실행 기록 사유 · 리비전 2 · 공식버전 메모에
     잇는다(`_RunLog.source_memo`).
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
@@ -2367,6 +2369,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사유의 발행 줄 쪽 끝 · 리비전 2 · 공식버전 메모의 조각 차례는 원천 조각(`_RunLog.source_memo` — CUSTOM 원천 대조 · 업무 키
     충돌, `scenario_registration.source_check_memo`) · CS 빈 행 · 부대공정 판 · 부하 예외 판이다. 소요대수 밖 수요 경고는 그 뒤
     `_WARNING_SEPARATOR` 로 잇고 `split_published_reason` 이 경고 머리로만 가른다 — 대조 조각 안의 「—」 는 가르지 않는다.
+    CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off` — 7장)로 받은 회차는 원천 조각이 「CUSTOM 원천 붙이지 않음 — 부품 구분 없음(-)」 이고
+    회차는 그대로 공식으로 올린다(2026-11-24 사용자 답 Q2 (가) — 회차 코드는 끄개를 모른다, 시험
+    `test_a_switched_off_run_registers_blank_parts_and_carries_the_switch_memo`).
   - 회차를 멈춘 예외는 traceback 과 함께 로그에 남기되(`_log_failure_trace`), BigDataQuery 조회 실패(`BigDataQueryCallError`)면 예외
     사슬을 따라가지 않는다 — 감싼 패키지 원문(`__cause__`)에는 요청자 계정 · CUSTOM 원천 표 이름이 가리지 않은 채 든다. 그 실패를
     실행 기록에 쓰지 못한 줄도 문맥이 그 조회 실패라 같이 끊는다(`test_a_custom_query_failure_keeps_the_table_name_out_of_the_log`).
@@ -2399,8 +2404,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서
     고르면 등록일 −7~+3일) 넓은 기본 창으로 조용히 떨어지지 않는다. 같은 코드 재수신은 원천 코드 불변 검사가 막는다.
   - CUSTOM 은 CUSTOM 원천 표에서 받는다(7장 — 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE` · `BDQ_CUSTOM_TABLE_ENV` 로만, 저장소 ·
-    ZIP 에 두지 않는다). `fetch` 차례는 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → 표 이름 판정(`custom_table_problem` — 없음 ·
-    꼴 틀림, 영문 · 숫자 · 밑줄 낱말 하나나 점으로 이은 둘, 값은 글에 싣지 않는다) → 패키지 → CUSTOM 원천 표 조회(`build_custom_query`
+    ZIP 에 두지 않는다). `fetch` 차례는 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → 끄개 · 표 이름 판정(`custom_source_problem` — 끄개가
+    켜졌을 때만 `custom_table_problem` 의 없음 · 꼴 틀림, 영문 · 숫자 · 밑줄 낱말 하나나 점으로 이은 둘, 값은 글에 싣지 않는다 — 끄개와
+    표 이름은 한 번 읽은 값 `_custom_source_setting` 으로 판정과 갈래를 함께 고르고, 공급자가 따로 받은 `custom_table` 이 환경변수보다
+    앞선다) → 패키지 → CUSTOM 원천 표 조회(`build_custom_query`
     · `CUSTOM_QUERY_TEMPLATE` — 기간 없이 코드 하나, 열 이름은 설계 초안이라 사내 확인 거리) · `check_custom_rows` → 본 조회 → 0행 ·
     칸 · 중복 검사 → 이름 바꾸기 → `attach_custom_values`(본 표 CUSTOM 칸만 Capa Code 로 덮는다 — 덮은 프레임이 원천 스냅샷) →
     MPGA TEST 보정이고, 대조 수는 `CoreDataBatch.custom_check` 로 간다. 본 조회문 `QUERY_TEMPLATE` 은 글자 그대로 두고(지문 시험) 그
@@ -2408,10 +2415,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표(CAPA_BDQ_CUSTOM_TABLE) 조회에서 멈췄습니다」 머리를 단 사본(`retold` — 갈래 · 낱말 · 종류 이름은 다시 가르지 않음)이고, SQL
     갈래면 값 · 조회 권한을 보라고 덧붙인다. 원문(`_original_text`)은 요청자 계정과 함께 표 이름(값 전체 · 점 뒤 끝 조각, 3글자
     이상, 대소문자 무시)을 `CUSTOM_TABLE_MASK` 로 한 번에 가린다(`_texts_to_hide` · `_hide_texts`) — 자동 갱신 실행 기록 사유가
-    원문을 그대로 남긴다. 시험은 `tests/conftest.py` autouse 가 합성 값 `demo_schema.demo_custom` 을 넣고 「없음」 갈래만 직접 지운다.
-    같은 판정(`custom_table_problem`)을 DB 등록 탭의 저장 단추 잠금 · `AD-04` 와 Admin 「서버 시작 점검」 의 「CUSTOM 원천 표」 줄
-    (`AD-01`)이 읽는다 — 그 줄 · 제목 판정 · `AD-01` 은 `tests/test_custom_table_setting.py`, 잠금 · `AD-04` 는
-    `tests/test_bigdataquery_registration.py` 가 본다.
+    원문을 그대로 남긴다. 시험은 `tests/conftest.py` autouse 가 합성 값 `demo_schema.demo_custom` 을 넣고 끄개를 지우며, 「없음」 갈래와
+    끄개를 내린 갈래는 그 시험이 직접 바꾼다. 같은 판정(`custom_source_problem`)을 DB 등록 탭의 저장 단추 잠금 · `AD-04` 와 Admin
+    「서버 시작 점검」 의 「CUSTOM 원천 표」 줄(`AD-01`)이 읽는다 — 그 줄 · 제목 판정 · `AD-01` 은 `tests/test_custom_table_setting.py`,
+    잠금 · `AD-04` 는 `tests/test_bigdataquery_registration.py` 가 본다.
+  - CUSTOM 원천 끄개(`BDQ_CUSTOM_SOURCE_ENV` = `CAPA_BDQ_CUSTOM_SOURCE`, 2026-11-24 정식판 마감 1번 — 7장)는 값이 `off`(앞뒤 공백 ·
+    대소문자 무시)일 때만 끈다(`custom_source_on` — 비었거나 `of` · `false` 같은 다른 값은 켬, 부를 때마다 읽는다 — 메모리 공유 스위치와
+    같은 꼴). 끄면 표 이름을 판정하지 않고(`custom_source_problem` 이 None — 변수가 없거나 꼴이 틀려도) 패키지 뒤 CUSTOM 원천 표를 묻지
+    않으며, 본 조회 · 0행 · 칸 · 중복 검사 · 이름 바꾸기 뒤 CUSTOM 칸을 모두 빈 값 표지로 덮는다(`custom_source_check.blank_custom_values` —
+    조회문 상수 그대로가 아니다). 대조는 「붙이지 않음」(`CustomSourceCheck.switched_off`)이라 메모 조각 · 등록 알림 `SC-06` 이 늘
+    선다. 판정 자리는 `build_query` 뒤라 「SQL 미설정」 글이 먼저다. 켬 길 판정 · 글은 끄개 전과 같다. 시험은
+    `tests/test_company_bigdataquery_adapter.py` 의 `test_only_off_turns_the_custom_source_off` · `test_the_switch_off_*` ·
+    `test_the_switch_is_judged_after_the_unconfigured_sql_check`.
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
@@ -3073,6 +3088,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     의 `warns` · `notice()` · `memo()`(늘 「CUSTOM 원천 대조 — 종류 n · …」) · `cells`. 메모는 리비전 · 자동 갱신 메모
     (`scenario_registration.source_check_memo`)가, `warns` 일 때의 글 · 표(칸 `CELL_COLUMNS`)는 DB 등록 사건 알림 `SC-05` 와 그
     Alarm 줄의 표 「CUSTOM 대조」(`bigdataquery_registration._queue_custom_source_check` — 2,000행을 넘으면 표 없이 수만)가 쓴다.
+  - 끄개(어댑터의 `CAPA_BDQ_CUSTOM_SOURCE=off` — 7장): `blank_custom_values` 가 본 표 CUSTOM 칸을 모두 빈 값 표지로 덮고(맞댈 칸이
+    없어도 멈추지 않는다, 글자 dtype 은 `attach_custom_values` 와 같이 지킨다 — `_with_custom` 한 곳) 대조
+    `CustomSourceCheck.switched_off` 를 낸다 — 끝 칸 `attached` 거짓 · 대조 칸 없음 · 종류 1 · `warns` 참. `memo()` 는
+    `SWITCHED_OFF_MEMO`(「CUSTOM 원천 붙이지 않음 — 부품 구분 없음(-)」 — 변수 이름 없음, 목록 메모 칸은 모두가 본다), `notice()` 는
+    `SWITCHED_OFF_NOTICE`(DB 등록 사건 알림 `SC-06` 글 — 앞 60자가 「CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다」, 표 없음,
+    끄개 이름 · 코드는 `_queue_custom_source_check` 가 끝에 붙인다)다. 시험 `tests/test_custom_source_check.py::test_a_switched_off_check_says_so_in_memo_and_notice_and_has_no_cells`.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 칸이 많은 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 그룹 자리(첫 등장 차례)를 바꾸지
     않는다.
@@ -6228,7 +6249,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     → 패키지(패키지 줄은 조회 SQL 이 다 섰을 때만), 짧은 글은 그 가운데 앞선 하나(`_configuration_short`), 저장 단추 풍선도 조회 SQL →
     CUSTOM 원천 표 → 고른 코드 차례로 앞선 하나다. 목록 조회는 그 표를 쓰지 않아 잠그지 않는다. 잠긴 단추가 눌려도 상세 조회가
     패키지를 부르기 전에 같은 판정 글로 멈춰 단추 곁 오류가 된다(설계 규칙 UI-INP-07 — 판정이 프로세스 환경이라 보인 회차와 누른
-    회차가 갈리지 않는다). 등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
+    회차가 갈리지 않는다). 판정은 `custom_source_problem` 이라 CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 변수가 없어도
+    단추가 열리고 `AD-04` 에 그 줄이 없다(잠글 까닭이 없다). 그때 저장하면 저장 알림 뒤 셋째 칸(`REGISTRATION_CUSTOM_FLASH_KEY` — 켬이면
+    `SC-05`, 끔이면 `SC-06`, 한 등록에 하나라 충돌 칸 index 1 그대로)에 사건 알림 `SC-06` 이 표 없이 알림창 · Alarm 에만 선다(전문 끝
+    「끄개 CAPA_BDQ_CUSTOM_SOURCE=off · 시뮬레이션 코드 <코드>」 — 표 이름 · 값 없음, 시험
+    `test_a_switched_off_registration_saves_raises_sc06_and_writes_the_memo_piece`). 등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
     선다(9장 「폼 안 칸에 세션으로 값을 써 넣지 않는다」). 빈 칸 저장은 빈 칸을 모아 곁 한 줄로 거부한다(「필수 칸이 비어 있습니다:
     …」 — 복제와 같은 꼴). 글자 칸은 입력 초안이라 `persist_state` 가 없어
     그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의
@@ -8173,6 +8198,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   — DB 등록 탭은 저장 뒤 사건 알림 `SC-05` 와 그 Alarm 줄의 표 「CUSTOM 대조」(칸마다 두 표 행 수, 2,000행을 넘으면 표 없이 수만)로
   알리고, 대조 수는 BigDataQuery 등록이면 늘 메모 조각 「CUSTOM 원천 대조 — 종류 n · 행 수 다른 칸 m · 한쪽에만 있는 칸 k」 로
   리비전 1 메모(자동 갱신은 실행 기록 사유 · 리비전 2 · 공식버전 메모에도 — 원천 조각, 3장 `source_check_memo`)에 남는다.
+- **CUSTOM 원천 끄개 `CAPA_BDQ_CUSTOM_SOURCE=off` 면 CUSTOM 원천 표를 묻지 않고 모든 부품을 구분 없음(「-」)으로 등록한다**(2026-11-24
+  사용자 정식판 마감 1번 — 2026-11-22 설계의 「한 곳 스위치는 짓지 않는다」 를 덮는다). 1.0 부터 앞 ZIP 으로 되돌리지 않으므로, 원천 표
+  모양이 설계와 달라 등록 · 자동 갱신이 멈추면 고친 ZIP 없이 C-DEP 환경변수 + CI/CD 로 물러선다. 값이 `off` 일 때만 끄고(오타는 켬),
+  끄면 표 이름을 판정하지 않으며 조회문 상수가 아니라 「-」(0039 가 옛 행에 넣은 표지와 같은 글자)로 덮는다 — 붙일 수 있는 부품만
+  붙이는 가운데 꼴은 없다(전부 아니면 없음). 물러섬은 숨기지 않는다 — 리비전 1 메모(자동 갱신은 실행 기록 사유 · 리비전 2 · 공식버전
+  메모에도)에 「CUSTOM 원천 붙이지 않음 — 부품 구분 없음(-)」, DB 등록마다 사건 알림 `SC-06`, Admin 「서버 시작 점검」 「CUSTOM 원천 표」
+  줄 「건너뜀」(`AD-01` 없음). 자동 갱신은 끈 동안에도 그대로 공식으로 올린다(2026-11-24 사용자 답 Q2 (가) — 지난 판과 같은 꼴의 숫자).
+  대가: 끈 동안 등록한 코드는 원천 해시가 「-」 로 굳어 끄개를 걷은 뒤에도 부품을 나눠 다시 받을 수 없다. 판정은 어댑터
+  `custom_source_problem` 하나를 상세 조회 · 저장 단추 잠금 · `AD-04` · 서버 시작 점검이 부른다(3장 어댑터).
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기
   등)보다 먼저 뺀다 — 행마다 따로 바꾸는 `제품정보`·`Area_Name` 정규화만 빼기 전에 해 뺀 경로 행을 남은 계획과 같은 꼴로
@@ -10061,6 +10095,9 @@ state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 
 받은 이름 시험만 따로 지은 합성 이름을 쓴다. 「없음」 갈래는 그 시험이 직접 지운다. 이 이름은 위생 시험이 모르는 사내 값이라 막는 것은 이 손 규칙이다. 값은 화면 · 알림 · 실행 기록 사유 · 로그에 싣지
 않는다 — 판정 글 · 풍선 · `AD-04` · 서버 시작 점검 줄은 변수 이름만 싣고, 조회 실패 원문은 어댑터가 값 전체와 점 뒤 끝 조각을 표지
 `<CAPA_BDQ_CUSTOM_TABLE>` 로 가린다(`CUSTOM_TABLE_MASK`). 리뷰 · 런북 압축본에도 옮기지 않는다 — 배포 날 확인은 「있음」 · 갈래 낱말 · 수뿐이다.
+CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE`, 2026-11-24 — 7장)는 환경변수로만 둔다 — 화면 단추 · 설정 상자 · DB 칸을 두지 않고, 평소에는
+넣지 않으며, 원천 표 모양 탓에 등록이 멈췄을 때 사용자가 정해 C-DEP 환경변수 표(사내 PC · WebIDE 는 그 자리 환경변수)에 `off` 를 넣고
+다시 띄운다. 시험은 `tests/conftest.py` autouse 가 끄개를 지워 사내 창에 끄개가 남아도 결과가 같고, 끔 갈래는 그 시험이 직접 넣는다.
 
 앱 코드의 `subprocess` 는 `io/object_storage.py` 한 곳에만 둔다(명령 실행기를 주입받아 시험한다). C-DEP CD 시작
 스크립트(`scripts/container_start.py`)의 pip·import 확인은 앱이 서기 전 `scripts/` 몫이라 이 규칙 밖이고, 앱 쪽(어댑터·

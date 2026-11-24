@@ -49,11 +49,12 @@ from capa_simulation.services.builtin_seed import (
     build_builtin_seed_dataset,
     load_builtin_display_order,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.core_data_pipeline import (
     PreparedCoreDataset,
     prepare_core_data_dataset,
 )
-from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS
+from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS, SWITCHED_OFF_MEMO
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
@@ -1216,6 +1217,140 @@ def test_two_parts_through_fetch_and_prepare_keep_two_custom_keys_and_no_custom_
         parts = split.reference_tables[table].groupby("제품정보")["CUSTOM"]
         assert {CUSTOM_A, CUSTOM_B} in [set(values) for _, values in parts], table
     assert "RQ_YLD" in set(folded.reference_conflicts["RQ테이블"])
+
+
+def _switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CUSTOM 원천 끄개를 내린다 — 앞뒤 공백 · 대문자도 끈 값이다(conftest 가 지워 둔다)."""
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, " OFF ")
+
+
+def _two_part_main() -> pd.DataFrame:
+    """부품 둘 · 달 둘의 본 답 — CUSTOM 칸은 조회문 상수다."""
+    return pd.DataFrame(
+        {
+            "공정": ["ASSY", "ASSY", "TEST", "TEST"],
+            "모듈수": [2, 2, 1, 1],
+            "Capa Code": ["DEMO_CAPA_A", "DEMO_CAPA_B", "DEMO_CAPA_A", "DEMO_CAPA_B"],
+            "생산계획년월": [202611, 202611, 202612, 202612],
+            "CUSTOM": [QUERY_CONSTANT] * 4,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "on"),
+    [
+        (None, True),
+        ("", True),
+        ("on", True),
+        ("0", True),
+        ("false", True),
+        ("of", True),
+        ("off", False),
+        (" OFF ", False),
+    ],
+    ids=["없음", "빈 값", "on", "0", "false", "오타 of", "off", "공백 · 대문자 OFF"],
+)
+def test_only_off_turns_the_custom_source_off(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, on: bool
+) -> None:
+    """끄개는 값이 `off`(앞뒤 공백 · 대소문자 무시)일 때만 끈다 — 비었거나 다른 값(오타 `of` ·
+    `false` 포함)은 켬이다. 끄면 표 이름을 판정하지 않고(변수가 없거나 꼴이 틀려도 None), 켬이면
+    판정이 표 이름 판정(`custom_table_problem`) 그대로다. 넘긴 환경과 이 프로세스의 환경이 같은
+    답이다."""
+    environ = {} if value is None else {adapter.BDQ_CUSTOM_SOURCE_ENV: value}
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_SOURCE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, value)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+
+    assert adapter.custom_source_on(environ) is on
+    assert adapter.custom_source_on() is on
+    missing = adapter.CUSTOM_TABLE_MISSING if on else None
+    assert adapter.custom_source_problem(environ) == missing
+    assert adapter.custom_source_problem() == missing
+    named = {**environ, adapter.BDQ_CUSTOM_TABLE_ENV: DEMO_CUSTOM_TABLE}
+    assert adapter.custom_source_problem(named) is None
+    malformed = {**environ, adapter.BDQ_CUSTOM_TABLE_ENV: "demo schema.demo_custom"}
+    assert adapter.custom_source_problem(malformed) == (
+        adapter.CUSTOM_TABLE_MALFORMED if on else None
+    )
+
+
+def test_the_switch_off_asks_only_the_main_query_and_marks_every_part_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """끄개를 내리면 CUSTOM 원천 표를 묻지 않는다 — 가짜가 받은 조회문은 본 조회 하나다. 본 조회문의
+    상수 CUSTOM 칸은 모든 부품이 구분 없음(`CUSTOM_BLANK`)으로 덮이고(상수 그대로가 아니다) 행 수 ·
+    차례 · 다른 칸은 그대로다. 원천 묶음의 대조(`custom_check`)는 「붙이지 않음」 이다."""
+    _switch_off(monkeypatch)
+    asked: list[str] = []
+    main = _two_part_main()
+    monkeypatch.setattr(
+        adapter,
+        "load_bigdataquery_module",
+        lambda: _module(_answers(main, _custom_for(main), asked=asked)),
+    )
+
+    batch = adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    [query] = asked
+    assert "'SIM-001'" in query and DEMO_CUSTOM_TABLE not in query
+    assert batch.frame["CUSTOM"].tolist() == [CUSTOM_BLANK] * 4
+    pd.testing.assert_frame_equal(batch.frame.drop(columns="CUSTOM"), main.drop(columns="CUSTOM"))
+    assert batch.custom_check is not None
+    assert not batch.custom_check.attached
+    assert batch.custom_check.memo() == SWITCHED_OFF_MEMO
+
+
+@pytest.mark.parametrize(
+    "value", [None, "demo schema.demo_custom", "   "], ids=["변수 없음", "꼴 틀림", "공백뿐"]
+)
+def test_the_switch_off_needs_no_custom_table_variable(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """끄개를 내리면 표 이름을 판정하지 않는다 — 변수가 없거나 꼴이 틀려도 멈추지 않고 본 조회
+    하나로 원천을 낸다. 꼴이 틀린 값은 조회문 어디에도 끼지 않는다."""
+    _switch_off(monkeypatch)
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+    asked: list[str] = []
+    main = _two_part_main()
+    monkeypatch.setattr(
+        adapter,
+        "load_bigdataquery_module",
+        lambda: _module(_answers(main, _custom_for(main), asked=asked)),
+    )
+
+    batch = adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    [query] = asked
+    if value is not None and value.strip():
+        assert value not in query
+    assert set(batch.frame["CUSTOM"]) == {CUSTOM_BLANK}
+
+
+def test_the_switch_is_judged_after_the_unconfigured_sql_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """끄개 판정은 본 조회문 짓기(미설정 SQL 검사) 뒤다 — 끄개를 내려도 「SQL 미설정」 글이
+    그대로이고 패키지를 부르지 않는다(켬이고 변수가 없을 때 SQL 글이 먼저인 것은 변수 없음 갈래
+    시험이 본다)."""
+    _switch_off(monkeypatch)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    imported = _counting_import(monkeypatch)
+    unconfigured = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template=f"SELECT {adapter.UNCONFIGURED_MARKER} WHERE x = '{{simulation_code}}'",
+    )
+
+    with pytest.raises(RuntimeError, match="SQL이 아직 설정되지 않았습니다"):
+        unconfigured.fetch("SIM-001")
+
+    assert imported == []
 
 
 def test_catalog_sql_is_not_mixed_into_the_detail_template() -> None:

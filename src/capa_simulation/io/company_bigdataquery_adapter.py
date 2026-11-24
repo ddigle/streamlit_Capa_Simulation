@@ -38,7 +38,11 @@ from capa_simulation.io.container_start_report import (
     start_check_hint,
 )
 from capa_simulation.io.core_data_source import CoreDataBatch
-from capa_simulation.services.custom_source_check import attach_custom_values, check_custom_rows
+from capa_simulation.services.custom_source_check import (
+    attach_custom_values,
+    blank_custom_values,
+    check_custom_rows,
+)
 from capa_simulation.services.korean_particle import with_subject_particle
 
 _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -57,11 +61,18 @@ DETAIL_WINDOW_DAYS_AFTER: Final = 3
 # `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
 # CUSTOM 원천 표 이름(표 또는 스키마.표)을 넣는 환경변수. 표 이름은 저장소 · 배포 ZIP 에 두지
 # 않고 이 값으로만 받는다 — `fetch` 가 부를 때마다 읽어 화면 등록과 자동 갱신이 같은 판정을
-# 받는다(`custom_table_problem`).
+# 받는다(`custom_source_problem` → `custom_table_problem`).
 BDQ_CUSTOM_TABLE_ENV: Final = "CAPA_BDQ_CUSTOM_TABLE"
 # 표 이름 꼴 — 영문 · 숫자 · 밑줄 낱말 하나 또는 점으로 이은 둘. `\w` 는 한글도 받아 쓰지 않는다.
 # 값은 조회문에 그대로 끼우므로 이 꼴이 조회문에 들어가는 글의 유일한 거름이다.
 _CUSTOM_TABLE_PATTERN: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+# CUSTOM 원천 끄개 — 기본 켬이고, 값이 `off`(앞뒤 공백 · 대소문자 무시)일 때만 끈다(메모리 공유
+# 스위치 `settings.SHARE_SESSION_TABLES_ENV` 와 같은 꼴). 끄면 CUSTOM 원천 표를 묻지 않고 모든
+# 부품을 구분 없음으로 등록한다(`custom_source_check.blank_custom_values`). 평소에는 넣지 않는다 —
+# 원천 표 모양이 설계와 달라 등록 · 자동 갱신이 멈췄을 때 C-DEP 환경변수 표에 넣고 다시 띄우는
+# 물러설 길이다. 부를 때마다 읽는다.
+BDQ_CUSTOM_SOURCE_ENV: Final = "CAPA_BDQ_CUSTOM_SOURCE"
+CUSTOM_SOURCE_OFF: Final = "off"
 
 # ---------------------------------------------------------------------------
 # 사내 환경 설정 영역
@@ -72,7 +83,8 @@ _CUSTOM_TABLE_PATTERN: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][
 # 4) 조회 기간은 호출자가 `QueryWindow` 로 넘깁니다. {start_date}·{end_date} 자리를
 #    지우면 기간을 좁힐 수 없어 팩트 테이블을 전면 조회합니다.
 # 5) 아래 SQL 의 CUSTOM 칸은 상수이고 등록 때 CUSTOM 원천 표의 값으로 덮입니다
-#    (`CUSTOM_QUERY_TEMPLATE` — 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE`).
+#    (`CUSTOM_QUERY_TEMPLATE` — 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE`, 끄개
+#    `CAPA_BDQ_CUSTOM_SOURCE=off` 면 묻지 않고 구분 없음으로 덮습니다).
 # ---------------------------------------------------------------------------
 QUERY_TEMPLATE = """
 SELECT
@@ -338,19 +350,32 @@ class BigDataQueryCoreDataProvider:
         """코드 하나의 원천 — CUSTOM 원천 표를 먼저 묻고 본 조회 결과의 CUSTOM 칸을 그 값으로
         덮는다.
 
-        차례: 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → CUSTOM 원천 표 이름 판정 → 패키지 →
-        CUSTOM 원천 표 조회 · 검사 → 본 조회 → 0행 · 칸 · 중복 검사 → 이름 바꾸기 → CUSTOM
+        차례: 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → 끄개 · CUSTOM 원천 표 이름 판정 →
+        패키지 → CUSTOM 원천 표 조회 · 검사 → 본 조회 → 0행 · 칸 · 중복 검사 → 이름 바꾸기 → CUSTOM
         붙이기 → MPGA TEST 보정. 표 이름이 없거나 꼴이 틀리면 패키지를 부르기 전에 멈추고, CUSTOM
         원천 표 답이 0행 · 칸 모자람 · 한 부품에 CUSTOM 둘 이상 · 빈 CUSTOM 이면 본 조회를 부르지
         않고 멈춘다(`custom_source_check` — 2026-11-22 사용자 답 Q2 (가) · Q9 (가)).
+
+        끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 표 이름을 판정하지 않고 CUSTOM 원천 표를
+        묻지 않는다 — 본 조회 뒤 CUSTOM 칸을 모두 구분 없음으로 덮는다(`blank_custom_values`).
+        판정은 저장 단추 잠금 · `AD-04` · 서버 시작 점검과 같은 함수(`custom_source_problem`)이고,
+        끄개와 표 이름을 한 번 읽은 값(`_custom_source_setting`)으로 판정과 갈래를 함께 고른다.
         """
         code = _validated_simulation_code(simulation_code)
         window = self.window or default_query_window()
         query = build_query(self.query_template, code, window=window)
-        table = _usable_custom_table(self.custom_table)
-        custom_query = build_custom_query(code, table)
+        setting = _custom_source_setting(self.custom_table)
+        problem = custom_source_problem(setting)
+        if problem is not None:
+            raise RuntimeError(problem + _CUSTOM_TABLE_ADVICE)
+        attach = custom_source_on(setting)
+        table = _custom_table_text(setting[BDQ_CUSTOM_TABLE_ENV])
         module = cast(BigDataQueryModule, load_bigdataquery_module())
-        custom = check_custom_rows(_custom_answer(module, custom_query, table))
+        custom = (
+            check_custom_rows(_custom_answer(module, build_custom_query(code, table), table))
+            if attach
+            else None
+        )
         frame = call_get_data(module, query)
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
@@ -375,9 +400,13 @@ class BigDataQueryCoreDataProvider:
         if duplicated:
             names = ", ".join(map(str, duplicated))
             raise ValueError(f"BigDataQuery 컬럼 매핑 결과에 중복 컬럼이 있습니다: {names}")
-        # 본 조회문의 CUSTOM 칸은 상수다 — 부품(Capa Code)마다 CUSTOM 원천 표의 값으로 덮는다.
-        # 행은 이어 붙이지 않는다. 덮은 프레임이 그대로 원천 스냅샷이 된다.
-        renamed, custom_check = attach_custom_values(renamed, custom)
+        # 본 조회문의 CUSTOM 칸은 상수다 — 부품(Capa Code)마다 CUSTOM 원천 표의 값으로 덮는다(끄개면
+        # 모두 구분 없음으로). 행은 이어 붙이지 않는다. 덮은 프레임이 그대로 원천 스냅샷이 된다.
+        renamed, custom_check = (
+            blank_custom_values(renamed)
+            if custom is None
+            else attach_custom_values(renamed, custom)
+        )
         # TODO: MPGA TEST 원천 모듈수 산정 규칙이 확정되면 제거
         module_count = pd.to_numeric(renamed["모듈수"], errors="coerce")
 
@@ -420,8 +449,9 @@ def build_query(
     )
 
 
-# CUSTOM 원천 표 이름을 쓸 수 없는 까닭 — 값은 싣지 않는다(사내 표 이름이다). 저장 단추 잠금 · 상태
-# 알림 · 서버 시작 점검이 같은 판정(`custom_table_problem`)과 같은 글을 쓴다.
+# CUSTOM 원천 표 이름을 쓸 수 없는 까닭 — 값은 싣지 않는다(사내 표 이름이다). 상세 조회 · 저장 단추
+# 잠금 · 상태 알림 · 서버 시작 점검이 같은 판정(`custom_source_problem` — 끄개가 켜졌을 때
+# `custom_table_problem`)과 같은 글을 쓴다.
 CUSTOM_TABLE_MISSING: Final = f"CUSTOM 원천 표 환경변수({BDQ_CUSTOM_TABLE_ENV})가 없습니다."
 CUSTOM_TABLE_MALFORMED: Final = (
     f"CUSTOM 원천 표 환경변수({BDQ_CUSTOM_TABLE_ENV}) 값이 표 이름(스키마.표) 꼴이 아닙니다."
@@ -450,6 +480,33 @@ def custom_table_problem(value: str | None = None) -> str | None:
     if _CUSTOM_TABLE_PATTERN.fullmatch(text) is None:
         return CUSTOM_TABLE_MALFORMED
     return None
+
+
+def custom_source_on(environ: Mapping[str, str] | None = None) -> bool:
+    """CUSTOM 원천 끄개가 켜졌는가 — `BDQ_CUSTOM_SOURCE_ENV` 가 `off`(앞뒤 공백 · 대소문자 무시)가
+    아니면 켬이다. 비었거나 다른 값(`of` · `false` 같은 오타 포함)도 켬이다. `environ` 이 None 이면
+    이 프로세스의 지금 환경변수를 읽는다."""
+    env = os.environ if environ is None else environ
+    return env.get(BDQ_CUSTOM_SOURCE_ENV, "").strip().lower() != CUSTOM_SOURCE_OFF
+
+
+def custom_source_problem(environ: Mapping[str, str] | None = None) -> str | None:
+    """CUSTOM 원천을 붙일 수 없는 까닭 — 끄개가 내려졌으면 판정하지 않고 None, 켬이면 CUSTOM 원천 표
+    이름 판정(`custom_table_problem`)이다. 상세 조회(`fetch`) · DB 등록 저장 단추 잠금 · `AD-04` ·
+    서버 시작 점검 줄이 모두 이 함수 하나를 부른다. `environ` 이 None 이면 이 프로세스의 지금
+    환경변수를 읽는다. Streamlit 을 부르지 않는다."""
+    if not custom_source_on(environ):
+        return None
+    return custom_table_problem(None if environ is None else environ.get(BDQ_CUSTOM_TABLE_ENV, ""))
+
+
+def _custom_source_setting(table: str | None) -> dict[str, str]:
+    """상세 조회 한 번이 쓰는 끄개 · CUSTOM 원천 표 이름 — 지금 환경변수를 한 번 읽는다. 공급자가
+    표 이름을 따로 받았으면(`table`) 그 값이 환경변수보다 앞선다."""
+    return {
+        BDQ_CUSTOM_SOURCE_ENV: os.environ.get(BDQ_CUSTOM_SOURCE_ENV, ""),
+        BDQ_CUSTOM_TABLE_ENV: os.environ.get(BDQ_CUSTOM_TABLE_ENV, "") if table is None else table,
+    }
 
 
 def _usable_custom_table(value: str | None) -> str:

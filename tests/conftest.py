@@ -390,13 +390,14 @@ DEMO_CUSTOM_TABLE = "demo_schema.demo_custom"
 @pytest.fixture(autouse=True)
 def _with_demo_custom_table(monkeypatch: pytest.MonkeyPatch) -> None:
     """CUSTOM 원천 표 환경변수(`company_bigdataquery_adapter.BDQ_CUSTOM_TABLE_ENV`)를 합성 값으로
-    둔다.
+    두고 CUSTOM 원천 끄개(`BDQ_CUSTOM_SOURCE_ENV`)는 지운다.
 
-    사내 pytest 창에 실제 값이 있어도 덮어 결과가 같다. 지우지 않는 까닭 — 없으면 DB 등록이
-    「변수 없음」 으로 멈추고 그 판정을 읽는 화면 · 점검 시험이 뜻 없이 바뀐다. 「없음」 갈래는 그
-    시험이 직접 지운다(`monkeypatch.delenv`).
+    사내 pytest 창에 실제 값 · 끄개가 있어도 덮어 결과가 같다. 표 이름을 지우지 않는 까닭 — 없으면
+    DB 등록이 「변수 없음」 으로 멈추고 그 판정을 읽는 화면 · 점검 시험이 뜻 없이 바뀐다. 「없음」
+    갈래와 끄개를 내린 갈래는 그 시험이 직접 바꾼다(`monkeypatch.delenv` · `setenv`).
     """
     monkeypatch.setenv(company_bigdataquery_adapter.BDQ_CUSTOM_TABLE_ENV, DEMO_CUSTOM_TABLE)
+    monkeypatch.delenv(company_bigdataquery_adapter.BDQ_CUSTOM_SOURCE_ENV, raising=False)
 
 
 @pytest.fixture(autouse=True)

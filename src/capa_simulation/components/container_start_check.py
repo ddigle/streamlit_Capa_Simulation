@@ -20,9 +20,11 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 
 **CUSTOM 원천 표** — 동기화 줄 뒤 · 메모리 한도 줄 앞 「CUSTOM 원천 표」 줄(`custom_table_step`)은
 이 프로세스의 지금 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 을 DB 등록 · 자동 갱신의 상세 조회와 같은 판정
-(`company_bigdataquery_adapter.custom_table_problem`)으로 본다 — 값을 읽는 것이 이 앱 프로세스라
+(`company_bigdataquery_adapter.custom_source_problem`)으로 본다 — 값을 읽는 것이 이 앱 프로세스라
 결과 파일이 아니라 지금 환경이 바른 판정이다. 없거나 꼴이 틀리면 「실패」 라 제목 판정
 `start_verdict` 와 `AD-01` 에 든다. 까닭에는 변수 이름만 싣고 값(사내 표 이름)은 싣지 않는다.
+끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내렸으면 변수를 판정하지 않고 「건너뜀」 이다 — 실패가 아니라
+`AD-01` 에 들지 않고, 운영자는 이 줄로 끄개가 먹었는지 본다(`of` 같은 오타는 켬이라 서지 않는다).
 
 **메모리** — 표 끝 「DuckDB 메모리 한도」 줄(지금 연결 설정의 한도 칸 판정 — 틀린 값이면
 「실패」 라 제목 판정 `start_verdict` 와 `AD-01` 에 든다)과 사실 줄 끝 메모리 값 줄(RSS · 세션 ·
@@ -107,8 +109,11 @@ from capa_simulation.components.sso_status import (
 )
 from capa_simulation.io import bdq_login, bdq_token
 from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_CUSTOM_SOURCE_ENV,
     BDQ_CUSTOM_TABLE_ENV,
-    custom_table_problem,
+    CUSTOM_SOURCE_OFF,
+    custom_source_on,
+    custom_source_problem,
     last_query_failed_on_token,
 )
 from capa_simulation.io.container_start_report import (
@@ -118,6 +123,7 @@ from capa_simulation.io.container_start_report import (
     STATUS_FAILED,
     STATUS_LABELS,
     STATUS_OK,
+    STATUS_SKIPPED,
     STEP_LABELS,
     STEP_TOKEN,
     STEPS,
@@ -179,6 +185,10 @@ _ADDRESS = re.compile(
 _GIB = 1024**3
 # 동기화 줄 뒤 · 메모리 한도 줄 앞의 「CUSTOM 원천 표」 줄(`custom_table_step`).
 CUSTOM_TABLE_STEP_LABEL = "CUSTOM 원천 표"
+# 그 줄이 끄개로 「건너뜀」 일 때의 까닭 — 값 · 표지만(설계 규칙 UI-TXT-04).
+CUSTOM_SOURCE_SKIPPED_REASON = (
+    f"{BDQ_CUSTOM_SOURCE_ENV}={CUSTOM_SOURCE_OFF} — CUSTOM 원천 표를 묻지 않고 부품 구분 없이 등록"
+)
 # pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
 POD_TAIL_CHARS = 5
 
@@ -258,10 +268,16 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
 
 def custom_table_step() -> tuple[str, str, str]:
     """「서버 시작 점검」 표의 「CUSTOM 원천 표」 줄 `(단계, 결과, 까닭)` — 결과 파일이 아니라 이
-    프로세스의 지금 환경변수를 상세 조회와 같은 판정(`custom_table_problem`)으로 본다. 없거나 꼴이
-    틀리면 「실패」(DB 등록 · 자동 갱신이 멈춘다)이고, 까닭은 그 판정 글에 막히는 것을 잇는다. 값은
-    싣지 않는다."""
-    problem = custom_table_problem()
+    프로세스의 지금 환경변수를 상세 조회와 같은 판정(`custom_source_problem`)으로 본다. 없거나
+    꼴이 틀리면 「실패」(DB 등록 · 자동 갱신이 멈춘다)이고, 까닭은 그 판정 글에 막히는 것을 잇는다.
+    끄개를 내렸으면 「건너뜀」 이다(변수가 없어도 — 판정하지 않는다). 값은 싣지 않는다."""
+    if not custom_source_on():
+        return (
+            CUSTOM_TABLE_STEP_LABEL,
+            STATUS_LABELS[STATUS_SKIPPED],
+            CUSTOM_SOURCE_SKIPPED_REASON,
+        )
+    problem = custom_source_problem()
     if problem is None:
         return CUSTOM_TABLE_STEP_LABEL, STATUS_LABELS[STATUS_OK], f"{BDQ_CUSTOM_TABLE_ENV} 있음"
     reason = f"{problem.removesuffix('.')} — DB 등록 · 자동 갱신이 멈춥니다"
@@ -508,7 +524,8 @@ def failed_start_steps(report: ContainerStartReport) -> list[tuple[str, str]]:
 
 def live_failed_steps() -> list[tuple[str, str]]:
     """결과 파일이 아니라 이 프로세스의 지금 설정에서 실패한 단계의 (이름, 까닭) — 표 차례로 CUSTOM
-    원천 표 환경변수가 없거나 꼴이 틀림, DuckDB 메모리 한도 칸이 틀려 기본으로 물러섬."""
+    원천 표 환경변수가 없거나 꼴이 틀림, DuckDB 메모리 한도 칸이 틀려 기본으로 물러섬. 「건너뜀」
+    (끄개 · 한도 칸 없음)은 들지 않는다."""
     failed = STATUS_LABELS[STATUS_FAILED]
     return [(name, reason) for name, status, reason in live_steps() if status == failed]
 

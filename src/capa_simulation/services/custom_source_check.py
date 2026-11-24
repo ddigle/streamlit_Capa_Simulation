@@ -26,6 +26,11 @@ Capa Code 는 앞뒤 공백만 떼어 맞대고(대소문자는 둔다), 생산�
 등록한다(`CustomSourceCheck.warns`) — 붙이기가 Capa Code 단위라 값에는 영향이 없다. 칸 대조의 본 표
 수는 받은 행 그대로(완전 중복 행 포함 — 등록이 그대로 싣는다)이고, 완전 중복을 접은 수는 합계로만
 남긴다(`main_distinct_rows`).
+
+끄개(어댑터의 `CAPA_BDQ_CUSTOM_SOURCE=off`)를 내린 등록은 CUSTOM 원천 표를 묻지 않는다 — 본 표
+CUSTOM 칸을 모두 빈 값 표지(`CUSTOM_BLANK`)로 덮고(`blank_custom_values`) 대조는 「붙이지 않음」
+(`CustomSourceCheck.switched_off`)이다. 옛 상수로 조용히 물러나지 않고 「부품 구분 없음」 을 글자
+그대로 남기며, 메모 조각과 등록 알림이 그 사실을 늘 드러낸다.
 """
 
 from __future__ import annotations
@@ -53,6 +58,16 @@ CUSTOM_EXAMPLE_LIMIT: Final = 10
 _MONTH_EXAMPLE_LIMIT: Final = 3
 _PLAN_FLAG_COLUMN: Final = "계획기초정보여부"
 _MERGED_NOTE: Final = f"그대로 등록하면 그 부품은 구분 없음({CUSTOM_BLANK})으로 합쳐집니다."
+# 끄개로 CUSTOM 원천 표를 묻지 않은 등록의 메모 조각 — 변수 이름은 싣지 않는다(시나리오 관리 목록
+# 메모 칸은 모두가 본다).
+SWITCHED_OFF_MEMO: Final = f"CUSTOM 원천 붙이지 않음 — 부품 구분 없음({CUSTOM_BLANK})"
+# 같은 등록의 알림 글(사건 알림 `SC-06`) — 앞 60자가 무엇을 했는지를 말한다. 끄개 이름 · 코드는
+# 알리는 쪽이 끝에 붙인다.
+SWITCHED_OFF_NOTICE: Final = (
+    "CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다 — CUSTOM 원천 표를 묻지 않아 모든 부품의 "
+    f"CUSTOM 이 구분 없음({CUSTOM_BLANK})이고, 리비전 메모에 「CUSTOM 원천 붙이지 않음」 이 "
+    "남습니다. 이 코드는 끄개를 걷은 뒤에도 부품을 나눠 다시 받을 수 없습니다."
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +80,8 @@ class CustomSourceCheck:
     - `kinds` 본 표에 붙은 CUSTOM 값 종류 수(Capa Code 가 빈 행의 빈 값 표지는 세지 않는다).
     - `one_side_cells` 한쪽 표에만 있는 (Capa Code, 생산계획년월) 칸 · `count_mismatch_cells` 두
       표에 다 있는데 행 수가 다른 칸. `cells` 는 그 칸들의 표(칸 `CELL_COLUMNS`, 없는 쪽은 0행)다.
+    - `attached` CUSTOM 원천 표의 값을 붙였는가 — 끄개로 묻지 않은 등록은 거짓이고 대조 칸이 없다
+      (`switched_off`).
     """
 
     main_rows: int
@@ -74,15 +91,35 @@ class CustomSourceCheck:
     one_side_cells: int
     count_mismatch_cells: int
     cells: pd.DataFrame = field(compare=False, repr=False)
+    attached: bool = True
+
+    @classmethod
+    def switched_off(cls, frame: pd.DataFrame) -> CustomSourceCheck:
+        """끄개로 CUSTOM 원천 표를 묻지 않은 등록의 대조 — 붙이지 않았고 대조 칸이 없으며, 종류는
+        구분 없음 하나다(본 표가 0행이면 0). `frame` 은 CUSTOM 을 덮기 전이든 뒤든 같은 수다."""
+        return cls(
+            main_rows=len(frame),
+            main_distinct_rows=len(frame) - int(frame.duplicated().sum()),
+            custom_rows=0,
+            kinds=1 if len(frame) else 0,
+            one_side_cells=0,
+            count_mismatch_cells=0,
+            cells=pd.DataFrame(columns=list(CELL_COLUMNS)),
+            attached=False,
+        )
 
     @property
     def warns(self) -> bool:
-        """알릴 칸(한쪽에만 있는 칸 · 행 수가 다른 칸)이 있는가."""
-        return self.one_side_cells + self.count_mismatch_cells > 0
+        """알릴 것이 있는가 — 붙이지 않았거나(끄개) 알릴 칸(한쪽에만 있는 칸 · 행 수가 다른 칸)이
+        있다."""
+        return not self.attached or self.one_side_cells + self.count_mismatch_cells > 0
 
     def notice(self) -> str:
-        """등록 결과 알림. 알릴 칸이 없으면 빈 글. 어긋난 칸 수가 맨 앞이다 — 알림창 짧은 글
-        (`alerts.short_text` — 60자)이 칸마다 네 자리 수까지 그 수를 싣는다."""
+        """등록 결과 알림. 알릴 것이 없으면 빈 글. 붙이지 않은 등록은 그 사실(`SWITCHED_OFF_NOTICE`
+        — 사건 알림 `SC-06`)이고, 붙인 등록은 어긋난 칸 수가 맨 앞이다 — 알림창 짧은 글
+        (`alerts.short_text` — 60자)이 칸마다 네 자리 수까지 그 수를 싣는다(`SC-05`)."""
+        if not self.attached:
+            return SWITCHED_OFF_NOTICE
         if not self.warns:
             return ""
         cells = self.count_mismatch_cells + self.one_side_cells
@@ -94,7 +131,9 @@ class CustomSourceCheck:
         )
 
     def memo(self) -> str:
-        """리비전 메모에 붙이는 짧은 조각 — 늘 붙는다."""
+        """리비전 메모에 붙이는 짧은 조각 — 늘 붙는다. 붙이지 않은 등록은 `SWITCHED_OFF_MEMO` 다."""
+        if not self.attached:
+            return SWITCHED_OFF_MEMO
         return (
             f"CUSTOM 원천 대조 — 종류 {self.kinds:,} · 행 수 다른 칸 "
             f"{self.count_mismatch_cells:,} · 한쪽에만 있는 칸 {self.one_side_cells:,}"
@@ -159,14 +198,7 @@ def attach_custom_values(
     if bool(not_found.any()):
         _reject_missing_codes(frame, codes, months, not_found)
     values = attached.where(listed, CUSTOM_BLANK)
-    original = frame[CUSTOM_COLUMN] if CUSTOM_COLUMN in frame.columns else None
-    dtype = (
-        original.dtype
-        if original is not None and pd.api.types.is_string_dtype(original.dtype)
-        else object
-    )
-    column = pd.Series(values.to_numpy(dtype=object), index=frame.index).astype(dtype)
-    result = frame.assign(**{CUSTOM_COLUMN: column})
+    result = _with_custom(frame, values)
     cells = _cell_differences(codes.loc[listed], months.loc[listed], known)
     one_side = cells[MAIN_ROWS_COLUMN].eq(0) | cells[CUSTOM_ROWS_COLUMN].eq(0)
     check = CustomSourceCheck(
@@ -179,6 +211,32 @@ def attach_custom_values(
         cells=cells,
     )
     return result, check
+
+
+def blank_custom_values(frame: pd.DataFrame) -> tuple[pd.DataFrame, CustomSourceCheck]:
+    """끄개로 CUSTOM 원천 표를 묻지 않은 등록 — 본 표 CUSTOM 칸을 모두 빈 값 표지(`CUSTOM_BLANK`)로
+    덮고 「붙이지 않음」 대조(`CustomSourceCheck.switched_off`)를 낸다.
+
+    조회문 상수를 그대로 두지 않고 덮는다 — 0039 가 옛 행에 넣은 표지와 같은 글자라 「부품 구분
+    없음」 을 글자 그대로 말한다. Capa Code · 생산계획년월 칸이 없어도 멈추지 않는다(맞댈 것이
+    없다). 돌려주는 표는 받은 표의 사본이고 CUSTOM 칸만 다르다(`attach_custom_values` 와 같은 꼴 —
+    받은 표의 CUSTOM 칸이 글자 dtype 이면 그 dtype 을 지킨다, 칸이 없으면 끝에 더한다).
+    """
+    values = pd.Series([CUSTOM_BLANK] * len(frame), dtype=object)
+    return _with_custom(frame, values), CustomSourceCheck.switched_off(frame)
+
+
+def _with_custom(frame: pd.DataFrame, values: pd.Series) -> pd.DataFrame:
+    """`frame` 의 CUSTOM 칸을 차례로 맞댄 `values` 로 바꾼 사본 — 받은 칸이 글자 dtype 이면 그
+    dtype 을, 아니면 object 다."""
+    original = frame[CUSTOM_COLUMN] if CUSTOM_COLUMN in frame.columns else None
+    dtype = (
+        original.dtype
+        if original is not None and pd.api.types.is_string_dtype(original.dtype)
+        else object
+    )
+    column = pd.Series(values.to_numpy(dtype=object), index=frame.index).astype(dtype)
+    return frame.assign(**{CUSTOM_COLUMN: column})
 
 
 def _code_text(values: pd.Series) -> pd.Series:

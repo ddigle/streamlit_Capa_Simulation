@@ -21,8 +21,10 @@ from capa_simulation.services.custom_source_check import (
     CUSTOM_ROWS_COLUMN,
     CUSTOM_SOURCE_COLUMNS,
     MAIN_ROWS_COLUMN,
+    SWITCHED_OFF_NOTICE,
     CustomSourceCheck,
     attach_custom_values,
+    blank_custom_values,
     check_custom_rows,
 )
 
@@ -335,3 +337,41 @@ def test_missing_columns_in_the_custom_answer_stop_with_column_names() -> None:
         check_custom_rows(_custom([]))
     with pytest.raises(ValueError, match="행수 칸에 숫자가 아닌 값"):
         check_custom_rows(_custom([(PART_A, 202611, CUSTOM_A, 1)]).assign(행수=["많음"]))
+
+
+def test_a_switched_off_check_says_so_in_memo_and_notice_and_has_no_cells() -> None:
+    """끄개로 CUSTOM 원천 표를 묻지 않은 등록(`blank_custom_values`)은 본 표 CUSTOM 칸을 모두 빈 값
+    표지로 덮고(조회문 상수 그대로가 아니다) 행 수 · 차례 · index · 다른 칸을 그대로 둔다. 대조는
+    「붙이지 않음」 — 대조 칸이 없고 종류는 구분 없음 하나이며, 알릴 것이 늘 있어 메모 · 알림이 그
+    사실을 말한다(메모에는 끄개 이름을 싣지 않는다). 맞댈 칸(Capa Code · 생산계획년월)이 없는 본
+    표도 멈추지 않고, 글자 dtype CUSTOM 칸은 그 dtype 을 지킨다."""
+    main = _main([(PART_A, 202611, "Y"), (PART_B, 202612, "N"), (PART_B, 202612, "N")])
+    main.index = pd.Index([7, 3, 3])
+
+    blanked, check = blank_custom_values(main)
+
+    assert blanked["CUSTOM"].tolist() == [CUSTOM_BLANK] * 3
+    pd.testing.assert_frame_equal(blanked.drop(columns="CUSTOM"), main.drop(columns="CUSTOM"))
+    assert main["CUSTOM"].eq(QUERY_CONSTANT).all()
+    assert not check.attached and check.warns
+    assert (check.main_rows, check.main_distinct_rows, check.custom_rows, check.kinds) == (
+        3,
+        2,
+        0,
+        1,
+    )
+    assert (check.one_side_cells, check.count_mismatch_cells) == (0, 0)
+    assert check.cells.empty and list(check.cells.columns) == list(CELL_COLUMNS)
+    assert check.memo() == f"CUSTOM 원천 붙이지 않음 — 부품 구분 없음({CUSTOM_BLANK})"
+    assert "CAPA_" not in check.memo()
+    assert check.notice() == SWITCHED_OFF_NOTICE
+    assert alerts.short_text(check.notice()).startswith(
+        "CUSTOM 원천 끄개로 부품 구분 없이 등록했습니다"
+    )
+    assert check == CustomSourceCheck.switched_off(blanked)
+    typed = main.astype({"CUSTOM": "string"})
+    assert blank_custom_values(typed)[0]["CUSTOM"].dtype == typed["CUSTOM"].dtype
+    bare = main.drop(columns=["Capa Code", "생산계획년월", "CUSTOM"])
+    assert blank_custom_values(bare)[0]["CUSTOM"].tolist() == [CUSTOM_BLANK] * 3
+    custom = _custom([(PART_A, 202611, CUSTOM_A, 1), (PART_B, 202612, CUSTOM_B, 2)])
+    assert attach_custom_values(main, custom)[1].attached

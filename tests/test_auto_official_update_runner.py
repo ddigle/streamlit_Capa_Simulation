@@ -75,12 +75,14 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     ProcessMinimum,
 )
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.core_data_pipeline import (
     prepare_core_data_dataset,
     reference_conflict_memo,
 )
 from capa_simulation.services.custom_source_check import (
     CUSTOM_SOURCE_COLUMNS,
+    SWITCHED_OFF_MEMO,
     attach_custom_values,
 )
 from capa_simulation.services.route_load_exceptions import (
@@ -878,6 +880,56 @@ def test_a_run_without_the_custom_table_variable_fails_in_register_and_the_next_
     assert asked == [adapter.build_custom_query("SIM-W41"), asked[1]]
     assert "'SIM-W41'" in asked[1]
     assert runner.received_codes(repository) == {"SIM-W41"}
+
+
+def test_a_switched_off_run_registers_blank_parts_and_carries_the_switch_memo(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CUSTOM 원천 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내리면 실제 상세 조회 공급자
+    (`bigdataquery_detail_provider`)가 CUSTOM 원천 표를 묻지 않고(변수가 없어도) 모든 부품을 구분
+    없음으로 등록한다. 자동 갱신은 그대로 공식으로 올리고(2026-11-24 사용자 답 Q2 (가))
+    「CUSTOM 원천 붙이지 않음」 조각이 리비전 1 메모 · 실행 기록 사유의 발행 줄 쪽 · 리비전 2 ·
+    공식버전 메모에 남는다(끄개 이름은 없다). 가짜는 조회 실행 자리(패키지)뿐이다. 합성 시드 —
+    샘플 관측."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    main = _source()
+    asked: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        return main.copy()
+
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: SimpleNamespace(getData=get_data)
+    )
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    sources = AutoUpdateSources(fetch_catalog=catalog.fetch_catalog)
+    assert sources.detail_provider is runner.bigdataquery_detail_provider
+
+    run = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert run is not None
+    assert (run.simulation_code, run.status, run.stage) == ("SIM-W41", STATUS_PUBLISHED, "done")
+    [query] = asked
+    assert "'SIM-W41'" in query and DEMO_CUSTOM_TABLE not in query
+    assert run.reason is not None
+    head, _warning = runner.split_published_reason(run.reason)
+    assert head.startswith("공식 v2 지정 · W41 SIM-W41 · 자동 갱신 · ")
+    assert f" · {SWITCHED_OFF_MEMO}" in head
+    assert adapter.BDQ_CUSTOM_SOURCE_ENV not in run.reason
+    base = repository.load_revision(str(run.base_revision_id))
+    assert base.revision.note is not None
+    assert f"상세 조회기간 2026-10-05 ~ 2026-10-15 · {SWITCHED_OFF_MEMO}" in base.revision.note
+    assert set(repository.load_source_data(base.scenario.scenario_id)["CUSTOM"]) == {CUSTOM_BLANK}
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    release = repository.latest_official_release()
+    assert release is not None
+    assert filtered.revision.note == release.note
+    assert release.note is not None and f" · {SWITCHED_OFF_MEMO}" in release.note
 
 
 class _PackageError(Exception):

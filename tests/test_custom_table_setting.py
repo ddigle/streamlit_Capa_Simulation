@@ -6,7 +6,8 @@ DB 등록 · 자동 갱신의 상세 조회가 쓰는 판정(`company_bigdataque
 하나를 Admin 「서버 시작 점검」 의 「CUSTOM 원천 표」 줄이 이 프로세스의 지금 환경으로 읽는다 —
 없거나 꼴이 틀리면 「실패」 라 펼침 제목이 「실패 있음」 이 되고 개발자 알림 `AD-01` 이 선다.
 값(사내 표 이름)은 표 · 복사 글 · 알림 어디에도 싣지 않는다. 같은 판정의 DB 등록 탭 저장 단추
-잠금 · `AD-04` 는 `tests/test_bigdataquery_registration.py` 가 본다.
+잠금 · `AD-04` 는 `tests/test_bigdataquery_registration.py` 가 본다. 끄개
+(`CAPA_BDQ_CUSTOM_SOURCE=off`)를 내리면 판정하지 않아 줄이 「건너뜀」 이고 `AD-01` 에 들지 않는다.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import capa_simulation.settings as settings
 from capa_simulation import alerts
 from capa_simulation.components import container_start_check
 from capa_simulation.components.container_start_check import (
+    CUSTOM_SOURCE_SKIPPED_REASON,
     CUSTOM_TABLE_STEP_LABEL,
     custom_table_step,
     live_failed_steps,
@@ -208,3 +210,56 @@ def test_a_missing_or_malformed_variable_fails_the_row_and_raises_ad01_without_t
     if value is not None:
         shown = [*steps.astype(str).to_numpy().ravel(), note["short"], note["full"], text]
         assert not [place for place in shown if value in place]
+
+
+@pytest.mark.parametrize(
+    ("value", "on_status"),
+    [(None, "실패"), (MALFORMED_VALUES[0], "실패"), ("demo_schema.demo_custom", "정상")],
+    ids=["없음", "꼴 틀림", "있음"],
+)
+def test_the_start_check_line_is_skipped_with_the_switch_off_even_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, on_status: str
+) -> None:
+    """끄개를 내리면 줄은 변수와 상관없이 「건너뜀」 이고 까닭은 끄개 이름 · 값 표지뿐이다 — 판정
+    함수(`custom_source_problem`)가 판정하지 않아(None) 지금 판정한 실패 목록에 들지 않는다. 오타
+    (`of`)는 켬이라 「건너뜀」 이 서지 않고 변수 판정으로 돌아간다."""
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "off")
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+
+    assert adapter.custom_source_problem() is None
+    assert custom_table_step() == (CUSTOM_TABLE_STEP_LABEL, "건너뜀", CUSTOM_SOURCE_SKIPPED_REASON)
+    assert CUSTOM_SOURCE_SKIPPED_REASON.startswith(f"{adapter.BDQ_CUSTOM_SOURCE_ENV}=off — ")
+    assert live_failed_steps() == []
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "of")
+    assert custom_table_step()[1] == on_status
+
+
+def test_a_skipped_custom_line_does_not_raise_ad01(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
+) -> None:
+    """변수가 없어도 끄개를 내렸으면 줄은 「건너뜀」 이고 펼침 제목 판정 · 개발자 알림 `AD-01` 은
+    그대로다(「실패」 만 든다). 복사 글에도 같은 줄이 실린다 — 운영자는 이 줄로 끄개가 먹었는지
+    본다."""
+    _report(tmp_path, monkeypatch)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_SOURCE_ENV, "OFF")
+    report = read_container_start_report()
+    assert report is not None
+    assert start_verdict(report) == "모두 정상"
+
+    app = AppTest.from_string(SCRIPT).run(timeout=60)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    title, steps = _start_check(app)
+    assert title == "서버 시작 점검 · 모두 정상"
+    assert steps.iloc[-2].tolist() == [
+        CUSTOM_TABLE_STEP_LABEL,
+        "건너뜀",
+        CUSTOM_SOURCE_SKIPPED_REASON,
+    ]
+    assert active_state(app, container_start_check.START_CHECK_ALERT_CODE) is None
+    text = diagnostic_copies[f"{COMPONENT_KEY_PREFIX}container_start_check"]
+    assert f"{CUSTOM_TABLE_STEP_LABEL}\t건너뜀\t{CUSTOM_SOURCE_SKIPPED_REASON}" in text

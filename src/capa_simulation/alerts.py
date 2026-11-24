@@ -292,6 +292,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "SC-05", "check", "event", "DB 등록 — CUSTOM 원천 표와 행 수가 다른 칸이 있음(등록함)"
     ),
+    # 끄개(`CAPA_BDQ_CUSTOM_SOURCE=off`)로 CUSTOM 원천 표를 묻지 않고 부품 구분 없이 등록함 — 표
+    # 없음, 전문 끝에 끄개 이름 · 코드(`bigdataquery_registration._queue_custom_source_check`).
+    AlertSpec("SC-06", "check", "event", "DB 등록 — CUSTOM 원천 끄개로 부품 구분 없이 등록함"),
     # 정본 버킷 동기화(`components/object_sync_status.py`). 값 없이 갈래 낱말만 싣는다.
     AlertSpec("SY-01", "action", "state", "동기화 꺼짐 — 설정 오류"),
     AlertSpec("SY-02", "error", "state", "저장이 정본에 올라가지 못함"),
