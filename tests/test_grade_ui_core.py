@@ -347,182 +347,6 @@ def test_the_covered_actions_are_known() -> None:
     assert COVERED_ACTIONS <= set(grades.ACTIONS)
 
 
-# ------------------------------------------------------------------ 화면 쪽 창구(grade_ui) 계약
-STOP_PAGE = """
-import streamlit as st
-from capa_simulation.components import grade_ui
-
-grade_ui.stop_unless("admin.area", place="page")
-st.write("after")
-"""
-
-STOP_TAB = """
-import streamlit as st
-from capa_simulation.components import grade_ui
-
-grade_ui.stop_unless(
-    "scenario.db_register", place="tab", tab_key="demo_tabs", first_label="첫 탭"
-)
-st.write("after")
-"""
-
-PENDING_FRAGMENT = """
-import streamlit as st
-from capa_simulation.components import grade_ui
-
-st.session_state["runs"] = st.session_state.get("runs", 0) + 1
-
-
-@grade_ui.in_fragment
-def body() -> None:
-    st.write("body")
-
-
-if st.session_state["runs"] == 1:
-    st.session_state[grade_ui.PENDING_KEY] = True
-body()
-"""
-
-
-def _written(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.markdown]
-
-
-@GRADE_PARAMS
-def test_stop_unless_stops_an_out_of_grade_page(
-    monkeypatch: pytest.MonkeyPatch, grade: str
-) -> None:
-    as_grade(monkeypatch, grade)
-    app = AppTest.from_string(STOP_PAGE).run(timeout=60)
-
-    assert not list(app.exception), [element.message for element in app.exception]
-    if grade == grades.DEVELOPER:
-        assert "after" in _written(app) and not list(app.warning)
-    else:
-        assert [item.value for item in app.warning] == ["개발자만 여는 화면입니다"]
-        assert "after" not in _written(app)
-
-
-def test_stop_unless_rewrites_a_hidden_tab_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    as_grade(monkeypatch, grades.VIEWER)
-    app = AppTest.from_string(STOP_TAB)
-    app.session_state["demo_tabs"] = "DB 등록"
-    app.run(timeout=60)
-
-    assert [item.value for item in app.warning] == ["실무자부터 여는 탭입니다"]
-    assert app.session_state["demo_tabs"] == "첫 탭", "다음 회차는 첫 탭으로 정상"
-    with pytest.raises(ValueError):
-        grade_ui.stop_unless("scenario.db_register", place="tab", tab_key="demo_tabs")
-
-
-@GRADE_PARAMS
-def test_toolbar_scope_and_chart_config_hide_only_below_the_grade(
-    monkeypatch: pytest.MonkeyPatch, grade: str
-) -> None:
-    as_grade(monkeypatch, grade)
-    allowed = grades.at_least(grade, grades.MANAGER)
-    key = grade_ui.toolbar_key("equipment.export", "equipment_master_table")
-    assert (key == "equipment_master_table") is allowed
-    assert key.startswith(grade_ui.HIDDEN_TOOLS_PREFIX) is not allowed
-    config = grade_ui.chart_config("equipment.export", {"scrollZoom": False})
-    assert config["scrollZoom"] is False
-    assert ("displayModeBar" in config) is not allowed
-    assert grade_ui.HIDDEN_TOOLS_PREFIX in grade_ui.TOOLBAR_STYLE
-    assert 'data-testid="stElementToolbar"' in grade_ui.TOOLBAR_STYLE
-
-
-def test_the_toolbar_style_hides_only_the_csv_download_button() -> None:
-    """감춤 칸은 표 도구 막대의 CSV 내려받기 단추만 감춘다 — 찾기 · 크게 보기 · 칸 보이기는
-    남는다(2026-11-17 정한 것 42 — 브라우저로 확인). 막대 줄 통째(`stElementToolbar` 자체)를 감추는
-    규칙이 없고, 고른 단추 이름표가 설치된 Streamlit 프런트 묶음에 그대로 있다(이름표가 바뀌면
-    단추가 다시 보이므로 판 올림 때 여기서 걸린다)."""
-    import streamlit
-
-    style = grade_ui.TOOLBAR_STYLE
-    rules = [part.strip() for part in style.split("{")[0].removeprefix("<style>").split(",")]
-    toolbar_rules = [
-        rule for rule in rules if "stElementToolbar" in rule and grade_ui.CSV_DOWNLOAD_LABEL in rule
-    ]
-    assert toolbar_rules == [
-        f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"] '
-        f'button[aria-label="{grade_ui.CSV_DOWNLOAD_LABEL}"]'
-    ]
-    assert not [rule for rule in rules if rule.endswith('[data-testid="stElementToolbar"]')]
-    for kept in ("Search", "Fullscreen", "Show/hide columns", "Show data"):
-        assert kept not in style
-    assert ":has(" not in style
-    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
-    needle = f"label:`{grade_ui.CSV_DOWNLOAD_LABEL}`"
-    labelled = [path.name for path in bundle.glob("*.js") if needle in path.read_text("utf-8")]
-    assert labelled, "설치된 Streamlit 표 도구 막대에 내려받기 단추 이름표가 없다"
-
-
-def test_the_toolbar_style_hides_the_chart_image_and_spec_buttons() -> None:
-    """감춤 칸 안 Altair 그림(가용설비 현황 Summary › Main 「주차별 설비 현황」 등)의 도구 막대도
-    그림 저장(「Download as PNG」)과 그림 정의 복사(「Copy Vega-Lite spec」 — 그림의 값이 함께
-    실린다)를 감춘다 — Plotly 그림 막대를 끄는 것(`chart_config`)과 같은 몫이다(2026-11-19 E2E
-    E2-3 — 열람 · 실무자에게 PNG 내려받기가 남아 실제로 내려받아졌다, 6-34 「가용설비 현황 · Space
-    현황 내려받기는 관리자부터」). 「Show data」 · 크게 보기는 남는다(값 보기). 두 이름표가 설치된
-    Streamlit 프런트 묶음에 그대로 있다(판 올림 때 여기서 걸린다)."""
-    import streamlit
-
-    style = grade_ui.TOOLBAR_STYLE
-    for label in grade_ui.CHART_EXPORT_LABELS:
-        assert (
-            f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
-            f' button[aria-label="{label}"]'
-        ) in style
-    assert grade_ui.CHART_EXPORT_LABELS == ("Download as PNG", "Copy Vega-Lite spec")
-    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
-    texts = [path.read_text("utf-8") for path in bundle.glob("*.js")]
-    for label in grade_ui.CHART_EXPORT_LABELS:
-        assert any(f"`{label}`" in text for text in texts), label
-
-
-def test_toolbar_scope_writes_no_style_slot_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
-    """칸마다 스타일을 보내지 않는다 — 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 등급과 상관없이
-    같다(스타일은 `app.py` 가 보내는 한 벌)."""
-    script = """
-import streamlit as st
-from capa_simulation.components import grade_ui
-
-with grade_ui.toolbar_scope("equipment.export", "demo_table"):
-    st.write("table")
-"""
-    counts = []
-    for grade in (grades.VIEWER, grades.MANAGER):
-        as_grade(monkeypatch, grade)
-        app = AppTest.from_string(script).run(timeout=60)
-        counts.append(len(app.get("html")))
-    assert counts == [0, 0]
-
-
-def test_an_alarm_table_can_drop_its_csv_button() -> None:
-    import pandas as pd
-
-    from capa_simulation.components.state_alerts import alert_table
-
-    frame = pd.DataFrame({"설비": ["DEMO-01"]})
-    kept = alert_table(frame, title="표", file_name="demo.csv")
-    dropped = alert_table(frame, title="표", file_name="demo.csv", csv=False)
-    assert kept is not None and "csv" not in kept
-    assert dropped is not None and dropped["csv"] is False
-
-
-def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """프래그먼트 · 팝업 안 콜백이 거절을 담으면(`on_press` 표지) 이어 도는 프래그먼트 회차의 본문
-    첫머리가 앱 전체를 다시 그린다 — 그 회차에는 알림을 낼 `emit` 이 돌지 않는다."""
-    monkeypatch.setattr(grade_ui, "fragment_only_run", lambda: True)
-    app = AppTest.from_string(PENDING_FRAGMENT).run(timeout=60)
-
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert app.session_state["runs"] == 2
-    assert grade_ui.PENDING_KEY not in app.session_state
-    assert "body" in _written(app)
-
-
 # ------------------------------------------------- 구현 중 화면(2026-11-24 정식판 마감 2-A)
 # 머리가 구현 중이라 운영 서버의 개발자가 아니면 통째로 빠지는 사이드바 상자
 # (`navigation.SIDEBAR_GROUPS`).
@@ -740,3 +564,179 @@ def test_the_execution_head_drops_the_draft_cards_and_the_slot_for_all_but_the_d
         ]
         assert len(slots) == (1 if developer else 0), grade
         assert sso_identity.unfinished_hidden() is (not developer)
+
+
+# ------------------------------------------------------------------ 화면 쪽 창구(grade_ui) 계약
+STOP_PAGE = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+grade_ui.stop_unless("admin.area", place="page")
+st.write("after")
+"""
+
+STOP_TAB = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+grade_ui.stop_unless(
+    "scenario.db_register", place="tab", tab_key="demo_tabs", first_label="첫 탭"
+)
+st.write("after")
+"""
+
+PENDING_FRAGMENT = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+st.session_state["runs"] = st.session_state.get("runs", 0) + 1
+
+
+@grade_ui.in_fragment
+def body() -> None:
+    st.write("body")
+
+
+if st.session_state["runs"] == 1:
+    st.session_state[grade_ui.PENDING_KEY] = True
+body()
+"""
+
+
+def _written(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.markdown]
+
+
+@GRADE_PARAMS
+def test_stop_unless_stops_an_out_of_grade_page(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    app = AppTest.from_string(STOP_PAGE).run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    if grade == grades.DEVELOPER:
+        assert "after" in _written(app) and not list(app.warning)
+    else:
+        assert [item.value for item in app.warning] == ["개발자만 여는 화면입니다"]
+        assert "after" not in _written(app)
+
+
+def test_stop_unless_rewrites_a_hidden_tab_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    as_grade(monkeypatch, grades.VIEWER)
+    app = AppTest.from_string(STOP_TAB)
+    app.session_state["demo_tabs"] = "DB 등록"
+    app.run(timeout=60)
+
+    assert [item.value for item in app.warning] == ["실무자부터 여는 탭입니다"]
+    assert app.session_state["demo_tabs"] == "첫 탭", "다음 회차는 첫 탭으로 정상"
+    with pytest.raises(ValueError):
+        grade_ui.stop_unless("scenario.db_register", place="tab", tab_key="demo_tabs")
+
+
+@GRADE_PARAMS
+def test_toolbar_scope_and_chart_config_hide_only_below_the_grade(
+    monkeypatch: pytest.MonkeyPatch, grade: str
+) -> None:
+    as_grade(monkeypatch, grade)
+    allowed = grades.at_least(grade, grades.MANAGER)
+    key = grade_ui.toolbar_key("equipment.export", "equipment_master_table")
+    assert (key == "equipment_master_table") is allowed
+    assert key.startswith(grade_ui.HIDDEN_TOOLS_PREFIX) is not allowed
+    config = grade_ui.chart_config("equipment.export", {"scrollZoom": False})
+    assert config["scrollZoom"] is False
+    assert ("displayModeBar" in config) is not allowed
+    assert grade_ui.HIDDEN_TOOLS_PREFIX in grade_ui.TOOLBAR_STYLE
+    assert 'data-testid="stElementToolbar"' in grade_ui.TOOLBAR_STYLE
+
+
+def test_the_toolbar_style_hides_only_the_csv_download_button() -> None:
+    """감춤 칸은 표 도구 막대의 CSV 내려받기 단추만 감춘다 — 찾기 · 크게 보기 · 칸 보이기는
+    남는다(2026-11-17 정한 것 42 — 브라우저로 확인). 막대 줄 통째(`stElementToolbar` 자체)를 감추는
+    규칙이 없고, 고른 단추 이름표가 설치된 Streamlit 프런트 묶음에 그대로 있다(이름표가 바뀌면
+    단추가 다시 보이므로 판 올림 때 여기서 걸린다)."""
+    import streamlit
+
+    style = grade_ui.TOOLBAR_STYLE
+    rules = [part.strip() for part in style.split("{")[0].removeprefix("<style>").split(",")]
+    toolbar_rules = [
+        rule for rule in rules if "stElementToolbar" in rule and grade_ui.CSV_DOWNLOAD_LABEL in rule
+    ]
+    assert toolbar_rules == [
+        f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"] '
+        f'button[aria-label="{grade_ui.CSV_DOWNLOAD_LABEL}"]'
+    ]
+    assert not [rule for rule in rules if rule.endswith('[data-testid="stElementToolbar"]')]
+    for kept in ("Search", "Fullscreen", "Show/hide columns", "Show data"):
+        assert kept not in style
+    assert ":has(" not in style
+    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
+    needle = f"label:`{grade_ui.CSV_DOWNLOAD_LABEL}`"
+    labelled = [path.name for path in bundle.glob("*.js") if needle in path.read_text("utf-8")]
+    assert labelled, "설치된 Streamlit 표 도구 막대에 내려받기 단추 이름표가 없다"
+
+
+def test_the_toolbar_style_hides_the_chart_image_and_spec_buttons() -> None:
+    """감춤 칸 안 Altair 그림(가용설비 현황 Summary › Main 「주차별 설비 현황」 등)의 도구 막대도
+    그림 저장(「Download as PNG」)과 그림 정의 복사(「Copy Vega-Lite spec」 — 그림의 값이 함께
+    실린다)를 감춘다 — Plotly 그림 막대를 끄는 것(`chart_config`)과 같은 몫이다(2026-11-19 E2E
+    E2-3 — 열람 · 실무자에게 PNG 내려받기가 남아 실제로 내려받아졌다, 6-34 「가용설비 현황 · Space
+    현황 내려받기는 관리자부터」). 「Show data」 · 크게 보기는 남는다(값 보기). 두 이름표가 설치된
+    Streamlit 프런트 묶음에 그대로 있다(판 올림 때 여기서 걸린다)."""
+    import streamlit
+
+    style = grade_ui.TOOLBAR_STYLE
+    for label in grade_ui.CHART_EXPORT_LABELS:
+        assert (
+            f'[class*="st-key-{grade_ui.HIDDEN_TOOLS_PREFIX}"] [data-testid="stElementToolbar"]'
+            f' button[aria-label="{label}"]'
+        ) in style
+    assert grade_ui.CHART_EXPORT_LABELS == ("Download as PNG", "Copy Vega-Lite spec")
+    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
+    texts = [path.read_text("utf-8") for path in bundle.glob("*.js")]
+    for label in grade_ui.CHART_EXPORT_LABELS:
+        assert any(f"`{label}`" in text for text in texts), label
+
+
+def test_toolbar_scope_writes_no_style_slot_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """칸마다 스타일을 보내지 않는다 — 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수가 등급과 상관없이
+    같다(스타일은 `app.py` 가 보내는 한 벌)."""
+    script = """
+import streamlit as st
+from capa_simulation.components import grade_ui
+
+with grade_ui.toolbar_scope("equipment.export", "demo_table"):
+    st.write("table")
+"""
+    counts = []
+    for grade in (grades.VIEWER, grades.MANAGER):
+        as_grade(monkeypatch, grade)
+        app = AppTest.from_string(script).run(timeout=60)
+        counts.append(len(app.get("html")))
+    assert counts == [0, 0]
+
+
+def test_an_alarm_table_can_drop_its_csv_button() -> None:
+    import pandas as pd
+
+    from capa_simulation.components.state_alerts import alert_table
+
+    frame = pd.DataFrame({"설비": ["DEMO-01"]})
+    kept = alert_table(frame, title="표", file_name="demo.csv")
+    dropped = alert_table(frame, title="표", file_name="demo.csv", csv=False)
+    assert kept is not None and "csv" not in kept
+    assert dropped is not None and dropped["csv"] is False
+
+
+def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """프래그먼트 · 팝업 안 콜백이 거절을 담으면(`on_press` 표지) 이어 도는 프래그먼트 회차의 본문
+    첫머리가 앱 전체를 다시 그린다 — 그 회차에는 알림을 낼 `emit` 이 돌지 않는다."""
+    monkeypatch.setattr(grade_ui, "fragment_only_run", lambda: True)
+    app = AppTest.from_string(PENDING_FRAGMENT).run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["runs"] == 2
+    assert grade_ui.PENDING_KEY not in app.session_state
+    assert "body" in _written(app)
