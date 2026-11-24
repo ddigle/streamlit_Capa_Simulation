@@ -8,7 +8,8 @@
 - 행 읽기(`read_source_csv_rows`)는 저장 회차에만 pandas 로 고른 코드 행을 Core Data 계약(구분자 ·
   따옴표 · 열 이름 · 글자 열 `string`)대로 읽어 계약 78열 차례로 낸다 — 정규화
   (`normalize_core_data`) 전 자리다. 결측은 빈칸만이고(글자 「NA」 · 「null」 은 글자 그대로)
-  숫자 열은 `round_trip` 으로 읽어 최단 표기 글자가 적은 실수를 그대로 돌려받는다.
+  숫자 열은 `round_trip` 으로 읽어 최단 표기 글자가 적은 실수를 그대로 돌려받는다. 다른 코드 행의
+  글자 탓에 숫자 열이 통째로 글자로 읽혔으면 고른 행만 글자마다 `float` 로 바꿔 같은 실수를 받는다.
 - 남는 열 셋(`SOURCE_CSV_EXTRA_COLUMNS`)과 값 없는 이름 없는 열(줄 끝 쉼표)은 읽지 않고 알리지
   않는다. 그 밖의 모르는 열 · 모자란 계약 열 · 겹친 머리는 멈춘다.
 - 공급자(`SourceCsvCoreDataProvider`)는 DB 등록 공급자와 같은 원천 묶음(`CoreDataBatch`)을 낸다 —
@@ -97,6 +98,9 @@ _SKIP_NAME: Final = "__source_csv_skip_{position}"
 # DB 가 숫자로 넘긴 칸을 원천 웹이 적은 꼴 — 앞자리 0 · 앞뒤 공백 · `+` · 글자가 없다. 그런 값이
 # 든 칸은 DB 도 글자로 넘긴 칸이다.
 _PLAIN_NUMBER: Final = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+# 숫자 계약 칸의 수 글자 — 십진 수만(앞뒤 공백 · 부호 · 앞자리 0 · `.5` · `5.` 허용).
+# `float` 가 받는 `inf` · `nan` · `1_000` 은 수 글자가 아니다.
+_NUMBER_TEXT: Final = re.compile(r"\s*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\s*")
 
 
 class SourceCsvError(ValueError):
@@ -205,6 +209,8 @@ def read_source_csv_rows(
 
     시뮬레이션 ID 는 앞뒤 공백을 뗀 값으로 맞대고, 남긴 행의 그 칸도 뗀 값으로 둔다 — DB 조회는
     코드와 같은 값의 행만 받으므로 두 길의 원천이 같은 글이 된다. 전체 표는 그 자리에서 놓는다.
+    숫자 칸의 꼴은 pandas 가 파일 전체로 정하므로, 고른 행에서 글자로 남은 숫자 계약 칸은
+    `_restore_number_columns` 가 고른 행만 보고 실수로 되돌린다.
     """
     selected = contract or load_core_data_contract()
     names = [column.name for column in selected.columns]
@@ -246,6 +252,7 @@ def read_source_csv_rows(
     picked = frame.loc[ids.eq(code).fillna(False).to_numpy(dtype=bool), names]
     picked = picked.reset_index(drop=True)
     picked[SIMULATION_ID_COLUMN] = picked[SIMULATION_ID_COLUMN].astype("string").str.strip()
+    _restore_number_columns(picked, selected)
     return picked
 
 
@@ -326,6 +333,39 @@ class SourceCsvCoreDataProvider:
             source_registered_at=self.source_registered_at,
             custom_check=None,
         )
+
+
+def _restore_number_columns(frame: pd.DataFrame, contract: CoreDataContract) -> None:
+    """고른 행의 숫자 계약 칸이 글자로 남았으면 글자마다 `float` 로 바꾼다 — 받은 표를 고친다.
+
+    pandas 는 숫자 칸의 꼴을 파일 전체로 정한다. 다른 코드 행에 수가 아닌 글자가 하나라도 있으면 그
+    칸이 통째로 글자로 읽혀 `round_trip` 을 지나지 않고, 정규화의 `pd.to_numeric` 이 고른 코드의 긴
+    소수 글자를 마지막 비트에서 어긋나게 바꾼다. 고른 행의 값이 모두 수 글자(`_NUMBER_TEXT`)이면
+    `float`(바르게 반올림 — `round_trip` 과 같은 값)로 바꾼 실수 칸(float64)으로 두고, 빈 글자 ·
+    공백뿐은 빈 값이다(정규화와 같음). 하나라도 수 글자가 아니면 그 칸은 글자 그대로 두어 정규화가
+    지금 글로 멈춘다.
+    """
+    for column in contract.columns:
+        if column.dtype == "string":
+            continue
+        series = frame[column.name]
+        if pd.api.types.is_numeric_dtype(series.dtype):
+            continue
+        numbers: list[float] = []
+        for value in series.tolist():
+            if value is None or value is pd.NA or (isinstance(value, float) and math.isnan(value)):
+                numbers.append(math.nan)
+                continue
+            if not isinstance(value, str):
+                break
+            if not value.strip():
+                numbers.append(math.nan)
+                continue
+            if _NUMBER_TEXT.fullmatch(value) is None:
+                break
+            numbers.append(float(value))
+        else:
+            frame[column.name] = pd.Series(numbers, index=frame.index, dtype="float64")
 
 
 def _header_encoding(buffer: BinaryIO, contract: CoreDataContract) -> str:

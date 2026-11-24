@@ -2417,6 +2417,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     닫히지 않게).
   - 행 `read_source_csv_rows`: 고른 코드 행만 계약 78열 차례로(정규화 전) — 글자 열 `string`, 결측은 빈칸만, 숫자 `round_trip`,
     `header=0, names=` · `index_col=False`. 행 수가 요약과 다르면 멈춘다. 멈춤은 모두 `SourceCsvError`(`ValueError`) 한 글이다.
+    숫자 칸 꼴은 pandas 가 파일 전체로 정하므로, 다른 코드 행의 글자 탓에 글자로 읽힌 숫자 계약 칸은 고른 행만 글자마다 `float`
+    로 되돌린다(`_restore_number_columns` — 수 글자가 아닌 값이 하나라도 있으면 그대로 두어 정규화가 멈춘다).
   - 공급자 `SourceCsvCoreDataProvider`(`CoreDataProvider` 규약): `fetch` 가 코드(앞뒤 공백 뗌 · 어댑터의 `is_valid_simulation_code`)
     → 파일 다시 흘려 읽기(요약과 다르면 「올린 파일이 바뀌었습니다」) → 고른 코드 행 → 숫자 글자 칸 맞춤 → 설비대수변화관리 빈 글자
     (DB 조회문 상수와 같음) → CUSTOM 붙이기(`custom_rows_of` 답 · `FILE_WORDS` — 둘째 표와 같은 판정 · 정규화) → 원천 보정

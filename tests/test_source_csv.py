@@ -292,6 +292,53 @@ def test_two_codes_list_both_and_rows_read_only_the_picked_code() -> None:
     assert picked["PLAN ID"].tolist() == [row["PLAN ID"] for row in second]
 
 
+def test_another_codes_text_in_a_number_column_keeps_the_picked_floats_exact() -> None:
+    """다른 코드 행의 글자 탓에 숫자 열이 통째로 글자로 읽혀도 고른 코드 값은 비트까지 같다.
+
+    pandas 는 숫자 칸 꼴을 파일 전체로 정해, 다른 코드 한 행의 `x%` 로 그 칸이 글자가 된다. 고른
+    행을 글자마다 `float` 로 되돌리지 않으면(`_restore_number_columns` 를 빼면) 정규화의
+    `pd.to_numeric` 이 이 견본의 여러 값을 마지막 비트에서 어긋나게 바꿔 실패한다. 정수 계약 칸
+    (생산계획년월)도 같은 길이다. 견줌은 다른 코드가 없는 파일에서 읽은 같은 코드다.
+    """
+    rng = random.Random(20261125)
+    picked_rows = demo_core_rows(96)
+    texts: list[str] = []
+    for index, row in enumerate(picked_rows):
+        text = "" if index == 5 else repr(rng.uniform(0.001, 100.0) * 10.0 ** rng.randint(-9, 4))
+        row["소요대수"] = text
+        texts.append(text)
+    other = demo_core_rows(1, code="DEMO-SIM-2")
+    other[0].update({"소요대수": "12%", "생산계획년월": "DEMO-MONTH"})
+
+    alone = _read(source_csv_bytes(picked_rows))
+    mixed = _read(source_csv_bytes([*picked_rows[:40], *other, *picked_rows[40:]]))
+
+    for column in ("소요대수", "생산계획년월"):
+        assert pd.api.types.is_numeric_dtype(mixed[column].dtype), column
+    read = [float.hex(float(value)) for value in mixed["소요대수"]]
+    assert read == [float.hex(float(text)) if text else float.hex(math.nan) for text in texts]
+    assert core_data_hash(normalize_core_data(mixed)) == core_data_hash(normalize_core_data(alone))
+
+
+@pytest.mark.parametrize("word", ["12%", "nan", "1_000", "1,5"])
+def test_a_non_number_in_the_picked_code_still_stops_at_normalize_with_or_without_others(
+    word: str,
+) -> None:
+    """고른 코드 자체의 수 아닌 글자는 다른 코드가 있든 없든 그 칸을 글자로 두어 정규화가 멈춘다.
+
+    `float` 가 받는 `nan` · `1_000` 도 수 글자가 아니다.
+    """
+    rows = demo_core_rows(3)
+    rows[1]["소요대수"] = word
+    other = demo_core_rows(1, code="DEMO-SIM-2")
+    other[0]["소요대수"] = "12%"
+    for data in (source_csv_bytes(rows), source_csv_bytes([*rows, *other])):
+        frame = _read(data)
+        assert not pd.api.types.is_numeric_dtype(frame["소요대수"].dtype)
+        with pytest.raises(ValueError, match="숫자 컬럼에 변환할 수 없는 값이 있습니다: 소요대수"):
+            normalize_core_data(frame)
+
+
 def test_blank_simulation_id_rows_stop() -> None:
     rows = demo_core_rows(5)
     rows[1]["시뮬레이션 ID"] = ""
