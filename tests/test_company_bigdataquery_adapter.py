@@ -35,6 +35,7 @@ from bdq_login_support import (
     target_of,
     use_fake_bdq,
 )
+from conftest import DEMO_CUSTOM_TABLE
 from s3_mock_store import MockStore
 
 from capa_simulation import module_helpers
@@ -62,8 +63,9 @@ def _module(get_data: object) -> SimpleNamespace:
     return SimpleNamespace(getData=get_data)
 
 
-# 시험의 CUSTOM 원천 표 이름 — `tests/conftest.py` 의 autouse 가 환경변수에 넣는 합성 값이다.
-DEMO_CUSTOM_TABLE = "demo_schema.demo_custom"
+# 시험의 CUSTOM 원천 표 이름(`DEMO_CUSTOM_TABLE` — `tests/conftest.py` 의 autouse 가 환경변수에 넣는
+# 합성 값)의 두 조각 — 가린 글에 남지 않아야 하는 것이다.
+DEMO_SCHEMA, DEMO_TABLE = DEMO_CUSTOM_TABLE.split(".")
 # 본 조회문이 CUSTOM 칸에 싣는 상수 자리(합성) — 붙이기가 덮어야 하는 값이다.
 QUERY_CONSTANT = "DEMO_CONSTANT"
 CUSTOM_A = "DEMO_CUSTOM_A"
@@ -1105,14 +1107,14 @@ def test_an_empty_custom_answer_stops_before_the_main_query(
     [
         (
             Error(
-                "AnalysisException: Could not resolve table reference: 'DEMO_SCHEMA.DEMO_CUSTOM' "
-                "(table Demo_Custom)"
+                "AnalysisException: Could not resolve table reference: "
+                f"'{DEMO_CUSTOM_TABLE.upper()}' (table {DEMO_TABLE.title()})"
             ),
             adapter.QUERY_FAILURE_SQL,
             True,
         ),
         (
-            TimeoutError("timed out reading demo_schema.demo_custom"),
+            TimeoutError(f"timed out reading {DEMO_CUSTOM_TABLE}"),
             adapter.QUERY_FAILURE_TIMEOUT,
             False,
         ),
@@ -1141,7 +1143,7 @@ def test_a_custom_query_failure_names_the_variable_and_hides_the_table_name(
     assert text.startswith(f"CUSTOM 원천 표({adapter.BDQ_CUSTOM_TABLE_ENV}) 조회에서 멈췄습니다.")
     assert f"BigDataQuery 조회가 실패했습니다({kind})" in text
     assert ("조회 권한을 확인하세요" in text) is names_access
-    assert "demo_custom" not in text.casefold() and "demo_schema" not in text.casefold()
+    assert DEMO_TABLE not in text.casefold() and DEMO_SCHEMA not in text.casefold()
     assert adapter.CUSTOM_TABLE_MASK in text
     assert (raised.value.kind, raised.value.type_names) == (kind, (type(error).__name__,))
     assert raised.value.__cause__ is error

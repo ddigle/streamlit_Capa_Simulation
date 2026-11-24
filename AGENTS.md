@@ -10056,8 +10056,9 @@ state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 
 사내 값이다 — 파일 · 시험 · 문서 · 커밋 메시지 · 브랜치 이름에 적지 않고 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 로만 받는다(사내 PC 사용자
 환경변수 — README 4단계 · WebIDE 셸 — `docs/bigdataquery_webide_setup.md` 2-1 · C-DEP 환경변수 표 — 같은 문서 「넣을 환경변수」). 어댑터의 조회문
 틀(`CUSTOM_QUERY_TEMPLATE`)에는 자리만 있고, 값은 부를 때마다 읽어 표 이름 꼴 정규식 하나로 거른다(3장 어댑터 · `custom_table_problem`).
-시험은 합성 값 `demo_schema.demo_custom` 하나만 쓴다 — `tests/conftest.py` autouse 가 사내 창에 실제 값이 있어도 덮고, 「없음」 갈래는 그
-시험이 직접 지운다. 이 이름은 위생 시험이 모르는 사내 값이라 막는 것은 이 손 규칙이다. 값은 화면 · 알림 · 실행 기록 사유 · 로그에 싣지
+시험은 합성 값만 쓴다 — 기본값은 `tests/conftest.py` 의 `DEMO_CUSTOM_TABLE`(`demo_schema.demo_custom`) 하나이고 autouse 가 사내 창에
+실제 값이 있어도 덮는다. 두 조회 가짜는 그 상수를 읽어 둘째 조회를 가르고(`from conftest import DEMO_CUSTOM_TABLE`), 꼴 판정 · 공급자가 따로
+받은 이름 시험만 따로 지은 합성 이름을 쓴다. 「없음」 갈래는 그 시험이 직접 지운다. 이 이름은 위생 시험이 모르는 사내 값이라 막는 것은 이 손 규칙이다. 값은 화면 · 알림 · 실행 기록 사유 · 로그에 싣지
 않는다 — 판정 글 · 풍선 · `AD-04` · 서버 시작 점검 줄은 변수 이름만 싣고, 조회 실패 원문은 어댑터가 값 전체와 점 뒤 끝 조각을 표지
 `<CAPA_BDQ_CUSTOM_TABLE>` 로 가린다(`CUSTOM_TABLE_MASK`). 리뷰 · 런북 압축본에도 옮기지 않는다 — 배포 날 확인은 「있음」 · 갈래 낱말 · 수뿐이다.
 

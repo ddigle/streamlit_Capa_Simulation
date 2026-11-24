@@ -14,6 +14,7 @@ from alert_marks import (
     successes,
     table_frame,
 )
+from conftest import DEMO_CUSTOM_TABLE
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
 
@@ -1741,7 +1742,7 @@ def test_the_revision_memo_orders_custom_and_conflict_pieces_before_capacity(
 # 실제 어댑터(`BigDataQueryCoreDataProvider`)로 화면 저장 경로를 한 번 돈다 — 패키지 자리만 가짜다.
 # 본 답은 내장 시드 원천이고, CUSTOM 원천 표 답은 그 (Capa Code, 생산계획년월) 칸 행 수에 시험이 준
 # 부품별 CUSTOM(`__custom__`)을 단 것이다. 표 이름은 conftest 가 환경변수에 넣는 합성 값이다.
-REAL_ADAPTER_SAVE_SCRIPT = """
+REAL_ADAPTER_SAVE_SCRIPT = f"""
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1752,7 +1753,7 @@ from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 
-TABLE = "demo_schema.demo_custom"
+TABLE = {DEMO_CUSTOM_TABLE!r}
 main = build_builtin_seed_dataset().source_data.copy()
 cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
 cells["CUSTOM"] = cells["Capa Code"].map(st.session_state["__custom__"])
@@ -1821,13 +1822,19 @@ def test_a_save_pressed_without_the_variable_stands_the_same_refusal_beside_the_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
     """잠긴 단추가 눌려 저장 길에 닿아도(풍선과 같은 판정) 상세 조회가 패키지를 부르기 전에 멈추고
-    같은 까닭이 단추 곁 오류로 선다 — 사내 DB 를 묻지 않고 저장하지 않으며 값은 싣지 않는다."""
+    같은 까닭이 단추 곁 오류로 선다 — 패키지를 불러오지도, 사내 DB 를 묻지도, 저장하지도 않으며
+    값은 싣지 않는다."""
     database = _registration_database(tmp_path)
     _set_custom_table(monkeypatch, value)
     asked = "def get_data(*, param, **_kwargs):\n"
-    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == 1
+    loaded = "lambda: SimpleNamespace(getData=get_data)"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == REAL_ADAPTER_SAVE_SCRIPT.count(loaded) == 1
     script = REAL_ADAPTER_SAVE_SCRIPT.replace(
         asked, asked + '    st.session_state["__asked__"] = True\n'
+    ).replace(
+        loaded,
+        'lambda: (st.session_state.__setitem__("__loaded__", True), '
+        "SimpleNamespace(getData=get_data))[1]",
     )
     app = AppTest.from_string(script, default_timeout=60)
     app.session_state["__database__"] = str(database)
@@ -1843,7 +1850,7 @@ def test_a_save_pressed_without_the_variable_stands_the_same_refusal_beside_the_
     [error] = place_errors(app)
     assert error.startswith(problem)
     assert MALFORMED_CUSTOM_TABLE not in error
-    assert "__asked__" not in app.session_state
+    assert "__loaded__" not in app.session_state and "__asked__" not in app.session_state
     assert registration.REGISTRATION_FLASH_KEY not in app.session_state
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 

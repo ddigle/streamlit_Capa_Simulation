@@ -382,7 +382,8 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
 
 
-# 시험이 늘 쓰는 CUSTOM 원천 표 이름 — 합성 값이다(실제 표 이름은 환경변수로만 받는다).
+# 시험이 늘 쓰는 CUSTOM 원천 표 이름 — 합성 값이다(실제 표 이름은 환경변수로만 받는다). 두 조회
+# 가짜(어댑터 · DB 등록 · 자동 갱신 시험)도 이 상수를 읽어 둘째 조회를 가른다.
 DEMO_CUSTOM_TABLE = "demo_schema.demo_custom"
 
 

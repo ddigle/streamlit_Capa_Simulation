@@ -7479,7 +7479,8 @@
 - (2026-11-22) **CUSTOM 원천 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE` 로만 받고 저장소 · 배포 ZIP · 대화 · 리뷰에 적지 않는다**(설계 B-stop
   §4) — 넣는 자리는 셋이다: 사내 PC 사용자 환경변수(README 4단계 한 줄 — 그 PC 의 앱으로 등록할 때만) · WebIDE 셸
   (`docs/bigdataquery_webide_setup.md` 2-1 — 앱을 띄울 같은 터미널) · C-DEP 환경변수 표(같은 문서 「넣을 환경변수」 — 이 이름을 읽는 판의
-  CI/CD 앞). 시험 값은 합성 `demo_schema.demo_custom` 하나(`tests/conftest.py` autouse)이고, 화면 · 알림 · 실행 기록에는 변수 이름만 싣고 조회
+  CI/CD 앞). 시험 값은 합성 값뿐이고(기본값은 `tests/conftest.py` 의
+  `DEMO_CUSTOM_TABLE` 하나 — autouse · 두 조회 가짜가 같은 상수를 읽는다), 화면 · 알림 · 실행 기록에는 변수 이름만 싣고 조회
   실패 원문의 값은 어댑터가 가린다(AGENTS 10장 — 위생 시험이 모르는 사내 값이라 손 규칙). 시작 스크립트는 이 값을 쓰지 않고 앱에 넘기며 판정은
   앱 프로세스가 한다(서버 시작 점검 「CUSTOM 원천 표」 줄 — 위 줄). 다음 배포 런북 글감은 1장 「다음 배포 7장에 넣을 줄 — 사용자 요청 A ~ G」
   의 갈래 1-5 B 줄들이다 — 관련: `README.md` · `docs/bigdataquery_webide_setup.md` · AGENTS 10장
