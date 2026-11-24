@@ -145,6 +145,8 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("admin_sync_init", "admin", "이관", *_SEQ, "result", "datasets"),
     _spec("admin_fetch_copy", "admin", "사본 받기", "seq_to", "result"),
     _spec("admin_sync_prune", "admin", "수동 정리", "deleted", "result"),
+    _spec("admin_sync_keep", "admin", "세대 지킴", "seq_to", "keep_until", "result"),
+    _spec("admin_sync_unkeep", "admin", "세대 지킴 풀기", "seq_to", "result"),
     _spec("admin_auto_update_settings", "admin", "자동 갱신 설정", "fields", *_VERSION),
     _spec("admin_auto_update_run", "admin", "자동 갱신 수동 실행", "run_id", "status"),
     # 공지 — 대상은 공지 id(`tgt`), 상세는 결과 · 끝 시각뿐이고 글은 싣지 않는다.
@@ -282,6 +284,7 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "home_cleared": "HOME 지정 비움",
     "hour": "시간",
     "hours": "유지(시간)",
+    "keep_until": "기한",
     "key": "조각",
     "kid_peak": "하위 최고 RSS(MiB)",
     "kind": "갈래",

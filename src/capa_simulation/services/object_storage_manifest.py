@@ -1,4 +1,4 @@
-# Purpose: 오브젝트 스토리지 세대 포인터의 키 계약과 세대·분기·정리 판정을 순수 함수로 제공한다.
+# Purpose: 버킷 세대 포인터 · 지킴 표지의 키 계약과 세대·분기·정리 판정을 순수 함수로 제공한다.
 
 """원격 스냅샷의 키 규칙과 받기·올리기·정리 판정을 담는 순수 계층.
 
@@ -23,6 +23,9 @@
 read-modify-write 지점이고, 두 사람이 같은 파일을 각자 갱신할 때 앞사람 저장이 사라지는
 경로가 거기서만 생긴다. 포인터를 불변 객체의 시퀀스로 만들면 **같은 seq 에 포인터가 둘인
 것 자체가 분기의 물증**이 되고, 올라간 스냅샷은 어느 경우에도 사라지지 않는다.
+
+**세대 지킴 표지**(`KEEP_PREFIX`)는 포인터 밖의 작은 객체다. 키에 지킬 seq 와 기한이 실려 정리가
+목록 한 번으로 그 세대를 남긴다. 포인터 꼴은 그대로라 표지를 모르는 코드도 같은 버킷을 읽는다.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Final, Literal, get_args
 
@@ -46,7 +49,10 @@ POINTER_SCHEMA_VERSION: Final = 2
 SEQUENCE_SPACE: Final = 10**12 - 1
 KEY_DIGITS: Final = 12
 HEAD_PREFIX: Final = "generations/heads/"
-# 정리가 건드리는 접두사의 전부. 접속 명단(`access/`)은 이 밖이라 어떤 경로로도 지우지 못한다.
+# 세대 지킴 표지 자리. `HEAD_PREFIX` 밖이라 HEAD 고르기 · 갈라짐 판정 · 받기가 보지 않는다.
+KEEP_PREFIX: Final = "generations/keep/"
+# 정리가 지울 수 있는 접두사의 전부. 접속 명단(`access/`)은 이 밖이라 어떤 경로로도 지우지 못한다.
+# 지킴 표지(`KEEP_PREFIX`)도 이 밖이다 — 정리는 그 목록을 읽기만 한다.
 PRUNE_PREFIXES: Final = (HEAD_PREFIX, "simulation/snapshots/", "equipment/snapshots/")
 KEEP_LAST_GENERATIONS: Final = 5
 KEEP_DAYS: Final = 7
@@ -113,6 +119,9 @@ _POINTER_KEY_PATTERN: Final = re.compile(
     r"^generations/heads/"
     r"(?P<descending>\d{12})__s(?P<simulation>\d{12})__e(?P<equipment>\d{12})__"
     r"(?P<token>[0-9a-f]{8})\.json$"
+)
+_PIN_KEY_PATTERN: Final = re.compile(
+    r"^generations/keep/(?P<seq>\d{12})__(?P<until>\d{8})__(?P<token>[0-9a-f]{8})\.json$"
 )
 
 
@@ -223,6 +232,67 @@ def parse_snapshot_key(key: str) -> tuple[int, str, str]:
     if matched is None:
         raise ValueError(f"스냅샷 키 형식이 아닙니다: {key}")
     return int(matched.group("seq")), matched.group("created"), matched.group("sha8")
+
+
+@dataclass(frozen=True)
+class PinMarker:
+    """세대 지킴 표지 한 장. 키에 실린 것뿐이라 표지를 GET 하지 않는다.
+
+    `until` 은 UTC 날짜이고 그날까지 지킨다. 기한을 두는 까닭은 표지를 풀 명령이 없는 코드로
+    되돌린 뒤에도 표지가 저절로 풀리게 하기 위해서다.
+    """
+
+    seq: int
+    until: date
+    token: str
+    key: str
+
+
+def pin_marker_key(seq: int, *, until: date, token: str) -> str:
+    """지킴 표지 키. seq 는 오름차순 12자리라 목록 정렬이 곧 세대 차례다."""
+    _require_sequence(seq)
+    return f"{KEEP_PREFIX}{seq:0{KEY_DIGITS}d}__{until:%Y%m%d}__{_validated_token(token)}.json"
+
+
+def parse_pin_marker_key(key: str) -> PinMarker:
+    """지킴 표지 키에서 seq · 기한 · 꼬리를 읽는다. 꼴이 다르거나 없는 날짜면 거절한다."""
+    matched = _PIN_KEY_PATTERN.match(key)
+    if matched is None:
+        raise ValueError(f"지킴 표지 키 형식이 아닙니다: {key}")
+    try:
+        until = datetime.strptime(matched.group("until"), "%Y%m%d").date()
+    except ValueError as exc:
+        raise ValueError(f"지킴 표지 기한이 날짜가 아닙니다: {key}") from exc
+    return PinMarker(
+        seq=int(matched.group("seq")), until=until, token=matched.group("token"), key=key
+    )
+
+
+def read_pin_markers(keys: Sequence[str]) -> tuple[PinMarker, ...]:
+    """목록의 키 가운데 지킴 표지만 seq 차례로 읽는다. 모르는 꼴은 건너뛴다."""
+    markers = []
+    for key in sorted(keys):
+        try:
+            markers.append(parse_pin_marker_key(key))
+        except ValueError:
+            continue
+    return tuple(markers)
+
+
+def latest_pin_deadlines(markers: Sequence[PinMarker]) -> dict[int, date]:
+    """seq 마다 가장 늦은 기한(seq 차례). 한 세대에 표지가 여럿이면 가장 늦은 것이 붙잡는다."""
+    found: dict[int, date] = {}
+    for marker in markers:
+        found[marker.seq] = max(found.get(marker.seq, marker.until), marker.until)
+    return dict(sorted(found.items()))
+
+
+def pin_holds(until: date, head_moment: datetime | None) -> bool:
+    """기한 `until` 의 표지가 지금 정리를 붙잡는가 — 기한이 HEAD LastModified 의 UTC 날짜 이상이다.
+
+    HEAD 시각을 모르면 붙잡는 쪽으로 본다. 그때 정리는 아무것도 지우지 않는다.
+    """
+    return head_moment is None or until >= _utc_date(head_moment)
 
 
 def select_head_key(keys: Sequence[str]) -> str | None:
@@ -551,12 +621,18 @@ def prune_generations(
     keep_days: int = KEEP_DAYS,
     include_orphans: bool = False,
     limit: int = PRUNE_DELETE_LIMIT,
+    pins: Sequence[ListedObject] = (),
 ) -> PrunePlan:
     """오래된 세대의 정리 판정. **목록 한 번**만 쓰고 GET 을 하지 않는다.
 
-    - 남김 = HEAD ∪ 멤버 쌍이 다른 최신 `keep_last` 세대 ∪ HEAD 나이 기준 `keep_days` 일 안 세대.
-      나이는 **HEAD 의 LastModified 에서** 잰다 — 앱 시계를 쓰지 않고, 한동안 저장이 없으면 정리도
-      멈춘다. 저장 없는 시작이 되풀이되면 같은 멤버의 펜스 세대만 쌓이므로 쌍이 다른 세대로 센다.
+    - 남김 = HEAD ∪ 멤버 쌍이 다른 최신 `keep_last` 세대 ∪ HEAD 나이 기준 `keep_days` 일 안 세대
+      ∪ 지킨 세대. 나이는 **HEAD 의 LastModified 에서** 잰다 — 앱 시계를 쓰지 않고, 한동안 저장이
+      없으면 정리도 멈춘다. 저장 없는 시작이 되풀이되면 같은 멤버의 펜스 세대만 쌓이므로 쌍이 다른
+      세대로 센다.
+    - 지킨 세대는 `pins`(지킴 표지 목록)에서 온다. 기한이 HEAD LastModified 의 UTC 날짜
+      이상인 표지의 seq 에 걸린 포인터를 모두 남긴다. 기한이 지난 표지 · 모르는 꼴의 키는
+      무시하고, 포인터가 없는 seq 의 표지는 아무것도 붙잡지 않는다. 표지 자체는 지울 거리에
+      들지 않는다.
     - 남긴 세대가 가리키는 스냅샷(이어 적은 앞 세대 멤버 포함)은 지키고, **어떤 포인터도 가리키지
       않는 고아는 늘 지킨다** — 경합에서 진 쪽의 데이터라 「유실 불가」 의 근거다.
       `include_orphans` 일 때만 `keep_days` 넘은 고아를 지운다.
@@ -584,6 +660,7 @@ def prune_generations(
     cutoff = head_moment - timedelta(days=keep_days)
 
     kept = _kept_pointers(sorted(keys), moments, cutoff, keep_last)
+    kept |= _pinned_pointers(keys, pins, head_moment)
     kept_refs = {
         (name, seq) for key in kept for name, seq in member_seqs_from_pointer_key(key).items()
     }
@@ -662,6 +739,25 @@ def _kept_pointers(
             kept.add(key)
             pairs.add(pair)
     return kept
+
+
+def _pinned_pointers(
+    keys: Sequence[str], pins: Sequence[ListedObject], head_moment: datetime
+) -> set[str]:
+    """기한 안의 지킴 표지가 걸린 seq 의 포인터 전부. 같은 seq 에 포인터가 둘이면 둘 다다."""
+    held = {
+        marker.seq
+        for marker in read_pin_markers([item.key for item in pins])
+        if pin_holds(marker.until, head_moment)
+    }
+    return {key for key in keys if seq_from_pointer_key(key) in held}
+
+
+def _utc_date(moment: datetime) -> date:
+    """저장소 시각의 UTC 날짜. 시간대 없는 시각은 UTC 로 본다."""
+    if moment.tzinfo is None:
+        return moment.date()
+    return moment.astimezone(timezone.utc).date()
 
 
 def writer_age_message(

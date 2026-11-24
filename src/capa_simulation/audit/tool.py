@@ -1,6 +1,7 @@
 # Purpose: 사내 PC 운영 도구가 명령마다 감사 조각 하나를 버킷에 직접 올린다(행위자는 OS 사용자).
 
-"""운영 도구의 감사 조각(`scripts/sync_object_storage.py` 의 rollback · init · fetch-copy · prune).
+"""운영 도구의 감사 조각(`scripts/sync_object_storage.py` 의 rollback · init · fetch-copy · prune ·
+keep · unkeep).
 
 사내 PC 에는 통합인증이 없어 기록기가 꺼져 있다(`recorder.enabled()` 거짓) — 그래도 운영
 정본을 바꾸는 사람 손 동작이라 빠지면 안 된다(설계 AU14). 그래서 기록기 큐를 거치지 않고 명령마다

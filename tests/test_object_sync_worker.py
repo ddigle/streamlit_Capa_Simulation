@@ -8,10 +8,11 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError, dataclass, field, replace
+from datetime import date
 from pathlib import Path
 
 import pytest
-from object_store_fakes import seed_pair
+from object_store_fakes import FakeStore, add_row, fake_client, seed_pair
 
 from capa_simulation import object_sync_worker as worker_module
 from capa_simulation import settings as app_settings
@@ -23,6 +24,8 @@ from capa_simulation.object_sync_engine import (
     PublishStop,
     SyncPaths,
     WatchResult,
+    init_generation,
+    offline_exporter,
 )
 from capa_simulation.object_sync_worker import (
     BLOCKED_RECHECK_SECONDS,
@@ -41,6 +44,7 @@ from capa_simulation.object_sync_worker import (
     WAKE_SECONDS,
     WATCH_SECONDS,
     ObjectSyncWorker,
+    StorageEngine,
     SyncHealth,
     WorkerStatus,
     assess,
@@ -58,8 +62,10 @@ from capa_simulation.services.object_storage_manifest import (
     Pointer,
     PrunePlan,
     PushDecision,
+    pin_marker_key,
     pointer_key,
     pointer_to_json,
+    seq_from_pointer_key,
     snapshot_key,
 )
 
@@ -622,6 +628,43 @@ def test_prune_yields_to_an_upload_request(rig: Rig) -> None:
     sync_state.request_upload()
 
     assert should_stop() is True
+
+
+def test_worker_prune_spares_a_pinned_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """일꾼의 하루 한 번 정리(기본 보존값 그대로)도 지킨 세대를 남긴다 — 일꾼은 엔진을 거쳐
+    따른다."""
+    sync_state.clear_all()
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
+    paths = seed_pair(tmp_path)
+    sync_state.enable(paths.registry)
+    store = FakeStore()
+    client = fake_client(store)
+    exporter = offline_exporter(paths)
+    try:
+        first = init_generation(client, paths, exporter=exporter, note="첫 세대", keep_writer=True)
+        assert first.published
+        for value in range(9):
+            add_row(paths.databases["simulation"], value)
+            sync_state.mark_dirty(paths.databases["simulation"])
+            assert StorageEngine(client, paths, exporter).upload().published
+        marker = pin_marker_key(2, until=date(2026, 12, 7), token="0000abcd")
+        store.objects[marker] = b"{}"
+        head = store.pointer_keys()[0]
+        for key in store.keys():
+            store.modified[key] = "2026-10-01T00:00:00+00:00"
+        store.modified[head] = store.now
+
+        outcome = StorageEngine(client, paths, exporter).prune(lambda: False)
+    finally:
+        sync_state.clear_all()
+
+    seqs = {seq_from_pointer_key(key) for key in store.pointer_keys()}
+    assert outcome.deleted > 0 and not outcome.interrupted
+    assert 2 in seqs and 1 not in seqs and 3 not in seqs
+    assert store.keys("simulation/snapshots/000000000002")
+    assert marker in store.objects
 
 
 def test_status_is_a_frozen_copy(rig: Rig) -> None:

@@ -373,8 +373,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   조각 `audit_late_segment` · 400일 미러 · 새 인스턴스의 `audit_chain_link` · 시계 차이 `sys_clock_skew` · `AD-12`/`AD-13`
   까닭)은 `audit/shipper.py` 다(동기화 일꾼이 부른다, 시험은 `tests/test_audit_shipper.py` — `aws` 없이 인자 배열을 가짜 S3
   에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 사내 PC 운영 도구(`sync_object_storage.py` 의 rollback · init ·
-  fetch-copy · prune)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
-  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 개발자 행위(명단 추가 · 삭제
+  fetch-copy · prune · keep · unkeep)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
+  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정 · 할 일이 없던 명령은 남기지 않음, 올리지 못해도 종료 코드 그대로). 개발자 행위(명단 추가 · 삭제
   — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown`(시도한 판), 쓰지 못한 실패 `fail` 은 판 전 = 후 — `access_store._audit_revisions`, 기록 보기 상세는
   「판 n(그대로)」 — `audit_log_view.detail_text` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
   이름과 판만 · 자동 갱신 수동 실행)는 그 함수 · 콜백이 `recorder.record` 를 부른다. 데이터 작업은 두 저장소의 쓰기 함수에 단
@@ -2874,6 +2874,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   까닭(`revision_refusal` — G4)도 둔다. 시험 `tests/test_extra_process_revision.py`.
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
+  - **세대 지킴 표지**(`KEEP_PREFIX` — `generations/keep/<seq 12자리>__<기한 YYYYMMDD>__<꼬리 8자리>.json`, 2026-11-24 정식판 마감 2번 B)는 포인터 밖 객체라 HEAD 고르기 · 갈라짐 판정 · 받기가 보지 않고, 포인터 꼴 · 스키마 · origin 은 그대로라 지킴을 모르는 코드도 같은 버킷을 읽는다. `prune_generations(pins=)` 는 기한이 HEAD LastModified 의 UTC 날짜 이상인(`pin_holds`) 표지의 seq 포인터를 남김에 더하고(그 두 멤버는 지금 규칙으로 남음) 표지는 지우지 않는다 — 표지가 없으면 판정이 그대로다.
+  - 엔진: `plan_prune` 이 그 접두를 목록 한 번 더 읽는다(GET 없음 — 목록이 실패하면 정리 전체가 실패해 아무것도 지우지 않음, 일꾼 · 도구는 엔진을 거쳐 따른다). `keep_generation`(seq 없으면 HEAD — 포인터를 한 번 받아 두 멤버의 세대 · 마이그레이션 판을 돌려줌, 1 ~ 90일 · 기본 30, 빈 원격 · 없는 세대 · 갈라진 세대는 거절) · `release_generation`(그 seq 표지만) · `list_pins`.
+  - 도구: `keep (--head | --seq N) [--days] [--note]`(붙잡는 일이라 `--yes` 없음 · 범위 밖 일수는 `aws` 앞에서 멈춤 · 요약에 seq · 두 멤버 · 두 판 · 기한만, 메모는 싣지 않음) · `unkeep --seq N --yes` · `generations` 의 지킴 꼬리(` · 지킴 ~날짜` · ` · 지킴 지남 ~날짜` · `--limit` 밖 지킨 줄 · 세대 없는 표지 줄 · 요약 `지킴 n`). 운영 절차는 `docs/objectstore_setup.md` 3 · 7 · 8장.
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
   만드는 순수 계층이다(Streamlit import 없음). 코드·PLAN 당 한 행만 남긴다.
 - `src/capa_simulation/services/auto_official_update.py` — 공식버전 자동 갱신의 규칙(주차·후보·판정·설정·예약·표지)을

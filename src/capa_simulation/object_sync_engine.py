@@ -1,4 +1,4 @@
-# Purpose: 두 DB 한 쌍의 세대 게시·받기·되돌리기·정리 차례를 Streamlit 없이 돌려 결과로 준다.
+# Purpose: 두 DB 한 쌍의 세대 게시·받기·되돌리기·정리·지킴 차례를 Streamlit 없이 돌려 결과로 준다.
 
 """사람이 돌리는 스크립트(`scripts/sync_object_storage.py`)와 앱 일꾼이 함께 쓰는 동기화 코어.
 
@@ -29,11 +29,12 @@ Streamlit 을 import 하지 않고 `subprocess` 도 직접 부르지 않는다 �
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Final, TypeAlias
@@ -60,7 +61,10 @@ from capa_simulation.persistence.sync_state import (
     UnpublishedGeneration,
 )
 from capa_simulation.services import object_storage_manifest as manifest
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import (
+    with_object_particle,
+    with_subject_particle,
+)
 from capa_simulation.services.object_storage_manifest import (
     DATASET_NAMES,
     FAILURE_CORRUPT,
@@ -1317,8 +1321,14 @@ def plan_prune(
     keep_days: int = manifest.KEEP_DAYS,
     include_orphans: bool = False,
 ) -> PrunePlan:
-    """목록만 읽어 판정한다. `generations/` · `simulation/` · `equipment/` 밖은 보지 않는다."""
+    """목록만 읽어 판정한다. 정리 접두(`PRUNE_PREFIXES`)와 지킴 표지(`KEEP_PREFIX`) 밖은 보지
+    않는다.
+
+    지킴 표지는 목록 한 번으로 읽고 GET 하지 않는다. 그 목록이 실패하면 판정 전체가 실패해 아무것도
+    지우지 않는다 — 표지를 못 읽은 채 판정하면 지킨 세대가 지울 거리에 든다.
+    """
     pointers = client.list_all_objects(manifest.HEAD_PREFIX)
+    pins = client.list_all_objects(manifest.KEEP_PREFIX)
     snapshots = [
         record
         for name in DATASET_NAMES
@@ -1330,6 +1340,7 @@ def plan_prune(
         keep_last=keep_last,
         keep_days=keep_days,
         include_orphans=include_orphans,
+        pins=[manifest.ListedObject(item.key, item.last_modified) for item in pins],
     )
 
 
@@ -1371,3 +1382,97 @@ def prune(
 
 def _since(started: float) -> float:
     return time.perf_counter() - started
+
+
+# --------------------------------------------------------------------------- 지킴
+# 지킴 표지의 일수. 기한이 지나면 정리가 표지를 무시하므로, 표지를 풀 명령이 없는 코드로 되돌린
+# 뒤에도 그 세대를 끝없이 붙잡지 않는다.
+PIN_DAYS_DEFAULT: Final = 30
+PIN_DAYS_MIN: Final = 1
+PIN_DAYS_MAX: Final = 90
+
+
+@dataclass(frozen=True)
+class KeepOutcome:
+    """지킴 표지 한 장을 둔 결과 — 지킨 세대의 포인터(두 멤버의 세대 · 마이그레이션 판)와 표지."""
+
+    pointer: Pointer
+    marker: manifest.PinMarker
+
+
+def keep_generation(
+    client: ObjectStorageClient,
+    *,
+    seq: int | None,
+    note: str,
+    days: int = PIN_DAYS_DEFAULT,
+    today: date | None = None,
+    scratch_dir: Path | None = None,
+) -> KeepOutcome:
+    """세대 하나에 기한 있는 지킴 표지를 둔다. 포인터는 그대로이고 정리만 그 세대를 비켜 간다.
+
+    `seq` 가 없으면 HEAD 다. 그 포인터를 한 번 받아 두 멤버의 판을 돌려준다 — 되돌릴 날의 옛 도구는
+    표지를 모르므로, 이 결과가 어느 세대를 지켰는지의 기록이 된다. 같은 seq 에 포인터가 둘인 갈라진
+    세대는 어느 쌍을 지켰는지 한 줄로 말할 수 없어 거절한다(`rollback` 으로 푼 새 세대를 지킨다).
+    기한은 `today`(UTC 날짜, 없으면 지금)에서 `days` 일 뒤이고 그날까지 지킨다.
+    """
+    if not PIN_DAYS_MIN <= days <= PIN_DAYS_MAX:
+        raise ValueError(f"지킴 일수는 {PIN_DAYS_MIN} ~ {PIN_DAYS_MAX} 입니다: {days}")
+    scratch = scratch_dir or snapshot_export.prepare_scratch()
+    pointer = read_pointer(client, _pin_target_key(client, seq), scratch_dir=scratch)
+    until = (today or datetime.now(timezone.utc).date()) + timedelta(days=days)
+    key = manifest.pin_marker_key(pointer.seq, until=until, token=uuid.uuid4().hex[:8])
+    client.put_text(key, _pin_marker_body(note), scratch_dir=scratch)
+    return KeepOutcome(pointer=pointer, marker=manifest.parse_pin_marker_key(key))
+
+
+def _pin_target_key(client: ObjectStorageClient, seq: int | None) -> str:
+    """지킬 포인터 키 하나. 원격이 비었거나 · 그 세대가 없거나 · 갈라졌으면 거절한다."""
+    if seq is None:
+        remote = read_remote_head(client)
+        if remote.head_key is None:
+            raise ValueError("원격이 비어 있습니다.")
+        if remote.forked:
+            raise ValueError(
+                f"HEAD {with_subject_particle(f'seq {remote.head_seq}')} 갈라져 있습니다 — "
+                "갈라진 세대는 지키지 않습니다. rollback 으로 푼 새 세대를 지킵니다."
+            )
+        return remote.head_key
+    keys = pointer_keys_at(client, seq)
+    if not keys:
+        raise ValueError(f"세대 {with_object_particle(f'seq {seq}')} 원격에서 찾지 못했습니다.")
+    if len(keys) > 1:
+        raise ValueError(
+            f"세대 seq {seq} 에 포인터가 둘 이상입니다 — 갈라진 세대는 지키지 않습니다. "
+            "rollback 으로 푼 새 세대를 지킵니다."
+        )
+    return keys[0]
+
+
+def _pin_marker_body(note: str) -> str:
+    """표지 본문 — 기록용(메모 · 가린 작성자 · 시각)이다. 정리는 키만 보고 본문을 받지 않는다."""
+    author = snapshot_export.author_label()
+    return json.dumps(
+        {
+            "note": note,
+            "author": f"{author[:2]}***",
+            "created_at_utc": snapshot_export.utc_timestamp(),
+        },
+        ensure_ascii=False,
+        indent=1,
+    )
+
+
+def list_pins(client: ObjectStorageClient) -> tuple[manifest.PinMarker, ...]:
+    """버킷의 지킴 표지를 seq 차례로. 목록 한 번이고 GET 하지 않는다. 모르는 꼴의 키는 건너뛴다."""
+    records = client.list_all_objects(manifest.KEEP_PREFIX)
+    return manifest.read_pin_markers([record.key for record in records])
+
+
+def release_generation(client: ObjectStorageClient, *, seq: int) -> tuple[str, ...]:
+    """그 seq 의 지킴 표지만 지운다(기한과 상관없이 모두). 포인터 · 스냅샷 · 다른 seq 의 표지는
+    건드리지 않는다. 지운 키를 돌려준다 — 없으면 빈 묶음이다."""
+    doomed = tuple(marker.key for marker in list_pins(client) if marker.seq == seq)
+    for key in doomed:
+        client.delete(key)
+    return doomed

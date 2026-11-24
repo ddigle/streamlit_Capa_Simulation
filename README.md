@@ -782,7 +782,7 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 | `review_sample_sim.py` · `review_sample_equip.py` · `review_sample_modules.py` · `review_sample_story.py` · `review_sample_core_frame.py` | 그 부품 — 시뮬레이션 DB(앱 저장 API · 끝 점검 52) · 설비 DB(공식 소요 · 가용에서) · 모듈 견본 복사 · 이야기 상수와 산출 자리 지킴 · 78컬럼 원천 |
 | **DB 운영** | |
 | `compact_duckdb.py` | DuckDB 빈 공간을 재구축으로 걷어낸다(인자 없으면 두 DB, `--dry-run`·`--keep-backup`). 앱을 내린 뒤 |
-| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 목록(`generations`) · 세대 되돌리기(`rollback`) · 정리. `rollback` · `init` · `fetch-copy` · `prune` 은 끝에 감사 조각 한 줄을 버킷 `audit/v1/tool/` 에 올리고(행위자 OS 사용자), `audit-list --date YYYY-MM-DD\|today` · `--month YYYY-MM` 은 그 날짜 · 달의 감사 조각 · 일별 파일 수만 찍는다 |
+| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 목록(`generations`) · 세대 되돌리기(`rollback`) · 세대 지킴(`keep` · `unkeep` — 정리가 기한(기본 30일)까지 그 세대를 비켜 가는 표지) · 정리. `rollback` · `init` · `fetch-copy` · `prune` · `keep` · `unkeep` 은 끝에 감사 조각 한 줄을 버킷 `audit/v1/tool/` 에 올리고(행위자 OS 사용자), `audit-list --date YYYY-MM-DD\|today` · `--month YYYY-MM` 은 그 날짜 · 달의 감사 조각 · 일별 파일 수만 찍는다 |
 | **검증·측정** | |
 | `benchmark_home.py` | HOME 의 콜드·웜·토글별 rerun 시간. 기본은 합성 표본, `--data-dir <사본 폴더>` 면 실 DB 사본 |
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |

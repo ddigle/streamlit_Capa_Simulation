@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +42,7 @@ from capa_simulation.object_sync_worker import (
     StorageEngine,
 )
 from capa_simulation.persistence import snapshot_export, sync_state
+from capa_simulation.persistence._sql_helpers import connect
 from capa_simulation.services import object_storage_manifest as manifest
 from capa_simulation.services.object_storage_manifest import (
     BLOCKING_PUSH,
@@ -1384,6 +1387,168 @@ def test_a_rollback_says_so_when_a_member_went_away_after_its_pointer(
     assert _head_seq(rig) == 3
 
 
+def _pin_in_store(rig: SimpleNamespace, seq: int, *, until: date = date(2026, 12, 7)) -> str:
+    """지킴 표지를 버킷에 바로 둔다. 판정은 키만 보므로 본문은 비어 있어도 된다."""
+    key = manifest.pin_marker_key(seq, until=until, token="0000abcd")
+    rig.store.objects[key] = b"{}"
+    return key
+
+
+def _pointers_at(rig: SimpleNamespace, seq: int) -> list[str]:
+    return [key for key in rig.store.pointer_keys() if manifest.seq_from_pointer_key(key) == seq]
+
+
+def test_plan_prune_reads_pin_markers_in_one_listing(rig: SimpleNamespace) -> None:
+    """표지는 목록 한 번으로 읽고 GET 하지 않는다 — 판정은 지금처럼 목록만으로 선다."""
+    _ten_aged_generations(rig)
+    marker = _pin_in_store(rig, 3)
+    pinned = _pointers_at(rig, 3)
+    unpinned = _pointers_at(rig, 2)
+
+    plan = engine.plan_prune(rig.client, keep_last=1, keep_days=0)
+
+    operations = rig.store.operations()
+    assert [key for op, key in operations if key == manifest.KEEP_PREFIX] == [manifest.KEEP_PREFIX]
+    assert {op for op, _key in operations} == {"list-objects-v2"}
+    assert pinned and not set(pinned) & set(plan.pointers)
+    assert set(unpinned) <= set(plan.pointers)
+    assert marker not in plan.pointers and marker not in plan.snapshots
+
+
+def test_a_failed_pin_listing_deletes_nothing(rig: SimpleNamespace) -> None:
+    """표지를 못 읽은 채 판정하면 지킨 세대가 지울 거리에 든다. 그때는 정리 전체가 실패한다."""
+    _ten_aged_generations(rig)
+    _pin_in_store(rig, 3)
+    before = set(rig.store.objects)
+    rig.store.failures.append(
+        Failure("list-objects-v2", manifest.KEEP_PREFIX, stderr=CONNECT_TEXT, times=10)
+    )
+
+    with pytest.raises(ObjectStorageError):
+        engine.prune(rig.client, keep_last=1, keep_days=0)
+
+    assert set(rig.store.objects) == before
+    assert not [key for op, key in rig.store.operations() if op == "delete-object"]
+
+
+def test_rollback_reaches_a_pinned_generation_after_aggressive_prune(rig: SimpleNamespace) -> None:
+    """보존 창을 끝까지 줄인 정리(1세대 · 0일)도 지킨 세대와 그 멤버는 남긴다 — 그래서 그 세대로
+    되돌려 새 pod 가 받는다. 지키지 않은 옛 세대는 지운다(대조군)."""
+    for value in range(6):
+        _save(rig, value=value)
+        assert _publish(rig).published
+    marker = _pin_in_store(rig, 3)
+    head = rig.store.pointer_keys()[0]
+    for key in rig.store.keys():
+        rig.store.modified[key] = "2026-10-01T00:00:00+00:00"
+    rig.store.modified[head] = rig.store.now
+    rig.store.calls.clear()
+
+    outcome = engine.prune(rig.client, keep_last=1, keep_days=0)
+
+    assert not outcome.interrupted and outcome.deleted > 0
+    remaining = {manifest.seq_from_pointer_key(key) for key in rig.store.pointer_keys()}
+    assert remaining == {3, 7}
+    assert not rig.store.keys("simulation/snapshots/000000000002")
+    assert rig.store.keys("simulation/snapshots/000000000003")
+    assert marker in rig.store.objects
+    deleted = [key for op, key in rig.store.operations() if op == "delete-object"]
+    assert not any(key.startswith(manifest.KEEP_PREFIX) for key in deleted)
+
+    pointer = engine.rollback(rig.client, to_seq=3, note="되돌림")
+
+    assert pointer.seq == 8
+    _wipe_disk(rig)
+    assert engine.boot_pull(rig.client, rig.paths).ok
+    assert row_count(rig.simulation) == 12
+
+
+def _bump_simulation_migration(rig: SimpleNamespace, version: int) -> None:
+    """시뮬레이션 DB 의 마이그레이션 판을 올린 저장 — 두 멤버의 판이 달라 칸을 가를 수 있다."""
+    with connect(rig.simulation) as connection:
+        connection.execute(
+            "INSERT INTO app_meta.schema_migration VALUES (?, 'demo', 'x')", [version]
+        )
+    sync_state.mark_dirty(rig.simulation)
+
+
+def test_keep_generation_reports_member_migration_versions(rig: SimpleNamespace) -> None:
+    """지킴은 포인터를 한 번 받아 두 멤버의 세대 · 판을 돌려주고 표지 하나만 둔다 — 포인터는
+    그대로다. 기한은 준 날(UTC)에서 일수 뒤이고, 메모는 표지 본문에만 남는다."""
+    _bump_simulation_migration(rig, 7)
+    assert _publish(rig).published
+    pointers = rig.store.pointer_keys()
+    rig.store.calls.clear()
+
+    outcome = engine.keep_generation(
+        rig.client, seq=None, note="1.0 앞 세대", days=30, today=date(2026, 11, 24)
+    )
+
+    pointer = outcome.pointer
+    assert pointer.seq == 2
+    assert {name: member.seq for name, member in pointer.members.items()} == {
+        "simulation": 2,
+        "equipment": 1,
+    }
+    assert {name: member.migration_version for name, member in pointer.members.items()} == {
+        "simulation": 7,
+        "equipment": 1,
+    }
+    assert (outcome.marker.seq, outcome.marker.until) == (2, date(2026, 12, 24))
+    assert rig.store.pointer_keys() == pointers
+    assert rig.store.keys(manifest.KEEP_PREFIX) == [outcome.marker.key]
+    operations = [op for op, _key in rig.store.operations()]
+    assert (operations.count("get-object"), operations.count("put-object")) == (1, 1)
+    body = json.loads(rig.store.objects[outcome.marker.key].decode("utf-8"))
+    assert set(body) == {"note", "author", "created_at_utc"}
+    assert body["note"] == "1.0 앞 세대"
+    assert body["author"].endswith("***") and "@" not in body["author"]
+
+
+def test_keep_generation_by_seq_and_the_requests_it_refuses(rig: SimpleNamespace) -> None:
+    """세대 번호로도 지킨다. 없는 세대 · 갈라진 세대 · 범위 밖 일수는 표지를 두지 않는다."""
+    _save(rig)
+    assert _publish(rig).published
+
+    kept = engine.keep_generation(rig.client, seq=1, note="", days=1, today=date(2026, 11, 24))
+
+    assert (kept.pointer.seq, kept.marker.until) == (1, date(2026, 11, 25))
+    for days in (0, 91):
+        with pytest.raises(ValueError, match="지킴 일수"):
+            engine.keep_generation(rig.client, seq=1, note="", days=days)
+    with pytest.raises(ValueError, match="seq 9를 원격에서 찾지 못했습니다"):
+        engine.keep_generation(rig.client, seq=9, note="")
+    forked = _another_writer_publishes(rig)
+    rig.store.objects[forked.replace("abcdef01", "abcdef02")] = rig.store.objects[forked]
+    with pytest.raises(ValueError, match="갈라"):
+        engine.keep_generation(rig.client, seq=3, note="")
+    with pytest.raises(ValueError, match="갈라"):
+        engine.keep_generation(rig.client, seq=None, note="")
+    assert rig.store.keys(manifest.KEEP_PREFIX) == [kept.marker.key]
+
+
+def test_unkeep_removes_only_that_seq(rig: SimpleNamespace) -> None:
+    """풀기는 그 seq 의 표지만 — 기한이 다른 둘 다 — 지운다. 다른 seq 의 표지 · 모르는 꼴의 키 ·
+    포인터 · 스냅샷은 그대로다."""
+    _save(rig)
+    assert _publish(rig).published
+    mine = [
+        engine.keep_generation(rig.client, seq=1, note="", days=days).marker.key
+        for days in (10, 40)
+    ]
+    other = engine.keep_generation(rig.client, seq=2, note="").marker.key
+    stray = f"{manifest.KEEP_PREFIX}notes.txt"
+    rig.store.objects[stray] = b"x"
+    before = set(rig.store.objects) - set(mine)
+
+    removed = engine.release_generation(rig.client, seq=1)
+
+    assert sorted(removed) == sorted(mine)
+    assert set(rig.store.objects) == before
+    assert [marker.key for marker in engine.list_pins(rig.client)] == [other]
+    assert engine.release_generation(rig.client, seq=1) == ()
+
+
 def test_prune_never_lists_outside_its_prefixes(rig: SimpleNamespace) -> None:
     rig.store.objects["access/access_list.json"] = b"{}"
     rig.store.calls.clear()
@@ -1391,7 +1556,7 @@ def test_prune_never_lists_outside_its_prefixes(rig: SimpleNamespace) -> None:
     engine.prune(rig.client, include_orphans=True)
 
     prefixes = {key for op, key in rig.store.operations() if op == "list-objects-v2"}
-    assert prefixes == set(manifest.PRUNE_PREFIXES)
+    assert prefixes == {*manifest.PRUNE_PREFIXES, manifest.KEEP_PREFIX}
     assert "access/access_list.json" in rig.store.objects
 
 
