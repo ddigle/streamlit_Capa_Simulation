@@ -21,14 +21,15 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 `CHILD_POLL_SECONDS` 마다 그 하위 자신의 최고 RSS 를 읽는다(`_run_child` — 새 스레드 없이 같은
 자리에서 되풀이해 기다린다).
 
-**진단**(`child_diag` → `LoginResult.diag` — `ChildDiag`). 하위 프로세스를 띄운 시도마다 종료
-코드 · 시그널 · 걸린 초(부르는 쪽이 잰다), 하위 본문이 마지막으로 들어간 단계와 판(단계 줄 —
-표지 없이 끝나도 남는다), 표준 오류 마지막 traceback 의 예외 종류(`stderr_kind` — 이름만, 계정 ·
-비밀번호가 든 이름은 버린다), 하위 프로세스를 띄우기 바로 앞과 끝난 바로 뒤의 메모리 단서(cgroup
-사용 · 한도 · OOM 종료 수, 앱 RSS)와 그 하위 자신의 최고 RSS(도는 동안 잰 가장 큰 값), 띄우기 바로
-앞의 프로세스 단서(부른 프로세스가 뜬 시간 · 스레드 · 열린 파일, cgroup 프로세스 · 스레드 수 ·
-한도, 프로세스 · 좀비 수) — `io/memory_probe`, 못 읽으면 「모름」 — 를 남긴다. 표준 오류 글
-자체는 그 자리에서 버린다. 마지막 시도 줄(Admin) · 로그 · 감사 상세 · 결과 파일 칸이 읽는다.
+**진단**(`child_diag` → `LoginResult.diag` — `ChildDiag`). 하위 프로세스를 띄운 시도마다 종료 코드 ·
+시그널 · 걸린 초(부르는 쪽이 잰다), 하위 본문이 마지막으로 들어간 단계와 판 · 패키지를 불러온
+길(단계 줄 — 표지 없이 끝나도 남는다. 길은 가벼운 길 `light` · 전체 `full`), 표준 오류 마지막
+traceback 의 예외 종류(`stderr_kind` — 이름만, 계정 · 비밀번호가 든 이름은 버린다), 하위 프로세스를
+띄우기 바로 앞과 끝난 바로 뒤의 메모리 단서(cgroup 사용 · 한도 · OOM 종료 수, 앱 RSS)와 그 하위
+자신의 최고 RSS(도는 동안 잰 가장 큰 값), 띄우기 바로 앞의 프로세스 단서(부른 프로세스가 뜬 시간 ·
+스레드 · 열린 파일, cgroup 프로세스 · 스레드 수 · 한도, 프로세스 · 좀비 수) — `io/memory_probe`, 못
+읽으면 「모름」 — 를 남긴다. 표준 오류 글 자체는 그 자리에서 버린다. 마지막 시도 줄(Admin) · 로그 ·
+감사 상세 · 결과 파일 칸이 읽는다.
 
 **판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었고 같은 하위
 프로세스가 로그인 뒤 잰 남은 분이 `REMAINING_WARNING_MINUTES`(7시간)를 넘으면 성공이다(2026-11-16
@@ -111,7 +112,13 @@ from typing import TYPE_CHECKING, Final, Literal, TypeVar
 from capa_simulation.auth import names as sso_names
 from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import bdq_token, memory_probe
-from capa_simulation.io.bdq_login_child import MARKER, STEP_MARKER, STEP_STAGES, VERSION_PACKAGES
+from capa_simulation.io.bdq_login_child import (
+    MARKER,
+    STEP_LOADS,
+    STEP_MARKER,
+    STEP_STAGES,
+    VERSION_PACKAGES,
+)
 from capa_simulation.io.bdq_login_store import LoadResult, LoginSecret, StoredLogin
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
@@ -245,11 +252,15 @@ _MARKER_LINE: Final = re.compile(
     rf"{re.escape(MARKER)} stage=(input|import|login|done) error=(-|{_NAME}) net=([01]) "
     rf"minutes=(-|[0-9]{{1,7}}) time_error=(-|{_NAME})"
 )
-# 단계 줄(`bdq_login_child.step_line`) — 표지와 따로 푼다. 꼴이 어긋나면 진단의 단계 · 판만 빈다.
+# 단계 줄(`bdq_login_child.step_line`) — 표지와 따로 푼다. 꼴이 어긋나면 진단의 단계 · 판 · 길만
+# 빈다. 끝 칸 `load` 는 패키지를 불러온 길이다(`STEP_LOADS`) — 하위 본문과 이 꼴은 함께 바꾼다
+# (`fullmatch` 라 모르는 칸이 서면 단계가 빈 글이 되어 import 단계 끊김을 `import_killed` 로
+# 읽지 못한다). 그 칸이 없는 줄도 받는다(길만 빈 글).
 _VERSION: Final = r"-|\?|[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}"
 _STEP_LINE: Final = re.compile(
     rf"{re.escape(STEP_MARKER)} stage=({'|'.join(STEP_STAGES)})"
     + "".join(rf" {re.escape(name)}=({_VERSION})" for name in VERSION_PACKAGES)
+    + rf"(?: load=({'|'.join(STEP_LOADS)}))?"
 )
 # 표준 오류에서 마지막 traceback 을 찾는 머리와, 그 예외 줄 앞마디(종류 이름)의 꼴.
 _TRACEBACK_HEAD: Final = "Traceback (most recent call last):"
@@ -705,20 +716,36 @@ def parse_marker(output: bytes) -> Marker | None:
     )
 
 
-def parse_steps(output: bytes) -> tuple[str, dict[str, str]]:
-    """하위 표준 출력의 마지막 단계 줄 → (단계, 배포 → 판). 단계 줄이 없거나 마지막 줄의 꼴이
-    어긋나면 `("", {})` — 표지 판정과 따로다."""
+@dataclass(frozen=True)
+class StepLine:
+    """하위 표준 출력의 마지막 단계 줄 — 단계 · 패키지를 불러온 길(`STEP_LOADS` — 그 칸이 없는
+    줄은 빈 글) · 배포 → 판. 단계 줄이 없거나 꼴이 어긋나면 모두 빈 값이다."""
+
+    stage: str = ""
+    load: str = ""
+    versions: Mapping[str, str] = field(default_factory=dict)
+
+
+def parse_step(output: bytes) -> StepLine:
+    """하위 표준 출력의 마지막 단계 줄을 푼다 — 표지 판정과 따로다."""
     text = output.decode("utf-8", errors="replace")
     lines = [
         line.strip() for line in text.splitlines() if line.strip().startswith(f"{STEP_MARKER} ")
     ]
     if not lines:
-        return "", {}
+        return StepLine()
     found = _STEP_LINE.fullmatch(lines[-1])
     if found is None:
-        return "", {}
-    stage, *versions = found.groups()
-    return stage, dict(zip(VERSION_PACKAGES, versions, strict=True))
+        return StepLine()
+    stage, *versions, load = found.groups()
+    return StepLine(stage, load or "", dict(zip(VERSION_PACKAGES, versions, strict=True)))
+
+
+def parse_steps(output: bytes) -> tuple[str, dict[str, str]]:
+    """하위 표준 출력의 마지막 단계 줄 → (단계, 배포 → 판). 단계 줄이 없거나 마지막 줄의 꼴이
+    어긋나면 `("", {})` — 표지 판정과 따로다. 길까지 읽으려면 `parse_step`."""
+    step = parse_step(output)
+    return step.stage, dict(step.versions)
 
 
 def stderr_kind(stderr: bytes, secrets: Iterable[str]) -> str:
@@ -772,17 +799,18 @@ def child_diag(
     """하위 프로세스 한 번의 진단 — 종료 코드 · 시그널 · 걸린 초 · 단계 줄 · 표준 오류 마지막 예외
     종류 · 메모리 단서(`memory` — `memory_probe.child_memory`) · 띄우기 앞 프로세스 단서(`process`
     — `memory_probe.process_clues`). 하위 출력 · 표준 오류 글은 싣지 않는다."""
-    stage, versions = parse_steps(stdout)
+    step = parse_step(stdout)
     return ChildDiag(
         exit_code=exit_code,
         signal=_signal_name(exit_code),
         seconds=round(max(seconds, 0.0), 1),
-        stage=stage,
+        stage=step.stage,
         stderr_kind=stderr_kind(stderr, secrets),
-        bigdataquery=versions.get("bigdataquery", ""),
-        getpass_asterisk=versions.get("getpass_asterisk", ""),
+        bigdataquery=step.versions.get("bigdataquery", ""),
+        getpass_asterisk=step.versions.get("getpass_asterisk", ""),
         memory=memory,
         process=process,
+        load=step.load,
     )
 
 
