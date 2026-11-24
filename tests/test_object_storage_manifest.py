@@ -546,6 +546,30 @@ def test_prune_ignores_a_pin_without_a_pointer() -> None:
     assert orphan_pin == plain
 
 
+def test_prune_keeps_every_pointer_of_a_forked_pinned_generation() -> None:
+    """지킨 seq 에 포인터가 둘이면(지난 갈라짐을 뒤 세대가 풀었다) 둘 다와 각 쪽 멤버가 남는다 —
+    한쪽만 남기면 다른 쪽 갈래의 스냅샷이 지워진다. 갈라짐 판정은 맨 위 seq 만 보므로 정리는
+    돈다."""
+    pointers, snapshots = _generations(12)
+    first = _key(3, 3, 1)
+    # 같은 세대 3 의 다른 쪽 — 시뮬레이션은 세대 2 를 이어 적고 설비를 새로 냈다.
+    second = _key(3, 2, 3, token="ffffbbbb")
+    pointers = [*pointers, _listed(second, 9)]
+    snapshots = [*snapshots, _listed(_snapshot("equipment", 3), 9)]
+    members = {_snapshot("simulation", 3), _snapshot("simulation", 2), _snapshot("equipment", 3)}
+
+    unpinned = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+    pinned = manifest.prune_generations(pointers=pointers, snapshots=snapshots, pins=[_pin(3)])
+
+    assert {first, second} <= set(unpinned.pointers)
+    assert members <= set(unpinned.snapshots)
+    assert first not in pinned.pointers
+    assert second not in pinned.pointers
+    assert not members & set(pinned.snapshots)
+    assert pinned.kept_generations == unpinned.kept_generations + 2
+    assert _key(2, 2, 1) in pinned.pointers
+
+
 def test_prune_never_deletes_pin_markers() -> None:
     """표지는 정리 접두 밖이다. 목록에 섞여 들어와도 지울 거리에 들지 않고 HEAD 로도 읽히지
     않는다."""

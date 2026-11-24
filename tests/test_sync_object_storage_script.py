@@ -513,6 +513,23 @@ def test_unkeep_without_yes_skips(rig: SimpleNamespace, capsys: pytest.CaptureFi
     assert _tool_lines(rig, "admin_sync_unkeep") == []
 
 
+def test_keep_dry_run_places_no_marker(
+    rig: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--dry-run` 이면 HEAD 든 seq 든 표지를 두지 않는다 — aws 를 부르지 않고 감사 조각도 없다."""
+    _generations(rig, capsys, 1)
+    rig.store.calls.clear()
+
+    for target in (("--head",), ("--seq", "1")):
+        lines = _main(rig, capsys, "--dry-run", "keep", *target)
+
+        assert lines[0] == "[건너뜀] --dry-run 이라 표지를 두지 않습니다.", target
+        assert lines[-1] == "전송용 요약: keep 통과; 종료 0; 건너뜀 dry-run", target
+    assert rig.store.calls == []
+    assert not rig.store.keys(manifest.KEEP_PREFIX)
+    assert _tool_lines(rig, "admin_sync_keep") == []
+
+
 def test_generations_marks_pinned_rows_beyond_limit(
     rig: SimpleNamespace, capsys: pytest.CaptureFixture[str]
 ) -> None:
