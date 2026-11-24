@@ -20,6 +20,7 @@ from streamlit.testing.v1 import AppTest
 from test_source_csv import PART_CUSTOM, _with_custom
 from test_write_entry_points import _press_twice, _SecondPress
 
+from capa_simulation import alerts
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components import source_csv_registration as route
 from capa_simulation.components.process_labels import ProcessLabels
@@ -493,3 +494,30 @@ def test_a_second_press_of_the_csv_save_creates_once(
     names = [scenario.scenario_name for scenario in _scenarios(database)]
     assert names == [f"{DEMO_CODE} ({DEMO_CODE})"]
     assert [str(item.value) for item in app.error] in ([], [route.SAME_NAME_TEXT])
+
+
+def test_ad04_words_say_only_the_db_route_is_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`AD-04` 는 DB 상태라 CSV 길 회차에도 그대로 서지만, 막힘 낱말은 DB 길만 말한다 — 짧은 글
+    「… — DB 조회 · 등록이 막힘」(알림창 한 줄 안 — `alerts.SHORT_LIMIT`) · CUSTOM 원천 표 줄
+    꼬리 「… DB 조회 · 저장이 막힙니다 …」. CSV 길은 그 설정으로 막히지 않고 저장 단추는 파일
+    없음으로만 잠긴다(설계 규칙 UI-NTF-05 · UI-NTF-06)."""
+    assert "DB 조회 · 등록이 막힘" in registration.SQL_MISSING_SHORT
+    assert len(registration.SQL_MISSING_SHORT) <= alerts.SHORT_LIMIT
+    assert "DB 조회 · 저장이 막힙니다" in registration.CUSTOM_NOTICE_TAIL
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: False)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+
+    app = _app(_database(tmp_path))
+    on_db = active_state(app, "AD-04")
+    app = _csv_route(app)
+    on_csv = active_state(app, "AD-04")
+
+    assert on_db is not None and on_csv is not None
+    assert on_db["short"] == on_csv["short"] == registration.SQL_MISSING_SHORT
+    assert on_csv["full"] == on_db["full"]
+    assert registration.custom_table_notice(adapter.CUSTOM_TABLE_MISSING) in str(on_csv["full"])
+    assert _button(app, SAVE_LABEL).help == route.NO_FILE_HELP

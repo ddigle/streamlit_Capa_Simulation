@@ -6304,7 +6304,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「적용」 트리거를 바로 받아야 해 `st.form` 밖이고(`components/date_panel.py`), 목록 조회는 폼 없이 단추 하나다.
   - DB 등록 탭 표 위 작업 줄 맨 앞에 원천 종류 단추 「원천」(`DB 조회 · CSV 파일` — `SOURCE_ROUTE_KEY`, 처음 값 DB 조회 ·
     `persist_state="session"` · `required`)가 선다(설계 규칙 UI-LAY-07). `CSV 파일` 이면 목록 · 등록 폼 대신
-    `source_csv_registration.render_source_csv_route` 를 부른다. `AD-04` 는 길과 상관없이 회차마다 낸다(DB 상태다). 저장 결과 칸
+    `source_csv_registration.render_source_csv_route` 를 부른다. `AD-04` 는 길과 상관없이 회차마다 낸다(DB 상태다) — 막힘
+    낱말은 DB 길만 말한다(짧은 글 `SQL_MISSING_SHORT` 「… — DB 조회 · 등록이 막힘」 · CUSTOM 줄 꼬리 `CUSTOM_NOTICE_TAIL`
+    「… DB 조회 · 저장이 막힙니다 …」, 시험 `test_ad04_words_say_only_the_db_route_is_blocked`). 저장 결과 칸
     (`registration_result_slot`) · 부대공정 칩(`render_extra_chip`) · 저장 뒤 처리(`finish_registration` — 활성화 · 목록 따라감 ·
     성공 알림 · SC-04 · CUSTOM 대조 · CS 빈 행 · 부대공정 · 대당 Capa)는 두 길이 함께 쓰고 `registration_steps()` 로 넘긴다. DB
     조회 길 회차는 올린 원천 CSV 를 놓는다(`forget_source_csv`) — 폼 되살리기(`_restore_dropped_prefill`)는 DB 길 회차에만 돈다.

@@ -192,14 +192,16 @@ DETAIL_LOCKED_HELP: Final = (
 # 조회는 그 표를 쓰지 않아 잠그지 않는다.
 CUSTOM_LOCKED_TAIL: Final = " 조회 · 저장이 막힙니다 — 채울 자리는 Alarm 그 줄이 적습니다."
 # 상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_table_notice`).
-# 값(사내 표 이름)은 어디에도 싣지 않는다.
+# 막히는 것은 DB 조회 길뿐이다(CSV 파일 길은 파일의 CUSTOM 을 쓴다). 값(사내 표 이름)은 어디에도
+# 싣지 않는다.
 CUSTOM_NOTICE_TAIL: Final = (
-    " 부품(Capa Code)의 CUSTOM 을 읽지 못해 상세 조회 · 저장이 막힙니다 — 영문 · 숫자 · 밑줄로 "
+    " 부품(Capa Code)의 CUSTOM 을 읽지 못해 DB 조회 · 저장이 막힙니다 — 영문 · 숫자 · 밑줄로 "
     "된 표 이름(표 또는 스키마.표)을 넣고 앱을 다시 띄우세요(혼자 쓰는 PC · WebIDE 는 README "
     "「초기 설정」 4단계, C-DEP 는 배포 설정의 환경변수 표)."
 )
 # `AD-04` 짧은 글 — 조회 SQL → CUSTOM 원천 표 → 패키지 차례로 앞선 하나(`_configuration_short`).
-SQL_MISSING_SHORT: Final = "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
+# 막힘 낱말은 DB 조회 길만 말한다 — CSV 파일 길은 이 설정과 상관없이 열린다.
+SQL_MISSING_SHORT: Final = "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — DB 조회 · 등록이 막힘"
 CUSTOM_TABLE_SHORT: Final = "CUSTOM 원천 표 환경변수를 쓸 수 없어 DB 조회 · 저장이 막힘"
 PACKAGE_MISSING_SHORT: Final = (
     "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
