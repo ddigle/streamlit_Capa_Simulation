@@ -98,6 +98,10 @@ from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.constraint_simulation import ConstraintResult
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import ShorteningPlan, plan_required_shortening
+from capa_simulation.services.route_load_exceptions import (
+    BUFFER_X_CORE_CHIP,
+    normalize_route_load_declaration,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / CONSTRAINT_SIMULATION.path
@@ -411,6 +415,58 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
     # (2026-11-09 보드 T4).
     links = app.session_state["captured_page_links"]
     assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
+
+
+# 시드에 없는 공정 하나의 부하 예외 선언 — 숫자는 그대로 두고 계산 토큰만 접힌다.
+OUT_OF_DATA_DECLARATION = {"DEMO-예외 공정": BUFFER_X_CORE_CHIP}
+
+
+def test_the_plan_cell_and_the_product_demand_read_one_declaration_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R(설비 일정 계획 칸 — `load_required_shortening_for_target`)과 Rc(제품별 소요 —
+    `get_process_product_demand`)는 따로 받는 칸이다. 두 칸이 같은 판이어야 Rc ≤ R 이고
+    Re = R − Rc 가 맞으므로 둘 다 같은 계산 키(`page_inputs.capacity_cache_key` — 부하 예외 선언을
+    접은 계산 토큰)로 받는다. 선언을 저장한 DB 에서 두 길이 받은 시나리오 키가 같고 그 토큰에
+    선언이 접혀 있는지 본다 — 한 길만 선언을 떼면 Admin 이 선언을 저장한 뒤 R 은 앞 판의 칸, Rc 는
+    새 판이 된다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.persistence.cache import get_scenario_repository
+
+    scenario_path = tmp_path / "scenario.duckdb"
+    ensure_initial_scenario(get_scenario_repository(str(scenario_path)))
+    DuckDBScenarioRepository(scenario_path).append_route_load_exceptions(
+        expected_seq=0, entries=OUT_OF_DATA_DECLARATION, applied_by=None, source_place="test"
+    )
+    databases = (scenario_path, _equipment_database(tmp_path / "equipment.duckdb"))
+    plan_keys: list[simulation_cache.ScenarioCacheKey] = []
+    demand_keys: list[simulation_cache.ScenarioCacheKey] = []
+    load_plan = simulation_cache.load_required_shortening_for_target
+    product_demand = simulation_cache.get_process_product_demand
+
+    def record_plan(
+        key: simulation_cache.RequiredShorteningTargetCacheKey, *args: Any, **kwargs: Any
+    ) -> ShorteningPlan:
+        plan_keys.append(key[0][0])
+        return load_plan(key, *args, **kwargs)
+
+    def record_demand(
+        cache_key: simulation_cache.ScenarioCacheKey, *args: Any, **kwargs: Any
+    ) -> pd.DataFrame:
+        demand_keys.append(cache_key)
+        return product_demand(cache_key, *args, **kwargs)
+
+    monkeypatch.setattr(simulation_cache, "load_required_shortening_for_target", record_plan)
+    monkeypatch.setattr(simulation_cache, "get_process_product_demand", record_demand)
+    _opened(databases)
+
+    assert plan_keys and demand_keys
+    assert set(plan_keys) == set(demand_keys)
+    ((_, token, *_),) = set(demand_keys)
+    assert simulation_cache.ROUTE_EXCEPTION_TOKEN_MARK in token
+    assert simulation_cache.token_route_exceptions(token) == normalize_route_load_declaration(
+        OUT_OF_DATA_DECLARATION
+    )
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:

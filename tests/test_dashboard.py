@@ -33,6 +33,7 @@ from capa_simulation.services.load_calculator import (
     exclude_dummy_series,
     filter_edp_plan,
 )
+from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.product_parts import PART_NOT_SPLIT, multi_part_products
 from capa_simulation.services.product_share import assign_product_slots, build_product_volume
 from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
@@ -997,3 +998,60 @@ def test_home_plan_detail_judges_the_parts_on_the_whole_revision_plan() -> None:
             )
             product_rows = detail.loc[detail["제품정보"].eq(TWO_PART_PRODUCT)]
             assert product_rows["CUSTOM"].tolist() == [PART_A]
+
+
+def test_the_plan_detail_cache_tells_apart_revisions_whose_period_plans_are_the_same(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HOME 계산은 조회기간으로 거른 계획만 `get_production_dashboard` 에 해시해 넘기고, 부품 판정은
+    리비전 계획 전체(조회기간 밖 달 포함)에서 낸다. 두 리비전의 거른 계획이 글자까지 같아도 판정이
+    다를 수 있으므로 판정 튜플(`multi_part`)이 그 캐시의 해시 칸이어야 한다 — `_` 칸으로 빠지면 뒤
+    리비전의 계획 세부수량에 앞 리비전의 부품 줄이 남는다."""
+    monkeypatch.setattr(
+        simulation_cache,
+        "get_scenario_capacity_and_demand",
+        lambda *_args, **_kwargs: (pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(
+        simulation_cache, "get_securement_rate", lambda *_args, **_kwargs: pd.DataFrame()
+    )
+    split = two_part_tables()
+    plan = split["RQ_PKG_PLAN"]
+    months = sorted({int(month) for month in pd.to_numeric(plan["생산계획년월"])})
+    late = pd.to_numeric(plan["생산계획년월"]).ge(months[-1])
+    without_b = plan["CUSTOM"].ne(PART_B)
+    # 앞 리비전 — 둘째 부품이 조회기간 밖 마지막 달에만 있다(판정: 그 제품을 부품마다 가름).
+    split["RQ_PKG_PLAN"] = plan.loc[without_b | late].reset_index(drop=True)
+    # 뒤 리비전 — 둘째 부품이 없다(판정: 가르지 않음).
+    single = {**split, "RQ_PKG_PLAN": plan.loc[without_b].reset_index(drop=True)}
+    start, end = months[0], months[-2]
+    pd.testing.assert_frame_equal(
+        filter_month_range(split["RQ_PKG_PLAN"], start, end, "RQ_PKG_PLAN"),
+        filter_month_range(single["RQ_PKG_PLAN"], start, end, "RQ_PKG_PLAN"),
+    )
+    display_order = split["RQ_DISPLAY_ORDER"]
+
+    def key(name: str) -> simulation_cache.HomeSimulationCacheKey:
+        return simulation_cache.build_home_simulation_cache_key(
+            reference_version=1,
+            scenario_token=f"plan-detail-judgement-{name}-{uuid4().hex}",
+            start_month=start,
+            end_month=end,
+            display_order=display_order,
+            route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
+        )
+
+    simulation_cache.get_home_simulation.clear()
+    simulation_cache.get_production_dashboard.clear()
+    try:
+        first = simulation_cache.get_home_simulation(key("split"), split, display_order, split)
+        second = simulation_cache.get_home_simulation(key("single"), single, display_order, single)
+    finally:
+        simulation_cache.get_home_simulation.clear()
+        simulation_cache.get_production_dashboard.clear()
+
+    first_detail, second_detail = first[1], second[1]
+    first_parts = first_detail.loc[first_detail["제품정보"].eq(TWO_PART_PRODUCT), "CUSTOM"]
+    second_parts = second_detail.loc[second_detail["제품정보"].eq(TWO_PART_PRODUCT), "CUSTOM"]
+    assert set(first_parts) == {PART_A}
+    assert set(second_parts) == {PART_NOT_SPLIT}

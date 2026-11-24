@@ -722,6 +722,57 @@ def test_the_summary_donut_names_each_part_and_still_sums_to_one() -> None:
 # ---------------------------------------------------------------- HOME 진입
 
 
+# 부품을 가른 제품의 과거 달 조각 이름(과거 입력에는 부품이 없다).
+PAST_MARKER = "DEMO PRODUCT A (-)"
+
+
+def _store_past_plan(database_path: Path) -> None:
+    """두 달 과거 구간(제품별 PKG — 부품 없음)을 공용 과거 구간 프로필에 넣는다."""
+    past_months = [202511, 202512]
+    DuckDBScenarioRepository(database_path).replace_global_past_data(
+        {
+            "월별": pd.DataFrame(
+                {
+                    "생산계획년월": past_months,
+                    "Density": [8.0, 9.0],
+                    "Wafer Total": [100_000.0, 110_000.0],
+                }
+            ),
+            "계획": pd.DataFrame(
+                {
+                    "생산계획년월": [month for month in past_months for _ in range(2)],
+                    "제품정보": [TWO_PART_PRODUCT, "DEMO PRODUCT B"] * 2,
+                    "Stack": ["12H"] * 4,
+                    "Customer": ["DEMO-CUST"] * 4,
+                    "생산수량": [100.0, 50.0, 120.0, 60.0],
+                }
+            ),
+            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+        },
+        source="시험",
+    )
+
+
+def _home_with_past_months(database_path: Path) -> AppTest:
+    """HOME 을 열고 조회기간을 과거 달까지 넓혀 PKG 단위로 다시 그린 AppTest.
+
+    첫 회차가 리비전 프리셋의 조회기간(계획 달)을 건다 — 과거 달까지 넓힌다. 과거 구간은 제품별
+    PKG 만 있어 Wafer 단위면 과거 달 도넛이 서지 않는다."""
+    app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
+    app.session_state[MONTH_RANGE_KEY] = ("2025-11", "2026-12")
+    app.session_state[PRODUCT_SHARE_BASIS_KEY] = PRODUCT_SHARE_BASIS_PKG
+    return app.run()
+
+
+def _month_pie_labels(app: AppTest) -> set[str]:
+    return {
+        str(label)
+        for trace in app.session_state["spy_figures"]["production_lob_months"].data
+        if isinstance(trace, go.Pie)
+        for label in trace.labels
+    }
+
+
 def test_home_draws_one_donut_slice_and_legend_entry_per_part(tmp_path: Path) -> None:
     database_path = tmp_path / "scenario.duckdb"
     publish_two_part_revision(database_path)
@@ -749,46 +800,14 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     전체처럼 읽히는 줄 · 새 색 칸)으로 선다."""
     database_path = tmp_path / "scenario.duckdb"
     publish_two_part_revision(database_path)
-    past_months = [202511, 202512]
-    DuckDBScenarioRepository(database_path).replace_global_past_data(
-        {
-            "월별": pd.DataFrame(
-                {
-                    "생산계획년월": past_months,
-                    "Density": [8.0, 9.0],
-                    "Wafer Total": [100_000.0, 110_000.0],
-                }
-            ),
-            "계획": pd.DataFrame(
-                {
-                    "생산계획년월": [month for month in past_months for _ in range(2)],
-                    "제품정보": [TWO_PART_PRODUCT, "DEMO PRODUCT B"] * 2,
-                    "Stack": ["12H"] * 4,
-                    "Customer": ["DEMO-CUST"] * 4,
-                    "생산수량": [100.0, 50.0, 120.0, 60.0],
-                }
-            ),
-            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
-        },
-        source="시험",
-    )
+    _store_past_plan(database_path)
 
-    app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
-    # 첫 회차가 리비전 프리셋의 조회기간(계획 달)을 건다 — 과거 달까지 넓힌다. 과거 구간은 제품별
-    # PKG 만 있어 Wafer 단위면 과거 달 도넛이 서지 않는다.
-    app.session_state[MONTH_RANGE_KEY] = ("2025-11", "2026-12")
-    app.session_state[PRODUCT_SHARE_BASIS_KEY] = PRODUCT_SHARE_BASIS_PKG
-    app.run()
+    app = _home_with_past_months(database_path)
 
     assert not list(app.exception)
     figures = app.session_state["spy_figures"]
-    marker = "DEMO PRODUCT A (-)"
-    pie_labels = {
-        str(label)
-        for trace in figures["production_lob_months"].data
-        if isinstance(trace, go.Pie)
-        for label in trace.labels
-    }
+    marker = PAST_MARKER
+    pie_labels = _month_pie_labels(app)
     assert marker in pie_labels
     assert TWO_PART_PRODUCT not in pie_labels
     # 과거 달 「(-)」 조각은 그 제품 첫 부품의 색을 빌린다(그림 보드 3 답 q7-past-slice) — 다른
@@ -812,3 +831,53 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     }
     assert marker in named
     assert TWO_PART_PRODUCT not in named
+
+
+def test_home_judges_the_past_parts_again_after_an_edit_in_the_same_scenario(
+    tmp_path: Path,
+) -> None:
+    """과거 열 · 조각의 부품 판정 메모(`home._remembered("product_parts", …)`)는 HOME 계산 키의 계산
+    토큰으로 갈린다. 시나리오를 바꾸면 메모 칸이 지워지지만(`_STALE_VALUE_KEYS`), 같은 시나리오에서
+    편집을 적용하면 내용 토큰만 바뀌고 메모 칸은 남는다 — 그때 앞 판정이 남으면 둘째 부품을 넣은
+    제품의 과거 달이 「제품 (-)」 가 아니라 접힌 제품 이름(그 제품 전체처럼 읽히는 조각 · 새 색
+    칸)으로 선다. 한 값 시드로 메모를 채운 뒤 같은 시나리오에 두 부품 표를 적용해 다시 그린다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.persistence.cache import get_scenario_repository
+    from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+
+    database_path = tmp_path / "scenario.duckdb"
+    ensure_initial_scenario(get_scenario_repository(str(database_path)))
+    _store_past_plan(database_path)
+
+    app = _home_with_past_months(database_path)
+    assert not list(app.exception)
+    before = _month_pie_labels(app)
+    assert TWO_PART_PRODUCT in before
+    assert PAST_MARKER not in before
+
+    # 편집 적용(`scenario_state.apply_table_updates`)과 같은 꼴 — 같은 시나리오 · 다음 revision · 새
+    # 내용 토큰 · 표만 갈아끼움. 시나리오를 바꾸는 길이 아니라 세션 칸은 지우지 않는다. 세션 표는
+    # DB 를 지난 꼴(칸 dtype)이라 편집 화면이 세션 표에서 짓는 편집본처럼 두 부품 표도 그 꼴로
+    # 맞춘다.
+    active = app.session_state[ACTIVE_SCENARIO_KEY]
+    split = two_part_tables()
+    tables = dict(active["tables"])
+    tables.update(
+        {
+            name: split[name].astype(tables[name].dtypes.to_dict())
+            for name in tables
+            if name in split
+        }
+    )
+    app.session_state[ACTIVE_SCENARIO_KEY] = {
+        "reference_version": active["reference_version"],
+        "revision": active["revision"] + 1,
+        "content_token": uuid4().hex,
+        "tables": tables,
+    }
+    app.run()
+
+    assert not list(app.exception)
+    after = _month_pie_labels(app)
+    assert {LABEL_A, LABEL_B, PAST_MARKER} <= after
+    assert TWO_PART_PRODUCT not in after
