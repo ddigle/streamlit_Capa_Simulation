@@ -1224,9 +1224,10 @@ console.log(JSON.stringify(out))
 
 
 def test_a_popup_without_flash_still_drops_at_once_when_it_is_the_lowest() -> None:
-    """`flash` 가 없는 칸(상태 알림 · 남의 저장 사건 · JS 로컬 사건)은 결과 칸이 아니다 — 높은 단계
-    셋 앞에서 「알림」 은 지금처럼 서자마자 걷히고 보인 적이 없다(2026-11-10 보드 Q-1). 결과 칸이
-    선 동안에도 같다. 결과 칸과 같은 열쇠로 `flash` 없는 칸이 다시 서면 그 칸은 보통 칸이 된다."""
+    """`flash` 가 없는 칸(상태 알림 · 사건 길 `alerts.event` 의 사건 · JS 로컬 사건)은
+    결과 칸이 아니다 — 높은 단계 셋 앞에서 「알림」 은 지금처럼 서자마자 걷히고 보인 적이
+    없다(2026-11-10 보드 Q-1). 결과 칸이 선 동안에도 같다. 결과 칸과 같은 열쇠로 `flash` 없는
+    칸이 다시 서면 그 칸은 보통 칸이 된다."""
     out = _popups(
         """
 const out = {}
