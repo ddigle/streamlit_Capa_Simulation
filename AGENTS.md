@@ -543,9 +543,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     판정은 그대로다(`tests/test_home_page.py` 의 `only_box_routes_says_outside_calculation_in_the_process_filter`).
   - 「상세 B/N 공정」 제목 줄 오른쪽 끝에는 조회기간에 계산 밖 공정(소요기준 BOX · PCB 경로가 있는 공정 — 11장)이 있을 때만 작은 회색
     「계산 밖 n공정 ⓘ」 가 선다(2026-11-24 사용자 답 — B/N 순위가 그 공정 없이 정해지는 자리). 앱 전체 회차가 같은 목록 칸을 읽어
-    `outside_calculation_mark`(풍선 차례는 공정 필터 선택지와 같은 확보율 탭 표시순서)로 짓고 `render_home_figures(bottleneck_mark=)` 로
-    넘긴다. n 은 공정 필터와 상관없이 조회기간 전체의 수이고, 그림이 아니라 제목 줄 글이라 Figure 캐시 키 · `HOME_FIGURE_SCHEMA_VERSION`
-    은 그대로다(`tests/test_home_page.py` 의 `bottleneck_title_row_carries_the_outside_calculation_mark`).
+    `outside_calculation_mark`(풍선 차례는 공정 필터 선택지와 같은 확보율 탭 표시순서 — 세션 메모 `home_sort_memo` 의
+    `outside_order` 칸)로 짓고 `render_home_figures(bottleneck_mark=)` 로 넘긴다. n 은 공정 필터와 상관없이 조회기간 전체의 수이고,
+    그림이 아니라 제목 줄 글이라 Figure 캐시 키 · `HOME_FIGURE_SCHEMA_VERSION` 은 그대로다(`tests/test_home_page.py` 의
+    `bottleneck_title_row_carries_the_outside_calculation_mark`).
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -561,7 +562,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록에서 본다(`persistence/cache.scenario_has_revision` — 목록에 없으면 DB 로 한 번 더 본다, 회차마다 DB 를 열지 않는다).
   - **토글 회차는 그림과 상관없는 정렬 · 합치기를 다시 하지 않는다** — 세션 메모(`SessionSlot` `home_sort_memo` — 칸 이름은
     `home_state.HOME_SORT_MEMO_KEY`, 이름마다 두 벌)에 표시순서 준비(키 = HOME 계산 키의 표시순서 지문) · 공정 선택지 차례(공정
-    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 계산 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
+    이름들, 지문) · 「상세 B/N 공정」 표지 풍선의 계산 밖 공정 차례(계산 밖 공정 이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME
+    계산 키 — 계산 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
     과거 열 · 조각의 부품 판정(`product_parts.multi_part_products` — 키 = HOME 계산 키의 계산 토큰(5장 44 — 판정은 그 앞머리 내용 토큰이 정한다), 계획 세부수량 과거 열과 제품별 비중 과거 조각이 한 칸)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
