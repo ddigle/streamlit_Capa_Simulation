@@ -7462,7 +7462,9 @@
   단추 밑에 그리지 않음) · UI-NTF-02 통과(자리에 상태 글 · 표 없음 — 표는 Alarm 줄) · UI-NTF-05 통과(숫자를 믿기 전에 알 일 — 알림창 ·
   Alarm · 메모 셋에 남음) · UI-TXT-08 통과(어긋난 칸이 없으면 알림 없음 — 메모 조각은 화면이 아니라 기록) · UI-NTF-06 통과(짧은 글 머리가 「CUSTOM 원천
   대조 어긋난 칸 n개(행 수 다른 칸 b · 한쪽에만 있는 칸 a)」 — 칸마다 네 자리 수까지 60자 안, 볼 자리는 이름 「CUSTOM 대조」 의 Alarm
-  줄 표) — 관련: `components/bigdataquery_registration.py` · `scenario_registration.py` · `auto_official_update_runner.py` · `alerts.py`
+  줄 표). 자동 갱신 탭 실행 기록 「사유」 칸 머리 풍선(`RUN_REASON_HELP`)도 이어 적히는 것에 CUSTOM 원천 대조 · 업무 키 충돌을 꼽는다
+  — UI-TXT-02 통과(칸 하나의 뜻은 그 칸 풍선, 화면에 늘 보이는 글은 늘지 않음) — 관련: `components/bigdataquery_registration.py` ·
+  `scenario_registration.py` · `auto_official_update_runner.py` · `components/auto_official_update_tab.py` · `alerts.py`
 - (2026-11-22) **CUSTOM 원천 표 환경변수가 없거나 꼴이 틀리면 DB 등록 탭의 `DB 조회 후 시나리오 저장` 을 잠그고 상태 알림
   `AD-04` · 서버 시작 점검 「CUSTOM 원천 표」 줄(실패면 `AD-01`)로 알린다**(설계 B-stop §1-9 — 상세 조회와 같은 판정
   `custom_table_problem` 하나를 셋이 읽는다). 목록 조회는 그 표를 쓰지 않아 잠그지 않는다. `AD-04` 전문은 조회 SQL → CUSTOM 원천
