@@ -401,7 +401,7 @@ New-Item -ItemType Directory review -Force
   못하게 막습니다. 실데이터 · 사본 · 백업 폴더(저장소 `data/` · `e2e_copy` · `capa-copy` · `deploy_backup`)도 `Read` · 셸의 읽는
   꼴로 열지 못하게 막습니다. `review/` 는 리뷰 문서 자리이고, 에이전트가 읽는 사내 결과는 사용자가 준 `--output` 파일(이 폴더들
   밖)뿐입니다.
-- 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 7-8 개수 세기 `inspect_db_counts.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
+- 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 7-8 개수 세기 `inspect_db_counts.py` · 원천 CSV 견줌 `inspect_source_csv.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
   `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py` · 화면 확인 `check_deploy_screens.py` · 버킷 명령
   `sync_object_storage.py`)는 템플릿에 allow 가 없고, 런북 꼴(`uv run --no-sync python scripts/…`)의 줄은 deny 로 막습니다(2026-11-11 — 사내 DB 를
   Claude 가 읽지 않는다. 사용자가 고정한 auto 모드는 allow 가 없어도 묻지 않고 통과시킬 수 있어서입니다). 사용자가 Claude 밖의 별도 PowerShell
@@ -794,7 +794,7 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 
 ## 보조 스크립트
 
-모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다. 확인 스크립트는 사본을 마이그레이션하지 않으므로 `0039`(CUSTOM 칸) 전 사본은 CUSTOM 키 표를 0039 와 같이 빈 값 표지(`-`)로 채워 읽고 `사본 0039 전` 한 줄을 찍습니다(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`inspect_db_counts.py`·`compare_legacy_results.py` — `benchmark_upeh_assumption.py` 는 결과 JSON 의 `scenario_custom_filled`). 소요대수를 세는 셋(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`benchmark_upeh_assumption.py`)은 앱처럼 사본의 지금 부하 예외 선언으로 세고 선언이 있으면 판 · 공정 수만 찍으며(공정 이름 없음), 선언 표가 없는 `0040` 전 사본은 빈 선언으로 세고 `사본 0040 전` 한 줄(6-3 b 는 `scenario_route_exceptions_missing`)을 남깁니다.
+모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`inspect_source_csv.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다. 확인 스크립트는 사본을 마이그레이션하지 않으므로 `0039`(CUSTOM 칸) 전 사본은 CUSTOM 키 표를 0039 와 같이 빈 값 표지(`-`)로 채워 읽고 `사본 0039 전` 한 줄을 찍습니다(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`inspect_db_counts.py`·`compare_legacy_results.py` — `benchmark_upeh_assumption.py` 는 결과 JSON 의 `scenario_custom_filled`). 소요대수를 세는 셋(`inspect_revision_calculations.py`·`inspect_real_data_checks.py`·`benchmark_upeh_assumption.py`)은 앱처럼 사본의 지금 부하 예외 선언으로 세고 선언이 있으면 판 · 공정 수만 찍으며(공정 이름 없음), 선언 표가 없는 `0040` 전 사본은 빈 선언으로 세고 `사본 0040 전` 한 줄(6-3 b 는 `scenario_route_exceptions_missing`)을 남깁니다.
 
 | 스크립트 | 하는 일 |
 |---|---|
