@@ -349,6 +349,16 @@ def test_the_schema_moved_past_the_past_marker_folded_into_other() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 63
 
 
+def test_the_schema_moved_past_the_widened_product_cell() -> None:
+    """64 부터 부품을 가른 제품이 있어도 계획 세부수량 제품 칸을 넓히지 않는다 — 분류 칸 그림이 폭을
+    싣지 않고 HOME 구분 컬럼은 늘 같은 폭이다(그림 보드 4 답 q7-shared-col (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 61 ~ 63 의 그림(폭을 실은 그림 — 구분 컬럼이 넓어지고
+    달 칸이 밀림)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 64
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

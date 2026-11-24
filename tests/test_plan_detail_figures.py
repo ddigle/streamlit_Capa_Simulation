@@ -10,7 +10,6 @@
 행 한가운데다.
 """
 
-import math
 from pathlib import Path
 from typing import Any
 
@@ -26,17 +25,13 @@ from capa_simulation.components.home_dimensions import (
     lower_delta_row_height,
     table_row_height,
 )
-from capa_simulation.components.home_figure_common import (
-    HOVER_LABEL_FONT_SIZE_PX,
-    _table_label_width_units,
-)
+from capa_simulation.components.home_figure_common import HOVER_LABEL_FONT_SIZE_PX
 from capa_simulation.components.home_figures import build_plan_detail_figures
 from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
     DETAIL_HOVER_LINE_MAX_PX,
     DETAIL_LABEL_INSET_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
-    plan_detail_label_width_px,
 )
 from capa_simulation.components.plotly_layout import table_text_max_width_px, table_text_y
 from capa_simulation.design import tokens
@@ -407,31 +402,10 @@ def _group_rules(figure: go.Figure) -> int:
     )
 
 
-def _shapes_at_the_product_boundary(figure: go.Figure) -> list[dict[str, Any]]:
-    """분류 칸 도형 — 제품 칸 경계의 x 는 「경계」 로 바꿔 적는다(부품 이름표에 맞춰 제품 칸을 넓힌
-    그림은 그 경계가 오른쪽이다)."""
-    boundary = next(
-        shape.x0
-        for shape in figure.layout.shapes
-        if shape.type == "line"
-        and shape.x0 == shape.x1
-        and shape.line.color == tokens.BORDER
-        and shape.line.width == tokens.GRID_LINE_WIDTH_PX
-    )
-    shapes: list[dict[str, Any]] = []
-    for shape in figure.layout.shapes:
-        spec = shape.to_plotly_json()
-        for edge in ("x0", "x1"):
-            if spec.get(edge) == boundary:
-                spec[edge] = "경계"
-        shapes.append(spec)
-    return shapes
-
-
 def test_each_part_gets_its_own_band_and_rule_like_a_product_named_by_its_label() -> None:
     """부품은 칸으로 그리지 않는다 — 머리글은 제품 · Stack 그대로이고 줄무늬 띠 · 굵은 선은 이름표
-    단위라, 제품 칸 글을 이름표로 바꾼 표와 칸 면색 · 선이 같다(제품 칸 경계 자리만 넓힌 만큼
-    다르다). 한 부품 안의 Stack 경계는 얇은 선이다."""
+    단위라, 제품 칸 글을 이름표로 바꾼 표와 칸 면색 · 선이 같다. 한 부품 안의 Stack 경계는 얇은
+    선이다."""
     label_figure, month_figure = build_plan_detail_figures(
         production_detail=_part_detail(), month_labels=MONTHS
     )
@@ -442,9 +416,7 @@ def test_each_part_gets_its_own_band_and_rule_like_a_product_named_by_its_label(
     )
 
     assert list(label_figure.data[0].text) == ["<b>제품</b>", "<b>Stack</b>"]
-    assert _shapes_at_the_product_boundary(label_figure) == _shapes_at_the_product_boundary(
-        named_label
-    )
+    assert label_figure.layout.shapes == named_label.layout.shapes
     assert month_figure.layout.shapes == named_month.layout.shapes
     assert _group_rules(month_figure) == 2
     assert month_figure.to_json() == named_month.to_json()
@@ -531,15 +503,6 @@ def _rendered_px(text: str, size: float) -> float:
     return max(sum(_RENDERED_EM[character][font] for character in text) for font in (0, 1)) * size
 
 
-def _product_cell_px(label_figure: go.Figure, dimensions: list[str]) -> float:
-    """그림의 제품 칸 폭(px) — 기본 칸 폭에 부품 이름표에 맞춰 넓힌 몫(분류 칸 그림 폭 − 기본 폭)을
-    더한다. 넓힌 몫은 상한 안이다."""
-    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
-    extra = plan_detail_label_width_px(label_figure) - DASHBOARD_LABEL_COLUMN_WIDTH_PX
-    assert 0 <= extra <= tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX
-    return widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX + extra
-
-
 @pytest.mark.parametrize("product", [TWO_PART_PRODUCT, "DEMO-H12A"])
 @pytest.mark.parametrize(
     "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
@@ -548,8 +511,8 @@ def test_a_part_label_fits_the_product_cell_at_its_rendered_width(
     product: str, dimensions: list[str]
 ) -> None:
     """상세 계획을 끈 기본 폭(약 182px)에서도 켠 좁은 폭에서도 부품 이름표는 실제로 그린 폭이 제품
-    칸 안(양쪽 여백을 뺀 자리 — 부품 이름표에 맞춰 넓힌 칸)에 든다 — 칸 경계에서 첫 글자와 끝 괄호가
-    잘리지 않는다. 두 부품은 서로 다른 글이고 부품 끝을 남긴다."""
+    칸 안(양쪽 여백을 뺀 자리)에 든다 — 칸 경계에서 첫 글자와 끝 괄호가 잘리지 않는다. 두 부품은
+    서로 다른 글이고 부품 끝을 남긴다."""
     detail = pd.DataFrame(
         {
             "제품정보": [product, product],
@@ -565,7 +528,8 @@ def test_a_part_label_fits_the_product_cell_at_its_rendered_width(
         production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
     )
 
-    product_px = _product_cell_px(label_figure, dimensions)
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
     texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
     assert len(texts) == 2 and len(set(texts)) == 2
     assert texts[0].endswith("_A)") and texts[1].endswith("_B)")
@@ -597,7 +561,8 @@ def test_parts_that_share_their_end_stay_apart_in_the_product_cell(dimensions: l
         production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
     )
 
-    product_px = _product_cell_px(label_figure, dimensions)
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
     texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
     assert len(texts) == 2 and len(set(texts)) == 2
     assert "1" in texts[0] and "2" in texts[1]
@@ -630,7 +595,8 @@ def test_parts_chained_by_their_end_stay_apart_in_the_product_cell(dimensions: l
         production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
     )
 
-    product_px = _product_cell_px(label_figure, dimensions)
+    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
+    product_px = widths[0] / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
     texts = [text for text in _value_texts(label_figure) if text not in {"12H", "DEMO_CUST-1"}]
     assert len(texts) == 3 and len(set(texts)) == 3
     for text in texts:
@@ -665,12 +631,12 @@ def test_a_folded_frame_draws_the_same_figures_as_the_frame_without_the_part_col
         assert left.to_json() == right.to_json()
 
 
-def _sample_part_detail(parts: list[str], *, customer: bool = False) -> pd.DataFrame:
+def _sample_part_detail(*, customer: bool = False) -> pd.DataFrame:
     """검수용 견본의 DEMO-H12A 처럼 부품 둘로 가른 제품 하나와 접힌 제품 하나."""
     frame = pd.DataFrame(
         {
             "제품정보": ["DEMO-H12A", "DEMO-H12A", "DEMO-H8A"],
-            "CUSTOM": [*parts, PART_NOT_SPLIT],
+            "CUSTOM": [PART_A, PART_B, PART_NOT_SPLIT],
             "Stack": ["12H", "12H", "8H"],
             "202608": [1000.0, 500.0, 300.0],
             "202609": [2000.0, 600.0, 300.0],
@@ -681,115 +647,18 @@ def _sample_part_detail(parts: list[str], *, customer: bool = False) -> pd.DataF
     return frame
 
 
-def _column_px(label_figure: go.Figure, dimensions: list[str]) -> list[float]:
-    """분류 칸마다 px 폭 — 제품 칸 경계 선과 그림 폭으로 낸다(넓힌 그림은 그림 폭이 크다)."""
-    width = plan_detail_label_width_px(label_figure)
-    widths = [DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM"]
-    rest = sum(widths[1:])
-    product_px = width - rest / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
-    return [product_px, *(w / sum(widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX for w in widths[1:])]
-
-
-@pytest.mark.parametrize(
-    "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
-)
-def test_the_product_cell_widens_until_the_longest_part_label_fits(dimensions: list[str]) -> None:
-    """부품을 가른 제품이 있으면 제품 칸만 가장 긴 부품 이름표가 다 들 만큼 넓힌다(2026-11-24 그림
-    보드 3 답 q7-narrow-label (다)) — 「DEMO-H12A (DEMO_CUSTOM_A)」 가 줄지 않고 다 선다. Stack ·
-    거래선 칸은 px 폭이 그대로라 분류 칸 그림이 넓힌 만큼 넓어지고, 그 폭을 `layout.width` 에
-    싣는다. 넓히는 몫은 상한(`tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX`) 안이고 상한을 넘으면 그
-    상한이다."""
-    customer = "Customer" in dimensions
-    detail = _sample_part_detail([PART_A, PART_B], customer=customer)
-
-    label_figure, month_figure = build_plan_detail_figures(
-        production_detail=detail, month_labels=MONTHS, detail_dimensions=list(dimensions)
-    )
-    _, unsplit_month = build_plan_detail_figures(
-        production_detail=detail.assign(CUSTOM=PART_NOT_SPLIT),
-        month_labels=MONTHS,
-        detail_dimensions=list(dimensions),
-    )
-
-    width = plan_detail_label_width_px(label_figure)
-    labels = [f"DEMO-H12A ({PART_A})", f"DEMO-H12A ({PART_B})"]
-    base_product_px = (
-        DETAIL_DIMENSION_WIDTHS["제품정보"]
-        / sum(DETAIL_DIMENSION_WIDTHS[column] for column in dimensions if column != "CUSTOM")
-        * DASHBOARD_LABEL_COLUMN_WIDTH_PX
-    )
-    needed = max(_table_label_width_units(label) for label in labels) * DETAIL_VALUE_FONT_SIZE_PX
-    needed += 2 * DETAIL_LABEL_INSET_PX
-    extra = min(math.ceil(needed - base_product_px), tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX)
-    assert width == DASHBOARD_LABEL_COLUMN_WIDTH_PX + extra
-    assert label_figure.layout.width == width
-    columns = _column_px(label_figure, list(dimensions))
-    assert columns[0] == pytest.approx(base_product_px + extra)
-    texts = _value_texts(label_figure)
-    if extra < tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX:
-        assert set(labels) <= set(texts)
-    else:
-        # 상한을 넘는 이름표는 부품을 남기고 제품 쪽부터 줄인다(지금 꼴).
-        fitted = [text for text in texts if text.endswith(f"({PART_A})")]
-        assert len(fitted) == 1 and "…" in fitted[0]
-    # 달 칸은 넓히지 않는다 — 부품 칸을 접은 표와 같은 폭 · 같은 칸이다.
-    assert month_figure.layout.width == unsplit_month.layout.width
-
-
-def test_the_sample_part_label_stands_whole_in_the_default_view() -> None:
-    """검수용 견본의 DEMO-H12A 부품 이름표는 상세 계획을 끈 기본 보기에서 상한 안에서 다 든다 — 보드
-    (다) 의 그림(「DEMO-H12A (DEMO_CUSTOM_A)」)이 그대로 선다."""
-    label_figure, _ = build_plan_detail_figures(
-        production_detail=_sample_part_detail([PART_A, PART_B]), month_labels=MONTHS
-    )
-
-    texts = _value_texts(label_figure)
-    assert f"DEMO-H12A ({PART_A})" in texts and f"DEMO-H12A ({PART_B})" in texts
-    assert (
-        plan_detail_label_width_px(label_figure)
-        < DASHBOARD_LABEL_COLUMN_WIDTH_PX + tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX
-    )
-
-
-def test_a_part_label_longer_than_the_cap_is_shortened_like_before() -> None:
-    """상한을 넘는 부품 이름표는 제품 칸을 상한까지만 넓히고, 부품을 남기고 제품 쪽부터 줄인다 — 두
-    부품은 서로 다른 글이고 그린 폭은 넓힌 칸 안이다."""
-    parts = ["DEMO_CUSTOM_PART_ROUTE_SETUP_KIT_A", "DEMO_CUSTOM_PART_ROUTE_SETUP_KIT_B"]
-
-    label_figure, _ = build_plan_detail_figures(
-        production_detail=_sample_part_detail(parts), month_labels=MONTHS
-    )
-
-    assert (
-        plan_detail_label_width_px(label_figure)
-        == DASHBOARD_LABEL_COLUMN_WIDTH_PX + tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX
-    )
-    product_px = _product_cell_px(label_figure, PRODUCTION_DETAIL_DIMENSIONS)
-    part_texts = [
-        text for text in _value_texts(label_figure) if text not in {"12H", "8H", "DEMO-H8A"}
-    ]
-    assert len(part_texts) == 2 and len(set(part_texts)) == 2
-    assert part_texts[0].endswith("_A)") and part_texts[1].endswith("_B)")
-    for text in part_texts:
-        assert "…" in text
-        assert _rendered_px(text, DETAIL_VALUE_FONT_SIZE_PX) <= product_px - 2 * (
-            DETAIL_LABEL_INSET_PX
-        )
-
-
 @pytest.mark.parametrize("with_comparison", [False, True])
 @pytest.mark.parametrize(
     "dimensions", [PRODUCTION_DETAIL_DIMENSIONS, PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS]
 )
-def test_without_a_split_part_the_label_figure_keeps_its_width(
+def test_a_split_part_never_widens_the_label_figure(
     with_comparison: bool, dimensions: list[str]
 ) -> None:
-    """부품을 가른 제품이 없으면(접힌 값뿐) 제품 칸 · 분류 칸 그림 폭이 넓히기 전과 같다 — 그림이
-    `layout.width` 를 싣지 않고 HOME 분류 칸은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 다. 상세 계획 ·
-    GAP 에서도 같다."""
-    detail = _sample_part_detail([PART_A, PART_B], customer="Customer" in dimensions).assign(
-        CUSTOM=PART_NOT_SPLIT
-    )
+    """부품을 가른 제품이 있어도 분류 칸 그림은 제 폭을 싣지 않는다(`layout.width` 없음 — HOME 구분
+    컬럼은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX`). HOME 네 구획이 이름 칸 하나를 같이 써서 제품 칸을
+    넓히면 네 구획 이름 칸이 함께 넓어지고 오른쪽 달 칸이 그만큼 덜 보인다 — 2026-11-24 그림 보드 4
+    답 q7-shared-col (나) 「넓히지 않음」. 상세 계획 · GAP 에서도 같다."""
+    detail = _sample_part_detail(customer="Customer" in dimensions)
 
     label_figure, _ = build_plan_detail_figures(
         production_detail=detail,
@@ -799,49 +668,26 @@ def test_without_a_split_part_the_label_figure_keeps_its_width(
     )
 
     assert label_figure.layout.width is None
-    assert plan_detail_label_width_px(label_figure) == DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    assert label_figure.layout.autosize is None
 
 
-def test_the_widened_width_rides_with_the_figure_through_the_shared_store() -> None:
-    """넓힌 폭은 그림 레이아웃에 실려 공용 칸 왕복(`to_dict` → 검증 없이 다시 세움)에도 남는다 —
-    캐시에서 꺼낸 그림으로 그리는 회차도 HOME 분류 칸이 같은 폭이다."""
+def test_the_sample_part_label_keeps_the_part_whole_and_hovers_the_full_name() -> None:
+    """검수용 견본의 「DEMO-H12A (DEMO_CUSTOM_A)」 는 상세 계획을 끈 기본 보기 제품 칸에서도 부품을
+    온전히 남기고 제품 쪽부터 줄여 「… (DEMO_CUSTOM_A)」 이고, 온전한 이름은 풍선이다(그림 보드 3
+    q7-narrow-label (가) 의 꼴 — 보드 4 q7-shared-col (나) 로 돌아감)."""
     label_figure, _ = build_plan_detail_figures(
-        production_detail=_sample_part_detail([PART_A, PART_B]), month_labels=MONTHS
+        production_detail=_sample_part_detail(), month_labels=MONTHS
     )
 
-    restored = go.Figure(label_figure.to_dict(), _validate=False)
-
-    assert plan_detail_label_width_px(restored) == plan_detail_label_width_px(label_figure)
-    assert plan_detail_label_width_px(restored) > DASHBOARD_LABEL_COLUMN_WIDTH_PX
-
-
-def test_a_gap_view_widens_the_product_cell_by_the_same_rule() -> None:
-    """GAP(비교 시나리오) 을 켜도 같은 규칙이다 — 비교에만 있는 옛 리비전의 「제품 (-)」 줄이 끼어도
-    넓히는 몫은 가른 부품 이름표가 정한다."""
-    detail = _sample_part_detail([PART_A, PART_B])
-    compared = pd.concat(
-        [
-            detail,
-            pd.DataFrame(
-                {
-                    "제품정보": ["DEMO-H12A"],
-                    "CUSTOM": ["-"],
-                    "Stack": ["12H"],
-                    "202608": [900.0],
-                    "202609": [900.0],
-                }
-            ),
-        ],
-        ignore_index=True,
-    )
-
-    plain, _ = build_plan_detail_figures(production_detail=detail, month_labels=MONTHS)
-    gap, _ = build_plan_detail_figures(
-        production_detail=compared, month_labels=MONTHS, comparison_detail=compared
-    )
-
-    assert plan_detail_label_width_px(gap) == plan_detail_label_width_px(plain)
-    assert "DEMO-H12A (-)" in _value_texts(gap)
+    texts = _value_texts(label_figure)
+    assert f"… ({PART_A})" in texts and f"… ({PART_B})" in texts
+    hovered = {
+        str(name).replace("<br>", " ")
+        for trace in label_figure.data
+        if trace.type == "bar"
+        for name in trace.hovertext
+    }
+    assert {f"DEMO-H12A ({PART_A})", f"DEMO-H12A ({PART_B})"} <= hovered
 
 
 def test_home_draws_one_plan_detail_band_per_part(tmp_path: Path) -> None:
@@ -882,17 +728,15 @@ def _label_column_px(app: AppTest) -> set[int]:
     return widths
 
 
-def test_home_widens_the_shared_label_column_to_the_plan_detail_figure(tmp_path: Path) -> None:
-    """두 부품 공식버전을 연 HOME 은 계획 세부수량 분류 칸 그림이 실은 폭으로 구분 컬럼을 못박는다 —
-    네 구획이 한 컬럼이라 행이 맞고, 넓힌 몫은 상한 안이다."""
+def test_home_keeps_the_shared_label_column_with_a_split_part(tmp_path: Path) -> None:
+    """두 부품 공식버전을 연 HOME 도 네 구획이 함께 쓰는 구분 컬럼은
+    `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 다 — 계획 세부수량 분류 칸 그림이 폭을 싣지 않는다(그림 보드
+    4 답 q7-shared-col (나))."""
     database_path = tmp_path / "scenario.duckdb"
     publish_two_part_revision(database_path)
 
     app = AppTest.from_string(home_script(database_path), default_timeout=300).run()
 
     assert not list(app.exception)
-    label_figure = app.session_state["spy_figures"]["production_detail_labels"]
-    width = plan_detail_label_width_px(label_figure)
-    assert DASHBOARD_LABEL_COLUMN_WIDTH_PX < width
-    assert width <= DASHBOARD_LABEL_COLUMN_WIDTH_PX + tokens.PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX
-    assert _label_column_px(app) == {width}
+    assert app.session_state["spy_figures"]["production_detail_labels"].layout.width is None
+    assert _label_column_px(app) == {DASHBOARD_LABEL_COLUMN_WIDTH_PX}

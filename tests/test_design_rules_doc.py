@@ -3632,8 +3632,9 @@ def _board3_lines(document: str) -> dict[str, str]:
 def test_the_q7_picture_board_answers_join_6_41() -> None:
     """v1.45 — Q7 갈라 보임 화면을 찍어 본 2026-11-24 그림 보드 3 의 답(모두 권장)은 6-41 에 보드
     카드 id 를 줄 머리로 잇는다. 첫 줄 q7-narrow-label 은 (다) 「계획 세부수량 제품 칸만 넓힘」
-    이고 4장 「부품 이름표」 줄이 넓힘의 상한(달 칸 한 칸)을 적는다. 1장 안내 · 6-41 머리글이 보드
-    3 을 가리킨다."""
+    이었고 같은 날 저녁 그림 보드 4 q7-shared-col (나) 「넓히지 않음」 이 그 줄에 이어져 지금 답이다
+    — 그 줄 · 4장 「부품 이름표」 줄에 걷은 상한 토큰이 남지 않고, 7-1 이 뒤집힘을 남긴다. 1장
+    안내 · 6-41 머리글이 보드 3 을 가리킨다."""
     document = _text()
     assert "판 v1.45" in document.split("\n## 1. ")[0]
     assert "2026-11-24 그림 보드 3" in _chapter(document, 1)
@@ -3644,13 +3645,17 @@ def test_the_q7_picture_board_answers_join_6_41() -> None:
     assert "q7-narrow-label" in lines
     narrow = lines["q7-narrow-label"]
     assert "→ **(다) 계획 세부수량 제품 칸만 넓힘**" in narrow
-    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" in narrow and "(2026-11-24 · " in narrow
+    assert "그림 보드 4 q7-shared-col 로 물었다 → **(나) 넓히지 않음" in narrow
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" not in narrow and "(2026-11-24 · " in narrow
     known = {rule.id for rule in _rules()}
     cited = RULE_TOKEN.findall(narrow.rsplit("(2026-11-24 · ", 1)[1])
     assert cited and set(cited) <= known
     current = _chapter(document, 4)
     row = next(line for line in current.splitlines() if line.startswith("| 부품 이름표 |"))
-    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" in row and "100px" in row
+    assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" not in row and "q7-shared-col (나)" in row
+    assert "넓히지 않음" in row
+    turned = _chapter(document, 7).split("\n### 7-2. ")[0]
+    assert "q7-narrow-label (다)" in turned and "q7-shared-col (나)" in turned
     for card in BOARD3_CARDS:
         if card not in lines:
             continue
@@ -3664,7 +3669,7 @@ def test_the_q7_picture_board_answers_join_6_41() -> None:
         assert "q7-past-slice (나)" in turned
     history = _chapter(document, 8)
     v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
-    for phrase in ("6-41", "규칙 82", *lines):
+    for phrase in ("6-41", "규칙 82", "q7-shared-col", *lines):
         assert phrase in v145, phrase
 
 

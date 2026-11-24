@@ -1869,10 +1869,10 @@ def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
     ]
 
 
-def test_the_label_column_keeps_its_width_without_a_split_part(seeded_database: Path) -> None:
-    """내장 시드(부품을 가른 제품 없음)의 HOME 구분 컬럼은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX`
-    그대로다 — 계획 세부수량 제품 칸을 넓히는 것은 부품을 가른 제품이 있을 때뿐이다(그림 보드 3 답
-    q7-narrow-label)."""
+def test_the_label_column_keeps_its_pinned_width(seeded_database: Path) -> None:
+    """HOME 구분 컬럼은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 로 못박히고 계획 세부수량 분류 칸 그림은
+    제 폭을 싣지 않는다. 부품을 가른 제품이 있는 공식버전도 같은 폭이다(그림 보드 4 답
+    q7-shared-col (나) — `tests/test_plan_detail_figures.py` 가 두 부품 견본으로 본다)."""
     app = _run(seeded_database)
 
     pinned = [
