@@ -459,6 +459,190 @@ def test_prune_rejects_keeping_nothing() -> None:
         manifest.prune_generations(pointers=[], snapshots=[], keep_last=0)
 
 
+def _pin(seq: int, *, days_left: int = 30, token: str = "0000abcd") -> ListedObject:
+    """HEAD 날짜에서 `days_left` 일 뒤까지 지키는 표지. 표지의 LastModified 는 판정에 안 쓴다."""
+    until = HEAD_TIME.date() + timedelta(days=days_left)
+    return _listed(manifest.pin_marker_key(seq, until=until, token=token), 40)
+
+
+def _carried_generations() -> tuple[list[ListedObject], list[ListedObject]]:
+    """세대 1 ~ 12, 하루 간격. 세대 3 은 시뮬레이션 멤버를 세대 2 에서 이어 적고 설비만 낸다."""
+    members = {1: (1, 1), 2: (2, 1), 3: (2, 3)}
+    members.update({seq: (seq, seq) for seq in range(4, 13)})
+    pointers = []
+    snapshots = []
+    for seq, (simulation, equipment) in members.items():
+        age = float(12 - seq)
+        pointers.append(_listed(_key(seq, simulation, equipment), age))
+        if simulation == seq:
+            snapshots.append(_listed(_snapshot("simulation", seq), age))
+        if equipment == seq:
+            snapshots.append(_listed(_snapshot("equipment", seq), age))
+    return pointers, snapshots
+
+
+def test_prune_keeps_a_pinned_generation_past_both_windows() -> None:
+    """세대 3 은 7일 밖이고 쌍이 다른 최신 5세대에도 들지 않는다. 지키면 포인터와 두 멤버가 남는다 —
+    이어 적은 시뮬레이션 멤버(세대 2 가 만든 것)도 함께다."""
+    pointers, snapshots = _carried_generations()
+
+    unpinned = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+    pinned = manifest.prune_generations(pointers=pointers, snapshots=snapshots, pins=[_pin(3)])
+
+    assert _key(3, 2, 3) in unpinned.pointers
+    assert _snapshot("simulation", 2) in unpinned.snapshots
+    assert _key(3, 2, 3) not in pinned.pointers
+    assert _snapshot("simulation", 2) not in pinned.snapshots
+    assert _snapshot("equipment", 3) not in pinned.snapshots
+    assert pinned.kept_generations == unpinned.kept_generations + 1
+    # 지키지 않은 옆 세대는 그대로 지운다. 세대 2 의 포인터는 그 몫 스냅샷(설비 1)과 함께 간다.
+    assert _key(2, 2, 1) in pinned.pointers
+    assert _snapshot("equipment", 1) in pinned.snapshots
+    assert _key(1, 1, 1) in pinned.pointers
+
+
+def test_prune_ignores_an_expired_pin() -> None:
+    pointers, snapshots = _generations(12)
+    plain = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+
+    expired = manifest.prune_generations(
+        pointers=pointers, snapshots=snapshots, pins=[_pin(2, days_left=-1)]
+    )
+
+    assert expired == plain
+    assert _key(2, 2, 1) in expired.pointers
+
+
+def test_a_pin_holds_through_its_last_day_by_the_heads_utc_date() -> None:
+    """기한은 그날까지다. 날짜는 HEAD LastModified 의 UTC 날짜로 잰다 — 앱 시계도 지역 시간도
+    아니다."""
+    pointers, snapshots = _generations(12)
+
+    last_day = manifest.prune_generations(
+        pointers=pointers, snapshots=snapshots, pins=[_pin(2, days_left=0)]
+    )
+
+    assert _key(2, 2, 1) not in last_day.pointers
+    # 지역 시각 11-07 08:00(+09:00)은 UTC 로 11-06 23:00 이다. 11-06 까지인 표지는 아직 지킨다.
+    seoul = timezone(timedelta(hours=9))
+    head_local = ListedObject(pointers[-1].key, datetime(2026, 11, 7, 8, tzinfo=seoul))
+    marker = manifest.pin_marker_key(2, until=datetime(2026, 11, 6).date(), token="0000abcd")
+    shifted = manifest.prune_generations(
+        pointers=[*pointers[:-1], head_local],
+        snapshots=snapshots,
+        pins=[ListedObject(marker, None)],
+    )
+    assert _key(2, 2, 1) not in shifted.pointers
+    assert _key(1, 1, 1) in shifted.pointers
+
+
+def test_prune_ignores_a_pin_without_a_pointer() -> None:
+    """포인터가 이미 없는 seq 의 표지는 아무것도 붙잡지 않는다 — 판정도 남김 수도 그대로다."""
+    pointers, snapshots = _generations(12)
+    plain = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+
+    orphan_pin = manifest.prune_generations(pointers=pointers, snapshots=snapshots, pins=[_pin(99)])
+
+    assert orphan_pin == plain
+
+
+def test_prune_never_deletes_pin_markers() -> None:
+    """표지는 정리 접두 밖이다. 목록에 섞여 들어와도 지울 거리에 들지 않고 HEAD 로도 읽히지
+    않는다."""
+    pointers, snapshots = _generations(12)
+    markers = [_pin(2), _pin(3, days_left=-5), _pin(99)]
+
+    plan = manifest.prune_generations(
+        pointers=[*pointers, *markers],
+        snapshots=[*snapshots, *markers],
+        include_orphans=True,
+        keep_days=0,
+        pins=markers,
+    )
+
+    doomed = {*plan.snapshots, *plan.pointers}
+    assert not any(item.key in doomed for item in markers)
+    assert not any(key.startswith(manifest.KEEP_PREFIX) for key in doomed)
+    assert not any(prefix.startswith(manifest.KEEP_PREFIX) for prefix in manifest.PRUNE_PREFIXES)
+    assert not manifest.KEEP_PREFIX.startswith(manifest.HEAD_PREFIX)
+    keys = [item.key for item in [*markers, *pointers]]
+    assert manifest.select_head_key(keys) == _key(12, 12, 1)
+    assert manifest.detect_fork(keys) == ()
+
+
+def test_pin_marker_key_round_trips() -> None:
+    until = datetime(2026, 12, 24).date()
+    key = manifest.pin_marker_key(42, until=until, token="0000abcd")
+
+    assert key == "generations/keep/000000000042__20261224__0000abcd.json"
+    marker = manifest.parse_pin_marker_key(key)
+    assert (marker.seq, marker.until, marker.token, marker.key) == (42, until, "0000abcd", key)
+    with pytest.raises(ValueError, match="토큰"):
+        manifest.pin_marker_key(42, until=until, token="ABCD0000")
+    with pytest.raises(ValueError, match="시퀀스"):
+        manifest.pin_marker_key(-1, until=until, token="0000abcd")
+
+    broken = [
+        "generations/keep/000000000042__20261332__0000abcd.json",
+        "generations/keep/000000000042__00000101__0000abcd.json",
+        "generations/keep/42__20261224__0000abcd.json",
+        "generations/heads/000000000042__20261224__0000abcd.json",
+        "generations/keep/000000000042__20261224__0000ABCD.json",
+    ]
+    for wrong in broken:
+        with pytest.raises(ValueError, match="지킴 표지"):
+            manifest.parse_pin_marker_key(wrong)
+    later = manifest.pin_marker_key(7, until=until, token="0000abcd")
+    assert manifest.read_pin_markers([key, *broken, later]) == (
+        manifest.parse_pin_marker_key(later),
+        marker,
+    )
+
+
+def test_prune_without_pins_matches_the_old_plan() -> None:
+    """표지가 없거나 아무것도 붙잡지 않으면 판정은 표지 이전과 같다."""
+    pointers, snapshots = _generations(12)
+    plain = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+
+    assert plain.kept_generations == 8
+    assert plain.snapshots == tuple(_snapshot("simulation", seq) for seq in range(1, 5))
+    assert plain.pointers == tuple(_key(seq, seq, 1) for seq in range(1, 5))
+    idle_pins = [_pin(2, days_left=-1), _pin(9_999)]
+    forked = [*pointers, _listed(_key(12, 12, 1, token="ffffbbbb"))]
+    old_pointers, old_snapshots = _generations(8, days_each=30.0)
+    long_pointers, long_snapshots = _generations(2345)
+    cases: list[tuple[list[ListedObject], list[ListedObject], int, int, bool, int]] = [
+        (pointers, snapshots, 5, 7, False, manifest.PRUNE_DELETE_LIMIT),
+        (old_pointers, old_snapshots, 5, 7, False, manifest.PRUNE_DELETE_LIMIT),
+        (long_pointers, long_snapshots, 5, 7, False, manifest.PRUNE_DELETE_LIMIT),
+        (long_pointers, long_snapshots, 5, 7, False, 150),
+        (forked, snapshots, 5, 7, False, manifest.PRUNE_DELETE_LIMIT),
+        (pointers, snapshots, 1, 0, True, manifest.PRUNE_DELETE_LIMIT),
+    ]
+    for case_pointers, case_snapshots, keep_last, keep_days, orphans, limit in cases:
+        before = manifest.prune_generations(
+            pointers=case_pointers,
+            snapshots=case_snapshots,
+            keep_last=keep_last,
+            keep_days=keep_days,
+            include_orphans=orphans,
+            limit=limit,
+        )
+        for pins in ((), idle_pins):
+            assert (
+                manifest.prune_generations(
+                    pointers=case_pointers,
+                    snapshots=case_snapshots,
+                    keep_last=keep_last,
+                    keep_days=keep_days,
+                    include_orphans=orphans,
+                    limit=limit,
+                    pins=pins,
+                )
+                == before
+            )
+
+
 def test_writer_age_uses_server_time_only() -> None:
     """PC 시계가 어긋나면 조언이 거짓말이 된다. 인자에 클라이언트 시각 자리가 없다."""
     mark = WriterMark(

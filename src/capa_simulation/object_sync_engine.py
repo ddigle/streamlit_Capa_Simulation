@@ -1317,8 +1317,14 @@ def plan_prune(
     keep_days: int = manifest.KEEP_DAYS,
     include_orphans: bool = False,
 ) -> PrunePlan:
-    """목록만 읽어 판정한다. `generations/` · `simulation/` · `equipment/` 밖은 보지 않는다."""
+    """목록만 읽어 판정한다. 정리 접두(`PRUNE_PREFIXES`)와 지킴 표지(`KEEP_PREFIX`) 밖은 보지
+    않는다.
+
+    지킴 표지는 목록 한 번으로 읽고 GET 하지 않는다. 그 목록이 실패하면 판정 전체가 실패해 아무것도
+    지우지 않는다 — 표지를 못 읽은 채 판정하면 지킨 세대가 지울 거리에 든다.
+    """
     pointers = client.list_all_objects(manifest.HEAD_PREFIX)
+    pins = client.list_all_objects(manifest.KEEP_PREFIX)
     snapshots = [
         record
         for name in DATASET_NAMES
@@ -1330,6 +1336,7 @@ def plan_prune(
         keep_last=keep_last,
         keep_days=keep_days,
         include_orphans=include_orphans,
+        pins=[manifest.ListedObject(item.key, item.last_modified) for item in pins],
     )
 
 
