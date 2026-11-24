@@ -23,7 +23,7 @@ import sys
 import time
 import types
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -42,6 +42,7 @@ from before_custom_copy import (
 )
 from custom_key_tables import PART_A, PART_B, custom_keyed_tables
 
+from capa_simulation import application_bootstrap
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
 from capa_simulation.io.company_bigdataquery_adapter import (
@@ -57,16 +58,24 @@ from capa_simulation.persistence.equipment_repository import (
 )
 from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
+from capa_simulation.services import builtin_seed
 from capa_simulation.services.core_data_derivation import (
     CUSTOM_BLANK,
     build_q_core_data,
     plan_row_mask,
 )
+from capa_simulation.services.dashboard import home_aggregation_wafer_load
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
-from capa_simulation.services.legacy_comparison import COMPARISONS
+from capa_simulation.services.legacy_comparison import COMPARISON_KEYS, COMPARISONS, plan_row_frame
+from capa_simulation.services.load_calculator import calculate_wafer_load
+from capa_simulation.services.product_type import (
+    EDP_PRODUCT_TYPE,
+    HBM_PRODUCT_TYPE,
+    TOP_DUMMY_DIVISION,
+)
 from capa_simulation.services.required_equipment import (
     LOAD_KEYS,
     REQB_COLUMNS,
@@ -1410,6 +1419,201 @@ def test_the_plan_row_and_conflict_lines_stay_short_and_check_at_real_widths() -
         "- 8-2K 종류 2 · 충돌 12,345 = 키밖 12,000 + 그밖 345 · Capa둘이상 0",
         "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0",
     ]
+
+
+def _month_comparison(*rows: tuple[float | None, float | None, bool]) -> pd.DataFrame:
+    """(기존값, 신규값, 값 불일치) 줄로 지은, 키가 생산계획년월 하나인 `compare_metric` 꼴."""
+    frame = _route_comparison(*(("-", legacy, fresh, mismatch) for legacy, fresh, mismatch in rows))
+    months = [str(202601 + offset) for offset in range(len(rows))]
+    return frame.drop(columns="WF 구분").assign(생산계획년월=months)
+
+
+def test_months_off_counts_every_month_outside_the_tolerance() -> None:
+    """`넘음` 은 ±0.1% 안에 들지 못한 달 수다 — 한쪽에만 있는 달 · 접지 못한 달 · 원천 0 인데 앱이
+    있는 달도 넘고, 두 쪽 모두 0 인 달은 든다. 허용 오차는 넘겨받는다."""
+    monthly = _month_comparison(
+        (100.0, 100.0, False),
+        (100.0, 100.05, False),
+        (0.0, 0.0, False),
+        (100.0, 101.0, False),
+        (None, 50.0, False),
+        (50.0, None, False),
+        (0.0, 5.0, False),
+        (100.0, 100.0, True),
+    )
+
+    assert checks.months_off(monthly) == 5
+    assert checks.months_off(monthly, tolerance=0.02) == 4
+    assert checks.months_off(monthly.iloc[:3]) == 0
+    assert checks.months_off(monthly.iloc[0:0]) == 0
+
+
+def test_same_months_counts_equal_months_over_the_union_of_both_sides() -> None:
+    """`G` · `총` 은 두 달 합이 같은 달 수 / 두 쪽 달의 합집합 수다 — 값이 다른 달과 한쪽에만 있는
+    달은 같지 않고, 더한 차례에 따른 반올림만 다르면 같다."""
+    left = pd.Series({"202601": 0.1 + 0.2, "202602": 2.0, "202603": 3.0})
+    right = pd.Series({"202601": 0.3, "202602": 2.5, "202604": 4.0})
+
+    assert checks.same_months(left, right) == checks.SameMonths(same=1, months=4)
+    assert checks.same_months(left, right).cell("G") == "G 1/4"
+    assert checks.same_months(left, left) == checks.SameMonths(same=3, months=3)
+    empty = pd.Series(dtype="float64")
+    assert checks.same_months(empty, empty) == checks.SameMonths(same=0, months=0)
+
+
+def _seed_variant(path: Path, change: Callable[[pd.DataFrame], pd.DataFrame]) -> Path:
+    """내장 합성 시드 원천을 `change` 로 고쳐 앱과 같은 길(파생 → 리비전 1 → 공식)로 등록하고 이름을
+    표지값으로 바꾼 DB — 원천과 리비전 표가 함께 바뀐다. 모듈 범위 `simulation_db` 는 건드리지
+    않는다."""
+    frame = change(builtin_seed.build_builtin_core_data())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(builtin_seed, "build_builtin_core_data", lambda: frame.copy())
+        prepared = builtin_seed.build_builtin_seed_dataset()
+        assert prepared.reference_conflicts.empty
+        patch.setattr(application_bootstrap, "build_builtin_seed_dataset", lambda: prepared)
+        path.parent.mkdir(parents=True)
+        repository = DuckDBScenarioRepository(path)
+        repository.initialize()
+        assert ensure_initial_scenario(repository).status == "created_builtin_seed"
+    _plant_sentinels(path)
+    return path
+
+
+def _product_rows(frame: pd.DataFrame, product: str) -> pd.Series:
+    return frame["제품정보"].astype("string").str.endswith(product).fillna(False).astype(bool)
+
+
+def _with_divisions(
+    frame: pd.DataFrame, product: str, product_type: str, divisions: Sequence[str]
+) -> pd.DataFrame:
+    """`product` 로 끝나는 제품의 행(계획 행 · 경로 행)을 `product_type` 으로 바꾸고, 그 행을
+    `WF 구분` 만 `divisions` 로 바꿔 하나씩 더 싣는다 — 원천처럼 계획 줄마다 `WF 구분` 줄이
+    여럿이다."""
+    chosen = _product_rows(frame, product)
+    changed = frame.copy()
+    changed.loc[chosen, "제품타입"] = product_type
+    copies = [changed.loc[chosen].assign(**{"WF 구분": division}) for division in divisions]
+    return pd.concat([changed, *copies], ignore_index=True)
+
+
+def _set_source_wafers(path: Path, values: Sequence[tuple[int, float]]) -> None:
+    """(파생 프레임 행 번호, 값) 마다 원천 행 `WF수(매)` 를 고친다 — 파생 행 번호는 원천 행
+    차례다."""
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "WF수(매)" = ? WHERE source_row_no = ?',
+            [[value, row_numbers[index]] for index, value in values],
+        )
+
+
+def _source_of(path: Path) -> checks.SourceData:
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    return source
+
+
+def _app_wafer(source: checks.SourceData) -> pd.DataFrame:
+    tables = source.tables
+    return calculate_wafer_load(tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
+
+
+def _plant_plan_row_wafers(path: Path) -> int:
+    """계획 행(계획기초정보여부 Y · 공정 빈)의 `WF수(매)` 를 앱 Wafer 부하량(같은 계획 줄 × WF
+    구분 — `COMPARISON_KEYS`)으로 다시 싣는다 — 원천 계획 행 집계와 앱 계산이 같은 표본. 시드 원천
+    값은 수율을 나누지 않아 앱 값과 늘 달라 `넘음 0` 을 만들지 못한다. 돌려주는 것은 다시 실은 행
+    수."""
+    source = _source_of(path)
+    wafer = _app_wafer(source)
+    keys = list(COMPARISON_KEYS)
+    loads = (
+        _keyed(wafer, keys)
+        .assign(물량=pd.to_numeric(wafer["물량"]).to_numpy())
+        .groupby(keys, as_index=False)["물량"]
+        .sum()
+    )
+    plan_rows = plan_row_frame(build_q_core_data(source.raw, load_core_data_contract()))
+    merged = (
+        _keyed(plan_rows, keys)
+        .assign(_행=plan_rows.index)
+        .merge(loads, on=keys, how="inner", validate="one_to_one")
+    )
+    assert len(merged) == len(plan_rows)
+    _set_source_wafers(
+        path,
+        [(int(row), float(load)) for row, load in zip(merged["_행"], merged["물량"], strict=True)],
+    )
+    return len(merged)
+
+
+def _hbm_dummy_and_edp_source(frame: pd.DataFrame) -> pd.DataFrame:
+    """제품 A 는 HBM 으로 `Dummy` · `Top_Dummy` 줄을 더 싣고, 제품 B 는 EDP-TSV 로 — 달 대조의 두
+    빼기(Dummy 계열 · EDP)와 환산 두 기준(HOME 집계 · 총량)이 갈리는 표본."""
+    hbm = _with_divisions(frame, "PRODUCT_A", HBM_PRODUCT_TYPE, ["Dummy", TOP_DUMMY_DIVISION])
+    hbm.loc[_product_rows(hbm, "PRODUCT_B"), "제품타입"] = EDP_PRODUCT_TYPE
+    return hbm
+
+
+def _division_count(path: Path, division: str) -> int:
+    with duckdb.connect(str(path), read_only=True) as connection:
+        row = connection.execute(
+            'SELECT count(*) FROM raw_data.core_data WHERE "WF 구분" = ?', [division]
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def test_the_plan_row_line_sums_months_without_dummy_series_and_edp_on_both_sides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사용자 요청 F · 답 Q8 ② — 원천과 리비전에 HBM `Dummy` · `Top_Dummy` 줄과 EDP-TSV 제품이 함께
+    있고 계획 행 값이 앱 Wafer 부하량과 같으면 요약 `8-2P` 는 `달 0.00% · 넘음 0` 이다(달 대조가 두
+    쪽 모두 Dummy 계열과 EDP 를 뺀다 — 한쪽만 빼면 모든 달이 넘는다). 총량 ≠ HOME 집계인 표본에서
+    `G` · `총` 은 모든 달이 같다(환산 「HOME 집계 기준」 은 HOME Wafer 계획과, 「산출 기준 총량」 은
+    신규 Wafer 부하량 합과). 한 계획 행을 1% 틀면 그 달 하나만 넘는다."""
+    path = _seed_variant(tmp_path / "dummy" / "capa_simulation.duckdb", _hbm_dummy_and_edp_source)
+    _plant_plan_row_wafers(path)
+    wafer = _app_wafer(_source_of(path))
+    total = checks._monthly_sums(wafer)
+    home = checks._monthly_sums(home_aggregation_wafer_load(wafer))
+    # 표본이 설계대로인지 — 달마다 총량과 HOME 집계가 다르고, 앱 Wafer 에 EDP 행이 있다.
+    months = len(total)
+    assert months > 1 and set(total.index) == set(home.index)
+    assert all(abs(total[month] - home[month]) > 1 for month in total.index)
+    assert checks._edp_rows(wafer).any()
+    dummy, top = _division_count(path, "Dummy"), _division_count(path, TOP_DUMMY_DIVISION)
+    assert dummy > 0 and top > 0
+    nudged = tmp_path / "nudged" / "capa_simulation.duckdb"
+    nudged.parent.mkdir()
+    shutil.copyfile(path, nudged)
+    with duckdb.connect(str(nudged)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "WF수(매)" = "WF수(매)" * 1.01 WHERE source_row_no = ('
+            "SELECT min(source_row_no) FROM raw_data.core_data WHERE "
+            "\"계획기초정보여부\" = 'Y' AND coalesce(trim(\"공정\"), '') = '' "
+            "AND \"WF 구분\" = 'Core')"
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+    nudged_code, nudged_output = _run(capsys, "--only", "legacy", "--database", str(nudged))
+
+    assert (code, nudged_code) == (0, 0)
+    _assert_no_leak(output)
+    tail = f"G {months}/{months} · 총 {months}/{months} · D {dummy} · T {top} · 못봄 0"
+    assert _summary_line(output, "8-2P") == f"- 8-2P 종류 1 · 불일치 0 · 달 0.00% · 넘음 0 · {tail}"
+    assert _summary_line(nudged_output, "8-2P") == (
+        f"- 8-2P 종류 1 · 불일치 0 · 달 0.99% · 넘음 1 · {tail}"
+    )
+    assert f"- 달 비 — 달 {months} 가운데 ±0.1% 안에 들지 못한 달 0(" in output
+    assert checks.check_transcript(_summary(nudged_output)) == []
 
 
 def test_the_route_key_label_counts_the_route_keys() -> None:
