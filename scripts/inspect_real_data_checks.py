@@ -55,7 +55,7 @@
   없으면 계산과 손 SQL 이 그대로 멈춰 드러난다. 소요대수는 앱처럼 사본의 지금 부하 예외 선언
   (`0040` 판 이력의 마지막 줄 — 같은 연결로 한 번 읽음)을 넘겨 셈하고, 선언 표가 없는 사본(0039 뒤 ·
   0040 전)은 빈 선언으로 셈하며 블록 앞에 `사본 0040 전` 한 줄을 찍는다. 선언이 있으면 판 · 공정 수
-  한 줄(이름 없음)을 찍는다.
+  한 줄(이름 없음)을 찍고, 8-2 끝 `8-2E` 가 선언 공정의 WF 경로를 원천 `WF수(매)` 와 맞댄다.
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
   코드, 키별 값, 합계 물량, 파일 경로, **예외 문구**를 찍지 않는다 — 이 앱의 오류 문구에는
   설계상 식별값이 박혀 있다. 실패는 예외 종류(클래스 이름)만 적는다. 출력은 리뷰 문서를 거쳐
@@ -275,9 +275,11 @@ from capa_simulation.services.month_filter import (  # noqa: E402
     filter_month_range,
 )
 from capa_simulation.services.product_type import (  # noqa: E402
+    CORE_DIVISION,
     DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
     PRODUCT_TYPE_COLUMN,
+    SOURCE_TOP_DIVISION,
     TOP_DUMMY_DIVISION,
     WF_DIVISION_COLUMN,
     WF_DIVISIONS_BY_PRODUCT_TYPE,
@@ -305,6 +307,7 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
 from capa_simulation.services.route_load_exceptions import (  # noqa: E402
     NO_ROUTE_LOAD_EXCEPTIONS,
     RouteLoadDeclaration,
+    route_load_targets,
 )
 from capa_simulation.services.scenario_transform import (  # noqa: E402
     MONTHLY_TABLES,
@@ -2791,20 +2794,28 @@ def same_months(left: pd.Series, right: pd.Series) -> SameMonths:
     return SameMonths(same=same, months=len(months))
 
 
+def keys_within(comparison: pd.DataFrame, tolerance: float = TIGHT_TOLERANCE) -> pd.Series:
+    """`compare_metric` 결과에서 ±`tolerance` 안에 든 키 — 양쪽에 값이 있고 접을 수 있었으며
+    차이율이 허용 안이거나 차이가 0 인 키다. 두 쪽이 모두 0 인 키는 든다(차이율이 없어 차이로 본다).
+
+    한쪽에만 있는 키 · 원천을 접지 못한 키(`값 불일치`) · 원천 0 인데 앱이 있는 키는 들지 못한다.
+    """
+    legacy = pd.to_numeric(comparison["기존값"], errors="coerce")
+    fresh = pd.to_numeric(comparison["신규값"], errors="coerce")
+    matched = ~comparison["값 불일치"].astype(bool) & legacy.notna() & fresh.notna()
+    rate = pd.to_numeric(comparison["차이율"], errors="coerce")
+    gap = pd.to_numeric(comparison["차이"], errors="coerce")
+    return (matched & (rate.le(tolerance) | gap.eq(0)).fillna(False)).astype(bool)
+
+
 def months_off(monthly: pd.DataFrame, tolerance: float = TIGHT_TOLERANCE) -> int:
     """달마다 맞댄 대조(`compare_metric` 의 키가 생산계획년월 하나)에서 ±`tolerance` 안에 들지
-    못한 달 수.
+    못한 달 수(`keys_within` 의 나머지).
 
     한쪽에만 있는 달 · 원천을 접지 못한 달(`값 불일치`) · 원천 0 인데 앱이 있는 달도 든다. 두
     쪽이 모두 0 인 달은 든 것으로 본다.
     """
-    legacy = pd.to_numeric(monthly["기존값"], errors="coerce")
-    fresh = pd.to_numeric(monthly["신규값"], errors="coerce")
-    matched = ~monthly["값 불일치"].astype(bool) & legacy.notna() & fresh.notna()
-    rate = pd.to_numeric(monthly["차이율"], errors="coerce")
-    gap = pd.to_numeric(monthly["차이"], errors="coerce")
-    within = matched & (rate.le(tolerance) | gap.eq(0)).fillna(False).astype(bool)
-    return int(len(monthly) - within.sum())
+    return int(len(monthly) - keys_within(monthly, tolerance).sum())
 
 
 @dataclass(frozen=True)
@@ -3003,6 +3014,180 @@ def _custom_key_section(
     return [*lines, ""]
 
 
+# ---------------------------------------------------------------------------------- 8-2E
+#
+# 공정별 부하 산출 예외(사용자 요청 E · 2026-11-22 답 Q8 ③)가 원천 산식을 따라가는지 본다 — 지금
+# 선언 공정의 소요기준 WF 경로만 원천 경로 `WF수(매)` 와 선언을 건 신규 `부하량` 을 경로 키로
+# 맞댄다(위 Wafer 경로 맞대기와 같은 접기). 원천은 그 공정의 Core 를 Buffer Wafer × Core 구분_Chip
+# 으로, Top_Dummy 를 0 으로 실어 보낸다는 관측이고 나머지 `WF 구분` 은 일반 산식이다. 켬 · 끔
+# 견줌(그 밖의 공정 소요대수 · HOME Wafer 계획이 같은지)은 6-3 a
+# (`inspect_revision_calculations.py`)가 맡는다.
+
+ROUTE_EXCEPTION_METRIC: Final = LegacyMetric(
+    label="부하 예외 경로", legacy_column=WAFER_LOAD_COLUMN, new_column="부하량"
+)
+
+
+@dataclass(frozen=True)
+class KeyAgreement:
+    """`WF 구분` 무리 하나에서 ±0.1% 안에 든 키 `within` 와 그 무리의 키 `keys`."""
+
+    within: int
+    keys: int
+
+    def cell(self, label: str) -> str:
+        return f"{label} {self.within:,}/{self.keys:,}"
+
+
+@dataclass(frozen=True)
+class RouteExceptionNote:
+    """요약 `8-2E` 한 줄의 수 — `선언 n · Core a/N · TD0 b/N · 그밖 c/N · Top비 x(m)`.
+
+    `core` · `top_dummy` · `other` 는 선언 공정의 WF 경로 키를 `WF 구분` 으로 가른 세 무리(`Core` ·
+    `Top_Dummy` · 그 밖 — Buffer · Top · Dummy 와 그 밖 표기)다. `top_ratio` 는 그 밖 가운데 `Top`
+    키의 기존 ÷ 신규 중앙(두 값이 모두 양수인 키 `top_keys` 개 — 없으면 None)이다.
+    """
+
+    declared: int
+    core: KeyAgreement
+    top_dummy: KeyAgreement
+    other: KeyAgreement
+    top_ratio: float | None
+    top_keys: int
+
+    def line(self) -> str:
+        ratio = "-" if self.top_ratio is None else f"{self.top_ratio:.3f}"
+        return _note(
+            "8-2E",
+            f"선언 {self.declared:,}",
+            self.core.cell("Core"),
+            self.top_dummy.cell("TD0"),
+            self.other.cell("그밖"),
+            f"Top비 {ratio}({self.top_keys:,})",
+        )
+
+
+def _division_rows(comparison: pd.DataFrame, division: str) -> pd.Series:
+    """`WF 구분` 이 `division` 인 키(대소문자 · 앞뒤 공백 무시)."""
+    return (
+        match_key(comparison[WF_DIVISION_COLUMN])
+        .eq(scalar_match_key(division))
+        .fillna(False)
+        .astype(bool)
+    )
+
+
+def _agreement(within: pd.Series, rows: pd.Series) -> KeyAgreement:
+    return KeyAgreement(within=int((within & rows).sum()), keys=int(rows.sum()))
+
+
+def route_exception_note(comparison: pd.DataFrame, declared: int) -> RouteExceptionNote:
+    """선언 공정의 WF 경로를 경로 키로 맞댄 `compare_metric` 결과를 `WF 구분` 무리로 가른다.
+
+    든 키는 `keys_within`(±0.1%, 두 쪽 모두 0 인 키도 든다)이다 — `Top_Dummy` 는 신규가 0 이라
+    원천도 0 인 키만 든다. 바탕이 없어 소요대수에서 뺀 Core 줄은 신규 쪽에 없어 들지 못한다.
+    """
+    within = keys_within(comparison)
+    core = _division_rows(comparison, CORE_DIVISION)
+    top_dummy = _division_rows(comparison, TOP_DUMMY_DIVISION)
+    other = ~(core | top_dummy)
+    top = ratio_distribution(comparison.loc[_division_rows(comparison, SOURCE_TOP_DIVISION)])
+    return RouteExceptionNote(
+        declared=declared,
+        core=_agreement(within, core),
+        top_dummy=_agreement(within, top_dummy),
+        other=_agreement(within, other),
+        top_ratio=top.median,
+        top_keys=top.keys,
+    )
+
+
+def _route_exception_rows(comparison: pd.DataFrame) -> list[list[str]]:
+    """무리마다 키 · ±0.1% 안 · 기존에만 · 신규에만 · 값 불일치(`WF 구분` 이름은 계약 어휘)."""
+    within = keys_within(comparison)
+    core = _division_rows(comparison, CORE_DIVISION)
+    top_dummy = _division_rows(comparison, TOP_DUMMY_DIVISION)
+    groups = (
+        (f"`{CORE_DIVISION}`", core),
+        (f"`{TOP_DUMMY_DIVISION}`", top_dummy),
+        ("그 밖", ~(core | top_dummy)),
+        (f"그 밖 가운데 `{SOURCE_TOP_DIVISION}`", _division_rows(comparison, SOURCE_TOP_DIVISION)),
+    )
+    rows = []
+    for label, chosen in groups:
+        summary = summarize_comparison(comparison.loc[chosen])
+        rows.append(
+            [
+                label,
+                _count(int(chosen.sum())),
+                _count(int((within & chosen).sum())),
+                _count(cast(int, summary["기존에만 있음"])),
+                _count(cast(int, summary["신규에만 있음"])),
+                _count(cast(int, summary["값 불일치"])),
+            ]
+        )
+    return rows
+
+
+def _route_exception_section(
+    core: pd.DataFrame,
+    required: Required,
+    grain: Sequence[str],
+    contract: CoreDataContract,
+    declaration: RouteLoadDeclaration,
+    notes: list[str],
+) -> list[str]:
+    """선언 공정의 WF 경로 — 원천 `WF수(매)` ↔ 선언을 건 신규 `부하량`(요약 `8-2E`)."""
+    if not declaration:
+        notes.append(_note("8-2E", "선언 없음"))
+        return ["**부하 예외 경로** — 지금 선언이 없어 맞댈 경로가 없다", ""]
+    declared = f"선언 {len(declaration):,}"
+    within = f"±{TIGHT_TOLERANCE:.1%} 안"
+    lines = [
+        "**부하 예외 경로** — 지금 선언 공정의 소요기준 WF 경로만 원천 `WF수(매)` 와 선언을 건 "
+        f"신규 `부하량` 을 {with_direction_particle(ROUTE_KEY_LABEL)} 맞댄다(위 Wafer 경로 "
+        f"맞대기와 같은 접기). 산식은 `{CORE_DIVISION}` 줄을 Buffer Wafer × Core 구분_Chip 으로, "
+        f"`{TOP_DUMMY_DIVISION}` 줄을 0 으로 바꾸고 그 밖은 일반 산식이다. 든 키는 {within} — "
+        f"바탕이 없어 소요대수에서 뺀 `{CORE_DIVISION}` 줄은 `기존에만` 에 든다. 공정 이름은 찍지 "
+        "않는다.",
+        "",
+    ]
+    if required.frame is None:
+        notes.append(_note("8-2E", declared, _short(required.failure)))
+        return [*lines, f"- 신규 계산 {required.failure} — 경로 키로 맞대지 않았다", ""]
+    if not _filled(core, WAFER_LOAD_COLUMN):
+        notes.append(_note("8-2E", declared, "빔"))
+        return [*lines, "- 원천 `WF수(매)` 가 비어 있다", ""]
+    try:
+        route = _route_frame(core)
+        fresh = required.frame
+        comparison = compare_metric(
+            route.loc[route_load_targets(route, declaration)],
+            fresh.loc[route_load_targets(fresh, declaration)],
+            ROUTE_EXCEPTION_METRIC,
+            contract,
+            keys=REQB_COLUMNS,
+            grain=[*grain, *REQB_COLUMNS],
+        )
+        note = route_exception_note(comparison, len(declaration))
+        rows = _route_exception_rows(comparison)
+    except Exception as exc:  # 이 절이 멈춰도 블록의 나머지와 요약은 지킨다
+        notes.append(_note("8-2E", declared, _failure(exc)))
+        return [*lines, f"- 부하 예외 경로 — {_failure(exc)}", ""]
+    ratio = "-" if note.top_ratio is None else f"{note.top_ratio:.4g}"
+    lines.extend(
+        [
+            *_table(["`WF 구분`", "키", within, "기존에만", "신규에만", "값 불일치"], rows),
+            "",
+            f"- `{SOURCE_TOP_DIVISION}` 줄 기존÷신규 — 두 값이 모두 양수인 키 {note.top_keys:,} · "
+            f"중앙 {ratio}",
+            "",
+        ]
+    )
+    notes.append(note.line())
+    return lines
+
+
 def check_legacy(session: Session) -> list[str]:
     lines = _heading("8-2", "기존 결과 대조 — 분포만", "legacy")
     notes = session.notes
@@ -3090,6 +3275,9 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend(_pcb_section(raw, core, grain))
     lines.extend(_plan_row_section(core, tables, contract, source.custom, notes))
     lines.extend(_custom_key_section(source, contract, notes))
+    lines.extend(
+        _route_exception_section(core, required, grain, contract, session.route_exceptions(), notes)
+    )
     lines.extend(
         [
             f"- ≈ 는 기준의 ±{NEAR_TOLERANCE:.0%} 안. 기준 "

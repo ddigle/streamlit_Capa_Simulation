@@ -76,7 +76,10 @@ from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
 from capa_simulation.services.revision_compatibility import CUSTOM_MIGRATION
-from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
+from capa_simulation.services.route_load_exceptions import (
+    NO_ROUTE_LOAD_EXCEPTIONS,
+    route_load_targets,
+)
 from capa_simulation.settings import DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1417,6 +1420,158 @@ def test_the_route_key_label_counts_the_route_keys() -> None:
     assert checks.ROUTE_KEY_LABEL == f"경로 키 {len(REQB_COLUMNS)}"
     assert "CUSTOM" in REQB_COLUMNS
     assert re.findall(r"경로 키 \d+", source) == []
+
+
+def _route_comparison(*rows: tuple[str, float | None, float | None, bool]) -> pd.DataFrame:
+    """(WF 구분, 기존값, 신규값, 값 불일치) 줄로 지은 `compare_metric` 꼴의 합성 결과."""
+    frame = pd.DataFrame(rows, columns=["WF 구분", "기존값", "신규값", "값 불일치"])
+    frame["기존값"] = pd.to_numeric(frame["기존값"])
+    frame["신규값"] = pd.to_numeric(frame["신규값"])
+    frame["차이"] = frame["신규값"] - frame["기존값"]
+    denominator = frame["기존값"].abs()
+    frame["차이율"] = (frame["차이"].abs() / denominator).where(denominator.gt(0))
+    return frame
+
+
+def test_the_route_exception_line_counts_each_wf_division_within_a_tenth_of_a_percent() -> None:
+    """`8-2E` — 선언 공정의 WF 경로 키를 `Core` · `Top_Dummy` · 그 밖으로 가르고 ±0.1% 안에 든
+    키를 센다. 두 쪽 모두 0 인 Top_Dummy 키는 들고, 한쪽에만 있는 키(바탕 없음으로 신규에서 빠진
+    Core 줄)와 접지 못한 키는 들지 못한다. `Top비` 는 그 밖 가운데 Top 키의 기존 ÷ 신규 중앙이다.
+    `WF 구분` 은 대소문자를 가리지 않는다."""
+    comparison = _route_comparison(
+        ("Core", 100.0, 100.0, False),
+        ("CORE", 100.0, 100.05, False),
+        ("Core", 100.0, 101.0, False),
+        ("Core", 100.0, None, False),
+        ("TOP_DUMMY", 0.0, 0.0, False),
+        ("Top_Dummy", 5.0, 0.0, False),
+        ("Buffer", 50.0, 50.0, False),
+        ("Buffer", None, 50.0, True),
+        ("DUMMY", 10.0, 10.0, False),
+        ("TOP", 30.0, 30.0, False),
+        ("Top", 31.0, 30.0, False),
+        ("Top", 20.0, 20.0, False),
+    )
+
+    note = checks.route_exception_note(comparison, 2)
+
+    assert note.line() == "- 8-2E 선언 2 · Core 2/4 · TD0 1/2 · 그밖 4/6 · Top비 1.000(3)"
+    assert checks._route_exception_rows(comparison) == [
+        ["`Core`", "4", "2", "1", "0", "0"],
+        ["`Top_Dummy`", "2", "1", "0", "0", "0"],
+        ["그 밖", "6", "4", "0", "0", "1"],
+        ["그 밖 가운데 `Top`", "3", "2", "0", "0", "0"],
+    ]
+    empty = checks.route_exception_note(comparison.iloc[0:0], 1)
+    assert empty.line() == "- 8-2E 선언 1 · Core 0/0 · TD0 0/0 · 그밖 0/0 · Top비 -(0)"
+
+
+def test_the_route_exception_line_stays_short_and_checks_at_real_widths() -> None:
+    """손으로 옮기는 줄이라 실데이터 꼴의 네 자리 키 수에서도 확인 코드까지 90 자 안이고, 확인
+    코드가 다시 셈과 맞으며 줄 안 식(` = `)이 없다. 선언이 없거나 멈춘 꼴도 같다."""
+    wide = checks.RouteExceptionNote(
+        declared=1,
+        core=checks.KeyAgreement(within=9_998, keys=9_999),
+        top_dummy=checks.KeyAgreement(within=9_999, keys=9_999),
+        other=checks.KeyAgreement(within=9_997, keys=9_999),
+        top_ratio=1.0004,
+        top_keys=9_999,
+    )
+    notes = [
+        wide.line(),
+        checks._note("8-2E", "선언 없음"),
+        checks._note("8-2E", "선언 1", "빔"),
+        checks._note("8-2E", "선언 1", "실패(KeyError)"),
+    ]
+    lines = [line for line in checks.summary_lines(notes) if line.startswith("- 8-2E")]
+
+    assert len(lines) == 4
+    assert max(len(line) for line in lines) <= 90, lines
+    assert checks.check_transcript(lines) == []
+    assert not any(" = " in line for line in lines)
+    assert _uncoded(lines)[0] == (
+        "- 8-2E 선언 1 · Core 9,998/9,999 · TD0 9,999/9,999 · 그밖 9,997/9,999 · Top비 1.000(9,999)"
+    )
+
+
+def _plant_declared_route_wafers(path: Path, declaration: dict[str, str]) -> int:
+    """선언 공정의 소요기준 WF 경로 행 `WF수(매)` 를 선언을 건 신규 `부하량` 으로 다시 싣는다(같은
+    계획 줄 × WF 구분). 신규 쪽에 없는 줄(바탕 없음으로 빠진 Core)은 그대로 둔다. 돌려주는 것은
+    다시 실은 원천 행 수."""
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    core = build_q_core_data(source.raw, load_core_data_contract())
+    required = checks._required_equipment(source.tables, route_exceptions=declaration)
+    plan = [key for key in LOAD_KEYS if key != "소요기준"]
+    wafer = required.loc[route_load_targets(required, declaration)]
+    loads = _keyed(wafer, plan).assign(부하량=wafer["부하량"].to_numpy()).drop_duplicates(plan)
+    routes = core.loc[core["Area_Name"].notna()]
+    routes = routes.loc[route_load_targets(routes, declaration)]
+    merged = _keyed(routes, plan).assign(_행=routes.index).merge(loads, on=plan, how="inner")
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "WF수(매)" = ? WHERE source_row_no = ?',
+            [
+                [float(load), row_numbers[int(index)]]
+                for index, load in zip(merged["_행"], merged["부하량"], strict=True)
+            ],
+        )
+    return len(merged)
+
+
+def _nudge_one_route_wafer(path: Path, process: str, division: str) -> None:
+    """선언 공정의 그 `WF 구분` 경로 행 하나(가장 이른 달)의 `WF수(매)` 를 1% 키운다."""
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "WF수(매)" = "WF수(매)" * 1.01 WHERE source_row_no = ('
+            'SELECT min(source_row_no) FROM raw_data.core_data WHERE "공정" = ? '
+            'AND "WF 구분" = ? AND "생산계획년월" = ('
+            'SELECT min("생산계획년월") FROM raw_data.core_data WHERE "공정" = ?))',
+            [process, division, process],
+        )
+
+
+def _touching_declaration() -> dict[str, str]:
+    """시드 선언을 이 DB 의 표지값 붙은 공정 이름으로 — 시드의 WF 경로에 실제로 닿는다."""
+    prefix = RENAMED_COLUMNS["공정"]
+    return {f"{prefix}{process}": formula for process, formula in seed_route_declaration().items()}
+
+
+def test_the_route_exception_block_follows_the_source_formula_on_the_declared_routes(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사용자 요청 E · 답 Q8 ③ — 선언 공정의 WF 경로를 원천 `WF수(매)` 와 선언을 건 신규
+    `부하량` 으로 맞댄다. 원천 경로 값을 신규 값으로 실으면 그 밖(시드의 Base)이 들고 한 키를 1%
+    틀면 그 키만 빠진다. 시드에는 Buffer 가 없어 선언 공정의 Core 줄이 바탕 없음으로 신규에서
+    빠지므로 Core 는 모두 `기존에만` 이다. 공정 이름은 찍지 않는다."""
+    declaration = _touching_declaration()
+    (process,) = declaration
+    target = tmp_path / "declared" / "capa_simulation.duckdb"
+    target.parent.mkdir()
+    path = database_with_route_exceptions(simulation_db, target, declaration)
+    assert _plant_declared_route_wafers(path, declaration) == 12
+    _nudge_one_route_wafer(path, process, "Base")
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        _summary_line(output, "8-2E")
+        == "- 8-2E 선언 1 · Core 0/12 · TD0 0/0 · 그밖 11/12 · Top비 -(0)"
+    )
+    assert "| `Core` | 12 | 0 | 12 | 0 | 0 |" in output
+    assert "| 그 밖 | 12 | 11 | 0 | 0 | 0 |" in output
+    assert checks.check_transcript(_summary(output)) == []
 
 
 def test_raw_columns_rejoin_the_derived_frame_by_row_number_after_a_drop() -> None:
@@ -3916,6 +4071,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-2B",
         "8-2P",
         "8-2K",
+        "8-2E",
         "8-3",
         "8-4",
         "8-4s",
@@ -3942,15 +4098,17 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         bare[7],
     ), bare[7]
     assert bare[8] == "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0"
-    assert bare[11] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
-    assert bare[12] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
-    assert bare[13] == "- 8-10 활성 1 · 모두 0 (12/12)"
-    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[14]), bare[14]
+    # 합성 표본 사본에는 부하 예외 선언이 없다.
+    assert bare[9] == "- 8-2E 선언 없음"
+    assert bare[12] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
+    assert bare[13] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
+    assert bare[14] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[15]), bare[15]
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[15],
-    ), bare[15]
-    assert bare[16] == "- 8-12 전부 1 · 걸림 0"
+        bare[16],
+    ), bare[16]
+    assert bare[17] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 5
