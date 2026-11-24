@@ -807,8 +807,8 @@ def test_a_package_that_fails_to_import_does_not_stop_the_catalog_query(
 
 
 def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_the_table() -> None:
-    """조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과 줄은 그 아래 표 바로 위다
-    (설계 규칙 UI-LAY-11)."""
+    """원천 종류 단추(맨 앞) · 조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과
+    줄은 그 아래 표 바로 위다(설계 규칙 UI-LAY-11)."""
     app = _run()
 
     row = next(
@@ -818,7 +818,7 @@ def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_th
         and block.proto.flex_container.direction == 2
     )
     labels = [text for _, text in _drawn_in_order(row)]
-    assert labels == ["시뮬레이션 코드 조회", "검색", "표시 범위"]
+    assert labels == ["원천", "시뮬레이션 코드 조회", "검색", "표시 범위"]
     assert row.proto.flex_container.wrap
     assert registration.CATALOG_TOOLBAR_KEY in registration.CATALOG_TOOLBAR_STYLE
 
