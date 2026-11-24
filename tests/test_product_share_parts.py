@@ -318,7 +318,8 @@ def _other_hover(cell: ProductShareCell) -> list[str]:
 def test_an_other_hover_naming_a_part_carries_the_amounts_on_its_first_line() -> None:
     """부품 이름표가 낀 `기타` 풍선은 수량을 첫 줄로 올리고 둘째 줄에 접힌 이름만 싣는다 — 이름표가
     길어 수량과 이름을 한 줄에 이으면 풍선이 넓어져 왼쪽 고정 구분 칸 밑으로 앞머리가
-    잘렸다(2026-11-24 그림 확인). 두 줄 그대로이고 접힌 이름 · 「외 N」 은 그대로 다 싣는다."""
+    잘렸다(2026-11-24 그림 확인). 두 줄 그대로이고 접힌 이름 · 「외 N」 은 그대로 다 싣는다. 부품이
+    없는 `기타` 풍선도 같은 꼴이다(아래 시험)."""
     cell = _folded_part_cell(["DEMO_X", "DEMO_Y", "DEMO_Z"])
 
     first, second = _other_hover(cell)
@@ -334,8 +335,10 @@ def test_an_other_hover_naming_a_part_carries_the_amounts_on_its_first_line() ->
     assert max(_text_width_units(first), _text_width_units(second)) < old_widest
 
 
-def test_an_other_hover_without_a_part_keeps_its_one_line_of_names() -> None:
-    """부품 이름표가 없는 `기타` 풍선은 지금 꼴(둘째 줄에 수량 · 접힌 이름) 그대로다."""
+def test_an_other_hover_without_a_part_takes_the_same_two_lines() -> None:
+    """부품 이름표가 없는 `기타` 풍선도 같은 꼴이다 — 첫 줄 「달 · 기타 비중 · 수량」, 둘째 줄 접힌
+    이름만(2026-11-24 그림 보드 3 답 q7-other-hover (나)). 글은 옛 꼴(둘째 줄에 수량 · 이름)과 같고
+    줄만 바뀐다 — 이름은 줄이지 않는다."""
     others = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT + 2)]
     plan = pd.DataFrame(
         [(202609, name, "-", 10.0 * (index + 1)) for index, name in enumerate(others)],
@@ -348,8 +351,52 @@ def test_an_other_hover_without_a_part_keeps_its_one_line_of_names() -> None:
 
     first, second = _other_hover(cell)
 
-    assert first == f"26.09 · {OTHER_PRODUCT_LABEL} {cell.slices[-1].share:.1%}"
-    assert second.startswith("Wafer ") and " · DEMO_" in second
+    other = cell.slices[-1]
+    head = f"26.09 · {OTHER_PRODUCT_LABEL} {other.share:.1%}"
+    amounts = f"Wafer {other.value / 1000:,.1f}K / {cell.total / 1000:,.1f}K"
+    names = ", ".join(f"{name} {value / cell.total:.1%}" for name, value in other.members[:3])
+    rest = len(other.members) - 3
+    names += f" 외 {rest}" if rest > 0 else ""
+    # 글은 옛 꼴(「head」 · 「수량 · 이름들」)과 같고 수량이 첫 줄로 올라왔을 뿐이다.
+    assert first == f"{head} · {amounts}"
+    assert second == names
+
+
+def test_a_past_pkg_other_hover_takes_the_same_two_lines() -> None:
+    """과거 달(PKG) 도넛의 `기타` 풍선도 같은 꼴이다 — 첫 줄 「달 · 기타 비중 · 수량 · 과거
+    입력값」, 둘째 줄 접힌 이름만(그림 보드 3 답 q7-other-hover (나) — 과거 달 도넛도 같은
+    그리기)."""
+    past = pd.DataFrame(
+        {
+            "생산계획년월": [202510] * (PRODUCT_SHARE_SLOT_COUNT + 2),
+            "제품정보": [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT + 2)],
+            "Stack": ["12H"] * (PRODUCT_SHARE_SLOT_COUNT + 2),
+            "Customer": ["DEMO-CUST"] * (PRODUCT_SHARE_SLOT_COUNT + 2),
+            "생산수량": [10.0 * (index + 1) for index in range(PRODUCT_SHARE_SLOT_COUNT + 2)],
+        }
+    )
+    past_volume = past_product_volume(
+        past, start_month=202510, end_month=202512, exclude_months=set()
+    )
+    slots = assign_product_slots(past_volume.iloc[0:0], past_volume=past_volume)
+    cell = build_product_share_cells(
+        past_volume, PRODUCT_SHARE_BASIS_PKG, slots, month_labels=["25.10"]
+    )["25.10"]
+    traces = product_share_traces(
+        {"25.10": cell},
+        ["25.10"],
+        basis=PRODUCT_SHARE_BASIS_PKG,
+        year_totals=(),
+        past_month_labels={"25.10"},
+    )
+    hover = next(text for text in traces[0].hovertext if f" · {OTHER_PRODUCT_LABEL} " in text)
+    first, second = str(hover).split("<br>")
+
+    assert cell.past
+    assert first.startswith(f"25.10 · {OTHER_PRODUCT_LABEL} ")
+    assert f" · {PRODUCT_SHARE_BASIS_PKG} " in first and first.endswith(" · 과거 입력값")
+    assert " / " not in second and "과거 입력값" not in second
+    assert second.startswith("DEMO_")
 
 
 # ---------------------------------------------------------------- 범례 · 풍선

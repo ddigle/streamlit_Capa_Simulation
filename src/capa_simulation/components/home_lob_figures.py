@@ -157,13 +157,15 @@ def _share_amount(value: float, basis: str) -> str:
 
 
 def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
-    """조각마다 hover 두 줄. 둘째 줄에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+    """조각마다 hover 두 줄. 수량에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
 
-    `기타` 는 무엇이 모였는지 둘째 줄에 잇는다 — 접었다고 정보를 지우지 않는다. 적는 이름에 부품
-    이름표(「제품 (부품)」)가 끼면 수량을 첫 줄로 올리고 둘째 줄에 이름만 싣는다 — 이름표가 길어
-    한 줄에 이으면 풍선이 넓어진다. `기타` 는 늘 마지막 조각(12시 왼쪽)이라 Plotly 가 풍선을
-    왼쪽으로 펴고, 그림이 가로 스크롤 칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서
-    잘렸다. 과거 구간 칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과
+    이름 있는 조각은 첫 줄 「달 · 이름 비중」, 둘째 줄 수량이다. `기타` 는 늘 첫 줄 「달 · 기타
+    비중 · 수량」, 둘째 줄 모인 이름과 각 비중이다 — 이름에 부품 이름표가 끼든 말든 한 꼴이다
+    (2026-11-24 그림 보드 3 답 q7-other-hover (나)). 접었다고 정보를 지우지 않고 이름을 줄이지
+    않는다(이름은 `_PRODUCT_SHARE_HOVER_MEMBERS` 까지 적고 나머지는 「외 N」). 수량을 첫 줄에 두는
+    까닭: `기타` 는 늘 마지막 조각(12시 왼쪽)이라 Plotly 가 풍선을 왼쪽으로 펴고, 그림이 가로 스크롤
+    칸 안에 있어 넓은 풍선의 앞머리가 왼쪽 고정 구분 칸 밑에서 잘린다 — 둘째 줄을 이름만으로 짧게
+    둔다. 과거 구간 칸은 그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과
     정의가 다를 수 있다).
     """
     source = " · 과거 입력값" if cell.past else ""
@@ -183,12 +185,7 @@ def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
         )
         rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
         names = listed + (f" 외 {rest}" if rest > 0 else "")
-        if any(
-            part != PART_NOT_SPLIT for part in piece.member_parts[:_PRODUCT_SHARE_HOVER_MEMBERS]
-        ):
-            texts.append(f"{head} · {amounts}<br>{names}")
-        else:
-            texts.append(f"{head}<br>{amounts} · {names}")
+        texts.append(f"{head} · {amounts}<br>{names}")
     return texts
 
 

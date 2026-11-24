@@ -329,6 +329,16 @@ def test_the_schema_moved_past_the_plan_detail_with_a_narrow_product_cell() -> N
     assert HOME_FIGURE_SCHEMA_VERSION >= 61
 
 
+def test_the_schema_moved_past_the_two_shapes_of_the_other_hover() -> None:
+    """62 부터 `기타` 풍선은 부품 이름표가 끼었는지와 무관하게 첫 줄 「달 · 기타 비중 · 수량」,
+    둘째 줄 이름의 한 꼴이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(부품이 없는 `기타` 풍선은 수량이 둘째 줄)이 새
+    세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 62
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

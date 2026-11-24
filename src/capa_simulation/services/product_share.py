@@ -103,8 +103,7 @@ class ProductShareSlice(NamedTuple):
 
     `product` 는 이름표이고, `base_product` · `part` 는 그 이름표를 지은 제품정보 · 접힌
     부품이다(좁은 범례 칸에서 부품을 남기고 줄이는 데 쓴다 — `home_figure_common._fit_part_label`).
-    `기타` 조각은 빈 글자다. `member_parts` 는 `members` 와 같은 차례로 각 이름의 접힌 부품이다
-    (`기타` 풍선이 부품 이름표가 낀 이름 줄을 가른다).
+    `기타` 조각은 빈 글자다.
     """
 
     product: str
@@ -114,7 +113,6 @@ class ProductShareSlice(NamedTuple):
     members: tuple[tuple[str, float], ...] = ()
     base_product: str = ""
     part: str = PART_NOT_SPLIT
-    member_parts: tuple[str, ...] = ()
 
 
 class ProductShareCell(NamedTuple):
@@ -411,18 +409,7 @@ def _cell(
     if members:
         other = sum(value for _, value in members)
         ordered = tuple(sorted(members, key=lambda item: -item[1]))
-        slices.append(
-            ProductShareSlice(
-                OTHER_PRODUCT_LABEL,
-                other,
-                other / total,
-                None,
-                ordered,
-                member_parts=tuple(
-                    parts.get(name, (name, PART_NOT_SPLIT))[1] for name, _ in ordered
-                ),
-            )
-        )
+        slices.append(ProductShareSlice(OTHER_PRODUCT_LABEL, other, other / total, None, ordered))
     return ProductShareCell(label=label, total=total, slices=tuple(slices), past=past)
 
 

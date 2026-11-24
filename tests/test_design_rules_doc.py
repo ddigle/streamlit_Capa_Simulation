@@ -3651,9 +3651,16 @@ def test_the_q7_picture_board_answers_join_6_41() -> None:
     current = _chapter(document, 4)
     row = next(line for line in current.splitlines() if line.startswith("| 부품 이름표 |"))
     assert "PLAN_DETAIL_PRODUCT_WIDEN_MAX_PX" in row and "100px" in row
+    for card in BOARD3_CARDS:
+        if card not in lines:
+            continue
+        cited = RULE_TOKEN.findall(lines[card].rsplit("(2026-11-24 · ", 1)[1])
+        assert cited and set(cited) <= known, card
+    if "q7-other-hover" in lines:
+        assert "→ **(나) 모든 기타 풍선을 같은 꼴로**" in lines["q7-other-hover"]
     history = _chapter(document, 8)
     v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
-    for phrase in ("6-41", "q7-narrow-label", "규칙 82"):
+    for phrase in ("6-41", "규칙 82", *lines):
         assert phrase in v145, phrase
 
 
