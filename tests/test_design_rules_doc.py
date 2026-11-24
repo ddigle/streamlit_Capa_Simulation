@@ -3597,6 +3597,10 @@ CLOSEOUT_2A_LINES = {
     "screens-modules": "숨기지 않는다",
     "screens-sso-off": "모두에게 숨는다",
     "screens-preview-blink": "받아들이고 `docs/TODO.md` 2장에 남긴다",
+    "screens-exec-head": (
+        "운영 서버의 개발자가 아니면 이행 현황판 자리 · 실적 셋 목차 카드를 그리지 않고 세 영역의 "
+        "Dynamic Capa 카드는 이름 · 풍선만 남긴다"
+    ),
 }
 
 
@@ -3632,3 +3636,20 @@ def test_the_closeout_2a_hidden_unfinished_screens_are_judged_in_6_42() -> None:
     v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
     for phrase in ("6-42", "UI-LAY-10", "UI-INP-07", net, "규칙 82"):
         assert phrase in v145, phrase
+
+
+def test_the_closeout_2a_execution_head_slot_is_in_the_rule_exceptions() -> None:
+    """v1.45 — 실행 관리 머리의 이행 현황판 자리(다음 판 점선)도 운영 서버에서는 개발자에게만 선다 —
+    UI-LAY-10 예외가 그 자리를 부르고 그물이 실행 관리 머리 시험을, UI-INP-07 예외가 값만 남는 세
+    영역 Dynamic Capa 카드를 부르며, 판 기록이 그 시험을 적는다."""
+    rules = {rule.id: rule for rule in _rules()}
+    net = "test_draft_cards_and_the_dashboard_slot_are_developer_only_on_the_operational_server"
+    lay10 = rules["UI-LAY-10"]
+    assert "실행 관리 머리의 이행 현황판 자리" in lay10.fields["예외"][0]
+    assert net in lay10.fields["그물"][0]
+    inp07 = rules["UI-INP-07"].fields["예외"][0]
+    assert "실행 관리 머리의 이행 현황판 자리" in inp07
+    assert "Dynamic Capa 카드는 이름 · 풍선만 남는다" in inp07
+    history = _chapter(_text(), 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
+    assert net in v145

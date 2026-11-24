@@ -712,3 +712,31 @@ def test_the_production_server_with_sso_off_hides_them_from_everyone(
     assert _execution_box_links(app) == _finished_execution_titles(all_of_them=False)
     assert "Admin Area" not in _sidebar_links(app)
     assert sso_identity.unfinished_hidden()
+
+
+def test_the_execution_head_drops_the_draft_cards_and_the_slot_for_all_but_the_developer(
+    real_app: Callable[[], AppTest], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실제 `app.py` 의 실행 관리 머리 — 운영 서버의 실무자는 목차 링크가 다섯(실적 셋 없음)이고 세
+    영역의 「열기」 는 Static Capa 하나(Dynamic Capa 는 이름 · 풍선만)이며 이행 현황판 점선 자리가
+    없다. 같은 서버의 개발자는 여덟 · 「열기」 둘 · 자리 하나다(2026-11-24 정식판 마감 2-A — 설계
+    규칙 UI-INP-07 예외 · UI-LAY-10 예외). 판정은 사이드바와 같은 `unfinished_hidden` 하나다."""
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT
+
+    for grade in (grades.EDITOR, grades.DEVELOPER):
+        as_grade(monkeypatch, grade)
+        app = real_app().run()
+        app.switch_page(EXECUTION_MANAGEMENT.path).run()
+
+        assert not list(app.exception), [element.message for element in app.exception]
+        developer = grade == grades.DEVELOPER
+        labels = [str(link.proto.label) for link in app.main.get("page_link")]
+        opens = ["열기", "열기"] if developer else ["열기"]
+        assert labels == [*opens, *_finished_execution_titles(all_of_them=developer)], grade
+        slots = [
+            element
+            for element in app.main.get("html")
+            if "em-dashboard-slot" in str(element.proto.body)
+        ]
+        assert len(slots) == (1 if developer else 0), grade
+        assert sso_identity.unfinished_hidden() is (not developer)

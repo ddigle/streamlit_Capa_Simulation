@@ -452,8 +452,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
     구현 중 화면 숨김 판정 `unfinished_hidden` 도 여기다 — 동작 `screen.unfinished`(개발자 몫, `admin_area_locked` 와 한 뿌리 ·
     「이 등급으로 보기」 를 따름)를 화면 등급으로 할 수 없으면 참이고, `app.py` 가 그 값으로 사이드바에서 구현 중 화면
-    (`navigation.PageSpec.unfinished`)을 빼고 주소 · 탭 · 알림으로 연 회차를 멈춘다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」,
-    시험 `tests/test_grade_ui_core.py`).
+    (`navigation.PageSpec.unfinished`)을 빼고 주소 · 탭 · 알림으로 연 회차를 멈추며, 실행 관리 머리가 같은 값으로 목차의 그 화면
+    카드와 이행 현황판 자리를 걷는다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」, 시험 `tests/test_grade_ui_core.py`).
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
     「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴 — 띠 글은 문지기가 그 401 에 단 까닭 낱말 머리(`names.REASON_HEADER` —
@@ -769,6 +769,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
+  - 운영 서버의 개발자가 아닌 회차(`sso_identity.unfinished_hidden` — 사이드바에서 구현 중 화면을 빼는 판정과 같은 하나를 한 번
+    부른다)에는 맨 아래 이행 현황판 점선 자리를 그리지 않고, 목차에서 구현 중 화면(`PageSpec.unfinished` — 실적 셋) 카드를 빼
+    다섯이다. 세 영역의 Dynamic Capa 는 카드를 걷지 않고 이름 · 풍선만 남긴다(「열기」 없음 — UI-INP-07 예외 「값만」). 선언
+    `EXECUTION_MANAGEMENT_SUBPAGES` 는 그대로다 — Guide 목록 대조가 선언 전체를 본다. Guide 는 보는 사람마다 다를 수 없어 자리를
+    가리키지 않고 실적 셋 · Dynamic 이 운영 서버에서는 개발자에게만 보인다고 적는다(2026-11-24 정식판 마감 2-A — 시험
+    `test_execution_management_page.py` · `test_grade_ui_core.py`).
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
   모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
   자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
@@ -4293,8 +4299,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/module_slot.py` — 아직 없는 화면 · 칸이 들어올 점선 자리 한 벌(`slot_html` — 제목 ·
   표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
-  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가
-  그것을 부른다. 그 자리만 든 화면 한 벌
+  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」(운영
+  서버에서는 개발자에게만)가 그것을 부른다. 그 자리만 든 화면 한 벌
   (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 성숙도는 화면 탭 「구현중」 표지 · `PageSpec.in_progress`, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
   같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
   진도 화면 내용」).
