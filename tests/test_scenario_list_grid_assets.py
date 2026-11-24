@@ -12,6 +12,7 @@ import json
 import re
 from typing import Any
 
+import pytest
 from js_runner import run_js_json
 
 from capa_simulation.components import grid_shared
@@ -23,7 +24,7 @@ OWN_JS = (ASSETS / "list.js").read_text(encoding="utf-8")
 OWN_CSS = (ASSETS / "list.css").read_text(encoding="utf-8")
 JS = grid.registered_js()
 CSS = grid.registered_css()
-_SECTIONS = ("grid-nav", "grid-outbox", "list-move", "list-head", "list-ime")
+_SECTIONS = ("grid-nav", "grid-outbox", "list-move", "list-head", "list-ime", "list-batch")
 _MOUNT_HEAD = "export default function (component) {"
 
 
@@ -51,6 +52,20 @@ def test_the_table_sends_one_state_value_and_no_trigger() -> None:
     assert grid.STATE_NAMES == {"outbox"} and grid.TRIGGER_NAMES == set()
     assert set(re.findall(r"S\.setState\('(\w+)'", OWN_JS)) == grid.STATE_NAMES
     assert "setTriggerValue" not in OWN_JS and "setTrigger" not in OWN_JS
+
+
+def test_every_mount_carries_the_batch_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    """묶음 길이는 결정값 상수(`LIST_SEND_MS`)를 data `sendMs` 로 넘기고, 개발 실행 줄
+    `CAPA_DEV_BATCH_MS` 가 있으면 그 값이다(측정 사본 — `grid_shared.batch_ms`)."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(grid, "_GRID", lambda **kwargs: sent.append(kwargs["data"]))
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    grid.render_list_mount(grid.TABLE_KEY, {"mode": "scenarios"}, on_outbox=lambda: None)
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "1500")
+    grid.render_list_mount(grid.REVISIONS_KEY, {"mode": "revisions"}, on_outbox=lambda: None)
+    assert [data["sendMs"] for data in sent] == [grid.LIST_SEND_MS, 1500]
+    assert all(data["palette"] == grid_shared.grid_palette() for data in sent)
 
 
 def test_colours_come_from_the_palette_and_text_goes_in_as_text() -> None:
@@ -260,6 +275,14 @@ out.composing = [
   remembersEnter({ code: 'Enter' }),
 ]
 out.typed = input.typed.map(([key, ctrl, meta, alt]) => typedStart(key, ctrl, meta, alt))
+out.batch = [undefined, null, 800, '650', 0, -5, 'x'].map(batchMs)
+const name = { op: 'name' }
+const move = { op: 'move' }
+const open = { op: 'open' }
+out.first = [
+  firstEdit(true, [name]), firstEdit(true, [open, move]), firstEdit(true, [name, name]),
+  firstEdit(false, [name]), firstEdit(undefined, [name]), firstEdit(true, [open]), firstEdit(true, []),
+]
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -324,6 +347,10 @@ def test_the_pure_sections_agree_with_python() -> None:
         None,
         None,
     ]
+    # 묶음 길이는 data 값이고 없거나 양수가 아니면 300ms 다. 깨끗한 편집본(data `clean`)의 고침 op 가
+    # 하나뿐이면 첫 고침이다 — 줄 고르기(`open`)는 세지 않는다.
+    assert out["batch"] == [300, 300, 800, 650, 300, 300, 300]
+    assert out["first"] == [True, True, False, False, False, False, False]
 
 
 # ---------------------------------------------------------------- 가짜 DOM
@@ -449,6 +476,21 @@ globalThis.document = {
   addEventListener(type, handler) { (documentListeners[type] = documentListeners[type] || []).push(handler) },
   removeEventListener(type, handler) {
     documentListeners[type] = (documentListeners[type] || []).filter((item) => item !== handler)
+  },
+}
+// 창 대역 — 떠나기 신호(`leave.js` 의 `joinLeaving`)가 창에 처리기를 달고 `announceLeaving` 이 창 사건을 쏜다.
+const windowListeners = {}
+globalThis.window = {
+  addEventListener(type, handler) { (windowListeners[type] = windowListeners[type] || []).push(handler) },
+  removeEventListener(type, handler) {
+    windowListeners[type] = (windowListeners[type] || []).filter((item) => item !== handler)
+  },
+  dispatchEvent(event) {
+    for (const handler of (windowListeners[event.type] || []).slice()) handler(event)
+    return true
+  },
+  CustomEvent: class {
+    constructor(type) { this.type = type }
   },
 }
 const fireDocument = (type, extra) => {
@@ -884,6 +926,127 @@ def test_a_burst_of_name_edits_goes_out_once_after_the_quiet_time() -> None:
     assert out["repaint"] == {"sent": 0, "edit": None}
     assert out["quiet"] == {"sent": 1, "ops": 3}, "이름 3칸 → 보냄 1회"
     assert out["outside"] == {"sent": 2, "edit": None}, "표 밖 누름은 곧바로 보낸다"
+
+
+_BATCH_AND_LEAVE = (
+    _DOM
+    + """
+const book = () => window.__capaEditors
+const rename = (m, text) => {
+  click(press(cell(m.host, 'a', 'name')))
+  type(editor(m.host), text)
+  key(editor(m.host), 'Enter')
+}
+const acked = (m, data) => {
+  const sent = m.sent[m.sent.length - 1][1]
+  m.rerender({ ...data, ack: { mount: sent.mount, seq: sent.ops[sent.ops.length - 1].seq } })
+}
+const out = {}
+;(async () => {
+  // data 의 묶음 길이(600ms) — 300ms 가 지나도 보내지 않는다. 내린 마운트는 편집기 명부에서 빠진다.
+  const slow = { ...SCENARIOS, sendMs: 600 }
+  let m = mount(slow)
+  rename(m, '새 가')
+  await tick(330)
+  out.slow = [m.sent.length]
+  await tick(330)
+  out.slow.push(m.sent.length)
+  m.cleanup()
+  out.dropped = book().entries.size
+
+  // 깨끗한 편집본(data clean)의 첫 고침은 곧바로 보내고, ack 전의 둘째 고침은 묶는다.
+  const clean = { ...slow, clean: true }
+  m = mount(clean)
+  rename(m, '첫 고침')
+  out.first = m.sent.length
+  rename(m, '둘째 고침')
+  out.second = m.sent.length
+
+  // 떠나기 신호 — 묶음 안 op 를 곧바로 보내고 ack 가 올 때까지 busy 다. 신호 뒤 고침은 묶지 않는다.
+  out.busyHeld = editorsBusy(book())
+  announceLeaving(window)
+  out.leave = { sent: m.sent.length, ops: m.sent[m.sent.length - 1][1].ops.length, busy: editorsBusy(book()) }
+  rename(m, '떠나며 고침')
+  out.afterLeave = m.sent.length
+  acked(m, { ...slow, clean: false })
+  out.settled = { busy: editorsBusy(book()), leaving: m.host.__sgl.leave.leaving }
+  // 다 걷힌 뒤로는 다시 묶는다.
+  rename(m, '머문 고침')
+  out.batchedAgain = [m.sent.length]
+  await tick(630)
+  out.batchedAgain.push(m.sent.length)
+  m.cleanup()
+  out.cleanup = { entries: book().entries.size, listeners: (windowListeners['capa-leaving'] || []).length }
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_the_batch_length_first_edit_and_leaving_signal() -> None:
+    """묶음 길이는 data `sendMs` 다. 깨끗한 편집본의 첫 고침은 묶지 않는다(화면 탭 점 · 변경 칩 ·
+    떠나기 확인이 늦지 않게). 화면을 떠나는 누름의 신호(`capa-leaving`)는 묶음 안 op 를 곧바로
+    보내고, ack 가 올 때까지 편집기 명부에 busy 다 — 탭 줄 붙들기가 그동안 기다린다. 신호 뒤 고침은
+    다 걷힐 때까지 곧바로 가고, 걷힌 뒤로는 다시 묶는다. 내린 마운트는 명부 · 창 처리기에서 빠진다."""
+    out = _node({}, _BATCH_AND_LEAVE, _MOUNT_SOURCE)
+    assert out["slow"] == [0, 1], "data 의 600ms 동안 묶는다"
+    assert out["dropped"] == 0
+    assert out["first"] == 1, "깨끗한 편집본의 첫 고침은 곧바로"
+    assert out["second"] == 1, "ack 전 둘째 고침은 묶는다"
+    assert out["busyHeld"] is True
+    assert out["leave"] == {"sent": 2, "ops": 2, "busy": True}
+    assert out["afterLeave"] == 3, "신호 뒤 고침은 곧바로"
+    assert out["settled"] == {"busy": False, "leaving": False}
+    assert out["batchedAgain"] == [3, 4]
+    assert out["cleanup"] == {"entries": 0, "listeners": 0}
+
+
+_LEAVE_WITH_NOTHING_TO_SEND = (
+    _DOM
+    + """
+const book = () => window.__capaEditors
+const rename = (m, text) => {
+  click(press(cell(m.host, 'a', 'name')))
+  type(editor(m.host), text)
+  key(editor(m.host), 'Enter')
+}
+const out = {}
+;(async () => {
+  // 보낸 고침의 ack 를 받아 보낼 것도 기다릴 ack 도 없는 마운트.
+  const data = { ...SCENARIOS, sendMs: 600 }
+  const m = mount(data)
+  rename(m, '첫 고침')
+  await tick(630)
+  const sent = m.sent[m.sent.length - 1][1]
+  m.rerender({ ...data, ack: { mount: sent.mount, seq: sent.ops[sent.ops.length - 1].seq } })
+  out.before = { sent: m.sent.length, busy: editorsBusy(book()) }
+
+  // 떠나기 신호(떠나기 확인에서 머묾 · 테마 단추) — 보낼 것이 없으니 곧바로 걷힌다.
+  announceLeaving(window)
+  out.leave = { sent: m.sent.length, busy: editorsBusy(book()), leaving: m.host.__sgl.leave.leaving }
+
+  // 머문 화면의 다음 고침 셋은 하나로 묶인다.
+  rename(m, '둘째')
+  rename(m, '셋째')
+  rename(m, '넷째')
+  out.burst = [m.sent.length]
+  await tick(630)
+  out.burst.push(m.sent.length)
+  m.cleanup()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_a_leaving_signal_with_nothing_to_send_leaves_the_batch_as_it_was() -> None:
+    """보낼 것도 기다릴 ack 도 없는 편집기가 떠나기 신호를 받으면 그 자리에서 떠나기 표지를 걷는다
+    — ack 가 올 일이 없으니 기다리면 머문 화면의 다음 고침이 하나씩 곧바로 나간다. 걷힌 뒤 고침
+    셋은 묶음 하나다."""
+    out = _node({}, _LEAVE_WITH_NOTHING_TO_SEND, _MOUNT_SOURCE)
+    assert out["before"] == {"sent": 1, "busy": False}
+    assert out["leave"] == {"sent": 1, "busy": False, "leaving": False}
+    assert out["burst"] == [1, 2], "머문 화면의 고침 셋은 묶음 하나"
 
 
 def test_repainting_keeps_speed_scroll_and_focus() -> None:

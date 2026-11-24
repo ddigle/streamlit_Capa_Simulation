@@ -214,13 +214,37 @@ def test_an_unreadable_text_stays_a_draft_and_never_enters_the_buffer(
     assert fixed.state.overlay == {} and fixed.changed
 
 
-def test_the_dropped_toast_does_not_blame_another_user() -> None:
-    """base 는 내 저장·모두 버리기·시나리오 불러오기 때도 바뀐다 — 남 탓으로 적지 않는다."""
+def test_the_dropped_toast_names_the_cause_the_caller_found() -> None:
+    """base 는 모두 버리기 · 시나리오 불러오기 · 남의 저장 때 바뀐다 — 기본 글은 남 탓으로 적지
+    않고, 부르는 쪽이 남의 저장을 가렸을 때만 그 글이다. 제 「리비전 저장」 직전 편집본에 그린 op 는
+    버리지 않고 저장본 위에 얹으므로(설비 마스터 탭) 버린 까닭으로 적지 않는다."""
     state = _state()
     op = {**_op("cell", 1, id=_id(state, 0), col="담당자", text="X"), "base": "tok#0"}
     result = _apply(state, op)
     assert result.toast == eg.DROPPED_TOAST.format(count=1)
-    assert "다른 사용자의 저장으로" not in result.toast and "리비전 저장" in result.toast
+    assert "다른 사용자" not in result.toast and "리비전 저장" not in result.toast
+    foreign = eg.apply_ops(state, [op], CONTEXT, dropped_toast=eg.FOREIGN_DROPPED_TOAST)
+    assert foreign.toast == eg.FOREIGN_DROPPED_TOAST.format(count=1)
+    assert "고침 1건은 반영하지 않았습니다" in foreign.toast
+
+
+def test_a_moved_op_follows_the_saved_ids_and_drops_a_deleted_row() -> None:
+    """제 저장 뒤 id 지도(`save_id_map` — 새 호기 n:X → s:X, 이름 바꿈, 지운 호기 None)로 op 의 행
+    id 를 옮긴다 — 지운 호기를 가리키는 op 는 얹을 줄이 없다(None)."""
+    moved = {"n:A": "s:A", "s:B": "s:B2", "s:C": None}
+    assert eg.moved_op({"op": "cell", "id": "n:A", "col": "담당자"}, moved) == {
+        "op": "cell",
+        "id": "s:A",
+        "col": "담당자",
+    }
+    paste = {"op": "paste", "ids": ["s:B", "s:D"], "cols": ["담당자"], "rows": [["x"], ["y"]]}
+    assert eg.moved_op(paste, moved) == {**paste, "ids": ["s:B2", "s:D"]}
+    assert eg.moved_op({"op": "delete", "ids": ["s:C"]}, moved) is None
+    assert eg.moved_op({"op": "add", "draftSeq": 3, "draft": []}, moved) == {
+        "op": "add",
+        "draftSeq": 3,
+        "draft": [],
+    }
 
 
 def test_a_different_base_is_dropped_and_told() -> None:

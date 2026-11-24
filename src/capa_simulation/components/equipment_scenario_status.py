@@ -29,7 +29,7 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation import alerts
-from capa_simulation.components import grade_ui, sso_identity
+from capa_simulation.components import fragment_scope, grade_ui, sso_identity
 from capa_simulation.components.app_header import (
     STATUS_NEWER,
     STATUS_UNSAVED,
@@ -733,8 +733,11 @@ def render_load_latest_button(
 def _load_latest(
     database_path: str, scenario_id: str, revision_id: str, scenario_name: str, latest_no: int
 ) -> None:
-    """「최신 rN 불러오기(변경 버림)」 콜백(팝업 밖 — 설비 마스터 탭·Space)."""
-    _move_to_latest(database_path, scenario_id, revision_id, scenario_name, latest_no)
+    """「최신 rN 불러오기(변경 버림)」 콜백(팝업 밖 — 설비 마스터 탭·Space). 옮겼으면 그 상호작용은
+    앱 전체 회차다 — 세션 · 편집본은 페이지 회차가 세운다(편집기 구역 회차의 누름이면 콜백 끝에서
+    올린다, AGENTS 9장 「구역 회차 규칙」 R1)."""
+    if _move_to_latest(database_path, scenario_id, revision_id, scenario_name, latest_no):
+        fragment_scope.escalate()
 
 
 def _move_to_latest(

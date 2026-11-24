@@ -13,11 +13,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 from edit_grid_node import FAKE_DOM
 from js_runner import run_js_json
 from test_design_tokens import SMALL_TEXT_MINIMUM, contrast_ratio
 
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import grid_shared
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
 from capa_simulation.design import tokens
 from capa_simulation.services import equipment_grid as eg
@@ -42,6 +44,17 @@ def test_the_editing_channel_is_one_state_value_and_triggers_are_the_declared_se
     assert sent == set(emg.TRIGGER_NAMES)
     registered = set(re.findall(r"on_([a-z]+)_change=", SOURCE))
     assert registered == set(emg.STATE_NAMES) | set(emg.TRIGGER_NAMES)
+
+
+def test_the_table_registration_carries_the_shared_pieces_with_the_leave_piece_first() -> None:
+    """표 등록 JS 는 표 공용 조각(`grid_shared.SHARED_JS` — 떠나기 신호 `leave.js` 포함) 뒤에 이
+    표의 `grid.js` 를 잇는다. feed 등록은 공용 조각 없이 작은 글 하나다."""
+    own = (ASSETS / "grid.js").read_text(encoding="utf-8")
+    leave = grid_shared.leave_js()
+    assert grid_shared.LEAVE_JS in grid_shared.SHARED_JS
+    assert leave in JS and JS.endswith(own)
+    assert JS.index(leave) < JS.index(own)
+    assert leave not in emg.feed_js()
 
 
 def test_ops_the_browser_sends_are_the_ops_python_applies() -> None:
@@ -2896,7 +2909,7 @@ const R = {}
 
 
 def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
-    """칸을 잇달아 고치면 보냄은 300ms 묶음 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정 ·
+    """칸을 잇달아 고치면 보냄은 쉼 뒤 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정 ·
     다음 칸 열기가 표 본문을 다시 그리면 초점 든 칸이 사라져 대상 없는 focusout 이 나고, 그것을 표
     밖으로 나간 것으로 읽어 칸마다 회차가 돌았다(u4-02 — 6칸 6회차, 샘플 관측). 진짜로 표 밖을 누른
     때와 창이 숨을 때는 지금처럼 곧바로 보낸다."""
@@ -3998,3 +4011,473 @@ def test_the_detail_marks_shared_columns_of_a_module_group_and_resends_a_red_val
     assert result["alone"] == []
     rule = re.search(r"\n\.emg-group-tag \{(?P<body>[^}]*)\}", CSS)
     assert rule is not None and "var(--emg-accent)" in rule["body"]
+
+
+# ---------------------------------------------------------------- 표 data 가르기(껍데기 · feed)
+
+FEED_JS = (ASSETS / "feed.js").read_text(encoding="utf-8")
+
+
+def test_the_feed_registration_is_small_and_the_table_waits_for_its_own_shell() -> None:
+    """feed 등록은 작은 JS 하나(주석 줄을 걷는다)이고 칸 · 이벤트 이름이 표 JS 와 같다. 표 key ·
+    feed key 는 고정이고 feed 요소를 숨기는 서식이 메뉴 서식 덩이에 든다(이벤트 칸 자리 수를 늘리지
+    않는다)."""
+    registered = emg.feed_js()
+    assert len(registered.encode("utf-8")) < 1_000
+    assert not any(line.lstrip().startswith("//") for line in registered.splitlines())
+    assert "__capaEquipmentGrid" in registered and "__capaEquipmentGrid" in JS
+    assert "'capa-equipment-grid'" in registered and "'capa-equipment-grid'" in JS
+    assert emg.feed_key() == f"{emg.GRID_KEY}-feed" and "__" not in emg.feed_key()
+    assert f".st-key-{emg.feed_key()} {{ display: none; }}" in emg.tools_menu_style()
+    assert "_FEED(key=feed_key(key)" in SOURCE
+    assert SOURCE.index("_FEED(key=feed_key(key)") < SOURCE.index(
+        "_GRID(\n        key=key,\n        data=sent"
+    )
+
+
+def test_the_browser_joins_shell_and_feed_the_way_python_does() -> None:
+    """브라우저가 잇는 표 data(`joinGridData`) = 파이썬 `join_grid_data` = 가르기 전 data. 다른
+    껍데기의 feed 는 잇지 않는다(null — 그 껍데기를 기다린다)."""
+    from test_equipment_grid_model import _copy, _saved, _view
+
+    saved = _saved()
+    view = _view(_copy(saved), saved)
+    loaded = list(view.index.ids[:3])
+    shell, _ = eg.split_grid_data(eg.grid_data(view, loaded))
+    edited = _copy(saved)
+    edited[1].loc[2, "Model"] = "MODEL-Z"
+    data = eg.grid_data(_view(edited, saved), loaded, ack={"mount": "m-x", "seq": 4})
+    kept, feed = eg.split_grid_data(data, shell)
+    assert kept == shell and feed["rows"]
+    runner = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  joined: joinGridData(input.shell, input.feed),
+  other: joinGridData(input.shell, Object.assign({}, input.feed, { shell: 'other' })),
+}))
+"""
+    match = re.search(r"// <grid-feed>\n(?P<body>.*?)\n// </grid-feed>", JS, re.S)
+    assert match, "grid.js 에 // <grid-feed> 구획이 없습니다"
+    result = _node({"shell": kept, "feed": feed}, runner, source=match.group("body"))
+    assert result["joined"] == eg.join_grid_data(kept, feed) == data
+    assert result["other"] is None
+
+
+_SHELL_FEED_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const data = {")]
+    + FEED_JS.replace("export default function", "globalThis.__feed = function", 1)
+    + """
+const HOST = 'equipment_grid_table'
+const columns = [
+  { name: '설비명', kind: 'name', width: 'name' },
+  { name: 'Model', kind: 'text', width: 'm' },
+]
+const rowOf = (id, name, model) => ({ id, values: [name, model] })
+const shellOf = (token, rows) => ({
+  mode: 'grid', host: HOST, shell: token, base: 'b1', view: 'v-' + token,
+  limits: { outboxCells: 10000, pasteCells: 5000 }, columns, colSets: [['all', '전체', '', [1]]],
+  rows,
+})
+const first = shellOf('s1', [rowOf('a', 'EQ-1', 'x'), rowOf('b', 'EQ-2', 'y')])
+const feed = (token, extra) => globalThis.__feed({
+  data: Object.assign({ host: HOST, shell: token, rows: {} }, extra),
+})
+let builds = 0
+const build = buildGridSkeleton
+buildGridSkeleton = (...args) => {
+  builds += 1
+  return build(...args)
+}
+const component = {
+  parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => sent.push(value.ops.map((op) => op.seq)),
+}
+const R = {}
+;(async () => {
+  // 껍데기가 feed 보다 먼저 왔다 — 그 feed 가 올 때까지 그리지 않는다.
+  const cleanup = globalThis.__mount({ data: first, ...component })
+  const S = host.__emg
+  R.waiting = { model: Boolean(S.model), builds }
+  feed('s1', { ack: {}, counts: { loaded: 2, total: 2, limit: 1000 } })
+  const models = () => S.model.rows.map((row) => row.values[1])
+  R.drawn = { builds, models: models(), count: S.data.counts.loaded }
+  // 칸 하나를 고쳐 보냈다 — 그 줄만 든 feed 가 오면 그 줄이 바뀌고 출납이 걷힌다(껍데기 그대로).
+  enqueue(S, { op: 'cell', id: 'a', col: 'Model', text: 'X' }, [['a', 1, 'X']])
+  send(S)
+  const model = S.model
+  feed('s1', { ack: { mount: S.mount, seq: 1 }, rows: { a: rowOf('a', 'EQ-1', 'X') } })
+  R.patched = {
+    builds, sent: sent.slice(), box: S.box.ops.length, pending: S.pending.size,
+    models: models(), rebuilt: S.model !== model,
+  }
+  // 같은 껍데기 · 같은 바뀐 줄에 연 줄만 바뀐 feed — 표 모양을 다시 짓지 않는다.
+  const kept = S.model
+  feed('s1', { ack: { mount: S.mount, seq: 1 }, rows: { a: rowOf('a', 'EQ-1', 'X') }, open: 'b' })
+  R.openOnly = { builds, same: S.model === kept, open: S.openId }
+  // 다른 껍데기의 feed 는 잇지 않는다.
+  feed('s9', { rows: { a: rowOf('a', 'EQ-1', 'Q') } })
+  R.otherShell = { same: S.model === kept, models: models() }
+  // 새 껍데기가 오면 그 껍데기의 feed 를 기다렸다 잇는다(칸에 남은 다른 껍데기 feed 로
+  // 그리지 않는다).
+  const third = [rowOf('a', 'EQ-1', 'X'), rowOf('b', 'EQ-2', 'y'), rowOf('c', 'EQ-3', 'z')]
+  globalThis.__mount({ data: shellOf('s2', third), ...component })
+  R.newShellWaits = { same: S.model === kept }
+  feed('s2', { ack: { mount: S.mount, seq: 1 } })
+  R.newShell = { builds, models: models() }
+  cleanup()
+  R.cleared = window.__capaEquipmentGrid[HOST].feed
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_table_takes_feed_patches_and_does_not_rebuild_for_an_unchanged_shell() -> None:
+    """표 JS 는 껍데기와 그 껍데기의 feed 를 이어 그린다(data 가르기). feed 의 바뀐 줄이 그 줄을
+    바꾸고 ack 가 출납을 걷는다. 껍데기가 그대로인 회차에는 표 뼈대를 다시 짓지 않고, 바뀐 줄도
+    그대로인 feed(연 줄만 바뀜)에는 정렬한 표 모양도 다시 짓지 않는다. 다른 껍데기의 feed 는 그
+    껍데기가 올 때까지 둔다. 내릴 때 칸의 feed 를 비운다(다음 마운트가 옛 feed 로 먼저 그리지
+    않게)."""
+    result = _node({}, _SHELL_FEED_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["waiting"] == {"model": False, "builds": 0}
+    assert result["drawn"] == {"builds": 1, "models": ["x", "y"], "count": 2}
+    assert result["patched"] == {
+        "builds": 1,
+        "sent": [[1]],
+        "box": 0,
+        "pending": 0,
+        "models": ["X", "y"],
+        "rebuilt": True,
+    }
+    assert result["openOnly"] == {"builds": 1, "same": True, "open": "b"}
+    assert result["otherShell"] == {"same": True, "models": ["X", "y"]}
+    assert result["newShellWaits"] == {"same": True}
+    assert result["newShell"] == {"builds": 1, "models": ["X", "y", "z"]}
+    assert result["cleared"] is None
+
+
+# ---------------------------------------------------------------- 묶어 보내기 쉼(파이썬 값)
+
+_SEND_MS_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    + """
+const remount = (extra) => globalThis.__mount({
+  data: Object.assign({}, data, extra), ...component,
+})
+const paste = (text, id, col) => {
+  const cell = { dataset: { id, col: String(col) } }
+  const target = {
+    closest: (sel) => (sel.startsWith('.emg-c') ? cell : null),
+    classList: { contains: () => false },
+  }
+  onPaste(S, { target, clipboardData: { getData: () => text }, preventDefault() {} })
+}
+const R = {}
+;(async () => {
+  // 파이썬이 쉼을 1초로 주고 편집본이 깨끗하다 — 첫 칸은 곧바로, 그 답이 오기 전 칸은 1초를 모은다.
+  remount({ sendMs: 1000, clean: true })
+  R.sendMs = S.sendMs
+  typed('a', 1, 'C1', press('Enter'))
+  R.first = sent.length
+  typed('a', 2, 'C2', press('Enter'))
+  typed('b', 2, 'C3', press('Enter'))
+  await tick(400)
+  R.held = sent.length
+  await tick(800)
+  R.quiet = sent.slice()
+  // 답이 왔다(깨끗하지 않음) — 첫 칸도 쉼을 기다린다.
+  remount({ sendMs: 1000, clean: false, ack: { mount: S.mount, seq: 3 } })
+  typed('c', 1, 'D1', press('Enter'))
+  R.dirtyFirst = sent.length
+  // 붙여넣기 · 단추 op · 표 밖 누름 · 창 숨김은 쉼 없이 곧바로 보낸다(앞에 모인 칸도 함께).
+  paste('P1\\nP2', 'b', 2)
+  R.paste = sent.length
+  sendOnce(S, { op: 'restore', ids: ['a'] }, [])
+  R.button = sent.length
+  typed('b', 1, 'OUT', (input) => {
+    document.activeElement = null
+    fire(input, 'focusout', { relatedTarget: null })
+  })
+  R.outside = sent.length
+  typed('c', 1, 'VIS', press('Enter'))
+  for (const run of docListeners.visibilitychange) run()
+  R.hidden = sent.length
+  // 쉼을 주지 않으면 300ms 다.
+  remount({ sendMs: undefined, clean: false })
+  R.fallback = S.sendMs
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_send_interval_comes_from_python_and_the_immediate_paths_stay_immediate() -> None:
+    """묶어 보내기 쉼은 파이썬 값(data `sendMs` — `grid_shared.batch_ms(SEND_MS)`)이다. 깨끗한
+    편집본의 첫 op 는 곧바로 가고 그 답이 오기 전 칸은 쉼만큼 모은다. 붙여넣기 · 단추 op · 표 밖
+    누름(focusout) · 창 숨김(visibilitychange)은 쉼이 길어도 곧바로 보낸다."""
+    result = _node({}, _SEND_MS_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["sendMs"] == 1000
+    assert result["first"] == 1, "깨끗한 편집본의 첫 칸은 곧바로"
+    assert result["held"] == 1, "답이 오기 전 칸은 쉼(1초)만큼 모은다"
+    assert result["quiet"] == [1, 3], "모은 두 칸은 쉼 뒤 한 번에"
+    assert result["dirtyFirst"] == 2, "깨끗하지 않으면 첫 칸도 모은다"
+    assert (result["paste"], result["button"]) == (3, 4)
+    assert (result["outside"], result["hidden"]) == (5, 6)
+    assert result["fallback"] == 300
+
+
+def test_the_send_interval_reads_only_the_shared_dev_override_in_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """쉼은 결정값 `SEND_MS` 이고, 개발 · 측정 사본 실행 줄 `CAPA_DEV_BATCH_MS` 가 범위(50 ~ 5000
+    정수) 안이면 그 값이다 — 운영 `APP_ENV` 는 덮어쓰기를 읽지 않는다(`grid_shared.batch_ms`).
+    덮어쓰기 이름은 편집기마다 따로 두지 않는다."""
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv(grid_shared.BATCH_OVERRIDE_ENV, raising=False)
+    assert emg._with_palette({})["sendMs"] == emg.SEND_MS == 800
+    monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, "300")
+    assert emg._with_palette({})["sendMs"] == 300
+    for text in ("", "abc", "10", "60000", "0.8"):
+        monkeypatch.setenv(grid_shared.BATCH_OVERRIDE_ENV, text)
+        assert emg._with_palette({})["sendMs"] == emg.SEND_MS, text
+    assert not hasattr(emg, "SEND_MS_ENV"), "덮어쓰기 이름은 공용 하나다"
+
+
+# ---------------------------------------------------------------- 「새 호기」 초안 묶어 보내기
+
+_DRAFT_BATCH_RUNNER = """
+const docListeners = {}
+document.addEventListener = (type, fn) => {
+  ;(docListeners[type] = docListeners[type] || []).push(fn)
+}
+document.removeEventListener = () => {}
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const states = []
+const mount = (data) => globalThis.__mount({
+  data, parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => states.push(name === 'draft'
+    ? [name, value.seq, value.values.slice()]
+    : [name, value.ops.map((op) => op.op)]),
+})
+const panel = (fields) => Object.assign({
+  mode: 'side', panel: 'new', base: 'b1', sendMs: 1000,
+  columns: [
+    { name: '설비명', kind: 'name' }, { name: '공정소분류', kind: 'text' },
+    { name: '보관유무', kind: 'choice', options: ['Y', 'N'] },
+  ],
+  groups: [[0, '호기 정보', 'common', '', [0, 1, 2]]], blank: ['', '', ''], required: [0, 1],
+  tiers: { required: [[0, false], [1, false]] },
+  draft: { seq: 3, values: ['', '', ''] }, checked: 3, errors: {}, warns: {}, locks: {},
+}, fields)
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const field = (k) => host.querySelector('[data-fk="n' + k + '"]')
+const type = (k, text) => {
+  const input = field(k)
+  input.value = text
+  fire(input, 'input')
+  return input
+}
+const buttonOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.textContent.startsWith(label))
+const R = {}
+;(async () => {
+  const cleanup = mount(panel({}))
+  // Enter 로 확정 · 칩 고르기는 곧바로 보내지 않고 쉼(1초)만큼 모은다 — 마지막 초안 하나만 간다.
+  fire(type(0, 'EQ-1'), 'keydown', { key: 'Enter' })
+  fire(host.querySelector('[data-fk="n2=N"]'), 'click')
+  R.held = states.length
+  await wait(1100)
+  R.rest = states.slice()
+  // 칸을 떠나면(초점이 다른 칸으로) 곧바로 보낸다.
+  fire(type(1, 'DA'), 'blur')
+  R.left = states.slice(1)
+  // Enter 로 확정해 둔 초안은 「호기 추가」 직전에 먼저 가고, 「호기 추가」 는 그 초안을 싣는다.
+  fire(type(0, 'EQ-2'), 'keydown', { key: 'Enter' })
+  fire(buttonOf('호기 추가'), 'click')
+  R.add = states.slice(2)
+  // 창이 숨거나 내릴 때도 모아 둔 초안을 곧바로 보낸다.
+  fire(type(0, 'EQ-3'), 'keydown', { key: 'Enter' })
+  for (const run of docListeners.visibilitychange) run()
+  R.hidden = states.slice(4)
+  fire(type(0, 'EQ-4'), 'keydown', { key: 'Enter' })
+  cleanup()
+  R.unmounted = states.slice(5)
+  await wait(1100)
+  R.after = states.length
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_the_new_unit_draft_goes_out_on_leaving_a_field_after_the_quiet_time_or_before_add() -> (
+    None
+):
+    """「새 호기」 초안(39칸)은 칸 확정마다 보내지 않는다(사용자 결정 11-20 Q4) — Enter · 칩으로
+    확정한 초안은 쉼(data `sendMs`) 뒤 · 칸을 떠날 때 · 「호기 추가」 직전 · 창 숨김 · 내릴 때
+    마지막 것 하나만 간다. 「호기 추가」 는 그 마지막 초안을 싣는다(파이썬이 그 초안으로 다시
+    판정해 넣는다)."""
+    runner = _FAKE_DOM + _DRAFT_BATCH_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+    assert result["held"] == 0
+    assert result["rest"] == [["draft", 5, ["EQ-1", "", "N"]]]
+    assert result["left"] == [["draft", 6, ["EQ-1", "DA", "N"]]]
+    assert result["add"] == [["draft", 7, ["EQ-2", "DA", "N"]], ["outbox", ["add"]]]
+    assert result["hidden"] == [["draft", 8, ["EQ-3", "DA", "N"]]]
+    assert result["unmounted"] == [["draft", 9, ["EQ-4", "DA", "N"]]]
+    assert result["after"] == 6
+
+
+# ---------------------------------------------------------------- 떠나기 신호(R8)
+
+# 창 처리기를 이름마다 센다 — 떠나기 신호 처리기가 다시 불러도 하나인지 본다.
+_WINDOW_COUNT = """
+const winCount = {}
+const addWindow = window.addEventListener.bind(window)
+const removeWindow = window.removeEventListener.bind(window)
+window.addEventListener = (type, fn, options) => {
+  winCount[type] = (winCount[type] || 0) + 1
+  addWindow(type, fn, options)
+}
+window.removeEventListener = (type, fn, options) => {
+  winCount[type] = (winCount[type] || 0) - 1
+  removeWindow(type, fn, options)
+}
+"""
+
+_LEAVE_RUNNER = (
+    _WINDOW_COUNT
+    + _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    + """
+const R = {}
+;(async () => {
+  const book = editorBook(window)
+  const busy = () => editorsBusy(book)
+  R.mounted = { editors: book.entries.size, busy: busy() }
+  // 앞서 고친 칸이 있는 표 — 쉼에 걸린다. 명부는 busy(보내지 않은 op).
+  typed('a', 1, 'T0', press('Enter'))
+  R.held = { sent: sent.length, busy: busy() }
+  // 화면을 떠나는 누름이 쏜 신호 — 곧바로 보내고 ack 전까지 busy 다.
+  window.dispatchEvent(new CustomEvent('capa-leaving'))
+  R.left = { sent: sent.length, busy: busy(), leaving: S.leave.leaving }
+  // 신호 뒤 고침은 묶지 않는다.
+  typed('a', 2, 'T1', press('Enter'))
+  R.after = { sent: outgoing.map((ops) => ops.map((op) => op[0])), busy: busy() }
+  // ack 로 보낼 목록이 비면 busy 가 걷히고 다시 묶는다.
+  const acked = { ...data, view: 'v2', ack: { mount: S.mount, seq: 2 } }
+  globalThis.__mount({ data: acked, ...component })
+  R.acked = { box: S.box.ops.length, busy: busy(), leaving: S.leave.leaving }
+  typed('b', 1, 'T2', press('Enter'))
+  R.again = { sent: sent.length, busy: busy() }
+  await tick(360)
+  R.quiet = { sent: sent.length }
+  // 다시 불러도(data 가 바뀐 회차) 명부 칸과 창 처리기(떠나기 신호 · feed)는 하나다.
+  for (let i = 0; i < 50; i += 1) {
+    globalThis.__mount({ data: { ...data, view: 'v' + (3 + i) }, ...component })
+  }
+  R.remounted = {
+    editors: book.entries.size,
+    leaving: winCount['capa-leaving'],
+    feed: winCount['capa-equipment-grid'],
+  }
+  // 마운트를 내리면 명부에서 빠진다(남은 op 는 보내고).
+  cleanup()
+  R.down = {
+    editors: book.entries.size, busy: busy(), leave: S.leave, leaving: winCount['capa-leaving'],
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_leaving_signal_sends_the_held_cells_at_once_and_holds_busy_until_the_ack() -> None:
+    """떠나기 신호(`capa-leaving`)를 받으면 묶음 쉼 안의 칸 고침을 곧바로 보내고, ack 가 올 때까지
+    편집기 명부(`window.__capaEditors`)에 busy 다. 신호 뒤 고침은 묶지 않고, ack 로 보낼 목록이
+    비면 다시 묶는다. data 가 바뀔 때마다 default export 를 다시 불러도 명부 칸과 창 처리기는
+    하나이고, 마운트를 내리면 명부에서 빠진다."""
+    result = _node({}, _LEAVE_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["mounted"] == {"editors": 1, "busy": False}
+    assert result["held"] == {"sent": 0, "busy": True}
+    assert result["left"] == {"sent": 1, "busy": True, "leaving": True}
+    assert result["after"] == {"sent": [[1], [1, 2]], "busy": True}, "신호 뒤 칸은 곧바로"
+    assert result["acked"] == {"box": 0, "busy": False, "leaving": False}
+    assert result["again"] == {"sent": 2, "busy": True}, "ack 뒤 고침은 다시 쉼을 탄다"
+    assert result["quiet"] == {"sent": 3}
+    assert result["remounted"] == {"editors": 1, "leaving": 1, "feed": 1}
+    assert result["down"] == {"editors": 0, "busy": False, "leave": None, "leaving": 0}
+
+
+_LEAVE_DRAFT_RUNNER = (
+    "globalThis.window = new EventTarget()\n"
+    + _WINDOW_COUNT
+    + _DRAFT_BATCH_RUNNER[: _DRAFT_BATCH_RUNNER.index("const R = {}")]
+    + """
+const R = {}
+;(async () => {
+  const cleanup = mount(panel({}))
+  const S = host.__emg
+  // Enter 로 확정한 초안은 쉼(1초) 안이다 — 떠나기 신호에 곧바로 간다. 초안은 ack 가 없어 busy 가
+  // 아니고, 보낼 목록도 비어 신호를 받은 자리에서 걷힌다.
+  fire(type(0, 'EQ-1'), 'keydown', { key: 'Enter' })
+  R.held = states.length
+  window.dispatchEvent(new CustomEvent('capa-leaving'))
+  R.left = { states: states.slice(), leaving: S.leave.leaving }
+  await wait(1100)
+  R.quiet = states.length
+  // 머문 뒤 다음 확정은 다시 쉼을 탄다.
+  fire(type(0, 'EQ-2'), 'keydown', { key: 'Enter' })
+  R.again = states.length
+  // 다시 불러도(data 가 바뀐 회차) 명부 칸과 신호 처리기는 하나다.
+  const book = editorBook(window)
+  for (let i = 0; i < 50; i += 1) mount(panel({ checked: 3 + i }))
+  R.remounted = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  cleanup()
+  R.down = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  mount(panel({}))
+  R.back = { editors: book.entries.size, leaving: winCount['capa-leaving'] }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_leaving_signal_sends_the_new_unit_draft_and_mounts_join_the_book_once() -> None:
+    """「새 호기」 초안도 떠나기 신호에 곧바로 간다 — ack 가 없는 상태 값이라 busy 에 들지 않고,
+    보낼 것이 남지 않은 편집기는 신호를 받은 자리에서 걷혀 머문 뒤 다음 확정은 다시 쉼을 탄다.
+    data 가 바뀔 때마다 default export 를 다시 불러도 명부 칸과 신호 처리기는 하나이고, 정리 함수가
+    둘 다 걷으며 다시 마운트하면 다시 하나다."""
+    runner = _FAKE_DOM + _LEAVE_DRAFT_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+    assert result["held"] == 0
+    assert result["left"] == {"states": [["draft", 4, ["EQ-1", "", ""]]], "leaving": False}
+    assert result["quiet"] == 1, "보낸 초안은 쉼 뒤에 다시 가지 않는다"
+    assert result["again"] == 1, "머문 뒤 다음 확정은 쉼을 탄다"
+    assert result["remounted"] == {"editors": 1, "leaving": 1}
+    assert result["down"] == {"editors": 0, "leaving": 0}
+    assert result["back"] == {"editors": 1, "leaving": 1}
+
+
+def test_the_grid_joins_the_leaving_book_in_bind_and_drops_it_in_cleanup() -> None:
+    """글 약속 — 신호 받기는 처리기를 한 번 다는 자리(`S.bound`) 안이고 정리 함수가 걷는다. busy 는
+    보낼 목록이 남았는가이고, ack 를 받은 뒤 걷힘을 알린다. 떠나기 뒤 칸 고침 · 초안 확정은 묶음
+    타이머를 타지 않는다."""
+    own = (ASSETS / "grid.js").read_text(encoding="utf-8")
+    bind = own[own.index("if (!S.bound) {") : own.index("if (data.mode === 'loader') {")]
+    assert (
+        "S.leave = joinLeaving(window, { busy: () => gridBusy(S), flush: () => leaveNow(S) }, host)"
+        in bind
+    )
+    assert "return boxBusy(S.box)" in own[own.index("function gridBusy(") :]
+    receive = own[own.index("function receive(") : own.index("function send(")]
+    assert receive.index("ackBox(S.box, ack.seq)") < receive.index(
+        "settleLeaving(S.leave, gridBusy(S))"
+    )
+    schedule = own[own.index("function schedule(") : own.index("function sendOnce(")]
+    assert "leavingNow(S.leave) ||" in schedule
+    commit = own[own.index("function commitDraft(") : own.index("function flushDraft(")]
+    assert "now = now || leavingNow(S.leave)" in commit
+    cleanup = own[own.index("return () => {", own.index(_MOUNT_HEAD)) :]
+    assert "if (S.leave) S.leave.drop()" in cleanup

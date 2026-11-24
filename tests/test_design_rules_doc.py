@@ -3679,6 +3679,35 @@ def test_the_tip_delay_board_answers_are_recorded_in_6_44_and_make_ui_nav_04() -
         assert phrase in v148, phrase
 
 
+RERUN_1120_ANSWERS = {
+    "q5-head": "머리 글에서 칸 수 · 층 수를 뺀다",
+    "q6-apply": "여럿 고른 뒤 「적용」 한 번",
+}
+
+
+def test_the_editor_rerun_user_decisions_are_recorded_in_6_40() -> None:
+    """6-40 은 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 입력 비가동 · 층 사용 머리 글과
+    필요 단축 「공정」 칸의 사용자 결정 둘이 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남) 고른
+    답이 굵게 선다. 필요 단축 일정 「공정」 의 옛 답 m19-rr-d5 를 바꾼 것은 7-1 에 선다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-40. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-20) · ([^()]+)\)$", line)
+        assert match, line
+        card, answer = match.group(1), match.group(2)
+        found.append(card)
+        assert answer == RERUN_1120_ANSWERS[card], card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(RERUN_1120_ANSWERS)
+    overturned = _chapter(document, 7)
+    assert "m19-rr-d5" in overturned and "6-40" in overturned
+
+
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
     """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
     보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""

@@ -583,10 +583,7 @@ def held_flash(key: str) -> tuple[str, str | None, str] | None:
     부르는 쪽(`flash.render_flash`)은 담아 둔 알림이 없을 때 이 알림을 그 자리에 같은 꼴로 다시
     그린다. 아이콘·종류 없이 적은 옛 꼴(글, 시각[, 아이콘])도 읽는다(종류는 성공).
     """
-    marks = st.session_state.get(RECENT_NOTICES_KEY)
-    if not isinstance(marks, dict):
-        return None
-    entry = marks.get(key)
+    entry = _notice_entry(key)
     if not isinstance(entry, tuple) or len(entry) not in (2, 3, 4):
         return None
     message, moment, *rest = entry
@@ -600,6 +597,21 @@ def held_flash(key: str) -> tuple[str, str | None, str] | None:
     ):
         return None
     return (message, icon, kind) if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
+
+
+def noted_notice(key: str) -> str | None:
+    """`key` 칸에 적힌 마지막 쓰기 알림 글 — 창(`TRAILING_PRESS_SECONDS`)과 상관없이. 끊긴 쓰기의
+    뒷정리를 다른 표지로 알아본 쪽이 그 알림을 다시 낼 때 쓴다."""
+    entry = _notice_entry(key)
+    if isinstance(entry, tuple) and entry and isinstance(entry[0], str):
+        return entry[0]
+    return None
+
+
+def _notice_entry(key: str) -> object:
+    """쓰기 알림 표지 dict 의 `key` 칸(없으면 None)."""
+    marks = st.session_state.get(RECENT_NOTICES_KEY)
+    return marks.get(key) if isinstance(marks, dict) else None
 
 
 def held_notice(key: str) -> str | None:

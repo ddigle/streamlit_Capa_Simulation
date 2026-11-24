@@ -81,6 +81,8 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from functools import partial
+from typing import Final
 
 import pandas as pd
 import streamlit as st
@@ -95,7 +97,12 @@ from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.edit_file_tail import edited_file_name
 from capa_simulation.components.grade_hooks import in_fragment, on_press, viewer_can
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
-from capa_simulation.components.process_field import first_and_rest
+from capa_simulation.components.process_field import (
+    board_trigger,
+    first_and_rest,
+    mount_process_board,
+    parse_board_apply,
+)
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import render_row_value
 from capa_simulation.components.shortening_basis_switch import (
@@ -240,6 +247,7 @@ from capa_simulation.services.undated_equipment import (
 )
 from capa_simulation.services.upeh_assumption import UpehAssumption
 from capa_simulation.services.usage_basis import usage_exclusion_mark
+from capa_simulation.session_slot import SessionSlot
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, rerun_fragment_if_alone
 
@@ -251,6 +259,8 @@ __all__ = [
     "SHARED_FILTER_HELP",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
+    "PROCESS_BOARD_KEY",
+    "PROCESS_CLEAR_LABEL",
     "PROCESS_FIELD_EMPTY",
     "PROCESS_FIELD_NAME",
     "PROCESS_POPOVER_KEY",
@@ -266,11 +276,20 @@ __all__ = [
 
 # 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
 # 여기서 다시 내보낸다.
+# 적용한 공정(원본, 고른 차례) — 위젯 key 가 아니라 세션 칸이다. 팝오버 안 고르기 판의 「적용」 이
+# 적는다(`_apply_processes`).
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
-# 조건 카드의 공정 칸 — 이름 줄, 고른 값 한 줄 팝오버(안이 다중 선택 칸), 고르지 않았을 때의 글.
+SHORTENING_PROCESS: Final = SessionSlot(SHORTENING_PROCESS_KEY, list)
+# 조건 카드의 공정 칸 — 이름 줄, 고른 값 한 줄 팝오버(안이 고르기 판), 고르지 않았을 때의 글.
 PROCESS_FIELD_NAME = "공정 (표시순서)"
 PROCESS_FIELD_EMPTY = "미선택 시 목표 미달 공정 전체"
 PROCESS_POPOVER_KEY = "equipment_shortening_process_popover"
+# 팝오버 안 고르기 판(공용 공정 팝업과 같은 판 — `process_field.mount_process_board`)과 그 판의 고른
+# 것 비우기 단추 글(판의 「전체」 자리 — 이 칸에서 비움은 「목표 미달 공정 전체」 라 「전체」 가
+# 「모든 공정」 으로 읽히지 않게). 그 단추는 판 안의 고름만 비우고 저장은 「적용」 이 한다(다른
+# 화면의 「선택 해제」 처럼 고름만 푼다).
+PROCESS_BOARD_KEY = "equipment_shortening_process_board"
+PROCESS_CLEAR_LABEL = "선택 해제"
 # 이름 줄과 한 줄 칸의 꼴 — 이웃 고르기 칸(진척 비교 · 시작 월)처럼 이름은 위젯 라벨
 # 글(0.875rem)이고 값은 왼쪽 · 펼침 표식은 오른쪽 끝이다(팝오버 단추는 기본이 가운데 정렬이라 단추로
 # 읽혔다). 서식과 이름을 한 `st.html` 에 실어 카드 안 그 자리에 그린다(스타일만 든 `st.html` 은
@@ -1135,17 +1154,32 @@ def _render_process_filter(
     labels: ProcessLabels,
     database_path: str | None,
 ) -> list[str]:
-    """공정 다중 선택(표시순서). 선택지는 맞댄 공정이고 라벨은 공정 표시명, 값은 원본이다.
+    """공정 고르기(표시순서). 선택지는 맞댄 공정이고 글자는 공정 표시명, 값은 원본이다.
 
     카드에는 고른 값 한 줄(「Wafer Saw 외 2개」 — `process_field.first_and_rest`, 하나면 이름,
-    고르지 않았으면 「미선택 시 목표 미달 공정 전체」)만 서고, 누르면 뜨는 팝오버 안이 다중 선택
-    칸이다(2026-11-09 사용자 검수 g03-2 — 고른 칩이 카드를 몇 줄씩 늘렸다). 첫 공정은 **가장 먼저
-    고른 공정**이다 — 다중 선택 값은 고른 차례대로 쌓인다. 둘 이상이면 한 줄 칸의 풍선이 전체
-    목록이다. 팝오버는 key 가 있어 고르는 회차에도 열린 채 남는다.
+    고르지 않았으면 「미선택 시 목표 미달 공정 전체」)만 서고, 누르면 뜨는 팝오버 안이 고르기 판이다
+    (2026-11-09 사용자 검수 g03-2 — 고른 칩이 카드를 몇 줄씩 늘렸다). 첫 공정은 **가장 먼저 고른
+    공정**이다 — 판이 누른 차례대로 쌓고(`pick_order`) 적용한 값도 그 차례다(같은 공정을 차례만
+    바꿔 고른 것도 「적용」 한다). 둘 이상이면 한 줄 칸의 풍선이 전체 목록이다. 팝오버는 key 가 있어
+    「적용」 회차에도 열린 채 남는다.
+
+    **여럿 고른 뒤 「적용」 한 번이다**(2026-11-20 사용자 결정 — 편집기 다시 로딩 줄이기 Q6). 판은
+    공용 공정 팝업과 같은 Components v2 판이라(`process_field.mount_process_board`) 타일을 누르는
+    동안은 서버가 돌지 않고, 「적용」 이 고른 공정을 트리거 하나로 보내 앱 전체 회차 한 번이
+    된다(콜백 `_apply_processes` 가 회차 앞에서 세션 칸을 적고 공용 프로필에 남긴다 — 한 줄 칸 글이
+    그 회차에 바로 맞는다). 고르고 적용하지 않은 동안은 「적용」 만 켜진다(지금 값과 같으면 잠김 —
+    설계 규칙 UI-INP-04, 설명 글은 두지 않는다). 모두 켬은 고르지 않음과 다르다(「미선택 = 목표 미달
+    공정 전체」 — `whole_is_all=False`). 판의 「선택 해제」(공용 판의 「전체」 자리)는 판에 켠
+    공정이 있을 때만 켜지고 판 안의 고름만 비운다(`clear_draft` — 서버에 가지 않는다). 비운 고름도
+    「적용」 이 보내 그때 「목표 미달 공정 전체」 가 된다 — 이 칸에서 공용 설정을 쓰는 단추는
+    「적용」 하나다. 적용하지 않은 고름은 판(브라우저) 안에만 있어 팝오버를 닫거나 다른 화면에
+    다녀오면 사라지고 판은 적용한 값으로 다시 선다 — 거르는 조건이라 잃는 입력이 없고 한 줄 칸이 늘
+    적용한 값을 말한다(공용 공정 팝업이 열 때 고르다 만 판을 비우는 것과 같은 꼴). 찾기 칸에 글이
+    있을 때 Esc 는 글만 지우고 팝오버는 그대로다.
 
     **세션에 값이 없으면** 공용 프로필의 공정으로 심는다 — 지금 맞댄 공정에 없는 것만 빼고
-    (`prune_list_selection` 의 `default`). 프로필에서는 지우지 않는다. 사용자가 바꾸면
-    `on_change` 가 저장한다(그때도 화면에 없던 저장 공정은 남긴다 — `merge_filter_processes`).
+    (`prune_list_selection` 의 `default`). 프로필에서는 지우지 않는다. 「적용」 이 저장한다(그때도
+    화면에 없던 저장 공정은 남긴다 — `merge_filter_processes`).
     """
     chosen = prune_list_selection(SHORTENING_PROCESS_KEY, ordered, default=profile.processes)
     # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이
@@ -1160,16 +1194,17 @@ def _render_process_filter(
         wrap=False,
         help=" · ".join(names) if len(names) >= 2 else None,
     ):
-        selected = st.multiselect(
-            PROCESS_FIELD_NAME,
+        mount_process_board(
+            key=PROCESS_BOARD_KEY,
             options=ordered,
-            format_func=shown_text,
-            placeholder=PROCESS_FIELD_EMPTY,
-            key=SHORTENING_PROCESS_KEY,
-            persist_state="session",
-            label_visibility="collapsed",
-            on_change=_save_processes if database_path is not None else None,
-            args=(database_path, tuple(ordered)) if database_path is not None else None,
+            texts=[shown_text(process) for process in ordered],
+            selected=chosen,
+            has_shared=bool(chosen),
+            on_apply=partial(_apply_processes, database_path, tuple(ordered)),
+            whole_is_all=False,
+            pick_order=True,
+            clear_draft=True,
+            clear_label=PROCESS_CLEAR_LABEL,
         )
     absent = absent_filter_processes(profile.processes, set(ordered))
     if absent:
@@ -1184,7 +1219,21 @@ def _render_process_filter(
                 + " — 공용 설정에는 남습니다."
             ),
         )
-    return [str(process) for process in selected]
+    return list(chosen)
+
+
+def _apply_processes(database_path: str | None, visible: tuple[str, ...]) -> None:
+    """고르기 판 「적용」 의 콜백 — 회차 앞에서 적용한 공정(고른 차례 — 비었으면 「목표 미달 공정
+    전체」)을 세션 칸에 적고 공용 프로필에 남긴다(`_save_processes`). 선택지에 없는 값은 버린다(공정
+    표시명이 바뀐 직후 옛 판의 누름 — `parse_board_apply`). 이 판의 「선택 해제」 는 트리거를 보내지
+    않지만 공용 판 꼴의 비우기 트리거(`clear`)가 오면 비운 「적용」 과 같이 받는다. 꼴이 맞지 않는
+    트리거는 아무것도 하지 않는다."""
+    result = parse_board_apply(board_trigger(PROCESS_BOARD_KEY), visible, pick_order=True)
+    if result is None:
+        return
+    SHORTENING_PROCESS.set([] if result.clear else list(result.values))
+    if database_path is not None:
+        _save_processes(database_path, visible)
 
 
 @on_press
@@ -1216,11 +1265,11 @@ def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
 
 @on_press
 def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
-    """공정 선택의 콜백. 고른 공정을 공용 프로필에 남긴다(기간은 그대로).
+    """공정 「적용」 의 저장(`_apply_processes` 가 부른다). 적용한 공정을 공용 프로필에
+    남긴다(기간은 그대로).
 
-    선택지에 없는 값이 섞여 오면 쓰지 않는다 — 공정 표시명이 바뀐 직후 브라우저가 옛 라벨을
-    되보내는 경우다(AGENTS 9장 — 선택 상자는 라벨 글자를 주고받는다). 그 값을 그대로 쓰면 사용자가
-    고르지 않은 빠짐이 공용 설정이 된다. 실패해도 화면은 멈추지 않는다(`_save_month_range`).
+    선택지에 없는 값이 섞여 있으면 쓰지 않는다 — 그 값을 그대로 쓰면 사용자가 고르지 않은 빠짐이
+    공용 설정이 된다. 실패해도 화면은 멈추지 않는다(`_save_month_range`).
     """
     if not viewer_can("shortening.filter_default"):
         # 기간과 같다 — 아래 등급의 고름은 세션에만 남는다(`_save_month_range`).

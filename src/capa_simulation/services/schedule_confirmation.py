@@ -79,6 +79,48 @@ def schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.
     return _issues(equipment, kinds=CONFIRMATION_KINDS, today=pd.Timestamp(today))
 
 
+# 한 줄의 일정 확인 판정이 읽는 칸 — 설비명과 단계마다 (일정, 실적, 상태). 판정은 그 줄의 이
+# 칸과 오늘로만 정해진다(`row_confirmation_words` — 바뀐 줄만 다시 보는 쪽이 이 칸으로 바뀐 줄을
+# 가른다).
+CONFIRMATION_INPUT_COLUMNS: Final = (
+    EQUIPMENT_ID_COLUMN,
+    *(column for stage in ACTUAL_STAGES for column in (stage.schedule, stage.actual, stage.status)),
+)
+
+
+def row_confirmation_words(equipment: pd.DataFrame, *, today: date) -> list[tuple[str, ...]]:
+    """줄마다 걸린 「단계 확인구분」 낱말(「반입 미확인」) — `schedule_confirmation_issues` 와 같은
+    판정을 줄 자리 차례로 낸다. 한 줄 안의 차례는 확인구분(`CONFIRMATION_KINDS`) → 단계(반입 →
+    Qual)이고, 설비명이 빈 줄은 빈 튜플이다. 판정이 줄마다 따로라 바뀐 줄만 떼어 불러도 그 줄의
+    낱말은 통째로 부른 것과 같다."""
+    count = len(equipment)
+    if not count or EQUIPMENT_ID_COLUMN not in equipment.columns:
+        return [()] * count
+    names = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    named = (names.notna() & names.ne("")).fillna(False).to_numpy(dtype=bool)
+    stamp = pd.Timestamp(today)
+    words: list[list[str]] = [[] for _ in range(count)]
+    for kind in CONFIRMATION_KINDS:
+        for stage in ACTUAL_STAGES:
+            schedule, actual, status = _stage_values(equipment, stage)
+            chosen = _kind_mask(kind, schedule, actual, status, stamp).to_numpy(dtype=bool) & named
+            for position in chosen.nonzero()[0]:
+                words[int(position)].append(f"{stage.label} {kind}")
+    return [tuple(item) for item in words]
+
+
+def rowwise_confirmation(equipment: pd.DataFrame) -> bool:
+    """줄을 떼어 판정해도 통째로 판정한 것과 같은가 — 단계 날짜 칸이 모두 날짜 형일 때만이다. 글자
+    날짜 칸은 `pd.to_datetime` 이 그 칸 앞 값에서 꼴을 짐작하므로 뗀 줄의 차례에 따라 읽는 꼴이
+    달라질 수 있다."""
+    return all(
+        pd.api.types.is_datetime64_any_dtype(equipment[column])
+        for stage in ACTUAL_STAGES
+        for column in (stage.schedule, stage.actual)
+        if column in equipment.columns
+    )
+
+
 def unconfirmed_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
     """미확인만. 칸과 차례는 `schedule_confirmation_issues` 와 같다. 다른 두 확인구분을 구하지 않아
     회차마다 부르는 Space 「!」(`space_unit_state.unit_boundaries`)가 쓴다."""

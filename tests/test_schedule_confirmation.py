@@ -26,6 +26,8 @@ from capa_simulation.services.schedule_confirmation import (
     UNCONFIRMED,
     confirmation_counts,
     flagged_equipment,
+    row_confirmation_words,
+    rowwise_confirmation,
     schedule_confirmation_issues,
     schedule_confirmation_notice,
     unconfirmed_issues,
@@ -221,3 +223,37 @@ def test_an_unvalidated_buffer_and_an_old_frame_are_read_without_errors() -> Non
     assert _kinds(issues) == [("EQ-1", UNCONFIRMED, "반입")]
     assert schedule_confirmation_issues(old, today=TODAY).empty
     assert schedule_confirmation_issues(pd.DataFrame(), today=TODAY).empty
+
+
+def test_row_words_follow_the_whole_list_and_a_slice_judges_its_rows_the_same() -> None:
+    """줄마다 낱말(`row_confirmation_words`)은 통째 목록(`schedule_confirmation_issues`)의 그 줄
+    판정과 같고, 한 줄 안의 차례는 확인구분 → 단계다. 줄을 떼어 불러도(바뀐 줄만 다시 보는 설비
+    마스터 탭) 그 줄의 낱말은 같다 — 날짜 칸이 날짜 형이면(`rowwise_confirmation`)."""
+    past = pd.Timestamp(TODAY - timedelta(days=3))
+    master = _master(
+        _unit("A", 반입일정=past, 반입상태="계획", Qual일정=past, Qual상태="확정"),
+        _unit("B", 반입상태="완료"),
+        _unit("C", 반입실적=past, 반입상태="계획", Qual상태="완료"),
+        _unit("", 반입일정=past, 반입상태="계획"),
+        _unit("D"),
+    )
+    for column in ("반입일정", "반입실적", "Qual일정", "Qual실적"):
+        master[column] = pd.to_datetime(master[column])
+    assert rowwise_confirmation(master)
+    words = row_confirmation_words(master, today=TODAY)
+    assert words == [
+        ("반입 미확인", "Qual 미확인"),
+        ("반입 실적 누락",),
+        ("Qual 실적 누락", "반입 상태 갱신 필요"),
+        (),
+        (),
+    ]
+    issues = schedule_confirmation_issues(master, today=TODAY)
+    whole = {(name, f"{stage} {kind}") for name, kind, stage in _kinds(issues)}
+    rows = {(name, word) for name, found in zip("ABC D", words, strict=True) for word in found}
+    assert rows == whole
+    picked = [2, 0]
+    assert row_confirmation_words(master.iloc[picked], today=TODAY) == [words[2], words[0]]
+    texts = master.astype({"반입일정": "object"})
+    texts["반입일정"] = texts["반입일정"].map(lambda value: "" if pd.isna(value) else str(value))
+    assert not rowwise_confirmation(texts)

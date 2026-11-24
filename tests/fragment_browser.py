@@ -15,12 +15,14 @@ AppTest 는 `run()` 마다 러너를 새로 만들고 그때마다 프래그먼�
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
-from streamlit.proto.WidgetStates_pb2 import WidgetStates
+from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.runtime.fragment import MemoryFragmentStorage
 from streamlit.runtime.scriptrunner import RerunData, ScriptRunnerEvent
 from streamlit.runtime.scriptrunner_utils.script_requests import ScriptRequests
@@ -41,6 +43,11 @@ class FragmentBrowser:
     회차 뒤에 앱 전체 회차가 이어지면 앞 회차의 델타는 큐에서 빠지므로, 앞 회차가 무엇을 보냈는지는
     이것으로 본다. 프래그먼트 회차의 `run()` 이 돌려주는 요소 트리는 그 회차가 보낸
     델타뿐이다(사이드바 위젯을 누르려면 앱 전체 회차를 한 번 돌린다).
+
+    Components v2 상태 값(`setStateValue`)은 `send_state` 로 보낸다 — 브라우저는 그 부품을 그린
+    델타의 `fragment_id` 를 실어 요청하므로(BidiComponent 의 `setJsonValue(…, {fragmentId})`)
+    프래그먼트 안 부품이면 그 프래그먼트만 도는 회차다. AppTest 는 부품을 그리지 못해 위젯 상태에
+    싣지 않으므로 마지막 메시지에서 부품 id 를 찾아 상태 값 칸(`json_value`)을 더한다.
     """
 
     storage: MemoryFragmentStorage = field(default_factory=MemoryFragmentStorage)
@@ -63,6 +70,63 @@ class FragmentBrowser:
                 assert delta.fragment_id, f"{widget_key} 는 프래그먼트 안이 아니다"
                 return str(delta.fragment_id)
         raise AssertionError(f"{widget_key} 위젯을 그린 메시지가 없다")
+
+    def widget_id_of(self, widget_key: str) -> str:
+        """그 키의 위젯(Components v2 부품 포함)을 그린 마지막 메시지의 위젯 id."""
+        for message in reversed(self.emitted or self.messages):
+            if message.WhichOneof("type") != "delta":
+                continue
+            delta = message.delta
+            if delta.WhichOneof("type") != "new_element":
+                continue
+            kind = delta.new_element.WhichOneof("type")
+            widget = getattr(delta.new_element, kind) if kind else None
+            widget_id = str(getattr(widget, "id", ""))
+            if widget_id.endswith(f"-{widget_key}"):
+                return widget_id
+        raise AssertionError(f"{widget_key} 위젯을 그린 메시지가 없다")
+
+    def bidi_data(self, widget_key: str) -> Any:
+        """그 키의 Components v2 부품이 마지막으로 받은 data(JSON) — 없으면 `None`."""
+        for message in reversed(self.emitted or self.messages):
+            if message.WhichOneof("type") != "delta":
+                continue
+            delta = message.delta
+            if delta.WhichOneof("type") != "new_element":
+                continue
+            if delta.new_element.WhichOneof("type") != "bidi_component":
+                continue
+            component = delta.new_element.bidi_component
+            if str(component.id).endswith(f"-{widget_key}"):
+                return json.loads(component.json) if component.json else None
+        return None
+
+    def send_state(self, app: AppTest, widget_key: str, value: Mapping[str, Any]) -> AppTest:
+        """브라우저처럼 Components v2 부품 하나의 상태 값을 바꾼 회차를 청한다 — 부품이 프래그먼트
+        안이면 그 프래그먼트만 도는 요청이다(모듈 설명). 마지막 회차 트리의 다른 위젯 값도 함께
+        보낸다."""
+        widget_id = self.widget_id_of(widget_key)
+        fragment_id = self._fragment_of_id(widget_id)
+        states = app._tree.get_widget_states()
+        kept = [state for state in states.widgets if state.id != widget_id]
+        del states.widgets[:]
+        states.widgets.extend(kept)
+        states.widgets.append(WidgetState(id=widget_id, json_value=json.dumps(dict(value))))
+        self.fragment_queue = [fragment_id] if fragment_id else []
+        return app._run(widget_state=states)
+
+    def _fragment_of_id(self, widget_id: str) -> str:
+        for message in reversed(self.emitted or self.messages):
+            if message.WhichOneof("type") != "delta":
+                continue
+            delta = message.delta
+            if delta.WhichOneof("type") != "new_element":
+                continue
+            kind = delta.new_element.WhichOneof("type")
+            widget = getattr(delta.new_element, kind) if kind else None
+            if str(getattr(widget, "id", "")) == widget_id:
+                return str(delta.fragment_id)
+        return ""
 
     def fragment_keyed(self, key: str) -> str:
         """`@st.fragment(key=...)` 로 단 프래그먼트의 id. 이번 앱 전체 회차에 등록돼 있어야 한다."""

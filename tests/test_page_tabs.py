@@ -1313,7 +1313,7 @@ def test_a_manual_downtime_draft_marks_the_equipment_tab_and_the_change_chip_fro
     _ok(app.run())
 
     assert app.session_state["test_marks"] == {
-        AVAILABLE_EQUIPMENT_STATUS.path: "저장하지 않은 입력 비가동 2칸"
+        AVAILABLE_EQUIPMENT_STATUS.path: "저장하지 않은 입력 비가동"
     }
     assert app.session_state["test_leave"] == ""
     assert [
@@ -1323,7 +1323,7 @@ def test_a_manual_downtime_draft_marks_the_equipment_tab_and_the_change_chip_fro
         (
             "keep",
             AVAILABLE_EQUIPMENT_STATUS.title,
-            "입력 비가동 2칸 저장 안 함",
+            "입력 비가동 저장 안 함",
             "입력 비가동 미저장",
             "equipment",
             tab_name(EQUIPMENT_PREFERENCE_TAB),

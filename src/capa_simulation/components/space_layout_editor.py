@@ -70,12 +70,12 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import sso_identity
+from capa_simulation.components import grid_shared, sso_identity
 from capa_simulation.components.date_panel import (
     DATE_PANEL_CSS,
     DATE_PANEL_HTML,
@@ -105,6 +105,7 @@ from capa_simulation.services.floor_layout_profile import (
 from capa_simulation.services.space_layout_edit import EditorInputs, finite_or_none
 from capa_simulation.services.space_shortening_layer import BUCKETS
 from capa_simulation.services.space_unit_sheet import MAX_SHEET_ROWS, SHEET_TYPES
+from capa_simulation.session_slot import SessionSlot
 
 _ASSETS = Path(__file__).with_name("space_layout_editor_assets")
 # FAB 도면의 범위 이름(편집기 `data.floor`). 층 이름과 겹치지 않으면 된다 — 뷰를 처음 크기로 돌릴지
@@ -120,15 +121,31 @@ _LEGEND_LIMIT = 40
 # 풀린다(AGENTS 9장 「브라우저 전용 보기 상태」).
 SPACE_LOCK_ATTRIBUTE = "data-space-lock"
 
+# 「호기 정보」 창 칸 확인을 모아 보내는 쉼(ms) — 잇달아 고친 칸은 마지막 고침 뒤 이만큼 조용할
+# 때 한 번 묻는다(편집기 data `sheetSendMs` — `grid_shared.batch_ms`, 개발 · 측정 사본만 실행 줄
+# `CAPA_DEV_BATCH_MS` 로 덮어쓴다). 첫 칸 · 되돌리기 · 창 밖으로 초점이 나감 · 「적용」 직전 ·
+# 떠나기 신호 · 창 숨김은 쉼을 기다리지 않는다(`editor.js` 의 `// <sheet-send>`).
+SHEET_SEND_MS: Final = 800
+# 「호기 정보」 창 「확인만」 요청을 마지막으로 받은 자리 ``{"editor", "epoch", "mount", "seq"}``
+# (`_dispatch_sheet_check` — 같은 마운트의 같은 · 옛 seq 를 거른다).
+SHEET_CHECK_SEEN_KEY: Final = "space_sheet_check_seen_v1"
+_SHEET_CHECK_SEEN: Final = SessionSlot(SHEET_CHECK_SEEN_KEY, dict)
+
 # 「+ 호기 추가」 의 날짜 칸 자리 — 앱의 날짜 칸과 같은 조각을 그대로 넣는다(설계 규칙 UI-INP-03).
 DATE_PANEL_SLOT = "<!-- capa-date-panel -->"
+# 등록 글 머리에 떠나기 신호 조각(`grid_shared.leave_js` — `joinLeaving` · `leavingNow` ·
+# `settleLeaving`)을 잇는다 — 창 칸 확인을 묶는 동안 화면을 떠나는 누름이 남은 칸을 곧바로
+# 보내게 한다.
 _EDITOR = st.components.v2.component(
     "capa_space_layout_editor",
     html=(_ASSETS / "editor.html")
     .read_text(encoding="utf-8")
     .replace(DATE_PANEL_SLOT, DATE_PANEL_HTML),
     css=DATE_PANEL_CSS + (_ASSETS / "editor.css").read_text(encoding="utf-8"),
-    js=DATE_PANEL_MOUNT_JS + (_ASSETS / "editor.js").read_text(encoding="utf-8"),
+    js=grid_shared.leave_js()
+    + "\n"
+    + DATE_PANEL_MOUNT_JS
+    + (_ASSETS / "editor.js").read_text(encoding="utf-8"),
 )
 
 
@@ -666,11 +683,13 @@ def _dispatch_pick(key: str, epoch: str, on_pick: Callable[[str | None], None] |
 def _dispatch_sheet_check(
     key: str, epoch: str, on_check: Callable[[Mapping[str, Any]], None] | None
 ) -> None:
-    """`on_sheetCheck_change` 콜백. 배치 편집 「호기 정보」 창에서 칸을 확정할 때마다 브라우저가
-    보낸 「확인만」 요청(``{"epoch", "seq", "base", "cells"}``)을 `on_check` 로 넘긴다 — 본문보다
-    먼저 돌아 판정 · 알림이 그 회차에 선다(2026-11-12 Space 시안 보드 답 5-6). 편집기를 그린 epoch
-    와 다른 값(다시 서기 전에 보낸 옛 요청)과 seq 가 정수가 아닌 값은 버린다 — 블록
-    열기(`_dispatch_navigate`)와 같은 규칙이다. 칸 꼴은 받는 쪽이 읽는다(`parse_sheet_cells`)."""
+    """`on_sheetCheck_change` 콜백. 배치 편집 「호기 정보」 창에서 고친 칸을 브라우저가 모아
+    보낸 「확인만」 요청(``{"mount", "epoch", "seq", "base", "cells"}``)을 `on_check` 로 넘긴다 —
+    본문보다 먼저 돌아 판정 · 알림이 그 회차에 선다(2026-11-12 Space 시안 보드 답 5-6, 2026-11-20
+    사용자 결정 Q3). 편집기를 그린 epoch 와 다른 값(다시 서기 전에 보낸 옛 요청)과 seq 가 정수가
+    아닌 값은 버린다 — 블록 열기(`_dispatch_navigate`)와 같은 규칙이다. 같은 편집기 · epoch ·
+    마운트에서 이미 받은 seq 이하도 버린다(`_sheet_check_is_new` — 판정이 오지 않아 브라우저가 한
+    번 다시 보낸 요청 · 늦게 온 옛 요청). 칸 꼴은 받는 쪽이 읽는다(`parse_sheet_cells`)."""
     if on_check is None:
         return
     state = st.session_state.get(key)
@@ -684,7 +703,29 @@ def _dispatch_sheet_check(
     seq = payload.get("seq")
     if not isinstance(seq, int) or isinstance(seq, bool):
         return
+    if not _sheet_check_is_new(key, epoch, payload.get("mount"), seq):
+        return
     on_check(payload)
+
+
+def _sheet_check_is_new(key: str, epoch: str, mount: object, seq: int) -> bool:
+    """이 「확인만」 요청이 같은 편집기 · epoch · 마운트에서 처음 받는 뒤 seq 인가 — 참이면 그
+    자리를 적는다(`SHEET_CHECK_SEEN_KEY`). 마운트(브라우저 편집기가 설 때마다 새 id — 없으면 빈
+    글자)가 다르면 seq 가 처음부터 다시 오르므로 견주지 않는다. 같은 seq 는 다시 보낸 요청이라
+    서버가 이미 판정했으면 그 판정이 세션에 남아 있다."""
+    mount_id = mount if isinstance(mount, str) else ""
+    seen = _SHEET_CHECK_SEEN.peek()
+    if (
+        seen is not None
+        and seen.get("editor") == key
+        and seen.get("epoch") == epoch
+        and seen.get("mount") == mount_id
+    ):
+        last = seen.get("seq")
+        if isinstance(last, int) and not isinstance(last, bool) and seq <= last:
+            return False
+    _SHEET_CHECK_SEEN.set({"editor": key, "epoch": epoch, "mount": mount_id, "seq": seq})
+    return True
 
 
 def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey, bool], None]) -> None:
@@ -871,11 +912,14 @@ def render_space_layout_editor(
     「도면」 칸은 브라우저가 쥔 편집으로 덮어 쓴다). `sheet_edit` 는 그 창의 칸 고치기 재료
     (`space_sheet_edit.sheet_edit_data` — epoch 밖), `sheet_refused` 는 막힌 창 칸으로 거부한 적용의
     판정 ``{"epoch", "nonce", "blocked", "follow"}``(`space_sheet_edit.verdict_payload` — 브라우저가
-    nonce 마다 한 번 받아 빨간 칸으로 짚는다). 창에서 칸을 확정할 때마다 브라우저가 「확인만」 요청
-    ``{"epoch", "seq", "base", "cells"}`` 을 트리거 `sheetCheck` 로 보내고 `on_sheet_check` 가
-    콜백에서 받는다 (`_dispatch_sheet_check` — ``base`` 는 고친 칸이 마지막으로 빈 seq). 그 판정은
-    다음 회차 `sheet_verdict` ``{"epoch", "seq", "blocked", "follow"}`` 로 돌려준다(브라우저는
-    마지막으로 보낸 seq 의 것만 받는다).
+    nonce 마다 한 번 받아 빨간 칸으로 짚는다). 창에서 고친 칸을 브라우저가 잠깐 모아(쉼
+    `SHEET_SEND_MS` — data `sheetSendMs`, 첫 칸 · 되돌리기 · 창 밖으로 초점이 나감 · 「적용」
+    직전 · 떠나기 신호 · 창 숨김은 곧바로) 「확인만」 요청 ``{"mount", "epoch", "seq", "base",
+    "cells"}`` 을 트리거 `sheetCheck` 로 보내고 `on_sheet_check` 가 콜백에서
+    받는다(`_dispatch_sheet_check` — ``mount`` 는 브라우저 편집기가 설 때마다 새 id, ``base`` 는
+    고친 칸이 마지막으로 빈 seq, 같은 마운트의 같은 · 옛 seq 는 거른다). 그 판정은 다음 회차
+    `sheet_verdict` ``{"epoch", "mount", "seq", "blocked", "follow"}`` 로 돌려준다(브라우저는 그
+    마운트가 마지막으로 보낸 seq 의 것만 받고, 판정이 오지 않으면 같은 요청을 한 번 다시 보낸다).
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels",
     "cells", "stack"}``.
@@ -957,6 +1001,7 @@ def render_space_layout_editor(
             "sheetEdit": dict(sheet_edit) if sheet_edit is not None else None,
             "sheetRefused": dict(sheet_refused) if sheet_refused is not None else None,
             "sheetVerdict": dict(sheet_verdict) if sheet_verdict is not None else None,
+            "sheetSendMs": grid_shared.batch_ms(SHEET_SEND_MS),
         },
         on_apply_change=lambda: None,
         on_sheetCheck_change=partial(_dispatch_sheet_check, key, epoch, on_sheet_check),

@@ -15,9 +15,10 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
   있어(1.63 의 위젯 상태 합치기는 CCv2 트리거의 앞 값을 살리지 않는다) 잃어도 되는 화면 조작만
   트리거로 둔다: 불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·
   `goto`·`copy`(가져오기·「이 호기로 새 호기 만들기」).
-- **「새 호기」 초안은 상태 값 `draft`** 다(``{"seq", "values": 39칸 글}`` — 칸을 확정할 때마다
-  전부). 파이썬이 세션 초안으로 적고 그 초안으로 체크 상자·칸 오류를 다시 낸다.
-  편집본을 바꾸지 않으므로 잃어도 다음 확정이 덮는다.
+- **「새 호기」 초안은 상태 값 `draft`** 다(``{"seq", "values": 39칸 글}``). 칸을 확정할 때마다
+  보내지 않고 확정해 둔 마지막 초안 전부를 칸을 떠날 때 · 쉼(`SEND_MS`) 뒤 · 「호기 추가」 직전에
+  하나만 보낸다(단추 「양식 비우기」 는 곧바로). 파이썬이 세션 초안으로 적고 그 초안으로 체크
+  상자·칸 오류를 다시 낸다(그 회차에 선다). 편집본을 바꾸지 않으므로 잃어도 다음 확정이 덮는다.
 - **받기** 는 `on_<이름>_change` 콜백이다(본문보다 먼저 돈다). 콜백은 그 key 의 세션 값을 읽어 꼴을
   거른 뒤 화면 쪽이 넘긴 처리 함수를 부른다. 표가 그린 회차의 `view` 와 다른 트리거(목록이 다시 선
   뒤 누른 옛 줄)는 버린다. 출납은 두 마운트(표·오른쪽 칸)가 함께 보낼 수 있어 처리 함수가
@@ -35,6 +36,15 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
 등급 밖 출납을 버린다(`equipment_master_tab.apply_outbox`) — 이것은 길을 줄이는 것이지 벽이
 아니다(2026-11-18 접속 등급).
 
+**표 마운트는 두 등록으로 나눠 보낸다**(범용 편집 그리드 `edit_grid` 와 같은 꼴). CCv2 는 data
+가 바뀐 회차마다 등록 JS · CSS 를 요소와 함께 다시 보낸다. 표 요소(`_GRID` — 「껍데기」: 칸 정의
+· 잠금 · 불러온 줄)는 칸 하나를 고친 회차에도 앞 껍데기를 그대로 다시 내 ForwardMsg 해시 참조로
+가고, 회차마다 바뀌는 ack · 껍데기 뒤 바뀐 줄 · 수 · 옮김 · 연 줄은 작은 요소(`_FEED` — JS 1 KB
+남짓)에 싣는다(`equipment_grid.split_grid_data`). 둘은 같은 문서의
+`window.__capaEquipmentGrid[host]` 칸과 `window` 이벤트 `capa-equipment-grid` 로 잇는다(feed 의
+`shell` 이 껍데기 지문과 같을 때만 잇는다). feed 요소는 늘 표 요소 바로 앞에서 부르고(key 고정)
+페이지 CSS(`tools_menu_style`)로 숨긴다.
+
 **두 칸 배치**(왼쪽 표 · 오른쪽 칸 — 칸막이 · 접기 · 폭 기억 · 서식)는 시나리오 목록 관리와 함께
 쓰는 `components/side_panel.py` 이고 이 화면의 스펙이 `MASTER_SIDE` 다(저장소
 `capa-equipment-side-v1`, `<html>` 의 `--emd-side-w` · `--emd-top` · `data-emd-side`).
@@ -45,6 +55,7 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
@@ -55,6 +66,7 @@ import streamlit as st
 
 from capa_simulation.components import grid_shared, side_panel
 from capa_simulation.design import tokens
+from capa_simulation.services.equipment_grid import split_grid_data
 
 _ASSETS = Path(__file__).with_name("equipment_master_grid_assets")
 
@@ -85,12 +97,27 @@ def registered_css() -> str:
     return grid_shared.joined_assets(grid_shared.SHARED_CSS, [_ASSETS / "grid.css"])
 
 
+_COMMENT_LINE: Final = re.compile(r"^\s*//")
+
+
+def feed_js() -> str:
+    """feed 등록 JS — 주석만 든 줄을 걷는다(회차마다 다시 가는 작은 요소)."""
+    text = (_ASSETS / "feed.js").read_text(encoding="utf-8")
+    return "\n".join(line for line in text.splitlines() if not _COMMENT_LINE.match(line)) + "\n"
+
+
 _GRID = st.components.v2.component(
     "capa_equipment_master_grid",
     html=(_ASSETS / "grid.html").read_text(encoding="utf-8"),
     css=registered_css(),
     js=registered_js(),
 )
+_FEED = st.components.v2.component("capa_equipment_master_grid_feed", js=feed_js())
+
+
+def feed_key(host: str = GRID_KEY) -> str:
+    """표 feed 요소 key — 표 key 뒤에 `-feed`(CCv2 key 에는 `__` 를 쓸 수 없다)."""
+    return f"{host}-feed"
 
 
 def side_key(panel: SidePanel) -> str:
@@ -100,9 +127,16 @@ def side_key(panel: SidePanel) -> str:
 
 _palette = grid_shared.grid_palette
 
+# 표 · 오른쪽 칸이 칸 고침을 모아 서버로 보내기까지의 쉼(ms) — 결정값은 이 한 줄이고 브라우저
+# `schedule` 이 data `sendMs` 로 받는다(`grid_shared.batch_ms` — 개발 · 측정 사본은 실행 줄
+# `CAPA_DEV_BATCH_MS` 로 덮어쓴다). 깨끗한 편집본의 첫 op · 붙여넣기 · 단추 op · 표 밖 누름 · 창
+# 숨김은 쉼 없이 곧바로 보낸다.
+SEND_MS: Final = 800
+
 
 def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:
-    return {**data, "palette": _palette()}
+    """마운트마다 회차의 화면 값 — 팔레트(테마)와 묶어 보내기 쉼."""
+    return {**data, "palette": _palette(), "sendMs": grid_shared.batch_ms(SEND_MS)}
 
 
 # 화면 등급 잠금 갈래(`lockSets` · 줄 `locks` · `lockReasons` 의 이름 — 다른 잠금과 겹치지 않는다).
@@ -326,20 +360,29 @@ def render_grid_table(
     on_unload: Callable[[list[str]], None],
     key: str = GRID_KEY,
     read_only: str | None = None,
-) -> None:
+    shell: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """표 자리 — 칸 묶음·정렬(브라우저 몫), 칸 고치기·엑셀 여러 칸 붙여넣기·고르기·한꺼번에 고치기·
     지우기·되살리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`). 고른 줄 띠는 고른 동안
     불러오기 칸(`loaderKey`) 자리에 대신 선다(`tools_menu_style` 이 그동안 불러오기 줄 · 메뉴를
-    숨긴다)."""
+    숨긴다).
+
+    data 를 껍데기와 feed 로 갈라(`split_grid_data` — `shell` 은 앞 회차에 보낸 껍데기) feed 요소,
+    그다음 표 요소를 그린다(이 차례 고정). 이번에 보낸 껍데기를 돌려준다 — 부르는 쪽이 세션에
+    두었다가 다음 회차에 `shell` 로 넘긴다."""
     view = str(data.get("view") or "")
+    full = {**_with_palette(read_only_data(data, read_only)), "loaderKey": LOADER_KEY, "host": key}
+    sent, feed = split_grid_data(full, shell)
+    _FEED(key=feed_key(key), data={**feed, "host": key}, width="stretch")
     _GRID(
         key=key,
-        data={**_with_palette(read_only_data(data, read_only)), "loaderKey": LOADER_KEY},
+        data=sent,
         on_outbox_change=on_outbox,
         on_open_change=partial(_dispatch_open, key, view, on_open),
         on_unload_change=partial(_dispatch_unload, key, view, on_unload),
         width="stretch",
     )
+    return sent
 
 
 def render_grid_side(
@@ -449,6 +492,8 @@ def tools_menu_style() -> str:
     자리에 고른 줄 띠가 같은 높이로 대신 서고(2026-11-08 사용자 결정 g01 (가)) 숨긴 칸은 자리를
     그대로 지켜 표가 움직이지 않는다. 불러오기 줄은 그림자 DOM 이라 상속되는 변수
     `--emd-sel-hide` 로 숨는다(값 줄 「불러온 호기 n대」 는 남는다).
+
+    표 feed 요소(`feed_key` — 보이는 것이 없는 작은 요소)도 여기서 숨긴다 — 자리를 먹지 않게.
     """
     item = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{TOOLS_KEY})'
     button = f'.st-key-{TOOLS_KEY} [data-testid="stPopoverButton"]'
@@ -477,6 +522,7 @@ def tools_menu_style() -> str:
             ),
             f"{button} > div {{ gap: {TOOLS_MENU_CARET_GAP_PX}px; margin-right: 0; }}",
             f"{button} p {{ font: 400 13px/1.45 {tokens.FONT_FAMILY}; }}",
+            f".st-key-{feed_key()} {{ display: none; }}",
             f"@media screen and (width > {side_panel.SIDE_STACK_MAX_PX}px) {{ ",
             f"{folded} {loader} {{ ",
             f"--emd-tools-reserve: {room + side_panel.SIDE_REOPEN_RESERVE_PX}px; }} ",

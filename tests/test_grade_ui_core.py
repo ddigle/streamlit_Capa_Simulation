@@ -594,6 +594,7 @@ st.session_state["runs"] = st.session_state.get("runs", 0) + 1
 
 @grade_ui.in_fragment
 def body() -> None:
+    st.session_state["bodies"] = st.session_state.get("bodies", []) + [st.session_state["runs"]]
     st.write("body")
 
 
@@ -731,8 +732,9 @@ def test_an_alarm_table_can_drop_its_csv_button() -> None:
 def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """프래그먼트 · 팝업 안 콜백이 거절을 담으면(`on_press` 표지) 이어 도는 프래그먼트 회차의 본문
-    첫머리가 앱 전체를 다시 그린다 — 그 회차에는 알림을 낼 `emit` 이 돌지 않는다."""
+    """프래그먼트 · 팝업 회차에 거절 표지(`on_press` — 콜백 끝에서 올리지 못한 본문 몫)가 남았으면
+    프래그먼트 본문을 다 그린 **뒤** 앱 전체를 다시 그린다 — 그 회차에는 알림을 낼 `emit` 이 돌지
+    않는다. 본문 앞에서 올리지 않는다(AGENTS 9장 「구역 회차 규칙」 R1)."""
     monkeypatch.setattr(grade_ui, "fragment_only_run", lambda: True)
     app = AppTest.from_string(PENDING_FRAGMENT).run(timeout=60)
 
@@ -740,3 +742,5 @@ def test_a_pending_callback_refusal_reruns_the_whole_app_from_a_fragment_run(
     assert app.session_state["runs"] == 2
     assert grade_ui.PENDING_KEY not in app.session_state
     assert "body" in _written(app)
+    # 표지가 남은 첫 회차에도 본문을 다 그린 뒤 올렸다 — 본문 앞에서 올렸으면 첫 회차 본문이 없다.
+    assert app.session_state["bodies"] == [1, 2]

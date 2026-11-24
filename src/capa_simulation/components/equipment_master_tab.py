@@ -17,8 +17,9 @@
   칸(`SIDE_BODY_KEY` — 그 칸, 창 높이 상한 안에서 스크롤). 오른쪽 칸은 붙어 있다(sticky). 받기
   콜백이 오른쪽 칸을 열면(`_switch_side`) 접힌 칸을 편다.
 - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸 — 초안(세션 `NEW_UNIT_DRAFT_KEY`, 브라우저가
-  칸을 확정할 때마다 상태 값 `draft` 로 보낸다)을 `equipment_grid.new_unit_check` 로 보고 체크 상자
-  셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
+  확정해 둔 초안을 칸을 떠날 때 · 쉼 뒤 · 「호기 추가」 직전에 상태 값 `draft` 로 보낸다)을
+  `equipment_grid.new_unit_check` 로 보고 체크 상자 셋(에러 없이 추가 · 가용대수 · 도면)과 칸
+  오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
   초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 오른쪽 칸
   고르기 말고도 첫 화면 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한 호기에서 값
   가져오기」 가 이 칸을 연다.
@@ -34,7 +35,7 @@
   지우기는 늘 하고 일어난 일은 결과 알림이 적는다(`equipment_save_fields` 모듈 설명). 「리비전
   저장」 은
   잠그지
-  않는다(출납은 300ms 묶음이라 마지막 회차의 판정은 브라우저보다 늦다) — 콜백이 출납을 먼저 반영한
+  않는다(출납은 묶어 보내므로 마지막 회차의 판정은 브라우저보다 늦다) — 콜백이 출납을 먼저 반영한
   뒤
   오류·고친 것 없음을 판정해 단추 아래에 알린다. 두 번 누름 거르기의 잣대는 편집본 세대가 아니라
   `base`(저장본 쌍 토큰 + 씨뿌린 세대 — `buffer_base`)다.
@@ -42,20 +43,24 @@
 
 from __future__ import annotations
 
+import functools
+import threading
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import astuple
+from collections.abc import Callable, Hashable, Mapping, Sequence
+from dataclasses import astuple, dataclass, replace
 from datetime import date
 from functools import partial
+from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
 import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import admin_view, grade_ui, sso_identity
+from capa_simulation.components import admin_view, fragment_scope, grade_ui, sso_identity
 from capa_simulation.components import equipment_master_grid as grid_component
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import IDLE_MARKUP
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_CLEAR_KEY,
     _NOTE_KEY,
@@ -92,15 +97,23 @@ from capa_simulation.components.equipment_data_workspace import (
     carry_layout_memo,
     carry_until_head_rerun,
     defer_grid_undo,
+    effective_floor_canvases,
     equipment_buffer_generation,
     floor_layout_words,
+    foreign_origins,
     grid_loaded_ids,
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
+    has_unsaved_equipment_edits,
+    head_stale_if_unsaved_changed,
     layout_lock_origins,
     layout_memo_mark,
+    live_layout_role,
+    note_late_ops,
     official_layout_cells,
+    own_save_carry,
+    own_save_unsettled,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -119,12 +132,18 @@ from capa_simulation.components.equipment_data_workspace import (
     settle_bulk_restore,
     settle_grid_toasts,
     settle_grid_undo,
+    settle_own_save_carry,
+    small_editor_edits,
+    stage_own_save_carry,
     stale_delete_lock,
     stale_save_reasons,
     stale_save_refusal,
     stamp_layout_role,
+    stamped_layout_role,
     table_editable,
+    table_generations,
     table_lock,
+    take_late_ops,
 )
 from capa_simulation.components.equipment_data_workspace import (
     NAME_CHANGES_EXPANDER_KEY as _NAME_CHANGES_KEY,
@@ -166,6 +185,8 @@ from capa_simulation.equipment_scenario_activation import (
     UNMERGED_LOCK_REASON,
     EquipmentSession,
     SpaceEditMode,
+    current_selection,
+    space_edit_mode,
 )
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB
 from capa_simulation.page_bootstrap import (
@@ -173,7 +194,15 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
 )
-from capa_simulation.persistence.equipment_cache import load_floor_states
+from capa_simulation.persistence._sql_helpers import pinned_connections
+from capa_simulation.persistence.equipment_cache import (
+    get_equipment_repository,
+    latest_equipment_revision_id,
+    load_equipment_scenario_catalog,
+    load_floor_layout_canvases,
+    load_floor_states,
+    load_merged_equipment_snapshot,
+)
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
@@ -184,6 +213,7 @@ from capa_simulation.services.equipment_bulk_delete import (
     DOWNTIME_TARGET,
 )
 from capa_simulation.services.equipment_contract import (
+    ACTUAL_STAGES,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
@@ -195,6 +225,8 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_template,
 )
 from capa_simulation.services.equipment_grid import (
+    DROPPED_TOAST,
+    FOREIGN_DROPPED_TOAST,
     GRID_ROW_LIMIT,
     NAME_INDEX,
     GridApplied,
@@ -209,6 +241,7 @@ from capa_simulation.services.equipment_grid import (
     build_grid_view,
     cell_text,
     change_counts,
+    changed_positions,
     changes_data,
     copied_draft,
     copy_source,
@@ -221,6 +254,7 @@ from capa_simulation.services.equipment_grid import (
     load_ids,
     loader_data,
     move_ids,
+    moved_op,
     new_unit_check,
     new_unit_data,
     pending_ops,
@@ -249,17 +283,52 @@ from capa_simulation.services.grid_outbox import this_session
 from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import assumption_group_refusal
 from capa_simulation.services.schedule_confirmation import (
-    CONFIRMATION_KIND_COLUMN,
-    STAGE_COLUMN,
+    CONFIRMATION_INPUT_COLUMNS,
+    CONFIRMATION_KINDS,
+    row_confirmation_words,
+    rowwise_confirmation,
 )
-from capa_simulation.services.simulation_cache import get_schedule_confirmation_issues
 from capa_simulation.services.space_layout_edit import (
     buffer_matches_saved,
     module_layout_message,
     name_changes,
 )
+from capa_simulation.session_slot import SessionSlot
 
 T = TypeVar("T")
+C = TypeVar("C", bound=Callable[..., Any])
+
+# 탭 ① 본문의 편집기 구역 key(AGENTS 9장 「구역 회차 규칙」) — 칸 고치기 · 오른쪽 칸 · 저장 구획
+# 조작은 이 구역만 돈다(`render_equipment_master_scope`). 구역 칸 key 는 `fragment_scope.box_key`.
+MASTER_SCOPE: Final = "equipment_master_scope"
+# 구역 본문은 표 고르기 · 오른쪽 칸 · 상태와 상관없이 이벤트 칸에 같은 수의 자리를 쓴다(AGENTS 9장
+# 「구역 회차 규칙」 R5 — 구역 회차는 이벤트 칸 쓰기 자리를 구역 자리로 되돌린다). 갈래마다 쓰는 수:
+# 작은 편집표(결과 · 안내 알림 칸 + 작업 줄 서식)와 저장 구획(저장 결과 알림 칸 + 「최신 rN
+# 불러오기」 실패 칸). 그 갈래를 그리지 않는 회차는 빈 서식으로 그 수를 채운다(`_fill_event_slots`).
+SMALL_EDITOR_EVENT_SLOTS: Final = 2
+SAVE_SECTION_EVENT_SLOTS: Final = 2
+
+
+def _fill_event_slots(count: int) -> None:
+    """이벤트 칸 자리 `count` 개를 빈 서식으로 채운다 — 그리지 않은 갈래 몫(R5)."""
+    for _ in range(count):
+        st.html(IDLE_MARKUP)
+
+
+def _to_app_run(fn: C) -> C:
+    """그 상호작용을 늘 앱 전체 회차로 — 하는 일이 탭 밖(페이지가 세우는 세션 · 편집본, 팝업
+    호스트)에 닿는 콜백(「리비전 저장」 · 「모두 버리기」 · 팝업 열기). 구역 회차면 콜백 끝에서
+    올리고(R1 — 본문 전이라 위젯 상태가 남는다) 앱 전체 회차면 아무 일도 하지 않는다.
+    `grade_ui.on_press` **위**에 단다."""
+
+    @functools.wraps(fn)
+    def inner(*args: Any, **kwargs: Any) -> Any:
+        result = fn(*args, **kwargs)
+        fragment_scope.escalate()
+        return result
+
+    return cast(C, inner)
+
 
 # 표 고르기(맨 위 줄)와 오른쪽 칸 고르기 — 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 표
 # 고르기 key 는 작은 편집표 판정(`small_editor_edits` — 탭 줄이 페이지보다 먼저 읽는다)도 읽어
@@ -546,6 +615,12 @@ def _buffer_key() -> tuple[object, ...]:
     return (equipment_buffer_generation(), buffer_base(), DRAFT_REVISION.peek())
 
 
+def _table_key(position: int) -> tuple[object, ...]:
+    """편집본 한 표(0 기존 보유대수 · 1 설비 마스터 · 2 비가동 일정)의 내용을 가르는 열쇠 — (그 표
+    세대, 출발점, 저장본 사본 쌍 토큰). 다른 표만 바뀐 회차에는 그대로다(`table_generations`)."""
+    return (table_generations()[position], buffer_base(), DRAFT_REVISION.peek())
+
+
 def _remembered(name: str, key: tuple[object, ...], build: Callable[[], T]) -> T:
     """회차 메모(`GRID_MEMO`)의 `name` 칸 — 열쇠가 같으면 그 값, 다르면 `build()` 로 새로 적는다.
     값은 기본형(튜플 · 글 · 수)만 둔다(모델 인스턴스를 세션에 두지 않는다)."""
@@ -553,7 +628,8 @@ def _remembered(name: str, key: tuple[object, ...], build: Callable[[], T]) -> T
     if memo.get(f"{name}_key") == key and name in memo:
         return cast(T, memo[name])
     value = build()
-    fresh = dict(memo)
+    # 짓는 사이 다른 칸이 메모에 적혔을 수 있다 — 지은 뒤의 메모 위에 적는다.
+    fresh = dict(GRID_MEMO.get())
     fresh[f"{name}_key"] = key
     fresh[name] = value
     GRID_MEMO.set(fresh)
@@ -588,9 +664,9 @@ def _table_errors(
 ) -> list[str]:
     """표 단위로 저장을 막는 것 — 기존 보유대수·비가동 일정(칸 단위로 그리지 않는다)·예시 행·모듈
     묶음 바둑판·가정 세션 묶음 거부·낡은 세션의 지운 호기(개편 명세 5-2·4-5). 앞 셋(편집본 세 표만
-    보는 것)은 편집본 열쇠(`_buffer_key`)로 회차 메모에 한 번 — 뒤 셋은 이름 바꿈 · 묶음 승인 ·
+    보는 것)은 그 표 열쇠로 회차 메모에 한 번(`_frame_errors`) — 뒤 셋은 이름 바꿈 · 묶음 승인 ·
     잠금처럼 편집본 밖 칸도 보아 회차마다 본다."""
-    errors = list(_remembered("frame_errors", _buffer_key(), partial(_frame_errors, frames)))
+    errors = list(_frame_errors(frames))
     violations = saved_master_violations(frames[1])
     if violations:
         errors.append(module_layout_message(violations))
@@ -615,20 +691,19 @@ def _table_errors(
 
 def _frame_errors(frames: Frames) -> tuple[str, ...]:
     """`_table_errors` 의 앞 셋 — 편집본 세 표만 본다(기존 보유대수 · 비가동 일정 정규화 · 예시
-    행)."""
-    errors: list[str] = []
-    try:
-        prepare_equipment_baseline(frames[0])
-    except ValueError as exc:
-        errors.append(f"기존 보유대수 — {exc}")
-    names = frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    try:
-        prepare_downtime_for_prepared_equipment(
-            frames[2], pd.DataFrame({EQUIPMENT_ID_COLUMN: names.dropna().tolist()})
+    행). 기존 보유대수 둘은 그 표 열쇠로, 비가동 일정은 그 표 열쇠 + 설비 마스터 설비명(그 판정의
+    재료 그대로)으로 회차 메모에 한 번이다 — 설비 마스터 칸 하나를 고친 회차가 두 표를 다시 보지
+    않는다."""
+    errors = [*_remembered("baseline_errors", _table_key(0), partial(_baseline_errors, frames[0]))]
+    names = tuple(frames[1][EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna().tolist())
+    errors.extend(
+        _remembered(
+            "downtime_errors",
+            (*_table_key(2), names),
+            partial(_downtime_errors, frames[2], names),
         )
-    except ValueError as exc:
-        errors.append(f"비가동 일정 — {exc}")
-    examples = _example_row_count(frames)
+    )
+    examples = _remembered("example_rows", _table_key(0), partial(_example_row_count, frames))
     if examples:
         errors.append(
             f"기존 보유대수에 손대지 않은 예시 행 {examples:,}건 — 표 고르기 「기존 보유대수」 "
@@ -638,43 +713,110 @@ def _frame_errors(frames: Frames) -> tuple[str, ...]:
     return tuple(errors)
 
 
+def _baseline_errors(baseline: pd.DataFrame) -> tuple[str, ...]:
+    try:
+        prepare_equipment_baseline(baseline)
+    except ValueError as exc:
+        return (f"기존 보유대수 — {exc}",)
+    return ()
+
+
+def _downtime_errors(downtime: pd.DataFrame, names: tuple[str, ...]) -> tuple[str, ...]:
+    try:
+        prepare_downtime_for_prepared_equipment(
+            downtime, pd.DataFrame({EQUIPMENT_ID_COLUMN: list(names)})
+        )
+    except ValueError as exc:
+        return (f"비가동 일정 — {exc}",)
+    return ()
+
+
 def _alerts(
     master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
 ) -> dict[str, str]:
     """설비명 → 일정 확인 갈래 글(「Qual 미확인 · 반입 실적 누락」) — 저장을 막지 않는다. 가정 설비
-    시나리오면 공식 일정 기준이다(`official`). 편집본 열쇠 · 공식 스냅샷 토큰 · 오늘로 회차 메모에
-    한 번(메모에는 (설비명, 글) 튜플로 둔다)."""
-    key = (*_buffer_key(), official.token if official is not None else None, today.isoformat())
-    pairs = _remembered("alerts", key, partial(_alert_pairs, master, official, today))
+    시나리오면 공식 일정 기준이다(`official`).
+
+    **바뀐 줄만 다시 본다.** 판정은 줄마다 그 줄의 설비명 · 단계 칸과 오늘로만 정해지므로
+    (`row_confirmation_words`) 앞 회차의 판정 재료(그 칸 사본)와 줄마다 견주어 바뀐 줄만 다시
+    판정하고 나머지 줄의 낱말은 그대로 쓴다. 출발점 · 저장본 토큰 · 오늘이 바뀌거나 줄 수가 바뀌면
+    처음부터 본다. 같은 설비명의 낱말은 확인구분 → 단계 차례로 한 번씩 잇는다(통째로 본 일정 확인
+    목록에서 설비명마다 낱말을 모은 것과 같다)."""
+    frame = confirmation_master(master, official)
+    columns = [column for column in CONFIRMATION_INPUT_COLUMNS if column in frame.columns]
+    material = frame.loc[:, columns].reset_index(drop=True)
+    key = (buffer_base(), DRAFT_REVISION.peek(), today.isoformat())
+    memo = GRID_MEMO.get()
+    kept = memo.get("alert_rows")
+    previous = kept if isinstance(kept, dict) and kept.get("key") == key else None
+    prior = previous.get("material") if previous is not None else None
+    positions = changed_positions(prior if isinstance(prior, pd.DataFrame) else None, material)
+    if previous is not None and positions == []:
+        pairs = previous.get("pairs")
+        if isinstance(pairs, tuple):
+            return dict(pairs)
+    names = (
+        material[EQUIPMENT_ID_COLUMN].astype("string").str.strip().tolist()
+        if EQUIPMENT_ID_COLUMN in material.columns
+        else [None] * len(material)
+    )
+    if previous is None or positions is None or not rowwise_confirmation(material):
+        words = row_confirmation_words(material, today=today)
+    else:
+        words = list(previous["words"])
+        fresh = row_confirmation_words(material.iloc[positions], today=today)
+        for position, found in zip(positions, fresh, strict=True):
+            words[position] = found
+    pairs = _alert_pairs(names, words)
+    GRID_MEMO.set(
+        {
+            **memo,
+            "alert_rows": {
+                "key": key,
+                "material": material,
+                "words": tuple(words),
+                "pairs": pairs,
+            },
+        }
+    )
     return dict(pairs)
 
 
+# 일정 확인 낱말의 차례 — 확인구분 → 단계(`row_confirmation_words` 가 한 줄 안에서 낸 차례).
+_ALERT_WORD_ORDER: Final = {
+    f"{stage.label} {kind}": order
+    for order, (kind, stage) in enumerate(
+        (kind, stage) for kind in CONFIRMATION_KINDS for stage in ACTUAL_STAGES
+    )
+}
+
+
 def _alert_pairs(
-    master: pd.DataFrame, official: EquipmentSnapshot | None, today: date
+    names: Sequence[object], words: Sequence[tuple[str, ...]]
 ) -> tuple[tuple[str, str], ...]:
-    issues = get_schedule_confirmation_issues(confirmation_master(master, official), today=today)
-    alerts: dict[str, list[str]] = {}
-    for name, stage, kind in zip(
-        issues[EQUIPMENT_ID_COLUMN].tolist(),
-        issues[STAGE_COLUMN].tolist(),
-        issues[CONFIRMATION_KIND_COLUMN].tolist(),
-        strict=True,
-    ):
-        words = alerts.setdefault(cell_text(name), [])
-        word = f"{stage} {kind}"
-        if word not in words:
-            words.append(word)
-    return tuple((name, " · ".join(words)) for name, words in alerts.items() if name)
+    """줄마다 낱말을 설비명으로 모은 (설비명, 글) — 같은 설비명의 낱말은 차례대로 한 번씩."""
+    found: dict[str, set[str]] = {}
+    for name, row_words in zip(names, words, strict=True):
+        if not row_words or not isinstance(name, str) or not name:
+            continue
+        found.setdefault(cell_text(name), set()).update(row_words)
+    return tuple(
+        (name, " · ".join(sorted(items, key=_ALERT_WORD_ORDER.__getitem__)))
+        for name, items in found.items()
+        if name
+    )
 
 
 def _others(frames: Frames, saved: Frames) -> str:
-    """편집본 밖 두 표 · 층 배치 · FAB 의 저장 전 변경 한 줄. 두 표의 바뀐 행 수는 편집본 열쇠로
-    회차 메모에 한 번이다(층 배치 · FAB 대기분은 세대를 올리지 않아 회차마다 읽는다)."""
+    """편집본 밖 두 표 · 층 배치 · FAB 의 저장 전 변경 한 줄. 두 표의 바뀐 행 수는 표마다 그 표
+    열쇠(`_table_key`)로 회차 메모에 한 번이다 — 설비 마스터만 고친 회차는 두 표를 다시 견주지
+    않는다(층 배치 · FAB 대기분은 표 세대를 올리지 않아 회차마다 읽는다)."""
     parts: list[str] = []
-    baseline, downtime = _remembered(
-        "other_rows",
-        _buffer_key(),
-        lambda: (_changed_rows(saved[0], frames[0]), _changed_rows(saved[2], frames[2])),
+    baseline = _remembered(
+        "baseline_rows", _table_key(0), partial(_changed_rows, saved[0], frames[0])
+    )
+    downtime = _remembered(
+        "downtime_rows", _table_key(2), partial(_changed_rows, saved[2], frames[2])
     )
     if baseline:
         parts.append(f"기존 보유대수 {baseline:,}행")
@@ -701,9 +843,19 @@ def build_view(
     confirmation_official: EquipmentSnapshot | None,
     layout: LayoutMode,
 ) -> GridView:
-    """이 회차의 표 모양 — 세 마운트 data 가 모두 여기서 나온다."""
+    """이 회차의 표 모양 — 세 마운트 data 가 모두 여기서 나온다. 재료는 저마다 바뀐 것만 다시
+    낸다 — 글 행렬(바뀐 칸 · 줄), 칸 결과(바뀐 칸), 일정 확인(바뀐 줄), 표 단위 오류 · 다른 두 표
+    바뀐 행 수(그 표 세대), 「바뀐 칸」 표지(두 글 줄이 그대로인 줄은 앞 회차 것 — 출발점 · 저장본
+    토큰 열쇠로 회차 메모에 둔다)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     saved = _saved_frames()
+    texts = _texts(frames[1], saved[1])
+    changed_key = (buffer_base(), DRAFT_REVISION.peek())
+    memo = GRID_MEMO.get()
+    kept = memo.get("changed_rows")
+    prior = (
+        kept[1] if isinstance(kept, tuple) and len(kept) == 2 and kept[0] == changed_key else None
+    )
     source = GridSource(
         frames=frames,
         saved=saved,
@@ -713,9 +865,12 @@ def build_view(
         alerts=_alerts(frames[1], confirmation_official, today),
         table_errors=tuple(_table_errors(frames, saved, context, layout=layout)),
         others=_others(frames, saved),
-        texts=_texts(frames[1], saved[1]),
+        texts=texts,
+        changed_memo=prior if isinstance(prior, dict) else None,
     )
-    return build_grid_view(source, context)
+    view = build_grid_view(source, context)
+    GRID_MEMO.set({**GRID_MEMO.get(), "changed_rows": (changed_key, view.changed_memo)})
+    return view
 
 
 # ------------------------------------------------------------------ 받기 처리
@@ -748,18 +903,33 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
 
     편집본이 없으면(저장 · 모두 버리기 콜백이 비운 뒤 본문이 다시 세우기 전에 회차가 끊김) 얹을 곳이
     없다 — op 를 건드리지 않고 표지만 남겨, 다시 세운 편집본을 본 본문이 부른다. 결과 알림 칸은 그
-    회차에 다시 세우면서 비우는 칸이라 여기서 세면 사라진다."""
-    if BUFFER_KEY not in st.session_state:
+    회차에 다시 세우면서 비우는 칸이라 여기서 세면 사라진다. 제 「리비전 저장」 이 지금 편집본을
+    이미 썼는데 뒷정리 전에 끊긴 회차(`own_save_unsettled`)도 같다 — 여기 얹으면 다시 세울 때
+    사라진다.
+    미루는 것은 seq 를 적기 **전**이다(다시 부를 때 그 op 를 거르지 않게).
+
+    **제 저장 이음**: 저장 직전 편집본에 그렸으나 그 저장 뒤에 닿은 op(저장 직후 친 칸)는 버리지
+    않는다 — 다시 세운 편집본이 곧 그때 편집본의 저장본이라 행 id 를 저장 뒤 id 로 옮겨(지운 호기를
+    가리키면 뺀다) 지금 `base` 로 얹는다(`_carried`). 그 밖의 옛 `base` op 는 버리고 그 수를 알린다
+    — 남의 저장으로 다시 세운 출발점이면 그렇게 적는다."""
+    if BUFFER_KEY not in st.session_state or own_save_unsettled():
         st.session_state[OUTBOX_HELD_KEY] = True
         return
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
     ops = _within_grade(this_session(ops, context.base))
+    note_late_ops([op for op in ops if op.get("base") == context.base], context.base)
+    _apply_received(ops, context, layout)
+
+
+def _apply_received(ops: list[dict[str, Any]], context: GridContext, layout: LayoutMode) -> None:
+    """받은 op 를 제 저장 이음(`_carried`)을 거쳐 편집본에 얹고 결과를 적는다."""
+    ops = _carried(ops, context.base)
     if not ops:
         return
     before = layout_memo_mark()
-    result = apply_ops(_grid_state(), ops, context)
+    result = apply_ops(_grid_state(), ops, context, dropped_toast=_dropped_toast(ops, context.base))
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
     _follow_view(result)
@@ -771,6 +941,38 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _carried(ops: list[dict[str, Any]], base: str) -> list[dict[str, Any]]:
+    """제 저장 직전 편집본(이음 표지 `froms`)에 그린 op 를 지금 편집본(`to` — 그 저장본)에 얹는 꼴로
+    옮긴다 — 행 id 는 저장 뒤 id 로(`moved_op`), `base` 는 지금 것으로. 저장에 이미 든 op(마운트별
+    seq — 이음 표지 `applied`)는 뺀다(넣기 · 붙여넣기가 두 번 들지 않게). 지운 호기를 가리키는
+    op 는 옛 `base` 그대로 두어 버린 수로 센다. 이음 표지가 지금 편집본의 것이 아니면 그대로."""
+    carry = own_save_carry()
+    if carry is None or carry.get("to") != base:
+        return ops
+    froms = set(carry.get("froms") or ())
+    ids, applied = carry.get("ids"), carry.get("applied")
+    moved: dict[str, str | None] = ids if isinstance(ids, dict) else {}
+    saved: dict[str, int] = applied if isinstance(applied, dict) else {}
+    result: list[dict[str, Any]] = []
+    for op in ops:
+        if op.get("base") == base or op.get("base") not in froms:
+            result.append(op)
+            continue
+        if int(op.get("seq") or 0) <= int(saved.get(str(op.get("mount")), 0)):
+            continue
+        rebased = moved_op(op, moved)
+        result.append(op if rebased is None else {**rebased, "base": base})
+    return result
+
+
+def _dropped_toast(ops: Sequence[Mapping[str, Any]], base: str) -> str:
+    """버릴 op(옛 `base`)의 까닭 글 — 남의 저장으로 다시 세운 출발점에서 온 것이 있으면 그 글."""
+    foreign = set(foreign_origins())
+    if any(op.get("base") != base and op.get("base") in foreign for op in ops):
+        return FOREIGN_DROPPED_TOAST
+    return DROPPED_TOAST
 
 
 def _within_grade(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -912,10 +1114,12 @@ def _touches_layout(ops: Sequence[Mapping[str, Any]]) -> bool:
     return False
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_outbox(context: GridContext, layout: LayoutMode) -> None:
     apply_outbox(context, layout)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_load(request: grid_component.LoadRequest) -> None:
     if BUFFER_KEY not in st.session_state:
         return
@@ -945,6 +1149,7 @@ def _on_load(request: grid_component.LoadRequest) -> None:
     _load_result("success" if result.added else "info", text)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_clear() -> None:
     _store_loaded(())
     st.session_state[MISSING_KEY] = ()
@@ -956,12 +1161,14 @@ def _open_detail(row_id: str) -> None:
     _switch_side(SIDE_DETAIL)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_new() -> None:
     """첫 화면 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로(설비 마스터를 고치는 등급만)."""
     if table_editable(TABLE_MASTER):
         _switch_side(SIDE_NEW)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_draft(value: grid_component.DraftValue) -> None:
     """「새 호기」 칸이 보낸 초안 — 번호가 세션 초안보다 작지 않을 때만 적는다(늦게 온 옛 초안이
     가져오기·「호기 추가」 뒤 초안을 덮지 않게)."""
@@ -970,6 +1177,7 @@ def _on_draft(value: grid_component.DraftValue) -> None:
         _store_new_draft(value.seq, value.values)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_copy(request: grid_component.CopyRequest) -> None:
     """가져오기 — 상세 「이 호기로 새 호기 만들기」(빈 초안에 그 호기 값) 또는 「비슷한 호기에서
     값 가져오기」(브라우저 초안 위에 설비명이 같거나 앞부분이 맞는 첫 호기 값). 「새 호기」 칸을
@@ -1006,10 +1214,12 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
     st.session_state[SIDE_HEAD_KEY] = True
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_grid_open(row_id: str) -> None:
     _open_detail(row_id)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_side_open(row_id: str) -> None:
     """「저장 전 변경」 의 고칠 것·호기 이름 — 목록에 없으면 맨 위로 불러와 상세로 연다."""
     if row_id not in grid_loaded_ids():
@@ -1017,11 +1227,13 @@ def _on_side_open(row_id: str) -> None:
     _open_detail(row_id)
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_unload(ids: list[str]) -> None:
     drop = set(ids)
     _store_loaded(tuple(row_id for row_id in grid_loaded_ids() if row_id not in drop))
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _on_goto(table: str, unit: str) -> None:
     """「비가동 일정 표에서 고치기」 — 표 고르기를 그 표로, 그 표 설비명 거르기를 그 이름으로. 그
     표는 이 회차에 아직 그려지지 않아 잃을 편집이 없다 — 적용 보기도 거둬 요청 보기가 그대로
@@ -1032,12 +1244,14 @@ def _on_goto(table: str, unit: str) -> None:
         st.session_state.pop(f"{DOWNTIME_EDITOR_KEY}_applied_view", None)
 
 
+@_to_app_run
 def _on_import_menu() -> None:
     """메뉴 「엑셀·CSV로 한꺼번에」 — 팝업을 열고 메뉴는 세대를 올려 닫는다."""
     open_equipment_import(from_menu=True)
     bump(DATA_MENU_GENERATION_KEY)
 
 
+@_to_app_run
 def _on_dialog(name: str) -> None:
     if name == IMPORT_DIALOG:
         # 첫 화면의 「엑셀·CSV로 한꺼번에」 — 고치는 표가 하나도 없는 등급(열람)은 열지 않는다.
@@ -1051,6 +1265,7 @@ def _on_dialog(name: str) -> None:
 # ------------------------------------------------------------------ 저장 구획 콜백
 
 
+@fragment_scope.escalates(MASTER_SCOPE)
 def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다. 표 단계가 없으면 그
     아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다. 그 표에
@@ -1072,7 +1287,7 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     뒤에 끊기면 둘째 누름이 다시 되돌리지 않고 이번 누름이 빈손으로 끝날 뿐이다(다시 누르면
     된다)."""
     apply_outbox(context, layout)
-    if BUFFER_KEY not in st.session_state:
+    if BUFFER_KEY not in st.session_state or own_save_unsettled():
         return
     if press != current_generation(UNDO_PRESS_KEY) or just_written(UNDO_PRESS_KEY):
         return
@@ -1102,6 +1317,7 @@ def _grid_undo(context: GridContext, layout: LayoutMode) -> None:
         carry_layout_memo(before)
 
 
+@_to_app_run
 def _discard_all() -> None:
     """「모두 버리기」 확인 — 편집본을 저장본으로 다시 세운다(FAB 대기분은 남김, 되돌릴 수 없음)."""
     reset_equipment_drafts(keep_fab=True)
@@ -1140,6 +1356,7 @@ def _has_changes(frames: Frames) -> bool:
     )
 
 
+@_to_app_run
 @grade_ui.on_press
 def _save_revision(
     repository: DuckDBEquipmentRepository,
@@ -1175,6 +1392,9 @@ def _save_revision(
     id_map = save_id_map(grid_index(frames[1], _saved_frames()[1], renames.units), frames[1])
     loaded, detail = grid_loaded_ids(), _detail_id()
     note = st.session_state.get(_NOTE_KEY)
+    # 저장 뒤에 닿을 이 편집본의 op(저장 직후 친 칸)를 저장본 위에 이을 표지 — DB 쓰기 **전에**
+    # 적는다.
+    stage_own_save_carry(id_map, _applied())
     try:
         message = save_equipment_buffer(
             repository,
@@ -1186,6 +1406,7 @@ def _save_revision(
             reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
+        settle_own_save_carry()
         _result(
             "error",
             admin_view.diagnostic_message(
@@ -1193,6 +1414,7 @@ def _save_revision(
             ),
         )
         return
+    settle_own_save_carry()
     if message == NOTHING_SAVED_MESSAGE:
         _result("info", message)
         return
@@ -1417,7 +1639,13 @@ def _render_data_menu(
             ),
         ):
             if target in editable:
-                render_csv_download(data=payload(), file_name=filename, key=key, label=label)
+                render_csv_download(
+                    data=_remembered(f"template:{filename}", (), payload),
+                    file_name=filename,
+                    key=key,
+                    label=label,
+                )
+        revision_id = latest_snapshot.revision.revision_id if latest_snapshot is not None else None
         _render_current_data_downloads(
             st.session_state[BUFFER_KEY],
             saved=_saved_frames(),
@@ -1425,11 +1653,10 @@ def _render_data_menu(
             database_path=str(repository.database_path),
             scenario_name=scenario_name,
             edit_note=DOWNLOAD_NOTE,
-            memo_key=(
-                equipment_buffer_generation(),
-                buffer_base(),
-                st.session_state.get(DRAFT_REVISION_KEY),
-                latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
+            memo_keys=(
+                (*_table_key(1), revision_id),
+                (*_table_key(0), revision_id),
+                (*_table_key(2), revision_id),
             ),
             targets=exported,
         )
@@ -1471,20 +1698,29 @@ def _render_grid_section(
     # 차례는 불러오기 줄 → 값 줄(「목록 비우기」 · 「전체 N대 불러오기」) 다음이 메뉴다.
     with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
         _render_data_menu(repository, latest_snapshot, context.scenario_name)
-    grid_component.render_grid_table(
-        grid_data(
-            view,
-            loaded,
-            ack=acks.get("grid"),
-            moved=carried[0],
-            inserted=carried[1],
-            open_id=_detail_id(),
-        ),
+    kept = GRID_MEMO.get().get("grid_shell")
+    shell = grid_component.render_grid_table(
+        {
+            **grid_data(
+                view,
+                loaded,
+                ack=acks.get("grid"),
+                moved=carried[0],
+                inserted=carried[1],
+                open_id=_detail_id(),
+            ),
+            # 깨끗한 편집본의 첫 칸 고침은 묶지 않고 곧바로 보낸다(feed 칸 — 브라우저 `schedule`).
+            "clean": not has_unsaved_equipment_edits(),
+        },
         on_outbox=partial(_on_outbox, context, layout),
         on_open=_on_grid_open,
         on_unload=_on_unload,
         read_only=read_only,
+        shell=kept if isinstance(kept, dict) else None,
     )
+    # 보낸 껍데기 — 다음 회차가 줄 밖 칸 · 목록이 그대로면 그것을 다시 보낸다(브라우저 해시 참조).
+    if not isinstance(kept, dict) or kept.get("shell") != shell["shell"]:
+        GRID_MEMO.set({**GRID_MEMO.get(), "grid_shell": shell})
 
 
 def save_target(basis: EquipmentSaveBasis | None) -> str:
@@ -1536,7 +1772,7 @@ def _render_save_section(
         or pending_floor_stacks()
     )
     with st.container(horizontal=True, gap="small"):
-        # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 300ms 묶음이라 이 회차의 단계 수는
+        # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 묶어 보내므로 이 회차의 단계 수는
         # 브라우저보다 늦고, 콜백이 출납을 먼저 반영한 뒤 판정해 없으면 알림창이 알린다(설계 규칙
         # UI-INP-07 의 제출 단추).
         st.button(
@@ -1577,12 +1813,15 @@ def _render_save_section(
         )
     slot = render_flash(SAVE_RESULT_CARRIED_KEY, SAVE_RESULT_KEY)
     # 낡은 세션의 낡기 전 편집(버려질 칸·지운 호기)이 저장을 막으면 그 거절 곁에서 최신으로 옮긴다 —
-    # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다.
+    # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다. 단추 아래 실패 칸이 서지 않는 회차는 그
+    # 자리를 빈 서식으로 채운다(이벤트 칸 자리 수 — `SAVE_SECTION_EVENT_SLOTS`).
     if stale_save_refusal(frames, basis) is not None:
         with slot:
             render_load_latest_button(
                 str(repository.database_path), session, key=LOAD_LATEST_BUTTON_KEY
             )
+    else:
+        _fill_event_slots(1)
 
 
 def _render_new_unit(
@@ -1663,8 +1902,17 @@ def render_equipment_master_tab(
         floor_canvases=floor_canvases,
         today=today,
     )
+    # 본문에서 얹는 출납(미뤄 둔 것 · 제 저장 뒤 다시 얹는 것)은 머리를 그린 뒤라 미저장 표시가
+    # 바뀌면 페이지 끝에서 한 번 다시 돈다.
+    unsaved_before = has_unsaved_equipment_edits()
+    late = take_late_ops()
+    if late:
+        # 제 저장 뒤 다시 세운 편집본 — 저장 뒤에 곧 버려질 옛 편집본에 얹었던 op 를 이 편집본에
+        # 잇는다.
+        _apply_received(late, context, layout)
     if st.session_state.pop(OUTBOX_HELD_KEY, False):
         apply_outbox(context, layout)
+    head_stale_if_unsaved_changed(unsaved_before)
     settle_grid_undo(partial(_grid_undo, context, layout))
     view = build_view(
         context,
@@ -1697,6 +1945,7 @@ def render_equipment_master_tab(
                 acks=acks,
                 carried=carried,
             )
+            _fill_event_slots(SMALL_EDITOR_EVENT_SLOTS)
         else:
             stale = (basis is not None and basis.stale) or session.unmerged
             submit = render_small_editor(
@@ -1709,6 +1958,8 @@ def render_equipment_master_tab(
                 # 삭제를 확정하면 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다 — 오른쪽
                 # 칸이 접혀 있으면 펴고(c6).
                 on_deleted=partial(_switch_side, SIDE_CHANGES),
+                # 적용 전 편집이 서거나 걷히는 칸(탭 점 · 떠나기 확인)은 편집표 콜백 끝에서 올린다.
+                rise=partial(fragment_scope.escalate_if_moved, MASTER_SCOPE),
             )
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
@@ -1774,19 +2025,26 @@ def render_equipment_master_tab(
         else:
             grid_component.render_grid_side(
                 "detail",
-                detail_data(
-                    view,
-                    _detail_id(),
-                    ack=acks.get("detail"),
-                    toast=toasts.get("detail"),
-                    reveal_head=reveal_head,
-                ),
+                {
+                    **detail_data(
+                        view,
+                        _detail_id(),
+                        ack=acks.get("detail"),
+                        toast=toasts.get("detail"),
+                        reveal_head=reveal_head,
+                    ),
+                    # 깨끗한 편집본의 첫 칸 고침은 묶지 않고 곧바로 보낸다(표와 같다).
+                    "clean": not has_unsaved_equipment_edits(),
+                },
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,
                 on_copy=_on_copy,
                 read_only=master_lock,
             )
+    # 저장 구획을 그리지 않은 회차는 그 이벤트 칸 자리를 빈 서식으로 채운다(R5).
+    if not (side == SIDE_CHANGES and table_editable(DOWNTIME_TARGET)):
+        _fill_event_slots(SAVE_SECTION_EVENT_SLOTS)
     # 그린 마운트의 자리 거부는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 것은 거둔다(닫은 한
     # 줄이 다시 마운트할 때 되살아나지 않게).
     settle_grid_toasts({"detail"} if side == SIDE_DETAIL else {"new"} if side == SIDE_NEW else ())
@@ -1796,3 +2054,240 @@ def render_equipment_master_tab(
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()
+
+
+# ------------------------------------------------------------------ 탭 ① 진입
+#
+# 탭 본문은 한 함수(`render_equipment_master_scope`)로 들어간다 — 받는 인자는 작은 값(한 번만
+# 쓰는 표지 `drafts_replaced`)뿐이다. 표 · 스냅숏을 든 재료(`MasterMaterials`)는 그 회차 페이지가
+# 세운 것을 스레드 칸으로 넘기고(`render_equipment_master`), 넘긴 것이 없는 회차(탭 본문만 다시
+# 도는 회차)는 마지막 페이지 회차가 적은 자리(`_MasterPlace` — DB 자리 · 저장본 쌍 id · 스냅숏 뺀
+# 세션)로 캐시에서 다시 세운다. 다시 세우기는 세션을 옮기거나 편집본을 세우지 않는다 — 그 일은
+# 페이지 회차(`resolve_equipment_session` · `ensure_equipment_drafts`)의 몫이다. 저장 토큰
+# (`saved_pair_token`)과 머리 표지(`master_head`)는 탭 밖이 본 값과 지금 값을 견주는 재료다.
+
+
+@dataclass(frozen=True)
+class MasterMaterials:
+    """탭 ① 본문이 쓰는 그 회차의 재료 — 페이지가 세운 저장소 · 설비 시나리오 세션(합친 스냅숏
+    포함) · 캔버스 · 배치 편집 권한 · 오늘 · 확인용 공식 스냅숏."""
+
+    database_path: str
+    repository: DuckDBEquipmentRepository
+    session: EquipmentSession
+    floor_canvases: FloorCanvasMap
+    layout_mode: SpaceEditMode
+    today: date
+    confirmation_official: EquipmentSnapshot | None = None
+
+
+SnapshotPair = tuple[str, str | None]
+
+
+@dataclass(frozen=True)
+class _MasterPlace:
+    """마지막 페이지 회차가 적은 탭 ① 재료의 자리 — 세션 칸에 드는 작은 값(표 · 스냅숏 없음)."""
+
+    database_path: str
+    # 스냅숏 · 한 회차 알림(`notice` · `head_dropped`)을 뺀 세션 — 목록은 그 회차 것 그대로.
+    session: EquipmentSession
+    # 세션 스냅숏 · 확인용 공식 스냅숏의 (공통 대장, 일정) 리비전 id 쌍 — 없으면 None.
+    pair: SnapshotPair | None
+    official: SnapshotPair | None
+
+
+MASTER_PLACE_KEY: Final = "equipment_master_place_v1"
+_PLACE = SessionSlot(MASTER_PLACE_KEY, _MasterPlace)
+# 머리 표지가 읽는 칸 — 편집본(있나), 팝업 호스트 열림 칸(어느 팝업).
+_BUFFER = SessionSlot(BUFFER_KEY, tuple)
+_DIALOG_OPEN = SessionSlot(EQUIPMENT_DIALOG_KEY, str)
+
+
+def _pair_of(snapshot: EquipmentSnapshot | None) -> SnapshotPair | None:
+    if snapshot is None:
+        return None
+    schedule = snapshot.schedule.schedule_revision_id if snapshot.schedule is not None else None
+    return snapshot.revision.revision_id, schedule
+
+
+def _place_of(materials: MasterMaterials) -> _MasterPlace:
+    return _MasterPlace(
+        database_path=materials.database_path,
+        session=replace(materials.session, snapshot=None, notice=None, head_dropped=False),
+        pair=_pair_of(materials.session.snapshot),
+        official=_pair_of(materials.confirmation_official),
+    )
+
+
+class _Handoff(threading.local):
+    """페이지 회차가 세운 재료를 같은 회차의 탭 본문에 넘기는 스레드 칸 — 본문이 꺼내 비운다."""
+
+    held: MasterMaterials | None = None
+
+    def give(self, materials: MasterMaterials) -> None:
+        self.held = materials
+
+    def take(self) -> MasterMaterials | None:
+        held, self.held = self.held, None
+        return held
+
+
+_HANDOFF = _Handoff()
+
+
+def _rebuilt_materials() -> MasterMaterials:
+    """마지막 페이지 회차가 적은 자리로 재료를 다시 세운다 — 스냅숏은 쌍 id 캐시에서(리비전 내용은
+    불변), 캔버스 · 배치 편집 권한 · 오늘은 지금 값이다. 자리가 없으면(페이지 회차를 거치지 않음)
+    `RuntimeError`."""
+    place = _PLACE.peek()
+    if place is None:
+        raise RuntimeError("설비 마스터 탭 재료의 자리가 없습니다 — 페이지 회차를 먼저 거칩니다")
+    path = place.database_path
+    snapshot = load_merged_equipment_snapshot(path, *place.pair) if place.pair else None
+    session = replace(place.session, snapshot=snapshot)
+    official: EquipmentSnapshot | None = None
+    if place.official is not None:
+        official = (
+            snapshot
+            if place.official == place.pair
+            else load_merged_equipment_snapshot(path, *place.official)
+        )
+    return MasterMaterials(
+        database_path=path,
+        repository=get_equipment_repository(path),
+        session=session,
+        floor_canvases=effective_floor_canvases(load_floor_layout_canvases(path)),
+        layout_mode=space_edit_mode(session, stamped_role=live_layout_role()),
+        today=date.today(),
+        confirmation_official=official,
+    )
+
+
+def saved_pair_token() -> Hashable:
+    """남의 저장을 알아보는 저장본 쌍 토큰 — (공통 대장 최신 리비전, 세션 설비 시나리오의 최신 일정
+    리비전). 둘 다 쓰기 세대 · DB stat 을 키로 둔 캐시에서 읽어(`latest_equipment_revision_id` ·
+    `load_equipment_scenario_catalog`) 바뀐 것이 없으면 DB 를 열지 않는다. 자리가 없으면 None."""
+    place = _PLACE.peek()
+    if place is None:
+        return None
+    path = place.database_path
+    scenario_id = place.session.scenario_id
+    scenario = (
+        load_equipment_scenario_catalog(path).scenario(scenario_id)
+        if scenario_id is not None
+        else None
+    )
+    latest_schedule = scenario.latest_schedule_revision_id if scenario is not None else None
+    return latest_equipment_revision_id(path), latest_schedule
+
+
+def _seen_pair_token() -> Hashable:
+    """페이지가 세션 · 편집본을 세운 회차에 본 저장 토큰 — 마지막 페이지 회차가 적은 자리의 (세션
+    스냅숏의 공통 대장 리비전, 그 회차 목록이 적은 세션 설비 시나리오의 최신 일정 리비전).
+    `saved_pair_token` 과 같은 꼴이라 그 뒤 저장이 없으면 둘이 같다. DB 를 읽지 않는다. 자리가
+    없으면 None, 고른 설비 시나리오가 없는 세션(페이지가 공통 대장을 읽지 않았다)은 지금 값이다."""
+    place = _PLACE.peek()
+    if place is None:
+        return None
+    scenario = place.session.scenario
+    if scenario is None:
+        return saved_pair_token()
+    common = place.pair[0] if place.pair is not None else None
+    return common, scenario.latest_schedule_revision_id
+
+
+def _scope_token() -> Hashable:
+    """구역의 저장 토큰(AGENTS 9장 「구역 회차 규칙」 R4) — 앱 전체 회차는 페이지가 편집본을 세운
+    회차에 본 값(`_seen_pair_token`)을 찍고, 구역 회차는 지금 값(`saved_pair_token`)을 읽어
+    견준다. 앱 전체 회차도 지금 값을 찍으면 페이지가 편집본을 세운 뒤 · 찍기 전에 든 남의 저장이
+    찍혀 그 뒤 구역 회차가 끝내 알아보지 못한다."""
+    if fragment_scope.fragment_only_run():
+        return saved_pair_token()
+    return _seen_pair_token()
+
+
+def _drafts_outdated() -> bool:
+    """구역 회차에서 편집본이 낡았는가 — 페이지가 편집본을 세운 뒤 남이 저장했다(`_scope_token` 이
+    R4 로 보는 견줌과 같다). 한 번만 쓰는 표지 `drafts_replaced` 는 구역 회차에서 꺼지므로 본문 끝의
+    작은 편집표 제출은 이것으로 거절한다 — 그 편집본은 올라간 앱 전체 회차가 버리고 다시 세운다. 제
+    저장의 뒷정리 대기(`own_save_unsettled`)는 남의 저장이 아니다."""
+    return (
+        fragment_scope.fragment_only_run()
+        and not own_save_unsettled()
+        and saved_pair_token() != _seen_pair_token()
+    )
+
+
+def master_head() -> tuple[object, ...]:
+    """탭 ① 밖이 이 탭의 세션에서 읽어 그리는 값 — 머리 띠 변경 칩 · 화면 탭 줄 점 · 떠나기 확인 ·
+    테마 표지 · 탭 ① 점(미저장 편집 · FAB 배치 대기 · 작은 편집표 적용 전 편집), 편집본 출발점 ·
+    저장본 사본 리비전(저장 · 모두 버리기 · 불러오기 · 남의 저장), 팝업 호스트 열림 칸, 찍힌 배치
+    역할, 세션이 든 설비 시나리오 쌍(사이드바 「설비 시나리오」 줄 · 머리 띠), 제 저장의 뒷정리
+    대기(`own_save_unsettled` — 편집본을 다시 세우는 페이지 회차가 잇는다)."""
+    return (
+        _BUFFER.exists(),
+        has_unsaved_equipment_edits(),
+        pending_fab_layout() is not None,
+        tuple(small_editor_edits()),
+        buffer_base(),
+        DRAFT_REVISION.peek(),
+        _DIALOG_OPEN.peek(),
+        stamped_layout_role(),
+        current_selection(),
+        own_save_unsettled(),
+    )
+
+
+def _pinned_in_scope(fn: C) -> C:
+    """구역 회차는 앱 전체 회차의 실행 핀(`app.py`) 밖에서 돈다 — 저장 토큰
+    읽기(`_scope_token`)와 본문을 설비 DB 핀 하나 안에서 돌린다(AGENTS 9장 「구역 회차 규칙」
+    DB 핀). `editor_scope` **위**, `grade_ui.in_fragment` 아래에 단다 — 토큰은 `editor_scope` 가
+    본문보다 먼저 읽는다. 앱 전체 회차는 실행 핀 안이라 그대로 부른다."""
+
+    @functools.wraps(fn)
+    def inner(*args: Any, **kwargs: Any) -> Any:
+        place = _PLACE.peek()
+        if place is None or not fragment_scope.fragment_only_run():
+            return fn(*args, **kwargs)
+        with pinned_connections(Path(place.database_path)):
+            return fn(*args, **kwargs)
+
+    return cast(C, inner)
+
+
+@fragment_scope.fragment(MASTER_SCOPE)
+@grade_ui.in_fragment
+@_pinned_in_scope
+@fragment_scope.editor_scope(
+    MASTER_SCOPE, head=master_head, token=_scope_token, one_shot=("drafts_replaced",)
+)
+def render_equipment_master_scope(*, drafts_replaced: bool = False) -> None:
+    """탭 ① 본문 — 편집기 구역(AGENTS 9장 「구역 회차 규칙」). 앱 전체 회차는 페이지가 넘긴
+    재료(`render_equipment_master`)로, 구역 회차는 마지막 페이지 회차의 자리에서 다시 세운 재료로
+    그린다(모듈 끝 설명). 구역 밖이 그리는 값(`master_head`) · 저장 토큰(`_scope_token`)이
+    바뀐 상호작용은 콜백 끝 · 본문 뒤에서 앱 전체로 올라가 페이지가 세션 · 편집본을 다시 세운다.
+    남의 저장을 본 구역 회차의 작은 편집표 제출은 거절한다(`_drafts_outdated`).
+    표 고르기 · 오른쪽 칸은 이벤트 칸 자리 수가 같아(`_fill_event_slots`) 바꿔도 구역 회차다."""
+    materials = _HANDOFF.take()
+    if materials is None or fragment_scope.fragment_only_run():
+        materials = _rebuilt_materials()
+    render_equipment_master_tab(
+        repository=materials.repository,
+        session=materials.session,
+        latest_snapshot=materials.session.snapshot,
+        floor_canvases=materials.floor_canvases,
+        layout_mode=materials.layout_mode,
+        today=materials.today,
+        confirmation_official=materials.confirmation_official,
+        drafts_replaced=drafts_replaced or _drafts_outdated(),
+    )
+
+
+def render_equipment_master(materials: MasterMaterials, *, drafts_replaced: bool = False) -> None:
+    """페이지가 부르는 탭 ① 진입 — 그 회차 재료를 넘기고 자리를 적은 뒤 탭 본문을 그린다."""
+    _PLACE.set(_place_of(materials))
+    _HANDOFF.give(materials)
+    try:
+        render_equipment_master_scope(drafts_replaced=drafts_replaced)
+    finally:
+        _HANDOFF.take()

@@ -7,7 +7,11 @@
 // 짓지 않고 표지만 고친다): paint · scrollToCell · setRange · displayText · rawText · valueAt · isLocked ·
 // rowKeys · colNames · queueOp · sendNow · sendOnce · startEdit · commitEdit · cancelEdit · setStatus · announce · toast ·
 // focusGrid · cellAtPoint · visibleRowCount · setWidths.
+// 떠나기 신호(AGENTS 9장 「구역 회차 규칙」 R8 — 등록 글 앞에 이은 `leave.js` 조각): 마운트는 편집기 명부에 오르고(`joinLeaving`),
+// 창 사건 `capa-leaving` 을 받으면 묶음 타이머를 멈추고 남은 op 를 곧바로 보낸다. 보낼 목록에 op 가 남은 동안(보내지 않았거나 ack
+// 가 오지 않음) busy 다 — 화면을 떠나는 누름이 그 ack 를 기다린다. 신호 뒤 편집은 묶지 않고, ack 로 목록이 비면 다시 묶는다.
 
+// 묶어 보내기 쉼의 대비 값 — 쉼은 껍데기 limits.sendMs(파이썬 `edit_grid.SEND_MS` 하나)가 정하고, 그 칸이 없을 때만 이 값이다.
 const EG_SEND_MS = 300
 const EG_BUFFER_ROWS = 8
 // 값 칸 머리 풍선의 지연 — 앱 전체 풍선 지연(껍데기 스타일 `--capa-tip-delay`, 그림자 뿌리도 물려받는다)이고 못 읽으면 1초다.
@@ -43,7 +47,7 @@ function egState(host) {
     widths: [], lefts: [], total: 0, frozen: 1, frozenWidth: 0, widthsTable: null,
     rowH: 30, headH: 32, dom: null, listeners: [], timers: {}, frames: {}, observer: null,
     lastToast: null, seenFeed: false, setState: null, inRender: false, sendQueued: false, window: null, paletteKey: '',
-    pageBlock: null,
+    pageBlock: null, leave: null,
   }
   // 고른 범위 = 고정 모서리(origin — 없으면 지금 칸)와 맞은편 모서리(focus). 지금 칸(anchor)은 범위 안 어디든 있을 수 있다
   // (Ctrl+A·Shift+Space 는 지금 칸을 지킨 채 범위만 넓힌다 — 엑셀).
@@ -172,6 +176,12 @@ function egBind(S) {
     S.observer = new ResizeObserver(() => egFrame(S, 'layout', () => egLayout(S)))
     S.observer.observe(frame)
   }
+  S.leave = joinLeaving(window, { busy: () => egBusy(S), flush: () => sendNow(S) }, S.host)
+}
+
+// 떠나기 명부의 busy — 보낼 목록에 op 가 남았다(보내지 않았거나 ack 가 오지 않음 — op 는 ack 가 올 때까지 남는다).
+function egBusy(S) {
+  return S.box.ops.length > 0
 }
 
 function egInside(S, node) {
@@ -325,6 +335,7 @@ function egTakeAcks(S, feed) {
   if (acked <= 0) return
   for (const op of S.box.ops) if (op.seq <= acked) egDropPreview(S, op.seq)
   boxAck(S.box, acked)
+  settleLeaving(S.leave, egBusy(S))
 }
 
 function egApplyFeed(S, feed) {
@@ -1026,7 +1037,7 @@ function commitEdit(S, move, refocus) {
   const text = editor.value
   S.edit = null
   // 초점을 먼저 표로 옮기고 숨긴다 — 초점 든 칸을 숨기면 브라우저가 대상 없는 focusout 을 내고, 그것이 표 밖으로 나간 것으로
-  // 읽혀 300ms 묶음을 끊는다. refocus 가 false 면 초점이 이미 표 밖이다(blur · 앞 표 넘김 · 머리 누름 · 도구 단추).
+  // 읽혀 출납 묶음을 끊는다. refocus 가 false 면 초점이 이미 표 밖이다(blur · 앞 표 넘김 · 머리 누름 · 도구 단추).
   if (refocus !== false) focusGrid(S)
   editor.hidden = true
   const m = S.model
@@ -1088,14 +1099,15 @@ function egOnPaste(S, event) {
     setStatus(S, why)
     return
   }
-  queueOp(S, { op: 'write', rows: rowKeys(S, r, r), cols: colNames(S, c, c), values: [[first]] })
+  queueOp(S, { op: 'write', rows: rowKeys(S, r, r), cols: colNames(S, c, c), values: [[first]] }, true)
 }
 
 // ---------------------------------------------------------------- 출납
 
 // op 하나를 쌓는다 — table·gen·seq·at 을 붙이고 화면에는 곧바로 미리보기. 초안이 없던 표의 첫 op 는 기다리지 않고 바로
-// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 300ms 묶음을 기다리지 않고 한 회차 안에 서게). 쌓지 못하면(보낼 칸이 너무 많음) null.
-function queueOp(S, op) {
+// 보낸다(변경 칩 · 탭 점 · 「적용 전 (1)」 이 묶음 쉼을 기다리지 않고 한 회차 안에 서게). now 면(붙여넣기 · 단추 op) 쉼 없이
+// 곧바로 보낸다. 떠나기 신호를 받은 뒤(`leavingNow`)도 묶지 않는다. 쌓지 못하면(보낼 칸이 너무 많음) null.
+function queueOp(S, op, now) {
   const m = S.model
   if (!m || !m.table) return null
   if (!S.gen) {
@@ -1117,8 +1129,8 @@ function queueOp(S, op) {
   S.pendingBySeq.set(queued.seq, cells)
   const counts = (S.feedData && S.feedData.counts) || {}
   const first = S.box.ops.length === 1 && !Number(counts.cells)
-  if (first || op.op === 'undo' || op.op === 'redo') sendNow(S)
-  else egTimer(S, 'send', EG_SEND_MS, () => sendNow(S))
+  if (now || first || op.op === 'undo' || op.op === 'redo' || leavingNow(S.leave)) sendNow(S)
+  else egTimer(S, 'send', egSendMs(S), () => sendNow(S))
   paint(S)
   egWhere(S)
   return queued
@@ -1183,6 +1195,12 @@ function egDropPreview(S, seq) {
     }
   }
   S.pendingBySeq.delete(seq)
+}
+
+// 묶어 보내기 쉼(ms) — 껍데기 limits.sendMs(양수), 없으면 대비 값.
+function egSendMs(S) {
+  const ms = Number(S.limits && S.limits.sendMs)
+  return Number.isFinite(ms) && ms > 0 ? ms : EG_SEND_MS
 }
 
 // 반영 안 된 op 전부를 보낸다 — 아직 한 번도 보내지 않은 op 가 있을 때만(focusout·visibilitychange·정리 함수가 이미 보낸
@@ -1278,6 +1296,8 @@ export default function (component) {
     S.frames = {}
     if (S.observer) S.observer.disconnect()
     S.observer = null
+    if (S.leave) S.leave.drop()
+    S.leave = null
     S.pageBlock = null
     egSaveView(S)
     S.dom = null

@@ -234,6 +234,29 @@ def test_a_cell_edit_from_the_grid_outbox_lands_in_the_buffer_and_marks_the_tab(
     assert dot in [str(element.proto.body).strip() for element in app.get("html")]
 
 
+def test_a_cell_edit_resends_the_same_table_shell_and_only_that_row_in_the_feed(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """표 마운트는 껍데기와 feed 두 요소로 간다(`split_grid_data`). 칸 하나를 고친 회차와 그대로
+    다시 돈 회차는 껍데기를 앞 회차 그대로(같은 내용 — 브라우저 해시 참조) 다시 내고, 고친 줄과
+    ack 는 feed 로 간다. 이은 data 는 그 칸을 고친 값이다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    before = last(grid, f"{emg.GRID_KEY}#shell")
+    send_ops(app, grid, {"op": "cell", "id": "n:DA-01", "col": "담당자", "text": "홍길동"})
+    after = last(grid, f"{emg.GRID_KEY}#shell")
+    assert after == before
+    feed = last(grid, emg.feed_key())
+    assert feed["shell"] == before["shell"] and list(feed["rows"]) == ["n:DA-01"]
+    assert feed["ack"]["seq"] >= 1
+    table = last(grid, emg.GRID_KEY)
+    row = next(row for row in table["rows"] if row["id"] == "n:DA-01")
+    assert row["values"][list(EQUIPMENT_COLUMNS).index("담당자")] == "홍길동"
+    app.run()
+    assert last(grid, f"{emg.GRID_KEY}#shell") == before
+    assert list(last(grid, emg.feed_key())["rows"]) == ["n:DA-01"]
+
+
 def test_a_bad_date_stays_as_a_cell_draft_and_blocks_the_revision_save(
     tmp_path: Path, grid: Calls
 ) -> None:
@@ -567,7 +590,7 @@ def test_grid_results_go_to_the_alert_popup_in_the_kind_of_what_happened(
 def test_the_undo_button_stays_live_and_answers_when_there_is_nothing_to_undo(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """「한 단계 되돌리기」 는 「리비전 저장」 과 같은 제출 단추다 — 출납은 300ms 묶음이라 회차의
+    """「한 단계 되돌리기」 는 「리비전 저장」 과 같은 제출 단추다 — 출납은 묶어 보내므로 회차의
     단계 수는 브라우저보다 늦어 잠그면 방금 고친 것을 되돌리는 누름을 놓친다. 잠그지 않고 누른
     회차에 판정해 알림창이 알린다(설계 규칙 UI-INP-07, g5-09). 무엇을 되돌리나는 풍선이다."""
     app = _app(tmp_path / "equipment.duckdb")

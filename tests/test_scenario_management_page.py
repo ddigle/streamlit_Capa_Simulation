@@ -941,7 +941,10 @@ def test_rename_refreshes_the_cached_snapshot_name(
     assert cached.scenario.scenario_name == summary.scenario_name
 
     app, browser, calls = _list_app(script, monkeypatch)
+    # 깨끗한 편집본이면 브라우저가 첫 고침을 묶지 않고 곧바로 보낸다(data `clean`).
+    assert last(calls, TABLE_KEY)["clean"] is True
     browser.rename_scenario(summary.scenario_id, "  이름 바꾼 시나리오 ")
+    assert last(calls, TABLE_KEY)["clean"] is False
     # 고친 수는 칸 안 수 넷이 말한다 — 표 위에 값 줄을 세우지 않는다.
     assert _counts(calls) == {"scenario": 1, "order": 0, "revision": 0, "blocked": 0}
     assert not any("고친 것" in str(item.value) for item in app.caption)
@@ -953,6 +956,7 @@ def test_rename_refreshes_the_cached_snapshot_name(
     assert table_names(calls) == ["이름 바꾼 시나리오"]
     assert "saved" not in table_row(calls, summary.scenario_id)
     assert _counts(calls)["scenario"] == 0
+    assert last(calls, TABLE_KEY)["clean"] is True
     assert app.session_state[ACTIVE_SCENARIO_LABEL_KEY]["scenario_name"] == "이름 바꾼 시나리오"
 
 

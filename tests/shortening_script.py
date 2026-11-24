@@ -10,6 +10,8 @@ fleet 을 보이므로 그 호기로 계산이 돈다.
 마스터다 — 그 앞에 쓴 시험이 설비 마스터 기준의 숫자를 본다. `None` 이면 심지 않아 화면 기본값
 (Static)이다. `static` 을 주면 활성 시나리오에 Static 가용대수 표(`RQ_EQP_AVBL` — 모든 공정 · 달에
 그 값)를 싣는다.
+
+스크립트가 돈 수는 세션 칸 `test_runs` 에 쌓인다 — 한 조작이 앱 전체 회차를 몇 번 돌렸는지 본다.
 """
 
 from __future__ import annotations
@@ -163,6 +165,8 @@ process_labels_module.get_process_labels = lambda: ProcessLabels(
     version=1, labels={dict(labels or {})!r}
 )
 try:
+    # 스크립트가 돈 수(앱 전체 회차 — `st.rerun` 으로 다시 돈 것 포함).
+    st.session_state["test_runs"] = st.session_state.get("test_runs", 0) + 1
     # streamlit 모듈 자체를 바꾸는 패치라 원복이 반드시 돌아야 한다.
     st.download_button = record_download_button
     st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",

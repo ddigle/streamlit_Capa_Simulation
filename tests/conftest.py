@@ -47,6 +47,7 @@ from capa_simulation.components import (
     page_failure_card,
     page_tabs,
     paste_form,
+    process_field,
     scenario_list_grid,
     side_panel,
     space_layout_editor,
@@ -647,8 +648,8 @@ def _stub_alert_center(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
-    """설비 마스터 표 컴포넌트(`equipment_master_grid._GRID`)를 아무것도 보내지 않는 대역으로
-    바꾼다.
+    """설비 마스터 표 컴포넌트(`equipment_master_grid._GRID` · 표 feed `_FEED`)를 아무것도 보내지
+    않는 대역으로 바꾼다.
 
     Space 편집기 대역과 같은 까닭이다 — AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest
     에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다. 받은 값을 보는 시험은 제
@@ -667,7 +668,11 @@ def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
             goto=None,
         )
 
+    def _silent_feed(**_: Any) -> None:
+        return None
+
     monkeypatch.setattr(equipment_master_grid, "_GRID", _silent)
+    monkeypatch.setattr(equipment_master_grid, "_FEED", _silent_feed)
 
 
 @pytest.fixture(autouse=True)
@@ -754,3 +759,25 @@ def _stub_paste_window(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(paste_form, "_PASTE_WINDOW", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_process_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    """공정 고르기 판(`process_field._PROCESS_PICKER`)을 아무것도 보내지 않는 대역으로 바꾼다 —
+    필요 단축 일정 조건 카드 「공정」 팝오버가 매 회차 그린다. Space 편집기 대역과 같은 까닭(AppTest
+    는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서 진짜 컴포넌트를 부르면 「not
+    registered」로 죽는다). 판을 누르는 시험은 `tests/process_board_press.live_board` 로 회차 안에서
+    진짜 판을 등록해 이 위에 다시 덮는다."""
+
+    def _silent(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(apply=None)
+
+    monkeypatch.setattr(process_field, "_PROCESS_PICKER", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _editor_scopes_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """편집기 구역 끄개(`settings.EDITOR_SCOPES_ENV`)를 시험 창에서 걷는다 — 사내 창에 끄개가 남아
+    있어도 시험은 기본(켬) 꼴로 돈다. 끈 꼴을 보는 시험은 제 `monkeypatch.setenv` 로 이 위에 다시
+    넣는다."""
+    monkeypatch.delenv(settings.EDITOR_SCOPES_ENV, raising=False)

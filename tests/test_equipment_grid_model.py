@@ -391,6 +391,63 @@ def test_changed_cells_carry_the_saved_text_and_new_rows_are_tagged() -> None:
     assert (counts.cells, counts.new, counts.deleted) == (2, 1, 0)
 
 
+def test_changed_positions_find_only_the_rows_whose_values_changed() -> None:
+    """바뀐 줄 자리 — 빈 값끼리는 같고, 줄 수 · 칸 · dtype 이 다르면 None(통째로 다시 본다)."""
+    before = pd.DataFrame(
+        {
+            "설비명": pd.array(["A", "B", None, "D"], dtype="string"),
+            "반입일정": pd.Series(
+                [pd.Timestamp("2026-01-01"), pd.NaT, pd.NaT, pd.Timestamp("2026-02-01")]
+            ),
+            "반입상태": ["계획", None, "완료", "확정"],
+        }
+    )
+    after = before.copy()
+    assert eg.changed_positions(before, after) == []
+    after.loc[1, "반입일정"] = pd.Timestamp("2026-03-01")
+    after.loc[3, "반입상태"] = "완료"
+    assert eg.changed_positions(before, after) == [1, 3]
+    assert eg.changed_positions(None, after) is None
+    assert eg.changed_positions(before, after.iloc[:3]) is None
+    assert eg.changed_positions(before, after.astype({"반입상태": "string"})) is None
+
+
+def test_a_view_built_on_the_previous_changed_memo_is_the_view_built_from_scratch() -> None:
+    """「바뀐 칸」 은 두 글 줄이 그대로인 줄만 앞 회차 것을 쓴다(`changed_memo`) — 글 행렬을
+    바뀐 줄만 갈아 끼우는(`text_matrix_since`) 다음 회차의 표 모양은 처음부터 낸 것과 같다."""
+    saved = _saved()
+    frames = _copy(saved)
+    frames[1].loc[0, "담당자"] = "담당B"
+    context = eg.GridContext(base="t#1", scenario_name="운영")
+    saved_texts = eg.text_matrix(saved[1])
+    first = eg.text_matrix_since(None, frames[1])
+    view = eg.build_grid_view(
+        eg.GridSource(frames=frames, saved=saved, texts=(first.rows, saved_texts)), context
+    )
+    master = frames[1].copy()
+    master.loc[0, "담당자"] = saved[1].loc[0, "담당자"]
+    master.loc[2, "메모1"] = "새 메모"
+    frames = (frames[0], master, frames[2])
+    second = eg.text_matrix_since(first, master)
+    assert second.rows[1] is first.rows[1] and second.rows[0] is not first.rows[0]
+    reused = eg.build_grid_view(
+        eg.GridSource(
+            frames=frames,
+            saved=saved,
+            texts=(second.rows, saved_texts),
+            changed_memo=view.changed_memo,
+        ),
+        context,
+    )
+    fresh = eg.build_grid_view(eg.GridSource(frames=frames, saved=saved), context)
+    assert reused.marks == fresh.marks and reused.values == fresh.values
+    ids = reused.index.ids
+    assert not reused.marks[ids[0]].changed
+    assert reused.marks[ids[2]].changed == {
+        eg.COLUMN_INDEX["메모1"]: saved_texts[2][eg.COLUMN_INDEX["메모1"]]
+    }
+
+
 def test_deleted_units_show_their_saved_values_and_lock_every_cell() -> None:
     saved = _saved()
     frames = _copy(saved)
@@ -504,6 +561,56 @@ def test_grid_data_is_plain_json_in_loaded_order() -> None:
     assert all(len(row["values"]) == 39 for row in data["rows"])
     assert data["colSets"][0][3] == [eg.COLUMN_INDEX[c] for c in eg.COLUMN_SETS[0].columns]
     assert eg.grid_data(view, loaded) == eg.grid_data(view, loaded), "같은 입력이면 같은 data"
+
+
+def test_a_cell_edit_keeps_the_shell_and_sends_only_the_changed_row_in_the_feed() -> None:
+    """표 data 는 껍데기(칸 정의 · 잠금 · 불러온 줄)와 feed(ack · 수 · 연 줄 · 껍데기 뒤 바뀐 줄)로
+    간다(`split_grid_data`). 칸 하나를 고친 회차는 앞 껍데기를 그대로 다시 내고(같은 dict — 해시
+    참조) 그 줄만 feed 에 싣는다. 둘을 다시 이으면 원래 data 다. 목록이 바뀌거나 바뀐 줄이 상한을
+    넘으면 껍데기를 새로 짓는다."""
+    saved = _saved()
+    frames = _copy(saved)
+    view = _view(frames, saved)
+    loaded = list(view.index.ids[:4])
+    data = eg.grid_data(view, loaded, ack={"mount": "m-1", "seq": 2}, open_id=loaded[0])
+    shell, feed = eg.split_grid_data(data)
+    assert feed["rows"] == {} and feed["shell"] == shell["shell"]
+    assert not set(eg.GRID_FEED_FIELDS) & set(shell) and "rows" in shell
+    assert eg.join_grid_data(shell, feed) == data
+    assert shell["shell"] == eg.split_grid_data(data)[0]["shell"], "같은 내용이면 같은 지문"
+
+    edited = _copy(frames)
+    edited[1].loc[1, "담당자"] = "담당Z"
+    view2 = _view(edited, saved)
+    data2 = eg.grid_data(view2, loaded, ack={"mount": "m-1", "seq": 3}, open_id=loaded[2])
+    shell2, feed2 = eg.split_grid_data(data2, shell)
+    assert shell2 == shell, "칸 하나 — 껍데기 그대로"
+    assert list(feed2["rows"]) == [loaded[1]]
+    assert feed2["ack"] == {"mount": "m-1", "seq": 3} and feed2["open"] == loaded[2]
+    assert eg.join_grid_data(shell2, feed2) == data2
+    assert json.dumps(feed2, allow_nan=False)
+
+    shorter = eg.grid_data(view2, loaded[:3])
+    shell3, feed3 = eg.split_grid_data(shorter, shell)
+    assert shell3["shell"] != shell["shell"] and feed3["rows"] == {}
+    assert eg.join_grid_data(shell3, feed3) == shorter
+    assert eg.join_grid_data(shell, feed3) == {k: v for k, v in shell.items() if k != "shell"}
+
+
+def test_the_shell_is_rebuilt_when_the_feed_would_carry_too_many_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved = _saved()
+    view = _view(_copy(saved), saved)
+    loaded = list(view.index.ids[:4])
+    shell, _ = eg.split_grid_data(eg.grid_data(view, loaded))
+    edited = _copy(saved)
+    edited[1]["담당자"] = "모두"
+    data = eg.grid_data(_view(edited, saved), loaded)
+    monkeypatch.setattr(eg, "GRID_PATCH_LIMIT", 2)
+    fresh, feed = eg.split_grid_data(data, shell)
+    assert fresh["shell"] != shell["shell"] and feed["rows"] == {}
+    assert eg.join_grid_data(fresh, feed) == data
 
 
 def test_the_side_refusal_line_is_carried_as_it_is() -> None:

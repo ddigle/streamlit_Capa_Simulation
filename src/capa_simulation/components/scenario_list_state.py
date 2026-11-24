@@ -35,6 +35,10 @@ REVISIONS_KEY: Final = "scenario_list_revisions"
 CHANGES_KEY: Final = "scenario_list_changes"
 CHECKS_KEY: Final = "scenario_list_checks"
 MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY, CHECKS_KEY)
+# 목록 관리 두 칸(표 · 오른쪽 칸)의 편집기 구역 key — 프래그먼트 key 이자 `fragment_scope` 구역
+# key 다(AGENTS 9장 「구역 회차 규칙」). 「점검」 칸 콜백(`scenario_input_check`)도 이 구역에서
+# 올린다.
+LIST_SCOPE: Final = "scenario_list_panels"
 # 오른쪽 칸 고르기 · 받기 콜백이 고른 칸 — 맨 위 알림 칸이 표 모듈을 읽지 않고 본다(이름은
 # `scenario_list_grid.LIST_SIDE` 와 같다 — 시험이 맞댄다).
 SIDE_CHOICE_KEY: Final = "scenario_list_side_v1"

@@ -131,7 +131,7 @@ function rowsRemove(S) {
     setStatus(S, plan.why)
     return false
   }
-  queueOp(S, { op: plan.restore ? 'restore' : 'remove', rows: plan.keys })
+  queueOp(S, { op: plan.restore ? 'restore' : 'remove', rows: plan.keys }, true)
   announce(S, egText(S, plan.restore ? 'rowRestore' : 'rowRemove', ''))
   return true
 }

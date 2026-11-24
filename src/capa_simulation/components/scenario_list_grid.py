@@ -35,6 +35,11 @@ CHECKS_KEY: Final = scenario_list_state.CHECKS_KEY
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = frozenset({"outbox"})
 TRIGGER_NAMES: Final = frozenset[str]()
+# 이름 · 차례 고침을 모아 보내는 쉼(ms) — 결정값(AGENTS 9장 「구역 회차 규칙」 묶음
+# 길이). data `sendMs` 로 JS 에 넘기고, 개발 · 측정 사본은 실행 줄 `CAPA_DEV_BATCH_MS` 로
+# 덮어쓴다(`grid_shared.batch_ms`). 깨끗한 편집본의 첫 고침 · 줄 고르기 · 되돌리기 · 표 밖
+# 누름 · 창 숨김 · 떠나기 신호는 묶지 않는다(`list.js`).
+LIST_SEND_MS: Final = 800
 
 # 처음 폭은 줄의 40%(옛 시제품 측정 — 리비전 표 세 칸이 346px 에서 밀리고 416px 이면 든다). 한계는
 # 설비 마스터와 같다. 칸 고르기 다섯은 단추 좌우 안쪽 여백을 12px 로 좁혀 창 1283 의 처음 폭에서 한
@@ -69,10 +74,15 @@ _GRID = st.components.v2.component(
 
 
 def render_list_mount(key: str, data: Mapping[str, Any], *, on_outbox: Callable[[], None]) -> None:
-    """네 자리 가운데 하나를 그린다. 색은 등록 CSS 에 적지 않고 회차마다 팔레트로 넘긴다."""
+    """네 자리 가운데 하나를 그린다. 색은 등록 CSS 에 적지 않고 회차마다 팔레트로 넘긴다. 묶음
+    길이도 data 로 넘긴다(`LIST_SEND_MS`)."""
     _GRID(
         key=key,
-        data={**data, "palette": grid_shared.grid_palette()},
+        data={
+            **data,
+            "palette": grid_shared.grid_palette(),
+            "sendMs": grid_shared.batch_ms(LIST_SEND_MS),
+        },
         on_outbox_change=on_outbox,
         width="stretch",
     )

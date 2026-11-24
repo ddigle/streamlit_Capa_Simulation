@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+from functools import partial
 from typing import Any, Final, Literal, NamedTuple, cast
 from uuid import uuid4
 
@@ -41,9 +43,11 @@ from capa_simulation.components.table_view_controls import (
 )
 from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
+    forget_seen,
     held_notice,
     is_own_save,
     note_notice,
+    noted_notice,
     notice_marks,
     own_save_marks,
     remember_own_save,
@@ -225,6 +229,22 @@ GRID_DETAIL_KEY = "equipment_grid_detail_v1"
 # 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글} — 저장해도 남고(다음 호기를 이어 넣는다)
 # 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
 NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
+# 제 「리비전 저장」 이음 표지 — 저장 누름이 DB 쓰기 **전에** 적는 dict 칸(쓰기 뒤에는 그 dict 만
+# 고친다 — 끊겨도 남는다). 저장 직전 편집본에 그렸으나 그 저장 뒤에 닿은 표 op 를 버리지 않고 저장본
+# 위에 얹는 재료다 — 출납으로 다시 온 op 는 `equipment_master_tab._carried` 가 옮겨 얹고, 쓰는 사이
+# 옛 편집본에 이미 얹힌 op 는 `note_late_ops` 가 남겼다가 `take_late_ops` 가 꺼낸다. 같은 출발점에서
+# 쓰는 중이거나 쓴 표지는 둘째 누름이 다시 적지 않는다(`stage_own_save_carry`).
+# {"from": 저장한 편집본 출발점, "ids": 저장 뒤 행 id 지도(`save_id_map` — 지운 호기 None),
+#  "applied": 마운트별 저장에 든 마지막 seq, "at": 적은 때(`time.monotonic` — `late` 를 남기는 창
+#  `LATE_OPS_WINDOW_SECONDS` 의 시작), "writing": 저장소 쓰기가 도는 중인가, "written": 쓰기가
+#  됐는가, "late": 적은 뒤 · 다시 세우기 전에 그 편집본에 얹은 op, "froms": 이어 받는 옛 출발점,
+#  "to": 이어 받는 지금 출발점, "to_seeded": 그 편집본의 씨뿌린 세대, "rewind": 이어 받은 뒤
+#  `late` 를 아직 안 꺼냄}.
+OWN_SAVE_CARRY_KEY = "equipment_grid_own_save_carry_v1"
+# 남의 저장으로 다시 세운 편집본의 옛 출발점(최근 몇 개) — 그 출발점에서 온 op 를 버릴 때 그
+# 까닭으로 알린다.
+FOREIGN_ORIGINS_KEY = "equipment_grid_foreign_origins_v1"
+_FOREIGN_ORIGINS_LIMIT = 4
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
@@ -372,6 +392,7 @@ _HEAD_HELD_KEY = "equipment_workspace_head_held_v1"
 # 띄운다 — `flash` 의 `again` 과 같은 꼴).
 _HEAD_RESEND_KEY = "equipment_workspace_head_resend_v1"
 _HEAD_RESEND: Final = SessionSlot(_HEAD_RESEND_KEY, list, list)
+_HEAD_STALE: Final = SessionSlot(HEAD_STALE_KEY, bool)
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
 # 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
@@ -383,6 +404,14 @@ _BUFFER_SESSION_KEY = "equipment_workspace_session_v1"
 # 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 설비 마스터 탭 편집을 놓치지 않게
 # 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
+# 편집본 세 표(기존 보유대수, 설비 마스터, 비가동 일정)마다 그 표 내용이 바뀔 수 있는 쓰기에서만
+# 오르는 세대 — 한 표만 보는 회차 메모(설비 마스터 탭의 다른 두 표 바뀐 행 수 · 표 단위 오류 ·
+# 현재 데이터 내려받기)의 열쇠다. 설비 마스터 칸 하나를 고친 회차가 다른 두 표의 일을 다시 하지
+# 않게 한다. 편집본 세대처럼 세션 안에서 내려가지 않는다(다시 세워도 오른다).
+TABLE_GENERATIONS_KEY = "equipment_workspace_table_generations_v1"
+# 세 표 모두 / 어느 표도 아님(층 배치 대기분처럼 편집본 세 표 밖만 바꾸는 쓰기).
+ALL_TABLES: Final = (True, True, True)
+NO_TABLES: Final = (False, False, False)
 CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
@@ -448,12 +477,15 @@ def _clear_editors() -> None:
         st.session_state.pop(f"{key}_applied_view", None)
 
 
-def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
+def reset_equipment_drafts(*, keep_fab: bool = False, keep_own_save_carry: bool = False) -> None:
     """새 저장본으로 돌아갈 때 페이지 draft와 설비 마스터 탭의 입력·편집표 delta를 함께 비운다.
 
     `keep_fab` 이면 미저장 FAB 전체 배치는 남긴다 — 설비 시나리오와 무관한 현행값이라 시나리오를
-    바꿔 불러와도 버릴 까닭이 없다.
+    바꿔 불러와도 버릴 까닭이 없다. `keep_own_save_carry` 는 제 「리비전 저장」 뒷정리만 준다 — 그
+    밖의 다시 세움(모두 버리기 · 불러오기 · 세션 옮김)은 저장 직전 편집본의 op 를 얹지 않는다.
     """
+    if not keep_own_save_carry:
+        OWN_SAVE_CARRY.clear()
     _clear_editors()
     for key in (
         BASELINE_DRAFT_KEY,
@@ -516,8 +548,18 @@ def _copy_frames(frames: Frames) -> Frames:
     return frames[0].copy(), frames[1].copy(), frames[2].copy()
 
 
-def _bump_buffer_generation() -> None:
+def _bump_buffer_generation(tables: tuple[bool, bool, bool] = ALL_TABLES) -> None:
+    """편집본 세대를 올리고 `tables` 가 참인 표의 세대도 올린다(모르면 셋 다 — 기본값)."""
     st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
+    if any(tables):
+        current = table_generations()
+        TABLE_GENERATIONS.set(
+            (
+                current[0] + int(tables[0]),
+                current[1] + int(tables[1]),
+                current[2] + int(tables[2]),
+            )
+        )
 
 
 # 편집본 세 표(기존 보유대수 · 설비 마스터 · 비가동 일정)를 고치는 데 필요한 등급 동작(2026-11-18
@@ -645,9 +687,25 @@ def equipment_buffer_generation() -> int:
     return int(value) if isinstance(value, int) else 0
 
 
+def table_generations() -> tuple[int, int, int]:
+    """편집본 세 표(기존 보유대수, 설비 마스터, 비가동 일정)의 세대 — 그 표를 바꿀 수 있는
+    쓰기에서만 오른다(`TABLE_GENERATIONS_KEY`). 꼴이 다르면 0 셋."""
+    value = TABLE_GENERATIONS.peek()
+    if value is not None and len(value) == 3 and all(isinstance(item, int) for item in value):
+        return value[0], value[1], value[2]
+    return 0, 0, 0
+
+
 # 설비 마스터 탭 회차 메모(`GRID_MEMO_KEY`)의 창구 — 새 메모 칸(표 단위 오류 · 일정 확인 · 다른 표
 # 바뀐 행 수 · 칸 결과 재료)은 이 창구로 읽고 쓴다(옛 칸 결과 · 글 행렬 자리는 그대로).
 GRID_MEMO: Final = SessionSlot(GRID_MEMO_KEY, dict, dict)
+# 표별 세대 · 제 저장 이음 표지 · 남의 저장 옛 출발점 · 세운 세대 · 제 저장이 옮길 일정
+# 리비전의 창구.
+TABLE_GENERATIONS: Final = SessionSlot(TABLE_GENERATIONS_KEY, tuple)
+OWN_SAVE_CARRY: Final = SessionSlot(OWN_SAVE_CARRY_KEY, dict)
+FOREIGN_ORIGINS: Final = SessionSlot(FOREIGN_ORIGINS_KEY, tuple)
+_SEEDED_GENERATION: Final = SessionSlot(_SEEDED_GENERATION_KEY, int)
+_SAVED_SCHEDULE: Final = SessionSlot(SAVED_SCHEDULE_KEY, dict)
 # 저장본 사본의 쌍 토큰(`DRAFT_REVISION_KEY`) 읽기 창구.
 DRAFT_REVISION: Final = SessionSlot(DRAFT_REVISION_KEY, str)
 
@@ -814,6 +872,141 @@ def has_unsaved_equipment_edits() -> bool:
     )
 
 
+def stage_own_save_carry(ids: Mapping[str, str | None], applied: Mapping[str, int]) -> None:
+    """「리비전 저장」 누름이 DB 쓰기 **전에** 이음 표지를 적는다 — 지금 편집본 출발점, 저장 뒤 행
+    id 지도, 마운트별 저장에 든 마지막 seq. 쓰기는 `_save_equipment_frames` 가 이 dict 에 적는다.
+
+    이 편집본을 쓰는 중이거나(`writing` — 첫 누름의 저장소 쓰기가 아직 도는 사이) 이미 쓴(`written`
+    — 뒷정리 전에 끊김) 제 저장의 표지가 있으면 새로 적지 않고 그대로 둔다 — 둘째 누름은 새로 쓰지
+    않고 첫 저장의 결과를 잇는다(`write_guard.save_once` · 제 저장 짝). 그러니 저장에 든 seq · 행 id
+    지도는 첫 누름의 것이고, 그 사이 옛 편집본에 얹은 op(`late`)도 다시 세운 편집본에 얹어야 한다 —
+    덮어쓰면 그 op 가 「저장에 든 것」 으로 걸러져 사라진다."""
+    staged = _carry_for(buffer_base())
+    if staged is not None and (staged.get("writing") is True or staged.get("written") is True):
+        return
+    OWN_SAVE_CARRY.set(
+        {
+            "from": buffer_base(),
+            "ids": dict(ids),
+            "applied": {str(mount): int(seq) for mount, seq in applied.items()},
+            "written": False,
+            "froms": [],
+            "at": time.monotonic(),
+        }
+    )
+
+
+def settle_own_save_carry() -> None:
+    """저장 누름 콜백이 끝까지 돈 뒤 — 쓰지 않았으면(오류 · 고친 것 없음) 이음 표지를 걷는다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is None or carry.get("written") is not True:
+        OWN_SAVE_CARRY.clear()
+
+
+def _carry_for(base: str) -> dict[str, Any] | None:
+    """그 출발점에서 적은 이음 표지 dict(세션 칸의 그 객체) — 없거나 다른 출발점이면 None."""
+    carry = OWN_SAVE_CARRY.peek()
+    return carry if carry is not None and carry.get("from") == base else None
+
+
+def own_save_unsettled() -> bool:
+    """제 「리비전 저장」 이 지금 편집본을 이미 DB 에 썼는데 뒷정리(편집본 다시 세우기)가 아직이다 —
+    쓰기 뒤 다음 조작의 회차가 콜백을 끊은 사이(fastReruns). 이 편집본에 op 를 얹으면 다시 세울 때
+    사라지므로 받는 쪽은 다시 세운 뒤로 미룬다(`equipment_master_tab.apply_outbox`). 끊긴 저장이 새
+    일정 리비전을 써 세션을 다음 회차에 옮기는 사이(`SAVED_SCHEDULE_KEY` — 그 회차가 한 번 더 다시
+    세운다)도 같다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is None or carry.get("written") is not True:
+        return False
+    return carry.get("from") == buffer_base() or _SAVED_SCHEDULE.exists()
+
+
+def _own_carry_written_here() -> bool:
+    """이음 표지가 지금 편집본(뒷정리 전)에서 쓴 제 저장의 것인가."""
+    carry = _carry_for(buffer_base())
+    return carry is not None and carry.get("written") is True
+
+
+def own_save_carry() -> dict[str, Any] | None:
+    """다시 세운 편집본에 이어진 이음 표지(`to` 가 있는 것) — 없으면 None."""
+    carry = OWN_SAVE_CARRY.peek()
+    if carry is not None and carry.get("written") is True and isinstance(carry.get("to"), str):
+        return carry
+    return None
+
+
+def foreign_origins() -> tuple[str, ...]:
+    """남의 저장으로 다시 세운 편집본의 옛 출발점(최근 것 몇 개)."""
+    value = FOREIGN_ORIGINS.peek()
+    return tuple(str(item) for item in value) if value is not None else ()
+
+
+def _bind_own_save_carry(*, replaced: bool, seeded_before: object, base_before: str) -> None:
+    """편집본을 다시 세운 회차의 이음 표지 — 제 저장 뒤 첫 다시 세움(앞 씨뿌림 세대가 없다)이나 그
+    편집본을 다시 세운 것(세대가 이어진 것 — 새 일정 리비전으로 세션을 옮긴 회차)이면 지금
+    출발점으로 잇고, 남의 저장이면 걷고 그 옛 출발점을 남의 저장으로 적는다."""
+    carry = OWN_SAVE_CARRY.peek()
+    if replaced:
+        OWN_SAVE_CARRY.clear()
+        olds = [*foreign_origins(), base_before]
+        if carry is not None:
+            olds.extend(str(item) for item in [carry.get("from"), *carry.get("froms", [])] if item)
+        FOREIGN_ORIGINS.set(tuple(dict.fromkeys(olds))[-_FOREIGN_ORIGINS_LIMIT:])
+        return
+    if carry is None or carry.get("written") is not True:
+        return
+    if "to" in carry and carry.get("to_seeded") != seeded_before:
+        OWN_SAVE_CARRY.clear()
+        return
+    froms = [*carry.get("froms", []), *([carry["to"]] if "to" in carry else [carry["from"]])]
+    carry["froms"] = list(dict.fromkeys(str(item) for item in froms))
+    carry["to"] = buffer_base()
+    carry["to_seeded"] = _SEEDED_GENERATION.peek()
+    carry["rewind"] = True
+
+
+# 저장 누름이 이음 표지를 적은 뒤 옛 편집본에 얹는 op 를 남기는 창(초) — 저장 한 번(쓰기 · 뒷정리)이
+# 넉넉히 드는 시간. 그 뒤에도 이어지지 않은 표지는 쓰기 전에 끊긴 저장이다.
+LATE_OPS_WINDOW_SECONDS: Final = 60.0
+
+
+def note_late_ops(ops: Sequence[Mapping[str, Any]], base: str) -> None:
+    """제 「리비전 저장」 누름이 이음 표지를 적은 뒤 · 다시 세우기 전에 그 편집본(`base`)에 얹는 op
+    를 이음 표지에 남긴다 — Streamlit 1.63 은 저장 콜백이 DB 에 쓰는 사이 닿은 다음 조작의 회차를
+    다른 스레드로 세워, 그 회차가 곧 버려질 옛 편집본에 op 를 얹고 ack 를 그린다(브라우저는 그
+    op 를 버린다). 다시 세운 편집본에 이을 때 이것을 다시 얹는다(`take_late_ops`). 세션 칸이 아니라
+    그 dict 를 고친다(두 스레드가 같은 객체를 본다)."""
+    carry = _carry_for(base)
+    if carry is None or "to" in carry or not ops:
+        return
+    staged = carry.get("at")
+    if not isinstance(staged, float) or time.monotonic() - staged > LATE_OPS_WINDOW_SECONDS:
+        # 쓰기 전에 끊겨 이어지지 않을 이음 표지 — 그 뒤 편집을 끝없이 쌓지 않는다.
+        return
+    carry["late"] = [*carry.get("late", []), *(dict(op) for op in ops)]
+
+
+def take_late_ops() -> list[dict[str, Any]]:
+    """이음 표지가 방금 다시 세운 편집본에 이어졌으면 그 사이 옛 편집본에 얹었던 op(한 번만 —
+    저장에 든 seq 이하는 뺀다). 없으면 빈 목록.
+
+    끊긴 제 저장이 새 일정 리비전을 써 세션을 다음 회차에 옮기며 한 번 더 다시 세울
+    회차(`own_save_unsettled`)면 꺼내지 않고 그대로 둔다 — 지금 편집본에 얹으면 그 다시 세움이
+    지우고, 꺼낸 목록은 비어 다시 얹히지 않는다. 옮긴 뒤 다시 세운 편집본에 이어질 때 꺼낸다."""
+    carry = own_save_carry()
+    if carry is None or own_save_unsettled() or not carry.pop("rewind", False):
+        return []
+    applied = carry.get("applied")
+    saved: dict[str, int] = applied if isinstance(applied, dict) else {}
+    late = carry.pop("late", [])
+    return [
+        dict(op)
+        for op in late
+        if isinstance(op, dict)
+        and int(op.get("seq") or 0) > int(saved.get(str(op.get("mount")), 0))
+    ]
+
+
 def pop_drafts_replaced() -> bool:
     """이번 회차에 다른 사람의 저장으로 편집본을 새로 세웠는가. 페이지가 `ensure_equipment_drafts`
     바로 뒤에 한 번 읽는다(안 읽으면 다음 회차의 정상 제출까지 막는다)."""
@@ -905,6 +1098,15 @@ def _resend_after_head_rerun(code: str | None = None) -> None:
             ),
         ]
     )
+
+
+def head_stale_if_unsaved_changed(before: bool) -> None:
+    """페이지 본문이 머리를 그린 뒤 편집본을 바꿔 미저장 표시(`has_unsaved_equipment_edits` — 변경
+    칩 · 화면 탭 점 · 떠나기 확인)가 `before` 와 달라졌으면 그 화면 끝에서 한 번 다시 돌게
+    한다(`rerun_if_head_stale`) — 설비 마스터 탭이 미뤄 둔 출납 · 제 저장 뒤 다시 얹은 op 를
+    본문에서 얹는 회차."""
+    if has_unsaved_equipment_edits() != before:
+        _HEAD_STALE.set(True)
 
 
 def rerun_if_head_stale() -> None:
@@ -1028,6 +1230,8 @@ def ensure_equipment_drafts(
         # 토큰이 **실제로 바뀐** 경우(다른 사람이 새 리비전을 저장)에만 옛 편집을 버리고 알린다.
         # 처음 세우는 회차(앞 토큰 없음)에 미리 쌓인 층 배치까지 지우면 그 편집이 사라진다.
         replaced = previous is not None and previous != token
+        base_before = buffer_base()
+        seeded_before = _SEEDED_GENERATION.peek()
         if replaced:
             st.session_state[DRAFTS_REPLACED_KEY] = True
         _clear_editors()
@@ -1109,6 +1313,9 @@ def ensure_equipment_drafts(
             _follow_saved_unit_renames(moved)
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+        _bind_own_save_carry(
+            replaced=replaced, seeded_before=seeded_before, base_before=base_before
+        )
         if reapplied is not None and reapplied.reapplied:
             # 다시 얹은 편집은 저장 안 한 편집이다 — 세운 세대보다 한 칸 올린다. 편집기가 적용한
             # 묶음 모양 승인은 다시 얹은 결과에서도 그 모양인 묶음만 새 이름으로 남긴다(위 stale
@@ -1132,7 +1339,11 @@ def ensure_equipment_drafts(
         # 제 저장이 새 일정 리비전을 썼다 — 세션을 그리로 옮기는 것은 다음 회차(페이지가
         # `pop_saved_schedule` 로 읽는다)다. 이 회차의 저장본 표지를 남기지 않아 다음 회차가 옮긴
         # 리비전에서 말없이 새로 세운다(남의 저장으로 읽지 않는다). 머리도 그 회차에 다시 그린다.
+        # 옛 일정 리비전에서 세운 이 편집본의 본 값도 남기지 않는다 — 일정만 쓴 저장이면 그 본 값이
+        # 저장 전 짝 그대로라, 다음 회차의 끊긴 저장 잇기(`_settle_own_save`)가 같은 저장을 한 번 더
+        # 이어 뒷정리하며 이음 표지를 걷는다(옮기기 전 편집본은 저장하지 않는다).
         st.session_state.pop(_REVISION_KEY, None)
+        forget_seen(_BASE_KEY)
         st.session_state[HEAD_STALE_KEY] = True
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
@@ -1169,6 +1380,11 @@ def _settle_own_save() -> _OwnSaveSettled | None:
         if len(pair) != 2 or pair[0] != expected or pair[1] == expected:
             continue
         message = held_notice(name)
+        if message is None and _own_carry_written_here():
+            # 창(`TRAILING_PRESS_SECONDS`)이 지났어도 이 편집본을 쓴 제 저장 누름의 이음 표지가
+            # 있으면 끊긴 제 저장이다 — 바쁜 서버에서 다음 회차가 늦게 와도 남의 저장으로 읽지
+            # 않는다.
+            message = noted_notice(name) or SAVED_AGAIN_MESSAGE
         if message is None:
             continue
         stored = pair[1]
@@ -1242,15 +1458,21 @@ def _remember_edits(frames: Frames, *, keep_undo: bool = False) -> None:
     # 밖 표의 변경은 넣지 않는다(`_grade_kept`).
     frames = _grade_kept(frames)
     current = st.session_state.get(BUFFER_KEY)
-    unchanged = isinstance(current, tuple) and all(
-        same_frame_content(left, right) for left, right in zip(current, frames, strict=True)
+    changed: tuple[bool, bool, bool] = (
+        (
+            not same_frame_content(current[0], frames[0]),
+            not same_frame_content(current[1], frames[1]),
+            not same_frame_content(current[2], frames[2]),
+        )
+        if isinstance(current, tuple) and len(current) == 3
+        else ALL_TABLES
     )
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
     # 내용이 그대로인 제출(작은 편집표 보기 적용 등)은 세대를 올리지 않는다 — 올리면 「저장 안 한
     # 편집이 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
-    if not unchanged:
-        _bump_buffer_generation()
+    if any(changed):
+        _bump_buffer_generation(changed)
         if not keep_undo:
             _forget_grid_undo()
         _note_if_back_to_saved()
@@ -1353,7 +1575,7 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         if any(applied.frames_changed):
             st.session_state[BUFFER_KEY] = _grade_kept(state.frames)
             _drop_changed_editors(applied.frames_changed)
-        _bump_buffer_generation()
+        _bump_buffer_generation(applied.frames_changed)
     if state.overlay:
         st.session_state[GRID_OVERLAY_KEY] = dict(state.overlay)
     else:
@@ -2087,7 +2309,7 @@ def stage_floor_canvas(
         staged[key] = canvas
     st.session_state[PENDING_CANVASES_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2107,7 +2329,7 @@ def stage_floor_marks(
         staged[key] = marks
     st.session_state[PENDING_MARKS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2128,7 +2350,7 @@ def stage_floor_group_labels(
         staged[key] = dict(labels)
     st.session_state[PENDING_GROUP_LABELS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2148,7 +2370,7 @@ def stage_floor_stack(
         staged[key] = stack
     st.session_state[PENDING_STACKS_KEY] = staged
     _remember_base(key, base)
-    _bump_buffer_generation()
+    _bump_buffer_generation(NO_TABLES)
     _note_if_back_to_saved()
 
 
@@ -2473,19 +2695,36 @@ def _save_equipment_frames(
     )
     own_name = f"{EQUIPMENT_SAVE_NAME}:{scenario_id}"
     expected = (request.base_common_revision_id, request.base_schedule_revision_id or "")
+    # 이음 표지(저장 누름이 적은 dict)는 쓰기 **전에** 잡아 두고 쓰기 뒤에는 그 dict 만 고친다 —
+    # 쓰기 뒤 세션 칸 접근은 다음 조작의 회차가 끊을 수 있다.
+    carry = _carry_for(buffer_base())
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     messages = notice_marks()
+
+    def write() -> EquipmentSaveResult:
+        # 쓰는 동안의 표지 — 그 사이 같은 출발점의 둘째 누름은 이 저장의 결과를 이으므로 이음 표지를
+        # 새로 적지 않는다(`stage_own_save_carry`). 썼으면 `written` 을 먼저 적고 걷어 두 표지 사이
+        # 빈틈이 없다. 쓰지 못했거나(예외) 아무것도 쓰지 않았으면 걷혀 다음 누름이 새로 적는다. 세션
+        # 칸이 아니라 그 dict 를 고친다. 저장소 쓰기는 이 한 곳에서만 부른다.
+        if carry is not None:
+            carry["writing"] = True
+        try:
+            outcome = repository.save_equipment(request)
+            if carry is not None and _wrote_anything(outcome):
+                carry["written"] = True
+            return outcome
+        finally:
+            if carry is not None:
+                carry.pop("writing", None)
+
     try:
         # 출발점(`buffer_base`)은 아래 뒷정리(`reset_equipment_drafts`)가 옮긴다. 빠른 두 번 누름의
         # 둘째 회차가 첫 콜백을 DB 쓰기 뒤·뒷정리 전에 끊으면 출발점이 그대로라, 둘째 콜백이 옛
         # 출발점으로 다시 저장하다 거부되고 제 저장을 「다른 사용자가 먼저 저장」 으로 알렸다
         # (2026-10-26 E2E). 같은 출발점의 둘째 누름은 저장하지 않고 첫 결과로 뒷정리·알림을 잇는다.
         result = save_once(
-            EQUIPMENT_SAVE_NAME,
-            (buffer_base(), scenario_id),
-            lambda: repository.save_equipment(request),
-            wrote=_wrote_anything,
+            EQUIPMENT_SAVE_NAME, (buffer_base(), scenario_id), write, wrote=_wrote_anything
         )
     except EquipmentRevisionConflict as exc:
         # 창(`TRAILING_PRESS_SECONDS`)을 지나 닿은 둘째 누름은 저장소가 거부한다 — 그 거부가 제 저장
@@ -2499,9 +2738,13 @@ def _save_equipment_frames(
             raise
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
         # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.
+        if carry is not None:
+            carry["written"] = True
         moved = current[1] if current[1] and current[1] != expected[1] else None
         _after_equipment_save(scenario_id, moved)
         return held_notice(own_name) or SAVED_AGAIN_MESSAGE
+    if carry is not None and _wrote_anything(result):
+        carry["written"] = True
     if result.wrote_revision:
         # 저장된 값은 이 쓰기의 결과다 — 쓴 뒤 저장소를 다시 읽으면 그 사이 남의 저장이 짝에 들어가
         # 남의 저장 뒤 충돌을 제 저장으로 알아본다(쓰기 잠금 안의 결과라 그대로 지금 최신이다).
@@ -2557,7 +2800,8 @@ def _after_equipment_save(
     # 다음 설비 마스터 탭 회차에 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다).
     # 버리기·남의 저장은 이름이 돌아가므로 버린다.
     followed = st.session_state.get(FOLLOWED_FILTERS_KEY)
-    reset_equipment_drafts()
+    # 이 저장이 쓴 편집본의 이음 표지만 남긴다 — 다음 다시 세움이 그 출발점을 잇는다.
+    reset_equipment_drafts(keep_own_save_carry=_own_carry_written_here())
     if followed:
         st.session_state[FOLLOWED_FILTERS_KEY] = followed
     if schedule_revision_id is not None:
@@ -2754,15 +2998,17 @@ def _render_current_data_downloads(
     database_path: str,
     scenario_name: str | None,
     edit_note: str,
-    memo_key: tuple[object, ...],
+    memo_keys: tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...]],
     targets: Collection[str] = _TARGETS,
 ) -> None:
     """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 메뉴 「엑셀·CSV」 의 양식 단추
     아래에 같은 차례로 선다. `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글이다.
     `targets` 는 세울 표다(화면 등급 — 실무자는 비가동 일정 하나).
-    내보낼 바이트와 「편집본」 판정은 `memo_key`(편집본 세대·출발점·저장본 토큰) 열쇠로 세션
-    메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms 가
-    들었다(개편 명세 8장).
+    내보낼 바이트와 「편집본」 판정은 **표마다** 그 표 열쇠(`memo_keys` — 설비 마스터 · 기존
+    보유대수 · 비가동 일정 차례, 그 표 세대·출발점·저장본 토큰·리비전)로 세션
+    메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms
+    가 들었고(개편 명세 8장), 설비 마스터 칸 하나를 고친 회차가 다른 두 표를 다시 직렬화하지
+    않는다.
 
     내보내는 것은 **편집 버퍼**(설비 마스터 표가 보여 주는 편집본)이지 저장된 리비전이 아니다.
     사용자가 「지금 보는 것」을 받아야 Excel 에서 고쳐 되돌리는 왕복이 맞아떨어지고, 저장본과 같을
@@ -2799,29 +3045,34 @@ def _render_current_data_downloads(
         return serializers[position](frame)
 
     memo = st.session_state.get(GRID_MEMO_KEY)
-    cached = memo.get("downloads") if isinstance(memo, dict) else None
-    if (
-        isinstance(memo, dict)
-        and memo.get("downloads_key") == memo_key
-        and isinstance(cached, tuple)
-        and len(cached) == 2
+    stored_memo = dict(memo) if isinstance(memo, dict) else {}
+    found: list[tuple[bytes, bool]] = []
+    built = False
+    for position, (frame, saved_frame) in enumerate(
+        (
+            (buffered_equipment, saved_equipment),
+            (buffered_baseline, saved_baseline),
+            (buffered_downtime, saved_downtime),
+        )
     ):
-        payloads, edited = cached
-    else:
-        payloads = tuple(
-            table_bytes(position, frame)
-            for position, frame in enumerate(
-                (buffered_equipment, buffered_baseline, buffered_downtime)
-            )
-        )
-        edited = payloads != tuple(
-            table_bytes(position, frame)
-            for position, frame in enumerate((saved_equipment, saved_baseline, saved_downtime))
-        )
-        stored_memo = dict(memo) if isinstance(memo, dict) else {}
-        stored_memo["downloads_key"] = memo_key
-        stored_memo["downloads"] = (payloads, edited)
+        name = f"downloads_{position}"
+        cached = stored_memo.get(name)
+        if (
+            stored_memo.get(f"{name}_key") == memo_keys[position]
+            and isinstance(cached, tuple)
+            and len(cached) == 2
+        ):
+            found.append(cached)
+            continue
+        payload = table_bytes(position, frame)
+        found.append((payload, payload != table_bytes(position, saved_frame)))
+        stored_memo[f"{name}_key"] = memo_keys[position]
+        stored_memo[name] = found[-1]
+        built = True
+    if built:
         st.session_state[GRID_MEMO_KEY] = stored_memo
+    payloads = tuple(payload for payload, _ in found)
+    edited = any(differs for _, differs in found)
     basis = _saved_basis_words(latest_snapshot, scenario_name) if latest_snapshot else "저장본 없음"
     state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
     # 값 한 줄(무엇을 내려받나), 편집본이 언제 드는지 · 되붙이는 법은 풍선이다(UI-TXT-01).
@@ -3250,18 +3501,21 @@ def _selectable_editor(
     selection: frozenset[RowKey],
     locked_columns: Sequence[str] = (),
     fixed_rows: bool = False,
+    on_change: Callable[[], None] | None = None,
 ) -> tuple[pd.DataFrame, frozenset[RowKey]]:
     """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다.
 
     `locked_columns` 는 고칠 수 없게 잠글 칸, `fixed_rows` 는 행 추가·삭제를 막는다(낡은 설비
     시나리오 세션 — 설계 4-2). 선택 칸은 늘 고칠 수 있다 — 낡은 세션에서 호기·비가동의 「선택 행
-    삭제」 는 단추가 막는다(`_selection_buttons(delete_locked=)`).
+    삭제」 는 단추가 막는다(`_selection_buttons(delete_locked=)`). `on_change` 는 편집표 칸을 고친
+    회차의 콜백이다(`render_small_editor(rise=…)`).
     """
     display = view.frame.copy()
     display.insert(0, SELECT_COLUMN, _selection_flags(display, target, selection))
     result = st.data_editor(
         display,
         key=editor_widget_key(key),
+        on_change=on_change,
         num_rows="fixed" if fixed_rows else view.row_mode,
         disabled=[column for column in locked_columns if column in display.columns],
         hide_index=True,
@@ -3305,6 +3559,38 @@ def locked_editor(view: TableView, *, key: str, column_config: Mapping[str, Any]
     )
 
 
+class _SmallPresses(NamedTuple):
+    """작은 편집표 작업 줄에서 본문이 누른 회차에 판정하는 단추의 key(`render_small_editor` 의 제출
+    판정 — 「편집본에 적용」 · 「보기 적용」 · 「모두 선택」 · 「선택 해제」 · 「선택 행 삭제」)."""
+
+    apply: str
+    view_apply: str
+    select_matching: str
+    select_clear: str
+    delete_selected: str
+
+
+def _small_presses(slug: str) -> _SmallPresses:
+    return _SmallPresses(
+        apply=f"equipment_{slug}_apply_v1",
+        view_apply=f"equipment_{slug}_view_apply_v1",
+        select_matching=f"equipment_{slug}_select_matching_v1",
+        select_clear=f"equipment_{slug}_select_clear_v1",
+        delete_selected=f"equipment_{slug}_delete_selected_v1",
+    )
+
+
+def _rise_on_cell_edit(slug: str, rise: Callable[[], None]) -> None:
+    """작은 편집표 `on_change` — 칸을 고친 회차의 콜백 끝에서 `rise`(편집기 구역의 머리 표지
+    견주기 · 올리기)를 부른다. 같은 요청에 그 표의 작업 줄 · 삭제 확인 단추 누름(`_small_presses` ·
+    「삭제 확정」 · 「취소」)이 실렸으면 부르지 않는다 — 콜백 끝 올리기는 그 누름을 버린다. 그때는
+    본문이 그 누름을 판정하고 구역이 본문 뒤에서 올린다."""
+    pressed = (*_small_presses(slug), CONFIRM_DELETE_BUTTON_KEY, CANCEL_DELETE_BUTTON_KEY)
+    if any(SessionSlot(key, bool).peek() for key in pressed):
+        return
+    rise()
+
+
 def selection_menu_generation_key(slug: str) -> str:
     """작은 편집표 「선택 ▾」 메뉴의 세대 칸(`SELECTION_MENU_LABEL`)."""
     return f"equipment_{slug}_selection_menu_generation_v1"
@@ -3325,9 +3611,10 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
     일정). 「선택 행 삭제」 는 누르면 메뉴를 닫고 「선택 해제」 는 열어 둔다
     (`SELECTION_MENU_LABEL`) — 단추 key 는 그대로다.
     """
+    presses = _small_presses(slug)
     matching = st.button(
         "모두 선택",
-        key=f"equipment_{slug}_select_matching_v1",
+        key=presses.select_matching,
         icon=":material/checklist:",
         help="「표 보기」 의 필터에 맞는 행을 모두 고릅니다.",
     )
@@ -3339,12 +3626,12 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
     ):
         clear = st.button(
             "선택 해제",
-            key=f"equipment_{slug}_select_clear_v1",
+            key=presses.select_clear,
             icon=":material/deselect:",
         )
         delete = st.button(
             "선택 행 삭제",
-            key=f"equipment_{slug}_delete_selected_v1",
+            key=presses.delete_selected,
             icon=":material/delete:",
             disabled=delete_locked is not None,
             help=literal_markdown(delete_locked) if delete_locked is not None else None,
@@ -3902,6 +4189,7 @@ def render_small_editor(
     undo: Callable[[], None] | None = None,
     on_deleted: Callable[[], None] | None = None,
     read_only: str | None = None,
+    rise: Callable[[], None] | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -3928,7 +4216,12 @@ def render_small_editor(
     UI-INP-07 예외 · UI-NTF-05 — 2026-11-18 접속 등급, 같은 날 구현 확인 보드 「고칠 것」).
     표 위 작은 단추 줄(표 도구 막대)은 그 표를 고치거나 내려받는 등급에만 선다 — 비가동 일정은
     실무자부터, 기존 보유대수는 설비 화면 내려받기 등급부터(`grade_ui.toolbar_scope`). 실무자의
-    비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다."""
+    비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다.
+
+    `rise` 는 편집기 구역 안에서 그릴 때 부르는 쪽이 넘기는 올리기(머리 표지 견주기)다 — 편집표
+    `on_change` 끝에서 부른다(`_rise_on_cell_edit` — 같은 요청에 이 표의 단추 누름이 실리면 부르지
+    않는다). 적용 전 편집이 서거나 걷히는 칸이 그 상호작용에서 곧바로 앱 전체 회차가 되게 한다
+    (AGENTS 9장 R8 — 편집표는 떠나기 명부 밖이다)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -3965,6 +4258,8 @@ def render_small_editor(
 
     apply_clicked = False
     action: str | None = None
+    presses = _small_presses(slug)
+    on_change = partial(_rise_on_cell_edit, slug, rise) if rise is not None else None
     with (
         grade_ui.toolbar_scope(tools_action, f"equipment_small_{slug}_tools_v1"),
         st.container(key=f"equipment_small_{slug}_editor_v1"),
@@ -3975,7 +4270,7 @@ def render_small_editor(
         # 아래 붙어 있어 단추가 그 자리에 닿으면 막대가 덮는다. 다 들지 못하면 「표 보기 ▾」 가
         # 다음 줄로 내려간다(1600 · 1283 창은 한 줄, 1283 창에서 필터가 걸려 「표 보기 · 필터」 면
         # 두 줄 — 샘플 관측).
-        view_apply_key = f"equipment_{slug}_view_apply_v1"
+        view_apply_key = presses.view_apply
         downtime = frames[2]
         with st.container(horizontal=True, gap="small", key=action_row):
             if read_only is None:
@@ -3983,7 +4278,7 @@ def render_small_editor(
                 # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
                 apply_clicked = st.button(
                     "편집본에 적용",
-                    key=f"equipment_{slug}_apply_v1",
+                    key=presses.apply,
                     type="primary",
                     icon=":material/check:",
                     help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
@@ -4050,6 +4345,7 @@ def render_small_editor(
                 target=BASELINE_TARGET,
                 column_config=column_config,
                 selection=selection.get(BASELINE_TARGET, frozenset()),
+                on_change=on_change,
             )
         else:
             edited, checked = _selectable_editor(
@@ -4062,6 +4358,7 @@ def render_small_editor(
                 # 비가동 일정 표 전체가 설비 시나리오 쪽이다 — 낡은 세션에서는 통째로 잠근다.
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
+                on_change=on_change,
             )
     # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
     restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target

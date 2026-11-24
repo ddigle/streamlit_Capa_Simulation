@@ -51,7 +51,7 @@ SESSION_STATE_SITES: dict[str, int] = {
     "src/capa_simulation/components/editor_state.py": 3,
     "src/capa_simulation/components/equipment_data_workspace.py": 194,
     "src/capa_simulation/components/equipment_import_dialog.py": 25,
-    "src/capa_simulation/components/equipment_master_tab.py": 56,
+    "src/capa_simulation/components/equipment_master_tab.py": 55,
     "src/capa_simulation/components/equipment_save_fields.py": 1,
     "src/capa_simulation/components/equipment_scenario_management.py": 22,
     "src/capa_simulation/components/equipment_scenario_status.py": 15,

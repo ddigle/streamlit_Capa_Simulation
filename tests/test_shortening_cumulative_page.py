@@ -16,14 +16,20 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pytest
 from alert_marks import flashed, texts
+from process_board_press import apply_board, board_data, board_options, live_board
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _csv, _database, _html, _run, _run_static
 from test_shortening_progress_tab import _name_input as _baseline_name
+from test_shortening_progress_tab import _progress_cards, _saved_database
 from test_shortening_progress_tab import _save_button as _baseline_save
-from test_shortening_progress_tab import _saved_database
 
-from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
+from capa_simulation.components.required_shortening_panel import (
+    PROCESS_BOARD_KEY,
+    SHORTENING_DIALOG_HOST,
+    SHORTENING_PROCESS_KEY,
+)
 from capa_simulation.components.shortening_cumulative import (
     _FILL_BUTTON_KEY,
     _FILL_KEY,
@@ -461,4 +467,50 @@ def test_this_weeks_value_follows_the_basis_switch_even_beside_another_basis_bas
     _open(app)
     help_text = str(app.button(key=_FILL_BUTTON_KEY).help)
     assert f"{master_total.days:,}일(설비 마스터 기준 · 목표" in help_text
+    clear_equipment_repository()
+
+
+def test_applying_processes_keeps_the_basis_the_comparison_and_the_strip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조건 카드 「공정」 은 여럿 고른 뒤 「적용」 한 번이다(2026-11-20 사용자 결정). 「적용」 은 앱
+    전체 회차 하나이고 같은 카드의 「Static | 설비 마스터」 전환 · 진척 비교 고름 · 머리 「누적
+    진척」 띠를 건드리지 않는다 — 진척 비교는 적용한 공정의 카드로 좁혀 견주고, 「이번 주 값 넣기」
+    의 화면 합계는 적용한 공정 · 전환의 기준 그대로의 합계다. 전환을 바꿔도 적용한 공정은
+    그대로다."""
+    live_board(monkeypatch)
+    database_path, _ = _saved_database(tmp_path)
+    app = _run_static(database_path)
+    assert not app.exception, [element.message for element in app.exception]
+    app = _baseline_name(app).set_value("Static 기준선").run()
+    app = _baseline_save(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+    whole_cards = _progress_cards(app)
+    strip = _strip(app)
+    options = board_options(app, PROCESS_BOARD_KEY)
+    chosen = next(option for option in options if [option] != whole_cards)
+    runs = int(app.session_state["test_runs"])
+
+    app = apply_board(app, PROCESS_BOARD_KEY, [chosen])
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert int(app.session_state["test_runs"]) - runs == 1
+    assert app.session_state[SHORTENING_BASIS_KEY] == "Static"
+    assert app.session_state[SHORTENING_COMPARE_KEY] == stored.baseline_id
+    assert set(_progress_cards(app)) <= {chosen}
+    assert _strip(app) == strip
+    total = app.session_state[SCREEN_TOTAL_KEY]
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["공정"]) <= {chosen}
+    assert (total.basis, total.selected) == ("Static", True)
+    assert total.days == _shortened_days(units)
+
+    app = app.sidebar.button_group(key=SHORTENING_BASIS_KEY).set_value("설비 마스터").run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [chosen]
+    assert board_data(app, PROCESS_BOARD_KEY)["selected"] == [chosen]
+    assert app.session_state[SCREEN_TOTAL_KEY].basis == "설비 마스터"
     clear_equipment_repository()

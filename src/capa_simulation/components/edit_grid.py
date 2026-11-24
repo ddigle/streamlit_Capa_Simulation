@@ -12,7 +12,10 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 
 - **등록 JS 는 기능별 파일을 이어 붙인다**(`JS_PARTS` 차례 — 주석만 든 줄을 걷는다). 순수 구획 표지
   `// <eg-…>` 는 저장소 파일에 남아 node 시험이 읽는다. 색은 등록 CSS 에 적지 않고 회차마다
-  팔레트(`palette`)로 넘긴다 — 등록 CSS 는 테마를 따라오지 않는다.
+  팔레트(`palette`)로 넘긴다 — 등록 CSS 는 테마를 따라오지 않는다. 맨 앞에는 공용 떠나기 신호
+  조각(`grid_shared_assets/leave.js` 의 `LEAVE_SECTIONS` — 편집기 명부 · 떠나기 신호, AGENTS 9장
+  「구역 회차 규칙」 R8)을 잇는다(`leave_js`) — 화면을 떠나는 누름이 쏜 `capa-leaving` 에 묶음
+  타이머를 멈추고 남은 op 를 곧바로 보내며, ack 가 올 때까지 명부에 busy 다.
 - **편집은 상태 값 `outbox` 하나**(``{"mount", "ops"}`` — 반영 안 된 op 전부, op 마다
   seq·at·table·gen). 트리거는 없다. 콜백(`collect_outbox`)은 새 op 만 세션 inbox 에 쌓고 마운트별
   seq 를 올린다 — 반영(`apply_inbox`)은 본문에서 한다. 콜백 안에서 `st.rerun()`·`st.switch_page` 를
@@ -35,14 +38,16 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
 import streamlit as st
 
+from capa_simulation.components import grid_shared
 from capa_simulation.design import tokens
+from capa_simulation.scenario_state import ACTIVE_SCENARIO
 from capa_simulation.services.edit_grid import (
     DROPPED_TOAST,
     LOCKED_TOAST,
@@ -61,12 +66,14 @@ from capa_simulation.services.edit_grid import (
     new_ops,
 )
 from capa_simulation.services.edit_grid_payload import (
+    LIMITS,
     EditGridBase,
     empty_base,
     encode_base,
     encode_feed,
 )
 from capa_simulation.services.korean_particle import with_subject_particle
+from capa_simulation.session_slot import SessionSlot
 
 _ASSETS: Final = Path(__file__).with_name("edit_grid_assets")
 GRID_COMPONENT: Final = "capa_edit_grid"
@@ -82,6 +89,9 @@ ROWS_CSS_PARTS: Final = (*CSS_PARTS, "eg_rows.css")
 # 껍데기에 이 칸 가운데 하나가 있으면 줄 규칙 표의 등록으로 그린다.
 ROWS_SHELL_KEYS: Final = ("fmts", "ids", "locks", "rowOps")
 FEED_JS: Final = "feed.js"
+# 등록 글 앞에 잇는 떠나기 신호 조각의 구획(`grid_shared_assets/leave.js`) — 편집기 명부와 신호
+# 받기. 구역 회차 표지 지킴이(`<capa-scope-run…>`)는 화면 탭 줄이 걸므로 싣지 않는다.
+LEAVE_SECTIONS: Final = ("capa-leave", "capa-leave-window")
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = ("outbox",)
 TRIGGER_NAMES: Final[tuple[str, ...]] = ()
@@ -96,7 +106,18 @@ DISCARD_ICON: Final = ":material/delete_sweep:"
 # UI-LAY-11 — 이름은 짧게, 원래 뜻은 풍선). 「변경」 은 머리 띠 칩(이 세션의 변경 — 건수)의
 # 낱말이라 이 단추에 쓰지 않는다 — 한 화면에 같은 낱말이 다른 수로 서지 않게(UI-CON-02).
 CHANGES_BUTTON: Final = "적용 전"
+# 출납 묶어 보내기 쉼(ms) — 칸을 잇달아 고치면 마지막 고침 뒤 이만큼 조용할 때 한 번에
+# 보낸다. 결정값은 이 한 줄이고 껍데기 `limits.sendMs` 로 JS 에 넘긴다(`grid_shared.batch_ms` —
+# 개발 · 측정 사본은 실행 줄 `CAPA_DEV_BATCH_MS` 로 덮어쓴다. `eg_core.js` 의 `EG_SEND_MS` 는 그
+# 칸이 없을 때만 쓰는 대비 값). 초안 없던 표의 첫 op · 붙여넣기 · 줄 지우기 단추 · 되돌리기 ·
+# 다시 실행 · 표 밖 누름(focusout) · 창 숨김(visibilitychange) · 떠나기 신호 · 마운트 정리는 쉼을
+# 기다리지 않는다.
+SEND_MS: Final = 1000
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
+
+
+def _drop_comment_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not _COMMENT_LINE.match(line))
 
 
 def _joined(parts: Sequence[str], *, drop_comments: bool) -> str:
@@ -104,15 +125,30 @@ def _joined(parts: Sequence[str], *, drop_comments: bool) -> str:
     for name in parts:
         text = (_ASSETS / name).read_text(encoding="utf-8")
         if drop_comments:
-            text = "\n".join(line for line in text.splitlines() if not _COMMENT_LINE.match(line))
+            text = _drop_comment_lines(text)
         texts.append(text.strip("\n"))
     return "\n".join(text for text in texts if text) + "\n"
 
 
+def leave_js() -> str:
+    """떠나기 신호 조각 — `grid_shared.leave_js()` 글에서 `LEAVE_SECTIONS` 구획만 떼어 잇고 주석만
+    든 줄을 걷는다."""
+    text = grid_shared.leave_js()
+    found = []
+    for name in LEAVE_SECTIONS:
+        match = re.search(
+            rf"// <{re.escape(name)}>\n(?P<body>.*?)// </{re.escape(name)}>", text, re.S
+        )
+        if match is None:
+            raise ValueError(f"떠나기 신호 조각에 구획 {name} 이 없습니다")
+        found.append(_drop_comment_lines(match.group("body")).strip("\n"))
+    return "\n".join(found) + "\n"
+
+
 def registered_js(parts: Sequence[str] = JS_PARTS) -> str:
-    """등록 JS — `parts`(기본 `JS_PARTS`)를 잇고 주석만 든 줄을 걷는다(줄 끝 주석·문자열 안
-    `//` 는 그대로)."""
-    return _joined(parts, drop_comments=True)
+    """등록 JS — 떠나기 신호 조각(`leave_js`) 뒤에 `parts`(기본 `JS_PARTS`)를 잇고 주석만 든 줄을
+    걷는다(줄 끝 주석·문자열 안 `//` 는 그대로)."""
+    return leave_js() + _joined(parts, drop_comments=True)
 
 
 def registered_css(parts: Sequence[str] = CSS_PARTS) -> str:
@@ -395,6 +431,32 @@ def draft_of(cells_key: str) -> DraftState | None:
     return draft_from(st.session_state.get(cells_key))
 
 
+def draft_present(cells_key: str) -> bool:
+    """그 표 초안 칸이 있는가 — 머리 띠 변경 칩 · 화면 탭 점 · 떠나기 확인이 세는 값이다(출납 콜백이
+    둔 빈 초안 자리도 든다 — `scenario_edit_bar.pending_edit_pages`)."""
+    return SessionSlot(cells_key, object).peek() is not None
+
+
+def head_value(key: str) -> Hashable:
+    """편집기 구역 머리 표지(AGENTS 9장 「구역 회차 규칙」 R2)에 넣는 세션 칸 값 — 목록 · 튜플은
+    튜플로, 그 밖에 해시할 수 없는 값(표 · 사전)은 꼴 이름으로(있음 · 없음만 가른다)."""
+    return _hashable(SessionSlot(key, object).peek())
+
+
+def _hashable(value: object) -> Hashable:
+    if isinstance(value, (list, tuple)):
+        return tuple(_hashable(item) for item in value)
+    if isinstance(value, Hashable):
+        return value
+    return type(value).__name__
+
+
+def scenario_mark() -> str | None:
+    """활성 시나리오 내용 토큰 — 적용 · 등록 · 불러오기가 바꾼다(편집기 구역 머리 표지)."""
+    scenario = ACTIVE_SCENARIO.peek()
+    return None if scenario is None else str(scenario.get("content_token"))
+
+
 def draft_pending(cells_key: str) -> bool:
     """그 표에 적용하지 않은 초안이 있는가(누른 회차에 적용할 것이 있는지 · 단추 점의 조건)."""
     return change_counts(draft_of(cells_key))[0] > 0
@@ -465,7 +527,7 @@ def discard_table(slot_keys: tuple[str, str], keys: GridKeys | None = None) -> N
     """그 표의 초안·이력을 지운다(적용·「편집 취소」·원본이 바뀜). 다음 회차에 새 `gen` 이 선다.
 
     `keys`(그 칸 `discarded` 가 있을 때)를 주면 사용자가 **일부러** 버린 것이다 — 버린 이력의
-    `gen` 을 적어 두어, 버리기 직전에 보낸 op(300ms 출납 묶음 안의 편집 — 「편집 취소」 를 누른
+    `gen` 을 적어 두어, 버리기 직전에 보낸 op(출납 묶음 쉼 안의 편집 — 「편집 취소」 를 누른
     focusout 이 보낸다)를 `apply_inbox` 가 「표가 바뀌기 전에 보낸 편집 … 다시 고쳐 주세요」
     토스트 없이 버린다.
     """
@@ -508,7 +570,15 @@ def shell_data(
         texts=texts(spec, changes_label=changes_label),
         palette=palette(),
         row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
+        limits=shell_limits(),
     )
+
+
+def shell_limits() -> dict[str, int]:
+    """껍데기 상한 — 칸 수 상한(`LIMITS`)에 묶어 보내기 쉼 `sendMs`
+    (`grid_shared.batch_ms(SEND_MS)`)를 더한다. 부를 때마다 읽는다 — 한 프로세스 안에서는 같은
+    값이라 껍데기가 회차마다 같은 dict 로 남는다(해시 참조)."""
+    return {**LIMITS, "sendMs": grid_shared.batch_ms(SEND_MS)}
 
 
 def texts_for_empty(*, changes_label: str) -> dict[str, Any]:

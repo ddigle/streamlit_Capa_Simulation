@@ -23,9 +23,8 @@
   화면에 갇힌다. 그래서 data 에 상한과 모든 화면의 주소·이름을 싣는다. 지나 보낸 링크가 여는 탭은
   그 탭이 data 에 올 때까지(같은 `epoch`) 열린 탭으로 센다(`<tabs-links>`) — 세지 않으면 탭 9개에서
   링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차의 탭 9개로 세어 거름을 지나 서버
-  되돌림까지 갔다. 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 먼저 돈다.
-  탭 10개에서 닫은 탭의 기록으로 뒤로가면 서버가 되돌리고, 탭 하나를 닫을 때까지 그 기록 앞으로
-  가지 못한다(README·런북 7-7).
+  되돌림까지 갔다. 뒤로·앞으로가기는 상한 거름을 지나지 않는다 — 탭 10개에서 닫은 탭의 기록으로
+  뒤로가면 서버가 되돌리고, 탭 하나를 닫을 때까지 그 기록 앞으로 가지 못한다(README·런북 7-7).
 - **화면을 옮기면 기록은 한 칸.** 서버가 주소 인자를 바꾸면(`st.query_params` 쓰기·지우기,
   `st.switch_page` 의 인자 다시 적기) 프런트가 지금 경로로 기록을 한 칸 쌓는다 — `st.switch_page` 는
   떠나는 화면 경로로 한 칸 먼저 쌓았고, 링크 인자를 받아 지우는 화면(공정 Capa 상세·Space·제약
@@ -38,10 +37,31 @@
   쓰는 중이거나 Enter 직후에 누르면 그 편집 회차가 돌아오기 전이라 확인 없이 옮겼다. JS 가 그 편집
   회차가 돌아올 때까지 누름을 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 편집표는 glide 격자와
   그림자 DOM Components v2 편집 칸(`EDIT_HOST_KEYS` — data `grids`, 설비 마스터 표·오른쪽 칸과 기준
-  정보 편집 그리드, 시나리오 목록 표)이다. 기준 정보 그리드 초안은 세션 칸이라 떠나도 남아 묻지
-  않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다. 붙들기가 끝난 뒤 떠나는 화면이
-  보내는 메시지(편집표가 접힌 편집을 걷고 0.15초 뒤 보내는 상태)는 회차 표지로 보이지 않는다 —
-  그 메시지가 옮긴 화면을 덮지 않게 서버가 회차 맨 앞에서 거른다(`stale_page_guard`).
+  정보 · 생산 계획 · 접속 명단 편집 그리드, 시나리오 목록 표)이다. 기준 정보 그리드 초안은 세션
+  칸이라 떠나도 남아 묻지 않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다. 붙들기가
+  끝난 뒤 떠나는 화면이 보내는 메시지(편집표가 접힌 편집을 걷고 0.15초 뒤 보내는 상태)는 회차 표지로
+  보이지 않는다 — 그 메시지가 옮긴 화면을 덮지 않게 서버가 회차 맨 앞에서
+  거른다(`stale_page_guard`).
+- **떠나는 누름은 먼저 떠나기 신호를 쏜다**(AGENTS 9장 「구역 회차 규칙」 R8). 탭 고르기 · 지금 탭
+  닫기 · 사이드바 화면 링크 · 테마 단추 · 알림 칸 「그 화면으로」 는 붙들기 판정 전에 창 사건
+  `capa-leaving`(`grid_shared_assets/leave.js` — 등록 글이 탭 줄 JS 앞에 잇는다)을 쏜다. 옮기는 동안
+  기다리던 탭 누름 · 닿지 않아 다시 보내는 고르기도 보내기 전에 같은 신호 · 붙들기를 지난다. 묶어
+  보내던 편집기는 그 자리에서 남은 op 를 보내고 ack 가 올 때까지 떠나기 명부에 busy 다 — 붙들기는
+  busy 가 걷히고 회차가 끝날 때까지(길어야 `BUSY_MS`) 기다린다. busy 였다가 걷힌 붙들기는 새 data 를
+  0.4초 기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다) — 대신 누른 지
+  얼마가 지났든 회차 끝 뒤 조용함(`HOLD_QUIET_MS`)이 차야 놓는다(ack 를 그린 구역 회차가 앱 전체로
+  올라가는 두 회차 사이에 놓지 않는다). 사이드바 화면 링크도 탭 줄과 같은 떠나기 확인(`leave` —
+  가용설비 현황 작은 편집표 둘 포함)을 묻는다 — 붙든 누름은 다시 누를 때 묻는다.
+- **브라우저 뒤로·앞으로가기도 같은 붙들기를 지난다**(Navigation API 가 있는 브라우저 — 사내
+  Chrome · Edge). Streamlit 1.63 은 `popstate` 를 받자마자 앱 칸 값만 실은 이동 요청을 보낸다 — 그
+  처리기가 탭 줄보다 먼저 걸려 popstate 로는 막지 못해, 묶어 두던 편집과 칸 편집기에 쓰던 글(뒤로는
+  초점을 옮기지 않는다)이 서버에 가기 전에 화면이 바뀌어 사라졌다. JS 가 그보다 먼저 오는 `navigate`
+  사건의 같은 문서 `traverse` 를 막고(`<tabs-nav>`), 탭 줄 · 테마 단추 · 사이드바 링크와 같은 길
+  (`window.__capaLeaveGate` — 칸 blur · 떠나기 신호 · ack 와 회차 끝까지 붙들기 · 같은 떠나기
+  확인)을 지난 뒤 같은 목적지로 다시 간다. blur 로 확정하지 않는 glide 칸 편집기
+  (`st.data_editor`)는 body 에 바깥 누름을 보내 확정시킨다(탭 줄 누름의 pointerdown 과 같은 길).
+  확인을 취소하면 그 화면에 머문다. 붙들 것이 없으면 막지 않는다(지연 0). API 가 없거나 사건을 막을
+  수 없으면(사용자 활성 없이 잇달아 누른 뒤로 등) 지나 보낸다.
 - **탭 누름은 한 번에 하나.** 다른 탭 고르기·지금 탭 닫기는 트리거를 보내기 전에 JS 가 누름
   기다림을 건다. 옮긴 화면의 탭 줄이 오고 그 회차가 다 돌거나 탭 줄이 온 뒤 1초가 지나기 전에 누른
   탭은 마지막 것만 기다렸다 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 누름은 프런트가 떠나는
@@ -111,13 +131,13 @@ from typing import Any, Final
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import process_field
+from capa_simulation.components import grid_shared, process_field
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
     small_editor_edits,
 )
-from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_count
+from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_pending
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
@@ -161,11 +181,18 @@ from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY, rerun_fr
 
 _ASSETS = Path(__file__).with_name("page_tabs_assets")
 
+
+def registered_js() -> str:
+    """등록 JS — 떠나기 신호 조각(`grid_shared.leave_js` — 떠나기 명부 · 구역 회차 표지) 뒤에 탭 줄
+    파일."""
+    return grid_shared.leave_js() + "\n" + (_ASSETS / "page_tabs.js").read_text(encoding="utf-8")
+
+
 _PAGE_TABS = st.components.v2.component(
     "capa_page_tabs",
     html=(_ASSETS / "page_tabs.html").read_text(encoding="utf-8"),
     css=(_ASSETS / "page_tabs.css").read_text(encoding="utf-8"),
-    js=(_ASSETS / "page_tabs.js").read_text(encoding="utf-8"),
+    js=registered_js(),
 )
 
 # 새로고침·테마 단추 뒤 새 세션이 공식 설비 시나리오로 열렸음을 알리는 글(개선 거리 I1). 새로고침은
@@ -214,12 +241,16 @@ WIP_TITLE = "구현 중"
 WIP_SOURCE = " — {source} 미연결"
 WIP_SAMPLE = " · 화면은 합성 샘플로 미리 봄"
 
+# 접속 명단 편집 그리드의 호스트 key(`access_list_grid.HOST` — 그 모듈은 읽을 때 범용 편집 그리드를
+# 등록해 여기서 불러오지 않는다. 같은지는 시험이 본다).
+ACCESS_LIST_GRID_HOST: Final = "admin-access-grid"
 # 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비 마스터
-# 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 · 생산 계획 범용 편집
-# 그리드(`reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS`). 그림자 DOM 이라 JS 가 바깥 key
-# 칸(`.st-key-<key>`)으로 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지
-# 않는다 — key 가 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집
-# 칸을 새로 두면 여기에 더한다.
+# 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 · 생산 계획 · 접속
+# 명단 범용 편집 그리드(`reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS` ·
+# `ACCESS_LIST_GRID_HOST`), 시나리오 목록 표. 그림자 DOM 이라 JS 가 바깥 key 칸(`.st-key-<key>`)으로
+# 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지 않는다 — key 가
+# 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면
+# 여기에 더한다.
 EDIT_HOST_KEYS: Final = (
     "equipment_grid_table",
     "equipment_grid_side_detail",
@@ -227,6 +258,7 @@ EDIT_HOST_KEYS: Final = (
     "equipment_grid_side_changes",
     REFERENCE_GRID_HOST,
     *PLAN_GRID_HOSTS.values(),
+    ACCESS_LIST_GRID_HOST,
     *MOUNT_KEYS,
 )
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
@@ -275,9 +307,10 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
       칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
     - 설비 편집본은 가용설비 현황·Space 현황이 함께 쓰는 한 벌이라 두 탭에 함께 찍는다(세대 기준이라
       되돌린 편집에도 남는다 — 테마 표지와 같은 오탐).
-    - 가용설비 현황 Preference 「입력 비가동」 초안(`manual_downtime_draft_count` — 편집표 칸
+    - 가용설비 현황 Preference 「입력 비가동」 초안(`manual_downtime_draft_pending` — 편집표 칸
       편집을 `on_change` 가 세션에 접은 칸)도 세션 칸이라 **어느 화면에서나** 가용설비 현황 탭에
-      찍는다(떠나도 남아 떠나기 확인에는 넣지 않는다 — 2026-11-19 사용자 요청).
+      찍는다(떠나도 남아 떠나기 확인에는 넣지 않는다 — 2026-11-19 사용자 요청). 풍선은 칸 수를
+      싣지 않는다(층 사용 편집과 한 꼴 — 2026-11-20 사용자 결정).
     - VOC 적어 둔 답변(`kept_reply_count` — 남지 못한 답변을 「닫기」 까지 두는 세션 칸)도 탭을
       옮겨도 남아 **어느 화면에서나** VOC 탭에 찍는다. 새로고침 · 테마 전환에 사라지는 사용자의
       글이다.
@@ -294,9 +327,8 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     if has_unsaved_equipment_edits() or pending_fab_layout() is not None:
         for spec in (AVAILABLE_EQUIPMENT_STATUS, SPACE_STATUS):
             mark(spec.path, "저장하지 않은 설비 편집")
-    manual = manual_downtime_draft_count()
-    if manual:
-        mark(AVAILABLE_EQUIPMENT_STATUS.path, f"저장하지 않은 입력 비가동 {manual:,}칸")
+    if manual_downtime_draft_pending():
+        mark(AVAILABLE_EQUIPMENT_STATUS.path, "저장하지 않은 입력 비가동")
     if past_data_has_pending():
         mark(HOME.path, "저장하지 않은 Past Data")
     if list_has_edits():

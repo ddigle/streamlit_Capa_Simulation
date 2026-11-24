@@ -19,11 +19,16 @@
   콜백보다 먼저 돈다) 적용한 뒤, 같은 회차 하나가 새 원본으로 그린다(전에는 누른 회차가 옛
   원본으로 다 돈 뒤 `st.rerun()` 해 회차가 둘이었다). 막힌 적용의 글은 콜백이 그릴 수 없어 한 번
   쓰는 칸(`refuse`)에 담고 작업 줄 아래 알림 칸이 그 회차에 그린다.
+- **편집기 구역**(AGENTS 9장 「구역 회차 규칙」) — 화면이 표마다 작업 줄 칸 · 그리드 칸을 키 붙은
+  프래그먼트(`components/fragment_scope.editor_scope`)로 묶어 칸 고치기를 그 구역 회차로 돌린다.
+  작업 줄 · 그리드의 콜백은 `scope_key` 를 주면 `fragment_scope.escalates` 로 감싸 콜백 끝에
+  구역 밖이 그린 값(`scope_head`)이 바뀌었으면 앱 전체 회차로 올린다 — 「⋯」 메뉴 단추는 메뉴
+  닫기(`_closing`)까지 마친 뒤 올린다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -31,7 +36,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.components import edit_grid
+from capa_simulation.components import edit_grid, fragment_scope
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
@@ -49,6 +54,7 @@ from capa_simulation.plan_grid_keys import (
     last_key,
     toast_key,
 )
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.edit_grid import (
     GridSpec,
     Op,
@@ -256,6 +262,29 @@ def _take_refusal(table: str) -> tuple[str, str | None] | None:
     return str(message), icon if isinstance(icon, str) else None
 
 
+def scope_head(
+    *, staged_key: str, dialog_key: str, own_change_key: str, tab_key: str
+) -> tuple[Hashable, ...]:
+    """편집기 구역 밖이 그리는 값(AGENTS 9장 「구역 회차 규칙」 R2 — 머리 표지)을 세션 칸에서만
+    읽는다 — 구역 규칙표는 프로세스 공용이라 페이지 회차의 값을 잡지 않는다. 화면이 칸 이름을 묶어
+    넘긴다.
+
+    표마다 초안 칸이 있는가(머리 띠 변경 칩 · 화면 탭 점 · 떠나기 확인) · 적용할 초안이 있는가(표 탭
+    점), 붙여넣기 대기 표(`staged_key`) · 열린 팝업(`dialog_key` — 팝업은 구역 밖에서 그린다) · 방금
+    스스로 적용한 표(`own_change_key`) · 고른 탭(`tab_key` — 같은 틱에 구역 회차에 실려 온 탭
+    고르기), 활성 시나리오 내용(적용 · 등록) · 조회기간."""
+    return (
+        tuple(edit_grid.draft_present(cells_key(table)) for table in HOSTS),
+        tuple(draft_pending(table) for table in HOSTS),
+        edit_grid.head_value(staged_key),
+        edit_grid.head_value(dialog_key),
+        edit_grid.head_value(own_change_key),
+        edit_grid.head_value(tab_key),
+        edit_grid.scenario_mark(),
+        edit_grid.head_value(MONTH_RANGE_KEY),
+    )
+
+
 def counts(table: str) -> tuple[int, int, int]:
     """(고친 칸, 고친 줄, 오류 칸)."""
     return change_counts(edit_grid.draft_of(cells_key(table)))
@@ -319,8 +348,11 @@ def _shell(table: str, grid: PlanGrid | None) -> dict[str, object]:
     return shell
 
 
-def render_grid(table: str, grid: PlanGrid | None, *, hidden: bool = False) -> None:
-    """그리드 자리 — 늘 같은 자리에서 부른다.
+def render_grid(
+    table: str, grid: PlanGrid | None, *, hidden: bool = False, scope_key: str | None = None
+) -> None:
+    """그리드 자리 — 늘 같은 자리에서 부른다. `scope_key`(편집기 구역 key)를 주면 출납 콜백 끝에
+    구역 밖이 그린 값이 바뀌었으면 앱 전체 회차로 올린다(`fragment_scope.escalates`).
 
     표가 있으면 그 표를 싣고 보낸 껍데기 · feed 를 세션에 적어 둔다(`last_key`). 닫힌
     탭(`hidden`)이라 표를 짓지 않은 회차에는 적어 둔 껍데기 · feed 를 **그대로** 다시 보낸다 — 같은
@@ -345,9 +377,17 @@ def render_grid(table: str, grid: PlanGrid | None, *, hidden: bool = False) -> N
         host,
         shell,
         feed,
-        on_outbox=lambda: collect(table),
+        on_outbox=_rising(scope_key)(lambda: collect(table)),
         page_style=LAYOUTS[table].style,
     )
+
+
+def _rising(scope_key: str | None) -> Callable[[Callable[[], None]], Callable[[], None]]:
+    """콜백 감싸기 — 편집기 구역 key 가 있으면 `fragment_scope.escalates`(콜백 끝 올리기), 없으면
+    그대로."""
+    if scope_key is None:
+        return lambda callback: callback
+    return fragment_scope.escalates(scope_key)
 
 
 @dataclass(frozen=True)
@@ -394,6 +434,7 @@ def render_actions(
     discard_key: str,
     staged: bool = False,
     flash_keys: Sequence[str],
+    scope_key: str | None = None,
 ) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · (「⋯」 메뉴) · 「편집 취소」(고친
     칸이나 붙여넣기 대기가 있을 때) · 「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 알림 칸. 고친
@@ -404,9 +445,11 @@ def render_actions(
     누른 회차에 보고 아무것도 하지 않는다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙 —
     설계 규칙 UI-INP-07 「누른 회차에 판정」, 2026-11-19 아침 확인 보드 m19-e2e-first-apply
     (가)). 「⋯」 는 「Excel 붙여넣기」 바로 뒤라 고치기 전 · 뒤에 같은 자리다. 그 표의 적용
-    콜백이 막혀 담아 둔 글(`refuse`)은 알림 칸에 오류로 그린다."""
+    콜백이 막혀 담아 둔 글(`refuse`)은 알림 칸에 오류로 그린다. `scope_key`(편집기 구역 key)를
+    주면 단추 콜백마다 끝에서 구역 밖이 그린 값이 바뀌었으면 앱 전체 회차로 올린다."""
     cells, _, errors = counts(table)
     pending = cells > 0 or staged
+    rise = _rising(scope_key)
     with st.container(
         key=LAYOUTS[table].action_row, horizontal=True, vertical_alignment="center", gap="small"
     ):
@@ -416,9 +459,14 @@ def render_actions(
             key=apply.key,
             type="primary",
             help=apply_help,
-            on_click=apply.on_click,
+            on_click=None if apply.on_click is None else rise(apply.on_click),
         )
-        st.button(paste.label, icon=paste.icon, key=paste.key, on_click=paste.on_click)
+        st.button(
+            paste.label,
+            icon=paste.icon,
+            key=paste.key,
+            on_click=None if paste.on_click is None else rise(paste.on_click),
+        )
         if more:
             # 메뉴 안 단추를 누르면 메뉴를 닫는다 — 팝오버 key 의 세대를 올려 다음 회차에 새(닫힌)
             # 팝오버로 선다. 열린 채 두면 그 단추가 여는 창 위에 메뉴가 떠 있다.
@@ -431,7 +479,7 @@ def render_actions(
                         item.label,
                         icon=item.icon,
                         key=item.key,
-                        on_click=_closing(item.on_click, counter),
+                        on_click=rise(_closing(item.on_click, counter)),
                         width="stretch",
                     )
         if pending:
@@ -439,7 +487,7 @@ def render_actions(
                 "편집 취소",
                 icon=edit_grid.DISCARD_ICON,
                 key=discard_key,
-                on_click=discard_click,
+                on_click=rise(discard_click),
                 help=discard_help,
             )
             if errors:

@@ -12,8 +12,9 @@
   그 화면의 공정 칸을 바꾸고 공용 값을 그 하나로 보낸다(2026-11-09 보드 C2 (가)).
 - 판의 트리거는 `apply` 하나다 — 결과 객체가 dict 라 `clear` 같은 이름은 `dict.clear` 와 겹쳐 연
   회차에 「전체」 가 눌린 것으로 읽혔다(2026-11-08 사본 앱 — 팝업이 열리자마자 닫혔다).
-- 판 JS 의 판정 구획(`// <process-picker-core>`)은 node 로 돌린다. 브라우저 동작(누름 · 키보드 초점
-  · 회차 0)은 사본 앱으로 본다.
+- 판 JS 의 판정 구획(`// <process-picker-core>`)은 node 로 돌린다. 마운트 함수(`export default` —
+  타일 · 「적용」 · 「전체」 누름, 「적용」 잠금, data 셋이 이어지는 자리, 보일 때만 찾기 칸 초점)는
+  자산 HTML 로 세운 가짜 DOM 에서 node 로 돌린다. 방향키 초점 옮김 · 회차 0 은 사본 앱으로 본다.
 
 Components v2 는 AppTest 에 없다 — 팝업 본문 시험은 판 함수(`render_process_picker_apply`)를 갈아
 끼운다.
@@ -739,6 +740,78 @@ process.stdout.write(JSON.stringify({
     assert (out["multiCount"], out["singleCount"]) == ("선택 2 / 24", "24개 공정")
 
 
+def test_a_board_that_keeps_pick_order_and_does_not_read_all_as_none() -> None:
+    """판을 쓰는 다른 칸(필요 단축 일정 조건 카드 「공정」 — `pickOrder` · `wholeIsAll: false`)은
+    누른 차례로 쌓고(끄면 빼고 다시 켜면 끝), 모두 켬을 고르지 않음과 같이 보지 않는다 — 판은 그때
+    공정 수 0 을 넘겨 `applyState` 가 둘을 가른다. 차례를 지키는 판(`ordered`)은 차례만 바뀐 초안도
+    지금 값과 다르게 본다 — 저장소도 차례를 남긴다. 차례를 보지 않는 판(공용 공정 팝업)은 그대로
+    같다."""
+    out = _node(
+        """
+const order = ['WF', 'Mold', 'Underfill']
+const one = togglePicked([], 'Underfill')
+const two = togglePicked(one, 'WF')
+const back = togglePicked(togglePicked(two, 'Underfill'), 'Underfill')
+process.stdout.write(JSON.stringify({
+  one, two, back,
+  allFromNone: applyState('multi', order, [], 0, true),
+  noneFromAll: applyState('multi', [], order, 0, true),
+  reordered: applyState('multi', ['Mold', 'WF'], ['WF', 'Mold'], 0, true),
+  sameOrder: applyState('multi', ['WF', 'Mold'], ['WF', 'Mold'], 0, true),
+  anyOrder: applyState('multi', ['Mold', 'WF'], ['WF', 'Mold'], 0),
+  emptyFromOne: applyState('multi', [], ['Mold'], 0, true),
+}))
+"""
+    )
+    assert out["one"] == ["Underfill"]
+    assert out["two"] == ["Underfill", "WF"]
+    assert out["back"] == ["WF", "Underfill"]
+    assert (out["allFromNone"], out["noneFromAll"]) == ("ready", "ready")
+    assert (out["reordered"], out["sameOrder"], out["anyOrder"]) == ("ready", "same", "same")
+    assert out["emptyFromOne"] == "ready"
+
+
+def test_the_board_flags_default_to_the_shared_dialog_board() -> None:
+    """판 data 의 넷(`wholeIsAll` · `pickOrder` · `clearDraft` · `clearLabel`)은 주지 않으면 공용
+    공정 팝업 판 그대로다 — 그 팝업 data 에는 실리지 않는다. 다른 칸이 줄 때만 실린다. 판 JS 가 넷을
+    읽어 누름 · 「적용」 잠금 · 비우기 · 단추 글로 잇는 자리는 아래 마운트 시험(가짜 DOM)이 돈다."""
+    shared = process_field._board_data(
+        mode=process_field.MULTI, options=OPTIONS, texts=OPTIONS, selected=(), has_shared=True
+    )
+    assert set(shared) == {"mode", "options", "selected", "hasShared"}
+    other = process_field._board_data(
+        mode=process_field.MULTI,
+        options=OPTIONS,
+        texts=OPTIONS,
+        selected=("Mold", "WF"),
+        has_shared=True,
+        whole_is_all=False,
+        pick_order=True,
+        clear_draft=True,
+        clear_label="선택 해제",
+    )
+    assert (
+        other["wholeIsAll"],
+        other["pickOrder"],
+        other["clearDraft"],
+        other["clearLabel"],
+    ) == (False, True, True, "선택 해제")
+    assert other["selected"] == ["Mold", "WF"]
+
+
+def test_an_apply_in_pick_order_keeps_the_sent_order_without_strangers_or_repeats() -> None:
+    picked = process_field.parse_board_apply(
+        {"values": ["Underfill", "Ghost", "WF", "Underfill"]}, OPTIONS, pick_order=True
+    )
+    assert picked == PickerResult(values=("Underfill", "WF"))
+    assert process_field.parse_board_apply(
+        {"values": ["Underfill", "WF"]}, OPTIONS
+    ) == PickerResult(values=("WF", "Underfill"))
+    assert process_field.parse_board_apply({"clear": True}, OPTIONS) == PickerResult(clear=True)
+    assert process_field.parse_board_apply(None, OPTIONS) is None
+    assert process_field.parse_board_apply({"values": "WF"}, OPTIONS, pick_order=True) is None
+
+
 def test_searching_matches_the_visible_text_or_the_original_name() -> None:
     out = _node(
         """
@@ -776,3 +849,411 @@ process.stdout.write(JSON.stringify(cleanOptions([
 """
     )
     assert out == [{"value": "WF", "label": "웨이퍼"}, {"value": "Mold", "label": "Mold"}]
+
+
+# ------------------------------------------------------------------ 판 JS 마운트(가짜 DOM)
+
+_MOUNT_HEAD = "export default function (component) {"
+
+# 판 자산 HTML 을 그대로 세운 가짜 DOM 에서 마운트 함수를 돌린다. 단계(`steps`)는 마운트(서버 회차 —
+# 같은 뿌리 요소라 회차를 넘는 초안이 남는다) · 타일 · 「적용」 · 「전체」 누름 · 보임 바꾸기 · 그림
+# 차례(`requestAnimationFrame`) 돌리기다. 잠긴 단추에는 click 이 가지 않는다(브라우저와
+# 같다). `snap` 이름을 준 단계 뒤에는 단추 상태 · 글 · 초점 기록을 남긴다.
+_BOARD_DOM_RUNNER = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 }
+const frames = []
+globalThis.requestAnimationFrame = (fn) => {
+  frames.push(fn)
+  return frames.length
+}
+const focusCalls = []
+let shown = true
+// 창 처리기 대역 — capture 로 단 keydown 처리기를 모은다. 판을 둔 팝오버(`st.popover`)는 열린 동안
+// 문서의 keydown 을 capture 단계에서 받아 Esc 면 닫는다 — 창 capture 처리기가 멈추지 않은 Esc 는
+// 그 팝오버가 받아 닫는 것으로 센다(`closed`).
+const windowListeners = []
+globalThis.window = {
+  addEventListener: (type, fn, capture) => {
+    windowListeners.push({ type, fn, capture: Boolean(capture) })
+  },
+}
+let closed = 0
+
+class FakeText {
+  constructor(value) {
+    this.nodeType = 3
+    this.nodeValue = String(value)
+    this.parentNode = null
+  }
+  get textContent() { return this.nodeValue }
+}
+
+class FakeElement {
+  constructor(tag) {
+    this.nodeType = 1
+    this.tagName = String(tag).toUpperCase()
+    this.childNodes = []
+    this.parentNode = null
+    this.attributes = {}
+    this.dataset = {}
+    this.className = ''
+    this.hidden = false
+    this.disabled = false
+    this.tabIndex = -1
+    this.value = ''
+    this.offsetTop = 0
+  }
+  get children() { return this.childNodes.filter((node) => node.nodeType === 1) }
+  append(...nodes) {
+    for (const node of nodes) {
+      node.parentNode = this
+      this.childNodes.push(node)
+    }
+  }
+  replaceChildren(...nodes) {
+    this.childNodes = []
+    this.append(...nodes)
+  }
+  get textContent() { return this.childNodes.map((node) => node.textContent).join('') }
+  set textContent(value) { this.replaceChildren(new FakeText(value)) }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value)
+    if (name === 'class') this.className = String(value)
+    if (name === 'hidden') this.hidden = true
+  }
+  getAttribute(name) { return name in this.attributes ? this.attributes[name] : null }
+  matches(selector) { return this.className.split(/\s+/).includes(selector.replace(/^\./, '')) }
+  querySelectorAll(selector) {
+    const found = []
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (child.matches(selector)) found.push(child)
+        walk(child)
+      }
+    }
+    walk(this)
+    return found
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null }
+  closest(selector) {
+    for (let node = this; node && node.nodeType === 1; node = node.parentNode) {
+      if (node.matches(selector)) return node
+    }
+    return null
+  }
+  focus() { focusCalls.push(this.className) }
+  getClientRects() { return shown ? [{ width: 1, height: 1 }] : [] }
+}
+
+globalThis.document = { createElement: (tag) => new FakeElement(tag) }
+
+// 자산 HTML 을 태그 · 속성 · 글 마디로 세운다 — 읽지 못한 글자가 남으면 실패다.
+const VOID_TAGS = new Set(['input'])
+function buildTree(html) {
+  const top = new FakeElement('div')
+  const stack = [top]
+  const token = /<\/([a-z]+)\s*>|<([a-z]+)((?:\s+[a-z][a-z0-9-]*(?:="[^"]*")?)*)\s*>|([^<]+)/g
+  let read = 0
+  for (const match of html.matchAll(token)) {
+    if (match.index !== read) {
+      throw new Error('HTML 을 읽지 못한 자리: ' + html.slice(read, read + 40))
+    }
+    read = match.index + match[0].length
+    const here = stack[stack.length - 1]
+    if (match[1]) {
+      const closed = stack.pop()
+      if (stack.length === 0 || closed.tagName !== match[1].toUpperCase()) {
+        throw new Error('닫는 태그가 어긋남: ' + match[1])
+      }
+      continue
+    }
+    if (match[2]) {
+      const element = new FakeElement(match[2])
+      for (const attr of match[3].matchAll(/([a-z][a-z0-9-]*)(?:="([^"]*)")?/g)) {
+        element.setAttribute(attr[1], attr[2] ?? '')
+      }
+      here.append(element)
+      if (!VOID_TAGS.has(match[2])) stack.push(element)
+      continue
+    }
+    here.append(new FakeText(match[4]))
+  }
+  if (read !== html.length || stack.length !== 1) throw new Error('HTML 이 끝까지 닫히지 않음')
+  return top
+}
+
+const parent = buildTree(input.html)
+const root = parent.querySelector('.capa-proc-root')
+const part = (name) => root.querySelector('.capa-proc-' + name)
+const triggers = []
+const snaps = {}
+let data = null
+
+function click(target) {
+  const button = ['.capa-proc-tile', '.capa-proc-apply', '.capa-proc-all']
+    .map((selector) => target.closest(selector))
+    .find(Boolean)
+  if (button && button.disabled) return
+  root.onclick({ target, preventDefault() {}, stopPropagation() {} })
+}
+
+for (const step of input.steps) {
+  if (step.op === 'mount') {
+    data = step.data
+    __mount({
+      data,
+      parentElement: parent,
+      setTriggerValue: (name, value) => triggers.push({ name, value }),
+    })
+  } else if (step.op === 'tile') {
+    const index = data.options.findIndex((option) => option.value === step.value)
+    const tile = part('grid').querySelectorAll('.capa-proc-tile')[index]
+    click(tile.querySelector('.capa-proc-name'))
+  } else if (step.op === 'apply') {
+    click(part('apply').querySelector('.capa-proc-icon'))
+  } else if (step.op === 'clear') {
+    click(part('all'))
+  } else if (step.op === 'shown') {
+    shown = step.on
+  } else if (step.op === 'type') {
+    part('search').value = step.text
+    root.oninput({ target: part('search') })
+  } else if (step.op === 'key') {
+    const event = {
+      key: step.key,
+      target: part('search'),
+      isComposing: Boolean(step.composing),
+      ctrlKey: false,
+      metaKey: false,
+      stopped: false,
+      preventDefault() {},
+      stopPropagation() { this.stopped = true },
+    }
+    for (const listener of windowListeners) {
+      if (listener.type === 'keydown' && listener.capture && !event.stopped) listener.fn(event)
+    }
+    if (!event.stopped && event.key === 'Escape') closed += 1
+    else if (!event.stopped) root.onkeydown(event)
+  } else if (step.op === 'frames') {
+    for (const fn of frames.splice(0)) fn()
+  } else {
+    throw new Error('모르는 단계: ' + step.op)
+  }
+  if (step.snap) {
+    const clearAll = part('all')
+    snaps[step.snap] = {
+      apply: part('apply').disabled ? 'locked' : 'open',
+      clear: clearAll.disabled ? 'locked' : 'open',
+      clearText: clearAll.childNodes
+        .filter((node) => node.nodeType === 3)
+        .map((node) => node.nodeValue)
+        .join(''),
+      clearIcon: clearAll.querySelector('.capa-proc-icon').textContent,
+      state: root.dataset.state,
+      count: part('count').textContent,
+      tiles: part('grid').querySelectorAll('.capa-proc-tile').length,
+      shownTiles: part('grid')
+        .querySelectorAll('.capa-proc-tile')
+        .filter((tile) => !tile.hidden).length,
+      search: part('search').value,
+      focus: focusCalls.slice(),
+      closed,
+      windowKeydown: windowListeners.filter((listener) => listener.type === 'keydown').length,
+    }
+  }
+}
+process.stdout.write(JSON.stringify({ snaps, triggers }))
+"""
+
+
+def _mount(*steps: dict[str, Any]) -> Any:
+    """판 JS 의 마운트 함수(`export default`)를 자산 HTML 로 세운 가짜 DOM 에서 `steps` 대로
+    돌린다 — 돌려주는 것은 `snaps`(이름별 단추 상태 · 글 · 초점)와 `triggers`(보낸 트리거 차례)."""
+    assert PROCESS_FIELD_JS.count(_MOUNT_HEAD) == 1
+    source = PROCESS_FIELD_JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+    return run_js_json(
+        source + "\n" + _BOARD_DOM_RUNNER,
+        what="공정 판 JS 마운트 시험",
+        stdin=json.dumps({"html": PROCESS_FIELD_HTML, "steps": list(steps)}, ensure_ascii=False),
+    )
+
+
+def _board(
+    selected: tuple[str, ...] = (), *, has_shared: bool = False, shortening: bool = True
+) -> dict[str, Any]:
+    """서버가 판에 보내는 data(`_board_data`) — `shortening` 이면 필요 단축 일정 조건 카드
+    「공정」 판의 넷(`whole_is_all=False` · `pick_order` · `clear_draft` · 「선택 해제」), 아니면
+    공용 공정 팝업 판."""
+    flags: dict[str, Any] = {}
+    if shortening:
+        flags = {
+            "whole_is_all": False,
+            "pick_order": True,
+            "clear_draft": True,
+            "clear_label": "선택 해제",
+        }
+    return process_field._board_data(
+        mode=process_field.MULTI,
+        options=OPTIONS,
+        texts=["웨이퍼", "몰드", "언더필"],
+        selected=selected,
+        has_shared=has_shared,
+        **flags,
+    )
+
+
+def test_the_mounted_shortening_board_keeps_pick_order_and_applies_every_process() -> None:
+    """필요 단축 일정 「공정」 판(data 넷을 준 판)은 누른 차례로 쌓아 보내고, 모두 켬을 고르지
+    않음과 같이 보지 않아 「적용」 이 열리며, 「전체」 자리 글이 「선택 해제」 다(아이콘은 그대로).
+    다음 회차의 지금 값 차례가 첫 초안이다."""
+    out = _mount(
+        {"op": "mount", "data": _board(), "snap": "start"},
+        {"op": "tile", "value": "Underfill"},
+        {"op": "tile", "value": "WF", "snap": "two"},
+        {"op": "tile", "value": "Mold", "snap": "every"},
+        {"op": "apply"},
+        {"op": "mount", "data": _board(("Mold", "WF"), has_shared=True), "snap": "seeded"},
+        {"op": "tile", "value": "Underfill"},
+        {"op": "apply"},
+    )
+    start, two, every, seeded = (out["snaps"][name] for name in ("start", "two", "every", "seeded"))
+    assert start["tiles"] == len(OPTIONS)
+    assert (start["clearText"], start["clearIcon"]) == ("선택 해제", "filter_alt_off")
+    assert (start["apply"], start["clear"], start["state"]) == ("locked", "locked", "same")
+    assert (two["apply"], two["clear"], two["count"]) == ("open", "open", "선택 2 / 3")
+    assert (every["apply"], every["state"], every["count"]) == ("open", "ready", "선택 3 / 3")
+    assert (seeded["apply"], seeded["clear"], seeded["count"]) == ("locked", "open", "선택 2 / 3")
+    assert out["triggers"] == [
+        {"name": "apply", "value": {"values": ["Underfill", "WF", "Mold"]}},
+        {"name": "apply", "value": {"values": ["Mold", "WF", "Underfill"]}},
+    ]
+
+
+def test_the_shortening_boards_clear_button_only_empties_the_draft_and_apply_sends_it() -> None:
+    """필요 단축 일정 판의 「선택 해제」(`clearDraft`)는 다른 화면의 같은 이름 단추처럼 고름만
+    푼다 — 서버에 아무것도 보내지 않고 판에 켠 타일만 끈다. 켠 타일이 있을 때만 켜지고(적용한
+    값이 없어도), 누르면 잠기므로 초점이 찾기 칸으로 간다 — 「적용」 이 열려도 그리로 가지 않는다
+    (누르고 있던 Enter 의 되풀이가 공용 설정을 쓰지 않게). 비운 초안은 「적용」 이 빈 목록으로
+    보낸다(「목표 미달 공정 전체」)."""
+    out = _mount(
+        {"op": "mount", "data": _board()},
+        {"op": "tile", "value": "WF"},
+        {"op": "tile", "value": "Mold", "snap": "picked"},
+        {"op": "clear", "snap": "unpicked"},
+        {"op": "mount", "data": _board(("Mold", "WF"), has_shared=True), "snap": "seeded"},
+        {"op": "clear", "snap": "emptied"},
+        {"op": "apply"},
+    )
+    picked, unpicked, seeded, emptied = (
+        out["snaps"][name] for name in ("picked", "unpicked", "seeded", "emptied")
+    )
+    assert (picked["clear"], picked["apply"]) == ("open", "open")
+    assert (unpicked["clear"], unpicked["apply"], unpicked["count"]) == (
+        "locked",
+        "locked",
+        "선택 0 / 3",
+    )
+    assert unpicked["focus"][-1] == "capa-proc-search"
+    assert (seeded["clear"], seeded["apply"]) == ("open", "locked")
+    assert (emptied["clear"], emptied["apply"], emptied["count"]) == (
+        "locked",
+        "open",
+        "선택 0 / 3",
+    )
+    assert emptied["focus"][-1] == "capa-proc-search"
+    assert out["triggers"] == [{"name": "apply", "value": {"values": []}}]
+
+
+def test_a_reordered_pick_of_the_same_processes_can_be_applied() -> None:
+    """같은 공정을 차례만 바꿔 고른 초안(처음 고른 공정을 바꿈)은 「적용」 이 열려 그 차례로
+    보낸다 — 저장소 · 한 줄 칸이 차례를 쓴다. 공용 공정 팝업 판은 차례를 보지 않아 그대로 잠긴다."""
+    out = _mount(
+        {"op": "mount", "data": _board(("WF", "Mold"), has_shared=True), "snap": "seeded"},
+        {"op": "tile", "value": "WF"},
+        {"op": "tile", "value": "WF", "snap": "reordered"},
+        {"op": "apply"},
+    )
+    seeded, reordered = out["snaps"]["seeded"], out["snaps"]["reordered"]
+    assert seeded["apply"] == "locked"
+    assert (reordered["apply"], reordered["state"], reordered["count"]) == (
+        "open",
+        "ready",
+        "선택 2 / 3",
+    )
+    assert out["triggers"] == [{"name": "apply", "value": {"values": ["Mold", "WF"]}}]
+
+    shared = _mount(
+        {"op": "mount", "data": _board(("WF", "Mold"), has_shared=True, shortening=False)},
+        {"op": "tile", "value": "WF"},
+        {"op": "tile", "value": "WF", "snap": "reordered"},
+        {"op": "apply"},
+    )
+    assert shared["snaps"]["reordered"]["apply"] == "locked"
+    assert shared["triggers"] == []
+
+
+@pytest.mark.parametrize("shortening", [True, False])
+def test_escape_with_a_search_text_clears_only_the_text_even_inside_a_popover(
+    shortening: bool,
+) -> None:
+    """찾기 칸에 글이 있을 때 Esc 는 글만 지우고 판을 둔 팝오버 · 팝업은 닫지 않는다 — 팝오버는
+    문서의 keydown 을 capture 단계에서 받아 닫으므로 판은 그보다 앞인 창 capture 단계에서 받는다.
+    한글을 치는 중의 Esc 는 글을 지우지 않고 팝오버에도 보내지 않는다(조합은 입력기 몫). 글이 없는
+    Esc 는 손대지 않아 팝오버가 닫힌다. 창 처리기는 판을 몇 번 다시 세워도 하나다(R7)."""
+    out = _mount(
+        {"op": "mount", "data": _board(shortening=shortening)},
+        {"op": "tile", "value": "WF"},
+        {"op": "type", "text": "mo", "snap": "typed"},
+        {"op": "key", "key": "Escape", "composing": True, "snap": "composing"},
+        {"op": "key", "key": "Escape", "snap": "cleared"},
+        {"op": "mount", "data": _board(shortening=shortening)},
+        {"op": "mount", "data": _board(shortening=shortening)},
+        {"op": "key", "key": "Escape", "snap": "empty"},
+    )
+    typed, composing, cleared, empty = (
+        out["snaps"][name] for name in ("typed", "composing", "cleared", "empty")
+    )
+    assert (typed["search"], typed["shownTiles"]) == ("mo", 1)
+    assert (composing["search"], composing["closed"]) == ("mo", 0)
+    assert (cleared["search"], cleared["shownTiles"], cleared["closed"]) == ("", len(OPTIONS), 0)
+    assert cleared["count"] == "선택 1 / 3"
+    assert (empty["closed"], empty["windowKeydown"]) == (1, 1)
+
+
+def test_the_mounted_shared_dialog_board_keeps_option_order_and_locks_every_process() -> None:
+    """data 셋을 주지 않은 판(공용 공정 팝업)은 선택지 차례로 보내고, 모두 켬을 고르지 않음과 같이
+    보아 「적용」 을 잠근다(잠긴 단추는 누르지 못한다) — 「전체」 글 그대로다."""
+    out = _mount(
+        {"op": "mount", "data": _board(shortening=False), "snap": "start"},
+        {"op": "tile", "value": "Underfill"},
+        {"op": "tile", "value": "WF"},
+        {"op": "tile", "value": "Mold", "snap": "every"},
+        {"op": "apply"},
+        {"op": "tile", "value": "Mold", "snap": "two"},
+        {"op": "apply"},
+    )
+    start, every, two = (out["snaps"][name] for name in ("start", "every", "two"))
+    assert (start["clearText"], start["clearIcon"]) == ("전체", "filter_alt_off")
+    assert (every["apply"], every["state"]) == ("locked", "same")
+    assert (two["apply"], two["state"]) == ("open", "ready")
+    assert out["triggers"] == [{"name": "apply", "value": {"values": ["WF", "Underfill"]}}]
+
+
+def test_the_mounted_board_takes_the_search_focus_only_once_it_is_visible() -> None:
+    """보이지 않는 판(닫힌 팝오버 안에 미리 선 판)은 찾기 칸 초점을 가져가지 않는다 — 화면의 다른
+    칸에서 초점을 뺏지 않게. 보이는 회차에 한 번만 가져간다."""
+    out = _mount(
+        {"op": "shown", "on": False},
+        {"op": "mount", "data": _board()},
+        {"op": "frames", "snap": "hidden"},
+        {"op": "shown", "on": True},
+        {"op": "mount", "data": _board()},
+        {"op": "frames", "snap": "visible"},
+        {"op": "mount", "data": _board()},
+        {"op": "frames", "snap": "again"},
+    )
+    snaps = out["snaps"]
+    assert snaps["hidden"]["focus"] == []
+    assert snaps["visible"]["focus"] == ["capa-proc-search"]
+    assert snaps["again"]["focus"] == ["capa-proc-search"]

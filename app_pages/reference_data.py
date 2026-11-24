@@ -36,8 +36,11 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
-from capa_simulation.components import reference_grid
-from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components import fragment_scope, grade_ui, reference_grid
+from capa_simulation.components.column_filter import (
+    column_filter_key,
+    render_column_filter_controls,
+)
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogBody, DialogHost, DialogPicker
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -229,13 +232,13 @@ _chosen = st.segmented_control(
     label_visibility="collapsed",
 )
 current_dataset = _chosen if isinstance(_chosen, str) and _chosen in DATASETS else DEFAULT_DATASET
-# 작업 줄 → 그리드 자리 → 읽기 보기 칸. 모두 **늘 서 있는 칸**이라 안의 칸 수가 바뀌어도 아래 자리
-# (그리드 마운트의 앞 형제 순번)가 밀리지 않는다 — 밀리면 그리드가 다시 마운트되어 보내지 않은
-# 출납을 잃는다. 읽기 보기(STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
-# 밀지 않는다. 편집 표를 고른 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표
-# 아래 단추에 초점이 가면 본문이 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
-actions_box = st.container(key=reference_grid.ACTIONS_BOX)
-grid_box = st.container(key=reference_grid.GRID_BOX)
+# 편집기 구역 자리(작업 줄 → 그리드 — 아래 `_render_reference_scope`) → 읽기 보기 칸. 둘 다 **늘
+# 서 있는 칸**이라 안의 칸 수가 바뀌어도 아래 자리(그리드 마운트의 앞 형제 순번)가 밀리지 않는다 —
+# 밀리면 그리드가 다시 마운트되어 보내지 않은 출납을 잃는다. 구역은 대본 끝에서 부르지만 이 칸 안에
+# 선다. 읽기 보기(STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를 밀지 않는다. 편집 표를 고른
+# 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표 아래 단추에 초점이 가면 본문이
+# 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
+scope_slot = st.container()
 view_box = st.container(key="reference_view")
 
 
@@ -510,14 +513,17 @@ def _table_conditions(grid: reference_grid.GridTable) -> nullcontext[None] | Del
     return nullcontext()
 
 
+def _grid_dimensions(table_name: str) -> list[str]:
+    """그 편집 표의 분류 칸."""
+    if table_name in {name for name, _, _, _ in EQUIPMENT_EDITORS}:
+        return list(EQUIPMENT_DIMENSIONS)
+    return TABLE_SOURCES[table_name][0]
+
+
 def _grid_table(table_name: str) -> reference_grid.GridTable:
     """그리드 표 하나 — 양식과 그 색인·껍데기 본문(캐시). 큰 표는 사이드바 필터 선택으로 줄을
     고른다."""
-    dimensions = (
-        EQUIPMENT_DIMENSIONS
-        if table_name in {name for name, _, _, _ in EQUIPMENT_EDITORS}
-        else TABLE_SOURCES[table_name][0]
-    )
+    dimensions = _grid_dimensions(table_name)
     return reference_grid.build_grid_table(
         table_name,
         TABLE_NAMES[table_name],
@@ -549,8 +555,6 @@ if reference_grid.apply_grid_inbox(grid_tables) or head_is_stale:
     # 다시 보내지 않는다). 한 번 다시 돈다(양식·색인은 캐시라 싸고, 다음 회차는 버릴 초안도 inbox
     # 도 없어 되풀이되지 않는다).
     st.rerun()
-with actions_box:
-    render_flash(GRID_DROPPED_FLASH_KEY)
 _remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(화면 탭 점·테마 단추·새로고침 확인이 함께 따라오고, 떠날
@@ -1136,71 +1140,131 @@ def _paste_widget_keys(value: object) -> tuple[str, ...]:
     return paste_widget_keys(str(value))
 
 
-# 편집 표를 고른 회차 — 표 조건(사이드바) → 작업 줄(표 위) → 그리드. 그리드 자리는 종류와 상관없이
-# 늘 같은 자리에서 그린다(읽기 보기를 골랐으면 표 없는 껍데기 — 마운트만 남는다).
+# 편집기 구역(AGENTS 9장 「구역 회차 규칙」) — 작업 줄 칸 · 그리드 칸을 키 붙은 프래그먼트로 묶어,
+# 칸을 고치면 앱 전체 대신 그 구역만 돈다. 구역 밖(머리 띠 변경 칩 · 화면 탭 점 · 종류 단추 점 ·
+# 사이드바 「표 조건」 카드 · 붙여넣기 호스트)이 그리는 값은 머리
+# 표지(`reference_grid.scope_head`)로 견줘 바뀌면 콜백 끝 · 본문 뒤에서 앱 전체 회차로 올린다. 「표
+# 조건」 카드는 구역에 넣지 않는다 — 바꾸면 앱 전체 회차다(같은 틱에 구역 회차에 실려 와도 머리
+# 표지가 올린다). 구역 회차의 인자 · 표(`grid_tables` 등 이 대본의 이름)는 마지막 앱 전체 회차의
+# 것이다 — 원본(활성 시나리오 내용 · 조회기간 · 종류)이 바뀌는 조작은 머리 표지가 앱 전체로 올린다.
+# 원본은 이 세션의 활성 시나리오라 남의 저장이 바꾸지 않는다(저장 토큰 견주기 R4 는 없다).
+REFERENCE_SCOPE = "reference_data_grid_scope"
+# 종류 → 사이드바 「표 조건」 필터 칸 key(머리 표지가 그 종류의 고른 값을 본다).
+FILTER_KEYS = {
+    table_name: tuple(
+        column_filter_key(_filter_prefix(table_name), column)
+        for column in _grid_dimensions(table_name)
+    )
+    for table_name in EDIT_TABLES
+}
+SCOPE_HEAD = partial(
+    reference_grid.scope_head,
+    dialog_key=DIALOG_KEY,
+    own_change_key=OWN_CHANGE_KEY,
+    filter_keys=FILTER_KEYS,
+)
+
+
+def _scope_grid(table_name: str | None) -> reference_grid.GridTable | None:
+    """구역이 그릴 표 — 구역 회차면 출납(inbox)을 이 본문에서 반영한다(앱 전체 회차는 본문 앞 대본이
+    반영하고, 그 반영이 초안 칸을 비우면 대본이 한 번 더 돈다). 반영이 표 초안 있음 · 없음을 바꾸면
+    본문 뒤에서 앱 전체 회차로 올라간다(머리 표지). 마지막 앱 전체 회차에 짓지 않은 표의 op 가
+    쌓였으면 그 표를 지금 짓는다."""
+    if table_name is None:
+        return None
+    if not fragment_scope.fragment_only_run():
+        return grid_tables.get(table_name)
+    tables = dict(grid_tables)
+    for name in reference_grid.inbox_tables() - set(tables):
+        if name in EDIT_TABLES:
+            tables[name] = _grid_table(name)
+    reference_grid.apply_grid_inbox(tables)
+    return tables.get(table_name)
+
+
+def _apply_pressed(grid: reference_grid.GridTable, actions: reference_grid.Actions) -> bool:
+    """「변경사항 적용」 — 잠그지 않으므로 누른 회차에 본다: 초안이 없으면(고친 것 없는 누름 ·
+    반영이 초안을 비움) 아무것도 하지 않는다 — 알림도 없다(같은 값 적용으로 리비전만 오르지
+    않게). 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에 초안을
+    업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).
+    적용했으면 참 — 구역 회차는 머리 표지(활성 시나리오 내용)가 본문 뒤에서 앱 전체로 올리고, 앱
+    전체 회차는 부르는 쪽이 다시 돈다."""
+    if not (actions.submitted and reference_grid.draft_pending(grid.table)):
+        return False
+    blocked = reference_grid.error_notice(grid, process_labels.label)
+    if blocked is not None:
+        actions.notice.error(blocked, icon=":material/error:")
+        return False
+    try:
+        merged = reference_grid.merged_template(grid)
+        _apply_edit(_editor(grid.table, grid.template), merged, imported=False)
+    except (KeyError, ValueError) as exc:
+        actions.notice.error(bootstrap_error_message(exc))
+        return False
+    return True
+
+
+@fragment_scope.fragment(REFERENCE_SCOPE)
+@grade_ui.in_fragment
+@fragment_scope.editor_scope(REFERENCE_SCOPE, head=SCOPE_HEAD)
+def _render_reference_scope(*, table: str | None, scope: str | None) -> bool:
+    """기준 정보 편집기 구역 — 작업 줄 칸 → 그리드 칸. 그리드 자리는 종류와 상관없이 늘 같은
+    자리에서 그린다(읽기 보기를 골랐으면 `table` 없이 표 없는 껍데기 — 마운트만 남는다). `scope` 는
+    표 아래 상태 줄의 편집 범위 글이다. 다른 화면의 적용으로 초안을 버린 알림 · 측정률 빈 기간 글 ·
+    작업 줄은 작업 줄 칸에 선다. 「변경사항 적용」 으로 적용했으면 참(`_apply_pressed`)."""
+    grid = _scope_grid(table)
+    actions_box = st.container(key=reference_grid.ACTIONS_BOX)
+    grid_box = st.container(key=reference_grid.GRID_BOX)
+    with actions_box:
+        render_flash(GRID_DROPPED_FLASH_KEY)
+    if grid is None:
+        with grid_box:
+            reference_grid.render_grid(None)
+        return False
+    with actions_box:
+        # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.
+        if grid.table in RATIO_TABLES and edit_slices.get_or_stop(grid.table).empty:
+            st.caption(
+                RATIO_EMPTY_TEXT.format(label=TABLE_NAMES[grid.table]), help=RATIO_EMPTY_HELP
+            )
+        actions = reference_grid.render_actions(
+            grid,
+            open_paste=DIALOG_HOST.opener(grid.editor_key, reference_grid.paste_button_key(grid)),
+            scope_key=REFERENCE_SCOPE,
+        )
+    with grid_box:
+        reference_grid.render_grid(grid, key_prefix=_filter_prefix(grid.table), scope=scope)
+    return _apply_pressed(grid, actions)
+
+
+# 편집 표를 고른 회차 — 표 조건(사이드바) → 편집기 구역(작업 줄 → 그리드). 필터는 보기만 좁힌다 —
+# 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지 않는다. 고른 값은 feed 로 가
+# 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다). 공정은 공용 공정 값이라 다른 화면에서
+# 바꿔도 따라 좁혀진다. 행이 없는 표(측정률이 통째로 빈 기간)에는 거를 것이 없어 세우지 않는다.
 current_grid = grid_tables.get(current_dataset)
-grid_actions: reference_grid.Actions | None = None
+grid_scope_text: str | None = None
 if current_grid is not None:
-    grid_filter_prefix = _filter_prefix(current_dataset)
-    # 필터는 보기만 좁힌다 — 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지
-    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다).
-    # 공정은 공용 공정 값이라 다른 화면에서 바꿔도 따라 좁혀진다. 행이 없는 표(측정률이 통째로 빈
-    # 기간)에는 거를 것이 없어 세우지 않는다.
     grid_visible = current_grid.template
     if not current_grid.template.empty:
         with _table_conditions(current_grid):
             grid_visible = render_column_filter_controls(
                 current_grid.template,
                 list(current_grid.dimensions),
-                key_prefix=grid_filter_prefix,
+                key_prefix=_filter_prefix(current_dataset),
                 column_labels=COLUMN_LABELS,
                 value_labels=process_labels.value_labels(),
                 shared_screen=SCREEN,
             )
-    with actions_box:
-        # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.
-        if current_dataset in RATIO_TABLES and edit_slices.get_or_stop(current_dataset).empty:
-            st.caption(
-                RATIO_EMPTY_TEXT.format(label=TABLE_NAMES[current_dataset]), help=RATIO_EMPTY_HELP
-            )
-        grid_actions = reference_grid.render_actions(
-            current_grid,
-            open_paste=DIALOG_HOST.opener(
-                current_grid.editor_key, reference_grid.paste_button_key(current_grid)
-            ),
-        )
-    with grid_box:
-        reference_grid.render_grid(
-            current_grid,
-            key_prefix=grid_filter_prefix,
-            scope=scope_text(current_grid.template, grid_visible, current_grid.months),
-        )
-else:
-    with grid_box:
-        reference_grid.render_grid(None)
+    grid_scope_text = scope_text(current_grid.template, grid_visible, current_grid.months)
+with scope_slot:
+    grid_applied = _render_reference_scope(
+        table=current_dataset if current_grid is not None else None, scope=grid_scope_text
+    )
 # 「Excel 붙여넣기」 팝업의 호스트 — 매 앱 전체 회차 빠짐없이(읽기 보기를 고른 회차에도), 여는
-# 단추를 그린 뒤 · 아래 「변경사항 적용」 보다 앞이다. 이벤트 칸에 늘 한 자리를 쓴다.
+# 단추(구역 안)를 그린 뒤다. 이벤트 칸에 늘 한 자리를 쓴다. 구역 안 여는 콜백은 호스트만 다시 돌리고
+# (`rerun_fragment_if_alone`), 그러지 못하면 열림 칸이 바뀐 머리 표지가 콜백 끝에서 앱 전체로
+# 올린다.
 DIALOG_HOST.render(_paste_picker(current_dataset, current_grid), widget_keys=_paste_widget_keys)
-
-# 「변경사항 적용」 — 잠그지 않으므로 누른 회차에 본다: 초안이 없으면(고친 것 없는 누름 ·
-# 반영이 초안을 비움) 아무것도 하지 않는다 — 알림도 없다(같은 값 적용으로 리비전만 오르지
-# 않게). 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에 초안을
-# 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).
-if (
-    current_grid is not None
-    and grid_actions is not None
-    and grid_actions.submitted
-    and reference_grid.draft_pending(current_grid.table)
-):
-    blocked = reference_grid.error_notice(current_grid, process_labels.label)
-    if blocked is not None:
-        grid_actions.notice.error(blocked, icon=":material/error:")
-    else:
-        grid_editor = _editor(current_dataset, current_grid.template)
-        try:
-            merged = reference_grid.merged_template(current_grid)
-            _apply_edit(grid_editor, merged, imported=False)
-        except (KeyError, ValueError) as exc:
-            grid_actions.notice.error(bootstrap_error_message(exc))
-        else:
-            st.rerun()
+# 앱 전체 회차에 「변경사항 적용」 으로 적용했다 — 새 원본으로 다시 돈다(호스트를 그린 뒤).
+if grid_applied:
+    st.rerun()

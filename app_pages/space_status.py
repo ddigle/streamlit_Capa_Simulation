@@ -371,9 +371,9 @@ SHEET_REFUSED_KEY = "space_sheet_refused_v1"
 # → 2026-08-04)도 새 epoch 로 브라우저의 고친 칸을 비운다(편집본 세대는 내용이 같으면 오르지
 # 않는다).
 SHEET_APPLIED_KEY = "space_sheet_applied_v1"
-# 창 칸 확정마다 받은 「확인만」 판정(편집기 key · epoch · seq · 막힌 칸 · 같이 바뀌는 형제 칸) —
-# 다음 회차 편집기 data `sheetVerdict` 로 간다. 편집본에는 넣지 않는다(2026-11-12 시안 보드 답 5-6 ·
-# Q1 (가)).
+# 창 칸을 고치면 브라우저가 모아 보낸 「확인만」 판정(편집기 key · epoch · 마운트 · seq · 막힌 칸 ·
+# 같이 바뀌는 형제 칸) — 다음 회차 편집기 data `sheetVerdict` 로 간다. 편집본에는 넣지 않는다
+# (2026-11-12 시안 보드 답 5-6 · Q1 (가), 2026-11-20 사용자 결정 Q3).
 SHEET_VERDICT_KEY = "space_sheet_verdict_v1"
 # 「공식으로 바꾸기」·「최신 rM 불러오기」 실패 글 — 저장 오류와 따로 둔다(저장 안 한 상자가
 # 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다
@@ -1994,8 +1994,8 @@ def _render_layout_editor(
         sheet_edit=sheet_edit_data(sheet, frames[1], context=context, locks=sheet_locks),
         sheet_refused=_sheet_refused(editor_key, epoch),
         sheet_verdict=_sheet_verdict(editor_key, epoch),
-        # 칸 확정마다 「확인만」 — 콜백이 본문보다 먼저 판정하고 새로 막힌 칸을 알림창 · Alarm 에
-        # 낸다. 그린 편집본 세대와 다르면(그 사이 편집본이 바뀜) 버린다.
+        # 창에서 고친 칸을 브라우저가 잠깐 모아 「확인만」 — 콜백이 본문보다 먼저 판정하고 새로 막힌
+        # 칸을 알림창 · Alarm 에 낸다. 그린 편집본 세대와 다르면(그 사이 편집본이 바뀜) 버린다.
         on_sheet_check=partial(
             _check_sheet_request,
             editor_key,
@@ -2281,9 +2281,10 @@ def _refuse_sheet_cells(editor_key: str, epoch: str, check: SheetCheck) -> None:
         "nonce": uuid.uuid4().hex[:12],
         **verdict_payload(check),
     }
-    # 칸 확정의 「확인만」 이 같은 칸 · 같은 글로 이미 알렸으면 다시 알리지 않는다 — 확정 없이
-    # 「적용」 을 누르면 칸을 떠나며 보낸 확인과 적용이 잇달아 와 같은 알림이 두 번 섰다(브라우저
-    # 확인).
+    # 칸 「확인만」 이 같은 칸 · 같은 글로 이미 알렸으면 다시 알리지 않는다 — 칸 확인은
+    # 「적용」 보다 먼저 닿는다(칸을 떠나며 곧바로 보낸 것 · 「적용」 이 같은 틱에 먼저 보낸 묶음).
+    # 이 거부 뒤로는 브라우저가 「적용」 때의 seq 까지 확인 기다림을 걷어 같은 칸을 다시 묻지
+    # 않는다.
     seen = blocked_keys(_sheet_verdict(editor_key, epoch))
     _alert_blocked_cells(
         [
@@ -2327,11 +2328,13 @@ def _check_sheet_request(
     """`on_sheetCheck_change` 이 넘긴 창 칸 「확인만」 요청을 판정한다(콜백 — 본문보다 먼저 돈다).
 
     편집본은 고치지 않는다 — 판정(`check_sheet_cells`, 표와 같은 인자)을 세션에 두어 다음 회차
-    편집기 data `sheetVerdict` 로 돌려주고, **새로** 막힌 칸(같은 편집기 · epoch 의 앞 판정에 없던
+    편집기 data `sheetVerdict`(요청의 마운트 · seq 를 실음 — 브라우저는 그 마운트가 마지막으로 보낸
+    seq 의 것만 받는다)로 돌려주고, **새로** 막힌 칸(같은 편집기 · epoch · 마운트의 앞 판정에 없던
     칸 · 글 · 규칙)만 알림창 · Alarm 사건 `EQ-25` 로 낸다. 앞 판정은 요청의 `base`(브라우저에서 고친
     칸이 마지막으로 빈 seq — 처음 상태로 · 되돌리기로 칸이 0개가 되면 묻지 않고 판정을 걷는다)보다
     뒤의 seq 일 때만 쓴다 — 칸을 비운 뒤 같은 칸에 같은 막힌 값을 다시 치면 다시 알린다. 잇달아 친
-    확인(앞 판정을 받기 전)은 같은 base 라 앞 판정을 쓴다. 그린 회차의 편집본 세대와 지금 세대가
+    확인(앞 판정을 받기 전)은 같은 base 라 앞 판정을 쓴다. 다시 선 편집기(새 마운트 — seq 가
+    처음부터 다시 오른다)는 앞 마운트의 판정을 쓰지 않는다. 그린 회차의 편집본 세대와 지금 세대가
     다르면(그 사이 편집본이 바뀜 — 다음 회차에 편집기가 새 epoch 로 선다) 버린다. 꼴이 어긋난 요청도
     조용히 버린다 — 「적용」 이 같은 판정을 한 번 더 한다."""
     if equipment_buffer_generation() != generation:
@@ -2352,17 +2355,21 @@ def _check_sheet_request(
     previous = st.session_state.get(SHEET_VERDICT_KEY)
     base = payload.get("base", 0)
     since = base if isinstance(base, int) and not isinstance(base, bool) else 0
+    mount = payload.get("mount")
+    mount_id = mount if isinstance(mount, str) else ""
     seen = (
         blocked_keys(previous)
         if isinstance(previous, Mapping)
         and previous.get("editor") == editor_key
         and previous.get("epoch") == epoch
+        and previous.get("mount", "") == mount_id
         and int(previous.get("seq") or 0) > since
         else frozenset()
     )
     st.session_state[SHEET_VERDICT_KEY] = {
         "editor": editor_key,
         "epoch": epoch,
+        "mount": mount_id,
         "seq": int(payload["seq"]),
         **verdict_payload(check),
     }
@@ -2387,6 +2394,7 @@ def _sheet_verdict(editor_key: str, epoch: str) -> dict[str, Any] | None:
         return None
     return {
         "epoch": epoch,
+        "mount": str(value.get("mount") or ""),
         "seq": int(value.get("seq") or 0),
         "blocked": list(value.get("blocked") or ()),
         "follow": list(value.get("follow") or ()),

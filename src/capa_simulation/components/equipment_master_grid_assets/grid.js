@@ -5,6 +5,10 @@
 // 잃어도 되는 화면 조작만 트리거다(불러오기 load·clear·new·dialog, 표 open·unload, 오른쪽 칸 open·goto·copy). 업무
 // 검증은 파이썬이 한다 — 여기는 data 가 준 잠금·고를 값·자리 계산만 안다. 데이터 글은 textContent 로만 넣고
 // innerHTML 은 고정 아이콘에만 쓴다. 아래 `// <grid-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
+// 떠나기 신호(AGENTS 9장 「구역 회차 규칙」 R8 — 등록 글 앞에 이은 `leave.js` 조각): 마운트마다 편집기 명부에 오르고
+// (`joinLeaving` — 처리기를 한 번 다는 자리), 창 사건 `capa-leaving` 을 받으면 묶음 타이머를 멈추고 보낼 목록 · 「새 호기」
+// 초안을 곧바로 보낸다. 보낼 목록에 op 가 남은 동안(보내지 않았거나 ack 가 오지 않음) busy 다 — 화면을 떠나는 누름이 그 ack
+// 를 기다린다. 신호 뒤 고침은 묶지 않고, ack 로 목록이 비면 다시 묶는다.
 
 // <grid-paste>
 // 붙인 글을 칸 판으로. 끝 줄바꿈 하나는 떼고 \r 은 버린다. 탭·줄바꿈이 없으면(한 칸) null — 보통 붙여넣기다.
@@ -543,6 +547,34 @@ function listScroll(current, top, height, room, pad) {
 }
 // </grid-place>
 
+// <grid-feed>
+// 표 마운트는 껍데기(칸 정의 · 잠금 · 불러온 줄 — 칸 하나를 고친 회차에도 그대로라 다시 오지 않는다)와 feed(ack · 껍데기 뒤
+// 바뀐 줄 · 수 · 옮김 · 연 줄)로 온다. 둘을 이은 것이 표 data 다(파이썬 `equipment_grid.join_grid_data` 와 같은 꼴). feed 가 다른
+// 껍데기의 것이면 null — 그 껍데기가 올 때까지 둔다.
+const FEED_FIELDS = ['ack', 'counts', 'moved', 'inserted', 'open', 'clean']
+function joinGridData(shell, feed) {
+  if (!shell || !feed || feed.shell !== shell.shell) return null
+  const joined = {}
+  for (const [key, value] of Object.entries(shell)) if (key !== 'shell') joined[key] = value
+  const patches = feed.rows || {}
+  const has = (key) => Object.prototype.hasOwnProperty.call(patches, key)
+  joined.rows = (Array.isArray(shell.rows) ? shell.rows : []).map((row) => (has(row.id) ? patches[row.id] : row))
+  for (const key of FEED_FIELDS) if (Object.prototype.hasOwnProperty.call(feed, key)) joined[key] = feed[key]
+  return joined
+}
+
+// 표 모양(정렬한 줄)의 열쇠 — 껍데기와 그 뒤 바뀐 줄이 같으면 같다. 같으면 ack 만 온 회차라 표 모양을 다시 짓지 않는다.
+function rowsKeyOf(shell, feed) {
+  return String(shell.shell) + '|' + JSON.stringify(feed.rows || {})
+}
+
+// 쉼을 기다리지 않고 곧바로 보낼 op 인가 — 편집본이 깨끗하고(`clean` — 파이썬 판정) 보내고 답을 못 받은 op 가 없을 때(그
+// 편집본의 첫 op). 그 뒤 답이 오기 전에 고친 칸은 쉼만큼 모은다.
+function sendsAtOnce(clean, ops, sentSeq) {
+  return clean === true && ops.length > 0 && ops.every((op) => op.seq > sentSeq)
+}
+// </grid-feed>
+
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
 // 표 밑 「⌨ 키보드 조작」 표지의 풍선.
 const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
@@ -588,7 +620,7 @@ function freshState() {
     note: '', noteSeq: 0, noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
-    dialogOpener: null, dialogClosed: null,
+    dialogOpener: null, dialogClosed: null, leave: null,
   }
 }
 
@@ -658,8 +690,14 @@ function receive(S, data) {
     for (const [key, item] of S.pending) if (item.seq <= ack.seq) S.pending.delete(key)
     // 기다리던 op 가 돌아왔다 — 진행 한 줄(붙여넣는 중)을 거둔다. 결과는 알림창이 말한다.
     if (S.noteSeq && S.noteSeq <= ack.seq) clearNote(S)
+    // 보낼 목록이 비었으면 떠나기 표지를 걷는다 — 다음 고침은 다시 묶는다.
+    settleLeaving(S.leave, gridBusy(S))
   }
   S.limit = Number((data.limits || {}).outboxCells) || 10000
+  // 묶어 보내기 쉼(ms) — 파이썬이 정한다(`equipment_master_grid.SEND_MS` → `grid_shared.batch_ms`). 없으면 SEND_MS.
+  S.sendMs = Number(data.sendMs) > 0 ? Number(data.sendMs) : SEND_MS
+  // 편집본에 저장 안 한 편집이 없다(파이썬 판정) — 그때의 첫 op 는 쉼을 기다리지 않는다(`sendsAtOnce`).
+  S.clean = data.clean === true
 }
 
 // 이미 보낸 op 만 남았으면 보내지 않는다 — 「호기 추가」 는 그 회차가 「새 호기」 마운트를 내리고 칸 고르기를 「호기 상세」 로
@@ -674,9 +712,29 @@ function send(S) {
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 
+// 떠나기 명부의 busy — 보낼 목록에 op 가 남았다(보내지 않았거나 ack 가 오지 않음 — op 는 ack 가 올 때까지 남는다).
+// 「새 호기」 초안은 ack 가 없는 상태 값이라 신호에 곧바로 보내고(`leaveNow`) busy 에 넣지 않는다.
+function gridBusy(S) {
+  return boxBusy(S.box)
+}
+
+// 떠나기 신호 — 묶음 타이머를 멈추고 보낼 목록 · 확정해 둔 「새 호기」 초안을 곧바로 보낸다.
+function leaveNow(S) {
+  send(S)
+  flushDraft(S)
+}
+
+// 칸 고침은 쉼(`S.sendMs`)만큼 모아 한 번에 보낸다 — 깨끗한 편집본의 첫 op 는 곧바로(미저장 표지 · 떠나기 확인이 늦지 않게).
+// 떠나기 신호를 받은 뒤(`leavingNow`)도 묶지 않는다. 붙여넣기 · 단추 op · 표 밖 누름(focusout) · 창 숨김 · 떠나기 신호는 이
+// 길을 거치지 않고 곧바로 보낸다(`send` — 떠나기 신호는 `leaveNow`).
 function schedule(S) {
   if (S.timer) clearTimeout(S.timer)
-  S.timer = setTimeout(() => send(S), SEND_MS)
+  S.timer = 0
+  if (leavingNow(S.leave) || sendsAtOnce(S.clean, S.box.ops, S.sentSeq)) {
+    send(S)
+    return
+  }
+  S.timer = setTimeout(() => send(S), S.sendMs || SEND_MS)
 }
 
 // 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고,
@@ -1351,7 +1409,7 @@ function editableIn(S, row, col) {
   return lockOf(row, col, S.model.locks) === null
 }
 
-function drawGrid(host, S, data) {
+function drawGrid(host, S, data, rowsKey) {
   receive(S, data)
   S.data = data
   // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꾸고, 모듈 묶음 같이 쓰기는 형제 줄을 끼워 목록 지문도 바꾼다 — 옮김을
@@ -1398,7 +1456,11 @@ function drawGrid(host, S, data) {
   const lifted = new Map(moved)
   const keptOpen = openAt === null ? null : lifted.has(wasOpen) ? lifted.get(wasOpen) : wasOpen
   if (!keepTop && !S.resetScroll && keptOpen !== null && S.openId === keptOpen) keepTop = { id: keptOpen, top: openAt }
-  S.model = gridModel(S, data)
+  // 껍데기 · 바뀐 줄이 그대로면(ack · 연 줄만 온 회차) 정렬한 표 모양을 그대로 쓴다 — 정렬 · 칸 묶음을 바꾸면 그 자리가 새로 짓는다.
+  if (rowsKey === undefined || !S.model || S.modelKey !== rowsKey) {
+    S.model = gridModel(S, data)
+    S.modelKey = rowsKey
+  }
   const shift = keepTop ? keptRowShift(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.top) : 0
   const known = new Set(S.model.live.map((row) => row.id))
   for (const id of Array.from(S.selected)) if (!known.has(id)) S.selected.delete(id)
@@ -2749,7 +2811,7 @@ function drawNew(S, root, data) {
     S.nd = { seq: S.nd.seq, values: blank.slice() }
     S.ndTouched.clear()
     S.ndDirty.clear()
-    commitDraft(S)
+    commitDraft(S, true)
     drawSide(S.host, S, S.data)
   })
   // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
@@ -2761,6 +2823,8 @@ function drawNew(S, root, data) {
       drawSide(S.host, S, S.data)
       return
     }
+    // 모아 둔 초안을 먼저 보낸다 — 「호기 추가」 는 그 마지막 초안을 싣고 파이썬이 그 초안으로 다시 판정해 넣는다.
+    flushDraft(S)
     enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice() }, [])
     send(S)
   })
@@ -2783,10 +2847,33 @@ function drawNew(S, root, data) {
   root.appendChild(foot)
 }
 
-function commitDraft(S) {
+// 「새 호기」 칸 확정 — 번호를 올리고 확정한 값(`ndSent`)으로 적는다. 서버로는 칸을 떠날 때 · 쉼(`S.sendMs`) 뒤 · 「호기
+// 추가」 직전에 마지막 초안 하나만 보낸다(`flushDraft`) — 칸마다 회차를 돌리지 않는다. 단추(양식 비우기)는 `now` 로, 떠나기
+// 신호를 받은 뒤(`leavingNow`)는 곧바로.
+function commitDraft(S, now) {
+  now = now || leavingNow(S.leave)
   S.nd = bumpDraft(S.nd, (S.data && S.data.draft && S.data.draft.seq) || 0)
   S.ndSent = S.nd.values.slice()
-  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
+  S.ndQueued = true
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = now ? 0 : setTimeout(() => flushDraft(S), S.sendMs || SEND_MS)
+  if (now) flushDraft(S)
+}
+
+// 확정해 두고 아직 보내지 않은 초안을 곧바로 보낸다(없으면 아무것도 하지 않는다).
+function flushDraft(S) {
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = 0
+  if (!S.ndQueued || !S.setState || !S.nd) return
+  S.ndQueued = false
+  S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
+}
+
+// 보내지 않은 초안을 버린다 — 가져오기(`copy`)는 지금 초안을 함께 싣는다.
+function dropQueuedDraft(S) {
+  if (S.draftTimer) clearTimeout(S.draftTimer)
+  S.draftTimer = 0
+  S.ndQueued = false
 }
 
 function copyRow(S) {
@@ -2804,6 +2891,7 @@ function copyRow(S) {
   go.disabled = !S.copyQuery.trim()
   const fire = () => {
     if (!S.copyQuery.trim()) return
+    dropQueuedDraft(S)
     S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice() } })
   }
   input.addEventListener('input', () => {
@@ -2837,7 +2925,12 @@ function newField(S, column, k, mark) {
   if (mark.tier) label.appendChild(el('span', 'emg-tier is-' + mark.tier + (mark.ok ? ' is-done' : ''), TIER_TAGS[mark.tier]))
   field.appendChild(label)
   field.title = [mark.lock || '', column.help || ''].filter(Boolean).join('\n')
-  // 확정 — 보낸 값(`ndSent`)과 다를 때만. 다시 그린 칸(초점 되돌림)도 보낸 값과 견주므로 친 글을 잃지 않는다.
+  // 칸을 떠나면(그 칸 밖으로 초점이 감 — 다시 그리는 중은 아님) 모아 둔 초안을 곧바로 보낸다 — 체크 상자 · 칸 오류가 그때 선다.
+  field.addEventListener('focusout', (event) => {
+    if (S.painting || (event.relatedTarget && field.contains(event.relatedTarget))) return
+    flushDraft(S)
+  })
+  // 확정 — 확정한 값(`ndSent`)과 다를 때만. 다시 그린 칸(초점 되돌림)도 확정한 값과 견주므로 친 글을 잃지 않는다.
   const commit = (text) => {
     S.nd.values[k] = text
     S.ndTouched.add(k)
@@ -2889,6 +2982,7 @@ function newField(S, column, k, mark) {
     input.addEventListener('blur', () => {
       if (S.painting) return
       commit(input.value)
+      flushDraft(S)
     })
     field.appendChild(input)
   }
@@ -3044,6 +3138,32 @@ function drawChanges(S, root, data) {
   if (data.others) root.appendChild(el('div', 'emg-sec', data.others))
 }
 
+// ---------------------------------------------------------------- 표 껍데기 · feed 받기
+
+// 표 껍데기를 받았다 — 그 껍데기의 feed 가 칸에 있으면 이어 그리고, 없으면 feed 이벤트를 기다린다.
+function takeShell(host, S, shell) {
+  S.shell = shell
+  S.hostKey = /^[\w-]+$/.test(String(shell.host || '')) ? String(shell.host) : ''
+  takeFeed(host, S)
+}
+
+// feed 칸을 읽어 껍데기와 이어 그린다 — 이미 그린 (껍데기, feed) 짝이면 그리지 않는다.
+function feedStore() {
+  return typeof window !== 'undefined' ? window.__capaEquipmentGrid : null
+}
+
+function takeFeed(host, S) {
+  const store = feedStore()
+  const slot = store && S.hostKey ? store[S.hostKey] : null
+  const feed = slot ? slot.feed : null
+  if (!S.shell || !feed || (feed === S.feedData && S.drawnShell === S.shell)) return
+  const data = joinGridData(S.shell, feed)
+  if (!data) return
+  S.feedData = feed
+  S.drawnShell = S.shell
+  drawGrid(host, S, data, rowsKeyOf(S.shell, feed))
+}
+
 // ---------------------------------------------------------------- 마운트
 
 export default function (component) {
@@ -3063,13 +3183,29 @@ export default function (component) {
   if (!S.bound) {
     S.bound = true
     // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만. 그리는 중의
-    // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
+    // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
-      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) send(S)
+      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) {
+        send(S)
+        flushDraft(S)
+      }
       // 불러오기 밖(표 칸 등)으로 초점을 옮겼다 — 돌아온 불러오기 회차가 찾기 칸으로 초점을 빼앗지 않는다.
       if (!S.painting && event.relatedTarget && !host.contains(event.relatedTarget)) S.refocus = null
     })
-    listen(S, document, 'visibilitychange', () => send(S))
+    listen(S, document, 'visibilitychange', () => {
+      send(S)
+      flushDraft(S)
+    })
+    // 떠나기 명부 — 마운트(불러오기 · 표 · 오른쪽 칸)마다 한 번 오르고 정리 함수가 걷는다. 뿌리는 편집기 상태를 단 요소다.
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      S.leave = joinLeaving(window, { busy: () => gridBusy(S), flush: () => leaveNow(S) }, host)
+    }
+    // 표 마운트만 — feed 요소가 칸을 바꿨다(그 껍데기면 이어 그린다).
+    if (data.mode === 'grid' && typeof window !== 'undefined' && window.addEventListener) {
+      listen(S, window, 'capa-equipment-grid', (event) => {
+        if (event.detail === S.hostKey) takeFeed(host, S)
+      })
+    }
     listen(S, document, 'mousedown', (event) => {
       // 그림자 DOM 밖에서 보면 대상이 호스트로 바뀐다 — 지나온 길(composedPath)로 안쪽 누름을 가른다.
       const path = typeof event.composedPath === 'function' ? event.composedPath() : null
@@ -3091,13 +3227,19 @@ export default function (component) {
   if (data.mode === 'loader') {
     drawLoader(host, S, data)
     watchLoaderFit(host, S)
-  } else if (data.mode === 'grid') drawGrid(host, S, data)
-  else drawSide(host, S, data)
+  } else if (data.mode === 'grid') {
+    // 껍데기 지문이 없는 data(한 등록으로 온 표 data)는 그대로 그린다.
+    if (typeof data.shell === 'string') takeShell(host, S, data)
+    else drawGrid(host, S, data)
+  } else drawSide(host, S, data)
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
     send(S)
+    flushDraft(S)
     for (const [target, type, handler, options] of S.listeners) target.removeEventListener(type, handler, options)
     S.listeners = []
+    if (S.leave) S.leave.drop()
+    S.leave = null
     if (S.timer) clearTimeout(S.timer)
     if (S.noteTimer) clearTimeout(S.noteTimer)
     if (S.scrollFrame) cancelAnimationFrame(S.scrollFrame)
@@ -3105,7 +3247,15 @@ export default function (component) {
     S.fitObserver = null
     if (S.bandObserver) S.bandObserver.disconnect()
     S.bandObserver = null
-    if (data.mode === 'grid') markSelecting(S, false)
+    if (data.mode === 'grid') {
+      markSelecting(S, false)
+      // 다음 마운트가 이 마운트의 옛 feed 로 먼저 그리지 않게 칸을 비운다(새 feed 가 다시 채운다).
+      const store = feedStore()
+      if (store && S.hostKey && store[S.hostKey]) store[S.hostKey].feed = null
+      S.feedData = null
+      S.drawnShell = null
+      S.modelKey = undefined
+    }
     S.timer = 0
     S.noteTimer = 0
     S.scrollFrame = 0

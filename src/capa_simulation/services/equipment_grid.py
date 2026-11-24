@@ -43,6 +43,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -575,6 +576,28 @@ def text_matrix_since(previous: TextMatrix | None, master: pd.DataFrame) -> Text
     return TextMatrix(frame, rows)
 
 
+def changed_positions(previous: pd.DataFrame | None, current: pd.DataFrame) -> list[int] | None:
+    """두 표(같은 칸 · 줄 자리 색인)에서 값이 바뀐 줄 자리 — 줄 수 · 칸 목록이 다르거나 앞 표가
+    없으면 None(통째로 다시 본다). 칸 dtype 이 바뀌어도 None 이다. 빈 값끼리는 같다고 본다."""
+    if (
+        previous is None
+        or len(previous) != len(current)
+        or list(previous.columns) != list(current.columns)
+    ):
+        return None
+    changed = np.zeros(len(current), dtype=bool)
+    for name in current.columns:
+        before, after = previous[name], current[name]
+        if same_column(before, after):
+            continue
+        if before.dtype != after.dtype:
+            return None
+        same = before.eq(after).fillna(False).to_numpy(dtype=bool)
+        both_blank = (before.isna() & after.isna()).to_numpy(dtype=bool)
+        changed |= ~(same | both_blank)
+    return [int(position) for position in changed.nonzero()[0]]
+
+
 def _names(master: pd.DataFrame) -> list[str]:
     if EQUIPMENT_ID_COLUMN not in master.columns:
         return [""] * len(master)
@@ -754,6 +777,32 @@ def move_ids(ids: Sequence[str], moved: Mapping[str, str | None]) -> tuple[str, 
     return tuple(dict.fromkeys(row_id for row_id in result if row_id))
 
 
+# 행 id 를 싣는 op 칸 — 하나(`id`)와 여럿(`ids`).
+_OP_ID_FIELDS: Final = ("id",)
+_OP_IDS_FIELDS: Final = ("ids",)
+
+
+def moved_op(op: Mapping[str, Any], moved: Mapping[str, str | None]) -> dict[str, Any] | None:
+    """op 의 행 id 를 `moved`(저장 뒤 id 지도 — `save_id_map`)로 옮긴 사본. 지도에 없는 id 는
+    그대로, 지운 호기(None)를 가리키면 None(얹을 줄이 없다)."""
+    result = dict(op)
+    for name in _OP_ID_FIELDS:
+        value = op.get(name)
+        if isinstance(value, str) and value in moved:
+            target = moved[value]
+            if target is None:
+                return None
+            result[name] = target
+    for name in _OP_IDS_FIELDS:
+        values = op.get(name)
+        if isinstance(values, list):
+            targets = [moved.get(item, item) if isinstance(item, str) else item for item in values]
+            if any(target is None for target in targets):
+                return None
+            result[name] = targets
+    return result
+
+
 def all_load_ids(
     master: pd.DataFrame, index: GridIndex, *, limit: int = GRID_ROW_LIMIT
 ) -> list[str]:
@@ -781,6 +830,11 @@ def prune_overlay(overlay: Mapping[str, str], index: GridIndex) -> dict[str, str
 # ------------------------------------------------------------------ 한 회차의 표 모양
 
 
+# 행 id → (편집본 글 줄, 저장본 글 줄, 바뀐 칸 — 자리 → 저장본 글자). 줄은 그 회차 글 행렬의 줄
+# 객체 그대로다(같은지는 `is` 로 본다).
+ChangedMemo = Mapping[str, tuple[Sequence[str], Sequence[str], Mapping[int, str]]]
+
+
 @dataclass(frozen=True)
 class GridSource:
     """표 모양을 낼 재료. `frames`·`saved` 는 (기존 보유대수, 설비 마스터, 비가동 일정) 이다.
@@ -800,6 +854,9 @@ class GridSource:
     table_errors: Sequence[str] = ()
     others: str = ""
     texts: tuple[Sequence[Sequence[str]], Sequence[Sequence[str]]] | None = None
+    # 앞 회차 표 모양의 줄마다 「바뀐 칸」 재료(`GridView.changed_memo`) — 편집본 · 저장본 글 줄이
+    # 같은 줄 객체면(`text_matrix_since` 는 안 바뀐 줄을 그대로 둔다) 견주지 않고 그 결과를 쓴다.
+    changed_memo: ChangedMemo | None = None
 
 
 @dataclass(frozen=True)
@@ -826,6 +883,8 @@ class GridView:
     errors: tuple[tuple[str | None, str, str, str], ...]
     downtime: pd.DataFrame
     source: GridSource
+    # 다음 회차 `GridSource.changed_memo` 로 넘길 이 회차의 줄마다 「바뀐 칸」 재료.
+    changed_memo: ChangedMemo = field(default_factory=dict)
 
     @property
     def live_count(self) -> int:
@@ -847,7 +906,8 @@ def _overlay_error(
 
 def build_grid_view(source: GridSource, context: GridContext) -> GridView:
     """표 모양을 한 번에 낸다 — 편집본·저장본 글자, 줄마다 바뀐·오류·경고 표지와 잠금, 고칠 것
-    목록."""
+    목록. 「바뀐 칸」 은 앞 회차 재료(`source.changed_memo`)에서 두 글 줄이 그대로인 줄은 견주지
+    않고 그 결과를 쓴다(바뀐 줄만 다시 견준다 — 처음부터 견준 것과 같다)."""
     master = source.frames[1].reset_index(drop=True)
     saved = source.saved[1].reset_index(drop=True)
     index = grid_index(master, saved, source.renames.units)
@@ -858,6 +918,8 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
     marks: dict[str, RowMarks] = {}
     names: dict[str, str] = {}
     tags: dict[str, str] = {}
+    prior = source.changed_memo or {}
+    memo: dict[str, tuple[Sequence[str], Sequence[str], Mapping[int, str]]] = {}
     for row_id, position in index.live.items():
         row = buffer_texts[position]
         values[row_id] = list(row)
@@ -866,7 +928,12 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         saved_position = index.saved.get(row_id)
         if saved_position is not None:
             before = saved_texts[saved_position]
-            changed = {j: before[j] for j in range(len(row)) if row[j] != before[j]}
+            kept = prior.get(row_id)
+            if kept is not None and kept[0] is row and kept[1] is before:
+                changed = dict(kept[2])
+            else:
+                changed = {j: before[j] for j in range(len(row)) if row[j] != before[j]}
+            memo[row_id] = (row, before, dict(changed))
         else:
             tags[row_id] = "new"
         marks[row_id] = RowMarks(changed=changed)
@@ -918,6 +985,7 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         errors=tuple(errors),
         downtime=source.frames[2],
         source=source,
+        changed_memo=memo,
     )
 
 
@@ -1103,6 +1171,71 @@ def grid_data(
         "inserted": [row_id for row_id in inserted if row_id in view.values],
         "open": open_id if open_id is not None and open_id in view.values else None,
     }
+
+
+# 표 마운트 data 가운데 회차마다 바뀌는 작은 칸 — feed 로 간다(`split_grid_data`). 나머지(칸 정의 ·
+# 잠금 · 불러온 줄과 그 글)는 껍데기다.
+GRID_FEED_FIELDS: Final = ("ack", "counts", "moved", "inserted", "open", "clean")
+# feed 에 실을 바뀐 줄 수 상한 — 넘으면 껍데기를 새로 짓는다(feed 가 껍데기만큼 커지지 않게).
+GRID_PATCH_LIMIT: Final = 200
+
+
+def shell_token(shell: Mapping[str, Any]) -> str:
+    """껍데기 지문 — 같은 내용이면 같은 글이다(정렬한 JSON 의 해시). feed 가 제 껍데기를 가른다."""
+    text = json.dumps(shell, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def split_grid_data(
+    data: Mapping[str, Any], previous: Mapping[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """표 마운트 data(`grid_data` + 화면 쪽 칸)를 (껍데기, feed) 로 가른다.
+
+    껍데기는 칸 정의 · 잠금 · 불러온 줄(그 글 · 표지)이고, feed 는 회차마다 바뀌는 작은 칸
+    (`GRID_FEED_FIELDS`)과 **껍데기 뒤 바뀐 줄**(`rows` — 행 id → 줄)이다. 앞 껍데기(`previous`)의
+    줄 밖 칸이 같고 불러온 줄의 id · 차례가 같으면 그 껍데기를 그대로 돌려준다 — 같은 dict 라
+    브라우저가 해시 참조로 받는다(칸 하나를 고친 회차는 feed 만 간다). 바뀐 줄이
+    `GRID_PATCH_LIMIT` 를 넘거나 줄 밖 칸 · 목록이 바뀌면 껍데기를 새로 짓는다(그때 feed 의 줄은
+    비었다). 둘을 다시 이은 것(`join_grid_data`)은 `data` 와 같다."""
+    rows = list(data.get("rows") or [])
+    rest = {key: value for key, value in data.items() if key not in (*GRID_FEED_FIELDS, "rows")}
+    patches: dict[str, Any] = {}
+    shell: dict[str, Any] | None = None
+    if previous is not None and _same_frame(previous, rest, rows):
+        kept = {row["id"]: row for row in previous["rows"]}
+        patches = {row["id"]: row for row in rows if row != kept[row["id"]]}
+        if len(patches) <= GRID_PATCH_LIMIT:
+            shell = dict(previous)
+        else:
+            patches = {}
+    if shell is None:
+        fresh = {**rest, "rows": rows}
+        shell = {**fresh, "shell": shell_token(fresh)}
+    feed: dict[str, Any] = {"shell": shell["shell"], "rows": patches}
+    feed.update({key: data[key] for key in GRID_FEED_FIELDS if key in data})
+    return shell, feed
+
+
+def _same_frame(previous: Mapping[str, Any], rest: Mapping[str, Any], rows: Sequence[Any]) -> bool:
+    """앞 껍데기의 줄 밖 칸이 지금 것과 같고 줄 id 차례가 같은가."""
+    kept = previous.get("rows")
+    if not isinstance(kept, list) or not isinstance(previous.get("shell"), str):
+        return False
+    if {key: value for key, value in previous.items() if key not in ("rows", "shell")} != rest:
+        return False
+    return [row.get("id") for row in kept] == [row.get("id") for row in rows]
+
+
+def join_grid_data(shell: Mapping[str, Any], feed: Mapping[str, Any]) -> dict[str, Any]:
+    """껍데기 + feed → 표 마운트 data(`split_grid_data` 의 거꾸로 — 브라우저 `joinGridData` 와 같은
+    꼴). feed 가 다른 껍데기의 것이면 껍데기만."""
+    joined = {key: value for key, value in shell.items() if key != "shell"}
+    if feed.get("shell") != shell.get("shell"):
+        return joined
+    patches = feed.get("rows") or {}
+    joined["rows"] = [patches.get(row["id"], row) for row in shell.get("rows") or []]
+    joined.update({key: feed[key] for key in GRID_FEED_FIELDS if key in feed})
+    return joined
 
 
 # 불러오기 「조건별」 칸(사용자 R1 — 옛 RawData 표 보기 거르기 13칸).
@@ -2893,11 +3026,15 @@ def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
 
 DELETE_TOAST: Final = "{count:,}대 지울 목록에 넣음"
 DELETE_NEW_TOAST: Final = "새 호기 {count:,}대 뺌"
-# base 가 바뀌는 때는 여럿이다(내 리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) —
-# 서비스는 그 까닭을 모르므로 가르지 않고 적는다.
+# base 가 바뀌어 버린 op 의 글 — 까닭은 화면이 가른다(`apply_ops` 의 `dropped_toast`). 제 「리비전
+# 저장」 직전 편집본에 그린 op 는 버리지 않고 저장본 위에 얹으므로(설비 마스터 탭 제 저장 이음) 그
+# 까닭은 적지 않는다.
 DROPPED_TOAST: Final = (
-    "편집본을 다시 세운 뒤라(리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) 그 "
-    "전에 보낸 고침 {count}건은 반영하지 않았습니다"
+    "편집본을 다시 세운 뒤라(모두 버리기·설비 시나리오 불러오기 등) 그 전에 보낸 고침 "
+    "{count}건은 반영하지 않았습니다"
+)
+FOREIGN_DROPPED_TOAST: Final = (
+    "다른 사용자가 저장해 편집본을 다시 세운 뒤라 그 전에 보낸 고침 {count}건은 반영하지 않았습니다"
 )
 UNDO_EMPTY_TOAST: Final = "되돌릴 고침이 없습니다"
 
@@ -3196,12 +3333,17 @@ OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
 
 def apply_ops(
-    state: GridState, ops: Sequence[Mapping[str, Any]], context: GridContext
+    state: GridState,
+    ops: Sequence[Mapping[str, Any]],
+    context: GridContext,
+    *,
+    dropped_toast: str = DROPPED_TOAST,
 ) -> GridApplied:
     """출납 op 를 차례대로 편집본에 얹는다(`pending_ops` 가 고른 것).
 
     `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 다시 세운 편집본
-    위에 옛 편집을 얹지 않는다(그 수는 결과 글 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
+    위에 옛 편집을 얹지 않는다(그 수는 결과 글 한 줄 — 글은 부르는 쪽이 까닭을 가려
+    `dropped_toast` 로 준다). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
     지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 배치 편집이 잠긴
     회차(`context.layout_lock`)면 이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 탭 제출과 같은 판정으로
     맞춘다(`locked_layout`). 내용이 그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
@@ -3240,7 +3382,7 @@ def apply_ops(
             # 이름을 바꾸면 행 조각을 든 앞 단계는 옛 이름을 지녀 버린다(그 단계까지 함께).
             work.undo = list(after_row_steps(work.undo))
     if work.dropped:
-        dropped = DROPPED_TOAST.format(count=work.dropped)
+        dropped = dropped_toast.format(count=work.dropped)
         work.toast = f"{work.toast} · {dropped}" if work.toast else dropped
     frames: Frames = (work.baseline, work.master, work.downtime)
     changed = any(work.changed) or work.overlay_changed or work.renames_changed

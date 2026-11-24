@@ -278,8 +278,13 @@ def test_css_files_carry_no_comments() -> None:
 
 def test_the_registered_bytes_stay_within_budget() -> None:
     """명세 12장 예산 — 등록 JS(주석 줄 걷은 뒤) ≤ 120 KB, CSS ≤ 24 KB, feed JS ≤ 3 KB. 줄 규칙
-    표의 등록(줄 갈래를 더 실음 — 접속 명단 하나)은 JS ≤ 130 KB 다."""
-    assert len(REGISTERED_JS.encode("utf-8")) <= 120_000
+    표의 등록(줄 갈래를 더 실음 — 접속 명단 하나)은 JS ≤ 130 KB 다. 맨 앞에 잇는 공용 떠나기
+    신호 조각(`edit_grid.leave_js` — AGENTS 9장 「구역 회차 규칙」 R8)은 그리드 몫 120 KB 밖에서
+    2 KB 이하로 따로 센다(줄 규칙 등록은 조각까지 130 KB 안)."""
+    leave = len(edit_grid.leave_js().encode("utf-8"))
+    assert REGISTERED_JS.startswith(edit_grid.leave_js())
+    assert leave <= 2_000
+    assert len(REGISTERED_JS.encode("utf-8")) - leave <= 120_000
     assert len(REGISTERED_CSS.encode("utf-8")) <= 24_000
     assert len(ROWS_JS.encode("utf-8")) <= 130_000
     assert len(ROWS_CSS.encode("utf-8")) <= 24_000

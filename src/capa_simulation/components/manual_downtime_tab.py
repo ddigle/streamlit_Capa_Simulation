@@ -18,8 +18,13 @@
   회차의 화면 탭 점 · 변경 칩 · 테마 · 새로고침 확인이 바로 안다), 본문도 편집표 결과로 다시 접는다.
   편집표는 늘 저장본 위에 초안을 얹어 그린다 — 다른 화면에 다녀와도 칸이 그대로 선다. 초안이 있는
   동안 화면 탭 점 · 이 탭 ③ 점 · 머리 변경 칩(「저장 안 함」 묶음)이 서고, 새로고침 · 탭 닫기 · 테마
-  전환이 묻는다. 화면을 옮겨도 초안은 남으므로 탭 줄 떠나기 확인(`page_tabs.leave_notice`)에는 넣지
-  않는다(설계 규칙 UI-STA-02 — 잃을 것이 없으면 묻지 않는다). 조회기간을 바꿔 보이지 않게 된 칸도
+  전환이 묻는다. 머리 글(변경 칩 「입력 비가동 저장 안 함」 · 화면 탭 점 풍선 「저장하지 않은 입력
+  비가동」)은 칸 수를 싣지 않고 초안이 있나 없나만 말한다(`manual_downtime_draft_pending` —
+  2026-11-20 사용자 결정, 다른 미저장 칩 「설비 편집 저장 안 함」 과 한 꼴). 그래서 머리가 바뀌는
+  것은 첫 칸을 고친 회차와 마지막 칸을 되돌린 회차뿐이다 — 둘째 칸부터의 편집은 머리를 바꾸지
+  않는다. 칸 수는 저장 줄 「되돌리기」 풍선 · 버림 알림처럼 이 탭 안에서만 말한다. 화면을 옮겨도
+  초안은 남으므로 탭 줄 떠나기 확인(`page_tabs.leave_notice`)에는 넣지 않는다(설계 규칙 UI-STA-02 —
+  잃을 것이 없으면 묻지 않는다). 조회기간을 바꿔 보이지 않게 된 칸도
   초안에 남고 저장은 보이는 칸만이다. 「되돌리기」 가 초안을 버린다. 표를 그리지 않는 화면 — 열람
   등급의 읽기 표(개발자의 「이 등급으로 보기」 포함)는 초안을 얹지도 버리지도 않고 점 · 칩도 세지
   않는다(`manual_downtime_draft_count` 가 0). 「넣을 칸이 없습니다」 화면은 초안이 있으면
@@ -60,6 +65,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Final
 
 import pandas as pd
@@ -141,6 +147,7 @@ __all__ = [
     "dropped_text",
     "edited_cells",
     "manual_downtime_draft_count",
+    "manual_downtime_draft_pending",
     "manual_editor_frame",
     "manual_editor_key",
     "manual_tab_processes",
@@ -149,7 +156,7 @@ __all__ = [
 
 MANUAL_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
 # 적은 칸 초안 — (공정, 달) → 값(None = 빈칸), 저장본과 다른 칸만(모듈 docstring). 화면 탭 점 · 변경
-# 칩 · 이 탭 ③ 점이 이것을 센다(`manual_downtime_draft_count`).
+# 칩 · 이 탭 ③ 점은 이것이 있나 없나를 본다(`manual_downtime_draft_pending`).
 MANUAL_DRAFT_KEY: Final = "equipment_manual_downtime_draft_v1"
 MANUAL_DRAFT: Final = SessionSlot(MANUAL_DRAFT_KEY, dict, dict)
 MANUAL_REVERT_KEY: Final = "equipment_manual_downtime_revert"
@@ -226,6 +233,23 @@ MANUAL_NO_CELLS_HELP: Final = (
 )
 
 
+@dataclass(frozen=True)
+class _EditorInputs:
+    """편집 칸(저장 줄 · 알림 칸 · 편집표)이 그리는 데 쓰는 이 화면 입력 — 탭 본문이 회차마다
+    세션 칸(`_EDITOR_INPUTS`)에 적고 편집 칸이 거기서 읽는다. 공정 목록 · 표시명처럼 길이가
+    정해지지 않은 값을 함수 인자로 넘기지 않는다(AGENTS 9장 「구역 회차 규칙」 R3). 저장본
+    (`ManualDowntime`)은 싣지 않고 편집 칸이 캐시로 다시 읽는다."""
+
+    database_path: str
+    snapshot_processes: tuple[str, ...]
+    months: tuple[int, ...]
+    process_labels: ProcessLabels
+    locked_reason: str | None
+
+
+_EDITOR_INPUTS: Final = SessionSlot("equipment_manual_downtime_editor_inputs_v1", _EditorInputs)
+
+
 def manual_editor_key(version: int) -> str:
     """편집표 위젯 key — 표가 출발한 저장본 version 을 든다(모듈 docstring). 바깥 상자 key 는
     `MANUAL_EDITOR_KEY` 그대로다."""
@@ -236,9 +260,7 @@ Cell = tuple[str, int]
 
 
 def manual_downtime_draft_count() -> int:
-    """저장하지 않은 입력 비가동 칸 수(보이지 않게 된 칸 포함). 세션만 읽는다 — 화면 탭 점 · 변경
-    칩 · 이 화면 ③ 탭 점이 페이지보다 먼저 부른다(칸 편집은 그 회차 첫머리 `on_change` 가 이미
-    접었다).
+    """저장하지 않은 입력 비가동 칸 수(보이지 않게 된 칸 포함). 세션만 읽는다.
 
     입력 비가동을 고칠 수 없는 화면 등급(열람 — 개발자의 「이 등급으로 보기」 포함)이면 0 이다 — 그
     등급은 표를 값만 그려 초안을 보이지도 버리지도 못한다. 초안은 지우지 않고 남아, 고칠 수 있는
@@ -247,6 +269,13 @@ def manual_downtime_draft_count() -> int:
     if not draft or not sso_identity.viewer_can("equipment.manual_downtime"):
         return 0
     return len(draft)
+
+
+def manual_downtime_draft_pending() -> bool:
+    """저장하지 않은 입력 비가동이 있는가(`manual_downtime_draft_count` 가 0 이 아닌가). 화면 탭
+    점 · 변경 칩 · 이 화면 ③ 탭 점이 페이지보다 먼저 부른다(칸 편집은 그 회차 첫머리 `on_change` 가
+    이미 접었다) — 머리 글은 칸 수를 싣지 않는다(모듈 docstring)."""
+    return manual_downtime_draft_count() > 0
 
 
 def _hidden_count(draft: Mapping[Cell, object], visible: frozenset[Cell]) -> int:
@@ -372,10 +401,13 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
     알림창으로 알린다 — 남의 저장 위에 옛 초안을 얹어 보이지 않은 칸을 덮지 않게(9장 「본 값과
     보이는 칸」). 그 뒤(또는 초안이 없으면) 그린 저장본의 version 을 본 값으로 적는다.
 
-    초안 칸 수가 바뀌었으면 본 값을 적은 뒤 앱 전체를 한 번 다시 돌린다 — 화면 탭 점 · 변경 칩 ·
-    ③ 탭 점은 페이지보다 먼저 초안 칸 수를 세어(`manual_downtime_draft_count`) 이 회차에는 옛 수로
-    섰다(설비 편집본의 `rerun_if_head_stale` 와 같은 까닭). 담은 알림은 다시 돈 회차의 알림 칸이 한
-    번 그린다. 다시 돈 회차는 본 값이 저장본과 같아 되풀이되지 않는다."""
+    초안이 있다가 없어졌으면 본 값을 적은 뒤 앱 전체를 한 번 다시 돌린다 — 화면 탭 점 · 변경 칩 ·
+    ③ 탭 점은 페이지보다 먼저 초안이 있나를 보아(`manual_downtime_draft_pending`) 이 회차에는 옛
+    표지로 섰다(설비 편집본의 `rerun_if_head_stale` 와 같은 까닭). 머리는 칸 수를 싣지 않으므로
+    칸 수만 준 회차(제 저장이 보이는 칸만 빼고 보이지 않는 칸이 남음)는 다시 돌지 않는다 — 담은
+    성공 알림은 이 회차의 알림 칸(저장 줄 아래, 이 함수 뒤에 그린다)이 바로 그린다. 남의 저장이
+    초안을 모두 버린 회차는 다시 돌아 버림 알림이 다시 돈 회차의 알림 칸에 한 번 선다. 다시 돈
+    회차는 본 값이 저장본과 같아 되풀이되지 않는다."""
     draft = _draft()
     base = seen(MANUAL_BASE_VERSION_KEY)
     if draft and base != profile.version:
@@ -392,7 +424,7 @@ def _settle_draft(profile: ManualDowntime, visible: frozenset[Cell]) -> None:
             )
     if not _draft() or base != profile.version:
         remember_seen(MANUAL_BASE_VERSION_KEY, profile.version)
-    if len(_draft()) != len(draft):
+    if bool(_draft()) != bool(draft):
         st.rerun(scope="app")
 
 
@@ -522,15 +554,17 @@ def render_manual_downtime_tab(
                 key=MANUAL_VIEW_ONLY_KEY,
             )
     else:
-        _render_editor(
-            database_path=database_path,
-            profile=profile,
-            processes=processes,
-            absent=absent,
-            months=ordered_months,
-            process_labels=process_labels,
-            locked_reason=locked_reason,
+        _EDITOR_INPUTS.set(
+            _EditorInputs(
+                database_path=database_path,
+                snapshot_processes=tuple(str(process) for process in snapshot_processes),
+                months=tuple(ordered_months),
+                process_labels=process_labels,
+                locked_reason=locked_reason,
+            )
         )
+        st.html(f"<style>{toolbar_room_css(MANUAL_SAVE_ROW_KEY)}</style>")
+        _render_editor_scope()
     if not tab_is_hidden(owner_tab):
         with grade_ui.toolbar_scope("equipment.export", MANUAL_HISTORY_TOOLS_KEY):
             _render_history(database_path)
@@ -570,6 +604,34 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
     )
 
 
+def _render_editor_scope() -> None:
+    """편집 칸 — 이 회차 입력(`_EDITOR_INPUTS`)과 캐시로 다시 읽은 저장본으로 그린다. 저장 줄
+    서식은 탭 본문이 이 앞에서 싣는다(스타일만 든 `st.html` — 이벤트 칸 한 자리). 저장본을 읽지
+    못하면(탭 본문이 이미 읽은 값이라 캐시가 그 사이 비고 DB 가 막힌 때뿐) 그리지 않는다 — 다음
+    회차의 탭 본문이 오류 표지를 그린다. 그때도 이벤트 칸에는 알림 칸(`render_flash`)과 같은 한
+    자리를 쓴다."""
+    inputs = _EDITOR_INPUTS.peek()
+    profile: ManualDowntime | None = None
+    if inputs is not None:
+        try:
+            profile = load_manual_downtime(inputs.database_path)
+        except BOOTSTRAP_ERRORS:
+            profile = None
+    if inputs is None or profile is None:
+        st.html("<style></style>")
+        return
+    processes, absent = manual_tab_processes(inputs.snapshot_processes, profile)
+    _render_editor(
+        database_path=inputs.database_path,
+        profile=profile,
+        processes=processes,
+        absent=absent,
+        months=inputs.months,
+        process_labels=inputs.process_labels,
+        locked_reason=inputs.locked_reason,
+    )
+
+
 def _render_editor(
     *,
     database_path: str,
@@ -586,7 +648,6 @@ def _render_editor(
     submitted_base = seen(MANUAL_BASE_VERSION_KEY)
     visible = frozenset((process, int(month)) for process in processes for month in months)
     saved = {cell: units for cell, units in profile.cells.items() if cell in visible}
-    st.html(f"<style>{toolbar_room_css(MANUAL_SAVE_ROW_KEY)}</style>")
     # 폼이 두르던 테두리를 그대로 둔다 — 저장 줄 · 알림 칸 · 표가 한 상자다.
     with st.container(border=True):
         # 작업 줄(저장·되돌리기·저장자·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대

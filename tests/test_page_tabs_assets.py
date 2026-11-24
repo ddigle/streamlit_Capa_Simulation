@@ -13,12 +13,15 @@ from typing import Any
 
 from js_runner import run_js_json
 
-from capa_simulation.components import page_tabs
+from capa_simulation.components import grid_shared, page_tabs
 
 ASSETS = page_tabs._ASSETS
 HTML = (ASSETS / "page_tabs.html").read_text(encoding="utf-8")
 CSS = (ASSETS / "page_tabs.css").read_text(encoding="utf-8")
 JS = (ASSETS / "page_tabs.js").read_text(encoding="utf-8")
+# 떠나기 신호 조각 — 등록 글이 탭 줄 JS 앞에 잇는다(`page_tabs.registered_js`).
+LEAVE_JS = grid_shared.leave_js()
+_LEAVE_SECTIONS = ("capa-leave", "capa-leave-window")
 
 
 def test_the_strip_sends_only_one_shot_triggers() -> None:
@@ -377,15 +380,18 @@ def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() ->
     assert "sendSelect(item, opened)" in select and "sendSelect(target, opened)" in select
     settle = JS[JS.index("  function settle() {") :]
     settle = settle[: settle.index("\n  }\n")]
-    assert (
-        "sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)" in settle
-    )
+    assert "const opened = waited !== null && waited.id === next ? waited.opened : null" in settle
+    assert "leaveThen(item, (chosen) => sendSelect(chosen, opened), since)" in settle
     assert settle.index("if (S.queue.flight !== null) {") < settle.index("S.waitOpen = null")
     link = JS[JS.index("S.onLink = (event) => {") :]
     link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
     assert link.index("const opened = S.linkOpened") < link.index("if (event.defaultPrevented")
     assert "gate.hold(() => replayLink(href, opened))" in link
-    assert "if (!why) {\n        if (opened) opened()\n        return\n      }" in link
+    # 상한을 지난 링크 누름은 떠나기 확인을 지난 뒤에만 알린다 — 취소하면 열기 표지를 되돌리고
+    # 부르지 않는다.
+    passed = link[link.index("if (!why) {") : link.index("flash('limit', why)")]
+    assert passed.index("!leaveOk()") < passed.index("S.linkFlight = before")
+    assert passed.index("S.linkFlight = before") < passed.index("if (opened) opened()")
     assert link.index("if (opened) opened()") < link.index("flash('limit', why)")
     replay = JS[JS.index("const replayLink = (href, opened) => {") :]
     replay = replay[: replay.index("\n    }\n")]
@@ -433,11 +439,16 @@ _SECTIONS = (
     "tabs-wip",
     "tabs-focus",
     "tabs-return",
+    "tabs-nav",
 )
 
 
 def _sections() -> str:
     parts = []
+    for name in _LEAVE_SECTIONS:
+        match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", LEAVE_JS, re.S)
+        assert match, f"leave.js 에 // <{name}> 구획이 없습니다"
+        parts.append(match.group("body"))
     for name in _SECTIONS:
         match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
         assert match, f"page_tabs.js 에 // <{name}> 구획이 없습니다"
@@ -780,7 +791,7 @@ def test_the_lost_select_check_watches_the_run_mark_and_resends_without_asking_a
     resend = JS[JS.index("  function resendLost(open) {") :]
     resend = resend[: resend.index("\n  }\n")]
     assert "resendTarget(S.queue, S.data.active, open)" in resend
-    assert "sendSelect(item, opened, lost.leave, target.again)" in resend
+    assert "sendSelect(chosen, opened, lost.leave, target.again), lost.at)" in resend
     watch = JS[JS.index("const appRoot = document.querySelector(APP_ROOT)") :]
     watch = watch[: watch.index("\n  }\n")]
     assert "new MutationObserver(() => markRun(S.run, readRun(), Date.now()))" in watch
@@ -864,9 +875,10 @@ def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
     """다른 탭 고르기와 지금 탭 × 는 묻기(`leaveOk`) 전에 편집표에서 막 손을 뗀 누름인지
     본다. 누르는 순간의 편집표 포커스는 `pointerdown`(포커스가 탭으로 옮기기 전)에서 적는다."""
     select = JS[JS.index("const select = (item, opened = null) => {") :]
-    assert select.index("if (fresh())") < select.index("holding(item")
+    assert select.index("const pending = leaving()") < select.index("if (fresh() && !pending)")
+    assert select.index("if (fresh() && !pending)") < select.index("holding(item")
     close = JS[JS.index("const close = (item) => {") :]
-    assert close.index("!fresh()") < close.index("closeNow(item)")
+    assert close.index("leaving()") < close.index("!fresh()") < close.index("closeNow(item)")
     assert "S.pressFromGrid = S.gridFocused" in JS
     assert "document.addEventListener(type, S.onEdit, true)" in JS
     assert "document.removeEventListener(type, S.onEdit, true)" in JS
@@ -1614,7 +1626,7 @@ def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves
     # 돌려줄지 본다.
     assert "if (event.detail === 0) S.keyPressAt = Date.now()" in JS
     settle = JS[JS.index("function settle() {") : JS.index("const appRunning = () => {")]
-    assert "else restoreFocus()" in settle
+    assert "if (!item) {\n      restoreFocus()\n      return\n    }" in settle
     # 회차가 아직 돌면(`MOVED_GRACE_MS` 로 기다리던 누름을 먼저 보냈을 수 있다) 다 설 때까지
     # 다시 본다.
     restore = JS[JS.index("function restoreFocus() {") :]
@@ -1724,7 +1736,8 @@ def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
     (`S.hold` — `release` 가 `holdVerdict` 로 놓는다)에 싣는다."""
     gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
     assert "press: () => { S.pressFromGrid = S.gridFocused }" in gate
-    assert gate.index("if (fresh())") < gate.index("S.hold = { id: null")
+    assert gate.index("const pending = leaving()") < gate.index("if (fresh() && !pending)")
+    assert gate.index("if (fresh() && !pending)") < gate.index("S.hold = { id: null")
     assert "release()" in gate
     assert "if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate" in JS
     # 붙든 테마 누름은 탭이 아니다 — 놓을 때 탭 표지를 건드리지 않고 부른 쪽을 잇는다.
@@ -1836,6 +1849,502 @@ def test_the_unload_guard_reads_the_theme_button_marker_and_is_installed_by_the_
     assert "beforeunload" not in cleanup
 
 
+_NAV_VERDICT_RUNNER = """
+const out = {}
+const base = {
+  type: 'traverse', cancelable: true, sameDocument: true,
+  from: 'http://app.test/b', to: 'http://app.test/', key: 'k1', delta: -1,
+}
+const g = createNavGuard()
+out.push = navVerdict(g, { ...base, type: 'push' }, 0, 1000)
+out.replace = navVerdict(g, { ...base, type: 'replace' }, 0, 1000)
+out.reload = navVerdict(g, { ...base, type: 'reload' }, 0, 1000)
+out.uncancelable = navVerdict(g, { ...base, cancelable: false }, 0, 1000)
+out.crossDocument = navVerdict(g, { ...base, sameDocument: false }, 0, 1000)
+const site = 'http://app.test'
+const at = (from, to) => navVerdict(g, { ...base, from: site + from, to: site + to }, 0, 1000)
+out.hashOnly = at('/b#x', '/b#y')
+out.hashBack = at('/b#x', '/b')
+out.hashOtherSearch = at('/b?p=1', '/b#y')
+out.otherSearch = at('/b?process=x', '/b')
+out.sameUrl = at('/b', '/b')
+out.badUrl = navHashOnly('not a url', '#x')
+out.traverse = navVerdict(g, base, 0, 1000)
+
+const h = createNavGuard()
+out.idle = [navHeld(h, base, 0, false, navToken(h)), h.held]
+const t1 = navToken(h)
+out.hold = [navHeld(h, base, 10, true, t1), h.held]
+// 붙든 동안 또 온 뒤로도 붙들기에 다시 묻고, 목적지는 마지막 것 하나다.
+out.whileHeld = navVerdict(h, { ...base, key: 'k0' }, 20, 1000)
+const t2 = navToken(h)
+out.retarget = [
+  navHeld(h, { ...base, key: 'k0', delta: -2 }, 20, true, t2),
+  h.held.key, h.held.delta, h.held.token === t2,
+]
+out.staleRelease = [navRelease(h, t1), h.held !== null]
+out.release = navRelease(h, t2)
+out.releaseTwice = [navRelease(h, t2), h.held]
+// 다시 붙들 때 붙들 것이 없으면 기다리던 다시 가기를 걷는다.
+const t3 = navToken(h)
+navHeld(h, base, 30, true, t3)
+out.idleAgain = [navHeld(h, base, 40, false, navToken(h)), h.held, navRelease(h, t3)]
+
+// 다시 쏜 이동의 표지 — 목적지가 맞으면 걷고 지나 보낸다. 같은 칸으로 가는 다음 뒤로는 다시 묻는다.
+navMark(h, 'k0', 100)
+out.replay = [navVerdict(h, { ...base, key: 'k0' }, 150, 1000), h.replay]
+out.nextBack = navVerdict(h, { ...base, key: 'k0' }, 160, 1000)
+const mark = navMark(h, 'k0', 200)
+out.otherKey = [navVerdict(h, { ...base, key: 'k9' }, 210, 1000), h.replay !== null]
+// 걷기는 그 다시 가기의 표지일 때만 — 같은 key 의 다른 몫(앞 다시 가기)은 지금 표지를 걷지 않는다.
+navUnmark(h, { key: 'k0', at: 100 })
+out.unmarkOther = h.replay !== null
+navUnmark(h, mark)
+out.unmark = h.replay
+navMark(h, 'k0', 300)
+out.expired = [navVerdict(h, { ...base, key: 'k0' }, 1300, 1000), h.replay]
+navMark(h, 'k0', 400)
+const ourPush = { ...base, type: 'push', key: 'k0' }
+out.pushKeepsMark = [navVerdict(h, ourPush, 410, 1000), h.replay !== null]
+const ourUncancelable = { ...base, key: 'k0', cancelable: false }
+out.uncancelableOurs = [navVerdict(h, ourUncancelable, 420, 1000), h.replay]
+navMark(h, 'k0', 500)
+const ourHash = { ...base, key: 'k0', from: 'http://app.test/#a', to: 'http://app.test/#b' }
+out.hashOurs = [navVerdict(h, ourHash, 510, 1000), h.replay]
+navMark(h, '', 600)
+out.emptyKey = navVerdict(h, { ...base, key: '' }, 610, 1000)
+// 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다.
+const t4 = navToken(h)
+navHeld(h, base, 700, true, t4)
+out.uncancelableClears = [
+  navVerdict(h, { ...base, cancelable: false }, 710, 1000), h.held, navRelease(h, t4),
+]
+
+const event = {
+  navigationType: 'traverse', cancelable: true,
+  destination: { url: 'http://app.test/', key: 'k1', index: 2, sameDocument: true },
+}
+out.facts = navFacts(event, { index: 3 }, 'http://app.test/b')
+const ahead = { ...event, destination: { ...event.destination, index: 4 } }
+out.forward = navFacts(ahead, { index: 3 }, 'x').delta
+out.bare = navFacts({ navigationType: 'push', destination: { url: 'http://app.test/c' } }, null, '')
+out.empty = navFacts({}, undefined, undefined)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_back_guard_verdict_holds_only_same_document_cancelable_traverses() -> None:
+    """브라우저 뒤로 · 앞으로 판정(`<tabs-nav>`). Streamlit 1.63 은 `popstate` 를 받자마자 앱 칸
+    값만 실은 이동 요청을 보내 popstate 로는 막지 못한다 — 그보다 먼저 오는 Navigation API
+    `navigate` 의 같은 문서 `traverse` 만 손댄다. traverse 가 아님 · 막을 수 없음 · 다른 문서 ·
+    같은 화면의 해시만 다름은 지나 보내고(조회 인자가 다르면 Streamlit 이 화면을 다시 돌려 붙든다),
+    우리가 다시 쏜
+    이동(표지 + 목적지 key)은 표지를 걷고 지나 보낸다. 표지는 목적지가 맞는 사건이면 어느 갈래든,
+    상한이 지나도 걷힌다 — 같은 칸으로 가는 다음 뒤로를 놓치지 않는다. 붙들 것이 없으면 지나
+    보내고(지연 0), 붙든 동안 또 온 뒤로는 다시 묻고 마지막 목적지 하나만 남긴다 — 낡은 붙들기가
+    놓여도 아무것도 하지 않는다. 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다."""
+    out = _node(_NAV_VERDICT_RUNNER)
+
+    passes = ("push", "replace", "reload", "uncancelable", "crossDocument", "hashOnly", "hashBack")
+    for name in passes:
+        assert out[name] == "pass", name
+    for name in ("hashOtherSearch", "otherSearch", "sameUrl", "traverse"):
+        assert out[name] == "try", name
+    assert out["badUrl"] is False
+    assert out["idle"] == ["pass", None]
+    assert out["hold"] == ["hold", {"key": "k1", "delta": -1, "at": 10, "token": 2}]
+    assert out["whileHeld"] == "try"
+    assert out["retarget"] == ["retarget", "k0", -2, True]
+    assert out["staleRelease"] == [None, True]
+    assert out["release"] == {"key": "k0", "delta": -2, "at": 20, "token": 3}
+    assert out["releaseTwice"] == [None, None]
+    assert out["idleAgain"] == ["pass", None, None]
+    assert out["replay"] == ["replay-pass", None]
+    assert out["nextBack"] == "try"
+    assert out["otherKey"] == ["try", True]
+    assert out["unmarkOther"] is True
+    assert out["unmark"] is None
+    assert out["expired"] == ["try", None]
+    assert out["pushKeepsMark"] == ["pass", True]
+    assert out["uncancelableOurs"] == ["pass", None]
+    assert out["hashOurs"] == ["pass", None]
+    assert out["emptyKey"] == "try"
+    assert out["uncancelableClears"] == ["pass", None, None]
+    assert out["facts"] == {
+        "type": "traverse",
+        "cancelable": True,
+        "sameDocument": True,
+        "from": "http://app.test/b",
+        "to": "http://app.test/",
+        "key": "k1",
+        "delta": -1,
+    }
+    assert out["forward"] == 1
+    assert out["bare"] == {
+        "type": "push",
+        "cancelable": False,
+        "sameDocument": False,
+        "from": "",
+        "to": "http://app.test/c",
+        "key": "",
+        "delta": 0,
+    }
+    assert out["empty"]["type"] == "" and out["empty"]["delta"] == 0
+
+
+_NAV_INSTALL_RUNNER = """
+;(async () => {
+  let now = 1000
+  Date.now = () => now
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) await Promise.resolve()
+  }
+  const timers = []
+  const runTimers = () => {
+    for (const fn of timers.splice(0)) fn()
+  }
+  const log = []
+  const handlers = []
+  let mode = 'ok'
+  const failure = (name) => {
+    const error = new Error(name)
+    error.name = name
+    return error
+  }
+  const rejected = (name) => {
+    const committed = Promise.reject(failure(name))
+    const finished = Promise.reject(failure(name))
+    return { committed, finished }
+  }
+  const navigation = {
+    currentEntry: { index: 3 },
+    addEventListener(type, fn) { handlers.push([type, fn]) },
+    traverseTo(key) {
+      log.push('traverseTo:' + key)
+      if (mode === 'throw') throw failure('InvalidStateError')
+      if (mode === 'reject') return rejected('InvalidStateError')
+      if (mode === 'abort') return rejected('AbortError')
+      if (mode === 'pending') {
+        return { committed: new Promise(() => {}), finished: new Promise(() => {}) }
+      }
+      if (mode === 'committed') {
+        return { committed: Promise.resolve(), finished: new Promise(() => {}) }
+      }
+      return { committed: Promise.resolve(), finished: Promise.resolve() }
+    },
+  }
+  const editor = { blur() { log.push('blur') } }
+  const host = { shadowRoot: { activeElement: editor } }
+  const body = {}
+  const document = { body, activeElement: body }
+  // glide 칸 편집기(틀 `.gdg-clip-region` 안 입력)와 격자 — 바깥 누름을 받으면 glide 처럼
+  // 격자로 초점을 돌린다.
+  const canvas = { blur() { log.push('blur:canvas'); document.activeElement = body } }
+  const glideInput = {
+    closest(selector) { return selector === '.gdg-clip-region' ? {} : null },
+    blur() { log.push('blur:input') },
+  }
+  body.dispatchEvent = (e) => {
+    log.push(['press', e.kind, e.type, e.bubbles, e.composed].join(':'))
+    if (document.activeElement === glideInput) document.activeElement = canvas
+    return true
+  }
+  const gate = {
+    answer: false, loss: false, okay: true, fns: [],
+    hold(fn) { log.push('hold'); this.fns.push(fn); return this.answer },
+    ask() { log.push('ask'); return this.okay },
+    loses() { return this.loss },
+    inGrid(node) { return node === host || node === glideInput || node === canvas },
+    blurred(typed) { log.push('blurred:' + typed) },
+  }
+  const last = () => gate.fns[gate.fns.length - 1]
+  const win = {
+    navigation, document, location: { href: 'http://app.test/b' },
+    history: { go(delta) { log.push('go:' + delta) } },
+    setTimeout(fn) { timers.push(fn); return timers.length },
+    __capaLeaveGate: gate,
+  }
+  const event = (destination = {}, over = {}) => {
+    const e = {
+      navigationType: 'traverse', cancelable: true, prevented: false,
+      destination: {
+        url: 'http://app.test/', key: 'k2', index: 2, sameDocument: true, ...destination,
+      },
+      ...over,
+    }
+    e.preventDefault = () => { e.prevented = true }
+    return e
+  }
+  const fire = (e) => {
+    for (const [type, fn] of handlers) if (type === 'navigate') fn(e)
+    return e.prevented
+  }
+  const step = (fn) => {
+    log.length = 0
+    return fn()
+  }
+  const out = {}
+
+  const bare = {}
+  installNavGuard(bare)
+  out.noApi = bare.__capaNavGuard === undefined
+  installNavGuard(win)
+  installNavGuard(win)
+  out.listeners = handlers.map(([type]) => type)
+  const guard = win.__capaNavGuard
+
+  // 쉬는 편집기 — 붙들기가 기다릴 것이 없으면 막지 않는다(지연 0).
+  out.idle = step(() => [fire(event()), log.slice(), guard.held])
+  // traverse 가 아님 · 해시만 다름 · 다른 문서 · 목적지 없음은 붙들기에 묻지 않는다.
+  out.passes = step(() => [
+    fire(event({}, { navigationType: 'push' })),
+    fire(event({ url: 'http://app.test/b#x' })),
+    fire(event({ url: 'http://other.test/', sameDocument: false })),
+    fire({
+      navigationType: 'traverse', cancelable: true, prevented: false,
+      preventDefault() { this.prevented = true },
+    }),
+    log.slice(),
+  ])
+  // 칸에 쓰는 중 — 깊은 활성 요소를 blur 한 뒤 붙들기에 묻고, 붙들었으면 막는다.
+  document.activeElement = host
+  gate.answer = true
+  out.held = step(() => [fire(event()), log.slice(), guard.held.key, guard.held.delta])
+  // 붙든 동안 또 뒤로 — 다시 묻고 목적지는 마지막 것, 낡은 붙들기가 놓여도 아무것도 하지 않는다.
+  document.activeElement = body
+  const older = () => event({ url: 'http://app.test/x', key: 'k1', index: 1 })
+  out.again = step(() => [fire(older()), log.slice(), guard.held.key])
+  out.stale = step(() => {
+    gate.fns[gate.fns.length - 2]()
+    return [log.slice(), guard.held !== null]
+  })
+  // 놓이면 탭 줄과 같은 확인을 지나 표지를 달고 같은 목적지로 다시 간다.
+  out.replayed = step(() => {
+    last()()
+    return [log.slice(), guard.replay && guard.replay.key, guard.held]
+  })
+  // 다시 쏜 이동은 붙들기에 묻지 않고 지나 보내며 표지를 걷는다.
+  out.replayPass = step(() => [fire(older()), log.slice(), guard.replay])
+  await flush()
+  // 같은 칸으로 가는 다음 뒤로는 다시 붙든다.
+  out.nextBack = step(() => [fire(older()), log.slice()])
+  // 확인을 취소하면 다시 가지 않는다 — 이미 막았으니 주소 · 본문 그대로다.
+  gate.okay = false
+  out.cancelled = step(() => {
+    last()()
+    return [log.slice(), guard.replay, guard.held]
+  })
+  gate.okay = true
+  // 붙든 동안 막을 수 없는 이동이 지나가면 기다리던 다시 가기를 걷는다.
+  fire(event())
+  out.uncancelable = step(() => [fire(event({}, { cancelable: false })), log.slice(), guard.held])
+  out.afterUncancelable = step(() => {
+    last()()
+    return log.slice()
+  })
+  // 기다릴 것은 없어도 떠나면 사라지는 편집이 있으면 막고 곧바로 놓아 묻는다.
+  gate.answer = false
+  gate.loss = true
+  timers.length = 0
+  out.loses = step(() => [fire(event()), log.slice(), timers.length])
+  out.losesReleased = step(() => {
+    runTimers()
+    return [log.slice(), guard.replay && guard.replay.key]
+  })
+  out.losesReplay = step(() => [fire(event()), log.slice(), guard.replay])
+  await flush()
+  gate.loss = false
+  gate.answer = true
+  // 다시 가기가 거절되면 표지를 걷고 history.go 로 한 번 — 던져도 같다.
+  mode = 'reject'
+  fire(event())
+  out.rejected = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  mode = 'throw'
+  fire(event())
+  out.thrown = step(() => {
+    last()()
+    return [log.slice(), guard.replay]
+  })
+  // 칸 차이를 모르는 사건(목적지 칸 번호 없음 — delta 0)은 다시 가기가 거절되거나 던져도
+  // history.go 를 부르지 않는다 — go(0) 은 새로고침이라 지키려던 편집과 그 접속의 편집이
+  // 모두 사라진다.
+  mode = 'reject'
+  fire(event({ index: undefined }))
+  out.rejectedNoDelta = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  mode = 'throw'
+  fire(event({ index: undefined }))
+  out.thrownNoDelta = step(() => {
+    last()()
+    return [log.slice(), guard.replay]
+  })
+  // 다른 이동이 끊은 다시 가기는 그 이동에 맡긴다.
+  mode = 'abort'
+  fire(event())
+  out.aborted = await (async () => {
+    log.length = 0
+    last()()
+    await flush()
+    return [log.slice(), guard.replay]
+  })()
+  // 다시 간 이동의 committed 만 이루어져도(그 사건 · 상한 타이머 없이) 표지를 걷는다.
+  mode = 'committed'
+  fire(event())
+  timers.length = 0
+  last()()
+  const committedMark = guard.replay && guard.replay.key
+  await flush()
+  out.committedOnly = [committedMark, guard.replay, timers.length]
+  // 약속이 끝나지 않아도 표지는 상한에 걷힌다.
+  mode = 'pending'
+  fire(event())
+  timers.length = 0
+  last()()
+  out.pendingMark = [guard.replay && guard.replay.key, timers.length]
+  // 다시 간 이동이 닿은 뒤 같은 칸으로 또 붙들어 다시 가도 앞 다시 가기의 상한 타이머는
+  // 새 표지를 걷지 않는다.
+  fire(event())
+  fire(event())
+  last()()
+  timers.shift()()
+  out.olderTimer = [guard.replay && guard.replay.key, timers.length]
+  runTimers()
+  out.pendingCleared = guard.replay
+  mode = 'ok'
+  // glide 칸 편집기에 쓰는 중 — blur 로는 확정하지 않으니 body 에 바깥 누름(문서 capture
+  // 단계 pointerdown)을 보내 확정시키고, glide 가 돌린 격자 초점도 뺀 뒤 쓰는 중이었다고
+  // 알리고 붙들기에 묻는다.
+  win.PointerEvent = class {
+    constructor(type, init) { Object.assign(this, init, { type, kind: 'pointer' }) }
+  }
+  win.Event = class {
+    constructor(type, init) { Object.assign(this, init, { type, kind: 'event' }) }
+  }
+  document.activeElement = glideInput
+  out.glide = step(() => [fire(event()), log.slice(), document.activeElement === body])
+  fire(event({}, { cancelable: false }))
+  // PointerEvent 가 없으면 Event 로 같은 사건을 보낸다.
+  delete win.PointerEvent
+  document.activeElement = glideInput
+  out.glideEvent = step(() => [fire(event()), log.slice()])
+  fire(event({}, { cancelable: false }))
+  // 격자에만 초점(열린 칸 편집기 없음)이면 바깥 누름 없이 blur 만 — 쓰는 중이 아니다.
+  document.activeElement = canvas
+  out.gridOnly = step(() => [fire(event()), log.slice()])
+  fire(event({}, { cancelable: false }))
+  document.activeElement = body
+  // 붙들기가 던지면 지나 보낸다.
+  const hold = gate.hold
+  gate.hold = () => { throw new Error('boom') }
+  out.thrownHold = step(() => [fire(event()), guard.held])
+  gate.hold = hold
+  // 탭 줄이 내려가 붙들기가 없으면 지나 보낸다.
+  delete win.__capaLeaveGate
+  out.noGate = step(() => [fire(event()), log.slice(), guard.held])
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_the_back_guard_holds_through_the_strip_gate_and_goes_again_to_the_last_target() -> None:
+    """뒤로 · 앞으로 지킴이(`<tabs-nav-install>`)를 창 대역으로 돌린다. Navigation API 가 없으면
+    걸지 않고, 문서에 한 번만 건다. 깊은 활성 요소가 편집표 안이면 blur 한 뒤(칸이 제 focusout
+    길로 확정) 탭 줄 붙들기(`__capaLeaveGate.hold`)에 묻고 붙들었을 때만 막는다 — 쉬는 편집기는
+    지연이 없다. 기다릴 것이 없어도 떠나면 사라지는 편집이 있으면 막고 곧바로 놓아 묻는다. 놓이면
+    탭 줄과 같은 확인(`ask`)을 지나 표지를 달고 같은 목적지로 다시 가고(`traverseTo`), 취소면 아무
+    것도 하지 않는다. 붙든 동안 또 온 뒤로는 마지막 목적지 하나로 한 번만 가고, 막을 수 없는 이동은
+    기다리던 다시 가기를 걷는다. 다시 가기가 거절되면 history.go 로 한 번, 다른 이동이 끊었으면
+    맡긴다. 표지는 다시 간 이동이 닿거나 약속이 끝나거나 상한에 걷힌다 — 앞 다시 가기의 상한
+    타이머는 같은 칸으로 다시 간 새 표지를 걷지 않는다."""
+    sections = []
+    for name in ("tabs-nav", "tabs-nav-install"):
+        match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
+        assert match, f"page_tabs.js 에 // <{name}> 구획이 없습니다"
+        sections.append(match.group("body"))
+
+    out = _node(_NAV_INSTALL_RUNNER, prelude="\n".join(sections))
+
+    assert out["noApi"] is True
+    assert out["listeners"] == ["navigate"]
+    assert out["idle"] == [False, ["hold"], None]
+    assert out["passes"] == [False, False, False, False, []]
+    assert out["held"] == [True, ["blur", "blurred:false", "hold"], "k2", -1]
+    assert out["again"] == [True, ["hold"], "k1"]
+    assert out["stale"] == [[], True]
+    assert out["replayed"] == [["ask", "traverseTo:k1"], "k1", None]
+    assert out["replayPass"] == [False, [], None]
+    assert out["nextBack"] == [True, ["hold"]]
+    assert out["cancelled"] == [["ask"], None, None]
+    assert out["uncancelable"] == [False, [], None]
+    assert out["afterUncancelable"] == []
+    assert out["loses"] == [True, ["hold"], 1]
+    assert out["losesReleased"] == [["ask", "traverseTo:k2"], "k2"]
+    assert out["losesReplay"] == [False, [], None]
+    assert out["rejected"] == [["ask", "traverseTo:k2", "go:-1"], None]
+    assert out["thrown"] == [["ask", "traverseTo:k2", "go:-1"], None]
+    assert out["rejectedNoDelta"] == [["ask", "traverseTo:k2"], None]
+    assert out["thrownNoDelta"] == [["ask", "traverseTo:k2"], None]
+    assert out["committedOnly"] == ["k2", None, 1]
+    assert out["aborted"] == [["ask", "traverseTo:k2"], None]
+    assert out["pendingMark"] == ["k2", 1]
+    assert out["olderTimer"] == ["k2", 1]
+    assert out["pendingCleared"] is None
+    press = "press:pointer:pointerdown:true:true"
+    assert out["glide"] == [True, [press, "blur:canvas", "blurred:true", "hold"], True]
+    assert out["glideEvent"] == [
+        True,
+        ["press:event:pointerdown:true:true", "blur:canvas", "blurred:true", "hold"],
+    ]
+    assert out["gridOnly"] == [True, ["blur:canvas", "blurred:false", "hold"]]
+    assert out["thrownHold"] == [False, None]
+    assert out["noGate"] == [False, [], None]
+
+
+def test_the_back_guard_is_a_navigate_listener_on_the_strip_gate_not_a_popstate_one() -> None:
+    """뒤로 · 앞으로는 popstate 로 막지 않는다 — 캡처 단계 popstate 처리기는 Streamlit 이 이미 이동
+    요청을 보낸 뒤라 못 막고, 다시 쏜 PopStateEvent 는 주소와 본문을 어긋나게 한다. 탭 줄이 그릴 때
+    `navigate` 지킴이를 문서에 한 번 걸고(걸고 풀지 않는다 — 붙들기는 사건 때의 `__capaLeaveGate`
+    를 읽는다), 붙들기 · 확인 · 편집표 판정은 탭 줄 붙들기와 같은 함수다(새 길을 만들지 않는다).
+    머리 설명은 지금 동작(Navigation API 가 있으면 붙듦, 없거나 막을 수 없으면 지나 보냄)을
+    말한다."""
+    assert "'popstate'" not in JS and "PopStateEvent" not in JS
+    install = re.search(r"// <tabs-nav-install>\n(?P<body>.*?)\n// </tabs-nav-install>", JS, re.S)
+    assert install is not None
+    block = install.group("body")
+    assert "navigation.addEventListener('navigate'," in block
+    assert "const navigation = win.navigation" in block
+    assert "win.__capaLeaveGate" in block and "gate.hold(release(token))" in block
+    assert block.index("blurEditor(gate)") < block.index("gate.hold(release(token))")
+    assert "navigation.traverseTo(held.key)" in block and "win.history.go(held.delta)" in block
+    assert "event.preventDefault()" in block
+    body = JS[JS.index("export default function (component) {") :]
+    assert body.count("installNavGuard(window)") == 1
+    cleanup = body[body.rindex("  return () => {") :]
+    assert "installNavGuard" not in cleanup and "navigate" not in cleanup
+    gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
+    assert "ask: () => navLeaveAsked(S.queue.flight, S.data && S.data.leave) || leaveOk()," in gate
+    loses = "loses: () => Boolean(S.data && S.data.leave) && !navLeaveAsked("
+    assert loses + "S.queue.flight, S.data.leave)," in gate
+    assert "node.closest(S.gridSelector)" in gate
+    assert "blurred: (typed) => {" in gate
+    order = [
+        block.index(part) for part in ("pressOutside(doc)", "active.blur()", "gate.blurred(typed)")
+    ]
+    assert order == sorted(order)
+    assert "const NAV_GLIDE_EDITOR = '.gdg-clip-region'" in block
+    head = JS[: JS.index("const ICON_FONT")]
+    assert "막지 못한다 —" not in head and "Navigation API" in head and "`navigate`" in head
+
+
 _GATE_RUNNER = """
 (() => {
   // 시계·타이머 대역 — `advance(t)` 가 t 까지 걸린 타이머를 차례로 부른다.
@@ -1865,8 +2374,19 @@ _GATE_RUNNER = """
     const setAttr = (element, name, value) => { if (element) element[name] = value }
     const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
     const sendSelect = (item) => log.push('tab:' + item.dataset.id)
+    // 떠나기 확인(탭 줄과 같은 `leaveOk`)과 닫기가 부르는 것의 대역.
+    const leaveOk = () => {
+      if (!S.data.leave) return true
+      log.push('confirm')
+      return S.okay !== false
+    }
+    const nav = { getRootNode: () => ({ activeElement: null }) }
+    const list = { children: [] }
+    const syncControls = () => {}
+    const claimDrawn = () => ({})
+    const moving = () => log.push('moving')
     %(slice)s
-    return { gate, select }
+    return { gate, select, close }
   }
   const strip = (log) => {
     const parts = { tab: {}, close: { hidden: false } }
@@ -1874,6 +2394,8 @@ _GATE_RUNNER = """
     const S = {
       items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
       editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+      run: createRunMark(false), gridSelector: 'GRID',
+      send: (type, payload) => log.push(type + ':' + payload.id),
     }
     return { S, tab, ...mount(S, log) }
   }
@@ -1963,6 +2485,56 @@ _GATE_RUNNER = """
   scriptState = 'notRunning'
   out.backTab = [log.slice(), T.S.hold, T.tab.__parts.tab['aria-busy'] || null]
   window.location.pathname = '/list'
+
+  // 브라우저 뒤로 · 앞으로가 쓰는 판정 — 떠나기 확인(`ask`) · 떠나면 사라지는 편집(`loses`) ·
+  // 편집표 안(`inGrid`).
+  timers.length = 0; now = 60000; log = []; T = strip(log)
+  const inside = { closest: (selector) => (selector === 'GRID' ? {} : null) }
+  out.navClean = [T.gate.ask(), T.gate.loses(), log.slice()]
+  T.S.data = { active: 'a', leave: '설비 마스터 · 비가동 일정' }
+  out.navLeave = [T.gate.loses(), T.gate.ask(), log.slice()]
+  // 날아가는 고르기가 같은 떠나기 글을 이미 물어 지나왔으면 다시 묻지 않는다.
+  log.length = 0
+  T.S.queue.flight = { id: 'b', at: now, leave: '설비 마스터 · 비가동 일정' }
+  out.navFlight = [T.gate.loses(), T.gate.ask(), log.slice()]
+  // 떠나기 글이 그 뒤 바뀌었으면 묻는다.
+  T.S.data = { active: 'a', leave: '설비 마스터 · 기존 보유대수' }
+  out.navFlightChanged = [T.gate.loses(), T.gate.ask(), log.slice()]
+  T.S.queue.flight = null
+  out.navGrid = [T.gate.inGrid(inside), T.gate.inGrid(null), T.gate.inGrid({})]
+  // 코드 blur 뒤 — 초점 표지를 지금 활성 요소로 다시 맞추고, 칸 편집기를 닫았으면 쓰는 중에
+  // 누른 것으로 적는다.
+  T.S.data = { active: 'a' }
+  T.S.gridFocused = true
+  document.activeElement = {}
+  T.gate.blurred(false)
+  out.navBlurred = [T.S.gridFocused, T.S.pressFromGrid]
+  document.activeElement = inside
+  T.gate.blurred(false)
+  out.navStillInside = [T.S.gridFocused, T.S.pressFromGrid]
+  document.activeElement = {}
+  T.gate.blurred(true)
+  out.navTyped = [T.S.gridFocused, T.S.pressFromGrid]
+  // 칸 입력 창(`EDIT_MS`)을 넘겨 쓰던 글이어도 붙든다.
+  log.length = 0
+  out.navTypedHeld = T.gate.hold(theme(log))
+  advance(60500)
+  out.navTypedLater = log.slice()
+  delete document.activeElement
+
+  // 붙든 사이 지금 탭이 아닌 탭을 닫아도 붙든 누름은 남는다 — 닫기는 화면을 떠나지 않는다.
+  timers.length = 0; now = 70000; log = []; T = strip(log)
+  T.S.editAt = now
+  out.closeHeld = T.gate.hold(theme(log))
+  const other = {
+    dataset: { id: 'c' }, hidden: false, __parts: { tab: {}, close: { hidden: false } },
+  }
+  T.S.items.set('c', other)
+  T.close(other)
+  out.closeOther = [log.slice(), T.S.hold !== null, other.hidden]
+  T.S.data = { active: 'a' }
+  advance(70500)
+  out.closeOtherLater = [log.slice(), T.S.hold]
   process.stdout.write(JSON.stringify(out))
 })()
 """
@@ -1975,7 +2547,7 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     누름은 버려지고 탭 누름만 잇는다."""
     lines = [
         re.search(rf"^const {name} = .+$", JS, re.M)
-        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
     ]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
     assert len(constants.splitlines()) == len(lines)
@@ -2001,6 +2573,19 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     assert out["backTheme"] == [[], None]
     assert out["backTabBusy"] == "true"
     assert out["backTab"] == [[], None, None]
+    assert out["navClean"] == [True, False, []]
+    assert out["navLeave"] == [True, True, ["confirm"]]
+    assert out["navFlight"] == [False, True, []]
+    assert out["navFlightChanged"] == [True, True, ["confirm"]]
+    assert out["navGrid"] == [True, False, False]
+    assert out["navBlurred"] == [False, False]
+    assert out["navStillInside"] == [True, False]
+    assert out["navTyped"] == [False, True]
+    assert out["navTypedHeld"] is True
+    assert out["navTypedLater"] == ["theme"]
+    assert out["closeHeld"] is True
+    assert out["closeOther"] == [["close:c"], True, True]
+    assert out["closeOtherLater"] == [["close:c", "theme"], None]
 
 
 def test_a_sidebar_link_press_right_after_a_table_edit_waits_for_its_run() -> None:
@@ -2032,17 +2617,20 @@ def test_the_equipment_master_grid_and_its_side_panels_count_as_edit_tables() ->
     · 생산 계획 범용 편집 그리드의 호스트 key, 시나리오 목록 표 셋이다 — 그 모듈의 key 를 바꾸면 이
     묶음도 같이 바뀌어야 한다(`page_tabs` 는 읽을 때 컴포넌트를 등록하는 그 모듈을 불러오지 않는다).
     탭 줄 data 의 `grids` 로 실려 JS 가 그릴 때마다 선택자를 다시 짓는다."""
+    from capa_simulation.components import access_list_grid
     from capa_simulation.components import equipment_master_grid as emg
     from capa_simulation.components.scenario_list_state import MOUNT_KEYS
     from capa_simulation.page_tabs_state import INITIAL_STRIP
     from capa_simulation.plan_grid_keys import HOSTS
     from capa_simulation.reference_grid_keys import GRID_HOST
 
+    assert page_tabs.ACCESS_LIST_GRID_HOST == access_list_grid.HOST
     assert set(page_tabs.EDIT_HOST_KEYS) == {
         emg.GRID_KEY,
         *(emg.side_key(panel) for panel in emg.SIDE_PANELS),
         GRID_HOST,
         *HOSTS.values(),
+        access_list_grid.HOST,
         *MOUNT_KEYS,
     }
     assert emg.LOADER_KEY not in page_tabs.EDIT_HOST_KEYS
@@ -2118,7 +2706,7 @@ _EDIT_HOST_RUNNER = """
     const S = {
       items: new Map(), queue: createSelectQueue(), data: { active: 'a', grids },
       editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
-      gridSelector: gridSelector(GRID, grids),
+      gridSelector: gridSelector(GRID, grids), run: createRunMark(false),
     }
     const T = mount(S, log)
     fire('focusin', target)
@@ -2158,7 +2746,15 @@ def test_a_theme_press_while_typing_in_the_equipment_master_grid_waits_for_the_e
     격자는 그대로 붙들고, 묶음 밖 칸(불러오기)은 붙들지 않는다."""
     lines = [
         re.search(rf"^const {name} = .+$", JS, re.M)
-        for name in ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+        for name in (
+            "GRID",
+            "BUSY_MS",
+            "SETTLE_POLL_MS",
+            "HOLD_MS",
+            "HOLD_QUIET_MS",
+            "EDIT_MS",
+            "APP_ROOT",
+        )
     ]
     constants = "\n".join(line.group(0) for line in lines if line is not None)
     assert len(constants.splitlines()) == len(lines)
@@ -2183,3 +2779,555 @@ def test_a_theme_press_while_typing_in_the_equipment_master_grid_waits_for_the_e
     assert out["withoutHosts"][0] == ["theme"]
     assert out["otherHost"][0] == ["theme"]
     assert out["selector"] == ".base, .st-key-equipment_grid_table"
+
+
+_EDITORS_VERDICT_RUNNER = """
+const out = {}
+const data = { leave: '' }
+const hold = { at: 0, data, path: '/list' }
+const editors = (busy, seen, quiet) => ({ busy, seen, quiet, quietMs: 300 })
+out.verdicts = [
+  // 명부의 편집기가 busy(보낼 것 · ack 대기)면 0.4초가 지나도 기다린다.
+  holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(true, true, 999)),
+  // busy 였다가 걷혔다 — 새 data 없이도 회차 끝 뒤 조용함이 차면 0.4초 전에 보낸다.
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 50)),
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, true, 300)),
+  // 0.4초가 지났어도 조용함이 차기 전(ack 를 그린 구역 회차가 앱 전체로 올라가는 두 회차 사이)에는
+  // 놓지 않는다.
+  holdVerdict(hold, 500, false, data, 400, 10000, '/list', editors(false, true, 10)),
+  holdVerdict(hold, 900, false, data, 400, 10000, '/list', editors(false, true, 300)),
+  // 명부가 busy 를 본 적 없으면(glide 격자 · 명부에 오르지 않은 편집기) 새 data 를 0.4초 기다린다.
+  holdVerdict(hold, 200, false, data, 400, 10000, '/list', editors(false, false, 999)),
+  holdVerdict(hold, 400, false, data, 400, 10000, '/list', editors(false, false, 999)),
+  // 회차가 돌면 기다리고, 상한 · 주소 바뀜은 그대로다.
+  holdVerdict(hold, 200, true, data, 400, 10000, '/list', editors(false, true, 999)),
+  holdVerdict(hold, 10000, true, data, 400, 10000, '/list', editors(true, true, 0)),
+  holdVerdict(hold, 200, false, data, 400, 10000, '/', editors(false, true, 999)),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_hold_waits_for_busy_editors_and_skips_the_new_data_wait_once_they_clear() -> None:
+    """붙든 누름은 떠나기 명부의 편집기가 busy 인 동안 기다리고, busy 였다가 걷혔으면 새 data 를
+    0.4초 기다리지 않는다 — 편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않아 그 기다림이 늘
+    붙는다. 대신 누른 지 얼마가 지났든 회차 끝 뒤 조용함(`HOLD_QUIET_MS`)이 차야 놓는다 — ack 를
+    그린 구역 회차가 본문 뒤에서 앱 전체로 올라가는 두 회차 사이(회차 끝 GC)에 놓으면 떠나기 표지가
+    서기 전이다. 명부가 busy 를 본 적 없는 붙들기는 새 data 를 0.4초 기다린다."""
+    out = _node(_EDITORS_VERDICT_RUNNER)
+
+    assert out["verdicts"] == [
+        "wait",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "wait",
+        "go",
+        "drop",
+    ]
+
+
+_BUSY_GATE_RUNNER = """
+(() => {
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
+  const window = new EventTarget()
+  window.location = { pathname: '/list' }
+  window.CustomEvent = globalThis.CustomEvent || class extends Event {}
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item) => log.push('tab:' + item.dataset.id + '@' + (now - S.t0))
+    %(slice)s
+    return { gate, select }
+  }
+  const strip = (log, t0) => {
+    timers.length = 0
+    now = t0
+    scriptState = 'notRunning'
+    const parts = { tab: {}, close: { hidden: false } }
+    const tab = { dataset: { id: 'b' }, hidden: false, __parts: parts }
+    const S = {
+      items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
+      editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null,
+      holdTimer: 0, run: createRunMark(false), t0,
+    }
+    return { S, tab, ...mount(S, log) }
+  }
+  // 묶어 보내는 편집기 대역 — 신호에 곧바로 보내고(`flush`) ack 까지 busy.
+  const editor = (log) => {
+    const E = { queued: 0, sent: 0, acked: 0 }
+    E.handle = joinLeaving(window, {
+      busy: () => E.queued > E.acked,
+      flush: () => { if (E.queued > E.sent) { E.sent = E.queued; log.push('flush') } },
+    })
+    return E
+  }
+  // 신호에 보낸 편집의 구역 회차 — `start` 에 돌기 시작해 `end` 에 ack 를 싣고 끝난다(탭 줄 data 는
+  // 그대로).
+  const scopeRun = (T, E, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    E.acked = E.queued
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
+  // ack 를 그린 구역 회차가 본문 뒤에서 올린 앱 전체 회차 — 앞 회차 끝(회차 끝 GC 틈) 뒤 `start` 에
+  // 돌기 시작해 `end` 에 끝난다.
+  const appRun = (T, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
+  const out = {}
+  const at = (log, t0) => (label) => () => log.push(label + '@' + (now - t0))
+
+  // 손을 뗀 지 오래된 누름 · 보낼 것 없음 — 신호만 쏘고 곧바로 잇는다.
+  let log = []
+  let T = strip(log, 0)
+  let E = editor(log)
+  T.gate.go(at(log, 0)('theme'))
+  out.idle = [log.slice(), T.S.hold]
+  E.handle.drop()
+
+  // 손을 뗀 지 오래된 누름이어도 묶어 둔 op 가 있으면 — 신호에 곧바로 보내고 붙든다. 편집 회차가
+  // ack 를 싣고 끝나면 조용함(`HOLD_QUIET_MS`) 뒤, 0.4초 전에 잇는다(새 data 를 기다리지 않는다).
+  log = []
+  T = strip(log, 1000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 1000)('theme'))
+  out.flushed = [log.slice(), T.S.hold !== null]
+  scopeRun(T, E, 1020, 1160)
+  advance(1600)
+  out.busyHeld = log.slice()
+  E.handle.drop()
+
+  // 탭 고르기도 같다 — 신호 · 붙듦 · ack 뒤 조용함.
+  log = []
+  T = strip(log, 2000)
+  E = editor(log)
+  E.queued = 1
+  T.select(T.tab)
+  scopeRun(T, E, 2020, 2160)
+  advance(2600)
+  out.tab = log.slice()
+  E.handle.drop()
+
+  // 구역 회차가 0.4초 넘게 돌아 ack 를 싣고 본문 뒤에서 앱 전체로 올라간다 — 두 회차
+  // 사이(회차 끝 GC 100ms)에 놓지 않고, 올라간 앱 전체 회차가 끝난 뒤 조용함이 차야 잇는다.
+  log = []
+  T = strip(log, 5000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 5000)('theme'))
+  scopeRun(T, E, 5020, 5450)
+  advance(5550)
+  out.gapHeld = log.slice()
+  appRun(T, 5550, 5750)
+  advance(6400)
+  out.afterApp = log.slice()
+  E.handle.drop()
+
+  // 짧은 구역 회차가 한 그리기에 접혀 회차 표지가 바뀌지 않은 채 ack 가 오고, 80ms 뒤 앱 전체
+  // 회차가 선다 — busy 가 걷힌 것을 본 때부터 조용함을 세어 그 틈에 놓지 않는다.
+  log = []
+  T = strip(log, 7000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 7000)('theme'))
+  advance(7150)
+  E.acked = E.queued
+  advance(7230)
+  out.foldedGap = log.slice()
+  appRun(T, 7230, 7430)
+  advance(8000)
+  out.foldedAfter = log.slice()
+  E.handle.drop()
+
+  // glide 격자(`st.data_editor`) 편집 뒤 누름 — 명부가 busy 를 봤어도 새 data 를 0.4초
+  // 기다린다.
+  log = []
+  T = strip(log, 3000)
+  E = editor(log)
+  E.queued = 1
+  T.S.editAt = 3000
+  T.S.editGlide = true
+  T.gate.go(at(log, 3000)('theme'))
+  scopeRun(T, E, 3020, 3160)
+  advance(3600)
+  out.glide = log.slice()
+  E.handle.drop()
+
+  // ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다.
+  log = []
+  T = strip(log, 10000)
+  E = editor(log)
+  E.queued = 1
+  T.gate.go(at(log, 10000)('theme'))
+  advance(10000 + BUSY_MS - 200)
+  out.capEarly = log.slice()
+  advance(10000 + BUSY_MS + 200)
+  out.capLate = log.slice().map((item) => item.split('@')[0])
+  E.handle.drop()
+
+  // 내린 편집기(명부에서 빠짐)는 붙들기를 묶지 않는다.
+  log = []
+  T = strip(log, 30000)
+  E = editor(log)
+  E.queued = 1
+  E.handle.drop()
+  T.gate.go(at(log, 30000)('theme'))
+  out.dropped = log.slice()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_leaving_press_flushes_batched_edits_and_waits_for_their_ack() -> None:
+    """떠나는 누름(테마 단추 · 사이드바 링크가 지나는 `gate`, 탭 고르기)은 붙들기 판정 **전에**
+    떠나기 신호를 쏜다. 묶어 둔 op 가 있는 편집기는 그 자리에서 보내고 ack 가 올 때까지 busy 라,
+    손을 뗀 지 오래된 누름도 붙든다. 그 편집 회차(구역 회차 — 탭 줄 data 는 그대로)가 ack 를 싣고
+    끝나면 조용함(`HOLD_QUIET_MS`) 뒤에 잇는다(새 data 를 기다리지 않는다). 그 회차가 본문 뒤에서
+    앱 전체로 올라가면 두 회차 사이에 놓지 않고 올라간 회차가 끝난 뒤 조용함을 기다린다. glide 격자
+    편집 뒤는 새 data 를 0.4초 기다리고, ack 가 끝내 오지 않으면 `BUSY_MS` 에서 놓는다."""
+    names = ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "HOLD_QUIET_MS", "EDIT_MS", "APP_ROOT")
+    lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  const appRunning = () => {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _BUSY_GATE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["idle"] == [["theme@0"], None]
+    assert out["flushed"] == [["flush"], True]
+    assert out["busyHeld"] == ["flush", "theme@500"]
+    assert out["tab"] == ["flush", "tab:b@500"]
+    assert out["gapHeld"] == ["flush"], "두 회차 사이(0.4초 넘음)에 놓지 않는다"
+    assert out["afterApp"] == ["flush", "theme@1100"]
+    assert out["foldedGap"] == ["flush"], "회차 표지가 바뀌지 않아도 ack 직후 틈에 놓지 않는다"
+    assert out["foldedAfter"] == ["flush", "theme@800"]
+    assert out["glide"] == ["flush", "theme@400"]
+    assert out["capEarly"] == ["flush"]
+    assert out["capLate"] == ["flush", "theme"]
+    assert out["dropped"] == ["theme@0"]
+
+
+_QUEUED_LEAVE_RUNNER = """
+(() => {
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = {
+    querySelector: () => ({ getAttribute: () => scriptState }), activeElement: null, body: {},
+  }
+  const window = new EventTarget()
+  window.location = { pathname: '/list' }
+  window.CustomEvent = globalThis.CustomEvent || class extends Event {}
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item, opened = null, asked = null, resent = false) =>
+      log.push('tab:' + item.dataset.id + '@' + (now - S.t0) + (resent ? ':again' : ''))
+    %(slice)s
+    return { settle }
+  }
+  const tab = (id) => ({
+    dataset: { id }, hidden: false, __parts: { tab: {}, close: { hidden: false } },
+  })
+  const strip = (log, t0) => {
+    timers.length = 0
+    now = t0
+    scriptState = 'notRunning'
+    const S = {
+      items: new Map([['a', tab('a')], ['b', tab('b')], ['c', tab('c')]]),
+      queue: createSelectQueue(), data: { active: 'a', leave: '' }, waitOpen: null,
+      keyPressAt: null,
+      editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null,
+      holdTimer: 0, settleTimer: 0, focusTimer: 0, run: createRunMark(false), t0,
+    }
+    return { S, ...mount(S, log) }
+  }
+  // 묶어 보내는 편집기 대역 — 신호에 곧바로 보내고(`flush`) ack 까지 busy.
+  const editor = (log) => {
+    const E = { queued: 0, sent: 0, acked: 0 }
+    E.handle = joinLeaving(window, {
+      busy: () => E.queued > E.acked,
+      flush: () => { if (E.queued > E.sent) { E.sent = E.queued; log.push('flush') } },
+    })
+    return E
+  }
+  const scopeRun = (T, E, start, end) => {
+    advance(start)
+    scriptState = 'running'
+    markRun(T.S.run, true, now)
+    advance(end)
+    E.acked = E.queued
+    scriptState = 'notRunning'
+    markRun(T.S.run, false, now)
+  }
+  // 보낸 고르기 b 가 서버에 닿지 않았다 — 보낸 뒤 선 회차(트리거 없는 회차)가 60 에 끝나고
+  // 조용하다.
+  const lose = (T) => {
+    sentSelect(T.S.queue, 'b', 'a', T.S.t0, { path: '/list', leave: '' })
+    markRun(T.S.run, true, T.S.t0 + 20)
+    markRun(T.S.run, false, T.S.t0 + 60)
+  }
+  const out = {}
+
+  // 다시 보냄 — 그 사이 묶어 둔 op 가 없으면 곧바로(떠나기 신호만) 다시 보낸다.
+  let log = []
+  let T = strip(log, 0)
+  let E = editor(log)
+  lose(T)
+  advance(700)
+  T.settle()
+  out.resendIdle = log.slice()
+  E.handle.drop()
+
+  // 다시 보냄 — 기다리는 동안 칸을 고쳐 op 가 묶음 타이머에 있다. 떠나기 신호에 곧바로
+  // 보내고, 그 ack 가 오고 조용함이 찬 뒤에 다시 보낸다.
+  log = []
+  T = strip(log, 1000)
+  E = editor(log)
+  lose(T)
+  E.queued = 1
+  advance(1700)
+  T.settle()
+  out.resendHeld = [log.slice(), T.S.hold !== null]
+  scopeRun(T, E, 1720, 1860)
+  advance(2400)
+  out.resendAfter = log.slice()
+  E.handle.drop()
+
+  // 줄 선 누름 — b 로 옮기는 동안 c 를 눌렀다. b 화면의 탭 줄이 오고 그 회차가 끝났을 때
+  // 묶어 둔 op 가 있으면 떠나기 신호 · 붙들기를 지난다.
+  log = []
+  T = strip(log, 3000)
+  E = editor(log)
+  sentSelect(T.S.queue, 'b', 'a', 3000, { path: '/list', leave: '' })
+  pressSelect(T.S.queue, 'c', 'a', 3050, 10000)
+  T.S.data = { active: 'b', leave: '' }
+  E.queued = 1
+  advance(3400)
+  T.settle()
+  out.queuedHeld = log.slice()
+  scopeRun(T, E, 3420, 3560)
+  advance(4100)
+  out.queuedAfter = log.slice()
+  E.handle.drop()
+
+  // 다시 보냄 — 편집표(glide) 입력이 앞 고르기를 보낸 뒤면 붙들고(명부 밖이라 0.4초), 그 전
+  // 입력(앞 누름의 붙들기가 이미 기다림)이면 곧바로 보낸다.
+  log = []
+  T = strip(log, 6000)
+  E = editor(log)
+  lose(T)
+  T.S.editAt = 6300
+  advance(6700)
+  T.settle()
+  advance(7300)
+  out.glideAfter = log.slice()
+  E.handle.drop()
+  log = []
+  T = strip(log, 8000)
+  E = editor(log)
+  T.S.editAt = 7900
+  lose(T)
+  advance(8700)
+  T.settle()
+  out.glideBefore = log.slice()
+  E.handle.drop()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_queued_and_resent_selects_flush_editors_and_wait_for_their_ack() -> None:
+    """기다리던 누름(옮기는 동안 누른 탭)과 서버에 닿지 않아 다시 보내는 고르기도 화면을
+    떠난다 — 누르는 자리처럼 떠나기 신호를 쏘고, 묶어 둔 op 가 있는 편집기는 그 자리에서 보내며
+    ack 가 오고 조용함(`HOLD_QUIET_MS`)이 찬 뒤에 보낸다. 신호 없이 보내면 그 사이 칸을 고친 op 가
+    묶음 타이머에 남은 채 화면이 옮겨져 부품이 내려가며 사라진다. 보낼 것이 없으면 곧바로 보내고,
+    다시 보낸 고르기는 앞서 물어 지나온 떠나기를 그대로 들고 간다. 명부 밖 편집표(glide) 입력은 앞
+    고르기를 보낸 뒤의 것만 붙든다."""
+    names = (
+        "BUSY_MS",
+        "SETTLE_POLL_MS",
+        "HOLD_MS",
+        "HOLD_QUIET_MS",
+        "EDIT_MS",
+        "APP_ROOT",
+        "LOST_QUIET_MS",
+        "LOST_IDLE_MS",
+        "MOVED_GRACE_MS",
+    )
+    lines = [re.search(rf"^const {name} = .+$", JS, re.M) for name in names]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  function settle() {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _QUEUED_LEAVE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["resendIdle"] == ["tab:b@700:again"]
+    assert out["resendHeld"] == [["flush"], True]
+    assert out["resendAfter"] == ["flush", "tab:b@1200:again"]
+    assert out["queuedHeld"] == ["flush"]
+    assert out["queuedAfter"] == ["flush", "tab:c@900"]
+    assert out["glideAfter"] == ["tab:b@1100:again"]
+    assert out["glideBefore"] == ["tab:b@700:again"]
+
+
+def test_a_sidebar_link_asks_the_same_leave_question_once_on_its_replay() -> None:
+    """사이드바 화면 링크도 탭 줄과 같은 떠나기 확인(`leave` — 가용설비 현황 작은 편집표 둘의 적용
+    안 한 편집 포함)을 묻는다 — 붙든 누름은 막고 다시 누를 때(새 data) 한 번 묻는다. 상한 거름이
+    적은 열기 표지는 취소하면 되돌리고, 지금 화면의 링크는 묻지 않는다. 알림 칸 「그 화면으로」 의
+    링크 누름도 같은 처리기라 한 번만 묻는다."""
+    link = JS[JS.index("S.onLink = (event) => {") :]
+    link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
+    held = link[link.index("gate.hold(") : link.index("refusal(")]
+    assert "leaveOk" not in held, "붙든 누름에서는 묻지 않는다"
+    passed = link[link.index("if (!why) {") : link.index("flash('limit', why)")]
+    assert "linkPath(href) === linkPath(here.__href)" in passed
+    assert "if (!staying && !leaveOk())" in passed
+    assert link.index("const before = S.linkFlight") < link.index("refusal(")
+    opener = JS[JS.index("S.onOpenPage = (event) => {") :]
+    opener = opener[: opener.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
+    assert "leaveOk" not in opener
+
+
+_LINK_LEAVE_RUNNER = """
+(() => {
+  const PAGE_LINK = 'a.page-link'
+  let confirms = 0
+  let answer = true
+  const window = { __capaLeaveGate: null, confirm: () => { confirms += 1; return answer } }
+  const links = []
+  const document = { querySelectorAll: () => links }
+  const S = {
+    linkReplay: null, linkOpened: null, linkFlight: null,
+    items: new Map([['a', { __href: 'page_a' }]]), data: { active: 'a', leave: '' },
+  }
+  const leaveOk = () => !S.data.leave || window.confirm('?')
+  const flashes = []
+  const flash = (kind) => flashes.push(kind)
+  let refused = ''
+  // 상한 거름 대역 — 진짜처럼 지나 보내는 누름의 열기 표지를 적는다.
+  const refusal = (href) => {
+    if (!refused) S.linkFlight = { href }
+    return refused
+  }
+  %(link_path)s
+  %(slice)s
+  const press = (href) => {
+    const event = {
+      button: 0, defaultPrevented: false, prevented: false,
+      target: { closest: () => ({ getAttribute: () => href, target: '' }) },
+      preventDefault() { this.prevented = true },
+      stopPropagation() {},
+    }
+    S.onLink(event)
+    return event.prevented
+  }
+  const reset = (leave) => {
+    confirms = 0
+    answer = true
+    refused = ''
+    S.linkFlight = null
+    S.linkReplay = null
+    S.data = { active: 'a', leave }
+    window.__capaLeaveGate = null
+  }
+  const out = {}
+  reset('')
+  out.clean = [press('page_b'), confirms]
+  reset('비가동 일정')
+  answer = false
+  out.cancel = [press('page_b'), confirms, S.linkFlight]
+  reset('비가동 일정')
+  out.accept = [press('page_b'), confirms, S.linkFlight && S.linkFlight.href]
+  reset('비가동 일정')
+  out.samePage = [press('page_a'), confirms]
+  reset('비가동 일정')
+  refused = '상한'
+  out.limit = [press('page_b'), confirms, flashes.slice()]
+  // 붙든 누름 — 막고 묻지 않는다. 다시 누를 때(같은 링크) 한 번 묻는다.
+  reset('비가동 일정')
+  let held = null
+  window.__capaLeaveGate = { hold: (fn) => { held = fn; return true } }
+  links.push({ getAttribute: () => 'page_b', click: () => press('page_b') })
+  out.held = [press('page_b'), confirms]
+  held()
+  out.replayed = [confirms, S.linkReplay]
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_sidebar_link_leave_question_runs_once_and_restores_the_open_mark_on_cancel() -> None:
+    """사이드바 화면 링크 처리기(`S.onLink`)를 탭 줄 JS 그대로 node 에서 돌린다 — 적용 안 한 편집이
+    없으면 묻지 않고, 있으면 다른 화면 링크에서 한 번 묻는다. 취소하면 누름을 막고 상한 거름의 열기
+    표지를 되돌린다. 지금 화면의 링크 · 상한에 걸린 링크는 묻지 않는다. 붙든 누름은 묻지 않고 다시
+    누를 때 한 번 묻는다."""
+    link_path = re.search(r"^function linkPath\(href\) \{\n.*?\n\}\n", JS, re.M | re.S)
+    assert link_path is not None
+    start = JS.index("    const replayLink = (href, opened) => {")
+    end = JS.index("    document.addEventListener('click', S.onLink, true)")
+    runner = _LINK_LEAVE_RUNNER % {"link_path": link_path.group(0), "slice": JS[start:end]}
+
+    out = _node(runner, prelude="")
+
+    assert out["clean"] == [False, 0]
+    assert out["cancel"] == [True, 1, None]
+    assert out["accept"] == [False, 1, "page_b"]
+    assert out["samePage"] == [False, 0]
+    assert out["limit"] == [True, 0, ["limit"]]
+    assert out["held"] == [True, 0]
+    assert out["replayed"] == [1, None]

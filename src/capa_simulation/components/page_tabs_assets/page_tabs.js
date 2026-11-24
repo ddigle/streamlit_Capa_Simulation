@@ -12,13 +12,17 @@
 // 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
 // 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
 // 앞서 지나 보낸 링크가 연 탭은 그 탭이 탭 줄 data 에 올 때까지 열린 탭으로 센다(`<tabs-links>`).
-// 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
+// 브라우저 뒤로·앞으로가기는 Navigation API 가 있는 브라우저(Chrome · Edge)에서 붙든다(`<tabs-nav>`) — Streamlit 의 `popstate`
+// 처리기가 이 모듈보다 먼저 걸려 먼저 돌아 popstate 로는 막지 못하고(1.63 브라우저 확인), 그보다 먼저 오는 `navigate` 사건의
+// 같은 문서 `traverse` 를 막는다. 떠나기 신호 · 붙들기 · 떠나기 확인은 탭 줄과 같은 길이고, 놓으면 같은 목적지로 다시 간다.
+// API 가 없거나 사건을 막을 수 없으면(사용자 활성 없이 잇달아 누른 뒤로 등) 지나 보낸다 — 상한 거름도 거치지 않는다.
 // 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
 // (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
 // 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고
 // 그 회차가 끝나거나 잠깐 지날 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을
 // 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
-// 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
+// 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`). 뒤로·앞으로 지킴이
+// `<tabs-nav-install>` 은 창을 인자로 받아 node 가 창 대역으로 돌린다.
 // 목록이 옆으로 넘치면(좁은 창·탭이 많을 때) 더 있는 쪽 가장자리를 흐리고 화살표 표지를 단다(`<tabs-edges>`).
 // 키보드 초점은 탭 줄 안에 남긴다(`<tabs-focus>`) — 키보드 초점이 있던 탭을 닫으면 이웃 탭으로 옮기고, 키보드로 화면을 옮긴
 // 뒤 초점이 body 로 빠졌으면 지금 탭으로 돌려준다.
@@ -26,7 +30,15 @@
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
 // 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`). 사이드바 화면 링크도 같다 — 터치 톡은 초점이 빠지며 나간 표의 출납
-// 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누른다.
+// 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누르고, 그때 탭 줄과
+// 같은 떠나기 확인(`leave`)을 묻는다.
+// 떠나는 누름은 붙들기 판정 **전에** 떠나기 신호(`capa-leaving` — `grid_shared_assets/leave.js`, 등록 글이 이 파일 앞에 잇는다)를
+// 쏜다. 편집기는 묶어 두던 op 를 곧바로 보내고 ack 가 올 때까지 명부에 busy 다 — 손을 뗀 지 오래된 누름이어도 busy 면 붙들고,
+// busy 가 걷히고 회차가 끝날 때까지 기다린다. 명부에 오른 편집기가 busy 였다가 걷힌 붙들기는 누른 지 얼마가 지났든 회차 표지가
+// `HOLD_QUIET_MS` 동안 「돌지 않음」 이어야 놓는다 — ack 를 그린 구역 회차가 본문 뒤에서 앱 전체로 올라가면 두 회차 사이(회차 끝
+// GC)도 「돌지 않음」 이고, 그 틈에 놓으면 머리 띠 · 탭 줄이 아직 옛 떠나기 표지라 묻지 않고 떠난다. 「새 data 가 올 때까지
+// 0.4초」 는 기다리지 않는다(편집기만 다시 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다). 명부에 오르지 않는 편집표(glide
+// `st.data_editor`)는 새 data 를 0.4초(`HOLD_MS`) 기다린다.
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
@@ -72,6 +84,11 @@ const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
 const EDIT_MS = 5000
 // 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
 const HOLD_MS = 400
+// 명부에 오른 편집기의 busy 가 걷힌 붙들기는 회차 표지가 이만큼 「돌지 않음」 이어야 보낸다(누른 지 얼마가 지났든) — 구역 회차가
+// 본문 뒤에서 앱 전체로 올라갈 때 두 회차 사이(끝 · 회차 끝 GC · 새 회차 시작 — 같은 프로세스의 다른 세션이 GIL 을 쥐면 더
+// 길다)와, 회차 끝(`script_finished`) 직후 수십 ms 안에 쓴 트리거를 프런트가 지우는 창(`<tabs-queue>`)을 넘긴다.
+// 그 틈에 놓으면 떠나기 표지가 서기 전이라 묻지 않고 떠나므로 회차 끝 GC 보다 넉넉히 둔다.
+const HOLD_QUIET_MS = 300
 // 닫기·고정 누름 뒤 같은 자리의 둘째 누름을 더블클릭의 꼬리로 보는 창(`<tabs-press>`) — Windows 기본 더블클릭 시간과
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
@@ -170,15 +187,21 @@ function installHistoryGuard() {
 // 입력에서 `ms` 가 지나지 않았다. `holdVerdict` 는 붙든 누름({at, data, path})을 'wait'(더 기다린다)·'go'(지금 data 로
 // 묻고 보낸다)·'drop'(버린다)으로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는
 // 기다린다(편집 회차 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다. 누른 뒤 주소(`path`)가
-// 바뀌었으면 사용자가 다른 길로 옮긴 것이다(뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
+// 바뀌었으면 사용자가 다른 길로 옮긴 것이다(지나 보낸 뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
+// `editors` 는 떠나기 명부 판정이다({busy, seen, quiet, quietMs} — 없으면 위 판정 그대로). 명부의 편집기가 busy(보낼 것 · ack
+// 대기)면 기다린다. 붙든 동안 busy 였다가 걷혔으면(`seen`) 편집 회차가 ack 를 싣고 돌아왔다 — 누른 지 얼마가 지났든 회차 표지가
+// `quietMs` 동안 「돌지 않음」(`quiet`) 이어야 보낸다(그 회차가 앱 전체로 올라가는 두 회차 사이에 놓지 않는다). 새 data 는
+// 기다리지 않는다(편집기만 도는 구역 회차는 탭 줄 data 를 다시 보내지 않는다).
 function editPending(now, editAt, focused, ms) {
   return Boolean(focused) || now - editAt < ms
 }
-function holdVerdict(hold, now, running, data, minMs, maxMs, path) {
+function holdVerdict(hold, now, running, data, minMs, maxMs, path, editors = null) {
   if (hold.path !== path) return 'drop'
   const elapsed = now - hold.at
   if (elapsed >= maxMs) return 'go'
   if (running) return 'wait'
+  if (editors !== null && editors.busy) return 'wait'
+  if (editors !== null && editors.seen) return editors.quiet >= editors.quietMs ? 'go' : 'wait'
   if (elapsed < minMs && data === hold.data) return 'wait'
   return 'go'
 }
@@ -584,6 +607,203 @@ function installUnloadGuard(win, doc) {
   })
 }
 // </tabs-unload>
+
+// <tabs-nav>
+// 브라우저 뒤로·앞으로가기를 떠나는 누름처럼 붙든다. Streamlit 1.63 은 `popstate` 를 받자마자 앱 칸 값만 실은 이동 요청을 보낸다
+// — 문서 capture 단계 처리기보다 먼저 걸려 popstate 로는 막지 못한다. 그래서 묶어 두던 op 와 칸 편집기에 쓰던 글(뒤로는 초점을
+// 옮기지 않아 칸이 확정하지 않는다)이 서버에 가기 전에 화면이 바뀌어 말없이 사라졌다. 그보다 먼저 오는 Navigation API `navigate`
+// 사건의 같은 문서 `traverse` 는 막을 수 있다 — 막으면 popstate 도 회차도 없이 주소 · 본문 그대로이고, 같은 목적지로 다시 가면
+// 옮겨진다. `navFacts` 는 사건을 {type, cancelable, sameDocument, from, to, key, delta}(`delta` — 지금 칸에서 목적지 칸까지)로
+// 옮긴다. `navVerdict` 는 'pass'(지나 보냄 — traverse 가 아님 · 막을 수 없음 · 다른 문서 · 같은 화면의 해시만 다름) ·
+// 'replay-pass'(우리가 다시 쏜 이동 — 표지(`replay` — 목적지 key)를 걷고 지나 보냄) · 'try'(떠나기 붙들기에 묻는다)로 가른다.
+// 표지는 목적지가 맞는 사건이 오면 어느 갈래든 걷고 `ms` 가 지나도 걷는다 — 남으면 같은 칸으로 가는 다음 뒤로를 놓친다. 막을 수
+// 없는 이동이 지나가면 기다리던 다시 가기(`held`)도 걷는다. `navHeld` 는 붙들기에 물은 뒤다 — 붙들 것이 없으면(쉬는 편집기 · 열린
+// 칸 없음 · 떠나면 사라지는 편집 없음) 'pass'(지연 0), 붙들었으면 목적지를 이 사건 것으로 적고 'hold'(처음) · 'retarget'(붙든
+// 동안 또 온 이동 — 목적지는 마지막 것 하나, 붙들기도 하나)다. 붙든 동안 온 이동도 붙들기에 다시 묻는다 — 탭 · 링크 누름이
+// 붙들기를 갈아 끼웠으면 남은 `held` 는 낡았다. `navRelease` 는 붙들기가 놓일 때 그 번호(`token` — `navToken`)의 목적지를
+// 꺼낸다 — 그 사이 걷혔거나 다른 붙들기로 갈아 끼웠으면 null 이다. `navMark` 는 다시 가기 하나의 표지를 달아 돌려주고,
+// `navUnmark` 는 지금 표지가 그 몫일 때만 걷는다 — 같은 칸으로 다시 간 새 표지를 앞 다시 가기의 상한 타이머가 걷지 않게.
+// `navLeaveAsked` 는 날아가는 고르기(`<tabs-queue>` 의 `flight` — 보낼 때의 떠나기 글 `leave`)가 지금 떠나기 글을 이미 물어
+// 지나왔는가다 — 그 편집은 이미 떠나기로 했으니 뒤로가 같은 확인을 또 묻지 않는다(그 고르기가 닿기 전 탭 줄 data 는 옛 화면 것이다).
+function createNavGuard() {
+  return { held: null, replay: null, seq: 0 }
+}
+function navToken(guard) {
+  guard.seq += 1
+  return guard.seq
+}
+function navFacts(event, current, href) {
+  const destination = (event && event.destination) || {}
+  const to = Number.isInteger(destination.index) ? destination.index : -1
+  const at = current && Number.isInteger(current.index) ? current.index : -1
+  return {
+    type: String((event && event.navigationType) || ''),
+    cancelable: Boolean(event && event.cancelable),
+    sameDocument: Boolean(destination.sameDocument),
+    from: String(href || ''),
+    to: String(destination.url || ''),
+    key: String(destination.key || ''),
+    delta: to >= 0 && at >= 0 ? to - at : 0,
+  }
+}
+function navHashOnly(from, to) {
+  try {
+    const here = new URL(from)
+    const there = new URL(to, here)
+    return (
+      here.origin === there.origin && here.pathname === there.pathname && here.search === there.search && here.hash !== there.hash
+    )
+  } catch (error) {
+    return false
+  }
+}
+function navVerdict(guard, nav, now, ms) {
+  if (guard.replay !== null && now - guard.replay.at >= ms) guard.replay = null
+  if (nav.type !== 'traverse') return 'pass'
+  const ours = guard.replay !== null && nav.key !== '' && nav.key === guard.replay.key
+  if (ours) guard.replay = null
+  if (!nav.cancelable) {
+    guard.held = null
+    return 'pass'
+  }
+  if (!nav.sameDocument || navHashOnly(nav.from, nav.to)) return 'pass'
+  return ours ? 'replay-pass' : 'try'
+}
+function navHeld(guard, nav, now, held, token) {
+  if (!held) {
+    guard.held = null
+    return 'pass'
+  }
+  const again = guard.held !== null
+  guard.held = { key: nav.key, delta: nav.delta, at: now, token }
+  return again ? 'retarget' : 'hold'
+}
+function navRelease(guard, token) {
+  const held = guard.held
+  if (held === null || held.token !== token) return null
+  guard.held = null
+  return held
+}
+function navMark(guard, key, now) {
+  guard.replay = { key, at: now }
+  return guard.replay
+}
+function navUnmark(guard, mark) {
+  if (guard.replay === mark) guard.replay = null
+}
+function navLeaveAsked(flight, leave) {
+  const now = String(leave || '')
+  return flight !== null && flight !== undefined && now !== '' && String(flight.leave || '') === now
+}
+// </tabs-nav>
+
+// <tabs-nav-install>
+// 뒤로·앞으로 지킴이는 문서에 하나다(`window.__capaNavGuard` — 걸고 풀지 않는다). Navigation API 가 없으면 걸지 않아 지금처럼
+// 지나 보낸다. 붙들기 · 떠나기 확인 · 편집표 판정은 사건 때의 탭 줄 붙들기(`window.__capaLeaveGate` — 탭 줄 · 테마 단추 · 사이드바
+// 링크와 같은 길, 탭 줄이 내려가 없으면 지나 보낸다)를 쓴다. 막기 전에 정한다 — 깊은 활성 요소가 편집표 안(`inGrid`)이면 먼저
+// `blur()` 해 칸이 제 focusout 길로 확정해 보내게 하고(편집기는 ack 까지 명부에 busy), 붙들기(`hold` — 떠나기 신호를 쏘고 기다릴
+// 것이 있으면 붙든다)에 묻는다. glide 칸 편집기(`st.data_editor` — 틀 `NAV_GLIDE_EDITOR`)는 blur 로 확정하지 않고 문서 capture
+// 단계 바깥 누름(pointerdown)과 Enter · Tab 으로만 확정한다 — 탭 줄 누름은 그 pointerdown 이 확정하지만 뒤로는 누름이 없어, 쓰던
+// 글이 그대로 사라졌다. 그래서 활성 요소가 그 틀 안이면 body 에 바깥 누름을 보내 지금 값으로 확정시킨 뒤(glide 는 격자로 초점을
+// 돌린다) 그 초점도 뺀다. 코드 blur 는 focusin 이 없으니 탭 줄 초점 표지를 다시 맞추고, 칸 편집기를 닫았으면 쓰는 중에 누른 것으로
+// 적는다(`blurred` — 칸 입력 창 `EDIT_MS` 를 넘겨 쓰던 글도 붙든다). 기다릴 것은 없어도 떠나면 사라지는 편집(`loses` — data
+// `leave`, 날아가는 고르기가 이미 물은 글이면 뺀다)이 있으면 곧바로 놓는 붙들기로 묻는다. 붙들었을 때만 막는다(`preventDefault`)
+// — 쉬는 편집기에서는 지연이 없다. 놓이면(ack · 회차 끝, 길어야 `BUSY_MS`) 탭 줄과 같은 확인(`ask` — 떠나면 사라지는 편집이 있을
+// 때만 묻는다)을 지나 표지를 달고 같은 목적지로 다시 간다(`traverseTo`). 취소면 아무것도 하지 않는다 — 이미 막았으니 주소 · 본문
+// 그대로다. 다시 가기가 거절되면(그 칸이 없어짐) 표지를 걷고 `history.go` 로 한 번(칸 차이를 모르면 부르지 않는다 — `go(0)` 은
+// 새로고침이다), 그것도 안 되면 끝이다. 표지는 다시 간 이동이 닿거나 그 약속이 끝나거나 `NAV_REPLAY_MS` 가 지나면 걷는다.
+const NAV_REPLAY_MS = 5000
+const NAV_GLIDE_EDITOR = '.gdg-clip-region'
+function installNavGuard(win) {
+  const navigation = win.navigation
+  if (win.__capaNavGuard || !navigation || typeof navigation.addEventListener !== 'function') return
+  const guard = createNavGuard()
+  win.__capaNavGuard = guard
+  const replay = (held) => {
+    const mark = navMark(guard, held.key, Date.now())
+    const clear = () => navUnmark(guard, mark)
+    const again = () => {
+      clear()
+      try {
+        if (held.delta) win.history.go(held.delta)
+      } catch (error) {
+        // 다시 가지 못하면 끝이다 — 표지는 걷었다.
+      }
+    }
+    let result = null
+    try {
+      result = navigation.traverseTo(held.key)
+    } catch (error) {
+      again()
+      return
+    }
+    const watch = (promise, failed) => {
+      if (promise && typeof promise.then === 'function') promise.then(clear, failed)
+    }
+    // 다른 이동이 끊은 다시 가기(AbortError)는 그 이동에 맡긴다.
+    watch(result && result.committed, (error) => (error && error.name === 'AbortError' ? clear() : again()))
+    watch(result && result.finished, clear)
+    win.setTimeout(clear, NAV_REPLAY_MS)
+  }
+  const release = (token) => () => {
+    const held = navRelease(guard, token)
+    if (held === null) return
+    const gate = win.__capaLeaveGate
+    if (gate && typeof gate.ask === 'function' && !gate.ask()) return
+    replay(held)
+  }
+  const deepActive = (doc) => {
+    let active = doc.activeElement
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement
+    return active
+  }
+  // 문서 capture 단계 바깥 누름 — glide 칸 편집기는 이 pointerdown 에 지금 값으로 확정한다(탭 줄 누름과 같은 길).
+  const pressOutside = (doc) => {
+    const Press = typeof win.PointerEvent === 'function' ? win.PointerEvent : win.Event
+    if (typeof Press !== 'function' || !doc.body || typeof doc.body.dispatchEvent !== 'function') return
+    const init = { bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1, isPrimary: true, pointerType: 'mouse' }
+    doc.body.dispatchEvent(new Press('pointerdown', init))
+  }
+  const blurEditor = (gate) => {
+    const doc = win.document
+    const host = doc ? doc.activeElement : null
+    if (!host || host === doc.body || typeof gate.inGrid !== 'function' || !gate.inGrid(host)) return
+    let active = deepActive(doc)
+    const typed = Boolean(active && typeof active.closest === 'function' && active.closest(NAV_GLIDE_EDITOR))
+    if (typed) {
+      pressOutside(doc)
+      active = deepActive(doc)
+    }
+    if (active && active !== doc.body && typeof active.blur === 'function') active.blur()
+    if (typeof gate.blurred === 'function') gate.blurred(typed)
+  }
+  navigation.addEventListener('navigate', (event) => {
+    let nav = null
+    try {
+      nav = navFacts(event, navigation.currentEntry, win.location.href)
+    } catch (error) {
+      return
+    }
+    if (navVerdict(guard, nav, Date.now(), NAV_REPLAY_MS) !== 'try') return
+    const token = navToken(guard)
+    let held = false
+    try {
+      const gate = win.__capaLeaveGate
+      if (gate && typeof gate.hold === 'function') {
+        blurEditor(gate)
+        held = Boolean(gate.hold(release(token)))
+        if (!held && typeof gate.loses === 'function' && gate.loses()) {
+          held = true
+          win.setTimeout(release(token), 0)
+        }
+      }
+    } catch (error) {
+      held = false
+    }
+    if (navHeld(guard, nav, Date.now(), held, token) !== 'pass') event.preventDefault()
+  })
+}
+// </tabs-nav-install>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -705,7 +925,7 @@ export default function (component) {
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, busyTimer: 0, lastActive: null, onFonts: null, onOpenPage: null,
     onLink: null, linkFlight: null, linkReplay: null, linkOpened: null, queue: createSelectQueue(), waitOpen: null, settleTimer: 0, lastPress: null,
-    onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
+    onEdit: null, editAt: -Infinity, editGlide: false, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
     moves: createMoveBatch(), moveTimer: 0, dataOrder: null, dataSeen: null,
@@ -733,6 +953,8 @@ export default function (component) {
     S.runWatch.observe(appRoot, { attributes: true, attributeFilter: ['data-test-script-state'] })
     S.runRoot = appRoot
   }
+  // 편집기 구역만 도는 회차의 실행 표시 · 낡음 흐림을 감추는 문서 표지(`leave.js` 의 `<capa-scope-run-window>` — 문서에 하나).
+  watchScopeRuns(window, document)
 
   setAttr(nav, 'aria-label', text.nav || '')
   const pending = (data.palette && data.palette.pending) || ''
@@ -991,7 +1213,8 @@ export default function (component) {
     if (opened) opened()
   }
   // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았거나 잠깐 지났다, 아니면 기다림이 다 됐다) 기다리던 누름을
-  // 보낸다. 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가 끝났다는 알림은 컴포넌트에 오지 않는다.
+  // 보낸다 — 누르는 자리처럼 떠나기 신호 · 붙들기를 지난다(`leaveThen`). 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가
+  // 끝났다는 알림은 컴포넌트에 오지 않는다.
   function settle() {
     clearTimeout(S.settleTimer)
     const open = []
@@ -1004,6 +1227,7 @@ export default function (component) {
       resendLost(open)
       return
     }
+    const since = S.queue.flight !== null ? S.queue.flight.at : -Infinity
     const next = settleSelect(S.queue, S.data.active, now, BUSY_MS, open, running, MOVED_GRACE_MS)
     if (S.queue.flight !== null) {
       S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
@@ -1013,12 +1237,17 @@ export default function (component) {
     const waited = S.waitOpen
     S.waitOpen = null
     const item = next === null ? null : S.items.get(next)
-    if (item) sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)
-    else restoreFocus()
+    if (!item) {
+      restoreFocus()
+      return
+    }
+    const opened = waited !== null && waited.id === next ? waited.opened : null
+    leaveThen(item, (chosen) => sendSelect(chosen, opened), since)
   }
   // 보낸 고르기가 서버에 닿지 않았다(`lostSelect`) — 그 사이 누른 마지막 탭, 없으면 그 고르기를 한 번 다시 보낸다
-  // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다. 「그 화면으로」 알림은 같은 고르기면 이미
-  // 불렀고, 기다리던 누름의 것이면 들고 간다.
+  // (`resendTarget`). 화면은 그대로라 앞서 물어 지나온 떠나기는 다시 묻지 않는다(떠나기 글이 그대로일 때). 그 사이 편집기에 쓴
+  // op 가 있을 수 있어 떠나기 신호 · 붙들기는 다시 지난다(`leaveThen`). 「그 화면으로」 알림은 같은 고르기면 이미 불렀고,
+  // 기다리던 누름의 것이면 들고 간다.
   function resendLost(open) {
     const lost = S.queue.flight
     const target = resendTarget(S.queue, S.data.active, open)
@@ -1030,7 +1259,7 @@ export default function (component) {
       return
     }
     const opened = !target.again && waited !== null && waited.id === target.id ? waited.opened : null
-    sendSelect(item, opened, lost.leave, target.again)
+    leaveThen(item, (chosen) => sendSelect(chosen, opened, lost.leave, target.again), lost.at)
   }
   const appRunning = () => {
     const root = document.querySelector(APP_ROOT)
@@ -1053,18 +1282,42 @@ export default function (component) {
     const item = S.items.get(S.data.active)
     if (item && !item.hidden) item.__parts.tab.focus({ preventScroll: true })
   }
-  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다.
-  const holding = (item, go) => {
+  // 떠나기 신호를 쏘고 명부의 편집기가 busy 인지 본다 — 편집기는 처리기 안에서 묶어 두던 op 를 곧바로 보낸다(`leave.js`).
+  const leaving = () => {
+    announceLeaving(window)
+    return editorsBusy(editorBook(window))
+  }
+  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다(지금 탭이 아닌 탭
+  // 닫기는 떠나는 누름이 아니라 붙듦을 그대로 둔다). `seen` 은 붙든 순간 명부의 편집기가 busy 였는가다.
+  const holding = (item, go, seen = false) => {
     busy(item)
-    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go }
+    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go, seen }
     clearTimeout(S.holdTimer)
     S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+  }
+  // 명부 판정 — busy 를 한 번이라도 봤고 마지막 편집이 glide 격자가 아니면 busy 가 걷힌 뒤 새 data 를 0.4초 기다리지 않고 회차
+  // 표지의 조용함(`HOLD_QUIET_MS`)을 본다(`holdVerdict`). 조용함은 회차 표지가 「돌지 않음」 으로 바뀐 때와 busy 가 걷힌 것을 처음
+  // 본 때(`clearedAt` — busy 가 다시 서면 지운다) 가운데 늦은 쪽부터 센다. 짧은 구역 회차는 표지가 한 그리기에 접혀 바뀌지 않을
+  // 수 있다(`LOST_IDLE_MS` 와 같은 까닭) — 그러면 표지만으로는 ack 직후 두 회차 사이도 오래 조용한 것으로 보인다.
+  const editorVerdict = (hold) => {
+    const busyNow = editorsBusy(editorBook(window))
+    const now = Date.now()
+    if (busyNow) {
+      hold.seen = true
+      hold.clearedAt = null
+    } else if (hold.seen && hold.clearedAt == null) {
+      hold.clearedAt = now
+    }
+    const sinceRun = S.run.running ? 0 : now - S.run.changedAt
+    const quiet = hold.clearedAt == null ? sinceRun : Math.min(sinceRun, now - hold.clearedAt)
+    return { busy: busyNow, seen: Boolean(hold.seen) && !S.editGlide, quiet, quietMs: HOLD_QUIET_MS }
   }
   function release() {
     clearTimeout(S.holdTimer)
     const hold = S.hold
     if (!hold) return
-    const verdict = holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS, window.location.pathname)
+    const editors = editorVerdict(hold)
+    const verdict = holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS, window.location.pathname, editors)
     if (verdict === 'wait') {
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return
@@ -1081,6 +1334,25 @@ export default function (component) {
     S.pressFromGrid = false
     return !pending
   }
+  // 기다리던 누름(`settle`)과 닿지 않아 다시 보내는 고르기(`resendLost`)도 화면을 떠난다 — 누르는 자리(`select`)처럼 떠나기
+  // 신호를 쏘고, 명부의 편집기가 busy 거나 편집표에서 막 손을 뗐으면 붙든 뒤 `send` 를 부른다. 기다리는 동안 쓴 편집이 묶음
+  // 타이머에 남은 채 옮기면 그 op 는 부품이 내려가며 말없이 사라진다. 막 손을 뗌은 지금 편집표 초점이거나 앞 고르기를 보낸
+  // 때(`since`) 뒤의 편집표 입력이 `EDIT_MS` 안인 것이다 — 그 전 입력은 앞 누름의 붙들기가 이미 기다렸다. 붙든 동안 그 탭이
+  // 닫혔거나 지금 탭이 됐으면 보내지 않는다.
+  const leaveThen = (item, send, since) => {
+    const pending = leaving()
+    const typed = S.gridFocused || (S.editAt > since && editPending(Date.now(), S.editAt, false, EDIT_MS))
+    if (!pending && !typed) {
+      send(item)
+      return
+    }
+    const id = item.dataset.id
+    holding(item, () => {
+      const target = S.items.get(id)
+      if (target && !target.hidden && id !== S.data.active) send(target)
+      else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
+    }, pending)
+  }
   // `opened` — 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림(`S.onOpenPage`). 기다리는 누름은 마지막 하나라 그 알림도 그
   // 누름과 함께 갈아 끼운다(`S.waitOpen`). 그 탭으로 이미 가는 중이면 지금 알린다 — 닿으면 `settleSelect` 가 다시 보내지 않는다.
   const select = (item, opened = null) => {
@@ -1094,7 +1366,8 @@ export default function (component) {
       return
     }
     if (verdict !== 'send') return
-    if (fresh()) {
+    const pending = leaving()
+    if (fresh() && !pending) {
       S.hold = null
       sendSelect(item, opened)
       return
@@ -1104,19 +1377,21 @@ export default function (component) {
       const target = S.items.get(id)
       if (target && !target.hidden && id !== S.data.active) sendSelect(target, opened)
       else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
-    })
+    }, pending)
   }
   const close = (item) => {
     const id = item.dataset.id
     if (item.__parts.close.hidden) return
-    if (id === S.data.active && !fresh()) {
+    const pending = id === S.data.active && leaving()
+    if (id === S.data.active && (!fresh() || pending)) {
       holding(item, () => {
         const target = S.items.get(id)
         if (target && !target.hidden) closeNow(target)
-      })
+      }, pending)
       return
     }
-    S.hold = null
+    // 지금 탭이 아닌 탭 닫기는 화면을 떠나지 않는다 — 붙든 누름(탭 · 테마 · 링크 · 브라우저 뒤로)을 버리지 않는다.
+    if (id === S.data.active) S.hold = null
     closeNow(item)
   }
   const closeNow = (item) => {
@@ -1151,19 +1426,31 @@ export default function (component) {
   // 붙든 동안 탭을 누르면 마지막 누름만 남는다 — 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다.
   const gate = {
     press: () => { S.pressFromGrid = S.gridFocused },
-    // 막 손을 뗀 누름이면 붙들고 참을 돌려준다 — 거짓이면 붙들지 않았으니 부른 쪽이 그대로 잇는다.
+    // 막 손을 뗀 누름이거나 명부의 편집기가 busy 면 붙들고 참을 돌려준다 — 거짓이면 붙들지 않았으니 부른 쪽이 그대로 잇는다.
     hold: (fn) => {
-      if (fresh()) {
+      const pending = leaving()
+      if (fresh() && !pending) {
         S.hold = null
         return false
       }
-      S.hold = { id: null, at: Date.now(), data: S.data, path: window.location.pathname, go: fn }
+      S.hold = { id: null, at: Date.now(), data: S.data, path: window.location.pathname, go: fn, seen: pending }
       clearTimeout(S.holdTimer)
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return true
     },
     go: (fn) => {
       if (!gate.hold(fn)) fn()
+    },
+    // 브라우저 뒤로·앞으로(`<tabs-nav-install>`)도 같은 판정을 쓴다 — 탭 줄과 같은 떠나기 확인(`ask`), 떠나면 사라지는 편집이
+    // 있는가(`loses`), 편집표(`<tabs-grid>`) 안의 요소인가(`inGrid`). 날아가는 고르기가 이미 물어 지나온 떠나기 글이면 다시 묻지
+    // 않는다(`navLeaveAsked`). `blurred` 는 뒤로가 편집표 초점을 코드로 뺀 뒤다 — 코드 blur 는 focusin 이 없어 초점 표지를 지금
+    // 활성 요소로 다시 맞추고(남으면 다음 누름이 까닭 없이 붙든다), 칸 편집기를 닫았으면(`typed`) 쓰는 중에 누른 것으로 적는다.
+    ask: () => navLeaveAsked(S.queue.flight, S.data && S.data.leave) || leaveOk(),
+    loses: () => Boolean(S.data && S.data.leave) && !navLeaveAsked(S.queue.flight, S.data.leave),
+    inGrid: (node) => Boolean(node && node.closest && node.closest(S.gridSelector)),
+    blurred: (typed) => {
+      S.gridFocused = gate.inGrid(document.activeElement)
+      if (typed) S.pressFromGrid = true
     },
   }
   window.__capaLeaveGate = gate
@@ -1463,6 +1750,9 @@ export default function (component) {
   }
   // 문서를 떠날 때 저장하지 않은 편집이 있으면 브라우저 확인 창(`<tabs-unload>`). 문서에 하나이고 걸고 풀지 않는다.
   installUnloadGuard(window, document)
+  // 브라우저 뒤로·앞으로를 붙드는 `navigate` 지킴이(`<tabs-nav-install>`). 문서에 하나이고 걸고 풀지 않는다 — 붙들기는 사건 때의
+  // `window.__capaLeaveGate` 를 읽는다.
+  installNavGuard(window)
 
   // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)과
   // 앞서 지나 보낸 링크가 여는 탭(`<tabs-links>`)에 없고, 그 둘을 합쳐 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를
@@ -1485,7 +1775,11 @@ export default function (component) {
     const inGrid = (node) => Boolean(node && node.closest && node.closest(S.gridSelector))
     S.onEdit = (event) => {
       if (event.type === 'focusin') S.gridFocused = inGrid(event.target)
-      if (inGrid(event.target)) S.editAt = Date.now()
+      if (inGrid(event.target)) {
+        S.editAt = Date.now()
+        // glide 격자(`st.data_editor`)는 떠나기 명부에 오르지 않는다 — 그 편집 뒤 붙들기는 0.4초를 기다린다(`<tabs-hold>`).
+        S.editGlide = Boolean(event.target.closest(GRID))
+      }
     }
     for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.addEventListener(type, S.onEdit, true)
   }
@@ -1530,8 +1824,20 @@ export default function (component) {
           return
         }
       }
+      // 상한 거름이 연 탭 표지(`S.linkFlight`)를 적기 전 값 — 떠나기 확인을 취소하면 되돌린다.
+      const before = S.linkFlight
       const why = refusal(href.split(/[?#]/)[0])
       if (!why) {
+        // 지금 화면에 적용하지 않은 편집표 편집(`leave` — 가용설비 현황 작은 편집표 둘 포함)이 있으면 탭 줄과 같은 확인을 묻는다.
+        // 붙든 누름은 다시 누를 때(새 data) 묻는다. 지금 화면의 링크는 떠나지 않는다.
+        const here = S.items.get(S.data.active)
+        const staying = here !== undefined && linkPath(href) === linkPath(here.__href)
+        if (!staying && !leaveOk()) {
+          S.linkFlight = before
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         if (opened) opened()
         return
       }
