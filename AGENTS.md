@@ -3387,8 +3387,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     차례 올림). 앞의 것은 팝업 여는 콜백도 부르지만 뒤의 것은 그 회차에만 부른다 — `page_visit` 으로 「다시
     들어왔다」를 아는 화면이 같은 페이지의 rerun 에서 위젯 아닌 칸을 거두지 않게.
 - `src/capa_simulation/settings.py`, `sidebar_status.py` — 앱 이름·경로·조회기간 상수와 운영 DB 자리 판정
-  (`settings.is_operational_database_place` — 사본 전용 스크립트의 거절과 점검 스크립트의 앱 프로세스 확인이 쓴다), 끄는 스위치
-  읽기(메모리 공유 둘 · 편집기 구역 끄개 `editor_scopes_enabled` — 값이 `off` 일 때만 끔)와, 사이드바의
+  (`settings.is_operational_database_place` — 사본 전용 스크립트의 거절과 점검 스크립트의 앱 프로세스 확인이 쓴다)과, 사이드바의
   구역 제목·조건 패널 칸·조회기간 상태 표시·접힘을 기억하는 상자·조건 카드(`sidebar_status`)다.
   - 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 조건 패널의 페이지 칸(`page_condition_slot`)은
     세션에 둔다 — 모듈 전역에 두면 세션끼리 나눠 쓴다. 공통 줄이 없는 화면은 칸 대신 미룬 패널(`defer_page_condition_slots`)을
