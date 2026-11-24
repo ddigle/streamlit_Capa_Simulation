@@ -1062,6 +1062,243 @@ console.log(JSON.stringify(out))
     assert timer in _js_function("showPopup")
 
 
+# 방금 누른 동작의 결과 사건(`flash` 를 실은 사건 — 파이썬 `flash._alert` 가 싣는다)을 세운다. 키가
+# 곧 짧은 글이다.
+_RESULT_FAKES = """
+const act = (C, key, level = 'info', kind = 'success') => {
+  const repeat = isRepeat(C.live.get(key), Date.now(), 60000)
+  showPopup(C, key, { level, short: key, flash: kind }, repeat)
+}
+const live = (C, key) => {
+  const item = C.live.get(key)
+  return item ? { visible: item.visible, gone: typeof item.goneAt === 'number' } : null
+}
+"""
+
+
+def _popups(body: str) -> Any:
+    return _node(
+        _js_function("showPopup") + _js_function("hidePopup") + _POPUP_FAKES + _RESULT_FAKES + body
+    )
+
+
+def test_an_action_result_stands_as_a_fourth_popup_when_the_stack_is_full() -> None:
+    """높은 단계 세 칸이 선 동안 방금 누른 저장의 결과(`flash` 를 실은 「알림」)가 오면 서자마자
+    걷히지 않고 넷째 칸으로 선다 — 앞 세 칸은 그대로다(2026-11-24 사용자 「권장대로」, 설계 규칙
+    UI-NTF-01). 로그인 직후 상태 알림 셋이 차 있어 첫 저장 성공 알림창이 보이지 않던 길(사외 점검
+    D2). 「확인 필요」 경고 결과도 같다 — 단계가 가장 낮아 걷힐 칸이어도 결과 칸이면 남는다."""
+    out = _popups(
+        """
+const out = {}
+let C = fresh()
+high(C)
+act(C, '저장했습니다')
+out.full = shown(C)
+out.result = C.resultKey
+out.live = live(C, '저장했습니다')
+C = fresh()
+raise(C, 'action', 'action')
+raise(C, 'error', 'error')
+raise(C, 'action2', 'action')
+act(C, '경고 결과', 'check', 'warning')
+out.warning = shown(C)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["full"] == ["action", "error", "check", "저장했습니다"]
+    assert out["result"] == "저장했습니다"
+    assert out["live"] == {"visible": True, "gone": False}
+    assert out["warning"] == ["action", "error", "action2", "경고 결과"]
+    stack = _js_function("showPopup")
+    assert "if (note.flash) C.resultKey = key" in stack
+    assert "(limits.popups || 3) + (kept ? 1 : 0)" in stack
+    assert "[...C.stack.children].filter((node) => node !== kept)" in stack
+
+
+def test_a_state_popup_after_the_result_drops_among_the_other_three_and_the_result_stays() -> None:
+    """결과 칸이 선 동안 온 다른 칸은 결과를 뺀 세 칸 + 새 칸 가운데서 지금 규칙대로 하나를 걷는다
+    (단계가 가장 낮은 칸, 같으면 먼저 선 칸 — 2026-11-10 보드 Q-1). 결과 칸은 남고 넷을 넘지 않는다.
+    결과가 아닌 「알림」 은 높은 단계 셋 앞에서 여전히 서자마자 걷힌다."""
+    out = _popups(
+        """
+const out = {}
+const C = fresh()
+high(C)
+act(C, '저장했습니다')
+raise(C, 'check2', 'check')
+out.state = shown(C)
+out.dropped = live(C, 'check')
+raise(C, 'info', 'info')
+out.info = shown(C)
+out.infoLive = live(C, 'info')
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["state"] == ["action", "error", "저장했습니다", "check2"]
+    assert out["dropped"] == {"visible": False, "gone": True}
+    assert out["info"] == ["action", "error", "저장했습니다", "check2"]
+    assert out["infoLive"] == {"visible": False, "gone": False}
+
+
+def test_a_result_and_a_state_in_one_scan_end_the_same_in_either_order() -> None:
+    """한 회차 훑기에 결과와 상태 알림이 같이 와도(「변경사항 적용」 — 내용 토큰이 바뀌어 상태
+    알림이 다시 뜸) 차례와 상관없이 같은 칸 넷이 남는다 — 결과 → 상태는 상한 넷에서 결과를 뺀 넷
+    가운데, 상태 → 결과는 상한 셋에서 하나를 걷고 결과가 넷째로 선다."""
+    out = _popups(
+        """
+const fill = (C) => ['s1', 's2', 's3'].forEach((key) => raise(C, key, 'check'))
+const out = {}
+let C = fresh()
+fill(C)
+act(C, '적용했습니다')
+raise(C, 's4', 'check')
+out.resultFirst = shown(C)
+C = fresh()
+fill(C)
+raise(C, 's4', 'check')
+act(C, '적용했습니다')
+out.stateFirst = shown(C)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert len(out["resultFirst"]) == len(out["stateFirst"]) == 4
+    expected = ["s2", "s3", "s4", "적용했습니다"]
+    assert sorted(out["resultFirst"]) == sorted(out["stateFirst"]) == expected
+
+
+def test_a_second_action_result_takes_the_fourth_place_from_the_first() -> None:
+    """새 결과가 서면 앞 결과는 그 순간 보통 칸이 되어 넘침 후보에 든다 — 단계가 가장 낮아 앞 결과가
+    걷히고 새 결과가 넷째 칸이다. 앞 결과는 보였던 칸이라 반복 창을 연다. 같은 결과가 다시 나면
+    새 칸 없이 「×2」 로 그 자리에 남는다(D4)."""
+    out = _popups(
+        """
+const out = {}
+const C = fresh()
+high(C)
+act(C, '첫 저장')
+clock += 2000
+act(C, '둘째 저장')
+out.second = shown(C)
+out.result = C.resultKey
+out.first = live(C, '첫 저장')
+act(C, '둘째 저장')
+out.again = shown(C)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["second"] == ["action", "error", "check", "둘째 저장"]
+    assert out["result"] == "둘째 저장"
+    assert out["first"] == {"visible": False, "gone": True}
+    assert out["again"] == ["action", "error", "check", "둘째 저장 ×2"]
+
+
+def test_the_result_key_clears_when_its_popup_leaves() -> None:
+    """결과 칸이 제 시간(알림 8초 · 그 밖 15초)에 걷히면 결과 열쇠가 비고 상한이 다시 세 칸이다 —
+    그 뒤 넘침은 결과 없이 지금 규칙대로 걷는다. 혼자 선 결과 뒤로 상태 셋이 차도 넷이고, 결과가
+    걷힌 뒤 온 칸은 셋 안에서 다툰다."""
+    out = _popups(
+        """
+const out = {}
+let C = fresh()
+high(C)
+act(C, '저장했습니다')
+expire(C, '저장했습니다')
+out.cleared = [C.resultKey, shown(C)]
+raise(C, 'info', 'info')
+out.afterInfo = shown(C)
+C = fresh()
+act(C, '저장했습니다')
+high(C)
+out.alone = shown(C)
+expire(C, '저장했습니다')
+raise(C, 'check2', 'check')
+out.afterCheck = [C.resultKey, shown(C)]
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["cleared"] == [None, ["action", "error", "check"]]
+    assert out["afterInfo"] == ["action", "error", "check"]
+    assert out["alone"] == ["저장했습니다", "action", "error", "check"]
+    assert out["afterCheck"] == [None, ["action", "error", "check2"]]
+    assert "if (C.resultKey === key) C.resultKey = null" in _js_function("hidePopup")
+
+
+def test_a_popup_without_flash_still_drops_at_once_when_it_is_the_lowest() -> None:
+    """`flash` 가 없는 칸(상태 알림 · 남의 저장 사건 · JS 로컬 사건)은 결과 칸이 아니다 — 높은 단계
+    셋 앞에서 「알림」 은 지금처럼 서자마자 걷히고 보인 적이 없다(2026-11-10 보드 Q-1). 결과 칸이
+    선 동안에도 같다. 결과 칸과 같은 열쇠로 `flash` 없는 칸이 다시 서면 그 칸은 보통 칸이 된다."""
+    out = _popups(
+        """
+const out = {}
+let C = fresh()
+high(C)
+raise(C, 'info', 'info')
+out.plain = [shown(C), live(C, 'info'), C.resultKey || null]
+act(C, '저장했습니다')
+raise(C, 'info', 'info')
+out.withResult = [shown(C), live(C, 'info')]
+C = fresh()
+high(C)
+act(C, '같은 글')
+showPopup(C, '같은 글', { level: 'info', short: '같은 글' }, false)
+out.sameKey = [C.resultKey || null, shown(C)]
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["plain"] == [["action", "error", "check"], {"visible": False, "gone": False}, None]
+    assert out["withResult"] == [
+        ["action", "error", "check", "저장했습니다"],
+        {"visible": False, "gone": False},
+    ]
+    assert out["sameKey"] == [None, ["action", "error", "check"]]
+
+
+def test_a_flash_event_marker_takes_the_result_place_through_the_event_path() -> None:
+    """파이썬 표지 꼴 그대로(`flash._alert` — `id` · `FL-01` · `kind: "event"` · `flash`)의 사건이
+    사건 길(`handle` → `handleEvent`)로 오면 상태 알림 셋 위 넷째 칸으로 선다. 같은 `FL-02` 라도
+    `flash` 가 없는 사건(화면 확인 · 탭 줄이 JS 로 내는 꼴)은 결과 칸이 아니라 서자마자 걷힌다."""
+    out = _node(
+        "const SEEN_LIMIT = 400\n"
+        + _js_function("showPopup")
+        + _js_function("hidePopup")
+        + _js_function("rowFor")
+        + _js_function("resolveRow")
+        + _js_function("text")
+        + _js_function("remember")
+        + _js_function("writeEventRow")
+        + _js_function("handleState")
+        + _js_function("handleEvent")
+        + _js_function("handle")
+        + _POPUP_FAKES
+        + """
+const out = {}
+const C = fresh()
+C.rows = []
+C.states = {}
+C.seen = []
+C.seenSet = new Set()
+C.data.text = {}
+const state = (code) => ({
+  code, kind: 'state', level: 'check', scope: 's', fp: `fp-${code}`, active: true, short: code,
+})
+for (const code of ['ST-01', 'ST-02', 'ST-03']) handle(C, state(code))
+handle(C, {
+  id: 'ev-1', code: 'FL-01', kind: 'event', level: 'info', short: '저장했습니다',
+  full: '저장했습니다', flash: 'success', origin: 'demo_flash',
+})
+out.flash = shown(C)
+handle(C, { id: 'ev-2', code: 'FL-02', kind: 'event', level: 'info', short: '안내', full: '안내' })
+out.plain = shown(C)
+out.rows = C.rows.map((row) => row.short)
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["flash"] == ["ST-01", "ST-02", "ST-03", "저장했습니다"]
+    assert out["plain"] == ["ST-01", "ST-02", "ST-03", "저장했습니다"]
+    # 걷힌 칸도 Alarm 줄에는 남는다.
+    assert out["rows"][:2] == ["안내", "저장했습니다"]
+
+
 def test_a_state_popup_whose_scope_moved_leaves_the_stack_so_the_apply_success_stays() -> None:
     """같은 코드의 상태 알림이 다른 범위로 오면 앞 범위 줄은 「범위 바뀜」 으로 닫히고(UI-NTF-02 —
     수가 같아도 새 줄) 그 줄의 알림창 칸도 걷힌다 — 한 상태 코드는 알림창 한 칸이다. 생산 계획

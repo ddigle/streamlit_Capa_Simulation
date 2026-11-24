@@ -4,7 +4,8 @@
 // - 알림창 한 꼴: 오른쪽 아래, 최대 3칸(넘치면 단계가 가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다 — `overflowVictim`),
 //   새 칸이 구석, 단계 이름 글자 + 단계 색 테두리. 누름을 받지 않는다(`pointer-events: none`). 층은 Streamlit 대화상자 위다.
 //   알림 8초 · 나머지 15초 뒤 걷는다. 방금 세운 칸이 넘침으로 곧바로 걷히면 보인 적이 없어 반복 창을 열지 않는다(`hidePopup`
-//   의 `seen`).
+//   의 `seen`). 방금 누른 동작의 결과 칸(`flash` 를 실은 사건 — `C.resultKey`)은 그 넘침에서 걷지 않고 제 시간 동안 상한 위
+//   한 칸(넷째)으로 선다 — 차 있던 칸은 밀리지 않고, 새 결과가 서면 앞 결과는 보통 칸이 된다(2026-11-24 사용자 「권장대로」).
 // - 표지 훑기: 알림을 내는 자리(`alerts.state` · `alerts.flush` · `flash.render_flash`)가 스타일만 든 `st.html` 표지
 //   (`style[data-capa-alerts]` — JSON, 팝업 본문 안에서는 칸 안의 숨은 `span`)를 그린다. 앱 뿌리의 회차 표지
 //   (`data-test-script-state`)가 바뀔 때마다 문서를 **한 번** 훑는다 — 상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 회차 시작에도 훑어 끊긴 회차의 표지를 놓치지
@@ -684,6 +685,8 @@ function createCenter(data) {
     seen: [],
     seenSet: new Set(),
     live: new Map(),
+    // 방금 누른 동작의 결과 알림창 칸의 열쇠(`showPopup` 이 세우고 그 칸이 걷힐 때 `hidePopup` 이 비운다) — 넘침에서 걷지 않는 한 칸.
+    resultKey: null,
     filter: { level: 'all', page: '', hideResolved: false },
     open: null,
     openLogs: new Set(),
@@ -1227,8 +1230,14 @@ function showPopup(C, key, note, repeat) {
   live.level = String(note.level || 'info')
   clearTimeout(live.timer)
   live.timer = setTimeout(() => hidePopup(C, key), levelMs(C, note.level))
-  while (C.stack.children.length > (limits.popups || 3)) {
-    const shown = [...C.stack.children]
+  // 방금 누른 동작의 결과(`flash` 를 실은 사건)는 제 시간 동안 상한 위 한 칸이고 넘침 후보에서 빠진다 — 상태 알림 셋이 차 있어도
+  // 저장 성공이 서자마자 걷히지 않고, 차 있던 칸도 밀리지 않는다. 새 결과가 서면 앞 결과는 보통 칸(후보)이 된다.
+  if (note.flash) C.resultKey = key
+  else if (C.resultKey === key) C.resultKey = null
+  const result = C.resultKey ? C.live.get(C.resultKey) : null
+  const kept = result && result.el && result.el.isConnected ? result.el : null
+  while (C.stack.children.length > (limits.popups || 3) + (kept ? 1 : 0)) {
+    const shown = [...C.stack.children].filter((node) => node !== kept)
     const victim = shown[overflowVictim(shown.map((node) => node.dataset.level))]
     const owner = [...C.live.entries()].find(([, item]) => item.el === victim)
     if (owner) hidePopup(C, owner[0], owner[0] !== key)
@@ -1242,7 +1251,9 @@ function showPopup(C, key, note, repeat) {
 
 // `seen` 이 거짓이면 방금 세운 칸이 넘침으로 곧바로 걷힌 것이다 — 보인 적이 없으니 반복 창(`goneAt`)을 이 회로 열지 않는다.
 // 처음 난 알림은 다음에 나도 「×n」 · 시선 끌기 없이 새 칸으로 서고, 앞에 보였던 알림은 그때 연 창이 그대로다.
+// 걷히는 칸이 결과 칸이면 그 열쇠를 비워 상한이 다시 세 칸이 된다.
 function hidePopup(C, key, seen = true) {
+  if (C.resultKey === key) C.resultKey = null
   const live = C.live.get(key)
   if (!live) return
   clearTimeout(live.timer)

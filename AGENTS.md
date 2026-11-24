@@ -5547,9 +5547,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
   필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
-  가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1) ·
-  `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING` ·
-  `ATTENTION_HIT_MS` 900 · `ATTENTION_FADE_MS` 160 · `ATTENTION_STILL_MS` 1600)가 여기 한 곳이다. 시선 끌기 값은
+  가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1). 방금 누른 동작의
+  결과 칸(`flash` 를 실은 사건)은 그 넘침에서 걷지 않고 제 시간 동안 이 위 한 칸으로 선다(`showPopup` 의 `C.resultKey` —
+  2026-11-24 사용자 「권장대로」) · `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 ·
+  `ATTENTION_EASING` · `ATTENTION_HIT_MS` 900 · `ATTENTION_FADE_MS` 160 · `ATTENTION_STILL_MS` 1600)가 여기 한 곳이다. 시선 끌기 값은
   `attention_payload()` 한 사전으로 알림 칸 data `limits` 와 Space 층 보기 · 편집 data `attention` 이 함께 받는다(두 JS 에 수를 두지 않는다). API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
   코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
@@ -9981,6 +9982,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Static 대비 일정을 열면 `EQ-06` · `EQ-23` 이 더 떠 먼저 선 `EQ-12` 를 15초 전에 밀어내던 소음(샘플 관측 — 2026-11-10 사본 앱). 그 대가로 높은 단계 세 칸이 선 동안 온
   「알림」 은 서자마자 걷힌다(Alarm 줄 · 안 읽음 수에는 남는다). 그 칸은 보인 적이 없어 반복 창을 열지 않는다 — 다음에 나도
   「×n」 · 시선 끌기 없이 새 칸이다(`hidePopup` 의 `seen` — 앞에 보였던 알림은 그때 연 창 그대로).
+  **다만 방금 누른 동작의 결과 칸은 그 넘침에서 걷지 않고 상한 위 한 칸(넷째)으로 선다**(2026-11-24 사용자 「권장대로」 — 정식판
+  1.0 마감 2번 D). 결과 칸은 `flash` 를 실은 사건(`flash._alert` — 버튼 곁 결과 `queue_flash`)이고 알림 칸이 그 열쇠 하나
+  (`C.resultKey`)를 들고 그 칸이 걷힐 때(`hidePopup`) 비운다. 그 칸이 서 있는 동안 상한은 `POPUP_LIMIT` + 1 이고 걷을 칸 후보에서
+  그 칸만 빠진다 — 나머지는 위 규칙 그대로라 차 있던 칸이 결과에 밀리지 않고 넷을 넘지 않는다. 새 결과가 서면 앞 결과는 그 순간
+  보통 칸(후보)이 된다. 결과는 제 시간(알림 8초 · 그 밖 15초)을 다 선다 — 로그인 직후 상태 알림 셋이 차 있어 첫 저장 성공 알림창이
+  보이지 않던 길(사외 점검 D2). 상태 알림 · 남의 저장 사건 · JS 로컬 사건(탭 줄 · 화면 확인 `raise`)은 `flash` 가 없어 결과 칸이
+  아니다.
 - **닫는 회차에 알림 표지를 쓰는 팝업은 앱 전체로 닫는다**(지난 보드 a-fragment-mark — 2026-11-10 Q-11 권장대로). 알림 칸은 앱 뿌리의
   회차 표지가 바뀔 때만 문서를 훑는다 — 호스트만 도는 짧은 회차(팝업 호스트 닫기)는 그 표지를 움직이지 않아 그 회차가 남긴 알림 ·
   해소 표지를 다음 회차까지 읽지 못한다. 그래서 닫힌 자리(`DialogHost(idle=)` · 닫힌 팝업이 넘긴 알림)가 알림을 내는 팝업 —
