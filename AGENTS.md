@@ -2428,6 +2428,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     앞뒤 공백 · 글자가 하나라도 든 칸은 그대로다. DB 조회가 이 칸들을 글자로 넘긴다고 확인되면 묶음을 비운다(그때는 파일 글자
     그대로가 DB 와 같다 — 두 꼴 모두 `tests/test_source_csv.py` 의 두 길 같음 시험이 본다).
   - 원천 유형 `SOURCE_CSV_SOURCE_TYPE`(`CSV_CORE_DATA_UPLOAD`). 시험 견본은 `tests/source_csv_samples.py`(내장 합성 시드 값).
+  - 견줌 스크립트 `scripts/inspect_source_csv.py`(사본 · 읽기만 · 값 없이 수만): 같은 길(요약 → 공급자 → 정규화)로 읽은 CSV 원천을
+    DB 사본에 같은 코드로 받아 둔 DB 길 원천(파생 넷 · CSV 원천 밖, 가장 최근 적재)과 견준다 — 원천 행 · 접은 행, 저장 해시(원천 코드
+    불변 검사의 값) 같음, 지금 파이프라인으로 다시 파생한 16표의 정확 · 오차 안(`rtol` 1e-12 · `atol` 0 — 행 차례는 숫자 아닌 칸이 앞
+    열쇠), 오차 밖으로 값 묶음이 다른 계약 열, CUSTOM 을 빈 값 표지로 둔 16표(CUSTOM 둘째 표를 붙이기 전 DB 등록분은 CUSTOM 키 표가
+    늘 갈린다). 운영 DB 자리는 `inspect_revision_calculations.py` 와 같은 판정으로 열기 전에 거절하고, 코드 · 파일 이름 · 예외 문구는
+    찍지 않으며(멈춤은 단계와 예외 종류만) 끝에 코드마다 `전송용 요약:` 한 줄이다. 사내 권한 템플릿 deny 에 든다 — 사용자가 별도 창에서 친다.
 - `src/capa_simulation/io/company_bigdataquery_adapter.py` — 사내 SQL·컬럼 매핑 전용 접속부로, 결과를 CSV 로 남기지 않고
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서

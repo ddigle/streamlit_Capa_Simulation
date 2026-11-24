@@ -43,6 +43,7 @@ DATABASE_SCRIPTS = (
     "check_deploy_screens.py",
     "inspect_wf_division.py",
     "inspect_db_counts.py",
+    "inspect_source_csv.py",
     "sync_object_storage.py",
 )
 OPENS_A_DATABASE = (*DATABASE_SCRIPTS, "duckdb.connect", "import duckdb")
@@ -369,6 +370,8 @@ def test_the_settings_template_denies_every_runbook_line_that_opens_a_database()
         f"{prefix}check_deploy_screens.py --items alert_popup --playwright-dir C:/pw",
         f"{prefix}inspect_db_counts.py --output C:/Users/someone/db_counts.md",
         f"{prefix}inspect_db_counts.py",
+        f"{prefix}inspect_source_csv.py --database C:/Users/someone/e2e_copy/1/data/x.duckdb "
+        "--csv C:/Users/someone/source.csv --output C:/Users/someone/source_csv.md",
     ]
     names = {name for name in DATABASE_SCRIPTS if any(name in line for line in lines)}
 
