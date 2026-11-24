@@ -1,7 +1,7 @@
 # Purpose: 원천 CSV 를 「다리」 원천으로 가린다 — 불변 검사 · 「등록됨」 셈에서 빼는 판정 한 곳.
 
-"""원천 CSV 는 DB 가 그 코드를 적재하기 전까지 건너는 「다리」 원천이다(사용자 물음 Q-C1
-(나) — `docs/TODO.md` 2장 「BigDataQuery 어댑터·등록」).
+"""원천 CSV 는 DB 가 그 코드를 적재하기 전까지 건너는 「다리」 원천이다(사용자 결정 Q-C1
+(나) — `docs/TODO.md` 3장 「운영·배포」 2026-11-25).
 
 - 원천 코드 불변 검사(`persistence/source_data_store.validate_immutable_source_code`)는 다리
   아닌 원천(DB 조회 등)을 받을 때 다리 원천의 해시를 견주지 않는다(`compared_source_hashes`) —

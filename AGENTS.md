@@ -3105,8 +3105,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   PLAN 모두), 리비전 메모(`source_csv_note` — 「CSV 파일 <이름>」 ·
   「CUSTOM 파일 값 — 종류 n」, 파일 이름은 `safe_file_name` 로 경로 · 제어 글자를 떼고 60자), 원천 등록시점 판정
   (`optional_registered_at` — DB 폼 `_optional_datetime` 과 같은 판정 · 같은 칸 정규식, 하나로 모으기는 1.0.x).
-- `src/capa_simulation/services/source_bridge.py` — 원천 CSV 를 「다리」 원천으로 가리는 판정 한 곳이다(사용자 물음 Q-C1 (나) — 답
-  대기, 7장 「원천은 두 길」). 원천 유형이 `CSV_CORE_DATA_UPLOAD` 와 글자 그대로 같을 때만 다리다(`is_bridge_source` — 초기 이관
+- `src/capa_simulation/services/source_bridge.py` — 원천 CSV 를 「다리」 원천으로 가리는 판정 한 곳이다(사용자 결정 Q-C1 (나) —
+  2026-11-25, 7장 「원천은 두 길」). 원천 유형이 `CSV_CORE_DATA_UPLOAD` 와 글자 그대로 같을 때만 다리다(`is_bridge_source` — 초기 이관
   스크립트의 `CSV_CORE_DATA_INITIAL_*` · 복제 · 파생은 아님). 원천 코드 불변 검사가 견줄 해시(`compared_source_hashes` — 다리 아닌
   원천을 받으면 다리 원천 해시를 뺌), 「등록됨」 으로 셀 코드(`settled_source_codes` — 다리 원천 시나리오를 뺌, 자동 갱신 실행 · DB
   등록 탭 DB 목록이 부름), 원천 CSV 처음 시나리오명 꼬리(`BRIDGE_NAME_TAIL`)를 둔다. 시험 `tests/test_source_bridge.py`.
@@ -8318,8 +8318,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그런 CSV 시나리오를 공식으로 지정하면 그 코드가 DB 목록에 오기 전 회차의 자동 갱신은 지정 시각보다 앞서 생긴 같은 주차 코드를
     받지 않는다(`auto_official_update` 기준 시각 = 원천 등록시각 또는 지정 시각). 원천 웹 파일 이름에는 시뮬레이션명 · 주차가 없어 이름
     처음 값은 시뮬레이션 코드다 — 공식으로 쓸 시나리오는 이름에 `W##` 를 넣고 등록시점을 채운다(Guide).
-  - **원천 CSV 는 다리다 — DB 원천의 원천 코드 불변 검사 · 「등록됨」 셈에서 빠진다**(사용자 물음 Q-C1 (나) — 답 대기, 답이 (가) 면
-    이 판정을 걷는다 · `services/source_bridge.py`). 다음 날 같은 코드가 DB 에 오면 CSV 원천과 바이트가 달라도(소수 글자 · 빈 값 꼴 ·
+  - **원천 CSV 는 다리다 — DB 원천의 원천 코드 불변 검사 · 「등록됨」 셈에서 빠진다**(사용자 결정 Q-C1 (나) — 2026-11-25 ·
+    `services/source_bridge.py`). 다음 날 같은 코드가 DB 에 오면 CSV 원천과 바이트가 달라도(소수 글자 · 빈 값 꼴 ·
     재적재 겹침으로 대개 다르다) DB 등록 · 자동 갱신이 평소처럼 선다 — 한 코드에 원천 두 벌(CSV · DB)이고 CSV 시나리오는 남아 사람이
     보관한다. 불변 검사는 한쪽으로만 뺀다: DB 원천을 받을 때 같은 코드의 CSV 원천 해시를 견주지 않고, CSV 원천을 받을 때는 지금처럼
     모든 원천과 견준다(같은 코드의 CSV 원천은 한 벌, DB 원천이 먼저 있으면 바이트가 같은 파일만 — 거절 글은 그대로 「상세 조회 기간이나
