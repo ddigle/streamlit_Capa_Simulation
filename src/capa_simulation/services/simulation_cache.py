@@ -3114,7 +3114,8 @@ def get_process_product_demand(
     차례가 표시순서(산출 결과 · 소요대수)를 따르므로 지문이 키에 든다. `_display_order` 는
     `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다. 빗나가면 공정 조각
     (`get_process_calculation_rows`)만 받는다. 부품을 가르는 제품은 받은 시나리오 계획 전체
-    (`_scenario_tables["RQ_PKG_PLAN"]`)로 판정한다 — 키의 content_token 이 정하는 값이다.
+    (`_scenario_tables["RQ_PKG_PLAN"]`)로 판정한다 — 키 둘째 칸인 계산 토큰(AGENTS 5장 44)의
+    앞머리 내용 토큰이 정하는 값이다.
     """
     del display_order_key
     rows = get_process_calculation_rows(
