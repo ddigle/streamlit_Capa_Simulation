@@ -35,6 +35,7 @@ from capa_simulation.services.load_calculator import (
 )
 from capa_simulation.services.product_parts import PART_NOT_SPLIT, multi_part_products
 from capa_simulation.services.product_share import assign_product_slots, build_product_volume
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 
 def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
@@ -982,6 +983,7 @@ def test_home_plan_detail_judges_the_parts_on_the_whole_revision_plan() -> None:
         start_month=months[0],
         end_month=months[-2],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
 
     for include_edp in (True, False):

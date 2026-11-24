@@ -26,6 +26,7 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.load_calculator import calculate_wafer_load, filter_edp_plan
 from capa_simulation.services.plan_gap import WAFER_GAP_FORMAT, WAFER_GAP_SCALE, plan_gap_texts
 from capa_simulation.services.product_parts import PART_NOT_SPLIT
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602]
@@ -259,6 +260,7 @@ def _detail_gap_against_an_old_revision(
         start_month=months[0],
         end_month=months[-1],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     dimensions = list(PRODUCTION_DETAIL_DIMENSIONS)
     current = simulation_cache.get_home_plan_detail(

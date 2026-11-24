@@ -57,6 +57,7 @@ from capa_simulation.services.product_share import (
     combine_product_volume,
     past_product_volume,
 )
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # 보드 답 D1 (가) 의 꼴 그대로 적는다 — 이름표 도우미로 지으면 꼴을 되돌려도 기대가 함께 바뀐다.
@@ -82,6 +83,7 @@ def _home(
         start_month=start if start is not None else months[0],
         end_month=end if end is not None else months[-1],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     simulation = sc.get_home_simulation(key, tables, display_order, tables)
     without_edp = sc.get_home_lob_without_edp(key, tables, display_order)

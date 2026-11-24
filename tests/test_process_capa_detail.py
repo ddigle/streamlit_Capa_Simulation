@@ -533,7 +533,7 @@ def test_two_part_rows_split_one_product_and_add_up_to_the_parent(split: str) ->
     행의 합은 접은 표의 그 제품 한 행과 같다. 다른 제품의 행은 그대로이고 모든 행의 합은 공정
     소요대수다."""
     split_tables = two_part_tables()
-    _, required = get_capacity_and_demand(split_tables)
+    _, required = get_capacity_and_demand(split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     months = _months(required)
     multi_part = multi_part_products(split_tables["RQ_PKG_PLAN"])
     display_order = prepare_display_order(split_tables["RQ_DISPLAY_ORDER"])
@@ -589,7 +589,7 @@ def test_one_custom_value_per_product_keeps_the_rows_of_the_blank_marker(
 ) -> None:
     """제품마다 CUSTOM 이 실값 하나뿐인 데이터는 부품을 가르지 않는다 — 분류 · 숫자 · 차례가 표지
     `-` 하나인 데이터와 같고 CUSTOM 칸은 접힌 값이다."""
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     months = _months(required)
     display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
     names = sorted(required["제품정보"].dropna().astype(str).unique())
@@ -747,7 +747,9 @@ def test_the_top_products_name_the_parts_like_the_product_rows() -> None:
     """① 근거 카드의 상위 제품은 제품별 소요대수 분류 행과 같은 판정 · 같은 이름표 · 같은 숫자다
     (PRC-01). 제품 수도 이름표 단위로 센다."""
     split_tables = two_part_tables()
-    unit, required = get_capacity_and_demand(split_tables)
+    unit, required = get_capacity_and_demand(
+        split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
     multi_part = multi_part_products(split_tables["RQ_PKG_PLAN"])
     rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
     trace = build_process_month_trace(
@@ -1128,7 +1130,7 @@ def test_splitting_parts_keeps_the_constraint_demand_of_the_whole_product() -> N
     """제약 시뮬레이션은 같은 분류 「제품정보」 표를 읽는다 — 부품 행으로 갈라도 제품정보로 맞대므로
     그 제품의 제약 소요는 접은 표와 같다(부품 단위 고르기는 제약 화면의 몫)."""
     split_tables = two_part_tables()
-    _, required = get_capacity_and_demand(split_tables)
+    _, required = get_capacity_and_demand(split_tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     months = _months(required)
     parent = _process_demand(required, WAFER_PROCESS, months)
     process_months = pd.DataFrame(

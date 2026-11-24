@@ -32,6 +32,7 @@ from capa_simulation.services.product_parts import (
     part_merged_columns,
 )
 from capa_simulation.services.product_share import OTHER_PRODUCT_LABEL, assign_product_slots
+from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import get_capacity_and_demand
 
@@ -56,6 +57,7 @@ def _screen_labels(tables: Mapping[str, pd.DataFrame]) -> dict[str, set[str]]:
         start_month=months[0],
         end_month=months[-1],
         display_order=display_order,
+        route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS,
     )
     simulation = sc.get_home_simulation(key, tables, display_order, tables)
     without_edp = sc.get_home_lob_without_edp(key, tables, display_order)
@@ -92,7 +94,7 @@ def _screen_labels(tables: Mapping[str, pd.DataFrame]) -> dict[str, set[str]]:
     assert "CUSTOM" not in visible
     screens["HOME 계획 세부수량"] = {str(name) for name in merged["제품정보"].dropna()}
 
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     multi_part = multi_part_products(tables["RQ_PKG_PLAN"])
     for process in PROCESSES:
         table = build_process_product_demand(
@@ -158,7 +160,7 @@ def test_the_constraint_whole_line_and_part_lines_cover_the_process_rows(process
     그 제품의 분류 행이 없는 화면 값이다(제품 전체)."""
     tables = two_part_tables()
     months = _months(tables)
-    _, required = get_capacity_and_demand(tables)
+    _, required = get_capacity_and_demand(tables, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
     table = build_process_product_demand(
         required,
         process=process,
