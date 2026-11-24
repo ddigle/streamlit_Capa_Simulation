@@ -380,9 +380,10 @@ def test_a_cut_before_sending_shows_its_retry_turn_and_the_limit_stop_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """보내기 전 끊김(`import_killed`)은 `AD-24` 짧은 글 · 지문에 「다시 시도 n/3」 이 붙고(차례가
-    바뀌면 다시 선다) 전문은 다음 시도 시각과 멈추는 때를 말한다. 다시 시도 상한을 넘긴
-    멈춤(`cut_limit`)은 `AD-23` 짧은 글이 「다시 시도 3/3 끊김」 이고 전문은 계정 잠김 때문이
-    아니라 다시 시도를 다 썼다고 말한다."""
+    바뀌면 다시 선다) 전문은 다음 시도 시각과 멈추는 때, 새 서버 시작은 그 시각을 기다리지 않는
+    것을 말한다. 다시 시도 상한을 넘긴 멈춤(`cut_limit`)은 `AD-23` 짧은 글이 「다시 시도 3/3
+    끊김」 이고 전문은 계정 잠김 때문이 아니라 다시 시도를 다 썼다고, 떠 있는 서버는 더 하지 않고
+    풀리는 길은 새 서버 시작의 한 번 · 계정 다시 넣기 둘이라고 말한다."""
     _server(tmp_path, monkeypatch)
     now = datetime(2026, 11, 20, 9, 0, tzinfo=store.KST)
     monkeypatch.setattr(bdq_login, "_wall", lambda: now)
@@ -403,6 +404,8 @@ def test_a_cut_before_sending_shows_its_retry_turn_and_the_limit_stop_says_so(
     assert "불러오는 중 끊김 — 비밀번호를 보내기 전" in note["full"]
     assert "다시 시도 1/3 — 2026-11-20 09:05:00 뒤" in note["full"]
     assert "3번이 모두 끊기면 멈춥니다" in note["full"]
+    assert "서버가 새로 뜨면 기다리지 않고 시작 때 한 번 해 봅니다" in note["full"]
+    assert "재시작 때 다시 시도하고" not in note["full"]
     assert active_state(app, STOP) is None
     _secret_free(note)
     first = note["fp"]
@@ -422,6 +425,8 @@ def test_a_cut_before_sending_shows_its_retry_turn_and_the_limit_stop_says_so(
     assert len(stop["short"]) <= alerts.SHORT_LIMIT
     assert "불러오는 중 끊김 다시 시도 상한" in stop["full"]
     assert "더는 다시 시도하지 않습니다" in stop["full"]
+    assert "서버가 새로 뜨면(CI/CD · 컨테이너 재시작) 그때 한 번은 해 보아" in stop["full"]
+    assert "계정을 다시 넣어 로그인이 성공해도 풀립니다" in stop["full"]
     assert "계정이 잠기지 않게" not in stop["full"]
     _secret_free(stop)
 
@@ -442,4 +447,5 @@ def test_a_cut_at_start_is_a_standing_trouble_not_a_stop(
     assert note["short"] == "BigDataQuery 자동 로그인 시도하지 못함 — 다시 시도 대기"
     assert "불러오는 중 끊김 — 비밀번호를 보내기 전" in note["full"]
     assert "3번이 모두 끊기면 멈춥니다" in note["full"] and "성공 없이" not in note["full"]
+    assert "보내기 전). 다음 토큰 오류 때 다시 시도하고(서버가 새로 뜨면" in note["full"]
     assert active_state(app, STOP) is None

@@ -669,8 +669,10 @@ def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts
 
 def login_stop_note(view: bdq_login.LoginView, *, admin: bool) -> alerts.AlertNote:
     """자동 로그인 멈춤 개발자 알림(`AD-23`) 표지 한 칸. 멈춤이 아니거나 개발자가 아니면 해소다.
-    지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면 풀린다(D3). 「그
-    화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` — UI-NAV-01)."""
+    지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면 풀린다(D3). 보내기
+    전 끊김의 상한 멈춤(`cut_limit`)은 새 서버 시작의 한 번(`bdq_login.start_login`)이 성공해도
+    풀린다. 「그 화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` —
+    UI-NAV-01)."""
     active = view.state == "stopped" and admin
     return alerts.state_note(
         LOGIN_STOP_ALERT_CODE,
@@ -714,7 +716,9 @@ def _cut_retry(view: bdq_login.LoginView) -> int:
 
 
 def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
-    """`AD-24` 전문(평문) — 무엇이 서지 못했고 무엇이 그다음인가. 계정 · 비밀번호가 없다."""
+    """`AD-24` 전문(평문) — 무엇이 서지 못했고 무엇이 그다음인가. 계정 · 비밀번호가 없다. 보내기
+    전 끊김은 떠 있는 서버가 다음 시도 시각 뒤의 토큰 오류 때 다시 하고, 새 서버 시작은 그 시각을
+    기다리지 않고 한 번 한다(`bdq_login.start_login`)."""
     reason = login_reason_text(view.trouble_reason) if view.trouble_reason else "까닭 모름"
     if view.trouble_reason == bdq_login.REASON_IMPORT_KILLED:
         retry = _cut_retry(view)
@@ -722,7 +726,8 @@ def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
         due = f"{clock_text(view.retry_at)} 뒤 " if view.retry_at else ""
         return (
             f"저장된 BigDataQuery 계정의 자동 로그인이 {word}({reason} — 비밀번호를 "
-            f"보내기 전). {turn}{due}다음 토큰 오류 · 재시작 때 다시 시도하고, 다시 시도 "
+            f"보내기 전). {turn}{due}다음 토큰 오류 때 다시 시도하고(서버가 새로 뜨면 "
+            "기다리지 않고 시작 때 한 번 해 봅니다), 다시 시도 "
             f"{bdq_login.CUT_RETRY_LIMIT}번이 모두 끊기면 멈춥니다. Admin Area "
             f"「{BDQ_LOGIN_LABEL}」 의 진단 줄(종료 코드 · 메모리 단서)이 끊긴 모습이고, 계정을 "
             "다시 넣으면 곧바로 로그인해 봅니다."
@@ -748,12 +753,14 @@ def _login_stop_short(view: bdq_login.LoginView) -> str:
 def _login_stop_text(view: bdq_login.LoginView) -> str:
     """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다. 표지 없이 끝난 멈춤은
     로그인이 거절됐는지 모른다는 것과 진단을 볼 자리를 먼저 말한다. 보내기 전 끊김이 다시 시도
-    상한을 넘긴 멈춤은 계정 잠김 때문이 아니라 다시 시도를 다 썼다는 것과 진단을 볼 자리를
-    말한다."""
+    상한을 넘긴 멈춤은 계정 잠김 때문이 아니라 다시 시도를 다 썼다는 것과 진단을 볼 자리, 그리고
+    풀리는 길 둘을 말한다 — 떠 있는 서버는 더 하지 않지만 새 서버 시작은 한 번 해 보고
+    (`bdq_login.start_login`), 계정을 다시 넣어도 된다."""
     reason = login_reason_text(view.stop_reason) if view.stop_reason else "까닭 모름"
+    spare = f"그때까지 조회는 예비 토큰(CD 환경변수 {BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
     unlock = (
         f"Admin Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 넣어 로그인이 성공하면 풀립니다. "
-        f"그때까지 조회는 예비 토큰(CD 환경변수 {BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
+        f"{spare}"
     )
     if view.stop_reason == bdq_login.REASON_CUT_LIMIT:
         return (
@@ -761,7 +768,9 @@ def _login_stop_text(view: bdq_login.LoginView) -> str:
             "프로세스가 패키지를 불러오는 중(비밀번호를 보내기 전) 바깥에서 끊겼고, 쉬며 다시 "
             f"시도한 {bdq_login.CUT_RETRY_LIMIT}번도 모두 끊겼습니다 — Admin Area "
             f"「{BDQ_LOGIN_LABEL}」 · 「서버 시작 점검」 의 진단 줄(종료 코드 · 메모리 단서)을 "
-            f"먼저 봅니다. 더는 다시 시도하지 않습니다. {unlock}"
+            "먼저 봅니다. 떠 있는 이 서버는 더는 다시 시도하지 않습니다. 서버가 새로 뜨면(CI/CD · "
+            "컨테이너 재시작) 그때 한 번은 해 보아 로그인이 성공하면 풀리고, Admin Area "
+            f"「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 넣어 로그인이 성공해도 풀립니다. {spare}"
         )
     if view.stop_reason in bdq_login.UNCONFIRMED_REJECT_REASONS:
         head = (
