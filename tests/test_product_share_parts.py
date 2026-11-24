@@ -225,8 +225,9 @@ def test_one_value_data_gives_the_slots_colors_and_order_of_the_frame_without_cu
 
 
 def test_the_past_marker_slice_never_pushes_the_calculated_colors() -> None:
-    """과거 입력에는 부품이 없어 「제품 (-)」 조각이다. 과거 전용 이름이라 계산 구간 제품 뒤에서
-    칸을 받는다 — Past Data 를 켜도 부품 조각의 색이 그대로다."""
+    """과거 입력에는 부품이 없어 「제품 (-)」 조각이다. 과거 전용 이름이라 계산 구간 제품의 칸
+    배정을 마친 뒤에 그 제품 첫 부품의 색 칸을 빌린다(그림 보드 3 답 q7-past-slice (나)) — Past
+    Data 를 켜도 부품 조각의 색이 그대로이고 새 칸이 서지 않는다."""
     tables = two_part_tables()
     months = _months(tables)
     _, volume, _ = _home(tables)
@@ -252,9 +253,13 @@ def test_the_past_marker_slice_never_pushes_the_calculated_colors() -> None:
     with_past = assign_product_slots(volume, display_order, past_volume=past_volume)
 
     marker = "DEMO PRODUCT A (-)"
-    assert with_past.order[: len(without_past.order)] == without_past.order
+    assert with_past.order == without_past.order
     assert {name: with_past.slot[name] for name in without_past.order} == dict(without_past.slot)
-    assert with_past.order[-1] == marker
+    lender = next(name for name in without_past.order if name.startswith(f"{TWO_PART_PRODUCT} ("))
+    assert dict(with_past.lenders) == {marker: lender}
+    assert with_past.slot[marker] == with_past.slot[lender]
+    # 지금 규칙이면 계산 구간 뒤 남는 칸을 받았다 — 그 칸은 비워 두고 겹칠 때만 쓴다.
+    assert dict(with_past.fallback) == {marker: len(without_past.order)}
     cells = build_product_share_cells(
         combine_product_volume(volume, past_volume),
         "PKG",
@@ -264,6 +269,202 @@ def test_the_past_marker_slice_never_pushes_the_calculated_colors() -> None:
     past_cell = cells[month_label(months[0] - 100)]
     assert past_cell.past
     assert {piece.product for piece in past_cell.slices} == {marker, "DEMO PRODUCT B"}
+    borrowed = next(piece for piece in past_cell.slices if piece.product == marker)
+    assert borrowed.slot == with_past.slot[lender] and borrowed.lender == lender
+
+
+MARKER = "DEMO_PART (-)"
+
+
+def _slot_volumes(
+    calculated: list[tuple[str, str, float]], past: list[tuple[str, float]]
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """계산 달(202609)의 (제품, 부품, 수량)과 과거 달(202608)의 (제품, 수량) — DEMO_PART 만 부품을
+    가른다."""
+    plan = pd.DataFrame(
+        [(202609, name, part, value) for name, part, value in calculated],
+        columns=["생산계획년월", "제품정보", "CUSTOM", "생산수량"],
+    )
+    volume = build_product_volume(
+        plan, plan.rename(columns={"생산수량": "물량"}), multi_part=frozenset({"DEMO_PART"})
+    )
+    past_frame = pd.DataFrame(
+        {
+            "생산계획년월": [202608] * len(past),
+            "제품정보": [name for name, _ in past],
+            "Stack": ["12H"] * len(past),
+            "Customer": ["DEMO-CUST"] * len(past),
+            "생산수량": [value for _, value in past],
+        }
+    )
+    past_volume = past_product_volume(
+        past_frame,
+        start_month=202608,
+        end_month=202609,
+        exclude_months={202609},
+        multi_part=frozenset({"DEMO_PART"}),
+    )
+    return volume, past_volume
+
+
+def _full_slots() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """계산 달 이름 여섯이 칸을 다 써 과거 전용 이름에 남는 칸이 없는 견본(그림 보드 3 의 꼴)."""
+    others = [
+        (f"DEMO_{index}", "-", 100.0 + index) for index in range(PRODUCT_SHARE_SLOT_COUNT - 2)
+    ]
+    return _slot_volumes(
+        [*others, ("DEMO_PART", PART_A, 500.0), ("DEMO_PART", PART_B, 20.0)],
+        [("DEMO_PART", 300.0), ("DEMO_PAST", 50.0), ("DEMO_0", 10.0)],
+    )
+
+
+def test_a_past_marker_borrows_the_first_named_part_slot_when_no_slot_is_left() -> None:
+    """칸이 모자라 지금 규칙이면 과거 「DEMO_PART (-)」 가 `기타` 로 접히는 견본 — 그 제품의 부품
+    가운데 이름 있는 칸을 받은 첫 부품(칸 차례로 가장 앞)의 색 칸을 빌린다(그림 보드 3 답
+    q7-past-slice (나)). 칸 수 · 다른 제품의 칸 · `기타` 접힘(과거 전용 DEMO_PAST)은 빌리지 않은
+    배정과 같고, 풍선 이름은 「DEMO_PART (-)」 그대로다."""
+    volume, past_volume = _full_slots()
+    without_past = assign_product_slots(volume)
+
+    slots = assign_product_slots(volume, past_volume=past_volume)
+
+    part_a, part_b = f"DEMO_PART ({PART_A})", f"DEMO_PART ({PART_B})"
+    assert slots.order == without_past.order
+    assert len(slots.order) == PRODUCT_SHARE_SLOT_COUNT
+    assert slots.slot[part_a] < slots.slot[part_b]
+    assert dict(slots.lenders) == {MARKER: part_a}
+    assert slots.slot[MARKER] == slots.slot[part_a]
+    assert {name: slots.slot[name] for name in slots.order} == dict(without_past.slot)
+    assert slots.folded == frozenset({"DEMO_PAST"})
+    assert dict(slots.fallback) == {MARKER: None}
+
+    cells = build_product_share_cells(
+        combine_product_volume(volume, past_volume),
+        PRODUCT_SHARE_BASIS_PKG,
+        slots,
+        month_labels=["26.08", "26.09"],
+    )
+    past_cell = cells["26.08"]
+    borrowed = next(piece for piece in past_cell.slices if piece.product == MARKER)
+    assert borrowed.slot == slots.slot[part_a] and borrowed.lender == part_a
+    other = next(piece for piece in past_cell.slices if piece.product == OTHER_PRODUCT_LABEL)
+    assert [name for name, _ in other.members] == ["DEMO_PAST"]
+    assert sum(piece.share for piece in past_cell.slices) == pytest.approx(1.0)
+    hover = product_share_traces(
+        cells, ["26.08", "26.09"], basis="PKG", year_totals=(), past_month_labels={"26.08"}
+    )[0].hovertext
+    assert any(str(text).startswith(f"26.08 · {MARKER} ") for text in hover)
+
+
+def test_the_legend_keeps_one_line_per_slot_when_a_marker_borrows() -> None:
+    """범례는 칸마다 한 줄이다 — 빌린 칸은 빌려 준 부품 이름표 줄 하나이고 「DEMO_PART (-)」 줄을
+    더하지 않는다. 빌려 준 부품이 그려지지 않은 화면(과거 달만)에서는 그 칸 줄이 빌린 이름이다."""
+    volume, past_volume = _full_slots()
+    slots = assign_product_slots(volume, past_volume=past_volume)
+    cells = build_product_share_cells(
+        combine_product_volume(volume, past_volume),
+        PRODUCT_SHARE_BASIS_PKG,
+        slots,
+        month_labels=["26.08", "26.09"],
+    )
+
+    entries = product_share_legend(cells)
+    past_only = product_share_legend({"26.08": cells["26.08"]})
+
+    named = [(name, slot) for name, slot in entries if slot is not None]
+    assert len({slot for _, slot in named}) == len(named) == PRODUCT_SHARE_SLOT_COUNT
+    assert (f"DEMO_PART ({PART_A})", slots.slot[f"DEMO_PART ({PART_A})"]) in entries
+    assert MARKER not in {name for name, _ in entries}
+    assert (MARKER, slots.slot[MARKER]) in past_only
+
+
+def test_a_past_marker_keeps_the_old_rule_when_every_part_is_folded() -> None:
+    """그 제품의 부품이 모두 `기타` 로 접혔으면 빌릴 칸이 없다 — 과거 「DEMO_PART (-)」 는 지금
+    규칙(남는 칸이 있을 때만 받음) 그대로라 이 견본에서는 `기타` 다."""
+    others = [(f"DEMO_{index}", "-", 100.0 + index) for index in range(PRODUCT_SHARE_SLOT_COUNT)]
+    volume, past_volume = _slot_volumes(
+        [*others, ("DEMO_PART", PART_A, 2.0), ("DEMO_PART", PART_B, 1.0)],
+        [("DEMO_PART", 300.0), ("DEMO_0", 10.0)],
+    )
+
+    slots = assign_product_slots(volume, past_volume=past_volume)
+
+    assert {f"DEMO_PART ({PART_A})", f"DEMO_PART ({PART_B})"} <= slots.folded
+    assert MARKER in slots.folded
+    assert not slots.lenders and MARKER not in slots.slot
+
+
+def test_a_past_marker_with_room_borrows_and_leaves_its_own_slot_empty() -> None:
+    """남는 칸이 있어 지금 규칙이면 제 칸을 받았을 「DEMO_PART (-)」 도 첫 부품의 칸을 빌린다 — 그
+    칸은 비워 두어 뒤의 과거 전용 제품(DEMO_R)의 칸 · 색이 빌리지 않은 배정과 같다."""
+    volume, past_volume = _slot_volumes(
+        [("DEMO_PART", PART_A, 300.0), ("DEMO_PART", PART_B, 200.0), ("DEMO_Q", "-", 100.0)],
+        [("DEMO_PART", 300.0), ("DEMO_R", 50.0)],
+    )
+
+    slots = assign_product_slots(volume, past_volume=past_volume)
+
+    part_a = f"DEMO_PART ({PART_A})"
+    assert slots.order == (part_a, f"DEMO_PART ({PART_B})", "DEMO_Q", "DEMO_R")
+    assert slots.slot["DEMO_R"] == 4
+    assert slots.slot[MARKER] == slots.slot[part_a] == 0
+    assert dict(slots.fallback) == {MARKER: 3}
+    assert not slots.folded
+
+
+def test_a_calculated_marker_part_is_not_a_borrower() -> None:
+    """표지 `-` 를 부품 하나로 든 제품(계산 구간에 「DEMO_PART (-)」 가 있는 제품)의 「(-)」 는 과거
+    전용이 아니라 제 칸을 받는다 — 이름 끝 「(-)」 로 빌릴 이름을 고르지 않는다."""
+    volume, past_volume = _slot_volumes(
+        [("DEMO_PART", PART_A, 300.0), ("DEMO_PART", "-", 200.0), ("DEMO_Q", "-", 100.0)],
+        [("DEMO_PART", 300.0)],
+    )
+
+    slots = assign_product_slots(volume, past_volume=past_volume)
+
+    assert MARKER in slots.order
+    assert not slots.lenders
+    assert slots.slot[MARKER] != slots.slot[f"DEMO_PART ({PART_A})"]
+
+
+@pytest.mark.parametrize("with_room", [False, True])
+def test_a_marker_sharing_a_donut_with_its_lender_does_not_borrow_there(with_room: bool) -> None:
+    """한 도넛(한 칸 · 한 달)에 빌려 준 부품 조각과 「DEMO_PART (-)」 조각이 함께 서면 그 칸에서는
+    빌리지 않고 지금 규칙(제 칸 · 없으면 `기타`)을 쓴다 — 같은 색 두 조각이 서지 않는다. 화면의
+    수량은 달마다 계산 · 과거 가운데 하나지만, 함께 오는 값도 칸이 막는다. 과거 달만 선 칸은
+    그대로 빌린다."""
+    if with_room:
+        volume, past_volume = _slot_volumes(
+            [("DEMO_PART", PART_A, 300.0), ("DEMO_PART", PART_B, 200.0), ("DEMO_Q", "-", 100.0)],
+            [("DEMO_PART", 300.0), ("DEMO_R", 50.0)],
+        )
+    else:
+        volume, past_volume = _full_slots()
+    slots = assign_product_slots(volume, past_volume=past_volume)
+    part_a = f"DEMO_PART ({PART_A})"
+    mixed = combine_product_volume(
+        volume, past_volume, past_volume.assign(생산계획년월=202609, 과거=False)
+    )
+
+    cells = build_product_share_cells(
+        mixed, PRODUCT_SHARE_BASIS_PKG, slots, month_labels=["26.08", "26.09"]
+    )
+
+    shared = cells["26.09"]
+    drawn = [piece.slot for piece in shared.slices if piece.slot is not None]
+    assert len(drawn) == len(set(drawn))
+    assert {piece.product for piece in shared.slices} >= {part_a}
+    marker_pieces = [piece for piece in shared.slices if piece.product == MARKER]
+    if with_room:
+        assert [piece.slot for piece in marker_pieces] == [slots.fallback[MARKER]]
+        assert marker_pieces[0].lender == ""
+    else:
+        assert not marker_pieces
+        other = next(piece for piece in shared.slices if piece.product == OTHER_PRODUCT_LABEL)
+        assert MARKER in {name for name, _ in other.members}
+    assert sum(piece.share for piece in shared.slices) == pytest.approx(1.0)
+    alone = next(piece for piece in cells["26.08"].slices if piece.product == MARKER)
+    assert alone.slot == slots.slot[part_a] and alone.lender == part_a
 
 
 # ---------------------------------------------------------------- 칸이 넘칠 때 — 부품 단위 기타
@@ -590,6 +791,17 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     }
     assert marker in pie_labels
     assert TWO_PART_PRODUCT not in pie_labels
+    # 과거 달 「(-)」 조각은 그 제품 첫 부품의 색을 빌린다(그림 보드 3 답 q7-past-slice) — 다른
+    # 제품의 색과는 겹치지 않는다.
+    colors: dict[str, set[str]] = {}
+    for trace in figures["production_lob_months"].data:
+        if isinstance(trace, go.Pie):
+            for label, color in zip(trace.labels, trace.marker.colors, strict=True):
+                colors.setdefault(str(label), set()).add(str(color))
+    assert len(colors[marker]) == 1
+    sharing = {label for label, found in colors.items() if found & colors[marker]} - {marker}
+    assert len(sharing) == 1
+    assert next(iter(sharing)).startswith(f"{TWO_PART_PRODUCT} (")
     # 계획 세부수량 제품 칸은 부품 이름표에 맞춰 넓어져(그림 보드 3 답 q7-narrow-label) 「(-)」 줄
     # 이름이 칸에 다 들면 풍선 없이 칸 글로 선다 — 칸 글과 풍선을 함께 본다.
     named = {

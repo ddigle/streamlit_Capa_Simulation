@@ -3658,6 +3658,10 @@ def test_the_q7_picture_board_answers_join_6_41() -> None:
         assert cited and set(cited) <= known, card
     if "q7-other-hover" in lines:
         assert "→ **(나) 모든 기타 풍선을 같은 꼴로**" in lines["q7-other-hover"]
+    if "q7-past-slice" in lines:
+        assert "→ **(나) 그 제품 첫 부품의 색 칸을 빌림**" in lines["q7-past-slice"]
+        turned = _chapter(document, 7).split("\n### 7-2. ")[0]
+        assert "q7-past-slice (나)" in turned
     history = _chapter(document, 8)
     v145 = history[history.index("- **v1.45 — 2026-11-24.**") :]
     for phrase in ("6-41", "규칙 82", *lines):

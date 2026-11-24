@@ -23,6 +23,10 @@ Past Data 를 켜고 꺼도 계산 구간 제품의 색이 앞뒤로 밀리지 �
 제품은 제품 이름)이고 부품은 다른 제품처럼 제 색 칸을 받는다 — 같은 제품의 부품은 차례로만 이웃이고,
 칸이 넘치면 부품 단위로 `기타` 에 접힌다. 판정은 활성 리비전 계획 전체로 하고 수량 프레임의 `CUSTOM`
 칸에 접힌 값으로 싣는다. `CUSTOM` 칸이 없는 수량 프레임은 모두 접힌 것으로 읽는다.
+
+과거 달은 부품을 몰라 그 제품이 「DEMO_A (-)」 한 조각이다. 그 조각은 같은 제품의 부품 가운데 이름
+있는 칸을 받은 첫 부품의 색 칸을 빌린다(2026-11-24 그림 보드 3 답 q7-past-slice (나) —
+`assign_product_slots`).
 """
 
 from __future__ import annotations
@@ -30,10 +34,12 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from math import isfinite
+from types import MappingProxyType
 from typing import NamedTuple
 
 import pandas as pd
 
+from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
 from capa_simulation.services.frame_contracts import require_columns
@@ -81,17 +87,28 @@ OTHER_PRODUCT_LABEL = "기타"
 SHARE_LABEL_MIN_PERCENT = 20
 
 
+_NO_LENDERS: Mapping[str, str] = MappingProxyType({})
+_NO_FALLBACK: Mapping[str, int | None] = MappingProxyType({})
+
+
 class ProductSlots(NamedTuple):
     """화면 전체에서 한 번 정한 제품 차례와 색 칸.
 
     `order` 는 조각·범례 차례(표시순서)이고 `slot` 은 색 칸 번호다. `기타` 로 접힌 제품은
     `folded` 에만 있다. 제품 이름은 이름표(`product_parts.product_part_label`)다 — 부품을 가른
     제품은 부품마다 하나다.
+
+    `lenders` 는 색 칸을 빌린 과거 달 「제품 (-)」 이름 → 빌려 준 부품 이름표다. 빌린 이름은
+    `slot` 에 빌려 준 부품의 칸 번호로 들고 `order` · `folded` 에는 없다(칸 하나에 범례 한 줄).
+    `fallback` 은 빌린 이름이 빌려 준 부품과 한 도넛에 함께 서는 칸에서 쓰는 칸 — 빌리지 않은 지금
+    규칙의 결과이고 None 이면 `기타` 다(같은 색 두 조각이 서지 않게).
     """
 
     order: tuple[str, ...]
     slot: Mapping[str, int]
     folded: frozenset[str]
+    lenders: Mapping[str, str] = _NO_LENDERS
+    fallback: Mapping[str, int | None] = _NO_FALLBACK
 
     def key_of(self, product: str) -> str:
         """조각 이름. 접힌 제품은 `기타` 로 모인다."""
@@ -103,7 +120,8 @@ class ProductShareSlice(NamedTuple):
 
     `product` 는 이름표이고, `base_product` · `part` 는 그 이름표를 지은 제품정보 · 접힌
     부품이다(좁은 범례 칸에서 부품을 남기고 줄이는 데 쓴다 — `home_figure_common._fit_part_label`).
-    `기타` 조각은 빈 글자다.
+    `기타` 조각은 빈 글자다. `lender` 는 이 조각이 색 칸을 빌린 부품 이름표다(과거 달 「제품 (-)」 —
+    `ProductSlots.lenders`, 범례가 그 칸에 줄을 더하지 않는다). 빌리지 않은 조각은 빈 글자다.
     """
 
     product: str
@@ -113,6 +131,7 @@ class ProductShareSlice(NamedTuple):
     members: tuple[tuple[str, float], ...] = ()
     base_product: str = ""
     part: str = PART_NOT_SPLIT
+    lender: str = ""
 
 
 class ProductShareCell(NamedTuple):
@@ -342,6 +361,13 @@ def assign_product_slots(
 
     부품을 가른 제품은 부품 하나가 제품 하나처럼 칸을 받고 접힌다(2026-11-23 보드 답 D2 (가)) —
     한 제품의 부품이 이름 있는 칸과 `기타` 에 걸칠 수 있다.
+
+    과거 전용 「제품 (-)」(부품을 몰라 제품 하나로 선 과거 조각)은 위 배정을 마친 **뒤에** 같은
+    제품의 부품 가운데 이름 있는 칸을 받은 첫 부품(칸 차례로 가장 앞)의 색 칸을 빌린다(2026-11-24
+    그림 보드 3 답 q7-past-slice (나) — `_lenders`). 배정 뒤에 얹으므로 칸 수 · 다른 제품의 칸 ·
+    `기타` 접힘은 빌리기 전과 같다 — 빌린 이름이 지금 규칙으로 제 칸을 받았으면 그 칸은 비워 둔다.
+    그 제품의 부품이 모두 `기타` 로 접혔으면 빌리지 않고 지금 규칙(남는 칸이 있을 때만 받음)
+    그대로다.
     """
     totals, parts = _positive_totals(volume)
     past_totals, past_parts = _positive_totals(past_volume)
@@ -362,11 +388,45 @@ def assign_product_slots(
                 kept_past = _largest(past_only, past_only_totals, room)
                 named.extend(product for product in past_only if product in kept_past)
     folded = frozenset([*primary, *past_only]) - frozenset(named)
+    slot = {product: index for index, product in enumerate(named)}
+    lenders = _lenders(named, parts, past_only, past_parts)
+    if not lenders:
+        return ProductSlots(order=tuple(named), slot=slot, folded=folded)
     return ProductSlots(
-        order=tuple(named),
-        slot={product: index for index, product in enumerate(named)},
-        folded=folded,
+        order=tuple(product for product in named if product not in lenders),
+        slot={**slot, **{name: slot[lender] for name, lender in lenders.items()}},
+        folded=folded - frozenset(lenders),
+        lenders=lenders,
+        fallback={name: slot.get(name) for name in lenders},
     )
+
+
+def _lenders(
+    named: Sequence[str],
+    parts: Mapping[str, tuple[str, str]],
+    past_only: Sequence[str],
+    past_parts: Mapping[str, tuple[str, str]],
+) -> dict[str, str]:
+    """과거 전용 「제품 (-)」 이름 → 색 칸을 빌려 줄 부품 이름표.
+
+    빌려 주는 부품은 계산 구간 이름(`parts`) 가운데 이름 있는 칸을 받은 같은 제품의 부품이고, 칸
+    차례(`named` 차례)로 가장 앞의 것이다. 「(-)」 로 알아보는 것은 과거 전용 이름(`past_only`)의
+    표지 부품뿐이다 — 계산 구간에도 있는 「제품 (-)」(표지 `-` 를 부품 하나로 든 제품)은 과거 전용이
+    아니라 제 칸을 받는다.
+    """
+    first_part: dict[str, str] = {}
+    for label in named:
+        if label not in parts:
+            continue
+        product, part = parts[label]
+        if part != PART_NOT_SPLIT:
+            first_part.setdefault(product, label)
+    lenders: dict[str, str] = {}
+    for label in past_only:
+        product, part = past_parts[label]
+        if part == CUSTOM_BLANK and product in first_part:
+            lenders[label] = first_part[product]
+    return lenders
 
 
 def _cell(
@@ -377,34 +437,55 @@ def _cell(
     parts: Mapping[str, tuple[str, str]],
     past: bool = False,
 ) -> ProductShareCell | None:
-    """제품별 값(양수만)을 칸 차례대로 조각으로 만든다. 값이 없으면 칸을 비운다."""
+    """제품별 값(양수만)을 칸 차례대로 조각으로 만든다. 값이 없으면 칸을 비운다.
+
+    색 칸을 빌린 과거 「제품 (-)」 이 빌려 준 부품과 이 칸에 함께 서면 그 칸에서는 빌리지 않고
+    지금 규칙(`ProductSlots.fallback` — 제 칸 또는 `기타`)을 쓴다 — 한 도넛에 같은 색 두 조각이 서지
+    않게.
+    """
     positive = values.loc[values > 0]
     if positive.empty:
         return None
     total = float(positive.sum())
+    present = {str(product) for product in positive.index}
     named: dict[str, float] = {}
+    slot_of: dict[str, int] = {}
+    borrowed: dict[str, str] = {}
     members: list[tuple[str, float]] = []
     for product, value in positive.items():
-        key = slots.key_of(str(product))
+        name = str(product)
+        lender = slots.lenders.get(name)
+        if lender is not None and lender in present:
+            own = slots.fallback.get(name)
+            if own is None:
+                members.append((name, float(value)))
+            else:
+                named[name] = named.get(name, 0.0) + float(value)
+                slot_of[name] = own
+            continue
+        key = slots.key_of(name)
         if key == OTHER_PRODUCT_LABEL:
-            members.append((str(product), float(value)))
+            members.append((name, float(value)))
         elif key in slots.slot:
             named[key] = named.get(key, 0.0) + float(value)
+            slot_of[key] = slots.slot[key]
+            if lender is not None:
+                borrowed[key] = lender
         else:
             # 칸 배정에 없던 제품(배정 목록 밖에서 온 값)도 버리지 않는다. 버리면 비중 합이
             # 100% 가 아니게 된다. `기타` 로 모은다.
-            members.append((str(product), float(value)))
+            members.append((name, float(value)))
     slices = [
         ProductShareSlice(
             product,
             named[product],
             named[product] / total,
-            slots.slot[product],
+            slot_of[product],
             base_product=parts.get(product, (product, PART_NOT_SPLIT))[0],
             part=parts.get(product, (product, PART_NOT_SPLIT))[1],
+            lender=borrowed.get(product, ""),
         )
-        for product in slots.order
-        if product in named
+        for product in sorted(named, key=lambda name: slot_of[name])
     ]
     if members:
         other = sum(value for _, value in members)

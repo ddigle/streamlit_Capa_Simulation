@@ -277,17 +277,28 @@ def product_share_legend(cells: Mapping[str, ProductShareCell]) -> list[tuple[st
 
     EDP 를 끈 화면에서는 EDP 제품이 칸을 가진 채 조각이 없다. 범례에 두면 그리지 않은
     제품을 알리는 셈이라 뺀다(색 칸은 그대로 비워 둔다 — 남은 제품이 색을 바꾸지 않는다).
+
+    **칸마다 한 줄이다.** 과거 달 「제품 (-)」 이 부품의 색 칸을 빌렸으면
+    (`ProductShareSlice.lender`) 그 칸 줄은 빌려 준 부품 이름표 하나다 — 줄을 더하지 않는다. 빌려
+    준 부품이 화면에 그려지지 않았으면(EDP 를 끈 화면의 EDP 전용 부품) 그 칸 줄은 빌린 이름이다.
     """
-    seen: dict[str, int | None] = {}
+    by_slot: dict[int, str] = {}
+    lent: set[tuple[str, int]] = set()
+    others: dict[str, None] = {}
     for cell in cells.values():
         for piece in cell.slices:
-            seen.setdefault(piece.product, piece.slot)
-    named = sorted(
-        ((name, slot) for name, slot in seen.items() if slot is not None),
-        key=lambda item: item[1] if item[1] is not None else -1,
-    )
-    others = [(name, slot) for name, slot in seen.items() if slot is None]
-    return [*named, *others]
+            if piece.slot is None:
+                others.setdefault(piece.product, None)
+                continue
+            if piece.lender:
+                lent.add((piece.product, piece.slot))
+                by_slot.setdefault(piece.slot, piece.product)
+                continue
+            current = by_slot.get(piece.slot)
+            if current is None or (current, piece.slot) in lent:
+                by_slot[piece.slot] = piece.product
+    named = sorted(((name, slot) for slot, name in by_slot.items()), key=lambda item: item[1])
+    return [*named, *((name, None) for name in others)]
 
 
 def _product_share_label_annotations(

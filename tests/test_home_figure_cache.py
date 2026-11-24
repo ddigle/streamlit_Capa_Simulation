@@ -339,6 +339,16 @@ def test_the_schema_moved_past_the_two_shapes_of_the_other_hover() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 62
 
 
+def test_the_schema_moved_past_the_past_marker_folded_into_other() -> None:
+    """63 부터 과거 달 「제품 (-)」 조각은 그 제품의 부품 가운데 이름 있는 칸을 받은 첫 부품의 색
+    칸을 빌리고, 범례는 칸마다 한 줄이다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸이 모자라 `기타` 로 접힌 · 새 색을 받은 「(-)」
+    조각)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 63
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:
