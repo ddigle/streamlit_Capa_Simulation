@@ -599,6 +599,29 @@ def test_pin_marker_key_round_trips() -> None:
     )
 
 
+def test_the_latest_pin_deadline_stands_for_its_generation() -> None:
+    """한 세대에 표지가 여럿이면 가장 늦은 기한이 그 세대의 기한이다 — 목록은 seq 차례다."""
+    early = manifest.pin_marker_key(4, until=datetime(2026, 12, 1).date(), token="0000aaaa")
+    late = manifest.pin_marker_key(4, until=datetime(2026, 12, 20).date(), token="0000bbbb")
+    other = manifest.pin_marker_key(2, until=datetime(2026, 11, 30).date(), token="0000cccc")
+
+    deadlines = manifest.latest_pin_deadlines(manifest.read_pin_markers([late, other, early]))
+
+    assert deadlines == {2: datetime(2026, 11, 30).date(), 4: datetime(2026, 12, 20).date()}
+    assert list(deadlines) == [2, 4]
+
+
+def test_a_pin_holds_by_the_same_day_rule_as_the_prune() -> None:
+    """목록 표시가 정리와 같은 잣대를 쓴다 — HEAD 의 UTC 날짜까지, HEAD 시각을 모르면 붙잡는다."""
+    last_day = HEAD_TIME.date()
+
+    assert manifest.pin_holds(last_day, HEAD_TIME)
+    assert not manifest.pin_holds(last_day - timedelta(days=1), HEAD_TIME)
+    seoul = timezone(timedelta(hours=9))
+    assert manifest.pin_holds(last_day - timedelta(days=1), datetime(2026, 11, 7, 8, tzinfo=seoul))
+    assert manifest.pin_holds(last_day - timedelta(days=400), None)
+
+
 def test_prune_without_pins_matches_the_old_plan() -> None:
     """표지가 없거나 아무것도 붙잡지 않으면 판정은 표지 이전과 같다."""
     pointers, snapshots = _generations(12)

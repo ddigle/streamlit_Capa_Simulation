@@ -279,6 +279,22 @@ def read_pin_markers(keys: Sequence[str]) -> tuple[PinMarker, ...]:
     return tuple(markers)
 
 
+def latest_pin_deadlines(markers: Sequence[PinMarker]) -> dict[int, date]:
+    """seq 마다 가장 늦은 기한(seq 차례). 한 세대에 표지가 여럿이면 가장 늦은 것이 붙잡는다."""
+    found: dict[int, date] = {}
+    for marker in markers:
+        found[marker.seq] = max(found.get(marker.seq, marker.until), marker.until)
+    return dict(sorted(found.items()))
+
+
+def pin_holds(until: date, head_moment: datetime | None) -> bool:
+    """기한 `until` 의 표지가 지금 정리를 붙잡는가 — 기한이 HEAD LastModified 의 UTC 날짜 이상이다.
+
+    HEAD 시각을 모르면 붙잡는 쪽으로 본다. 그때 정리는 아무것도 지우지 않는다.
+    """
+    return head_moment is None or until >= _utc_date(head_moment)
+
+
 def select_head_key(keys: Sequence[str]) -> str | None:
     """현재 HEAD 포인터 키. 최소 키가 최대 seq 이고, 동률이면 사전순 최소로 결정론적이다.
 
@@ -729,11 +745,10 @@ def _pinned_pointers(
     keys: Sequence[str], pins: Sequence[ListedObject], head_moment: datetime
 ) -> set[str]:
     """기한 안의 지킴 표지가 걸린 seq 의 포인터 전부. 같은 seq 에 포인터가 둘이면 둘 다다."""
-    head_day = _utc_date(head_moment)
     held = {
         marker.seq
         for marker in read_pin_markers([item.key for item in pins])
-        if marker.until >= head_day
+        if pin_holds(marker.until, head_moment)
     }
     return {key for key in keys if seq_from_pointer_key(key) in held}
 

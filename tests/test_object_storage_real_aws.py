@@ -208,6 +208,38 @@ def test_rollback_reads_the_head_of_each_member(real: SimpleNamespace) -> None:
     assert pointer.seq == 3
 
 
+def test_a_kept_generation_survives_the_prune_and_rolls_back(real: SimpleNamespace) -> None:
+    """실제 `aws` 의 목록으로도 지킴 표지가 읽힌다 — 보존 창을 끝까지 줄인 정리(1세대 · 0일)
+    뒤에도 지킨 세대와 그 멤버가 남아, 그 세대로 되돌리면 새 pod 가 받는다."""
+    _init(real)
+    assert engine.prune(real.client).deleted == 0
+    for value in range(3):
+        _save(real, value)
+        assert _publish(real).published
+    kept = engine.keep_generation(real.client, seq=2, note="되돌림 준비")
+    newest = max(real.store.modified.values())
+    head = min(key for key in real.store.objects if key.startswith(manifest.HEAD_PREFIX))
+    for key in list(real.store.objects):
+        if key != head:
+            real.store.modified[key] = newest - timedelta(days=30)
+
+    outcome = engine.prune(real.client, keep_last=1, keep_days=0)
+
+    assert outcome.deleted > 0 and not outcome.interrupted
+    remaining = {
+        manifest.seq_from_pointer_key(key)
+        for key in real.store.objects
+        if key.startswith(manifest.HEAD_PREFIX)
+    }
+    assert remaining == {2, 4}
+    assert kept.marker.key in real.store.objects
+    pointer = engine.rollback(real.client, to_seq=2, note="되돌림")
+    assert pointer.seq == 5
+    _wipe_disk(real)
+    assert engine.boot_pull(real.client, real.paths).ok
+    assert row_count(real.paths.databases["simulation"]) == 2_001
+
+
 def _start_script_client(
     real: SimpleNamespace, home: Path
 ) -> tuple[ObjectStorageClient, dict[str, str]]:

@@ -15,10 +15,11 @@
 `fetch-copy` 로 사본을 받는다.
 
 **앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가 실패한다.
-`status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠
-있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한
-줄(JSON)을 찍는다. 확인이 실제 내려받기로 넘어가면 `--download-mark` 로 받은 자리에 빈 표지 파일을
-남긴다 — 시작 임시 화면이 그 표지를 보고서야 「n번째 받는 중」 을 보인다.
+`status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` · `keep` ·
+`unkeep` 은 앱이 떠 있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에
+부르고, 값 없는 결과 한 줄(JSON)을 찍는다. 확인이 실제 내려받기로 넘어가면 `--download-mark` 로
+받은 자리에 빈 표지 파일을 남긴다 — 시작 임시 화면이 그 표지를 보고서야 「n번째 받는 중」 을
+보인다.
 
 **주소 · 버킷 · 프로필은 환경변수(또는 인자)로만 받는다** — 사내 값이라 저장소에 기본값이 없다.
 비었으면 `aws` 를 부르기 전에 넣을 환경변수 이름을 대고 멈춘다(`docs/objectstore_setup.md` 6장).
@@ -39,10 +40,16 @@
 — 여닫는 경로 값은 그대로다). 표준 오류도 같다 — 도는 동안 어느 모듈의 로거 글이든
 (`_masked_logging`), 잡지 못한 예외의 트레이스백도(`_masked_excepthook`) 같은 가림을 지난다.
 
-**정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
-그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
-미검증). `--dry-run` · `--yes` 없이 건너뛴 명령 · 빈 설정은 남기지 않는다. 올리지 못해도 명령의
-종료 코드는 그대로다. `audit-list` 는 그 날짜 · 달의 조각 · 일별 파일 수만 찍는다(값 없음).
+**세대 지킴**(`keep` · `unkeep`)은 버킷에 기한 있는 표지(`generations/keep/`)를 두거나 지운다.
+정리가 기한까지 그 세대와 두 멤버를 비켜 간다. 포인터는 그대로라 표지를 모르는 코드도 같은
+버킷을 읽고, 기한이 지나면 표지는 저절로 아무것도 붙잡지 않는다. `generations` 는 지킨 세대에
+그 기한을 단다.
+
+**정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` ·
+`keep` · `unkeep` 은 끝에 그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다
+(`audit/tool.py` — 행위자는 OS 사용자, 미검증). `--dry-run` · `--yes` 없이 건너뛴 명령 · 빈
+설정 · 할 일이 없던 명령은 남기지 않는다. 올리지 못해도 명령의 종료 코드는 그대로다.
+`audit-list` 는 그 날짜 · 달의 조각 · 일별 파일 수만 찍는다(값 없음).
 """
 
 from __future__ import annotations
@@ -115,6 +122,8 @@ AUDITED_COMMANDS: dict[str, str] = {
     "init": "admin_sync_init",
     "fetch-copy": "admin_fetch_copy",
     "prune": "admin_sync_prune",
+    "keep": "admin_sync_keep",
+    "unkeep": "admin_sync_unkeep",
 }
 _AUDIT_DETAIL: dict[str, object] = {}
 _AUDIT_SKIP = "skip"
@@ -436,6 +445,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     generations = sub.add_parser("generations", help="되돌릴 세대를 고를 목록을 찍는다.")
     generations.add_argument("--limit", type=int, default=30, help="찍을 세대 수. 기본 30.")
+
+    keep = sub.add_parser("keep", help="세대 하나를 기한까지 정리에서 지킨다(표지만 둔다).")
+    target = keep.add_mutually_exclusive_group(required=True)
+    target.add_argument("--head", action="store_true", help="지금 HEAD 세대를 지킨다.")
+    target.add_argument("--seq", type=int, help="지킬 세대.")
+    keep.add_argument(
+        "--days",
+        type=int,
+        default=engine.PIN_DAYS_DEFAULT,
+        help=f"지킬 일수({engine.PIN_DAYS_MIN} ~ {engine.PIN_DAYS_MAX}). "
+        f"기본 {engine.PIN_DAYS_DEFAULT}.",
+    )
+    keep.add_argument("--note", default="세대 지킴", help="표지에 남길 메모.")
+
+    unkeep = sub.add_parser("unkeep", help="세대의 지킴 표지를 지운다(세대는 지우지 않는다).")
+    unkeep.add_argument("--seq", type=int, required=True, help="표지를 풀 세대.")
+    unkeep.add_argument("--yes", action="store_true", help="확인 없이 실제로 푼다.")
 
     boot_pull = sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
     boot_pull.add_argument(
@@ -809,20 +835,126 @@ def _head_tail(client: ObjectStorageClient, remote: engine.RemoteHead) -> str:
 
 
 def command_generations(args: argparse.Namespace) -> int:
-    """되돌릴 세대를 고르는 목록. 멤버 번호가 깨진 세대와 다른 세대가 되돌릴 자리다."""
-    rows = engine.list_generations(build_client(args))
+    """되돌릴 세대를 고르는 목록. 멤버 번호가 깨진 세대와 다른 세대가 되돌릴 자리다.
+
+    지킨 세대는 줄 끝에 기한을 단다 — 정리가 지금 그 표지로 붙잡지 않으면(기한이 HEAD 날짜
+    앞) 「지킴 지남」 이다. `--limit` 밖의 지킨 세대도 끝에 따로 찍고, 포인터가 없는 표지는 한
+    줄로 말한다. 포인터 · 표지 모두 목록만 읽는다(GET 없음).
+    """
+    client = build_client(args)
+    rows = engine.list_generations(client)
+    deadlines = manifest.latest_pin_deadlines(engine.list_pins(client))
     _fact(f"세대 {len(rows)}")
+    seqs = {row.seq for row in rows}
     if not rows:
         print("원격 : 비어 있음")
+    else:
+        _fact(f"HEAD seq {rows[0].seq}")
+        head_moment = rows[0].last_modified
+        for index, row in enumerate(rows[: args.limit]):
+            pin = _pin_tail(deadlines.get(row.seq), head_moment)
+            print(_generation_row(row, head=index == 0) + pin)
+        if len(rows) > args.limit:
+            print(f"… {len(rows) - args.limit}개 더 있습니다(--limit 로 늘립니다).")
+            for row in rows[args.limit :]:
+                if row.seq in deadlines:
+                    print(
+                        _generation_row(row, head=False)
+                        + _pin_tail(deadlines[row.seq], head_moment)
+                    )
+        held = [
+            seq
+            for seq, until in deadlines.items()
+            if seq in seqs and manifest.pin_holds(until, head_moment)
+        ]
+        if deadlines:
+            _fact(f"지킴 {len(held)}")
+    for seq in deadlines:
+        if seq not in seqs:
+            print(f"지킴 표지 seq {seq} — 세대 없음")
+    return 0
+
+
+def _generation_row(row: engine.GenerationRow, *, head: bool) -> str:
+    members = " · ".join(f"{DATASET_LABELS[name]} {seq}" for name, seq in row.members.items())
+    moment = "시각 모름" if row.last_modified is None else row.last_modified.isoformat()
+    return f"seq {row.seq} · {members} · {row.token} · {moment}{' · HEAD' if head else ''}"
+
+
+def _pin_tail(until: date | None, head_moment: datetime | None) -> str:
+    """세대 줄 끝의 지킴 꼬리 — 표지가 없으면 빈 글."""
+    if until is None:
+        return ""
+    word = "지킴" if manifest.pin_holds(until, head_moment) else "지킴 지남"
+    return f" · {word} ~{until.isoformat()}"
+
+
+def command_keep(args: argparse.Namespace) -> int:
+    """세대 하나에 기한 있는 지킴 표지를 둔다. 붙잡는 일이라 `--yes` 를 받지 않는다.
+
+    끝 줄에 지킨 seq · 두 멤버의 세대 · 마이그레이션 판 · 기한을 싣는다 — 되돌릴 날의 옛 도구는
+    표지를 모르므로 리뷰에 옮긴 이 줄이 지킨 세대의 기록이다. 메모는 표지 본문에만 둔다.
+    """
+    if not engine.PIN_DAYS_MIN <= args.days <= engine.PIN_DAYS_MAX:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
+        print(
+            f"[중단] --days 는 {engine.PIN_DAYS_MIN} ~ {engine.PIN_DAYS_MAX} 입니다 — "
+            "aws 를 부르지 않았습니다."
+        )
+        _stopped(STOP_REQUEST)
+        return 1
+    if args.dry_run:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
+        print("[건너뜀] --dry-run 이라 표지를 두지 않습니다.")
+        _fact("건너뜀 dry-run")
         return 0
-    _fact(f"HEAD seq {rows[0].seq}")
-    for index, row in enumerate(rows[: args.limit]):
-        members = " · ".join(f"{DATASET_LABELS[name]} {seq}" for name, seq in row.members.items())
-        moment = "시각 모름" if row.last_modified is None else row.last_modified.isoformat()
-        head = " · HEAD" if index == 0 else ""
-        print(f"seq {row.seq} · {members} · {row.token} · {moment}{head}")
-    if len(rows) > args.limit:
-        print(f"… {len(rows) - args.limit}개 더 있습니다(--limit 로 늘립니다).")
+    client = build_client(args)
+    try:
+        outcome = engine.keep_generation(
+            client, seq=None if args.head else args.seq, days=args.days, note=args.note
+        )
+    except ValueError as exc:
+        print(_stop_line(exc))
+        _stopped(STOP_REQUEST)
+        return 1
+    pointer = outcome.pointer
+    until = outcome.marker.until.isoformat()
+    simulation = pointer.members["simulation"]
+    equipment = pointer.members["equipment"]
+    _AUDIT_DETAIL.update(seq_to=pointer.seq, until=until)
+    print(f"지킴 : seq {pointer.seq} · 기한 ~{until}")
+    print(
+        f"멤버 : {DATASET_LABELS['simulation']} {simulation.seq}(판 {simulation.migration_version})"
+        f" · {DATASET_LABELS['equipment']} {equipment.seq}(판 {equipment.migration_version})"
+    )
+    _fact(f"지킴 seq {pointer.seq}")
+    _fact(f"멤버 S{simulation.seq} E{equipment.seq}")
+    _fact(f"판 S{simulation.migration_version} E{equipment.migration_version}")
+    _fact(f"기한 {until}")
+    return 0
+
+
+def command_unkeep(args: argparse.Namespace) -> int:
+    """그 seq 의 지킴 표지만 지운다. 세대 · 스냅샷은 건드리지 않는다."""
+    if not args.yes:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
+        print(f"[건너뜀] seq {args.seq} 의 지킴 표지를 풀려면 --yes 를 함께 주세요.")
+        _fact("건너뜀 --yes 없음")
+        return 0
+    if args.dry_run:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
+        print("[건너뜀] --dry-run 이라 표지를 풀지 않습니다.")
+        _fact("건너뜀 dry-run")
+        return 0
+    removed = engine.release_generation(build_client(args), seq=args.seq)
+    if not removed:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
+        print(f"[건너뜀] seq {args.seq} 에는 지킴 표지가 없습니다.")
+        _fact("건너뜀 표지 없음")
+        return 0
+    _AUDIT_DETAIL["seq_to"] = args.seq
+    print(f"풀림 : seq {args.seq} · 표지 {len(removed)}")
+    _fact(f"풀림 seq {args.seq} · 표지 {len(removed)}")
     return 0
 
 
@@ -1156,6 +1288,8 @@ COMMANDS = {
     "fetch-copy": command_fetch_copy,
     "rollback": command_rollback,
     "generations": command_generations,
+    "keep": command_keep,
+    "unkeep": command_unkeep,
     "boot-pull": command_boot_pull,
     "audit-list": command_audit_list,
 }
