@@ -120,6 +120,7 @@ ACTIONS: Final[Mapping[str, Action]] = _actions(
     ("equipment.legacy_ack", DEVELOPER, "옛 배포 흔적을 이어 쓸"),
     ("diag.full", DEVELOPER, "운영 진단 글을 볼"),
     ("admin.area", DEVELOPER, "Admin Area 를 쓸"),
+    ("screen.unfinished", DEVELOPER, "구현 중 화면을 볼"),
 )
 
 

@@ -436,6 +436,19 @@ def admin_area_locked() -> bool:
     return not viewer_can("admin.area")
 
 
+def unfinished_hidden() -> bool:
+    """구현 중 화면(`navigation.PageSpec.unfinished`)을 이 회차에 숨기는가 — 화면 등급으로 개발자 몫
+    (`screen.unfinished`)을 할 수 없다.
+
+    판정은 이것 하나다 — `app.py` 가 이 값으로 사이드바에서 그 화면 · 상자를 빼고
+    (`build_navigation_pages(hide_unfinished=)`), 주소 · 탭 · 알림으로 연 회차는 본문 대신
+    「개발자만 여는 화면입니다」 + 「HOME 으로」 로 멈춘다(2026-11-24 정식판 마감 2-A). 개발
+    `app.py` · 사내 WebIDE · 사내 PC(운영 아님)는 지금처럼 모두 보인다. 통합인증이 꺼진 운영 서버는
+    관리자까지라 모두에게 숨는다. 「이 등급으로 보기」 동안은 숨는다. 모듈 화면은 이 판정 밖이다.
+    """
+    return not viewer_can("screen.unfinished")
+
+
 def developer_wall_locked() -> bool:
     """쓰는 순간의 두 번째 벽 — 운영 서버이고 실제 개발자가 아니다(미리 보기를 따르지 않는다).
 

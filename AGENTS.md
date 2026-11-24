@@ -350,6 +350,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_scenario_status.py`)·공정(`components/process_field.py` — 공용 공정 칸, 2026-11-08 공정 공유 1차) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
     는 설비 DB 를 열지 않는다(9장).
+  - 운영 서버의 개발자가 아닌 회차(`sso_identity.unfinished_hidden` — 「이 등급으로 보기」 동안 포함, 운영 + 통합인증 꺼짐은
+    모두)는 구현 중 화면(`navigation.PageSpec.unfinished`)을 사이드바에서 빼고(`build_navigation_pages(hide_unfinished=True)` —
+    등록은 `NavigationPages.unlisted` 로 그대로), 주소 · 탭 · 알림으로 그 화면에 든 회차(`locked`)는 화면 파일 대신
+    `grade_ui.stop_unless("screen.unfinished", place="page")` 를 `run_core_page` 로 돌린다(Admin Area 와 같은 멈춤). 그 회차는 조회
+    조건 구역 · 패널 · 설비 시나리오 칸을 세우지 않고 알림 칸에 화면 선언을 넘기지 않는다(「합성 샘플」 표지 · 공정 칩 짐작 없음).
+    화면 탭은 선다. 개발 · WebIDE · 사내 PC · 시험(운영 아님)은 그대로다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」).
 - `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py` — 앱 스크립트는 `app.py` 하나 그대로). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로 여섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다. 통합인증 기동 바로 뒤
@@ -444,6 +450,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
     비는 그 세션 변경 목록을 볼 마지막 자리) — 다만 판 안 「그 화면으로」 는 옮기지 못하고 판만 닫는다. 정상 회차 요소 차례는
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
+    구현 중 화면 숨김 판정 `unfinished_hidden` 도 여기다 — 동작 `screen.unfinished`(개발자 몫, `admin_area_locked` 와 한 뿌리 ·
+    「이 등급으로 보기」 를 따름)를 화면 등급으로 할 수 없으면 참이고, `app.py` 가 그 값으로 사이드바에서 구현 중 화면
+    (`navigation.PageSpec.unfinished`)을 빼고 주소 · 탭 · 알림으로 연 회차를 멈춘다(2026-11-24 정식판 마감 2-A — 9장 「접속 등급」,
+    시험 `tests/test_grade_ui_core.py`).
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
     「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴 — 띠 글은 문지기가 그 401 에 단 까닭 낱말 머리(`names.REASON_HEADER` —
@@ -3268,7 +3278,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     미연결 화면은 `PageSpec.pending_source`(그 화면이 스위치 · 머리 띠 표지 · 탭 풍선에 주는 원천 이름)를 선언하고,
     `PageSpec.implementing`(라벨 `(구현중)` · 그 선언 · 만드는 중 선언 `in_progress` — Dynamic Capa 는 그룹 머리라 라벨에 달지
     않는다, 생산 진도 · 샘플 페이지 셋은 원천도 접미도 없어 `in_progress`)이 화면 탭 「구현중」 표지의, `pending_source` 가 머리 띠
-    「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 (가) — 그물 `tests/test_page_tabs.py`).
+    「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 (가) — 그물 `tests/test_page_tabs.py`). 운영 서버에서 개발자에게만 세우는 화면은
+    `PageSpec.unfinished`(코어 화면이고 `pending_source` 또는 `in_progress` — 라벨 `(구현중)` 은 보지 않아 L0 · L1 모듈 화면은
+    밖)이고, `build_navigation_pages(hide_unfinished=True)` 는 그 화면을 그릴 상자에서 빼(머리가 그런 그룹은 상자째)
+    `NavigationPages.unlisted` 로 옮긴다 — 등록은 그대로라 주소가 산다(빼면 Streamlit 「Page not found」). 이 모듈은 `sso_identity`
+    를 읽지 않고 `app.py` 가 판정 값을 넘긴다(2026-11-24 정식판 마감 2-A, 시험 `tests/test_app_navigation.py`).
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
     `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 미룬 패널 화면(실적 셋 ·
@@ -6765,7 +6779,8 @@ RQ_MODULE
     (새 등급 「관리자」 는 옛 공식 지정자 뜻 — 옛 뜻 「관리자」 는 「개발자」, 역할 「앱 관리자」 는 「앱 관리자(개발자)」, 「저장소 관리자」 는
     그대로). 불변조건:
     - **어디서 가르나.** 운영 아님(개발 `app.py` · WebIDE · 사내 PC) = 제한 없음, 운영 + 통합인증 꺼짐 = 관리자 몫까지(개발자 몫만 막힘 — 기록도
-      없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 등급 시험은 모두 「운영 + 켜짐」 판정을
+      없다), 운영 + 켜짐 = 개발자(`CAPA_ACCESS_ADMINS` ∪ 명단 `admin`) 또는 등급 파일 줄 또는 열람. 그래서 운영 + 꺼짐이면 구현 중
+      화면(`screen.unfinished` — 개발자 몫)도 모두에게 숨는다(2026-11-24 정식판 마감 2-A). 등급 시험은 모두 「운영 + 켜짐」 판정을
       거친다(`tests/grade_support.operational_grades` — 넷 계정의 등급을 단언, 헛돌기 막음).
     - **명단 파일 꼴 · 저장 값은 그대로다.** 등급 칸은 `user` · `admin` 둘(`admin` = 개발자) — 앞 ZIP 이 다시 써도 깨지지 않게. 열람 · 실무자 ·
       관리자는 같은 버킷 · 같은 디렉터리의 등급 파일(`grades.json` — 적는 값 `editor` · `manager` 둘, **열람 = 줄 없음**, 줄마다 그 사람의
@@ -9334,7 +9349,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `grades.require` 는 알림을 담지 않는다(`write_guard` 잠금 안에서도 불린다). 로그인이 끝난 신원은 등급 거절과 섞지 않는다(`SignInEnded` —
   「로그인이 끝나 저장하지 않았습니다 — 다시 로그인하세요」).
 - **주소 · 알림으로 연 등급 밖 화면 · 탭**은 `grade_ui.stop_unless`(「개발자만 여는 화면입니다」 · 「실무자부터 여는 탭입니다」 + 「HOME
-  으로」). 화면은 Admin Area 하나이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
+  으로」). 화면은 Admin Area 와 운영 서버의 구현 중 화면(`PageSpec.unfinished` — 화면 파일이 아니라 `app.py` 가 선언으로 멈춘다,
+  2026-11-24 정식판 마감 2-A)이고 탭은 DB 등록 · 자동 갱신이다. 모듈 화면은 모두 열람부터라 멈추지 않는다.
 - **설비 화면 내려받기 감추기는 벽이 아니다** — 앱이 그리는 단추는 세우지 않고, 표 도구 막대 · 그림 막대는 `grade_ui.toolbar_scope` ·
   `chart_config` 로 감춘다(Altair 그림은 칸 안 도구 막대의 그림 저장 · 그림 정의 복사 단추 — `toolbar_scope` 칸 안에 그린다). Alarm 표의 CSV 는 `state_alerts.alert_table(csv=False)` 표지가 표와 함께 따라간다. 칸 복사 · 캡처 · 인쇄 ·
   계산 화면 호기 줄 파일로는 나간다(정한 것). 「Print」 는 모든 등급에 둔다.
