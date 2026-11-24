@@ -496,9 +496,17 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
         assert removed not in text
     for name in ("APP_SECURITY_LEVEL", "APP_AUTH_CODE", "APP_AUTH_EXPIRY", "APP_HANDLING_NOTE"):
         assert not hasattr(settings, name), name
-    # 머리 띠에는 싣지 않는다.
+    # 머리 띠에는 싣지 않는다 — 문의처와 카드 첫 줄의 판 글(「v1.0」 · 배포 번호 · 「사외 개발」).
+    # 판 글이 카드에 있음을 함께 봐 이 지킴이 헛돌지 않게 한다.
+    from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL
+
+    version = f"v{APP_VERSION}"
+    outside = credit_lines(stamp="")[0]
+    assert version in credit_lines(stamp="202610081234")[0]
+    assert version in outside and OUTSIDE_BUILD_LABEL in outside
     css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
-    assert FAKE_CONTACT not in css and "배포 " not in css
+    for leaked in (FAKE_CONTACT, version, "202610081234", OUTSIDE_BUILD_LABEL):
+        assert leaked not in css, leaked
     assert not hasattr(settings, "APP_BUILD_DATE")
 
 
