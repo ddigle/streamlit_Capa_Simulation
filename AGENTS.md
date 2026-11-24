@@ -4184,7 +4184,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
   싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸과 본문 빈 칸의 간격
-  지움(`EMPTY_FORM_SLOT_SELECTOR` · `EMPTY_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
+  지움(`EMPTY_FORM_SLOT_SELECTOR` · `EMPTY_SLOT_SELECTOR`), 풍선 지연(`tip_delay` — 맨 앞 값 · 애니메이션, 화면 덩어리 끝 규칙),
+  인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
@@ -4201,17 +4202,36 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`page_tabs.js` `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 몫과 테마 글). 서버에 아무것도 남기지
     않고, 앞 세션이 공식 발행 쌍이었으면(새로고침은 가정이 아니었으면) 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
-    보낸다(그보다 앞서 멈추는 통합인증 멈춤 화면은 `sso_identity._render_stop_chrome` 이 따로 보낸다). 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
+    보낸다(그보다 앞서 멈추는 통합인증 멈춤 화면은 `sso_identity._render_stop_chrome` 이 따로 보낸다). 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)의 규칙은 여섯이다 — 화면
     탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래. `top` 은 머리 띠 높이
     `tokens.HEADER_BAND_REM` 이고, 제자리를 그 자리와 같게 `margin-top: tokens.PAGE_TABS_LIFT_REM`(-0.25rem)으로 끌어올린다 —
     제자리는 본문 위 여백 `MAIN_TOP_PADDING_REM` + 그 앞 높이 0 테마 iframe 과의 요소 간격 `BLOCK_GAP_REM` 이라 3.5px 아래였고,
     스크롤을 처음 내리는 동안 탭 줄이 따라 올라갔다 — 2026-11-02 사용자 요청 「스크롤 아래로 내릴 때 틀이 살짝 움직임」.
     `tests/test_app_header.py` 가 「위 여백 + 간격 + 끌어올림 = sticky 자리」 를 맞댄다), 큰 제목 칸 sr-only
     (`PAGE_TITLE_SELECTOR`), 모달 동안 탭 줄 흐림(`#root[inert]` — 1.63 은 `st.dialog` 가 열리면 앱 뿌리에 `inert` 를 단다,
-    탭 줄 누름이 말없이 먹혔다). 인쇄에는 제목이 보인다.
+    탭 줄 누름이 말없이 먹혔다), 풍선 글이 마우스를 받지 않음(`TOOLTIP_TEXT_SELECTOR`), 폼 안 · 본문 빈 칸 간격 지움, 풍선
+    지연(`tip_delay.TIP_SCREEN_CSS` — 덩어리 끝). 인쇄에는 제목이 보인다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
   - 회차마다 소켓으로 다시 가는 스타일이라 CSS 안에 주석을 두지 않는다 — 규칙 설명은 그 조각 바로 위 파이썬 주석이다
     (9장 「스크립트와 컴포넌트」).
+- `src/capa_simulation/components/tip_delay.py` — 마우스를 올리면 뜨는 풍선의 앱 전체 지연 한 곳(1초 — 2026-11-21 사용자
+  결정, 설계 규칙 UI-NAV-04). 값 `TIP_DELAY_MS` · 사용자 정의 속성 `TIP_DELAY_VARIABLE`(`--capa-tip-delay`)과 애니메이션
+  `capa-tip-in`(opacity 와 visibility 를 함께 — 기다리는 동안 Playwright `visible=true` · 읽기 도구가 세지 않게)을 껍데기 스타일
+  맨 앞(`TIP_ROOT_CSS`, `@media` 밖 — 그림자 뿌리도 사용자 정의 속성은 물려받는다)에, 거는 규칙 넷(`TIP_SCREEN_RULES` —
+  Streamlit 도움말 · 오류 풍선과 표 칸 풍선은 JS 지연 200 · 600ms 뒤 나머지, Plotly · Altair 그림 값 풍선은 문서 뿌리 웜업 표지
+  `CHART_WARM_ATTRIBUTE` 가 없을 때만, Plotly 막대 단추 이름은 늘)을 화면 덩어리 끝에 둔다.
+  - 그림 웜업 스크립트(`chart_tip_warmup_script` — 고정 문자열, `app.py` 가 테마 툴바 스크립트에 싣는다)는 부모 문서에
+    `pointerover` · `pointerout` 하나씩 걸어 그림에 처음 들어온 뒤 지연이 지나면 표지를 달고, 그림 밖 · 다른 그림 · 창 밖이면
+    뗀다. 멈춘 마우스 밑에 그림 밖이 새로 서는 것(누를 때 Plotly 가 세우는 덮개 `dragcover` · 칸 누름 회차에 다시 세우는 틈의
+    빈 칸)은 떠난 것이 아니다 — 그림 안에서는 `pointerover` 가 없어 옮긴 자리 · 누른 자리를 `pointermove` · `pointerdown` 으로
+    적어 가르고(브라우저는 요소를 넘는 `pointerover` 를 그 자리의 `pointermove` 보다 먼저 보낸다), 누른 채 그림 상자 밖으로 끌고
+    가 뗀 자리는 식힌다. 칸 key(`st-key-…`)가 같은 그림이 다시 서면 잇고, 굴림 · 화면 옮김으로 밑에 온 다른 그림 · key 없는
+    그림은 기다린다. 터치는 곧바로 데운다. 테마 iframe 이 다시 서면 옛 처리기를 뗀다.
+  - 그림자 DOM · 자체 풍선 부품(`grid_shared_assets/cells.css` · `eg_core.js` · Space `editor.js` · `date_panel.js` ·
+    `process_picker` · `paste_window.css` · `intro.js`)은 같은 속성을 읽고 못 읽을 때의 기본값도 1초다 — 키보드 초점은
+    곧바로, 누름은 날짜 칸 도움말 · Space 배치 편집 표의 잠긴 칸 열기만 곧바로(꺼진 단추 까닭 · 붙여넣기 창 잠긴 칸은 1초).
+  - Streamlit 풍선 글 상자 testid 셋 · JS 지연(200 · 600ms)과 Plotly 풍선 묶음 · Altair 풍선 id 는 비공식 이름이라 판올림으로
+    바뀌면 지연만 조용히 풀린다 — `tests/test_tip_delay.py` 가 설치된 프런트 묶음에서 찾는다.
 - `src/capa_simulation/components/typography.py` — 본문의 페이지 제목·상자 제목·큰 숫자에만
   `tokens.FONT_FAMILY_DISPLAY`(`CapaDisplay`)를 거는 앱 전체 서체 스타일이다(자리 표 `docs/design_system.md` 1-1).
   - 글꼴(`static/fonts/archivo-700.woff2`·`archivo-800.woff2`)은 정적 서빙(`config.toml`)의 상대 경로로 받는다 —
@@ -8503,6 +8523,19 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   남긴다(`tests/test_collapsed_label_help.py` — 남긴 자리 `KEPT` 는 비었다: 바탕부터 숨어 있던 제약 시뮬레이션 모드 전환 ·
   공정 Capa 상세 구획 고르기는 2026-11-10 보드 Q-8 로 그 줄 ⓘ 에 옮겼다). 메모 · 저장자처럼 사람이 쓰는 글 칸은 풍선 대신
   칸 안 안내 글 「<칸 이름> · 예: <예>」(`saved_note.field_placeholder`)가 이름을 말한다.
+- **마우스를 올리면 뜨는 풍선은 1초 뒤에 뜬다**(2026-11-21 사용자 결정 — 설계 규칙 UI-NAV-04, `components/tip_delay.py`).
+  지연은 껍데기 스타일의 `--capa-tip-delay` 하나다. 새 자체 풍선은 그 값을 읽어 기다리고(JS 는
+  `getComputedStyle(…).getPropertyValue('--capa-tip-delay')`, 못 읽으면 `tip_delay.TIP_DELAY_MS` 와 같은 1초) 기다리는 동안
+  `visibility` 로 숨는다 — CSS 로 띄우면 그림자 DOM 밖은 `capa-tip-in` 애니메이션, 그림자 DOM 안은
+  `transition: visibility 0s linear var(--capa-tip-delay, 1000ms)`. 키보드 초점(`:focus-visible`)으로 여는 우리 풍선은
+  곧바로다 — 마우스로 누른 초점은 `:focus-visible` 이 아니라 올려 둔 것과 같이 기다리고, 누르면 까닭을 여는 자리(날짜 칸
+  도움말 `onfocus` · Space 배치 편집 표의 잠긴 칸 열기)만 곧바로다. 그림 값 풍선은 그림 단위 웜업(문서 뿌리 `data-capa-chart-warm`)이라 그림 안에서는 곧바로 따라간다 — 칸 꼴 그림을
+  새로 만들 때 `.js-plotly-plot` · `stVegaLiteChart` 밖에 그리면 웜업을 받지 못한다. 누르면 여는 팝업 · 팝오버 · 알림창 ·
+  브라우저 기본 풍선(`title` · SVG `<title>`)에는 걸지 않는다. Streamlit 풍선은 파이썬으로 지연을 바꿀 수 없어 CSS 로 덧붙인
+  것이라 초점 풍선도 같이 늦고(키보드 초점은 Streamlit 이 JS 200ms 없이 곧바로 세워 0.8초), 닫히고 0.5초 안에 다른 풍선으로 가면
+  0.8초, 요소 툴바(전체화면 등)는 1.8초다(받아들인 대가 —
+  규칙집 6-44). 화면 확인 · 가이드 촬영 스크립트가 풍선을 볼 때는 1초 넘게 기다린다(`check_deploy_screens.py` UPEH 머리 풍선은
+  3초까지).
 - **계산 가정 칸(세션 전용)은 조건 카드 끝 「이 세션만」 묶음이다** — 거르는 조건이 아니지만 계산 입력이라 카드에 둔다
   (예외). UPEH 가정이 그렇다(2026-10-22). 묶음 앞에 `:material/person:` 「이 세션만」 캡션을 두어 카드 머리의 「공용 설정」
   안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다. 제약 시뮬레이션의

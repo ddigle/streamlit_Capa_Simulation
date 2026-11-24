@@ -29,6 +29,7 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
 from capa_simulation.components.theme_toggle import PRINT_BUTTON_ID
+from capa_simulation.components.tip_delay import TIP_ROOT_CSS, TIP_SCREEN_RULES
 from capa_simulation.design import theme
 from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
@@ -294,6 +295,11 @@ def test_the_streamlit_main_menu_and_deploy_are_hidden_and_nothing_else() -> Non
     for css in (SHELL_STYLE, _header_css()):
         assert "stToolbarActions" not in css
     screen, _ = _split_shell_style()
+    # 풍선 지연 값 · 애니메이션(`tip_delay.TIP_ROOT_CSS`)은 맨 앞 한 벌이다 — 무엇을 거는지는 화면
+    # 덩어리가 정하고(`test_the_screen_block_…`) 그 글은 `tests/test_tip_delay.py` 가 본다.
+    assert screen.count(TIP_ROOT_CSS) == 1
+    assert SHELL_STYLE.index(TIP_ROOT_CSS) < SHELL_STYLE.index("@media")
+    screen = screen.replace(TIP_ROOT_CSS, "")
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", screen)
     assert [
         ({selector.strip() for selector in selectors.split(",")}, rule.strip())
@@ -359,12 +365,13 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
 
 
 def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> None:
-    """화면 덩어리는 다섯뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
+    """화면 덩어리는 여섯뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
     밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
     읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다). 셋째는 모달 동안 탭
     줄 흐림, 넷째는 풍선 글이 곁 칸의 마우스를 가로채지 않게 하는 규칙, 다섯째는 폼 안 알림이
     없는 칸과 본문의 빈 칸이 줄 사이 간격을 먹지 않게 하는 규칙(2026-11-09 사용자 검수 g17 · g18,
-    같은 날 상단 띠 재고 1-1)."""
+    같은 날 상단 띠 재고 1-1), 여섯째는 마우스를 올리면 뜨는 풍선을 1초 뒤에 띄우는 규칙(2026-11-21
+    사용자 결정 — 설계 규칙 UI-NAV-04, 글은 `tests/test_tip_delay.py`)."""
     block = _screen_block()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
     assert {selector.strip() for selector, _ in rules} == {
@@ -374,8 +381,11 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
         TOOLTIP_TEXT_SELECTOR,
         EMPTY_FORM_SLOT_SELECTOR,
         EMPTY_SLOT_SELECTOR,
+        *(selectors for selectors, _ in TIP_SCREEN_RULES),
     }
     by_selector = {selector.strip(): body for selector, body in rules}
+    for selectors, body in TIP_SCREEN_RULES:
+        assert by_selector[selectors].strip() == body
     assert by_selector[TOOLTIP_TEXT_SELECTOR].strip() == "pointer-events: none;"
     assert by_selector[EMPTY_FORM_SLOT_SELECTOR].strip() == "display: none;"
     assert by_selector[EMPTY_SLOT_SELECTOR].strip() == "display: none;"

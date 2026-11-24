@@ -101,6 +101,7 @@ from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
 from capa_simulation.components.theme_toggle import PRINT_BUTTON_ID
+from capa_simulation.components.tip_delay import TIP_ROOT_CSS, TIP_SCREEN_CSS
 from capa_simulation.design import tokens
 from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import (
@@ -236,7 +237,7 @@ EMPTY_SLOT_SELECTOR = (
 # - 화면 탭 줄(`PAGE_TABS_SELECTOR`)도 뺀다 — 화면을 옮기는 단추라 종이에는 쓸모가 없다. 대신
 #   화면에서 숨긴 큰 제목이 인쇄에는 보인다(아래 화면 덩어리가 `@media screen` 안이다).
 #
-# 화면 덩어리(`@media screen`)는 다섯이다(2026-10-24 사용자 결정 — 페이지 탭).
+# 화면 덩어리(`@media screen`)는 여섯이다(2026-10-24 사용자 결정 — 페이지 탭).
 # - 화면 탭 줄은 머리 띠 바로 밑에 붙어 본문과 함께 스크롤되지 않는다(`position: sticky` — 스크롤
 #   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 `tokens.HEADER_BAND_REM` 아래에 선다). z-index 는 본문
 #   위·머리 띠(999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다
@@ -263,9 +264,13 @@ EMPTY_SLOT_SELECTOR = (
 # - 폼 안의 알림이 없는 칸은 줄 사이 간격을 먹지 않는다(`EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09
 #   사용자 검수 g17 · g18). 본문의 빈 칸도 같다(`EMPTY_SLOT_SELECTOR` — 같은 날 상단 띠 재고 1-1).
 #   인쇄에는 높이 0 칸이라 걸 까닭이 없다.
+# - 마우스를 올리면 뜨는 풍선은 1초 뒤에 뜬다(2026-11-21 사용자 결정 — 설계 규칙 UI-NAV-04,
+#   `components/tip_delay.py`). 맨 위의 `:root` 값과 애니메이션(`TIP_ROOT_CSS`)은 `@media` 밖이고 —
+#   그림자 DOM 부품도 그 값을 물려받는다 — 거는 규칙(`TIP_SCREEN_CSS` — Streamlit 도움말 · 표 칸
+#   풍선, 그림 값 풍선, 그림 막대 단추 이름)은 화면 덩어리 끝이다. 인쇄에는 풍선이 없다.
 SHELL_STYLE = (
     """<style>
-[data-testid="stMainMenu"],
+__TIP_ROOT__[data-testid="stMainMenu"],
 [data-testid="stAppDeployButton"] {
   display: none !important;
 }
@@ -304,7 +309,7 @@ SHELL_STYLE = (
   __EMPTY_SLOT__ {
     display: none;
   }
-}
+__TIP_SCREEN__}
 @media print {
   @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
   __PAGE_TABS__, #capa-intro-host, #capa-alert-host {
@@ -331,6 +336,8 @@ SHELL_STYLE = (
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
     .replace("__TOOLTIP_TEXT__", TOOLTIP_TEXT_SELECTOR)
+    .replace("__TIP_ROOT__", TIP_ROOT_CSS)
+    .replace("__TIP_SCREEN__", TIP_SCREEN_CSS)
     .replace("__TABS_TOP__", tokens.rem(tokens.HEADER_BAND_REM))
     .replace("__TABS_LIFT__", tokens.rem(tokens.PAGE_TABS_LIFT_REM))
 )
@@ -1021,7 +1028,7 @@ def refresh_equipment_header(
 
 
 def render_shell_style() -> None:
-    """⋮ 메뉴·Deploy·제목 링크 감춤, 폼 안 빈 알림 칸, 인쇄 규칙을 보낸다.
+    """⋮ 메뉴·Deploy·제목 링크 감춤, 폼 안 빈 알림 칸, 풍선 지연, 인쇄 규칙을 보낸다.
 
     `app.py` 가 부트스트랩 앞에서 매 회차 한 번 부른다. 스타일만 든 `st.html` 이라 본문 자리를
     먹지 않는다.

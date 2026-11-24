@@ -178,9 +178,12 @@ const R = {}
     order: Array.from(S.view.order),
     sort: q('.eg-head').children[3].getAttribute('aria-sort'),
   }
-  // 값 칸 머리 풍선(role=tooltip, 300ms 뒤).
+  // 값 칸 머리 풍선(role=tooltip) — 앱 전체 풍선 지연 뒤(가짜 DOM 은 서식을 몰라 기본값 1초).
+  // 0.9초에는 아직 없다.
   fire(q('.eg-head').children[2], 'pointerover')
-  await tick(340)
+  await tick(900)
+  R.tipEarly = q('.eg-tip').hidden
+  await tick(140)
   const tip = q('.eg-tip')
   R.tip = [
     tip.hidden, tip.textContent, tip.getAttribute('role'),
@@ -277,6 +280,9 @@ def test_the_core_draws_edits_moves_and_talks_to_python() -> None:
     assert result["sorted"]["sort"] == "ascending"
     # 202702 오름차순 — 지금 보이는 값(초안·붙여넣기 미리보기 포함)으로: C 13% < B 50% < A 90%.
     assert result["sorted"]["order"] == [2, 1, 0]
+    # 값 칸 머리 풍선은 앱 전체 풍선 지연(1초) 뒤에 뜬다(2026-11-21 사용자 결정 — 설계 규칙
+    # UI-NAV-04).
+    assert result["tipEarly"] is True
     assert result["tip"] == [False, "데모 월 칸 풍선", "tooltip", True]
     assert result["ignored"]
     assert result["switched"] == {"same": True, "table": "RQ_OTHER", "gen": "", "cols": 5}

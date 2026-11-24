@@ -29,6 +29,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.tip_delay import TIP_DELAY_MS, TIP_DELAY_VARIABLE
 from capa_simulation.design import tokens
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.services.threshold_label import threshold_percent_label
@@ -93,7 +94,10 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
     position: relative;
 }}"""
         # 버튼 위로 띄운다. 아래로 띄우면 맨 아래 줄에서 팝업에 스크롤이 생겨 화면이 흔들린다. 폭은
-        # 버튼과 같게 두어 팝업 가장자리 버튼에서도 옆으로 넘치지 않는다.
+        # 버튼과 같게 두어 팝업 가장자리 버튼에서도 옆으로 넘치지 않는다. 앱 전체 풍선 지연
+        # (`tip_delay.TIP_DELAY_VARIABLE` — 껍데기 스타일이 없으면 1초) 동안 감춰 두었다
+        # 나타난다(설계 규칙 UI-NAV-04) — 투명도만 바꾸면 기다리는 동안에도 「보임」 이라
+        # `visibility` 를 함께 바꾼다.
         f"""
 {root}:hover::after {{
     position: absolute;
@@ -112,11 +116,11 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
     white-space: pre-line;
     overflow-wrap: anywhere;
     pointer-events: none;
-    animation: home-bn-tile-tip 0.12s ease-out 0.35s both;
+    animation: home-bn-tile-tip 0.12s ease-out var({TIP_DELAY_VARIABLE}, {TIP_DELAY_MS}ms) both;
 }}
 @keyframes home-bn-tile-tip {{
-    from {{ opacity: 0; }}
-    to {{ opacity: 1; }}
+    from {{ opacity: 0; visibility: hidden; }}
+    to {{ opacity: 1; visibility: visible; }}
 }}
 {contents}
 </style>

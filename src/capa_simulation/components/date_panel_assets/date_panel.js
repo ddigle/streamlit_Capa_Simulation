@@ -228,6 +228,15 @@ function valueText(mode, start, end) {
 }
 // </date-panel-core>
 
+// 앱 전체 풍선 지연(껍데기 스타일 `--capa-tip-delay` — 그림자 뿌리도 물려받는다). 못 읽으면 1초다(`components/tip_delay.py`).
+const TIP_DELAY_MS = 1000
+
+function tipDelayMs(node) {
+  const raw = typeof getComputedStyle === 'function' ? getComputedStyle(node).getPropertyValue('--capa-tip-delay') : ''
+  const match = /^\s*(\d+(?:\.\d+)?)(ms|s)\s*$/.exec(raw || '')
+  return match ? Math.round(parseFloat(match[1]) * (match[2] === 's' ? 1000 : 1)) : TIP_DELAY_MS
+}
+
 // 판 한 벌을 그 조각(`.capa-date-root`)에 세운다. `data` 는 지금 값과 칸의 조건, `sendApply` 는 「적용」 을 받는 쪽이다 —
 // 서버로 보내는 칸은 트리거이고, 그림자 DOM 안 브라우저 몫 칸(Space 편집기 호기 추가)은 제 상태에 적는다. 회차마다(값이
 // 바뀔 때마다) 다시 불러도 된다 — 초안은 뿌리 요소에 남는다.
@@ -536,17 +545,25 @@ function mountDatePanel(root, data, sendApply) {
     }
   }
 
-  // 풍선 — 맨 위 층에 띄워 잘리지 않게 한다. popover 가 없는 브라우저는 title 로 물러난다.
+  // 풍선 — 맨 위 층에 띄워 잘리지 않게 한다. popover 가 없는 브라우저는 title 로 물러난다. 마우스를 올려 둔 것은 앱 전체 풍선
+  // 지연(껍데기 스타일 `--capa-tip-delay`, 못 읽으면 1초) 뒤에 띄우고, 누름 · 키보드 초점은 곧바로다(설계 규칙 UI-NAV-04). 기다림은
+  // 단추에 달아 둔다 — 판을 다시 세운 회차(값이 바뀜)의 새 처리기도 앞 회차가 건 기다림을 걷는다.
   if (helpButton) {
     helpButton.hidden = !help
     helpButton.setAttribute('aria-label', help)
     const canFloat = Boolean(bubble && bubble.showPopover)
     if (bubble) bubble.textContent = help
     if (!canFloat) helpButton.title = help
+    const stopWaiting = () => {
+      clearTimeout(helpButton.capaTipWait)
+      helpButton.capaTipWait = 0
+    }
     const hide = () => {
+      stopWaiting()
       if (canFloat && bubble.matches(':popover-open')) bubble.hidePopover()
     }
     const show = () => {
+      stopWaiting()
       if (!canFloat || !help || bubble.matches(':popover-open')) return
       bubble.showPopover()
       const anchor = helpButton.getBoundingClientRect()
@@ -557,7 +574,10 @@ function mountDatePanel(root, data, sendApply) {
       bubble.style.left = left + 'px'
       bubble.style.top = (above >= 8 ? above : anchor.bottom + 8) + 'px'
     }
-    helpButton.onpointerenter = show
+    helpButton.onpointerenter = () => {
+      stopWaiting()
+      helpButton.capaTipWait = setTimeout(show, tipDelayMs(helpButton))
+    }
     helpButton.onpointerleave = hide
     helpButton.onfocus = show
     helpButton.onblur = hide

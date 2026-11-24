@@ -1190,6 +1190,7 @@ def _tip_source() -> str:
         _js_decl(head)
         for head in (
             "function placeTip(",
+            "function cancelTipWait(",
             "function hideTip(",
             "function showTip(",
             "function setTip(",
@@ -1286,15 +1287,116 @@ def test_every_toolbar_button_that_can_lock_sits_in_a_tip_host() -> None:
 
 
 def test_the_tip_opens_by_mouse_and_keyboard_and_esc_hides_it() -> None:
-    """마우스는 올린 동안, 키보드는 초점이 머무는 동안이다 — 누른 초점에는 뜨지 않는다. 떠 있는
-    풍선은 Esc 가 먼저 걷고 고른 것 · 붓은 그대로다."""
+    """마우스는 올려 둔 동안(앱 전체 풍선 지연 뒤 — `hoverTip`), 키보드는 초점이 머무는 동안(곧바로
+    — `showTip`)이다 — 누른 초점에는 뜨지 않는다. 떠 있는 풍선은 Esc 가 먼저 걷고 고른 것 · 붓은
+    그대로다."""
     bind = _js_decl("function bindTip(")
-    assert "spot.onpointerenter = () => showTip(spot)" in bind
+    assert "spot.onpointerenter = () => hoverTip(spot)" in bind
     assert "spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }" in bind
     keys = JS[JS.index("host.onkeydown = (event) => {") :]
     assert keys.index(
         "S.tipFor && !tipBox.hidden) { event.preventDefault(); hideTip(); return }"
     ) < keys.index("if (VIEW) {")
+
+
+_TIP_WAIT_RUNNER = """
+const S = {}
+const TIP_DELAY_MS = 1000
+const TIP_GAP_PX = 6
+const timers = []
+let now = 0
+globalThis.setTimeout = (run, ms) => { timers.push({ run, at: now + ms }); return timers.length }
+globalThis.clearTimeout = (id) => { if (id) timers[id - 1] = null }
+const advance = (ms) => {
+  now += ms
+  timers.forEach((timer, index) => {
+    if (timer && timer.at <= now) { timers[index] = null; timer.run() }
+  })
+}
+const box = (left, top, width, height) => (
+  { left, top, right: left + width, bottom: top + height, width, height }
+)
+const host = { getBoundingClientRect: () => box(100, 50, 1000, 600) }
+const tipBox = { hidden: true, offsetWidth: 200, offsetHeight: 30, style: {}, textContent: '' }
+const setText = (n, text) => { n.textContent = text }
+const spot = (tip) => ({
+  dataset: { tip }, isConnected: true, closest: () => null,
+  getBoundingClientRect: () => box(300, 60, 60, 27),
+})
+const a = spot('고른 것 없음')
+const b = spot('변경 없음')
+const out = {}
+hoverTip(a)
+out.at0 = !tipBox.hidden
+advance(900)
+out.at900 = !tipBox.hidden
+hoverTip(a)
+advance(150)
+out.at1050 = [!tipBox.hidden, tipBox.textContent]
+// 다른 칸으로 옮기면 떠 있던 풍선을 걷고 다시 기다린다.
+hoverTip(b)
+out.moved = !tipBox.hidden
+advance(999)
+out.movedEarly = !tipBox.hidden
+advance(1)
+out.movedLate = [!tipBox.hidden, tipBox.textContent]
+// 뜨기 전에 떠나면(hideTip) 뜨지 않는다.
+hideTip()
+hoverTip(a)
+advance(500)
+hideTip()
+advance(1000)
+out.leftEarly = !tipBox.hidden
+// 키보드 초점(showTip)은 곧바로이고 기다리던 마우스 풍선을 지운다.
+hoverTip(b)
+showTip(a)
+out.focus = [!tipBox.hidden, tipBox.textContent]
+advance(2000)
+out.focusKept = tipBox.textContent
+// 까닭이 빈 칸은 기다리지 않는다.
+hoverTip(spot(''))
+advance(2000)
+out.empty = [!tipBox.hidden, timers.filter(Boolean).length]
+// 기다리는 동안 칸이 사라지면 띄우지 않는다.
+const gone = spot('사라짐')
+hoverTip(gone)
+gone.isConnected = false
+advance(1000)
+out.gone = !tipBox.hidden
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_mouse_tip_waits_the_app_tip_delay_and_the_keyboard_tip_does_not() -> None:
+    """마우스로 올린 칸의 까닭 풍선은 앱 전체 풍선 지연(껍데기 스타일 `--capa-tip-delay` — 못 읽으면
+    1초) 뒤에 뜬다(2026-11-21 사용자 결정 — 설계 규칙 UI-NAV-04). 같은 칸 위에서 다시 올라와도
+    기다림을 다시 세지 않고, 다른 칸으로 옮기면 걷고 다시 기다린다. 뜨기 전에 떠나면 뜨지 않는다.
+    키보드 초점은 곧바로다. 배치 편집 표 칸도 같은 `hoverTip` 이다."""
+    source = "\n".join(
+        _js_decl(head)
+        for head in (
+            "function tipDelayMs(",
+            "function placeTip(",
+            "function cancelTipWait(",
+            "function hideTip(",
+            "function hoverTip(",
+            "function showTip(",
+        )
+    )
+    out = _node(source + _TIP_WAIT_RUNNER, {})
+    assert out["at0"] is False
+    assert out["at900"] is False
+    assert out["at1050"] == [True, "고른 것 없음"]
+    assert out["moved"] is False and out["movedEarly"] is False
+    assert out["movedLate"] == [True, "변경 없음"]
+    assert out["leftEarly"] is False
+    assert out["focus"] == [True, "고른 것 없음"] and out["focusKept"] == "고른 것 없음"
+    assert out["empty"] == [False, 0]
+    assert out["gone"] is False
+    assert "const TIP_DELAY_MS = 1000" in JS
+    assert "getPropertyValue('--capa-tip-delay')" in _js_decl("function tipDelayMs(")
+    sheet = JS[JS.index("sheetBodyRows.onpointerover = (event) => {") :]
+    assert "if (cell) hoverTip(cell)" in sheet[: sheet.index("sheetBodyRows.onkeydown")]
 
 
 _TIP_KEY_RUNNER = """
