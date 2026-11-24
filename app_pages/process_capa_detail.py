@@ -33,7 +33,9 @@
 
 - **Static 기준** — 공통 진입(`page_bootstrap`), 유효 기간은 산출 결과처럼 `RQ_REQB` 원천에서
   정한다. 확보율은 키 전용 캐시(`get_scenario_securement_rate`), 요약은 회차마다
-  (`build_process_capa_summary` — 판정 기준에 닿는다).
+  (`build_process_capa_summary` — 판정 기준에 닿는다). 고른 공정의 경로가 조회기간 안에서 모두
+  소요기준 BOX · PCB(계산 밖 — `get_unimplemented_basis_processes`)면 ③ 판정 카드가 「소요 없음」
+  대신 「계산 밖(소요기준 …)」 이다.
 - **설비 일정(참고)** — 설비 DB 의 최신 저장본·Cut-off 를 **읽기만** 한다
   (`PageSpec.uses_equipment_db`). 샘플 fleet 은 쓰지 않는다 — 저장본이 없으면 「설비 일정
   없음」이다. 판정(`dynamic_readiness`)을 통과한 공정만 계획
@@ -88,6 +90,7 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.outside_calculation_mark import whole_outside_basis
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
@@ -224,6 +227,7 @@ from capa_simulation.services.simulation_cache import (
     get_process_calculation_rows,
     get_process_equipment_timeline,
     get_undated_equipment,
+    get_unimplemented_basis_processes,
     get_usage_excluded_equipment,
     load_required_shortening_for_target,
     process_timeline_key_from_shortening,
@@ -1070,6 +1074,19 @@ def sheet_heading() -> tuple[tuple[str, str], ...]:
     return tuple(rows)
 
 
+# 계산 밖 공정(소요기준 BOX · PCB 경로) — 이 공정의 경로가 조회기간 안에서 모두 계산 밖이면
+# ③ 판정 카드가 「소요 없음」 대신 그 소요기준을 말한다. 목록 칸은 산출 결과 표 제목 줄 표지와
+# 같은 키(선언을 접지 않은 내용 토큰 + 유효 조회기간)다.
+outside_basis = whole_outside_basis(
+    get_unimplemented_basis_processes(
+        str(active_scenario["content_token"]),
+        effective_start,
+        effective_end,
+        _reqb=scenario_tables["RQ_REQB"],
+    ),
+    process,
+)
+
 render_process_detail_view(
     ProcessDetailView(
         process=process,
@@ -1099,6 +1116,7 @@ render_process_detail_view(
         units_export=units_export,
         sheet_heading=sheet_heading(),
         sheet_file_name=edited_file_name(file_names.sheet),
+        outside_basis=outside_basis,
     )
 )
 

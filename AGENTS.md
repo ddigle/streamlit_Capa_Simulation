@@ -810,6 +810,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`st.page_link` + 주소 `?process=`)은 늘 보이고 설비 일정이 서지 않는 공정이면 꺼진 채 풍선이 까닭을 말한다(D11).
     HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 링크 판정만 세션 스냅샷으로 한 번 더 낸다(제약
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
+  - 고른 공정의 경로가 조회기간 안에서 모두 소요기준 BOX · PCB(계산 밖 — 11장)면 `ProcessDetailView.outside_basis` 에 그
+    소요기준(「BOX」 · 「BOX · PCB」)을 실어 ③ 판정 카드가 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 를
+    쓴다(2026-11-24 사용자 「권장안 그대로」). 목록은 산출 결과 표 제목 줄 표지와 같은 칸(`get_unimplemented_basis_processes` —
+    선언을 접지 않은 내용 토큰 + 유효 조회기간)이고 공정 하나 고르기는 `outside_calculation_mark.whole_outside_basis`(`whole` 공정만 —
+    경로 일부만 빠진 공정은 남은 경로로 판정이 서서 None)다. 경고 알림이 아니고 숫자 · 그림 · 시트는 그대로다
+    (`tests/test_process_capa_detail_page.py`).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다. 설명은 `guides/capa_chatbot.md` 다 — 답의 네 칸(2026-11-10 보드 Q-9)과 「연결 방식」(오른쪽 카드는 제목과
   목록만 — 2차 보드 Q2-24)도 거기서 말한다. 머리에 배지 줄이 없고 「샘플 데이터」 는 조회 조건 패널 줄이다 — 공통
@@ -2126,6 +2132,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   경로」, 열 개 넘으면 「외 n공정」)을 짓는 순수 함수 `outside_calculation_mark` 다. 공정 차례는 부르는 쪽이 준 원본 공정 표시순서이고
   표시명은 차례를 정한 뒤 붙이며 마크다운 글자를 막는다(`literal_markdown`). 없으면 None — 표지 낱말은 「계산 밖」 하나다
   (`OUTSIDE_CALCULATION`, 설계 규칙 UI-CON-02). 지금 부르는 곳은 산출 결과 세 표 제목 줄이다(`tests/test_outside_calculation_mark.py`).
+  - 공정 하나를 말하는 자리의 글도 여기다 — `whole_outside_basis`(목록과 원본 공정명 → 경로가 모두 계산 밖이면 빠진 소요기준 글,
+    둘이면 「BOX · PCB」, 아니면 None)와 `BASIS_MARK`(「계산 밖(소요기준 BOX)」). 부르는 곳은 공정 Capa 상세 ③ 판정 카드다
+    (`process_capa_view._unjudged_text`).
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
   두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
@@ -6645,6 +6654,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - UPEH 가정 토큰도 그림 기억 키에 든다. KPI 는 가정 요약 값에 회색 줄 「가정 전 n」, 근거 카드 ① 은 구간 달에 가정 한
     줄, ③ 은 구간 달이면 머리 식·판정·원인을 가정 요약으로 내고(식 첫 줄 「소요 = 가정 전 ÷ f」) 가정 전 판정은 회색 「가정
     전: …」 한 줄이다 — 같은 패널의 다음 화면 줄과 같은 기준(이름은 2026-11-12 사용자 답 q2 (가)).
+  - ③ 판정 카드의 판정하지 않는 달(소요 없음)은 `ProcessDetailView.outside_basis`(공정 경로가 모두 계산 밖 — 11장)가 있으면
+    「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다 — UPEH 가정 달 머리와 회색 「가정 전: …」 줄도 같은 글(`_unjudged_text`). 판정이
+    서는 달은 그 값과 상관없이 식 그대로다. 카드는 회차마다 짓는 글이라 그림 · 시트 기억 키와 `CANVAS_SCHEMA_VERSION` ·
+    `SHEET_SCHEMA_VERSION` 은 그대로다(`tests/test_process_capa_view.py`).
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
@@ -7812,7 +7825,8 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조). 화면은 경고 알림이 아니라 표지 +
-  풍선이다 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」(`components/outside_calculation_mark.py`)
+  풍선이다 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」(`components/outside_calculation_mark.py`) · 공정 Capa 상세 ③ 판정
+  카드 「계산 밖(소요기준 BOX) — 판정하지 않습니다」(경로가 모두 계산 밖인 공정만)
 - 기본 화면용 공정별 대당 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
   집계한다. 동일한 대당 Capa의 STEP이 늘면 공정별 대당 Capa는 그 수에 반비례해 감소한다.
@@ -11040,7 +11054,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   `simulation_cache.get_unimplemented_basis_processes`)이다. 세는 꼴이 두 계산이 버리는 꼴과 같아 목록의 공정과 계산이 버린 경로가
   어긋나지 않고, 계산 숫자는 바꾸지 않으며, 넣을 때 그 집합만 고치면 목록도 함께 따라간다(`tests/test_frame_contracts.py` ·
   `tests/test_required_equipment.py`). 화면 표지는 산출 결과 세 표 제목 줄 「계산 밖 n공정」 + 풍선이다(경고 알림 아님 —
-  `components/outside_calculation_mark.py`, 3장 `calculation_result.py`).
+  `components/outside_calculation_mark.py`, 3장 `calculation_result.py`). 경로가 모두 계산 밖인 공정을 고른 공정 Capa 상세 ③
+  판정 카드는 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다(3장 `process_capa_detail.py`).
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지

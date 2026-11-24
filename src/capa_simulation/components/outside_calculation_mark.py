@@ -1,4 +1,4 @@
-# Purpose: 계산에서 빠진 BOX · PCB 소요기준 공정을 알리는 「계산 밖 n공정」 표지와 풍선 글을 짓는다.
+# Purpose: 계산에서 빠진 BOX · PCB 소요기준 공정을 알리는 「계산 밖」 표지와 풍선 글을 짓는다.
 
 """계산 밖 표지 — 표 제목 줄 부가 설명 칸에 다는 짧은 글과 풍선(정식판 1.0 마감 2번 C — 2026-11-24
 사용자 「권장안 그대로」: PCB 산식이 아니라 표지).
@@ -16,6 +16,10 @@ UI-TXT-04)이다. 사용자가 고칠 수 없는데 늘 서는 상태라 경고 
   「— 일부 경로」 를 붙인다 — 그 공정은 남은 경로로 계산된다.
 - 차례는 부르는 쪽이 준 원본 공정 차례(표시순서)이고 표시명은 차례를 정한 뒤에 붙인다. 차례에 없는
   공정은 받은 차례 그대로 뒤에 선다.
+
+공정 하나를 말하는 자리(공정 Capa 상세 ③ 판정 카드)는 그 공정의 경로가 조회기간 안에서 모두
+계산 밖(`whole`)일 때만 「계산 밖(소요기준 BOX)」 을 쓴다(`whole_outside_basis` · `BASIS_MARK`).
+경로 일부만 빠진 공정은 남은 경로로 판정이 서므로 그 자리 글은 그대로다.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ PERIOD_HEAD: Final = "이 기간: "
 PARTIAL: Final = " — 일부 경로"
 # 풍선에 이름을 싣는 공정 수 — 넘으면 「외 n공정」.
 NAME_LIMIT: Final = 10
+# 공정 하나를 말하는 자리의 표지 — 「계산 밖(소요기준 BOX)」(`whole_outside_basis` 의 글을 넣는다).
+BASIS_MARK: Final = f"{OUTSIDE_CALCULATION}(소요기준 {{bases}})"
 
 
 class OutsideCalculationMark(NamedTuple):
@@ -72,3 +78,17 @@ def outside_calculation_mark(
     rest = len(ordered) - NAME_LIMIT
     line = PERIOD_HEAD + " · ".join(names) + (f" 외 {rest}공정" if rest > 0 else "")
     return OutsideCalculationMark(caption=MARK.format(n=len(ordered)), help=f"{REASON}\n\n{line}")
+
+
+def whole_outside_basis(processes: Sequence[UnimplementedProcess], process: str) -> str | None:
+    """`process`(원본 공정명)의 조회기간 안 경로가 모두 계산 밖이면 빠진 소요기준 글 — 「BOX」,
+    둘이면 「BOX · PCB」(풍선과 같은 잇기).
+
+    경로 일부만 빠진 공정(`whole` 거짓)은 남은 경로로 계산되어 판정이 서므로 None 이다. 목록에 없는
+    공정도 None 이다.
+    """
+    name = process.strip()
+    for item in processes:
+        if item.process == name:
+            return " · ".join(item.bases) if item.whole else None
+    return None

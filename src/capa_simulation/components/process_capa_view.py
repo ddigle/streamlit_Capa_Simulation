@@ -106,6 +106,7 @@ from capa_simulation.components.home_dimensions import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.month_sheet_canvas import SELECTED_BORDER_PX, signed_int
+from capa_simulation.components.outside_calculation_mark import BASIS_MARK
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -557,6 +558,13 @@ class ProcessDetailView:
 
     sheet_file_name: str = "process_capa_detail.xlsx"
     """시트 엑셀 파일 이름(`detail_file_names` — 가정 계획이면 UPEH 가정 꼬리, 끝에 공정 이름)."""
+
+    outside_basis: str | None = None
+    """이 공정의 조회기간 안 경로가 모두 계산 밖(소요기준 BOX · PCB — 산식이 정해질 때까지
+    계산에 넣지 않음)이면 그 소요기준 글(「BOX」 · 「BOX · PCB」 —
+    `outside_calculation_mark.whole_outside_basis`). ③ 판정 카드가 「소요 없음」 대신 「계산
+    밖(소요기준 …)」 을 쓴다. 경로 일부만 빠진 공정과 계산 밖이 아닌 공정은 None 이다. 그림 ·
+    시트에는 싣지 않는다."""
 
     @property
     def judgement_summary(self) -> pd.DataFrame:
@@ -1504,7 +1512,14 @@ def evidence_cards(
     cards = [
         demand_card(trace, record, assumed=assumed, token=view.upeh_token),
         availability_card(record, bridge),
-        judgement_card(record, view.thresholds, month, assumed=assumed, token=view.upeh_token),
+        judgement_card(
+            record,
+            view.thresholds,
+            month,
+            assumed=assumed,
+            token=view.upeh_token,
+            outside_basis=view.outside_basis,
+        ),
     ]
     if view.dynamic is not None:
         card = shortening_card(view.dynamic, month)
@@ -1664,12 +1679,17 @@ def judgement_card(
     *,
     assumed: Mapping[str, object] | None = None,
     token: UpehToken = NO_ASSUMPTION,
+    outside_basis: str | None = None,
 ) -> EvidenceCard:
     """③ 판정 — 확보율 식·과부족 식(그 달 확보 기준)과 원인.
 
     그 달이 UPEH 가정 구간이면(`assumed`) 판정은 한 기준이다 — 머리 식·판정·원인을 가정 레코드로
     내고 식 첫 줄에 「소요 = 가정 전 ÷ f」 를 드러낸다. 가정 전 판정은 회색 「가정 전: …」 한 줄로
     내린다(부족 띠·KPI·다음 화면 줄이 가정 요약을 읽는 것과 같은 기준이다).
+
+    판정하지 않는 달(소요 없음)의 글은 `outside_basis`(`ProcessDetailView.outside_basis` — 공정
+    경로가 모두 계산 밖)가 있으면 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다. 판정이 서는
+    달은 그 값과 상관없이 식 그대로다.
     """
     secure, warning = thresholds.for_month(month)
     secure_bound = thresholds.boundary_for(month)[0]
@@ -1686,7 +1706,7 @@ def judgement_card(
         f"{boundary_percent_label(secure)} 이상)"
     )
     if required is None or required <= 0 or available is None:
-        return EvidenceCard(title, "소요 없음 — 판정하지 않습니다", (bases,))
+        return EvidenceCard(title, _unjudged_text(outside_basis), (bases,))
     rate = available / required
     name = _STATUS_NAMES.get(str(status), _EMPTY)
     balance = _whole(basis.get(BALANCE_COLUMN))
@@ -1717,8 +1737,16 @@ def judgement_card(
     if str(status) == "secure" and surplus_held_at_zero(available, required, secure):
         notes.append(ROUNDED_IN_NOTE.format(threshold=threshold_percent_label(secure)))
     if assumed is not None:
-        notes.append(_official_judgement_note(record))
+        notes.append(_official_judgement_note(record, outside_basis=outside_basis))
     return EvidenceCard(title, "\n".join(lines), tuple(notes))
+
+
+def _unjudged_text(outside_basis: str | None) -> str:
+    """판정하지 않는 달의 글 — 「소요 없음 — 판정하지 않습니다」. 공정 경로가 모두 계산 밖이면 수요
+    없음으로 읽히지 않게 「계산 밖(소요기준 BOX) — 판정하지 않습니다」(표지 낱말은 산출 결과 표 제목
+    줄과 같은 「계산 밖」 — `outside_calculation_mark.BASIS_MARK`)."""
+    head = "소요 없음" if outside_basis is None else BASIS_MARK.format(bases=outside_basis)
+    return f"{head} — 판정하지 않습니다"
 
 
 def _assumed_required_line(official: float | None, assumed: float, token: UpehToken) -> str:
@@ -1755,13 +1783,15 @@ def _cause_note(record: Mapping[str, object], required: float) -> str:
     return f"원인: {cause}" if cause else ""
 
 
-def _official_judgement_note(record: Mapping[str, object]) -> str:
+def _official_judgement_note(
+    record: Mapping[str, object], *, outside_basis: str | None = None
+) -> str:
     """UPEH 가정 달의 회색 한 줄 — 「가정 전: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도
-    부족」."""
+    부족」. 판정하지 않는 달은 ③ 머리와 같은 글(`_unjudged_text`)이다."""
     available = _number(record.get("가용대수"))
     required = _number(record.get("소요대수"))
     if required is None or required <= 0 or available is None:
-        return "가정 전: 소요 없음 — 판정하지 않습니다"
+        return f"가정 전: {_unjudged_text(outside_basis)}"
     balance = _whole(record.get(BALANCE_COLUMN))
     cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
     return (

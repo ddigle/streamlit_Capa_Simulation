@@ -245,6 +245,59 @@ def test_a_month_without_demand_is_not_judged() -> None:
     assert card.formula == "소요 없음 — 판정하지 않습니다"
 
 
+def test_the_judgement_card_names_the_outside_calculation_basis() -> None:
+    """공정 경로가 조회기간 내내 계산 밖(소요기준 BOX · PCB — 산식이 정해질 때까지 계산에 넣지
+    않음)이면 소요 없는 달의 ③ 은 「소요 없음」 이 아니라 「계산 밖(소요기준 …)」 이다 — 수요
+    없음으로 읽히지 않게. UPEH 가정 달 머리와 회색 「가정 전」 줄도 같은 글이고, 판정이 서는 달은
+    그 값과 상관없이 식 그대로다. 뷰 칸(`ProcessDetailView.outside_basis`)이 카드까지 간다."""
+    unjudged = {"가용대수": 3.0, "소요대수": 0.0, "판정": None}
+    card = judgement_card(unjudged, THRESHOLDS, 202611, outside_basis="BOX")
+    assert card.title == "③ 판정"
+    assert card.formula == "계산 밖(소요기준 BOX) — 판정하지 않습니다"
+    assert card.notes == judgement_card(unjudged, THRESHOLDS, 202611).notes
+    both = judgement_card(unjudged, THRESHOLDS, 202611, outside_basis="BOX · PCB")
+    assert both.formula == "계산 밖(소요기준 BOX · PCB) — 판정하지 않습니다"
+
+    token = (80, (202611,))
+    assumed_card = judgement_card(
+        unjudged, THRESHOLDS, 202611, assumed=dict(unjudged), token=token, outside_basis="PCB"
+    )
+    assert assumed_card.title == "③ 판정 (UPEH 가정 80%)"
+    assert assumed_card.formula == "계산 밖(소요기준 PCB) — 판정하지 않습니다"
+    judged_assumed = {"가용대수": 3.0, "소요대수": 2.0, "판정": "secure", "확보기준 과부족": 0}
+    official_line = judgement_card(
+        unjudged, THRESHOLDS, 202611, assumed=judged_assumed, token=token, outside_basis="BOX"
+    ).notes[-1]
+    assert official_line == "가정 전: 계산 밖(소요기준 BOX) — 판정하지 않습니다"
+
+    month = 202703
+    judged = _record(_summary(), month)
+    assert judgement_card(judged, THRESHOLDS, month, outside_basis="BOX") == judgement_card(
+        judged, THRESHOLDS, month
+    )
+
+    rate = pd.DataFrame(
+        {
+            "생산계획년월": [202611],
+            "공정": [PROCESS],
+            "가용대수": [3.0],
+            "소요대수": [0.0],
+            "확보율": [float("nan")],
+        }
+    )
+    owned = pd.DataFrame({"생산계획년월": [202611], "공정": [PROCESS], "설비보유": [3.0]})
+    lent = pd.DataFrame({"생산계획년월": [202611], "공정": [PROCESS], "설비대여평가": [0.0]})
+    summary = build_process_capa_summary(
+        rate, owned, lent, process=PROCESS, months=[202611], thresholds=THRESHOLDS
+    )
+    view = _view(summary=summary, months=(202611,), outside_basis="BOX")
+    assert evidence_cards(view, 202611, None)[2].formula == (
+        "계산 밖(소요기준 BOX) — 판정하지 않습니다"
+    )
+    plain = evidence_cards(replace(view, outside_basis=None), 202611, None)[2]
+    assert plain.formula == "소요 없음 — 판정하지 않습니다"
+
+
 def test_the_availability_card_warns_on_a_mismatch_and_adds_the_schedule_reference() -> None:
     record = _record(_summary(), 202611)
     record[MISMATCH_COLUMN] = True
