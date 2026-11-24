@@ -1328,6 +1328,22 @@ def test_the_guide_says_the_general_target_is_a_whole_percent_judged_by_rounding
     assert "1% 단위" in row and "109.5%" in row
 
 
+def test_the_guide_says_what_it_does_not_do_without_a_next_version_promise() -> None:
+    """Guide 는 만들지 않은 것을 「… 는 하지 않습니다」 로 적는다 — 낼 때가 정해지지 않은
+    「다음 판입니다」 약속을 정식판 Guide 에 두지 않는다(2026-11-24 정식판 마감 2-A)."""
+    guide = " ".join(
+        (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    assert "다음 판입니다" not in guide
+    assert (
+        "호기 지정 · 설비 시나리오 비가동으로 넣기 · 제약 개조를 미리 나눠 하기는 "
+        "하지 않습니다." in guide
+    )
+    assert "개조 대상 **호기 고르기**와 제품별 Cut-off 는 하지 않습니다." in guide
+
+
 def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
