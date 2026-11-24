@@ -2307,6 +2307,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 화면 등록(`components/bigdataquery_registration.py`)과 자동 갱신이 같은 `save_bigdataquery_scenario` 를 불러 원천
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
+  - 리비전 1 메모 끝 조각 차례는 CUSTOM 원천 대조 · 업무 키 충돌 · CS 빈 행 · 부대공정 판 · 대당 Capa 멈춤(늘 끝)이다. 앞
+    둘은 `source_check_memo` 한 곳 — 「CUSTOM 원천 대조 — 종류 n · 행 수 다른 칸 m · 한쪽에만 있는 칸 k」(BigDataQuery 등록이면
+    늘 — `CustomSourceCheck.memo`, CSV · 시드 · 가짜 공급자는 None 이라 없음) · 「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」(있을
+    때만 — `core_data_pipeline.reference_conflict_memo`)이고, 자동 갱신이 같은 함수로 실행 기록 사유 · 리비전 2 · 공식버전 메모에
+    잇는다(`_RunLog.source_memo`).
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(등록한 시나리오를 남겼다는 끝 글 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`. 푸는 길이 원천 다시 등록이면(`fixed_at_source`) 끝 글은 「…은 남겼습니다」 까지이고 「…손으로 지정하세요」 꼬리를 달지 않는다 — 검수 보드 sc-runner-word)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
@@ -2317,7 +2322,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `stop_scope` 「HOME · 생산 계획 · 표준 목표 계산」(메모 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)`), 푸는 길은 원천에 계획 행을 넣어
     다시 등록, 검수 보드 st-route-only)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
-    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
+    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CUSTOM 원천 대조 `SC-05` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
     (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
     화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
@@ -2356,6 +2361,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 부하 예외 선언은 「judge」 단계 앞에서 저장소(`load_route_load_exceptions` — 캐시 래퍼 없이)로 한 번 읽어 판정과 발행 검사가 같은
     판으로 셈한다. 선언이 있으면 실행 기록 사유의 발행 줄 쪽 끝과 리비전 2 · 공식버전 메모에 「부하 예외 판 n」(이름 없음 —
     `_route_exception_memo`)을 붙여 공식 숫자가 어느 판으로 났는지 되짚는다. 선언이 없으면 조각이 없다.
+  - 사유의 발행 줄 쪽 끝 · 리비전 2 · 공식버전 메모의 조각 차례는 원천 조각(`_RunLog.source_memo` — CUSTOM 원천 대조 · 업무 키
+    충돌, `scenario_registration.source_check_memo`) · CS 빈 행 · 부대공정 판 · 부하 예외 판이다. 소요대수 밖 수요 경고는 그 뒤
+    `_WARNING_SEPARATOR` 로 잇고 `split_published_reason` 이 경고 머리로만 가른다 — 대조 조각 안의 「—」 는 가르지 않는다.
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
   차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다. 감사 기록기가 켜진
   서버면 감사 할 일(`audit/shipper.py` 의 `AuditTasks` — 비우기 10초 · 올리기 5분 또는 200줄 · 일별 묶음 · 미러)도 같은 고리가
@@ -3053,7 +3061,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `CUSTOM_EXAMPLE_LIMIT` 까지다. CUSTOM 의 앞뒤 공백 · 대소문자는 `normalize_custom_values` 로 접고, Capa Code 는 앞뒤 공백만
     떼며, 생산계획년월은 양쪽을 같은 글자(`202611`)로 맞댄다. Capa Code 가 빈 행은 짝짓지 않는다(본 표는 빈 값 표지).
   - 알림만: 한쪽에만 있는 (Capa Code, 생산계획년월) 칸 · 행 수가 다른 칸(본 표는 받은 행 그대로 센다) — `CustomSourceCheck`
-    의 `warns` · `notice()` · `memo()`(늘 「CUSTOM 원천 대조 — 종류 n · …」) · `cells`.
+    의 `warns` · `notice()` · `memo()`(늘 「CUSTOM 원천 대조 — 종류 n · …」) · `cells`. 메모는 리비전 · 자동 갱신 메모
+    (`scenario_registration.source_check_memo`)가, `warns` 일 때의 글 · 표(칸 `CELL_COLUMNS`)는 DB 등록 사건 알림 `SC-05` 와 그
+    Alarm 줄의 표 「CUSTOM 대조」(`bigdataquery_registration._queue_custom_source_check` — 2,000행을 넘으면 표 없이 수만)가 쓴다.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 칸이 많은 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 그룹 자리(첫 등장 차례)를 바꾸지
     않는다.
@@ -8144,7 +8154,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다른 부품과 구분 없음(`CUSTOM_BLANK`)으로 합쳐지고, 한 부품의 CUSTOM 이 달마다 다르면 달마다 다른 제품으로 갈린다 — 어느 부품 ·
   어느 달인지 알리고 멈춘다. 표 이름 환경변수(`CAPA_BDQ_CUSTOM_TABLE`)가 없거나 꼴이 틀리면 패키지를 부르기 전에, CUSTOM 원천 표
   답이 0행 · 칸 모자람이면 본 조회 전에 멈춘다. 자동 갱신은 그 회차가 등록 단계 오류로 끝나 시나리오를 만들지 않으므로 다음 회차가
-  같은 코드를 다시 받는다. 두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나는 것은 알리고 등록한다(값은 Capa Code 단위라 그대로).
+  같은 코드를 다시 받는다. 두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나는 것은 알리고 등록한다(값은 Capa Code 단위라 그대로)
+  — DB 등록 탭은 저장 뒤 사건 알림 `SC-05` 와 그 Alarm 줄의 표 「CUSTOM 대조」(칸마다 두 표 행 수, 2,000행을 넘으면 표 없이 수만)로
+  알리고, 대조 수는 BigDataQuery 등록이면 늘 메모 조각 「CUSTOM 원천 대조 — 종류 n · 행 수 다른 칸 m · 한쪽에만 있는 칸 k」 로
+  리비전 1 메모(자동 갱신은 실행 기록 사유 · 리비전 2 · 공식버전 메모에도 — 원천 조각, 3장 `source_check_memo`)에 남는다.
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기
   등)보다 먼저 뺀다 — 행마다 따로 바꾸는 `제품정보`·`Area_Name` 정규화만 빼기 전에 해 뺀 경로 행을 남은 계획과 같은 꼴로
@@ -8153,7 +8166,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   행(`계획기초정보여부 = Y`)·경로 행(그 밖) 수, 경로 일부 빠진 남은 계획 줄 수(6장 「부하량」 끝 — 계획 0행이어도 소요대수가
   줄 수 있어서다)를 `BlankCsDrop` 이 들고 등록 경로마다 드러낸다 — DB 등록 탭은 저장 알림 밑 경고, 리비전 1
   메모 끝은 `CS 빈 행 n개(계획 m행 · 경로 k행) 뺌`(+ ` · 경로 일부 빠진 계획 j줄`, `scenario_registration.save_bigdataquery_scenario`
-  한 곳), 자동 갱신은 실행 기록 사유의 발행 줄 끝(소요대수 밖 수요 경고와 섞지 않는다)과 리비전 2·공식버전 메모 끝, CSV 초기
+  한 곳 — 원천 조각(CUSTOM 원천 대조 · 업무 키 충돌) 뒤 · 부대공정 판 · 대당 Capa 멈춤 앞), 자동 갱신은 실행 기록 사유의 발행 줄
+  끝(같은 차례 — 소요대수 밖 수요 경고와 섞지 않는다)과 리비전 2·공식버전 메모 끝, CSV 초기
   이관 스크립트는 저장 뒤 출력 한 줄과 메모다. 모든 행이 비거나 계획 행이 모두 비면 빈 시나리오 대신 까닭을 알리고 막는다.
   대조 스크립트(`inspect_real_data_checks.py` 8-2·`compare_legacy_results.py`)도 같은 프레임을 지나 같은 수를 찍고, 원천 칸은
   행 번호로 되붙인다.
@@ -8171,7 +8185,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   행이다(2026-11-22 요청 D). 다른 표에서 순위의 앞선 칸이 모두 같고 한 칸만 0 · 빈 값으로 갈리는 형제는
   `ZERO_OVER_BLANK` 가 가른다(2026-11-22 사용자 답 Q4 (가) 0 먼저 — 앞선 칸이 함께 갈리면 그 칸이 정한다). DB 등록 탭은 저장 뒤 사건 알림 `SC-04` 와 그 Alarm 줄의 표 「충돌 요약」(표별 충돌 건수 · 키밖 갈림 · 그 밖 갈림 그룹수 · 임시 제외 행 수) · 「충돌 상세」(「키밖구분」 칸, CSV 는 원본 공정명)로 알린다
   (2026-11-05 답 v10 (가) — 자리에 경고 · 표 · 접힘을 두지 않는다, 상세가 2,000행을 넘으면 그 표만 탭 맨 아래 CSV 단추로 남는다, 저장하지 못한 등록에는 내지 않는다) — 글은
-  고른 행을 따로 말하지 않고 그룹 수 뒤에 「(키밖 n · 그 밖 m)」 을 붙여 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다. 원천 정합성 확인용 임시 정책이며
+  고른 행을 따로 말하지 않고 그룹 수 뒤에 「(키밖 n · 그 밖 m)」 을 붙여 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다. 같은 수가 메모 조각
+  「업무 키 충돌 n그룹(키밖 a · 그 밖 b)」(`core_data_pipeline.reference_conflict_memo`)으로 리비전 1 메모 — 자동 갱신은 실행 기록 사유 ·
+  리비전 2 · 공식버전 메모에도 — 에 남는다(CUSTOM 원천 대조 조각 바로 뒤, 3장 `source_check_memo`). 원천 정합성 확인용 임시 정책이며
   실제 집계 규칙을 대신하지 않는다. `RQ_PKG_PLAN` 의 Pack Code 별 수량은 충돌이 아니라 별도 행이다(4장).
 
 ## 8. 표시·정렬 규칙
@@ -9110,7 +9126,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   바뀌는 결과(제약 시뮬레이션 「달마다 보기」)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
   범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa, `RS-02` 필요 단축 일정 · Space 「필요 단축」 보기) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
   가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`tables=` — 한 줄에 여럿, 커서 None 인 칸은 빠진다. 대당 Capa 제외 `ST-14` ·
-  소요대수 `ST-15` · `ST-21` · `ST-22` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02` · 사건은 `queue_flash(tables=)` — DB 등록 충돌 `SC-04`). 같은 코드 + 같은 짧은 글의 사건이 한 줄에 합쳐지면 표도 새 표지의 것이다(`freshenEventRow`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
+  소요대수 `ST-15` · `ST-21` · `ST-22` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02` · 사건은 `queue_flash(tables=)` — DB 등록 충돌 `SC-04` · CUSTOM 원천 대조 `SC-05`). 같은 코드 + 같은 짧은 글의 사건이 한 줄에 합쳐지면 표도 새 표지의 것이다(`freshenEventRow`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
   `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위 줄을 「범위 바뀜」 으로 닫고(Alarm 표지 「범위 바뀜 hh:mm」, 로그 칸

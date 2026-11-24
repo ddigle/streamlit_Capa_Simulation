@@ -47,7 +47,7 @@ from capa_simulation.auto_official_update_runner import (
 )
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
-from capa_simulation.io.core_data_source import CoreDataProvider
+from capa_simulation.io.core_data_source import CoreDataBatch, CoreDataProvider
 from capa_simulation.persistence.models import (
     AutoOfficialUpdateRun,
     ScenarioCreate,
@@ -73,7 +73,14 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     ProcessMinimum,
 )
-from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS
+from capa_simulation.services.core_data_pipeline import (
+    prepare_core_data_dataset,
+    reference_conflict_memo,
+)
+from capa_simulation.services.custom_source_check import (
+    CUSTOM_SOURCE_COLUMNS,
+    attach_custom_values,
+)
 from capa_simulation.services.route_load_exceptions import (
     BUFFER_X_CORE_CHIP,
     RouteLoadDeclaration,
@@ -638,6 +645,65 @@ def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warni
     assert filtered.revision.note == release.note == f"{auto_memo} · {memo}"
     assert base.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
     assert repository.load_source_row_count(base.scenario.scenario_id) == len(SEED_SOURCE)
+
+
+def test_the_run_reason_and_official_note_carry_custom_and_conflict_memos(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """자동 갱신도 화면 등록과 같은 원천 조각 — CUSTOM 원천 대조(BigDataQuery 등록이면 늘)와
+    업무 키 충돌 — 을 리비전 1 메모, 실행 기록 사유의 발행 줄 끝(CS 빈 행 조각 앞), 리비전 2 ·
+    공식버전 메모에 남긴다(설계 B-stop §2). 소요대수 밖 수요 경고와 섞이지 않는다 — 대조 조각 안의
+    「—」 가 사유를 가르지 않는다. 합성 시드 — 샘플 관측."""
+    _official_w40(repository)
+    frame = _source(blank_first_plan=True)
+    plans = frame.index[frame["계획기초정보여부"].eq("Y")]
+    routes = frame.index[frame["계획기초정보여부"].eq("N")]
+    twin = frame.loc[[plans[-2]]].copy()
+    twin["생산수량"] = pd.to_numeric(twin["생산수량"]) + 1
+    frame = pd.concat([frame, twin], ignore_index=True)
+    frame.loc[routes[-1], "CS"] = "  "
+    cells = frame.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    cells["CUSTOM"] = "DEMO_CUSTOM_" + cells["Capa Code"].astype(str)
+    cells["행수"] = cells["행수"].mask(cells.index == 0, cells["행수"] + 1)
+    check = attach_custom_values(frame, cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)])[1]
+    assert check.warns
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-W41",
+            simulation_name="PSM W41",
+            source_type="BIGDATAQUERY",
+            frame=frame,
+        ),
+        repository.load_global_display_order().rules,
+    )
+    conflict_memo = reference_conflict_memo(prepared.reference_conflicts)
+    assert conflict_memo.startswith("업무 키 충돌 ")
+    blank_memo = prepared.blank_cs.memo()
+    assert blank_memo.startswith("CS 빈 행 1개(")
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame},
+        checks={"SIM-W41": check},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_PUBLISHED, "done")
+    assert run.reason is not None
+    pieces = f"{check.memo()} · {conflict_memo} · {blank_memo}"
+    head, warning = runner.split_published_reason(run.reason)
+    assert head.startswith("공식 v2 지정 · W41 SIM-W41 · 자동 갱신 · ")
+    assert head.endswith(f" · {pieces}")
+    assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
+    assert check.memo() not in warning and conflict_memo not in warning
+    base = repository.load_revision(str(run.base_revision_id))
+    assert base.revision.note is not None
+    assert base.revision.note.endswith(f"상세 조회기간 2026-10-05 ~ 2026-10-15 · {pieces}")
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    release = repository.latest_official_release()
+    assert release is not None
+    auto_memo = "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+    assert filtered.revision.note == release.note == f"{auto_memo} · {pieces}"
 
 
 def test_a_source_with_every_cs_blank_stops_at_registration_with_the_reason(

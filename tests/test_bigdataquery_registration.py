@@ -22,8 +22,14 @@ from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.components.state_alerts import alarm_table_place
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
+from capa_simulation.services.custom_source_check import (
+    CELL_COLUMNS,
+    CUSTOM_SOURCE_COLUMNS,
+    CustomSourceCheck,
+)
 from capa_simulation.services.scenario_list_edits import ListDraft
 
 
@@ -1106,12 +1112,14 @@ class FakeProvider:
             extra = frame.loc[[int(index)]].copy()
             extra["생산수량"] = pd.to_numeric(extra["생산수량"]) + 1
             frame = pd.concat([frame, extra], ignore_index=True)
+        # 시험이 주면 CUSTOM 원천 표 대조 수를 싣는다 — 실제 어댑터가 BigDataQuery 등록마다 싣는 칸.
         return CoreDataBatch(
             simulation_code=simulation_code,
             simulation_name=self._name,
             source_type="BIGDATAQUERY",
             frame=frame,
             source_registered_at=self._registered_at,
+            custom_check=st.session_state.get("__custom_check__"),
         )
 
 
@@ -1429,6 +1437,160 @@ def test_a_failed_save_queues_no_conflict_report(
     assert not app.exception
     assert [str(item.value) for item in app.error] == ["저장을 막았습니다."]
     assert registration.REGISTRATION_CONFLICT_FLASH_KEY not in app.session_state
+
+
+def _custom_check(*, mismatch: bool) -> CustomSourceCheck:
+    """내장 시드 원천에 부품마다 다른 CUSTOM 을 단 CUSTOM 원천 표 답으로 붙여 본 대조 수.
+
+    `mismatch` 면 첫 칸의 행수를 하나 늘리고(행 수 다른 칸) 달이 둘 이상인 부품의 마지막 칸을
+    뺀다(한쪽에만 있는 칸 — 부품은 남아 못 찾음이 아니다). 합성 시드 — 샘플 관측."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+    from capa_simulation.services.custom_source_check import attach_custom_values
+
+    source = build_builtin_seed_dataset().source_data
+    cells = source.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    codes = sorted(str(code) for code in cells["Capa Code"].unique())
+    parts = {code: f"DEMO_CUSTOM_{index}" for index, code in enumerate(codes, start=1)}
+    cells["CUSTOM"] = cells["Capa Code"].astype(str).map(parts)
+    if mismatch:
+        cells["행수"] = cells["행수"].mask(cells.index == 0, cells["행수"] + 1)
+        several = cells["Capa Code"].duplicated(keep=False)
+        cells = cells.drop(index=cells.index[several][-1])
+    return attach_custom_values(source, cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)])[1]
+
+
+def _custom_registration_app(database: Path, **session: object) -> AppTest:
+    """폼 값을 채우고 시험이 준 원천 꼴(`__custom_check__` · `__duplicate_rows__` 등)로 화면 저장
+    경로를 한 번 돌린다."""
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    for key, value in session.items():
+        app.session_state[key] = value
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 12)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 22)
+    return app.run()
+
+
+def _saved_note(database: Path) -> str:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    return repository.load_revision(scenario.active_revision_id).revision.note or ""
+
+
+def test_a_custom_mismatch_saves_and_warns_in_alarm_with_the_cell_table(tmp_path: Path) -> None:
+    """두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나도 CUSTOM 은 Capa Code 로 붙여 값에는
+    영향이 없어 등록은 한다(요청 — 알리고 등록). 저장 알림 · 충돌 칸 다음 셋째 칸에 사건 알림
+    `SC-05` 가 알림창 · Alarm 에만 서고(자리에는 아무것도 그리지 않는다 — UI-NTF-03), 그 Alarm 줄의
+    표 「CUSTOM 대조」 가 어긋난 칸마다 두 표 행 수를 싣는다. 같은 수가 리비전 메모에 남는다."""
+    from capa_simulation.components.flash import FlashNote
+
+    check = _custom_check(mismatch=True)
+    assert (check.count_mismatch_cells, check.one_side_cells) == (1, 1)
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(database, __custom_check__=check)
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert not app.warning and not app.dataframe
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    keys = registration.REGISTRATION_FLASH_KEYS
+    assert keys.index(registration.REGISTRATION_CONFLICT_FLASH_KEY) == 1
+    assert keys.index(registration.REGISTRATION_CUSTOM_FLASH_KEY) == 2
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.kind, note.alert, note.popup_only) == ("warning", "SC-05", True)
+    assert note.message.startswith(check.notice())
+    assert alarm_table_place(registration.CUSTOM_CELLS_TITLE) in note.message
+    [table] = note.tables
+    assert table["title"] == registration.CUSTOM_CELLS_TITLE
+    cells = table_frame(table)
+    assert list(cells.columns) == list(CELL_COLUMNS)
+    assert len(cells) == check.count_mismatch_cells + check.one_side_cells
+    assert check.memo() in _saved_note(database)
+
+
+def test_an_oversized_custom_cell_table_leaves_only_the_counts_in_the_alert(tmp_path: Path) -> None:
+    """어긋난 칸이 Alarm 줄에 싣기에 많으면(`alerts.TABLE_ROW_LIMIT` 초과) 표 없이 수만 싣는다 —
+    수는 알림 글과 리비전 메모가 함께 든다."""
+    import pandas as pd
+
+    from capa_simulation.components.flash import FlashNote
+
+    count = alerts.TABLE_ROW_LIMIT + 1
+    cells = pd.DataFrame(
+        {
+            CELL_COLUMNS[0]: [f"DEMO-{index:05d}" for index in range(count)],
+            CELL_COLUMNS[1]: ["202611"] * count,
+            CELL_COLUMNS[2]: [1] * count,
+            CELL_COLUMNS[3]: [0] * count,
+        }
+    )
+    check = CustomSourceCheck(
+        main_rows=count,
+        main_distinct_rows=count,
+        custom_rows=0,
+        kinds=2,
+        one_side_cells=count,
+        count_mismatch_cells=0,
+        cells=cells,
+    )
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(database, __custom_check__=check)
+
+    assert not app.exception
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CUSTOM_FLASH_KEY])
+    assert (note.alert, note.popup_only, note.tables) == ("SC-05", True, ())
+    assert note.message == check.notice()
+    assert check.memo() in _saved_note(database)
+
+
+def test_the_revision_memo_orders_custom_and_conflict_pieces_before_capacity(
+    tmp_path: Path,
+) -> None:
+    """리비전 메모 끝 조각 차례는 CUSTOM 원천 대조 · 업무 키 충돌 · CS 빈 행 · (부대공정) · 대당
+    Capa 멈춤이다 — 원천을 받은 그대로 알린 것이 먼저, 저장 뒤 계산이 끝(설계 B-stop §2). 대조 칸이
+    모두 맞으면 메모 조각만 남고 `SC-05` 는 서지 않는다. 합성 시드 — 샘플 관측."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    source = build_builtin_seed_dataset().source_data
+    plan = int(source.index[source["계획기초정보여부"].eq("Y")][0])
+    process = "DEMO_Wafer_Inspect"
+    month = int(source.loc[source["공정"].eq(process), "생산계획년월"].min())
+    stopped = source["공정"].eq(process) & source["생산계획년월"].eq(month)
+    blank = int(source.index[source["계획기초정보여부"].eq("N") & ~stopped][-1])
+    check = _custom_check(mismatch=False)
+    assert not check.warns
+    database = _registration_database(tmp_path)
+
+    app = _custom_registration_app(
+        database,
+        __custom_check__=check,
+        __duplicate_rows__=[plan],
+        __blank_cs__={blank: None},
+        __blank_cells__=[(int(row), "CAPA_RUN_RATE") for row in source.index[stopped]],
+    )
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert registration.REGISTRATION_CUSTOM_FLASH_KEY not in app.session_state
+    note = _saved_note(database)
+    assert note.startswith(
+        f"상세 조회기간 2026-11-12 ~ 2026-11-22 · {check.memo()} · 업무 키 충돌 "
+    )
+    positions = [
+        note.index(piece)
+        for piece in (check.memo(), "업무 키 충돌 ", "CS 빈 행 1개(", "대당 Capa 계산 멈춤(")
+    ]
+    assert positions == sorted(positions)
+    assert note.rindex(" · 대당 Capa 계산 멈춤(") > note.rindex("CS 빈 행 1개(")
 
 
 # 실제 어댑터(`BigDataQueryCoreDataProvider`)로 화면 저장 경로를 한 번 돈다 — 패키지 자리만 가짜다.

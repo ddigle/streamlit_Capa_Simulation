@@ -84,6 +84,20 @@ def test_the_basis_missing_route_alert_closes_the_static_group_after_the_pkg_rul
     assert codes[codes.index("ST-22") + 1].startswith("HM-")
 
 
+def test_the_custom_source_event_follows_the_conflict_event() -> None:
+    """DB 등록 뒤 CUSTOM 원천 표와 행 수가 다른 칸(알리고 등록함 — 설계 B-stop §1-8)은 같은 저장 뒤
+    사건인 업무 키 충돌(`SC-04`)의 다음 번호이고 그 바로 뒤에 선다(무리 안에 더한 `ST-22` 선례).
+    고칠 입력이 그 자리에 없는 동작 뒤 경고라 확인 필요 단계의 사건 알림이다."""
+    spec = alerts.spec("SC-05")
+    assert (spec.level, spec.kind, spec.title) == (
+        "check",
+        "event",
+        "DB 등록 — CUSTOM 원천 표와 행 수가 다른 칸이 있음(등록함)",
+    )
+    codes = [entry.code for entry in alerts.SPECS]
+    assert codes.index("SC-05") == codes.index("SC-04") + 1
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):

@@ -96,6 +96,7 @@ from capa_simulation.services.core_data_pipeline import (
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
+from capa_simulation.services.custom_source_check import CustomSourceCheck
 from capa_simulation.services.korean_particle import with_object_particle
 
 # Alarm 줄에 싣기에 큰 충돌 상세만 이 칸에 남아 탭 맨 아래 CSV 단추로 내려받는다.
@@ -107,6 +108,11 @@ REGISTRATION_CONFLICT_FLASH_KEY = "bigdataquery_registration_conflict_flash"
 CONFLICT_SUMMARY_TITLE: Final = "충돌 요약"
 CONFLICT_DETAIL_TITLE: Final = "충돌 상세"
 CONFLICT_CSV_LABEL: Final = "기준정보 업무 키 충돌 CSV 다운로드"
+# 저장은 됐지만 CUSTOM 원천 표와 본 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋날 때의 경고 —
+# 알림창 · Alarm 에만(충돌 경고 뒤). 칸마다의 행 수는 그 Alarm 줄의
+# 표다(`_queue_custom_source_check`).
+REGISTRATION_CUSTOM_FLASH_KEY = "bigdataquery_registration_custom_flash"
+CUSTOM_CELLS_TITLE: Final = "CUSTOM 대조"
 # 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 뒤).
 REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 # 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고(`RegistrationCapacityCheck`) — 알림창 ·
@@ -118,6 +124,7 @@ REGISTRATION_EXTRA_FLASH_KEY = "bigdataquery_registration_extra_flash"
 REGISTRATION_FLASH_KEYS: Final = (
     REGISTRATION_FLASH_KEY,
     REGISTRATION_CONFLICT_FLASH_KEY,
+    REGISTRATION_CUSTOM_FLASH_KEY,
     REGISTRATION_DROP_FLASH_KEY,
     REGISTRATION_EXTRA_FLASH_KEY,
     REGISTRATION_CAPACITY_FLASH_KEY,
@@ -756,10 +763,10 @@ def _render_registration_form(
             help=DETAIL_LOCKED_HELP if not configured else UNSAVABLE_REASON if unsavable else None,
         )
     # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
-    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
-    # Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가
-    # 폼 맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도
-    # 서서 아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
+    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CUSTOM 원천 대조 · CS 빈 행 · 대당 Capa
+    # 멈춤)는 알림창 · Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨
+    # 위에 두면 단추가 폼 맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은
+    # 알림이 없어도 서서 아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
     # 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
     queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
     notice = render_flash(*REGISTRATION_FLASH_KEYS)
@@ -883,9 +890,10 @@ def _save_scenario(
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "올렸습니다.",
     )
-    # 아래 세 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
+    # 아래 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
     # UI-NTF-03 · AMB-05 (나) — 저장 단추 밑에는 그리지 않는다).
     _queue_reference_conflict_report(prepared.reference_conflicts, prepared.batch.simulation_code)
+    _queue_custom_source_check(prepared.batch.custom_check, prepared.batch.simulation_code)
     if prepared.blank_cs.dropped:
         # 저장은 됐다 — 막지 않고 알린다. 같은 수가 리비전 메모에도 남는다.
         queue_flash(
@@ -1018,7 +1026,7 @@ def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: s
     알림 글이 그 자리를 부른다(`_render_oversized_conflict_download`)."""
     if conflicts.empty:
         return
-    safe_code = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._") or "query"
+    safe_code = _file_code(simulation_code)
     timestamp = datetime.now().strftime("%Y%m%d%H%M")
     file_name = f"RQ_업무키_충돌_{safe_code}_{timestamp}.csv"
     summary = alert_table(
@@ -1052,6 +1060,42 @@ def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: s
         alert="SC-04",
         popup_only=True,
         tables=(summary, detail),
+    )
+
+
+def _file_code(simulation_code: str) -> str:
+    """등록 보고 CSV 파일 이름에 넣는 코드 — 파일 이름에 쓸 수 없는 글자를 밑줄로 바꾼다."""
+    return re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._") or "query"
+
+
+def _queue_custom_source_check(check: CustomSourceCheck | None, simulation_code: str) -> None:
+    """저장한 등록의 CUSTOM 원천 대조 — 두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나면 사건
+    알림 `SC-05` 와 그 Alarm 줄의 표 「CUSTOM 대조」(칸마다 본 표 · CUSTOM 원천 표 행 수)로 낸다.
+
+    CUSTOM 은 Capa Code 로 붙여 값에는 영향이 없어 등록은 했다 — 막지 않고 알린다(요청 그대로).
+    대조가 없거나(CSV · 시드 · 가짜 공급자) 어긋난 칸이 없으면 아무것도 내지 않는다. 표가 커서
+    Alarm 줄에 싣지 못하면(`alert_table` 이 None) 표 없이 수만 싣는다 — 같은 수가 리비전 메모에도
+    남는다."""
+    if check is None or not check.warns:
+        return
+    # 파일 이름의 분은 KST 다(`korea_time` — 서버 시각대를 따르지 않는다).
+    safe_code = _file_code(simulation_code)
+    table = alert_table(
+        check.cells,
+        title=CUSTOM_CELLS_TITLE,
+        file_name=f"CUSTOM_대조_{safe_code}_{datetime.now(KST).strftime('%Y%m%d%H%M')}.csv",
+    )
+    message = check.notice()
+    if table is not None:
+        message = f"{message} 칸마다의 행 수: {alarm_table_place(CUSTOM_CELLS_TITLE)}"
+    queue_flash(
+        REGISTRATION_CUSTOM_FLASH_KEY,
+        message,
+        kind="warning",
+        icon=":material/warning:",
+        alert="SC-05",
+        popup_only=True,
+        tables=(table,),
     )
 
 
