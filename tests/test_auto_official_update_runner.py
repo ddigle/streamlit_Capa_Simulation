@@ -13,6 +13,7 @@ import threading
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -44,6 +45,7 @@ from capa_simulation.auto_official_update_runner import (
     current_official_baseline,
     run_auto_official_update,
 )
+from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.io.core_data_source import CoreDataProvider
 from capa_simulation.persistence.models import (
@@ -71,6 +73,7 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     ProcessMinimum,
 )
+from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS
 from capa_simulation.services.route_load_exceptions import (
     BUFFER_X_CORE_CHIP,
     RouteLoadDeclaration,
@@ -751,6 +754,62 @@ def test_a_catalog_failure_is_recorded_with_its_stage(
         "목록 조회 단계에서 멈췄습니다 — 현재 환경에 bigdataquery 패키지가 없습니다."
     )
     assert result.run.finished_at == NOW
+
+
+def test_a_run_without_the_custom_table_variable_fails_in_register_and_the_next_run_retries_the_code(  # noqa: E501 — 이름이 설계 그대로다
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CUSTOM 원천 표 환경변수가 없으면 실제 상세 조회 공급자(`bigdataquery_detail_provider`)가
+    패키지를 부르기 전에 멈춰 회차가 등록 단계 오류로 끝난다. 시나리오를 만들지 않아 받은 코드에
+    들지 않으므로 변수를 넣은 다음 회차가 같은 코드를 다시 받는다. 가짜는 조회 실행 자리(패키지)
+    뿐이다."""
+    _official_w40(repository)
+    catalog = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    main = _source()
+    cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    custom = cells.assign(CUSTOM="DEMO_CUSTOM_A").loc[:, list(CUSTOM_SOURCE_COLUMNS)]
+    table = "demo_schema.demo_custom"
+    asked: list[str] = []
+    loads: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        return (custom if table in param else main).copy()
+
+    def load() -> SimpleNamespace:
+        loads.append("bigdataquery")
+        return SimpleNamespace(getData=get_data)
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", load)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV)
+    sources = AutoUpdateSources(fetch_catalog=catalog.fetch_catalog)
+    assert sources.detail_provider is runner.bigdataquery_detail_provider
+
+    first = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert first is not None
+    assert (first.status, first.stage) == (STATUS_ERROR, "register")
+    assert first.reason is not None
+    assert first.reason.startswith(
+        f"상세 조회·등록 단계에서 멈췄습니다 — {adapter.CUSTOM_TABLE_MISSING}"
+    )
+    assert first.created_scenario_id is None
+    assert (loads, asked) == ([], [])
+    assert runner.received_codes(repository) == set()
+
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, table)
+    second = run_auto_official_update(
+        repository, trigger=TRIGGER_MANUAL, sources=sources, clock=_clock
+    ).run
+
+    assert second is not None
+    assert (second.simulation_code, second.status) == ("SIM-W41", STATUS_PUBLISHED)
+    assert second.created_scenario_id is not None
+    assert asked == [adapter.build_custom_query("SIM-W41"), asked[1]]
+    assert "'SIM-W41'" in asked[1]
+    assert runner.received_codes(repository) == {"SIM-W41"}
 
 
 def test_a_registration_failure_keeps_nothing_half_made(

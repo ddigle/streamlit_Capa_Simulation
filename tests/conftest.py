@@ -382,6 +382,22 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
 
 
+# 시험이 늘 쓰는 CUSTOM 원천 표 이름 — 합성 값이다(실제 표 이름은 환경변수로만 받는다).
+DEMO_CUSTOM_TABLE = "demo_schema.demo_custom"
+
+
+@pytest.fixture(autouse=True)
+def _with_demo_custom_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CUSTOM 원천 표 환경변수(`company_bigdataquery_adapter.BDQ_CUSTOM_TABLE_ENV`)를 합성 값으로
+    둔다.
+
+    사내 pytest 창에 실제 값이 있어도 덮어 결과가 같다. 지우지 않는 까닭 — 없으면 DB 등록이
+    「변수 없음」 으로 멈추고 그 판정을 읽는 화면 · 점검 시험이 뜻 없이 바뀐다. 「없음」 갈래는 그
+    시험이 직접 지운다(`monkeypatch.delenv`).
+    """
+    monkeypatch.setenv(company_bigdataquery_adapter.BDQ_CUSTOM_TABLE_ENV, DEMO_CUSTOM_TABLE)
+
+
 @pytest.fixture(autouse=True)
 def _without_grade_judge() -> Iterator[None]:
     """접속 등급의 판정기(`grades.install_caller_source` — `app.py` 를 도는 AppTest · 등급 시험이

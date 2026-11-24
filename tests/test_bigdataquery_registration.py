@@ -1431,6 +1431,84 @@ def test_a_failed_save_queues_no_conflict_report(
     assert registration.REGISTRATION_CONFLICT_FLASH_KEY not in app.session_state
 
 
+# 실제 어댑터(`BigDataQueryCoreDataProvider`)로 화면 저장 경로를 한 번 돈다 — 패키지 자리만 가짜다.
+# 본 답은 내장 시드 원천이고, CUSTOM 원천 표 답은 그 (Capa Code, 생산계획년월) 칸 행 수에 시험이 준
+# 부품별 CUSTOM(`__custom__`)을 단 것이다. 표 이름은 conftest 가 환경변수에 넣는 합성 값이다.
+REAL_ADAPTER_SAVE_SCRIPT = """
+from pathlib import Path
+from types import SimpleNamespace
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+TABLE = "demo_schema.demo_custom"
+main = build_builtin_seed_dataset().source_data.copy()
+cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+cells["CUSTOM"] = cells["Capa Code"].map(st.session_state["__custom__"])
+custom = cells.loc[:, ["Capa Code", "생산계획년월", "CUSTOM", "행수"]]
+
+
+def get_data(*, param, **_kwargs):
+    return (custom if TABLE in param else main).copy()
+
+
+database_path = st.session_state["__database__"]
+if not st.session_state.get("__saved__"):
+    st.session_state["__saved__"] = True
+    original = adapter.load_bigdataquery_module
+    adapter.load_bigdataquery_module = lambda: SimpleNamespace(getData=get_data)
+    try:
+        registration._save_scenario(
+            DuckDBScenarioRepository(Path(database_path)),
+            database_path,
+            existing_names=frozenset(),
+        )
+    finally:
+        adapter.load_bigdataquery_module = original
+"""
+
+
+def test_the_saved_source_frame_carries_the_looked_up_custom(tmp_path: Path) -> None:
+    """실제 어댑터를 지난 화면 등록은 CUSTOM 원천 표로 덮은 프레임을 원천 스냅샷
+    (`raw_data.core_data`)으로 저장한다 — 조회문 상수가 아니다. 기존 결과 대조 · 확인 스크립트는
+    원천 스냅샷에서 다시 파생하므로, 원천과 리비전의 CUSTOM 키 표가 같은 부품 값이어야 새 등록이
+    저절로 맞는다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    database = _registration_database(tmp_path)
+    source = build_builtin_seed_dataset().source_data
+    codes = sorted(str(code) for code in source["Capa Code"].dropna().unique())
+    parts = {code: f"DEMO_CUSTOM_{index}" for index, code in enumerate(codes, start=1)}
+    app = AppTest.from_string(REAL_ADAPTER_SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__custom__"] = parts
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W47"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W47"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W47 (SIM-W47)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-12 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 11, 5)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 15)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    raw = repository.load_source_data(scenario.scenario_id)
+    assert len(raw) == len(source)
+    assert raw["CUSTOM"].tolist() == [parts[str(code)] for code in source["Capa Code"]]
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    for table in ("RQ_PKG_PLAN", "RQ_REQB"):
+        assert set(snapshot.tables[table]["CUSTOM"]) == set(parts.values()), table
+
+
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(
     tmp_path: Path,
 ) -> None:

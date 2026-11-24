@@ -38,6 +38,7 @@ from capa_simulation.io.container_start_report import (
     start_check_hint,
 )
 from capa_simulation.io.core_data_source import CoreDataBatch
+from capa_simulation.services.custom_source_check import attach_custom_values, check_custom_rows
 from capa_simulation.services.korean_particle import with_subject_particle
 
 _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -54,6 +55,13 @@ DETAIL_WINDOW_DAYS_BEFORE: Final = 7
 DETAIL_WINDOW_DAYS_AFTER: Final = 3
 # 조회 요청자의 사내 계정을 넣는 환경변수 `BDQ_USER_NAME_ENV` 는 C-DEP CD 시작 스크립트도 읽어
 # `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
+# CUSTOM 원천 표 이름(스키마.표)을 넣는 환경변수. 표 이름은 저장소 · 배포 ZIP 에 두지 않고 이
+# 값으로만 받는다 — `fetch` 가 부를 때마다 읽어 화면 등록과 자동 갱신이 같은 판정을 받는다
+# (`custom_table_problem`).
+BDQ_CUSTOM_TABLE_ENV: Final = "CAPA_BDQ_CUSTOM_TABLE"
+# 표 이름 꼴 — 영문 · 숫자 · 밑줄 낱말 하나 또는 점으로 이은 둘. `\w` 는 한글도 받아 쓰지 않는다.
+# 값은 조회문에 그대로 끼우므로 이 꼴이 조회문에 들어가는 글의 유일한 거름이다.
+_CUSTOM_TABLE_PATTERN: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 # ---------------------------------------------------------------------------
 # 사내 환경 설정 영역
@@ -63,6 +71,8 @@ DETAIL_WINDOW_DAYS_AFTER: Final = 3
 # 3) DB 컬럼명이 Core Data 78컬럼명과 다르면 SOURCE_COLUMN_MAPPING에 등록합니다.
 # 4) 조회 기간은 호출자가 `QueryWindow` 로 넘깁니다. {start_date}·{end_date} 자리를
 #    지우면 기간을 좁힐 수 없어 팩트 테이블을 전면 조회합니다.
+# 5) 아래 SQL 의 CUSTOM 칸은 상수이고 등록 때 CUSTOM 원천 표의 값으로 덮입니다
+#    (`CUSTOM_QUERY_TEMPLATE` — 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE`).
 # ---------------------------------------------------------------------------
 QUERY_TEMPLATE = """
 SELECT
@@ -148,6 +158,20 @@ FROM camp_tsp.campavp_catb_sim_rslt_report
 WHERE impala_insert_time >= '{start_date}'
   AND impala_insert_time <  '{end_date}'
   AND catb_sim_info_id = '{simulation_code}'
+"""
+
+# CUSTOM 원천 표 조회 — 부품(Capa Code)의 CUSTOM 을 (Capa Code, 생산계획년월, CUSTOM) 마다
+# 센다. 별칭은 `custom_source_check.CUSTOM_SOURCE_COLUMNS` 와 같다. 표에 적재 시각 칸이 없어 기간
+# 없이 코드 하나로 묻는다. 열 이름은 설계 초안 그대로이고 사내에서 아직 확인하지 않았다.
+CUSTOM_QUERY_TEMPLATE = """
+SELECT
+    capa_code AS `Capa Code`,
+    plan_yyyymm AS 생산계획년월,
+    custom AS CUSTOM,
+    COUNT(*) AS 행수
+FROM {custom_table}
+WHERE catb_sim_info_id = '{simulation_code}'
+GROUP BY capa_code, plan_yyyymm, custom
 """
 
 SOURCE_COLUMN_MAPPING: dict[str, str] = {
@@ -307,12 +331,26 @@ class BigDataQueryCoreDataProvider:
     column_mapping: Mapping[str, str] = field(default_factory=lambda: SOURCE_COLUMN_MAPPING.copy())
     # 기본값이 있는 필드를 맨 뒤에 두어 기존 위치·키워드 생성이 그대로 돈다.
     window: QueryWindow | None = None
+    # CUSTOM 원천 표 이름. None 이면 부를 때마다 환경변수(`BDQ_CUSTOM_TABLE_ENV`)에서 읽는다.
+    custom_table: str | None = None
 
     def fetch(self, simulation_code: str) -> CoreDataBatch:
+        """코드 하나의 원천 — CUSTOM 원천 표를 먼저 묻고 본 조회 결과의 CUSTOM 칸을 그 값으로
+        덮는다.
+
+        차례: 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → CUSTOM 원천 표 이름 판정 → 패키지 →
+        CUSTOM 원천 표 조회 · 검사 → 본 조회 → 0행 · 칸 · 중복 검사 → 이름 바꾸기 → CUSTOM
+        붙이기 → MPGA TEST 보정. 표 이름이 없거나 꼴이 틀리면 패키지를 부르기 전에 멈추고, CUSTOM
+        원천 표 답이 0행 · 칸 모자람 · 한 부품에 CUSTOM 둘 이상 · 빈 CUSTOM 이면 본 조회를 부르지
+        않고 멈춘다(`custom_source_check` — 2026-11-22 사용자 답 Q2 (가) · Q9 (가)).
+        """
         code = _validated_simulation_code(simulation_code)
         window = self.window or default_query_window()
         query = build_query(self.query_template, code, window=window)
+        table = _usable_custom_table(self.custom_table)
+        custom_query = build_custom_query(code, table)
         module = cast(BigDataQueryModule, load_bigdataquery_module())
+        custom = check_custom_rows(_custom_answer(module, custom_query, table))
         frame = call_get_data(module, query)
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
@@ -337,6 +375,9 @@ class BigDataQueryCoreDataProvider:
         if duplicated:
             names = ", ".join(map(str, duplicated))
             raise ValueError(f"BigDataQuery 컬럼 매핑 결과에 중복 컬럼이 있습니다: {names}")
+        # 본 조회문의 CUSTOM 칸은 상수다 — 부품(Capa Code)마다 CUSTOM 원천 표의 값으로 덮는다.
+        # 행은 이어 붙이지 않는다. 덮은 프레임이 그대로 원천 스냅샷이 된다.
+        renamed, custom_check = attach_custom_values(renamed, custom)
         # TODO: MPGA TEST 원천 모듈수 산정 규칙이 확정되면 제거
         module_count = pd.to_numeric(renamed["모듈수"], errors="coerce")
 
@@ -352,6 +393,7 @@ class BigDataQueryCoreDataProvider:
             source_type="BIGDATAQUERY",
             frame=renamed,
             source_registered_at=self.source_registered_at,
+            custom_check=custom_check,
         )
 
 
@@ -376,6 +418,81 @@ def build_query(
         start_date=start_bound,
         end_date=end_bound,
     )
+
+
+# CUSTOM 원천 표 이름을 쓸 수 없는 까닭 — 값은 싣지 않는다(사내 표 이름이다). 저장 단추 잠금 · 상태
+# 알림 · 서버 시작 점검이 같은 판정(`custom_table_problem`)과 같은 글을 쓴다.
+CUSTOM_TABLE_MISSING: Final = f"CUSTOM 원천 표 환경변수({BDQ_CUSTOM_TABLE_ENV})가 없습니다."
+CUSTOM_TABLE_MALFORMED: Final = (
+    f"CUSTOM 원천 표 환경변수({BDQ_CUSTOM_TABLE_ENV}) 값이 표 이름(스키마.표) 꼴이 아닙니다."
+)
+_CUSTOM_TABLE_ADVICE: Final = (
+    " 부품(Capa Code)의 CUSTOM 을 읽지 못해 등록하지 않았습니다 — 영문 · 숫자 · 밑줄로 된 "
+    "스키마.표 값을 넣고 앱을 다시 띄우세요(사내 PC · WebIDE 는 README 「초기 설정」 4단계, "
+    "C-DEP 는 배포 설정의 환경변수 표)."
+)
+
+
+def _custom_table_text(value: str | None) -> str:
+    """CUSTOM 원천 표 이름 — `value` 가 None 이면 지금 환경변수 값, 앞뒤 공백은 뗀다."""
+    raw = os.environ.get(BDQ_CUSTOM_TABLE_ENV, "") if value is None else value
+    return raw.strip()
+
+
+def custom_table_problem(value: str | None = None) -> str | None:
+    """CUSTOM 원천 표 이름을 쓸 수 없으면 그 까닭(`CUSTOM_TABLE_MISSING` ·
+    `CUSTOM_TABLE_MALFORMED`), 쓸 수 있으면 None. `value` 가 None 이면 이 프로세스의 지금
+    환경변수를 읽는다 — 값을 읽는 것이 앱 프로세스의 `fetch` 라 그 환경이 바른 판정이다.
+    Streamlit 을 부르지 않는다."""
+    text = _custom_table_text(value)
+    if not text:
+        return CUSTOM_TABLE_MISSING
+    if _CUSTOM_TABLE_PATTERN.fullmatch(text) is None:
+        return CUSTOM_TABLE_MALFORMED
+    return None
+
+
+def _usable_custom_table(value: str | None) -> str:
+    """조회문에 끼울 CUSTOM 원천 표 이름. 없거나 꼴이 틀리면 `RuntimeError`(값은 글에 없다)."""
+    problem = custom_table_problem(value)
+    if problem is not None:
+        raise RuntimeError(problem + _CUSTOM_TABLE_ADVICE)
+    return _custom_table_text(value)
+
+
+def build_custom_query(simulation_code: str, custom_table: str | None = None) -> str:
+    """CUSTOM 원천 표 조회문 하나 — 그 표에서 코드 하나의 (Capa Code, 생산계획년월, CUSTOM) 행 수를
+    센다. `custom_table` 이 None 이면 환경변수를 읽는다. 표 이름 · 코드는 끼우기 전에 꼴을 본다."""
+    table = _usable_custom_table(custom_table)
+    code = _validated_simulation_code(simulation_code)
+    return CUSTOM_QUERY_TEMPLATE.format(custom_table=table, simulation_code=code)
+
+
+def _custom_answer(module: BigDataQueryModule, query: str, table: str) -> pd.DataFrame:
+    """CUSTOM 원천 표 답 — 본 조회와 같은 길(`call_get_data` — 겹침 합류 · 다시 로그인 · 토큰
+    표지)로 묻고 칸 이름을 `SOURCE_COLUMN_MAPPING` 으로 맞춘다. 패키지 실패는 이 조회에서 멈췄다는
+    머리를 단 같은 갈래의 실패로 올린다(`_custom_query_failure`)."""
+    try:
+        answer = call_get_data(module, query)
+    except BigDataQueryCallError as failure:
+        raise _custom_query_failure(failure, table) from failure.__cause__
+    if not isinstance(answer, pd.DataFrame):
+        raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
+    return answer.rename(columns=SOURCE_COLUMN_MAPPING)
+
+
+def _custom_query_failure(failure: BigDataQueryCallError, table: str) -> BigDataQueryCallError:
+    """CUSTOM 원천 표 조회 실패 — 갈래 글 앞에 그 조회에서 멈췄다는 머리를 붙이고, SQL 갈래(표
+    없음 · 권한 · 열 이름)면 환경변수 값과 조회 권한을 보라고 덧붙인다. 원문의 표 이름은 가린다 —
+    환경변수 값은 원문을 지을 때 이미 가렸고(`_original_text`), 공급자가 따로 받은 이름이면 여기서
+    가린다."""
+    lead = f"CUSTOM 원천 표({BDQ_CUSTOM_TABLE_ENV}) 조회에서 멈췄습니다."
+    if failure.kind == QUERY_FAILURE_SQL:
+        lead += " 환경변수 값(표 이름)이 맞는지와 그 표의 조회 권한을 확인하세요."
+    body = str(failure)
+    if table != _custom_table_text(None):
+        body = _hide_texts(body, tables=(table,))
+    return failure.retold(f"{lead} {body}")
 
 
 def is_bigdataquery_adapter_configured() -> bool:
@@ -744,27 +861,62 @@ def token_advice() -> str:
 
 # 원문에서 요청자 계정을 가리는 글.
 ACCOUNT_MASK: Final = "***"
+# 원문에서 CUSTOM 원천 표 이름을 가리는 글.
+CUSTOM_TABLE_MASK: Final = f"<{BDQ_CUSTOM_TABLE_ENV}>"
+# 가릴 표 이름 조각의 가장 짧은 글자 수 — 더 짧은 조각은 문구의 다른 낱말까지 지운다.
+_CUSTOM_TABLE_PIECE_MIN: Final = 3
 
 
-def _accounts_to_hide() -> tuple[str, ...]:
-    """원문에서 가릴 요청자 계정 — 계정 원천(저장된 자동 로그인 계정 · `CAPA_BDQ_USER_NAME`)의 두
-    자리를 S3 에 묻지 않고 읽는다(`bdq_login_store.peek_account`). 긴 것부터(겹친 이름이 반만
-    가려지지 않게). 한 글자는 가리지 않는다(문구 전체를 지운다)."""
+def _custom_table_pieces(table: str) -> tuple[str, ...]:
+    """원문에서 가릴 CUSTOM 원천 표 이름 조각 — 값 전체와 점 뒤 끝 조각(서버 문구가 표 이름만 싣기도
+    한다). `_CUSTOM_TABLE_PIECE_MIN` 글자보다 짧은 조각은 뺀다."""
+    whole = table.strip()
+    tail = whole.rsplit(".", 1)[-1]
+    return tuple(
+        piece for piece in dict.fromkeys((whole, tail)) if len(piece) >= _CUSTOM_TABLE_PIECE_MIN
+    )
+
+
+def _texts_to_hide(tables: tuple[str, ...] = ()) -> tuple[tuple[str, str], ...]:
+    """원문에서 가릴 글의 정규식과 그 자리에 둘 글 — 긴 것부터(겹친 이름이 반만 가려지지 않게).
+
+    - 요청자 계정: 계정 원천(저장된 자동 로그인 계정 · `CAPA_BDQ_USER_NAME`)의 두 자리를 S3 에 묻지
+      않고 읽는다(`bdq_login_store.peek_account`). 글자 그대로 `ACCOUNT_MASK` 로. 한 글자는 가리지
+      않는다(문구 전체를 지운다).
+    - CUSTOM 원천 표 이름: 환경변수 값(과 `tables`)의 전체 · 끝 조각을 대소문자 무시로
+      `CUSTOM_TABLE_MASK` 로 — 자동 갱신 실행 기록 사유가 원문을 그대로 남긴다.
+    """
     names = {os.environ.get(BDQ_USER_NAME_ENV, "").strip()}
     try:
         names.add(login_store.peek_account())
     except Exception:  # 기억을 읽다 깨져도 환경변수 계정은 가린다
         pass
-    return tuple(sorted((name for name in names if len(name) >= 2), key=len, reverse=True))
+    hidden = [(name, re.escape(name), ACCOUNT_MASK) for name in names if len(name) >= 2]
+    for table in (_custom_table_text(None), *tables):
+        hidden.extend(
+            (piece, f"(?i:{re.escape(piece)})", CUSTOM_TABLE_MASK)
+            for piece in _custom_table_pieces(table)
+        )
+    ordered = sorted(hidden, key=lambda item: len(item[0]), reverse=True)
+    return tuple((pattern, mask) for _, pattern, mask in ordered)
+
+
+def _hide_texts(text: str, *, tables: tuple[str, ...] = ()) -> str:
+    """`_texts_to_hide` 를 한 번에 바꾼다 — 바꾼 글을 다시 훑지 않아 가린 글이 또 가려지지
+    않는다."""
+    hidden = _texts_to_hide(tables)
+    if not hidden:
+        return text
+    pattern = re.compile("|".join(f"({regex})" for regex, _ in hidden))
+    masks = [mask for _, mask in hidden]
+    return pattern.sub(lambda match: masks[(match.lastindex or 1) - 1], text)
 
 
 def _original_text(error: BaseException) -> str:
     """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구. 패키지 문구가 실은
-    요청자 계정(저장된 BDQ 계정 ID 는 화면에 보이지 않는다 — D7)은 자르기 전에 가린다 — 조회한
-    누구나 보는 글이고 모듈로도 간다."""
-    text = str(error).strip()
-    for name in _accounts_to_hide():
-        text = text.replace(name, ACCOUNT_MASK)
+    요청자 계정(저장된 BDQ 계정 ID 는 화면에 보이지 않는다 — D7)과 CUSTOM 원천 표 이름은 자르기 전에
+    가린다 — 조회한 누구나 보는 글이고 모듈 · 실행 기록으로도 간다."""
+    text = _hide_texts(str(error).strip())
     if len(text) > _ORIGINAL_TEXT_LIMIT:
         text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
     return f"{type(error).__name__}: {text or '(문구 없음)'}"
@@ -878,6 +1030,14 @@ class BigDataQueryCallError(RuntimeError):
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {advice}\n\n"
             f"원문 — {_original_text(error)}{hint}"
         )
+
+    def retold(self, text: str) -> BigDataQueryCallError:
+        """글만 바꾼 사본 — 갈래 · 낱말 · 종류 이름은 다시 가르지 않고 그대로 둔다(오래 기다린 끝에
+        올린 갈래를 지킨다). 원래 예외는 부르는 쪽이 `raise … from` 으로 잇는다."""
+        told = BigDataQueryCallError.__new__(BigDataQueryCallError)
+        RuntimeError.__init__(told, text)
+        told.kind, told.clue, told.type_names = self.kind, self.clue, self.type_names
+        return told
 
 
 def load_bigdataquery_module() -> ModuleType:

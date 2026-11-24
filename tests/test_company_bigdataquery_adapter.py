@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
@@ -43,6 +44,15 @@ from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.bdq_login_store import LoginSecret
 from capa_simulation.io.s3_small import S3Target
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
+from capa_simulation.services.builtin_seed import (
+    build_builtin_seed_dataset,
+    load_builtin_display_order,
+)
+from capa_simulation.services.core_data_pipeline import (
+    PreparedCoreDataset,
+    prepare_core_data_dataset,
+)
+from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
@@ -50,6 +60,52 @@ CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
 
 def _module(get_data: object) -> SimpleNamespace:
     return SimpleNamespace(getData=get_data)
+
+
+# 시험의 CUSTOM 원천 표 이름 — `tests/conftest.py` 의 autouse 가 환경변수에 넣는 합성 값이다.
+DEMO_CUSTOM_TABLE = "demo_schema.demo_custom"
+# 본 조회문이 CUSTOM 칸에 싣는 상수 자리(합성) — 붙이기가 덮어야 하는 값이다.
+QUERY_CONSTANT = "DEMO_CONSTANT"
+CUSTOM_A = "DEMO_CUSTOM_A"
+CUSTOM_B = "DEMO_CUSTOM_B"
+
+
+def _answers(
+    main: pd.DataFrame, custom: pd.DataFrame, *, asked: list[str] | None = None
+) -> Callable[..., pd.DataFrame]:
+    """두 조회 가짜 `getData` — 조회문에 CUSTOM 원천 표 이름이 있으면 둘째 답, 아니면 본 답(사본).
+    `asked` 에 부른 조회문을 차례로 남긴다."""
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        if asked is not None:
+            asked.append(param)
+        return (custom if DEMO_CUSTOM_TABLE in param else main).copy()
+
+    return get_data
+
+
+def _custom_for(main: pd.DataFrame, values: Mapping[str, str] | None = None) -> pd.DataFrame:
+    """본 표의 (Capa Code, 생산계획년월) 칸마다 행 수를 센 CUSTOM 원천 표 답 — 부품의 CUSTOM 은
+    `values`(없으면 모든 부품 `CUSTOM_A`)."""
+    cells = main.groupby(["Capa Code", "생산계획년월"]).size().rename("행수").reset_index()
+    cells["CUSTOM"] = [
+        CUSTOM_A if values is None else values[str(code)] for code in cells["Capa Code"]
+    ]
+    return cells.loc[:, list(CUSTOM_SOURCE_COLUMNS)]
+
+
+def _one_custom_row() -> pd.DataFrame:
+    """본 표와 맞대기 전에 멈추는 시험이 쓰는 한 줄 CUSTOM 원천 표 답."""
+    return pd.DataFrame([("DEMO_CAPA_A", 202611, CUSTOM_A, 1)], columns=list(CUSTOM_SOURCE_COLUMNS))
+
+
+def _part_columns(rows: int) -> dict[str, list[object]]:
+    """본 프레임에 넣는 부품 칸 — Capa Code · 생산계획년월 · 조회문 상수 CUSTOM."""
+    return {
+        "Capa Code": ["DEMO_CAPA_A"] * rows,
+        "생산계획년월": [202611] * rows,
+        "CUSTOM": [QUERY_CONSTANT] * rows,
+    }
 
 
 def test_the_requester_account_reaches_get_data(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,15 +676,21 @@ def test_unconfigured_query_is_rejected_before_package_import(
 
 def test_provider_returns_renamed_dataframe_without_csv(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
+    # `fetch` 는 MPGA TEST 예외를 적용하므로 원천에 `공정`·`모듈수` 가 있어야 한다. CUSTOM 은
+    # Capa Code 로 붙이므로 그 칸 · 생산계획년월도 있어야 한다.
+    main = pd.DataFrame(
+        {"db_product": ["Product*_A"], "공정": ["ASSY"], "모듈수": [2], **_part_columns(1)}
+    )
+    answer = _answers(main, _custom_for(main))
 
     def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
+        # CUSTOM 원천 표를 먼저 묻고 본 조회가 마지막이라 남는 것은 본 조회의 인자다.
         captured.update(
             param=param,
             convert_type=convert_type,
             verbose=verbose,
         )
-        # `fetch` 는 MPGA TEST 예외를 적용하므로 원천에 `공정`·`모듈수` 가 있어야 한다.
-        return pd.DataFrame({"db_product": ["Product*_A"], "공정": ["ASSY"], "모듈수": [2]})
+        return answer(param=param)
 
     monkeypatch.setattr(
         importlib,
@@ -644,7 +706,14 @@ def test_provider_returns_renamed_dataframe_without_csv(monkeypatch: pytest.Monk
     batch = provider.fetch("SIM-001")
 
     assert batch.source_type == "BIGDATAQUERY"
-    assert batch.frame.columns.tolist() == ["제품정보", "공정", "모듈수"]
+    assert batch.frame.columns.tolist() == [
+        "제품정보",
+        "공정",
+        "모듈수",
+        "Capa Code",
+        "생산계획년월",
+        "CUSTOM",
+    ]
     assert captured == {
         "param": "SELECT * FROM source WHERE simulation_code = 'SIM-001'",
         "convert_type": True,
@@ -668,6 +737,7 @@ def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
         {
             "공정": ["MPGA TEST", "MPGA TEST", "MPGA TEST", "ASSY"],
             "모듈수": [0.955, 0.94, 2, 0.955],
+            **_part_columns(4),
         }
     )
 
@@ -680,7 +750,7 @@ def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
         patch.setattr(
             importlib,
             "import_module",
-            lambda _: SimpleNamespace(getData=lambda **_kwargs: frame),
+            lambda _: SimpleNamespace(getData=_answers(frame, _custom_for(frame))),
         )
         batch = provider.fetch("SIM-001")
 
@@ -693,7 +763,7 @@ def test_provider_reports_missing_columns_before_source_adjustment(
 ) -> None:
     frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955]}).drop(columns=missing_column)
     monkeypatch.setattr(
-        adapter, "load_bigdataquery_module", lambda: _module(lambda **_kwargs: frame)
+        adapter, "load_bigdataquery_module", lambda: _module(_answers(frame, _one_custom_row()))
     )
     provider = adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={})
 
@@ -706,7 +776,7 @@ def test_provider_reports_mapping_collisions_before_source_adjustment(
 ) -> None:
     frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955], "module_count": [2]})
     monkeypatch.setattr(
-        adapter, "load_bigdataquery_module", lambda: _module(lambda **_kwargs: frame)
+        adapter, "load_bigdataquery_module", lambda: _module(_answers(frame, _one_custom_row()))
     )
     provider = adapter.BigDataQueryCoreDataProvider(
         "사내 조회", column_mapping={"module_count": "모듈수"}
@@ -816,10 +886,15 @@ def test_the_detail_window_defaults_to_a_few_days_around_the_registration_date()
 
 def test_provider_passes_the_window_into_the_query(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
+    asked: list[str] = []
+    main = pd.DataFrame(
+        {"제품정보": ["Product-A"], "공정": ["ASSY"], "모듈수": [2], **_part_columns(1)}
+    )
+    answer = _answers(main, _custom_for(main), asked=asked)
 
     def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
         captured["param"] = param
-        return pd.DataFrame({"제품정보": ["Product-A"], "공정": ["ASSY"], "모듈수": [2]})
+        return answer(param=param)
 
     monkeypatch.setattr(
         importlib,
@@ -838,16 +913,19 @@ def test_provider_passes_the_window_into_the_query(monkeypatch: pytest.MonkeyPat
     provider.fetch("SIM-001")
 
     assert captured["param"] == "SELECT 'SIM-001' WHERE t >= '2026-09-01' AND t < '2026-09-09'"
+    # CUSTOM 원천 표가 먼저다 — 그 조회문에는 기간이 없다.
+    assert asked == [adapter.build_custom_query("SIM-001"), captured["param"]]
 
 
 def test_empty_result_is_rejected_before_the_module_count_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """0행 가드가 rename 뒤에 있으면 `KeyError('모듈수')` 로 먼저 터진다."""
+    """0행 가드가 rename 뒤에 있으면 `KeyError('모듈수')` 로 먼저 터진다. CUSTOM 원천 표 답은
+    있고 본 답만 0행인 꼴이다(CUSTOM 원천 표 0행 멈춤도 「0행」 이라 그 답은 채워 둔다)."""
     monkeypatch.setattr(
         importlib,
         "import_module",
-        lambda _: SimpleNamespace(getData=lambda **_kwargs: pd.DataFrame()),
+        lambda _: SimpleNamespace(getData=_answers(pd.DataFrame(), _one_custom_row())),
     )
     provider = adapter.BigDataQueryCoreDataProvider(
         "사내 조회",
@@ -857,6 +935,285 @@ def test_empty_result_is_rejected_before_the_module_count_exception(
 
     with pytest.raises(ValueError, match="0행"):
         provider.fetch("SIM-001")
+
+
+def _counting_import(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """패키지 import 를 세는 가짜 — 부른 모듈 이름을 남기고 쓸 수 없는 물건을 돌려준다."""
+    imported: list[str] = []
+
+    def fake_import(name: str) -> object:
+        imported.append(name)
+        return object()
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+    return imported
+
+
+@pytest.mark.parametrize("value", [None, "", "   "], ids=["없음", "빈 값", "공백뿐"])
+def test_a_missing_custom_table_variable_stops_before_the_package_is_imported(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """CUSTOM 원천 표 환경변수가 없으면 부품의 CUSTOM 을 읽을 수 없어 등록을 멈춘다 — 패키지를
+    부르기 전이고, 미설정 SQL 검사(`build_query`)보다는 뒤다. 글은 변수 이름을 든다."""
+    if value is None:
+        monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+    imported = _counting_import(monkeypatch)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.BigDataQueryCoreDataProvider("사내 조회").fetch("SIM-001")
+
+    assert str(raised.value).startswith(adapter.CUSTOM_TABLE_MISSING)
+    assert adapter.BDQ_CUSTOM_TABLE_ENV in str(raised.value)
+    assert isinstance(raised.value, BOOTSTRAP_ERRORS)
+    assert imported == []
+    assert adapter.custom_table_problem() == adapter.CUSTOM_TABLE_MISSING
+    # 미설정 SQL 이면 그 글이 먼저다(변수 없음 갈래가 SQL 안내를 가리지 않는다).
+    unconfigured = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template=f"SELECT {adapter.UNCONFIGURED_MARKER} WHERE x = '{{simulation_code}}'",
+    )
+    with pytest.raises(RuntimeError, match="SQL이 아직 설정되지 않았습니다"):
+        unconfigured.fetch("SIM-001")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "demo schema.demo_custom",
+        "demo_schema.demo_custom;",
+        "demo_schema.demo_custom' --",
+        "demo_schema.demo.custom",
+        "1demo.demo_custom",
+        "demo-schema.demo_custom",
+        "데모_스키마.데모_표",
+        "demo_schema.",
+    ],
+)
+def test_a_custom_table_value_that_is_not_a_table_name_stops_without_echoing_it(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """표 이름 꼴(영문 · 숫자 · 밑줄 낱말 하나 또는 점으로 이은 둘)이 아니면 조회문에 끼우지 않고
+    멈춘다 — 패키지를 부르기 전이다. 사내 값이라 글에 그 값을 싣지 않는다."""
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, value)
+    imported = _counting_import(monkeypatch)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.BigDataQueryCoreDataProvider("사내 조회").fetch("SIM-001")
+
+    text = str(raised.value)
+    assert text.startswith(adapter.CUSTOM_TABLE_MALFORMED)
+    assert value.strip() not in text
+    assert imported == []
+    assert adapter.custom_table_problem() == adapter.CUSTOM_TABLE_MALFORMED
+    with pytest.raises(RuntimeError, match="표 이름"):
+        adapter.build_custom_query("SIM-001")
+
+
+@pytest.mark.parametrize("value", [DEMO_CUSTOM_TABLE, "demo_custom", f"  {DEMO_CUSTOM_TABLE}  "])
+def test_a_table_name_with_or_without_a_schema_is_usable(value: str) -> None:
+    assert adapter.custom_table_problem(value) is None
+    assert f"FROM {value.strip()}\n" in adapter.build_custom_query("SIM-001", value)
+
+
+def test_the_main_query_text_is_unchanged() -> None:
+    """본 조회문은 글자 하나 바꾸지 않는다 — 상수 CUSTOM 칸은 붙이기가 덮는다(설계 B 1-5). 목록
+    조회 · 상세 창 · 별칭 대조가 이 글에 기대므로 바뀌면 이 지문이 먼저 깨진다(바꿀 때는 그 까닭과
+    함께 지문을 새로 적는다)."""
+    digest = hashlib.sha256(adapter.QUERY_TEMPLATE.encode("utf-8")).hexdigest()
+
+    assert digest == "1beec0c708869a82c78dd6b97794242815d87e59b0a83eb21a19c1766050b5dd"
+
+
+def _select_aliases(query: str) -> list[str]:
+    aliases: list[str] = []
+    for line in query.split("FROM", 1)[0].splitlines():
+        item = line.strip().rstrip(",")
+        if not item or item.upper() == "SELECT":
+            continue
+        aliases.append(item.rsplit(" AS ", 1)[1].strip().strip("`"))
+    return aliases
+
+
+def test_the_custom_query_asks_one_code_from_the_variable_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CUSTOM 원천 표 조회는 환경변수의 표에서 코드 하나를 기간 없이 묻고, 별칭이 붙이기가 읽는 칸
+    (`CUSTOM_SOURCE_COLUMNS`)과 같다. 공급자가 받은 이름이 환경변수보다 앞선다."""
+    query = adapter.build_custom_query("SIM-001")
+
+    assert f"FROM {DEMO_CUSTOM_TABLE}\n" in query
+    assert "WHERE catb_sim_info_id = 'SIM-001'" in query
+    assert "{" not in query and "impala_insert_time" not in query
+    assert _select_aliases(query) == list(CUSTOM_SOURCE_COLUMNS)
+    assert "FROM other_schema.other_custom\n" in adapter.build_custom_query(
+        "SIM-001", "other_schema.other_custom"
+    )
+    with pytest.raises(ValueError, match="영문·숫자"):
+        adapter.build_custom_query("SIM'001")
+
+    asked: list[str] = []
+    main = pd.DataFrame({"공정": ["ASSY"], "모듈수": [2], **_part_columns(1)})
+    other = _custom_for(main)
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        return (other if "other_schema.other_custom" in param else main).copy()
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", lambda: _module(get_data))
+    adapter.BigDataQueryCoreDataProvider(
+        "사내 조회", column_mapping={}, custom_table="other_schema.other_custom"
+    ).fetch("SIM-001")
+
+    assert asked[0] == adapter.build_custom_query("SIM-001", "other_schema.other_custom")
+
+
+@pytest.mark.parametrize(
+    "custom",
+    [
+        pd.DataFrame(columns=list(CUSTOM_SOURCE_COLUMNS)),
+        pd.DataFrame(
+            [("DEMO_CAPA_A", 202611, CUSTOM_A)], columns=["Capa Code", "생산계획년월", "CUSTOM"]
+        ),
+        pd.DataFrame(
+            [("DEMO_CAPA_A", 202611, CUSTOM_A, 1), ("DEMO_CAPA_A", 202612, CUSTOM_B, 1)],
+            columns=list(CUSTOM_SOURCE_COLUMNS),
+        ),
+    ],
+    ids=["0행", "칸 없음", "부품 하나에 둘"],
+)
+def test_an_empty_custom_answer_stops_before_the_main_query(
+    monkeypatch: pytest.MonkeyPatch, custom: pd.DataFrame
+) -> None:
+    """CUSTOM 원천 표 답이 0행(그 표 적재가 늦은 날) · 칸 없음 · 한 부품에 CUSTOM 둘이면 본 조회를
+    부르지 않고 멈춘다 — 헛 본 조회가 없다."""
+    asked: list[str] = []
+    main = pd.DataFrame({"공정": ["ASSY"], "모듈수": [2], **_part_columns(1)})
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: _module(_answers(main, custom, asked=asked))
+    )
+
+    with pytest.raises(ValueError, match="CUSTOM 원천 표"):
+        adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    assert asked == [adapter.build_custom_query("SIM-001")]
+
+
+@pytest.mark.parametrize(
+    ("error", "kind", "names_access"),
+    [
+        (
+            Error(
+                "AnalysisException: Could not resolve table reference: 'DEMO_SCHEMA.DEMO_CUSTOM' "
+                "(table Demo_Custom)"
+            ),
+            adapter.QUERY_FAILURE_SQL,
+            True,
+        ),
+        (
+            TimeoutError("timed out reading demo_schema.demo_custom"),
+            adapter.QUERY_FAILURE_TIMEOUT,
+            False,
+        ),
+    ],
+    ids=["SQL", "시간 초과"],
+)
+def test_a_custom_query_failure_names_the_variable_and_hides_the_table_name(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, kind: str, names_access: bool
+) -> None:
+    """CUSTOM 원천 표 조회가 실패하면 본 조회를 부르지 않고, 그 조회에서 멈췄다는 머리를 단 같은
+    갈래의 실패로 올린다. SQL 갈래(표 없음 · 권한)면 변수 값과 조회 권한을 보라고 덧붙인다. 원문이
+    실은 표 이름(값 전체 · 끝 조각, 대소문자가 달라도)은 가린다 — 자동 갱신 실행 기록 사유로 남는
+    글이다."""
+    asked: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        raise error
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", lambda: _module(get_data))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    text = str(raised.value)
+    assert text.startswith(f"CUSTOM 원천 표({adapter.BDQ_CUSTOM_TABLE_ENV}) 조회에서 멈췄습니다.")
+    assert f"BigDataQuery 조회가 실패했습니다({kind})" in text
+    assert ("조회 권한을 확인하세요" in text) is names_access
+    assert "demo_custom" not in text.casefold() and "demo_schema" not in text.casefold()
+    assert adapter.CUSTOM_TABLE_MASK in text
+    assert (raised.value.kind, raised.value.type_names) == (kind, (type(error).__name__,))
+    assert raised.value.__cause__ is error
+    assert asked == [adapter.build_custom_query("SIM-001")]
+
+
+def test_fetch_overwrites_the_query_constant_custom_with_the_looked_up_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """본 조회문의 상수 CUSTOM 칸을 부품(Capa Code)마다 CUSTOM 원천 표의 값으로 덮는다 — 행 수 ·
+    차례 · 다른 칸은 그대로다. 대조 수는 원천 묶음(`custom_check`)에 실린다."""
+    main = pd.DataFrame(
+        {
+            "공정": ["ASSY", "ASSY", "TEST", "TEST"],
+            "모듈수": [2, 2, 1, 1],
+            "Capa Code": ["DEMO_CAPA_A", "DEMO_CAPA_B", "DEMO_CAPA_A", "DEMO_CAPA_B"],
+            "생산계획년월": [202611, 202611, 202612, 202612],
+            "CUSTOM": [QUERY_CONSTANT] * 4,
+        }
+    )
+    custom = _custom_for(main, {"DEMO_CAPA_A": CUSTOM_A, "DEMO_CAPA_B": f"  {CUSTOM_B} "})
+    custom["Capa Code"] = " " + custom["Capa Code"] + " "
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: _module(_answers(main, custom))
+    )
+
+    batch = adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    assert batch.frame["CUSTOM"].tolist() == [CUSTOM_A, CUSTOM_B, CUSTOM_A, CUSTOM_B]
+    pd.testing.assert_frame_equal(batch.frame.drop(columns="CUSTOM"), main.drop(columns="CUSTOM"))
+    assert batch.custom_check is not None
+    assert (batch.custom_check.kinds, batch.custom_check.warns) == (2, False)
+    assert batch.custom_check.memo().startswith("CUSTOM 원천 대조 — 종류 2")
+
+
+def _two_part_source() -> pd.DataFrame:
+    """내장 시드 원천에서 한 제품의 행을 한 벌 더 두어 두 부품으로 가른 본 답 — 둘째 부품은 Capa
+    Code 가 다르고 EDS 수율만 다르다(Capa Code 가 키 밖인 `RQ_YLD` 에서만 두 부품이 갈린다)."""
+    source = build_builtin_seed_dataset().source_data
+    first = source["제품정보"].eq(source["제품정보"].iloc[0])
+    part_b = source.loc[first].copy()
+    part_b["Capa Code"] = "DEMO_CAPA_A2"
+    part_b["EDS_수율"] = pd.to_numeric(part_b["EDS_수율"]) * 0.8
+    return pd.concat([source, part_b], ignore_index=True)
+
+
+def test_two_parts_through_fetch_and_prepare_keep_two_custom_keys_and_no_custom_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """한 제품의 두 부품이 CUSTOM 원천 표에서 다른 CUSTOM 을 받으면 조회 → 변환 끝까지 두 CUSTOM
+    키로 남고 업무 키 충돌이 없다. 두 부품이 같은 CUSTOM 이면(조회문 상수 그대로와 같은 꼴) 키 밖
+    Capa Code 로 갈린 충돌이 선다 — 붙이기가 그 충돌을 없앤다는 것을 견준다."""
+    main = _two_part_source()
+    first = str(main["Capa Code"].iloc[0])
+    other = sorted(set(main["Capa Code"].astype(str)) - {first, "DEMO_CAPA_A2"})
+
+    def prepared(values: dict[str, str]) -> PreparedCoreDataset:
+        custom = _custom_for(main, values)
+        monkeypatch.setattr(
+            adapter, "load_bigdataquery_module", lambda: _module(_answers(main, custom))
+        )
+        batch = adapter.BigDataQueryCoreDataProvider("사내 조회").fetch("SIM-001")
+        return prepare_core_data_dataset(batch, load_builtin_display_order())
+
+    split = prepared({first: CUSTOM_A, "DEMO_CAPA_A2": CUSTOM_B, **dict.fromkeys(other, CUSTOM_A)})
+    folded = prepared({first: CUSTOM_A, "DEMO_CAPA_A2": CUSTOM_A, **dict.fromkeys(other, CUSTOM_A)})
+
+    assert split.reference_conflicts.empty
+    for table in ("RQ_PKG_PLAN", "RQ_YLD"):
+        parts = split.reference_tables[table].groupby("제품정보")["CUSTOM"]
+        assert {CUSTOM_A, CUSTOM_B} in [set(values) for _, values in parts], table
+    assert "RQ_YLD" in set(folded.reference_conflicts["RQ테이블"])
 
 
 def test_catalog_sql_is_not_mixed_into_the_detail_template() -> None:

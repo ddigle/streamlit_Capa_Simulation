@@ -2384,6 +2384,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서
     고르면 등록일 −7~+3일) 넓은 기본 창으로 조용히 떨어지지 않는다. 같은 코드 재수신은 원천 코드 불변 검사가 막는다.
+  - CUSTOM 은 CUSTOM 원천 표에서 받는다(7장 — 표 이름은 환경변수 `CAPA_BDQ_CUSTOM_TABLE` · `BDQ_CUSTOM_TABLE_ENV` 로만, 저장소 ·
+    ZIP 에 두지 않는다). `fetch` 차례는 코드 검증 → 본 조회문 짓기(미설정 SQL 검사) → 표 이름 판정(`custom_table_problem` — 없음 ·
+    꼴 틀림, 영문 · 숫자 · 밑줄 낱말 하나나 점으로 이은 둘, 값은 글에 싣지 않는다) → 패키지 → CUSTOM 원천 표 조회(`build_custom_query`
+    · `CUSTOM_QUERY_TEMPLATE` — 기간 없이 코드 하나, 열 이름은 설계 초안이라 사내 확인 거리) · `check_custom_rows` → 본 조회 → 0행 ·
+    칸 · 중복 검사 → 이름 바꾸기 → `attach_custom_values`(본 표 CUSTOM 칸만 Capa Code 로 덮는다 — 덮은 프레임이 원천 스냅샷) →
+    MPGA TEST 보정이고, 대조 수는 `CoreDataBatch.custom_check` 로 간다. 본 조회문 `QUERY_TEMPLATE` 은 글자 그대로 두고(지문 시험) 그
+    상수 CUSTOM 칸을 붙이기가 덮는다. CUSTOM 원천 표 조회 실패는 같은 길(`call_get_data`)의 `BigDataQueryCallError` 에 「CUSTOM 원천
+    표(CAPA_BDQ_CUSTOM_TABLE) 조회에서 멈췄습니다」 머리를 단 사본(`retold` — 갈래 · 낱말 · 종류 이름은 다시 가르지 않음)이고, SQL
+    갈래면 값 · 조회 권한을 보라고 덧붙인다. 원문(`_original_text`)은 요청자 계정과 함께 표 이름(값 전체 · 점 뒤 끝 조각, 3글자
+    이상, 대소문자 무시)을 `CUSTOM_TABLE_MASK` 로 한 번에 가린다(`_texts_to_hide` · `_hide_texts`) — 자동 갱신 실행 기록 사유가
+    원문을 그대로 남긴다. 시험은 `tests/conftest.py` autouse 가 합성 값 `demo_schema.demo_custom` 을 넣고 「없음」 갈래만 직접 지운다.
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
@@ -8127,6 +8138,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 지정까지 가지 못한 회차 사유 끝에 같은 푸는 길을 적는다(계획 행만 있는 원천은 계산이
   0행으로 끝나 「남는 공정이 없어」 갈래로 오는데 그 갈래에도 — 검수 보드 st-runner-hint). 막지 않는다 — 막으면 원천을 다시
   받아야만 풀린다.
+- **CUSTOM 은 CUSTOM 원천 표에서 Capa Code 로 붙이고, 못 찾음 · 둘 이상 · 빈 값 · 변수 없음은 등록을 멈춘다**(2026-11-22
+  사용자 답 Q2 (가) · Q9 (가)). 본 조회문의 CUSTOM 칸은 상수이고 어댑터가 부품(Capa Code)마다 CUSTOM 원천 표의 값으로 덮는다(행은
+  이어 붙이지 않는다 — `custom_source_check`). 그 표에 없는 부품 · 줄은 있는데 CUSTOM 이 빈 부품을 그대로 등록하면 같은 제품의
+  다른 부품과 구분 없음(`CUSTOM_BLANK`)으로 합쳐지고, 한 부품의 CUSTOM 이 달마다 다르면 달마다 다른 제품으로 갈린다 — 어느 부품 ·
+  어느 달인지 알리고 멈춘다. 표 이름 환경변수(`CAPA_BDQ_CUSTOM_TABLE`)가 없거나 꼴이 틀리면 패키지를 부르기 전에, CUSTOM 원천 표
+  답이 0행 · 칸 모자람이면 본 조회 전에 멈춘다. 자동 갱신은 그 회차가 등록 단계 오류로 끝나 시나리오를 만들지 않으므로 다음 회차가
+  같은 코드를 다시 받는다. 두 표의 (Capa Code, 생산계획년월) 칸 행 수가 어긋나는 것은 알리고 등록한다(값은 Capa Code 단위라 그대로).
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기
   등)보다 먼저 뺀다 — 행마다 따로 바꾸는 `제품정보`·`Area_Name` 정규화만 빼기 전에 해 뺀 경로 행을 남은 계획과 같은 꼴로
