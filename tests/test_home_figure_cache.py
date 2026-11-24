@@ -368,6 +368,16 @@ def test_the_schema_moved_past_the_other_hover_with_three_names() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 65
 
 
+def test_the_schema_moved_past_the_marker_line_in_the_legend() -> None:
+    """66 부터 색 칸을 빌린 과거 달 「제품 (-)」 조각이 그려진 화면(Past Data 를 켬)의 범례는 빌려
+    준 부품 줄 곁에 같은 색으로 「제품 (-)」 줄을 하나 더 둔다(그림 보드 4 답 q7-past-legend (나)).
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(빌린 칸은 부품 이름표 줄 하나 — 과거 달 조각이
+    범례로는 그 부품으로 읽힘)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 66
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

@@ -26,7 +26,9 @@ Past Data 를 켜고 꺼도 계산 구간 제품의 색이 앞뒤로 밀리지 �
 
 과거 달은 부품을 몰라 그 제품이 「DEMO_A (-)」 한 조각이다. 그 조각은 같은 제품의 부품 가운데 이름
 있는 칸을 받은 첫 부품의 색 칸을 빌린다(2026-11-24 그림 보드 3 답 q7-past-slice (나) —
-`assign_product_slots`).
+`assign_product_slots`). 범례는 그 조각이 그려진 화면(Past Data 를 켬)에서 빌려 준 부품 줄 곁에 같은
+색으로 「제품 (-)」 줄을 하나 더 둔다(같은 날 그림 보드 4 답 q7-past-legend (나) —
+`home_lob_figures.product_share_legend`).
 """
 
 from __future__ import annotations
@@ -99,7 +101,7 @@ class ProductSlots(NamedTuple):
     제품은 부품마다 하나다.
 
     `lenders` 는 색 칸을 빌린 과거 달 「제품 (-)」 이름 → 빌려 준 부품 이름표다. 빌린 이름은
-    `slot` 에 빌려 준 부품의 칸 번호로 들고 `order` · `folded` 에는 없다(칸 하나에 범례 한 줄).
+    `slot` 에 빌려 준 부품의 칸 번호로 들고 `order` · `folded` 에는 없다(새 칸이 서지 않는다).
     `fallback` 은 빌린 이름이 빌려 준 부품과 한 도넛에 함께 서는 칸에서 쓰는 칸 — 빌리지 않은 지금
     규칙의 결과이고 None 이면 `기타` 다(같은 색 두 조각이 서지 않게).
     """
@@ -121,7 +123,8 @@ class ProductShareSlice(NamedTuple):
     `product` 는 이름표이고, `base_product` · `part` 는 그 이름표를 지은 제품정보 · 접힌
     부품이다(좁은 범례 칸에서 부품을 남기고 줄이는 데 쓴다 — `home_figure_common._fit_part_label`).
     `기타` 조각은 빈 글자다. `lender` 는 이 조각이 색 칸을 빌린 부품 이름표다(과거 달 「제품 (-)」 —
-    `ProductSlots.lenders`, 범례가 그 칸에 줄을 더하지 않는다). 빌리지 않은 조각은 빈 글자다.
+    `ProductSlots.lenders`, 범례는 빌려 준 부품 줄 곁에 같은 색으로 「제품 (-)」 줄을 하나 더 둔다 —
+    `home_lob_figures.product_share_legend`). 빌리지 않은 조각은 빈 글자다.
     """
 
     product: str

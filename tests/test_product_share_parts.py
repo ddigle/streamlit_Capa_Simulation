@@ -35,7 +35,7 @@ from capa_simulation.components.home_lob_figures import (
     product_share_traces,
 )
 from capa_simulation.components.intro_summary import summary_payload
-from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
+from capa_simulation.home_state import PAST_DATA_TOGGLE_KEY, PRODUCT_SHARE_BASIS_KEY
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services import simulation_cache as sc
@@ -356,9 +356,23 @@ def test_a_past_marker_borrows_the_first_named_part_slot_when_no_slot_is_left() 
     assert any(str(text).startswith(f"26.08 · {MARKER} ") for text in hover)
 
 
-def test_the_legend_keeps_one_line_per_slot_when_a_marker_borrows() -> None:
-    """범례는 칸마다 한 줄이다 — 빌린 칸은 빌려 준 부품 이름표 줄 하나이고 「DEMO_PART (-)」 줄을
-    더하지 않는다. 빌려 준 부품이 그려지지 않은 화면(과거 달만)에서는 그 칸 줄이 빌린 이름이다."""
+def _legend_names(annotations: list[dict[str, object]]) -> list[tuple[str, str, str]]:
+    """범례 항목마다 (온전한 이름, 그린 글, 색 네모 색) — 제목(첫 항목)은 뺀다."""
+    rows: list[tuple[str, str, str]] = []
+    for entry in annotations[1:]:
+        text = str(entry["text"])
+        fitted = text.rsplit("</span> ", 1)[1]
+        color = text.split("color:", 1)[1].split('"', 1)[0]
+        rows.append((str(entry.get("hovertext") or fitted), fitted, color))
+    return rows
+
+
+def test_the_legend_adds_a_marker_line_in_the_lent_color_when_the_past_is_drawn() -> None:
+    """과거 달 「DEMO_PART (-)」 조각이 그려진 화면의 범례는 빌려 준 부품 줄 곁에 같은 칸 번호(같은
+    색)로 「DEMO_PART (-)」 줄을 하나 더 둔다(그림 보드 4 답 q7-past-legend (나)) — 그 제품의 그려진
+    부품 줄 가운데 마지막 줄 바로 뒤이고 `기타` 는 맨 끝 그대로다. 과거 달이 없는 화면(Past Data 를
+    끔)에는 그 줄이 없고, 빌려 준 부품이 그려지지 않은 화면(과거 달만)에서는 그 칸 줄이 빌린 이름
+    하나다."""
     volume, past_volume = _full_slots()
     slots = assign_product_slots(volume, past_volume=past_volume)
     cells = build_product_share_cells(
@@ -367,15 +381,106 @@ def test_the_legend_keeps_one_line_per_slot_when_a_marker_borrows() -> None:
         slots,
         month_labels=["26.08", "26.09"],
     )
+    part_a, part_b = f"DEMO_PART ({PART_A})", f"DEMO_PART ({PART_B})"
 
     entries = product_share_legend(cells)
+    calculated_only = product_share_legend({"26.09": cells["26.09"]})
     past_only = product_share_legend({"26.08": cells["26.08"]})
 
-    named = [(name, slot) for name, slot in entries if slot is not None]
-    assert len({slot for _, slot in named}) == len(named) == PRODUCT_SHARE_SLOT_COUNT
-    assert (f"DEMO_PART ({PART_A})", slots.slot[f"DEMO_PART ({PART_A})"]) in entries
-    assert MARKER not in {name for name, _ in entries}
-    assert (MARKER, slots.slot[MARKER]) in past_only
+    names = [name for name, _ in entries]
+    assert (MARKER, slots.slot[part_a]) in entries
+    assert names.count(MARKER) == 1
+    assert names.index(MARKER) == max(names.index(part_a), names.index(part_b)) + 1
+    assert names[-1] == OTHER_PRODUCT_LABEL
+    assert [entry for entry in entries if entry[0] != MARKER] == [
+        *calculated_only,
+        (OTHER_PRODUCT_LABEL, None),
+    ]
+    assert len(entries) == len(calculated_only) + 2
+    assert MARKER not in {name for name, _ in calculated_only}
+    assert [entry for entry in past_only if entry[1] == slots.slot[part_a]] == [
+        (MARKER, slots.slot[part_a])
+    ]
+
+
+def test_the_marker_line_fits_the_legend_and_leaves_the_part_line_as_it_was() -> None:
+    """더한 「DEMO_PART (-)」 줄은 범례 칸 폭에 맞춰 제품 쪽을 줄이고(표지 「(-)」 는 남김) 그 줄
+    풍선에 온전한 이름이 뜬다. 색 네모는 빌려 준 부품 줄과 같은 색이고, 부품 줄의 줄인 글은 그
+    줄이 없을 때와 같다."""
+    volume, past_volume = _full_slots()
+    slots = assign_product_slots(volume, past_volume=past_volume)
+    cells = build_product_share_cells(
+        combine_product_volume(volume, past_volume),
+        PRODUCT_SHARE_BASIS_PKG,
+        slots,
+        month_labels=["26.08", "26.09"],
+    )
+    part_a = f"DEMO_PART ({PART_A})"
+    budget = _legend_name_budget_units()
+
+    rows = _legend_names(_product_share_label_annotations(cells, "PKG", row_top=0.3))
+    without = _legend_names(
+        _product_share_label_annotations({"26.09": cells["26.09"]}, "PKG", row_top=0.3)
+    )
+
+    by_name = {name: (fitted, color) for name, fitted, color in rows}
+    fitted, color = by_name[MARKER]
+    assert fitted != MARKER and fitted.endswith(" (-)") and fitted.startswith("DEMO")
+    assert _text_width_units(fitted) <= budget
+    assert color == by_name[part_a][1]
+    assert {name: fitted for name, fitted, _ in without} == {
+        name: fitted for name, fitted, _ in rows if name not in (MARKER, OTHER_PRODUCT_LABEL)
+    }
+
+
+def _marker_cells(markers: int) -> dict[str, ProductShareCell]:
+    """이름 있는 칸 여섯(부품을 가른 제품 여섯의 부품 하나씩) + `기타` 인 계산 달과, 그 가운데 앞
+    `markers` 제품의 과거 「(-)」 조각이 색 칸을 빌린 과거 달."""
+    owners = tuple(
+        ProductShareSlice(
+            f"DEMO_P{slot} ({PART_A})", 1.0, 1 / 7, slot, base_product=f"DEMO_P{slot}", part=PART_A
+        )
+        for slot in range(PRODUCT_SHARE_SLOT_COUNT)
+    )
+    other = ProductShareSlice(
+        OTHER_PRODUCT_LABEL, 1.0, 1 / 7, None, ((f"DEMO_P0 ({PART_B})", 1.0),)
+    )
+    borrowed = tuple(
+        ProductShareSlice(
+            f"DEMO_P{slot} (-)",
+            1.0,
+            1 / markers,
+            slot,
+            base_product=f"DEMO_P{slot}",
+            part="-",
+            lender=f"DEMO_P{slot} ({PART_A})",
+        )
+        for slot in range(markers)
+    )
+    return {
+        "26.08": ProductShareCell("26.08", float(markers), borrowed, past=True),
+        "26.09": ProductShareCell("26.09", 7.0, (*owners, other)),
+    }
+
+
+@pytest.mark.parametrize("markers", [1, 2, 3, 5])
+def test_a_full_legend_drops_the_marker_lines_first_and_keeps_every_color(markers: int) -> None:
+    """범례는 두 칸 × 네 줄(여덟 항목)까지다. 더한 「(-)」 줄로 넘치면 그 줄부터 뒤에서 뺀다 —
+    그려진 색은 모두 제 줄을 지키고 `기타` 줄도 남는다(앞 제품의 「(-)」 줄은 남는 자리만큼
+    선다)."""
+    cells = _marker_cells(markers)
+
+    entries = product_share_legend(cells)
+    rows = _legend_names(_product_share_label_annotations(cells, "PKG", row_top=0.3))
+
+    assert len(entries) == PRODUCT_SHARE_SLOT_COUNT + 1 + markers
+    names = [name for name, _, _ in rows]
+    assert len(names) == 8
+    assert names[-1] == OTHER_PRODUCT_LABEL
+    assert {f"DEMO_P{slot} ({PART_A})" for slot in range(PRODUCT_SHARE_SLOT_COUNT)} <= set(names)
+    kept = [name for name in names if name.endswith(" (-)")]
+    assert kept == ["DEMO_P0 (-)"]
+    assert names.index("DEMO_P0 (-)") == names.index(f"DEMO_P0 ({PART_A})") + 1
 
 
 def test_a_past_marker_keeps_the_old_rule_when_every_part_is_folded() -> None:
@@ -776,6 +881,18 @@ def _month_pie_labels(app: AppTest) -> set[str]:
     }
 
 
+def _legend_swatches(figure: go.Figure) -> dict[str, str]:
+    """구분 칸 그림의 범례 줄마다 온전한 이름 → 색 네모 색(제목처럼 색 네모가 없는 글은 뺀다)."""
+    swatches: dict[str, str] = {}
+    for entry in figure.layout.annotations:
+        text = str(entry.text)
+        if "</span> " not in text or "■" not in text:
+            continue
+        name = str(entry.hovertext or text.rsplit("</span> ", 1)[1])
+        swatches[name] = text.split("color:", 1)[1].split('"', 1)[0]
+    return swatches
+
+
 def test_home_draws_one_donut_slice_and_legend_entry_per_part(tmp_path: Path) -> None:
     database_path = tmp_path / "scenario.duckdb"
     publish_two_part_revision(database_path)
@@ -823,7 +940,12 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     assert len(colors[marker]) == 1
     sharing = {label for label, found in colors.items() if found & colors[marker]} - {marker}
     assert len(sharing) == 1
-    assert next(iter(sharing)).startswith(f"{TWO_PART_PRODUCT} (")
+    lender = next(iter(sharing))
+    assert lender.startswith(f"{TWO_PART_PRODUCT} (")
+    # 범례는 빌려 준 부품 줄 곁에 같은 색으로 「(-)」 줄을 하나 더 둔다(그림 보드 4 답
+    # q7-past-legend (나)) — 줄인 글이면 그 줄 풍선에 온전한 이름.
+    legend = _legend_swatches(figures["production_lob_labels"])
+    assert legend[marker] == legend[lender] == next(iter(colors[marker]))
     hovered = {
         str(name).replace("<br>", " ")
         for trace in figures["production_detail_labels"].data
@@ -832,6 +954,15 @@ def test_home_names_the_past_of_a_split_product_with_the_marker(tmp_path: Path) 
     }
     assert marker in hovered
     assert TWO_PART_PRODUCT not in hovered
+
+    # Past Data 를 끄면 과거 달 조각이 없어 범례의 「(-)」 줄도 없다.
+    app.session_state[PAST_DATA_TOGGLE_KEY] = False
+    app.run()
+
+    assert not list(app.exception)
+    assert marker not in _month_pie_labels(app)
+    swatches = _legend_swatches(app.session_state["spy_figures"]["production_lob_labels"])
+    assert marker not in swatches and lender in swatches
 
 
 def test_home_judges_the_past_parts_again_after_an_edit_in_the_same_scenario(

@@ -3703,6 +3703,43 @@ def test_the_board4_other_hover_answer_joins_the_board3_line() -> None:
     assert "q7-hover-cap (나)" in v145 and "q7-hover-rest" in v145
 
 
+def test_the_board4_past_legend_answer_joins_the_board3_line() -> None:
+    """그림 보드 4 q7-past-legend (나) 「Past Data 를 켠 화면에서 「제품 (-)」 줄을 같은 색으로
+    하나 더」 는 그 꼴을 낳은 보드 3 줄 q7-past-slice 에 잇고, 「범례는 칸마다 한 줄」 을 굵은 답에
+    두던 답 밖 줄 q7-slice-rest 는 그 몫을 걷고 답을 지으며 정한 몫(더한 줄 자리 · 넘치면 그
+    줄부터 뺌)을 싣는다(판은 v1.45 그대로). 줄이 부르는 코드 이름이 코드에 있다."""
+    document = _text()
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-41. ") :].split("\n### ", 2)[1]
+    heads = {
+        line.split(" · ", 1)[0][2:]: line for line in record.splitlines() if line.startswith("- ")
+    }
+    past = heads["q7-past-slice"]
+    assert (
+        "그림 보드 4 q7-past-legend 로 물었다 → **(나) Past Data 를 켠 화면에서 「제품 (-)」 줄을 "
+        "같은 색으로 하나 더**"
+    ) in past
+    assert "q7-slice-rest" in past and "q7-past-legend" not in heads
+    rest = heads["q7-slice-rest"]
+    assert rest.split(" — ", 1)[0].endswith("답 밖에서 정한 것")
+    bold = re.findall(r"\*\*([^*]+)\*\*", rest)
+    assert bold and "칸마다 한 줄" not in bold[0] and "그 줄부터 뺌" in bold[0]
+    assert "q7-past-legend" in rest
+    known = {rule.id for rule in _rules()}
+    for line in (past, rest):
+        cited = RULE_TOKEN.findall(line.rsplit("(2026-11-24 · ", 1)[1])
+        assert cited and set(cited) <= known
+    code = (PROJECT_ROOT / "src/capa_simulation/components/home_lob_figures.py").read_text(
+        encoding="utf-8"
+    )
+    for name, line in (("product_share_legend", past), ("_legend_rows_within_limit", rest)):
+        assert name in line, name
+        assert re.search(rf"^def {name}\(", code, re.MULTILINE), name
+    history = _chapter(document, 8)
+    v145 = history[history.index("- **v1.45 — 2026-11-24.**") :].split("\n- **v1.", 1)[0]
+    assert "q7-past-legend (나)" in v145 and "범례 칸마다 한 줄 · " not in v145
+
+
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
     """v1.36 — 3 · 4장이 지금 화면을 말하는 자리의 옛 뜻 「관리자」(접힌 진단 이름 · 진단 몫 · 공지
     보낸 이 · 칩 풍선 글)는 「개발자」 다. 날짜 붙은 결정 기록(6장)과 근거 칸의 인용은 그대로다."""

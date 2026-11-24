@@ -97,8 +97,9 @@ LOB_BAR_LABEL_FONT_SIZE_PX = 22
 
 
 # `제품별 비중` 구분 칸. 제목 한 줄 아래에 두 칸짜리 범례가 선다. 조각은 `기타` 를 넣어 여섯
-# 까지지만, 계산 구간 제품이 여섯이고 과거 구간에만 있는 제품이 `기타` 로 접히면 일곱이 되므로
-# 네 줄까지 받는다.
+# 까지지만, 계산 구간 제품이 여섯이고 과거 구간에만 있는 제품이 `기타` 로 접히면 일곱이 되고, 과거
+# 달 「제품 (-)」 이 부품의 색 칸을 빌린 화면은 그 줄이 더 서므로 네 줄(여덟 항목)까지 받는다 —
+# 넘치면 더한 「제품 (-)」 줄부터 뺀다(`_legend_rows_within_limit`).
 PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
 PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
 PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
@@ -293,27 +294,67 @@ def product_share_legend(cells: Mapping[str, ProductShareCell]) -> list[tuple[st
     EDP 를 끈 화면에서는 EDP 제품이 칸을 가진 채 조각이 없다. 범례에 두면 그리지 않은
     제품을 알리는 셈이라 뺀다(색 칸은 그대로 비워 둔다 — 남은 제품이 색을 바꾸지 않는다).
 
-    **칸마다 한 줄이다.** 과거 달 「제품 (-)」 이 부품의 색 칸을 빌렸으면
-    (`ProductShareSlice.lender`) 그 칸 줄은 빌려 준 부품 이름표 하나다 — 줄을 더하지 않는다. 빌려
-    준 부품이 화면에 그려지지 않았으면(EDP 를 끈 화면의 EDP 전용 부품) 그 칸 줄은 빌린 이름이다.
+    과거 달 「제품 (-)」 이 부품의 색 칸을 빌려 그려졌으면(`ProductShareSlice.lender`) 빌려 준
+    부품 줄 곁에 **같은 칸 번호(같은 색)로 「제품 (-)」 줄을 하나 더** 둔다 — 범례만 보고도 과거 달
+    조각을 부품이 아니라 그 제품의 과거로 읽게(2026-11-24 그림 보드 4 답 q7-past-legend (나)). 더한
+    줄은 그 제품의 그려진 부품 줄 가운데 마지막 줄 바로 뒤다(부품 차례에서 표지 `-` 가 끝인 것과
+    같다). 과거 달 조각은 Past Data 를 켠 화면에만 그려지므로 끄면 그 줄도 없다. 빌려 준 부품이
+    그려지지 않았으면(EDP 를 끈 화면의 EDP 전용 부품) 그 칸 줄은 빌린 이름 하나다. 여덟 항목 상한은
+    그리는 쪽이 건다(`_legend_rows_within_limit`).
     """
-    by_slot: dict[int, str] = {}
-    lent: set[tuple[str, int]] = set()
+    owners: dict[int, str] = {}
+    borrowers: dict[int, str] = {}
+    products: dict[str, str] = {}
     others: dict[str, None] = {}
     for cell in cells.values():
         for piece in cell.slices:
             if piece.slot is None:
                 others.setdefault(piece.product, None)
                 continue
+            products.setdefault(piece.product, piece.base_product or piece.product)
             if piece.lender:
-                lent.add((piece.product, piece.slot))
-                by_slot.setdefault(piece.slot, piece.product)
-                continue
-            current = by_slot.get(piece.slot)
-            if current is None or (current, piece.slot) in lent:
-                by_slot[piece.slot] = piece.product
-    named = sorted(((name, slot) for slot, name in by_slot.items()), key=lambda item: item[1])
+                borrowers.setdefault(piece.slot, piece.product)
+            else:
+                owners.setdefault(piece.slot, piece.product)
+    ranked: list[tuple[tuple[int, int], str, int]] = [
+        ((slot, 0), name, slot) for slot, name in owners.items()
+    ]
+    for slot, name in borrowers.items():
+        if slot not in owners:
+            ranked.append(((slot, 0), name, slot))
+            continue
+        last = max(
+            (index for index, owner in owners.items() if products[owner] == products[name]),
+            default=slot,
+        )
+        ranked.append(((last, 1), name, slot))
+    named = [(name, slot) for _, name, slot in sorted(ranked)]
     return [*named, *((name, None) for name in others)]
+
+
+def _legend_rows_within_limit(
+    entries: Sequence[tuple[str, int | None]],
+) -> list[tuple[str, int | None]]:
+    """범례 칸에 그릴 항목 — 두 칸 × 네 줄(여덟 항목)을 넘으면 **더한 「제품 (-)」 줄부터** 뺀다.
+
+    더한 줄은 앞 항목과 칸 번호가 같은 줄(과거 달 「제품 (-)」 — `product_share_legend`)이다.
+    뒤에서부터 빼므로 그려진 색은 모두 제 줄을 지키고 `기타` 줄도 남는다(이름 있는 칸 여섯 +
+    `기타` 는 일곱). 그래도 넘치면 뒤를 자른다.
+    """
+    limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
+    excess = len(entries) - limit
+    if excess <= 0:
+        return list(entries)
+    seen: set[int] = set()
+    added: list[int] = []
+    for index, (_, slot) in enumerate(entries):
+        if slot is None:
+            continue
+        if slot in seen:
+            added.append(index)
+        seen.add(slot)
+    dropped = set(added[-excess:])
+    return [entry for index, entry in enumerate(entries) if index not in dropped][:limit]
 
 
 def _product_share_label_annotations(
@@ -336,9 +377,9 @@ def _product_share_label_annotations(
         for cell in cells.values()
         for piece in cell.slices
     }
-    limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
-    shown = entries[:limit]
-    # 같은 제품의 부품끼리 줄인 글이 같아지지 않게 함께 그리는 형제 부품을 넘긴다.
+    shown = _legend_rows_within_limit(entries)
+    # 같은 제품의 부품끼리 줄인 글이 같아지지 않게 함께 그리는 형제 부품을 넘긴다(과거 달
+    # 「제품 (-)」 줄의 표지 `-` 도 함께 그리는 형제다).
     shown_parts: dict[str, set[str]] = {}
     for name, _ in shown:
         base_product, part = parts.get(name, (name, PART_NOT_SPLIT))

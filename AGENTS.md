@@ -542,8 +542,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     반환 꼴은 그대로다. 과거 구간 조각은 `past_product_volume(multi_part=)` 가 「제품 (-)」 로 채운다 — 그 과거 전용
     조각은 칸 배정을 마친 뒤 같은 제품의 부품 가운데 이름 있는 칸을 받은 첫 부품의 색 칸을 빌린다(2026-11-24 그림 보드 3
     답 q7-past-slice (나) — `ProductSlots.lenders`, 칸 수 · 다른 제품 칸 · `기타` 접힘 그대로, 그 제품의 부품이 모두 접혔으면
-    지금 규칙, 빌려 준 부품과 한 도넛에 함께 서면 그 칸만 `ProductSlots.fallback`, 범례는 칸마다 한 줄). 범례 줄임은
-    `_fit_part_label` 이다(`tests/test_product_share_parts.py`). `기타` 풍선은 늘 첫 줄 「달 · 기타 비중 · 수량」, 둘째
+    지금 규칙, 빌려 준 부품과 한 도넛에 함께 서면 그 칸만 `ProductSlots.fallback`). 그 조각이 그려진 화면(Past Data 를 켠
+    PKG 단위)의 범례는 빌려 준 부품 줄 곁에 같은 칸 번호(같은 색)로 「제품 (-)」 줄을 하나 더 둔다 — 그 제품의 그려진 부품 줄
+    가운데 마지막 줄 바로 뒤, 끄면 없음(같은 날 그림 보드 4 답 q7-past-legend (나) — `product_share_legend`). 범례는 두 칸 ×
+    네 줄(여덟 항목)까지이고 넘치면 더한 「(-)」 줄부터 뒤에서 뺀다 — 그려진 색과 `기타` 는 늘 제 줄이 있다
+    (`_legend_rows_within_limit`). 범례 줄임은 `_fit_part_label` 이다(더한 줄도 제품 쪽을 줄여 「DEMO-H… (-)」 · 풍선에 온전한
+    이름 — `tests/test_product_share_parts.py`). `기타` 풍선은 늘 첫 줄 「달 · 기타 비중 · 수량」, 둘째
     줄부터 모인 이름이다 — 이름은 줄이지 않고 다 적되 한 줄에 셋, 넘긴 줄 끝에 쉼표, 이름 줄 넷(이름 열둘)을 넘는
     이름만 마지막 줄 끝 「외 N」(`_other_member_lines` · `_PRODUCT_SHARE_HOVER_NAME_LINES` — 같은 날 그림 보드 4 답
     q7-hover-cap (나), `tests/test_product_share.py`). 이름에 부품 이름표가 끼든 말든 한 꼴이다
@@ -8315,7 +8319,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     제 칸을 받았을 「(-)」 이면 그 칸은 비워 둔다), 그 제품의 부품이 모두 `기타` 면 지금 규칙(남는 칸이 있을 때만)이다. 한
     도넛에 빌려 준 부품 조각과 「(-)」 조각이 함께 서면(화면의 달은 계산 · 과거 하나라 서지 않지만 값으로 막는다) 그 칸에서는
     빌리지 않는다(`ProductSlots.fallback`). 계획 세부수량 · 비교 덤벨 · 입장 화면 Summary 는 색 칸을 쓰지 않거나(앞 둘)
-    과거 수량을 받지 않아 빌림이 없다. 범례는 칸마다 한 줄 — 빌린 칸은 빌려 준 부품 이름표 줄이다.
+    과거 수량을 받지 않아 빌림이 없다. 범례는 빌린 조각이 그려진 화면에서 빌려 준 부품 줄 곁에 같은 색 「제품 (-)」 줄을 하나
+    더 둔다(같은 날 그림 보드 4 답 q7-past-legend (나) — 같은 색 두 줄은 회색 바탕(과거 달)으로 가린다, 3장 HOME 제품별 비중 줄).
   - 부품을 칸으로 따로 그리지 않는 화면은 `part_merged_columns` 로 제품 칸 글에 녹인다. HOME 계획 세부수량도 제품 칸을
     넓히지 않는다(2026-11-24 그림 보드 4 답 q7-shared-col (나) — 3장 HOME Figure 가족 줄). 좁은 칸 줄임은
     `home_figure_common._fit_part_label` — 부품을 남기고 제품 쪽을 먼저 줄이며(「DEMO… (DEMO_CUSTOM_A)」), 제품 글자가 하나도
