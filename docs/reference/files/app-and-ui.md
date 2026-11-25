@@ -99,6 +99,8 @@
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
   `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
   `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
+  - 로그인은 `response_type=id_token` · `response_mode=form_post` 로 ID 토큰만 받아 코드 교환이 없다(`auth/web.py`) — 포털이 준 Client Secret 은 쓰지 않고, 넣을 환경변수 자리도 없다.
+  - 「접속 권한 신청」 단추 이름은 상수 `auth/web.REGISTER_LABEL` 하나다 — 거절 화면(`auth/web.py`) · 앱 안 멈춤 판(`components/sso_identity.py`) · 띠(`components/sso_reconnect.py`)가 그 상수를 불러 쓰고 글자를 따로 적지 않는다.
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
     없이 뜬 서버는 멈춤 화면 + `st.stop()`). 문지기 없이 뜬 서버는 경고 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 문의 캡션 · 참고 줄 ·
@@ -241,6 +243,8 @@
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
+  - 계획 세부수량 · 상세 B/N 구획은 토글(옛 「계획·B/N 상세표 표시」)로 늦게 만들지 않는다.
+  - 제품별 비중 도넛은 같은 제품의 양산 · ER 을 더해 비중을 낸다(분모는 Wafer 면 `Wafer 계획` 행, PKG 면 그 달 PKG 생산수량 전체). 색 칸은 화면 전체에서 한 번 정해 달 · 단위 · EDP · Past Data 토글과 상관없이 같은 제품이 같은 색이다. 칸은 여섯이라 넘치면 PKG 생산수량이 작은 제품부터 「기타」 로 접고(이름 칸 다섯 + 기타 — `PRODUCT_SHARE_SLOT_COUNT`), 과거 구간 달의 Wafer 도넛은 제품별 Wafer 를 몰라 비운다(`past_product_volume`).
   - 제품별 비중은 부품(`CUSTOM`)이 둘 이상인 제품만 부품마다 조각 · 색 칸 · 범례 이름표다(8장 「합쳐 보는 화면의 부품
     이름표」 — 조각 합은 그대로 `Wafer 계획`). 판정은 HOME 캐시 두 함수(`get_home_simulation` · `get_home_lob_without_edp`)가
     받은 리비전 계획 전체(`_tables["RQ_PKG_PLAN"]`)로 하고 수량 프레임의 `CUSTOM` 칸에 접힌 값으로 싣는다 — 캐시 키 ·
@@ -461,6 +465,7 @@
     키 전용 캐시다.
   - 설비 DB 는 읽기만 하고 필요 단축 일정의 공용 조회 조건·기준선·세션 칸은 읽지 않는다(5장 9). 판정을 통과한 공정만
     계획·설비 일정을 받고, 아니면 데이터 Error 마크 한 칸(채울 입력이 빠짐) 또는 회색 평문 한 줄(HBM·EDP 호기 없음 빈 상태)이다.
+  - 사용기준이 HBM·EDP 가 아니어서 이 공정의 가용 · 단축 후보에서 뺀 호기는 자리 표지 없이 상태 알림 `PD-04` 로만 낸다(`report_usage_excluded`). 범위는 이 화면의 설비 기준 · 공정이고, 내용은 설비명 목록이며, 짧은 글은 「사용기준 제외 n대 — <공정> 가용 · 단축 후보에서 뺌」 이다. 설비 일정을 세우지 못한 회차에도 해소로 부른다.
   - 설비는 **방문 기준**이다 — HOME 칸으로 들어온 방문은 ◀▶ 뒤에도 그 방문 동안 공식 설비 시나리오(사이드바 줄은 잠근
     꼴, 출처 띠 끝 「설비는 공식 vN 기준」), 그 밖의 길은 세션 설비 시나리오다(`process_detail_state`). 설비 시나리오는 공정·
     달을 정한 바로 뒤에 읽는다 — 출처 띠를 자리(`st.empty`)에 다시 쓰지 않게(9장 placeholder 시험). 설비 DB 가 코드보다
@@ -1108,6 +1113,7 @@
     알림창 한 번이고, 해소는 공식버전을 확인한 회차의 알림 칸 data 가 낸다(2026-11-14 물음 보드 decided 5). 글의 할 일 절은 화면 등급마다
     그 등급에 있는 단추만 가리킨다 — 「공식으로 지정…」 은 관리자부터, DB 등록 · 「되돌리기」 는 실무자부터, 열람은 「공식 지정은 관리자부터」 뿐이고
     「그 화면으로」 가 DB 등록 탭이 아니라 Capa 시나리오다(UI-INP-07 예외 — 지문은 같다).
+  - 시나리오 · 리비전 ID 를 보이는 전용 칸 · 값 줄은 두지 않는다(Admin Area 에도 두지 않는다) — 장애 신고 · 문의는 시나리오 이름 + rN 으로 가리킨다. 파생 작업(월 머지 · 연도 Shift · 부대공정 얹기)의 「저장될 출처 메모」 · 변경 메모 글은 원본 ID 를 싣는다(`components/scenario_transform.source_description`).
   - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
     표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 점검 · 저장 전 변경 · 공식 이력 · 보관함」(점검은 `components/scenario_input_check.py`).
     상세는 리비전 표(r · 리비전명 · 상태)가 맨 위에 서서 머리가 왼쪽 표 머리와 윗선이 같고(사용자 요청 2026-11-07), 그 아래 연 시나리오의 제목 · 원천 코드 · 최근 수정과 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
@@ -1200,6 +1206,7 @@
     되돌릴 수 없다는 것은 창을 연 회차의 알림 `PA-01`(`PASTE_OPENING` · `CLEAR_OPENING`)이고 창 안에는 글 · 칸 풍선이 없다
     (설계 규칙 UI-TXT-01 · UI-NTF-09, 2026-11-05 검수 static-37). 로직 분석의 일곱 칸은 앞 칸이 빌 때 잠기고 까닭 풍선을 달며,
     다 고르기 전에는 빈 결과 한 줄(`LOGIC_EMPTY`)이다.
+  - 「제품·WF 속성별 Mix 산출 근거」 표 위 캡션 「`●` 선택한 분류」 는 표의 ● 하나만 말하는 표지 한 줄이라 늘 서는 설명 줄 걷기(UI-TXT-01) 밖이고 그 자리에 남긴다 — 조화가중으로 읽는 법은 Guide 몫이다(UI-TXT-04).
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
     가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
@@ -1256,6 +1263,7 @@
     시나리오를 불러온 회차는 곧바로) 보관본까지 목록을 읽어 세션에 적은 최신 번호를 이름표 번호와 견준 것
     (`newer_active_revision_no` — 세션만 읽음)이다. 팝업은 연 회차에 읽은 목록으로 그 값을 고쳐 적는다
     (`remember_active_scenario_latest`). 제 저장 뒤에는 이름표 번호가 확인 값 이상이라 서지 않는다.
+  - 올라온 리비전이 없으면 줄 값 칸은 「시나리오명 · rN」 대신 「올라온 리비전 없음」 이다.
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
   - 「신규 리비전 저장」 구획은 화면 등급 실무자부터 서고, 제출 단추 key 는 고정(`SAVE_SUBMIT_KEY` — `SessionSlot` `SAVE_SUBMIT`)이다.
@@ -1787,6 +1795,7 @@
   - 경계는 공용 판정 기준 프로필(`load_global_securement_threshold`)이고 두 축 모두 범주, 모든 행에 공정 이름이다. 축 값은
     원본 공정이고 눈금 · hover 글자만 표시명이다(`category_axis`, hover 는 customdata 쌍) — 같은 표시명의 두 공정을 한 줄로 합치지 않는다.
   - HOME `주요공정 확보율`(`home_figures.build_key_process_heatmap_figures`)과는 다른 그림이고 판정 경계의 뜻만 같다.
+    HOME 쪽은 별도 영역이 아니라 같은 분할 격자의 구획이라 `go.Heatmap` 을 쓰지 않는다(쓰면 칸 폭이 100px 월 격자와 어긋난다). 이 히트맵은 HOME 주요공정 목록을 공유하지 않고 확보율 표와 같은 행(표 조건 카드의 필터를 거친 표)을 그린다.
 - `src/capa_simulation/components/capacity_gate.py` — 리비전 저장·복제·파생 저장·공식 발행 **전에** 시나리오 전체
   기간 Capa 계산(대당 Capa·소요대수 + HOME Density 환산 `density_error`)이 되는지 검사한다.
   - 저장은 편집이 새로 깨뜨렸으면 막고 원래 안 되면 경고하며 허락한다(파생 저장은 원본이 「편집 전」). 발행은 막는다.
@@ -1821,6 +1830,7 @@
   표시명은 차례를 정한 뒤 붙이며 마크다운 글자를 막는다(`literal_markdown`). 없으면 None — 표지 낱말은 「계산 밖」 하나다
   (`OUTSIDE_CALCULATION`, 설계 규칙 UI-CON-02). 부르는 곳은 산출 결과 세 표 제목 줄과 HOME 「상세 B/N 공정」 제목 줄이다
   (`tests/test_outside_calculation_mark.py`).
+  - 표지는 앞에 아이콘을 달지 않고 끝 ⓘ 하나다(이웃 제목 줄 부가 설명 꼴 — Static 대비 일정 「한쪽 공정 · GAP 없음」 표지와 같은 꼴, 설계 규칙 UI-TXT-04). 계산 밖을 말하는 Guide 는 세 파일 네 자리다 — 산출 결과 「계산 밖 공정」 단락 · HOME 「공정 필터」 · 「대시보드」 · 공정 Capa 상세 ③ 판정 카드 뜻.
   - 공정 하나를 말하는 자리의 글도 여기다 — `whole_outside_basis`(목록과 원본 공정명 → 경로가 모두 계산 밖이면 빠진 소요기준 글,
     둘이면 「BOX · PCB」, 아니면 None)와 `BASIS_MARK`(「계산 밖(소요기준 BOX)」). 부르는 곳은 공정 Capa 상세 ③ 판정 카드다
     (`process_capa_view._unjudged_text`).
@@ -2098,6 +2108,7 @@
     셈한다(`wip_grid_height_px`·`wip_grid_vertical_spacing`) — 줄 사이는 아래 칸의 두 줄 제목과 위 칸의 -45° 날짜 눈금을 함께
     담고도 사이가 떠야 한다. 범례도 첫 줄 칸 위로 px 고정이다(`wip_grid_legend_y`) — 범례 y 를 축 영역 비율로 고정하면 1줄
     격자에서 첫 줄 제목과 겹치고, 4줄부터는 위 여백을 넘어 plotly 가 여백을 늘린다.
+  - 지금 값은 줄 사이 80px 이다(64px 는 눈금과 제목 사이가 2px 만 떠 제목이 위 칸 것으로 읽혔다). 범례 아래 끝은 첫 줄 칸 위 50px 이다. 값과 까닭의 정본은 두 상수(`WIP_GRID_ROW_GAP_PX` · `_GRID_LEGEND_LIFT_PX`)의 주석이다.
 - `src/capa_simulation/components/grouped_monthly_table.py` — 환산 결과처럼 편집하지 않는 월별 표를 고정 분류 영역 +
   스크롤 월 영역 Plotly 표로 그린다. 계층 그룹·제품/양산구분 Total·전체 합계 행을 넣고 같은 구조의 CSV 프레임을
   만든다. 계산 원본은 바꾸지 않는다.
