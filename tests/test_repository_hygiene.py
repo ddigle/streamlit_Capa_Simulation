@@ -137,15 +137,25 @@ def test_core_tracked_drops_only_the_internal_only_top_level() -> None:
 
 
 def test_agents_does_not_name_modules_that_no_longer_exist() -> None:
-    """`AGENTS.md` 3장이 **없는 파일**을 가리키지 않는다.
+    """파일별 책임(`docs/reference/files/`)과 규칙(`docs/rules/`)이 **없는 파일**을 가리키지 않는다.
 
     `test_documentation_inventory` 는 「모듈이 문서에 있나」 한 방향만 본다. 반대가 비어
     있었다 — 파일을 지웠는데 이름이 문서에 남으면 읽는 쪽이 없는 파일을 찾는다. 사내에서
-    그 탐색은 되돌려 받을 수 없는 비용이다.
+    그 탐색은 되돌려 받을 수 없는 비용이다. 생성 색인 `docs/reference/module_index.md` 는
+    추적 파일로만 쓰이므로 보지 않는다(색인이 최신인지는 등재 시험이 본다).
     """
-    agents = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    section = agents.split("## 3. 파일별 책임", 1)[-1].split("\n## 4.", 1)[0]
-    mentioned = sorted(set(re.findall(r"`([\w./-]+\.py)`", section)))
+    references = sorted((PROJECT_ROOT / "docs" / "reference" / "files").glob("*.md"))
+    rules = sorted((PROJECT_ROOT / "docs" / "rules").glob("*.md"))
+    assert references, "docs/reference/files/*.md 를 찾지 못했습니다."
+    assert rules, "docs/rules/*.md 를 찾지 못했습니다."
+    mentioned = sorted(
+        {
+            name
+            for path in (*references, *rules)
+            for name in re.findall(r"`([\w./-]+\.py)`", path.read_text(encoding="utf-8"))
+        }
+    )
+    assert mentioned, "파일별 책임 · 규칙 문서에서 `.py` 이름을 하나도 모으지 못했습니다."
 
     tracked = set(_tracked("*.py"))
     basenames = {Path(path).name for path in tracked}
@@ -159,8 +169,8 @@ def test_agents_does_not_name_modules_that_no_longer_exist() -> None:
     ]
 
     assert not stale, (
-        "AGENTS.md 3장이 실재하지 않는 파일을 가리킵니다. 파일을 지우거나 옮겼으면 같은 "
-        "변경에서 문서도 고칩니다:\n" + "\n".join(stale)
+        "파일별 책임 · 규칙 문서(docs/reference/files · docs/rules)가 실재하지 않는 파일을 "
+        "가리킵니다. 파일을 지우거나 옮겼으면 같은 변경에서 문서도 고칩니다:\n" + "\n".join(stale)
     )
 
 

@@ -41,3 +41,7 @@
 - 12장 변경 작업 체크리스트 → [docs/rules/12-change-checklist.md](docs/rules/12-change-checklist.md)
 - 13장 문서 우선순위 → [docs/rules/13-document-priority.md](docs/rules/13-document-priority.md)
 - 14장 병행 개발 규칙 (에이전트 둘 이상이 동시에 일할 때) → [docs/rules/14-parallel-development.md](docs/rules/14-parallel-development.md)
+- TODO 2장 구현 사항 > 문서 및 테스트 → [docs/rules/15-runbook-writing.md](docs/rules/15-runbook-writing.md)
+- TODO 1장 · 2장 · 4장 구현 사항 → [docs/records/closed.md](docs/records/closed.md)
+- TODO 3장 결정 기록 → [docs/records/decisions.md](docs/records/decisions.md)
+- design_rules 6장 · 8장 결정 기록 → [docs/records/design_rules_log.md](docs/records/design_rules_log.md)
