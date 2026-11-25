@@ -27,6 +27,7 @@
 - 3장 파일별 책임 > 화면 공통 계층 → [docs/rules/08-display-sorting.md](docs/rules/08-display-sorting.md)
 - 3장 파일별 책임 > 영속성 모듈 → [docs/reference/files/persistence.md](docs/reference/files/persistence.md)
 - 3장 파일별 책임 > 영속성 모듈 → [docs/rules/05-state-cache-invariants.md](docs/rules/05-state-cache-invariants.md)
+- 3장 파일별 책임 > 모듈 색인 → [docs/reference/module_index.md](docs/reference/module_index.md)
 - 3장 파일별 책임 > 자료실(GitHub Pages)과 발표 자료 → [docs/rules/10-local-files-security.md](docs/rules/10-local-files-security.md)
 - 4장 기준정보 테이블 계약 → [docs/rules/04-reference-table-contract.md](docs/rules/04-reference-table-contract.md)
 - 5장 상태와 캐시 불변조건 → [docs/rules/05-state-cache-invariants.md](docs/rules/05-state-cache-invariants.md)
