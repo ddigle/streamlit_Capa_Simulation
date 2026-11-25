@@ -28,6 +28,7 @@ RQ_CHIP_EQ
 한다. 부하량·소요대수·HOME 은 Pack Code 없는 키로 `groupby` 하고, PKG 환산은
 `_prepare_pkg_plan_for_equivalent` 가 8키 합계로 접는다. 변환기나 `validated_distinct` 에서
 합산하지 않는다 — 거기서 접으면 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없다.
+표준 목표 계획과 소요대수 상세를 잇는 키 `standard_target_capacity.PKG_PLAN_KEYS` 에는 Pack Code 를 넣지 않는다 — 연결 상대인 원수요 키 `DEMAND_ID_COLUMNS` 에 그 칸이 없어 넣으면 `KeyError` 다. 표준 목표 화면 집계 차원에도 Pack Code 를 넣지 않는다.
 
 **`CUSTOM` 은 제품을 가르는 업무 키다**(사용자 결정 「CUSTOM 이 다르면 다른 제품」 — 시뮬레이션 `0039`). 제품정보가 든
 8표(`RQ_PKG_PLAN` · `RQ_YLD` · `RQ_CHIP_QTY` · `RQ_CHIP_EQ` · `RQ_UPEH` · `RQ_LOT_RATIO` · `RQ_WF_RATIO` · `RQ_REQB`)의
@@ -39,6 +40,7 @@ Stack 뒤에 둔다(3장 각 모듈). 빈 값은 표지 `"-"`(`core_data_derivat
 비중 · HOME 상세 · 공정 Capa 상세 「제품별 소요대수」 · 제약 시뮬레이션)은 부품이 둘 이상인 제품만 부품마다 가르고 부품이
 하나뿐인 제품은 제품으로 합친다(`services/product_parts.py` 한 벌 — 8장 「합쳐 보는 화면의 부품 이름표」). 산출 결과 소요대수 「상세」 표와
 그 제외 목록은 대당 Capa STEP별 표처럼 부품마다 한 줄이다(`required_equipment.RESULT_DIMENSIONS` — 공정 합은 같다).
+이미 등록한 원천 코드는 보관본까지 다시 받지 않으므로 부품마다 갈린 수율 · UPEH 는 0039 뒤 새로 등록한(또는 자동 갱신이 받은) 리비전부터 숫자에 들고, 그 값을 쓰려면 그 리비전을 공식 · HOME 주요 Case 로 다시 지정한다(옛 코드를 지우고 다시 등록하는 길은 최신 공식이면 지울 수 없고 이력 · HOME 지정도 함께 사라진다).
 
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
 수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다. 월 축(`생산계획년월`)이
