@@ -3465,6 +3465,23 @@ def test_the_equipment_preference_summary_is_fixed_words_and_counts() -> None:
     assert "저장 단추 없음" in screens.summarize_equipment_preference(1, 1, None, True)
 
 
+def _open_screen_item(todo: str) -> str:
+    """TODO 의 열린 「다음 배포 — 화면 확인 항목」(`- [ ] **다음 배포 — 화면 확인 항목…`) 하나의
+    글 — 줄 맨 앞의 다음 `- ` 항목(닫힌 `- ~~` 도)이나 `#` 머리 앞까지라 뒤따르는 항목은
+    넣지 않는다. 열린 항목이 없거나 둘 이상이면 무엇을 고칠지 말하고 멈춘다."""
+    marker = "\n- [ ] **다음 배포 — 화면 확인 항목"
+    entries = todo.split(marker)[1:]
+    assert entries, (
+        "배포 뒤 ITEMS 에 화면 확인 항목을 더했으면 docs/TODO.md 2장에 열린 "
+        "「- [ ] **다음 배포 — 화면 확인 항목」 을 두고 더한 키와 `A n` 수를 적는다"
+    )
+    assert len(entries) == 1, (
+        f"docs/TODO.md 의 열린 「다음 배포 — 화면 확인 항목」 이 {len(entries)}개다 — "
+        "하나로 합쳐 더한 키와 `A n` 수를 적는다"
+    )
+    return re.split(r"\n(?=- |#)", entries[0], maxsplit=1)[0]
+
+
 def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     """런북 7장(이번 몫 7-41)이 가리키는 기대 꼴 · A 표 · 항목 수가 앱 · 스크립트와
     맞는다(2026-10-25 리뷰 — 사내 에이전트는 런북 글 그대로 찾는다).
@@ -3477,9 +3494,10 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
       말한다 — 앱에는 그 줄이 없다.
     - 7-41 A 표의 키 · 제목이 `--list`(`ITEMS`) 앞머리와 차례까지 같고, 런북 압축본
       기대 `A n` 이 그 표의 수다. 7장은 배포마다 새로 써서 그 배포 전체를 싣는다 —
-      배포 뒤에 더한 항목은 다음 배포 7장을 쓸 때까지 TODO 「다음 배포 — 화면 확인
-      항목」 줄이 키와 `ITEMS` 전체 수를 적는다. 앞머리만 같아도 통과하므로 7장을
-      고치지 않은 다음 배포는 빌더가 막는다(`build_deploy_package.
+      배포 뒤에 더한 항목은 다음 배포 7장을 쓸 때까지 TODO 의 열린(`- [ ]`) 「다음 배포 —
+      화면 확인 항목」 하나가 키와 `ITEMS` 전체 수를 적는다(닫힌 같은 이름 항목은 읽지
+      않는다). 앞머리만 같아도 통과하므로 7장을 고치지 않은 다음 배포는 빌더가
+      막는다(`build_deploy_package.
       runbook_screen_count_mismatch` — 아래 시험이 빌더의 셈과 `ITEMS` 를 묶는다).
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
@@ -3513,7 +3531,7 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     added = screens.ITEMS[recorded:]
     if added:
         todo = _text(PROJECT_ROOT / "docs" / "TODO.md")
-        later = todo.split("**다음 배포 — 화면 확인 항목", 1)[1].split("\n- [", 1)[0]
+        later = _open_screen_item(todo)
         items = len(screens.ITEMS)
         assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in later
         for item in added:
