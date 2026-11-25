@@ -57,7 +57,7 @@
 - **WSL 메모리 늘리기** — 보류 그대로(2026-11-01 C1).
 - **배포 clone 전환** — 10-22 결정 「ZIP 메일 유지」. 다시 검토할 때 쓰는 절차 파일은 `~/projects/Deploy/d0-mirror/`.
 - **부대공정(BDQ 밖) 생산성 기준정보** — 몸통과 S3 Drive 가져오기는 실렸다. 첫 판 넣기는 1.0 확인 뒤 사용자가 하는 늦은 차례다(런북 7-0 차례 10 · 7-42 ⑤ — 설계 저장소 밖 `~/projects/Deploy/worklog/extra-process-1113/design.md`).
-- **되돌림 판** — 만드는 법은 `docs/wsl_dev_environment.md` 5장 「되돌림 판」(코드로 따라간 것 — 흉내 저장소 연습은 아직). 직전 배포 트리에 새 stamp 를 붙인 ZIP + 1.0 CI/CD 앞에 지킨 세대로 `rollback`.
+- **되돌림 판** — 만드는 법은 `docs/wsl_dev_environment.md` 5장 「되돌림 판」(2026-11-25 흉내 저장소 · 가짜 S3 로 연습 — 기록 · 7장 견본은 저장소 밖 `~/projects/Deploy/worklog/next-1124/`). 직전 배포 트리에 새 stamp 를 붙인 ZIP + 1.0 CI/CD 앞에 지킨 세대로 `rollback`.
 - 본 체크아웃의 남은 작업 트리는 본 체크아웃과 `n-pp2`(공정 공유 2차 `night/pp2-1110` — 실을 때 묻는다) 둘이다. 새 일은 `~/projects/Deploy/lanes/` 의
   일반 클론에서 한다.
 - 메인 체크아웃의 `data/temp` 백업과 8501 의 `data/` 는 손대지 않는다.

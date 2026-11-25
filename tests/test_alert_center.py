@@ -234,7 +234,8 @@ def test_the_restart_notice_names_the_last_canonical_save_on_a_pulling_server(
 def test_the_last_save_line_is_korean_time_with_a_date_only_on_another_day(
     saved: str, restarted: str, line: str
 ) -> None:
-    """컨테이너 시계는 UTC 일 수 있다 — 한국 시각으로 적고, 다시 선 날과 다를 때만 날짜를 붙인다."""
+    """한국 시각으로 적고, 다시 선 날과 다를 때만 날짜를 붙인다 — C-DEP 컨테이너 시각대는 KST 로
+    확인했다(리뷰 202611211432) — 이미지가 바뀌면 다시 본다(UTC 라도 같은 줄이다)."""
     assert alert_center.last_save_line(saved, restarted) == line
 
 

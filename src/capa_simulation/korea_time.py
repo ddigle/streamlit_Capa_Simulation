@@ -7,8 +7,9 @@
 때만 여기를 지난다. 「… UTC」 로 적기로 정한 자리(참고 줄 · 앱 밖 화면 바닥 · 시작 실패 줄)는 UTC
 그대로다. `datetime.astimezone()`(인자 없음) · `time.localtime` · `time.strftime(꼴)` ·
 `datetime.fromtimestamp(초)`(시각대 없음)처럼 서버 시각대를 따르는 변환은 화면 코드에 쓰지 않는다 —
-C-DEP 컨테이너의 시각대는 이미지가 정하고(UTC 일 수 있다) 사내 PC 는 KST 라, 같은 Admin Area 에서
-같은 일이 9시간 어긋나 보인다. 그물은 `tests/test_server_clock_sites.py`(남은 자리와 까닭) ·
+C-DEP 컨테이너 시각대는 KST 로 확인했다(리뷰 202611211432) — 이미지가 바뀌면 다시 본다(UTC 면 사내
+PC(KST)와 같은 Admin Area 에서 같은 일이 9시간 어긋나 보인다). 그물은
+`tests/test_server_clock_sites.py`(남은 자리와 까닭) ·
 `tests/test_screen_clock_kst.py`(UTC 서버에서 본 대표 자리)다.
 
 표준 라이브러리만 쓴다 — 앱 밖 화면(`auth/page_frame.py`) · 감사 읽기(`audit/read.py`)도 들인다.

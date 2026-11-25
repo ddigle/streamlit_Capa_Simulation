@@ -518,7 +518,7 @@ ZIP 을 다시 풀거나 코드를 손으로 되돌리지 않는다 — 적용�
 | `apply_deploy_package.py` (검사 · 지우고 풀기 · 목록 대조) | `scripts/` | 있음 |
 | 사내 쓰기 차단 설정 | `docs/internal_claude_settings.json` → 사내 `.claude/settings.json` | 사람이 한 번 복사 |
 | 사내 DB 를 사외로 보내는 길 | — | **없고, 만들지 않는다** |
-| 판을 거두는 길(되돌림 판 · 정본 세대 지킴) | `docs/wsl_dev_environment.md` 5장 · `scripts/sync_object_storage.py` `keep` · `rollback` | 절차 있음 · 연습 전. 전용 도구는 없다(직전 배포 트리를 새 번호로 빌드). 지킴은 그것을 싣는 첫 배포부터 |
+| 판을 거두는 길(되돌림 판 · 정본 세대 지킴) | `docs/wsl_dev_environment.md` 5장 · `scripts/sync_object_storage.py` `keep` · `rollback` | 절차 있음 · 2026-11-25 연습(흉내 저장소 · 가짜 S3 — 실제 날은 아직). 전용 도구는 없다(직전 배포 트리를 새 번호로 빌드 — 7장 견본은 저장소 밖 작업 기록). 지킴은 그것을 싣는 첫 배포부터 |
 | 사내 작업 자리 `review/<산출물>/` · 사내판 `static/<산출물>/local/` 무시 | `.gitignore` | 있음(가이드 — 사내는 가이드 첫 배포부터) |
 | 코드 밖 산출물 생성기 · 점검기 | `scripts/build_page_guide.py` · `scripts/check_page_guide.py` | 있음(가이드 — 사내는 가이드 첫 배포부터) |
 | Guide 버튼 — 사내판이 있으면 사내판, 없으면 예시판 | `components/page_guide.py` | 있음(HOME `lob` — 사내는 가이드 첫 배포부터) |
