@@ -3852,12 +3852,12 @@ def test_the_editor_rerun_user_decisions_are_recorded_in_6_45() -> None:
     """v1.49 — 6-45 는 2026-11-20 편집기 다시 로딩 줄이기 물음 가운데 입력 비가동 · 층 사용 머리
     글과 필요 단축 「공정」 칸의 사용자 결정 둘이 한 줄씩이고(「(2026-11-20 · 규칙 id)」 로 끝남)
     고른 답이 굵게 선다. 필요 단축 일정 「공정」 의 옛 답 m19-rr-d5 를 바꾼 것은 7-1 에 서고
-    6-45 를 가리킨다. 판 머리 · 1장 안내 · 8장 판 기록이 함께 선다."""
+    6-45 를 가리킨다. 1장 안내 · 8장 판 기록이 함께 선다(판 머리는 v1.50 시험으로 옮김)."""
     document = _text()
-    assert "판 v1.49" in document.split("\n## 1. ")[0]
     assert "6-45 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-45. ") :]
+    record = section[section.index("\n### 6-45. ") : section.index("\n### 6-46. ")]
+    assert "둘 다 계획의 권장(Q5 · Q6 「이번 판에서 뺌」)이 아닌 답이다" in record
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -3879,6 +3879,73 @@ def test_the_editor_rerun_user_decisions_are_recorded_in_6_45() -> None:
     v149 = history[history.index("- **v1.49 — 2026-11-20.**") :]
     for phrase in ("6-45", "Q5 (가)", "Q6", "m19-rr-d5", "규칙 83", "MUST 48"):
         assert phrase in v149, phrase
+
+
+# 2026-11-24 정식판 마감 2-C · 2-D(6-46)의 줄 — 줄 id: 굵은 글(고른 꼴). Q5 · Q6 둘만 같은 날 14:05
+# 사용자 답(「권장대로」 = (가))이고 나머지는 「2번 선택은 권장안 그대로」 를 입힌 설계의 꼴이다.
+CLOSEOUT_2C_2D_LINES = {
+    "marks-outside": (
+        "PCB 산식이 아니라 「계산 밖」 표지 + 풍선 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」 · "
+        "HOME 공정 필터 「확보율 없음」 단추 끝 「계산 밖」 · 공정 Capa 상세 판정 카드 "
+        "「계산 밖(소요기준 BOX) — 판정하지 않습니다」 · Guide 셋"
+    ),
+    "marks-home-title": (
+        "(가) 「상세 B/N 공정」 제목 오른쪽 끝에 작은 「계산 밖 n공정 ⓘ」 — 0공정이면 없음"
+    ),
+    "marks-keep-back": (
+        "「같음」 인데 그 줄이 없으면 알림창 · 안 읽음 없이 줄만 다시 세운다 — 보관 값 그대로"
+    ),
+    "marks-bdq-public": "개발자가 아닌 등급에는 갈래와 할 일만 — 원문 · 서버 단계 안내는 개발자 몫",
+    "marks-result-fourth": "(가) 결과 칸만 넷째로 잠깐(알림 8초) — 앞 세 칸 그대로, 넷을 넘지 않음",
+}
+
+
+def test_the_closeout_2c_2d_marks_and_alerts_are_judged_in_6_46() -> None:
+    """v1.50 — 6-46 은 2026-11-24 정식판 마감 2-C(소요기준 BOX · PCB 공정의 「계산 밖」
+    표지)와 2-D 알림 셋(⑨ⓒ · O2 · D2), 같은 날 따로 물은 계획 Q5 · Q6 의 답(14:05
+    「권장대로」)을 입힌 판정이다 — 줄마다 줄 id · 무엇, 굵은 글이 고른 꼴, 끝은 「(2026-11-24 ·
+    규칙 id)」 이고 사용자 답 줄은 Q5 · Q6 둘이다. 줄 아래 문단이 구현이 답 밖에서 정한 것이고,
+    O2 줄은 UI-INP-07 의 연장이며 UI-NTF-01 · UI-NTF-02 · UI-TXT-04 근거가 6-46 을 부른다. 판
+    머리 · 1장 안내 · 8장 판 기록이 함께 선다."""
+    document = _text()
+    assert "판 v1.50" in document.split("\n## 1. ")[0]
+    assert "6-46 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-46. ") :]
+    intro = record.split("\n- ", 1)[0]
+    assert "「2번 선택은 권장안 그대로」" in intro and "갈래는 `next/marks-1124` 다" in intro
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-24) · ([^()]+)\)$", line)
+        assert match, line[:120]
+        card = match.group(1)
+        found.append(card)
+        assert match.group(2) == CLOSEOUT_2C_2D_LINES[card], card
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line[:120]
+        answered = card in ("marks-home-title", "marks-result-fourth")
+        assert ("14:05 사용자 「권장대로」" in line) == answered, card
+    assert tuple(found) == tuple(CLOSEOUT_2C_2D_LINES)
+    heads = dict(zip(found, lines, strict=True))
+    assert "UI-INP-07" in heads["marks-bdq-public"].rsplit("(2026-11-24 · ", 1)[1]
+    assert "UI-INP-07 예외 「등급 밖 기능은 숨긴다」 의 연장" in heads["marks-bdq-public"]
+    rest = record[record.index("\n- marks-result-fourth · ") + 1 :]
+    assert rest.split("\n", 2)[2].startswith("구현이 답 밖에서 정한 것"), rest[:80]
+    rules = {rule.id: rule for rule in _rules()}
+    for rule_id in ("UI-NTF-01", "UI-NTF-02", "UI-TXT-04"):
+        assert "6-46" in rules[rule_id].fields["근거"][0], rule_id
+    assert "넷째 칸" in rules["UI-NTF-01"].fields["지금 값"][0]
+    assert "알림창 없이 다시 선다" in rules["UI-NTF-02"].text
+    code = (PROJECT_ROOT / "src/capa_simulation/services/frame_contracts.py").read_text(
+        encoding="utf-8"
+    )
+    assert re.search(r"^def unimplemented_basis_processes\(", code, re.MULTILINE)
+    history = _chapter(document, 8)
+    v150 = history[history.index("- **v1.50 — 2026-11-24.**") :]
+    for phrase in ("6-46", "Q5", "Q6", "UI-NTF-01", "UI-TXT-04", "UI-INP-07", "규칙 83", "MUST 48"):
+        assert phrase in v150, phrase
 
 
 def test_the_rule_chapters_name_the_developer_for_the_old_manager_sense() -> None:
