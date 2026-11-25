@@ -44,7 +44,7 @@ from capa_simulation.io import bdq_login_store as login_store
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io.bdq_login_store import LoginSecret
 from capa_simulation.io.s3_small import S3Target
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.services.builtin_seed import (
     build_builtin_seed_dataset,
     load_builtin_display_order,
@@ -54,7 +54,12 @@ from capa_simulation.services.core_data_pipeline import (
     PreparedCoreDataset,
     prepare_core_data_dataset,
 )
-from capa_simulation.services.custom_source_check import CUSTOM_SOURCE_COLUMNS, SWITCHED_OFF_MEMO
+from capa_simulation.services.custom_source_check import (
+    CUSTOM_SOURCE_COLUMNS,
+    SWITCHED_OFF_MEMO,
+    SWITCHED_OFF_NOTICE,
+    check_custom_rows,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
@@ -2488,3 +2493,293 @@ def test_source_corrections_set_mpga_test_module_count_to_one() -> None:
     assert corrected is frame
     assert corrected["모듈수"].tolist() == [1, 1, 1, 0.949, 0.961, 2, 0.955]
     pd.testing.assert_frame_equal(corrected.drop(columns="모듈수"), before.drop(columns="모듈수"))
+
+
+# --- 누구나 볼 꼴(`public_failure_text`) --------------------------------------------------------
+
+# 누구나 볼 꼴에 남지 않아야 하는 개발자 몫 낱말 — 변수 이름 · 원문 · 서버 시작 점검 단계 · 설치
+# 안내.
+_DEVELOPER_ONLY_WORDS = (
+    adapter.BDQ_CUSTOM_TABLE_ENV,
+    adapter.BDQ_CUSTOM_SOURCE_ENV,
+    adapter.BDQ_USER_NAME_ENV,
+    "CAPA_BDQ_TOKEN",
+    "CAPA_ARTIFACTORY",
+    "원문",
+    "(문구 없음)",
+    "서버 시작 점검",
+    "CI/CD",
+    "README",
+    "pyproject",
+    "setx",
+    "export",
+)
+# 화면 · 기록이 실패 글 앞에 붙이는 머리 — 누구나 볼 꼴에도 그대로 남는다.
+_SCREEN_HEADS = ("", "BigDataQueryCallError: ", "RuntimeError: ", "등록 단계에서 멈췄습니다 — ")
+
+
+class _UnprintableError(Exception):
+    """글 만들기(`__str__`)가 깨지는 패키지 예외 — 원문 한 줄이 「(문구 없음)」 이다."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("글을 만들 수 없음")
+
+
+def _public(text: str) -> str:
+    """`text` 의 누구나 볼 꼴 — 있고, 개발자 몫 낱말이 없다."""
+    public = adapter.public_failure_text(text)
+    assert public is not None, text
+    left = [word for word in _DEVELOPER_ONLY_WORDS if word in public]
+    assert not left, (left, public)
+    return public
+
+
+def _assert_heads_and_flat_text_keep_the_form(text: str, public: str) -> None:
+    """앞머리는 그대로 남고 그 뒤만 줄며, 빈 줄이 걷힌 글 · 화면 글(`bootstrap_error_message`)도
+    같은 꼴이다."""
+    for head in _SCREEN_HEADS:
+        assert adapter.public_failure_text(f"{head}{text}") == f"{head}{public}"
+    assert adapter.public_failure_text(text.replace("\n\n", " ")) == public
+    assert adapter.public_failure_text(bootstrap_error_message(RuntimeError(text))) == public
+
+
+def _raised_text(call: Callable[[], object]) -> str:
+    with pytest.raises(RuntimeError) as raised:
+        call()
+    assert isinstance(raised.value, BOOTSTRAP_ERRORS)
+    return str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (Error("HTTP 500 invalid token"), adapter.QUERY_FAILURE_TOKEN),
+        (
+            Error("Rejected query from pool root.default: queue full, limit=200."),
+            adapter.QUERY_FAILURE_BUSY,
+        ),
+        (TimeoutError("timed out"), adapter.QUERY_FAILURE_TIMEOUT),
+        (ConnectionError("Connection refused"), adapter.QUERY_FAILURE_CONNECTION),
+        (Error("AnalysisException: syntax error at line 1"), adapter.QUERY_FAILURE_SQL),
+        (Error("memory limit exceeded"), adapter.QUERY_FAILURE_OTHER),
+        (_UnprintableError(), adapter.QUERY_FAILURE_OTHER),
+    ],
+    ids=["토큰", "서버 혼잡", "시간 초과", "연결", "SQL", "그 밖", "문구 없음"],
+)
+def test_the_public_failure_text_keeps_the_kind_and_what_to_do_and_drops_the_original(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: BaseException, kind: str
+) -> None:
+    """개발자가 아닌 등급이 보는 조회 실패는 첫 단락 「<머리>(<갈래>). <할 일>」 만이다 — 원문
+    단락과 토큰 갈래의 서버 시작 점검 단락(실행 사용자 · `CAPA_BDQ_TOKEN` · CI/CD)은 걷고, 할 일의
+    「아래 원문을 개발자에게」 는 「개발자에게」 다. 어댑터의 글 자체는 그대로다(자동 갱신 · 점검
+    스크립트)."""
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "DEMO_ACCOUNT")
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(_refusing(error)))
+    _start_report(tmp_path, monkeypatch, token=("ok", "토큰 파일을 씀"), missing=())
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    text = str(raised.value)
+    assert raised.value.kind == kind
+    assert f"\n\n{adapter.ORIGINAL_LEAD}" in text
+    assert ("서버 시작 점검" in text) is (kind == adapter.QUERY_FAILURE_TOKEN)
+    public = _public(text)
+    first = text.split("\n\n", 1)[0]
+    assert public == first.replace(adapter.ORIGINAL_TO_DEVELOPER, "개발자에게")
+    assert public.startswith(f"{adapter.FAILED_QUERY_LEAD}({kind}). ")
+    if adapter.ORIGINAL_TO_DEVELOPER in first:
+        assert public.endswith("개발자에게 알려 주세요.")
+    _assert_heads_and_flat_text_keep_the_form(text, public)
+
+
+def _refusing(error: BaseException) -> Callable[..., pd.DataFrame]:
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise error
+
+    return refuse
+
+
+def _package_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    _start_report(tmp_path, monkeypatch, install=("failed", "설치 시도 실패 — pip 종료 코드 1"))
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+    return _raised_text(adapter.load_bigdataquery_module)
+
+
+def _dependency_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    _installed_package(monkeypatch, tmp_path, "import capa_bdq_missing_dependency\n")
+    return _raised_text(adapter.load_bigdataquery_module)
+
+
+def _package_breaks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    _installed_package(
+        monkeypatch, tmp_path, 'raise ImportError("DLL load failed while importing _jpype")\n'
+    )
+    return _raised_text(adapter.load_bigdataquery_module)
+
+
+def _package_breaks_without_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    def broken_import(_name: str) -> object:
+        raise _UnprintableError()
+
+    monkeypatch.setattr(importlib, "import_module", broken_import)
+    return _raised_text(adapter.load_bigdataquery_module)
+
+
+def _account_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(
+        importlib,
+        "import_module",
+        lambda _: _module(_refusing(ValueError("Parameter user_name is necessary."))),
+    )
+    _start_report(tmp_path, monkeypatch)
+    return _raised_text(
+        lambda: adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    )
+
+
+def _custom_table_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    return _raised_text(lambda: adapter.BigDataQueryCoreDataProvider("사내 조회").fetch("SIM-001"))
+
+
+def _custom_table_malformed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    monkeypatch.setenv(adapter.BDQ_CUSTOM_TABLE_ENV, "demo schema.demo_custom")
+    return _raised_text(lambda: adapter.BigDataQueryCoreDataProvider("사내 조회").fetch("SIM-001"))
+
+
+@pytest.mark.parametrize(
+    ("fail", "lead"),
+    [
+        (_package_missing, adapter.PACKAGE_MISSING_LEAD),
+        (_dependency_missing, adapter.PACKAGE_LOAD_LEAD),
+        (_package_breaks, adapter.PACKAGE_LOAD_LEAD),
+        (_package_breaks_without_text, adapter.PACKAGE_LOAD_LEAD),
+        (_account_missing, adapter.USER_NAME_LEAD),
+        (_custom_table_missing, adapter.CUSTOM_TABLE_MISSING),
+        (_custom_table_malformed, adapter.CUSTOM_TABLE_MALFORMED),
+    ],
+    ids=[
+        "패키지 없음",
+        "빠진 모듈",
+        "불러오기 실패",
+        "불러오기 실패 문구 없음",
+        "요청자 계정 없음",
+        "CUSTOM 변수 없음",
+        "CUSTOM 꼴 틀림",
+    ],
+)
+def test_setup_failures_read_as_one_tell_the_developer_sentence_for_others(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    fail: Callable[[pytest.MonkeyPatch, Path], str],
+    lead: str,
+) -> None:
+    """이 서버의 설치 · 환경변수 문제(패키지 없음 · 불러오기 실패 · 요청자 계정 없음 · CUSTOM
+    원천 표 변수 없음 · 꼴 틀림)는 개발자가 아닌 등급에게 한 문장이다 — 설치 단계 · 환경변수 이름 ·
+    README · 원문은 개발자 몫이다. 글은 어댑터가 지을 때와 같은 머리 상수로 시작한다."""
+    text = fail(monkeypatch, tmp_path)
+
+    assert text.startswith(lead)
+    assert any(word in text for word in _DEVELOPER_ONLY_WORDS), text
+    public = _public(text)
+    assert public == adapter.PUBLIC_SETUP_TEXT
+    _assert_heads_and_flat_text_keep_the_form(text, public)
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (
+            Error(f"AnalysisException: Could not resolve table reference: '{DEMO_CUSTOM_TABLE}'"),
+            adapter.QUERY_FAILURE_SQL,
+        ),
+        (TimeoutError(f"timed out reading {DEMO_CUSTOM_TABLE}"), adapter.QUERY_FAILURE_TIMEOUT),
+    ],
+    ids=["SQL", "시간 초과"],
+)
+def test_a_custom_query_failure_reads_without_the_variable_for_others(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, kind: str
+) -> None:
+    """CUSTOM 원천 표 조회 실패는 「CUSTOM 원천 표 조회에서 멈췄습니다.」 뒤에 조회 실패와 같은
+    꼴이다 — 머리의 변수 이름과 SQL 갈래 덧말(값 · 조회 권한)은 걷는다. 조회 실패 머리로 고르면
+    변수 이름이 앞머리로 남는다."""
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", lambda: _module(_refusing(error)))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    text = str(raised.value)
+    assert text.startswith(adapter.CUSTOM_QUERY_LEAD)
+    assert ("조회 권한" in text) is (kind == adapter.QUERY_FAILURE_SQL)
+    public = _public(text)
+    plain = adapter.public_failure_text(str(adapter.BigDataQueryCallError(error)))
+    assert public == f"CUSTOM 원천 표 조회에서 멈췄습니다. {plain}"
+    assert "조회 권한" not in public
+    _assert_heads_and_flat_text_keep_the_form(text, public)
+
+
+def test_with_the_custom_switch_off_a_query_failure_reads_the_plain_public_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CUSTOM 원천 끄개를 내리면 변수가 없어도 멈추지 않고 본 조회만 묻는다 — 그 조회의 실패는
+    CUSTOM 머리 없는 조회 실패의 누구나 볼 꼴이다."""
+    _switch_off(monkeypatch)
+    monkeypatch.delenv(adapter.BDQ_CUSTOM_TABLE_ENV, raising=False)
+    asked: list[str] = []
+
+    def get_data(*, param: str, **_kwargs: object) -> pd.DataFrame:
+        asked.append(param)
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", lambda: _module(get_data))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+
+    assert len(asked) == 1
+    public = _public(str(raised.value))
+    assert public.startswith(f"{adapter.FAILED_QUERY_LEAD}({adapter.QUERY_FAILURE_TIMEOUT}). ")
+    assert public == adapter.public_failure_text(str(adapter.BigDataQueryCallError(TimeoutError())))
+
+
+def _data_stop(custom: pd.DataFrame) -> str:
+    with pytest.raises(ValueError) as raised:
+        check_custom_rows(custom)
+    return str(raised.value)
+
+
+def test_a_text_the_adapter_did_not_write_has_no_public_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """어댑터가 낸 실패 글이 아니면 None 이다 — 부르는 쪽(`admin_view.diagnostic_message`)이 받은 글
+    그대로 둔다. 개발자 몫이 없는 데이터 멈춤 글(CUSTOM 원천 표 답 0행 · 칸 없음 · 한 부품에 둘, 본
+    조회 0행)과 끄개 메모 · 알림 글(`SC-06` 앞 글), 이미 줄인 한 문장도 그렇다."""
+    main = pd.DataFrame({"공정": ["ASSY"], "모듈수": [2], **_part_columns(1)})
+    monkeypatch.setattr(
+        adapter,
+        "load_bigdataquery_module",
+        lambda: _module(_answers(main.iloc[0:0], _custom_for(main))),
+    )
+    with pytest.raises(ValueError) as empty_main:
+        adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={}).fetch("SIM-001")
+    texts = [
+        "",
+        "짧은 글",
+        str(empty_main.value),
+        _data_stop(pd.DataFrame(columns=list(CUSTOM_SOURCE_COLUMNS))),
+        _data_stop(_one_custom_row().drop(columns="행수")),
+        _data_stop(
+            pd.DataFrame(
+                [("DEMO_CAPA_A", 202611, CUSTOM_A, 1), ("DEMO_CAPA_A", 202612, CUSTOM_B, 1)],
+                columns=list(CUSTOM_SOURCE_COLUMNS),
+            )
+        ),
+        SWITCHED_OFF_MEMO,
+        SWITCHED_OFF_NOTICE,
+        adapter.PUBLIC_SETUP_TEXT,
+    ]
+
+    assert all(text.startswith("CUSTOM 원천 표") for text in texts[3:6])
+    assert [adapter.public_failure_text(text) for text in texts] == [None] * len(texts)

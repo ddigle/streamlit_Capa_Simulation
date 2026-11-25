@@ -46,6 +46,10 @@ from capa_simulation.components import (
     sso_identity,
     sso_status,
 )
+from capa_simulation.io.company_bigdataquery_adapter import (
+    BigDataQueryCallError,
+    public_failure_text,
+)
 from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_FORMULAS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +133,10 @@ def test_developer_notes_follow_the_screen_grade(
     assert admin_view.developer_notes_visible() is (grade == grades.DEVELOPER)
     if grade != grades.DEVELOPER:
         assert admin_view.diagnostic_message("짧은 글") == "짧은 글"
+    failed = str(BigDataQueryCallError(ValueError("table not found")))
+    assert admin_view.diagnostic_message(failed) == (
+        failed if grade == grades.DEVELOPER else public_failure_text(failed)
+    )
 
 
 ACCESS_ALERTS_SCRIPT = """

@@ -19,6 +19,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
 
 from capa_simulation import alerts
+from capa_simulation.components import admin_view
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
@@ -2054,6 +2055,150 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
     assert ("서버 시작 점검" in banner) is with_report
     assert ("CAPA_ARTIFACTORY_TOKEN" in banner) is with_report
     assert "`" not in banner
+
+
+def _as_developer(monkeypatch: pytest.MonkeyPatch, developer: bool) -> None:
+    """이 회차에 개발자 몫을 보이나(`admin_view.developer_notes_visible`). 시험은 운영 아닌 꺼진
+    서버라 누구나 참이다 — 거짓이면 운영 서버의 관리자 · 실무자 회차다."""
+    monkeypatch.setattr(admin_view, "developer_notes_visible", lambda: developer)
+
+
+# 개발자 몫 낱말 — 개발자가 아닌 회차의 곁 오류 · `AD-04` 전문에 실리지 않는다.
+DEVELOPER_WORDS = (adapter.ORIGINAL_LEAD, "서버 시작 점검", "CAPA_", "CI/CD", "README", "export")
+
+
+def _cd_package_missing_app(tmp_path: Path) -> AppTest:
+    """C-DEP 서버(시작 점검 결과 파일 있음)에서 패키지 없이 탭을 그리고 목록 조회를 한 번 누른다."""
+    report = repr(str(tmp_path / "container_start.json"))
+    app = AppTest.from_string(CD_PACKAGE_MISSING_SCRIPT.replace("__REPORT__", report))
+    app.run(timeout=60)
+    assert not app.exception
+    return app
+
+
+def _failed_save_app(tmp_path: Path) -> AppTest:
+    """실제 어댑터를 지나는 화면 저장 — 사내 조회가 시간 초과로 실패하는 꼴."""
+    asked = "def get_data(*, param, **_kwargs):\n"
+    assert REAL_ADAPTER_SAVE_SCRIPT.count(asked) == 1
+    script = REAL_ADAPTER_SAVE_SCRIPT.replace(
+        asked, asked + '    raise TimeoutError("Read timed out")\n'
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["__database__"] = str(_registration_database(tmp_path))
+    app.session_state["__custom__"] = {}
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W48"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W48"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W48 (SIM-W48)"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-19 09:00:00"
+    app.run()
+    assert not app.exception
+    return app
+
+
+@pytest.mark.parametrize("route", ["목록 조회", "저장 · 조회 실패", "저장 · 변수 없음"])
+def test_a_non_developer_sees_the_failure_without_the_original_or_server_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """개발자가 아닌 회차(운영 서버의 관리자 · 실무자)의 조회 · 저장 실패 곁 오류는 갈래와 할 일만
+    싣는다 — 원문 · 서버 시작 점검 · 환경변수 이름은 개발자 몫이고(`admin_view.diagnostic_message`),
+    할 일의 「아래 원문을 개발자에게」 는 「개발자에게」 다. 준비 실패(CUSTOM 원천 표 변수 없음)는
+    「개발자에게 알려 주세요」 한 문장이다. 자리는 그대로 단추 곁 오류 하나다(설계 규칙
+    UI-NTF-03)."""
+    _as_developer(monkeypatch, False)
+    monkeypatch.delenv("CAPA_BDQ_USER_NAME", raising=False)
+    if route == "목록 조회":
+        app = AppTest.from_string(
+            CATALOG_FAILURE_SCRIPT.replace("Read timed out", "Error executing SQL statement")
+        )
+        app.run()
+        assert not app.exception
+        assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
+    else:
+        if route == "저장 · 변수 없음":
+            _set_custom_table(monkeypatch, None)
+        app = _failed_save_app(tmp_path)
+        assert registration.REGISTRATION_FLASH_KEY not in app.session_state
+
+    [error] = place_errors(app)
+    assert not [word for word in DEVELOPER_WORDS if word in error], error
+    assert adapter.ORIGINAL_TO_DEVELOPER not in error and "\n\n" not in error
+    assert "Error executing" not in error and "Read timed out" not in error
+    if route == "저장 · 변수 없음":
+        assert error == adapter.PUBLIC_SETUP_TEXT
+    elif route == "목록 조회":
+        assert error.startswith(f"{adapter.FAILED_QUERY_LEAD}({adapter.QUERY_FAILURE_OTHER}).")
+        assert error.endswith("같은 실패가 이어지면 개발자에게 알려 주세요.")
+    else:
+        # 저장의 첫 사내 조회는 CUSTOM 원천 표다 — 머리의 변수 이름은 걷고 갈래 · 할 일은 남는다.
+        assert error.startswith("CUSTOM 원천 표 조회에서 멈췄습니다.")
+        assert f"{adapter.FAILED_QUERY_LEAD}({adapter.QUERY_FAILURE_TIMEOUT})." in error
+
+
+def test_a_developer_still_sees_the_original_and_the_start_check_paragraph(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """개발자 회차는 지금과 같다 — 곁 오류에 원문 단락이, C-DEP 서버면 서버 시작 점검 단락과 넣을
+    환경변수가, `AD-04` 전문에 CUSTOM 원천 표 줄과 그 단락이 든다(설계 규칙 UI-NTF-04 — 넘겨받은
+    사람이 원인을 찾게)."""
+    _as_developer(monkeypatch, True)
+    monkeypatch.delenv("CAPA_BDQ_USER_NAME", raising=False)
+    catalog = AppTest.from_string(CATALOG_FAILURE_SCRIPT)
+    catalog.run()
+    assert not catalog.exception
+    [error] = place_errors(catalog)
+    assert f"\n\n{adapter.ORIGINAL_LEAD}" in error and "Read timed out" in error
+    [error] = place_errors(_failed_save_app(tmp_path))
+    assert adapter.BDQ_CUSTOM_TABLE_ENV in error and "Read timed out" in error
+
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: False)
+    app = _cd_package_missing_app(tmp_path)
+    [error] = place_errors(app)
+    assert "서버 시작 점검" in error and "CAPA_ARTIFACTORY_TOKEN" in error
+    note = active_state(app, "AD-04")
+    assert note is not None
+    full = str(note["full"])
+    assert registration.custom_table_notice(adapter.CUSTOM_TABLE_MISSING) in full
+    assert "서버 시작 점검" in full and "CAPA_ARTIFACTORY_TOKEN" in full
+
+
+def test_ad04_full_drops_the_start_check_paragraph_for_others_and_keeps_its_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """개발자가 아니면 `AD-04` 전문에서 CUSTOM 원천 표 줄(변수 이름 · 채울 자리)과 패키지 줄의 서버
+    시작 점검 단락을 뺀다. 짧은 글과 지문은 그대로라 「이 등급으로 보기」 를 켜고 꺼도 알림이 다시
+    뜨지 않는다. 남는 줄이 없으면(CUSTOM 원천 표만 빠짐) 전문은 짧은 글이다."""
+    _set_custom_table(monkeypatch, None)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: False)
+    shown: dict[bool, dict[str, Any]] = {}
+    for developer in (True, False):
+        _as_developer(monkeypatch, developer)
+        note = active_state(_cd_package_missing_app(tmp_path), "AD-04")
+        assert note is not None
+        shown[developer] = note
+    mine, others = shown[True], shown[False]
+    assert others["fp"] == mine["fp"]
+    assert others["short"] == mine["short"] == registration.CUSTOM_TABLE_SHORT
+    assert "서버 시작 점검" in mine["full"] and adapter.BDQ_CUSTOM_TABLE_ENV in mine["full"]
+    full = str(others["full"])
+    assert full.startswith("SQL 설정은 확인했습니다.") and full in mine["full"]
+    assert "\n\n" not in full
+    assert not [word for word in DEVELOPER_WORDS if word in full], full
+    assert adapter.CUSTOM_TABLE_MISSING not in full
+
+    # CUSTOM 원천 표만 빠지면 개발자가 아닌 회차에 남는 줄이 없다 — 전문은 짧은 글이다.
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    only: dict[bool, dict[str, Any]] = {}
+    for developer in (True, False):
+        _as_developer(monkeypatch, developer)
+        note = active_state(_run(), "AD-04")
+        assert note is not None
+        only[developer] = note
+    assert only[False]["fp"] == only[True]["fp"]
+    assert only[False]["full"] == only[False]["short"] == registration.CUSTOM_TABLE_SHORT
+    assert adapter.BDQ_CUSTOM_TABLE_ENV in only[True]["full"]
 
 
 @pytest.mark.parametrize(

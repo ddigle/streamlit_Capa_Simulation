@@ -33,6 +33,7 @@ from capa_simulation.components.home_preference import (
     section_accent_bar_css,
 )
 from capa_simulation.components.loading_progress import LoadingStage
+from capa_simulation.components.outside_calculation_mark import OutsideCalculationMark
 from capa_simulation.components.plotly_layout import (
     hover_chart_config,
     static_chart_config,
@@ -574,6 +575,12 @@ def render_home_performance(
         )
 
 
+# 구획 제목 줄 끝 표지(`render_section_title_row(mark=)` 의 `st.caption`)와 그것을 든 줄 안 칸 —
+# `dashboard_title_row_style` 이 이 둘을 골라 표지를 한 줄 · 제목 눈높이에 세운다.
+_TITLE_MARK = '[data-testid="stCaptionContainer"]'
+_TITLE_MARK_HOLDER = f'[data-testid="stElementContainer"]:has({_TITLE_MARK})'
+
+
 def dashboard_title_row_style() -> str:
     """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 못박는다.
 
@@ -646,6 +653,26 @@ def dashboard_title_row_style() -> str:
     .st-key-plan_detail_title_row *,
     .st-key-key_process_title_row *,
     .st-key-bottleneck_title_row * { min-width: 0; max-width: 100%; }"""
+        # 제목 오른쪽 끝 표지(`render_section_title_row(mark=)` — 「상세 B/N 공정」 줄의
+        # 「계산 밖 n공정 ⓘ」)는 줄을 바꾸지 않고 줄지도 않는다. 위 `min-width:0` 이 표지 칸까지
+        # 줄이면 ⓘ 가 글 밑으로 떨어져 줄이 높아지거나 칸 밖으로 잘린다 — 칸을 내용 폭에 묶고,
+        # 모자라면 말줄임은 제목 쪽이다(전체 제목은 풍선 `title`). 캡션 문단의 아래 여백과 칸의
+        # 음수 여백도 제목 문단처럼 0 으로 둬야 표지가 줄 가운데, 제목과 같은 눈높이에 선다.
+        f"""
+    .st-key-plan_detail_title_row {_TITLE_MARK_HOLDER},
+    .st-key-key_process_title_row {_TITLE_MARK_HOLDER},
+    .st-key-bottleneck_title_row {_TITLE_MARK_HOLDER} {{
+        flex: none;
+    }}
+    .st-key-plan_detail_title_row {_TITLE_MARK},
+    .st-key-key_process_title_row {_TITLE_MARK},
+    .st-key-bottleneck_title_row {_TITLE_MARK} {{ margin-bottom: 0; }}
+    .st-key-plan_detail_title_row {_TITLE_MARK} > p,
+    .st-key-key_process_title_row {_TITLE_MARK} > p,
+    .st-key-bottleneck_title_row {_TITLE_MARK} > p {{
+        margin: 0;
+        white-space: nowrap;
+    }}"""
         # 범례는 제목과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
         # 스크롤바와 겹치지 않게 별도 블록으로 두지 않는다.
         #
@@ -845,6 +872,7 @@ def render_home_figures(
     leading_past_month_count: int = 0,
     owner_tab: OpenTab | None = None,
     key_process_title: str = "주요공정 확보율",
+    bottleneck_mark: OutsideCalculationMark | None = None,
 ) -> None:
     """대시보드 여덟 Figure. **숨은 탭에서는 그리지 않는다.**
 
@@ -865,6 +893,10 @@ def render_home_figures(
     보는 조건은 사이드바 `LOB 표시 조건` 카드다. 숨은 탭에서는 그리지 않으므로 그 회차에는 선택
     위젯도 없다. 테두리 상자는 `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께
     감싼다.
+
+    `bottleneck_mark` 는 `상세 B/N 공정` 제목 줄 오른쪽 끝의 「계산 밖 n공정」 표지와 풍선이다
+    (`outside_calculation_mark` — 조회기간에 소요기준 BOX · PCB 경로가 있는 공정이 없으면 None 이고
+    그리지 않는다). Figure 가 아니라 제목 줄의 Streamlit 글이라 Figure 캐시 키와는 상관없다.
     """
     # 칸 클릭 콜백이 적은 이동은 무엇을 그리기 전에 한다 — 숨은 탭 판정보다도 앞이다.
     switch_to_queued_process_detail()
@@ -922,7 +954,13 @@ def render_home_figures(
                 key="key_process_heatmap_labels",
                 config=static_chart_config(),
             )
-            render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
+            # B/N 순위가 계산 밖 공정 없이 정해지는 자리라 그 표지를 제목 줄 끝에 단다.
+            render_section_title_row(
+                "상세 B/N 공정",
+                key="bottleneck_title_row",
+                mark=None if bottleneck_mark is None else bottleneck_mark.caption,
+                mark_help=None if bottleneck_mark is None else bottleneck_mark.help,
+            )
             st.plotly_chart(
                 figures.bottleneck_labels,
                 width="stretch",

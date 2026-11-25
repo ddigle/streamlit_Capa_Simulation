@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -197,6 +198,58 @@ def validate_demand_basis(values: pd.Series, label: str) -> pd.Series:
         examples = normalized.loc[invalid].drop_duplicates().head(5).tolist()
         raise ValueError(f"{label}에 지원하지 않는 소요기준이 있습니다: {examples}")
     return normalized
+
+
+class UnimplementedProcess(NamedTuple):
+    """조회기간 안 계산 밖 경로(소요기준 `UNIMPLEMENTED_BASES`)가 있는 공정 하나."""
+
+    # 앞뒤 공백을 뗀 원본 공정 글자. 표시명은 부르는 쪽이 붙인다.
+    process: str
+    # 그 공정에서 빠진 소요기준 — 대문자로 맞춘 값, 글자 차례.
+    bases: tuple[str, ...]
+    # 조회기간 안 그 공정의 경로가 모두 계산 밖인가. 거짓이면 일부 경로만 빠지고 남은 경로로
+    # 계산된다.
+    whole: bool
+
+
+def unimplemented_basis_processes(
+    reqb: pd.DataFrame, *, start_month: int, end_month: int
+) -> tuple[UnimplementedProcess, ...]:
+    """조회기간 안 `RQ_REQB` 에서 소요기준이 BOX · PCB 인 경로를 가진 공정(계산 밖 공정).
+
+    대당 Capa(`unit_capacity`) · 소요대수(`required_equipment._prepare_reqb`)가 행을 버리는 꼴과
+    같게 거른다 — 앞뒤 공백을 떼고 대문자로 바꾼 소요기준이 `UNIMPLEMENTED_BASES` 에 드는가. 그래서
+    화면 표지가 세는 공정과 계산이 버린 경로가 어긋나지 않는다. 버리는 것은 두 계산이 하고 여기는
+    세기만 한다 — 계산 숫자는 그대로다.
+
+    - 조회기간은 양 끝을 넣는다. 달을 숫자로 못 읽는 행과 공정이 빈 행은 세지 않는다 — 표지가 새
+      멈춤 길을 만들지 않는다(달 형식 오류는 계산이 멈추며 알린다).
+    - 차례는 계산 밖 경로가 처음 나온 차례다. 표시순서 정렬은 부르는 쪽이 한다.
+    - `whole` 은 조회기간 안 그 공정 경로가 모두 계산 밖인가다. 한 공정 한 소요기준(업무 규칙 —
+      `assert_one_demand_basis_per_process`)을 어긴 원천이면 거짓이고, 그 공정은 남은 경로로만
+      계산된다. 소요기준이 빈 경로는 계산 밖이 아니다.
+    - 받은 표는 고치지 않는다(세션 표는 잠긴 표다).
+    """
+    require_columns(reqb, ["생산계획년월", "공정", "소요기준"], "RQ_REQB")
+    if reqb.empty:
+        return ()
+    months = pd.to_numeric(reqb["생산계획년월"], errors="coerce")
+    processes = reqb["공정"].astype("string").str.strip()
+    inside = months.between(start_month, end_month) & processes.fillna("").ne("")
+    bases = reqb["소요기준"].astype("string").str.strip().str.upper()
+    outside = bases.isin(UNIMPLEMENTED_BASES) & inside
+    if not outside.any():
+        return ()
+    whole = outside[inside].groupby(processes[inside], sort=False).all()
+    picked = pd.DataFrame({"공정": processes[outside], "소요기준": bases[outside]})
+    return tuple(
+        UnimplementedProcess(
+            process=str(process),
+            bases=tuple(sorted({str(value) for value in group})),
+            whole=bool(whole[process]),
+        )
+        for process, group in picked.groupby("공정", sort=False)["소요기준"]
+    )
 
 
 def normalize_month_column(data: pd.DataFrame, label: str, *, column: str = "생산계획년월") -> None:

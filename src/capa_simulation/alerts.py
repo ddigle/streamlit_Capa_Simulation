@@ -104,7 +104,9 @@ LEVEL_LABELS: Final[Mapping[Level, str]] = {
 # 알림창이 떠 있는 시간(초). 알림은 짧게, 나머지는 읽고 손댈 시간을 둔다(기본값 — 설계 7장 끝).
 POPUP_SECONDS: Final[Mapping[Level, int]] = {"info": 8, "check": 15, "action": 15, "error": 15}
 # 알림창은 이만큼까지 쌓는다 — 넘치면 단계가 가장 낮은 칸을 걷는다(같은 단계면 가장 오래된 칸 —
-# 알림 칸 JS `overflowVictim`). 낮은 단계 알림 여럿이 더 높은 단계 칸을 밀어내지 않는다.
+# 알림 칸 JS `overflowVictim`). 낮은 단계 알림 여럿이 더 높은 단계 칸을 밀어내지 않는다. 방금 누른
+# 동작의 결과 칸(`flash` 를 실은 사건)은 그 넘침에서 걷지 않고 제 시간 동안 이 위 한 칸(넷째)으로
+# 선다(알림 칸 JS `showPopup` — 2026-11-24 사용자 「권장대로」).
 POPUP_LIMIT: Final = 3
 # 같은 사건 알림(코드 + 짧은 글)이 앞 알림창이 떠 있거나 사라진 뒤 이 안에 다시 나면 시선을
 # 끈다(D4).
@@ -556,7 +558,8 @@ class AlertNote(TypedDict, total=False):
       `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 와 상태 알림 `state(target=)` 가 싣는다)
       · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
-      `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
+      `flash`(버튼 곁 결과의 종류 — 알림 칸 JS 는 이 칸이 있는 사건을 넘침에서 걷지 않는 결과 칸으로
+      본다) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
       읽는다) · `again`(다시 보냄) · `keep`(자리에 마크만 남은 오류 — Alarm 줄이 전문의 유일한
       자리라, 같은 글이 다시 와도 알림창은 띄우지 않되 그 줄이 없으면 다시 세운다).
     """

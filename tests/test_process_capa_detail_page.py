@@ -2000,3 +2000,66 @@ def test_the_constraint_link_is_disabled_with_its_reason_without_equipment(
     (link,) = _constraint_links(other)
     assert link["disabled"] is True
     assert link["help"] == "설비 일정이 서야 엽니다 — 설비 없음"
+
+
+OUTSIDE_PROCESS = "DEMO_Final_Test"
+
+
+def _publish_outside_revision(database_path: Path) -> None:
+    """내장 시드를 부트스트랩한 DB 에 `OUTSIDE_PROCESS` 의 경로를 모두 소요기준 BOX 로 바꾼 표를 새
+    공식버전으로 발행한다 — 가용대수 · 보유 · 표시순서 행은 그대로라 그 공정은 공정 칸에 남고, 두
+    계산이 경로를 버려 소요가 0 이다(`home_two_part_app.publish_two_part_revision` 과 같은 길)."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.persistence.cache import get_scenario_repository, load_scenario_snapshot
+    from capa_simulation.persistence.models import ScenarioCreate
+
+    repository = get_scenario_repository(str(database_path))
+    ensure_initial_scenario(repository)
+    official = repository.latest_official_release()
+    assert official is not None
+    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
+    tables = dict(snapshot.tables)
+    reqb = tables["RQ_REQB"].copy()
+    routes = reqb["공정"].astype("string").str.strip().eq(OUTSIDE_PROCESS).fillna(False)
+    assert routes.any()
+    reqb.loc[routes, "소요기준"] = "BOX"
+    tables["RQ_REQB"] = reqb
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="계산 밖 공정 계획",
+            source_simulation_code="DEMO-OUTSIDE",
+            source_simulation_name="계산 밖 공정 계획",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        snapshot.preset,
+    )
+    repository.publish_official_revision(
+        str(created.scenario.scenario_id),
+        str(created.revision.revision_id),
+        release_name="계산 밖 공정 계획",
+    )
+
+
+def test_a_process_with_only_box_routes_says_outside_calculation_on_the_judgement_card(
+    tmp_path: Path,
+) -> None:
+    """경로가 모두 소요기준 BOX 인 공정(계산 밖)을 고르면 ③ 판정 카드가 「소요 없음」 이 아니라
+    「계산 밖(소요기준 BOX)」 이라고 말한다 — 산출 결과 표 제목 줄 표지와 같은 목록 칸이다. 경로가
+    계산되는 공정의 카드는 그대로다."""
+    database, equipment = tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb"
+    _publish_outside_revision(database)
+    app = _ok(_app((database, equipment)).run())
+    assert OUTSIDE_PROCESS in _process_box(app).options
+
+    _process_box(app).set_value(OUTSIDE_PROCESS)
+    _ok(app.run())
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert "계산 밖(소요기준 BOX) — 판정하지 않습니다" in cards
+    assert "소요 없음" not in cards
+
+    _process_box(app).set_value(DYNAMIC_PROCESS)
+    _ok(app.run())
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert "계산 밖" not in cards

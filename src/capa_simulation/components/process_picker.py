@@ -1,4 +1,4 @@
-# Purpose: 확보율 구역별 공정 버튼(미달은 최저 확보율 곁 글)을 그리되 표시명과 원본값을 가른다.
+# Purpose: 확보율 구역별 공정 버튼(미달 확보율 · 계산 밖 곁 글)을 그리되 표시명과 원본값을 가른다.
 
 """HOME 공정 필터(B/N 판정 대상) 팝업의 공정 버튼.
 
@@ -22,6 +22,15 @@
 버튼의 `::after` 로 붙인다 — 라벨 칸(말줄임 칸)은 긴 이름에서 끝을 자르므로 라벨 끝에 이으면 값이
 먼저 잘린다. `::after` 는 라벨 칸 밖 흐름 칸이라 이름이 먼저 줄고 값은 남는다. 풍선과 같은 숨은
 스타일 칸에 싣는다(`tile_rate_style`).
+
+**계산 밖 공정은 「확보율 없음」 구역 단추에 「계산 밖」 을 같은 `::after` 자리에
+붙인다**(정식판 1.0 마감 2번 C — 2026-11-24 사용자 「권장안 그대로」). 조회기간 안 경로가 모두
+소요기준 BOX · PCB 라 계산에서 빠진 공정(`outside` — 원본 공정 → 빠진 소요기준 글,
+`outside_calculation_mark.whole_outside_bases`)은 확보율이 없어 그 구역에 서는데, 풍선
+「조회기간에 유효한 확보율이 없어 판정하지 않습니다.」 는 까닭이 틀리게 읽힌다. 그 줄을
+「소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정).」 로 바꾼다. 유효한 확보율이
+있는 단추(과거 구간 달 등)는 표지 없이 그대로다 — 판정이 그 값으로 서고 구역 · 켜고 끄기도
+그대로다. 경고 알림이 아니다(UI-NTF-05).
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -29,6 +38,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.outside_calculation_mark import BASIS_REASON, OUTSIDE_CALCULATION
 from capa_simulation.components.tip_delay import TIP_DELAY_MS, TIP_DELAY_VARIABLE
 from capa_simulation.design import tokens
 from capa_simulation.services.process_picker import ProcessPickerItem
@@ -47,14 +57,26 @@ TOOLTIP_STYLE_BOX_KEY = "home_bn_tile_tips"
 
 
 def tile_tooltip_text(
-    item: ProcessPickerItem, label: str, *, enabled: bool, mark: str | None = None
+    item: ProcessPickerItem,
+    label: str,
+    *,
+    enabled: bool,
+    mark: str | None = None,
+    outside: str | None = None,
 ) -> str:
-    """버튼 위에 띄우는 설명. 표시명·원본 공정·기간 최저 확보율·누르면 무엇이 되는지·표지."""
+    """버튼 위에 띄우는 설명. 표시명·원본 공정·기간 최저 확보율·누르면 무엇이 되는지·표지.
+
+    `outside` 는 그 공정이 계산 밖이면 빠진 소요기준 글(「BOX」)이다 — 확보율이 없는 줄만 그
+    까닭으로 바꾼다."""
     details = [label]
     if label != item.process:
         details.append(f"원본 공정: {item.process}")
     if item.minimum_rate is None or item.minimum_month is None:
-        details.append("조회기간에 유효한 확보율이 없어 판정하지 않습니다.")
+        details.append(
+            BASIS_REASON.format(bases=outside)
+            if outside
+            else "조회기간에 유효한 확보율이 없어 판정하지 않습니다."
+        )
     else:
         details.append(
             f"기간 최저 {item.minimum_rate:.1%} · "
@@ -128,20 +150,24 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
     )
 
 
-def tile_rate_text(item: ProcessPickerItem) -> str | None:
-    """확보 기준 미달 공정 버튼에 붙일 기간 최저 확보율 글자(「97%」). 다른 구역 · 값 없음은 None.
+def tile_rate_text(item: ProcessPickerItem, *, outside: str | None = None) -> str | None:
+    """확보 기준 미달 공정 버튼에 붙일 기간 최저 확보율 글자(「97%」). 「확보율 없음」 구역의
+    계산 밖 공정(`outside` — 빠진 소요기준 글)은 「계산 밖」. 그 밖의 구역 · 값 없음은 None.
 
     판정이 확보율을 사사오입한 정수 % 로 견주므로(`securement_threshold.meets_threshold`) 글자도
     같은 어림이다 — 기준과 같은 글자가 미달 구역에 서지 않는다(월별 예외 달은 그 달 기준으로
     판정한다)."""
+    if item.group == "unavailable" and outside:
+        return OUTSIDE_CALCULATION
     if item.group != "shortfall" or item.minimum_rate is None:
         return None
     return threshold_percent_label(item.minimum_rate)
 
 
 def tile_rate_style(rates: Sequence[str | None]) -> str:
-    """순번대로 감싼 버튼 칸마다 최저 확보율 글자를 버튼 `::after` 로 거는 CSS. `rates[i]` 가 `i`
-    번째 칸의 글이고 None 이면 그 칸은 붙이지 않는다. 붙일 칸이 없으면 빈 글자다.
+    """순번대로 감싼 버튼 칸마다 최저 확보율 · 계산 밖 글자를 버튼 `::after` 로 거는 CSS.
+    `rates[i]` 가 `i` 번째 칸의 글이고 None 이면 그 칸은 붙이지 않는다. 붙일 칸이 없으면 빈
+    글자다.
 
     `::after` 는 버튼 흐름 칸(라벨 칸 다음)이라 줄지 않고(`flex: none`) 라벨 칸이 먼저 말줄임한다.
     라벨 칸은 글 폭만 쓴다(`width: auto` — Streamlit 은 칸을 단추 폭까지 늘리고 이름을 그 가운데에
@@ -201,9 +227,13 @@ def render_process_picker(
     format_func: Callable[[str], str],
     on_toggle: Callable[[str], None],
     marks: Mapping[str, str] | None = None,
+    outside: Mapping[str, str] | None = None,
 ) -> None:
-    """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다."""
+    """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다. `outside` 는 원본 공정 →
+    계산 밖 소요기준 글이다(경로가 모두 계산 밖인 공정만 —
+    `outside_calculation_mark.whole_outside_bases`)."""
     marks = marks or {}
+    outside = outside or {}
     # 캡션은 마크다운이다 — 공용 표시명 「CoW~검사~A」 의 물결표가 지움선이 되지 않게 공정 글자만
     # 막는다(표지 「자동 off(…)」 는 앱이 지은 글이라 그대로 둔다).
     mark_line = auto_off_mark_line(
@@ -244,10 +274,13 @@ def render_process_picker(
                             on_click=on_toggle,
                             args=(item.process,),
                         )
-                    tooltips.append(tile_tooltip_text(item, label, enabled=enabled, mark=mark))
-                    rates.append(tile_rate_text(item))
-    # 풍선 · 최저 확보율 스타일은 숨은 본문 칸에 싣는다(`TOOLTIP_STYLE_BOX_KEY` — 팝업 본문은 이벤트
-    # 칸에 쓰지 않는다). 칸은 풍선이 없어도 늘 선다.
+                    basis = outside.get(item.process)
+                    tooltips.append(
+                        tile_tooltip_text(item, label, enabled=enabled, mark=mark, outside=basis)
+                    )
+                    rates.append(tile_rate_text(item, outside=basis))
+    # 풍선 · 최저 확보율 · 계산 밖 스타일은 숨은 본문 칸에 싣는다(`TOOLTIP_STYLE_BOX_KEY` — 팝업
+    # 본문은 이벤트 칸에 쓰지 않는다). 칸은 풍선이 없어도 늘 선다.
     with st.container(key=TOOLTIP_STYLE_BOX_KEY):
         st.html(
             f"<style>.st-key-{TOOLTIP_STYLE_BOX_KEY} {{ display: none; }}</style>"

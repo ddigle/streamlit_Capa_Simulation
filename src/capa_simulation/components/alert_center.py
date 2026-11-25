@@ -287,6 +287,9 @@ TEXT: Final[dict[str, str]] = {
     "not_yet": "아직",
     "cause_new": "조건이 처음 보임",
     "cause_change": "내용이 바뀜",
+    # 열린 상태 줄이 보관(줄 수 · 시간)에서 걷힌 뒤 같은 지문이 다시 와 알림창 없이 다시 세운
+    # 줄의 계기.
+    "cause_back": "보관에서 걷힌 뒤 조건이 이어져 다시 세움",
     "cause_event": "동작 결과",
     "changes": "이 세션의 변경",
     "changes_word": "변경",

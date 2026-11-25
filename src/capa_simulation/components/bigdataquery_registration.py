@@ -46,6 +46,7 @@ from capa_simulation.components.flash import (
     queue_flash,
     render_flash,
 )
+from capa_simulation.components.grade_hooks import diagnostic_message
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
@@ -472,11 +473,18 @@ def _report_configuration(
     빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 — 상태 경고는 자리에 세우지 않는다, 2026-11-09
     사용자 규칙 「상단 여백 · 문구 최소화」). 조회 SQL · CUSTOM 원천 표가 없어 잠긴 단추는 그 풍선이
     까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 · 이벤트 칸 한 자리) — 닫힌
-    탭(`alert_tab` None)이면 알리지 않는다."""
+    탭(`alert_tab` None)이면 알리지 않는다.
+
+    CUSTOM 원천 표 줄(환경변수 이름과 채울 자리)과 패키지 줄의 서버 시작 점검 단락은 개발자 몫이라
+    개발자가 아니면(`admin_view.developer_notes_visible`) 전문에서 뺀다 — 남는 줄이 없으면 전문은
+    짧은 글이다. 지문 재료 `content` 는 늘 개발자 전문이다 — 「이 등급으로 보기」 를 켜고 꺼도
+    알림이 다시 뜨지 않게."""
     lines: list[str] = []
+    public_lines: list[str] = []
     query_notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
     if query_notice is not None:
         lines.append(query_notice)
+        public_lines.append(query_notice)
     if custom_problem is not None:
         lines.append(custom_table_notice(custom_problem))
     if query_notice is None and not package_ready:
@@ -484,6 +492,7 @@ def _report_configuration(
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
             "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
+        public_lines.append(package_notice)
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
         hint = start_check_hint(STEP_INSTALL)
         if hint:
@@ -491,6 +500,14 @@ def _report_configuration(
         lines.append(package_notice)
     notice = "\n\n".join(lines) if lines else None
     if alert_tab is not None:
+        full: str | None = None
+        if notice is not None:
+            # 부를 때 읽는다 — 개발자 판정은 `sso_identity` 를 읽고 그 모듈은 머리에서 앱 머리 띠 ·
+            # HOME 그리기까지 닿는다(`grade_hooks` 와 같은 까닭).
+            from capa_simulation.components import admin_view
+
+            shown = notice if admin_view.developer_notes_visible() else "\n\n".join(public_lines)
+            full = alerts.plain_text(shown) if shown else None
         alerts.state(
             "AD-04",
             scope=None,
@@ -499,7 +516,7 @@ def _report_configuration(
             text=_configuration_short(
                 query_ready=query_notice is None, custom_problem=custom_problem
             ),
-            full=alerts.plain_text(notice) if notice else None,
+            full=full,
             tab=alert_tab,
         )
 
@@ -607,8 +624,9 @@ def _run_catalog_query(window: QueryWindow) -> None:
             # 결과셋이 바뀌었으니 선택만 버린다. 폼에 적힌 값은 건드리지 않는다.
             _clear_pick()
     except BOOTSTRAP_ERRORS as exc:
-        # 실패해도 직전 목록은 지우지 않는다.
-        st.error(bootstrap_error_message(exc))
+        # 실패해도 직전 목록은 지우지 않는다. 개발자가 아니면 BigDataQuery 실패 글의 원문 · 서버
+        # 단계 안내를 걷은 꼴이다(`admin_view.diagnostic_message`).
+        st.error(diagnostic_message(bootstrap_error_message(exc)))
 
 
 def _render_catalog_list(toolbar: DeltaGenerator, *, registered_codes: frozenset[str]) -> None:
@@ -1021,7 +1039,8 @@ def _save_scenario(
                 extra=registration_data.extra,
             )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        # 목록 조회 실패와 같은 판정이다 — 개발자가 아니면 원문 · 서버 단계 안내를 걷는다.
+        st.error(diagnostic_message(bootstrap_error_message(exc)))
         return
     finish_registration(repository, registration, registration_data)
     # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.

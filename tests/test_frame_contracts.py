@@ -7,6 +7,7 @@ from capa_simulation.services.frame_contracts import (
     AREA_NAMES,
     DEMAND_BASES,
     UNIMPLEMENTED_BASES,
+    UnimplementedProcess,
     assert_complete,
     blank_cell,
     normalize_area_name,
@@ -15,6 +16,7 @@ from capa_simulation.services.frame_contracts import (
     normalize_month_column,
     require_columns,
     to_numeric_strict,
+    unimplemented_basis_processes,
     validate_demand_basis,
 )
 
@@ -130,3 +132,70 @@ def test_blank_cell_counts_only_missing_markers_not_empty_text() -> None:
         pd.Timestamp("2026-05-01"),
     ):
         assert not blank_cell(present)
+
+
+def test_unimplemented_basis_processes_lists_box_and_pcb_routes_in_the_period() -> None:
+    """계산 밖 공정은 조회기간 안 BOX · PCB 경로가 있는 공정이다. 표기만 다른 값(`box `)도 계산이
+    버리는 꼴로 센다. 남은 경로(PKG · 빈 소요기준)와 섞인 공정은 `whole` 이 거짓이고, 기간 밖 경로는
+    `whole` 판정에도 들지 않는다. 달을 못 읽는 행 · 공정이 빈 행은 세지 않고 멈추지도 않는다."""
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [
+                202608,
+                202608,
+                202609,
+                202612,
+                202608,
+                202609,
+                202612,
+                "2026-08",
+                202608,
+                202608,
+                202608,
+            ],
+            "공정": [
+                "DEMO_P1",
+                "DEMO_BOX_A",
+                " DEMO_BOX_A ",
+                "DEMO_BOX_A",
+                "DEMO_MIX",
+                "DEMO_MIX",
+                "DEMO_BOX_LATE",
+                "DEMO_BOX_BAD",
+                None,
+                "DEMO_BLANK_BASIS",
+                "DEMO_BLANK_BASIS",
+            ],
+            "소요기준": [
+                "PKG",
+                "box ",
+                "PCB",
+                "PKG",
+                "PKG",
+                " Box",
+                "BOX",
+                "BOX",
+                "PCB",
+                "BOX",
+                None,
+            ],
+        }
+    )
+    before = reqb.copy()
+
+    listed = unimplemented_basis_processes(reqb, start_month=202608, end_month=202609)
+
+    assert listed == (
+        UnimplementedProcess(process="DEMO_BOX_A", bases=("BOX", "PCB"), whole=True),
+        UnimplementedProcess(process="DEMO_MIX", bases=("BOX",), whole=False),
+        UnimplementedProcess(process="DEMO_BLANK_BASIS", bases=("BOX",), whole=False),
+    )
+    pd.testing.assert_frame_equal(reqb, before)
+    assert unimplemented_basis_processes(reqb.iloc[:0], start_month=202608, end_month=202609) == ()
+    counted_only = reqb.loc[reqb["공정"].eq("DEMO_P1")]
+    assert unimplemented_basis_processes(counted_only, start_month=202608, end_month=202609) == ()
+    assert unimplemented_basis_processes(reqb, start_month=202610, end_month=202611) == ()
+    with pytest.raises(ValueError, match=r"RQ_REQB 필수 컬럼이 없습니다: 소요기준"):
+        unimplemented_basis_processes(
+            reqb.drop(columns="소요기준"), start_month=202608, end_month=202609
+        )

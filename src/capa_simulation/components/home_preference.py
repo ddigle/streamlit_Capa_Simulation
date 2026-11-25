@@ -381,15 +381,23 @@ _MARKDOWN_SAFE = str.maketrans(
 )
 
 
-def render_section_title_row(text: str, *, key: str) -> None:
+def render_section_title_row(
+    text: str, *, key: str, mark: str | None = None, mark_help: str | None = None
+) -> None:
     """구획 제목 줄. `Capa LOB 현황` 줄과 같은 높이·같은 모양이다.
 
     네 구획의 제목이 같은 컴포넌트로 그려져야 제목과 표 사이 간격이 하나로 맞는다.
     하나만 Plotly 주석으로 남겨 두면 그 구획만 간격이 다르다.
+
+    `mark` 는 제목 오른쪽 끝의 작은 회색 표지(값 한 마디 — 「상세 B/N 공정」 줄의 「계산 밖 n공정」)
+    이고 `mark_help` 는 그 ⓘ 풍선이다. 없으면 그리지 않는다. 같은 줄 안이라 줄 높이 · 월 칸 짝 빈
+    줄은 그대로이고, 한 줄을 넘지 않는 서식은 `home_rendering.dashboard_title_row_style` 이 건다.
     """
     with st.container(key=key, horizontal=True, vertical_alignment="center", gap="medium"):
         # 줄 폭을 채워야 넘친 제목이 줄 안에서 말줄임된다(내용 폭이면 칸 밖으로 삐져나간다).
         st.markdown(section_title_markup(text), unsafe_allow_html=True, width="stretch")
+        if mark:
+            st.caption(mark, width="content", help=mark_help)
 
 
 def section_title_markup(text: str) -> str:

@@ -536,6 +536,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
     공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
     프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `Capa 요약 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
+  - 공정 필터 팝업 「확보율 없음」 구역의 계산 밖 공정(경로가 모두 소요기준 BOX · PCB — 11장) 단추는 이름 오른쪽 「계산 밖」 과 풍선 줄
+    「소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정).」 이다(2026-11-24 사용자 「권장안 그대로」). 목록은 산출 결과 표
+    제목 줄 표지와 같은 칸(`get_unimplemented_basis_processes` — 선언을 접지 않은 내용 토큰 + 계산 조회기간)이고 여는 회차에만
+    고른다(`_process_filter_dialog` → `whole_outside_bases` — 원본 공정 키, `show_process_filter_dialog(outside_bases=)`). 구역 · 켜고 끄기 ·
+    판정은 그대로다(`tests/test_home_page.py` 의 `only_box_routes_says_outside_calculation_in_the_process_filter`).
+  - 「상세 B/N 공정」 제목 줄 오른쪽 끝에는 조회기간에 계산 밖 공정(소요기준 BOX · PCB 경로가 있는 공정 — 11장)이 있을 때만 작은 회색
+    「계산 밖 n공정 ⓘ」 가 선다(2026-11-24 사용자 답 — B/N 순위가 그 공정 없이 정해지는 자리). 앱 전체 회차가 같은 목록 칸을 읽어
+    `outside_calculation_mark`(풍선 차례는 공정 필터 선택지와 같은 확보율 탭 표시순서 — 세션 메모 `home_sort_memo` 의
+    `outside_order` 칸)로 짓고 `render_home_figures(bottleneck_mark=)` 로 넘긴다. n 은 공정 필터와 상관없이 조회기간 전체의 수이고,
+    그림이 아니라 제목 줄 글이라 Figure 캐시 키 · `HOME_FIGURE_SCHEMA_VERSION` 은 그대로다(`tests/test_home_page.py` 의
+    `bottleneck_title_row_carries_the_outside_calculation_mark`).
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -551,7 +562,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록에서 본다(`persistence/cache.scenario_has_revision` — 목록에 없으면 DB 로 한 번 더 본다, 회차마다 DB 를 열지 않는다).
   - **토글 회차는 그림과 상관없는 정렬 · 합치기를 다시 하지 않는다** — 세션 메모(`SessionSlot` `home_sort_memo` — 칸 이름은
     `home_state.HOME_SORT_MEMO_KEY`, 이름마다 두 벌)에 표시순서 준비(키 = HOME 계산 키의 표시순서 지문) · 공정 선택지 차례(공정
-    이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME 계산 키 — 계산 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
+    이름들, 지문) · 「상세 B/N 공정」 표지 풍선의 계산 밖 공정 차례(계산 밖 공정 이름들, 지문) · 과거 열을 붙인 계획 세부수량(HOME
+    계산 키 — 계산 토큰 · 기간 · 지문, EDP, 거래선 칸, 과거 프로필 version) ·
     과거 열 · 조각의 부품 판정(`product_parts.multi_part_products` — 키 = HOME 계산 키의 계산 토큰(5장 44 — 판정은 그 앞머리 내용 토큰이 정한다), 계획 세부수량 과거 열과 제품별 비중 과거 조각이 한 칸)을 기억한다(`home._remembered`). 키는 결과를 정하는 입력 전부이고 꺼낸 표는 사본, 공정 목록은 새 list 다. 붙일 과거 열이 없으면
     규칙을 보지 않고, 표시순서 오류는 같은 try 가 받는다(기억하지 않는다). 시나리오를 바꾸면 `_STALE_VALUE_KEYS` 가 지운다.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
@@ -761,6 +773,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     키 · 지문을 받아 기억하고(`memo=`), 알림을 내는 일(`alerts.state`)은 회차마다 한다. 접힌 「히트맵」 상자 안 그림은 그대로
     짓는다 — 상자 여닫기가 빈 구역 회차라 본문이 돌지 않아, 펼 때만 지으려면 펼침이 앱 회차를 불러야 한다(`docs/TODO.md` 2장
     「성능」 C3 결정 거리).
+  - 조회기간에 소요기준 BOX · PCB 경로가 있는 공정(계산 밖 — 11장)이 있으면 세 표 제목 줄(대당 Capa 공정별 · STEP별 · 소요대수 ·
+    확보율)의 부가 설명 칸에 「계산 밖 n공정」 표지가 서고 까닭 · 공정 표시명 · 빠진 소요기준은 그 풍선(`caption_help`)이다
+    (`components/outside_calculation_mark.py` — 2026-11-24 사용자 「권장안 그대로」, 설계 규칙 UI-TXT-04). 경고 알림이 아니다 —
+    고칠 수 없는데 늘 서는 상태다(UI-NTF-05). 목록은 `simulation_cache.get_unimplemented_basis_processes`(선언을 접지 않은 내용
+    토큰 + 계산과 같은 유효 조회기간) 한 번이고 풍선 차례는 공정 칸 선택지와 같은 표시순서다. n 은 공용 공정 거름과 상관없이
+    조회기간 전체의 수라 세 탭이 같고, 없으면 그리지 않는다(UI-TXT-08). 「STEP별로 그릴 공정이 없습니다」 빈 결과 · CSV · 시트
+    머리 값에는 싣지 않는다(`tests/test_calculation_result_tabs.py`).
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(Guide 첫 단락, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -803,6 +822,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`st.page_link` + 주소 `?process=`)은 늘 보이고 설비 일정이 서지 않는 공정이면 꺼진 채 풍선이 까닭을 말한다(D11).
     HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 링크 판정만 세션 스냅샷으로 한 번 더 낸다(제약
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
+  - 고른 공정의 경로가 조회기간 안에서 모두 소요기준 BOX · PCB(계산 밖 — 11장)면 `ProcessDetailView.outside_basis` 에 그
+    소요기준(「BOX」 · 「BOX · PCB」)을 실어 ③ 판정 카드가 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 를
+    쓴다(2026-11-24 사용자 「권장안 그대로」). 목록은 산출 결과 표 제목 줄 표지와 같은 칸(`get_unimplemented_basis_processes` —
+    선언을 접지 않은 내용 토큰 + 유효 조회기간)이고 공정 하나 고르기는 `outside_calculation_mark.whole_outside_basis`(`whole` 공정만 —
+    경로 일부만 빠진 공정은 남은 경로로 판정이 서서 None)다. 경고 알림이 아니고 숫자 · 그림 · 시트는 그대로다
+    (`tests/test_process_capa_detail_page.py`).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다. 설명은 `guides/capa_chatbot.md` 다 — 답의 네 칸(2026-11-10 보드 Q-9)과 「연결 방식」(오른쪽 카드는 제목과
   목록만 — 2차 보드 Q2-24)도 거기서 말한다. 머리에 배지 줄이 없고 「샘플 데이터」 는 조회 조건 패널 줄이다 — 공통
@@ -2114,6 +2139,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     A11 — 월 머지는 베이스의 옛 판 모듈수가 이겨 풀지 못한다). 판을 적용하는 Admin 「부대공정」 은 개발자만 열어 그 밖의 화면
     등급(`sso_identity.viewer_can("admin.area")`)에는 「개발자가 판을 고쳐 적용한 뒤 부대공정 얹기」 로 할 수 있는 일만 적는다(규칙
     6-34 SC-01). 출처는 모듈수 오류일 때만 읽는다(`_scenario_extras` · `_active_extras` — 다섯 부르는 곳이 시나리오를 넘긴다).
+- `src/capa_simulation/components/outside_calculation_mark.py` — 소요기준 BOX · PCB 경로가 계산에서 빠진 공정(계산 밖 — 11장)을
+  알리는 표 제목 줄 표지 「계산 밖 n공정」 과 그 풍선 글(까닭 + 「이 기간: 표시명 (BOX) · …」, 경로 일부만 빠진 공정은 「— 일부
+  경로」, 열 개 넘으면 「외 n공정」)을 짓는 순수 함수 `outside_calculation_mark` 다. 공정 차례는 부르는 쪽이 준 원본 공정 표시순서이고
+  표시명은 차례를 정한 뒤 붙이며 마크다운 글자를 막는다(`literal_markdown`). 없으면 None — 표지 낱말은 「계산 밖」 하나다
+  (`OUTSIDE_CALCULATION`, 설계 규칙 UI-CON-02). 부르는 곳은 산출 결과 세 표 제목 줄과 HOME 「상세 B/N 공정」 제목 줄이다
+  (`tests/test_outside_calculation_mark.py`).
+  - 공정 하나를 말하는 자리의 글도 여기다 — `whole_outside_basis`(목록과 원본 공정명 → 경로가 모두 계산 밖이면 빠진 소요기준 글,
+    둘이면 「BOX · PCB」, 아니면 None)와 `BASIS_MARK`(「계산 밖(소요기준 BOX)」). 부르는 곳은 공정 Capa 상세 ③ 판정 카드다
+    (`process_capa_view._unjudged_text`).
+  - 공정마다 단추가 서는 자리는 `whole_outside_bases`(선택지 원본 공정 → 그 글, 글이 선 공정만)와 풍선 줄 `BASIS_REASON`(「소요기준 BOX —
+    산식이 정해질 때까지 계산 밖입니다(추가 예정).」)을 쓴다. 부르는 곳은 HOME 공정 필터 팝업이다(`process_picker`).
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
   두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
@@ -2153,7 +2189,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결과(결과 키 · 지문 — 소요대수 `ST-15` · `ST-21` · `ST-22` · 대당 Capa `ST-14`)뿐이고 생산 계획 `ST-04` · Static Capa `ST-01` 은 주지 않아 늘
     짓는다. 알림을 내는 일(`alerts.state`)은 기억하지 않는다 — 회차마다 제 이벤트 칸을 쓴다.
 - `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 펼침이 서 있는 동안 늘 `run_every` 프래그먼트(`LIVE_FRAGMENT_KEY` · 5초)로 갱신하고, 판정 제목 · 「지금 올리기」 잠금이 그린 때와 달라지면 앱 회차로 돌아가 함께 고친다 — 그린 순간 값에 머물면 연 채 둔 화면이 다른 회차의 저장 뒤에도 초록 「CI/CD 눌러도 됨」 을 보였다(E2E C-11), 그 페이지의 여닫기는 앱 전체로 돈다(`note_periodic_fragment` — 9장 「여닫을 때…」))과 개발자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 개발자에게 알려 주세요」), 개발자 지시 · 런북 · 갈래는 개발자 몫 전문에만, 개발자 줄의 「그 화면으로」 는 Admin 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_sync_panel` · 알림 칸 받는 쪽 `object_sync`, 설계 규칙 UI-NAV-01), `SY-06` 은 개발자 몫에만, 일꾼이 없으면 개발자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
-- `src/capa_simulation/components/admin_view.py` — 개발자 몫 알림 · 전문 · 접힌 「개발자용 진단」 을 이 회차에 보일지 한 곳(`developer_notes_visible` — 개발자(`sso_identity.viewer_is_developer`)면 참, 아니면 통합인증이 켜짐이 아니고 운영 서버(`SsoConfig.operational` — Admin Area 잠금 `admin_area_locked` 와 한 뿌리)가 아닐 때만 누구에게나). 그래서 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않고(Admin Area 가 모두에게 잠긴 것과 같다 — 참인 회차에는 Admin Area 가 늘 열려 「그 화면으로」 가 잠긴 화면을 가리키지 않는다), 개발 `app.py` · 사내 WebIDE · 사내 PC 는 누구에게나다. 이것을 부르는 자리 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` · `AD-19` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 개발자 전문 · DB 실패 전문(`data_error_mark`) · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판(`sso_identity`)의 「개발자용 진단」. BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23`)은 밖이다 — 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않는다(규칙집 결정 ad10-nosso, `viewer_is_developer` 그대로). 보이기만 가르고 쓰기 · 개발자 단추의 두 번째 벽은 그 자리 판정(`viewer_is_developer`) 그대로다(2026-11-14 보드 리뷰 반영 「개발자 회차에만 은 꺼진 서버에서 아무도 못 본다」). 그 가운데 서버 상태 알림(`AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `AD-25` · `AD-26` · `SY-*` 전문)을 세울지는 `developer_alerts_visible` 이다 — 같은 판정이되 「이 등급으로 보기」 를 따르지 않는다(켜고 끄는 사이 서 있던 알림이 해소 · 다시 뜸으로 흔들리지 않게 — 감사 `AD-12` · `AD-13` 도 실제 개발자 `viewer_is_developer`, 시험 `tests/test_grade_ui_core.py`). 시험은 `tests/test_admin_view.py`(설정 × 개발자 진리표 · Admin Area 잠금과 맞댐). 개발자에게만 서는 상태 알림(이 판정의 `AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `AD-26` · `SY-06`, 토큰 셋, 감사 `AD-12` · `AD-13`)은 그 밖의 회차를 해소(`active=False`)로 부르고 짧은 글 · 전문을 싣지 않는다 — 숨은 표지(`[data-capa-alerts]`)에는 등록부 이름만 실린다(시험 `tests/test_admin_alert_resolved_markers.py` 가 앱 정보 카드 · 동기화 알림의 일곱 — `AD-08` · `AD-09` · `AD-19` · `AD-12` · `AD-13` · `AD-21` · `SY-06` — 을 본다). 누구에게나 서는 운영인데 꺼짐 `AD-02` 도 해소 표지에는 글을 싣지 않는다 — Admin Area 가 잠금 앞에서 부르므로 켜진 서버에서 주소로 Admin Area 를 연 일반 회차에도 그 표지가 실린다(시험 `tests/test_sso_status.py`).
+- `src/capa_simulation/components/admin_view.py` — 개발자 몫 알림 · 전문 · 접힌 「개발자용 진단」 을 이 회차에 보일지 한 곳(`developer_notes_visible` — 개발자(`sso_identity.viewer_is_developer`)면 참, 아니면 통합인증이 켜짐이 아니고 운영 서버(`SsoConfig.operational` — Admin Area 잠금 `admin_area_locked` 와 한 뿌리)가 아닐 때만 누구에게나). 그래서 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않고(Admin Area 가 모두에게 잠긴 것과 같다 — 참인 회차에는 Admin Area 가 늘 열려 「그 화면으로」 가 잠긴 화면을 가리키지 않는다), 개발 `app.py` · 사내 WebIDE · 사내 PC 는 누구에게나다. 이것을 부르는 자리 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` · `AD-19` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 개발자 전문 · DB 실패 전문(`data_error_mark`) · DB 등록 BigDataQuery 실패 곁 글 · `AD-04` 전문(`bigdataquery_registration`) · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판(`sso_identity`)의 「개발자용 진단」. 아래 등급에게도 한 줄을 남기는 자리(설비 저장 실패 · 자동 갱신 진단 · DB 등록 조회 · 저장 실패 곁 글)는 `diagnostic_message` 로 짓는다 — 개발자 몫이면 원문, 아니면 DB 실패 글은 `page_bootstrap.screen_error_public`, BigDataQuery 실패 글은 `company_bigdataquery_adapter.public_failure_text` 로 줄인 꼴이다. DB 등록 `AD-04` 전문은 개발자가 아니면 CUSTOM 원천 표 줄 · 서버 시작 점검 단락을 빼고 지문(`content`)은 그대로다(「이 등급으로 보기」 를 켜고 꺼도 다시 뜨지 않게). BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-23`)은 밖이다 — 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않는다(규칙집 결정 ad10-nosso, `viewer_is_developer` 그대로). 보이기만 가르고 쓰기 · 개발자 단추의 두 번째 벽은 그 자리 판정(`viewer_is_developer`) 그대로다(2026-11-14 보드 리뷰 반영 「개발자 회차에만 은 꺼진 서버에서 아무도 못 본다」). 그 가운데 서버 상태 알림(`AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `AD-25` · `AD-26` · `SY-*` 전문)을 세울지는 `developer_alerts_visible` 이다 — 같은 판정이되 「이 등급으로 보기」 를 따르지 않는다(켜고 끄는 사이 서 있던 알림이 해소 · 다시 뜸으로 흔들리지 않게 — 감사 `AD-12` · `AD-13` 도 실제 개발자 `viewer_is_developer`, 시험 `tests/test_grade_ui_core.py`). 시험은 `tests/test_admin_view.py`(설정 × 개발자 진리표 · Admin Area 잠금과 맞댐). 개발자에게만 서는 상태 알림(이 판정의 `AD-01` · `AD-08` · `AD-09` · `AD-19` · `AD-21` · `AD-22` · `AD-26` · `SY-06`, 토큰 셋, 감사 `AD-12` · `AD-13`)은 그 밖의 회차를 해소(`active=False`)로 부르고 짧은 글 · 전문을 싣지 않는다 — 숨은 표지(`[data-capa-alerts]`)에는 등록부 이름만 실린다(시험 `tests/test_admin_alert_resolved_markers.py` 가 앱 정보 카드 · 동기화 알림의 일곱 — `AD-08` · `AD-09` · `AD-19` · `AD-12` · `AD-13` · `AD-21` · `SY-06` — 을 본다). 누구에게나 서는 운영인데 꺼짐 `AD-02` 도 해소 표지에는 글을 싣지 않는다 — Admin Area 가 잠금 앞에서 부르므로 켜진 서버에서 주소로 Admin Area 를 연 일반 회차에도 그 표지가 실린다(시험 `tests/test_sso_status.py`).
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + `managed` 서버의 「BDQ 자동
@@ -2612,6 +2648,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - C-DEP CD 시작 점검 결과 파일이 있으면 「패키지가 없습니다」·로그인 토큰 오류(`is_login_token_failure`)·`user_name`
     안내 **뒤에** 그 단계의 결과 한 단락과 넣을 환경변수를 덧붙인다(첫 문장·갈래·종류 이름은 그대로, 파일이 없으면 지금
     문구 그대로). `BDQ_USER_NAME_ENV` 는 `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
+  - 누구나 볼 꼴 `public_failure_text(message)` — 이 어댑터가 낸 실패 글을 개발자가 아닌 등급에게 줄인 꼴이고, 어댑터가 낸 글이 아니면
+    None 이다. 머리 글 상수(`FAILED_QUERY_LEAD` · `ORIGINAL_LEAD` · `ORIGINAL_TO_DEVELOPER` · `CUSTOM_QUERY_LEAD` · `USER_NAME_LEAD` ·
+    `PACKAGE_MISSING_LEAD` · `PACKAGE_LOAD_LEAD` · `CUSTOM_TABLE_MISSING` · `CUSTOM_TABLE_MALFORMED`)는 글을 지을 때와 알아볼 때 같이 쓴다(문구만
+    고친 배포가 판정을 깨지 않게). 머리는 글 어디에 있어도 알아보고(앞머리는 남김) 가장 앞 머리 하나로 고른다 — 조회 실패는 첫 단락
+    「<머리>(<갈래>). <할 일>」 만(원문 · 서버 시작 점검 단락을 걷고 「아래 원문을 개발자에게」 → 「개발자에게」), CUSTOM 원천 표 조회 실패는
+    머리의 변수 이름 · SQL 갈래 덧말을 걷은 같은 꼴, 준비 실패(패키지 없음 · 불러오기 실패 · 요청자 계정 없음 · CUSTOM 원천 표 변수 없음 ·
+    꼴 틀림)는 `PUBLIC_SETUP_TEXT` 한 문장, 데이터 멈춤 글 · 끄개 메모는 None 이다. 어댑터의 글 자체와 로그(`_log_failure` — 원문 없음)는
+    그대로다 — 자동 갱신 스레드 · 점검 스크립트 · 모듈 창구가 같은 글을 받는다. 부르는 곳은 `admin_view.diagnostic_message` 하나다(공식버전
+    자동 갱신 탭 「마지막 확인」 · DB 등록 조회 · 저장 곁 오류). Streamlit 을 부르지 않는다. 시험 `tests/test_company_bigdataquery_adapter.py` 의
+    `test_the_public_failure_text_keeps_the_kind_and_what_to_do_and_drops_the_original` · `test_setup_failures_read_as_one_tell_the_developer_sentence_for_others` ·
+    `test_a_custom_query_failure_reads_without_the_variable_for_others` · `test_with_the_custom_switch_off_a_query_failure_reads_the_plain_public_form` ·
+    `test_a_text_the_adapter_did_not_write_has_no_public_form`, 등급마다는 `tests/test_grade_ui_core.py`.
 - `src/capa_simulation/io/container_start_report.py` — C-DEP CD 시작 스크립트(`scripts/container_start.py`)와 앱이 함께
   쓰는 환경변수 이름 다섯(`CD_ENVIRONMENT` — 사내 패키지 저장소 주소 `CAPA_COMPANY_INDEX_URL` 을 더해. 사내 PC 도 넣는 이름이라
   CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다. 앱이 읽지 않는 옛 갱신 토큰 이름
@@ -2970,6 +3018,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸이 그 토큰에서 선언을 푼다(`token_route_exceptions`, 5장 44). 선언을 접지 않는 편집표 키 `scenario_content_key` 는 생산
     계획 · 기준 정보 편집표 두 자리만 쓴다. 소요대수 길(`get_capacity_and_demand` · `full_capacity_outcome`)도 선언 칸에 기본값이
     없다(`tests/test_route_load_exception_keys.py`).
+  - 계산 밖 공정 칸(`get_unimplemented_basis_processes` — 소요기준 BOX · PCB 경로가 있는 공정, 11장)은 계산 칸이 아니라 빌더 셋
+    밖이다. 키는 활성 시나리오 `content_token` + 조회기간 스칼라이고 부하 예외 선언을 접지 않는다(선언이 목록을 바꾸지 않음).
+    `RQ_REQB` 는 `_` 인자(프레임 또는 빗나갈 때만 부르는 로더)다(`tests/test_scenario_result_cache.py`).
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
   - 설비 마스터를 받는 래퍼는 표를 Streamlit 이 해시하지 않는다 — 일정 미정 · 사용기준 밖 · 주차 집계는 `_cached_*` 의 `_`
@@ -3301,6 +3352,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 필수 컬럼 검증·업무 키 정규화의 단일 정의다(14-5).
   정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`). 표 칸 빈칸 판정(None·`pd.NA`·
   NaN·NaT — 빈 글자·0 은 값이다)도 `blank_cell` 하나다.
+  조회기간 안 계산 밖 공정(소요기준 BOX · PCB 경로가 있는 공정 — `UnimplementedProcess` 의 공정 · 빠진 소요기준 · `whole`)의
+  목록도 `unimplemented_basis_processes` 하나다. 두 계산이 행을 버리는 꼴(앞뒤 공백 · 대문자 · `UNIMPLEMENTED_BASES`)로 세고 받은
+  표를 고치지 않으며, 달을 못 읽는 행 · 공정이 빈 행은 세지 않아 멈춤 길을 더하지 않는다(11장).
 - `src/capa_simulation/services/frame_checks.py` — 중복 키 검사(`assert_unique_keys`)·텍스트 키 strip 의 단일 정의다.
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
@@ -5100,6 +5154,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_picker.py` — 위 요약을 세 구역의 공정 버튼으로 그린다(긴 표시명은
   한 줄 말줄임, 자동 갱신이 뺀 공정은 `marks` 표지).
   - 콜백·위젯 키에는 원본 공정명을 쓴다. 설명 풍선은 `help` 가 아니라 순번 칸(`home_bn_tile_<i>`)의 CSS `:hover` 다.
+  - 계산 밖 공정(`outside` — 원본 공정 → 빠진 소요기준 글)은 「확보율 없음」 구역 단추에서만 미달 최저 확보율과 같은 `::after`
+    자리에 「계산 밖」(`tile_rate_text`)이고 풍선의 확보율 없음 줄이 그 소요기준 까닭(`tile_tooltip_text` — 글은
+    `outside_calculation_mark.BASIS_REASON`)이다. 유효한 확보율이 있는 단추(과거 구간 달 등)는 그대로다(`tests/test_process_picker.py`).
 - `src/capa_simulation/services/month_columns.py` — 월 축과 연간 Total 열의 규칙이다. Total 은 1~12월이 모두
   조회범위 안인 해만 갖고 그 해 12월 바로 뒤에 들어간다.
   - 축은 하나다 — 표·차트·스크롤 폭이 같은 라벨 목록을 본다. 월 칸 표기 `YY.MM` 은 `month_label` 한 벌이다.
@@ -5118,6 +5175,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   서식은 제목 줄 캡션 — 9장 「표 도구 막대」). 판정 기준은 띄움 그대로다. 숨은 탭도 모두 그린다(`stateful_tabs`) — 탭을
   옮겨도 폼의 고친 칸이 남는다. 상자 하나하나(저장 단추 · 저장 단위 · key · 저장 길)는 놓는 자리와 상관없다. 팝업 머리 안내 글은 없다 — 「모든 사용자가 함께
   쓰는 공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추 일곱의 풍선(`SHARED_SAVE_HELP`)이 말한다.
+  - 구획 제목 줄 `render_section_title_row` 는 선택 인자 `mark` · `mark_help` 로 제목 오른쪽 끝에 작은 회색 표지(`st.caption` + ⓘ 풍선)를
+    단다 — 없으면 그리지 않고, 지금 쓰는 곳은 「상세 B/N 공정」 줄의 「계산 밖 n공정」 하나다(줄 서식은 `home_rendering.dashboard_title_row_style`).
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고(선행 B/O·선행 입고 실적은 대조 없이 `write_guard.save_once` 만) 월별 값은 보이는 달만 갈아
     끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
@@ -5502,9 +5561,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
   필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
-  가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1) ·
-  `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING` ·
-  `ATTENTION_HIT_MS` 900 · `ATTENTION_FADE_MS` 160 · `ATTENTION_STILL_MS` 1600)가 여기 한 곳이다. 시선 끌기 값은
+  가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1). 방금 누른 동작의
+  결과 칸(`flash` 를 실은 사건)은 그 넘침에서 걷지 않고 제 시간 동안 이 위 한 칸으로 선다(`showPopup` 의 `C.resultKey` —
+  2026-11-24 사용자 「권장대로」) · `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 ·
+  `ATTENTION_EASING` · `ATTENTION_HIT_MS` 900 · `ATTENTION_FADE_MS` 160 · `ATTENTION_STILL_MS` 1600)가 여기 한 곳이다. 시선 끌기 값은
   `attention_payload()` 한 사전으로 알림 칸 data `limits` 와 Space 층 보기 · 편집 data `attention` 이 함께 받는다(두 JS 에 수를 두지 않는다). API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
   코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
@@ -5514,6 +5574,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면을 단다. 화면을 그리지 못한 오류의 알림은 `page_error_note`(같은 글이면 같은 id · `keep` — Alarm 줄을 지키라는 표지, 알림 칸 JS 의
   `keptRowMissing`)이고 자리 마크와 한 칸에 싣는 표지가 `hidden_marker` 다(`components/data_error_mark.py` — 아래). 분석 기록(L2)은 자리만 있다
   (`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
+  보관(`HISTORY_ROWS` · `HISTORY_HOURS`)에서 걷힌 열린 상태 줄은 같은 지문이 다시 오면 알림창 없이 다시 선다(알림 칸 JS `handleState` — 9장 「알림 칸」).
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
@@ -6482,6 +6543,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `dashboard_title_row_style` 이 flex 로 둬 본문 글줄을 걷는다(안 걷으면 글 아래가 4.4px 더 빈다). 「적용하지 못한 달」
     은 제목 줄 밑에 서지 않는다(상태 알림 `HM-04` — `home_preference.render_lob_title_row`). 그림 여백은 그대로라
     `HOME_FIGURE_SCHEMA_VERSION` 은 올리지 않았다(`tests/test_home_page.py` 의 간격 시험).
+  - 제목 줄 끝 표지(`render_section_title_row(mark=)` — 「상세 B/N 공정」 의 「계산 밖 n공정 ⓘ」)는 그 줄의 자식이라 두 캔버스의 짝 차례 ·
+    띠 높이가 그대로다. `dashboard_title_row_style` 이 표지 칸을 내용 폭에 묶고(`flex: none` — 구분 칸의 `min-width:0` 이 ⓘ 를 글 밑으로
+    떨어뜨리지 않게) 글을 한 줄로 두며 캡션 문단 여백을 0 으로 걷어 제목과 눈높이를 맞춘다 — 모자라면 말줄임은 제목 쪽이다. 구분 칸 260px
+    에서 「계산 밖 12공정 ⓘ」 까지 제목 말줄임 없이 든다(2026-11-24 합성 사본 브라우저 실측).
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
   글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
   「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서
@@ -6626,6 +6691,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - UPEH 가정 토큰도 그림 기억 키에 든다. KPI 는 가정 요약 값에 회색 줄 「가정 전 n」, 근거 카드 ① 은 구간 달에 가정 한
     줄, ③ 은 구간 달이면 머리 식·판정·원인을 가정 요약으로 내고(식 첫 줄 「소요 = 가정 전 ÷ f」) 가정 전 판정은 회색 「가정
     전: …」 한 줄이다 — 같은 패널의 다음 화면 줄과 같은 기준(이름은 2026-11-12 사용자 답 q2 (가)).
+  - ③ 판정 카드의 판정하지 않는 달(소요 없음)은 `ProcessDetailView.outside_basis`(공정 경로가 모두 계산 밖 — 11장)가 있으면
+    「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다 — UPEH 가정 달 머리와 회색 「가정 전: …」 줄도 같은 글(`_unjudged_text`). 판정이
+    서는 달은 그 값과 상관없이 식 그대로다. 카드는 회차마다 짓는 글이라 그림 · 시트 기억 키와 `CANVAS_SCHEMA_VERSION` ·
+    `SHEET_SCHEMA_VERSION` 은 그대로다(`tests/test_process_capa_view.py`).
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
@@ -6652,7 +6721,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     단추가 열리고 `AD-04` 에 그 줄이 없다(잠글 까닭이 없다). 그때 저장하면 저장 알림 뒤 셋째 칸(`REGISTRATION_CUSTOM_FLASH_KEY` — 켬이면
     `SC-05`, 끔이면 `SC-06`, 한 등록에 하나라 충돌 칸 index 1 그대로)에 사건 알림 `SC-06` 이 표 없이 알림창 · Alarm 에만 선다(전문 끝
     「끄개 CAPA_BDQ_CUSTOM_SOURCE=off · 시뮬레이션 코드 <코드>」 — 표 이름 · 값 없음, 시험
-    `test_a_switched_off_registration_saves_raises_sc06_and_writes_the_memo_piece`). 등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
+    `test_a_switched_off_registration_saves_raises_sc06_and_writes_the_memo_piece`). 개발자 몫은 `admin_view` 한 판정이다 — 「시뮬레이션 코드 조회」 ·
+    「저장」 의 상세 조회 실패 곁 오류는 `grade_hooks.diagnostic_message` 를 지나 개발자가 아니면 갈래와 할 일만 남고(원문 · 서버 시작 점검 ·
+    환경변수 이름을 걷은 `company_bigdataquery_adapter.public_failure_text` 꼴, 준비 실패는 「개발자에게 알려 주세요」 한 문장), `AD-04` 전문은
+    개발자가 아니면 CUSTOM 원천 표 줄과 패키지 줄의 서버 시작 점검 단락을 뺀다(남는 줄이 없으면 짧은 글 — 지문 `content` 는 개발자 전문
+    그대로라 「이 등급으로 보기」 를 켜고 꺼도 다시 뜨지 않는다). 등록 시각 칸 꼴 틀림 · 등록된 시나리오 읽기 실패(`SC-02` — 이미 판정)는
+    그대로다(시험 `test_a_non_developer_sees_the_failure_without_the_original_or_server_steps` ·
+    `test_a_developer_still_sees_the_original_and_the_start_check_paragraph` ·
+    `test_ad04_full_drops_the_start_check_paragraph_for_others_and_keeps_its_fingerprint`).
+    등록 폼 글자 칸은 세대 key(`form_field_key` · `FORM_GENERATION_KEY`)이고 행을 고르거나 폼을 초기화할 때마다 새 위젯으로
     선다(9장 「폼 안 칸에 세션으로 값을 써 넣지 않는다」). 빈 칸 저장은 빈 칸을 모아 곁 한 줄로 거부한다(「필수 칸이 비어 있습니다:
     …」 — 복제와 같은 꼴). 글자 칸은 입력 초안이라 `persist_state` 가 없어
     그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의
@@ -7792,7 +7869,10 @@ CSV 에서 빈칸으로 그려져 「값 없음」 과 구별되지 않는다.
   그대로 적는다. 피클 왕복에서도 꼴을 잃지 않는다(`__reduce__`).
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
-- BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
+- BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조). 화면은 경고 알림이 아니라 표지 +
+  풍선이다 — 산출 결과 세 표 제목 줄 「계산 밖 n공정」(`components/outside_calculation_mark.py`) · 공정 Capa 상세 ③ 판정
+  카드 「계산 밖(소요기준 BOX) — 판정하지 않습니다」(경로가 모두 계산 밖인 공정만) · HOME 공정 필터 팝업 「확보율 없음」 구역 단추
+  「계산 밖」(같은 공정만) · HOME 「상세 B/N 공정」 제목 줄 끝 「계산 밖 n공정」
 - 기본 화면용 공정별 대당 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
   집계한다. 동일한 대당 Capa의 STEP이 늘면 공정별 대당 Capa는 그 수에 반비례해 감소한다.
@@ -9786,6 +9866,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   닫힌 탭 · 접힌 펼침 안의 조건은 그 탭이 열린 회차에만 부른다. `tests/test_alert_sites.py` 가 경고 상자를 직접 그리는
   자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 2단계(a · b)가 상태 경고를 모두 옮겨
   남은 자리는 자리 글 까닭(`REASONS`) 하나를 든다. 새 경고 자리를 더하려면 상태 알림인지 먼저 가린다.
+  지문이 같아도 그 Alarm 줄이 보관(아래 「기록(L1)」)에서 걷혔으면 알림창 · 안 읽음 없이 줄만 다시 세운다 — 처음 시각은 상태 표가
+  기억한 것을 잇고 로그 계기 칸은 「보관에서 걷힌 뒤 조건이 이어져 다시 세움」(`alert_center.TEXT` 의 `cause_back`)이다(2026-11-24
+  사용자 「권장안 그대로」 — 자리 마크 오류의 걷힌 줄 `keptRowMissing` 과 같은 꼴, 설계 규칙 UI-NTF-02 · UI-NTF-08).
 - **화면에 상태 문장을 달지 않는다**(2026-11-04 사용자 원칙 — Space 결정 보드 답 「저런 식으로 인터페이스에 설명 문구를 다는
   걸 지양」). 경고 상자만이 아니라 조작 상자 · 머리 띠 끝에 붙인 짧은 상태 줄(「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
   m개」 같은)도 상태 알림으로 내고 그 자리에는 조작만 둔다 — 꼭 필요한 설명은 풍선 · Guide 다. 예: Space 「Space 도면」 상자
@@ -9921,6 +10004,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Static 대비 일정을 열면 `EQ-06` · `EQ-23` 이 더 떠 먼저 선 `EQ-12` 를 15초 전에 밀어내던 소음(샘플 관측 — 2026-11-10 사본 앱). 그 대가로 높은 단계 세 칸이 선 동안 온
   「알림」 은 서자마자 걷힌다(Alarm 줄 · 안 읽음 수에는 남는다). 그 칸은 보인 적이 없어 반복 창을 열지 않는다 — 다음에 나도
   「×n」 · 시선 끌기 없이 새 칸이다(`hidePopup` 의 `seen` — 앞에 보였던 알림은 그때 연 창 그대로).
+  **다만 방금 누른 동작의 결과 칸은 그 넘침에서 걷지 않고 상한 위 한 칸(넷째)으로 선다**(2026-11-24 사용자 「권장대로」 — 정식판
+  1.0 마감 2번 D). 결과 칸은 `flash` 를 실은 사건(`flash._alert` — 버튼 곁 결과 `queue_flash`)이고 알림 칸이 그 열쇠 하나
+  (`C.resultKey`)를 들고 그 칸이 걷힐 때(`hidePopup`) 비운다. 그 칸이 서 있는 동안 상한은 `POPUP_LIMIT` + 1 이고 걷을 칸 후보에서
+  그 칸만 빠진다 — 나머지는 위 규칙 그대로라 차 있던 칸이 결과에 밀리지 않고 넷을 넘지 않는다. 새 결과가 서면 앞 결과는 그 순간
+  보통 칸(후보)이 된다. 결과는 제 시간(알림 8초 · 그 밖 15초)을 다 선다 — 로그인 직후 상태 알림 셋이 차 있어 첫 저장 성공 알림창이
+  보이지 않던 길(사외 점검 D2). 결과 칸은 뜻이 아니라 길로 가른다 — 버튼 곁 결과 길(`queue_flash`)로 낸 알림은 모두 `flash` 를
+  실어 결과 칸이고, 그 길로 내는 남의 저장 안내(설비 편집을 최신 저장본으로 다시 연 안내 — `equipment_data_workspace.REOPENED_NOTICE_KEY`,
+  끊긴 제 저장의 성공 알림과 같은 칸 · 입력 비가동 초안을 버린 경고 — `manual_downtime_tab.MANUAL_DROPPED_MESSAGE`)도 그렇다. 상태
+  알림 · 사건 길(`alerts.event`)로 낸 사건 · JS 로컬 사건(탭 줄 · 화면 확인 `raise`)은 `flash` 가 없어 결과 칸이 아니다 — 남의 저장
+  사건 `EQ-05` 도, 누른 동작의 결과인 Space 「호기 정보」 창 칸 막음 `EQ-25`(확인 필요)도 그래서 높은 단계 셋이 차 있으면 서자마자
+  걷힌다(Alarm 줄은 남고, `EQ-25` 는 그 칸 빨강 + 까닭 풍선도 남는다).
 - **닫는 회차에 알림 표지를 쓰는 팝업은 앱 전체로 닫는다**(지난 보드 a-fragment-mark — 2026-11-10 Q-11 권장대로). 알림 칸은 앱 뿌리의
   회차 표지가 바뀔 때만 문서를 훑는다 — 호스트만 도는 짧은 회차(팝업 호스트 닫기)는 그 표지를 움직이지 않아 그 회차가 남긴 알림 ·
   해소 표지를 다음 회차까지 읽지 못한다. 그래서 닫힌 자리(`DialogHost(idle=)` · 닫힌 팝업이 넘긴 알림)가 알림을 내는 팝업 —
@@ -9933,6 +10027,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   옮기지 않는다(`role=status` · polite). 대화상자가 열린 동안 호스트에 `inert` 가 붙지만 그리기는 그대로다.
 - **기록(L1)은 이 브라우저 탭 `sessionStorage`** 다(D1 (가) — 200줄 · 12시간, 새로고침 · 테마 전환에도 남음). 서버 분석 기록(L2)은
   usage-log 1단계와 함께 만든다(D6 — 자리만 `alerts.record_server_event`).
+  열린 상태 줄도 이 보관에 걸린다 — 줄 시각은 처음 선 때라 조건이 이어져도 12시간 뒤(더 새 줄 200개에 밀리면 그때) 걷힌다. 상태 표는 따로 남아 같은 조건이 다시
+  오면 그 줄이 알림창 없이 다시 선다(위 「상태 경고는 자리에 그리지 않는다」). 보관 값(200줄 · 12시간)은 그대로다.
 - **서버 재시작 알림**(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가) — `GL-07`, 사건 · 확인 필요). 재시작 뒤 세션은 새것이라 파이썬만으로는
   재시작과 첫 접속을 가르지 못해 브라우저가 판정한다(`TAB-02` 와 같은 길) — 프로세스마다 한 번 정하는 부트 표지(`alert_center.BOOT_MARK`)와
   등록부를 지나 미리 만든 알림(`alerts.server_restart_note`)을 data 에 싣고, JS(`bootChanged`)가 이 탭 `sessionStorage` 의 앞 표지와
@@ -11011,6 +11107,14 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   기준이 확정되면 넣는다. 경계는 `frame_contracts.DEMAND_BASES` 와
   `frame_contracts.UNIMPLEMENTED_BASES` 다. 뒤의 것은 대당 Capa·소요대수·기준정보 적용 검사가
   모두 import 하는 한 벌이다 — 넣을 때 한 곳만 고치면 세 경로가 같은 행을 본다.
+  조회기간 안 계산 밖 공정 목록도 그 곁 한 곳(`frame_contracts.unimplemented_basis_processes`, 캐시
+  `simulation_cache.get_unimplemented_basis_processes`)이다. 세는 꼴이 두 계산이 버리는 꼴과 같아 목록의 공정과 계산이 버린 경로가
+  어긋나지 않고, 계산 숫자는 바꾸지 않으며, 넣을 때 그 집합만 고치면 목록도 함께 따라간다(`tests/test_frame_contracts.py` ·
+  `tests/test_required_equipment.py`). 화면 표지는 산출 결과 세 표 제목 줄 「계산 밖 n공정」 + 풍선이다(경고 알림 아님 —
+  `components/outside_calculation_mark.py`, 3장 `calculation_result.py`). 경로가 모두 계산 밖인 공정을 고른 공정 Capa 상세 ③
+  판정 카드는 「소요 없음」 대신 「계산 밖(소요기준 BOX) — 판정하지 않습니다」 다(3장 `process_capa_detail.py`). 같은 공정은 HOME 공정
+  필터 팝업 「확보율 없음」 구역 단추에 「계산 밖」 이 붙고 풍선이 그 소요기준을 말한다(3장 `home.py` · `process_picker.py`). HOME
+  「상세 B/N 공정」 제목 줄 끝에도 산출 결과와 같은 「계산 밖 n공정」 + 풍선이 선다 — B/N 순위가 그 공정 없이 정해지는 자리다(3장 `home.py`).
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지

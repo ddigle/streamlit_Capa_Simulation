@@ -11,6 +11,10 @@ from capa_simulation.components.required_exclusion_notice import (
     required_exclusion_message,
 )
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
+from capa_simulation.services.frame_contracts import (
+    UnimplementedProcess,
+    unimplemented_basis_processes,
+)
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
@@ -1500,3 +1504,35 @@ def test_dummy_series_routes_keep_their_load_in_required_equipment(basis: str) -
         home_only = exclude_dummy_series(month_load)["물량"].sum()
         assert everything > home_only
         assert total == pytest.approx(everything / _DUMMY_SERIES_CAPACITY)
+
+
+def test_box_routes_leave_the_numbers_and_the_outside_listing_names_the_dropped_routes() -> None:
+    """BOX · PCB 경로가 섞여도 소요대수 숫자는 그대로다. 계산 밖 목록
+    (`frame_contracts.unimplemented_basis_processes`)은 계산이 버린 경로의 공정을 센다 — 경로를 모두
+    버린 공정(`whole`)은 결과에 없고, 남은 경로가 있는 공정은 결과에 있다."""
+    counted = pd.DataFrame([_route("DEMO-A")])
+    dropped = pd.DataFrame(
+        [
+            {**_route("DEMO-A"), "공정": "DEMO_BOX_ONLY", "소요기준": " box "},
+            {**_route("DEMO-A"), "STEP_SEQ": 20, "소요기준": "pcb"},
+        ]
+    )
+    reqb = pd.concat([counted, dropped], ignore_index=True)
+    plan = pd.DataFrame([_plan_row("DEMO-A")])
+    inputs = (plan, _yield_rows("DEMO-A"), _chip_rows("DEMO-A"), _route_capacity("DEMO-A"))
+
+    plain = calculate_required_equipment(
+        counted, *inputs, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS
+    )
+    mixed = calculate_required_equipment(reqb, *inputs, route_exceptions=NO_ROUTE_LOAD_EXCEPTIONS)
+    listed = unimplemented_basis_processes(reqb, start_month=202608, end_month=202608)
+    remaining = set(mixed["공정"].astype(str))
+
+    pd.testing.assert_frame_equal(mixed, plain)
+    assert listed == (
+        UnimplementedProcess(process="DEMO_BOX_ONLY", bases=("BOX",), whole=True),
+        UnimplementedProcess(process="Process-A", bases=("PCB",), whole=False),
+    )
+    assert remaining == {"Process-A"}
+    assert {item.process for item in listed if item.whole}.isdisjoint(remaining)
+    assert {item.process for item in listed if not item.whole} <= remaining

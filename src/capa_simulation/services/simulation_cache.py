@@ -49,6 +49,10 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
+from capa_simulation.services.frame_contracts import (
+    UnimplementedProcess,
+    unimplemented_basis_processes,
+)
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.load_calculator import (
     MONTHLY_AGGREGATION_TOTAL,
@@ -783,6 +787,27 @@ def get_route_step_tables(
     """
     del cache_key
     return route_step_tables(_frame_from(_upeh), _frame_from(_reqb))
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_unimplemented_basis_processes(
+    content_token: str,
+    start_month: int,
+    end_month: int,
+    _reqb: FrameSource,
+) -> tuple[UnimplementedProcess, ...]:
+    """조회기간 안 계산 밖 공정 — 소요기준 BOX · PCB 경로가 있는 공정
+    (`frame_contracts.unimplemented_basis_processes`).
+
+    키는 활성 시나리오 `content_token` + 조회기간이다. 부하 예외 선언은 이 목록을 바꾸지 않으므로
+    계산 토큰(`calculation_token`)을 접지 않는다 — 선언만 바뀌면 같은 칸이다. `_reqb` 는 그 토큰을
+    발급한 활성 시나리오의 `RQ_REQB`(프레임 또는 빗나갈 때만 부르는 로더)이고 해시하지 않는다. 값은
+    공정 수만큼의 작은 튜플이다.
+    """
+    del content_token
+    return unimplemented_basis_processes(
+        _frame_from(_reqb), start_month=start_month, end_month=end_month
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
