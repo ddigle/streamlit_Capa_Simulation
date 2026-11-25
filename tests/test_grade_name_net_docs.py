@@ -12,7 +12,8 @@ core 그물(`tests/test_grade_name_net.py`)이 앱 · 페이지 · 부품 · `au
 - **문서** — Guide 전부 · 런북 · 모듈 지침서 · 모듈 담당자 안내서(글 원본과 GitHub Pages 판) ·
   사내에 가는 설정 문서 셋(`objectstore_setup` · `bigdataquery_webide_setup` ·
   `dual_env_workflow`) · 감사 기록 운영 문서 · README. 문서 본문 전부를 본다. 날짜 붙은 결정
-  기록 인용(`docs/TODO.md` · `docs/design_rules.md` 의 대화 원문)은 이 그물 밖이다.
+  기록 인용(`docs/TODO.md` · `docs/design_rules.md` 와 기록 `docs/records/` 의 결정 · 닫힌 항목 ·
+  규칙집 판 기록에 든 대화 원문)은 이 그물 밖이다.
 - **모듈 파일** — core 그물이 빼는 바로 그 파일(`module_*.py` · `components/module_*.py` ·
   `app_pages/internal_modules.py` · `scripts/new_module.py` · `scripts/module_check_rules.py`)의
   화면 글(문자열 상수 · f-string 조각, docstring 빼고). 같은 뿌리에서 core 범위를 뺀 나머지라
@@ -46,7 +47,13 @@ DOCUMENTS: Final = (
     "README.md",
 )
 # 날짜 붙은 결정 기록 인용이 남는 문서 — 그물 밖(옛 뜻의 원문을 고치지 않는다).
-DATED_RECORDS: Final = ("docs/TODO.md", "docs/design_rules.md")
+DATED_RECORDS: Final = (
+    "docs/TODO.md",
+    "docs/design_rules.md",
+    "docs/records/decisions.md",
+    "docs/records/closed.md",
+    "docs/records/design_rules_log.md",
+)
 # 이 갈래만 더 받는 꼴 — 등급 이름표(화면 라벨) · 다른 뜻의 프로그램 이름.
 LANE_ALLOWED: Final = (
     re.compile(r"`관리자`"),
