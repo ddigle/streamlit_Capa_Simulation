@@ -193,6 +193,12 @@ DETAIL_LOCKED_HELP: Final = (
 # 판정하지 않는다) 잠긴 저장 단추 풍선의 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_locked_help`). 목록
 # 조회는 그 표를 쓰지 않아 잠그지 않는다.
 CUSTOM_LOCKED_TAIL: Final = " 조회 · 저장이 막힙니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+# 개발자가 아닌 회차의 그 풍선(`_custom_locked_help_for_viewer`) — 변수 이름과 채울 자리는
+# 개발자 몫이라(`AD-04` 전문이 그 줄을 빼는 것과 같은 판정) 막힌 것과 알릴 사람만 적는다. 없음 ·
+# 꼴 틀림이 같은 한 문장이고 낱말은 `AD-04` 짧은 글(`CUSTOM_TABLE_SHORT`)을 따른다.
+CUSTOM_LOCKED_PUBLIC_HELP: Final = (
+    "CUSTOM 원천 표 환경변수를 쓸 수 없어 조회 · 저장이 막힙니다 — 개발자에게 알려 주세요."
+)
 # 상태 알림 `AD-04` 의 CUSTOM 원천 표 줄 꼬리 — 까닭 한 문장 뒤에 붙는다(`custom_table_notice`).
 # 막히는 것은 DB 조회 길뿐이다(CSV 파일 길은 파일의 CUSTOM 을 쓴다). 값(사내 표 이름)은 어디에도
 # 싣지 않는다.
@@ -454,8 +460,21 @@ def custom_table_notice(problem: str) -> str:
 
 
 def custom_locked_help(problem: str) -> str:
-    """CUSTOM 원천 표 환경변수를 쓸 수 없어 잠긴 저장 단추의 풍선(설계 규칙 UI-INP-07)."""
+    """CUSTOM 원천 표 환경변수를 쓸 수 없어 잠긴 저장 단추의 풍선(설계 규칙 UI-INP-07) — 개발자 몫
+    꼴(변수 이름 · 채울 자리를 적은 `AD-04` 그 줄을 가리킨다)."""
     return problem + CUSTOM_LOCKED_TAIL
+
+
+def _custom_locked_help_for_viewer(problem: str) -> str:
+    """이 회차의 그 풍선 — 개발자 몫(`admin_view.developer_notes_visible`)이면
+    `custom_locked_help`, 아니면 `CUSTOM_LOCKED_PUBLIC_HELP`. 개발자가 아닌 회차의 `AD-04` 전문에는
+    CUSTOM 원천 표 줄이 없어 「채울 자리는 Alarm 그 줄이」 가 가리킬 글이 없다. 판정은 부를 때
+    읽는다(`_report_configuration` 과 같은 까닭)."""
+    from capa_simulation.components import admin_view
+
+    if admin_view.developer_notes_visible():
+        return custom_locked_help(problem)
+    return CUSTOM_LOCKED_PUBLIC_HELP
 
 
 def _report_configuration(
@@ -857,7 +876,7 @@ def _render_registration_form(
     if not configured:
         locked_help: str | None = DETAIL_LOCKED_HELP
     elif custom_problem is not None:
-        locked_help = custom_locked_help(custom_problem)
+        locked_help = _custom_locked_help_for_viewer(custom_problem)
     else:
         locked_help = UNSAVABLE_REASON if unsavable else None
     # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의

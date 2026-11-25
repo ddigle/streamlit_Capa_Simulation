@@ -2202,6 +2202,44 @@ def test_ad04_full_drops_the_start_check_paragraph_for_others_and_keeps_its_fing
 
 
 @pytest.mark.parametrize(
+    ("value", "problem"),
+    [
+        (None, adapter.CUSTOM_TABLE_MISSING),
+        (MALFORMED_CUSTOM_TABLE, adapter.CUSTOM_TABLE_MALFORMED),
+    ],
+    ids=["없음", "꼴 틀림"],
+)
+def test_a_non_developer_reads_the_custom_lock_without_the_variable_or_the_place_to_fill(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, problem: str
+) -> None:
+    """개발자가 아닌 회차의 `AD-04` 전문에는 CUSTOM 원천 표 줄(변수 이름 · 채울 자리)이 없다 —
+    그래서 잠긴 저장 단추 풍선도 변수 이름과 「채울 자리는 Alarm 그 줄이」 를 싣지 않고 막힌 것과
+    알릴 사람만 적는다(없음 · 꼴 틀림이 같은 한 문장). 단추는 그대로 잠기고 자리에는 아무것도 서지
+    않는다(설계 규칙 UI-INP-07 · UI-NTF-02). 개발자 회차는 지금처럼 변수 이름으로 까닭을 말한다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    _set_custom_table(monkeypatch, value)
+
+    _as_developer(monkeypatch, False)
+    app = _run()
+    save = _save_button(app)
+    assert save.disabled
+    assert save.help == registration.CUSTOM_LOCKED_PUBLIC_HELP
+    assert not [word for word in DEVELOPER_WORDS if word in save.help], save.help
+    assert adapter.BDQ_CUSTOM_TABLE_ENV not in save.help and "채울 자리" not in save.help
+    assert MALFORMED_CUSTOM_TABLE not in save.help and "사내" not in save.help
+    assert not app.error and not app.warning
+    # 그 회차의 `AD-04` 전문(짧은 글)과 같은 낱말 — 풍선이 Alarm 에 없는 글을 가리키지 않는다.
+    note = active_state(app, "AD-04")
+    assert note is not None and note["full"] == registration.CUSTOM_TABLE_SHORT
+    assert "채울 자리" not in str(note["full"])
+
+    _as_developer(monkeypatch, True)
+    assert _save_button(_run()).help == registration.custom_locked_help(problem)
+
+
+@pytest.mark.parametrize(
     ("catalog_ready", "detail_ready", "places"),
     [
         (False, False, ("CATALOG_QUERY_TEMPLATE", "QUERY_TEMPLATE)")),
