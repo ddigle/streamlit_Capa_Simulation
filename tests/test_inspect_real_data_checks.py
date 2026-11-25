@@ -4174,8 +4174,11 @@ def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
 
 
 def _without_timings(output: str) -> list[str]:
-    """`걸린 시간` 줄을 뗀 출력 줄 — 같은 표를 두 번 잰 출력을 견준다."""
-    return [line for line in output.splitlines() if not line.startswith("- 걸린 시간 ")]
+    """`걸린 시간` 줄과 분 단위 `실행` 시각 줄을 뗀 출력 줄 — 같은 표를 두 번 잰 출력을 견준다
+    (두 번 사이에 분이 바뀌어도 같다)."""
+    return [
+        line for line in output.splitlines() if not line.startswith(("- 걸린 시간 ", "- 실행 "))
+    ]
 
 
 def test_a_copy_before_the_custom_column_reads_like_the_migrated_copy(
