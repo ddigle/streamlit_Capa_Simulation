@@ -90,6 +90,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 에이전트는 `--output` 파일만 옮긴다(런북 0장, 2026-11-11) — 정본 개발 에이전트는 받은 압축본에 `--check-summary <파일>` 을 돌려 옮겨 적은 오타를 잡는다),
 `scripts/inspect_db_counts.py`(사내 런북 7-8 개수 세기 — 두 DB 의 표마다 행 수 · Space 모듈 묶음 · 파일 크기와 생산 계획 그리드 두 표의 크기를
 **읽기 전용**으로 재어 한 줄씩 찍는다. 앞 세 줄은 옛 `python -c` 세 줄과 같은 꼴이고, 사용자가 별도 창에서 `--output` 으로 돌린다),
+`scripts/inspect_source_csv.py`(원천 CSV 견줌 — 원천 웹에서 받은 시나리오 CSV 를 DB 등록 탭 「CSV 파일」 길과 같은 함수로 읽어 DB 사본에
+같은 코드로 받아 둔 원천과 견주고 수만 찍는다. **읽기 전용**이고 `--database` 사본만 받으며 운영 DB 자리는 거절한다 — 사내는 사용자가 별도 창에서 돌린다),
 `scripts/inspect_revision_calculations.py`(사내 런북 6-3 a 사본 E2E — 저장된
 모든 리비전의 대당 Capa → 소요대수 → 확보율을 앱과 같은 길로 **읽기 전용**으로 다시 돌려 상태·개수만
 찍는다. `--database` 는 기본값이 없어 늘 DB 사본을 주고, 운영 DB 자리(같은 파일·저장소 `data/` 아래·git 저장소 안 —
@@ -140,7 +142,7 @@ DuckDB 파일은 프로세스 배타 잠금이다. 앱 서버가 떠 있으면 �
 계산 파이프라인:
 
 ```text
-Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
+Core_Data (BigDataQuery / 원천 CSV 올림 / data/input/Core_Data.csv / 내장 합성 시드)
   → 78컬럼 검증 + pandas RQ 16개 변환
   → data/capa_simulation.duckdb (시나리오·리비전·공식버전·공용 표시순서)
   → 활성 리비전 → 세션 활성 시나리오
