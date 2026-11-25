@@ -804,7 +804,7 @@
   싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
-    저장소(`localStorage`)가 막힌 브라우저는 키를 적지 못해 `?theme` 만 밝게 맞추므로, OS 가 어두우면 크롬과 본문의 테마가 어긋날 수 있다 — 이 어긋남은 고치지 않는다.
+    저장소(`localStorage`)가 막힌 브라우저는 키를 적지 못해 `?theme` 만 밝게 맞춘다 — 그런 브라우저에서 OS 가 어두울 때 생기는 테마 어긋남은 고치지 않는다.
   - 열릴 때의 새로고침(키를 고쳐 적었거나 `?theme` 이 다를 때 — `reloadOnOpen`)은 **문서를 연 주소**에서 빠진 인자를
     되살린다(`<theme-reopen>`, 연 주소는 `performance` 탐색 항목 — `history.replaceState` 로 바뀌지 않는다). 버려지는 첫
     세션도 링크 인자를 받아 주소에서 지우므로(Space `?layer=short…`·공정 Capa 상세 `?process=…`·제약 시뮬레이션), 지금
