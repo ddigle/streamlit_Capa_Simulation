@@ -39,6 +39,8 @@
 의 기록 파일)의 홈 폴더 앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게
 — 여닫는 경로 값은 그대로다). 표준 오류도 같다 — 도는 동안 어느 모듈의 로거 글이든
 (`_masked_logging`), 잡지 못한 예외의 트레이스백도(`_masked_excepthook`) 같은 가림을 지난다.
+불러오는 동안 Streamlit 캐시 래퍼가 찍는 「No runtime found」 경고(수십 줄)만 끈다 — 결과와
+상관없는 줄이고, 끄는 것은 그 불러오기 동안뿐이다.
 
 **세대 지킴**(`keep` · `unkeep`)은 버킷에 기한 있는 표지(`generations/keep/`)를 두거나 지운다.
 정리가 기한까지 그 세대와 두 멤버를 비켜 간다. 포인터는 그대로라 표지를 모르는 코드도 같은
@@ -85,10 +87,6 @@ from capa_simulation.io.object_storage import (  # noqa: E402
     StorageSettings,
     StorageSettingsError,
 )
-from capa_simulation.page_bootstrap import (  # noqa: E402
-    BOOTSTRAP_ERRORS,
-    bootstrap_error_message,
-)
 from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E402
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
 from capa_simulation.services.korean_particle import (  # noqa: E402
@@ -109,6 +107,20 @@ from capa_simulation.settings import (  # noqa: E402
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
 )
+
+# `page_bootstrap` 은 Streamlit 캐시 래퍼 모듈을 함께 불러온다. 실행 문맥 밖이라 래퍼마다 「No
+# runtime found」 경고가 표준 오류에 한 줄씩(수십 줄) 결과 줄보다 먼저 찍혀 사용자 창을 덮으므로
+# 불러오는 동안만 끈다. 끝나면 불러오기 전 단계로 되돌린다 — 명령이 도는 동안의 로거 글
+# (`_masked_logging`)과 오류는 그대로 표준 오류에 닿는다.
+_LOGGING_DISABLED = logging.root.manager.disable
+logging.disable(max(_LOGGING_DISABLED, logging.WARNING))
+try:
+    from capa_simulation.page_bootstrap import (  # noqa: E402
+        BOOTSTRAP_ERRORS,
+        bootstrap_error_message,
+    )
+finally:
+    logging.disable(_LOGGING_DISABLED)
 
 DATASET_PATHS: dict[DatasetName, Path] = {
     "simulation": DUCKDB_PATH,

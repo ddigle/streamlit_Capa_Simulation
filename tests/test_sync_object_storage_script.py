@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
@@ -132,6 +134,71 @@ def test_commands_stop_with_the_names_to_set_before_calling_aws(
     profile = capsys.readouterr().out
     assert "aws configure set" not in profile
     assert "CAPA_S3_ENDPOINT_URL · CAPA_S3_PROFILE" in profile
+
+
+# 새 파이썬에서 DB 자리를 저장소 `data/` 대신 시험 뿌리로 두고 도구를 명령 줄 그대로 돌린다.
+_RUN_TOOL_ELSEWHERE = r"""
+import os
+import runpy
+import sys
+from pathlib import Path
+
+from capa_simulation import settings
+
+settings.DATA_DIR = Path(os.environ["CHILD_DATA_DIR"])
+settings.DUCKDB_PATH = settings.DATA_DIR / "capa_simulation.duckdb"
+settings.EQUIPMENT_DUCKDB_PATH = settings.DATA_DIR / "equipment_availability.duckdb"
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def test_the_tool_prints_no_streamlit_runtime_warning_before_its_lines(tmp_path: Path) -> None:
+    """`page_bootstrap` 이 딸려 오는 Streamlit 캐시 래퍼는 실행 문맥 밖에서 「No runtime
+    found」 경고를 수십 줄 찍는다 — 사용자 별도 창에서 결과 줄보다 먼저 쏟아지던 줄이다
+    (2026-11-25 되돌림 연습). 도움말 · 멈춘 명령 모두 그 줄이 없고 표준 출력의 꼴(하위 명령
+    목록 · `[중단]` 줄 · 끝의 전송용 요약)은 그대로다. 명령이 도는 동안의 로거 글은 그대로
+    표준 오류에 닿는다 — `test_sync_script_redaction.py` 의
+    `test_any_logger_line_passes_the_mask`. 이 pytest 프로세스는 래퍼를 이미 불러왔으므로 새
+    프로세스에서 본다."""
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(("CAPA_", "AWS_", "PYTHON"))
+    }
+    environment.update(
+        {
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "CHILD_DATA_DIR": str(tmp_path / "data"),
+            "HOME": str(tmp_path / "home"),
+            "USERPROFILE": str(tmp_path / "home"),
+        }
+    )
+
+    def run(*argv: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-c", _RUN_TOOL_ELSEWHERE, str(SCRIPT_PATH), *argv],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=tmp_path,
+            env=environment,
+            timeout=120,
+            check=False,
+        )
+
+    helped = run("--help")
+    assert helped.returncode == 0, helped.stderr[-2000:]
+    assert "No runtime found" not in helped.stderr
+    assert helped.stderr == ""
+    assert "generations" in helped.stdout and "rollback" in helped.stdout
+
+    stopped = run("generations")
+    assert stopped.returncode == 1, stopped.stderr[-2000:]
+    assert "No runtime found" not in stopped.stderr
+    lines = stopped.stdout.splitlines()
+    assert lines[0].startswith("[중단] ") and "CAPA_S3_ENDPOINT_URL" in lines[0]
+    assert lines[-1].startswith("전송용 요약: generations 멈춤 ") and lines[-1].endswith("; 종료 1")
 
 
 def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_only_the_source(
