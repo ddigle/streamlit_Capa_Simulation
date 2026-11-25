@@ -64,6 +64,7 @@
   바꾼 경로」(산식이 부하량을 바꾼 결과 줄 수 · `WF 구분` 마다 부제 — 표는 결과 `attrs` 를 뗀다)가 선다. 재료(`RouteExceptionCheck` ·
   `route_exception_check`)는 `capacity_gate.input_check_verdict` 가 넘긴 판으로 짓고, 선언이 빈 리비전 · 뒤 묶음을 접는 멈춘 리비전의
   묶음은 그대로다. 「그 화면으로」 는 없다(고칠 곳이 Admin 「부하 예외」).
+  - 멈춘 리비전은 뒤 묶음을 세지 못해 「셀 수 없음」 한 묶음으로 접는다(등록 때 뺀 원천 행은 계산과 상관없이 센다). HOME Density 환산만 멈춘 리비전은 대당 Capa · 소요대수가 끝났으므로 「멈춤」 줄을 두고 뒤 묶음도 그대로 센다(`DENSITY_STOP_KEEPS_COUNTS`).
 - `src/capa_simulation/services/securement_rate.py` — 확보율·추가 필요대수·부호 있는 과부족(`securement_balance`)을 낸다.
 - `src/capa_simulation/services/process_capa_detail.py` — 공정 하나의 월별 요약·제품별 소요·경로 추적을 계산 결과에서 꺼낸다.
   - 새 계산이 없다. 대당 Capa 식을 바꾸면 `route_factor_product` 도 고친다(`tests/test_process_capa_detail.py`).
@@ -124,6 +125,7 @@
   - 내보낸 파일을 그대로 되붙여도 통과해야 한다(읽는 쪽 `*_COLUMNS` 와 같은 이름·차례, `reference_csv.guard_excel_text`).
   - 일부 열 붙여넣기(`read_equipment_update`)는 붙여넣은 열만 바꾸고(빈 칸 = 지움) 겹친 머리글을 막는다. 모르는
     머리글은 39열이 다 있거나 옛 36열·옛 38열(`시나리오 메모` 만 없음) 꼴일 때만 알림과 함께 넘기고 그 밖에는 막는다.
+  - 편집본에 없는 설비명(새 호기)은 새 호기에 필요한 열(선택 컬럼 밖)이 붙여넣은 표에 다 있어야 한다. 하나라도 없으면 검증 앞에서 거절한다 — 반만 채운 호기를 받지 않는다.
 - `src/capa_simulation/services/dashboard.py` — HOME 월별 집계와 B/N 월별 순위(Top 1·Top 5·상세)·Wafer Capa 를 낸다.
   - HOME 의 Wafer 정의는 `home_aggregation_wafer_load` 하나다 — Dummy 계열(`product_type.DUMMY_SERIES_DIVISIONS_BY_PRODUCT_TYPE`)을
     뺀 원천 집계 기준이고, 월 합과 제품별 비중 분모가 같은 거른 프레임에서 묶인다(6장 「HOME 얹기」).
@@ -197,6 +199,7 @@
     NUL 이 든 장 · csv 가 받지 않는 장 — 탭 예외가 아니라 거절 · 머리 칸 · 칸 수)이 어긋나면 뒤 검사를 하지 않는다. 측정률 빈칸 · 0 은 거절하지 않고 1.0 으로 센 칸 수만 센다(D23 (나) —
     0 은 0 그대로 싣고 계산이 1.0 으로 읽는다). `WF 구분` 은 대소문자를 무시해 덮임 · 겹침을 본다. RUN_DAY 는 `달력` 또는 정수다
     (계약 `integer` — 설계 V-11 을 좁힘).
+    공정 장(`01_process.csv`)에 공정이 한 줄도 없는 판은 V-03(「공정이 하나도 없음」)으로 거절한다.
   - 판 번호 판정 `judge_pack` — 활성 판과 sha 같음 = 바뀐 것 없음, 끈 동안 마지막 판과 sha 같음 = 다시 켜기, 판 번호 > 적용한
     가장 큰 판 = 적용, 그 밖 = 뒤로 감(거절). 판을 가르는 값은 받은 본문 sha256 이다.
   - `pack_to_zip` 은 같은 판을 늘 같은 바이트로 쓴다(고정 시각 · 글자 칸 가드). `pack_changes` 는 바뀐 칸 수와 그 가운데 활성
@@ -227,6 +230,7 @@
   (`SPLIT_CUSTOM_REASON`)을 남긴다 — 공통 줄을 먼저 본다. 견주는 리비전 표에는 CUSTOM 칸이 있어야 한다(0039 뒤 저장분은 늘 있다).
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. `page_bootstrap` 을 불러오는 동안만 WARNING 이하 로그를 모두 꺼(그 경고만 거르지 않는다 — 지금 그 사이 찍히는 것이 그 경고뿐이다) Streamlit 캐시 래퍼의 「No runtime found」 경고(수십 줄)를 결과 줄 앞에 찍지 않고, 불러온 뒤 앞 단계로 되돌린다(`inspect_revision_calculations.py` 와 같은 꼴 — 명령이 도는 동안의 로거 글 · 오류는 그대로, 2026-11-25 되돌림 연습. 되돌림은 시험이 새 프로세스에서 본다). 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
+  - 정리는 낱개를 지우기 전마다 원격을 다시 보고 HEAD 가 판정 때와 다르거나 원격이 갈라졌으면 그 자리에서 멈춘다(`PrunePlan.head_key` · `PruneOutcome.interrupted` — 다음 정리가 새 HEAD 로 다시 판정하고, 대가는 낱개마다 목록 한 번이다). `resolve --keep remote` 는 변경 표시도 내리고, 앱이 떠 있으면 거절하며 `--dry-run` 이면 버리지 않는다.
   - **세대 지킴 표지**(`KEEP_PREFIX` — `generations/keep/<seq 12자리>__<기한 YYYYMMDD>__<꼬리 8자리>.json`, 2026-11-24 정식판 마감 2번 B)는 포인터 밖 객체라 HEAD 고르기 · 갈라짐 판정 · 받기가 보지 않고, 포인터 꼴 · 스키마 · origin 은 그대로라 지킴을 모르는 코드도 같은 버킷을 읽는다. `prune_generations(pins=)` 는 기한이 HEAD LastModified 의 UTC 날짜 이상인(`pin_holds`) 표지의 seq 포인터를 남김에 더하고(그 두 멤버는 지금 규칙으로 남음) 표지는 지우지 않는다 — 표지가 없으면 판정이 그대로다.
   - 엔진: `plan_prune` 이 그 접두를 목록 한 번 더 읽는다(GET 없음 — 목록이 실패하면 정리 전체가 실패해 아무것도 지우지 않음, 일꾼 · 도구는 엔진을 거쳐 따른다). `keep_generation`(seq 없으면 HEAD — 포인터를 한 번 받아 두 멤버의 세대 · 마이그레이션 판을 돌려줌, 1 ~ 90일 · 기본 30, 빈 원격 · 없는 세대 · 갈라진 세대는 거절) · `release_generation`(그 seq 표지만) · `list_pins`.
   - 도구: `keep (--head | --seq N) [--days] [--note]`(붙잡는 일이라 `--yes` 없음 · 범위 밖 일수는 `aws` 앞에서 멈춤 · 요약에 seq · 두 멤버 · 두 판 · 기한만, 메모는 싣지 않음) · `unkeep --seq N --yes` · `generations` 의 지킴 꼬리(` · 지킴 ~날짜` · ` · 지킴 지남 ~날짜` · `--limit` 밖 지킨 줄 · 세대 없는 표지 줄 · 요약 `지킴 n`). 운영 절차는 `docs/objectstore_setup.md` 3 · 7 · 8장.
@@ -294,6 +298,7 @@
     않는다.
   - 효율·UPEH(`ZERO_BEFORE_BLANK_TABLES`)만 값 개수가 같으면 **0 이 빈 값보다 먼저**다(2026-11-01 사용자 결정). 0·빈 값만
     다른 형제에만 쓴다 — 숫자 실값이 서로 다른 충돌은 건너뛴다(`_real_values_agree`).
+    그 두 표 안에서는 0 칸이 많은 행, 같으면 앞 값 컬럼(표를 만드는 컬럼 차례 — `RQ_UPEH` 는 UPEH → ST)부터 0 인 행이 이기고, 충돌 보고서 「임시처리」 칸도 두 표만 「…그 둘만 다르면 0 행」(`ZERO_BEFORE_BLANK_RESOLUTION`)이다.
   - 그다음은 **원천 행 순위**(`source_row_rank`, 2026-11-22 요청 D) — 원천 작업 프레임 전체에서 한 번 만들어
     (`reference_transformer._SourceRows`) 16표가 같이 쓴다. 구분 칸(`SOURCE_ROW_CLASS_COLUMNS` — 제품정보 · Stack · CUSTOM ·
     Capa Code · Customer · CS · Pack Code)부터 `ACTIVE_CORE_COLUMNS` 나머지 차례의 사전식이고, 칸마다 실값은 작은 값부터 · 그
@@ -330,6 +335,7 @@
   - 기존 보유대수 자연키는 `BASELINE_KEY_COLUMNS`(공정, 분류)다. 옛 머리 이름은 입구에서 바꿔 읽고(`rename_legacy_headers`)
     빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없어도 된다 — 설비 마스터 입구
     (`read_equipment_update`)에서 새 호기는 빈 칸, 기존 호기는 저장값을 지킨다.
+    옛 머리는 두 세대 — 개편 전 32열과 개편 36열(`LEGACY_EQUIPMENT_HEADER_ALIASES`) — 를 그대로 읽는다. 옛 파일을 다시 넣을 일이 드물어도 이 읽기 코드는 지우지 않는다.
   - 사용기준 규칙(`COUNTED_USAGE_BASIS`·`counts_for_capacity`)과 모듈 일치 컬럼(`UNIT_CONSISTENT_COLUMNS` — 읽기·저장 모두
     막는 여섯, `UNIT_SAVE_CONSISTENT_COLUMNS` — 저장 때만 막는 일곱 Area Code·Maker·Model·투자Capa·담당자·보관유무·기존설비여부,
     `UNIT_SHARED_COLUMNS` — 묶음 한 줄을 고치면 같이 바뀌는 14칸 = 여섯 + 일곱 + 레이아웃표시, 사용기준은 셋 어디에도 없다 —
@@ -579,6 +585,7 @@
   싣고 값 사전에 글이 들며(`_object_codes`), feed 에 지운 줄 `removed`(있을 때만)가 선다.
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
+  - 샘플을 그리는 동안의 화면 글 · Guide 이름은 「설비 합성 샘플」 하나다 — 옛 꼴 「설비 샘플」 · 「설비 샘플(데모)」 · 「데모 fleet」 · 「합성 fleet」 은 `tests/test_one_concept_one_name.py` 의 `RENAMED` 가 막고, 주석 · docstring 의 코드 말은 그대로 둔다.
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
   원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
   모듈은 import 하지 않는다(8장). 근거 표 숫자 칸의 꼴(`SampleAnswer.evidence_formats` — 실적 화면 표와 같은 퍼센트·
