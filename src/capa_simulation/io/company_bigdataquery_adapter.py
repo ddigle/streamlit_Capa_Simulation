@@ -472,6 +472,10 @@ _CUSTOM_TABLE_ADVICE: Final = (
     "표 이름(표 또는 스키마.표)을 넣고 앱을 다시 띄우세요(혼자 쓰는 PC · WebIDE 는 README "
     "「초기 설정」 4단계, C-DEP 는 배포 설정의 환경변수 표)."
 )
+# CUSTOM 원천 표 조회 실패 글의 머리와 SQL 갈래 덧말(`_custom_query_failure`). 누구나 볼 꼴
+# (`public_failure_text`)이 같은 상수로 알아보고 변수 이름 · 덧말을 걷는다.
+CUSTOM_QUERY_LEAD: Final = f"CUSTOM 원천 표({BDQ_CUSTOM_TABLE_ENV}) 조회에서 멈췄습니다."
+_CUSTOM_QUERY_SQL_ADVICE: Final = " 환경변수 값(표 이름)이 맞는지와 그 표의 조회 권한을 확인하세요."
 
 
 def _custom_table_text(value: str | None) -> str:
@@ -554,9 +558,9 @@ def _custom_query_failure(failure: BigDataQueryCallError, table: str) -> BigData
     없음 · 권한 · 열 이름)면 환경변수 값과 조회 권한을 보라고 덧붙인다. 원문의 표 이름은 가린다 —
     환경변수 값은 원문을 지을 때 이미 가렸고(`_original_text`), 공급자가 따로 받은 이름이면 여기서
     가린다."""
-    lead = f"CUSTOM 원천 표({BDQ_CUSTOM_TABLE_ENV}) 조회에서 멈췄습니다."
+    lead = CUSTOM_QUERY_LEAD
     if failure.kind == QUERY_FAILURE_SQL:
-        lead += " 환경변수 값(표 이름)이 맞는지와 그 표의 조회 권한을 확인하세요."
+        lead += _CUSTOM_QUERY_SQL_ADVICE
     body = str(failure)
     if table != _custom_table_text(None):
         body = _hide_texts(body, tables=(table,))
@@ -690,6 +694,11 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
     return result
 
 
+# 요청자 계정 없음 글의 머리(`_get_data_once`) — 누구나 볼 꼴(`public_failure_text`)이 같은 상수로
+# 알아본다.
+USER_NAME_LEAD: Final = "BigDataQuery 조회에 요청자의 AD 계정이 필요합니다."
+
+
 def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     """`getData` 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
 
@@ -724,7 +733,7 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
                 f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error)
             )
             raise RuntimeError(
-                f"BigDataQuery 조회에 요청자의 AD 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
+                f"{USER_NAME_LEAD} {BDQ_USER_NAME_ENV} "
                 f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
                 f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
@@ -795,6 +804,11 @@ QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
 QUERY_FAILURE_CONNECTION: Final = "연결"
 QUERY_FAILURE_SQL: Final = "SQL"
 QUERY_FAILURE_OTHER: Final = "그 밖"
+# 조회 실패 글(`BigDataQueryCallError`)의 머리 — 「<머리>(<갈래>). <할 일>」 다음 빈 줄 뒤에 원문
+# 단락(`ORIGINAL_LEAD`)이 온다. 누구나 볼 꼴(`public_failure_text`)이 같은 상수로 알아본다. 이름을
+# `QUERY_FAILURE_` 로 시작하지 않는다 — 그 머리는 갈래 값의 자리다(모듈 지침서 동기 시험이 모은다).
+FAILED_QUERY_LEAD: Final = "BigDataQuery 조회가 실패했습니다"
+ORIGINAL_LEAD: Final = "원문 — "
 # 조회문 자체를 탓하는 낱말 — 기다린 시간과 상관없이 조회문 거절이다. 같은 SQL 갈래의 나머지
 # (`not found` · `does not exist` 등)는 긴 조회 중 다시 적재한 표에서도 난다
 # (`LONG_FAILURE_SECONDS`).
@@ -903,6 +917,9 @@ TOKEN_ADVICE_LOCAL: Final = (
     "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 BigDataQuery 로그인을 다시 "
     "하세요(토큰을 새로 받아야 풀립니다)."
 )
+# 할 일 가운데 원문을 넘기라는 말 — 누구나 볼 꼴(`public_failure_text`)은 원문 단락을 걷으므로 이
+# 말을 「개발자에게」 로 줄인다. 조회 실패 · 패키지 불러오기 실패 글이 같은 상수로 짓는다.
+ORIGINAL_TO_DEVELOPER: Final = "아래 원문을 개발자에게"
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     QUERY_FAILURE_TOKEN: TOKEN_ADVICE_SERVER,
     QUERY_FAILURE_BUSY: "DB 서버가 혼잡해 조회를 받지 않았습니다 — 잠시 뒤 같은 조회를 다시 "
@@ -911,10 +928,10 @@ _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     "기간을 줄여 다시 하세요.",
     QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
     "조회를 다시 하세요.",
-    QUERY_FAILURE_SQL: "DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 아래 원문을 "
-    "개발자에게 알려 주세요.",
-    QUERY_FAILURE_OTHER: "잠시 뒤 같은 조회를 다시 하세요. 같은 실패가 이어지면 아래 원문을 "
-    "개발자에게 알려 주세요.",
+    QUERY_FAILURE_SQL: "DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 "
+    f"{ORIGINAL_TO_DEVELOPER} 알려 주세요.",
+    QUERY_FAILURE_OTHER: "잠시 뒤 같은 조회를 다시 하세요. 같은 실패가 이어지면 "
+    f"{ORIGINAL_TO_DEVELOPER} 알려 주세요.",
 }
 # 화면에 옮기는 원문 길이. 패키지 문구에 조회문 전체가 실려 오기도 한다.
 _ORIGINAL_TEXT_LIMIT: Final = 300
@@ -1104,8 +1121,8 @@ class BigDataQueryCallError(RuntimeError):
         self.type_names = failure_type_names(error)
         advice = token_advice() if self.kind == QUERY_FAILURE_TOKEN else _FAILURE_ADVICE[self.kind]
         super().__init__(
-            f"BigDataQuery 조회가 실패했습니다({self.kind}). {advice}\n\n"
-            f"원문 — {_original_text(error)}{hint}"
+            f"{FAILED_QUERY_LEAD}({self.kind}). {advice}\n\n"
+            f"{ORIGINAL_LEAD}{_original_text(error)}{hint}"
         )
 
     def retold(self, text: str) -> BigDataQueryCallError:
@@ -1115,6 +1132,12 @@ class BigDataQueryCallError(RuntimeError):
         RuntimeError.__init__(told, text)
         told.kind, told.clue, told.type_names = self.kind, self.clue, self.type_names
         return told
+
+
+# 패키지 실패 글의 머리(`load_bigdataquery_module`). 「패키지가 없습니다」 첫 문장은 점검 스크립트가
+# 가르는 문구라 바꾸지 않는다. 불러오기 실패 머리는 빠진 모듈 · 초기화 실패 두 글이 같이 쓴다.
+PACKAGE_MISSING_LEAD: Final = "현재 환경에 bigdataquery 패키지가 없습니다."
+PACKAGE_LOAD_LEAD: Final = "bigdataquery 패키지를 불러오지 못했습니다"
 
 
 def load_bigdataquery_module() -> ModuleType:
@@ -1133,13 +1156,13 @@ def load_bigdataquery_module() -> ModuleType:
         _log_failure(f"패키지를 불러오지 못함(없는 모듈 {exc.name})")
         if exc.name in (None, "bigdataquery"):
             raise RuntimeError(
-                "현재 환경에 bigdataquery 패키지가 없습니다. "
+                f"{PACKAGE_MISSING_LEAD} "
                 "이 패키지는 공개 인덱스(PyPI)에 없어 pyproject.toml 의존성에 넣지 않습니다. "
                 "README 「초기 설정」 4단계대로 따로 설치한 뒤 실행하세요."
                 + _start_check_line(STEP_INSTALL)
             ) from exc
         raise RuntimeError(
-            "bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 "
+            f"{PACKAGE_LOAD_LEAD} — 패키지가 쓰는 모듈 "
             f"{with_subject_particle(f'`{exc.name}`')} "
             "없습니다. 패키지를 다시 설치한 뒤 실행하세요(README 「초기 설정」 "
             "4단계)."
@@ -1147,7 +1170,61 @@ def load_bigdataquery_module() -> ModuleType:
     except Exception as exc:  # 패키지 초기화가 낼 예외 종류를 모른다
         _log_failure("패키지 초기화 실패", type_names=failure_type_names(exc))
         raise RuntimeError(
-            "bigdataquery 패키지를 불러오지 못했습니다. 패키지를 다시 설치한 뒤 "
-            "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 개발자에게 "
-            f"알려 주세요.\n\n원문 — {_original_text(exc)}"
+            f"{PACKAGE_LOAD_LEAD}. 패키지를 다시 설치한 뒤 "
+            f"실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 {ORIGINAL_TO_DEVELOPER} "
+            f"알려 주세요.\n\n{ORIGINAL_LEAD}{_original_text(exc)}"
         ) from exc
+
+
+# 누구나 볼 꼴(`public_failure_text`)이 한 문장으로 바꾸는 준비 실패 글의 머리 — 이 서버의 설치 ·
+# 환경변수 문제라 다른 등급이 고칠 수 없다. 어댑터가 글을 지을 때와 같은 상수다.
+_SETUP_LEADS: Final = (
+    PACKAGE_MISSING_LEAD,
+    PACKAGE_LOAD_LEAD,
+    USER_NAME_LEAD,
+    CUSTOM_TABLE_MISSING,
+    CUSTOM_TABLE_MALFORMED,
+)
+# 준비 실패 글의 누구나 볼 꼴 — 설치 단계 · 환경변수 이름 · README · CI/CD 는 개발자 몫이다.
+PUBLIC_SETUP_TEXT: Final = (
+    "이 서버에서 BigDataQuery 를 쓸 준비가 되지 않았습니다 — 개발자에게 알려 주세요."
+)
+# CUSTOM 원천 표 조회 실패 머리의 누구나 볼 꼴 — 변수 이름을 걷는다.
+_PUBLIC_CUSTOM_QUERY_LEAD: Final = "CUSTOM 원천 표 조회에서 멈췄습니다."
+_PUBLIC_TO_DEVELOPER: Final = "개발자에게"
+
+
+def public_failure_text(message: str) -> str | None:
+    """이 어댑터가 낸 실패 글의 누구나 볼 꼴 — 어댑터가 낸 글이 아니면 None.
+
+    개발자가 아닌 등급에게 보일 때(`admin_view.diagnostic_message`) 부른다. 어댑터의 글 자체는
+    그대로 둔다 — 자동 갱신 스레드 · 점검 스크립트 · 모듈 창구가 같은 글을 받는다. 머리 글은 글
+    어디에 있어도 알아보고(앞에 붙은 화면 머리 「자동 갱신 …: 」 · 예외 종류 이름은 그대로 남긴다)
+    가장 앞에 선 머리 하나로 고른다.
+
+    - 조회 실패(`BigDataQueryCallError`): 첫 단락 「<머리>(<갈래>). <할 일>」 만 남긴다 — 원문
+      단락(`ORIGINAL_LEAD`, 빈 줄이 걷힌 글이어도)과 그 뒤 서버 시작 점검 단락은 걷고, 할 일의
+      「아래 원문을 개발자에게」 는 「개발자에게」 로 줄인다.
+    - CUSTOM 원천 표 조회 실패(`_custom_query_failure`): 머리에서 변수 이름과 SQL 갈래 덧말(값 ·
+      조회 권한)을 걷고 뒤는 조회 실패와 같다.
+    - 준비 실패(패키지 없음 · 불러오기 실패 · 요청자 계정 없음 · CUSTOM 원천 표 변수 없음 · 꼴
+      틀림): `PUBLIC_SETUP_TEXT` 한 문장.
+
+    데이터 멈춤 글(CUSTOM 원천 표 답 0행 · 칸 · 둘 이상 · 빈 값 · 못 찾음, 본 조회 0행)과 끄개
+    메모 · 알림은 개발자 몫이 없어 None 이다. Streamlit 을 부르지 않는다.
+    """
+    leads = (*_SETUP_LEADS, CUSTOM_QUERY_LEAD, FAILED_QUERY_LEAD)
+    found = [(message.find(lead), lead) for lead in leads]
+    hits = [(at, lead) for at, lead in found if at >= 0]
+    if not hits:
+        return None
+    at, lead = min(hits, key=lambda hit: hit[0])
+    head, rest = message[:at], message[at:]
+    if lead in _SETUP_LEADS:
+        return head + PUBLIC_SETUP_TEXT
+    ends = [end for end in (rest.find("\n\n"), rest.find(ORIGINAL_LEAD)) if end >= 0]
+    first = rest[: min(ends)] if ends else rest
+    if lead == CUSTOM_QUERY_LEAD:
+        first = first.removeprefix(CUSTOM_QUERY_LEAD).removeprefix(_CUSTOM_QUERY_SQL_ADVICE)
+        first = _PUBLIC_CUSTOM_QUERY_LEAD + first
+    return head + first.replace(ORIGINAL_TO_DEVELOPER, _PUBLIC_TO_DEVELOPER).rstrip()

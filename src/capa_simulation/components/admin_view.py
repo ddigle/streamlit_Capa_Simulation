@@ -27,7 +27,9 @@ ad10-nosso) 실제 개발자 판정(`sso_identity.viewer_is_developer`) 그대�
 
 이 판정은 보이기만 가른다 — 쓰기 · 개발자 단추의 두 번째 벽은 그 자리의 판정(실제 등급) 그대로다.
 설비 저장 실패 · 자동 갱신 진단처럼 아래 등급에게도 한 줄을 남겨야 하는 자리는 `diagnostic_message`
-로 짓는다(개발자 몫이면 원문, 아니면 화면 공용 꼴 — `page_bootstrap.screen_error_public`).
+로 짓는다(개발자 몫이면 원문, 아니면 화면 공용 꼴 — DB 실패 글은
+`page_bootstrap.screen_error_public`, BigDataQuery 실패 글은
+`company_bigdataquery_adapter.public_failure_text`).
 """
 
 from __future__ import annotations
@@ -56,9 +58,14 @@ def developer_alerts_visible() -> bool:
 
 
 def diagnostic_message(message: str) -> str:
-    """개발자 몫이면 원문, 아니면 화면 공용 꼴(`page_bootstrap.screen_error_public`)."""
+    """개발자 몫이면 원문, 아니면 화면 공용 꼴 — DB 실패 글(`page_bootstrap.screen_error_public`)을
+    줄인 뒤 BigDataQuery 실패 글(`company_bigdataquery_adapter.public_failure_text` — 갈래와 할
+    일만, 준비 실패는 한 문장)도 줄인다. 둘 다 부를 때 읽는다(순환 import 를 피함)."""
     if developer_notes_visible():
         return message
+    from capa_simulation.io.company_bigdataquery_adapter import public_failure_text
     from capa_simulation.page_bootstrap import screen_error_public
 
-    return screen_error_public(message)
+    shown = screen_error_public(message)
+    public = public_failure_text(shown)
+    return shown if public is None else public
