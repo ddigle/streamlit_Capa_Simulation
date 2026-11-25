@@ -7,6 +7,7 @@
   COMMIT 이 `.wal` 에만 있을 수 있고, ATTACH 복사는 1GiB 안에서 앱과 함께 돌지 못한다). 라이브 파일은 닫지 않는 번호로 읽는다 — 열었다 닫으면 프로세스 잠금이 풀린다.
 - `src/capa_simulation/persistence/sync_state.py` — DB 옆 `.sync.json` 사이드카에 미반영 변경 번호를, `sync_generation.json` 한 파일에 게시 상태(base · pending · 미게시 · 넘긴 표지)를 기록한다(DB
   안은 순환, 메모리는 죽으면 사라진다). `enable()` 전에는 파일을 만들지 않고 못 읽는 사이드카는 「변경 있음」 이다. 첫 미반영 시각 · 깨우기는 메모리다 — 일꾼이 멈춰도 그 값이 함께 멈추지 않게.
+  - 미게시로 옮기는 것은 담은 저장이 있는 게시뿐이다. 답이 끊긴 펜스(`observed` 가 빔)는 미게시로 옮기지 않고 버린다(`object_sync_engine._park_pending`) — 옮기면 변경 없는 새 pod 가 「원격과 어긋남」 으로 머문다.
 - `src/capa_simulation/persistence/repository.py` — `DuckDBScenarioRepository` 의 입력 검증·연결·쓰기 잠금·트랜잭션
   경계. 커밋과 변경 신호는 Repository 만 갖고 store 는 열린 연결을 받는다.
   - 교체 실패 시 행·버전을 복구하고 신호를 내지 않는다. 바뀐 것이 없는 쓰기(`initialize_global_display_order` 등)는
@@ -20,6 +21,7 @@
     다시 읽는다 — 원천이 없는 시나리오(복제 · 월 머지 · 연도 Shift)는 None, 시나리오가 없으면 `KeyError`. SQL 공백 패턴
     (`SOURCE_BLANK_TEXT_PATTERN`)은 파이썬 `str.isspace` 집합과 같고, 그 위에 파생과 같은 식(`core_data_derivation.blank_cs_mask`)으로 한 번 더
     가른다 — 수가 등록 파생(`derive_q_core_data(...).blank_cs`)과 같다(`tests/test_revision_input_check.py`). 목록 관리 「점검」 이 쓴다.
+  - Capa 시나리오 이름은 보관본까지 겹치지 못한다 — 쓰기 트랜잭션 안에서 앞뒤 공백을 뗀 완전 일치로 막고(`DUPLICATE_SCENARIO_NAME_MESSAGE` — 이름 수정은 자기 자신을 빼고, 목록 「변경 저장」 은 이 저장이 끝난 뒤의 이름끼리 같은 규칙으로 견준다), 이 규칙 전 DB 에 같은 이름이 남아 있을 수 있어 DB UNIQUE 제약은 걸지 않는다.
 - `src/capa_simulation/persistence/advance_load_store.py` — 공용 선행 B/O 프로필(`0018`)의 조회·교체 SQL.
 - `src/capa_simulation/persistence/advance_shipment_store.py` — 공용 선행 입고 실적 프로필(`0031`)의 조회·교체 SQL.
 - `src/capa_simulation/persistence/securement_threshold_store.py` — 공용 확보율 판정 기준 프로필(`0029`)의 조회·교체
@@ -89,6 +91,7 @@
     (일정·비가동·배치 차이 셋)에는 **UPDATE·DELETE 가 없다**(I1 — 시험이 소스를 훑는다). 그 소유 표 목록은
     `SCHEDULE_REVISION_OWNED_TABLES`(시험이 `information_schema` 와 견준다).
 - `src/capa_simulation/persistence/past_data_store.py` — 공용 과거 구간 프로필 세 표의 조회·교체 SQL.
+- `src/capa_simulation/persistence/preset_store.py` — `scenario_preset.preset_hash` 는 읽는 곳 없이 쓰기만 하는 해시지만 append-only 리비전의 감사값이라 칸 · 쓰기를 걷지 않는다.
 - `src/capa_simulation/persistence/summaries.py` — 조회 행을 요약 모델로 바꾸고, 요약 SELECT 투영
   (`SCENARIO_SUMMARY_SELECT` 등)을 매퍼 옆에 두어 열 순서와 row 인덱스가 짝을 이룬다.
 - `src/capa_simulation/persistence/_sql_helpers.py` — 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두 Repository
@@ -185,6 +188,7 @@
     없이 빈 차이). `read_merged` 는 합친 **뒤, 읽기 검증 앞**에 호기 배치 차이를 얹는다(`apply_unit_overlay`, 실패 까닭에 「배치
     차이를 얹은 뒤」). 옛 `_read_snapshot` 은 `_read_legacy_snapshot` 이고 계약 v4 를 받으면 `ValueError` 다. 모델은 캐시에
     실리므로 필드에 기본값을 두고 `Mapping` 대신 쌍 튜플(`unit_key_pairs`·`layout_official_places`)·`frozenset` 을 쓴다.
+    계약 v3 미만(v1 · v2) 옛 리비전을 읽는 길(`_legacy_snapshot` 의 `_load_legacy_equipment` · `_load_legacy_schedule` · `_load_legacy_downtime`)은 사내 설비 DB 의 리비전별 계약 판 수를 확인하기 전에는 걷지 않는다 — 그 수는 사내 DB 를 여는 확인이라 사용자가 별도 창에서 돌린 결과로만 받는다.
   - **저장은 `save_equipment(EquipmentSaveRequest)` 하나다**(연결 하나·트랜잭션 하나, 모든 쓰기가 `_write_transaction`).
     메모리에서 막기(옛 배포 흔적 → `EquipmentLegacyTraceError`, 공통 최신 ≠ 출발 공통 → `EquipmentRevisionConflict`, 일정을
     쓰는데 시나리오 최신 ≠ 출발 일정 → 같은 예외 `side`)·검증·호기 키·나누기·바뀐 쪽 가르기·함께 넣기·교차 검증·발행을 모두
@@ -232,12 +236,14 @@
     message=)`)가 확인 팝업과 같은 글을 낸다. 캔버스 검사·미리 보임이 보는 리비전도 한 곳
     (`_overlay_check_targets` — `_require_overlay_marks_fit`·`layout_overlay_extent` → `LayoutOverlayExtent`)이다. 목록 투영은
     최신의 저장된 요소·이름표 차이 행 수(`latest_layout_mark_count`·`latest_layout_label_count`)도 싣는다.
+    공식 발행 정리로 쓰는 `layout_clear` 리비전의 저장자는 그 발행을 한 사람(`released_by`)이다.
   - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 **어느 일정 리비전이든**(E7 「여기서 새 시나리오」), SQL 사본이
     아니라 지금 공통과 합친 읽기 길로 읽은 일곱 칸·비가동을 새 두 표에, `origin='clone'`. 지금 공통과 합쳐지지 않는 옛 리비전은
     `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지(호기 이름처럼 대소문자·앞뒤 공백만 다른 이름도 같은
     이름 — `scenario_name_taken`, 복제도 같다. 제 이름의 대소문자만 바꾸기는 된다), `expected_name` 대조 →
     `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` — 흔적 수
     대조 뒤 경계 행 하나)가 1단계 관리 쓰기다.
+    이미 대소문자 · 앞뒤 공백만 다르게 갈려 있는 두 설비 시나리오 이름은 그대로 두고 새로 만들거나 바꿀 때만 막는다(`scenario_name_taken`). 시뮬레이션 시나리오 이름은 이 규칙을 넓히지 않고 완전 일치로 가른다(`repository._require_unique_scenario_name`).
   - **E7 리비전 도구**: 리비전명(`rename_schedule_revision` — 이름표 한 칸만 UPDATE, 비우면 NULL, 비교 후 쓰기 →
     `EquipmentScheduleRevisionNameMoved`, 같은 이름이면 쓰지 않음 — 화면은 성공 대신 「바뀐 것이 없습니다」(개선 I5), 보관
     시나리오 거절)과 되돌리기(`restore_schedule_revision` —
@@ -255,6 +261,7 @@
     `ValueError` 다(자르지 않는다 — 화면 칸 `max_chars` 도 이 수). 확인 재료는 `preview_schedule_restore`(읽기만 — 쓰기도 잠금
     안에서 같은 `_restore_preview` 로 다시 잰다). 「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전이 함께 본
     공통(`common_revision_id`)에 키가 없는 호기다.
+    보관한 시나리오에서는 되돌리기도 거절한다(리비전명과 같다). 옛 배포 흔적 · 확인 뒤 바뀜과 함께 쓰기 전에 막는다.
   - 옛 배포 흔적은 설비 마스터 저장과 되돌리기를 막는다(복제·이름·리비전명·발행은 막지 않는다). 이어 쓰기는 옛 배포 리비전이 ACTIVE
     시나리오마다의 최신·최신 공식 발행과 합쳐질 때만 쓴다(아니면 `EquipmentLegacyTraceUnmergeable` — 굳히면 그 일정을 다시 못
     읽는다). 탭은 `legacy_trace_review()`(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭)로 확인 체크 글을 쓴다. 흔적이 공식과도
