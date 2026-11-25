@@ -237,7 +237,9 @@ def test_the_count_line_ends_with_the_progress_snapshot_rows(
 
     counts = _counts_only(simulation, equipment, tmp_path)
 
-    assert f" equipment_migration {SNAPSHOT_MIGRATION} " in counts
+    eq_version = max(migration.version for migration in load_equipment_migrations())
+    assert eq_version >= SNAPSHOT_MIGRATION
+    assert f" equipment_migration {eq_version} " in counts
     assert counts.endswith(" progress_log [0, 0] progress_snapshot [1, 2, 3]"), counts
     assert SENTINEL not in counts
 
