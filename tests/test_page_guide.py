@@ -202,9 +202,18 @@ def test_tracked_guide_boards_sit_under_static_howto_and_match_a_skeleton() -> N
         match = re.fullmatch(r"static/guides/howto/([a-z][a-z0-9_]*)\.html", board)
         assert match, f"가이드 HTML 은 static/guides/howto/<가이드>.html 에만 둡니다: {board}"
         assert match.group(1) in skeletons, board
-    # 문서가 새 자리를 가리킨다 — 읽는 쪽이 이 파일이 무엇인지 찾지 않게 한다.
-    for name in ("README.md", "AGENTS.md"):
-        text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
+    # 문서가 새 자리를 가리킨다 — 읽는 쪽이 이 파일이 무엇인지 찾지 않게 한다. AGENTS 는 색인과
+    # 손 글(`docs/rules` · `docs/reference/files`)을 한 묶음으로 읽는다.
+    agents = [
+        PROJECT_ROOT / "AGENTS.md",
+        *sorted((PROJECT_ROOT / "docs" / "rules").glob("*.md")),
+        *sorted((PROJECT_ROOT / "docs" / "reference" / "files").glob("*.md")),
+    ]
+    readers = {
+        "README.md": (PROJECT_ROOT / "README.md").read_text(encoding="utf-8"),
+        "AGENTS.md": "\n".join(path.read_text(encoding="utf-8") for path in agents),
+    }
+    for name, text in readers.items():
         assert "static/guides/howto/" in text, name
         assert "static/guides/local/" in text, name
 

@@ -673,19 +673,33 @@ def test_a_merged_module_reaches_the_app_between_deploys_through_runbook_four_se
 
 
 def _agents_bullet(start: str) -> str:
-    """AGENTS.md 에서 `- <start>` 로 여는 글머리 하나(두 칸 들여 쓴 이어진 줄까지)."""
-    lines = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()
-    first = next(n for n, line in enumerate(lines) if line.startswith(f"- {start}"))
-    end = next(
-        (n for n in range(first + 1, len(lines)) if not lines[n].startswith("  ")), len(lines)
-    )
-    return "\n".join(lines[first:end])
+    """AGENTS 색인과 규칙 문서(`docs/rules/*.md`)에서 `- <start>` 로 여는 글머리 하나(두 칸 들여
+    쓴 이어진 줄까지). 파일마다 따로 찾아 글머리가 파일 경계를 넘지 않고, 모두 합쳐 꼭 한 번이다."""
+    documents = [
+        PROJECT_ROOT / "AGENTS.md",
+        *sorted((PROJECT_ROOT / "docs" / "rules").glob("*.md")),
+    ]
+    found: list[tuple[str, str]] = []
+    for path in documents:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for first, line in enumerate(lines):
+            if not line.startswith(f"- {start}"):
+                continue
+            end = next(
+                (n for n in range(first + 1, len(lines)) if not lines[n].startswith("  ")),
+                len(lines),
+            )
+            found.append((path.relative_to(PROJECT_ROOT).as_posix(), "\n".join(lines[first:end])))
+    places = [name for name, _bullet in found]
+    assert len(found) == 1, f"`- {start}` 글머리는 AGENTS 색인 · docs/rules 에 꼭 한 번: {places}"
+    return found[0][1]
 
 
 def test_agents_defaults_bullet_is_the_guides_three_defaults_only() -> None:
-    """AGENTS 1장의 「메인 세션이 정한 기본값 셋」 은 지침서 8-3 의 셋 그대로다. 사용자가 직접
-    「권장대로」 로 정한 사양 10장 답(v1 은 운영 모듈 데이터를 백업하지 않는다 — 10장 5)은 그 묶음에
-    넣지 않고 따로 적는다 — 묶음에 섞으면 사용자 결정이 「바꿀 수 있는 기본값」 으로 읽힌다."""
+    """AGENTS 1장(`docs/rules/01`)의 「메인 세션이 정한 기본값 셋」 은 지침서 8-3 의 셋
+    그대로다. 사용자가 직접 「권장대로」 로 정한 사양 10장 답(v1 은 운영 모듈 데이터를 백업하지
+    않는다 — 10장 5)은 그 묶음에 넣지 않고 따로 적는다 — 묶음에 섞으면 사용자 결정이 「바꿀 수
+    있는 기본값」 으로 읽힌다."""
     defaults = _agents_bullet("**메인 세션이 「권장대로」 로 정한 기본값 셋")
 
     assert re.findall("[①②③④⑤]", defaults) == ["①", "②", "③"]
