@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 import subprocess
 import sys
@@ -199,6 +200,51 @@ def test_the_tool_prints_no_streamlit_runtime_warning_before_its_lines(tmp_path:
     lines = stopped.stdout.splitlines()
     assert lines[0].startswith("[중단] ") and "CAPA_S3_ENDPOINT_URL" in lines[0]
     assert lines[-1].startswith("전송용 요약: generations 멈춤 ") and lines[-1].endswith("; 종료 1")
+
+
+# 새 파이썬에서 로그 끄기 단계를 정해 두고 이 도구를 불러온 뒤 그 단계를 찍는다.
+_IMPORT_UNDER_DISABLED_LOGGING = """
+import logging
+import sys
+
+logging.disable(int(sys.argv[2]))
+sys.path.insert(0, sys.argv[1])
+import sync_object_storage
+
+print(logging.root.manager.disable)
+"""
+
+
+@pytest.mark.parametrize("level", [logging.NOTSET, logging.CRITICAL])
+def test_importing_keeps_stderr_quiet_and_the_logging_level(level: int) -> None:
+    """불러오는 동안 끈 로그를 불러오기 전 단계로 돌려놓는다 — 꺼져 있지 않았으면 다시 켜고,
+    부른 쪽이 이미 끈 채(CRITICAL) 불러오면 그 끄기를 풀지 않는다(`NOTSET` 으로 되돌리면 부른
+    쪽의 끄기가 풀려 Streamlit 로그가 다시 찍힌다). 불러오는 동안 표준 오류는 비어 있다. 이
+    pytest 프로세스는 이미 불러왔으므로 새 프로세스에서 본다."""
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(PROJECT_ROOT / "src"), *filter(None, [environment.get("PYTHONPATH")])]
+    )
+    finished = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _IMPORT_UNDER_DISABLED_LOGGING,
+            str(PROJECT_ROOT / "scripts"),
+            str(level),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=PROJECT_ROOT,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+
+    assert finished.returncode == 0, finished.stderr[-2000:]
+    assert finished.stdout.strip() == str(level)
+    assert finished.stderr == ""
 
 
 def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_only_the_source(

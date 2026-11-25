@@ -39,8 +39,9 @@
 의 기록 파일)의 홈 폴더 앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게
 — 여닫는 경로 값은 그대로다). 표준 오류도 같다 — 도는 동안 어느 모듈의 로거 글이든
 (`_masked_logging`), 잡지 못한 예외의 트레이스백도(`_masked_excepthook`) 같은 가림을 지난다.
-불러오는 동안 Streamlit 캐시 래퍼가 찍는 「No runtime found」 경고(수십 줄)만 끈다 — 결과와
-상관없는 줄이고, 끄는 것은 그 불러오기 동안뿐이다.
+`page_bootstrap` 을 불러오는 동안만 프로세스 전체의 WARNING 이하 로그를 끈다(ERROR 이상은 지난다)
+— 지금 그 사이에 찍히는 것은 Streamlit 캐시 래퍼의 「No runtime found」 경고(수십 줄)뿐이고 결과와
+상관없는 줄이다. 불러온 뒤 끄기 전 단계로 되돌린다.
 
 **세대 지킴**(`keep` · `unkeep`)은 버킷에 기한 있는 표지(`generations/keep/`)를 두거나 지운다.
 정리가 기한까지 그 세대와 두 멤버를 비켜 간다. 포인터는 그대로라 표지를 모르는 코드도 같은
@@ -110,8 +111,9 @@ from capa_simulation.settings import (  # noqa: E402
 
 # `page_bootstrap` 은 Streamlit 캐시 래퍼 모듈을 함께 불러온다. 실행 문맥 밖이라 래퍼마다 「No
 # runtime found」 경고가 표준 오류에 한 줄씩(수십 줄) 결과 줄보다 먼저 찍혀 사용자 창을 덮으므로
-# 불러오는 동안만 끈다. 끝나면 불러오기 전 단계로 되돌린다 — 명령이 도는 동안의 로거 글
-# (`_masked_logging`)과 오류는 그대로 표준 오류에 닿는다.
+# 불러오는 동안만 WARNING 이하 로그를 모두 끈다(그 경고만 거르지 않는다 — 그 사이 다른 모듈이
+# 불러올 때 찍는 WARNING 도 함께 사라진다). 끝나면 불러오기 전 단계로 되돌린다 — 명령이 도는
+# 동안의 로거 글(`_masked_logging`)과 오류는 그대로 표준 오류에 닿는다.
 _LOGGING_DISABLED = logging.root.manager.disable
 logging.disable(max(_LOGGING_DISABLED, logging.WARNING))
 try:
