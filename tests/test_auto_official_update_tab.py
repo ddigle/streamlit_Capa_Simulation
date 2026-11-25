@@ -1213,6 +1213,64 @@ def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Pa
     assert config["사유"]["help"] == RUN_REASON_HELP
 
 
+@pytest.mark.parametrize("developer", [False, True], ids=["개발자 아님", "개발자"])
+def test_a_bigdataquery_failed_round_reason_follows_the_developer_view(
+    database: Path, monkeypatch: pytest.MonkeyPatch, developer: bool
+) -> None:
+    """회차 안의 BigDataQuery 조회 실패는 「마지막 확인」 이 아니라 실행 기록 「사유」 칸에
+    남는다(`_RunLog.fail` — 원문 단락까지). 탭은 관리자부터 보므로 개발자가 아닌 회차에는 그 칸이
+    앞머리 「<단계> 단계에서 멈췄습니다 — 」 와 갈래 · 할 일만이고(`admin_view.diagnostic_message`
+    — 「마지막 확인」 과 같은 판정) 개발자 회차는 원문 그대로다. 발행한 회차의 사유(경고 · 메모
+    꼬리)와 「경고」 칸 표지는 두 회차 모두 그대로다. 실패 글은 실제 목록 조회 · 어댑터 · 회차 기록
+    길로 짓는다."""
+    import sys
+    from types import SimpleNamespace
+
+    from capa_simulation.components import admin_view
+    from capa_simulation.io import company_bigdataquery_adapter as adapter
+    from capa_simulation.io.bigdataquery_catalog import fetch_simulation_catalog
+
+    repository, published_id = _cut_off_published_round(database)
+
+    class Error(Exception):
+        pass
+
+    def get_data(**_kwargs: object) -> object:
+        raise Error("Read timed out")
+
+    monkeypatch.delenv("CAPA_BDQ_USER_NAME", raising=False)
+    monkeypatch.setitem(sys.modules, "bigdataquery", SimpleNamespace(getData=get_data))
+    failed = run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=replace(
+            FakeBigDataQuery(W41_CATALOG).sources, fetch_catalog=fetch_simulation_catalog
+        ),
+        clock=fixed_clock,
+    ).run
+    assert failed is not None and failed.reason is not None
+    raw = failed.reason
+    head = "목록 조회 단계에서 멈췄습니다 — "
+    assert raw.startswith(head + adapter.FAILED_QUERY_LEAD)
+    assert adapter.ORIGINAL_LEAD in raw and "Read timed out" in raw
+    public = adapter.public_failure_text(raw)
+    assert public is not None and public.startswith(head + adapter.FAILED_QUERY_LEAD)
+    assert adapter.ORIGINAL_LEAD not in public and "\n\n" not in public
+    published = repository.load_auto_official_update_run(published_id)
+    assert published.reason is not None and UNCOUNTED_DEMAND_LEAD in published.reason
+
+    monkeypatch.setattr(admin_view, "developer_notes_visible", lambda: developer)
+    app = _tab(database)
+
+    table = next(element for element in app.dataframe if "받은 코드" in element.value.columns)
+    reasons = [str(text) for text in table.value["사유"]]
+    assert (raw if developer else public) in reasons
+    leaked = [text for text in reasons if adapter.ORIGINAL_LEAD in text or "Read timed out" in text]
+    assert bool(leaked) is developer, leaked
+    assert published.reason in reasons
+    assert UNCOUNTED_DEMAND_MARK in list(table.value["경고"])
+
+
 def _running_notices(app: AppTest) -> list[str]:
     """「도는 중」 표지 줄 — 상자가 아니라 값 · 표지 평문 한 줄이다(설계 규칙 UI-TXT-04)."""
     assert not any("아직 도는 중" in str(element.value) for element in infos(app))

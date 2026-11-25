@@ -26,7 +26,9 @@
   성공 알림 뒤 그 건수를 경고로 따로 낸다 — 알림창 · Alarm 에만(실행 기록의 사유에는 이어 적힌
   그대로다).
 - **실행 기록·off 공정·설정 변경 기록** 표. 실행 기록은 그 경고가 사유 끝에 이어 적혀 칸이 좁으면
-  잘려 안 보이므로 「결과」 바로 뒤 「경고」 칸에 짧은 표지를 따로 둔다.
+  잘려 안 보이므로 「결과」 바로 뒤 「경고」 칸에 짧은 표지를 따로 둔다. 「사유」 칸은 「마지막
+  확인」 처럼 운영 진단 글이라 개발자가 아니면 화면 공용 꼴이다 — 회차 안의 BigDataQuery 조회
+  실패는 그 칸에 남는다(`admin_view.diagnostic_message`).
 
 설정 칸에는 `key` 를 두지 않는다(HOME 판정 기준 편집기와 같은 까닭) — 키가 붙은 칸은 한 번 그려진
 뒤 세션 값을 써서, 다른 사람이 바꾼 설정을 이 화면이 못 본 채 저장 한 번으로 되돌린다. 키 없는
@@ -746,7 +748,8 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
     # 담는 여기서 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다. 판정 · 지정 전
     # 검사가 멈춘 사유의 계산 오류 글은 예시 행을 화면 꼴 「YY.MM 공정 표시명 양산구분」 으로
     # 바꾼다(`markdown_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나) 「다른 계산 멈춤 자리도
-    # 함께」). 기록 표 「사유」 칸은 기록이라 원문이다.
+    # 함께」). 기록 표 「사유」 칸은 기록이라 예시 행이 원문이다(개발자가 아니면 BigDataQuery 실패
+    # 원문 · 서버 단계 안내만 걷는다 — `_render_run_history`).
     queue_flash(
         RUN_RESULT_KEY,
         markdown_examples(_run_result_text(run, reason), get_process_labels()),
@@ -847,8 +850,15 @@ def _render_run_history(
             st.caption("아직 돈 회차가 없습니다.")
             return
         st.caption(f"최근 {RUN_HISTORY_LIMIT}회차까지 · 최근 것이 위")
+        history = run_history_frame(runs, exclusions, labels)
+        # 회차 안의 BigDataQuery 조회 실패는 「마지막 확인」 이 아니라 사유에 남는다
+        # (`_RunLog.fail` — 원문 단락 · 서버 시작 점검 단락까지). 보여 주는 자리라 「마지막
+        # 확인」 과 같은 판정으로 개발자가 아니면 화면 공용 꼴로 줄인다 — 앞머리 「<단계>
+        # 단계에서 멈췄습니다 — 」 와 갈래 · 할 일은 남고, 어댑터 · DB 실패 글이 아닌 사유는
+        # 그대로다. 「경고」 칸은 원문 사유로 이미 갈랐고 표 내려받기도 이 글이다.
+        history["사유"] = history["사유"].map(diagnostic_message)
         st.dataframe(
-            run_history_frame(runs, exclusions, labels),
+            history,
             hide_index=True,
             width="stretch",
             column_config={

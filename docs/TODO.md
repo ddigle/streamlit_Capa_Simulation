@@ -4091,20 +4091,24 @@
   창구가 같이 받아 그대로 두고, 어댑터 곁 `public_failure_text`(머리 글 상수로 알아봄 — 조회 실패는 첫 단락 「<머리>(<갈래>). <할 일>」
   만 · 「아래 원문을 개발자에게」 → 「개발자에게」, CUSTOM 원천 표 조회 실패는 변수 이름을 걷은 같은 꼴, 준비 실패는 「이 서버에서
   BigDataQuery 를 쓸 준비가 되지 않았습니다 — 개발자에게 알려 주세요.」 한 문장)를 `admin_view.diagnostic_message` 가 개발자가 아니면
-  지난다. 그래서 DB 등록 「시뮬레이션 코드 조회」 · 「저장」 의 상세 조회 실패 곁 오류와 공식버전 자동 갱신 탭 「마지막 확인」 글이 함께
-  줄고, DB 등록 `AD-04` 전문은 개발자가 아니면 CUSTOM 원천 표 줄(변수 이름 · 채울 자리)과 패키지 줄의 서버 시작 점검 단락을 뺀다(지문
-  `content` 는 개발자 전문 그대로 — 「이 등급으로 보기」 를 켜고 꺼도 다시 뜨지 않게). 개발자 · 개발 `app.py` · WebIDE · 사내 PC 는
+  지난다. 그래서 DB 등록 「시뮬레이션 코드 조회」 · 「저장」 의 상세 조회 실패 곁 오류와 공식버전 자동 갱신 탭 「마지막 확인」 글 · 실행
+  기록 「사유」 칸이 함께 줄고(회차 안의 BigDataQuery 실패는 「마지막 확인」 이 아니라 `_RunLog.fail` 로 그 칸에 남는다 — 관리자부터 보는
+  탭이라 통합 검토가 잡아 그 칸도 같은 판정을 지나게 했다, 「경고」 칸은 원문 사유로 가른다), DB 등록 `AD-04` 전문은 개발자가 아니면
+  CUSTOM 원천 표 줄(변수 이름 · 채울 자리)과 패키지 줄의 서버 시작 점검 단락을 뺀다(지문 `content` 는 개발자 전문 그대로 — 「이 등급으로
+  보기」 를 켜고 꺼도 다시 뜨지 않게). 개발자 · 개발 `app.py` · WebIDE · 사내 PC 는
   지금과 같다 — 실무자에게서 「실패했다」 를 들은 개발자는 같은 조회로 전문을 본다. 로그(원문 없음)는 그대로다. 답 밖에서 정한 것:
   `AD-04` 에서 CUSTOM 원천 표만 빠진 회차의 개발자가 아닌 전문은 남는 줄이 없어 짧은 글(「CUSTOM 원천 표 환경변수를 쓸 수 없어 DB
   조회 · 저장이 막힘」)이다 — 그래서 그 회차의 잠긴 저장 단추 풍선도 변수 이름과 「채울 자리는 Alarm 그 줄이」 없이 「… 조회 · 저장이
   막힙니다 — 개발자에게 알려 주세요.」 다(`CUSTOM_LOCKED_PUBLIC_HELP` — 통합 검토가 잡음, 가리킬 줄이 없는 풍선이었다), 조회 SQL 미설정
   줄은 그대로 남긴다(2장 「BigDataQuery 어댑터·등록」 남은 것), 등록 시각 칸 꼴 틀림(입력 거부) · 등록된 시나리오 읽기 실패(`SC-02` —
   이미 같은 판정)는 그대로다. 기존 시험 기대는 바꾸지 않았다(`tests/test_company_bigdataquery_adapter.py` 에 다섯 ·
-  `tests/test_grade_ui_core.py` 에 한 줄 · `tests/test_bigdataquery_registration.py` 에 넷). 자체 검토: UI-NTF-03 통과(곁 오류 자리
-  그대로) · UI-NTF-04 통과(넘겨받은 개발자 회차는 전문 · 토큰 알림 `AD-10`) · UI-TXT-01 통과(예외 문장 「개발자 몫에만 진단」 과 같은
+  `tests/test_grade_ui_core.py` 에 한 줄 · `tests/test_bigdataquery_registration.py` 에 넷 · `tests/test_auto_official_update_tab.py` 에
+  하나). 자체 검토: UI-NTF-03 통과(곁 오류 자리 그대로) · UI-NTF-04 통과(넘겨받은 개발자 회차는 전문 · 토큰 알림 `AD-10`) · UI-TXT-01
+  통과(예외 문장 「개발자 몫에만 진단」 과 같은
   꼴 — DB 실패 글 `screen_error_public` 선례, 새 화면 문장은 준비 실패 한 문장과 잠긴 저장 단추 풍선 한 문장뿐) ·
   UI-TXT-05 통과(늘 참인 맥락을 더하지 않음) · UI-INP-07 의 연장(등급 밖 정보는 숨김 — 쓰기 벽은 그대로) — 관련:
-  `io/company_bigdataquery_adapter.py` · `components/admin_view.py` · `components/bigdataquery_registration.py` · Guide 시나리오 관리
+  `io/company_bigdataquery_adapter.py` · `components/admin_view.py` · `components/bigdataquery_registration.py` ·
+  `components/auto_official_update_tab.py` · Guide 시나리오 관리
 - (2026-11-24) **산출 결과 세 표 제목 줄에 「계산 밖 n공정」 표지 — 소요기준 BOX · PCB 공정의 까닭 · 이름은 풍선**(정식판 1.0 마감 2번 C —
   같은 날 사용자 「권장안 그대로」: PCB 산식이 아니라 표지, 규칙집 6-46 marks-outside · v1.50) — 대당 Capa(공정별 · STEP별) · 소요대수 · 확보율 표 제목 줄 부가 설명 칸
   (`caption` · `caption_help`)에 작은 회색 「계산 밖 n공정」 이 서고, 풍선이 까닭(「… 계산에 넣지 않습니다(추가 예정).」)과 「이 기간: 표시명
