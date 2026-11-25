@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import duckdb
 import pandas as pd
 import pytest
 from before_custom_copy import database_before_custom, database_marked_after_custom
+from test_equipment_migration_0027_scenarios import _database_before
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components import plan_grid
@@ -41,6 +43,8 @@ import check_deploy_screens  # noqa: E402
 import inspect_db_counts as script  # noqa: E402
 
 SENTINEL = "ZZSENTINEL"
+# 누적 진척 넣기 스냅숏 세 표(머리 · 범위 공정 · 호기)를 만든 설비 마이그레이션 번호.
+SNAPSHOT_MIGRATION = 37
 _N = r"(?:\d+|None)"
 
 
@@ -74,6 +78,7 @@ COUNT_LINE = re.compile(
             ("mark_look", _listed(3)),
             ("layout_stack", _listed(3)),
             ("progress_log", _listed(2)),
+            ("progress_snapshot", _listed(3)),
         )
     )
     + "$"
@@ -119,6 +124,7 @@ def test_the_five_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: 
     assert counts.startswith(f"migration {sim_version} equipment_migration {eq_version} ")
     assert COUNT_LINE.match(counts), counts
     assert " ref_copies 0 " in counts
+    assert counts.endswith(" progress_log [0, 0] progress_snapshot [0, 0, 0]"), counts
     assert bundles == (
         "groups 0 = two 0 + three 0 + four 0 + more 0; boxed 0 = all 0 + some 0 + none 0; "
         "untiled 0; more sizes -; more split -"
@@ -184,6 +190,71 @@ def test_a_copy_marked_after_the_custom_migration_is_not_filled(
     assert not [line for line in lines if "사본 0039 전" in line]
     [plan] = [line for line in lines if line.startswith("plan ")]
     assert PLAN_LINE.match(plan) and plan.endswith("skipped 1 (ValueError 1)"), plan
+
+
+def _counts_only(simulation: Path, equipment: Path, tmp_path: Path) -> str:
+    code, lines = _run(
+        ["--only", "counts", "--database", str(simulation), "--equipment-database", str(equipment)],
+        tmp_path,
+    )
+    assert code == 0 and len(lines) == 1, lines
+    assert COUNT_LINE.match(lines[0]), lines[0]
+    return lines[0]
+
+
+def test_the_count_line_ends_with_the_progress_snapshot_rows(
+    databases: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """설비 `0037` 넣기 스냅숏 — 첫 줄 끝 칸 `progress_snapshot [머리, 공정, 호기]` 가 세 표의
+    행 수를 그 차례로 찍는다(수가 모두 달라 차례가 바뀌면 깨진다). 공정 · 호기 이름은 찍지
+    않는다."""
+    simulation, source = databases
+    equipment = tmp_path / "equipment_availability.duckdb"
+    shutil.copyfile(source, equipment)
+    with duckdb.connect(str(equipment)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.shortening_progress_snapshot (iso_year, iso_week, "
+            "snapshot_id, log_updated_at, snapshot_days, target_level, schedule_basis, "
+            "scope_selected, plan_today, start_month, end_month, content_digest) VALUES "
+            "(2026, 47, 's1', TIMESTAMP '2026-11-20 09:00:00', 10, 100, 'Static', false, "
+            "DATE '2026-11-20', 202701, 202703, 'd')"
+        )
+        connection.executemany(
+            "INSERT INTO equipment_ops.shortening_progress_snapshot_process "
+            "(snapshot_id, process_name, sort_order) VALUES ('s1', ?, ?)",
+            [(f"{SENTINEL}-P{index}", index) for index in range(2)],
+        )
+        connection.executemany(
+            "INSERT INTO equipment_ops.shortening_progress_snapshot_unit (snapshot_id, "
+            "sort_order, process_name, unit_name, unit_kind, module_count, target_qual) "
+            "VALUES ('s1', ?, ?, ?, ?, 1, DATE '2027-03-01')",
+            [
+                (0, f"{SENTINEL}-P0", f"{SENTINEL}-U0", "단축"),
+                (1, f"{SENTINEL}-P0", f"{SENTINEL}-U1", "단축"),
+                (2, f"{SENTINEL}-P1", f"{SENTINEL}-U2", "신규"),
+            ],
+        )
+
+    counts = _counts_only(simulation, equipment, tmp_path)
+
+    assert f" equipment_migration {SNAPSHOT_MIGRATION} " in counts
+    assert counts.endswith(" progress_log [0, 0] progress_snapshot [1, 2, 3]"), counts
+    assert SENTINEL not in counts
+
+
+def test_an_equipment_copy_before_the_snapshot_tables_counts_none(
+    databases: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """설비 `0037` 을 건 적 없는 사본(앞 판 코드가 연 설비 36) — 세 표가 없어 끝 칸이
+    `[None, None, None]` 이고 첫 줄 꼴은 그대로다. 앞 칸 `progress_log` 은 그대로 센다."""
+    simulation, _ = databases
+    equipment = tmp_path / "equipment_availability.duckdb"
+    _database_before(equipment, SNAPSHOT_MIGRATION - 1)
+
+    counts = _counts_only(simulation, equipment, tmp_path)
+
+    assert f" equipment_migration {SNAPSHOT_MIGRATION - 1} " in counts
+    assert counts.endswith(" progress_log [0, 0] progress_snapshot [None, None, None]"), counts
 
 
 def _bundle_database(path: Path) -> Path:

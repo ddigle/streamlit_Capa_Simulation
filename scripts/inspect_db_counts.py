@@ -146,6 +146,12 @@ _PROGRESS_LOG_TABLES: Final = (
     "shortening_progress_log",
     "shortening_progress_goal",
 )
+# 설비 `0037` 누적 진척 넣기 스냅숏 — 머리(기록 주) · 범위 공정 · 당긴 호기와 추가N.
+_PROGRESS_SNAPSHOT_TABLES: Final = (
+    "shortening_progress_snapshot",
+    "shortening_progress_snapshot_process",
+    "shortening_progress_snapshot_unit",
+)
 
 # 줄 3 — 바이트 단위와 gzip 을 셀 때 한 번에 읽는 크기.
 _MIB: Final = 1 << 20
@@ -414,6 +420,8 @@ def count_line(simulation: duckdb.DuckDBPyConnection, equipment: duckdb.DuckDBPy
         stack_counts(),
         "progress_log",
         [eq_if(table) for table in _PROGRESS_LOG_TABLES],
+        "progress_snapshot",
+        [eq_if(table) for table in _PROGRESS_SNAPSHOT_TABLES],
     ]
     return " ".join(str(part) for part in parts)
 
