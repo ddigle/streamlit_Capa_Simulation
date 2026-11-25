@@ -1,6 +1,9 @@
-# Purpose: 화면 설계 · 검수 규칙 문서(docs/design_rules.md)의 꼴과 진입 문서 연결을 지킨다.
+# Purpose: 화면 설계 · 검수 규칙 문서(규칙집 · 6 · 8장 기록)의 꼴과 진입 문서 연결을 지킨다.
 
 """화면 설계 · 검수 규칙(`docs/design_rules.md`)의 꼴.
+
+6장(결정 기록) · 8장(판 기록)은 `docs/records/design_rules_log.md` 에 서고, 시험은 두 파일의 장을
+번호 차례로 다시 이은 글을 한 문서로 읽는다.
 
 규칙집은 설계 · 검수가 규칙 id 로 대 보는 정본이다(PRC-07). 꼴이 흐트러지면
 id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 기록이 빠지면 같은 것을
@@ -26,9 +29,14 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_LINK = "docs/design_rules.md"
 RULES_PATH = PROJECT_ROOT / RULES_LINK
+# 규칙집의 6장(결정 기록) · 8장(판 기록)이 선 기록 파일 — 나머지 장은 규칙집에 있다.
+RULES_LOG_LINK = "docs/records/design_rules_log.md"
+RULES_LOG_PATH = PROJECT_ROOT / RULES_LOG_LINK
 
 GROUPS = (
     "UI-TXT",
@@ -160,8 +168,16 @@ CITING_DOCUMENTS = (
     "docs/design_system.md",
     "docs/module_guide.md",
 )
+# 진입 · 짝 문서의 장이 나뉘어 선 폴더 — 규칙 장, 파일별 책임, 기록(TODO 결정 기록 · 닫힌 항목 ·
+# 이 문서의 6 · 8장). 폴더마다 파일이 하나 이상 있어야 한다.
+CITING_GLOBS = ("docs/rules/*.md", "docs/reference/files/*.md", "docs/records/*.md")
+# TODO 의 3장(결정 기록)과 닫힌 항목이 옮겨 간 기록 파일.
+TODO_LINK = "docs/TODO.md"
+TODO_DECISIONS_LINK = "docs/records/decisions.md"
+TODO_CLOSED_LINK = "docs/records/closed.md"
 
 _FENCE = re.compile(r"^[ ]*```.*?^[ ]*```[ ]*$", re.S | re.M)
+_CHAPTER_HEAD = re.compile(r"^## (\d+)\. ", re.M)
 _RULE_HEAD = re.compile(r"^#### (\S+) · (.+)$")
 _GROUP_HEAD = re.compile(r"^### 3-\d+\. (\S+) — ")
 _FIELD = re.compile(r"^- ([^:]+): (.*)$")
@@ -185,9 +201,36 @@ class _Draft:
     fields: dict[str, list[str]] = field(default_factory=dict)
 
 
+def _parts(raw: str, name: str) -> tuple[str, dict[int, str]]:
+    """첫 `## <n>. ` 머리 앞의 머리글과, 머리마다 다음 머리 앞까지의 장 글(장 번호 → 글)."""
+    heads = list(_CHAPTER_HEAD.finditer(raw))
+    assert heads, f"{name}: `## <n>. ` 장 머리가 없습니다."
+    ends = [head.start() for head in heads[1:]] + [len(raw)]
+    chapters = {
+        int(head.group(1)): raw[head.start() : end] for head, end in zip(heads, ends, strict=True)
+    }
+    assert len(chapters) == len(heads), f"{name}: 같은 장 번호가 두 번 섭니다."
+    return raw[: heads[0].start()], chapters
+
+
+def _raw() -> str:
+    """규칙집 머리글 뒤에 규칙집 · 기록 파일의 장을 번호 차례로 이은 날 글 — 기록 파일의 머리글은
+    뺀다. 한 장이 두 파일에 함께 서면 실패한다. 파일 끝에서 빈 줄 없이 끝난 장 뒤에 다른 장이
+    이어지면 장 사이 빈 줄 하나를 둔다(파일 안의 장 사이 빈 줄은 아래 시험이 본다)."""
+    head, chapters = _parts(RULES_PATH.read_text(encoding="utf-8"), RULES_LINK)
+    _, logged = _parts(RULES_LOG_PATH.read_text(encoding="utf-8"), RULES_LOG_LINK)
+    assert not chapters.keys() & logged.keys(), sorted(chapters.keys() & logged.keys())
+    chapters.update(logged)
+    pieces = [chapters[number] for number in sorted(chapters)]
+    parted = [
+        piece if piece.endswith("\n\n") else piece.rstrip("\n") + "\n\n" for piece in pieces[:-1]
+    ]
+    return head + "".join(parted) + pieces[-1]
+
+
 def _text() -> str:
     """코드 블록을 걷은 본문 — 블록 안의 `#` · `-` 줄은 머리 · 칸이 아니다."""
-    return _FENCE.sub("", RULES_PATH.read_text(encoding="utf-8"))
+    return _FENCE.sub("", _raw())
 
 
 def _chapter(text: str, number: int) -> str:
@@ -195,6 +238,39 @@ def _chapter(text: str, number: int) -> str:
     start = text.index(f"\n## {number}. ")
     following = text.find("\n## ", start + 1)
     return text[start : following if following != -1 else len(text)]
+
+
+def _globbed(pattern: str) -> list[str]:
+    """`pattern` 이 고른 저장소 상대 경로를 정렬한 차례로 — 하나도 없으면 실패한다."""
+    names = sorted(path.relative_to(PROJECT_ROOT).as_posix() for path in PROJECT_ROOT.glob(pattern))
+    assert names, f"{pattern}: 고른 파일이 없습니다."
+    return names
+
+
+def _citing_documents() -> list[str]:
+    """규칙 id 를 부를 수 있는 문서 — 이름 댄 진입 · 짝 문서 뒤에 폴더 glob 마다 고른 파일."""
+    return [*CITING_DOCUMENTS, *(name for pattern in CITING_GLOBS for name in _globbed(pattern))]
+
+
+def _logged_board(number: int) -> str:
+    """기록 파일 6장의 `### 6-<number>. ` 머리부터 다음 `### ` 머리 앞까지 — 머리가 없으면 실패한다.
+
+    새 보드 시험의 견본이다. 새 보드 시험은 규칙집 1장에 「6-NN 에 있다」 같은 가리킴 문장을
+    요구하지 않고, 결정 기록 머리를 이 도우미로 본다.
+    """
+    chapter = _chapter("\n" + _FENCE.sub("", RULES_LOG_PATH.read_text(encoding="utf-8")), 6)
+    head = f"\n### 6-{number}. "
+    assert head in chapter, f"{RULES_LOG_LINK} 6장에 `### 6-{number}.` 머리가 없습니다."
+    start = chapter.index(head)
+    following = chapter.find("\n### ", start + 1)
+    return chapter[start : following if following != -1 else len(chapter)]
+
+
+def _todo_with(*records: str) -> str:
+    """TODO 뒤에 그 글이 옮겨 간 기록 파일을 준 차례대로 이은 글."""
+    return "\n".join(
+        (PROJECT_ROOT / name).read_text(encoding="utf-8") for name in (TODO_LINK, *records)
+    )
 
 
 def _rules() -> list[Rule]:
@@ -278,14 +354,37 @@ def test_the_header_counts_are_the_rules() -> None:
 
 
 def test_chapters_are_parted_by_a_blank_line() -> None:
-    """`## n.` 머리 앞에는 빈 줄이 있다 — 붙으면 앞 목록의 마지막 줄에 이어진다."""
-    lines = RULES_PATH.read_text(encoding="utf-8").splitlines()
-    glued = [
-        lines[index]
-        for index in range(1, len(lines))
-        if lines[index].startswith("## ") and lines[index - 1].strip()
-    ]
-    assert glued == []
+    """`## n.` 머리 앞에는 빈 줄이 있다 — 붙으면 앞 목록의 마지막 줄에 이어진다. 규칙집과 기록
+    파일을 저마다 본다."""
+    for path in (RULES_PATH, RULES_LOG_PATH):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        heads = [line for line in lines if line.startswith("## ")]
+        glued = [
+            lines[index]
+            for index in range(1, len(lines))
+            if lines[index].startswith("## ") and lines[index - 1].strip()
+        ]
+        assert heads, path
+        assert glued == [], path
+
+
+def test_the_board_sample_helper_reads_one_logged_board() -> None:
+    """견본 도우미는 기록 파일 6장의 `### 6-NN.` 구간 하나만 돌려주고, 없는 머리에서는 실패한다."""
+    numbers = sorted(
+        int(number)
+        for number in re.findall(
+            r"^### 6-(\d+)\. ", _chapter("\n" + RULES_LOG_PATH.read_text(encoding="utf-8"), 6), re.M
+        )
+    )
+    assert numbers and numbers[0] == 1, numbers
+
+    first = _logged_board(1)
+    assert first.startswith("\n### 6-1. ") and first.count("\n### ") == 1
+    assert "\n- AMB-01 · " in first
+    last = _logged_board(numbers[-1])
+    assert last.startswith(f"\n### 6-{numbers[-1]}. ") and last.count("\n### ") == 1
+    with pytest.raises(AssertionError, match=re.escape(f"`### 6-{numbers[-1] + 1}.`")):
+        _logged_board(numbers[-1] + 1)
 
 
 def test_the_decision_record_holds_the_eighteen_answers() -> None:
@@ -620,7 +719,7 @@ def test_ids_cited_in_and_around_the_rules_exist() -> None:
     """이 문서와 그것을 부르는 문서의 규칙 id · 물음 id 는 모두 정의된 것이다
     (지운 id 를 가리키지 않는다)."""
     known = {rule.id for rule in _rules()}
-    for name in (RULES_LINK, *CITING_DOCUMENTS):
+    for name in (RULES_LINK, *_citing_documents()):
         text = _FENCE.sub("", (PROJECT_ROOT / name).read_text(encoding="utf-8"))
         assert set(RULE_TOKEN.findall(text)) <= known, name
         assert set(QUESTION_TOKEN.findall(text)) <= set(ANSWERS) | CLOSED_QUESTIONS, name
@@ -658,9 +757,8 @@ def test_the_two_other_answers_are_written_into_the_rules() -> None:
 
 
 def test_entry_documents_point_at_the_rules() -> None:
-    """AGENTS 8장 머리 · 12장 체크리스트 · 13장 문서 우선순위, CLAUDE.md 「문서
-    우선순위」, README 문서 표가 이 문서를 부른다."""
-    agents = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    """규칙 8장 머리 · 12장 체크리스트 · 13장 문서 우선순위(`docs/rules/` 에 장마다 한 파일),
+    CLAUDE.md 「문서 우선순위」, README 문서 표가 이 문서를 부른다."""
     claude = (PROJECT_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -669,10 +767,17 @@ def test_entry_documents_point_at_the_rules() -> None:
         following = text.find("\n## ", start + 1)
         return text[start : following if following != -1 else len(text)]
 
-    display = section(agents, "\n## 8. ")
+    def rule_chapter(pattern: str) -> str:
+        """`docs/rules/` 에서 `pattern` 이 고른 단 하나의 파일 — 머리가 첫 줄이어도 찾게 앞에
+        줄바꿈을 붙인다."""
+        names = _globbed(pattern)
+        assert len(names) == 1, names
+        return "\n" + (PROJECT_ROOT / names[0]).read_text(encoding="utf-8")
+
+    display = section(rule_chapter("docs/rules/08-*.md"), "\n## 8. ")
     assert RULES_LINK in display[: display.index("\n- ")]
-    assert RULES_LINK in section(agents, "\n## 12. ")
-    assert RULES_LINK in section(agents, "\n## 13. ")
+    assert RULES_LINK in section(rule_chapter("docs/rules/12-*.md"), "\n## 12. ")
+    assert RULES_LINK in section(rule_chapter("docs/rules/13-*.md"), "\n## 13. ")
     assert RULES_LINK in section(claude, "\n## 문서 우선순위")
     assert f"| `{RULES_LINK}` |" in readme
 
@@ -2745,11 +2850,12 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     )
     assert "decided-e2e 2 · 3" in dat11
 
-    # q-narrow-admin 「다음 판에 고침」 — TODO 2장 열린 할 일 · 3장 결정 기록 줄을 가리킨다.
-    todo = (PROJECT_ROOT / "docs/TODO.md").read_text(encoding="utf-8")
-    assert E2E_1115_NARROW_TODO in todo
+    # q-narrow-admin 「다음 판에 고침」 — TODO 2장 할 일(닫히면 닫힌 항목 기록) · 결정 기록 줄을
+    # 가리킨다.
+    assert E2E_1115_NARROW_TODO in _todo_with(TODO_CLOSED_LINK)
     assert "「좁은 창(390)에서 낱말 단위 줄바꿈을 …」" in by_id["q-narrow-admin"]
-    assert f"`{E2E_1115_ADDRESS}` — 규칙집 6-30 · v1.30" in todo
+    decisions = (PROJECT_ROOT / TODO_DECISIONS_LINK).read_text(encoding="utf-8")
+    assert f"`{E2E_1115_ADDRESS}` — 규칙집 6-30 · v1.30" in decisions
 
     # rule-list 메모 「오케이」 — 규칙 안 화면은 판정 목록으로만 보고하는 꼴을 받았다.
     prc07 = rules["PRC-07"].fields["근거"][0]
