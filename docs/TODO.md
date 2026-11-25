@@ -7490,7 +7490,7 @@
   (`data_scenario_create` 출처 칸에 원천 유형) · 새 화면 확인 항목(`A 36` 그대로) · 새 규칙집 절은 없음, 올림 상한 50MB(설비 CSV 와 같은
   값 · 제 상수), 회차 사이에는 업로드 바이트 한 벌과 수 KB 요약만 두고 저장 · 길 바꿈 · 칸 빔에 지움(저장하지 않은 올림은 길을 바꾸거나
   화면을 옮기면 다시 올림 — AGENTS 9장), 사본 견줌 스크립트 `scripts/inspect_source_csv.py`(뗄 수 있는 커밋 — 런북 7장 7-0 차례 5b · 7-42 ④). 답 대기: 사내
-  확인 C7 · C9 — 2장 「BigDataQuery 어댑터·등록」(사용자 물음 Q-C1 은 (나) — 아래 2026-11-25). 화면 규칙 자체 검토는 3장
+  확인 C7 · C9 — 2장 「BigDataQuery 어댑터·등록」(사용자 물음 Q-C1 은 (나) — 위 2026-11-25). 화면 규칙 자체 검토는 3장
   「화면」 같은 날 「DB 등록 탭에 「CSV 파일」 길」 이다 — 문서 몫(Guide 단락 · README · AGENTS · `docs/data_model.md`)은 화면 글을 더하지
   않아 새로 걸린 규칙이 없다 — 관련: `io/source_csv.py` · `services/source_csv_view.py` · `components/source_csv_registration.py` ·
   `components/bigdataquery_registration.py` · `services/custom_source_check.py` · `io/company_bigdataquery_adapter.py` ·
