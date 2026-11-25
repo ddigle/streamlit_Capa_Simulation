@@ -2133,8 +2133,8 @@ B 줄 `B 2 = 기록 <n> + 미기록 <2-n>; u<u>; na칸 <m>; 빈칸 <k>` 와 항�
 - **권한 템플릿이 바뀌었다 — 2-3 뒤 1-2 대조에 줄이 찍히는 것이 기대다.** 사용자가 복사하고(맨 앞 4) 세션을 다시 연 뒤 1-2 대조를 한 번 더 쳐 빈 줄을 본다(1-2 끝).
   찍히는 것은 여섯 줄이다 — `=>` 넷(원천 CSV 견줌의 런북 꼴 줄을 막는 deny 두 줄 `Bash(uv run --no-sync python scripts/inspect_source_csv.py:*)` 과 같은 꼴의 `PowerShell(…)`, 그 스크립트를 든 새 `_설명` 두 줄)과
   `<=` 둘(고치기 전 `_설명` 두 줄 — 템플릿이 그 두 줄을 고쳤다).
-- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 1247 source files」, `ruff format --check` 는 「1291 files already formatted」 꼴이다. pytest 는 약 {APPLY_FACTS} 개(정본 개발 쪽
-  WSL {APPLY_FACTS}) — 건너뜀 · xfail 수는 PC 마다 다르다. mypy · ruff 두 수가 같고 pytest 넷 동시의 **네 조각 모두 실패 0 · 오류 0** 이면 판정 줄이 `관문 ok` 이고
+- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 1247 source files」, `ruff format --check` 는 「1291 files already formatted」 꼴이다. pytest 는 약 20,375 개(정본 개발 쪽
+  WSL 20,351 통과 · 실패 0 · 오류 0) — 건너뜀 · xfail 수는 PC 마다 다르다. mypy · ruff 두 수가 같고 pytest 넷 동시의 **네 조각 모두 실패 0 · 오류 0** 이면 판정 줄이 `관문 ok` 이고
   (통과 · 건너뜀 수는 견주지 않는다), 다르면 `관문수` 줄에 적는다(5장 차례 2). 남은 실패는 고치지 않고 **처음 깨진 시험 이름 · 오류 종류 · 수만** 「발견」 에 적는다.
   - **판정은 넷 동시 한 번이다** — 4-3 의 펜스를 사용자가 저장소 뿌리의 별도 PowerShell 창에서 친다(단독 재실행 · `$o` 지우기도 4-3 대로). 압축본 한 줄
     `pytest4 <분>분; s1 <n> 통과, 건너뜀 <n>, xfail <n>, 실패 <n>, 오류 <n>; s2 …; s3 …; s4 …; 합 <네 조각 통과 합>`(칸 다섯은 0 도 적고 칸 사이는 `,` · `;` 로만 — 키보드 글자만, 5장).
