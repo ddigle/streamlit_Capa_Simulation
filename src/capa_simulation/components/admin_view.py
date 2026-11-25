@@ -29,7 +29,8 @@ ad10-nosso) 실제 개발자 판정(`sso_identity.viewer_is_developer`) 그대�
 설비 저장 실패 · 자동 갱신 진단처럼 아래 등급에게도 한 줄을 남겨야 하는 자리는 `diagnostic_message`
 로 짓는다(개발자 몫이면 원문, 아니면 화면 공용 꼴 — DB 실패 글은
 `page_bootstrap.screen_error_public`, BigDataQuery 실패 글은
-`company_bigdataquery_adapter.public_failure_text`).
+`company_bigdataquery_adapter.public_failure_text`). DB 등록 조회 · 저장 실패 곁 오류도 이 꼴이고,
+그 탭의 `AD-04` 전문은 CUSTOM 원천 표 줄 · 서버 시작 점검 단락을 개발자 몫으로 친다(지문은 그대로).
 """
 
 from __future__ import annotations

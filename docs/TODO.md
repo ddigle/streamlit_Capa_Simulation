@@ -2391,6 +2391,13 @@
   대기). 그때까지 이 함수가 `공정`·`모듈수` 를 전제하므로 `fetch` 가 붙이기 앞에서 두 칸을 먼저 보고, 없으면 78컬럼
   계약 오류 대신 「원천 보정에 필요한 컬럼이 없습니다」 로 멈춘다.
 - [ ] 목록 CSV 내보내기가 필요한지(지금은 넣지 않았다 — 어댑터가 조회 결과를 파일로 쓰지 않는다는 계약을 지켰다).
+- [ ] **BigDataQuery 실패 글 누구나 볼 꼴 — 이번 판 밖에 둔 둘**(2026-11-24 — 3장 「화면」 같은 날 「원문 · 서버 단계 안내는 개발자 몫」).
+  - **모듈 길** — `module_helpers.query_bigdataquery` 는 `BigDataQueryError(kind, str(error))` 로 어댑터의 전문(원문 · 서버 시작 점검
+    단락)을 모듈에 넘긴다. `module_api` v1 계약(「글은 앱 화면과 같은 안내」)과 지침서 동기 시험(`tests/test_module_guide_sync.py`)이 걸려
+    따로 본다 — 모듈 화면이 누구에게 그 글을 보이는지는 모듈이 정해 코어 판정(`admin_view.diagnostic_message`)이 닿지 않는다.
+  - **조회 SQL 미설정 풍선 · 알림의 파일 · 상수 이름** — `missing_query_notice` 의 `AD-04` 줄(「… bigdataquery_catalog.py의
+    CATALOG_QUERY_TEMPLATE」)은 개발자가 아닌 등급에도 그대로다. C-DEP 에는 SQL 이 들어 있어 서지 않으므로 1.0 은 그대로 두었다 —
+    SQL 이 빠진 서버가 생기면 그 줄도 개발자 몫으로 가른다.
 - [ ] **원천 CSV 등록 — 답 · 사내 확인을 기다리는 것**(2026-11-24 — 3장 「운영·배포」 같은 날 「원천은 두 길」).
   - **숫자 글자 칸 맞춤을 걷을지(사내 확인 C9)** — DB 조회가 계약 글자 칸 일곱(`source_csv.SOURCE_CSV_NUMBER_TEXT_COLUMNS` — `Step수` ·
     `Shot Time` · `Shot수` · `Index Time` · `Para` · `STEP_SEQ` · `MCP_SEQ`)을 숫자로 넘기는지 모른다. 최근 DB 등록 시나리오의 Admin Area
@@ -4077,6 +4084,25 @@
   UI-NTF-03 통과(동작 결과는 알림창으로만 — `queue_flash` 로 낸 결과 알림창이 이제 늘 보임) · UI-NTF-05 통과(먼저 선 확인 필요 ·
   조치 필요 칸을 결과가 밀어내지 않음) · UI-NTF-07 통과(같은 결과 반복은 그 칸 「×n」 그대로) · UI-TXT-01 통과(화면에 설명 글 없음 —
   규칙은 Guide 한 문장) — 관련: `alert_center.js` · `alerts.py`
+- (2026-11-24) **BigDataQuery 실패 글의 원문 · 서버 단계 안내는 개발자 몫 — 개발자가 아닌 등급에는 갈래와 할 일만**(정식판 1.0 마감 2번 D —
+  같은 날 사용자 「2번 선택은 권장안 그대로」, 설계에서 정함) — 운영 서버의 관리자 · 실무자가 DB 등록 조회 · 저장에 실패하면 곁 빨간 글에
+  원문(패키지 문구)과 「서버 시작 점검」 · `CAPA_BDQ_TOKEN` · CI/CD 같은 개발자 몫 안내가 그대로 섰다(Admin Area 를 못 여는 등급인데 —
+  사외 점검 O2). 판정은 보여 주는 자리에서만 한다 — 어댑터의 글과 `bootstrap_error_message` 는 자동 갱신 스레드 · 점검 스크립트 · 모듈
+  창구가 같이 받아 그대로 두고, 어댑터 곁 `public_failure_text`(머리 글 상수로 알아봄 — 조회 실패는 첫 단락 「<머리>(<갈래>). <할 일>」
+  만 · 「아래 원문을 개발자에게」 → 「개발자에게」, CUSTOM 원천 표 조회 실패는 변수 이름을 걷은 같은 꼴, 준비 실패는 「이 서버에서
+  BigDataQuery 를 쓸 준비가 되지 않았습니다 — 개발자에게 알려 주세요.」 한 문장)를 `admin_view.diagnostic_message` 가 개발자가 아니면
+  지난다. 그래서 DB 등록 「시뮬레이션 코드 조회」 · 「저장」 의 상세 조회 실패 곁 오류와 공식버전 자동 갱신 탭 「마지막 확인」 글이 함께
+  줄고, DB 등록 `AD-04` 전문은 개발자가 아니면 CUSTOM 원천 표 줄(변수 이름 · 채울 자리)과 패키지 줄의 서버 시작 점검 단락을 뺀다(지문
+  `content` 는 개발자 전문 그대로 — 「이 등급으로 보기」 를 켜고 꺼도 다시 뜨지 않게). 개발자 · 개발 `app.py` · WebIDE · 사내 PC 는
+  지금과 같다 — 실무자에게서 「실패했다」 를 들은 개발자는 같은 조회로 전문을 본다. 로그(원문 없음)는 그대로다. 답 밖에서 정한 것:
+  `AD-04` 에서 CUSTOM 원천 표만 빠진 회차의 개발자가 아닌 전문은 남는 줄이 없어 짧은 글(「CUSTOM 원천 표 환경변수를 쓸 수 없어 DB
+  조회 · 저장이 막힘」)이다, 조회 SQL 미설정 줄은 그대로 남긴다(2장 「BigDataQuery 어댑터·등록」 남은 것), 등록 시각 칸 꼴 틀림(입력
+  거부) · 등록된 시나리오 읽기 실패(`SC-02` — 이미 같은 판정)는 그대로다. 기존 시험 기대는 바꾸지 않았다
+  (`tests/test_company_bigdataquery_adapter.py` 에 다섯 · `tests/test_grade_ui_core.py` 에 한 줄 · `tests/test_bigdataquery_registration.py`
+  에 셋). 자체 검토: UI-NTF-03 통과(곁 오류 자리 그대로) · UI-NTF-04 통과(넘겨받은 개발자 회차는 전문 · 토큰 알림 `AD-10`) · UI-TXT-01
+  통과(예외 문장 「개발자 몫에만 진단」 과 같은 꼴 — DB 실패 글 `screen_error_public` 선례, 새 화면 문장은 준비 실패 한 문장뿐) ·
+  UI-TXT-05 통과(늘 참인 맥락을 더하지 않음) · UI-INP-07 의 연장(등급 밖 정보는 숨김 — 쓰기 벽은 그대로) — 관련:
+  `io/company_bigdataquery_adapter.py` · `components/admin_view.py` · `components/bigdataquery_registration.py` · Guide 시나리오 관리
 - (2026-11-24) **산출 결과 세 표 제목 줄에 「계산 밖 n공정」 표지 — 소요기준 BOX · PCB 공정의 까닭 · 이름은 풍선**(정식판 1.0 마감 2번 C —
   같은 날 사용자 「권장안 그대로」: PCB 산식이 아니라 표지) — 대당 Capa(공정별 · STEP별) · 소요대수 · 확보율 표 제목 줄 부가 설명 칸
   (`caption` · `caption_help`)에 작은 회색 「계산 밖 n공정」 이 서고, 풍선이 까닭(「… 계산에 넣지 않습니다(추가 예정).」)과 「이 기간: 표시명
