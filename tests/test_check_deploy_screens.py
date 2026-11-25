@@ -3466,16 +3466,16 @@ def test_the_equipment_preference_summary_is_fixed_words_and_counts() -> None:
 
 
 def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
-    """런북 7장(이번 몫 7-39)이 가리키는 기대 꼴 · A 표 · 항목 수가 앱 · 스크립트와
+    """런북 7장(이번 몫 7-41)이 가리키는 기대 꼴 · A 표 · 항목 수가 앱 · 스크립트와
     맞는다(2026-10-25 리뷰 — 사내 에이전트는 런북 글 그대로 찾는다).
 
-    - 7-39 A 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로 읽는다.
-    - 7-39 A 표의 `panel_rows_other_pages` 줄 정상 꼴은 선언(`OTHER_PAGE_PANELS`) 그대로 선 화면에서
+    - 7-41 A 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로 읽는다.
+    - 7-41 A 표의 `panel_rows_other_pages` 줄 정상 꼴은 선언(`OTHER_PAGE_PANELS`) 그대로 선 화면에서
       스크립트가 찍는 글(「… — 정한 대로 같음」)이다.
     - 7-0 바로 앞 「옛 자리 → 새 자리」 표가 Space 층 상세 아래 호기 표와 표 위 줄
       「… 의 설비 마스터 n줄」 을 도면 위 「호기 정보」 창으로 옮긴 것(2026-11-03)을
       말한다 — 앱에는 그 줄이 없다.
-    - 7-39 A 표의 키 · 제목이 `--list`(`ITEMS`) 앞머리와 차례까지 같고, 런북 압축본
+    - 7-41 A 표의 키 · 제목이 `--list`(`ITEMS`) 앞머리와 차례까지 같고, 런북 압축본
       기대 `A n` 이 그 표의 수다. 7장은 배포마다 새로 써서 그 배포 전체를 싣는다 —
       배포 뒤에 더한 항목은 다음 배포 7장을 쓸 때까지 TODO 「다음 배포 — 화면 확인
       항목」 줄이 키와 `ITEMS` 전체 수를 적는다. 앞머리만 같아도 통과하므로 7장을
@@ -3484,7 +3484,7 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
     chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
-    draft = chapter.split("### 7-39. ", 1)[1].split("### 7-5. ", 1)[0]
+    draft = chapter.split("### 7-41. ", 1)[1].split("### 7-5. ", 1)[0]
 
     a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
     places = chapter.split("**옛 자리 → 새 자리**", 1)[1].split("### 7-0. ", 1)[0]
@@ -3522,12 +3522,12 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
 
 def test_the_deploy_chapter_b_count_matches_its_hand_checks() -> None:
     """7장 머리의 압축본 B 줄 기대(`B <N> = 기록 <n> + 미기록 <N-n>` · 시간이 없을 때의 한 줄)의
-    N 이 7-39 B 의 번호 항목 수와 같고, 항목마다 압축본 항목 줄 꼴(`B <i>)ok…@u`)을 적는다(5장
+    N 이 7-41 B 의 번호 항목 수와 같고, 항목마다 압축본 항목 줄 꼴(`B <i>)ok…@u`)을 적는다(5장
     「B 세는 법」 — N 은 그 배포 7장 B 의 번호 항목 수). 항목을 더하고 머리 수를 그대로 두면
     사내가 셈 줄을 틀리게 옮긴다."""
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
     chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
-    draft = chapter.split("### 7-39. ", 1)[1].split("### 7-5. ", 1)[0]
+    draft = chapter.split("### 7-41. ", 1)[1].split("### 7-5. ", 1)[0]
     b_part = draft.split("#### B. ", 1)[1].split("\n### ", 1)[0]
     numbers = [int(n) for n in re.findall(r"^(\d+)\) \*\*", b_part, re.MULTILINE)]
     assert numbers == list(range(1, len(numbers) + 1)) and numbers
