@@ -3740,7 +3740,7 @@ def test_the_board4_past_legend_answer_joins_the_board3_line() -> None:
 
 
 # 2026-11-20 · 21 누적 진척 까닭 보드 — 카드 id: (날짜, 고른 답 굵은 글). 1차 q-look 은 권장이 아닌
-# 답이고 # 그 메모로 2차를 다시 물었다. 2차 풍선 여쭘(q2-tip-*)은 앱 전체 풍선 지연 갈래가 적는다.
+# 답이고 그 메모로 2차를 다시 물었다. 2차 풍선 여쭘(q2-tip-*)은 앱 전체 풍선 지연 갈래가 적는다.
 _CUMULATIVE_WHY_ANSWERS: dict[str, tuple[str, str]] = {
     "q-look": ("2026-11-20", "시안 A — 점 곁 꼬리표"),
     "q-source": ("2026-11-20", "자동 + 사람이 고침"),
@@ -3801,7 +3801,7 @@ _TIP_1121_ANSWERS = {
 
 
 def test_the_tip_delay_board_answers_are_recorded_in_6_44_and_make_ui_nav_04() -> None:
-    """v1.48 — 6-44 은 누적 진척 까닭 보드 메모 「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도
+    """v1.48 — 6-44 는 누적 진척 까닭 보드 메모 「마우스 올리고 1초 지나면 뜨도록해. 다른 팝업도
     마찬가지로」 와 그 범위를 물은 보드의 답 셋(줄마다 id · 물음 → **고른 답** · 끝 「(2026-11-21 ·
     규칙 id)」)이다. 메모가 넓힌 말이라 새 규칙 UI-NAV-04 는 MUST 이고, 그 예외가 답 둘(누르면 여는
     팝업 · 브라우저 기본 풍선)을 말하며 그물이 `tests/test_tip_delay.py` 를 부른다. 1장 안내 · 4장
