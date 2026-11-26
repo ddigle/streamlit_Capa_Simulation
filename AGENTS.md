@@ -1,8 +1,9 @@
 # Capa Simulation 개발 에이전트 가이드
 
-이 문서는 저장소 전체에 적용되는 개발 인수인계 문서다. 작업을 시작하기 전에
-`README.md`, 이 문서, `docs/TODO.md`를 읽고 실제 코드와 함께 현재 상태를 확인한다.
-구조나 핵심 계산 규칙을 변경하면 이 문서와 README도 같은 변경에서 갱신한다.
+이 문서는 저장소 전체에 적용되는 개발 규칙의 색인이다 — 장마다 한 파일(`docs/rules/`), 파일별 책임은
+`docs/reference/files/`, 모듈 색인은 생성한다(`docs/reference/module_index.md`). 작업을 시작하기 전에
+`README.md`, 이 색인에서 맡은 장, `docs/TODO.md`를 읽고 실제 코드와 함께 현재 상태를 확인한다.
+규칙이 바뀌면 그 규칙을 맡은 파일 한 곳을 그 자리에서 고쳐 쓴다(덧붙이지 않는다). 다른 곳은 링크로 둔다.
 
 > **사내(WebIDE)에서 이 문서를 읽고 있다면 `docs/dual_env_workflow.md` 와
 > `docs/internal_update_runbook.md` 를 먼저 읽는다.** 사내에서는 소스를 고치지 않고
@@ -43,6 +44,6 @@
 - 14장 병행 개발 규칙 (에이전트 둘 이상이 동시에 일할 때) → [docs/rules/14-parallel-development.md](docs/rules/14-parallel-development.md)
 - TODO 2장 구현 사항 > 문서 및 테스트 → [docs/rules/15-runbook-writing.md](docs/rules/15-runbook-writing.md)
 - CLAUDE 「아키텍처」 — 계산 파이프라인 · 계층과 경계 · DB 두 개 → [docs/rules/16-layers-and-boundaries.md](docs/rules/16-layers-and-boundaries.md)
-- TODO 1장 · 2장 · 4장 구현 사항 → [docs/records/closed.md](docs/records/closed.md)
+- 닫힌 항목(TODO 1장 · 2장 · 4장에서 닫은 것) → [docs/records/closed.md](docs/records/closed.md)
 - TODO 3장 결정 기록 → [docs/records/decisions.md](docs/records/decisions.md)
 - design_rules 6장 · 8장 결정 기록 → [docs/records/design_rules_log.md](docs/records/design_rules_log.md)
