@@ -1498,7 +1498,9 @@
     통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
     `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
     이름 그대로). 공정명 목록과 걸린 조건 줄도 위 `literal_names` 길이다. 호기 묶음 부딪힘 글
-    (`unit_group_collision_message`)만 서비스 예외 글이라 아직 `bootstrap_error_message` 의 물결표 막기만 지난다(`docs/TODO.md`).
+    (`unit_group_collision_message`)만 서비스 예외 글이라 `bootstrap_error_message` 의 물결표 막기만 지난다 — 서비스 예외 글에
+    실린 이름의 꾸밈(별표·`$`)은 물결표만 막는 지금대로 두며, 이 글을 `EquipmentNamesError` 꼴(이름을 속성으로 싣고 화면이
+    `literal_markdown` 으로 다시 짓기)로 옮기는 것은 열린 일이 아니다(다시 묻지 않는다).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
@@ -1532,6 +1534,8 @@
   잠금 갈래 `grade` + 편집 도구를 세우지 않는 `readOnly`, 작은 편집표 둘은 `locked_editor` — 같은 칸 꼴을 모든 칸 잠금 · 줄 고정 · 고르기 칸 없이). 탭
   값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않음). 앞선 예 Admin Area 링크 · 「토큰 넣기」 · 「접속 명단」 도 이 판정이다. 입장 화면
   Introduce 티저도 같다(동작 `screen.unfinished` — `intro_summary.teaser_payload` 가 `available: false` 로 보낸다, 2026-11-24 정식판 마감 2-A).
+  HOME Guide 옆 따라하기 창(예시판 — 그림마다 「예시 화면 · 합성 샘플」)은 이 숨김 밖이다 — 운영 서버에서도 등급과 상관없이 지금처럼
+  연다(`page_guide.find_howto_guide` 는 사내판 → 예시판 → md 차례만 보고 등급을 보지 않는다).
 - **판정은 동작 이름으로만 한다.** 화면 · 저장소는 등급 글자를 비교하지 않고 `grades.ACTIONS` 의 이름(`scenario.revision_save` ·
   `equipment.save` · `admin.area` …)을 넘긴다. 다른 갈래가 동작 · 사건 이름을 새로 지으려면 `auth/grades.py` 를 고친다(시험
   `tests/test_grades.py` 가 표를 잠근다).
