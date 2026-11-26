@@ -46,7 +46,7 @@
   `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지
   확인했다. 남은 것은 상세 조회 창의 결정과 사내 런북 8장의 실데이터 대조 결과이고, 반환 DataFrame은 구현된 `CoreDataProvider` 공통 처리·DuckDB 저장 경로를
   그대로 사용한다. DataLake·Impala를 별도 원천 어댑터로 붙이는 경로는 아직 없다.
-  상세 조회 창은 정해졌다 — 기본 창(원천 등록일 −7 ~ +3일, `DETAIL_WINDOW_DAYS_BEFORE` · `DETAIL_WINDOW_DAYS_AFTER`)을 그대로 두고 「원천 다시 받기」 는 두지 않는다. 그래서 남은 것은 사내 런북 8장의 실데이터 대조 결과이고, 같은 날 다른 값으로 두 번 실린 「하루 안 충돌 키」 는 열린 채다.
+  BigDataQuery 상세 조회는 기본 창(원천 등록일 −7 ~ +3일, `DETAIL_WINDOW_DAYS_BEFORE` · `DETAIL_WINDOW_DAYS_AFTER`)을 그대로 쓰고 「원천 다시 받기」 는 두지 않는다.
 - `app_pages/home.py`는 UI 코드가 크다. 대시보드 기능을 추가할 때 계산 로직을 더 넣지
   말고 Figure 생성기 또는 서비스 모듈 분리를 우선 검토한다.
 - Capa Chatbot 은 실제 데이터로 만든 대본을 보이는 화면이고 LLM API·권한·대화 이력은 연결하지 않았다.
