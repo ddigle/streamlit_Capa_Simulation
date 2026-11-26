@@ -72,6 +72,10 @@ Core_Data (BigDataQuery / 원천 CSV 올림 / data/input/Core_Data.csv / 내장 
   스풀 비우기(10초) · 올리기(5분 또는 200줄 — DB 올리기보다 먼저, DB 멈춤과 상관없이) · 일별 묶음 · 미러도 한다(`audit/shipper.py` —
   새 스레드 없음, 감사 실패는 DB 실패 수를 건드리지 않는다). Streamlit 을 import 하지 않고 캐시를 건드리지
   않는다. 차례는 `object_sync_engine.py`(유실을 막는 순서), 판정은 `services/object_storage_manifest.py`.
+  정본 버킷에 쓰는 쪽은 운영 앱 하나다 — 사내 PC 는 이관 `init` 뒤 쓰지 않고(넘긴 표지 `handed_over_utc` — 도구의 `push` · `resolve --keep mine` ·
+  `adopt --source local` 거절, 앱에 `SY-04`), `managed` 와 운영 버킷(`CAPA_S3_BUCKET`)은 운영 C-DEP 환경변수 표에만 두며 개발 서버 · WebIDE · 사내 PC
+  앱에는 넣지 않는다(쓰는 쪽이 둘이 되면 같은 세대에 포인터가 둘로 갈라져 시작 받기가 `원격이 갈라짐` 에 머물고 `rollback` 으로 푼다 —
+  `docs/objectstore_setup.md` 2 · 8장).
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
   직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.
