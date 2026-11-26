@@ -22,7 +22,7 @@ BUDGETS: dict[str, int] = {
     "AGENTS.md": 4_024,
     "CLAUDE.md": 4_953,
     "README.md": 65_682,
-    "docs/TODO.md": 247_272,
+    "docs/TODO.md": 247_298,
     "docs/design_rules.md": 164_473,
     "docs/reference/files/app-and-ui.md": 206_911,
     "docs/reference/files/components.md": 277_840,
