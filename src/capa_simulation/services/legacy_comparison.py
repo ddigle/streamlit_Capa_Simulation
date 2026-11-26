@@ -68,6 +68,7 @@ import pandas as pd
 from capa_simulation.io.core_data_source import CoreDataContract, load_core_data_contract
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK, plan_row_mask
 from capa_simulation.services.frame_contracts import (
+    DEMAND_BASES,
     match_key,
     normalize_demand_basis,
     require_columns,
@@ -429,6 +430,263 @@ def _normalized(frame: pd.DataFrame, keys: list[str], value_column: str) -> pd.D
     )
     prepared[value_column] = pd.to_numeric(prepared[value_column], errors="coerce")
     return prepared.dropna(subset=[value_column])
+
+
+# ---------------------------------------------------------------- Chip 꼬리 키 모양
+#
+# Chip 대조(계획 줄 키)에서 차이율이 `CHIP_TAIL_RATE` 를 넘는 꼬리 키가 어떤 꼴인지를 수 · 비 ·
+# 몫으로만 접는다. 원인을 정하지 않고 가를 칸만 낸다 — 기존 칸이 한 격자 위에 놓였고 꼬리가 그 격자
+# 안의 작은 키인가(출력 양자화), 같은 거친 키의 형제 계획 줄 사이에서 합이 보존되는가(형제 나눔),
+# 같은 계획 줄의 다른 소요기준 경로도 함께 벗어나는가(계획 물량 층) 아니면 Chip 에만 있는가. 키 ·
+# 값은 담지 않는다.
+
+CHIP_TAIL_RATE = 0.01
+# 기존 칸의 격자 후보(K개) — 굵은 것부터. 칸의 `GRID_SHARE` 이상이 놓인 가장 굵은 것을 단위로 본다.
+GRID_UNITS: tuple[float, ...] = (1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 1e-4, 1e-5, 1e-6)
+GRID_SHARE = 0.99
+# 「작은 키」 의 문턱 — 맞대진 키 가운데 기존값 순위가 이 몫 안인 꼬리 키를 센다(`bottom_keys`).
+BOTTOM_RANK = 0.05
+# 격자 위 판정의 허용 — 값의 1e-9 배(부동소수 잡음)이되 격자의 1e-3 을 넘지 않는다. 값에 비례만
+# 시키면 큰 칸은 잔 격자에 늘 올라앉는다.
+_GRID_NOISE = 1e-9
+_GRID_SLACK = 1e-3
+# 키 칸을 이어 붙인 글자의 가름과 결측 표지 — 프레임 사이 맞대기에만 쓴다.
+_TAG_SEP = "\x1f"
+_TAG_NA = "\x00"
+
+
+@dataclass(frozen=True)
+class ChipTailKey:
+    """꼬리 키 하나의 모양 — 값 · 키 없이 비 · 몫 · 개수만.
+
+    - `share` — 그 키 기존값 ÷ 맞대진 키 기존값 평균. `rank` — 맞대진 키 가운데 기존값이 그 키
+      이하인 몫(하위 몇 %).
+    - `cells` — 그 키로 더해진 기존 칸(계획 줄 × Pack Code × WF 구분). `within_grid` — |신규 − 기존|
+      < 격자 × `cells`(칸마다 격자 하나 아래로 잘렸으면 선다). 격자가 없으면 None.
+    - `siblings` — 같은 거친 키(`COMPARISON_KEYS`)의 계획 줄 수(자기 포함), `sibling_rate` — 그 거친
+      키의 |Σ신규 − Σ기존| ÷ Σ기존(값 불일치 키는 뺀다).
+    - `routes` — (소요기준, 차이율 > 문턱, 맞대진 경로 키). 같은 계획 줄(WF 구분 뺌 — PKG 경로는
+      WF 구분이 비거나 다를 수 있다)의 경로 키 대조에서 센다. 경로 대조가 없으면 빈 튜플이다.
+    """
+
+    rate: float
+    rising: bool
+    share: float | None
+    rank: float
+    cells: int
+    within_grid: bool | None
+    siblings: int
+    sibling_rate: float | None
+    routes: tuple[tuple[str, int, int], ...]
+
+
+@dataclass(frozen=True)
+class ChipOutlierShape:
+    """Chip 꼬리 키 모양(`chip_outlier_shape`).
+
+    `cells` 는 값(양수)이 든 기존 칸 수, `grid` 는 (격자, 그 위에 놓인 칸), `unit` 은 칸의
+    `GRID_SHARE` 이상이 놓인 가장 굵은 격자(없으면 None)다. `keys` 는 맞대진 키, `tail` 은 꼬리 키를
+    차이율 큰 차례로 둔 것이다. `routes` 는 꼬리 키의 계획 줄(WF 구분 뺌)을 겹침 없이 모아
+    소요기준별로 더한 (소요기준, 차이율 > 문턱, 맞대진 경로 키) — 경로 대조가 없으면 None 이다.
+    """
+
+    cells: int
+    grid: tuple[tuple[float, int], ...]
+    unit: float | None
+    keys: int
+    tail: tuple[ChipTailKey, ...]
+    routes: tuple[tuple[str, int, int], ...] | None
+
+    @property
+    def on_grid(self) -> int:
+        """`unit` 위 칸 — 단위가 없으면 가장 잔 격자 위 칸."""
+        unit = self.unit if self.unit is not None else self.grid[-1][0]
+        return dict(self.grid).get(unit, 0)
+
+    @property
+    def rising(self) -> int:
+        """신규 > 기존인 꼬리 키."""
+        return sum(key.rising for key in self.tail)
+
+    @property
+    def within(self) -> int | None:
+        """|신규 − 기존| < 격자 × 칸인 꼬리 키 — 단위가 없으면 None."""
+        return None if self.unit is None else sum(bool(key.within_grid) for key in self.tail)
+
+    @property
+    def largest_share(self) -> float | None:
+        shares = [key.share for key in self.tail if key.share is not None]
+        return max(shares) if shares else None
+
+    @property
+    def highest_rank(self) -> float | None:
+        return max((key.rank for key in self.tail), default=None)
+
+    @property
+    def bottom_keys(self) -> int:
+        """기존값이 맞대진 키의 하위 `BOTTOM_RANK` 안인 꼬리 키(큰 꼬리 키 하나에 흔들리지 않음)."""
+        return sum(key.rank <= BOTTOM_RANK for key in self.tail)
+
+    @property
+    def with_siblings(self) -> int:
+        """형제 계획 줄이 있는 꼬리 키."""
+        return sum(key.siblings > 1 for key in self.tail)
+
+    @property
+    def sibling_rate(self) -> float | None:
+        rates = [key.sibling_rate for key in self.tail if key.sibling_rate is not None]
+        return max(rates) if rates else None
+
+
+def _key_tags(frame: pd.DataFrame, keys: Sequence[str]) -> pd.Series:
+    """키 칸을 이어 붙인 글자(결측도 한 값). 이미 `_normalized` 를 거친 칸끼리 맞대는 데만 쓴다."""
+    if frame.empty:
+        return pd.Series([], index=frame.index, dtype="object")
+    parts = [frame[key].astype("string").fillna(_TAG_NA) for key in keys]
+    tags = parts[0].astype("object")
+    for part in parts[1:]:
+        tags = tags + _TAG_SEP + part.astype("object")
+    return tags
+
+
+def _on_grid(values: pd.Series, unit: float) -> pd.Series:
+    """값이 `unit` 격자 위에 놓였나 — 허용은 값의 `_GRID_NOISE` 배, 격자의 `_GRID_SLACK` 까지."""
+    nearest = (values / unit).round() * unit
+    slack = (values.abs() * _GRID_NOISE).clip(upper=unit * _GRID_SLACK)
+    return (values - nearest).abs().le(slack)
+
+
+def _route_counts(
+    route_comparison: pd.DataFrame, line_keys: Sequence[str], threshold: float
+) -> pd.DataFrame:
+    """경로 키 대조를 계획 줄(`line_keys`) × 소요기준으로 센다 — 밖(`_밖`) · 맞대진 키(`_키`)."""
+    matched = _matched_rows(route_comparison)
+    rate = pd.to_numeric(matched["차이율"], errors="coerce")
+    table = pd.DataFrame(
+        {
+            "_줄": _key_tags(matched, line_keys),
+            "_기준": normalize_demand_basis(matched["소요기준"]).astype("string").fillna(""),
+            "_밖": rate.gt(threshold).fillna(False).astype(int),
+        }
+    )
+    return table.groupby(["_줄", "_기준"], as_index=False).agg(
+        _밖=pd.NamedAgg(column="_밖", aggfunc="sum"),
+        _키=pd.NamedAgg(column="_밖", aggfunc="size"),
+    )
+
+
+def _basis_counts(counts: pd.DataFrame) -> tuple[tuple[str, int, int], ...]:
+    """소요기준별 (이름, 밖, 키) — 계약 소요기준 차례, 없는 것은 0/0."""
+    by_basis = counts.groupby("_기준")[["_밖", "_키"]].sum()
+    return tuple(
+        (
+            basis,
+            int(by_basis["_밖"].get(basis, 0)),
+            int(by_basis["_키"].get(basis, 0)),
+        )
+        for basis in DEMAND_BASES
+    )
+
+
+def chip_outlier_shape(
+    core: pd.DataFrame,
+    chip_comparison: pd.DataFrame,
+    route_comparison: pd.DataFrame | None = None,
+    contract: CoreDataContract | None = None,
+    *,
+    value_column: str = "Plan_Chip(K개)",
+    threshold: float = CHIP_TAIL_RATE,
+) -> ChipOutlierShape:
+    """Chip 대조에서 차이율이 `threshold` 를 넘는 꼬리 키의 모양(`ChipOutlierShape`).
+
+    `core` 는 `compare_metric` 에 넘긴 파생 프레임, `chip_comparison` 은 그 Chip 대조(계획 줄 키 —
+    `COMPARISONS` 의 Chip), `route_comparison` 은 소요대수를 경로 키(`REQB_COLUMNS`)로 맞댄 대조다
+    (없으면 None — 경로 칸을 비운다). 기존 칸은 `_legacy_totals` 와 같은 접기 단위(`legacy_grain`)로
+    보고 경로 반복은 한 번만 센다. 맞대진 키는 「대조 건수」 와 같은 키(`_matched_rows`)다.
+    """
+    selected = contract or load_core_data_contract()
+    grain = legacy_grain(selected)
+    keys = plan_line_keys(selected)
+    line_keys = [key for key in keys if key != "WF 구분"]
+    require_columns(core, [*grain, value_column], "Core Data")
+
+    prepared = _normalized(core, grain, value_column)
+    values = prepared.drop_duplicates([*grain, value_column])[value_column].astype("float64")
+    values = values.loc[values.gt(0)]
+    grid = tuple((unit, int(_on_grid(values, unit).sum())) for unit in GRID_UNITS)
+    unit = next(
+        (size for size, count in grid if not values.empty and count >= GRID_SHARE * len(values)),
+        None,
+    )
+    cells_per_key = _key_tags(prepared.drop_duplicates(grain), keys).value_counts()
+
+    matched = _matched_rows(chip_comparison)
+    legacy = pd.to_numeric(matched["기존값"], errors="coerce").astype("float64")
+    fresh = pd.to_numeric(matched["신규값"], errors="coerce").astype("float64")
+    rate = pd.to_numeric(matched["차이율"], errors="coerce").astype("float64")
+    mean = float(legacy.mean()) if not legacy.empty else 0.0
+    rank = legacy.rank(method="max", pct=True)
+    tag = _key_tags(matched, keys)
+    parent = _key_tags(matched, COMPARISON_KEYS)
+
+    usable = chip_comparison.loc[~chip_comparison["값 불일치"].astype(bool)]
+    sums = pd.DataFrame(
+        {
+            "_거친": _key_tags(usable, COMPARISON_KEYS),
+            "_기존": pd.to_numeric(usable["기존값"], errors="coerce").fillna(0.0),
+            "_신규": pd.to_numeric(usable["신규값"], errors="coerce").fillna(0.0),
+        }
+    ).groupby("_거친")
+    lines_per_parent = sums.size()
+    totals = sums[["_기존", "_신규"]].sum()
+    parent_rate = ((totals["_신규"] - totals["_기존"]).abs() / totals["_기존"]).where(
+        totals["_기존"].gt(0)
+    )
+
+    routes = (
+        None if route_comparison is None else _route_counts(route_comparison, line_keys, threshold)
+    )
+    line_tag = _key_tags(matched, line_keys)
+    out = rate.gt(threshold).fillna(False)
+    order = (
+        pd.DataFrame({"_rate": rate.loc[out], "_tag": tag.loc[out]})
+        .sort_values(["_rate", "_tag"], ascending=[False, True], kind="stable")
+        .index
+    )
+    tail: list[ChipTailKey] = []
+    for index in order:
+        cells = int(cells_per_key.get(tag.loc[index], 0))
+        gap = abs(fresh.loc[index] - legacy.loc[index])
+        sibling_rate = parent_rate.get(parent.loc[index])
+        own = (
+            ()
+            if routes is None
+            else _basis_counts(routes.loc[routes["_줄"].eq(line_tag.loc[index])])
+        )
+        tail.append(
+            ChipTailKey(
+                rate=float(rate.loc[index]),
+                rising=bool(fresh.loc[index] > legacy.loc[index]),
+                share=float(legacy.loc[index] / mean) if mean else None,
+                rank=float(rank.loc[index]),
+                cells=cells,
+                within_grid=None if unit is None else bool(gap < unit * cells),
+                siblings=int(lines_per_parent.get(parent.loc[index], 0)),
+                sibling_rate=None if pd.isna(sibling_rate) else float(sibling_rate),
+                routes=own,
+            )
+        )
+    tail_lines = set(line_tag.loc[order])
+    return ChipOutlierShape(
+        cells=int(len(values)),
+        grid=grid,
+        unit=unit,
+        keys=int(len(matched)),
+        tail=tuple(tail),
+        routes=(
+            None if routes is None else _basis_counts(routes.loc[routes["_줄"].isin(tail_lines)])
+        ),
+    )
 
 
 # ---------------------------------------------------------------- 소요대수 ≈60 배 가르기

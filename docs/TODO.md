@@ -1382,9 +1382,9 @@
   리뷰 한 줄로 받는다.
 - [ ] **(다음 판) 8-2L C(Chip 부하 차이율 최대)를 가르는 진단 칸** — 1.0 사내 리뷰 발견 2: 1a 새 등록 뒤에도 C 만 기대를 넘고 W · D 는 0,
   합의 비는 1 이다. 코드 · 합성 재현으로 앱 산식 결함 · CUSTOM 키 승격 · 확인 스크립트 접기 결함 · 판 회귀는 기각했고 원인은 미정이다(기존
-  칸 양자화 · 형제 계획 줄 나눔 · 게이트 정의 · Pack Code 관례). `legacy_comparison` 에 꼬리 키 모양 함수(기존 칸 격자 n/N · 꼬리 키 크기 ·
-  밖 계획 줄 PKG · WF 경로 이탈)를 두고 8장 `8-2C` 줄로 낸다 — 원형은 저장소 밖 분석 산출. 결과에 따라 C 판정을 가중 차이율 · 거친 키로
-  바꿀지 사용자에게 묻는다.
+  칸 양자화 · 형제 계획 줄 나눔 · 게이트 정의 · Pack Code 관례). `legacy_comparison.chip_outlier_shape` 와 8장 정보 줄 `8-2C` · `8-2C2`(기존 칸
+  격자 n/N · 꼬리 키 크기 · 방향 · 하위5% · 같은 계획 줄 PKG · CHIP · WF 경로 이탈 · 형제 계획 줄 합)를 두었다 — 다음 배포 8장에서 값으로 받고(그
+  배포 7장 차례 5 에 「정보 줄 — 기대 없음」), 결과에 따라 C 판정을 가중 차이율 · 거친 키로 바꿀지 사용자에게 묻는다.
 - [ ] **conftest 환경 지우기 준비 다섯이 함수 범위**(2026-11-13 — ⑥-3 리뷰 지적, `feat/test-env-1113`) — `_without_auto_update_opt_in` ·
   `_without_sso_environment` · `_without_object_storage_environment` · `_without_container_start_report` · `_without_internal_modules` 는 함수 범위라 모듈 ·
   세션 범위 준비가 띄우는 하위 프로세스는 창의 값을 그대로 받는다. 지금 그런 하위 프로세스는 `tests/test_review_sample.py` 의 `sample_root` 하나이고 그

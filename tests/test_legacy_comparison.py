@@ -16,6 +16,9 @@
 예전에는 `fillna(0.0)` 으로 통과 처리해 59건을 놓쳤다.
 """
 
+import math
+from collections.abc import Callable, Mapping, Sequence
+
 import pandas as pd
 import pytest
 
@@ -23,6 +26,7 @@ from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services.core_data_derivation import CUSTOM_BLANK
 from capa_simulation.services.legacy_comparison import (
     AGREE_GROUP,
+    CHIP_TAIL_RATE,
     COMPARISON_KEYS,
     COMPARISONS,
     FORMULA_INPUTS,
@@ -34,6 +38,7 @@ from capa_simulation.services.legacy_comparison import (
     SUSPECT_GROUP,
     WAFER_ROUTE_FACTORS,
     WAFER_ROUTE_RESULTS,
+    ChipOutlierShape,
     FactorAgreement,
     FactorFold,
     FormulaInput,
@@ -47,6 +52,7 @@ from capa_simulation.services.legacy_comparison import (
     RouteValueSpread,
     ScalingCheck,
     attach_formula_inputs,
+    chip_outlier_shape,
     compare_metric,
     describe_ratios,
     difference_distribution,
@@ -1059,3 +1065,380 @@ def test_the_plan_row_fold_is_not_a_formal_comparison() -> None:
     assert PLAN_ROW_METRIC.legacy_column == wafer.legacy_column
     assert PLAN_ROW_METRIC.label != wafer.label
     assert not PLAN_ROW_METRIC.plan_line
+
+
+# ------------------------------------------------------------- Chip 꼬리 키 모양
+#
+# 꼬리 키(차이율 > 1%)의 모양이 세 꼴에서 서로 다르게 나오는지 본다 — (가) 기존 칸을 0.001K 로
+# 올림한 출력 양자화에 작은 계획 줄, (나) 형제 계획 줄 사이 나눔(합 보존), (다) 꼬리 없음. 합성 DEMO
+# 값이다.
+
+CHIP = next(metric for metric in COMPARISONS if metric.plan_line)
+ROUTE = LegacyMetric(label="소요대수", legacy_column="소요대수", new_column="소요대수")
+_CHIP_LINE: dict[str, object] = {
+    "생산계획년월": 202608,
+    "양산구분": "양산",
+    "CS": "MP",
+    "Stack": "8H",
+    "Customer": "DEMO_CUST",
+    "CUSTOM": CUSTOM_BLANK,
+}
+# (제품, Capa Code, Pack Code 마다 신규 Chip). 같은 제품은 같은 거친 키라 DEMO_P1 의 두 줄이 형제다.
+# 값은 9 자리 소수라 잔 격자에도 놓이지 않는다. 끝 두 줄은 작은 계획 줄(하나는 Pack Code 둘)이고,
+# 채움 줄 서른은 작은 두 줄이 맞대진 키의 하위 5% 안에 들 만큼 키를 늘린다.
+_CHIP_LINES: tuple[tuple[str, str, tuple[float, ...]], ...] = (
+    *((f"DEMO_Q{i}", "DEMO_K1", (150.0 + 3.123456789 * i,)) for i in range(1, 31)),
+    ("DEMO_P1", "DEMO_K1", (512.123456789,)),
+    ("DEMO_P1", "DEMO_K2", (301.987654321,)),
+    ("DEMO_P2", "DEMO_K1", (250.314159265, 120.271828182)),
+    ("DEMO_P3", "DEMO_K1", (480.161803398,)),
+    ("DEMO_P4", "DEMO_K1", (333.333333331,)),
+    ("DEMO_P5", "DEMO_K1", (275.141421356,)),
+    ("DEMO_P6", "DEMO_K1", (199.173205081,)),
+    ("DEMO_P7", "DEMO_K1", (421.223606797,)),
+    ("DEMO_P8", "DEMO_K1", (366.244948974,)),
+    ("DEMO_P9", "DEMO_K1", (0.000041234567,)),
+    ("DEMO_P10", "DEMO_K1", (0.000123456789, 0.000234567891)),
+)
+_TINY = {("DEMO_P9", "DEMO_K1"), ("DEMO_P10", "DEMO_K1")}
+_SIBLINGS = (("DEMO_P1", "DEMO_K1"), ("DEMO_P1", "DEMO_K2"))
+_ROUTE_BASES = (("PKG", ""), ("CHIP", "Core"), ("WF", "Core"))
+_NO_ROUTE = {"Area_Name": "", "공정": "", "STEP_SEQ": "", "MCP_SEQ": "", "소요기준": ""}
+
+
+def _chip_shape(
+    legacy: Callable[[str, str, int, float], float],
+    route_scale: Callable[[str, str, str], float] = lambda *_: 1.0,
+    lines: Sequence[tuple[str, str, tuple[float, ...]]] = _CHIP_LINES,
+    split: Mapping[tuple[str, str], float] | None = None,
+) -> ChipOutlierShape:
+    """`lines`(기본 `_CHIP_LINES`)를 원천 · 신규 계산으로 펴서 두 대조를 만들고 꼬리 모양을 잰다.
+
+    `legacy(제품, Capa Code, Pack Code 차례, 신규)` 가 그 칸의 기존 `Plan_Chip(K개)` 다. 계획 행
+    하나와 경로 행 셋(소요기준 PKG · CHIP · WF — 첫 Pack Code 만)을 둔다. Core 경로 행은 기존 Chip
+    칸을 되풀이해 싣는다(실제 원천처럼 — 접어서 한 칸). PKG 경로는 WF 구분이 비었다. 경로 기존
+    소요대수는 신규 × `route_scale(제품, Capa Code, 소요기준)` 이다. `split` 의 계획 줄은 CHIP 경로
+    행이 기존 칸에 그 값을 더해 실어 그 칸이 갈린다(`값 불일치`).
+    """
+    rows: list[dict[str, object]] = []
+    fresh: list[dict[str, object]] = []
+    required: list[dict[str, object]] = []
+    for product, capa, packs in lines:
+        line = {**_CHIP_LINE, "제품정보": product, "Capa Code": capa}
+        olds = [legacy(product, capa, index, value) for index, value in enumerate(packs)]
+        for index, old in enumerate(olds):
+            rows.append(
+                {
+                    **line,
+                    **_NO_ROUTE,
+                    "WF 구분": "Core",
+                    "Pack Code": f"DEMO_PK{index + 1}",
+                    "Plan_Chip(K개)": old,
+                    "소요대수": None,
+                }
+            )
+        for number, (basis, division) in enumerate(_ROUTE_BASES, start=1):
+            path = {
+                **line,
+                "WF 구분": division,
+                "Area_Name": "Main",
+                "공정": f"DEMO_{basis}",
+                "STEP_SEQ": "1",
+                "MCP_SEQ": "1",
+                "소요기준": basis,
+            }
+            need = 10.0 * number
+            shifted = (split or {}).get((product, capa), 0.0) if basis == "CHIP" else 0.0
+            rows.append(
+                {
+                    **path,
+                    "Pack Code": "DEMO_PK1",
+                    "Plan_Chip(K개)": olds[0] + shifted if division else None,
+                    "소요대수": need * route_scale(product, capa, basis),
+                }
+            )
+            required.append({**path, "소요대수": need})
+        fresh.append({**line, "WF 구분": "Core", "물량": sum(packs)})
+    core = pd.DataFrame(rows)
+    chip = compare_metric(core, pd.DataFrame(fresh), CHIP, CONTRACT)
+    route = compare_metric(
+        core,
+        pd.DataFrame(required),
+        ROUTE,
+        CONTRACT,
+        keys=REQB_COLUMNS,
+        grain=[*legacy_grain(CONTRACT), *REQB_COLUMNS],
+    )
+    return chip_outlier_shape(core, chip, route, CONTRACT)
+
+
+def _ceiled(_product: str, _capa: str, _index: int, value: float) -> float:
+    """(가) 기존 칸만 0.001K 로 올림 — 큰 줄은 1% 안에 남고 작은 줄만 꼬리가 된다."""
+    return math.ceil(value / 0.001) * 0.001
+
+
+def _ceiled_chip_route(product: str, capa: str, basis: str) -> float:
+    """(가) 기존 CHIP 경로 소요대수는 올린 Chip 칸을 따른다 — PKG · WF 경로는 그대로다."""
+    if basis != "CHIP" or (product, capa) not in _TINY:
+        return 1.0
+    (packs,) = [packs for p, c, packs in _CHIP_LINES if (p, c) == (product, capa)]
+    return _ceiled(product, capa, 0, packs[0]) / packs[0]
+
+
+_MOVED = 30.0
+
+
+def _split(product: str, capa: str, _index: int, value: float) -> float:
+    """(나) 형제 두 줄 사이에서 기존이 물량을 옮겼다 — 합은 같다."""
+    return value + {_SIBLINGS[0]: _MOVED, _SIBLINGS[1]: -_MOVED}.get((product, capa), 0.0)
+
+
+def _split_route(product: str, capa: str, _basis: str) -> float:
+    """(나) 계획 물량 층이 갈렸으므로 그 줄의 모든 소요기준 경로가 같은 비로 따라간다."""
+    (packs,) = [packs for p, c, packs in _CHIP_LINES if (p, c) == (product, capa)]
+    return _split(product, capa, 0, packs[0]) / packs[0]
+
+
+def _same(_product: str, _capa: str, _index: int, value: float) -> float:
+    return value
+
+
+def _signature(shape: ChipOutlierShape) -> tuple[object, ...]:
+    return (
+        shape.unit,
+        len(shape.tail),
+        shape.rising,
+        shape.within,
+        shape.bottom_keys,
+        shape.with_siblings,
+        shape.routes,
+    )
+
+
+def test_chip_tail_shapes_tell_quantization_sibling_split_and_no_tail_apart() -> None:
+    """세 꼴에서 모양이 서로 다르다 — 격자 · 꼬리 · 방향 · 격자 안 · 형제 · 경로 이탈이 저마다
+    가른다."""
+    quantized = _chip_shape(_ceiled, _ceiled_chip_route)
+    split = _chip_shape(_split, _split_route)
+    clean = _chip_shape(_same)
+
+    # 기존 칸은 계획 줄 × Pack Code × WF 구분 — Core 경로 행이 되풀이한 값은 한 칸으로 센다.
+    cells = sum(len(packs) for _p, _c, packs in _CHIP_LINES)
+    assert quantized.cells == split.cells == clean.cells == cells
+    assert quantized.keys == split.keys == clean.keys == len(_CHIP_LINES)
+
+    # (다) 꼬리 없음 — 9 자리 소수라 어느 격자에도 99% 가 서지 않는다.
+    assert clean.unit is None and clean.tail == () and clean.within is None
+    assert clean.routes == (("PKG", 0, 0), ("CHIP", 0, 0), ("WF", 0, 0))
+
+    # (가) 모든 칸이 0.001K 격자 위 · 꼬리는 작은 두 줄 · 기존이 크다 · |차이| < 격자 × 칸 · 하위.
+    assert (quantized.unit, quantized.on_grid) == (0.001, cells)
+    assert dict(quantized.grid)[0.01] < cells
+    assert len(quantized.tail) == 2 and quantized.rising == 0 and quantized.within == 2
+    assert quantized.highest_rank == pytest.approx(2 / len(_CHIP_LINES))
+    assert quantized.bottom_keys == 2
+    assert quantized.largest_share is not None and quantized.largest_share < 1e-5
+    assert quantized.with_siblings == 0
+    assert quantized.routes == (("PKG", 0, 2), ("CHIP", 2, 2), ("WF", 0, 2))
+    assert [key.cells for key in quantized.tail] == [1, 2]
+    assert all(key.rate > CHIP_TAIL_RATE for key in quantized.tail)
+
+    # (나) 꼬리는 형제 두 줄 · 방향이 하나씩 갈림 · 형제 합은 그대로 · 모든 소요기준 경로가 함께
+    # 벗어남.
+    assert split.unit is None and split.within is None
+    assert len(split.tail) == 2 and split.rising == 1
+    assert split.with_siblings == 2 and [key.siblings for key in split.tail] == [2, 2]
+    assert split.sibling_rate is not None and split.sibling_rate < 1e-12
+    assert split.routes == (("PKG", 2, 2), ("CHIP", 2, 2), ("WF", 2, 2))
+    assert split.largest_share is not None and split.largest_share > 1.0
+    assert split.bottom_keys == 0
+
+    signatures = {_signature(shape) for shape in (quantized, split, clean)}
+    assert len(signatures) == 3
+
+
+def test_chip_tail_shape_moves_when_its_input_changes() -> None:
+    """빈 통과가 아니다 — 입력의 한 가지를 바꾸면 그 칸이 따라 움직인다."""
+    # 0.01K 로 올리면 단위가 굵어진다.
+    coarse = _chip_shape(lambda _p, _c, _i, value: math.ceil(value / 0.01) * 0.01)
+    assert coarse.unit == 0.01
+    # 형제 합을 깨면 형제 합 차이율이 선다.
+    broken = _chip_shape(
+        lambda product, capa, index, value: (
+            value + (_MOVED if (product, capa) == _SIBLINGS[0] else 0.0)
+        )
+    )
+    assert broken.sibling_rate is not None and broken.sibling_rate > 0.01
+    assert broken.rising == 0 and broken.with_siblings == 1
+    # 작은 줄의 PKG 경로도 벗어나면 PKG 칸이 센다.
+    leaking = _chip_shape(
+        _ceiled,
+        lambda product, capa, basis: (
+            2.0 if basis == "PKG" else _ceiled_chip_route(product, capa, basis)
+        ),
+    )
+    assert leaking.routes == (("PKG", 2, 2), ("CHIP", 2, 2), ("WF", 0, 2))
+    assert [key.routes[0] for key in leaking.tail] == [("PKG", 1, 1), ("PKG", 1, 1)]
+
+
+def test_chip_tail_within_grid_scales_by_the_pack_codes_of_the_key() -> None:
+    """Pack Code 둘을 더한 작은 줄은 |차이| 가 격자 하나를 넘어도 칸마다 격자 안이면 격자 안이다."""
+    shape = _chip_shape(_ceiled, _ceiled_chip_route)
+    (two,) = [key for key in shape.tail if key.cells == 2]
+    packs = dict(((p, c), v) for p, c, v in _CHIP_LINES)[("DEMO_P10", "DEMO_K1")]
+    gap = sum(_ceiled("", "", 0, value) for value in packs) - sum(packs)
+    assert 0.001 < gap < 0.002
+    assert two.within_grid is True
+
+
+def test_chip_tail_shape_leaves_routes_empty_without_a_route_comparison() -> None:
+    """경로 대조가 없으면(원천 소요대수가 빈 데이터셋) 경로 칸만 비운다."""
+    core = pd.DataFrame(
+        [
+            {
+                **_CHIP_LINE,
+                **_NO_ROUTE,
+                "제품정보": "DEMO_P1",
+                "Capa Code": "DEMO_K1",
+                "WF 구분": "Core",
+                "Pack Code": "DEMO_PK1",
+                "Plan_Chip(K개)": 2.0,
+            }
+        ]
+    )
+    fresh = core.drop(columns=["Pack Code", "Plan_Chip(K개)"]).assign(물량=1.5)
+    shape = chip_outlier_shape(core, compare_metric(core, fresh, CHIP, CONTRACT), None, CONTRACT)
+
+    assert shape.routes is None
+    assert len(shape.tail) == 1 and shape.tail[0].routes == ()
+    assert shape.unit == 1.0 and shape.within == 1 and shape.rising == 0
+
+
+def _grid_shape(values: Sequence[float]) -> ChipOutlierShape:
+    """계획 줄마다 칸 하나(기존 = 신규 = 그 값)인 Chip 대조의 꼬리 모양 — 격자만 본다."""
+    core = pd.DataFrame(
+        [
+            {
+                **_CHIP_LINE,
+                **_NO_ROUTE,
+                "제품정보": f"DEMO_P{index}",
+                "Capa Code": "DEMO_K1",
+                "WF 구분": "Core",
+                "Pack Code": "DEMO_PK1",
+                "Plan_Chip(K개)": value,
+            }
+            for index, value in enumerate(values)
+        ]
+    )
+    fresh = core.drop(columns=["Pack Code", "Plan_Chip(K개)"]).assign(물량=list(values))
+    return chip_outlier_shape(core, compare_metric(core, fresh, CHIP, CONTRACT), None, CONTRACT)
+
+
+def test_chip_grid_does_not_seat_a_large_off_grid_value_on_a_fine_grid() -> None:
+    """격자 허용은 값에 비례만 하지 않는다 — 큰 칸의 잔 자리가 잔 격자에 올라앉지 않는다."""
+    shape = _grid_shape([123456.7891234, 2.5, 4.0, 16.9531, 16.953099999999992])
+    grid = dict(shape.grid)
+
+    # 16.9531 과 그 부동소수 잡음 꼴은 0.0001K 격자 위, 큰 값은 0.000001K 에도 아니다.
+    assert (grid[1.0], grid[0.1], grid[0.0001], grid[1e-6]) == (1, 2, 4, 4)
+    assert shape.unit is None and shape.on_grid == 4 and shape.tail == ()
+
+
+def test_chip_grid_unit_needs_ninety_nine_percent_of_the_cells() -> None:
+    """칸의 95% 만 0.001K 격자 위면 단위가 서지 않는다(`GRID_SHARE` 99%) — 칸 n 은 가장 잔 격자."""
+    on = [1.0 + 0.001 * (2 * index + 1) for index in range(19)]
+    shape = _grid_shape([*on, 0.1234567891])
+
+    assert dict(shape.grid)[0.01] == 0 and dict(shape.grid)[0.001] == 19
+    assert shape.cells == 20 and shape.unit is None and shape.on_grid == 19
+
+
+# 범례(런북 8-6)의 칸 정의를 둥근 수로 못 박는다 — (제품, Capa Code, 신규, 기존). 채움 줄 열여섯은
+# 기존 = 신규다. 맞대진 키 24 · 기존 0 인 키 하나(칸에는 안 들고 평균 · 순위에는 든다).
+_PINNED: tuple[tuple[str, str, float, float], ...] = (
+    *((f"DEMO_Q{i}", "DEMO_K1", 200.0 + 7 * i, 200.0 + 7 * i) for i in range(1, 17)),
+    ("DEMO_A1", "DEMO_K1", 100.0, 120.0),  # 꼬리 · 형제 · 기존 큼
+    ("DEMO_A1", "DEMO_K2", 50.0, 40.0),  # 꼬리 · 형제 · 신규 큼 · 기존이 B1 과 같다(순위 동률)
+    ("DEMO_B1", "DEMO_K1", 40.0, 40.0),
+    ("DEMO_C1", "DEMO_K1", 201.0, 200.0),  # 0.5% — 밖이 아니다
+    ("DEMO_C2", "DEMO_K1", 101.0, 100.0),  # 딱 1% — 밖이 아니다(문턱을 넘어야 밖)
+    ("DEMO_D1", "DEMO_K1", 2.0, 3.0),  # |차이| = 격자 × 칸 — 격자 안이 아니다 · 하위 2/24
+    ("DEMO_D2", "DEMO_K1", 4.5, 5.0),  # 격자 안
+    ("DEMO_Z1", "DEMO_K1", 7.0, 0.0),  # 기존 0
+)
+# 경로 기존 소요대수 ÷ 신규 — 차이율은 |1 − s| ÷ s. 1.005 는 0.5% 라 벗어남이 아니다. 밖이 아닌
+# C1 줄의 경로는 벗어나도 세지 않는다.
+_PINNED_ROUTES: dict[tuple[str, str, str], float] = {
+    ("DEMO_A1", "DEMO_K1", "PKG"): 1.005,
+    ("DEMO_A1", "DEMO_K1", "CHIP"): 1.2,
+    ("DEMO_A1", "DEMO_K2", "PKG"): 1.5,
+    ("DEMO_A1", "DEMO_K2", "CHIP"): 1.5,
+    ("DEMO_A1", "DEMO_K2", "WF"): 1.5,
+    ("DEMO_D2", "DEMO_K1", "WF"): 0.9,
+    ("DEMO_C1", "DEMO_K1", "PKG"): 1.5,
+    ("DEMO_C1", "DEMO_K1", "CHIP"): 1.5,
+}
+
+
+def _pinned_shape(
+    table: Sequence[tuple[str, str, float, float]] = _PINNED,
+    split: Mapping[tuple[str, str], float] | None = None,
+) -> ChipOutlierShape:
+    olds = {(product, capa): old for product, capa, _new, old in table}
+    return _chip_shape(
+        lambda product, capa, _index, _value: olds[(product, capa)],
+        lambda product, capa, basis: _PINNED_ROUTES.get((product, capa, basis), 1.0),
+        lines=[(product, capa, (new,)) for product, capa, new, _old in table],
+        split=split,
+    )
+
+
+def test_chip_tail_shape_pins_the_legend_definitions() -> None:
+    """범례대로 — 밖은 차이율 > 1%, 몫은 기존 ÷ 맞대진 키 기존값 평균(기존 0 키도 든다), 순위는
+    기존값이 그 키 이하인 몫(동률은 위로), 격자 안은 |차이| < 격자 × 칸, 형제 합 차이율은 ÷ Σ기존,
+    경로 이탈은 경로 키 차이율 > 1%, 칸 N 은 값(양수)이 든 칸만."""
+    shape = _pinned_shape()
+    mean = sum(old for *_, old in _PINNED) / len(_PINNED)
+
+    assert (shape.keys, shape.cells, shape.unit, shape.on_grid) == (24, 23, 1.0, 23)
+    # 차이율 큰 차례 — D1 · A1/K2 · A1/K1 · D2. 0.5% · 딱 1% 키는 밖이 아니다.
+    assert [key.rate for key in shape.tail] == pytest.approx([1 / 3, 10 / 40, 20 / 120, 0.5 / 5])
+    assert [key.rising for key in shape.tail] == [False, True, False, False]
+    assert [key.share for key in shape.tail] == pytest.approx(
+        [3 / mean, 40 / mean, 120 / mean, 5 / mean]
+    )
+    # 기존 0 · 3 · 5 · 40 · 40 · … — A1/K2 는 B1 과 동률이라 5/24 다.
+    assert [key.rank for key in shape.tail] == pytest.approx([2 / 24, 5 / 24, 7 / 24, 3 / 24])
+    assert [key.cells for key in shape.tail] == [1, 1, 1, 1]
+    assert [key.within_grid for key in shape.tail] == [False, False, False, True]
+    assert [key.siblings for key in shape.tail] == [1, 2, 2, 1]
+    # A1 형제 합 — Σ신규 150 · Σ기존 160. 형제가 없으면 자기 차이율이다.
+    assert [key.sibling_rate for key in shape.tail] == pytest.approx(
+        [1 / 3, 10 / 160, 10 / 160, 0.5 / 5]
+    )
+    assert [key.routes for key in shape.tail] == [
+        (("PKG", 0, 1), ("CHIP", 0, 1), ("WF", 0, 1)),
+        (("PKG", 1, 1), ("CHIP", 1, 1), ("WF", 1, 1)),
+        (("PKG", 0, 1), ("CHIP", 1, 1), ("WF", 0, 1)),
+        (("PKG", 0, 1), ("CHIP", 0, 1), ("WF", 1, 1)),
+    ]
+    assert shape.routes == (("PKG", 1, 4), ("CHIP", 2, 4), ("WF", 2, 4))
+    # 하위 5% 안인 꼬리 키는 없다 — D1 은 2/24(≈8%)다.
+    assert (shape.rising, shape.within, shape.bottom_keys, shape.with_siblings) == (1, 1, 0, 2)
+    assert shape.largest_share == pytest.approx(120 / mean)
+    assert shape.sibling_rate == pytest.approx(1 / 3)
+
+
+def test_chip_tail_siblings_leave_out_a_split_legacy_line() -> None:
+    """형제 수 · 형제 합은 기존 칸이 경로 행마다 갈린(`값 불일치`) 계획 줄을 뺀다 — 맞대지 못한
+    줄이다."""
+    table = [
+        ("DEMO_A1", "DEMO_K1", 100.0, 120.0),
+        ("DEMO_A1", "DEMO_K2", 50.0, 40.0),
+        ("DEMO_A1", "DEMO_K3", 30.0, 30.0),
+    ]
+    shape = _pinned_shape(table, split={("DEMO_A1", "DEMO_K3"): 1.0})
+
+    assert shape.keys == 2 and len(shape.tail) == 2
+    assert [key.siblings for key in shape.tail] == [2, 2]
+    assert [key.sibling_rate for key in shape.tail] == pytest.approx([10 / 160, 10 / 160])

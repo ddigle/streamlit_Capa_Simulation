@@ -223,6 +223,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     TIGHT_TOLERANCE,
     WAFER_ROUTE_FACTORS,
     WAFER_ROUTE_RESULTS,
+    ChipOutlierShape,
     DifferenceDistribution,
     FactorAgreement,
     FormulaInput,
@@ -234,6 +235,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     RouteLink,
     ScalingCheck,
     attach_formula_inputs,
+    chip_outlier_shape,
     compare_metric,
     describe_ratios,
     difference_distribution,
@@ -1679,6 +1681,27 @@ def _required_from(
     )
 
 
+REQUIREMENT_METRIC: Final = LegacyMetric(
+    label="소요대수", legacy_column="소요대수", new_column="소요대수"
+)
+
+
+def _route_path_comparison(
+    route: pd.DataFrame, required: pd.DataFrame, contract: CoreDataContract
+) -> pd.DataFrame:
+    """경로 키로 맞댄 소요대수 — 같은 경로 반복은 접고 Pack Code 는 더한다. 신규가 아직 세지 않는
+    소요기준(BOX · PCB) 경로는 뺀다. 8-2R 표 첫 줄과 8-2C2 가 같은 대조를 본다."""
+    compared = route.loc[~route["소요기준"].isin(UNIMPLEMENTED_BASES).fillna(False)]
+    return compare_metric(
+        compared,
+        required,
+        REQUIREMENT_METRIC,
+        contract,
+        keys=REQB_COLUMNS,
+        grain=[*legacy_grain(contract), *REQB_COLUMNS],
+    )
+
+
 def _requirement_section(
     core: pd.DataFrame,
     tables: dict[str, pd.DataFrame],
@@ -1741,15 +1764,13 @@ def _requirement_section(
     )
     compared = route.loc[~unimplemented].copy()
     compared["_원천행"] = np.arange(len(compared))
-    metric = LegacyMetric(label="소요대수", legacy_column="소요대수", new_column="소요대수")
+    metric = REQUIREMENT_METRIC
     finest = [*legacy_grain(contract), *REQB_COLUMNS]
     month_process = ["생산계획년월", "공정", "소요기준"]
     results = [
         _guarded(
             f"{ROUTE_KEY_LABEL} · 같은 경로 반복을 접음",
-            lambda: compare_metric(
-                compared, required, metric, contract, keys=REQB_COLUMNS, grain=finest
-            ),
+            lambda: _route_path_comparison(compared, required, contract),
         ),
         _guarded(
             "월×공정×소요기준 · 접음",
@@ -2684,6 +2705,164 @@ def _load_note(names: Sequence[str], results: Sequence[ComparisonResult]) -> str
     return _note("8-2L", *cells)
 
 
+# ---------------------------------------------------------------------------------- 8-2C
+#
+# Chip 꼬리 키 모양(`legacy_comparison.chip_outlier_shape`) — 부하량 표 Chip 줄의 차이율 > 1% 키가
+# 기존 칸 격자에 걸린 작은 키인가, 형제 계획 줄 사이 나눔인가, 같은 계획 줄의 다른 소요기준 경로도
+# 벗어나는가를 가르는 정보 줄이다. 8-2L 판정은 바꾸지 않는다. 요약 줄 하나는 90 자에 넘쳐 두
+# 줄(`8-2C` · `8-2C2`)이다.
+
+# 본문 표에 싣는 꼬리 키 — 차이율 큰 차례로 이만큼, 나머지는 요약 수에만 든다.
+CHIP_TAIL_ROWS: Final = 40
+
+
+def _grid_unit(unit: float) -> str:
+    """격자(K개)를 지수 없이 — `1000` · `0.001` · `0.000001`."""
+    return f"{unit:.6f}".rstrip("0").rstrip(".")
+
+
+def _share(value: float | None) -> str:
+    """몫(기존 ÷ 맞대진 키 평균)을 % 로 — 0.01% 아래는 지수 표기 대신 `<0.01%` 로 접는다."""
+    if value is None:
+        return "-"
+    return "<0.01%" if 0 < value < 0.0001 else _percent(value, 2)
+
+
+def _route_cells(routes: tuple[tuple[str, int, int], ...]) -> list[str]:
+    return [f"{basis} {out:,}/{total:,}" for basis, out, total in routes]
+
+
+def _chip_route_path(
+    core: pd.DataFrame, required: Required, contract: CoreDataContract
+) -> tuple[pd.DataFrame | None, str | None]:
+    """8-2C2 가 보는 경로 키 대조와 그것이 없을 때의 칸(`빔` · `실패(종류)`)."""
+    if required.frame is None:
+        return None, _short(required.failure)
+    route = _route_frame(core)
+    if not _filled(route, "소요대수"):
+        return None, "빔"
+    try:
+        return _route_path_comparison(route, required.frame, contract), None
+    except Exception as exc:  # 경로 칸만 비우고 Chip 모양은 잰다
+        return None, _failure(exc)
+
+
+def chip_shape_notes(shape: ChipOutlierShape, route_state: str | None = None) -> list[str]:
+    """요약 `8-2C` · `8-2C2` 두 줄 — 칸 뜻은 런북 8-6 범례. 확인 코드까지 90 자 안인 것은 시험이 잰
+    범위(칸 다섯 자리 · 꼬리 키 세 자리 · 경로 키 네 자리)까지다."""
+    unit = "-" if shape.unit is None else _grid_unit(shape.unit)
+    within = shape.within
+    routes = [f"경로 {route_state or '-'}"] if shape.routes is None else _route_cells(shape.routes)
+    return [
+        _note(
+            "8-2C",
+            f"격자 {unit} {shape.on_grid:,}/{shape.cells:,}",
+            f"밖 {len(shape.tail):,}",
+            f"신규큼 {shape.rising:,}",
+            f"안 {'-' if within is None else f'{within:,}'}",
+            f"몫 {_share(shape.largest_share)}",
+            f"하위5% {shape.bottom_keys:,}",
+        ),
+        _note(
+            "8-2C2",
+            *routes,
+            f"형제 {shape.with_siblings:,}/{len(shape.tail):,} {_percent(shape.sibling_rate, 2)}",
+        ),
+    ]
+
+
+def _yes(value: bool | None) -> str:
+    return "-" if value is None else ("예" if value else "아니오")
+
+
+def _chip_shape_lines(shape: ChipOutlierShape, route_state: str | None) -> list[str]:
+    """본문 — 격자 분포 한 줄, 꼬리 키 묶음 두 줄, 꼬리 키별 표(값 · 키 없이)."""
+    grid = " · ".join(f"{_grid_unit(unit)} {count:,}" for unit, count in shape.grid)
+    unit = "-" if shape.unit is None else _grid_unit(shape.unit)
+    lines = [
+        f"- 기존 `Plan_Chip(K개)` 값이 든 칸(계획 줄 × Pack Code × WF 구분 — 경로 반복은 한 번) "
+        f"{shape.cells:,} 가운데 격자(K개) 위 — {grid}. 단위 {unit}(칸의 99% 이상이 놓인 가장 굵은 "
+        "격자 — 없으면 -)",
+        f"- 밖(차이율 > 1%) {len(shape.tail):,} / 맞대진 키 {shape.keys:,} · 신규 > 기존 "
+        f"{shape.rising:,} · |신규 − 기존| < 격자 × 칸 "
+        f"{'-' if shape.within is None else f'{shape.within:,}'} · 형제 계획 줄이 있는 키 "
+        f"{shape.with_siblings:,}",
+    ]
+    if shape.routes is None:
+        lines.append(f"- 밖 계획 줄의 경로 키 대조 — {route_state or '-'}")
+    else:
+        lines.append(
+            "- 밖 계획 줄(WF 구분 뺌 · 겹침 없이)의 "
+            f"{ROUTE_KEY_LABEL} 소요대수 차이율 > 1% / 맞대진 경로 키 — "
+            + " · ".join(_route_cells(shape.routes))
+        )
+    if not shape.tail:
+        return [*lines, ""]
+    rows = [
+        [
+            f"{order:,}",
+            _percent(key.rate, 2),
+            "신규 큼" if key.rising else "신규 작음",
+            _share(key.share),
+            _percent(key.rank, 1),
+            _count(key.cells),
+            _yes(key.within_grid),
+            _count(key.siblings),
+            _percent(key.sibling_rate, 2),
+            *(f"{out:,}/{total:,}" for _basis, out, total in key.routes),
+        ]
+        for order, key in enumerate(shape.tail[:CHIP_TAIL_ROWS], start=1)
+    ]
+    route_headers = [f"{basis} 경로 >1%" for basis, _out, _total in shape.tail[0].routes]
+    headers = [
+        "차례",
+        "차이율",
+        "방향",
+        "몫(기존÷평균)",
+        "하위",
+        "기존 칸",
+        "격자 안",
+        "형제 줄",
+        "형제 합 차이율",
+        *route_headers,
+    ]
+    lines.extend(["", *_table(headers, rows), ""])
+    rest = len(shape.tail) - CHIP_TAIL_ROWS
+    if rest > 0:
+        lines.extend(
+            [f"- 차이율 큰 차례로 {CHIP_TAIL_ROWS} 키만 — 나머지 {rest:,} 키는 위 수에만 든다", ""]
+        )
+    return lines
+
+
+def _chip_shape_section(
+    core: pd.DataFrame,
+    chip: ComparisonResult | None,
+    required: Required,
+    contract: CoreDataContract,
+    notes: list[str],
+) -> list[str]:
+    """부하량 표 Chip 줄의 꼬리 키 모양(요약 `8-2C` · `8-2C2`). 멈춰도 블록의 나머지는 잰다."""
+    lines = [
+        "**Chip 꼬리 키** — 위 Chip 줄에서 차이율이 1% 를 넘는 키(밖)의 꼴. 키 · 값 없이 몫 · "
+        "순위 · 개수만 싣는다(정보 — 8-2L 판정은 그대로).",
+        "",
+    ]
+    if chip is None or chip.comparison is None:
+        failure = _short(None if chip is None else chip.failure)
+        notes.append(_note("8-2C", failure))
+        return [*lines, f"- Chip 대조가 없어 재지 않았다 — {failure}", ""]
+    try:
+        route, route_state = _chip_route_path(core, required, contract)
+        shape = chip_outlier_shape(core, chip.comparison, route, contract)
+        body = _chip_shape_lines(shape, route_state)
+    except Exception as exc:  # 이 절이 멈춰도 Wafer 경로 · 소요대수 절은 잰다
+        notes.append(_note("8-2C", _failure(exc)))
+        return [*lines, f"- Chip 꼬리 키 모양 — {_failure(exc)}", ""]
+    _noted(notes, "8-2C", lambda: chip_shape_notes(shape, route_state))
+    return [*lines, *body]
+
+
 # ---------------------------------------------------------------------------------- 8-2P · 8-2K
 #
 # 「계획 행으로 접음」 대조(사용자 요청 F)와 같은 줄에 덧붙인 확인 칸(2026-11-22 답 Q8 —
@@ -3257,6 +3436,8 @@ def check_legacy(session: Session) -> list[str]:
     _noted(notes, "8-2L", lambda: [_load_note(load_names, load_results)])
 
     required = source.required or _calculate_required(tables, session.route_exceptions())
+    chip = next((r for m, r in zip(COMPARISONS, load_results, strict=True) if m.plan_line), None)
+    lines.extend(_chip_shape_section(core, chip, required, contract, notes))
     try:
         lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다

@@ -69,7 +69,14 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
-from capa_simulation.services.legacy_comparison import COMPARISON_KEYS, COMPARISONS, plan_row_frame
+from capa_simulation.services.legacy_comparison import (
+    COMPARISON_KEYS,
+    COMPARISONS,
+    GRID_UNITS,
+    ChipOutlierShape,
+    ChipTailKey,
+    plan_row_frame,
+)
 from capa_simulation.services.load_calculator import calculate_wafer_load
 from capa_simulation.services.product_type import (
     BUFFER_DIVISION,
@@ -2402,7 +2409,277 @@ def test_a_failing_ratio_grouping_stays_inside_the_requirement_section(
     assert "- ≈60 배 가르기 실패(ValueError)" in output
     assert "**PCB수(K매)**" in output
     bare = _uncoded(_summary(output))
-    assert re.fullmatch(r"- 8-2R 100\.00% · [\d.]+% · 실패\(ValueError\)", bare[3]), bare
+    assert re.fullmatch(r"- 8-2R 100\.00% · [\d.]+% · 실패\(ValueError\)", bare[5]), bare
+
+
+# ---------------------------------------------------------------------------------- 8-2C
+#
+# Chip 꼬리 키 모양(`legacy_comparison.chip_outlier_shape`) — 부하량 표 바로 뒤의 정보 줄 둘. 모양이
+# 세 꼴을 가르는지는 `tests/test_legacy_comparison.py` 가 보고, 여기서는 블록 자리 · 요약 줄 꼴 ·
+# 확인 코드 · `--check-summary` · 값이 새지 않는지를 본다.
+
+CHIP_SHAPE_LINE: Final = re.compile(
+    r"- 8-2C 격자 (?P<unit>[\d.]+|-) (?P<on>[\d,]+)/(?P<cells>[\d,]+) · 밖 (?P<tail>[\d,]+) · "
+    r"신규큼 [\d,]+ · 안 (?:[\d,]+|-) · 몫 (?:[\d.]+%|<0\.01%|-) · 하위5% [\d,]+"
+)
+CHIP_ROUTE_LINE: Final = re.compile(
+    r"- 8-2C2 (?:PKG [\d,]+/[\d,]+ · CHIP [\d,]+/[\d,]+ · WF [\d,]+/[\d,]+|경로 \S+) · "
+    r"형제 [\d,]+/[\d,]+ (?:[\d.]+%|-)"
+)
+
+
+def _grid(*counts: int) -> tuple[tuple[float, int], ...]:
+    """`GRID_UNITS` 차례의 (격자, 그 위 칸)."""
+    return tuple(zip(GRID_UNITS, counts, strict=True))
+
+
+def _chip_row(output: str) -> list[str]:
+    """8-2 부하량 표의 Chip 줄 칸."""
+    (row,) = [line for line in output.splitlines() if line.startswith("| Chip `Plan_Chip(K개)` |")]
+    return [cell.strip() for cell in row.strip("|").split("|")]
+
+
+def test_the_chip_tail_lines_follow_the_load_table_and_their_codes_hold(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """요약 `8-2C` · `8-2C2` 는 `8-2L` 바로 뒤에 서고, 밖 수는 부하량 표 Chip 줄의 `>1%` 와 같다.
+    본문은 부하량 표 바로 뒤다. 두 줄의 확인 코드가 서고 `--check-summary` 가 두 줄을 센다 — 한
+    자리를 바꾸면 그 줄을 잡는다."""
+    code, output = _run(capsys, "--only", "legacy", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _summary(output)
+    keys = [line.split(" ", 2)[1] for line in lines]
+    assert keys[keys.index("8-2L") + 1 : keys.index("8-2L") + 3] == ["8-2C", "8-2C2"]
+    chip = _summary_line(output, "8-2C")
+    found = CHIP_SHAPE_LINE.fullmatch(chip)
+    assert found is not None, chip
+    assert found.group("tail") == _chip_row(output)[6]
+    # 합성 표본은 원천 소요대수를 표지값으로 채워 경로 키 대조가 선다.
+    route = _summary_line(output, "8-2C2")
+    assert CHIP_ROUTE_LINE.fullmatch(route), route
+    assert route.startswith("- 8-2C2 PKG ")
+    assert output.index("| Chip `Plan_Chip(K개)` |") < output.index("**Chip 꼬리 키**")
+    assert output.index("**Chip 꼬리 키**") < output.index("**Wafer `WF수(매)` 경로 값**")
+
+    carried = [line for line in lines if line.startswith(("- 8-2C ", "- 8-2C2 "))]
+    assert checks.check_transcript(carried) == []
+    transcript = tmp_path / "transcript.md"
+    transcript.write_text("\n".join(carried), encoding="utf-8")
+    assert checks.main(["--check-summary", str(transcript)]) == 0
+    assert capsys.readouterr().out.splitlines() == ["확인 코드가 있는 줄 2 · 맞지 않는 것 0"]
+    slipped = carried[0].replace("밖 ", "밖 9", 1)
+    transcript.write_text("\n".join([slipped, carried[1]]), encoding="utf-8")
+    assert checks.main(["--check-summary", str(transcript)]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "확인 코드가 있는 줄 2 · 맞지 않는 것 1"
+    assert out[1].startswith("- 줄 1 — 확인 코드가 맞지 않는다")
+
+
+def test_a_quantized_legacy_chip_sits_on_its_grid_and_its_values_stay_out(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """기존 `Plan_Chip(K개)` 칸을 0.001K 로 올리면 격자가 그 단위로 서고 모든 칸이 그 위에 놓인다.
+    칸 값 · 키별 값은 찍지 않는다(값을 심어 본다)."""
+    path = _seed_copy(simulation_db, tmp_path, "quantized")
+    planted = 4321.987
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE raw_data.core_data SET "Plan_Chip(K개)" = ceil("Plan_Chip(K개)" * 1000) / 1000'
+        )
+        connection.execute(
+            'UPDATE raw_data.core_data SET "Plan_Chip(K개)" = ? WHERE "Plan_Chip(K개)" = ('
+            'SELECT max("Plan_Chip(K개)") FROM raw_data.core_data)',
+            [planted],
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    for shown in (f"{planted}", f"{planted:,}", f"{planted:.2f}", f"{planted:,.2f}"):
+        assert shown not in output
+    found = CHIP_SHAPE_LINE.fullmatch(_summary_line(output, "8-2C"))
+    assert found is not None
+    assert found.group("unit") == "0.001"
+    assert found.group("on") == found.group("cells")
+
+
+def test_the_chip_tail_lines_without_a_tail_or_a_chip_comparison() -> None:
+    """꼬리가 없어도 두 줄은 같은 칸 차례로 서고(빈 칸은 `-`), Chip 대조가 없으면 `8-2C` 한 줄에
+    까닭만 남고 `8-2C2` 는 서지 않는다(런북 8-6 범례)."""
+    empty = ChipOutlierShape(
+        cells=2_345,
+        grid=_grid(0, 3, 40, 400, 1_000, 2_000, 2_340, 2_342, 2_343, 2_344),
+        unit=0.001,
+        keys=1_234,
+        tail=(),
+        routes=(("PKG", 0, 0), ("CHIP", 0, 0), ("WF", 0, 0)),
+    )
+    lines = [
+        line for line in checks.summary_lines(checks.chip_shape_notes(empty)) if "8-2C" in line
+    ]
+    assert _uncoded(lines) == [
+        "- 8-2C 격자 0.001 2,340/2,345 · 밖 0 · 신규큼 0 · 안 0 · 몫 - · 하위5% 0",
+        "- 8-2C2 PKG 0/0 · CHIP 0/0 · WF 0/0 · 형제 0/0 -",
+    ]
+    assert checks.check_transcript(lines) == []
+
+    contract = load_core_data_contract()
+    for chip, shown in (
+        (checks.ComparisonResult(label="Chip", failure="원천이 비어 대조 불가"), "빔"),
+        (checks.ComparisonResult(label="Chip", failure="실패(KeyError)"), "실패(KeyError)"),
+        (None, "-"),
+    ):
+        notes: list[str] = []
+        body = checks._chip_shape_section(
+            pd.DataFrame(), chip, checks.Required(frame=None), contract, notes
+        )
+        assert notes == [f"- 8-2C {shown}"]
+        assert f"- Chip 대조가 없어 재지 않았다 — {shown}" in body
+
+
+def test_a_failing_chip_shape_stays_inside_its_section(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """꼬리 모양을 재다 멈춰도 그 실패는 8-2C 칸에 머문다 — 문구는 찍지 않고, 8-2C2 는 서지 않으며
+    Wafer 경로 · 소요대수 절과 8-2R 은 그대로다."""
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise ValueError(f"{SENTINEL} 문구")
+
+    monkeypatch.setattr(checks, "chip_outlier_shape", broken)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- Chip 꼬리 키 모양 — 실패(ValueError)" in output
+    assert "**Wafer `WF수(매)` 경로 값**" in output and "**소요대수**" in output
+    bare = _uncoded(_summary(output))
+    assert bare[1] == "- 8-2C 실패(ValueError)"
+    assert not any(line.startswith("- 8-2C2 ") for line in bare)
+    assert any(line.startswith("- 8-2R 100.00% · ") for line in bare)
+
+
+def _tail_key(
+    rate: float,
+    rising: bool,
+    share: float,
+    rank: float,
+    within: bool,
+    siblings: int,
+    sibling_rate: float,
+) -> ChipTailKey:
+    return ChipTailKey(
+        rate=rate,
+        rising=rising,
+        share=share,
+        rank=rank,
+        cells=1,
+        within_grid=within,
+        siblings=siblings,
+        sibling_rate=sibling_rate,
+        routes=(("PKG", 0, 1), ("CHIP", 1, 1), ("WF", 0, 1)),
+    )
+
+
+def test_each_chip_tail_cell_carries_its_own_count() -> None:
+    """두 줄의 칸마다 제 수를 싣는다 — 모든 수가 서로 다른 모양을 글자 그대로 맞대 칸끼리 바뀌면
+    잡는다. 가장 큰 몫과 가장 큰 형제 합 차이율은 꼬리 가운데(첫 · 끝 아님)의 서로 다른 키에
+    있다."""
+    tail = (
+        _tail_key(0.31, True, 0.0123, 0.40, True, 2, 0.0456),
+        _tail_key(0.27, False, 0.0234, 0.03, False, 1, 0.27),
+        _tail_key(0.22, True, 5.4321, 0.97, False, 3, 0.0789),
+        _tail_key(0.18, False, 0.0345, 0.50, True, 2, 0.0012),
+        _tail_key(0.15, False, 0.0456, 0.60, False, 4, 0.4567),
+        _tail_key(0.12, True, 0.0567, 0.70, False, 1, 0.12),
+        _tail_key(0.09, False, 0.0678, 0.80, False, 1, 0.09),
+    )
+    shape = ChipOutlierShape(
+        cells=4_321,
+        grid=_grid(0, 12, 105, 987, 2_100, 3_456, 4_300, 4_310, 4_314, 4_318),
+        unit=0.001,
+        keys=1_234,
+        tail=tail,
+        routes=(("PKG", 1, 5), ("CHIP", 6, 7), ("WF", 2, 9)),
+    )
+
+    def bare(sample: ChipOutlierShape, state: str | None = None) -> list[str]:
+        lines = [
+            line
+            for line in checks.summary_lines(checks.chip_shape_notes(sample, state))
+            if line.startswith("- 8-2C")
+        ]
+        assert checks.check_transcript(lines) == []
+        return _uncoded(lines)
+
+    assert bare(shape) == [
+        "- 8-2C 격자 0.001 4,300/4,321 · 밖 7 · 신규큼 3 · 안 2 · 몫 543.21% · 하위5% 1",
+        "- 8-2C2 PKG 1/5 · CHIP 6/7 · WF 2/9 · 형제 4/7 45.67%",
+    ]
+    # 단위가 없으면 n 은 가장 잔 격자 위 칸이고 안은 `-`, 경로 대조가 없으면 그 까닭 한 칸이다.
+    assert bare(replace(shape, unit=None), None)[0] == (
+        "- 8-2C 격자 - 4,318/4,321 · 밖 7 · 신규큼 3 · 안 - · 몫 543.21% · 하위5% 1"
+    )
+    assert bare(replace(shape, routes=None), "빔")[1] == "- 8-2C2 경로 빔 · 형제 4/7 45.67%"
+    # 본문의 묶음 줄도 같은 수다(맞대진 키는 본문에만).
+    body = checks._chip_shape_lines(shape, None)
+    assert body[1] == (
+        "- 밖(차이율 > 1%) 7 / 맞대진 키 1,234 · 신규 > 기존 3 · |신규 − 기존| < 격자 × 칸 2 · "
+        "형제 계획 줄이 있는 키 4"
+    )
+
+
+def test_the_chip_tail_lines_stay_short_at_large_counts() -> None:
+    """요약 줄은 손으로 옮기므로 확인 코드까지 90 자 안이다 — 칸 · 맞대진 키 다섯 자리, 꼬리 키 세
+    자리, 경로 키 네 자리까지 잰다(그보다 크면 넘칠 수 있다)."""
+    many = ChipTailKey(
+        rate=0.6,
+        rising=True,
+        share=12.3456,
+        rank=0.01,
+        cells=9,
+        within_grid=True,
+        siblings=9,
+        sibling_rate=0.99,
+        routes=(("PKG", 9, 9), ("CHIP", 9, 9), ("WF", 9, 9)),
+    )
+    shape = ChipOutlierShape(
+        cells=99_999,
+        grid=tuple((unit, 99_999) for unit in GRID_UNITS),
+        unit=GRID_UNITS[-1],
+        keys=99_999,
+        tail=(many,) * 999,
+        routes=(("PKG", 9_999, 9_999), ("CHIP", 9_999, 9_999), ("WF", 9_999, 9_999)),
+    )
+    tiny = replace(shape, unit=None, tail=(replace(many, share=1e-7, within_grid=None),))
+
+    for state, sample in ((None, shape), ("실패(ValueError)", replace(shape, routes=None))):
+        lines = checks.summary_lines(checks.chip_shape_notes(sample, state))
+        notes = [line for line in lines if line.startswith("- 8-2C")]
+        assert len(notes) == 2 and max(len(line) for line in notes) <= 90, notes
+        assert checks.check_transcript(notes) == []
+        assert CHIP_SHAPE_LINE.fullmatch(_uncoded(notes)[0]), notes
+        assert CHIP_ROUTE_LINE.fullmatch(_uncoded(notes)[1]), notes
+    # 칸은 그 수에서 온다 — 밖은 꼬리 키 수(맞대진 키 수가 아니다), 경로는 소요기준 차례대로.
+    first, second = _uncoded(
+        [n for n in checks.summary_lines(checks.chip_shape_notes(shape)) if n.startswith("- 8")]
+    )
+    assert first == (
+        "- 8-2C 격자 0.000001 99,999/99,999 · 밖 999 · 신규큼 999 · 안 999 · 몫 1234.56% · "
+        "하위5% 999"
+    )
+    assert second == (
+        "- 8-2C2 PKG 9,999/9,999 · CHIP 9,999/9,999 · WF 9,999/9,999 · 형제 999/999 99.00%"
+    )
+    (line, _route) = _uncoded(
+        [n for n in checks.summary_lines(checks.chip_shape_notes(tiny)) if n.startswith("- 8")]
+    )
+    # 지수 표기를 옮기지 않는다 — 아주 작은 몫은 `<0.01%`, 단위가 없으면 격자 `-` · 안 `-`.
+    assert " 격자 - " in line and " 안 - " in line and " 몫 <0.01% " in line and "e-" not in line
 
 
 def test_a_failing_summary_line_keeps_the_block(
@@ -4324,6 +4601,8 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert keys == [
         "8-1",
         "8-2L",
+        "8-2C",
+        "8-2C2",
         "8-2W",
         "8-2T",
         "8-2R",
@@ -4349,26 +4628,26 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert max(len(line) for line in lines) <= 90, lines
     bare = _uncoded(lines)
     assert re.fullmatch(r"- 8-1 S (\d+)/\1 · E (\d+)/\2 · R 1 · O 1", bare[0]), bare[0]
-    assert bare[4].startswith("- 8-2R 100.00% · ")
-    assert bare[6] == "- 8-2B 0"
+    assert bare[6].startswith("- 8-2R 100.00% · ")
+    assert bare[8] == "- 8-2B 0"
     # 합성 표본은 CUSTOM 이 빈 값 하나 · Dummy 계열 없음 · 충돌 없음이라 그 칸이 0 · 1 이다.
     assert re.fullmatch(
         r"- 8-2P 종류 1 · 불일치 0 · 달 [\d.]+% · 넘음 \d+ · G (\d+)/\1 · 총 (\d+)/\2 · D 0 · T 0 "
         r"· 못봄 0",
-        bare[7],
-    ), bare[7]
-    assert bare[8] == "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0"
+        bare[9],
+    ), bare[9]
+    assert bare[10] == "- 8-2K 종류 1 · 충돌 0 · Capa둘이상 0"
     # 합성 표본 사본에는 부하 예외 선언이 없다.
-    assert bare[9] == "- 8-2E 선언 없음"
-    assert bare[12] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
-    assert bare[13] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
-    assert bare[14] == "- 8-10 활성 1 · 모두 0 (12/12)"
-    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[15]), bare[15]
+    assert bare[11] == "- 8-2E 선언 없음"
+    assert bare[14] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
+    assert bare[15] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
+    assert bare[16] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[17]), bare[17]
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[16],
-    ), bare[16]
-    assert bare[17] == "- 8-12 전부 1 · 걸림 0"
+        bare[18],
+    ), bare[18]
+    assert bare[19] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 5
@@ -5261,6 +5540,7 @@ def test_the_runbook_lists_every_block_and_its_summary_key() -> None:
     keys = re.findall(r"^\| `([^`]+)` \|", legend, re.MULTILINE)
     assert "8-11" in keys and "8-10" in keys
     assert {"8-12", "8-12K", "8-12D", "8-12R", "8-12S", "8-12L"} <= set(keys)
+    assert {"8-2L", "8-2C", "8-2C2"} <= set(keys)
 
 
 # ---------------------------------------------------------------------------------- 8-12 blank

@@ -1241,6 +1241,8 @@
     싣는다(10-1).
   - 사내 실데이터는 분포·개수로만 가른다(`difference_distribution`·`ratio_groups`·`scaling_check`·
     `fold_route_cells` 등 → `scripts/inspect_real_data_checks.py`).
+  - Chip 대조의 차이율 > 1% 키는 `chip_outlier_shape` 가 기존 칸 격자 · 크기 몫 · 순위 · 방향 · 밖 계획 줄 경로 이탈 ·
+    형제 계획 줄 합으로 접는다 — 원인은 정하지 않고 수 · 비만 낸다(사내 확인 스크립트의 정보 줄 `8-2C` · `8-2C2`).
   - 지표를 더하면 두 스크립트의 계산 사전(`LOAD_BUILDERS`)도 더하고, 산식이 바뀌면 `FORMULA_INPUTS` 도 고친다.
     환산 UPEH 는 `hourly_rate` 가 `unit_capacity.converted_upeh` 를 부르고, `time_agreement`(UPEH × ST ÷ 60)는
     그 모듈의 `ST_MINUTES_PER_HOUR` 를 쓴다 — 식을 복제하지 않는다.
