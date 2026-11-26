@@ -8,9 +8,10 @@
 흩어져 있었다). 카드 맨 위는 주요 Case 칩이다(2026-11-02 — `home_main_case_chips`, 부르는 쪽이
 넘긴다). Preference 편집기(전에는 HOME 본문 `Preference` 탭, 2026-11-02 부터 사이드바 「HOME 설정」
 팝업 안 — `home_settings`)는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행
-B/O·선행 입고 실적·`Capa 요약`·Top5 대역·주요공정·확보율 보정이고, 저장은 모두 공용 프로필
-교체다. 팝업 안 네 탭에 쓰는 묶음대로 나눠 선다(`render_home_preference` — 2026-11-04 사용자 검수
-home-u01). 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
+B/O·선행 입고 실적·`Capa 요약`·Top5 대역·주요공정·확보율 보정·공정 그룹(`process_group_editor`)
+이고, 저장은 모두 공용 프로필 교체다. 팝업 안 네 탭에 쓰는 묶음대로 나눠
+선다(`render_home_preference` — 2026-11-04 사용자 검수 home-u01). 저장 버튼은 편집 칸 **위**다.
+설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -42,6 +43,7 @@ from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
+from capa_simulation.components.process_group_editor import render_process_group_editor
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
@@ -635,7 +637,7 @@ def render_home_preference(
     clamped_execution: pd.DataFrame,
     database_path: str,
 ) -> None:
-    """Preference 편집기 아홉을 「HOME 설정」 팝업의 네 탭(`tabs` — 라벨 → 탭,
+    """Preference 편집기 열을 「HOME 설정」 팝업의 네 탭(`tabs` — 라벨 → 탭,
     `home_state.HOME_PREFERENCE_TABS`)에 쓰는 묶음대로 세운다(2026-11-04 사용자 검수 home-u01 —
     전에는 한 탭에 아홉이 세로로 섰다). 상자 하나하나(저장 단추·저장 단위·key·저장 길)는 그대로이고
     놓는 자리만 정한다.
@@ -646,12 +648,12 @@ def render_home_preference(
     - `판정 기준` — 확보율 판정 기준(기본 두 칸 + 월별 표). 달이 많은 표라 팝업 폭을 다 쓴다.
     - `선행 · 보정` — 사이드바 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적
       · 확보율 보정). 앞 둘은 `구분` 칸 폭이 같아 달 칸이 같은 자리에 서도록 위아래로 둔다.
-    - `Capa 요약 · 표시` — 화면에 보이는 것을 정하는 셋. 왼쪽 Capa 요약 · B/N Top5 구간,
-      오른쪽 주요공정 히트맵 프리셋.
+    - `Capa 요약 · 표시` — 화면에 보이는 것을 정하는 넷. 왼쪽 Capa 요약 · B/N Top5 구간,
+      오른쪽 주요공정 히트맵 프리셋 · 공정 그룹(`process_group_editor` — 공정 필터 그룹 단추).
 
     탭 본문은 숨은 탭도 모두 그린다(`stateful_tabs`) — 탭을 옮겨도 폼의 고친 칸이 남는다. 주요공정
     프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로 읽는다
-    (`_render_key_process_editor`).
+    (`_render_key_process_editor`). 공정 그룹 카드도 공용 프로필을 스스로 읽는다.
     """
     with tabs[HOME_CASES_TAB]:
         comparison_column, case_column = st.columns(CASES_COLUMN_WEIGHTS, gap="medium")
@@ -704,6 +706,13 @@ def render_home_preference(
                 process_options=process_options,
                 process_labels=process_labels,
                 database_path=database_path,
+            )
+            render_process_group_editor(
+                process_options=process_options,
+                process_labels=process_labels,
+                database_path=database_path,
+                read_only=_settings_read_only(),
+                save_help=SHARED_SAVE_HELP,
             )
 
 

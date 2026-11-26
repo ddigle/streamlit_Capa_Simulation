@@ -178,6 +178,7 @@
 - `src/capa_simulation/components/process_capa_view.py`
 - `src/capa_simulation/components/process_capa_workbook.py`
 - `src/capa_simulation/components/process_field.py`
+- `src/capa_simulation/components/process_group_editor.py`
 - `src/capa_simulation/components/process_labels.py`
 - `src/capa_simulation/components/process_picker.py`
 - `src/capa_simulation/components/process_rename_management.py`

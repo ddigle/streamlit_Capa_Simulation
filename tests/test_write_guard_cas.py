@@ -96,6 +96,12 @@ from capa_simulation.components.home_preference import (
     THRESHOLD_SAVE_NAME,
     THRESHOLD_SAVED_MESSAGE,
 )
+from capa_simulation.components.process_group_editor import (
+    PROCESS_GROUP_SAVE_LABEL,
+    PROCESS_GROUP_SAVE_NAME,
+    PROCESS_GROUP_SAVED_MESSAGE,
+    process_group_editor_key,
+)
 from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_SAVE_NAME,
     PROCESS_RENAME_SAVED_MESSAGE,
@@ -107,6 +113,7 @@ from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.cache import (
     clear_global_display_order_cache,
     clear_global_execution_capacity_cache,
+    clear_global_process_group_cache,
     clear_global_process_rename_cache,
     clear_global_securement_threshold_cache,
 )
@@ -930,6 +937,95 @@ def test_an_old_screen_double_press_after_another_process_rename_keeps_the_refus
     clear_global_process_rename_cache()
 
 
+def _process_group_script(database_path: Path) -> str:
+    return f"""
+import pandas as pd
+
+from capa_simulation.components.process_group_editor import render_process_group_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+
+render_process_group_editor(
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    database_path={str(database_path)!r},
+    read_only=False,
+    save_help="DEMO 풍선",
+)
+"""
+
+
+def _process_group_app(tmp_path: Path) -> tuple[AppTest, DuckDBScenarioRepository]:
+    """공정 그룹 카드 — v1(DEMO_A → FRONT)을 본 화면."""
+    database_path = tmp_path / "process-group.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_group([("DEMO_A", "FRONT")], source="A 가 본 것")
+    clear_global_process_group_cache()
+    app = AppTest.from_string(_process_group_script(database_path), default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+    return app, repository
+
+
+def _group_edit(app: AppTest, version: int, group: str) -> None:
+    """공정 그룹 표 둘째 줄(DEMO_B)의 그룹 칸을 고친 것처럼 채운다."""
+    app.session_state[process_group_editor_key(version, ["DEMO_A", "DEMO_B"])] = {
+        "edited_rows": {1: {"공정그룹": group}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+
+
+def test_an_old_screen_double_press_after_another_process_group_save_keeps_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_trailing_window: None
+) -> None:
+    """HOME 공정 그룹 — 위와 같은 꼴(「공정 그룹 저장」)."""
+    app, repository = _process_group_app(tmp_path)
+    repository.replace_global_process_group(
+        [("DEMO_A", "FRONT"), ("DEMO_B", "TEST")], source="B 의 저장", expected_version=1
+    )
+    clear_global_process_group_cache()
+    _group_edit(app, 1, "PKG")
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, PROCESS_GROUP_SAVE_LABEL),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_process_group",
+    )
+
+    errors = _texts(app, "error")
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not successes(app)
+    profile = repository.load_global_process_group()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
+    clear_global_process_group_cache()
+
+
+def test_a_double_press_of_the_process_group_save_writes_once_and_says_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 공정 그룹 — 첫 누름이 저장한 직후 끊겨도 둘째 누름은 다시 쓰지 않고 제 저장으로 알아
+    성공만 남긴다."""
+    app, repository = _process_group_app(tmp_path)
+    _group_edit(app, 1, "PKG")
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, PROCESS_GROUP_SAVE_LABEL),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_process_group",
+    )
+
+    assert _texts(app, "error") == []
+    assert _texts(app, "success") == [PROCESS_GROUP_SAVED_MESSAGE]
+    profile = repository.load_global_process_group()
+    assert profile.version == 2
+    assert profile.assignments == (("DEMO_A", "FRONT"), ("DEMO_B", "PKG"))
+    clear_global_process_group_cache()
+
+
 # 제 저장 짝은 뒷정리 앞 ---------------------------------------------------------
 #
 # 첫 회차가 저장소에 쓴 뒤 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아 끼우기 — 세션 칸
@@ -1086,6 +1182,15 @@ def _refused_process_rename(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]
     return app, _pressed(app, "공용 공정 표시명 저장"), PROCESS_RENAME_SAVE_NAME
 
 
+def _refused_process_group(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    app, repository = _process_group_app(tmp_path)
+    repository.replace_global_process_group(
+        [("DEMO_B", "TEST")], source="B 의 저장", expected_version=1
+    )
+    clear_global_process_group_cache()
+    return app, _pressed(app, PROCESS_GROUP_SAVE_LABEL), PROCESS_GROUP_SAVE_NAME
+
+
 def _refused_display_order(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
     database_path = tmp_path / "display-order.duckdb"
     clear_global_display_order_cache()
@@ -1114,8 +1219,16 @@ def _refused_settings(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
         _refused_process_rename,
         _refused_display_order,
         _refused_settings,
+        _refused_process_group,
     ],
-    ids=["threshold", "execution", "process_rename", "display_order", "auto_update_settings"],
+    ids=[
+        "threshold",
+        "execution",
+        "process_rename",
+        "display_order",
+        "auto_update_settings",
+        "process_group",
+    ],
 )
 def test_a_refusal_carried_into_the_second_press_is_drawn_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused_screen: Any
@@ -1136,6 +1249,7 @@ def test_a_refusal_carried_into_the_second_press_is_drawn_once(
     clear_global_execution_capacity_cache()
     clear_global_process_rename_cache()
     clear_global_display_order_cache()
+    clear_global_process_group_cache()
 
 
 # Cut-off -----------------------------------------------------------------------

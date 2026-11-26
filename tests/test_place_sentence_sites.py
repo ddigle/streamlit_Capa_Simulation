@@ -236,6 +236,10 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "render_plan_comparison_dumbbell",
     ): (EMPTY,),
     ("src/capa_simulation/components/process_capa_view.py", "_render_route_factors"): (EMPTY,),
+    ("src/capa_simulation/components/process_group_editor.py", "render_process_group_editor"): (
+        EMPTY,
+        BESIDE_INPUT,
+    ),
     ("src/capa_simulation/components/process_picker.py", "render_process_picker"): (EMPTY,),
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,

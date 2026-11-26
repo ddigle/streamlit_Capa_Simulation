@@ -125,7 +125,7 @@ SETTINGS_BUTTON_KEY = "home_settings_open"
 SETTINGS_HELP = (
     "HOME 공용 설정(모든 사용자가 함께 씀) — 비교 · 주요 Case / 판정 기준 / 선행 · 보정: "
     "선행 B/O · 선행 입고 실적 · 확보율 보정 / Capa 요약 · 표시: Capa 요약 · Top5 구간 · "
-    "주요공정 프리셋 / Past Data: 과거 구간"
+    "주요공정 프리셋 · 공정 그룹 / Past Data: 과거 구간"
 )
 PENDING_HELP = "읽어 두고 저장하지 않은 Past Data 가 있습니다 — 팝업의 Past Data 탭에서 저장합니다."
 STOPPED_HELP = "계산이 멈춰 열 수 없습니다 — Alarm 의 오류를 먼저 고칩니다."

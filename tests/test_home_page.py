@@ -655,6 +655,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "선행 입고 저장",
             "확보율 보정 저장",
             "프리셋 저장",
+            "공정 그룹 저장",
             "판정 기준 저장",
             "확보율 구간 저장",
         ]
@@ -700,9 +701,9 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
         for button in app.button
         if button.label
         in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "Capa 요약 저장")
-        + ("확보율 구간 저장", "프리셋 저장", "확보율 보정 저장")
+        + ("확보율 구간 저장", "프리셋 저장", "확보율 보정 저장", "공정 그룹 저장")
     }
-    assert len(saves) == 7 and all("공용 설정" in str(text) for text in saves.values()), saves
+    assert len(saves) == 8 and all("공용 설정" in str(text) for text in saves.values()), saves
 
 
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"

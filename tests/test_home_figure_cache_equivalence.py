@@ -713,6 +713,12 @@ def test_saved_profiles_and_a_new_comparison_revision_rebuild_what_they_reach(
     )
     assert _saved(app, "주요공정 프리셋 저장") == {HEATMAP}
 
+    # 공정 그룹은 공정 필터 초안만 바꾸는 보기 보조라 어느 묶음도 다시 그리지 않는다.
+    repository.replace_global_process_group(
+        [(processes[0], "FRONT"), (processes[2], "PKG")], source="시험"
+    )
+    assert _saved(app, "공정 그룹 저장") == set()
+
     past = repository.load_global_past_data()
     monthly = past.monthly.copy()
     monthly.loc[monthly.index[0], "Density"] = 4.0

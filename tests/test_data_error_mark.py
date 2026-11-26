@@ -192,6 +192,10 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/page_failure_card.py", "render_page_failure"): (1, CORE_CARD),
     ("src/capa_simulation/components/past_data_management.py", "_render_save"): (1, PRESSED),
+    ("src/capa_simulation/components/process_group_editor.py", "render_process_group_editor"): (
+        3,
+        PRESSED,
+    ),
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         3,
         PRESSED,

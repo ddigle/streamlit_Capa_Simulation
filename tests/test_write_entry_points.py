@@ -247,6 +247,11 @@ LEDGER: dict[tuple[str, str, str], str] = {
         SAME_REPLACE
     ),
     (
+        f"{_PARTS}/process_group_editor.py",
+        "_save_process_group",
+        "replace_global_process_group",
+    ): VERSION_CHECK,
+    (
         f"{_PARTS}/process_rename_management.py",
         "_save_process_rename",
         "replace_global_process_rename",

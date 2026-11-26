@@ -443,12 +443,14 @@ def _owner_line() -> str:
 
 
 # 저장 줄 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움을 걷은 폼(2026-11-10 사용자 그림
-# 메모 「저장 버튼과 시트 사이 여백 조정」 — Admin Proc Rename · 표시순서, 가용설비 Preference) →
-# 그 저장 줄 key 이름. 같은 꼴의 HOME 설정 메모 폼은 함수 단위로 따로 본다(`HOME_ROOM_FORMS`).
+# 메모 「저장 버튼과 시트 사이 여백 조정」 — Admin Proc Rename · 표시순서, 가용설비 Preference,
+# 공정 그룹 카드) → 그 저장 줄 key 이름. 같은 꼴의 HOME 설정 메모 폼은 함수 단위로 따로
+# 본다(`HOME_ROOM_FORMS`).
 ROOM_ROWS: dict[str, str] = {
     "src/capa_simulation/components/process_rename_management.py": "SAVE_ROW_KEY",
     "src/capa_simulation/components/display_order_management.py": "SAVE_ROW_KEY",
     "src/capa_simulation/components/manual_downtime_tab.py": "MANUAL_SAVE_ROW_KEY",
+    "src/capa_simulation/components/process_group_editor.py": "PROCESS_GROUP_SAVE_ROW_KEY",
 }
 HOME_PREFERENCE = PROJECT_ROOT / "src/capa_simulation/components/home_preference.py"
 # HOME 설정의 저장 줄 ↔ 표 폼 — 선행 B/O 와 선행 입고(공용 편집기 하나) · 확보율 보정은 막대 자리 꼴
