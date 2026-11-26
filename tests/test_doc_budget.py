@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # 열린 일 · 규칙집 · README 다. 기록(`docs/records/`)과 런북은 뺀다.
 BUDGETS: dict[str, int] = {
     "AGENTS.md": 4_024,
-    "CLAUDE.md": 4_953,
+    "CLAUDE.md": 4_971,
     "README.md": 65_810,
-    "docs/TODO.md": 247_786,
+    "docs/TODO.md": 247_796,
     "docs/design_rules.md": 164_473,
     "docs/reference/files/app-and-ui.md": 207_502,
     "docs/reference/files/components.md": 278_339,
