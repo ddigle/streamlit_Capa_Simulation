@@ -26,8 +26,9 @@
 이 표의 정본은 `config/parallel_agents.json` 이다. 스크립트와 검사가 그 파일을 읽으므로
 여기 적힌 값과 어긋나면 그 파일이 맞다.
 
-**8501~8503 은 예약이다.** 동작을 재려고 시험용 앱을 띄우거나 데모·샘플을 열 때는
-**8510 이상**을 쓴다. 이 셋에 얹으면 먼저 뜬 쪽이 그 포트를 쥔다. 뒤에 포트를 적고 띄운
+**8501–8519 는 예약이다.** 동작을 재려고 시험용 앱을 띄우거나 데모·샘플·E2E·앱 사본을 열 때는
+**8700–8799** 를 쓴다(두 범위 밖 예외는 `docs/rules/14-parallel-development.md` 14-1). 예약 포트에
+얹으면 먼저 뜬 쪽이 그 포트를 쥔다. 뒤에 포트를 적고 띄운
 앱은 「Port N is not available」 로 멈추고, 포트를 빠뜨린 앱은 다음 번호(남의 예약 포트)로
 말없이 옮겨 앉는다(Streamlit 1.63, Windows 도 같다 — `docs/internal_update_runbook.md` 4-2).
 그래서 사용자가 보는 화면, 상대 에이전트가 보는 화면, 띄운 줄 알고 연 시험 화면이 **말없이
@@ -35,7 +36,7 @@
 
 ```powershell
 # 시험용·데모는 이렇게
-.\.venv\Scripts\python.exe -m streamlit run <시험용>.py --server.port 8510
+.\.venv\Scripts\python.exe -m streamlit run <시험용>.py --server.port 8710
 ```
 
 ---

@@ -97,7 +97,7 @@ cd ~/projects/streamlit_project
   `app_command`)는 `--server.address` 를 주므로 원래 묻지 않는다.
 - 서피스에서 보려면 서피스 PowerShell 에 `ssh -N -L 8501:localhost:8501 desk` 를 열어 둔 채 `http://localhost:8501`.
   서피스 8501 앱이 아직 떠 있으면(7장 정리 전) 로컬 포트가 겹쳐 실패한다 — 그때는 `-L 8601:localhost:8501` 로 열고 `http://localhost:8601`.
-- **포트는 늘 적는다.** 8501~8503 은 사용자 몫이고 에이전트의 시험 앱은 8510 이상이다(`AGENTS.md`). 포트를 빼면 Streamlit 이
+- **포트는 늘 적는다.** 8501–8519 는 예약이고 에이전트의 시험 앱은 8700–8799 다(`docs/rules/14-parallel-development.md` 14-1). 포트를 빼면 Streamlit 이
   찬 포트를 피해 다음 번호로 조용히 옮겨 뜬다.
 
 ## 4. 푸시 — 사용자, 처음 한 번

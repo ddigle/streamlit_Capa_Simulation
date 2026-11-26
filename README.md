@@ -450,7 +450,8 @@ Windows(PowerShell):
 ```
 
 사외 WSL(bash)은 사용자가 Claude 밖 tmux 창에서 [`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md) 3장의
-실행 줄로 띄웁니다. **포트는 늘 적습니다** — 8501~8503 은 사용자 몫이고 시험용 앱은 8510 이상입니다.
+실행 줄로 띄웁니다. **포트는 늘 적습니다** — 8501–8519 는 예약이고 에이전트가 띄우는 시험 앱은 8700–8799 입니다
+(`docs/rules/14-parallel-development.md` 14-1).
 
 ```bash
 .venv/bin/python -m streamlit run app.py --server.headless true --server.port 8501 --browser.serverAddress localhost
