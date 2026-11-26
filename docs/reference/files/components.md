@@ -1090,6 +1090,13 @@
   시작 높이가 되살아나는 것은 Streamlit 1.63 expander 의 비공식 동작에 기대므로 판올림 때 다시 본다. CPU 10배 제한으로 잴 때는 12초 이상 기다린다.
 - `src/capa_simulation/components/sidebar_style.py` — 꺼진 단추를 감싼 풍선 칸의 초점 윤곽(`stTooltipHoverTarget:focus-visible` — 1.63 DOM)도 여기다. 탐색 그룹·활성 경로·`Support` 상자 key 와 현재 테마로
   사이드바 스타일 문자열을 만든다. 위젯 생성·HTML 주입은 하지 않는다.
+  - 사이드바 페이지 링크의 키보드 초점 — Streamlit 이 `:focus` 윤곽을 지우고 `:focus-visible` 에 hover 와 같은 옅은 칠만
+    깔므로, 모든 링크(HOME·지금 화면·최상위 단독 링크·묶음 안 하위 링크)에 `:focus-visible` 하나만 든 규칙 하나
+    (`{NAV_LINK}:focus-visible`)로 2px 띄운 2px `ACCENT` 윤곽을 두른다(조건 값 칸과 같은 윤곽 — `docs/design_system.md`
+    「융기는 사이드바 네비게이션 전용이다」 절). HOME·지금 화면 묶음의 `:focus-visible` 은 평소와 같은 면만 맡고 윤곽을 따로
+    두지 않는다. 링크 hover·활성 그림이 이미 `box-shadow` 를 써서 초점은 링이 아니라 윤곽이고, 뒤의 링크 규칙이
+    `outline: none`·`0` 으로 지우지 않는다(`tests/test_sidebar_stylesheet.py`
+    `test_every_sidebar_page_link_draws_a_keyboard_focus_ring`).
   - 접두어·구역 제목 선택자는 선언 모듈(`sidebar_status`·`navigation.SIDEBAR_SECTIONS`)에서 읽는다 — 빌더에 필수
     인자를 더하지 않는다(`tests/test_sidebar_stylesheet.py`). 선택자가 1.63 DOM 에 기댄다.
   - 화면을 옮길 때마다 소켓으로 가는 시트라 CSS 주석을 싣지 않는다(설명은 파이썬 주석, 9장 「스크립트와 컴포넌트」).
@@ -1446,6 +1453,8 @@
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리 — 줄에는 값만,
   그 자리는 줄 풍선 `OFFICIAL_SLOT_HELP`). Case1·
   Case2 마다 「시나리오」·「리비전」 상자를 두고(넓으면 두 칸, 좁으면 위아래) 고르는 것이 곧 저장이다(공용 프로필 `0036`).
+  고르는 칸은 이 둘뿐이고 Case 별명(사람이 붙이는 이름) 칸은 두지 않는다 — 프로필도 Case 마다 시나리오·리비전 칸 둘이고, 칩
+  글자 규칙은 `home_main_case_chips` 가 맡는다.
   - **공용 프로필이 정본이고 상자는 거울이다.** 비교 시나리오(세션 우선)와 달리 회차마다 프로필 값을 위젯 앞에서 상자에
     적는다 — 남의 지정·이름 바꾸기가 다음 회차에 보이고 브라우저가 옛 글자를 되보내도 지정이 바뀌지 않는다(9장).
   - 시나리오 콜백은 그 시나리오 첫 리비전과 **짝으로** 저장한다(위젯 기본값은 `on_change` 를 부르지 않는다). Case 하나만
