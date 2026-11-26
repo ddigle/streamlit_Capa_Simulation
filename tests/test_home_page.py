@@ -79,7 +79,9 @@ def _home_script(database_path: Path, *, retain_process_dialog: bool = False) ->
     AppTest는 매 실행마다 fragment 저장소를 새로 만들어 dialog 내부 클릭도 전체 실행으로
     취급한다. 공정 선택 검증에서만 실제 HOME 함수와 인자를 보관해 dialog를 재호출한다.
     적용으로 초안이 제거되면 HOME 전체 실행으로 돌아간다. 실제 fragment 격리는 브라우저
-    검증 몫이고, 여기서는 원본 콜백·초안·적용 동작을 대체하지 않는다.
+    검증 몫이고, 여기서는 원본 콜백·초안·적용 동작을 대체하지 않는다. 그룹 단추 묶음(키워드
+    인자)도 그 전체 실행 회차의 공용 공정 그룹 대응으로 지어 함께 보관한다 — 대응을 저장한 시험은
+    전체 실행을 한 번 돌린 뒤 팝업을 연다.
     """
     return f"""
 from pathlib import Path
@@ -142,7 +144,8 @@ try:
         and "dashboard_bottleneck_process_dialog_draft" in st.session_state
     ):
         st.session_state["test_process_dialog_function"](
-            *st.session_state["test_process_dialog_arguments"]
+            *st.session_state["test_process_dialog_arguments"],
+            **st.session_state["test_process_dialog_keywords"],
         )
     else:
         page_source = Path({str(HOME_PAGE)!r}).read_text(encoding="utf-8")
@@ -167,6 +170,14 @@ try:
                 ),
                 namespace["effective_start"], namespace["effective_end"],
             )
+            st.session_state["test_process_dialog_keywords"] = {{
+                "group_buttons": namespace["process_group_buttons"](
+                    namespace["load_global_process_group"](
+                        str(settings.DUCKDB_PATH.resolve())
+                    ).assignments,
+                    namespace["process_options"],
+                ),
+            }}
 finally:
     st.plotly_chart = _original_plotly_chart
     horizontal_scrollbar.render_horizontal_scrollbar = _original_scrollbar
@@ -3311,3 +3322,233 @@ def test_home_rebuilds_figures_when_the_route_exception_declaration_changes(
     assert drawn.route_exception_digest == saved.digest != ""
     assert drawn.content_token == plain.content_token
     clear_global_route_load_exceptions_cache()
+
+
+# ------------------------------------------- 공정 필터 팝업 그룹 단추(공용 공정 그룹 대응)
+
+PROCESS_GROUP_BUTTON_PREFIX = "dashboard_bottleneck_process_group_"
+PROCESS_DIALOG_ACTIONS = [
+    "dashboard_bottleneck_process_apply",
+    "dashboard_bottleneck_process_all_on",
+    "dashboard_bottleneck_process_all_off",
+    "dashboard_bottleneck_process_restore",
+]
+PROCESS_GROUP_ABSENT_HELP = "이 그룹에 넣은 공정이 이번 시나리오 · 조회기간에 없습니다."
+
+
+def _save_process_groups(database: Path, assignments: list[tuple[str, str]]) -> None:
+    """공용 공정 그룹 대응을 저장소로 바로 저장하고 읽기 캐시를 비운다(편집 카드는 다른 시험 몫)."""
+    from capa_simulation.persistence.cache import clear_global_process_group_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    DuckDBScenarioRepository(database).replace_global_process_group(
+        assignments, source="공정 필터 그룹 단추 검증"
+    )
+    clear_global_process_group_cache()
+
+
+def _process_dialog_keys(app: AppTest) -> list[str]:
+    """팝업 안 단추 key(화면 차례) — 작업 줄 · 그룹 단추 · 공정 타일."""
+    return [
+        str(button.key)
+        for button in app.button
+        if str(button.key).startswith(("dashboard_bottleneck_process_", "home_bn_process_tile_"))
+        and button.key != "dashboard_bottleneck_process_dialog_open"
+    ]
+
+
+def _process_group_buttons(app: AppTest) -> list[Any]:
+    return [
+        button for button in app.button if str(button.key).startswith(PROCESS_GROUP_BUTTON_PREFIX)
+    ]
+
+
+def test_the_process_filter_reads_the_shared_process_groups_when_it_opens(tmp_path: Path) -> None:
+    """공정 필터 팝업은 여는 회차에 공용 공정 그룹 대응을 읽어 작업 줄 아래 그룹 단추 줄을 세운다.
+
+    대응이 0행이면 팝업은 지금과 같다 — 그룹 줄이 없고 단추는 작업 줄 넷 다음 공정 타일이다.
+    대응이 있으면 대응이 있는 그룹만 그룹 목록 차례(FRONT · PKG · MI · TEST · FDY · 물류)로
+    서고, 첫 단추는 그대로 「선택 공정 적용」 이다. 대응은 있는데 이번 선택지에 그 그룹 공정이
+    없으면 잠그고 까닭 풍선을 단다(UI-INP-07). 켜진 단추에는 풍선이 없다(다시 그려지는 팝업의
+    열린 채 남는 풍선). 누르면 초안만 그 그룹 공정(선택지 차례)으로 바뀌고, 판정 대상 · 공용 공정
+    값은 「선택 공정 적용」 뒤에 바뀐다. 하네스가 팝업 함수를 다시 부르지 않는 길이라 실제
+    읽기(`_process_filter_dialog`)를 지난다.
+    """
+    from capa_simulation import shared_process
+    from capa_simulation.persistence.cache import clear_global_process_group_cache
+    from capa_simulation.services.process_group import PROCESS_GROUPS
+
+    database = tmp_path / "process_groups.duckdb"
+    app = _run(database)
+    options = list(app.session_state[PROCESS_SELECTION_KEY])
+    assert len(options) >= 3
+
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    keys = _process_dialog_keys(app)
+    assert keys[:4] == PROCESS_DIALOG_ACTIONS
+    assert all(key.startswith("home_bn_process_tile_") for key in keys[4:])
+    assert not _process_group_buttons(app)
+    _dismiss_home_dialog(app)
+    app.run()
+
+    front = [options[2], options[0]]
+    _save_process_groups(
+        database,
+        [
+            *[(process, "FRONT") for process in front],
+            (options[1], "PKG"),
+            ("DEMO_ABSENT_PROCESS", "TEST"),
+        ],
+    )
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    keys = _process_dialog_keys(app)
+    groups = [PROCESS_GROUPS.index(name) for name in ("FRONT", "PKG", "TEST")]
+    assert keys[:7] == [
+        *PROCESS_DIALOG_ACTIONS,
+        *[f"{PROCESS_GROUP_BUTTON_PREFIX}{index}" for index in groups],
+    ]
+    assert all(key.startswith("home_bn_process_tile_") for key in keys[7:])
+    buttons = _process_group_buttons(app)
+    assert [button.label for button in buttons] == ["FRONT", "PKG", "TEST"]
+    assert [(button.disabled, button.help or "") for button in buttons] == [
+        (False, ""),
+        (False, ""),
+        (True, PROCESS_GROUP_ABSENT_HELP),
+    ]
+
+    app.button(key=f"{PROCESS_GROUP_BUTTON_PREFIX}{groups[0]}").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == [
+        options[0],
+        options[2],
+    ]
+    assert f"**선택 2 / {len(options)}**" in [item.value for item in app.markdown]
+    assert app.session_state[PROCESS_SELECTION_KEY] == options
+    assert shared_process._VALUES_KEY not in app.session_state
+
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == [options[0], options[2]]
+    assert list(app.session_state[shared_process._VALUES_KEY]) == [options[0], options[2]]
+    assert app.button(key="dashboard_bottleneck_process_dialog_open").label == (
+        f"2 / {len(options)} 공정"
+    )
+    clear_global_process_group_cache()
+
+
+def test_a_process_group_button_leaves_processes_outside_this_period_as_they_were(
+    tmp_path: Path,
+) -> None:
+    """그룹 단추는 이번 선택지(조회기간) 안 그 그룹 공정만 남긴다. 이번 기간에 보이지 않는 공정은
+    그룹에 들었든 아니든 지금 상태 그대로다 — 켜져 있던 것은 켜진 채(리비전 프리셋에 실린다),
+    꺼져 있던 그룹 공정은 꺼진 채다(`apply_dialog_selection`). 공용 공정 값에는 이번 선택지 안
+    것만 간다. 그룹 단추를 누른 뒤 다시 그려진 팝업에도 그룹 줄이 그대로 선다(하네스가 키워드
+    묶음도 넘긴다)."""
+    from capa_simulation import shared_process
+    from capa_simulation.persistence.cache import clear_global_process_group_cache
+    from capa_simulation.services.process_group import PROCESS_GROUPS
+
+    database = tmp_path / "process_groups_hidden.duckdb"
+    app = _run_process_dialog_app(database)
+    options = list(app.session_state["test_process_dialog_arguments"][0])
+    assert len(options) >= 2
+    hidden_on = "DEMO_HIDDEN_ON"
+    hidden_front = "DEMO_HIDDEN_FRONT"
+    app.session_state[PROCESS_SELECTION_KEY] = [*options, hidden_on]
+    _save_process_groups(
+        database,
+        [(options[1], "FRONT"), (hidden_front, "FRONT"), (options[0], "PKG"), (hidden_on, "PKG")],
+    )
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == [*options, hidden_on]
+
+    front_key = f"{PROCESS_GROUP_BUTTON_PREFIX}{PROCESS_GROUPS.index('FRONT')}"
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    app.button(key=front_key).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == [options[1]]
+    assert [button.label for button in _process_group_buttons(app)] == ["FRONT", "PKG"]
+
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == [options[1], hidden_on]
+    assert list(app.session_state[shared_process._VALUES_KEY]) == [options[1]]
+    clear_global_process_group_cache()
+
+
+def test_an_unreadable_process_group_profile_only_leaves_the_group_row_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그룹 대응을 읽지 못하면 그룹 줄이 서지 않을 뿐이다 — 팝업은 멈추지 않고 오류 표지도 없다
+    (계산 밖 보기 보조, DB 를 못 읽으면 HOME 본문이 먼저 알린다)."""
+    import duckdb
+
+    from capa_simulation.persistence import cache
+
+    database = tmp_path / "process_groups_unreadable.duckdb"
+    app = _run(database)
+
+    def unreadable(_database_path: str) -> Any:
+        raise duckdb.IOException("DEMO 읽기 실패")
+
+    monkeypatch.setattr(cache, "load_global_process_group", unreadable)
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    keys = _process_dialog_keys(app)
+    assert keys[:4] == PROCESS_DIALOG_ACTIONS
+    assert keys[4:]
+    assert not _process_group_buttons(app)
+    assert not data_error_texts(app)
+
+
+def test_the_process_groups_are_read_only_in_the_opening_run_and_reuse_the_draft_callback() -> None:
+    """그룹 대응은 팝업을 여는 회차(`_process_filter_dialog`)에만 읽는다 — 앱 전체 회차의
+    `partial(_process_filter_dialog, …)` 인자에 싣지 않는다(호스트만 도는 여는 회차의 인자는 직전
+    앱 전체 회차 것이라 낡았다). 그룹 단추는 「전체 ON」 과 같은 초안 콜백을 다시 쓰고 새 세션
+    칸을 두지 않는다. 단추 key 는 그룹 목록 순번이다."""
+    import ast
+
+    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    readers = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "load_global_process_group"
+    ]
+    opening = functions["_process_filter_dialog"]
+    assert len(readers) == 1
+    assert any(node is readers[0] for node in ast.walk(opening))
+    assert "group_buttons=process_group_buttons(process_group_assignments, options)" in (
+        ast.unparse(opening)
+    )
+    hosted = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "partial"
+        and node.args
+        and ast.unparse(node.args[0]) == "_process_filter_dialog"
+    ]
+    assert len(hosted) == 1
+    assert "process_group" not in ast.unparse(hosted[0])
+
+    dialog = functions["show_process_filter_dialog"]
+    group_button = next(
+        node
+        for node in ast.walk(dialog)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "st.button"
+        and node.args
+        and ast.unparse(node.args[0]) == "process_group"
+    )
+    keywords = {keyword.arg: ast.unparse(keyword.value) for keyword in group_button.keywords}
+    assert keywords["on_click"] == "set_process_dialog_selection"
+    assert keywords["args"] == "(list(members),)"
+    assert keywords["disabled"] == "not members"
+    assert keywords["help"] == "None if members else PROCESS_GROUP_ABSENT_HELP"
+    assert "PROCESS_GROUPS.index(process_group)" in keywords["key"]
+    assert "icon" not in keywords
+    assert "type" not in keywords

@@ -126,6 +126,7 @@ from capa_simulation.persistence.cache import (
     load_global_execution_capacity,
     load_global_key_process,
     load_global_past_data,
+    load_global_process_group,
     load_global_securement_threshold,
     load_global_summary_note,
     load_global_top5_band,
@@ -185,6 +186,7 @@ from capa_simulation.services.past_data import (
     merge_past_plan_detail,
     past_plan_detail_to_wide,
 )
+from capa_simulation.services.process_group import PROCESS_GROUPS, process_group_buttons
 from capa_simulation.services.process_picker import (
     ProcessPickerItem,
     build_process_picker_summary,
@@ -236,6 +238,8 @@ PROCESS_FIELD_LABEL = "공정 필터"
 PROCESS_FIELD_HINT = "B/N 판정 대상"
 PROCESS_FIELD_KEY = "dashboard_bottleneck_process_dialog_open"
 PROCESS_FIELD_ICON = ":material/filter_alt:"
+# 공정 필터 팝업의 그룹 단추 — 대응은 있는데 이번 선택지에 그 그룹 공정이 없어 잠근 단추의 까닭.
+PROCESS_GROUP_ABSENT_HELP = "이 그룹에 넣은 공정이 이번 시나리오 · 조회기간에 없습니다."
 
 
 def process_field_value(included: int, total: int) -> str:
@@ -790,7 +794,7 @@ def open_process_filter(included: list[str]) -> None:
 # 회차에 HOME 이 할 일이 없다. 초안은 팝업 안에서만 읽히고 열 때마다 `open_process_filter` 가 다시
 # 적으며, 판정 대상을 바꾸는 것은 「선택 공정 적용」(열림 칸을 지우고 앱 전체 재실행) 하나다.
 # 주요공정 히트맵 팝업도 같다. 호스트만 도는 여는 회차의 인자(선택지 · 확보율 · 기간)는 직전 앱 전체
-# 회차의 것이고, 공정 단추 묶음과 자동 갱신 표지는 팝업을 여는 회차에만
+# 회차의 것이고, 공정 단추 묶음 · 자동 갱신 표지 · 그룹 단추 묶음은 팝업을 여는 회차에만
 # 만든다(`_process_filter_dialog`).
 @st.dialog(
     PROCESS_FIELD_LABEL,
@@ -807,6 +811,7 @@ def show_process_filter_dialog(
     end_month: int,
     auto_off_marks: Mapping[str, str] | None = None,
     outside_bases: Mapping[str, str] | None = None,
+    group_buttons: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> None:
     draft_selection = st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, [])
     if not isinstance(draft_selection, list):
@@ -856,6 +861,22 @@ def show_process_filter_dialog(
             args=(list(st.session_state[PROCESS_SELECTION_KEY]),),
             key="dashboard_bottleneck_process_restore",
         )
+    # 그룹 단추는 작업 줄 아래 둘째 줄이다 — 누르면 초안이 그 그룹 공정(선택지 차례)만 남고, 판정
+    # 대상은 「전체 ON」 처럼 「선택 공정 적용」 을 눌러야 바뀐다. 대응이 없는 그룹은 단추가 없고
+    # 대응이 0행이면 줄째 서지 않는다. 대응은 있는데 이번 선택지에 그 그룹 공정이 없으면 잠그고
+    # 까닭 풍선을 단다. 켜진 단추에는 `help` 를 달지 않는다 — 팝업을 다시 그리는 단추의 `help`
+    # 풍선은 열린 채 남는다(`components/process_picker`). key 는 그룹 목록 순번이다(한글 그룹 이름).
+    if group_buttons:
+        with st.container(horizontal=True, gap="small"):
+            for process_group, members in group_buttons:
+                st.button(
+                    process_group,
+                    key=f"dashboard_bottleneck_process_group_{PROCESS_GROUPS.index(process_group)}",
+                    on_click=set_process_dialog_selection,
+                    args=(list(members),),
+                    disabled=not members,
+                    help=None if members else PROCESS_GROUP_ABSENT_HELP,
+                )
 
     # 버튼에 보이는 글자만 표시명이며 콜백과 선택값은 반드시 원본 `공정` 이다.
     # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
@@ -895,14 +916,24 @@ def _process_filter_dialog(
     content_token: str,
     reqb: pd.DataFrame,
 ) -> None:
-    """공정 필터 팝업을 연다 — 공정 단추 묶음(구역 · 최저 확보율)과 자동 갱신 · 계산 밖 단추 표지는
-    여는 회차에만 만든다. 앱 전체 회차마다 만들지 않는다(DB 를 더 열지 않는다).
+    """공정 필터 팝업을 연다 — 공정 단추 묶음(구역 · 최저 확보율)과 자동 갱신 · 계산 밖 단추 표지,
+    그룹 단추 묶음은 여는 회차에만 만든다. 앱 전체 회차마다 만들지 않는다(DB 를 더 열지 않는다).
+
+    그룹 단추 묶음은 공용 공정 그룹 대응(`load_global_process_group` — 공용 프로필이라 직전 앱 전체
+    회차의 인자에 싣지 않고 이 회차에 읽는다)을 이번 선택지에 맞댄 것이다. 읽지 못하면 줄이 서지
+    않을 뿐이다 — 계산 밖 보기 보조라 팝업을 멈추지 않고, DB 를 못 읽으면 HOME 본문이 먼저 알린다.
 
     계산 밖 단추 표지는 산출 결과 표 제목 줄 · 「상세 B/N 공정」 제목 줄 표지와 같은 목록 칸
     (`get_unimplemented_basis_processes` — 선언을 접지 않은 내용 토큰 + 계산과 같은 유효 조회기간 —
     앱 전체 회차가 제목 줄 표지로 이미 채운 칸이다)에서 경로가 모두 계산 밖인 공정만 고른다
     (`whole_outside_bases` — 원본 공정 키). `content_token` · `reqb` 는 그 회차 활성 시나리오의
     것이다."""
+    try:
+        process_group_assignments = load_global_process_group(
+            str(DUCKDB_PATH.resolve())
+        ).assignments
+    except BOOTSTRAP_ERRORS:
+        process_group_assignments = ()
     show_process_filter_dialog(
         options,
         build_process_picker_summary(
@@ -922,6 +953,7 @@ def _process_filter_dialog(
             get_unimplemented_basis_processes(content_token, start_month, end_month, _reqb=reqb),
             options,
         ),
+        group_buttons=process_group_buttons(process_group_assignments, options),
     )
 
 
