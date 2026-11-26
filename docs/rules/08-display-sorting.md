@@ -116,7 +116,7 @@
     컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
     열기·내려받기). 기동 보강은 그 프로필을 그대로 두고 미루며, Admin 탭은 겹친 범위를 적고 범위마다
     고치거나 내려받아 고친 뒤 붙여넣는 길을 경고로 알린다. 그 범위를 쓰는 화면은 정렬만 멈추는 것이
-    아니라 적용의 ValueError 로 그 부분에 오류를 띄운다 — Admin 「공정 그룹」 편집 표만 오류 없이 원본 이름 차례로
+    아니라 적용의 ValueError 로 그 부분에 오류를 띄운다 — Admin 「공정 그룹」 편집 표는 오류 없이 원본 이름 차례로
     선다(겹친 범위는 같은 페이지 「표시순서 관리」 탭 `AD-05` 가 알린다). 고쳐 저장하면 그 저장이 보강까지 한다.
   - `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`(`reference_transformer` →
     `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
