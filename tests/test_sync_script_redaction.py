@@ -436,6 +436,40 @@ def test_the_four_places_that_print_a_pc_path_show_userprofile(
     assert any(snapshot_export.backup_dir().iterdir()), "백업은 실제 경로에 있다"
 
 
+def test_a_state_file_another_program_holds_stops_with_the_home_hidden(
+    rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r"""상태 파일 바꿔치기(`os.replace`)가 Windows 에서 남이 쥔 파일 때문에 거절되면 그 실패는
+    일부러 그대로 올라가 `[중단]` 줄에 선다(`BOOTSTRAP_ERRORS` 갈래). 그 글은 거절된 두 경로를
+    싣는다 — 둘 다 홈(`C:\Users\<계정>`)이 이름표로 바뀌고 홈 뒤 경로와 전송용 요약은 그대로다."""
+    monkeypatch.setenv("USERPROFILE", C_HOME)
+    held = sync_state.generation_path(rig.paths.databases["simulation"]).name
+    real_replace = os.replace
+
+    def held_by_another_program(source: str, target: str) -> None:
+        if Path(target).name == held:
+            raise PermissionError(
+                13,
+                "Permission denied",
+                f"{C_HOME}\\capa\\data\\{held}.tmp",
+                None,
+                f"{C_HOME}\\capa\\data\\{held}",
+            )
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", held_by_another_program)
+
+    code, printed = _run(rig, "init", "--keep-writer")
+
+    assert code == 1
+    stop = next(line for line in printed.splitlines() if line.startswith("[중단] "))
+    assert "demo.hidden" not in printed, printed
+    assert f"'{HOME_TAG}\\\\capa\\\\data\\\\{held}.tmp'" in stop, stop
+    assert f"'{HOME_TAG}\\\\capa\\\\data\\\\{held}'" in stop, stop
+    summary = printed.splitlines()[-1]
+    assert summary.startswith("전송용 요약: init 멈춤 그 밖의 실패; 종료 1"), summary
+
+
 # --- 닫힌 주소 · 표준 오류(E2E D-16) ---------------------------------------------------------
 #
 # 사내 PC 처럼 스크립트를 따로 띄운다 — 같은 프로세스에서 `main()` 을 부르면 pytest 가 뿌리
