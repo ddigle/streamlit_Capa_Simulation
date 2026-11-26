@@ -30,7 +30,7 @@ BUDGETS: dict[str, int] = {
     "docs/reference/files/persistence.md": 27_209,
     "docs/reference/files/services.md": 64_770,
     "docs/rules/00-purpose-header.md": 1_952,
-    "docs/rules/01-goals-and-boundaries.md": 9_744,
+    "docs/rules/01-goals-and-boundaries.md": 9_754,
     "docs/rules/02-runtime-and-verification.md": 16_031,
     "docs/rules/04-reference-table-contract.md": 3_354,
     "docs/rules/05-state-cache-invariants.md": 52_232,
@@ -44,7 +44,7 @@ BUDGETS: dict[str, int] = {
     "docs/rules/12-change-checklist.md": 5_182,
     "docs/rules/13-document-priority.md": 617,
     "docs/rules/14-parallel-development.md": 8_862,
-    "docs/rules/15-runbook-writing.md": 3_375,
+    "docs/rules/15-runbook-writing.md": 3_505,
     "docs/rules/16-layers-and-boundaries.md": 6_299,
 }
 

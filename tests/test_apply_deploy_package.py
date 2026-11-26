@@ -602,7 +602,7 @@ def test_uncommitted_edits_stop_the_apply_and_survive(
     capsys: pytest.CaptureFixture[str],
     staged: bool,
 ) -> None:
-    """사용자가 지시한 사내 임시 수정(런북 0장·1-5)이 남은 채 적용하면 아무것도 안 건드리고 멈춘다.
+    """커밋하지 않은 임시 수정(런북 1-5 이관 전 꼴)이 남은 채 적용하면 아무것도 안 건드리고 멈춘다.
 
     런북은 적용 전에 그 diff 를 저장소 밖에 남기고 되돌리라고 한다. 그 단계를 빠뜨렸을 때 남는
     방어선이 이 멈춤 하나다 — 없으면 지우고 푸는 과정이 임시 수정을 `deploy:` 커밋 밑에 말없이
@@ -938,6 +938,57 @@ def test_two_applies_keep_committed_and_untracked_module_files(
     assert _repo_git(root, "status", "--porcelain", "--untracked-files=no") == ""
     assert (root / "app.py").read_bytes() == b"x = 3\n"
     assert _repo_git(root, "ls-files", "gone.py") == ""
+
+
+def test_a_committed_temp_fix_is_overwritten_by_the_next_apply_without_stopping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """적용 → 사용자가 지시한 `temp:` 커밋 → 다음 적용(런북 1-5 의 4 — 이관 뒤 꼴).
+
+    적용기는 사내 커밋을 보지 않는다. 트리가 깨끗하므로 멈추지 않고, `temp:` 가 바꾼 파일은 ZIP
+    판으로 덮고, 더한 파일은 「사외에서 지워짐」 으로 지우고, 지운 파일은 ZIP 에 있으면 다시 채운다
+    — 셋 다 새 `deploy:` 커밋에 든다. 그래서 정식 반영이 실렸는지는 적용 전에 사람이 가린다.
+    """
+    root = _internal_repo(tmp_path, None)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    first_stamp = "202611010900"
+    shipped = {"app.py": b"x = 2\n", "src/keep.py": b"k = 1\n"}
+    assert apply_deploy_package.main([str(_stamped_zip(tmp_path, first_stamp, shipped))]) == 0
+    capsys.readouterr()
+
+    (root / "app.py").write_bytes(b"x = 99  # DEMO temp fix\n")
+    (root / "src" / "temp_extra.py").write_bytes(b"# Purpose: DEMO temp\n")
+    _repo_git(root, "rm", "-q", "src/keep.py")
+    _repo_git(root, "add", "app.py", "src/temp_extra.py")
+    _repo_git(root, "commit", "-q", "-m", "temp: DEMO 임시 수정")
+    temp_commit = _repo_git(root, "rev-parse", "HEAD")
+
+    second = _stamped_zip(
+        tmp_path,
+        "202611011700",
+        {"app.py": b"x = 3\n", "src/keep.py": b"k = 1\n"},
+        previous_commit=first_stamp.ljust(40, "0"),
+    )
+    assert apply_deploy_package.main([str(second)]) == 0
+    out = capsys.readouterr().out
+    assert "- src/temp_extra.py" in out
+
+    assert (root / "app.py").read_bytes() == b"x = 3\n"
+    assert not (root / "src" / "temp_extra.py").exists()
+    assert _repo_git(root, "ls-files", "src/temp_extra.py") == ""
+    assert (root / "src" / "keep.py").read_bytes() == b"k = 1\n"
+    assert _repo_git(root, "ls-files", "src/keep.py") == "src/keep.py"
+    assert _repo_git(root, "status", "--porcelain", "--untracked-files=no") == ""
+    assert _repo_git(root, "log", "-1", "--format=%s").startswith("deploy: 202611011700 ")
+    assert _repo_git(root, "rev-parse", "HEAD~1") == temp_commit
+    name_status = _repo_git(root, "show", "--name-status", "--format=", "HEAD").splitlines()
+    touched = {path: status for status, path in (line.split("\t", 1) for line in name_status)}
+    assert touched == {
+        ".deploy/applied.json": "M",
+        "app.py": "M",
+        "src/keep.py": "A",
+        "src/temp_extra.py": "D",
+    }
 
 
 @pytest.mark.parametrize("staged", [False, True])
