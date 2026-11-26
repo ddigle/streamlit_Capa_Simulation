@@ -726,7 +726,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: MUST · 확정
 - 범위: 화면 이름 · 기능 이름 · 탭 이름 · 범례 · 상태 이름
-- 예외: 생산 계획 환산 「집계 기준」 칸의 값 「산출 기준 총량」 하나 — 사용자가 정한 이름이라 계산 화면의 「소요대수 산출 기준」 과 낱말 「산출 기준」 이 겹쳐도 그대로 두고 Guide 「환산 조건」 · 칸 풍선이 두 뜻을 가른다(2026-11-22 · 6-41 g-basis-name). 그 밖에는 없다.
+- 예외: 생산 계획 환산 「집계 기준」 칸의 값 「산출 기준 총량」 — 사용자가 정한 이름이라 계산 화면의 「소요대수 산출 기준」 과 낱말 「산출 기준」 이 겹쳐도 그대로 두고 Guide 「환산 조건」 · 칸 풍선이 두 뜻을 가른다(2026-11-22 · 6-41 g-basis-name). / 필요 단축 일정 진척 비교의 상태 · 배지 이름 「기준 바뀜」(Static 기준에서 한 시점은 남는 호기이고 다른 시점은 날짜를 받은 호기 — `shortening_progress.PROGRESS_REBASED`) — 사용자가 고른 이름이라 같은 화면의 현재 일정 기준 전환(Static | 설비 마스터)과 낱말 「기준」 이 겹쳐 그 전환으로 읽힐 수 있어도 그대로 두고 Guide 「진척 비교」 가 뜻(진척이 아니라 견주는 범위가 바뀐 것)을 적는다(6-38 ⑨ · 6-40 q-blank-name). 그 밖에는 없다.
 - 판단: 이 이름이 가리키는 것이 앱에 하나뿐인가? 바꾼 옛 이름이 어디에 남았나?
 - 그물: `tests/test_home_settings_pointers.py`(HOME Preference 한 꼴) · `tests/test_page_guide.py`(떨어진 조사 · 한 낱말 두 곳) · `tests/test_display_order_scopes.py` · `scripts/check_deploy_screens.py` equipment_moves(옛 탭 이름 0곳) · `tests/test_one_concept_one_name.py`(이름 바꿈 사전 `RENAMED` — 화면 글 · Guide · 런북의 옛 이름, 문구 전달 대기 글은 `WAITING`)
 - 그물 후보: 없음
@@ -1063,7 +1063,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: SHOULD · 확정
 - 범위: 설정 · 편집 팝업
-- 예외: 없음
+- 예외: 한 번 넣고 끝나는 창(Admin 「서버 시작 점검」 의 「토큰 넣기」 — 비밀 칸 하나뿐이라 이어서 고칠 것이 없다)은 넣으면(같은 토큰이어도) 결과를 알림창에 내고 닫는다 — 거절만 칸 아래 한 줄로 열어 둔다(6-25 token-entry).
 - 판단: 저장 한 번에 팝업을 다시 열어야 하나?
 - 그물: `tests/test_standard_target_capa_page.py`(fragment_browser — 한 화면)
 - 그물 후보: 없음
