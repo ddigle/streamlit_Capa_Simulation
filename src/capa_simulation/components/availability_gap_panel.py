@@ -1051,7 +1051,7 @@ def remembered_sheet_canvas(
     bundle: GapSheetBundle, cell: tuple[int, str] | None, generation: int
 ) -> AvailabilitySheetCanvas:
     """시트 그림을 세션에 몇 벌 기억한다. 키는 그림을 바꾸는 것 전부 — 테마·범위 지문·머리 글자·
-    고른 칸·세대. 새 `st.cache_data` 를 두지 않는다(CLAUDE.md 캐시 경계)."""
+    고른 칸·세대. 새 `st.cache_data` 를 두지 않는다(docs/rules/16 캐시 경계)."""
     key = (
         _SHEET_SCHEMA_VERSION,
         theme.current_mode(),

@@ -9,9 +9,9 @@
 도구가 찍는 글을 옮긴 것(「사외에서 지워진 파일」), 리뷰 칸 이름(「사외 요청」 · `사외요청`)은
 그대로다.
 
-그래서 「사외」 낱말을 통째로 막지 않는다. 바꾼 뒤 여섯 문서(`INTERNAL_DOCUMENTS` — 런북 · 두
-환경 절차 · 모듈 지침서 · 동료 안내서 · `CLAUDE.md` 와, 담당자가 첫 지시를 복사해 가는 안내서 HTML
-판)에서 0 번이 된 일하는 쪽 꼴만 막는다.
+그래서 「사외」 낱말을 통째로 막지 않는다. 바꾼 뒤 사내에 가는 문서(`INTERNAL_DOCUMENTS` — 런북 · 두
+환경 절차 · 모듈 지침서 · 동료 안내서 · `CLAUDE.md` 와 그 절이 있는 장 파일, 담당자가 첫 지시를
+복사해 가는 안내서 HTML 판)에서 0 번이 된 일하는 쪽 꼴만 막는다.
 「사외가」 도 첫 지시 5번 세 곳을 함께 바꿔 0 번이 되어 막는다 — 적용기가 찍는 「사외가 추가하게
 한다」 는 `.py` 안에만 남고 문서는 그 글을 옮기지 않는다. 문서는 줄을 접으므로 꼴 안의 띄어쓰기는
 줄바꿈 · 들여쓰기도 받는다. 검사는 글을 받아 어긋남 목록을 내는 함수(`violations`) 하나다 — 지금
@@ -34,6 +34,13 @@ INTERNAL_DOCUMENTS = (
     "docs/module_guide.md",
     "docs/module_colleague_guide.md",
     "CLAUDE.md",
+    # CLAUDE.md 의 명령 · 아키텍처 · 상태·캐시 · SQL · 발표 자료 절이 있는 장 파일 —
+    # 사내 세션도 그 절을 읽는다.
+    "docs/rules/00-purpose-header.md",
+    "docs/rules/02-runtime-and-verification.md",
+    "docs/rules/05-state-cache-invariants.md",
+    "docs/rules/10-local-files-security.md",
+    "docs/rules/16-layers-and-boundaries.md",
     "site/module-guide/index.html",
 )
 NEW_TERM = "정본 개발 에이전트"

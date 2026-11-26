@@ -137,13 +137,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`components/home_rendering.HOME_PERFORMANCE_KEY`)를 켠다 — 개발용 계측이 모든 사용자가 늘 보는 자리를 차지하지 않게
   사이드바 토글은 두지 않는다.
 
-## 명령
+### 명령과 보조 스크립트
 
 Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 PowerShell 블록은 Windows 꼴이다(사내가 배포 확인 때
 치는 꼴은 런북 4-3 의 `uv run --no-sync python -m …`).
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py     # 앱 실행
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8501   # 앱 실행
 .\.venv\Scripts\python.exe -m ruff format --check .
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy                      # strict, app.py·app_pages·src·tests·scripts
@@ -207,6 +207,7 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘�
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
 `scripts/build_site_index.py`(GitHub Pages 자료 목록 — `site/catalog.json` 으로 뿌리 `index.html` 을 쓴다, `--check` 는 다르면 실패).
+`scripts/build_module_index.py`(모듈 색인 — 추적 소스 모듈(app.py · app_pages/ · src/capa_simulation/, __init__ 뺌)의 경로 전체를 `docs/reference/module_index.md` 로 쓴다, `--check` 는 다르면 실패. 모듈을 더하거나 옮기거나 지우면 돌려 함께 커밋한다).
 `scripts/run_test_shard.py`(CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 한 조각을 `pytest -q` 로 돈다, 두 CI 작업이 같은 수로 부른다).
 `scripts/new_module.py`(모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
 자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈

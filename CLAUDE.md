@@ -7,16 +7,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 문서 우선순위
 
-작업 전에 `README.md`, `AGENTS.md`, `docs/TODO.md`를 코드와 함께 확인한다. **`AGENTS.md`가
-이 저장소의 상세 개발 규칙 문서**이며(파일별 책임, 기준정보 테이블 계약, 핵심 계산 규칙,
-Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진입점이다. 계산식·테이블·화면을
-바꾸기 전에는 `AGENTS.md`의 해당 절을 반드시 읽는다. 구조나 계산 규칙을 바꾸면 같은 변경에서
-`AGENTS.md`·`README.md`·`docs/TODO.md`도 갱신한다. 화면 설계 · 검수 규칙(무엇을 어디에 어떤 꼴로 두나 — 규칙 id · 판단 질문 ·
+작업 전에 `README.md`, `AGENTS.md`(색인), `docs/TODO.md`(열린 일)를 코드와 함께 확인한다. 상세 개발 규칙은
+`AGENTS.md` 색인이 가리키는 장 파일(`docs/rules/`)과 파일별 책임(`docs/reference/files/`)에 있고(기준정보 테이블 계약,
+핵심 계산 규칙, Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진입점이다 — 아래 문서 지도. 계산식·테이블·화면을
+바꾸기 전에는 그 규칙을 맡은 파일을 반드시 읽는다. 규칙이 바뀌면 그 규칙을 맡은 파일 한 곳을 그 자리에서 고쳐 쓴다(덧붙이지
+않는다). 다른 곳은 링크로 둔다. 결정·보드 답 원문은 결정 기록(`docs/records/decisions.md`)에 두고, 경과는 커밋 메시지에
+쓴다. 화면 설계 · 검수 규칙(무엇을 어디에 어떤 꼴로 두나 — 규칙 id · 판단 질문 ·
 결정 기록)의 정본은 `docs/design_rules.md` 다 — 화면을 만들거나 바꾸면 걸린 규칙 id 를 적고 규칙마다 자체 검토한다(구현
 규칙은 `AGENTS.md` 8 · 9장).
 
 직전 세션의 현재 상태와 다음 할 일은 `HANDOFF.md`에 있다. 정본이 아니라 그 시점의 세션
 스냅샷이므로 위 세 문서·코드와 어긋나면 위를 따른다.
+
+### 문서 지도
+
+- 규칙 찾기: `grep -rn '<말>' docs/rules docs/reference docs/design_rules.md` — 장 목록은 `AGENTS.md`.
+- 관문 네 줄 · 단일 시험 · 보조 스크립트 → `docs/rules/02-runtime-and-verification.md` 「명령과 보조 스크립트」.
+- 계산 파이프라인 · 계층과 경계 · DB 두 개 → `docs/rules/16-layers-and-boundaries.md`. 상태·캐시 불변조건 → `docs/rules/05-state-cache-invariants.md`(끝에 요약).
+- SQL 마이그레이션(체크섬 · 결번) → `docs/rules/00-purpose-header.md`. 발표 자료 · 자료실 → `docs/rules/10-local-files-security.md`.
+- 모듈 색인은 생성한다 — `docs/reference/module_index.md`(`scripts/build_module_index.py`, 손으로 쓰지 않는다).
+- 이미 정한 것인가 → `grep -n '<말>' docs/records/decisions.md` 로 먼저 본다(정한 것은 다시 묻지 않는다). 닫힌 항목은
+  `docs/records/closed.md`, 규칙집 결정 · 판 기록은 `docs/records/design_rules_log.md`. 열린 일과 답 대기는 `docs/TODO.md`(4장).
 
 ## 어느 환경에서 열렸는지 먼저 확인한다
 

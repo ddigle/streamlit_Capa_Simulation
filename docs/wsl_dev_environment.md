@@ -41,7 +41,7 @@ CI(`.github/workflows/ci.yml`)가 `ubuntu-latest` · Python 3.10.11 · `uv sync 
 .venv/bin/python -m pytest
 ```
 
-같은 네 줄의 PowerShell 판(`.\.venv\Scripts\python.exe -m …`)은 Windows 꼴이다(`CLAUDE.md` 「명령」) — 사내가 배포 확인 때 치는 꼴은
+같은 네 줄의 PowerShell 판(`.\.venv\Scripts\python.exe -m …`)은 Windows 꼴이다(`docs/rules/02-runtime-and-verification.md` 「명령과 보조 스크립트」) — 사내가 배포 확인 때 치는 꼴은
 런북 4-3 의 `uv run --no-sync python -m …` 이다.
 
 - 실제 `aws` 왕복 시험(`tests/test_object_storage_real_aws.py`)은 `CAPA_TEST_AWS_BIN` 이 있을 때만 돈다 — 저장소 의존성에 넣지 않고 저장소 밖에 깐다.

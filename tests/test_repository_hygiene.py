@@ -280,9 +280,8 @@ def test_every_docs_file_is_reachable_from_somewhere() -> None:
 # 앱 실행 줄을 찾는 꼴. `streamlit run … app.py` 를 말로만 적은 산문(말줄임)은 걸리지 않는다.
 _APP_LAUNCH_LINE = re.compile(r"-m streamlit run \S*app\.py")
 
-# 포트 검사에서 빼는 문서. `CLAUDE.md` 의 Windows 꼴 줄은 에이전트용 명령 요약이고(사용자 앱은
-# 사용자가 띄운다) 프로젝트 지시 파일이라 고칠지는 사용자가 정한다. 고치면 여기서 지운다.
-_LAUNCH_PORT_EXEMPT = {"CLAUDE.md"}
+# 포트 검사에서 빼는 문서(지금은 없다 — 명령 요약의 Windows 꼴 줄도 포트를 적는다).
+_LAUNCH_PORT_EXEMPT: set[str] = set()
 
 
 def test_documented_app_launch_lines_name_the_port() -> None:

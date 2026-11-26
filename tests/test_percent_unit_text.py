@@ -9,8 +9,8 @@
 `docs/` — 런북 7장도)도 본다. ② 값으로만 정해지는 글 — 실적 지표의 Gap
 단위(빼는 Gap 과 비율 Gap 이 셈은 다르고 단위는 둘 다 「%」), Chatbot 대본, 개조 일정 조건 오류문.
 입장 화면 티저(`intro_overlay_assets/capa-teaser.html`)는 쇼케이스 원본의 복사본이라
-(CLAUDE.md 「발표 자료는 저장소 밖에서 운영한다」) 가드 밖이다 — 그 「%p」 는 화면에 그리지 않는
-표본 데이터 키다.
+(`docs/rules/10-local-files-security.md` 「발표 자료는 저장소 밖에서 운영한다」) 가드 밖이다 —
+그 「%p」 는 화면에 그리지 않는 표본 데이터 키다.
 """
 
 from __future__ import annotations

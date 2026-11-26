@@ -326,7 +326,7 @@ def remembered_figures(
 
     키는 그림 모양 버전·테마·계산 결과(조건·달·값 — 값으로 같다)·화면 글자·고른 달·비중 배분
     비교·세대다.
-    만들다 실패하면 기억하지 않는다. 새 `st.cache_data` 를 두지 않는다(CLAUDE.md 캐시 경계).
+    만들다 실패하면 기억하지 않는다. 새 `st.cache_data` 를 두지 않는다(docs/rules/16 캐시 경계).
     """
     key = (
         CONSTRAINT_FIGURE_SCHEMA_VERSION,

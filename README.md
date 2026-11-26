@@ -844,6 +844,7 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `build_site_index.py` | GitHub Pages 첫 화면(뿌리 `index.html` 자료 목록)을 `site/catalog.json` 으로 쓴다(`--check` 는 다르면 실패) |
+| `build_module_index.py` | 모듈 색인 `docs/reference/module_index.md` 를 추적 소스 모듈 경로로 쓴다(`--check` 는 다르면 실패) — 모듈을 더하거나 옮기면 돌려 함께 커밋 |
 | `run_test_shard.py` | 시험 조각 실행기(CI · 한 PC 동시) — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 pytest 로 돈다. 끝줄에 수가 서고(`-q` 는 `addopts` 하나) 캐시를 쓰지 않는다. `--basetemp-root <폴더>` 는 조각별 임시 폴더 `<폴더>/shard<k>`(저장소 밖 폴더 — git 작업 트리 안이면 멈춘다. 보존 정책 `failed` 라 call 이 통과하지 못한 시험의 임시 파일만 남긴다 — 준비 · 정리 오류만 난 시험의 것도 지운다), `--list` 는 파일만 찍는다 |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자(개발자) 승인 뒤) |
@@ -861,10 +862,13 @@ Admin Area 다섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 | 문서 | 무엇이 있나 |
 |---|---|
 | `README.md` | 이 문서 — 처음 보는 사람용 안내(무엇인가·화면·설치·실행·데이터) |
-| `AGENTS.md` | **개발 규칙의 정본** — 파일별 책임·표 계약·상태/캐시 불변조건·계산·Streamlit 규칙·병행 개발 |
-| `CLAUDE.md` | 에이전트 진입점 — AGENTS 의 요약, 사외·사내 가르기, 명령 |
+| `AGENTS.md` | **개발 규칙의 색인** — 장마다 `docs/rules/` 파일(표 계약·상태/캐시 불변조건·계산·Streamlit 규칙·병행 개발)과 파일별 책임 `docs/reference/files/` 로 잇는다 |
+| `CLAUDE.md` | 에이전트 진입점 — 문서 지도, 사외·사내 가르기 |
 | `HANDOFF.md` | 직전 세션의 상태와 다음 할 일. 정본이 아닌 스냅샷이라 위 문서·코드와 어긋나면 그쪽을 따름 |
-| `docs/TODO.md` | 확정된 업무 결정의 이력과 작업 목록 |
+| `docs/TODO.md` | 열린 작업 목록과 답 대기(4장) |
+| `docs/rules/` | 개발 규칙 — 장마다 한 파일(명령과 보조 스크립트는 2장, 계층과 경계는 16장, 런북 7장 쓰기는 15장) |
+| `docs/reference/` | 파일별 책임(`files/`)과 생성 모듈 색인(`module_index.md` — `scripts/build_module_index.py`) |
+| `docs/records/` | 기록 — 확정된 업무 결정(`decisions.md`) · 닫힌 항목(`closed.md`) · 규칙집 결정 · 판 기록(`design_rules_log.md`). 늘 읽는 문서가 아니다 |
 | `docs/data_model.md` | DuckDB 두 개의 스키마·저장 규칙·공간 회수 |
 | `docs/design_system.md` | 색·서체·표 밀도와 화면 구성 규칙 |
 | `docs/design_rules.md` | 화면 설계 · 검수 규칙 — 규칙 id · 수준 · 판단 질문 · 그물 · 결정 기록. 화면을 만들거나 바꿀 때 걸린 규칙 id 로 자체 검토 |
