@@ -1151,8 +1151,8 @@
     저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`·
-    `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·
-    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)·`tests/test_process_group_editor.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·`tests/test_process_group_editor.py`·
+    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
     HOME 주요 Case 는 표지를 거부한 콜백이 아니라 상자를 옮기는 회차가 적는다(`home_main_cases._hold_moved_boxes`) — 고르면
