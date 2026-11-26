@@ -1376,7 +1376,7 @@
   해서는 숫자가 그대로, 옛 코드는 이 표를 읽지 않아 `GL-02` 만 내고 막지 않음, C-DEP 는 그 DB 첫 저장 뒤 앞 ZIP 을 막음). ② 7-8 개수 세기 —
   첫 줄은 코드가 정한 표만 세어 칸이 늘지 않는다. 「`0040` 판 이력 표는 이 줄이 세지 않는다」 에 `0041` 두 표를 더하고, 고정 칸 `migration`
   범위의 위 끝을 `41` 로(그 ZIP 뒤 C-DEP 에서 시뮬레이션을 저장했을 때). ③ 7장 화면 확인의 Admin Area 탭이 하나 는다(「부대공정」 뒤
-  「공정 그룹」 — 「부하 예외」 는 그대로 「공지」 바로 앞). 대응이 0행이면 HOME 공정 필터 팝업은 그대로라 HOME 확인 항목은 늘리지 않는다.
+  「공정 그룹」 — 「부하 예외」 는 그대로 「공지」 바로 앞, 탭 전환 목록 · 누르지 않는 쓰기 목록에 「공정 그룹 저장」). 대응이 0행이면 HOME 공정 필터 팝업은 그대로라 HOME 확인 항목은 늘리지 않는다.
 - [ ] **conftest 환경 지우기 준비 다섯이 함수 범위**(2026-11-13 — ⑥-3 리뷰 지적, `feat/test-env-1113`) — `_without_auto_update_opt_in` ·
   `_without_sso_environment` · `_without_object_storage_environment` · `_without_container_start_report` · `_without_internal_modules` 는 함수 범위라 모듈 ·
   세션 범위 준비가 띄우는 하위 프로세스는 창의 값을 그대로 받는다. 지금 그런 하위 프로세스는 `tests/test_review_sample.py` 의 `sample_root` 하나이고 그
