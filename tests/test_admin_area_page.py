@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from alert_marks import (
     active_state,
     box_expanded,
     data_error_marks,
+    events,
     flashed,
     infos,
     place_errors,
@@ -22,9 +24,22 @@ from alert_marks import (
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, TextInput
 
+import capa_simulation.components.process_group_editor as process_group_editor
 import capa_simulation.components.write_guard as write_guard
+import capa_simulation.settings as settings
 from capa_simulation.components.data_error_mark import MARK_CLASS
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_group_editor import (
+    ABSENT_MARK,
+    ADMIN_NO_PROCESS_CAPTION,
+    ADMIN_SAVE_HELP,
+    ADMIN_TITLE,
+    NO_PROCESS_CAPTION,
+    PROCESS_GROUP_SAVE_LABEL,
+    PROCESS_GROUP_SAVED_MESSAGE,
+    PROCESS_GROUP_TITLE,
+    process_group_editor_key,
+)
 from capa_simulation.components.process_rename_management import (
     BASE_VERSION_KEY,
     EDITOR_KEY,
@@ -33,6 +48,7 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
 from capa_simulation.components.table_toolbar import toolbar_room_css
+from capa_simulation.io.reference_cache import SESSION_REFERENCE_TABLES_KEY
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_AREA_LOG_TAB,
@@ -40,8 +56,13 @@ from capa_simulation.navigation import (
     ADMIN_AREA_ROUTE_EXCEPTION_TAB,
 )
 from capa_simulation.navigation import ADMIN_AREA_TABS as TAB_NAMES
-from capa_simulation.persistence.cache import clear_global_process_rename_cache
+from capa_simulation.persistence.cache import (
+    clear_global_process_group_cache,
+    clear_global_process_rename_cache,
+)
+from capa_simulation.persistence.models import GlobalProcessGroup
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.process_group import PROCESS_GROUP_COLUMNS, PROCESS_GROUPS
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -108,13 +129,15 @@ def test_admin_area_renders_without_an_active_scenario(
     assert not [subheader.value for subheader in app.subheader]
     # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고 원천 품질이 뒤에 붙어 세 탭이다.
     # 계산 알림을 모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리
-    # 「점검」 칸이 센다(2026-11-11 입력 점검 보드 q7). 탭 이름 곁 수 표지도 없다. 「공지」 앞은 늘
-    # 서는 「부하 예외」, 맨 끝은 늘 서는 「공지」 다(2026-11-17 공지 보드 답 decided 2).
+    # 「점검」 칸이 센다(2026-11-11 입력 점검 보드 q7). 탭 이름 곁 수 표지도 없다. 「부대공정」 뒤는
+    # 늘 서는 「공정 그룹」, 「공지」 앞은 늘 서는 「부하 예외」, 맨 끝은 늘 서는 「공지」
+    # 다(2026-11-17 공지 보드 답 decided 2).
     assert [tab.label for tab in app.main.tabs] == [
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
         ":material/extension: 부대공정",
+        ":material/category: 공정 그룹",
         ":material/rule: 부하 예외",
         ":material/campaign: 공지",
     ]
@@ -1065,6 +1088,7 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
         ":material/extension: 부대공정",
+        ":material/category: 공정 그룹",
         ":material/rule: 부하 예외",
         ":material/campaign: 공지",
     ]
@@ -1705,3 +1729,184 @@ def test_a_failed_start_check_is_told_to_the_admin_only(
     assert not list(app.exception), [element.message for element in app.exception]
     assert active_state(app, "AD-01") is None
     assert len(states(app, "AD-01")) == 1
+
+
+# --- 공정 그룹 탭(HOME 설정 카드와 같은 부품 · 활성 시나리오의 모든 공정) ------------------------
+
+PROCESS_GROUP_TAB = TAB_NAMES[4]
+# 활성 시나리오(내장 시드)에 없는 합성 공정 — 저장돼 있으면 「· 이 화면에 없음」 줄로 선다.
+ABSENT_PROCESS = "DEMO-공정 그룹 목록 밖"
+SEEDED_SCRIPT = f"""
+from pathlib import Path
+
+import capa_simulation.settings as settings
+from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
+
+bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
+source = Path({str(PAGE)!r})
+exec(
+    compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+    {{"__name__": "__main__"}},
+)
+"""
+
+
+@pytest.fixture
+def group_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """내장 시드 공식버전을 여는 Admin Area 의 DB — 자리는 `monkeypatch` 로 둔다(AppTest 는 같은
+    프로세스라 스크립트 안에서 모듈 속성을 바꾸면 뒤 시험에 남는다)."""
+    database = tmp_path / "process_group_admin.duckdb"
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    clear_global_process_group_cache()
+    yield database
+    clear_global_process_group_cache()
+
+
+def _group_app(*, opened: bool = True) -> AppTest:
+    app = AppTest.from_string(SEEDED_SCRIPT, default_timeout=120)
+    if opened:
+        app.session_state["admin_area_active_tab"] = PROCESS_GROUP_TAB
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app
+
+
+def _group_tab(app: AppTest) -> Any:
+    (tab,) = [tab for tab in app.main.tabs if tab.label == PROCESS_GROUP_TAB]
+    return tab
+
+
+def _group_rows(app: AppTest) -> list[tuple[str, str | None]]:
+    (editor,) = [
+        frame
+        for frame in _group_tab(app).dataframe
+        if tuple(frame.value.columns) == PROCESS_GROUP_COLUMNS
+    ]
+    return [
+        (str(process), None if group is None or pd.isna(group) else str(group))
+        for process, group in zip(editor.value["공정"], editor.value["공정그룹"], strict=True)
+    ]
+
+
+def _scenario_processes(app: AppTest) -> list[str]:
+    """활성 시나리오 `RQ_MODULE` 의 공정(앞뒤 공백을 뗀 원본 · 이름 차례) — Proc Rename 과 같은
+    목록."""
+    module = app.session_state[SESSION_REFERENCE_TABLES_KEY]["RQ_MODULE"]
+    return sorted(module["공정"].astype("string").str.strip().dropna().unique().tolist())
+
+
+def _group_save(app: AppTest) -> Any:
+    return next(button for button in app.button if button.label == PROCESS_GROUP_SAVE_LABEL)
+
+
+def test_the_process_group_tab_lists_every_process_of_the_active_scenario(
+    group_database: Path,
+) -> None:
+    """Admin 「공정 그룹」 탭은 HOME 설정 카드와 같은 부품에 활성 시나리오의 모든 공정을 줄로
+    넘긴다 — 조회기간에 확보율이 없는 공정에도 그룹을 준다. 목록 밖 저장 공정은 「· 이 화면에
+    없음」 을 달고 뒤에 선다. 제목은 탭 이름을 거듭하지 않는 「직접 편집」 이다(UI-TXT-07)."""
+    store = DuckDBScenarioRepository(group_database)
+    store.initialize()
+    store.replace_global_process_group([(ABSENT_PROCESS, PROCESS_GROUPS[1])], source="처음 저장")
+    app = _group_app()
+
+    processes = _scenario_processes(app)
+    assert processes
+    assert _group_rows(app) == [
+        *((process, None) for process in processes),
+        (ABSENT_PROCESS, PROCESS_GROUPS[1]),
+    ]
+    columns = json.loads(_group_tab(app).dataframe[0].proto.columns)
+    assert ABSENT_PROCESS + ABSENT_MARK in json.dumps(columns, ensure_ascii=False)
+    headings = [str(item.value) for item in _group_tab(app).markdown]
+    assert ADMIN_TITLE in headings and PROCESS_GROUP_TITLE not in headings
+    save = _group_save(app)
+    assert save.help == ADMIN_SAVE_HELP and not save.disabled
+    assert not place_errors(app)
+
+
+def test_a_save_from_the_process_group_tab_is_the_shared_profile(group_database: Path) -> None:
+    """Admin 탭의 저장은 HOME 설정 카드와 같은 공용 프로필 · 같은 버전 대조 길이다 — 목록 밖 저장
+    공정은 그대로 남고 성공은 알림창이다."""
+    store = DuckDBScenarioRepository(group_database)
+    store.initialize()
+    store.replace_global_process_group([(ABSENT_PROCESS, PROCESS_GROUPS[1])], source="처음 저장")
+    app = _group_app()
+    rows = [process for process, _group in _group_rows(app)]
+
+    app.session_state[process_group_editor_key(1, rows)] = {
+        "edited_rows": {0: {"공정그룹": PROCESS_GROUPS[0]}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    _group_save(app).click()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    saved = store.load_global_process_group()
+    assert saved.version == 2
+    assert sorted(saved.assignments) == sorted(
+        [(rows[0], PROCESS_GROUPS[0]), (ABSENT_PROCESS, PROCESS_GROUPS[1])]
+    )
+    assert PROCESS_GROUP_SAVED_MESSAGE in [str(note.value) for note in successes(app)]
+    assert _group_rows(app)[0] == (rows[0], PROCESS_GROUPS[0])
+
+
+def test_the_process_group_tab_without_an_active_scenario_has_only_its_caption(
+    tmp_path: Path,
+) -> None:
+    """활성 시나리오가 없으면 그 탭은 제목 줄과 Admin 낱말의 빈 결과 한 줄이다(표 · 저장 줄
+    없음)."""
+    app = AppTest.from_string(_page_script(tmp_path / "scenario.duckdb"))
+    app.session_state["admin_area_active_tab"] = PROCESS_GROUP_TAB
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    captions = [str(item.value) for item in _group_tab(app).caption]
+    assert ADMIN_NO_PROCESS_CAPTION in captions and NO_PROCESS_CAPTION not in captions
+    assert not _group_tab(app).dataframe
+    assert PROCESS_GROUP_SAVE_LABEL not in [str(button.label) for button in app.button]
+
+
+def test_a_process_group_read_failure_marks_only_the_opened_tab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공정 그룹을 못 읽으면 열린 탭 안에만 Admin 코드(`AD-07`)의 「데이터 Error」 마크가 서고
+    「그 화면으로」 가 그 탭을 연다 — 닫힌 탭은 그 회차에 알리지 않는다(Admin 의 다른 입력 탭과
+    같다)."""
+
+    def broken(path: str) -> GlobalProcessGroup:
+        raise OSError("DEMO 공정 그룹 읽기 실패")
+
+    monkeypatch.setattr(process_group_editor, "load_global_process_group", broken)
+    app = AppTest.from_string(_page_script(tmp_path / "scenario.duckdb")).run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert data_error_marks(app) == 0
+    assert not events(app, "AD-07") and not events(app, "HM-01")
+
+    app.session_state["admin_area_active_tab"] = PROCESS_GROUP_TAB
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    tab = _group_tab(app)
+    assert sum(MARK_CLASS in str(element.proto.body) for element in tab.get("html")) == 1
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "AD-07")
+    assert note["tab"] == "공정 그룹"
+    assert not events(app, "HM-01")
+
+
+def test_the_process_group_tab_carries_the_mark_when_the_database_cannot_open(
+    tmp_path: Path,
+) -> None:
+    """DB 를 못 열어 멈추는 회차(`AD-07`)에 「공정 그룹」 탭을 열면 그 탭 안에 「데이터 Error」
+    마크가 선다(설계 규칙 UI-NTF-08)."""
+    # DB 자리가 폴더라 열리지 않는다.
+    app = AppTest.from_string(_page_script(tmp_path))
+    app.session_state["admin_area_active_tab"] = PROCESS_GROUP_TAB
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    tab = _group_tab(app)
+    assert sum(MARK_CLASS in str(element.proto.body) for element in tab.get("html")) == 1
+    assert data_error_marks(app) == 1, "열린 「공정 그룹」 탭 안에만"

@@ -3268,6 +3268,15 @@ def test_the_route_exception_summary_is_fixed_words_and_counts() -> None:
     assert screens.summarize_route_exception_tab(with_log, opened) == (
         "탭 있음 · 공지 앞 · 기록 탭 뒤 · 고르기 1 · 잠김 1 · 저장 잠김"
     )
+    # 「부대공정」 뒤 「공정 그룹」 탭이 서도(앱의 지금 차례) 자리 판정 · 기대 글은 그대로다.
+    grouped = [*names[:4], "category 공정 그룹", *names[4:]]
+    assert screens.summarize_route_exception_tab(grouped, opened) == (
+        "탭 있음 · 공지 앞 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
+    grouped_with_log = [*names[:4], "category 공정 그룹", "history 접속 · 작업 기록", *names[4:]]
+    assert screens.summarize_route_exception_tab(grouped_with_log, opened) == (
+        "탭 있음 · 공지 앞 · 기록 탭 뒤 · 고르기 1 · 잠김 1 · 저장 잠김"
+    )
     # 옛 판(탭 없음) · 끝에 둔 판(공지 뒤) · 열었는데 칸을 못 읽음.
     assert screens.summarize_route_exception_tab(names[:4] + names[5:], None) == "탭 없음"
     moved = [*names[:4], names[5], names[4]]

@@ -2,11 +2,17 @@
 
 """공정 그룹 편집 카드 — HOME 공정 필터 팝업의 그룹 단추가 쓰는 「공정 → 공정 그룹」 공용 프로필.
 
-공정 목록을 인자로 받는 부품이다. HOME 설정 `Capa 요약 · 표시` 탭은 조회기간 공정(확보율 선택지)을
-넘기고, 다른 자리는 제 목록을 넘겨 같은 카드를 붙인다(설계 규칙 UI-CON-04). 줄은 받은 목록 차례(한
-열쇠는 한 줄 — `services.process_group.process_group_editor_frame`)이고, 그 목록에 없는 저장 공정은
-뒤에 「· 이 화면에 없음」 을 달고 선다. 통째 교체 저장이 화면에 안 보이는 남의 값을 지우지 않게
-저장된 줄을 모두 보인다 — 지우려면 그 줄의 그룹 칸을 비운다.
+공정 목록을 인자로 받는 부품이고 두 자리에 붙는다(설계 규칙 UI-CON-04).
+
+- HOME 설정 `Capa 요약 · 표시` 탭 — 조회기간 공정(확보율 선택지)을 넘기는 테 두른 카드다.
+- Admin Area 「공정 그룹」 탭(`AdminTab`) — 활성 시나리오의 모든 공정(`RQ_MODULE`)을 넘겨 조회기간에
+  확보율이 없는 공정에도 그룹을 준다. 탭 이름을 거듭하지 않게 제목이 Admin 의 다른 편집 탭과 같은
+  「직접 편집」 이고 테가 없다(UI-TXT-07 · UI-CON-03). 빈 선택지 글 · 읽기 실패 마크(`AD-07` — 열린
+  탭에서만)도 Admin 낱말이다.
+
+줄은 받은 목록 차례(한 열쇠는 한 줄 — `services.process_group.process_group_editor_frame`)이고,
+그 목록에 없는 저장 공정은 뒤에 「· 이 화면에 없음」 을 달고 선다. 통째 교체 저장이 화면에 안 보이는
+남의 값을 지우지 않게 저장된 줄을 모두 보인다 — 지우려면 그 줄의 그룹 칸을 비운다.
 
 저장은 확보율 보정 편집기(`home_preference._render_execution_editor`)와 같은 길이다.
 
@@ -25,13 +31,15 @@
 것이다(`dialog_host`).
 
 `home_preference` 를 들이지 않는다(그쪽이 이 부품을 부른다). 값만 보기 여부와 저장 단추 풍선은
-부르는 쪽이 넘긴다.
+부르는 쪽이 넘긴다. 세션 key · 저장 이름은 두 자리가 같다 — 한 공용 프로필의 이 세션 저장 표지
+(제 저장 · 충돌 · 거부)는 하나이고, 두 자리는 한 회차에 같이 그려지지 않는다.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import streamlit as st
 from streamlit.elements.lib.column_types import ColumnConfig
@@ -109,6 +117,23 @@ ABSENT_PROCESS_GROUP_HELP = (
     "저장해도 그대로 남고 그 공정이 있는 화면에서는 단추에 듭니다. 빼려면 공정 그룹 칸을 비웁니다."
 )
 DEFAULT_SOURCE = "웹 직접 편집"
+# Admin Area 「공정 그룹」 탭 자리 — 탭 이름을 거듭하지 않는 제목(Admin 의 다른 편집 탭과 같은
+# 낱말), 활성 시나리오 공정이 없을 때의 글, 저장 단추 풍선(HOME 의 공용 설정 풍선은 팝업을 말한다).
+ADMIN_TITLE = "#### 직접 편집"
+ADMIN_NO_PROCESS_CAPTION = "활성 시나리오의 공정이 없어 입력할 칸이 없습니다."
+ADMIN_SAVE_HELP = (
+    "모든 사용자가 함께 쓰는 공용 설정으로 저장합니다. HOME 설정 「Capa 요약 · 표시」 탭의 "
+    "「공정 그룹」 과 같은 값입니다."
+)
+
+
+@dataclass(frozen=True)
+class AdminTab:
+    """Admin Area 「공정 그룹」 탭에 붙일 때 — 알림이 열 탭 이름(`state_alerts.tab_name`)과 그 탭이
+    이번 회차에 열렸나(닫힌 탭의 읽기 실패는 그 회차에 알리지 않는다)."""
+
+    name: str
+    opened: bool
 
 
 def process_group_editor_key(version: int, processes: Sequence[str]) -> str:
@@ -124,31 +149,41 @@ def render_process_group_editor(
     database_path: str,
     read_only: bool,
     save_help: str,
+    admin: AdminTab | None = None,
 ) -> None:
     """공정 그룹 카드 — 공정 · 공정 그룹 두 칸 편집 표와 그 위 저장 줄.
 
     `process_options` 는 줄로 세울 원본 공정(부르는 쪽 차례 그대로)이고 글자만 표시명이다.
     `read_only` 이면 표가 잠기고 저장 줄(단추 · 메모)이 없다 — 값은 그대로 보인다. `save_help` 는
-    저장 단추 풍선이다.
+    저장 단추 풍선이다. `admin` 을 주면 Admin Area 탭 자리다(제목 · 테 · 빈 선택지 글 · 읽기 실패
+    마크 — 모듈 설명).
     """
     submitted_base = seen(PROCESS_GROUP_BASE_VERSION_KEY)
     try:
         profile = load_global_process_group(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        render_data_error(
-            bootstrap_error_message(exc), code="HM-01", text="공정 그룹을 읽지 못했습니다"
-        )
+        if admin is None:
+            render_data_error(
+                bootstrap_error_message(exc), code="HM-01", text="공정 그룹을 읽지 못했습니다"
+            )
+        elif admin.opened:
+            render_data_error(
+                bootstrap_error_message(exc),
+                code="AD-07",
+                tab=admin.name,
+                text="공정 그룹을 읽지 못했습니다",
+            )
         return
-    with st.container(border=True):
+    with st.container(border=admin is None):
         render_profile_heading(
-            PROCESS_GROUP_TITLE,
+            PROCESS_GROUP_TITLE if admin is None else ADMIN_TITLE,
             profile,
             key="home_process_group",
             empty=PROCESS_GROUP_EMPTY,
             style=toolbar_room_css(PROCESS_GROUP_SAVE_ROW_KEY),
         )
         if not process_options:
-            st.caption(NO_PROCESS_CAPTION)
+            st.caption(NO_PROCESS_CAPTION if admin is None else ADMIN_NO_PROCESS_CAPTION)
             return
         table, outside = process_group_editor_frame(profile.assignments, process_options)
         processes = [str(process) for process in table[PROCESS_GROUP_COLUMNS[0]]]

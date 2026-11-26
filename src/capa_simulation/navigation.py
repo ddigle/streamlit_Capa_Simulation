@@ -513,14 +513,16 @@ INTERNAL_MODULES = PageSpec(
 # 모듈 상자의 slug — 상자 key `internal_modules_box`, CSS 는 `build_sidebar_stylesheet` 가 낸다.
 MODULE_GROUP_SLUG: Final = "internal_modules"
 
-# Admin Area 탭. 앞 넷은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다 — 넷째
+# Admin Area 탭. 앞 다섯은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다 — 넷째
 # 「부대공정」 은 BDQ 밖 공정의 판(시뮬레이션 DB 판 이력)을 보이고 쓰는 단추는 C-DEP 의 개발자에게만
-# 연다(`components/extra_process_admin.py`). 다음 「접속
+# 연다(`components/extra_process_admin.py`). 다섯째 「공정 그룹」 은 HOME 공정 필터 그룹 단추가 쓰는
+# 공용 대응을 활성 시나리오의 모든 공정 줄로 고치고 저장 벽은 HOME 설정과 같다
+# (`components/process_group_editor.py`). 다음 「접속
 # · 작업 기록」 은 통합인증이 켜진 서버의 관리자 회차에만 서고 (`sso_identity.viewer_can_audit`)
 # 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다. 그 뒤 「부하 예외」 는 늘 서고 공정별
 # 부하 산출 예외 선언(모든 시나리오에 거는 공용 판 이력)을 보이며, 고르는 공정 목록이 활성 리비전의
 # 소요기준을 읽어 시나리오 줄을 세운다 — 저장 단추는 「부대공정」 과 같은 판정으로 C-DEP 의
-# 개발자에게만 연다(`components/route_load_exception_admin.py`). 서수로 부르는 앞 다섯이 그대로이게
+# 개발자에게만 연다(`components/route_load_exception_admin.py`). 서수로 부르는 앞 여섯이 그대로이게
 # `ADMIN_AREA_TABS` 밖 상수다. 맨 끝 「공지」 는 늘 서고(Admin Area 를 여는 사람 — 운영 서버는
 # 관리자) 시나리오 · 조건 카드가 없다 (2026-11-17 공지 보드 답 decided 2). 사이드바(`app.py`)가 열린
 # 탭을 봐야 해서 라벨을 여기 한 곳에 두고 페이지가 읽는다.
@@ -530,6 +532,7 @@ ADMIN_AREA_TABS = (
     ":material/sort: 표시순서 관리",
     ":material/fact_check: 원천 품질",
     ":material/extension: 부대공정",
+    ":material/category: 공정 그룹",
 )
 ADMIN_AREA_LOG_TAB = ":material/history: 접속 · 작업 기록"
 ADMIN_AREA_ROUTE_EXCEPTION_TAB = ":material/rule: 부하 예외"

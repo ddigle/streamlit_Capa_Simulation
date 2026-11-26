@@ -34,6 +34,8 @@ from grade_support import (
 )
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.application_bootstrap import ensure_initial_scenario
+from capa_simulation.audit.recorder import as_system
 from capa_simulation.auth import grade_store, grades, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.identity import Identity, identity_from_cookies
@@ -46,10 +48,14 @@ from capa_simulation.components import (
     sso_identity,
     sso_status,
 )
+from capa_simulation.components.process_group_editor import PROCESS_GROUP_SAVE_LABEL
 from capa_simulation.io.company_bigdataquery_adapter import (
     BigDataQueryCallError,
     public_failure_text,
 )
+from capa_simulation.navigation import ADMIN_AREA_TABS
+from capa_simulation.persistence.cache import clear_global_process_group_cache
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.route_load_exceptions import ROUTE_LOAD_FORMULAS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -198,6 +204,51 @@ def test_off_the_operational_server_the_admin_area_opens_without_a_preview(
     assert not _locked(app)
     assert access_list_admin.PREVIEW_LABEL not in visible_labels(app)
     assert admin_view.developer_notes_visible()
+
+
+# 내장 시드 공식버전을 연 Admin Area — DB 자리는 시험이 `monkeypatch` 로 둔다(스크립트 안에서 모듈
+# 속성을 바꾸면 같은 프로세스의 뒤 시험에 남는다).
+SEEDED_ADMIN_SCRIPT = f"""
+from pathlib import Path
+
+import capa_simulation.settings as settings
+from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
+
+bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
+source = Path({str(PAGE)!r})
+exec(
+    compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+    {{"__name__": "__main__"}},
+)
+"""
+
+
+@pytest.mark.parametrize("operational", [True, False], ids=["developer", "off"])
+def test_whoever_opens_the_admin_area_saves_its_process_group_tab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operational: bool
+) -> None:
+    """Admin 「공정 그룹」 탭의 저장 벽은 HOME 설정 카드와 같은 `home.settings`(관리자부터)다 —
+    Admin Area 를 여는 사람(운영 서버는 개발자, 운영 밖은 모두)은 그 벽을 넘어 저장 줄이 선다. 그
+    아래 등급은 Admin Area 자체가 잠긴다(`test_only_the_developer_opens_the_admin_area`)."""
+    import capa_simulation.settings as settings
+
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    with as_system():
+        ensure_initial_scenario(repository)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    clear_global_process_group_cache()
+    if operational:
+        as_grade(monkeypatch, grades.DEVELOPER)
+    else:
+        unrestricted(monkeypatch)
+    app = AppTest.from_string(SEEDED_ADMIN_SCRIPT).run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert ADMIN_AREA_TABS[4] in [str(tab.label) for tab in app.main.tabs]
+    assert PROCESS_GROUP_SAVE_LABEL in visible_labels(app)
+    assert sso_identity.viewer_can("home.settings")
 
 
 def test_the_access_list_is_one_edit_grid_with_four_grades_and_locked_own_rows(

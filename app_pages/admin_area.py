@@ -1,5 +1,5 @@
-# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·부대공정·접속 기록·부하 예외·공지 탭, 위의
-# 서버 점검·BDQ 자동 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
+# Purpose: 개발자 전용 잠금과 표시명·표시순서·원천 품질·부대공정·공정 그룹·접속 기록·부하 예외·공지
+# 탭, 위의 서버 점검·BDQ 자동 로그인·통합인증 점검·접속 명단과 탭 줄 끝 「이 등급으로 보기」.
 
 from __future__ import annotations
 
@@ -23,6 +23,12 @@ from capa_simulation.components.object_sync_status import render_object_sync_sta
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
+from capa_simulation.components.process_group_editor import (
+    ADMIN_SAVE_HELP,
+    AdminTab,
+    render_process_group_editor,
+)
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
@@ -34,6 +40,7 @@ from capa_simulation.components.sso_identity import (
     ADMIN_ONLY_NOTICE,
     HOME_LINK_LABEL,
     admin_area_locked,
+    viewer_can,
     viewer_can_audit,
 )
 from capa_simulation.components.sso_status import (
@@ -63,7 +70,8 @@ from capa_simulation.settings import DUCKDB_PATH
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다 (2026-11-11
 # 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째 「부대공정」 은 늘 서는
 # 탭이고(위젯이 단추 · 내려받기 · 확인 칸뿐이라 닫혀 있으면 건너뜀) 쓰는 단추는 C-DEP 의
-# 개발자에게만 열린다. 다섯째 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다.
+# 개발자에게만 열린다. 다섯째 「공정 그룹」 은 늘 서는 입력 탭이다(편집 표). 여섯째 「접속 · 작업
+# 기록」 은 감사 기록이 켜진 서버의 개발자 회차에만 선다.
 # 그 뒤 「부하 예외」 는 늘 서는 입력 탭이라(공정 고르기 칸) 닫혀 있어도 그리고 저장 단추는
 # 「부대공정」 과 같은 판정으로 C-DEP 의 개발자에게만 열린다. 맨 끝 「공지」 는 늘 서는 입력
 # 탭이다(2026-11-17 공지 보드 답 decided 2 — DB 를 쓰지 않는다).
@@ -126,7 +134,13 @@ with tabs_box:
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]
     opened_tabs = stateful_tabs(tab_labels, key=TABS_KEY)
-process_rename_tab, display_order_tab, source_quality_tab, extra_process_tab = opened_tabs[:4]
+(
+    process_rename_tab,
+    display_order_tab,
+    source_quality_tab,
+    extra_process_tab,
+    process_group_tab,
+) = opened_tabs[: len(TAB_NAMES)]
 route_exception_tab = opened_tabs[-2]
 
 if shows_log:
@@ -154,6 +168,7 @@ except BOOTSTRAP_ERRORS as exc:
             display_order_tab,
             source_quality_tab,
             extra_process_tab,
+            process_group_tab,
             route_exception_tab,
         ),
         (*TAB_NAMES, ROUTE_EXCEPTION_TAB),
@@ -235,6 +250,19 @@ with extra_process_tab:
         render_extra_process_admin(
             repository, alert_tab=open_tab_name(extra_process_tab, TAB_NAMES[3])
         )
+with process_group_tab:
+    # HOME 공정 필터 그룹 단추가 쓰는 공용 공정 그룹 — HOME 설정 카드와 같은 부품에 활성
+    # 시나리오의 모든 공정(`RQ_MODULE` — Proc Rename 과 같은 목록)을 줄로 넘겨 조회기간에 확보율이
+    # 없는 공정에도 그룹을 준다. 편집 표가 있어 닫혀 있어도 그린다(닫힌 회차는 공용 프로필 캐시만
+    # 읽는다). 저장 벽은 HOME 설정과 같은 `home.settings` 다(쓰기 하나에 벽 하나).
+    render_process_group_editor(
+        process_options=available_processes,
+        process_labels=get_process_labels(),
+        database_path=database_path,
+        read_only=not viewer_can("home.settings"),
+        save_help=ADMIN_SAVE_HELP,
+        admin=AdminTab(tab_name(TAB_NAMES[4]), not tab_is_hidden(process_group_tab)),
+    )
 with route_exception_tab:
     # 공정별 부하 산출 예외 선언 — 고르기 칸이 있어 닫혀 있어도 그린다(닫힌 회차는 공용 프로필
     # 캐시만 읽고 판 이력 표는 열린 회차에만 읽는다).
