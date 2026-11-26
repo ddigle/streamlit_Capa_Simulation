@@ -51,6 +51,7 @@
   ETag(`ExtraProcessState.baseline`)와 견줘 같거나 파일이 없을 때만 덮고, 다르면 덮지 않는다(적용하지 않은 사람 파일 — G5). 상태 줄
   낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 「새 판」 쓰기 대기 판정(`needs_write`) ·
   사람이 놓은 같은 새 판 판정(`placed_matches`)도 둔다.
+  꽂이(HEAD · PUT)가 낸 예외는 `SourceFailure` 로 감싸지 않은 것도 모두 실패 기록이다. HEAD 실패는 단계 HEAD · 낱말 「읽지 못함(까닭)」 이다. PUT 실패는 단계 PUT 이고, 낱말은 HEAD 로 본 파일이 있었으면 「옛 판」, 없었으면 「없음」 이다. 까닭은 `failure_reason` 이 짓는다 — `SourceFailure` 면 그 낱말, 아니면 「예상하지 못한 오류(<예외 종류 이름>)」 이고, 예외 글은 주소 · 열쇠가 섞일 수 있어 싣지 않는다. PUT 이 빈 ETag(공백뿐 포함)를 돌려줘도 실패(단계 PUT · 까닭 `ETAG_MISSING`)다 — 「씀」 기록은 ETag 를 들어야 하고(기준 ETag 가 된다), 저장소(`extra_process_store.append_write`)가 ETag 없는 「씀」 을 거절한다. 부르는 쪽(`_write_active`)은 DB 에 새 판을 넣은 뒤라, 새면 쓰기 기록 없이 화면 오류가 된다(시험 `tests/test_extra_process_revision_admin.py`).
 - `src/capa_simulation/extra_process_drive.py` — 부대공정 S3 Drive 가져오기 원천(설계 A6 — 2026-11-20 보드 결정-2 (가) 「낱장 CSV
   여섯」). 버킷 `extra_process/` 아래 정해진 이름 여섯(`00_info.csv` ~ `05_rate_vital.csv`)만 GET · HEAD 로 본다 — 목록(LIST)은 앱
   열쇠로 재지 않은 능력이라 쓰지 않아 다른 이름 · 남는 파일은 보지 않는다(그 장은 「파일 없음」 거절). 받기는 여섯을 받고 머리를
@@ -86,6 +87,7 @@
   `SY-02` 를 건드리지 않는다). 「지금 올리기」 는 감사부터 올린다(열린 시간 묶음을 앞당겨 닫고, DB 올리기 뒤 그 몫까지 —
   5장 40). 누름은 물러남 대기만 비우고 연속 실패 수는 성공 때만 0 이다 — 계속 실패하는 동안 누를 때마다 0 이면 배지가
   「누르면 저장 잃음」 에 닿지 못한다. 감사 할 일을 못 세우면 일꾼은 감사 없이 서고 `AD-12` 「올리기 없음」 이 선다.
+  CI/CD 로 새 디스크에 선 서버는 앞 서버가 끌 때 못 올린 저장을 알 길이 없다(변경 표시 사이드카도 앞 디스크와 함께 사라진다). 그래서 그 흔적 · 알림을 따로 두지 않는다. 보이는 것은 Admin 「서버 시작 점검」 의 「앞 pod 마지막 올림 → 이번 앱 준비」 간격과 `GL-07` 전문 끝 「마지막으로 정본에 올라간 저장 ○시 ○분」(9장 「서버 재시작 알림」)뿐이다 — `docs/objectstore_setup.md` 「하지 않은 것」.
 - `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신을 매일 지정 시각에 돌리는 배경 스레드다(5장 4·9장).
   - 실행 줄 `CAPA_AUTO_OFFICIAL_UPDATE=1` 일 때만 서고, 지정 시각이 직전 확인과 지금 사이일 때만 돈다(`crossed_slot` —
     놓친 날은 따라잡지 않는다). 스레드 이름(`THREAD_NAME`)으로 하나를 지키고 `st.cache_resource` 는 쓰지 않는다.
@@ -380,6 +382,8 @@
   사라진 프로세스 · 한도 없음 · 옛 기록 · 범위 밖 값, Linux 에서 큰 앱 아래 작은 진짜 하위의 최고가 앱 RSS 보다 작음 · 막 띄운 진짜 하위의 뜬 시간이 몇 초 안).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
+  - `boto3` 를 쓰지 않는다 — 엔드포인트 · 자격증명 · CA 인증서는 CLI 프로필이 들고 파이썬 의존성 용량도 늘지 않으므로, 큰 파일은 이 모듈이 `aws` CLI 로만 주고받는다(작은 객체는 `io/s3_small` 의 표준 라이브러리 SigV4).
+  - 모든 `aws` 명령의 환경에 경로 스타일(`AWS_S3_ADDRESSING_STYLE=path`)을 강제하고(`FORCED_ENV` — 시작 스크립트의 `AwsRunner` 도 같은 클라이언트를 지난다) 프로필 줄 한 벌(`profile_settings`)에도 `s3.addressing_style path` 를 싣는다 — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트 스타일로는 표현할 수 없고, 없으면 서명 불일치나 DNS 오류가 난다(`docs/objectstore_setup.md` 6장, 시험 `tests/test_object_storage.py::test_path_addressing_and_checksum_optout_are_forced_by_environment`).
   - `aws` 가 찍는 시각은 두 꼴이다 — 목록(XML)은 ISO, HEAD · GET 은 `Last-Modified` 머리 글 그대로(RFC 1123 — `aws` 1 판, 운영 이미지 판).
     둘 다 읽고(`_parse_timestamp`) 못 읽으면 모름이다 — HEAD 시각을 못 읽으면 감사 기록의 시계 차이 확인(`sys_clock_skew`)이 말없이 끝난다
     (E2E C-17). 시험 실행기(`tests/s3_mock_runner.py`)도 HEAD · GET 시각을 `aws` 1 판처럼 머리 글 그대로 돌려준다.
