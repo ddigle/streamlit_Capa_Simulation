@@ -144,17 +144,18 @@ def process_group_editor_frame(
 
     줄은 선택지 차례(공용 표시순서로 선 원본 글자 그대로) 다음에 선택지에 없는 저장 공정(공정
     글자순)이다 — 통째 교체 저장이 화면에 안 보이는 저장값을 날리지 않게 저장된 줄을 모두 보인다.
+    한 열쇠는 한 줄이다 — 열쇠가 같은 선택지는 처음 나온 원본 글자로 한 번만 선다(두 줄로 서면
+    손대지 않은 표의 저장도 「같은 공정 두 줄」 로 막힌다).
     칸은 「공정」(원본) · 「공정그룹」(정본 표기, 그룹 없음 · 목록 밖 그룹은 None)이다.
     """
     stored = _readable_assignments(assignments)
     processes: list[str] = []
-    seen_options: set[str] = set()
     option_keys: set[str] = set()
     for option in process_options:
-        if option in seen_options:
+        key = process_group_key(option)
+        if key in option_keys:
             continue
-        seen_options.add(option)
-        option_keys.add(process_group_key(option))
+        option_keys.add(key)
         processes.append(option)
     outside = tuple(sorted(key for key in stored if key and key not in option_keys))
     processes.extend(outside)

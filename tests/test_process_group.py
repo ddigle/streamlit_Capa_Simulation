@@ -178,6 +178,21 @@ def test_an_unchanged_editor_is_the_same_as_the_saved_assignments() -> None:
     assert same_process_groups(assignments_from_editor(frame), saved)
 
 
+def test_options_with_the_same_key_stand_as_one_editor_row() -> None:
+    """열쇠가 같은 선택지(U+00A0 · 끝 공백만 다름)는 처음 원본 글자로 한 줄만 선다 — 손대지 않은
+    표를 저장으로 되돌려도 「같은 공정 두 줄」 로 막히지 않는다."""
+    saved = (("DEMO DA", "FRONT"),)
+    frame, outside = process_group_editor_frame(
+        saved,
+        [f"DEMO{NBSP}DA", "DEMO_WB", "DEMO DA", "DEMO DA "],
+    )
+
+    assert frame["공정"].tolist() == [f"DEMO{NBSP}DA", "DEMO_WB"]
+    assert frame["공정그룹"].tolist() == ["FRONT", None]
+    assert outside == ()
+    assert same_process_groups(assignments_from_editor(frame), saved)
+
+
 def test_an_editor_frame_with_other_columns_is_refused() -> None:
     with pytest.raises(ValueError, match="공정 그룹 컬럼"):
         assignments_from_editor(pd.DataFrame({"공정": ["DEMO_DA"], "그룹": ["FRONT"]}))
