@@ -62,12 +62,12 @@ OUTSIDE_BUILD_LABEL = "사외 개발"
 
 
 def credit_lines(stamp: str | None = None) -> tuple[str, str]:
-    """보여 줄 두 줄. 앱·판, 개발 차례다. `stamp` 를 주지 않으면 적용 기록에서 읽고, 판은 그 번호를
-    붙인 `app_version` 이다(빈 번호면 판 머리 뒤에 「사외 개발」). 문의처는 환경변수에서 읽고, 비면
-    팀 이름만 싣는다."""
+    """보여 줄 두 줄. 앱·판, 「개발 : <팀> · <문의처>」 차례다. `stamp` 를 주지 않으면 적용 기록에서
+    읽고, 판은 그 번호를 붙인 `app_version` 이다(빈 번호면 판 머리 뒤에 「사외 개발」). 문의처는
+    환경변수에서 읽고, 비면 「개발 : <팀>」 만 싣는다."""
     stamp = deployed_stamp() if stamp is None else stamp
     title = f"{APP_NAME} v{app_version(stamp)}"
-    team = f"개발 {APP_OWNER_TEAM}"
+    team = f"개발 : {APP_OWNER_TEAM}"
     contact = app_contact_email()
     return (
         title if stamp else f"{title} · {OUTSIDE_BUILD_LABEL}",

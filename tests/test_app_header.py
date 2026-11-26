@@ -499,7 +499,7 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     assert credit_lines(stamp="202610081234") == (
         f"{APP_NAME} v1.0.202610081234",
-        f"개발 {APP_OWNER_TEAM} · {FAKE_CONTACT}",
+        f"개발 : {APP_OWNER_TEAM} · {FAKE_CONTACT}",
     )
     text = "\n".join(credit_lines())
     for removed in ("인증번호", "유효기간", "반출", "CONFIDENTIAL"):
@@ -542,12 +542,12 @@ def test_without_a_contact_variable_the_credits_name_only_the_team(
 
     if value is not None:
         monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, value)
-    assert credit_lines(stamp="202610081234")[1] == f"개발 {APP_OWNER_TEAM}"
+    assert credit_lines(stamp="202610081234")[1] == f"개발 : {APP_OWNER_TEAM}"
     assert settings.app_contact_email() == ""
     assert not hasattr(settings, "APP_CONTACT_EMAIL"), "읽어 둔 상수는 두지 않는다"
 
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, f"  {FAKE_CONTACT}  ")
-    assert credit_lines(stamp="202610081234")[1] == f"개발 {APP_OWNER_TEAM} · {FAKE_CONTACT}"
+    assert credit_lines(stamp="202610081234")[1] == f"개발 : {APP_OWNER_TEAM} · {FAKE_CONTACT}"
     assert settings.app_contact_email({APP_CONTACT_EMAIL_ENV: FAKE_CONTACT}) == FAKE_CONTACT
 
 

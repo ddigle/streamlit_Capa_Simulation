@@ -21,11 +21,11 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGETS: dict[str, int] = {
     "AGENTS.md": 4_024,
     "CLAUDE.md": 4_953,
-    "README.md": 65_808,
+    "README.md": 65_810,
     "docs/TODO.md": 247_184,
     "docs/design_rules.md": 164_473,
     "docs/reference/files/app-and-ui.md": 207_502,
-    "docs/reference/files/components.md": 278_337,
+    "docs/reference/files/components.md": 278_339,
     "docs/reference/files/input-and-state.md": 62_931,
     "docs/reference/files/persistence.md": 27_209,
     "docs/reference/files/services.md": 64_770,
