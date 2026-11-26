@@ -1573,6 +1573,9 @@
       것(`S.placedLog`, 지금도 서 있고 층 가운데 크기 어림이 아닌 것) → 편집본에서 설비명 자연 정렬이 가장 뒤인 것
       (`newUnit.prefixSizes` = 파이썬 `prefix_sizes`) → 이 층 가운데 크기(`defaultSize`). 빌린 크기는 `sizeGuessed`·
       `sizeFrom` 이고 상태 줄에 「크기를 … 에서 불러옴」을 쓴다(`trayPlan`).
+      「마지막으로 놓은 것」 기록(`S.placedLog`)은 적용 뒤에도 지우지 않고 같은 편집기 화면(마운트)이 이어 쓴다. 기록은
+      `host.__sle` 에 있고, 적용 뒤 다시 맞춘 새 epoch 가 상태를 비울 때도 이 기록은 건드리지 않는다 — 「이번 편집」 은 적용
+      한 번이 아니라 같은 편집기 화면이 마운트된 동안이다.
     - 서랍 Shift 범위(`pickChip`): 기준 칩(마지막으로 그냥·Ctrl 로 누른 칩, `S.trayAnchor`)부터 누른 칩까지 지금 보이는
       차례, Ctrl+Shift 는 더하기, 묶음 칩은 한 칸.
   - **키보드**(2026-10-26 E2E — 마우스 없이는 호기 하나를 고르거나 칩을 놓을 길이 없었다). 호기 상자(편집·층 보기)와 편집의
@@ -1757,6 +1760,8 @@
       이웃과 그 둘의 묶음 형제도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
       `showSummary` 가 요약 끝에 「겹쳐 숨긴 반입 예정 n대」로 붙인다(파이썬 범례 대수는 그대로). 지분은 파이썬 기준일의
       것이라(같은 epoch 회차에도 `unitLook` 으로 새로 받음) 페이더를 끄는 동안에는 숨김(그날)과 지분(직전 날)이 섞인다.
+      묶음째 숨김의 예외 — 이 층에 그린 같은 묶음 모듈 가운데 「필요 단축」 표시(`layer`)가 하나라도 있으면 그 묶음은
+      숨기지 않는다. 표시 없는 반입 전 형제가 덮여도 보인다(`coveredWithMates` 의 `mates.some((m) => m.layer)`).
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
