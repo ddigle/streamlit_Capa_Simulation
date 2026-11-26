@@ -1033,7 +1033,7 @@
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
   기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 다섯 탭과 「부하 예외」(고르는 공정 목록이 활성 리비전 소요기준)만
   시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은 둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py`,
-  다섯째는 `components/process_group_editor.py`(활성 시나리오 `RQ_MODULE` 이 줄 — 편집 표라 닫혀 있어도 그리고 닫힌 회차는 공용 프로필 캐시만, 저장 벽은 `home.settings`)를 그린다. 계산 알림을
+  다섯째는 `components/process_group_editor.py`(활성 시나리오 `RQ_MODULE` 이 줄 — 차례는 HOME 공정 필터와 같은 공용 표시순서(`get_display_ordered_values` — 규칙 오류면 이름 차례), 편집 표라 닫혀 있어도 그리고 닫힌 회차는 공용 프로필 캐시만, 저장 벽은 `home.settings`)를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(위젯이 단추 · 내려받기 · 확인

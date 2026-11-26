@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.access_list_admin import (
@@ -62,6 +63,12 @@ from capa_simulation.navigation import (
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
+from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+from capa_simulation.services.simulation_cache import (
+    display_order_digest,
+    get_display_ordered_values,
+    get_prepared_display_order,
+)
 from capa_simulation.settings import DUCKDB_PATH
 
 # 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs` 라
@@ -206,6 +213,24 @@ try:
 except BOOTSTRAP_ERRORS:
     available_processes = []
     requirement_processes = []
+# 「공정 그룹」 탭의 줄 차례만 HOME 설정 카드 · 공정 필터와 같은 공용 표시순서(산출 결과 › 확보율
+# 범위)다 — 규칙 밖 공정은 이름 차례로 뒤에 선다. Proc Rename · 부하 예외 목록은 원본 이름 차례
+# 그대로다. 준비 · 정렬은 표시순서 지문 키 캐시라, 편집 표라 늘 그리는 닫힌 탭 회차도 캐시만
+# 꺼낸다(줄 차례가 열린 회차와 같아야 표 key 의 줄 지문이 같다). 잘못 저장된 규칙이면 이름 차례로
+# 물러선다 — 겹친 분류값은 「표시순서 관리」 탭의 `AD-05` 가 알린다.
+group_processes = available_processes
+if available_processes:
+    try:
+        display_order = reference_tables["RQ_DISPLAY_ORDER"]
+        group_processes = get_display_ordered_values(
+            pd.DataFrame({"공정": available_processes}),
+            display_order_digest(display_order),
+            PAGE_CALCULATION,
+            TAB_SECUREMENT,
+            _display_order=get_prepared_display_order(display_order),
+        )
+    except BOOTSTRAP_ERRORS:
+        group_processes = available_processes
 
 # 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
 # 회차에만 낸다(닫힌 탭이면 None — `open_tab_name`). 「그 화면으로」 가 그 탭을 연다.
@@ -252,11 +277,12 @@ with extra_process_tab:
         )
 with process_group_tab:
     # HOME 공정 필터 그룹 단추가 쓰는 공용 공정 그룹 — HOME 설정 카드와 같은 부품에 활성
-    # 시나리오의 모든 공정(`RQ_MODULE` — Proc Rename 과 같은 목록)을 줄로 넘겨 조회기간에 확보율이
-    # 없는 공정에도 그룹을 준다. 편집 표가 있어 닫혀 있어도 그린다(닫힌 회차는 공용 프로필 캐시만
-    # 읽는다). 저장 벽은 HOME 설정과 같은 `home.settings` 다(쓰기 하나에 벽 하나).
+    # 시나리오의 모든 공정(`RQ_MODULE` — Proc Rename 과 같은 목록, 차례는 공용 표시순서)을 줄로
+    # 넘겨 조회기간에 확보율이 없는 공정에도 그룹을 준다. 편집 표가 있어 닫혀 있어도 그린다(닫힌
+    # 회차는 공용 프로필 캐시만 읽는다). 저장 벽은 HOME 설정과 같은 `home.settings` 다(쓰기 하나에
+    # 벽 하나).
     render_process_group_editor(
-        process_options=available_processes,
+        process_options=group_processes,
         process_labels=get_process_labels(),
         database_path=database_path,
         read_only=not viewer_can("home.settings"),

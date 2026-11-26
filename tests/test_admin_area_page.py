@@ -26,6 +26,7 @@ from streamlit.testing.v1.element_tree import Dataframe, TextInput
 
 import capa_simulation.components.process_group_editor as process_group_editor
 import capa_simulation.components.write_guard as write_guard
+import capa_simulation.services.simulation_cache as simulation_cache
 import capa_simulation.settings as settings
 from capa_simulation.components.data_error_mark import MARK_CLASS
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -64,6 +65,12 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.models import GlobalProcessGroup
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.display_order import apply_display_order, prepare_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_CALCULATION,
+    TAB_SECUREMENT,
+    TAB_UNIT_CAPACITY,
+)
 from capa_simulation.services.process_group import PROCESS_GROUP_COLUMNS, PROCESS_GROUPS
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
@@ -1965,3 +1972,151 @@ def test_the_process_group_tab_carries_the_mark_when_the_database_cannot_open(
     tab = _group_tab(app)
     assert sum(MARK_CLASS in str(element.proto.body) for element in tab.get("html")) == 1
     assert data_error_marks(app) == 1, "열린 「공정 그룹」 탭 안에만"
+
+
+def _order_rule(
+    tab: str, mode: str, value: str | None = None, rank: int | None = None
+) -> dict[str, object]:
+    """「산출 결과」 페이지 `tab` 범위의 공정 규칙 한 줄(합성)."""
+    return {
+        "페이지 구분": PAGE_CALCULATION,
+        "탭 구분": tab,
+        "정렬우선순위": 1,
+        "분류컬럼": "공정",
+        "정렬방식": mode,
+        "분류값": value,
+        "값표시순서": rank,
+        "활성여부": "Y",
+    }
+
+
+def _replace_display_order(app: AppTest, rules: list[dict[str, object]]) -> pd.DataFrame:
+    """세션 활성 리비전의 공용 표시순서를 합성 규칙으로 바꾼다 — 저장소 검증을 지나지 않아 잘못된
+    규칙도 넣는다(「표시순서 관리」 저장이 세션 표를 바꾸는 자리와 같다)."""
+    order = pd.DataFrame(rules)
+    tables = app.session_state[SESSION_REFERENCE_TABLES_KEY]
+    app.session_state[SESSION_REFERENCE_TABLES_KEY] = {**tables, "RQ_DISPLAY_ORDER": order}
+    return order
+
+
+def _owned_processes(app: AppTest) -> list[str]:
+    """Proc Rename 「보유 공정 n개」 팝오버의 원본 공정 목록(차례 그대로)."""
+    (tab,) = [tab for tab in app.main.tabs if tab.label == TAB_NAMES[0]]
+    (frame,) = [frame for frame in tab.dataframe if tuple(frame.value.columns) == ("공정",)]
+    return [str(process) for process in frame.value["공정"]]
+
+
+def test_the_process_group_rows_follow_the_shared_display_order(group_database: Path) -> None:
+    """Admin 「공정 그룹」 탭의 줄 차례는 HOME 설정 카드 · 공정 필터와 같은 공용 표시순서(산출
+    결과 › 확보율 범위)다 — 규칙에 든 공정이 그 차례로 앞에, 규칙 밖 공정은 이름 차례로 그 뒤에,
+    목록 밖 저장 공정은 맨 뒤에 선다. 다른 범위(대당 Capa)의 규칙은 이 차례를 바꾸지 않고, Proc
+    Rename 「보유 공정」 목록은 원본 이름 차례 그대로다(내장 시드의 확보율 규칙은 공정 오름차순이라
+    이름 차례와 같다 — 그래서 이름 차례와 갈리는 규칙을 넣어 가른다)."""
+    store = DuckDBScenarioRepository(group_database)
+    store.initialize()
+    store.replace_global_process_group([(ABSENT_PROCESS, PROCESS_GROUPS[1])], source="처음 저장")
+    app = _group_app()
+    # 규칙 밖 공정이 둘 이상이게 `RQ_MODULE` 에만 있는 공정 하나를 더한다.
+    tables = app.session_state[SESSION_REFERENCE_TABLES_KEY]
+    extra = tables["RQ_MODULE"].head(1).copy()
+    extra["공정"] = MODULE_ONLY_PROCESS
+    app.session_state[SESSION_REFERENCE_TABLES_KEY] = {
+        **tables,
+        "RQ_MODULE": pd.concat([tables["RQ_MODULE"], extra], ignore_index=True),
+    }
+    processes = _scenario_processes(app)
+    assert len(processes) >= 4
+    # 이름 차례를 거꾸로 세운 두 공정만 규칙에 든다.
+    listed = [processes[-1], processes[0]]
+    _replace_display_order(
+        app,
+        [
+            _order_rule(TAB_SECUREMENT, "사용자지정", listed[0], 1),
+            _order_rule(TAB_SECUREMENT, "사용자지정", listed[1], 2),
+            _order_rule(TAB_UNIT_CAPACITY, "내림차순"),
+        ],
+    )
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    expected = [*listed, *(process for process in processes if process not in listed)]
+    assert expected != processes
+    assert _group_rows(app) == [
+        *((process, None) for process in expected),
+        (ABSENT_PROCESS, PROCESS_GROUPS[1]),
+    ]
+    assert _owned_processes(app) == processes
+
+
+@pytest.mark.parametrize("broken", ["mode", "clash"])
+def test_a_broken_display_order_leaves_the_process_group_rows_in_name_order(
+    group_database: Path, broken: str
+) -> None:
+    """표시순서 규칙이 잘못 저장돼 정렬이 ValueError 를 내면(준비에서 — 지원하지 않는 정렬방식,
+    적용에서 — 대소문자만 다른 사용자지정 분류값) 「공정 그룹」 탭은 멈추지 않고 원본 이름 차례로
+    선다. 탭 안 「데이터 Error」 마크 · 알림을 새로 내지 않는다 — 겹친 분류값은 「표시순서 관리」
+    탭의 `AD-05` 몫이다."""
+    app = _group_app()
+    processes = _scenario_processes(app)
+    rules = (
+        [_order_rule(TAB_SECUREMENT, "DEMO_무작위")]
+        if broken == "mode"
+        else [
+            _order_rule(TAB_SECUREMENT, "사용자지정", processes[-1], 1),
+            _order_rule(TAB_SECUREMENT, "사용자지정", processes[-1].lower(), 2),
+        ]
+    )
+    order = _replace_display_order(app, rules)
+    with pytest.raises(ValueError):
+        apply_display_order(
+            pd.DataFrame({"공정": processes}), order, PAGE_CALCULATION, TAB_SECUREMENT
+        )
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    # 그 회차가 규칙을 갈아 끼우지 않았다 — 잘못된 규칙을 쥔 채 그렸다.
+    assert app.session_state[SESSION_REFERENCE_TABLES_KEY]["RQ_DISPLAY_ORDER"].equals(order)
+    assert _group_rows(app) == [(process, None) for process in processes]
+    assert _owned_processes(app) == processes
+    assert data_error_marks(app) == 0
+    assert not events(app, "AD-07") and not place_errors(app)
+
+
+def test_a_closed_process_group_tab_round_reuses_the_cached_order(
+    group_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """닫힌 「공정 그룹」 탭도 편집 표라 늘 그리지만, 같은 공정 · 같은 표시순서의 다음 회차는 규칙을
+    다시 준비하거나 정렬하지 않는다(표시순서 지문 키 캐시 — 계산 화면 공정 선택지와 같은 칸)."""
+    calls: list[str] = []
+    prepare = prepare_display_order
+    apply = apply_display_order
+
+    def counted_prepare(*args: Any, **kwargs: Any) -> Any:
+        calls.append("prepare")
+        return prepare(*args, **kwargs)
+
+    def counted_apply(*args: Any, **kwargs: Any) -> Any:
+        calls.append("apply")
+        return apply(*args, **kwargs)
+
+    monkeypatch.setattr(simulation_cache, "prepare_display_order", counted_prepare)
+    monkeypatch.setattr(simulation_cache, "apply_display_order", counted_apply)
+    app = _group_app(opened=False)
+    processes = _scenario_processes(app)
+    # 이 시험만의 규칙이라 첫 회차는 캐시에 없다.
+    _replace_display_order(
+        app,
+        [
+            _order_rule(TAB_SECUREMENT, "사용자지정", processes[-1], 1),
+            _order_rule(TAB_SECUREMENT, "사용자지정", str(group_database), 2),
+        ],
+    )
+    calls.clear()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert calls == ["prepare", "apply"]
+
+    calls.clear()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert calls == []
