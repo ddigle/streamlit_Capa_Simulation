@@ -100,7 +100,7 @@
   `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
   `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
   - 로그인은 `response_type=id_token` · `response_mode=form_post` 로 ID 토큰만 받아 코드 교환이 없다(`auth/web.py`) — 포털이 준 Client Secret 은 쓰지 않고, 넣을 환경변수 자리도 없다.
-  - 「접속 권한 신청」 단추 이름은 상수 `auth/web.REGISTER_LABEL` 하나다 — 거절 화면(`auth/web.py`) · 앱 안 멈춤 판(`components/sso_identity.py`) · 띠(`components/sso_reconnect.py`)가 그 상수를 불러 쓰고 글자를 따로 적지 않는다.
+  - 「접속 권한 신청」 단추 라벨은 상수 `auth/web.REGISTER_LABEL` 하나다 — 거절 화면(`auth/web.py`) · 앱 안 멈춤 판(`components/sso_identity.py`) · 띠(`components/sso_reconnect.py`)의 단추가 그 상수를 불러 쓴다. 시작 임시 화면의 잃은 신청 글(`scripts/container_stage.py` 의 `NOTE_REGISTER_LOST`)은 같은 이름을 글자로 적고 `tests/test_container_stage.py` 가 그 상수와 맞댄다.
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
     없이 뜬 서버는 멈춤 화면 + `st.stop()`). 문지기 없이 뜬 서버는 경고 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 문의 캡션 · 참고 줄 ·
