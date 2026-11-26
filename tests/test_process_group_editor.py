@@ -7,10 +7,12 @@
   `PROCESS_GROUPS` 차례다.
 - 저장은 버전 대조다 — 그룹을 고른 저장은 새 버전이고 목록 밖 저장 공정이 남는다. 바꾼 것 없는
   저장은 새 버전을 만들지 않는다(v0 의 첫 저장은 쓴다). 남의 저장 뒤 옛 화면의 저장은 거부되고 옛
-  편집은 버려진다. 느린 둘째 누름은 방금 성공을 다시 알린다. 빠른 두 번 누름 · 넘어온 거부 글은
-  `tests/test_write_guard_cas.py` 가 본다.
+  편집은 버려지며 적은 메모는 남는다. 거부 직후 창 안의 둘째 누름은 저장하지 않고 그 거부를 다시
+  알린다. 느린 둘째 누름은 방금 성공을 다시 알린다. 빠른 두 번 누름(메모 비우기 포함) · 넘어온 거부
+  글은 `tests/test_write_guard_cas.py` 가 본다.
 - 선택지가 비면 캡션 한 줄이고 표가 없다. 값만 보기는 표가 잠기고 저장 줄이 없다. 읽기 실패는 카드
-  자리에 「데이터 Error」 마크다.
+  자리에 「데이터 Error」 마크다 — 읽기 함수는 `monkeypatch` 로 바꾼다(AppTest 는 같은 프로세스라
+  스크립트 안에서 모듈 속성을 바꾸면 뒤 시험에 남는다).
 """
 
 from __future__ import annotations
@@ -23,12 +25,15 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import data_error_marks, infos, place_errors, successes
+from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.process_group_editor as process_group_editor
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.process_group_editor import (
     ABSENT_MARK,
     NO_PROCESS_CAPTION,
+    PROCESS_GROUP_BASE_VERSION_KEY,
     PROCESS_GROUP_NOTE_KEY,
     PROCESS_GROUP_SAVE_LABEL,
     PROCESS_GROUP_SAVED_MESSAGE,
@@ -37,6 +42,7 @@ from capa_simulation.components.process_group_editor import (
     process_group_editor_key,
 )
 from capa_simulation.persistence.cache import clear_global_process_group_cache
+from capa_simulation.persistence.models import GlobalProcessGroup
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.process_group import (
     PROCESS_GROUP_LABEL,
@@ -65,21 +71,14 @@ def _script(
     options: Sequence[str] = OPTIONS,
     *,
     read_only: bool = False,
-    failing: bool = False,
 ) -> str:
-    failure = (
-        "editor.load_global_process_group = lambda path: (_ for _ in ()).throw("
-        "OSError('DEMO 읽기 실패'))\n"
-        if failing
-        else ""
-    )
     return f"""
 import pandas as pd
 
 import capa_simulation.components.process_group_editor as editor
 from capa_simulation.components.process_labels import process_labels_from_rules
 
-{failure}editor.render_process_group_editor(
+editor.render_process_group_editor(
     process_options={list(options)!r},
     process_labels=process_labels_from_rules(
         pd.DataFrame({{"공정": ["DEMO_WB"], "표시명": ["DEMO 와이어"]}})
@@ -126,9 +125,22 @@ def _edit(app: AppTest, version: int, edits: dict[int, dict[str, object]]) -> No
     }
 
 
-def _press(app: AppTest) -> AppTest:
+def _pressed(app: AppTest) -> WidgetStates:
+    """「공정 그룹 저장」 을 누른 화면의 위젯 값(둘째 누름이 그대로 다시 보낸다)."""
     next(button for button in app.button if button.label == PROCESS_GROUP_SAVE_LABEL).click()
+    return app._tree.get_widget_states()
+
+
+def _press(app: AppTest) -> AppTest:
+    _pressed(app)
     app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    return app
+
+
+def _resend(app: AppTest, pressed: WidgetStates) -> AppTest:
+    """누른 화면의 위젯 값을 한 번 더 보낸다 — 앞 회차 뒤에 닿은 같은 누름."""
+    app._run(widget_state=pressed)
     assert not app.exception, [item.message for item in app.exception]
     return app
 
@@ -255,6 +267,88 @@ def test_a_save_on_a_screen_older_than_another_save_is_refused_and_its_edits_dro
     assert profile.assignments == (("DEMO DA", "FRONT"), ("DEMO_WB", "PKG"))
 
 
+def _refused_old_screen(repository: DuckDBScenarioRepository) -> tuple[AppTest, WidgetStates]:
+    """v1 을 본 화면 — 다른 세션이 v2 로 저장한 뒤 그룹 칸을 고치고 메모를 적어 누른 누름이 거부된
+    화면과 그 누름의 위젯 값."""
+    _seed(repository, [("DEMO DA", "FRONT")])
+    app = _app(repository)
+    repository.replace_global_process_group(
+        [("DEMO DA", "FRONT"), ("DEMO_WB", "TEST")], source="다른 세션", expected_version=1
+    )
+    clear_global_process_group_cache()
+    _edit(app, 1, {1: {"공정그룹": "PKG"}})
+    app.text_input(key=PROCESS_GROUP_NOTE_KEY).set_value("거부될 메모")
+    pressed = _pressed(app)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    errors = _texts(app.error)
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    return app, pressed
+
+
+def test_a_refused_save_keeps_the_typed_note(repository: DuckDBScenarioRepository) -> None:
+    """남의 저장에 거부된 저장은 적은 메모를 지우지 않는다(확보율 보정 편집기와 같은 꼴)."""
+    app, _pressed_states = _refused_old_screen(repository)
+
+    assert not successes(app)
+    assert app.text_input(key=PROCESS_GROUP_NOTE_KEY).value == "거부될 메모"
+    profile = repository.load_global_process_group()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+
+
+def test_a_second_press_right_after_a_refusal_keeps_the_refusal(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면의 두 번 누름 — 거부 회차가 본 version 을 최신으로 적어 둘째 누름은
+    대조를 지나지만, 거부 직후 창(`TRAILING_PRESS_SECONDS`) 안이라 저장하지 않고 그 거부를 한 번
+    다시 알린다(「바뀐 것이 없습니다」 로 덮지 않는다). 창이 지난 뒤 새 화면을 보고 고쳐 누른
+    저장은 지난다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app, pressed = _refused_old_screen(repository)
+
+    app = _resend(app, pressed)
+
+    errors = _texts(app.error)
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not successes(app) and not infos(app)
+    profile = repository.load_global_process_group()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit(app, 2, {1: {"공정그룹": "PKG"}})
+    app = _press(app)
+    assert not place_errors(app), place_errors(app)
+    assert _texts(successes(app)) == [PROCESS_GROUP_SAVED_MESSAGE]
+    profile = repository.load_global_process_group()
+    assert (profile.version, profile.source) == (3, "거부될 메모")
+    assert profile.assignments == (("DEMO DA", "FRONT"), ("DEMO_WB", "PKG"))
+
+
+def test_a_single_press_after_a_held_second_press_saves(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 누름이 거부 뒤 회차를 끊고 거부 표지에 걸려 끝나도 그 회차가 그린 최신 version 을 본
+    값으로 적는다 — 창이 지난 뒤 새 화면을 보고 한 번 누른 저장은 저장된다. 끊긴 회차는 본 version
+    을 옛 값으로 되살려 흉내 낸다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app, pressed = _refused_old_screen(repository)
+
+    app.session_state[PROCESS_GROUP_BASE_VERSION_KEY] = 1
+    app = _resend(app, pressed)
+    errors = _texts(app.error)
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert repository.load_global_process_group().version == 2
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit(app, 2, {1: {"공정그룹": "MI"}})
+    app = _press(app)
+    assert not place_errors(app), place_errors(app)
+    assert _texts(successes(app)) == [PROCESS_GROUP_SAVED_MESSAGE]
+    profile = repository.load_global_process_group()
+    assert profile.version == 3
+    assert profile.assignments == (("DEMO DA", "FRONT"), ("DEMO_WB", "MI"))
+
+
 def test_a_slow_second_press_repeats_the_success(
     repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -297,9 +391,13 @@ def test_below_the_manager_the_card_shows_values_only(repository: DuckDBScenario
 
 
 def test_a_read_failure_is_a_data_error_mark_on_the_card(
-    repository: DuckDBScenarioRepository,
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    app = _app(repository, failing=True)
+    def broken(path: str) -> GlobalProcessGroup:
+        raise OSError("DEMO 읽기 실패")
+
+    monkeypatch.setattr(process_group_editor, "load_global_process_group", broken)
+    app = _app(repository)
 
     assert data_error_marks(app) == 1
     assert not app.dataframe and not app.button

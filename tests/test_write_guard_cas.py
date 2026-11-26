@@ -97,6 +97,7 @@ from capa_simulation.components.home_preference import (
     THRESHOLD_SAVED_MESSAGE,
 )
 from capa_simulation.components.process_group_editor import (
+    PROCESS_GROUP_NOTE_KEY,
     PROCESS_GROUP_SAVE_LABEL,
     PROCESS_GROUP_SAVE_NAME,
     PROCESS_GROUP_SAVED_MESSAGE,
@@ -1023,6 +1024,31 @@ def test_a_double_press_of_the_process_group_save_writes_once_and_says_saved(
     profile = repository.load_global_process_group()
     assert profile.version == 2
     assert profile.assignments == (("DEMO_A", "FRONT"), ("DEMO_B", "PKG"))
+    clear_global_process_group_cache()
+
+
+def test_a_double_press_of_the_process_group_save_that_cut_the_first_run_empties_the_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 공정 그룹 — 첫 누름이 저장한 직후 끊겨 메모 칸을 비울 표지를 남기지 못해도, 제 저장임을
+    알아본 둘째 누름이 그 메모(첫 누름 글)를 비운다."""
+    app, repository = _process_group_app(tmp_path)
+    _group_edit(app, 1, "PKG")
+    app.text_input(key=PROCESS_GROUP_NOTE_KEY).set_value("첫 메모")
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, PROCESS_GROUP_SAVE_LABEL),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_process_group",
+    )
+
+    assert _texts(app, "error") == []
+    assert _texts(app, "success") == [PROCESS_GROUP_SAVED_MESSAGE]
+    assert app.text_input(key=PROCESS_GROUP_NOTE_KEY).value == ""
+    profile = repository.load_global_process_group()
+    assert (profile.version, profile.source) == (2, "첫 메모")
     clear_global_process_group_cache()
 
 
