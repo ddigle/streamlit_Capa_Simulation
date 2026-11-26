@@ -32,6 +32,7 @@ import capa_simulation.components.process_group_editor as process_group_editor
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.process_group_editor import (
     ABSENT_MARK,
+    ABSENT_PROCESS_GROUP_HELP,
     NO_PROCESS_CAPTION,
     PROCESS_GROUP_BASE_VERSION_KEY,
     PROCESS_GROUP_NOTE_KEY,
@@ -166,7 +167,7 @@ def test_rows_are_the_options_then_the_stored_processes_off_this_screen(
         {"value": "DEMO_WB", "label": "DEMO 와이어"},
         {"value": "DEMO_GONE", "label": f"DEMO_GONE{ABSENT_MARK}"},
     ]
-    assert process["help"]
+    assert process["help"] == ABSENT_PROCESS_GROUP_HELP
     group = columns["공정그룹"]
     assert group["label"] == PROCESS_GROUP_LABEL
     assert group["type_config"]["options"] == list(PROCESS_GROUPS)

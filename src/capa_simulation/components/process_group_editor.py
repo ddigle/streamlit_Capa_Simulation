@@ -7,12 +7,14 @@
 - HOME 설정 `Capa 요약 · 표시` 탭 — 조회기간 공정(확보율 선택지)을 넘기는 테 두른 카드다.
 - Admin Area 「공정 그룹」 탭(`AdminTab`) — 활성 시나리오의 모든 공정(`RQ_MODULE`)을 넘겨 조회기간에
   확보율이 없는 공정에도 그룹을 준다. 탭 이름을 거듭하지 않게 제목이 Admin 의 다른 편집 탭과 같은
-  「직접 편집」 이고 테가 없다(UI-TXT-07 · UI-CON-03). 빈 선택지 글 · 읽기 실패 마크(`AD-07` — 열린
-  탭에서만)도 Admin 낱말이다.
+  「직접 편집」 이고 테가 없다(UI-TXT-07 · UI-CON-03). 빈 선택지 글 · 목록 밖 표지와 그 풍선 · 읽기
+  실패 마크(`AD-07` — 열린 탭에서만)도 Admin 낱말이다.
 
 줄은 받은 목록 차례(한 열쇠는 한 줄 — `services.process_group.process_group_editor_frame`)이고,
-그 목록에 없는 저장 공정은 뒤에 「· 이 화면에 없음」 을 달고 선다. 통째 교체 저장이 화면에 안 보이는
-남의 값을 지우지 않게 저장된 줄을 모두 보인다 — 지우려면 그 줄의 그룹 칸을 비운다.
+그 목록에 없는 저장 공정은 뒤에 표지를 달고 선다. HOME 은 「· 이 화면에 없음」(조회기간 선택지 밖),
+Admin 은 옆 탭 Proc Rename 과 같은 낱말 「· 보유 공정 밖」(활성 시나리오 `RQ_MODULE` 밖)이다 — 두
+목록이 다른 개념이라 이름도 둘이다(UI-CON-02). 통째 교체 저장이 화면에 안 보이는 남의 값을 지우지
+않게 저장된 줄을 모두 보인다 — 지우려면 그 줄의 그룹 칸을 비운다.
 
 저장은 확보율 보정 편집기(`home_preference._render_execution_editor`)와 같은 길이다.
 
@@ -118,9 +120,16 @@ ABSENT_PROCESS_GROUP_HELP = (
 )
 DEFAULT_SOURCE = "웹 직접 편집"
 # Admin Area 「공정 그룹」 탭 자리 — 탭 이름을 거듭하지 않는 제목(Admin 의 다른 편집 탭과 같은
-# 낱말), 활성 시나리오 공정이 없을 때의 글, 저장 단추 풍선(HOME 의 공용 설정 풍선은 팝업을 말한다).
+# 낱말), 보유 공정이 없을 때의 글, 목록 밖 표지와 「공정」 칸 풍선(Proc Rename 의 「보유 공정
+# 밖」 과 같은 낱말), 저장 단추 풍선(HOME 의 공용 설정 풍선은 팝업을 말한다).
 ADMIN_TITLE = "#### 직접 편집"
-ADMIN_NO_PROCESS_CAPTION = "활성 시나리오의 공정이 없어 입력할 칸이 없습니다."
+ADMIN_NO_PROCESS_CAPTION = "활성 시나리오의 보유 공정이 없어 입력할 칸이 없습니다."
+ADMIN_ABSENT_MARK = " · 보유 공정 밖"
+ADMIN_ABSENT_PROCESS_GROUP_HELP = (
+    "「보유 공정 밖」 공정은 이 시나리오의 보유 공정에 없는 공정입니다. 공용 설정이라 저장해도 "
+    "그대로 남고, 그 공정이 있는 시나리오에서는 HOME 공정 필터의 그룹 단추에 듭니다. 빼려면 공정 "
+    "그룹 칸을 비웁니다."
+)
 ADMIN_SAVE_HELP = (
     "모든 사용자가 함께 쓰는 공용 설정으로 저장합니다. HOME 설정 「Capa 요약 · 표시」 탭의 "
     "「공정 그룹」 과 같은 값입니다."
@@ -155,8 +164,8 @@ def render_process_group_editor(
 
     `process_options` 는 줄로 세울 원본 공정(부르는 쪽 차례 그대로)이고 글자만 표시명이다.
     `read_only` 이면 표가 잠기고 저장 줄(단추 · 메모)이 없다 — 값은 그대로 보인다. `save_help` 는
-    저장 단추 풍선이다. `admin` 을 주면 Admin Area 탭 자리다(제목 · 테 · 빈 선택지 글 · 읽기 실패
-    마크 — 모듈 설명).
+    저장 단추 풍선이다. `admin` 을 주면 Admin Area 탭 자리다(제목 · 테 · 빈 선택지 글 · 목록 밖
+    표지와 풍선 · 읽기 실패 마크 — 모듈 설명).
     """
     submitted_base = seen(PROCESS_GROUP_BASE_VERSION_KEY)
     try:
@@ -227,7 +236,16 @@ def render_process_group_editor(
                 disabled=read_only,
                 width="stretch",
                 placeholder="",
-                column_config=_column_config(processes, outside, process_labels),
+                column_config=_column_config(
+                    processes,
+                    outside,
+                    process_labels,
+                    absent_text=(
+                        (ABSENT_MARK, ABSENT_PROCESS_GROUP_HELP)
+                        if admin is None
+                        else (ADMIN_ABSENT_MARK, ADMIN_ABSENT_PROCESS_GROUP_HELP)
+                    ),
+                ),
             )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출 · 충돌 회차에는 적지 않는다.
@@ -295,15 +313,21 @@ def _column_config(
     processes: Sequence[str],
     outside: Sequence[str],
     process_labels: ProcessLabels,
+    *,
+    absent_text: tuple[str, str],
 ) -> dict[str, ColumnConfig]:
-    """두 칸 — 「공정」(잠김, 값은 원본 · 글자는 표시명) · 「공정 그룹」(빈 칸 = 그룹 없음)."""
+    """두 칸 — 「공정」(잠김, 값은 원본 · 글자는 표시명) · 「공정 그룹」(빈 칸 = 그룹 없음).
+
+    `absent_text` 는 목록 밖 줄의 표지와 「공정」 칸 풍선이다(자리마다 낱말이 다르다 — 모듈 설명).
+    """
     process_column, group_column = PROCESS_GROUP_COLUMNS
     base_format = process_labels.unique_format_func(processes)
     absent = frozenset(outside)
+    absent_mark, absent_help = absent_text
 
     def process_text(value: str | int | float | bool) -> str:
         text = base_format(value)
-        return f"{text}{ABSENT_MARK}" if value in absent else text
+        return f"{text}{absent_mark}" if value in absent else text
 
     return {
         process_column: st.column_config.SelectboxColumn(
@@ -311,7 +335,7 @@ def _column_config(
             options=list(processes),
             format_func=process_text,
             disabled=True,
-            help=ABSENT_PROCESS_GROUP_HELP if absent else None,
+            help=absent_help if absent else None,
         ),
         group_column: st.column_config.SelectboxColumn(
             PROCESS_GROUP_LABEL,

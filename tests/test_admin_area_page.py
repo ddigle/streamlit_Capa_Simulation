@@ -31,6 +31,8 @@ from capa_simulation.components.data_error_mark import MARK_CLASS
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_group_editor import (
     ABSENT_MARK,
+    ADMIN_ABSENT_MARK,
+    ADMIN_ABSENT_PROCESS_GROUP_HELP,
     ADMIN_NO_PROCESS_CAPTION,
     ADMIN_SAVE_HELP,
     ADMIN_TITLE,
@@ -1453,7 +1455,7 @@ def test_the_module_status_is_a_popover_at_the_tab_row_only_with_modules(
         caption for caption in app.caption if module_registry.DISABLED_ENV_VAR in caption.value
     ]
     assert "앱을 다시 띄운 뒤" in environment.proto.help
-    # 탭은 그대로 앞 넷과 「부하 예외」 · 맨 끝 「공지」 다.
+    # 탭은 그대로 앞 다섯과 「부하 예외」 · 맨 끝 「공지」 다.
     assert [tab.label for tab in app.main.tabs] == [
         *TAB_NAMES,
         ADMIN_AREA_ROUTE_EXCEPTION_TAB,
@@ -1734,8 +1736,10 @@ def test_a_failed_start_check_is_told_to_the_admin_only(
 # --- 공정 그룹 탭(HOME 설정 카드와 같은 부품 · 활성 시나리오의 모든 공정) ------------------------
 
 PROCESS_GROUP_TAB = TAB_NAMES[4]
-# 활성 시나리오(내장 시드)에 없는 합성 공정 — 저장돼 있으면 「· 이 화면에 없음」 줄로 선다.
+# 활성 시나리오(내장 시드)에 없는 합성 공정 — 저장돼 있으면 「· 보유 공정 밖」 줄로 선다.
 ABSENT_PROCESS = "DEMO-공정 그룹 목록 밖"
+# 활성 시나리오 `RQ_MODULE` 에만 넣는 합성 공정 — 소요기준(`RQ_REQB`)에 없어 확보율도 없다.
+MODULE_ONLY_PROCESS = "DEMO_MODULE_ONLY"
 SEEDED_SCRIPT = f"""
 from pathlib import Path
 
@@ -1800,12 +1804,27 @@ def _group_save(app: AppTest) -> Any:
     return next(button for button in app.button if button.label == PROCESS_GROUP_SAVE_LABEL)
 
 
+def _group_process_column(app: AppTest) -> dict[str, Any]:
+    """편집 표 「공정」 칸 설정(선택지 값 → 글자 · 풍선)."""
+    column: dict[str, Any] = json.loads(_group_tab(app).dataframe[0].proto.columns)["공정"]
+    return column
+
+
+def _group_process_texts(app: AppTest) -> dict[str, str]:
+    return {
+        str(option["value"]): str(option["label"])
+        for option in _group_process_column(app)["type_config"]["options"]
+    }
+
+
 def test_the_process_group_tab_lists_every_process_of_the_active_scenario(
     group_database: Path,
 ) -> None:
     """Admin 「공정 그룹」 탭은 HOME 설정 카드와 같은 부품에 활성 시나리오의 모든 공정을 줄로
-    넘긴다 — 조회기간에 확보율이 없는 공정에도 그룹을 준다. 목록 밖 저장 공정은 「· 이 화면에
-    없음」 을 달고 뒤에 선다. 제목은 탭 이름을 거듭하지 않는 「직접 편집」 이다(UI-TXT-07)."""
+    넘긴다 — 조회기간에 확보율이 없는 공정에도 그룹을 준다. 목록 밖 저장 공정은 옆 탭 Proc Rename
+    과 같은 낱말 「· 보유 공정 밖」 을 달고 뒤에 서고, 「공정」 칸 풍선도 그 낱말이다(UI-CON-02 —
+    HOME 의 「· 이 화면에 없음」 은 조회기간 선택지 밖이라 다른 이름). 제목은 탭 이름을 거듭하지
+    않는 「직접 편집」 이다(UI-TXT-07)."""
     store = DuckDBScenarioRepository(group_database)
     store.initialize()
     store.replace_global_process_group([(ABSENT_PROCESS, PROCESS_GROUPS[1])], source="처음 저장")
@@ -1817,13 +1836,49 @@ def test_the_process_group_tab_lists_every_process_of_the_active_scenario(
         *((process, None) for process in processes),
         (ABSENT_PROCESS, PROCESS_GROUPS[1]),
     ]
-    columns = json.loads(_group_tab(app).dataframe[0].proto.columns)
-    assert ABSENT_PROCESS + ABSENT_MARK in json.dumps(columns, ensure_ascii=False)
+    texts = _group_process_texts(app)
+    assert texts[ABSENT_PROCESS] == ABSENT_PROCESS + ADMIN_ABSENT_MARK
+    assert not [text for text in texts.values() if text.endswith(ABSENT_MARK)]
+    assert _group_process_column(app)["help"] == ADMIN_ABSENT_PROCESS_GROUP_HELP
     headings = [str(item.value) for item in _group_tab(app).markdown]
     assert ADMIN_TITLE in headings and PROCESS_GROUP_TITLE not in headings
     save = _group_save(app)
     assert save.help == ADMIN_SAVE_HELP and not save.disabled
     assert not place_errors(app)
+
+
+def test_a_process_only_in_the_scenario_module_table_stands_as_a_row(group_database: Path) -> None:
+    """Admin 탭의 줄은 활성 시나리오 `RQ_MODULE` 공정이다 — 소요기준(`RQ_REQB`)에 없어 확보율이
+    없는 공정도 시나리오 차례의 제 줄로 서고 목록 밖 표지 · 풍선이 없다(HOME 카드와 갈리는 몫)."""
+    store = DuckDBScenarioRepository(group_database)
+    store.initialize()
+    store.replace_global_process_group(
+        [(MODULE_ONLY_PROCESS, PROCESS_GROUPS[2])], source="처음 저장"
+    )
+    app = _group_app()
+    tables = app.session_state[SESSION_REFERENCE_TABLES_KEY]
+    module = tables["RQ_MODULE"]
+    extra = module.head(1).copy()
+    extra["공정"] = MODULE_ONLY_PROCESS
+    app.session_state[SESSION_REFERENCE_TABLES_KEY] = {
+        **tables,
+        "RQ_MODULE": pd.concat([module, extra], ignore_index=True),
+    }
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    # 그 회차가 시나리오 표를 다시 올리지 않았다 — 더한 공정이 세션 표에 그대로 있다.
+    tables = app.session_state[SESSION_REFERENCE_TABLES_KEY]
+    assert MODULE_ONLY_PROCESS in set(tables["RQ_MODULE"]["공정"].astype(str))
+    assert MODULE_ONLY_PROCESS not in set(tables["RQ_REQB"]["공정"].astype(str))
+    processes = _scenario_processes(app)
+    assert MODULE_ONLY_PROCESS in processes
+    assert _group_rows(app) == [
+        (process, PROCESS_GROUPS[2] if process == MODULE_ONLY_PROCESS else None)
+        for process in processes
+    ]
+    assert _group_process_texts(app)[MODULE_ONLY_PROCESS] == MODULE_ONLY_PROCESS
+    assert not _group_process_column(app).get("help")
 
 
 def test_a_save_from_the_process_group_tab_is_the_shared_profile(group_database: Path) -> None:
