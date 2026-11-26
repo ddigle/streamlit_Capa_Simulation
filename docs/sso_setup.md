@@ -477,17 +477,17 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 창 1 — 가짜 IdP(그 자리에 개발용 환경변수 파일을 쓴다):
 
 ```bash
-python scripts/sso_mock_idp.py --port 8591 --app-url http://localhost:8510 --env-out ~/sso-dev.env
+python scripts/sso_mock_idp.py --port 8591 --app-url http://localhost:8710 --env-out ~/sso-dev.env
 ```
 
 창 2 — 그 파일을 읽어 진입 파일로 앱을 띄운다:
 
 ```bash
 set -a; . ~/sso-dev.env; set +a
-python -m streamlit run capa_server.py --server.port 8510
+python -m streamlit run capa_server.py --server.port 8710
 ```
 
-- 브라우저로 `http://localhost:8510` 을 열면 가짜 IdP 화면(클레임 표 + 「로그인」)을 거쳐 앱으로 돌아온다. `--aud` · `--omit-claim` ·
+- 브라우저로 `http://localhost:8710` 을 열면 가짜 IdP 화면(클레임 표 + 「로그인」)을 거쳐 앱으로 돌아온다. `--aud` · `--omit-claim` ·
   `--error` 로 실패 화면을 볼 수 있다.
 - http 루프백에서는 브라우저가 상태 쿠키(`SameSite=None; Secure`)를 받지 않을 수 있다. 확인된 길은 HTTPS(자체서명)다 — 앱은
   `--server.sslCertFile/--server.sslKeyFile`, 가짜 IdP 는 `--tls-cert/--tls-key` 로 띄우고 `--app-url` 을 https 로 준다.
@@ -513,7 +513,7 @@ python -m streamlit run capa_server.py --server.port 8510
   ```bash
   set -a; . ~/sso-dev.env; . ~/s3-dev.env; set +a
   export CAPA_ACCESS_ADMINS=demo.admin
-  python -m streamlit run capa_server.py --server.port 8510
+  python -m streamlit run capa_server.py --server.port 8710
   ```
 
   창 1 은 `--loginid demo.admin` 으로 띄운다. 들어오면 Admin 「접속 명단」 이 서고, 「추가」 로 `demo.user` 를 넣으면 재시작 없이 저장되고 「S3 명단」 줄이 `버전 1 · 쓰기 정상 · <시각>` 으로 바뀐다. 그 사람으로 들어가 보려면 창 1 을 `--loginid demo.user` 로, 창 2 를 그 env 파일로 다시 띄운다(가짜 IdP 키가 새로 생겨서다 — 가짜 S3 창을 그대로 두면 명단은 이어진다). 편집 자리가 없고 지우면 다음 조작에 탭이 닫힌다.

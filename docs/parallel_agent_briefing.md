@@ -6,9 +6,10 @@
 먼저 `CLAUDE.md` → `AGENTS.md` 순으로 읽는다. 이 문서는 그 둘을 대신하지 않는다.
 
 > **이 브리핑의 폴더·명령(`C:\Dev\…`, `.\scripts\new_worktree.ps1`, `.\run.ps1`, `.\.venv\Scripts\…`)은
-> 서피스 Windows 시절 기준이다.** 사외 개발은 이제 데스크탑 WSL 하나라(2026-10-13 사용자 결정) WSL 판
-> 절차(작업 폴더 자리·포트 고정)는 사용자 결정 뒤 적는다. 그때까지 WSL 의 명령은
-> `docs/wsl_dev_environment.md` 를, 규칙은 `AGENTS.md` 14장을 따른다.
+> 서피스 Windows 시절 기준이다** — 아래 `C:\Dev\…` 표와 `new_worktree.ps1` 절차는 그때 기록이다. 개발은 이제
+> 데스크탑 WSL 하나이고(2026-10-13 사용자 결정) 병행 작업 폴더는 저장소 밖 일반 클론으로 정했다(2026-11-13
+> 확인 보드 답). 규칙은 `docs/rules/14-parallel-development.md`(14-1 작업 폴더 · 포트)를, WSL 의 명령은
+> `docs/wsl_dev_environment.md` 를 따른다.
 
 ---
 

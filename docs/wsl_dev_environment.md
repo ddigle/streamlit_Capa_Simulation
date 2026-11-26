@@ -395,7 +395,7 @@ CI/CD 앞에 낀 저장을 잃는다 — 이 문서에서 「`지킴` 줄」 은
 | Windows 전용 테스트 9개 — `tests/test_check_deploy_screens.py` 의 `skipif(sys.platform != "win32")` | Job Object·CTRL_BREAK·NTFS 대체 데이터 스트림·공유 위반·DB 자리의 폴더·대소문자를 가리지 않는 파일 시스템을 본다 | 4관문에서 건너뛴다(2장). 사내 Windows 의 4관문(런북 4-3)에서만 돈다 |
 | `scripts/check_deploy_screens.py` 실행 | 깔린 Chrome 과 Playwright 가 있어야 한다(사내 런북 7장 도구) | `--list` 만 된다 |
 | 화면 E2E(agent-browser·Claude in Chrome)·배포 메일 | 브라우저가 없다 | AppTest 로 확인하고, 실제 화면은 사용자가 포트 전달로 본다. 배포 메일은 사용자가 보낸다(5장) |
-| `scripts/new_worktree.ps1`(병행 개발 작업 폴더) | PowerShell 전용이고, 기본 자리(저장소 옆 `../capa-<이름>`)가 샌드박스 쓰기 범위 밖이다 | 아직 정하지 않았다 — 데스크탑 안내서의 `claude -w <이름>`(저장소 안 `.claude/worktrees/`, 무시 목록에 있다)을 쓰거나, 사용자가 Claude 밖에서 저장소 옆에 만든다. 작업 폴더마다 `uv sync --frozen --python 3.10.11` 은 사용자가 친다 |
+| `scripts/new_worktree.ps1`(병행 개발 작업 폴더) | PowerShell 전용이고, 기본 자리(저장소 옆 `../capa-<이름>`)가 샌드박스 쓰기 범위 밖이다 | 쓰지 않는다 — 병행 작업 폴더는 저장소 밖 폴더에 만든 일반 클론이다(`docs/rules/14-parallel-development.md` 14-1) |
 
 ## 7. 서피스 개발 환경을 지우기 전에 — 사용자가 챙길 것
 

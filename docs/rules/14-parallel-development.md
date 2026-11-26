@@ -38,11 +38,12 @@ Windows(PowerShell) 시절에는 **`git worktree` 폴더를 `scripts/new_worktre
   쓰고, 시험 · mypy 는 `PYTHONPATH` · `MYPYPATH` 를 `<클론>/src` 로 준다(주지 않으면 본 체크아웃
   소스를 읽어 거짓 결과가 난다). 앱 사본도 `PYTHONPATH=<사본>/src` 로 띄운다.
 
-  **이것만은 기계가 잡는다** — `scripts/check_worktree_isolation.py` 가 가상환경·editable
+  **이것만은 기계가 잡는다**(제 `.venv` 를 둔 worktree 폴더에서) — `scripts/check_worktree_isolation.py` 가 가상환경·editable
   경로·실제 import 되는 패키지·DuckDB 경로 넷을 보고 하나라도 폴더 밖이면 0 이 아닌 값으로
-  끝난다. 일을 시작하기 전과 올리기 전에 한 번씩 돌린다. 일반 클론에서 본 체크아웃 `.venv` 로
-  (`PYTHONPATH` 를 그 클론 `src` 로 준 채) 돌리면 가상환경 · editable 두 줄은 늘 `!!` 이고 종료코드
-  1 이다 — 클론에서 볼 것은 import 되는 패키지 · DuckDB 두 줄이 클론 안을 가리키는지다(2026-11-26 확인).
+  끝난다. 일을 시작하기 전과 올리기 전에 한 번씩 돌린다. 일반 클론에서는 기계가 가르지 못한다 — 본 체크아웃
+  `.venv` 로 돌리면 가상환경 · editable 두 줄이 늘 `!!` 라, `PYTHONPATH` 를 그 클론 `src` 로 주어도 빠뜨려도(그때는
+  네 줄 모두 `!!`) 종료코드가 1 이다(2026-11-26 확인). 클론에서는 import 되는 패키지 · DuckDB 두 줄이 `OK`(클론 안)인지
+  사람이 읽는다. 가상환경 줄의 「`uv sync` 로 제 것을 만드세요」 는 worktree 꼴에 맞춘 안내다.
 
   Windows(PowerShell):
 
@@ -83,26 +84,28 @@ Windows(PowerShell) 시절에는 **`git worktree` 폴더를 `scripts/new_worktre
   포트를 적고 띄운 앱은 「Port N is not available」 로 멈추고, 포트를 빠뜨린 앱은 다음
   번호(남의 예약 포트)로 말없이 옮겨 앉는다. 그래서 사용자가 8501 에서 보는 화면, 다른
   에이전트가 8502·8503 에서 보는 화면, 띄운 줄 알고 연 시험 화면이 **말없이 남의 것**이 된다.
-  두 범위 밖의 예외는 그대로 둔다 — 8551(`scripts/check_deploy_screens.py` 화면 확인 기본 포트) ·
-  8552~(`scripts/build_page_guide.py` 가이드 촬영 앱, 8552 부터 빈 것) · 8591(`docs/sso_setup.md` 가짜 IdP 예시).
-- **`git stash` 를 쓰지 않는다.** 스태시·태그·브랜치는 `git worktree` 폴더끼리 **공유**한다. 한쪽의
-  스태시가 다른 쪽에 보인다.
+  두 범위는 띄울 때 고르는 포트에 건다. 두 범위 밖에서 스크립트가 기본값 · 예시로 쓰는 포트는 그대로 둔다 — 예:
+  8551(`scripts/check_deploy_screens.py` 화면 확인 기본 포트) · 8552~(`scripts/build_page_guide.py` 가이드 촬영 앱,
+  8552 부터 빈 것) · 8591(`docs/sso_setup.md` 가짜 IdP 예시) · 8607(`scripts/s3_mock_store.py` 가짜 S3 기본 포트).
+- **`git stash` 를 쓰지 않는다.** 스태시·태그·브랜치는 같은 `.git` 을 쓰는 폴더(`git worktree` 로 만든 폴더)끼리
+  **공유**한다. 한쪽의 스태시가 다른 쪽에 보인다. 일반 클론끼리는 공유하지 않지만 이 금지는 어느 자리에서나 그대로다.
 - **배포 ZIP 은 본 체크아웃(통합 폴더)에서만 만든다.** 빌더는 자기 위치의 작업트리를 읽고 그 HEAD 에
   태그를 박는다. 후보 브랜치에서 만들면 미채택 코드가 사내 정본으로 나가고 태그가 엉뚱한
   커밋에 박힌다. 빌더는 HEAD 가 `origin/main` 과 다르거나 추적 파일에 커밋하지 않은 수정이
   있으면 멈추므로(2026-10-13, `--no-tag` 시험 빌드는 알리기만 한다) 후보 브랜치의 커밋으로는
   태그를 단 배포 ZIP 이 만들어지지 않는다.
 
-`scripts/check_worktree_isolation.py` 가 **`.venv` 공유**를(일반 클론에서는 import · DuckDB 두 줄),
-Windows 에서는 `new_worktree.ps1`+`run.ps1` 이 **포트**를, 빌더가 **배포 ZIP 의 출처**를 잡는다.
-남은 것(스태시 · 일반 클론의 포트)은 사람이 지킨다.
+`scripts/check_worktree_isolation.py` 가 worktree 폴더의 **`.venv` 공유**를, Windows 에서는
+`new_worktree.ps1`+`run.ps1` 이 **포트**를, 빌더가 **배포 ZIP 의 출처**를 잡는다. 남은 것(스태시 ·
+일반 클론의 `.venv` 공유 — import · DuckDB 두 줄을 읽는다 · 일반 클론의 포트)은 사람이 지킨다.
 
 ### 14-2. 브랜치·저작자·충돌
 
 - 브랜치 이름은 `cand/<과제>/<에이전트>` 다 — 예: `cand/home-legend/claude`.
   사람이 만든 `feat/`·`fix/` 와 목록에서 갈린다.
-- **커밋 `author` 를 바꾸지 않는다.** 세 폴더가 같은 `.git/config` 를 공유해 한쪽에서
-  `git config user.name` 을 바꾸면 다른 폴더까지 바뀐다. 누가 했는지는 이미 쓰고 있는
+- **커밋 `author` 를 바꾸지 않는다.** 같은 `.git` 을 쓰는 폴더끼리는 `.git/config` 를 공유해 한쪽에서
+  `git config user.name` 을 바꾸면 다른 폴더까지 바뀐다. 일반 클론은 제 `.git/config` 를 갖지만 이 금지는
+  그대로다. 누가 했는지는 이미 쓰고 있는
   **트레일러**(`Co-Authored-By:`)로 가른다.
 - **충돌은 에이전트가 흡수한다.** 사용자에게 `<<<<<<<` 를 내밀지 않는다. 합치는 쪽이 양쪽
   의도를 읽고 푼 뒤, **무엇을 어떻게 골랐는지 한 줄로 보고**한다.
@@ -145,8 +148,7 @@ Windows 에서는 `new_worktree.ps1`+`run.ps1` 이 **포트**를, 빌더가 **�
   안전장치이지 권장 상태가 아니다.
 - 채택되지 않은 브랜치가 번호를 이미 썼으면 **그 번호를 영구 결번으로 등록한다** — 0장
   「SQL 마이그레이션」(`docs/rules/00-purpose-header.md`)의 결번 규칙과 같은 자리
-  (`docs/migration_catalog.md` 「재사용 금지 번호 (결번)」 · `tests/test_migration_numbering.py` 의
-  `BURNED_VERSIONS`)에 적는다. 되돌리는 다른 방법이 없다.
+  (`docs/migration_catalog.md` 「재사용 금지 번호 (결번)」)에 적는다. 되돌리는 다른 방법이 없다.
 
 `tests/test_migration_parity.py` 가 홀짝을, `tests/test_migration_numbering.py` 가 결번
 재사용과 번호 중복을 잡는다.
