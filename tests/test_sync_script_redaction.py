@@ -441,8 +441,8 @@ def test_a_state_file_another_program_holds_stops_with_the_home_hidden(
 ) -> None:
     r"""상태 파일 바꿔치기(`os.replace`)가 Windows 에서 남이 쥔 파일 때문에 거절되면 그 실패는
     일부러 그대로 올라가 `[중단]` 줄에 선다(`BOOTSTRAP_ERRORS` 갈래). 그 글은 거절된 두 경로를
-    싣는다 — 둘 다 홈(`C:\Users\<계정>`)이 이름표로 바뀌고 홈 뒤 경로와 전송용 요약은 그대로다."""
-    monkeypatch.setenv("USERPROFILE", C_HOME)
+    싣는다 — 둘 다 홈(`C:\Users\<계정>`)이 이름표로 바뀌고 홈 뒤 경로와 전송용 요약은 그대로다.
+    홈 값(`USERPROFILE`)은 바꾸지 않는다 — 그 꼴의 경로는 이 PC 의 홈이 아니어도 가린다."""
     held = sync_state.generation_path(rig.paths.databases["simulation"]).name
     real_replace = os.replace
 
