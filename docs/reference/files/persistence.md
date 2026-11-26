@@ -22,6 +22,7 @@
     (`SOURCE_BLANK_TEXT_PATTERN`)은 파이썬 `str.isspace` 집합과 같고, 그 위에 파생과 같은 식(`core_data_derivation.blank_cs_mask`)으로 한 번 더
     가른다 — 수가 등록 파생(`derive_q_core_data(...).blank_cs`)과 같다(`tests/test_revision_input_check.py`). 목록 관리 「점검」 이 쓴다.
   - Capa 시나리오 이름은 보관본까지 겹치지 못한다 — 쓰기 트랜잭션 안에서 앞뒤 공백을 뗀 완전 일치로 막고(`DUPLICATE_SCENARIO_NAME_MESSAGE` — 이름 수정은 자기 자신을 빼고, 목록 「변경 저장」 은 이 저장이 끝난 뒤의 이름끼리 같은 규칙으로 견준다), 이 규칙 전 DB 에 같은 이름이 남아 있을 수 있어 DB UNIQUE 제약은 걸지 않는다.
+  - 프리셋 쓰기(`preset_store.py`)의 `scenario_preset.preset_hash` 는 읽는 곳 없이 쓰기만 하는 해시지만 append-only 리비전의 감사값이라 칸 · 쓰기를 걷지 않는다.
 - `src/capa_simulation/persistence/advance_load_store.py` — 공용 선행 B/O 프로필(`0018`)의 조회·교체 SQL.
 - `src/capa_simulation/persistence/advance_shipment_store.py` — 공용 선행 입고 실적 프로필(`0031`)의 조회·교체 SQL.
 - `src/capa_simulation/persistence/securement_threshold_store.py` — 공용 확보율 판정 기준 프로필(`0029`)의 조회·교체
@@ -91,7 +92,6 @@
     (일정·비가동·배치 차이 셋)에는 **UPDATE·DELETE 가 없다**(I1 — 시험이 소스를 훑는다). 그 소유 표 목록은
     `SCHEDULE_REVISION_OWNED_TABLES`(시험이 `information_schema` 와 견준다).
 - `src/capa_simulation/persistence/past_data_store.py` — 공용 과거 구간 프로필 세 표의 조회·교체 SQL.
-- `src/capa_simulation/persistence/preset_store.py` — `scenario_preset.preset_hash` 는 읽는 곳 없이 쓰기만 하는 해시지만 append-only 리비전의 감사값이라 칸 · 쓰기를 걷지 않는다.
 - `src/capa_simulation/persistence/summaries.py` — 조회 행을 요약 모델로 바꾸고, 요약 SELECT 투영
   (`SCENARIO_SUMMARY_SELECT` 등)을 매퍼 옆에 두어 열 순서와 row 인덱스가 짝을 이룬다.
 - `src/capa_simulation/persistence/_sql_helpers.py` — 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두 Repository
@@ -188,7 +188,7 @@
     없이 빈 차이). `read_merged` 는 합친 **뒤, 읽기 검증 앞**에 호기 배치 차이를 얹는다(`apply_unit_overlay`, 실패 까닭에 「배치
     차이를 얹은 뒤」). 옛 `_read_snapshot` 은 `_read_legacy_snapshot` 이고 계약 v4 를 받으면 `ValueError` 다. 모델은 캐시에
     실리므로 필드에 기본값을 두고 `Mapping` 대신 쌍 튜플(`unit_key_pairs`·`layout_official_places`)·`frozenset` 을 쓴다.
-    계약 v3 미만(v1 · v2) 옛 리비전을 읽는 길(`_legacy_snapshot` 의 `_load_legacy_equipment` · `_load_legacy_schedule` · `_load_legacy_downtime`)은 사내 설비 DB 의 리비전별 계약 판 수를 확인하기 전에는 걷지 않는다 — 그 수는 사내 DB 를 여는 확인이라 사용자가 별도 창에서 돌린 결과로만 받는다.
+    계약 v3 미만(v1 · v2) 옛 리비전을 읽는 길(`_legacy_snapshot` 의 `_load_legacy_equipment` · `_load_legacy_schedule` · `_load_legacy_downtime`)은 사내 설비 DB 의 리비전별 계약 판 수를 확인하기 전에는 손대지 않는다(걷지도 고치지도 않는다) — 그 수는 사내 DB 를 여는 확인이라 사용자가 별도 창에서 돌린 결과로만 받는다.
   - **저장은 `save_equipment(EquipmentSaveRequest)` 하나다**(연결 하나·트랜잭션 하나, 모든 쓰기가 `_write_transaction`).
     메모리에서 막기(옛 배포 흔적 → `EquipmentLegacyTraceError`, 공통 최신 ≠ 출발 공통 → `EquipmentRevisionConflict`, 일정을
     쓰는데 시나리오 최신 ≠ 출발 일정 → 같은 예외 `side`)·검증·호기 키·나누기·바뀐 쪽 가르기·함께 넣기·교차 검증·발행을 모두
