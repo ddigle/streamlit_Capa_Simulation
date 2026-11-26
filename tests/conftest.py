@@ -57,6 +57,7 @@ from capa_simulation.io import bdq_login, bdq_token, company_bigdataquery_adapte
 from capa_simulation.io.container_start_report import BDQ_SECRET_KEY_ENV, CD_ONLY_ENVIRONMENT
 from capa_simulation.persistence import _sql_helpers as sql_helpers
 from capa_simulation.persistence.duckdb_memory import MemoryLimitSetting
+from capa_simulation.services import builtin_seed
 
 
 def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
@@ -92,6 +93,20 @@ def _popen_within_the_windows_limit(
 subprocess.Popen.__init__ = _popen_within_the_windows_limit  # type: ignore[method-assign]
 
 keep_capture_tolerant()
+
+
+# 로컬 표시순서 시드(`data/input/RQ_DISPLAY_ORDER.csv`)는 체크아웃마다 다르다 — 사내 PC 에는
+# 실제 프로필이, 사외 본 체크아웃에는 검수용 견본이 있고 CI · 갈래 클론에는 없다. 있으면 내장
+# 시드(`load_builtin_display_order` · `build_builtin_seed_dataset`)가 Git 의 합성 규칙 대신 그것을
+# 읽어, 시드 규칙을 전제로 한 시험(부품 차례 · 분류 칸 차례)이 그 체크아웃에서만 늘 깨진다. 시험은
+# 늘 없는 자리를 보게 해 Git 의 시드로 돈다. 로컬 시드를 보는 시험은 제 `monkeypatch.setattr` 로
+# 다시 돌린다. 수집 때 시드를 읽는 도우미(`auto_update_fakes` 등)까지 막으려고 준비(fixture)가
+# 아니라 import 때 바꾼다 — `tests/test_local_display_order_seed.py` 가 본다. 시험이 띄우는 하위
+# 프로세스에는 닿지 않는다.
+NO_LOCAL_DISPLAY_ORDER_CSV = (
+    Path(__file__).resolve().parent / "fixtures" / "no_local_display_order" / "RQ_DISPLAY_ORDER.csv"
+)
+builtin_seed.LOCAL_DISPLAY_ORDER_CSV_PATH = NO_LOCAL_DISPLAY_ORDER_CSV
 
 
 # 공식버전 자동 갱신 예약의 실행 줄 허락(`auto_update_scheduler.ENV_VAR`). 그 모듈을 여기서 읽으면

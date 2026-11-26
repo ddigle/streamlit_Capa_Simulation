@@ -94,6 +94,7 @@
 - `src/capa_simulation/services/builtin_seed.py`, `config/bootstrap_display_order.json` — GitHub 독립 실행용 합성 Core Data
   (`DEMO_*`)와 최소 표시순서를 CSV·BigDataQuery 와 같은 변환·저장 길로 낸다.
   - `data/input/RQ_DISPLAY_ORDER.csv` 가 있으면 첫 공용 표시순서 이관에 우선 쓴다(커밋·배포하지 않는다).
+    시험은 이 파일을 보지 않는다 — `tests/conftest.py` 가 자리를 돌린다(`docs/rules/02-runtime-and-verification.md`).
   - 표시순서 시드(로컬 CSV·내장 JSON)는 쓰일 때만 읽고 검사한다 — 공용 프로필이 없을 때(첫 이관)와 빈 시나리오
     저장소에 내장 시드를 만들 때다. 기동 길(`persistence/cache.py`)은 결과가 아니라 읽는 함수
     (`load_builtin_display_order`)를 넘기므로, 프로필이 있으면 쓰지 않는 시드가 검사에 걸려도 앱 기동을 막지 않는다

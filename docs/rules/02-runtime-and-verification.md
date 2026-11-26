@@ -106,6 +106,7 @@ Windows(PowerShell):
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
   못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 열한 가지부터 본다. 러너 로캘은 영어라
   사내 한국어 로캘(cp949 · 한글 오류 글)은 흉내 내지 못한다. 계약은 `tests/test_ci_workflow.py` · `tests/test_run_test_shard.py`.
+- 시험은 체크아웃의 로컬 표시순서 시드(`data/input/RQ_DISPLAY_ORDER.csv` — 사외 본 체크아웃에는 검수용 견본이, 사내 PC 에는 그 PC 의 프로필이 있을 수 있다)를 읽지 않는다 — `tests/conftest.py` 가 import 때 `builtin_seed.LOCAL_DISPLAY_ORDER_CSV_PATH` 를 없는 자리로 돌려 모든 시험이 Git 의 내장 시드(`config/bootstrap_display_order.json`)로 돈다. 로컬 시드를 보는 시험은 제 `monkeypatch` 로 다시 돌리고, 시험이 띄우는 하위 프로세스에는 이 돌림이 닿지 않는다(그물 `tests/test_local_display_order_seed.py`).
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
