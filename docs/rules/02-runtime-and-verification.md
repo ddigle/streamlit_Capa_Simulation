@@ -207,6 +207,8 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘�
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
+배포 빌더의 화면 확인 수 대조는 `--no-tag` 시험 빌드도 멈춘다(같은 stamp 태그 검사는 태그를 남기는 빌드만) — 런북 7장 A 표 대조 시험(`tests/test_check_deploy_screens.py`)은
+7장을 그 배포의 기록으로 두려고 `ITEMS` 의 앞머리이기만 해도 통과하므로, 낡은 7장으로 다음 배포를 만드는 것은 빌더가 막는다.
 `scripts/build_site_index.py`(GitHub Pages 자료 목록 — `site/catalog.json` 으로 뿌리 `index.html` 을 쓴다, `--check` 는 다르면 실패).
 `scripts/build_module_index.py`(모듈 색인 — 추적 소스 모듈(app.py · app_pages/ · src/capa_simulation/, __init__ 뺌)의 경로 전체를 `docs/reference/module_index.md` 로 쓴다, `--check` 는 다르면 실패. 모듈을 더하거나 옮기거나 지우면 돌려 함께 커밋한다).
 `scripts/run_test_shard.py`(CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 한 조각을 `pytest -q` 로 돈다, 두 CI 작업이 같은 수로 부른다).
