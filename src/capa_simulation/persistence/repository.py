@@ -36,6 +36,7 @@ from capa_simulation.persistence import (
     home_profile_store,
     key_process_store,
     past_data_store,
+    process_group_store,
     process_rename_store,
     route_load_exception_store,
     securement_threshold_store,
@@ -81,6 +82,7 @@ from capa_simulation.persistence.models import (
     GlobalKeyProcess,
     GlobalMainCases,
     GlobalPastData,
+    GlobalProcessGroup,
     GlobalProcessRename,
     GlobalSecurementThreshold,
     GlobalSummaryNote,
@@ -136,6 +138,7 @@ from capa_simulation.services.display_order_editor import ClashKey, DisplayOrder
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
+from capa_simulation.services.process_group import normalize_process_groups
 from capa_simulation.services.process_rename import prepare_process_rename_rules
 from capa_simulation.services.securement_threshold import (
     DEFAULT_SECURE_THRESHOLD,
@@ -783,6 +786,38 @@ class DuckDBScenarioRepository:
                 connection, normalized, source=source_label, expected_version=expected_version
             )
         return self.load_global_key_process()
+
+    def load_global_process_group(self) -> GlobalProcessGroup:
+        """Load the scenario-independent process → process-group assignments for HOME.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않고 기동 때 쓰지도 않는다. 한 번도 저장하지 않은
+        상태가 정상이고 그때는 version 0 · 빈 대응이다.
+        """
+        with self._connect() as connection:
+            return process_group_store.load_global_process_group(connection)
+
+    @audited("data_profile_save", work_audit.profile("process_group", "assignments"))
+    def replace_global_process_group(
+        self,
+        assignments: Sequence[tuple[object, object]],
+        *,
+        source: str,
+        expected_version: int | None = None,
+    ) -> GlobalProcessGroup:
+        """Atomically replace every shared process-group assignment.
+
+        현재본만 남기고 version 을 올린다 — 대응 0행 저장도 정상이며 version 이 오른다. 검증(목록 밖
+        그룹 · 같은 공정 두 줄 · 빈 출처)은 쓰기 잠금 전에 끝낸다. 화면 편집은 `expected_version` 을
+        넘겨 버전 대조를 받는다(다르면 `ProfileVersionConflict`). 벽은 `data_profile_save` 의 바닥
+        (`home.settings`)이다 — HOME 설정 카드와 Admin 탭이 같은 쓰기를 쓴다.
+        """
+        normalized = normalize_process_groups(assignments)
+        source_label = required_text(source, "공정 그룹 변경 출처")
+        with self._write_transaction() as connection:
+            process_group_store.replace_global_process_group(
+                connection, normalized, source=source_label, expected_version=expected_version
+            )
+        return self.load_global_process_group()
 
     def list_voc_posts(self) -> pd.DataFrame:
         """VOC 글 전체. 최신이 위다.

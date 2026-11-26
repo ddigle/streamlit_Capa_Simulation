@@ -308,6 +308,7 @@
 - `src/capa_simulation/persistence/models.py`
 - `src/capa_simulation/persistence/past_data_store.py`
 - `src/capa_simulation/persistence/preset_store.py`
+- `src/capa_simulation/persistence/process_group_store.py`
 - `src/capa_simulation/persistence/process_rename_store.py`
 - `src/capa_simulation/persistence/repository.py`
 - `src/capa_simulation/persistence/route_load_exception_store.py`
@@ -394,6 +395,7 @@
 - `src/capa_simulation/services/process_capa_detail.py`
 - `src/capa_simulation/services/process_cutoff.py`
 - `src/capa_simulation/services/process_equipment_timeline.py`
+- `src/capa_simulation/services/process_group.py`
 - `src/capa_simulation/services/process_picker.py`
 - `src/capa_simulation/services/process_rename.py`
 - `src/capa_simulation/services/process_selection.py`

@@ -40,6 +40,7 @@ SIMULATION_EVENTS: dict[str, str | tuple[str, ...]] = {
     "replace_global_execution_capacity": "data_profile_save",
     "replace_global_top5_band": "data_profile_save",
     "replace_global_key_process_presets": "data_profile_save",
+    "replace_global_process_group": "data_profile_save",
     "replace_global_summary_note": "data_profile_save",
     "replace_global_comparison_scenario": "data_profile_save",
     "replace_global_main_case": "data_profile_save",

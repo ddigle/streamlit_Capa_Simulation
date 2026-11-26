@@ -670,6 +670,7 @@ _PROFILE_KINDS = (
     "execution_capacity",
     "past_data",
     "route_load_exceptions",
+    "process_group",
 )
 
 

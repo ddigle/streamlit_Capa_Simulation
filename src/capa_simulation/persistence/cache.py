@@ -2,9 +2,9 @@
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열세 종
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열네 종
 (표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·Capa 요약·Top5 대역·
-주요공정·확보율 보정·과거 구간·확보율 판정 기준·부하 예외 선언)을 여기서만 캐시한다. 비교
+주요공정·확보율 보정·과거 구간·확보율 판정 기준·부하 예외 선언·공정 그룹)을 여기서만 캐시한다. 비교
 시나리오 후보 목록과 비교 시나리오의 리비전 목록(HOME 이 회차마다 세션의 비교 짝을 대 보는 것)은
 비교 대상 프로필과 한 세대를 쓴다.
 
@@ -36,6 +36,7 @@ from capa_simulation.persistence.models import (
     GlobalKeyProcess,
     GlobalMainCases,
     GlobalPastData,
+    GlobalProcessGroup,
     GlobalProcessRename,
     GlobalSecurementThreshold,
     GlobalSummaryNote,
@@ -92,6 +93,7 @@ _write_generations: dict[str, int] = {
         "execution_capacity",
         "past_data",
         "route_load_exceptions",
+        "process_group",
         "snapshot",
         "plan",
     )
@@ -649,6 +651,32 @@ def clear_global_key_process_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_process_group_payload(
+    database_path: str, generation: WriteGeneration
+) -> dict[str, Any]:
+    del generation
+    profile = get_scenario_repository(database_path).load_global_process_group()
+    return _payload(profile, GlobalProcessGroup)
+
+
+def load_global_process_group(database_path: str) -> GlobalProcessGroup:
+    """Share the process-group assignments without caching their model class."""
+    return GlobalProcessGroup(
+        **_load_global_process_group_payload(database_path, _write_generation("process_group"))
+    )
+
+
+def clear_global_process_group_cache() -> None:
+    """공정 그룹 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*` 표에도
+    오버레이되지 않고 HOME 공정 필터 그룹 단추가 초안을 바꿀 때만 쓰는 보기 보조다.
+    """
+    _bump_write_generation("process_group")
+    _load_global_process_group_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_execution_capacity_payload(
     database_path: str, generation: WriteGeneration
 ) -> dict[str, Any]:
@@ -778,6 +806,7 @@ def clear_scenario_repository() -> None:
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()
     _load_global_key_process_payload.clear()
+    _load_global_process_group_payload.clear()
     _load_global_summary_note_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()

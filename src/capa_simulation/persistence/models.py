@@ -205,6 +205,24 @@ class GlobalKeyProcess:
 
 
 @dataclass(frozen=True)
+class GlobalProcessGroup:
+    """HOME 공정 필터 그룹 단추가 쓰는 공정 → 공정 그룹 대응(시나리오 독립 공용 프로필, 계산 밖).
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`, `updated_at=None`, 빈
+    대응이다. 대응을 모두 비운 저장도 version 이 오른다 — 캐시가 version 을 본다.
+
+    주요공정 프리셋과 같은 까닭으로 프레임이 아니라 tuple 이다 — 해시되는 값이고 화면이 프레임을
+    다시 만들 일이 없다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    # (원본 공정, 공정 그룹) — 저장 차례는 공정 글자순. 한 공정은 한 번만 나온다.
+    assignments: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class GlobalSummaryNote:
     """Scenario-independent notice shown at the top of HOME.
 

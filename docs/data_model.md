@@ -95,6 +95,7 @@ app_meta.global_advance_shipment     1 ── N global_advance_shipment_month   
 app_meta.global_auto_official_update 1 ── N auto_official_update_setting_log 공식버전 자동 갱신 설정·변경 기록(0035)
 app_meta.auto_official_update_run    1 ── N auto_official_update_exclusion   실행·자동 off 공정(0035, run_id·머리 없음)
 app_meta.global_main_cases           1                                       HOME 주요 Case(0036 — 아래 예외)
+app_meta.global_process_group        1 ── N global_process_group_item        공정 그룹(0041, HOME 보기 보조 · 계산 밖)
 app_meta.voc_post                    1 ── N voc_reply (post_id)              VOC 게시판(0025, 머리 없음)
 
 app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
@@ -280,6 +281,9 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   HOME 주요공정 히트맵의 이름 붙은 프리셋 여럿. 머리(version)는 0024 것을 쓰고 `프리셋순서` 0 번이
   새 세션의 기본이다. 0024 의 단일 목록 `global_key_process_item` 은 0028 이 「기본」 프리셋으로 옮긴
   뒤 지우지 않고 남겼고 읽는 코드는 없다.
+- `global_process_group`·`global_process_group_item`(0041): HOME 공정 필터 팝업 그룹 단추가 쓰는 원본 `공정` → `공정그룹`
+  대응. 열쇠 `(profile_id, 공정)` 이라 한 공정은 한 그룹에만 들고, 그룹 낱말은 서비스가 본다(설비 마스터 공정구분 그룹의
+  표기 — `CHECK` 없음). 계산 · 캐시 키에 들지 않는 보기 보조이고 저장은 편집 시작 version 과 대조한다.
 - `global_securement_threshold`·`global_securement_threshold_month`(0029): 확보율 판정 기준 —
   기본 확보·경고 기준(비율)과 그 달에만 다른 월별 예외. 저장은 편집 시작 version 과 대조한다.
   한 번도 저장하지 않아 행이 없으면 최신 공식버전 프리셋의 `secure_threshold`·
