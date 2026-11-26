@@ -1498,9 +1498,8 @@
     통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
     `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
     이름 그대로). 공정명 목록과 걸린 조건 줄도 위 `literal_names` 길이다. 호기 묶음 부딪힘 글
-    (`unit_group_collision_message`)만 서비스 예외 글이라 `bootstrap_error_message` 의 물결표 막기만 지난다 — 서비스 예외 글에
-    실린 이름의 꾸밈(별표·`$`)은 물결표만 막는 지금대로 두며, 이 글을 `EquipmentNamesError` 꼴(이름을 속성으로 싣고 화면이
-    `literal_markdown` 으로 다시 짓기)로 옮기는 것은 열린 일이 아니다(다시 묻지 않는다).
+    (`unit_group_collision_message`)만 서비스 예외 글이라 `bootstrap_error_message` 의 물결표 막기만 지난다 — 위 「예외 글」
+    줄의 다시 짓기(이름을 속성으로도 싣는 꼴)에서 빠진 자리다.
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
