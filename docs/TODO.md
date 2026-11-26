@@ -2519,11 +2519,11 @@
       적었으나 5장에는 없다)에 둘을 함께 규칙으로 적는다. 고를 것: (가) 함수를 지우고 그 AGENTS 줄 · `stop_calculation_on_error` docstring(970)에서 이름만
       뺀다 — 규칙은 `stop_calculation_on_error` 로 남는다 · (나) 함수와 규칙 줄을 그대로
       둔다. 권장 (가) — 부르지 않는 이름이 규칙에 남으면 새 화면이 어느 쪽을 불러야 하는지 헷갈린다.
-    - **② CLAUDE.md 의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: 아키텍처 줄(`docs/rules/16-layers-and-boundaries.md` 의 `frame_contracts` 줄)은 「서비스 공용 컬럼 계약과 업무 키
+    - **② 아키텍처 장(`docs/rules/16-layers-and-boundaries.md`)의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: 그 줄은 「서비스 공용 컬럼 계약과 업무 키
       정규화」 뿐이고, 표 칸 빈칸 판정 `frame_contracts.blank_cell`(`a1f45fcd` 239 — 실행 관리 서비스 넷이 import)은 AGENTS 3장 `frame_contracts` 항목
-      (`a1f45fcd` 2872)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — CLAUDE.md 는 요약 ·
-      진입점이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을
-      이미 지키고, CLAUDE.md 에 도우미 이름을 하나씩 늘리면 요약이 커진다.
+      (`a1f45fcd` 2872)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — 그 장은 CLAUDE 「아키텍처」 를
+      옮긴 요약이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을
+      이미 지키고, 그 줄에 도우미 이름을 하나씩 늘리면 요약이 커진다.
     - **③ refactor B · E 가 한 벌로 모은 도우미가 AGENTS 공용 도우미 목록에 없다** — 지금: 목록(`tests/test_documentation_inventory.py:14-30`
       `SHARED_HELPERS` 열다섯 — 이름이 AGENTS 에 없거나 부를 수 없으면 실패, 73)에 1101 refactor 몫은 A · C · D 의 셋(`f39d5e51` 이 더함)과 E 의
       `constraint_simulation_figures.axis_bounds`(`625d6991` — 목록에는 다른 커밋의 `percent_or_none` 과 함께 `1d0bb1ae` 가 더함) 하나뿐이고 B 몫은 없다.
