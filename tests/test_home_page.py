@@ -3484,25 +3484,41 @@ def test_an_unreadable_process_group_profile_only_leaves_the_group_row_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """그룹 대응을 읽지 못하면 그룹 줄이 서지 않을 뿐이다 — 팝업은 멈추지 않고 오류 표지도 없다
-    (계산 밖 보기 보조, DB 를 못 읽으면 HOME 본문이 먼저 알린다)."""
+    (계산 밖 보기 보조, DB 를 못 읽으면 HOME 본문이 먼저 알린다).
+
+    대응을 저장해 두고 먼저 읽기가 되는 회차에 그룹 단추가 서는 것을 본 뒤 읽기를 실패로 바꾼다 —
+    빈 대응과 갈라지게. 바꾼 읽기가 팝업을 여는 회차에 실제로 불렸는지도 센다."""
     import duckdb
 
     from capa_simulation.persistence import cache
+    from capa_simulation.persistence.cache import clear_global_process_group_cache
 
     database = tmp_path / "process_groups_unreadable.duckdb"
     app = _run(database)
+    options = list(app.session_state[PROCESS_SELECTION_KEY])
+    _save_process_groups(database, [(options[0], "FRONT")])
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert [button.label for button in _process_group_buttons(app)] == ["FRONT"]
+    _dismiss_home_dialog(app)
+    app.run()
 
-    def unreadable(_database_path: str) -> Any:
+    calls: list[str] = []
+
+    def unreadable(database_path: str) -> Any:
+        calls.append(database_path)
         raise duckdb.IOException("DEMO 읽기 실패")
 
     monkeypatch.setattr(cache, "load_global_process_group", unreadable)
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception, [item.message for item in app.exception]
+    assert calls
     keys = _process_dialog_keys(app)
     assert keys[:4] == PROCESS_DIALOG_ACTIONS
     assert keys[4:]
     assert not _process_group_buttons(app)
     assert not data_error_texts(app)
+    clear_global_process_group_cache()
 
 
 def test_the_process_groups_are_read_only_in_the_opening_run_and_reuse_the_draft_callback() -> None:
