@@ -5,6 +5,7 @@
 - `src/capa_simulation/persistence/snapshot_export.py` — DuckDB 스냅샷 내보내기와 받은 스냅샷 검증·설치. 앱을 끈 자리는 `ATTACH` + `_sql_helpers.copy_database()` 다
   (구조는 `COPY FROM DATABASE … (SCHEMA)`, 데이터는 외래 키 부모 표부터 — `scripts/compact_duckdb.py` 와 같은 길). 앱 안에서는 쓰기 잠금 · CHECKPOINT · stat 대조 아래서만 바이트로 읽는다(`checkpoint_copy` —
   COMMIT 이 `.wal` 에만 있을 수 있고, ATTACH 복사는 1GiB 안에서 앱과 함께 돌지 못한다). 라이브 파일은 닫지 않는 번호로 읽는다 — 열었다 닫으면 프로세스 잠금이 풀린다.
+  바이트 복사의 일관성은 DuckDB 내부 동작(쓰기 잠금 안 `CHECKPOINT` 뒤 `.wal` 이 비면 본 파일만으로 온전하다는 것)에 기댄다 — `duckdb==` 핀(`pyproject.toml` · `requirements.txt`)을 올릴 때는 저장과 겹쳐 뜨는 앱 안 스냅샷 시험을 다시 돈다. 그 겹침 시험은 `pytest` 밖 샘플 관측이고 증명이 아니다 — `tests/test_snapshot_export.py` 의 `checkpoint_copy` 시험은 저장과 겹쳐 되풀이하지 않는다(`docs/objectstore_setup.md` 9장 「못 잰 것」).
 - `src/capa_simulation/persistence/sync_state.py` — DB 옆 `.sync.json` 사이드카에 미반영 변경 번호를, `sync_generation.json` 한 파일에 게시 상태(base · pending · 미게시 · 넘긴 표지)를 기록한다(DB
   안은 순환, 메모리는 죽으면 사라진다). `enable()` 전에는 파일을 만들지 않고 못 읽는 사이드카는 「변경 있음」 이다. 첫 미반영 시각 · 깨우기는 메모리다 — 일꾼이 멈춰도 그 값이 함께 멈추지 않게.
   - 미게시로 옮기는 것은 담은 저장이 있는 게시뿐이다. 답이 끊긴 펜스(`observed` 가 빔)는 미게시로 옮기지 않고 버린다(`object_sync_engine._park_pending`) — 옮기면 변경 없는 새 pod 가 「원격과 어긋남」 으로 머문다.
