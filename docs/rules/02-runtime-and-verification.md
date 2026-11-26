@@ -136,3 +136,88 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - HOME 단계별 소요시간은 `scripts/benchmark_home.py` 로 잰다. 화면에서 봐야 할 때만 세션 키 `dashboard_show_performance`
   (`components/home_rendering.HOME_PERFORMANCE_KEY`)를 켠다 — 개발용 계측이 모든 사용자가 늘 보는 자리를 차지하지 않게
   사이드바 토글은 두지 않는다.
+
+## 명령
+
+Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 PowerShell 블록은 Windows 꼴이다(사내가 배포 확인 때
+치는 꼴은 런북 4-3 의 `uv run --no-sync python -m …`).
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py     # 앱 실행
+.\.venv\Scripts\python.exe -m ruff format --check .
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy                      # strict, app.py·app_pages·src·tests·scripts
+.\.venv\Scripts\python.exe -m pytest
+```
+
+단일 테스트: `.\.venv\Scripts\python.exe -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed`
+
+사외 개발 자리는 데스크탑 WSL 하나다(2026-10-13) — 같은 명령을 bash 로 친다. 환경 준비·앱 띄우기·배포 절차는
+`docs/wsl_dev_environment.md`.
+
+```bash
+.venv/bin/python -m ruff format --check .
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy
+.venv/bin/python -m pytest
+.venv/bin/python -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed
+```
+
+사외 앱은 사용자가 Claude 밖 tmux 창에서 `docs/wsl_dev_environment.md` 3장의 실행 줄로 띄운다 — 포트는 늘 적는다.
+
+보조 스크립트: `scripts/inspect_wf_division.py`·`scripts/inspect_top_remigration.py`
+(사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고
+개수만 보고한다), `scripts/audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
+**읽기 전용**으로 점검), `scripts/inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
+대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인과 가정 배치 차이·옛 코드 흔적(설비 `0031`))·BigDataQuery(블록 `bdq` — 런북은 이 블록을 부르지 않는다. 꼭 필요하면 정본 개발 에이전트가 사용자에게 먼저 요청하고 사용자가 직접 돌린다)·「지금대로」 결정의 유병률(8-10 센서스 — 리비전 표 객체 칸의 값 종류 `8-10T` 포함)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)·빈 값 멈춤의 꼴(8-12 — 남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전)을 **읽기 전용**으로
+재어 집계만 찍고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다. 사내 런북 8장이 배포마다
+부르고 — 사내 DB 를 여는 이 스크립트들(아래 6-3 · 화면 확인 포함)은 사용자가 Claude 밖의 별도 PowerShell 창에서 치고 사내
+에이전트는 `--output` 파일만 옮긴다(런북 0장, 2026-11-11) — 정본 개발 에이전트는 받은 압축본에 `--check-summary <파일>` 을 돌려 옮겨 적은 오타를 잡는다),
+`scripts/inspect_db_counts.py`(사내 런북 7-8 개수 세기 — 두 DB 의 표마다 행 수 · Space 모듈 묶음 · 파일 크기와 생산 계획 그리드 두 표의 크기를
+**읽기 전용**으로 재어 한 줄씩 찍는다. 앞 세 줄은 옛 `python -c` 세 줄과 같은 꼴이고, 사용자가 별도 창에서 `--output` 으로 돌린다),
+`scripts/inspect_source_csv.py`(원천 CSV 견줌 — 원천 웹에서 받은 시나리오 CSV 를 DB 등록 탭 「CSV 파일」 길과 같은 함수로 읽어 DB 사본에
+같은 코드로 받아 둔 원천과 견주고 수만 찍는다. **읽기 전용**이고 `--database` 사본만 받으며 운영 DB 자리는 거절한다 — 사내는 사용자가 별도 창에서 돌린다),
+`scripts/inspect_revision_calculations.py`(사내 런북 6-3 a 사본 E2E — 저장된
+모든 리비전의 대당 Capa → 소요대수 → 확보율을 앱과 같은 길로 **읽기 전용**으로 다시 돌려 상태·개수만
+찍는다. `--database` 는 기본값이 없어 늘 DB 사본을 주고, 운영 DB 자리(같은 파일·저장소 `data/` 아래·git 저장소 안 —
+`settings.is_operational_database_place`)는 거절한다),
+`scripts/check_deploy_screens.py`(사내 런북
+7장 화면 확인 — 별도 포트에 앱을 띄워 저장소 밖 Playwright·깔린 Chrome 으로 보고 개수·있음/없음만
+찍는다. 항목은 함수 하나 + `ITEMS` 한 줄), `scripts/benchmark_home.py`(HOME 단계별 성능 — 기본은 합성
+표본이고, `--data-dir <사본 폴더>` 를 주면 실 DB 사본으로 잰다. 사내 런북 6-3 b 이며 같은 판정으로 저장소 안은
+받지 않는다), `scripts/benchmark_upeh_assumption.py`(UPEH 가정 계획 1회 시간 — 사내 런북 6-3 b 에 이어,
+`--data-dir <사본 폴더>` 만 받고 같은 판정으로 저장소 안은 거절), `scripts/validate_duckdb_persistence.py`
+(영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
+`scripts/generate_sample_core_data.py`(합성 Core Data 생성),
+`scripts/generate_review_sample.py`(검수용 합성 샘플 — 시뮬레이션 DB·설비 DB·`--modules` 모듈 견본을 저장소 밖 뿌리에 만든다. 부품
+`review_sample_*.py`, 문서 `docs/review_sample.md`. 가이드 예시판 시드도 이것이다 — git 작업 트리 안은 거절),
+`scripts/sso_mock_idp.py`(개발용 가짜 통합인증 IdP — 키를 메모리에만 만들고 form_post 로 id_token 을 보내 `capa_server.py` 의 로그인을
+끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
+`scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 객체 GET · PUT · HEAD · DELETE · 목록을 메모리로 받는다. 실제 `aws` 1.46.3 도 붙는다 — 접속 명단 · DB 동기화 시험, `docs/sso_setup.md` 8장, 루프백만),
+`scripts/container_start.py`(C-DEP 이미지 `CMD` — 맨 앞에서 포트를 잡고(임시 응답 `container_stage.py`) 프로필 · 점검 · 설치 · `managed` 면 두 DB 받기 뒤 앱이 된다. 어떤 실패에도 앱을 띄우되 DB 받기만 예외다 — `docs/objectstore_setup.md`),
+`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `generations` · `rollback`, 컨테이너의 `boot-pull`.
+`rollback` · `init` · `fetch-copy` · `prune` 은 끝에 감사 조각 한 줄을 버킷 `audit/v1/tool/` 에 올리고 `audit-list` 는 날짜 · 달의 감사 조각 수만 찍는다),
+`scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
+HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
+2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
+`page_guide_capture.py`·`page_guide_helpers.js`), `scripts/check_page_guide.py`(가이드 점검기 — 덮어쓰기·매개값·촬영 결과를
+뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다. `--accepted` 는 사내 검수 마친 판과 견줘 바뀐 자리만 `바뀜 n/N` 으로 —
+못 읽으면 `바뀜 na` 로 멈추지 않는다 — `--accept` 는 검수 끝 뒤 그 판을 쓴다).
+`scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
+`origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
+`check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
+`scripts/build_site_index.py`(GitHub Pages 자료 목록 — `site/catalog.json` 으로 뿌리 `index.html` 을 쓴다, `--check` 는 다르면 실패).
+`scripts/run_test_shard.py`(CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 한 조각을 `pytest -q` 로 돈다, 두 CI 작업이 같은 수로 부른다).
+`scripts/new_module.py`(모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
+자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈
+시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게). 정적 규칙 부품은
+`scripts/module_check_rules.py` 이고 규칙 번호·창구 이름·예시·점검 출력은 `tests/test_module_guide_sync.py` 가 지침서와 맞댄다.
+
+`mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
+합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).
+파일 하나만 볼 때도 저장소 루트에서 돌린다(`mypy_path` 가 상대경로다). Streamlit 화면·상태를
+바꿨으면 `streamlit.testing.v1.AppTest` 또는 실제 브라우저로 페이지 진입·수정·왕복을 추가
+검증한다.
+
+DuckDB 파일은 프로세스 배타 잠금이다. 앱 서버가 떠 있으면 같은 DB를 여는 스크립트·테스트가
+`duckdb.IOException`으로 실패한다 — 가상환경 손상이 아니다.

@@ -94,3 +94,18 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 시작 로그인도 같은 환경을 넘긴다). C-DEP 는 환경변수 표에 넣고 CI/CD 로 다시 띄운 뒤, 멈춤이 저장돼 있으면 Admin 「BDQ 자동 로그인」 에서 비밀번호를
 다시 넣는다(거절 · 결과 표지 없음 · 닿지 못함 3번 · 시도 결과를 적지 못함으로 멈춘 것은 객체에 적혀 재시작을 넘어 남아 시작 로그인이 돌지
 않는다 — 보내기 전 끊김으로만 막힌 멈춤(`cut_limit`)은 그 CI/CD 의 시작 로그인이 한 번 해 보아 되면 풀린다, 3장 `io/bdq_login.py`).
+
+## 발표 자료는 저장소 밖에서 운영한다
+
+발표 자료 원본(혁신대회 덱 `contest`·바이블 `bible`·중간 보고 덱 `build`·Learning Champion 초안)은 저장소 밖
+`~/projects/capa-simulation-showcase` 에서 그 폴더의 CLAUDE.md·메모리와 그 폴더에서 연 세션이 맡는다(2026-10-13 사용자
+결정). 이 저장소에는 대표 발표 자료 한 파일(`site/contest-deck/index.html` — GitHub Pages 용)과 입장 화면 `Introduce` 가 띄우는 40초
+티저 한 파일(`src/capa_simulation/components/intro_overlay_assets/capa-teaser.html`, 쇼케이스 `contest/dist/capa-teaser.html`
+의 복사본 — 2026-10-19 사용자 결정)만 두고 그 밖의 발표 파일은 사용자가 자료실에 올리라고 할 때만 더한다. 원본은 쇼케이스의
+`contest/dist/capa-contest.html` 이다(`capa-contest.artifact.html` 은 아티팩트용 변형이라 쓰지 않는다). 두 폴더는 서로 읽되
+쓰지 않는다 — 덱을 바꿀 때만 이 저장소 세션이 그 파일을 읽어 CR 을 뺀 뒤(`tr -d '\r'`) `site/contest-deck/index.html` 로 복사하고
+`site/catalog.json` 의 `updated` 를 고쳐 생성기(`scripts/build_site_index.py`)를 돌린 뒤 커밋하고, 견줄
+때도 CR 을 뺀 뒤 견준다. 발표자 실명은 그대로 둔다(같은 날 사용자 결정 — 다시 묻지 않는다). 티저도 같은 규칙으로 CR 을
+빼고 복사하며, 외부 파일 없이 한 파일로 서야 한다. 뿌리 `index.html` 은 Pages 첫 화면인 자료 목록으로 생성기가 쓴다(손으로
+고치지 않는다). 새 자료는 `site/<폴더>/index.html` · `site/catalog.json` 한 줄 · 생성기 실행이고 `tests/test_site_index.py` 가
+빠뜨림을 잡는다. 공개 저장소를 거친다 — 합성 값만, 실데이터 · 사내 식별값이 든 HTML 은 올리지 않는다. 자세한 것은 `AGENTS.md` 3장 끝.

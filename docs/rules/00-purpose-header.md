@@ -34,3 +34,11 @@ Git으로 관리하는 Python·PowerShell 소스에는 파일 최상단에 다�
   PowerShell `Purpose`의 누락·빈 항목과 모든 SQL의 카탈로그 등록을 검사하므로 기본
   검증 명령에 포함된 pytest를 반드시 통과시킨다.
 - `modules/<id>/` 는 코어 시험이 훑지 않아 `check_module.py`(M13)가 같은 헤더를 본다.
+
+### SQL 마이그레이션
+
+적용된 마이그레이션은 **버전 번호로 체크섬을 대조**하므로 주석 추가를 포함해 절대 수정하지
+않는다. 후속 번호를 새로 추가한다. **시뮬레이션 DB의 2·3번은 영구 결번**이고 재사용하면
+기존 DB에서 앱이 시작조차 못 한다(`tests/test_migration_numbering.py`가 막는다). 신규 SQL은
+`--` 형식의 `Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성하고,
+`tests/test_migration_checksums.py` 의 체크섬 표에 한 줄을 더한다(적용된 파일의 수정을 그 시험이 잡는다).
