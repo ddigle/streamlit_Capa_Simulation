@@ -2519,7 +2519,7 @@
       적었으나 5장에는 없다)에 둘을 함께 규칙으로 적는다. 고를 것: (가) 함수를 지우고 그 AGENTS 줄 · `stop_calculation_on_error` docstring(970)에서 이름만
       뺀다 — 규칙은 `stop_calculation_on_error` 로 남는다 · (나) 함수와 규칙 줄을 그대로
       둔다. 권장 (가) — 부르지 않는 이름이 규칙에 남으면 새 화면이 어느 쪽을 불러야 하는지 헷갈린다.
-    - **② CLAUDE.md 의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: CLAUDE.md 아키텍처 줄(`CLAUDE.md:210`)은 「서비스 공용 컬럼 계약과 업무 키
+    - **② CLAUDE.md 의 `frame_contracts` 줄에 `blank_cell` 을 적을까** — 지금: 아키텍처 줄(`docs/rules/16-layers-and-boundaries.md` 의 `frame_contracts` 줄)은 「서비스 공용 컬럼 계약과 업무 키
       정규화」 뿐이고, 표 칸 빈칸 판정 `frame_contracts.blank_cell`(`a1f45fcd` 239 — 실행 관리 서비스 넷이 import)은 AGENTS 3장 `frame_contracts` 항목
       (`a1f45fcd` 2872)과 한 벌 도우미 목록(`tests/test_documentation_inventory.py:19`)에 이미 있다. 고를 것: (가) 적지 않는다 — CLAUDE.md 는 요약 ·
       진입점이고 이름 단위는 AGENTS 가 맡는다 · (나) 그 줄 끝에 「표 칸 빈칸 판정 `blank_cell` 도 여기 한 벌」 을 더한다. 권장 (가) — 시험이 AGENTS 쪽을

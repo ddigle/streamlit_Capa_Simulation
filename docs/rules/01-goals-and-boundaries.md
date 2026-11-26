@@ -20,7 +20,7 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 운영 데이터는 시뮬레이션과 물리적으로 분리된
 `data/equipment_availability.duckdb`에 저장한다. `Core_Data` 78컬럼 계약·typed raw
 적재와 pandas 기반 16개 RQ 변환은 구현되었고, BigDataQuery 어댑터의 실제 SQL·컬럼
-매핑도 커밋을 마쳤고 사내에서 약 3만 행 조회와 시나리오 저장까지 확인했다. 남은 것은 상세 조회 창의 결정과
+매핑도 커밋을 마쳤고 사내에서 약 3만 행 조회와 시나리오 저장까지 확인했다. 남은 것은
 사내 런북 8장의 실데이터 대조 결과다.
 
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
