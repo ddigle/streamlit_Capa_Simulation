@@ -66,7 +66,7 @@
   않는 자리에서 본다(`test_scenario_activation`). 폼 안 입력을 성공 뒤 비울 때도 같다 — 위젯을 그린
   **뒤**에는 적을 수 없으므로 표지를 남겨 다음 회차 위젯 앞에서 빈 값을 적거나 key 세대를 바꾼다
   (`clear_on_submit` 은 쓰지 않는다 — 거절된 제출에도 적은 글을 지운다). 공용 저장 폼의 변경 메모 칸(입력 비가동 · 판정
-  기준 · 선행 B/O · 선행 입고 · 확보율 보정 · Past Data · Proc Rename · 표시순서)은 key 세대를 쓰지 않고
+  기준 · 선행 B/O · 선행 입고 · 확보율 보정 · 공정 그룹 · Past Data · Proc Rename · 표시순서)은 key 세대를 쓰지 않고
   `components/saved_note` 로 비운다 — 칸이 갈리면 Enter 저장의 초점이 대화상자 닫기 단추로 가고, 서버 재시작 뒤 앞 세션
   탭의 칸이 빈다(2026-11-08 리뷰). 성공한 저장과 제 저장을 알아본 둘째 누름에만, 칸 글이 저장한 그 글일 때만 비우고,
   거절 · 오류 · 바꾼 것 없는 저장은 칸을 지킨다. 입력 비가동 저장자 칸은 남는다(입력 비가동은 2026-11-19 부터 폼 밖이고
@@ -1135,9 +1135,9 @@
     새 값을 보고 거절하는 발행 확인 글 대조는 `is_own_save_settled` 로 그 잠금을 거쳐 판정한다
     (`tests/test_equipment_scenario_double_press.py` — 둘째 회차를 첫 쓰기 전 화면으로 쓰기 앞까지 세워 둔 겹침). 화면에서 충돌 예외 10종을 잡는 자리는 제 저장일
     수 없는 충돌(HOME 주요 Case 의 시나리오 대조)을 빼고 모두 이 판정을 부른다(같은 그물). 시험은 첫 회차의 쓰기 직후 그 회차에
-    멈춤을 걸고(`ScriptRequests.request_stop`) 같은 위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 일곱
-    자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신 설정·표시순서·Proc Rename·판정 기준)에서 더블클릭은 한 번 쓰고 성공만,
-    남의 저장 뒤 옛 화면 더블클릭은 둘 다 거부다. 남의 저장 뒤 옛 화면 더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename) 모두 거부
+    멈춤을 걸고(`ScriptRequests.request_stop`) 같은 위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 여덟
+    자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신 설정·표시순서·Proc Rename·판정 기준·공정 그룹)에서 더블클릭은 한 번 쓰고 성공만,
+    남의 저장 뒤 옛 화면 더블클릭은 둘 다 거부다. 남의 저장 뒤 옛 화면 더블클릭은 버전 대조 폼 다섯(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename·공정 그룹) 모두 거부
     표지 창을 0 으로 두고 본 값 대조만으로 거부되는지 본다 — 제출 회차에 본 값을 올리면(「결과가 무엇이든 올림」) 실패한다.
   - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부 회차가 본 값을 올리지 않으므로 그 누름은 다시 거부된다. 거부 뒤 다음
     회차가 최신을 그린 직후에 닿은 둘째 누름(옛 화면의 입력)은 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 의
@@ -1152,7 +1152,7 @@
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`·
     `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·
-    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_preference_profile_conflicts.py` — HOME Capa 요약·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)·`tests/test_process_group_editor.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
     HOME 주요 Case 는 표지를 거부한 콜백이 아니라 상자를 옮기는 회차가 적는다(`home_main_cases._hold_moved_boxes`) — 고르면
@@ -1219,9 +1219,10 @@
     HOME Preference 확보율 보정(`prepare_execution_capacity` 꼴의 `.equals` — 증감은 칸 값 그대로 저장해 끝자리를 접지 않는다),
     Capa 요약(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
     프리셋의 이름·공정 차례까지 — 「＋ 새 프리셋」 은 늘 쓴다), 선행 B/O·선행 입고 실적(보이는 달을 합친 저장 행의 달·값,
-    `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 버전 대조가 있는 넷(표시순서·확보율 보정·
-    Capa 요약·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
-    `display_order_management._render_direct_editor` 안의 같은 조건), 프리셋은 제출 회차가 다시 읽은 묶음(고칠
+    `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 공정 그룹(HOME 설정 · Admin 한 부품)은
+    `same_process_groups` 로 공정 → 그룹 대응을 차례 없이 견준다. 버전 대조가 있는 다섯(표시순서·확보율 보정·
+    Capa 요약·구간·공정 그룹)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서 ·
+    공정 그룹은 `display_order_management._render_direct_editor` · `process_group_editor` 안의 같은 조건), 프리셋은 제출 회차가 다시 읽은 묶음(고칠
     프리셋 대조 `_stale_key_process_target` 를 지난 뒤), 대조 없는 선행 둘은 제출 회차가 읽은 최신 저장본과 견준다. 겹친 둘째
     누름(저장본이 아직 낡은 회차)은 전처럼 `save_once`·제 저장 표지가 거른다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
     대조가 거부한다. 저장본이 없는 v0 의 첫 저장은 쓴다 — 판정 기준은 그때 보이는 공식버전 프리셋·코드 기본값을 공용으로
@@ -1350,7 +1351,7 @@
   8px)로 비우면 입력 칸은 그 앞까지만 늘고 다 들지 못하는 단추는 다음 줄로 내려가, 막대가 그 빈 위에 서므로 표가 줄 바로
   아래(줄 사이 14px)에 붙는다 — Admin Proc Rename · 표시순서 관리의 저장 줄(표시순서는 CSV · Excel 칸도 막대 자리 앞),
   가용설비 Preference 입력 비가동 저장 줄(2026-11-10 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」), 설비 마스터 작은
-  편집표 작업 줄(같은 날 답 Q-14), HOME 설정 선행 B/O · 선행 입고 · 확보율 보정 저장 줄(2차 보드 Q2-2 「같은 꼴 같은 간격」 —
+  편집표 작업 줄(같은 날 답 Q-14), HOME 설정 선행 B/O · 선행 입고 · 확보율 보정 · 공정 그룹(Admin 탭도) 저장 줄(2차 보드 Q2-2 「같은 꼴 같은 간격」 —
   팝업 본문은 스타일만 든 `st.html` 을 쓰지 않으므로 서식은 제목 줄 버전 캡션에 싣는다, `render_profile_heading(style=)`).
   HOME 설정 판정 기준은 표 바로 위가 숫자 칸 줄이라 띄움이다 — 두 갈래를 `tests/test_table_toolbar.py` 가 지킨다. 저장
   줄과 표 사이에 알림(「바뀐 것이 없습니다」 · 거부)이 서는 회차에는 막대가 그 알림 칸 오른쪽 끝 아래쪽에 겹친다(알림 칸에는 누를 것이 없다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는

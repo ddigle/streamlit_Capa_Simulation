@@ -211,6 +211,10 @@
   - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
     공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
     프리셋을 고치는 자리(HOME 설정 → `판정 기준` · `Capa 요약 · 표시` 탭)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
+  - 공정 필터 팝업 작업 줄 아래 둘째 줄이 공정 그룹 단추다(`show_process_filter_dialog(group_buttons=)`). 누르면 초안이 그 그룹 공정만
+    남고(「전체 ON」 과 같은 초안 콜백) 판정 대상은 「선택 공정 적용」 이 바꾼다. 대응은 여는 회차에만 읽고(`_process_filter_dialog` →
+    `process_group_buttons`, 읽기 실패는 빈 대응) 대응 없는 그룹은 단추가 없으며, 이번 선택지에 그 그룹 공정이 없으면 잠그고 까닭
+    풍선(`PROCESS_GROUP_ABSENT_HELP`)을 단다 — 켜진 단추에는 `help` 를 달지 않는다(다시 그리는 팝업에 풍선이 열린 채 남는다).
   - 공정 필터 팝업 「확보율 없음」 구역의 계산 밖 공정(경로가 모두 소요기준 BOX · PCB — 11장) 단추는 이름 오른쪽 「계산 밖」 과 풍선 줄
     「소요기준 BOX — 산식이 정해질 때까지 계산 밖입니다(추가 예정).」 이다(2026-11-24 사용자 「권장안 그대로」). 목록은 산출 결과 표
     제목 줄 표지와 같은 칸(`get_unimplemented_basis_processes` — 선언을 접지 않은 내용 토큰 + 계산 조회기간)이고 여는 회차에만
@@ -1017,18 +1021,19 @@
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` · `부대공정` 네 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
-  회차(`sso_identity.viewer_can_audit`)에만 다섯째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
-  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 넷과 「부하 예외」 · 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  `원천 품질` · `부대공정` · `공정 그룹` 다섯 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 개발자
+  회차(`sso_identity.viewer_can_audit`)에만 여섯째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 다섯과 「부하 예외」 · 맨 끝 「공지」 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
   「공지」 바로 앞(기록 탭이 서면 그 바로 뒤) 「부하 예외」(`navigation.ADMIN_AREA_ROUTE_EXCEPTION_TAB` — `components/route_load_exception_admin.py`)는
   늘 서는 입력 탭(공정 고르기 칸)이라 닫혀 있어도 그리고(닫힌 회차는 공용 프로필 캐시만 — 판 이력 표는 열린 회차에만), DB 를 열지 못하면 열린 회차에
-  「데이터 Error」 마크가 선다. 서수로 부르는 앞 다섯(넷째 「부대공정」 · 다섯째 기록 탭 — `extra_process_admin.TAB_LABEL = ADMIN_AREA_TABS[3]`)이
+  「데이터 Error」 마크가 선다. 서수로 부르는 앞 여섯(넷째 「부대공정」 · 여섯째 기록 탭 — `extra_process_admin.TAB_LABEL = ADMIN_AREA_TABS[3]`)이
   그대로이게 `ADMIN_AREA_TABS` 밖 상수이고 페이지는 `opened_tabs[-2]` 로 받는다.
   맨 끝 「공지」(`navigation.ADMIN_AREA_NOTICE_TAB` — `components/notice_admin.py`, 2026-11-17 공지 보드 답 decided 2)는 Admin Area 를
   여는 회차마다 서는 입력 탭이라 닫혀 있어도 늘 그리고, DB 를 쓰지 않아 DB 를 열기 앞에서 그린다.
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
-  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 네 탭과 「부하 예외」(고르는 공정 목록이 활성 리비전 소요기준)만
-  시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은 둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py` 를 그린다. 계산 알림을
+  기록 탭 · 공지 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 다섯 탭과 「부하 예외」(고르는 공정 목록이 활성 리비전 소요기준)만
+  시나리오 줄, 기록 탭만 「기록 조건」 카드, 공지 탭은 둘 다 없음)을 읽는다. 셋째는 `components/source_quality.py`, 넷째는 `components/extra_process_admin.py`,
+  다섯째는 `components/process_group_editor.py`(활성 시나리오 `RQ_MODULE` 이 줄 — 편집 표라 닫혀 있어도 그리고 닫힌 회차는 공용 프로필 캐시만, 저장 벽은 `home.settings`)를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(위젯이 단추 · 내려받기 · 확인

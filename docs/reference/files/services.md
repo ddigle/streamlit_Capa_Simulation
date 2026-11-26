@@ -32,6 +32,9 @@
   `PERFORMANCE_ROUTE_COLUMNS`)는 Stack 뒤에 `CUSTOM` 을 싣고, 함께 처리하는 수요 변형은 Capa Code · Customer · CS 셋이다.
 - `src/capa_simulation/services/process_rename.py` — 공용 공정 표시명의 정규화·검증·직렬화다(치환은
   `components/process_labels.py` 에만, 8장).
+- `src/capa_simulation/services/process_group.py` — 공용 공정 그룹 대응의 칸 계약 · 정규화 · 검증, 편집 표 줄(한 열쇠 한 줄),
+  HOME 그룹 단추 묶음. 열쇠는 원본 공정(`process_group_key` — 표시명과 같은 정규화, 대소문자 가림)이고 그룹 목록은 설비
+  마스터 공정구분 표기(`equipment_contract.LINE_TYPE_GROUPS`), 단추 차례는 FRONT · PKG · MI · TEST · FDY · 물류다.
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
   - `calculate_required_equipment(route_exceptions=)` 는 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)을 받는다.
     **기본값이 없다** — 호출처가 모두 넘기고 빠뜨리면 mypy 가 잡는다. 빈 선언이면 결과 · attrs 는 일반 산식 그대로다. 선언

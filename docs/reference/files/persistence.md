@@ -45,6 +45,8 @@
   찍는 표지는 `BEFORE_ROUTE_EXCEPTION_COPY`(`사본 0040 전`)다.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
+- `src/capa_simulation/persistence/process_group_store.py` — 공용 공정 그룹 프로필(`0041`)의 조회·교체 SQL. 소유 칸이 없고 계산 밖이며,
+  저장소 쓰기(`replace_global_process_group`)는 잠금 전에 서비스로 검증하고 `home.settings` 벽 뒤 버전 대조다.
 - `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·Capa 요약·GAP 비교 대상(`0020`)·주요
   Case(`0036`)의 조회·교체·해제 SQL.
   - 주요 Case 는 한 행에 Case 마다 칸 둘(`case1_scenario_id`…)이다. 칸 이름이 `scenario_id` 가 아니라 `_owned_tables`
@@ -134,7 +136,7 @@
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
     시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.
 - `src/capa_simulation/persistence/migration_runner.py`, `equipment_migration_runner.py` — 각 DB 를 엔진에 묶는 진입점.
-- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열세 종(부하 예외 선언 포함)과 설비
+- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열네 종(부하 예외 선언 · 공정 그룹 포함)과 설비
   스냅샷·층/FAB 도면·설비 마스터 탭 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).

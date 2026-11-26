@@ -1165,6 +1165,10 @@
     저장」, 자리는 2026-11-07 g8-16).
   - 저장 줄(`SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대 자리로 비우고(`toolbar_room_css`) 표 앞 띄움이 없다 — 저장 줄 → 표
     14px(2026-11-10 사용자 그림 메모 admin-rename, 9장 「표 도구 막대」).
+- `src/capa_simulation/components/process_group_editor.py` — 공용 공정 그룹 편집 카드(공정 · 공정 그룹 두 칸 표 + 위 저장 줄). 공정
+  목록을 인자로 받아 HOME 설정 `Capa 요약 · 표시`(조회기간 선택지)와 Admin 「공정 그룹」 탭(`AdminTab` — 활성 시나리오 `RQ_MODULE`)에
+  붙는다. 목록 밖 저장 공정도 표지(「· 이 화면에 없음」 · Admin 「· 보유 공정 밖」)를 단 줄로 보여 통째 저장이 숨은 값을 지우지 않는다.
+  저장은 확보율 보정 편집기와 같은 버전 대조 · 제 저장 판정 · 바뀐 것 없음(v0 첫 저장은 씀)이고, 표 key 끝은 저장본 version · 줄 지문이다.
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
   저장 성공과 그 저장의 표시명 경고(성공 칸 안), 저장된 겹침 경고는 각각 늘 서 있는 칸에 서서 저장(`st.rerun()`)
@@ -1422,14 +1426,14 @@
   탭에 쓰는 묶음대로 선다(`render_home_preference(tabs=)` — 2026-11-04 사용자 검수 home-u01): `비교 · 주요 Case` 는 「비교
   시나리오」 · 「주요 Case」(`home_main_cases`) 나란히(`CASES_COLUMN_WEIGHTS`), `판정 기준` 은 확보율 판정 기준, `선행 · 보정` 은
   선행 B/O · 선행 입고 실적 · 확보율 보정 위아래(앞 둘은 `구분` 칸 폭이 같아 달 칸이 맞선다), `Capa 요약 · 표시` 는 왼쪽
-  Capa 요약 · Top5 구간, 오른쪽 주요공정 프리셋. `Capa 요약 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — Capa 요약
+  Capa 요약 · Top5 구간, 오른쪽 주요공정 프리셋 · 공정 그룹(`process_group_editor` 를 부른다). `Capa 요약 · 표시` 는 같은 말 · 빈 줄을 두지 않는다(2026-11-09 사용자 검수 g18) — Capa 요약
   버전 줄에 옛 「공지 중 · 내림」 꼬리가 없고 글 칸 이름은 숨기며(상자 제목과 같은 말), Top5 는 저장 · 하한 · 상한이 한 줄(프리셋
   저장 · 이름 줄과 같은 꼴)이다. 폼마다 알림 칸은 `render_flash` 가 돌려준 칸 하나다(폼 안 빈 칸은 간격을 먹지 않는다 —
   9장 「알림 칸」). 선행 B/O · 선행 입고 · 확보율 보정의 저장 줄(`ADVANCE_SAVE_ROW_KEY` · `ADVANCE_SHIPMENT_SAVE_ROW_KEY` ·
   `EXECUTION_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2차 보드 Q2-2,
   서식은 제목 줄 캡션 — 9장 「표 도구 막대」). 판정 기준은 띄움 그대로다. 숨은 탭도 모두 그린다(`stateful_tabs`) — 탭을
   옮겨도 폼의 고친 칸이 남는다. 상자 하나하나(저장 단추 · 저장 단위 · key · 저장 길)는 놓는 자리와 상관없다. 팝업 머리 안내 글은 없다 — 「모든 사용자가 함께
-  쓰는 공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추 일곱의 풍선(`SHARED_SAVE_HELP`)이 말한다.
+  쓰는 공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추 여덟(공정 그룹 포함)의 풍선(`SHARED_SAVE_HELP`)이 말한다.
   - 구획 제목 줄 `render_section_title_row` 는 선택 인자 `mark` · `mark_help` 로 제목 오른쪽 끝에 작은 회색 표지(`st.caption` + ⓘ 풍선)를
     단다 — 없으면 그리지 않고, 지금 쓰는 곳은 「상세 B/N 공정」 줄의 「계산 밖 n공정」 하나다(줄 서식은 `home_rendering.dashboard_title_row_style`).
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).

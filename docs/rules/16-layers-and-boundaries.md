@@ -28,7 +28,7 @@ Core_Data (BigDataQuery / 원천 CSV 올림 / data/input/Core_Data.csv / 내장 
 - `capa_server.py` — C-DEP 운영 진입점(시작 스크립트가 `streamlit run capa_server.py --server.port 8080` 으로 띄운다). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로·문지기를 같은 프로세스에 붙인다(`src/capa_simulation/auth/`). 개발·WebIDE·시험·화면 확인은
   `app.py` 로 띄운다(통합인증 꺼짐). 자세한 것은 `docs/sso_setup.md`. 통합인증이 켜진 기동에서만 접속 · 작업 감사 기록기를
-  켠다(`src/capa_simulation/audit/` — 메모리 큐 → 로컬 스풀 → 버킷 `audit/` 새 객체, 두 DB · 마이그레이션 밖. Admin Area 다섯째 탭
+  켠다(`src/capa_simulation/audit/` — 메모리 큐 → 로컬 스풀 → 버킷 `audit/` 새 객체, 두 DB · 마이그레이션 밖. Admin Area 여섯째 탭
   「접속 · 작업 기록」 은 개발자만). 꺼진 곳(개발 · WebIDE · 시험 · 사내 PC)은 기록기 · 탭 호출이 0 이다.
   규칙은 AGENTS 5장 40, 운영은 `docs/audit_log_operations.md`.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
