@@ -2015,10 +2015,10 @@
     바뀜」 · 「판에 안 든 칸 입력 n」. 「새 판 적용」 은 `apply_editor_extra_process`(「앱 입력」 · 펼친 차례 대조)만 넣고 작성을
     닫는다 — S3 Drive 몫 밖(`owes_drive`). 만든 뒤 표가 바뀌면 걷힌다(`made_from`). 시험 `tests/test_extra_process_editor_box.py`.
 - `src/capa_simulation/components/extra_process_editor.py` — 「부대공정」 탭 앱 작성 편집기(셋째 길). 「앱에서 작성」 이 활성 판(끈
-  동안 마지막 판, 없으면 빈 판 — 못 읽으면 진입 잠금)을 펼쳐 표 넷을 그리드 한 마운트(종류 단추)로 고치고 참조 · 조합은
-  팝오버로 고른다. 회차마다 초안으로 모형을 다시 짓고 초안을 맞춘다(`_tidy`). 표 위 「판 만들기」 가 판 번호 · 시각 ·
-  작성자를 고정해 받은 판 자리에 싣는다. 구역 아님(9장 R7 · R8). 메모 `persist_state` 는 9장 「입력 초안」 예외(초안
-  전체가 세션 칸). 시험 `tests/test_extra_process_editor_screen.py`.
+  동안 마지막 판, 없으면 빈 판 — 못 읽으면 진입 잠금)을 펼쳐 표 넷을 그리드 한 마운트(종류 단추)로 고친다 — 새 공정은 빈 새 줄,
+  참조공정 · STEP · MCP 는 「글 + 후보」 칸, 표 위 팝오버는 「따라올 제품」 · 「판 만들기」(받은 판 자리에).
+  회차마다 초안으로 모형을 짓고 맞춘다(`_tidy`). 구역 아님(9장 R7 · R8). 메모 `persist_state` 는 9장 「입력 초안」 예외. 시험
+  `tests/test_extra_process_editor_screen.py`.
 - `src/capa_simulation/components/extra_process_notice.py` — 부대공정 판을 합친 결과 알림 한 꼴. 짧은 글은 「부대공정 2 합침」 ·
   「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만(`popup_only`). 조건이 남는
   동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
