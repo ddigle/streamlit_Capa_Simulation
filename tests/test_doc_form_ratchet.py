@@ -130,7 +130,7 @@ BASELINE: dict[str, dict[str, int]] = {
         "보드 답": 29,
     },
     "docs/reference/files/components.md": {
-        "날짜": 260,
+        "날짜": 259,
         "사용자 결정": 42,
         "가지 이름": 0,
         "보드 답": 15,
@@ -148,7 +148,7 @@ BASELINE: dict[str, dict[str, int]] = {
         "보드 답": 0,
     },
     "docs/reference/files/services.md": {
-        "날짜": 29,
+        "날짜": 28,
         "사용자 결정": 10,
         "가지 이름": 0,
         "보드 답": 8,

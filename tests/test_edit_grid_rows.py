@@ -138,6 +138,84 @@ def test_choice_and_length_errors_are_written_per_column() -> None:
     assert "colErrors" not in edit_grid.texts(plain, changes_label="적용 전 변경")
 
 
+SUGGEST_SPEC = eg.GridSpec(
+    "DEMO_SUGGEST",
+    "데모 공정",
+    ("No.",),
+    ("참조", "STEP"),
+    TEXT,
+    column_formats=(
+        ("참조", eg.ValueFormat("suggest", 0, max_length=8)),
+        ("STEP", eg.ValueFormat("suggest", 0)),
+    ),
+    id_column="_id",
+)
+
+
+def _suggestions(tag: str) -> dict[str, eg.Suggestions]:
+    return {
+        "참조": eg.Suggestions(
+            items=(
+                eg.Suggestion(f"{tag} X (DEMO_X)", "DEMO_X"),
+                eg.Suggestion("DEMO_Y", "DEMO_Y"),
+            )
+        ),
+        "STEP": eg.Suggestions(by="참조", table={"DEMO_X": (eg.Suggestion("S1", "S1"),)}),
+    }
+
+
+def test_suggest_cells_keep_text_and_their_candidates_stay_out_of_the_table_body() -> None:
+    """글 + 후보 칸(2026-11-27 총괄 결정 R1) — 값은 글 그대로(목록 밖 글도 받고 판정은 부르는 쪽),
+    다듬기 · 표시 · 양식 값 · 되머지가 글 칸과 같다. 후보 {보이는 글, 넣을 글}과 딸린 후보(같은 줄
+    `by` 칸 글 → 후보)는 껍데기 `suggest` 에 실려 표 본문 · `baseKey` 밖이다 — 후보가 바뀌어도
+    브라우저 모델을 다시 짓지 않는다."""
+    frame = pd.DataFrame(
+        {"No.": ["1", "2"], "_id": ["a", "b"], "참조": ["DEMO_OLD", None], "STEP": [None, "S1"]}
+    )
+    fmt = SUGGEST_SPEC.format_of("참조")
+    index = eg.build_index(frame, SUGGEST_SPEC)
+    assert index.text_cols == frozenset({0, 1}) and index.template_value(0, 0) == "DEMO_OLD"
+    assert eg.coerce(" DEMO_NEW ", fmt, template_value=None) == eg.Coerced("DEMO_NEW")
+    assert eg.coerce("DEMO_TOO_LONG", fmt, template_value=None).error == "len"
+    assert eg.format_value("DEMO_X", fmt) == "DEMO_X"
+    assert eg.format_payload(fmt)["kind"] == "suggest"
+    assert eg.format_payload(fmt)["maxLength"] == 8 and "options" not in eg.format_payload(fmt)
+    found = edit_grid.texts(SUGGEST_SPEC, changes_label="적용 전 변경")
+    assert found["colErrors"] == {"0": {"len": "8자 이하로 적습니다"}}
+    assert found["errors"]["text"] == "줄바꿈 · 탭 같은 글자는 받지 않습니다"
+
+    assert eg.suggest_payload(SUGGEST_SPEC, _suggestions("표시")) == {
+        "참조": {"items": [["표시 X (DEMO_X)", "DEMO_X"], "DEMO_Y"], "by": None, "table": {}},
+        "STEP": {"items": [], "by": "참조", "table": {"DEMO_X": ["S1"]}},
+    }
+    with pytest.raises(ValueError, match="글 \\+ 후보"):
+        eg.suggest_payload(SPEC, {"등급": eg.Suggestions()})
+    with pytest.raises(ValueError, match="없는 칸"):
+        eg.suggest_payload(SUGGEST_SPEC, {"STEP": eg.Suggestions(by="모름")})
+
+    base = payload.build_base(frame, SUGGEST_SPEC, None)
+    shells = [
+        edit_grid.shell_data(
+            "h", base, SUGGEST_SPEC, base_key="k", changes_label="적용 전 변경", suggest=suggest
+        )
+        for suggest in (_suggestions("표시"), _suggestions("다른"))
+    ]
+    assert shells[0]["suggest"] != shells[1]["suggest"]
+    assert shells[0]["baseKey"] == shells[1]["baseKey"] == "k"
+    assert {key: value for key, value in shells[0].items() if key != "suggest"} == {
+        key: value for key, value in shells[1].items() if key != "suggest"
+    }
+    assert "suggest" not in base.body and edit_grid.uses_rows(shells[0])
+    plain = edit_grid.shell_data(
+        "h", base, SUGGEST_SPEC, base_key="k", changes_label="적용 전 변경"
+    )
+    assert "suggest" not in plain
+
+    draft: eg.DraftState = {"cells": {"b": {"참조": "DEMO_NEW"}}, "bad": {}}
+    merged = eg.merge_into_template(frame, SUGGEST_SPEC, draft)
+    assert merged["참조"].tolist() == ["DEMO_OLD", "DEMO_NEW"]
+
+
 # ------------------------------------------------------------------ 색인 · 껍데기 · feed
 
 

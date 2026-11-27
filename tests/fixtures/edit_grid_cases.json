@@ -2421,6 +2421,16 @@
      "관리자",
      "개발자"
     ]
+   },
+   "step": {
+    "kind": "suggest",
+    "digits": 0,
+    "int": false,
+    "min": 0.0,
+    "max": null,
+    "blankZero": false,
+    "pattern": null,
+    "maxLength": 8
    }
   },
   "coerce": [
@@ -2575,6 +2585,54 @@
     "value": null,
     "error": null,
     "text": null
+   },
+   {
+    "raw": " S1/M2 ",
+    "fmt": "step",
+    "template": null,
+    "value": "S1/M2",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "DEMO_NEW",
+    "fmt": "step",
+    "template": null,
+    "value": "DEMO_NEW",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "S1\tM2",
+    "fmt": "step",
+    "template": null,
+    "value": null,
+    "error": "text",
+    "text": "S1\tM2"
+   },
+   {
+    "raw": "S1/M2/X99",
+    "fmt": "step",
+    "template": null,
+    "value": null,
+    "error": "len",
+    "text": "S1/M2/X99"
+   },
+   {
+    "raw": 3,
+    "fmt": "step",
+    "template": null,
+    "value": "3",
+    "error": null,
+    "text": null
+   },
+   {
+    "raw": "  ",
+    "fmt": "step",
+    "template": null,
+    "value": null,
+    "error": null,
+    "text": null
    }
   ],
   "format": [
@@ -2612,6 +2670,16 @@
     "value": 7,
     "fmt": "plain",
     "text": "7"
+   },
+   {
+    "value": "S1/M2",
+    "fmt": "step",
+    "text": "S1/M2"
+   },
+   {
+    "value": 3,
+    "fmt": "step",
+    "text": "3"
    }
   ]
  }

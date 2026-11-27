@@ -631,3 +631,164 @@ def test_korean_composition_filters_the_list_as_it_goes() -> None:
     assert result["ended"] == ["관리자"]
     assert result["endOnly"] == ["실무자", "관리자", "개발자"]
     assert result["commit"] == [[["관리자"]], "관리자"]
+
+
+SUGGEST_SPEC = eg.GridSpec(
+    "DEMO_SUGGEST",
+    "데모 공정",
+    ("No.",),
+    ("공정", "참조공정", "STEP_MCP"),
+    eg.ValueFormat("text", 0),
+    column_formats=(
+        ("공정", eg.ValueFormat("text", 0)),
+        ("참조공정", eg.ValueFormat("suggest", 0, max_length=20)),
+        ("STEP_MCP", eg.ValueFormat("suggest", 0)),
+    ),
+    id_column="_id",
+    label_column="_label",
+    row_ops=True,
+)
+
+
+def _suggestions(tag: str) -> dict[str, eg.Suggestions]:
+    """후보 60개(보이는 글 「<tag> nn (원본)」 · 넣을 글 원본)와 참조공정에 딸린 STEP/MCP 후보."""
+    items = tuple(eg.Suggestion(f"{tag} {k:02d} ({ref})", ref) for k, ref in enumerate(REFS))
+    table = {
+        ref: tuple(eg.Suggestion(f"S{k}/M{j}", f"S{k}/M{j}") for j in range(2))
+        for k, ref in enumerate(REFS[:3])
+    }
+    fallback = (eg.Suggestion("S9/M9", "S9/M9"),)
+    return {
+        "참조공정": eg.Suggestions(items=items),
+        "STEP_MCP": eg.Suggestions(by="참조공정", table=table, items=fallback),
+    }
+
+
+def _suggest_shell(tag: str) -> tuple[dict[str, Any], eg.GridIndex]:
+    frame = pd.DataFrame(
+        {
+            "No.": ["1", "2", "새 1"],
+            "_id": ["p1", "p2", "+1"],
+            "_label": ["DEMO_A", "DEMO_B", "새 줄 1"],
+            "공정": ["DEMO_A", "DEMO_B", None],
+            "참조공정": ["DEMO_REF_001", "DEMO_OLD", None],
+            "STEP_MCP": ["S1/M0", None, None],
+        }
+    )
+    base = build_base(frame, SUGGEST_SPEC, None, LIST_RULES)
+    shell = edit_grid.shell_data(
+        "demo_rows",
+        base,
+        SUGGEST_SPEC,
+        base_key="k1",
+        changes_label="적용 전 변경",
+        suggest=_suggestions(tag),
+    )
+    return shell, base.index
+
+
+SUGGEST_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const labels = () => list.children.map((n) => n.textContent)
+  const lastValues = () => S.box.ops[S.box.ops.length - 1].values
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  const open = (r, c) => {
+    setRange(S, { r, c }, { r, c })
+    key(scroller, 'Enter')
+  }
+  const on = () => list.children.findIndex((n) => n.classList.contains('is-on'))
+  // 참조공정 — 보이는 글은 「표시 nn (원본)」, 지금 값(원본)과 같은 항목이 강조, 고르면 원본을
+  // 넣는다.
+  open(0, 2)
+  R.open = [labels().length, labels()[0], on(), ed().value]
+  type('ref_00')
+  key(ed(), 'ArrowDown')
+  key(ed(), 'Enter')
+  R.pick = [lastValues(), cell(0, 2).textContent]
+  // 보이는 글로 거르고 보이는 글을 다 치면 그 항목이 강조 — Enter 가 원본을 넣는다.
+  open(2, 2)
+  type('표시 02 (DEMO_REF_002)')
+  R.label = [labels(), on()]
+  key(ed(), 'Enter')
+  R.labelPick = lastValues()
+  // 목록 밖 글(바탕 판 참조 · 새 글)은 그대로 칸에 남고 오류가 아니다 — 판정은 부르는 쪽.
+  open(1, 2)
+  R.outside = [on(), labels().length]
+  type('DEMO_NEW')
+  R.outsideList = list.hidden
+  key(ed(), 'Enter')
+  R.outsideCommit = [lastValues(), cell(1, 2).textContent, has(1, 2, 'is-error')]
+  // 딸린 후보 — 그 줄 참조공정의 지금 칸(보내는 중 · 초안 포함)으로 고르고, 표에 없는 참조면
+  // 기본 후보.
+  open(0, 3)
+  R.dep0 = labels()
+  key(ed(), 'Escape')
+  open(1, 3)
+  R.dep1 = labels()
+  key(ed(), 'Escape')
+  open(2, 3)
+  R.dep2 = labels()
+  key(ed(), 'Escape')
+  // 후보 표가 바뀐 껍데기(같은 baseKey)가 와도 모델 · 마운트 · 편집 중 칸 · 보낼 op 는 그대로이고
+  // 목록만 새 벌.
+  open(0, 2)
+  const model = S.model
+  const mountId = S.mount
+  const ops = S.box.ops.length
+  mount(input.shell2)
+  R.swap = {
+    model: S.model === model, mount: S.mount === mountId, edit: Boolean(S.edit), value: ed().value,
+    ops: S.box.ops.length === ops, first: labels()[0], on: on(), cell: cell(1, 2).textContent,
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_suggest_cells_list_labels_put_values_and_follow_the_row() -> None:
+    """글 + 후보 칸(R1) — 목록은 보이는 글, 고르면 넣을 글(원본), 목록 밖 글은 그대로 남는다.
+    딸린 후보는 같은 줄 참조공정의 지금 칸(보내지 않은 초안 포함)으로 브라우저가 고른다. 후보 표가
+    바뀐 껍데기는 `baseKey` 가 같아 모델을 다시 짓지 않는다 — 편집 중 칸 · 보낼 op 가 그대로다."""
+    shell, index = _suggest_shell("표시")
+    shell2, _ = _suggest_shell("다른")
+    assert shell2["baseKey"] == shell["baseKey"] and shell2["suggest"] != shell["suggest"]
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(
+        source,
+        SUGGEST_RUNNER,
+        {"shell": shell, "shell2": shell2, "feed": _feed(index, "k1", None)},
+    )
+
+    assert result["open"] == [60, "표시 00 (DEMO_REF_000)", 1, "DEMO_REF_001"]
+    assert result["pick"] == [[["DEMO_REF_000"]], "DEMO_REF_000"]
+    assert result["label"] == [["표시 02 (DEMO_REF_002)"], 0]
+    assert result["labelPick"] == [["DEMO_REF_002"]]
+    assert result["outside"] == [-1, 60]
+    assert result["outsideList"] is True, "맞는 후보가 없으면 목록을 걷는다"
+    assert result["outsideCommit"] == [[["DEMO_NEW"]], "DEMO_NEW", False]
+    assert result["dep0"] == ["S0/M0", "S0/M1"], "보내는 중인 참조공정(DEMO_REF_000)을 따른다"
+    assert result["dep1"] == ["S9/M9"], "표에 없는 참조는 기본 후보"
+    assert result["dep2"] == ["S2/M0", "S2/M1"]
+    assert result["swap"] == {
+        "model": True,
+        "mount": True,
+        "edit": True,
+        "value": "DEMO_REF_000",
+        "ops": True,
+        "first": "다른 00 (DEMO_REF_000)",
+        "on": 0,
+        "cell": "DEMO_NEW",
+    }

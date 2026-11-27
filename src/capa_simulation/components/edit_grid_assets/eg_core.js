@@ -283,7 +283,7 @@ function egRebuildView(S, keepCell) {
   const anchorRow = keepCell && old.length ? old[Math.min(S.anchor.r, old.length - 1)] : -1
   const sort = S.view.sort && S.view.sort.col < m.colCount ? S.view.sort : null
   const vc = sort ? sort.col - m.keyCount : -1
-  const numeric = vc >= 0 && fmtOf(m, vc).kind !== 'text'
+  const numeric = vc >= 0 && !TEXT_KINDS.includes(fmtOf(m, vc).kind)
   const keyOf = sort ? (row) => (numeric ? egNumberAt(S, row, vc) : vc < 0 ? egLabel(S, row, sort.col) : formatValue(egCellState(S, row, vc).value, fmtOf(m, vc))) : null
   const filters = S.feedData && S.feedData.table === m.table ? S.feedData.filters : null
   S.view.order = viewOrder(m.rows, m.keyCodes, filters, sort, keyOf, numeric)

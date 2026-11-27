@@ -18,7 +18,8 @@
   미리보기다 — `tests/fixtures/edit_grid_cases.json` 의 같은 사례를 둘이 같은 답으로 낸다(쌍둥이
   시험). 표시 형식(`format_value` ↔ `formatValue`)도 같다.
 - **글 · 고르기 칸 · 줄 규칙은 고른 표만**(2026-11-18 접속 명단 편집 표). 칸마다 형식
-  (`GridSpec.column_formats` — `text` 글 · `choice` 고르기, 값은 고른 항목 차례 번호), 업무 키를
+  (`GridSpec.column_formats` — `text` 글 · `choice` 고르기, 값은 고른 항목 차례 번호 · `suggest`
+  글 + 후보, 값은 글이고 후보 `Suggestions` 는 껍데기에 따로 — `suggest_payload`), 업무 키를
   보이는 분류 칸이 아닌 칸에서(`GridSpec.id_column`), 줄마다 잠긴 칸 · 지울 수 없는 줄 · 빈 새 줄 ·
   줄이 누구인지 말하는 잠긴 칸(`RowRules` — 붙인 값이 그 칸과 다르면 그 줄을 건너뛴다,
   `LockKind.anchor`), 줄 지우기 · 되살리기 op(`GridSpec.row_ops` — 초안의 예약 칸
@@ -40,7 +41,9 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-ValueKind = Literal["percent", "fixed", "sig", "text", "choice"]
+ValueKind = Literal["percent", "fixed", "sig", "text", "choice", "suggest"]
+# 값이 글인 형식 — `suggest`(글 + 후보)는 다듬기 · 표시 · 양식 값이 `text` 와 같고 목록만 더 있다.
+TEXT_KINDS: Final = frozenset({"text", "suggest"})
 
 # 업무 키 — 분류 칸 원값(`astype(str)`)을 이 글자로 잇고, 같은 키가 또 나오면 둘째부터 `\x1e<n>` 을
 # 붙인다.
@@ -98,7 +101,8 @@ class ValueFormat:
 
     `kind` — percent(분수 0.9875 를 「98.75%」 로) · fixed(천 단위 + 소수 `digits` 자리) ·
     sig(유효숫자 `digits` 자리) · text(글 — `pattern` 전체 맞음 · `max_length` 글자 이하) ·
-    choice(`options` 가운데 하나 — 값은 그 차례 번호, 칸에는 항목 글). `integer` 면 소수는 칸
+    choice(`options` 가운데 하나 — 값은 그 차례 번호, 칸에는 항목 글) · suggest(text 와 같은 글 칸에
+    편집 중 후보 목록 — 후보는 형식 밖 `Suggestions`, 목록 밖 글도 받는다). `integer` 면 소수는 칸
     오류, `blank_zero` 면 빈칸을 0 으로 다듬는다(설비대수 — 빈칸 = 0)."""
 
     kind: ValueKind
@@ -141,6 +145,47 @@ class GridSpec:
 
 
 @dataclass(frozen=True)
+class Suggestion:
+    """「글 + 후보」 칸의 후보 하나 — 목록에 보이는 글과 고르면 칸에 넣는 글."""
+
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
+class Suggestions:
+    """「글 + 후보」 칸 하나의 후보. `by`(같은 표의 값 칸 이름)를 주면 그 줄 `by` 칸의 지금 글(초안
+    포함 — 브라우저가 고른다)로 `table` 에서 고르고, 그 글이 `table` 에 없으면 `items` 다."""
+
+    items: tuple[Suggestion, ...] = ()
+    by: str | None = None
+    table: Mapping[str, tuple[Suggestion, ...]] = field(default_factory=dict)
+
+
+def _suggestion_items(items: Iterable[Suggestion]) -> list[str | list[str]]:
+    return [item.value if item.label == item.value else [item.label, item.value] for item in items]
+
+
+def suggest_payload(spec: GridSpec, suggestions: Mapping[str, Suggestions]) -> dict[str, Any]:
+    """껍데기 `suggest` — 칸 이름 → ``{"items", "by", "table"}``. 후보 하나는 보이는 글과 넣을 글이
+    같으면 글 하나, 다르면 ``[보이는 글, 넣을 글]``. 표 본문(`fmts`) · `baseKey` 밖이라 후보가
+    바뀌어도 브라우저 모델 · 초안 · 편집 중 칸은 그대로다. 「글 + 후보」 칸이 아니거나 `by` 가 값
+    칸이 아니면 ValueError."""
+    found: dict[str, Any] = {}
+    for column, source in suggestions.items():
+        if column not in spec.value_columns or spec.format_of(column).kind != "suggest":
+            raise ValueError(f"{spec.title} 의 「글 + 후보」 칸이 아닙니다: {column}")
+        if source.by is not None and source.by not in spec.value_columns:
+            raise ValueError(f"{spec.title} 에 없는 칸으로 후보를 고릅니다: {source.by}")
+        found[column] = {
+            "items": _suggestion_items(source.items),
+            "by": source.by,
+            "table": {str(key): _suggestion_items(items) for key, items in source.table.items()},
+        }
+    return found
+
+
+@dataclass(frozen=True)
 class LockKind:
     """줄 규칙 하나 — 잠긴 값 칸과 그 까닭, 줄 지우기를 막는 까닭(None 이면 지울 수 있음), 빈 새
     줄인가(지우기는 그 줄 칸을 비운다), 그 줄이 누구인지 말하는 잠긴 칸(`anchor`).
@@ -166,8 +211,8 @@ class RowRules:
 
 
 def format_payload(fmt: ValueFormat) -> dict[str, Any]:
-    """브라우저가 받는 값 형식(`fmt`) — 껍데기와 쌍둥이 시험 사례가 같은 꼴을 쓴다. 글 · 고르기
-    형식만 제 칸(`options` · `pattern` · `maxLength`)을 더 싣는다."""
+    """브라우저가 받는 값 형식(`fmt`) — 껍데기와 쌍둥이 시험 사례가 같은 꼴을 쓴다. 글 · 고르기 ·
+    글 + 후보 형식만 제 칸(`options` · `pattern` · `maxLength`)을 더 싣는다."""
     payload: dict[str, Any] = {
         "kind": fmt.kind,
         "digits": fmt.digits,
@@ -178,7 +223,7 @@ def format_payload(fmt: ValueFormat) -> dict[str, Any]:
     }
     if fmt.kind == "choice":
         payload["options"] = list(fmt.options)
-    if fmt.kind == "text":
+    if fmt.kind in TEXT_KINDS:
         payload["pattern"] = fmt.pattern
         payload["maxLength"] = fmt.max_length
     return payload
@@ -305,7 +350,9 @@ def build_index(template: pd.DataFrame, spec: GridSpec, rules: RowRules | None =
     if rules is not None and len(rules.rows) != len(keys):
         raise ValueError(f"{spec.title} 줄 규칙의 줄 수가 양식과 다릅니다")
     text_cols = frozenset(
-        col for col, month in enumerate(spec.value_columns) if spec.format_of(month).kind == "text"
+        col
+        for col, month in enumerate(spec.value_columns)
+        if spec.format_of(month).kind in TEXT_KINDS
     )
     values = month_matrix(template, spec.value_columns)
     text_values: dict[tuple[int, int], str] = {}
@@ -437,10 +484,10 @@ def coerce(raw: object, fmt: ValueFormat, *, template_value: CellValue) -> Coerc
     빈 글은 빈칸(None — `blank_zero` 면 0.0). 수는 유한한 값만, 천 단위 쉼표는 세 자리 묶음만,
     `percent` 표만 「85%」 → 0.85. 하한·상한·정수 검사는 양식과 같은 값이면 하지 않는다(양식에 이미
     있는 범위 밖 값을 다시 적어도 오류가 아니다). 오류면 값은 None 이고 적은 글이 남는다. 글 ·
-    고르기 칸은 제 규칙이다(`_coerce_text` · `_coerce_choice`)."""
+    고르기 칸은 제 규칙이다(`_coerce_text` · `_coerce_choice` — 글 + 후보 칸은 글 칸 규칙)."""
     if fmt.kind == "choice":
         return _coerce_choice(raw, fmt)
-    if fmt.kind == "text":
+    if fmt.kind in TEXT_KINDS:
         return _coerce_text(raw, fmt, template_value)
     if raw is None:
         return Coerced(0.0 if fmt.blank_zero else None)
@@ -542,7 +589,7 @@ def format_value(value: CellValue, fmt: ValueFormat) -> str:
         return value
     if math.isnan(value):
         return ""
-    if fmt.kind == "text":
+    if fmt.kind in TEXT_KINDS:
         return number_text(value)
     if fmt.kind == "choice":
         at = int(value) if value == math.floor(value) else -1

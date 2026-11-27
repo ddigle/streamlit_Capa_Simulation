@@ -29,7 +29,8 @@ ForwardMsg 해시 참조(약 75 B)로 가고, 편집 회차마다 바뀌는 초�
 - **줄 규칙 표는 다른 등록**(`ROWS_COMPONENT` — 2026-11-18 접속 명단 편집 표). 껍데기에 칸마다
   형식 · 업무 키 · 줄 규칙 · 줄 지우기(`fmts` · `ids` · `locks` · `rowOps`)가 실리면 `eg_rows.js` ·
   `eg_rows.css` 를 더 실은 등록으로 그린다(`ROWS_JS_PARTS`) — 그 밖의 표가 받는 등록 JS 는
-  그대로다(예산).
+  그대로다(예산). 글 + 후보 칸의 후보는 껍데기 `suggest`(`shell_data(suggest=…)`)로 — 표 본문 ·
+  `baseKey` 밖이라 후보가 바뀌어도 브라우저 모델 · 초안 · 편집 중 칸은 그대로다.
 
 이 모듈은 읽을 때 세 컴포넌트를 등록한다 — 페이지 대본이 늘 import 해 첫 AppTest 실행에서 등록되게
 한다. 시험은 `tests/conftest.py` 의 대역(`_GRID`·`_GRID_ROWS`·`_FEED`)이 바꾼다.
@@ -52,11 +53,13 @@ from capa_simulation.services.edit_grid import (
     DROPPED_TOAST,
     LOCKED_TOAST,
     PASTE_CELL_LIMIT,
+    TEXT_KINDS,
     DraftState,
     GridIndex,
     GridSpec,
     HistoryState,
     Op,
+    Suggestions,
     apply_ops,
     change_counts,
     draft_from,
@@ -64,6 +67,7 @@ from capa_simulation.services.edit_grid import (
     history_from,
     new_history,
     new_ops,
+    suggest_payload,
 )
 from capa_simulation.services.edit_grid_payload import (
     LIMITS,
@@ -264,7 +268,7 @@ def _rows_texts(spec: GridSpec) -> dict[str, Any]:
         own: dict[str, str] = {}
         if fmt.kind == "choice":
             own["choice"] = choice_error(fmt.options)
-        if fmt.kind == "text":
+        if fmt.kind in TEXT_KINDS:
             errors["text"] = "줄바꿈 · 탭 같은 글자는 받지 않습니다"
             if fmt.max_length:
                 own["len"] = f"{fmt.max_length}자 이하로 적습니다"
@@ -577,14 +581,17 @@ def shell_data(
     *,
     base_key: str,
     changes_label: str,
+    suggest: Mapping[str, Suggestions] | None = None,
 ) -> dict[str, Any]:
-    """껍데기 — 표가 없으면(읽기 보기) 표 없는 껍데기라 마운트는 그대로 남는다."""
+    """껍데기 — 표가 없으면(읽기 보기) 표 없는 껍데기라 마운트는 그대로 남는다. `suggest` 는 글 +
+    후보 칸의 후보(칸 이름 → `Suggestions` — 회차마다 부르는 쪽이 짓는다)로, 표 본문 ·
+    `baseKey` 밖의 칸 `suggest` 에 싣는다."""
     _check_host(host)
     if base is None or spec is None:
         return empty_base(
             host=host, texts=texts_for_empty(changes_label=changes_label), palette=palette()
         )
-    return encode_base(
+    shell = encode_base(
         base.body,
         host=host,
         base_key=base_key,
@@ -593,6 +600,9 @@ def shell_data(
         row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
         limits=shell_limits(),
     )
+    if suggest:
+        shell["suggest"] = suggest_payload(spec, suggest)
+    return shell
 
 
 def shell_limits() -> dict[str, int]:

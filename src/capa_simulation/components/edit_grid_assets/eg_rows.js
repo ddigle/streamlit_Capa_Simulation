@@ -1,5 +1,5 @@
-// 범용 편집 그리드 — 줄 규칙을 쓰는 표의 갈래(글 · 고르기 칸, 줄 규칙 잠금, 줄 지우기 · 되살리기, 고르기 목록). 이 파일은
-// 줄 규칙 표의 등록(`components/edit_grid.ROWS_JS_PARTS` — 접속 명단)에만 실린다. 순수 구획 `// <eg-kinds>` 는 node 시험이
+// 범용 편집 그리드 — 줄 규칙을 쓰는 표의 갈래(글 · 고르기 · 글 + 후보 칸, 줄 규칙 잠금, 줄 지우기 · 되살리기, 고르기 · 후보
+// 목록). 이 파일은 줄 규칙 표의 등록(`components/edit_grid.ROWS_JS_PARTS` — 접속 명단 · 부대공정 편집기)에만 실린다. 순수 구획 `// <eg-kinds>` 는 node 시험이
 // 떼어 돌린다(eg_pure 의 `// <eg-format>` 뒤에 — KINDS · STRIP_EDGES · numberText 를 쓴다). 갈고리는 `feature({ name: 'rows', ... })`
 // 하나다(eg_pure.js 의 FEATURES — 차례 select → fill → toolbar → rows).
 
@@ -52,6 +52,9 @@ KINDS.choice = {
   },
 }
 
+// 글 + 후보 칸 — 값은 글이라 다듬기 · 표시가 글 칸과 같다(목록 밖 글도 받는다).
+KINDS.suggest = KINDS.text
+
 // 줄 규칙(껍데기 locks — {kinds: [{cols, reason, remove, fresh}], rows: [규칙 번호 | -1]})에서 원본 줄의 규칙.
 function rowRule(locks, row) {
   if (!locks) return null
@@ -90,6 +93,21 @@ function listFilter(items, query) {
     else if (label.includes(q) || value.includes(q)) rest.push(item)
   }
   return head.concat(rest)
+}
+
+// 글 + 후보 칸의 후보(껍데기 suggest[칸 이름] = {items, by, table} — 항목은 글 하나 또는 [보이는 글, 넣을 글]) → [{label, value}].
+// by 가 있으면 같은 줄 그 칸의 지금 글(byText — 앞뒤 공백 걷음)로 table 에서 고르고, 그 글이 table 에 없으면 items 다.
+function suggestItems(spec, byText) {
+  if (!spec) return []
+  const table = spec.table || {}
+  const key = spec.by ? String(byText || '').replace(STRIP_EDGES, '') : ''
+  const list = spec.by && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : spec.items || []
+  return list.map((item) => (Array.isArray(item) ? { label: String(item[0]), value: String(item[1]) } : { label: String(item), value: String(item) }))
+}
+
+// 두 항목 목록이 같은가(차례 · 보이는 글 · 넣을 글) — 회차마다 새로 온 같은 후보에 목록 · 강조를 다시 짓지 않게.
+function sameItems(a, b) {
+  return a.length === b.length && a.every((item, k) => item.label === b[k].label && item.value === b[k].value)
 }
 
 // 글과 같은 항목의 차례(넣을 글 먼저, 다음 보이는 글 — 앞뒤 공백만 걷고 대소문자 그대로), 없으면 -1. 강조는 이것과 ↑ ↓ 뿐이다.
@@ -201,23 +219,43 @@ function rowsPaintCell(S, cell, r, c) {
   if (why || cell.title) cell.title = why
 }
 
-// 편집 중 칸의 목록 상태 {edit, src, all, query, shown, on} — 목록 칸(고르기)이 아니면 null. 칸을 연 때는 전부(지금 값 강조),
+// 줄(원본) · 값 칸 이름의 지금 글 — 보내는 중 · 초안 · 양식 차례(egCellState), 못 읽은 칸은 적은 글.
+function rowsTextAt(S, row, name) {
+  const m = S.model
+  const vc = m.colOf.get(name)
+  if (vc === undefined) return ''
+  const state = egCellState(S, row, vc)
+  return state.bad ? state.bad.text : state.value === null ? '' : formatValue(state.value, fmtOf(m, vc))
+}
+
+// 편집 중 칸의 목록 상태 {edit, src, by, all, query, shown, on} — 목록 칸(고르기 · 글 + 후보)이 아니면 null. 후보는 껍데기
+// suggest(표 본문 · baseKey 밖 — 바뀌어도 모델 · 편집은 그대로)에서 그때 읽고, 딸린 후보는 그 줄 by 칸의 지금 글로 고른다.
+// 칸을 연 때는 전부(지금 값 강조),
 // 친 뒤(rowsTyped — 글자로 연 칸은 처음부터)는 그 글로 거른다. 글자로 열지 않은 목록 칸은 글 전체를 골라 둔다 — 치면 갈아 쓴다(한글은
 // 글자로 칸을 열지 못해 Enter · F2 · 두 번 누름으로 연다).
 function rowsPick(S) {
   const R = S.rows
   const m = S.model
   if (!S.edit || !m) return (R.pick = null)
-  const f = fmtOf(m, S.edit.c - m.keyCount)
-  if (f.kind !== 'choice') return (R.pick = null)
+  const vc = S.edit.c - m.keyCount
+  const f = fmtOf(m, vc)
+  if (f.kind !== 'choice' && f.kind !== 'suggest') return (R.pick = null)
+  const spec = f.kind === 'suggest' ? ((S.shell && S.shell.suggest) || {})[m.valueCols[vc]] || null : null
+  const src = spec || f
+  const by = spec && spec.by ? rowsTextAt(S, S.view.order[S.edit.r], spec.by) : ''
   const P = R.pick
-  if (P && P.edit === S.edit && P.src === f) return P
+  if (P && P.edit === S.edit && P.src === src && P.by === by) return P
   const editor = S.dom.editor
   const fresh = !P || P.edit !== S.edit
-  const all = (f.options || []).map((label) => ({ label: String(label), value: String(label) }))
+  const all = spec ? suggestItems(spec, by) : f.kind === 'choice' ? (f.options || []).map((label) => ({ label: String(label), value: String(label) })) : []
+  if (!fresh && sameItems(P.all, all)) {
+    P.src = src
+    P.by = by
+    return P
+  }
   const query = fresh ? (S.edit.typed ? editor.value : null) : P.query
   const shown = listFilter(all, query)
-  R.pick = { edit: S.edit, src: f, all, query, shown, on: listMatch(shown, editor.value) }
+  R.pick = { edit: S.edit, src, by, all, query, shown, on: listMatch(shown, editor.value) }
   if (fresh && !S.edit.typed && all.length) editor.setSelectionRange(0, editor.value.length)
   return R.pick
 }
@@ -232,7 +270,7 @@ function rowsTyped(S) {
   rowsChoices(S)
 }
 
-// 고르기 칸을 고치는 동안 칸 아래에 항목 목록(높이 상한 안에서 굴림) — 누르면 그 항목으로 확정, 칸 편집기의 ↑ ↓ 가 강조를 옮긴다.
+// 고르기 · 글 + 후보 칸을 고치는 동안 칸 아래에 항목 목록(높이 상한 안에서 굴림) — 누르면 그 항목으로 확정, 칸 편집기의 ↑ ↓ 가 강조를 옮긴다.
 // 목록은 거른 결과가 바뀐 때만 다시 짓고, 강조가 바뀐 때만 강조를 보이는 자리로 굴린다(그 밖의 그리기 · 굴림은 자리만 고친다 — 굴림
 // 막대를 끄는 중에 되돌리지 않게).
 function rowsChoices(S) {

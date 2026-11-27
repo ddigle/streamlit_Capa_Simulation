@@ -49,6 +49,9 @@ function rowKeyText(dims, keyCodes, dupes, r) {
   return parts.join(KEY_SEPARATOR) + (count ? DUPLICATE_SEPARATOR + count : '')
 }
 
+// 값이 글인 형식 — 글 + 후보(suggest)는 글 칸과 같다(Python `TEXT_KINDS`).
+const TEXT_KINDS = ['text', 'suggest']
+
 // 껍데기 → 모델. 값은 Float64Array(줄 × 값 칸, 빈칸 NaN) — 글 칸이 든 표(fmts)는 Array(글 · 수 · NaN). ids 가 있으면 그것이
 // 업무 키다. 칸마다 형식 fmts · 줄 이름 rowLabels · 줄 규칙 locks · 줄 지우기 rowOps 는 고른 표만 싣는다.
 function decodeBase(shell) {
@@ -62,7 +65,7 @@ function decodeBase(shell) {
   const vals = shell.vals || [null]
   const runs = shell.runs || []
   const fmts = shell.fmts || null
-  const values = fmts && fmts.some((f) => f && f.kind === 'text') ? new Array(rows * valueCount).fill(NaN) : new Float64Array(rows * valueCount)
+  const values = fmts && fmts.some((f) => f && TEXT_KINDS.includes(f.kind)) ? new Array(rows * valueCount).fill(NaN) : new Float64Array(rows * valueCount)
   const line = new Int32Array(valueCount)
   for (let r = 0; r < rows; r += 1) {
     line.fill(0)
