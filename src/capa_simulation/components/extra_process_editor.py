@@ -1,6 +1,6 @@
 # Purpose: Admin 「부대공정」 탭의 앱 작성 편집기 — 공정 · 생산성 · 설비 · 효율 표를 범용 그리드
-# 한 마운트(종류 단추)로 그리고, 공정 더하기 · 참조 바꾸기 꼴과 판 만들기(받은 판 자리에 싣기)를
-# 맡는다.
+# 한 마운트(종류 단추)로 그리고, 참조공정 · STEP · MCP 후보 · 「따라올 제품」 미리보기와 판
+# 만들기(받은 판 자리에 싣기)를 맡는다.
 
 """Admin 「부대공정」 — 판을 앱에서 쓰는 셋째 길(CSV · S3 Drive 가져오기 · 「새 판으로」 곁).
 
@@ -16,21 +16,26 @@
 
 - **표 넷 · 마운트 하나**(UI-LAY-07) — 종류 단추 「공정 · 생산성 · 설비 · 효율」. 형식이 칸마다라
   값 표를 판 파일(03 · 04 · 05)마다 나눈다. 공정 표는 줄 규칙 표(지우기 · 되살리기)이고, 통째 옮김
-  줄은 지우기만 열린다. 값 표 줄은 살아 있는 편집기 몫 줄에서 짓는다 — 공정을 지우면 값 줄이
-  함께 빠진다.
+  줄은 지우기만 열린다. 펼친 줄 뒤에 빈 새 줄(`n<k>` — 채운 새 줄 뒤로 늘 `FRESH_ROWS` 개)이 서고,
+  새 공정은 새 줄에 바로 적는다. 한 칸이라도 적은 새 줄이 편집기 줄이다(반쯤 찬 줄도 — 빈칸은
+  입력 문제). 값 표 줄은 살아 있는 편집기 몫 줄에서 짓는다 — 공정을 지우면 값 줄이 함께 빠진다
+  (지운 새 줄의 값 표 초안은 남아 되돌리기 · 같은 새 줄에 다시 적은 공정에 붙는다).
 - **월 칸** = [이전(읽기 전용)] + 계획 첫 달 ~ 끝 달(`YY.MM`) + [이후(한 값이면 고침)]. 칸 이름이
   머리 글이라 이전 · 이후 칸 이름에 그 달을 싣는다(「~26.12」 · 「27.07~」) — 이후 칸은 절대
   `Onward` 열쇠라 시나리오가 바뀌어도 옛 이후 칸 초안이 숨은 칸으로 남는다. 칸 이름 → 달은 세션
   지도(`COLUMNS`)가 기억한다. 양식은 `CellView.default`, 잠금은 `not editable`(까닭은 줄마다 한 글).
   「여러 값」 으로 잠긴 이후 칸의 초안은 숨은 짝 칸(`hidden_after`)에 두어 잠긴 칸에 그리지 않는다.
-- **고르기** — 줄마다 후보가 달라지는 참조공정 · (STEP, MCP) 조합은 그리드 칸이 아니라 표 위
-  「공정 더하기 · 참조 바꾸기」 팝오버의 Streamlit 고르기(찾기 · 「표시명 (원본)」 — UI-DAT-10)다.
-  조합 칸은 직접 넣는 글도 받는다(결정3 — UI-INP-05). 그리드의 그 칸들은 읽기 전용 글이고, 목록이
-  짧고 줄과 무관한 Area 만 그리드 고르기다. 팝오버 값은 「더하기」 · 「바꾸기」 누름에만 씨앗
-  (`LINES`)에 들어간다 — 새 줄의 기본값(`line_defaults`)은 더한 때 고정한다.
+- **참조공정 · STEP · MCP** — 그리드 「글 + 후보」 칸(값은 글 그대로라 시나리오가 바뀌어도 · 목록
+  밖 글도 칸에 남는다 — 판정은 입력 문제 · 관문). 참조공정 후보는 `reference_choices`(「표시명
+  (원본)」 을 보이고 원본을 넣음 — UI-DAT-10), STEP · MCP 후보는 그 줄 참조공정 글로 고르는 조합
+  표(「STEP · MCP」 를 보이고 제 칸 몫을 넣음). Area 는 그리드 고르기, 소요기준은 참조공정을 따라
+  잠근다. 줄의 양식(`line_form`)이 그 줄의 지금 참조공정 글을 따른다 — 참조가 바뀐 줄의 STEP ·
+  MCP(조합이 하나일 때만) · 새 줄 기본값은 양식이고 초안에 쓰지 않아(사람이 친 칸이 이김) 참조를
+  되돌리면 양식도 돌아온다.
 - **자리 차례**(늘 같은 칸 — 그리드 앞에 조건부 형제를 두지 않는다): 표 위 작업 줄(종류 ·
-  「공정 더하기 · 참조 바꾸기」 · 「판 만들기」 팝오버 — 00 메모 · 「만들기」, UI-LAY-03) → 그리드
-  → 표 아래 「확인할 칸 n」(있을 때만). 받은 판 상자는 그 뒤(`extra_process_admin`).
+  「따라올 제품」 팝오버 — 공정마다 참조공정 · 조합 · 따라올 제품 표 · 「판 만들기」 팝오버 — 00
+  메모 · 「만들기」, UI-LAY-03) → 그리드 → 표 아래 「확인할 칸 n」(있을 때만). 받은 판 상자는 그
+  뒤(`extra_process_admin`).
 - **판 만들기**(누른 회차) — 출납을 다시 모아 반영 · 흡수한 뒤(G2) 판 번호(마지막 내용 판 + 1) ·
   작성시각(KST 초) · 작성자(통합인증 이름, 없으면 빈칸)를 한 번 고정해 `fold` → `canonical` 로
   짓는다. 00 고정 본문이 펼친 판과 같으면 받은 판을 두지 않고 「바뀐 것 없음」, 펼친 뒤 판
@@ -51,7 +56,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import astuple, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
@@ -61,7 +66,7 @@ import streamlit as st
 from capa_simulation.components import edit_grid, sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash
-from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.saved_note import field_placeholder
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.extra_process_intake import (
@@ -81,16 +86,18 @@ from capa_simulation.persistence.models import ExtraProcessState, ExtraProcessVe
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.services.edit_grid import (
+    ROW_REMOVED,
     DraftState,
     GridSpec,
     LockKind,
     RowRules,
+    Suggestion,
+    Suggestions,
     ValueFormat,
     removed_keys,
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, build_base
 from capa_simulation.services.extra_process_editor import (
-    BASE_LINE_PREFIX,
     EQUIPMENT,
     LENT_COLUMN,
     OWNED_COLUMN,
@@ -115,11 +122,12 @@ from capa_simulation.services.extra_process_editor import (
     follow_preview,
     ignored_cells,
     input_problems,
-    line_defaults,
+    line_form,
     model_from_pack,
     month_view,
     plan_span,
     redundant_cells,
+    reference_choice,
     reference_choices,
     same_body,
     value_rows,
@@ -153,12 +161,7 @@ MAKE_MENU_KEY: Final = "admin_extra_editor_make_menu"
 MAKE_BUTTON_KEY: Final = "admin_extra_editor_make"
 KIND_KEY: Final = "admin_extra_editor_kind"
 MEMO_KEY: Final = "admin_extra_editor_memo"
-LINE_PICK_KEY: Final = "admin_extra_editor_line_pick"
-NAME_INPUT_KEY: Final = "admin_extra_editor_new_name"
-REFERENCE_PICK_KEY: Final = "admin_extra_editor_reference"
-STEP_PICK_KEY: Final = "admin_extra_editor_step"
-LINE_BUTTON_KEY: Final = "admin_extra_editor_line_apply"
-ADD_MENU_KEY: Final = "admin_extra_editor_add_menu"
+FOLLOW_MENU_KEY: Final = "admin_extra_editor_follow_menu"
 CHECK_MENU_KEY: Final = "admin_extra_editor_check_menu"
 ACTIONS_BOX: Final = "admin_extra_editor_actions"
 ACTION_ROW: Final = "admin_extra_editor_action_row"
@@ -166,7 +169,6 @@ GRID_BOX: Final = "admin_extra_editor_grid_box"
 MAKE_BOX: Final = "admin_extra_editor_make_box"
 
 EDITOR_KEY: Final = "admin_extra_editor"
-LINES_KEY: Final = "admin_extra_editor_lines"
 COLUMNS_KEY: Final = "admin_extra_editor_columns"
 CONTEXT_KEY: Final = "admin_extra_editor_context"
 FOLLOW_KEY: Final = "admin_extra_editor_follow"
@@ -217,10 +219,7 @@ CLOSE_LABEL: Final = "작성 닫기"
 CLOSE_CONFIRM_LABEL: Final = "버리고 닫기"
 MAKE_LABEL: Final = "판 만들기"
 MAKE_BUTTON_LABEL: Final = "만들기"
-ADD_MENU_LABEL: Final = "공정 더하기 · 참조 바꾸기"
-ADD_LABEL: Final = "더하기"
-CHANGE_LABEL: Final = "바꾸기"
-NEW_LINE: Final = "새 공정"
+FOLLOW_LABEL: Final = "따라올 제품"
 MEMO_LABEL: Final = "판 메모"
 CHANGES_LABEL: Final = "적용 전 변경"
 OPEN_HELP: Final = (
@@ -233,8 +232,10 @@ MAKE_HELP: Final = (
     "고친 표로 다음 판을 만들어 받은 판 자리에 둡니다(받아 둔 판을 바꿈) — 판은 통째로 바뀌어 "
     "지운 공정은 빠지고, 「새 판 적용」 을 눌러야 들어갑니다."
 )
-ADD_HELP: Final = "참조공정과 STEP · MCP 조합을 골라 새 공정을 더하거나 고른 줄의 참조를 바꿉니다."
-STEP_HELP: Final = "목록에 없는 조합은 「STEP · MCP」 꼴로 적습니다."
+FOLLOW_HELP: Final = (
+    "공정마다 참조공정 · STEP · MCP 와 그 참조공정을 따라올 제품 · 줄 · Buffer 밖(따라와도 셈에 "
+    "들지 않는 PKG 줄) 수입니다 — 읽기 전용."
+)
 NO_PLAN_REASON: Final = "올라와 있는 시나리오에 계획 월이 없습니다"
 UNREADABLE_REASON: Final = "부대공정 판 내용을 읽지 못해 펼칠 수 없습니다"
 UNCHANGED_EDITOR: Final = "바뀐 것 없음 — 펼친 판과 같은 판입니다"
@@ -248,8 +249,6 @@ MOVED_REASON: Final = (
     "펼친 뒤 다른 판이 들어와 적용할 수 없습니다 — 「작성 닫기」 뒤 다시 펼쳐 고칩니다"
 )
 STALE_STAGED: Final = "판을 만든 뒤 표를 고쳐 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
-NO_REFERENCE: Final = "참조공정을 고릅니다"
-BAD_STEP: Final = "STEP · MCP 를 「STEP · MCP」 꼴로 적습니다"
 # 탭 점 풍선(`page_tabs.page_unsaved_marks`).
 UNSAVED_NOTE: Final = "적용하지 않은 부대공정 작성"
 CHECK_LABEL: Final = "확인할 칸 {n}"
@@ -265,6 +264,11 @@ WARNING_TABLES: Final = {
     "창": "공정",
     "효율": "효율",
 }
+# 「따라올 제품」 팝오버 표 — 편집기 몫 줄마다(통째 옮김 줄은 판 그대로라 뺀다). 줄이 없으면 빈
+# 상태 한 마디(`EMPTY_LINES`).
+FOLLOW_COLUMNS: Final = ("공정", "참조공정", "STEP · MCP", "따라올 제품", "줄", "Buffer 밖")
+FOLLOW_COUNTS: Final = FOLLOW_COLUMNS[3:]
+FOLLOW_WIDTH: Final = 640
 EMPTY_LINES: Final = "공정 없음"
 EMPTY_VALUES: Final = "고칠 공정 없음"
 ROW_REMOVE_HINT: Final = (
@@ -300,22 +304,30 @@ LINE_COLUMNS: Final = (
     MEMO_COLUMN,
     CARRY_COLUMN,
 )
-PICKED_COLUMNS: Final = (BASIS_COLUMN, REFERENCE_COLUMN, STEP_COLUMN, MCP_COLUMN, CARRY_COLUMN)
-PICKED_WHY: Final = (
-    "소요기준 · 참조공정 · STEP · MCP 는 「공정 더하기 · 참조 바꾸기」 에서 고릅니다"
-)
+# 편집기 몫 줄에서 잠근 칸 — 소요기준은 참조공정을 따른다(`line_form`), 「옮김」 은 표지다.
+BASIS_WHY: Final = "소요기준은 참조공정을 따릅니다"
+CARRY_MARK_WHY: Final = "「옮김」 은 통째 옮김 줄 표지입니다"
 CARRIED_WHY: Final = "통째 옮김({reason}) — 줄 지우기만 됩니다"
+# 빈 새 줄 — 채운 새 줄 뒤로 늘 이만큼(업무 키 `n<k>`, 「No.」 칸은 「새 k」).
+FRESH_ROWS: Final = 3
+NEW_LINE_PREFIX: Final = "n"
 # 고칠 수 있는 공정 표 칸 → `LineFields` 이름.
 _EDITABLE: Final = {
     NAME_COLUMN: "name",
     AREA_COLUMN: "area",
     MODULES_COLUMN: "modules",
+    REFERENCE_COLUMN: "reference",
+    STEP_COLUMN: "step",
+    MCP_COLUMN: "mcp",
     START_COLUMN: "start",
     END_COLUMN: "end",
     MEMO_COLUMN: "memo",
 }
+# 초안 글을 글 그대로 받는 `LineFields` 칸.
+_TEXT_FIELDS: Final = frozenset({"name", "memo", "area", "reference", "step", "mcp"})
 _MONTH_PATTERN: Final = r"\d{6}"
 _TEXT: Final = ValueFormat("text", 0)
+_SUGGEST: Final = ValueFormat("suggest", 0, max_length=100)
 LINE_SPEC: Final = GridSpec(
     table=LINE_TABLE,
     title="공정",
@@ -327,9 +339,9 @@ LINE_SPEC: Final = GridSpec(
         (AREA_COLUMN, ValueFormat("choice", 0, options=AREA_NAMES)),
         (BASIS_COLUMN, _TEXT),
         (MODULES_COLUMN, ValueFormat("sig", 6)),
-        (REFERENCE_COLUMN, _TEXT),
-        (STEP_COLUMN, _TEXT),
-        (MCP_COLUMN, _TEXT),
+        (REFERENCE_COLUMN, _SUGGEST),
+        (STEP_COLUMN, _SUGGEST),
+        (MCP_COLUMN, _SUGGEST),
         (START_COLUMN, ValueFormat("text", 0, pattern=_MONTH_PATTERN)),
         (END_COLUMN, ValueFormat("text", 0, pattern=_MONTH_PATTERN)),
         (MEMO_COLUMN, ValueFormat("text", 0, max_length=200)),
@@ -388,7 +400,7 @@ NO_PERIOD_WHY: Final = "시작월 · 끝월을 먼저 적습니다"
 BEFORE_WHY: Final = "앞 「~YY.MM」 칸은 읽기 전용"
 MULTIPLE_WHY: Final = "여러 값 — 한 값으로 고칠 수 없음"
 OUTSIDE_WHY: Final = "경로 밖 달"
-# 표 위 작업 줄(종류 · 「공정 더하기 · 참조 바꾸기」 · 「판 만들기」)과 표 도구 막대를 한 줄로
+# 표 위 작업 줄(종류 · 「따라올 제품」 · 「판 만들기」)과 표 도구 막대를 한 줄로
 # 세우는 창 폭 · 작업 줄 자리(`edit_grid.one_line_style` — 설계 규칙 4장 「부대공정 편집기 표 위
 # 한 줄」).
 ONE_LINE_MIN_WINDOW_PX: Final = 1400
@@ -400,17 +412,15 @@ ONE_LINE_STYLE: Final = edit_grid.one_line_style(
     min_window_px=ONE_LINE_MIN_WINDOW_PX,
     reserve_px=ACTION_ROW_RESERVE_PX,
 )
-_FOLLOW_MEMO_LIMIT: Final = 16
 
 # 세션 칸(AGENTS 5장 42). 펼친 판 = (펼친 때의 판 이력 차례, 바탕 sha 또는 None, 바탕 바이트 또는
-# None). 줄 씨앗 = 줄 id → `LineFields` 칸 값 tuple(새 줄 · 참조를 바꾼 줄). 칸 지도 = 값 표 칸
-# 이름 → (갈래 "m" · "after" · "before", 달).
+# None). 칸 지도 = 값 표 칸 이름 → (갈래 "m" · "after" · "before", 달).
 EDITOR: Final = SessionSlot(EDITOR_KEY, tuple)
-LINES: Final = SessionSlot(LINES_KEY, dict, dict)
 COLUMNS: Final = SessionSlot(COLUMNS_KEY, dict, dict)
 # (맥락 열쇠, `EditorContext`) — (시나리오 id, 기준정보 판)마다 한 번 센다.
 CONTEXT: Final = SessionSlot(CONTEXT_KEY, tuple, tuple)
-# (맥락 열쇠, 참조, 소요기준, 시작, 끝) → `FollowPreview`.
+# (맥락 열쇠, 참조, 소요기준, 시작, 끝) → `FollowPreview` — 이 회차 줄들이 쓰는 열쇠만 남긴다(줄이
+# 많아도 회차마다 다시 세지 않고, 바뀐 참조의 옛 열쇠는 걷힌다).
 FOLLOW: Final = SessionSlot(FOLLOW_KEY, dict, dict)
 DIRTY: Final = SessionSlot(DIRTY_KEY, bool, bool)
 # (판 sha, 읽혔나) — 진입 잠금(G1)을 판 sha 마다 한 번 본다.
@@ -447,10 +457,10 @@ def editor_has_edits() -> bool:
 
 def close_editor() -> None:
     """작성을 닫는다(「작성 닫기」 · 편집기 판 적용 뒤) — 네 표 초안 · 이력을 일부러 버리고(누름
-    직전에 보낸 op 를 알림 없이 버림) 씨앗 · 칸 지도 · 표지를 지운다."""
+    직전에 보낸 op 를 알림 없이 버림) 칸 지도 · 메모 칸 · 표지를 지운다."""
     for keys in TABLE_KEYS.values():
         edit_grid.discard_table(keys, KEYS)
-    for slot in (EDITOR, LINES, COLUMNS, FOLLOW, DIRTY, BASE_PACK):
+    for slot in (EDITOR, COLUMNS, FOLLOW, DIRTY, BASE_PACK):
         slot.clear()
     INBOX.clear()
 
@@ -461,27 +471,6 @@ def collect() -> None:
     edit_grid.collect_outbox(HOST, KEYS)
     if INBOX.peek():
         DIRTY.set(True)
-
-
-def _seeds() -> dict[str, LineFields]:
-    found: dict[str, LineFields] = {}
-    for line_id, values in LINES.get().items():
-        if isinstance(line_id, str) and isinstance(values, tuple):
-            found[line_id] = LineFields(*values)
-    return found
-
-
-def _set_seed(line_id: str, fields: LineFields) -> None:
-    seeds = dict(LINES.get())
-    seeds[line_id] = astuple(fields)
-    LINES.set(seeds)
-
-
-def _next_line_id(seeds: Mapping[str, LineFields]) -> str:
-    numbers = [
-        int(line_id[1:]) for line_id in seeds if line_id.startswith("n") and line_id[1:].isdigit()
-    ]
-    return f"n{max(numbers, default=0) + 1}"
 
 
 # --------------------------------------------------------------------------- 진입 · 닫기
@@ -651,29 +640,62 @@ def _context(repository: DuckDBScenarioRepository) -> tuple[tuple[object, ...], 
     return key, context
 
 
-def _follow(
-    key: tuple[object, ...], reference: str, basis: str, start: int | None, end: int | None
-) -> FollowPreview | None:
-    """따라올 줄 미리보기(결정2 — 읽기 전용) — (맥락, 참조, 소요기준, 기간)마다 메모한다. 기간이
-    없거나 표를 못 읽으면 None."""
-    if start is None:
-        return None
-    memo_key = (key, reference, basis, start, end)
-    memo = dict(FOLLOW.get())
-    found = memo.get(memo_key)
-    if isinstance(found, FollowPreview):
-        return found
-    try:
-        preview = follow_preview(
-            get_effective_reference_tables(), reference, basis, Period(start, end)
+def follow_frame(
+    model: EditorModel, context: EditorContext, key: tuple[object, ...]
+) -> pd.DataFrame:
+    """「따라올 제품」 표(결정2 — 읽기 전용) — 편집기 몫 줄마다 공정 · 참조공정(「표시명 (원본)」) ·
+    STEP · MCP 와 그 참조공정을 따라올 제품 · 줄 · Buffer 밖 수. 수는 (맥락, 참조, 소요기준,
+    기간)마다 한 번 센다(`FOLLOW` — 이 회차 줄들의 열쇠만 남김). 참조가 후보 밖이거나 시작월이
+    없거나 표를 못 읽은 줄은 수 칸이 빈칸이다."""
+    labels = get_process_labels()
+    memo = FOLLOW.get()
+    kept: dict[object, FollowPreview] = {}
+    rows: list[dict[str, object]] = []
+    for line in model.lines:
+        if line.carried is not None:
+            continue
+        fields = line.fields
+        reference = _text_or_none(fields.reference)
+        choice = None if reference is None else reference_choice(context, reference)
+        start = _month_of(fields.start)
+        preview: FollowPreview | None = None
+        if choice is not None and start is not None:
+            end = _month_of(fields.end)
+            memo_key = (key, choice.name, choice.basis, start, end)
+            found = kept.get(memo_key, memo.get(memo_key))
+            if not isinstance(found, FollowPreview):
+                try:
+                    found = follow_preview(
+                        get_effective_reference_tables(),
+                        choice.name,
+                        choice.basis,
+                        Period(start, end),
+                    )
+                except BOOTSTRAP_ERRORS:
+                    found = None
+            if isinstance(found, FollowPreview):
+                kept[memo_key] = preview = found
+        step = " · ".join(text for text in (fields.step.strip(), fields.mcp.strip()) if text)
+        rows.append(
+            {
+                "공정": _line_name(line.line_id, fields.name),
+                "참조공정": "" if reference is None else _reference_label(labels, reference),
+                "STEP · MCP": step,
+                "따라올 제품": None if preview is None else preview.products,
+                "줄": None if preview is None else preview.rows,
+                "Buffer 밖": None if preview is None else preview.uncounted,
+            }
         )
-    except BOOTSTRAP_ERRORS:
-        return None
-    memo[memo_key] = preview
-    if len(memo) > _FOLLOW_MEMO_LIMIT:
-        memo.pop(next(iter(memo)))
-    FOLLOW.set(memo)
-    return preview
+    if kept.keys() != memo.keys():
+        FOLLOW.set(kept)
+    frame = pd.DataFrame(rows, columns=list(FOLLOW_COLUMNS))
+    return frame.astype({column: "Int64" for column in FOLLOW_COUNTS})
+
+
+def _reference_label(labels: ProcessLabels, name: str) -> str:
+    """참조공정 후보 · 미리보기 글 — 표시명이 있으면 「표시명 (원본)」(UI-DAT-10), 없으면 원본."""
+    label = labels.label(name)
+    return name if label == name else f"{label} ({name})"
 
 
 # --------------------------------------------------------------------------- 표 짓기
@@ -681,11 +703,14 @@ def _follow(
 
 @dataclass(frozen=True)
 class _LineRow:
-    """공정 표 한 줄 — 줄 id · 양식 값(씨앗 또는 펼친 값) · 통째 옮김 까닭."""
+    """공정 표 한 줄 — 줄 id · 양식 값(`line_form`) · 통째 옮김 까닭, 새 줄이면 그 번호와 한 칸
+    이라도 적었나(적지 않은 새 줄은 편집기 줄이 아니다)."""
 
     line_id: str
     fields: LineFields
     carried: str | None
+    number: int | None = None
+    filled: bool = True
 
 
 @dataclass(frozen=True)
@@ -726,18 +751,64 @@ class _Screen:
     stamp: str = ""
 
 
-def _line_rows(origin: EditorModel, seeds: Mapping[str, LineFields]) -> tuple[_LineRow, ...]:
-    """펼친 줄(차례 그대로) 뒤에 새 줄(더한 차례)."""
-    rows = [
-        _LineRow(line.line_id, seeds.get(line.line_id, line.fields), line.carried)
-        for line in origin.origin
+def _line_rows(origin: EditorModel, context: EditorContext) -> tuple[_LineRow, ...]:
+    """펼친 줄(차례 그대로) 뒤에 새 줄 `n1` ~ (채운 새 줄 가운데 가장 뒤 번호 + `FRESH_ROWS`).
+    양식은 그 줄의 지금 참조공정 글(초안 포함)을 따른다(`line_form`) — 통째 옮김 줄은 펼친 값,
+    적지 않은 새 줄은 빈 양식."""
+    typed = _typed(_draft(LINE_TABLE))
+    rows: list[_LineRow] = []
+    for line in origin.origin:
+        fields = line.fields
+        if line.carried is None:
+            own = typed.get(line.line_id, {})
+            reference = own[REFERENCE_COLUMN] if REFERENCE_COLUMN in own else fields.reference
+            fields = line_form(context, reference, fields)
+        rows.append(_LineRow(line.line_id, fields, line.carried))
+    filled = [
+        number
+        for line_id, own in typed.items()
+        if (number := _fresh_number(line_id)) is not None and _filled(own)
     ]
-    rows += [
-        _LineRow(line_id, fields, None)
-        for line_id, fields in seeds.items()
-        if not line_id.startswith(BASE_LINE_PREFIX)
-    ]
+    for number in range(1, max(filled, default=0) + FRESH_ROWS + 1):
+        own = typed.get(f"{NEW_LINE_PREFIX}{number}", {})
+        if not _filled(own):
+            rows.append(_LineRow(f"{NEW_LINE_PREFIX}{number}", LineFields(), None, number, False))
+            continue
+        fields = line_form(context, own.get(REFERENCE_COLUMN, ""))
+        rows.append(_LineRow(f"{NEW_LINE_PREFIX}{number}", fields, None, number))
     return tuple(rows)
+
+
+def _fresh_number(line_id: str) -> int | None:
+    """새 줄 업무 키 `n<k>` 의 k(펼친 줄 `b<n>` 이면 None)."""
+    tail = line_id.removeprefix(NEW_LINE_PREFIX)
+    return int(tail) if tail != line_id and tail.isdigit() else None
+
+
+def _line_name(line_id: str, name: object) -> str:
+    """줄을 부르는 이름 — 공정 이름, 없으면 새 줄은 「새 줄 k」, 그 밖은 줄 id."""
+    number = _fresh_number(line_id)
+    return _text_or_none(name) or (line_id if number is None else f"새 줄 {number}")
+
+
+def _typed(draft: DraftState | None) -> dict[str, dict[str, object]]:
+    """공정 표 초안 — 줄 id → 칸 → 적은 값(못 읽은 글은 적은 글). 줄 지우기 표지는 뺀다."""
+    found: dict[str, dict[str, object]] = {}
+    if draft is None:
+        return found
+    for book, wrong in ((draft["cells"], False), (draft["bad"], True)):
+        for row_id, row_cells in book.items():
+            for column, raw in row_cells.items():
+                if column == ROW_REMOVED:
+                    continue
+                value = raw[0] if wrong and isinstance(raw, tuple) else raw
+                found.setdefault(str(row_id), {})[str(column)] = value
+    return found
+
+
+def _filled(own: Mapping[str, object]) -> bool:
+    """새 줄에 적은 칸이 있나(빈칸으로 되돌린 칸만 남은 줄은 적지 않은 줄)."""
+    return any(value is not None for value in own.values())
 
 
 def _draft(table: str) -> DraftState | None:
@@ -766,7 +837,7 @@ def _field_value(name: str, raw: object) -> CellInput:
     if name == "area" and isinstance(raw, float):
         at = int(raw)
         return AREA_NAMES[at] if 0 <= at < len(AREA_NAMES) else ""
-    if name in ("name", "memo", "area"):
+    if name in _TEXT_FIELDS:
         return "" if raw is None else str(raw)
     if isinstance(raw, (int, float, str)) or raw is None:
         return raw
@@ -774,26 +845,23 @@ def _field_value(name: str, raw: object) -> CellInput:
 
 
 def _line_inputs(rows: Sequence[_LineRow]) -> list[tuple[str, LineFields]]:
-    """공정 표의 전체 상태(양식 + 초안, 지운 줄 뺌) → `with_lines` 입력."""
+    """공정 표의 전체 상태(양식 + 초안, 지운 줄 · 적지 않은 새 줄 뺌) → `with_lines` 입력."""
     draft = _draft(LINE_TABLE)
-    cells = {} if draft is None else draft["cells"]
-    bad = {} if draft is None else draft["bad"]
+    typed = _typed(draft)
     removed = set(removed_keys(draft))
     found: list[tuple[str, LineFields]] = []
     for row in rows:
-        if row.line_id in removed:
+        if row.line_id in removed or not row.filled:
             continue
         if row.carried is not None:
             found.append((row.line_id, row.fields))
             continue
-        own = cells.get(row.line_id, {})
-        wrong = bad.get(row.line_id, {})
-        changes: dict[str, Any] = {}
-        for column, name in _EDITABLE.items():
-            if column in wrong:
-                changes[name] = _field_value(name, wrong[column][0])
-            elif column in own:
-                changes[name] = _field_value(name, own[column])
+        own = typed.get(row.line_id, {})
+        changes: dict[str, Any] = {
+            name: _field_value(name, own[column])
+            for column, name in _EDITABLE.items()
+            if column in own
+        }
         found.append((row.line_id, replace(row.fields, **changes)))
     return found
 
@@ -811,16 +879,24 @@ def _line_spec(carried: bool) -> GridSpec:
 
 
 def _line_table(rows: Sequence[_LineRow]) -> _Table:
-    """공정 표 — 줄이 없어도(빈 시작) 머리 줄만 든 표를 지어 「공정 없음」 이 선다(UI-LAY-10)."""
+    """공정 표 — 펼친 줄 뒤에 빈 새 줄(빈 시작도 새 줄 칸이 먼저 선다 — UI-LAY-10). 편집기 몫 줄은
+    소요기준(· 「옮김」)만 잠그고, 새 줄은 「빈 새 줄」 규칙(지우기는 그 줄 칸을 비움 · 붙일
+    덩어리가 남은 새 줄보다 길면 거절)이다."""
     carried = any(row.carried is not None for row in rows)
     spec = _line_spec(carried)
-    picked = tuple(column for column in PICKED_COLUMNS if column in spec.value_columns)
-    kinds: list[LockKind] = [LockKind(cols=picked, reason=PICKED_WHY)]
+    locked = (BASIS_COLUMN, CARRY_COLUMN) if carried else (BASIS_COLUMN,)
+    why = f"{BASIS_WHY} · {CARRY_MARK_WHY}" if carried else BASIS_WHY
+    kinds: list[LockKind] = [
+        LockKind(cols=locked, reason=why),
+        LockKind(cols=locked, reason=why, fresh=True),
+    ]
     rules: list[int] = []
     records: list[dict[str, object]] = []
     for number, row in enumerate(rows, start=1):
         fields = row.fields
-        if row.carried is None:
+        if row.number is not None:
+            rules.append(1)
+        elif row.carried is None:
             rules.append(0)
         else:
             kind = LockKind(cols=LINE_COLUMNS, reason=CARRIED_WHY.format(reason=row.carried))
@@ -829,9 +905,13 @@ def _line_table(rows: Sequence[_LineRow]) -> _Table:
             rules.append(kinds.index(kind))
         records.append(
             {
-                NO_COLUMN: str(number),
+                NO_COLUMN: str(number) if row.number is None else f"새 {row.number}",
                 ID_COLUMN: row.line_id,
-                LABEL_COLUMN: _text_or_none(fields.name) or row.line_id,
+                LABEL_COLUMN: (
+                    _text_or_none(fields.name) or row.line_id
+                    if row.number is None
+                    else f"새 줄 {row.number}"
+                ),
                 NAME_COLUMN: _text_or_none(fields.name),
                 AREA_COLUMN: _area_index(fields.area),
                 BASIS_COLUMN: _text_or_none(fields.basis),
@@ -926,7 +1006,7 @@ def _value_table(
         if line.carried is not None:
             continue
         view = views.get(line.line_id)
-        name = _text_or_none(line.fields.name) or line.line_id
+        name = _line_name(line.line_id, line.fields.name)
         for row in value_rows(line.line_id):
             if row[1] != file:
                 continue
@@ -1055,7 +1135,7 @@ def _month_of(value: object) -> int | None:
 def _screen(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
     """초안 전체에서 모형 · 표 넷을 다시 짓는다(병합 아님)."""
     origin = model_from_pack(base)
-    rows = _line_rows(origin, _seeds())
+    rows = _line_rows(origin, context)
     model = with_lines(origin, _line_inputs(rows))
     cells, places = _value_inputs(model)
     model = with_cells(model, cells)
@@ -1227,7 +1307,7 @@ def render_editor(repository: DuckDBScenarioRepository, hooks: Hooks, *, lock: s
     with actions:
         kind, pressed = _render_actions(screen, key, context, lock)
     with grid_box:
-        _render_grid(screen, kind)
+        _render_grid(screen, kind, context)
     with check_box:
         _render_check(screen, context)
     if pressed:
@@ -1238,8 +1318,8 @@ def render_editor(repository: DuckDBScenarioRepository, hooks: Hooks, *, lock: s
 def _render_actions(
     screen: _Screen, key: tuple[object, ...], context: EditorContext, lock: str | None
 ) -> tuple[str, bool]:
-    """작업 줄(표 위 — UI-LAY-03) — 종류 단추 · 「공정 더하기 · 참조 바꾸기」 · 「판 만들기」(셋 다
-    늘 선다). (고른 종류, 「만들기」 누름)."""
+    """작업 줄(표 위 — UI-LAY-03) — 종류 단추 · 「따라올 제품」 · 「판 만들기」(셋 다 늘 선다 —
+    그리드 앞에 조건부 형제를 두지 않는다). (고른 종류, 「만들기」 누름)."""
     with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
         if KIND.peek() not in KINDS:
             KIND.set(next(iter(KINDS)))
@@ -1251,8 +1331,10 @@ def _render_actions(
             persist_state="session",
             label_visibility="collapsed",
         )
-        with st.popover(ADD_MENU_LABEL, icon=":material/add:", help=ADD_HELP, key=ADD_MENU_KEY):
-            _render_line_form(screen, key, context)
+        with st.popover(
+            FOLLOW_LABEL, icon=":material/account_tree:", help=FOLLOW_HELP, key=FOLLOW_MENU_KEY
+        ):
+            _render_follow(screen, key, context)
         with st.popover(
             MAKE_LABEL,
             icon=":material/note_add:",
@@ -1265,16 +1347,26 @@ def _render_actions(
     return kind, pressed
 
 
-def _render_grid(screen: _Screen, kind: str) -> None:
+def _render_grid(screen: _Screen, kind: str, context: EditorContext) -> None:
+    """고른 종류의 표를 그린다 — 공정 표는 「글 + 후보」 칸의 후보를 껍데기에 싣는다(표 본문 ·
+    `baseKey` 밖이라 후보가 바뀌어도 다시 마운트되지 않는다)."""
     table = KINDS[kind]
     built = screen.tables[table]
+    suggest = _suggestions(context, screen.model) if table == LINE_TABLE else None
     shell = edit_grid.shell_data(
-        HOST, built.base, built.spec, base_key=built.base_key, changes_label=CHANGES_LABEL
+        HOST,
+        built.base,
+        built.spec,
+        base_key=built.base_key,
+        changes_label=CHANGES_LABEL,
+        suggest=suggest,
     )
-    # 빈 표 글 — 공정 표는 「공정 없음」, 값 표는 편집기 몫 줄이 없을 때(옮김 줄뿐 포함).
-    texts = {**shell["texts"], "empty": EMPTY_LINES if table == LINE_TABLE else EMPTY_VALUES}
+    # 공정 표는 늘 새 줄이 있어 빈 표가 없다 — 값 표는 편집기 몫 줄이 없을 때(옮김 줄뿐 포함).
+    texts = dict(shell["texts"])
     if table == LINE_TABLE:
         texts["rowRemoveHint"] = ROW_REMOVE_HINT
+    else:
+        texts["empty"] = EMPTY_VALUES
     shell["texts"] = texts
     feed = edit_grid.feed_data(HOST, built.slot, KEYS, base_key=built.base_key)
     edit_grid.render_edit_grid(
@@ -1321,7 +1413,7 @@ def _render_check(screen: _Screen, context: EditorContext) -> None:
 def check_frame(model: EditorModel, context: EditorContext) -> pd.DataFrame:
     """「확인할 칸 n」 의 내역 — 관문이 거절할 입력(`input_problems`)과 관문은 받지만 등록 때
     빠지거나 잘릴 것(`editor_warnings`)."""
-    names = {line.line_id: _text_or_none(line.fields.name) or line.line_id for line in model.lines}
+    names = {line.line_id: _line_name(line.line_id, line.fields.name) for line in model.lines}
     rows: list[dict[str, str]] = []
     for problem in input_problems(model):
         rows.append(
@@ -1361,147 +1453,38 @@ def _months_text(months: Sequence[int]) -> str:
     return f"{month_label(months[0])} ~ {month_label(months[-1])} ({len(months)}달)"
 
 
-# ------------------------------------------------------------------- 공정 더하기 · 참조 바꾸기
+# ------------------------------------------------------------------- 후보 · 따라올 제품
 
 
-def _render_line_form(screen: _Screen, key: tuple[object, ...], context: EditorContext) -> None:
-    """팝오버 꼴 — 줄 · (새 줄이면 공정 이름) · 참조공정 · STEP · MCP 조합, 따라올 줄 미리보기,
-    「더하기」 · 「바꾸기」. 값은 누른 회차에만 씨앗에 든다."""
-    model = screen.model
-    editable = [line for line in model.lines if line.carried is None]
-    names = {line.line_id: _text_or_none(line.fields.name) or line.line_id for line in editable}
-    target = st.selectbox(
-        "줄",
-        [NEW_LINE, *names],
-        format_func=lambda value: names.get(value, value),
-        key=LINE_PICK_KEY,
-    )
-    line = model.line(target) if target != NEW_LINE else None
-    fields = line.fields if line is not None else LineFields()
-    # 칸 key 꼬리 — 새 줄은 더할 줄 id 라 더한 뒤에는 빈 칸으로 다시 선다(`form_key`).
-    form = form_key(target)
-    name = ""
-    if line is None:
-        name = st.text_input(NAME_COLUMN, key=f"{NAME_INPUT_KEY}-{form}", max_chars=100)
-    choices = reference_choices(context, model, basis=None if line is None else fields.basis)
-    options = [choice.name for choice in choices]
-    current = _text_or_none(fields.reference)
-    if current is not None and current not in options:
-        options.append(current)
+def _suggestions(context: EditorContext, model: EditorModel) -> dict[str, Suggestions]:
+    """공정 표 「글 + 후보」 칸의 후보 — 참조공정은 `reference_choices`(지금 줄 이름은 뺌 — V-06,
+    「표시명 (원본)」 을 보이고 원본을 넣음), STEP · MCP 는 그 줄 참조공정 글로 고르는 조합 표
+    (「STEP · MCP」 를 보이고 제 칸 몫을 넣음 — 후보 밖 참조면 목록 없음)."""
     labels = get_process_labels()
-
-    def shown(value: str) -> str:
-        label = labels.label(value)
-        return value if label == value else f"{label} ({value})"
-
-    reference = st.selectbox(
-        REFERENCE_COLUMN,
-        options,
-        index=options.index(current) if current in options else None,
-        format_func=shown,
-        key=f"{REFERENCE_PICK_KEY}-{form}",
-        placeholder=REFERENCE_COLUMN,
+    references = tuple(
+        Suggestion(_reference_label(labels, choice.name), choice.name)
+        for choice in reference_choices(context, model)
     )
-    choice = next((item for item in choices if item.name == reference), None)
-    steps = [f"{step} · {mcp}" for step, mcp in (choice.steps if choice is not None else ())]
-    present = f"{fields.step} · {fields.mcp}" if _text_or_none(fields.step) and fields.mcp else None
-    if present is not None and reference == current and present not in steps:
-        steps.append(present)
-    step_index = steps.index(present) if present in steps else (0 if steps else None)
-    step_text = st.selectbox(
-        "STEP · MCP",
-        steps,
-        index=step_index,
-        key=f"{STEP_PICK_KEY}-{form}-{reference}",
-        accept_new_options=True,
-        help=STEP_HELP,
-        placeholder="STEP · MCP",
-    )
-    if choice is not None:
-        start = _month_of(fields.start) or (context.months[0] if context.months else None)
-        preview = _follow(key, choice.name, choice.basis, start, _month_of(fields.end))
-        if preview is not None:
-            st.caption(
-                f"따라올 제품 {preview.products:,} · 줄 {preview.rows:,} · Buffer 밖 "
-                f"{preview.uncounted:,}"
-            )
-    pressed = st.button(
-        ADD_LABEL if line is None else CHANGE_LABEL,
-        key=LINE_BUTTON_KEY,
-        type="primary",
-        icon=":material/add:" if line is None else ":material/swap_horiz:",
-    )
-    if pressed:
-        # 있는 줄은 양식(씨앗 또는 펼친 값 — 그리드 초안을 뺀 값)에서 바꾼다. 모형 값(초안 포함)을
-        # 씨앗에 구우면 그 칸의 그리드 되돌리기가 먹지 않는다.
-        template = next((row.fields for row in screen.rows if row.line_id == target), None)
-        refused = _apply_line_form(target, template, name, reference, step_text, context)
-        # 팝오버 안 검증 거부는 누른 단추 바로 아래 한 줄만(UI-NTF-03 · UI-INP-05 — 알림창 · 기록
-        # 없음). 팝오버는 key 가 있어 열린 채다.
-        st.error(refused, icon=":material/block:")
+    steps: dict[str, tuple[Suggestion, ...]] = {}
+    mcps: dict[str, tuple[Suggestion, ...]] = {}
+    for name, choice in context.references.items():
+        steps[name] = tuple(Suggestion(f"{step} · {mcp}", step) for step, mcp in choice.steps)
+        mcps[name] = tuple(Suggestion(f"{step} · {mcp}", mcp) for step, mcp in choice.steps)
+    return {
+        REFERENCE_COLUMN: Suggestions(references),
+        STEP_COLUMN: Suggestions(by=REFERENCE_COLUMN, table=steps),
+        MCP_COLUMN: Suggestions(by=REFERENCE_COLUMN, table=mcps),
+    }
 
 
-def form_key(target: str) -> str:
-    """「공정 더하기 · 참조 바꾸기」 칸 key 의 꼬리 — 있는 줄은 그 줄 id, 새 공정은 다음에 더할 줄
-    id(더하고 나면 바뀌어 이름 · 참조 칸이 비어 다시 선다)."""
-    return _next_line_id(_seeds()) if target == NEW_LINE else target
-
-
-def _split_step(text: object) -> tuple[str, str] | None:
-    """「STEP · MCP」(또는 / · , · 빈칸으로 가른) 글 → (STEP_SEQ, MCP_SEQ)."""
-    if not isinstance(text, str):
-        return None
-    for separator in ("·", "/", ",", " "):
-        if separator in text:
-            left, _, right = text.partition(separator)
-            step, mcp = left.strip(), right.strip()
-            return (step, mcp) if step and mcp else None
-    return None
-
-
-def _apply_line_form(
-    target: str,
-    template: LineFields | None,
-    name: str,
-    reference: object,
-    step_text: object,
-    context: EditorContext,
-) -> str:
-    """「더하기」 · 「바꾸기」 누름 — 새 줄이면 그때의 기본값(`line_defaults`)을 씨앗으로 고정하고,
-    있는 줄이면 그 줄 양식의 참조공정 · 소요기준 · STEP · MCP 를 바꾼다(새 줄은 Area · 모듈수
-    기본값도). 받으면 다시 그리고(돌아오지 않는다), 받지 못하면 그 까닭을 돌려준다(곁 한 줄)."""
-    if not isinstance(reference, str) or not reference.strip():
-        return NO_REFERENCE
-    step = _split_step(step_text)
-    if step is None:
-        return BAD_STEP
-    seeds = _seeds()
-    defaults = line_defaults(context, reference)
-    if template is None:
-        line_id = _next_line_id(seeds)
-        fields = replace(defaults, name=name.strip(), step=step[0], mcp=step[1])
-    else:
-        line_id = target
-        base = template
-        picked = replace(
-            base,
-            reference=defaults.reference,
-            basis=defaults.basis or base.basis,
-            step=step[0],
-            mcp=step[1],
-        )
-        if not target.startswith(BASE_LINE_PREFIX):
-            picked = replace(
-                picked,
-                area=defaults.area or picked.area,
-                modules=defaults.modules if defaults.modules is not None else picked.modules,
-            )
-        fields = picked
-    _set_seed(line_id, fields)
-    # 화면 탭 줄 · 「작성 닫기」 는 페이지보다 먼저 그린다 — 흡수가 바로잡기 전에 켜 두어 다시 그린
-    # 회차에 점 · 확인이 선다(출납 콜백 `collect` 와 같은 꼴).
-    DIRTY.set(True)
-    st.rerun()
+def _render_follow(screen: _Screen, key: tuple[object, ...], context: EditorContext) -> None:
+    """「따라올 제품」 팝오버 안 — 표(`follow_frame`), 편집기 몫 줄이 없으면 빈 상태 한 마디."""
+    frame = follow_frame(screen.model, context, key)
+    if frame.empty:
+        st.caption(EMPTY_LINES)
+        return
+    # 팝오버는 안 글 폭만큼 넓어진다 — 표 폭을 정해 수 칸이 굴림 밖으로 숨지 않게.
+    st.dataframe(frame, hide_index=True, width=FOLLOW_WIDTH, placeholder="")
 
 
 # --------------------------------------------------------------------------- 판 만들기

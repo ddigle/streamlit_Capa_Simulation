@@ -1,12 +1,15 @@
-# Purpose: Admin 「부대공정」 앱 작성 편집기 화면(그리드 넷 · 공정 더하기 · 판 만들기)이 받은 판
-# 상자를 지나 적용되는 왕복과 바뀐 것 없음 · 통째 옮김 지우기 · 잠금 · 닫힌 탭 · 탭 점을 본다.
+# Purpose: Admin 「부대공정」 앱 작성 편집기 화면(그리드 넷 · 새 줄 · 참조 후보 · 판 만들기)이
+# 받은 판 상자를 지나 적용되는 왕복과 양식 · 바뀐 것 없음 · 통째 옮김 지우기 · 잠금 · 닫힌 탭 ·
+# 탭 점을 본다.
 
 """편집기 화면(`components/extra_process_editor.py` — 받은 판 상자는 `extra_process_admin`).
 
 그리드는 대역(`edit_grid_fake.install_fake_edit_grid(early=True)` — 진짜처럼 출납 콜백이 회차 맨
 앞에서 돈다)이다. 표 넷이 한 마운트라 op 는 종류 단추를 그 표로 옮긴 뒤 보낸다(마지막 feed 의 표 ·
 `gen`). 쓰기 잠금은 C-DEP 꼴을 흉내 내 갈아 끼운다(`write_lock_reason`). 빈 시작(판 없음)이 주
-길이라 첫 시험은 판이 없는 DB 에서 출발한다. 견본 판(판 1)의 두 공정은 모두 통째 옮김이다.
+길이라 첫 시험은 판이 없는 DB 에서 출발한다. 견본 판(판 1)의 두 공정은 모두 통째 옮김이다. 새
+공정은 공정 표 빈 새 줄(`n1` …)에 이름 · 참조공정을 적어 더한다. 내장 합성 시드의 참조공정은 모두
+조합이 하나라, 조합이 둘인 경우 · 다른 시나리오 후보는 맥락을 갈아 끼워 본다(`references`).
 """
 
 from __future__ import annotations
@@ -16,10 +19,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from alert_marks import alert_notes, flashed
 from auto_update_fakes import new_repository
-from edit_grid_fake import FAKE_EVENT_KEY, Calls, deliver_ops, install_fake_edit_grid, last, outbox
+from edit_grid_fake import (
+    FAKE_EVENT_KEY,
+    Calls,
+    deliver_ops,
+    install_fake_edit_grid,
+    last,
+    outbox,
+    shell_frame,
+)
 from extra_process_fixtures import bump_version, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template
@@ -33,9 +45,14 @@ from capa_simulation.components.extra_process_admin import (
     REMOVED_CONFIRM_KEY,
     STAGED_KEY,
 )
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.extra_process_intake import SourceFetch, StagedPack, stage_pack
 from capa_simulation.persistence.models import EXTRA_EDITOR_PLACE, EXTRA_KIND_REVISION
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.extra_process_editor import (
+    EditorContext,
+    ReferenceChoice,
+)
 from capa_simulation.services.extra_process_pack import read_pack_zip
 
 OPEN_KEY = "__editor_open__"
@@ -120,24 +137,34 @@ def _shell(calls: Calls) -> dict[str, Any]:
     return last(calls, editor.HOST)
 
 
-def _new_form(app: AppTest) -> str:
-    """새 공정 칸 key 꼬리(`form_key`) — 그 앱 세션의 씨앗으로 센 다음 줄 id."""
-    seeds = app.session_state[editor.LINES_KEY] if editor.LINES_KEY in app.session_state else {}
-    numbers = [int(key[1:]) for key in seeds if key.startswith("n") and key[1:].isdigit()]
-    return f"n{max(numbers, default=0) + 1}"
+def _suggested(calls: Calls, column: str = editor.REFERENCE_COLUMN) -> list[str]:
+    """공정 표 껍데기의 「글 + 후보」 칸 후보 — 넣을 글(보이는 글이 다르면 [보이는 글, 넣을 글])."""
+    items = _shell(calls)["suggest"][column]["items"]
+    return [item if isinstance(item, str) else item[1] for item in items]
 
 
-def _add_line(app: AppTest, name: str = NAME) -> tuple[AppTest, str]:
-    """「공정 더하기」 — 새 줄 이름과 첫 참조공정 후보 · 첫 조합으로 더한다(고른 참조공정을
+def _add_line(
+    app: AppTest, calls: Calls, name: str = NAME, line: str = "n1", reference: str | None = None
+) -> tuple[AppTest, str]:
+    """새 공정 — 공정 표 빈 새 줄에 이름과 참조공정(주지 않으면 첫 후보)을 적는다(고른 참조공정을
     돌려준다)."""
-    form = _new_form(app)
-    app.text_input(key=f"{editor.NAME_INPUT_KEY}-{form}").input(name)
-    app = _run(app)
-    box = app.selectbox(key=f"{editor.REFERENCE_PICK_KEY}-{form}")
-    reference = str(box.options[0])
-    box.select_index(0)
-    app = _run(app)
-    return _press(app, editor.LINE_BUTTON_KEY), reference
+    app = _kind(app, "공정")
+    chosen = _suggested(calls)[0] if reference is None else reference
+    app = _send(app, calls, _write([line], ["공정", "참조공정"], [[name, chosen]]))
+    return app, chosen
+
+
+def _form(calls: Calls, line: str) -> dict[str, Any]:
+    """공정 표 껍데기에서 그 줄의 양식 값(초안 아님)."""
+    shell = _shell(calls)
+    frame = shell_frame(shell)
+    return dict(frame.iloc[shell["ids"].index(line)])
+
+
+def _line_draft(app: AppTest, line: str) -> dict[str, Any]:
+    key = editor.LINE_CELLS_KEY
+    draft = app.session_state[key] if key in app.session_state else None
+    return {} if not draft else dict(draft["cells"].get(line, {}))
 
 
 def _fill_new_line(app: AppTest, calls: Calls, line: str = "n1") -> AppTest:
@@ -190,25 +217,74 @@ def _captions(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.caption]
 
 
+def _context_of(app: AppTest) -> EditorContext:
+    """그 앱 세션이 센 편집기 맥락(시나리오 그대로 — 갈아 끼운 후보는 들지 않는다)."""
+    context = app.session_state[editor.CONTEXT_KEY][1]
+    assert isinstance(context, EditorContext)
+    return context
+
+
+def _table(app: AppTest, columns: tuple[str, ...]) -> pd.DataFrame | None:
+    """그 칸들로 된 표(팝오버 안 포함) — 없으면 None."""
+    found = [item.value for item in app.dataframe if tuple(item.value.columns) == columns]
+    assert len(found) <= 1
+    return found[0] if found else None
+
+
+def _check_table(app: AppTest) -> pd.DataFrame:
+    frame = _table(app, editor.CHECK_COLUMNS)
+    assert frame is not None, "「확인할 칸 n」 이 선다"
+    return frame
+
+
+@pytest.fixture
+def references(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """다른 시나리오 흉내 손잡이 — `references["shape"]` 가 함수면 맥락의 참조공정 후보(이름 →
+    `ReferenceChoice`)를 그 함수로 바꾼 맥락이다(맥락 열쇠도 바뀐다). None 이면 그대로다."""
+    knob: dict[str, Any] = {"shape": None}
+    original = editor._context
+
+    def shaped(repository: Any) -> Any:
+        key, context = original(repository)
+        shape = knob["shape"]
+        if shape is None:
+            return key, context
+        return (*key, "shaped", id(shape)), replace(
+            context, references=shape(dict(context.references))
+        )
+
+    monkeypatch.setattr(editor, "_context", shaped)
+    return knob
+
+
 def test_an_empty_start_adds_a_process_makes_a_pack_and_applies_it(
     database: Path, calls: Calls
 ) -> None:
-    """빈 시작(판 없음 — 주 길): 진입 → 공정 더하기 → 달 값 → 판 만들기 → 받은 판 상자 → 적용."""
+    """빈 시작(판 없음 — 주 길): 진입 → 새 줄에 이름 · 참조공정 → STEP · MCP 양식(조합 하나) → 달
+    값 → 판 만들기 → 받은 판 상자 → 적용."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     assert _opened(app)
-    # 공정이 없어도 머리 줄만 든 표가 서서 「공정 없음」 이 보인다(UI-LAY-10). 옮김 줄이 없으면
-    # 「옮김」 칸도 없다(UI-TXT-08).
+    # 공정이 없어도 빈 새 줄이 서 새 공정을 적을 자리가 보인다(UI-LAY-10). 적지 않은 새 줄은
+    # 편집기 줄이 아니다(탭 점 없음). 옮김 줄이 없으면 「옮김」 칸도 없다(UI-TXT-08).
     empty = _shell(calls)
-    assert empty["ids"] == [] and empty["texts"]["empty"] == editor.EMPTY_LINES
+    assert empty["ids"] == ["n1", "n2", "n3"]
+    assert list(shell_frame(empty)["No."]) == ["새 1", "새 2", "새 3"]
     assert empty["valueCols"][0] == "공정" and editor.CARRY_COLUMN not in empty["valueCols"]
     assert empty["texts"]["rowRemoveHint"] == editor.ROW_REMOVE_HINT, "저장이 아니라 판 만들기"
     assert not _dirty(app)
 
-    app, reference = _add_line(app)
+    app, reference = _add_line(app, calls)
     lines = _shell(calls)
-    assert lines["ids"] == ["n1"] and lines["valueCols"][0] == "공정"
+    assert lines["ids"] == ["n1", "n2", "n3", "n4"], "채운 새 줄 뒤로 늘 빈 새 줄 셋"
     assert _dirty(app), "더한 공정만으로도 펼친 판과 다르다"
+    # 참조공정의 조합이 하나면 STEP · MCP 는 양식이다 — 초안에 쓰지 않는다(참조를 되돌리면 걷힌다).
+    choice = _context_of(app).references[reference]
+    ((step, mcp),) = choice.steps
+    form = _form(calls, "n1")
+    assert (form["STEP_SEQ"], form["MCP_SEQ"], form["소요기준"]) == (step, mcp, choice.basis)
+    assert form["참조공정"] is None and form["공정"] is None, "고른 참조 · 이름은 초안"
+    assert set(_line_draft(app, "n1")) == {"공정", "참조공정"}
     app = _fill_new_line(app, calls)
 
     app = _press(app, editor.MAKE_BUTTON_KEY)
@@ -217,7 +293,9 @@ def test_an_empty_start_adds_a_process_makes_a_pack_and_applies_it(
     pack = staged.reading.pack
     assert pack is not None and pack.info.version_no == 1
     assert [process.name for process in pack.processes] == [NAME]
-    assert [route.reference for route in pack.routes] == [reference]
+    assert [(route.reference, route.step, route.mcp) for route in pack.routes] == [
+        (reference, step, mcp)
+    ]
     assert any(text.startswith("더한 공정 1 · 뺀 공정 0") for text in _captions(app))
 
     app = _press(app, APPLY_BUTTON_KEY)
@@ -235,7 +313,8 @@ def test_making_an_untouched_pack_says_nothing_changed(database: Path, calls: Ca
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     lines = _shell(calls)
-    assert len(lines["ids"]) == 2 and lines["locks"], "견본 두 공정은 통째 옮김(잠김)"
+    assert lines["ids"] == ["b1", "b2", "n1", "n2", "n3"] and lines["locks"]
+    assert not _dirty(app), "견본 두 공정은 통째 옮김(잠김) · 빈 새 줄은 줄이 아니다"
     assert editor.CARRY_COLUMN in lines["valueCols"], "옮김 줄이 있을 때만 「옮김」 칸"
 
     app = _press(app, editor.MAKE_BUTTON_KEY)
@@ -251,7 +330,7 @@ def test_a_carried_line_can_only_be_removed_and_its_removal_asks_to_confirm(
     apply_template(new_repository(database))
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    first, second = _shell(calls)["ids"]
+    first, second, *_ = _shell(calls)["ids"]
     # 잠긴 칸에 쓰기는 건너뛴다(통째 옮김 — 이름을 고치지 않는다).
     app = _send(app, calls, _write([first], ["공정"], [["DEMO_RENAMED"]]))
     assert not _dirty(app)
@@ -312,7 +391,7 @@ def test_edits_sent_while_the_tab_is_closed_are_absorbed_when_it_opens(
     """닫힌 탭은 그리지 않는다 — 그 회차에 온 op 는 inbox 에 남고 다시 연 회차가 반영한다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     value = outbox(calls, _write(["n1"], ["모듈수"], [[3]]), host=editor.HOST)
 
     app.session_state[HIDDEN_KEY] = True
@@ -332,7 +411,7 @@ def test_an_edit_arriving_with_the_press_is_in_the_pack(database: Path, calls: C
     """G2 — 칸 고침과 「판 만들기」 누름이 한 회차에 와도 그 고침이 판에 든다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _kind(app, "공정")
     value = outbox(calls, _write(["n1"], ["메모"], [["DEMO 메모"]]), host=editor.HOST)
@@ -351,7 +430,7 @@ def test_the_tab_mark_follows_real_edits_not_the_draft(database: Path, calls: Ca
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     assert not _dirty(app)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     assert _dirty(app)
     app = _send(app, calls, {"op": "remove", "rows": ["n1"]})
     assert not _dirty(app), "더한 줄을 지우면 펼친 판과 같다"
@@ -363,13 +442,13 @@ def test_a_memo_only_change_is_its_own_value_part(database: Path, calls: Calls) 
     """01 메모만 바꾼 판은 칸 · 공정 수가 그대로라 값 줄에 「01 메모 · 차례만 바뀜」 이 붙는다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     app = _press(app, APPLY_BUTTON_KEY)
 
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    (line,) = _shell(calls)["ids"]
+    line, *_ = _shell(calls)["ids"]
     app = _send(app, calls, _write([line], ["메모"], [["DEMO 고친 메모"]]))
     app = _press(app, editor.MAKE_BUTTON_KEY)
 
@@ -382,27 +461,34 @@ def test_a_memo_only_change_is_its_own_value_part(database: Path, calls: Calls) 
 def test_changing_the_reference_rewrites_the_route_of_that_line(
     database: Path, calls: Calls
 ) -> None:
-    """「참조 바꾸기」 — 있는 줄을 고르고 같은 소요기준의 다른 참조공정으로 바꾸면 그 줄의 경로가
-    바뀐다(고르기 값은 누름에만 든다)."""
+    """참조공정 칸에 같은 소요기준의 다른 참조공정을 적으면 그 줄의 경로와 양식(STEP · MCP ·
+    Area)이 그 참조를 따른다. 양식과 다르게 적은 칸(모듈수 2)은 그대로다 — 양식과 같은 값을 적은
+    칸(Area)은 초안이 아니라 양식을 따른다(보인 값을 다시 적으면 바뀐 것 없음)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, first = _add_line(app)
+    app, first = _add_line(app, calls)
     app = _fill_new_line(app, calls)
-    app.selectbox(key=editor.LINE_PICK_KEY).select("n1")
-    app = _run(app)
-    box = app.selectbox(key=f"{editor.REFERENCE_PICK_KEY}-n1")
-    assert box.value == first, "있는 줄은 지금 참조공정에서 시작한다"
-    others = [str(option) for option in box.options if str(option) != first]
-    if not others:
-        pytest.skip("합성 표본에 같은 소요기준의 다른 참조공정이 없다")
-    box.select(others[0])
-    app = _run(app)
-    app = _press(app, editor.LINE_BUTTON_KEY)
+    references = _context_of(app).references
+    others = [
+        name
+        for name, choice in references.items()
+        if name != first and choice.basis == references[first].basis
+    ]
+    assert others, "합성 시드에 같은 소요기준의 다른 참조공정이 있다"
+    app = _kind(app, "공정")
+    app = _send(app, calls, _write(["n1"], ["참조공정"], [[others[0]]]))
+    ((step, mcp),) = references[others[0]].steps
+    assert (_form(calls, "n1")["STEP_SEQ"], _form(calls, "n1")["MCP_SEQ"]) == (step, mcp)
 
     app = _press(app, editor.MAKE_BUTTON_KEY)
     staged = _staged(app)
     assert staged is not None and staged.reading.pack is not None
-    assert [route.reference for route in staged.reading.pack.routes] == [others[0]]
+    assert [(route.reference, route.step, route.mcp) for route in staged.reading.pack.routes] == [
+        (others[0], step, mcp)
+    ]
+    assert [(process.area, process.modules) for process in staged.reading.pack.processes] == [
+        (references[others[0]].area, 2.0)
+    ]
 
 
 def test_a_pack_made_after_another_pack_was_applied_cannot_be_applied(
@@ -413,7 +499,7 @@ def test_a_pack_made_after_another_pack_was_applied_cannot_be_applied(
     repository = new_repository(database)
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     apply_template(repository)
 
@@ -438,30 +524,41 @@ def test_the_entry_is_locked_without_an_active_scenario(database: Path, calls: C
 def _applied_one(app: AppTest, calls: Calls) -> AppTest:
     """빈 시작에서 공정 하나를 적용하고 다시 펼친다(그 공정은 펼친 줄 `b1` — 편집기 몫)."""
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     app = _press(app, APPLY_BUTTON_KEY)
     return _press(app, editor.OPEN_BUTTON_KEY)
 
 
-def test_changing_the_reference_of_an_opened_line_keeps_its_grid_edits_undoable(
+def test_changing_the_reference_of_an_opened_line_and_undoing_it_restores_its_form(
     database: Path, calls: Calls
 ) -> None:
-    """펼친 줄의 「바꾸기」 는 양식(펼친 값)에서 바꾼다 — 그리드에서 고친 모듈수를 씨앗에 굽지 않아
-    되돌리면 펼친 값으로 돌아가고, 같은 참조로 바꾼 판은 「바뀐 것 없음」 이다."""
+    """펼친 줄의 참조공정을 바꾸면 STEP · MCP 양식이 새 참조의 조합이 된다 — 초안에 쓰지 않아,
+    참조 칸을 되돌리면 펼친 값으로 돌아오고 그리드에서 고친 모듈수도 되돌리면 「바뀐 것 없음」
+    이다(eee9e9cf)."""
     app = _applied_one(_app(database), calls)
-    assert _shell(calls)["ids"] == ["b1"]
+    assert _shell(calls)["ids"][0] == "b1"
+    opened = _form(calls, "b1")
+    references = _context_of(app).references
+    other = next(
+        name
+        for name, choice in references.items()
+        if name != opened["참조공정"] and choice.basis == opened["소요기준"]
+    )
     app = _send(app, calls, _write(["b1"], ["모듈수"], [[5]]))
-    app.selectbox(key=editor.LINE_PICK_KEY).select("b1")
-    app = _press(_run(app), editor.LINE_BUTTON_KEY)
-    assert app.session_state[editor.LINES_KEY]["b1"][3] == 2.0
+    app = _send(app, calls, _write(["b1"], ["참조공정"], [[other]]))
+    ((step, mcp),) = references[other].steps
+    changed = _form(calls, "b1")
+    assert (changed["STEP_SEQ"], changed["MCP_SEQ"]) == (step, mcp)
+    assert changed["참조공정"] == opened["참조공정"], "참조공정 칸 양식은 펼친 값"
+    assert set(_line_draft(app, "b1")) == {"모듈수", "참조공정"}
 
     app = _send(app, calls, {"op": "undo"})
-    assert (
-        editor.LINE_CELLS_KEY not in app.session_state
-        or not app.session_state[editor.LINE_CELLS_KEY]
-    )
+    restored = _form(calls, "b1")
+    assert (restored["STEP_SEQ"], restored["MCP_SEQ"]) == (opened["STEP_SEQ"], opened["MCP_SEQ"])
+    app = _send(app, calls, {"op": "undo"})
+    assert not _line_draft(app, "b1")
     assert not _dirty(app)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     assert _staged(app) is None
@@ -489,7 +586,7 @@ def test_cells_left_outside_the_route_are_counted_on_the_value_line(
     「판에 안 든 칸 입력 n」 으로 센다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _kind(app, "생산성")
     columns = _shell(calls)["valueCols"]
@@ -522,7 +619,7 @@ def test_a_pack_made_before_more_edits_is_taken_back_so_apply_cannot_drop_them(
     같다(그 누름은 닿지 않는다)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     assert _staged(app) is not None
@@ -552,7 +649,7 @@ def test_a_pack_stays_while_nothing_that_shapes_it_changes(
     걷은 뒤 남은 고침 · 00 메모라 창과 상관없다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     made = _staged(app)
@@ -588,7 +685,7 @@ def test_a_pack_stays_across_a_closed_tab_with_its_memo(database: Path, calls: C
     회차에도 남는다(`persist_state`)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app.text_input(key=editor.MEMO_KEY).input("DEMO 판 메모")
     app = _press(_run(app), editor.MAKE_BUTTON_KEY)
@@ -657,7 +754,7 @@ def test_a_value_typed_in_a_shown_cell_stays_after_other_cells_change(
     바꾸거나 되돌린 뒤에도 사람이 적은 값이다(바탕 없는 달의 ER 따름 · 앞 달 이어 씀)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _send(app, calls, _write(["n1"], ["Area_Name", "모듈수"], [["Main", 2]]))
     app = _kind(app, "생산성")
     first, second, third = _shell(calls)["valueCols"][:3]
@@ -677,7 +774,7 @@ def test_a_value_typed_in_a_shown_cell_stays_after_other_cells_change(
 
 def _late_line(app: AppTest, calls: Calls, months_after: int = 6) -> tuple[AppTest, int]:
     """시작월이 계획 끝 뒤인 새 공정 한 줄(n1) — 그 시작월."""
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _kind(app, "생산성")
     roles = app.session_state[editor.COLUMNS_KEY]
     last = max(month for kind, month in roles.values() if kind == "m")
@@ -728,7 +825,7 @@ def test_an_after_cell_locked_as_many_values_does_not_paint_its_old_draft(
     든다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     row = "n1|03|양산|UPEH"
     window["cut"] = 3
@@ -755,32 +852,209 @@ def test_an_after_cell_locked_as_many_values_does_not_paint_its_old_draft(
 # --------------------------------------------------------------------------- 작업 줄 · 곁 거부
 
 
-def test_a_refused_add_says_why_beside_the_button_and_not_in_the_alarm(
+def test_a_half_filled_new_line_is_an_input_problem_and_never_an_exception(
     database: Path, calls: Calls
 ) -> None:
-    """「공정 더하기 · 참조 바꾸기」 팝오버 안 검증 거부(참조공정 없음)는 「더하기」 바로 아래 한
-    줄이고 알림창 · Alarm 에는 가지 않는다(UI-NTF-03 · UI-INP-05)."""
+    """I6 — 이름만 적은 새 줄(참조 · 조합 없음)도 편집기 줄이다. 값 표에는 그 줄 값 줄이 빈칸으로
+    서고(시작월 양식 = 첫 계획 월), 빈칸은 「확인할 칸 n」 의 입력 문제다. 판 만들기는 막지 않고
+    관문이 거절한다(예외 없음 · 곁 오류 없음)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    form = _new_form(app)
-    app.text_input(key=f"{editor.NAME_INPUT_KEY}-{form}").input(NAME)
-    app = _press(_run(app), editor.LINE_BUTTON_KEY)
+    app = _send(app, calls, _write(["n1"], ["공정"], [[NAME]]))
 
-    assert [str(item.value) for item in app.error] == [editor.NO_REFERENCE]
-    assert editor.NO_REFERENCE not in _flashes(app)
-    assert _new_form(app) == form, "거부한 누름은 줄을 더하지 않는다"
+    assert _dirty(app)
+    form = _form(calls, "n1")
+    assert form["시작월"] == str(_context_of(app).months[0])
+    assert form["참조공정"] is None and form["STEP_SEQ"] is None and form["소요기준"] is None
+    reasons = set(_check_table(app)["까닭"])
+    assert {"참조공정 빈칸", "STEP_SEQ · MCP_SEQ 빈칸", "Area_Name 은 Main · MI"} <= reasons
+    app = _kind(app, "생산성")
+    assert "n1|03|양산|UPEH" in _shell(calls)["ids"]
+    assert set(shell_frame(_shell(calls)).iloc[0, 2:].dropna()) == set(), "값 칸은 빈칸"
+
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and not staged.reading.accepted
+    assert not app.error
+
+
+def test_a_reference_with_two_step_pairs_leaves_the_pair_blank_until_one_is_picked(
+    database: Path, calls: Calls, references: dict[str, Any]
+) -> None:
+    """R3 — 참조공정의 조합이 둘 이상이면 STEP · MCP 양식은 빈칸이고 입력 문제다. 후보는 그 줄
+    참조공정 글로 고르는 조합 표(「STEP · MCP」 를 보이고 제 칸 몫을 넣음)이고, 고른 값이 판에
+    든다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    reference = _suggested(calls)[0]
+    ((step, mcp),) = _context_of(app).references[reference].steps
+    second = ("DEMO-P101", "DEMO-1B")
+
+    def two_pairs(found: dict[str, ReferenceChoice]) -> dict[str, ReferenceChoice]:
+        found[reference] = replace(found[reference], steps=((step, mcp), second))
+        return found
+
+    references["shape"] = two_pairs
+    app, _ = _add_line(app, calls, reference=reference)
+    form = _form(calls, "n1")
+    assert form["STEP_SEQ"] is None and form["MCP_SEQ"] is None
+    assert "STEP_SEQ · MCP_SEQ 빈칸" in set(_check_table(app)["까닭"])
+    suggest = _shell(calls)["suggest"]
+    assert suggest["STEP_SEQ"]["by"] == suggest["MCP_SEQ"]["by"] == "참조공정"
+    assert suggest["STEP_SEQ"]["table"][reference] == [
+        [f"{step} · {mcp}", step],
+        [f"{second[0]} · {second[1]}", second[0]],
+    ]
+    assert [item[1] for item in suggest["MCP_SEQ"]["table"][reference]] == [mcp, second[1]]
+
+    app = _send(app, calls, _write(["n1"], ["STEP_SEQ", "MCP_SEQ"], [list(second)]))
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and staged.applicable and staged.reading.pack is not None
+    assert [(route.step, route.mcp) for route in staged.reading.pack.routes] == [second]
+
+
+def test_a_typed_reference_stays_as_text_when_the_scenario_candidates_change(
+    database: Path, calls: Calls, references: dict[str, Any]
+) -> None:
+    """참조공정 칸은 고른 차례 번호가 아니라 글이다 — 후보가 다른 시나리오로 바꿔도 칸에 그 글이
+    남고(후보 밖 — R-02 알림 · STEP · MCP 양식 빈칸), 돌아오면 양식도 돌아온다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, reference = _add_line(app, calls)
+    app = _fill_new_line(app, calls)
+    ((step, mcp),) = _context_of(app).references[reference].steps
+
+    references["shape"] = lambda found: {
+        name: choice for name, choice in found.items() if name != reference
+    }
+    app = _kind(app, "공정")
+    assert _line_draft(app, "n1")["참조공정"] == reference
+    assert reference not in _suggested(calls)
+    assert _form(calls, "n1")["STEP_SEQ"] is None
+    reasons = set(_check_table(app)["까닭"])
+    assert "R-02 · 참조공정이 이번 기준 데이터 후보에 없음 — 등록 때 빠짐" in reasons
+
+    references["shape"] = None
+    app = _run(app)
+    assert _line_draft(app, "n1")["참조공정"] == reference
+    assert (_form(calls, "n1")["STEP_SEQ"], _form(calls, "n1")["MCP_SEQ"]) == (step, mcp)
+
+
+def test_an_opened_reference_outside_the_candidates_stays_in_its_cell_and_the_pack(
+    database: Path, calls: Calls, references: dict[str, Any]
+) -> None:
+    """C12 — 펼친 판의 참조공정이 이번 후보 밖이어도 칸 양식은 그 글이고(목록에는 없음) STEP ·
+    MCP 도 펼친 값이다. 다른 칸을 고친 판에 그 참조 · 조합이 그대로 든다."""
+    app = _applied_one(_app(database), calls)
+    opened = _form(calls, "b1")
+    references["shape"] = lambda found: {
+        name: choice for name, choice in found.items() if name != opened["참조공정"]
+    }
+    app = _kind(app, "공정")
+    form = _form(calls, "b1")
+    assert (form["참조공정"], form["STEP_SEQ"], form["MCP_SEQ"]) == (
+        opened["참조공정"],
+        opened["STEP_SEQ"],
+        opened["MCP_SEQ"],
+    )
+    assert opened["참조공정"] not in _suggested(calls)
+
+    app = _send(app, calls, _write(["b1"], ["메모"], [["DEMO 메모 고침"]]))
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and staged.applicable and staged.reading.pack is not None
+    assert [(route.reference, route.step, route.mcp) for route in staged.reading.pack.routes] == [
+        (opened["참조공정"], opened["STEP_SEQ"], opened["MCP_SEQ"])
+    ]
+
+
+def test_the_reference_candidates_show_the_display_name_and_put_the_original(
+    database: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UI-DAT-10 — 참조공정 후보는 표시명이 있으면 「표시명 (원본)」 을 보이고 원본을 넣는다.
+    지금 편집기 줄 이름은 후보에서 빠진다(V-06)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    first, *rest = _suggested(calls)
+    monkeypatch.setattr(
+        editor, "get_process_labels", lambda: ProcessLabels(1, {first: "DEMO 표시명"})
+    )
+    app = _run(app)
+    items = _shell(calls)["suggest"]["참조공정"]["items"]
+    assert items[0] == [f"DEMO 표시명 ({first})", first]
+    assert items[1:] == rest
+
+    app = _send(app, calls, _write(["n1"], ["공정"], [[rest[0]]]))
+    assert rest[0] not in _suggested(calls), "편집기 줄 이름은 참조공정 후보 밖"
+
+
+def test_the_follow_popover_lists_each_line_with_its_pair_and_follow_counts(
+    database: Path, calls: Calls
+) -> None:
+    """「따라올 제품」 — 늘 서는 표 위 팝오버. 편집기 몫 줄마다 공정 · 참조공정 · STEP · MCP ·
+    따라올 제품 · 줄 · Buffer 밖(합치기와 같은 몸통 — 메모), 줄이 없으면 빈 상태 한 마디."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    assert _table(app, editor.FOLLOW_COLUMNS) is None
+    assert editor.EMPTY_LINES in _captions(app)
+
+    app, reference = _add_line(app, calls)
+    frame = _table(app, editor.FOLLOW_COLUMNS)
+    assert frame is not None and len(frame) == 1
+    ((step, mcp),) = _context_of(app).references[reference].steps
+    row = frame.iloc[0]
+    assert (row["공정"], row["참조공정"], row["STEP · MCP"]) == (NAME, reference, f"{step} · {mcp}")
+    (preview,) = app.session_state[editor.FOLLOW_KEY].values()
+    assert preview.rows > 0
+    assert (row["따라올 제품"], row["줄"], row["Buffer 밖"]) == (
+        preview.products,
+        preview.rows,
+        preview.uncounted,
+    )
+    assert editor.EMPTY_LINES not in _captions(app)
+
+
+def test_removing_a_new_line_clears_it_and_undo_brings_it_back_with_its_values(
+    database: Path, calls: Calls
+) -> None:
+    """새 줄 지우기는 그 줄 칸을 비운다(빈 새 줄 규칙). 값 표 초안은 남아(「판에 안 든 칸 입력」)
+    되돌리면 공정째 돌아오고, 같은 새 줄에 다른 공정을 적으면 그 공정에 붙는다(업무 키가 줄 id)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, reference = _add_line(app, calls)
+    app = _fill_new_line(app, calls)
+    app = _kind(app, "공정")
+
+    app = _send(app, calls, {"op": "remove", "rows": ["n1"]})
+    assert not _line_draft(app, "n1") and not _dirty(app)
+    assert _shell(calls)["ids"] == ["n1", "n2", "n3"]
+    assert _value_draft(app, "n1|03|양산|UPEH")
+    assert any(text.startswith("판에 안 든 칸 입력") for text in _check_table(app)["까닭"])
+
+    app = _send(app, calls, {"op": "undo"})
+    assert _dirty(app) and {"공정", "참조공정"} <= set(_line_draft(app, "n1"))
+    app = _send(app, calls, {"op": "redo"})
+    app, _ = _add_line(app, calls, name="DEMO_Other", reference=reference)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and staged.applicable and staged.reading.pack is not None
+    pack = staged.reading.pack
+    assert [process.name for process in pack.processes] == ["DEMO_Other"]
+    assert 30000.0 in [row.upeh for row in pack.productivity]
 
 
 def test_adding_a_process_marks_the_close_as_losing_edits_on_the_redrawn_run(
     database: Path, calls: Calls
 ) -> None:
-    """「더하기」 만 한 회차 — 다시 그린 회차의 「작성 닫기」 가 이미 확인 팝오버다(화면 탭 점 ·
-    새로고침 확인도 같은 표지를 그 회차에 읽는다)."""
+    """새 줄에 적기만 한 회차 — 그 회차의 「작성 닫기」 가 이미 확인 팝오버다(출납 콜백이 표지를
+    먼저 켠다 — 화면 탭 점 · 새로고침 확인도 같은 표지를 그 회차에 읽는다)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     assert editor.CLOSE_BUTTON_KEY in [button.key for button in app.button]
 
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
 
     keys = [button.key for button in app.button]
     assert editor.CLOSE_BUTTON_KEY not in keys and editor.CLOSE_CONFIRM_KEY in keys
@@ -851,7 +1125,7 @@ def test_making_a_pack_says_its_result_in_the_alarm_too(database: Path, calls: C
     assert editor.MADE_REJECTED.format(n=f"{count:,}") in _flashes(app)
     assert not app.error and not app.warning
 
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     made = _staged(app)
@@ -865,7 +1139,7 @@ def test_closing_the_editor_takes_back_the_pack_it_made(database: Path, calls: C
     걷는다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    app, _ = _add_line(app)
+    app, _ = _add_line(app, calls)
     app = _fill_new_line(app, calls)
     app = _press(app, editor.MAKE_BUTTON_KEY)
     assert _staged(app) is not None
@@ -891,7 +1165,7 @@ def test_closing_the_editor_keeps_an_imported_pack(database: Path, calls: Calls)
     app = _app(database)
     app.session_state[STAGED_KEY] = imported
     app = _press(app, editor.OPEN_BUTTON_KEY)
-    first, _ = _shell(calls)["ids"]
+    first, *_ = _shell(calls)["ids"]
     app = _send(app, calls, {"op": "remove", "rows": [first]})
     assert _dirty(app)
 

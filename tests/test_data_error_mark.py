@@ -161,8 +161,6 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/extra_process_admin.py", "_render_staged"): (1, BESIDE),
     # 「시험 계산」 을 누른 회차에 기준정보를 못 읽음.
     ("src/capa_simulation/components/extra_process_admin.py", "_preview"): (1, PRESSED),
-    # 「공정 더하기 · 참조 바꾸기」 팝오버 안 검증 거부(참조공정 없음 · 조합 꼴).
-    ("src/capa_simulation/components/extra_process_editor.py", "_render_line_form"): (1, BESIDE),
     ("src/capa_simulation/components/flash.py", "_draw"): (1, ALERT_PATH),
     ("src/capa_simulation/components/home_preference.py", "_reject_key_process_write"): (
         1,
