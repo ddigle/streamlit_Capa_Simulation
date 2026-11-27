@@ -20,7 +20,9 @@
   줄은 지우기만 열린다. 펼친 줄 뒤에 빈 새 줄(`n<k>` — 채운 새 줄 뒤로 늘 `FRESH_ROWS` 개)이 서고,
   새 공정은 새 줄에 바로 적는다. 한 칸이라도 적은 새 줄이 편집기 줄이다(반쯤 찬 줄도 — 빈칸은
   입력 문제). 값 표 줄은 살아 있는 편집기 몫 줄에서 짓는다 — 공정을 지우면 값 줄이 함께 빠진다
-  (지운 새 줄의 값 표 초안은 남아 되돌리기 · 같은 새 줄에 다시 적은 공정에 붙는다).
+  (지운 새 줄의 값 표 초안은 남아 「판에 안 든 칸 입력」 이고 되돌리기가 값째 되살린다). 값 표
+  초안이 남은 새 줄 번호는 빈 새 줄로 다시 내놓지 않는다(`held` — 그 줄에 다른 공정을 적으면 지운
+  공정 값이 표지 없이 붙는다). op 는 건너뛴 줄을 잠가 더한 색인으로 받는다(`_line_slot`).
 - **월 칸** = [이전(읽기 전용)] + 계획 첫 달 ~ 끝 달(`YY.MM`) + [이후(한 값이면 고침)]. 칸 이름이
   머리 글이라 이전 · 이후 칸 이름에 그 달을 싣는다(「~26.12」 · 「27.07~」) — 이후 칸은 절대
   `Onward` 열쇠라 시나리오가 바뀌어도 옛 이후 칸 초안이 숨은 칸으로 남는다. 칸 이름 → 달은 세션
@@ -95,6 +97,7 @@ from capa_simulation.services.edit_grid import (
     Suggestion,
     Suggestions,
     ValueFormat,
+    build_index,
     removed_keys,
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, build_base
@@ -314,6 +317,8 @@ LINE_COLUMNS: Final = (
 BASIS_WHY: Final = "소요기준은 참조공정을 따릅니다"
 CARRY_MARK_WHY: Final = "「옮김」 은 통째 옮김 줄 표지입니다"
 CARRIED_WHY: Final = "통째 옮김({reason}) — 줄 지우기만 됩니다"
+# 건너뛴 새 줄(`held`)의 잠금 — op 를 받는 색인에만 있고 그리지 않는다.
+HELD_WHY: Final = "지운 새 줄 — 되돌리기로만 돌아옵니다"
 # 빈 새 줄 — 채운 새 줄 뒤로 늘 이만큼(업무 키 `n<k>`, 「No.」 칸은 「새 k」).
 FRESH_ROWS: Final = 3
 NEW_LINE_PREFIX: Final = "n"
@@ -710,13 +715,15 @@ def _reference_label(labels: ProcessLabels, name: str) -> str:
 @dataclass(frozen=True)
 class _LineRow:
     """공정 표 한 줄 — 줄 id · 양식 값(`line_form`) · 통째 옮김 까닭, 새 줄이면 그 번호와 한 칸
-    이라도 적었나(적지 않은 새 줄은 편집기 줄이 아니다)."""
+    이라도 적었나(적지 않은 새 줄은 편집기 줄이 아니다) · 건너뛴 줄인가(`held` — 적지 않았는데
+    값 표 초안이 남은 새 줄, 그리지 않는다)."""
 
     line_id: str
     fields: LineFields
     carried: str | None
     number: int | None = None
     filled: bool = True
+    held: bool = False
 
 
 @dataclass(frozen=True)
@@ -758,10 +765,11 @@ class _Screen:
 
 
 def _line_rows(origin: EditorModel, context: EditorContext) -> tuple[_LineRow, ...]:
-    """펼친 줄(차례 그대로) 뒤에 새 줄 `n1` ~ (채운 새 줄 가운데 가장 뒤 번호 + `FRESH_ROWS`).
-    양식은 그 줄의 지금 참조공정 글(초안 포함)을 따른다(`line_form`) — 통째 옮김 줄은 펼친 값,
-    적지 않은 새 줄은 빈 양식."""
+    """펼친 줄(차례 그대로) 뒤에 새 줄 `n1` ~ (채운 줄 · 건너뛴 줄 가운데 가장 뒤 번호 +
+    `FRESH_ROWS`). 양식은 그 줄의 지금 참조공정 글(초안 포함)을 따른다(`line_form`) — 통째 옮김
+    줄은 펼친 값, 적지 않은 새 줄은 빈 양식. 건너뛴 줄(`_held_numbers`)도 싣고 표시만 한다."""
     typed = _typed(_draft(LINE_TABLE))
+    held = _held_numbers(typed)
     rows: list[_LineRow] = []
     for line in origin.origin:
         fields = line.fields
@@ -775,14 +783,32 @@ def _line_rows(origin: EditorModel, context: EditorContext) -> tuple[_LineRow, .
         for line_id, own in typed.items()
         if (number := _fresh_number(line_id)) is not None and _filled(own)
     ]
-    for number in range(1, max(filled, default=0) + FRESH_ROWS + 1):
-        own = typed.get(f"{NEW_LINE_PREFIX}{number}", {})
+    for number in range(1, max((*filled, *held), default=0) + FRESH_ROWS + 1):
+        line_id = f"{NEW_LINE_PREFIX}{number}"
+        own = typed.get(line_id, {})
         if not _filled(own):
-            rows.append(_LineRow(f"{NEW_LINE_PREFIX}{number}", LineFields(), None, number, False))
+            rows.append(_LineRow(line_id, LineFields(), None, number, False, number in held))
             continue
         fields = line_form(context, own.get(REFERENCE_COLUMN, ""))
-        rows.append(_LineRow(f"{NEW_LINE_PREFIX}{number}", fields, None, number))
+        rows.append(_LineRow(line_id, fields, None, number))
     return tuple(rows)
+
+
+def _held_numbers(typed: Mapping[str, Mapping[str, object]]) -> set[int]:
+    """건너뛸 새 줄 번호 — 공정 표에 적은 칸이 없는데 값 표 초안이 남은 새 줄(그 줄을 지우거나 비운
+    뒤). 빈 새 줄로 다시 내놓으면 그 줄에 적은 다른 공정이 남은 값을 물려받는다."""
+    held: set[int] = set()
+    for table in VALUE_TABLES:
+        draft = _draft(table)
+        if draft is None:
+            continue
+        for book in (draft["cells"], draft["bad"]):
+            for row_id in book:
+                line_id = str(row_id).split("|", 1)[0]
+                number = _fresh_number(line_id)
+                if number is not None and not _filled(typed.get(line_id, {})):
+                    held.add(number)
+    return held
 
 
 def _fresh_number(line_id: str) -> int | None:
@@ -887,7 +913,23 @@ def _line_spec(carried: bool) -> GridSpec:
 def _line_table(rows: Sequence[_LineRow]) -> _Table:
     """공정 표 — 펼친 줄 뒤에 빈 새 줄(빈 시작도 새 줄 칸이 먼저 선다 — UI-LAY-10). 편집기 몫 줄은
     소요기준(· 「옮김」)만 잠그고, 새 줄은 「빈 새 줄」 규칙(지우기는 그 줄 칸을 비움 · 붙일
-    덩어리가 남은 새 줄보다 길면 거절)이다."""
+    덩어리가 남은 새 줄보다 길면 거절)이다. 건너뛴 줄(`held`)은 그리지 않는다."""
+    return _built(*_line_frame([row for row in rows if not row.held]))
+
+
+def _line_slot(screen: _Screen) -> edit_grid.TableSlot:
+    """op 를 받을 공정 표 — 그린 줄에 건너뛴 줄을 더한 색인. 건너뛴 줄은 모든 칸 · 지우기가 잠겨
+    되돌리기 · 다시 실행(잠금을 보지 않는다)으로만 바뀐다 — 그 줄이 걷히기 전에 보낸 칸 쓰기가 지운
+    공정 값을 물려받지 않고 건너뛴 수로 알려진다."""
+    built = screen.tables[LINE_TABLE]
+    if not any(row.held for row in screen.rows):
+        return built.slot
+    frame, spec, rules = _line_frame(screen.rows)
+    return replace(built.slot, index=build_index(frame, spec, rules))
+
+
+def _line_frame(rows: Sequence[_LineRow]) -> tuple[pd.DataFrame, GridSpec, RowRules]:
+    """공정 표 양식 · 규격 · 줄 규칙(`_line_table` 몸통 — 건너뛴 줄은 모든 칸 · 지우기 잠금)."""
     carried = any(row.carried is not None for row in rows)
     spec = _line_spec(carried)
     locked = (BASIS_COLUMN, CARRY_COLUMN) if carried else (BASIS_COLUMN,)
@@ -900,7 +942,12 @@ def _line_table(rows: Sequence[_LineRow]) -> _Table:
     records: list[dict[str, object]] = []
     for number, row in enumerate(rows, start=1):
         fields = row.fields
-        if row.number is not None:
+        if row.held:
+            kind = LockKind(cols=spec.value_columns, reason=HELD_WHY, remove=HELD_WHY)
+            if kind not in kinds:
+                kinds.append(kind)
+            rules.append(kinds.index(kind))
+        elif row.number is not None:
             rules.append(1)
         elif row.carried is None:
             rules.append(0)
@@ -934,7 +981,7 @@ def _line_table(rows: Sequence[_LineRow]) -> _Table:
             }
         )
     frame = pd.DataFrame(records, columns=[NO_COLUMN, ID_COLUMN, LABEL_COLUMN, *spec.value_columns])
-    return _built(frame, spec, RowRules(tuple(kinds), tuple(rules)))
+    return frame, spec, RowRules(tuple(kinds), tuple(rules))
 
 
 def _built(frame: pd.DataFrame, spec: GridSpec, rules: RowRules) -> _Table:
@@ -1274,11 +1321,12 @@ def _stamp(model: EditorModel, edits: Mapping[CellKey, CellInput]) -> str:
 
 
 def _absorb(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
-    """inbox 를 반영하고(앞 회차 양식 — 브라우저가 본 표 — 로) 모형을 다시 짓고 초안을 이 회차 표에
-    맞춘 뒤(`_tidy`) 탭 점 표지를 적고 판 지문을 단다."""
+    """inbox 를 반영하고(앞 회차 양식 — 브라우저가 본 표에 건너뛴 새 줄을 더해 — 로) 모형을 다시
+    짓고 초안을 이 회차 표에 맞춘 뒤(`_tidy`) 탭 점 표지를 적고 판 지문을 단다."""
     if INBOX.peek():
         before = _screen(base, context)
         slots = {table: built.slot for table, built in before.tables.items()}
+        slots[LINE_TABLE] = _line_slot(before)
         edit_grid.apply_inbox(KEYS, slots)
         _clear_blank_fresh()
     screen = _screen(base, context)

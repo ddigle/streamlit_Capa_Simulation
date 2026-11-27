@@ -50,6 +50,7 @@ from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.extra_process_intake import SourceFetch, StagedPack, stage_pack
 from capa_simulation.persistence.models import EXTRA_EDITOR_PLACE, EXTRA_KIND_REVISION
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.edit_grid import LOCKED_TOAST
 from capa_simulation.services.extra_process_editor import (
     EditorContext,
     ReferenceChoice,
@@ -168,13 +169,18 @@ def _line_draft(app: AppTest, line: str) -> dict[str, Any]:
     return {} if not draft else dict(draft["cells"].get(line, {}))
 
 
-def _fill_new_line(app: AppTest, calls: Calls, line: str = "n1") -> AppTest:
+def _fresh_ids(first: int, count: int = editor.FRESH_ROWS) -> list[str]:
+    """빈 새 줄 업무 키 `n<first>` 부터 `count` 개."""
+    return [f"n{number}" for number in range(first, first + count)]
+
+
+def _fill_new_line(app: AppTest, calls: Calls, line: str = "n1", upeh: float = 30000) -> AppTest:
     """새 줄 한 달씩 — 공정 표(Area · 모듈수) · 생산성 양산 · 설비 보유 · 효율 양산 효율 · 편중률.
     바탕 없는 달은 채움이 잇는다(ER 은 양산을 따름 · 대여 0)."""
     app = _send(app, calls, _write([line], ["Area_Name", "모듈수"], [["Main", 2]]))
     app = _kind(app, "생산성")
     first = _shell(calls)["valueCols"][0]
-    app = _send(app, calls, _write([f"{line}|03|양산|UPEH"], [first], [[30000]]))
+    app = _send(app, calls, _write([f"{line}|03|양산|UPEH"], [first], [[upeh]]))
     app = _kind(app, "설비")
     app = _send(app, calls, _write([f"{line}|04||설비보유"], [first], [[2]]))
     app = _kind(app, "효율")
@@ -1060,11 +1066,56 @@ def test_the_follow_popover_lists_each_line_with_its_pair_and_follow_counts(
         assert "월 꼴(YYYYMM)이 아님" in set(_check_table(app)["까닭"])
 
 
-def test_removing_a_new_line_clears_it_and_undo_brings_it_back_with_its_values(
+def _held_line_round_trip(app: AppTest, calls: Calls, reference: str) -> AppTest:
+    """값까지 적은 새 줄 `n1` 을 지우거나 비운 뒤 — 공정 표 초안은 걷히고 값 표 초안은 남는다
+    (「판에 안 든 칸 입력」 — 탭 점 · 공정 표 「적용 전」 에는 세지 않음). 그 번호는 빈 새 줄로
+    다시 서지 않고 그 뒤로 빈 새 줄 `FRESH_ROWS` 개다. 되돌리기는 그 줄을 값째 되살리고(건너뛴 줄은
+    그리지 않아도 op 를 받는 색인에 있다), 걷히기 전 표에 늦게 보낸 `n1` 쓰기는 잠긴 칸으로
+    건너뛴다."""
+    assert not _line_draft(app, "n1") and not _dirty(app)
+    shell = _shell(calls)
+    assert shell["ids"] == _fresh_ids(2), "값이 남은 번호는 건너뛴다"
+    assert list(shell_frame(shell)["No."]) == [f"새 {k}" for k in range(2, 2 + editor.FRESH_ROWS)]
+    assert _value_draft(app, "n1|03|양산|UPEH")
+    assert any(text.startswith("판에 안 든 칸 입력") for text in _check_table(app)["까닭"])
+    feed = last(calls, edit_grid.feed_key(editor.HOST))
+    assert not feed["counts"]["cells"]
+
+    app = _send(app, calls, {"op": "undo"})
+    assert _dirty(app) and {"공정", "참조공정"} <= set(_line_draft(app, "n1"))
+    assert _shell(calls)["ids"] == ["n1", *_fresh_ids(2)]
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and staged.reading.pack is not None
+    assert 30000.0 in [row.upeh for row in staged.reading.pack.productivity], "값째 돌아온다"
+
+    app = _send(app, calls, {"op": "redo"})
+    assert not _line_draft(app, "n1") and _shell(calls)["ids"] == _fresh_ids(2)
+    app = _send(app, calls, _write(["n1"], ["공정"], [["DEMO_Late"]]))
+    assert not _line_draft(app, "n1") and _shell(calls)["ids"] == _fresh_ids(2)
+    toast = last(calls, edit_grid.feed_key(editor.HOST))["toast"]
+    assert toast is not None and LOCKED_TOAST.format(n="1") in toast["text"]
+
+    # 다른 공정은 다른 새 줄에 서고 지운 공정 값을 물려받지 않는다.
+    app, _ = _add_line(app, calls, name="DEMO_Other", line="n2", reference=reference)
+    app = _fill_new_line(app, calls, line="n2", upeh=31000)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    staged = _staged(app)
+    assert staged is not None and staged.applicable and staged.reading.pack is not None
+    pack = staged.reading.pack
+    assert [process.name for process in pack.processes] == ["DEMO_Other"]
+    upeh = [row.upeh for row in pack.productivity]
+    assert 31000.0 in upeh and 30000.0 not in upeh
+    app = _run(app)
+    assert _staged(app) is not None, "건너뛴 줄 값은 판 지문 밖 — 다시 그려도 판이 남는다"
+    return app
+
+
+def test_removing_a_new_line_with_values_skips_its_number_and_undo_brings_it_back(
     database: Path, calls: Calls
 ) -> None:
-    """새 줄 지우기는 그 줄 칸을 비운다(빈 새 줄 규칙). 값 표 초안은 남아(「판에 안 든 칸 입력」)
-    되돌리면 공정째 돌아오고, 같은 새 줄에 다른 공정을 적으면 그 공정에 붙는다(업무 키가 줄 id)."""
+    """새 줄 지우기는 그 줄 칸을 비운다(빈 새 줄 규칙) — 값 표 초안이 남은 줄은 번호째 건너뛴다
+    (`_held_line_round_trip`)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     app, reference = _add_line(app, calls)
@@ -1072,21 +1123,32 @@ def test_removing_a_new_line_clears_it_and_undo_brings_it_back_with_its_values(
     app = _kind(app, "공정")
 
     app = _send(app, calls, {"op": "remove", "rows": ["n1"]})
-    assert not _line_draft(app, "n1") and not _dirty(app)
-    assert _shell(calls)["ids"] == ["n1", "n2", "n3"]
-    assert _value_draft(app, "n1|03|양산|UPEH")
-    assert any(text.startswith("판에 안 든 칸 입력") for text in _check_table(app)["까닭"])
+    _held_line_round_trip(app, calls, reference)
 
-    app = _send(app, calls, {"op": "undo"})
-    assert _dirty(app) and {"공정", "참조공정"} <= set(_line_draft(app, "n1"))
-    app = _send(app, calls, {"op": "redo"})
-    app, _ = _add_line(app, calls, name="DEMO_Other", reference=reference)
-    app = _press(app, editor.MAKE_BUTTON_KEY)
-    staged = _staged(app)
-    assert staged is not None and staged.applicable and staged.reading.pack is not None
-    pack = staged.reading.pack
-    assert [process.name for process in pack.processes] == ["DEMO_Other"]
-    assert 30000.0 in [row.upeh for row in pack.productivity]
+
+def test_clearing_a_new_line_with_values_skips_its_number_and_undo_brings_it_back(
+    database: Path, calls: Calls
+) -> None:
+    """값까지 적은 새 줄을 Delete(칸 비우기)로 비워도 지우기와 같다 — 빈칸 초안을 걷은 뒤
+    (`_clear_blank_fresh`) 값 표 초안이 남은 번호는 건너뛴다. 건너뛴 뒤의 빈 새 줄은 모두 받는다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, reference = _add_line(app, calls)
+    app = _fill_new_line(app, calls)
+    app = _kind(app, "공정")
+    columns = list(_shell(calls)["valueCols"])
+
+    app = _send(app, calls, {"op": "clear", "rows": ["n1"], "cols": columns})
+    assert not _line_draft(app, "n1")
+    app = _held_line_round_trip(app, calls, reference)
+
+    app = _kind(app, "공정")
+    assert _shell(calls)["ids"] == _fresh_ids(2, 1 + editor.FRESH_ROWS)
+    rest = _fresh_ids(3)
+    names = [[f"DEMO_Paste_{at}"] for at in range(len(rest))]
+    app = _send(app, calls, _write(rest, ["공정"], names))
+    assert all(_line_draft(app, line) for line in rest), "건너뛴 뒤 빈 새 줄은 모두 받는다"
+    assert _shell(calls)["ids"] == _fresh_ids(2, 1 + 2 * editor.FRESH_ROWS)
 
 
 def test_clearing_a_filled_new_line_leaves_no_blank_drafts_and_undo_brings_it_back(
