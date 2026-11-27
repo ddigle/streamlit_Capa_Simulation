@@ -651,6 +651,10 @@ def test_an_after_cell_of_a_line_starting_past_the_plan_follows_the_window(
     narrow = _shell(calls)["valueCols"][-1]
     assert narrow != wide and narrow.endswith("~")
     assert _value_draft(app, row) == {narrow: 10.0}, "다른 창에서 적은 값이 이 창 이후 칸에 선다"
+    # 옮긴 초안은 그리드 이력 밖이다 — 옛 칸 이름을 가리킨 되돌리기는 이 창에 없는 칸이라 아무것도
+    # 바꾸지 않는다(보이는 값 = 판 값은 그대로).
+    app = _send(app, calls, {"op": "undo"})
+    assert _value_draft(app, row) == {narrow: 10.0}
 
     app = _send(app, calls, _write([row], [narrow], [[20]]))
     window["cut"] = 0
