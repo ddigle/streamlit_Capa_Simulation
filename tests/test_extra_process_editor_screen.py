@@ -482,7 +482,7 @@ def test_cells_left_outside_the_route_are_counted_on_the_value_line(
     database: Path, calls: Calls
 ) -> None:
     """경로를 줄여 판에 들지 않게 된 칸 입력은 지우지 않고(경로를 다시 넓히면 산다) 값 줄
-    「창 밖 고친 칸 n」 으로 센다."""
+    「판에 안 든 칸 입력 n」 으로 센다."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     app, _ = _add_line(app)
@@ -577,6 +577,60 @@ def window(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
 
     monkeypatch.setattr(editor, "_context", shaped)
     return cut
+
+
+def test_a_pack_stays_across_a_closed_tab_with_its_memo(database: Path, calls: Calls) -> None:
+    """판 메모를 적고 만든 뒤 탭을 닫았다 열어도 받은 판은 그대로다 — 메모는 지문에 들고 닫힌 탭
+    회차에도 남는다(`persist_state`)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app.text_input(key=editor.MEMO_KEY).input("DEMO 판 메모")
+    app = _press(_run(app), editor.MAKE_BUTTON_KEY)
+    made = _staged(app)
+    assert made is not None and made.reading.pack is not None
+    assert made.reading.pack.info.memo == "DEMO 판 메모"
+
+    app.session_state[HIDDEN_KEY] = True
+    app = _run(app)
+    app.session_state[HIDDEN_KEY] = False
+    app = _run(app)
+
+    assert _staged(app) is made
+    assert editor.STALE_STAGED not in _all_flashes(app)
+
+
+def test_the_check_table_puts_the_reason_second_and_only_table_names_in_the_table_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「확인할 칸 n」 표 — 까닭이 둘째 칸(좁은 팝오버에서도 먼저 보임), 「표」 칸에는 표 이름만,
+    등록 규칙 코드(R-xx)는 까닭 앞머리, 그 밖의 알림 갈래 낱말은 싣지 않는다."""
+    from capa_simulation.services.extra_process_editor import (
+        EditorWarning,
+        InputProblem,
+        model_from_pack,
+    )
+
+    problem = InputProblem(None, "", None, "공정", (), "공정이 하나도 없음")
+    warnings = (
+        EditorWarning(None, "R-02", "참조공정이 후보에 없음"),
+        EditorWarning(None, "효율", "효율이 1 을 넘음"),
+        EditorWarning(None, "고침", "판에 안 든 칸 입력 2칸"),
+    )
+    monkeypatch.setattr(editor, "input_problems", lambda model: (problem,))
+    monkeypatch.setattr(editor, "editor_warnings", lambda model, context: warnings)
+
+    frame = editor.check_frame(model_from_pack(None), None)  # type: ignore[arg-type]
+
+    assert list(frame.columns) == ["공정", "까닭", "표", "칸", "달"]
+    assert list(frame["까닭"]) == [
+        "공정이 하나도 없음",
+        "R-02 · 참조공정이 후보에 없음",
+        "효율이 1 을 넘음",
+        "판에 안 든 칸 입력 2칸",
+    ]
+    assert list(frame["표"]) == ["판", "공정", "효율", ""]
 
 
 def _all_flashes(app: AppTest) -> list[str]:
@@ -728,9 +782,10 @@ def test_adding_a_process_marks_the_close_as_losing_edits_on_the_redrawn_run(
     assert editor.CLOSE_BUTTON_KEY not in keys and editor.CLOSE_CONFIRM_KEY in keys
 
 
-def test_the_make_form_sits_above_the_grid_with_the_memo(database: Path, calls: Calls) -> None:
-    """「판 만들기」 는 표 위 작업 줄 팝오버(00 메모 · 「만들기」 — UI-LAY-03)이고 메모 칸은 「판
-    메모 · 예: …」 안내 글로 이름을 말한다."""
+def test_the_make_form_names_its_memo_and_button(database: Path, calls: Calls) -> None:
+    """「판 만들기」 팝오버의 메모 칸은 「판 메모 · 예: …」 안내 글로 이름을 말하고 단추는
+    「만들기」 다. 팝오버가 표 위 작업 줄에 서는 자리(UI-LAY-03)는 브라우저로만 본다(AppTest 는
+    배치를 재지 않는다)."""
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
 
