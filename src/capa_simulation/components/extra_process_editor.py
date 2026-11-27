@@ -383,9 +383,17 @@ NO_PERIOD_WHY: Final = "시작월 · 끝월을 먼저 적습니다"
 BEFORE_WHY: Final = "앞 「~YY.MM」 칸은 읽기 전용"
 MULTIPLE_WHY: Final = "여러 값 — 한 값으로 고칠 수 없음"
 OUTSIDE_WHY: Final = "경로 밖 달"
-# 표 위 작업 줄과 표 도구 막대를 한 줄로(`edit_grid.one_line_style`).
+# 표 위 작업 줄(종류 · 「공정 더하기 · 참조 바꾸기」 · 「판 만들기」)과 표 도구 막대를 한 줄로
+# 세우는 창 폭 · 작업 줄 자리(`edit_grid.one_line_style` — 설계 규칙 4장 「부대공정 편집기 표 위
+# 한 줄」).
+ONE_LINE_MIN_WINDOW_PX: Final = 1400
+ACTION_ROW_RESERVE_PX: Final = 550
 ONE_LINE_STYLE: Final = edit_grid.one_line_style(
-    ACTIONS_BOX, ACTION_ROW, GRID_BOX, min_window_px=1300, reserve_px=520
+    ACTIONS_BOX,
+    ACTION_ROW,
+    GRID_BOX,
+    min_window_px=ONE_LINE_MIN_WINDOW_PX,
+    reserve_px=ACTION_ROW_RESERVE_PX,
 )
 _FOLLOW_MEMO_LIMIT: Final = 16
 

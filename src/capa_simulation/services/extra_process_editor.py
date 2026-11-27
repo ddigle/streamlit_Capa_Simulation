@@ -835,9 +835,10 @@ def effective_edits(model: EditorModel) -> dict[CellKey, CellInput]:
 
 
 def redundant_cells(model: EditorModel) -> tuple[CellKey, ...]:
-    """판에 드는 자리지만 빼도 아무것도 바뀌지 않아 걷은 칸 입력 — 화면은 흡수할 때마다 그리드
-    초안에서 이 칸을 지운다(남겨 두면 다른 칸 고침으로 그 칸의 「고치지 않았을 때 값」 이 바뀔 때
-    보이지 않던 옛 입력이 되살아난다 — 다른 창에서 적은 이후 칸처럼)."""
+    """판에 드는 자리지만 빼도 아무것도 바뀌지 않아 걷은 칸 입력 — 화면은 흡수할 때마다 이 가운데
+    그리드에 보이지 않는 칸을 초안에서 지운다(남겨 두면 다른 칸 고침으로 그 칸의 「고치지 않았을 때
+    값」 이 바뀔 때 보이지 않던 옛 입력이 되살아난다 — 다른 창에서 적은 이후 칸처럼). 보이는 칸은
+    사람이 지금 보고 적은 값이라 남긴다(다른 칸을 바꿔도 그 값)."""
     found: list[CellKey] = []
     for line in model.lines:
         result = _compute_line(model, line)
