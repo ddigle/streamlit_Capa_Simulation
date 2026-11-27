@@ -599,8 +599,9 @@ def _find_unit(
     pick: bool,
     discard_key: str | None = None,
 ) -> None:
-    """「설비 찾기」 콜백(FAB 전체). 그린 회차의 후보(`targets` — 설비명 → 층 · 자리)로 그 층을
-    연다(`_floor_opened` — 층 사용 초안 규칙은 바로 가기와 같다. 비활성 층도 연다 — 배너가 말한다).
+    """「설비 찾기」 콜백(FAB 전체). 그린 회차의 후보(`targets` — 설비명 → 층 · 자리, 연 층이 그릴
+    날 `as_of_day` 로 가름)로 그 층을 연다(`_floor_opened` — 층 사용 초안 규칙은 바로 가기와 같다.
+    비활성 층도 연다 — 배너가 말한다).
     실제로 열렸을 때만 다음을 둔다 — 도면에 선 호기면 맞춤 대상(`UNIT_FOCUS_KEY`)이고, 색 기준
     「필요 단축」 을 고른 회차(`pick`)면 필요 단축 칸의 고른 호기로도 쥔다(`_pick_unit` — 보기가
     서지 않으면 층 본문이 푼다). 도면에 서지 않은 호기면 알림창 한 마디이고(`_search_miss`), 그
@@ -1063,35 +1064,86 @@ effective_choice = (
     else color_choice
 )
 
-space_equipment = all_status.copy()
-if selected_processes:
-    space_equipment = space_equipment.loc[space_equipment["공정소분류"].isin(selected_processes)]
-has_supported_location = pd.Series(
-    [
-        (building, floor) in valid_location_pairs
-        for building, floor in zip(space_equipment["동"], space_equipment["층"], strict=False)
-    ],
-    index=space_equipment.index,
-)
-located_equipment = space_equipment.loc[
-    space_equipment[LAYOUT_REFLECTED_COLUMN].fillna(False)
-    & space_equipment["동"].notna()
-    & space_equipment["층"].notna()
-    & space_equipment[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)
-    & has_supported_location
-].copy()
-# 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 공정소분류 필터가 모듈 행
-# 일부만 남기면 그 몫만 센다. 여기서 되돌리지 않는다.
-counted_equipment = placed_unit_rows(space_equipment, located_equipment)
-# 도면에 서지 않은 설비는 둘로 가른다. 레이아웃표시 Y 면 「미배치」(좌표를 넣으면 설 자리가 있다),
-# N 이면 「레이아웃 제외」. 도면 이탈일(반출/이설일정, 없으면 정지일정)이 지난 호기는 공간에 없으니
-# 어디에도 세지 않는다 — 상태 이름이 아니라 판정의 `도면이탈여부` 를 본다(정지한 뒤 반출/이설 전인
-# 호기는 「정지」이지만 아직 공간에 있다).
-exited = space_equipment[LAYOUT_EXITED_COLUMN].fillna(False).astype(bool)
-not_placed = space_equipment.loc[~space_equipment.index.isin(counted_equipment.index) & ~exited]
-wants_layout = not_placed["레이아웃표시"].eq("Y").fillna(False)
-unplaced_equipment = not_placed.loc[wants_layout]
-excluded_equipment = not_placed.loc[~wants_layout]
+
+class _SpaceRows(NamedTuple):
+    """한 기준일 상태 표를 공정 필터 뒤 도면 자리로 가른 것(`_space_rows`)."""
+
+    space: pd.DataFrame
+    located: pd.DataFrame
+    counted: pd.DataFrame
+    exited: pd.Series
+    not_placed: pd.DataFrame
+    unplaced: pd.DataFrame
+    excluded: pd.DataFrame
+
+
+def _space_rows(status: pd.DataFrame) -> _SpaceRows:
+    """기준일 상태 표(`get_space_equipment_status`)를 공용 공정 필터로 거르고 도면 자리로 가른다 —
+    FAB · 층 회차의 표와 「설비 찾기」 가 연 층이 그릴 날의 표가 같은 규칙을 쓴다."""
+    space = status.copy()
+    if selected_processes:
+        space = space.loc[space["공정소분류"].isin(selected_processes)]
+    has_supported_location = pd.Series(
+        [
+            (building, floor) in valid_location_pairs
+            for building, floor in zip(space["동"], space["층"], strict=False)
+        ],
+        index=space.index,
+    )
+    located = space.loc[
+        space[LAYOUT_REFLECTED_COLUMN].fillna(False)
+        & space["동"].notna()
+        & space["층"].notna()
+        & space[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)
+        & has_supported_location
+    ].copy()
+    # 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 공정소분류 필터가 모듈 행
+    # 일부만 남기면 그 몫만 센다. 여기서 되돌리지 않는다.
+    counted = placed_unit_rows(space, located)
+    # 도면에 서지 않은 설비는 둘로 가른다. 레이아웃표시 Y 면 「미배치」(좌표를 넣으면 설 자리가
+    # 있다), N 이면 「레이아웃 제외」. 도면 이탈일(반출/이설일정, 없으면 정지일정)이 지난 호기는
+    # 공간에 없으니 어디에도 세지 않는다 — 상태 이름이 아니라 판정의 `도면이탈여부` 를 본다(정지한
+    # 뒤 반출/이설 전인 호기는 「정지」이지만 아직 공간에 있다).
+    exited = space[LAYOUT_EXITED_COLUMN].fillna(False).astype(bool)
+    not_placed = space.loc[~space.index.isin(counted.index) & ~exited]
+    wants_layout = not_placed["레이아웃표시"].eq("Y").fillna(False)
+    return _SpaceRows(
+        space,
+        located,
+        counted,
+        exited,
+        not_placed,
+        not_placed.loc[wants_layout],
+        not_placed.loc[~wants_layout],
+    )
+
+
+def _search_targets(rows: _SpaceRows) -> dict[str, UnitSearchTarget]:
+    """「설비 찾기」 후보(`unit_search_targets`) — 도면 · 미배치 · 레이아웃 제외 · 도면 이탈 행에
+    더해, 도면에 선 묶음의 숨은 모듈(세는 행이지만 그리지 않는 행 — 레이아웃표시 N · 좌표 없음)도
+    미배치 · 레이아웃 제외로 갈라 넣는다(같은 층에 선 형제로 맞춘다 — `UnitSearchTarget.lead`)."""
+    hidden_modules = rows.counted.loc[
+        ~rows.counted.index.isin(rows.located.index) & ~rows.exited.loc[rows.counted.index]
+    ]
+    hidden_wanted = hidden_modules["레이아웃표시"].eq("Y").fillna(False).astype(bool)
+    return unit_search_targets(
+        placed=rows.located,
+        unplaced=pd.concat([rows.unplaced, hidden_modules.loc[hidden_wanted]]),
+        excluded=pd.concat([rows.excluded, hidden_modules.loc[~hidden_wanted]]),
+        exited=rows.space.loc[rows.exited],
+    )
+
+
+space_rows = _space_rows(all_status)
+(
+    space_equipment,
+    located_equipment,
+    counted_equipment,
+    exited,
+    not_placed,
+    unplaced_equipment,
+    excluded_equipment,
+) = space_rows
 exited_count = equipment_unit_total(space_equipment.loc[exited])
 # 동·층이 정해지지 않은(또는 FAB 의 층이 아닌) 미배치는 층 집계에 들어갈 자리가 없다. FAB
 # 요약의 미배치 = 층 목록 표 미배치 합 + 미정이 되도록 FAB 요약에서 따로 말한다(층 요약에 더하면
@@ -2697,25 +2749,27 @@ with space_box:
         # Streamlit 기본 거름(퍼지 — 친 글자가 차례대로 든 이름을 맞음 점수 차례로)이 띄운다. 층
         # 사용 편집 초안이 있는 동안은 바로 가기와 같은 팝오버 꼴이다(설계 규칙 UI-STA-02 ·
         # UI-NTF-09).
-        # 도면에 선 묶음의 숨은 모듈(세는 행이지만 그리지 않는 행 — 레이아웃표시 N · 좌표 없음)도
-        # 후보다 — 미배치 · 레이아웃 제외로 가르고 같은 층에 선 형제로
-        # 맞춘다(`UnitSearchTarget.lead`).
-        hidden_modules = counted_equipment.loc[
-            ~counted_equipment.index.isin(located_equipment.index)
-            & ~exited.loc[counted_equipment.index]
-        ]
-        hidden_wanted = hidden_modules["레이아웃표시"].eq("Y").fillna(False).astype(bool)
-        search_targets = unit_search_targets(
-            placed=located_equipment,
-            unplaced=pd.concat([unplaced_equipment, hidden_modules.loc[hidden_wanted]]),
-            excluded=pd.concat([excluded_equipment, hidden_modules.loc[~hidden_wanted]]),
-            exited=space_equipment.loc[exited],
+        # 후보의 자리는 연 층이 그릴 날로 가른다 — 층 배치 편집 토글은 FAB 회차에 걷혀 연 층은 늘
+        # 보기이므로 「필요 단축」 이면 오늘이다. 이 회차와 날이 다른 것은 FAB 배치 편집 중(필요
+        # 단축이 쉬어 세션 기준일)뿐이고, 그때만 그날 표를 한 번 더 낸다(같은 캐시 함수).
+        search_as_of = today if layer_requested and not no_fleet else as_of
+        search_targets = _search_targets(
+            space_rows
+            if search_as_of == as_of
+            else _space_rows(
+                get_space_equipment_status(
+                    equipment,
+                    downtime,
+                    as_of=search_as_of,
+                    equipment_digest=space_equipment_digest,
+                )
+            )
         )
         search_names = list(search_targets)
         search_args = (
             UNIT_SEARCH_KEY,
             search_targets,
-            as_of,
+            search_as_of,
             layer_requested and not no_fleet,
         )
         if floor_state_draft_pending():

@@ -22,6 +22,7 @@ AppTest 는 JS 를 못 돌린다 — `_EDITOR` 를 대역으로 바꿔 받은 da
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,7 @@ SEARCH_KEY = "space_status_unit_search"
 SEARCH_DISCARD_KEY = f"{SEARCH_KEY}_discard"
 FOCUS_KEY = "space_status_unit_focus"
 PICKED_KEY = "space_status_picked_unit"
+AS_OF_KEY = "space_status_as_of"
 NAVIGATE_KEY = "test_fake_fab_navigate"
 _SEARCH_BLOCK = re.compile(r"// <search-focus>\n(?P<body>.*?)\n\s*// </search-focus>", re.S)
 
@@ -161,12 +163,16 @@ def _fleet() -> pd.DataFrame:
 
 
 def _open(
-    tmp_path: Path, *, inactive: dict[tuple[str, str], str] | None = None, **query: str
+    tmp_path: Path,
+    *,
+    inactive: dict[tuple[str, str], str] | None = None,
+    fleet: pd.DataFrame | None = None,
+    **query: str,
 ) -> AppTest:
     database = tmp_path / "space_search.duckdb"
     repository = DuckDBEquipmentRepository(database)
     repository.initialize()
-    repository.save_snapshot(_baseline(), _fleet(), _downtime())
+    repository.save_snapshot(_baseline(), _fleet() if fleet is None else fleet, _downtime())
     if inactive:
         repository.save_floor_states(inactive, expected_version=0, source="test")
     clear_equipment_repository()
@@ -343,6 +349,62 @@ def test_the_search_works_while_the_fab_layout_is_being_edited(
     views = _floor_views(calls, start)
     assert views[0].get("mode") == "view"
     assert [focus["id"] for focus in _focuses(calls, start)] == ["EQ-01"]
+
+
+def _exiting_fleet(today: date) -> pd.DataFrame:
+    """C1 1F — 오늘 뒤 30일에 반출하는 SOON-OUT · 오늘 앞 30일에 반출을 마친 PAST-OUT."""
+    return _master(
+        {
+            "설비명": "SOON-OUT",
+            "X좌표": 60.0,
+            "정지일정": (today + timedelta(days=20)).isoformat(),
+            "반출/이설일정": (today + timedelta(days=30)).isoformat(),
+        },
+        {
+            "설비명": "PAST-OUT",
+            "X좌표": 80.0,
+            "정지일정": (today - timedelta(days=40)).isoformat(),
+            "반출/이설일정": (today - timedelta(days=30)).isoformat(),
+        },
+    )
+
+
+def _drawn(view: dict[str, Any], name: str) -> bool:
+    """그 도면이 그 기준일(`asOf`)에 그리는 호기인가 — 브라우저 `unitState` 의 보임(도면 이탈일
+    없음 또는 기준일 < 도면 이탈일)."""
+    item = next((item for item in view["items"] if item.get("id") == name), None)
+    return item is not None and (item.get("exitOn") is None or view["asOf"] < item["exitOn"])
+
+
+@pytest.mark.parametrize("fab_edit", [False, True])
+@pytest.mark.parametrize(("shift", "name"), [(60, "SOON-OUT"), (-60, "PAST-OUT")])
+def test_the_search_judges_a_unit_on_the_day_the_opened_floor_draws(
+    tmp_path: Path, calls: list[dict[str, Any]], fab_edit: bool, shift: int, name: str
+) -> None:
+    """색 기준 「필요 단축」 이면 연 층은 오늘로 선다 — FAB 배치 편집 중(필요 단축이 쉬어 FAB 은
+    세션 기준일)에 찾아도 후보의 자리 · 알림 날은 연 층이 그릴 날이다. 맞춤은 그 도면이 그 날
+    그리는 호기에만 실리고, 그 날 빠진 호기는 그 날로 알린다(세션 기준일은 반출일 너머)."""
+    today = date.today()
+    app = _open(tmp_path, fleet=_exiting_fleet(today))
+    app.session_state[AS_OF_KEY] = today + timedelta(days=shift)
+    _turn_on(_ok(app.run()))
+    if fab_edit:
+        app.toggle(key="space_fab_edit_mode").set_value(True)
+        _ok(app.run())
+    assert name in app.selectbox(key=SEARCH_KEY).options
+    start = len(calls)
+    _search(app, name)
+    views = _floor_views(calls, start)
+    assert views[0]["asOf"] == today.isoformat()
+    drawn = _drawn(views[0], name)
+    assert drawn is (name == "SOON-OUT")
+    assert [focus["id"] for focus in _focuses(calls, start)] == ([name] if drawn else [])
+    notes = [note.value.replace("\\", "") for note in flashed(app, "info")]
+    if drawn:
+        assert not notes, notes
+    else:
+        assert any(f"{today.isoformat()}" in note and "반출/이설" in note for note in notes), notes
+        assert PICKED_KEY not in app.session_state
 
 
 def test_an_inactive_floor_still_opens_and_takes_the_focus(
