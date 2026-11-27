@@ -37,6 +37,7 @@ from capa_simulation.services.extra_process_editor import (
     follow_preview,
     input_problems,
     line_defaults,
+    line_form,
     model_from_pack,
     reference_choices,
     same_body,
@@ -149,6 +150,50 @@ def test_a_reference_brings_its_basis_area_modules_and_unique_step_pairs() -> No
     )
     assert context.references["DEMO_Final_Test"].area == "MI"
     assert unknown == LineFields(reference="DEMO_Nowhere", start=202601)
+
+
+def test_the_line_form_follows_the_reference_and_fills_a_lone_step_pair() -> None:
+    """R3 — 공정 표 줄의 양식은 그 줄의 지금 참조공정 글을 따른다. STEP · MCP 는 고유 조합이 하나일
+    때만 채우고 둘 이상 · 후보 밖이면 빈칸이다(입력 문제로 고른다). 참조공정 칸 자체는 펼친 값(새
+    줄은 빈칸) — 고른 참조는 초안이라 양식에 굽지 않는다. 펼친 줄은 참조가 같으면 펼친 값 그대로,
+    바뀌면 소요기준 · STEP · MCP 만 바뀐다."""
+    seed = _seed()
+    reqb = seed["RQ_REQB"]
+    second = reqb.loc[reqb["공정"].eq("DEMO_Chip_Attach")].assign(STEP_SEQ="DEMO-P101")
+    seed["RQ_REQB"] = pd.concat([reqb, second], ignore_index=True)
+    context = editor_context(seed)
+    opened = LineFields(
+        name="DEMO_Opened",
+        area="MI",
+        basis="CHIP",
+        modules=3.0,
+        memo="DEMO 메모",
+        reference="DEMO_Off_List",
+        step="DEMO-P900",
+        mcp="DEMO-9A",
+        start=202603,
+        end=None,
+    )
+
+    assert line_form(context, "") == LineFields(start=202601)
+    assert line_form(context, "DEMO_Nowhere") == LineFields(start=202601)
+    assert line_form(context, " DEMO_Final_Test ") == LineFields(
+        area="MI", basis="CHIP", modules=4.0, step="DEMO-P300", mcp="DEMO-3A", start=202601
+    )
+    assert line_form(context, "DEMO_Chip_Attach") == LineFields(
+        area="Main", basis="CHIP", modules=4.0, start=202601
+    ), "조합이 둘이면 STEP · MCP 빈칸"
+
+    assert line_form(context, "DEMO_Off_List", opened) is opened, "펼친 참조(후보 밖도) 그대로"
+    assert line_form(context, "DEMO_Wafer_Inspect", opened) == LineFields(
+        **{**vars(opened), "basis": "WF", "step": "DEMO-P200", "mcp": "DEMO-2A"}
+    )
+    assert line_form(context, "DEMO_Chip_Attach", opened) == LineFields(
+        **{**vars(opened), "step": "", "mcp": ""}
+    )
+    assert line_form(context, "DEMO_Elsewhere", opened) == LineFields(
+        **{**vars(opened), "step": "", "mcp": ""}
+    ), "후보 밖 참조로 바꾸면 소요기준은 펼친 값, 조합은 빈칸"
 
 
 def test_the_follow_preview_counts_match_the_merge_body() -> None:

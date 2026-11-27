@@ -52,6 +52,8 @@ UPEH(`60 / ST` 를 `MI_UPEH_DIGITS` 자리로 반올림)로 받고, 적은 값�
 창과 안 겹친 경로 · 효율 > 1 · 판에 들지 않는 칸)이다. 기준 데이터 도우미(`editor_context` ·
 `reference_choices` · `line_defaults` · `follow_preview`)는 옛 판 공정을 걷은 이름으로 센다 —
 걷기는 strip 이름을 대소문자 그대로 견주고, 부대공정끼리 참조 금지(V-06)는 대소문자를 무시한다.
+공정 표 줄의 양식(`line_form`)은 그 줄의 지금 참조공정 글을 따른다 — STEP · MCP 는 조합이 하나일
+때만 채우고, 고른 참조 · 친 칸은 화면 초안이라 양식에 굽지 않는다.
 """
 
 from __future__ import annotations
@@ -1506,7 +1508,7 @@ def editor_warnings(model: EditorModel, context: EditorContext) -> tuple[EditorW
             )
         if line.carried is not None:
             continue
-        choice = _reference(context, _text(line.fields.reference))
+        choice = reference_choice(context, line.fields.reference)
         if _text(line.fields.reference) and choice is None:
             found.append(
                 EditorWarning(
@@ -1630,8 +1632,10 @@ def _module_counts(frame: pd.DataFrame | None, dropped: Collection[str]) -> dict
     return {name: next(iter(counts)) for name, counts in found.items() if len(counts) == 1}
 
 
-def _reference(context: EditorContext, reference: str) -> ReferenceChoice | None:
-    """합치기(`follow_routes`)처럼 strip 이름으로 찾고 없으면 대소문자를 무시해 찾는다."""
+def reference_choice(context: EditorContext, reference: str) -> ReferenceChoice | None:
+    """참조공정 글의 후보 — 합치기(`follow_routes`)처럼 strip 이름으로 찾고 없으면 대소문자를 무시해
+    찾는다(후보 밖이면 None)."""
+    reference = _text(reference)
     choice = context.references.get(reference)
     if choice is not None:
         return choice
@@ -1659,7 +1663,7 @@ def line_defaults(context: EditorContext, reference: str) -> LineFields:
     """참조공정을 고른 새 줄의 기본값 — 소요기준 · Area · 모듈수 · 첫 (STEP, MCP) 조합, 시작월 = 첫
     계획 월, 끝월 빈칸(제안 e · f · 결정3). 후보에 없으면 참조공정과 시작월만."""
     first = context.months[0] if context.months else None
-    choice = _reference(context, _text(reference))
+    choice = reference_choice(context, reference)
     if choice is None:
         return LineFields(reference=_text(reference), start=first)
     step, mcp = choice.steps[0] if choice.steps else ("", "")
@@ -1668,6 +1672,38 @@ def line_defaults(context: EditorContext, reference: str) -> LineFields:
         basis=choice.basis,
         modules=choice.modules,
         reference=choice.name,
+        step=step,
+        mcp=mcp,
+        start=first,
+    )
+
+
+def line_form(
+    context: EditorContext, reference: object, opened: LineFields | None = None
+) -> LineFields:
+    """공정 표 한 줄의 양식(사람이 그 칸을 고치지 않았을 때 값) — 참조공정 `reference`(초안을 든 그
+    줄의 지금 글)를 따르되, 참조공정 칸 자체는 펼친 값(새 줄은 빈칸)이다(고른 참조는 초안).
+
+    - 펼친 줄(`opened`): 참조가 펼친 값과 같으면 펼친 값 그대로. 바뀌었으면 소요기준은 그 참조의
+      것(후보 밖이면 펼친 값), STEP · MCP 는 그 참조의 고유 조합이 하나일 때 그 조합 — 둘 이상 ·
+      후보 밖이면 빈칸(입력 문제로 고른다). 이름 · Area · 모듈수 · 기간 · 메모는 펼친 값.
+    - 새 줄: 시작월 = 첫 계획 월, 참조가 후보면 소요기준 · Area · 모듈수 · 위와 같은 STEP · MCP.
+    """
+    text = _text(reference)
+    if opened is not None and text == _text(opened.reference):
+        return opened
+    choice = reference_choice(context, text) if text else None
+    step, mcp = choice.steps[0] if choice is not None and len(choice.steps) == 1 else ("", "")
+    if opened is not None:
+        basis = choice.basis if choice is not None else ""
+        return replace(opened, basis=basis or opened.basis, step=step, mcp=mcp)
+    first = context.months[0] if context.months else None
+    if choice is None:
+        return LineFields(start=first)
+    return LineFields(
+        area=choice.area or "",
+        basis=choice.basis,
+        modules=choice.modules,
         step=step,
         mcp=mcp,
         start=first,
