@@ -36,6 +36,7 @@ from extra_process_fixtures import bump_version, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template
 
+from capa_simulation.components import edit_grid
 from capa_simulation.components import extra_process_editor as editor
 from capa_simulation.components.extra_process_admin import (
     APPLY_BUTTON_KEY,
@@ -1042,6 +1043,13 @@ def test_the_follow_popover_lists_each_line_with_its_pair_and_follow_counts(
     )
     assert editor.EMPTY_LINES not in _captions(app)
 
+    for month in ("000000", "202613"):
+        app = _send(app, calls, _write(["n1"], ["시작월"], [[month]]))
+        row = _table(app, editor.FOLLOW_COLUMNS).iloc[0]  # type: ignore[union-attr]
+        counts = [row[name] for name in editor.FOLLOW_COUNTS]
+        assert all(pd.isna(value) for value in counts), f"월 꼴이 아닌 시작월 {month} 은 세지 않음"
+        assert "월 꼴(YYYYMM)이 아님" in set(_check_table(app)["까닭"])
+
 
 def test_removing_a_new_line_clears_it_and_undo_brings_it_back_with_its_values(
     database: Path, calls: Calls
@@ -1070,6 +1078,36 @@ def test_removing_a_new_line_clears_it_and_undo_brings_it_back_with_its_values(
     pack = staged.reading.pack
     assert [process.name for process in pack.processes] == ["DEMO_Other"]
     assert 30000.0 in [row.upeh for row in pack.productivity]
+
+
+def test_clearing_a_filled_new_line_leaves_no_blank_drafts_and_undo_brings_it_back(
+    database: Path, calls: Calls
+) -> None:
+    """채운 새 줄을 Delete(칸 비우기)로 비우면 양식이던 칸의 빈칸 초안이 남지 않는다 — 적지 않은 새
+    줄의 양식은 빈칸이라 보이는 것은 같고, 남기면 「적용 전」 에 세이고 그 줄에 다시 적을 때 참조를
+    따른 양식(Area · STEP · 시작월 등)을 빈칸 초안이 이겼다. 되돌리기는 비우기 앞 칸을 되살린다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, reference = _add_line(app, calls)
+    filled = _form(calls, "n1")
+    columns = list(_shell(calls)["valueCols"])
+
+    app = _send(app, calls, {"op": "clear", "rows": ["n1"], "cols": columns})
+    assert not _line_draft(app, "n1") and not _dirty(app)
+    assert _shell(calls)["ids"] == ["n1", "n2", "n3"]
+    feed = last(calls, edit_grid.feed_key(editor.HOST))
+    assert not feed["counts"]["cells"], "「적용 전」 에 세지 않음"
+
+    app = _send(app, calls, {"op": "undo"})
+    assert set(_line_draft(app, "n1")) == {"공정", "참조공정"}
+    app = _send(app, calls, {"op": "redo"})
+    assert not _line_draft(app, "n1")
+
+    app, _ = _add_line(app, calls, name="DEMO_Again", reference=reference)
+    again = _form(calls, "n1")
+    shown = ("Area_Name", "모듈수", "STEP_SEQ", "MCP_SEQ", "시작월")
+    assert {name: again[name] for name in shown} == {name: filled[name] for name in shown}
+    assert set(_line_draft(app, "n1")) == {"공정", "참조공정"}
 
 
 def test_adding_a_process_marks_the_close_as_losing_edits_on_the_redrawn_run(

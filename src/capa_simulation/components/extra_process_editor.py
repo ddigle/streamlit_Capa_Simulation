@@ -7,12 +7,13 @@
 **정본은 그리드 초안이다**(순수 몸통 `services/extra_process_editor.py` 의 화면 계약 1 ~ 10).
 회차마다 펼친 판(`EDITOR` — 펼친 때의 판 이력 차례 · sha · 바이트)에서 모형을 다시 짓는다 —
 `with_cells(with_lines(model_from_pack(바탕), 줄 그리드 전체), 값 그리드 전체)`. 병합이 아니라 전체
-상태라 그리드 되돌리기 · 「적용 전」 서랍이 그대로 먹는다. 정본 칸(펼친 판 · 줄 씨앗 · 칸 이름
-지도 · 그리드 초안)은 기본형이고, 메모 칸(맥락 · 미리보기 · 펼친 판 읽기)은 꼴 검사로 다시 짓는다.
-흡수할 때마다 초안을 이 회차 표에 맞춘다(`_tidy`) — 걷은 칸(`redundant_cells`)은 그리드에 보이지
-않을 때만 지우고(남기면 다른 창의 이후 칸처럼 숨은 옛 입력이 되살아난다 — 보이는 칸은 사람이 지금
-보고 적은 값이라 남긴다), 이 회차 이후 칸과 같은 열쇠의 초안은 그 칸(여러 값이면 숨은 짝)으로
-옮긴다. `ignored_cells` 는 지우지 않는다(경로가 넓어지면 산다). 그리드 이력은 건드리지 않는다.
+상태라 그리드 되돌리기 · 「적용 전」 서랍이 그대로 먹는다. 정본 칸(펼친 판 · 칸 이름 지도 · 그리드
+초안)은 기본형이고, 메모 칸(맥락 · 미리보기 · 펼친 판 읽기)은 꼴 검사로 다시 짓는다. 흡수할 때마다
+초안을 이 회차 표에 맞춘다 — 빈칸 초안만 남은 새 줄은 지우고(`_clear_blank_fresh`), 값 표의 걷은
+칸(`redundant_cells`)은 그리드에 보이지 않을 때만 지우고(`_tidy` — 남기면 다른 창의 이후 칸처럼
+숨은 옛 입력이 되살아난다 — 보이는 칸은 사람이 지금 보고 적은 값이라 남긴다), 이 회차 이후 칸과
+같은 열쇠의 초안은 그 칸(여러 값이면 숨은 짝)으로 옮긴다. `ignored_cells` 는 지우지 않는다(경로가
+넓어지면 산다). 그리드 이력은 건드리지 않는다.
 
 - **표 넷 · 마운트 하나**(UI-LAY-07) — 종류 단추 「공정 · 생산성 · 설비 · 효율」. 형식이 칸마다라
   값 표를 판 파일(03 · 04 · 05)마다 나눈다. 공정 표는 줄 규칙 표(지우기 · 되살리기)이고, 통째 옮김
@@ -248,7 +249,7 @@ MOVED_VERDICT: Final = "moved"
 MOVED_REASON: Final = (
     "펼친 뒤 다른 판이 들어와 적용할 수 없습니다 — 「작성 닫기」 뒤 다시 펼쳐 고칩니다"
 )
-STALE_STAGED: Final = "판을 만든 뒤 표를 고쳐 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
+STALE_STAGED: Final = "판을 만든 뒤 표가 바뀌어 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
 # 탭 점 풍선(`page_tabs.page_unsaved_marks`).
 UNSAVED_NOTE: Final = "적용하지 않은 부대공정 작성"
 CHECK_LABEL: Final = "확인할 칸 {n}"
@@ -1127,10 +1128,12 @@ def _value_inputs(
 
 
 def _month_of(value: object) -> int | None:
+    """월 칸 → YYYYMM(달 1 ~ 12 — 입력 문제 「월 꼴(YYYYMM)이 아님」 과 같은 판정), 아니면 None."""
     text = "" if value is None else str(value).strip()
     if isinstance(value, float) and value.is_integer():
         text = str(int(value))
-    return int(text) if len(text) == 6 and text.isdigit() else None
+    valid = len(text) == 6 and text.isdigit() and 1 <= int(text[4:]) <= 12
+    return int(text) if valid else None
 
 
 def _screen(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
@@ -1202,8 +1205,24 @@ def _tidy(screen: _Screen) -> bool:
     return _rewrite_drafts(moves)
 
 
+def _clear_blank_fresh() -> bool:
+    """공정 표 초안에서 빈칸 초안만 남은 새 줄(채운 줄을 Delete 로 비움)의 칸을 지운다 — 적지
+    않은 새 줄의 양식은 빈칸이라 보이는 것은 그대로이고, 남기면 「적용 전 (n)」 에 세이고 그 줄에
+    다시 적을 때 참조를 따른 양식(STEP · 시작월 등)을 빈칸 초안이 이긴다. 그리드 이력은 그대로라
+    되돌리기는 비우기 앞 칸을 되살린다. 바꿨으면 참."""
+    typed = _typed(_draft(LINE_TABLE))
+    return _rewrite_drafts(
+        {
+            (LINE_TABLE, line_id, column): None
+            for line_id, own in typed.items()
+            if _fresh_number(line_id) is not None and not _filled(own)
+            for column in own
+        }
+    )
+
+
 def _rewrite_drafts(moves: Mapping[Place, str | None]) -> bool:
-    """값 표 초안 칸을 옮기거나(새 칸 이름) 지운다(None) — 바꿨으면 참."""
+    """그리드 초안 칸을 옮기거나(새 칸 이름) 지운다(None) — 바꿨으면 참."""
     by_table: dict[str, dict[tuple[str, str], str | None]] = {}
     for (table, row_id, column), target in moves.items():
         by_table.setdefault(table, {})[(row_id, column)] = target
@@ -1257,6 +1276,7 @@ def _absorb(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
         before = _screen(base, context)
         slots = {table: built.slot for table, built in before.tables.items()}
         edit_grid.apply_inbox(KEYS, slots)
+        _clear_blank_fresh()
     screen = _screen(base, context)
     if _tidy(screen):
         screen = _screen(base, context)
