@@ -228,7 +228,7 @@ OPEN_HELP: Final = (
     "「새 판 적용」 을 눌러야 바뀝니다."
 )
 CLOSE_HELP: Final = "작성을 닫습니다."
-CLOSE_DIRTY_HELP: Final = "고친 것을 버리고 작성을 닫습니다."
+CLOSE_DIRTY_HELP: Final = "고친 것과 이 표로 만든 판을 버리고 작성을 닫습니다."
 MAKE_HELP: Final = (
     "고친 표로 다음 판을 만들어 받은 판 자리에 둡니다(받아 둔 판을 바꿈) — 판은 통째로 바뀌어 "
     "지운 공정은 빠지고, 「새 판 적용」 을 눌러야 들어갑니다."
@@ -238,6 +238,11 @@ STEP_HELP: Final = "목록에 없는 조합은 「STEP · MCP」 꼴로 적습�
 NO_PLAN_REASON: Final = "올라와 있는 시나리오에 계획 월이 없습니다"
 UNREADABLE_REASON: Final = "부대공정 판 내용을 읽지 못해 펼칠 수 없습니다"
 UNCHANGED_EDITOR: Final = "바뀐 것 없음 — 펼친 판과 같은 판입니다"
+UNCHANGED_CLEARED: Final = f"{UNCHANGED_EDITOR}(받아 둔 판을 비움)"
+# 「만들기」 결과 알림 — 받은 판 상자 머리(「앱에서 만든 판 · 새 판 n」)와 같은 낱말.
+MADE_PACK: Final = "앱에서 만든 판 · 새 판 {n}"
+MADE_REJECTED: Final = "앱에서 만든 판 · 거절 {n}"
+MADE_MOVED: Final = "앱에서 만든 판 · 새 판 {n} — 적용할 수 없음"
 MOVED_VERDICT: Final = "moved"
 MOVED_REASON: Final = (
     "펼친 뒤 다른 판이 들어와 적용할 수 없습니다 — 「작성 닫기」 뒤 다시 펼쳐 고칩니다"
@@ -420,7 +425,7 @@ INBOX: Final = SessionSlot(INBOX_KEY, list)
 @dataclass(frozen=True)
 class Hooks:
     """받은 판 상자(`extra_process_admin`)가 넘기는 것 — 쓰기 잠금 판정(누른 회차에 다시 부름),
-    받은 판 두기 · 비우기 · 읽기(만든 뒤 표가 바뀐 편집기 판을 걷는다)."""
+    받은 판 두기 · 비우기 · 읽기(만든 뒤 표가 바뀌거나 작성을 닫으면 편집기 판을 걷는다)."""
 
     lock: Callable[[], str | None]
     place: Callable[[StagedPack], None]
@@ -492,7 +497,7 @@ def render_entry(
     """단추 줄의 「앱에서 작성」(닫혀 있을 때) 또는 「작성 닫기」(열려 있을 때). `lock` 은 그 회차의
     쓰기 잠금 까닭이다."""
     if editor_open():
-        _render_close()
+        _render_close(hooks)
         return
     reason = lock or _entry_lock(repository, state)
     if st.button(
@@ -505,19 +510,28 @@ def render_entry(
         _open(repository, hooks)
 
 
-def _render_close() -> None:
+def _render_close(hooks: Hooks) -> None:
     if not DIRTY.get():
         if st.button(CLOSE_LABEL, key=CLOSE_BUTTON_KEY, icon=":material/close:", help=CLOSE_HELP):
-            close_editor()
-            st.rerun()
+            _close(hooks)
         return
     # 잃을 것이 있을 때만 한 번 묻는다(UI-STA-02 · UI-NTF-09).
     with st.popover(
         CLOSE_LABEL, icon=":material/close:", help=CLOSE_DIRTY_HELP, key=CLOSE_MENU_KEY
     ):
         if st.button(CLOSE_CONFIRM_LABEL, key=CLOSE_CONFIRM_KEY, icon=":material/delete_sweep:"):
-            close_editor()
-            st.rerun()
+            _close(hooks)
+
+
+def _close(hooks: Hooks) -> None:
+    """「작성 닫기」 · 「버리고 닫기」 — 받은 판 자리의 편집기 판도 걷는다(두면 버린 초안에서 나온
+    판이 「새 판 적용」 으로 들어간다). 가져온 판 · 「새 판으로」 판은 그대로다. 적용 성공으로
+    닫히는 길(`close_editor`)은 받은 판 상자가 먼저 비운다."""
+    staged = hooks.staged()
+    if staged is not None and staged.editor is not None:
+        hooks.discard()
+    close_editor()
+    st.rerun()
 
 
 def _opened_version(state: ExtraProcessState) -> ExtraProcessVersion | None:
@@ -1529,8 +1543,10 @@ def _make(
         built = canonical_pack(folded.rows)
         pack = built.reading.pack
         if pack is not None and same_body(pack, model.base):
+            # 받아 둔 판이 있었으면 비웠다고 말한다(말없이 사라지지 않게 — UI-NTF-09).
+            held = hooks.staged() is not None
             hooks.discard()
-            queue_flash(FLASH_KEY, UNCHANGED_EDITOR, kind="info")
+            queue_flash(FLASH_KEY, UNCHANGED_CLEARED if held else UNCHANGED_EDITOR, kind="info")
             st.rerun()
         earlier = previous_content(state)
         before = (
@@ -1552,4 +1568,20 @@ def _make(
     if pack is not None and state.last_seq != seen_seq:
         staged = replace(staged, judgement=PackJudgement(MOVED_VERDICT, MOVED_REASON))
     hooks.place(staged)
+    _queue_made(staged)
     st.rerun()
+
+
+def _queue_made(staged: StagedPack) -> None:
+    """「만들기」 결과를 알림창 한 줄로도 낸다 — 그리드가 화면 높이를 채우면 받은 판 상자가 첫
+    화면 밖에 선다(G3). 거절 · 적용할 수 없음은 상자가 표 · 까닭을 들어 곁에 그리지 않는다
+    (UI-NTF-03)."""
+    reading = staged.reading
+    if not reading.accepted or staged.judgement is None:
+        message = MADE_REJECTED.format(n=f"{len(reading.problems):,}")
+        queue_flash(FLASH_KEY, message, kind="warning", popup_only=True)
+    elif not staged.applicable:
+        message = MADE_MOVED.format(n=reading.version_no)
+        queue_flash(FLASH_KEY, message, kind="warning", popup_only=True)
+    else:
+        queue_flash(FLASH_KEY, MADE_PACK.format(n=reading.version_no))

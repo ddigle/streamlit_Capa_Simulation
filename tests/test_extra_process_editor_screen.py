@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ import pytest
 from alert_marks import alert_notes, flashed
 from auto_update_fakes import new_repository
 from edit_grid_fake import FAKE_EVENT_KEY, Calls, deliver_ops, install_fake_edit_grid, last, outbox
+from extra_process_fixtures import bump_version, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template
 
@@ -31,7 +33,7 @@ from capa_simulation.components.extra_process_admin import (
     REMOVED_CONFIRM_KEY,
     STAGED_KEY,
 )
-from capa_simulation.extra_process_intake import StagedPack
+from capa_simulation.extra_process_intake import SourceFetch, StagedPack, stage_pack
 from capa_simulation.persistence.models import EXTRA_EDITOR_PLACE, EXTRA_KIND_REVISION
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.extra_process_pack import read_pack_zip
@@ -421,6 +423,8 @@ def test_a_pack_made_after_another_pack_was_applied_cannot_be_applied(
     assert staged is not None and staged.judgement is not None
     assert not staged.applicable and staged.judgement.reason == editor.MOVED_REASON
     assert [str(item.value) for item in app.error] == [editor.MOVED_REASON]
+    # 알림창 한 줄은 「새 판 n」 으로 읽히지 않는다(곁에는 그리지 않아 오류 상자는 하나).
+    assert editor.MADE_MOVED.format(n=staged.reading.version_no) in _flashes(app)
 
 
 def test_the_entry_is_locked_without_an_active_scenario(database: Path, calls: Calls) -> None:
@@ -818,3 +822,97 @@ def test_the_guide_and_the_header_helps_say_what_the_editor_does() -> None:
         if table != editor.EQUIPMENT_TABLE:
             assert "바탕 값이 없는 달" in text, table
     assert IGNORED_PART.startswith("판에 안 든 칸 입력")
+
+
+# --------------------------------------------------------------------------- 만들기 결과 · 닫기
+
+
+def _imported(database: Path) -> StagedPack:
+    """가져온 CSV 판(견본 판의 판 번호만 올린 판 2) — 받은 판 자리에 둘 것."""
+    repository = DuckDBScenarioRepository(database)
+    fetched = SourceFetch(data=zip_files(bump_version(template_files(), 2)), place="가짜")
+    staged = stage_pack(
+        repository.load_extra_process_state(), fetched, now=datetime(2026, 11, 27, 9, 0)
+    )
+    assert staged.applicable and staged.editor is None
+    return staged
+
+
+def test_making_a_pack_says_its_result_in_the_alarm_too(database: Path, calls: Calls) -> None:
+    """G3 — 공정이 있으면 그리드가 화면 높이를 채워 받은 판 상자가 첫 화면 밖에 선다. 「만들기」
+    결과를 알림창 한 줄로도 낸다 — 새 판이면 그 번호, 거절이면 거절 수(거절 표는 받은 판 상자 —
+    곁에는 그리지 않는다)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    refused = _staged(app)
+    assert refused is not None and not refused.reading.accepted, "빈 판은 「공정이 하나도 없음」"
+    count = len(refused.reading.problems)
+    assert editor.MADE_REJECTED.format(n=f"{count:,}") in _flashes(app)
+    assert not app.error and not app.warning
+
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    made = _staged(app)
+    assert made is not None and made.applicable
+    assert editor.MADE_PACK.format(n=1) in _flashes(app)
+
+
+def test_closing_the_editor_takes_back_the_pack_it_made(database: Path, calls: Calls) -> None:
+    """걷기 물음 1 — 「버리고 닫기」 뒤에도 편집기 판 상자가 남아 버린 초안의 판을 「새 판 적용」
+    으로 넣을 수 있었다. 작성을 닫으면(고친 것 없는 「작성 닫기」 도) 받은 판 자리의 편집기 판을
+    걷는다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    assert _staged(app) is not None
+
+    app = _press(app, editor.CLOSE_CONFIRM_KEY)
+
+    assert not _opened(app) and _staged(app) is None
+    assert APPLY_BUTTON_KEY not in [button.key for button in app.button]
+    assert _applied_versions(database) == 0
+
+    # 빈 판을 고치지 않고 만든 거절 판 — 고친 것이 없어 묻지 않는 닫기도 걷는다.
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    assert _staged(app) is not None and not _dirty(app)
+    app = _press(app, editor.CLOSE_BUTTON_KEY)
+    assert not _opened(app) and _staged(app) is None
+
+
+def test_closing_the_editor_keeps_an_imported_pack(database: Path, calls: Calls) -> None:
+    """작성을 닫아도 가져온 CSV 판(편집기 밖 출처)은 받은 판 자리에 그대로다."""
+    apply_template(new_repository(database))
+    imported = _imported(database)
+    app = _app(database)
+    app.session_state[STAGED_KEY] = imported
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    first, _ = _shell(calls)["ids"]
+    app = _send(app, calls, {"op": "remove", "rows": [first]})
+    assert _dirty(app)
+
+    app = _press(app, editor.CLOSE_CONFIRM_KEY)
+
+    assert not _opened(app) and _staged(app) == imported
+
+
+def test_an_untouched_make_says_it_cleared_the_held_pack(database: Path, calls: Calls) -> None:
+    """규칙 Q4 — 받아 둔 판이 있을 때 고친 것 없이 「만들기」 를 누르면 「바뀐 것 없음」 과 함께
+    그 판이 비워진다. 비운 판이 있을 때만 알림 글이 그 말을 붙인다."""
+    apply_template(new_repository(database))
+    app = _app(database)
+    app.session_state[STAGED_KEY] = _imported(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+
+    assert _staged(app) is None
+    assert editor.UNCHANGED_CLEARED in _flashes(app)
+
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    shown = _flashes(app)
+    assert editor.UNCHANGED_EDITOR in shown and editor.UNCHANGED_CLEARED not in shown
