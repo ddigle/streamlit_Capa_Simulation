@@ -1277,6 +1277,39 @@ def test_a_kept_voc_reply_marks_the_voc_tab_and_the_change_chip_from_any_page(
     assert app.session_state["test_changes"] == []
 
 
+@pytest.mark.parametrize("page_file", ["home.py", "admin_area.py"])
+def test_extra_process_editor_edits_mark_the_tab_and_the_change_chip_together(
+    page_file: str,
+) -> None:
+    """Admin 「부대공정」 앱 작성의 고친 표는 세션 칸이라 화면을 옮겨도 남고 새로고침에 사라진다 —
+    Admin Area 탭 점과 머리 변경 칩 「저장 안 함」 한 줄이 같은 판정으로 함께 선다(UI-LAY-04 ·
+    UI-DAT-11). 떠나도 남으므로 떠나기 확인 글에는 들지 않는다. 펼친 판과 같아지면 둘 다 걷힌다."""
+    from capa_simulation.components.extra_process_editor import (
+        DIRTY_KEY,
+        EDITOR_KEY,
+        UNSAVED_NOTE,
+    )
+    from capa_simulation.navigation import ADMIN_AREA
+
+    app = AppTest.from_function(_kept_reply_marks_script)
+    app.session_state["test_page_file"] = page_file
+    app.session_state[EDITOR_KEY] = (0, None, None)
+    app.session_state[DIRTY_KEY] = True
+    _ok(app.run())
+
+    assert app.session_state["test_marks"] == {ADMIN_AREA.path: UNSAVED_NOTE}
+    assert app.session_state["test_leave"] == ""
+    assert [
+        (item["group"], item["page"], item["text"], item["top"], item["tab"])
+        for item in app.session_state["test_changes"]
+    ] == [("keep", ADMIN_AREA.title, "부대공정 작성 적용 안 함", "부대공정 미적용", "부대공정")]
+
+    app.session_state[DIRTY_KEY] = False
+    _ok(app.run())
+    assert app.session_state["test_marks"] == {}
+    assert app.session_state["test_changes"] == []
+
+
 def test_a_kept_voc_reply_marks_the_voc_tab_and_the_theme_button(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:

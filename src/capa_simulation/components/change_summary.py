@@ -10,8 +10,9 @@
 2. **저장 안 함**(`keep`) — 적용했지만 저장하지 않은 시나리오, 설비 편집본 · FAB 배치 대기,
 Space 층 사용 편집 초안(위젯 밖 세션 칸 — 2026-11-19 보드 m19-e2e-space-leave (나)),
 가용설비 현황 Preference 입력 비가동 초안(세션 칸 — 2026-11-19),
-기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Past Data
-   초안, 시나리오 관리 표 초안, VOC 적어 둔 답변(남지 못한 답변). 판 머리 글은 「새로고침에
+기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Admin
+   「부대공정」 앱 작성(펼친 판과 다른 표 — 세션 칸), Past Data 초안, 시나리오 관리 표 초안, VOC
+   적어 둔 답변(남지 못한 답변). 판 머리 글은 「새로고침에
    사라짐」 하나다 — 시나리오를 바꿀 때는 그 팝업이 따로 묻는다(적어 둔 답변은 새로고침 · 테마
    전환에 사라진다).
 3. **가정 사용 중**(`assume`) — 공식과 다른 설비 시나리오, UPEH 가정(100% 아님). 내가 바꾼 것이지만
@@ -20,14 +21,14 @@ Space 층 사용 편집 초안(위젯 밖 세션 칸 — 2026-11-19 보드 m19-e
 
 **판정은 화면 탭 줄 주황 점(`page_tabs.page_unsaved_marks`)과 같은 등록부**이고 **세션만 읽는다**(DB
 · 캐시 없음 — 매 회차 페이지 앞에서 부른다). 서버가 모르는 초안(폼 안 · 브라우저 안 — HOME
-Preference 폼 · Cut-off · Admin 표 · 자동 갱신 설정 · Space 적용 전 배치 · VOC 새 글)과 저장 개념이
-없는 세션 조건(제약 시뮬레이션 · Qual 계산기 · 필터)은 들지 않는다(설계 5-2 「넣지 않는 것」 — 다음
-판 후보).
+Preference 폼 · Cut-off · Admin 폼 표 · 자동 갱신 설정 · Space 적용 전 배치 · VOC 새 글)과 저장
+개념이 없는 세션 조건(제약 시뮬레이션 · Qual 계산기 · 필터)은 들지 않는다(설계 5-2 「넣지 않는
+것」 — 다음 판 후보).
 머리 띠 위 줄의 「최신 rN 있음」 · 「공식 vN」 은 상태라 넣지 않는다.
 
 차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 층
-사용 미저장 → 입력 비가동 미저장 → 표 초안 · 붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 →
-설비 가정 → UPEH 가정.
+사용 미저장 → 입력 비가동 미저장 → 표 초안 · 붙여넣기 대기 → 부대공정 미적용 → Past Data · 목록 →
+VOC 적어 둔 답변 → 설비 가정 → UPEH 가정.
 """
 
 from __future__ import annotations
@@ -43,6 +44,8 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
+from capa_simulation.components.extra_process_editor import TAB_LABEL as EXTRA_PROCESS_TAB
+from capa_simulation.components.extra_process_editor import editor_has_edits
 from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_pending
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
@@ -53,6 +56,7 @@ from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
 from capa_simulation.navigation import (
+    ADMIN_AREA,
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_PREFERENCE_TAB,
     HOME,
@@ -198,6 +202,18 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
             )
         )
     keep.extend(held)
+    # 탭 점 풍선(`extra_process_editor.UNSAVED_NOTE` 「적용하지 않은 부대공정 작성」)과 한 낱말.
+    if editor_has_edits():
+        keep.append(
+            item(
+                "keep",
+                ADMIN_AREA,
+                ADMIN_AREA.title,
+                "부대공정 작성 적용 안 함",
+                "부대공정 미적용",
+                tab=tab_name(EXTRA_PROCESS_TAB),
+            )
+        )
     if past_data_has_pending():
         keep.append(item("keep", HOME, HOME.title, "Past Data 저장 안 함", "Past Data 미저장"))
     if list_has_edits():
