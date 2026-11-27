@@ -137,6 +137,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     small_editor_edits,
 )
+from capa_simulation.components.extra_process_editor import UNSAVED_NOTE, editor_has_edits
 from capa_simulation.components.manual_downtime_tab import manual_downtime_draft_pending
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.sample_data import sample_switch_on
@@ -146,6 +147,7 @@ from capa_simulation.components.space_floor_list import floor_state_draft_pendin
 from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
+    ADMIN_AREA,
     AVAILABLE_EQUIPMENT_STATUS,
     HOME,
     SCENARIO_MANAGEMENT,
@@ -314,6 +316,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     - VOC 적어 둔 답변(`kept_reply_count` — 남지 못한 답변을 「닫기」 까지 두는 세션 칸)도 탭을
       옮겨도 남아 **어느 화면에서나** VOC 탭에 찍는다. 새로고침 · 테마 전환에 사라지는 사용자의
       글이다.
+    - Admin 「부대공정」 앱 작성(`extra_process_editor.editor_has_edits` — 모형이 펼친 판과 다름,
+      그리드 초안 · 줄 씨앗 모두 세션 칸)도 탭을 옮겨도 남아 **어느 화면에서나** Admin Area 탭에
+      찍는다(떠나기 확인에는 넣지 않는다).
     - 넣지 않는 것: 적용했지만 저장하지 않은 시나리오(머리 띠·사이드바 배지가 말한다. 어느 화면이
       적용했는지 기록도 없다), Cut-off 초안(판정 함수가 없다), Qual 계산기(저장 개념이 없다).
     """
@@ -338,6 +343,8 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
         mark(_page_path(VOC_PAGE_FILE), f"적어 둔 답변 {kept:,}건")
     if floor_state_draft_pending():
         mark(SPACE_STATUS.path, "저장하지 않은 층 사용 편집")
+    if editor_has_edits():
+        mark(ADMIN_AREA.path, UNSAVED_NOTE)
     small = _equipment_small_editors(page_file)
     if small:
         mark(AVAILABLE_EQUIPMENT_STATUS.path, "적용 전 편집: " + ", ".join(small))

@@ -380,11 +380,13 @@ class RevisionOrigin:
 class EditorOrigin:
     """편집기에서 만든 판의 바탕 — 펼친 때의 판 이력 마지막 차례(적용이 이 차례와 대조한다 — 누른
     때의 차례를 쓰면 펼친 뒤 남이 적용한 판을 말없이 지운다), 펼친 판의 sha(판이 하나도 없었으면
-    None), 거절 표 한 줄을 편집기 자리로 되짚을 접은 줄(`extra_process_editor.locate`)."""
+    None), 거절 표 한 줄을 편집기 자리로 되짚을 접은 줄(`extra_process_editor.locate`), 판에 들지
+    않은 칸 입력 수(`extra_process_editor.ignored_cells` — 값 줄 「창 밖 고친 칸 n」)."""
 
     seen_seq: int
     base_sha: str | None
     folded: Folded
+    ignored: int = 0
 
 
 @dataclass(frozen=True)

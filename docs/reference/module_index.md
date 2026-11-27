@@ -112,6 +112,7 @@
 - `src/capa_simulation/components/equipment_settings_dialog.py`
 - `src/capa_simulation/components/exclusion_table.py`
 - `src/capa_simulation/components/extra_process_admin.py`
+- `src/capa_simulation/components/extra_process_editor.py`
 - `src/capa_simulation/components/extra_process_notice.py`
 - `src/capa_simulation/components/flash.py`
 - `src/capa_simulation/components/formula_text.py`

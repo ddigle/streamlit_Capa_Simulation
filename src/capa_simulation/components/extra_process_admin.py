@@ -46,15 +46,17 @@ ETag 를 들어 같은 뜻이다(`pending_write`).
 `EP-06` 하나다(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」). 누를 수
 없는 까닭(꺼짐 · 판 없음 · 다른 판 · 섞인 판 · 연도 Shift · 부대공정 없음 — G4)은 풍선이다.
 
-**편집기에서 만든 판**(`extra_process_intake.stage_editor_pack` — `StagedPack.editor`)도 같은 받은
-판 자리를 지난다 — 머리 「앱에서 만든 판」, 거절 표에는 편집기 자리(공정 · 표 · 양산구분 · 칸 ·
-기간 · 옮긴 줄 — `extra_process_editor.locate`)가 붙는다. 「새 판 적용」 은 DB 에 갈래 「새 판」 ·
-원천 자리 「앱 입력」 만 넣고(`_apply_editor`) S3 Drive 는 쓰지 않는다 — 쓸 몫이 아니라 `EP-05` ·
+**편집기에서 만든 판**(앱 작성 편집기 `components/extra_process_editor.py` — 단추 줄의 「앱에서
+작성」 · 「작성 닫기」 와 단추 줄 아래 편집기 자리, `StagedPack.editor`)도 같은 받은 판 자리를
+지난다 — 머리 「앱에서 만든 판」, 거절 표에는 편집기 자리(공정 · 표 · 양산구분 · 칸 · 기간 · 옮긴
+줄 — `extra_process_editor.locate`)가 붙고 값 줄 끝에 「01 메모 · 차례만 바뀜」 · 「창 밖 고친 칸
+n」 이 붙는다. 「새 판 적용」 은 DB 에 갈래 「새 판」 · 원천 자리 「앱 입력」 만
+넣고(`_apply_editor` — 적용하면 작성을 닫는다) S3 Drive 는 쓰지 않는다 — 쓸 몫이 아니라 `EP-05` ·
 `EP-06` 도 서지 않는다(`owes_drive`). 끈 동안 받은 판의 값 줄 끝에는 「적용하면 켜짐」 이 붙는다.
 
-**닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 이 탭의 위젯은 단추 · 내려받기 · 확인
-칸뿐이라 버릴 값이 없고, 닫힌 탭이 회차마다 판 이력을 읽지 않게 한다. 세션 칸은 `SessionSlot`
-창구다.
+**닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 닫힌 탭이 회차마다 판 이력을 읽지 않게
+한다. 편집기 초안 · inbox · 메모 · 종류 단추 값은 세션에 남아 다시 연 회차가 이어 받는다. 세션 칸은
+`SessionSlot` 창구다.
 """
 
 from __future__ import annotations
@@ -69,7 +71,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components import sso_identity
+from capa_simulation.components import extra_process_editor, sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -227,6 +229,9 @@ EDITOR_APPLY_HELP: Final = (
 )
 # 끈 동안 받은 판의 값 줄 끝 — 적용하면 그 판으로 다시 켜진다(누르기 전에 알아야 할 결과).
 TURNS_ON_PART: Final = "적용하면 켜짐"
+# 편집기 판의 값 줄 조각(`_editor_parts`).
+ORDER_ONLY_PART: Final = "01 메모 · 차례만 바뀜"
+IGNORED_PART: Final = "창 밖 고친 칸 {n}"
 REWRITE_HELP: Final = (
     "활성 판을 S3 Drive 의 current.zip 에 다시 씁니다 — 적용하지 않은 파일이 놓여 있으면 덮지 "
     "않습니다."
@@ -326,6 +331,12 @@ def place_staged(staged: StagedPack) -> None:
     REMOVED_CONFIRMED.set(False)
 
 
+def _discard_staged() -> None:
+    """받은 판 자리를 비운다(편집기의 「바뀐 것 없음」 — `_stage_revision` 과 같은 꼴)."""
+    STAGED.clear()
+    PREVIEW.clear()
+
+
 def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str:
     """상태 줄 값 한 줄 — 값만 싣고 공정 이름 · 생산성은 싣지 않는다(리뷰 압축본에 옮길 꼴)."""
     active = state.active
@@ -348,7 +359,7 @@ def render_extra_process_admin(
     """탭 본문. `alert_tab` 은 이 탭 이름(열린 탭)이고 None 이면 닫힌 탭이다 — 닫힌 탭은 위젯만
     세우고 상태 알림 · 시험 계산 · 이력 표를 건너뛴다(`state_alerts.open_tab_name`)."""
     opened = alert_tab is not None
-    render_flash(FLASH_KEY)
+    render_flash(FLASH_KEY, extra_process_editor.FLASH_KEY)
     if alert_tab is not None:
         _report_official_outcomes(repository, alert_tab)
     try:
@@ -367,7 +378,11 @@ def render_extra_process_admin(
     if alert_tab is not None:
         _report_remote_state(state if lock is None else None, alert_tab)
     st.caption(status_line(state, SEEN.peek()))
+    hooks = extra_process_editor.Hooks(
+        lock=write_lock_reason, place=place_staged, discard=_discard_staged
+    )
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        extra_process_editor.render_entry(repository, state, hooks, lock=lock)
         source = installed_source()
         if source is not None and st.button(
             source.label,
@@ -381,6 +396,8 @@ def render_extra_process_admin(
         _render_rewrite(repository, state, lock)
         _render_download(repository, state)
         _render_toggle(repository, state, lock)
+    # 편집기(작성 중일 때만 — 작업 줄 → 그리드 → 판 줄)는 받은 판 상자 앞이다.
+    extra_process_editor.render_editor(repository, hooks, lock=lock)
     staged = STAGED.peek()
     if staged is not None:
         _render_staged(repository, state, staged, lock, opened=opened)
@@ -653,6 +670,7 @@ def _render_staged(
                     *_changes_parts(staged.changes),
                     reading.ratio.text(),
                     *_origin_parts(origin),
+                    *_editor_parts(editor, staged.changes),
                     *([TURNS_ON_PART] if state.off else []),
                 ]
             )
@@ -714,6 +732,19 @@ def _origin_parts(origin: RevisionOrigin | None) -> list[str]:
         f"옮기지 못한 공정 {len(origin.kept)}",
         f"경로가 판과 다름 {len(origin.route_differs)}",
     ]
+
+
+def _editor_parts(editor: EditorOrigin | None, changes: PackChanges | None) -> list[str]:
+    """편집기 판의 값 줄 조각 — 칸 · 공정이 그대로인데 판이 다르면 01 메모 · 차례만 바뀐 것이고
+    (00 고정 본문 견줌이 같으면 받은 판이 서지 않는다), 판에 들지 않은 칸 입력이 있으면 그 수."""
+    if editor is None:
+        return []
+    parts = []
+    if changes is not None and not (changes.added or changes.removed or changes.changed_cells):
+        parts.append(ORDER_ONLY_PART)
+    if editor.ignored:
+        parts.append(IGNORED_PART.format(n=f"{editor.ignored:,}"))
+    return parts
 
 
 def _changes_parts(changes: PackChanges | None) -> list[str]:
@@ -1320,6 +1351,8 @@ def _apply_editor(
         PREVIEW.clear()
         # 활성 판이 바뀌어 S3 Drive 낱말(같음 → 옛 판)이 바뀐다 — 다음 회차가 머리를 다시 본다.
         HEAD_SEEN.clear()
+        # 적용한 판이 펼친 판을 대신한다 — 작성을 닫는다(다음 작성은 새 활성 판을 펼친다).
+        extra_process_editor.close_editor()
         queue_flash(FLASH_KEY, f"부대공정 판 {pack.info.version_no} 적용 — 앱 입력")
     st.rerun()
 

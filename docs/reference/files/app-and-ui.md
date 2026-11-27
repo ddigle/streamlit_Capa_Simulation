@@ -1037,8 +1037,8 @@
   다섯째는 `components/process_group_editor.py`(활성 시나리오 `RQ_MODULE` 이 줄 — 차례는 HOME 공정 필터와 같은 공용 표시순서(`get_display_ordered_values` — 규칙 오류면 이름 차례), 편집 표라 닫혀 있어도 그리고 닫힌 회차는 공용 프로필 캐시만, 저장 벽은 `home.settings`)를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
-  - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(위젯이 단추 · 내려받기 · 확인
-    칸뿐이라 버릴 값이 없다 — 판 이력 읽기에 캐시가 없다)은 닫혀 있으면 건너뛴다(`tab_is_hidden`, `tests/test_admin_area_page.py`) — 둘이
+  - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없다)과 `부대공정`(편집기 초안 · inbox · 위젯 값은
+    세션에 남는다 — 판 이력 읽기에 캐시가 없다)은 닫혀 있으면 건너뛴다(`tab_is_hidden`, `tests/test_admin_area_page.py`) — 둘이
     Admin 회차의 DB 읽기라 열린 회차에만 DuckDB 를 연다. 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
     「서버 시작 점검」 의 「토큰 넣기」 팝업(`components/bdq_token_admin.py` — 호스트 `DialogHost`)도 같은 칸을 값으로 쓴다.
@@ -1987,37 +1987,38 @@
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/extra_process_admin.py` — Admin Area 넷째 탭 「부대공정」(설계 A7 1단계). 상태 줄 값 한 줄(판 번호 ·
   공정 수 · 적용 시각, 끈 동안 「꺼짐 · 마지막 판 n」, 원천을 봤으면 「<자리> <낱말>(hh:mm 에 봄)」) · 가져오기(원천이 꽂혔을 때만) ·
-  양식 내려받기(마지막 내용 판, 없으면 빈 양식) · 끄기 / 다시 켜기(한 자리) · 받은 판의 거절 표 또는 값 줄(지금 판 — 끈 동안 마지막 판 — 과
-  차이 · 앞 판 값으로 되돌리는 칸 G12 · 측정률 칸 — 받는 때 `stage_pack` 이 센다, 계산 없음, 끈 동안 끝에 「적용하면 켜짐」)과
-  미리보기(「시험 계산」 누른 회차에만 돌고 (sha, 계산 토큰 — 내용 토큰 + 그 회차의 부하 예외 선언)마다 세션에 둔다,
-  시나리오를 못 읽으면 단추 자리에 「데이터 Error」 마크 `AD-07`) · 적용(뺀 공정 · 되돌리는 칸이
-  있으면 확인 칸을 채워야 열림 — UI-NTF-09 · 세 길 공용, `place_staged` 가 새 판마다 비움) · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의 알림 `EP-03` · `EP-04`. 닫힌
-  탭은 `admin_area` 가 그리지 않는다(위젯이 단추 · 내려받기 · 확인 칸뿐 — DB 를 읽지 않는다). 받은 판 판정
-  예외도 원천 실패와 같은 `EP-01` 길. 세션 칸은 `SessionSlot`(`STAGED` · `SEEN` — `peek`, 메모 `PREVIEW` · `TEMPLATE`). 쓰는
-  단추는 `write_lock_reason`(C-DEP 판정 + 실제 개발자 — 「부하 예외」 탭과 한 판정 `sso_identity.production_write_lock_reason` 의 감쌈, 시험이 바꿔 끼운다)이 열 때만이고 잠긴 동안 풍선에 까닭(UI-INP-07), 누른
-  회차에도 다시 판정하며 쓰기는 본문(콜백 아님) · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
+  양식 내려받기(마지막 내용 판, 없으면 빈 양식) · 끄기 / 다시 켜기 · 받은 판의 거절 표 또는 값 줄(지금 판 — 끈 동안 마지막
+  판 — 과 차이 · 앞 판 값으로 되돌리는 칸 G12 · 측정률 칸 — `stage_pack` 이 받는 때 센다, 끈 동안 끝에 「적용하면 켜짐」)과
+  미리보기(「시험 계산」 누른 회차에만, (sha, 계산 토큰 — 내용 토큰 + 부하 예외 선언)마다 세션에 둠, 시나리오를 못 읽으면 단추 자리에
+  `AD-07` 마크) · 적용(뺀 공정 · 되돌리는 칸이 있으면 확인 칸을 채워야 열림 — UI-NTF-09 · 세 길 공용, `place_staged` 가 새 판마다
+  비움) · 판 이력 표(적용한 사람 앞 두 글자) · 열린 회차의 알림 `EP-03` · `EP-04`. 닫힌 탭은 `admin_area` 가 그리지 않는다(DB 를
+  읽지 않는다 — 편집기 초안 · inbox · 위젯 값은 세션에 남는다). 받은 판 판정 예외도 `EP-01` 길. 세션 칸은
+  `SessionSlot`(`STAGED` · `SEEN` — `peek`, 메모 `PREVIEW` · `TEMPLATE`). 쓰는 단추는 `write_lock_reason`(「부하 예외」 와 한 판정
+  `sso_identity.production_write_lock_reason` 의 감쌈 — 시험이 바꿔 끼운다)이 열 때만이고 잠긴 동안 풍선에
+  까닭(UI-INP-07), 누른 회차에도 다시 판정하며 쓰기는 본문 · 저장소 `admin.area` 벽 · 판 이력 마지막 차례 대조다. 시험
   `tests/test_extra_process_admin.py`.
   - **「이 리비전 값을 새 판으로」**(2단계 — 설계 3-5 · A15): 사이드바에 올라온 **저장 리비전**(미저장 편집은 들지 않음 — G1)의
-    값으로 다음 판(P + 1)을 거꾸로 만들어(`extra_process_revision.pack_from_revision`) 받은 판 자리(`STAGED` — `revision`
-    칸)에 둔다. 같은 거절 표 · 값 줄 · 시험 계산을 지나고 값 줄에 「옮긴 공정 · 옮기지 못한 공정 · 경로가 판과 다름」 수, 옮기지 못한
-    까닭 표가 붙는다. 바뀐 칸이 없으면 알리기만. 누를 수 없는 까닭(꺼짐 · 판 없음 · 다른 판(sha 견줌)으로 만든 리비전 · 섞인 판 ·
-    연도 Shift · 부대공정 없음 — G4)은 풍선이다. 「새 판 적용」 은 DB 에 갈래 「새 판」(`revise_extra_process` — 바탕
-    시나리오 · 리비전 id)을 먼저 넣고, 내보내기 자리가 꽂혀 있으면 그 뒤 S3 Drive 파일을 덮는다(`_write_active` → `write_back` —
-    0038 쓰기 기록 · 알림창 「앱이 덮음 · 판 n · 시각」 / 덮지 않음 경고 / 실패 오류 · 판 이력 「S3 쓰기」 칸). 활성 「새 판」 을
-    아직 쓰지 못했으면 알림 `EP-05` 와 단추 「S3 에 다시 쓰기」(누른 회차에 다시 읽어 이미 썼으면 쓰지 않음)가 서고,
-    원천이 꽂혀 있으면 5분에 한 번 머리 보기(`head`)로 가져오지 않은 새 파일(`EP-02`)을 보고(`HEAD_SEEN` — 내보내기와
-    묶지 않음), 가져오기 · 적용이 성공하면 그 메모를 비운다(UI-NTF-02). 내보내기가 꽂히지 않으면(운영 포함) DB 새 판만 넣고 `EP-05` · 다시 쓰기 단추가 없다 — 원천이 꽂힌 C-DEP 는 그 대신 판 어긋남
-    알림 `EP-06`(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」, 판은 기준 ETag 를 가진 판) 하나가
-    선다. 사람이 그 새 판을 놓아 가져오면(「바뀐 것 없음」 + `placed_matches`) `_note_placed` 가 「놓인 파일 같음」(결과 「씀」 + 까닭
-    `EXTRA_WRITE_PLACED_REASON`, 감사 `PLACED`)을 넣어 그 ETag 가 기준이 되고 `EP-06` 이 풀린다 — 보통의 「바뀐 것 없음」 은 적지
-    않고, 다시 읽은 활성 판 sha 가 다르면 적지 않는다. 끈 동안 그 파일을 가져와 다시 켜도
-    그 줄의 ETag 로 풀린다(`pending_write`). 받을 것이
-    아직 없음(`SourceNotReady`)은 안내와 상태 줄 낱말뿐(`EP-01` 아님). 판 이력 「바탕」
-    칸은 「시나리오 r번호」 다. 시험 `tests/test_extra_process_revision_admin.py`(가짜 내보내기 · 가짜 원천).
-  - **편집기 판**(`StagedPack.editor` — `stage_editor_pack`): 머리 「앱에서 만든 판」, 거절 표 앞에 편집기 자리(`locate`). 「새 판
-    적용」 은 `apply_editor_extra_process`(갈래 「새 판」 · 원천 자리 「앱 입력」 · 바탕 빈칸 · 펼친 차례 대조 · 감사
-    `admin_extra_process_editor`)만 넣는다 — S3 Drive 에 쓸 몫이 아니라 `EP-05` · `EP-06` · 다시 쓰기 밖(`owes_drive`)이고 놓인 같은
-    판은 적는다. 시험 `tests/test_extra_process_editor_box.py`.
+    값으로 다음 판(P + 1)을 거꾸로 만들어(`extra_process_revision.pack_from_revision`) 받은 판 자리(`STAGED` — `revision` 칸)에
+    둔다. 같은 거절 표 · 값 줄 · 시험 계산을 지나고 값 줄에 「옮긴 공정 · 옮기지 못한 공정 · 경로가 판과 다름」 수, 옮기지 못한 까닭
+    표가 붙는다. 바뀐 칸이 없으면 알리기만. 누를 수 없는 까닭(꺼짐 · 판 없음 · 다른 판 · 섞인 판 · 연도 Shift · 부대공정 없음 —
+    G4)은 풍선이다. 「새 판 적용」 은 DB 에 갈래 「새 판」(`revise_extra_process` — 바탕 시나리오 · 리비전 id)을
+    먼저 넣고, 내보내기 자리가 꽂혀 있으면 S3 Drive 파일을 덮는다(`_write_active` → `write_back` — 0038 쓰기 기록 · 알림창 「앱이
+    덮음 · 판 n · 시각」 / 덮지 않음 경고 / 실패 오류 · 판 이력 「S3 쓰기」 칸). 활성 「새 판」 을 못 썼으면 `EP-05` 와 「S3 에 다시
+    쓰기」(누른 회차에 다시 읽음)가 서고, 원천이 꽂혀 있으면 5분에 한 번 머리 보기로 가져오지 않은 새 파일(`EP-02`)을 본다
+    (`HEAD_SEEN` — 가져오기 · 적용 성공이 비움). 내보내기가 없으면(운영 포함) DB 새 판만 넣고, 원천이 꽂힌 C-DEP 는
+    그 대신 판 어긋남 `EP-06`(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」) 하나다. 사람이 그 새 판을
+    놓아 가져오면(「바뀐 것 없음」 + `placed_matches`) `_note_placed` 가 「놓인 파일 같음」(「씀」 + `EXTRA_WRITE_PLACED_REASON`,
+    감사 `PLACED`)을 넣어 그 ETag 가 기준이 되고 `EP-06` 이 풀린다(다시 읽은 활성 sha 가 다르면 적지 않음 · 끈 동안 다시 켜도 그 줄
+    ETag 로 풀림). 받을 것이 아직 없음(`SourceNotReady`)은 안내와 상태 줄 낱말뿐(`EP-01` 아님). 판 이력
+    「바탕」 칸은 「시나리오 r번호」 다. 시험 `tests/test_extra_process_revision_admin.py`.
+  - **편집기 판**(`StagedPack.editor`): 머리 「앱에서 만든 판」, 거절 표에 편집기 자리(`locate`), 값 줄 끝 「01 메모 · 차례만
+    바뀜」 · 「창 밖 고친 칸 n」. 「새 판 적용」 은 `apply_editor_extra_process`(「앱 입력」 · 펼친 차례 대조)만 넣고 작성을 닫는다 —
+    S3 Drive 몫 밖(`owes_drive`). 시험 `tests/test_extra_process_editor_box.py`.
+- `src/capa_simulation/components/extra_process_editor.py` — 「부대공정」 탭의 앱 작성 편집기(셋째 길). 「앱에서 작성」 이 활성 판(끈
+  동안 마지막 판, 없으면 빈 판 — 못 읽으면 진입 잠금)을 펼쳐 공정 · 생산성 · 설비 · 효율을 범용 그리드 한 마운트(종류 단추)로 고치고,
+  참조공정 · STEP · MCP 는 「공정 더하기 · 참조 바꾸기」 팝오버에서 고른다. 회차마다 초안 전체로 모형을 다시 짓는다(서비스 화면
+  계약). 「판 만들기」 는 판 번호 · 작성시각 · 작성자를 그 누름에 고정해 받은 판 자리에 싣는다. 시험
+  `tests/test_extra_process_editor_screen.py`.
 - `src/capa_simulation/components/extra_process_notice.py` — 부대공정 판을 합친 결과 알림 한 꼴. 짧은 글은 「부대공정 2 합침」 ·
   「부대공정 1 합침 · 1 뺌」, 까닭은 Alarm 전문 — 뺀 · BDQ 에 생긴 공정이 있으면 경고, 모두 합쳤으면 알리기만(`popup_only`). 조건이 남는
   동안의 상태 알림 `EP-03`(최신 공식버전에서 뺀 부대공정) · `EP-04`(BDQ 에 같은 이름이 생겨 건너뜀)는 Admin 「부대공정」 탭이 열린 회차에
