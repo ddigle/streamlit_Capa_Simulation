@@ -15,6 +15,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -63,6 +64,10 @@ def rig(
     monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     monkeypatch.setattr(script, "DATASET_PATHS", dict(paths.databases))
     monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", ENDPOINT)
+    # 감사 조각 작업 파일(gettempdir()/capa-audit-tool)을 basetemp 안에 둔다.
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
     monkeypatch.setenv("CAPA_S3_BUCKET", BUCKET)
     monkeypatch.setenv("CAPA_S3_PROFILE", PROFILE)
     monkeypatch.setattr(snapshot_export, "author_label", lambda: AUTHOR)

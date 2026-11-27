@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -467,6 +468,10 @@ def rig(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNames
     monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     monkeypatch.setattr(module, "DATASET_PATHS", dict(paths.databases))
     store = FakeStore()
+    # 감사 조각 작업 파일(gettempdir()/capa-audit-tool)을 basetemp 안에 둔다.
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
     monkeypatch.setattr(module, "build_settings", lambda _args: fake_settings())
     monkeypatch.setattr(module, "build_client", lambda _args: fake_client(store))
     yield SimpleNamespace(script=module, store=store, paths=paths)
