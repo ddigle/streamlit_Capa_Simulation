@@ -792,3 +792,94 @@ def test_suggest_cells_list_labels_put_values_and_follow_the_row() -> None:
         "on": 0,
         "cell": "DEMO_NEW",
     }
+
+
+RERUN_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const on = () => list.children.findIndex((n) => n.classList.contains('is-on'))
+  // 목록을 연 채 ↓ 세 번 · 목록을 굴린 뒤, 같은 내용의 껍데기(새 객체)와 ack 를 실은 feed 가
+  // 오는 회차.
+  setRange(S, { r: 0, c: 2 }, { r: 0, c: 2 })
+  key(scroller, 'Enter')
+  for (let k = 0; k < 3; k += 1) key(ed(), 'ArrowDown')
+  list.scrollTop = 50
+  const first = list.children[0]
+  const before = [on(), list.scrollTop]
+  mount(JSON.parse(JSON.stringify(input.shell)))
+  sendFeed(Object.assign({}, input.feed, { acks: { [S.mount]: 0 } }))
+  R.rerun = {
+    before, after: [on(), list.scrollTop], same: list.children[0] === first,
+    edit: Boolean(S.edit), value: ed().value,
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_rerun_with_the_same_candidates_keeps_the_open_list() -> None:
+    """앞 칸의 묶음 보내기 회차가 목록을 연 다음 칸에 닿는 흔한 경우 — 같은 내용의 후보가 새 객체로
+    와도 목록을 다시 짓지 않아 강조(↑ ↓ 로 옮긴 자리)와 사용자가 굴린 자리가 그대로다."""
+    shell, index = _suggest_shell("표시")
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, RERUN_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["rerun"] == {
+        "before": [4, 50],
+        "after": [4, 50],
+        "same": True,
+        "edit": True,
+        "value": "DEMO_REF_001",
+    }
+
+
+DRAWER_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  fire(q('.eg-tb-changes'), 'click')
+  R.bad = q('.eg-drawer-list').children
+    .filter((item) => item.classList.contains('is-bad'))
+    .map((item) => [
+      item.querySelector('.eg-chg-where').textContent,
+      item.querySelector('.eg-chg-new').title,
+    ])
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_the_changes_drawer_names_each_columns_own_error() -> None:
+    """변경 목록의 오류 칸 풍선도 칸마다 글이다 — 고르기 칸 둘(후보 60 · Area)과 글자 수 칸."""
+    shell, index = _list_shell()
+    draft: eg.DraftState = {
+        "cells": {},
+        "bad": {
+            "p2": {"참조": ("D", "choice"), "Area": ("x", "choice")},
+            "+1": {"공정": ("123456789", "len")},
+        },
+    }
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, DRAWER_RUNNER, {"shell": shell, "feed": _feed(index, "k1", draft)})
+
+    assert result["bad"] == [
+        [
+            "DEMO_B · 참조",
+            "DEMO_REF_000 · DEMO_REF_001 · DEMO_REF_002 … 60개 가운데 하나를 적습니다",
+        ],
+        ["DEMO_B · Area", "Main · MI 가운데 하나를 적습니다"],
+        ["새 줄 1 · 공정", "8자 이하로 적습니다"],
+    ]
