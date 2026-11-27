@@ -1,5 +1,5 @@
 # Purpose: 부대공정 판 이력 · 판 내용 · 데이터셋 출처(마이그레이션 0037)와 S3 Drive 쓰기 기록(0038)
-# 저장, 끄기 · 다시 켜기 · 새 판 · 기준 ETag 를 본다.
+# 저장, 끄기 · 다시 켜기 · 새 판(리비전 · 앱 입력) · 기준 ETag 를 본다.
 
 """부대공정 판 저장소(`repository.*_extra_process*` · `persistence/extra_process_store.py`).
 
@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from auto_update_fakes import new_repository
 from extra_process_fixtures import bump_version, template_files, zip_files
 
+from capa_simulation.audit import events, recorder
 from capa_simulation.persistence.extra_process_store import ExtraProcessMoved
 from capa_simulation.persistence.models import (
+    EXTRA_EDITOR_LABEL,
+    EXTRA_EDITOR_PLACE,
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
     EXTRA_KIND_RESUME,
@@ -190,6 +194,97 @@ def test_a_revision_version_points_at_its_base_and_needs_a_larger_number(
     assert active.version_no == 2 and active.source_place == EXTRA_REVISION_PLACE
     assert (active.base_scenario_ref, active.base_revision_ref) == ("scenario-1", "revision-2")
     assert active.kind_label == "새 판"
+
+
+def _apply_editor(repository: DuckDBScenarioRepository, data: bytes, *, expected_seq: int) -> None:
+    reading = read_pack_zip(data)
+    assert reading.pack is not None
+    repository.apply_editor_extra_process(
+        data,
+        sha256=reading.sha256,
+        version_no=reading.pack.info.version_no,
+        expected_seq=expected_seq,
+        applied_by="개발자 A",
+        process_count=len(reading.pack.processes),
+        row_counts=json.dumps(reading.pack.row_counts()),
+    )
+
+
+def _audit_lines(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    lines: list[dict[str, Any]] = []
+
+    def capture(event: str, **fields: Any) -> None:
+        lines.append({"ev": event, **fields})
+
+    monkeypatch.setattr(recorder, "record", capture)
+    return lines
+
+
+def test_an_editor_version_is_an_app_input_new_version_without_a_base(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """편집기 판은 갈래 「새 판」 그대로 원천 자리 「앱 입력」 이고 바탕 칸이 비어 있다 — 판
+    번호 검사 · 화면이 본 차례 대조는 다른 쓰기와 같고, 감사는 따로 한 사건(갈래 · 차례 · 판 ·
+    공정 수만)이다."""
+    _apply(repository, zip_files(template_files()), expected_seq=0)
+    lines = _audit_lines(monkeypatch)
+
+    with pytest.raises(ValueError, match="커야 합니다"):
+        _apply_editor(repository, zip_files(template_files()), expected_seq=1)
+    with pytest.raises(ExtraProcessMoved):
+        _apply_editor(repository, zip_files(bump_version(template_files(), 2)), expected_seq=0)
+    assert repository.load_extra_process_state().last_seq == 1
+
+    _apply_editor(repository, zip_files(bump_version(template_files(), 2)), expected_seq=1)
+
+    active = repository.load_extra_process_state().active
+    assert active is not None and active.kind == EXTRA_KIND_REVISION and active.version_no == 2
+    assert active.source_place == EXTRA_EDITOR_PLACE and active.editor_made
+    assert (active.base_scenario_ref, active.base_revision_ref) == (None, None)
+    assert active.kind_label == EXTRA_EDITOR_LABEL == "앱 입력"
+    assert lines == [
+        {
+            "ev": "admin_extra_process_editor",
+            "out": "fail",
+            "claimed": "개발자 A",
+            "det": {"kind": EXTRA_KIND_REVISION},
+        },
+        {
+            "ev": "admin_extra_process_editor",
+            "out": "fail",
+            "claimed": "개발자 A",
+            "det": {"kind": EXTRA_KIND_REVISION},
+        },
+        {
+            "ev": "admin_extra_process_editor",
+            "claimed": "개발자 A",
+            "det": {"kind": EXTRA_KIND_REVISION, "entry": 2, "version": 2, "processes": 2},
+        },
+    ]
+    spec = events.spec_of("admin_extra_process_editor")
+    assert spec is not None and spec.det_keys == {"kind", "entry", "version", "processes"}
+
+
+def test_an_editor_version_applied_while_off_turns_the_pack_back_on(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """끈 동안 편집기 판을 넣으면 그 판이 활성이 된다(다시 켜짐 — 가져온 판의 「적용」 과
+    같다). 끄고 단추로 다시 켜면 그 「다시 켜기」 줄은 원천 자리를 옮겨 적어도 편집기 판 줄이
+    아니다."""
+    _apply(repository, zip_files(template_files()), expected_seq=0)
+    repository.turn_off_extra_process(expected_seq=1, applied_by=None)
+
+    _apply_editor(repository, zip_files(bump_version(template_files(), 2)), expected_seq=2)
+
+    state = repository.load_extra_process_state()
+    assert not state.off and state.active is not None and state.active.version_no == 2
+    assert state.active.editor_made
+
+    repository.turn_off_extra_process(expected_seq=3, applied_by=None)
+    resumed = repository.resume_extra_process(expected_seq=4, applied_by=None).active
+    assert resumed is not None and resumed.kind == EXTRA_KIND_RESUME
+    assert resumed.source_place == EXTRA_EDITOR_PLACE and not resumed.editor_made
+    assert resumed.kind_label == "다시 켜기"
 
 
 def test_s3_writes_are_appended_and_pick_the_baseline_etag(

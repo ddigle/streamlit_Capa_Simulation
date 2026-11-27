@@ -68,7 +68,7 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
         └── 전역 증가 release_no 의 공식 발행 이력(scenario_id 를 가져 시나리오 삭제가 함께 지운다)
 
 app_meta.extra_process_version N ── 1 app_meta.extra_process_content   (0037 — 부대공정 판 이력 · 내용, 소유 칸 없음)
-        └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION). 내용은 sha256 하나에 ZIP 한 벌
+        └── append-only, 마지막 줄이 지금 상태(APPLY · OFF · RESUME · REVISION — 리비전 · 앱 입력). 내용은 sha256 하나에 ZIP 한 벌
 app_meta.extra_process_s3_write N ── 1 app_meta.extra_process_version  (0038 — 판을 S3 Drive 파일로 쓴 결과, 넣기만)
 app_meta.route_load_exception_version                                  (0040 — 부하 예외 선언 판 이력, 소유 칸 없음)
         └── append-only, 마지막 줄이 지금 선언(모두 뺀 저장도 비움 판 한 줄). 모든 시나리오에 걸린다
@@ -295,7 +295,9 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   없다(`CHECK`). 이력 · 내용은 소유 칸이 없어 시나리오를 지워도 남고(「이력은 DB 에만」 — S3 옛 판 사본 없음), 출처는
   `dataset_id` 소유라 데이터셋과 함께 지워진다. 출처 한 줄 = (데이터셋, 공정, 판 차례) — 판 번호 · sha · 결과(`MERGED` ·
   `DROPPED` · `GRADUATED`) · 규칙(R-01 ~ R-07) · 까닭 · 표별 행 수(JSON) · 메모(연도 Shift 이동량 · 월 머지 쪽 · 덧붙인 달 범위).
-  「새 판으로」(2단계 — 갈래 `REVISION`)의 바탕 시나리오 · 리비전은 `base_*_ref` 로 가리키기만 한다. 0037 의 `s3_write_result` 칸은
+  갈래 `REVISION`(「새 판」)은 앱이 만든 판이고 원천 자리 `source_place` 로 가른다 — 「리비전」(「새 판으로」)은 바탕 시나리오 ·
+  리비전을 `base_*_ref` 로 가리키기만 하고, 「앱 입력」(편집기 — 판 이력 갈래 글도 「앱 입력」)은 `base_*_ref` 가 비고 S3 Drive 에 쓸
+  몫이 아니다(마이그레이션 없음 — 0037 에 두 칸을 묶는 CHECK 가 없다). 0037 의 `s3_write_result` 칸은
   쓰지 않는다 — 쓰기 결과는 판을 넣은 뒤에야 알아 아래 0038 표에 넣는다.
 - `extra_process_s3_write`(0038): 「새 판으로」 · 「S3 에 다시 쓰기」 가 S3 Drive 를 쓴 결과 한 줄씩(넣기만).
   쓴 판(`version_seq` — 판 이력 차례, 가리키기만) · 결과(`WRITTEN` — PUT 이 돌려준 ETag / `KEPT` — 쓰기 직전 HEAD 의 ETag 가 기준과 달라

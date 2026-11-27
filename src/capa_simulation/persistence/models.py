@@ -558,19 +558,23 @@ class ScenarioSnapshot:
 
 # 부대공정 판 이력의 갈래(마이그레이션 0037 — `app_meta.extra_process_version.kind`).
 # 「적용」 은 가져와 적용한 판, 「끄기」 는 활성 판을 비우는 빈 줄, 「다시 켜기」 는 마지막
-# 내용 판을 파일 없이 되살린 줄, 「새 판」 은 리비전 값으로 만든 판(2단계)이다.
+# 내용 판을 파일 없이 되살린 줄, 「새 판」 은 앱이 만든 판(리비전 값 · 편집기)이다.
 EXTRA_KIND_APPLY = "APPLY"
 EXTRA_KIND_OFF = "OFF"
 EXTRA_KIND_RESUME = "RESUME"
 EXTRA_KIND_REVISION = "REVISION"
-# 「새 판」 줄의 원천 자리(판 이력 `source_place`) — 파일이 아니라 저장 리비전에서 왔다.
+# 「새 판」 줄의 원천 자리(판 이력 `source_place`) — 파일이 아니라 저장 리비전에서 왔거나(바탕
+# 시나리오 · 리비전을 가리킨다) 편집기에서 적었다(바탕 칸이 비고 S3 Drive 에 쓸 몫이 아니다).
 EXTRA_REVISION_PLACE = "리비전"
+EXTRA_EDITOR_PLACE = "앱 입력"
 EXTRA_KIND_LABELS: dict[str, str] = {
     EXTRA_KIND_APPLY: "적용",
     EXTRA_KIND_OFF: "끄기",
     EXTRA_KIND_RESUME: "다시 켜기",
     EXTRA_KIND_REVISION: "새 판",
 }
+# 편집기 판 줄의 갈래 글 — 갈래는 「새 판」(REVISION) 그대로이고 원천 자리로 가른다.
+EXTRA_EDITOR_LABEL = "앱 입력"
 
 
 @dataclass(frozen=True)
@@ -595,7 +599,15 @@ class ExtraProcessVersion:
     s3_write_result: str | None = None
 
     @property
+    def editor_made(self) -> bool:
+        """편집기에서 만든 판 줄인가 — 갈래 「새 판」 + 원천 자리 「앱 입력」(「다시 켜기」 줄은
+        원천 자리를 옮겨 적어도 아니다)."""
+        return self.kind == EXTRA_KIND_REVISION and self.source_place == EXTRA_EDITOR_PLACE
+
+    @property
     def kind_label(self) -> str:
+        if self.editor_made:
+            return EXTRA_EDITOR_LABEL
         return EXTRA_KIND_LABELS.get(self.kind, self.kind)
 
 

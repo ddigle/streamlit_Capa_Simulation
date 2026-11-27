@@ -152,9 +152,18 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     # 공지 — 대상은 공지 id(`tgt`), 상세는 결과 · 끝 시각뿐이고 글은 싣지 않는다.
     _spec("admin_notice_send", "admin", "공지 보냄", "result", "until"),
     _spec("admin_notice_withdraw", "admin", "공지 거둠", "result"),
-    # 부대공정 판 — 갈래(적용 · 끄기 · 다시 켜기) · 이력 차례 · 판 번호 · 공정 수뿐이고 공정 이름 ·
-    # 생산성 값은 싣지 않는다.
+    # 부대공정 판 — 갈래(적용 · 끄기 · 다시 켜기 · 새 판) · 이력 차례 · 판 번호 · 공정 수뿐이고 공정
+    # 이름 · 생산성 값은 싣지 않는다. 편집기에서 만든 판의 적용은 따로 한 사건이다(같은 상세 키).
     _spec("admin_extra_process", "admin", "부대공정 판", "kind", "entry", "version", "processes"),
+    _spec(
+        "admin_extra_process_editor",
+        "admin",
+        "부대공정 판 앱 입력",
+        "kind",
+        "entry",
+        "version",
+        "processes",
+    ),
     # 부대공정 판의 S3 Drive 파일 쓰기 — 결과(씀 · 덮지 않음 · 실패 · 사람이 놓은 같은 파일
     # `PLACED`) · 쓴 판의 이력 차례 · 기록 차례뿐.
     _spec(

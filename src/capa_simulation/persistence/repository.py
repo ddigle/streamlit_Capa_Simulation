@@ -61,6 +61,7 @@ from capa_simulation.persistence.display_order_store import (
 )
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode, apply_migrations
 from capa_simulation.persistence.models import (
+    EXTRA_EDITOR_PLACE,
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
     EXTRA_KIND_RESUME,
@@ -1635,6 +1636,35 @@ class DuckDBScenarioRepository:
         )
 
     @grades.gated("admin.area")
+    def apply_editor_extra_process(
+        self,
+        pack_bytes: bytes,
+        *,
+        sha256: str,
+        version_no: int,
+        expected_seq: int,
+        applied_by: str | None,
+        process_count: int,
+        row_counts: str,
+    ) -> ExtraProcessState:
+        """편집기에서 만든 판(P + 1)을 활성으로 넣는다 — 갈래 「새 판」, 원천 자리 「앱 입력」, 바탕
+        칸은 비운다. S3 Drive 파일은 쓰지 않는다(쓸 몫이 아니다). 판 번호 검사 · `expected_seq`
+        대조는 다른 쓰기와 같고, 끈 동안 넣으면 다시 켜진다(가져온 판의 「적용」 과 같다). 감사
+        사건은 `admin_extra_process_editor` 다."""
+        return self._append_extra_process(
+            kind=EXTRA_KIND_REVISION,
+            expected_seq=expected_seq,
+            applied_by=applied_by,
+            pack_bytes=pack_bytes,
+            sha256=sha256,
+            version_no=version_no,
+            process_count=process_count,
+            row_counts=row_counts,
+            source_place=EXTRA_EDITOR_PLACE,
+            audit_event="admin_extra_process_editor",
+        )
+
+    @grades.gated("admin.area")
     def record_extra_process_write(
         self,
         *,
@@ -1725,6 +1755,7 @@ class DuckDBScenarioRepository:
         s3_last_modified: datetime | None = None,
         base_scenario_ref: str | None = None,
         base_revision_ref: str | None = None,
+        audit_event: str = "admin_extra_process",
     ) -> ExtraProcessState:
         author = (applied_by or "").strip() or None
         try:
@@ -1764,13 +1795,11 @@ class DuckDBScenarioRepository:
                     base_revision_ref=base_revision_ref,
                 )
         except Exception:
-            audit_recorder.record(
-                "admin_extra_process", out="fail", claimed=author, det={"kind": kind}
-            )
+            audit_recorder.record(audit_event, out="fail", claimed=author, det={"kind": kind})
             raise
         # 감사 줄에는 갈래 · 판 번호 · 공정 수만 — 공정 이름 · 생산성 값은 싣지 않는다.
         audit_recorder.record(
-            "admin_extra_process",
+            audit_event,
             claimed=author,
             det={"kind": kind, "entry": seq, "version": version_no, "processes": process_count},
         )
