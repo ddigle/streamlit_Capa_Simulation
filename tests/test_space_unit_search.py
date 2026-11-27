@@ -84,6 +84,37 @@ def test_the_candidates_keep_floor_bound_names_in_natural_order_and_the_first_pl
     assert targets["DEMO-GONE"] == UnitSearchTarget(("C1", "3F"), SEARCH_EXITED)
 
 
+def test_a_module_off_the_drawing_leads_to_a_standing_sibling_on_its_floor() -> None:
+    """도면에 서지 않은 모듈은 같은 층 도면에 선 형제(자연 정렬 처음)를 `lead` 로 단다 — 도면이 그
+    묶음으로 맞춘다. 형제가 다른 층에만 섰거나 없으면 `lead` 가 없다. 낱 호기 · 도면에 선 모듈은
+    `group` 도 달지 않는다."""
+
+    def modules(*rows: tuple[str, str, str, str | None]) -> pd.DataFrame:
+        return pd.DataFrame(rows, columns=["설비명", "동", "층", "Main 설비"])
+
+    targets = unit_search_targets(
+        placed=modules(
+            ("DEMO-M1-B", "C1", "1F", "DEMO-M1"),
+            ("DEMO-M1-A", "C1", "1F", "DEMO-M1"),
+            ("DEMO-M2-A", "C2", "1F", "DEMO-M2"),
+            ("DEMO-EQ-01", "C1", "1F", None),
+        ),
+        unplaced=modules(
+            ("DEMO-M1-C", "C1", "1F", "DEMO-M1"), ("DEMO-M2-B", "C1", "1F", "DEMO-M2")
+        ),
+        excluded=modules(("DEMO-M1-D", "C1", "1F", "DEMO-M1"), ("DEMO-OFF", "C1", "1F", None)),
+        exited=modules(("DEMO-M3-A", "C1", "1F", "DEMO-M3")),
+    )
+    assert targets["DEMO-M1-C"] == UnitSearchTarget(
+        ("C1", "1F"), SEARCH_UNPLACED, "DEMO-M1", "DEMO-M1-A"
+    )
+    assert targets["DEMO-M1-D"].lead == "DEMO-M1-A"
+    assert targets["DEMO-M2-B"] == UnitSearchTarget(("C1", "1F"), SEARCH_UNPLACED, "DEMO-M2", None)
+    assert targets["DEMO-M3-A"].lead is None
+    assert targets["DEMO-M1-A"] == UnitSearchTarget(("C1", "1F"), SEARCH_PLACED)
+    assert targets["DEMO-OFF"] == UnitSearchTarget(("C1", "1F"), SEARCH_EXCLUDED)
+
+
 # ---------------------------------------------------------------- 화면(AppTest)
 
 
@@ -108,12 +139,14 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 def _fleet() -> pd.DataFrame:
-    """C1 1F — EQ-01·EQ-02 · Main 설비 MOD-1 모듈 둘 · 좌표 없는 TRAY-01 · 레이아웃표시 N 인 N-01 ·
+    """C1 1F — EQ-01·EQ-02 · Main 설비 MOD-1 모듈 둘(과 레이아웃표시 N 인 셋째 모듈) · 좌표 없는
+    TRAY-01 · 레이아웃표시 N 인 N-01 ·
     기준일 전에 반출을 마친 OUT-01, C1 2F — UP-01, 동 · 층 미정 — FLOAT-01."""
     module = {"Main 설비": "MOD-1", "Xsize": 6, "Ysize": 4}
     return _master(
         {**module, "설비명": "MOD-1A", "X좌표": 60.0, "Y좌표": 10.0},
         {**module, "설비명": "MOD-1B", "X좌표": 66.0, "Y좌표": 10.0},
+        {**module, "설비명": "MOD-1C", "레이아웃표시": "N", "X좌표": None, "Y좌표": None},
         {"설비명": "UP-01", "층": "2F"},
         {"설비명": "TRAY-01", "X좌표": None, "Y좌표": None},
         {"설비명": "N-01", "레이아웃표시": "N", "X좌표": 70.0},
@@ -177,6 +210,7 @@ def test_the_search_stands_only_on_the_fab_right_under_the_place_row(
         "EQ-02",
         "MOD-1A",
         "MOD-1B",
+        "MOD-1C",
         "N-01",
         "OUT-01",
         "TRAY-01",
@@ -272,6 +306,43 @@ def test_a_unit_off_the_drawing_opens_its_floor_and_says_why_in_the_alarm(
         notes
     )
     assert not app.info
+
+
+def test_a_module_off_the_drawing_fits_its_standing_bundle_and_says_so(
+    tmp_path: Path, calls: list[dict[str, Any]]
+) -> None:
+    """도면에 서지 않은 모듈(레이아웃표시 N 인 MOD-1C)은 층을 열고 같은 층 도면에 선 형제(MOD-1A)로
+    맞춰 그 묶음을 보이며, 알림창 한 마디가 그 묶음으로 맞췄다고 말한다."""
+    app = _open(tmp_path)
+    start = len(calls)
+    _search(app, "MOD-1C")
+    assert app.session_state["space_status_selected_floor"] == "1F"
+    assert [focus["id"] for focus in _focuses(calls, start)] == ["MOD-1A"]
+    notes = [note.value.replace("\\", "") for note in flashed(app, "info")]
+    assert any(
+        "「MOD-1C」 — C1 1F 도면에 없습니다 · 레이아웃 제외(레이아웃표시 N)"
+        " · Main 설비 「MOD-1」 묶음으로 맞춤" in note
+        for note in notes
+    ), notes
+
+
+def test_the_search_works_while_the_fab_layout_is_being_edited(
+    tmp_path: Path, calls: list[dict[str, Any]]
+) -> None:
+    """FAB 배치 편집을 켠 동안에도 자리 줄 밑에 서고, 고르면 그 층이 열려 첫 회차 도면이 맞춘다
+    (FAB 편집 토글은 층에서 걷혀 층은 보기로 선다)."""
+    app = _open(tmp_path)
+    app.toggle(key="space_fab_edit_mode").set_value(True)
+    _ok(app.run())
+    assert any(data.get("scope") == "fab" and data.get("mode") != "view" for data in calls)
+    order = _box_order(_box(app))
+    assert order[order.index(SEARCH_KEY) + 1] == "space_fab_edit_mode"
+    start = len(calls)
+    _search(app, "EQ-01")
+    assert app.session_state["space_status_selected_floor"] == "1F"
+    views = _floor_views(calls, start)
+    assert views[0].get("mode") == "view"
+    assert [focus["id"] for focus in _focuses(calls, start)] == ["EQ-01"]
 
 
 def test_an_inactive_floor_still_opens_and_takes_the_focus(

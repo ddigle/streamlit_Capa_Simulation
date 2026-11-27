@@ -603,8 +603,9 @@ def _find_unit(
     연다(`_floor_opened` — 층 사용 초안 규칙은 바로 가기와 같다. 비활성 층도 연다 — 배너가 말한다).
     실제로 열렸을 때만 다음을 둔다 — 도면에 선 호기면 맞춤 대상(`UNIT_FOCUS_KEY`)이고, 색 기준
     「필요 단축」 을 고른 회차(`pick`)면 필요 단축 칸의 고른 호기로도 쥔다(`_pick_unit` — 보기가
-    서지 않으면 층 본문이 푼다). 도면에 서지 않은 호기면 알림창 한 마디다(`_search_miss`). 고르기
-    칸은 늘 비운다 — 같은 설비를 다시 골라도 움직이게(열기를 거절한 회차도)."""
+    서지 않으면 층 본문이 푼다). 도면에 서지 않은 호기면 알림창 한 마디이고(`_search_miss`), 그
+    호기가 같은 층 도면에 형제가 선 모듈이면 맞춤 대상은 그 형제다(묶음으로 맞춘다). 고르기 칸은 늘
+    비운다 — 같은 설비를 다시 골라도 움직이게(열기를 거절한 회차도)."""
     name = st.session_state.get(widget_key)
     st.session_state[widget_key] = None
     if not isinstance(name, str) or name not in targets:
@@ -615,10 +616,13 @@ def _find_unit(
         return
     if target.place != SEARCH_PLACED:
         _queue_space_flash(_search_miss(name, target, as_of_day), kind="info")
+    # 도면에 선 호기 — 그 호기, 도면에 서지 않은 모듈 — 같은 층 도면에 선 형제(그 묶음으로 맞춘다).
+    unit = name if target.place == SEARCH_PLACED else target.lead
+    if unit is None:
         return
-    st.session_state[UNIT_FOCUS_KEY] = (*target.floor, name, uuid.uuid4().hex)
+    st.session_state[UNIT_FOCUS_KEY] = (*target.floor, unit, uuid.uuid4().hex)
     if pick:
-        _pick_unit(target.floor, name)
+        _pick_unit(target.floor, unit)
 
 
 def _search_miss(name: str, target: UnitSearchTarget, as_of_day: date) -> str:
@@ -633,7 +637,12 @@ def _search_miss(name: str, target: UnitSearchTarget, as_of_day: date) -> str:
         why = f"기준일 {as_of_day.isoformat()} 에 반출/이설을 마침"
     else:
         why = "도면에 없음"
-    return f"{quoted(name)} — {where} 도면에 없습니다 · {why}"
+    tail = (
+        f" · Main 설비 {quoted(target.group)} 묶음으로 맞춤"
+        if target.group is not None and target.lead is not None
+        else ""
+    )
+    return f"{quoted(name)} — {where} 도면에 없습니다 · {why}{tail}"
 
 
 def _take_unit_focus(key: FloorKey) -> dict[str, str] | None:
@@ -2688,10 +2697,18 @@ with space_box:
         # Streamlit 기본 거름(퍼지 — 친 글자가 차례대로 든 이름을 맞음 점수 차례로)이 띄운다. 층
         # 사용 편집 초안이 있는 동안은 바로 가기와 같은 팝오버 꼴이다(설계 규칙 UI-STA-02 ·
         # UI-NTF-09).
+        # 도면에 선 묶음의 숨은 모듈(세는 행이지만 그리지 않는 행 — 레이아웃표시 N · 좌표 없음)도
+        # 후보다 — 미배치 · 레이아웃 제외로 가르고 같은 층에 선 형제로
+        # 맞춘다(`UnitSearchTarget.lead`).
+        hidden_modules = counted_equipment.loc[
+            ~counted_equipment.index.isin(located_equipment.index)
+            & ~exited.loc[counted_equipment.index]
+        ]
+        hidden_wanted = hidden_modules["레이아웃표시"].eq("Y").fillna(False).astype(bool)
         search_targets = unit_search_targets(
             placed=located_equipment,
-            unplaced=unplaced_equipment,
-            excluded=excluded_equipment,
+            unplaced=pd.concat([unplaced_equipment, hidden_modules.loc[hidden_wanted]]),
+            excluded=pd.concat([excluded_equipment, hidden_modules.loc[~hidden_wanted]]),
             exited=space_equipment.loc[exited],
         )
         search_names = list(search_targets)

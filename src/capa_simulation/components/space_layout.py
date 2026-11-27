@@ -197,10 +197,35 @@ SEARCH_EXITED: Final = "exited"
 
 
 class UnitSearchTarget(NamedTuple):
-    """설비 찾기 후보 하나 — 그 설비명이 선 층과 자리(`SEARCH_*`)."""
+    """설비 찾기 후보 하나 — 그 설비명이 선 층과 자리(`SEARCH_*`). 도면에 서지 않은 모듈이면
+    `group` 은 그 Main 설비이고, 같은 층 도면에 선 형제 모듈이 있으면 `lead` 가 그 하나다(도면이 그
+    묶음으로 맞춘다)."""
 
     floor: FloorKey
     place: str
+    group: str | None = None
+    lead: str | None = None
+
+
+def _search_rows(frame: pd.DataFrame) -> list[tuple[str, FloorKey, str | None]]:
+    """(설비명, 층, Main 설비) — 설비명이 비거나 층이 FAB 의 층이 아닌 행(층 미정)은 뺀다."""
+    if frame.empty:
+        return []
+    valid = set(FLOOR_KEYS)
+    names = frame[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    groups = (
+        frame[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+        if PARENT_EQUIPMENT_COLUMN in frame.columns
+        else pd.Series(pd.NA, index=frame.index, dtype="string")
+    )
+    rows = []
+    for name, building, floor, group in zip(names, frame["동"], frame["층"], groups, strict=True):
+        if pd.isna(name) or not name or pd.isna(building) or pd.isna(floor):
+            continue
+        key = (str(building), str(floor))
+        if key in valid:
+            rows.append((str(name), key, None if pd.isna(group) or not group else str(group)))
+    return rows
 
 
 def unit_search_targets(
@@ -216,24 +241,27 @@ def unit_search_targets(
     `placed` 는 도면에 그리는 행, `unplaced` · `excluded` 는 레이아웃표시 Y · N 인데 도면에 서지
     않은 행, `exited` 는 기준일에 도면에서 빠진 행(반출/이설, 없으면 정지를 마침)이다. 동 · 층이
     FAB 의 층이 아닌 행(층 미정)은 열 층이 없어 뺀다. 같은 설비명이 여러 표에 있으면 앞 표(도면 →
-    미배치 → 레이아웃 제외 → 도면 이탈)가 이긴다."""
-    valid = set(FLOOR_KEYS)
+    미배치 → 레이아웃 제외 → 도면 이탈)가 이긴다. 도면에 서지 않은 모듈은 같은 층 도면에 선 형제
+    모듈(자연 정렬 처음)을 `lead` 로 단다."""
+    placed_rows = _search_rows(placed)
+    leads: dict[tuple[FloorKey, str], str] = {}
+    for name, key, group in sorted(placed_rows, key=lambda row: natural_name_key(row[0])):
+        if group is not None:
+            leads.setdefault((key, group), name)
     found: dict[str, UnitSearchTarget] = {}
-    for place, frame in (
-        (SEARCH_PLACED, placed),
-        (SEARCH_UNPLACED, unplaced),
-        (SEARCH_EXCLUDED, excluded),
-        (SEARCH_EXITED, exited),
+    for place, rows in (
+        (SEARCH_PLACED, placed_rows),
+        (SEARCH_UNPLACED, _search_rows(unplaced)),
+        (SEARCH_EXCLUDED, _search_rows(excluded)),
+        (SEARCH_EXITED, _search_rows(exited)),
     ):
-        if frame.empty:
-            continue
-        names = frame[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-        for name, building, floor in zip(names, frame["동"], frame["층"], strict=True):
-            if pd.isna(name) or not name or name in found or pd.isna(building) or pd.isna(floor):
+        for name, key, group in rows:
+            if name in found:
                 continue
-            key = (str(building), str(floor))
-            if key in valid:
-                found[str(name)] = UnitSearchTarget(key, place)
+            if place == SEARCH_PLACED or group is None:
+                found[name] = UnitSearchTarget(key, place)
+            else:
+                found[name] = UnitSearchTarget(key, place, group, leads.get((key, group)))
     return {name: found[name] for name in sorted(found, key=natural_name_key)}
 
 
