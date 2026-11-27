@@ -375,6 +375,19 @@ def test_pack_to_zip_round_trips_the_same_rows_and_bytes() -> None:
     assert pack_sha256(pack_to_zip(again.pack)) == pack_sha256(written)
 
 
+def test_the_writer_bytes_of_the_template_and_the_empty_form_stay_pinned() -> None:
+    """쓰개를 공개 도우미(`pack_rows` · `pack_files`)로 나눠도 바이트가 그대로다(나누기 전 값)."""
+    reading = read_pack_files(template_files())
+    assert reading.pack is not None
+
+    assert pack_sha256(pack_to_zip(reading.pack)) == (
+        "e50e7a942893cbe3ccb1baa193d37ea77915721df0e5b22128039499ff8897f2"
+    )
+    assert pack_sha256(template_zip()) == (
+        "86455dc42cebf0a27f17f4c1fc5a41c03466dea0241234c0d6c54471eac982b7"
+    )
+
+
 def test_judge_pack_tells_unchanged_resume_apply_and_backward() -> None:
     one = pack_sha256(zip_files(template_files()))
     two = pack_sha256(zip_files(bump_version(template_files(), 2)))

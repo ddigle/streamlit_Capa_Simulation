@@ -26,7 +26,9 @@ ZIP 하나다 — 낱장 한 벌은 `bundle_pack_files` 가 `pack_to_zip` 과 �
 
 **쓰기.** `pack_to_zip` 은 판을 같은 꼴의 ZIP 으로 다시 쓰고(글자 칸에 Excel 텍스트 가드),
 `template_zip` 은 머리 칸만 든 빈 양식이다. 셋 다 같은 묶개(`_zip_members`)를 지난다 — 같은 장은 늘
-같은 바이트다(표준 라이브러리 deflate 출력이 같은 동안). Streamlit 을 import 하지 않는다.
+같은 바이트다(표준 라이브러리 deflate 출력이 같은 동안). 칸 글은 줄 쓰개(`pack_rows` ·
+`*_cells` · `number_cell` · `text_cell`)가, 장 바이트는 `pack_files` 가 짓는다 — 앱이 지은 검사 전
+글 줄(편집기)도 같은 쓰개로 묶여 관문을 지난다. Streamlit 을 import 하지 않는다.
 """
 
 from __future__ import annotations
@@ -432,94 +434,112 @@ def judge_pack(
 def template_zip() -> bytes:
     """빈 양식 — 머리 칸과 판 기록(형식판 · 판 1)만. 내용 판이 하나도 없을 때 내려받는다."""
     rows: dict[str, list[list[str]]] = {name: [] for name in PACK_HEADERS}
-    rows[INFO_FILE] = [
-        ["형식판", str(FORMAT_VERSION)],
-        ["판", "1"],
-        ["작성시각", ""],
-        ["작성자", ""],
-        ["메모", ""],
-    ]
-    return _zip_tables(rows)
+    rows[INFO_FILE] = info_rows(PackInfo(FORMAT_VERSION, 1))
+    return _zip_members(pack_files(rows))
 
 
 def pack_to_zip(pack: ExtraProcessPack) -> bytes:
     """판을 같은 꼴의 ZIP 으로 다시 쓴다 — 글자 칸에 Excel 텍스트 가드를 씌운다(양식 내려받기)."""
-    info = pack.info
-    rows: dict[str, list[list[str]]] = {
-        INFO_FILE: [
-            ["형식판", str(info.format_version)],
-            ["판", str(info.version_no)],
-            ["작성시각", info.written_at],
-            ["작성자", info.author],
-            ["메모", info.memo],
-        ],
-        PROCESS_FILE: [
-            [_text(item.name), item.area, item.basis, _number(item.modules), _text(item.memo)]
-            for item in pack.processes
-        ],
-        ROUTE_FILE: [
-            [
-                _text(item.process),
-                _text(item.reference),
-                _text(item.product),
-                _text(item.stack),
-                _text(item.wf),
-                _text(item.step),
-                _text(item.mcp),
-                *_period_cells(item.period),
-            ]
-            for item in pack.routes
-        ],
-        PRODUCTIVITY_FILE: [
-            [
-                _text(item.process),
-                _text(item.product),
-                _text(item.stack),
-                _text(item.wf),
-                _text(item.step),
-                _text(item.mcp),
-                item.mass_class,
-                *_period_cells(item.period),
-                _number(item.upeh),
-                _number(item.st),
-                _number(item.lot_ratio),
-                _number(item.wf_ratio),
-            ]
-            for item in pack.productivity
-        ],
-        EQUIPMENT_FILE: [
-            [
-                _text(item.process),
-                *_period_cells(item.period),
-                CALENDAR_WORD if item.run_day is None else str(item.run_day),
-                _number(item.owned),
-                _number(item.lent),
-            ]
-            for item in pack.equipment
-        ],
-        RATE_FILE: [
-            [
-                _text(item.process),
-                item.mass_class,
-                *_period_cells(item.period),
-                _number(item.run_rate),
-                _number(item.vital),
-            ]
-            for item in pack.rate_vital
-        ],
+    return _zip_members(pack_files(pack_rows(pack)))
+
+
+def pack_rows(pack: ExtraProcessPack) -> dict[str, list[list[str]]]:
+    """판을 파일마다 글 줄(머리 칸 빼고)로 편다 — `pack_to_zip` 이 쓰는 칸 글 그대로다."""
+    return {
+        INFO_FILE: info_rows(pack.info),
+        PROCESS_FILE: [process_cells(item) for item in pack.processes],
+        ROUTE_FILE: [route_cells(item) for item in pack.routes],
+        PRODUCTIVITY_FILE: [productivity_cells(item) for item in pack.productivity],
+        EQUIPMENT_FILE: [equipment_cells(item) for item in pack.equipment],
+        RATE_FILE: [rate_cells(item) for item in pack.rate_vital],
     }
-    return _zip_tables(rows)
 
 
-def _zip_tables(rows: Mapping[str, list[list[str]]]) -> bytes:
+def info_rows(info: PackInfo) -> list[list[str]]:
+    """판 기록(00) 다섯 줄 — 작성시각 · 작성자 · 메모는 가드 없이 쓴다(읽기가 벗기는 꼴 그대로)."""
+    return [
+        ["형식판", str(info.format_version)],
+        ["판", str(info.version_no)],
+        ["작성시각", info.written_at],
+        ["작성자", info.author],
+        ["메모", info.memo],
+    ]
+
+
+def process_cells(item: ProcessRow) -> list[str]:
+    return [
+        text_cell(item.name),
+        item.area,
+        item.basis,
+        number_cell(item.modules),
+        text_cell(item.memo),
+    ]
+
+
+def route_cells(item: RouteRow) -> list[str]:
+    return [
+        text_cell(item.process),
+        text_cell(item.reference),
+        text_cell(item.product),
+        text_cell(item.stack),
+        text_cell(item.wf),
+        text_cell(item.step),
+        text_cell(item.mcp),
+        *period_cells(item.period),
+    ]
+
+
+def productivity_cells(item: ProductivityRow) -> list[str]:
+    return [
+        text_cell(item.process),
+        text_cell(item.product),
+        text_cell(item.stack),
+        text_cell(item.wf),
+        text_cell(item.step),
+        text_cell(item.mcp),
+        item.mass_class,
+        *period_cells(item.period),
+        number_cell(item.upeh),
+        number_cell(item.st),
+        number_cell(item.lot_ratio),
+        number_cell(item.wf_ratio),
+    ]
+
+
+def equipment_cells(item: EquipmentRow) -> list[str]:
+    return [
+        text_cell(item.process),
+        *period_cells(item.period),
+        CALENDAR_WORD if item.run_day is None else str(item.run_day),
+        number_cell(item.owned),
+        number_cell(item.lent),
+    ]
+
+
+def rate_cells(item: RateVitalRow) -> list[str]:
+    return [
+        text_cell(item.process),
+        item.mass_class,
+        *period_cells(item.period),
+        number_cell(item.run_rate),
+        number_cell(item.vital),
+    ]
+
+
+def pack_files(rows: Mapping[str, Sequence[Sequence[str]]]) -> dict[str, bytes]:
+    """파일마다 글 줄 → 장 바이트(UTF-8 BOM · CRLF · 머리 칸 먼저) — `pack_to_zip` 과 같은 쓰개.
+
+    여섯 장을 모두 쓴다(줄이 없는 장은 머리 칸만). 값은 검사하지 않는다 — 앱이 지은 검사 전 글
+    줄(편집기)도 이 꼴로 묶어 관문(`read_pack_zip`)에 넘긴다.
+    """
     members: dict[str, bytes] = {}
     for name, header in PACK_HEADERS.items():
         text = io.StringIO()
         writer = csv.writer(text, lineterminator="\r\n")
         writer.writerow(header)
-        writer.writerows(rows.get(name, []))
-        members[name] = ("﻿" + text.getvalue()).encode("utf-8")
-    return _zip_members(members)
+        writer.writerows(rows.get(name, ()))
+        members[name] = ("\ufeff" + text.getvalue()).encode("utf-8")
+    return members
 
 
 def bundle_pack_files(files: Mapping[str, bytes]) -> bytes:
@@ -550,12 +570,14 @@ def _zip_members(members: Mapping[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def _text(value: str) -> str:
+def text_cell(value: str) -> str:
+    """글자 칸 — Excel 이 바꿔 놓을 글만 `="..."` 로 감싼다(`guard_excel_text`)."""
     guarded = guard_excel_text(value)
     return guarded if isinstance(guarded, str) else value
 
 
-def _number(value: float | None) -> str:
+def number_cell(value: float | None) -> str:
+    """수 칸 — None 은 빈칸, 정수 값은 지수 · `.0` 없이, 그 밖은 가장 짧은 왕복 꼴(`repr`)."""
     if value is None:
         return ""
     if float(value).is_integer():
@@ -563,7 +585,8 @@ def _number(value: float | None) -> str:
     return repr(float(value))
 
 
-def _period_cells(period: Period) -> list[str]:
+def period_cells(period: Period) -> list[str]:
+    """시작월 · 끝월 칸(끝 None = 빈칸)."""
     return [str(period.start), "" if period.end is None else str(period.end)]
 
 
