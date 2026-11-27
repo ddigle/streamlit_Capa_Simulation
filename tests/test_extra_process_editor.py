@@ -46,6 +46,7 @@ from capa_simulation.services.extra_process_editor import (
     locate,
     model_from_pack,
     month_view,
+    redundant_cells,
     same_body,
     value_rows,
     with_cells,
@@ -279,6 +280,78 @@ def _neutral_ratios(files: Files) -> Files:
     )
 
 
+def _carried_variants() -> dict[str, Files]:
+    """Bond 를 통째 옮김으로 만드는 사본 다섯 — 관문은 모두 받는다."""
+    editor = _editor_files()
+    two_follow = _append(
+        editor, P02, [[BOND, "DEMO_Wire_Bond", "", "", "", "DEMO-P150", "DEMO-1A", "202601", ""]]
+    )
+    specified_only = _replace_rows(
+        _replace_rows(
+            editor,
+            P02,
+            BOND,
+            [[BOND, "", "DEMO PRODUCT A", "8H", "Core", "DEMO-P150", "DEMO-1A", "202601", ""]],
+        ),
+        P03,
+        BOND,
+        [
+            [
+                BOND,
+                "DEMO PRODUCT A",
+                "8H",
+                "Core",
+                "DEMO-P150",
+                "DEMO-1A",
+                "모두",
+                "202601",
+                "",
+                "54000",
+                "",
+                "1",
+                "1",
+            ]
+        ],
+    )
+    orphan = _append(
+        editor,
+        P03,
+        [[BOND, "", "", "", "DEMO-P999", "DEMO-9Z", "모두", "202601", "", "1000", "", "1", "1"]],
+    )
+    product_orphan = _append(
+        editor,
+        P03,
+        [
+            [
+                BOND,
+                "DEMO PRODUCT A",
+                "8H",
+                "Core",
+                "DEMO-P999",
+                "DEMO-9Z",
+                "모두",
+                "202601",
+                "",
+                "1000",
+                "",
+                "1",
+                "1",
+            ]
+        ],
+    )
+    run_day = edited(
+        editor, P04, lambda rows: set_cell(rows, lambda r: r[0] == BOND, "RUN_DAY", "25")
+    )
+
+    return {
+        "따라가기 둘 E7": two_follow,
+        "지정 꼴 하나": specified_only,
+        "고아 03 E2": orphan,
+        "제품 행 고아 03": product_orphan,
+        "숫자 RUN_DAY E9": run_day,
+    }
+
+
 def _new_line_fields(
     name: str = NEW_NAME, *, start: object = 202601, end: object = None
 ) -> LineFields:
@@ -332,6 +405,7 @@ def _packs() -> dict[str, ExtraProcessPack]:
         "값이 경로보다 김 E5": _pack(_longer_values(editor)),
         "측정률 빈칸 · 0": _pack(_neutral_ratios(editor)),
         "편집기가 만든 판": _editor_made(),
+        **{f"통째 옮김 {name}": _pack(files) for name, files in _carried_variants().items()},
     }
 
 
@@ -414,72 +488,15 @@ def test_the_stock_template_is_all_carried_and_neutral_ratios_stay_editable() ->
 
 
 def test_routes_product_rows_other_keys_and_numeric_run_days_are_carried() -> None:
-    editor = _editor_files()
-    two_follow = _append(
-        editor, P02, [[BOND, "DEMO_Wire_Bond", "", "", "", "DEMO-P150", "DEMO-1A", "202601", ""]]
-    )
-    specified_only = _replace_rows(
-        _replace_rows(
-            editor,
-            P02,
-            BOND,
-            [[BOND, "", "DEMO PRODUCT A", "8H", "Core", "DEMO-P150", "DEMO-1A", "202601", ""]],
-        ),
-        P03,
-        BOND,
-        [
-            [
-                BOND,
-                "DEMO PRODUCT A",
-                "8H",
-                "Core",
-                "DEMO-P150",
-                "DEMO-1A",
-                "모두",
-                "202601",
-                "",
-                "54000",
-                "",
-                "1",
-                "1",
-            ]
-        ],
-    )
-    orphan = _append(
-        editor,
-        P03,
-        [[BOND, "", "", "", "DEMO-P999", "DEMO-9Z", "모두", "202601", "", "1000", "", "1", "1"]],
-    )
-    product_orphan = _append(
-        editor,
-        P03,
-        [
-            [
-                BOND,
-                "DEMO PRODUCT A",
-                "8H",
-                "Core",
-                "DEMO-P999",
-                "DEMO-9Z",
-                "모두",
-                "202601",
-                "",
-                "1000",
-                "",
-                "1",
-                "1",
-            ]
-        ],
-    )
-    run_day = edited(
-        editor, P04, lambda rows: set_cell(rows, lambda r: r[0] == BOND, "RUN_DAY", "25")
-    )
+    variants = _carried_variants()
 
-    assert carried_processes(_pack(two_follow))[BOND] == CARRY_ROUTES
-    assert carried_processes(_pack(specified_only))[BOND] == CARRY_SPECIFIED
-    assert carried_processes(_pack(orphan))[BOND] == CARRY_OTHER_KEY
-    assert carried_processes(_pack(product_orphan))[BOND] == CARRY_PRODUCT_ROWS
-    assert carried_processes(_pack(run_day))[BOND] == CARRY_RUN_DAY
+    assert {name: carried_processes(_pack(files))[BOND] for name, files in variants.items()} == {
+        "따라가기 둘 E7": CARRY_ROUTES,
+        "지정 꼴 하나": CARRY_SPECIFIED,
+        "고아 03 E2": CARRY_OTHER_KEY,
+        "제품 행 고아 03": CARRY_PRODUCT_ROWS,
+        "숫자 RUN_DAY E9": CARRY_RUN_DAY,
+    }
 
 
 # --------------------------------------------------------------------------- I1 · I2 · I7
@@ -833,8 +850,52 @@ def test_the_after_cell_is_one_onward_edit_and_the_last_month_alone_does_not_con
     assert _value_at(with_tail, BOND, row, 202612) == 60000.0
     assert _value_at(with_tail, BOND, row, 203001) == 60000.0
     # 그 Onward 고침은 다른 창에서도 같은 절대 달(202701 ~)을 뜻한다.
-    narrow = month_view(with_cells(model, {(row, after_key): 60000.0}), WINDOWS["B 05-08"])[bond]
+    tailed = with_cells(model, {(row, after_key): 60000.0})
+    narrow = month_view(tailed, WINDOWS["B 05-08"])[bond]
     assert narrow.after[row].multiple and narrow.after[row].key == Onward(202609)
+    # 그 범위에 다른 창의 고침이 있어 한 값이 될 수 없으므로 잠근다(모형은 그 Onward 를 둔다).
+    assert not narrow.after[row].editable
+    assert (row, Onward(202701)) in effective_edits(tailed)
+    _assert_view_matches_pack(tailed, WINDOWS["B 05-08"])
+
+
+def test_a_point_edit_from_a_wider_window_locks_the_after_cell_of_a_narrower_one() -> None:
+    """결정 B · K1 — 넓은 창에서 202703 을 고치면 2026 창의 이후 칸(202701 ~)은 여러 값이라
+    잠긴다."""
+    base = PACKS["편집기 몫 Bond"]
+    model = model_from_pack(base)
+    bond = _line_id(model, BOND)
+    row = (bond, PRODUCTIVITY, MASS, UPEH_COLUMN)
+    wide = tuple(range(202601, 202613)) + tuple(range(202701, 202707))
+    assert month_view(model, wide)[bond].months[row][202703].editable
+
+    edited_model = with_cells(model, {(row, 202703): 61000.0})
+    narrow = month_view(edited_model, YEAR_2026)[bond]
+
+    assert narrow.after[row].multiple and not narrow.after[row].editable
+    _assert_view_matches_pack(edited_model, YEAR_2026)
+    _assert_view_matches_pack(edited_model, wide)
+
+
+def test_redundant_inputs_are_named_so_the_grid_can_drop_them_before_they_revive() -> None:
+    """화면 계약 — 걷은 칸(빼도 그대로인 입력)을 그리드 초안에서 지우지 않으면, 다른 창에서 고친
+    칸 때문에 그 칸의 「고치지 않았을 때 값」 이 바뀌어 보이지 않던 옛 입력이 되살아난다."""
+    base = PACKS["편집기 몫 Bond"]
+    model = model_from_pack(base)
+    lent = (_line_id(model, BOND), EQUIPMENT, "", LENT_COLUMN)
+    stale: dict[CellKey, CellInput] = {(lent, Onward(202701)): 0.0}
+    written: dict[CellKey, CellInput] = {(lent, Onward(202601)): 0.5}
+    assert month_view(model, WINDOWS["C 07-12"])[lent[0]].after[lent].key == Onward(202701)
+
+    redundant = redundant_cells(with_cells(model, stale))
+    revived = with_cells(model, {**stale, **written})
+    pruned = with_cells(model, written)
+
+    assert redundant == ((lent, Onward(202701)),)
+    assert month_view(revived, WINDOWS["F 없음"])[lent[0]].after[lent].multiple
+    after = month_view(pruned, WINDOWS["F 없음"])[lent[0]].after[lent]
+    assert (after.value, after.multiple, after.edited) == (0.5, False, True)
+    _assert_view_matches_pack(pruned, WINDOWS["F 없음"])
 
 
 # --------------------------------------------------------------------------- 새 공정 · 빈 시작
@@ -982,8 +1043,20 @@ def test_changing_step_moves_the_productivity_key() -> None:
 
 
 def test_shortening_and_extending_the_route_rebuild_the_value_tables() -> None:
-    """E8 · E9 · C7 · C9 — 경로 하나라 줄이면 세 표가 그 기간으로, 늘리면 끝 달 값을 잇는다."""
-    base = PACKS["닫힌 경로"]
+    """E8 · E9 · C7 · C9 — 경로 하나라 줄이면 세 표가 그 기간으로, 늘리면 끝 달 값(대여 0.5 ·
+    측정률 빈칸 · 달력)을 그대로 잇는다 — 기본값(대여 0 · 측정률 1)으로 바꾸지 않는다."""
+    files = _closed(_editor_files())
+    files = edited(
+        files,
+        P04,
+        lambda rows: set_cell(
+            rows, lambda r: r[0] == BOND and r[1] == "202607", "설비대여평가", "0.5"
+        ),
+    )
+    files = edited(
+        files, P03, lambda rows: set_cell(rows, lambda r: r[0] == BOND, "Lot 측정률", "")
+    )
+    base = _pack(files)
     model = model_from_pack(base)
     bond = _line_id(model, BOND)
     owned = (bond, EQUIPMENT, "", OWNED_COLUMN)
@@ -999,8 +1072,10 @@ def test_shortening_and_extending_the_route_rebuild_the_value_tables() -> None:
     periods += [row.period for row in shorter.rate_vital if row.process == BOND]
     assert all(period.end is not None and period.end <= 202609 for period in periods)
     assert _value_at(longer, BOND, owned, 202801) == 8.0
-    assert _value_at(longer, BOND, lent, 202801) == 0.0
+    assert _value_at(longer, BOND, lent, 202801) == 0.5
     assert all(row.run_day is None for row in longer.equipment)
+    tail = [row for row in longer.productivity if row.process == BOND][-1]
+    assert (tail.period.end, tail.lot_ratio, tail.wf_ratio) == (None, None, 1.0)
     assert view.after[owned].value == 8.0 and view.after[owned].editable
 
 

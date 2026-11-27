@@ -26,7 +26,8 @@ Streamlit 을 import 하지 않는다. 화면은 이 모듈의 모형(`EditorMod
 같은 달 양산 값, 그 밖은 앞 달 값(빈칸은 건너뜀 · 대여는 빈칸도 값), 앞에 없으면 대여는 0 ·
 나머지는 뒤에서 처음 적힌 값이다. 그래서 새 공정의 「이후」 칸은 마지막 창 달 값을, 「이전」 칸은
 첫 창 달 값을 이어 쓴다. 바탕이 있는 달은 고친 그 칸만 바뀐다(점 고침 — 「계속」 표지 같은 숨은
-이어 쓰기는 없다). `Onward` 고침은 그 범위의 바탕 값이 하나(또는 없음)일 때만 받는다.
+이어 쓰기는 없다). `Onward` 고침은 그 범위의 바탕 값이 하나(또는 없음)일 때만 받고, 보기는 그 칸
+고침을 뺀 값도 하나일 때만 「이후」 칸을 연다(다른 창의 고침이 범위 안에 있으면 「여러 값」 잠김).
 
 **고침 걷기.** 들어온 칸 가운데 빼도 그 줄의 달마다 값이 하나도 바뀌지 않는 칸은 고침이
 아니다(늦은 달부터 걷는다). 보인 값을 다시 적으면 「바뀐 것 없음」 이다 — MI 는 화면
@@ -672,6 +673,7 @@ class _LineResult:
     base: _BaseRows | None
     rows: Mapping[RowKey, _RowResult]
     ignored: tuple[CellKey, ...]
+    redundant: tuple[CellKey, ...]
 
     def without(self, row: RowKey, cell: MonthCell) -> list[CellInput]:
         """그 칸 고침만 뺀 그 줄의 달마다 값(그리드 양식 — 「이 칸을 고치지 않았을 때」)."""
@@ -728,6 +730,7 @@ def _compute_line(model: EditorModel, line: EditorLine) -> _LineResult | None:
     area = _area(line.fields.area)
     rows: dict[RowKey, _RowResult] = {}
     ignored: list[CellKey] = []
+    redundant: list[CellKey] = []
     known_rows = set(value_rows(line.line_id))
     ignored.extend(key for key in own if key[0] not in known_rows)
     month_set = set(months)
@@ -752,8 +755,11 @@ def _compute_line(model: EditorModel, line: EditorLine) -> _LineResult | None:
         follow = None
         if row[2] == ENGINEERING:
             follow = list(rows[(row[0], row[1], MASS, row[3])].values)
-        rows[row] = _settle(months, layer, points, onward, row[3], follow)
-    return _LineResult(line, months, end, area, base, rows, tuple(ignored))
+        settled = _settle(months, layer, points, onward, row[3], follow)
+        rows[row] = settled
+        redundant.extend((row, month) for month in points if month not in settled.points)
+        redundant.extend((row, Onward(start)) for start in onward if start not in settled.onward)
+    return _LineResult(line, months, end, area, base, rows, tuple(ignored), tuple(redundant))
 
 
 def _mi_candidates(layer: Sequence[_Slot], row: RowKey, area: str | None) -> tuple[float, ...]:
@@ -826,6 +832,18 @@ def effective_edits(model: EditorModel) -> dict[CellKey, CellInput]:
             for start, value in row_result.onward.items():
                 found[(row, Onward(start))] = value
     return found
+
+
+def redundant_cells(model: EditorModel) -> tuple[CellKey, ...]:
+    """판에 드는 자리지만 빼도 아무것도 바뀌지 않아 걷은 칸 입력 — 화면은 흡수할 때마다 그리드
+    초안에서 이 칸을 지운다(남겨 두면 다른 칸 고침으로 그 칸의 「고치지 않았을 때 값」 이 바뀔 때
+    보이지 않던 옛 입력이 되살아난다 — 다른 창에서 적은 이후 칸처럼)."""
+    found: list[CellKey] = []
+    for line in model.lines:
+        result = _compute_line(model, line)
+        if result is not None:
+            found.extend(result.redundant)
+    return tuple(found)
 
 
 def ignored_cells(model: EditorModel) -> tuple[CellKey, ...]:
@@ -912,7 +930,6 @@ def month_view(model: EditorModel, months: Iterable[int]) -> dict[str, LineView]
             if axis.after is not None:
                 start = axis.after[0]
                 span = _span(result.months, row_result.values, *axis.after)
-                editable = _onward_open(result.months, row_result.layer, start, column)
                 edited = start in row_result.onward
                 default_span = (
                     _span(result.months, result.without(row, Onward(start)), *axis.after)
@@ -921,6 +938,13 @@ def month_view(model: EditorModel, months: Iterable[int]) -> dict[str, LineView]
                 )
                 single = _single(span, column)
                 default_single = _single(default_span, column)
+                # 모형은 바탕 값이 하나인 범위의 Onward 를 받는다(받은 고침이 뒤 고침으로 떨어지지
+                # 않게). 보기는 그 칸 고침을 뺀 값도 하나일 때만 연다 — 다른 창에서 한 고침이 범위
+                # 안에 있으면 적어도 한 값이 되지 않으므로 「여러 값」 읽기 전용이다.
+                editable = (
+                    _onward_open(result.months, row_result.layer, start, column)
+                    and default_single[0]
+                )
                 after[row] = CellView(
                     _shown(single[1], area, table),
                     _shown(default_single[1], area, table),
