@@ -817,10 +817,11 @@
     「사이드바·조건 카드·본문」 의 화면 조작 상자): 조회 조건 패널 바로 밑 · `Space 조건` 카드 **위**에 이 화면을 볼 때만 선다
     (`page_box_key("space")` — `render_equipment_scenario_row` 바로 뒤, 첫 `condition_card` 보다 먼저 자리만 세우고 안은 옛 경로 줄
     자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 자리 줄 `FAB 전체`
-    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
+    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · FAB 만 그 밑
+    `설비 찾기`(`space_status_unit_search` — `_find_unit` 이 연 층의 첫 회차 도면만 `focus` 를 받는다) · 도면 줄
     `배치 편집`(층 `space_layout_edit_mode`·잠기거나 설비 저장본이 없는 층이면 꺼진 짝 `space_layout_edit_mode_locked` — 풍선이
     까닭 / FAB `space_fab_edit_mode`, 줄마다 위젯 하나 · 가로 줄은 자리 줄 하나 — 2026-11-12 Space 보드 답 1-4 「캔버스 편집버튼은
-    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기`(세션 옮기기라 모든 등급 — 가정 여부는 `equipment_session.is_assumption` 으로 본다, 등급으로 꺼지는 `edit_mode.fab` 으로 가르지 않는다) · 잠금 줄(`_render_edit_lock_line` —
+    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기`(세션 옮기기라 모든 등급 — `equipment_session.is_assumption` 으로 가르고 `edit_mode.fab` 은 보지 않는다) · 잠금 줄(`_render_edit_lock_line` —
     표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글 · `반입 일정` 토글
     (`space_arrival_dates_v1`, 층 배치 편집 중 · FAB 이면 꺼진 짝 `space_arrival_dates_locked_v1` — 2026-11-12 Space 보드 답
     1-4 · 1-6 · A5, 켠 회차에만 뷰어 data `arrivalDates`)이다 — **상자에는 조작만 둔다**
@@ -1285,7 +1286,7 @@
     호환 검사 → 활성화 → 필드 알림·적용 전 편집 목록 비우기·팝업 닫기, 다시 돌리기는 부르는 쪽 — 팝업은 `st.rerun()`,
     칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
     거치는 길).
-- `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`), 호기
+- `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`, 설비 찾기 후보 `unit_search_targets`), 호기
   상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 「호기 정보」 창의 칸(`FLOOR_TABLE_COLUMNS`)·
   누른 호기 줄(`picked_unit_rows` — 필요 단축 칸, 편집기 JS `pickedRows` 와 같은 규칙)과 영역·금지 색을 만든다. 색 기준 「필요 단축」 은 블록 셋째 줄(`floor_block_stats(short_lines=)` — 비활성
   층에는 싣지 않음)·구간 얹기(`apply_layer_looks` — 표시 호기 면을 비워 브라우저가 구간 변수로 칠함)·범례
