@@ -205,8 +205,8 @@
     공정 장(`01_process.csv`)에 공정이 한 줄도 없는 판은 V-03(「공정이 하나도 없음」)으로 거절한다.
   - 판 번호 판정 `judge_pack` — 활성 판과 sha 같음 = 바뀐 것 없음, 끈 동안 마지막 판과 sha 같음 = 다시 켜기, 판 번호 > 적용한
     가장 큰 판 = 적용, 그 밖 = 뒤로 감(거절). 판을 가르는 값은 받은 본문 sha256 이다.
-  - `pack_to_zip` 은 같은 판을 늘 같은 바이트로 쓴다(고정 시각 · 글자 칸 가드). `pack_changes` 는 바뀐 칸 수와 그 가운데 활성
-    판의 바로 앞 판 값으로 되돌리는 칸 수(G12)를 센다.
+  - `pack_to_zip` 은 같은 판을 늘 같은 바이트로 쓴다(고정 시각 · 00 까지 글자 칸 가드 — 줄 · 장 쓰개 `pack_rows` · `pack_files` 는
+    편집기도 쓴다). `pack_changes` 는 바뀐 칸 수와 그 가운데 활성 판의 바로 앞 판 값으로 되돌리는 칸 수(G12)를 센다.
 - `src/capa_simulation/services/extra_process_merge.py` — 부대공정 판을 BDQ 16표에 펼쳐 합친다(R-01 ~ R-07 — 6장 「부대공정」).
   덧붙이는 행은 BDQ 표와 같은 칸 · 차례 · 형식이다(저장의 칸 집합 대조). 옛 판 걷기(`strip_extra_processes` — 이름으로, 사람이
   더한 STEP 까지) · 걷을 공정 가르기(`split_previous` — 출처에 합침만 있는 공정, 합침 · BDQ 에 생김이 함께거나 섞임 뺌 줄
@@ -215,22 +215,25 @@
   전체 기간 계산 `capacity_outcome` 을 받으면 다시 돌리지 않는다. 셋 다 부하 예외 선언 칸에 기본값이 없고, 등록 R-07 판정
   `capacity_stop` 만 빈 선언으로 돈다 — 선언은 멈춤을 만들지도 풀지도 않는다, 5장 44) · 보고(`ExtraMergeReport` — 메모 · 알림 글 · 출처 줄, 합치지
   못함 `failed`)를 둔다. 표를 제자리에서 고치지 않고 더한 표만 새로 이어 붙인다(나머지 표는 받은 프레임 그대로 — 얹기 · 미리보기는
-  걷기가 사본이다). 순수 함수라 자동 갱신 스레드도 부른다. 이어받은 결손 셈(`inherited_capacity_gaps` — R-02, 이미 돌린 계산의
-  제외 줄에서 센다 — 등록 길에는 계산을 더하지 않는다)과 월 머지 섞임 가르기(`month_merge_mixing` — 결과 `RQ_REQB` 의 달마다 고른
+  걷기가 사본이다). 순수 함수라 자동 갱신 스레드도 부르고 `follow_routes` · `bdq_process_names` 는 편집기도 쓴다. 이어받은 결손
+  셈(`inherited_capacity_gaps` — R-02, 이미 돌린 계산의 제외 줄에서 센다 — 등록 길에는 계산을 더하지
+  않는다)과 월 머지 섞임 가르기(`month_merge_mixing` — 결과 `RQ_REQB` 의 달마다 고른
   원본 · 원본마다 출처로 「판 섞임」(다른 sha)과 「판 · BDQ 행 섞임」(한 원본은 출처 줄이 아예 없는 BDQ 행)을 가른다)도 둔다.
   양식(판)에는 CUSTOM 칸이 없다 — 지정 꼴은 그 제품의 모든 부품에 같은 값으로 펼치고(`_VARIANT_KEYS` · `_PATH_KEYS` 가 CUSTOM
   을 싣는다), 따라가기 꼴은 참조 경로의 CUSTOM 을 잇는다.
-- `src/capa_simulation/services/extra_process_revision.py` — 「이 리비전 값을 새 판으로」 의 거꾸로 만들기(설계 3-5 · A15, 순수
-  함수). **바탕 판 줄에서 시작한다** — 값 줄(03 · 04 · 05)마다 리비전 기간(그 리비전 계획의 달) 안의 달을 리비전 값과 견주고, 같은
+- `src/capa_simulation/services/extra_process_revision.py` — 「이 리비전 값을 새 판으로」 의 거꾸로 만들기(순수 함수). **바탕 판
+  줄에서 시작한다** — 값 줄(03 · 04 · 05)마다 리비전 기간(그 리비전 계획의 달) 안의 달을 리비전 값과 견주고, 같은
   뜻이면(측정률 빈칸 ≡ 1.0 · `달력` ≡ 그 달 날수 · 대여 빈칸 ≡ 0) 바탕 줄을 그대로, 다른 달이 있을 때만 값이 바뀌는 달마다
   쪼갠다(G3 — 리비전에 값이 없는 달 · 밖의 달은 바탕 값, 열린 끝은 열린 채, `모두` 줄은 갈린 구간만 양산 · ER 로). 그래서 고치지
   않은 리비전은 바뀐 칸 0 이다. 01 · 02 는 바탕 그대로(G2), 앱에서 바꾼 경로(STEP 더하기 · 빼기)는 옮기지 않고 「경로가 판과 다름」 으로
   센다(2026-11-19 사용자 답 Q1 — 리비전 표에서 그 공정을 걷고 바탕 판을 다시 펼친 경로와 맞댄다). 공통 값인데 제품마다 값이 갈린
   공정(G11) · 가용대수를 보유 − 대여와 따로 고친 공정은 옮기지 않고 까닭을 남긴다. 측정률 0 은 0 그대로(G9). 만든 판은 양식 ZIP
   바이트로 다시 접수 검증(`read_pack_zip`)을 지나고, 화면은 그 바이트를 적용까지 그대로 든다(sha 가 바뀌지 않게). 누를 수 없는
-  까닭(`revision_refusal` — G4)도 둔다. 시험 `tests/test_extra_process_revision.py`. 양식에 CUSTOM 칸이 없으므로 같은 줄 키에
-  부품(CUSTOM)마다 다른 값이 든 공정은 옮기지 않고 까닭 「양식에 CUSTOM 칸이 없는데 CUSTOM 마다 값이 갈림 — 옮기지 못함」
-  (`SPLIT_CUSTOM_REASON`)을 남긴다 — 공통 줄을 먼저 본다. 견주는 리비전 표에는 CUSTOM 칸이 있어야 한다(0039 뒤 저장분은 늘 있다).
+  까닭(`revision_refusal` — G4)도 둔다. 시험 `tests/test_extra_process_revision.py`. 같은 줄 키에 부품(CUSTOM)마다 다른
+  값이 든 공정도 옮기지 않는다(`SPLIT_CUSTOM_REASON` — 양식에 CUSTOM 칸이 없다, 공통 줄을 먼저 본다). 견주는 리비전 표에는
+  CUSTOM 칸이 있어야 한다(0039 뒤 저장분은 늘 있다).
+- `src/capa_simulation/services/extra_process_editor.py` — 「앱에서 작성」 의 순수 몸통(판 ↔ 모형 · 월 축 보기 · `fold` · `canonical` ·
+  `same_body` · `locate` · 입력 돕기 — 규칙은 6장 「부대공정」, 화면 계약은 모듈 머리). 시험 `tests/test_extra_process_editor*.py`.
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
   - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 표준 오류도 같다 — 명령이 도는 동안 뿌리 로거에 가리는 처리기(`_masked_logging` — 감사 조각 · 사이드카 · 엔진 어느 로거든)를 달고, 잡지 못한 예외의 트레이스백도 `_masked_excepthook` 을 지난다. `page_bootstrap` 을 불러오는 동안만 WARNING 이하 로그를 모두 꺼(그 경고만 거르지 않는다 — 지금 그 사이 찍히는 것이 그 경고뿐이다) Streamlit 캐시 래퍼의 「No runtime found」 경고(수십 줄)를 결과 줄 앞에 찍지 않고, 불러온 뒤 앞 단계로 되돌린다(`inspect_revision_calculations.py` 와 같은 꼴 — 명령이 도는 동안의 로거 글 · 오류는 그대로, 2026-11-25 되돌림 연습. 되돌림은 시험이 새 프로세스에서 본다). 감사 조각을 못 올린 경고(`audit/tool.py`)는 트레이스백 없이 갈래 낱말만 싣는다(E2E D-16). 내 PC 경로가 찍히는 자리(실패한 `aws` 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의 받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로, `probe --write` 의 기록 파일)는 홈 폴더(`USERPROFILE` 값과 `X:\Users\<계정>` 꼴 — 짧은 8.3 이름 · `/` 구분자 포함)를 `%USERPROFILE%` 로 찍는다(`mask_home` — 설정을 못 읽은 실행에서도, 출력만이고 여닫는 경로 값은 그대로). 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
   - 도구(`scripts/sync_object_storage.py`)와 엔진(`object_sync_engine.py`)에는 동기화 모드(`local` · `managed`)로 명령을 막는 가드를 두지 않는다. 사람이 부르는 명령이라 `local` 에서도 사이드카를 등록하고(`sync_state.enable`) 그대로 돈다(`boot-pull` 만은 시작 스크립트가 부른다). 모드로 가르는 것은 부르는 쪽이다 — 시작 스크립트는 `managed` 일 때만 `boot-pull` 을 부르고(`container_start.plan_sync`), 일꾼은 `managed` + 부트 기록일 때만 선다(`object_sync_worker.start_object_sync` — 16장 `object_sync_worker.py` 줄).

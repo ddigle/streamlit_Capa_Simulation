@@ -583,7 +583,8 @@
   - 점(`page_unsaved_marks`)은 세션만 읽는다 — 붙여넣기 대기·표 초안(기준 정보 그리드)·설비 편집본(가용설비·Space 두 탭)·Past Data 초안·시나리오
     관리 표 초안·VOC 적어 둔 답변(`voc_draft_keeper.kept_reply_count` — VOC 탭에)·가용설비 현황 Preference 입력 비가동
     초안(`manual_downtime_tab.manual_downtime_draft_pending` — 가용설비 현황 탭에, 2026-11-19)·Space 층 사용 편집 초안(`floor_state_draft_pending` — 편집 중인가 ·
-    초안 모두 위젯 밖 칸, Space 탭에, 2026-11-19 보드 m19-e2e-space-leave (나))은 어느 화면에서나, 편집표의 적용 전 편집과 가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
+    초안 모두 위젯 밖 칸, Space 탭에, 2026-11-19 보드 m19-e2e-space-leave (나))·Admin 「부대공정」 앱 작성(`editor_has_edits` — Admin Area
+    탭에)은 어느 화면에서나, 편집표의 적용 전 편집과 가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
     (`small_editor_edits` — 시나리오 편집 등록부에는 넣지 않는다, 시나리오 저장 경고가 아니다)은 지금 탭에만 찍는다. 지금 화면의 그 둘이 있으면 다른 탭
     누름·지금 탭 × · 사이드바 화면 링크 · 브라우저 뒤로·앞으로가기(Navigation API — 아래 「뒤로 · 앞으로 지킴이」)에서 `confirm` 으로 묻는다(`leave_notice`). 시나리오 미저장·
     Cut-off 초안·Qual 계산기는 점 대상이 아니다. 테마 단추의 「저장 안 함」 표지도 이 판정 하나를 쓴다.

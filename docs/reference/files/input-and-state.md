@@ -46,7 +46,7 @@
   (`preview_pack` — 지금 시나리오 표의 옛 부대공정을 걷고 합쳐 봄 · 저장 안 함, 전체 기간 계산 한 번을 월별 확보율 · 경로
   수 · 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다, 부하 예외 선언은 부르는 화면이 읽은 `route_exceptions`) · C-DEP 판정(`production_place` — 동기화
   `managed` + 기동 때 읽은 S3 접속 정보). **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` — HEAD · PUT, `install_sink`) — 놓는
-  꼴이 낱장 여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지 정하지 않아 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
+  꼴이 낱장 여섯으로 바뀐 뒤(2026-11-20) 여섯은 덮지 않기로 해 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
   ETag(`ExtraProcessState.baseline`)와 견줘 같거나 파일이 없을 때만 덮고, 다르면 덮지 않는다(적용하지 않은 사람 파일 — G5). 상태 줄
   낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 쓰기 대기(`needs_write` — 「새 판으로」 판만,
   `owes_drive`) · 놓인 같은 판(`placed_matches` — 편집기 판도, `unplaced`) 판정을 둔다.

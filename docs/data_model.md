@@ -303,7 +303,7 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   쓴 판(`version_seq` — 판 이력 차례, 가리키기만) · 결과(`WRITTEN` — PUT 이 돌려준 ETag / `KEPT` — 쓰기 직전 HEAD 의 ETag 가 기준과 달라
   덮지 않음, 본 ETag / `FAILED` — 실패한 단계 HEAD · PUT 과 까닭 낱말) · 쓴 사람. 기준 ETag 는 판 이력 줄의 ETag(가져와 적용 · 다시
   켬)와 이 표의 `WRITTEN` 가운데 마지막 것이다(`models.ExtraProcessState.baseline`). 내보내기 자리는 꽂지 않아(놓는 꼴이 낱장 여섯으로
-  바뀐 뒤 여섯을 덮을지 정하지 않음) 앱이 덮은 줄은 없다 — 아직 S3 Drive 에 없는 「새 판」 과 같은 파일을 사람이 놓아 가져온 「놓인
+  바뀐 뒤 여섯은 덮지 않기로 함 — 편집기 판은 쓸 몫도 아님) 앱이 덮은 줄은 없다 — 아직 S3 Drive 에 없는 「새 판」 과 같은 파일을 사람이 놓아 가져온 「놓인
   파일 같음」(결과 `WRITTEN` · 까닭 `놓인 파일 같음`) 줄만 생겨 그 ETag 를 기준으로 삼는다(2026-11-20 — 사람은 S3 Drive `extra_process/`
   에 낱장 CSV 여섯을 놓고, 판 이력의 `s3_key` 는 `extra_process/` · `s3_etag` 는 여섯 ETag 를 묶은 값이다).
 - `route_load_exception_version`(0040): 공정별 부하 산출 예외 선언(원본 공정명 → 산식 id)의 판 이력. 넣기만 하고 마지막
