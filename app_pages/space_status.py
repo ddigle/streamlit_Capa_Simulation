@@ -114,7 +114,12 @@ from capa_simulation.components.space_floor_list import (
 )
 from capa_simulation.components.space_layout import (
     FLOOR_TABLE_COLUMNS,
+    SEARCH_EXCLUDED,
+    SEARCH_EXITED,
+    SEARCH_PLACED,
+    SEARCH_UNPLACED,
     ColorChoice,
+    UnitSearchTarget,
     apply_layer_looks,
     color_check_style,
     default_color_choice,
@@ -130,6 +135,7 @@ from capa_simulation.components.space_layout import (
     space_legend_counts,
     space_legend_entries,
     unit_appearance,
+    unit_search_targets,
 )
 from capa_simulation.components.space_layout_editor import (
     render_fab_layout_editor,
@@ -351,6 +357,13 @@ FLOOR_PARAM = "floor"
 # 층 바로 가기의 위젯 키. 지금 자리(FAB·층)마다 키를 갈라 그 자리의 값으로 선다. 층 목록 표의
 # 키는 `components/space_floor_list.py` 가 갖는다.
 FLOOR_JUMP_KEY = "space_status_floor_jump"
+# FAB 전체 「설비 찾기」 — 자리 줄 바로 밑 고르기 칸 하나. key 는 FAB 회차마다 같고 콜백이 값을
+# 비운다(같은 설비를 다시 골라도 움직인다). 고른 설비가 도면에 선 호기면 연 층 도면이 맞출 대상(동,
+# 층, 설비명, 토큰)을 `UNIT_FOCUS_KEY` 에 두고, 그 층 상세를 처음 그리는 회차가 꺼내 도면 data
+# `focus` 로 한 번 싣는다 — 뒤 회차 · 배치 편집 토글 · 다른 화면에 다녀오기에 다시 맞추지 않는다.
+UNIT_SEARCH_KEY = "space_status_unit_search"
+UNIT_SEARCH_LABEL = "설비 찾기"
+UNIT_FOCUS_KEY = "space_status_unit_focus"
 FAB_VIEWER_KEY = "space_fab_viewer"
 FAB_EDITOR_KEY = "space_fab_editor"
 # 배치 편집. 저장 알림·메모는 가용설비 현황의 키(`FLASH_KEY`·`_NOTE_KEY`)를 쓰지 않는다 — 그쪽
@@ -526,9 +539,10 @@ def _picked_unit(key: FloorKey) -> str | None:
 
 
 def _show_fab_overview() -> None:
-    """FAB 전체로 돌아간다(콜백). 주소의 `floor` 인자만 지운다."""
+    """FAB 전체로 돌아간다(콜백). 주소의 `floor` 인자만 지운다. 「설비 찾기」 맞춤 대상도 버린다."""
     st.session_state.pop(SELECTED_BUILDING_KEY, None)
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
+    st.session_state.pop(UNIT_FOCUS_KEY, None)
     if FLOOR_PARAM in st.query_params:
         del st.query_params[FLOOR_PARAM]
 
@@ -543,12 +557,20 @@ def _open_floor(key: FloorKey, *, discard: bool = False) -> None:
     온 열기는 초안을 두고 층 목록 알림 칸에 알린다, `floor_open_allowed`). 연 회차에는 초안을 여기서
     버린다 — 초안은 위젯 밖 칸이라 층을 열어도 남으므로, 답한 대로 버리고 페이지보다 먼저 도는
     `app.py` 의 탭 점·변경 칩·테마 단추 확인이 이 회차부터 걷히게 한다."""
+    _floor_opened(key, discard=discard)
+
+
+def _floor_opened(key: FloorKey, *, discard: bool) -> bool:
+    """`_open_floor` 의 몸 — 열었으면 참이다(「설비 찾기」 는 연 층에만 맞춤 대상을 둔다). 앞 「설비
+    찾기」 맞춤 대상은 버린다 — 다른 길로 연 층이 그것을 받지 않게."""
     if not floor_open_allowed(key, discard=discard):
-        return
+        return False
     discard_floor_state_draft()
+    st.session_state.pop(UNIT_FOCUS_KEY, None)
     st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = key
     if st.query_params.get(FLOOR_PARAM) != floor_param(key):
         st.query_params[FLOOR_PARAM] = floor_param(key)
+    return True
 
 
 def _open_unless_inactive(inactive: frozenset[FloorKey], key: FloorKey, discard: bool) -> None:
@@ -568,6 +590,64 @@ def _jump_to_floor(widget_key: str, discard_key: str | None = None) -> None:
     discard = discard_key is not None and SessionSlot(discard_key, bool).peek() is True
     if key is not None:
         _open_floor(key, discard=discard)
+
+
+def _find_unit(
+    widget_key: str,
+    targets: Mapping[str, UnitSearchTarget],
+    as_of_day: date,
+    pick: bool,
+    discard_key: str | None = None,
+) -> None:
+    """「설비 찾기」 콜백(FAB 전체). 그린 회차의 후보(`targets` — 설비명 → 층 · 자리)로 그 층을
+    연다(`_floor_opened` — 층 사용 초안 규칙은 바로 가기와 같다. 비활성 층도 연다 — 배너가 말한다).
+    실제로 열렸을 때만 다음을 둔다 — 도면에 선 호기면 맞춤 대상(`UNIT_FOCUS_KEY`)이고, 색 기준
+    「필요 단축」 을 고른 회차(`pick`)면 필요 단축 칸의 고른 호기로도 쥔다(`_pick_unit` — 보기가
+    서지 않으면 층 본문이 푼다). 도면에 서지 않은 호기면 알림창 한 마디다(`_search_miss`). 고르기
+    칸은 늘 비운다 — 같은 설비를 다시 골라도 움직이게(열기를 거절한 회차도)."""
+    name = st.session_state.get(widget_key)
+    st.session_state[widget_key] = None
+    if not isinstance(name, str) or name not in targets:
+        return
+    target = targets[name]
+    discard = discard_key is not None and SessionSlot(discard_key, bool).peek() is True
+    if not _floor_opened(target.floor, discard=discard):
+        return
+    if target.place != SEARCH_PLACED:
+        _queue_space_flash(_search_miss(name, target, as_of_day), kind="info")
+        return
+    st.session_state[UNIT_FOCUS_KEY] = (*target.floor, name, uuid.uuid4().hex)
+    if pick:
+        _pick_unit(target.floor, name)
+
+
+def _search_miss(name: str, target: UnitSearchTarget, as_of_day: date) -> str:
+    """「설비 찾기」 로 연 층 도면에 그 호기가 없는 까닭 한 마디(알림창 · Alarm — 무엇을 ·
+    어디서)."""
+    where = floor_label(target.floor)
+    if target.place == SEARCH_UNPLACED:
+        why = "미배치(좌표 없음)"
+    elif target.place == SEARCH_EXCLUDED:
+        why = "레이아웃 제외(레이아웃표시 N)"
+    elif target.place == SEARCH_EXITED:
+        why = f"기준일 {as_of_day.isoformat()} 에 반출/이설을 마침"
+    else:
+        why = "도면에 없음"
+    return f"{quoted(name)} — {where} 도면에 없습니다 · {why}"
+
+
+def _take_unit_focus(key: FloorKey) -> dict[str, str] | None:
+    """「설비 찾기」 가 둔 이 층의 맞춤 대상을 꺼내고 비운다 — 층 상세를 그리는 회차마다 부르고,
+    값은 그 층 도면 data `focus` 로 한 번만 간다. 다른 층의 값 · 깨진 값은 버리고 None 이다."""
+    stored = st.session_state.pop(UNIT_FOCUS_KEY, None)
+    if (
+        isinstance(stored, tuple)
+        and len(stored) == 4
+        and (stored[0], stored[1]) == key
+        and all(isinstance(part, str) and part for part in stored[2:])
+    ):
+        return {"id": stored[2], "token": stored[3]}
+    return None
 
 
 def _compare_lock_reason(editing: bool) -> str | None:
@@ -1192,11 +1272,12 @@ def _scenario_place() -> str:
     return quoted(equipment_session.scenario_name, empty="이 설비 시나리오")
 
 
-def _queue_space_flash(message: str) -> None:
-    """Space 알림 칸(`SPACE_FLASH_KEY`)에 성공 글을 담는다. 그 글은 `st.success` 로 그려지는데
-    설비 시나리오 이름(「10~12월 증설」)을 싣는다 — 물결표를 `\\~` 로 막아 담는다(한 글에 이름이 두
-    번 나오면 물결표 하나짜리 이름도 지움선 짝이 된다)."""
-    queue_flash(SPACE_FLASH_KEY, markdown_safe_tildes(message))
+def _queue_space_flash(message: str, *, kind: FlashKind = "success") -> None:
+    """Space 알림 칸(`SPACE_FLASH_KEY`)에 결과 글을 담는다(기본은 성공, 「설비 찾기」 의 도면에
+    없음은 안내 — 둘 다 알림창 · Alarm 으로만 간다). 글은 설비 시나리오 이름(「10~12월 증설」)을
+    싣는다 — 물결표를 `\\~` 로 막아 담는다(한 글에 이름이 두 번 나오면 물결표 하나짜리 이름도 지움선
+    짝이 된다)."""
+    queue_flash(SPACE_FLASH_KEY, markdown_safe_tildes(message), kind=kind)
 
 
 def _official_target(session: EquipmentSession) -> tuple[str, str | None]:
@@ -1844,13 +1925,14 @@ def _render_layout_editor(
     *,
     pending_save: bool = False,
     sheet_csv: Mapping[str, str] | None = None,
+    focus: Mapping[str, str] | None = None,
 ) -> None:
     """한 층 배치 편집기. 편집본을 그리고, `적용` 이 오면 검증해 편집본·대기분에 얹는다.
 
     저장된 요소·이름표는 세션 설비 시나리오의 합친 값(`effective_floor_layout` — 공식 층 현행값 ⊕ 그
     리비전의 차이)이다. 대기분·「그대로인가」 판정·저장 대조 기준 지문이 모두 그것과 견준다 — 공식과
     견주면 가정 회차에 편집이 없는데도 대기분이 생긴다(검토 F15·M7). 적용이 배치를 바꾸면 그때의
-    역할을 찍는다(설계 6-2)."""
+    역할을 찍는다(설계 6-2). `focus` 는 「설비 찾기」 맞춤 신호다(보기 뷰어와 같다)."""
     assert latest_snapshot is not None
     key: FloorKey = (building, floor)
     canvases = effective_floor_canvases(floor_canvases)
@@ -2008,6 +2090,7 @@ def _render_layout_editor(
             sheet_ids_of(sheet),
             today,
         ),
+        focus=focus,
     )
     if submission is None:
         return
@@ -2527,7 +2610,8 @@ def _render_fab_editor(
 # › 층 · `배치 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은 2026-11-04 결정 보드 답으로
 # 상태 알림이다, 위 「상자의 자리」). 위젯 key 는 옮기기 전 그대로다(세션 값·화면 확인이 산다).
 # 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층 모두 같은 수이고 안의 위젯만 범위를
-# 따른다. 자리 줄 밑은 줄마다 위젯 하나이고 줄 사이는 Streamlit 기본 칸 틈 그대로다 — 토글
+# 따른다 — 자리 줄 밑 「설비 찾기」 한 줄만 FAB 전체에서 선다(결정 기록 「Space 설비 찾기」).
+# 자리 줄 밑은 줄마다 위젯 하나이고 줄 사이는 Streamlit 기본 칸 틈 그대로다 — 토글
 # 줄끼리의 간격이 같다(2026-11-12 Space 보드 답 1-4 「각 버튼의 간격 일정하게」). 캔버스 폭 ·
 # 높이는 상자가 아니라 「배치 편집」 왼쪽 칸 「캔버스」 다(같은 답 — 「캔버스 편집 버튼은
 # 지우고」). FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은 공식에서만 — G5).
@@ -2596,6 +2680,60 @@ with space_box:
                 label_visibility="collapsed",
                 width="stretch",
                 disabled=not floor_labels,
+            )
+    if selected is None:
+        # 설비 찾기 — 자리 줄 바로 밑 한 줄(FAB 전체만). 후보는 FAB 블록 · 층 목록 대수와 같은
+        # 표에서 층이 정해진 설비명이다(층 미정은 열 층이 없어 뺀다). 글자는 설비명 그대로다 — 층 ·
+        # 상태를 넣으면 남이 바꿀 때 브라우저가 옛 글자를 되보낸다(AGENTS 9장). 비슷한 이름은
+        # Streamlit 기본 거름(퍼지 — 친 글자가 차례대로 든 이름을 맞음 점수 차례로)이 띄운다. 층
+        # 사용 편집 초안이 있는 동안은 바로 가기와 같은 팝오버 꼴이다(설계 규칙 UI-STA-02 ·
+        # UI-NTF-09).
+        search_targets = unit_search_targets(
+            placed=located_equipment,
+            unplaced=unplaced_equipment,
+            excluded=excluded_equipment,
+            exited=space_equipment.loc[exited],
+        )
+        search_names = list(search_targets)
+        search_args = (
+            UNIT_SEARCH_KEY,
+            search_targets,
+            as_of,
+            layer_requested and not no_fleet,
+        )
+        if floor_state_draft_pending():
+            search_discard_key = f"{UNIT_SEARCH_KEY}_discard"
+            with st.popover(
+                UNIT_SEARCH_LABEL,
+                icon=":material/warning:",
+                key=f"{UNIT_SEARCH_KEY}_popover",
+                width="stretch",
+            ):
+                search_discard = st.checkbox(FLOOR_OPEN_DISCARD_LABEL, key=search_discard_key)
+                st.selectbox(
+                    UNIT_SEARCH_LABEL,
+                    options=search_names,
+                    index=None,
+                    placeholder=UNIT_SEARCH_LABEL,
+                    key=UNIT_SEARCH_KEY,
+                    on_change=_find_unit,
+                    args=(*search_args, search_discard_key),
+                    label_visibility="collapsed",
+                    width="stretch",
+                    disabled=not search_names or not search_discard,
+                )
+        else:
+            st.selectbox(
+                UNIT_SEARCH_LABEL,
+                options=search_names,
+                index=None,
+                placeholder=UNIT_SEARCH_LABEL,
+                key=UNIT_SEARCH_KEY,
+                on_change=_find_unit,
+                args=search_args,
+                label_visibility="collapsed",
+                width="stretch",
+                disabled=not search_names,
             )
     # 도면 줄 — 「배치 편집」 토글 하나. 설비 · Space 저장 등급이 아니면 세우지 않는다(숨김).
     if not can_edit_layout:
@@ -2791,8 +2929,9 @@ else:
     alerts.flush()
 
 if selected is None:
-    # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).
+    # FAB 로 돌아오면 층 상세에서 누른 호기와 「설비 찾기」 맞춤 대상은 풀린다(층을 바꾼 것과 같다).
     st.session_state.pop(SPACE_PICKED_KEY, None)
+    st.session_state.pop(UNIT_FOCUS_KEY, None)
     placements = floor_placements(
         counted_equipment, unplaced_equipment, located_equipment, _canvas_of
     )
@@ -2968,6 +3107,9 @@ if selected is None:
 
 else:
     selected_building, selected_floor = selected
+    # 「설비 찾기」 로 연 첫 회차의 맞춤 대상 — 꺼내 비우고 이 회차 도면(보기 · 배치 편집)에만
+    # 싣는다.
+    search_focus = _take_unit_focus(selected)
     floor_equipment = (
         located_equipment.loc[
             located_equipment["동"].eq(selected_building)
@@ -3155,6 +3297,7 @@ else:
                 layout_profile,
                 pending_save=pending_save,
                 sheet_csv=floor_sheet_csv,
+                focus=search_focus,
             )
         else:
             if viewer_inputs is None:
@@ -3222,6 +3365,8 @@ else:
                 pick_to_server=shown_layer is not None,
                 # 「반입 일정」 — epoch 밖, 켠 회차에만 키가 실린다.
                 arrival_dates=arrival_on,
+                # 「설비 찾기」 맞춤(epoch 밖) — 연 첫 회차에만 실린다.
+                focus=search_focus,
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
     # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다).

@@ -1,4 +1,4 @@
-# Purpose: Space 배치 집계·호기 상자 색·필요 단축 얹기·층 상세 범례·호기 칸을 만든다.
+# Purpose: Space 배치 집계·설비 찾기 후보·호기 상자 색·필요 단축 얹기·층 상세 범례·호기 칸을 만든다.
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Final, cast
+from typing import Any, Final, NamedTuple, cast
 
 import pandas as pd
 
@@ -186,6 +186,55 @@ def floor_block_stats(
             cell["layout"] = " · ".join(layout_words)
         stats[floor_label(placement.key)] = cell
     return stats
+
+
+# FAB 전체 「설비 찾기」 후보의 자리. 도면에 선 호기만 그 층 도면이 고르고 맞추며, 나머지는 층을
+# 열고 알림창에 까닭 한 마디다(`space_status._find_unit`).
+SEARCH_PLACED: Final = "placed"
+SEARCH_UNPLACED: Final = "unplaced"
+SEARCH_EXCLUDED: Final = "excluded"
+SEARCH_EXITED: Final = "exited"
+
+
+class UnitSearchTarget(NamedTuple):
+    """설비 찾기 후보 하나 — 그 설비명이 선 층과 자리(`SEARCH_*`)."""
+
+    floor: FloorKey
+    place: str
+
+
+def unit_search_targets(
+    *,
+    placed: pd.DataFrame,
+    unplaced: pd.DataFrame,
+    excluded: pd.DataFrame,
+    exited: pd.DataFrame,
+) -> dict[str, UnitSearchTarget]:
+    """FAB 전체 「설비 찾기」 의 후보 — 설비명(앞뒤 공백을 걷음) → 층 · 자리, 설비명 자연 정렬.
+
+    FAB 블록 · 층 목록 대수와 같은 표(그 회차의 설비 시나리오 · 공정 필터 · 기준일)를 받는다 —
+    `placed` 는 도면에 그리는 행, `unplaced` · `excluded` 는 레이아웃표시 Y · N 인데 도면에 서지
+    않은 행, `exited` 는 기준일에 도면에서 빠진 행(반출/이설, 없으면 정지를 마침)이다. 동 · 층이
+    FAB 의 층이 아닌 행(층 미정)은 열 층이 없어 뺀다. 같은 설비명이 여러 표에 있으면 앞 표(도면 →
+    미배치 → 레이아웃 제외 → 도면 이탈)가 이긴다."""
+    valid = set(FLOOR_KEYS)
+    found: dict[str, UnitSearchTarget] = {}
+    for place, frame in (
+        (SEARCH_PLACED, placed),
+        (SEARCH_UNPLACED, unplaced),
+        (SEARCH_EXCLUDED, excluded),
+        (SEARCH_EXITED, exited),
+    ):
+        if frame.empty:
+            continue
+        names = frame[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+        for name, building, floor in zip(names, frame["동"], frame["층"], strict=True):
+            if pd.isna(name) or not name or name in found or pd.isna(building) or pd.isna(floor):
+                continue
+            key = (str(building), str(floor))
+            if key in valid:
+                found[str(name)] = UnitSearchTarget(key, place)
+    return {name: found[name] for name in sorted(found, key=natural_name_key)}
 
 
 def mark_colors() -> dict[str, str]:

@@ -30,6 +30,10 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 호기를 누르면 같은 꼴로 `pick` 을 보내고 `on_pick_change` 콜백이 받는다(색 기준 「필요 단축」 을 켠
 동안만 — 그 칸의 누른 호기 상세).
 
+FAB 전체 「설비 찾기」 로 연 층은 층 도면(보기 · 배치 편집)이 data `focus` ``{"id", "token"}``(epoch
+밖)를 한 번 받아 그 호기를 고르고 둘레가 보이게 맞춰 확대한다(`_clean_focus` — 토큰마다 한 번, 없는
+id 는 조용히 둔다).
+
 **「호기 정보」 창**(층 보기·편집, 2026-11-03 사용자 요청)도 브라우저 몫이다 — 도면 위에 뜨는 창에
 고른 호기의 칸(`space_layout.FLOOR_TABLE_COLUMNS` 21칸)과, 칸마다 엑셀 자동 필터 꼴로 거른 호기
 목록을 보이고 맞는 호기를 도면에서 강조한다. 표 재료는 data `sheet`(epoch 밖)이고 거르기·강조는
@@ -392,6 +396,19 @@ def _clean_group_labels(labels: Mapping[str, str] | None) -> dict[str, str]:
     }
 
 
+def _clean_focus(focus: Mapping[str, Any] | None) -> dict[str, Any]:
+    """층 도면의 「설비 찾기」 맞춤 신호 — 설비명(`id`)과 한 번 표지(`token`)가 둘 다 빈 글이 아닐
+    때만 data `focus` 로 싣는다(없으면 키가 없다 — `arrivalDates` 와 같은 꼴). epoch 밖이다 —
+    브라우저는 새 층 전체 보기를 세운 뒤 그 토큰마다 한 번 그 호기를 고르고 둘레가 보이게
+    맞춘다(`LIST_ROW_ZOOM` 까지)."""
+    if not isinstance(focus, Mapping):
+        return {}
+    unit, token = focus.get("id"), focus.get("token")
+    if isinstance(unit, str) and unit and isinstance(token, str) and token:
+        return {"focus": {"id": unit, "token": token}}
+    return {}
+
+
 def _clean_legend(legend: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """브라우저로 보낼 범례(편집기 왼쪽 칸 「범례」) — `{"entries": [{label, css, inner}], "asOf":
     글}`.
@@ -565,6 +582,7 @@ def render_space_layout_viewer(
     pick_to_server: bool = True,
     arrival_dates: bool = False,
     raised: Collection[str] = (),
+    focus: Mapping[str, str] | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -617,7 +635,10 @@ def render_space_layout_viewer(
 
     `arrival_dates` 는 사이드바 「반입 일정」 을 켠 회차다(2026-11-12 Space 보드 답 1-1 ~ 1-6) — 켠
     회차에만 data `arrivalDates` 가 실리고(epoch 밖) 브라우저가 반입 전 호기에 반입 일정을 쓴다.
-    재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다."""
+    재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다.
+
+    `focus` 는 FAB 전체 「설비 찾기」 로 이 층을 연 첫 회차의 맞춤 신호 ``{"id", "token"}``
+    (`_clean_focus` — epoch 밖)다. 고른 호기를 서버로 보내는 규칙(`pick_to_server`)과 따로다."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -653,6 +674,7 @@ def render_space_layout_viewer(
             "pickToServer": bool(pick_to_server),
             **layer_fields,
             **({"arrivalDates": True} if arrival_dates else {}),
+            **_clean_focus(focus),
         },
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
@@ -889,6 +911,7 @@ def render_space_layout_editor(
     sheet_refused: Mapping[str, Any] | None = None,
     sheet_verdict: Mapping[str, Any] | None = None,
     on_sheet_check: Callable[[Mapping[str, Any]], None] | None = None,
+    focus: Mapping[str, str] | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -920,6 +943,8 @@ def render_space_layout_editor(
     고친 칸이 마지막으로 빈 seq, 같은 마운트의 같은 · 옛 seq 는 거른다). 그 판정은 다음 회차
     `sheet_verdict` ``{"epoch", "mount", "seq", "blocked", "follow"}`` 로 돌려준다(브라우저는 그
     마운트가 마지막으로 보낸 seq 의 것만 받고, 판정이 오지 않으면 같은 요청을 한 번 다시 보낸다).
+    `focus` 는 뷰어와 같은 「설비 찾기」 맞춤 신호다(도면에 선 호기면 고르고 맞추고, 미배치 칸
+    호기면 고르기만).
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels",
     "cells", "stack"}``.
@@ -1002,6 +1027,7 @@ def render_space_layout_editor(
             "sheetRefused": dict(sheet_refused) if sheet_refused is not None else None,
             "sheetVerdict": dict(sheet_verdict) if sheet_verdict is not None else None,
             "sheetSendMs": grid_shared.batch_ms(SHEET_SEND_MS),
+            **_clean_focus(focus),
         },
         on_apply_change=lambda: None,
         on_sheetCheck_change=partial(_dispatch_sheet_check, key, epoch, on_sheet_check),
