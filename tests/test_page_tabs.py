@@ -1148,6 +1148,28 @@ def test_past_data_and_scenario_table_drafts_mark_their_tabs_and_the_theme_butto
     assert _has_theme_unsaved_marker(app)
 
 
+def test_extra_process_editor_edits_mark_the_admin_area_tab_from_any_page(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """Admin 「부대공정」 앱 작성 — 펼친 판과 다를 때만(흡수가 적은 표지) 어느 화면에서나 Admin
+    Area 탭에 점, 떠나도 남아 묻지 않는다."""
+    from capa_simulation.components.extra_process_editor import DIRTY_KEY, EDITOR_KEY
+    from capa_simulation.navigation import ADMIN_AREA
+
+    app = _ok(_app.run())
+    app.session_state[PAGE_TABS_OPEN_KEY] = (H, ADMIN_AREA.path)
+    app.session_state[EDITOR_KEY] = (0, None, None)
+    app.session_state[DIRTY_KEY] = False
+    _ok(app.run())
+    assert _tab(sent, ADMIN_AREA.path)["dirty"] is False
+
+    app.session_state[DIRTY_KEY] = True
+    _ok(app.run())
+    admin = _tab(sent, ADMIN_AREA.path)
+    assert admin["dirty"] is True and "적용하지 않은 부대공정 작성" in admin["title"]
+    assert _data(sent)["leave"] == ""
+
+
 def test_editor_edits_mark_only_the_current_tab_and_ask_before_leaving(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:

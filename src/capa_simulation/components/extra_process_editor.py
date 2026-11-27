@@ -1239,7 +1239,10 @@ def _render_line_form(screen: _Screen, key: tuple[object, ...], context: EditorC
         icon=":material/add:" if line is None else ":material/swap_horiz:",
     )
     if pressed:
-        _apply_line_form(target, line, name, reference, step_text, context)
+        # 있는 줄은 양식(씨앗 또는 펼친 값 — 그리드 초안을 뺀 값)에서 바꾼다. 모형 값(초안 포함)을
+        # 씨앗에 구우면 그 칸의 그리드 되돌리기가 먹지 않는다.
+        template = next((row.fields for row in screen.rows if row.line_id == target), None)
+        _apply_line_form(target, template, name, reference, step_text, context)
 
 
 def form_key(target: str) -> str:
@@ -1262,7 +1265,7 @@ def _split_step(text: object) -> tuple[str, str] | None:
 
 def _apply_line_form(
     target: str,
-    line: object,
+    template: LineFields | None,
     name: str,
     reference: object,
     step_text: object,
@@ -1282,13 +1285,12 @@ def _apply_line_form(
     assert step is not None
     seeds = _seeds()
     defaults = line_defaults(context, reference)
-    if line is None:
+    if template is None:
         line_id = _next_line_id(seeds)
         fields = replace(defaults, name=name.strip(), step=step[0], mcp=step[1])
     else:
         line_id = target
-        origin = seeds.get(target)
-        base = origin if origin is not None else getattr(line, "fields", LineFields())
+        base = template
         picked = replace(
             base,
             reference=defaults.reference,

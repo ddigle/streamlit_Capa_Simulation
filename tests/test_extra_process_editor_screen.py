@@ -24,6 +24,7 @@ from test_extra_process_registration import apply_template
 from capa_simulation.components import extra_process_editor as editor
 from capa_simulation.components.extra_process_admin import (
     APPLY_BUTTON_KEY,
+    IGNORED_PART,
     NOT_PRODUCTION_REASON,
     ORDER_ONLY_PART,
     REMOVED_CONFIRM_KEY,
@@ -36,6 +37,7 @@ from capa_simulation.services.extra_process_pack import read_pack_zip
 
 OPEN_KEY = "__editor_open__"
 HIDDEN_KEY = "__editor_hidden__"
+NO_SCENARIO_KEY = "__editor_no_scenario__"
 NAME = "DEMO_New_Sort"
 
 
@@ -56,7 +58,8 @@ settings.DUCKDB_PATH = Path({str(database)!r})
 if st.session_state.get({OPEN_KEY!r}):
     admin.write_lock_reason = lambda: None
 try:
-    bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
+    if not st.session_state.get({NO_SCENARIO_KEY!r}):
+        bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
     repository = get_scenario_repository(str(settings.DUCKDB_PATH))
     # 닫힌 탭 흉내 — 탭 본문을 부르지 않는다(`app_pages/admin_area.py`).
     if not st.session_state.get({HIDDEN_KEY!r}):
@@ -83,10 +86,11 @@ def _run(app: AppTest) -> AppTest:
     return app
 
 
-def _app(database: Path, *, open_place: bool = True) -> AppTest:
+def _app(database: Path, *, open_place: bool = True, no_scenario: bool = False) -> AppTest:
     app = AppTest.from_string(_script(database), default_timeout=120)
     app.session_state[OPEN_KEY] = open_place
     app.session_state[HIDDEN_KEY] = False
+    app.session_state[NO_SCENARIO_KEY] = no_scenario
     return _run(app)
 
 
@@ -411,3 +415,83 @@ def test_a_pack_made_after_another_pack_was_applied_cannot_be_applied(
     assert staged is not None and staged.judgement is not None
     assert not staged.applicable and staged.judgement.reason == editor.MOVED_REASON
     assert [str(item.value) for item in app.error] == [editor.MOVED_REASON]
+
+
+def test_the_entry_is_locked_without_an_active_scenario(database: Path, calls: Calls) -> None:
+    """활성 시나리오가 없으면 진입을 잠근다(계획 월 · 참조공정 후보를 셀 표가 없다)."""
+    app = _app(database, no_scenario=True)
+
+    entry = app.button(key=editor.OPEN_BUTTON_KEY)
+    assert entry.disabled and entry.help not in (None, editor.OPEN_HELP, NOT_PRODUCTION_REASON)
+
+
+def _applied_one(app: AppTest, calls: Calls) -> AppTest:
+    """빈 시작에서 공정 하나를 적용하고 다시 펼친다(그 공정은 펼친 줄 `b1` — 편집기 몫)."""
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    app = _press(app, APPLY_BUTTON_KEY)
+    return _press(app, editor.OPEN_BUTTON_KEY)
+
+
+def test_changing_the_reference_of_an_opened_line_keeps_its_grid_edits_undoable(
+    database: Path, calls: Calls
+) -> None:
+    """펼친 줄의 「바꾸기」 는 양식(펼친 값)에서 바꾼다 — 그리드에서 고친 모듈수를 씨앗에 굽지 않아
+    되돌리면 펼친 값으로 돌아가고, 같은 참조로 바꾼 판은 「바뀐 것 없음」 이다."""
+    app = _applied_one(_app(database), calls)
+    assert _shell(calls)["ids"] == ["b1"]
+    app = _send(app, calls, _write(["b1"], ["모듈수"], [[5]]))
+    app.selectbox(key=editor.LINE_PICK_KEY).select("b1")
+    app = _press(_run(app), editor.LINE_BUTTON_KEY)
+    assert app.session_state[editor.LINES_KEY]["b1"][3] == 2.0
+
+    app = _send(app, calls, {"op": "undo"})
+    assert (
+        editor.LINE_CELLS_KEY not in app.session_state
+        or not app.session_state[editor.LINE_CELLS_KEY]
+    )
+    assert not _dirty(app)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    assert _staged(app) is None
+    assert any(editor.UNCHANGED_EDITOR in text for text in _flashes(app))
+
+
+def test_a_module_count_change_is_a_changed_cell_not_a_memo_only_change(
+    database: Path, calls: Calls
+) -> None:
+    """「01 메모 · 차례만 바뀜」 은 칸 · 공정이 그대로일 때만 — 모듈수는 바뀐 칸이다."""
+    app = _applied_one(_app(database), calls)
+    app = _send(app, calls, _write(["b1"], ["모듈수"], [[5]]))
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+
+    staged = _staged(app)
+    assert staged is not None and staged.changes is not None
+    assert staged.changes.changed_cells == 1
+    assert not any(ORDER_ONLY_PART in text for text in _captions(app))
+
+
+def test_cells_left_outside_the_route_are_counted_on_the_value_line(
+    database: Path, calls: Calls
+) -> None:
+    """경로를 줄여 판에 들지 않게 된 칸 입력은 지우지 않고(경로를 다시 넓히면 산다) 값 줄
+    「창 밖 고친 칸 n」 으로 센다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _kind(app, "생산성")
+    columns = _shell(calls)["valueCols"]
+    last_month = [name for name in columns if not name.endswith("~")][-1]
+    app = _send(app, calls, _write(["n1|03|양산|UPEH"], [last_month], [[40000]]))
+    first = app.session_state[editor.COLUMNS_KEY][columns[0]][1]
+    app = _kind(app, "공정")
+    app = _send(app, calls, _write(["n1"], ["끝월"], [[str(first)]]))
+
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+
+    staged = _staged(app)
+    assert staged is not None and staged.applicable and staged.editor is not None
+    assert staged.editor.ignored == 1
+    assert any(IGNORED_PART.format(n="1") in text for text in _captions(app))
