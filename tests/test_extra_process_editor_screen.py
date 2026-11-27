@@ -970,6 +970,31 @@ def test_an_opened_reference_outside_the_candidates_stays_in_its_cell_and_the_pa
     ]
 
 
+def test_a_pack_resting_on_a_form_default_is_taken_back_when_the_scenario_moves_it(
+    database: Path, calls: Calls, references: dict[str, Any]
+) -> None:
+    """새 줄 기본값(조합 하나의 STEP · MCP)은 양식이라 지금 시나리오 후보로 다시 센다 — 다른
+    시나리오에서 그 양식이 바뀌면 보이는 값 = 판 값이 달라져 만든 판을 걷는다(`_drop_stale`)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, reference = _add_line(app, calls)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    assert _staged(app) is not None
+
+    references["shape"] = lambda found: {
+        **found,
+        reference: replace(found[reference], steps=(("DEMO-P777", "DEMO-7A"),)),
+    }
+    app = _kind(app, "공정")
+
+    assert (_form(calls, "n1")["STEP_SEQ"], _form(calls, "n1")["MCP_SEQ"]) == (
+        "DEMO-P777",
+        "DEMO-7A",
+    )
+    assert _staged(app) is None and editor.STALE_STAGED in _all_flashes(app)
+
+
 def test_the_reference_candidates_show_the_display_name_and_put_the_original(
     database: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
