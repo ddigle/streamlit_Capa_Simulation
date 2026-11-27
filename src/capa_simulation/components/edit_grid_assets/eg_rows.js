@@ -113,6 +113,9 @@ function rowsInit(S) {
     R.listeners.push([target, type, handler])
   }
   listen(button, 'click', (event) => tbGridCommand(S, event, () => rowsRemove(S)))
+  // 목록 누름은 칸 누름이 아니다 — 목록이 칸 위에 떠 있어 뿌리 pointerdown 이 그 자리 칸을 골라(select 갈래가 먼저) 편집을
+  // 닫고 목록을 걷어 click 이 항목에 닿지 않았다. 여기서 멈춰 mousedown(초점 유지) → click(확정)으로 간다.
+  listen(list, 'pointerdown', (event) => event.stopPropagation())
   listen(list, 'mousedown', (event) => event.preventDefault())
   listen(list, 'click', (event) => {
     const item = event.target && event.target.closest ? event.target.closest('.eg-choice') : null
@@ -218,10 +221,6 @@ function rowsKey(S, event) {
   return true
 }
 
-function rowsPointerDown(S, event) {
-  return Boolean(event.target && event.target.closest && event.target.closest('.eg-choices'))
-}
-
 // 붙일 덩어리가 표 끝(빈 새 줄)을 넘으면 거절 글 — 여러 사람을 붙여 앞 몇 줄만 들어가고 나머지가 조용히 잘리지 않게(select 의
 // pasteGuard 갈고리). 고른 범위 안에서 되풀이하는 붙여넣기는 표 끝을 넘지 않는다.
 function rowsPasteGuard(S, matrix) {
@@ -238,7 +237,7 @@ function rowsCleanup(S) {
 }
 
 feature({
-  name: 'rows', init: rowsInit, keydown: rowsKey, pointerdown: rowsPointerDown, paintCell: rowsPaintCell,
+  name: 'rows', init: rowsInit, keydown: rowsKey, paintCell: rowsPaintCell,
   paintOverlay: (S) => {
     rowsSync(S)
     rowsChoices(S)

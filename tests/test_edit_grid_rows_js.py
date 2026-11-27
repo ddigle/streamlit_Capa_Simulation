@@ -148,6 +148,18 @@ const R = {}
   R.choiceDown = [q('.eg-ed').value, list.children.map((n) => n.classList.contains('is-on'))]
   key(q('.eg-ed'), 'Enter')
   R.choiceCommit = { op: lastOps()[0], hidden: list.hidden, text: cell(0, 3).textContent }
+  // 마우스 — 칸 위에 뜬 목록의 항목을 누르면 그 항목으로 확정한다(뿌리의 칸 누름으로 새지 않는다).
+  setRange(S, { r: 0, c: 3 }, { r: 0, c: 3 })
+  key(scroller, 'Enter')
+  const over = { clientX: S.lefts[3] + 5, clientY: S.headH + S.rowH * 1.5, pointerId: 1 }
+  const item = list.children[2]
+  const down = fire(item, 'pointerdown', over)
+  fire(item, 'mousedown', over)
+  fire(item, 'click', over)
+  R.choiceMouse = {
+    stopped: down.stopped, op: S.box.ops[S.box.ops.length - 1], hidden: list.hidden,
+    text: cell(0, 3).textContent, focus: [S.focus.r, S.focus.c],
+  }
   // 새 줄 계정 칸에 틀린 꼴 — 미리보기가 빨간 칸.
   setRange(S, { r: 2, c: 1 }, { r: 2, c: 1 })
   key(scroller, 'B')
@@ -208,6 +220,11 @@ def test_the_row_feature_locks_cells_lists_choices_and_removes_rows() -> None:
     assert commit["op"]["op"] == "write" and commit["op"]["values"] == [["실무자"]]
     assert commit["op"]["rows"] == ["demo.a"] and commit["op"]["cols"] == ["등급"]
     assert commit["hidden"] is True and commit["text"] == "실무자"
+    mouse = result["choiceMouse"]
+    assert mouse["stopped"] is True, "목록 pointerdown 은 칸 누름으로 새지 않는다"
+    assert mouse["op"]["op"] == "write" and mouse["op"]["values"] == [["관리자"]]
+    assert mouse["op"]["rows"] == ["demo.a"] and mouse["op"]["cols"] == ["등급"]
+    assert mouse["hidden"] is True and mouse["text"] == "관리자" and mouse["focus"] == [0, 3]
     assert result["badPreview"] == [True, "Bad Name"]
     assert result["removeButton"] == ["줄 지우기", "false"]
     assert result["removeOp"]["rows"] == ["demo.a"]
