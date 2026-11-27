@@ -13,7 +13,7 @@
 - R-02 참조 공정 — 따라가기 꼴은 참조 공정이 이번 `RQ_REQB` 에 있고 소요기준이 같아야 한다. 참조
   공정의 경로 줄을 (월 · 양산구분 · 제품 · Stack · Capa Code · Customer · CS · WF 구분)으로 고유하게
   접어 이어받는다 — 참조 공정에서 셈에 들지 않는 줄(PKG 의 Buffer 밖)도 함께 오고 수를 보고에
-  싣는다.
+  싣는다. 편집기의 따라올 줄 미리보기도 같은 몸통(`follow_routes`)을 부른다.
 - R-03 제품 — 지정 꼴은 (제품정보, Stack)이 계획에 있어야 하고, CHIP · WF 면 WF 구분이 그 제품의
   `RQ_CHIP_QTY` 에, PKG 면 그 제품의 `RQ_REQB` 에 소요기준 PKG · `WF 구분` Buffer 줄이 하나라도
   있어야 한다(설계 G6 — 2026-11-18 사용자 답 Q6 「경로 표」). WF 구분은 데이터 쪽 글자로 맞춘다.
@@ -53,6 +53,7 @@ from capa_simulation.services.extra_process_pack import (
     CLASS_EXPANSION,
     EquipmentRow,
     ExtraProcessPack,
+    Period,
     ProcessRow,
     ProductivityRow,
     RouteRow,
@@ -577,6 +578,104 @@ def _appended(
     return result
 
 
+@dataclass(frozen=True)
+class FollowRows:
+    """따라가기 꼴 경로 하나가 이어받는 줄(R-02 · R-04) — 합치기와 편집기 미리보기가 같은 몸통이다.
+
+    `rows` 는 참조 공정의 경로 줄을 (월 · 양산구분 · 제품 · Stack · CUSTOM · Capa Code · Customer ·
+    CS · WF 구분)으로 고유하게 접어 이번 계획 월 ∩ 경로 기간으로 자른 줄이다 — 길이가 그 경로가
+    `ProcessOutcome.route_rows` 에 보태는 수다. `uncounted` 는 그 가운데 PKG 의 Buffer 밖 줄
+    (`inherited_uncounted` 몫), `refused` 는 이어받지 못한 때의 (규칙, 까닭)이다.
+    """
+
+    rows: pd.DataFrame
+    uncounted: int = 0
+    refused: tuple[str, str] | None = None
+
+
+def follow_routes(
+    tables: Mapping[str, pd.DataFrame], reference: str, basis: str, period: Period
+) -> FollowRows:
+    """따라가기 꼴 경로(참조 공정 · 01 소요기준 · 경로 기간)가 이번 표에서 이어받는 줄.
+
+    `tables` 는 옛 판 공정을 이미 걷은 표다 — 걷기(`strip_extra_processes`)는 strip 이름을
+    대소문자 그대로 견주고 부르는 쪽이 한다. 받은 표는 고치지 않는다. 합치기(`_Expander`)와 같은
+    몸통이라 같은 표 · 같은 경로면 수가 같다(R-01 졸업은 공정 이름 판정이라 여기서 보지 않는다).
+    """
+    months = {int(month) for month in tables["RQ_PKG_PLAN"]["생산계획년월"].dropna()}
+    return _follow_rows(_normalized_reqb(tables["RQ_REQB"]), months, reference, basis, period)
+
+
+def bdq_process_names(
+    tables: Mapping[str, pd.DataFrame], excluded: Collection[str] = ()
+) -> set[str]:
+    """BDQ 표의 공정 이름(strip + 대소문자 무시) — 졸업 판정(R-01)이 견준다.
+
+    `excluded` 는 걷을 옛 판 공정이다 — `strip_extra_processes` 와 같게 strip 이름을 대소문자 그대로
+    견주어 그 행을 빼고 센다(대소문자만 다른 BDQ 행은 남아 R-01 에 걸린다).
+    """
+    dropped = {name.strip() for name in excluded}
+    names: set[str] = set()
+    for name in PROCESS_TABLES:
+        frame = tables.get(name)
+        if frame is None or "공정" not in frame.columns:
+            continue
+        values = frame["공정"].dropna().astype("string").str.strip()
+        if dropped:
+            values = values.loc[~values.isin(dropped)]
+        names.update(str(value) for value in values.str.casefold().unique())
+    return names
+
+
+def _normalized_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
+    """견줄 칸(공정 strip · 소요기준 정규 · WF 구분 strip + casefold)을 붙인 사본."""
+    return reqb.assign(
+        _process=reqb["공정"].astype("string").str.strip(),
+        _basis=normalize_demand_basis(reqb["소요기준"]),
+        _wf=reqb["WF 구분"].astype("string").str.strip().str.casefold(),
+    )
+
+
+def _in_plan(months: Collection[int], period: Period, frame: pd.DataFrame) -> pd.Series:
+    """줄마다 그 달이 이번 계획 월이고 경로 기간 안인가(R-04)."""
+    return (
+        frame["생산계획년월"]
+        .map(lambda month: int(month) in months and period.covers(int(month)))
+        .astype(bool)
+    )
+
+
+def _follow_rows(
+    reqb: pd.DataFrame, months: Collection[int], reference: str, basis: str, period: Period
+) -> FollowRows:
+    """`follow_routes` 의 몸통 — `reqb` 는 `_normalized_reqb` 를 지난 표다."""
+    reference = reference.strip()
+    picked = reqb.loc[reqb["_process"].eq(reference).fillna(False)]
+    if picked.empty:
+        picked = reqb.loc[reqb["_process"].str.casefold().eq(reference.casefold()).fillna(False)]
+    empty = reqb.iloc[0:0][list(_FOLLOW_KEYS)]
+    if picked.empty:
+        return FollowRows(
+            empty,
+            refused=(
+                RULE_REFERENCE,
+                f"참조 공정 {with_subject_particle(reference)} 이번 경로(RQ_REQB)에 없음",
+            ),
+        )
+    if set(picked["_basis"].dropna()) != {basis}:
+        return FollowRows(
+            empty, refused=(RULE_REFERENCE, f"참조 공정 {reference} 의 소요기준이 다름")
+        )
+    folded = picked[list(_FOLLOW_KEYS)].drop_duplicates()
+    folded = folded.assign(생산계획년월=folded["생산계획년월"].astype("int64"))
+    in_plan = _in_plan(months, period, folded)
+    uncounted = 0
+    if basis == "PKG":
+        wf = folded["WF 구분"].astype("string").str.strip().str.casefold()
+        uncounted = int((in_plan & wf.ne(BUFFER_WORD).fillna(True)).sum())
+    return FollowRows(folded.loc[in_plan].reset_index(drop=True), uncounted)
+
+
 class _Refused(Exception):
     """공정 하나를 뺀다 — 규칙과 까닭."""
 
@@ -599,13 +698,8 @@ class _Expander:
         self.variants = variants.assign(
             생산계획년월=variants["생산계획년월"].astype("int64")
         ).reset_index(drop=True)
-        reqb = tables["RQ_REQB"]
-        self.reqb = reqb.assign(
-            _process=reqb["공정"].astype("string").str.strip(),
-            _basis=normalize_demand_basis(reqb["소요기준"]),
-            _wf=reqb["WF 구분"].astype("string").str.strip().str.casefold(),
-        )
-        self.bdq_names = _process_names(tables)
+        self.reqb = _normalized_reqb(tables["RQ_REQB"])
+        self.bdq_names = bdq_process_names(tables)
         self.contract_keys = load_core_data_contract().derived_keys
 
     def process(self, process: ProcessRow) -> tuple[ProcessOutcome, dict[str, pd.DataFrame] | None]:
@@ -667,12 +761,8 @@ class _Expander:
             variants, uncounted = self._follow(process, route)
         else:
             variants, uncounted = self._specified(process, route), 0
-        if variants.empty:
-            return variants, uncounted
-        in_period = variants["생산계획년월"].map(
-            lambda month: int(month) in self.month_set and route.period.covers(int(month))
-        )
-        variants = variants.loc[in_period.astype(bool)]
+            if not variants.empty:
+                variants = variants.loc[_in_plan(self.month_set, route.period, variants)]
         if variants.empty:
             return variants, uncounted
         rows = variants.assign(
@@ -685,30 +775,12 @@ class _Expander:
         return rows.reset_index(drop=True), uncounted
 
     def _follow(self, process: ProcessRow, route: RouteRow) -> tuple[pd.DataFrame, int]:
-        reference = route.reference.strip()
-        picked = self.reqb.loc[self.reqb["_process"].eq(reference).fillna(False)]
-        if picked.empty:
-            picked = self.reqb.loc[
-                self.reqb["_process"].str.casefold().eq(reference.casefold()).fillna(False)
-            ]
-        if picked.empty:
-            raise _Refused(
-                RULE_REFERENCE,
-                f"참조 공정 {with_subject_particle(reference)} 이번 경로(RQ_REQB)에 없음",
-            )
-        bases = set(picked["_basis"].dropna())
-        if bases != {process.basis}:
-            raise _Refused(RULE_REFERENCE, f"참조 공정 {reference} 의 소요기준이 다름")
-        folded = picked[list(_FOLLOW_KEYS)].drop_duplicates()
-        folded = folded.assign(생산계획년월=folded["생산계획년월"].astype("int64"))
-        uncounted = 0
-        if process.basis == "PKG":
-            in_months = folded["생산계획년월"].map(
-                lambda month: int(month) in self.month_set and route.period.covers(int(month))
-            )
-            wf = folded["WF 구분"].astype("string").str.strip().str.casefold()
-            uncounted = int((in_months.astype(bool) & wf.ne(BUFFER_WORD).fillna(True)).sum())
-        return folded.reset_index(drop=True), uncounted
+        found = _follow_rows(
+            self.reqb, self.month_set, route.reference, process.basis, route.period
+        )
+        if found.refused is not None:
+            raise _Refused(*found.refused)
+        return found.rows, found.uncounted
 
     def _specified(self, process: ProcessRow, route: RouteRow) -> pd.DataFrame:
         product = self.variants.loc[
@@ -880,18 +952,6 @@ class _Expander:
             combined = pd.concat([self.tables[name][keys], frame[keys]], ignore_index=True)
             if bool(combined.duplicated().any()):
                 raise _Refused(RULE_DUPLICATE, f"{name} 업무 키가 겹침(같은 경로를 두 번 적음)")
-
-
-def _process_names(tables: Mapping[str, pd.DataFrame]) -> set[str]:
-    """BDQ 표의 공정 이름(대소문자 무시) — 졸업 판정(R-01)이 견준다."""
-    names: set[str] = set()
-    for name in PROCESS_TABLES:
-        frame = tables.get(name)
-        if frame is None or "공정" not in frame.columns:
-            continue
-        values = frame["공정"].dropna().astype("string").str.strip().str.casefold()
-        names.update(str(value) for value in values.unique())
-    return names
 
 
 def provenance_rows(report: ExtraMergeReport) -> list[dict[str, object]]:

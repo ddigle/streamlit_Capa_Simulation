@@ -30,13 +30,15 @@ from capa_simulation.services.extra_process_merge import (
     ActiveExtraPack,
     CapacityCheck,
     ExtraPackVersion,
+    bdq_process_names,
     capacity_stop,
+    follow_routes,
     load_lines,
     merge_extra_processes,
     process_rows_frame,
     strip_extra_processes,
 )
-from capa_simulation.services.extra_process_pack import read_pack_files
+from capa_simulation.services.extra_process_pack import Period, read_pack_files
 from capa_simulation.services.route_load_exceptions import NO_ROUTE_LOAD_EXCEPTIONS
 
 Tables = dict[str, pd.DataFrame]
@@ -307,6 +309,82 @@ def test_following_a_pkg_process_counts_the_inherited_rows_outside_buffer() -> N
     assert bond.outcome == OUTCOME_MERGED
     # 제품 B 의 Base 줄 12달은 이어받아도 PKG 셈에 들지 않는다.
     assert bond.inherited_uncounted == 12
+
+
+def test_follow_routes_counts_match_the_merge_report() -> None:
+    """편집기 미리보기(`follow_routes`)와 합치기가 같은 몸통이라 줄 수 · Buffer 밖 수가 같다."""
+    tables = _with_pkg_buffer_for_product_a(_seed())
+    files = edited(
+        template_files(),
+        "01_process.csv",
+        lambda rows: set_cell(rows, lambda row: row[0] == BOND, "소요기준", "PKG"),
+    )
+    files = edited(
+        files,
+        "02_route.csv",
+        lambda rows: set_cell(rows, lambda row: row[0] == BOND, "참조공정", "DEMO_Pack"),
+    )
+    files = edited(
+        files,
+        "02_route.csv",
+        lambda rows: set_cell(rows, lambda row: row[0] == BOND, "시작월", "202604"),
+    )
+    tables_before = {name: frame.copy() for name, frame in tables.items()}
+
+    pkg = follow_routes(tables, "DEMO_Pack", "PKG", Period(202604, None))
+    chip = follow_routes(_seed(), "DEMO_Chip_Attach", "CHIP", Period(202601, 202606))
+    missing = follow_routes(_seed(), "DEMO_Nowhere", "CHIP", Period(202601, None))
+    other_basis = follow_routes(_seed(), "DEMO_Chip_Attach", "WF", Period(202601, None))
+
+    bond = {
+        item.process: item
+        for item in merge_extra_processes(
+            tables, _active(files), check=_never_stops
+        ).report.outcomes
+    }[BOND]
+    chip_files = edited(
+        template_files(),
+        "02_route.csv",
+        lambda rows: set_cell(rows, lambda row: row[0] == BOND, "끝월", "202606"),
+    )
+    chip_bond = {
+        item.process: item
+        for item in merge_extra_processes(
+            _seed(), _active(chip_files), check=_never_stops
+        ).report.outcomes
+    }[BOND]
+    assert (len(pkg.rows), pkg.uncounted, pkg.refused) == (
+        bond.route_rows,
+        bond.inherited_uncounted,
+        None,
+    )
+    assert pkg.uncounted == 9 and len(pkg.rows) > pkg.uncounted
+    assert pkg.rows["생산계획년월"].min() == 202604
+    assert (len(chip.rows), chip.uncounted) == (chip_bond.route_rows, 0)
+    assert chip.rows["생산계획년월"].max() == 202606
+    assert missing.refused is not None and missing.refused[0] == RULE_REFERENCE
+    assert missing.rows.empty
+    assert other_basis.refused == (RULE_REFERENCE, "참조 공정 DEMO_Chip_Attach 의 소요기준이 다름")
+    for name, frame in tables.items():
+        pd.testing.assert_frame_equal(frame, tables_before[name])
+
+
+def test_bdq_names_leave_out_stripped_rows_case_sensitively() -> None:
+    seed = _seed()
+    upeh = seed["RQ_UPEH"]
+    extra = upeh.head(2).assign(공정=["DEMO_Old_Extra ", "demo_old_extra"])
+    tables = dict(seed)
+    tables["RQ_UPEH"] = pd.concat([upeh, extra], ignore_index=True)
+
+    names = bdq_process_names(tables)
+    stripped = bdq_process_names(tables, ("DEMO_Old_Extra",))
+
+    assert {"demo_chip_attach", "demo_old_extra"} <= names
+    # 대소문자가 같은 행만 걷히고, 대소문자만 다른 행은 남아 R-01 에 걸린다.
+    assert "demo_old_extra" in stripped
+    assert bdq_process_names(tables, ("DEMO_Old_Extra", "demo_old_extra")) == names - {
+        "demo_old_extra"
+    }
 
 
 def test_the_same_path_written_twice_is_refused_by_r06() -> None:
