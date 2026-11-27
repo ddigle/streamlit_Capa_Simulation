@@ -403,8 +403,8 @@ OUTSIDE_WHY: Final = "경로 밖 달"
 # 표 위 작업 줄(종류 · 「따라올 제품」 · 「판 만들기」)과 표 도구 막대를 한 줄로
 # 세우는 창 폭 · 작업 줄 자리(`edit_grid.one_line_style` — 설계 규칙 4장 「부대공정 편집기 표 위
 # 한 줄」).
-ONE_LINE_MIN_WINDOW_PX: Final = 1400
-ACTION_ROW_RESERVE_PX: Final = 550
+ONE_LINE_MIN_WINDOW_PX: Final = 1360
+ACTION_ROW_RESERVE_PX: Final = 490
 ONE_LINE_STYLE: Final = edit_grid.one_line_style(
     ACTIONS_BOX,
     ACTION_ROW,
