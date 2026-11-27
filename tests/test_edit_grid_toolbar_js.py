@@ -25,6 +25,8 @@ LAYOUT_VARS = {"toolbar-justify", "toolbar-reserve", "tb-height", "tb-radius", "
 PURE = asset("eg_pure.js")
 CORE = asset("eg_core.js")
 REGISTERED_JS = edit_grid.registered_js()
+# 줄 규칙 표의 등록(글 칸 · 줄 갈래 — 부대공정 편집기 · 접속 명단).
+ROWS_JS = edit_grid.registered_js(edit_grid.ROWS_JS_PARTS)
 
 
 def _pure(*names: str) -> str:
@@ -496,8 +498,8 @@ const R = {}
 """
 
 
-def _run(body: str, payload: dict[str, Any]) -> Any:
-    source = FAKE_DOM + mountable(REGISTERED_JS)
+def _run(body: str, payload: dict[str, Any], js: str = REGISTERED_JS) -> Any:
+    source = FAKE_DOM + mountable(js)
     runner = (
         "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))\n"
         + PRELUDE
@@ -822,7 +824,7 @@ def test_the_status_bar_sums_the_numeric_cells_of_the_selection() -> None:
 def test_fit_measures_text_and_remembers_widths_per_table() -> None:
     body = r"""
   const storeKey = 'capa-edit-grid-v1:demo_grid:RQ_DEMO:widths'
-  // 저장된 폭이 없는 첫 진입 — 맞춤을 한 번 돌리고 저장한다.
+  // 저장된 폭이 없는 첫 진입 — 글에 맞추되 저장하지 않는다(사람이 맞추거나 끈 폭만 저장).
   R.first = { widths: S.widths.slice(), auto: S.tb.lastFit && S.tb.lastFit.auto,
     stored: JSON.parse(storage.data[storeKey] || 'null'), note: note() }
   // 칸 폭 맞춤 단추 — 글이 길어진 칸(편집 미리보기 포함)을 따라온다.
@@ -833,7 +835,7 @@ def test_fit_measures_text_and_remembers_widths_per_table() -> None:
   key(q('.eg-ed'), 'Enter')
   click(tb().fit)
   R.fit = { widths: S.widths.slice(), note: note(), auto: S.tb.lastFit.auto,
-    cols: S.tb.lastFit.cols,
+    cols: S.tb.lastFit.cols, stored: JSON.parse(storage.data[storeKey] || 'null'),
     head: q('.eg-head').children[2].style.width }
   // 머리 경계 두 번 누름 — 그 칸만 맞춤.
   const widths = S.widths.slice()
@@ -849,20 +851,175 @@ def test_fit_measures_text_and_remembers_widths_per_table() -> None:
     # 월: 머리 6자 × 8 + 30 = 78.
     assert first["widths"] == [72, 46, 78, 78, 78, 78]
     assert first["auto"] is True and first["note"] == "", "첫 진입 맞춤은 상태 줄을 쓰지 않는다"
-    assert first["stored"] == {
-        "k:공정": 72,
-        "k:구분": 46,
-        "v:202701": 78,
-        "v:202702": 78,
-        "v:202703": 78,
-        "v:202704": 78,
-    }
+    assert first["stored"] is None, "첫 진입 맞춤은 저장하지 않는다"
     fit = result["fit"]
     # 못 읽은 글 「1234567890」 10자 × 7 + 16 = 86.
     assert fit["widths"] == [72, 46, 86, 78, 78, 78]
     assert fit["note"] == "칸 폭 맞춤 — 6칸" and fit["auto"] is False and fit["cols"] == 6
+    assert fit["stored"] == {
+        "k:공정": 72,
+        "k:구분": 46,
+        "v:202701": 86,
+        "v:202702": 78,
+        "v:202703": 78,
+        "v:202704": 78,
+    }, "단추로 맞춘 폭은 저장한다"
     assert fit["head"] == "86px"
     assert result["one"] == [46, 1, "칸 폭 맞춤 — 1칸"]
+
+
+# 줄마다 업무 키가 있는 글 표(부대공정 편집기 공정 표 꼴) — 새 줄에 친 이름은 초안이고 새 바탕의
+# 양식은 빈칸이다.
+NAME_SPEC = eg.GridSpec(
+    "RQ_NAMES", "공정", ("No.",), ("공정", "메모"), eg.ValueFormat("text", 0), id_column="_id"
+)
+
+
+def _name_pair(key: str, rows: int, names: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    frame = pd.DataFrame(
+        {
+            "No.": [f"새 {k}" for k in range(1, rows + 1)],
+            "_id": [f"n{k}" for k in range(1, rows + 1)],
+            "공정": [None] * rows,
+            "메모": [None] * rows,
+        }
+    )
+    base = build_base(frame, NAME_SPEC, None)
+    shell = encode_base(
+        base.body,
+        host="demo_grid",
+        base_key=key,
+        texts=edit_grid.texts(NAME_SPEC, changes_label="적용 전 변경"),
+        palette={"text": "ink"},
+        row_height=30,
+    )
+    draft: eg.DraftState | None = (
+        {"cells": {row: {"공정": name} for row, name in names.items()}, "bad": {}}
+        if names
+        else None
+    )
+    feed = encode_feed(
+        base.index,
+        draft,
+        {"gen": "g1", "undo": [], "redo": []},
+        host="demo_grid",
+        base_key=key,
+        acks={},
+        toast=None,
+    )
+    return shell, feed
+
+
+def test_new_bases_refit_to_their_draft_text_until_the_person_fits_or_drags() -> None:
+    """빈 시작의 맞춤(머리 글만 — 공정 칸 46)은 저장하지 않아, 새 줄에 친 이름(초안)을 실은 새
+    바탕이 오면 그 feed 를 받은 뒤 다시 맞춘다 — feed 가 먼저 오든 껍데기가 먼저 오든. 칸을 고치는
+    중에 온 feed 는 편집을 닫지 않고 맞춤을 그다음 feed 로 미루며, 칸이 열린 채 온 새 바탕(미룸)은
+    친 글 전부로 확정한 뒤 맞춘다. 사람이 맞춘 폭은 저장돼 다음 새 바탕이 되살린다(다시 맞추지
+    않음)."""
+    body = r"""
+  const storeKey = 'capa-edit-grid-v1:demo_grid:RQ_NAMES:widths'
+  const stored = () => JSON.parse(storage.data[storeKey] || 'null')
+  const again = (shell) => globalThis.__mount({ data: shell, parentElement: host.parentNode,
+    setStateValue: (name, value) => sent.push([name, JSON.parse(JSON.stringify(value))]) })
+  const ed = () => q('.eg-ed')
+  const ack = (feed) => Object.assign({}, feed, { acks: { [S.mount]: S.box.seq } })
+  const now = () => ({ name: S.widths[1], stored: stored(), base: S.shell.baseKey,
+    auto: S.tb.lastFit && S.tb.lastFit.auto, edit: Boolean(S.edit) })
+  R.empty = { ...now(), at: [S.anchor.r, S.anchor.c] }
+  // 새 1 공정 칸에 이름 — 브라우저 차례대로 feed(ack · 초안)가 껍데기보다 먼저 온다.
+  scroller.focus()
+  key(scroller, 'D')
+  ed().value = 'DEMO_W2_TC'
+  key(ed(), 'Enter')
+  await tick(5)
+  sendFeed(ack(input.feed2))
+  again(input.shell2)
+  R.named = now()
+  // 껍데기가 먼저 — feed 가 올 때까지 기본 폭, 온 뒤 맞춤.
+  again(input.shell3)
+  R.shellFirst = now()
+  sendFeed(input.feed3)
+  R.feedAfter = now()
+  // 껍데기가 먼저 온 뒤 칸을 열었다 — 그때 온 feed 는 편집을 닫지 않고 맞춤을 미룬다.
+  again(input.shell4)
+  scroller.focus()
+  key(scroller, 'ArrowDown')
+  key(scroller, 'ArrowDown')
+  key(scroller, 'ArrowDown')
+  key(scroller, 'X')
+  sendFeed(input.feed4)
+  await tick(5)
+  R.editing = { ...now(), value: ed().value, open: ed().style.display !== 'none' }
+  ed().value = 'X_SHORT'
+  key(ed(), 'Enter')
+  await tick(5)
+  sendFeed(ack(input.feed4b))
+  R.afterEdit = now()
+  // 칸이 열린 채 새 바탕이 오면 미룬다 — 친 글 전부로 확정한 뒤 새 바탕을 맞춘다.
+  const before = S.tb.lastFit
+  key(scroller, 'Y')
+  sendFeed(input.feed5)
+  again(input.shell5)
+  await tick(5)
+  R.deferred = { ...now(), value: ed().value, refit: S.tb.lastFit !== before }
+  ed().value = 'Y_TYPED_SLOWLY_TO_THE_END'
+  key(ed(), 'Enter')
+  await tick(5)
+  R.landed = { ...now(), refit: S.tb.lastFit !== before, ops: S.box.ops.map((op) => op.values) }
+  // 사람이 맞춘 폭은 저장 — 다음 새 바탕은 되살린다(맞춤 없음 — 짧은 이름에 줄지 않음).
+  click(tb().fit)
+  R.fit = now()
+  const fitAt = S.tb.lastFit
+  sendFeed(input.feed6)
+  again(input.shell6)
+  R.restored = { ...now(), sameFit: S.tb.lastFit === fitAt }
+"""
+    payload: dict[str, Any] = {"canvas": True}
+    pairs = {
+        "": _name_pair("k1", 3, {}),
+        "2": _name_pair("k2", 4, {"n1": "DEMO_W2_TC"}),
+        "3": _name_pair("k3", 5, {"n1": "DEMO_W2_TC", "n2": "DEMO_W2_OTHER_NAME"}),
+        "4": _name_pair("k4", 6, {"n1": "DEMO_W2_TC"}),
+        "4b": _name_pair("k4", 6, {"n1": "DEMO_W2_TC", "n4": "X_SHORT"}),
+        "5": _name_pair("k5", 7, {"n1": "DEMO_W2_TC", "n4": "X_SHORT"}),
+        "6": _name_pair("k6", 8, {"n1": "DEMO"}),
+    }
+    for tag, (shell, feed) in pairs.items():
+        payload[f"shell{tag}"] = shell
+        payload[f"feed{tag}"] = feed
+    result = _run(body, payload, ROWS_JS)
+    # 머리 「공정」 2자 × 8 + 30 = 46 · 「DEMO_W2_TC」 10자 × 7 + 16 = 86 ·
+    # 「DEMO_W2_OTHER_NAME」 18자 → 142 · 25자는 상한 160.
+    assert result["empty"] == {
+        "name": 46,
+        "stored": None,
+        "base": "k1",
+        "auto": True,
+        "edit": False,
+        "at": [0, 1],
+    }
+    assert result["named"] == {
+        "name": 86,
+        "stored": None,
+        "base": "k2",
+        "auto": True,
+        "edit": False,
+    }
+    assert result["shellFirst"]["name"] == 80, "feed 전에는 기본 폭(초안을 아직 모른다)"
+    assert result["feedAfter"]["name"] == 142 and result["feedAfter"]["stored"] is None
+    editing = result["editing"]
+    assert editing["edit"] is True and editing["value"] == "X" and editing["open"] is True
+    assert editing["name"] == 80, "칸을 고치는 중에는 맞추지 않는다(편집을 닫지 않음)"
+    assert result["afterEdit"]["name"] == 86 and result["afterEdit"]["edit"] is False
+    deferred = result["deferred"]
+    assert deferred["base"] == "k4" and deferred["edit"] is True and deferred["value"] == "Y"
+    assert deferred["refit"] is False
+    landed = result["landed"]
+    assert landed["base"] == "k5" and landed["refit"] is True and landed["name"] == 160
+    assert landed["ops"] == [[["Y_TYPED_SLOWLY_TO_THE_END"]]], "친 글 전부가 간다"
+    assert result["fit"]["stored"] == {"k:No.": 54, "v:공정": 160, "v:메모": 46}
+    restored = result["restored"]
+    assert restored["base"] == "k6" and restored["name"] == 160 and restored["sameFit"] is True
 
 
 def test_header_edges_resize_columns_and_a_new_mount_restores_them() -> None:

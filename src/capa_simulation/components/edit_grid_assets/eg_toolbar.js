@@ -1,6 +1,6 @@
 // 범용 편집 그리드 — 도구 막대(TOOLBAR): 찾기(일치 칸 칠함 · ▲▼ · Enter/Shift+Enter · F3/Shift+F3 · Ctrl+F · Esc 지움)·되돌리기/
 // 다시 실행 단추(feed 의 수가 0 이면 꺼짐, ack 까지 기다림 표시)·칸 폭 맞춤(전체 — 머리 경계를 두 번 누르면 그 칸)·머리 경계 끌어
-// 폭 바꾸기(40~480px, 표마다 브라우저 저장 — 저장이 없는 첫 진입에 맞춤 한 번)·적용 전 변경 서랍(옛 값 → 새 값, 누르면 그 칸,
+// 폭 바꾸기(40~480px, 맞추거나 끈 폭은 표마다 브라우저 저장 — 저장이 없으면 새 표마다 초안까지 든 글에 맞춤, 저장 안 함)·적용 전 변경 서랍(옛 값 → 새 값, 누르면 그 칸,
 // ✕ 는 revert)·전체 화면(그림자 DOM 안 <dialog>.showModal() — top layer 라 긴 회차의 opacity·머리 띠·사이드바에 묻히지 않는다)·
 // 상태 줄 선택 범위 요약(개수 · 합계 · 평균)·상태 줄 편집 범위 글(feed `scope`). 순수 구획 `// <eg-search>`·`// <eg-summary>`·`// <eg-width>` 은 node 시험이 떼어
 // 돌린다. 갈고리는 `feature({ name: 'toolbar', ... })` 하나로 단다.
@@ -726,7 +726,8 @@ function tbColumnTexts(S, c, memo) {
   return texts
 }
 
-// 칸 폭 맞춤 — only 가 null 이면 모든 칸. auto 는 첫 진입 맞춤(상태 줄 글을 쓰지 않는다). 글 폭을 잴 수 없으면 false.
+// 칸 폭 맞춤 — only 가 null 이면 모든 칸. auto 는 새 표의 맞춤(tbOnLayout)이라 저장하지 않고 상태 줄 글도 쓰지 않는다 — 저장은
+// 사람이 맞추거나 끈 폭만이다(빈 칸을 머리 글만으로 맞춘 폭이 남아 뒤에 온 글을 자르지 않게). 글 폭을 잴 수 없으면 false.
 function tbFitColumns(S, only, auto) {
   const m = S.model
   if (!m) return false
@@ -736,7 +737,7 @@ function tbFitColumns(S, only, auto) {
   const began = performance.now()
   const memo = new Map()
   const widths = S.widths.slice()
-  const cols = only || Array.from({ length: m.colCount }, (item, c) => c)
+  const cols = only || [...Array(m.colCount).keys()]
   for (const c of cols) {
     const isKey = c < m.keyCount
     const head = isKey ? String(m.keyCols[c].label || m.keyCols[c].name) : String(m.valueCols[c - m.keyCount])
@@ -744,9 +745,8 @@ function tbFitColumns(S, only, auto) {
   }
   S.tb.widthsModel = m
   setWidths(S, widths)
-  tbSaveWidths(S)
-  S.tb.lastFit = { cols: cols.length, ms: performance.now() - began, auto: Boolean(auto) }
-  if (!auto) setStatus(S, tbFill(tbText(S, 'fitDone', '칸 폭 맞춤 — {n}칸'), { n: tbNumber(cols.length) }))
+  S.tb.lastFit = { cols: cols.length, ms: performance.now() - began, auto }
+  if (!auto) tbSaveWidths(S), setStatus(S, tbFill(tbText(S, 'fitDone', '칸 폭 맞춤 — {n}칸'), { n: tbNumber(cols.length) }))
   return true
 }
 
@@ -767,10 +767,12 @@ function tbLoadWidths(S) {
   return readWidths(tbStorage(), key, widthNames(m.keyCols, m.valueCols), S.widths.slice(), TB_DRAG_LOW, TB_DRAG_HIGH)
 }
 
-// 새 표(모델)가 섰다 — 저장된 폭이 있으면 되살리고, 없으면 맞춤을 한 번 돌려 저장한다.
+// 새 표(모델)가 그 feed 를 받았다 — 저장된 폭이 있으면 되살리고, 없으면 그 표의 글(초안 포함)에 맞춘다(저장 안 함 — 다음 새 표도
+// 다시 맞춘다). 껍데기만 선 때는 초안이 아직 없어(새 줄에 적은 글은 초안이다) feed 를 기다린다(tbOnFeed 가 부른다). 칸을 고치는
+// 중이면 편집을 닫지 않게 그다음 feed 로 미룬다.
 function tbOnLayout(S) {
   const tb = S.tb
-  if (!tb || !S.model || tb.widthsModel === S.model) return
+  if (!tb || !S.feedData || tb.widthsModel === S.model || S.edit) return
   tb.widthsModel = S.model
   const saved = tbLoadWidths(S)
   if (saved) setWidths(S, saved)
@@ -1014,6 +1016,7 @@ function tbScope(S) {
 
 function tbOnFeed(S) {
   if (!S.tb) return
+  tbOnLayout(S)
   tbSync(S)
   tbScope(S)
   if (S.tb.drawerOpen) tbRenderDrawer(S)

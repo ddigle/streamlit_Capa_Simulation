@@ -559,8 +559,8 @@
     서버가 지금 원본 칸 값에서 되풀이한다. 순수 구획 `// <eg-paste>`·`// <eg-fill>` 과 사례 표(`tests/fixtures/edit_grid_cases.json`)
     는 `tests/test_edit_grid_fill_js.py` 가 본다.
   - `eg_toolbar.js`·`eg_toolbar.css`(도구 막대)는 찾기(Ctrl+F·F3·Enter/Shift+Enter·Esc)·되돌리기/다시 실행 단추·칸 폭 맞춤·머리
-    경계 끌어 폭 바꾸기(40~480px, 표마다 브라우저 저장)·적용 전 변경 서랍·전체 화면(그림자 DOM 안 `<dialog>.showModal()`)·상태 줄
-    선택 범위 요약(개수 · 합계 · 평균)을 맡는다. 되돌리기·다시 실행·칸 폭 맞춤·「적용 전 (n)」·찾기 ▲▼ 를 마우스로 누르면 초점이
+    경계 끌기(40~480px — 맞추거나 끈 폭만 표마다 브라우저 저장, 없으면 새 표마다 초안까지 맞춤)·적용 전 변경 서랍·전체 화면(그림자
+    DOM 안 `<dialog>.showModal()`)·상태 줄 선택 범위 요약(개수·합계·평균)을 맡는다. 막대 단추(전체 화면 밖)를 마우스로 누르면 초점이
     표로 돌아간다(`tbGridCommand` — 이어 누르는 Ctrl+Z·화살표·Ctrl+C/V 가 표에 간다, 자판으로 누르면 단추에 남는다, 찾을 글이 없어
     찾기 칸에 초점을 준 ▲▼ 는 돌리지 않는다). 순수 구획 `// <eg-search>`·`// <eg-summary>`·
     `// <eg-width>` 과 가짜 DOM 동작은 `tests/test_edit_grid_toolbar_js.py` 가 본다.
