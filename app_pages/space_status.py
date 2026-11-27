@@ -628,22 +628,24 @@ def _find_unit(
 
 def _search_miss(name: str, target: UnitSearchTarget, as_of_day: date) -> str:
     """「설비 찾기」 로 연 층 도면에 그 호기가 없는 까닭 한 마디(알림창 · Alarm — 무엇을 ·
-    어디서)."""
+    어디서). 까닭은 이름 · 층 바로 뒤이고 Main 설비 이름은 맨 끝 괄호다 — 알림창 짧은 글이 60자에서
+    말줄임해도(`alerts.short_text`) 까닭과 「묶음으로 맞춤」 이 남는다. 낱말은 FAB 요약 · Guide 와
+    같다(「레이아웃표시 N」 뜻은 Guide)."""
     where = floor_label(target.floor)
     if target.place == SEARCH_UNPLACED:
         why = "미배치(좌표 없음)"
     elif target.place == SEARCH_EXCLUDED:
-        why = "레이아웃 제외(레이아웃표시 N)"
+        why = "레이아웃 제외"
     elif target.place == SEARCH_EXITED:
-        why = f"기준일 {as_of_day.isoformat()} 에 반출/이설을 마침"
+        why = f"{as_of_day.isoformat()}에 반출/이설 마침"
     else:
         why = "도면에 없음"
     tail = (
-        f" · Main 설비 {quoted(target.group)} 묶음으로 맞춤"
+        f" · 묶음으로 맞춤(Main 설비 {quoted(target.group)})"
         if target.group is not None and target.lead is not None
         else ""
     )
-    return f"{quoted(name)} — {where} 도면에 없습니다 · {why}{tail}"
+    return f"{quoted(name)} {where} · {why}{tail}"
 
 
 def _search_hidden(key: FloorKey, as_of_day: date, unit: str, covered: bool) -> None:

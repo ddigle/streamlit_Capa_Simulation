@@ -203,6 +203,11 @@ def _search(app: AppTest, name: str) -> AppTest:
     return _ok(app.run())
 
 
+def _short(shown: Any) -> str:
+    """표지 알림의 알림창 짧은 글(`alerts.short_text` — 60자 말줄임)."""
+    return str((shown.note or {}).get("short", ""))
+
+
 def _focuses(calls: list[dict[str, Any]], since: int = 0) -> list[dict[str, Any]]:
     return [data["focus"] for data in _floor_views(calls, since) if "focus" in data]
 
@@ -298,15 +303,16 @@ def test_the_same_name_again_moves_again_with_a_new_token(
     ("name", "why"),
     [
         ("TRAY-01", "미배치(좌표 없음)"),
-        ("N-01", "레이아웃 제외(레이아웃표시 N)"),
-        ("OUT-01", "반출/이설을 마침"),
+        ("N-01", "레이아웃 제외"),
+        ("OUT-01", "반출/이설 마침"),
     ],
 )
 def test_a_unit_off_the_drawing_opens_its_floor_and_says_why_in_the_alarm(
     tmp_path: Path, calls: list[dict[str, Any]], name: str, why: str
 ) -> None:
     """도면에 서지 않은 호기 — 그 층은 열고 맞추지 않으며, 알림창 · Alarm 에 안내 한 마디(무엇을 ·
-    어디서 · 까닭)다. 버튼 곁 칸에는 그리지 않는다."""
+    어디서 · 까닭 — 까닭이 이름 · 층 바로 뒤라 알림창 짧은 글에 남는다)다. 버튼 곁 칸에는 그리지
+    않는다."""
     app = _open(tmp_path)
     start = len(calls)
     _search(app, name)
@@ -314,9 +320,8 @@ def test_a_unit_off_the_drawing_opens_its_floor_and_says_why_in_the_alarm(
     assert _floor_views(calls, start) and not _focuses(calls, start)
     # 표지 글은 마크다운 원문이다 — 이름의 구두점 막음(`\\-`)을 걷고 읽는다.
     notes = [note.value.replace("\\", "") for note in flashed(app, "info")]
-    assert any(f"「{name}」 — C1 1F 도면에 없습니다" in note and why in note for note in notes), (
-        notes
-    )
+    assert any(f"「{name}」 C1 1F · " in note and why in note for note in notes), notes
+    assert any(why in _short(note) for note in flashed(app, "info")), notes
     assert not app.info
 
 
@@ -324,7 +329,8 @@ def test_a_module_off_the_drawing_fits_its_standing_bundle_and_says_so(
     tmp_path: Path, calls: list[dict[str, Any]]
 ) -> None:
     """도면에 서지 않은 모듈(레이아웃표시 N 인 MOD-1C)은 층을 열고 같은 층 도면에 선 형제(MOD-1A)로
-    맞춰 그 묶음을 보이며, 알림창 한 마디가 그 묶음으로 맞췄다고 말한다."""
+    맞춰 그 묶음을 보이며, 알림창 한 마디가 그 묶음으로 맞췄다고 말한다 — Main 설비 이름은 맨 끝
+    괄호라 긴 이름에 짧은 글이 잘려도 「묶음으로 맞춤」 은 남는다."""
     app = _open(tmp_path)
     start = len(calls)
     _search(app, "MOD-1C")
@@ -332,10 +338,37 @@ def test_a_module_off_the_drawing_fits_its_standing_bundle_and_says_so(
     assert [focus["id"] for focus in _focuses(calls, start)] == ["MOD-1A"]
     notes = [note.value.replace("\\", "") for note in flashed(app, "info")]
     assert any(
-        "「MOD-1C」 — C1 1F 도면에 없습니다 · 레이아웃 제외(레이아웃표시 N)"
-        " · Main 설비 「MOD-1」 묶음으로 맞춤" in note
+        "「MOD-1C」 C1 1F · 레이아웃 제외 · 묶음으로 맞춤(Main 설비 「MOD-1」)" in note
         for note in notes
     ), notes
+
+
+def test_a_long_module_name_keeps_the_bundle_word_in_the_alarm_short_text(
+    tmp_path: Path, calls: list[dict[str, Any]]
+) -> None:
+    """이름이 길어 알림창 짧은 글(60자)이 잘려도 까닭과 「묶음으로 맞춤」 은 남는다 — Main 설비
+    이름만 잘린다(설계 규칙 UI-NTF-06)."""
+    module = {"Main 설비": "DEMO-MODULE-LONG-01", "Xsize": 6, "Ysize": 4}
+    app = _open(
+        tmp_path,
+        fleet=_master(
+            {**module, "설비명": "DEMO-MODULE-LONG-01A", "X좌표": 60.0, "Y좌표": 10.0},
+            {
+                **module,
+                "설비명": "DEMO-MODULE-LONG-01C",
+                "레이아웃표시": "N",
+                "X좌표": None,
+                "Y좌표": None,
+            },
+        ),
+    )
+    _search(app, "DEMO-MODULE-LONG-01C")
+    shorts = [_short(note) for note in flashed(app, "info")]
+    assert any(
+        short.startswith("「DEMO-MODULE-LONG-01C」 C1 1F · 레이아웃 제외 · 묶음으로 맞춤")
+        and short.endswith("…")
+        for short in shorts
+    ), shorts
 
 
 def test_the_search_works_while_the_fab_layout_is_being_edited(
