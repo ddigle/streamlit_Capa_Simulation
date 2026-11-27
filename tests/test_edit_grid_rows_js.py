@@ -541,7 +541,7 @@ def test_a_long_choice_list_filters_scrolls_and_keeps_typed_text_on_blur() -> No
     강조만 옮기고(끝에서 돎) 강조가 보이는 자리로 목록을 굴린다(높이 상한 안). 다시 그려도 사용자가
     굴린 자리는 그대로다. 친 글로 거르고 Enter 는 강조한 항목, blur 는 친 글 그대로(2026-11-27 총괄
     결정 R2). 오류 글은 칸마다 맞고 긴 목록은 줄인다(spike 2-6 · 2-7). 목록 자체 누름(굴림 막대)은
-    편집을 닫지 않는다(bdff5a6b 마우스 확정 유지)."""
+    편집을 닫지 않는다(9b74036d 마우스 확정 유지)."""
     shell, index = _list_shell()
     source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
 

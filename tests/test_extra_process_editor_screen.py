@@ -544,7 +544,7 @@ def test_changing_the_reference_of_an_opened_line_and_undoing_it_restores_its_fo
 ) -> None:
     """펼친 줄의 참조공정을 바꾸면 STEP · MCP 양식이 새 참조의 조합이 된다 — 초안에 쓰지 않아,
     참조 칸을 되돌리면 펼친 값으로 돌아오고 그리드에서 고친 모듈수도 되돌리면 「바뀐 것 없음」
-    이다(eee9e9cf)."""
+    이다(4da2e9ea)."""
     app = _applied_one(_app(database), calls)
     assert _shell(calls)["ids"][0] == "b1"
     opened = _form(calls, "b1")
