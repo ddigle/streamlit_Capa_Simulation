@@ -48,10 +48,11 @@ UPEH(`60 / ST` 를 `MI_UPEH_DIGITS` 자리로 반올림)로 받고, 적은 값�
 
 **입력 돕기.** `input_problems` 는 관문이 거절할 입력(빈칸 · 0 이하 · 글 · 대여 > 보유 · 01 ·
 02 칸)을 창과 상관없이 줄 · 칸마다 모은다 — 판 만들기를 막지 않는다(관문이 정본).
-`editor_warnings` 는 관문이 모르는 기준 데이터 쪽 알림(R-01 이름 · R-02 참조공정 · 닫힌 끝월 ·
-창과 안 겹친 경로 · 효율 > 1 · 판에 들지 않는 칸)이다. 기준 데이터 도우미(`editor_context` ·
-`reference_choices` · `line_defaults` · `follow_preview`)는 옛 판 공정을 걷은 이름으로 센다 —
-걷기는 strip 이름을 대소문자 그대로 견주고, 부대공정끼리 참조 금지(V-06)는 대소문자를 무시한다.
+`editor_warnings` 는 관문이 모르는 기준 데이터 쪽 알림(R-01 이름 · R-02 참조공정 · 참조공정 조합에
+없는 STEP · MCP 짝 · 닫힌 끝월 · 창과 안 겹친 경로 · 효율 > 1 · 판에 들지 않는 칸)이다. 기준 데이터
+도우미(`editor_context` · `reference_choices` · `line_defaults` · `follow_preview`)는 옛 판 공정을
+걷은 이름으로 센다 — 걷기는 strip 이름을 대소문자 그대로 견주고, 부대공정끼리 참조 금지(V-06)는
+대소문자를 무시한다.
 공정 표 줄의 양식(`line_form`)은 그 줄의 지금 참조공정 글을 따른다 — STEP · MCP 는 조합이 하나일
 때만 채우고, 고른 참조 · 친 칸은 화면 초안이라 양식에 굽지 않는다.
 """
@@ -132,6 +133,8 @@ CARRY_PRODUCT_ROWS: Final = "생산성(03)에 제품 행이 있음"
 CARRY_OTHER_KEY: Final = "생산성(03) 키가 경로의 STEP · MCP 와 다름"
 CARRY_RATIO: Final = "측정률이 1 이 아님"
 CARRY_RUN_DAY: Final = "RUN_DAY 가 달력이 아님"
+# 참조공정 조합에 없는 STEP · MCP 짝 알림(`editor_warnings` 「조합」 — 막지 않음).
+PAIR_WARNING: Final = "STEP · MCP 가 참조공정 조합에 없음 — 직접 적은 조합인지 확인"
 
 CellInput: TypeAlias = float | int | str | None
 # 값 줄 열쇠 — (줄 id, 표, 양산구분(04 는 빈칸), 칸).
@@ -1519,6 +1522,8 @@ def editor_warnings(model: EditorModel, context: EditorContext) -> tuple[EditorW
             found.append(
                 EditorWarning(line.line_id, "R-02", "참조공정 소요기준이 다름 — 등록 때 빠짐")
             )
+        if choice is not None and _odd_pair(model, line, choice):
+            found.append(EditorWarning(line.line_id, "조합", PAIR_WARNING))
         period = _route_period(line.fields)
         if period is not None:
             end = period[1]
@@ -1539,6 +1544,21 @@ def editor_warnings(model: EditorModel, context: EditorContext) -> tuple[EditorW
     if ignored:
         found.append(EditorWarning(None, "고침", f"판에 안 든 칸 입력 {ignored}칸"))
     return tuple(found)
+
+
+def _odd_pair(model: EditorModel, line: EditorLine, choice: ReferenceChoice) -> bool:
+    """두 칸이 다 찬 (STEP, MCP) 가 참조공정 조합에 없나 — 두 칸을 다른 조합에서 고르거나 참조를
+    바꾼 뒤 친 짝이 남은 줄(막지 않음 — 직접 적는 조합도 받는다, UI-INP-05). 참조 · STEP · MCP 가
+    펼친 값 그대로인 줄은 이 편집기에서 고른 짝이 아니라 뺀다."""
+    pair = (_text(line.fields.step), _text(line.fields.mcp))
+    if not all(pair) or pair in choice.steps:
+        return False
+    opened = next((item.fields for item in model.origin if item.line_id == line.line_id), None)
+    return opened is None or (
+        _text(opened.reference),
+        _text(opened.step),
+        _text(opened.mcp),
+    ) != (_text(line.fields.reference), *pair)
 
 
 def _over_one(result: _LineResult) -> bool:

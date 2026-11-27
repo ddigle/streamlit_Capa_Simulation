@@ -716,6 +716,7 @@ def test_the_check_table_puts_the_reason_second_and_only_table_names_in_the_tabl
     problem = InputProblem(None, "", None, "공정", (), "공정이 하나도 없음")
     warnings = (
         EditorWarning(None, "R-02", "참조공정이 후보에 없음"),
+        EditorWarning(None, "조합", "STEP · MCP 가 참조공정 조합에 없음"),
         EditorWarning(None, "효율", "효율이 1 을 넘음"),
         EditorWarning(None, "고침", "판에 안 든 칸 입력 2칸"),
     )
@@ -728,10 +729,11 @@ def test_the_check_table_puts_the_reason_second_and_only_table_names_in_the_tabl
     assert list(frame["까닭"]) == [
         "공정이 하나도 없음",
         "R-02 · 참조공정이 후보에 없음",
+        "STEP · MCP 가 참조공정 조합에 없음",
         "효율이 1 을 넘음",
         "판에 안 든 칸 입력 2칸",
     ]
-    assert list(frame["표"]) == ["판", "공정", "효율", ""]
+    assert list(frame["표"]) == ["판", "공정", "공정", "효율", ""]
 
 
 def _all_flashes(app: AppTest) -> list[str]:
@@ -1118,6 +1120,10 @@ def test_the_guide_and_the_header_helps_say_what_the_editor_does() -> None:
     ):
         assert word in section, word
     assert "공정 더하기" not in section, "걷은 팝오버 이름"
+    assert "STEP_SEQ · MCP_SEQ 칸은 그 줄 참조공정이 후보일 때" in section, (
+        "STEP · MCP 목록이 서는 때"
+    )
+    assert "참조공정 조합에 없는 짝이면" in section and "조합" in editor.WARNING_TABLES
     for table, text in editor.VALUE_HELPS.items():
         assert "「YY.MM~」" in text and "이후」" not in text, table
         if table != editor.EQUIPMENT_TABLE:

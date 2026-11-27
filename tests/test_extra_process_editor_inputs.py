@@ -355,11 +355,57 @@ def test_warnings_tell_r01_r02_closed_ends_windows_rates_and_ignored_cells() -> 
         (bond, "효율"),
         ("n1", "R-01"),
         ("n1", "R-02"),
+        ("n1", "조합"),
         ("n1", "창"),
         (None, "고침"),
     }
     assert "경로 끝월 202609 뒤 계획 달은 계산에 들지 않음" in texts
     assert "판에 안 든 칸 입력 2칸" in texts
+
+
+def test_a_step_mcp_pair_outside_the_reference_combos_is_a_warning_not_a_block() -> None:
+    """STEP · MCP 를 칸마다 따로 고르면 두 칸이 다른 조합에서 온 짝(MIXED)이 되고, 참조를 바꾼
+    뒤 친 짝이 남으면 새 참조 조합에 없는 짝(STALE)이 된다 — 둘 다 「조합」 알림이다(막지 않음,
+    직접 적는 조합도 받는다). 참조 · STEP · MCP 가 펼친 값 그대로인 줄(`b1` — 펼친 짝이 지금
+    조합에 없음)은 이 편집기에서 고른 짝이 아니라 빼고, 그 줄도 짝 한 칸을 바꾸면 선다."""
+    seed = _seed()
+    reqb = seed["RQ_REQB"]
+    second = reqb.loc[reqb["공정"].eq("DEMO_Chip_Attach")].assign(
+        STEP_SEQ="DEMO-P101", MCP_SEQ="DEMO-1B"
+    )
+    seed["RQ_REQB"] = pd.concat([reqb, second], ignore_index=True)
+    context = editor_context(seed)
+    model = model_from_pack(_editor_pack())
+    bond, aoi = model.lines
+
+    def line(reference: str, step: str, mcp: str, name: str) -> LineFields:
+        return LineFields(
+            name=name,
+            area="Main",
+            basis="CHIP",
+            modules=1,
+            reference=reference,
+            step=step,
+            mcp=mcp,
+            start=202601,
+        )
+
+    def pairs(*rows: tuple[str, LineFields]) -> set[str | None]:
+        found = editor_warnings(with_lines(model, [*rows, (aoi.line_id, aoi.fields)]), context)
+        return {item.line_id for item in found if item.code == "조합"}
+
+    untouched = (bond.line_id, bond.fields)
+    mixed = ("n1", line("DEMO_Chip_Attach", "DEMO-P100", "DEMO-1B", "DEMO_Mixed_Pair"))
+    whole = ("n2", line("DEMO_Chip_Attach", "DEMO-P101", "DEMO-1B", "DEMO_Whole_Pair"))
+    stale = ("n3", line("DEMO_Final_Test", "DEMO-P101", "DEMO-1B", "DEMO_Stale_Pair"))
+    half = ("n4", line("DEMO_Final_Test", "DEMO-P101", "", "DEMO_Half_Pair"))
+    moved = (bond.line_id, LineFields(**{**vars(bond.fields), "mcp": "DEMO-1B"}))
+
+    assert bond.fields.step == "DEMO-P150", "펼친 짝은 지금 조합 밖"
+    assert pairs(untouched, mixed, whole, stale, half) == {"n1", "n3"}
+    assert pairs(moved) == {bond.line_id}
+    texts = {item.text for item in editor_warnings(with_lines(model, [mixed]), context)}
+    assert "STEP · MCP 가 참조공정 조합에 없음 — 직접 적은 조합인지 확인" in texts
 
 
 def test_a_reference_missing_from_the_scenario_still_folds_back_untouched() -> None:
