@@ -42,6 +42,7 @@ from capa_simulation.io.s3_small import S3Target
 from capa_simulation.persistence.models import EXTRA_KIND_APPLY, ExtraProcessState
 from capa_simulation.persistence.models import ExtraProcessVersion as Version
 from capa_simulation.services.extra_process_pack import (
+    BACKWARD_ADVICE,
     JUDGE_APPLY,
     JUDGE_BACKWARD,
     NOT_UTF8_HINT,
@@ -337,7 +338,9 @@ def test_changing_some_files_needs_the_version_raised(mock_s3: tuple[MockStore, 
 
     staged = stage_pack(state, _source(store, endpoint).fetch(), now=datetime(2026, 11, 20))
     assert staged.judgement is not None and staged.judgement.verdict == JUDGE_BACKWARD
-    assert "00_info.csv 의 판 번호를 올려" in staged.judgement.reason
+    # 까닭은 판 번호를 올리라고 하지 않는다 — 옛 사본의 판만 올리면 지금 판에서 고친 값이 돌아간다.
+    assert staged.judgement.reason.endswith(BACKWARD_ADVICE)
+    assert "판 번호를 올려" not in staged.judgement.reason
 
     _place(store, bump_version(changed, 2))
     staged = stage_pack(state, _source(store, endpoint).fetch(), now=datetime(2026, 11, 20))

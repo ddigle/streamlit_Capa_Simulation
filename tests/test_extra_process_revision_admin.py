@@ -58,6 +58,7 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.extra_process_pack import (
+    BACKWARD_ADVICE,
     bundle_pack_files,
     pack_sha256,
     pack_to_zip,
@@ -415,9 +416,10 @@ def test_with_a_source_and_no_sink_a_new_version_raises_the_drift_alert_until_pl
 def test_a_resaved_download_needs_the_version_raised_and_that_also_clears_the_drift(
     database: Path,
 ) -> None:
-    """내려받은 새 판을 메모장으로 다시 저장해(BOM 없음 — 바이트가 달라짐) 그대로 놓으면 판 번호가
-    같아 「판 번호를 올려 다시 놓으세요」 로 거절된다. 판을 1 올려 놓고 적용하면 활성 판이 가져온
-    판(「적용」)이 되어 판 어긋남 `EP-06` 이 풀린다(Guide · 알림 전문의 다른 길)."""
+    """내려받은 새 판을 메모장으로 다시 저장해(BOM 없음 — 바이트가 달라짐) 그대로 놓으면 판
+    번호가 같아 「양식 내려받기로 지금 판을 받아 고쳐 놓으세요」 로 거절된다(판 번호를 올리라고
+    하지 않는다). 판을 1 올려 놓고 적용하면 활성 판이 가져온 판(「적용」)이 되어 판 어긋남
+    `EP-06` 이 풀린다(Guide · 알림 전문의 다른 길)."""
     repository = _edited_revision(database)
     app = _app(database, source=True, head='"판1-파일"')
     _click(app, REVISION_BUTTON_KEY)
@@ -431,7 +433,7 @@ def test_a_resaved_download_needs_the_version_raised_and_that_also_clears_the_dr
     app.session_state[FETCH_KEY] = bundle_pack_files(resaved)
     app.session_state[HEAD_KEY] = '"다시-저장"'
     _click(app, IMPORT_BUTTON_KEY)
-    assert any("00_info.csv 의 판 번호를 올려" in str(item.value) for item in app.error)
+    assert any(str(item.value).endswith(BACKWARD_ADVICE) for item in app.error)
     assert not [button for button in app.button if button.key == APPLY_BUTTON_KEY]
 
     app.session_state[FETCH_KEY] = bundle_pack_files(bump_version(resaved, 3))

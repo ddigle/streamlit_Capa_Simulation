@@ -384,6 +384,8 @@ JUDGE_APPLY: Final = "apply"
 JUDGE_UNCHANGED: Final = "unchanged"
 JUDGE_RESUME: Final = "resume"
 JUDGE_BACKWARD: Final = "backward"
+# 뒤로 간 판의 까닭 끝 — 옛 사본에서 판 번호만 올려 놓지 않게 지금 판에서 고치라고 한다.
+BACKWARD_ADVICE: Final = "양식 내려받기로 지금 판을 받아 고쳐 놓으세요"
 
 
 @dataclass(frozen=True)
@@ -413,7 +415,8 @@ def judge_pack(
     - 활성 판과 sha 가 같으면 「바뀐 것 없음」(아무것도 쓰지 않는다).
     - 끈 동안 마지막 내용 판과 sha 가 같으면 「다시 켜기」 로 받는다(설계 D22).
     - 판 번호가 P 보다 크면 적용할 수 있다. 그 밖(판 번호가 P 이하인데 내용이 다름)은 옛 파일을
-      잘못 놓은 것으로 보고 거절한다 — 정말 되돌리려면 판 번호를 올려 다시 놓는다.
+      잘못 놓은 것으로 보고 거절한다 — 옛 사본의 판 번호만 올리면 지금 판에서 고친 값이 돌아가므로,
+      까닭 글은 판 번호를 올리라고 하지 않고 지금 판(양식 내려받기)에서 고쳐 놓으라고 한다.
     """
     if active_sha is not None and sha256 == active_sha:
         return PackJudgement(JUDGE_UNCHANGED, "바뀐 것 없음 — 활성 판과 같은 파일")
@@ -424,7 +427,7 @@ def judge_pack(
     return PackJudgement(
         JUDGE_BACKWARD,
         f"판 번호({version_no})가 적용한 가장 큰 판({latest_version_no}) 이하인데 내용이 다름 — "
-        f"{INFO_FILE} 의 판 번호를 올려 다시 놓으세요",
+        f"{BACKWARD_ADVICE}",
     )
 
 
