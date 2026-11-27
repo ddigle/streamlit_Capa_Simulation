@@ -28,6 +28,11 @@ SHARD_RUN = (
     "run: uv run --no-sync python scripts/run_test_shard.py "
     "--shard ${{ matrix.shard }} --of ${{ strategy.job-total }}"
 )
+WINDOWS_TEST_STEPS = [
+    "테스트 (Windows — 막지 않음)",
+    "테스트 (Windows — 막지 않음 · 임시 폴더 따로)",
+]
+SAME_DRIVE_TEMP = {name: "${{ runner.temp }}" for name in ("TMPDIR", "TEMP", "TMP")}
 
 
 def _jobs() -> dict[str, list[str]]:
@@ -70,6 +75,22 @@ def _step_keys(block: list[str], name: str) -> dict[str, str]:
         if found is not None:
             keys[found.group(1)] = found.group(2)
     return keys
+
+
+def _step_env(block: list[str], name: str) -> dict[str, str]:
+    """`- name: <name>` 단계의 `env:` 아래 변수(열 칸 들여쓰기) → 값."""
+    env: dict[str, str] = {}
+    inside = False
+    for line in block[block.index(f"      - name: {name}") + 1 :]:
+        if line.startswith("      - "):
+            break
+        if re.match(r"^        [A-Za-z-]+:", line):
+            inside = line == "        env:"
+            continue
+        found = re.match(r"^          ([A-Za-z_]+):\s*(.*)$", line)
+        if inside and found is not None:
+            env[found.group(1)] = found.group(2)
+    return env
 
 
 def _install_lines(block: list[str]) -> list[str]:
@@ -154,6 +175,28 @@ def test_only_the_first_windows_shard_gives_the_runner_its_own_temp_root() -> No
     guards = [line.strip() for line in windows if line.strip().startswith("if: matrix.shard")]
     assert guards == ["if: matrix.shard != 1", "if: matrix.shard == 1"]
     assert not any("--basetemp-root" in line for line in _run_lines(jobs[LINUX_JOB]))
+
+
+def test_the_windows_test_steps_keep_the_temp_folder_on_the_checkout_drive() -> None:
+    """시험이 `-c <저장소>/pyproject.toml` 로 띄운 안쪽 pytest 가 다른 드라이브의 tmp_path 를
+    모으면 수집 사슬이 드라이브 뿌리부터 서서 Windows 정션을 연다(WinError 5) — 시험 두 단계
+    모두 임시 폴더를 체크아웃과 같은 드라이브의 `runner.temp` 에 둔다. `runner` 문맥은 작업
+    단위 `env` 에서 쓸 수 없다."""
+    jobs = _jobs()
+    windows = jobs[WINDOWS_JOB]
+    steps = [
+        line.strip().removeprefix("- name: ")
+        for line in windows
+        if line.strip().startswith("- name: 테스트")
+    ]
+
+    assert steps == WINDOWS_TEST_STEPS
+    for name in steps:
+        env = _step_env(windows, name)
+        assert {key: env.get(key) for key in SAME_DRIVE_TEMP} == SAME_DRIVE_TEMP, name
+        assert env.get("PYTHONIOENCODING") == "utf-8", name
+    assert "env" not in _job_keys(windows)
+    assert not any(re.match(r"^\s+(TMPDIR|TEMP|TMP):", line) for line in jobs[LINUX_JOB])
 
 
 def test_both_jobs_cut_the_tests_into_the_same_shards() -> None:
