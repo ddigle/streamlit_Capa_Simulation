@@ -44,17 +44,28 @@ UPEH(`60 / ST` 를 `MI_UPEH_DIGITS` 자리로 반올림)로 받고, 적은 값�
 **정규 바이트**(`canonical`): 글 줄 → `pack_files` → 묶기 → 관문 → 받으면 `pack_to_zip` 을
 고정점까지 되풀이한다(겹친 Excel 가드처럼 한 번에 닿지 않는 글이 있다). **바뀐 것
 없음**(`same_body`)은 00 을 바탕 판 것으로 고정한 본문 바이트 견줌이다(바탕이 없으면 늘 새 판).
+
+**입력 돕기.** `input_problems` 는 관문이 거절할 입력(빈칸 · 0 이하 · 글 · 대여 > 보유 · 01 ·
+02 칸)을 창과 상관없이 줄 · 칸마다 모은다 — 판 만들기를 막지 않는다(관문이 정본).
+`editor_warnings` 는 관문이 모르는 기준 데이터 쪽 알림(R-01 이름 · R-02 참조공정 · 닫힌 끝월 ·
+창과 안 겹친 경로 · 효율 > 1 · 판에 들지 않는 칸)이다. 기준 데이터 도우미(`editor_context` ·
+`reference_choices` · `line_defaults` · `follow_preview`)는 옛 판 공정을 걷은 이름으로 센다 —
+걷기는 strip 이름을 대소문자 그대로 견주고, 부대공정끼리 참조 금지(V-06)는 대소문자를 무시한다.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, TypeAlias, TypeVar
 
+import pandas as pd
+
+from capa_simulation.services.extra_process_merge import bdq_process_names, follow_routes
 from capa_simulation.services.extra_process_pack import (
     BOTH_CLASSES,
+    BUFFER_WORD,
     CALENDAR_WORD,
     CLASS_EXPANSION,
     ENGINEERING,
@@ -92,6 +103,7 @@ from capa_simulation.services.extra_process_pack import (
 from capa_simulation.services.frame_contracts import (
     AREA_NAMES,
     DEMAND_BASES,
+    normalize_demand_basis,
     normalize_demand_basis_value,
 )
 
@@ -134,11 +146,6 @@ _ROW_SPECS: Final[tuple[tuple[str, str, str], ...]] = (
 _CLASS_ORDER: Final = {BOTH_CLASSES: 0, MASS: 1, ENGINEERING: 2}
 _FileRow: TypeAlias = RouteRow | ProductivityRow | EquipmentRow | RateVitalRow
 _T = TypeVar("_T")
-_TABLE_FILES: Final = {
-    PRODUCTIVITY: PRODUCTIVITY_FILE,
-    EQUIPMENT: EQUIPMENT_FILE,
-    RATE: RATE_FILE,
-}
 _FILE_TABLES: Final = {
     PROCESS_FILE: PROCESS_TABLE,
     ROUTE_FILE: ROUTE_TABLE,
@@ -1341,3 +1348,362 @@ def locate(problem: PackProblem, folded: Folded) -> ProblemPlace | None:
         origin.end,
         origin.carried,
     )
+
+
+# --------------------------------------------------------------------------- 입력 문제 · 알림
+
+
+@dataclass(frozen=True)
+class InputProblem:
+    """관문이 거절할 입력 한 갈래 — 줄 · 표(01 · 02 칸은 "01", 판 전체는 "") · 값 줄 · 칸 · 달 ·
+    까닭."""
+
+    line_id: str | None
+    table: str
+    row: RowKey | None
+    column: str
+    months: tuple[int, ...]
+    reason: str
+
+
+def input_problems(model: EditorModel) -> tuple[InputProblem, ...]:
+    """창과 상관없이 모은 입력 문제(모듈 설명 「입력 돕기」) — 판 만들기를 막지 않는다."""
+    lines = [line for line in model.lines if not _blank_line(model, line)]
+    if not lines:
+        return (InputProblem(None, "", None, "공정", (), "공정이 하나도 없음"),)
+    found: list[InputProblem] = []
+    names = [_text(line.fields.name).casefold() for line in lines]
+    seen: set[str] = set()
+    for line, key in zip(lines, names, strict=True):
+        if key and key in seen:
+            found.append(_field_problem(line, "공정", "공정 중복(대소문자 무시)"))
+        seen.add(key)
+        if line.carried is None:
+            found.extend(_line_field_problems(line, set(names)))
+            result = _compute_line(model, line)
+            if result is not None:
+                found.extend(_value_problems(result))
+    return tuple(found)
+
+
+def _field_problem(line: EditorLine, column: str, reason: str) -> InputProblem:
+    return InputProblem(line.line_id, PROCESS_TABLE, None, column, (), reason)
+
+
+def _line_field_problems(line: EditorLine, names: Collection[str]) -> list[InputProblem]:
+    fields = line.fields
+    found: list[InputProblem] = []
+    if not _text(fields.name):
+        found.append(_field_problem(line, "공정", "공정 빈칸"))
+    if _area(fields.area) is None:
+        found.append(_field_problem(line, "Area_Name", "Area_Name 은 Main · MI"))
+    if _basis(fields.basis) not in DEMAND_BASES:
+        found.append(_field_problem(line, "소요기준", "소요기준은 PKG · CHIP · WF"))
+    if not _positive(_number_or_text(fields.modules)):
+        found.append(_field_problem(line, "모듈수", "모듈수는 0 보다 커야 함"))
+    reference = _text(fields.reference)
+    if not reference:
+        found.append(_field_problem(line, "참조공정", "참조공정 빈칸"))
+    elif reference.casefold() in names:
+        found.append(_field_problem(line, "참조공정", "부대공정끼리는 참조하지 않음"))
+    if not _text(fields.step) or not _text(fields.mcp):
+        found.append(_field_problem(line, "STEP_SEQ", "STEP_SEQ · MCP_SEQ 빈칸"))
+    start = _month_or_text(fields.start)
+    end = _month_or_text(fields.end)
+    if start is None:
+        found.append(_field_problem(line, "시작월", "시작월 빈칸"))
+    elif isinstance(start, str):
+        found.append(_field_problem(line, "시작월", "월 꼴(YYYYMM)이 아님"))
+    if isinstance(end, str):
+        found.append(_field_problem(line, "끝월", "월 꼴(YYYYMM)이 아님"))
+    elif isinstance(start, int) and end is not None and end < start:
+        found.append(_field_problem(line, "끝월", "끝월이 시작월보다 앞"))
+    return found
+
+
+def _value_problems(result: _LineResult) -> list[InputProblem]:
+    found: list[InputProblem] = []
+    line_id = result.line.line_id
+    owned = result.rows[(line_id, EQUIPMENT, "", OWNED_COLUMN)].values
+    for row, row_result in result.rows.items():
+        column = row[3]
+        reasons: dict[str, list[int]] = {}
+        for index, (month, value) in enumerate(zip(result.months, row_result.values, strict=True)):
+            reason = _value_reason(column, value, owned[index])
+            if reason is not None:
+                reasons.setdefault(reason, []).append(month)
+        for reason, months in reasons.items():
+            found.append(InputProblem(line_id, row[1], row, column, tuple(months), reason))
+    return found
+
+
+def _value_reason(column: str, value: CellInput, owned: CellInput) -> str | None:
+    if column == LENT_COLUMN:
+        if value is None:
+            return None
+        if not isinstance(value, float):
+            return "수가 아님"
+        if value < 0:
+            return "0 이상이어야 함"
+        if isinstance(owned, float) and value > owned:
+            return "대여 > 보유"
+        return None
+    if value is None:
+        return "빈칸"
+    if not isinstance(value, float):
+        return "수가 아님"
+    if column == OWNED_COLUMN:
+        return "0 이상이어야 함" if value < 0 else None
+    return None if value > 0 else "0 보다 커야 함"
+
+
+@dataclass(frozen=True)
+class EditorWarning:
+    """관문이 모르는 기준 데이터 쪽 알림 — 줄(판 전체는 None) · 갈래 낱말 · 글."""
+
+    line_id: str | None
+    code: str
+    text: str
+
+
+def editor_warnings(model: EditorModel, context: EditorContext) -> tuple[EditorWarning, ...]:
+    """모듈 설명 「입력 돕기」 의 알림 — 등록 때 R-01 · R-02 · R-04 로 빠지거나 잘릴 것을 미리
+    보인다."""
+    found: list[EditorWarning] = []
+    last_plan = context.months[-1] if context.months else None
+    for line in model.lines:
+        if _blank_line(model, line):
+            continue
+        name = _text(line.fields.name)
+        if name and name.casefold() in context.bdq_names:
+            found.append(
+                EditorWarning(line.line_id, "R-01", "BDQ 에 같은 이름 — 등록 때 BDQ 값으로 셈")
+            )
+        if line.carried is not None:
+            continue
+        choice = _reference(context, _text(line.fields.reference))
+        if _text(line.fields.reference) and choice is None:
+            found.append(
+                EditorWarning(
+                    line.line_id, "R-02", "참조공정이 이번 기준 데이터 후보에 없음 — 등록 때 빠짐"
+                )
+            )
+        elif choice is not None and choice.basis != _basis(line.fields.basis):
+            found.append(
+                EditorWarning(line.line_id, "R-02", "참조공정 소요기준이 다름 — 등록 때 빠짐")
+            )
+        period = _route_period(line.fields)
+        if period is not None:
+            end = period[1]
+            if end is not None and last_plan is not None:
+                text = (
+                    f"경로 끝월 {end} 뒤 계획 달은 계산에 들지 않음"
+                    if end < last_plan
+                    else f"경로 끝월 {end} 이 닫힘 — 계획이 그 뒤로 가면 빠짐"
+                )
+                found.append(EditorWarning(line.line_id, "끝월", text))
+            axis = month_axis(line.fields, context.months)
+            if axis is not None and not axis.window:
+                found.append(EditorWarning(line.line_id, "창", "경로가 이번 계획 월과 겹치지 않음"))
+        result = _compute_line(model, line)
+        if result is not None and _over_one(result):
+            found.append(EditorWarning(line.line_id, "효율", "효율이 1 을 넘음"))
+    ignored = len(ignored_cells(model))
+    if ignored:
+        found.append(EditorWarning(None, "고침", f"판에 들지 않는 칸 입력 {ignored}칸"))
+    return tuple(found)
+
+
+def _over_one(result: _LineResult) -> bool:
+    for mass_class in (MASS, ENGINEERING):
+        values = result.rows[(result.line.line_id, RATE, mass_class, RUN_RATE_COLUMN)].values
+        if any(isinstance(value, float) and value > 1 for value in values):
+            return True
+    return False
+
+
+# --------------------------------------------------------------------------- 기준 데이터 도우미
+
+
+@dataclass(frozen=True)
+class ReferenceChoice:
+    """참조공정 후보 — 소요기준(하나), Area(Main · MI 한 값일 때), 모듈수(0 보다 큰 한 값일 때),
+    (STEP_SEQ, MCP_SEQ) 고유 조합(차례대로 — 결정3 은 이 가운데 하나를 1경로로 고른다)."""
+
+    name: str
+    basis: str
+    area: str | None
+    modules: float | None
+    steps: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class EditorContext:
+    """활성 시나리오 기준 데이터에서 센 편집기 맥락 — 계획 월, 참조공정 후보, R-01
+    이름(casefold)."""
+
+    months: tuple[int, ...]
+    references: Mapping[str, ReferenceChoice]
+    bdq_names: frozenset[str]
+
+
+def editor_context(
+    tables: Mapping[str, pd.DataFrame], excluded: Collection[str] = ()
+) -> EditorContext:
+    """기준 데이터 16표에서 편집기 맥락을 센다 — 표는 고치지 않고 사본도 만들지 않는다.
+
+    `excluded` 는 옛 판 공정(바탕 데이터셋 출처의 걷을 이름 — `split_previous(...).stripped`)이다.
+    그 행은 strip 이름을 대소문자 그대로 견주어 뺀다(`strip_extra_processes` 와 같은 견줌). 후보는
+    `normalize_demand_basis` 집합이 정확히 하나이고 PKG · CHIP · WF 인 공정이다(R-02 — 소요기준이
+    섞인 공정 · BOX · PCB 는 늘 빠진다).
+    """
+    plan = tables["RQ_PKG_PLAN"]["생산계획년월"].dropna()
+    months = tuple(sorted({int(month) for month in plan}))
+    dropped = {name.strip() for name in excluded}
+    reqb = tables["RQ_REQB"]
+    names = reqb["공정"].astype("string").str.strip()
+    keep = (names.notna() & ~names.isin(dropped)).fillna(False).astype(bool)
+    frame = pd.DataFrame(
+        {
+            "name": names.loc[keep],
+            "basis": normalize_demand_basis(reqb.loc[keep, "소요기준"]),
+            "area": reqb.loc[keep, "Area_Name"].astype("string").str.strip(),
+            "step": reqb.loc[keep, "STEP_SEQ"].astype("string"),
+            "mcp": reqb.loc[keep, "MCP_SEQ"].astype("string"),
+        }
+    )
+    modules = _module_counts(tables.get("RQ_MODULE"), dropped)
+    references: dict[str, ReferenceChoice] = {}
+    for name, group in frame.groupby("name", sort=True):
+        bases = {str(value) for value in group["basis"].dropna().unique()}
+        if len(bases) != 1 or next(iter(bases)) not in DEMAND_BASES:
+            continue
+        areas = {_area(value) for value in group["area"].dropna().unique()}
+        pairs = group[["step", "mcp"]].dropna().drop_duplicates()
+        steps = tuple(sorted((str(step), str(mcp)) for step, mcp in pairs.itertuples(index=False)))
+        references[str(name)] = ReferenceChoice(
+            str(name),
+            next(iter(bases)),
+            next(iter(areas)) if len(areas) == 1 and None not in areas else None,
+            modules.get(str(name)),
+            steps,
+        )
+    return EditorContext(months, references, frozenset(bdq_process_names(tables, dropped)))
+
+
+def _module_counts(frame: pd.DataFrame | None, dropped: Collection[str]) -> dict[str, float]:
+    """공정마다 0 보다 큰 모듈수가 한 값이면 그 값(모듈수 기본값)."""
+    if frame is None or "공정" not in frame.columns or "모듈수" not in frame.columns:
+        return {}
+    names = frame["공정"].astype("string").str.strip()
+    values = pd.to_numeric(frame["모듈수"], errors="coerce")
+    found: dict[str, set[float]] = {}
+    for name, value in zip(names, values, strict=True):
+        if pd.isna(name) or str(name) in dropped or pd.isna(value) or not value > 0:
+            continue
+        found.setdefault(str(name), set()).add(float(value))
+    return {name: next(iter(counts)) for name, counts in found.items() if len(counts) == 1}
+
+
+def _reference(context: EditorContext, reference: str) -> ReferenceChoice | None:
+    """합치기(`follow_routes`)처럼 strip 이름으로 찾고 없으면 대소문자를 무시해 찾는다."""
+    choice = context.references.get(reference)
+    if choice is not None:
+        return choice
+    folded = reference.casefold()
+    return next(
+        (item for name, item in context.references.items() if name.casefold() == folded), None
+    )
+
+
+def reference_choices(
+    context: EditorContext, model: EditorModel, *, basis: str | None = None
+) -> tuple[ReferenceChoice, ...]:
+    """고를 수 있는 참조공정 — 지금 편집기 줄 이름(대소문자 무시 — V-06)과 같은 공정은 빼고,
+    `basis` 를 주면 그 소요기준만(R-02)."""
+    own = {_text(line.fields.name).casefold() for line in model.lines}
+    wanted = None if basis is None else _basis(basis)
+    return tuple(
+        choice
+        for name, choice in sorted(context.references.items())
+        if name.casefold() not in own and (wanted is None or choice.basis == wanted)
+    )
+
+
+def line_defaults(context: EditorContext, reference: str) -> LineFields:
+    """참조공정을 고른 새 줄의 기본값 — 소요기준 · Area · 모듈수 · 첫 (STEP, MCP) 조합, 시작월 = 첫
+    계획 월, 끝월 빈칸(제안 e · f · 결정3). 후보에 없으면 참조공정과 시작월만."""
+    first = context.months[0] if context.months else None
+    choice = _reference(context, _text(reference))
+    if choice is None:
+        return LineFields(reference=_text(reference), start=first)
+    step, mcp = choice.steps[0] if choice.steps else ("", "")
+    return LineFields(
+        area=choice.area or "",
+        basis=choice.basis,
+        modules=choice.modules,
+        reference=choice.name,
+        step=step,
+        mcp=mcp,
+        start=first,
+    )
+
+
+@dataclass(frozen=True)
+class FollowGroup:
+    """따라올 줄 한 묶음 — (제품정보, Stack, CUSTOM, WF 구분)의 줄 수 · 첫 달 · 끝 달 · 셈에
+    드나."""
+
+    product: str
+    stack: str
+    custom: str
+    wf: str
+    rows: int
+    first: int
+    last: int
+    counted: bool
+
+
+@dataclass(frozen=True)
+class FollowPreview:
+    """따라가기 미리보기(결정2 — 읽기 전용) — 줄 수 · Buffer 밖 수 · 묶음 · 이어받지 못한 까닭.
+    수는 합치기(`ProcessOutcome.route_rows` · `inherited_uncounted`)와 같은 몸통에서 온다."""
+
+    rows: int
+    uncounted: int
+    groups: tuple[FollowGroup, ...]
+    refused: tuple[str, str] | None
+
+    @property
+    def products(self) -> int:
+        return len({(group.product, group.stack) for group in self.groups})
+
+
+def follow_preview(
+    tables: Mapping[str, pd.DataFrame], reference: str, basis: str, period: Period
+) -> FollowPreview:
+    """참조공정 · 소요기준 · 경로 기간으로 따라올 줄을 센다(`follow_routes` — 걷은 표를 넘긴다)."""
+    found = follow_routes(tables, reference, _basis(basis), period)
+    groups: list[FollowGroup] = []
+    if not found.rows.empty:
+        keys = ["제품정보", "Stack", "CUSTOM", "WF 구분"]
+        frame = found.rows.assign(
+            **{key: found.rows[key].astype("string").fillna("") for key in keys}
+        )
+        for values, group in frame.groupby(keys, sort=True):
+            product, stack, custom, wf = (str(value) for value in values)
+            months = group["생산계획년월"].astype("int64")
+            counted = _basis(basis) != "PKG" or wf.strip().casefold() == BUFFER_WORD
+            groups.append(
+                FollowGroup(
+                    product,
+                    stack,
+                    custom,
+                    wf,
+                    len(group),
+                    int(months.min()),
+                    int(months.max()),
+                    counted,
+                )
+            )
+    return FollowPreview(len(found.rows), found.uncounted, tuple(groups), found.refused)
