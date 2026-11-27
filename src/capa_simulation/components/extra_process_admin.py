@@ -294,7 +294,7 @@ SEEN: Final = SessionSlot(SEEN_KEY, SeenSource)
 PREVIEW: Final = SessionSlot(PREVIEW_KEY, tuple, tuple)
 # (판 sha, 양식 ZIP 바이트, 파일 이름).
 TEMPLATE: Final = SessionSlot(TEMPLATE_KEY, tuple, tuple)
-# 「적용」 앞 확인 칸 둘(위젯 key) — 받은 판을 새로 둘 때 비운다(`place_staged`).
+# 「적용」 앞 확인 칸 둘(위젯 key) — 받은 판을 새로 둘 때 거짓으로 되돌린다(`place_staged`).
 REVERT_CONFIRMED: Final = SessionSlot(APPLY_CONFIRM_KEY, bool)
 REMOVED_CONFIRMED: Final = SessionSlot(REMOVED_CONFIRM_KEY, bool)
 # 마지막으로 가져온 파일의 (ETag, 상태 줄 낱말) — S3 쓰기가 덮지 않은 파일이 그것이면 그 낱말을
@@ -315,13 +315,15 @@ def write_lock_reason() -> str | None:
 
 
 def place_staged(staged: StagedPack) -> None:
-    """받은 판 자리에 새 판을 둔다(가져옴 · 리비전 · 편집기 공용) — 시험 계산 메모와 「적용」 앞
-    확인 칸 값을 함께 비운다. 확인 칸은 key 만으로 같은 위젯이라(라벨의 수가 바뀌어도) 비우지 않으면
-    앞 판에 채운 확인이 다음 판의 「적용」 을 연다. 위젯을 그리기 전 회차에 부른다."""
+    """받은 판 자리에 새 판을 둔다(가져옴 · 리비전 · 편집기 공용) — 시험 계산 메모를 비우고
+    「적용」 앞 확인 칸을 채우지 않은 값으로 되돌린다. 확인 칸은 key 만으로 같은 위젯이라(라벨의
+    수가 바뀌어도) 그대로 두면 앞 판에 채운 확인이 다음 판의 「적용」 을 연다. 지우지 않고 거짓을
+    적는다 — 지우기만 하면 브라우저가 들고 있던 값이 다음 회차에 되돌아온다. 위젯을 그리기 전
+    회차에 부른다."""
     STAGED.set(staged)
     PREVIEW.clear()
-    REVERT_CONFIRMED.clear()
-    REMOVED_CONFIRMED.clear()
+    REVERT_CONFIRMED.set(False)
+    REMOVED_CONFIRMED.set(False)
 
 
 def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str:
@@ -577,6 +579,9 @@ def _note_placed(
         active = fresh.active
         if active is None or active.sha256 != staged.reading.sha256:
             raise ExtraProcessMoved(staged.seen_seq, fresh.last_seq)
+        # 적기 전에 본다 — 「새 판으로」 판(끄고 단추로 다시 켠 줄 포함)은 판 어긋남(EP-06)이
+        # 서 있었다.
+        drift = needs_write(fresh)
         if placed_matches(fresh, staged):
             repository.record_extra_process_placed(
                 version_seq=active.seq, etag=etag, written_by=_who()
@@ -586,7 +591,7 @@ def _note_placed(
         return
     HEAD_SEEN.clear()
     # 「새 판으로」 판은 판 어긋남(EP-06)이 풀린다 — 편집기 판은 어긋남이 서지 않아 기준만 옮긴다.
-    tail = " — 판 어긋남을 풉니다" if owes_drive(active) else ""
+    tail = " — 판 어긋남을 풉니다" if drift else ""
     queue_flash(
         FLASH_KEY, f"S3 Drive 에 놓인 파일이 활성 판 {active.version_no} 내용과 같습니다{tail}"
     )

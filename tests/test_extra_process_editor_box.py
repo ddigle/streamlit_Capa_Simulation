@@ -177,7 +177,8 @@ def test_an_editor_pack_rides_the_staged_box_and_applies_as_app_input(
 ) -> None:
     """편집기 판은 받은 판 상자의 머리 「앱에서 만든 판」 · 값 줄 · 「새 판 적용」 을 그대로
     지나고, 적용하면 갈래 「새 판」 · 원천 자리 「앱 입력」 · 바탕 칸 빈 줄이 되어 판 이력에 「앱
-    입력」 으로 보인다. S3 Drive 는 쓰지 않는다."""
+    입력」 으로 보인다. 내보내기가 꽂혀 있어도 S3 Drive 는 쓰지 않는다(가짜 내보내기의 PUT 은
+    부르면 실패한다)."""
     repository = new_repository(database)
     apply_template(repository)
     staged = _stage_from_editor(repository, _add_new_process())
@@ -185,7 +186,7 @@ def test_an_editor_pack_rides_the_staged_box_and_applies_as_app_input(
     assert staged.seen_seq == 1 and staged.fetch.place == EXTRA_EDITOR_PLACE
     lines = _audit_lines(monkeypatch)
 
-    app = _app(database, open_place=True, staged=staged)
+    app = _app(database, open_place=True, staged=staged, drive_etag='"판1-파일"')
 
     assert any(
         str(item.value).startswith("**앱에서 만든 판** · 새 판 2 · sha ") for item in app.markdown
@@ -205,6 +206,7 @@ def test_an_editor_pack_rides_the_staged_box_and_applies_as_app_input(
     assert active.version_no == 2 and active.process_count == 3
     assert (active.base_scenario_ref, active.base_revision_ref) == (None, None)
     assert state.writes == ()
+    assert active_state(app, "EP-05") is None
     assert any("부대공정 판 2 적용 — 앱 입력" in str(note.value) for note in flashed(app))
     assert not [button for button in app.button if button.key == APPLY_BUTTON_KEY]
     history = _history(app)

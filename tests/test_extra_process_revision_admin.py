@@ -490,6 +490,32 @@ def test_resuming_with_the_placed_new_version_file_clears_the_drift(database: Pa
     assert active_state(app, "EP-06") is None
 
 
+def test_a_placed_new_version_after_a_button_resume_still_says_the_drift_clears(
+    database: Path,
+) -> None:
+    """「새 판」 을 끄고 단추로 다시 켠 뒤(활성 줄이 「다시 켜기」) 그 판을 놓아 가져와도 판
+    어긋남(`EP-06`)이 서 있었으므로 알림이 「판 어긋남을 풉니다」 다 — 활성 줄 갈래가 아니라 적기
+    전 쓰기 대기로 가른다."""
+    repository = _edited_revision(database)
+    app = _app(database, source=True, head='"판1-파일"')
+    _click(app, REVISION_BUTTON_KEY)
+    _click(app, APPLY_BUTTON_KEY)
+    _click(app, TOGGLE_BUTTON_KEY)
+    _click(app, TOGGLE_BUTTON_KEY)
+    resumed = repository.load_extra_process_state().active
+    assert resumed is not None and resumed.kind == EXTRA_KIND_RESUME
+    assert active_state(app, "EP-06") is not None
+
+    app.session_state[FETCH_KEY] = _placed_from_download(repository, str(resumed.sha256))
+    app.session_state[HEAD_KEY] = '"사람이-놓은-판2"'
+    _click(app, IMPORT_BUTTON_KEY)
+
+    (placed,) = repository.load_extra_process_state().writes
+    assert placed.placed and placed.version_seq == resumed.seq
+    assert any("판 어긋남을 풉니다" in str(note.value) for note in flashed(app))
+    assert active_state(app, "EP-06") is None
+
+
 def _download_members(repository: DuckDBScenarioRepository, sha: str) -> dict[str, bytes]:
     """양식 내려받기 ZIP(그 판을 다시 쓴 것 — Admin `_template_bytes` 와 같은 셈)을 푼 여섯 장."""
     import io
