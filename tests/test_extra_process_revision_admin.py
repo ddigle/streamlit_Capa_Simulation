@@ -417,9 +417,9 @@ def test_a_resaved_download_needs_the_version_raised_and_that_also_clears_the_dr
     database: Path,
 ) -> None:
     """내려받은 새 판을 메모장으로 다시 저장해(BOM 없음 — 바이트가 달라짐) 그대로 놓으면 판
-    번호가 같아 「양식 내려받기로 지금 판을 받아 고쳐 놓으세요」 로 거절된다(판 번호를 올리라고
-    하지 않는다). 판을 1 올려 놓고 적용하면 활성 판이 가져온 판(「적용」)이 되어 판 어긋남
-    `EP-06` 이 풀린다(Guide · 알림 전문의 다른 길)."""
+    번호가 같아 「양식 내려받기로 지금 판을 받아 판 번호를 1 올려 고쳐 놓으세요」 로 거절된다.
+    판을 1 올려 놓고 적용하면 활성 판이 가져온 판(「적용」)이 되어 판 어긋남 `EP-06` 이
+    풀린다(Guide · 알림 전문의 다른 길)."""
     repository = _edited_revision(database)
     app = _app(database, source=True, head='"판1-파일"')
     _click(app, REVISION_BUTTON_KEY)

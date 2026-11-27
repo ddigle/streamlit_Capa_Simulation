@@ -384,8 +384,10 @@ JUDGE_APPLY: Final = "apply"
 JUDGE_UNCHANGED: Final = "unchanged"
 JUDGE_RESUME: Final = "resume"
 JUDGE_BACKWARD: Final = "backward"
-# 뒤로 간 판의 까닭 끝 — 옛 사본에서 판 번호만 올려 놓지 않게 지금 판에서 고치라고 한다.
-BACKWARD_ADVICE: Final = "양식 내려받기로 지금 판을 받아 고쳐 놓으세요"
+# 뒤로 간 판의 까닭 끝 — 옛 사본에서 판 번호만 올려 놓지 않게 지금 판에서 고치라고 하고,
+# 내려받은 양식은 지금 판과 번호가 같아 그대로 놓으면 같은 거절이 되풀이되므로 번호 올림도
+# 함께 말한다.
+BACKWARD_ADVICE: Final = "양식 내려받기로 지금 판을 받아 판 번호를 1 올려 고쳐 놓으세요"
 
 
 @dataclass(frozen=True)
