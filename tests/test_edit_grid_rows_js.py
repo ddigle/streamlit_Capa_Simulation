@@ -960,10 +960,12 @@ REBASE_RUNNER = (
   key(scroller, 'S')
   type('S0/')
   R.typing = state()
-  // 그 op 를 실은 회차 — 양식 · 새 줄 수가 바뀐 껍데기와 ack 를 실은 feed.
-  mount(input.shell2)
+  // 그 op 를 실은 회차 — ack 를 실은 feed 가 먼저(앱 차례), 양식 · 새 줄 수가 바뀐 껍데기가
+  // 뒤에 온다. 닿은 뒤 다시 쳐 목록을 다시 고르게 한다(딸린 참조가 보내는 중 미리보기에서 오는지).
   sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  mount(input.shell2)
   await tick(5)
+  type('S0/')
   R.during = Object.assign(state(), { focus: document.activeElement === ed(), rows: S.model.rows })
   type('S0/M1')
   key(ed(), 'Enter')
@@ -996,10 +998,10 @@ REBASE_RUNNER = (
 
 def test_a_new_base_while_a_cell_is_open_waits_until_the_edit_ends() -> None:
     """양식 · 새 줄 수가 바뀐 같은 표의 껍데기(다른 `baseKey`)가 칸을 고치는 중에 와도 칸을
-    닫지 않는다 — 친 글 · 딸린 목록 · 초점이 그대로이고 ack 도 그때 받지 않는다(받으면 보내는
-    중 참조가 걷혀 딸린 목록이 비었다). 확정 · 취소 뒤 그 껍데기로 다시 짓고, 아직 ack 되지 않은
-    op 의 미리보기는 새 모델에 다시 얹어 친 칸에 양식이 보이지 않는다. 다른 표의 껍데기는
-    지금처럼 확정하고 바꾼다."""
+    닫지 않는다 — 친 글 · 딸린 목록 · 초점이 그대로이고, 껍데기보다 먼저 온 그 바탕의 feed 의
+    ack 도 그때 받지 않는다(받으면 보내는 중 참조가 걷혀 딸린 목록이 비었다 — 브라우저 걷기).
+    확정 · 취소 뒤 그 껍데기로 다시 짓고, 아직 ack 되지 않은 op 의 미리보기는 새 모델에 다시
+    얹어 친 칸에 양식이 보이지 않는다. 다른 표의 껍데기는 지금처럼 확정하고 바꾼다."""
     shell, index = _rebased_shell("k1", form=None, fresh=1)
     shell2, index2 = _rebased_shell("k2", form="S0/M0", fresh=2)
     shell3, _ = _rebased_shell("k3", form="S0/M0", fresh=3)

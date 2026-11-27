@@ -880,8 +880,8 @@ RUNNER_REBASE = (
   key(scroller, '5')
   key(ed, 'Tab')
   key(scroller, '3')
-  mount(input.shell2)
   sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  mount(input.shell2)
   await tick(5)
   R.during = {
     edit: Boolean(S.edit), value: ed.value, base: S.shell.baseKey, box: S.box.ops.length,

@@ -341,7 +341,9 @@ function egTakeFeed(S) {
   const store = window.__capaEditGrid
   const slot = store && S.hostKey ? store[S.hostKey] : null
   const feed = slot && slot.feed
-  if (!feed || feed === S.feedData || !S.dom || S.deferred) return
+  // 칸을 고치는 중에 같은 표의 다른 바탕 feed(곧 올 껍데기는 미뤄진다)는 ack 도 받지 않는다 — feed 가 껍데기보다 먼저 오므로, 받으면
+  // 보내는 중 op 의 미리보기가 옛 모델에서 걷혀 딸린 목록이 옛 초안을 따른다. 편집이 끝난 뒤 받는다.
+  if (!feed || feed === S.feedData || !S.dom || S.deferred || (S.edit && feed.table === S.model.table && feed.baseKey !== S.shell.baseKey)) return
   // ack 는 표가 아니라 이 마운트의 것이다 — 표 없는 껍데기(읽기 보기)·다른 표의 feed 에서도 받아 반영된 op 를 출납에서
   // 뺀다. 빼지 않으면 visibilitychange·정리 함수가 같은 op 를 다시 보내 앱 회차가 하나 더 돈다.
   egTakeAcks(S, feed)
