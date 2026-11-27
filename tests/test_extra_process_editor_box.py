@@ -1,5 +1,5 @@
-# Purpose: 편집기가 만든 부대공정 판이 받은 판 상자를 지나 「앱 입력」 새 판으로 들어가는 길과
-# 그 판의 S3 Drive 경계(쓸 몫 아님 · 놓인 파일 같음 적기)를 본다.
+# Purpose: 편집기가 만든 부대공정 판이 받은 판 상자를 지나 「앱 입력」 새 판으로 들어가는 길, 그
+# 판의 S3 Drive 경계(쓸 몫 아님 · 놓인 파일 같음 적기)와 세 길 공용 「뺀 공정」 확인 칸을 본다.
 
 """편집기 판의 받은 판 상자 · 적용 · S3 Drive 경계(`extra_process_intake.stage_editor_pack` ·
 `components/extra_process_admin.py` — 편집기 화면은 다음 단계라, 시험이 그 셈을 대신해 받은 판
@@ -8,7 +8,8 @@
 편집기 화면이 할 셈은 `_stage_from_editor` 하나다 — 펼친 판(활성 판, 끈 동안 마지막 내용 판)을
 모형으로 펴서 고치고(`with_lines` · `with_cells`) 접어(`fold`) 정규 바이트로 만든 뒤(`canonical`)
 펼친 때의 차례 · sha · 접은 줄을 든 `EditorOrigin` 으로 싣는다. 견본 판(판 1 — 두 공정 모두 통째
-옮김)에 합성 새 공정 `DEMO_New_Sort` 를 더하는 고침을 쓴다.
+옮김)에 합성 새 공정 `DEMO_New_Sort` 를 더하는 고침을 쓴다. 「뺀 공정」 확인 칸은 받은 판 상자
+공용이라 가져온 판 · 리비전 판 · 편집기 판 셋 모두에서 본다.
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ import pandas as pd
 import pytest
 from alert_marks import active_state, flashed, states
 from auto_update_fakes import new_repository
-from extra_process_fixtures import bump_version, template_files
+from extra_process_fixtures import AOI, bump_version, edited, template_files, zip_files
 from streamlit.testing.v1 import AppTest
-from test_extra_process_admin import _app
+from test_extra_process_admin import PACK_KEY, _app
 from test_extra_process_editor import NEW_NAME, YEAR_2026, _fill, _new_line_fields
 from test_extra_process_registration import apply_template
 from test_extra_process_revision_admin import (
@@ -41,15 +42,20 @@ from capa_simulation.components.extra_process_admin import (
     EDITOR_APPLY_HELP,
     EDITOR_PROBLEM_COLUMNS,
     IMPORT_BUTTON_KEY,
+    REMOVED_CONFIRM_KEY,
+    REMOVED_CONFIRM_LABEL,
     REVISION_APPLY_LABEL,
     REWRITE_BUTTON_KEY,
     TURNS_ON_PART,
+    UNCONFIRMED_REMOVED_REASON,
     history_frame,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.extra_process_intake import (
     OLD_VERSION_WORD,
     SAME_WORD,
     EditorOrigin,
+    RevisionOrigin,
     SourceFetch,
     StagedPack,
     head_word,
@@ -90,7 +96,9 @@ from capa_simulation.services.extra_process_pack import (
     JUDGE_APPLY,
     JUDGE_UNCHANGED,
     MASS,
+    PackChanges,
     PackInfo,
+    PackJudgement,
     bundle_pack_files,
     pack_sha256,
     read_pack_zip,
@@ -432,3 +440,107 @@ def test_with_a_source_a_placed_editor_version_moves_the_baseline_without_drift(
     _drive_click(other, IMPORT_BUTTON_KEY)
     assert len(repository.load_extra_process_state().writes) == 1
     assert any("바뀐 것 없음" in str(note.value) for note in flashed(other, "info"))
+
+
+# ----------------------------------------------------------------- 뺀 공정 확인(세 길 공용)
+
+
+def _without_aoi(version: int) -> bytes:
+    """견본에서 `DEMO_New_AOI` 를 모든 장에서 지운 판(판 번호 `version`)."""
+    files = bump_version(template_files(), version)
+    for name in sorted(files)[1:]:
+        files = edited(
+            files, name, lambda rows: [rows[0], *(row for row in rows[1:] if row[0] != AOI)]
+        )
+    return zip_files(files)
+
+
+def _drop_aoi(model: EditorModel) -> EditorModel:
+    return with_lines(
+        model, [(line.line_id, line.fields) for line in model.lines if line.base_name != AOI]
+    )
+
+
+def _assert_removed_gate(app: AppTest, count: int) -> None:
+    """뺀 공정 확인 칸이 서고 비어 있어 「적용」 이 잠겨 있다."""
+    box = app.checkbox(key=REMOVED_CONFIRM_KEY)
+    assert box.label == REMOVED_CONFIRM_LABEL.format(n=count) and not box.value
+    assert literal_markdown(AOI) in str(box.help)
+    apply = app.button(key=APPLY_BUTTON_KEY)
+    assert apply.disabled and apply.help == UNCONFIRMED_REMOVED_REASON
+
+
+def test_an_editor_pack_that_drops_a_process_needs_the_removed_check(database: Path) -> None:
+    """편집기에서 공정 줄을 지운 판 — 값 줄 「뺀 공정 1」 과 확인 칸이 서고, 채워야 「새 판 적용」
+    이 열린다."""
+    repository = new_repository(database)
+    apply_template(repository)
+    staged = _stage_from_editor(repository, _drop_aoi)
+
+    app = _app(database, open_place=True, staged=staged)
+
+    assert _value_line(app).startswith("더한 공정 0 · 뺀 공정 1 · ")
+    _assert_removed_gate(app, 1)
+    app.checkbox(key=REMOVED_CONFIRM_KEY).check().run()
+    assert not app.button(key=APPLY_BUTTON_KEY).disabled
+    app.button(key=APPLY_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    active = repository.load_extra_process_state().active
+    assert active is not None and active.editor_made and active.process_count == 1
+
+
+def test_an_imported_pack_that_drops_a_process_needs_the_check_and_a_new_pack_clears_it(
+    database: Path,
+) -> None:
+    """가져온 판도 같다 — 채운 확인은 다음에 받은 판으로 이어지지 않는다(확인 칸은 key 만으로 같은
+    위젯이라 받은 판을 새로 둘 때 비운다)."""
+    apply_template(new_repository(database))
+    app = _app(database, open_place=True, pack=_without_aoi(2))
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+    _assert_removed_gate(app, 1)
+    app.checkbox(key=REMOVED_CONFIRM_KEY).check().run()
+    assert not app.button(key=APPLY_BUTTON_KEY).disabled
+
+    app.session_state[PACK_KEY] = _without_aoi(3)
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("적용 전 판 3" in text for text in _captions(app))
+    _assert_removed_gate(app, 1)
+
+
+def test_while_off_an_imported_pack_counts_drops_against_the_last_pack(database: Path) -> None:
+    """끈 동안 가져온 판은 마지막 내용 판과 견준다 — 적용하면 그 자리에서 다시 켜지므로 빠지는
+    공정을 확인해야 하고, 값 줄 끝에 「적용하면 켜짐」 이 붙는다."""
+    repository = new_repository(database)
+    apply_template(repository)
+    repository.turn_off_extra_process(expected_seq=1, applied_by=None)
+    app = _app(database, open_place=True, pack=_without_aoi(2))
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+
+    line = _value_line(app)
+    assert line.startswith("더한 공정 0 · 뺀 공정 1 · ") and line.endswith(TURNS_ON_PART)
+    _assert_removed_gate(app, 1)
+
+
+def test_a_revision_pack_that_drops_a_process_needs_the_same_check(database: Path) -> None:
+    """리비전에서 만든 판도 같은 받은 판 상자의 확인 칸을 지난다(빼는 공정이 생기는 꼴을 합성으로
+    둔다 — 「새 판으로」 는 보통 공정을 빼지 않는다)."""
+    repository = new_repository(database)
+    apply_template(repository)
+    data = _without_aoi(2)
+    reading = read_pack_zip(data)
+    staged = StagedPack(
+        fetch=SourceFetch(data=data, place=EXTRA_REVISION_PLACE),
+        reading=reading,
+        judgement=PackJudgement(JUDGE_APPLY, "새 판 2"),
+        seen_seq=1,
+        staged_at=NOW,
+        changes=PackChanges(removed=(AOI,)),
+        revision=RevisionOrigin("demo-scenario", "demo-revision", "DEMO 시나리오 r2"),
+    )
+
+    app = _app(database, open_place=True, staged=staged)
+
+    _assert_removed_gate(app, 1)

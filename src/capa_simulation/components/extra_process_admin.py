@@ -9,8 +9,11 @@
 단추 줄(가져오기 · 양식 내려받기 · 끄기 / 다시 켜기), 받은 판이 있으면 그 거절 표 또는 값 줄(지금
 판과의 차이 · 앞 판 값으로 되돌리는 칸 · 측정률 칸 — 받는 때 센다)과 미리보기 · 「적용」, 맨 아래 판
 이력 표. 설명 글은 세우지 않는다 — 단추 · 칸의 뜻은 풍선, 탭의 쓰임은 Guide 다(설계 규칙 UI-TXT-01 ·
-UI-TXT-02). 앞 판 값으로 되돌리는 칸이 있으면(G12 — 옛 사본에서 판 번호만 올린 판) 「적용」 앞 확인
-칸을 채워야 「적용」 이 열린다(UI-NTF-09).
+UI-TXT-02). 빠지는 공정(지금 판 — 끈 동안은 마지막 내용 판 — 에 있고 받은 판에 없음)이 있거나 앞 판
+값으로 되돌리는 칸이 있으면(G12 — 옛 사본에서 판 번호만 올린 판) 「적용」 앞 확인 칸을 채워야
+「적용」 이 열린다(UI-NTF-09 — 가져온 판 · 리비전 판 · 편집기 판 모두, 누른 회차의 칸 값으로 다시
+판정). 받은 판을 새로 둘 때는 `place_staged` 가 확인 칸 값을 비운다 — 앞 판에 채운 확인이 다음 판에
+이어지지 않는다.
 
 **가져오기 단추는 원천이 꽂혀 있을 때만 선다**(`extra_process_intake.installed_source`). C-DEP
 진입 파일만 S3 Drive 원천(`extra_process_drive` — 놓는 자리의 낱장 CSV 여섯)을 꽂는다 — 개발 · 사내
@@ -170,6 +173,7 @@ PREVIEW_BUTTON_KEY: Final = "admin_extra_process_preview_run"
 APPLY_BUTTON_KEY: Final = "admin_extra_process_apply"
 DISCARD_BUTTON_KEY: Final = "admin_extra_process_discard"
 APPLY_CONFIRM_KEY: Final = "admin_extra_process_apply_confirm"
+REMOVED_CONFIRM_KEY: Final = "admin_extra_process_removed_confirm"
 REVISION_BUTTON_KEY: Final = "admin_extra_process_from_revision"
 REWRITE_BUTTON_KEY: Final = "admin_extra_process_rewrite"
 
@@ -264,6 +268,14 @@ REVERT_CONFIRM_HELP: Final = (
     "옛 사본에서 판 번호만 올린 판이면 지금 판에서 고친 값이 앞 판 값으로 돌아갑니다"
 )
 UNCONFIRMED_REASON: Final = "앞 판 값으로 되돌리는 칸을 확인하면 누를 수 있습니다"
+# 공정이 빠지는 판의 「적용」 앞 확인 칸(UI-NTF-09) — 세 길(가져옴 · 리비전 · 편집기) 공용.
+# 풍선에 빠지는 공정 이름을 싣는다.
+REMOVED_CONFIRM_LABEL: Final = "뺀 공정 {n}개를 확인했습니다"
+REMOVED_CONFIRM_HELP: Final = (
+    "{names} — 지금 판에 있고 이 판에 없어, 적용하면 다음 등록부터 빠집니다(이미 저장된 리비전은 "
+    "그대로입니다)"
+)
+UNCONFIRMED_REMOVED_REASON: Final = "뺀 공정을 확인하면 누를 수 있습니다"
 
 
 @dataclass(frozen=True)
@@ -282,6 +294,9 @@ SEEN: Final = SessionSlot(SEEN_KEY, SeenSource)
 PREVIEW: Final = SessionSlot(PREVIEW_KEY, tuple, tuple)
 # (판 sha, 양식 ZIP 바이트, 파일 이름).
 TEMPLATE: Final = SessionSlot(TEMPLATE_KEY, tuple, tuple)
+# 「적용」 앞 확인 칸 둘(위젯 key) — 받은 판을 새로 둘 때 비운다(`place_staged`).
+REVERT_CONFIRMED: Final = SessionSlot(APPLY_CONFIRM_KEY, bool)
+REMOVED_CONFIRMED: Final = SessionSlot(REMOVED_CONFIRM_KEY, bool)
 # 마지막으로 가져온 파일의 (ETag, 상태 줄 낱말) — S3 쓰기가 덮지 않은 파일이 그것이면 그 낱말을
 # 잇는다.
 FETCHED_KEY: Final = "admin_extra_process_fetched"
@@ -297,6 +312,16 @@ def write_lock_reason() -> str | None:
     「부하 예외」 탭과 같은 `sso_identity.production_write_lock_reason` 하나이고, 이 이름은 시험이
     바꿔 끼우는 자리다."""
     return sso_identity.production_write_lock_reason()
+
+
+def place_staged(staged: StagedPack) -> None:
+    """받은 판 자리에 새 판을 둔다(가져옴 · 리비전 · 편집기 공용) — 시험 계산 메모와 「적용」 앞
+    확인 칸 값을 함께 비운다. 확인 칸은 key 만으로 같은 위젯이라(라벨의 수가 바뀌어도) 비우지 않으면
+    앞 판에 채운 확인이 다음 판의 「적용」 을 연다. 위젯을 그리기 전 회차에 부른다."""
+    STAGED.set(staged)
+    PREVIEW.clear()
+    REVERT_CONFIRMED.clear()
+    REMOVED_CONFIRMED.clear()
 
 
 def status_line(state: ExtraProcessState, seen: SeenSource | None = None) -> str:
@@ -494,11 +519,13 @@ def _import(repository: DuckDBScenarioRepository) -> None:
         with st.spinner("부대공정 판을 받는 중입니다..."):
             fetched = source.fetch()
         state = repository.load_extra_process_state()
+        # 끈 동안의 「지금 판」 은 마지막 내용 판이다 — 적용하면 그 자리에서 다시 켜지므로 빠지는
+        # 공정 · 바뀐 칸을 그 판과 센다(편집기가 펼치는 판과 같다).
         staged = stage_pack(
             state,
             fetched,
             now=now,
-            current=_content(repository, state.active),
+            current=_content(repository, state.active or state.latest_content),
             before=_content(repository, previous_content(state)),
         )
     except SourceNotReady as exc:
@@ -531,7 +558,7 @@ def _import(repository: DuckDBScenarioRepository) -> None:
         else:
             queue_flash(FLASH_KEY, "바뀐 것 없음 — 활성 판과 같은 파일입니다", kind="info")
     else:
-        STAGED.set(staged)
+        place_staged(staged)
     st.rerun()
 
 
@@ -638,12 +665,20 @@ def _render_staged(
         preview = _preview(repository, state, staged, run=opened)
         if preview is not None:
             _render_preview(preview)
+        removed = () if staged.changes is None else staged.changes.removed
         reverted = 0 if staged.changes is None else staged.changes.reverted_cells
-        confirmed = reverted == 0 or st.checkbox(
+        removed_ok = not removed or st.checkbox(
+            REMOVED_CONFIRM_LABEL.format(n=f"{len(removed):,}"),
+            key=REMOVED_CONFIRM_KEY,
+            help=REMOVED_CONFIRM_HELP.format(names=literal_markdown(" · ".join(removed))),
+        )
+        reverted_ok = reverted == 0 or st.checkbox(
             REVERT_CONFIRM_LABEL.format(n=f"{reverted:,}"),
             key=APPLY_CONFIRM_KEY,
             help=REVERT_CONFIRM_HELP,
         )
+        confirmed = removed_ok and reverted_ok
+        unconfirmed = UNCONFIRMED_REASON if removed_ok else UNCONFIRMED_REMOVED_REASON
         made_here = origin is not None or editor is not None
         apply_help = (
             REVISION_APPLY_HELP
@@ -652,14 +687,16 @@ def _render_staged(
             if editor is not None
             else APPLY_HELP
         )
-        if st.button(
+        pressed = st.button(
             REVISION_APPLY_LABEL if made_here else APPLY_LABEL,
             key=APPLY_BUTTON_KEY,
             type="primary",
             icon=":material/check:",
             disabled=lock is not None or not confirmed,
-            help=lock or (apply_help if confirmed else UNCONFIRMED_REASON),
-        ):
+            help=lock or (apply_help if confirmed else unconfirmed),
+        )
+        # 누른 회차의 확인 칸 값으로 다시 판정한다 — 잠긴 단추의 누름이 닿아도 쓰지 않는다.
+        if pressed and confirmed:
             _apply(repository, staged)
 
 
@@ -1185,7 +1222,7 @@ def _stage_revision(repository: DuckDBScenarioRepository) -> None:
         STAGED.clear()
         queue_flash(FLASH_KEY, UNCHANGED_REVISION, kind="info")
         st.rerun()
-    STAGED.set(
+    place_staged(
         StagedPack(
             fetch=SourceFetch(data=built.data, place=EXTRA_REVISION_PLACE),
             reading=built.reading,
