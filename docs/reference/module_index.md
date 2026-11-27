@@ -364,6 +364,7 @@
 - `src/capa_simulation/services/equipment_units.py`
 - `src/capa_simulation/services/equipment_validation.py`
 - `src/capa_simulation/services/execution_capacity.py`
+- `src/capa_simulation/services/extra_process_editor.py`
 - `src/capa_simulation/services/extra_process_merge.py`
 - `src/capa_simulation/services/extra_process_pack.py`
 - `src/capa_simulation/services/extra_process_revision.py`
