@@ -364,6 +364,7 @@ FLOOR_JUMP_KEY = "space_status_floor_jump"
 UNIT_SEARCH_KEY = "space_status_unit_search"
 UNIT_SEARCH_LABEL = "설비 찾기"
 UNIT_FOCUS_KEY = "space_status_unit_focus"
+UNIT_FOCUS = SessionSlot(UNIT_FOCUS_KEY, tuple)
 FAB_VIEWER_KEY = "space_fab_viewer"
 FAB_EDITOR_KEY = "space_fab_editor"
 # 배치 편집. 저장 알림·메모는 가용설비 현황의 키(`FLASH_KEY`·`_NOTE_KEY`)를 쓰지 않는다 — 그쪽
@@ -542,7 +543,7 @@ def _show_fab_overview() -> None:
     """FAB 전체로 돌아간다(콜백). 주소의 `floor` 인자만 지운다. 「설비 찾기」 맞춤 대상도 버린다."""
     st.session_state.pop(SELECTED_BUILDING_KEY, None)
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
-    st.session_state.pop(UNIT_FOCUS_KEY, None)
+    UNIT_FOCUS.clear()
     if FLOOR_PARAM in st.query_params:
         del st.query_params[FLOOR_PARAM]
 
@@ -566,7 +567,7 @@ def _floor_opened(key: FloorKey, *, discard: bool) -> bool:
     if not floor_open_allowed(key, discard=discard):
         return False
     discard_floor_state_draft()
-    st.session_state.pop(UNIT_FOCUS_KEY, None)
+    UNIT_FOCUS.clear()
     st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = key
     if st.query_params.get(FLOOR_PARAM) != floor_param(key):
         st.query_params[FLOOR_PARAM] = floor_param(key)
@@ -607,8 +608,9 @@ def _find_unit(
     서지 않으면 층 본문이 푼다). 도면에 서지 않은 호기면 알림창 한 마디이고(`_search_miss`), 그
     호기가 같은 층 도면에 형제가 선 모듈이면 맞춤 대상은 그 형제다(묶음으로 맞춘다). 고르기 칸은 늘
     비운다 — 같은 설비를 다시 골라도 움직이게(열기를 거절한 회차도)."""
-    name = st.session_state.get(widget_key)
-    st.session_state[widget_key] = None
+    search = SessionSlot(widget_key, object)
+    name = search.peek()
+    search.set(None)
     if not isinstance(name, str) or name not in targets:
         return
     target = targets[name]
@@ -621,7 +623,7 @@ def _find_unit(
     unit = name if target.place == SEARCH_PLACED else target.lead
     if unit is None:
         return
-    st.session_state[UNIT_FOCUS_KEY] = (*target.floor, unit, uuid.uuid4().hex)
+    UNIT_FOCUS.set((*target.floor, unit, uuid.uuid4().hex))
     if pick:
         _pick_unit(target.floor, unit)
 
@@ -660,7 +662,8 @@ def _search_hidden(key: FloorKey, as_of_day: date, unit: str, covered: bool) -> 
 def _take_unit_focus(key: FloorKey) -> dict[str, str] | None:
     """「설비 찾기」 가 둔 이 층의 맞춤 대상을 꺼내고 비운다 — 층 상세를 그리는 회차마다 부르고,
     값은 그 층 도면 data `focus` 로 한 번만 간다. 다른 층의 값 · 깨진 값은 버리고 None 이다."""
-    stored = st.session_state.pop(UNIT_FOCUS_KEY, None)
+    stored = UNIT_FOCUS.peek()
+    UNIT_FOCUS.clear()
     if (
         isinstance(stored, tuple)
         and len(stored) == 4
@@ -3014,7 +3017,7 @@ else:
 if selected is None:
     # FAB 로 돌아오면 층 상세에서 누른 호기와 「설비 찾기」 맞춤 대상은 풀린다(층을 바꾼 것과 같다).
     st.session_state.pop(SPACE_PICKED_KEY, None)
-    st.session_state.pop(UNIT_FOCUS_KEY, None)
+    UNIT_FOCUS.clear()
     placements = floor_placements(
         counted_equipment, unplaced_equipment, located_equipment, _canvas_of
     )

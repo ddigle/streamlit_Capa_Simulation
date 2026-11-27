@@ -697,7 +697,7 @@ def _dispatch_focus_hidden(
     규칙이다."""
     if on_focus_hidden is None:
         return
-    state = st.session_state.get(key)
+    state = SessionSlot(key, object).peek()
     payload = (
         state.get("focusHidden")
         if isinstance(state, Mapping)
