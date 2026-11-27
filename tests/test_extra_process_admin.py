@@ -313,6 +313,35 @@ def test_a_pack_that_brings_back_older_values_needs_a_check_before_apply(databas
     assert not app.button(key=APPLY_BUTTON_KEY).disabled
 
 
+def test_while_off_a_pack_that_brings_back_older_values_needs_the_same_check(
+    database: Path,
+) -> None:
+    """G12 은 끈 동안에도 선다 — 「지금 판」 이 마지막 내용 판(판 2)이라 그 앞 판(판 1) 값으로
+    돌아가는 칸을 센다(활성 판이 없다고 견줌을 비우지 않는다)."""
+    from auto_update_fakes import new_repository
+    from test_extra_process_registration import apply_template
+
+    repository = new_repository(database)
+    apply_template(repository)
+    second = edited(
+        bump_version(template_files(), 2),
+        "03_productivity.csv",
+        lambda rows: set_cell(
+            rows, lambda row: row[0] == BOND and row[7] == "202607", "UPEH", "60000"
+        ),
+    )
+    apply_template(repository, expected_seq=1, files=second)
+    repository.turn_off_extra_process(expected_seq=2, applied_by=None)
+    app = _app(database, open_place=True, pack=zip_files(bump_version(template_files(), 3)))
+
+    app.button(key=IMPORT_BUTTON_KEY).click().run()
+
+    line = next(text for text in _captions(app) if text.startswith("더한 공정 0 · 뺀 공정 0"))
+    assert "앞 판 값으로 되돌리는 칸 0" not in line
+    apply = app.button(key=APPLY_BUTTON_KEY)
+    assert apply.disabled and apply.help == UNCONFIRMED_REASON
+
+
 def test_the_trial_button_place_shows_a_data_error_when_no_scenario_is_loaded(
     database: Path,
 ) -> None:

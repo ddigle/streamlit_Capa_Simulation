@@ -468,14 +468,15 @@ def stage_editor_pack(
 
 
 def previous_content(state: ExtraProcessState) -> ExtraProcessVersion | None:
-    """활성 판의 바로 앞 내용 판(sha 가 다른 마지막 내용 줄) — 되돌리는 칸 수(G12)의 견줌 대상."""
-    active = state.active
-    if active is None:
+    """지금 판(활성 판, 끈 동안은 마지막 내용 판 — 세 길이 차이를 견주는 판)의 바로 앞 내용 판
+    (sha 가 다른 마지막 내용 줄) — 되돌리는 칸 수(G12)의 견줌 대상."""
+    current = state.active or state.latest_content
+    if current is None:
         return None
     for item in reversed(state.history):
-        if item.seq >= active.seq or item.sha256 is None:
+        if item.seq >= current.seq or item.sha256 is None:
             continue
-        if item.sha256 != active.sha256:
+        if item.sha256 != current.sha256:
             return item
     return None
 
