@@ -72,11 +72,18 @@ def test_the_height_handle_is_a_horizontal_separator_under_the_stage() -> None:
 
 def test_resizing_stays_in_the_browser() -> None:
     """크기는 파이썬으로 보내지 않는다(보내면 페이지 전체가 다시 돈다). 보내는 것은 `적용` 과
-    FAB 층 블록의 `열기`·층 상세 뷰어에서 누른 호기(`pick`, 트리거), 그리고 기준일 `asOf`(상태 —
-    페이더를 놓을 때·FAB 「오늘로」)뿐이다."""
+    FAB 층 블록의 `열기`·층 상세 뷰어에서 누른 호기(`pick`)·「설비 찾기」 로 맞출 호기가 그 날
+    숨음(`focusHidden`)·배치 편집 「호기 정보」 창 칸 판정 요청(`sheetCheck`, 트리거), 그리고
+    기준일 `asOf`(상태 — 페이더를 놓을 때·FAB 「오늘로」)뿐이다."""
     assert sorted(re.findall(r"setStateValue\('([A-Za-z]+)'", JS)) == ["asOf", "asOf"]
     assert JS.count("setStateValue(") == 2
-    assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate", "pick"]
+    assert sorted(re.findall(r"setTriggerValue\('([A-Za-z]+)'", JS)) == [
+        "apply",
+        "focusHidden",
+        "navigate",
+        "pick",
+        "sheetCheck",
+    ]
     # 무대 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 둘째 관찰자는
     # 스크롤 고정 중 본문 내용 상자를 본다(켤 때 만들고 끌 때 끊는다). 내릴 때 둘 다 끊는다.
     assert JS.count("new ResizeObserver(") == 2

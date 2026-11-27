@@ -9985,24 +9985,37 @@ export default function (component) {
   // 뒤(`S.onResize` 다음 — 새 층은 위에서 전체 보기로 섰다) 그 호기를 고르고 둘레가 보이게 맞춘다 — 배율은 「호기 정보」 목록 줄
   // 찾아가기와 같은 LIST_ROW_ZOOM 까지(설계 규칙 UI-NAV-03)이고 모듈 묶음이면 이 층 도면에 선 묶음 전체(`expanded`)다. 창이 그 호기를
   // 덮으면 목록 줄 찾아가기처럼 덮지 않은 띠로 민다. 같은 토큰은 다시 맞추지 않는다(뒤 회차 · 같은 epoch 다시 그리기 — 파이썬도 연
-  // 첫 회차에만 싣는다). 이 도면에 없는 id 는 조용히 둔다 — 도면에 없는 까닭은 파이썬이 층을 열 때 알림창으로 말한다. 편집의 미배치
-  // 칸 호기는 고르기만 한다(칩이 고른 표지). 고른 호기를 서버로 보내지 않는다 — 필요 단축 칸은 같은 콜백이 파이썬에서 쥐었다(`notePick`
-  // 규칙 그대로).
+  // 첫 회차에만 싣는다). 이 도면에 없는 id 는 조용히 둔다 — 도면에 없는 까닭은 파이썬이 층을 열 때 알림창으로 말한다. 보기에서 그 날
+  // 숨은 호기(겹친 반입 예정 — 파이썬은 겹침을 모른다)는 「호기 정보」 목록 줄 찾아가기(`goToUnit`)처럼 고르지도 맞추지도 않고, 그린
+  // 뒤에 `focusHidden`({epoch, id, token, covered})을 한 번 보내 파이썬이 알림창으로 까닭을 말한다. 편집의 미배치 칸 호기는 고르기만
+  // 한다(칩이 고른 표지). 고른 호기를 서버로 보내지 않는다 — 필요 단축 칸은 같은 콜백이 파이썬에서 쥐었다(`notePick` 규칙 그대로).
   // <search-focus>
-  function focusPlan(focus, seen, known) {
+  function focusPlan(focus, seen, known, hidden) {
     if (!focus || typeof focus !== 'object') return null
     const id = typeof focus.id === 'string' ? focus.id : ''
     const token = typeof focus.token === 'string' ? focus.token : ''
     if (!id || !token || seen.has(token)) return null
-    return { id, token, known: Boolean(known(id)) }
+    const isKnown = Boolean(known(id))
+    return { id, token, known: isKnown, hidden: isKnown && Boolean(hidden(id)) }
   }
   // </search-focus>
   function applyFocus() {
     if (FAB) return
-    const plan = focusPlan(data.focus, S.focusSeen, (id) => S.items.has(id) && isUnit(S.items.get(id)))
+    const plan = focusPlan(
+      data.focus,
+      S.focusSeen,
+      (id) => S.items.has(id) && isUnit(S.items.get(id)),
+      (id) => VIEW && S.groups.get(id)?.__visible === false,
+    )
     if (!plan) return
     S.focusSeen.add(plan.token)
     if (!plan.known) return
+    if (plan.hidden) {
+      const body = { epoch: S.epoch, id: plan.id, token: plan.token, covered: S.covered.has(plan.id) }
+      const later = typeof queueMicrotask === 'function' ? queueMicrotask : setTimeout
+      later(() => setTriggerValue('focusHidden', body))
+      return
+    }
     const item = S.items.get(plan.id)
     select(plan.id)
     if (!onCanvas(item)) return

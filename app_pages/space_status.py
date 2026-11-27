@@ -646,6 +646,15 @@ def _search_miss(name: str, target: UnitSearchTarget, as_of_day: date) -> str:
     return f"{quoted(name)} — {where} 도면에 없습니다 · {why}{tail}"
 
 
+def _search_hidden(key: FloorKey, as_of_day: date, unit: str, covered: bool) -> None:
+    """층 도면 `focusHidden` 콜백 — 「설비 찾기」 로 맞출 호기가 그 날 도면에 숨어(겹친 반입 예정 —
+    파이썬은 겹침을 모른다) 브라우저가 고르지도 맞추지도 않았다. 알림창 · Alarm 안내 한 마디다."""
+    why = "겹쳐 숨긴 반입 예정" if covered else "도면에 보이지 않음"
+    _queue_space_flash(
+        f"{quoted(unit)} {floor_label(key)} · {as_of_day.isoformat()}에 {why}", kind="info"
+    )
+
+
 def _take_unit_focus(key: FloorKey) -> dict[str, str] | None:
     """「설비 찾기」 가 둔 이 층의 맞춤 대상을 꺼내고 비운다 — 층 상세를 그리는 회차마다 부르고,
     값은 그 층 도면 data `focus` 로 한 번만 간다. 다른 층의 값 · 깨진 값은 버리고 None 이다."""
@@ -3436,8 +3445,10 @@ else:
                 pick_to_server=shown_layer is not None,
                 # 「반입 일정」 — epoch 밖, 켠 회차에만 키가 실린다.
                 arrival_dates=arrival_on,
-                # 「설비 찾기」 맞춤(epoch 밖) — 연 첫 회차에만 실린다.
+                # 「설비 찾기」 맞춤(epoch 밖) — 연 첫 회차에만 실린다. 그 날 숨은 호기면 브라우저가
+                # 맞추지 않고 알려 온다(알림창).
                 focus=search_focus,
+                on_focus_hidden=partial(_search_hidden, selected, as_of),
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
     # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다).

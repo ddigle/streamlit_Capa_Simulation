@@ -32,7 +32,7 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 
 FAB 전체 「설비 찾기」 로 연 층은 층 도면(보기 · 배치 편집)이 data `focus` ``{"id", "token"}``(epoch
 밖)를 한 번 받아 그 호기를 고르고 둘레가 보이게 맞춰 확대한다(`_clean_focus` — 토큰마다 한 번, 없는
-id 는 조용히 둔다).
+id 는 조용히 둔다). 보기에서 그 날 숨은 호기(겹친 반입 예정)면 맞추지 않고 `focusHidden` 을 보낸다.
 
 **「호기 정보」 창**(층 보기·편집, 2026-11-03 사용자 요청)도 브라우저 몫이다 — 도면 위에 뜨는 창에
 고른 호기의 칸(`space_layout.FLOOR_TABLE_COLUMNS` 21칸)과, 칸마다 엑셀 자동 필터 꼴로 거른 호기
@@ -583,6 +583,7 @@ def render_space_layout_viewer(
     arrival_dates: bool = False,
     raised: Collection[str] = (),
     focus: Mapping[str, str] | None = None,
+    on_focus_hidden: Callable[[str, bool], None] | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -638,7 +639,10 @@ def render_space_layout_viewer(
     재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다.
 
     `focus` 는 FAB 전체 「설비 찾기」 로 이 층을 연 첫 회차의 맞춤 신호 ``{"id", "token"}``
-    (`_clean_focus` — epoch 밖)다. 고른 호기를 서버로 보내는 규칙(`pick_to_server`)과 따로다."""
+    (`_clean_focus` — epoch 밖)다. 고른 호기를 서버로 보내는 규칙(`pick_to_server`)과 따로다. 그
+    호기가 그 날 도면에 숨었으면(겹친 반입 예정) 브라우저는 고르지도 맞추지도 않고
+    `focusHidden`(``{"epoch", "id", "token", "covered"}``)을 한 번 보내 `on_focus_hidden(설비명,
+    겹침)` 이 콜백에서 돈다(`_dispatch_focus_hidden` — 옛 epoch 값은 버린다)."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -679,8 +683,31 @@ def render_space_layout_viewer(
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
         on_pick_change=partial(_dispatch_pick, key, epoch, on_pick),
+        on_focusHidden_change=partial(_dispatch_focus_hidden, key, epoch, on_focus_hidden),
         width="stretch",
     )
+
+
+def _dispatch_focus_hidden(
+    key: str, epoch: str, on_focus_hidden: Callable[[str, bool], None] | None
+) -> None:
+    """`on_focusHidden_change` 콜백. 「설비 찾기」 로 맞출 호기가 그 날 도면에 숨어 브라우저가
+    고르지도 맞추지도 않은 회차에 한 번 온다(``{"epoch", "id", "token", "covered"}``). 뷰어를 그린
+    epoch 와 다른 값 · 글자가 아닌 id · 토큰은 버린다 — 호기 누르기(`_dispatch_pick`)와 같은
+    규칙이다."""
+    if on_focus_hidden is None:
+        return
+    state = st.session_state.get(key)
+    payload = (
+        state.get("focusHidden")
+        if isinstance(state, Mapping)
+        else getattr(state, "focusHidden", None)
+    )
+    if not isinstance(payload, Mapping) or payload.get("epoch") != epoch:
+        return
+    unit, token = payload.get("id"), payload.get("token")
+    if isinstance(unit, str) and unit.strip() and isinstance(token, str) and token:
+        on_focus_hidden(unit.strip(), payload.get("covered") is True)
 
 
 def _dispatch_pick(key: str, epoch: str, on_pick: Callable[[str | None], None] | None) -> None:

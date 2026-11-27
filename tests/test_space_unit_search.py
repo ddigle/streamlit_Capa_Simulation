@@ -58,6 +58,7 @@ FOCUS_KEY = "space_status_unit_focus"
 PICKED_KEY = "space_status_picked_unit"
 AS_OF_KEY = "space_status_as_of"
 NAVIGATE_KEY = "test_fake_fab_navigate"
+HIDDEN_KEY = "test_fake_focus_hidden"
 _SEARCH_BLOCK = re.compile(r"// <search-focus>\n(?P<body>.*?)\n\s*// </search-focus>", re.S)
 
 
@@ -123,7 +124,8 @@ def test_a_module_off_the_drawing_leads_to_a_standing_sibling_on_its_floor() -> 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """`_EDITOR` 대역 — 받은 data 를 적고, `NAVIGATE_KEY` 가 있으면 FAB 블록을 누른 것처럼
-    `on_navigate_change` 를 부른다."""
+    `on_navigate_change` 를, `HIDDEN_KEY` 가 있으면 층 보기가 맞출 호기를 그 날 숨긴 것처럼
+    `on_focusHidden_change` 를 부른다."""
     recorded: list[dict[str, Any]] = []
 
     def _stub(**kwargs: Any) -> None:
@@ -135,6 +137,10 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         if payload is not None and data.get("scope") == "fab":
             st.session_state[kwargs["key"]] = {"navigate": {"epoch": data["epoch"], **payload}}
             kwargs["on_navigate_change"]()
+        hidden = st.session_state.pop(HIDDEN_KEY, None)
+        if hidden is not None and data.get("mode") == "view" and data.get("scope") == "floor":
+            st.session_state[kwargs["key"]] = {"focusHidden": {"epoch": data["epoch"], **hidden}}
+            kwargs["on_focusHidden_change"]()
 
     monkeypatch.setattr(space_layout_editor, "_EDITOR", _stub)
     return recorded
@@ -407,6 +413,29 @@ def test_the_search_judges_a_unit_on_the_day_the_opened_floor_draws(
         assert PICKED_KEY not in app.session_state
 
 
+def test_a_unit_the_drawing_hides_that_day_is_said_in_the_alarm(
+    tmp_path: Path, calls: list[dict[str, Any]]
+) -> None:
+    """그 날 도면에 숨은 호기(겹친 반입 예정 — 파이썬은 겹침을 모른다)는 브라우저가 맞추지 않고
+    `focusHidden` 을 보내면 알림창 · Alarm 안내 한 마디다(무엇을 · 어디서 · 까닭). 옛 epoch 값 ·
+    토큰 없는 값은 버린다."""
+    app = _open(tmp_path)
+    _search(app, "EQ-01")
+    today = date.today().isoformat()
+    app.session_state[HIDDEN_KEY] = {"id": "EQ-01", "token": "t", "covered": True}
+    _ok(app.run())
+    _ok(app.run())
+    notes = [note.value.replace("\\", "") for note in flashed(app, "info")]
+    assert any(f"「EQ-01」 C1 1F · {today}에 겹쳐 숨긴 반입 예정" in note for note in notes), notes
+    assert not app.info
+
+    for stale in ({"id": "EQ-02", "token": "t", "epoch": "old"}, {"id": "EQ-02"}):
+        app.session_state[HIDDEN_KEY] = stale
+        _ok(app.run())
+        _ok(app.run())
+        assert not any("「EQ-02」" in note.value for note in flashed(app, "info"))
+
+
 def test_an_inactive_floor_still_opens_and_takes_the_focus(
     tmp_path: Path, calls: list[dict[str, Any]]
 ) -> None:
@@ -533,7 +562,8 @@ const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 process.stdout.write(JSON.stringify(input.cases.map((c) => {
   const seen = new Set(c.seen || [])
   const known = new Set(c.known || [])
-  return focusPlan(c.focus, seen, (id) => known.has(id))
+  const hidden = new Set(c.hidden || [])
+  return focusPlan(c.focus, seen, (id) => known.has(id), (id) => hidden.has(id))
 })))
 """
     result: Any = _node(block.group("body") + runner, {"cases": cases})
@@ -542,23 +572,28 @@ process.stdout.write(JSON.stringify(input.cases.map((c) => {
 
 def test_a_focus_is_taken_once_per_token_and_an_unknown_id_is_quiet() -> None:
     """맞춤 판정 — 새 토큰의 이 도면 호기면 그 호기다. 같은 토큰은 다시 맞추지 않는다(뒤 회차 · 같은
-    epoch 다시 그리기). 이 도면에 없는 id 도 토큰은 쓴다(조용히 — 까닭은 파이썬 알림). 빈 값 · 꼴이
-    다른 값은 없음이다."""
+    epoch 다시 그리기). 이 도면에 없는 id 도 토큰은 쓴다(조용히 — 까닭은 파이썬 알림). 그 날 숨은
+    호기면 `hidden` 이다(고르지도 맞추지도 않음 — 없는 id 는 숨음을 묻지 않는다). 빈 값 · 꼴이 다른
+    값은 없음이다."""
     focus = {"id": "DEMO-EQ-01", "token": "t1"}
     assert _plan(
         [
             {"focus": focus, "known": ["DEMO-EQ-01"]},
             {"focus": focus, "known": ["DEMO-EQ-01"], "seen": ["t1"]},
             {"focus": {"id": "DEMO-EQ-09", "token": "t2"}, "known": ["DEMO-EQ-01"]},
+            {"focus": focus, "known": ["DEMO-EQ-01"], "hidden": ["DEMO-EQ-01"]},
+            {"focus": {"id": "DEMO-EQ-09", "token": "t4"}, "hidden": ["DEMO-EQ-09"]},
             {"focus": None},
             {"focus": {"id": "", "token": "t3"}},
             {"focus": {"id": "DEMO-EQ-01"}},
             {"focus": "DEMO-EQ-01"},
         ]
     ) == [
-        {"id": "DEMO-EQ-01", "token": "t1", "known": True},
+        {"id": "DEMO-EQ-01", "token": "t1", "known": True, "hidden": False},
         None,
-        {"id": "DEMO-EQ-09", "token": "t2", "known": False},
+        {"id": "DEMO-EQ-09", "token": "t2", "known": False, "hidden": False},
+        {"id": "DEMO-EQ-01", "token": "t1", "known": True, "hidden": True},
+        {"id": "DEMO-EQ-09", "token": "t4", "known": False, "hidden": False},
         None,
         None,
         None,
@@ -569,15 +604,24 @@ def test_a_focus_is_taken_once_per_token_and_an_unknown_id_is_quiet() -> None:
 def test_the_focus_selects_and_fits_the_bundle_after_the_stage_is_measured() -> None:
     """거는 자리 — 층 도면만(FAB 아님), 무대 크기를 잰 뒤(`S.onResize()` 다음). 토큰은 id 가 없어도
     쓰고, 이 도면 호기면 고르고 도면에 선 호기면 묶음째(`expanded`) 「호기 정보」 목록 줄 찾아가기와
-    같은 배율 상한(`LIST_ROW_ZOOM` — 설계 규칙 UI-NAV-03 300%)으로 맞춘다. 고른 호기를 서버로
-    보내지 않는다(필요 단축 칸은 파이썬 콜백이 쥔다)."""
+    같은 배율 상한(`LIST_ROW_ZOOM` — 설계 규칙 UI-NAV-03 300%)으로 맞춘다. 보기에서 그 날 숨은
+    호기(`__visible === false` — 목록 줄 찾아가기와 같은 거름)는 고르지도 맞추지도 않고 그린 뒤에
+    `focusHidden` 만 보낸다. 고른 호기를 서버로 보내지 않는다(필요 단축 칸은 파이썬 콜백이 쥔다)."""
     start = JS.index("  function applyFocus() {")
     body = JS[start : JS.index("\n  }\n", start)]
     assert "if (FAB) return" in body
     assert body.index("S.focusSeen.add(plan.token)") < body.index("if (!plan.known) return")
+    assert "(id) => VIEW && S.groups.get(id)?.__visible === false" in body
+    hidden = body[
+        body.index("if (plan.hidden) {") : body.index("const item = S.items.get(plan.id)")
+    ]
+    assert body.index("if (!plan.known) return") < body.index("if (plan.hidden) {")
+    assert "queueMicrotask" in hidden and "setTriggerValue('focusHidden', body)" in hidden
+    assert "return\n" in hidden and "select(" not in hidden and "zoomToBox(" not in hidden
     assert body.index("select(plan.id)") < body.index("if (!onCanvas(item)) return")
     assert "zoomToBox(bbox(expanded([item])), LIST_ROW_ZOOM)" in body
-    assert "notePick" not in body and "setTriggerValue" not in body
+    assert "notePick" not in body and "setTriggerValue('pick'" not in body
+    assert body.count("setTriggerValue(") == 1
     assert "const LIST_ROW_ZOOM = 3" in JS
     assert "focusSeen: new Set()," in JS
     tail = JS[JS.rindex("  S.onResize()\n") :]
