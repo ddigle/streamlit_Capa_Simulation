@@ -1114,8 +1114,10 @@ def test_the_guide_and_the_header_helps_say_what_the_editor_does() -> None:
         "STEP · MCP 와 다름",
         "`YY.MM~`",
         "`~YY.MM`",
+        editor.FOLLOW_LABEL,
     ):
         assert word in section, word
+    assert "공정 더하기" not in section, "걷은 팝오버 이름"
     for table, text in editor.VALUE_HELPS.items():
         assert "「YY.MM~」" in text and "이후」" not in text, table
         if table != editor.EQUIPMENT_TABLE:
