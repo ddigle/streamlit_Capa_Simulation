@@ -229,9 +229,10 @@ function tbStorage() {
   }
 }
 
-function tbErrorText(S, code) {
+function tbErrorText(S, code, vc) {
+  const own = ((S.texts && S.texts.colErrors) || {})[vc] || {}
   const errors = (S.texts && S.texts.errors) || {}
-  return typeof errors[code] === 'string' ? errors[code] : String(code)
+  return typeof own[code] === 'string' ? own[code] : typeof errors[code] === 'string' ? errors[code] : String(code)
 }
 
 // 원본 줄의 분류 표시명 「공정 · 양산」(줄 이름을 실은 표는 그 이름).
@@ -905,7 +906,7 @@ function tbChangeRow(S, entry, i) {
   const after = tbEl('span', 'eg-chg-new', entry.removed ? '' : entry.bad ? entry.bad.text : tbValueText(S, entry.after, entry.col))
   if (entry.bad) {
     item.classList.add('is-bad')
-    after.title = tbErrorText(S, entry.bad.code)
+    after.title = tbErrorText(S, entry.bad.code, entry.col)
   }
   line.appendChild(after)
   go.appendChild(line)

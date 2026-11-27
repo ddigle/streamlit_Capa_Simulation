@@ -118,6 +118,26 @@ def test_only_text_and_choice_formats_carry_their_own_fields() -> None:
     assert eg.format_payload(ACCOUNT)["maxLength"] == 12
 
 
+def test_choice_and_length_errors_are_written_per_column() -> None:
+    """고르기 항목 · 글자 수 오류 글은 칸마다(`colErrors` — 값 칸 차례 번호)다. 표에 하나면
+    마지막 고르기 칸 글이 앞 고르기 칸 오류를 덮었다(spike-grid 2-6). 긴 목록은 앞 셋 · 수로
+    줄인다(2-7)."""
+    found = edit_grid.texts(SPEC, changes_label="저장 전 변경")
+    assert found["colErrors"] == {
+        "0": {"len": "12자 이하로 적습니다"},
+        "2": {"choice": "열람 · 실무자 · 관리자 · 개발자 가운데 하나를 적습니다"},
+    }
+    assert "choice" not in found["errors"] and "len" not in found["errors"]
+    assert found["errors"]["pattern"] == "꼴이 맞지 않습니다"
+    assert edit_grid.choice_error(("Main", "MI")) == "Main · MI 가운데 하나를 적습니다"
+    refs = tuple(f"DEMO_REF_{k:03d}" for k in range(60))
+    assert edit_grid.choice_error(refs) == (
+        "DEMO_REF_000 · DEMO_REF_001 · DEMO_REF_002 … 60개 가운데 하나를 적습니다"
+    )
+    plain = eg.GridSpec("RQ_DEMO", "데모", ("공정",), ("202701",), eg.ValueFormat("fixed", 0))
+    assert "colErrors" not in edit_grid.texts(plain, changes_label="적용 전 변경")
+
+
 # ------------------------------------------------------------------ 색인 · 껍데기 · feed
 
 

@@ -407,9 +407,11 @@ function egNumberAt(S, row, vc) {
   return state.bad || state.value === null ? NaN : state.value
 }
 
-function egErrorText(S, code) {
+// 오류 코드의 글 — 칸마다 다른 글(texts.colErrors[값 칸] — 고르기 항목 · 글자 수)이 표 글(errors)보다 먼저다.
+function egErrorText(S, code, vc) {
+  const own = ((S.texts && S.texts.colErrors) || {})[vc] || {}
   const errors = (S.texts && S.texts.errors) || {}
-  return typeof errors[code] === 'string' ? errors[code] : code
+  return typeof own[code] === 'string' ? own[code] : typeof errors[code] === 'string' ? errors[code] : code
 }
 
 // 지금 보이는 값 — 분류 칸은 원값 글, 값 칸은 수 | null(빈칸) | 글(못 읽은 칸 · 글 · 고르기 칸). r 은 보기 줄.
@@ -746,7 +748,7 @@ function egWhere(S) {
   if (S.anchor.c >= m.keyCount) {
     text += ' · ' + m.valueCols[S.anchor.c - m.keyCount]
     const state = egCellState(S, row, S.anchor.c - m.keyCount)
-    if (state.bad) text += ' — ' + egErrorText(S, state.bad.code)
+    if (state.bad) text += ' — ' + egErrorText(S, state.bad.code, S.anchor.c - m.keyCount)
   }
   where.textContent = text
   where.title = text

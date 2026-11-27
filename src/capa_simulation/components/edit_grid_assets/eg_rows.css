@@ -15,6 +15,9 @@
 .eg-choices {
   position: absolute;
   z-index: 1;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 2px 0;
   border: 1px solid var(--eg-border-strong);
   background: var(--eg-surface);

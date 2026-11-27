@@ -229,9 +229,23 @@ def _bound_text(value: float | None, spec: GridSpec) -> str:
     return text[:-1].rstrip("0").rstrip(".") + "%"
 
 
+# 고르기 칸 오류 글이 항목을 다 잇는 목록의 상한 — 넘으면 앞 셋과 수만(상태 줄은 한 줄이다).
+CHOICE_ERROR_ITEMS: Final = 6
+CHOICE_ERROR_CHARS: Final = 40
+
+
+def choice_error(options: Sequence[str]) -> str:
+    """고르기 칸 오류 글 — 짧은 목록은 항목을 다 잇고, 긴 목록은 앞 셋 · 「…」 · 수."""
+    joined = " · ".join(options)
+    if len(options) <= CHOICE_ERROR_ITEMS and len(joined) <= CHOICE_ERROR_CHARS:
+        return f"{joined} 가운데 하나를 적습니다"
+    return f"{' · '.join(options[:3])} … {len(options):,}개 가운데 하나를 적습니다"
+
+
 def _rows_texts(spec: GridSpec) -> dict[str, Any]:
     """줄 규칙 표만의 글 — 줄 지우기 단추 · 변경 목록 · 지운 줄 잠김 · 새 줄이 모자란 붙여넣기
-    거절 · 글 · 고르기 칸 오류."""
+    거절 · 글 · 고르기 칸 오류. 칸마다 다른 오류 글(고르기 항목 · 글자 수)은 값 칸 차례 번호로
+    `colErrors` 에 싣는다 — 표에 하나면 마지막 칸 글이 앞 칸을 덮는다."""
     found: dict[str, Any] = {}
     if spec.row_ops:
         found.update(
@@ -244,17 +258,24 @@ def _rows_texts(spec: GridSpec) -> dict[str, Any]:
             freshShort="새 줄이 {n}줄 모자라 붙이지 않았습니다 — 나눠 붙이면 새 줄이 늘어납니다",
         )
     errors: dict[str, str] = {}
-    for _, fmt in spec.column_formats:
+    by_column: dict[str, dict[str, str]] = {}
+    for col, column in enumerate(spec.value_columns if spec.column_formats else ()):
+        fmt = spec.format_of(column)
+        own: dict[str, str] = {}
         if fmt.kind == "choice":
-            errors["choice"] = f"{' · '.join(fmt.options)} 가운데 하나를 적습니다"
+            own["choice"] = choice_error(fmt.options)
         if fmt.kind == "text":
             errors["text"] = "줄바꿈 · 탭 같은 글자는 받지 않습니다"
             if fmt.max_length:
-                errors["len"] = f"{fmt.max_length}자 이하로 적습니다"
+                own["len"] = f"{fmt.max_length}자 이하로 적습니다"
             if fmt.pattern is not None:
                 errors["pattern"] = "꼴이 맞지 않습니다"
+        if own:
+            by_column[str(col)] = own
     if errors:
         found["kindErrors"] = errors
+    if by_column:
+        found["colErrors"] = by_column
     return found
 
 

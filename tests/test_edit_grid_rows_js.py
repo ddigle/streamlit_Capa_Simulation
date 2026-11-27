@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from edit_grid_node import FAKE_DOM, RUNNER_HEAD, asset, mountable, run_node, section
 from test_edit_grid_rows import RULES, SPEC, _frame
 
@@ -139,11 +140,15 @@ const R = {}
   R.selfButton = [button.getAttribute('aria-disabled'), button.title]
   fire(button, 'click')
   R.selfPress = [q('.eg-note').textContent, sent.length]
-  // 고르기 칸 — 편집을 열면 칸 아래 항목 목록, ↓ 가 다음 항목, Enter 가 그 글로 확정.
+  // 고르기 칸 — 편집을 열면 칸 아래 항목 목록 전부(지금 값 강조 · 글 전체 고름), ↓ 가 강조를
+  // 다음 항목으로(편집기 글은 그대로), Enter 가 강조한 항목으로 확정.
   setRange(S, { r: 0, c: 3 }, { r: 0, c: 3 })
   key(scroller, 'Enter')
   const list = q('.eg-choices')
-  R.choiceOpen = [list.hidden, list.children.map((n) => n.textContent), q('.eg-ed').value]
+  R.choiceOpen = [
+    list.hidden, list.children.map((n) => n.textContent), q('.eg-ed').value,
+    list.children.map((n) => n.classList.contains('is-on')), q('.eg-ed').selection,
+  ]
   key(q('.eg-ed'), 'ArrowDown')
   R.choiceDown = [q('.eg-ed').value, list.children.map((n) => n.classList.contains('is-on'))]
   key(q('.eg-ed'), 'Enter')
@@ -214,8 +219,14 @@ def test_the_row_feature_locks_cells_lists_choices_and_removes_rows() -> None:
     assert result["lockedEdit"] == [True, "명단 칸은 잠김"]
     assert result["selfButton"] == ["true", "나 자신은 못 지움"]
     assert result["selfPress"][0] == "나 자신은 못 지움"
-    assert result["choiceOpen"] == [False, ["열람", "실무자", "관리자", "개발자"], "열람"]
-    assert result["choiceDown"] == ["실무자", [False, True, False, False]]
+    assert result["choiceOpen"] == [
+        False,
+        ["열람", "실무자", "관리자", "개발자"],
+        "열람",
+        [True, False, False, False],
+        [0, 2],
+    ]
+    assert result["choiceDown"] == ["열람", [False, True, False, False]]
     commit = result["choiceCommit"]
     assert commit["op"]["op"] == "write" and commit["op"]["values"] == [["실무자"]]
     assert commit["op"]["rows"] == ["demo.a"] and commit["op"]["cols"] == ["등급"]
@@ -341,3 +352,282 @@ def test_paste_delete_and_fill_skip_locked_rows_and_say_so() -> None:
         ["clear", f"1칸 비움 · {skipped}"],
     ]
     assert result["removed"] == [["clear", f"2칸 비움 · {skipped}"], ["write", "1칸 붙여넣음"]]
+
+
+def test_the_list_filter_keeps_matching_items_with_prefix_matches_first() -> None:
+    """공용 거름(2026-11-27 보드 답 「거름 더함」) — 친 글이 보이는 글 · 넣을 글에 든 항목만
+    (대소문자 무시), 앞머리가 맞는 항목이 앞이고 그 안은 항목 차례다. 칸을 막 연 때(null) · 빈
+    글은 전부. 강조는 같은 글(넣을 글 먼저, 다음 보이는 글 — 대소문자 그대로)뿐이다."""
+    runner = (
+        RUNNER_HEAD
+        + """
+const items = input.items.map(([label, value]) => ({ label, value }))
+const names = (list) => list.map((item) => item.value)
+done({
+  open: names(listFilter(items, null)),
+  blank: names(listFilter(items, '  ')),
+  demo: names(listFilter(items, 'demo')),
+  inner: names(listFilter(items, ' _b ')),
+  label: names(listFilter(items, '표시')),
+  none: names(listFilter(items, 'zz')),
+  match: [' DEMO_B_A ', 'demo_b_a', 'C 표시', ''].map((text) => listMatch(items, text)),
+})
+"""
+    )
+    source = section(PURE, "eg-format") + section(ROWS, "eg-kinds")
+    items = [
+        ["A_DEMO", "A_DEMO"],
+        ["DEMO_B_A", "DEMO_B_A"],
+        ["C 표시", "demo_c"],
+        ["X_B", "X_B"],
+    ]
+    result = run_node(source, runner, {"items": items})
+    everything = ["A_DEMO", "DEMO_B_A", "demo_c", "X_B"]
+    assert result["open"] == everything and result["blank"] == everything
+    assert result["demo"] == ["DEMO_B_A", "demo_c", "A_DEMO"], "앞머리 맞음이 앞"
+    assert result["inner"] == ["DEMO_B_A", "X_B"]
+    assert result["label"] == ["demo_c"], "보이는 글로도 거른다"
+    assert result["none"] == []
+    assert result["match"] == [1, -1, 2, -1]
+
+
+REFS = tuple(f"DEMO_REF_{k:03d}" for k in range(60))
+LIST_SPEC = eg.GridSpec(
+    "DEMO_LIST",
+    "데모 공정",
+    ("No.",),
+    ("공정", "참조", "Area"),
+    eg.ValueFormat("text", 0),
+    column_formats=(
+        ("공정", eg.ValueFormat("text", 0, max_length=8)),
+        ("참조", eg.ValueFormat("choice", 0, options=REFS)),
+        ("Area", eg.ValueFormat("choice", 0, options=("Main", "MI"))),
+    ),
+    id_column="_id",
+    label_column="_label",
+    row_ops=True,
+)
+LIST_RULES = eg.RowRules((eg.LockKind(fresh=True),), (-1, -1, 0))
+
+
+def _list_shell() -> tuple[dict[str, Any], eg.GridIndex]:
+    frame = pd.DataFrame(
+        {
+            "No.": ["1", "2", "새 1"],
+            "_id": ["p1", "p2", "+1"],
+            "_label": ["DEMO_A", "DEMO_B", "새 줄 1"],
+            "공정": ["DEMO_A", "DEMO_B", None],
+            "참조": [3.0, 12.0, None],
+            "Area": [0.0, 1.0, None],
+        }
+    )
+    base = build_base(frame, LIST_SPEC, None, LIST_RULES)
+    shell = encode_base(
+        base.body,
+        host="demo_rows",
+        base_key="k1",
+        texts=edit_grid.texts(LIST_SPEC, changes_label="적용 전 변경"),
+        palette={"text": "black-ink"},
+        row_height=30,
+    )
+    return shell, base.index
+
+
+LIST_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  // 목록 높이 상한 안의 굴림 — 보이는 높이를 항목 다섯(24px)으로 둔다.
+  list.clientHeight = 120
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  const view = () => ({
+    n: list.children.length,
+    hidden: list.hidden,
+    first: list.children.length ? list.children[0].textContent : '',
+    on: list.children.findIndex((n) => n.classList.contains('is-on')),
+    top: list.scrollTop,
+    value: ed().value,
+  })
+  const open = (r, c) => {
+    setRange(S, { r, c }, { r, c })
+    key(scroller, 'Enter')
+  }
+  // 칸을 연 때 — 후보 60개 전부, 지금 값(DEMO_REF_012) 강조가 보이게 굴린다.
+  open(1, 2)
+  R.open = view()
+  // ↓ 열 번 — 강조가 보이는 자리로 따라 굴린다. 사용자가 목록을 굴린 뒤 다시 그려도 굴림은
+  // 그대로다(강조가 그대로면).
+  for (let k = 0; k < 10; k += 1) key(ed(), 'ArrowDown')
+  R.down = view()
+  list.scrollTop = 0
+  paint(S)
+  R.repaint = view()
+  key(ed(), 'ArrowUp')
+  R.up = view()
+  key(ed(), 'Escape')
+  R.escape = [list.hidden, S.edit]
+  // 친 글로 거름 — 강조 없음, ↓ 가 거른 목록 첫 항목, Enter 가 그 항목.
+  open(0, 2)
+  type('ref_01')
+  R.typed = view()
+  key(ed(), 'ArrowDown')
+  key(ed(), 'ArrowDown')
+  R.typedDown = view()
+  key(ed(), 'Enter')
+  R.typedCommit = [S.box.ops[S.box.ops.length - 1].values, list.hidden, cell(0, 2).textContent]
+  // ↑ 는 강조가 없으면 끝 항목, 처음에서 ↑ 는 끝으로 돈다.
+  open(0, 2)
+  type('ref_00')
+  key(ed(), 'ArrowUp')
+  R.upFromNone = view()
+  key(ed(), 'ArrowDown')
+  R.wrapDown = view().on
+  key(ed(), 'ArrowUp')
+  R.wrapUp = view().on
+  key(ed(), 'Escape')
+  // 글자로 연 칸은 그 글로 거르고 강조가 없다. ↓ 뒤에도 blur 는 친 글 그대로(자동 고름 없음) —
+  // 목록 밖 글은 고르기 오류 칸.
+  setRange(S, { r: 1, c: 2 }, { r: 1, c: 2 })
+  key(scroller, 'D')
+  R.typedOpen = view()
+  key(ed(), 'ArrowDown')
+  fire(ed(), 'blur')
+  const lastValues = () => S.box.ops[S.box.ops.length - 1].values
+  R.blur = [lastValues(), has(1, 2, 'is-error'), q('.eg-where').textContent]
+  // 칸마다 오류 글 — Area 고르기 · 공정 글자 수.
+  setRange(S, { r: 1, c: 3 }, { r: 1, c: 3 })
+  key(scroller, 'x')
+  key(ed(), 'Enter')
+  setRange(S, { r: 1, c: 3 }, { r: 1, c: 3 })
+  R.areaWhere = q('.eg-where').textContent
+  setRange(S, { r: 2, c: 1 }, { r: 2, c: 1 })
+  key(scroller, '1')
+  type('123456789')
+  key(ed(), 'Enter')
+  setRange(S, { r: 2, c: 1 }, { r: 2, c: 1 })
+  R.lenWhere = q('.eg-where').textContent
+  // 마우스 — 목록 자체(굴림 막대 자리) 누름은 칸 누름으로 새지 않고 편집도 닫지 않는다. 그 뒤
+  // 항목 누름이 확정한다.
+  open(0, 3)
+  const over = { clientX: S.lefts[3] + 5, clientY: S.headH + S.rowH * 1.5 }
+  const bar = fire(list, 'pointerdown', over)
+  const keep = fire(list, 'mousedown')
+  R.bar = [bar.stopped, keep.defaultPrevented, Boolean(S.edit), list.hidden]
+  key(ed(), 'Escape')
+  open(0, 2)
+  list.scrollTop = 600
+  fire(list.children[30], 'pointerdown')
+  fire(list.children[30], 'mousedown')
+  fire(list.children[30], 'click')
+  R.pick = [S.box.ops[S.box.ops.length - 1].values, list.hidden, cell(0, 2).textContent]
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_long_choice_list_filters_scrolls_and_keeps_typed_text_on_blur() -> None:
+    """고르기 후보 60개(spike-grid 2장 꼴) — 칸을 연 때 전부와 지금 값 강조, ↑ ↓ 는 거른 목록 안에서
+    강조만 옮기고(끝에서 돎) 강조가 보이는 자리로 목록을 굴린다(높이 상한 안). 다시 그려도 사용자가
+    굴린 자리는 그대로다. 친 글로 거르고 Enter 는 강조한 항목, blur 는 친 글 그대로(2026-11-27 총괄
+    결정 R2). 오류 글은 칸마다 맞고 긴 목록은 줄인다(spike 2-6 · 2-7). 목록 자체 누름(굴림 막대)은
+    편집을 닫지 않는다(bdff5a6b 마우스 확정 유지)."""
+    shell, index = _list_shell()
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, LIST_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["open"] == {
+        "n": 60,
+        "hidden": False,
+        "first": "DEMO_REF_000",
+        "on": 12,
+        "top": 12 * 24 + 24 - 120,
+        "value": "DEMO_REF_012",
+    }
+    assert result["down"]["on"] == 22 and result["down"]["top"] == 22 * 24 + 24 - 120
+    assert result["down"]["value"] == "DEMO_REF_012", "↓ 는 편집기 글을 바꾸지 않는다"
+    assert result["repaint"]["top"] == 0 and result["repaint"]["on"] == 22
+    assert result["up"]["on"] == 21 and result["up"]["top"] == 21 * 24 + 24 - 120
+    assert result["escape"] == [True, None]
+    assert result["typed"]["n"] == 10 and result["typed"]["first"] == "DEMO_REF_010"
+    assert result["typed"]["on"] == -1 and result["typed"]["top"] == 0
+    assert result["typedDown"]["on"] == 1 and result["typedDown"]["value"] == "ref_01"
+    assert result["typedCommit"] == [[["DEMO_REF_011"]], True, "DEMO_REF_011"]
+    assert result["upFromNone"]["on"] == 9 and result["upFromNone"]["n"] == 10
+    assert [result["wrapDown"], result["wrapUp"]] == [0, 9]
+    assert result["typedOpen"]["n"] == 60 and result["typedOpen"]["on"] == -1
+    assert result["typedOpen"]["value"] == "D"
+    values, error, where = result["blur"]
+    assert values == [["D"]] and error is True
+    assert where.endswith(
+        "참조 — DEMO_REF_000 · DEMO_REF_001 · DEMO_REF_002 … 60개 가운데 하나를 적습니다"
+    )
+    assert result["areaWhere"].endswith("Area — Main · MI 가운데 하나를 적습니다")
+    assert result["lenWhere"].endswith("공정 — 8자 이하로 적습니다")
+    assert result["bar"] == [True, True, True, False]
+    assert result["pick"] == [[["DEMO_REF_030"]], True, "DEMO_REF_030"]
+
+
+IME_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = q('.eg-ed')
+  const shown = () => list.children.map((n) => n.textContent)
+  // 한글은 글자로 칸을 열지 못한다(조합 키) — Enter 로 열고 글 전체가 골라져 있어 조합 글이
+  // 갈아 쓴다.
+  setRange(S, { r: 0, c: 3 }, { r: 0, c: 3 })
+  key(scroller, 'Enter')
+  fire(ed, 'compositionstart')
+  ed.value = '관'
+  fire(ed, 'input', { isComposing: true })
+  R.composing = shown()
+  key(ed, 'Enter', { isComposing: true })
+  R.stillEditing = Boolean(S.edit)
+  ed.value = '관리'
+  fire(ed, 'input', { isComposing: true })
+  fire(ed, 'compositionend')
+  R.ended = shown()
+  ed.value = '자'
+  fire(ed, 'compositionend')
+  R.endOnly = shown()
+  key(ed, 'ArrowDown')
+  key(ed, 'ArrowDown')
+  key(ed, 'Enter')
+  R.commit = [S.box.ops[S.box.ops.length - 1].values, cell(0, 3).textContent]
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_korean_composition_filters_the_list_as_it_goes() -> None:
+    """한글 IME 조합 중에도 거름이 따라간다 — 조합 중 input(값에 조합 글이 든다)과 조합 끝
+    (compositionend)에서 거르고, 조합 중 Enter 는 확정하지 않는다."""
+    shell, index = _shell("k1")
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, IME_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["composing"] == ["관리자"]
+    assert result["stillEditing"] is True
+    assert result["ended"] == ["관리자"]
+    assert result["endOnly"] == ["실무자", "관리자", "개발자"]
+    assert result["commit"] == [[["관리자"]], "관리자"]
