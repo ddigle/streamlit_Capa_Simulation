@@ -1,7 +1,8 @@
 // 범용 편집 그리드 — 마운트·모델·그리기·칸 편집·키 나눔·출납 보내기·feed 받기(CORE). 등록 JS 의 끝 조각이다.
 // 껍데기(이 요소의 data — 표 본문·글·팔레트)는 표가 같으면 회차마다 같아 해시 참조로 오고, 초안·오류·ack 는 작은 요소
 // `capa_edit_grid_feed` 가 window.__capaEditGrid[host].feed 칸과 'capa-edit-grid' 이벤트로 넘긴다 — 차례에 기대지 않는다(feed 의
-// baseKey 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 그때 쓴다). 편집은 상태 값 outbox 하나다(트리거 없음 — 반영 안 된 op 전부를
+// baseKey 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 그때 쓴다). 같은 표의 다른 baseKey 껍데기는 모델을 다시 짓고(보내는 중 op
+// 의 미리보기는 새 모델에 다시 얹음), 칸을 고치는 중이면 편집이 끝날 때까지 미룬다. 편집은 상태 값 outbox 하나다(트리거 없음 — 반영 안 된 op 전부를
 // {mount, ops} 로). 사용자 글은 textContent 로만 넣는다. 기능 파일(select·fill·toolbar)은 FEATURES 갈고리로 붙고, 아래 이름의
 // 함수를 부른다(내부 API — 이름을 바꾸지 않는다. paintCell 갈고리는 같은 칸에 다시 불릴 수 있다 — 고름만 바뀌면 칸을 다시
 // 짓지 않고 표지만 고친다): paint · scrollToCell · setRange · displayText · rawText · valueAt · isLocked ·
@@ -47,7 +48,7 @@ function egState(host) {
     widths: [], lefts: [], total: 0, frozen: 1, frozenWidth: 0, widthsTable: null,
     rowH: 30, headH: 32, dom: null, listeners: [], timers: {}, frames: {}, observer: null,
     lastToast: null, seenFeed: false, setState: null, inRender: false, sendQueued: false, window: null, paletteKey: '',
-    pageBlock: null, leave: null,
+    pageBlock: null, leave: null, deferred: null,
   }
   // 고른 범위 = 고정 모서리(origin — 없으면 지금 칸)와 맞은편 모서리(focus). 지금 칸(anchor)은 범위 안 어디든 있을 수 있다
   // (Ctrl+A·Shift+Space 는 지금 칸을 지킨 채 범위만 넓힌다 — 엑셀).
@@ -209,10 +210,17 @@ function egReceiveShell(S, data) {
   S.hostKey = EG_HOST_KEY.test(hostKey) ? hostKey : ''
   const baseKey = data.table ? String(data.baseKey || '') : ''
   const current = S.shell && S.model ? String(S.shell.baseKey || '') : ''
+  S.deferred = null
   if (S.model && baseKey === current) {
     S.shell = data
     egHead(S)
     paint(S)
+    return
+  }
+  // 같은 표의 다른 바탕(양식 · 줄 수가 바뀜)이 칸을 고치는 중에 오면 그 칸을 닫지 않는다 — 편집 · 친 글 · 목록 · 초점을 그대로
+  // 두고, 편집이 끝난 뒤(egDeferredLater) 마지막에 온 껍데기로 다시 짓는다. 그 사이 feed(ack 포함)도 받지 않는다.
+  if (S.edit && data.table === S.model.table) {
+    S.deferred = data
     return
   }
   if (S.edit) commitEdit(S, null, false)
@@ -231,7 +239,10 @@ function egReceiveShell(S, data) {
   }
   const sameTable = S.model && S.model.table === data.table
   S.model = decodeBase(data)
+  // 같은 표면 아직 ack 되지 않은 op 의 미리보기를 새 모델에 다시 얹는다(업무 키 · 칸 이름으로 — 없는 줄 · 칸은 건너뜀, 견줄 양식은
+  // 새 바탕). 얹지 않으면 ack 가 올 때까지 친 칸에 양식이 보인다.
   if (!sameTable) S.gen = ''
+  else for (const op of S.box.ops) if (op.table === data.table) egShowOp(S, op)
   S.view.sort = null
   S.view.filterKey = 'null'
   egRestoreView(S)
@@ -239,6 +250,15 @@ function egReceiveShell(S, data) {
   egApplyWidths(S, defaultWidths(S.model.keyCols, S.model.valueCount, EG_KEY_WIDTH, EG_VALUE_WIDTH))
   egLayout(S)
   egWhere(S)
+}
+
+// 칸 편집이 끝난 뒤 미뤄 둔 껍데기를 받는다 — 확정 · 취소를 부른 손짓이 옛 모델로 하던 일(옮김 · 고름 · 채우기 op)을 마친 뒤에.
+function egDeferredLater(S) {
+  if (S.deferred) queueMicrotask(() => {
+    if (!S.deferred || S.edit || !S.dom) return
+    egReceiveShell(S, S.deferred)
+    egTakeFeed(S)
+  })
 }
 
 // 앞 표(모델)의 토스트·상태 글과 그 타이머를 걷는다 — 표를 바꾼 뒤 다른 표 위에 그 표 이야기가 남지 않게.
@@ -321,7 +341,7 @@ function egTakeFeed(S) {
   const store = window.__capaEditGrid
   const slot = store && S.hostKey ? store[S.hostKey] : null
   const feed = slot && slot.feed
-  if (!feed || feed === S.feedData || !S.dom) return
+  if (!feed || feed === S.feedData || !S.dom || S.deferred) return
   // ack 는 표가 아니라 이 마운트의 것이다 — 표 없는 껍데기(읽기 보기)·다른 표의 feed 에서도 받아 반영된 op 를 출납에서
   // 뺀다. 빼지 않으면 visibilitychange·정리 함수가 같은 op 를 다시 보내 앱 회차가 하나 더 돈다.
   egTakeAcks(S, feed)
@@ -1055,6 +1075,7 @@ function commitEdit(S, move, refocus) {
   S.committing = false
   paint(S)
   egWhere(S)
+  egDeferredLater(S)
 }
 
 function cancelEdit(S) {
@@ -1065,6 +1086,7 @@ function cancelEdit(S) {
   S.dom.editor.hidden = true
   S.committing = false
   paint(S)
+  egDeferredLater(S)
 }
 
 function egOnEditorKey(S, event) {
@@ -1122,13 +1144,7 @@ function queueOp(S, op, now) {
     setStatus(S, egText(S, 'outboxFull', ''))
     return null
   }
-  const cells = []
-  for (const [cell, item] of egPreview(S, queued)) {
-    item.seq = queued.seq
-    S.pending.set(cell, item)
-    cells.push(cell)
-  }
-  S.pendingBySeq.set(queued.seq, cells)
+  egShowOp(S, queued)
   const counts = (S.feedData && S.feedData.counts) || {}
   const first = S.box.ops.length === 1 && !Number(counts.cells)
   if (now || first || op.op === 'undo' || op.op === 'redo' || leavingNow(S.leave)) sendNow(S)
@@ -1145,6 +1161,17 @@ function egPreviewOf(m, row, col, raw) {
   if (parsed.error) return { bad: { text: String(parsed.text), code: parsed.error } }
   if (parsed.value === template) return { revert: true }
   return { value: parsed.value }
+}
+
+// op 의 미리보기를 화면에 얹는다(칸 → 미리보기 · op seq → 칸).
+function egShowOp(S, op) {
+  const cells = []
+  for (const [cell, item] of egPreview(S, op)) {
+    item.seq = op.seq
+    S.pending.set(cell, item)
+    cells.push(cell)
+  }
+  S.pendingBySeq.set(op.seq, cells)
 }
 
 // 보내는 op 의 칸별 미리보기(서버 규칙과 같은 다듬기). 되돌리기·다시 실행은 미리보기 없이 feed 를 기다린다.

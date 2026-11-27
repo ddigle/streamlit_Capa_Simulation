@@ -842,6 +842,160 @@ def test_a_rerun_with_the_same_candidates_keeps_the_open_list() -> None:
     }
 
 
+def _rebased_shell(
+    key: str, *, form: str | None, fresh: int
+) -> tuple[dict[str, Any], eg.GridIndex]:
+    """`_suggest_shell` 과 같은 표의 다른 바탕 — 새 줄 `+1` 의 STEP_MCP 양식(`form`)과 빈 새 줄 수가
+    바뀌어 `baseKey` 가 다르다(부대공정 편집기에서 참조를 적은 회차 꼴)."""
+    numbers = range(1, fresh + 1)
+    frame = pd.DataFrame(
+        {
+            "No.": ["1", "2", *(f"새 {k}" for k in numbers)],
+            "_id": ["p1", "p2", *(f"+{k}" for k in numbers)],
+            "_label": ["DEMO_A", "DEMO_B", *(f"새 줄 {k}" for k in numbers)],
+            "공정": ["DEMO_A", "DEMO_B", *([None] * fresh)],
+            "참조공정": ["DEMO_REF_001", "DEMO_OLD", *([None] * fresh)],
+            "STEP_MCP": ["S1/M0", None, form, *([None] * (fresh - 1))],
+        }
+    )
+    rules = eg.RowRules((eg.LockKind(fresh=True),), (-1, -1, *([0] * fresh)))
+    base = build_base(frame, SUGGEST_SPEC, None, rules)
+    shell = edit_grid.shell_data(
+        "demo_rows",
+        base,
+        SUGGEST_SPEC,
+        base_key=key,
+        changes_label="적용 전 변경",
+        suggest=_suggestions("표시"),
+    )
+    return shell, base.index
+
+
+REBASE_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const labels = () => (list.hidden ? null : list.children.map((n) => n.textContent))
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  const state = () => ({
+    edit: Boolean(S.edit), value: ed().hidden ? null : ed().value, list: labels(),
+    base: S.shell.baseKey, ops: S.box.ops.map((op) => [op.seq, op.cols, op.values]),
+    sent: sent.length,
+  })
+  // 새 줄 참조공정을 적고(표의 첫 op — 곧바로 감) 같은 줄 STEP_MCP 를 글자로 연 채 반쯤 친다.
+  setRange(S, { r: 2, c: 2 }, { r: 2, c: 2 })
+  key(scroller, 'Enter')
+  type('DEMO_REF_000')
+  key(ed(), 'Enter')
+  setRange(S, { r: 2, c: 3 }, { r: 2, c: 3 })
+  key(scroller, 'S')
+  type('S0/')
+  R.typing = state()
+  // 그 op 를 실은 회차 — 양식 · 새 줄 수가 바뀐 껍데기와 ack 를 실은 feed.
+  mount(input.shell2)
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  await tick(5)
+  R.during = Object.assign(state(), { focus: document.activeElement === ed(), rows: S.model.rows })
+  type('S0/M1')
+  key(ed(), 'Enter')
+  await tick(5)
+  R.after = Object.assign(state(), {
+    rows: S.model.rows, ref: cell(2, 2).textContent, step: cell(2, 3).textContent,
+    fresh: cell(3, 0).textContent,
+  })
+  // Esc 로 그만둔 편집도 끝에 미룬 껍데기를 받는다.
+  setRange(S, { r: 0, c: 1 }, { r: 0, c: 1 })
+  key(scroller, 'Enter')
+  mount(input.shell3)
+  await tick(5)
+  R.cancelDuring = state()
+  key(ed(), 'Escape')
+  await tick(5)
+  R.cancelAfter = state()
+  // 다른 표의 껍데기는 지금처럼 편집 중 칸을 친 글로 확정하고 바꾼다.
+  setRange(S, { r: 0, c: 1 }, { r: 0, c: 1 })
+  key(scroller, 'X')
+  mount(input.other)
+  await tick(5)
+  const last = S.box.ops[S.box.ops.length - 1]
+  R.other = { edit: Boolean(S.edit), table: S.model.table, last: last.values }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_new_base_while_a_cell_is_open_waits_until_the_edit_ends() -> None:
+    """양식 · 새 줄 수가 바뀐 같은 표의 껍데기(다른 `baseKey`)가 칸을 고치는 중에 와도 칸을
+    닫지 않는다 — 친 글 · 딸린 목록 · 초점이 그대로이고 ack 도 그때 받지 않는다(받으면 보내는
+    중 참조가 걷혀 딸린 목록이 비었다). 확정 · 취소 뒤 그 껍데기로 다시 짓고, 아직 ack 되지 않은
+    op 의 미리보기는 새 모델에 다시 얹어 친 칸에 양식이 보이지 않는다. 다른 표의 껍데기는
+    지금처럼 확정하고 바꾼다."""
+    shell, index = _rebased_shell("k1", form=None, fresh=1)
+    shell2, index2 = _rebased_shell("k2", form="S0/M0", fresh=2)
+    shell3, _ = _rebased_shell("k3", form="S0/M0", fresh=3)
+    other, _ = _list_shell()
+    draft2: eg.DraftState = {"cells": {"+1": {"참조공정": "DEMO_REF_000"}}, "bad": {}}
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(
+        source,
+        REBASE_RUNNER,
+        {
+            "shell": shell,
+            "shell2": shell2,
+            "shell3": shell3,
+            "other": other,
+            "feed": _feed(index, "k1", None),
+            "feed2": _feed(index2, "k2", draft2),
+        },
+    )
+
+    ref_op = [1, ["참조공정"], [["DEMO_REF_000"]]]
+    assert result["typing"] == {
+        "edit": True,
+        "value": "S0/",
+        "list": ["S0/M0", "S0/M1"],
+        "base": "k1",
+        "ops": [ref_op],
+        "sent": 1,
+    }
+    assert result["during"] == {
+        "edit": True,
+        "value": "S0/",
+        "list": ["S0/M0", "S0/M1"],
+        "base": "k1",
+        "ops": [ref_op],
+        "sent": 1,
+        "focus": True,
+        "rows": 3,
+    }, "칸 · 친 글 · 딸린 목록 · 초점이 그대로, ack 도 미룸"
+    assert result["after"] == {
+        "edit": False,
+        "value": None,
+        "list": None,
+        "base": "k2",
+        "ops": [[2, ["STEP_MCP"], [["S0/M1"]]]],
+        "sent": 1,
+        "rows": 4,
+        "ref": "DEMO_REF_000",
+        "step": "S0/M1",
+        "fresh": "새 2",
+    }, "다 친 글 하나로 확정하고 새 바탕 · 새 줄, 보내는 중 칸은 양식이 아니라 친 글"
+    assert result["cancelDuring"]["edit"] is True and result["cancelDuring"]["base"] == "k2"
+    assert result["cancelAfter"]["edit"] is False and result["cancelAfter"]["base"] == "k3"
+    assert result["other"] == {"edit": False, "table": "DEMO_LIST", "last": [["X"]]}
+
+
 DRAWER_RUNNER = (
     RUNNER.split(";(async () => {")[0]
     + r"""

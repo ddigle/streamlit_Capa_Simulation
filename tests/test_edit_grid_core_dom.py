@@ -863,3 +863,63 @@ def test_an_open_edit_goes_out_before_the_press_on_an_outside_button(drafted: bo
     assert result["typing"] == {"sent": 0, "editing": True}
     assert result["beforeClick"] == {"sent": 1, "edit": None, "writes": [[["61%"]]]}
     assert result["quiet"] == {"sent": 1}
+
+
+RUNNER_REBASE = (
+    RUNNER[: RUNNER.index(";(async () => {")]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const ed = q('.eg-ed')
+  // 첫 달 값(표의 첫 op — 곧바로 감)을 친 뒤 다음 달 칸을 글자 하나로 연 사이, 그 op 를
+  // 실은 회차의 새 바탕(뒤 달 양식이 바뀜 — 다른 baseKey)이 ack 와 함께 온다.
+  setRange(S, { r: 1, c: 2 }, { r: 1, c: 2 })
+  key(scroller, '5')
+  key(ed, 'Tab')
+  key(scroller, '3')
+  mount(input.shell2)
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  await tick(5)
+  R.during = {
+    edit: Boolean(S.edit), value: ed.value, base: S.shell.baseKey, box: S.box.ops.length,
+  }
+  ed.value = '31'
+  key(ed, 'Enter')
+  await tick(5)
+  R.after = {
+    edit: Boolean(S.edit), base: S.shell.baseKey, ops: S.box.ops.map((op) => op.values),
+    typed: text(1, 3), next: text(1, 4),
+  }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_new_base_reaches_an_open_cell_only_after_it_is_committed() -> None:
+    """새 공정 값 표 꼴 — 칸 하나를 고친 회차에 뒤 달 양식이 바뀌어 같은 표의 다른 `baseKey`
+    껍데기가 오면, 그때 글자로 연 다음 칸을 친 글(「3」)로 확정하지 않는다. 다 친 뒤 Enter 가
+    「31」 하나를 보내고 새 바탕으로 다시 지으며, 아직 ack 되지 않은 그 op 의 미리보기를 새
+    모델에 다시 얹는다."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    later = _frame()
+    later.loc[1, ["202703", "202704"]] = 0.05
+    shell2, index2 = _shell(SPEC, later, "k2")
+    draft2: eg.DraftState = {"cells": {"DEMO_B\x1f양산": {"202701": 0.05}}, "bad": {}}
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_REBASE,
+        {
+            "shell": shell,
+            "feed": _feed(index, "k1", None),
+            "shell2": shell2,
+            "feed2": _feed(index2, "k2", draft2),
+        },
+    )
+    assert result["during"] == {"edit": True, "value": "3", "base": "k1", "box": 1}
+    assert result["after"]["edit"] is False and result["after"]["base"] == "k2"
+    assert result["after"]["ops"] == [[["31"]]]
+    assert "31" in result["after"]["typed"] and "5" in result["after"]["next"]
