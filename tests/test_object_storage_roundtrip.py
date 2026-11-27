@@ -14,6 +14,7 @@ import importlib.util
 import json
 import re
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,7 @@ from object_store_fakes import (
 )
 
 from capa_simulation import settings as app_settings
+from capa_simulation.audit import layout as audit_layout
 from capa_simulation.io.object_storage import CommandResult
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.services import object_storage_manifest as manifest
@@ -50,10 +52,16 @@ def _load_script() -> ModuleType:
 
 @pytest.fixture()
 def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """스크립트를 임시 경로와 가짜 스토리지에 붙인다."""
+    """스크립트를 임시 경로와 가짜 스토리지에 붙인다. 시스템 임시 폴더도 `tmp_path` 안으로 돌린다 —
+    init 의 감사 조각 작업 파일(`gettempdir()/capa-audit-tool`)이 basetemp 밖, 함께 도는 pytest
+    프로세스가 같이 쓰는 자리에 써지지 않게 한다. 환경변수는 이미 읽혀 있을 수 있어 값을 바로
+    바꾼다."""
     sync_state.clear_all()
     script = _load_script()
     paths = seed_pair(tmp_path)
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
 
     monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     monkeypatch.setattr(script, "DATASET_PATHS", dict(paths.databases))
@@ -68,6 +76,7 @@ def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         database=paths.databases["simulation"],
         equipment=paths.databases["equipment"],
         tmp_path=tmp_path,
+        temp=temp,
     )
 
 
@@ -88,6 +97,15 @@ def test_init_uploads_both_snapshots_and_publishes_one_pointer(harness: SimpleNa
     assert len(harness.store.keys("equipment/snapshots/")) == 1
     assert len(harness.store.pointer_keys()) == 1
     assert harness.store.head_pointer()["origin"] == "init"
+
+
+def test_init_writes_the_audit_work_file_inside_tmp_path(harness: SimpleNamespace) -> None:
+    """감사 조각은 올라가고, 그 작업 폴더는 이 시험의 임시 폴더 안에 선다. 작업 파일이 지워졌는지는
+    보지 않는다 — 못 지워도 감사 쪽이 넘기는 실패라 이 시험의 깨짐 자리가 되면 안 된다."""
+    assert _run(harness, "init") == 0
+
+    assert harness.store.keys(audit_layout.TOOL_PREFIX)
+    assert (harness.temp / "capa-audit-tool").is_dir()
 
 
 def test_init_is_idempotent(harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]) -> None:
