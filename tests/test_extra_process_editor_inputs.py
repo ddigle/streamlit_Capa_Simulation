@@ -314,7 +314,7 @@ def test_warnings_tell_r01_r02_closed_ends_windows_rates_and_ignored_cells() -> 
         (None, "고침"),
     }
     assert "경로 끝월 202609 뒤 계획 달은 계산에 들지 않음" in texts
-    assert "판에 들지 않는 칸 입력 2칸" in texts
+    assert "판에 안 든 칸 입력 2칸" in texts
 
 
 def test_a_reference_missing_from_the_scenario_still_folds_back_untouched() -> None:

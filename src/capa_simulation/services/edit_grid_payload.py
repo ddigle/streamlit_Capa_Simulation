@@ -108,7 +108,7 @@ def encode_runs(codes: npt.NDArray[np.int64], width: int) -> list[str]:
     """줄마다 (코드 `width` 글자 + 길이 1 글자) 짝을 이은 글. 같은 코드가 이어지는 칸을 한
     짝으로."""
     rows, cols = codes.shape
-    if cols == 0:
+    if rows == 0 or cols == 0:
         return [""] * rows
     change = np.ones((rows, cols), dtype=bool)
     change[:, 1:] = codes[:, 1:] != codes[:, :-1]

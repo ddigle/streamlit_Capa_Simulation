@@ -11,11 +11,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import flashed
+from alert_marks import alert_notes, flashed
 from auto_update_fakes import new_repository
 from edit_grid_fake import FAKE_EVENT_KEY, Calls, deliver_ops, install_fake_edit_grid, last, outbox
 from streamlit.testing.v1 import AppTest
@@ -194,8 +195,12 @@ def test_an_empty_start_adds_a_process_makes_a_pack_and_applies_it(
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     assert _opened(app)
-    # 공정이 없는 빈 표도 마운트는 선다(표 없는 껍데기 — 줄 규칙 등록).
-    assert _shell(calls).get("valueCols") is None
+    # 공정이 없어도 머리 줄만 든 표가 서서 「공정 없음」 이 보인다(UI-LAY-10). 옮김 줄이 없으면
+    # 「옮김」 칸도 없다(UI-TXT-08).
+    empty = _shell(calls)
+    assert empty["ids"] == [] and empty["texts"]["empty"] == editor.EMPTY_LINES
+    assert empty["valueCols"][0] == "공정" and editor.CARRY_COLUMN not in empty["valueCols"]
+    assert empty["texts"]["rowRemoveHint"] == editor.ROW_REMOVE_HINT, "저장이 아니라 판 만들기"
     assert not _dirty(app)
 
     app, reference = _add_line(app)
@@ -229,6 +234,7 @@ def test_making_an_untouched_pack_says_nothing_changed(database: Path, calls: Ca
     app = _press(app, editor.OPEN_BUTTON_KEY)
     lines = _shell(calls)
     assert len(lines["ids"]) == 2 and lines["locks"], "견본 두 공정은 통째 옮김(잠김)"
+    assert editor.CARRY_COLUMN in lines["valueCols"], "옮김 줄이 있을 때만 「옮김」 칸"
 
     app = _press(app, editor.MAKE_BUTTON_KEY)
 
@@ -495,3 +501,261 @@ def test_cells_left_outside_the_route_are_counted_on_the_value_line(
     assert staged is not None and staged.applicable and staged.editor is not None
     assert staged.editor.ignored == 1
     assert any(IGNORED_PART.format(n="1") in text for text in _captions(app))
+
+
+# --------------------------------------------------------------------------- 받은 판 · 초안 맞춤
+
+
+def _applied_versions(database: Path) -> int:
+    return len(DuckDBScenarioRepository(database).load_extra_process_state().history)
+
+
+def test_a_pack_made_before_more_edits_is_taken_back_so_apply_cannot_drop_them(
+    database: Path, calls: Calls
+) -> None:
+    """판을 만든 뒤 표를 더 고치면 받은 판을 걷는다 — 두면 「새 판 적용」 이 만든 때의 판을 넣고
+    작성을 닫아 그 뒤 고친 칸을 말없이 버린다. 칸 고침과 「새 판 적용」 누름이 한 회차에 와도
+    같다(그 누름은 닿지 않는다)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    assert _staged(app) is not None
+    app = _kind(app, "생산성")
+    first = _shell(calls)["valueCols"][0]
+
+    app = _send(app, calls, _write(["n1|03|양산|UPEH"], [first], [[45000]]))
+
+    assert _staged(app) is None and _opened(app)
+    assert editor.STALE_STAGED in _all_flashes(app)
+
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    pack = _staged(app).reading.pack  # type: ignore[union-attr]
+    assert pack is not None and 45000.0 in [row.upeh for row in pack.productivity]
+    value = outbox(calls, _write(["n1|03|양산|UPEH"], [first], [[46000]]), host=editor.HOST)
+    app.session_state[FAKE_EVENT_KEY] = (editor.HOST, value)
+    app = _press(app, APPLY_BUTTON_KEY)
+
+    assert _applied_versions(database) == 0, "같은 회차 누름은 걷힌 판에 닿지 않는다"
+    assert _staged(app) is None and _opened(app)
+
+
+def test_a_pack_stays_while_nothing_that_shapes_it_changes(
+    database: Path, calls: Calls, window: dict[str, int]
+) -> None:
+    """판을 만든 뒤 종류 단추 · 시나리오(계획 월 창)만 바꾸면 받은 판은 그대로다 — 지문은 줄 ·
+    걷은 뒤 남은 고침 · 00 메모라 창과 상관없다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    made = _staged(app)
+    assert made is not None
+
+    app = _kind(app, "설비")
+    window["cut"] = 3
+    app = _run(app)
+
+    assert _staged(app) is made
+    assert editor.STALE_STAGED not in _all_flashes(app)
+
+
+@pytest.fixture
+def window(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """다른 시나리오 흉내 손잡이 — `window["cut"]` 달만큼 계획 월 끝을 뺀 맥락(이후 칸이 그만큼
+    앞에 선다). 0 이면 그대로다."""
+    cut = {"cut": 0}
+    original = editor._context
+
+    def shaped(repository: Any) -> Any:
+        key, context = original(repository)
+        if not cut["cut"]:
+            return key, context
+        return (*key, cut["cut"]), replace(context, months=context.months[: -cut["cut"]])
+
+    monkeypatch.setattr(editor, "_context", shaped)
+    return cut
+
+
+def _all_flashes(app: AppTest) -> list[str]:
+    """다시 보낸 표지까지 든 결과 알림 글(`_send` 는 op 회차 뒤 한 번 더 돈다)."""
+    return [
+        str(note.get("markdown", "")) for note in alert_notes(app, again=True) if "flash" in note
+    ]
+
+
+def _value_draft(app: AppTest, row: str) -> dict[str, Any]:
+    key = editor.PRODUCTIVITY_CELLS_KEY
+    draft = app.session_state[key] if key in app.session_state else None
+    return {} if not draft else dict(draft["cells"].get(row, {}))
+
+
+def test_a_value_typed_in_a_shown_cell_stays_after_other_cells_change(
+    database: Path, calls: Calls
+) -> None:
+    """걷기는 보이지 않는 칸만 — 보이는 칸에 적은 값은 그 값이 양식과 같아져도 남아, 다른 칸을
+    바꾸거나 되돌린 뒤에도 사람이 적은 값이다(바탕 없는 달의 ER 따름 · 앞 달 이어 씀)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _send(app, calls, _write(["n1"], ["Area_Name", "모듈수"], [["Main", 2]]))
+    app = _kind(app, "생산성")
+    first, second, third = _shell(calls)["valueCols"][:3]
+    mass, er = "n1|03|양산|UPEH", "n1|03|ER|UPEH"
+
+    app = _send(app, calls, _write([er], [first], [[50]]))
+    app = _send(app, calls, _write([mass], [first], [[50]]))
+    app = _send(app, calls, _write([mass], [first], [[60]]))
+    assert _value_draft(app, er) == {first: 50.0}, "ER 50 은 양산을 따라 60 이 되지 않는다"
+
+    app = _send(app, calls, _write([mass], [third], [[100]]))
+    app = _send(app, calls, _write([mass], [first], [[50]]))
+    app = _send(app, calls, _write([mass], [second], [[100]]))
+    app = _send(app, calls, {"op": "undo"})
+    assert _value_draft(app, mass) == {first: 50.0, third: 100.0}, "03 에 적은 100 이 남는다"
+
+
+def _late_line(app: AppTest, calls: Calls, months_after: int = 6) -> tuple[AppTest, int]:
+    """시작월이 계획 끝 뒤인 새 공정 한 줄(n1) — 그 시작월."""
+    app, _ = _add_line(app)
+    app = _kind(app, "생산성")
+    roles = app.session_state[editor.COLUMNS_KEY]
+    last = max(month for kind, month in roles.values() if kind == "m")
+    start = last
+    for _ in range(months_after):
+        start = start + 1 if start % 100 < 12 else (start // 100 + 1) * 100 + 1
+    app = _kind(app, "공정")
+    app = _send(
+        app, calls, _write(["n1"], ["Area_Name", "모듈수", "시작월"], [["Main", 2, str(start)]])
+    )
+    return _kind(app, "생산성"), start
+
+
+def test_an_after_cell_of_a_line_starting_past_the_plan_follows_the_window(
+    database: Path, calls: Calls, window: dict[str, int]
+) -> None:
+    """시작월이 두 창의 계획 끝 뒤인 줄 — 창마다 이후 칸 이름이 달라도 한 열쇠라, 다른 창에서
+    적은 값이 이 창 이후 칸에 보인다(보이는 값 = 판 값). 둘 다 적으면 지금 창에 보이는 쪽 하나만
+    남는다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _late_line(app, calls)
+    row = "n1|03|양산|UPEH"
+    wide = _shell(calls)["valueCols"][-1]
+    app = _send(app, calls, _write([row], [wide], [[10]]))
+
+    window["cut"] = 3
+    app = _run(app)
+    narrow = _shell(calls)["valueCols"][-1]
+    assert narrow != wide and narrow.endswith("~")
+    assert _value_draft(app, row) == {narrow: 10.0}, "다른 창에서 적은 값이 이 창 이후 칸에 선다"
+
+    app = _send(app, calls, _write([row], [narrow], [[20]]))
+    window["cut"] = 0
+    app = _run(app)
+    assert _value_draft(app, row) == {wide: 20.0}, "지금 창에 보이는 칸 하나만 남는다"
+
+
+def test_an_after_cell_locked_as_many_values_does_not_paint_its_old_draft(
+    database: Path, calls: Calls, window: dict[str, int]
+) -> None:
+    """짧은 창 이후 칸에 적고, 긴 창 이후 칸에 다른 값을 적은 뒤 짧은 창으로 돌아오면 그 이후
+    칸은 「여러 값」 잠김이다 — 옛 초안은 숨은 짝 칸으로 옮겨 잠긴 칸에 그리지 않고 판에는 그대로
+    든다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    app, _ = _add_line(app)
+    app = _fill_new_line(app, calls)
+    row = "n1|03|양산|UPEH"
+    window["cut"] = 3
+    app = _kind(app, "생산성")
+    short = _shell(calls)["valueCols"][-1]
+    app = _send(app, calls, _write([row], [short], [[111]]))
+    window["cut"] = 0
+    app = _run(app)
+    full = _shell(calls)["valueCols"][-1]
+    app = _send(app, calls, _write([row], [full], [[222]]))
+
+    window["cut"] = 3
+    app = _run(app)
+
+    draft = _value_draft(app, row)
+    assert short not in draft and draft[editor.hidden_after(short)] == 111.0
+    app = _press(app, editor.MAKE_BUTTON_KEY)
+    pack = _staged(app).reading.pack  # type: ignore[union-attr]
+    assert pack is not None
+    values = {row.upeh for row in pack.productivity if row.mass_class in ("양산", "모두")}
+    assert {111.0, 222.0} <= values
+
+
+# --------------------------------------------------------------------------- 작업 줄 · 곁 거부
+
+
+def test_a_refused_add_says_why_beside_the_button_and_not_in_the_alarm(
+    database: Path, calls: Calls
+) -> None:
+    """「공정 더하기 · 참조 바꾸기」 팝오버 안 검증 거부(참조공정 없음)는 「더하기」 바로 아래 한
+    줄이고 알림창 · Alarm 에는 가지 않는다(UI-NTF-03 · UI-INP-05)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    form = _new_form(app)
+    app.text_input(key=f"{editor.NAME_INPUT_KEY}-{form}").input(NAME)
+    app = _press(_run(app), editor.LINE_BUTTON_KEY)
+
+    assert [str(item.value) for item in app.error] == [editor.NO_REFERENCE]
+    assert editor.NO_REFERENCE not in _flashes(app)
+    assert _new_form(app) == form, "거부한 누름은 줄을 더하지 않는다"
+
+
+def test_adding_a_process_marks_the_close_as_losing_edits_on_the_redrawn_run(
+    database: Path, calls: Calls
+) -> None:
+    """「더하기」 만 한 회차 — 다시 그린 회차의 「작성 닫기」 가 이미 확인 팝오버다(화면 탭 점 ·
+    새로고침 확인도 같은 표지를 그 회차에 읽는다)."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+    assert editor.CLOSE_BUTTON_KEY in [button.key for button in app.button]
+
+    app, _ = _add_line(app)
+
+    keys = [button.key for button in app.button]
+    assert editor.CLOSE_BUTTON_KEY not in keys and editor.CLOSE_CONFIRM_KEY in keys
+
+
+def test_the_make_form_sits_above_the_grid_with_the_memo(database: Path, calls: Calls) -> None:
+    """「판 만들기」 는 표 위 작업 줄 팝오버(00 메모 · 「만들기」 — UI-LAY-03)이고 메모 칸은 「판
+    메모 · 예: …」 안내 글로 이름을 말한다."""
+    app = _app(database)
+    app = _press(app, editor.OPEN_BUTTON_KEY)
+
+    memo = app.text_input(key=editor.MEMO_KEY)
+    assert memo.placeholder == editor.MEMO_PLACEHOLDER
+    assert memo.placeholder.startswith(f"{editor.MEMO_LABEL} · 예: ")
+    make = app.button(key=editor.MAKE_BUTTON_KEY)
+    assert make.label == editor.MAKE_BUTTON_LABEL
+
+
+def test_the_guide_and_the_header_helps_say_what_the_editor_does() -> None:
+    """Guide 「앱에서 작성」 · 그리드 머리 풍선이 화면과 같은 말을 한다 — ER 따름은 바탕 값이 없는
+    달만, 이전 · 이후 칸은 머리 글 이름, 값 줄 · 팝오버의 낱말(UI-TXT-02 · UI-CON-02)."""
+    guide = (Path(editor.__file__).parent.parent / "guides" / "admin_area.md").read_text(
+        encoding="utf-8"
+    )
+    section = guide[guide.index("**앱에서 작성**") : guide.index("#### 공정 그룹")]
+    for word in (
+        "바탕 값이 없는 달",
+        "판에 안 든 칸 입력",
+        "Buffer 밖",
+        "01 메모 · 차례만 바뀜",
+        "STEP · MCP 와 다름",
+        "`YY.MM~`",
+        "`~YY.MM`",
+    ):
+        assert word in section, word
+    for table, text in editor.VALUE_HELPS.items():
+        assert "「YY.MM~」" in text and "이후」" not in text, table
+        if table != editor.EQUIPMENT_TABLE:
+            assert "바탕 값이 없는 달" in text, table
+    assert IGNORED_PART.startswith("판에 안 든 칸 입력")

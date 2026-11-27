@@ -1534,7 +1534,7 @@ def editor_warnings(model: EditorModel, context: EditorContext) -> tuple[EditorW
             found.append(EditorWarning(line.line_id, "효율", "효율이 1 을 넘음"))
     ignored = len(ignored_cells(model))
     if ignored:
-        found.append(EditorWarning(None, "고침", f"판에 들지 않는 칸 입력 {ignored}칸"))
+        found.append(EditorWarning(None, "고침", f"판에 안 든 칸 입력 {ignored}칸"))
     return tuple(found)
 
 

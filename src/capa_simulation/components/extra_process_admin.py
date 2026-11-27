@@ -49,10 +49,11 @@ ETag 를 들어 같은 뜻이다(`pending_write`).
 **편집기에서 만든 판**(앱 작성 편집기 `components/extra_process_editor.py` — 단추 줄의 「앱에서
 작성」 · 「작성 닫기」 와 단추 줄 아래 편집기 자리, `StagedPack.editor`)도 같은 받은 판 자리를
 지난다 — 머리 「앱에서 만든 판」, 거절 표에는 편집기 자리(공정 · 표 · 양산구분 · 칸 · 기간 · 옮긴
-줄 — `extra_process_editor.locate`)가 붙고 값 줄 끝에 「01 메모 · 차례만 바뀜」 · 「창 밖 고친 칸
-n」 이 붙는다. 「새 판 적용」 은 DB 에 갈래 「새 판」 · 원천 자리 「앱 입력」 만
-넣고(`_apply_editor` — 적용하면 작성을 닫는다) S3 Drive 는 쓰지 않는다 — 쓸 몫이 아니라 `EP-05` ·
-`EP-06` 도 서지 않는다(`owes_drive`). 끈 동안 받은 판의 값 줄 끝에는 「적용하면 켜짐」 이 붙는다.
+줄 — `extra_process_editor.locate`)가 붙고 값 줄 끝에 「01 메모 · 차례만 바뀜」 · 「판에 안 든
+칸 입력 n」 이 붙는다. 만든 뒤 표를 더 고치면 편집기가 그 판을 걷는다(`Hooks.staged`). 「새 판
+적용」 은 DB 에 갈래 「새 판」 · 원천 자리 「앱 입력」 만 넣고(`_apply_editor` — 적용하면 작성을
+닫는다) S3 Drive 는 쓰지 않는다 — 쓸 몫이 아니라 `EP-05` · `EP-06` 도 서지 않는다(`owes_drive`).
+끈 동안 받은 판의 값 줄 끝에는 「적용하면 켜짐」 이 붙는다.
 
 **닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 닫힌 탭이 회차마다 판 이력을 읽지 않게
 한다. 편집기 초안 · inbox · 메모 · 종류 단추 값은 세션에 남아 다시 연 회차가 이어 받는다. 세션 칸은
@@ -231,7 +232,7 @@ EDITOR_APPLY_HELP: Final = (
 TURNS_ON_PART: Final = "적용하면 켜짐"
 # 편집기 판의 값 줄 조각(`_editor_parts`).
 ORDER_ONLY_PART: Final = "01 메모 · 차례만 바뀜"
-IGNORED_PART: Final = "창 밖 고친 칸 {n}"
+IGNORED_PART: Final = "판에 안 든 칸 입력 {n}"
 REWRITE_HELP: Final = (
     "활성 판을 S3 Drive 의 current.zip 에 다시 씁니다 — 적용하지 않은 파일이 놓여 있으면 덮지 "
     "않습니다."
@@ -379,7 +380,7 @@ def render_extra_process_admin(
         _report_remote_state(state if lock is None else None, alert_tab)
     st.caption(status_line(state, SEEN.peek()))
     hooks = extra_process_editor.Hooks(
-        lock=write_lock_reason, place=place_staged, discard=_discard_staged
+        lock=write_lock_reason, place=place_staged, discard=_discard_staged, staged=STAGED.peek
     )
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         extra_process_editor.render_entry(repository, state, hooks, lock=lock)
@@ -501,7 +502,7 @@ def _render_toggle(
         return
     again = write_lock_reason()
     if again is not None:
-        queue_flash(FLASH_KEY, again, kind="error", icon=":material/block:")
+        queue_flash(FLASH_KEY, again, kind="error", icon=":material/block:", popup_only=True)
         st.rerun()
     who = _who()
     try:
@@ -888,7 +889,7 @@ def _render_preview(preview: PackPreview) -> None:
 def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
     lock = write_lock_reason()
     if lock is not None:
-        queue_flash(FLASH_KEY, lock, kind="error", icon=":material/block:")
+        queue_flash(FLASH_KEY, lock, kind="error", icon=":material/block:", popup_only=True)
         st.rerun()
     pack = staged.reading.pack
     judgement = staged.judgement
@@ -1134,7 +1135,7 @@ def _render_rewrite(
         return
     again = write_lock_reason()
     if again is not None:
-        queue_flash(FLASH_KEY, again, kind="error", icon=":material/block:")
+        queue_flash(FLASH_KEY, again, kind="error", icon=":material/block:", popup_only=True)
         st.rerun()
     try:
         # 누른 회차에 다시 읽는다 — 겹친 둘째 누름은 이미 쓴 판을 보고 쓰지 않는다.
@@ -1206,7 +1207,13 @@ def _stage_revision(repository: DuckDBScenarioRepository) -> None:
     lock = write_lock_reason()
     target = _revision_target()
     if lock is not None or target is None:
-        queue_flash(FLASH_KEY, lock or NO_REVISION_REASON, kind="error", icon=":material/block:")
+        queue_flash(
+            FLASH_KEY,
+            lock or NO_REVISION_REASON,
+            kind="error",
+            icon=":material/block:",
+            popup_only=True,
+        )
         st.rerun()
     assert target is not None
     scenario_id, revision_id = target

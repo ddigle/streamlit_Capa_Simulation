@@ -8,7 +8,8 @@
 함수가 짓는다(`saved_note.field_placeholder` — `note_placeholder` ·
 `equipment_save_fields.SAVED_BY_PLACEHOLDER`).
 화면 코드에서 라벨이 그 이름인 `text_input` · `text_area` 를 모두 찾아 이름 줄이 걷혔고 안내 글이
-있는지, 안내 글을 글 상수로 손수 짓지 않는지 본다.
+있는지, 안내 글을 글 상수로 손수 짓지 않는지 본다. Admin 「부대공정」 앱 작성의 「판 메모」(판 00
+메모 — 「판 만들기」 팝오버)도 같은 꼴이라 함께 찾는다.
 
 남긴 자리(`KEPT` — 까닭과 함께, 목록에 있어도 걷혀 있으면 통과한다):
 
@@ -31,6 +32,7 @@ from capa_simulation.components.equipment_save_fields import (
     SAVED_BY_LABEL,
     SAVED_BY_PLACEHOLDER,
 )
+from capa_simulation.components.extra_process_editor import MEMO_LABEL as PACK_MEMO_LABEL
 from capa_simulation.components.saved_note import NOTE_LABEL, field_placeholder, note_placeholder
 
 KEPT: dict[tuple[str, str], str] = {
@@ -47,15 +49,20 @@ KEPT: dict[tuple[str, str], str] = {
 }
 
 
+# 이름 상수 → 글(그 이름을 쓰는 화면 모듈의 상수).
+_NAMES = {"NOTE_LABEL": NOTE_LABEL, "SAVED_BY_LABEL": SAVED_BY_LABEL, "MEMO_LABEL": PACK_MEMO_LABEL}
+
+
 def _label(call: ast.Call) -> str | None:
-    """첫 인자가 글 상수 「변경 메모」 · 「저장자(선택)」 이거나 그 이름 상수면 그 글."""
+    """첫 인자가 글 상수 「변경 메모」 · 「저장자(선택)」 · 「판 메모」 이거나 그 이름 상수면 그
+    글."""
     if not call.args:
         return None
     first = call.args[0]
-    if isinstance(first, ast.Constant) and first.value in (NOTE_LABEL, SAVED_BY_LABEL):
+    if isinstance(first, ast.Constant) and first.value in _NAMES.values():
         return str(first.value)
-    if isinstance(first, ast.Name) and first.id in ("NOTE_LABEL", "SAVED_BY_LABEL"):
-        return NOTE_LABEL if first.id == "NOTE_LABEL" else SAVED_BY_LABEL
+    if isinstance(first, ast.Name) and first.id in _NAMES:
+        return _NAMES[first.id]
     return None
 
 

@@ -26,6 +26,8 @@ def test_runs_pair_codes_with_lengths_and_split_long_runs() -> None:
     # 63 + 63 + 4 — 길이 글자는 1~63 이다.
     assert payload.encode_runs(long, 1) == ["5_5_54"]
     assert payload.encode_runs(np.zeros((2, 0), dtype=np.int64), 1) == ["", ""]
+    # 줄 없는 표(머리 줄만 — 빈 표 글이 서는 부대공정 편집기 빈 시작)도 짓는다.
+    assert payload.encode_runs(np.zeros((0, 3), dtype=np.int64), 1) == []
 
 
 def test_json_numbers_drop_needless_fractions() -> None:

@@ -7,9 +7,12 @@
 **정본은 그리드 초안이다**(순수 몸통 `services/extra_process_editor.py` 의 화면 계약 1 ~ 10).
 회차마다 펼친 판(`EDITOR` — 펼친 때의 판 이력 차례 · sha · 바이트)에서 모형을 다시 짓는다 —
 `with_cells(with_lines(model_from_pack(바탕), 줄 그리드 전체), 값 그리드 전체)`. 병합이 아니라 전체
-상태라 그리드 되돌리기 · 「적용 전」 서랍이 그대로 먹는다. 세션에는 기본형만 둔다(바탕 바이트 ·
-줄 씨앗 tuple · 칸 이름 지도). 흡수할 때마다 `redundant_cells` 를 초안에서 지운다 — 남기면 다른 창의
-이후 칸처럼 숨은 옛 입력이 되살아난다. `ignored_cells` 는 지우지 않는다(경로가 넓어지면 산다).
+상태라 그리드 되돌리기 · 「적용 전」 서랍이 그대로 먹는다. 정본 칸(펼친 판 · 줄 씨앗 · 칸 이름
+지도 · 그리드 초안)은 기본형이고, 메모 칸(맥락 · 미리보기 · 펼친 판 읽기)은 꼴 검사로 다시 짓는다.
+흡수할 때마다 초안을 이 회차 표에 맞춘다(`_tidy`) — 걷은 칸(`redundant_cells`)은 그리드에 보이지
+않을 때만 지우고(남기면 다른 창의 이후 칸처럼 숨은 옛 입력이 되살아난다 — 보이는 칸은 사람이 지금
+보고 적은 값이라 남긴다), 이 회차 이후 칸과 같은 열쇠의 초안은 그 칸(여러 값이면 숨은 짝)으로
+옮긴다. `ignored_cells` 는 지우지 않는다(경로가 넓어지면 산다). 그리드 이력은 건드리지 않는다.
 
 - **표 넷 · 마운트 하나**(UI-LAY-07) — 종류 단추 「공정 · 생산성 · 설비 · 효율」. 형식이 칸마다라
   값 표를 판 파일(03 · 04 · 05)마다 나눈다. 공정 표는 줄 규칙 표(지우기 · 되살리기)이고, 통째 옮김
@@ -19,19 +22,22 @@
   머리 글이라 이전 · 이후 칸 이름에 그 달을 싣는다(「~26.12」 · 「27.07~」) — 이후 칸은 절대
   `Onward` 열쇠라 시나리오가 바뀌어도 옛 이후 칸 초안이 숨은 칸으로 남는다. 칸 이름 → 달은 세션
   지도(`COLUMNS`)가 기억한다. 양식은 `CellView.default`, 잠금은 `not editable`(까닭은 줄마다 한 글).
+  「여러 값」 으로 잠긴 이후 칸의 초안은 숨은 짝 칸(`hidden_after`)에 두어 잠긴 칸에 그리지 않는다.
 - **고르기** — 줄마다 후보가 달라지는 참조공정 · (STEP, MCP) 조합은 그리드 칸이 아니라 표 위
   「공정 더하기 · 참조 바꾸기」 팝오버의 Streamlit 고르기(찾기 · 「표시명 (원본)」 — UI-DAT-10)다.
   조합 칸은 직접 넣는 글도 받는다(결정3 — UI-INP-05). 그리드의 그 칸들은 읽기 전용 글이고, 목록이
   짧고 줄과 무관한 Area 만 그리드 고르기다. 팝오버 값은 「더하기」 · 「바꾸기」 누름에만 씨앗
   (`LINES`)에 들어간다 — 새 줄의 기본값(`line_defaults`)은 더한 때 고정한다.
-- **자리 차례**(늘 같은 칸 — 그리드 앞에 조건부 형제를 두지 않는다): 작업 줄(종류 · 팝오버) →
-  그리드 → 판 줄(00 메모 · 「판 만들기」 · 「확인할 칸 n」). 받은 판 상자는 그
-  뒤(`extra_process_admin`).
+- **자리 차례**(늘 같은 칸 — 그리드 앞에 조건부 형제를 두지 않는다): 표 위 작업 줄(종류 ·
+  「공정 더하기 · 참조 바꾸기」 · 「판 만들기」 팝오버 — 00 메모 · 「만들기」, UI-LAY-03) → 그리드
+  → 표 아래 「확인할 칸 n」(있을 때만). 받은 판 상자는 그 뒤(`extra_process_admin`).
 - **판 만들기**(누른 회차) — 출납을 다시 모아 반영 · 흡수한 뒤(G2) 판 번호(마지막 내용 판 + 1) ·
   작성시각(KST 초) · 작성자(통합인증 이름, 없으면 빈칸)를 한 번 고정해 `fold` → `canonical` 로
   짓는다. 00 고정 본문이 펼친 판과 같으면 받은 판을 두지 않고 「바뀐 것 없음」, 펼친 뒤 판
   이력이 움직였으면 적용할 수 없는 판으로 싣는다. 입력 문제는 막지 않는다(관문이 정본 — 표지
-  「확인할 칸 n」).
+  「확인할 칸 n」). 판에는 만든 때의 지문(`_stamp` — 줄 · 걷은 뒤 남은 고침 · 00 메모)을 싣고, 그 뒤
+  표가 바뀌면 다음 흡수가 그 판을 걷는다(`_drop_stale` — 「새 판 적용」 이 옛 판을 넣고 작성을 닫아
+  그 뒤 고친 것을 버리지 않게).
 - **잠금**(UI-INP-07) — 진입 · 판 만들기는 `write_lock_reason`(C-DEP 밖 · 개발자 아님)으로 잠그고,
   진입은 활성 판 내용을 못 읽을 때(G1) · 활성 시나리오 · 계획 월이 없을 때도 잠근다.
 - **탭 점** — 술어는 「모형이 펼친 판과 다름」(`effective_edits` 가 있거나 줄이 바뀜)이고 흡수 때
@@ -56,6 +62,7 @@ from capa_simulation.components import edit_grid, sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.saved_note import field_placeholder
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.extra_process_intake import (
     EditorOrigin,
@@ -140,7 +147,9 @@ HOST: Final = "admin-extra-editor-grid"
 FLASH_KEY: Final = "admin_extra_editor_flash"
 OPEN_BUTTON_KEY: Final = "admin_extra_editor_open"
 CLOSE_BUTTON_KEY: Final = "admin_extra_editor_close"
+CLOSE_MENU_KEY: Final = "admin_extra_editor_close_menu"
 CLOSE_CONFIRM_KEY: Final = "admin_extra_editor_close_confirm"
+MAKE_MENU_KEY: Final = "admin_extra_editor_make_menu"
 MAKE_BUTTON_KEY: Final = "admin_extra_editor_make"
 KIND_KEY: Final = "admin_extra_editor_kind"
 MEMO_KEY: Final = "admin_extra_editor_memo"
@@ -207,6 +216,7 @@ OPEN_LABEL: Final = "앱에서 작성"
 CLOSE_LABEL: Final = "작성 닫기"
 CLOSE_CONFIRM_LABEL: Final = "버리고 닫기"
 MAKE_LABEL: Final = "판 만들기"
+MAKE_BUTTON_LABEL: Final = "만들기"
 ADD_MENU_LABEL: Final = "공정 더하기 · 참조 바꾸기"
 ADD_LABEL: Final = "더하기"
 CHANGE_LABEL: Final = "바꾸기"
@@ -232,12 +242,30 @@ MOVED_VERDICT: Final = "moved"
 MOVED_REASON: Final = (
     "펼친 뒤 다른 판이 들어와 적용할 수 없습니다 — 「작성 닫기」 뒤 다시 펼쳐 고칩니다"
 )
+STALE_STAGED: Final = "판을 만든 뒤 표를 고쳐 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
 NO_REFERENCE: Final = "참조공정을 고릅니다"
 BAD_STEP: Final = "STEP · MCP 를 「STEP · MCP」 꼴로 적습니다"
 # 탭 점 풍선(`page_tabs.page_unsaved_marks`).
 UNSAVED_NOTE: Final = "적용하지 않은 부대공정 작성"
 CHECK_LABEL: Final = "확인할 칸 {n}"
-CHECK_COLUMNS: Final = ("공정", "표", "칸", "달", "까닭")
+# 「까닭」 을 앞에 — 좁은 팝오버에서도 먼저 보이게(표 폭은 `CHECK_WIDTH`).
+CHECK_COLUMNS: Final = ("공정", "까닭", "표", "칸", "달")
+CHECK_WIDTH: Final = 640
+# 기준 데이터 알림 코드 → 그 알림이 짚는 표(「표」 칸에는 표 이름만 — 등록 규칙 코드는 「까닭」
+# 앞머리).
+WARNING_TABLES: Final = {
+    "R-01": "공정",
+    "R-02": "공정",
+    "끝월": "공정",
+    "창": "공정",
+    "효율": "효율",
+}
+EMPTY_LINES: Final = "공정 없음"
+EMPTY_VALUES: Final = "고칠 공정 없음"
+ROW_REMOVE_HINT: Final = (
+    "고른 공정을 지웁니다 — 「판 만들기」 · 「새 판 적용」 을 눌러야 판에서 빠집니다"
+)
+MEMO_PLACEHOLDER: Final = field_placeholder(MEMO_LABEL, "26.12 새 공정 더함")
 
 # 공정 표 칸.
 NO_COLUMN: Final = "No."
@@ -314,19 +342,24 @@ VALUE_FORMATS: Final = {
     EQUIPMENT_TABLE: ValueFormat("fixed", 2),
     RATE_TABLE: ValueFormat("percent", 2),
 }
+# 이전 · 이후 칸은 머리 글(「~YY.MM」 · 「YY.MM~」)로 부른다 — 화면에 「이전」 · 「이후」 라는 칸
+# 이름은 없다(Guide 「앱에서 작성」 과 한 이름).
+_EDGE_HELP: Final = (
+    "끝 「YY.MM~」 칸은 그 달부터 경로 끝까지 한 값, 앞 「~YY.MM」 칸은 그 앞 달 값(읽기 "
+    "전용)입니다."
+)
+_ER_HELP: Final = (
+    "바탕 값이 없는 달(새 공정 · 늘린 경로)의 ER 은 고치지 않으면 같은 달 양산 값을 따릅니다 — "
+    "바탕 값이 있는 달은 고친 칸만 바뀝니다."
+)
 VALUE_HELPS: Final = {
     PRODUCTIVITY_TABLE: (
-        "UPEH — MI 공정도 UPEH 로 적습니다(판에는 ST = 60 / UPEH). ER 은 고치지 않으면 같은 달 "
-        "양산 값을 따르고, 끝의 「이후」 칸은 그 달부터 경로 끝까지 한 값입니다."
+        f"UPEH — MI 공정도 UPEH 로 적습니다(판에는 ST = 60 / UPEH). {_ER_HELP} {_EDGE_HELP}"
     ),
     EQUIPMENT_TABLE: (
-        "설비보유 · 설비대여평가(빈칸 = 0) — 대여는 보유보다 클 수 없습니다. 끝의 「이후」 칸은 그 "
-        "달부터 경로 끝까지 한 값입니다."
+        f"설비보유 · 설비대여평가(빈칸 = 0) — 대여는 보유보다 클 수 없습니다. {_EDGE_HELP}"
     ),
-    RATE_TABLE: (
-        "효율(CAPA_RUN_RATE) · 편중률 — ER 은 고치지 않으면 같은 달 양산 값을 따르고, 끝의 "
-        "「이후」 칸은 그 달부터 경로 끝까지 한 값입니다."
-    ),
+    RATE_TABLE: f"효율(CAPA_RUN_RATE) · 편중률 — {_ER_HELP} {_EDGE_HELP}",
 }
 # (표, 양산구분, 칸) → 구분 글.
 ROW_LABELS: Final = {
@@ -347,7 +380,7 @@ TABLE_WORDS: Final = {
     RATE: "효율",
 }
 NO_PERIOD_WHY: Final = "시작월 · 끝월을 먼저 적습니다"
-BEFORE_WHY: Final = "이전 칸은 읽기 전용"
+BEFORE_WHY: Final = "앞 「~YY.MM」 칸은 읽기 전용"
 MULTIPLE_WHY: Final = "여러 값 — 한 값으로 고칠 수 없음"
 OUTSIDE_WHY: Final = "경로 밖 달"
 # 표 위 작업 줄과 표 도구 막대를 한 줄로(`edit_grid.one_line_style`).
@@ -379,11 +412,12 @@ INBOX: Final = SessionSlot(INBOX_KEY, list)
 @dataclass(frozen=True)
 class Hooks:
     """받은 판 상자(`extra_process_admin`)가 넘기는 것 — 쓰기 잠금 판정(누른 회차에 다시 부름),
-    받은 판 두기 · 비우기."""
+    받은 판 두기 · 비우기 · 읽기(만든 뒤 표가 바뀐 편집기 판을 걷는다)."""
 
     lock: Callable[[], str | None]
     place: Callable[[StagedPack], None]
     discard: Callable[[], None]
+    staged: Callable[[], StagedPack | None]
 
 
 # --------------------------------------------------------------------------- 세션 상태
@@ -470,7 +504,9 @@ def _render_close() -> None:
             st.rerun()
         return
     # 잃을 것이 있을 때만 한 번 묻는다(UI-STA-02 · UI-NTF-09).
-    with st.popover(CLOSE_LABEL, icon=":material/close:", help=CLOSE_DIRTY_HELP):
+    with st.popover(
+        CLOSE_LABEL, icon=":material/close:", help=CLOSE_DIRTY_HELP, key=CLOSE_MENU_KEY
+    ):
         if st.button(CLOSE_CONFIRM_LABEL, key=CLOSE_CONFIRM_KEY, icon=":material/delete_sweep:"):
             close_editor()
             st.rerun()
@@ -528,7 +564,14 @@ def _open(repository: DuckDBScenarioRepository, hooks: Hooks) -> None:
         except BOOTSTRAP_ERRORS as exc:
             reason = bootstrap_error_message(exc)
     if reason is not None or opened_at is None:
-        queue_flash(FLASH_KEY, reason or UNREADABLE_REASON, kind="error", icon=":material/block:")
+        # 누른 순간의 잠금 · 못 읽음은 그 자리에 고칠 입력이 없다 — 알림창 · Alarm 한 번(UI-NTF-03).
+        queue_flash(
+            FLASH_KEY,
+            reason or UNREADABLE_REASON,
+            kind="error",
+            icon=":material/block:",
+            popup_only=True,
+        )
         st.rerun()
     close_editor()
     EDITOR.set(opened_at)
@@ -649,14 +692,16 @@ class _Columns:
 
 @dataclass(frozen=True)
 class _Screen:
-    """이 회차의 편집기 — 모형 · 공정 표 줄 · 값 표 칸 · 표 넷(줄이 없으면 None) · 초안 칸의 모형
-    열쇠 → 그리드 자리."""
+    """이 회차의 편집기 — 모형 · 공정 표 줄 · 값 표 칸 · 표 넷 · 초안 칸의 모형 열쇠 → 그리드
+    자리 · 줄마다 월 보기, 흡수가 적는 판 지문(`_stamp`)."""
 
     model: EditorModel
     rows: tuple[_LineRow, ...]
     columns: _Columns
-    tables: Mapping[str, _Table | None]
+    tables: Mapping[str, _Table]
     places: Mapping[CellKey, tuple[tuple[str, str, str], ...]]
+    views: Mapping[str, LineView]
+    stamp: str = ""
 
 
 def _line_rows(origin: EditorModel, seeds: Mapping[str, LineFields]) -> tuple[_LineRow, ...]:
@@ -731,10 +776,24 @@ def _line_inputs(rows: Sequence[_LineRow]) -> list[tuple[str, LineFields]]:
     return found
 
 
-def _line_table(rows: Sequence[_LineRow]) -> _Table | None:
-    if not rows:
-        return None
-    kinds: list[LockKind] = [LockKind(cols=PICKED_COLUMNS, reason=PICKED_WHY)]
+def _line_spec(carried: bool) -> GridSpec:
+    """공정 표 규격 — 「옮김」 칸은 통째 옮김 줄이 있을 때만 싣는다(UI-TXT-08). 펼친 줄은 표에서
+    빠지지 않고(지운 줄도 표지로 남는다) 새 줄은 옮김이 아니라, 작성 중 칸 집합은 바뀌지 않는다."""
+    if carried:
+        return LINE_SPEC
+    return replace(
+        LINE_SPEC,
+        value_columns=tuple(column for column in LINE_COLUMNS if column != CARRY_COLUMN),
+        column_formats=tuple(item for item in LINE_SPEC.column_formats if item[0] != CARRY_COLUMN),
+    )
+
+
+def _line_table(rows: Sequence[_LineRow]) -> _Table:
+    """공정 표 — 줄이 없어도(빈 시작) 머리 줄만 든 표를 지어 「공정 없음」 이 선다(UI-LAY-10)."""
+    carried = any(row.carried is not None for row in rows)
+    spec = _line_spec(carried)
+    picked = tuple(column for column in PICKED_COLUMNS if column in spec.value_columns)
+    kinds: list[LockKind] = [LockKind(cols=picked, reason=PICKED_WHY)]
     rules: list[int] = []
     records: list[dict[str, object]] = []
     for number, row in enumerate(rows, start=1):
@@ -761,11 +820,13 @@ def _line_table(rows: Sequence[_LineRow]) -> _Table | None:
                 START_COLUMN: _text_or_none(fields.start),
                 END_COLUMN: _text_or_none(fields.end),
                 MEMO_COLUMN: _text_or_none(fields.memo),
-                CARRY_COLUMN: row.carried,
+                **(
+                    {CARRY_COLUMN: None if row.carried is None else CARRY_COLUMN} if carried else {}
+                ),
             }
         )
-    frame = pd.DataFrame(records, columns=[NO_COLUMN, ID_COLUMN, LABEL_COLUMN, *LINE_COLUMNS])
-    return _built(frame, LINE_SPEC, RowRules(tuple(kinds), tuple(rules)))
+    frame = pd.DataFrame(records, columns=[NO_COLUMN, ID_COLUMN, LABEL_COLUMN, *spec.value_columns])
+    return _built(frame, spec, RowRules(tuple(kinds), tuple(rules)))
 
 
 def _built(frame: pd.DataFrame, spec: GridSpec, rules: RowRules) -> _Table:
@@ -784,9 +845,16 @@ def _previous_month(month: int) -> int:
     return month - 1 if month % 100 > 1 else (month // 100 - 1) * 100 + 12
 
 
+def hidden_after(name: str) -> str:
+    """이후 칸 이름의 숨은 짝 — 「여러 값」 으로 잠긴 이후 칸의 초안을 옮겨 두는 그리드 밖 칸이다.
+    칸 지도가 같은 달을 가리켜 판에는 그대로 들고, 잠긴 칸에 그 초안 값이 그려지지 않는다."""
+    return f"{name} (여러 값)"
+
+
 def _columns(span: Sequence[int], views: Mapping[str, LineView]) -> _Columns:
     """값 표 칸 — 이전 칸은 어느 줄이 계획 첫 달 앞에서 시작할 때만, 이후 칸은 어느 줄이 계획 끝
-    달 뒤로 이어질 때만 선다(UI-TXT-08). 이름은 칸 지도(`COLUMNS`)에 더해 둔다."""
+    달 뒤로 이어질 때만 선다(UI-TXT-08). 이름(이후 칸의 숨은 짝 포함)은 칸 지도(`COLUMNS`)에 더해
+    둔다."""
     months = {month_label(month): month for month in span}
     before = after = None
     roles: dict[str, tuple[str, int]] = {name: ("m", month) for name, month in months.items()}
@@ -798,6 +866,7 @@ def _columns(span: Sequence[int], views: Mapping[str, LineView]) -> _Columns:
         edge = _next_month(span[-1])
         after = f"{month_label(edge)}~"
         roles[after] = ("after", edge)
+        roles[hidden_after(after)] = ("after", edge)
     known = COLUMNS.get()
     if any(known.get(name) != role for name, role in roles.items()):
         COLUMNS.set({**known, **roles})
@@ -824,9 +893,9 @@ def _row_label(row: RowKey) -> str:
 
 def _value_table(
     table: str, model: EditorModel, views: Mapping[str, LineView], columns: _Columns
-) -> _Table | None:
-    """값 표 하나 — 살아 있는 편집기 몫 줄마다 그 파일의 값 줄. 칸 값은 양식(`CellView.default`)이고
-    잠긴 칸의 까닭은 줄마다 한 글로 잇는다."""
+) -> _Table:
+    """값 표 하나 — 살아 있는 편집기 몫 줄마다 그 파일의 값 줄(없으면 머리 줄만 — 「고칠 공정
+    없음」). 칸 값은 양식(`CellView.default`)이고 잠긴 칸의 까닭은 줄마다 한 글로 잇는다."""
     file = VALUE_TABLES[table]
     kinds: list[LockKind] = []
     rules: list[int] = []
@@ -857,8 +926,6 @@ def _value_table(
             if kind not in kinds:
                 kinds.append(kind)
             rules.append(kinds.index(kind))
-    if not records:
-        return None
     spec = GridSpec(
         table=table,
         title=VALUE_TITLES[table],
@@ -972,20 +1039,73 @@ def _screen(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
     model = with_cells(model, cells)
     views = month_view(model, context.months)
     columns = _columns(plan_span(context.months), views)
-    tables: dict[str, _Table | None] = {LINE_TABLE: _line_table(rows)}
+    tables: dict[str, _Table] = {LINE_TABLE: _line_table(rows)}
     for table in VALUE_TABLES:
         tables[table] = _value_table(table, model, views, columns)
-    return _Screen(model, rows, columns, tables, places)
+    return _Screen(model, rows, columns, tables, places, views)
 
 
-def _prune(screen: _Screen) -> bool:
-    """걷은 칸(`redundant_cells`)을 초안에서 지운다(계약 5) — 지웠으면 참."""
-    targets: dict[str, dict[str, set[str]]] = {}
-    for key in redundant_cells(screen.model):
-        for table, row_id, column in screen.places.get(key, ()):
-            targets.setdefault(table, {}).setdefault(row_id, set()).add(column)
+Place = tuple[str, str, str]
+
+
+def _shown_place(screen: _Screen, place: Place) -> bool:
+    """초안 칸이 이 회차 그리드 표 넷 가운데 하나에 보이는 칸인가(마운트한 종류와 상관없이)."""
+    table, row_id, column = place
+    built = screen.tables.get(table)
+    return (
+        built is not None and row_id in built.base.index.rows and column in built.spec.value_columns
+    )
+
+
+def _after_home(screen: _Screen, key: CellKey) -> str | None:
+    """그 열쇠가 이 회차 이후 칸의 열쇠면 초안이 설 칸 이름 — 한 값이면 이후 칸, 여러 값으로
+    잠겼으면 그 숨은 짝(`hidden_after`). 아니면 None(제자리)."""
+    row, month = key
+    after = screen.columns.after
+    if not isinstance(month, Onward) or after is None:
+        return None
+    view = screen.views.get(row[0])
+    cell = None if view is None else view.after.get(row)
+    if cell is None or cell.key != month:
+        return None
+    return after if cell.editable else hidden_after(after)
+
+
+def _tidy(screen: _Screen) -> bool:
+    """초안을 이 회차 표에 맞춘다(그리드 이력은 건드리지 않는다) — 바꿨으면 참.
+
+    - 걷은 칸(`redundant_cells`)은 이 회차 그리드에 보이지 않을 때만 지운다(계약 5 — 숨은 옛
+      입력이 다른 창에서 되살아나지 않게). 보이는 칸은 사람이 지금 보고 적은 값이라 남긴다 — 다른
+      칸 고침 · 되돌리기 뒤에도 그 값이다(보이는 값 = 판 값은 그대로).
+    - 이 회차 이후 칸과 같은 열쇠의 초안은 이후 칸(한 값) 또는 그 숨은 짝(여러 값 — 잠긴 칸에 옛
+      초안 값이 그려지지 않게)으로 옮긴다. 시작월이 계획 끝 뒤인 줄은 창마다 다른 이후 칸 이름이 한
+      열쇠라, 옮기지 않으면 다른 창에서 적은 값이 보이지 않는 채 판에 든다.
+    - 한 열쇠에 초안 자리가 둘 이상이면 하나만 남긴다 — 그 칸 이름, 보이는 자리, 마지막 자리
+      차례(마지막 자리가 지금 모형이 쓰는 값이다)."""
+    redundant = set(redundant_cells(screen.model))
+    moves: dict[Place, str | None] = {}
+    for key, places in screen.places.items():
+        home = _after_home(screen, key)
+        shown = [place for place in places if _shown_place(screen, place)]
+        if key in redundant and not shown:
+            moves.update(dict.fromkeys(places))
+            continue
+        keeper = next((place for place in places if place[2] == home), None)
+        if keeper is None:
+            keeper = shown[-1] if shown else places[-1]
+        moves.update((place, None) for place in places if place != keeper)
+        if home is not None and keeper[2] != home:
+            moves[keeper] = home
+    return _rewrite_drafts(moves)
+
+
+def _rewrite_drafts(moves: Mapping[Place, str | None]) -> bool:
+    """값 표 초안 칸을 옮기거나(새 칸 이름) 지운다(None) — 바꿨으면 참."""
+    by_table: dict[str, dict[tuple[str, str], str | None]] = {}
+    for (table, row_id, column), target in moves.items():
+        by_table.setdefault(table, {})[(row_id, column)] = target
     changed = False
-    for table, rows in targets.items():
+    for table, spots in by_table.items():
         draft = _draft(table)
         if draft is None:
             continue
@@ -993,12 +1113,16 @@ def _prune(screen: _Screen) -> bool:
         for name in ("cells", "bad"):
             book: dict[str, dict[str, Any]] = {}
             for row_id, row_cells in draft[name].items():
-                kept = {
-                    column: value
-                    for column, value in row_cells.items()
-                    if column not in rows.get(row_id, set())
-                }
-                changed = changed or len(kept) != len(row_cells)
+                kept: dict[str, Any] = {}
+                for column, value in row_cells.items():
+                    spot = (str(row_id), str(column))
+                    if spot not in spots:
+                        kept[column] = value
+                        continue
+                    changed = True
+                    target = spots[spot]
+                    if target is not None:
+                        kept[target] = value
                 if kept:
                     book[row_id] = kept
             books[name] = book
@@ -1010,19 +1134,45 @@ def _prune(screen: _Screen) -> bool:
     return changed
 
 
+def _stamp(model: EditorModel, edits: Mapping[CellKey, CellInput]) -> str:
+    """판 본문을 정하는 것의 지문 — 줄(01 · 02 값) · 걷은 뒤 남은 고침 · 00 메모. 창 · 초안 자리와
+    상관없다(시나리오를 바꿔도 같다)."""
+    body = repr(
+        (
+            model.lines,
+            sorted((repr(key), repr(value)) for key, value in edits.items()),
+            MEMO.peek() or "",
+        )
+    )
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()
+
+
 def _absorb(base: ExtraProcessPack | None, context: EditorContext) -> _Screen:
-    """inbox 를 반영하고(앞 회차 양식 — 브라우저가 본 표 — 로) 모형을 다시 짓고 걷은 칸을 지운 뒤
-    탭 점 표지를 적는다."""
+    """inbox 를 반영하고(앞 회차 양식 — 브라우저가 본 표 — 로) 모형을 다시 짓고 초안을 이 회차 표에
+    맞춘 뒤(`_tidy`) 탭 점 표지를 적고 판 지문을 단다."""
     if INBOX.peek():
         before = _screen(base, context)
-        slots = {table: built.slot for table, built in before.tables.items() if built is not None}
+        slots = {table: built.slot for table, built in before.tables.items()}
         edit_grid.apply_inbox(KEYS, slots)
     screen = _screen(base, context)
-    if _prune(screen):
+    if _tidy(screen):
         screen = _screen(base, context)
     model = screen.model
-    DIRTY.set(bool(effective_edits(model)) or model.lines != model.origin)
-    return screen
+    edits = effective_edits(model)
+    DIRTY.set(bool(edits) or model.lines != model.origin)
+    return replace(screen, stamp=_stamp(model, edits))
+
+
+def _drop_stale(hooks: Hooks, stamp: str) -> None:
+    """받은 판이 이 편집기에서 만든 판인데 그 뒤 표가 바뀌었으면 걷는다 — 두면 「새 판 적용」 이
+    만든 때의 판을 넣고 작성을 닫아 그 뒤 고친 것을 말없이 버린다. 받은 판 상자보다 먼저 부른다
+    (같은 회차의 「새 판 적용」 누름도 닿지 않는다)."""
+    staged = hooks.staged()
+    if staged is None or staged.editor is None or staged.editor.made_from == stamp:
+        return
+    hooks.discard()
+    queue_flash(FLASH_KEY, STALE_STAGED, kind="info")
+    st.rerun()
 
 
 # --------------------------------------------------------------------------- 그리기
@@ -1051,19 +1201,23 @@ def render_editor(repository: DuckDBScenarioRepository, hooks: Hooks, *, lock: s
     screen = _absorb(base, context)
     actions = st.container(key=ACTIONS_BOX)
     grid_box = st.container(key=GRID_BOX)
-    make_box = st.container(key=MAKE_BOX)
+    check_box = st.container(key=MAKE_BOX)
     with actions:
-        kind = _render_actions(screen, key, context)
+        kind, pressed = _render_actions(screen, key, context, lock)
     with grid_box:
         _render_grid(screen, kind)
-    with make_box:
-        pressed = _render_make_row(screen, context, lock)
+    with check_box:
+        _render_check(screen, context)
     if pressed:
         _make(repository, base, context, hooks, seen_seq=int(seen_seq), base_sha=base_sha)
+    _drop_stale(hooks, screen.stamp)
 
 
-def _render_actions(screen: _Screen, key: tuple[object, ...], context: EditorContext) -> str:
-    """작업 줄 — 종류 단추와 「공정 더하기 · 참조 바꾸기」(둘 다 늘 선다)."""
+def _render_actions(
+    screen: _Screen, key: tuple[object, ...], context: EditorContext, lock: str | None
+) -> tuple[str, bool]:
+    """작업 줄(표 위 — UI-LAY-03) — 종류 단추 · 「공정 더하기 · 참조 바꾸기」 · 「판 만들기」(셋 다
+    늘 선다). (고른 종류, 「만들기」 누름)."""
     with st.container(key=ACTION_ROW, horizontal=True, vertical_alignment="center", gap="small"):
         if KIND.peek() not in KINDS:
             KIND.set(next(iter(KINDS)))
@@ -1077,53 +1231,69 @@ def _render_actions(screen: _Screen, key: tuple[object, ...], context: EditorCon
         )
         with st.popover(ADD_MENU_LABEL, icon=":material/add:", help=ADD_HELP, key=ADD_MENU_KEY):
             _render_line_form(screen, key, context)
-    return chosen if isinstance(chosen, str) and chosen in KINDS else next(iter(KINDS))
+        with st.popover(
+            MAKE_LABEL,
+            icon=":material/note_add:",
+            help=lock or MAKE_HELP,
+            disabled=lock is not None,
+            key=MAKE_MENU_KEY,
+        ):
+            pressed = _render_make_form(lock)
+    kind = chosen if isinstance(chosen, str) and chosen in KINDS else next(iter(KINDS))
+    return kind, pressed
 
 
 def _render_grid(screen: _Screen, kind: str) -> None:
     table = KINDS[kind]
-    built = screen.tables.get(table)
-    if built is None:
-        shell = edit_grid.shell_data(HOST, None, None, base_key="", changes_label=CHANGES_LABEL)
-        shell["texts"] = {**shell["texts"], "empty": "공정 없음"}
-        feed = edit_grid.feed_data(HOST, None, KEYS, base_key="")
-    else:
-        shell = edit_grid.shell_data(
-            HOST, built.base, built.spec, base_key=built.base_key, changes_label=CHANGES_LABEL
-        )
-        feed = edit_grid.feed_data(HOST, built.slot, KEYS, base_key=built.base_key)
-    # 표 없는 껍데기는 높이가 없어 끌어올리면 판 줄이 작업 줄을 덮는다 — 표가 있을 때만 한 줄로.
-    style = "" if built is None else ONE_LINE_STYLE
-    edit_grid.render_edit_grid(HOST, shell, feed, on_outbox=collect, page_style=style, rows=True)
+    built = screen.tables[table]
+    shell = edit_grid.shell_data(
+        HOST, built.base, built.spec, base_key=built.base_key, changes_label=CHANGES_LABEL
+    )
+    # 빈 표 글 — 공정 표는 「공정 없음」, 값 표는 편집기 몫 줄이 없을 때(옮김 줄뿐 포함).
+    texts = {**shell["texts"], "empty": EMPTY_LINES if table == LINE_TABLE else EMPTY_VALUES}
+    if table == LINE_TABLE:
+        texts["rowRemoveHint"] = ROW_REMOVE_HINT
+    shell["texts"] = texts
+    feed = edit_grid.feed_data(HOST, built.slot, KEYS, base_key=built.base_key)
+    edit_grid.render_edit_grid(
+        HOST, shell, feed, on_outbox=collect, page_style=ONE_LINE_STYLE, rows=True
+    )
 
 
-def _render_make_row(screen: _Screen, context: EditorContext, lock: str | None) -> bool:
-    """판 줄 — 00 메모 · 「판 만들기」(쓰기 잠금으로만 잠근다 — 고친 것 없는 누름도 누른 회차에
-    판정) · 「확인할 칸 n」(입력 문제 + 기준 데이터 알림 — 막지 않는다, G6)."""
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.text_input(
-            MEMO_LABEL,
-            key=MEMO_KEY,
-            persist_state="session",
-            max_chars=200,
-            placeholder=MEMO_LABEL,
-            label_visibility="collapsed",
-            width=320,
-        )
-        pressed = st.button(
-            MAKE_LABEL,
-            key=MAKE_BUTTON_KEY,
-            icon=":material/note_add:",
-            disabled=lock is not None,
-            help=lock or MAKE_HELP,
-        )
-        frame = check_frame(screen.model, context)
-        if not frame.empty:
-            with st.popover(
-                CHECK_LABEL.format(n=f"{len(frame):,}"), icon=":material/error:", key=CHECK_MENU_KEY
-            ):
-                st.dataframe(frame, hide_index=True, width="stretch", placeholder="")
+def _render_make_form(lock: str | None) -> bool:
+    """「판 만들기」 팝오버 — 00 메모와 「만들기」(쓰기 잠금으로만 잠근다 — 고친 것 없는 누름도 누른
+    회차에 판정)."""
+    st.text_input(
+        MEMO_LABEL,
+        key=MEMO_KEY,
+        persist_state="session",
+        max_chars=200,
+        placeholder=MEMO_PLACEHOLDER,
+        label_visibility="collapsed",
+        width=320,
+    )
+    pressed = st.button(
+        MAKE_BUTTON_LABEL,
+        key=MAKE_BUTTON_KEY,
+        type="primary",
+        icon=":material/note_add:",
+        disabled=lock is not None,
+        help=lock or MAKE_HELP,
+    )
     return bool(pressed) and lock is None
+
+
+def _render_check(screen: _Screen, context: EditorContext) -> None:
+    """표 아래 「확인할 칸 n」(입력 문제 + 기준 데이터 알림 — 막지 않는다, G6). 있을 때만 서고
+    그리드 뒤라 그리드를 다시 마운트하지 않는다."""
+    frame = check_frame(screen.model, context)
+    if frame.empty:
+        return
+    with st.popover(
+        CHECK_LABEL.format(n=f"{len(frame):,}"), icon=":material/error:", key=CHECK_MENU_KEY
+    ):
+        # 팝오버는 안 글 폭만큼 넓어진다 — 표 폭을 정해 「까닭」 이 굴림 밖으로 숨지 않게.
+        st.dataframe(frame, hide_index=True, width=CHECK_WIDTH, placeholder="")
 
 
 def check_frame(model: EditorModel, context: EditorContext) -> pd.DataFrame:
@@ -1142,13 +1312,14 @@ def check_frame(model: EditorModel, context: EditorContext) -> pd.DataFrame:
             }
         )
     for warning in editor_warnings(model, context):
+        rule = warning.code.startswith("R-")
         rows.append(
             {
                 "공정": "" if warning.line_id is None else names.get(warning.line_id, ""),
-                "표": warning.code,
+                "까닭": f"{warning.code} · {warning.text}" if rule else warning.text,
+                "표": WARNING_TABLES.get(warning.code, ""),
                 "칸": "",
                 "달": "",
-                "까닭": warning.text,
             }
         )
     return pd.DataFrame(rows, columns=list(CHECK_COLUMNS))
@@ -1242,7 +1413,10 @@ def _render_line_form(screen: _Screen, key: tuple[object, ...], context: EditorC
         # 있는 줄은 양식(씨앗 또는 펼친 값 — 그리드 초안을 뺀 값)에서 바꾼다. 모형 값(초안 포함)을
         # 씨앗에 구우면 그 칸의 그리드 되돌리기가 먹지 않는다.
         template = next((row.fields for row in screen.rows if row.line_id == target), None)
-        _apply_line_form(target, template, name, reference, step_text, context)
+        refused = _apply_line_form(target, template, name, reference, step_text, context)
+        # 팝오버 안 검증 거부는 누른 단추 바로 아래 한 줄만(UI-NTF-03 · UI-INP-05 — 알림창 · 기록
+        # 없음). 팝오버는 key 가 있어 열린 채다.
+        st.error(refused, icon=":material/block:")
 
 
 def form_key(target: str) -> str:
@@ -1270,19 +1444,15 @@ def _apply_line_form(
     reference: object,
     step_text: object,
     context: EditorContext,
-) -> None:
+) -> str:
     """「더하기」 · 「바꾸기」 누름 — 새 줄이면 그때의 기본값(`line_defaults`)을 씨앗으로 고정하고,
     있는 줄이면 그 줄 양식의 참조공정 · 소요기준 · STEP · MCP 를 바꾼다(새 줄은 Area · 모듈수
-    기본값도)."""
+    기본값도). 받으면 다시 그리고(돌아오지 않는다), 받지 못하면 그 까닭을 돌려준다(곁 한 줄)."""
     if not isinstance(reference, str) or not reference.strip():
-        queue_flash(FLASH_KEY, NO_REFERENCE, kind="error", icon=":material/block:")
-        st.rerun()
-    assert isinstance(reference, str)
+        return NO_REFERENCE
     step = _split_step(step_text)
     if step is None:
-        queue_flash(FLASH_KEY, BAD_STEP, kind="error", icon=":material/block:")
-        st.rerun()
-    assert step is not None
+        return BAD_STEP
     seeds = _seeds()
     defaults = line_defaults(context, reference)
     if template is None:
@@ -1306,6 +1476,9 @@ def _apply_line_form(
             )
         fields = picked
     _set_seed(line_id, fields)
+    # 화면 탭 줄 · 「작성 닫기」 는 페이지보다 먼저 그린다 — 흡수가 바로잡기 전에 켜 두어 다시 그린
+    # 회차에 점 · 확인이 선다(출납 콜백 `collect` 와 같은 꼴).
+    DIRTY.set(True)
     st.rerun()
 
 
@@ -1325,10 +1498,11 @@ def _make(
     고정해 판을 짓고 받은 판 자리에 둔다(쓰지 않는다)."""
     reason = hooks.lock()
     if reason is not None:
-        queue_flash(FLASH_KEY, reason, kind="error", icon=":material/block:")
+        queue_flash(FLASH_KEY, reason, kind="error", icon=":material/block:", popup_only=True)
         st.rerun()
     collect()
-    model = _absorb(base, context).model
+    screen = _absorb(base, context)
+    model = screen.model
     now = datetime.now(KST)
     try:
         state = repository.load_extra_process_state()
@@ -1364,6 +1538,7 @@ def _make(
         base_sha if isinstance(base_sha, str) else None,
         folded,
         ignored=len(ignored_cells(model)),
+        made_from=screen.stamp,
     )
     staged = stage_editor_pack(built, origin, now=now, base=model.base, before=before)
     if pack is not None and state.last_seq != seen_seq:
