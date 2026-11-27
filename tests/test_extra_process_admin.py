@@ -27,6 +27,7 @@ from capa_simulation.components.extra_process_admin import (
     IMPORT_BUTTON_KEY,
     NOT_PRODUCTION_REASON,
     PREVIEW_BUTTON_KEY,
+    STAGED_KEY,
     TOGGLE_BUTTON_KEY,
     UNCONFIRMED_REASON,
     history_frame,
@@ -34,7 +35,7 @@ from capa_simulation.components.extra_process_admin import (
     write_lock_reason,
 )
 from capa_simulation.components.percent_cells import percent_cell_text
-from capa_simulation.extra_process_intake import SAME_WORD, SourceFetch, stage_pack
+from capa_simulation.extra_process_intake import SAME_WORD, SourceFetch, StagedPack, stage_pack
 from capa_simulation.persistence.models import (
     EXTRA_KIND_APPLY,
     EXTRA_KIND_OFF,
@@ -141,12 +142,16 @@ def _app(
     pack: bytes | None = None,
     no_scenario: bool = False,
     drive_etag: str | None = None,
+    staged: StagedPack | None = None,
 ) -> AppTest:
+    """`staged` 는 처음 회차 전에 받은 판 자리에 둘 판이다(편집기가 만든 판 — 편집기 화면 대신)."""
     app = AppTest.from_string(_script(database), default_timeout=120)
     app.session_state[OPEN_KEY] = open_place
     app.session_state[PACK_KEY] = pack
     app.session_state[NO_SCENARIO_KEY] = no_scenario
     app.session_state[DRIVE_ETAG_KEY] = drive_etag
+    if staged is not None:
+        app.session_state[STAGED_KEY] = staged
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     return app

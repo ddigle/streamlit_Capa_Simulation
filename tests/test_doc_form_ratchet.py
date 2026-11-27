@@ -124,10 +124,10 @@ BASELINE: dict[str, dict[str, int]] = {
         "보드 답": 0,
     },
     "docs/reference/files/app-and-ui.md": {
-        "날짜": 204,
+        "날짜": 202,
         "사용자 결정": 37,
         "가지 이름": 0,
-        "보드 답": 30,
+        "보드 답": 29,
     },
     "docs/reference/files/components.md": {
         "날짜": 260,

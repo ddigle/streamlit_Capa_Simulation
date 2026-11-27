@@ -676,7 +676,14 @@ def test_head_word_tells_same_from_old_version(database: Path) -> None:
     assert head_word('"y"', state, {}) == NEW_FILE_WORD
 
 
-def _row(seq: int, kind: str, sha: str | None, etag: str | None = None) -> ExtraProcessVersion:
+def _row(
+    seq: int,
+    kind: str,
+    sha: str | None,
+    etag: str | None = None,
+    *,
+    source_place: str | None = None,
+) -> ExtraProcessVersion:
     from datetime import datetime
 
     return ExtraProcessVersion(
@@ -686,6 +693,7 @@ def _row(seq: int, kind: str, sha: str | None, etag: str | None = None) -> Extra
         sha256=sha,
         created_at=datetime(2026, 11, 19, 1, 0),
         s3_etag=etag,
+        source_place=source_place,
     )
 
 

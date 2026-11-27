@@ -1,6 +1,6 @@
 # Purpose: Admin Area 「부대공정」 탭 — 판 상태 줄 · 양식 내려받기 · 끄기 / 다시 켜기 · 이 리비전
-# 값을 새 판으로 · S3 에 다시 쓰기 · 판 이력과 받은 판의 거절 표 · 미리보기 시험 계산 · 적용을
-# 그린다.
+# 값을 새 판으로 · S3 에 다시 쓰기 · 판 이력과 받은 판(가져옴 · 리비전 · 편집기)의 거절 표 ·
+# 미리보기 시험 계산 · 적용을 그린다.
 
 """Admin 「부대공정」(설계 3-4 · A7 — 1단계).
 
@@ -43,6 +43,12 @@ ETag 를 들어 같은 뜻이다(`pending_write`).
 `EP-06` 하나다(「S3 Drive 파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」). 누를 수
 없는 까닭(꺼짐 · 판 없음 · 다른 판 · 섞인 판 · 연도 Shift · 부대공정 없음 — G4)은 풍선이다.
 
+**편집기에서 만든 판**(`extra_process_intake.stage_editor_pack` — `StagedPack.editor`)도 같은 받은
+판 자리를 지난다 — 머리 「앱에서 만든 판」, 거절 표에는 편집기 자리(공정 · 표 · 양산구분 · 칸 ·
+기간 · 옮긴 줄 — `extra_process_editor.locate`)가 붙는다. 「새 판 적용」 은 DB 에 갈래 「새 판」 ·
+원천 자리 「앱 입력」 만 넣고(`_apply_editor`) S3 Drive 는 쓰지 않는다 — 쓸 몫이 아니라 `EP-05` ·
+`EP-06` 도 서지 않는다(`owes_drive`). 끈 동안 받은 판의 값 줄 끝에는 「적용하면 켜짐」 이 붙는다.
+
 **닫힌 탭은 그리지 않는다**(`app_pages/admin_area.py`) — 이 탭의 위젯은 단추 · 내려받기 · 확인
 칸뿐이라 버릴 값이 없고, 닫힌 탭이 회차마다 판 이력을 읽지 않게 한다. 세션 칸은 `SessionSlot`
 창구다.
@@ -69,6 +75,7 @@ from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.table_toolbar import render_zip_download, toolbar_clearance
 from capa_simulation.extra_process_intake import (
     NEW_FILE_WORD,
+    EditorOrigin,
     PackPreview,
     RevisionOrigin,
     SourceFailure,
@@ -81,6 +88,7 @@ from capa_simulation.extra_process_intake import (
     installed_sink,
     installed_source,
     needs_write,
+    owes_drive,
     pending_write,
     placed_matches,
     preview_pack,
@@ -115,6 +123,7 @@ from capa_simulation.scenario_activation import (
     active_persisted_scenario_id,
 )
 from capa_simulation.scenario_state import ensure_active_scenario
+from capa_simulation.services.extra_process_editor import locate
 from capa_simulation.services.extra_process_merge import (
     OUTCOME_DROPPED,
     OUTCOME_GRADUATED,
@@ -144,6 +153,7 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_subject_particle,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.simulation_cache import calculation_token
 from capa_simulation.session_slot import SessionSlot
 
@@ -207,6 +217,12 @@ REVISION_APPLY_HELP: Final = (
     "이 판을 활성 판으로 둡니다 — 다음 BDQ 등록 · 자동 갱신 · 부대공정 얹기부터 들어가고, S3 "
     "Drive 의 파일도 덮을 수 있으면 이 판으로 바꿉니다."
 )
+EDITOR_APPLY_HELP: Final = (
+    "이 판을 활성 판으로 둡니다 — 다음 BDQ 등록 · 자동 갱신 · 부대공정 얹기부터 들어가고, 이미 "
+    "저장된 리비전과 S3 Drive 의 파일은 그대로입니다."
+)
+# 끈 동안 받은 판의 값 줄 끝 — 적용하면 그 판으로 다시 켜진다(누르기 전에 알아야 할 결과).
+TURNS_ON_PART: Final = "적용하면 켜짐"
 REWRITE_HELP: Final = (
     "활성 판을 S3 Drive 의 current.zip 에 다시 씁니다 — 적용하지 않은 파일이 놓여 있으면 덮지 "
     "않습니다."
@@ -218,6 +234,19 @@ OUTCOME_LABELS: Final = {
     OUTCOME_DROPPED: "뺌",
     OUTCOME_GRADUATED: "BDQ 에 생김",
 }
+# 편집기 판의 거절 표 — 판 줄을 편집기 자리(공정 · 표 · 양산구분 · 칸 · 기간 · 옮긴 줄)로 되짚는다.
+EDITOR_PROBLEM_COLUMNS: Final = (
+    "규칙",
+    "공정",
+    "표",
+    "양산구분",
+    "칸",
+    "기간",
+    "옮긴 줄",
+    "까닭",
+    "파일",
+    "행",
+)
 HISTORY_COLUMNS: Final = (
     "판",
     "갈래",
@@ -529,9 +558,10 @@ def _note_placed(
         queue_flash(FLASH_KEY, bootstrap_error_message(exc), kind="error", icon=":material/error:")
         return
     HEAD_SEEN.clear()
+    # 「새 판으로」 판은 판 어긋남(EP-06)이 풀린다 — 편집기 판은 어긋남이 서지 않아 기준만 옮긴다.
+    tail = " — 판 어긋남을 풉니다" if owes_drive(active) else ""
     queue_flash(
-        FLASH_KEY,
-        f"S3 Drive 에 놓인 파일이 활성 판 {active.version_no} 내용과 같습니다 — 판 어긋남을 풉니다",
+        FLASH_KEY, f"S3 Drive 에 놓인 파일이 활성 판 {active.version_no} 내용과 같습니다{tail}"
     )
 
 
@@ -556,29 +586,43 @@ def _render_staged(
 ) -> None:
     reading = staged.reading
     origin = staged.revision
+    editor = staged.editor
     with st.container(border=True):
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            if origin is None:
-                st.markdown(f"**받은 판** · {_staged_word(staged)} · sha {reading.sha256[:8]}")
-            else:
+            if origin is not None:
                 st.markdown(
                     f"**리비전에서 만든 판** · {literal_markdown(origin.label)} · 새 판 "
                     f"{reading.version_no} · sha {reading.sha256[:8]}"
                 )
+            elif editor is not None:
+                word = f"새 판 {reading.version_no}" if reading.accepted else "거절"
+                st.markdown(f"**앱에서 만든 판** · {word} · sha {reading.sha256[:8]}")
+            else:
+                st.markdown(f"**받은 판** · {_staged_word(staged)} · sha {reading.sha256[:8]}")
             if st.button(DISCARD_LABEL, key=DISCARD_BUTTON_KEY, type="tertiary"):
                 STAGED.clear()
                 PREVIEW.clear()
                 st.rerun()
         if not reading.accepted or staged.judgement is None:
             toolbar_clearance()
-            st.dataframe(_problem_frame(staged), hide_index=True, width="stretch", placeholder="")
+            st.dataframe(
+                _problem_frame(staged) if editor is None else _editor_problem_frame(staged, editor),
+                hide_index=True,
+                width="stretch",
+                placeholder="",
+            )
             return
         if not staged.judgement.applicable:
             st.error(staged.judgement.reason, icon=":material/block:")
             return
         st.caption(
             " · ".join(
-                [*_changes_parts(staged.changes), reading.ratio.text(), *_origin_parts(origin)]
+                [
+                    *_changes_parts(staged.changes),
+                    reading.ratio.text(),
+                    *_origin_parts(origin),
+                    *([TURNS_ON_PART] if state.off else []),
+                ]
             )
         )
         if origin is not None and origin.kept:
@@ -600,18 +644,21 @@ def _render_staged(
             key=APPLY_CONFIRM_KEY,
             help=REVERT_CONFIRM_HELP,
         )
+        made_here = origin is not None or editor is not None
+        apply_help = (
+            REVISION_APPLY_HELP
+            if origin is not None
+            else EDITOR_APPLY_HELP
+            if editor is not None
+            else APPLY_HELP
+        )
         if st.button(
-            APPLY_LABEL if origin is None else REVISION_APPLY_LABEL,
+            REVISION_APPLY_LABEL if made_here else APPLY_LABEL,
             key=APPLY_BUTTON_KEY,
             type="primary",
             icon=":material/check:",
             disabled=lock is not None or not confirmed,
-            help=lock
-            or (
-                (APPLY_HELP if origin is None else REVISION_APPLY_HELP)
-                if confirmed
-                else UNCONFIRMED_REASON
-            ),
+            help=lock or (apply_help if confirmed else UNCONFIRMED_REASON),
         ):
             _apply(repository, staged)
 
@@ -777,6 +824,9 @@ def _apply(repository: DuckDBScenarioRepository, staged: StagedPack) -> None:
     who = _who()
     if staged.revision is not None:
         _apply_revision(repository, staged, pack, staged.revision, who)
+        return
+    if staged.editor is not None:
+        _apply_editor(repository, staged, pack, who)
         return
     try:
         if judgement.verdict == JUDGE_RESUME:
@@ -1186,7 +1236,7 @@ def _apply_revision(
     try:
         outcome = (
             None
-            if active is None or active.kind != EXTRA_KIND_REVISION
+            if active is None or not owes_drive(active)
             else _write_active(repository, after, active, staged.fetch.data, who)
         )
     except BOOTSTRAP_ERRORS as exc:
@@ -1199,6 +1249,36 @@ def _apply_revision(
         )
         st.rerun()
     _queue_write_result(head, pack.info.version_no, outcome)
+    st.rerun()
+
+
+def _apply_editor(
+    repository: DuckDBScenarioRepository,
+    staged: StagedPack,
+    pack: ExtraProcessPack,
+    who: str | None,
+) -> None:
+    """편집기 판 「새 판 적용」 — DB 에 갈래 「새 판」 · 원천 자리 「앱 입력」 만 넣는다. S3
+    Drive 에 쓸 몫이 아니라 내보내기가 꽂혀 있어도 쓰지 않는다. 대조 차례는 펼친 때의 것이다
+    (`EditorOrigin.seen_seq`)."""
+    try:
+        repository.apply_editor_extra_process(
+            staged.fetch.data,
+            sha256=staged.reading.sha256,
+            version_no=pack.info.version_no,
+            expected_seq=staged.seen_seq,
+            applied_by=who,
+            process_count=len(pack.processes),
+            row_counts=json.dumps(pack.row_counts(), ensure_ascii=False, sort_keys=True),
+        )
+    except (ExtraProcessMoved, ValueError) as exc:
+        queue_flash(FLASH_KEY, bootstrap_error_message(exc), kind="error", icon=":material/error:")
+    else:
+        STAGED.clear()
+        PREVIEW.clear()
+        # 활성 판이 바뀌어 S3 Drive 낱말(같음 → 옛 판)이 바뀐다 — 다음 회차가 머리를 다시 본다.
+        HEAD_SEEN.clear()
+        queue_flash(FLASH_KEY, f"부대공정 판 {pack.info.version_no} 적용 — 앱 입력")
     st.rerun()
 
 
@@ -1221,6 +1301,38 @@ def _problem_frame(staged: StagedPack) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["규칙", "파일", "행", "칸", "까닭"])
 
 
+def _editor_problem_frame(staged: StagedPack, editor: EditorOrigin) -> pd.DataFrame:
+    """편집기 판의 거절 표 — 판 줄마다 편집기 자리(`locate` — 00 · 파일 전체 거절은 자리 칸이
+    빈다)를 앞에, 판의 파일 · 행을 뒤에 둔다. MI 의 ST 칸은 편집기가 받는 UPEH 칸으로 보인다."""
+    rows = []
+    for problem in staged.reading.problems:
+        place = locate(problem, editor.folded)
+        rows.append(
+            {
+                "규칙": problem.code,
+                "공정": "" if place is None else place.process,
+                "표": "" if place is None else place.table,
+                "양산구분": "" if place is None else place.mass_class,
+                "칸": problem.column if place is None else place.column,
+                "기간": "" if place is None else _period_text(place.start, place.end),
+                "옮긴 줄": place is not None and place.carried,
+                "까닭": problem.reason,
+                "파일": problem.file,
+                "행": problem.row,
+            }
+        )
+    return pd.DataFrame(rows, columns=list(EDITOR_PROBLEM_COLUMNS))
+
+
+def _period_text(start: int | None, end: int | None) -> str:
+    """달 범위 글(그리드 월 칸 머리와 같은 `YY.MM`) — 끝이 열렸으면 「~」 로 끝난다."""
+    if start is None:
+        return ""
+    if end == start:
+        return month_label(start)
+    return f"{month_label(start)} ~ {'' if end is None else month_label(end)}".rstrip()
+
+
 def _masked(name: str | None) -> str:
     """적용한 사람은 앞 두 글자만(값 원문을 넓게 펴지 않는다)."""
     if not name:
@@ -1229,9 +1341,10 @@ def _masked(name: str | None) -> str:
 
 
 def history_frame(state: ExtraProcessState, bases: Mapping[str, str] | None = None) -> pd.DataFrame:
-    """판 이력 표(새 줄이 위) — 판 · 갈래 · 적용 시각 · 적용한 사람(가림) · sha 앞 8자 · 공정 수 ·
-    행 수 · 바탕(새 판이면 시나리오 · 리비전 — `bases` 는 리비전 id → 글) · S3 쓰기(그 판의 마지막
-    쓰기 결과와 시각 — 「앱이 덮음 11-19 01:23」)."""
+    """판 이력 표(새 줄이 위) — 판 · 갈래(편집기 판은 「앱 입력」 — `kind_label`) · 적용 시각 ·
+    적용한 사람(가림) · sha 앞 8자 · 공정 수 · 행 수 · 바탕(「새 판으로」 판이면 시나리오 · 리비전 —
+    `bases` 는 리비전 id → 글, 편집기 판은 바탕 칸이 비어 빈칸) · S3 쓰기(그 판의 마지막 쓰기 결과와
+    시각 — 「앱이 덮음 11-19 01:23」)."""
     rows = []
     for item in reversed(state.history):
         counts = json.loads(item.row_counts) if item.row_counts else {}

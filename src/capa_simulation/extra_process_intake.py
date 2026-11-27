@@ -15,7 +15,8 @@
 판정(`judge_pack` — 바뀐 것 없음 · 다시 켜기 · 적용 · 뒤로 감)과 지금 판과의 차이 · 앞 판 값으로
 되돌리는 칸 수(G12 — `pack_changes`, 계산 없이 센다)를 함께 든다 — 화면은 「적용」 위에 그 값 줄을
 늘 세운다. 판정은 받은 때의 판 이력 마지막 차례 (`seen_seq`)를 들고 있어 적용이 그 차례와
-대조한다(설계 규칙 UI-STA-05).
+대조한다(설계 규칙 UI-STA-05). 편집기가 만든 판(`stage_editor_pack`)도 같은 자리에 실린다 — 차례는
+펼친 때의 것이고(`EditorOrigin`), 거절 표 한 줄은 접은 줄 출처로 편집기 자리를 되짚는다.
 
 **미리보기**(`preview_pack`)는 지금 활성 시나리오의 표에 이 판을 4장 규칙대로 합쳐 본다(저장하지
 않는다) — 공정마다 합침/뺌과 월별 소요대수 · 확보율 · 부하 0 경로 수. 합친 표의 전체 기간 계산은
@@ -30,7 +31,10 @@
 여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지는 정하지 않아 **앱 코드는 꽂지 않는다 — 시험만 꽂는다**.
 꽂힌 것이 없으면 「새 판으로」 는 DB 새 판만 넣고 S3 를 건드리지 않으며, 「S3 에 다시 쓰기」 · 알림
 `EP-05`(덮지 못함)도 서지 않는다 — 원천이 꽂혀 있으면 그 대신 판 어긋남 알림 `EP-06`(「S3 Drive
-파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」)이 선다. 가져오지 않은 새 파일
+파일은 판 n 그대로 — 양식 내려받기로 새 판을 받아 놓으세요」)이 선다. 편집기 판(원천 자리 「앱
+입력」)은 S3 Drive 에 쓸 몫이 아니라(`owes_drive`) 내보내기가 꽂혀 있어도 이 셋 밖이다 — 다만 사람이
+그 판 양식을 그대로 놓아 가져오면 「놓인 파일 같음」 은 적는다(`unplaced` — 기준 ETag 가 옛 파일에
+머물면 그 파일이 「새 파일」 `EP-02` 로 남는다). 가져오지 않은 새 파일
 (`EP-02`)은 원천의 `head()` 만으로 선다(2026-11-19 보드 답 — 내보내기와 묶지 않음). 쓰기
 (`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준 ETag(`ExtraProcessState.baseline` — 앱이
 적용했거나 쓴 마지막 파일)와 견줘 같거나 파일이 없을 때만 덮는다 — 다르면 적용하지 않은 사람
@@ -40,7 +44,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Final, Protocol
@@ -48,6 +52,7 @@ from typing import Final, Protocol
 import pandas as pd
 
 from capa_simulation.persistence.models import (
+    EXTRA_EDITOR_PLACE,
     EXTRA_KIND_OFF,
     EXTRA_KIND_REVISION,
     EXTRA_WRITE_FAILED,
@@ -57,6 +62,7 @@ from capa_simulation.persistence.models import (
     ExtraProcessState,
     ExtraProcessVersion,
 )
+from capa_simulation.services.extra_process_editor import Canonical, Folded
 from capa_simulation.services.extra_process_merge import (
     ActiveExtraPack,
     ExtraMergeReport,
@@ -68,6 +74,7 @@ from capa_simulation.services.extra_process_merge import (
     process_rows_frame,
 )
 from capa_simulation.services.extra_process_pack import (
+    JUDGE_APPLY,
     JUDGE_UNCHANGED,
     ExtraProcessPack,
     PackChanges,
@@ -275,21 +282,23 @@ def head_word(etag: str | None, state: ExtraProcessState, known: Mapping[str, st
     return known.get(etag, NEW_FILE_WORD)
 
 
-def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool:
-    """활성 판을 S3 Drive 에 아직 쓰지 못했으면 그 내용의 마지막 쓰기 기록(쓴 적 없으면 None),
-    쓸 것이 없으면 False.
+def owes_drive(version: ExtraProcessVersion) -> bool:
+    """그 판 줄의 내용을 앱이 S3 Drive 에 써야 하나 — 「새 판으로」 판(갈래 「새 판」 · 원천 자리
+    「리비전」)만이다. 편집기 판(원천 자리 「앱 입력」)은 쓸 몫이 아니다 — `EP-05` · `EP-06` · 「S3
+    에 다시 쓰기」 밖이고, 내보내기가 꽂혀 있어도 쓰지 않는다."""
+    return version.kind == EXTRA_KIND_REVISION and not version.editor_made
 
-    쓸 것은 「새 판으로」 가 만든 내용이다 — 활성 줄이 「새 판」 이거나, 끄기 → 다시 켜기로 같은
-    내용(sha)이 다시 활성이 된 때다. 같은 sha 의 어느 판 줄에든 「씀」 기록이 있으면 S3 에 이미
-    있다(판은 sha 로 견준다) — 사람이 놓은 같은 파일을 적은 줄(`placed_matches`)도 「씀」 이다. 같은
-    sha 의 판 줄이 S3 Drive 에서 가져온 파일의 ETag 를 들고 있어도(끈 동안 그 새 판 파일을 놓아
-    가져와 다시 켬 — `baseline` 이 그 ETag 를 기준으로 삼는 줄) S3 에 이미 있다."""
+
+def _unwritten(
+    state: ExtraProcessState, made: Callable[[ExtraProcessVersion], bool]
+) -> ExtraProcessS3Write | None | bool:
+    """활성 판 내용을 앱이 만들었고(`made` — 같은 sha 의 어느 판 줄이든) S3 Drive 에 그 파일이 아직
+    없으면 그 내용의 마지막 쓰기 기록(쓴 적 없으면 None), 아니면 False."""
     active = state.active
     if active is None or active.sha256 is None:
         return False
     same = {item.seq for item in state.history if item.sha256 == active.sha256}
-    made_here = any(item.kind == EXTRA_KIND_REVISION for item in state.history if item.seq in same)
-    if not made_here:
+    if not any(made(item) for item in state.history if item.seq in same):
         return False
     if any(
         item.s3_etag and item.kind != EXTRA_KIND_OFF for item in state.history if item.seq in same
@@ -301,6 +310,19 @@ def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool
     return writes[-1] if writes else None
 
 
+def pending_write(state: ExtraProcessState) -> ExtraProcessS3Write | None | bool:
+    """활성 판을 S3 Drive 에 아직 쓰지 못했으면 그 내용의 마지막 쓰기 기록(쓴 적 없으면 None),
+    쓸 것이 없으면 False.
+
+    쓸 것은 「새 판으로」 가 만든 내용이다(`owes_drive` — 편집기 판은 들지 않는다) — 활성 줄이 그
+    「새 판」 이거나, 끄기 → 다시 켜기로 같은 내용(sha)이 다시 활성이 된 때다. 같은 sha 의 어느 판
+    줄에든 「씀」 기록이 있으면 S3 에 이미 있다(판은 sha 로 견준다) — 사람이 놓은 같은 파일을 적은
+    줄(`placed_matches`)도 「씀」 이다. 같은 sha 의 판 줄이 S3 Drive 에서 가져온 파일의 ETag 를 들고
+    있어도(끈 동안 그 새 판 파일을 놓아 가져와 다시 켬 — `baseline` 이 그 ETag 를 기준으로 삼는 줄)
+    S3 에 이미 있다."""
+    return _unwritten(state, owes_drive)
+
+
 def needs_write(state: ExtraProcessState) -> bool:
     """활성 판(「새 판으로」 가 만든 내용)을 S3 Drive 에 아직 쓰지 못했나 — 알림 `EP-05` 와 「S3 에
     다시 쓰기」 의 조건(꽂힌 내보내기가 있을 때만 부른다), 내보내기가 없으면 판 어긋남 `EP-06` 의
@@ -308,13 +330,22 @@ def needs_write(state: ExtraProcessState) -> bool:
     return pending_write(state) is not False
 
 
+def unplaced(state: ExtraProcessState) -> bool:
+    """활성 판이 앱이 만든 내용(갈래 「새 판」 — 「새 판으로」 · 편집기)이고 S3 Drive 에 그 파일이
+    아직 없나 — 「놓인 파일 같음」 적기(`placed_matches`)의 조건. 편집기 판은 쓸 몫이 아니어도
+    든다 — 사람이 그 판 양식을 그대로 놓았는데 적지 않으면 기준 ETag 가 옛 파일에 머물러, 다른
+    세션의 머리 보기가 그 파일을 「새 파일」(`EP-02`)로 본다."""
+    return _unwritten(state, lambda item: item.kind == EXTRA_KIND_REVISION) is not False
+
+
 def placed_matches(state: ExtraProcessState, staged: StagedPack) -> bool:
-    """받은 파일이 아직 S3 Drive 에 쓰지 못한 활성 판(「새 판으로」 판)과 같은 내용인가 — 사람이
-    양식 내려받기로 받은 새 판을 놓은 것이다. 그러면 그 파일의 ETag 를 「놓인 파일 같음」 으로 적어
-    판 어긋남(`EP-06`) · 「S3 에 다시 쓰기」 를 풀고 기준을 옮긴다. 보통의 「바뀐 것 없음」(적용한
-    파일을 다시 가져옴)은 아무것도 적지 않는다(설계 3-2). 받은 때의 판정(`judgement`)만 믿지 않고
-    `state` 의 활성 판 sha 와 받은 판 sha 를 다시 견준다 — 적는 쪽이 다시 읽은 판 이력으로 부를 때
-    그사이 다른 판이 활성이 되었으면 적지 않는다."""
+    """받은 파일이 아직 S3 Drive 에 없는 활성 판(앱이 만든 「새 판」 — `unplaced`)과 같은 내용인가
+    — 사람이 양식 내려받기로 받은 그 판을 놓은 것이다. 그러면 그 파일의 ETag 를 「놓인 파일
+    같음」 으로 적어 기준을 옮긴다 — 「새 판으로」 판이면 판 어긋남(`EP-06`) · 「S3 에 다시
+    쓰기」 도 풀린다. 보통의 「바뀐 것 없음」(적용한 파일을 다시 가져옴)은 아무것도 적지
+    않는다(설계 3-2). 받은 때의 판정(`judgement`)만 믿지 않고 `state` 의 활성 판 sha 와 받은 판
+    sha 를 다시 견준다 — 적는 쪽이 다시 읽은 판 이력으로 부를 때 그사이 다른 판이 활성이 되었으면
+    적지 않는다."""
     active = state.active
     judgement = staged.judgement
     etag = staged.fetch.etag
@@ -325,9 +356,10 @@ def placed_matches(state: ExtraProcessState, staged: StagedPack) -> bool:
         and judgement is not None
         and judgement.verdict == JUDGE_UNCHANGED
         and staged.revision is None
+        and staged.editor is None
         and bool(etag)
         and etag != state.baseline[0]
-        and needs_write(state)
+        and unplaced(state)
     )
 
 
@@ -345,9 +377,21 @@ class RevisionOrigin:
 
 
 @dataclass(frozen=True)
+class EditorOrigin:
+    """편집기에서 만든 판의 바탕 — 펼친 때의 판 이력 마지막 차례(적용이 이 차례와 대조한다 — 누른
+    때의 차례를 쓰면 펼친 뒤 남이 적용한 판을 말없이 지운다), 펼친 판의 sha(판이 하나도 없었으면
+    None), 거절 표 한 줄을 편집기 자리로 되짚을 접은 줄(`extra_process_editor.locate`)."""
+
+    seen_seq: int
+    base_sha: str | None
+    folded: Folded
+
+
+@dataclass(frozen=True)
 class StagedPack:
     """받아 검사한 판 — 아직 적용하지 않았다. `revision` 이 있으면 원천 파일이 아니라 저장
-    리비전에서 거꾸로 만든 판이다(「이 리비전 값을 새 판으로」)."""
+    리비전에서 거꾸로 만든 판(「이 리비전 값을 새 판으로」), `editor` 가 있으면 편집기에서 만든
+    판이다."""
 
     fetch: SourceFetch
     reading: PackReading
@@ -357,6 +401,7 @@ class StagedPack:
     # 지금 판 · 앞 판과의 차이(받은 판이 읽혔을 때만).
     changes: PackChanges | None = None
     revision: RevisionOrigin | None = None
+    editor: EditorOrigin | None = None
 
     @property
     def applicable(self) -> bool:
@@ -389,6 +434,35 @@ def stage_pack(
             off=state.off,
         )
     return StagedPack(fetched, reading, judgement, state.last_seq, now, changes)
+
+
+def stage_editor_pack(
+    built: Canonical,
+    origin: EditorOrigin,
+    *,
+    now: datetime,
+    base: ExtraProcessPack | None,
+    before: ExtraProcessPack | None = None,
+) -> StagedPack:
+    """편집기가 만든 판(`extra_process_editor.canonical` — 정규 바이트와 그 읽기)을 받은 판 자리에
+    싣는다(쓰지 않는다). 판정은 「새 판」 하나다 — 판 번호는 편집기가 마지막 내용 판 + 1 로
+    지었고, 그사이 판 이력이 움직였으면 적용이 펼친 차례(`origin.seen_seq`)와 대조해 막는다.
+    차이는 펼친 판(`base` — 활성 판, 끈 동안은 마지막 내용 판)과 견주므로 「뺀 공정」 은 편집기에서
+    지운 공정이고, `before` 는 그 앞 내용 판(G12)이다. 거절이면 판정 · 차이 없이 거절 표만
+    선다."""
+    reading = built.reading
+    pack = reading.pack
+    return StagedPack(
+        fetch=SourceFetch(data=built.data, place=EXTRA_EDITOR_PLACE),
+        reading=reading,
+        judgement=(
+            None if pack is None else PackJudgement(JUDGE_APPLY, f"새 판 {pack.info.version_no}")
+        ),
+        seen_seq=origin.seen_seq,
+        staged_at=now,
+        changes=None if pack is None else pack_changes(pack, base, before),
+        editor=origin,
+    )
 
 
 def previous_content(state: ExtraProcessState) -> ExtraProcessVersion | None:

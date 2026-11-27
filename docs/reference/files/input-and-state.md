@@ -40,18 +40,17 @@
     (`provenance_records` → `create_scenario(extra_process=…)`)을 남긴다. 판이 없거나 꺼졌으면 전과 같다.
 - `src/capa_simulation/extra_process_intake.py` — 부대공정 판 들이기의 화면 밖 몸통(세션 없음). 가져오기 원천은 **꽂는 자리 하나**
   (`ExtraProcessSource` · `install_source` — 받기 `fetch()` · 머리 보기 `head()`)이고 C-DEP 진입 파일만 S3 Drive 원천
-  (`extra_process_drive`)을 꽂는다 — 개발 · 사내 PC · WebIDE(`app.py`)에는 입력 길이 없어 Admin 「부대공정」 의 가져오기 단추가
-  서지 않는다. 받을 것이 아직 없음은 `SourceNotReady`(낱말 · 안내 — 실패 아님)다. 받은 파일 판정(`stage_pack` — 접수
-  검증 + 판 번호 판정 + 지금 판 · 앞 판과의 차이 `changes`, 받은 때의 판 이력 마지막 차례를 든다) · 미리보기 시험 계산
-  (`preview_pack` — 지금 시나리오 표에 이미 든 부대공정을 걷고 합쳐 본다, 저장 안 함, 합친 표의 전체 기간 계산은 한 번 돌려 월별
-  확보율 · 경로 수 · 따라가는 공정에서 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다 — 부하 예외 선언은 부르는 화면이 읽은 판
-  `route_exceptions` 를 받는다) · C-DEP 판정(`production_place` — 동기화
+  (`extra_process_drive`)을 꽂는다 — 개발 · 사내 PC · WebIDE(`app.py`)에는 Admin 「부대공정」 가져오기 단추가 서지 않는다. 받을 것이 아직 없음은 `SourceNotReady`(낱말 · 안내 — 실패 아님)다. 받은 파일 판정(`stage_pack` — 접수
+  검증 + 판 번호 판정 + 지금 판 · 앞 판과의 차이 `changes`, 받은 때의 마지막 차례) · 편집기 판 싣기
+  (`stage_editor_pack` — 판정 「새 판」 · 펼친 판과의 차이, 펼친 차례 · sha · 접은 줄은 `EditorOrigin`) · 미리보기 시험 계산
+  (`preview_pack` — 지금 시나리오 표의 옛 부대공정을 걷고 합쳐 봄 · 저장 안 함, 전체 기간 계산 한 번을 월별 확보율 · 경로
+  수 · 이어받은 대당 Capa 결손 줄 R-02 가 함께 쓴다, 부하 예외 선언은 부르는 화면이 읽은 `route_exceptions`) · C-DEP 판정(`production_place` — 동기화
   `managed` + 기동 때 읽은 S3 접속 정보). **내보내기도 꽂는 자리 하나다**(`ExtraProcessSink` — HEAD · PUT, `install_sink`) — 놓는
   꼴이 낱장 여섯으로 바뀐 뒤(2026-11-20) 여섯을 덮을지 정하지 않아 **앱 코드는 꽂지 않고 시험만 꽂는다**. 쓰기(`write_back`)는 PUT 바로 앞 HEAD 의 ETag 를 기준
   ETag(`ExtraProcessState.baseline`)와 견줘 같거나 파일이 없을 때만 덮고, 다르면 덮지 않는다(적용하지 않은 사람 파일 — G5). 상태 줄
-  낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 「새 판」 쓰기 대기 판정(`needs_write`) ·
-  사람이 놓은 같은 새 판 판정(`placed_matches`)도 둔다.
-  꽂이(HEAD · PUT)가 낸 예외는 `SourceFailure` 로 감싸지 않은 것도 모두 실패 기록이다. HEAD 실패는 단계 HEAD · 낱말 「읽지 못함(까닭)」 이다. PUT 실패는 단계 PUT 이고, 낱말은 HEAD 로 본 파일이 있었으면 「옛 판」, 없었으면 「없음」 이다. 까닭은 `failure_reason` 이 짓는다 — `SourceFailure` 면 그 낱말, 아니면 「예상하지 못한 오류(<예외 종류 이름>)」 이고, 예외 글은 주소 · 열쇠가 섞일 수 있어 싣지 않는다. PUT 이 빈 ETag(공백뿐 포함)를 돌려줘도 실패(단계 PUT · 까닭 `ETAG_MISSING`)다 — 「씀」 기록은 ETag 를 들어야 하고(기준 ETag 가 된다), 저장소(`extra_process_store.append_write`)가 ETag 없는 「씀」 을 거절한다. 부르는 쪽(`_write_active`)은 DB 에 새 판을 넣은 뒤라, 새면 쓰기 기록 없이 화면 오류가 된다(시험 `tests/test_extra_process_revision_admin.py`).
+  낱말(`head_word` — 없음 · 같음 · 옛 판 · 마지막으로 가져온 파일의 낱말 · 새 파일)과 쓰기 대기(`needs_write` — 「새 판으로」 판만,
+  `owes_drive`) · 놓인 같은 판(`placed_matches` — 편집기 판도, `unplaced`) 판정을 둔다.
+  꽂이(HEAD · PUT)의 예외는 `SourceFailure` 가 아니어도 모두 실패 기록이다. HEAD 실패는 단계 HEAD · 낱말 「읽지 못함(까닭)」, PUT 실패는 단계 PUT · 낱말은 HEAD 로 본 파일이 있었으면 「옛 판」, 없었으면 「없음」. 까닭(`failure_reason`)은 `SourceFailure` 면 그 낱말, 아니면 「예상하지 못한 오류(<예외 종류 이름>)」 다(예외 글은 주소 · 열쇠가 섞일 수 있어 싣지 않음). PUT 이 빈 ETag(공백뿐 포함)를 돌려줘도 실패(단계 PUT · `ETAG_MISSING`)다 — 저장소(`extra_process_store.append_write`)가 ETag 없는 「씀」 을 거절한다. 부르는 쪽(`_write_active`)은 DB 새 판 뒤라 새면 쓰기 기록 없이 화면 오류다(시험 `tests/test_extra_process_revision_admin.py`).
 - `src/capa_simulation/extra_process_drive.py` — 부대공정 S3 Drive 가져오기 원천(설계 A6 — 2026-11-20 보드 결정-2 (가) 「낱장 CSV
   여섯」). 버킷 `extra_process/` 아래 정해진 이름 여섯(`00_info.csv` ~ `05_rate_vital.csv`)만 GET · HEAD 로 본다 — 목록(LIST)은 앱
   열쇠로 재지 않은 능력이라 쓰지 않아 다른 이름 · 남는 파일은 보지 않는다(그 장은 「파일 없음」 거절). 받기는 여섯을 받고 머리를
