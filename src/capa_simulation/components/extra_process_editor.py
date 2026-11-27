@@ -319,8 +319,9 @@ CARRY_MARK_WHY: Final = "「옮김」 은 통째 옮김 줄 표지입니다"
 CARRIED_WHY: Final = "통째 옮김({reason}) — 줄 지우기만 됩니다"
 # 건너뛴 새 줄(`held`)의 잠금 — op 를 받는 색인에만 있고 그리지 않는다.
 HELD_WHY: Final = "지운 새 줄 — 되돌리기로만 돌아옵니다"
-# 빈 새 줄 — 채운 새 줄 뒤로 늘 이만큼(업무 키 `n<k>`, 「No.」 칸은 「새 k」).
-FRESH_ROWS: Final = 3
+# 빈 새 줄 — 채운 새 줄 뒤로 늘 이만큼(업무 키 `n<k>`, 「No.」 칸은 「새 k」). 접속 명단과 같은 수 —
+# 붙일 덩어리가 남은 새 줄보다 길면 통째 거절이라 셋이면 공정 넷부터 한 번에 붙지 않았다.
+FRESH_ROWS: Final = 10
 NEW_LINE_PREFIX: Final = "n"
 # 고칠 수 있는 공정 표 칸 → `LineFields` 이름.
 _EDITABLE: Final = {

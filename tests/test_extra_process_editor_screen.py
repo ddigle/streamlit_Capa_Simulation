@@ -36,7 +36,7 @@ from extra_process_fixtures import bump_version, template_files, zip_files
 from streamlit.testing.v1 import AppTest
 from test_extra_process_registration import apply_template
 
-from capa_simulation.components import edit_grid
+from capa_simulation.components import access_list_grid, edit_grid
 from capa_simulation.components import extra_process_editor as editor
 from capa_simulation.components.extra_process_admin import (
     APPLY_BUTTON_KEY,
@@ -275,15 +275,16 @@ def test_an_empty_start_adds_a_process_makes_a_pack_and_applies_it(
     # 공정이 없어도 빈 새 줄이 서 새 공정을 적을 자리가 보인다(UI-LAY-10). 적지 않은 새 줄은
     # 편집기 줄이 아니다(탭 점 없음). 옮김 줄이 없으면 「옮김」 칸도 없다(UI-TXT-08).
     empty = _shell(calls)
-    assert empty["ids"] == ["n1", "n2", "n3"]
-    assert list(shell_frame(empty)["No."]) == ["새 1", "새 2", "새 3"]
+    assert editor.FRESH_ROWS == access_list_grid.FRESH_ROWS, "접속 명단과 같은 수"
+    assert empty["ids"] == _fresh_ids(1)
+    assert list(shell_frame(empty)["No."]) == [f"새 {k}" for k in range(1, 11)]
     assert empty["valueCols"][0] == "공정" and editor.CARRY_COLUMN not in empty["valueCols"]
     assert empty["texts"]["rowRemoveHint"] == editor.ROW_REMOVE_HINT, "저장이 아니라 판 만들기"
     assert not _dirty(app)
 
     app, reference = _add_line(app, calls)
     lines = _shell(calls)
-    assert lines["ids"] == ["n1", "n2", "n3", "n4"], "채운 새 줄 뒤로 늘 빈 새 줄 셋"
+    assert lines["ids"] == _fresh_ids(1, 11), "채운 새 줄 뒤로 늘 빈 새 줄 FRESH_ROWS 개"
     assert _dirty(app), "더한 공정만으로도 펼친 판과 다르다"
     # 참조공정의 조합이 하나면 STEP · MCP 는 양식이다 — 초안에 쓰지 않는다(참조를 되돌리면 걷힌다).
     choice = _context_of(app).references[reference]
@@ -320,7 +321,7 @@ def test_making_an_untouched_pack_says_nothing_changed(database: Path, calls: Ca
     app = _app(database)
     app = _press(app, editor.OPEN_BUTTON_KEY)
     lines = _shell(calls)
-    assert lines["ids"] == ["b1", "b2", "n1", "n2", "n3"] and lines["locks"]
+    assert lines["ids"] == ["b1", "b2", *_fresh_ids(1)] and lines["locks"]
     assert not _dirty(app), "견본 두 공정은 통째 옮김(잠김) · 빈 새 줄은 줄이 아니다"
     assert editor.CARRY_COLUMN in lines["valueCols"], "옮김 줄이 있을 때만 「옮김」 칸"
 
@@ -1165,7 +1166,7 @@ def test_clearing_a_filled_new_line_leaves_no_blank_drafts_and_undo_brings_it_ba
 
     app = _send(app, calls, {"op": "clear", "rows": ["n1"], "cols": columns})
     assert not _line_draft(app, "n1") and not _dirty(app)
-    assert _shell(calls)["ids"] == ["n1", "n2", "n3"]
+    assert _shell(calls)["ids"] == _fresh_ids(1), "값 표 초안이 없으면 번호째 빈 새 줄"
     feed = last(calls, edit_grid.feed_key(editor.HOST))
     assert not feed["counts"]["cells"], "「적용 전」 에 세지 않음"
 
