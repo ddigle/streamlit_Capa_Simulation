@@ -459,13 +459,15 @@ def pack_rows(pack: ExtraProcessPack) -> dict[str, list[list[str]]]:
 
 
 def info_rows(info: PackInfo) -> list[list[str]]:
-    """판 기록(00) 다섯 줄 — 작성시각 · 작성자 · 메모는 가드 없이 쓴다(읽기가 벗기는 꼴 그대로)."""
+    """판 기록(00) 다섯 줄 — 작성시각 · 작성자 · 메모는 다른 글자 칸과 같은 Excel 가드
+    (`text_cell`)를 씌운다(편집기 00 메모는 화면 자유 글이다). 읽기(`_clean`)가 벗겨 같은 글로
+    돌아온다."""
     return [
         ["형식판", str(info.format_version)],
         ["판", str(info.version_no)],
-        ["작성시각", info.written_at],
-        ["작성자", info.author],
-        ["메모", info.memo],
+        ["작성시각", text_cell(info.written_at)],
+        ["작성자", text_cell(info.author)],
+        ["메모", text_cell(info.memo)],
     ]
 
 

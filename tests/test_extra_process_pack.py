@@ -9,7 +9,11 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import zipfile
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 from extra_process_fixtures import (
@@ -25,6 +29,7 @@ from extra_process_fixtures import (
 
 from capa_simulation.services import extra_process_pack as pack_module
 from capa_simulation.services.extra_process_pack import (
+    INFO_FILE,
     JUDGE_APPLY,
     JUDGE_BACKWARD,
     JUDGE_RESUME,
@@ -386,6 +391,48 @@ def test_the_writer_bytes_of_the_template_and_the_empty_form_stay_pinned() -> No
     assert pack_sha256(template_zip()) == (
         "86455dc42cebf0a27f17f4c1fc5a41c03466dea0241234c0d6c54471eac982b7"
     )
+
+
+def _info_cells(data: bytes) -> dict[str, str]:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        text = archive.read(INFO_FILE).decode("utf-8-sig")
+    return {row[0]: row[1] for row in list(csv.reader(io.StringIO(text)))[1:]}
+
+
+@pytest.mark.parametrize(
+    "memo", ["=SUM(1)", "+DEMO", "@DEMO", "-DEMO", "TRUE", "2026-11-27", "010"]
+)
+def test_the_info_text_cells_carry_the_excel_guard_and_read_back_plain(memo: str) -> None:
+    """G8 — 00 의 작성자 · 메모(편집기 화면 자유 글)도 다른 글자 칸과 같은 가드를 쓴다. 읽기가 벗겨
+    같은 글로 돌아오고, 다시 쓰면 같은 바이트다(고정점)."""
+    reading = read_pack_files(template_files())
+    assert reading.pack is not None
+    pack = replace(reading.pack, info=replace(reading.pack.info, author=memo, memo=memo))
+
+    written = pack_to_zip(pack)
+    cells = _info_cells(written)
+    again = read_pack_zip(written)
+
+    assert cells["메모"] == f'="{memo}"' and cells["작성자"] == f'="{memo}"'
+    assert cells["작성시각"] == pack.info.written_at, "ISO 작성시각은 가드가 서지 않는다"
+    assert again.pack is not None
+    assert (again.pack.info.author, again.pack.info.memo) == (memo, memo)
+    assert pack_to_zip(again.pack) == written
+
+
+def test_a_guard_looking_info_memo_reaches_a_fixed_point_in_one_rewrite() -> None:
+    """S3 꼴 — 이미 가드처럼 생긴 메모(`="=X"`)는 따옴표가 있어 가드가 서지 않고, 읽으면 벗겨진 `=X`
+    가 다음 쓰기에서 가드를 받는다 — 한 번 더 쓰면 같은 바이트다."""
+    reading = read_pack_files(template_files())
+    assert reading.pack is not None
+    pack = replace(reading.pack, info=replace(reading.pack.info, memo='="=DEMO"'))
+
+    first = read_pack_zip(pack_to_zip(pack))
+    assert first.pack is not None and first.pack.info.memo == "=DEMO"
+    second = pack_to_zip(first.pack)
+    assert _info_cells(second)["메모"] == '="=DEMO"'
+    third = read_pack_zip(second)
+    assert third.pack is not None and pack_to_zip(third.pack) == second
 
 
 def test_judge_pack_tells_unchanged_resume_apply_and_backward() -> None:
