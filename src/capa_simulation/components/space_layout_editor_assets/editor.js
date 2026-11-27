@@ -27,6 +27,8 @@ export default function (component) {
     panels: null, narrowOpen: null, panelLast: null, lock: false, lockH: null,
     // 서식 복사·붙여넣기 — 든 붓(`paint` = {clip, sticky}), 담은 서식(`formatClip` — 회차마다 저장소에서 다시 읽음), 붙일 것 체크.
     paint: null, formatClip: null, formatParts: null,
+    // 「설비 찾기」 맞춤을 마친 토큰(`applyFocus` — 이 마운트에서 토큰마다 한 번).
+    focusSeen: new Set(),
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -9978,6 +9980,40 @@ export default function (component) {
     event.stopPropagation()
   }
 
+  // ---------------------------------------------------------------- 「설비 찾기」 맞춤(층 도면 — 토큰마다 한 번)
+  // FAB 전체 「설비 찾기」 로 연 층의 첫 회차에 data `focus`({id, token} — epoch 밖, 파이썬 `_clean_focus`)가 온다. 무대 크기를 잰
+  // 뒤(`S.onResize` 다음 — 새 층은 위에서 전체 보기로 섰다) 그 호기를 고르고 둘레가 보이게 맞춘다 — 배율은 「호기 정보」 목록 줄
+  // 찾아가기와 같은 LIST_ROW_ZOOM 까지(설계 규칙 UI-NAV-03)이고 모듈 묶음이면 이 층 도면에 선 묶음 전체(`expanded`)다. 창이 그 호기를
+  // 덮으면 목록 줄 찾아가기처럼 덮지 않은 띠로 민다. 같은 토큰은 다시 맞추지 않는다(뒤 회차 · 같은 epoch 다시 그리기 — 파이썬도 연
+  // 첫 회차에만 싣는다). 이 도면에 없는 id 는 조용히 둔다 — 도면에 없는 까닭은 파이썬이 층을 열 때 알림창으로 말한다. 편집의 미배치
+  // 칸 호기는 고르기만 한다(칩이 고른 표지). 고른 호기를 서버로 보내지 않는다 — 필요 단축 칸은 같은 콜백이 파이썬에서 쥐었다(`notePick`
+  // 규칙 그대로).
+  // <search-focus>
+  function focusPlan(focus, seen, known) {
+    if (!focus || typeof focus !== 'object') return null
+    const id = typeof focus.id === 'string' ? focus.id : ''
+    const token = typeof focus.token === 'string' ? focus.token : ''
+    if (!id || !token || seen.has(token)) return null
+    return { id, token, known: Boolean(known(id)) }
+  }
+  // </search-focus>
+  function applyFocus() {
+    if (FAB) return
+    const plan = focusPlan(data.focus, S.focusSeen, (id) => S.items.has(id) && isUnit(S.items.get(id)))
+    if (!plan) return
+    S.focusSeen.add(plan.token)
+    if (!plan.known) return
+    const item = S.items.get(plan.id)
+    select(plan.id)
+    if (!onCanvas(item)) return
+    zoomToBox(bbox(expanded([item])), LIST_ROW_ZOOM)
+    const rect = S.groups.get(item.id)?.querySelector('.sle-rect')?.getBoundingClientRect()
+    const shift = rect && sheetBox && !sheetBox.hidden && S.sheetWin && !S.sheetWin.min
+      ? clearOfSheet(stage.getBoundingClientRect(), sheetBox.getBoundingClientRect(), rect)
+      : null
+    if (shift) panBy(shift.dx * unitsPerPx(), shift.dy * unitsPerPx())
+  }
+
   // ---------------------------------------------------------------- 크기 바뀜
   // 관찰자는 한 번만 만든다(S.ro). 실행마다 새로 정의되는 S.onResize 를 부르므로 첫 실행의 낡은 값(데이터·
   // 팔레트·VIEW)을 쥐지 않는다. rAF 로 묶고, 바뀐 px 크기로 viewBox 비율과 화면 px 에 기대는 값(손잡이·글자
@@ -10011,6 +10047,7 @@ export default function (component) {
   }
   // 이번 실행에서 무대 크기가 달라졌으면(첫 실행·열 폭 변화) 바로 맞춘다. 고정 중이면 위 칸이 바뀌었을 수 있어 다시 맞춘다.
   S.onResize()
+  applyFocus()
   updateStatus()
   showLockMark()
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.

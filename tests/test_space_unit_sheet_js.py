@@ -743,7 +743,8 @@ def test_a_press_on_a_spot_that_takes_no_focus_keeps_the_keys_in_the_editor() ->
 
 def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_most() -> None:
     """목록 줄 누르기(`goToUnit`)는 그 호기로 옮기며 300% 까지만 확대한다(2026-11-04 Space 결정
-    보드 답 — 800% 는 둘레 호기가 거의 안 보였다). 「고른 곳 보기」 는 그대로 최대(800%)다."""
+    보드 답 — 800% 는 둘레 호기가 거의 안 보였다). 「고른 곳 보기」 는 그대로 최대(800%)다. FAB
+    「설비 찾기」 로 연 층의 맞춤(`applyFocus`)도 목록 줄과 같은 300% 다."""
     assert "  const MAX_ZOOM = 8\n" in JS and "  const LIST_ROW_ZOOM = 3\n" in JS
     fit = JS[JS.index("  function zoomToBox(") : JS.index("  function panBy(")]
     assert "function zoomToBox(box, cap = MAX_ZOOM) {" in fit
@@ -752,7 +753,8 @@ def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_mo
         JS.index("  function goToUnit(id) {") : JS.index("    if (item && isUnit(item) && !VIEW")
     ]
     assert "zoomToBox(bbox(VIEW ? [item] : expanded([item])), LIST_ROW_ZOOM)" in go
-    assert JS.count("zoomToBox(") == 3
+    assert "zoomToBox(bbox(expanded([item])), LIST_ROW_ZOOM)" in JS
+    assert JS.count("zoomToBox(") == 4
     assert "if (list.length) zoomToBox(bbox(list))\n" in JS
 
 
