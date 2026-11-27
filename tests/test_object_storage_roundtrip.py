@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import json
+import os
 import re
 import sys
 import tempfile
@@ -19,16 +20,20 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 from object_store_fakes import (
     Failure,
     FakeStore,
+    FileRefusals,
     add_row,
     fake_client,
     fake_settings,
     row_count,
     seed_pair,
+    watch_file_refusals,
+    windows_refusal,
 )
 
 from capa_simulation import settings as app_settings
@@ -78,6 +83,12 @@ def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         tmp_path=tmp_path,
         temp=temp,
     )
+
+
+@pytest.fixture()
+def refusals(monkeypatch: pytest.MonkeyPatch) -> FileRefusals:
+    """파일 거절 기록(`watch_file_refusals`) — 단언 글에 `str()` 로 싣는다."""
+    return watch_file_refusals(monkeypatch)
 
 
 def _run(harness: SimpleNamespace, *argv: str) -> int:
@@ -592,21 +603,35 @@ def test_generations_on_an_empty_remote_says_so(
     assert "비어 있음" in capsys.readouterr().out
 
 
-def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
-    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """이관 뒤에는 시작마다 세대가 늘어 늘 이 꼴이다. `resolve` 는 할 일이 없다."""
-    assert _run(harness, "init") == 0
+def _init_then_a_boot_fence(harness: SimpleNamespace, refusals: FileRefusals) -> None:
+    """init 뒤 시작 받기가 펜스(seq 2)를 내고, 이 PC 의 세대 파일은 init 때로 되돌린다.
+
+    이 꼴의 시험은 단언 글에 파일 거절 기록을 싣는다 — 실패 블록의 첫 `E` 줄이 지우기 · 바꿔치기 ·
+    읽기 가운데 어느 동작의 어느 파일이 거절됐는지 가른다(없으면 `file refusals: none`). 종료 코드 ·
+    본문을 먼저 받아 단언하는 것은 `+ where` 줄에 하네스(PC 계정이 든 경로)가 찍히지 않게 하려는
+    것이다."""
+    code = _run(harness, "init")
+    assert code == 0, str(refusals)
     state = sync_state.read_generation(harness.paths.generation)
     harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
     sync_state.write_generation(harness.paths.generation, state)
+    origin = harness.store.head_pointer()["origin"]
+    assert origin == "boot", str(refusals)
+
+
+def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str], refusals: FileRefusals
+) -> None:
+    """이관 뒤에는 시작마다 세대가 늘어 늘 이 꼴이다. `resolve` 는 할 일이 없다."""
+    _init_then_a_boot_fence(harness, refusals)
     capsys.readouterr()
 
-    assert _run(harness, "status") == 0
+    code = _run(harness, "status")
+    assert code == 0, str(refusals)
 
     printed = capsys.readouterr().out
-    assert "fetch-copy" in printed
-    assert "resolve" not in printed
+    assert "fetch-copy" in printed, str(refusals)
+    assert "resolve" not in printed, str(refusals)
 
 
 def _gets(harness: SimpleNamespace) -> int:
@@ -614,38 +639,39 @@ def _gets(harness: SimpleNamespace) -> int:
 
 
 def test_status_names_a_start_fence_head_after_its_number(
-    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str], refusals: FileRefusals
 ) -> None:
     """이관 직후 C-DEP 가 받기 끝에 낸 펜스(seq 2)는 저장이 아니다(사내 리뷰 202611131000 정할 것
     7 (가)). 원격 줄과 요약 칸의 번호 뒤에 꼬리를 달고, 압축본이 읽는 `원격 seq <n>` 꼴은 그대로다.
     앱 저장이 그 위로 오면 꼬리가 없고, HEAD 포인터를 받지 못하면 꼬리 없이 통과한다."""
-    assert _run(harness, "init") == 0
-    state = sync_state.read_generation(harness.paths.generation)
-    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
-    sync_state.write_generation(harness.paths.generation, state)
+    _init_then_a_boot_fence(harness, refusals)
     capsys.readouterr()
     gets_before = _gets(harness)
 
-    assert _run(harness, "status") == 0
+    code = _run(harness, "status")
+    assert code == 0, str(refusals)
     lines = capsys.readouterr().out.splitlines()
     # 더 드는 것은 HEAD 포인터 받기 하나뿐이다.
-    assert _gets(harness) - gets_before == 1
-    assert "원격 : seq 2 (시작 펜스)" in lines
+    gets = _gets(harness) - gets_before
+    assert gets == 1, str(refusals)
+    assert "원격 : seq 2 (시작 펜스)" in lines, str(refusals)
     assert lines[-1].startswith(
         "전송용 요약: status 통과; 종료 0; 원격 seq 2 (시작 펜스); 로컬 seq 1;"
-    )
+    ), str(refusals)
 
     harness.store.failures.append(Failure("get-object", times=3))
-    assert _run(harness, "status") == 0
+    code = _run(harness, "status")
+    assert code == 0, str(refusals)
     printed = capsys.readouterr().out
-    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed
+    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed, str(refusals)
     harness.store.failures.clear()
 
     _another_pod_republishes(harness)
-    assert _run(harness, "status") == 0
+    code = _run(harness, "status")
+    assert code == 0, str(refusals)
     printed = capsys.readouterr().out
-    assert "원격 : seq 3\n" in printed and "시작 펜스" not in printed
-    assert "; 원격 seq 3; 로컬 seq 1;" in printed.splitlines()[-1]
+    assert "원격 : seq 3\n" in printed and "시작 펜스" not in printed, str(refusals)
+    assert "; 원격 seq 3; 로컬 seq 1;" in printed.splitlines()[-1], str(refusals)
 
 
 def _without_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
@@ -678,26 +704,96 @@ def test_status_on_an_unreadable_head_pointer_drops_only_the_fence_tail(
     harness: SimpleNamespace,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    refusals: FileRefusals,
     damage: Callable[[dict[str, object], pytest.MonkeyPatch], None],
 ) -> None:
     """꼬리는 덤이다 — 세대 번호 · 판정은 목록에서 이미 났다. HEAD 포인터 본문이 깨졌거나(파서가
     KeyError · TypeError 로 낸다) 받을 작업 폴더를 못 만들어도 status 는 꼬리 없이 종료 0 이다."""
-    assert _run(harness, "init") == 0
-    state = sync_state.read_generation(harness.paths.generation)
-    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
-    sync_state.write_generation(harness.paths.generation, state)
+    _init_then_a_boot_fence(harness, refusals)
     head_key = harness.store.pointer_keys()[0]
     payload = json.loads(harness.store.objects[head_key].decode("utf-8"))
-    assert payload["origin"] == "boot"
     damage(payload, monkeypatch)
     harness.store.objects[head_key] = json.dumps(payload).encode("utf-8")
     capsys.readouterr()
 
-    assert _run(harness, "status") == 0
+    code = _run(harness, "status")
+    assert code == 0, str(refusals)
 
     printed = capsys.readouterr().out
-    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed
-    assert printed.splitlines()[-1].startswith("전송용 요약: status 통과; 종료 0; 원격 seq 2;")
+    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed, str(refusals)
+    summary = printed.splitlines()[-1]
+    assert summary.startswith("전송용 요약: status 통과; 종료 0; 원격 seq 2;"), str(refusals)
+
+
+# Windows 꼴 경로 — 거절 글이 실은 경로의 앞부분이 기록에 새지 않는지 본다.
+WINDOWS_DATA = "C:\\Users\\demo.hidden\\capa\\data"
+
+
+def _refuse_upload_unlink(monkeypatch: pytest.MonkeyPatch) -> None:
+    unlink = Path.unlink
+
+    def held(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith("upload-"):
+            raise windows_refusal(32, f"{WINDOWS_DATA}\\{self.name}")
+        unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+
+
+def _refuse_generation_replace(monkeypatch: pytest.MonkeyPatch) -> None:
+    replace = os.replace
+
+    def held(source: str, target: str) -> None:
+        if Path(target).name == sync_state.GENERATION_FILENAME:
+            names = (f"{WINDOWS_DATA}\\{Path(path).name}" for path in (source, target))
+            raise windows_refusal(5, *names)
+        replace(source, target)
+
+    monkeypatch.setattr(os, "replace", held)
+
+
+def _refuse_download_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    path_open = Path.open
+
+    def held(self: Path, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+        if self.name.startswith("download-") and not set(mode) & set("wax+"):
+            raise windows_refusal(32, f"{WINDOWS_DATA}\\{self.name}")
+        return path_open(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", held)
+
+
+@pytest.mark.parametrize(
+    ("refuse", "expected"),
+    [
+        (_refuse_upload_unlink, r"unlink upload-[0-9a-f]+\.json \[WinError 32\]"),
+        (
+            _refuse_generation_replace,
+            r"replace sync_generation\.json\.\S+ -> sync_generation\.json \[WinError 5\]",
+        ),
+        (_refuse_download_read, r"read download-[0-9a-f]+\.json \[WinError 32\]"),
+    ],
+    ids=["unlink", "replace", "read"],
+)
+def test_a_refused_file_call_names_itself_on_the_first_e_line(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    refuse: Callable[[pytest.MonkeyPatch], None],
+    expected: str,
+) -> None:
+    """Windows 꼴 거절(WinError 32 · 5)을 기록 장치 아래에 꽂으면, 같은 꼴 시험의 단언 글 첫 줄이
+    동작 · 파일 이름 · 번호를 싣는다. 지우기 · 바꿔치기는 init 줄에서, 시작 받기가 삼킨 읽기는
+    `origin` 줄에서 깨진다. 경로 앞부분(거절 글의 Windows 꼴 · 이 PC 의 임시 경로)은 싣지 않는다."""
+    refuse(monkeypatch)
+    refusals = watch_file_refusals(monkeypatch)
+
+    with pytest.raises(AssertionError) as caught:
+        _init_then_a_boot_fence(harness, refusals)
+
+    first = str(caught.value).splitlines()[0]
+    assert first.startswith("file refusals: ") and re.search(expected, first), first
+    assert first.isascii(), first
+    assert "Users" not in first and str(harness.tmp_path) not in first, first
 
 
 def test_resolve_refuses_a_generation_whose_snapshot_is_gone(
