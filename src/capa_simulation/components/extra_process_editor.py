@@ -249,13 +249,17 @@ MOVED_VERDICT: Final = "moved"
 MOVED_REASON: Final = (
     "펼친 뒤 다른 판이 들어와 적용할 수 없습니다 — 「작성 닫기」 뒤 다시 펼쳐 고칩니다"
 )
-STALE_STAGED: Final = "판을 만든 뒤 표가 바뀌어 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
+STALE_STAGED: Final = (
+    "판을 만든 뒤 표가 바뀌어 받은 판을 걷었습니다 — 「판 만들기」 를 다시 누릅니다"
+)
 # 탭 점 풍선(`page_tabs.page_unsaved_marks`).
 UNSAVED_NOTE: Final = "적용하지 않은 부대공정 작성"
 CHECK_LABEL: Final = "확인할 칸 {n}"
 # 「까닭」 을 앞에 — 좁은 팝오버에서도 먼저 보이게(표 폭은 `CHECK_WIDTH`).
 CHECK_COLUMNS: Final = ("공정", "까닭", "표", "칸", "달")
 CHECK_WIDTH: Final = 640
+# 후보 밖 참조 글이 후보의 표시명일 때 R-02 까닭 끝(`_labelled_source`).
+LABEL_HINT: Final = " · 표시명 — 원본은 「{name}」"
 # 기준 데이터 알림 코드 → 그 알림이 짚는 표(「표」 칸에는 표 이름만 — 등록 규칙 코드는 「까닭」
 # 앞머리).
 WARNING_TABLES: Final = {
@@ -1446,18 +1450,38 @@ def check_frame(model: EditorModel, context: EditorContext) -> pd.DataFrame:
                 "까닭": problem.reason,
             }
         )
+    labels: ProcessLabels | None = None
     for warning in editor_warnings(model, context):
         rule = warning.code.startswith("R-")
+        reason = f"{warning.code} · {warning.text}" if rule else warning.text
+        line = None if warning.line_id is None else model.line(warning.line_id)
+        if warning.code == "R-02" and line is not None:
+            labels = get_process_labels() if labels is None else labels
+            source = _labelled_source(labels, context, line.fields.reference)
+            reason += "" if source is None else LABEL_HINT.format(name=source)
         rows.append(
             {
                 "공정": "" if warning.line_id is None else names.get(warning.line_id, ""),
-                "까닭": f"{warning.code} · {warning.text}" if rule else warning.text,
+                "까닭": reason,
                 "표": WARNING_TABLES.get(warning.code, ""),
                 "칸": "",
                 "달": "",
             }
         )
     return pd.DataFrame(rows, columns=list(CHECK_COLUMNS))
+
+
+def _labelled_source(labels: ProcessLabels, context: EditorContext, reference: str) -> str | None:
+    """후보 밖 참조공정 글이 어떤 후보의 표시명(또는 「표시명 (원본)」 — 대소문자 무시)이면 그
+    원본 — 표시명을 적거나 붙인 실수를 R-02 까닭 끝에 짚는다(AGENTS 8장 — 막지는 않는다, G6)."""
+    text = reference.strip().casefold()
+    if not text or reference_choice(context, reference) is not None:
+        return None
+    for name in context.references:
+        label = labels.label(name)
+        if label != name and text in {label.casefold(), _reference_label(labels, name).casefold()}:
+            return name
+    return None
 
 
 def _problem_column(problem: InputProblem) -> str:

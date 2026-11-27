@@ -1017,6 +1017,15 @@ def test_the_reference_candidates_show_the_display_name_and_put_the_original(
     app = _send(app, calls, _write(["n1"], ["공정"], [[rest[0]]]))
     assert rest[0] not in _suggested(calls), "편집기 줄 이름은 참조공정 후보 밖"
 
+    # 참조공정 칸에 표시명(목록에서 고르지 않고 친 글 · 붙인 글)을 적으면 막지 않고 R-02 까닭 끝에
+    # 원본을 짚는다(AGENTS 8장).
+    for typed in ("DEMO 표시명", f"demo 표시명 ({first})"):
+        app = _send(app, calls, _write(["n1"], ["참조공정"], [[typed]]))
+        hint = editor.LABEL_HINT.format(name=first)
+        assert any(
+            text.startswith("R-02 ") and text.endswith(hint) for text in _check_table(app)["까닭"]
+        )
+
 
 def test_the_follow_popover_lists_each_line_with_its_pair_and_follow_counts(
     database: Path, calls: Calls
