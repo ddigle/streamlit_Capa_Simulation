@@ -96,12 +96,15 @@ function listFilter(items, query) {
 }
 
 // 글 + 후보 칸의 후보(껍데기 suggest[칸 이름] = {items, by, table} — 항목은 글 하나 또는 [보이는 글, 넣을 글]) → [{label, value}].
-// by 가 있으면 같은 줄 그 칸의 지금 글(byText — 앞뒤 공백 걷음)로 table 에서 고르고, 그 글이 table 에 없으면 items 다.
+// by 가 있으면 같은 줄 그 칸의 지금 글(byText — 앞뒤 공백 걷음)로 table 에서 고르고(같은 글이 없으면 대소문자를 무시한 첫 열쇠 —
+// 부대공정 참조공정 찾기와 같은 차례), 그런 열쇠도 없으면 items 다.
 function suggestItems(spec, byText) {
   if (!spec) return []
   const table = spec.table || {}
-  const key = spec.by ? String(byText || '').replace(STRIP_EDGES, '') : ''
-  const list = spec.by && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : spec.items || []
+  const text = spec.by ? String(byText || '').replace(STRIP_EDGES, '') : ''
+  const folded = text.toLowerCase()
+  const key = Object.prototype.hasOwnProperty.call(table, text) ? text : Object.keys(table).find((name) => name.toLowerCase() === folded)
+  const list = spec.by && key !== undefined ? table[key] : spec.items || []
   return list.map((item) => (Array.isArray(item) ? { label: String(item[0]), value: String(item[1]) } : { label: String(item), value: String(item) }))
 }
 
@@ -328,12 +331,14 @@ function rowsChoices(S) {
 
 // 목록이 선 칸 편집기의 키 — ↑ ↓ 는 거른 목록 안에서 강조를 옮기고(끝에서 돌아감, 강조가 없으면 ↓ 첫 · ↑ 끝), Enter · Tab 은
 // 강조한 항목을 넣은 뒤 core 의 확정 · 옮김으로 넘긴다(강조가 없으면 친 글 그대로). 칸을 떠나는 blur 는 친 글 그대로다(core).
+// 후보가 있는 칸에서 친 글이 목록을 다 걸렀으면 ↑ ↓ 는 아무 일도 하지 않는다 — 글자로 연 칸의 화살표(확정 + 옮김)로 넘기지 않는다.
 function rowsKey(S, event) {
   const P = S.edit ? S.rows.pick : null
-  if (!P || P.edit !== S.edit || !P.shown.length) return false
+  if (!P || P.edit !== S.edit || !P.all.length) return false
   const key = event.key
   if (key === 'ArrowDown' || key === 'ArrowUp') {
     event.preventDefault()
+    if (!P.shown.length) return true
     const n = P.shown.length
     const step = key === 'ArrowDown' ? 1 : n - 1
     P.on = P.on < 0 ? (step === 1 ? 0 : n - 1) : (P.on + step) % n

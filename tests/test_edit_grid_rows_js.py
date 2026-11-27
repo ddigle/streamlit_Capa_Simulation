@@ -842,6 +842,66 @@ def test_a_rerun_with_the_same_candidates_keeps_the_open_list() -> None:
     }
 
 
+EDGE_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const labels = () => (list.hidden ? null : list.children.map((n) => n.textContent))
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  // 후보가 있는 칸을 글자로 열고 맞는 후보가 없게 치면 ↑ ↓ 는 칸을 넘기지 않는다.
+  setRange(S, { r: 2, c: 2 }, { r: 2, c: 2 })
+  key(scroller, 'x')
+  R.empty = labels()
+  key(ed(), 'ArrowDown')
+  key(ed(), 'ArrowUp')
+  R.arrow = {
+    edit: Boolean(S.edit), value: ed().value, at: [S.anchor.r, S.anchor.c], ops: S.box.ops.length,
+  }
+  // 대소문자만 다른 참조 글도 딸린 후보를 고른다(파이썬 참조공정 찾기와 같은 차례).
+  type('demo_ref_002')
+  key(ed(), 'Enter')
+  setRange(S, { r: 2, c: 3 }, { r: 2, c: 3 })
+  key(scroller, 'Enter')
+  R.folded = [S.box.ops[S.box.ops.length - 1].values, labels()]
+  key(ed(), 'Escape')
+  // 후보가 없는 칸(표에 없는 참조의 딸린 칸 — 기본 후보도 없는 껍데기)은 글 칸처럼 화살표가
+  // 확정 + 옮김이다.
+  setRange(S, { r: 1, c: 3 }, { r: 1, c: 3 })
+  key(scroller, 'Z')
+  key(ed(), 'ArrowDown')
+  R.plain = { edit: Boolean(S.edit), last: S.box.ops[S.box.ops.length - 1].values }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_list_arrows_stay_in_an_emptied_list_and_case_folded_keys_pick_candidates() -> None:
+    """후보가 있는 칸에서 친 글이 목록을 다 거르면 ↑ ↓ 는 아무 일도 하지 않는다(전에는 글자로 연
+    칸의 화살표라 친 글을 확정하고 아래 줄로 갔다). 딸린 후보는 그 줄 칸 글과 같은 열쇠가 없으면
+    대소문자를 무시해 찾는다 — 파이썬 `reference_choice` 가 양식을 채우는데 목록만 비지 않게. 후보가
+    하나도 없는 칸은 지금처럼 글 칸이다."""
+    shell, index = _suggest_shell("표시")
+    shell["suggest"]["STEP_MCP"]["items"] = []
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, EDGE_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["empty"] is None
+    assert result["arrow"] == {"edit": True, "value": "x", "at": [2, 2], "ops": 0}
+    assert result["folded"] == [[["demo_ref_002"]], ["S2/M0", "S2/M1"]]
+    assert result["plain"] == {"edit": False, "last": [["Z"]]}
+
+
 def _rebased_shell(
     key: str, *, form: str | None, fresh: int
 ) -> tuple[dict[str, Any], eg.GridIndex]:

@@ -488,7 +488,7 @@
     칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
     붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(지울 수 없는
     줄은 빼고 까닭 풍선), 지운 줄 지움선 · 잠긴 칸 바탕 + 까닭 풍선(`title`) · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 · 글 + 후보 칸
-    편집 중 칸 아래 목록(친 글로 거름 · ↑ ↓ 강조 · 높이 상한 안 굴림 — `listFilter`, 후보는 껍데기 `suggest` — `baseKey` 밖), 칸마다 오류 글(`colErrors`), 붙일 덩어리가 표 끝(빈 새 줄)을
+    편집 중 칸 아래 목록(친 글로 거름 · ↑ ↓ 강조 — 다 걸러지면 칸을 넘기지 않음 · 높이 상한 안 굴림 — `listFilter`, 후보는 껍데기 `suggest` — `baseKey` 밖, 딸린 후보 열쇠는 같은 글이 없으면 대소문자 무시), 칸마다 오류 글(`colErrors`), 붙일 덩어리가 표 끝(빈 새 줄)을
     넘으면 잘라 붙이지 않고 통째로 거절하는 `pasteGuard`(글 `freshShort`)다. 표 없는 껍데기와 줄 규칙 표를 오가는
     호스트는 `render_edit_grid(rows=True)` 로 늘 이 등록이다(같은 key 의 등록이 바뀌면 옛 JS 가 그린다). 변경 목록은 지운 줄을 맨 앞 「줄 지움」 으로 싣고 ✕ 가
     `restore` 다. 시험 `tests/test_edit_grid_rows_js.py`. 시험 대역은 `_GRID_ROWS` 도 바꾼다.
