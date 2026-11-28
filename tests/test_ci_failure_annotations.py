@@ -2,9 +2,10 @@
 
 """`scripts/ci_failure_annotations.py` 의 계약.
 
-작업 로그는 관리자 권한이라 정본 개발 세션이 읽지 못하고 공개로 읽히는 것은 check-run 주석뿐이다.
-주석 줄은 GitHub 명령 꼴(`::error title=…::…`)이라 값 이스케이프가 틀리면 줄이 끊기거나 속성이
-갈린다 — 여기서 러너가 읽는 꼴로 되읽어 본다. 견본은 pytest 8 의 junit 꼴을 본뜬 합성 이름뿐이다.
+작업 로그는 저장소 관리자 권한이라 정본 개발 세션이 읽지 못하고 공개로 읽히는 것은 check-run
+주석뿐이다. 주석 줄은 GitHub 명령 꼴(`::error title=…::…`)이라 값 이스케이프가 틀리면 줄이
+끊기거나 속성이 갈린다 — 여기서 러너가 읽는 꼴로 되읽어 본다. 견본은 pytest 8 의 junit 꼴을 본뜬
+합성 이름뿐이다.
 """
 
 from __future__ import annotations

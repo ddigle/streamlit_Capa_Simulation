@@ -2,9 +2,10 @@
 
 """CI 실패 주석 — `.github/workflows/ci.yml` 의 시험 단계가 빨갈 때만 돈다.
 
-작업 로그는 관리자 권한이라 정본 개발 세션(인증 없는 공개 API)이 읽지 못하고, 공개로 읽히는 것은
-check-run 주석(annotations)뿐이다. 그래서 조각 실행기(`scripts/run_test_shard.py --junitxml`)가 남긴
-결과 파일을 읽어 실패한 시험 이름과 까닭 첫 줄을 주석으로 남긴다.
+작업 로그는 저장소 관리자 권한이라 정본 개발 세션(인증 없는 공개 API)이 읽지 못하고, 공개로
+읽히는 것은 check-run 주석(annotations)뿐이다. 그래서
+조각 실행기(`scripts/run_test_shard.py --junitxml`)가 남긴 결과 파일을 읽어 실패한 시험 이름과
+까닭 첫 줄을 주석으로 남긴다.
 
     python scripts/ci_failure_annotations.py <junit 파일>
 

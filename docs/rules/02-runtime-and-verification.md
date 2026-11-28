@@ -212,7 +212,7 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘�
 `scripts/build_site_index.py`(GitHub Pages 자료 목록 — `site/catalog.json` 으로 뿌리 `index.html` 을 쓴다, `--check` 는 다르면 실패).
 `scripts/build_module_index.py`(모듈 색인 — 추적 소스 모듈(app.py · app_pages/ · src/capa_simulation/, __init__ 뺌)의 경로 전체를 `docs/reference/module_index.md` 로 쓴다, `--check` 는 다르면 실패. 모듈을 더하거나 옮기거나 지우면 돌려 함께 커밋한다).
 `scripts/run_test_shard.py`(CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 한 조각을 돈다),
-`scripts/ci_failure_annotations.py`(CI 실패 주석 — 빨간 조각의 `--junitxml` 결과에서 실패 시험 이름 · 까닭 첫 줄을 `::error` 로 찍는다. 작업 로그는 관리자 권한이라).
+`scripts/ci_failure_annotations.py`(CI 실패 주석 — 빨간 조각의 `--junitxml` 결과의 실패 시험 이름 · 까닭 첫 줄을 `::error` 로 찍는다. 로그는 저장소 관리자 권한이라).
 `scripts/new_module.py`(모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
 자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈
 시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게). 정적 규칙 부품은
