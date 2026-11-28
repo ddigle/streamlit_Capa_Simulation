@@ -1298,6 +1298,80 @@ def test_a_new_base_while_a_cell_is_open_waits_until_the_edit_ends() -> None:
     assert result["other"] == {"edit": False, "table": "DEMO_LIST", "last": [["X"]]}
 
 
+NEW_GEN_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  const state = () => ({
+    edit: Boolean(S.edit), list: !list.hidden, base: S.shell.baseKey, gen: S.gen,
+    ops: S.box.ops.map((op) => [op.seq, op.gen, op.cols, op.values]),
+  })
+  // 새 줄 참조공정을 적고 같은 줄 STEP_MCP 를 목록을 연 채 반쯤 친 사이, 초안을 버린
+  // 회차(새 gen)의 새 바탕이 앱 차례(feed 먼저)로 온다.
+  setRange(S, { r: 2, c: 2 }, { r: 2, c: 2 })
+  key(scroller, 'Enter')
+  type('DEMO_REF_000')
+  key(ed(), 'Enter')
+  setRange(S, { r: 2, c: 3 }, { r: 2, c: 3 })
+  key(scroller, 'S')
+  type('S0/')
+  R.typing = state()
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  mount(input.shell2)
+  await tick(5)
+  R.after = state()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_new_base_with_a_new_gen_closes_an_open_list_cell_at_once() -> None:
+    """줄 규칙 등록 — 목록을 연 채 반쯤 친 칸에 초안을 버린 회차의 새 바탕(다른 `baseKey` · 다른
+    `gen`)이 오면 미루지 않고 칸 · 목록을 곧바로 닫는다. 친 글은 옛 `gen` op 하나로 나가 서버가
+    세어 버린다(브라우저 걷기 G1 — 같은 `gen` 의 새 바탕은 위 시험처럼 미룬다)."""
+    shell, index = _rebased_shell("k1", form=None, fresh=1)
+    shell2, index2 = _rebased_shell("k2", form=None, fresh=1)
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(
+        source,
+        NEW_GEN_RUNNER,
+        {
+            "shell": shell,
+            "shell2": shell2,
+            "feed": _feed(index, "k1", None),
+            "feed2": {**_feed(index2, "k2", None), "gen": "g2"},
+        },
+    )
+
+    ref_op = [1, "g1", ["참조공정"], [["DEMO_REF_000"]]]
+    assert result["typing"] == {
+        "edit": True,
+        "list": True,
+        "base": "k1",
+        "gen": "g1",
+        "ops": [ref_op],
+    }
+    assert result["after"] == {
+        "edit": False,
+        "list": False,
+        "base": "k2",
+        "gen": "g2",
+        "ops": [[2, "g1", ["STEP_MCP"], [["S0/"]]]],
+    }, "칸 · 목록을 닫고 새 바탕 · 새 gen, 친 글은 옛 gen op 하나"
+
+
 DRAWER_RUNNER = (
     RUNNER.split(";(async () => {")[0]
     + r"""

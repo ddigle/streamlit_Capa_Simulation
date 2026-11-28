@@ -2,7 +2,8 @@
 // 껍데기(이 요소의 data — 표 본문·글·팔레트)는 표가 같으면 회차마다 같아 해시 참조로 오고, 초안·오류·ack 는 작은 요소
 // `capa_edit_grid_feed` 가 window.__capaEditGrid[host].feed 칸과 'capa-edit-grid' 이벤트로 넘긴다 — 차례에 기대지 않는다(feed 의
 // baseKey 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 그때 쓴다). 같은 표의 다른 baseKey 껍데기는 모델을 다시 짓고(보내는 중 op
-// 의 미리보기는 새 모델에 다시 얹음), 칸을 고치는 중이면 편집이 끝날 때까지 미룬다. 편집은 상태 값 outbox 하나다(트리거 없음 — 반영 안 된 op 전부를
+// 의 미리보기는 새 모델에 다시 얹음), 칸을 고치는 중이면 편집이 끝날 때까지 미룬다(그 바탕의 feed gen 이 바뀌었으면 미루지 않고 칸을
+// 닫는다). 편집은 상태 값 outbox 하나다(트리거 없음 — 반영 안 된 op 전부를
 // {mount, ops} 로). 사용자 글은 textContent 로만 넣는다. 기능 파일(select·fill·toolbar)은 FEATURES 갈고리로 붙고, 아래 이름의
 // 함수를 부른다(내부 API — 이름을 바꾸지 않는다. paintCell 갈고리는 같은 칸에 다시 불릴 수 있다 — 고름만 바뀌면 칸을 다시
 // 짓지 않고 표지만 고친다): paint · scrollToCell · setRange · displayText · rawText · valueAt · isLocked ·
@@ -218,7 +219,8 @@ function egReceiveShell(S, data) {
     return
   }
   // 같은 표의 다른 바탕(양식 · 줄 수가 바뀜)이 칸을 고치는 중에 오면 그 칸을 닫지 않는다 — 편집 · 친 글 · 목록 · 초점을 그대로
-  // 두고, 편집이 끝난 뒤(egDeferredLater) 마지막에 온 껍데기로 다시 짓는다. 그 사이 feed(ack 포함)도 받지 않는다.
+  // 두고, 편집이 끝난 뒤(egDeferredLater) 마지막에 온 껍데기로 다시 짓는다. 그 사이 feed(ack 포함)도 받지 않는다 — 그 feed 의
+  // gen 이 바뀌었으면 egTakeFeed 가 칸을 닫는다(그때 와 있으면 이 껍데기는 미뤄지지 않는다).
   if (S.edit && data.table === S.model.table) {
     S.deferred = data
     return
@@ -341,9 +343,17 @@ function egTakeFeed(S) {
   const store = window.__capaEditGrid
   const slot = store && S.hostKey ? store[S.hostKey] : null
   const feed = slot && slot.feed
+  if (!feed || feed === S.feedData || !S.dom) return
   // 칸을 고치는 중에 같은 표의 다른 바탕 feed(곧 올 껍데기는 미뤄진다)는 ack 도 받지 않는다 — feed 가 껍데기보다 먼저 오므로, 받으면
-  // 보내는 중 op 의 미리보기가 옛 모델에서 걷혀 딸린 목록이 옛 초안을 따른다. 편집이 끝난 뒤 받는다.
-  if (!feed || feed === S.feedData || !S.dom || S.deferred || (S.edit && feed.table === S.model.table && feed.baseKey !== S.shell.baseKey)) return
+  // 보내는 중 op 의 미리보기가 옛 모델에서 걷혀 딸린 목록이 옛 초안을 따른다. 편집이 끝난 뒤 받는다. 다만 그 바탕의 gen 이 바뀌었으면
+  // (적용 · 편집 취소 · 원본이 바뀜 — 초안을 버림) 친 글은 어차피 서버가 버리므로 미루지 않고 지금 칸을 옛 gen 으로 확정해 닫는다 —
+  // 버림 토스트가 곧바로 서고, 초점을 표로 돌리지 않아 이어 친 글이 옛 모델에 새 칸을 열지 않는다. 껍데기가 먼저 와 미뤄졌으면 확정
+  // 끝(egDeferredLater)이 그 껍데기를 받는다.
+  if (S.edit && feed.table === S.model.table && feed.baseKey !== S.shell.baseKey) {
+    if (feed.gen === S.gen) return
+    commitEdit(S, null, false)
+  }
+  if (S.deferred) return
   // ack 는 표가 아니라 이 마운트의 것이다 — 표 없는 껍데기(읽기 보기)·다른 표의 feed 에서도 받아 반영된 op 를 출납에서
   // 뺀다. 빼지 않으면 visibilitychange·정리 함수가 같은 op 를 다시 보내 앱 회차가 하나 더 돈다.
   egTakeAcks(S, feed)

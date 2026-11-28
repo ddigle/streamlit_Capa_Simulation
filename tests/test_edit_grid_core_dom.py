@@ -923,3 +923,80 @@ def test_a_new_base_reaches_an_open_cell_only_after_it_is_committed() -> None:
     assert result["after"]["edit"] is False and result["after"]["base"] == "k2"
     assert result["after"]["ops"] == [[["31"]]]
     assert "31" in result["after"]["typed"] and "5" in result["after"]["next"]
+
+
+RUNNER_REBASE_NEW_GEN = (
+    RUNNER[: RUNNER.index(";(async () => {")]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const ed = q('.eg-ed')
+  // 첫 달 값(곧바로 감)을 친 뒤 다음 달 칸을 글자 하나로 연 사이 「변경사항 적용」 이
+  // 돈다 — 새 바탕은 초안을 버린 새 gen 을 싣고 온다. 앱 차례(feed 먼저)와 거꾸로
+  // (껍데기 먼저) 둘 다 본다.
+  setRange(S, { r: 1, c: 2 }, { r: 1, c: 2 })
+  key(scroller, '5')
+  key(ed, 'Tab')
+  key(scroller, '3')
+  const feed2 = Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } })
+  const steps = [() => sendFeed(feed2), () => mount(input.shell2)]
+  if (!input.feedFirst) steps.reverse()
+  steps[0]()
+  R.between = { edit: Boolean(S.edit), base: S.shell.baseKey }
+  steps[1]()
+  await tick(5)
+  R.after = {
+    edit: Boolean(S.edit), hidden: ed.hidden, base: S.shell.baseKey, gen: S.gen,
+    ops: S.box.ops.map((op) => [op.seq, op.gen, op.values]), previews: S.pending.size,
+  }
+  R.cells = [text(1, 2), text(1, 3)]
+  await tick(360)
+  R.outbox = sent.length ? sent[sent.length - 1][1] : null
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+@pytest.mark.parametrize("feed_first", [True, False], ids=["feed-first", "shell-first"])
+def test_a_new_base_with_a_new_gen_closes_an_open_cell_at_once(feed_first: bool) -> None:
+    """「변경사항 적용」 처럼 초안을 버린 회차의 새 바탕(다른 `baseKey` · 다른 `gen`)이 칸을
+    고치는 중에 오면 미루지 않는다 — 그 칸에 친 글은 옛 `gen` 이라 서버가 어차피 버리므로 그때까지
+    친 글(「3」)로 곧바로 확정해 닫고 새 바탕으로 다시 지으며, 서버가 그 op 를 세어 버림 토스트를
+    낸다(미루기 전 꼴). 미루면 칸을 연 채 더 치게 둔 뒤 Enter 에야 버렸다(브라우저 걷기 G1).
+    feed 가 먼저 오든(앱 차례) 껍데기가 먼저 오든 같고, 같은 `gen` 의 새 바탕은 위 시험처럼
+    미룬다."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    applied = _frame()
+    applied.loc[1, "202701"] = 0.05
+    shell2, index2 = _shell(SPEC, applied, "k2")
+    feed2 = {**_feed(index2, "k2", None), "gen": "g2"}
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_REBASE_NEW_GEN,
+        {
+            "shell": shell,
+            "feed": _feed(index, "k1", None),
+            "shell2": shell2,
+            "feed2": feed2,
+            "feedFirst": feed_first,
+        },
+    )
+    assert result["between"] == {"edit": not feed_first, "base": "k1"}
+    assert result["after"] == {
+        "edit": False,
+        "hidden": True,
+        "base": "k2",
+        "gen": "g2",
+        "ops": [[2, "g1", [["3"]]]],
+        "previews": 0,
+    }, "칸을 닫고 새 바탕 · 새 gen, 친 글은 옛 gen op 하나(미리보기 없음)"
+    assert result["cells"] == ["5.00%", "79.00%"], "적용한 값은 바탕, 버릴 칸은 바탕 값"
+    ops, _ = eg.new_ops({"demo_grid": result["outbox"]}, {})
+    history: eg.HistoryState = {"gen": "g2", "undo": [], "redo": []}
+    kept = eg.apply_ops(index2, SPEC, None, history, ops)
+    assert kept.toasts == [eg.DROPPED_TOAST.format(n="1")], "서버가 옛 gen op 를 세어 알린다"
+    assert eg.change_counts(kept.draft)[0] == 0

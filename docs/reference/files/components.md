@@ -484,7 +484,7 @@
   모듈을 읽을 때 세 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
   - **줄 규칙 표의 등록**(`ROWS_COMPONENT` `capa_edit_grid_rows` — 접속 명단 · 부대공정 편집기): 껍데기에 `fmts` · `ids` · `locks` ·
     `rowOps` 가 있으면(`uses_rows`) 줄 갈래 `eg_rows.js` · `eg_rows.css` 를 eg_core 앞에 더 실은 등록(`ROWS_JS_PARTS` ·
-    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표는 그대로다(JS 예산 122 KB · 줄 규칙 등록 135 KB, 맨 앞 떠나기 조각 `leave_js` 는 몫 밖 2 KB 이하). 줄 갈래는 글 · 고르기 · 글 + 후보
+    `ROWS_CSS_PARTS`)으로 그린다 — 그 밖의 표는 그대로다(JS 예산 122 KB · 줄 규칙 등록 136 KB, 맨 앞 떠나기 조각 `leave_js` 는 몫 밖 2 KB 이하). 줄 갈래는 글 · 고르기 · 글 + 후보
     칸 다듬기(`// <eg-kinds>` — eg_pure 의 `KINDS` 에 단다, Python 과 쌍둥이), 줄 규칙 잠금(core 의 `S.lockAt` — 편집 시작 · 한 칸
     붙여넣기는 까닭 한 줄로 막고 미리보기는 잠긴 칸을 건너뛴다), 표 도구 막대 「줄 지우기」 · 「줄 되살리기」(지울 수 없는
     줄은 빼고 까닭 풍선), 지운 줄 지움선 · 잠긴 칸 바탕 + 까닭 풍선(`title`) · 글 칸 왼쪽 맞춤(`paintCell`), 고르기 · 글 + 후보 칸
@@ -494,9 +494,9 @@
     `restore` 다. 시험 `tests/test_edit_grid_rows_js.py`. 시험 대역은 `_GRID_ROWS` 도 바꾼다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
-    `capa-edit-grid` 로 잇고(비공식 — 화면 탭 줄의 `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의
-    `baseKey` 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 쓴다 — 같은 표 새 `baseKey` 는 칸 편집 중이면 끝까지(feed 도) 미루고 보내는 중 미리보기를 다시 얹는다). `render_edit_grid` 가 늘 같은 자리에서 feed → 무거운 요소 차례로
-    그리고(둘 다 key 고정 — `feed_key(host)` = `<host>-feed` — CCv2 key 에는 `__` 를 쓸 수 없다, 트리거 id 구분자), feed 칸은 스타일만 든 `st.html`(이벤트 칸 — 자리를 먹지 않는다)로
+    `capa-edit-grid` 로 잇고(비공식 — `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의
+    `baseKey` 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 쓴다 — 같은 표 새 `baseKey` 는 칸 편집 중이면 끝까지(feed 도) 미루고(새 `gen` 은 닫음) 보내는 중 미리보기를 다시 얹는다). `render_edit_grid` 가 늘 같은 자리에서 feed → 무거운 요소 차례로
+    그리고(둘 다 key 고정 — `feed_key(host)` = `<host>-feed` — CCv2 key 에는 `__` 를 쓸 수 없다, 트리거 id 구분자), feed 칸은 스타일만 든 `st.html`(이벤트 칸 — 자리 없음)로
     숨긴다(`hide_feed_style`). 호스트 key 는 ASCII `[A-Za-z0-9_-]+` 만(feed JS 와 같은 글자), `__` 없이.
   - **편집은 상태 값 `outbox` 하나**(`STATE_NAMES`, 트리거 없음 — 9장). 콜백 몸통 `collect_outbox` 는 새 op 만 세션 inbox 에
     쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
