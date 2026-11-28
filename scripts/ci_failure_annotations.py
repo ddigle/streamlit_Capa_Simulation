@@ -9,7 +9,8 @@ check-run 주석(annotations)뿐이다. 그래서 조각 실행기(`scripts/run_
     python scripts/ci_failure_annotations.py <junit 파일>
 
 - 시험마다 `::error title=<classname::name>::<까닭 첫 줄>` 한 줄. 까닭은 `message` 첫 줄이고,
-  비었거나 수집 실패(「collection failure」)면 본문의 마지막 `E ` 줄(예외 줄)이다. 이름은 가운데를,
+  비었거나 수집 실패(「collection failure」)면 본문의 마지막 빈 것 아닌 `E ` 줄(예외 줄), 그것도
+  없으면 태그 이름(`failure` · `error`)이라 값이 비지 않는다. 이름은 가운데를,
   까닭은 끝을 잘라 짧게 둔다.
 - GitHub 는 단계마다 오류 주석 10개까지만 받는다 — 넘으면 앞 9개와 10번째 줄 「그 밖 n개」
   (남은 이름).
@@ -77,8 +78,11 @@ def _reason(element: ElementTree.Element) -> str:
     first = lines[0].strip() if lines else ""
     if first and first != COLLECTION_FAILURE:
         return first
+    # 줄 끝 공백뿐인 `E ` 줄은 건너뛴다 — 값이 빈 주석은 까닭 없는 빨간 줄이 된다.
     raised = [
-        line[1:].strip() for line in (element.text or "").splitlines() if line.startswith("E ")
+        line[1:].strip()
+        for line in (element.text or "").splitlines()
+        if line.startswith("E ") and line[1:].strip()
     ]
     if raised:
         return raised[-1]

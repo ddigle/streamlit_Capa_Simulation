@@ -847,7 +847,8 @@ Admin Area 여섯째 탭 「접속 · 작업 기록」 은 개발자에게만 �
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `build_site_index.py` | GitHub Pages 첫 화면(뿌리 `index.html` 자료 목록)을 `site/catalog.json` 으로 쓴다(`--check` 는 다르면 실패) |
 | `build_module_index.py` | 모듈 색인 `docs/reference/module_index.md` 를 추적 소스 모듈 경로로 쓴다(`--check` 는 다르면 실패) — 모듈을 더하거나 옮기면 돌려 함께 커밋 |
-| `run_test_shard.py` | 시험 조각 실행기(CI · 한 PC 동시) — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 pytest 로 돈다. 끝줄에 수가 서고(`-q` 는 `addopts` 하나) 캐시를 쓰지 않는다. `--basetemp-root <폴더>` 는 조각별 임시 폴더 `<폴더>/shard<k>`(저장소 밖 폴더 — git 작업 트리 안이면 멈춘다. 보존 정책 `failed` 라 call 이 통과하지 못한 시험의 임시 파일만 남긴다 — 준비 · 정리 오류만 난 시험의 것도 지운다), `--list` 는 파일만 찍는다 |
+| `run_test_shard.py` | 시험 조각 실행기(CI · 한 PC 동시) — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 pytest 로 돈다. 끝줄에 수가 서고(`-q` 는 `addopts` 하나) 캐시를 쓰지 않는다. `--basetemp-root <폴더>` 는 조각별 임시 폴더 `<폴더>/shard<k>`(저장소 밖 폴더 — git 작업 트리 안이면 멈춘다. 보존 정책 `failed` 라 call 이 통과하지 못한 시험의 임시 파일만 남긴다 — 준비 · 정리 오류만 난 시험의 것도 지운다), `--junitxml <파일>` 은 결과 XML, `--list` 는 파일만 찍는다 |
+| `ci_failure_annotations.py` | 빨간 CI 조각의 결과 XML 에서 실패 시험 이름 · 까닭 첫 줄을 공개 `::error` 주석으로 찍는다(작업 로그는 관리자 권한 · 늘 종료 0) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자(개발자) 승인 뒤) |
 | `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M21)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |

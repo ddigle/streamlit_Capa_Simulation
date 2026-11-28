@@ -140,9 +140,22 @@ E   DemoError: 첫 예외
 E   DemoError: 마지막 예외</failure></testcase>
 <testcase classname="tests.test_demo" name="test_b" time="0"><error /></testcase>
 """
+    # 줄 끝 공백뿐인 `E ` 줄은 까닭이 아니다 — 값이 빈 주석을 찍지 않는다.
+    blank_tail = "E   DemoError: 진짜 예외\nE      "
+    only_blank = "E   \nE "
+    for name, text in (("test_c", blank_tail), ("test_d", only_blank)):
+        cases += (
+            f'<testcase classname="tests.test_demo" name="{name}" time="0">'
+            f'<failure message="">{text}</failure></testcase>'
+        )
     lines = _run(_junit(tmp_path, cases), capsys)
 
-    assert [data for _, _, data in lines] == ["DemoError: 마지막 예외", "error"]
+    assert [data for _, _, data in lines] == [
+        "DemoError: 마지막 예외",
+        "error",
+        "DemoError: 진짜 예외",
+        "failure",
+    ]
 
 
 def test_a_run_with_only_passes_says_so_in_one_warning(

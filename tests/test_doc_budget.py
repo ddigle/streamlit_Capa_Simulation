@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGETS: dict[str, int] = {
     "AGENTS.md": 4_024,
     "CLAUDE.md": 4_971,
-    "README.md": 65_810,
+    "README.md": 65_957,
     "docs/TODO.md": 248_550,
     "docs/design_rules.md": 164_950,
     "docs/reference/files/app-and-ui.md": 207_613,
