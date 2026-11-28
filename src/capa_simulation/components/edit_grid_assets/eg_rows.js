@@ -79,23 +79,22 @@ function rowPlan(rows, keys, locks, removed) {
   return plan
 }
 
-// 고르기 목록 거름 — 항목 [{label, value}] 가운데 친 글(앞뒤 공백 걷음)이 보이는 글 · 넣을 글에 든 것만, 대소문자 무시, 앞머리가
-// 맞는 항목이 앞(그 안은 항목 차례). 글이 null(칸을 막 연 때) · 빈 글이면 전부.
+// 고르기 목록 거름 — 항목 [{label, value}] 가운데 친 글(앞뒤 공백 걷음)이 보이는 글 · 넣을 글에 든 것만, 대소문자 무시. 차례는 같음
+// (보이는 글 · 넣을 글이 친 글과 같음) → 앞머리 맞음 → 포함이고 그 안은 항목 차례다(맨 위가 강조 — listMatch). 글이 null(칸을 막 연
+// 때) · 빈 글이면 전부.
 function listFilter(items, query) {
-  const q = query === null ? '' : query.replace(STRIP_EDGES, '').toLowerCase()
+  const q = (query || '').replace(STRIP_EDGES, '').toLowerCase()
   if (!q) return items.slice()
-  const head = []
-  const rest = []
+  const ranks = [[], [], [], []]
   for (const item of items) {
-    const label = item.label.toLowerCase()
-    const value = item.value.toLowerCase()
-    if (label.startsWith(q) || value.startsWith(q)) head.push(item)
-    else if (label.includes(q) || value.includes(q)) rest.push(item)
+    const both = [item.label.toLowerCase(), item.value.toLowerCase()]
+    ranks[both.includes(q) ? 0 : both.some((t) => t.startsWith(q)) ? 1 : both.some((t) => t.includes(q)) ? 2 : 3].push(item)
   }
-  return head.concat(rest)
+  return ranks[0].concat(ranks[1], ranks[2])
 }
 
-// 글 + 후보 칸의 후보(껍데기 suggest[칸 이름] = {items, by, table} — 항목은 글 하나 또는 [보이는 글, 넣을 글]) → [{label, value}].
+// 글 + 후보 칸의 후보(껍데기 suggest[칸 이름] = {items, by, table} — 항목은 글 하나 또는 [보이는 글, 넣을 글]) → [{label, value}]
+// (고르기 칸은 {items: 항목 글}).
 // by 가 있으면 같은 줄 그 칸의 지금 글(byText — 앞뒤 공백 걷음)로 table 에서 고르고(같은 글이 없으면 대소문자를 무시한 첫 열쇠 —
 // 부대공정 참조공정 찾기와 같은 차례), 그런 열쇠도 없으면 items 다.
 function suggestItems(spec, byText) {
@@ -113,8 +112,11 @@ function sameItems(a, b) {
   return a.length === b.length && a.every((item, k) => item.label === b[k].label && item.value === b[k].value)
 }
 
-// 글과 같은 항목의 차례(넣을 글 먼저, 다음 보이는 글 — 앞뒤 공백만 걷고 대소문자 그대로), 없으면 -1. 강조는 이것과 ↑ ↓ 뿐이다.
-function listMatch(items, text) {
+// 강조할 항목의 차례 — 친 글(query — 앞뒤 공백을 걷어 빈 글이 아님)로 거른 목록은 맨 위(2026-11-28 사용자 답 「맨 위 후보를 넣음」),
+// 그 밖(칸을 막 연 때 · 친 글을 다 지움)은 text 와 같은 항목(넣을 글 먼저, 다음 보이는 글 — 앞뒤 공백만 걷고 대소문자 그대로). 없으면
+// -1. 친 글을 다 지운 칸은 맨 위를 강조하지 않는다 — Backspace 로 연 칸 · 글을 지운 칸의 Enter 는 칸을 비운다(첫 후보를 넣지 않음).
+function listMatch(items, text, query) {
+  if (query && query.replace(STRIP_EDGES, '')) return items.length ? 0 : -1
   const body = text.replace(STRIP_EDGES, '')
   if (!body) return -1
   const at = items.findIndex((item) => item.value === body)
@@ -142,11 +144,11 @@ function rowsPicked(S) {
 function rowsInit(S) {
   const R = (S.rows = { listeners: [], button: null, list: null, key: '', pick: null, drawn: null, drawnOn: null })
   S.lockAt = rowsLockAt
+  // 목록 칸 키 갈고리 — fill 의 편집 중 Ctrl+Enter(이 갈래 keydown 보다 먼저 받는다)가 Enter 처럼 강조 항목을 칸 편집기에 넣는다.
+  S.listKey = rowsKey
   const button = tbButton('eg-tb-rows', '')
   button.hidden = true
-  const fit = S.tb && S.tb.dom ? S.tb.dom.fit : null
-  if (fit) S.dom.toolbar.insertBefore(button, fit)
-  else S.dom.toolbar.appendChild(button)
+  S.dom.toolbar.insertBefore(button, (S.tb && S.tb.dom && S.tb.dom.fit) || null)
   const list = egEl('div', 'eg-choices')
   list.setAttribute('role', 'listbox')
   list.hidden = true
@@ -232,10 +234,9 @@ function rowsTextAt(S, row, name) {
 }
 
 // 편집 중 칸의 목록 상태 {edit, src, by, all, query, shown, on} — 목록 칸(고르기 · 글 + 후보)이 아니면 null. 후보는 껍데기
-// suggest(표 본문 · baseKey 밖 — 바뀌어도 모델 · 편집은 그대로)에서 그때 읽고, 딸린 후보는 그 줄 by 칸의 지금 글로 고른다.
-// 칸을 연 때는 전부(지금 값 강조),
-// 친 뒤(rowsTyped — 글자로 연 칸은 처음부터)는 그 글로 거른다. 글자로 열지 않은 목록 칸은 글 전체를 골라 둔다 — 치면 갈아 쓴다(한글은
-// 글자로 칸을 열지 못해 Enter · F2 · 두 번 누름으로 연다).
+// suggest(표 본문 · baseKey 밖 — 바뀌어도 모델 · 편집은 그대로)에서 그때 읽고, 딸린 후보는 그 줄 by 칸의 지금 글로 고른다. 칸을 연
+// 때는 전부(지금 값 강조), 친 뒤(rowsTyped — 글자로 연 칸은 처음부터)는 그 글로 거르고 맨 위를 강조한다(listMatch). 글자로 열지 않은
+// 목록 칸은 글 전체를 골라 둔다 — 치면 갈아 쓴다(한글은 글자로 칸을 열지 못해 Enter · F2 · 두 번 누름으로 연다).
 function rowsPick(S) {
   const R = S.rows
   const m = S.model
@@ -250,7 +251,7 @@ function rowsPick(S) {
   if (P && P.edit === S.edit && P.src === src && P.by === by) return P
   const editor = S.dom.editor
   const fresh = !P || P.edit !== S.edit
-  const all = spec ? suggestItems(spec, by) : f.kind === 'choice' ? (f.options || []).map((label) => ({ label: String(label), value: String(label) })) : []
+  const all = suggestItems(spec || (f.kind === 'choice' && { items: f.options }), by)
   if (!fresh && sameItems(P.all, all)) {
     P.src = src
     P.by = by
@@ -258,18 +259,18 @@ function rowsPick(S) {
   }
   const query = fresh ? (S.edit.typed ? editor.value : null) : P.query
   const shown = listFilter(all, query)
-  R.pick = { edit: S.edit, src, by, all, query, shown, on: listMatch(shown, editor.value) }
+  R.pick = { edit: S.edit, src, by, all, query, shown, on: listMatch(shown, editor.value, query) }
   if (fresh && !S.edit.typed && all.length) editor.setSelectionRange(0, editor.value.length)
   return R.pick
 }
 
-// 칸 편집기에 친 글(input · compositionend) — 그 글로 거르고 강조는 같은 항목만.
+// 칸 편집기에 친 글(input · compositionend) — 그 글로 거르고 맨 위를 강조한다(친 글을 다 지우면 강조 없음).
 function rowsTyped(S) {
   const P = S.rows.pick
   if (!S.edit || !P || P.edit !== S.edit) return
   P.query = S.dom.editor.value
   P.shown = listFilter(P.all, P.query)
-  P.on = listMatch(P.shown, P.query)
+  P.on = listMatch(P.shown, P.query, P.query)
   rowsChoices(S)
 }
 
@@ -330,7 +331,8 @@ function rowsChoices(S) {
 }
 
 // 목록이 선 칸 편집기의 키 — ↑ ↓ 는 거른 목록 안에서 강조를 옮기고(끝에서 돌아감, 강조가 없으면 ↓ 첫 · ↑ 끝), Enter · Tab 은
-// 강조한 항목을 넣은 뒤 core 의 확정 · 옮김으로 넘긴다(강조가 없으면 친 글 그대로). 칸을 떠나는 blur 는 친 글 그대로다(core).
+// 강조한 항목을 넣은 뒤 core 의 확정 · 옮김으로 넘긴다(거른 결과가 없거나 강조가 없으면 친 글 그대로 — 고르기 칸은 오류). 칸을 떠나는
+// blur · 다른 칸 누름은 친 글 그대로다(core — 자동 고름 없음, ↑ ↓ 뒤에도).
 // 후보가 있는 칸에서 친 글이 목록을 다 걸렀으면 ↑ ↓ 는 아무 일도 하지 않는다 — 글자로 연 칸의 화살표(확정 + 옮김)로 넘기지 않는다.
 function rowsKey(S, event) {
   const P = S.edit ? S.rows.pick : null
@@ -338,8 +340,8 @@ function rowsKey(S, event) {
   const key = event.key
   if (key === 'ArrowDown' || key === 'ArrowUp') {
     event.preventDefault()
-    if (!P.shown.length) return true
     const n = P.shown.length
+    if (!n) return true
     const step = key === 'ArrowDown' ? 1 : n - 1
     P.on = P.on < 0 ? (step === 1 ? 0 : n - 1) : (P.on + step) % n
     rowsChoices(S)
@@ -361,7 +363,7 @@ function rowsCleanup(S) {
   if (!R) return
   for (const [target, type, handler] of R.listeners) target.removeEventListener(type, handler)
   R.listeners = []
-  S.lockAt = null
+  S.lockAt = S.listKey = null
 }
 
 feature({

@@ -354,14 +354,17 @@ def test_paste_delete_and_fill_skip_locked_rows_and_say_so() -> None:
     assert result["removed"] == [["clear", f"2칸 비움 · {skipped}"], ["write", "1칸 붙여넣음"]]
 
 
-def test_the_list_filter_keeps_matching_items_with_prefix_matches_first() -> None:
+def test_the_list_filter_puts_equal_then_prefix_then_contains_and_tops_the_highlight() -> None:
     """공용 거름(2026-11-27 보드 답 「거름 더함」) — 친 글이 보이는 글 · 넣을 글에 든 항목만
-    (대소문자 무시), 앞머리가 맞는 항목이 앞이고 그 안은 항목 차례다. 칸을 막 연 때(null) · 빈
-    글은 전부. 강조는 같은 글(넣을 글 먼저, 다음 보이는 글 — 대소문자 그대로)뿐이다."""
+    (대소문자 무시), 차례는 같음 → 앞머리 맞음 → 포함이고 그 안은 항목 차례다(「mi」 는 앞 항목
+    MIX_DEMO 보다 MI 가 먼저). 칸을 막 연 때(null) · 빈 글은 전부. 강조는 친 글로 거른 동안 맨 위
+    (2026-11-28 사용자 답 「맨 위 후보를 넣음」 — 거른 결과가 없으면 -1), 친 글이 없거나 빈 글이면
+    같은 글(넣을 글 먼저, 다음 보이는 글 — 대소문자 그대로)이다."""
     runner = (
         RUNNER_HEAD
         + """
 const items = input.items.map(([label, value]) => ({ label, value }))
+const mix = input.mix.map(([label, value]) => ({ label, value }))
 const names = (list) => list.map((item) => item.value)
 done({
   open: names(listFilter(items, null)),
@@ -370,7 +373,17 @@ done({
   inner: names(listFilter(items, ' _b ')),
   label: names(listFilter(items, '표시')),
   none: names(listFilter(items, 'zz')),
+  mi: names(listFilter(mix, 'mi')),
+  folded: names(listFilter(mix, ' Mi ')),
+  byLabel: names(listFilter(mix, '데모 m')),
   match: [' DEMO_B_A ', 'demo_b_a', 'C 표시', ''].map((text) => listMatch(items, text)),
+  top: [
+    listMatch(listFilter(mix, 'mi'), 'mi', 'mi'),
+    listMatch([], 'zz', 'zz'),
+    listMatch(items, '', ''),
+    listMatch(items, 'DEMO_B_A', '  '),
+    listMatch(items, 'X_B', null),
+  ],
 })
 """
     )
@@ -381,14 +394,24 @@ done({
         ["C 표시", "demo_c"],
         ["X_B", "X_B"],
     ]
-    result = run_node(source, runner, {"items": items})
+    mix = [
+        ["MIX_DEMO", "MIX_DEMO"],
+        ["Main", "Main"],
+        ["A_MI", "A_MI"],
+        ["데모 m", "MI"],
+    ]
+    result = run_node(source, runner, {"items": items, "mix": mix})
     everything = ["A_DEMO", "DEMO_B_A", "demo_c", "X_B"]
     assert result["open"] == everything and result["blank"] == everything
     assert result["demo"] == ["DEMO_B_A", "demo_c", "A_DEMO"], "앞머리 맞음이 앞"
     assert result["inner"] == ["DEMO_B_A", "X_B"]
     assert result["label"] == ["demo_c"], "보이는 글로도 거른다"
     assert result["none"] == []
+    assert result["mi"] == ["MI", "MIX_DEMO", "A_MI"], "같음이 앞머리보다 앞"
+    assert result["folded"] == ["MI", "MIX_DEMO", "A_MI"], "대소문자 무시 · 앞뒤 공백 걷음"
+    assert result["byLabel"] == ["MI"], "보이는 글이 같아도 같음"
     assert result["match"] == [1, -1, 2, -1]
+    assert result["top"] == [0, -1, -1, 1, 3], "거른 동안 맨 위, 빈 친 글은 같은 글"
 
 
 REFS = tuple(f"DEMO_REF_{k:03d}" for k in range(60))
@@ -475,7 +498,7 @@ LIST_RUNNER = (
   R.up = view()
   key(ed(), 'Escape')
   R.escape = [list.hidden, S.edit]
-  // 친 글로 거름 — 강조 없음, ↓ 가 거른 목록 첫 항목, Enter 가 그 항목.
+  // 친 글로 거름 — 맨 위가 강조, ↓ 둘이 셋째 항목, Enter 가 그 항목.
   open(0, 2)
   type('ref_01')
   R.typed = view()
@@ -484,18 +507,18 @@ LIST_RUNNER = (
   R.typedDown = view()
   key(ed(), 'Enter')
   R.typedCommit = [S.box.ops[S.box.ops.length - 1].values, list.hidden, cell(0, 2).textContent]
-  // ↑ 는 강조가 없으면 끝 항목, 처음에서 ↑ 는 끝으로 돈다.
+  // 맨 위에서 ↑ 는 끝으로, 끝에서 ↓ 는 맨 위로 돈다.
   open(0, 2)
   type('ref_00')
   key(ed(), 'ArrowUp')
-  R.upFromNone = view()
+  R.upFromTop = view()
   key(ed(), 'ArrowDown')
   R.wrapDown = view().on
   key(ed(), 'ArrowUp')
   R.wrapUp = view().on
   key(ed(), 'Escape')
-  // 글자로 연 칸은 그 글로 거르고 강조가 없다. ↓ 뒤에도 blur 는 친 글 그대로(자동 고름 없음) —
-  // 목록 밖 글은 고르기 오류 칸.
+  // 글자로 연 칸은 그 글로 거르고 맨 위가 강조. ↓ 뒤에도 blur 는 친 글 그대로(자동 고름 없음 —
+  // 총괄 결정) — 목록 밖 글은 고르기 오류 칸.
   setRange(S, { r: 1, c: 2 }, { r: 1, c: 2 })
   key(scroller, 'D')
   R.typedOpen = view()
@@ -503,7 +526,7 @@ LIST_RUNNER = (
   fire(ed(), 'blur')
   const lastValues = () => S.box.ops[S.box.ops.length - 1].values
   R.blur = [lastValues(), has(1, 2, 'is-error'), q('.eg-where').textContent]
-  // 칸마다 오류 글 — Area 고르기 · 공정 글자 수.
+  // 칸마다 오류 글 — Area 고르기(거른 결과가 없으면 Enter 는 친 글) · 공정 글자 수.
   setRange(S, { r: 1, c: 3 }, { r: 1, c: 3 })
   key(scroller, 'x')
   key(ed(), 'Enter')
@@ -539,9 +562,10 @@ LIST_RUNNER = (
 def test_a_long_choice_list_filters_scrolls_and_keeps_typed_text_on_blur() -> None:
     """고르기 후보 60개(spike-grid 2장 꼴) — 칸을 연 때 전부와 지금 값 강조, ↑ ↓ 는 거른 목록 안에서
     강조만 옮기고(끝에서 돎) 강조가 보이는 자리로 목록을 굴린다(높이 상한 안). 다시 그려도 사용자가
-    굴린 자리는 그대로다. 친 글로 거르고 Enter 는 강조한 항목, blur 는 친 글 그대로(2026-11-27 총괄
-    결정 R2). 오류 글은 칸마다 맞고 긴 목록은 줄인다(spike 2-6 · 2-7). 목록 자체 누름(굴림 막대)은
-    편집을 닫지 않는다(9b74036d 마우스 확정 유지)."""
+    굴린 자리는 그대로다. 친 글로 거르면 맨 위가 강조되고 Enter 는 강조한 항목(2026-11-28
+    사용자 답 「맨 위 후보를 넣음」), blur 는 ↑ ↓ 뒤에도 친 글 그대로(2026-11-27 총괄 결정 R2).
+    오류 글은 칸마다 맞고 긴 목록은 줄인다(spike 2-6 · 2-7). 목록 자체 누름(굴림 막대)은 편집을
+    닫지 않는다(9b74036d 마우스 확정 유지)."""
     shell, index = _list_shell()
     source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
 
@@ -561,12 +585,12 @@ def test_a_long_choice_list_filters_scrolls_and_keeps_typed_text_on_blur() -> No
     assert result["up"]["on"] == 21 and result["up"]["top"] == 21 * 24 + 24 - 120
     assert result["escape"] == [True, None]
     assert result["typed"]["n"] == 10 and result["typed"]["first"] == "DEMO_REF_010"
-    assert result["typed"]["on"] == -1 and result["typed"]["top"] == 0
-    assert result["typedDown"]["on"] == 1 and result["typedDown"]["value"] == "ref_01"
-    assert result["typedCommit"] == [[["DEMO_REF_011"]], True, "DEMO_REF_011"]
-    assert result["upFromNone"]["on"] == 9 and result["upFromNone"]["n"] == 10
+    assert result["typed"]["on"] == 0 and result["typed"]["top"] == 0
+    assert result["typedDown"]["on"] == 2 and result["typedDown"]["value"] == "ref_01"
+    assert result["typedCommit"] == [[["DEMO_REF_012"]], True, "DEMO_REF_012"]
+    assert result["upFromTop"]["on"] == 9 and result["upFromTop"]["n"] == 10
     assert [result["wrapDown"], result["wrapUp"]] == [0, 9]
-    assert result["typedOpen"]["n"] == 60 and result["typedOpen"]["on"] == -1
+    assert result["typedOpen"]["n"] == 60 and result["typedOpen"]["on"] == 0
     assert result["typedOpen"]["value"] == "D"
     values, error, where = result["blur"]
     assert values == [["D"]] and error is True
@@ -607,7 +631,9 @@ IME_RUNNER = (
   ed.value = '자'
   fire(ed, 'compositionend')
   R.endOnly = shown()
-  key(ed, 'ArrowDown')
+  R.endOn = list.children.findIndex((n) => n.classList.contains('is-on'))
+  key(ed, 'Enter', { isComposing: true, ctrlKey: true })
+  R.stillAfterCtrl = [Boolean(S.edit), S.box.ops.length]
   key(ed, 'ArrowDown')
   key(ed, 'Enter')
   R.commit = [S.box.ops[S.box.ops.length - 1].values, cell(0, 3).textContent]
@@ -620,7 +646,7 @@ IME_RUNNER = (
 
 def test_korean_composition_filters_the_list_as_it_goes() -> None:
     """한글 IME 조합 중에도 거름이 따라간다 — 조합 중 input(값에 조합 글이 든다)과 조합 끝
-    (compositionend)에서 거르고, 조합 중 Enter 는 확정하지 않는다."""
+    (compositionend)에서 거르고 맨 위를 강조한다. 조합 중 Enter · Ctrl+Enter 는 확정하지 않는다."""
     shell, index = _shell("k1")
     source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
 
@@ -629,7 +655,8 @@ def test_korean_composition_filters_the_list_as_it_goes() -> None:
     assert result["composing"] == ["관리자"]
     assert result["stillEditing"] is True
     assert result["ended"] == ["관리자"]
-    assert result["endOnly"] == ["실무자", "관리자", "개발자"]
+    assert result["endOnly"] == ["실무자", "관리자", "개발자"] and result["endOn"] == 0
+    assert result["stillAfterCtrl"] == [True, 0]
     assert result["commit"] == [[["관리자"]], "관리자"]
 
 
@@ -708,12 +735,12 @@ SUGGEST_RUNNER = (
     key(scroller, 'Enter')
   }
   const on = () => list.children.findIndex((n) => n.classList.contains('is-on'))
-  // 참조공정 — 보이는 글은 「표시 nn (원본)」, 지금 값(원본)과 같은 항목이 강조, 고르면 원본을
-  // 넣는다.
+  // 참조공정 — 보이는 글은 「표시 nn (원본)」, 지금 값(원본)과 같은 항목이 강조, 친 글로 거르면
+  // 맨 위가 강조 — Enter 가 그 원본을 넣는다.
   open(0, 2)
   R.open = [labels().length, labels()[0], on(), ed().value]
   type('ref_00')
-  key(ed(), 'ArrowDown')
+  R.typedOn = on()
   key(ed(), 'Enter')
   R.pick = [lastValues(), cell(0, 2).textContent]
   // 보이는 글로 거르고 보이는 글을 다 치면 그 항목이 강조 — Enter 가 원본을 넣는다.
@@ -773,6 +800,7 @@ def test_suggest_cells_list_labels_put_values_and_follow_the_row() -> None:
     )
 
     assert result["open"] == [60, "표시 00 (DEMO_REF_000)", 1, "DEMO_REF_001"]
+    assert result["typedOn"] == 0
     assert result["pick"] == [[["DEMO_REF_000"]], "DEMO_REF_000"]
     assert result["label"] == [["표시 02 (DEMO_REF_002)"], 0]
     assert result["labelPick"] == [["DEMO_REF_002"]]
@@ -792,6 +820,217 @@ def test_suggest_cells_list_labels_put_values_and_follow_the_row() -> None:
         "on": 0,
         "cell": "DEMO_NEW",
     }
+
+
+GRADES = ("열람", "실무자", "관리자", "개발자")
+ENTER_SPEC = eg.GridSpec(
+    "DEMO_ENTER",
+    "데모 공정",
+    ("No.",),
+    ("공정", "참조공정", "Area", "등급"),
+    eg.ValueFormat("text", 0),
+    column_formats=(
+        ("공정", eg.ValueFormat("text", 0)),
+        ("참조공정", eg.ValueFormat("suggest", 0)),
+        ("Area", eg.ValueFormat("choice", 0, options=("MIX_DEMO", "Main", "MI"))),
+        ("등급", eg.ValueFormat("choice", 0, options=GRADES)),
+    ),
+    id_column="_id",
+    label_column="_label",
+    row_ops=True,
+)
+ENTER_REFS = (
+    eg.Suggestion("최종 앞 점검 (Pre Final Check)", "Pre Final Check"),
+    eg.Suggestion("최종 검사 (Final Test)", "Final Test"),
+    eg.Suggestion("Final Test Retest", "Final Test Retest"),
+)
+
+
+def _enter_shell() -> tuple[dict[str, Any], eg.GridIndex]:
+    """「글 + 후보」 참조공정(표시명 · 원본) · 고르기 Area(MIX_DEMO · Main · MI) · 접속 명단 꼴
+    등급 칸."""
+    frame = pd.DataFrame(
+        {
+            "No.": ["1", "2", "3", "새 1"],
+            "_id": ["p1", "p2", "p3", "+1"],
+            "_label": ["DEMO_A", "DEMO_B", "DEMO_C", "새 줄 1"],
+            "공정": ["DEMO_A", "DEMO_B", "DEMO_C", None],
+            "참조공정": ["DEMO_OLD", None, None, None],
+            "Area": [1.0, 0.0, None, None],
+            "등급": [0.0, 1.0, 1.0, None],
+        }
+    )
+    rules = eg.RowRules((eg.LockKind(fresh=True),), (-1, -1, -1, 0))
+    base = build_base(frame, ENTER_SPEC, None, rules)
+    shell = edit_grid.shell_data(
+        "demo_rows",
+        base,
+        ENTER_SPEC,
+        base_key="k1",
+        changes_label="적용 전 변경",
+        suggest={"참조공정": eg.Suggestions(items=ENTER_REFS)},
+    )
+    return shell, base.index
+
+
+ENTER_RUNNER = (
+    RUNNER.split(";(async () => {")[0]
+    + r"""
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const list = q('.eg-choices')
+  const ed = () => q('.eg-ed')
+  const labels = () => (list.hidden ? null : list.children.map((n) => n.textContent))
+  const on = () => list.children.findIndex((n) => n.classList.contains('is-on'))
+  const last = () => S.box.ops[S.box.ops.length - 1]
+  const type = (text) => {
+    ed().value = text
+    fire(ed(), 'input')
+  }
+  const open = (r, c) => {
+    setRange(S, { r, c }, { r, c })
+    key(scroller, 'Enter')
+  }
+  const typeOpen = (r, c, letter) => {
+    setRange(S, { r, c }, { r, c })
+    key(scroller, letter)
+  }
+  // 「final」 + Enter — 앞머리 맞음(Final Test · Final Test Retest)이 포함(Pre Final Check)보다
+  // 앞이고 맨 위가 강조, Enter 가 그 원본을 넣는다.
+  open(0, 2)
+  type('final')
+  R.final = [labels(), on()]
+  key(ed(), 'Enter')
+  R.finalCommit = [last().values, cell(0, 2).textContent, S.edit]
+  // ↓ 뒤 Enter 는 옮긴 강조.
+  open(1, 2)
+  type('final')
+  key(ed(), 'ArrowDown')
+  key(ed(), 'Enter')
+  R.downCommit = last().values
+  // 「글 + 후보」 칸에서 거른 결과가 없으면 친 글 그대로(목록 밖 글 — 오류 아님, 「확인할 칸」 몫).
+  open(2, 2)
+  type('DEMO_NEW_REF')
+  R.noneList = labels()
+  key(ed(), 'Enter')
+  R.noneSuggest = [last().values, has(2, 2, 'is-error')]
+  // 고르기 칸 「mi」 — 같음(MI)이 앞머리(MIX_DEMO)보다 앞이라 Enter 가 MI.
+  typeOpen(0, 3, 'm')
+  type('mi')
+  R.mi = [labels(), on()]
+  key(ed(), 'Enter')
+  R.miCommit = [last().values, cell(0, 3).textContent, has(0, 3, 'is-error')]
+  // 고르기 칸에서 거른 결과가 없으면 친 글 그대로라 오류 칸.
+  typeOpen(1, 3, 'q')
+  R.noneChoiceList = labels()
+  key(ed(), 'Enter')
+  R.noneChoice = [last().values, has(1, 3, 'is-error')]
+  // Tab 도 맨 위를 넣고 오른쪽 칸으로 간다.
+  typeOpen(2, 3, 'M')
+  type('ma')
+  key(ed(), 'Tab')
+  R.tab = [last().values, [S.anchor.r, S.anchor.c], S.edit]
+  // 접속 명단 등급 꼴 「관리」 + Enter — 한글은 글자로 칸을 열지 못해 Enter 로 열고 친 글로
+  // 거른 맨 위.
+  open(0, 4)
+  type('관리')
+  R.grade = [labels(), on()]
+  key(ed(), 'Enter')
+  R.gradeCommit = [last().values, cell(0, 4).textContent]
+  // ↓ 뒤 칸을 떠나면 친 글 그대로(자동 고름 없음 — 접속 명단도).
+  open(1, 4)
+  type('자')
+  key(ed(), 'ArrowDown')
+  R.blurOn = on()
+  fire(ed(), 'blur')
+  R.blur = [last().values, has(1, 4, 'is-error'), S.edit]
+  // 글을 치지 않고 연 칸은 지금 값 강조 — Enter 는 지금 값(바뀐 것이 없어 보내지 않음).
+  const count = S.box.ops.length
+  open(2, 4)
+  R.plainOpen = [on(), ed().value]
+  key(ed(), 'Enter')
+  R.plainCommit = [S.box.ops.length === count, cell(2, 4).textContent]
+  // Backspace 로 연 칸 · 친 글을 다 지운 칸은 강조가 없다 — Enter 가 칸을 비운다(첫 후보를
+  // 넣지 않음).
+  setRange(S, { r: 0, c: 4 }, { r: 0, c: 4 })
+  key(scroller, 'Backspace')
+  R.backOpen = [on(), (labels() || []).length]
+  key(ed(), 'Enter')
+  R.back = [last().values, cell(0, 4).textContent]
+  typeOpen(0, 3, 'm')
+  type('')
+  R.erasedOn = on()
+  key(ed(), 'Enter')
+  R.erased = [last().values, cell(0, 3).textContent]
+  // Ctrl+Enter(고른 범위 채우기)도 Enter 처럼 맨 위 강조 항목을 쓴다.
+  setRange(S, { r: 0, c: 4 }, { r: 3, c: 4 })
+  key(scroller, 'Enter')
+  type('실무')
+  const all = fire(ed(), 'keydown', { key: 'Enter', ctrlKey: true })
+  R.ctrl = {
+    prevented: all.defaultPrevented, op: last(), edit: S.edit,
+    cells: [0, 1, 2, 3].map((r) => cell(r, 4).textContent),
+  }
+  // ↓ 로 옮긴 강조도, 거른 결과가 없으면 친 글.
+  setRange(S, { r: 0, c: 3 }, { r: 1, c: 3 })
+  key(scroller, 'm')
+  key(ed(), 'ArrowDown')
+  fire(ed(), 'keydown', { key: 'Enter', ctrlKey: true })
+  R.ctrlDown = last().values
+  setRange(S, { r: 0, c: 3 }, { r: 1, c: 3 })
+  key(scroller, 'z')
+  fire(ed(), 'keydown', { key: 'Enter', ctrlKey: true })
+  R.ctrlNone = [last().values, has(0, 3, 'is-error'), has(1, 3, 'is-error')]
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_enter_tab_and_ctrl_enter_put_the_top_of_a_filtered_list() -> None:
+    """고르기 목록 Enter 규칙(2026-11-28 사용자 답 「맨 위 후보를 넣음」 — 고르기 · 글 + 후보 칸
+    모두). 글을 쳐서 거른 동안 맨 위가 강조되고 Enter · Tab · Ctrl+Enter 가 그 항목을 넣는다(넣을
+    글 — 참조공정은 원본). ↑ ↓ 는 강조를 옮기고, 거른 결과가 없으면 친 글 그대로(고르기 칸은 오류,
+    글 + 후보 칸은 목록 밖 글), 칸을 떠나면 ↑ ↓ 뒤에도 친 글 그대로다(총괄 결정). 글을 치지 않고 연
+    칸은 지금 값 강조, 친 글이 빈 칸(Backspace · 다 지움)은 강조 없이 Enter 가 칸을 비운다."""
+    shell, index = _enter_shell()
+    source = FAKE_DOM + mountable(edit_grid.registered_js(edit_grid.ROWS_JS_PARTS))
+
+    result = run_node(source, ENTER_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
+
+    assert result["final"] == [
+        ["최종 검사 (Final Test)", "Final Test Retest", "최종 앞 점검 (Pre Final Check)"],
+        0,
+    ]
+    assert result["finalCommit"] == [[["Final Test"]], "Final Test", None]
+    assert result["downCommit"] == [["Final Test Retest"]]
+    assert result["noneList"] is None
+    assert result["noneSuggest"] == [[["DEMO_NEW_REF"]], False]
+    assert result["mi"] == [["MI", "MIX_DEMO"], 0]
+    assert result["miCommit"] == [[["MI"]], "MI", False]
+    assert result["noneChoiceList"] is None
+    assert result["noneChoice"] == [[["q"]], True]
+    assert result["tab"] == [[["Main"]], [2, 4], None]
+    assert result["grade"] == [["관리자"], 0]
+    assert result["gradeCommit"] == [[["관리자"]], "관리자"]
+    assert result["blurOn"] == 1
+    assert result["blur"] == [[["자"]], True, None]
+    assert result["plainOpen"] == [1, "실무자"]
+    assert result["plainCommit"] == [True, "실무자"]
+    assert result["backOpen"] == [-1, 4]
+    assert result["back"] == [[[""]], ""], "첫 후보(열람)를 넣지 않고 비운다"
+    assert result["erasedOn"] == -1
+    assert result["erased"] == [[[""]], ""], "첫 후보(MIX_DEMO)를 넣지 않고 비운다"
+    ctrl = result["ctrl"]
+    assert ctrl["prevented"] and ctrl["edit"] is None
+    assert ctrl["op"]["values"] == [["실무자"]] and ctrl["op"]["cols"] == ["등급"]
+    assert len(ctrl["op"]["rows"]) == 4
+    assert ctrl["cells"] == ["실무자"] * 4
+    assert result["ctrlDown"] == [["Main"]]
+    assert result["ctrlNone"] == [[["z"]], True, True]
 
 
 RERUN_RUNNER = (
@@ -866,9 +1105,10 @@ EDGE_RUNNER = (
   R.arrow = {
     edit: Boolean(S.edit), value: ed().value, at: [S.anchor.r, S.anchor.c], ops: S.box.ops.length,
   }
-  // 대소문자만 다른 참조 글도 딸린 후보를 고른다(파이썬 참조공정 찾기와 같은 차례).
+  // 대소문자만 다른 참조 글도 딸린 후보를 고른다(파이썬 참조공정 찾기와 같은 차례). Enter 는
+  // 맨 위 후보(DEMO_REF_002)를 넣으니 칸을 떠나 친 글 그대로 둔다(자동 고름 없음).
   type('demo_ref_002')
-  key(ed(), 'Enter')
+  fire(ed(), 'blur')
   setRange(S, { r: 2, c: 3 }, { r: 2, c: 3 })
   key(scroller, 'Enter')
   R.folded = [S.box.ops[S.box.ops.length - 1].values, labels()]

@@ -313,6 +313,8 @@ function fillKey(S, event) {
   if (S.edit) {
     if (event.key !== 'Enter' || !ctrl || event.altKey || event.shiftKey) return false
     event.preventDefault()
+    // 목록 칸(고르기 · 글 + 후보)은 Enter 처럼 강조 항목을 먼저 칸 편집기에 넣는다 — 줄 갈래의 키(`S.listKey`)는 이 갈래 뒤라 여기서 부른다.
+    if (S.listKey) S.listKey(S, event)
     fillEnterAll(S)
     return true
   }
