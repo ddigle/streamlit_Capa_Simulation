@@ -151,7 +151,7 @@ def test_a_run_with_only_passes_says_so_in_one_warning(
     [(kind, title, data)] = _run(_junit(tmp_path, PASSING), capsys)
 
     assert (kind, title) == ("warning", "실패 시험 없음")
-    assert data.startswith("junit-shard.xml 에 실패 · 오류 시험이 없습니다")
+    assert data.startswith("junit-shard.xml 파일에 실패 · 오류 시험이 없습니다")
 
 
 @pytest.mark.parametrize("text", ["", "<testsuites><testcase", "not xml at all"])
@@ -164,7 +164,7 @@ def test_a_broken_file_is_one_warning_and_still_exit_zero(
     [(kind, title, data)] = _run(path, capsys)
 
     assert (kind, title) == ("warning", "시험 결과 깨짐")
-    assert data.startswith("junit-shard.xml 을 읽지 못했습니다 — ")
+    assert data.startswith("junit-shard.xml 파일을 읽지 못했습니다 — ")
 
 
 def test_a_missing_file_or_a_folder_is_one_warning_without_the_local_path(
@@ -174,7 +174,7 @@ def test_a_missing_file_or_a_folder_is_one_warning_without_the_local_path(
     이름만 적는다."""
     [(kind, title, data)] = _run(tmp_path / "junit-shard.xml", capsys)
     assert (kind, title) == ("warning", "시험 결과 없음")
-    assert data.startswith("junit-shard.xml 이 없습니다 — ")
+    assert data.startswith("junit-shard.xml 파일이 없습니다 — ")
     assert str(tmp_path) not in data
 
     folder = tmp_path / "junit-folder"

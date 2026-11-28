@@ -125,8 +125,8 @@ def annotation_lines(junit: Path) -> list[str]:
             command(
                 "warning",
                 "시험 결과 없음",
-                f"{junit.name} 이 없습니다 — 시험 단계 전에 멈췄거나 시험이 시간 제한 · 강제 종료로"
-                " 끊겨 결과 파일을 남기지 못했습니다",
+                f"{junit.name} 파일이 없습니다 — 시험 단계 전에 멈췄거나 시험이 시간 제한 ·"
+                " 강제 종료로 끊겨 결과 파일을 남기지 못했습니다",
             )
         ]
     except (OSError, ElementTree.ParseError) as error:
@@ -137,7 +137,7 @@ def annotation_lines(junit: Path) -> list[str]:
             command(
                 "warning",
                 "시험 결과 깨짐",
-                cut_end(f"{junit.name} 을 읽지 못했습니다 — {detail}", REASON_LIMIT),
+                cut_end(f"{junit.name} 파일을 읽지 못했습니다 — {detail}", REASON_LIMIT),
             )
         ]
     failures = failed_tests(root)
@@ -146,7 +146,7 @@ def annotation_lines(junit: Path) -> list[str]:
             command(
                 "warning",
                 "실패 시험 없음",
-                f"{junit.name} 에 실패 · 오류 시험이 없습니다 — 까닭은 시험 결과 밖(다른 단계 ·"
+                f"{junit.name} 파일에 실패 · 오류 시험이 없습니다 — 까닭은 시험 결과 밖(다른 단계 ·"
                 " pytest 자체)에 있습니다",
             )
         ]

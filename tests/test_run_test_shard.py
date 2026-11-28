@@ -321,8 +321,8 @@ def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> 
     assert mark.parent.parent == basetemp
     assert mark.parent.name.startswith("test_keeps_its_mark_when_it_f")
     # 결과 XML 은 CI 실패 주석이 읽는 꼴 그대로다 — 실패 하나와 그 까닭 첫 줄. 견본 파일이 저장소
-    # 밖이라 pytest 가 classname 을 비워 이름만 남는다(저장소 시험은 `tests.<모듈>::<이름>`).
+    # 밖이라 classname 꼴은 OS 마다 다를 수 있어 이름 끝만 본다(저장소 시험은
+    # `tests.<모듈>::<이름>`).
     [failed] = ci_failure_annotations.failed_tests(ElementTree.parse(junit).getroot())
-    assert failed == ci_failure_annotations.FailedTest(
-        "test_keeps_its_mark_when_it_fails", "assert False"
-    )
+    assert failed.test_id.endswith("test_keeps_its_mark_when_it_fails")
+    assert failed.reason == "assert False"
