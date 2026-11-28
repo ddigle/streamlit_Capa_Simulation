@@ -840,9 +840,9 @@ ENTER_SPEC = eg.GridSpec(
     row_ops=True,
 )
 ENTER_REFS = (
-    eg.Suggestion("최종 앞 점검 (Pre Final Check)", "Pre Final Check"),
-    eg.Suggestion("최종 검사 (Final Test)", "Final Test"),
-    eg.Suggestion("Final Test Retest", "Final Test Retest"),
+    eg.Suggestion("DEMO 앞 점검 (DEMO_PRE Final Check)", "DEMO_PRE Final Check"),
+    eg.Suggestion("DEMO 표시 (Final Test)", "Final Test"),
+    eg.Suggestion("Final Test DEMO_2", "Final Test DEMO_2"),
 )
 
 
@@ -898,8 +898,8 @@ ENTER_RUNNER = (
     setRange(S, { r, c }, { r, c })
     key(scroller, letter)
   }
-  // 「final」 + Enter — 앞머리 맞음(Final Test · Final Test Retest)이 포함(Pre Final Check)보다
-  // 앞이고 맨 위가 강조, Enter 가 그 원본을 넣는다.
+  // 「final」 + Enter — 앞머리 맞음(Final Test · Final Test DEMO_2)이 포함(DEMO_PRE Final
+  // Check)보다 앞이고 맨 위가 강조, Enter 가 그 원본을 넣는다.
   open(0, 2)
   type('final')
   R.final = [labels(), on()]
@@ -1002,11 +1002,11 @@ def test_enter_tab_and_ctrl_enter_put_the_top_of_a_filtered_list() -> None:
     result = run_node(source, ENTER_RUNNER, {"shell": shell, "feed": _feed(index, "k1", None)})
 
     assert result["final"] == [
-        ["최종 검사 (Final Test)", "Final Test Retest", "최종 앞 점검 (Pre Final Check)"],
+        ["DEMO 표시 (Final Test)", "Final Test DEMO_2", "DEMO 앞 점검 (DEMO_PRE Final Check)"],
         0,
     ]
     assert result["finalCommit"] == [[["Final Test"]], "Final Test", None]
-    assert result["downCommit"] == [["Final Test Retest"]]
+    assert result["downCommit"] == [["Final Test DEMO_2"]]
     assert result["noneList"] is None
     assert result["noneSuggest"] == [[["DEMO_NEW_REF"]], False]
     assert result["mi"] == [["MI", "MIX_DEMO"], 0]
