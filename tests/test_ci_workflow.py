@@ -10,6 +10,9 @@
 시험은 두 작업 모두 같은 수의 조각으로 나눈다(`scripts/run_test_shard.py`). 한 러너로는 시간 안에
 끝나지 못해 초록도 빨강도 나오지 않았다 — 끝나지 못한 판이 Windows 실패를 사내까지 보냈다.
 
+작업 로그는 관리자 권한이라 정본 개발 세션(인증 없는 공개 API)이 읽지 못한다. 그래서 시험 단계가
+junit 파일을 남기고, 빨간 판에만 도는 단계가 실패 시험을 공개로 읽히는 check-run 주석으로 옮긴다.
+
 Actions 는 여기서 돌릴 수 없고 개발 환경에 YAML 해석기가 없어, 작업 덩어리를 들여쓰기로 잘라 줄을
 견준다 — 이 파일의 들여쓰기 꼴(작업 두 칸 · 키 네 칸 · 단계 여섯 칸)이 계약이다.
 """
@@ -24,15 +27,19 @@ LINUX_JOB = "verify"
 WINDOWS_JOB = "windows-pytest"
 VERDICT_JOB = "verify-result"
 JOB_HEAD = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
+JUNIT_FILE = "${{ runner.temp }}/junit-shard.xml"
 SHARD_RUN = (
     "run: uv run --no-sync python scripts/run_test_shard.py "
-    "--shard ${{ matrix.shard }} --of ${{ strategy.job-total }}"
+    "--shard ${{ matrix.shard }} --of ${{ strategy.job-total }} --junitxml " + JUNIT_FILE
 )
+ANNOTATION_STEP = "실패 시험 주석"
+ANNOTATION_RUN = f"uv run --no-sync python scripts/ci_failure_annotations.py {JUNIT_FILE}"
 WINDOWS_TEST_STEPS = [
     "테스트 (Windows — 막지 않음)",
     "테스트 (Windows — 막지 않음 · 임시 폴더 따로)",
 ]
 SAME_DRIVE_TEMP = {name: "${{ runner.temp }}" for name in ("TMPDIR", "TEMP", "TMP")}
+TEST_STEPS = {LINUX_JOB: ["4/4 테스트"], WINDOWS_JOB: WINDOWS_TEST_STEPS}
 
 
 def _jobs() -> dict[str, list[str]]:
@@ -105,6 +112,14 @@ def _install_lines(block: list[str]) -> list[str]:
         elif text.startswith(("run: uv python ", "run: uv sync ")):
             picked.append(text)
     return picked
+
+
+def _step_names(block: list[str]) -> list[str]:
+    return [
+        line.strip().removeprefix("- name: ")
+        for line in block
+        if line.strip().startswith("- name: ")
+    ]
 
 
 def _run_lines(block: list[str]) -> list[str]:
@@ -260,3 +275,25 @@ def test_each_shard_says_which_shard_it_was_in_the_summary() -> None:
     for name in (LINUX_JOB, WINDOWS_JOB):
         summary = [line for line in jobs[name] if "조각 ${{ matrix.shard }}/" in line]
         assert len(summary) == 2, name
+
+
+def test_a_red_test_step_leaves_its_failures_as_public_annotations() -> None:
+    """작업 로그는 관리자 권한이라 정본 개발 세션(인증 없는 공개 API)이 읽지 못한다 — 시험 단계가
+    junit 파일을 남기고, 빨간 판에만 도는 단계가 실패 시험 이름과 까닭 첫 줄을 check-run 주석으로
+    옮긴다. 결과 파일은 `PYTEST_ADDOPTS` 로 주지 않는다 — 시험이 안에서 띄우는 pytest 도 그 값을
+    받아 같은 파일을 덮는다."""
+    jobs = _jobs()
+
+    for name in (LINUX_JOB, WINDOWS_JOB):
+        block = jobs[name]
+        shard_runs = [line for line in _run_lines(block) if "scripts/run_test_shard.py" in line]
+        assert len(shard_runs) == len(TEST_STEPS[name]), name
+        assert all(line.startswith(SHARD_RUN) for line in shard_runs), name
+        step = _step_keys(block, ANNOTATION_STEP)
+        assert step == {"if": "failure()", "run": ANNOTATION_RUN}, name
+        steps = _step_names(block)
+        tests = [steps.index(test) for test in TEST_STEPS[name]]
+        assert max(tests) < steps.index(ANNOTATION_STEP) < steps.index("결과 한 줄"), name
+    assert "PYTEST_ADDOPTS" not in WORKFLOW.read_text(encoding="utf-8")
+    # 주석 단계는 판정을 바꾸지 않는다 — 판정 작업은 Linux 조각만 기다린다.
+    assert ANNOTATION_STEP not in "\n".join(jobs[VERDICT_JOB])

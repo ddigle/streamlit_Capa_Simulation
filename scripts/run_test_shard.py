@@ -9,6 +9,7 @@
     python scripts/run_test_shard.py --shard 3 --of 8          # 3 조각을 pytest 로 돈다
     python scripts/run_test_shard.py --shard 3 --of 8 --list   # 나누기만 하고 파일을 찍는다
     python scripts/run_test_shard.py --shard 3 --of 4 --basetemp-root <폴더>   # 임시 <폴더>/shard3
+    python scripts/run_test_shard.py --shard 3 --of 8 --junitxml <파일>   # 결과 XML 도 남긴다
 
 - **고르게** — 무거운 파일부터 지금 가장 가벼운 조각에 넣는다. 무게는 파일 크기다. `.gitattributes`
   가 `.py` 를 LF 로 묶어 두 OS 의 크기가 같아서, Linux · Windows 의 같은 번호 조각은 같은 파일이다.
@@ -28,6 +29,10 @@
   붙잡는다 — `tests/conftest.py`). 오류(E)가 난 시험의 임시 파일은 대개 남지 않는다. pytest
   기본(모두 남김)이면 조각 하나가 GB 단위로 쌓인다 — 시작 때 그 폴더를 비우니 다음 판에는 어차피
   남지 않는다. 주지 않으면(CI) 정책도 pytest 기본이다.
+- **결과 XML** — `--junitxml <파일>` 은 이 조각의 pytest 한 번에만 인자로 넘긴다(부르는 자리
+  기준으로 푼다). CI 가 빨간 조각의 실패 시험을 공개 주석으로 옮기는 재료다
+  (`scripts/ci_failure_annotations.py`). `PYTEST_ADDOPTS` 로 주지 않는다 — 시험이 안에서 띄우는
+  pytest(`-c pyproject.toml`)도 그 값을 받아 같은 파일을 덮는다.
 - 시험 하나가 `HANG_REPORT_SECONDS` 를 넘기면 내장 faulthandler 가 스레드별 위치를 표준 오류에
   찍는다 — 작업이 시간 제한으로 끊겨도 어디서 멈췄는지 남는다.
 """
@@ -76,7 +81,9 @@ def shard_of(shard: int, pieces: int, root: Path = PROJECT_ROOT) -> list[Path]:
     return split_files(weights, pieces)[shard - 1]
 
 
-def pytest_command(files: Sequence[Path], *, basetemp: Path | None = None) -> list[str]:
+def pytest_command(
+    files: Sequence[Path], *, basetemp: Path | None = None, junitxml: Path | None = None
+) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -94,6 +101,7 @@ def pytest_command(files: Sequence[Path], *, basetemp: Path | None = None) -> li
                 f"tmp_path_retention_policy={RETENTION_WITH_ROOT}",
             ]
         ),
+        *([] if junitxml is None else [f"--junitxml={junitxml}"]),
         *(path.as_posix() for path in files),
     ]
 
@@ -134,6 +142,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             " 저장소(git 작업 트리) 밖 폴더. 통과한 시험의 임시 파일은 바로 지운다"
         ),
     )
+    parser.add_argument(
+        "--junitxml",
+        type=Path,
+        help="이 조각의 pytest 결과를 junit XML <파일>로도 남긴다(CI 실패 주석의 재료)",
+    )
     options = parser.parse_args(argv)
     if not 1 <= options.shard <= options.of:
         parser.error("--shard 는 1 이상 --of 이하입니다.")
@@ -161,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print(f"조각 {options.shard}/{options.of} · 파일 {len(files)}개", flush=True)
     basetemp = None if root is None else shard_basetemp(root, options.shard)
-    command = pytest_command(files, basetemp=basetemp)
+    junitxml = None if options.junitxml is None else options.junitxml.resolve()
+    command = pytest_command(files, basetemp=basetemp, junitxml=junitxml)
     return subprocess.run(command, cwd=PROJECT_ROOT, check=False).returncode
 
 

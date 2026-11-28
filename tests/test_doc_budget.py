@@ -31,7 +31,7 @@ BUDGETS: dict[str, int] = {
     "docs/reference/files/services.md": 65_030,
     "docs/rules/00-purpose-header.md": 1_952,
     "docs/rules/01-goals-and-boundaries.md": 9_754,
-    "docs/rules/02-runtime-and-verification.md": 16_031,
+    "docs/rules/02-runtime-and-verification.md": 16_123,
     "docs/rules/04-reference-table-contract.md": 3_354,
     "docs/rules/05-state-cache-invariants.md": 52_356,
     "docs/rules/06-core-calculation.md": 55_536,

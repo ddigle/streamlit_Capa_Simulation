@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from js_runner import refuse_overlong_command_line
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+import ci_failure_annotations  # noqa: E402
 import run_test_shard  # noqa: E402
 
 PIECES = [1, 2, 3, 8, 16]
@@ -88,6 +90,7 @@ def test_each_shard_command_fits_the_windows_command_line(pieces: int) -> None:
             run_test_shard.pytest_command(
                 run_test_shard.shard_of(shard, pieces),
                 basetemp=long_root / f"shard{shard}",
+                junitxml=long_root / "junit-shard.xml",
             )
         )
 
@@ -151,6 +154,7 @@ def test_the_shard_runs_pytest_from_the_root_and_gives_back_its_code(
     assert "-q" not in command, "pyproject addopts 의 -q 와 겹치면 끝줄 수가 사라진다"
     assert command[command.index("-p") + 1] == "no:cacheprovider"
     assert _basetemps(command) == []
+    assert _junitxmls(command) == []
     assert not [part for part in command if part.startswith("tmp_path_retention_policy")]
     assert "faulthandler_timeout=600" in command
     expected = [path.as_posix() for path in run_test_shard.shard_of(2, 8)]
@@ -159,6 +163,42 @@ def test_the_shard_runs_pytest_from_the_root_and_gives_back_its_code(
 
 def _basetemps(command: list[str]) -> list[str]:
     return [part.removeprefix("--basetemp=") for part in command if part.startswith("--basetemp")]
+
+
+def _junitxmls(command: list[str]) -> list[str]:
+    return [part.removeprefix("--junitxml=") for part in command if part.startswith("--junitxml")]
+
+
+def test_a_junitxml_goes_to_the_shard_pytest_alone_resolved_from_the_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """결과 XML 은 조각 pytest 의 인자로만 간다. `PYTEST_ADDOPTS` 로 주면 시험이 안에서 띄우는
+    pytest(`-c pyproject.toml`)도 받아 같은 파일을 덮는다. pytest 는 저장소 뿌리에서 돌므로 상대
+    경로는 부르는 자리 기준으로 푼다."""
+    seen: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, cwd: Path, check: bool
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert "PYTEST_ADDOPTS" not in os.environ
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert run_test_shard.main(["--shard", "2", "--of", "8", "--junitxml", "out/j.xml"]) == 1
+
+    [command] = seen
+    assert _junitxmls(command) == [str(tmp_path.resolve() / "out" / "j.xml")]
+    expected = [path.as_posix() for path in run_test_shard.shard_of(2, 8)]
+    assert command[-len(expected) :] == expected
+    assert "PYTEST_ADDOPTS" not in os.environ
+    # 나누기만 하는 판은 아무것도 돌리지 않고 파일도 만들지 않는다.
+    assert run_test_shard.main(["--shard", "2", "--of", "8", "--list", "--junitxml", "x.xml"]) == 0
+    assert len(seen) == 1
+    assert not (tmp_path / "x.xml").exists()
 
 
 def test_a_basetemp_root_gives_each_shard_its_own_folder_from_the_caller(
@@ -253,8 +293,9 @@ def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> 
     synthetic = tmp_path / "test_synthetic_shard.py"
     synthetic.write_text(SYNTHETIC_TEST, encoding="utf-8")
     basetemp = run_test_shard.shard_basetemp(tmp_path / "roots", 3)
+    junit = tmp_path / "out" / "junit-shard.xml"
     command = [
-        *run_test_shard.pytest_command([synthetic], basetemp=basetemp),
+        *run_test_shard.pytest_command([synthetic], basetemp=basetemp, junitxml=junit),
         "-c",
         str(PROJECT_ROOT / "pyproject.toml"),
     ]
@@ -279,3 +320,9 @@ def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> 
     [mark] = basetemp.rglob("mark")
     assert mark.parent.parent == basetemp
     assert mark.parent.name.startswith("test_keeps_its_mark_when_it_f")
+    # 결과 XML 은 CI 실패 주석이 읽는 꼴 그대로다 — 실패 하나와 그 까닭 첫 줄. 견본 파일이 저장소
+    # 밖이라 pytest 가 classname 을 비워 이름만 남는다(저장소 시험은 `tests.<모듈>::<이름>`).
+    [failed] = ci_failure_annotations.failed_tests(ElementTree.parse(junit).getroot())
+    assert failed == ci_failure_annotations.FailedTest(
+        "test_keeps_its_mark_when_it_fails", "assert False"
+    )
